@@ -2,17 +2,86 @@
 
 ## Status
 
-Design proposal. Stand-alone next-generation matcher (`matcher_ng`) intended
-as a full replacement for the existing `koskari/matcher.py`. Implementation
-lands in `koskari/lib/matcher.c` and `koskari/lib/matcher.h`, with Python
-interactions driven from `koskari/matcher_ng.py`. The current `matcher.py`
-remains untouched until validation of `matcher_ng` is complete; only after a
-clean migration will the original matcher be removed. Migration and removal
-are out of scope for the work described here.
+Phases 1 through 5 of the implementation strategy below are landed. The
+native engine lives in `koskari/lib/matcher.{c,h}`; the Python builder
+API and the cleanroom composite layer live in `koskari/matcher_ng.py`.
+`matcher_ng` is now stand-alone: its only runtime dependency is
+`koskari.lib`. There is no import of `koskari.matcher`,
+`koskari.compile.*`, or `koskari.exceptions` from the new module, and
+no post-match Python transform layer. `Matcher.match` returns the
+native `MatchResult` directly; captures are final.
+
+Phases 6 through 9 are pending. The legacy `koskari/matcher.py` and
+`koskari.compile.helpers` parsing helpers remain in place for the
+existing compile path; migration of compile-time dispatch and runtime
+`match/case` to `matcher_ng`, and the removal of the legacy stack, are
+still out of scope for this rollup.
 
 Complements the current architecture reference at
 [unified-matcher-transformer-model.md](unified-matcher-transformer-model.md),
 which documents the implementation `matcher_ng` is intended to supersede.
+
+## As-built deviations
+
+The plans below were followed in spirit but several details landed
+differently. The deviations are listed here so the rest of the
+document can be read as the as-built design.
+
+* **Phase 4.5 was added between Phase 4 and Phase 5.** The plain
+  `REPEAT` plus the per-iteration native frame-dict mechanism made it
+  worth shipping a small support layer before composites: the
+  builder helpers `repeat_capture`, `slot_prefix`,
+  `binding_inner_pattern`, and `BINDING_CELL`, plus a per-`ONEOF`
+  capture-scope stack on `_FreezeCtx` so identical slot names can
+  appear in mutually exclusive branches. Tests for these landed in
+  `tests/matcher_ng/test_repeat_frames.py` and a native counterpart
+  in `tests/native/test_matcher.c`.
+
+* **Phase 5 was originally implemented with post-processors and a
+  `MatcherProgram` wrapper that delegated to legacy
+  `koskari.compile.helpers` parsers.** That implementation was
+  reverted because it violated the cleanroom goal of the matcher_ng
+  branch. The composite layer that landed is composition-only:
+  `_Composite._emit` lowers to primitive nodes and registers
+  freeze-time hygiene metadata; no post-match Python callable runs,
+  no result wrapper exists, and no legacy parser is imported. The
+  per-form result types (`BindingResult`, `BindingsResult`,
+  `DeclResult`, `FormalsResult`, `UsingResult`) are not part of the
+  matcher_ng surface — the captures dict is the result.
+
+* **Composite expansions landed structurally, not as ad-hoc parsers.**
+
+  | Composite  | Final shape (sketch)                                                                                                                             |
+  |------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+  | `DEFINE`   | `CAPTURE(slot, TYPE("symbol"))`                                                                                                                  |
+  | `BINDING`  | `CAPTURE(slot, binding_inner_pattern())`                                                                                                         |
+  | `BINDINGS` | `ONEOF(CAPTURE(slot, LITERAL(nil)), repeat_capture(slot, binding_inner_pattern()))` — nil arm before repeat arm because `REPEAT` always succeeds |
+  | `USING`    | `CAPTURE(slot, FORM(ONEOF(...)))` with four ordered `GROUP` branches: unpack, name+expr, expr-as-name, bare expr                                 |
+  | `DECL`     | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(GROUP(SYMBOL("name"))), FORM(GROUP(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))), FORM(GROUP(SYMBOL("name"), REST("decl_tail")))))` — inner `name`, `type`, `decl_tail` slots are bound directly; the matcher does not parse the keyword tail |
+  | `FORMALS`  | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(GROUP(OPTIONAL(positionals), OPTIONAL(defaults), OPTIONAL(star_seg), OPTIONAL(kwonly), OPTIONAL(starstar_seg)))))` — phased graph; each phase is a `repeat_capture` over a small per-cell ONEOF |
+  | `BODY`     | `REST(slot)` plus a `scope_regions` hygiene entry                                                                                                |
+
+* **Hygiene meta is merged at the top level of the frozen tuple's
+  meta dict.** The plan suggested a single `hygiene` key; the
+  implementation merges `hygiene_version`, `binders`, and
+  `scope_regions` directly into the user-supplied meta. A user meta
+  key that conflicts with one of these raises `ValueError` at
+  freeze time.
+
+* **Improper-list FORMALS are rejected.** koskari does not allow
+  improper lists as a formals shape, so the `FORMALS` composite
+  recognises bare-symbol formals and proper-list formals only.
+  This is a deliberate semantic choice, not a structural
+  limitation of the engine.
+
+* **`BINDINGS` on its own is inline in the parent spine, not a
+  single descended cell.** The original plan described the bindings
+  list as one outer element holding a proper list of cells. The
+  composition that landed runs `repeat_capture` directly against
+  the parent spine, so `(GROUP(BINDINGS("bs"), BODY("body")))`
+  matches subjects shaped `(cell cell ... body...)` — which is what
+  most callers want. The empty-list arm matches a single `nil`
+  sentinel element.
 
 ## Purpose
 
@@ -925,87 +994,377 @@ For diagnostics, callers may request provenance or best-failure tracing, but thi
 
 ---
 
+## Self-Describing Matcher Syntax
+
+The surface matcher syntax defined in "Syntax Proposal" is itself an
+ordinary koskari s-expression form. The matcher_ng primitives can
+therefore describe its shape: a single matcher pattern recognises one
+matcher-syntax expression element and binds the relevant pieces into
+captures, and a small walker re-applies the matcher recursively to
+lower the captured pieces into a frozen tuple. The walker is the only
+place that knows the head-symbol vocabulary and the keyword-tag
+semantics; the matcher itself is pure shape recognition.
+
+This is the shape parser that Phase 6 will build on. It is also the
+canonical demonstration of the discipline articulated in
+"As-built deviations": the matcher describes the BNF, the walker
+enforces the semantics. Once it exists, `define-matcher` is a special
+form whose body is parsed by this matcher plus its walker, and the
+output is a frozen tuple ready for `Matcher.from_tuple`.
+
+### Surface element classification
+
+Every matcher pattern element on the spine is exactly one of the
+shapes below. The "Head atom" column is the recognising key the
+meta-matcher dispatches on.
+
+| Surface form              | Head atom                  | Subject shape            |
+|---------------------------|----------------------------|--------------------------|
+| `x`                       | (none, atom)               | bare symbol element      |
+| `5` `"hello"` `foo:`      | (none, atom)               | non-symbol non-pair atom |
+| `'sym`                    | symbol `quote`             | pair `(quote sym)`       |
+| `(:: pat...)`             | keyword `::`               | pair                     |
+| `(type: pat...)`          | keyword `type:`            | pair                     |
+| `(val: expr)`             | keyword `val:`             | pair                     |
+| `(CLASS Sym fields...)`   | symbol `CLASS`             | pair                     |
+| `(HEAD args...)`          | symbol (any other)         | pair                     |
+
+The last row covers two surface forms that share a shape: the
+**named capture** (`(name :: symbol)`,
+`(formals :: (FORMALS scope: body))`) and the **composite invocation**
+(`(FORM ...)`, `(ONEOF ...)`, `(BINDINGS mode: parallel ...)`). The
+matcher does not try to distinguish these — that is a one-line
+dispatch in the walker against a registered set of matcher-head
+symbols.
+
+### Meta-matcher
+
+In matcher_ng Python builder form, the meta-matcher is a single
+ordered `ONEOF` whose branches correspond row-for-row to the table
+above:
+
+```python
+META_PATTERN = ONEOF(
+    # 1. quoted symbol literal: (quote SYM)
+    FORM(GROUP(
+        LITERAL_SYM("quote"),
+        CAPTURE("quoted_symbol", TYPE("symbol")))),
+
+    # 2. anonymous :: constraint: (:: PAT...)
+    FORM(GROUP(
+        LITERAL_KW("::"),
+        REST("dcolon_args"))),
+
+    # 3. anonymous type: constraint: (type: PAT...)
+    FORM(GROUP(
+        LITERAL_KW("type"),
+        REST("type_args"))),
+
+    # 4. anonymous val: constraint: (val: EXPR)
+    FORM(GROUP(
+        LITERAL_KW("val"),
+        CAPTURE("val_expr"))),
+
+    # 5. CLASS pattern: (CLASS Sym FIELDS...)
+    FORM(GROUP(
+        LITERAL_SYM("CLASS"),
+        CAPTURE("class_extern", TYPE("symbol")),
+        REST("class_fields"))),
+
+    # 6. general (HEAD ARGS...) -- composite invocation OR named capture
+    FORM(GROUP(
+        CAPTURE("head", TYPE("symbol")),
+        REST("head_args"))),
+
+    # 7. bare symbol -- captures any value into a slot named after itself
+    CAPTURE("bare_symbol", TYPE("symbol")),
+
+    # 8. atomic literal -- number, string, keyword, etc.
+    CAPTURE("atom_literal"),
+)
+```
+
+The pattern is invoked against a length-1 subject containing one
+matcher-syntax element:
+
+```python
+META_MATCHER = GROUP(META_PATTERN).build()
+result = META_MATCHER.match((elem,), symbol=SYMBOL_TYPE,
+                            keyword=KEYWORD_TYPE)
+```
+
+The branch order matters:
+
+1. `(quote SYM)` precedes the general `(HEAD ARGS...)` arm so a
+   leading `quote` is recognised as a literal-symbol marker rather
+   than as a capture named `quote`.
+2. The three anonymous-constraint arms (`::`, `type:`, `val:`)
+   precede the general arm so their leading keyword is consumed
+   structurally rather than folded into a capture's option list.
+3. `CLASS` is split out so the class extern's symbol is bound to a
+   distinct slot — the walker treats `(CLASS ...)` differently from
+   any other named composite.
+4. The general `(HEAD ARGS...)` arm sits at the end of the list-form
+   arms; its head may be either a known matcher head
+   (`FORM`, `GROUP`, `ONEOF`, `REPEAT`, `OPTIONAL`, `REST`, `NOT`,
+   `FORMALS`, `BINDING`, `BINDINGS`, `USING`, `DEFINE`, `DECL`, ...)
+   or a user-chosen capture name. The walker decides.
+5. The two atom arms come last, in the order bare-symbol then
+   atomic-literal, because `bare_symbol` constrains to `symbol` and
+   `atom_literal` is unconstrained.
+
+### Capture-shape contract
+
+After a successful match the captures dict has exactly one of the
+following slot configurations bound; all other slots are `ABSENT`:
+
+| Shape recognised        | Slots bound                          |
+|-------------------------|--------------------------------------|
+| `'sym`                  | `quoted_symbol`                      |
+| `(:: pat...)`           | `dcolon_args`                        |
+| `(type: pat...)`        | `type_args`                          |
+| `(val: expr)`           | `val_expr`                           |
+| `(CLASS Sym fields...)` | `class_extern`, `class_fields`       |
+| `(HEAD args...)`        | `head`, `head_args`                  |
+| `x`                     | `bare_symbol`                        |
+| `5`                     | `atom_literal`                       |
+
+The walker dispatches on which slot is non-`ABSENT`; the captured
+tail (`*_args`, `class_fields`, `head_args`) is the *raw* koskari
+list whose elements the walker re-feeds into `META_MATCHER`.
+
+### Walker outline
+
+```python
+KNOWN_HEADS = {
+    "FORM", "GROUP", "MATCH", "ONEOF", "SEQ",
+    "REPEAT", "OPTIONAL", "REST", "NOT",
+    "FORMALS", "BINDING", "BINDINGS", "USING",
+    "DEFINE", "DECL",
+}
+
+CAPTURE_OPTION_KEYS = {"scope", "mode", "role"}
+
+
+def lower(elem):
+    """
+    Lower one matcher-syntax element to a matcher_ng pattern object.
+    """
+
+    r = META_MATCHER.match((elem,), symbol=SYMBOL_TYPE,
+                           keyword=KEYWORD_TYPE)
+    if not r.matched:
+        raise SpecialError(
+            "not a valid matcher pattern: %r" % (elem,), elem)
+    c = r.captures
+
+    if c["bare_symbol"] is not ABSENT:
+        return CAPTURE(str(c["bare_symbol"]))
+
+    if c["atom_literal"] is not ABSENT:
+        return LITERAL(c["atom_literal"])
+
+    if c["quoted_symbol"] is not ABSENT:
+        return LITERAL_SYM(str(c["quoted_symbol"]))
+
+    if c["dcolon_args"] is not ABSENT:
+        return _lower_anon_constraint("::", c["dcolon_args"])
+
+    if c["type_args"] is not ABSENT:
+        return _lower_anon_constraint("type:", c["type_args"])
+
+    if c["val_expr"] is not ABSENT:
+        return LITERAL(c["val_expr"])
+
+    if c["class_extern"] is not ABSENT:
+        return _lower_class(c["class_extern"], c["class_fields"])
+
+    if c["head"] is not ABSENT:
+        head = c["head"]
+        args = c["head_args"]
+        if str(head) in KNOWN_HEADS:
+            return _lower_composite(head, args)
+        return _lower_named_capture(head, args)
+
+    raise SpecialError(
+        "internal: meta-matcher matched with no slot bound", elem)
+```
+
+`_lower_named_capture` walks `args`, splitting it into capture
+options (keyword-value pairs whose keyword name is in
+`CAPTURE_OPTION_KEYS`) and constraints (everything else, each itself
+re-fed to the meta-matcher). `_lower_composite` recurses by mapping
+each element of `args` through `lower` and assembling the result via
+the named composite's Python constructor (or directly via frozen
+tuple, depending on the registry).
+
+### One-level recursion via walker
+
+matcher_ng has no native pattern-recursion primitive; a matcher
+cannot reference itself by name from inside its own definition. The
+meta-matcher therefore matches **one level at a time**, and the
+walker is the loop driver. Each branch's `head_args` /
+`class_fields` / `dcolon_args` capture is the raw tail of the source
+list; the walker iterates that tail and calls `lower` on each
+element.
+
+This is acceptable for a ground-up bootstrap because matcher syntax
+has no left recursion and no productions with shared cursor state
+across recursion: every recursive position is **inside a
+parenthesised form** that the meta-matcher already isolates as a
+captured sub-list. Lowering is therefore strictly bottom-up with no
+risk of left-recursive non-termination.
+
+### Worked example
+
+Take a clause from a hypothetical `define-matcher` for `BINDING`:
+
+```scheme
+(FORM (name :: symbol) expr)
+```
+
+The walker sees `(FORM ...)` as one matcher pattern element. The
+meta-matcher binds:
+
+```text
+captures = {
+    head:        symbol("FORM"),
+    head_args:   ((name :: symbol) expr),
+    ...other slots ABSENT...
+}
+```
+
+`str(head) == "FORM"` is in `KNOWN_HEADS`, so `_lower_composite`
+runs. It iterates `head_args` and calls `lower` on each element:
+
+* `(name :: symbol)` re-enters the meta-matcher and matches the
+  general arm with `head = symbol("name")` and
+  `head_args = (:: symbol)`. `name` is not in `KNOWN_HEADS`, so
+  `_lower_named_capture` is called. It walks `head_args` looking
+  for capture options (none) and constraints (one `::` constraint
+  whose payload is the symbol `symbol`), and returns
+  `CAPTURE("name", TYPE("symbol"))`.
+
+* `expr` re-enters the meta-matcher and matches the bare-symbol
+  arm, returning `CAPTURE("expr")`.
+
+`_lower_composite` assembles the parent:
+`FORM(GROUP(CAPTURE("name", TYPE("symbol")), CAPTURE("expr")))`.
+
+(The `GROUP` wrapping is implicit in `FORM`'s arity-greater-than-one
+calling convention; the actual assembly normalises it.)
+
+### Why this matters
+
+Once the meta-matcher exists, the matcher language describes itself.
+The same `MatchResult` shape that `helper_bindings` walks is what
+`define-matcher` walks; the same discipline that makes
+`gather_formals_ng` thin makes `define-matcher` thin. Every parser
+in the koskari compiler that consumes a matcher pattern reduces to
+**one matcher constant plus one walker**, and the matcher constant
+is itself a frozen tuple that can be inspected, pretty-printed, or
+shipped as a stable wire format.
+
+This is the closing of the bootstrap: the matcher engine is
+responsible for shape recognition and capture binding only; every
+parser, every matcher constructor, every special-form dispatcher is
+one matcher plus one walker over its captures dict.
+
+---
+
 ## Implementation Strategy: Low to High
 
-### Phase 1 — Native low-level matcher core
+### Phase 1 — Native low-level matcher core *(landed)*
 
-Implement the C-native tagged node array and validator.
+C-native tagged node array, validator, and matcher core in
+`koskari/lib/matcher.{c,h}`.
 
-Initial primitive nodes:
+Primitive node kinds present: `TEST`, `CAPTURE`, `GROUP`, `FORM`,
+`ONEOF`, `REST`, `REPEAT`, `OPTIONAL`, `NOT`, `CLASS`, `FIELD`.
 
-* `TEST`
-* `CAPTURE`
-* `GROUP`
-* `FORM`
-* `ONEOF`
-* `REST`
-* `REPEAT`
-* `OPTIONAL`
-* `NOT`
-* possibly `CLASS`
-
-Implement:
+Implemented:
 
 * bottom-up node validation
 * child index acyclicity
-* width computation
-* one REST per FORM branch
-* REPEAT min-width validation
+* width computation (`min_width`, `max_width`, `KOS_MATCH_UNBOUNDED`)
+* one REST per FORM branch (with `OPTIONAL` rest-bearing fold-in)
+* REPEAT min-width validation (operand min must be `>= 1`)
 * capture slot validation
 * extern table validation
+* `NOT` rejects subtrees containing `CAPTURE`
 
-### Phase 2 — Subject adapters
+### Phase 2 — Subject adapters *(landed)*
 
-Implement adapters for:
+Adapters for both `PySequence_Fast` (tuple/list runtime matching)
+and `KosPair` (compile-time source-form matching) live in
+`koskari/lib/matcher.c`. The matcher core is adapter-agnostic;
+`subject_from_any` dispatches at the subject root and `match_form`
+re-enters the dispatch when descending into a nested element.
 
-1. Runtime `PySequence_Fast` matching.
-2. Compile-time `KosPair` source-form matching.
+### Phase 3 — Frozen tuple schema and thaw *(landed)*
 
-Keep matcher execution independent of adapter type.
+Schema is the eight-element tuple
+`("MATCHER", version, slots, externs, consts, nodes, entry, meta)`.
+`Matcher.from_tuple` performs schema-version, structural, and
+width validation; the resulting object is a real native `Matcher`
+held by ordinary Python code-constant machinery. `thaw` in
+`koskari/matcher_ng.py` wraps `Matcher.from_tuple` for symmetry
+with the builder API.
 
-### Phase 3 — Frozen tuple schema and thaw
+### Phase 4 — Python builder API *(landed)*
 
-Define the tagged tuple schema.
-
-Implement:
-
-* tuple parser
-* schema version check
-* node construction
-* validation
-* native `Matcher` instance creation
-* constant thaw integration
-
-### Phase 4 — Python builder API
-
-Implement ergonomic Python constructors:
+Builder classes and shorthand factories live in
+`koskari/matcher_ng.py`:
 
 ```python
-FORM(...)
-GROUP(...)
-ONEOF(...)
-CAPTURE(...)
-SYMBOL(...)
-VALUE(...)
-REST(...)
-BINDING(...)
-BINDINGS(...)
-FORMALS(...)
+TEST_ANY, LITERAL, TYPE, PREDICATE, CAPTURE,
+FORM, GROUP, ONEOF, REPEAT, OPTIONAL, REST, NOT, CLASS, FIELD,
+BIND, VALUE, SYMBOL, PAIR, LITERAL_KW, LITERAL_SYM, LIST,
+make_matcher, thaw,
 ```
 
-These produce symbolic matcher objects and lower to frozen tuples.
+All ergonomic shorthands lower into the same frozen-tuple
+representation as the primitives.
 
-### Phase 5 — Bootstrap composites
+### Phase 4.5 — Repeat frames and slots helpers *(landed)*
 
-Define composites like `BINDING`, `BINDINGS`, and `FORMALS` using the Python builder API.
+Not in the original plan; added when per-iteration frame dicts
+became an engine feature. Builder helpers landed in
+`koskari/matcher_ng.py`:
 
-Use these to replace current ad hoc matcher objects while preserving existing behavior.
+```python
+repeat_capture(slot, inner)       # CAPTURE(slot, REPEAT(inner))
+slot_prefix(pattern, prefix)      # rename CAPTURE/REST slots
+binding_inner_pattern()           # FORM(ONEOF(...)) for one cell
+BINDING_CELL(slot)                # slot_prefix(binding_inner_pattern, slot)
+```
 
-### Phase 6 — Matcher syntax parser
+`_FreezeCtx` gained a `capture_scope_stack` so each `ONEOF` branch
+is its own slot-uniqueness scope; identical slot names across
+mutually exclusive arms are valid.
 
-Implement a matcher-syntax parser that uses bootstrap matchers to unpack matcher syntax itself.
+### Phase 5 — Bootstrap composites *(landed, cleanroom rewrite)*
 
-This enables source-level matcher authoring:
+Composites in `koskari/matcher_ng.py`: `DEFINE`, `DECL`, `BINDING`,
+`BINDINGS`, `FORMALS`, `USING`, `BODY`. Each composite is a thin
+factory: `_expand` returns a tree of primitives, and `_emit`
+registers freeze-time hygiene metadata. There is no post-match
+Python transform; the captures dict is the result.
+
+The first attempt at this phase delegated to legacy parsers via a
+`MatcherProgram` wrapper. That work was reverted; see "As-built
+deviations" above. The composite shapes are documented in detail
+under "Current Matcher Examples Rewritten" and the deviations
+table above.
+
+### Phase 6 — Matcher syntax parser *(pending)*
+
+Implement a matcher-syntax parser that uses the existing primitives
+and composites to unpack matcher syntax itself.
+
+The shape and capture contract of that parser are sketched in the
+"Self-Describing Matcher Syntax" section above. Once landed,
+source-level matcher authoring becomes:
 
 ```scheme
 (define-matcher BINDING
@@ -1014,36 +1373,46 @@ This enables source-level matcher authoring:
     (FORM (name :: symbol) expr)))
 ```
 
-The matcher language can then increasingly describe itself.
+The matcher language then describes itself: `define-matcher` is a
+special form whose body is parsed by the meta-matcher plus a small
+walker, and the walker emits a frozen tuple.
 
-### Phase 7 — Special-form dispatch integration
+### Phase 7 — Special-form dispatch integration *(pending)*
 
-Move special forms from manually running Python matcher APIs to compiled matcher groups.
+Move special forms from running Python matcher APIs to compiled
+matcher constants.
 
-A special form can have a precompiled matcher constant plus associated handler functions. Dispatch becomes:
+A special form has a precompiled matcher constant plus associated
+handler functions. Dispatch:
 
-1. Match source form or form tail.
+1. Match source form or form tail with the constant.
 2. Receive capture result.
 3. Optionally extract hygiene targets.
 4. Invoke matching handler with captures.
 
-### Phase 8 — Runtime match/case
+This phase will land per-special-form, with each form's matcher
+authored either in Python builder form or, after Phase 6, in
+`define-matcher` source.
+
+### Phase 8 — Runtime match/case *(pending)*
 
 Add runtime `match` syntax using the same matcher constants.
 
 Runtime flow:
 
 1. Evaluate subject.
-2. Adapt subject once.
+2. Adapt subject once (sequence adapter at runtime).
 3. Run case matchers in order.
 4. Apply captures to namespace.
 5. Execute selected body.
 
-### Phase 9 — Hygiene extraction migration
+### Phase 9 — Hygiene extraction migration *(pending)*
 
 Reimplement `extract_targets` over the new `MatchResult` metadata.
+The freeze-time hygiene wire format is already populated by the
+composite layer; the consumer side is what remains.
 
-Ensure old behavior maps to new metadata for:
+Map existing behavior to new metadata for:
 
 * lambda formals over body
 * let bindings over body
@@ -1055,14 +1424,40 @@ Ensure old behavior maps to new metadata for:
 
 ## Remaining Design Decisions
 
-1. Exact absent/default sentinel for failed `OPTIONAL` captures.
-2. Exact duplicate capture-name behavior outside named repeats.
-3. Whether named composites are always inlined before freeze or whether a low-level `CALL_MATCHER` node exists.
-4. Exact improper-list policy for KosPair syntax matching.
-5. Exact field extraction semantics for `CLASS`.
-6. Whether shorthand `(Point x: 0 y)` is accepted or only canonical `(CLASS Point x: 0 y)`.
-7. Whether source diagnostics use best-failure tracing inside the matcher or an external retry/tracing mode.
-8. Whether `GROUP` and `MATCH` are aliases or have distinct meaning.
+1. **Sentinel for failed `OPTIONAL` captures.** *Resolved.* Slots
+   that an `OPTIONAL` arm did not bind appear as `ABSENT` (the
+   `koskari.lib.ABSENT` singleton) in `MatchResult.captures`.
+2. **Duplicate capture-name behavior outside named repeats.**
+   *Resolved.* Duplicate slot names raise `ValueError` at
+   freeze time. Each `ONEOF` branch is its own slot scope, so
+   identical names across mutually exclusive arms remain valid.
+3. **Whether named composites are always inlined before freeze or
+   whether a low-level `CALL_MATCHER` node exists.** *Resolved.*
+   Composites are always inlined; the frozen tuple is pure
+   primitives. There is no `CALL_MATCHER` node kind, and no
+   intent to add one.
+4. **Improper-list policy for KosPair syntax matching.** *Resolved.*
+   `FORM` requires a proper list at the engine level; `match_form`
+   in `koskari/lib/matcher.c` rejects improper-list subjects with
+   a soft no-match. Improper-list `FORMALS` are therefore
+   structurally rejected, which is the intended koskari semantics.
+5. **Field extraction semantics for `CLASS`.** *Resolved.*
+   Positional fields use `__match_args__`; keyword fields use
+   `name=`. `AttributeError` during attribute extraction folds
+   to a no-match.
+6. **Whether shorthand `(Point x: 0 y)` is accepted or only
+   canonical `(CLASS Point x: 0 y)`.** *Open.* Phase 6 concern;
+   the meta-matcher sketch in this document recognises only the
+   canonical `(CLASS ...)` form.
+7. **Whether source diagnostics use best-failure tracing inside the
+   matcher or an external retry/tracing mode.** *Open.* Deferred;
+   no diagnostic surface beyond the boolean `matched` flag exists
+   yet. A trace mode could be threaded into the engine without
+   changing the public match contract.
+8. **Whether `GROUP` and `MATCH` are aliases or have distinct
+   meaning.** *Resolved.* In `matcher_ng` only `GROUP` exists;
+   surface `MATCH` is treated as a `GROUP` alias for the Phase 6
+   parser. `matcher_ng` does not export a separate `MATCH` builder.
 
 ---
 
