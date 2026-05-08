@@ -1435,6 +1435,56 @@ Map existing behavior to new metadata for:
 * with/except/using-style forms
 * macro expansion hygiene substitution
 
+### Migration execution plan — baseline-first, single cutover *(agreed)*
+
+The branch intent is to remove legacy matcher/hygiene and rename the
+NG stack to canonical names. To avoid getting stuck mid-migration, the
+work is staged as small, testable baseline changes first, then one
+large cutover.
+
+#### Baseline A — `hygiene_ng.py` as a standalone engine
+
+Add `hygiene_ng.py` without changing production call sites. It should
+provide the same high-level operations as current hygiene handling
+(collect introduced symbols, recurse through scope targets, apply
+substitution), but operate over explicit hygiene data rather than legacy
+matcher-spec introspection.
+
+#### Baseline B — `MatcherCompiler` emits hygiene objects
+
+Teach the matcher compiler to produce a hygiene object as a side product
+of matcher compilation. This output is validated and tested directly,
+but is not yet required by existing special-form dispatch.
+
+#### Baseline C — minimal special-form funnel interface
+
+Add a minimal interface on `Special` (not broad `Compiled`) that routes
+matching/hygiene through a stable API. Update `syntax.py` to call this
+funnel instead of directly depending on matcher internals. At this
+point, specials may still be backed by legacy matcher/hygiene behavior,
+but all callers go through one indirection surface.
+
+#### Baseline D — reduced syntax-rules matcher compiler
+
+Add a dedicated compiler path for the simpler syntax-rules pattern
+surface. It lowers reduced inputs to normal matcher artifacts while
+also producing the associated hygiene object. This remains additive and
+can be tested independently of special-form migration.
+
+#### Cutover E — migrate all specials and switch backend
+
+Perform the large migration in one step:
+
+1. Re-declare special-form patterns using the new matcher API
+2. Update `@special_forms` plumbing to attach the hygiene object
+3. Switch special funnel methods to the new matcher/hygiene APIs
+4. Update syntax/macro rule paths to rely only on the funnel contract
+5. Remove legacy matcher and legacy hygiene modules
+6. Rename NG modules to canonical names
+
+This cutover is intentionally large, but the preceding baselines ensure
+all framework pieces are already present and individually tested.
+
 ---
 
 ## Remaining Design Decisions
