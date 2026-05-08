@@ -2589,6 +2589,56 @@ static PyObject *matcher_repr(PyObject *self) {
 }
 
 
+static PyObject *kos_matcher_extern_defaults = NULL;
+
+
+static int kos_matcher_populate_extern_defaults(PyObject *dict) {
+  static const struct {
+    const char *name;
+    PyTypeObject *tp;
+  } entries[] = {
+    { "pair", &KosPairType },
+    { "symbol", &KosSymbolType },
+    { "keyword", &KosKeywordType },
+    { "int", &PyLong_Type },
+    { "str", &PyUnicode_Type },
+    { "tuple", &PyTuple_Type },
+    { "list", &PyList_Type },
+  };
+  const Py_ssize_t n =
+      (Py_ssize_t) (sizeof(entries) / sizeof(entries[0]));
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    if (PyDict_SetItemString(dict, entries[i].name,
+                             (PyObject *) entries[i].tp))
+      return -1;
+  }
+
+  return 0;
+}
+
+
+PyObject *KosMatcher_ExternDefaults(void) {
+  if (! kos_matcher_extern_defaults) {
+    kos_matcher_extern_defaults = PyDict_New();
+    if (! kos_matcher_extern_defaults)
+      return NULL;
+    if (kos_matcher_populate_extern_defaults(kos_matcher_extern_defaults)) {
+      Py_CLEAR(kos_matcher_extern_defaults);
+      return NULL;
+    }
+  }
+
+  return kos_matcher_extern_defaults;
+}
+
+
+PyObject *KosMatcher_ResetExternDefaults(void) {
+  Py_CLEAR(kos_matcher_extern_defaults);
+  return KosMatcher_ExternDefaults();
+}
+
+
 static PyObject *matcher_match_method(
     PyObject *self,
     PyObject *args,
@@ -2617,10 +2667,22 @@ static PyObject *matcher_match_method(
           Py_DECREF(extern_env);
           return NULL;
         }
-        PyErr_Format(PyExc_TypeError,
-                     "matcher missing extern binding: %R", name);
-        Py_DECREF(extern_env);
-        return NULL;
+        PyObject *defs = KosMatcher_ExternDefaults();
+        if (! defs) {
+          Py_DECREF(extern_env);
+          return NULL;
+        }
+        val = PyDict_GetItemWithError(defs, name);
+        if (! val) {
+          if (PyErr_Occurred()) {
+            Py_DECREF(extern_env);
+            return NULL;
+          }
+          PyErr_Format(PyExc_TypeError,
+                       "matcher missing extern binding: %R", name);
+          Py_DECREF(extern_env);
+          return NULL;
+        }
       }
       Py_INCREF(val);
       PyTuple_SET_ITEM(extern_env, i, val);
@@ -2643,6 +2705,82 @@ static PyObject *matcher_match_method(
   KosMatchSubject_Release(&subj);
   Py_XDECREF(extern_env);
   return result;
+}
+
+
+static PyObject *matcher_missing_externs_method(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
+
+  KosMatcher *m = (KosMatcher *) self;
+  PyObject *provided = Py_None;
+  int exclude_defaults = 0;
+  static char *kwlist[] = {"provided", "exclude_defaults", NULL};
+
+  if (! PyArg_ParseTupleAndKeywords(args, kwds, "|Op", kwlist,
+                                   &provided, &exclude_defaults))
+    return NULL;
+
+  if (provided != Py_None && ! PyMapping_Check(provided)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "provided must be None or a mapping");
+    return NULL;
+  }
+
+  Py_ssize_t n = PyTuple_GET_SIZE(m->externs);
+  PyObject *lst = PyList_New(0);
+  if (! lst)
+    return NULL;
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *name = PyTuple_GET_ITEM(m->externs, i);
+    int satisfied = 0;
+
+    if (provided != Py_None) {
+      PyObject *item = PyObject_GetItem(provided, name);
+      if (item) {
+        Py_DECREF(item);
+        satisfied = 1;
+      } else {
+        if (! PyErr_ExceptionMatches(PyExc_KeyError)) {
+          Py_DECREF(lst);
+          return NULL;
+        }
+        PyErr_Clear();
+      }
+    }
+
+    if (! satisfied && exclude_defaults) {
+      PyObject *defs = KosMatcher_ExternDefaults();
+      if (! defs) {
+        Py_DECREF(lst);
+        return NULL;
+      }
+      PyObject *dv = PyDict_GetItemWithError(defs, name);
+      if (PyErr_Occurred()) {
+        Py_DECREF(lst);
+        return NULL;
+      }
+      if (dv)
+        satisfied = 1;
+    }
+
+    if (! satisfied) {
+      if (PyList_Append(lst, name))
+        goto fail;
+    }
+  }
+
+  PyObject *tup = PyList_AsTuple(lst);
+  Py_DECREF(lst);
+  if (! tup)
+    return NULL;
+  return tup;
+
+fail:
+  Py_DECREF(lst);
+  return NULL;
 }
 
 
@@ -3096,6 +3234,11 @@ static PyMethodDef matcher_methods[] = {
   { "match", (PyCFunction) matcher_match_method,
     METH_VARARGS | METH_KEYWORDS,
     "match(subject, **externs) -> MatchResult" },
+  { "missing_externs", (PyCFunction) matcher_missing_externs_method,
+    METH_VARARGS | METH_KEYWORDS,
+    "missing_externs(provided=None, *, exclude_defaults=False)\n"
+    "Return extern parameter names not satisfied by provided or "
+    "defaults, in extern table order" },
   { "from_tuple", (PyCFunction) matcher_from_tuple,
     METH_VARARGS | METH_CLASS,
     "Matcher.from_tuple(tagged_tuple) -> Matcher\n\n"
@@ -3223,6 +3366,7 @@ int koskari_matcher_init(PyObject *mod) {
 int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(KosMatchAbsent);
+  Py_CLEAR(kos_matcher_extern_defaults);
   return 0;
 }
 

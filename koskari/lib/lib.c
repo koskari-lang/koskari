@@ -46,12 +46,40 @@ static PyObject *lib_clear_trace_counters(PyObject *mod, PyObject *unused) {
 }
 
 
+static PyObject *lib_get_extern_defaults(PyObject *mod, PyObject *unused) {
+  (void) mod;
+  (void) unused;
+  PyObject *d = KosMatcher_ExternDefaults();
+  if (! d)
+    return NULL;
+  Py_INCREF(d);
+  return d;
+}
+
+
+static PyObject *lib_reset_extern_defaults(PyObject *mod, PyObject *unused) {
+  (void) mod;
+  (void) unused;
+  PyObject *d = KosMatcher_ResetExternDefaults();
+  if (! d)
+    return NULL;
+  Py_INCREF(d);
+  return d;
+}
+
+
 static PyMethodDef libmod_methods[] = {
   { "get_trace_report", (PyCFunction) lib_get_trace_report, METH_NOARGS,
     "Return a dict of compile-time tracing report (flags and per-feature data)" },
   { "clear_trace_counters", (PyCFunction) lib_clear_trace_counters, METH_NOARGS,
     "Reset all compile-time trace counters/timers for enabled build features "
     "(same as module init/clear)" },
+  { "get_extern_defaults", (PyCFunction) lib_get_extern_defaults, METH_NOARGS,
+    "Return the live matcher extern defaults dict (mutable)." },
+  { "reset_extern_defaults", (PyCFunction) lib_reset_extern_defaults,
+    METH_NOARGS,
+    "Reset matcher extern defaults to the built-in baseline and "
+    "return the new dict (mutable)." },
   { NULL, },
 };
 

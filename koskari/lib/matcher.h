@@ -287,6 +287,21 @@ PyObject *KosMatcher_Match(
     PyObject *extern_env);
 
 
+/**
+   Borrowed reference to the mutable matcher extern-defaults mapping.
+   Lazily allocates and inserts baseline entries on first call.
+ */
+PyObject *KosMatcher_ExternDefaults(void);
+
+
+/**
+   Discard the singleton defaults dict and rebuild from baseline; returns
+   a borrowed reference to the fresh dict (same object identity rules
+   as KosMatcher_ExternDefaults).
+ */
+PyObject *KosMatcher_ResetExternDefaults(void);
+
+
 /* === C-internal builder ===
    The builder is the canonical low-level construction surface for a
    KosMatcher. Callers append slots, externs, consts, and nodes
