@@ -9,7 +9,11 @@ API and the cleanroom composite layer live in `koskari/matcher_ng.py`.
 `koskari.lib`. There is no import of `koskari.matcher`,
 `koskari.compile.*`, or `koskari.exceptions` from the new module, and
 no post-match Python transform layer. `Matcher.match` returns the
-native `MatchResult` directly; captures are final.
+native `MatchResult` directly; captures are final. The frozen matcher
+constant is a **7-tuple** consumed by `Matcher.from_tuple`; **hygiene**
+is an optional parallel **`Hygiene`** object from
+`HygienicMatchCompiler.build_hygiene()`, not part of that tuple or of
+`MatchResult` (see "As-built deviations").
 
 Phase 6 parser/registry surface is landed in `matcher_ng` as
 `META_PATTERN`, `META_MATCHER`, `parse_matcher`,
@@ -48,8 +52,11 @@ document can be read as the as-built design.
   `koskari.compile.helpers` parsers.** That implementation was
   reverted because it violated the cleanroom goal of the matcher_ng
   branch. The composite layer that landed is composition-only:
-  `Composite._emit` lowers to primitive nodes and registers
-  freeze-time hygiene metadata; no post-match Python callable runs,
+  `Composite.lower` expands to primitive nodes; hygienic composites
+  may register binder or scope-region ownership on a
+  `HygienicMatchCompiler` during that walk (see the deviation on
+  split hygiene below). `MatchCompiler` ignores those registrations.
+  No post-match Python callable runs,
   no result wrapper exists, and no legacy parser is imported. The
   per-form result types (`BindingResult`, `BindingsResult`,
   `DeclResult`, `FormalsResult`, `UsingResult`) are not part of the
@@ -67,12 +74,22 @@ document can be read as the as-built design.
   | `FORMALS`  | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(GROUP(OPTIONAL(positionals), OPTIONAL(defaults), OPTIONAL(star_seg), OPTIONAL(kwonly), OPTIONAL(starstar_seg)))))` — phased graph; each phase is a `repeat_capture` over a small per-cell ONEOF |
   | `BODY`     | `REST(slot)` plus a `scope_regions` hygiene entry                                                                                                |
 
-* **Hygiene meta is merged at the top level of the frozen tuple's
-  meta dict.** The plan suggested a single `hygiene` key; the
-  implementation merges `hygiene_version`, `binders`, and
-  `scope_regions` directly into the user-supplied meta. A user meta
-  key that conflicts with one of these raises `ValueError` at
-  freeze time.
+* **Hygiene is a separate data structure; the frozen matcher stays
+  pure.** The original plan folded hygiene into an eighth tuple
+  element or into a `meta` map carried beside the rule program. The
+  landed design keeps **matching** and **thaw** aligned with a strict
+  **7-tuple** `("MATCHER", version, slots, externs, consts, nodes,
+  entry)` only. Nothing hygiene-shaped is embedded in that constant or
+  in `Matcher.from_tuple`. Optional binder/scope-region interpretation
+  is collected at freeze time into a **`Hygiene`** instance
+  (`koskari/hygiene_ng.py`) with its own portable wire form
+  (`Hygiene.to_tuple` / `from_tuple`, tag `HYGIENE`). Only
+  **`HygienicMatchCompiler`** accumulates that plan via
+  `build_hygiene()`; **`MatchCompiler`** produces no `Hygiene` object
+  and does not need hygiene to compile or run the same rule program.
+  Surface matcher syntax may still mention `scope:` and composites
+  that *would* register hygiene, but the baseline compiler path treats
+  those aspects as inert for matching.
 
 * **Improper-list FORMALS are rejected.** koskari does not allow
   improper lists as a formals shape, so the `FORMALS` composite
@@ -166,8 +183,7 @@ Conceptually:
   externs,
   consts,
   nodes,
-  entry,
-  meta)
+  entry)
 ```
 
 Where:
@@ -177,7 +193,11 @@ Where:
 * `consts` stores embedded literal constants or sub-matcher constants.
 * `nodes` is a bottom-up list of tagged nodes.
 * `entry` is the root node index.
-* `meta` stores provenance and hygiene metadata.
+
+Hygiene plans, provenance, and other compile-time sidecars are **not**
+fields of this tuple. They live in parallel Python values (notably
+`Hygiene` from `hygiene_ng`) when a caller uses
+`HygienicMatchCompiler`.
 
 ### 4. Frozen code constant
 
@@ -482,18 +502,25 @@ but only if resolution rules make it unambiguous. The safer canonical form is ex
 
 ## Hygiene Integration
 
-The matcher result can carry both captures and hygiene metadata. Hygiene metadata is inert unless a caller asks for it, for example through `extract_targets`.
+Native **`MatchResult`** carries **captures only** (plus match/miss).
+Hygiene is **not** attached to the result object from the engine.
+Callers that need expansion or binding-symbol discovery pair the same
+successful captures with a **`Hygiene`** plan built alongside the
+pattern (via `HygienicMatchCompiler.build_hygiene()`) and drive walks
+through `koskari/hygiene_ng` (`introduced_symbols_from_match`,
+`scope_region_targets`, `collect_binding_symbols`, etc.). That keeps
+**matching pure** while still allowing matcher syntax to carry optional
+`scope:` / composite hints for authors who compile with the hygienic
+compiler.
 
-Current concepts map into the new model as capture flags and metadata:
+Concept mapping:
 
-* `DECL` / introduced name: capture with `hygiene_role=decl`.
-* `USING`: capture with `hygiene_role=use`.
-* `BINDING`: composite matcher that identifies a declared name and expression.
-* `BINDINGS`: repeated `BINDING` composite.
-* `BODY`: capture or rest region marked as a body/scope target.
-* `scope:`: link from declaration capture to body capture.
+* **`DEFINE`**, **`DECL`**, **`BINDING`**, **`BINDINGS`**, **`FORMALS`**, **`USING`**: composites that contribute **binder** semantics in the `Hygiene` plan when registered.
+* **`BODY`**: registers a **scope-region** slot (body extent) in the plan; at match time it lowers like **`REST`** to the native engine.
+* **`scope:`** on composites: recorded in wire rows as the tuple of scope-region slot names the binder applies over; interpretation is in `hygiene_ng`, not in the frozen 7-tuple.
+* **`CAPTURE`**: may carry `hygiene_role` / `scope_slot` fields in the node encoding for a future migration; they are not a substitute for the separate `Hygiene` object today.
 
-The low-level matcher does not need separate primitive kinds for every hygiene-aware matcher. Most of them lower into capture/test nodes with flags and graph metadata.
+The low-level matcher does not need separate primitive kinds for every hygiene-aware surface form. Composites lower into ordinary capture/test/group structure; hygiene **interpretation** lives on the composite instances referenced from `Hygiene.binders` and `Hygiene.scope_regions`.
 
 Example:
 
@@ -502,7 +529,11 @@ Example:
 (body :: REST)
 ```
 
-The match captures `formals` and `body`; the matcher metadata records that declarations produced by `FORMALS` apply over the body capture slot.
+A successful match binds `formals` and `body` in **`captures`**. If
+this pattern was frozen with **`HygienicMatchCompiler`**, the companion
+**`Hygiene`** plan records that `FORMALS` introduces binders scoped over
+the `body` capture slot; **`MatchCompiler`** alone yields the same
+native matcher without that plan.
 
 ---
 
@@ -650,7 +681,10 @@ Use cases:
 * source-form diagnostics
 * hygiene extraction
 
-Syntax matching can request provenance and hygiene data, but the core matcher API still simply determines match/no-match.
+The core matcher API only determines match/no-match and fills
+**`captures`**. Hygiene and provenance are layered by the caller using
+a separate `Hygiene` plan and (eventually) other side channels, not by
+extending **`MatchResult`**.
 
 ### Shared implementation through subject adapters
 
@@ -694,16 +728,21 @@ A non-matching value is not an error.
 
 Exceptions are reserved for invalid matcher state, invalid invocation environment, failed validation, missing externs, or internal bugs.
 
-On match, the result contains:
+On match, the native result contains:
 
 * capture slots
 * nested capture records
 * repeated capture lists
 * optional absent/default sentinels
-* optional provenance data
-* optional hygiene graph data
 
-Applying captures to a namespace is a later, separate operation. This allows matcher inspection, dispatch, unpacking, and hygiene extraction to share the same result object.
+Optional **provenance** or **diagnostic** data could be added later
+without conflating them with hygiene. **Hygiene graphs** are not part
+of `MatchResult`; they live in **`Hygiene`** and are applied using the
+same **`captures`** mapping after a successful match.
+
+Applying captures to a namespace is a later, separate operation.
+Matcher inspection, dispatch, and unpacking use **`MatchResult`**;
+hygiene walks use **`captures`** plus **`Hygiene`**.
 
 ---
 
@@ -843,7 +882,9 @@ Likely primitive node kinds:
 Do not make every surface matcher a native primitive. Examples:
 
 * `SYMBOL(name)` lowers to `CAPTURE slot=name` with `TEST_TYPE symbol`.
-* `DECL(name)` lowers to `CAPTURE slot=name`, `TEST_TYPE symbol`, hygiene role `decl`.
+* `DECL(name)` lowers to a composite `CAPTURE` over declaration shapes
+  (see the deviations table); optional `hygiene_role` on `CAPTURE` is
+  reserved for later use and is not the primary hygiene mechanism today.
 * `VALUE(name)` lowers to unconstrained capture.
 * `LITERAL 5` lowers to `TEST_LITERAL 5`.
 * `(x val: 5)` lowers to `CAPTURE slot=x` wrapping or carrying `TEST_LITERAL 5`.
@@ -888,11 +929,13 @@ Conceptual frozen tuple:
   ],
 
   ;; entry
-  7,
-
-  ;; meta
-  { hygiene: [("DECL_SET", "formals", "body")] })
+  7)
 ```
+
+A separate **`Hygiene`** value (not shown), built only when lowering
+through **`HygienicMatchCompiler`**, would record binder/scope links
+such as `FORMALS` scoped over the `body` slot. **`MatchCompiler`**
+omits that object entirely.
 
 A `CALL_MATCHER` node may be its own primitive or may be represented as a `TEST`/`FORM` family node depending on implementation. If named composites are fully inlined before freeze, no `CALL_MATCHER` is needed in the lowest form.
 
@@ -917,8 +960,7 @@ Conceptual frozen tuple:
     ("CLASS", extern:Point, fields:[1,3]),
     ("CAPTURE", slot:data, sub:4)
   ],
-  5,
-  {})
+  5)
 ```
 
 Invocation:
@@ -1309,13 +1351,14 @@ re-enters the dispatch when descending into a nested element.
 
 ### Phase 3 — Frozen tuple schema and thaw *(landed)*
 
-Schema is the eight-element tuple
-`("MATCHER", version, slots, externs, consts, nodes, entry, meta)`.
+Schema is the **seven-element** tuple
+`("MATCHER", version, slots, externs, consts, nodes, entry)`.
 `Matcher.from_tuple` performs schema-version, structural, and
 width validation; the resulting object is a real native `Matcher`
 held by ordinary Python code-constant machinery. `thaw` in
 `koskari/matcher_ng.py` wraps `Matcher.from_tuple` for symmetry
-with the builder API.
+with the builder API. **Hygiene** is not a field of this tuple; see
+"As-built deviations" (split hygiene).
 
 ### Phase 4 — Python builder API *(landed)*
 
@@ -1353,9 +1396,11 @@ mutually exclusive arms are valid.
 
 Composites in `koskari/matcher_ng.py`: `DEFINE`, `DECL`, `BINDING`,
 `BINDINGS`, `FORMALS`, `USING`, `BODY`. Each composite is a thin
-factory: `_expand` returns a tree of primitives, and `_emit`
-registers freeze-time hygiene metadata. There is no post-match
-Python transform; the captures dict is the result.
+factory: `_expand` returns a tree of primitives. During lowering,
+hygienic composites implement **`register_hygiene`** so a
+**`HygienicMatchCompiler`** can assemble a **`Hygiene`** plan; a
+baseline **`MatchCompiler`** ignores that hook. There is no post-match
+Python transform; the captures dict is the **`MatchResult`** payload.
 
 The first attempt at this phase delegated to legacy parsers via a
 `MatcherProgram` wrapper. That work was reverted; see "As-built
@@ -1423,11 +1468,13 @@ Runtime flow:
 
 ### Phase 9 — Hygiene extraction migration *(pending)*
 
-Reimplement `extract_targets` over the new `MatchResult` metadata.
-The freeze-time hygiene wire format is already populated by the
-composite layer; the consumer side is what remains.
+Reimplement `extract_targets` (and similar callers) over **`captures`**
+plus an explicit **`Hygiene`** plan, not over hygiene fields inside
+**`MatchResult`**. The composite layer already produces **`Hygiene`**
+wire rows when compiled with **`HygienicMatchCompiler`**; wiring that
+plan through specials and macro expansion is what remains.
 
-Map existing behavior to new metadata for:
+Map existing behavior to the split model for:
 
 * lambda formals over body
 * let bindings over body
@@ -1450,11 +1497,12 @@ provide the same high-level operations as current hygiene handling
 substitution), but operate over explicit hygiene data rather than legacy
 matcher-spec introspection.
 
-#### Baseline B — `MatcherCompiler` emits hygiene objects
+#### Baseline B — `HygienicMatchCompiler` emits hygiene objects
 
-Teach the matcher compiler to produce a hygiene object as a side product
-of matcher compilation. This output is validated and tested directly,
-but is not yet required by existing special-form dispatch.
+Teach **`HygienicMatchCompiler`** (not the baseline **`MatchCompiler`**)
+to produce a **`Hygiene`** object as a side product of lowering the
+same pattern tree. This output is validated and tested directly, but is
+not yet required by existing special-form dispatch.
 
 #### Baseline C — minimal special-form funnel interface
 
@@ -1529,4 +1577,4 @@ all framework pieces are already present and individually tested.
 
 ## Working Summary
 
-The matcher system should be a compiled, frozen, native rule program with ergonomic syntax and builder layers above it. The same rules can match runtime values and syntax forms, but through different subject adapters. Hygiene is metadata produced by matching, not a separate matching engine. Named matchers are compile-time conveniences that lower into primitive rules. Runtime symbolic dependencies such as classes and types are provided explicitly as extern bindings at match invocation. The low-level matcher should remain small, array-based, acyclic, and strict about validation so matching is fast and failures are ordinary no-match results.
+The matcher system should be a compiled, frozen, native rule program with ergonomic syntax and builder layers above it. The same rules can match runtime values and syntax forms, but through different subject adapters. **Matching is pure:** the frozen constant and **`MatchResult`** carry the rule program and **captures** only. **Hygiene** is optional metadata assembled in parallel (**`Hygiene`** / `hygiene_ng`) when a pattern is lowered with **`HygienicMatchCompiler`**, not a by-product of the native match step itself. Named matchers are compile-time conveniences that lower into primitive rules. Runtime symbolic dependencies such as classes and types are provided explicitly as extern bindings at match invocation. The low-level matcher should remain small, array-based, acyclic, and strict about validation so matching is fast and failures are ordinary no-match results.
