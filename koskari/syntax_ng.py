@@ -36,9 +36,8 @@ elements (``()``), not ``(nil,)``.
 """
 
 
-from abc import ABC
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from koskari.compile.compiler import Compiled
 from koskari.lib import cdr, gensym, nil, symbol
@@ -114,7 +113,7 @@ class Datum(object):
         return self.datum.cdr
 
 
-class Transform(ABC):
+class Transform(Protocol):
     """
     One clause of a ``Syntax`` dispatcher: frozen ``matcher_ng`` pattern,
     hygiene plan, and optional handler callable (filled in later)
@@ -141,12 +140,14 @@ class Transform(ABC):
         self.hygiene = hc.build_hygiene()
 
 
+    def expand(self, compiler, source_obj, match_result, tc=False):
+        ...
+
 
 class SyntaxTransform(Transform):
     """
     Template-only arm: future expansion will run ``hygiene_ng`` on a template
     """
-
 
 
 class MacroTransform(Transform):
@@ -155,12 +156,10 @@ class MacroTransform(Transform):
     """
 
 
-
 class SpecialTransform(Transform):
     """
     Special arm: handler return is the compile result without automatic hygiene
     """
-
 
 
 class Syntax(Compiled):
@@ -190,7 +189,6 @@ class Syntax(Compiled):
                     % (type(t).__name__,))
 
 
-
     def compile_impl(self, compiler, source_obj, tc):
         """
         Compile-time entry point (stub)
@@ -199,7 +197,6 @@ class Syntax(Compiled):
         """
 
         raise NotImplementedError("Syntax.compile_impl is not implemented yet")
-
 
 
     def __add__(self, other):

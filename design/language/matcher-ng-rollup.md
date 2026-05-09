@@ -27,6 +27,30 @@ existing compile path; migration of compile-time dispatch and runtime
 `match/case` to `matcher_ng`, and the removal of the legacy stack, are
 still out of scope for this rollup.
 
+**Syntax NG (bootstrap, landed).** `koskari/syntax_ng.py` is an additive
+module (no edits to `koskari/syntax.py`, `compile/compiler.py`, or
+`compile/specials/syntax.py`). It introduces:
+
+* **`Syntax` (`Compiled`)** — ordered container of **transform** arms;
+  `compile_impl` is still a stub; **`__add__`** prepends transforms for
+  dispatch priority experiments.
+* **`Datum`** — source box parallel to **`koskari.syntax.Syntax`** for
+  hygiene guards and future unboxing in syntax/macro transforms.
+* **`Transform`**, **`SyntaxTransform`**, **`MacroTransform`**,
+  **`SpecialTransform`** — each holds a **`matcher_ng.Pattern`**, the
+  frozen **7-tuple** from **`HygienicMatchCompiler.lower`**, and a
+  **`Hygiene`** from **`build_hygiene()`**; handlers are optional stubs.
+* **`parse_syntax_rules_pattern`** — lowers **RULE**-dialect
+  syntax-rules patterns (optional `(match INNER)` wrapper, literals,
+  ellipsis, nested lists) to **`matcher_ng`** trees. **MATCH**-dialect
+  (`matcher/foo` registry) remains out of scope here; parity details
+  (e.g. ellipsis inner slot `id__sr`, empty repeat vs subject `()`)
+  live in the module docstring.
+
+Tests: `tests/syntax_ng/test_syntax_ng_bootstrap.py`. **Not wired** into
+`define-syntax` / macro compilation or **`SPECIALS`** yet; that is part
+of the eventual switchover below.
+
 Complements the current architecture reference at
 [unified-matcher-transformer-model.md](unified-matcher-transformer-model.md),
 which documents the implementation `matcher_ng` is intended to supersede.
@@ -105,6 +129,14 @@ document can be read as the as-built design.
   matches subjects shaped `(cell cell ... body...)` — which is what
   most callers want. The empty-list arm matches a single `nil`
   sentinel element.
+
+* **Syntax expansion migrates through `syntax_ng`, not by growing
+  legacy modules.** New dispatch, const-pool shapes, and Koskari loaders
+  for `define-syntax` / macro-rules are expected to build on
+  **`syntax_ng.Syntax`** and **`parse_syntax_rules_pattern`** while
+  **`koskari.syntax`** and **`compile/specials/syntax.py`** stay the
+  production path until a deliberate cutover. That keeps matcher/hygiene
+  NG work cleanroom until switchover day.
 
 ## Purpose
 
@@ -1450,6 +1482,13 @@ handler functions. Dispatch:
 3. Optionally extract hygiene targets.
 4. Invoke matching handler with captures.
 
+**Syntax NG alignment:** multi-pattern specials and future syntax-rules /
+macro dispatch can target **`syntax_ng.Syntax`** (transform list + native
+`matcher_tuple` per arm) instead of extending **`Special.forms`** with
+legacy matchers, once registration and **`compile_impl`** are
+implemented. That path reuses **`Hygiene`** per transform and keeps
+**`MatchResult.captures`** as the only match payload.
+
 This phase will land per-special-form, with each form's matcher
 authored either in Python builder form or, after Phase 6, in
 `define-matcher` source.
@@ -1512,12 +1551,29 @@ funnel instead of directly depending on matcher internals. At this
 point, specials may still be backed by legacy matcher/hygiene behavior,
 but all callers go through one indirection surface.
 
+**Note:** The long-term shape may be **`syntax_ng.Syntax`** implementing
+the same funnel contract for pattern-heavy forms, with **`Special`**
+left as a thin legacy adapter until Cutover E. Baseline C can be
+satisfied by a shared protocol (match + optional hygiene) that both
+types satisfy.
+
 #### Baseline D — reduced syntax-rules matcher compiler
 
-Add a dedicated compiler path for the simpler syntax-rules pattern
-surface. It lowers reduced inputs to normal matcher artifacts while
-also producing the associated hygiene object. This remains additive and
-can be tested independently of special-form migration.
+**Progress:** the first tranche lives in **`koskari/syntax_ng.py`**:
+**`parse_syntax_rules_pattern`** lowers RULE-style patterns to
+**`matcher_ng.Pattern`**; each **`Transform`** carries the frozen
+7-tuple and **`Hygiene`** from **`HygienicMatchCompiler`**. This is
+validated in **`tests/syntax_ng/`** and does not touch the existing
+**`compile/specials/syntax.py`** lowerer.
+
+**Remaining:** Koskari-facing compile hooks (new specials or loaders
+only—no pollution of legacy modules) that build **`Syntax`** /
+**`SyntaxTransform`** / **`MacroTransform`** instances from
+`define-syntax` and friends; const-pool serialization for those objects;
+adapters from **`MatchResult.captures`** to macro lambda kwargs (including
+flattening repeat frames, e.g. `id__sr` rows, toward legacy
+**`RepeatResult`** shape where needed); and wiring **`Datum`** /
+**`hygiene_ng`** into template and procedural expansion.
 
 #### Cutover E — migrate all specials and switch backend
 
@@ -1526,7 +1582,10 @@ Perform the large migration in one step:
 1. Re-declare special-form patterns using the new matcher API
 2. Update `@special_forms` plumbing to attach the hygiene object
 3. Switch special funnel methods to the new matcher/hygiene APIs
-4. Update syntax/macro rule paths to rely only on the funnel contract
+4. Update syntax/macro rule paths to **`syntax_ng`** (or a renamed
+   canonical module): **`Syntax`** dispatch, native matchers, and
+   **`hygiene_ng`** only; retire **`koskari.syntax`** transformer glue
+   that depends on legacy **`koskari.matcher`**
 5. Remove legacy matcher and legacy hygiene modules
 6. Rename NG modules to canonical names
 
@@ -1578,3 +1637,5 @@ all framework pieces are already present and individually tested.
 ## Working Summary
 
 The matcher system should be a compiled, frozen, native rule program with ergonomic syntax and builder layers above it. The same rules can match runtime values and syntax forms, but through different subject adapters. **Matching is pure:** the frozen constant and **`MatchResult`** carry the rule program and **captures** only. **Hygiene** is optional metadata assembled in parallel (**`Hygiene`** / `hygiene_ng`) when a pattern is lowered with **`HygienicMatchCompiler`**, not a by-product of the native match step itself. Named matchers are compile-time conveniences that lower into primitive rules. Runtime symbolic dependencies such as classes and types are provided explicitly as extern bindings at match invocation. The low-level matcher should remain small, array-based, acyclic, and strict about validation so matching is fast and failures are ordinary no-match results.
+
+**Syntax and macros** move toward **`syntax_ng`**: RULE patterns already lower to **`matcher_ng`**; **`Syntax`** will grow into the multi-pattern **`Compiled`** dispatcher with transform-specific expansion (**template + hygiene**, **call + hygiene**, **special**). Until Cutover E, production expansion stays on **`koskari.syntax`** and legacy matchers; **`syntax_ng`** stays additive so the branch can harden parsers, captures adapters, and registration without destabilizing the existing compiler.

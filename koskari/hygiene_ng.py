@@ -149,7 +149,7 @@ def hygiene_from_wire_row(row):
 
     global _MATCHER_REGISTRY
     if _MATCHER_REGISTRY is None:
-        from koskari.matcher_ng import MATCHER_REGISTRY as _MATCHER_REGISTRY
+        from .matcher_ng import MATCHER_REGISTRY as _MATCHER_REGISTRY
 
     factory = _MATCHER_REGISTRY[row[0]]
     return factory.matcher_ng_wire_class.hygiene_from_wire(row)
