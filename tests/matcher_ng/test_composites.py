@@ -34,12 +34,14 @@ from koskari.matcher_ng import (
     DEFINE,
     FORMALS,
     GROUP,
+    Hygiene,
+    HygienicMatchCompiler,
     LITERAL,
+    MatchCompiler,
     Matcher,
     MatchResult,
     TYPE,
     USING,
-    Hygiene,
     make_matcher,
 )
 
@@ -101,8 +103,9 @@ class TestDEFINE(unittest.TestCase):
         DEFINE contributes a binder hygiene owner that yields the slot symbol
         """
 
-        _frozen, hygiene = GROUP(DEFINE("name")).compile()
-        self.assertEqual(hygiene.version, 1)
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(GROUP(DEFINE("name")))
+        hygiene = hc.build_hygiene()
         binders = hygiene.binders
         self.assertIn("name", binders)
         owner = binders["name"]
@@ -195,7 +198,9 @@ class TestDECL(unittest.TestCase):
         DECL binder owner extracts introduced symbols from name or bare slot
         """
 
-        _frozen, hygiene = GROUP(DECL("d")).compile()
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(GROUP(DECL("d")))
+        hygiene = hc.build_hygiene()
         owner = hygiene.binders["d"]
         sx = symbol("x")
         self.assertEqual(set(owner.iter_introduced_symbols({"name": sx})), {sx})
@@ -254,7 +259,9 @@ class TestBINDING(unittest.TestCase):
         BINDING binder owner yields name and expr recurse targets
         """
 
-        _frozen, hygiene = GROUP(BINDING("b")).compile()
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(GROUP(BINDING("b")))
+        hygiene = hc.build_hygiene()
         owner = hygiene.binders["b"]
         sn = symbol("n")
         self.assertEqual(set(owner.iter_introduced_symbols({"name": sn})), {sn})
@@ -325,7 +332,9 @@ class TestBINDINGS(unittest.TestCase):
         """
 
         bs = BINDINGS("bs")
-        _frozen, hygiene = GROUP(bs).compile()
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(GROUP(bs))
+        hygiene = hc.build_hygiene()
         self.assertEqual(bs._mode, "parallel")
         self.assertIs(hygiene.binders["bs"], bs)
 
@@ -336,7 +345,9 @@ class TestBINDINGS(unittest.TestCase):
         """
 
         bs = BINDINGS("bs", mode="sequential")
-        _frozen, hygiene = GROUP(bs).compile()
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(GROUP(bs))
+        hygiene = hc.build_hygiene()
         self.assertEqual(bs._mode, "sequential")
         self.assertIs(hygiene.binders["bs"], bs)
 
@@ -442,7 +453,9 @@ class TestUSING(unittest.TestCase):
         USING binder owner extracts optional name and expr recurse
         """
 
-        _frozen, hygiene = GROUP(USING("u")).compile()
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(GROUP(USING("u")))
+        hygiene = hc.build_hygiene()
         owner = hygiene.binders["u"]
         sn = symbol("n")
         self.assertEqual(set(owner.iter_introduced_symbols({"name": sn})), {sn})
@@ -847,7 +860,9 @@ class TestFORMALS(unittest.TestCase):
         FORMALS binder owner extracts bare-symbol formals as introduced names
         """
 
-        _frozen, hygiene = GROUP(FORMALS("f")).compile()
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(GROUP(FORMALS("f")))
+        hygiene = hc.build_hygiene()
         owner = hygiene.binders["f"]
         sf = symbol("rest")
         self.assertEqual(set(owner.iter_introduced_symbols({"f": sf})), {sf})
@@ -877,7 +892,9 @@ class TestBODY(unittest.TestCase):
         """
 
         pat = GROUP(CAPTURE("head"), BODY("body"))
-        _frozen, hygiene = pat.compile()
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(pat)
+        hygiene = hc.build_hygiene()
         regions = hygiene.scope_regions
         self.assertIn("body", regions)
         body_owner = regions["body"]
@@ -892,24 +909,24 @@ class TestRuntimeCompileHygiene(unittest.TestCase):
 
     def test_primitives_compile_without_source_hygiene(self):
         """
-        Pure primitive trees compile with hygienic=False (baseline
-        MatchCompiler) and emit no hygiene plan
+        Pure primitive trees lowered with MatchCompiler emit no hygiene
+        plan
         """
 
         pat = GROUP(CAPTURE("x", TYPE("symbol")))
-        _frozen, hygiene = pat.compile(hygienic=False)
-        self.assertTrue(hygiene.is_empty())
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(pat)
+        self.assertTrue(hc.build_hygiene().is_empty())
 
 
     def test_body_compile_ignores_hygiene_when_not_hygienic(self):
         """
-        BODY calls add_scope_region; on baseline MatchCompiler that is a
-        no-op and the hygiene plan stays empty
+        BODY registers scope only under HygienicMatchCompiler; baseline
+        lower leaves the hygiene plan empty
         """
 
         pat = GROUP(BODY("b"))
-        _frozen, hygiene = pat.compile(hygienic=False)
-        self.assertTrue(hygiene.is_empty())
+        _frozen = MatchCompiler().lower(pat)
         m = Matcher.from_tuple(_frozen)
         result = m.match((1, 2, 3))
         self.assertTrue(result.matched)
@@ -918,12 +935,11 @@ class TestRuntimeCompileHygiene(unittest.TestCase):
 
     def test_define_compile_ignores_hygiene_when_not_hygienic(self):
         """
-        DEFINE calls add_binder; on baseline MatchCompiler that is a no-op
+        DEFINE registers binders only under HygienicMatchCompiler
         """
 
         pat = GROUP(DEFINE("n"))
-        _frozen, hygiene = pat.compile(hygienic=False)
-        self.assertTrue(hygiene.is_empty())
+        _frozen = MatchCompiler().lower(pat)
         m = Matcher.from_tuple(_frozen)
         sa = symbol("x")
         result = m.match((sa,), symbol=SYMBOL_TYPE)
@@ -995,18 +1011,19 @@ class TestComposition(unittest.TestCase):
 class TestHygieneCompile(unittest.TestCase):
 
 
-    def test_compile_exposes_version_and_sections(self):
+    def test_compile_exposes_binders_and_scope_regions(self):
         """
-        Composite-bearing patterns produce a Hygiene plan with a version
-        field plus binders and scope_regions sections
+        Composite-bearing patterns produce a Hygiene plan with binders and
+        scope_regions sections
         """
 
         dn = DEFINE("name")
         bod = BODY("body")
         pat = GROUP(dn, bod)
-        _frozen, hygiene = pat.compile()
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(pat)
+        hygiene = hc.build_hygiene()
         self.assertIsInstance(hygiene, Hygiene)
-        self.assertEqual(hygiene.version, 1)
         self.assertIs(hygiene.binders["name"], dn)
         self.assertIs(hygiene.scope_regions["body"], bod)
 

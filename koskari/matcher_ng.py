@@ -36,13 +36,13 @@ from koskari.lib import (
     ABSENT,
     Matcher,
     MatchResult,
-    cons,
     keyword,
     nil,
     pair,
     symbol,
 )
-from koskari.types import is_pair, is_keyword, is_symbol, unpack
+from koskari.types import is_keyword, is_pair, is_symbol, unpack
+from typing import Protocol, runtime_checkable
 
 
 __all__ = [
@@ -96,6 +96,8 @@ __all__ = [
     "USING",
     "BODY",
 
+    "HygienicPattern",
+
     "MATCHER_REGISTRY",
     "register_matcher",
     "lookup_matcher",
@@ -119,13 +121,11 @@ def thaw(tagged_tuple):
 # === Builder infrastructure ===
 
 
-class MatchCompiler(object):
+class MatchCompiler:
     """
     Baseline freeze-time compiler for one lowering pass. Holds the four
     insertion-ordered tables that become the slots, externs, consts, and
-    nodes of the frozen 7-tuple, plus capture-scope bookkeeping.
-    add_binder and add_scope_region are no-ops here; HygienicMatchCompiler
-    overrides them to record koskari hygiene_ng metadata
+    nodes of the frozen 7-tuple, plus capture-scope bookkeeping
     """
 
 
@@ -229,28 +229,33 @@ class MatchCompiler(object):
         top.add(name)
 
 
-    def add_binder(self, slot, owner):
+    def on_pattern(self, pat):
         """
-        No-op on the baseline compiler; see HygienicMatchCompiler
-        """
-
-        pass
-
-
-    def add_scope_region(self, slot, owner):
-        """
-        No-op on the baseline compiler; see HygienicMatchCompiler
+        Hook invoked when a pattern node begins lowering; baseline compiler
+        ignores it
         """
 
         pass
 
 
-    def build_hygiene(self):
+    def lower(self, root):
         """
-        Empty hygiene plan on the baseline compiler
+        Lower root into this compiler and return the frozen matcher tuple
+
+        :param root: pattern to lower
+        :rtype: tuple
         """
 
-        return Hygiene({}, {})
+        entry = root.lower(self)
+        frozen = (
+            "MATCHER", 1,
+            tuple(Pattern._slot_names(self)),
+            tuple(Pattern._extern_names(self)),
+            tuple(self.consts),
+            tuple(self.nodes),
+            entry,
+        )
+        return frozen
 
 
 class HygienicMatchCompiler(MatchCompiler):
@@ -258,7 +263,7 @@ class HygienicMatchCompiler(MatchCompiler):
     Match compiler that accumulates koskari hygiene_ng binder and
     scope-region owners alongside the baseline tables. Use for matchers
     over compile-time source forms; runtime-only matchers should use the
-    baseline MatchCompiler via Pattern.compile(hygienic=False)
+    baseline MatchCompiler via MatchCompiler().lower(pattern)
     """
 
 
@@ -278,8 +283,8 @@ class HygienicMatchCompiler(MatchCompiler):
         for this binder slot. Raises ValueError on duplicate slot entries
 
         :param slot: slot name introduced by the composite
-        :param owner: Pattern instance whose iter_introduced_symbols and
-            iter_recurse_targets Hygiene uses at runtime
+        :param owner: HygienicPattern instance whose iter_introduced_symbols
+            and iter_recurse_targets Hygiene uses at runtime
         """
 
         if slot in self.hygiene_binders:
@@ -295,7 +300,8 @@ class HygienicMatchCompiler(MatchCompiler):
         this slot. Re-registration of the same owner is idempotent
 
         :param slot: slot name carrying scope-region semantics
-        :param owner: Pattern instance whose iter_scope_targets Hygiene uses
+        :param owner: HygienicPattern instance whose iter_scope_targets
+            Hygiene uses
         """
 
         existing = self.hygiene_scope_regions.get(slot)
@@ -320,117 +326,95 @@ class HygienicMatchCompiler(MatchCompiler):
         return Hygiene(
             dict(self.hygiene_binders),
             dict(self.hygiene_scope_regions),
-            1,
         )
 
 
-class Pattern(object):
-    """
-    Base class for matcher_ng pattern builders. Subclasses implement
-    _emit to append their node tuple to a MatchCompiler and return the
-    resulting node index. The freeze, build, and match helpers are the
-    public lowering surface
-    """
-
-
-    def compile(self, *, hygienic=True):
+    def on_pattern(self, pat):
         """
-        Lower this pattern to a frozen 7-tuple plus the compiled Hygiene
-        plan when using HygienicMatchCompiler.
-
-        :param hygienic: when True (default), use HygienicMatchCompiler so
-            composites record hygiene metadata. When False, use the baseline
-            MatchCompiler; add_binder and add_scope_region are no-ops
-        :rtype: tuple of (frozen_tuple, Hygiene)
+        Register HygienicPattern owners during the same lower walk as node
+        emission
         """
 
-        if hygienic:
-            ctx = HygienicMatchCompiler()
-        else:
-            ctx = MatchCompiler()
-        entry = self._emit(ctx)
+        if isinstance(pat, HygienicPattern):
+            pat.register_hygiene(self)
+
+
+    def lower(self, root):
+        """
+        Lower root into this compiler and return the frozen matcher tuple.
+        Hygiene owners register via on_pattern during lowering
+        """
+
+        entry = root.lower(self)
         frozen = (
             "MATCHER", 1,
-            tuple(self._slot_names(ctx)),
-            tuple(self._extern_names(ctx)),
-            tuple(ctx.consts),
-            tuple(ctx.nodes),
+            tuple(Pattern._slot_names(self)),
+            tuple(Pattern._extern_names(self)),
+            tuple(self.consts),
+            tuple(self.nodes),
             entry,
         )
-        return frozen, ctx.build_hygiene()
-
-
-    def freeze(self, *, hygienic=True):
-        """
-        Lower this pattern to a frozen 7-tuple suitable for
-        Matcher.from_tuple
-
-        :param hygienic: passed through to compile
-        """
-
-        frozen, _hygiene = self.compile(hygienic=hygienic)
         return frozen
 
 
-    def build(self, *, hygienic=True):
-        """
-        Lower this pattern and thaw it into a native Matcher. Composite
-        builders contribute structural primitives plus freeze-time
-        hygiene registration on the Python side only when hygienic is
-        True; match-time behaviour is pure native engine
+@runtime_checkable
+class Pattern(Protocol):
+    """
+    Structural base for matcher_ng pattern builders. Implementations
+    define lower(ctx) to append their node tuple to a MatchCompiler and
+    return the resulting node index. MatchCompiler.lower and
+    HygienicMatchCompiler.lower drive lowering from the root pattern;
+    composites and BODY call ctx.on_pattern(self) before expanding so
+    hygienic compilers register in the same walk; freeze, build, and
+    match use the baseline MatchCompiler path
+    """
 
-        :param hygienic: passed through to compile
+
+    def lower(self, ctx):
+        """
+        Append nodes for this pattern into the compiler context and
+        return the index of the resulting top node
+        """
+
+        ...
+
+
+    def freeze(self):
+        """
+        Lower this pattern to a frozen 7-tuple suitable for
+        Matcher.from_tuple
+        """
+
+        return MatchCompiler().lower(self)
+
+
+    def build(self):
+        """
+        Lower this pattern and thaw it into a native Matcher. Match-time
+        behaviour is pure native engine
+
         :rtype: Matcher
         """
 
-        return Matcher.from_tuple(self.freeze(hygienic=hygienic))
+        return Matcher.from_tuple(MatchCompiler().lower(self))
 
 
-    def match(self, subject, *, hygienic=True, **externs):
+    def match(self, subject, **externs):
         """
-        Convenience helper that thaws this pattern into a native
-        Matcher and runs it against subject. Returns the native
-        MatchResult; captures are final
-
-        :param hygienic: passed through to build
+        Convenience helper that thaws this pattern into a native Matcher
+        and runs it against subject. Returns the native MatchResult;
+        captures are final
         """
 
-        return self.build(hygienic=hygienic).match(subject, **externs)
+        return self.build().match(subject, **externs)
 
 
-    def iter_introduced_symbols(self, matched):
+    def visit(self, fn):
         """
-        Yield symbols introduced as binders for captures produced by this
-        pattern, given a native-style capture mapping from one match
-        """
-
-        yield from ()
-
-
-    def iter_recurse_targets(self, matched):
-        """
-        Yield nested forms to recurse for binder discovery (initializers,
-        type expressions, etc.)
+        Invoke fn on this pattern; subclasses recurse into children
         """
 
-        yield from ()
-
-
-    def iter_scope_targets(self, matched):
-        """
-        Yield template roots for lexical scope-region descent (bodies)
-        """
-
-        yield from ()
-
-
-    def _emit(self, ctx):
-        """
-        Subclass responsibility: emit nodes for this pattern into the
-        context and return the index of the resulting top node
-        """
-
-        raise NotImplementedError
+        fn(self)
 
 
     @staticmethod
@@ -493,7 +477,7 @@ class TEST_ANY(Pattern):
         pass
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit the TEST_ANY node tuple
         """
@@ -523,7 +507,7 @@ class LITERAL(Pattern):
         self._value = value
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Intern the literal in consts and emit a TEST/LITERAL node
         """
@@ -550,7 +534,7 @@ class TYPE(Pattern):
         self._extern = extern_name
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Intern the extern and emit a TEST/TYPE node
         """
@@ -578,7 +562,7 @@ class PREDICATE(Pattern):
         self._extern = extern_name
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Intern the extern and emit a TEST/PREDICATE node
         """
@@ -635,7 +619,7 @@ class CAPTURE(Pattern):
         self._scope_slot = scope_slot
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Reserve the slot, lower the optional sub-pattern, and emit the
         CAPTURE node
@@ -646,7 +630,7 @@ class CAPTURE(Pattern):
         if self._sub is None:
             sub_idx = -1
         else:
-            sub_idx = self._sub._emit(ctx)
+            sub_idx = self._sub.lower(ctx)
         if self._scope_slot is None:
             scope_idx = -1
         else:
@@ -654,6 +638,12 @@ class CAPTURE(Pattern):
         return ctx.append_node(
             ("CAPTURE", slot_idx, sub_idx,
              self._hygiene_role, scope_idx))
+
+
+    def visit(self, fn):
+        fn(self)
+        if self._sub is not None:
+            self._sub.visit(fn)
 
 
 class FORM(Pattern):
@@ -673,13 +663,18 @@ class FORM(Pattern):
         self._sub = sub
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit the inner pattern then a FORM node referencing it
         """
 
-        sub_idx = self._sub._emit(ctx)
+        sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("FORM", sub_idx))
+
+
+    def visit(self, fn):
+        fn(self)
+        self._sub.visit(fn)
 
 
 class GROUP(Pattern):
@@ -699,13 +694,19 @@ class GROUP(Pattern):
         self._children = children
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit each child then a GROUP node listing them in order
         """
 
-        idxs = [c._emit(ctx) for c in self._children]
+        idxs = [c.lower(ctx) for c in self._children]
         return ctx.append_node(("GROUP",) + tuple(idxs))
+
+
+    def visit(self, fn):
+        fn(self)
+        for c in self._children:
+            c.visit(fn)
 
 
 class ONEOF(Pattern):
@@ -728,7 +729,7 @@ class ONEOF(Pattern):
         self._branches = branches
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit each branch then a ONEOF node listing them in order. Each
         branch gets its own capture scope so identical slot names across
@@ -739,10 +740,16 @@ class ONEOF(Pattern):
         for b in self._branches:
             ctx.push_capture_scope()
             try:
-                idxs.append(b._emit(ctx))
+                idxs.append(b.lower(ctx))
             finally:
                 ctx.pop_capture_scope()
         return ctx.append_node(("ONEOF",) + tuple(idxs))
+
+
+    def visit(self, fn):
+        fn(self)
+        for b in self._branches:
+            b.visit(fn)
 
 
 class REPEAT(Pattern):
@@ -761,13 +768,18 @@ class REPEAT(Pattern):
         self._sub = sub
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit the inner pattern then a REPEAT node referencing it
         """
 
-        sub_idx = self._sub._emit(ctx)
+        sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("REPEAT", sub_idx))
+
+
+    def visit(self, fn):
+        fn(self)
+        self._sub.visit(fn)
 
 
 class OPTIONAL(Pattern):
@@ -788,13 +800,18 @@ class OPTIONAL(Pattern):
         self._sub = sub
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit the inner pattern then an OPTIONAL node referencing it
         """
 
-        sub_idx = self._sub._emit(ctx)
+        sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("OPTIONAL", sub_idx))
+
+
+    def visit(self, fn):
+        fn(self)
+        self._sub.visit(fn)
 
 
 class REST(Pattern):
@@ -814,7 +831,7 @@ class REST(Pattern):
         self._slot = slot
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Reserve the slot and emit a REST node
         """
@@ -841,13 +858,18 @@ class NOT(Pattern):
         self._sub = sub
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit the inner pattern then a NOT node referencing it
         """
 
-        sub_idx = self._sub._emit(ctx)
+        sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("NOT", sub_idx))
+
+
+    def visit(self, fn):
+        fn(self)
+        self._sub.visit(fn)
 
 
 class CLASS(Pattern):
@@ -878,7 +900,7 @@ class CLASS(Pattern):
         self._fields = fields
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit each FIELD child then a CLASS node referencing them.
         Toggles ctx.in_class_fields so that nested CLASS/FIELD trees
@@ -891,11 +913,17 @@ class CLASS(Pattern):
         prev = ctx.in_class_fields
         ctx.in_class_fields = True
         try:
-            field_idxs = [f._emit(ctx) for f in self._fields]
+            field_idxs = [f.lower(ctx) for f in self._fields]
         finally:
             ctx.in_class_fields = prev
         return ctx.append_node(
             ("CLASS", ext_idx) + tuple(field_idxs))
+
+
+    def visit(self, fn):
+        fn(self)
+        for f in self._fields:
+            f.visit(fn)
 
 
 class FIELD(Pattern):
@@ -922,7 +950,7 @@ class FIELD(Pattern):
         self._name = name
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
         Emit a FIELD_POS or FIELD_KW node. Rejects emission outside a
         CLASS scope. Temporarily clears in_class_fields so that the
@@ -936,13 +964,18 @@ class FIELD(Pattern):
         prev = ctx.in_class_fields
         ctx.in_class_fields = False
         try:
-            sub_idx = self._sub._emit(ctx)
+            sub_idx = self._sub.lower(ctx)
         finally:
             ctx.in_class_fields = prev
 
         if self._name is None:
             return ctx.append_node(("FIELD_POS", sub_idx))
         return ctx.append_node(("FIELD_KW", sub_idx, self._name))
+
+
+    def visit(self, fn):
+        fn(self)
+        self._sub.visit(fn)
 
 
 def repeat_capture(slot, inner):
@@ -1152,17 +1185,12 @@ def LIST(*specs, key=None):
     return CAPTURE(key, inner)
 
 
-def make_matcher(pattern, *, hygienic=True):
+def make_matcher(pattern):
     """
     Lower a pattern AST into a native Matcher. The matcher carries
-    slots, externs, and consts declared by the pattern tree;
-    composite builders contribute structural primitives plus
-    freeze-time hygiene registration only on the Python Hygiene plan
-    when hygienic is True
+    slots, externs, and consts declared by the pattern tree
 
     :param pattern: a matcher_ng pattern object
-    :param hygienic: when False, uses baseline MatchCompiler (hygiene hooks
-        are no-ops and build_hygiene returns an empty plan)
     :raises TypeError: when pattern is not a matcher_ng pattern
     :rtype: Matcher
     """
@@ -1171,7 +1199,7 @@ def make_matcher(pattern, *, hygienic=True):
         raise TypeError(
             "make_matcher requires a matcher_ng pattern, got %r"
             % (type(pattern).__name__,))
-    return pattern.build(hygienic=hygienic)
+    return pattern.build()
 
 
 # === Composite matchers ===
@@ -1212,23 +1240,20 @@ def normalize_scopes(scope, scopes, what):
 class Composite(Pattern):
     """
     Base class for matcher_ng composite matchers. Subclasses return
-    a tree of primitive Pattern nodes from _expand; the _emit hook
-    lowers that tree and asks the composite to register freeze-time
-    hygiene registration. Composites contribute no match-time Python
+    a tree of primitive Pattern nodes from _expand; lower on the
+    composite lowers that tree. Composites contribute no match-time Python
     behaviour: every semantic concern is encoded structurally
     """
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
-        Emit the expanded primitive pattern and register hygiene binder
-        and scope-region entries against the match compiler
+        Emit the expanded primitive pattern
         """
 
+        ctx.on_pattern(self)
         primitive = self._expand()
-        idx = primitive._emit(ctx)
-        self._register_hygiene(ctx)
-        return idx
+        return primitive.lower(ctx)
 
 
     def _expand(self):
@@ -1237,19 +1262,114 @@ class Composite(Pattern):
         that performs the structural match for this composite
         """
 
-        raise NotImplementedError
+        ...
 
 
-    def _register_hygiene(self, ctx):
+    def visit(self, fn):
+        fn(self)
+        self._expand().visit(fn)
+
+
+@runtime_checkable
+class HygienicPattern(Protocol):
+    """
+    Structural contract for patterns that participate in hygiene wire,
+    freeze-time registration, and post-match hygiene walks over captures
+    """
+
+    def hygiene_wire(self):
         """
-        Subclass responsibility: register binder and scope-region
-        entries on the match compiler
+        Build a portable hygiene row for this instance
         """
 
-        raise NotImplementedError
+        ...
 
 
-class DEFINE(Composite):
+    @classmethod
+    def hygiene_from_wire(cls, row):
+        """
+        Rebuild an instance from ``hygiene_wire`` output
+        """
+
+        ...
+
+
+    def register_hygiene(self, ctx):
+        """
+        Record binder or scope-region ownership on a HygienicMatchCompiler
+        """
+
+        ...
+
+
+    def iter_introduced_symbols(self, matched):
+        """
+        Yield symbols introduced as binders for captures produced by this
+        pattern, given a native-style capture mapping from one match
+        """
+
+        ...
+
+
+    def iter_recurse_targets(self, matched):
+        """
+        Yield nested forms to recurse for binder discovery (initializers,
+        type expressions, etc.)
+        """
+
+        ...
+
+
+    def iter_scope_targets(self, matched):
+        """
+        Yield template roots for lexical scope-region descent (bodies)
+        """
+
+        ...
+
+
+class HygieneWireSlotScopes(object):
+    """
+    Shared hygiene wire for binder composites keyed by slot and scopes
+    tuple
+    """
+
+
+    def hygiene_wire(self):
+        """
+        Wire row is ``(class name, slot, scopes)``
+        """
+
+        return (type(self).__name__, self._slot, self._scopes)
+
+
+    @classmethod
+    def hygiene_from_wire(cls, row):
+        """
+        Invert ``hygiene_wire`` for the 3-tuple slot-and-scopes shape
+        """
+
+        _, slot, scopes = row
+        return cls(slot, scopes=scopes)
+
+
+    def register_hygiene(self, ctx):
+        ctx.add_binder(self._slot, self)
+
+
+    def iter_introduced_symbols(self, matched):
+        yield from ()
+
+
+    def iter_recurse_targets(self, matched):
+        yield from ()
+
+
+    def iter_scope_targets(self, matched):
+        yield from ()
+
+
+class DEFINE(Composite, HygieneWireSlotScopes):
     """
     Capture one element constrained to be a symbol. Used as the
     introduced-name slot for define-shaped specials
@@ -1278,11 +1398,7 @@ class DEFINE(Composite):
             yield val
 
 
-    def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, self)
-
-
-class DECL(Composite):
+class DECL(Composite, HygieneWireSlotScopes):
     """
     Capture one element shaped as a declaration: a bare symbol, a
     one-element list naming the symbol, the (type as: name) form,
@@ -1338,11 +1454,7 @@ class DECL(Composite):
             yield dt
 
 
-    def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, self)
-
-
-class BINDING(Composite):
+class BINDING(Composite, HygieneWireSlotScopes):
     """
     Capture a single binding-shaped cell, (NAME EXPR) or
     (EXPR as: NAME). The structural match descends into the cell via
@@ -1379,10 +1491,6 @@ class BINDING(Composite):
         ex = matched.get("expr")
         if ex is not None and ex is not ABSENT:
             yield ex
-
-
-    def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, self)
 
 
 class BINDINGS(Composite):
@@ -1449,8 +1557,29 @@ class BINDINGS(Composite):
                     yield ex
 
 
-    def _register_hygiene(self, ctx):
+    def iter_scope_targets(self, matched):
+        yield from ()
+
+
+    def register_hygiene(self, ctx):
         ctx.add_binder(self._slot, self)
+
+
+    def hygiene_wire(self):
+        return ("BINDINGS", self._slot, self._mode, self._scopes)
+
+
+    @classmethod
+    def hygiene_from_wire(cls, row):
+        """
+        Build from ``hygiene_wire`` output
+
+        :param row: ``("BINDINGS", slot, mode, scopes)``
+        :rtype: BINDINGS
+        """
+
+        _, slot, mode, scopes = row
+        return cls(slot, mode=mode, scopes=scopes)
 
 
 def formal_param_pattern():
@@ -1550,7 +1679,7 @@ def formals_inner_pattern():
     ))
 
 
-class FORMALS(Composite):
+class FORMALS(Composite, HygieneWireSlotScopes):
     """
     Capture one element shaped as a formals list and decompose its
     structure into named slots. The composite accepts the
@@ -1646,11 +1775,7 @@ class FORMALS(Composite):
                                     yield av
 
 
-    def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, self)
-
-
-class USING(Composite):
+class USING(Composite, HygieneWireSlotScopes):
     """
     Capture one element shaped as a using-form. Four inner shapes
     are recognised through an ordered ONEOF; first match wins:
@@ -1698,10 +1823,6 @@ class USING(Composite):
             yield ex
 
 
-    def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, self)
-
-
 class BODY(Pattern):
     """
     Scope-region-aware REST capture. Behaves identically to REST at
@@ -1723,15 +1844,21 @@ class BODY(Pattern):
         self._slot = slot
 
 
-    def _emit(self, ctx):
+    def lower(self, ctx):
         """
-        Emit the underlying REST node and register the scope region
-        entry for slot
+        Emit the underlying REST node
         """
 
-        idx = REST(self._slot)._emit(ctx)
-        ctx.add_scope_region(self._slot, self)
-        return idx
+        ctx.on_pattern(self)
+        return REST(self._slot).lower(ctx)
+
+
+    def iter_introduced_symbols(self, matched):
+        yield from ()
+
+
+    def iter_recurse_targets(self, matched):
+        yield from ()
 
 
     def iter_scope_targets(self, matched):
@@ -1743,6 +1870,28 @@ class BODY(Pattern):
         if val is None or val is ABSENT:
             return
         yield val
+
+
+    def hygiene_wire(self):
+        """
+        Wire row is ``("BODY", slot)``
+        """
+
+        return ("BODY", self._slot)
+
+
+    @classmethod
+    def hygiene_from_wire(cls, row):
+        """
+        Invert ``hygiene_wire`` for the 2-tuple BODY shape
+        """
+
+        _, slot = row
+        return cls(slot)
+
+
+    def register_hygiene(self, ctx):
+        ctx.add_scope_region(self._slot, self)
 
 
 # === Self-describing matcher syntax: registry, meta-matcher, parser ===
@@ -1844,25 +1993,6 @@ META_PATTERN = ONEOF(
 META_MATCHER = make_matcher(GROUP(META_PATTERN))
 
 
-def iter_pair_list(p):
-    """
-    Yield successive elements of a koskari proper pair-list; treats
-    nil as the empty list. Raises ValueError when the spine ends in
-    a non-nil non-pair (improper list)
-    """
-
-    cur = p
-    while cur is not nil:
-        try:
-            head, tail = cur
-        except (TypeError, ValueError):
-            raise ValueError(
-                "expected a proper koskari list, found improper tail %r"
-                % (cur,))
-        yield head
-        cur = tail
-
-
 def parse_matcher(elem):
     """
     Lower one matcher-syntax element to a matcher_ng pattern object.
@@ -1932,7 +2062,7 @@ def lower_anon_constraint(tag, args, source):
     For val:, the single payload is wrapped in LITERAL verbatim
     """
 
-    items = list(iter_pair_list(args))
+    items = list(unpack(args))
     if len(items) != 1:
         raise ValueError(
             "(%s ...) expects exactly one payload, got %d in %r"
@@ -1954,7 +2084,7 @@ def lower_class(extern_sym, fields):
 
     type_name = str(extern_sym)
     field_objs = []
-    for f in iter_pair_list(fields):
+    for f in unpack(fields):
         lowered = parse_matcher(f)
         if not isinstance(lowered, FIELD):
             raise ValueError(
@@ -1977,7 +2107,7 @@ def lower_named_capture(name_sym, args):
     name = str(name_sym)
     constraints = []
     options = {}
-    items = list(iter_pair_list(args))
+    items = list(unpack(args))
     i = 0
     n = len(items)
     while i < n:
@@ -2102,11 +2232,12 @@ def slot_only_factory(name, ctor):
     """
 
     def factory(head_sym, raw_args):
-        items = list(iter_pair_list(raw_args))
+        items = list(unpack(raw_args))
         expect_arity(name, items, 1)
         return ctor(coerce_slot(name, items[0]))
 
     factory.__name__ = "factory_%s" % (name,)
+    factory.matcher_ng_wire_class = ctor
     return factory
 
 
@@ -2118,7 +2249,7 @@ def slot_with_options_factory(name, ctor, allowed_options):
     """
 
     def factory(head_sym, raw_args):
-        items = list(iter_pair_list(raw_args))
+        items = list(unpack(raw_args))
         if not items:
             raise ValueError(
                 "(%s ...) requires a slot name" % (name,))
@@ -2149,6 +2280,7 @@ def slot_with_options_factory(name, ctor, allowed_options):
         return ctor(slot, **opts)
 
     factory.__name__ = "factory_%s" % (name,)
+    factory.matcher_ng_wire_class = ctor
     return factory
 
 
@@ -2159,7 +2291,7 @@ def unary_recursive_factory(name, ctor):
     """
 
     def factory(head_sym, raw_args):
-        items = list(iter_pair_list(raw_args))
+        items = list(unpack(raw_args))
         expect_arity(name, items, 1)
         return ctor(parse_matcher(items[0]))
 
@@ -2174,7 +2306,7 @@ def form_factory(head_sym, raw_args):
     wraps the children in GROUP per the rollup convention
     """
 
-    items = list(iter_pair_list(raw_args))
+    items = list(unpack(raw_args))
     if not items:
         raise ValueError("(FORM ...) requires at least one sub-pattern")
     if len(items) == 1:
@@ -2188,7 +2320,7 @@ def group_factory(head_sym, raw_args):
     elements)
     """
 
-    return GROUP(*[parse_matcher(i) for i in iter_pair_list(raw_args)])
+    return GROUP(*[parse_matcher(i) for i in unpack(raw_args)])
 
 
 def oneof_factory(head_sym, raw_args):
@@ -2197,7 +2329,7 @@ def oneof_factory(head_sym, raw_args):
     ONEOF builder)
     """
 
-    items = [parse_matcher(i) for i in iter_pair_list(raw_args)]
+    items = [parse_matcher(i) for i in unpack(raw_args)]
     if not items:
         raise ValueError("(ONEOF ...) requires at least one branch")
     return ONEOF(*items)
@@ -2209,7 +2341,7 @@ def list_factory(head_sym, raw_args):
     extra wrapping here is unnecessary
     """
 
-    return LIST(*[parse_matcher(i) for i in iter_pair_list(raw_args)])
+    return LIST(*[parse_matcher(i) for i in unpack(raw_args)])
 
 
 def capture_factory(head_sym, raw_args):
@@ -2219,7 +2351,7 @@ def capture_factory(head_sym, raw_args):
     the implicit named-capture form
     """
 
-    items = list(iter_pair_list(raw_args))
+    items = list(unpack(raw_args))
     if not items:
         raise ValueError("(CAPTURE ...) requires a slot name")
     slot_sym = items[0]
@@ -2238,7 +2370,7 @@ def literal_factory(head_sym, raw_args):
     not capture or match patterns)
     """
 
-    items = list(iter_pair_list(raw_args))
+    items = list(unpack(raw_args))
     expect_arity("LITERAL", items, 1)
     return LITERAL(items[0])
 
@@ -2248,7 +2380,7 @@ def test_any_factory(head_sym, raw_args):
     Lower (TEST_ANY)
     """
 
-    items = list(iter_pair_list(raw_args))
+    items = list(unpack(raw_args))
     expect_arity("TEST_ANY", items, 0)
     return TEST_ANY()
 
@@ -2260,7 +2392,7 @@ def str_arg_factory(name, ctor):
     """
 
     def factory(head_sym, raw_args):
-        items = list(iter_pair_list(raw_args))
+        items = list(unpack(raw_args))
         expect_arity(name, items, 1)
         return ctor(coerce_str_arg(name, items[0]))
 
@@ -2275,7 +2407,7 @@ def field_factory(head_sym, raw_args):
     to NAME (which must be a symbol)
     """
 
-    items = list(iter_pair_list(raw_args))
+    items = list(unpack(raw_args))
     if len(items) == 1:
         return FIELD(parse_matcher(items[0]))
     if len(items) == 2:

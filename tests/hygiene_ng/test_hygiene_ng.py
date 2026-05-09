@@ -30,7 +30,8 @@ from koskari.hygiene_ng import (
     introduced_symbols_from_match,
     scope_region_targets,
 )
-from koskari.lib import cons, nil, symbol
+from koskari.lib import cons, keyword, nil, symbol
+from koskari.matcher_ng import BODY, DEFINE, GROUP, HygienicMatchCompiler
 from koskari.types import is_symbol
 
 
@@ -58,6 +59,10 @@ class _FakeBinderOwner(object):
         yield from ()
 
 
+    def hygiene_wire(self):
+        return ("DEFINE", self.slot, ())
+
+
 class _FakeBindingRecurse(object):
 
 
@@ -73,6 +78,10 @@ class _FakeBindingRecurse(object):
 
     def iter_scope_targets(self, matched):
         yield from ()
+
+
+    def hygiene_wire(self):
+        return ("BINDING", "b", ())
 
 
 class _FakeBodyScope(object):
@@ -91,6 +100,10 @@ class _FakeBodyScope(object):
         if val is None:
             return
         yield val
+
+
+    def hygiene_wire(self):
+        return ("BODY", "body")
 
 
 class _FakeCompiled(object):
@@ -236,6 +249,51 @@ class TestCollectAndApply(unittest.TestCase):
         self.assertEqual(len(parts), 2)
         self.assertIs(parts[0], hd)
         self.assertNotEqual(parts[1], intro)
+
+
+class TestHygieneTupleWire(unittest.TestCase):
+
+
+    def test_empty_hygiene_round_trip(self):
+        """
+        Empty Hygiene serializes to HYGIENE with empty binder and scope
+        tuples
+        """
+
+        h = Hygiene({}, {})
+        t = h.to_tuple()
+        self.assertEqual(t, (keyword("HYGIENE"), (), ()))
+        h2 = Hygiene.from_tuple(t)
+        self.assertEqual(h2.to_tuple(), t)
+
+
+    def test_compile_round_trip_define_body(self):
+        """
+        Hygiene from HygienicMatchCompiler.lower round-trips through tuple
+        wire
+        """
+
+        pat = GROUP(DEFINE("name"), BODY("body"))
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(pat)
+        hygiene = hc.build_hygiene()
+        t = hygiene.to_tuple()
+        self.assertEqual(
+            t,
+            (keyword("HYGIENE"),
+             (("DEFINE", "name", ()),),
+             (("BODY", "body"),)))
+        h2 = Hygiene.from_tuple(t)
+        self.assertEqual(h2.to_tuple(), t)
+
+
+    def test_from_tuple_rejects_bad_tag(self):
+        """
+        from_tuple requires the HYGIENE tag
+        """
+
+        with self.assertRaises(ValueError):
+            Hygiene.from_tuple(("OTHER", (), ()))
 
 
 # The end.

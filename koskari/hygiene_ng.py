@@ -21,6 +21,8 @@ Hygiene plans plus stable Special-object hooks
 
 Each binder or scope-region slot maps to the Pattern or Composite instance
 that produced it; hygiene interpretation lives on those objects.
+Portable plans use ``Hygiene.to_tuple`` / ``Hygiene.from_tuple`` with tag
+``HYGIENE`` (see method docstrings).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -32,7 +34,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from koskari.exceptions import CompilerError, SpecialError
-from koskari.lib import gensym, nil
+from koskari.lib import gensym, nil, keyword
 from koskari.types import build_proper, is_pair, is_symbol, unpack
 
 
@@ -47,6 +49,9 @@ __all__ = (
 )
 
 
+_HYGIENE_TAG = keyword("HYGIENE")
+
+
 @dataclass(frozen=True)
 class Hygiene(object):
     """
@@ -55,12 +60,10 @@ class Hygiene(object):
     :param binders: binder slot names mapped to owning Pattern instances
     :param scope_regions: scope-region slot names mapped to owning Pattern
         instances
-    :param version: schema version
     """
 
     binders: Mapping[str, object]
     scope_regions: Mapping[str, object]
-    version: int = 1
 
 
     def is_empty(self):
@@ -89,6 +92,67 @@ class Hygiene(object):
 
     def __bool__(self):
         return bool(self.binders or self.scope_regions)
+
+
+    def to_tuple(self):
+        """
+        Serialize to ``("HYGIENE", binders_rows, scope_rows)`` using each
+        owner's ``hygiene_wire()``
+
+        :rtype: tuple
+        """
+
+        binders_rows = tuple(
+            owner.hygiene_wire() for owner in self.binders.values())
+        scope_rows = tuple(
+            owner.hygiene_wire() for owner in self.scope_regions.values())
+        return (_HYGIENE_TAG, binders_rows, scope_rows)
+
+
+    @classmethod
+    def from_tuple(cls, t):
+        """
+        Rebuild from ``to_tuple`` output
+
+        :param t: ``("HYGIENE", binders_rows, scope_rows)``
+        :rtype: Hygiene
+        """
+
+        if not (isinstance(t, tuple) and len(t) == 3 and t[0] == _HYGIENE_TAG):
+            raise ValueError(
+                "hygiene tuple must be (%r, binders, scopes), got %r"
+                % (_HYGIENE_TAG, t))
+        _, binders_entries, scope_entries = t
+
+        binders = {}
+        scope_regions = {}
+        for row in binders_entries:
+            pat = hygiene_from_wire_row(row)
+            binders[pat._slot] = pat
+        for row in scope_entries:
+            pat = hygiene_from_wire_row(row)
+            scope_regions[pat._slot] = pat
+        return cls(binders, scope_regions)
+
+
+_MATCHER_REGISTRY = None
+
+
+def hygiene_from_wire_row(row):
+    """
+    Rebuild a pattern from a ``hygiene_wire`` tuple using the matcher_ng
+    registry
+
+    :param row: tuple whose first element is a registered matcher head
+    :rtype: object
+    """
+
+    global _MATCHER_REGISTRY
+    if _MATCHER_REGISTRY is None:
+        from koskari.matcher_ng import MATCHER_REGISTRY as _MATCHER_REGISTRY
+
+    factory = _MATCHER_REGISTRY[row[0]]
+    return factory.matcher_ng_wire_class.hygiene_from_wire(row)
 
 
 def introduced_symbols_from_match(matched, hygiene):
