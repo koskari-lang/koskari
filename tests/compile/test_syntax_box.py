@@ -105,7 +105,7 @@ class TestSyntaxBox(unittest.TestCase):
         form = cons(Syntax(a, None), cons(Syntax(b, None), nil))
         out = unbox_macro_with_hygiene(form, lambda _h: None)
         self.assertFalse(_tree_contains_syntax(out))
-        self.assertEqual(out, cons(a, cons(b, nil)))
+        self.assertEqual(out, cons(a, b, nil))
 
 
     def test_unbox_macro_with_hygiene_atom_syntax(self):
@@ -129,7 +129,7 @@ class TestSyntaxBox(unittest.TestCase):
         form = cons(Syntax(a, None), cons(Syntax(b, None), nil))
         out = unbox_macro(form)
         self.assertFalse(_tree_contains_syntax(out))
-        self.assertEqual(out, cons(a, cons(b, nil)))
+        self.assertEqual(out, cons(a, b, nil))
 
 
     def test_unbox_macro_atom_syntax(self):

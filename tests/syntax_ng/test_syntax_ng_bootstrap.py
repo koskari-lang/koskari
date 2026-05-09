@@ -298,7 +298,7 @@ class TestSpecialUnpack(unittest.TestCase):
         st = SpecialTransform(p, fn, unpack="kwargs")
         head = symbol("compile/unpack-kw")
         slot = symbol("slot")
-        src = cons(head, cons(slot, nil))
+        src = cons(head, slot, nil)
         out = st.try_expand(None, src, True)
         self.assertEqual(out, symbol("done"))
         self.assertEqual(saw[0][0], True)

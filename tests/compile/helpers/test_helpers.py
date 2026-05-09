@@ -37,7 +37,7 @@ pytestmark = pytest.mark.phase_compile
 class TestGatherParametersNg(unittest.TestCase):
 
     def test_positional_only(self):
-        args = cons(symbol("a"), cons(symbol("b"), nil))
+        args = cons(symbol("a"), symbol("b"), nil)
         args_seq, kwds_seq = gather_parameters_ng(args)
         self.assertEqual(args_seq, [(0, symbol("a")), (1, symbol("b"))])
         self.assertEqual(kwds_seq, [])
@@ -58,7 +58,7 @@ class TestGatherParametersNg(unittest.TestCase):
         k2 = keyword("k2")
         v1 = symbol("v1")
         v2 = symbol("v2")
-        args = cons(k1, cons(v1, cons(k2, cons(v2, nil))))
+        args = cons(k1, v1, k2, v2, nil)
         args_seq, kwds_seq = gather_parameters_ng(args)
         self.assertEqual(args_seq, [])
         self.assertEqual(kwds_seq, [("k1", v1), ("k2", v2)])
@@ -68,7 +68,7 @@ class TestGatherParametersNg(unittest.TestCase):
         b = symbol("b")
         k = keyword("x")
         v = symbol("v")
-        args = cons(a, cons(b, cons(k, cons(v, nil))))
+        args = cons(a, b, k, v, nil)
         args_seq, kwds_seq = gather_parameters_ng(args)
         self.assertEqual(args_seq, [(0, a), (1, b)])
         self.assertEqual(kwds_seq, [("x", v)])
@@ -86,7 +86,7 @@ class TestGatherParametersNg(unittest.TestCase):
         starstar_sym = symbol("kwargs")
         k = keyword("*")
         kk = keyword("**")
-        args = cons(k, cons(star_sym, cons(kk, cons(starstar_sym, nil))))
+        args = cons(k, star_sym, kk, starstar_sym, nil)
         args_seq, kwds_seq = gather_parameters_ng(args)
         self.assertEqual(args_seq, [("*", star_sym)])
         self.assertEqual(kwds_seq, [("**", starstar_sym)])
@@ -97,8 +97,7 @@ class TestGatherParametersNg(unittest.TestCase):
         c = symbol("c")
         dargs = symbol("dargs")
         k_star = keyword("*")
-        args = cons(a, cons(k_star, cons(bargs, cons(c, cons(
-            k_star, cons(dargs, nil))))))
+        args = cons(a, k_star, bargs, c, k_star, dargs, nil)
         args_seq, kwds_seq = gather_parameters_ng(args)
         self.assertEqual(args_seq, [
             (0, a), ("*", bargs), (1, c), ("*", dargs)])
@@ -112,8 +111,7 @@ class TestGatherParametersNg(unittest.TestCase):
         yval = symbol("yval")
         kw2 = symbol("kw2")
         kk = keyword("**")
-        args = cons(x, cons(xval, cons(kk, cons(kw1, cons(
-            y, cons(yval, cons(kk, cons(kw2, nil))))))))
+        args = cons(x, xval, kk, kw1, y, yval, kk, kw2, nil)
         args_seq, kwds_seq = gather_parameters_ng(args)
         self.assertEqual(args_seq, [])
         self.assertEqual(kwds_seq, [
@@ -131,7 +129,7 @@ class TestGatherParametersNg(unittest.TestCase):
         v = symbol("v")
         k_star = keyword("*")
         star_sym = symbol("foo")
-        args = cons(a, cons(k, cons(v, cons(k_star, cons(star_sym, nil)))))
+        args = cons(a, k, v, k_star, star_sym, nil)
         with self.assertRaises(ParametersError) as ctx:
             gather_parameters_ng(args)
         self.assertIn("*", str(ctx.exception))
@@ -141,7 +139,7 @@ class TestGatherParametersNg(unittest.TestCase):
         k = keyword("x")
         v = symbol("v")
         extra = symbol("extra")
-        args = cons(k, cons(v, cons(extra, nil)))
+        args = cons(k, v, extra, nil)
         with self.assertRaises(ParametersError) as ctx:
             gather_parameters_ng(args)
         self.assertIn("positional", str(ctx.exception).lower())
@@ -155,7 +153,7 @@ class TestGatherParametersNg(unittest.TestCase):
 class TestGatherFormals(unittest.TestCase):
 
     def test_positional_only(self):
-        args = cons(symbol("a"), cons(symbol("b"), nil))
+        args = cons(symbol("a"), symbol("b"), nil)
         pos, defaults, kwonly, star, starstar, annotations = gather_formals(
             args)
         self.assertEqual(len(pos), 2)
@@ -182,7 +180,7 @@ class TestGatherFormals(unittest.TestCase):
         a = symbol("a")
         k = keyword("k")
         v = symbol("v")
-        args = cons(a, cons(k, cons(v, nil)))
+        args = cons(a, k, v, nil)
         pos, defaults, kwonly, star, starstar, annotations = gather_formals(
             args)
         self.assertEqual(pos, [a])
@@ -213,7 +211,7 @@ class TestGatherFormals(unittest.TestCase):
         v = symbol("v")
         k_star = keyword("*")
         kk = keyword("**")
-        args = cons(a, cons(k_star, cons(star_sym, cons(k, cons(v, nil)))))
+        args = cons(a, k_star, star_sym, k, v, nil)
         pos, defaults, kwonly, star, starstar, annotations = gather_formals(
             args)
         self.assertEqual(pos, [a])
@@ -231,15 +229,7 @@ class TestGatherFormals(unittest.TestCase):
         ky = keyword("y")
         v = symbol("v")
         k_star = keyword("*")
-        args = cons(
-            a,
-            cons(
-                k_star,
-                cons(
-                    star_sym,
-                    cons(
-                        x_sym,
-                        cons(ky, cons(v, nil))))))
+        args = cons(a, k_star, star_sym, x_sym, ky, v, nil)
         pos, defaults, kwonly, star, starstar, annotations = gather_formals(
             args)
         self.assertEqual(pos, [a])
@@ -256,7 +246,7 @@ class TestGatherFormals(unittest.TestCase):
         starstar_sym = symbol("kwargs")
         k_star = keyword("*")
         kk = keyword("**")
-        args = cons(k_star, cons(star_sym, cons(kk, cons(starstar_sym, nil))))
+        args = cons(k_star, star_sym, kk, starstar_sym, nil)
         pos, defaults, kwonly, star, starstar, annotations = gather_formals(
             args)
         self.assertEqual(pos, [])
@@ -270,7 +260,7 @@ class TestGatherFormals(unittest.TestCase):
         a = symbol("a")
         rest = symbol("rest")
         k = keyword("x")
-        args = cons(a, cons(rest, cons(k, nil)))
+        args = cons(a, rest, k, nil)
         with self.assertRaises(SpecialError):
             gather_formals(args)
 
@@ -280,7 +270,7 @@ class TestGatherFormals(unittest.TestCase):
             gather_formals(args)
 
     def test_missing_value_for_keyword_raises(self):
-        args = cons(symbol("a"), cons(keyword("k"), nil))
+        args = cons(symbol("a"), keyword("k"), nil)
         with self.assertRaises(SpecialError):
             gather_formals(args)
 
@@ -292,7 +282,7 @@ class TestGatherFormals(unittest.TestCase):
         a = symbol("a")
         colon = keyword("::")
         t = symbol("int")
-        bracket = cons(a, cons(colon, cons(t, nil)))
+        bracket = cons(a, colon, t, nil)
         args = cons(bracket, nil)
         pos, defaults, kwonly, star, starstar, annotations = gather_formals(
             args)
@@ -303,7 +293,7 @@ class TestGatherFormals(unittest.TestCase):
     def test_bracket_formal_type_keyword(self):
         a = symbol("a")
         t = symbol("int")
-        bracket = cons(a, cons(keyword("type:"), cons(t, nil)))
+        bracket = cons(a, keyword("type:"), t, nil)
         args = cons(bracket, nil)
         pos, defaults, kwonly, star, starstar, annotations = gather_formals(
             args)
@@ -313,7 +303,7 @@ class TestGatherFormals(unittest.TestCase):
     def test_bracket_formal_value_default(self):
         a = symbol("a")
         dv = symbol("dv")
-        bracket = cons(a, cons(keyword("value:"), cons(dv, nil)))
+        bracket = cons(a, keyword("value:"), dv, nil)
         args = cons(bracket, nil)
         pos, defaults, kwonly, star, starstar, annotations = gather_formals(
             args)
@@ -340,7 +330,7 @@ class TestParseDecl(unittest.TestCase):
     def test_bracket_name_type_double_colon(self):
         x = symbol("x")
         t = symbol("int")
-        bracket = cons(x, cons(keyword("::"), cons(t, nil)))
+        bracket = cons(x, keyword("::"), t, nil)
         n, ty = parse_decl(bracket)
         self.assertIs(n, x)
         self.assertIs(ty, t)
@@ -348,21 +338,21 @@ class TestParseDecl(unittest.TestCase):
     def test_rejects_value_default(self):
         x = symbol("x")
         dv = symbol("dv")
-        bracket = cons(x, cons(keyword("value:"), cons(dv, nil)))
+        bracket = cons(x, keyword("value:"), dv, nil)
         with self.assertRaises(SpecialError):
             parse_decl(bracket)
 
     def test_rejects_sym_expr_pair(self):
         x = symbol("x")
         e = symbol("expr")
-        bracket = cons(x, cons(e, nil))
+        bracket = cons(x, e, nil)
         with self.assertRaises(SpecialError):
             parse_decl(bracket)
 
     def test_type_as_name(self):
         t = symbol("int")
         x = symbol("x")
-        form = cons(t, cons(keyword("as"), cons(x, nil)))
+        form = cons(t, keyword("as"), x, nil)
         n, ty = parse_decl(form)
         self.assertIs(n, x)
         self.assertIs(ty, t)
@@ -383,7 +373,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
 
     def test_fixed_arity_list(self):
         a, b, c = symbol("a"), symbol("b"), symbol("c")
-        lhs = cons(a, cons(b, cons(c, nil)))
+        lhs = cons(a, b, c, nil)
         frag = using_unpack_helper(self.compiler, lhs)
         self.assertEqual(frag.declares, ["a", "b", "c"])
         self.assertEqual(
@@ -398,7 +388,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
     def test_star_pattern(self):
         a, rest, b = symbol("a"), symbol("rest"), symbol("b")
         star = keyword("*")
-        lhs = cons(a, cons(star, cons(rest, cons(b, nil))))
+        lhs = cons(a, star, rest, b, nil)
         frag = using_unpack_helper(self.compiler, lhs)
         self.assertEqual(frag.declares, ["a", "rest", "b"])
         self.assertEqual(
@@ -413,7 +403,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
     def test_whole_sequence_star_only(self):
         whole = symbol("whole")
         star = keyword("*")
-        lhs = cons(star, cons(whole, nil))
+        lhs = cons(star, whole, nil)
         frag = using_unpack_helper(self.compiler, lhs)
         self.assertEqual(frag.declares, ["whole"])
         self.assertEqual(
@@ -421,7 +411,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
             [(OpCode.KOS_OP_VAR_STORE, "whole")])
 
     def test_non_symbol_element_raises(self):
-        lhs = cons(symbol("a"), cons(42, nil))
+        lhs = cons(symbol("a"), 42, nil)
         with self.assertRaises(SpecialError):
             using_unpack_helper(self.compiler, lhs)
 
@@ -454,7 +444,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
             ])
 
     def test_declare_var_2(self):
-        lhs = cons(symbol("a"), cons(symbol("b"), nil))
+        lhs = cons(symbol("a"), symbol("b"), nil)
         frag = using_unpack_helper(self.compiler, lhs, declare=False)
         self.assertEqual(frag.declares, [])
         self.assertEqual(

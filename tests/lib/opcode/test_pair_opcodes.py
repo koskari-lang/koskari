@@ -39,7 +39,7 @@ class TestCarOpcode(CevalTest):
         CAR 1 returns the car of a cons cell.
         """
 
-        cell = cons(10, cons(20, nil))
+        cell = cons(10, 20, nil)
         code, ns = build_expr([
             ["CONST", cell],
             ["CAR", 1],
@@ -55,7 +55,7 @@ class TestCarOpcode(CevalTest):
         """
 
         inner = cons(1, nil)
-        cell = cons(inner, cons(2, nil))
+        cell = cons(inner, 2, nil)
         code, ns = build_expr([
             ["CONST", cell],
             ["CAR", 2],
@@ -160,7 +160,7 @@ class TestCdrOpcode(CevalTest):
         CDR 2 walks two cons cells.
         """
 
-        cell = cons(1, cons(2, cons(3, nil)))
+        cell = cons(1, 2, 3, nil)
         code, ns = build_expr([
             ["CONST", cell],
             ["CDR", 2],
@@ -324,7 +324,7 @@ class TestPairSpliceOpcode(CevalTest):
         """
 
         from koskari.lib import cons
-        seg = cons(1, cons(2, nil))
+        seg = cons(1, 2, nil)
         code, ns = build_expr([
             ["CONST", seg],
             ["PAIR_SPLICE", 1],
@@ -340,8 +340,8 @@ class TestPairSpliceOpcode(CevalTest):
         """
 
         from koskari.lib import cons
-        seg1 = cons(1, cons(2, nil))
-        seg2 = cons(3, cons(4, nil))
+        seg1 = cons(1, 2, nil)
+        seg2 = cons(3, 4, nil)
         code, ns = build_expr([
             ["CONST", seg1],
             ["CONST", seg2],
@@ -394,7 +394,7 @@ class TestPairSpliceOpcode(CevalTest):
         """
 
         from koskari.lib import cons
-        seg = cons(1, cons(2, nil))
+        seg = cons(1, 2, nil)
         code, ns = build_expr([
             ["CONST", nil],
             ["CONST", seg],

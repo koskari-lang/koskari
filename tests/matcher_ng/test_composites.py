@@ -699,7 +699,7 @@ class TestFORMALS(unittest.TestCase):
         sa = symbol("a")
         sb = symbol("b")
         sc = symbol("c")
-        improper = cons(sa, cons(sb, sc))
+        improper = cons(sa, sb, sc)
         result = m.match((improper,), **self._externs())
         self.assertFalse(result.matched)
 

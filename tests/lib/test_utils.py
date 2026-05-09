@@ -135,7 +135,7 @@ class TestApply(unittest.IsolatedAsyncioTestCase):
         apply with pair args unpacks them
         """
 
-        pair = lib.cons(1, lib.cons(2, lib.cons(3, lib.nil)))
+        pair = lib.cons(1, 2, 3, lib.nil)
         result = lib.apply(max, pair)
         self.assertEqual(result, 3)
 
@@ -490,8 +490,8 @@ class TestBuildDict(unittest.TestCase):
         build_dict from cons pairs
         """
 
-        pair1 = lib.cons('x', lib.cons(100, lib.nil))
-        pair2 = lib.cons('y', lib.cons(200, lib.nil))
+        pair1 = lib.cons('x', 100, lib.nil)
+        pair2 = lib.cons('y', 200, lib.nil)
         result = lib.build_dict(pair1, pair2)
         self.assertEqual(result, {'x': 100, 'y': 200})
 

@@ -125,7 +125,7 @@ class TestMatchList(unittest.IsolatedAsyncioTestCase):
     async def test_list_matches_nested_list(self):
         a = symbol('a')
         b = symbol('b')
-        inner = cons(a, cons(b, nil))
+        inner = cons(a, b, nil)
         src = cons(inner, nil)
         result = match(src, MATCH(LIST(BIND('x'), BIND('y'))))
         self.assertIsNotNone(result)
@@ -143,7 +143,7 @@ class TestMatchList(unittest.IsolatedAsyncioTestCase):
     async def test_list_requires_full_consumption(self):
         a = symbol('a')
         b = symbol('b')
-        inner = cons(a, cons(b, nil))
+        inner = cons(a, b, nil)
         src = cons(inner, nil)
         result = match(src, MATCH(LIST(BIND('x'))))
         self.assertIsNone(result)

@@ -2596,7 +2596,7 @@ class LayoutReader(Reader):
             raise stream.error('invalid syntax after decorators', pos)
 
         deco_list = cons(*decorators, nil)
-        return cons(_symbol_compile_decorate, cons(deco_list, cons(inner, nil)))
+        return cons(_symbol_compile_decorate, deco_list, inner, nil)
 
 
     def _apply_layout(self, stream, outer_indent, source):

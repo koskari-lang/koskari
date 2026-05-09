@@ -397,7 +397,7 @@ class TestLayoutLineEvents(IsolatedAsyncioTestCase):
         result = reader.read(stream)
         expected = cons(
             symbol('compile/quote'),
-            cons(1, cons(2, nil)),
+            cons(1, 2, nil),
             nil)
         self.assertEqual(result, expected)
 

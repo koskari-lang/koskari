@@ -54,8 +54,10 @@ def layout_class(source, peers):
 
     return cons(
         symbol('compile/class'),
-        cons(name,
-             cons(supers, cons(cons(symbol('compile/begin'), body), nil))))
+        name,
+        supers,
+        cons(symbol('compile/begin'), body),
+        nil)
 
 
 @layout(symbol('layout/define-class'))
@@ -88,8 +90,10 @@ def layout_define_class(source, peers):
 
     return cons(
         symbol('compile/define-class'),
-        cons(name,
-             cons(supers, cons(cons(symbol('compile/begin'), body), nil))))
+        name,
+        supers,
+        cons(symbol('compile/begin'), body),
+        nil)
 
 
 # The end.

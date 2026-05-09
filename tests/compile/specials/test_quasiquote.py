@@ -626,7 +626,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         splice = cons(symbol('compile/unquote-splicing'), symbol('forms'), nil)
         block = _make_block((symbol('begin'),), (splice,))
         source = cons(symbol('compile/quasiquote-block'), block, nil)
-        forms = cons(10, cons(20, nil))
+        forms = cons(10, 20, nil)
         intermediate, _, _, _ = await self.compile_cons_to_source(source, forms=forms)
 
         self.assertTrue(is_pair(intermediate))
@@ -685,7 +685,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         splice = cons(symbol('compile/unquote-splicing'), symbol('forms'), nil)
         block = _make_block((symbol('begin'),), (splice,))
         source = cons(symbol('compile/quasiquote-block'), block, nil)
-        forms = cons(1, cons(2, cons(3, nil)))
+        forms = cons(1, 2, 3, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, forms=forms)
         result = await self.run_source(intermediate, module, mod_ns, compiler)
@@ -769,7 +769,7 @@ class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
         `begin:
           ,@forms
         """
-        forms = cons(1, cons(2, cons(3, nil)))
+        forms = cons(1, 2, 3, nil)
         intermediate, module, mod_ns, compiler = await self.compile_layout_src_to_source(
             src, forms=forms)
         result = await self.run_source(intermediate, module, mod_ns, compiler)

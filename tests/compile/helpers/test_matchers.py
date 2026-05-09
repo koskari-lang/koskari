@@ -50,7 +50,7 @@ class TestFormalsMatcher(unittest.TestCase):
     def test_formals_matcher_positional(self):
         a = symbol('a')
         b = symbol('b')
-        formals_list = cons(a, cons(b, nil))
+        formals_list = cons(a, b, nil)
         src = cons(formals_list, nil)
         result = match(src, MATCH(FORMALS('formals')))
         self.assertIsNotNone(result)
@@ -79,7 +79,7 @@ class TestFormalsMatcher(unittest.TestCase):
         a = symbol('a')
         k = keyword('k')
         v = symbol('v')
-        formals_list = cons(a, cons(k, cons(v, nil)))
+        formals_list = cons(a, k, v, nil)
         src = cons(formals_list, nil)
         result = match(src, MATCH(FORMALS('formals')))
         self.assertIsNotNone(result)
@@ -115,7 +115,7 @@ class TestBindingMatcher(unittest.TestCase):
     def test_binding_matcher_sym_expr(self):
         a = symbol('a')
         one = symbol('1')
-        binding_form = cons(a, cons(one, nil))
+        binding_form = cons(a, one, nil)
         src = cons(binding_form, nil)
         result = match(src, MATCH(BINDING('binding')))
         self.assertIsNotNone(result)
@@ -128,7 +128,7 @@ class TestBindingMatcher(unittest.TestCase):
         one = symbol('1')
         kw = keyword('as')
         a = symbol('a')
-        binding_form = cons(one, cons(kw, cons(a, nil)))
+        binding_form = cons(one, kw, a, nil)
         src = cons(binding_form, nil)
         result = match(src, MATCH(BINDING('binding')))
         self.assertIsNotNone(result)
@@ -221,8 +221,8 @@ class TestUsingMatcher(unittest.TestCase):
     def test_using_rejects_structured_lhs(self):
         a, b = symbol('a'), symbol('b')
         it = symbol('items')
-        lhs = cons(a, cons(b, nil))
-        cell = cons(lhs, cons(it, nil))
+        lhs = cons(a, b, nil)
+        cell = cons(lhs, it, nil)
         pat = USING('binding')
         self.assertIsNone(match1(cell, pat))
 
@@ -235,8 +235,8 @@ class TestUsingUnpackMatcher(unittest.TestCase):
     def test_using_unpack_pair_and_expr(self):
         a, b = symbol('a'), symbol('b')
         it = symbol('items')
-        lhs = cons(a, cons(b, nil))
-        cell = cons(lhs, cons(it, nil))
+        lhs = cons(a, b, nil)
+        cell = cons(lhs, it, nil)
         src = cons(cell, nil)
         pat = MATCH(USING_UNPACK('binding'))
         result = match(src, pat)
@@ -250,8 +250,8 @@ class TestUsingUnpackMatcher(unittest.TestCase):
 
     def test_extract_binder_symbols_using_unpack(self):
         a, b = symbol('a'), symbol('b')
-        lhs = cons(a, cons(b, nil))
-        cell = cons(lhs, cons(symbol('x'), nil))
+        lhs = cons(a, b, nil)
+        cell = cons(lhs, symbol('x'), nil)
         spec = USING_UNPACK('binding')
         br = UsingResult(cell, name=None, value=symbol('x'), lhs=lhs)
         vals = list(extract_binder_symbols(spec, br))
@@ -261,9 +261,9 @@ class TestUsingUnpackMatcher(unittest.TestCase):
 class TestRepeatWithBinding(unittest.TestCase):
 
     def test_repeat_with_binding(self):
-        binding1 = cons(symbol('x'), cons(1, nil))
-        binding2 = cons(symbol('y'), cons(2, nil))
-        src = cons(binding1, cons(binding2, nil))
+        binding1 = cons(symbol('x'), 1, nil)
+        binding2 = cons(symbol('y'), 2, nil)
+        src = cons(binding1, binding2, nil)
         pat = MATCH(REPEAT('bindings', BINDING('b')))
         result = match(src, pat)
         self.assertIsNotNone(result)

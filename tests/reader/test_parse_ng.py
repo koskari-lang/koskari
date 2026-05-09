@@ -289,7 +289,7 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
 
     async def test_read_ref_atom_bare_ampersand(self):
         result = _parse_ng("(& 8 1)")
-        expected = cons(symbol("&"), cons(8, cons(1, nil)))
+        expected = cons(symbol("&"), 8, 1, nil)
         self.assertEqual(result, expected)
 
     async def test_read_ref_atom_dotted_multi(self):

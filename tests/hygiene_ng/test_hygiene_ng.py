@@ -242,7 +242,7 @@ class TestCollectAndApply(unittest.TestCase):
         def find_compiled(head):
             return table.get(head)
 
-        template = cons(hd, cons(intro, nil))
+        template = cons(hd, intro, nil)
         bindings = {}
         out = apply_syntax_rules_hygiene(template, bindings, find_compiled)
         parts = list(out.unpack())

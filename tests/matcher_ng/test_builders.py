@@ -402,10 +402,10 @@ class TestBuildAndMatch(unittest.TestCase):
         self.assertEqual(r_tuple.captures["head"], 1)
         self.assertEqual(r_tuple.captures["tail"], (2, 3))
 
-        r_pair = m.match(cons(1, cons(2, cons(3, nil))))
+        r_pair = m.match(cons(1, 2, 3, nil))
         self.assertTrue(r_pair.matched)
         self.assertEqual(r_pair.captures["head"], 1)
-        self.assertEqual(r_pair.captures["tail"], cons(2, cons(3, nil)))
+        self.assertEqual(r_pair.captures["tail"], cons(2, 3, nil))
 
 
     def test_class_round_trip(self):

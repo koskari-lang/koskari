@@ -203,7 +203,7 @@ class TestIsProper(unittest.IsolatedAsyncioTestCase):
 
     async def test_true_for_proper_list(self):
         """is_proper returns True for proper lists"""
-        proper = cons(1, cons(2, cons(3, nil)))
+        proper = cons(1, 2, 3, nil)
         self.assertTrue(is_proper(proper))
 
     async def test_false_for_improper_pair(self):
@@ -227,7 +227,7 @@ class TestIsRecursive(unittest.IsolatedAsyncioTestCase):
 
     async def test_false_for_proper_list(self):
         """is_recursive returns False for proper lists"""
-        proper = cons(1, cons(2, nil))
+        proper = cons(1, 2, nil)
         self.assertFalse(is_recursive(proper))
 
     async def test_true_for_circular(self):

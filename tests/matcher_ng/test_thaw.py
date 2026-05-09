@@ -110,13 +110,13 @@ class TestMatcherFromTuple(unittest.TestCase):
             ("head", "tail"), (), (),
             nodes, 3)
         m = thaw(frozen)
-        subj = cons(1, cons(2, cons(3, nil)))
+        subj = cons(1, 2, 3, nil)
         result = m.match(subj)
         self.assertTrue(result.matched)
         self.assertEqual(result.captures["head"], 1)
         # rest is a kospair tail — verify by walking it
         tail = result.captures["tail"]
-        self.assertEqual(tail, cons(2, cons(3, nil)))
+        self.assertEqual(tail, cons(2, 3, nil))
 
 
     def test_thaw_oneof_absent_for_other_branches(self):

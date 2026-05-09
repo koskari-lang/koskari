@@ -36,7 +36,7 @@ class TestDiscoverDocstring(unittest.TestCase):
         self.assertIsNone(discover_docstring(nil))
 
     def test_leading_str(self):
-        body = cons('alpha', cons(symbol('x'), nil))
+        body = cons('alpha', symbol('x'), nil)
         self.assertEqual(discover_docstring(body), 'alpha')
 
     def test_no_leading_str(self):
@@ -45,28 +45,28 @@ class TestDiscoverDocstring(unittest.TestCase):
 
     def test_begin_with_str(self):
         begin = symbol('begin')
-        inner = cons('beta', cons(symbol('y'), nil))
+        inner = cons('beta', symbol('y'), nil)
         head = cons(begin, inner)
         body = cons(head, nil)
         self.assertEqual(discover_docstring(body), 'beta')
 
     def test_compile_begin_with_str(self):
         cb = symbol('compile/begin')
-        inner = cons('gamma', cons(symbol('z'), nil))
+        inner = cons('gamma', symbol('z'), nil)
         head = cons(cb, inner)
         body = cons(head, nil)
         self.assertEqual(discover_docstring(body), 'gamma')
 
     def test_begin_without_str_then_more_forms(self):
         begin = symbol('begin')
-        inner = cons(symbol('a'), cons(symbol('b'), nil))
+        inner = cons(symbol('a'), symbol('b'), nil)
         head = cons(begin, inner)
-        body = cons(head, cons(symbol('c'), nil))
+        body = cons(head, symbol('c'), nil)
         self.assertIsNone(discover_docstring(body))
 
     def test_nested_begin(self):
         begin = symbol('begin')
-        inner2 = cons('nested', cons(symbol('u'), nil))
+        inner2 = cons('nested', symbol('u'), nil)
         head2 = cons(begin, inner2)
         inner1 = cons(head2, nil)
         head1 = cons(begin, inner1)
@@ -82,7 +82,7 @@ class TestStripLeadingDocstring(unittest.TestCase):
         self.assertIs(rest, nil)
 
     def test_leading_str_removed(self):
-        body = cons('alpha', cons(symbol('x'), nil))
+        body = cons('alpha', symbol('x'), nil)
         doc, rest = strip_leading_docstring(body)
         self.assertEqual(doc, 'alpha')
         self.assertEqual(rest, cons(symbol('x'), nil))
@@ -95,16 +95,16 @@ class TestStripLeadingDocstring(unittest.TestCase):
 
     def test_begin_with_str(self):
         begin = symbol('begin')
-        inner = cons('beta', cons(symbol('y'), nil))
+        inner = cons('beta', symbol('y'), nil)
         head = cons(begin, inner)
         body = cons(head, nil)
         doc, rest = strip_leading_docstring(body)
         self.assertEqual(doc, 'beta')
-        self.assertEqual(rest, cons(cons(begin, cons(symbol('y'), nil)), nil))
+        self.assertEqual(rest, cons(cons(begin, symbol('y'), nil), nil))
 
     def test_nested_begin(self):
         begin = symbol('begin')
-        inner2 = cons('nested', cons(symbol('u'), nil))
+        inner2 = cons('nested', symbol('u'), nil)
         head2 = cons(begin, inner2)
         inner1 = cons(head2, nil)
         head1 = cons(begin, inner1)

@@ -82,7 +82,10 @@ def layout_dyn_wind(source, peers):
 
     return cons(
         symbol('compile/dyn-wind'),
-        cons(before_form, cons(body_form, cons(after_form, nil))))
+        before_form,
+        body_form,
+        after_form,
+        nil)
 
 
 # The end.

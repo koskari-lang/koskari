@@ -323,8 +323,13 @@ def _except(compiler, catches):
                 fill_position(checksrc, pos)
             define_form = cons(
                 symbol("compile/define"),
-                cons(symbol(str(key)), cons(cons(symbol("load-exception"), nil), nil)))
-            begin_body = cons(define_form, act if is_pair(act) else cons(act, nil))
+                symbol(str(key)),
+                cons(symbol("load-exception"), nil),
+                nil)
+            if is_pair(act):
+                begin_body = cons(define_form, act)
+            else:
+                begin_body = cons(define_form, act, nil)
             mod.append((checksrc, cons(symbol("compile/begin"), begin_body)))
 
     if not has_bare:
