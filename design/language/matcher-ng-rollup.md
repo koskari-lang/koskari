@@ -60,9 +60,11 @@ registration work lands). It provides:
   patterns to **`matcher_ng`** trees (**MATCH**-dialect registry patterns
   remain out of scope here).
 
-Tests: `tests/syntax_ng/test_syntax_ng_bootstrap.py`. **`special` /
-`Syntax` are not yet registered** in **`SPECIALS`** or **`define-syntax`**;
-that wiring is part of the cutover below.
+Tests: `tests/syntax_ng/test_syntax_ng_bootstrap.py` and
+`tests/syntax_ng/test_syntax_ng_builders.py`. **`special`** /
+**`Syntax`** and the **`build_*`** constructors are **not yet registered**
+in **`make_bootstrap()`** or **`SPECIALS`**; that wiring is part of the
+cutover below.
 
 ### Migration policy (single stack)
 
@@ -1585,18 +1587,23 @@ types satisfy.
 **Progress:** the first tranche lives in **`koskari/syntax_ng.py`**:
 **`parse_syntax_rules_pattern`** lowers RULE-style patterns to
 **`matcher_ng.Pattern`**; each **`Transform`** carries the frozen
-7-tuple and **`Hygiene`** from **`HygienicMatchCompiler`**. This is
-validated in **`tests/syntax_ng/`** and does not touch the existing
-**`compile/specials/syntax.py`** lowerer.
+7-tuple and **`Hygiene`** from **`HygienicMatchCompiler`**. Runtime
+constructors **`build_syntax`**, **`build_macro_syntax`**,
+**`build_special_syntax`**, and **`build_special_match`** assemble a
+**`syntax_ng.Syntax`** dispatcher from RULE patterns and templates or
+procedural handlers (same Python names as **`koskari.syntax`** builders,
+different module; not registered in bootstrap yet). Coverage includes
+**`tests/syntax_ng/test_syntax_ng_builders.py`**. Nothing here touches
+the existing **`compile/specials/syntax.py`** lowerer.
 
-**Remaining:** Koskari-facing compile hooks (new specials or loaders
-only—no pollution of legacy modules) that build **`Syntax`** /
-**`SyntaxTransform`** / **`MacroTransform`** instances from
-`define-syntax` and friends; const-pool serialization for those objects;
-adapters from **`MatchResult.captures`** to macro lambda kwargs (including
-flattening repeat frames, e.g. `id__sr` rows, toward legacy
-**`RepeatResult`** shape where needed); and wiring **`Datum`** /
-**`hygiene_ng`** into template and procedural expansion.
+**Remaining:** Koskari-facing **compile specials** (new code paths only)
+that **parse and lower** surface **`define-syntax`** forms into calls to
+those builders with the eventual NG wire signatures; **const-pool
+serialization** / round-trip tuples for NG transformers; adapters from
+**`MatchResult.captures`** to macro lambda kwargs (including flattening
+repeat frames, e.g. `id__sr` rows, toward legacy **`RepeatResult`** shape
+where needed); and a full **`Datum`** / **`hygiene_ng`** parity review for
+edge cases in template and procedural expansion.
 
 #### Cutover E — migrate all specials and switch backend
 

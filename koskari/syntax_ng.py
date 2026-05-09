@@ -30,6 +30,11 @@ repeat list slot. Callers can flatten frames to legacy ``RepeatResult``
 shape later. An empty ellipsis region matches a subject with zero spine
 elements (``()``), not ``(nil,)``.
 
+Runtime constructors ``build_syntax``, ``build_macro_syntax``,
+``build_special_syntax``, and ``build_special_match`` assemble a
+``Syntax`` dispatcher from RULE patterns and templates or procedural
+handlers; they are not registered in bootstrap until the NG cutover.
+
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 :ai-assistant: Composer via Cursor
@@ -76,6 +81,10 @@ __all__ = (
     "Syntax",
     "SyntaxTransform",
     "Transform",
+    "build_macro_syntax",
+    "build_special_match",
+    "build_special_syntax",
+    "build_syntax",
     "parse_syntax_rules_pattern",
     "special",
 )
@@ -553,10 +562,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
     """
 
     if not isinstance(literals, (set, frozenset)):
-        raise TypeError(
-            "literals must be a set or frozenset, got %r"
-            % (type(literals).__name__,))
-
+        literals = frozenset(literals)
     return _parse_rule_pattern(pattern_expr, literals, source_ctx)
 
 
@@ -568,8 +574,9 @@ def _parse_rule_pattern(pattern_expr, literals, source_ctx):
                     or rest.cdr is not nil
                     or rest is nil):
                 raise ValueError(
-                    "match pattern must have exactly one form: %r (context %r)"
-                    % (pattern_expr, source_ctx))
+                    f"match pattern must have exactly one form: {pattern_expr!r}"
+                    f" (context {source_ctx!r})"
+                )
             return _syntax_pattern_to_pattern(rest.car, literals, source_ctx)
 
     return _syntax_pattern_to_pattern(pattern_expr, literals, source_ctx)
@@ -578,8 +585,9 @@ def _parse_rule_pattern(pattern_expr, literals, source_ctx):
 def _syntax_pattern_to_pattern(pattern_expr, literals, source_ctx):
     if pattern_expr is Ellipsis:
         raise TypeError(
-            "invalid ellipsis placement in pattern: %r (context %r)"
-            % (pattern_expr, source_ctx))
+            f"invalid ellipsis placement in pattern: {pattern_expr!r}"
+            f" (context {source_ctx!r})"
+        )
 
     if is_symbol(pattern_expr):
         if pattern_expr in literals:
@@ -596,8 +604,9 @@ def _syntax_pattern_to_pattern(pattern_expr, literals, source_ctx):
 def _syntax_elem_pattern(pat, literals, source_ctx):
     if pat is Ellipsis:
         raise ValueError(
-            "invalid ellipsis placement in pattern: %r (context %r)"
-            % (pat, source_ctx))
+            f"invalid ellipsis placement in pattern: {pat!r}"
+            f" (context {source_ctx!r})"
+        )
 
     if is_symbol(pat):
         if pat in literals:
@@ -631,6 +640,157 @@ def _syntax_pattern_specs(p_items, literals, source_ctx):
         i += 1
 
     return specs
+
+
+def _literals_with_name(literals, name):
+    """
+    Merge caller literals with the macro name (syntax-rules convention)
+    """
+
+    base = frozenset(literals) if literals is not None else frozenset()
+    return base | {symbol(name)}
+
+
+def _normalize_syntax_rule_row(row):
+    """
+    Split a syntax-rules-style row into pattern and template datums
+    """
+
+    if not isinstance(row, (list, tuple)):
+        raise TypeError(
+            f"syntax-rules row must be a sequence, got {row!r}"
+        )
+    seq = tuple(row)
+    if len(seq) != 2:
+        raise ValueError(
+            f"syntax-rules row must be (pattern, template), got length {len(seq)}"
+        )
+    return seq[0], seq[1]
+
+
+def _normalize_proc_rule_row(row, default_unpack):
+    """
+    Split a macro-rules / special-rules row into pattern, procedure, unpack
+    """
+
+    if not isinstance(row, (list, tuple)):
+        raise TypeError(
+            f"macro/special rule row must be a sequence, got {row!r}"
+        )
+    seq = tuple(row)
+    if len(seq) == 2:
+        pat_d, proc = seq
+        unpack = default_unpack
+    elif len(seq) == 3:
+        pat_d, proc, unpack = seq
+        _validate_unpack_mode(unpack)
+    else:
+        raise ValueError(
+            f"macro/special rule row must be length 2 or 3, got {len(seq)}"
+        )
+    if proc is None or not callable(proc):
+        raise TypeError(
+            f"macro/special rule procedure must be callable, got {proc!r}"
+        )
+    return pat_d, proc, unpack
+
+
+def build_syntax(name, literals, rules, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``SyntaxTransform`` arms from RULE
+    patterns and templates.
+
+    Patterns match the tail of a use-site form (``cdr`` of the full pair),
+    consistent with ``Syntax.compile_impl``.
+
+    :param name: primary name symbol or string for this macro
+    :param literals: iterable of literal symbols or keywords for patterns
+    :param rules: iterable of ``(pattern_datum, template_datum)`` rows
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    :raises ValueError: when ``rules`` is empty or a row has wrong shape
+    """
+
+    rows = tuple(rules)
+    if not rows:
+        raise ValueError("build_syntax requires at least one rule")
+
+    lit = _literals_with_name(literals, name)
+    transforms = []
+    for row in rows:
+        pat_d, tmpl = _normalize_syntax_rule_row(row)
+        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(SyntaxTransform(ptree, tmpl))
+
+    return Syntax(name, (), tuple(transforms))
+
+
+def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``MacroTransform`` arms.
+
+    Default unpack mode per two-element row is ``kwargs`` (captures passed
+    as keyword arguments to the procedure). Supply a third row element to
+    override unpack (``None``, ``match``, or ``kwargs``).
+
+    :param name: primary name symbol or string for this macro
+    :param literals: iterable of pattern literals (merged with macro name)
+    :param rule_rows: iterable of ``(pattern, procedure)`` or
+        ``(pattern, procedure, unpack)``
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("build_macro_syntax requires at least one rule")
+
+    lit = _literals_with_name(literals, name)
+    transforms = []
+    for row in rows:
+        pat_d, proc, unpack = _normalize_proc_rule_row(row, "kwargs")
+        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(MacroTransform(ptree, proc, unpack=unpack))
+
+    return Syntax(name, (), tuple(transforms))
+
+
+def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``SpecialTransform`` arms.
+
+    Default unpack mode per two-element row is ``None`` (handler receives
+    ``compiler``, ``source_obj``, ``tc``).
+
+    :param name: primary name symbol or string for this special form macro
+    :param literals: iterable of pattern literals (merged with macro name)
+    :param rule_rows: iterable of ``(pattern, procedure)`` or
+        ``(pattern, procedure, unpack)``
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("build_special_syntax requires at least one rule")
+
+    lit = _literals_with_name(literals, name)
+    transforms = []
+    for row in rows:
+        pat_d, proc, unpack = _normalize_proc_rule_row(row, None)
+        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(SpecialTransform(ptree, proc, unpack=unpack))
+
+    return Syntax(name, (), tuple(transforms))
+
+
+def build_special_match(name, rule_rows, *, source_ctx=None):
+    """
+    Same as :func:`build_special_syntax` with no literal list (only the
+    macro name is merged into the pattern literals set).
+    """
+
+    return build_special_syntax(name, (), rule_rows, source_ctx=source_ctx)
 
 
 # The end.

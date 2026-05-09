@@ -33,6 +33,7 @@ from os.path import dirname, join
 
 from ..types import as_coroutine
 from ..compile.specials import SPECIALS
+from ..stdlib import BUILTINS
 from ..syntax import (Syntax,
                       build_macro_syntax as build_macro_rules,
                       build_special_match,
@@ -209,6 +210,9 @@ def make_bootstrap():
     _bind('@', _op.matmul)
     _bind('<<', _op.lshift)
     _bind('>>', _op.rshift)
+
+    for sym, fn in BUILTINS.items():
+        _bind(sym, fn)
 
     # Register all compiler specials so the Compiler can find them
     for sym, fn in SPECIALS.items():
