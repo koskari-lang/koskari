@@ -37,15 +37,36 @@ elements (``()``), not ``(nil,)``.
 
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
-from koskari.lib import cdr, gensym, nil, symbol
-from koskari.matcher_ng import (CAPTURE, FORM, GROUP, LITERAL, REST, SYMBOL,
-                                HygienicMatchCompiler, check_pattern_arg,
-                                repeat_capture)
-from koskari.types import (get_position, is_nil, is_pair, is_proper, is_symbol,
-                           unpack)
+from koskari.exceptions import CompilerError, SpecialError
+from koskari.hygiene_ng import (
+    apply_syntax_rules_hygiene,
+    collect_binding_symbols,
+    expand_template_with_hygiene,
+)
+from koskari.lib import Matcher, cdr, gensym, nil, symbol
+from koskari.matcher_ng import (
+    ABSENT,
+    CAPTURE,
+    FORM,
+    GROUP,
+    LITERAL,
+    REST,
+    SYMBOL,
+    HygienicMatchCompiler,
+    check_pattern_arg,
+    repeat_capture,
+)
+from koskari.types import (
+    get_position,
+    is_nil,
+    is_pair,
+    is_proper,
+    is_symbol,
+    unpack,
+)
 
 
 __all__ = (
@@ -56,10 +77,189 @@ __all__ = (
     "SyntaxTransform",
     "Transform",
     "parse_syntax_rules_pattern",
+    "special",
 )
 
 
+_VALID_UNPACK_MODES = frozenset((None, "match", "kwargs"))
+
+
 _symbol_match = symbol("match")
+
+
+def _validate_unpack_mode(unpack):
+    """
+    Raise ``ValueError`` when unpack is not a supported special-form unpack mode
+    """
+
+    if unpack not in _VALID_UNPACK_MODES:
+        raise ValueError(
+            "unpack must be None, 'match', or 'kwargs', got %r" % (unpack,))
+
+
+def _init_pattern_fields(instance, pattern, handler):
+    """
+    Attach pattern, frozen matcher tuple, hygiene plan, and thawed matcher
+    """
+
+    check_pattern_arg(pattern, "Transform pattern")
+    if handler is not None and not callable(handler):
+        raise TypeError(
+            "Transform handler must be callable or None, got %r"
+            % (type(handler).__name__,))
+    instance.pattern = pattern
+    instance.handler = handler
+    hc = HygienicMatchCompiler()
+    instance.matcher_tuple = hc.lower(pattern)
+    instance.hygiene = hc.build_hygiene()
+    instance._matcher = Matcher.from_tuple(instance.matcher_tuple)
+
+
+def _tail_subject(source_obj):
+    """
+    Match subject for syntax-rules-style patterns: spine of ``cdr(source_obj)``
+    """
+
+    if not is_pair(source_obj):
+        return ()
+    rest = cdr(source_obj)
+    if rest is nil:
+        return ()
+    if not is_proper(rest):
+        raise CompilerError(
+            "syntax pattern match requires a proper tail", source_obj)
+    return tuple(unpack(rest))
+
+
+def _filter_captures(captures):
+    """
+    Drop ``ABSENT`` entries from native ``MatchResult.captures``
+    """
+
+    return {
+        str(k): v
+        for k, v in captures.items()
+        if v is not ABSENT
+    }
+
+
+def _captures_to_bindings(captures):
+    """
+    Map string capture keys to koskari symbols for ``apply_syntax_rules_hygiene``
+    """
+
+    out = {}
+    for k, v in _filter_captures(captures).items():
+        out[symbol(k)] = v
+    return out
+
+
+def _make_special_invoke(user_fn, unpack):
+    """
+    Build one of three invoke closures (no per-call unpack branch)
+    """
+
+    if unpack is None:
+
+        def invoke_none(
+                compiler,
+                source_obj,
+                tc,
+                match_result):
+            return user_fn(compiler, source_obj, tc)
+
+        return invoke_none
+
+    if unpack == "match":
+
+        def invoke_match(
+                compiler,
+                source_obj,
+                tc,
+                match_result):
+            caps = _filter_captures(match_result.captures)
+            return user_fn(compiler, caps, tc)
+
+        return invoke_match
+
+    if unpack == "kwargs":
+
+        def invoke_kwargs(
+                compiler,
+                source_obj,
+                tc,
+                match_result):
+            caps = _filter_captures(match_result.captures)
+            return user_fn(compiler, tc=tc, **caps)
+
+        return invoke_kwargs
+
+    raise ValueError("internal: bad unpack %r" % (unpack,))
+
+
+def _unbox_datum_in_macro_output(expanded):
+    """
+    Strip ``Datum`` wrappers from procedural macro output (mirrors legacy
+    ``unbox_macro`` for ``koskari.syntax.Syntax``)
+    """
+
+    seen = set()
+
+    def walk(x):
+        if isinstance(x, Datum):
+            return walk(x.datum)
+
+        if is_nil(x):
+            return x
+
+        if is_pair(x):
+            nx = x
+            while nx is not nil:
+                xi = id(nx)
+                if xi in seen:
+                    nx = nx.cdr
+                    continue
+                seen.add(xi)
+
+                head, tail = nx
+                if isinstance(head, Datum):
+                    nx.car = walk(head.datum)
+                    nx.position = head.position
+                elif is_nil(head):
+                    pass
+                elif is_pair(head):
+                    walk(head)
+                nx = tail
+            return x
+        return x
+
+    return walk(expanded)
+
+
+@runtime_checkable
+class Transform(Protocol):
+    """
+    One clause of a ``Syntax`` dispatcher: frozen ``matcher_ng`` pattern,
+    hygiene plan, and matcher-backed ``try_expand``
+    """
+
+    pattern: Any
+    matcher_tuple: tuple
+    hygiene: Any
+    handler: Any
+
+    def try_expand(self, compiler, source_obj, tc):
+        """
+        Try this arm on ``source_obj``; return compile result or ``None``
+
+        :param compiler: active compiler instance
+        :param source_obj: full special form pair ``(head . tail)``
+        :param tc: tail-call flag
+        :return: fragment or form for ``compile_special``, or ``None`` when the
+            pattern does not match
+        """
+
+        ...
 
 
 @dataclass(frozen=True)
@@ -113,53 +313,120 @@ class Datum(object):
         return self.datum.cdr
 
 
-class Transform(Protocol):
+class SyntaxTransform(object):
     """
-    One clause of a ``Syntax`` dispatcher: frozen ``matcher_ng`` pattern,
-    hygiene plan, and optional handler callable (filled in later)
-
-    :param pattern: lowered syntax-rules pattern
-    :param handler: optional Python callable invoked after a match
+    Template arm: match tail, then ``apply_syntax_rules_hygiene`` on template
     """
 
-    def __init__(self, pattern, handler=None):
+    def __init__(self, pattern, template=nil):
         """
         :param pattern: matcher_ng pattern tree
-        :param handler: optional callable; subclasses document arity
+        :param template: syntax-rules template form (often contains pattern vars)
         """
 
-        check_pattern_arg(pattern, "Transform pattern")
-        if handler is not None and not callable(handler):
+        _init_pattern_fields(self, pattern, None)
+        self.template = template
+
+
+    def try_expand(self, compiler, source_obj, tc):
+        """
+        Match ``cdr(source_obj)``; on success expand ``template`` with captures
+
+        :param compiler: active compiler
+        :param source_obj: full special form pair
+        :param tc: tail-call flag (unused for template expansion)
+        :return: expanded form or ``None`` when the pattern does not match
+        """
+
+        subject = _tail_subject(source_obj)
+        result = self._matcher.match(subject)
+        if not result.matched:
+            return None
+        bindings = _captures_to_bindings(result.captures)
+        return apply_syntax_rules_hygiene(
+            self.template, bindings, compiler.find_compiled)
+
+
+class MacroTransform(object):
+    """
+    Procedural arm: invoke handler then ``hygiene_ng`` on expanded output
+    """
+
+    def __init__(self, pattern, handler, unpack=None):
+        """
+        :param pattern: matcher_ng pattern tree
+        :param handler: Python callable (arity depends on ``unpack``)
+        :param unpack: ``None``, ``match``, or ``kwargs`` (fixed at construction)
+        """
+
+        _validate_unpack_mode(unpack)
+        if handler is None or not callable(handler):
             raise TypeError(
-                "Transform handler must be callable or None, got %r"
+                "MacroTransform handler must be callable, got %r"
                 % (type(handler).__name__,))
-        self.pattern = pattern
-        self.handler = handler
-        hc = HygienicMatchCompiler()
-        self.matcher_tuple = hc.lower(pattern)
-        self.hygiene = hc.build_hygiene()
+        _init_pattern_fields(self, pattern, handler)
+        self._unpack = unpack
+        self._invoke = _make_special_invoke(handler, unpack)
 
 
-    def expand(self, compiler, source_obj, match_result, tc=False):
-        ...
+    def try_expand(self, compiler, source_obj, tc):
+        """
+        Match tail, run handler, then procedural macro hygiene on the result
+
+        :param compiler: active compiler
+        :param source_obj: full special form pair
+        :param tc: tail-call flag passed through when ``unpack`` is ``kwargs``
+        :return: hygiened expanded form or ``None`` when the pattern does not
+            match
+        """
+
+        subject = _tail_subject(source_obj)
+        result = self._matcher.match(subject)
+        if not result.matched:
+            return None
+        expanded = self._invoke(compiler, source_obj, tc, result)
+        syms = collect_binding_symbols(expanded, compiler.find_compiled)
+        hygiened = expand_template_with_hygiene(expanded, {}, syms, {})
+        return _unbox_datum_in_macro_output(hygiened)
 
 
-class SyntaxTransform(Transform):
+class SpecialTransform(object):
     """
-    Template-only arm: future expansion will run ``hygiene_ng`` on a template
+    Special arm: handler return is the compile result (no automatic hygiene)
     """
 
+    def __init__(self, pattern, handler, unpack=None):
+        """
+        :param pattern: matcher_ng pattern tree
+        :param handler: Python callable (arity depends on ``unpack``)
+        :param unpack: ``None``, ``match``, or ``kwargs`` (fixed at construction)
+        """
 
-class MacroTransform(Transform):
-    """
-    Procedural arm: future expansion will invoke the handler then a hygiene pass
-    """
+        _validate_unpack_mode(unpack)
+        if handler is None or not callable(handler):
+            raise TypeError(
+                "SpecialTransform handler must be callable, got %r"
+                % (type(handler).__name__,))
+        _init_pattern_fields(self, pattern, handler)
+        self._unpack = unpack
+        self._invoke = _make_special_invoke(handler, unpack)
 
 
-class SpecialTransform(Transform):
-    """
-    Special arm: handler return is the compile result without automatic hygiene
-    """
+    def try_expand(self, compiler, source_obj, tc):
+        """
+        Match tail; on success return handler result unchanged
+
+        :param compiler: active compiler
+        :param source_obj: full special form pair
+        :param tc: tail-call flag passed through when ``unpack`` is ``kwargs``
+        :return: compile product or ``None`` when the pattern does not match
+        """
+
+        subject = _tail_subject(source_obj)
+        result = self._matcher.match(subject)
+        if not result.matched:
+            return None
+        return self._invoke(compiler, source_obj, tc, result)
 
 
 class Syntax(Compiled):
@@ -191,12 +458,20 @@ class Syntax(Compiled):
 
     def compile_impl(self, compiler, source_obj, tc):
         """
-        Compile-time entry point (stub)
+        Try each transform in order; first non-``None`` result wins
 
-        :raises NotImplementedError: always until dispatch is implemented
+        :param compiler: active compiler instance
+        :param source_obj: full special form being compiled
+        :param tc: tail-call flag
+        :raises SpecialError: when no arm matches
+        :return: compile product from the winning transform
         """
 
-        raise NotImplementedError("Syntax.compile_impl is not implemented yet")
+        for t in self.transforms:
+            out = t.try_expand(compiler, source_obj, tc)
+            if out is not None:
+                return out
+        raise SpecialError("no matching syntax rule", source_obj)
 
 
     def __add__(self, other):
@@ -215,6 +490,52 @@ class Syntax(Compiled):
         else:
             return NotImplemented
         return Syntax(self.name, self.aliases, new_transforms)
+
+
+def _normalize_special_patterns(patterns):
+    """
+    Accept one ``Pattern`` or an iterable of patterns for ordered disjunction
+    """
+
+    if isinstance(patterns, (list, tuple)):
+        out = tuple(patterns)
+    else:
+        out = (patterns,)
+    for i, p in enumerate(out):
+        check_pattern_arg(p, "special patterns[%s]" % i)
+    return out
+
+
+def special(form_symbol, *, patterns, unpack=None):
+    """
+    Build a ``Syntax`` dispatcher whose arms are ``SpecialTransform`` instances
+    wrapping the decorated function. ``unpack`` selects one of three fixed
+    invoke shapes at decoration time (no per-call unpack dispatch)
+
+    :param form_symbol: primary compile-time head symbol for this form
+    :param patterns: one ``matcher_ng.Pattern`` or an iterable (try-order)
+    :param unpack: ``None`` (receive ``compiler, source_obj, tc``),
+        ``match`` (receive ``compiler, captures_dict, tc``), or ``kwargs``
+        (captures merged after ``tc``)
+    """
+
+    _validate_unpack_mode(unpack)
+
+    def deco(fn):
+        """
+        :param fn: Python handler implementing this special form
+        :rtype: Syntax
+        """
+
+        if not callable(fn):
+            raise TypeError(
+                "special decorator requires a callable, got %r"
+                % (type(fn).__name__,))
+        plist = _normalize_special_patterns(patterns)
+        transforms = tuple(SpecialTransform(p, fn, unpack=unpack) for p in plist)
+        return Syntax(form_symbol, (), transforms)
+
+    return deco
 
 
 def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):

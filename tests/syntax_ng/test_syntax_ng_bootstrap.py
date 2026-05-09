@@ -20,12 +20,16 @@ import unittest
 
 import pytest
 
+from koskari.exceptions import SpecialError
 from koskari.lib import Matcher, cons, nil, symbol
 from koskari.syntax_ng import (
     MacroTransform,
+    SpecialTransform,
     Syntax,
     SyntaxTransform,
+    Transform,
     parse_syntax_rules_pattern,
+    special,
 )
 from koskari.types import build_proper
 
@@ -120,7 +124,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         x = symbol("x")
         inner = build_proper(x)
         m_sym = symbol("match")
-        wrapped = cons(m_sym, cons(inner, nil))
+        wrapped = cons(m_sym, inner, nil)
         lit = frozenset()
         p = parse_syntax_rules_pattern(wrapped, lit, None)
         m = Matcher.from_tuple(p.freeze())
@@ -139,7 +143,9 @@ class TestSyntaxAdd(unittest.TestCase):
 
         n = symbol("compile/foo")
         t1 = SyntaxTransform(parse_syntax_rules_pattern(symbol("a"), frozenset(), None))
-        t2 = MacroTransform(parse_syntax_rules_pattern(symbol("b"), frozenset(), None))
+        t2 = MacroTransform(
+            parse_syntax_rules_pattern(symbol("b"), frozenset(), None),
+            lambda c, s, t: nil)
         s = Syntax(n, (), (t1,))
         s2 = s + t2
         self.assertIsNot(s2, s)
@@ -162,14 +168,65 @@ class TestSyntaxAdd(unittest.TestCase):
         self.assertEqual(s3.transforms, (tb, tc, ta))
 
 
-class TestSyntaxCompileImplStub(unittest.TestCase):
+class TestSyntaxCompileImpl(unittest.TestCase):
 
 
-    def test_compile_impl_raises(self):
+    def test_compile_impl_no_match_raises_special_error(self):
         n = symbol("compile/stub")
         s = Syntax(n, (), ())
-        with self.assertRaises(NotImplementedError):
-            s.compile_impl(None, nil, False)
+        with self.assertRaises(SpecialError):
+            s.compile_impl(None, cons(n, nil), False)
+
+
+    def test_compile_impl_first_arm_wins_when_both_patterns_match(self):
+        n = symbol("compile/pick")
+        p1 = parse_syntax_rules_pattern(symbol("a"), frozenset(), None)
+        p2 = parse_syntax_rules_pattern(symbol("b"), frozenset(), None)
+        seen = []
+
+        def h1(c, s, t):
+            seen.append(1)
+            return symbol("one")
+
+        def h2(c, s, t):
+            seen.append(2)
+            return symbol("two")
+
+        s = Syntax(
+            n,
+            (),
+            (
+                SpecialTransform(p1, h1),
+                SpecialTransform(p2, h2),
+            ))
+        src = cons(n, symbol("c"), nil)
+        out = s.compile_impl(None, src, False)
+        self.assertEqual(out, symbol("one"))
+        self.assertEqual(seen, [1])
+
+
+    def test_compile_impl_second_after_first_miss(self):
+        n = symbol("compile/fallback")
+        p_need_arg = parse_syntax_rules_pattern(
+            build_proper(symbol("x")), frozenset(), None)
+        p_rest = parse_syntax_rules_pattern(symbol("z"), frozenset(), None)
+
+        def need_arg(c, s, t):
+            return symbol("narrow")
+
+        def rest_z(c, s, t):
+            return symbol("wide")
+
+        s = Syntax(
+            n,
+            (),
+            (
+                SpecialTransform(p_need_arg, need_arg),
+                SpecialTransform(p_rest, rest_z),
+            ))
+        src = cons(n, symbol("z"), symbol("tail"), nil)
+        out = s.compile_impl(None, src, False)
+        self.assertEqual(out, symbol("wide"))
 
 
 class TestTransformFreeze(unittest.TestCase):
@@ -181,6 +238,93 @@ class TestTransformFreeze(unittest.TestCase):
         self.assertEqual(t.matcher_tuple[0], "MATCHER")
         self.assertEqual(len(t.matcher_tuple), 7)
         self.assertTrue(t.hygiene.is_empty())
+
+
+    def test_concrete_transforms_are_transform_protocol(self):
+        p = parse_syntax_rules_pattern(symbol("q"), frozenset(), None)
+        self.assertTrue(isinstance(SyntaxTransform(p), Transform))
+        self.assertTrue(isinstance(
+            MacroTransform(p, lambda c, s, t: nil), Transform))
+        self.assertTrue(isinstance(
+            SpecialTransform(p, lambda c, s, t: nil), Transform))
+
+
+class TestSpecialUnpack(unittest.TestCase):
+
+
+    def test_unpack_none_invokes_with_full_source(self):
+        p = parse_syntax_rules_pattern(symbol("v"), frozenset(), None)
+        saw = []
+
+        def fn(compiler, source_obj, tc):
+            saw.append(source_obj)
+            return symbol("done")
+
+        st = SpecialTransform(p, fn, unpack=None)
+        head = symbol("compile/unpack-none")
+        src = cons(head, symbol("slot"), nil)
+        out = st.try_expand(None, src, False)
+        self.assertEqual(out, symbol("done"))
+        self.assertEqual(len(saw), 1)
+        self.assertIs(saw[0], src)
+
+
+    def test_unpack_match_passes_capture_dict(self):
+        p = parse_syntax_rules_pattern(symbol("v"), frozenset(), None)
+        saw = []
+
+        def fn(compiler, caps, tc):
+            saw.append(caps)
+            return symbol("done")
+
+        st = SpecialTransform(p, fn, unpack="match")
+        head = symbol("compile/unpack-match")
+        slot = symbol("slot")
+        src = cons(head, slot, nil)
+        out = st.try_expand(None, src, False)
+        self.assertEqual(out, symbol("done"))
+        self.assertEqual(len(saw), 1)
+        self.assertEqual(saw[0]["v"], (slot,))
+
+
+    def test_unpack_kwargs_passes_tc_and_captures(self):
+        p = parse_syntax_rules_pattern(symbol("v"), frozenset(), None)
+        saw = []
+
+        def fn(compiler, tc=None, **caps):
+            saw.append((tc, caps))
+            return symbol("done")
+
+        st = SpecialTransform(p, fn, unpack="kwargs")
+        head = symbol("compile/unpack-kw")
+        slot = symbol("slot")
+        src = cons(head, cons(slot, nil))
+        out = st.try_expand(None, src, True)
+        self.assertEqual(out, symbol("done"))
+        self.assertEqual(saw[0][0], True)
+        self.assertEqual(saw[0][1]["v"], (slot,))
+
+
+class TestSpecialDecorator(unittest.TestCase):
+
+
+    def test_invalid_unpack_raises(self):
+        p = parse_syntax_rules_pattern(symbol("v"), frozenset(), None)
+        with self.assertRaises(ValueError):
+            special(symbol("compile/bad-unpack"), patterns=p, unpack="what")
+
+        with self.assertRaises(ValueError):
+            special(symbol("compile/bad-unpack2"), patterns=p, unpack="what")(
+                lambda c, s, t: nil)
+
+
+    def test_builds_syntax_with_one_or_many_patterns(self):
+        p1 = parse_syntax_rules_pattern(symbol("a"), frozenset(), None)
+        p2 = parse_syntax_rules_pattern(symbol("b"), frozenset(), None)
+        h = special(symbol("compile/d"), patterns=(p1, p2))(
+            lambda c, s, t: nil)
+        self.assertIsInstance(h, Syntax)
+        self.assertEqual(len(h.transforms), 2)
 
 
 class TestDatum(unittest.TestCase):

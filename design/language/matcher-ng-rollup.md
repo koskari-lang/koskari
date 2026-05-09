@@ -27,29 +27,52 @@ existing compile path; migration of compile-time dispatch and runtime
 `match/case` to `matcher_ng`, and the removal of the legacy stack, are
 still out of scope for this rollup.
 
-**Syntax NG (bootstrap, landed).** `koskari/syntax_ng.py` is an additive
-module (no edits to `koskari/syntax.py`, `compile/compiler.py`, or
-`compile/specials/syntax.py`). It introduces:
+**Syntax NG (dispatcher and transforms, landed).** `koskari/syntax_ng.py`
+remains additive relative to legacy `koskari/syntax.py` (no requirement to
+edit `compile/compiler.py` or `compile/specials/syntax.py` until
+registration work lands). It provides:
 
-* **`Syntax` (`Compiled`)** — ordered container of **transform** arms;
-  `compile_impl` is still a stub; **`__add__`** prepends transforms for
-  dispatch priority experiments.
-* **`Datum`** — source box parallel to **`koskari.syntax.Syntax`** for
-  hygiene guards and future unboxing in syntax/macro transforms.
-* **`Transform`**, **`SyntaxTransform`**, **`MacroTransform`**,
-  **`SpecialTransform`** — each holds a **`matcher_ng.Pattern`**, the
-  frozen **7-tuple** from **`HygienicMatchCompiler.lower`**, and a
-  **`Hygiene`** from **`build_hygiene()`**; handlers are optional stubs.
-* **`parse_syntax_rules_pattern`** — lowers **RULE**-dialect
-  syntax-rules patterns (optional `(match INNER)` wrapper, literals,
-  ellipsis, nested lists) to **`matcher_ng`** trees. **MATCH**-dialect
-  (`matcher/foo` registry) remains out of scope here; parity details
-  (e.g. ellipsis inner slot `id__sr`, empty repeat vs subject `()`)
-  live in the module docstring.
+* **`Syntax` (`Compiled`)** — ordered **transform** arms; **`compile_impl`**
+  runs **`try_expand`** on each arm in order (tail match subject is
+  **`unpack(cdr(source))`** like legacy specials); first non-``None`` result
+  wins; total miss raises **`SpecialError`**. **`__add__`** prepends clauses.
+* **`Datum`** — source box parallel to **`koskari.syntax.Syntax`** for hygiene
+  guards; procedural **`MacroTransform`** output is unboxed the same way as
+  legacy **`unbox_macro_with_hygiene`** after **`hygiene_ng`** expansion.
+* **`Transform` (`typing.Protocol`, `@runtime_checkable`)** — structural
+  contract for arms; concrete classes share **`_init_pattern_fields`** for
+  **`HygienicMatchCompiler.lower`**, **`build_hygiene()`**, and thawed
+  **`Matcher`** instances.
+* **`SyntaxTransform`** — template-only: **`apply_syntax_rules_hygiene`**
+  after a successful tail match.
+* **`MacroTransform`** — handler then **`collect_binding_symbols`** +
+  **`expand_template_with_hygiene`** on the expanded form ( **`hygiene_ng`**
+  only).
+* **`SpecialTransform`** — handler return is the compile product (no
+  automatic hygiene pass). **`unpack`** selects one of three **fixed**
+  invoke shapes at construction (**`None`**, **`match`**, **`kwargs`**), not a
+  branch on every call.
+* **`special(form_symbol, *, patterns, unpack=None)`** — decorator that
+  builds **`Syntax`** from one pattern or an ordered iterable of patterns
+  (disjunction), each arm a **`SpecialTransform`** over the same decorated
+  function.
+* **`parse_syntax_rules_pattern`** — lowers **RULE**-dialect syntax-rules
+  patterns to **`matcher_ng`** trees (**MATCH**-dialect registry patterns
+  remain out of scope here).
 
-Tests: `tests/syntax_ng/test_syntax_ng_bootstrap.py`. **Not wired** into
-`define-syntax` / macro compilation or **`SPECIALS`** yet; that is part
-of the eventual switchover below.
+Tests: `tests/syntax_ng/test_syntax_ng_bootstrap.py`. **`special` /
+`Syntax` are not yet registered** in **`SPECIALS`** or **`define-syntax`**;
+that wiring is part of the cutover below.
+
+### Migration policy (single stack)
+
+The migration target is **one** post-cutover stack: **`matcher_ng`**,
+**`hygiene_ng`**, and **`syntax_ng`** as the compile-time dispatch and
+pattern story. Delivery is intentionally a **single “Big Heave”**
+replacement of the legacy matcher / hygiene / syntax-rules surface for this
+codebase. **Running old and new matcher or hygiene stacks in parallel as a
+long-term architecture is not a design goal**; incidental overlap while
+landing patches is expected, but sustained dual-stack operation is not.
 
 Complements the current architecture reference at
 [unified-matcher-transformer-model.md](unified-matcher-transformer-model.md),
