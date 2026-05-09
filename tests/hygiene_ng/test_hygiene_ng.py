@@ -31,9 +31,66 @@ from koskari.hygiene_ng import (
     scope_region_targets,
 )
 from koskari.lib import cons, nil, symbol
+from koskari.types import is_symbol
 
 
 pytestmark = pytest.mark.phase_infra
+
+
+class _FakeBinderOwner(object):
+
+
+    def __init__(self, slot):
+        self.slot = slot
+
+
+    def iter_introduced_symbols(self, matched):
+        val = matched.get(self.slot)
+        if val is not None and is_symbol(val):
+            yield val
+
+
+    def iter_recurse_targets(self, matched):
+        yield from ()
+
+
+    def iter_scope_targets(self, matched):
+        yield from ()
+
+
+class _FakeBindingRecurse(object):
+
+
+    def iter_introduced_symbols(self, matched):
+        yield from ()
+
+
+    def iter_recurse_targets(self, matched):
+        ex = matched.get("expr")
+        if ex is not None:
+            yield ex
+
+
+    def iter_scope_targets(self, matched):
+        yield from ()
+
+
+class _FakeBodyScope(object):
+
+
+    def iter_introduced_symbols(self, matched):
+        yield from ()
+
+
+    def iter_recurse_targets(self, matched):
+        yield from ()
+
+
+    def iter_scope_targets(self, matched):
+        val = matched.get("body")
+        if val is None:
+            return
+        yield val
 
 
 class _FakeCompiled(object):
@@ -53,24 +110,13 @@ class TestHygieneHelpers(unittest.TestCase):
 
     def test_empty_hygiene_queries(self):
         """
-        Hygiene defaults classify slots and kinds consistently
+        Hygiene defaults classify slots consistently
         """
 
         h = Hygiene({}, {})
         self.assertTrue(h.is_empty())
         self.assertFalse(h.is_binder("x"))
-        self.assertEqual(h.binder_kinds(), {})
-
-
-    def test_binder_kinds_maps_slots(self):
-        """
-        binder_kinds exposes declared binder kinds by slot name
-        """
-
-        h = Hygiene({"n": {"kind": "DEFINE", "scopes": ()}}, {})
-        self.assertFalse(h.is_empty())
-        self.assertTrue(h.is_binder("n"))
-        self.assertEqual(h.binder_kinds(), {"n": "DEFINE"})
+        self.assertFalse(h.is_scope_region("x"))
 
 
 class TestIntroducedAndRecurse(unittest.TestCase):
@@ -78,10 +124,11 @@ class TestIntroducedAndRecurse(unittest.TestCase):
 
     def test_introduced_symbols_define(self):
         """
-        DEFINE binder introduces captures[slot] symbol
+        Binder owner introduces captures[slot] symbol
         """
 
-        hx = Hygiene({"nm": {"kind": "DEFINE", "scopes": ()}}, {})
+        owner = _FakeBinderOwner("nm")
+        hx = Hygiene({"nm": owner}, {})
         sn = symbol("n")
         matched = {"nm": sn}
         syms = introduced_symbols_from_match(matched, hx)
@@ -90,10 +137,10 @@ class TestIntroducedAndRecurse(unittest.TestCase):
 
     def test_binder_recurse_binding_targets_expr(self):
         """
-        BINDING recurse walks the expr capture when present
+        Owner recurse walks the expr capture when present
         """
 
-        hx = Hygiene({"b": {"kind": "BINDING", "scopes": ()}}, {})
+        hx = Hygiene({"b": _FakeBindingRecurse()}, {})
         matched = {"expr": 42}
         got = list(binder_recurse_targets(matched, hx))
         self.assertEqual(got, [42])
@@ -102,18 +149,16 @@ class TestIntroducedAndRecurse(unittest.TestCase):
 class TestScopeRegionTargets(unittest.TestCase):
 
 
-    def test_scope_region_yields_body_tuple_elements(self):
+    def test_scope_region_yields_body_capture_once(self):
         """
-        Scope-region slots configured on hygiene yield walk roots for each
-        tuple element
+        Scope-region owners yield the body capture as a single root
         """
 
-        hx = Hygiene({}, {"body": {"kind": "REST"}})
         bsym = symbol("b")
         matched = {"body": (bsym,)}
-        roots = list(scope_region_targets(matched, hx))
+        roots = list(scope_region_targets(matched, Hygiene({}, {"body": _FakeBodyScope()})))
         self.assertEqual(len(roots), 1)
-        self.assertEqual(roots[0], cons(bsym, nil))
+        self.assertEqual(roots[0], (bsym,))
 
 
 class TestExpandTemplate(unittest.TestCase):
@@ -155,7 +200,8 @@ class TestCollectAndApply(unittest.TestCase):
         """
 
         hd = symbol("rule-head")
-        hx = Hygiene({"nm": {"kind": "DEFINE", "scopes": ()}}, {})
+        owner = _FakeBinderOwner("nm")
+        hx = Hygiene({"nm": owner}, {})
         intro = symbol("fresh")
         fake = _FakeCompiled(hx, {"nm": intro})
         table = {hd: fake}
@@ -174,7 +220,8 @@ class TestCollectAndApply(unittest.TestCase):
         """
 
         hd = symbol("rule-head")
-        hx = Hygiene({"nm": {"kind": "DEFINE", "scopes": ()}}, {})
+        owner = _FakeBinderOwner("nm")
+        hx = Hygiene({"nm": owner}, {})
         intro = symbol("fresh")
         fake = _FakeCompiled(hx, {"nm": intro})
         table = {hd: fake}

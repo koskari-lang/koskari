@@ -18,9 +18,12 @@ matcher_ng
 Python surface for the next-generation native matcher. Provides the thaw
 helper that reconstructs a native Matcher from its frozen tagged-tuple
 representation, plus a small builder API for authoring matcher patterns
-in Python that lower to the same frozen form. Named repeat captures
-(CAPTURE wrapping REPEAT) produce per-iteration frame dicts; see
-repeat_capture and binding_inner_pattern
+in Python that lower to the same frozen form. Lowering uses either the
+baseline MatchCompiler (slots, externs, consts, nodes only) or
+HygienicMatchCompiler, which additionally records koskari hygiene_ng
+metadata for source-form matchers. Named repeat captures (CAPTURE wrapping
+REPEAT) produce per-iteration frame dicts; see repeat_capture and
+binding_inner_pattern
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -33,11 +36,13 @@ from koskari.lib import (
     ABSENT,
     Matcher,
     MatchResult,
+    cons,
     keyword,
     nil,
     pair,
     symbol,
 )
+from koskari.types import is_pair, is_keyword, is_symbol, unpack
 
 
 __all__ = [
@@ -52,6 +57,7 @@ __all__ = [
     "Pattern",
     "Composite",
     "MatchCompiler",
+    "HygienicMatchCompiler",
 
     "TEST_ANY",
     "LITERAL",
@@ -70,6 +76,7 @@ __all__ = [
 
     "BIND",
     "VALUE",
+    "KEYWORD",
     "SYMBOL",
     "PAIR",
     "LITERAL_KW",
@@ -114,16 +121,17 @@ def thaw(tagged_tuple):
 
 class MatchCompiler(object):
     """
-    Freeze-time match compiler state for one lowering pass. Holds the four
+    Baseline freeze-time compiler for one lowering pass. Holds the four
     insertion-ordered tables that become the slots, externs, consts, and
-    nodes positions of the frozen 7-tuple, plus bookkeeping used by the
-    eager-validation checks
+    nodes of the frozen 7-tuple, plus capture-scope bookkeeping.
+    add_binder and add_scope_region are no-ops here; HygienicMatchCompiler
+    overrides them to record koskari hygiene_ng metadata
     """
 
 
     def __init__(self):
         """
-        Construct an empty match compiler
+        Construct an empty baseline match compiler
         """
 
         self.slot_indices = {}
@@ -132,77 +140,6 @@ class MatchCompiler(object):
         self.nodes = []
         self.capture_scope_stack = [set()]
         self.in_class_fields = False
-        self.hygiene_binders = {}
-        self.hygiene_scope_regions = {}
-
-
-    def add_binder(self, slot, kind, scopes, extra=None):
-        """
-        Record a binder hygiene entry for slot. Raises ValueError on
-        duplicate slot binders so authors notice composite collisions
-        eagerly
-
-        :param slot: slot name introduced by the composite
-        :param kind: binder kind ('DEFINE'/'DECL'/'BINDING'/'BINDINGS'
-            /'FORMALS'/'USING')
-        :param scopes: tuple of scope-region slot names
-        :param extra: optional dict of additional fields to merge in
-        """
-
-        if slot in self.hygiene_binders:
-            raise ValueError(
-                "duplicate binder for slot %r in matcher pattern"
-                % (slot,))
-        entry = {"kind": kind, "scopes": tuple(scopes)}
-        if extra:
-            entry.update(extra)
-        self.hygiene_binders[slot] = entry
-
-
-    def add_scope_region(self, slot, kind):
-        """
-        Record a scope-region hygiene entry. Same-kind re-registration
-        is idempotent; different-kind re-registration is a ValueError
-
-        :param slot: slot name carrying scope-region semantics
-        :param kind: 'REST' (or reserved 'EXPR')
-        """
-
-        existing = self.hygiene_scope_regions.get(slot)
-        if existing is not None:
-            if existing.get("kind") != kind:
-                raise ValueError(
-                    "scope region %r already registered as %r,"
-                    " refusing to re-register as %r"
-                    % (slot, existing.get("kind"), kind))
-            return
-        self.hygiene_scope_regions[slot] = {"kind": kind}
-
-
-    def build_hygiene(self):
-        """
-        Assemble the hygiene plan from accumulated binders and scope
-        regions. Returns an empty Hygiene when no composite has
-        registered anything. Validates that every binder scope reference
-        resolves to a known scope region, raising ValueError on
-        dangling references
-        """
-
-        if not self.hygiene_binders and not self.hygiene_scope_regions:
-            return Hygiene({}, {})
-
-        for slot, entry in self.hygiene_binders.items():
-            for ref in entry.get("scopes", ()):
-                if ref not in self.hygiene_scope_regions:
-                    raise ValueError(
-                        "binder slot %r references unknown scope"
-                        " region %r" % (slot, ref))
-
-        return Hygiene(
-            {k: dict(v) for k, v in self.hygiene_binders.items()},
-            {k: dict(v) for k, v in self.hygiene_scope_regions.items()},
-            1,
-        )
 
 
     def push_capture_scope(self):
@@ -292,6 +229,101 @@ class MatchCompiler(object):
         top.add(name)
 
 
+    def add_binder(self, slot, owner):
+        """
+        No-op on the baseline compiler; see HygienicMatchCompiler
+        """
+
+        pass
+
+
+    def add_scope_region(self, slot, owner):
+        """
+        No-op on the baseline compiler; see HygienicMatchCompiler
+        """
+
+        pass
+
+
+    def build_hygiene(self):
+        """
+        Empty hygiene plan on the baseline compiler
+        """
+
+        return Hygiene({}, {})
+
+
+class HygienicMatchCompiler(MatchCompiler):
+    """
+    Match compiler that accumulates koskari hygiene_ng binder and
+    scope-region owners alongside the baseline tables. Use for matchers
+    over compile-time source forms; runtime-only matchers should use the
+    baseline MatchCompiler via Pattern.compile(hygienic=False)
+    """
+
+
+    def __init__(self):
+        """
+        Construct a match compiler with empty hygiene registration tables
+        """
+
+        super().__init__()
+        self.hygiene_binders = {}
+        self.hygiene_scope_regions = {}
+
+
+    def add_binder(self, slot, owner):
+        """
+        Record the Pattern or Composite that owns hygiene interpretation
+        for this binder slot. Raises ValueError on duplicate slot entries
+
+        :param slot: slot name introduced by the composite
+        :param owner: Pattern instance whose iter_introduced_symbols and
+            iter_recurse_targets Hygiene uses at runtime
+        """
+
+        if slot in self.hygiene_binders:
+            raise ValueError(
+                "duplicate binder for slot %r in matcher pattern"
+                % (slot,))
+        self.hygiene_binders[slot] = owner
+
+
+    def add_scope_region(self, slot, owner):
+        """
+        Record the Pattern instance that owns scope-region traversal for
+        this slot. Re-registration of the same owner is idempotent
+
+        :param slot: slot name carrying scope-region semantics
+        :param owner: Pattern instance whose iter_scope_targets Hygiene uses
+        """
+
+        existing = self.hygiene_scope_regions.get(slot)
+        if existing is not None:
+            if existing is not owner:
+                raise ValueError(
+                    "scope region %r already registered" % (slot,))
+            return
+        self.hygiene_scope_regions[slot] = owner
+
+
+    def build_hygiene(self):
+        """
+        Assemble the hygiene plan from accumulated binders and scope
+        regions. Returns an empty Hygiene when no composite has
+        registered anything
+        """
+
+        if not self.hygiene_binders and not self.hygiene_scope_regions:
+            return Hygiene({}, {})
+
+        return Hygiene(
+            dict(self.hygiene_binders),
+            dict(self.hygiene_scope_regions),
+            1,
+        )
+
+
 class Pattern(object):
     """
     Base class for matcher_ng pattern builders. Subclasses implement
@@ -301,15 +333,21 @@ class Pattern(object):
     """
 
 
-    def compile(self):
+    def compile(self, *, hygienic=True):
         """
         Lower this pattern to a frozen 7-tuple plus the compiled Hygiene
-        plan for matcher composites.
+        plan when using HygienicMatchCompiler.
 
+        :param hygienic: when True (default), use HygienicMatchCompiler so
+            composites record hygiene metadata. When False, use the baseline
+            MatchCompiler; add_binder and add_scope_region are no-ops
         :rtype: tuple of (frozen_tuple, Hygiene)
         """
 
-        ctx = MatchCompiler()
+        if hygienic:
+            ctx = HygienicMatchCompiler()
+        else:
+            ctx = MatchCompiler()
         entry = self._emit(ctx)
         frozen = (
             "MATCHER", 1,
@@ -322,37 +360,68 @@ class Pattern(object):
         return frozen, ctx.build_hygiene()
 
 
-    def freeze(self):
+    def freeze(self, *, hygienic=True):
         """
         Lower this pattern to a frozen 7-tuple suitable for
         Matcher.from_tuple
+
+        :param hygienic: passed through to compile
         """
 
-        frozen, _hygiene = self.compile()
+        frozen, _hygiene = self.compile(hygienic=hygienic)
         return frozen
 
 
-    def build(self):
+    def build(self, *, hygienic=True):
         """
         Lower this pattern and thaw it into a native Matcher. Composite
         builders contribute structural primitives plus freeze-time
-        hygiene registration on the Python side only; match-time behaviour
-        is pure native engine
+        hygiene registration on the Python side only when hygienic is
+        True; match-time behaviour is pure native engine
 
+        :param hygienic: passed through to compile
         :rtype: Matcher
         """
 
-        return Matcher.from_tuple(self.freeze())
+        return Matcher.from_tuple(self.freeze(hygienic=hygienic))
 
 
-    def match(self, subject, **externs):
+    def match(self, subject, *, hygienic=True, **externs):
         """
         Convenience helper that thaws this pattern into a native
         Matcher and runs it against subject. Returns the native
         MatchResult; captures are final
+
+        :param hygienic: passed through to build
         """
 
-        return self.build().match(subject, **externs)
+        return self.build(hygienic=hygienic).match(subject, **externs)
+
+
+    def iter_introduced_symbols(self, matched):
+        """
+        Yield symbols introduced as binders for captures produced by this
+        pattern, given a native-style capture mapping from one match
+        """
+
+        yield from ()
+
+
+    def iter_recurse_targets(self, matched):
+        """
+        Yield nested forms to recurse for binder discovery (initializers,
+        type expressions, etc.)
+        """
+
+        yield from ()
+
+
+    def iter_scope_targets(self, matched):
+        """
+        Yield template roots for lexical scope-region descent (bodies)
+        """
+
+        yield from ()
 
 
     def _emit(self, ctx):
@@ -1036,6 +1105,15 @@ def SYMBOL(slot):
     return CAPTURE(slot, TYPE("symbol"))
 
 
+def KEYWORD(slot):
+    """
+    Capture a keyword element into the named slot. Requires the
+    'keyword' extern at match time
+    """
+
+    return CAPTURE(slot, TYPE("keyword"))
+
+
 def PAIR(slot):
     """
     Capture a pair element into the named slot. Requires the 'pair'
@@ -1074,14 +1152,17 @@ def LIST(*specs, key=None):
     return CAPTURE(key, inner)
 
 
-def make_matcher(pattern):
+def make_matcher(pattern, *, hygienic=True):
     """
     Lower a pattern AST into a native Matcher. The matcher carries
     slots, externs, and consts declared by the pattern tree;
     composite builders contribute structural primitives plus
     freeze-time hygiene registration only on the Python Hygiene plan
+    when hygienic is True
 
     :param pattern: a matcher_ng pattern object
+    :param hygienic: when False, uses baseline MatchCompiler (hygiene hooks
+        are no-ops and build_hygiene returns an empty plan)
     :raises TypeError: when pattern is not a matcher_ng pattern
     :rtype: Matcher
     """
@@ -1090,7 +1171,7 @@ def make_matcher(pattern):
         raise TypeError(
             "make_matcher requires a matcher_ng pattern, got %r"
             % (type(pattern).__name__,))
-    return pattern.build()
+    return pattern.build(hygienic=hygienic)
 
 
 # === Composite matchers ===
@@ -1191,8 +1272,14 @@ class DEFINE(Composite):
         return CAPTURE(self._slot, TYPE("symbol"))
 
 
+    def iter_introduced_symbols(self, matched):
+        val = matched.get(self._slot)
+        if val is not None and val is not ABSENT and is_symbol(val):
+            yield val
+
+
     def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, "DEFINE", self._scopes)
+        ctx.add_binder(self._slot, self)
 
 
 class DECL(Composite):
@@ -1232,8 +1319,27 @@ class DECL(Composite):
         ))
 
 
+    def iter_introduced_symbols(self, matched):
+        name = matched.get("name")
+        if name is not None and name is not ABSENT and is_symbol(name):
+            yield name
+            return
+        raw = matched.get(self._slot)
+        if raw is not None and is_symbol(raw):
+            yield raw
+
+
+    def iter_recurse_targets(self, matched):
+        t = matched.get("type")
+        if t is not None and t is not ABSENT:
+            yield t
+        dt = matched.get("decl_tail")
+        if dt is not None and dt is not ABSENT and is_pair(dt):
+            yield dt
+
+
     def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, "DECL", self._scopes)
+        ctx.add_binder(self._slot, self)
 
 
 class BINDING(Composite):
@@ -1263,8 +1369,20 @@ class BINDING(Composite):
         return CAPTURE(self._slot, binding_inner_pattern())
 
 
+    def iter_introduced_symbols(self, matched):
+        name = matched.get("name")
+        if name is not None and name is not ABSENT and is_symbol(name):
+            yield name
+
+
+    def iter_recurse_targets(self, matched):
+        ex = matched.get("expr")
+        if ex is not None and ex is not ABSENT:
+            yield ex
+
+
     def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, "BINDING", self._scopes)
+        ctx.add_binder(self._slot, self)
 
 
 class BINDINGS(Composite):
@@ -1281,7 +1399,7 @@ class BINDINGS(Composite):
     def __init__(self, slot, *, mode='parallel', scope=None, scopes=None):
         """
         :param slot: target slot name
-        :param mode: stored on the binder hygiene entry, currently
+        :param mode: stored on the composite instance only, currently
             uninterpreted; legacy callers pass 'parallel' or
             'sequential'
         :param scope: optional scope-region slot name
@@ -1305,10 +1423,34 @@ class BINDINGS(Composite):
         )
 
 
+    def iter_introduced_symbols(self, matched):
+        cells = matched.get(self._slot)
+        if cells is nil or cells is None:
+            return
+        if not isinstance(cells, list):
+            return
+        for fr in cells:
+            if isinstance(fr, dict):
+                n = fr.get("name")
+                if n is not None and is_symbol(n):
+                    yield n
+
+
+    def iter_recurse_targets(self, matched):
+        cells = matched.get(self._slot)
+        if cells is nil or cells is None:
+            return
+        if not isinstance(cells, list):
+            return
+        for fr in cells:
+            if isinstance(fr, dict):
+                ex = fr.get("expr")
+                if ex is not None and ex is not ABSENT:
+                    yield ex
+
+
     def _register_hygiene(self, ctx):
-        ctx.add_binder(
-            self._slot, "BINDINGS", self._scopes,
-            extra={"mode": self._mode})
+        ctx.add_binder(self._slot, self)
 
 
 def formal_param_pattern():
@@ -1449,8 +1591,63 @@ class FORMALS(Composite):
         ))
 
 
+    def iter_introduced_symbols(self, matched):
+        raw = matched.get(self._slot)
+        if raw is not None and raw is not ABSENT and is_symbol(raw):
+            yield raw
+        pos = matched.get("positionals")
+        if isinstance(pos, list):
+            for fr in pos:
+                if isinstance(fr, dict):
+                    n = fr.get("name")
+                    if n is not None and n is not ABSENT and is_symbol(n):
+                        yield n
+        star = matched.get("star")
+        if star is not None and star is not ABSENT and is_symbol(star):
+            yield star
+        ss = matched.get("starstar")
+        if ss is not None and ss is not ABSENT and is_symbol(ss):
+            yield ss
+        kwonly = matched.get("kwonly")
+        if isinstance(kwonly, list):
+            for fr in kwonly:
+                if not isinstance(fr, dict):
+                    continue
+                n = fr.get("name")
+                if n is not None and is_symbol(n):
+                    yield n
+
+
+    def iter_recurse_targets(self, matched):
+        defs = matched.get("defaults")
+        if isinstance(defs, list):
+            for fr in defs:
+                if isinstance(fr, dict):
+                    dv = fr.get("default")
+                    if dv is not None:
+                        yield dv
+        kwonly = matched.get("kwonly")
+        if isinstance(kwonly, list):
+            for fr in kwonly:
+                if isinstance(fr, dict):
+                    dv = fr.get("default")
+                    if dv is not None:
+                        yield dv
+        pos = matched.get("positionals")
+        if isinstance(pos, list):
+            for fr in pos:
+                if isinstance(fr, dict):
+                    attrs = fr.get("attrs")
+                    if isinstance(attrs, list):
+                        for afr in attrs:
+                            if isinstance(afr, dict):
+                                av = afr.get("attr_val")
+                                if av is not None:
+                                    yield av
+
+
     def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, "FORMALS", self._scopes)
+        ctx.add_binder(self._slot, self)
 
 
 class USING(Composite):
@@ -1489,15 +1686,29 @@ class USING(Composite):
         )))
 
 
+    def iter_introduced_symbols(self, matched):
+        name = matched.get("name")
+        if name is not None and name is not ABSENT and is_symbol(name):
+            yield name
+
+
+    def iter_recurse_targets(self, matched):
+        ex = matched.get("expr")
+        if ex is not None and ex is not ABSENT:
+            yield ex
+
+
     def _register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, "USING", self._scopes)
+        ctx.add_binder(self._slot, self)
 
 
 class BODY(Pattern):
     """
     Scope-region-aware REST capture. Behaves identically to REST at
     the engine level but additionally registers the slot as a body
-    scope region in the compiled Hygiene plan
+    scope region in the compiled Hygiene plan. The capture is one
+    lexical extent for hygiene: iter_scope_targets yields that value
+    once, not tuple elements
     """
 
 
@@ -1519,8 +1730,19 @@ class BODY(Pattern):
         """
 
         idx = REST(self._slot)._emit(ctx)
-        ctx.add_scope_region(self._slot, "REST")
+        ctx.add_scope_region(self._slot, self)
         return idx
+
+
+    def iter_scope_targets(self, matched):
+        """
+        Yield the body capture as the single scope-region walk root
+        """
+
+        val = matched.get(self._slot)
+        if val is None or val is ABSENT:
+            return
+        yield val
 
 
 # === Self-describing matcher syntax: registry, meta-matcher, parser ===
@@ -1639,22 +1861,6 @@ def iter_pair_list(p):
                 % (cur,))
         yield head
         cur = tail
-
-
-def is_keyword(value):
-    """
-    True when value is a koskari keyword instance
-    """
-
-    return isinstance(value, keyword)
-
-
-def is_symbol(value):
-    """
-    True when value is a koskari symbol instance
-    """
-
-    return isinstance(value, symbol)
 
 
 def parse_matcher(elem):
@@ -2102,6 +2308,7 @@ def register_builtin_matchers():
     register_matcher("REST", slot_only_factory("REST", REST))
     register_matcher("BIND", slot_only_factory("BIND", BIND))
     register_matcher("VALUE", slot_only_factory("VALUE", VALUE))
+    register_matcher("KEYWORD", slot_only_factory("KEYWORD", KEYWORD))
     register_matcher("SYMBOL", slot_only_factory("SYMBOL", SYMBOL))
     register_matcher("PAIR", slot_only_factory("PAIR", PAIR))
     register_matcher("BODY", slot_only_factory("BODY", BODY))
