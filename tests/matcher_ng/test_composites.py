@@ -23,8 +23,9 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, keyword, nil, symbol
+from koskari.lib import Datum, cons, keyword, nil, symbol
 from koskari.matcher_ng import (
+    ABSENT,
     BINDING,
     BINDINGS,
     BODY,
@@ -32,6 +33,7 @@ from koskari.matcher_ng import (
     DECL,
     DEFINE,
     FORMALS,
+    FORMALS_SOURCE_KEY,
     MATCH,
     Hygiene,
     HygienicMatchCompiler,
@@ -42,23 +44,58 @@ from koskari.matcher_ng import (
     TYPE,
     USING,
     make_matcher,
-    unwrap_capture_tree,
 )
 
 
 pytestmark = pytest.mark.phase_infra
 
 
-SYMBOL_TYPE = type(symbol("x"))
-KEYWORD_TYPE = type(keyword("x"))
+def _peel_frame_row(item):
+    """
+    One REPEAT frame dict: use .datum on each value; peel nested frame
+    lists (e.g. attrs) the same way
+    """
+
+    if isinstance(item, dict):
+        out = {}
+        for kk, vv in item.items():
+            d = vv.datum
+            if isinstance(d, list):
+                out[kk] = [_peel_frame_row(x) for x in d]
+            else:
+                out[kk] = d
+        return out
+    return item.datum
+
+
+def _peel_capture_value(v):
+    """
+    Top-level or GROUP-nested capture: dict recurse; Datum peel; list of
+    frames via _peel_frame_row
+    """
+
+    if isinstance(v, dict):
+        return {
+            str(kk): _peel_capture_value(vv)
+            for kk, vv in v.items()}
+    d = v.datum
+    if isinstance(d, list):
+        return [_peel_frame_row(item) for item in d]
+    return d
 
 
 def _ucaps(result):
     """
-    Shallow copy of captures with Datum wrappers stripped recursively
+    Copy captures for assertions: .datum on each top-level slot; GROUP dicts
+    recurse; list values peel each frame dict entry
     """
 
-    return unwrap_capture_tree(dict(result.captures.items()))
+    out = {}
+    for k, v in result.captures.items():
+        if v is ABSENT:
+            continue
+        out[str(k)] = _peel_capture_value(v)
+    return out
 
 
 def _list(*items):
@@ -82,7 +119,7 @@ class TestDEFINE(unittest.TestCase):
         pat = MATCH(DEFINE("name"))
         m = pat.build()
         sa = symbol("foo")
-        result = m.match((sa,), symbol=SYMBOL_TYPE)
+        result = m.match((sa,))
         self.assertTrue(result.matched)
         self.assertIs(_ucaps(result)["name"], sa)
 
@@ -94,7 +131,7 @@ class TestDEFINE(unittest.TestCase):
 
         pat = MATCH(DEFINE("name"))
         m = pat.build()
-        self.assertFalse(m.match((42,), symbol=SYMBOL_TYPE).matched)
+        self.assertFalse(m.match((42,)).matched)
 
 
     def test_define_returns_native_matcher(self):
@@ -118,7 +155,8 @@ class TestDEFINE(unittest.TestCase):
         self.assertIn("name", binders)
         owner = binders["name"]
         sn = symbol("foo")
-        self.assertEqual(set(owner.iter_introduced_symbols({"name": sn})), {sn})
+        self.assertEqual(
+            set(owner.iter_introduced_symbols({"name": Datum(sn)})), {sn})
         self.assertEqual(list(owner.iter_recurse_targets({})), [])
 
 
@@ -133,7 +171,7 @@ class TestDECL(unittest.TestCase):
         pat = MATCH(DECL("d"))
         m = pat.build()
         sa = symbol("foo")
-        result = m.match((sa,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match((sa,))
         self.assertTrue(result.matched)
         self.assertIs(_ucaps(result)["d"], sa)
 
@@ -147,7 +185,7 @@ class TestDECL(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa),)
-        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         self.assertEqual(_ucaps(result)["d"], _list(sa))
         self.assertIs(_ucaps(result)["name"], sa)
@@ -163,7 +201,7 @@ class TestDECL(unittest.TestCase):
         sa = symbol("Foo")
         sb = symbol("bar")
         subj = (_list(sa, keyword("as"), sb),)
-        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         self.assertIs(_ucaps(result)["type"], sa)
         self.assertIs(_ucaps(result)["name"], sb)
@@ -181,9 +219,7 @@ class TestDECL(unittest.TestCase):
         kt = keyword("type")
         st = symbol("Bar")
         tail_form = _list(sa, kt, st)
-        result = m.match(
-            (tail_form,),
-            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match((tail_form,))
         self.assertTrue(result.matched)
         self.assertIs(_ucaps(result)["name"], sa)
         self.assertEqual(_ucaps(result)["decl_tail"], cons(kt, st, nil))
@@ -197,7 +233,7 @@ class TestDECL(unittest.TestCase):
 
         pat = MATCH(DECL("d"))
         m = pat.build()
-        result = m.match((42,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match((42,))
         self.assertFalse(result.matched)
 
 
@@ -211,7 +247,8 @@ class TestDECL(unittest.TestCase):
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["d"]
         sx = symbol("x")
-        self.assertEqual(set(owner.iter_introduced_symbols({"name": sx})), {sx})
+        self.assertEqual(
+            set(owner.iter_introduced_symbols({"name": Datum(sx)})), {sx})
 
 
 class TestBINDING(unittest.TestCase):
@@ -227,7 +264,7 @@ class TestBINDING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa, 7),)
-        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         self.assertEqual(_ucaps(result)["b"], _list(sa, 7))
         self.assertIs(_ucaps(result)["name"], sa)
@@ -243,7 +280,7 @@ class TestBINDING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(7, keyword("as"), sa),)
-        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         self.assertEqual(_ucaps(result)["expr"], 7)
         self.assertIs(_ucaps(result)["name"], sa)
@@ -258,7 +295,7 @@ class TestBINDING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa, 1, 2),)
-        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match(subj)
         self.assertFalse(result.matched)
 
 
@@ -272,7 +309,8 @@ class TestBINDING(unittest.TestCase):
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["b"]
         sn = symbol("n")
-        self.assertEqual(set(owner.iter_introduced_symbols({"name": sn})), {sn})
+        self.assertEqual(
+            set(owner.iter_introduced_symbols({"name": Datum(sn)})), {sn})
         self.assertEqual(list(owner.iter_recurse_targets({"expr": 99})), [99])
 
 
@@ -292,7 +330,7 @@ class TestBINDINGS(unittest.TestCase):
         sa = symbol("a")
         sb = symbol("b")
         subj = (_list(sa, 1), _list(sb, 2), "tail")
-        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         frames = _ucaps(result)["bs"]
         self.assertIsInstance(frames, list)
@@ -312,8 +350,7 @@ class TestBINDINGS(unittest.TestCase):
 
         pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
-        result = m.match(
-            (nil, "tail"), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match((nil, "tail"))
         self.assertTrue(result.matched)
         self.assertIs(_ucaps(result)["bs"], nil)
         self.assertEqual(_ucaps(result)["tail"], "tail")
@@ -327,8 +364,7 @@ class TestBINDINGS(unittest.TestCase):
 
         pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
-        result = m.match(
-            (42,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match((42,))
         self.assertTrue(result.matched)
         self.assertEqual(_ucaps(result)["bs"], [])
         self.assertEqual(_ucaps(result)["tail"], 42)
@@ -373,10 +409,7 @@ class TestUSING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa, 7),)
-        result = m.match(
-            subj,
-            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
-            pair=type(cons(1, nil)))
+        result = m.match(subj)
         self.assertTrue(result.matched)
         c = _ucaps(result)
         self.assertIs(c["name"], sa)
@@ -394,10 +427,7 @@ class TestUSING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(7, keyword("as"), sa),)
-        result = m.match(
-            subj,
-            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
-            pair=type(cons(1, nil)))
+        result = m.match(subj)
         self.assertTrue(result.matched)
         c = _ucaps(result)
         self.assertEqual(c["expr"], 7)
@@ -413,10 +443,7 @@ class TestUSING(unittest.TestCase):
         pat = MATCH(USING("u"))
         m = pat.build()
         subj = (_list(7),)
-        result = m.match(
-            subj,
-            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
-            pair=type(cons(1, nil)))
+        result = m.match(subj)
         self.assertTrue(result.matched)
         c = _ucaps(result)
         self.assertEqual(c["expr"], 7)
@@ -435,10 +462,7 @@ class TestUSING(unittest.TestCase):
         sb = symbol("b")
         lhs = _list(sa, sb)
         subj = (_list(lhs, 7),)
-        result = m.match(
-            subj,
-            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
-            pair=type(cons(1, nil)))
+        result = m.match(subj)
         self.assertTrue(result.matched)
         c = _ucaps(result)
         self.assertEqual(c["lhs"], lhs)
@@ -453,10 +477,7 @@ class TestUSING(unittest.TestCase):
 
         pat = MATCH(USING("u"))
         m = pat.build()
-        result = m.match(
-            (42,),
-            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
-            pair=type(cons(1, nil)))
+        result = m.match((42,))
         self.assertFalse(result.matched)
 
 
@@ -470,42 +491,24 @@ class TestUSING(unittest.TestCase):
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["u"]
         sn = symbol("n")
-        self.assertEqual(set(owner.iter_introduced_symbols({"name": sn})), {sn})
+        self.assertEqual(
+            set(owner.iter_introduced_symbols({"name": Datum(sn)})), {sn})
         self.assertEqual(list(owner.iter_recurse_targets({"expr": 1})), [1])
 
 
 class TestFORMALS(unittest.TestCase):
 
-
-    def _externs(self):
+    def test_formals_rejects_bare_symbol(self):
         """
-        Common extern bindings used by FORMALS match calls
-        """
-
-        return {
-            "symbol": SYMBOL_TYPE,
-            "keyword": KEYWORD_TYPE,
-        }
-
-
-    def test_formals_bare_symbol(self):
-        """
-        FORMALS accepts a bare symbol formals shape (the entire formals
-        list is one symbol). Inner phase slots remain ABSENT
+        matcher_ng FORMALS matches only proper-list formals cells, not a lone
+        symbol
         """
 
         pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("rest")
-        result = m.match((sa,), **self._externs())
-        self.assertTrue(result.matched)
-        c = _ucaps(result)
-        self.assertIs(c["f"], sa)
-        self.assertNotIn("positionals", c)
-        self.assertNotIn("defaults", c)
-        self.assertNotIn("star", c)
-        self.assertNotIn("kwonly", c)
-        self.assertNotIn("starstar", c)
+        result = m.match((sa,))
+        self.assertFalse(result.matched)
 
 
     def test_formals_empty_list(self):
@@ -517,15 +520,16 @@ class TestFORMALS(unittest.TestCase):
 
         pat = MATCH(FORMALS("f"))
         m = pat.build()
-        result = m.match((nil,), **self._externs())
+        result = m.match((nil,))
         self.assertTrue(result.matched)
         c = _ucaps(result)
-        self.assertIs(c["f"], nil)
-        self.assertEqual(c["positionals"], [])
-        self.assertEqual(c["defaults"], [])
-        self.assertEqual(c["kwonly"], [])
-        self.assertNotIn("star", c)
-        self.assertNotIn("starstar", c)
+        f = c["f"]
+        self.assertIs(f[FORMALS_SOURCE_KEY], nil)
+        self.assertEqual(f["positionals"], [])
+        self.assertEqual(f["defaults"], [])
+        self.assertEqual(f["kwonly"], [])
+        self.assertNotIn("star", f)
+        self.assertNotIn("starstar", f)
 
 
     def test_formals_simple_positionals(self):
@@ -540,10 +544,11 @@ class TestFORMALS(unittest.TestCase):
         sb = symbol("b")
         sc = symbol("c")
         formals = _list(sa, sb, sc)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["f"], formals)
-        positionals = _ucaps(result)["positionals"]
+        u = _ucaps(result)
+        self.assertEqual(u["f"][FORMALS_SOURCE_KEY], formals)
+        positionals = u["f"]["positionals"]
         self.assertIsInstance(positionals, list)
         self.assertEqual(len(positionals), 3)
         self.assertIs(positionals[0]["name"], sa)
@@ -561,9 +566,9 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         sself = symbol("self")
         formals = _list(sself)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        positionals = _ucaps(result)["positionals"]
+        positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sself)
 
@@ -579,12 +584,13 @@ class TestFORMALS(unittest.TestCase):
         sself = symbol("self")
         kthresh = keyword("threshold")
         formals = _list(sself, kthresh, 0.6)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        positionals = _ucaps(result)["positionals"]
+        u = _ucaps(result)
+        positionals = u["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sself)
-        defaults = _ucaps(result)["defaults"]
+        defaults = u["f"]["defaults"]
         self.assertEqual(len(defaults), 1)
         self.assertIs(defaults[0]["kw"], kthresh)
         self.assertEqual(defaults[0]["default"], 0.6)
@@ -601,10 +607,11 @@ class TestFORMALS(unittest.TestCase):
         kalive = keyword("alive")
         kdead = keyword("dead")
         formals = _list(kalive, "O", kdead, " ")
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["positionals"], [])
-        defaults = _ucaps(result)["defaults"]
+        u = _ucaps(result)
+        self.assertEqual(u["f"]["positionals"], [])
+        defaults = u["f"]["defaults"]
         self.assertEqual(len(defaults), 2)
         self.assertIs(defaults[0]["kw"], kalive)
         self.assertEqual(defaults[0]["default"], "O")
@@ -622,9 +629,9 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         kargv = keyword("argv")
         formals = _list(kargv, None)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        defaults = _ucaps(result)["defaults"]
+        defaults = _ucaps(result)["f"]["defaults"]
         self.assertEqual(len(defaults), 1)
         self.assertIs(defaults[0]["kw"], kargv)
         self.assertIsNone(defaults[0]["default"])
@@ -639,9 +646,9 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         rest = symbol("rest")
         formals = _list(keyword("*"), rest)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        c = _ucaps(result)
+        c = _ucaps(result)["f"]
         self.assertEqual(c["positionals"], [])
         self.assertIs(c["star"], rest)
         self.assertNotIn("starstar", c)
@@ -656,9 +663,9 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         skw = symbol("kw")
         formals = _list(keyword("**"), skw)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        c = _ucaps(result)
+        c = _ucaps(result)["f"]
         self.assertEqual(c["positionals"], [])
         self.assertIs(c["starstar"], skw)
         self.assertNotIn("star", c)
@@ -674,9 +681,9 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         sx = symbol("x")
         formals = _list(_list(sx))
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        positionals = _ucaps(result)["positionals"]
+        positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sx)
 
@@ -693,15 +700,15 @@ class TestFORMALS(unittest.TestCase):
         sx = symbol("x")
         st = symbol("T")
         formals = _list(_list(sx, keyword("::"), st))
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        positionals = _ucaps(result)["positionals"]
+        positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sx)
         attrs = positionals[0]["attrs"]
         self.assertIsInstance(attrs, list)
         self.assertEqual(len(attrs), 1)
-        self.assertEqual(attrs[0]["attr_val"], st)
+        self.assertIs(attrs[0]["attr_val"], st)
 
 
     def test_formals_rejects_improper_list(self):
@@ -716,19 +723,19 @@ class TestFORMALS(unittest.TestCase):
         sb = symbol("b")
         sc = symbol("c")
         improper = cons(sa, sb, sc)
-        result = m.match((improper,), **self._externs())
+        result = m.match((improper,))
         self.assertFalse(result.matched)
 
 
     def test_formals_rejects_non_symbol_non_list(self):
         """
-        FORMALS rejects an element that is neither a symbol nor a
-        proper list, such as a number
+        FORMALS rejects a formals cell that is not a proper list, such as
+        a number
         """
 
         pat = MATCH(FORMALS("f"))
         m = pat.build()
-        result = m.match((42,), **self._externs())
+        result = m.match((42,))
         self.assertFalse(result.matched)
 
 
@@ -742,9 +749,9 @@ class TestFORMALS(unittest.TestCase):
         sa = symbol("a")
         rest = symbol("rest")
         formals = _list(sa, keyword("*"), rest)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        c = _ucaps(result)
+        c = _ucaps(result)["f"]
         self.assertEqual(len(c["positionals"]), 1)
         self.assertIs(c["positionals"][0]["name"], sa)
         self.assertIs(c["star"], rest)
@@ -762,9 +769,9 @@ class TestFORMALS(unittest.TestCase):
         sa = symbol("a")
         kw = symbol("kw")
         formals = _list(sa, keyword("**"), kw)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        c = _ucaps(result)
+        c = _ucaps(result)["f"]
         self.assertIs(c["starstar"], kw)
         self.assertNotIn("star", c)
 
@@ -781,9 +788,9 @@ class TestFORMALS(unittest.TestCase):
         foo = keyword("foo")
         bar = keyword("bar")
         formals = _list(sa, foo, 1, bar, 2)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        defaults = _ucaps(result)["defaults"]
+        defaults = _ucaps(result)["f"]["defaults"]
         self.assertIsInstance(defaults, list)
         self.assertEqual(len(defaults), 2)
         self.assertIs(defaults[0]["kw"], foo)
@@ -807,16 +814,17 @@ class TestFORMALS(unittest.TestCase):
         skw = symbol("kw")
         formals = _list(
             sa, keyword("*"), rest, sx, ky, 2, keyword("**"), skw)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        self.assertIs(_ucaps(result)["star"], rest)
-        kwonly = _ucaps(result)["kwonly"]
+        u = _ucaps(result)["f"]
+        self.assertIs(u["star"], rest)
+        kwonly = u["kwonly"]
         self.assertIsInstance(kwonly, list)
         self.assertEqual(len(kwonly), 2)
         self.assertIs(kwonly[0]["name"], sx)
         self.assertIs(kwonly[1]["kw"], ky)
         self.assertEqual(kwonly[1]["default"], 2)
-        self.assertIs(_ucaps(result)["starstar"], skw)
+        self.assertIs(u["starstar"], skw)
 
 
     def test_formals_star_nil_marker(self):
@@ -829,9 +837,9 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         sa = symbol("a")
         formals = _list(sa, keyword("*"), nil)
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        self.assertIs(_ucaps(result)["star"], nil)
+        self.assertIs(_ucaps(result)["f"]["star"], nil)
 
 
     def test_formals_bracket_default(self):
@@ -845,9 +853,9 @@ class TestFORMALS(unittest.TestCase):
         sa = symbol("a")
         sb = symbol("b")
         formals = _list(sa, _list(sb, 1))
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        positionals = _ucaps(result)["positionals"]
+        positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 2)
         self.assertIs(positionals[0]["name"], sa)
         self.assertIs(positionals[1]["name"], sb)
@@ -865,9 +873,9 @@ class TestFORMALS(unittest.TestCase):
         st = symbol("T")
         sn = symbol("n")
         formals = _list(_list(st, keyword("as"), sn))
-        result = m.match((formals,), **self._externs())
+        result = m.match((formals,))
         self.assertTrue(result.matched)
-        positionals = _ucaps(result)["positionals"]
+        positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["type"], st)
         self.assertIs(positionals[0]["name"], sn)
@@ -875,7 +883,7 @@ class TestFORMALS(unittest.TestCase):
 
     def test_formals_registers_binder_meta(self):
         """
-        FORMALS binder owner extracts bare-symbol formals as introduced names
+        FORMALS binder owner reads introduced names from the nested GROUP dict
         """
 
         hc = HygienicMatchCompiler()
@@ -883,7 +891,9 @@ class TestFORMALS(unittest.TestCase):
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["f"]
         sf = symbol("rest")
-        self.assertEqual(set(owner.iter_introduced_symbols({"f": sf})), {sf})
+        grp = {"positionals": Datum([{"name": Datum(sf)}])}
+        self.assertEqual(
+            set(owner.iter_introduced_symbols({"f": grp})), {sf})
 
 
 class TestBODY(unittest.TestCase):
@@ -960,7 +970,7 @@ class TestRuntimeCompileHygiene(unittest.TestCase):
         _frozen = MatchCompiler().lower(pat)
         m = Matcher.from_tuple(_frozen)
         sa = symbol("x")
-        result = m.match((sa,), symbol=SYMBOL_TYPE)
+        result = m.match((sa,), symbol=symbol)
         self.assertTrue(result.matched)
         self.assertIs(_ucaps(result)["n"], sa)
 
@@ -977,7 +987,7 @@ class TestComposition(unittest.TestCase):
         pat = MATCH(DEFINE("name"), BODY("body"))
         m = pat.build()
         sa = symbol("foo")
-        result = m.match((sa, 1, 2, 3), symbol=SYMBOL_TYPE)
+        result = m.match((sa, 1, 2, 3))
         self.assertTrue(result.matched)
         self.assertIs(_ucaps(result)["name"], sa)
         self.assertEqual(_ucaps(result)["body"], (1, 2, 3))
@@ -995,14 +1005,13 @@ class TestComposition(unittest.TestCase):
         sx = symbol("x")
         sy = symbol("y")
         formals = _list(sx, sy)
-        result = m.match(
-            (sa, formals, "b1", "b2"),
-            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match((sa, formals, "b1", "b2"))
         self.assertTrue(result.matched)
-        self.assertIs(_ucaps(result)["name"], sa)
-        self.assertEqual(_ucaps(result)["formals"], formals)
-        self.assertEqual(_ucaps(result)["body"], ("b1", "b2"))
-        positionals = _ucaps(result)["positionals"]
+        u = _ucaps(result)
+        self.assertIs(u["name"], sa)
+        self.assertEqual(u["formals"][FORMALS_SOURCE_KEY], formals)
+        self.assertEqual(u["body"], ("b1", "b2"))
+        positionals = u["formals"]["positionals"]
         self.assertEqual(len(positionals), 2)
 
 
@@ -1017,9 +1026,7 @@ class TestComposition(unittest.TestCase):
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
-        result = m.match(
-            (_list(sa, 1), _list(sb, 2), "b1", "b2"),
-            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match(([sa, 1], [sb, 2], "b1", "b2"))
         self.assertTrue(result.matched)
         frames = _ucaps(result)["bs"]
         self.assertEqual(len(frames), 2)
@@ -1067,7 +1074,7 @@ class TestMakeMatcher(unittest.TestCase):
         pat = MATCH(DEFINE("name"))
         m = make_matcher(pat)
         sa = symbol("foo")
-        result = m.match((sa,), symbol=SYMBOL_TYPE)
+        result = m.match((sa,))
         self.assertIsInstance(result, MatchResult)
 
 

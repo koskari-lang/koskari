@@ -23,7 +23,7 @@ import pytest
 
 from koskari.exceptions import SpecialError
 from koskari.lib import cons, nil, symbol
-from koskari.matcher_ng import MATCH, SYMBOL, VALUE, unwrap_capture_tree
+from koskari.matcher_ng import MATCH, SYMBOL, VALUE
 from koskari.syntax_ng import special
 
 
@@ -56,8 +56,8 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         @special(primary, patterns=pat, unpack="match")
         def _fn(compiler, caps, tc):
             return (
-                unwrap_capture_tree(caps["head"]),
-                unwrap_capture_tree(caps["x"]),
+                caps["head"].datum,
+                caps["x"].datum,
                 tc,
             )
 

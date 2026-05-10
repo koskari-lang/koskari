@@ -65,7 +65,6 @@ from koskari.matcher_ng import (
     HygienicMatchCompiler,
     check_pattern_arg,
     repeat_capture,
-    unwrap_capture_tree,
 )
 from koskari.types import (
     is_nil,
@@ -128,12 +127,12 @@ def _init_pattern_fields(instance, pattern, handler):
 
 def _filter_captures(captures):
     """
-    Drop ``ABSENT`` entries from native ``MatchResult.captures`` and strip
-    ``Datum`` wrappers from values
+    Drop ``ABSENT`` entries from native ``MatchResult.captures``. Matcher
+    values (including ``Datum`` wrappers) are passed through unchanged
     """
 
     return {
-        str(k): unwrap_capture_tree(v)
+        str(k): v
         for k, v in captures.items()
         if v is not ABSENT
     }
@@ -416,7 +415,9 @@ def special(form_symbol, *, patterns, unpack=None):
     :param unpack: only for this decorator: ``None`` (receive
         ``compiler, source_obj, tc``), ``match`` (receive
         ``compiler, captures_dict, tc``), or ``kwargs`` (captures merged after
-        ``tc``). Not available on ``build_*`` rule rows.
+        ``tc``). For ``match`` and ``kwargs``, ``captures_dict`` omits
+        ``ABSENT`` slots only; values are matcher outputs (``Datum`` wrappers
+        may be present). Not available on ``build_*`` rule rows.
     """
 
     _validate_unpack_mode(unpack)

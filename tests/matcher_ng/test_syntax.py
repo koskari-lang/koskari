@@ -63,7 +63,6 @@ from koskari.matcher_ng import (
     lookup_matcher,
     parse_matcher,
     register_matcher,
-    unwrap_capture_tree,
 )
 
 
@@ -696,8 +695,8 @@ class TestRecursiveLowering(unittest.TestCase):
         subj = (_list(sa, sv),)
         result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(unwrap_capture_tree(result.captures["name"]), sa)
-        self.assertIs(unwrap_capture_tree(result.captures["expr"]), sv)
+        self.assertIs(result.captures["name"].datum, sa)
+        self.assertIs(result.captures["expr"].datum, sv)
 
 
     def test_oneof_with_alternative_arms(self):
@@ -717,7 +716,7 @@ class TestRecursiveLowering(unittest.TestCase):
         result = m.match(
             (sa,), symbol=SYMBOL_TYPE, pair=type(_list(1)))
         self.assertTrue(result.matched)
-        self.assertIs(unwrap_capture_tree(result.captures["a"]), sa)
+        self.assertIs(result.captures["a"].datum, sa)
         self.assertNotIn("b", result.captures)
 
 
@@ -741,9 +740,9 @@ class TestRecursiveLowering(unittest.TestCase):
         result = m.match(
             (outer,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertEqual(unwrap_capture_tree(result.captures["b"]), cell)
-        self.assertIs(unwrap_capture_tree(result.captures["name"]), sname)
-        self.assertIs(unwrap_capture_tree(result.captures["expr"]), sval)
+        self.assertEqual(result.captures["b"].datum, cell)
+        self.assertIs(result.captures["name"].datum, sname)
+        self.assertIs(result.captures["expr"].datum, sval)
 
 
 class TestRegistry(unittest.TestCase):
@@ -1026,7 +1025,7 @@ class TestMetaMatcherExposed(unittest.TestCase):
         self.assertTrue(result.matched)
         self.assertIsInstance(result, MatchResult)
         self.assertIs(
-            unwrap_capture_tree(result.captures["quoted_symbol"]),
+            result.captures["quoted_symbol"].datum,
             symbol("x"))
 
 

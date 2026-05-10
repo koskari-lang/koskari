@@ -129,7 +129,7 @@ document can be read as the as-built design.
   | `BINDINGS` | `ONEOF(CAPTURE(slot, LITERAL(nil)), repeat_capture(slot, binding_inner_pattern()))` — nil arm before repeat arm because `REPEAT` always succeeds |
   | `USING`    | `CAPTURE(slot, FORM(ONEOF(...)))` with four ordered `MATCH` branches: unpack, name+expr, expr-as-name, bare expr                                 |
   | `DECL`     | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(MATCH(SYMBOL("name"))), FORM(MATCH(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))), FORM(MATCH(SYMBOL("name"), REST("decl_tail")))))` — inner `name`, `type`, `decl_tail` slots are bound directly; the matcher does not parse the keyword tail |
-  | `FORMALS`  | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(MATCH(OPTIONAL(positionals), OPTIONAL(defaults), OPTIONAL(star_seg), OPTIONAL(kwonly), OPTIONAL(starstar_seg)))))` — phased graph; each phase is a `repeat_capture` over a small per-cell ONEOF |
+  | `FORMALS`  | `GROUP(slot, CAPTURE(FORMALS_SOURCE_KEY, formals_inner_pattern()))` — inner pattern is the phased `FORM(...)` graph; the slot binds a **plain dict** (`source` plus optional `positionals`, `defaults`, `star`, `kwonly`, `starstar`). No bare-symbol formals arm |
   | `BODY`     | `REST(slot)` plus a `scope_regions` hygiene entry                                                                                                |
 
 * **Hygiene is a separate data structure; the frozen matcher stays
@@ -149,11 +149,14 @@ document can be read as the as-built design.
   that *would* register hygiene, but the baseline compiler path treats
   those aspects as inert for matching.
 
-* **Improper-list FORMALS are rejected.** koskari does not allow
-  improper lists as a formals shape, so the `FORMALS` composite
-  recognises bare-symbol formals and proper-list formals only.
-  This is a deliberate semantic choice, not a structural
-  limitation of the engine.
+* **Improper-list FORMALS are rejected; matcher_ng FORMALS is
+  list-shaped only.** koskari does not allow improper lists as a
+  formals shape. The `FORMALS` composite lowers to `GROUP`; there is
+  no bare-symbol formals arm. Compile-side consumption of the GROUP
+  payload lives in **`koskari.compile.helpers_ng`** (`gather_formals`,
+  plus `discover_docstring` / `helper_begin` parallel to legacy
+  `compile.helpers`). Legacy `koskari.compile.helpers.gather_formals`
+  remains for the old matcher path.
 
 * **`BINDINGS` on its own is inline in the parent spine, not a
   single descended cell.** The original plan described the bindings
@@ -419,7 +422,7 @@ CLASS
 
 Successful `MatchResult.captures` is a **sparse** dict: only slots that actually bound a value appear. There is no guarantee that every declared slot key exists with `ABSENT` — use containment checks or defaults where needed.
 
-When the subject spine is backed by `KosPair` cells, values stored on capture paths (including `REST` slices and repeat frames) are wrapped in `koskari.lib.Datum` with `datum` and optional `position` (the tail cell’s position). Tuple/list subjects use `Datum` with `position` `None`. Hygiene and template expansion code that expects raw koskari values should unwrap via `matcher_ng.unwrap_capture_tree` or read `.datum`.
+When the subject spine is backed by `KosPair` cells, values stored on capture paths (including `REST` slices and repeat frames) are wrapped in `koskari.lib.Datum` with `datum` and optional `position` (the tail cell’s position). Tuple/list subjects use `Datum` with `position` `None`. Callers read the captured value through the `.datum` attribute.
 
 ---
 

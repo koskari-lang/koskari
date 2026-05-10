@@ -96,6 +96,7 @@ __all__ = [
     "BINDING",
     "BINDINGS",
     "FORMALS",
+    "FORMALS_SOURCE_KEY",
     "USING",
     "BODY",
 
@@ -110,7 +111,6 @@ __all__ = [
     "KNOWN_HEADS",
     "CAPTURE_OPTION_KEYS",
 
-    "unwrap_capture_tree",
 ]
 
 
@@ -121,36 +121,6 @@ def thaw(tagged_tuple):
     """
 
     return Matcher.from_tuple(tagged_tuple)
-
-
-def unwrap_capture_tree(value):
-    """
-    Recursively strip native Datum wrappers from values produced by the
-    matcher engine. Dicts, lists, and tuples are walked so nested GROUP
-    results and REPEAT frame dicts lose Datum leaves only
-    """
-
-    if isinstance(value, Datum):
-        return unwrap_capture_tree(value.datum)
-    if isinstance(value, dict):
-        return {
-            k: unwrap_capture_tree(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [unwrap_capture_tree(v) for v in value]
-    if isinstance(value, tuple):
-        return tuple(unwrap_capture_tree(v) for v in value)
-    return value
-
-
-def peel_datum_chain(value):
-    """
-    Strip only a chain of native Datum wrappers (.datum) for symbol tests.
-    Does not recurse into dict, list, or tuple
-    """
-
-    while isinstance(value, Datum):
-        value = value.datum
-    return value
 
 
 # === Builder infrastructure ===
@@ -1477,7 +1447,7 @@ class DEFINE(Composite, HygieneWireSlotScopes):
         val = matched.get(self._slot)
         if val is None or val is ABSENT:
             return
-        val = peel_datum_chain(val)
+        val = val.datum
         if is_symbol(val):
             yield val
 
@@ -1522,13 +1492,13 @@ class DECL(Composite, HygieneWireSlotScopes):
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
         if name is not None and name is not ABSENT:
-            name = peel_datum_chain(name)
+            name = name.datum
             if is_symbol(name):
                 yield name
                 return
         raw = matched.get(self._slot)
         if raw is not None and raw is not ABSENT:
-            raw = peel_datum_chain(raw)
+            raw = raw.datum
             if is_symbol(raw):
                 yield raw
 
@@ -1539,7 +1509,7 @@ class DECL(Composite, HygieneWireSlotScopes):
             yield t
         dt = matched.get("decl_tail")
         if dt is not None and dt is not ABSENT:
-            if is_pair(peel_datum_chain(dt)):
+            if is_pair(dt.datum):
                 yield dt
 
 
@@ -1573,7 +1543,7 @@ class BINDING(Composite, HygieneWireSlotScopes):
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
         if name is not None and name is not ABSENT:
-            name = peel_datum_chain(name)
+            name = name.datum
             if is_symbol(name):
                 yield name
 
@@ -1626,7 +1596,7 @@ class BINDINGS(Composite):
         cells = matched.get(self._slot)
         if cells is None or cells is ABSENT:
             return
-        cells = unwrap_capture_tree(cells)
+        cells = cells.datum
         if cells is nil:
             return
         if not isinstance(cells, list):
@@ -1635,7 +1605,7 @@ class BINDINGS(Composite):
             if isinstance(fr, dict):
                 n = fr.get("name")
                 if n is not None:
-                    n = peel_datum_chain(n)
+                    n = n.datum
                     if is_symbol(n):
                         yield n
 
@@ -1644,7 +1614,7 @@ class BINDINGS(Composite):
         cells = matched.get(self._slot)
         if cells is None or cells is ABSENT:
             return
-        cells = unwrap_capture_tree(cells)
+        cells = cells.datum
         if cells is nil:
             return
         if not isinstance(cells, list):
@@ -1689,7 +1659,8 @@ def formal_param_pattern():
     (name kw1 v1 kw2 v2 ...) with one-or-more keyword/value pairs
     in the tail. Captures inside this pattern appear in the enclosing
     REPEAT frame as 'name', 'default', 'type', and 'attrs' (a list
-    of {'kw', 'attr_val'} frame dicts) depending on which arm fires
+    of {'kw', 'attr_val'} frame dicts from CAPTURE/VALUE pairs) depending
+    on which arm fires
     """
 
     return ONEOF(
@@ -1700,7 +1671,7 @@ def formal_param_pattern():
         FORM(MATCH(
             SYMBOL("name"),
             repeat_capture("attrs", MATCH(
-                TYPE("keyword"),
+                CAPTURE("kw", TYPE("keyword")),
                 VALUE("attr_val"))))),
     )
 
@@ -1778,16 +1749,18 @@ def formals_inner_pattern():
     ))
 
 
+FORMALS_SOURCE_KEY = "source"
+
+
 class FORMALS(Composite, HygieneWireSlotScopes):
     """
-    Capture one element shaped as a formals list and decompose its
-    structure into named slots. The composite accepts the
-    bare-symbol case (whole formals are one symbol) and proper-list
-    formals; improper-list formals are rejected because koskari does
-    not allow them as a function-formals shape. After a successful
-    match captures[slot] is the source element and the following
-    inner slots are populated when their corresponding phases fire:
+    Capture one element shaped as a proper-list formals cell and
+    decompose its structure into a nested capture dict. Improper-list
+    formals are rejected because koskari does not allow them as a
+    function-formals shape. After a successful match captures[slot] is
+    a dict (native GROUP) whose keys include:
 
+    * 'source': Datum of the whole formals list spine (pair or nil)
     * 'positionals': list of frame dicts (one per positional formal)
     * 'defaults': list of frame dicts (one per default keyword/value)
     * 'star': the symbol after *: (or nil for the *: nil marker)
@@ -1813,75 +1786,74 @@ class FORMALS(Composite, HygieneWireSlotScopes):
 
 
     def _expand(self):
-        return CAPTURE(self._slot, ONEOF(
-            TYPE("symbol"),
-            formals_inner_pattern(),
-        ))
+        return GROUP(self._slot, CAPTURE(
+            FORMALS_SOURCE_KEY, formals_inner_pattern()))
 
 
     def iter_introduced_symbols(self, matched):
-        raw = matched.get(self._slot)
-        if raw is not None and raw is not ABSENT:
-            raw = peel_datum_chain(raw)
-            if is_symbol(raw):
-                yield raw
-        pos = matched.get("positionals")
+        grp = matched.get(self._slot)
+        if grp is None or grp is ABSENT or not isinstance(grp, dict):
+            return
+        pos = grp.get("positionals")
         if pos is not None and pos is not ABSENT:
-            pos = unwrap_capture_tree(pos)
+            pos = pos.datum
         if isinstance(pos, list):
             for fr in pos:
                 if isinstance(fr, dict):
                     n = fr.get("name")
                     if n is not None and n is not ABSENT:
-                        n = peel_datum_chain(n)
+                        n = n.datum
                         if is_symbol(n):
                             yield n
-        star = matched.get("star")
+        star = grp.get("star")
         if star is not None and star is not ABSENT:
-            star = peel_datum_chain(star)
+            star = star.datum
             if is_symbol(star):
                 yield star
-        ss = matched.get("starstar")
+        ss = grp.get("starstar")
         if ss is not None and ss is not ABSENT:
-            ss = peel_datum_chain(ss)
+            ss = ss.datum
             if is_symbol(ss):
                 yield ss
-        kwonly = matched.get("kwonly")
+        kwonly = grp.get("kwonly")
         if kwonly is not None and kwonly is not ABSENT:
-            kwonly = unwrap_capture_tree(kwonly)
+            kwonly = kwonly.datum
         if isinstance(kwonly, list):
             for fr in kwonly:
                 if not isinstance(fr, dict):
                     continue
                 n = fr.get("name")
                 if n is not None:
-                    n = peel_datum_chain(n)
+                    n = n.datum
                     if is_symbol(n):
                         yield n
 
 
     def iter_recurse_targets(self, matched):
-        defs = matched.get("defaults")
+        grp = matched.get(self._slot)
+        if grp is None or grp is ABSENT or not isinstance(grp, dict):
+            return
+        defs = grp.get("defaults")
         if defs is not None and defs is not ABSENT:
-            defs = unwrap_capture_tree(defs)
+            defs = defs.datum
         if isinstance(defs, list):
             for fr in defs:
                 if isinstance(fr, dict):
                     dv = fr.get("default")
                     if dv is not None:
                         yield dv
-        kwonly = matched.get("kwonly")
+        kwonly = grp.get("kwonly")
         if kwonly is not None and kwonly is not ABSENT:
-            kwonly = unwrap_capture_tree(kwonly)
+            kwonly = kwonly.datum
         if isinstance(kwonly, list):
             for fr in kwonly:
                 if isinstance(fr, dict):
                     dv = fr.get("default")
                     if dv is not None:
                         yield dv
-        pos = matched.get("positionals")
+        pos = grp.get("positionals")
         if pos is not None and pos is not ABSENT:
-            pos = unwrap_capture_tree(pos)
+            pos = pos.datum
         if isinstance(pos, list):
             for fr in pos:
                 if isinstance(fr, dict):
@@ -1933,7 +1905,7 @@ class USING(Composite, HygieneWireSlotScopes):
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
         if name is not None and name is not ABSENT:
-            name = peel_datum_chain(name)
+            name = name.datum
             if is_symbol(name):
                 yield name
 
@@ -2136,10 +2108,10 @@ def parse_matcher(elem):
     c = result.captures
 
     if c.get("bare_symbol", ABSENT) is not ABSENT:
-        return CAPTURE(str(unwrap_capture_tree(c.get("bare_symbol"))))
+        return CAPTURE(str(c.get("bare_symbol").datum))
 
     if c.get("atom_literal", ABSENT) is not ABSENT:
-        atom = unwrap_capture_tree(c.get("atom_literal"))
+        atom = c.get("atom_literal").datum
         if isinstance(atom, pair):
             raise ValueError(
                 "improper list is not a valid matcher pattern: %r"
@@ -2147,27 +2119,27 @@ def parse_matcher(elem):
         return LITERAL(atom)
 
     if c.get("quoted_symbol", ABSENT) is not ABSENT:
-        return LITERAL_SYM(str(unwrap_capture_tree(c.get("quoted_symbol"))))
+        return LITERAL_SYM(str(c.get("quoted_symbol").datum))
 
     if c.get("dcolon_args", ABSENT) is not ABSENT:
         return lower_anon_constraint(
-            "::", unwrap_capture_tree(c.get("dcolon_args")), elem)
+            "::", c.get("dcolon_args").datum, elem)
 
     if c.get("type_args", ABSENT) is not ABSENT:
         return lower_anon_constraint(
-            "type:", unwrap_capture_tree(c.get("type_args")), elem)
+            "type:", c.get("type_args").datum, elem)
 
     if c.get("val_expr", ABSENT) is not ABSENT:
-        return LITERAL(unwrap_capture_tree(c.get("val_expr")))
+        return LITERAL(c.get("val_expr").datum)
 
     if c.get("class_extern", ABSENT) is not ABSENT:
         return lower_class(
-            unwrap_capture_tree(c.get("class_extern")),
-            unwrap_capture_tree(c.get("class_fields")))
+            c.get("class_extern").datum,
+            c.get("class_fields").datum)
 
     if c.get("head", ABSENT) is not ABSENT:
-        head = unwrap_capture_tree(c.get("head"))
-        args = unwrap_capture_tree(c.get("head_args"))
+        head = c.get("head").datum
+        args = c.get("head_args").datum
         name = str(head)
         factory = MATCHER_REGISTRY.get(name)
         if factory is not None:

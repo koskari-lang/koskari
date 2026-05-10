@@ -30,7 +30,6 @@ from koskari.matcher_ng import (
     repeat_capture,
     slot_prefix,
     thaw,
-    unwrap_capture_tree,
 )
 
 
@@ -56,12 +55,12 @@ class TestRepeatCapture(unittest.TestCase):
         subj = ((sa, 1), (sb, 2))
         result = m.match(subj, symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        frames = unwrap_capture_tree(result.captures["bindings"])
+        frames = result.captures["bindings"].datum
         self.assertEqual(len(frames), 2)
-        self.assertEqual(frames[0]["name"], sa)
-        self.assertEqual(frames[0]["expr"], 1)
-        self.assertEqual(frames[1]["name"], sb)
-        self.assertEqual(frames[1]["expr"], 2)
+        self.assertEqual(frames[0]["name"].datum, sa)
+        self.assertEqual(frames[0]["expr"].datum, 1)
+        self.assertEqual(frames[1]["name"].datum, sb)
+        self.assertEqual(frames[1]["expr"].datum, 2)
         self.assertNotIn("name", result.captures)
         self.assertNotIn("expr", result.captures)
 
@@ -79,10 +78,10 @@ class TestRepeatCapture(unittest.TestCase):
         subj = (cell,)
         result = m.match(subj, symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        frames = unwrap_capture_tree(result.captures["rows"])
+        frames = result.captures["rows"].datum
         self.assertEqual(len(frames), 1)
-        self.assertEqual(frames[0]["expr"], 99)
-        self.assertEqual(frames[0]["name"], sx)
+        self.assertEqual(frames[0]["expr"].datum, 99)
+        self.assertEqual(frames[0]["name"].datum, sx)
 
 
 class TestSlotPrefixAndBindingCell(unittest.TestCase):
@@ -131,10 +130,10 @@ class TestRepeatFramesThawRoundTrip(unittest.TestCase):
         subj = ((sa, 10), (sb, 20))
         result = m.match(subj, symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        frames = unwrap_capture_tree(result.captures["bindings"])
+        frames = result.captures["bindings"].datum
         self.assertEqual(len(frames), 2)
-        self.assertEqual(frames[0]["name"], sa)
-        self.assertEqual(frames[0]["expr"], 10)
+        self.assertEqual(frames[0]["name"].datum, sa)
+        self.assertEqual(frames[0]["expr"].datum, 10)
 
 
 # The end.

@@ -22,7 +22,6 @@ import pytest
 
 from koskari.exceptions import SpecialError
 from koskari.lib import Matcher, cons, nil, symbol
-from koskari.matcher_ng import unwrap_capture_tree
 from koskari.syntax_ng import (
     MacroTransform,
     SpecialTransform,
@@ -59,7 +58,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         b = symbol("b")
         r = m.match((a, b))
         self.assertTrue(r.matched)
-        self.assertEqual(unwrap_capture_tree(r.captures["x"]), (a, b))
+        self.assertEqual(r.captures["x"].datum, (a, b))
 
 
     def test_literal_symbol_top_level(self):
@@ -89,15 +88,15 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         m = Matcher.from_tuple(p.freeze())
         r = m.match(())
         self.assertTrue(r.matched)
-        self.assertEqual(unwrap_capture_tree(r.captures["a"]), [])
+        self.assertEqual(r.captures["a"].datum, [])
         s1 = symbol("s1")
         s2 = symbol("s2")
         r2 = m.match((s1, s2))
         self.assertTrue(r2.matched)
-        frames = unwrap_capture_tree(r2.captures["a"])
+        frames = r2.captures["a"].datum
         self.assertEqual(len(frames), 2)
-        self.assertEqual(frames[0]["a__sr"], s1)
-        self.assertEqual(frames[1]["a__sr"], s2)
+        self.assertEqual(frames[0]["a__sr"].datum, s1)
+        self.assertEqual(frames[1]["a__sr"].datum, s2)
 
 
     def test_nested_sublist_pattern(self):
@@ -115,7 +114,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         form = build_proper(sx)
         r = m.match((form,), symbol=SYMBOL_TYPE)
         self.assertTrue(r.matched)
-        self.assertEqual(unwrap_capture_tree(r.captures["x"]), sx)
+        self.assertEqual(r.captures["x"].datum, sx)
 
 
     def test_match_wrapper_dispatches_inner(self):
@@ -133,7 +132,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         r = m.match((symbol("only"),), symbol=SYMBOL_TYPE)
         self.assertTrue(r.matched)
         self.assertEqual(
-            unwrap_capture_tree(r.captures["x"]), symbol("only"))
+            r.captures["x"].datum, symbol("only"))
 
 
 class TestSyntaxAdd(unittest.TestCase):
@@ -306,7 +305,7 @@ class TestSpecialUnpack(unittest.TestCase):
         out = st.try_expand(None, src, False)
         self.assertEqual(out, symbol("done"))
         self.assertEqual(len(saw), 1)
-        self.assertEqual(saw[0]["v"], slot)
+        self.assertEqual(saw[0]["v"].datum, slot)
 
 
     def test_unpack_kwargs_passes_tc_and_captures(self):
@@ -328,7 +327,7 @@ class TestSpecialUnpack(unittest.TestCase):
         out = st.try_expand(None, src, True)
         self.assertEqual(out, symbol("done"))
         self.assertEqual(saw[0][0], True)
-        self.assertEqual(saw[0][1]["v"], slot)
+        self.assertEqual(saw[0][1]["v"].datum, slot)
 
 
 class TestSpecialDecorator(unittest.TestCase):

@@ -113,7 +113,7 @@ class TestBuildMacroSyntax(unittest.TestCase):
         self.assertEqual(len(saw), 1)
         tc, caps = saw[0]
         self.assertFalse(tc)
-        self.assertEqual(caps["v"], slot)
+        self.assertEqual(caps["v"].datum, slot)
 
     def test_build_macro_syntax_three_tuple_row_raises(self):
         m = symbol("compile/mm2")

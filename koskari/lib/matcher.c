@@ -2350,7 +2350,11 @@ static int match_capture(
       }
 
       if (n->as.capture.slot != KOS_MATCH_NO_INDEX) {
-        if (engine_set_slot(e, n->as.capture.slot, items))
+        PyObject *wrapped = kos_datum_new(items, Py_None, Py_None);
+        Py_DECREF(items);
+        if (! wrapped)
+          return -1;
+        if (engine_set_slot(e, n->as.capture.slot, wrapped))
           return -1;
       } else {
         Py_DECREF(items);
