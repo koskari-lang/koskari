@@ -21,7 +21,7 @@ import unittest
 import pytest
 
 from koskari.exceptions import SpecialError
-from koskari.lib import Matcher, cons, nil, symbol
+from koskari.lib import Datum, Matcher, cons, nil, symbol
 from koskari.syntax_ng import (
     MacroTransform,
     SpecialTransform,
@@ -86,12 +86,16 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         m = Matcher.from_tuple(p.freeze())
         r = m.match(())
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["a"].datum, [])
+        cap0 = r.captures["a"]
+        self.assertEqual(
+            cap0.datum if isinstance(cap0, Datum) else cap0,
+            [])
         s1 = symbol("s1")
         s2 = symbol("s2")
         r2 = m.match((s1, s2))
         self.assertTrue(r2.matched)
-        frames = r2.captures["a"].datum
+        cap_a = r2.captures["a"]
+        frames = cap_a.datum if isinstance(cap_a, Datum) else cap_a
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["a__sr"].datum, s1)
         self.assertEqual(frames[1]["a__sr"].datum, s2)

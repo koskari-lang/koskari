@@ -21,7 +21,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import keyword, symbol
+from koskari.lib import Datum, keyword, symbol
 from koskari.matcher_ng import (
     BINDING_CELL,
     MATCH,
@@ -52,7 +52,8 @@ class TestRepeatCapture(unittest.TestCase):
         subj = ((sa, 1), (sb, 2))
         result = m.match(subj, symbol=symbol)
         self.assertTrue(result.matched)
-        frames = result.captures["bindings"].datum
+        cap = result.captures["bindings"]
+        frames = cap.datum if isinstance(cap, Datum) else cap
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["name"].datum, sa)
         self.assertEqual(frames[0]["expr"].datum, 1)
@@ -75,7 +76,8 @@ class TestRepeatCapture(unittest.TestCase):
         subj = (cell,)
         result = m.match(subj, symbol=symbol)
         self.assertTrue(result.matched)
-        frames = result.captures["rows"].datum
+        cap = result.captures["rows"]
+        frames = cap.datum if isinstance(cap, Datum) else cap
         self.assertEqual(len(frames), 1)
         self.assertEqual(frames[0]["expr"].datum, 99)
         self.assertEqual(frames[0]["name"].datum, sx)
@@ -127,7 +129,8 @@ class TestRepeatFramesThawRoundTrip(unittest.TestCase):
         subj = ((sa, 10), (sb, 20))
         result = m.match(subj, symbol=symbol)
         self.assertTrue(result.matched)
-        frames = result.captures["bindings"].datum
+        cap = result.captures["bindings"]
+        frames = cap.datum if isinstance(cap, Datum) else cap
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["name"].datum, sa)
         self.assertEqual(frames[0]["expr"].datum, 10)

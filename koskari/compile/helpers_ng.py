@@ -23,7 +23,7 @@ Does not import koskari.compile.helpers
 """
 
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 from ..exceptions import SpecialError
 from ..lib import OpCode, keyword, nil, pair, symbol
@@ -110,19 +110,6 @@ def helper_begin(
     return fragment
 
 
-def _formal_kw_tag_to_key(kw):
-    """
-    Map keyword atom to annotation key; empty keyword (``::`` sugar) is type
-    """
-
-    raw = str(kw)
-    if raw.endswith(':'):
-        raw = raw[:-1]
-    if raw == '':
-        return 'type'
-    return raw
-
-
 def _merge_formal_annotations(annotations, name_sym, ann_bundle):
     """
     Merge ann_bundle into annotations dict keyed by str(name_sym)
@@ -163,17 +150,17 @@ def _attrs_frames_to_ann(attr_frames: List[dict], source):
         val_cell = afr.get('attr_val')
         if val_cell is None or val_cell is ABSENT:
             raise SpecialError(
-                "missing value for formal attribute %r" % kw,
+                f"missing value for formal attribute {kw!r}",
                 source)
         val = val_cell.datum
-        key = _formal_kw_tag_to_key(kw)
-        if key == 'value':
+
+        if kw == keyword('value'):
             default = val
-        elif key == 'type':
+        elif kw in (keyword('type'), keyword('')):
             ann['type'] = val
         else:
             raise SpecialError(
-                "unknown formal attribute %r" % kw,
+                f"unknown formal attribute {kw!r}",
                 source)
     return ann, default
 
@@ -195,15 +182,11 @@ def _gather_one_positional_frame(fr: dict, source):
     if typ is not None:
         annotations['type'] = typ
 
-    attrs_cell = fr.get('attrs')
-    if attrs_cell is not None and attrs_cell is not ABSENT:
-        attrs_list = attrs_cell.datum
-        if not isinstance(attrs_list, list):
-            raise SpecialError(
-                "positional attrs must be a list of frames, not %r"
-                % (attrs_list,),
-                source)
-        ann2, default2 = _attrs_frames_to_ann(attrs_list, source)
+    attrs_cell = fr.get('attrs', ())
+    if attrs_cell is ABSENT:
+        attrs_cell = ()
+    if attrs_cell:
+        ann2, default2 = _attrs_frames_to_ann(attrs_cell, source)
         for k2, v2 in ann2.items():
             if k2 in annotations and annotations[k2] != v2:
                 raise SpecialError(
@@ -230,20 +213,15 @@ def _gather_one_positional_frame(fr: dict, source):
     return name, annotations, default_expr
 
 
-def _grp_frames(grp: dict, key: str) -> List[dict]:
+def _grp_frames(grp: dict, key: str) -> Sequence[dict]:
     """
     List of REPEAT frame dicts for an optional FORMALS inner slot
     """
 
-    v = grp.get(key)
-    if v is None or v is ABSENT:
-        return []
-    d = v.datum
-    if d is None:
-        return []
-    if not isinstance(d, list):
-        return []
-    return d
+    v = grp.get(key, ())
+    if v is ABSENT:
+        return ()
+    return v
 
 
 def gather_formals(formals_group, source=None):
@@ -258,15 +236,10 @@ def gather_formals(formals_group, source=None):
     :raises SpecialError: on invalid structure
     """
 
-    if not isinstance(formals_group, dict):
-        raise SpecialError(
-            "formals_group must be a FORMALS GROUP dict, not %r"
-            % (type(formals_group).__name__,),
-            source)
 
-    sk = formals_group.get(FORMALS_SOURCE_KEY)
-    if source is None and sk is not None and sk is not ABSENT:
-        source = sk.datum
+    if source is None:
+        sk = formals_group.get(FORMALS_SOURCE_KEY)
+        source = sk.datum if sk else None
 
     annotations = {}
     positional = []

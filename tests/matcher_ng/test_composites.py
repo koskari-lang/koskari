@@ -59,13 +59,18 @@ def _peel_frame_row(item):
     if isinstance(item, dict):
         out = {}
         for kk, vv in item.items():
-            d = vv.datum
+            if isinstance(vv, Datum):
+                d = vv.datum
+            else:
+                d = vv
             if isinstance(d, list):
                 out[kk] = [_peel_frame_row(x) for x in d]
             else:
                 out[kk] = d
         return out
-    return item.datum
+    if isinstance(item, Datum):
+        return item.datum
+    return item
 
 
 def _peel_capture_value(v):
@@ -78,7 +83,10 @@ def _peel_capture_value(v):
         return {
             str(kk): _peel_capture_value(vv)
             for kk, vv in v.items()}
-    d = v.datum
+    if isinstance(v, Datum):
+        d = v.datum
+    else:
+        d = v
     if isinstance(d, list):
         return [_peel_frame_row(item) for item in d]
     return d

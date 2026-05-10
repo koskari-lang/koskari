@@ -1027,11 +1027,11 @@ class FIELD(Pattern):
 def repeat_capture(slot, inner):
     """
     Capture the results of repeating inner across successive subject
-    elements. The native engine stores matched.captures[slot] as a
-    list of dict objects: each dict maps slot names touched during
-    one iteration to their captured values (sparse; absent slots are
-    omitted). Inner patterns should use CAPTURE nodes for fields to
-    collect per iteration
+    elements.     The native engine stores matched.captures[slot] as a bare Python
+    list of dict objects (not wrapped in Datum): each dict maps slot
+    names touched during one iteration to their captured values
+    (sparse; absent slots are omitted). Inner patterns should use
+    CAPTURE nodes for fields to collect per iteration
 
     :param slot: outer slot receiving the list of frame dicts
     :param inner: pattern run once per repetition (often FORM around
@@ -1558,10 +1558,11 @@ class BINDINGS(Composite):
     """
     Capture a binding-list cell: a single element which is either nil
     or a proper list of binding-shaped cells. The nonempty arm uses
-    repeat_capture so captures[slot] is the native list of per-cell
-    frame dicts (each holding 'name' and 'expr'); the empty arm
-    matches nil and binds captures[slot] = nil. The two arms share an
-    outer slot name through ONEOF's per-branch capture scoping
+    repeat_capture so captures[slot] is a bare Python list of per-cell
+    frame dicts (each holding 'name' and 'expr'), not Datum-wrapped;
+    the empty arm matches nil and binds captures[slot] = nil (a
+    Datum in the usual CAPTURE sense). The two arms share an outer slot
+    name through ONEOF's per-branch capture scoping
     """
 
 
@@ -1596,11 +1597,10 @@ class BINDINGS(Composite):
         cells = matched.get(self._slot)
         if cells is None or cells is ABSENT:
             return
-        cells = cells.datum
-        if cells is nil:
-            return
-        if not isinstance(cells, list):
-            return
+        if isinstance(cells, Datum):
+            cells = cells.datum
+            if cells is nil:
+                return
         for fr in cells:
             if isinstance(fr, dict):
                 n = fr.get("name")
@@ -1614,11 +1614,10 @@ class BINDINGS(Composite):
         cells = matched.get(self._slot)
         if cells is None or cells is ABSENT:
             return
-        cells = cells.datum
-        if cells is nil:
-            return
-        if not isinstance(cells, list):
-            return
+        if isinstance(cells, Datum):
+            cells = cells.datum
+            if cells is nil:
+                return
         for fr in cells:
             if isinstance(fr, dict):
                 ex = fr.get("expr")
@@ -1761,10 +1760,10 @@ class FORMALS(Composite, HygieneWireSlotScopes):
     a dict (native GROUP) whose keys include:
 
     * 'source': Datum of the whole formals list spine (pair or nil)
-    * 'positionals': list of frame dicts (one per positional formal)
-    * 'defaults': list of frame dicts (one per default keyword/value)
+    * 'positionals': bare Python list of frame dicts (one per positional formal)
+    * 'defaults': bare Python list of frame dicts (one per default keyword/value)
     * 'star': the symbol after *: (or nil for the *: nil marker)
-    * 'kwonly': list of frame dicts (one per kw-only entry)
+    * 'kwonly': bare Python list of frame dicts (one per kw-only entry)
     * 'starstar': the symbol after **:
 
     Inner slots default to ABSENT when their phase did not run. Use
@@ -1794,17 +1793,16 @@ class FORMALS(Composite, HygieneWireSlotScopes):
         grp = matched.get(self._slot)
         if grp is None or grp is ABSENT or not isinstance(grp, dict):
             return
-        pos = grp.get("positionals")
-        if pos is not None and pos is not ABSENT:
-            pos = pos.datum
-        if isinstance(pos, list):
-            for fr in pos:
-                if isinstance(fr, dict):
-                    n = fr.get("name")
-                    if n is not None and n is not ABSENT:
-                        n = n.datum
-                        if is_symbol(n):
-                            yield n
+        pos = grp.get("positionals", ())
+        if pos is ABSENT:
+            pos = ()
+        for fr in pos:
+            if isinstance(fr, dict):
+                n = fr.get("name")
+                if n is not None and n is not ABSENT:
+                    n = n.datum
+                    if is_symbol(n):
+                        yield n
         star = grp.get("star")
         if star is not None and star is not ABSENT:
             star = star.datum
@@ -1815,55 +1813,52 @@ class FORMALS(Composite, HygieneWireSlotScopes):
             ss = ss.datum
             if is_symbol(ss):
                 yield ss
-        kwonly = grp.get("kwonly")
-        if kwonly is not None and kwonly is not ABSENT:
-            kwonly = kwonly.datum
-        if isinstance(kwonly, list):
-            for fr in kwonly:
-                if not isinstance(fr, dict):
-                    continue
-                n = fr.get("name")
-                if n is not None:
-                    n = n.datum
-                    if is_symbol(n):
-                        yield n
+        kwonly = grp.get("kwonly", ())
+        if kwonly is ABSENT:
+            kwonly = ()
+        for fr in kwonly:
+            if not isinstance(fr, dict):
+                continue
+            n = fr.get("name")
+            if n is not None:
+                n = n.datum
+                if is_symbol(n):
+                    yield n
 
 
     def iter_recurse_targets(self, matched):
         grp = matched.get(self._slot)
         if grp is None or grp is ABSENT or not isinstance(grp, dict):
             return
-        defs = grp.get("defaults")
-        if defs is not None and defs is not ABSENT:
-            defs = defs.datum
-        if isinstance(defs, list):
-            for fr in defs:
-                if isinstance(fr, dict):
-                    dv = fr.get("default")
-                    if dv is not None:
-                        yield dv
-        kwonly = grp.get("kwonly")
-        if kwonly is not None and kwonly is not ABSENT:
-            kwonly = kwonly.datum
-        if isinstance(kwonly, list):
-            for fr in kwonly:
-                if isinstance(fr, dict):
-                    dv = fr.get("default")
-                    if dv is not None:
-                        yield dv
-        pos = grp.get("positionals")
-        if pos is not None and pos is not ABSENT:
-            pos = pos.datum
-        if isinstance(pos, list):
-            for fr in pos:
-                if isinstance(fr, dict):
-                    attrs = fr.get("attrs")
-                    if isinstance(attrs, list):
-                        for afr in attrs:
-                            if isinstance(afr, dict):
-                                av = afr.get("attr_val")
-                                if av is not None:
-                                    yield av
+        defs = grp.get("defaults", ())
+        if defs is ABSENT:
+            defs = ()
+        for fr in defs:
+            if isinstance(fr, dict):
+                dv = fr.get("default")
+                if dv is not None:
+                    yield dv
+        kwonly = grp.get("kwonly", ())
+        if kwonly is ABSENT:
+            kwonly = ()
+        for fr in kwonly:
+            if isinstance(fr, dict):
+                dv = fr.get("default")
+                if dv is not None:
+                    yield dv
+        pos = grp.get("positionals", ())
+        if pos is ABSENT:
+            pos = ()
+        for fr in pos:
+            if isinstance(fr, dict):
+                attrs = fr.get("attrs", ())
+                if attrs is ABSENT:
+                    attrs = ()
+                for afr in attrs:
+                    if isinstance(afr, dict):
+                        av = afr.get("attr_val")
+                        if av is not None:
+                            yield av
 
 
 class USING(Composite, HygieneWireSlotScopes):

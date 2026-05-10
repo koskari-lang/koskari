@@ -716,7 +716,7 @@ The intended result shape:
 }
 ```
 
-Named `REPEAT` captures produce lists of per-iteration records. This is the main case where nested capture result shaping matters.
+Named `REPEAT` captures produce lists of per-iteration records, stored in the slot as a bare Python list (not `Datum`-wrapped). This is the main case where nested capture result shaping matters.
 
 ---
 

@@ -94,7 +94,6 @@ def special_lambda_ng(
     helper_begin(..., True) like production lambda)
     """
 
-
     called_by = caps["called-by"].datum
 
     named = caps.get("name")
@@ -104,11 +103,8 @@ def special_lambda_ng(
     return_type_mr = caps.get("return_type")
     return_type_src = return_type_mr.datum if return_type_mr else None
 
-    formals_grp = caps["formals"]
-    spine_cell = formals_grp.get(FORMALS_SOURCE_KEY)
-    spine = spine_cell.datum if spine_cell is not None else nil
     pos, defaults, kwonly, star, starstar, ann = gather_formals(
-        formals_grp, spine)
+        caps["formals"])
 
     body_src = caps["body"].datum
 
