@@ -218,13 +218,12 @@ class MacroTransform(object):
         :param pattern: matcher_ng pattern tree
         :param handler:
             ``(compiler, tc, **captures)`` procedure returning expanded form;
-            ``captures`` are string-keyed match slots match_result.captures``
+            ``captures`` are string-keyed match slots from ``match_result.captures``
         """
 
         if handler is None or not callable(handler):
-            raise TypeError(
-                "MacroTransform handler must be callable, got %r"
-                % (type(handler).__name__,))
+            raise TypeError("MacroTransform handler must be callable,"
+                            f" got {handler!r}")
         _init_pattern_fields(self, pattern, handler)
 
 
@@ -263,9 +262,8 @@ class SpecialTransform(object):
         """
 
         if handler is None or not callable(handler):
-            raise TypeError(
-                "SpecialTransform handler must be callable, got %r"
-                % (type(handler).__name__,))
+            raise TypeError("SpecialTransform handler must be callable,"
+                            f" got {handler!r}")
         _init_pattern_fields(self, pattern, handler)
 
 
@@ -308,9 +306,8 @@ class Syntax(Compiled):
         self.transforms = tuple(transforms)
         for t in self.transforms:
             if not isinstance(t, Transform):
-                raise TypeError(
-                    "Syntax transforms must be Transform instances, got %r"
-                    % (type(t).__name__,))
+                raise TypeError("Syntax transforms must be Transform instances,"
+                                f" got {t!r}")
 
 
     def compile_impl(self, compiler, source_obj, tc):
