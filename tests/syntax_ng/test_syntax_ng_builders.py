@@ -153,13 +153,15 @@ class TestBuildSpecialSyntax(unittest.TestCase):
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("special-out"))
 
-    def test_build_special_match_delegates_empty_literals(self):
+    def test_build_special_match_uses_match_dialect_pattern(self):
         m = symbol("compile/sm")
+        pat = build_proper(
+            m, build_proper(symbol("SYMBOL"), symbol("r")))
 
         def proc(compiler, source_obj, result, tc):
             return symbol("match-out")
 
-        s = build_special_match(m, ((build_proper(m, symbol("r")), proc),))
+        s = build_special_match(m, ((pat, proc),))
         src = cons(m, symbol("x"), nil)
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("match-out"))

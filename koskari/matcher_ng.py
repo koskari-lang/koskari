@@ -21,7 +21,8 @@ representation, plus a small builder API for authoring matcher patterns
 in Python that lower to the same frozen form. Lowering uses either the
 baseline MatchCompiler (slots, externs, consts, nodes only) or
 HygienicMatchCompiler, which additionally records koskari hygiene_ng
-metadata for source-form matchers. Named repeat captures (CAPTURE wrapping
+metadata for source-form matchers. Rule-level MATCH spines use
+:func:`parse_explicit_rule_pattern`. Named repeat captures (CAPTURE wrapping
 REPEAT) produce per-iteration frame dicts; see repeat_capture and
 binding_inner_pattern
 
@@ -41,7 +42,7 @@ from koskari.lib import (
     pair,
     symbol,
 )
-from koskari.types import is_keyword, is_pair, is_symbol, unpack
+from koskari.types import is_keyword, is_pair, is_proper, is_symbol, unpack
 from typing import Protocol, runtime_checkable
 
 
@@ -104,6 +105,7 @@ __all__ = [
     "register_matcher",
     "lookup_matcher",
     "parse_matcher",
+    "parse_explicit_rule_pattern",
     "META_PATTERN",
     "META_MATCHER",
     "KNOWN_HEADS",
@@ -2132,6 +2134,48 @@ def parse_matcher(elem):
     raise ValueError(
         "internal: meta-matcher matched %r with no recognised slot bound"
         % (elem,))
+
+
+def parse_explicit_rule_pattern(form, source_ctx=None):
+    """
+    Lower MATCH-dialect pattern source (a cons tree) to a matcher_ng Pattern.
+
+    Distinct from :func:`parse_matcher`, which lowers a single META element.
+    This walks a rule-level spine: either a registered declaration
+    ``(HEAD slot . opts)`` when ``HEAD`` is in :data:`MATCHER_REGISTRY` and
+    ``slot`` is a symbol, or a sequential ``MATCH`` of per-cell patterns.
+
+    :param form: koskari pattern datum
+    :param source_ctx: optional value appended to error messages
+    :return: Pattern instance (often ``MATCH`` wrapping a sequence)
+    :raises ValueError: on ellipsis, improper lists, or factory failures
+    """
+
+    ctx = "" if source_ctx is None else " (context %r)" % (source_ctx,)
+
+    if form is Ellipsis:
+        raise ValueError("invalid ellipsis in MATCH pattern%s" % ctx)
+
+    if not is_pair(form):
+        return LITERAL(form)
+
+    if not is_proper(form):
+        raise ValueError("MATCH pattern must be a proper list%s" % ctx)
+
+    head, tail = form
+
+    if tail is not nil and is_pair(tail):
+        decl_bind = tail.car
+        factory = lookup_matcher(str(head))
+        if factory is not None and is_symbol(decl_bind):
+            return factory(head, tail)
+
+    specs = []
+    cur = form
+    while cur is not nil:
+        first, cur = cur
+        specs.append(parse_explicit_rule_pattern(first, source_ctx))
+    return MATCH(*specs)
 
 
 def lower_anon_constraint(tag, args, source):

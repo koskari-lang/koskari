@@ -18,12 +18,11 @@ koskari.syntax_ng
 Next-generation syntax dispatch scaffolding: ``Syntax`` (a ``Compiled``
 dispatcher), transform arms, native ``koskari.lib.Datum`` for macro unbox,
 and a
-syntax-rules-compatible pattern lowerer to ``matcher_ng.Pattern``.
+syntax-rules-compatible pattern lowerer to ``matcher_ng.Pattern`` plus
+MATCH-dialect rule spines via :func:`koskari.matcher_ng.parse_explicit_rule_pattern`.
 
 The compiled dispatcher type here is ``syntax_ng.Syntax``. The legacy
-source wrapper remains ``koskari.syntax.Syntax``. This module does not
-implement MATCH-dialect ``parse_explicit_rule_pattern`` (``matcher/foo``
-registry); only RULE-style syntax-rules patterns.
+source wrapper remains ``koskari.syntax.Syntax``.
 
 Bare-pattern ellipsis ``(id ...)`` uses an inner capture slot ``id__sr``
 per iteration so freeze-time slot names stay distinct from the outer
@@ -31,15 +30,18 @@ repeat list slot. Callers can flatten frames to legacy ``RepeatResult``
 shape later. An empty ellipsis region matches a subject with zero spine
 elements (``()``), not ``(nil,)``.
 
-Runtime constructors ``build_syntax``, ``build_macro_syntax``,
-``build_special_syntax``, and ``build_special_match`` assemble a
-``Syntax`` dispatcher from RULE patterns and templates or procedural
-handlers; matcher arms receive the full use-site form (nil-terminated
-pair spine) unchanged. Pattern literals are only what the caller passes:
-the first pattern position is normally a symbol capture (the actual
-head, including aliases); include the dispatch symbol in ``literals``
-when a fixed head is required. They are not registered in bootstrap until
-the NG cutover.
+Runtime constructors ``build_syntax`` and ``build_macro_syntax`` /
+``build_special_syntax`` assemble a ``Syntax`` dispatcher from RULE
+patterns. ``build_syntax_match``, ``build_macro_match``, and
+``build_special_match`` use MATCH-dialect patterns (explicit matcher
+spine). Templates and procedural handlers see the full use-site form
+(nil-terminated pair spine) unchanged. For RULE builders, pattern
+literals are only what the caller passes: the first pattern position is
+normally a symbol capture (the actual head, including aliases); include
+the dispatch symbol in ``literals`` when a fixed head is required. Ki
+``syntax-match`` segments use only the macro name as a literal set at
+the compile layer; here MATCH patterns encode structure explicitly.
+These are not registered in bootstrap until the NG cutover.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -57,7 +59,7 @@ from koskari.hygiene_ng import (apply_syntax_rules_hygiene,
 from koskari.lib import Datum, Matcher, gensym, nil, symbol
 from koskari.matcher_ng import (CAPTURE, FORM, LITERAL, MATCH, REST, SYMBOL,
                                 HygienicMatchCompiler, check_pattern_arg,
-                                repeat_capture)
+                                parse_explicit_rule_pattern, repeat_capture)
 from koskari.types import is_nil, is_pair, is_proper, is_symbol, unpack
 
 
@@ -68,10 +70,12 @@ __all__ = (
     "Syntax",
     "SyntaxTransform",
     "Transform",
+    "build_macro_match",
     "build_macro_syntax",
     "build_special_match",
     "build_special_syntax",
     "build_syntax",
+    "build_syntax_match",
     "parse_syntax_rules_pattern",
     "special",
 )
@@ -588,6 +592,37 @@ def build_syntax(name, literals, rules, *, source_ctx=None):
     return Syntax(name, (), tuple(transforms))
 
 
+def build_syntax_match(name, rules, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``SyntaxTransform`` arms from
+    MATCH-dialect patterns and templates.
+
+    Same row shape as :func:`build_syntax`. Each pattern datum is lowered
+    with :func:`koskari.matcher_ng.parse_explicit_rule_pattern`. Ki
+    ``syntax-match`` supplies a literals segment of only the macro name;
+    explicit patterns encode list structure directly, so no separate
+    literals iterable is required here.
+
+    :param name: primary name symbol or string for this macro
+    :param rules: iterable of ``(pattern_datum, template_datum)`` rows
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    :raises ValueError: when ``rules`` is empty or a row has wrong shape
+    """
+
+    rows = tuple(rules)
+    if not rows:
+        raise ValueError("build_syntax_match requires at least one rule")
+
+    transforms = []
+    for row in rows:
+        pat_d, tmpl = _normalize_syntax_rule_row(row)
+        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
+        transforms.append(SyntaxTransform(ptree, tmpl))
+
+    return Syntax(name, (), tuple(transforms))
+
+
 def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
     """
     Build a ``Syntax`` dispatcher of ``MacroTransform`` arms.
@@ -614,6 +649,36 @@ def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
     for row in rows:
         pat_d, proc = _normalize_proc_rule_row(row)
         ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(MacroTransform(ptree, proc))
+
+    return Syntax(name, (), tuple(transforms))
+
+
+def build_macro_match(name, rule_rows, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``MacroTransform`` arms using
+    MATCH-dialect patterns.
+
+    Same row shape as :func:`build_macro_syntax`. Parallels Ki
+    ``macro-match`` (no separate literals list; serialized literals tuple
+    is empty at the compile layer).
+
+    Each procedure is invoked as ``procedure(compiler, tc, **captures)``.
+
+    :param name: primary name symbol or string for this macro
+    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("build_macro_match requires at least one rule")
+
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_proc_rule_row(row)
+        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
         transforms.append(MacroTransform(ptree, proc))
 
     return Syntax(name, (), tuple(transforms))
@@ -653,11 +718,29 @@ def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
 
 def build_special_match(name, rule_rows, *, source_ctx=None):
     """
-    Same as :func:`build_special_syntax` with an empty ``literals``
-    iterable (no pattern literals beyond what each rule datum implies).
+    Build a ``Syntax`` dispatcher of ``SpecialTransform`` arms using
+    MATCH-dialect patterns.
+
+    Parallels Ki ``special-match``: same row shape as
+    :func:`build_special_syntax`, but each pattern datum is lowered with
+    :func:`koskari.matcher_ng.parse_explicit_rule_pattern` instead of
+    RULE-style :func:`parse_syntax_rules_pattern`.
+
+    Each procedure is invoked as
+    ``procedure(compiler, source_obj, match_result, tc)``.
     """
 
-    return build_special_syntax(name, (), rule_rows, source_ctx=source_ctx)
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("build_special_match requires at least one rule")
+
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_proc_rule_row(row)
+        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
+        transforms.append(SpecialTransform(ptree, proc))
+
+    return Syntax(name, (), tuple(transforms))
 
 
 # The end.
