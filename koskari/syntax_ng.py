@@ -34,7 +34,9 @@ elements (``()``), not ``(nil,)``.
 Runtime constructors ``build_syntax``, ``build_macro_syntax``,
 ``build_special_syntax``, and ``build_special_match`` assemble a
 ``Syntax`` dispatcher from RULE patterns and templates or procedural
-handlers; they are not registered in bootstrap until the NG cutover.
+handlers; matcher arms receive the full use-site form (nil-terminated
+pair spine) unchanged. They are not registered in bootstrap until the NG
+cutover.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -45,13 +47,13 @@ handlers; they are not registered in bootstrap until the NG cutover.
 from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
-from koskari.exceptions import CompilerError, SpecialError
+from koskari.exceptions import SpecialError
 from koskari.hygiene_ng import (
     apply_syntax_rules_hygiene,
     collect_binding_symbols,
     expand_template_with_hygiene,
 )
-from koskari.lib import Datum, Matcher, cdr, gensym, nil, symbol
+from koskari.lib import Datum, Matcher, gensym, nil, symbol
 from koskari.matcher_ng import (
     ABSENT,
     CAPTURE,
@@ -124,22 +126,6 @@ def _init_pattern_fields(instance, pattern, handler):
     instance._matcher = Matcher.from_tuple(instance.matcher_tuple)
 
 
-def _tail_subject(source_obj):
-    """
-    Match subject for syntax-rules-style patterns: spine of ``cdr(source_obj)``
-    """
-
-    if not is_pair(source_obj):
-        return ()
-    rest = cdr(source_obj)
-    if rest is nil:
-        return ()
-    if not is_proper(rest):
-        raise CompilerError(
-            "syntax pattern match requires a proper tail", source_obj)
-    return tuple(unpack(rest))
-
-
 def _filter_captures(captures):
     """
     Drop ``ABSENT`` entries from native ``MatchResult.captures`` and strip
@@ -162,49 +148,6 @@ def _captures_to_bindings(captures):
     for k, v in _filter_captures(captures).items():
         out[symbol(k)] = v
     return out
-
-
-def _make_special_invoke(user_fn, unpack):
-    """
-    Build one of three invoke closures (no per-call unpack branch)
-    """
-
-    if unpack is None:
-
-        def invoke_none(
-                compiler,
-                source_obj,
-                tc,
-                match_result):
-            return user_fn(compiler, source_obj, tc)
-
-        return invoke_none
-
-    if unpack == "match":
-
-        def invoke_match(
-                compiler,
-                source_obj,
-                tc,
-                match_result):
-            caps = _filter_captures(match_result.captures)
-            return user_fn(compiler, caps, tc)
-
-        return invoke_match
-
-    if unpack == "kwargs":
-
-        def invoke_kwargs(
-                compiler,
-                source_obj,
-                tc,
-                match_result):
-            caps = _filter_captures(match_result.captures)
-            return user_fn(compiler, tc=tc, **caps)
-
-        return invoke_kwargs
-
-    raise ValueError("internal: bad unpack %r" % (unpack,))
 
 
 def _unbox_datum_in_macro_output(expanded):
@@ -263,7 +206,7 @@ class Transform(Protocol):
         Try this arm on ``source_obj``; return compile result or ``None``
 
         :param compiler: active compiler instance
-        :param source_obj: full special form pair ``(head . tail)``
+        :param source_obj: full special form as a proper list (pair spine)
         :param tc: tail-call flag
         :return: fragment or form for ``compile_special``, or ``None`` when the
             pattern does not match
@@ -274,7 +217,7 @@ class Transform(Protocol):
 
 class SyntaxTransform(object):
     """
-    Template arm: match tail, then ``apply_syntax_rules_hygiene`` on template
+    Template arm: match full use-site form, then ``apply_syntax_rules_hygiene``
     """
 
     def __init__(self, pattern, template=nil):
@@ -289,16 +232,16 @@ class SyntaxTransform(object):
 
     def try_expand(self, compiler, source_obj, tc):
         """
-        Match ``cdr(source_obj)``; on success expand ``template`` with captures
+        Match ``source_obj`` as the full proper-list form; on success expand
+        ``template`` with captures
 
         :param compiler: active compiler
-        :param source_obj: full special form pair
+        :param source_obj: full special form (proper list spine)
         :param tc: tail-call flag (unused for template expansion)
         :return: expanded form or ``None`` when the pattern does not match
         """
 
-        subject = _tail_subject(source_obj)
-        result = self._matcher.match(subject)
+        result = self._matcher.match(source_obj)
         if not result.matched:
             return None
         bindings = _captures_to_bindings(result.captures)
@@ -311,39 +254,38 @@ class MacroTransform(object):
     Procedural arm: invoke handler then ``hygiene_ng`` on expanded output
     """
 
-    def __init__(self, pattern, handler, unpack=None):
+    def __init__(self, pattern, handler):
         """
         :param pattern: matcher_ng pattern tree
-        :param handler: Python callable (arity depends on ``unpack``)
-        :param unpack: ``None``, ``match``, or ``kwargs`` (fixed at construction)
+        :param handler:
+            ``(compiler, source_obj, match_result, tc)`` procedure returning
+            expanded form (use ``match_result.captures`` as needed)
         """
 
-        _validate_unpack_mode(unpack)
         if handler is None or not callable(handler):
             raise TypeError(
                 "MacroTransform handler must be callable, got %r"
                 % (type(handler).__name__,))
         _init_pattern_fields(self, pattern, handler)
-        self._unpack = unpack
-        self._invoke = _make_special_invoke(handler, unpack)
 
 
     def try_expand(self, compiler, source_obj, tc):
         """
-        Match tail, run handler, then procedural macro hygiene on the result
+        Match ``source_obj`` as the full proper-list form, run handler, then
+        procedural macro hygiene on the result
 
         :param compiler: active compiler
-        :param source_obj: full special form pair
-        :param tc: tail-call flag passed through when ``unpack`` is ``kwargs``
+        :param source_obj: full special form (proper list spine)
+        :param tc: tail-call flag (fourth argument to the handler)
         :return: hygiened expanded form or ``None`` when the pattern does not
             match
         """
 
-        subject = _tail_subject(source_obj)
-        result = self._matcher.match(subject)
+        result = self._matcher.match(source_obj)
         if not result.matched:
             return None
-        expanded = self._invoke(compiler, source_obj, tc, result)
+        caps = _filter_captures(result.captures)
+        expanded = self.handler(compiler, tc, **caps)
         syms = collect_binding_symbols(expanded, compiler.find_compiled)
         hygiened = expand_template_with_hygiene(expanded, {}, syms, {})
         return _unbox_datum_in_macro_output(hygiened)
@@ -354,38 +296,36 @@ class SpecialTransform(object):
     Special arm: handler return is the compile result (no automatic hygiene)
     """
 
-    def __init__(self, pattern, handler, unpack=None):
+    def __init__(self, pattern, handler):
         """
         :param pattern: matcher_ng pattern tree
-        :param handler: Python callable (arity depends on ``unpack``)
-        :param unpack: ``None``, ``match``, or ``kwargs`` (fixed at construction)
+        :param handler:
+            ``(compiler, source_obj, match_result, tc)`` procedure; use
+            :func:`special` if you need other calling conventions
         """
 
-        _validate_unpack_mode(unpack)
         if handler is None or not callable(handler):
             raise TypeError(
                 "SpecialTransform handler must be callable, got %r"
                 % (type(handler).__name__,))
         _init_pattern_fields(self, pattern, handler)
-        self._unpack = unpack
-        self._invoke = _make_special_invoke(handler, unpack)
 
 
     def try_expand(self, compiler, source_obj, tc):
         """
-        Match tail; on success return handler result unchanged
+        Match ``source_obj`` as the full proper-list form; on success return
+        handler result unchanged
 
         :param compiler: active compiler
-        :param source_obj: full special form pair
-        :param tc: tail-call flag passed through when ``unpack`` is ``kwargs``
+        :param source_obj: full special form (proper list spine)
+        :param tc: tail-call flag
         :return: compile product or ``None`` when the pattern does not match
         """
 
-        subject = _tail_subject(source_obj)
-        result = self._matcher.match(subject)
+        result = self._matcher.match(source_obj)
         if not result.matched:
             return None
-        return self._invoke(compiler, source_obj, tc, result)
+        return self.handler(compiler, source_obj, result, tc)
 
 
 class Syntax(Compiled):
@@ -473,9 +413,10 @@ def special(form_symbol, *, patterns, unpack=None):
 
     :param form_symbol: primary compile-time head symbol for this form
     :param patterns: one ``matcher_ng.Pattern`` or an iterable (try-order)
-    :param unpack: ``None`` (receive ``compiler, source_obj, tc``),
-        ``match`` (receive ``compiler, captures_dict, tc``), or ``kwargs``
-        (captures merged after ``tc``)
+    :param unpack: only for this decorator: ``None`` (receive
+        ``compiler, source_obj, tc``), ``match`` (receive
+        ``compiler, captures_dict, tc``), or ``kwargs`` (captures merged after
+        ``tc``). Not available on ``build_*`` rule rows.
     """
 
     _validate_unpack_mode(unpack)
@@ -491,7 +432,27 @@ def special(form_symbol, *, patterns, unpack=None):
                 "special decorator requires a callable, got %r"
                 % (type(fn).__name__,))
         plist = _normalize_special_patterns(patterns)
-        transforms = tuple(SpecialTransform(p, fn, unpack=unpack) for p in plist)
+        if unpack is None:
+
+            def wrapped(compiler, source_obj, match_result, tc):
+                return fn(compiler, source_obj, tc)
+
+        elif unpack == "match":
+
+            def wrapped(compiler, source_obj, match_result, tc):
+                caps = _filter_captures(match_result.captures)
+                return fn(compiler, caps, tc)
+
+        elif unpack == "kwargs":
+
+            def wrapped(compiler, source_obj, match_result, tc):
+                caps = _filter_captures(match_result.captures)
+                return fn(compiler, tc=tc, **caps)
+
+        else:
+            raise ValueError("internal: bad unpack %r" % (unpack,))
+
+        transforms = tuple(SpecialTransform(p, wrapped) for p in plist)
         return Syntax(form_symbol, (), transforms)
 
     return deco
@@ -618,9 +579,9 @@ def _normalize_syntax_rule_row(row):
     return seq[0], seq[1]
 
 
-def _normalize_proc_rule_row(row, default_unpack):
+def _normalize_proc_rule_row(row):
     """
-    Split a macro-rules / special-rules row into pattern, procedure, unpack
+    Split a macro-rules / special-rules row into pattern and procedure
     """
 
     if not isinstance(row, (list, tuple)):
@@ -628,21 +589,17 @@ def _normalize_proc_rule_row(row, default_unpack):
             f"macro/special rule row must be a sequence, got {row!r}"
         )
     seq = tuple(row)
-    if len(seq) == 2:
-        pat_d, proc = seq
-        unpack = default_unpack
-    elif len(seq) == 3:
-        pat_d, proc, unpack = seq
-        _validate_unpack_mode(unpack)
-    else:
+    if len(seq) != 2:
         raise ValueError(
-            f"macro/special rule row must be length 2 or 3, got {len(seq)}"
+            f"macro/special rule row must be (pattern, procedure), "
+            f"got length {len(seq)}"
         )
+    pat_d, proc = seq
     if proc is None or not callable(proc):
         raise TypeError(
             f"macro/special rule procedure must be callable, got {proc!r}"
         )
-    return pat_d, proc, unpack
+    return pat_d, proc
 
 
 def build_syntax(name, literals, rules, *, source_ctx=None):
@@ -650,8 +607,9 @@ def build_syntax(name, literals, rules, *, source_ctx=None):
     Build a ``Syntax`` dispatcher of ``SyntaxTransform`` arms from RULE
     patterns and templates.
 
-    Patterns match the tail of a use-site form (``cdr`` of the full pair),
-    consistent with ``Syntax.compile_impl``.
+    Patterns describe the full use-site form (nil-terminated list spine)
+    passed to ``compile_impl``, typically with the macro name as a leading
+    literal in each pattern list.
 
     :param name: primary name symbol or string for this macro
     :param literals: iterable of literal symbols or keywords for patterns
@@ -679,14 +637,15 @@ def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
     """
     Build a ``Syntax`` dispatcher of ``MacroTransform`` arms.
 
-    Default unpack mode per two-element row is ``kwargs`` (captures passed
-    as keyword arguments to the procedure). Supply a third row element to
-    override unpack (``None``, ``match``, or ``kwargs``).
+    Patterns describe the full use-site form (nil-terminated list spine),
+    typically with the macro name as a leading literal.
+
+    Each procedure is invoked as
+    ``procedure(compiler, source_obj, match_result, tc)``.
 
     :param name: primary name symbol or string for this macro
     :param literals: iterable of pattern literals (merged with macro name)
-    :param rule_rows: iterable of ``(pattern, procedure)`` or
-        ``(pattern, procedure, unpack)``
+    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
     :param source_ctx: context value for pattern parse errors
     :return: ``Syntax`` instance
     """
@@ -698,9 +657,9 @@ def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
     lit = _literals_with_name(literals, name)
     transforms = []
     for row in rows:
-        pat_d, proc, unpack = _normalize_proc_rule_row(row, "kwargs")
+        pat_d, proc = _normalize_proc_rule_row(row)
         ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
-        transforms.append(MacroTransform(ptree, proc, unpack=unpack))
+        transforms.append(MacroTransform(ptree, proc))
 
     return Syntax(name, (), tuple(transforms))
 
@@ -709,13 +668,15 @@ def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
     """
     Build a ``Syntax`` dispatcher of ``SpecialTransform`` arms.
 
-    Default unpack mode per two-element row is ``None`` (handler receives
-    ``compiler``, ``source_obj``, ``tc``).
+    Patterns describe the full use-site form (nil-terminated list spine),
+    typically with the special name as a leading literal.
+
+    Each procedure is invoked as
+    ``procedure(compiler, source_obj, match_result, tc)``.
 
     :param name: primary name symbol or string for this special form macro
     :param literals: iterable of pattern literals (merged with macro name)
-    :param rule_rows: iterable of ``(pattern, procedure)`` or
-        ``(pattern, procedure, unpack)``
+    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
     :param source_ctx: context value for pattern parse errors
     :return: ``Syntax`` instance
     """
@@ -727,9 +688,9 @@ def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
     lit = _literals_with_name(literals, name)
     transforms = []
     for row in rows:
-        pat_d, proc, unpack = _normalize_proc_rule_row(row, None)
+        pat_d, proc = _normalize_proc_rule_row(row)
         ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
-        transforms.append(SpecialTransform(ptree, proc, unpack=unpack))
+        transforms.append(SpecialTransform(ptree, proc))
 
     return Syntax(name, (), tuple(transforms))
 

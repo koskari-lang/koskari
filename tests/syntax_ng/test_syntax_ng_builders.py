@@ -23,6 +23,7 @@ import pytest
 from koskari.lib import cons, nil, symbol
 from koskari.types import build_proper
 from koskari.syntax_ng import (
+    _filter_captures,
     build_macro_syntax,
     build_special_match,
     build_special_syntax,
@@ -46,13 +47,13 @@ class TestBuildSyntax(unittest.TestCase):
 
     def test_build_syntax_first_matching_arm_wins(self):
         """
-        Same tail matches multiple REST patterns; first listed arm wins
+        Same full form matches two variable arms; first listed arm wins
         """
 
         m = symbol("compile/m")
         rules = (
-            (symbol("x"), symbol("first")),
-            (symbol("y"), symbol("second")),
+            (build_proper(m, symbol("x")), symbol("first")),
+            (build_proper(m, symbol("y")), symbol("second")),
         )
         s = build_syntax(m, (), rules)
         comp = _StubCompiler()
@@ -62,15 +63,15 @@ class TestBuildSyntax(unittest.TestCase):
 
     def test_build_syntax_second_arm_when_first_misses_structure(self):
         """
-        First arm matches only a single literal tail slot; two-arg tail falls
-        through to the REST arm
+        First arm matches only (m onlyhere); three-cell form falls through to
+        the wider arm
         """
 
         m = symbol("compile/m2")
         onlyhere = symbol("onlyhere")
         rules = (
-            (build_proper(onlyhere), symbol("narrow")),
-            (symbol("z"), symbol("wide")),
+            (build_proper(m, onlyhere), symbol("narrow")),
+            (build_proper(m, symbol("a"), symbol("b")), symbol("wide")),
         )
         s = build_syntax(m, (onlyhere,), rules)
         comp = _StubCompiler()
@@ -91,9 +92,9 @@ class TestBuildSyntax(unittest.TestCase):
 
 class TestBuildMacroSyntax(unittest.TestCase):
 
-    def test_build_macro_syntax_kwargs_default(self):
+    def test_build_macro_syntax_kwargs_invoke(self):
         """
-        Default unpack passes captures as keyword arguments
+        Macro procedures receive captures as keyword arguments plus tc
         """
 
         m = symbol("compile/mm")
@@ -103,7 +104,7 @@ class TestBuildMacroSyntax(unittest.TestCase):
             saw.append((tc, caps))
             return symbol("macro-out")
 
-        s = build_macro_syntax(m, (), ((symbol("v"), proc),))
+        s = build_macro_syntax(m, (), ((build_proper(m, symbol("v")), proc),))
         comp = _StubCompiler()
         slot = symbol("slot")
         src = cons(m, slot, nil)
@@ -112,25 +113,18 @@ class TestBuildMacroSyntax(unittest.TestCase):
         self.assertEqual(len(saw), 1)
         tc, caps = saw[0]
         self.assertFalse(tc)
-        self.assertEqual(caps["v"], (slot,))
+        self.assertEqual(caps["v"], slot)
 
-    def test_build_macro_syntax_unpack_none_three_tuple(self):
+    def test_build_macro_syntax_three_tuple_row_raises(self):
         m = symbol("compile/mm2")
-        saw = []
 
-        def proc(compiler, source_obj, tc):
-            saw.append(source_obj)
+        def proc(compiler, tc=None, **caps):
             return symbol("done")
 
-        s = build_macro_syntax(
-            m, (),
-            ((symbol("w"), proc, None),))
-        comp = _StubCompiler()
-        src = cons(m, symbol("u"), nil)
-        out = s.compile_impl(comp, src, False)
-        self.assertEqual(out, symbol("done"))
-        self.assertEqual(len(saw), 1)
-        self.assertIs(saw[0], src)
+        with self.assertRaises(ValueError):
+            build_macro_syntax(
+                m, (),
+                ((build_proper(m, symbol("w")), proc, None),))
 
     def test_build_macro_syntax_empty_raises(self):
         m = symbol("compile/mm3")
@@ -142,18 +136,24 @@ class TestBuildMacroSyntax(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_macro_syntax(
                 m, (),
-                ((symbol("a"), lambda c: nil, None, "extra"),))
+                (
+                    (
+                        symbol("a"),
+                        lambda c, tc=None, **kw: nil,
+                        "extra",
+                    ),
+                ))
 
 
 class TestBuildSpecialSyntax(unittest.TestCase):
 
-    def test_build_special_syntax_default_unpack(self):
+    def test_build_special_syntax_handler_shape(self):
         m = symbol("compile/ss")
 
-        def proc(compiler, source_obj, tc):
+        def proc(compiler, source_obj, result, tc):
             return symbol("special-out")
 
-        s = build_special_syntax(m, (), ((symbol("q"), proc),))
+        s = build_special_syntax(m, (), ((build_proper(m, symbol("q")), proc),))
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("special-out"))
@@ -161,10 +161,10 @@ class TestBuildSpecialSyntax(unittest.TestCase):
     def test_build_special_match_delegates_empty_literals(self):
         m = symbol("compile/sm")
 
-        def proc(compiler, source_obj, tc):
+        def proc(compiler, source_obj, result, tc):
             return symbol("match-out")
 
-        s = build_special_match(m, ((symbol("r"), proc),))
+        s = build_special_match(m, ((build_proper(m, symbol("r")), proc),))
         src = cons(m, symbol("x"), nil)
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("match-out"))
