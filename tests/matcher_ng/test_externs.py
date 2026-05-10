@@ -49,9 +49,9 @@ def _lambda_style_tuple():
         ("TEST", "ANY", -1),
         ("TEST", "ANY", -1),
         ("REST", 1),
-        ("GROUP", 1, 2, 3, 4, 5),
+        ("MATCH", 1, 2, 3, 4, 5),
     )
-    return ("MATCHER", 1, slots, externs, consts, nodes, 6)
+    return ("MATCHER", slots, externs, consts, nodes, 6)
 
 
 def _two_extern_tuple():
@@ -61,7 +61,6 @@ def _two_extern_tuple():
 
     return (
         "MATCHER",
-        1,
         (),
         ("symbol", "Point"),
         (),
@@ -128,7 +127,6 @@ class TestExternDefaults(unittest.TestCase):
             m = thaw(
                 (
                     "MATCHER",
-                    1,
                     (),
                     ("Point",),
                     (),

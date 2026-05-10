@@ -214,3 +214,19 @@
    ...
    fun:Py_Finalize*
 }
+
+
+# === PyRun_String (embedded eval tests) ===
+#
+# test_eval.c uses PyRun_String to define small Python classes/functions.
+# CPython's compiler allocates dicts and related structures during
+# _PyAST_Compile that Valgrind still reports as lost at exit even after
+# Py_DECREF of the prelude dict and Py_Finalize; this is confined to
+# test_eval.c in this harness.
+
+{
+   python-pyrun-string-flags-leak
+   Memcheck:Leak
+   ...
+   fun:PyRun_StringFlags
+}

@@ -23,14 +23,14 @@ import pytest
 
 from koskari.lib import keyword, symbol
 from koskari.matcher_ng import (
-    ABSENT,
     BINDING_CELL,
-    GROUP,
+    MATCH,
     Matcher,
     binding_inner_pattern,
     repeat_capture,
     slot_prefix,
     thaw,
+    unwrap_capture_tree,
 )
 
 
@@ -56,14 +56,14 @@ class TestRepeatCapture(unittest.TestCase):
         subj = ((sa, 1), (sb, 2))
         result = m.match(subj, symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        frames = result.captures["bindings"]
+        frames = unwrap_capture_tree(result.captures["bindings"])
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["name"], sa)
         self.assertEqual(frames[0]["expr"], 1)
         self.assertEqual(frames[1]["name"], sb)
         self.assertEqual(frames[1]["expr"], 2)
-        self.assertIs(result.captures.get("name"), ABSENT)
-        self.assertIs(result.captures.get("expr"), ABSENT)
+        self.assertNotIn("name", result.captures)
+        self.assertNotIn("expr", result.captures)
 
 
     def test_repeat_capture_expr_as_name_branch(self):
@@ -79,7 +79,7 @@ class TestRepeatCapture(unittest.TestCase):
         subj = (cell,)
         result = m.match(subj, symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        frames = result.captures["rows"]
+        frames = unwrap_capture_tree(result.captures["rows"])
         self.assertEqual(len(frames), 1)
         self.assertEqual(frames[0]["expr"], 99)
         self.assertEqual(frames[0]["name"], sx)
@@ -94,10 +94,10 @@ class TestSlotPrefixAndBindingCell(unittest.TestCase):
         succeeds (duplicate bare name/expr would fail without prefix)
         """
 
-        pat = GROUP(BINDING_CELL("a"), BINDING_CELL("b"))
+        pat = MATCH(BINDING_CELL("a"), BINDING_CELL("b"))
         frozen = pat.freeze()
-        self.assertIn("a__name", frozen[2])
-        self.assertIn("b__expr", frozen[2])
+        self.assertIn("a__name", frozen[1])
+        self.assertIn("b__expr", frozen[1])
 
 
     def test_slot_prefix_rest_slot(self):
@@ -107,9 +107,9 @@ class TestSlotPrefixAndBindingCell(unittest.TestCase):
 
         from koskari.matcher_ng import REST
 
-        pat = slot_prefix(GROUP(REST("tail"), BINDING_CELL("x")), "p")
+        pat = slot_prefix(MATCH(REST("tail"), BINDING_CELL("x")), "p")
         frozen = pat.freeze()
-        slots = frozen[2]
+        slots = frozen[1]
         self.assertIn("p__tail", slots)
 
 
@@ -131,7 +131,7 @@ class TestRepeatFramesThawRoundTrip(unittest.TestCase):
         subj = ((sa, 10), (sb, 20))
         result = m.match(subj, symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        frames = result.captures["bindings"]
+        frames = unwrap_capture_tree(result.captures["bindings"])
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["name"], sa)
         self.assertEqual(frames[0]["expr"], 10)

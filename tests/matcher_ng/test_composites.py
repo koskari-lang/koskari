@@ -25,7 +25,6 @@ import pytest
 
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.matcher_ng import (
-    ABSENT,
     BINDING,
     BINDINGS,
     BODY,
@@ -33,7 +32,7 @@ from koskari.matcher_ng import (
     DECL,
     DEFINE,
     FORMALS,
-    GROUP,
+    MATCH,
     Hygiene,
     HygienicMatchCompiler,
     LITERAL,
@@ -43,6 +42,7 @@ from koskari.matcher_ng import (
     TYPE,
     USING,
     make_matcher,
+    unwrap_capture_tree,
 )
 
 
@@ -51,6 +51,14 @@ pytestmark = pytest.mark.phase_infra
 
 SYMBOL_TYPE = type(symbol("x"))
 KEYWORD_TYPE = type(keyword("x"))
+
+
+def _ucaps(result):
+    """
+    Shallow copy of captures with Datum wrappers stripped recursively
+    """
+
+    return unwrap_capture_tree(dict(result.captures.items()))
 
 
 def _list(*items):
@@ -71,12 +79,12 @@ class TestDEFINE(unittest.TestCase):
         DEFINE binds the named slot to a single symbol element
         """
 
-        pat = GROUP(DEFINE("name"))
+        pat = MATCH(DEFINE("name"))
         m = pat.build()
         sa = symbol("foo")
         result = m.match((sa,), symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"], sa)
+        self.assertIs(_ucaps(result)["name"], sa)
 
 
     def test_define_rejects_non_symbol(self):
@@ -84,7 +92,7 @@ class TestDEFINE(unittest.TestCase):
         DEFINE rejects non-symbol elements at the native engine level
         """
 
-        pat = GROUP(DEFINE("name"))
+        pat = MATCH(DEFINE("name"))
         m = pat.build()
         self.assertFalse(m.match((42,), symbol=SYMBOL_TYPE).matched)
 
@@ -94,7 +102,7 @@ class TestDEFINE(unittest.TestCase):
         Building a DEFINE-bearing pattern yields a native Matcher
         """
 
-        m = GROUP(DEFINE("name")).build()
+        m = MATCH(DEFINE("name")).build()
         self.assertIsInstance(m, Matcher)
 
 
@@ -104,7 +112,7 @@ class TestDEFINE(unittest.TestCase):
         """
 
         hc = HygienicMatchCompiler()
-        _frozen = hc.lower(GROUP(DEFINE("name")))
+        _frozen = hc.lower(MATCH(DEFINE("name")))
         hygiene = hc.build_hygiene()
         binders = hygiene.binders
         self.assertIn("name", binders)
@@ -122,12 +130,12 @@ class TestDECL(unittest.TestCase):
         DECL accepts a bare symbol element
         """
 
-        pat = GROUP(DECL("d"))
+        pat = MATCH(DECL("d"))
         m = pat.build()
         sa = symbol("foo")
         result = m.match((sa,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["d"], sa)
+        self.assertIs(_ucaps(result)["d"], sa)
 
 
     def test_decl_one_element_list(self):
@@ -135,14 +143,14 @@ class TestDECL(unittest.TestCase):
         DECL accepts (name) and binds the inner symbol to 'name'
         """
 
-        pat = GROUP(DECL("d"))
+        pat = MATCH(DECL("d"))
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa),)
         result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["d"], _list(sa))
-        self.assertIs(result.captures["name"], sa)
+        self.assertEqual(_ucaps(result)["d"], _list(sa))
+        self.assertIs(_ucaps(result)["name"], sa)
 
 
     def test_decl_as_form(self):
@@ -150,15 +158,15 @@ class TestDECL(unittest.TestCase):
         DECL accepts (type as: name) and binds 'type' and 'name'
         """
 
-        pat = GROUP(DECL("d"))
+        pat = MATCH(DECL("d"))
         m = pat.build()
         sa = symbol("Foo")
         sb = symbol("bar")
         subj = (_list(sa, keyword("as"), sb),)
         result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["type"], sa)
-        self.assertIs(result.captures["name"], sb)
+        self.assertIs(_ucaps(result)["type"], sa)
+        self.assertIs(_ucaps(result)["name"], sb)
 
 
     def test_decl_name_with_keyword_tail(self):
@@ -167,7 +175,7 @@ class TestDECL(unittest.TestCase):
         decl_tail so downstream consumers walk the keyword pairs
         """
 
-        pat = GROUP(DECL("d"))
+        pat = MATCH(DECL("d"))
         m = pat.build()
         sa = symbol("foo")
         kt = keyword("type")
@@ -177,8 +185,8 @@ class TestDECL(unittest.TestCase):
             (tail_form,),
             symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"], sa)
-        self.assertEqual(result.captures["decl_tail"], cons(kt, st, nil))
+        self.assertIs(_ucaps(result)["name"], sa)
+        self.assertEqual(_ucaps(result)["decl_tail"], cons(kt, st, nil))
 
 
     def test_decl_rejects_non_symbol_non_pair(self):
@@ -187,7 +195,7 @@ class TestDECL(unittest.TestCase):
         pair such as a literal int
         """
 
-        pat = GROUP(DECL("d"))
+        pat = MATCH(DECL("d"))
         m = pat.build()
         result = m.match((42,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertFalse(result.matched)
@@ -199,7 +207,7 @@ class TestDECL(unittest.TestCase):
         """
 
         hc = HygienicMatchCompiler()
-        _frozen = hc.lower(GROUP(DECL("d")))
+        _frozen = hc.lower(MATCH(DECL("d")))
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["d"]
         sx = symbol("x")
@@ -215,15 +223,15 @@ class TestBINDING(unittest.TestCase):
         the inner name and expr captures
         """
 
-        pat = GROUP(BINDING("b"))
+        pat = MATCH(BINDING("b"))
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa, 7),)
         result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["b"], _list(sa, 7))
-        self.assertIs(result.captures["name"], sa)
-        self.assertEqual(result.captures["expr"], 7)
+        self.assertEqual(_ucaps(result)["b"], _list(sa, 7))
+        self.assertIs(_ucaps(result)["name"], sa)
+        self.assertEqual(_ucaps(result)["expr"], 7)
 
 
     def test_binding_expr_as_name_form(self):
@@ -231,14 +239,14 @@ class TestBINDING(unittest.TestCase):
         BINDING captures (expr as: name) and exposes both inner slots
         """
 
-        pat = GROUP(BINDING("b"))
+        pat = MATCH(BINDING("b"))
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(7, keyword("as"), sa),)
         result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["expr"], 7)
-        self.assertIs(result.captures["name"], sa)
+        self.assertEqual(_ucaps(result)["expr"], 7)
+        self.assertIs(_ucaps(result)["name"], sa)
 
 
     def test_binding_rejects_unrecognised_shape(self):
@@ -246,7 +254,7 @@ class TestBINDING(unittest.TestCase):
         BINDING rejects forms that match neither inner shape
         """
 
-        pat = GROUP(BINDING("b"))
+        pat = MATCH(BINDING("b"))
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa, 1, 2),)
@@ -260,7 +268,7 @@ class TestBINDING(unittest.TestCase):
         """
 
         hc = HygienicMatchCompiler()
-        _frozen = hc.lower(GROUP(BINDING("b")))
+        _frozen = hc.lower(MATCH(BINDING("b")))
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["b"]
         sn = symbol("n")
@@ -279,21 +287,21 @@ class TestBINDINGS(unittest.TestCase):
         the trailing REST capture
         """
 
-        pat = GROUP(BINDINGS("bs"), CAPTURE("tail"))
+        pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
         subj = (_list(sa, 1), _list(sb, 2), "tail")
         result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        frames = result.captures["bs"]
+        frames = _ucaps(result)["bs"]
         self.assertIsInstance(frames, list)
         self.assertEqual(len(frames), 2)
         self.assertIs(frames[0]["name"], sa)
         self.assertEqual(frames[0]["expr"], 1)
         self.assertIs(frames[1]["name"], sb)
         self.assertEqual(frames[1]["expr"], 2)
-        self.assertEqual(result.captures["tail"], "tail")
+        self.assertEqual(_ucaps(result)["tail"], "tail")
 
 
     def test_bindings_empty_marker_nil(self):
@@ -302,13 +310,13 @@ class TestBINDINGS(unittest.TestCase):
         slot to nil itself
         """
 
-        pat = GROUP(BINDINGS("bs"), CAPTURE("tail"))
+        pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
         result = m.match(
             (nil, "tail"), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["bs"], nil)
-        self.assertEqual(result.captures["tail"], "tail")
+        self.assertIs(_ucaps(result)["bs"], nil)
+        self.assertEqual(_ucaps(result)["tail"], "tail")
 
 
     def test_bindings_zero_inline_cells(self):
@@ -317,13 +325,13 @@ class TestBINDINGS(unittest.TestCase):
         zero cells and binds the slot to an empty list
         """
 
-        pat = GROUP(BINDINGS("bs"), CAPTURE("tail"))
+        pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
         result = m.match(
             (42,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["bs"], [])
-        self.assertEqual(result.captures["tail"], 42)
+        self.assertEqual(_ucaps(result)["bs"], [])
+        self.assertEqual(_ucaps(result)["tail"], 42)
 
 
     def test_bindings_default_mode_recorded(self):
@@ -333,7 +341,7 @@ class TestBINDINGS(unittest.TestCase):
 
         bs = BINDINGS("bs")
         hc = HygienicMatchCompiler()
-        _frozen = hc.lower(GROUP(bs))
+        _frozen = hc.lower(MATCH(bs))
         hygiene = hc.build_hygiene()
         self.assertEqual(bs._mode, "parallel")
         self.assertIs(hygiene.binders["bs"], bs)
@@ -346,7 +354,7 @@ class TestBINDINGS(unittest.TestCase):
 
         bs = BINDINGS("bs", mode="sequential")
         hc = HygienicMatchCompiler()
-        _frozen = hc.lower(GROUP(bs))
+        _frozen = hc.lower(MATCH(bs))
         hygiene = hc.build_hygiene()
         self.assertEqual(bs._mode, "sequential")
         self.assertIs(hygiene.binders["bs"], bs)
@@ -361,7 +369,7 @@ class TestUSING(unittest.TestCase):
         unpack-only slot lhs remains ABSENT
         """
 
-        pat = GROUP(USING("u"))
+        pat = MATCH(USING("u"))
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa, 7),)
@@ -370,9 +378,10 @@ class TestUSING(unittest.TestCase):
             symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
             pair=type(cons(1, nil)))
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"], sa)
-        self.assertEqual(result.captures["expr"], 7)
-        self.assertIs(result.captures["lhs"], ABSENT)
+        c = _ucaps(result)
+        self.assertIs(c["name"], sa)
+        self.assertEqual(c["expr"], 7)
+        self.assertNotIn("lhs", c)
 
 
     def test_using_expr_as_name(self):
@@ -381,7 +390,7 @@ class TestUSING(unittest.TestCase):
         remains ABSENT
         """
 
-        pat = GROUP(USING("u"))
+        pat = MATCH(USING("u"))
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(7, keyword("as"), sa),)
@@ -390,9 +399,10 @@ class TestUSING(unittest.TestCase):
             symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
             pair=type(cons(1, nil)))
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["expr"], 7)
-        self.assertIs(result.captures["name"], sa)
-        self.assertIs(result.captures["lhs"], ABSENT)
+        c = _ucaps(result)
+        self.assertEqual(c["expr"], 7)
+        self.assertIs(c["name"], sa)
+        self.assertNotIn("lhs", c)
 
 
     def test_using_bare_expr(self):
@@ -400,7 +410,7 @@ class TestUSING(unittest.TestCase):
         USING accepts (expr) and binds expr only
         """
 
-        pat = GROUP(USING("u"))
+        pat = MATCH(USING("u"))
         m = pat.build()
         subj = (_list(7),)
         result = m.match(
@@ -408,9 +418,10 @@ class TestUSING(unittest.TestCase):
             symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
             pair=type(cons(1, nil)))
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["expr"], 7)
-        self.assertIs(result.captures["name"], ABSENT)
-        self.assertIs(result.captures["lhs"], ABSENT)
+        c = _ucaps(result)
+        self.assertEqual(c["expr"], 7)
+        self.assertNotIn("name", c)
+        self.assertNotIn("lhs", c)
 
 
     def test_using_unpack_form(self):
@@ -418,7 +429,7 @@ class TestUSING(unittest.TestCase):
         USING accepts ((pat...) expr) and binds the lhs pair plus expr
         """
 
-        pat = GROUP(USING("u"))
+        pat = MATCH(USING("u"))
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
@@ -429,9 +440,10 @@ class TestUSING(unittest.TestCase):
             symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
             pair=type(cons(1, nil)))
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["lhs"], lhs)
-        self.assertEqual(result.captures["expr"], 7)
-        self.assertIs(result.captures["name"], ABSENT)
+        c = _ucaps(result)
+        self.assertEqual(c["lhs"], lhs)
+        self.assertEqual(c["expr"], 7)
+        self.assertNotIn("name", c)
 
 
     def test_using_rejects_non_pair(self):
@@ -439,7 +451,7 @@ class TestUSING(unittest.TestCase):
         USING rejects a non-pair element: the FORM descent fails
         """
 
-        pat = GROUP(USING("u"))
+        pat = MATCH(USING("u"))
         m = pat.build()
         result = m.match(
             (42,),
@@ -454,7 +466,7 @@ class TestUSING(unittest.TestCase):
         """
 
         hc = HygienicMatchCompiler()
-        _frozen = hc.lower(GROUP(USING("u")))
+        _frozen = hc.lower(MATCH(USING("u")))
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["u"]
         sn = symbol("n")
@@ -482,17 +494,18 @@ class TestFORMALS(unittest.TestCase):
         list is one symbol). Inner phase slots remain ABSENT
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("rest")
         result = m.match((sa,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["f"], sa)
-        self.assertIs(result.captures["positionals"], ABSENT)
-        self.assertIs(result.captures["defaults"], ABSENT)
-        self.assertIs(result.captures["star"], ABSENT)
-        self.assertIs(result.captures["kwonly"], ABSENT)
-        self.assertIs(result.captures["starstar"], ABSENT)
+        c = _ucaps(result)
+        self.assertIs(c["f"], sa)
+        self.assertNotIn("positionals", c)
+        self.assertNotIn("defaults", c)
+        self.assertNotIn("star", c)
+        self.assertNotIn("kwonly", c)
+        self.assertNotIn("starstar", c)
 
 
     def test_formals_empty_list(self):
@@ -502,16 +515,17 @@ class TestFORMALS(unittest.TestCase):
         ABSENT
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         result = m.match((nil,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["f"], nil)
-        self.assertEqual(result.captures["positionals"], [])
-        self.assertEqual(result.captures["defaults"], [])
-        self.assertEqual(result.captures["kwonly"], [])
-        self.assertIs(result.captures["star"], ABSENT)
-        self.assertIs(result.captures["starstar"], ABSENT)
+        c = _ucaps(result)
+        self.assertIs(c["f"], nil)
+        self.assertEqual(c["positionals"], [])
+        self.assertEqual(c["defaults"], [])
+        self.assertEqual(c["kwonly"], [])
+        self.assertNotIn("star", c)
+        self.assertNotIn("starstar", c)
 
 
     def test_formals_simple_positionals(self):
@@ -520,7 +534,7 @@ class TestFORMALS(unittest.TestCase):
         each holding 'name'
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
@@ -528,8 +542,8 @@ class TestFORMALS(unittest.TestCase):
         formals = _list(sa, sb, sc)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["f"], formals)
-        positionals = result.captures["positionals"]
+        self.assertEqual(_ucaps(result)["f"], formals)
+        positionals = _ucaps(result)["positionals"]
         self.assertIsInstance(positionals, list)
         self.assertEqual(len(positionals), 3)
         self.assertIs(positionals[0]["name"], sa)
@@ -543,13 +557,13 @@ class TestFORMALS(unittest.TestCase):
         produces one positional frame
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sself = symbol("self")
         formals = _list(sself)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        positionals = result.captures["positionals"]
+        positionals = _ucaps(result)["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sself)
 
@@ -560,17 +574,17 @@ class TestFORMALS(unittest.TestCase):
         shape with one positional and one keyword default
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sself = symbol("self")
         kthresh = keyword("threshold")
         formals = _list(sself, kthresh, 0.6)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        positionals = result.captures["positionals"]
+        positionals = _ucaps(result)["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sself)
-        defaults = result.captures["defaults"]
+        defaults = _ucaps(result)["defaults"]
         self.assertEqual(len(defaults), 1)
         self.assertIs(defaults[0]["kw"], kthresh)
         self.assertEqual(defaults[0]["default"], 0.6)
@@ -582,15 +596,15 @@ class TestFORMALS(unittest.TestCase):
         defaults with no positional preamble
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         kalive = keyword("alive")
         kdead = keyword("dead")
         formals = _list(kalive, "O", kdead, " ")
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["positionals"], [])
-        defaults = result.captures["defaults"]
+        self.assertEqual(_ucaps(result)["positionals"], [])
+        defaults = _ucaps(result)["defaults"]
         self.assertEqual(len(defaults), 2)
         self.assertIs(defaults[0]["kw"], kalive)
         self.assertEqual(defaults[0]["default"], "O")
@@ -604,13 +618,13 @@ class TestFORMALS(unittest.TestCase):
         no other phases
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         kargv = keyword("argv")
         formals = _list(kargv, None)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        defaults = result.captures["defaults"]
+        defaults = _ucaps(result)["defaults"]
         self.assertEqual(len(defaults), 1)
         self.assertIs(defaults[0]["kw"], kargv)
         self.assertIsNone(defaults[0]["default"])
@@ -621,15 +635,16 @@ class TestFORMALS(unittest.TestCase):
         FORMALS accepts (*: rest) with no positional preamble
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         rest = symbol("rest")
         formals = _list(keyword("*"), rest)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["positionals"], [])
-        self.assertIs(result.captures["star"], rest)
-        self.assertIs(result.captures["starstar"], ABSENT)
+        c = _ucaps(result)
+        self.assertEqual(c["positionals"], [])
+        self.assertIs(c["star"], rest)
+        self.assertNotIn("starstar", c)
 
 
     def test_formals_only_starstar(self):
@@ -637,15 +652,16 @@ class TestFORMALS(unittest.TestCase):
         FORMALS accepts (**: kw) with no positional preamble
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         skw = symbol("kw")
         formals = _list(keyword("**"), skw)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["positionals"], [])
-        self.assertIs(result.captures["starstar"], skw)
-        self.assertIs(result.captures["star"], ABSENT)
+        c = _ucaps(result)
+        self.assertEqual(c["positionals"], [])
+        self.assertIs(c["starstar"], skw)
+        self.assertNotIn("star", c)
 
 
     def test_formals_bracket_name_only(self):
@@ -654,13 +670,13 @@ class TestFORMALS(unittest.TestCase):
         as ((x)); the frame holds 'name' and no other inner slots
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sx = symbol("x")
         formals = _list(_list(sx))
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        positionals = result.captures["positionals"]
+        positionals = _ucaps(result)["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sx)
 
@@ -672,14 +688,14 @@ class TestFORMALS(unittest.TestCase):
         list of keyword/value frames
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sx = symbol("x")
         st = symbol("T")
         formals = _list(_list(sx, keyword("::"), st))
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        positionals = result.captures["positionals"]
+        positionals = _ucaps(result)["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sx)
         attrs = positionals[0]["attrs"]
@@ -694,7 +710,7 @@ class TestFORMALS(unittest.TestCase):
         (a b . c); improper formals lists are illegal in koskari
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
@@ -710,7 +726,7 @@ class TestFORMALS(unittest.TestCase):
         proper list, such as a number
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         result = m.match((42,), **self._externs())
         self.assertFalse(result.matched)
@@ -721,17 +737,18 @@ class TestFORMALS(unittest.TestCase):
         FORMALS accepts (a *: rest) and binds 'star' to the rest symbol
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("a")
         rest = symbol("rest")
         formals = _list(sa, keyword("*"), rest)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertEqual(len(result.captures["positionals"]), 1)
-        self.assertIs(result.captures["positionals"][0]["name"], sa)
-        self.assertIs(result.captures["star"], rest)
-        self.assertIs(result.captures["starstar"], ABSENT)
+        c = _ucaps(result)
+        self.assertEqual(len(c["positionals"]), 1)
+        self.assertIs(c["positionals"][0]["name"], sa)
+        self.assertIs(c["star"], rest)
+        self.assertNotIn("starstar", c)
 
 
     def test_formals_starstar_segment(self):
@@ -740,15 +757,16 @@ class TestFORMALS(unittest.TestCase):
         symbol
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("a")
         kw = symbol("kw")
         formals = _list(sa, keyword("**"), kw)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["starstar"], kw)
-        self.assertIs(result.captures["star"], ABSENT)
+        c = _ucaps(result)
+        self.assertIs(c["starstar"], kw)
+        self.assertNotIn("star", c)
 
 
     def test_formals_default_keyword_value_pairs(self):
@@ -757,7 +775,7 @@ class TestFORMALS(unittest.TestCase):
         frames each holding 'kw' (a keyword) and 'default' (a value)
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("a")
         foo = keyword("foo")
@@ -765,7 +783,7 @@ class TestFORMALS(unittest.TestCase):
         formals = _list(sa, foo, 1, bar, 2)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        defaults = result.captures["defaults"]
+        defaults = _ucaps(result)["defaults"]
         self.assertIsInstance(defaults, list)
         self.assertEqual(len(defaults), 2)
         self.assertIs(defaults[0]["kw"], foo)
@@ -780,7 +798,7 @@ class TestFORMALS(unittest.TestCase):
         positional, star, kw-only, starstar phases
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("a")
         rest = symbol("rest")
@@ -791,14 +809,14 @@ class TestFORMALS(unittest.TestCase):
             sa, keyword("*"), rest, sx, ky, 2, keyword("**"), skw)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["star"], rest)
-        kwonly = result.captures["kwonly"]
+        self.assertIs(_ucaps(result)["star"], rest)
+        kwonly = _ucaps(result)["kwonly"]
         self.assertIsInstance(kwonly, list)
         self.assertEqual(len(kwonly), 2)
         self.assertIs(kwonly[0]["name"], sx)
         self.assertIs(kwonly[1]["kw"], ky)
         self.assertEqual(kwonly[1]["default"], 2)
-        self.assertIs(result.captures["starstar"], skw)
+        self.assertIs(_ucaps(result)["starstar"], skw)
 
 
     def test_formals_star_nil_marker(self):
@@ -807,13 +825,13 @@ class TestFORMALS(unittest.TestCase):
         nil); the star slot binds to nil
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("a")
         formals = _list(sa, keyword("*"), nil)
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["star"], nil)
+        self.assertIs(_ucaps(result)["star"], nil)
 
 
     def test_formals_bracket_default(self):
@@ -822,14 +840,14 @@ class TestFORMALS(unittest.TestCase):
         (a (b 1)) and the bracket frame holds name and default
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
         formals = _list(sa, _list(sb, 1))
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        positionals = result.captures["positionals"]
+        positionals = _ucaps(result)["positionals"]
         self.assertEqual(len(positionals), 2)
         self.assertIs(positionals[0]["name"], sa)
         self.assertIs(positionals[1]["name"], sb)
@@ -842,14 +860,14 @@ class TestFORMALS(unittest.TestCase):
         frame holds 'type' and 'name'
         """
 
-        pat = GROUP(FORMALS("f"))
+        pat = MATCH(FORMALS("f"))
         m = pat.build()
         st = symbol("T")
         sn = symbol("n")
         formals = _list(_list(st, keyword("as"), sn))
         result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        positionals = result.captures["positionals"]
+        positionals = _ucaps(result)["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["type"], st)
         self.assertIs(positionals[0]["name"], sn)
@@ -861,7 +879,7 @@ class TestFORMALS(unittest.TestCase):
         """
 
         hc = HygienicMatchCompiler()
-        _frozen = hc.lower(GROUP(FORMALS("f")))
+        _frozen = hc.lower(MATCH(FORMALS("f")))
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["f"]
         sf = symbol("rest")
@@ -877,12 +895,12 @@ class TestBODY(unittest.TestCase):
         slot, identical to REST at the engine level
         """
 
-        pat = GROUP(CAPTURE("head"), BODY("body"))
+        pat = MATCH(CAPTURE("head"), BODY("body"))
         m = pat.build()
         result = m.match((1, 2, 3))
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["head"], 1)
-        self.assertEqual(result.captures["body"], (2, 3))
+        self.assertEqual(_ucaps(result)["head"], 1)
+        self.assertEqual(_ucaps(result)["body"], (2, 3))
 
 
     def test_body_registers_scope_region(self):
@@ -891,7 +909,7 @@ class TestBODY(unittest.TestCase):
         capture once (the tuple tail as a single lexical root)
         """
 
-        pat = GROUP(CAPTURE("head"), BODY("body"))
+        pat = MATCH(CAPTURE("head"), BODY("body"))
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(pat)
         hygiene = hc.build_hygiene()
@@ -913,7 +931,7 @@ class TestRuntimeCompileHygiene(unittest.TestCase):
         plan
         """
 
-        pat = GROUP(CAPTURE("x", TYPE("symbol")))
+        pat = MATCH(CAPTURE("x", TYPE("symbol")))
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(pat)
         self.assertTrue(hc.build_hygiene().is_empty())
@@ -925,12 +943,12 @@ class TestRuntimeCompileHygiene(unittest.TestCase):
         lower leaves the hygiene plan empty
         """
 
-        pat = GROUP(BODY("b"))
+        pat = MATCH(BODY("b"))
         _frozen = MatchCompiler().lower(pat)
         m = Matcher.from_tuple(_frozen)
         result = m.match((1, 2, 3))
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["b"], (1, 2, 3))
+        self.assertEqual(_ucaps(result)["b"], (1, 2, 3))
 
 
     def test_define_compile_ignores_hygiene_when_not_hygienic(self):
@@ -938,13 +956,13 @@ class TestRuntimeCompileHygiene(unittest.TestCase):
         DEFINE registers binders only under HygienicMatchCompiler
         """
 
-        pat = GROUP(DEFINE("n"))
+        pat = MATCH(DEFINE("n"))
         _frozen = MatchCompiler().lower(pat)
         m = Matcher.from_tuple(_frozen)
         sa = symbol("x")
         result = m.match((sa,), symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["n"], sa)
+        self.assertIs(_ucaps(result)["n"], sa)
 
 
 class TestComposition(unittest.TestCase):
@@ -956,13 +974,13 @@ class TestComposition(unittest.TestCase):
         region
         """
 
-        pat = GROUP(DEFINE("name"), BODY("body"))
+        pat = MATCH(DEFINE("name"), BODY("body"))
         m = pat.build()
         sa = symbol("foo")
         result = m.match((sa, 1, 2, 3), symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"], sa)
-        self.assertEqual(result.captures["body"], (1, 2, 3))
+        self.assertIs(_ucaps(result)["name"], sa)
+        self.assertEqual(_ucaps(result)["body"], (1, 2, 3))
 
 
     def test_define_with_formals_and_body(self):
@@ -971,7 +989,7 @@ class TestComposition(unittest.TestCase):
         BODY into one matcher
         """
 
-        pat = GROUP(DEFINE("name"), FORMALS("formals"), BODY("body"))
+        pat = MATCH(DEFINE("name"), FORMALS("formals"), BODY("body"))
         m = pat.build()
         sa = symbol("foo")
         sx = symbol("x")
@@ -981,10 +999,10 @@ class TestComposition(unittest.TestCase):
             (sa, formals, "b1", "b2"),
             symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"], sa)
-        self.assertEqual(result.captures["formals"], formals)
-        self.assertEqual(result.captures["body"], ("b1", "b2"))
-        positionals = result.captures["positionals"]
+        self.assertIs(_ucaps(result)["name"], sa)
+        self.assertEqual(_ucaps(result)["formals"], formals)
+        self.assertEqual(_ucaps(result)["body"], ("b1", "b2"))
+        positionals = _ucaps(result)["positionals"]
         self.assertEqual(len(positionals), 2)
 
 
@@ -995,7 +1013,7 @@ class TestComposition(unittest.TestCase):
         the body
         """
 
-        pat = GROUP(BINDINGS("bs"), BODY("body"))
+        pat = MATCH(BINDINGS("bs"), BODY("body"))
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
@@ -1003,9 +1021,9 @@ class TestComposition(unittest.TestCase):
             (_list(sa, 1), _list(sb, 2), "b1", "b2"),
             symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        frames = result.captures["bs"]
+        frames = _ucaps(result)["bs"]
         self.assertEqual(len(frames), 2)
-        self.assertEqual(result.captures["body"], ("b1", "b2"))
+        self.assertEqual(_ucaps(result)["body"], ("b1", "b2"))
 
 
 class TestHygieneCompile(unittest.TestCase):
@@ -1019,7 +1037,7 @@ class TestHygieneCompile(unittest.TestCase):
 
         dn = DEFINE("name")
         bod = BODY("body")
-        pat = GROUP(dn, bod)
+        pat = MATCH(dn, bod)
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(pat)
         hygiene = hc.build_hygiene()
@@ -1036,7 +1054,7 @@ class TestMakeMatcher(unittest.TestCase):
         make_matcher returns a native Matcher and never a wrapper
         """
 
-        pat = GROUP(DEFINE("name"))
+        pat = MATCH(DEFINE("name"))
         m = make_matcher(pat)
         self.assertIsInstance(m, Matcher)
 
@@ -1046,7 +1064,7 @@ class TestMakeMatcher(unittest.TestCase):
         make_matcher's matcher returns native MatchResult instances
         """
 
-        pat = GROUP(DEFINE("name"))
+        pat = MATCH(DEFINE("name"))
         m = make_matcher(pat)
         sa = symbol("foo")
         result = m.match((sa,), symbol=SYMBOL_TYPE)

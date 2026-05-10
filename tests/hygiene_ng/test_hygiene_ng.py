@@ -31,7 +31,7 @@ from koskari.hygiene_ng import (
     scope_region_targets,
 )
 from koskari.lib import cons, keyword, nil, symbol
-from koskari.matcher_ng import BODY, DEFINE, GROUP, HygienicMatchCompiler
+from koskari.matcher_ng import BODY, DEFINE, MATCH, HygienicMatchCompiler
 from koskari.types import is_symbol
 
 
@@ -273,7 +273,7 @@ class TestHygieneTupleWire(unittest.TestCase):
         wire
         """
 
-        pat = GROUP(DEFINE("name"), BODY("body"))
+        pat = MATCH(DEFINE("name"), BODY("body"))
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(pat)
         hygiene = hc.build_hygiene()

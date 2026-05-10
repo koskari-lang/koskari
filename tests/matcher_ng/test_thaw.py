@@ -20,8 +20,8 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, nil, symbol
-from koskari.matcher_ng import ABSENT, Matcher, MatchResult, thaw
+from koskari.lib import Datum, cons, nil, symbol
+from koskari.matcher_ng import Matcher, MatchResult, thaw, unwrap_capture_tree
 
 
 pytestmark = pytest.mark.phase_infra
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.phase_infra
 def _make_lambda_matcher_tuple():
     """
     Build a frozen tuple for a one-branch lambda-style matcher:
-    GROUP(CAPTURE(name, TEST_TYPE symbol), TEST_LITERAL '::',
+    MATCH(CAPTURE(name, TEST_TYPE symbol), TEST_LITERAL '::',
           TEST_ANY, TEST_ANY, REST(body))
     """
 
@@ -44,9 +44,9 @@ def _make_lambda_matcher_tuple():
         ("TEST", "ANY", -1),                # 3: TEST_ANY (return)
         ("TEST", "ANY", -1),                # 4: TEST_ANY (formals)
         ("REST", 1),                        # 5: REST body
-        ("GROUP", 1, 2, 3, 4, 5),           # 6: GROUP entry
+        ("MATCH", 1, 2, 3, 4, 5),           # 6: MATCH entry
     )
-    return ("MATCHER", 1, slots, externs, consts, nodes, 6)
+    return ("MATCHER", slots, externs, consts, nodes, 6)
 
 
 class TestMatcherFromTuple(unittest.TestCase):
@@ -66,8 +66,9 @@ class TestMatcherFromTuple(unittest.TestCase):
         result = m.match(subj, symbol=type(symbol("x")))
         self.assertIsInstance(result, MatchResult)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"], subj[0])
-        self.assertEqual(result.captures["body"], ("b1", "b2"))
+        self.assertIs(unwrap_capture_tree(result.captures["name"]), subj[0])
+        self.assertEqual(
+            unwrap_capture_tree(result.captures["body"]), ("b1", "b2"))
 
 
     def test_thaw_round_trips_dict_captures(self):
@@ -81,84 +82,110 @@ class TestMatcherFromTuple(unittest.TestCase):
             ("CAPTURE", 0, 0, 0, -1),
             ("TEST", "ANY", -1),
             ("CAPTURE", 1, 2, 0, -1),
-            ("GROUP", 1, 3),
+            ("MATCH", 1, 3),
         )
         frozen = (
-            "MATCHER", 1,
+            "MATCHER",
             ("a", "b"), (), (),
             nodes, 4)
         m = thaw(frozen)
         result = m.match([7, 8])
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures, {"a": 7, "b": 8})
+        self.assertEqual(
+            {k: unwrap_capture_tree(v) for k, v in result.captures.items()},
+            {"a": 7, "b": 8})
 
 
-    def test_thaw_kospair_subject(self):
+    def test_thaw_kospair_subject_yields_datum_captures(self):
         """
-        A matcher thawed from a frozen tuple works against a kospair
-        subject as well as a Python sequence
+        KosPair-backed subjects store captures as Datum with position
         """
 
         nodes = (
             ("TEST", "ANY", -1),
             ("CAPTURE", 0, 0, 0, -1),
             ("REST", 1),
-            ("GROUP", 1, 2),
+            ("MATCH", 1, 2),
         )
         frozen = (
-            "MATCHER", 1,
+            "MATCHER",
             ("head", "tail"), (), (),
             nodes, 3)
         m = thaw(frozen)
         subj = cons(1, 2, 3, nil)
         result = m.match(subj)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["head"], 1)
-        # rest is a kospair tail — verify by walking it
+        head = result.captures["head"]
+        self.assertIsInstance(head, Datum)
+        self.assertEqual(head.datum, 1)
         tail = result.captures["tail"]
-        self.assertEqual(tail, cons(2, 3, nil))
+        self.assertIsInstance(tail, Datum)
+        self.assertEqual(tail.datum, cons(2, 3, nil))
 
 
-    def test_thaw_oneof_absent_for_other_branches(self):
+    def test_thaw_oneof_sparse_captures(self):
         """
-        A ONEOF with two branches yields ABSENT for slots from the
+        A ONEOF with two branches does not populate keys for the
         non-matching branch
         """
 
         nodes = (
             ("TEST", "LITERAL", 0),
             ("CAPTURE", 0, 0, 0, -1),
-            ("GROUP", 1),
+            ("MATCH", 1),
             ("TEST", "LITERAL", 1),
             ("CAPTURE", 1, 3, 0, -1),
-            ("GROUP", 4),
+            ("MATCH", 4),
             ("ONEOF", 2, 5),
         )
         frozen = (
-            "MATCHER", 1,
+            "MATCHER",
             ("xs", "ys"), (), ("X", "Y"),
             nodes, 6)
         m = thaw(frozen)
 
         r1 = m.match(["X"])
         self.assertTrue(r1.matched)
-        self.assertEqual(r1.captures["xs"], "X")
-        self.assertIs(r1.captures["ys"], ABSENT)
+        self.assertEqual(unwrap_capture_tree(r1.captures["xs"]), "X")
+        self.assertNotIn("ys", r1.captures)
 
         r2 = m.match(["Y"])
         self.assertTrue(r2.matched)
-        self.assertIs(r2.captures["xs"], ABSENT)
-        self.assertEqual(r2.captures["ys"], "Y")
+        self.assertNotIn("xs", r2.captures)
+        self.assertEqual(unwrap_capture_tree(r2.captures["ys"]), "Y")
 
 
-    def test_thaw_raises_on_bad_version(self):
+    def test_thaw_raises_on_wrong_tuple_length(self):
         """
-        Thaw rejects frozen tuples whose version is not 1
+        Thaw rejects frozen tuples whose length is not 6
         """
 
-        frozen = ("MATCHER", 99, (), (), (), (), 0)
+        frozen = ("MATCHER", (), (), (), ())
         with self.assertRaises(ValueError):
             thaw(frozen)
+
+
+    def test_thaw_named_group_nested_dict(self):
+        """
+        GROUP nodes bind a nested dict under the group slot name
+        """
+
+        nodes = (
+            ("TEST", "ANY", -1),
+            ("CAPTURE", 1, 0, 0, -1),
+            ("GROUP", 0, 1),
+        )
+        frozen = (
+            "MATCHER",
+            ("outer", "inner"), (), (),
+            nodes, 2)
+        m = thaw(frozen)
+        result = m.match([42])
+        self.assertTrue(result.matched)
+        self.assertEqual(list(result.captures.keys()), ["outer"])
+        inner = result.captures["outer"]
+        self.assertIsInstance(inner, dict)
+        self.assertEqual(unwrap_capture_tree(inner["inner"]), 42)
 
 
     def test_thaw_raises_on_oob_slot_index(self):
@@ -172,7 +199,7 @@ class TestMatcherFromTuple(unittest.TestCase):
             ("CAPTURE", 5, 0, 0, -1),
         )
         frozen = (
-            "MATCHER", 1,
+            "MATCHER",
             ("x",), (), (),
             nodes, 1)
         with self.assertRaises(ValueError):
@@ -186,32 +213,32 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (("BOGUS", 0),)
         frozen = (
-            "MATCHER", 1, (), (), (), nodes, 0)
+            "MATCHER", (), (), (), nodes, 0)
         with self.assertRaises(ValueError):
             thaw(frozen)
 
 
     def test_thaw_rejects_duplicate_child_index(self):
         """
-        A frozen GROUP that names the same child twice is rejected
+        A frozen MATCH that names the same child twice is rejected
         because the intrusive next chain cannot represent it
         """
 
         nodes = (
             ("TEST", "ANY", -1),
             ("TEST", "ANY", -1),
-            ("GROUP", 0, 1, 0),
+            ("MATCH", 0, 1, 0),
         )
         frozen = (
-            "MATCHER", 1, (), (), (),
+            "MATCHER", (), (), (),
             nodes, 2)
         with self.assertRaises(ValueError):
             thaw(frozen)
 
 
-    def test_thaw_match_alias_for_group(self):
+    def test_thaw_match_sequential_node(self):
         """
-        'MATCH' is accepted as an alias for 'GROUP' in node tuples
+        MATCH node tuples denote sequential spine composition
         """
 
         nodes = (
@@ -220,13 +247,13 @@ class TestMatcherFromTuple(unittest.TestCase):
             ("MATCH", 1),
         )
         frozen = (
-            "MATCHER", 1,
+            "MATCHER",
             ("x",), (), (),
             nodes, 2)
         m = thaw(frozen)
         result = m.match([42])
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["x"], 42)
+        self.assertEqual(unwrap_capture_tree(result.captures["x"]), 42)
 
 
     def test_thaw_class_kw_and_pos_round_trip(self):
@@ -249,7 +276,7 @@ class TestMatcherFromTuple(unittest.TestCase):
             ("CLASS", 0, 2, 5),                 # 6
         )
         frozen = (
-            "MATCHER", 1,
+            "MATCHER",
             ("x", "y"), ("Point",), (),
             nodes, 6)
 
@@ -262,8 +289,8 @@ class TestMatcherFromTuple(unittest.TestCase):
         p.y = 20
         result = m.match((p,), Point=Point)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["x"], 10)
-        self.assertEqual(result.captures["y"], 20)
+        self.assertEqual(unwrap_capture_tree(result.captures["x"]), 10)
+        self.assertEqual(unwrap_capture_tree(result.captures["y"]), 20)
 
         not_point = object()
         result_bad = m.match((not_point,), Point=Point)

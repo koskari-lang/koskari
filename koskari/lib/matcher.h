@@ -29,6 +29,7 @@ typedef enum {
   KOS_MATCH_NODE_TEST = 0,
   KOS_MATCH_NODE_CAPTURE,
   KOS_MATCH_NODE_FORM,
+  KOS_MATCH_NODE_MATCH,
   KOS_MATCH_NODE_GROUP,
   KOS_MATCH_NODE_ONEOF,
   KOS_MATCH_NODE_REPEAT,
@@ -93,7 +94,13 @@ typedef struct {
 
 typedef struct {
   uint32_t first_child;
-} KosMatchGroup;
+} KosMatchMatch;
+
+
+typedef struct {
+  uint32_t slot;
+  uint32_t first_child;
+} KosMatchNamedGroup;
 
 
 typedef struct {
@@ -149,7 +156,8 @@ typedef struct {
     KosMatchTest     test;
     KosMatchCapture  capture;
     KosMatchForm     form;
-    KosMatchGroup    group;
+    KosMatchMatch     match;
+    KosMatchNamedGroup group;
     KosMatchOneof    oneof;
     KosMatchRepeat   repeat;
     KosMatchOptional optional;
@@ -212,6 +220,24 @@ extern PyTypeObject KosMatchResultType;
 
 extern PyTypeObject KosMatchAbsentType;
 extern PyObject *KosMatchAbsent;
+
+
+/* === Datum (matched value + optional source position) === */
+
+
+typedef struct KosDatum {
+  PyObject_HEAD
+  PyObject *datum;
+  PyObject *position;
+  PyObject *binding;  /* capture slot name (str) or Py_None */
+} KosDatum;
+
+
+extern PyTypeObject KosDatumType;
+
+
+#define KosDatum_Check(obj)                                       \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosDatumType))
 
 
 /* === subject adapter === */
@@ -359,9 +385,9 @@ int KosMatcherBuilder_AddConst(
    The builder rejects appends whose subnode/scope_slot references the
    current count or higher (forward refs).
 
-   Container kinds (GROUP, ONEOF) are not accepted here; use
-   KosMatcherBuilder_AppendGroup / KosMatcherBuilder_AppendOneof
-   instead.
+   Container kinds (MATCH, GROUP, ONEOF) are not accepted here; use
+   KosMatcherBuilder_AppendMatch / KosMatcherBuilder_AppendNamedGroup /
+   KosMatcherBuilder_AppendOneof instead.
 
    Returns the index of the appended node, or -1 on error.
  */
@@ -370,17 +396,26 @@ int KosMatcherBuilder_AppendNode(
     const KosMatchNode *node);
 
 /**
-   Append a GROUP node whose children are the supplied node indices in
-   order. The builder stitches the children together via their next
-   fields and sets the GROUP's first_child. Each index must reference a
-   node already appended (forward refs are rejected) and may not appear
-   in another chain (each node may participate in at most one
-   sibling/branch chain).
+   Append a MATCH node (sequential spine, flat capture dict). Children
+   are stitched via next links; first_child is the head index.
+
+   Returns the index of the new MATCH node, or -1 on error.
+ */
+int KosMatcherBuilder_AppendMatch(
+    KosMatcherBuilder *builder,
+    const uint32_t *children,
+    Py_ssize_t count);
+
+/**
+   Append a named GROUP node: slot is the capture-slot index whose str
+   name becomes the parent dict key for a nested sub-dict of inner
+   captures. Children are stitched like MATCH.
 
    Returns the index of the new GROUP node, or -1 on error.
  */
-int KosMatcherBuilder_AppendGroup(
+int KosMatcherBuilder_AppendNamedGroup(
     KosMatcherBuilder *builder,
+    uint32_t slot,
     const uint32_t *children,
     Py_ssize_t count);
 

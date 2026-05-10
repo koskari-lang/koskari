@@ -16,7 +16,8 @@
 koskari.syntax_ng
 
 Next-generation syntax dispatch scaffolding: ``Syntax`` (a ``Compiled``
-dispatcher), transform arms, ``Datum`` boxing for hygiene guards, and a
+dispatcher), transform arms, native ``koskari.lib.Datum`` for macro unbox,
+and a
 syntax-rules-compatible pattern lowerer to ``matcher_ng.Pattern``.
 
 The compiled dispatcher type here is ``syntax_ng.Syntax``. The legacy
@@ -41,7 +42,6 @@ handlers; they are not registered in bootstrap until the NG cutover.
 """
 
 
-from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
@@ -51,21 +51,21 @@ from koskari.hygiene_ng import (
     collect_binding_symbols,
     expand_template_with_hygiene,
 )
-from koskari.lib import Matcher, cdr, gensym, nil, symbol
+from koskari.lib import Datum, Matcher, cdr, gensym, nil, symbol
 from koskari.matcher_ng import (
     ABSENT,
     CAPTURE,
     FORM,
-    GROUP,
     LITERAL,
+    MATCH,
     REST,
     SYMBOL,
     HygienicMatchCompiler,
     check_pattern_arg,
     repeat_capture,
+    unwrap_capture_tree,
 )
 from koskari.types import (
-    get_position,
     is_nil,
     is_pair,
     is_proper,
@@ -142,11 +142,12 @@ def _tail_subject(source_obj):
 
 def _filter_captures(captures):
     """
-    Drop ``ABSENT`` entries from native ``MatchResult.captures``
+    Drop ``ABSENT`` entries from native ``MatchResult.captures`` and strip
+    ``Datum`` wrappers from values
     """
 
     return {
-        str(k): v
+        str(k): unwrap_capture_tree(v)
         for k, v in captures.items()
         if v is not ABSENT
     }
@@ -208,8 +209,8 @@ def _make_special_invoke(user_fn, unpack):
 
 def _unbox_datum_in_macro_output(expanded):
     """
-    Strip ``Datum`` wrappers from procedural macro output (mirrors legacy
-    ``unbox_macro`` for ``koskari.syntax.Syntax``)
+    Strip native ``Datum`` wrappers from procedural macro output (mirrors
+    legacy ``unbox_macro`` for ``koskari.syntax.Syntax``)
     """
 
     seen = set()
@@ -269,57 +270,6 @@ class Transform(Protocol):
         """
 
         ...
-
-
-@dataclass(frozen=True)
-class Datum(object):
-    """
-    Wraps a Koskari datum with optional source position and optional tag.
-    Same shape as ``koskari.syntax.Syntax``; used as an opaque box so hygiene
-    walks skip internals until a syntax or macro transform unboxes
-
-    :param datum: underlying form (pair, symbol, nil, literals)
-    :param position: source position tuple or None when unknown
-    :param tag: optional interpretation hint; reserved for future use
-    """
-
-    datum: Any
-    position: Any = None
-    tag: Any = None
-
-
-    def __iter__(self):
-        """
-        Yield ``Datum`` values for each element from the pair spine
-
-        :raises TypeError: if ``datum`` is not a pair
-        :return: iterator of Datum instances
-        """
-
-        d = self.datum
-
-        if not is_pair(d):
-            raise TypeError(
-                "cannot iterate Datum with non-pair datum: %r" % (d,))
-
-        cell = d
-        for elem in unpack(d):
-            if is_pair(cell) and not is_nil(cell):
-                pos = get_position(cell) or self.position
-                yield Datum(elem, pos, self.tag)
-                cell = cdr(cell)
-            else:
-                yield Datum(elem, self.position, self.tag)
-
-
-    @property
-    def car(self):
-        return self.datum.car
-
-
-    @property
-    def cdr(self):
-        return self.datum.cdr
 
 
 class SyntaxTransform(object):
@@ -591,13 +541,13 @@ def _syntax_pattern_to_pattern(pattern_expr, literals, source_ctx):
 
     if is_symbol(pattern_expr):
         if pattern_expr in literals:
-            return GROUP(LITERAL(pattern_expr))
-        return GROUP(REST(str(pattern_expr)))
+            return MATCH(LITERAL(pattern_expr))
+        return MATCH(REST(str(pattern_expr)))
 
     if not is_pair(pattern_expr):
-        return GROUP(LITERAL(pattern_expr))
+        return MATCH(LITERAL(pattern_expr))
 
-    return GROUP(*_syntax_pattern_specs(
+    return MATCH(*_syntax_pattern_specs(
         list(unpack(pattern_expr)), literals, source_ctx))
 
 
@@ -616,7 +566,7 @@ def _syntax_elem_pattern(pat, literals, source_ctx):
     if not is_pair(pat):
         return LITERAL(pat)
 
-    return FORM(GROUP(*_syntax_pattern_specs(
+    return FORM(MATCH(*_syntax_pattern_specs(
         list(unpack(pat)), literals, source_ctx)))
 
 

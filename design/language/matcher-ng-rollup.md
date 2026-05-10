@@ -10,7 +10,7 @@ API and the cleanroom composite layer live in `koskari/matcher_ng.py`.
 `koskari.compile.*`, or `koskari.exceptions` from the new module, and
 no post-match Python transform layer. `Matcher.match` returns the
 native `MatchResult` directly; captures are final. The frozen matcher
-constant is a **7-tuple** consumed by `Matcher.from_tuple`; **hygiene**
+constant is a **6-tuple** consumed by `Matcher.from_tuple`; **hygiene**
 is an optional parallel **`Hygiene`** object from
 `HygienicMatchCompiler.build_hygiene()`, not part of that tuple or of
 `MatchResult` (see "As-built deviations").
@@ -36,9 +36,18 @@ registration work lands). It provides:
   runs **`try_expand`** on each arm in order (tail match subject is
   **`unpack(cdr(source))`** like legacy specials); first non-``None`` result
   wins; total miss raises **`SpecialError`**. **`__add__`** prepends clauses.
-* **`Datum`** — source box parallel to **`koskari.syntax.Syntax`** for hygiene
-  guards; procedural **`MacroTransform`** output is unboxed the same way as
-  legacy **`unbox_macro_with_hygiene`** after **`hygiene_ng`** expansion.
+* **`Datum`** (`koskari.lib.Datum`) — native match box wrapping the captured
+  value, source **`position`**, and optional **`binding`** (capture slot name
+  set when the engine writes the slot). **`car`**, **`cdr`**, and iteration
+  delegate to the wrapped **`datum`** (iteration uses
+  **`PyObject_GetIter(datum)`**, so pair iteration matches **`KosPair`**).
+  Procedural **`MacroTransform`** output is unboxed the same way as legacy
+  **`unbox_macro_with_hygiene`** after **`hygiene_ng`** expansion.
+  **`matcher_ng`** hygiene walks keep **`Datum`** on recurse/scope yields;
+  **`iter_introduced_symbols`** peels nested **`Datum`** only until
+  **`is_symbol`** sees a real symbol. **`hygiene_ng.collect_binding_symbols`**
+  peels a leading **`Datum`** chain at the walk entry so pair-tree recursion
+  unchanged.
 * **`Transform` (`typing.Protocol`, `@runtime_checkable`)** — structural
   contract for arms; concrete classes share **`_init_pattern_fields`** for
   **`HygienicMatchCompiler.lower`**, **`build_hygiene()`**, and thawed
@@ -118,17 +127,17 @@ document can be read as the as-built design.
   | `DEFINE`   | `CAPTURE(slot, TYPE("symbol"))`                                                                                                                  |
   | `BINDING`  | `CAPTURE(slot, binding_inner_pattern())`                                                                                                         |
   | `BINDINGS` | `ONEOF(CAPTURE(slot, LITERAL(nil)), repeat_capture(slot, binding_inner_pattern()))` — nil arm before repeat arm because `REPEAT` always succeeds |
-  | `USING`    | `CAPTURE(slot, FORM(ONEOF(...)))` with four ordered `GROUP` branches: unpack, name+expr, expr-as-name, bare expr                                 |
-  | `DECL`     | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(GROUP(SYMBOL("name"))), FORM(GROUP(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))), FORM(GROUP(SYMBOL("name"), REST("decl_tail")))))` — inner `name`, `type`, `decl_tail` slots are bound directly; the matcher does not parse the keyword tail |
-  | `FORMALS`  | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(GROUP(OPTIONAL(positionals), OPTIONAL(defaults), OPTIONAL(star_seg), OPTIONAL(kwonly), OPTIONAL(starstar_seg)))))` — phased graph; each phase is a `repeat_capture` over a small per-cell ONEOF |
+  | `USING`    | `CAPTURE(slot, FORM(ONEOF(...)))` with four ordered `MATCH` branches: unpack, name+expr, expr-as-name, bare expr                                 |
+  | `DECL`     | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(MATCH(SYMBOL("name"))), FORM(MATCH(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))), FORM(MATCH(SYMBOL("name"), REST("decl_tail")))))` — inner `name`, `type`, `decl_tail` slots are bound directly; the matcher does not parse the keyword tail |
+  | `FORMALS`  | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(MATCH(OPTIONAL(positionals), OPTIONAL(defaults), OPTIONAL(star_seg), OPTIONAL(kwonly), OPTIONAL(starstar_seg)))))` — phased graph; each phase is a `repeat_capture` over a small per-cell ONEOF |
   | `BODY`     | `REST(slot)` plus a `scope_regions` hygiene entry                                                                                                |
 
 * **Hygiene is a separate data structure; the frozen matcher stays
   pure.** The original plan folded hygiene into an eighth tuple
   element or into a `meta` map carried beside the rule program. The
   landed design keeps **matching** and **thaw** aligned with a strict
-  **7-tuple** `("MATCHER", version, slots, externs, consts, nodes,
-  entry)` only. Nothing hygiene-shaped is embedded in that constant or
+  **6-tuple** `("MATCHER", slots, externs, consts, nodes, entry)` only
+  (no separate version field). Nothing hygiene-shaped is embedded in that constant or
   in `Matcher.from_tuple`. Optional binder/scope-region interpretation
   is collected at freeze time into a **`Hygiene`** instance
   (`koskari/hygiene_ng.py`) with its own portable wire form
@@ -150,7 +159,7 @@ document can be read as the as-built design.
   single descended cell.** The original plan described the bindings
   list as one outer element holding a proper list of cells. The
   composition that landed runs `repeat_capture` directly against
-  the parent spine, so `(GROUP(BINDINGS("bs"), BODY("body")))`
+  the parent spine, so `(MATCH(BINDINGS("bs"), BODY("body")))`
   matches subjects shaped `(cell cell ... body...)` — which is what
   most callers want. The empty-list arm matches a single `nil`
   sentinel element.
@@ -229,13 +238,12 @@ Existing APIs such as `SYMBOL("name")`, `VALUE("expr")`, `REST("body")`, `BINDIN
 
 ### 3. Canonical low-level tagged-tuple representation
 
-This is the frozen form suitable for embedding into bytecode constants. It should be versioned, canonical, and compact. It should not contain Python builder objects.
+This is the frozen form suitable for embedding into bytecode constants. It is canonical and compact (no version integer in the tuple). It should not contain Python builder objects.
 
 Conceptually:
 
 ```text
 ("MATCHER",
-  version,
   slots,
   externs,
   consts,
@@ -245,7 +253,7 @@ Conceptually:
 
 Where:
 
-* `slots` names capture slots.
+* `slots` names capture slots (in emission order; duplicate display names are allowed at different capture sites when nested `GROUP` scopes separate them).
 * `externs` names externally supplied values such as classes, types, predicates, or symbolic comparison values.
 * `consts` stores embedded literal constants or sub-matcher constants.
 * `nodes` is a bottom-up list of tagged nodes.
@@ -407,7 +415,11 @@ NOT
 CLASS
 ```
 
-`MATCH` and `GROUP` are important for grouping multiple rules along the same current input spine. This differs from a nested `FORM`, which descends into a nested form value.
+`MATCH` sequences multiple patterns on the current spine. `GROUP` takes a mandatory slot name and runs its children in a nested capture dict stored under that key in the parent dict. This differs from a nested `FORM`, which descends into a nested form value.
+
+Successful `MatchResult.captures` is a **sparse** dict: only slots that actually bound a value appear. There is no guarantee that every declared slot key exists with `ABSENT` — use containment checks or defaults where needed.
+
+When the subject spine is backed by `KosPair` cells, values stored on capture paths (including `REST` slices and repeat frames) are wrapped in `koskari.lib.Datum` with `datum` and optional `position` (the tail cell’s position). Tuple/list subjects use `Datum` with `position` `None`. Hygiene and template expansion code that expects raw koskari values should unwrap via `matcher_ng.unwrap_capture_tree` or read `.datum`.
 
 ---
 
@@ -421,14 +433,16 @@ CLASS
 
 Matches a nested source/value sequence with the given branch pattern. In compile-time syntax matching, this means a KosPair/proper list form. In runtime matching, this means a sequence-like value according to the runtime subject adapter.
 
-### GROUP / MATCH
+### MATCH / GROUP
 
 ```scheme
-(GROUP p1 p2 ...)
 (MATCH p1 p2 ...)
+(GROUP slot p1 p2 ...)
 ```
 
-Groups several pattern elements on the current spine without descending into a nested form. This is needed inside `ONEOF` and similar places where each branch may contain multiple sequential elements.
+`MATCH` sequences several pattern elements on the current spine without descending into a nested form. This is needed inside `ONEOF` and similar places where each branch may contain multiple sequential elements.
+
+`GROUP` requires a slot symbol (or string) as its first argument. Inner captures from `p1 p2 ...` are collected into a sub-dict, which is stored in the parent captures under `slot`.
 
 Example concept:
 
@@ -436,9 +450,9 @@ Example concept:
 (FORM
   a
   (ONEOF
-    (GROUP b)
-    (GROUP c d)
-    (GROUP z (rest :: REST))))
+    (MATCH b)
+    (MATCH c d)
+    (MATCH z (rest :: REST))))
 ```
 
 This matches forms like:
@@ -457,7 +471,7 @@ The `ONEOF` branches operate from the same originating cursor after `a`.
 (ONEOF branch1 branch2 ...)
 ```
 
-Tries alternatives in order. Each branch may be a single pattern node or a `GROUP` containing multiple nodes on the same spine.
+Tries alternatives in order. Each branch may be a single pattern node or a `MATCH` containing multiple nodes on the same spine.
 
 Each `ONEOF` branch is independent for width analysis and REST allowance.
 
@@ -574,7 +588,7 @@ Concept mapping:
 
 * **`DEFINE`**, **`DECL`**, **`BINDING`**, **`BINDINGS`**, **`FORMALS`**, **`USING`**: composites that contribute **binder** semantics in the `Hygiene` plan when registered.
 * **`BODY`**: registers a **scope-region** slot (body extent) in the plan; at match time it lowers like **`REST`** to the native engine.
-* **`scope:`** on composites: recorded in wire rows as the tuple of scope-region slot names the binder applies over; interpretation is in `hygiene_ng`, not in the frozen 7-tuple.
+* **`scope:`** on composites: recorded in wire rows as the tuple of scope-region slot names the binder applies over; interpretation is in `hygiene_ng`, not in the frozen 6-tuple.
 * **`CAPTURE`**: may carry `hygiene_role` / `scope_slot` fields in the node encoding for a future migration; they are not a substitute for the separate `Hygiene` object today.
 
 The low-level matcher does not need separate primitive kinds for every hygiene-aware surface form. Composites lower into ordinary capture/test/group structure; hygiene **interpretation** lives on the composite instances referenced from `Hygiene.binders` and `Hygiene.scope_regions`.
@@ -1587,7 +1601,7 @@ types satisfy.
 **Progress:** the first tranche lives in **`koskari/syntax_ng.py`**:
 **`parse_syntax_rules_pattern`** lowers RULE-style patterns to
 **`matcher_ng.Pattern`**; each **`Transform`** carries the frozen
-7-tuple and **`Hygiene`** from **`HygienicMatchCompiler`**. Runtime
+6-tuple and **`Hygiene`** from **`HygienicMatchCompiler`**. Runtime
 constructors **`build_syntax`**, **`build_macro_syntax`**,
 **`build_special_syntax`**, and **`build_special_match`** assemble a
 **`syntax_ng.Syntax`** dispatcher from RULE patterns and templates or

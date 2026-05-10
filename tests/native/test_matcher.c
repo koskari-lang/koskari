@@ -115,12 +115,22 @@ static int append_form(KosMatcherBuilder *b, uint32_t subnode) {
 }
 
 
-static int append_group(
+static int append_match(
     KosMatcherBuilder *b,
     const uint32_t *children,
     uint32_t count) {
 
-    return KosMatcherBuilder_AppendGroup(b, children, (Py_ssize_t) count);
+    return KosMatcherBuilder_AppendMatch(b, children, (Py_ssize_t) count);
+}
+
+
+static PyObject *
+unwrap_datum_value(PyObject *v) {
+
+    if (v && KosDatum_Check(v))
+        return PyObject_GetAttrString(v, "datum");
+    Py_XINCREF(v);
+    return v;
 }
 
 
@@ -244,7 +254,7 @@ static int test_matcher_validator_widths_basic(void) {
         (uint32_t) n_not,
         (uint32_t) n_rest,
     };
-    int n_group = append_group(b, kids, 5);
+    int n_group = append_match(b, kids, 5);
     TEST_ASSERT(n_group >= 0, "append GROUP");
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_group);
@@ -317,7 +327,7 @@ static int test_matcher_validator_repeat_positive_width_accepted(void) {
     int n_opt = append_optional(b, (uint32_t) n_test2);
 
     uint32_t kids[] = {(uint32_t) n_test, (uint32_t) n_opt};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
     TEST_ASSERT(n_grp >= 0, "append GROUP");
 
     int n_rep = append_repeat(b, (uint32_t) n_grp);
@@ -354,7 +364,7 @@ static int test_matcher_validator_double_rest_in_form_branch_rejected(
     int n_rest2 = append_rest(b, KOS_MATCH_NO_INDEX);
 
     uint32_t kids[] = {(uint32_t) n_rest1, (uint32_t) n_rest2};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
     int n_form = append_form(b, (uint32_t) n_grp);
     TEST_ASSERT(n_form >= 0, "append FORM");
 
@@ -380,12 +390,12 @@ static int test_matcher_validator_oneof_branch_independence_accepted(
     int n_test1 = append_test_any(b);
     int n_rest1 = append_rest(b, KOS_MATCH_NO_INDEX);
     uint32_t k1[] = {(uint32_t) n_test1, (uint32_t) n_rest1};
-    int n_grp1 = append_group(b, k1, 2);
+    int n_grp1 = append_match(b, k1, 2);
 
     int n_test2 = append_test_any(b);
     int n_rest2 = append_rest(b, KOS_MATCH_NO_INDEX);
     uint32_t k2[] = {(uint32_t) n_test2, (uint32_t) n_rest2};
-    int n_grp2 = append_group(b, k2, 2);
+    int n_grp2 = append_match(b, k2, 2);
 
     uint32_t branches[] = {(uint32_t) n_grp1, (uint32_t) n_grp2};
     int n_oneof = append_oneof(b, branches, 2);
@@ -416,7 +426,7 @@ static int test_matcher_validator_post_rest_unbounded_rejected(void) {
     int n_rep = append_repeat(b, (uint32_t) n_inner_test);
 
     uint32_t kids[] = {(uint32_t) n_rest, (uint32_t) n_rep};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
     TEST_ASSERT(n_grp >= 0, "append GROUP");
 
     PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
@@ -442,7 +452,7 @@ static int test_matcher_validator_post_rest_finite_accepted(void) {
 
     uint32_t kids[] = {
         (uint32_t) n_rest, (uint32_t) n_t1, (uint32_t) n_t2};
-    int n_grp = append_group(b, kids, 3);
+    int n_grp = append_match(b, kids, 3);
     TEST_ASSERT(n_grp >= 0, "append GROUP");
 
     PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
@@ -467,7 +477,7 @@ static int test_matcher_validator_post_rest_optional_rejected(void) {
     int n_opt = append_optional(b, (uint32_t) n_test);
 
     uint32_t kids[] = {(uint32_t) n_rest, (uint32_t) n_opt};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
     TEST_ASSERT(n_grp >= 0, "append GROUP");
 
     PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
@@ -523,7 +533,7 @@ static int test_matcher_validator_capture_in_nested_not_rejected(void) {
     int n_t2 = append_test_any(b);
     int n_cap = append_capture(b, (uint32_t) slot_x, (uint32_t) n_t2);
     uint32_t kids[] = {(uint32_t) n_t1, (uint32_t) n_cap};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
     int n_not = append_not(b, (uint32_t) n_grp);
 
     PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) n_not);
@@ -709,7 +719,7 @@ static int test_matcher_module_exposes_matcher_type(void) {
 
 static int test_matcher_validator_group_child_oob_rejected(void) {
     /*
-      AppendGroup must reject child indices that have not yet been
+      AppendMatch must reject child indices that have not yet been
       appended (forward references).
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
@@ -719,8 +729,8 @@ static int test_matcher_validator_group_child_oob_rejected(void) {
     TEST_ASSERT(n_test >= 0, "append TEST node");
 
     uint32_t kids[] = { (uint32_t) n_test, 99 };
-    int idx = KosMatcherBuilder_AppendGroup(b, kids, 2);
-    TEST_ASSERT_EQ(idx, -1, "AppendGroup must reject forward ref");
+    int idx = KosMatcherBuilder_AppendMatch(b, kids, 2);
+    TEST_ASSERT_EQ(idx, -1, "AppendMatch must reject forward ref");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
     PyErr_Clear();
 
@@ -731,7 +741,7 @@ static int test_matcher_validator_group_child_oob_rejected(void) {
 
 static int test_matcher_builder_rejects_duplicate_child(void) {
     /*
-      AppendGroup must reject a child list that names the same node
+      AppendMatch must reject a child list that names the same node
       twice; the intrusive next chain cannot represent that.
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
@@ -742,8 +752,8 @@ static int test_matcher_builder_rejects_duplicate_child(void) {
     TEST_ASSERT(n_a >= 0 && n_b >= 0, "append TEST nodes");
 
     uint32_t kids[] = { (uint32_t) n_a, (uint32_t) n_b, (uint32_t) n_a };
-    int idx = KosMatcherBuilder_AppendGroup(b, kids, 3);
-    TEST_ASSERT_EQ(idx, -1, "AppendGroup must reject duplicate child");
+    int idx = KosMatcherBuilder_AppendMatch(b, kids, 3);
+    TEST_ASSERT_EQ(idx, -1, "AppendMatch must reject duplicate child");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
     PyErr_Clear();
 
@@ -766,8 +776,8 @@ static int test_matcher_var_size(void) {
     TEST_ASSERT(a >= 0 && t >= 0 && c >= 0, "append three TEST nodes");
 
     uint32_t kids[] = { (uint32_t) a, (uint32_t) t, (uint32_t) c };
-    int g = KosMatcherBuilder_AppendGroup(b, kids, 3);
-    TEST_ASSERT(g >= 0, "AppendGroup");
+    int g = KosMatcherBuilder_AppendMatch(b, kids, 3);
+    TEST_ASSERT(g >= 0, "AppendMatch");
 
     PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) g);
     KosMatcherBuilder_Free(b);
@@ -831,7 +841,7 @@ static int test_matcher_validator_lambda_shape_accepted(void) {
         uint32_t kids[] = {
             (uint32_t) n_cap, (uint32_t) n_lit, (uint32_t) n_rt,
             (uint32_t) n_fo, (uint32_t) n_rest};
-        int n_grp = append_group(b, kids, 5);
+        int n_grp = append_match(b, kids, 5);
         TEST_ASSERT(n_grp >= 0, "branch group built");
 
         branch_indices[i] = (uint32_t) n_grp;
@@ -940,7 +950,7 @@ static int test_match_group_pysequence(void) {
     int n_cap = append_capture(b, (uint32_t) slot, (uint32_t) n_t2);
 
     uint32_t kids[] = {(uint32_t) n_t1, (uint32_t) n_cap};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
     TEST_ASSERT_NOT_NULL(m_obj, "finalize");
@@ -959,9 +969,11 @@ static int test_match_group_pysequence(void) {
     KosMatchResult *mr = (KosMatchResult *) r;
     TEST_ASSERT(mr->matched, "matched");
 
-    PyObject *captured = PyDict_GetItemString(mr->captures, "name");
+    PyObject *captured = unwrap_datum_value(
+        PyDict_GetItemString(mr->captures, "name"));
     TEST_ASSERT_NOT_NULL(captured, "name capture present");
     TEST_ASSERT_SAME(captured, foo, "captured is foo");
+    Py_DECREF(captured);
 
     Py_DECREF(r);
     Py_DECREF(extern_env);
@@ -990,7 +1002,7 @@ static int test_match_group_kospair(void) {
     int n_cap = append_capture(b, (uint32_t) slot, (uint32_t) n_t2);
 
     uint32_t kids[] = {(uint32_t) n_t1, (uint32_t) n_cap};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
     TEST_ASSERT_NOT_NULL(m_obj, "finalize");
@@ -1013,9 +1025,10 @@ static int test_match_group_kospair(void) {
     KosMatchSubject_Release(&subj);
     TEST_ASSERT_NOT_NULL(r, "match returned");
     TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
-    PyObject *cap = PyDict_GetItemString(
-        ((KosMatchResult *) r)->captures, "name");
+    PyObject *cap = unwrap_datum_value(PyDict_GetItemString(
+        ((KosMatchResult *) r)->captures, "name"));
     TEST_ASSERT_SAME(cap, bar, "captured is bar");
+    Py_DECREF(cap);
 
     Py_DECREF(r);
     Py_DECREF(extern_env);
@@ -1045,13 +1058,13 @@ static int test_match_form_descends_into_pair(void) {
     int inner_t2 = append_test_any(b);
     uint32_t inner_kids[] = {
         (uint32_t) inner_cap, (uint32_t) inner_t2};
-    int inner_grp = append_group(b, inner_kids, 2);
+    int inner_grp = append_match(b, inner_kids, 2);
     int n_form = append_form(b, (uint32_t) inner_grp);
 
     int outer_t1 = append_test_any(b);
 
     uint32_t outer_kids[] = {(uint32_t) outer_t1, (uint32_t) n_form};
-    int outer_grp = append_group(b, outer_kids, 2);
+    int outer_grp = append_match(b, outer_kids, 2);
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) outer_grp);
     TEST_ASSERT_NOT_NULL(m_obj, "finalize");
@@ -1067,9 +1080,10 @@ static int test_match_form_descends_into_pair(void) {
     PyObject *r = run_match_kospair((KosMatcher *) m_obj, outer_pair);
     TEST_ASSERT_NOT_NULL(r, "match returned");
     TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
-    PyObject *cap = PyDict_GetItemString(
-        ((KosMatchResult *) r)->captures, "x");
+    PyObject *cap = unwrap_datum_value(PyDict_GetItemString(
+        ((KosMatchResult *) r)->captures, "x"));
     TEST_ASSERT_SAME(cap, two, "captured is 2");
+    Py_DECREF(cap);
 
     Py_DECREF(r);
     Py_DECREF(outer_pair);
@@ -1105,12 +1119,12 @@ static int test_match_oneof_first_branch_matches(void) {
     int t_x = append_test_literal(b, (uint32_t) c_x);
     int cap_a = append_capture(b, (uint32_t) slot_a, (uint32_t) t_x);
     uint32_t k_a[] = {(uint32_t) cap_a};
-    int g_a = append_group(b, k_a, 1);
+    int g_a = append_match(b, k_a, 1);
 
     int t_y = append_test_literal(b, (uint32_t) c_y);
     int cap_b = append_capture(b, (uint32_t) slot_b, (uint32_t) t_y);
     uint32_t k_b[] = {(uint32_t) cap_b};
-    int g_b = append_group(b, k_b, 1);
+    int g_b = append_match(b, k_b, 1);
 
     uint32_t branches[] = {(uint32_t) g_a, (uint32_t) g_b};
     int n_oneof = append_oneof(b, branches, 2);
@@ -1126,13 +1140,13 @@ static int test_match_oneof_first_branch_matches(void) {
     TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
 
     PyObject *captures = ((KosMatchResult *) r)->captures;
-    PyObject *a = PyDict_GetItemString(captures, "a");
-    PyObject *bb = PyDict_GetItemString(captures, "b");
-    TEST_ASSERT_NOT_NULL(a, "a present");
-    TEST_ASSERT_NOT_NULL(bb, "b present (as ABSENT)");
+    PyObject *a_raw = PyDict_GetItemString(captures, "a");
+    TEST_ASSERT_NOT_NULL(a_raw, "a present");
+    PyObject *a = unwrap_datum_value(a_raw);
     TEST_ASSERT_EQ(PyUnicode_CompareWithASCIIString(a, "x"), 0,
                    "a == 'x'");
-    TEST_ASSERT_SAME(bb, KosMatchAbsent, "b is ABSENT");
+    Py_DECREF(a);
+    TEST_ASSERT_NULL(PyDict_GetItemString(captures, "b"), "b sparse");
 
     Py_DECREF(r);
     Py_DECREF(seq);
@@ -1164,12 +1178,12 @@ static int test_match_oneof_falls_through(void) {
     int t_x = append_test_literal(b, (uint32_t) c_x);
     int cap_a = append_capture(b, (uint32_t) slot_a, (uint32_t) t_x);
     uint32_t k_a[] = {(uint32_t) cap_a};
-    int g_a = append_group(b, k_a, 1);
+    int g_a = append_match(b, k_a, 1);
 
     int t_y = append_test_literal(b, (uint32_t) c_y);
     int cap_b = append_capture(b, (uint32_t) slot_b, (uint32_t) t_y);
     uint32_t k_b[] = {(uint32_t) cap_b};
-    int g_b = append_group(b, k_b, 1);
+    int g_b = append_match(b, k_b, 1);
 
     uint32_t branches[] = {(uint32_t) g_a, (uint32_t) g_b};
     int n_oneof = append_oneof(b, branches, 2);
@@ -1185,12 +1199,13 @@ static int test_match_oneof_falls_through(void) {
     TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
 
     PyObject *captures = ((KosMatchResult *) r)->captures;
-    PyObject *a = PyDict_GetItemString(captures, "a");
-    PyObject *bb = PyDict_GetItemString(captures, "b");
-    TEST_ASSERT_SAME(a, KosMatchAbsent, "a is ABSENT");
-    TEST_ASSERT_NOT_NULL(bb, "b present");
+    TEST_ASSERT_NULL(PyDict_GetItemString(captures, "a"), "a sparse");
+    PyObject *bb_raw = PyDict_GetItemString(captures, "b");
+    TEST_ASSERT_NOT_NULL(bb_raw, "b present");
+    PyObject *bb = unwrap_datum_value(bb_raw);
     TEST_ASSERT_EQ(PyUnicode_CompareWithASCIIString(bb, "y"), 0,
                    "b == 'y'");
+    Py_DECREF(bb);
 
     Py_DECREF(r);
     Py_DECREF(seq);
@@ -1228,13 +1243,13 @@ static int test_match_oneof_rollback_clean_frame(void) {
     int cap_a = append_capture(b, (uint32_t) slot_a, (uint32_t) t_any_a);
     int t_z = append_test_literal(b, (uint32_t) c_z);
     uint32_t k_a[] = {(uint32_t) cap_a, (uint32_t) t_z};
-    int g_a = append_group(b, k_a, 2);
+    int g_a = append_match(b, k_a, 2);
 
     int t_any_b = append_test_any(b);
     int cap_b = append_capture(b, (uint32_t) slot_b, (uint32_t) t_any_b);
     int t_y = append_test_literal(b, (uint32_t) c_y);
     uint32_t k_b[] = {(uint32_t) cap_b, (uint32_t) t_y};
-    int g_b = append_group(b, k_b, 2);
+    int g_b = append_match(b, k_b, 2);
 
     uint32_t branches[] = {(uint32_t) g_a, (uint32_t) g_b};
     int n_oneof = append_oneof(b, branches, 2);
@@ -1251,11 +1266,12 @@ static int test_match_oneof_rollback_clean_frame(void) {
     TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
 
     PyObject *captures = ((KosMatchResult *) r)->captures;
-    PyObject *a = PyDict_GetItemString(captures, "a");
-    PyObject *bb = PyDict_GetItemString(captures, "b");
-    TEST_ASSERT_SAME(a, KosMatchAbsent, "a rollback to ABSENT");
+    TEST_ASSERT_NULL(PyDict_GetItemString(captures, "a"), "a sparse");
+    PyObject *bb_raw = PyDict_GetItemString(captures, "b");
+    PyObject *bb = unwrap_datum_value(bb_raw);
     TEST_ASSERT_EQ(PyUnicode_CompareWithASCIIString(bb, "x"), 0,
                    "b == 'x'");
+    Py_DECREF(bb);
 
     Py_DECREF(r);
     Py_DECREF(seq);
@@ -1283,7 +1299,7 @@ static int test_match_repeat_named_per_iteration_frames(void) {
     int t_any = append_test_any(b);
     int cap_val = append_capture(b, (uint32_t) slot_val, (uint32_t) t_any);
     uint32_t inner_kids[] = {(uint32_t) cap_val};
-    int inner_grp = append_group(b, inner_kids, 1);
+    int inner_grp = append_match(b, inner_kids, 1);
     int n_rep = append_repeat(b, (uint32_t) inner_grp);
     int cap_items = append_capture(b, (uint32_t) slot_items,
                                    (uint32_t) n_rep);
@@ -1302,21 +1318,23 @@ static int test_match_repeat_named_per_iteration_frames(void) {
 
     PyObject *captures = ((KosMatchResult *) r)->captures;
     PyObject *items = PyDict_GetItemString(captures, "items");
-    PyObject *val_top = PyDict_GetItemString(captures, "val");
     TEST_ASSERT_NOT_NULL(items, "items present");
     TEST_ASSERT(PyList_Check(items), "items is list");
     TEST_ASSERT_EQ(PyList_GET_SIZE(items), 3, "3 iterations");
 
     PyObject *iter0 = PyList_GET_ITEM(items, 0);
     TEST_ASSERT(PyDict_Check(iter0), "iter0 is dict");
-    PyObject *v0 = PyDict_GetItemString(iter0, "val");
+    PyObject *v0 = unwrap_datum_value(PyDict_GetItemString(iter0, "val"));
     TEST_ASSERT_SAME(v0, one, "iter0.val == 1");
+    Py_DECREF(v0);
 
     PyObject *iter2 = PyList_GET_ITEM(items, 2);
-    PyObject *v2 = PyDict_GetItemString(iter2, "val");
+    PyObject *v2 = unwrap_datum_value(PyDict_GetItemString(iter2, "val"));
     TEST_ASSERT_SAME(v2, three, "iter2.val == 3");
+    Py_DECREF(v2);
 
-    TEST_ASSERT_SAME(val_top, KosMatchAbsent, "val (top-level) ABSENT");
+    TEST_ASSERT_NULL(PyDict_GetItemString(captures, "val"),
+                     "val (top-level) sparse");
 
     Py_DECREF(r);
     Py_DECREF(seq);
@@ -1349,7 +1367,7 @@ static int test_match_repeat_bindings_shaped_two_slots_per_frame(void) {
     int cap_name = append_capture(b, (uint32_t) slot_name, (uint32_t) t_any_a);
     int cap_expr = append_capture(b, (uint32_t) slot_expr, (uint32_t) t_any_b);
     uint32_t inner_kids[] = {(uint32_t) cap_name, (uint32_t) cap_expr};
-    int inner_grp = append_group(b, inner_kids, 2);
+    int inner_grp = append_match(b, inner_kids, 2);
     int inner_form = append_form(b, (uint32_t) inner_grp);
     int n_rep = append_repeat(b, (uint32_t) inner_form);
     int cap_frames = append_capture(b, (uint32_t) slot_frames,
@@ -1378,21 +1396,25 @@ static int test_match_repeat_bindings_shaped_two_slots_per_frame(void) {
 
     PyObject *f0 = PyList_GET_ITEM(frames, 0);
     TEST_ASSERT(PyDict_Check(f0), "frame0 is dict");
-    PyObject *n0 = PyDict_GetItemString(f0, "name");
-    PyObject *e0 = PyDict_GetItemString(f0, "expr");
+    PyObject *n0 = unwrap_datum_value(PyDict_GetItemString(f0, "name"));
+    PyObject *e0 = unwrap_datum_value(PyDict_GetItemString(f0, "expr"));
     TEST_ASSERT_SAME(n0, one, "frame0.name == 1");
     TEST_ASSERT_SAME(e0, ten, "frame0.expr == 10");
+    Py_DECREF(n0);
+    Py_DECREF(e0);
 
     PyObject *f1 = PyList_GET_ITEM(frames, 1);
-    PyObject *n1 = PyDict_GetItemString(f1, "name");
-    PyObject *e1 = PyDict_GetItemString(f1, "expr");
+    PyObject *n1 = unwrap_datum_value(PyDict_GetItemString(f1, "name"));
+    PyObject *e1 = unwrap_datum_value(PyDict_GetItemString(f1, "expr"));
     TEST_ASSERT_SAME(n1, two, "frame1.name == 2");
     TEST_ASSERT_SAME(e1, twenty, "frame1.expr == 20");
+    Py_DECREF(n1);
+    Py_DECREF(e1);
 
-    PyObject *name_top = PyDict_GetItemString(captures, "name");
-    PyObject *expr_top = PyDict_GetItemString(captures, "expr");
-    TEST_ASSERT_SAME(name_top, KosMatchAbsent, "name top ABSENT");
-    TEST_ASSERT_SAME(expr_top, KosMatchAbsent, "expr top ABSENT");
+    TEST_ASSERT_NULL(PyDict_GetItemString(captures, "name"),
+                     "name top sparse");
+    TEST_ASSERT_NULL(PyDict_GetItemString(captures, "expr"),
+                     "expr top sparse");
 
     Py_DECREF(r);
     Py_DECREF(seq);
@@ -1419,7 +1441,7 @@ static int test_match_rest_terminal_pysequence(void) {
     int n_t = append_test_any(b);
     int n_rest = append_rest(b, (uint32_t) slot_r);
     uint32_t kids[] = {(uint32_t) n_t, (uint32_t) n_rest};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
     TEST_ASSERT_NOT_NULL(m_obj, "finalize");
@@ -1436,10 +1458,16 @@ static int test_match_rest_terminal_pysequence(void) {
 
     PyObject *cap = PyDict_GetItemString(
         ((KosMatchResult *) r)->captures, "rest");
-    TEST_ASSERT(PyTuple_Check(cap), "rest is tuple");
-    TEST_ASSERT_EQ(PyTuple_GET_SIZE(cap), 3, "3-element rest");
-    TEST_ASSERT_SAME(PyTuple_GET_ITEM(cap, 0), two, "rest[0]==2");
-    TEST_ASSERT_SAME(PyTuple_GET_ITEM(cap, 2), four, "rest[2]==4");
+    PyObject *cap_u = unwrap_datum_value(cap);
+    TEST_ASSERT(PyTuple_Check(cap_u), "rest is tuple");
+    TEST_ASSERT_EQ(PyTuple_GET_SIZE(cap_u), 3, "3-element rest");
+    PyObject *r0 = unwrap_datum_value(PyTuple_GET_ITEM(cap_u, 0));
+    PyObject *r2 = unwrap_datum_value(PyTuple_GET_ITEM(cap_u, 2));
+    TEST_ASSERT_SAME(r0, two, "rest[0]==2");
+    TEST_ASSERT_SAME(r2, four, "rest[2]==4");
+    Py_DECREF(r0);
+    Py_DECREF(r2);
+    Py_DECREF(cap_u);
 
     Py_DECREF(r);
     Py_DECREF(seq);
@@ -1464,7 +1492,7 @@ static int test_match_rest_terminal_kospair(void) {
     int n_t = append_test_any(b);
     int n_rest = append_rest(b, (uint32_t) slot_r);
     uint32_t kids[] = {(uint32_t) n_t, (uint32_t) n_rest};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
     TEST_ASSERT_NOT_NULL(m_obj, "finalize");
@@ -1481,9 +1509,11 @@ static int test_match_rest_terminal_kospair(void) {
 
     PyObject *cap = PyDict_GetItemString(
         ((KosMatchResult *) r)->captures, "rest");
-    TEST_ASSERT(KosPair_Check(cap) || KosNil_Check(cap),
+    PyObject *pair = unwrap_datum_value(cap);
+    TEST_ASSERT(KosPair_Check(pair) || KosNil_Check(pair),
                 "rest is kospair");
-    TEST_ASSERT_SAME(KosPair_CAR(cap), two, "rest car==2");
+    TEST_ASSERT_SAME(KosPair_CAR(pair), two, "rest car==2");
+    Py_DECREF(pair);
 
     Py_DECREF(r);
     Py_DECREF(cons);
@@ -1509,7 +1539,7 @@ static int test_match_rest_nonterminal_with_finite_suffix(void) {
     int n_t2 = append_test_any(b);
     uint32_t kids[] = {
         (uint32_t) n_t1, (uint32_t) n_rest, (uint32_t) n_t2};
-    int n_grp = append_group(b, kids, 3);
+    int n_grp = append_match(b, kids, 3);
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
     TEST_ASSERT_NOT_NULL(m_obj, "finalize");
@@ -1528,8 +1558,12 @@ static int test_match_rest_nonterminal_with_finite_suffix(void) {
     PyObject *cap = PyDict_GetItemString(
         ((KosMatchResult *) r)->captures, "rest");
     TEST_ASSERT_EQ(PyTuple_GET_SIZE(cap), 3, "rest has 3 items");
-    TEST_ASSERT_SAME(PyTuple_GET_ITEM(cap, 0), two, "rest[0]==2");
-    TEST_ASSERT_SAME(PyTuple_GET_ITEM(cap, 2), four, "rest[2]==4");
+    PyObject *u0 = unwrap_datum_value(PyTuple_GET_ITEM(cap, 0));
+    PyObject *u2 = unwrap_datum_value(PyTuple_GET_ITEM(cap, 2));
+    TEST_ASSERT_SAME(u0, two, "rest[0]==2");
+    TEST_ASSERT_SAME(u2, four, "rest[2]==4");
+    Py_DECREF(u0);
+    Py_DECREF(u2);
 
     Py_DECREF(r);
     Py_DECREF(seq);
@@ -1562,7 +1596,7 @@ static int test_match_optional_absent_present(void) {
     int n_opt = append_optional(b, (uint32_t) cap_x);
     int t_end = append_test_literal(b, (uint32_t) c_end);
     uint32_t kids[] = {(uint32_t) n_opt, (uint32_t) t_end};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
     TEST_ASSERT_NOT_NULL(m_obj, "finalize");
@@ -1573,18 +1607,18 @@ static int test_match_optional_absent_present(void) {
     PyObject *r1 = run_match_pyseq((KosMatcher *) m_obj, seq_present);
     TEST_ASSERT_NOT_NULL(r1, "match (present) returned");
     TEST_ASSERT(((KosMatchResult *) r1)->matched, "matched present");
-    PyObject *x1 = PyDict_GetItemString(
-        ((KosMatchResult *) r1)->captures, "x");
+    PyObject *x1 = unwrap_datum_value(PyDict_GetItemString(
+        ((KosMatchResult *) r1)->captures, "x"));
     TEST_ASSERT_EQ(PyUnicode_CompareWithASCIIString(x1, "v"), 0,
                    "x present == 'v'");
+    Py_DECREF(x1);
 
     PyObject *seq_absent = PyTuple_Pack(1, estr);
     PyObject *r2 = run_match_pyseq((KosMatcher *) m_obj, seq_absent);
     TEST_ASSERT_NOT_NULL(r2, "match (absent) returned");
     TEST_ASSERT(((KosMatchResult *) r2)->matched, "matched absent");
-    PyObject *x2 = PyDict_GetItemString(
-        ((KosMatchResult *) r2)->captures, "x");
-    TEST_ASSERT_SAME(x2, KosMatchAbsent, "x ABSENT");
+    TEST_ASSERT_NULL(PyDict_GetItemString(
+        ((KosMatchResult *) r2)->captures, "x"), "x sparse");
 
     Py_DECREF(r1);
     Py_DECREF(r2);
@@ -1615,7 +1649,7 @@ static int test_match_not_blocks(void) {
     int t_any = append_test_any(b);
     int cap_x = append_capture(b, (uint32_t) slot_x, (uint32_t) t_any);
     uint32_t kids[] = {(uint32_t) n_not, (uint32_t) cap_x};
-    int n_grp = append_group(b, kids, 2);
+    int n_grp = append_match(b, kids, 2);
 
     PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
     TEST_ASSERT_NOT_NULL(m_obj, "finalize");
@@ -1628,10 +1662,11 @@ static int test_match_not_blocks(void) {
     PyObject *r1 = run_match_pyseq((KosMatcher *) m_obj, seq_ok);
     TEST_ASSERT_NOT_NULL(r1, "ok match returned");
     TEST_ASSERT(((KosMatchResult *) r1)->matched, "matched 'go'");
-    PyObject *x1 = PyDict_GetItemString(
-        ((KosMatchResult *) r1)->captures, "x");
+    PyObject *x1 = unwrap_datum_value(PyDict_GetItemString(
+        ((KosMatchResult *) r1)->captures, "x"));
     TEST_ASSERT_EQ(PyUnicode_CompareWithASCIIString(x1, "go"), 0,
                    "x == 'go'");
+    Py_DECREF(x1);
 
     PyObject *r2 = run_match_pyseq((KosMatcher *) m_obj, seq_bad);
     TEST_ASSERT_NOT_NULL(r2, "bad match returned");
@@ -1732,7 +1767,7 @@ static int test_match_lambda_shaped_oneof(void) {
         uint32_t kids[] = {
             (uint32_t) cap_name, (uint32_t) t_disc, (uint32_t) t_ret,
             (uint32_t) t_form, (uint32_t) n_rest};
-        int g = append_group(b, kids, 5);
+        int g = append_match(b, kids, 5);
         branches[i] = (uint32_t) g;
     }
 
@@ -1760,13 +1795,21 @@ static int test_match_lambda_shaped_oneof(void) {
     TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
 
     PyObject *captures = ((KosMatchResult *) r)->captures;
-    PyObject *name_val = PyDict_GetItemString(captures, "name");
+    PyObject *name_val = unwrap_datum_value(
+        PyDict_GetItemString(captures, "name"));
     PyObject *body_val = PyDict_GetItemString(captures, "body");
+    PyObject *body_u = unwrap_datum_value(body_val);
     TEST_ASSERT_SAME(name_val, foo, "name == foo");
-    TEST_ASSERT(PyTuple_Check(body_val), "body is tuple");
-    TEST_ASSERT_EQ(PyTuple_GET_SIZE(body_val), 2, "body has 2 items");
-    TEST_ASSERT_SAME(PyTuple_GET_ITEM(body_val, 0), b1, "body[0]==b1");
-    TEST_ASSERT_SAME(PyTuple_GET_ITEM(body_val, 1), b2, "body[1]==b2");
+    Py_DECREF(name_val);
+    TEST_ASSERT(PyTuple_Check(body_u), "body is tuple");
+    TEST_ASSERT_EQ(PyTuple_GET_SIZE(body_u), 2, "body has 2 items");
+    PyObject *bv0 = unwrap_datum_value(PyTuple_GET_ITEM(body_u, 0));
+    PyObject *bv1 = unwrap_datum_value(PyTuple_GET_ITEM(body_u, 1));
+    TEST_ASSERT_SAME(bv0, b1, "body[0]==b1");
+    TEST_ASSERT_SAME(bv1, b2, "body[1]==b2");
+    Py_DECREF(bv0);
+    Py_DECREF(bv1);
+    Py_DECREF(body_u);
 
     Py_DECREF(r);
     Py_DECREF(extern_env);
@@ -1808,8 +1851,8 @@ static int test_thaw_minimal(void) {
     TEST_ASSERT_NOT_NULL(test_node, "build TEST node");
 
     PyObject *nodes = PyTuple_Pack(1, test_node);
-    PyObject *frozen = Py_BuildValue("(siOOOOi)",
-                                     "MATCHER", 1,
+    PyObject *frozen = Py_BuildValue("(sOOOOi)",
+                                     "MATCHER",
                                      empty, empty, empty, nodes, 0);
     TEST_ASSERT_NOT_NULL(frozen, "build frozen tuple");
 
@@ -1836,19 +1879,19 @@ static int test_thaw_minimal(void) {
 }
 
 
-static int test_thaw_rejects_bad_version(void) {
+static int test_thaw_rejects_short_tuple(void) {
     /*
-      Reject a frozen tuple whose version != 1.
+      Reject a frozen tuple whose length is not 6.
     */
     PyObject *empty = PyTuple_New(0);
-    PyObject *frozen = Py_BuildValue("(siOOOOi)",
-                                     "MATCHER", 99,
-                                     empty, empty, empty, empty, 0);
+    PyObject *frozen = Py_BuildValue("(sOOOO)",
+                                     "MATCHER",
+                                     empty, empty, empty, empty);
     TEST_ASSERT_NOT_NULL(frozen, "build frozen tuple");
 
     PyObject *from_tuple = get_from_tuple_method();
     PyObject *m = PyObject_CallOneArg(from_tuple, frozen);
-    TEST_ASSERT_NULL(m, "thaw must reject bad version");
+    TEST_ASSERT_NULL(m, "thaw must reject short tuple");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception set");
     PyErr_Clear();
 
@@ -1863,8 +1906,8 @@ static int test_thaw_rejects_unknown_node_tag(void) {
     PyObject *empty = PyTuple_New(0);
     PyObject *bad_node = Py_BuildValue("(si)", "BOGUS", 0);
     PyObject *nodes = PyTuple_Pack(1, bad_node);
-    PyObject *frozen = Py_BuildValue("(siOOOOi)",
-                                     "MATCHER", 1,
+    PyObject *frozen = Py_BuildValue("(sOOOOi)",
+                                     "MATCHER",
                                      empty, empty, empty, nodes, 0);
 
     PyObject *from_tuple = get_from_tuple_method();
@@ -1895,8 +1938,8 @@ static int test_thaw_rejects_index_oob(void) {
                                        "CAPTURE", 5, 0, 0, -1);
     PyObject *nodes = PyTuple_Pack(2, test_node, cap_node);
 
-    PyObject *frozen = Py_BuildValue("(siOOOOi)",
-                                     "MATCHER", 1,
+    PyObject *frozen = Py_BuildValue("(sOOOOi)",
+                                     "MATCHER",
                                      slots, empty, empty,
                                      nodes, 1);
 
@@ -1963,7 +2006,7 @@ static int test_thaw_full_lambda(void) {
         PyObject *t_form = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
         PyObject *rest = Py_BuildValue("(si)", "REST", 1);
         PyObject *grp = Py_BuildValue(
-            "(siiiii)", "GROUP",
+            "(siiiii)", "MATCH",
             (int)(base + 1), (int)(base + 2), (int)(base + 3),
             (int)(base + 4), (int)(base + 5));
 
@@ -1999,8 +2042,8 @@ static int test_thaw_full_lambda(void) {
     PyObject *nodes = PySequence_Tuple(nodes_list);
     Py_DECREF(nodes_list);
 
-    PyObject *frozen = Py_BuildValue("(siOOOOi)",
-                                     "MATCHER", 1,
+    PyObject *frozen = Py_BuildValue("(sOOOOi)",
+                                     "MATCHER",
                                      slots, externs, consts,
                                      nodes, (int) oneof_idx);
 
@@ -2027,9 +2070,21 @@ static int test_thaw_full_lambda(void) {
 
     PyObject *captures = ((KosMatchResult *) r)->captures;
     PyObject *name_v = PyDict_GetItemString(captures, "name");
+    PyObject *name_u = unwrap_datum_value(name_v);
+    TEST_ASSERT_SAME(name_u, foo, "name == zoo");
+    Py_DECREF(name_u);
+
     PyObject *body_v = PyDict_GetItemString(captures, "body");
-    TEST_ASSERT_SAME(name_v, foo, "name == zoo");
-    TEST_ASSERT_EQ(PyTuple_GET_SIZE(body_v), 2, "body has 2 items");
+    PyObject *body_uv = unwrap_datum_value(body_v);
+    TEST_ASSERT(PyTuple_Check(body_uv), "body is tuple");
+    TEST_ASSERT_EQ(PyTuple_GET_SIZE(body_uv), 2, "body has 2 items");
+    PyObject *b0 = unwrap_datum_value(PyTuple_GET_ITEM(body_uv, 0));
+    PyObject *b1u = unwrap_datum_value(PyTuple_GET_ITEM(body_uv, 1));
+    TEST_ASSERT_SAME(b0, b1, "body[0] == b1");
+    TEST_ASSERT_SAME(b1u, b2, "body[1] == b2");
+    Py_DECREF(b0);
+    Py_DECREF(b1u);
+    Py_DECREF(body_uv);
 
     Py_DECREF(r);
     Py_DECREF(extern_env);
@@ -2190,8 +2245,12 @@ static int test_match_class_kw_only(void) {
     TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
 
     PyObject *captures = ((KosMatchResult *) r)->captures;
-    TEST_ASSERT_SAME(PyDict_GetItemString(captures, "a"), X, "a captured");
-    TEST_ASSERT_SAME(PyDict_GetItemString(captures, "b"), Y, "b captured");
+    PyObject *a_u = unwrap_datum_value(PyDict_GetItemString(captures, "a"));
+    PyObject *b_u = unwrap_datum_value(PyDict_GetItemString(captures, "b"));
+    TEST_ASSERT_SAME(a_u, X, "a captured");
+    TEST_ASSERT_SAME(b_u, Y, "b captured");
+    Py_DECREF(a_u);
+    Py_DECREF(b_u);
 
     Py_DECREF(r);
     Py_DECREF(extern_env);
@@ -2251,10 +2310,14 @@ static int test_match_class_positional(void) {
     TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
 
     PyObject *captures = ((KosMatchResult *) r)->captures;
-    TEST_ASSERT_SAME(PyDict_GetItemString(captures, "first"), A,
-                     "first captured");
-    TEST_ASSERT_SAME(PyDict_GetItemString(captures, "second"), B,
-                     "second captured");
+    PyObject *f_u = unwrap_datum_value(PyDict_GetItemString(
+        captures, "first"));
+    PyObject *s_u = unwrap_datum_value(PyDict_GetItemString(
+        captures, "second"));
+    TEST_ASSERT_SAME(f_u, A, "first captured");
+    TEST_ASSERT_SAME(s_u, B, "second captured");
+    Py_DECREF(f_u);
+    Py_DECREF(s_u);
 
     Py_DECREF(r);
     Py_DECREF(extern_env);
@@ -2395,7 +2458,7 @@ static int test_validator_field_subnode_width_rejected(void) {
     int t1 = append_test_any(b);
     int t2 = append_test_any(b);
     uint32_t kids[] = {(uint32_t) t1, (uint32_t) t2};
-    int g = append_group(b, kids, 2);
+    int g = append_match(b, kids, 2);
     int f = append_field_pos(b, (uint32_t) g);
 
     uint32_t fields[] = {(uint32_t) f};
@@ -2510,7 +2573,7 @@ int run_matcher_tests(void) {
     BEGIN_TEST_SUITE("matcher_ng (Phase 3: thaw)");
 
     RUN_TEST(test_thaw_minimal);
-    RUN_TEST(test_thaw_rejects_bad_version);
+    RUN_TEST(test_thaw_rejects_short_tuple);
     RUN_TEST(test_thaw_rejects_unknown_node_tag);
     RUN_TEST(test_thaw_rejects_index_oob);
     RUN_TEST(test_thaw_full_lambda);

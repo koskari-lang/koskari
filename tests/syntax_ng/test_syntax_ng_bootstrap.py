@@ -22,6 +22,7 @@ import pytest
 
 from koskari.exceptions import SpecialError
 from koskari.lib import Matcher, cons, nil, symbol
+from koskari.matcher_ng import unwrap_capture_tree
 from koskari.syntax_ng import (
     MacroTransform,
     SpecialTransform,
@@ -44,7 +45,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
 
     def test_bare_pattern_variable_is_rest_of_tail(self):
         """
-        Whole pattern is one symbol not in literals -> GROUP(REST(slot))
+        Whole pattern is one symbol not in literals -> MATCH(REST(slot))
         """
 
         x = symbol("x")
@@ -57,7 +58,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         b = symbol("b")
         r = m.match((a, b))
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["x"], (a, b))
+        self.assertEqual(unwrap_capture_tree(r.captures["x"]), (a, b))
 
 
     def test_literal_symbol_top_level(self):
@@ -87,12 +88,12 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         m = Matcher.from_tuple(p.freeze())
         r = m.match(())
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["a"], [])
+        self.assertEqual(unwrap_capture_tree(r.captures["a"]), [])
         s1 = symbol("s1")
         s2 = symbol("s2")
         r2 = m.match((s1, s2))
         self.assertTrue(r2.matched)
-        frames = r2.captures["a"]
+        frames = unwrap_capture_tree(r2.captures["a"])
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["a__sr"], s1)
         self.assertEqual(frames[1]["a__sr"], s2)
@@ -113,7 +114,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         form = build_proper(sx)
         r = m.match((form,), symbol=SYMBOL_TYPE)
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["x"], sx)
+        self.assertEqual(unwrap_capture_tree(r.captures["x"]), sx)
 
 
     def test_match_wrapper_dispatches_inner(self):
@@ -130,7 +131,8 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         m = Matcher.from_tuple(p.freeze())
         r = m.match((symbol("only"),), symbol=SYMBOL_TYPE)
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["x"], symbol("only"))
+        self.assertEqual(
+            unwrap_capture_tree(r.captures["x"]), symbol("only"))
 
 
 class TestSyntaxAdd(unittest.TestCase):
@@ -236,7 +238,7 @@ class TestTransformFreeze(unittest.TestCase):
         p = parse_syntax_rules_pattern(symbol("z"), frozenset(), None)
         t = SyntaxTransform(p)
         self.assertEqual(t.matcher_tuple[0], "MATCHER")
-        self.assertEqual(len(t.matcher_tuple), 7)
+        self.assertEqual(len(t.matcher_tuple), 6)
         self.assertTrue(t.hygiene.is_empty())
 
 
@@ -330,8 +332,8 @@ class TestSpecialDecorator(unittest.TestCase):
 class TestDatum(unittest.TestCase):
 
 
-    def test_datum_iterates_like_syntax_box(self):
-        from koskari.syntax_ng import Datum
+    def test_datum_iter_delegates_to_wrapped_pair(self):
+        from koskari.lib import Datum
 
         a = symbol("a")
         b = symbol("b")
@@ -339,8 +341,8 @@ class TestDatum(unittest.TestCase):
         d = Datum(lst)
         out = list(d)
         self.assertEqual(len(out), 2)
-        self.assertEqual(out[0].datum, a)
-        self.assertEqual(out[1].datum, b)
+        self.assertIs(out[0], a)
+        self.assertEqual(out[1], cons(b, nil))
 
 
 # The end.

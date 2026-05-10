@@ -25,7 +25,6 @@ import pytest
 
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.matcher_ng import (
-    ABSENT,
     BINDING,
     BINDINGS,
     BODY,
@@ -43,6 +42,7 @@ from koskari.matcher_ng import (
     LITERAL,
     LITERAL_KW,
     LITERAL_SYM,
+    MATCH,
     MATCHER_REGISTRY,
     META_MATCHER,
     META_PATTERN,
@@ -63,6 +63,7 @@ from koskari.matcher_ng import (
     lookup_matcher,
     parse_matcher,
     register_matcher,
+    unwrap_capture_tree,
 )
 
 
@@ -327,28 +328,42 @@ class TestParseCompositeVariadic(unittest.TestCase):
         self.assertIsInstance(pat._sub, CAPTURE)
 
 
-    def test_form_multi_arg_implicit_group(self):
+    def test_form_multi_arg_implicit_match(self):
         """
-        (FORM pat1 pat2 ...) lowers with an implicit GROUP wrapper
+        (FORM pat1 pat2 ...) lowers with an implicit MATCH wrapper
         """
 
         src = _list(symbol("FORM"), symbol("a"), symbol("b"))
         pat = parse_matcher(src)
         self.assertIsInstance(pat, FORM)
-        self.assertIsInstance(pat._sub, GROUP)
+        self.assertIsInstance(pat._sub, MATCH)
         self.assertEqual(len(pat._sub._children), 2)
 
 
-    def test_group_lowers_children(self):
+    def test_match_lowers_children(self):
         """
-        (GROUP a b c) lowers to GROUP(CAPTURE(a), CAPTURE(b), CAPTURE(c))
+        (MATCH a b c) lowers to MATCH(CAPTURE(a), CAPTURE(b), CAPTURE(c))
         """
 
-        src = _list(symbol("GROUP"),
+        src = _list(symbol("MATCH"),
                     symbol("a"), symbol("b"), symbol("c"))
         pat = parse_matcher(src)
-        self.assertIsInstance(pat, GROUP)
+        self.assertIsInstance(pat, MATCH)
         self.assertEqual(len(pat._children), 3)
+
+
+    def test_group_named_lowers_nested(self):
+        """
+        (GROUP slot pat...) lowers to GROUP(slot, ...)
+        """
+
+        src = _list(
+            symbol("GROUP"), symbol("g"),
+            symbol("a"), symbol("b"))
+        pat = parse_matcher(src)
+        self.assertIsInstance(pat, GROUP)
+        self.assertEqual(pat._slot, "g")
+        self.assertEqual(len(pat._children), 2)
 
 
     def test_oneof_lowers_branches(self):
@@ -656,7 +671,7 @@ class TestRecursiveLowering(unittest.TestCase):
     def test_form_with_named_capture_and_bare(self):
         """
         Walker round-trips (FORM (name :: symbol) expr) into a
-        FORM(GROUP(CAPTURE(name, TYPE(symbol)), CAPTURE(expr)))
+        FORM(MATCH(CAPTURE(name, TYPE(symbol)), CAPTURE(expr)))
         and the resulting matcher matches the worked-example shape
         """
 
@@ -666,7 +681,7 @@ class TestRecursiveLowering(unittest.TestCase):
             symbol("expr"))
         pat = parse_matcher(src)
         self.assertIsInstance(pat, FORM)
-        self.assertIsInstance(pat._sub, GROUP)
+        self.assertIsInstance(pat._sub, MATCH)
         children = pat._sub._children
         self.assertEqual(len(children), 2)
         self.assertIsInstance(children[0], CAPTURE)
@@ -675,14 +690,14 @@ class TestRecursiveLowering(unittest.TestCase):
         self.assertIsInstance(children[1], CAPTURE)
         self.assertEqual(children[1]._slot, "expr")
 
-        m = GROUP(pat).build()
+        m = MATCH(pat).build()
         sa = symbol("foo")
         sv = symbol("bar")
         subj = (_list(sa, sv),)
         result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"], sa)
-        self.assertIs(result.captures["expr"], sv)
+        self.assertIs(unwrap_capture_tree(result.captures["name"]), sa)
+        self.assertIs(unwrap_capture_tree(result.captures["expr"]), sv)
 
 
     def test_oneof_with_alternative_arms(self):
@@ -696,14 +711,14 @@ class TestRecursiveLowering(unittest.TestCase):
             _list(symbol("a"), keyword("::"), symbol("symbol")),
             _list(symbol("b"), keyword("::"), symbol("pair")))
         pat = parse_matcher(src)
-        m = GROUP(pat).build()
+        m = MATCH(pat).build()
 
         sa = symbol("hello")
         result = m.match(
             (sa,), symbol=SYMBOL_TYPE, pair=type(_list(1)))
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["a"], sa)
-        self.assertIs(result.captures["b"], ABSENT)
+        self.assertIs(unwrap_capture_tree(result.captures["a"]), sa)
+        self.assertNotIn("b", result.captures)
 
 
     def test_binding_inside_form(self):
@@ -717,7 +732,7 @@ class TestRecursiveLowering(unittest.TestCase):
             _list(symbol("BINDING"), symbol("b")),
             symbol("expr"))
         pat = parse_matcher(src)
-        m = GROUP(pat).build()
+        m = MATCH(pat).build()
 
         sname = symbol("x")
         sval = symbol("v")
@@ -726,9 +741,9 @@ class TestRecursiveLowering(unittest.TestCase):
         result = m.match(
             (outer,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["b"], cell)
-        self.assertIs(result.captures["name"], sname)
-        self.assertIs(result.captures["expr"], sval)
+        self.assertEqual(unwrap_capture_tree(result.captures["b"]), cell)
+        self.assertIs(unwrap_capture_tree(result.captures["name"]), sname)
+        self.assertIs(unwrap_capture_tree(result.captures["expr"]), sval)
 
 
 class TestRegistry(unittest.TestCase):
@@ -739,7 +754,7 @@ class TestRegistry(unittest.TestCase):
         Built-in heads resolve via lookup_matcher
         """
 
-        for name in ("FORM", "GROUP", "ONEOF", "BINDING", "FORMALS",
+        for name in ("FORM", "MATCH", "GROUP", "ONEOF", "BINDING", "FORMALS",
                      "CAPTURE", "REST", "TYPE"):
             self.assertIsNotNone(lookup_matcher(name))
 
@@ -1010,7 +1025,9 @@ class TestMetaMatcherExposed(unittest.TestCase):
             (src,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
         self.assertIsInstance(result, MatchResult)
-        self.assertIs(result.captures["quoted_symbol"], symbol("x"))
+        self.assertIs(
+            unwrap_capture_tree(result.captures["quoted_symbol"]),
+            symbol("x"))
 
 
 # The end.

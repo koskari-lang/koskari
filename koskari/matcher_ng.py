@@ -34,6 +34,7 @@ binding_inner_pattern
 from koskari.hygiene_ng import Hygiene
 from koskari.lib import (
     ABSENT,
+    Datum,
     Matcher,
     MatchResult,
     keyword,
@@ -47,6 +48,7 @@ from typing import Protocol, runtime_checkable
 
 __all__ = [
     "ABSENT",
+    "Datum",
     "Matcher",
     "MatchResult",
     "Hygiene",
@@ -65,6 +67,7 @@ __all__ = [
     "PREDICATE",
     "CAPTURE",
     "FORM",
+    "MATCH",
     "GROUP",
     "ONEOF",
     "REPEAT",
@@ -106,6 +109,8 @@ __all__ = [
     "META_MATCHER",
     "KNOWN_HEADS",
     "CAPTURE_OPTION_KEYS",
+
+    "unwrap_capture_tree",
 ]
 
 
@@ -118,6 +123,36 @@ def thaw(tagged_tuple):
     return Matcher.from_tuple(tagged_tuple)
 
 
+def unwrap_capture_tree(value):
+    """
+    Recursively strip native Datum wrappers from values produced by the
+    matcher engine. Dicts, lists, and tuples are walked so nested GROUP
+    results and REPEAT frame dicts lose Datum leaves only
+    """
+
+    if isinstance(value, Datum):
+        return unwrap_capture_tree(value.datum)
+    if isinstance(value, dict):
+        return {
+            k: unwrap_capture_tree(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [unwrap_capture_tree(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(unwrap_capture_tree(v) for v in value)
+    return value
+
+
+def peel_datum_chain(value):
+    """
+    Strip only a chain of native Datum wrappers (.datum) for symbol tests.
+    Does not recurse into dict, list, or tuple
+    """
+
+    while isinstance(value, Datum):
+        value = value.datum
+    return value
+
+
 # === Builder infrastructure ===
 
 
@@ -125,7 +160,7 @@ class MatchCompiler:
     """
     Baseline freeze-time compiler for one lowering pass. Holds the four
     insertion-ordered tables that become the slots, externs, consts, and
-    nodes of the frozen 7-tuple, plus capture-scope bookkeeping
+    nodes of the frozen 6-tuple, plus capture-scope bookkeeping
     """
 
 
@@ -134,7 +169,7 @@ class MatchCompiler:
         Construct an empty baseline match compiler
         """
 
-        self.slot_indices = {}
+        self.slot_names = []
         self.extern_indices = {}
         self.consts = []
         self.nodes = []
@@ -163,15 +198,13 @@ class MatchCompiler:
 
     def intern_slot(self, name):
         """
-        Return the slot index for the named slot, allocating one when
-        first seen
+        Append a capture slot name and return its index. Duplicate names
+        are allowed (distinct indices); use claim_slot_name to forbid
+        duplicates within a capture scope
         """
 
-        if name in self.slot_indices:
-            return self.slot_indices[name]
-
-        idx = len(self.slot_indices)
-        self.slot_indices[name] = idx
+        idx = len(self.slot_names)
+        self.slot_names.append(name)
         return idx
 
 
@@ -248,7 +281,7 @@ class MatchCompiler:
 
         entry = root.lower(self)
         frozen = (
-            "MATCHER", 1,
+            "MATCHER",
             tuple(Pattern._slot_names(self)),
             tuple(Pattern._extern_names(self)),
             tuple(self.consts),
@@ -347,7 +380,7 @@ class HygienicMatchCompiler(MatchCompiler):
 
         entry = root.lower(self)
         frozen = (
-            "MATCHER", 1,
+            "MATCHER",
             tuple(Pattern._slot_names(self)),
             tuple(Pattern._extern_names(self)),
             tuple(self.consts),
@@ -423,7 +456,7 @@ class Pattern(Protocol):
         Return slot names in declaration order
         """
 
-        return list(ctx.slot_indices.keys())
+        return list(ctx.slot_names)
 
 
     @staticmethod
@@ -677,9 +710,9 @@ class FORM(Pattern):
         self._sub.visit(fn)
 
 
-class GROUP(Pattern):
+class MATCH(Pattern):
     """
-    Sequence of patterns matched in order against successive elements
+    Sequential spine: match children in order in the current capture dict
     """
 
 
@@ -690,17 +723,60 @@ class GROUP(Pattern):
         """
 
         for c in children:
-            check_pattern_arg(c, "GROUP child")
+            check_pattern_arg(c, "MATCH child")
         self._children = children
 
 
     def lower(self, ctx):
         """
-        Emit each child then a GROUP node listing them in order
+        Emit each child then a MATCH node listing them in order
         """
 
         idxs = [c.lower(ctx) for c in self._children]
-        return ctx.append_node(("GROUP",) + tuple(idxs))
+        return ctx.append_node(("MATCH",) + tuple(idxs))
+
+
+    def visit(self, fn):
+        fn(self)
+        for c in self._children:
+            c.visit(fn)
+
+
+class GROUP(Pattern):
+    """
+    Named nested capture namespace: inner captures go into a sub-dict
+    stored under the given slot name in the parent dict
+    """
+
+
+    def __init__(self, slot, *children):
+        """
+        :param slot: dict key / capture slot name for the nested result
+        :param children: zero or more patterns matched in order inside
+            the nested dict
+        """
+
+        check_str_arg(slot, "GROUP slot")
+        for c in children:
+            check_pattern_arg(c, "GROUP child")
+        self._slot = slot
+        self._children = children
+
+
+    def lower(self, ctx):
+        """
+        Reserve the group slot name, run children in a fresh capture
+        scope, emit a GROUP frozen node (slot index plus child indices)
+        """
+
+        ctx.claim_slot_name(self._slot)
+        slot_idx = ctx.intern_slot(self._slot)
+        ctx.push_capture_scope()
+        try:
+            idxs = [c.lower(ctx) for c in self._children]
+        finally:
+            ctx.pop_capture_scope()
+        return ctx.append_node(("GROUP", slot_idx) + tuple(idxs))
 
 
     def visit(self, fn):
@@ -983,13 +1059,13 @@ def repeat_capture(slot, inner):
     Capture the results of repeating inner across successive subject
     elements. The native engine stores matched.captures[slot] as a
     list of dict objects: each dict maps slot names touched during
-    one iteration to their captured values (ABSENT for unset slots).
-    Inner patterns should use CAPTURE nodes for fields to collect per
-    iteration
+    one iteration to their captured values (sparse; absent slots are
+    omitted). Inner patterns should use CAPTURE nodes for fields to
+    collect per iteration
 
     :param slot: outer slot receiving the list of frame dicts
     :param inner: pattern run once per repetition (often FORM around
-        a GROUP of captures)
+        a MATCH of captures)
     :rtype: CAPTURE
     """
 
@@ -1039,9 +1115,14 @@ def slot_prefix_copy(pattern, prefix, sep):
     if isinstance(pattern, FORM):
         return FORM(slot_prefix_copy(pattern._sub, prefix, sep))
 
-    if isinstance(pattern, GROUP):
-        return GROUP(*[
+    if isinstance(pattern, MATCH):
+        return MATCH(*[
             slot_prefix_copy(c, prefix, sep) for c in pattern._children])
+
+    if isinstance(pattern, GROUP):
+        return GROUP(
+            prefix + sep + pattern._slot,
+            *[slot_prefix_copy(c, prefix, sep) for c in pattern._children])
 
     if isinstance(pattern, ONEOF):
         return ONEOF(*[
@@ -1090,8 +1171,8 @@ def binding_inner_pattern():
     """
 
     return FORM(ONEOF(
-        GROUP(SYMBOL("name"), VALUE("expr")),
-        GROUP(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
+        MATCH(SYMBOL("name"), VALUE("expr")),
+        MATCH(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
     ))
 
 
@@ -1179,7 +1260,7 @@ def LIST(*specs, key=None):
     sub-list is also captured into that slot
     """
 
-    inner = FORM(GROUP(*specs))
+    inner = FORM(MATCH(*specs))
     if key is None:
         return inner
     return CAPTURE(key, inner)
@@ -1394,7 +1475,10 @@ class DEFINE(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         val = matched.get(self._slot)
-        if val is not None and val is not ABSENT and is_symbol(val):
+        if val is None or val is ABSENT:
+            return
+        val = peel_datum_chain(val)
+        if is_symbol(val):
             yield val
 
 
@@ -1426,23 +1510,27 @@ class DECL(Composite, HygieneWireSlotScopes):
     def _expand(self):
         return CAPTURE(self._slot, ONEOF(
             TYPE("symbol"),
-            FORM(GROUP(SYMBOL("name"))),
-            FORM(GROUP(
+            FORM(MATCH(SYMBOL("name"))),
+            FORM(MATCH(
                 VALUE("type"),
                 LITERAL_KW("as"),
                 SYMBOL("name"))),
-            FORM(GROUP(SYMBOL("name"), REST("decl_tail"))),
+            FORM(MATCH(SYMBOL("name"), REST("decl_tail"))),
         ))
 
 
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
-        if name is not None and name is not ABSENT and is_symbol(name):
-            yield name
-            return
+        if name is not None and name is not ABSENT:
+            name = peel_datum_chain(name)
+            if is_symbol(name):
+                yield name
+                return
         raw = matched.get(self._slot)
-        if raw is not None and is_symbol(raw):
-            yield raw
+        if raw is not None and raw is not ABSENT:
+            raw = peel_datum_chain(raw)
+            if is_symbol(raw):
+                yield raw
 
 
     def iter_recurse_targets(self, matched):
@@ -1450,8 +1538,9 @@ class DECL(Composite, HygieneWireSlotScopes):
         if t is not None and t is not ABSENT:
             yield t
         dt = matched.get("decl_tail")
-        if dt is not None and dt is not ABSENT and is_pair(dt):
-            yield dt
+        if dt is not None and dt is not ABSENT:
+            if is_pair(peel_datum_chain(dt)):
+                yield dt
 
 
 class BINDING(Composite, HygieneWireSlotScopes):
@@ -1483,8 +1572,10 @@ class BINDING(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
-        if name is not None and name is not ABSENT and is_symbol(name):
-            yield name
+        if name is not None and name is not ABSENT:
+            name = peel_datum_chain(name)
+            if is_symbol(name):
+                yield name
 
 
     def iter_recurse_targets(self, matched):
@@ -1533,20 +1624,28 @@ class BINDINGS(Composite):
 
     def iter_introduced_symbols(self, matched):
         cells = matched.get(self._slot)
-        if cells is nil or cells is None:
+        if cells is None or cells is ABSENT:
+            return
+        cells = unwrap_capture_tree(cells)
+        if cells is nil:
             return
         if not isinstance(cells, list):
             return
         for fr in cells:
             if isinstance(fr, dict):
                 n = fr.get("name")
-                if n is not None and is_symbol(n):
-                    yield n
+                if n is not None:
+                    n = peel_datum_chain(n)
+                    if is_symbol(n):
+                        yield n
 
 
     def iter_recurse_targets(self, matched):
         cells = matched.get(self._slot)
-        if cells is nil or cells is None:
+        if cells is None or cells is ABSENT:
+            return
+        cells = unwrap_capture_tree(cells)
+        if cells is nil:
             return
         if not isinstance(cells, list):
             return
@@ -1595,12 +1694,12 @@ def formal_param_pattern():
 
     return ONEOF(
         SYMBOL("name"),
-        FORM(GROUP(SYMBOL("name"))),
-        FORM(GROUP(SYMBOL("name"), VALUE("default"))),
-        FORM(GROUP(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))),
-        FORM(GROUP(
+        FORM(MATCH(SYMBOL("name"))),
+        FORM(MATCH(SYMBOL("name"), VALUE("default"))),
+        FORM(MATCH(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))),
+        FORM(MATCH(
             SYMBOL("name"),
-            repeat_capture("attrs", GROUP(
+            repeat_capture("attrs", MATCH(
                 TYPE("keyword"),
                 VALUE("attr_val"))))),
     )
@@ -1616,12 +1715,12 @@ def kwonly_param_pattern():
     cleanly before the optional **: tail
     """
 
-    return GROUP(
+    return MATCH(
         NOT(LITERAL_KW("**")),
         ONEOF(
-            FORM(GROUP(SYMBOL("name"))),
-            GROUP(SYMBOL("name")),
-            GROUP(CAPTURE("kw", TYPE("keyword")), VALUE("default")),
+            FORM(MATCH(SYMBOL("name"))),
+            MATCH(SYMBOL("name")),
+            MATCH(CAPTURE("kw", TYPE("keyword")), VALUE("default")),
         ),
     )
 
@@ -1634,7 +1733,7 @@ def default_pair_pattern():
     of default pairs stops at the first marker keyword
     """
 
-    return GROUP(
+    return MATCH(
         NOT(LITERAL_KW("*")),
         NOT(LITERAL_KW("**")),
         CAPTURE("kw", TYPE("keyword")),
@@ -1660,17 +1759,17 @@ def formals_inner_pattern():
     OPTIONAL chunks resolving to ABSENT
     """
 
-    star_segment = GROUP(
+    star_segment = MATCH(
         LITERAL_KW("*"),
         ONEOF(SYMBOL("star"), CAPTURE("star", LITERAL(nil))),
     )
 
-    starstar_segment = GROUP(
+    starstar_segment = MATCH(
         LITERAL_KW("**"),
         SYMBOL("starstar"),
     )
 
-    return FORM(GROUP(
+    return FORM(MATCH(
         OPTIONAL(repeat_capture("positionals", formal_param_pattern())),
         OPTIONAL(repeat_capture("defaults", default_pair_pattern())),
         OPTIONAL(star_segment),
@@ -1722,33 +1821,49 @@ class FORMALS(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         raw = matched.get(self._slot)
-        if raw is not None and raw is not ABSENT and is_symbol(raw):
-            yield raw
+        if raw is not None and raw is not ABSENT:
+            raw = peel_datum_chain(raw)
+            if is_symbol(raw):
+                yield raw
         pos = matched.get("positionals")
+        if pos is not None and pos is not ABSENT:
+            pos = unwrap_capture_tree(pos)
         if isinstance(pos, list):
             for fr in pos:
                 if isinstance(fr, dict):
                     n = fr.get("name")
-                    if n is not None and n is not ABSENT and is_symbol(n):
-                        yield n
+                    if n is not None and n is not ABSENT:
+                        n = peel_datum_chain(n)
+                        if is_symbol(n):
+                            yield n
         star = matched.get("star")
-        if star is not None and star is not ABSENT and is_symbol(star):
-            yield star
+        if star is not None and star is not ABSENT:
+            star = peel_datum_chain(star)
+            if is_symbol(star):
+                yield star
         ss = matched.get("starstar")
-        if ss is not None and ss is not ABSENT and is_symbol(ss):
-            yield ss
+        if ss is not None and ss is not ABSENT:
+            ss = peel_datum_chain(ss)
+            if is_symbol(ss):
+                yield ss
         kwonly = matched.get("kwonly")
+        if kwonly is not None and kwonly is not ABSENT:
+            kwonly = unwrap_capture_tree(kwonly)
         if isinstance(kwonly, list):
             for fr in kwonly:
                 if not isinstance(fr, dict):
                     continue
                 n = fr.get("name")
-                if n is not None and is_symbol(n):
-                    yield n
+                if n is not None:
+                    n = peel_datum_chain(n)
+                    if is_symbol(n):
+                        yield n
 
 
     def iter_recurse_targets(self, matched):
         defs = matched.get("defaults")
+        if defs is not None and defs is not ABSENT:
+            defs = unwrap_capture_tree(defs)
         if isinstance(defs, list):
             for fr in defs:
                 if isinstance(fr, dict):
@@ -1756,6 +1871,8 @@ class FORMALS(Composite, HygieneWireSlotScopes):
                     if dv is not None:
                         yield dv
         kwonly = matched.get("kwonly")
+        if kwonly is not None and kwonly is not ABSENT:
+            kwonly = unwrap_capture_tree(kwonly)
         if isinstance(kwonly, list):
             for fr in kwonly:
                 if isinstance(fr, dict):
@@ -1763,6 +1880,8 @@ class FORMALS(Composite, HygieneWireSlotScopes):
                     if dv is not None:
                         yield dv
         pos = matched.get("positionals")
+        if pos is not None and pos is not ABSENT:
+            pos = unwrap_capture_tree(pos)
         if isinstance(pos, list):
             for fr in pos:
                 if isinstance(fr, dict):
@@ -1804,17 +1923,19 @@ class USING(Composite, HygieneWireSlotScopes):
 
     def _expand(self):
         return CAPTURE(self._slot, FORM(ONEOF(
-            GROUP(PAIR("lhs"), VALUE("expr")),
-            GROUP(SYMBOL("name"), VALUE("expr")),
-            GROUP(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
-            GROUP(VALUE("expr")),
+            MATCH(PAIR("lhs"), VALUE("expr")),
+            MATCH(SYMBOL("name"), VALUE("expr")),
+            MATCH(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
+            MATCH(VALUE("expr")),
         )))
 
 
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
-        if name is not None and name is not ABSENT and is_symbol(name):
-            yield name
+        if name is not None and name is not ABSENT:
+            name = peel_datum_chain(name)
+            if is_symbol(name):
+                yield name
 
 
     def iter_recurse_targets(self, matched):
@@ -1966,23 +2087,23 @@ CAPTURE_OPTION_KW_TO_NAME = {
 
 
 META_PATTERN = ONEOF(
-    FORM(GROUP(
+    FORM(MATCH(
         LITERAL_SYM("quote"),
         CAPTURE("quoted_symbol", TYPE("symbol")))),
-    FORM(GROUP(
+    FORM(MATCH(
         LITERAL_KW("::"),
         REST("dcolon_args"))),
-    FORM(GROUP(
+    FORM(MATCH(
         LITERAL_KW("type"),
         REST("type_args"))),
-    FORM(GROUP(
+    FORM(MATCH(
         LITERAL_KW("val"),
         CAPTURE("val_expr"))),
-    FORM(GROUP(
+    FORM(MATCH(
         LITERAL_SYM("CLASS"),
         CAPTURE("class_extern", TYPE("symbol")),
         REST("class_fields"))),
-    FORM(GROUP(
+    FORM(MATCH(
         CAPTURE("head", TYPE("symbol")),
         REST("head_args"))),
     CAPTURE("bare_symbol", TYPE("symbol")),
@@ -1990,7 +2111,7 @@ META_PATTERN = ONEOF(
 )
 
 
-META_MATCHER = make_matcher(GROUP(META_PATTERN))
+META_MATCHER = make_matcher(MATCH(META_PATTERN))
 
 
 def parse_matcher(elem):
@@ -2014,35 +2135,39 @@ def parse_matcher(elem):
             "not a valid matcher pattern: %r" % (elem,))
     c = result.captures
 
-    if c["bare_symbol"] is not ABSENT:
-        return CAPTURE(str(c["bare_symbol"]))
+    if c.get("bare_symbol", ABSENT) is not ABSENT:
+        return CAPTURE(str(unwrap_capture_tree(c.get("bare_symbol"))))
 
-    if c["atom_literal"] is not ABSENT:
-        atom = c["atom_literal"]
+    if c.get("atom_literal", ABSENT) is not ABSENT:
+        atom = unwrap_capture_tree(c.get("atom_literal"))
         if isinstance(atom, pair):
             raise ValueError(
                 "improper list is not a valid matcher pattern: %r"
                 % (atom,))
         return LITERAL(atom)
 
-    if c["quoted_symbol"] is not ABSENT:
-        return LITERAL_SYM(str(c["quoted_symbol"]))
+    if c.get("quoted_symbol", ABSENT) is not ABSENT:
+        return LITERAL_SYM(str(unwrap_capture_tree(c.get("quoted_symbol"))))
 
-    if c["dcolon_args"] is not ABSENT:
-        return lower_anon_constraint("::", c["dcolon_args"], elem)
+    if c.get("dcolon_args", ABSENT) is not ABSENT:
+        return lower_anon_constraint(
+            "::", unwrap_capture_tree(c.get("dcolon_args")), elem)
 
-    if c["type_args"] is not ABSENT:
-        return lower_anon_constraint("type:", c["type_args"], elem)
+    if c.get("type_args", ABSENT) is not ABSENT:
+        return lower_anon_constraint(
+            "type:", unwrap_capture_tree(c.get("type_args")), elem)
 
-    if c["val_expr"] is not ABSENT:
-        return LITERAL(c["val_expr"])
+    if c.get("val_expr", ABSENT) is not ABSENT:
+        return LITERAL(unwrap_capture_tree(c.get("val_expr")))
 
-    if c["class_extern"] is not ABSENT:
-        return lower_class(c["class_extern"], c["class_fields"])
+    if c.get("class_extern", ABSENT) is not ABSENT:
+        return lower_class(
+            unwrap_capture_tree(c.get("class_extern")),
+            unwrap_capture_tree(c.get("class_fields")))
 
-    if c["head"] is not ABSENT:
-        head = c["head"]
-        args = c["head_args"]
+    if c.get("head", ABSENT) is not ABSENT:
+        head = unwrap_capture_tree(c.get("head"))
+        args = unwrap_capture_tree(c.get("head_args"))
         name = str(head)
         factory = MATCHER_REGISTRY.get(name)
         if factory is not None:
@@ -2303,7 +2428,7 @@ def form_factory(head_sym, raw_args):
     """
     Lower (FORM pat) and (FORM pat1 pat2 ...). The single-arg form
     becomes FORM(parse_matcher(pat)); the multi-arg form implicitly
-    wraps the children in GROUP per the rollup convention
+    wraps the children in MATCH per the rollup convention
     """
 
     items = list(unpack(raw_args))
@@ -2311,16 +2436,28 @@ def form_factory(head_sym, raw_args):
         raise ValueError("(FORM ...) requires at least one sub-pattern")
     if len(items) == 1:
         return FORM(parse_matcher(items[0]))
-    return FORM(GROUP(*[parse_matcher(i) for i in items]))
+    return FORM(MATCH(*[parse_matcher(i) for i in items]))
 
 
-def group_factory(head_sym, raw_args):
+def match_factory(head_sym, raw_args):
     """
-    Lower (GROUP pat...). Empty GROUP is permitted (matches zero
+    Lower (MATCH pat...). Empty MATCH is permitted (matches zero
     elements)
     """
 
-    return GROUP(*[parse_matcher(i) for i in unpack(raw_args)])
+    return MATCH(*[parse_matcher(i) for i in unpack(raw_args)])
+
+
+def group_named_factory(head_sym, raw_args):
+    """
+    Lower (GROUP slot pat...). slot names the nested capture dict key
+    """
+
+    items = list(unpack(raw_args))
+    if not items:
+        raise ValueError("(GROUP ...) requires a slot name")
+    slot = coerce_slot("GROUP", items[0])
+    return GROUP(slot, *[parse_matcher(i) for i in items[1:]])
 
 
 def oneof_factory(head_sym, raw_args):
@@ -2337,7 +2474,7 @@ def oneof_factory(head_sym, raw_args):
 
 def list_factory(head_sym, raw_args):
     """
-    Lower (LIST pat...). LIST itself wraps in FORM(GROUP(...)) so
+    Lower (LIST pat...). LIST itself wraps in FORM(MATCH(...)) so
     extra wrapping here is unnecessary
     """
 
@@ -2428,7 +2565,8 @@ def register_builtin_matchers():
     """
 
     register_matcher("FORM", form_factory)
-    register_matcher("GROUP", group_factory)
+    register_matcher("MATCH", match_factory)
+    register_matcher("GROUP", group_named_factory)
     register_matcher("ONEOF", oneof_factory)
     register_matcher("LIST", list_factory)
     register_matcher("NOT", unary_recursive_factory("NOT", NOT))
