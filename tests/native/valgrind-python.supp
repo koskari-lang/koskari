@@ -131,6 +131,28 @@
 }
 
 
+# === PyDict_SetItemString (unicode key) ===
+#
+# CPython allocates the str key via PyUnicode_FromString inside
+# PyDict_SetItemString. With some builds / interning, Valgrind reports
+# small definite leaks on that path even though the object is retained by
+# interpreter internals until exit.
+#
+# This matches only stacks where PyDict_SetItemString is the outermost
+# named frame below the allocation (any caller is allowed). It will also
+# suppress identical stacks from our own PyDict_SetItemString call sites.
+
+{
+   python-dict-setitemstring-unicode-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:PyUnicode_New
+   ...
+   fun:PyDict_SetItemString
+}
+
+
 # === Python GC ===
 #
 # Garbage collector data structures.

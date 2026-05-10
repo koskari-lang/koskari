@@ -23,7 +23,7 @@ import pytest
 from koskari.exceptions import SpecialError
 from koskari.lib import Datum, Matcher, cons, nil, symbol
 from koskari.syntax_ng import (MacroTransform, SpecialTransform, Syntax,
-                               SyntaxTransform, Transform, _filter_captures,
+                               SyntaxTransform, Transform,
                                parse_syntax_rules_pattern, special)
 from koskari.types import build_proper
 
@@ -330,7 +330,7 @@ class TestSpecialUnpack(unittest.TestCase):
         st = SpecialTransform(
             p,
             lambda compiler, source_obj, mr, tc: fn(
-                compiler, _filter_captures(mr.captures), tc))
+                compiler, mr.captures, tc))
         slot = symbol("slot")
         src = cons(head, slot, nil)
         out = st.try_expand(None, src, False)
@@ -352,7 +352,7 @@ class TestSpecialUnpack(unittest.TestCase):
         st = SpecialTransform(
             p,
             lambda compiler, source_obj, mr, tc: fn(
-                compiler, tc=tc, **_filter_captures(mr.captures)))
+                compiler, tc=tc, **mr.captures))
         slot = symbol("slot")
         src = cons(head, slot, nil)
         out = st.try_expand(None, src, True)

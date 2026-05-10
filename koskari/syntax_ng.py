@@ -77,20 +77,7 @@ __all__ = (
 )
 
 
-_VALID_UNPACK_MODES = frozenset((None, "match", "kwargs"))
-
-
 _symbol_match = symbol("match")
-
-
-def _validate_unpack_mode(unpack):
-    """
-    Raise ``ValueError`` when unpack is not a supported special-form unpack mode
-    """
-
-    if unpack not in _VALID_UNPACK_MODES:
-        raise ValueError(
-            "unpack must be None, 'match', or 'kwargs', got %r" % (unpack,))
 
 
 def _init_pattern_fields(instance, pattern, handler):
@@ -111,22 +98,13 @@ def _init_pattern_fields(instance, pattern, handler):
     instance._matcher = Matcher.from_tuple(instance.matcher_tuple)
 
 
-def _filter_captures(captures):
-    """
-    Copy native ``MatchResult.captures`` with string keys. Matcher values
-    (including ``Datum`` wrappers) are passed through unchanged
-    """
-
-    return {str(k): v for k, v in captures.items()}
-
-
 def _captures_to_bindings(captures):
     """
     Map string capture keys to koskari symbols for ``apply_syntax_rules_hygiene``
     """
 
     out = {}
-    for k, v in _filter_captures(captures).items():
+    for k, v in captures.items():
         out[symbol(k)] = v
     return out
 
@@ -240,8 +218,7 @@ class MacroTransform(object):
         :param pattern: matcher_ng pattern tree
         :param handler:
             ``(compiler, tc, **captures)`` procedure returning expanded form;
-            ``captures`` are string-keyed match slots from
-            ``_filter_captures(match_result.captures)``
+            ``captures`` are string-keyed match slots match_result.captures``
         """
 
         if handler is None or not callable(handler):
@@ -266,8 +243,7 @@ class MacroTransform(object):
         result = self._matcher.match(source_obj)
         if not result.matched:
             return None
-        caps = _filter_captures(result.captures)
-        expanded = self.handler(compiler, tc, **caps)
+        expanded = self.handler(compiler, tc, **result.captures)
         syms = collect_binding_symbols(expanded, compiler.find_compiled)
         hygiened = expand_template_with_hygiene(expanded, {}, syms, {})
         return _unbox_datum_in_macro_output(hygiened)
@@ -403,7 +379,9 @@ def special(form_symbol, *, patterns, unpack=None):
         wrappers may be present). Not available on ``build_*`` rule rows.
     """
 
-    _validate_unpack_mode(unpack)
+    if unpack not in (None, "match", "kwargs"):
+        raise ValueError(
+            f"unpack must be None, 'match', or 'kwargs', got {unpack!r}")
 
     def deco(fn):
         """
@@ -412,29 +390,24 @@ def special(form_symbol, *, patterns, unpack=None):
         """
 
         if not callable(fn):
-            raise TypeError(
-                "special decorator requires a callable, got %r"
-                % (type(fn).__name__,))
+            raise TypeError("special decorator requires a callable,"
+                            f" got {fn!r}")
+
         plist = _normalize_special_patterns(patterns)
         if unpack is None:
-
             def wrapped(compiler, source_obj, match_result, tc):
                 return fn(compiler, source_obj, tc)
 
         elif unpack == "match":
-
             def wrapped(compiler, source_obj, match_result, tc):
-                caps = _filter_captures(match_result.captures)
-                return fn(compiler, caps, tc)
+                return fn(compiler, match_result.captures, tc)
 
         elif unpack == "kwargs":
-
             def wrapped(compiler, source_obj, match_result, tc):
-                caps = _filter_captures(match_result.captures)
-                return fn(compiler, tc=tc, **caps)
+                return fn(compiler, tc=tc, **match_result.captures)
 
         else:
-            raise ValueError("internal: bad unpack %r" % (unpack,))
+            raise ValueError(f"internal: bad unpack {unpack!r}")
 
         transforms = tuple(SpecialTransform(p, wrapped) for p in plist)
         return Syntax(form_symbol, (), transforms)

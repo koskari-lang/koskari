@@ -21,14 +21,9 @@ import unittest
 import pytest
 
 from koskari.lib import cons, nil, symbol
+from koskari.syntax_ng import (build_macro_syntax, build_special_match,
+                               build_special_syntax, build_syntax)
 from koskari.types import build_proper
-from koskari.syntax_ng import (
-    _filter_captures,
-    build_macro_syntax,
-    build_special_match,
-    build_special_syntax,
-    build_syntax,
-)
 
 
 pytestmark = pytest.mark.phase_infra
