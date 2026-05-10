@@ -36,9 +36,6 @@ from koskari.matcher_ng import (
 pytestmark = pytest.mark.phase_infra
 
 
-SYMBOL_TYPE = type(symbol("x"))
-
-
 class TestRepeatCapture(unittest.TestCase):
 
 
@@ -53,7 +50,7 @@ class TestRepeatCapture(unittest.TestCase):
         sa = symbol("a")
         sb = symbol("b")
         subj = ((sa, 1), (sb, 2))
-        result = m.match(subj, symbol=SYMBOL_TYPE)
+        result = m.match(subj, symbol=symbol)
         self.assertTrue(result.matched)
         frames = result.captures["bindings"].datum
         self.assertEqual(len(frames), 2)
@@ -76,7 +73,7 @@ class TestRepeatCapture(unittest.TestCase):
         sx = symbol("x")
         cell = (99, keyword("as"), sx)
         subj = (cell,)
-        result = m.match(subj, symbol=SYMBOL_TYPE)
+        result = m.match(subj, symbol=symbol)
         self.assertTrue(result.matched)
         frames = result.captures["rows"].datum
         self.assertEqual(len(frames), 1)
@@ -128,7 +125,7 @@ class TestRepeatFramesThawRoundTrip(unittest.TestCase):
         sa = symbol("u")
         sb = symbol("v")
         subj = ((sa, 10), (sb, 20))
-        result = m.match(subj, symbol=SYMBOL_TYPE)
+        result = m.match(subj, symbol=symbol)
         self.assertTrue(result.matched)
         frames = result.captures["bindings"].datum
         self.assertEqual(len(frames), 2)

@@ -1211,8 +1211,8 @@ matcher-syntax element:
 
 ```python
 META_MATCHER = GROUP(META_PATTERN).build()
-result = META_MATCHER.match((elem,), symbol=SYMBOL_TYPE,
-                            keyword=KEYWORD_TYPE)
+result = META_MATCHER.match((elem,), symbol=symbol,
+                            keyword=keyword)
 ```
 
 The branch order matters:
@@ -1273,8 +1273,8 @@ def lower(elem):
     Lower one matcher-syntax element to a matcher_ng pattern object.
     """
 
-    r = META_MATCHER.match((elem,), symbol=SYMBOL_TYPE,
-                           keyword=KEYWORD_TYPE)
+    r = META_MATCHER.match((elem,), symbol=symbol,
+                           keyword=keyword)
     if not r.matched:
         raise SpecialError(
             "not a valid matcher pattern: %r" % (elem,), elem)

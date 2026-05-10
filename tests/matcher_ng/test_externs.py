@@ -21,10 +21,10 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    cons,
     get_extern_defaults,
     keyword,
     nil,
+    pair,
     reset_extern_defaults,
     symbol,
 )
@@ -77,12 +77,9 @@ class TestExternDefaults(unittest.TestCase):
         """
 
         d = get_extern_defaults()
-        sym_t = type(symbol("x"))
-        key_t = type(keyword("x"))
-        pair_t = type(cons(1, nil))
-        self.assertIs(d["pair"], pair_t)
-        self.assertIs(d["symbol"], sym_t)
-        self.assertIs(d["keyword"], key_t)
+        self.assertIs(d["pair"], pair)
+        self.assertIs(d["symbol"], symbol)
+        self.assertIs(d["keyword"], keyword)
         self.assertIs(d["int"], int)
         self.assertIs(d["str"], str)
         self.assertIs(d["tuple"], tuple)
@@ -110,7 +107,7 @@ class TestExternDefaults(unittest.TestCase):
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
         bad = m.match(subj, symbol=int)
         self.assertFalse(bad.matched)
-        good = m.match(subj, symbol=type(symbol("x")))
+        good = m.match(subj, symbol=symbol)
         self.assertTrue(good.matched)
 
     def test_runtime_mutation_persists(self):

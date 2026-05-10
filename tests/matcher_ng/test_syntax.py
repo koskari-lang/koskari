@@ -23,7 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, keyword, nil, symbol
+from koskari.lib import cons, keyword, nil, pair, symbol
 from koskari.matcher_ng import (
     BINDING,
     BINDINGS,
@@ -67,10 +67,6 @@ from koskari.matcher_ng import (
 
 
 pytestmark = pytest.mark.phase_infra
-
-
-SYMBOL_TYPE = type(symbol("x"))
-KEYWORD_TYPE = type(keyword("x"))
 
 
 def _list(*items):
@@ -693,7 +689,7 @@ class TestRecursiveLowering(unittest.TestCase):
         sa = symbol("foo")
         sv = symbol("bar")
         subj = (_list(sa, sv),)
-        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        result = m.match(subj, symbol=symbol, keyword=keyword)
         self.assertTrue(result.matched)
         self.assertIs(result.captures["name"].datum, sa)
         self.assertIs(result.captures["expr"].datum, sv)
@@ -714,7 +710,7 @@ class TestRecursiveLowering(unittest.TestCase):
 
         sa = symbol("hello")
         result = m.match(
-            (sa,), symbol=SYMBOL_TYPE, pair=type(_list(1)))
+            (sa,), symbol=symbol, pair=pair)
         self.assertTrue(result.matched)
         self.assertIs(result.captures["a"].datum, sa)
         self.assertNotIn("b", result.captures)
@@ -738,7 +734,7 @@ class TestRecursiveLowering(unittest.TestCase):
         cell = _list(sname, sval)
         outer = _list(cell, sval)
         result = m.match(
-            (outer,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+            (outer,), symbol=symbol, keyword=keyword)
         self.assertTrue(result.matched)
         self.assertEqual(result.captures["b"].datum, cell)
         self.assertIs(result.captures["name"].datum, sname)
@@ -1021,7 +1017,7 @@ class TestMetaMatcherExposed(unittest.TestCase):
 
         src = _list(symbol("quote"), symbol("x"))
         result = META_MATCHER.match(
-            (src,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+            (src,), symbol=symbol, keyword=keyword)
         self.assertTrue(result.matched)
         self.assertIsInstance(result, MatchResult)
         self.assertIs(

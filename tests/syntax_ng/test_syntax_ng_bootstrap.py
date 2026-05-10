@@ -37,8 +37,6 @@ from koskari.types import build_proper
 
 pytestmark = pytest.mark.phase_infra
 
-SYMBOL_TYPE = type(symbol("x"))
-
 
 class TestParseSyntaxRulesPattern(unittest.TestCase):
 
@@ -112,7 +110,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         m = Matcher.from_tuple(p.freeze())
         sx = symbol("inner-val")
         form = build_proper(sx)
-        r = m.match((form,), symbol=SYMBOL_TYPE)
+        r = m.match((form,), symbol=symbol)
         self.assertTrue(r.matched)
         self.assertEqual(r.captures["x"].datum, sx)
 
@@ -129,7 +127,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         lit = frozenset()
         p = parse_syntax_rules_pattern(wrapped, lit, None)
         m = Matcher.from_tuple(p.freeze())
-        r = m.match((symbol("only"),), symbol=SYMBOL_TYPE)
+        r = m.match((symbol("only"),), symbol=symbol)
         self.assertTrue(r.matched)
         self.assertEqual(
             r.captures["x"].datum, symbol("only"))

@@ -63,7 +63,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         self.assertEqual(m.consts, ("::",))
 
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        result = m.match(subj, symbol=type(symbol("x")))
+        result = m.match(subj, symbol=symbol)
         self.assertIsInstance(result, MatchResult)
         self.assertTrue(result.matched)
         self.assertIs(result.captures["name"].datum, subj[0])

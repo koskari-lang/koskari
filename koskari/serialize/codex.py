@@ -864,10 +864,10 @@ def encode_pool_record_value(val, index_of, pb=None):
     if isinstance(val, bytes):
         return struct.pack('<B', PoolKind.BYTES) + struct.pack('<I', len(val)) + val
 
-    if isinstance(val, type(symbol('x'))):
+    if isinstance(val, symbol):
         return struct.pack('<B', PoolKind.SYMBOL) + _pack_string(str(val))
 
-    if isinstance(val, type(keyword('x'))):
+    if isinstance(val, keyword):
         return struct.pack('<B', PoolKind.KEYWORD) + _pack_string(str(val))
 
     if isinstance(val, tuple):

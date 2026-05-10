@@ -23,7 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, keyword, nil, symbol
+from koskari.lib import cons, keyword, nil, pair, symbol
 from koskari.matcher_ng import (
     ABSENT,
     BIND,
@@ -56,11 +56,6 @@ from koskari.matcher_ng import (
 
 
 pytestmark = pytest.mark.phase_infra
-
-
-SYMBOL_TYPE = type(symbol("x"))
-KEYWORD_TYPE = type(keyword("x"))
-PAIR_TYPE = type(cons(1, nil))
 
 
 # === Per-primitive freeze shape tests ===
@@ -375,7 +370,7 @@ class TestBuildAndMatch(unittest.TestCase):
         self.assertEqual(m.consts, ("::",))
 
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        result = m.match(subj, symbol=SYMBOL_TYPE)
+        result = m.match(subj, symbol=symbol)
         self.assertIsInstance(result, MatchResult)
         self.assertTrue(result.matched)
         self.assertIs(result.captures["name"].datum, subj[0])
@@ -737,12 +732,12 @@ class TestErgonomicShorthands(unittest.TestCase):
 
         m = MATCH(SYMBOL("x")).build()
 
-        r_ok = m.match([symbol("foo")], symbol=SYMBOL_TYPE)
+        r_ok = m.match([symbol("foo")], symbol=symbol)
         self.assertTrue(r_ok.matched)
         self.assertIs(
             r_ok.captures["x"].datum, symbol("foo"))
 
-        self.assertFalse(m.match([7], symbol=SYMBOL_TYPE).matched)
+        self.assertFalse(m.match([7], symbol=symbol).matched)
 
 
     def test_pair_matches_pair_rejects_list(self):
@@ -752,10 +747,10 @@ class TestErgonomicShorthands(unittest.TestCase):
 
         m = MATCH(PAIR("p")).build()
 
-        r_ok = m.match([cons(1, 2)], pair=PAIR_TYPE)
+        r_ok = m.match([cons(1, 2)], pair=pair)
         self.assertTrue(r_ok.matched)
 
-        self.assertFalse(m.match([[1, 2]], pair=PAIR_TYPE).matched)
+        self.assertFalse(m.match([[1, 2]], pair=pair).matched)
 
 
     def test_literal_kw_matches_keyword_rejects_symbol(self):
