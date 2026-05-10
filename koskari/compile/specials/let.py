@@ -27,6 +27,7 @@ from ...matcher import MATCH, REST, SYMBOL, match
 from ..compiler import Compiler
 from ...exceptions import SpecialError
 from ...types import get_position, is_pair
+from ...stdlib import builtin
 from ..helpers import BINDINGS, helper_begin, special, special_forms
 
 
@@ -45,6 +46,7 @@ _LETREC_PATTERNS = [
 ]
 
 
+@builtin("compile/let")
 @special_forms(_LET_PATTERNS)
 @special(symbol("compile/let"))
 def special_let(
@@ -91,6 +93,7 @@ def special_let(
     return fragment
 
 
+@builtin("compile/letrec")
 @special_forms(_LETREC_PATTERNS)
 @special(symbol("compile/letrec"))
 def special_letrec(

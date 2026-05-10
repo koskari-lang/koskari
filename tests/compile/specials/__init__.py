@@ -24,13 +24,10 @@ Base class and helpers for testing koskari.compile.specials handlers.
 import unittest
 
 from koskari.compile import Compiler, CompilerMode
-from koskari.compile.specials import SPECIALS
+from koskari.compile.specials import BUILTINS
 from koskari.lib import FunctionSpec, OpCode
 from koskari.reader import LayoutReader, default_reader, source_str
 from koskari.lib import Module, ModuleNamespace
-from koskari.reader.layouts import LAYOUTS
-
-
 def _register_specials(ns, specials):
     for sym, fn in specials.items():
         ns.store(str(sym), fn)
@@ -54,10 +51,10 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         return reader.read(stream)
 
 
-    def compile_expr(self, src_str, lineno=1, specials=SPECIALS,
+    def compile_expr(self, src_str, lineno=1, specials=BUILTINS,
                      resolution_pragma_class=None, **defns):
         """
-        Compile source to an expression; specials=None uses SPECIALS
+        Compile source to an expression; specials=None uses BUILTINS
         """
 
         mod_ns = self.get_glbls(**defns)
@@ -65,7 +62,6 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         ns = vars(module)
 
         _register_specials(ns, specials)
-        _register_specials(ns, LAYOUTS)
 
         source = self.parse_source(src_str, lineno=lineno, reader=LayoutReader(ns))
 
@@ -89,7 +85,7 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         mod_ns = self.get_glbls(**defns)
         module = Module(mod_ns)
         ns = vars(module)
-        _register_specials(ns, SPECIALS)
+        _register_specials(ns, BUILTINS)
 
         source = self.parse_source(src_str, lineno=lineno)
         kwargs = {}

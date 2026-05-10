@@ -27,6 +27,7 @@ from ...lib import cons, gensym, nil, pair, symbol
 from ...matcher import (BIND, DEFINE, LIST, LITERAL, MATCH, MATCHERS, REPEAT,
                         REST, SYMBOL, VALUE, match, matcher_slot_names,
                         match1)
+from ...stdlib import builtin
 from ...syntax import SyntaxRule, SyntaxRulesTransformer, _serialize_form
 from ...types import (build_proper, get_position, is_keyword, is_pair,
                       is_proper, is_symbol, unpack)
@@ -57,6 +58,7 @@ _COMPILE_NAME_RULES_TAIL = [
 ]
 
 
+@builtin("compile/make-syntax")
 @special(symbol("compile/make-syntax"))
 def special_compile_syntax(
         compiler: Compiler,
@@ -83,6 +85,7 @@ def special_compile_syntax(
 _COMPILE_NAME_SPEC_PATTERNS = [MATCH(DEFINE("name"), VALUE("spec"))]
 
 
+@builtin("compile/syntax-rules")
 @special_forms(_COMPILE_NAME_LITERALS_RULES)
 @special(symbol("compile/syntax-rules"))
 def special_compile_syntax_rules(compiler, source, tc=False):
@@ -112,6 +115,7 @@ def special_compile_syntax_rules(compiler, source, tc=False):
     return cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
 
+@builtin("compile/macro-rules")
 @special_forms(_COMPILE_NAME_LITERALS_RULES)
 @special(symbol("compile/macro-rules"))
 def special_compile_macro_rules(compiler, source, tc=False):
@@ -153,6 +157,7 @@ def special_compile_macro_rules(compiler, source, tc=False):
                 *parts, nil)
 
 
+@builtin("compile/syntax-match")
 @special_forms(_COMPILE_NAME_RULES_TAIL)
 @special(symbol("compile/syntax-match"))
 def special_compile_syntax_match(compiler, source, tc=False):
@@ -199,6 +204,7 @@ def special_compile_syntax_match(compiler, source, tc=False):
     return cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
 
+@builtin("compile/macro-match")
 @special_forms(_COMPILE_NAME_RULES_TAIL)
 @special(symbol("compile/macro-match"))
 def special_compile_macro_match(compiler, source, tc=False):
@@ -246,6 +252,7 @@ def special_compile_macro_match(compiler, source, tc=False):
                 str(namesym), (), *parts, nil)
 
 
+@builtin("compile/special-rules")
 @special_forms(_COMPILE_NAME_LITERALS_RULES)
 @special(symbol("compile/special-rules"))
 def special_compile_special_rules(compiler, source, tc=False):
@@ -319,6 +326,7 @@ def special_compile_special_rules(compiler, source, tc=False):
                 *parts, nil)
 
 
+@builtin("compile/special-match")
 @special_forms(_COMPILE_NAME_RULES_TAIL)
 @special(symbol("compile/special-match"))
 def special_compile_special_match(compiler, source, tc=False):

@@ -25,9 +25,11 @@ Special form handlers for compile/item, compile/del-item, and compile/set-item.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import const_only_expr, special
 
 
+@builtin("compile/item")
 @special(symbol("compile/item"))
 def special_item(compiler, source, tc=False):
     """
@@ -60,6 +62,7 @@ def special_item(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/del-item")
 @special(symbol("compile/del-item"))
 def special_del_item(compiler, source, tc=False):
     """
@@ -94,6 +97,7 @@ def special_del_item(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/set-item")
 @special(symbol("compile/set-item"))
 def special_set_item(compiler, source, tc=False):
     """

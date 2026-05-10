@@ -26,12 +26,14 @@ compile/when, and compile/unless.
 from ...lib import keyword, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import helper_begin, special
 
 
 _keyword_else = keyword("else")
 
 
+@builtin("compile/cond")
 @special(symbol("compile/cond"))
 def special_cond(compiler, source, tc=False):
     """
@@ -78,6 +80,7 @@ def special_cond(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/switch")
 @special(symbol("compile/switch"))
 def special_switch(compiler, source, tc=False):
     """
@@ -150,6 +153,7 @@ def special_switch(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/and")
 @special(symbol("compile/and"))
 def special_and(compiler, source, tc=False):
     """
@@ -180,6 +184,7 @@ def special_and(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/or")
 @special(symbol("compile/or"))
 def special_or(compiler, source, tc=False):
     """

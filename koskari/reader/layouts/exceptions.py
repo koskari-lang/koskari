@@ -20,6 +20,7 @@ Layout handlers for try/except/else/finally block syntax.
 from ...compile.helpers import helper_using
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
+from ...stdlib import builtin
 from ...types import fill_position, get_position, is_pair, unpack
 from .helpers import layout
 
@@ -32,6 +33,7 @@ _keyword_else = keyword('else')
 _keyword_finally = keyword('finally')
 
 
+@builtin('layout/try')
 @layout(symbol('layout/try'), peers=(_symbol_except, _symbol_else, _symbol_finally))
 def layout_try(source, peers):
     """

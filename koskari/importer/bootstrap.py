@@ -32,7 +32,8 @@ from fractions import Fraction as fraction
 from os.path import dirname, join
 
 from ..types import as_coroutine
-from ..compile.specials import SPECIALS
+from ..compile import specials as _koskari_compile_specials  # noqa: F401
+from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 from ..stdlib import BUILTINS
 from ..syntax import (Syntax,
                       build_macro_syntax as build_macro_rules,
@@ -44,7 +45,6 @@ from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
                    build_list, build_set, build_tuple, car, cdr, cons, defer,
                    demand, demand_apply, demand_call, deref, gensym, keyword,
                    nil, pair, parameter, setcar, setcdr, symbol, values)
-from ..reader.layouts import LAYOUTS
 from ..types import (TypePredicate, build_proper, is_nil, is_None, is_proper,
                      is_recursive, unpack)
 
@@ -213,14 +213,6 @@ def make_bootstrap():
 
     for sym, fn in BUILTINS.items():
         _bind(sym, fn)
-
-    # Register all compiler specials so the Compiler can find them
-    for sym, fn in SPECIALS.items():
-        _bind(str(sym), fn)
-
-    # Register all reader layout handlers so the LayoutReader can find them
-    for sym, handler in LAYOUTS.items():
-        _bind(str(sym), handler)
 
     # exceptions (all subclasses of BaseException from builtins)
     import builtins as _builtins

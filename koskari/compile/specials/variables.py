@@ -38,6 +38,7 @@ from ...matcher import (
 )
 from ...types import get_position, is_pair
 from ...exceptions import CompilerError, SpecialError
+from ...stdlib import builtin
 from ..helpers import (
     FORMALS,
     special,
@@ -70,6 +71,7 @@ def _define_name_type_pos_from_match(matched, rest):
 _SETQ_PATTERNS = [MATCH(SYMBOL("sym"), VALUE("expr"))]
 
 
+@builtin("compile/setq")
 @special_forms(_SETQ_PATTERNS)
 @special(symbol("compile/setq"))
 def special_setq(compiler, source, tc=False):
@@ -106,6 +108,7 @@ _VALUES_BIND_PATTERNS = [
 ]
 
 
+@builtin("compile/setq-values")
 @special_forms(_VALUES_BIND_PATTERNS)
 @special(symbol("compile/setq-values"))
 def special_setq_values(compiler, source, tc=False):
@@ -152,6 +155,7 @@ def special_setq_values(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/define-values")
 @special_forms(_VALUES_BIND_PATTERNS)
 @special(symbol("compile/define-values"))
 def special_define_values(compiler, source, tc=False):
@@ -191,6 +195,7 @@ def special_define_values(compiler, source, tc=False):
 _DELQ_PATTERNS = [MATCH(SYMBOL("sym"))]
 
 
+@builtin("compile/delq")
 @special_forms(_DELQ_PATTERNS)
 @special(symbol("compile/delq"))
 def special_delq(compiler, source, tc=False):
@@ -258,6 +263,7 @@ _DEFINE_DECL_PATTERNS = [
 _DEFINE_PATTERNS = _DEFINE_INLINE_PATTERNS + _DEFINE_DECL_PATTERNS
 
 
+@builtin("compile/define")
 @special_forms(_DEFINE_PATTERNS)
 @special(symbol("compile/define"))
 def special_define(compiler, source, tc=False):
@@ -319,6 +325,7 @@ def special_define(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/globals")
 @special(symbol("compile/globals"))
 def special_globals(compiler, source, tc=False):
     """
@@ -334,6 +341,7 @@ def special_globals(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/locals")
 @special(symbol("compile/locals"))
 def special_locals(compiler, source, tc=False):
     """
@@ -349,6 +357,7 @@ def special_locals(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/define-global")
 @special_forms(_DEFINE_PATTERNS)
 @special(symbol("compile/define-global"))
 def special_define_global(compiler, source, tc=False):

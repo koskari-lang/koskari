@@ -24,9 +24,11 @@ Special form handler for compile/begin.
 
 from ...lib import pair, symbol
 from ..compiler import ByteCodeFragment, Compiler
+from ...stdlib import builtin
 from ..helpers import helper_begin, special
 
 
+@builtin("compile/begin")
 @special(symbol("compile/begin"))
 def special_begin(
         compiler: Compiler,

@@ -14,7 +14,7 @@ from ..exceptions import (
     SpecialError,
     UncaughtCompilerError,
 )
-from .specials import SPECIALS
+from ..stdlib import BUILTINS
 
 
 __all__ = (
@@ -26,7 +26,7 @@ __all__ = (
     "SpecialError",
     "UncaughtCompilerError",
 
-    "SPECIALS",
+    "BUILTINS",
 )
 
 

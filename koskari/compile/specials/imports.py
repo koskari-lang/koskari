@@ -76,6 +76,7 @@ Opcode sequences produced
 from ...lib import nil, OpCode, symbol
 from ...types import is_keyword, is_pair, is_symbol, unpack
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import helper_using, is_symbolish, special
 
 
@@ -257,6 +258,7 @@ def _parse_member(elem, source):
         source)
 
 
+@builtin("compile/import")
 @special(symbol("compile/import"))
 def special_import(compiler, source, tc=False):
     """
@@ -315,6 +317,7 @@ def special_import(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/import-from")
 @special(symbol("compile/import-from"))
 def special_import_from(compiler, source, tc=False):
     """

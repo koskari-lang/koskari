@@ -34,6 +34,7 @@ from ...lib import nil, OpCode, symbol, cons
 from ...exceptions import SpecialError
 from ...matcher import MATCH, VALUE, match
 from ...types import get_position, is_pair, is_symbol, is_keyword, unpack
+from ...stdlib import builtin
 from ..helpers import const_only_expr, is_symbolish, special, special_forms
 
 
@@ -216,6 +217,7 @@ _FORMAT_PATTERNS = [
 ]
 
 
+@builtin("compile/format")
 @special_forms(_FORMAT_PATTERNS)
 @special(symbol("compile/format"))
 def special_format(compiler, source, tc=False):
@@ -312,6 +314,7 @@ def _chain_compare(op, compiler, source):
     return frag
 
 
+@builtin("compile/==", "compile/equal?")
 @special(symbol("compile/=="), aliases=(symbol("compile/equal?"),))
 def special_eq(compiler, source, tc=False):
     """
@@ -321,6 +324,7 @@ def special_eq(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_EQ, compiler, source)
 
 
+@builtin("compile/!=", "compile/not-equal?")
 @special(symbol("compile/!="), aliases=(symbol("compile/not-equal?"),))
 def special_ne(compiler, source, tc=False):
     """
@@ -330,6 +334,7 @@ def special_ne(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_NE, compiler, source)
 
 
+@builtin("compile/<", "compile/lt?")
 @special(symbol("compile/<"), aliases=(symbol("compile/lt?"),))
 def special_lt(compiler, source, tc=False):
     """
@@ -339,6 +344,7 @@ def special_lt(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_LT, compiler, source)
 
 
+@builtin("compile/<=", "compile/le?")
 @special(symbol("compile/<="), aliases=(symbol("compile/le?"),))
 def special_le(compiler, source, tc=False):
     """
@@ -348,6 +354,7 @@ def special_le(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_LE, compiler, source)
 
 
+@builtin("compile/>", "compile/gt?")
 @special(symbol("compile/>"), aliases=(symbol("compile/gt?"),))
 def special_gt(compiler, source, tc=False):
     """
@@ -357,6 +364,7 @@ def special_gt(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_GT, compiler, source)
 
 
+@builtin("compile/>=", "compile/ge?")
 @special(symbol("compile/>="), aliases=(symbol("compile/ge?"),))
 def special_ge(compiler, source, tc=False):
     """
@@ -370,6 +378,7 @@ def special_ge(compiler, source, tc=False):
 # Predicate interface (NOARG binary / COUNT variadic)
 # ---------------------------------------------------------------------------
 
+@builtin("compile/in")
 @special(symbol("compile/in"))
 def special_in(compiler, source, tc=False):
     """
@@ -379,6 +388,7 @@ def special_in(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_IN, compiler, source)
 
 
+@builtin("compile/not-in")
 @special(symbol("compile/not-in"))
 def special_not_in(compiler, source, tc=False):
     """
@@ -388,6 +398,7 @@ def special_not_in(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_NOT_IN, compiler, source)
 
 
+@builtin("compile/is")
 @special(symbol("compile/is"))
 def special_is(compiler, source, tc=False):
     """
@@ -397,6 +408,7 @@ def special_is(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_IS, compiler, source)
 
 
+@builtin("compile/is-not")
 @special(symbol("compile/is-not"))
 def special_is_not(compiler, source, tc=False):
     """
@@ -451,6 +463,7 @@ def _type_check_op(op, compiler, source):
     return frag
 
 
+@builtin("compile/isinstance")
 @special(symbol("compile/isinstance"))
 def special_isinstance(compiler, source, tc=False):
     """
@@ -461,6 +474,7 @@ def special_isinstance(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_IS_INSTANCE, compiler, source)
 
 
+@builtin("compile/issubclass")
 @special(symbol("compile/issubclass"))
 def special_issubclass(compiler, source, tc=False):
     """
@@ -475,6 +489,7 @@ def special_issubclass(compiler, source, tc=False):
 # Numeric interface — reducible COUNT opcodes with constant folding
 # ---------------------------------------------------------------------------
 
+@builtin("compile/+")
 @special(symbol("compile/+"))
 def special_add(compiler, source, tc=False):
     """
@@ -485,6 +500,7 @@ def special_add(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_ADD, _op.add, compiler, source)
 
 
+@builtin("compile/-")
 @special(symbol("compile/-"))
 def special_subtract(compiler, source, tc=False):
     """
@@ -495,6 +511,7 @@ def special_subtract(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_SUBTRACT, _op.sub, compiler, source)
 
 
+@builtin("compile/*")
 @special(symbol("compile/*"))
 def special_multiply(compiler, source, tc=False):
     """
@@ -505,6 +522,7 @@ def special_multiply(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_MULTIPLY, _op.mul, compiler, source)
 
 
+@builtin("compile/**")
 @special(symbol("compile/**"))
 def special_power(compiler, source, tc=False):
     """
@@ -515,6 +533,7 @@ def special_power(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_POWER, None, compiler, source)
 
 
+@builtin("compile/&")
 @special(symbol("compile/&"))
 def special_bit_and(compiler, source, tc=False):
     """
@@ -525,6 +544,7 @@ def special_bit_and(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_BIT_AND, _op.and_, compiler, source)
 
 
+@builtin("compile/|")
 @special(symbol("compile/|"))
 def special_bit_or(compiler, source, tc=False):
     """
@@ -535,6 +555,7 @@ def special_bit_or(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_BIT_OR, _op.or_, compiler, source)
 
 
+@builtin("compile/^")
 @special(symbol("compile/^"))
 def special_bit_xor(compiler, source, tc=False):
     """
@@ -545,6 +566,7 @@ def special_bit_xor(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_BIT_XOR, _op.xor, compiler, source)
 
 
+@builtin("compile///")
 @special(symbol("compile///"))
 def special_floor_divide(compiler, source, tc=False):
     """
@@ -555,6 +577,7 @@ def special_floor_divide(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_FLOOR_DIVIDE, _op.floordiv, compiler, source)
 
 
+@builtin("compile/@")
 @special(symbol("compile/@"))
 def special_matrix_multiply(compiler, source, tc=False):
     """
@@ -569,6 +592,7 @@ def special_matrix_multiply(compiler, source, tc=False):
 # Numeric interface — NOARG binary opcodes (no constant folding)
 # ---------------------------------------------------------------------------
 
+@builtin("compile//")
 @special(symbol("compile//"))
 def special_true_divide(compiler, source, tc=False):
     """
@@ -579,6 +603,7 @@ def special_true_divide(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_TRUE_DIVIDE, _op.truediv, compiler, source)
 
 
+@builtin("compile/%")
 @special(symbol("compile/%"))
 def special_modulo(compiler, source, tc=False):
     """
@@ -588,6 +613,7 @@ def special_modulo(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_MODULO, compiler, source, opa=2)
 
 
+@builtin("compile/<<")
 @special(symbol("compile/<<"))
 def special_bit_left(compiler, source, tc=False):
     """
@@ -597,6 +623,7 @@ def special_bit_left(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_BIT_LEFT, compiler, source)
 
 
+@builtin("compile/>>")
 @special(symbol("compile/>>"))
 def special_bit_right(compiler, source, tc=False):
     """
@@ -606,6 +633,7 @@ def special_bit_right(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_BIT_RIGHT, compiler, source)
 
 
+@builtin("compile/divmod")
 @special(symbol("compile/divmod"))
 def special_divmod(compiler, source, tc=False):
     """
@@ -619,6 +647,7 @@ def special_divmod(compiler, source, tc=False):
 # General object interface — NOARG unary opcodes
 # ---------------------------------------------------------------------------
 
+@builtin("compile/not")
 @special(symbol("compile/not"))
 def special_not(compiler, source, tc=False):
     """
@@ -628,6 +657,7 @@ def special_not(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_NOT, compiler, source)
 
 
+@builtin("compile/repr")
 @special(symbol("compile/repr"))
 def special_repr(compiler, source, tc=False):
     """
@@ -637,6 +667,7 @@ def special_repr(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_REPR, compiler, source)
 
 
+@builtin("compile/truth")
 @special(symbol("compile/truth"))
 def special_truth(compiler, source, tc=False):
     """
@@ -646,6 +677,7 @@ def special_truth(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_TRUTH, compiler, source)
 
 
+@builtin("compile/iter")
 @special(symbol("compile/iter"))
 def special_iter(compiler, source, tc=False):
     """
@@ -655,6 +687,7 @@ def special_iter(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_ITER, compiler, source)
 
 
+@builtin("compile/~")
 @special(symbol("compile/~"))
 def special_bit_invert(compiler, source, tc=False):
     """
@@ -664,6 +697,7 @@ def special_bit_invert(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_BIT_INVERT, compiler, source)
 
 
+@builtin("compile/#str")
 @special(symbol("compile/#str"))
 def special_str(compiler, source, tc=False):
     """
@@ -684,6 +718,7 @@ def special_str(compiler, source, tc=False):
         source)
 
 
+@builtin("compile/len")
 @special(symbol("compile/len"))
 def special_len(compiler, source, tc=False):
     """
@@ -693,6 +728,7 @@ def special_len(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_LEN, compiler, source)
 
 
+@builtin("compile/type")
 @special(symbol("compile/type"))
 def special_type(compiler, source, tc=False):
     """
@@ -702,6 +738,7 @@ def special_type(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_TYPE, compiler, source)
 
 
+@builtin("compile/dir")
 @special(symbol("compile/dir"))
 def special_dir(compiler, source, tc=False):
     """
@@ -711,6 +748,7 @@ def special_dir(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_DIR, compiler, source)
 
 
+@builtin("compile/vars")
 @special(symbol("compile/vars"))
 def special_vars(compiler, source, tc=False):
     """
@@ -720,6 +758,7 @@ def special_vars(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_VARS, compiler, source)
 
 
+@builtin("compile/aiter")
 @special(symbol("compile/aiter"))
 def special_aiter(compiler, source, tc=False):
     """
@@ -759,6 +798,7 @@ _INPLACE_OP_MAP = {
 }
 
 
+@builtin("compile/inplace")
 @special(symbol("compile/inplace"))
 def special_inplace(compiler, source, tc=False):
     """

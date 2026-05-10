@@ -23,7 +23,7 @@ The koskari compiler. Converts source forms into bytecode fragments.
 
 from contextlib import contextmanager
 from enum import auto, IntEnum
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from ..lib import (
     cons,
@@ -52,6 +52,7 @@ from ..exceptions import CompilerError, UncaughtCompilerError
 from .pragma import KoskariPragma
 
 
+@runtime_checkable
 class Compiled(Protocol):
 
     def compile_impl(self, compiler, source_obj, tc):

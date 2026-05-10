@@ -24,9 +24,11 @@ Special form handler for compile/bytecode.
 
 from ...lib import keyword, nil, OpCode, pair, symbol
 from ..compiler import ByteCodeFragment, Compiler
+from ...stdlib import builtin
 from ..helpers import special
 
 
+@builtin("compile/bytecode")
 @special(symbol("compile/bytecode"))
 def special_bytecode(
         compiler: Compiler,

@@ -44,6 +44,7 @@ from ...lib import nil, OpCode, symbol
 from ...types import cons, get_position, is_nil, is_pair, set_position
 from ...exceptions import SpecialError
 from ..compiler import _is_const
+from ...stdlib import builtin
 from ..helpers import special
 
 
@@ -335,6 +336,7 @@ def _qq_list(compiler, frag, lst, level):
         frag.instruction(OpCode.KOS_OP_CONST, nil)
 
 
+@builtin("compile/quasiquote")
 @special(symbol("compile/quasiquote"))
 def special_quasiquote(compiler, source, tc=False):
     """
@@ -360,6 +362,7 @@ def special_quasiquote(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/quote-block")
 @special(symbol("compile/quote-block"))
 def special_quote_block(compiler, source, tc=False):
     """
@@ -388,6 +391,7 @@ def special_quote_block(compiler, source, tc=False):
     return rewritten
 
 
+@builtin("compile/quasiquote-block")
 @special(symbol("compile/quasiquote-block"))
 def special_quasiquote_block(compiler, source, tc=False):
     """
@@ -422,6 +426,7 @@ def special_quasiquote_block(compiler, source, tc=False):
     return rewritten
 
 
+@builtin("compile/unquote")
 @special(symbol("compile/unquote"))
 def special_unquote(compiler, source, tc=False):
     """
@@ -431,6 +436,7 @@ def special_unquote(compiler, source, tc=False):
     raise SpecialError("unquote used outside of quasiquote", source)
 
 
+@builtin("compile/unquote-splicing")
 @special(symbol("compile/unquote-splicing"))
 def special_unquote_splicing(compiler, source, tc=False):
     """

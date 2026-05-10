@@ -27,9 +27,11 @@ compile/yield, and compile/await.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair, is_nil
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import helper_begin, is_symbolish, special
 
 
+@builtin("compile/call/cc")
 @special(symbol("compile/call/cc"))
 def special_call_cc(compiler, source, tc=False):
     """
@@ -55,6 +57,7 @@ def special_call_cc(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/let/cc")
 @special(symbol("compile/let/cc"))
 def special_let_cc(compiler, source, tc=False):
     """
@@ -84,6 +87,7 @@ def special_let_cc(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/capture/cc")
 @special(symbol("compile/capture/cc"))
 def special_capture_cc(compiler, source, tc=False):
     """
@@ -116,6 +120,7 @@ def special_capture_cc(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/reset")
 @special(symbol("compile/reset"))
 def special_reset(compiler, source, tc=False):
     """
@@ -136,6 +141,7 @@ def special_reset(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/shift")
 @special(symbol("compile/shift"))
 def special_shift(compiler, source, tc=False):
     """
@@ -168,6 +174,7 @@ def special_shift(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/return")
 @special(symbol("compile/return"))
 def special_return(compiler, source, tc=False):
     """
@@ -195,6 +202,7 @@ def special_return(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/yield")
 @special(symbol("compile/yield"))
 def special_yield(compiler, source, tc=False):
     """
@@ -222,6 +230,7 @@ def special_yield(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/await")
 @special(symbol("compile/await"))
 def special_await(compiler, source, tc=False):
     """
@@ -246,6 +255,7 @@ def special_await(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/yield-from")
 @special(symbol("compile/yield-from"))
 def special_yield_from(compiler, source, tc=False):
     """

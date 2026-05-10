@@ -453,9 +453,8 @@ class TestQuasiquoteErrors(SpecialsTestCase):
 
 
 from koskari.compile import Compiler
-from koskari.compile.specials import SPECIALS
+from koskari.compile.specials import BUILTINS
 from koskari.reader import LayoutReader, source_str
-from koskari.reader.layouts import LAYOUTS
 from koskari.lib import Module, ModuleNamespace, keyword as _kw_type, symbol as _sym_type
 from koskari.types import is_pair
 
@@ -474,11 +473,6 @@ def _make_block(head_args_tuple, body_tuple):
     head_args = cons(*head_args_tuple, nil)
     body = cons(*body_tuple, nil) if body_tuple else nil
     return cons(_keyword_block, head_args, body, nil)
-
-
-def _register_layouts(ns):
-    for sym, handler in LAYOUTS.items():
-        ns.store(str(sym), handler)
 
 
 class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
@@ -503,8 +497,7 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
         mod_ns = ModuleNamespace("test", defns)
         module = Module(mod_ns)
         ns = vars(module)
-        _register_specials(ns, SPECIALS)
-        _register_layouts(ns)
+        _register_specials(ns, BUILTINS)
         compiler = Compiler("<unittest>", module, filename=__file__)
         return module, mod_ns, compiler
 
@@ -540,7 +533,7 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
         """
 
         module, mod_ns, compiler = self.make_module(**defns)
-        layout_builtins = {str(sym): handler for sym, handler in LAYOUTS.items()}
+        layout_builtins = dict(BUILTINS)
         reader = LayoutReader(layout_builtins)
         stream = source_str(src_str, __file__)
         source = reader.read(stream)

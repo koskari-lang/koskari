@@ -33,6 +33,7 @@ from ...matcher import (
     VALUE,
     match,
 )
+from ...stdlib import builtin
 from ..helpers import (
     FORMALS, discover_docstring, helper_begin, special, special_forms)
 
@@ -65,6 +66,7 @@ _LAMBDA_PATTERNS = [
 ]
 
 
+@builtin("compile/lambda")
 @special_forms(_LAMBDA_PATTERNS)
 @special(symbol("compile/lambda"))
 def special_lambda(

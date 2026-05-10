@@ -28,10 +28,12 @@ from ...lib import OpCode, nil, pair, symbol
 from ...matcher import MATCH, REST, match
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler
+from ...stdlib import builtin
 from ..helpers import (USING, gather_bindings, helper_begin,
                        special, special_forms)
 
 
+@builtin("compile/parameterize")
 @special(symbol("compile/parameterize"))
 def special_parameterize(
         compiler: Compiler,
@@ -70,6 +72,7 @@ _WITH_PATTERNS = [
 ]
 
 
+@builtin("compile/with")
 @special_forms(_WITH_PATTERNS)
 @special(symbol("compile/with"))
 def special_with(compiler, source, tc=False):
@@ -108,6 +111,7 @@ def special_with(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/dyn-with")
 @special_forms(_WITH_PATTERNS)
 @special(symbol("compile/dyn-with"))
 def special_dyn_with(compiler, source, tc=False):

@@ -14,7 +14,9 @@
 """
 koskari.reader.layouts
 
-Layout handlers for reader block syntax (layout decorator and LAYOUTS).
+Layout handlers for reader block syntax.
+
+Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS``.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -22,7 +24,7 @@ Layout handlers for reader block syntax (layout decorator and LAYOUTS).
 """
 
 
-from .helpers import LAYOUTS, layout, LayoutHandler
+from .helpers import LayoutHandler, layout
 from .basics import layout_block, layout_begin, layout_call
 from .classes import layout_define_class, layout_class
 from .conditionals import layout_if, layout_switch
@@ -40,7 +42,6 @@ from .exceptions import layout_try
 
 
 __all__ = (
-    "LAYOUTS",
     "layout",
     "LayoutHandler",
 

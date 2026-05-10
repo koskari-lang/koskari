@@ -15,20 +15,37 @@
 """
 koskari.stdlib
 
-Standard library for Koskari.
+Registration hooks for names merged into the Koskari builtins dict.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+:ai-assistant: Composer via Cursor
 """
 
 
-from typing import Any
+from typing import Any, Dict
 
 
-BUILTINS = {}
+BUILTINS: Dict[str, Any] = {}
 
 
-def builtin(name: str):
-    def decorator(obj: Any):
+def builtin(name: str, *aliases: str):
+    """
+    Register the decorated object under explicit stdlib string keys
+
+    Each name must be the bootstrap string for that binding (no inference).
+
+    :param names: one or more builtin name strings
+    :return: decorator that registers ``obj`` and returns it unchanged
+    :raises TypeError: when ``names`` is empty or any entry is not a ``str``
+    """
+
+    def decorator(obj):
         BUILTINS[name] = obj
+        for alias in aliases:
+            BUILTINS[alias] = obj
         return obj
+
     return decorator
 
 

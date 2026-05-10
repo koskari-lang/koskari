@@ -27,9 +27,11 @@ from ...lib import nil, OpCode, symbol
 from ...matcher import DEFINE, MATCH, VALUE, match
 from ...types import is_pair
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import const_only_expr, special, special_forms
 
 
+@builtin("compile/deref")
 @special(symbol("compile/deref"))
 def special_deref(compiler, source, tc=False):
     """
@@ -53,6 +55,7 @@ def special_deref(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/ref-attr")
 @special(symbol("compile/ref-attr"))
 def special_ref_attr(compiler, source, tc=False):
     """
@@ -76,6 +79,7 @@ def special_ref_attr(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/ref-item")
 @special(symbol("compile/ref-item"))
 def special_ref_item(compiler, source, tc=False):
     """
@@ -108,6 +112,7 @@ def special_ref_item(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/refq")
 @special(symbol("compile/refq"))
 def special_refq(compiler, source, tc=False):
     """
@@ -136,6 +141,7 @@ _BINDQ_PATTERNS = [
 ]
 
 
+@builtin("compile/bindq")
 @special_forms(_BINDQ_PATTERNS)
 @special(symbol("compile/bindq"))
 def special_bindq(compiler, source, tc=False):

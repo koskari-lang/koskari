@@ -26,6 +26,7 @@ from ...exceptions import LayoutError
 from ...lib import car, cons, nil, symbol
 from ...matcher import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, REPEAT, VALUE,
                         match, match1)
+from ...stdlib import builtin
 from ...types import (
     get_position,
     is_keyword,
@@ -148,6 +149,7 @@ def _syntax_rules_like_rows(rule_matches):
     return rules
 
 
+@builtin('layout/syntax-rules')
 @layout(symbol('layout/syntax-rules'))
 def layout_syntax_rules(source, peers):
     """
@@ -174,6 +176,7 @@ def layout_syntax_rules(source, peers):
     return cons(_symbol_syntax_rules, literals, *rules, nil)
 
 
+@builtin('layout/macro-rules')
 @layout(symbol('layout/macro-rules'))
 def layout_macro_rules(source, peers):
     """
@@ -199,6 +202,7 @@ def layout_macro_rules(source, peers):
     return cons(_symbol_macro_rules, literals, *rules, nil)
 
 
+@builtin('layout/special-rules')
 @layout(symbol('layout/special-rules'))
 def layout_special_rules(source, peers):
     """
@@ -224,6 +228,7 @@ def layout_special_rules(source, peers):
     return cons(_symbol_special_rules, literals, *rules, nil)
 
 
+@builtin('layout/syntax-match')
 @layout(symbol('layout/syntax-match'))
 def layout_syntax_match(source, peers):
     """
@@ -251,6 +256,7 @@ def layout_syntax_match(source, peers):
     return cons(_symbol_syntax_match, *rules, nil)
 
 
+@builtin('layout/macro-match')
 @layout(symbol('layout/macro-match'))
 def layout_macro_match(source, peers):
     """
@@ -278,6 +284,7 @@ def layout_macro_match(source, peers):
     return cons(_symbol_macro_match, *rules, nil)
 
 
+@builtin('layout/special-match')
 @layout(symbol('layout/special-match'))
 def layout_special_match(source, peers):
     """
@@ -305,6 +312,7 @@ def layout_special_match(source, peers):
     return cons(_symbol_special_match, *rules, nil)
 
 
+@builtin('layout/define-syntax')
 @layout(symbol('layout/define-syntax'))
 def layout_define_syntax(source, peers):
     """

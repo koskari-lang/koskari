@@ -22,7 +22,8 @@ Special form handlers for the Koskari compiler.
 """
 
 
-from ..helpers import SPECIALS, special
+from ...stdlib import BUILTINS
+from ..helpers import special
 from .apply_layout import special_apply_layout
 from .begin import special_begin
 from .bytecode import special_bytecode
@@ -74,7 +75,7 @@ from .variables import (special_define, special_define_global,
                         special_locals, special_setq, special_setq_values)
 
 __all__ = (
-    "SPECIALS",
+    "BUILTINS",
     "special",
     "special_add",
     "special_and",

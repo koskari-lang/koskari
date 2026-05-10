@@ -28,6 +28,7 @@ from ...lib import (FormalsSpec, FunctionSpec, OpCode, cons, nil, pair,
 from ...types import is_pair
 from ...matcher import ANY_ORDER, LITERAL_KW, LIST, MATCH, match, REST, VALUE
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
+from ...stdlib import builtin
 from ..helpers import special, special_forms
 
 
@@ -113,6 +114,7 @@ _DYN_WIND_PATTERNS = [
 ]
 
 
+@builtin("compile/dyn-wind")
 @special_forms(_DYN_WIND_PATTERNS)
 @special(symbol("compile/dyn-wind"))
 def special_dyn_wind(

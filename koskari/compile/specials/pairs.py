@@ -26,9 +26,11 @@ compile/cons.
 from ...lib import nil, OpCode, symbol, cons
 from ...types import get_position, is_nil, is_pair, is_keyword
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import requote, special
 
 
+@builtin("compile/quote")
 @special(symbol("compile/quote"))
 def special_quote(compiler, source, tc=False):
     called_by, body = source
@@ -51,6 +53,7 @@ def special_quote(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/car")
 @special(symbol("compile/car"))
 def special_car(compiler, source, tc=False):
     """
@@ -75,6 +78,7 @@ def special_car(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/cdr")
 @special(symbol("compile/cdr"))
 def special_cdr(compiler, source, tc=False):
     """
@@ -99,6 +103,7 @@ def special_cdr(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/cons")
 @special(symbol("compile/cons"))
 def special_cons(compiler, source, tc=False):
     """

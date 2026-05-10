@@ -26,6 +26,7 @@ clear-exception, load-exception, and raise.
 from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import fill_position, get_position, is_keyword, is_pair, unpack
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import helper_begin, helper_using, pycons, special
 
 
@@ -132,6 +133,7 @@ def _collect_catches(compiler, catches):
     return (normal_catches, act_else, act_finally)
 
 
+@builtin("compile/check-exception")
 @special(symbol("compile/check-exception"))
 def special_check_exception(compiler, source, tc=False):
     called_by, checks = source
@@ -149,6 +151,7 @@ def special_check_exception(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/clear-exception")
 @special(symbol("compile/clear-exception"))
 def special_clear_exception(compiler, source, tc=False):
     called_by, rest = source
@@ -162,6 +165,7 @@ def special_clear_exception(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/load-exception")
 @special(symbol("compile/load-exception"))
 def special_load_exception(compiler, source, tc=False):
     called_by, rest = source
@@ -175,6 +179,7 @@ def special_load_exception(compiler, source, tc=False):
     return fragment
 
 
+@builtin("compile/try")
 @special(symbol("compile/try"))
 def special_try(compiler, source, tc=False):
     called_by, rest = source
@@ -340,6 +345,7 @@ def _except(compiler, catches):
     return compiler.full_compile(expr, False)
 
 
+@builtin("compile/raise")
 @special(symbol("compile/raise"))
 def special_raise(compiler, source, tc=False):
     called_by, rest = source

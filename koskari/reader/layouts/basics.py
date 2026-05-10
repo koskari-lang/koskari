@@ -20,10 +20,12 @@ Layout handlers for basic block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, nil, symbol
+from ...stdlib import builtin
 from ...types import get_position, is_pair, is_keyword
 from .helpers import layout
 
 
+@builtin('layout/block')
 @layout(symbol('layout/block'))
 def layout_block(source, peers):
     """
@@ -49,6 +51,7 @@ def layout_block(source, peers):
     return hdr
 
 
+@builtin('layout/call')
 @layout(symbol('layout/call'))
 def layout_call(source, peers):
     """
@@ -98,6 +101,7 @@ def layout_call(source, peers):
     return cons(symbol('compile/call'), fn, body)
 
 
+@builtin('layout/begin')
 @layout(symbol('layout/begin'))
 def layout_begin(source, peers):
     """

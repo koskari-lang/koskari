@@ -25,6 +25,7 @@ Special form handler for compile/class.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import ParametersError, SpecialError
+from ...stdlib import builtin
 from ..helpers import (
     gather_parameters_ng,
     helper_begin,
@@ -56,6 +57,7 @@ def _compiling_module_name(compiler):
     return str(modname) if modname else None
 
 
+@builtin("compile/class")
 @special(symbol("compile/class"))
 def special_class(compiler, source, tc=False):
     """

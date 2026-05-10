@@ -29,6 +29,7 @@ forms. Multiple top-level results are wrapped in compile/begin.
 from ...exceptions import SpecialError
 from ...lib import car, cdr, cons, keyword, nil, symbol
 from ...types import is_nil, is_pair, unpack
+from ...stdlib import builtin
 from ..helpers import special
 
 
@@ -120,7 +121,7 @@ def _expand_block(compiler, block, rest):
     peers = []
     peers_consumed = 0
 
-    declared = tuple(getattr(layout_obj, 'peers', ()) or ())
+    declared = tuple(layout_obj.peers)
     if declared:
         declared_set = {str(s) for s in declared}
         for sibling in rest:
@@ -152,6 +153,7 @@ def _expand_block(compiler, block, rest):
     return result, peers_consumed
 
 
+@builtin("compile/apply-layout")
 @special(symbol("compile/apply-layout"))
 def special_apply_layout(compiler, source, tc=False):
     """

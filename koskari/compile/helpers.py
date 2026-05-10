@@ -10,7 +10,7 @@ parsing; all helpers raise SpecialError or ParametersError with optional source 
 """
 
 
-from typing import Callable, Union, Dict, Tuple, List
+from typing import Callable, Union, Tuple, List
 
 from ..lib import car, cdr, cons, keyword, nil, OpCode, pair, symbol
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
@@ -62,7 +62,6 @@ __all__ = (
     "requote",
     "special",
     "special_form",
-    "SPECIALS",
 )
 
 
@@ -70,9 +69,6 @@ SpecialFn = Callable[
     [Compiler, pair, bool],
     Union[ByteCodeFragment, pair, None]
 ]
-
-
-SPECIALS: Dict[symbol, SpecialFn] = {}
 
 
 def special_forms(
@@ -103,15 +99,15 @@ def special(
         form_symbol: symbol,
         aliases: Tuple[symbol, ...] = ()) -> Special:
     """
-    Decorator that registers a function as a special form handler.
-    The decorated function gets a compile_impl attribute for dispatch.
+    Decorator that builds a ``Special`` around the handler function.
+
+    The decorated object gets a compile_impl attribute for dispatch.
+    Publish names into the runtime builtins dict with
+    ``koskari.stdlib.builtin`` as the outermost decorator on the stack.
     """
 
     def decorator(fn: SpecialFn):
         inst = Special(form_symbol, fn, aliases)
-        SPECIALS[form_symbol] = inst
-        for alias in aliases:
-            SPECIALS[alias] = inst
         return inst
 
     return decorator

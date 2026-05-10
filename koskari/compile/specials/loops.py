@@ -25,6 +25,7 @@ Special form handlers for compile/while, compile/break, and compile/continue.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import (
     BINDING,
     USING_UNPACK,
@@ -37,6 +38,7 @@ from ..helpers import (
 from ...matcher import MATCH, REST, match
 
 
+@builtin("compile/while")
 @special(symbol("compile/while"))
 def special_while(compiler, source, tc=False):
     """
@@ -71,6 +73,7 @@ _FOREACH_PATTERNS = [
 ]
 
 
+@builtin("compile/for-each")
 @special_forms(_FOREACH_PATTERNS)
 @special(symbol("compile/for-each"))
 def special_for_each(compiler, source, tc=False):
@@ -159,6 +162,7 @@ def _special_break_continue(compiler, source, op):
     return frag
 
 
+@builtin("compile/break")
 @special(symbol("compile/break"))
 def special_break(compiler, source, tc=False):
     """
@@ -168,6 +172,7 @@ def special_break(compiler, source, tc=False):
     return _special_break_continue(compiler, source, OpCode.KOS_OP_BREAK)
 
 
+@builtin("compile/continue")
 @special(symbol("compile/continue"))
 def special_continue(compiler, source, tc=False):
     """

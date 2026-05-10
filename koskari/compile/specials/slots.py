@@ -25,6 +25,7 @@ Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
 from ...lib import OpCode, symbol
 from ...types import is_symbol
 from ...exceptions import SpecialError
+from ...stdlib import builtin
 from ..helpers import special, special_forms
 from ...matcher import MATCH, VALUE, SYMBOL, match
 
@@ -34,6 +35,7 @@ _ATTR_FORMS = [
 ]
 
 
+@builtin("compile/attr")
 @special_forms(_ATTR_FORMS)
 @special(symbol("compile/attr"))
 def special_attr(compiler, source, tc=False):
@@ -68,6 +70,7 @@ _DEL_ATTR_FORMS = [
 ]
 
 
+@builtin("compile/del-attr")
 @special_forms(_DEL_ATTR_FORMS)
 @special(symbol("compile/del-attr"))
 def special_del_attr(compiler, source, tc=False):
@@ -105,6 +108,7 @@ _SET_ATTR_FORMS = [
 ]
 
 
+@builtin("compile/set-attr")
 @special_forms(_SET_ATTR_FORMS)
 @special(symbol("compile/set-attr"))
 def special_set_attr(compiler, source, tc=False):

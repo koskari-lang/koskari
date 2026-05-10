@@ -25,6 +25,7 @@ Special form compile/gensym-thunk: placeholder-driven thunk lambda sugar.
 import re
 from ...exceptions import SpecialError
 from ...lib import cons, keyword, nil, symbol, gensym
+from ...stdlib import builtin
 from ...types import is_pair, is_symbol
 from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import special
@@ -124,6 +125,7 @@ def _build_formals(pos_map, source):
         return cons(*[pos_map[k] for k in keysyms], nil)
 
 
+@builtin("compile/gensym-thunk")
 @special(symbol("compile/gensym-thunk"))
 def special_gensym_thunk(
         compiler: Compiler,

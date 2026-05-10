@@ -27,6 +27,7 @@ from ...lib import OpCode, cons, nil, pair, symbol
 from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE, match
 from ...types import is_symbol
 from ..compiler import ByteCodeFragment, Compiler
+from ...stdlib import builtin
 from ..helpers import gather_parameters_ng, special, special_forms
 
 
@@ -95,6 +96,7 @@ _CALL_PATTERNS = [
 _sym_call_attr = symbol("compile/call-attr")
 
 
+@builtin("compile/call")
 @special_forms(_CALL_PATTERNS)
 @special(symbol("compile/call"))
 def special_call(
@@ -229,6 +231,7 @@ _CALL_ATTR_PATTERNS = [
 ]
 
 
+@builtin("compile/call-attr")
 @special_forms(_CALL_ATTR_PATTERNS)
 @special(_sym_call_attr)
 def special_call_attr(

@@ -30,8 +30,10 @@ Tests focus on the new interface contracts introduced in parser_ng:
 from io import StringIO
 from unittest import IsolatedAsyncioTestCase
 
+import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
+import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.compile.helpers import pycons
-from koskari.reader.layouts import LAYOUTS
+from koskari.stdlib import BUILTINS
 from koskari.reader.parser import (READ_EOF, IndentAwareStream, LayoutReader,
                                    Reader, SourceStream, default_reader,
                                    source_str)
@@ -61,9 +63,7 @@ def _parse_ng(src_str):
 
 
 def _parse_layout_ng(src_str, **defns):
-    builtins = {}
-    for name, value in LAYOUTS.items():
-        builtins[str(name)] = value
+    builtins = dict(BUILTINS)
     builtins.update(defns)
     reader = LayoutReader(builtins)
     stream = source_str(src_str, '<test>')
@@ -430,7 +430,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
         # This test verifies that LayoutReader.read wraps a plain SourceStream
         # in an IndentAwareStream so that stream.dedented is always a real
         # attribute and not discovered through getattr.
-        builtins = {str(k): v for k, v in LAYOUTS.items()}
+        builtins = dict(BUILTINS)
         reader = LayoutReader(builtins)
         plain = source_str("foo x:\n  y\n", '<test>')
         self.assertIsInstance(plain, SourceStream)

@@ -20,10 +20,12 @@ Layout handlers for class block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
+from ...stdlib import builtin
 from ...types import get_position, unpack
 from .helpers import layout
 
 
+@builtin('layout/class')
 @layout(symbol('layout/class'))
 def layout_class(source, peers):
     """
@@ -60,6 +62,7 @@ def layout_class(source, peers):
         nil)
 
 
+@builtin('layout/define-class')
 @layout(symbol('layout/define-class'))
 def layout_define_class(source, peers):
     """

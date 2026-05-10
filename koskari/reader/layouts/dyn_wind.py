@@ -20,6 +20,7 @@ Layout handler for layout/dyn-wind block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, nil, symbol
+from ...stdlib import builtin
 from ...types import get_position, unpack
 from .helpers import layout
 
@@ -29,6 +30,7 @@ _symbol_body = symbol('body')
 _symbol_after = symbol('after')
 
 
+@builtin('layout/dyn-wind')
 @layout(
     symbol('layout/dyn-wind'),
     peers=(_symbol_before, _symbol_body, _symbol_after))
