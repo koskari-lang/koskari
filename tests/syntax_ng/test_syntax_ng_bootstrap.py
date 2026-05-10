@@ -22,16 +22,9 @@ import pytest
 
 from koskari.exceptions import SpecialError
 from koskari.lib import Datum, Matcher, cons, nil, symbol
-from koskari.syntax_ng import (
-    MacroTransform,
-    SpecialTransform,
-    Syntax,
-    SyntaxTransform,
-    Transform,
-    _filter_captures,
-    parse_syntax_rules_pattern,
-    special,
-)
+from koskari.syntax_ng import (MacroTransform, SpecialTransform, Syntax,
+                               SyntaxTransform, Transform, _filter_captures,
+                               parse_syntax_rules_pattern, special)
 from koskari.types import build_proper
 
 
@@ -74,6 +67,42 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         self.assertFalse(r2.matched)
 
 
+    def test_list_pattern_head_not_in_literals_binds_actual_head_symbol(self):
+        """
+        First list position lowers to SYMBOL when not in literals, so a rule
+        written with the primary name still matches an alias head and binds
+        that symbol
+        """
+
+        m = symbol("compile/m")
+        alias = symbol("compile/m-alias")
+        lit = frozenset()
+        p = parse_syntax_rules_pattern(
+            build_proper(m, symbol("v")), lit, None)
+        matcher = Matcher.from_tuple(p.freeze())
+        arg = symbol("argval")
+        r = matcher.match((alias, arg))
+        self.assertTrue(r.matched)
+        self.assertIs(r.captures[str(m)].datum, alias)
+        self.assertIs(r.captures["v"].datum, arg)
+
+
+    def test_list_pattern_head_in_literals_requires_exact_symbol(self):
+        """
+        Including the head in literals restores fixed-head matching
+        """
+
+        m = symbol("compile/m")
+        alias = symbol("compile/m-alias")
+        lit = frozenset({m})
+        p = parse_syntax_rules_pattern(
+            build_proper(m, symbol("v")), lit, None)
+        matcher = Matcher.from_tuple(p.freeze())
+        arg = symbol("argval")
+        self.assertTrue(matcher.match((m, arg)).matched)
+        self.assertFalse(matcher.match((alias, arg)).matched)
+
+
     def test_sequence_and_ellipsis(self):
         """
         (a ... ) binds repeat_capture for a
@@ -114,7 +143,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         m = Matcher.from_tuple(p.freeze())
         sx = symbol("inner-val")
         form = build_proper(sx)
-        r = m.match((form,), symbol=symbol)
+        r = m.match((form,))
         self.assertTrue(r.matched)
         self.assertEqual(r.captures["x"].datum, sx)
 
@@ -131,7 +160,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         lit = frozenset()
         p = parse_syntax_rules_pattern(wrapped, lit, None)
         m = Matcher.from_tuple(p.freeze())
-        r = m.match((symbol("only"),), symbol=symbol)
+        r = m.match((symbol("only"),))
         self.assertTrue(r.matched)
         self.assertEqual(
             r.captures["x"].datum, symbol("only"))

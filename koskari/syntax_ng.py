@@ -35,8 +35,11 @@ Runtime constructors ``build_syntax``, ``build_macro_syntax``,
 ``build_special_syntax``, and ``build_special_match`` assemble a
 ``Syntax`` dispatcher from RULE patterns and templates or procedural
 handlers; matcher arms receive the full use-site form (nil-terminated
-pair spine) unchanged. They are not registered in bootstrap until the NG
-cutover.
+pair spine) unchanged. Pattern literals are only what the caller passes:
+the first pattern position is normally a symbol capture (the actual
+head, including aliases); include the dispatch symbol in ``literals``
+when a fixed head is required. They are not registered in bootstrap until
+the NG cutover.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -48,30 +51,14 @@ from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SpecialError
-from koskari.hygiene_ng import (
-    apply_syntax_rules_hygiene,
-    collect_binding_symbols,
-    expand_template_with_hygiene,
-)
+from koskari.hygiene_ng import (apply_syntax_rules_hygiene,
+                                collect_binding_symbols,
+                                expand_template_with_hygiene)
 from koskari.lib import Datum, Matcher, gensym, nil, symbol
-from koskari.matcher_ng import (
-    CAPTURE,
-    FORM,
-    LITERAL,
-    MATCH,
-    REST,
-    SYMBOL,
-    HygienicMatchCompiler,
-    check_pattern_arg,
-    repeat_capture,
-)
-from koskari.types import (
-    is_nil,
-    is_pair,
-    is_proper,
-    is_symbol,
-    unpack,
-)
+from koskari.matcher_ng import (CAPTURE, FORM, LITERAL, MATCH, REST, SYMBOL,
+                                HygienicMatchCompiler, check_pattern_arg,
+                                repeat_capture)
+from koskari.types import is_nil, is_pair, is_proper, is_symbol, unpack
 
 
 __all__ = (
@@ -252,8 +239,9 @@ class MacroTransform(object):
         """
         :param pattern: matcher_ng pattern tree
         :param handler:
-            ``(compiler, source_obj, match_result, tc)`` procedure returning
-            expanded form (use ``match_result.captures`` as needed)
+            ``(compiler, tc, **captures)`` procedure returning expanded form;
+            ``captures`` are string-keyed match slots from
+            ``_filter_captures(match_result.captures)``
         """
 
         if handler is None or not callable(handler):
@@ -270,7 +258,7 @@ class MacroTransform(object):
 
         :param compiler: active compiler
         :param source_obj: full special form (proper list spine)
-        :param tc: tail-call flag (fourth argument to the handler)
+        :param tc: tail-call flag (passed to the handler as ``tc``)
         :return: hygiened expanded form or ``None`` when the pattern does not
             match
         """
@@ -549,13 +537,12 @@ def _syntax_pattern_specs(p_items, literals, source_ctx):
     return specs
 
 
-def _literals_with_name(literals, name):
+def _pattern_literals(literals):
     """
-    Merge caller literals with the macro name (syntax-rules convention)
+    Frozenset of pattern literals supplied by the caller (no auto-merge)
     """
 
-    base = frozenset(literals) if literals is not None else frozenset()
-    return base | {symbol(name)}
+    return frozenset(literals) if literals is not None else frozenset()
 
 
 def _normalize_syntax_rule_row(row):
@@ -604,8 +591,10 @@ def build_syntax(name, literals, rules, *, source_ctx=None):
     patterns and templates.
 
     Patterns describe the full use-site form (nil-terminated list spine)
-    passed to ``compile_impl``, typically with the macro name as a leading
-    literal in each pattern list.
+    passed to ``compile_impl``. The first list element of a rule is a
+    symbol capture unless it appears in ``literals`` (use that to fix the
+    head to one symbol, e.g. for matching only a primary name and not an
+    alias).
 
     :param name: primary name symbol or string for this macro
     :param literals: iterable of literal symbols or keywords for patterns
@@ -619,7 +608,7 @@ def build_syntax(name, literals, rules, *, source_ctx=None):
     if not rows:
         raise ValueError("build_syntax requires at least one rule")
 
-    lit = _literals_with_name(literals, name)
+    lit = _pattern_literals(literals)
     transforms = []
     for row in rows:
         pat_d, tmpl = _normalize_syntax_rule_row(row)
@@ -633,14 +622,14 @@ def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
     """
     Build a ``Syntax`` dispatcher of ``MacroTransform`` arms.
 
-    Patterns describe the full use-site form (nil-terminated list spine),
-    typically with the macro name as a leading literal.
+    Patterns describe the full use-site form (nil-terminated list spine).
+    The first list element of a rule is a symbol capture unless it appears
+    in ``literals`` (see :func:`build_syntax`).
 
-    Each procedure is invoked as
-    ``procedure(compiler, source_obj, match_result, tc)``.
+    Each procedure is invoked as ``procedure(compiler, tc, **captures)``.
 
     :param name: primary name symbol or string for this macro
-    :param literals: iterable of pattern literals (merged with macro name)
+    :param literals: iterable of pattern literals for patterns
     :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
     :param source_ctx: context value for pattern parse errors
     :return: ``Syntax`` instance
@@ -650,7 +639,7 @@ def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
     if not rows:
         raise ValueError("build_macro_syntax requires at least one rule")
 
-    lit = _literals_with_name(literals, name)
+    lit = _pattern_literals(literals)
     transforms = []
     for row in rows:
         pat_d, proc = _normalize_proc_rule_row(row)
@@ -664,14 +653,15 @@ def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
     """
     Build a ``Syntax`` dispatcher of ``SpecialTransform`` arms.
 
-    Patterns describe the full use-site form (nil-terminated list spine),
-    typically with the special name as a leading literal.
+    Patterns describe the full use-site form (nil-terminated list spine).
+    The first list element of a rule is a symbol capture unless it appears
+    in ``literals`` (see :func:`build_syntax`).
 
     Each procedure is invoked as
     ``procedure(compiler, source_obj, match_result, tc)``.
 
     :param name: primary name symbol or string for this special form macro
-    :param literals: iterable of pattern literals (merged with macro name)
+    :param literals: iterable of pattern literals for patterns
     :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
     :param source_ctx: context value for pattern parse errors
     :return: ``Syntax`` instance
@@ -681,7 +671,7 @@ def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
     if not rows:
         raise ValueError("build_special_syntax requires at least one rule")
 
-    lit = _literals_with_name(literals, name)
+    lit = _pattern_literals(literals)
     transforms = []
     for row in rows:
         pat_d, proc = _normalize_proc_rule_row(row)
@@ -693,8 +683,8 @@ def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
 
 def build_special_match(name, rule_rows, *, source_ctx=None):
     """
-    Same as :func:`build_special_syntax` with no literal list (only the
-    macro name is merged into the pattern literals set).
+    Same as :func:`build_special_syntax` with an empty ``literals``
+    iterable (no pattern literals beyond what each rule datum implies).
     """
 
     return build_special_syntax(name, (), rule_rows, source_ctx=source_ctx)
