@@ -53,10 +53,10 @@ from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SpecialError
-from koskari.hygiene_ng import (apply_syntax_rules_hygiene,
+from koskari.hygiene_ng import (Hygiene, apply_syntax_rules_hygiene,
                                 collect_binding_symbols,
                                 expand_template_with_hygiene)
-from koskari.lib import Datum, Matcher, gensym, nil, symbol
+from koskari.lib import Datum, Matcher, cons, gensym, nil, symbol
 from koskari.matcher_ng import (CAPTURE, FORM, LITERAL, MATCH, REST, SYMBOL,
                                 HygienicMatchCompiler, check_pattern_arg,
                                 parse_explicit_rule_pattern, repeat_capture)
@@ -163,6 +163,8 @@ class Transform(Protocol):
     matcher_tuple: tuple
     hygiene: Any
     handler: Any
+    _matcher: Matcher
+
 
     def try_expand(self, compiler, source_obj, tc):
         """
@@ -312,6 +314,44 @@ class Syntax(Compiled):
             if not isinstance(t, Transform):
                 raise TypeError("Syntax transforms must be Transform instances,"
                                 f" got {t!r}")
+
+
+    @property
+    def hygiene(self):
+        """
+        Merged binder and scope-region plan from all transform arms for
+        :func:`koskari.hygiene_ng.collect_binding_symbols`
+        """
+
+        binders = {}
+        scopes = {}
+        for t in self.transforms:
+            h = t.hygiene
+            if h.is_empty():
+                continue
+            binders.update(dict(h.binders))
+            scopes.update(dict(h.scope_regions))
+        return Hygiene(binders, scopes)
+
+
+    def match_for_hygiene(self, rest):
+        """
+        Match ``(self.name . rest)`` against the first arm whose frozen
+        matcher succeeds; return capture mapping for hygiene discovery
+        """
+
+        head = self.name
+        if not is_symbol(head):
+            head = symbol(str(head))
+        full = cons(head, rest)
+        for t in self.transforms:
+            try:
+                r = t._matcher.match(full)
+            except SpecialError:
+                continue
+            if r.matched:
+                return r.captures
+        return None
 
 
     def compile_impl(self, compiler, source_obj, tc):

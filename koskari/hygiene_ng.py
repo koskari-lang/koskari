@@ -287,6 +287,8 @@ def expand_template_with_hygiene(
     if not is_pair(template):
         return template
 
+    # TODO: Review. We're losing positional provenance from the template
+    # during this pass.
     items = list(unpack(template))
     out = []
     i = 0
