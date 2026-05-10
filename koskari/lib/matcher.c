@@ -1511,35 +1511,6 @@ PyObject *KosMatcherBuilder_Finalize(
 }
 
 
-/* === ABSENT singleton === */
-
-
-static PyObject *absent_repr(PyObject *self) {
-  (void) self;
-  return PyUnicode_FromString("ABSENT");
-}
-
-
-static PyObject *absent_str(PyObject *self) {
-  (void) self;
-  return PyUnicode_FromString("ABSENT");
-}
-
-
-PyTypeObject KosMatchAbsentType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name = "koskari.lib.MatchAbsent",
-  .tp_basicsize = sizeof(PyObject),
-  .tp_flags = Py_TPFLAGS_DEFAULT,
-  .tp_repr = absent_repr,
-  .tp_str = absent_str,
-  .tp_doc = "Singleton sentinel for unset capture slots",
-};
-
-
-PyObject *KosMatchAbsent = NULL;
-
-
 /* === Datum === */
 
 
@@ -2244,7 +2215,7 @@ static PyObject *engine_changes_to_dict(
         Py_DECREF(d);
         return NULL;
       }
-      val = KosMatchAbsent;
+      continue;
     }
     if (PyDict_SetItem(d, name, val)) {
       Py_DECREF(d);
@@ -2377,11 +2348,11 @@ static int match_capture(
   if (n->as.capture.slot == KOS_MATCH_NO_INDEX)
     return 1;
 
+  if (end - start == 0)
+    return 1;
+
   PyObject *value = NULL;
-  if (end - start == 0) {
-    Py_INCREF(KosMatchAbsent);
-    value = KosMatchAbsent;
-  } else if (end - start == 1) {
+  if (end - start == 1) {
     PyObject *raw = e->subj->vt->get(e->subj, start);
     Py_INCREF(raw);
     value = kos_datum_from_spine_cell(e->subj, start, raw);
@@ -3707,17 +3678,8 @@ int koskari_matcher_init(PyObject *mod) {
   if (PyType_Ready(&KosMatchResultType))
     return -1;
 
-  if (PyType_Ready(&KosMatchAbsentType))
-    return -1;
-
   if (PyType_Ready(&KosDatumType))
     return -1;
-
-  if (! KosMatchAbsent) {
-    KosMatchAbsent = PyObject_New(PyObject, &KosMatchAbsentType);
-    if (! KosMatchAbsent)
-      return -1;
-  }
 
   if (PyDict_SetItemString(dict, "Matcher",
                            (PyObject *) &KosMatcherType))
@@ -3725,9 +3687,6 @@ int koskari_matcher_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "MatchResult",
                            (PyObject *) &KosMatchResultType))
-    return -1;
-
-  if (PyDict_SetItemString(dict, "ABSENT", KosMatchAbsent))
     return -1;
 
   if (PyDict_SetItemString(dict, "Datum",
@@ -3740,7 +3699,6 @@ int koskari_matcher_init(PyObject *mod) {
 
 int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
-  Py_CLEAR(KosMatchAbsent);
   Py_CLEAR(kos_matcher_extern_defaults);
   return 0;
 }

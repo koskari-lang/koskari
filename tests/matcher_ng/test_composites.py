@@ -25,7 +25,6 @@ import pytest
 
 from koskari.lib import Datum, cons, keyword, nil, symbol
 from koskari.matcher_ng import (
-    ABSENT,
     BINDING,
     BINDINGS,
     BODY,
@@ -100,8 +99,6 @@ def _ucaps(result):
 
     out = {}
     for k, v in result.captures.items():
-        if v is ABSENT:
-            continue
         out[str(k)] = _peel_capture_value(v)
     return out
 
@@ -410,7 +407,7 @@ class TestUSING(unittest.TestCase):
     def test_using_name_expr(self):
         """
         USING accepts (name expr) and binds name and expr; the
-        unpack-only slot lhs remains ABSENT
+        unpack-only slot lhs is omitted
         """
 
         pat = MATCH(USING("u"))
@@ -428,7 +425,7 @@ class TestUSING(unittest.TestCase):
     def test_using_expr_as_name(self):
         """
         USING accepts (expr as: name) and binds expr and name; lhs
-        remains ABSENT
+        key is omitted
         """
 
         pat = MATCH(USING("u"))
@@ -522,8 +519,8 @@ class TestFORMALS(unittest.TestCase):
     def test_formals_empty_list(self):
         """
         FORMALS accepts the empty proper list (). All inner REPEAT
-        phases produce empty frame lists; non-REPEAT segments remain
-        ABSENT
+        phases produce empty frame lists; non-REPEAT segment keys are
+        omitted
         """
 
         pat = MATCH(FORMALS("f"))

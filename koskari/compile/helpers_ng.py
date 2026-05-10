@@ -23,11 +23,11 @@ Does not import koskari.compile.helpers
 """
 
 
-from typing import Any, Dict, List, Sequence
+from typing import List
 
 from ..exceptions import SpecialError
 from ..lib import OpCode, keyword, nil, pair, symbol
-from ..matcher_ng import ABSENT, FORMALS_SOURCE_KEY
+from ..matcher_ng import FORMALS_SOURCE_KEY
 from ..types import is_pair, is_symbol
 
 from .compiler import ByteCodeFragment
@@ -89,6 +89,14 @@ def helper_begin(
         fragment: ByteCodeFragment,
         body: pair,
         tc: bool = False) -> ByteCodeFragment:
+    """
+    Compile a body list into a fragment
+
+    :param fragment: the fragment to compile into
+    :param body: the body list to compile
+    :param tc: whether to compile in tail call optimization mode
+    :return: the compiled fragment
+    """
 
     if body is nil:
         fragment.instruction(OpCode.KOS_OP_CONST, None)
@@ -124,17 +132,6 @@ def _merge_formal_annotations(annotations, name_sym, ann_bundle):
         annotations[key] = dict(ann_bundle)
 
 
-def _frame_cell_datum(fr: Dict[str, Any], key: str):
-    """
-    Read a Datum-backed frame slot; return unboxed value or None
-    """
-
-    v = fr.get(key)
-    if v is None or v is ABSENT:
-        return None
-    return v.datum
-
-
 def _attrs_frames_to_ann(attr_frames: List[dict], source):
     """
     Fold formal attribute REPEAT frames into (ann dict, default or None)
@@ -144,11 +141,11 @@ def _attrs_frames_to_ann(attr_frames: List[dict], source):
     default = None
     for afr in attr_frames:
         kw_cell = afr.get('kw')
-        if kw_cell is None or kw_cell is ABSENT:
+        if kw_cell is None:
             continue
         kw = kw_cell.datum
         val_cell = afr.get('attr_val')
-        if val_cell is None or val_cell is ABSENT:
+        if val_cell is None:
             raise SpecialError(
                 f"missing value for formal attribute {kw!r}",
                 source)
@@ -170,10 +167,11 @@ def _gather_one_positional_frame(fr: dict, source):
     Map one positional REPEAT frame to (name, ann_bundle, default_expr)
     """
 
-    name = _frame_cell_datum(fr, 'name')
-    typ = _frame_cell_datum(fr, 'type')
+    name = None if (v := fr.get('name')) is None else v.datum
+    typ = None if (v := fr.get('type')) is None else v.datum
+
     default_cell = fr.get('default')
-    if default_cell is None or default_cell is ABSENT:
+    if default_cell is None:
         default_expr = None
     else:
         default_expr = default_cell.datum
@@ -182,46 +180,33 @@ def _gather_one_positional_frame(fr: dict, source):
     if typ is not None:
         annotations['type'] = typ
 
-    attrs_cell = fr.get('attrs', ())
-    if attrs_cell is ABSENT:
-        attrs_cell = ()
+    attrs_cell = fr.get('attrs')
     if attrs_cell:
         ann2, default2 = _attrs_frames_to_ann(attrs_cell, source)
         for k2, v2 in ann2.items():
             if k2 in annotations and annotations[k2] != v2:
                 raise SpecialError(
-                    "conflicting formal annotations for %r" % name,
+                    f"conflicting formal annotations for {name!r}",
                     source)
             annotations[k2] = v2
         if default2 is not None:
             if default_expr is not None:
                 raise SpecialError(
-                    "duplicate default for formal %r" % name,
+                    f"duplicate default for formal {name!r}",
                     source)
             default_expr = default2
 
     if name is None:
         raise SpecialError(
-            "positional frame missing name: %r" % fr,
+            f"positional frame missing name: {fr!r}",
             source)
     if not (is_symbol(name) or is_lazygensym(name)):
         raise SpecialError(
-            "positional formals must be symbols or bracket forms, not %r"
-            % name,
+            "positional formals must be symbols or bracket forms, not"
+            f" {name!r}",
             source)
 
     return name, annotations, default_expr
-
-
-def _grp_frames(grp: dict, key: str) -> Sequence[dict]:
-    """
-    List of REPEAT frame dicts for an optional FORMALS inner slot
-    """
-
-    v = grp.get(key, ())
-    if v is ABSENT:
-        return ()
-    return v
 
 
 def gather_formals(formals_group, source=None):
@@ -245,10 +230,10 @@ def gather_formals(formals_group, source=None):
     positional = []
     defaults = []
 
-    for fr in _grp_frames(formals_group, 'positionals'):
+    for fr in formals_group.get('positionals', ()):
         if not isinstance(fr, dict):
             raise SpecialError(
-                "invalid positional frame %r" % fr,
+                f"invalid positional frame {fr!r}",
                 source)
         name, ann_bundle, default = _gather_one_positional_frame(fr, source)
         positional.append(name)
@@ -256,59 +241,52 @@ def gather_formals(formals_group, source=None):
         if default is not None:
             defaults.append((keyword(str(name)), default))
 
-    for fr in _grp_frames(formals_group, 'defaults'):
+    for fr in formals_group.get('defaults', ()):
         if not isinstance(fr, dict):
             raise SpecialError(
-                "invalid defaults frame %r" % fr,
+                f"invalid defaults frame {fr!r}",
                 source)
-        kw = _frame_cell_datum(fr, 'kw')
-        dflt = _frame_cell_datum(fr, 'default')
+        kw = None if (v := fr.get('kw')) is None else v.datum
+        dflt = None if (v := fr.get('default')) is None else v.datum
         if kw is None:
             raise SpecialError(
-                "defaults frame missing keyword: %r" % fr,
+                f"defaults frame missing keyword: {fr!r}",
                 source)
         defaults.append((kw, dflt))
 
     kwonly = []
-    for fr in _grp_frames(formals_group, 'kwonly'):
+    for fr in formals_group.get('kwonly', ()):
         if not isinstance(fr, dict):
             raise SpecialError(
-                "invalid kwonly frame %r" % fr,
+                f"invalid kwonly frame {fr!r}",
                 source)
-        name = _frame_cell_datum(fr, 'name')
+        name = None if (v := fr.get('name')) is None else v.datum
         if name is not None and (is_symbol(name) or is_lazygensym(name)):
             kwonly.append((keyword(str(name)), nil))
             continue
-        kw = _frame_cell_datum(fr, 'kw')
-        dflt = _frame_cell_datum(fr, 'default')
+        kw = None if (v := fr.get('kw')) is None else v.datum
+        dflt = None if (v := fr.get('default')) is None else v.datum
         if kw is not None:
             kwonly.append((kw, dflt))
         else:
             raise SpecialError(
-                "invalid kw-only frame %r" % fr,
+                f"invalid kw-only frame {fr!r}",
                 source)
 
     star_cell = formals_group.get('star')
-    if star_cell is None or star_cell is ABSENT:
-        star = None
-    else:
-        star = star_cell.datum
+    star = star_cell.datum if star_cell else None
 
     ss_cell = formals_group.get('starstar')
-    if ss_cell is None or ss_cell is ABSENT:
-        starstar = None
-    else:
-        starstar = ss_cell.datum
-        if starstar is not None and not (
-                is_symbol(starstar) or is_lazygensym(starstar)):
-            raise SpecialError(
-                "** keyword requires symbol binding, not %r" % starstar,
-                source)
+    starstar = ss_cell.datum if ss_cell else None
+    if starstar and not is_symbol(starstar):
+        raise SpecialError(
+            f"** keyword requires symbol binding, not {starstar!r}",
+            source)
 
     if star is not None and star is not nil:
-        if not (is_symbol(star) or is_lazygensym(star)):
+        if not is_symbol(star):
             raise SpecialError(
-                "* keyword requires symbol binding, not %r" % star,
+                f"* keyword requires symbol binding, not {star!r}",
                 source)
 
     return (positional, defaults, kwonly, star, starstar, annotations)

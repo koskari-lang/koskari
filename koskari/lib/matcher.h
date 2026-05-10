@@ -212,16 +212,6 @@ extern PyTypeObject KosMatchResultType;
   ((obj) && PyType_IsSubtype((obj)->ob_type, &KosMatchResultType))
 
 
-/* === ABSENT sentinel ===
-   Singleton placed in capture dicts for slots that were not produced
-   by the matched ONEOF branch (or by an OPTIONAL that did not fire).
-*/
-
-
-extern PyTypeObject KosMatchAbsentType;
-extern PyObject *KosMatchAbsent;
-
-
 /* === Datum (matched value + optional source position) === */
 
 

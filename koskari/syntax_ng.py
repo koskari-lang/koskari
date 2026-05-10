@@ -55,7 +55,6 @@ from koskari.hygiene_ng import (
 )
 from koskari.lib import Datum, Matcher, gensym, nil, symbol
 from koskari.matcher_ng import (
-    ABSENT,
     CAPTURE,
     FORM,
     LITERAL,
@@ -127,15 +126,11 @@ def _init_pattern_fields(instance, pattern, handler):
 
 def _filter_captures(captures):
     """
-    Drop ``ABSENT`` entries from native ``MatchResult.captures``. Matcher
-    values (including ``Datum`` wrappers) are passed through unchanged
+    Copy native ``MatchResult.captures`` with string keys. Matcher values
+    (including ``Datum`` wrappers) are passed through unchanged
     """
 
-    return {
-        str(k): v
-        for k, v in captures.items()
-        if v is not ABSENT
-    }
+    return {str(k): v for k, v in captures.items()}
 
 
 def _captures_to_bindings(captures):
@@ -415,9 +410,9 @@ def special(form_symbol, *, patterns, unpack=None):
     :param unpack: only for this decorator: ``None`` (receive
         ``compiler, source_obj, tc``), ``match`` (receive
         ``compiler, captures_dict, tc``), or ``kwargs`` (captures merged after
-        ``tc``). For ``match`` and ``kwargs``, ``captures_dict`` omits
-        ``ABSENT`` slots only; values are matcher outputs (``Datum`` wrappers
-        may be present). Not available on ``build_*`` rule rows.
+        ``tc``). For ``match`` and ``kwargs``, ``captures_dict`` includes only
+        slots the matcher bound; values are matcher outputs (``Datum``
+        wrappers may be present). Not available on ``build_*`` rule rows.
     """
 
     _validate_unpack_mode(unpack)

@@ -25,7 +25,6 @@ import pytest
 
 from koskari.lib import cons, keyword, nil, pair, symbol
 from koskari.matcher_ng import (
-    ABSENT,
     BIND,
     CAPTURE,
     CLASS,
@@ -378,10 +377,10 @@ class TestBuildAndMatch(unittest.TestCase):
             result.captures["body"].datum, ("b1", "b2"))
 
 
-    def test_oneof_yields_absent_for_other_branch(self):
+    def test_oneof_omits_other_branch_slots(self):
         """
-        ONEOF binds its matching branch's slots and leaves the other
-        branch's slots as ABSENT
+        ONEOF binds its matching branch's slots and omits the other
+        branch's slot keys
         """
 
         pat = ONEOF(
@@ -469,10 +468,10 @@ class TestBuildAndMatch(unittest.TestCase):
         self.assertEqual(result.captures["v"].datum, "Y")
 
 
-    def test_optional_absent_yields_absent(self):
+    def test_optional_omits_slot_when_inner_unmatched(self):
         """
-        OPTIONAL leaves its slot as ABSENT when the inner pattern does
-        not match, and binds it when it does
+        OPTIONAL omits its capture slot when the inner pattern does not
+        match, and binds it when it does
         """
 
         pat = MATCH(

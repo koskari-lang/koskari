@@ -33,7 +33,6 @@ binding_inner_pattern
 
 from koskari.hygiene_ng import Hygiene
 from koskari.lib import (
-    ABSENT,
     Datum,
     Matcher,
     MatchResult,
@@ -47,7 +46,6 @@ from typing import Protocol, runtime_checkable
 
 
 __all__ = [
-    "ABSENT",
     "Datum",
     "Matcher",
     "MatchResult",
@@ -830,9 +828,9 @@ class REPEAT(Pattern):
 
 class OPTIONAL(Pattern):
     """
-    Match the inner pattern at most once. When the inner pattern is
-    absent any captures it would have made resolve to the ABSENT
-    sentinel
+    Match the inner pattern at most once. When the inner pattern does
+    not match, any capture slots it would have bound are omitted from
+    the result captures dict
     """
 
 
@@ -1445,7 +1443,7 @@ class DEFINE(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         val = matched.get(self._slot)
-        if val is None or val is ABSENT:
+        if val is None:
             return
         val = val.datum
         if is_symbol(val):
@@ -1460,8 +1458,9 @@ class DECL(Composite, HygieneWireSlotScopes):
     attribute pairs verbatim. Captures appear directly in the result:
     captures[slot] is the source element, captures['name'] is the
     bare or list-form symbol, captures['type'] is the type expression
-    from the as-form (ABSENT otherwise), captures['decl_tail'] is the
-    raw remainder of (name . tail) (ABSENT otherwise)
+    from the as-form when that arm matches, captures['decl_tail'] is the
+    raw remainder of (name . tail) when that arm matches; other keys are
+    omitted
     """
 
 
@@ -1491,13 +1490,13 @@ class DECL(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
-        if name is not None and name is not ABSENT:
+        if name is not None:
             name = name.datum
             if is_symbol(name):
                 yield name
                 return
         raw = matched.get(self._slot)
-        if raw is not None and raw is not ABSENT:
+        if raw is not None:
             raw = raw.datum
             if is_symbol(raw):
                 yield raw
@@ -1505,10 +1504,10 @@ class DECL(Composite, HygieneWireSlotScopes):
 
     def iter_recurse_targets(self, matched):
         t = matched.get("type")
-        if t is not None and t is not ABSENT:
+        if t is not None:
             yield t
         dt = matched.get("decl_tail")
-        if dt is not None and dt is not ABSENT:
+        if dt is not None:
             if is_pair(dt.datum):
                 yield dt
 
@@ -1542,7 +1541,7 @@ class BINDING(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
-        if name is not None and name is not ABSENT:
+        if name is not None:
             name = name.datum
             if is_symbol(name):
                 yield name
@@ -1550,7 +1549,7 @@ class BINDING(Composite, HygieneWireSlotScopes):
 
     def iter_recurse_targets(self, matched):
         ex = matched.get("expr")
-        if ex is not None and ex is not ABSENT:
+        if ex is not None:
             yield ex
 
 
@@ -1595,7 +1594,7 @@ class BINDINGS(Composite):
 
     def iter_introduced_symbols(self, matched):
         cells = matched.get(self._slot)
-        if cells is None or cells is ABSENT:
+        if cells is None:
             return
         if isinstance(cells, Datum):
             cells = cells.datum
@@ -1612,7 +1611,7 @@ class BINDINGS(Composite):
 
     def iter_recurse_targets(self, matched):
         cells = matched.get(self._slot)
-        if cells is None or cells is ABSENT:
+        if cells is None:
             return
         if isinstance(cells, Datum):
             cells = cells.datum
@@ -1621,7 +1620,7 @@ class BINDINGS(Composite):
         for fr in cells:
             if isinstance(fr, dict):
                 ex = fr.get("expr")
-                if ex is not None and ex is not ABSENT:
+                if ex is not None:
                     yield ex
 
 
@@ -1725,8 +1724,8 @@ def formals_inner_pattern():
       keyword/value pairs)
     * an optional **: segment binding the starstar symbol
 
-    No phase is required; an empty proper list matches with all
-    OPTIONAL chunks resolving to ABSENT
+    No phase is required; an empty proper list matches with optional
+    phases contributing no capture keys
     """
 
     star_segment = MATCH(
@@ -1766,9 +1765,10 @@ class FORMALS(Composite, HygieneWireSlotScopes):
     * 'kwonly': bare Python list of frame dicts (one per kw-only entry)
     * 'starstar': the symbol after **:
 
-    Inner slots default to ABSENT when their phase did not run. Use
-    one FORMALS per matcher; multi-instance composition requires
-    slot_prefix because inner slots share the surrounding scope
+    Inner keys for phases that did not run are omitted from the group
+    dict. Use one FORMALS per matcher; multi-instance composition
+    requires slot_prefix because inner slots share the surrounding
+    scope
     """
 
 
@@ -1791,31 +1791,27 @@ class FORMALS(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         grp = matched.get(self._slot)
-        if grp is None or grp is ABSENT or not isinstance(grp, dict):
+        if grp is None or not isinstance(grp, dict):
             return
         pos = grp.get("positionals", ())
-        if pos is ABSENT:
-            pos = ()
         for fr in pos:
             if isinstance(fr, dict):
                 n = fr.get("name")
-                if n is not None and n is not ABSENT:
+                if n is not None:
                     n = n.datum
                     if is_symbol(n):
                         yield n
         star = grp.get("star")
-        if star is not None and star is not ABSENT:
+        if star is not None:
             star = star.datum
             if is_symbol(star):
                 yield star
         ss = grp.get("starstar")
-        if ss is not None and ss is not ABSENT:
+        if ss is not None:
             ss = ss.datum
             if is_symbol(ss):
                 yield ss
         kwonly = grp.get("kwonly", ())
-        if kwonly is ABSENT:
-            kwonly = ()
         for fr in kwonly:
             if not isinstance(fr, dict):
                 continue
@@ -1828,32 +1824,24 @@ class FORMALS(Composite, HygieneWireSlotScopes):
 
     def iter_recurse_targets(self, matched):
         grp = matched.get(self._slot)
-        if grp is None or grp is ABSENT or not isinstance(grp, dict):
+        if grp is None or not isinstance(grp, dict):
             return
         defs = grp.get("defaults", ())
-        if defs is ABSENT:
-            defs = ()
         for fr in defs:
             if isinstance(fr, dict):
                 dv = fr.get("default")
                 if dv is not None:
                     yield dv
         kwonly = grp.get("kwonly", ())
-        if kwonly is ABSENT:
-            kwonly = ()
         for fr in kwonly:
             if isinstance(fr, dict):
                 dv = fr.get("default")
                 if dv is not None:
                     yield dv
         pos = grp.get("positionals", ())
-        if pos is ABSENT:
-            pos = ()
         for fr in pos:
             if isinstance(fr, dict):
                 attrs = fr.get("attrs", ())
-                if attrs is ABSENT:
-                    attrs = ()
                 for afr in attrs:
                     if isinstance(afr, dict):
                         av = afr.get("attr_val")
@@ -1871,8 +1859,8 @@ class USING(Composite, HygieneWireSlotScopes):
     3. (EXPR as: NAME)     -- as form, captures expr and name
     4. (EXPR)              -- bare expression, captures expr only
 
-    Slot names not bound by the winning arm remain ABSENT in the
-    captures dict (the native ONEOF semantic)
+    Slot names not bound by the winning ONEOF arm are omitted from the
+    captures dict
     """
 
 
@@ -1899,7 +1887,7 @@ class USING(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         name = matched.get("name")
-        if name is not None and name is not ABSENT:
+        if name is not None:
             name = name.datum
             if is_symbol(name):
                 yield name
@@ -1907,7 +1895,7 @@ class USING(Composite, HygieneWireSlotScopes):
 
     def iter_recurse_targets(self, matched):
         ex = matched.get("expr")
-        if ex is not None and ex is not ABSENT:
+        if ex is not None:
             yield ex
 
 
@@ -1955,7 +1943,7 @@ class BODY(Pattern):
         """
 
         val = matched.get(self._slot)
-        if val is None or val is ABSENT:
+        if val is None:
             return
         yield val
 
@@ -2102,39 +2090,39 @@ def parse_matcher(elem):
             "not a valid matcher pattern: %r" % (elem,))
     c = result.captures
 
-    if c.get("bare_symbol", ABSENT) is not ABSENT:
-        return CAPTURE(str(c.get("bare_symbol").datum))
+    if "bare_symbol" in c:
+        return CAPTURE(str(c["bare_symbol"].datum))
 
-    if c.get("atom_literal", ABSENT) is not ABSENT:
-        atom = c.get("atom_literal").datum
+    if "atom_literal" in c:
+        atom = c["atom_literal"].datum
         if isinstance(atom, pair):
             raise ValueError(
                 "improper list is not a valid matcher pattern: %r"
                 % (atom,))
         return LITERAL(atom)
 
-    if c.get("quoted_symbol", ABSENT) is not ABSENT:
-        return LITERAL_SYM(str(c.get("quoted_symbol").datum))
+    if "quoted_symbol" in c:
+        return LITERAL_SYM(str(c["quoted_symbol"].datum))
 
-    if c.get("dcolon_args", ABSENT) is not ABSENT:
+    if "dcolon_args" in c:
         return lower_anon_constraint(
-            "::", c.get("dcolon_args").datum, elem)
+            "::", c["dcolon_args"].datum, elem)
 
-    if c.get("type_args", ABSENT) is not ABSENT:
+    if "type_args" in c:
         return lower_anon_constraint(
-            "type:", c.get("type_args").datum, elem)
+            "type:", c["type_args"].datum, elem)
 
-    if c.get("val_expr", ABSENT) is not ABSENT:
-        return LITERAL(c.get("val_expr").datum)
+    if "val_expr" in c:
+        return LITERAL(c["val_expr"].datum)
 
-    if c.get("class_extern", ABSENT) is not ABSENT:
+    if "class_extern" in c:
         return lower_class(
-            c.get("class_extern").datum,
-            c.get("class_fields").datum)
+            c["class_extern"].datum,
+            c["class_fields"].datum)
 
-    if c.get("head", ABSENT) is not ABSENT:
-        head = c.get("head").datum
-        args = c.get("head_args").datum
+    if "head" in c:
+        head = c["head"].datum
+        args = c["head_args"].datum
         name = str(head)
         factory = MATCHER_REGISTRY.get(name)
         if factory is not None:

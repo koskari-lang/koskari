@@ -1100,7 +1100,7 @@ static int test_match_form_descends_into_pair(void) {
 static int test_match_oneof_first_branch_matches(void) {
     /*
       ONEOF(GROUP(CAPTURE(a, LITERAL "x")), GROUP(CAPTURE(b, LITERAL "y")))
-      against ["x"]. Captures: a="x", b=ABSENT.
+      against ["x"]. Captures: a="x", b omitted.
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     TEST_ASSERT_NOT_NULL(b, "create builder");
@@ -1160,7 +1160,7 @@ static int test_match_oneof_first_branch_matches(void) {
 static int test_match_oneof_falls_through(void) {
     /*
       Same matcher as above against ["y"] — second branch matches.
-      Captures: a=ABSENT, b="y".
+      Captures: a omitted, b="y".
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
 
@@ -1225,7 +1225,7 @@ static int test_match_oneof_rollback_clean_frame(void) {
       Branch 1: GROUP(CAPTURE(b, TEST_ANY), TEST_LITERAL "Y")
 
       Subject: ["x", "Y"] — branch 0 captures a="x" then fails on "Z";
-      branch 1 succeeds with b="x". Final captures: a=ABSENT, b="x".
+      branch 1 succeeds with b="x". Final captures: a omitted, b="x".
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
 
@@ -1289,7 +1289,7 @@ static int test_match_repeat_named_per_iteration_frames(void) {
       against [1, 2, 3].
 
       Result: items = [{val: 1}, {val: 2}, {val: 3}]. The val slot
-      itself is ABSENT at top level (per-iteration only).
+      itself is omitted at top level (per-iteration only).
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
 
@@ -1582,7 +1582,7 @@ static int test_match_optional_absent_present(void) {
     /*
       GROUP(OPTIONAL(CAPTURE(x, TEST_ANY)), TEST_LITERAL "end")
       Against ["v", "end"]: x = "v".
-      Against ["end"]:      x = ABSENT.
+      Against ["end"]:      x omitted.
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     int slot_x = add_str_slot(b, "x");
