@@ -23,9 +23,8 @@ import pytest
 
 from koskari.dis import dis
 from koskari.lib import OpCode, build_list
-from koskari.syntax import (SpecialRulesTransformer, SyntaxRulesTransformer,
-                            build_macro_syntax, build_special_syntax,
-                            build_syntax)
+from koskari.syntax_ng import (Syntax, build_macro_rules, build_special_rules,
+                               build_syntax_rules)
 
 from . import SpecialsTestCase
 
@@ -36,18 +35,18 @@ pytestmark = pytest.mark.phase_specials
 class DefineSyntaxCompileHelpers(SpecialsTestCase):
 
     def compile_expr(self, src_str, **defns):
-        defns.setdefault('build-syntax-rules', build_syntax)
-        defns.setdefault('build-macro-rules', build_macro_syntax)
-        defns.setdefault('build-special-rules', build_special_syntax)
+        defns.setdefault('build-syntax-rules', build_syntax_rules)
+        defns.setdefault('build-macro-rules', build_macro_rules)
+        defns.setdefault('build-special-rules', build_special_rules)
         return super().compile_expr(src_str, **defns)
 
 
     def compile_to_code(self, src_str, lineno=1, tc=False,
                         resolution_pragma_class=None, resolution_pragma=None,
                         **defns):
-        defns.setdefault('build-syntax-rules', build_syntax)
-        defns.setdefault('build-macro-rules', build_macro_syntax)
-        defns.setdefault('build-special-rules', build_special_syntax)
+        defns.setdefault('build-syntax-rules', build_syntax_rules)
+        defns.setdefault('build-macro-rules', build_macro_rules)
+        defns.setdefault('build-special-rules', build_special_rules)
         return super().compile_to_code(
             src_str, lineno=lineno, tc=tc,
             resolution_pragma_class=resolution_pragma_class,
@@ -116,7 +115,7 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
             if op == OpCode.KOS_OP_CONST:
                 consts.append(code.constant(arg))
 
-        self.assertFalse(any(isinstance(v, SyntaxRulesTransformer) for v in consts))
+        self.assertFalse(any(isinstance(v, Syntax) for v in consts))
         self.assertTrue(any(isinstance(v, tuple) for v in consts))
 
 
@@ -293,7 +292,7 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
 
         await expr()
         ident = vars(mod)['ident']
-        self.assertIsInstance(ident, SpecialRulesTransformer)
+        self.assertIsInstance(ident, Syntax)
         defn = {'compile/ident': ident}
 
         src_str = """
@@ -320,7 +319,7 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
 
         await expr()
         ident = vars(mod)['ident']
-        self.assertIsInstance(ident, SpecialRulesTransformer)
+        self.assertIsInstance(ident, Syntax)
         defn = {'compile/ident': ident}
 
         src_str = """
@@ -347,7 +346,7 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
 
         await expr()
         ident = vars(mod)['ident']
-        self.assertIsInstance(ident, SpecialRulesTransformer)
+        self.assertIsInstance(ident, Syntax)
         defn = {'compile/ident': ident}
 
         src_str = """
@@ -375,7 +374,7 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
 
         await expr()
         ident = vars(mod)['ident']
-        self.assertIsInstance(ident, SpecialRulesTransformer)
+        self.assertIsInstance(ident, Syntax)
         defn = {'compile/ident': ident}
 
         src_str = """

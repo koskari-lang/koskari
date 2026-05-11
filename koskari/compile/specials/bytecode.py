@@ -23,13 +23,17 @@ Special form handler for compile/bytecode.
 
 
 from ...lib import keyword, nil, OpCode, pair, symbol
+from ...matcher_ng import MATCH, REST, SYMBOL
 from ..compiler import ByteCodeFragment, Compiler
 from ...stdlib import builtin
-from ..helpers import special
+from ...syntax_ng import special
+
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 @builtin("compile/bytecode")
-@special(symbol("compile/bytecode"))
+@special("compile/bytecode", patterns=_DEFAULT_PATTERNS)
 def special_bytecode(
         compiler: Compiler,
         source: pair,

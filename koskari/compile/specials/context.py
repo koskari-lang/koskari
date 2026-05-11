@@ -25,16 +25,23 @@ compile/dyn-with.
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil, pair, symbol
-from ...matcher import MATCH, REST, match
+from ...matcher_ng import MATCH, REST, SYMBOL, USING
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler
 from ...stdlib import builtin
-from ..helpers import (USING, gather_bindings, helper_begin,
-                       special, special_forms)
+from ...syntax_ng import special
+from ..helpers_ng import (
+    gather_bindings,
+    helper_begin,
+    match,
+)
+
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 @builtin("compile/parameterize")
-@special(symbol("compile/parameterize"))
+@special("compile/parameterize", patterns=_DEFAULT_PATTERNS)
 def special_parameterize(
         compiler: Compiler,
         source: pair,
@@ -71,10 +78,13 @@ _WITH_PATTERNS = [
     MATCH(USING("binding", scope="body"), REST("body")),
 ]
 
+_WITH_PATTERNS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _WITH_PATTERNS)
+
 
 @builtin("compile/with")
-@special_forms(_WITH_PATTERNS)
-@special(symbol("compile/with"))
+@special("compile/with", patterns=_WITH_PATTERNS_FULL)
 def special_with(compiler, source, tc=False):
     """
     Compile (compile/with [name? expr] BODY...). Single-shot context manager
@@ -86,12 +96,16 @@ def special_with(compiler, source, tc=False):
     if matched is None:
         raise SpecialError("with requires [name? expr] and body", source)
 
-    binding = matched["binding"]
-    name = binding.name
-    expr = binding.value
-    body = matched["body"].source
+    binding = matched["binding"].datum
+    if not isinstance(binding, dict):
+        raise SpecialError("internal: with binding capture must be a dict", source)
+    nc = binding.get("name")
+    ec = binding.get("expr")
+    name = nc.datum if nc is not None else None
+    expr = ec.datum if ec is not None else None
+    body = matched["body"].datum
 
-    # print(f"binding: {binding.source}")
+    # print(f"binding: {binding}")
     # print(f"name: {name}")
     # print(f"expr: {expr}")
     # print(f"body: {body}")
@@ -112,8 +126,7 @@ def special_with(compiler, source, tc=False):
 
 
 @builtin("compile/dyn-with")
-@special_forms(_WITH_PATTERNS)
-@special(symbol("compile/dyn-with"))
+@special("compile/dyn-with", patterns=_WITH_PATTERNS_FULL)
 def special_dyn_with(compiler, source, tc=False):
     """
     Compile (compile/dyn-with [name? expr] BODY...). Multi-shot context manager
@@ -126,10 +139,14 @@ def special_dyn_with(compiler, source, tc=False):
     if matched is None:
         raise SpecialError("dyn-with requires [name? expr] and body", source)
 
-    binding = matched["binding"]
-    name = binding.name
-    expr = binding.value
-    body = matched["body"].source
+    binding = matched["binding"].datum
+    if not isinstance(binding, dict):
+        raise SpecialError("internal: dyn-with binding capture must be a dict", source)
+    nc = binding.get("name")
+    ec = binding.get("expr")
+    name = nc.datum if nc is not None else None
+    expr = ec.datum if ec is not None else None
+    body = matched["body"].datum
 
     fragment = compiler.fragment(called_by)
     fragment.merge(compiler.full_compile(expr, False))

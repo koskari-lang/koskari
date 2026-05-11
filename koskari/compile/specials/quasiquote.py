@@ -44,9 +44,9 @@ from ...lib import nil, OpCode, symbol
 from ...types import cons, get_position, is_nil, is_pair, set_position
 from ...exceptions import SpecialError
 from ..compiler import _is_const
+from ...matcher_ng import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ..helpers import special
-
+from ...syntax_ng import special
 
 _symbol_apply_layout = symbol("compile/apply-layout")
 _symbol_quasiquote = symbol("compile/quasiquote")
@@ -55,6 +55,8 @@ _symbol_quote = symbol("compile/quote")
 _symbol_quote_block = symbol("compile/quote-block")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _qq_expr(compiler, frag, expr, level):
@@ -337,7 +339,7 @@ def _qq_list(compiler, frag, lst, level):
 
 
 @builtin("compile/quasiquote")
-@special(symbol("compile/quasiquote"))
+@special("compile/quasiquote", patterns=_DEFAULT_PATTERNS)
 def special_quasiquote(compiler, source, tc=False):
     """
     Compile (compile/quasiquote EXPR) — the backtick quasi-quote special form.
@@ -363,7 +365,7 @@ def special_quasiquote(compiler, source, tc=False):
 
 
 @builtin("compile/quote-block")
-@special(symbol("compile/quote-block"))
+@special("compile/quote-block", patterns=_DEFAULT_PATTERNS)
 def special_quote_block(compiler, source, tc=False):
     """
     Compile (compile/quote-block BLOCK-REPR) as (compile/quote BLOCK-REPR)
@@ -392,7 +394,7 @@ def special_quote_block(compiler, source, tc=False):
 
 
 @builtin("compile/quasiquote-block")
-@special(symbol("compile/quasiquote-block"))
+@special("compile/quasiquote-block", patterns=_DEFAULT_PATTERNS)
 def special_quasiquote_block(compiler, source, tc=False):
     """
     Compile (compile/quasiquote-block BLOCK-REPR) as a source rewrite
@@ -427,7 +429,7 @@ def special_quasiquote_block(compiler, source, tc=False):
 
 
 @builtin("compile/unquote")
-@special(symbol("compile/unquote"))
+@special("compile/unquote", patterns=_DEFAULT_PATTERNS)
 def special_unquote(compiler, source, tc=False):
     """
     Raise SpecialError — unquote is only valid inside quasiquote
@@ -437,7 +439,7 @@ def special_unquote(compiler, source, tc=False):
 
 
 @builtin("compile/unquote-splicing")
-@special(symbol("compile/unquote-splicing"))
+@special("compile/unquote-splicing", patterns=_DEFAULT_PATTERNS)
 def special_unquote_splicing(compiler, source, tc=False):
     """
     Raise SpecialError — unquote-splicing is only valid inside quasiquote

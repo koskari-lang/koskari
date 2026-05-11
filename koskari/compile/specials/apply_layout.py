@@ -29,13 +29,16 @@ forms. Multiple top-level results are wrapped in compile/begin.
 from ...exceptions import SpecialError
 from ...lib import car, cdr, cons, keyword, nil, symbol
 from ...types import is_nil, is_pair, unpack
+from ...matcher_ng import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ..helpers import special
+from ...syntax_ng import special
 
 
 _keyword_block = keyword(':block:')
 _symbol_begin = symbol('compile/begin')
 _symbol_layout_block = symbol('layout/block')
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _is_block(form):
@@ -154,7 +157,7 @@ def _expand_block(compiler, block, rest):
 
 
 @builtin("compile/apply-layout")
-@special(symbol("compile/apply-layout"))
+@special("compile/apply-layout", patterns=_DEFAULT_PATTERNS)
 def special_apply_layout(compiler, source, tc=False):
     """
     Compile (compile/apply-layout BLOCK ...) — depth-first expand :block:

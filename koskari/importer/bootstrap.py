@@ -35,12 +35,12 @@ from ..types import as_coroutine
 from ..compile import specials as _koskari_compile_specials  # noqa: F401
 from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 from ..stdlib import BUILTINS
-from ..syntax import (Syntax,
-                      build_macro_syntax as build_macro_rules,
-                      build_special_match,
-                      build_special_syntax as build_special_rules,
-                      build_syntax as build_syntax_rules)
-from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
+from ..syntax_ng import (build_macro_rules,
+                         build_special_match,
+                         build_special_rules,
+                         build_syntax_rules)
+from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
+                   MemoizedRef,
                    Module, ModuleNamespace, ParamRef, Ref, apply, build_dict,
                    build_list, build_set, build_tuple, car, cdr, cons, defer,
                    demand, demand_apply, demand_call, deref, gensym, keyword,
@@ -95,7 +95,7 @@ def make_bootstrap():
     _ty('pair', pair)
     _ty('symbol', symbol)
     _ty('values', values)
-    _ty('syntax', Syntax)
+    _ty('syntax', Datum)
 
     _bind('apply', apply)
     _bind('as-coroutine', as_coroutine)

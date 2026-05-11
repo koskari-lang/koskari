@@ -22,10 +22,11 @@ macro-rules, special-rules, syntax-match, macro-match, special-match).
 """
 
 
+from ...compile.helpers_ng import match, match1
 from ...exceptions import LayoutError
 from ...lib import car, cons, nil, symbol
-from ...matcher import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, REPEAT, VALUE,
-                        match, match1)
+from ...matcher_ng import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, VALUE,
+                          repeat_capture)
 from ...stdlib import builtin
 from ...types import (
     get_position,
@@ -60,27 +61,27 @@ _MATCH_FORM_PATTERN = LIST(LITERAL_SYM('match'), VALUE('inner'))
 
 _SYNTAX_RULES_FORM = MATCH(
     LIST(LITERAL_SYM('syntax-rules'), VALUE('literals_expr')),
-    REPEAT('rules', PAIR('rule'), min_count=1))
+    repeat_capture('rules', PAIR('rule')))
 
 _MACRO_RULES_FORM = MATCH(
     LIST(LITERAL_SYM('macro-rules'), VALUE('literals_expr')),
-    REPEAT('rules', PAIR('rule'), min_count=1))
+    repeat_capture('rules', PAIR('rule')))
 
 _SPECIAL_RULES_FORM = MATCH(
     LIST(LITERAL_SYM('special-rules'), VALUE('literals_expr')),
-    REPEAT('rules', PAIR('rule'), min_count=1))
+    repeat_capture('rules', PAIR('rule')))
 
 _SYNTAX_MATCH_FORM = MATCH(
     LIST(LITERAL_SYM('syntax-match')),
-    REPEAT('rules', PAIR('rule'), min_count=1))
+    repeat_capture('rules', PAIR('rule')))
 
 _MACRO_MATCH_FORM = MATCH(
     LIST(LITERAL_SYM('macro-match')),
-    REPEAT('rules', PAIR('rule'), min_count=1))
+    repeat_capture('rules', PAIR('rule')))
 
 _SPECIAL_MATCH_FORM = MATCH(
     LIST(LITERAL_SYM('special-match')),
-    REPEAT('rules', PAIR('rule'), min_count=1))
+    repeat_capture('rules', PAIR('rule')))
 
 
 _symbol_syntax_rules = symbol('syntax-rules')
@@ -130,7 +131,7 @@ def _pattern_template_from_rule(rule_source):
     template = rule_parts[-1]
     match_m = match1(pattern, [_MATCH_FORM_PATTERN])
     if match_m is not None:
-        pattern = match_m['inner'].source
+        pattern = match_m['inner'].datum
     return pattern, template
 
 
@@ -138,13 +139,14 @@ def _syntax_rules_like_rows(rule_matches):
     """
     Build (PATTERN TEMPLATE) rows for syntax-rules / macro-rules / special-rules.
 
-    :param rule_matches: ``repeat.matches`` from a syntax-rules-shaped rule list
+    :param rule_matches: list of repeat frames from a syntax-rules-shaped rule list
     :return: list of ``cons(pattern, template, nil)`` forms
     """
 
     rules = []
-    for sub_res, _ in rule_matches:
-        pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
+    for sub_res in rule_matches:
+        pattern, template = _pattern_template_from_rule(
+            sub_res['rule'].datum)
         rules.append(cons(pattern, template, nil))
     return rules
 
@@ -170,8 +172,8 @@ def layout_syntax_rules(source, peers):
             'syntax-rules requires literals list and at least one rule',
             get_position(source))
 
-    literals = _literals_to_list(m['literals_expr'].source, source)
-    rules = _syntax_rules_like_rows(m['rules'].matches)
+    literals = _literals_to_list(m['literals_expr'].datum, source)
+    rules = _syntax_rules_like_rows(m['rules'])
 
     return cons(_symbol_syntax_rules, literals, *rules, nil)
 
@@ -196,8 +198,8 @@ def layout_macro_rules(source, peers):
             'macro-rules requires literals list and at least one rule',
             get_position(source))
 
-    literals = _literals_to_list(m['literals_expr'].source, source)
-    rules = _syntax_rules_like_rows(m['rules'].matches)
+    literals = _literals_to_list(m['literals_expr'].datum, source)
+    rules = _syntax_rules_like_rows(m['rules'])
 
     return cons(_symbol_macro_rules, literals, *rules, nil)
 
@@ -222,8 +224,8 @@ def layout_special_rules(source, peers):
             'special-rules requires literals list and at least one rule',
             get_position(source))
 
-    literals = _literals_to_list(m['literals_expr'].source, source)
-    rules = _syntax_rules_like_rows(m['rules'].matches)
+    literals = _literals_to_list(m['literals_expr'].datum, source)
+    rules = _syntax_rules_like_rows(m['rules'])
 
     return cons(_symbol_special_rules, literals, *rules, nil)
 
@@ -249,8 +251,9 @@ def layout_syntax_match(source, peers):
             get_position(source))
 
     rules = []
-    for sub_res, _ in m['rules'].matches:
-        pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
+    for sub_res in m['rules']:
+        pattern, template = _pattern_template_from_rule(
+            sub_res['rule'].datum)
         rules.append(cons(pattern, template, nil))
 
     return cons(_symbol_syntax_match, *rules, nil)
@@ -277,8 +280,9 @@ def layout_macro_match(source, peers):
             get_position(source))
 
     rules = []
-    for sub_res, _ in m['rules'].matches:
-        pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
+    for sub_res in m['rules']:
+        pattern, template = _pattern_template_from_rule(
+            sub_res['rule'].datum)
         rules.append(cons(pattern, template, nil))
 
     return cons(_symbol_macro_match, *rules, nil)
@@ -305,8 +309,9 @@ def layout_special_match(source, peers):
             get_position(source))
 
     rules = []
-    for sub_res, _ in m['rules'].matches:
-        pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
+    for sub_res in m['rules']:
+        pattern, template = _pattern_template_from_rule(
+            sub_res['rule'].datum)
         rules.append(cons(pattern, template, nil))
 
     return cons(_symbol_special_match, *rules, nil)
@@ -333,8 +338,8 @@ def layout_define_syntax(source, peers):
             'define-syntax block requires name and single transformer form',
             get_position(source))
 
-    name = m['name'].source
-    transformer_spec = m['transformer'].source
+    name = m['name'].datum
+    transformer_spec = m['transformer'].datum
     head = car(transformer_spec)
     if not is_symbol(head) or str(head) not in _ALLOWED_DEFINE_SYNTAX_TRANSFORMERS:
         raise LayoutError(

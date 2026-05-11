@@ -31,7 +31,7 @@ from koskari.lib import Code, FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 
 
-pytestmark = pytest.mark.phase_infra
+pytestmark = pytest.mark.phase_reproducers
 
 
 def _make_truthy_code():

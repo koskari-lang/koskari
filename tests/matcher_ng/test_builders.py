@@ -633,15 +633,27 @@ class TestEagerValidation(unittest.TestCase):
             FIELD(TEST_ANY()).freeze()
 
 
-    def test_duplicate_slot_rejected_on_freeze(self):
+    def test_duplicate_plain_capture_allowed_on_freeze(self):
         """
-        Two CAPTURE nodes binding the same slot name raise ValueError
-        at freeze time
+        Two plain CAPTURE nodes for the same slot are allowed at freeze time
+        so syntax-rules can repeat a pattern variable (match requires equal
+        values at runtime)
         """
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x"))
-        with self.assertRaises(ValueError):
+        pat.freeze()
+
+
+    def test_duplicate_incompatible_capture_rejected_on_freeze(self):
+        """
+        Two CAPTURE nodes for the same slot with different capture kinds
+        raise ValueError at freeze time
+        """
+
+        pat = MATCH(CAPTURE("x"), CAPTURE("x", TYPE("symbol")))
+        with self.assertRaises(ValueError) as ctx:
             pat.freeze()
+        self.assertIn("differing matcher type", str(ctx.exception))
 
 
     def test_duplicate_capture_rest_slot_rejected(self):

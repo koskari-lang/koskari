@@ -1939,7 +1939,22 @@ int KosMatchSubject_FromKosPair(
    Returns 0 on success, -1 on error. Out subject must be released
    with KosMatchSubject_Release.
 */
+static PyObject *matcher_peel_datum(PyObject *obj) {
+  while (obj && KosDatum_Check(obj)) {
+    KosDatum *d = (KosDatum *) obj;
+    obj = d->datum;
+  }
+  return obj;
+}
+
+
 static int subject_from_any(PyObject *value, KosMatchSubject *out) {
+  /* Reader output often wraps pair-tree cells in Datum. Iterating a pair as
+     a Python sequence yields (car, cdr), which breaks FORM on a single list
+     cell such as ((t 1)): the matcher would see two spine elements and
+     fail to consume the trailing nil. Peel Datum layers so KosPair lists
+     use the proper-list spine adapter. */
+  value = matcher_peel_datum(value);
   if (KosPair_Check(value) || KosNil_Check(value))
     return KosMatchSubject_FromKosPair(value, out);
   return KosMatchSubject_FromPySequence(value, out);
@@ -2146,9 +2161,10 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
 
   case KOS_MATCH_TEST_LITERAL: {
     PyObject *lit = PyTuple_GET_ITEM(e->m->consts, t->ref_index);
-    if (lit == elem)
+    PyObject *got = matcher_peel_datum(elem);
+    if (lit == got)
       return 1;
-    int cmp = PyObject_RichCompareBool(lit, elem, Py_EQ);
+    int cmp = PyObject_RichCompareBool(lit, got, Py_EQ);
     if (cmp < 0)
       return -1;
     return cmp;
@@ -2161,7 +2177,8 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
       return -1;
     }
     PyObject *cls = PyTuple_GET_ITEM(e->extern_env, t->ref_index);
-    int r = PyObject_IsInstance(elem, cls);
+    PyObject *got = matcher_peel_datum(elem);
+    int r = PyObject_IsInstance(got, cls);
     if (r < 0)
       return -1;
     return r;
@@ -2174,7 +2191,8 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
       return -1;
     }
     PyObject *pred = PyTuple_GET_ITEM(e->extern_env, t->ref_index);
-    PyObject *res = PyObject_CallOneArg(pred, elem);
+    PyObject *got = matcher_peel_datum(elem);
+    PyObject *res = PyObject_CallOneArg(pred, got);
     if (! res)
       return -1;
     int r = PyObject_IsTrue(res);

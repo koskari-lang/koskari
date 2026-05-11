@@ -26,8 +26,8 @@ import pytest
 from koskari.lib import cons, nil, symbol
 from koskari.matcher_ng import parse_explicit_rule_pattern
 from koskari.syntax_ng import (build_macro_match, build_macro_syntax,
-                               build_special_match, build_special_syntax,
-                               build_syntax, build_syntax_match)
+                               build_special_match_from_rows, build_special_syntax,
+                               build_syntax_from_datums, build_syntax_match)
 from koskari.types import build_proper
 
 
@@ -55,7 +55,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
             (build_proper(m, onlyhere), symbol("narrow")),
             (build_proper(m, symbol("a"), symbol("b")), symbol("wide")),
         )
-        s = build_syntax(m, (onlyhere,), rules)
+        s = build_syntax_from_datums(m, (onlyhere,), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("solo"), symbol("extra"), nil)
         out = s.compile_impl(comp, src, False)
@@ -151,7 +151,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         def proc(compiler, source_obj, result, tc):
             return symbol("special-match-out")
 
-        s = build_special_match(m, ((pat, proc),))
+        s = build_special_match_from_rows(m, ((pat, proc),))
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("special-match-out"))
@@ -162,14 +162,14 @@ class TestPatternLanguageTraps(unittest.TestCase):
 
     def test_rule_ellipsis_pattern_builds_and_matches(self):
         """
-        RULE dialect ellipsis in ``build_syntax`` is accepted
+        RULE dialect ellipsis in ``build_syntax_from_datums`` is accepted
         """
 
         m = symbol("compile/trap-ell")
         a = symbol("a")
         body_pat = build_proper(m, a, Ellipsis)
         rules = ((body_pat, symbol("ellipsis-ok")),)
-        s = build_syntax(m, (), rules)
+        s = build_syntax_from_datums(m, (), rules)
         comp = _StubCompiler()
         src = build_proper(m, symbol("x"), symbol("y"))
         out = s.compile_impl(comp, src, False)

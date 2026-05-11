@@ -24,26 +24,11 @@ import unittest
 import pytest
 
 from koskari.lib import Datum, cons, keyword, nil, symbol
-from koskari.matcher_ng import (
-    BINDING,
-    BINDINGS,
-    BODY,
-    CAPTURE,
-    DECL,
-    DEFINE,
-    FORMALS,
-    FORMALS_SOURCE_KEY,
-    MATCH,
-    Hygiene,
-    HygienicMatchCompiler,
-    LITERAL,
-    MatchCompiler,
-    Matcher,
-    MatchResult,
-    TYPE,
-    USING,
-    make_matcher,
-)
+from koskari.matcher_ng import (BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE,
+                                FORMALS, FORMALS_SOURCE_KEY, LITERAL, MATCH,
+                                TYPE, USING, Hygiene, HygienicMatchCompiler,
+                                MatchCompiler, Matcher, MatchResult,
+                                make_matcher)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -178,7 +163,7 @@ class TestDECL(unittest.TestCase):
         sa = symbol("foo")
         result = m.match((sa,))
         self.assertTrue(result.matched)
-        self.assertIs(_ucaps(result)["d"], sa)
+        self.assertIs(_ucaps(result)["d"][FORMALS_SOURCE_KEY], sa)
 
 
     def test_decl_one_element_list(self):
@@ -192,8 +177,8 @@ class TestDECL(unittest.TestCase):
         subj = (_list(sa),)
         result = m.match(subj)
         self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["d"], _list(sa))
-        self.assertIs(_ucaps(result)["name"], sa)
+        self.assertEqual(_ucaps(result)["d"][FORMALS_SOURCE_KEY], _list(sa))
+        self.assertIs(_ucaps(result)["d"]["name"], sa)
 
 
     def test_decl_as_form(self):
@@ -208,8 +193,8 @@ class TestDECL(unittest.TestCase):
         subj = (_list(sa, keyword("as"), sb),)
         result = m.match(subj)
         self.assertTrue(result.matched)
-        self.assertIs(_ucaps(result)["type"], sa)
-        self.assertIs(_ucaps(result)["name"], sb)
+        self.assertIs(_ucaps(result)["d"]["type"], sa)
+        self.assertIs(_ucaps(result)["d"]["name"], sb)
 
 
     def test_decl_name_with_keyword_tail(self):
@@ -226,8 +211,8 @@ class TestDECL(unittest.TestCase):
         tail_form = _list(sa, kt, st)
         result = m.match((tail_form,))
         self.assertTrue(result.matched)
-        self.assertIs(_ucaps(result)["name"], sa)
-        self.assertEqual(_ucaps(result)["decl_tail"], cons(kt, st, nil))
+        self.assertIs(_ucaps(result)["d"]["name"], sa)
+        self.assertEqual(_ucaps(result)["d"]["decl_tail"], cons(kt, st, nil))
 
 
     def test_decl_rejects_non_symbol_non_pair(self):
@@ -253,7 +238,8 @@ class TestDECL(unittest.TestCase):
         owner = hygiene.binders["d"]
         sx = symbol("x")
         self.assertEqual(
-            set(owner.iter_introduced_symbols({"name": Datum(sx)})), {sx})
+            set(owner.iter_introduced_symbols(
+                {"d": {"name": Datum(sx)}})), {sx})
 
 
 class TestBINDING(unittest.TestCase):
@@ -271,9 +257,9 @@ class TestBINDING(unittest.TestCase):
         subj = (_list(sa, 7),)
         result = m.match(subj)
         self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["b"], _list(sa, 7))
-        self.assertIs(_ucaps(result)["name"], sa)
-        self.assertEqual(_ucaps(result)["expr"], 7)
+        self.assertEqual(_ucaps(result)["b"][FORMALS_SOURCE_KEY], _list(sa, 7))
+        self.assertIs(_ucaps(result)["b"]["name"], sa)
+        self.assertEqual(_ucaps(result)["b"]["expr"], 7)
 
 
     def test_binding_expr_as_name_form(self):
@@ -287,8 +273,8 @@ class TestBINDING(unittest.TestCase):
         subj = (_list(7, keyword("as"), sa),)
         result = m.match(subj)
         self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["expr"], 7)
-        self.assertIs(_ucaps(result)["name"], sa)
+        self.assertEqual(_ucaps(result)["b"]["expr"], 7)
+        self.assertIs(_ucaps(result)["b"]["name"], sa)
 
 
     def test_binding_rejects_unrecognised_shape(self):
@@ -315,8 +301,10 @@ class TestBINDING(unittest.TestCase):
         owner = hygiene.binders["b"]
         sn = symbol("n")
         self.assertEqual(
-            set(owner.iter_introduced_symbols({"name": Datum(sn)})), {sn})
-        self.assertEqual(list(owner.iter_recurse_targets({"expr": 99})), [99])
+            set(owner.iter_introduced_symbols(
+                {"b": {"name": Datum(sn)}})), {sn})
+        self.assertEqual(
+            list(owner.iter_recurse_targets({"b": {"expr": 99}})), [99])
 
 
 class TestBINDINGS(unittest.TestCase):
@@ -324,24 +312,26 @@ class TestBINDINGS(unittest.TestCase):
 
     def test_bindings_inline_yields_frame_list(self):
         """
-        BINDINGS consumes inline binding cells from the surrounding
-        spine and produces a list of per-cell frame dicts holding
-        name and expr. The remainder of the subject is consumed by
-        the trailing REST capture
+        BINDINGS matches one spine cell: ``nil`` or a single proper list of
+        binding-shaped cells. The repeat runs inside that cell, so several
+        bindings are one outer list element; the next spine slot is the tail
+        capture
         """
 
         pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
-        subj = (_list(sa, 1), _list(sb, 2), "tail")
+        subj = (_list(_list(sa, 1), _list(sb, 2)), "tail")
         result = m.match(subj)
         self.assertTrue(result.matched)
         frames = _ucaps(result)["bs"]
         self.assertIsInstance(frames, list)
         self.assertEqual(len(frames), 2)
+        self.assertEqual(frames[0][FORMALS_SOURCE_KEY], _list(sa, 1))
         self.assertIs(frames[0]["name"], sa)
         self.assertEqual(frames[0]["expr"], 1)
+        self.assertEqual(frames[1][FORMALS_SOURCE_KEY], _list(sb, 2))
         self.assertIs(frames[1]["name"], sb)
         self.assertEqual(frames[1]["expr"], 2)
         self.assertEqual(_ucaps(result)["tail"], "tail")
@@ -361,18 +351,16 @@ class TestBINDINGS(unittest.TestCase):
         self.assertEqual(_ucaps(result)["tail"], "tail")
 
 
-    def test_bindings_zero_inline_cells(self):
+    def test_bindings_rejects_non_binding_list_first_cell(self):
         """
-        BINDINGS adjacent to a non-binding-shaped element consumes
-        zero cells and binds the slot to an empty list
+        The binding-list cell must be ``nil`` or a list of binding pairs; a
+        non-list first spine element does not match the nonempty arm and is
+        not ``nil``, so the whole pattern fails
         """
 
         pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
-        result = m.match((42,))
-        self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["bs"], [])
-        self.assertEqual(_ucaps(result)["tail"], 42)
+        self.assertFalse(m.match((42, "tail")).matched)
 
 
     def test_bindings_default_mode_recorded(self):
@@ -417,9 +405,9 @@ class TestUSING(unittest.TestCase):
         result = m.match(subj)
         self.assertTrue(result.matched)
         c = _ucaps(result)
-        self.assertIs(c["name"], sa)
-        self.assertEqual(c["expr"], 7)
-        self.assertNotIn("lhs", c)
+        self.assertIs(c["u"]["name"], sa)
+        self.assertEqual(c["u"]["expr"], 7)
+        self.assertNotIn("lhs", c["u"])
 
 
     def test_using_expr_as_name(self):
@@ -435,9 +423,9 @@ class TestUSING(unittest.TestCase):
         result = m.match(subj)
         self.assertTrue(result.matched)
         c = _ucaps(result)
-        self.assertEqual(c["expr"], 7)
-        self.assertIs(c["name"], sa)
-        self.assertNotIn("lhs", c)
+        self.assertEqual(c["u"]["expr"], 7)
+        self.assertIs(c["u"]["name"], sa)
+        self.assertNotIn("lhs", c["u"])
 
 
     def test_using_bare_expr(self):
@@ -451,9 +439,9 @@ class TestUSING(unittest.TestCase):
         result = m.match(subj)
         self.assertTrue(result.matched)
         c = _ucaps(result)
-        self.assertEqual(c["expr"], 7)
-        self.assertNotIn("name", c)
-        self.assertNotIn("lhs", c)
+        self.assertEqual(c["u"]["expr"], 7)
+        self.assertNotIn("name", c["u"])
+        self.assertNotIn("lhs", c["u"])
 
 
     def test_using_unpack_form(self):
@@ -470,9 +458,9 @@ class TestUSING(unittest.TestCase):
         result = m.match(subj)
         self.assertTrue(result.matched)
         c = _ucaps(result)
-        self.assertEqual(c["lhs"], lhs)
-        self.assertEqual(c["expr"], 7)
-        self.assertNotIn("name", c)
+        self.assertEqual(c["u"]["lhs"], lhs)
+        self.assertEqual(c["u"]["expr"], 7)
+        self.assertNotIn("name", c["u"])
 
 
     def test_using_rejects_non_pair(self):
@@ -497,8 +485,10 @@ class TestUSING(unittest.TestCase):
         owner = hygiene.binders["u"]
         sn = symbol("n")
         self.assertEqual(
-            set(owner.iter_introduced_symbols({"name": Datum(sn)})), {sn})
-        self.assertEqual(list(owner.iter_recurse_targets({"expr": 1})), [1])
+            set(owner.iter_introduced_symbols(
+                {"u": {"name": Datum(sn)}})), {sn})
+        self.assertEqual(
+            list(owner.iter_recurse_targets({"u": {"expr": 1}})), [1])
 
 
 class TestFORMALS(unittest.TestCase):
@@ -1022,16 +1012,15 @@ class TestComposition(unittest.TestCase):
 
     def test_let_shaped_pattern_with_bindings_and_body(self):
         """
-        A let-shaped pattern composes BINDINGS with BODY into one
-        matcher; binding cells are inlined into the spine ahead of
-        the body
+        A let-shaped pattern composes BINDINGS with BODY: the first spine
+        element is the whole binding block ``[[a 1] [b 2]]``, then body forms
         """
 
         pat = MATCH(BINDINGS("bs"), BODY("body"))
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
-        result = m.match(([sa, 1], [sb, 2], "b1", "b2"))
+        result = m.match((_list(_list(sa, 1), _list(sb, 2)), "b1", "b2"))
         self.assertTrue(result.matched)
         frames = _ucaps(result)["bs"]
         self.assertEqual(len(frames), 2)

@@ -26,8 +26,13 @@ clear-exception, load-exception, and raise.
 from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import fill_position, get_position, is_keyword, is_pair, unpack
 from ...exceptions import SpecialError
+from ...matcher_ng import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ..helpers import helper_begin, helper_using, pycons, special
+from ...syntax_ng import special
+from ..helpers_ng import helper_begin, helper_using, pycons
+
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 _keyword_except = keyword("except")
@@ -134,7 +139,7 @@ def _collect_catches(compiler, catches):
 
 
 @builtin("compile/check-exception")
-@special(symbol("compile/check-exception"))
+@special("compile/check-exception", patterns=_DEFAULT_PATTERNS)
 def special_check_exception(compiler, source, tc=False):
     called_by, checks = source
 
@@ -152,7 +157,7 @@ def special_check_exception(compiler, source, tc=False):
 
 
 @builtin("compile/clear-exception")
-@special(symbol("compile/clear-exception"))
+@special("compile/clear-exception", patterns=_DEFAULT_PATTERNS)
 def special_clear_exception(compiler, source, tc=False):
     called_by, rest = source
 
@@ -166,7 +171,7 @@ def special_clear_exception(compiler, source, tc=False):
 
 
 @builtin("compile/load-exception")
-@special(symbol("compile/load-exception"))
+@special("compile/load-exception", patterns=_DEFAULT_PATTERNS)
 def special_load_exception(compiler, source, tc=False):
     called_by, rest = source
 
@@ -180,7 +185,7 @@ def special_load_exception(compiler, source, tc=False):
 
 
 @builtin("compile/try")
-@special(symbol("compile/try"))
+@special("compile/try", patterns=_DEFAULT_PATTERNS)
 def special_try(compiler, source, tc=False):
     called_by, rest = source
     if rest is nil or not is_pair(rest):
@@ -346,7 +351,7 @@ def _except(compiler, catches):
 
 
 @builtin("compile/raise")
-@special(symbol("compile/raise"))
+@special("compile/raise", patterns=_DEFAULT_PATTERNS)
 def special_raise(compiler, source, tc=False):
     called_by, rest = source
 

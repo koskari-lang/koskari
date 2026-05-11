@@ -11,14 +11,15 @@ alwaysApply: true
 - Document observed failures clearly, including reproduction steps and suspected root cause.
 - Use `tox` as the canonical entry point for running test suites and related checks.
 
-- Use the top-level Makefile
-- DO NOT use tests/native/tests.mk directly
-- Use the top-level Makefile
-
 - Running `python` or `python3` directly is illegal
 - Running `pip` is illegal
+- Running `pytest` is illegal
 - All python unit tests must be invoked via `tox`
 - NO EXECUTION WORKAROUNDS ARE PERMITTED.
 - DO NOT ATTEMPT TO EXECUTE PYTHON BY SEPARATE PATHS
 - ONLY TOX. ONLY TOX. ONLY TOX.
 - SKIPPING TESTS IS A FAILURE.
+
+
+When running individual tests, use `tox -qe py -- tests/<...>`
+See additional rules in @tox.mdc

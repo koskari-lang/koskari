@@ -36,6 +36,7 @@ from koskari.matcher_ng import (
     FIELD,
     FORM,
     FORMALS,
+    FORMALS_SOURCE_KEY,
     GROUP,
     KNOWN_HEADS,
     LIST,
@@ -736,9 +737,9 @@ class TestRecursiveLowering(unittest.TestCase):
         result = m.match(
             (outer,), symbol=symbol, keyword=keyword)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["b"].datum, cell)
-        self.assertIs(result.captures["name"].datum, sname)
-        self.assertIs(result.captures["expr"].datum, sval)
+        self.assertEqual(result.captures["b"][FORMALS_SOURCE_KEY].datum, cell)
+        self.assertIs(result.captures["b"]["name"].datum, sname)
+        self.assertIs(result.captures["b"]["expr"].datum, sval)
 
 
 class TestRegistry(unittest.TestCase):

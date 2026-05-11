@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from koskari.exceptions import CompilerError, SpecialError
-from koskari.lib import Datum, gensym, nil, keyword
+from koskari.lib import Datum, cons, gensym, nil, keyword
 from koskari.types import build_proper, is_pair, is_symbol, unpack
 
 
@@ -366,6 +366,12 @@ def collect_binding_symbols(node, find_compiled):
 
     for form in binder_recurse_targets(matched, hygiene):
         out |= collect_binding_symbols(form, find_compiled)
+
+    if hygiene.is_empty():
+        for elem in rest.unpack():
+            out |= collect_binding_symbols(
+                elem if is_pair(elem) else cons(elem, nil),
+                find_compiled)
 
     return out
 

@@ -21,8 +21,8 @@ import unittest
 import pytest
 
 from koskari.lib import cons, nil, symbol
-from koskari.syntax_ng import (build_macro_syntax, build_special_match,
-                               build_special_syntax, build_syntax)
+from koskari.syntax_ng import (build_macro_syntax, build_special_match_from_rows,
+                               build_special_syntax, build_syntax_from_datums)
 from koskari.types import build_proper
 
 
@@ -50,7 +50,7 @@ class TestBuildSyntax(unittest.TestCase):
             (build_proper(m, symbol("x")), symbol("first")),
             (build_proper(m, symbol("y")), symbol("second")),
         )
-        s = build_syntax(m, (), rules)
+        s = build_syntax_from_datums(m, (), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("z"), nil)
         out = s.compile_impl(comp, src, False)
@@ -68,7 +68,7 @@ class TestBuildSyntax(unittest.TestCase):
             (build_proper(m, onlyhere), symbol("narrow")),
             (build_proper(m, symbol("a"), symbol("b")), symbol("wide")),
         )
-        s = build_syntax(m, (onlyhere,), rules)
+        s = build_syntax_from_datums(m, (onlyhere,), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("solo"), symbol("extra"), nil)
         out = s.compile_impl(comp, src, False)
@@ -77,12 +77,12 @@ class TestBuildSyntax(unittest.TestCase):
     def test_build_syntax_empty_rules_raises(self):
         m = symbol("compile/m3")
         with self.assertRaises(ValueError):
-            build_syntax(m, (), ())
+            build_syntax_from_datums(m, (), ())
 
     def test_build_syntax_bad_row_shape_raises(self):
         m = symbol("compile/m4")
         with self.assertRaises(ValueError):
-            build_syntax(m, (), ((symbol("a"), symbol("b"), symbol("c")),))
+            build_syntax_from_datums(m, (), ((symbol("a"), symbol("b"), symbol("c")),))
 
 
 class TestBuildMacroSyntax(unittest.TestCase):
@@ -161,7 +161,7 @@ class TestBuildSpecialSyntax(unittest.TestCase):
         def proc(compiler, source_obj, result, tc):
             return symbol("match-out")
 
-        s = build_special_match(m, ((pat, proc),))
+        s = build_special_match_from_rows(m, ((pat, proc),))
         src = cons(m, symbol("x"), nil)
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("match-out"))

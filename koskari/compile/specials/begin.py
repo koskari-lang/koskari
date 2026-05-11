@@ -22,14 +22,19 @@ Special form handler for compile/begin.
 """
 
 
-from ...lib import pair, symbol
+from ...lib import pair
 from ..compiler import ByteCodeFragment, Compiler
+from ...matcher_ng import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ..helpers import helper_begin, special
+from ...syntax_ng import special
+from ..helpers_ng import helper_begin
+
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 @builtin("compile/begin")
-@special(symbol("compile/begin"))
+@special("compile/begin", patterns=_DEFAULT_PATTERNS)
 def special_begin(
         compiler: Compiler,
         source: pair,

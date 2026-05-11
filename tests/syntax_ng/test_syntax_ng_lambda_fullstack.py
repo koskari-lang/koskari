@@ -23,17 +23,9 @@ import pytest
 from koskari.compile.compiler import CompilerMode
 from koskari.compile.helpers_ng import (discover_docstring, gather_formals,
                                         helper_begin)
+from koskari.compile.specials.lambda_ import _LAMBDA_PATTERNS
 from koskari.exceptions import SpecialError
 from koskari.lib import FormalsSpec, FunctionSpec, OpCode, nil, symbol
-from koskari.matcher_ng import (
-    FORMALS,
-    FORMALS_SOURCE_KEY,
-    LITERAL_KW,
-    MATCH,
-    REST,
-    SYMBOL,
-    VALUE,
-)
 from koskari.syntax_ng import special
 from tests.compile.specials import SpecialsTestCase
 
@@ -41,48 +33,9 @@ from tests.compile.specials import SpecialsTestCase
 pytestmark = pytest.mark.phase_specials
 
 
-_LAMBDA_NG_PATTERNS = [
-    MATCH(
-        SYMBOL("called-by"),
-        SYMBOL("name"),
-        LITERAL_KW("::"),
-        VALUE("return_type"),
-        FORMALS("formals", scope="body"),
-        REST("body")),
-    MATCH(
-        SYMBOL("called-by"),
-        SYMBOL("name"),
-        LITERAL_KW("type:"),
-        VALUE("return_type"),
-        FORMALS("formals", scope="body"),
-        REST("body")),
-    MATCH(
-        SYMBOL("called-by"),
-        LITERAL_KW("::"),
-        VALUE("return_type"),
-        FORMALS("formals", scope="body"),
-        REST("body")),
-    MATCH(
-        SYMBOL("called-by"),
-        LITERAL_KW("type:"),
-        VALUE("return_type"),
-        FORMALS("formals", scope="body"),
-        REST("body")),
-    MATCH(
-        SYMBOL("called-by"),
-        SYMBOL("name"),
-        FORMALS("formals", scope="body"),
-        REST("body")),
-    MATCH(
-        SYMBOL("called-by"),
-        FORMALS("formals", scope="body"),
-        REST("body")),
-]
-
-
 @special(
     "compile/lambda-ng",
-    patterns=_LAMBDA_NG_PATTERNS,
+    patterns=_LAMBDA_PATTERNS,
     unpack="match",
 )
 def special_lambda_ng(

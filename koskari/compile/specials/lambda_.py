@@ -18,87 +18,78 @@ Special form handler for compile/lambda.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
+:ai-assistant: Claude via Cursor
 """
 
 
-from ...lib import FormalsSpec, FunctionSpec, OpCode, nil, pair, symbol
-from ..compiler import ByteCodeFragment, Compiler, CompilerMode
-from ...exceptions import SpecialError
-from ...matcher import (
-    LITERAL_KW,
-    MATCH,
-    REST,
-    SYMBOL,
-    VALUE,
-    match,
-)
+from ...lib import FormalsSpec, FunctionSpec, OpCode, nil
+from ...matcher_ng import FORMALS, LITERAL_KW, MATCH, BODY, SYMBOL, VALUE
 from ...stdlib import builtin
-from ..helpers import (
-    FORMALS, discover_docstring, helper_begin, special, special_forms)
+from ...syntax_ng import special
+from ..compiler import ByteCodeFragment, CompilerMode
+from ..helpers_ng import discover_docstring, gather_formals, helper_begin
 
 
-_LAMBDA_PATTERNS = [
+_LAMBDA_PATTERNS = (
     MATCH(
+        SYMBOL("called-by"),
         SYMBOL("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
-        REST("body")),
+        BODY("body")),
     MATCH(
+        SYMBOL("called-by"),
         SYMBOL("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
-        REST("body")),
+        BODY("body")),
     MATCH(
+        SYMBOL("called-by"),
         LITERAL_KW("::"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
-        REST("body")),
+        BODY("body")),
     MATCH(
+        SYMBOL("called-by"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
-        REST("body")),
-    MATCH(SYMBOL("name"), FORMALS("formals", scope="body"), REST("body")),
-    MATCH(FORMALS("formals", scope="body"), REST("body")),
-]
+        BODY("body")),
+    MATCH(
+        SYMBOL("called-by"),
+        SYMBOL("name"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        SYMBOL("called-by"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+)
 
 
 @builtin("compile/lambda")
-@special_forms(_LAMBDA_PATTERNS)
-@special(symbol("compile/lambda"))
-def special_lambda(
-        compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+@special("compile/lambda", patterns=_LAMBDA_PATTERNS, unpack="match")
+def special_lambda(compiler, caps, tc=False) -> ByteCodeFragment:
     """
     Compile (lambda [args] body) or (lambda name [args] body).
     Named form binds name in the function scope for self-reference.
     """
 
-    called_by, rest = source
-    matched = match(rest, _LAMBDA_PATTERNS)
-    if matched is None:
-        raise SpecialError("lambda requires formals and body", source)
+    called_by = caps["called-by"].datum
 
-    named = matched.get("name", None)
+    named = caps.get("name")
     if named is not None:
-        named = named.source
+        named = named.datum
 
-    return_type_mr = matched.get("return_type")
-    return_type_src = return_type_mr.source if return_type_mr is not None else None
+    return_type_mr = caps.get("return_type")
+    return_type_src = return_type_mr.datum if return_type_mr else None
 
-    formals = matched["formals"]
-    pos = formals.positional
-    defaults = formals.defaults
-    kwonly = formals.kwonly
-    star = formals.star
-    starstar = formals.starstar
-    ann = formals.annotations or None
+    pos, defaults, kwonly, star, starstar, ann = gather_formals(
+        caps["formals"])
 
-    body_src = matched["body"].source
+    body_src = caps["body"].datum
 
     proper_name = str(named) if named else None
     fragment_name = proper_name or "<lambda>"

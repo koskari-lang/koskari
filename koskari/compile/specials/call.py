@@ -24,11 +24,12 @@ Special form handler for compile/call and compile/call-attr
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, pair, symbol
-from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE, match
+from ...matcher_ng import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE
+from ...stdlib import builtin
+from ...syntax_ng import special
 from ...types import is_symbol
 from ..compiler import ByteCodeFragment, Compiler
-from ...stdlib import builtin
-from ..helpers import gather_parameters_ng, special, special_forms
+from ..helpers_ng import gather_parameters_ng, match
 
 
 def _partition_args(args_seq):
@@ -96,9 +97,13 @@ _CALL_PATTERNS = [
 _sym_call_attr = symbol("compile/call-attr")
 
 
+_CALL_PATTERNS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _CALL_PATTERNS)
+
+
 @builtin("compile/call")
-@special_forms(_CALL_PATTERNS)
-@special(symbol("compile/call"))
+@special("compile/call", patterns=_CALL_PATTERNS_FULL)
 def special_call(
         compiler: Compiler,
         source: pair,
@@ -110,7 +115,7 @@ def special_call(
     if matched is None:
         raise SpecialError("compile/call requires at least a callable", source)
 
-    rest = matched["args"].source if "args" in matched else nil
+    rest = matched["args"].datum if "args" in matched else nil
 
     # rewriting ((attr obj a) args...) to
     # (compile/call-attr obj a args...)
@@ -119,9 +124,9 @@ def special_call(
         attr = matched["attr"]
         return cons(
             _sym_call_attr,
-            obj.source, attr.source, rest)
+            obj.datum, attr.datum, rest)
 
-    callable = matched["callable"].source
+    callable = matched["callable"].datum
 
     use_var_path = is_symbol(callable) and not tc
     name = str(callable) if is_symbol(callable) else None
@@ -230,10 +235,13 @@ _CALL_ATTR_PATTERNS = [
     MATCH(VALUE("obj"), SYMBOL("attr"), REST("args")),
 ]
 
+_CALL_ATTR_PATTERNS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _CALL_ATTR_PATTERNS)
+
 
 @builtin("compile/call-attr")
-@special_forms(_CALL_ATTR_PATTERNS)
-@special(_sym_call_attr)
+@special("compile/call-attr", patterns=_CALL_ATTR_PATTERNS_FULL)
 def special_call_attr(
         compiler: Compiler,
         source: pair,
@@ -247,9 +255,9 @@ def special_call_attr(
     if matched is None:
         raise SpecialError("compile/call-attr requires obj, attr, and optionally args", source)
 
-    obj = matched["obj"].source
-    attr = matched["attr"].source
-    args_src = matched["args"].source if "args" in matched else nil
+    obj = matched["obj"].datum
+    attr = matched["attr"].datum
+    args_src = matched["args"].datum if "args" in matched else nil
 
     use_var_path = is_symbol(obj) and not tc
 

@@ -88,6 +88,7 @@ __all__ = [
     "repeat_capture",
     "slot_prefix",
     "binding_inner_pattern",
+    "bindings_grouped_list_cell_pattern",
     "BINDING_CELL",
 
     "DEFINE",
@@ -97,6 +98,7 @@ __all__ = [
     "FORMALS",
     "FORMALS_SOURCE_KEY",
     "USING",
+    "USING_UNPACK",
     "BODY",
 
     "HygienicPattern",
@@ -106,6 +108,7 @@ __all__ = [
     "lookup_matcher",
     "parse_matcher",
     "parse_explicit_rule_pattern",
+    "pattern_slot_names",
     "META_PATTERN",
     "META_MATCHER",
     "KNOWN_HEADS",
@@ -143,7 +146,7 @@ class MatchCompiler:
         self.extern_indices = {}
         self.consts = []
         self.nodes = []
-        self.capture_scope_stack = [set()]
+        self.capture_scope_stack = [{}]
         self.in_class_fields = False
 
 
@@ -152,7 +155,7 @@ class MatchCompiler:
         Begin an isolated duplicate-slot scope (used per ONEOF branch)
         """
 
-        self.capture_scope_stack.append(set())
+        self.capture_scope_stack.append({})
 
 
     def pop_capture_scope(self):
@@ -218,18 +221,32 @@ class MatchCompiler:
         return idx
 
 
-    def claim_slot_name(self, name):
+    def claim_slot_name(self, name, signature):
         """
-        Reject duplicate slot bindings within the current capture scope.
-        ONEOF branches use a fresh scope per branch so alternate arms may
-        reuse the same slot names
+        Reject incompatible duplicate slot bindings within the current capture
+        scope. A second claim with the same ``signature`` as the first is
+        allowed so syntax-rules patterns can repeat a pattern variable (the
+        native engine requires the same value twice). ONEOF branches use a fresh
+        scope per branch so alternate arms may reuse slot names
+
+        :param name: capture slot name
+        :param signature: hashable tuple describing this claim
         """
 
         top = self.capture_scope_stack[-1]
         if name in top:
+            prev = top[name]
+            if prev == signature:
+                return
+            if (isinstance(prev, tuple) and isinstance(signature, tuple)
+                    and len(prev) >= 1 and len(signature) >= 1
+                    and prev[0] == "capture" and signature[0] == "capture"):
+                raise ValueError(
+                    "duplicate slot name %r in matcher pattern "
+                    "(differing matcher type)" % (name,))
             raise ValueError(
                 "duplicate slot name %r in matcher pattern" % (name,))
-        top.add(name)
+        top[name] = signature
 
 
     def on_pattern(self, pat):
@@ -463,6 +480,17 @@ def check_str_arg(arg, what, *, allow_empty=False):
         raise ValueError("%s must be a non-empty str" % (what,))
 
 
+def pattern_slot_names(pattern):
+    """
+    Slot names for ``pattern`` in declaration order (hygienic lower)
+    """
+
+    check_pattern_arg(pattern, "pattern_slot_names pattern")
+    hc = HygienicMatchCompiler()
+    hc.lower(pattern)
+    return list(Pattern._slot_names(hc))
+
+
 # === Primitive builders ===
 
 
@@ -622,13 +650,25 @@ class CAPTURE(Pattern):
         self._scope_slot = scope_slot
 
 
+    def _claim_signature(self):
+        """
+        Freeze-time tuple so repeated identical captures share a signature
+        """
+
+        if self._sub is None:
+            return ("capture", None)
+        if isinstance(self._sub, TYPE):
+            return ("capture", ("type", self._sub._extern))
+        return ("capture", ("complex", id(self._sub)))
+
+
     def lower(self, ctx):
         """
         Reserve the slot, lower the optional sub-pattern, and emit the
         CAPTURE node
         """
 
-        ctx.claim_slot_name(self._slot)
+        ctx.claim_slot_name(self._slot, self._claim_signature())
         slot_idx = ctx.intern_slot(self._slot)
         if self._sub is None:
             sub_idx = -1
@@ -739,7 +779,7 @@ class GROUP(Pattern):
         scope, emit a GROUP frozen node (slot index plus child indices)
         """
 
-        ctx.claim_slot_name(self._slot)
+        ctx.claim_slot_name(self._slot, ("group", id(self)))
         slot_idx = ctx.intern_slot(self._slot)
         ctx.push_capture_scope()
         try:
@@ -882,7 +922,7 @@ class REST(Pattern):
         Reserve the slot and emit a REST node
         """
 
-        ctx.claim_slot_name(self._slot)
+        ctx.claim_slot_name(self._slot, ("rest", id(self)))
         slot_idx = ctx.intern_slot(self._slot)
         return ctx.append_node(("REST", slot_idx))
 
@@ -1128,14 +1168,23 @@ def slot_prefix_copy(pattern, prefix, sep):
         % (type(pattern).__name__,))
 
 
+FORMALS_SOURCE_KEY = "source"
+
+
 def binding_inner_pattern():
     """
     Build the inner shape of a single koskari binding cell as matcher_ng
     primitives: FORM around ONEOF of (SYM EXPR) or (EXPR as: SYM).
-    Does not wrap an outer CAPTURE; compose with FORM's subject being
-    one binding pair. When embedding multiple binding cells in one
-    matcher, pass the result through slot_prefix with a unique prefix
-    per cell first
+    The outer FORM descends into one spine element that is already a
+    binding pair (SYM EXPR). For a grouped cell such as ``((t 1))`` from
+    ``[[t 1]]``, use :func:`bindings_grouped_list_cell_pattern` inside
+    :class:`BINDINGS` instead; a single FORM here would yield an inner
+    spine of one pair element, and ONEOF would run MATCH(SYMBOL, ...) on
+    that pair and fail
+
+    Does not wrap an outer CAPTURE; when embedding multiple binding
+    cells in one matcher, pass the result through slot_prefix with a
+    unique prefix per cell first
 
     :rtype: FORM
     """
@@ -1144,6 +1193,27 @@ def binding_inner_pattern():
         MATCH(SYMBOL("name"), VALUE("expr")),
         MATCH(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
     ))
+
+
+def binding_group_capture_pattern():
+    """
+    Whole-cell CAPTURE plus binding_inner_pattern; same inner layout as
+    :class:`BINDING` GROUP dict and each :class:`BINDINGS` repeat frame
+    """
+
+    return CAPTURE(FORMALS_SOURCE_KEY, binding_inner_pattern())
+
+
+def bindings_grouped_list_cell_pattern():
+    """
+    Match one binding-list element that wraps a single pair in an extra
+    list cell, e.g. ``((t 1))`` from ``[[t 1]]``. FORM enters the outer
+    list; MATCH consumes the sole inner element; inner FORM enters the
+    pair tree for ONEOF(MATCH, MATCH)
+    """
+
+    inner = binding_group_capture_pattern()
+    return FORM(MATCH(inner))
 
 
 def BINDING_CELL(slot):
@@ -1457,12 +1527,10 @@ class DECL(Composite, HygieneWireSlotScopes):
     Capture one element shaped as a declaration: a bare symbol, a
     one-element list naming the symbol, the (type as: name) form,
     or a (name . tail) form where tail captures the keyword
-    attribute pairs verbatim. Captures appear directly in the result:
-    captures[slot] is the source element, captures['name'] is the
-    bare or list-form symbol, captures['type'] is the type expression
-    from the as-form when that arm matches, captures['decl_tail'] is the
-    raw remainder of (name . tail) when that arm matches; other keys are
-    omitted
+    attribute pairs verbatim. After a successful match captures[slot]
+    is a dict (native GROUP). Keys include ``source`` (Datum of the whole
+    declaration cell), ``name`` where applicable, ``type`` from the as-form,
+    ``decl_tail`` from the dotted tail arm; other keys are omitted
     """
 
 
@@ -1479,7 +1547,7 @@ class DECL(Composite, HygieneWireSlotScopes):
 
 
     def _expand(self):
-        return CAPTURE(self._slot, ONEOF(
+        return GROUP(self._slot, CAPTURE(FORMALS_SOURCE_KEY, ONEOF(
             TYPE("symbol"),
             FORM(MATCH(SYMBOL("name"))),
             FORM(MATCH(
@@ -1487,17 +1555,20 @@ class DECL(Composite, HygieneWireSlotScopes):
                 LITERAL_KW("as"),
                 SYMBOL("name"))),
             FORM(MATCH(SYMBOL("name"), REST("decl_tail"))),
-        ))
+        )))
 
 
     def iter_introduced_symbols(self, matched):
-        name = matched.get("name")
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        name = grp.get("name")
         if name is not None:
             name = name.datum
             if is_symbol(name):
                 yield name
                 return
-        raw = matched.get(self._slot)
+        raw = grp.get(FORMALS_SOURCE_KEY)
         if raw is not None:
             raw = raw.datum
             if is_symbol(raw):
@@ -1505,10 +1576,13 @@ class DECL(Composite, HygieneWireSlotScopes):
 
 
     def iter_recurse_targets(self, matched):
-        t = matched.get("type")
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        t = grp.get("type")
         if t is not None:
             yield t
-        dt = matched.get("decl_tail")
+        dt = grp.get("decl_tail")
         if dt is not None:
             if is_pair(dt.datum):
                 yield dt
@@ -1517,11 +1591,10 @@ class DECL(Composite, HygieneWireSlotScopes):
 class BINDING(Composite, HygieneWireSlotScopes):
     """
     Capture a single binding-shaped cell, (NAME EXPR) or
-    (EXPR as: NAME). The structural match descends into the cell via
-    binding_inner_pattern, exposing captures['name'] and
-    captures['expr'] in the same scope as the captures[slot] holding
-    the source pair. Use BINDING_CELL when several binding-shaped
-    captures must coexist in one matcher
+    (EXPR as: NAME). After a successful match captures[slot] is a dict
+    (native GROUP) with ``source`` (Datum of the pair), ``name``, and
+    ``expr`` as produced by binding_inner_pattern. Use BINDING_CELL when
+    several binding-shaped captures must coexist in one matcher
     """
 
 
@@ -1538,11 +1611,14 @@ class BINDING(Composite, HygieneWireSlotScopes):
 
 
     def _expand(self):
-        return CAPTURE(self._slot, binding_inner_pattern())
+        return GROUP(self._slot, binding_group_capture_pattern())
 
 
     def iter_introduced_symbols(self, matched):
-        name = matched.get("name")
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        name = grp.get("name")
         if name is not None:
             name = name.datum
             if is_symbol(name):
@@ -1550,7 +1626,10 @@ class BINDING(Composite, HygieneWireSlotScopes):
 
 
     def iter_recurse_targets(self, matched):
-        ex = matched.get("expr")
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        ex = grp.get("expr")
         if ex is not None:
             yield ex
 
@@ -1560,10 +1639,11 @@ class BINDINGS(Composite):
     Capture a binding-list cell: a single element which is either nil
     or a proper list of binding-shaped cells. The nonempty arm uses
     repeat_capture so captures[slot] is a bare Python list of per-cell
-    frame dicts (each holding 'name' and 'expr'), not Datum-wrapped;
-    the empty arm matches nil and binds captures[slot] = nil (a
-    Datum in the usual CAPTURE sense). The two arms share an outer slot
-    name through ONEOF's per-branch capture scoping
+    frame dicts (same keys as :class:`BINDING`: ``source``, ``name``,
+    ``expr``), not Datum-wrapped; the empty arm matches nil and binds
+    captures[slot] = nil (a Datum in the usual CAPTURE sense). The two
+    arms share an outer slot name through ONEOF's per-branch capture
+    scoping
     """
 
 
@@ -1588,9 +1668,19 @@ class BINDINGS(Composite):
 
 
     def _expand(self):
+        """
+        Match one subject cell (``nil`` or a proper binding list). The repeat
+        must run inside that cell via ``FORM`` so we do not treat following
+        special-form siblings (e.g. let body) as extra binding rows.
+        """
+
+        inner = ONEOF(
+            bindings_grouped_list_cell_pattern(),
+            binding_group_capture_pattern(),
+        )
         return ONEOF(
             CAPTURE(self._slot, LITERAL(nil)),
-            repeat_capture(self._slot, binding_inner_pattern()),
+            FORM(CAPTURE(self._slot, REPEAT(inner))),
         )
 
 
@@ -1606,7 +1696,8 @@ class BINDINGS(Composite):
             if isinstance(fr, dict):
                 n = fr.get("name")
                 if n is not None:
-                    n = n.datum
+                    if isinstance(n, Datum):
+                        n = n.datum
                     if is_symbol(n):
                         yield n
 
@@ -1749,9 +1840,6 @@ def formals_inner_pattern():
     ))
 
 
-FORMALS_SOURCE_KEY = "source"
-
-
 class FORMALS(Composite, HygieneWireSlotScopes):
     """
     Capture one element shaped as a proper-list formals cell and
@@ -1861,8 +1949,9 @@ class USING(Composite, HygieneWireSlotScopes):
     3. (EXPR as: NAME)     -- as form, captures expr and name
     4. (EXPR)              -- bare expression, captures expr only
 
-    Slot names not bound by the winning ONEOF arm are omitted from the
-    captures dict
+    After a successful match captures[slot] is a dict (native GROUP)
+    with ``source`` (Datum of the whole cell) plus whichever of ``lhs``,
+    ``name``, ``expr`` the winning arm binds
     """
 
 
@@ -1879,16 +1968,19 @@ class USING(Composite, HygieneWireSlotScopes):
 
 
     def _expand(self):
-        return CAPTURE(self._slot, FORM(ONEOF(
+        return GROUP(self._slot, CAPTURE(FORMALS_SOURCE_KEY, FORM(ONEOF(
             MATCH(PAIR("lhs"), VALUE("expr")),
             MATCH(SYMBOL("name"), VALUE("expr")),
             MATCH(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
             MATCH(VALUE("expr")),
-        )))
+        ))))
 
 
     def iter_introduced_symbols(self, matched):
-        name = matched.get("name")
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        name = grp.get("name")
         if name is not None:
             name = name.datum
             if is_symbol(name):
@@ -1896,9 +1988,104 @@ class USING(Composite, HygieneWireSlotScopes):
 
 
     def iter_recurse_targets(self, matched):
-        ex = matched.get("expr")
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        ex = grp.get("expr")
         if ex is not None:
             yield ex
+
+
+class USING_UNPACK(Composite, HygieneWireSlotScopes):
+    """
+    Capture ``((PATTERN...) EXPR)`` for unpack bindings (e.g. for-each).
+    After a successful match captures[slot] is a dict (native GROUP)
+    with ``source``, ``lhs``, and ``expr``
+    """
+
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        """
+        :param slot: target slot name
+        :param scope: optional scope-region slot name
+        :param scopes: optional tuple of scope-region slot names
+        """
+
+        check_str_arg(slot, "USING_UNPACK slot")
+        self._slot = slot
+        self._scopes = normalize_scopes(scope, scopes, "USING_UNPACK")
+
+
+    def _expand(self):
+        return GROUP(self._slot, CAPTURE(
+            FORMALS_SOURCE_KEY,
+            FORM(MATCH(PAIR("lhs"), VALUE("expr")))))
+
+
+    def iter_introduced_symbols(self, matched):
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        lhs = grp.get("lhs")
+        if lhs is None:
+            return
+        lhs_v = lhs.datum if isinstance(lhs, Datum) else lhs
+        yield from _iter_unpack_lhs_symbols(lhs_v)
+
+
+    def iter_recurse_targets(self, matched):
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        ex = grp.get("expr")
+        if ex is not None:
+            yield ex
+
+
+def _iter_unpack_lhs_symbols(lhs):
+    """
+    Yield symbols introduced by an unpack LHS (symbol or proper list)
+    """
+
+    if is_symbol(lhs):
+        yield lhs
+        return
+    if not is_pair(lhs):
+        return
+    if not is_proper(lhs):
+        return
+    cells = list(unpack(lhs))
+    _kw_star = keyword("*")
+    star_idx = [i for i, elt in enumerate(cells) if elt == _kw_star]
+    if len(star_idx) > 1:
+        return
+    if not star_idx:
+        for elt in cells:
+            if is_pair(elt):
+                yield from _iter_unpack_lhs_symbols(elt)
+            elif is_symbol(elt):
+                yield elt
+        return
+    si = star_idx[0]
+    prefix = cells[:si]
+    after = cells[si + 1:]
+    if not after:
+        return
+    star_name = after[0]
+    suffix = after[1:]
+    if not is_symbol(star_name):
+        return
+    for elt in prefix:
+        if is_pair(elt):
+            yield from _iter_unpack_lhs_symbols(elt)
+        elif is_symbol(elt):
+            yield elt
+    yield star_name
+    for elt in suffix:
+        if is_pair(elt):
+            yield from _iter_unpack_lhs_symbols(elt)
+        elif is_symbol(elt):
+            yield elt
 
 
 class BODY(Pattern):
