@@ -24,9 +24,9 @@ Special forms for ``compile/syntax`` and
 
 from ...exceptions import SpecialError
 from ...lib import Datum, cons, gensym, nil, pair, symbol
-from ...matcher_ng import (BIND, DEFINE, LIST, MATCH, REST, SYMBOL, VALUE,
-                           parse_explicit_rule_pattern, pattern_slot_names,
-                           repeat_capture)
+from ...matcher_ng import (BIND, DEFINE, LIST, LITERAL_SYM, MATCH, REST,
+                           SYMBOL, VALUE, parse_explicit_rule_pattern,
+                           pattern_slot_names, repeat_capture)
 from ...stdlib import builtin
 from ...syntax_ng import (Syntax, SyntaxTransform, hygienic_lower_tuple,
                           parse_syntax_rules_pattern)
@@ -53,6 +53,8 @@ MACRO_MATCH_RULES_PATTERN = MATCH(
     repeat_capture("rules", _MACRO_MATCH_RULE_ROW))
 
 _MACRO_RULES_BODY_PATTERN = MATCH(repeat_capture("rules", BIND("rule")))
+
+_MATCH_FORM_PATTERN = LIST(LITERAL_SYM("match"), VALUE("inner"))
 
 SPECIAL_RULES_PATTERN = MATCH(
     repeat_capture("rules", _MACRO_MATCH_RULE_ROW))
@@ -109,6 +111,38 @@ def _opaque_rule_spine(frame):
                 return inner.datum
             return inner
     return src
+
+
+def _syntax_rules_row_pattern_and_template(raw_rule):
+    """
+    Split one syntax-rules row into pattern and template datums.
+
+    Rows from the reader layout are normally ``(pattern-column template)`` of
+    length two (same as :func:`build_syntax_rules_transformer` historically
+    required). Ki sources can also supply longer proper lists; then the
+    template is the last top-level form and all preceding forms are grouped
+    like :func:`koskari.reader.layouts.define_syntax._pattern_template_from_rule`.
+    A pattern column ``(match INNER)`` is unwrapped to ``INNER`` for RULE
+    lowering.
+    """
+
+    if not is_pair(raw_rule):
+        raise SpecialError("invalid syntax-rules rule", raw_rule)
+    if not is_proper(raw_rule):
+        raise SpecialError("syntax-rules rule must be a proper list", raw_rule)
+    rule_parts = list(unpack(raw_rule))
+    if len(rule_parts) < 2:
+        raise SpecialError(
+            "syntax-rules rule must have pattern and template", raw_rule)
+    if len(rule_parts) == 2:
+        pattern_src, template_expr = rule_parts[0], rule_parts[1]
+    else:
+        pattern_src = cons(*rule_parts[:-1], nil)
+        template_expr = rule_parts[-1]
+    match_m = match1(pattern_src, [_MATCH_FORM_PATTERN])
+    if match_m is not None:
+        pattern_src = match_m["inner"].datum
+    return pattern_src, template_expr
 
 
 _MAKE_SYNTAX_PATTERNS = [
@@ -494,15 +528,8 @@ def build_syntax_rules_transformer(
     transforms = []
     for res in rules_m["rules"]:
         raw_rule = _opaque_rule_spine(res)
-        if not is_pair(raw_rule):
-            raise SpecialError("invalid syntax-rules rule", raw_rule)
-
-        pattern_src, template_tail = raw_rule
-        if not is_proper(template_tail) or template_tail.cdr is not nil:
-            raise SpecialError(
-                "syntax-rules rule must have pattern and template",
-                raw_rule)
-        template_expr = template_tail.car
+        pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
+            raw_rule)
         if match_patterns:
             pattern_matcher = parse_explicit_rule_pattern(pattern_src)
         else:

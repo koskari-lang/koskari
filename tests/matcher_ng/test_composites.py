@@ -886,7 +886,8 @@ class TestFORMALS(unittest.TestCase):
         hygiene = hc.build_hygiene()
         owner = hygiene.binders["f"]
         sf = symbol("rest")
-        grp = {"positionals": Datum([{"name": Datum(sf)}])}
+        # FORMALS binder meta expects bare Python lists for positional frames.
+        grp = {"positionals": [{"name": Datum(sf)}]}
         self.assertEqual(
             set(owner.iter_introduced_symbols({"f": grp})), {sf})
 

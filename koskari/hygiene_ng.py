@@ -35,7 +35,7 @@ from typing import Mapping
 
 from koskari.exceptions import CompilerError, SpecialError
 from koskari.lib import Datum, cons, gensym, nil, keyword
-from koskari.types import build_proper, is_pair, is_symbol, unpack
+from koskari.types import build_proper, is_nil, is_pair, is_symbol, unpack
 
 
 __all__ = (
@@ -46,6 +46,7 @@ __all__ = (
     "collect_binding_symbols",
     "expand_template_with_hygiene",
     "apply_syntax_rules_hygiene",
+    "finalize_macro_hygiene_unbox_one_pass",
 )
 
 
@@ -227,13 +228,30 @@ def _collect_symbols(expr, out):
                 _collect_symbols(elem, out)
 
 
+def _binding_value_for_expand(val):
+    """
+    Peel outer ``Datum`` layers so list/pair/tuple shape is visible to template
+    expansion. Bindings dict still holds matcher captures unchanged elsewhere
+    """
+
+    orig = val
+    # if isinstance(orig, Datum):
+    #     print('DEBUG hygiene_ng _binding_value_for_expand', 'in=', repr(orig))
+    while isinstance(val, Datum):
+        val = val.datum
+    # if isinstance(orig, Datum):
+    #     print('DEBUG hygiene_ng _binding_value_for_expand', 'out=', repr(val))
+    return val
+
+
 def _repeat_count(template, bindings):
     syms = set()
     _collect_symbols(template, syms)
     counts = {
-        len(bindings[s])
+        len(_binding_value_for_expand(bindings[s]))
         for s in syms
-        if s in bindings and isinstance(bindings[s], list)
+        if s in bindings
+        and isinstance(_binding_value_for_expand(bindings[s]), list)
     }
     if not counts:
         return 0
@@ -254,7 +272,10 @@ def expand_template_with_hygiene(
     template identifiers.
 
     :param template: template form (pairs, symbols, or Syntax-like opaque)
-    :param bindings: dict from pattern variable symbol to expanded value
+    :param bindings: dict from pattern variable symbol to capture value
+        (often ``Datum``-wrapped); outer ``Datum`` layers are peeled only
+        when expanding list or ellipsis structure, not when returning an
+        unexpanded binding reference unchanged
     :param binding_symbols: set of symbols needing gensym when not bound
     :param introduced: optional map mutated from symbol to gensym
     :param index: ellipsis repetition slice index when repeating
@@ -263,15 +284,23 @@ def expand_template_with_hygiene(
     if introduced is None:
         introduced = {}
 
+    # if introduced == {} and index is None:
+    #     print(
+    #         'DEBUG hygiene_ng expand_template_with_hygiene',
+    #         'template=', repr(template),
+    #         'binding_keys=', repr(list(bindings.keys()) if bindings else []),
+    #     )
+
     if is_symbol(template):
         if template in bindings:
             val = bindings[template]
-            if isinstance(val, list):
+            peeled = _binding_value_for_expand(val)
+            if isinstance(peeled, list):
                 if index is None:
                     raise CompilerError(
                         'ellipsis variable outside repeated template',
                         template)
-                return val[index]
+                return peeled[index]
             return val
 
         if template is Ellipsis:
@@ -304,13 +333,18 @@ def expand_template_with_hygiene(
             i += 1
             continue
 
-        if (is_symbol(elem) and elem in bindings
-                and not isinstance(bindings[elem], list)):
-            for c in unpack(bindings[elem]):
-                out.append(
-                    expand_template_with_hygiene(
-                        c, bindings, binding_symbols, introduced,
-                        index=index))
+        spliced = None
+        if is_symbol(elem) and elem in bindings:
+            spliced = _binding_value_for_expand(bindings[elem])
+        if spliced is not None and not isinstance(spliced, list):
+            # Ellipsis splicing: when splicing a captured list/pair spine,
+            # each captured element must be inserted as syntax data.
+            #
+            # Re-expanding spliced elements with the outer bindings causes
+            # unintended capture substitution inside inserted syntax (e.g.
+            # nested syntax-rules patterns where `name` should remain a
+            # pattern variable rather than the outer macro name).
+            out.extend(unpack(spliced))
         else:
             count = _repeat_count(elem, bindings)
             for rep_i in range(count):
@@ -321,6 +355,87 @@ def expand_template_with_hygiene(
         i += 2
 
     return build_proper(*out)
+
+
+def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
+    """
+    One pass combining introduced binding-symbol renaming (same ``introduced``
+    map semantics as :func:`expand_template_with_hygiene` with empty
+    ``bindings``) and ``Datum`` peeling for compilation.
+
+    :param form: macro or syntax-rules output (pairs, atoms, ``Datum``)
+    :param binding_symbols: symbols to rename when not bound as pattern vars
+    :param find_compiled: unused; reserved for API parity with discovery sites
+    :rtype: same root object as ``form`` after in-place updates where applicable
+    """
+
+    _ = find_compiled
+    introduced = {}
+    seen = set()
+
+    def gensym_binding(sym):
+        if sym not in introduced:
+            introduced[sym] = gensym(str(sym))
+        return introduced[sym]
+
+    def peel_car_in_place(nx):
+        c = nx.car
+        first_pos = None
+        while isinstance(c, Datum):
+            if first_pos is None:
+                first_pos = c.position
+            c = c.datum
+        if first_pos is not None:
+            nx.position = first_pos
+        nx.car = c
+        return nx.car
+
+    def peel_cdr_datums_in_place(nx):
+        tail = nx.cdr
+        while isinstance(tail, Datum):
+            tail = tail.datum
+            nx.cdr = tail
+            tail = nx.cdr
+        return tail
+
+    def walk_spine(nx):
+        while nx is not nil:
+            if not is_pair(nx):
+                return nx
+            i = id(nx)
+            if i in seen:
+                nx = nx.cdr
+                continue
+            seen.add(i)
+
+            c = peel_car_in_place(nx)
+
+            if is_symbol(c):
+                if c in binding_symbols:
+                    nx.car = gensym_binding(c)
+            elif is_pair(c):
+                walk_spine(c)
+
+            tail = peel_cdr_datums_in_place(nx)
+            if is_nil(tail):
+                return nil
+            if is_pair(tail):
+                nx = tail
+                continue
+            if is_symbol(tail) and tail in binding_symbols:
+                nx.cdr = gensym_binding(tail)
+            return nil
+        return nil
+
+    while isinstance(form, Datum):
+        form = form.datum
+    if is_symbol(form):
+        if form in binding_symbols:
+            return gensym_binding(form)
+        return form
+    if is_pair(form):
+        walk_spine(form)
+    return form
 
 
 def collect_binding_symbols(node, find_compiled):

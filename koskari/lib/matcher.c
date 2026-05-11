@@ -1520,6 +1520,76 @@ PyObject *KosMatcherBuilder_Finalize(
 
 /* === Datum === */
 
+static PyObject *kos_datum_new(
+    PyObject *datum,
+    PyObject *position,
+    PyObject *binding);
+
+typedef struct {
+  PyObject_HEAD
+  PyObject *current;   /* KosPair-or-nil; tail pointer */
+  PyObject *fallback;  /* fallback position */
+  PyObject *binding;   /* capture slot name or Py_None */
+} KosDatumIter;
+
+
+static void datum_iter_dealloc(PyObject *self) {
+  KosDatumIter *it = (KosDatumIter *) self;
+  Py_CLEAR(it->current);
+  Py_CLEAR(it->fallback);
+  Py_CLEAR(it->binding);
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static PyObject *datum_iter_iternext(PyObject *self) {
+  KosDatumIter *it = (KosDatumIter *) self;
+
+  if (! it->current || KosNil_Check(it->current)) {
+    Py_CLEAR(it->current);
+    return NULL;
+  }
+
+  if (! KosPair_Check(it->current)) {
+    /* Improper tail; terminate */
+    Py_CLEAR(it->current);
+    return NULL;
+  }
+
+  PyObject *cell = it->current;
+  PyObject *elem = KosPair_CAR(cell);
+  PyObject *pos = KosPair_POSITION(cell);
+  if (! pos || pos == Py_None) {
+    pos = it->fallback;
+  }
+  if (! pos)
+    pos = Py_None;
+
+  it->current = KosPair_CDR(cell);
+  Py_INCREF(it->current);
+  Py_DECREF(cell);
+
+  Py_INCREF(elem);
+  Py_INCREF(pos);
+  Py_INCREF(it->binding);
+  PyObject *out = kos_datum_new(elem, pos, it->binding);
+  Py_DECREF(elem);
+  Py_DECREF(pos);
+  Py_DECREF(it->binding);
+  return out;
+}
+
+
+static PyTypeObject KosDatumIterType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+  .tp_name = "koskari.lib.DatumIter",
+  .tp_basicsize = sizeof(KosDatumIter),
+  .tp_dealloc = datum_iter_dealloc,
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_iter = PyObject_SelfIter,
+  .tp_iternext = datum_iter_iternext,
+};
+
 
 static void datum_dealloc(PyObject *self) {
   KosDatum *d = (KosDatum *) self;
@@ -1578,14 +1648,25 @@ static PyObject *datum_get_cdr(PyObject *self, void *closure) {
 
 static PyObject *datum_iter(PyObject *self) {
   KosDatum *d = (KosDatum *) self;
-  return PyObject_GetIter(d->datum);
+  if (! KosPair_Check(d->datum)) {
+    return PyErr_Format(
+        PyExc_TypeError,
+        "cannot iterate Datum with non-pair datum: %R",
+        d->datum);
+  }
+
+  KosDatumIter *it = PyObject_New(KosDatumIter, &KosDatumIterType);
+  if (! it)
+    return NULL;
+
+  Py_INCREF(d->datum);
+  Py_INCREF(d->position);
+  Py_INCREF(d->binding);
+  it->current = d->datum;
+  it->fallback = d->position;
+  it->binding = d->binding;
+  return (PyObject *) it;
 }
-
-
-static PyObject *kos_datum_new(
-    PyObject *datum,
-    PyObject *position,
-    PyObject *binding);
 
 
 static PyObject *datum_tp_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
@@ -3762,6 +3843,9 @@ int koskari_matcher_init(PyObject *mod) {
     return -1;
 
   if (PyType_Ready(&KosMatchResultType))
+    return -1;
+
+  if (PyType_Ready(&KosDatumIterType))
     return -1;
 
   if (PyType_Ready(&KosDatumType))

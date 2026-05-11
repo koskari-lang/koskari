@@ -57,9 +57,9 @@ from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SpecialError
-from koskari.hygiene_ng import (Hygiene, apply_syntax_rules_hygiene,
-                                collect_binding_symbols,
-                                expand_template_with_hygiene)
+from koskari.hygiene_ng import (Hygiene, collect_binding_symbols,
+                                expand_template_with_hygiene,
+                                finalize_macro_hygiene_unbox_one_pass)
 from koskari.lib import (Datum, Matcher, car, cdr, cons, demand_call, gensym,
                          keyword, nil, pair, symbol)
 from koskari.matcher_ng import (BIND, CAPTURE, FORM, LITERAL, MATCH, REST,
@@ -219,74 +219,34 @@ def _run_matcher(matcher, matcher_tuple, subject):
     return matcher.match(subject, **ext)
 
 
-def _unwrap_syntax_binding_value(v):
-    """
-    Strip ``Datum`` wrappers from native matcher capture values so template
-    substitution builds plain pair spines (repeat frames are dicts whose
-    values may also be ``Datum``-wrapped)
-    """
-
-    if isinstance(v, Datum):
-        return _unwrap_syntax_binding_value(v.datum)
-    if isinstance(v, dict):
-        if len(v) == 1:
-            k, vv = next(iter(v.items()))
-            if isinstance(k, str) and k.endswith("__sr"):
-                return _unwrap_syntax_binding_value(vv)
-        return {kk: _unwrap_syntax_binding_value(vv) for kk, vv in v.items()}
-    if isinstance(v, list):
-        return [_unwrap_syntax_binding_value(x) for x in v]
-    return v
-
-
 def _captures_to_bindings(captures):
     """
-    Map string capture keys to koskari symbols for ``apply_syntax_rules_hygiene``
+    Map string capture keys to koskari symbols for template expansion.
+
+    Values are native matcher captures (often ``Datum``-wrapped); they are
+    stored unchanged so :func:`koskari.hygiene_ng.expand_template_with_hygiene`
+    peels at use sites. Macro handlers receive the same ``Datum``-bearing
+    ``MatchResult.captures`` mapping unchanged from the matcher.
     """
 
     out = {}
     for k, v in captures.items():
-        out[symbol(k)] = _unwrap_syntax_binding_value(v)
+        out[symbol(k)] = v
     return out
 
 
-def _unbox_datum_in_macro_output(expanded):
+def _finalize_macro_output(compiler, form):
     """
-    Strip native ``Datum`` wrappers from procedural macro output (mirrors
-    legacy ``unbox_macro`` for ``koskari.syntax.Syntax``)
+    Discover binding symbols on ``form`` then run the shared in-place hygiene
+    and ``Datum`` peel pass
     """
-
-    seen = set()
-
-    def walk(x):
-        if isinstance(x, Datum):
-            return walk(x.datum)
-
-        if is_nil(x):
-            return x
-
-        if is_pair(x):
-            nx = x
-            while nx is not nil:
-                xi = id(nx)
-                if xi in seen:
-                    nx = nx.cdr
-                    continue
-                seen.add(xi)
-
-                head, tail = nx
-                if isinstance(head, Datum):
-                    nx.car = walk(head.datum)
-                    nx.position = head.position
-                elif is_nil(head):
-                    pass
-                elif is_pair(head):
-                    walk(head)
-                nx = tail
-            return x
-        return x
-
-    return walk(expanded)
+    # print('DEBUG syntax_ng _finalize_macro_output', 'form=', repr(form))
+    syms = collect_binding_symbols(form, compiler.find_compiled)
+    # print('DEBUG syntax_ng _finalize_macro_output', 'syms=', repr(syms))
+    out = finalize_macro_hygiene_unbox_one_pass(
+        form, syms, compiler.find_compiled)
+    # print('DEBUG syntax_ng _finalize_macro_output', 'out=', repr(out))
+    return out
 
 
 @runtime_checkable
@@ -319,7 +279,8 @@ class Transform(Protocol):
 
 class SyntaxTransform(object):
     """
-    Template arm: match full use-site form, then ``apply_syntax_rules_hygiene``
+    Template arm: capture-only template expand, then shared finalize (hygiene
+    plus ``Datum`` peel for compile)
     """
 
     def __init__(self, pattern, template=nil):
@@ -363,9 +324,13 @@ class SyntaxTransform(object):
             self._matcher, self.matcher_tuple, source_obj)
         if not result.matched:
             return None
+        # print('DEBUG syntax_ng SyntaxTransform', 'captures=', repr(result.captures))
         bindings = _captures_to_bindings(result.captures)
-        return apply_syntax_rules_hygiene(
-            self.template, bindings, compiler.find_compiled)
+        # print('DEBUG syntax_ng SyntaxTransform', 'bindings=', repr(bindings))
+        subst = expand_template_with_hygiene(
+            self.template, bindings, set(), {})
+        # print('DEBUG syntax_ng SyntaxTransform', 'subst=', repr(subst))
+        return _finalize_macro_output(compiler, subst)
 
 
 class MacroTransform(object):
@@ -408,13 +373,12 @@ class MacroTransform(object):
         def _ki_captures_kw(cap):
             kw = {}
             for k, v in cap.items():
-                v2 = _unwrap_syntax_binding_value(v)
                 if isinstance(k, str) and k.endswith("__sr"):
                     base = k[:-4]
                     if base not in cap:
-                        kw[base] = v2
+                        kw[base] = v
                 else:
-                    kw[k] = v2
+                    kw[k] = v
             return kw
 
         def _ki_handler(compiler, tc, **captures):
@@ -443,10 +407,10 @@ class MacroTransform(object):
             self._matcher, self.matcher_tuple, source_obj)
         if not result.matched:
             return None
+        # print('DEBUG syntax_ng MacroTransform', 'captures=', repr(result.captures))
         expanded = self.handler(compiler, tc, **result.captures)
-        syms = collect_binding_symbols(expanded, compiler.find_compiled)
-        hygiened = expand_template_with_hygiene(expanded, {}, syms, {})
-        return _unbox_datum_in_macro_output(hygiened)
+        # print('DEBUG syntax_ng MacroTransform', 'expanded=', repr(expanded))
+        return _finalize_macro_output(compiler, expanded)
 
 
 class SpecialTransform(object):
@@ -498,10 +462,9 @@ class SpecialTransform(object):
             return kw
 
         def _ki_handler(compiler, source_obj, match_result, tc):
-            out = demand_call(
+            return demand_call(
                 raw, compiler, tc,
                 **_ki_captures_kw_special(match_result.captures))
-            return _unbox_datum_in_macro_output(out)
 
         self.handler = _ki_handler
         self.matcher_tuple = matcher_tuple

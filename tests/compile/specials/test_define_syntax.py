@@ -158,7 +158,7 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
             [(ellipsis-repro xs ...)
              `(#list ,@xs)]))
         """
-        expr, mod = self.compile_expr(src_str)
+        expr, mod = self.compile_expr(src_str, print=print)
         dis(expr.code)
 
         await expr()
@@ -285,7 +285,7 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define ident
           (compile/special-rules ident []
-            [(c (ident x) t) x]))
+            [(c (ident x) t) x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
@@ -339,7 +339,7 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         (compile/define ident
           (compile/special-match ident
             [(compiler (ident (VALUE x)) t)
-             x]))
+             x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)

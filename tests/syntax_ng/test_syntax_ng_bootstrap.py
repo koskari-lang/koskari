@@ -398,8 +398,10 @@ class TestDatum(unittest.TestCase):
         d = Datum(lst)
         out = list(d)
         self.assertEqual(len(out), 2)
-        self.assertIs(out[0], a)
-        self.assertEqual(out[1], cons(b, nil))
+        self.assertIsInstance(out[0], Datum)
+        self.assertIs(out[0].datum, a)
+        self.assertIsInstance(out[1], Datum)
+        self.assertIs(out[1].datum, b)
 
 
 # The end.
