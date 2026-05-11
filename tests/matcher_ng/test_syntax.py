@@ -55,6 +55,7 @@ from koskari.matcher_ng import (
     REPEAT,
     REST,
     SYMBOL,
+    TAIL,
     TEST_ANY,
     TYPE,
     USING,
@@ -507,6 +508,17 @@ class TestParseCompositeSlotFirst(unittest.TestCase):
         self.assertEqual(pat._slot, "tail")
 
 
+    def test_tail(self):
+        """
+        (TAIL tail) lowers to TAIL("tail"), i.e. OPTIONAL(REST("tail"))
+        """
+
+        src = _list(symbol("TAIL"), symbol("tail"))
+        pat = parse_matcher(src)
+        self.assertIsInstance(pat, TAIL)
+        self.assertEqual(pat._slot, "tail")
+
+
     def test_body(self):
         """
         (BODY body) lowers to BODY("body") with scope-region meta
@@ -751,7 +763,7 @@ class TestRegistry(unittest.TestCase):
         """
 
         for name in ("FORM", "MATCH", "GROUP", "ONEOF", "BINDING", "FORMALS",
-                     "CAPTURE", "REST", "TYPE"):
+                     "CAPTURE", "REST", "TAIL", "TYPE"):
             self.assertIsNotNone(lookup_matcher(name))
 
 

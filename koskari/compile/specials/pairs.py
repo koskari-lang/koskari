@@ -26,13 +26,13 @@ compile/cons.
 from ...lib import nil, OpCode, symbol, cons
 from ...types import get_position, is_nil, is_pair, is_keyword
 from ...exceptions import SpecialError
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher_ng import MATCH, SYMBOL, TAIL
 from ...stdlib import builtin
 from ...syntax_ng import special
 from ..helpers_ng import requote
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), TAIL("rest")),)
 
 
 @builtin("compile/quote")

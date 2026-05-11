@@ -24,9 +24,9 @@ Special forms for ``compile/syntax`` and
 
 from ...exceptions import SpecialError
 from ...lib import Datum, cons, gensym, nil, pair, symbol
-from ...matcher_ng import (BIND, DEFINE, LIST, MATCH, SYMBOL, VALUE,
-                          parse_explicit_rule_pattern, pattern_slot_names,
-                          repeat_capture, REST)
+from ...matcher_ng import (BIND, DEFINE, LIST, MATCH, REST, SYMBOL, TAIL,
+                          VALUE, parse_explicit_rule_pattern,
+                          pattern_slot_names, repeat_capture)
 from ...stdlib import builtin
 from ...syntax_ng import (Syntax, SyntaxTransform, hygienic_lower_tuple,
                           parse_syntax_rules_pattern, serialize_form as _serialize_form,
@@ -78,7 +78,7 @@ _COMPILE_NAME_RULES_TAIL_FULL = tuple(
     MATCH(SYMBOL("called-by"), *m._children)
     for m in _COMPILE_NAME_RULES_TAIL)
 
-_DEFAULT_SYNTAX_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_SYNTAX_PATTERNS = (MATCH(SYMBOL("called-by"), TAIL("rest")),)
 
 
 def _opaque_rule_mr(frame):

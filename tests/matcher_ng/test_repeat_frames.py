@@ -110,6 +110,18 @@ class TestSlotPrefixAndBindingCell(unittest.TestCase):
         slots = frozen[1]
         self.assertIn("p__tail", slots)
 
+    def test_slot_prefix_tail_slot(self):
+        """
+        slot_prefix rewrites TAIL slots when nesting calls for it
+        """
+
+        from koskari.matcher_ng import TAIL
+
+        pat = slot_prefix(MATCH(TAIL("tail"), BINDING_CELL("x")), "p")
+        frozen = pat.freeze()
+        slots = frozen[1]
+        self.assertIn("p__tail", slots)
+
 
 class TestRepeatFramesThawRoundTrip(unittest.TestCase):
 

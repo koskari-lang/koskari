@@ -72,6 +72,7 @@ __all__ = [
     "REPEAT",
     "OPTIONAL",
     "REST",
+    "TAIL",
     "NOT",
     "CLASS",
     "FIELD",
@@ -927,6 +928,41 @@ class REST(Pattern):
         return ctx.append_node(("REST", slot_idx))
 
 
+class TAIL(Pattern):
+    """
+    Optional remainder capture; equivalent to OPTIONAL(REST(slot))
+
+    When the optional arm matches, REST binds at least one remaining
+    spine cell. When it does not, the slot is omitted from captures
+    """
+
+
+    def __init__(self, slot):
+        """
+        :param slot: str capture slot name for the non-empty remainder
+
+        :raises TypeError: when slot is not a str
+        :raises ValueError: when slot is empty
+        """
+
+        check_str_arg(slot, "TAIL slot")
+        self._slot = slot
+
+
+    def lower(self, ctx):
+        """
+        Emit OPTIONAL wrapping REST for this slot
+        """
+
+        return OPTIONAL(REST(self._slot)).lower(ctx)
+
+
+    def visit(self, fn):
+        fn(self)
+        r = REST(self._slot)
+        OPTIONAL(r).visit(fn)
+
+
 class NOT(Pattern):
     """
     Negative lookahead: succeed when the inner pattern does not match
@@ -1086,8 +1122,8 @@ def repeat_capture(slot, inner):
 
 def slot_prefix(pattern, prefix, sep="__"):
     """
-    Return a copy of pattern with every nested CAPTURE and REST slot
-    renamed to prefix + sep + original, and CAPTURE scope_slot likewise
+    Return a copy of pattern with every nested CAPTURE, REST, and TAIL
+    slot renamed to prefix + sep + original, and CAPTURE scope_slot likewise
     prefixed when present. Use before composing the same binding-shaped
     subtree multiple times so freeze-time duplicate-slot detection does
     not fire
@@ -1149,6 +1185,9 @@ def slot_prefix_copy(pattern, prefix, sep):
 
     if isinstance(pattern, REST):
         return REST(prefix + sep + pattern._slot)
+
+    if isinstance(pattern, TAIL):
+        return TAIL(prefix + sep + pattern._slot)
 
     if isinstance(pattern, CLASS):
         new_fields = tuple(
@@ -2766,6 +2805,7 @@ def register_builtin_matchers():
 
     register_matcher("CAPTURE", capture_factory)
     register_matcher("REST", slot_only_factory("REST", REST))
+    register_matcher("TAIL", slot_only_factory("TAIL", TAIL))
     register_matcher("BIND", slot_only_factory("BIND", BIND))
     register_matcher("VALUE", slot_only_factory("VALUE", VALUE))
     register_matcher("KEYWORD", slot_only_factory("KEYWORD", KEYWORD))
