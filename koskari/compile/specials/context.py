@@ -24,17 +24,13 @@ compile/dyn-with.
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, nil, pair, symbol
-from ...matcher_ng import MATCH, REST, SYMBOL, USING
-from ...types import is_pair
-from ..compiler import ByteCodeFragment, Compiler
+from ...lib import OpCode, nil, pair
+from ...matcher_ng import BODY, MATCH, REST, SYMBOL, USING
 from ...stdlib import builtin
 from ...syntax_ng import special
-from ..helpers_ng import (
-    gather_bindings,
-    helper_begin,
-    match,
-)
+from ...types import is_pair
+from ..compiler import ByteCodeFragment, Compiler
+from ..helpers_ng import gather_bindings, helper_begin
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
@@ -75,35 +71,29 @@ def special_parameterize(
 
 
 _WITH_PATTERNS = [
-    MATCH(USING("binding", scope="body"), REST("body")),
+    MATCH(SYMBOL("_"), USING("binding", scope="body"), BODY("body")),
 ]
-
-_WITH_PATTERNS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
-    for m in _WITH_PATTERNS)
 
 
 @builtin("compile/with")
-@special("compile/with", patterns=_WITH_PATTERNS_FULL)
-def special_with(compiler, source, tc=False):
+@special("compile/with", patterns=_WITH_PATTERNS, unpack="match")
+def special_with(compiler, caps, tc=False):
     """
     Compile (compile/with [name? expr] BODY...). Single-shot context manager
     """
 
-    called_by, rest = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    matched = match(rest, _WITH_PATTERNS)
-    if matched is None:
-        raise SpecialError("with requires [name? expr] and body", source)
+    binding = caps["binding"]
 
-    binding = matched["binding"].datum
-    if not isinstance(binding, dict):
-        raise SpecialError("internal: with binding capture must be a dict", source)
     nc = binding.get("name")
     ec = binding.get("expr")
-    name = nc.datum if nc is not None else None
-    expr = ec.datum if ec is not None else None
-    body = matched["body"].datum
+
+    name = nc.datum if nc else None
+    expr = ec.datum if ec else None
+
+    body = caps["body"].datum
 
     # print(f"binding: {binding}")
     # print(f"name: {name}")
@@ -117,7 +107,7 @@ def special_with(compiler, source, tc=False):
         name = str(name)
         fragment.declare_var(name)
 
-    fragment.position_of(source)
+    fragment.position(pos)
     fragment.instruction(OpCode.KOS_OP_PUSH_WITH, name)
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_WITH, 0)
@@ -126,27 +116,24 @@ def special_with(compiler, source, tc=False):
 
 
 @builtin("compile/dyn-with")
-@special("compile/dyn-with", patterns=_WITH_PATTERNS_FULL)
-def special_dyn_with(compiler, source, tc=False):
+@special("compile/dyn-with", patterns=_WITH_PATTERNS, unpack="match")
+def special_dyn_with(compiler, caps, tc=False):
     """
     Compile (compile/dyn-with [name? expr] BODY...). Multi-shot context manager
     that participates in transfer plans (exit on unwind, enter on wind).
     """
 
-    called_by, rest = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    matched = match(rest, _WITH_PATTERNS)
-    if matched is None:
-        raise SpecialError("dyn-with requires [name? expr] and body", source)
+    binding = caps["binding"]
 
-    binding = matched["binding"].datum
-    if not isinstance(binding, dict):
-        raise SpecialError("internal: dyn-with binding capture must be a dict", source)
     nc = binding.get("name")
     ec = binding.get("expr")
     name = nc.datum if nc is not None else None
     expr = ec.datum if ec is not None else None
-    body = matched["body"].datum
+
+    body = caps["body"].datum
 
     fragment = compiler.fragment(called_by)
     fragment.merge(compiler.full_compile(expr, False))
@@ -155,7 +142,7 @@ def special_dyn_with(compiler, source, tc=False):
         name = str(name)
         fragment.declare_var(name)
 
-    fragment.position_of(source)
+    fragment.position(pos)
     fragment.instruction(OpCode.KOS_OP_PUSH_DYN_WITH, name)
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_DYN_WITH, 0)

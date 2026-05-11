@@ -55,16 +55,15 @@ def _define_name_type_pos_from_match(matched):
         name_mr = matched["name"]
         namesym = name_mr.datum
         rt = matched.get("return_type")
-        type_expr = rt.datum if rt is not None else None
+        type_expr = rt.datum if rt else None
+
     else:
         decl = matched["decl"]
-        if isinstance(decl, Datum):
-            decl = decl.datum
         name_cell = decl.get("name")
         if name_cell is not None:
             namesym = name_cell.datum
             tcell = decl.get("type")
-            type_expr = tcell.datum if tcell is not None else None
+            type_expr = tcell.datum if tcell else None
             if type_expr is None:
                 dtail = decl.get("decl_tail")
                 if dtail is not None:
@@ -72,8 +71,9 @@ def _define_name_type_pos_from_match(matched):
                     type_expr = ann.get("type")
         else:
             sk = decl.get(FORMALS_SOURCE_KEY)
-            src = sk.datum if sk is not None else None
+            src = sk.datum if sk else None
             namesym, type_expr = parse_decl(src)
+
     return namesym, type_expr
 
 
@@ -128,18 +128,18 @@ def special_setq_values(compiler, caps, tc=False):
     called_by = caps["_"].datum
     pos = caps["_"].position
 
-    expr = caps["expr"]
+    lhs_mr = caps["lhs"]
+    expr_mr = caps["expr"]
 
     frag = compiler.fragment(called_by)
 
-    lhs = caps["sym"].datum
-    expr = caps["expr"].datum
+    lhs = lhs_mr.datum
 
     for namesym in unpack_lhs_bind_symbols(lhs, flatten=True):
         frag.request_for_write(str(namesym), position=pos)
 
-    frag.position(expr.position)
-    frag.merge(compiler.full_compile(expr.datum))
+    frag.position(expr_mr.position)
+    frag.merge(compiler.full_compile(expr_mr.datum))
     frag.merge(
         using_unpack_helper(compiler, lhs, declare=False))
     frag.instruction(OpCode.KOS_OP_CONST, None)
@@ -159,15 +159,15 @@ def special_define_values(compiler, caps, tc=False):
     called_by = caps["_"].datum
     pos = caps["_"].position
 
-    expr = caps["expr"]
+    lhs_mr = caps["lhs"]
+    expr_mr = caps["expr"]
 
     frag = compiler.fragment(called_by)
 
-    lhs = caps["sym"].datum
-    expr = caps["expr"].datum
+    lhs = lhs_mr.datum
 
-    frag.position(expr.position)
-    frag.merge(compiler.full_compile(expr.datum))
+    frag.position(expr_mr.position)
+    frag.merge(compiler.full_compile(expr_mr.datum))
     frag.merge(
         using_unpack_helper(compiler, lhs, declare=True))
     frag.instruction(OpCode.KOS_OP_CONST, None)
