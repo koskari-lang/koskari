@@ -56,8 +56,8 @@ from koskari.exceptions import SpecialError
 from koskari.hygiene_ng import (Hygiene, apply_syntax_rules_hygiene,
                                 collect_binding_symbols,
                                 expand_template_with_hygiene)
-from koskari.lib import (Datum, Matcher, car, cdr, cons, gensym, keyword, nil,
-                         pair, symbol)
+from koskari.lib import (Datum, Matcher, car, cdr, cons, demand_call, gensym,
+                         keyword, nil, pair, symbol)
 from koskari.matcher_ng import (BIND, CAPTURE, FORM, LITERAL, MATCH, REST,
                                 HygienicMatchCompiler, check_pattern_arg,
                                 parse_explicit_rule_pattern, repeat_capture)
@@ -386,7 +386,12 @@ class MacroTransform(object):
     @classmethod
     def from_persistent(cls, matcher_tuple, handler):
         """
-        Rebuild from a frozen native matcher tuple and procedure
+        Rebuild from a frozen native matcher tuple and procedure.
+
+        Ki procedures are wrapped so ``try_expand`` still passes
+        ``(compiler, tc, **captures)`` while the underlying lambda receives
+        only ``**captures`` via :func:`koskari.lib.demand_call`, matching
+        compile-emitted ``compile/lambda`` formals.
         """
 
         if handler is None or not callable(handler):
@@ -394,7 +399,24 @@ class MacroTransform(object):
                             f" got {handler!r}")
         self = cls.__new__(cls)
         self.pattern = None
-        self.handler = handler
+        raw = handler
+
+        def _ki_captures_kw(cap):
+            kw = {}
+            for k, v in cap.items():
+                v2 = _unwrap_syntax_binding_value(v)
+                if isinstance(k, str) and k.endswith("__sr"):
+                    base = k[:-4]
+                    if base not in cap:
+                        kw[base] = v2
+                else:
+                    kw[k] = v2
+            return kw
+
+        def _ki_handler(compiler, tc, **captures):
+            return demand_call(raw, **_ki_captures_kw(captures))
+
+        self.handler = _ki_handler
         self.matcher_tuple = matcher_tuple
         self.hygiene = Hygiene({}, {})
         self._matcher = Matcher.from_tuple(matcher_tuple)
@@ -445,7 +467,12 @@ class SpecialTransform(object):
     @classmethod
     def from_persistent(cls, matcher_tuple, handler):
         """
-        Rebuild from a frozen native matcher tuple and procedure
+        Rebuild from a frozen native matcher tuple and procedure.
+
+        Ki procedures are wrapped so ``try_expand`` still passes
+        ``(compiler, source_obj, match_result, tc)`` while the underlying
+        lambda receives ``(compiler, tc, **captures)`` via
+        :func:`koskari.lib.demand_call`, matching compile-emitted formals.
         """
 
         if handler is None or not callable(handler):
@@ -453,7 +480,26 @@ class SpecialTransform(object):
                             f" got {handler!r}")
         self = cls.__new__(cls)
         self.pattern = None
-        self.handler = handler
+        raw = handler
+
+        def _ki_captures_kw_special(cap):
+            kw = {}
+            for k, v in cap.items():
+                if isinstance(k, str) and k.endswith("__sr"):
+                    base = k[:-4]
+                    if base not in cap:
+                        kw[base] = v
+                else:
+                    kw[k] = v
+            return kw
+
+        def _ki_handler(compiler, source_obj, match_result, tc):
+            out = demand_call(
+                raw, compiler, tc,
+                **_ki_captures_kw_special(match_result.captures))
+            return _unbox_datum_in_macro_output(out)
+
+        self.handler = _ki_handler
         self.matcher_tuple = matcher_tuple
         self.hygiene = Hygiene({}, {})
         self._matcher = Matcher.from_tuple(matcher_tuple)
