@@ -32,7 +32,7 @@ from koskari.hygiene_ng import (
 )
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.matcher_ng import BODY, DEFINE, MATCH, HygienicMatchCompiler
-from koskari.types import is_symbol
+from koskari.types import build_proper, is_symbol
 
 
 pytestmark = pytest.mark.phase_infra
@@ -202,6 +202,34 @@ class TestExpandTemplate(unittest.TestCase):
         with self.assertRaises(CompilerError) as ctx:
             expand_template_with_hygiene(tpl, bindings, binding_symbols)
         self.assertIn("ellipsis", str(ctx.exception).lower())
+
+
+    def test_template_ellipsis_splices_tail_binding(self):
+        """
+        Lone pattern-variable then ``...`` splices like quasiquote ``,@``
+        when the binding is not a Python list
+        """
+
+        plus = symbol("+")
+        xs = symbol("xs")
+        tpl = build_proper(plus, xs, Ellipsis)
+        bindings = {xs: cons(10, 20, nil)}
+        binding_symbols = set()
+        out = expand_template_with_hygiene(tpl, bindings, binding_symbols)
+        self.assertEqual(out, build_proper(plus, 10, 20))
+
+
+    def test_template_ellipsis_list_binding_uses_repeat_count(self):
+        """
+        List-valued bindings keep indexed ellipsis repetition
+        """
+
+        n = symbol("n")
+        tpl = build_proper(n, Ellipsis)
+        bindings = {n: [11, 22]}
+        binding_symbols = set()
+        out = expand_template_with_hygiene(tpl, bindings, binding_symbols)
+        self.assertEqual(out, build_proper(11, 22))
 
 
 class TestCollectAndApply(unittest.TestCase):

@@ -105,7 +105,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
 
     def test_sequence_and_ellipsis(self):
         """
-        (a ... ) binds repeat_capture for a
+        (a ... ) lowers to REST(a); captures bind the tail spine
         """
 
         a = symbol("a")
@@ -118,16 +118,14 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         cap0 = r.captures["a"]
         self.assertEqual(
             cap0.datum if isinstance(cap0, Datum) else cap0,
-            [])
+            ())
         s1 = symbol("s1")
         s2 = symbol("s2")
         r2 = m.match((s1, s2))
         self.assertTrue(r2.matched)
         cap_a = r2.captures["a"]
-        frames = cap_a.datum if isinstance(cap_a, Datum) else cap_a
-        self.assertEqual(len(frames), 2)
-        self.assertEqual(frames[0]["a__sr"].datum, s1)
-        self.assertEqual(frames[1]["a__sr"].datum, s2)
+        tail = cap_a.datum if isinstance(cap_a, Datum) else cap_a
+        self.assertEqual(tail, (s1, s2))
 
 
     def test_nested_sublist_pattern(self):

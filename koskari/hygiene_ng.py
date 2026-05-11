@@ -304,12 +304,20 @@ def expand_template_with_hygiene(
             i += 1
             continue
 
-        count = _repeat_count(elem, bindings)
-        for rep_i in range(count):
-            out.append(
-                expand_template_with_hygiene(
-                    elem, bindings, binding_symbols, introduced,
-                    index=rep_i))
+        if (is_symbol(elem) and elem in bindings
+                and not isinstance(bindings[elem], list)):
+            for c in unpack(bindings[elem]):
+                out.append(
+                    expand_template_with_hygiene(
+                        c, bindings, binding_symbols, introduced,
+                        index=index))
+        else:
+            count = _repeat_count(elem, bindings)
+            for rep_i in range(count):
+                out.append(
+                    expand_template_with_hygiene(
+                        elem, bindings, binding_symbols, introduced,
+                        index=rep_i))
         i += 2
 
     return build_proper(*out)

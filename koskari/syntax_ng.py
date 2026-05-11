@@ -24,11 +24,15 @@ MATCH-dialect rule spines via :func:`koskari.matcher_ng.parse_explicit_rule_patt
 The compiled dispatcher type here is ``syntax_ng.Syntax``. The legacy
 source wrapper remains ``koskari.syntax.Syntax``.
 
-Bare-pattern ellipsis ``(id ...)`` uses an inner capture slot ``id__sr``
-per iteration so freeze-time slot names stay distinct from the outer
-repeat list slot. Callers can flatten frames to legacy ``RepeatResult``
-shape later. An empty ellipsis region matches a subject with zero spine
-elements (``()``), not ``(nil,)``.
+Bare-pattern ellipsis ``(id ...)`` lowers to ``REST(str(id))`` in the
+RULE pattern lowerer: ``captures[id]`` is the tail-shaped value (often
+``Datum``), not a Python list of repeat frames. Template expansion treats
+a lone pattern-variable followed by ``...`` like quasiquote ``,@`` when
+that binding is not a ``list``; see
+:func:`koskari.hygiene_ng.expand_template_with_hygiene`. Compound
+``(subpat ...)`` still uses ``repeat_capture`` until repeat-frame
+transpose exists. An empty ellipsis region matches a subject with zero
+spine elements (``()``), not ``(nil,)``.
 
 Runtime constructors ``build_syntax`` and ``build_macro_syntax`` /
 ``build_special_syntax`` assemble a ``Syntax`` dispatcher from RULE
@@ -801,12 +805,11 @@ def _syntax_pattern_specs(p_items, literals, source_ctx):
         if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
             if is_symbol(pat) and pat not in literals:
-                slot = str(pat)
-                inner = CAPTURE(slot + "__sr")
+                specs.append(REST(str(pat)))
             else:
                 slot = str(gensym("_repeat"))
                 inner = _syntax_elem_pattern(pat, literals, source_ctx)
-            specs.append(repeat_capture(slot, inner))
+                specs.append(repeat_capture(slot, inner))
             i += 2
             continue
 
