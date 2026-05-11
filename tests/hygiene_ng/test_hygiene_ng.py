@@ -231,6 +231,36 @@ class TestExpandTemplate(unittest.TestCase):
         out = expand_template_with_hygiene(tpl, bindings, binding_symbols)
         self.assertEqual(out, build_proper(11, 22))
 
+    def test_template_ellipsis_repeats_compound_fn_a_b(self):
+        """
+        ``(#list (fn a b) ...)`` repeats the compound ``(fn a b)`` once per
+        index when ``a`` and ``b`` are list-valued captures of equal length
+        """
+
+        hash_list = symbol("#list")
+        fn = symbol("fn")
+        a = symbol("a")
+        b = symbol("b")
+        plus = symbol("+")
+        compound = cons(fn, a, b, nil)
+        tpl = cons(hash_list, compound, ..., nil)
+        bindings = {
+            fn: plus,
+            a: [1, 3, 100, 5],
+            b: [2, 4, 200, -1],
+        }
+        binding_symbols = set()
+        out = expand_template_with_hygiene(tpl, bindings, binding_symbols)
+        want = cons(
+            hash_list,
+            cons(plus, 1, 2, nil),
+            cons(plus, 3, 4, nil),
+            cons(plus, 100, 200, nil),
+            cons(plus, 5, -1, nil),
+            nil,
+        )
+        self.assertEqual(out, want)
+
 
 class TestCollectAndApply(unittest.TestCase):
 

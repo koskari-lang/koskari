@@ -82,6 +82,37 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         result = await expr()
         self.assertEqual(40, result)
 
+    async def test_compile_syntax_rules_compound_ellipsis_example_to_list(self):
+        """
+        ``(example fn (a b) ...)`` / ``(#list (fn a b) ...)`` repeats a compound
+        template fragment; use-site expands to ``(#list (+ 1 2) ...)`` and
+        evaluates like ``#[3 7 300 4]`` (``#list`` of those sums).
+        """
+
+        src_str = """
+        (compile/define example
+          (compile/syntax-rules example [#list]
+            [(example fn (a b) ...)
+             (#list (fn a b) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        await expr()
+        defn = {
+            'compile/example': vars(mod)['example'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (example + (1 2) (3 4) (100 200) (5 -1))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual([3, 7, 300, 4], list(result))
+
 
     async def test_compile_syntax_rules_no_matching_rule_raises(self):
         src_str = """

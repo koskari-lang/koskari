@@ -30,9 +30,10 @@ RULE pattern lowerer: ``captures[id]`` is the tail-shaped value (often
 a lone pattern-variable followed by ``...`` like quasiquote ``,@`` when
 that binding is not a ``list``; see
 :func:`koskari.hygiene_ng.expand_template_with_hygiene`. Compound
-``(subpat ...)`` still uses ``repeat_capture`` until repeat-frame
-transpose exists. An empty ellipsis region matches a subject with zero
-spine elements (``()``), not ``(nil,)``.
+``(subpat ...)`` uses ``repeat_capture``; :func:`_promote_repeat_frame_bindings`
+copies per-iteration frame slots up to parallel list columns for template
+symbols before ellipsis expansion. An empty ellipsis region matches a
+subject with zero spine elements (``()``), not ``(nil,)``.
 
 Runtime constructors ``build_syntax`` and ``build_macro_syntax`` /
 ``build_special_syntax`` assemble a ``Syntax`` dispatcher from RULE
@@ -61,12 +62,11 @@ from koskari.hygiene_ng import (Hygiene, collect_binding_symbols,
                                 expand_template_with_hygiene,
                                 finalize_macro_hygiene_unbox_one_pass)
 from koskari.lib import (Datum, Matcher, car, cdr, cons, demand_call, gensym,
-                         keyword, nil, pair, symbol)
-from koskari.matcher_ng import (BIND, CAPTURE, FORM, LITERAL, MATCH, REST,
+                         nil, symbol)
+from koskari.matcher_ng import (BIND, FORM, LITERAL, MATCH, REST,
                                 HygienicMatchCompiler, check_pattern_arg,
                                 parse_explicit_rule_pattern, repeat_capture)
-from koskari.types import (build_proper, is_nil, is_pair, is_proper, is_symbol,
-                           unpack)
+from koskari.types import build_proper, is_pair, is_proper, is_symbol, unpack
 
 
 __all__ = (
@@ -186,39 +186,6 @@ def _init_pattern_fields(instance, pattern, handler):
     instance._matcher = Matcher.from_tuple(instance.matcher_tuple)
 
 
-def _engine_externs():
-    """
-    Extern values for native ``Matcher.match`` on compile-time forms
-    """
-
-    return dict(
-        symbol=symbol,
-        keyword=keyword,
-        pair=pair,
-        nil=nil,
-        cons=cons,
-    )
-
-
-def _run_matcher(matcher, matcher_tuple, subject):
-    """
-    Run ``matcher`` against ``subject`` with externs required by ``matcher_tuple``
-    """
-
-    if (not isinstance(matcher_tuple, tuple)
-            or len(matcher_tuple) < 3
-            or matcher_tuple[0] != "MATCHER"):
-        return matcher.match(subject)
-    enames = matcher_tuple[2]
-    if not enames:
-        return matcher.match(subject)
-    full = _engine_externs()
-    ext = {k: full[k] for k in enames if k in full}
-    if not ext:
-        return matcher.match(subject)
-    return matcher.match(subject, **ext)
-
-
 def _captures_to_bindings(captures):
     """
     Map string capture keys to koskari symbols for template expansion.
@@ -229,9 +196,56 @@ def _captures_to_bindings(captures):
     ``MatchResult.captures`` mapping unchanged from the matcher.
     """
 
-    out = {}
-    for k, v in captures.items():
-        out[symbol(k)] = v
+    return {symbol(k): v for k, v in captures.items()}
+
+
+def _promote_repeat_frame_bindings(bindings):
+    """
+    For each ``repeat_capture`` value (bare list of per-iteration dicts),
+    copy slot columns onto top-level template keys.
+
+    Keys already present in ``bindings`` are left alone so outer captures and
+    the first promoted column win when names collide
+    """
+
+    out = dict(bindings)
+    for v in bindings.values():
+        # Stage 1: Datum at the binding root is never repeat_capture's frame
+        # vector; that structure is always a bare list. A Datum here is one
+        # wrapped cell (often a pair spine for REST or a leaf for BIND). If we
+        # mis-classified that as repeat rows, ellipsis would see wrong shapes.
+        if isinstance(v, Datum):
+            continue
+
+        # Stage 2: only non-empty Python lists can be repeat_capture output.
+        if not (v and isinstance(v, list)):
+            continue
+
+        frames = v
+        # Stage 3: repeat rows are dicts per iteration; anything else is not this
+        # transpose shape (e.g. a flat list of syntax objects from elsewhere).
+        if not all(isinstance(fr, dict) for fr in frames):
+            continue
+
+        # Stage 4: each frame maps string slot names to one iteration's
+        # captures (often Datum-wrapped); transpose into parallel lists for
+        # template ellipsis indexing.
+        slot_keys = set()
+        for fr in frames:
+            slot_keys.update(fr.keys())
+        for sk in slot_keys:
+            sym = symbol(sk) if isinstance(sk, str) else sk
+            if sym in out:
+                continue
+            col = []
+            for fr in frames:
+                if sk not in fr:
+                    col = None
+                    break
+                col.append(fr[sk])
+            if col is None:
+                continue
+            out[sym] = col
     return out
 
 
@@ -320,12 +334,12 @@ class SyntaxTransform(object):
         :return: expanded form or ``None`` when the pattern does not match
         """
 
-        result = _run_matcher(
-            self._matcher, self.matcher_tuple, source_obj)
+        result = self._matcher.match(source_obj)
         if not result.matched:
             return None
         # print('DEBUG syntax_ng SyntaxTransform', 'captures=', repr(result.captures))
         bindings = _captures_to_bindings(result.captures)
+        bindings = _promote_repeat_frame_bindings(bindings)
         # print('DEBUG syntax_ng SyntaxTransform', 'bindings=', repr(bindings))
         subst = expand_template_with_hygiene(
             self.template, bindings, set(), {})
@@ -403,8 +417,7 @@ class MacroTransform(object):
             match
         """
 
-        result = _run_matcher(
-            self._matcher, self.matcher_tuple, source_obj)
+        result = self._matcher.match(source_obj)
         if not result.matched:
             return None
         # print('DEBUG syntax_ng MacroTransform', 'captures=', repr(result.captures))
@@ -484,8 +497,7 @@ class SpecialTransform(object):
         :return: compile product or ``None`` when the pattern does not match
         """
 
-        result = _run_matcher(
-            self._matcher, self.matcher_tuple, source_obj)
+        result = self._matcher.match(source_obj)
         if not result.matched:
             return None
         return self.handler(compiler, source_obj, result, tc)
@@ -551,7 +563,7 @@ class Syntax(Compiled):
         full = cons(head, rest)
         for t in self.transforms:
             try:
-                r = _run_matcher(t._matcher, t.matcher_tuple, full)
+                r = t._matcher.match(full)
             except SpecialError:
                 continue
             if r.matched:

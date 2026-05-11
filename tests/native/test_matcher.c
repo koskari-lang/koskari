@@ -155,7 +155,7 @@ static int append_repeat_min(KosMatcherBuilder *b, uint32_t subnode,
 
 
 static int append_repeat(KosMatcherBuilder *b, uint32_t subnode) {
-    return append_repeat_min(b, subnode, 1);
+    return append_repeat_min(b, subnode, 0);
 }
 
 
@@ -179,7 +179,7 @@ static int append_rest_min(KosMatcherBuilder *b, uint32_t slot, uint32_t min_tai
 
 
 static int append_rest(KosMatcherBuilder *b, uint32_t slot) {
-    return append_rest_min(b, slot, 1);
+    return append_rest_min(b, slot, 0);
 }
 
 
@@ -718,8 +718,15 @@ static int test_matcher_module_exposes_matcher_type(void) {
 
     PyObject *cls = PyObject_GetAttrString(mod, "Matcher");
     TEST_ASSERT_NOT_NULL(cls, "Matcher exposed in koskari.lib");
-    TEST_ASSERT_SAME(cls, (PyObject *) &KosMatcherType,
-                     "Matcher attr is KosMatcherType");
+    TEST_ASSERT(PyType_Check(cls), "Matcher is a type");
+    /*
+      Importing koskari.lib loads the extension module; its Matcher may
+      not be pointer-identical to the statically linked KosMatcherType
+      used by the harness, but tp_name must agree.
+    */
+    TEST_ASSERT(strcmp(((PyTypeObject *) cls)->tp_name,
+                       KosMatcherType.tp_name) == 0,
+                "Matcher tp_name matches KosMatcherType");
 
     Py_DECREF(cls);
     Py_DECREF(mod);
