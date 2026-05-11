@@ -112,12 +112,14 @@ class TestSlotPrefixAndBindingCell(unittest.TestCase):
 
     def test_slot_prefix_tail_slot(self):
         """
-        slot_prefix rewrites TAIL slots when nesting calls for it
+        slot_prefix rewrites REST inside OPTIONAL from legacy (TAIL slot)
+        surface
         """
 
-        from koskari.matcher_ng import TAIL
+        from koskari.matcher_ng import OPTIONAL, REST
 
-        pat = slot_prefix(MATCH(TAIL("tail"), BINDING_CELL("x")), "p")
+        pat = slot_prefix(
+            MATCH(OPTIONAL(REST("tail", min_tail=1)), BINDING_CELL("x")), "p")
         frozen = pat.freeze()
         slots = frozen[1]
         self.assertIn("p__tail", slots)

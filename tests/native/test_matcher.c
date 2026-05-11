@@ -143,12 +143,19 @@ static int append_oneof(
 }
 
 
-static int append_repeat(KosMatcherBuilder *b, uint32_t subnode) {
+static int append_repeat_min(KosMatcherBuilder *b, uint32_t subnode,
+                             uint32_t min_count) {
     KosMatchNode n;
     memset(&n, 0, sizeof(n));
     n.kind = KOS_MATCH_NODE_REPEAT;
     n.as.repeat.subnode = subnode;
+    n.as.repeat.min_count = min_count;
     return KosMatcherBuilder_AppendNode(b, &n);
+}
+
+
+static int append_repeat(KosMatcherBuilder *b, uint32_t subnode) {
+    return append_repeat_min(b, subnode, 1);
 }
 
 
@@ -161,12 +168,18 @@ static int append_optional(KosMatcherBuilder *b, uint32_t subnode) {
 }
 
 
-static int append_rest(KosMatcherBuilder *b, uint32_t slot) {
+static int append_rest_min(KosMatcherBuilder *b, uint32_t slot, uint32_t min_tail) {
     KosMatchNode n;
     memset(&n, 0, sizeof(n));
     n.kind = KOS_MATCH_NODE_REST;
     n.as.rest.slot = slot;
+    n.as.rest.min_tail = min_tail;
     return KosMatcherBuilder_AppendNode(b, &n);
+}
+
+
+static int append_rest(KosMatcherBuilder *b, uint32_t slot) {
+    return append_rest_min(b, slot, 1);
 }
 
 
@@ -1578,6 +1591,149 @@ static int test_match_rest_nonterminal_with_finite_suffix(void) {
 }
 
 
+static int test_match_rest_min0_tail_nil_kospair(void) {
+    /*
+      MATCH(TEST_ANY, REST min_tail=0) on (1 . nil): rest captures nil.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int slot_r = add_str_slot(b, "r");
+    int n_t = append_test_any(b);
+    int n_rest = append_rest_min(b, (uint32_t) slot_r, 0);
+    uint32_t kids[] = {(uint32_t) n_t, (uint32_t) n_rest};
+    int n_grp = append_match(b, kids, 2);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *items[1] = {one};
+    PyObject *cons = make_kospair(items, 1);
+
+    PyObject *r = run_match_kospair((KosMatcher *) m_obj, cons);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    PyObject *cap = PyDict_GetItemString(
+        ((KosMatchResult *) r)->captures, "r");
+    PyObject *u = unwrap_datum_value(cap);
+    TEST_ASSERT(KosNil_Check(u), "rest is nil");
+
+    Py_DECREF(r);
+    Py_DECREF(cons);
+    Py_DECREF(one);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_rest_min0_tail_empty_tuple_pyseq(void) {
+    /*
+      Same matcher against Python tuple [1]: rest captures ().
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int slot_r = add_str_slot(b, "r");
+    int n_t = append_test_any(b);
+    int n_rest = append_rest_min(b, (uint32_t) slot_r, 0);
+    uint32_t kids[] = {(uint32_t) n_t, (uint32_t) n_rest};
+    int n_grp = append_match(b, kids, 2);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *seq = PyTuple_Pack(1, one);
+
+    PyObject *r = run_match_pyseq((KosMatcher *) m_obj, seq);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    PyObject *cap = PyDict_GetItemString(
+        ((KosMatchResult *) r)->captures, "r");
+    PyObject *u = unwrap_datum_value(cap);
+    TEST_ASSERT(PyTuple_Check(u), "rest is tuple");
+    TEST_ASSERT_EQ(PyTuple_GET_SIZE(u), 0, "empty tuple");
+
+    Py_DECREF(r);
+    Py_DECREF(seq);
+    Py_DECREF(one);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_repeat_min0_empty_subject(void) {
+    /*
+      CAPTURE(items, REPEAT(TEST_ANY, min_count=0)) matches [] with
+      items == [].
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int slot_items = add_str_slot(b, "items");
+    int t_any = append_test_any(b);
+    int n_rep = append_repeat_min(b, (uint32_t) t_any, 0);
+    int cap = append_capture(b, (uint32_t) slot_items, (uint32_t) n_rep);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) cap);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *seq = PyTuple_New(0);
+    PyObject *r = run_match_pyseq((KosMatcher *) m_obj, seq);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    PyObject *items = PyDict_GetItemString(
+        ((KosMatchResult *) r)->captures, "items");
+    TEST_ASSERT_NOT_NULL(items, "items");
+    TEST_ASSERT(PyList_Check(items), "list");
+    TEST_ASSERT_EQ(PyList_GET_SIZE(items), 0, "empty");
+
+    Py_DECREF(r);
+    Py_DECREF(seq);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_repeat_min2_requires_two_iterations(void) {
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int slot_items = add_str_slot(b, "items");
+    int t_any = append_test_any(b);
+    int n_rep = append_repeat_min(b, (uint32_t) t_any, 2);
+    int cap = append_capture(b, (uint32_t) slot_items, (uint32_t) n_rep);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) cap);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *seq1 = PyTuple_Pack(1, one);
+    PyObject *r_fail = run_match_pyseq((KosMatcher *) m_obj, seq1);
+    TEST_ASSERT_NOT_NULL(r_fail, "match returned");
+    TEST_ASSERT_EQ(((KosMatchResult *) r_fail)->matched, 0,
+                   "min_count=2 fails on one element");
+    Py_DECREF(r_fail);
+
+    PyObject *two = PyLong_FromLong(2);
+    PyObject *seq2 = PyTuple_Pack(2, one, two);
+    PyObject *r_ok = run_match_pyseq((KosMatcher *) m_obj, seq2);
+    TEST_ASSERT_NOT_NULL(r_ok, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r_ok)->matched, "two elems ok");
+    PyObject *items = PyDict_GetItemString(
+        ((KosMatchResult *) r_ok)->captures, "items");
+    TEST_ASSERT_EQ(PyList_GET_SIZE(items), 2, "two frames");
+
+    Py_DECREF(r_ok);
+    Py_DECREF(seq1);
+    Py_DECREF(seq2);
+    Py_DECREF(one);
+    Py_DECREF(two);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
 static int test_match_optional_absent_present(void) {
     /*
       GROUP(OPTIONAL(CAPTURE(x, TEST_ANY)), TEST_LITERAL "end")
@@ -1955,6 +2111,55 @@ static int test_thaw_rejects_index_oob(void) {
     Py_DECREF(cap_node);
     Py_DECREF(slots);
     Py_DECREF(xname);
+    Py_DECREF(empty);
+    return 0;
+}
+
+
+static int test_thaw_rest_repeat_min_fields(void) {
+    /*
+      3-tuple REST and REPEAT nodes preserve min_tail / min_count.
+    */
+    PyObject *empty = PyTuple_New(0);
+    PyObject *rname = PyUnicode_FromString("r");
+    PyObject *slots = PyTuple_Pack(1, rname);
+
+    PyObject *rest3 = Py_BuildValue("(sii)", "REST", 0, 0);
+    PyObject *nodes_r = PyTuple_Pack(1, rest3);
+    PyObject *frozen_r = Py_BuildValue("(sOOOOi)",
+                                        "MATCHER",
+                                        slots, empty, empty, nodes_r, 0);
+    PyObject *from_tuple = get_from_tuple_method();
+    PyObject *m_r = PyObject_CallOneArg(from_tuple, frozen_r);
+    TEST_ASSERT_NOT_NULL(m_r, "thaw REST+min");
+    TEST_ASSERT_EQ(((KosMatcher *) m_r)->nodes[0].as.rest.min_tail,
+                   (uint32_t) 0, "min_tail 0");
+
+    Py_DECREF(m_r);
+    Py_DECREF(frozen_r);
+    Py_DECREF(nodes_r);
+    Py_DECREF(rest3);
+
+    PyObject *test_any = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
+    PyObject *rep3 = Py_BuildValue("(sii)", "REPEAT", 0, 2);
+    PyObject *nodes_p = PyTuple_Pack(2, test_any, rep3);
+    PyObject *frozen_p = Py_BuildValue("(sOOOOi)",
+                                        "MATCHER",
+                                        empty, empty, empty, nodes_p, 1);
+    PyObject *m_p = PyObject_CallOneArg(from_tuple, frozen_p);
+    TEST_ASSERT_NOT_NULL(m_p, "thaw REPEAT+min");
+    TEST_ASSERT_EQ(((KosMatcher *) m_p)->nodes[1].as.repeat.min_count,
+                   (uint32_t) 2, "min_count 2");
+
+    Py_DECREF(m_p);
+    Py_DECREF(frozen_p);
+    Py_DECREF(nodes_p);
+    Py_DECREF(rep3);
+    Py_DECREF(test_any);
+
+    Py_DECREF(from_tuple);
+    Py_DECREF(slots);
+    Py_DECREF(rname);
     Py_DECREF(empty);
     return 0;
 }
@@ -2565,6 +2770,10 @@ int run_matcher_tests(void) {
     RUN_TEST(test_match_rest_terminal_pysequence);
     RUN_TEST(test_match_rest_terminal_kospair);
     RUN_TEST(test_match_rest_nonterminal_with_finite_suffix);
+    RUN_TEST(test_match_rest_min0_tail_nil_kospair);
+    RUN_TEST(test_match_rest_min0_tail_empty_tuple_pyseq);
+    RUN_TEST(test_match_repeat_min0_empty_subject);
+    RUN_TEST(test_match_repeat_min2_requires_two_iterations);
     RUN_TEST(test_match_optional_absent_present);
     RUN_TEST(test_match_not_blocks);
     RUN_TEST(test_match_extern_type_test);
@@ -2576,6 +2785,7 @@ int run_matcher_tests(void) {
     RUN_TEST(test_thaw_rejects_short_tuple);
     RUN_TEST(test_thaw_rejects_unknown_node_tag);
     RUN_TEST(test_thaw_rejects_index_oob);
+    RUN_TEST(test_thaw_rest_repeat_min_fields);
     RUN_TEST(test_thaw_full_lambda);
 
     BEGIN_TEST_SUITE("matcher_ng (Phase 4: CLASS / FIELD)");

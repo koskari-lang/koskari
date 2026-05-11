@@ -55,7 +55,6 @@ from koskari.matcher_ng import (
     REPEAT,
     REST,
     SYMBOL,
-    TAIL,
     TEST_ANY,
     TYPE,
     USING,
@@ -387,12 +386,42 @@ class TestParseCompositeVariadic(unittest.TestCase):
 
     def test_repeat_unary(self):
         """
-        (REPEAT pat) lowers to REPEAT
+        (REPEAT pat) lowers to REPEAT with min_count 0 (Kleene star)
         """
 
         src = _list(symbol("REPEAT"), symbol("e"))
         pat = parse_matcher(src)
         self.assertIsInstance(pat, REPEAT)
+        self.assertEqual(pat._min_count, 0)
+
+
+    def test_repeat_slot_and_min_option(self):
+        """
+        (REPEAT slot pat min: N) lowers to repeat_capture with REPEAT
+        min_count N
+        """
+
+        src = _list(
+            symbol("REPEAT"), symbol("xs"), symbol("e"),
+            keyword("min"), 2)
+        pat = parse_matcher(src)
+        self.assertIsInstance(pat, CAPTURE)
+        self.assertEqual(pat._slot, "xs")
+        self.assertIsInstance(pat._sub, REPEAT)
+        self.assertEqual(pat._sub._min_count, 2)
+
+
+    def test_repeat_min_keyword_with_trailing_colon(self):
+        """
+        min: spelling normalizes to the same option as min
+        """
+
+        src = _list(
+            symbol("REPEAT"), symbol("ys"), symbol("f"),
+            keyword("min:"), 0)
+        pat = parse_matcher(src)
+        self.assertIsInstance(pat, CAPTURE)
+        self.assertEqual(pat._sub._min_count, 0)
 
 
     def test_optional_unary(self):
@@ -499,24 +528,50 @@ class TestParseCompositeSlotFirst(unittest.TestCase):
 
     def test_rest(self):
         """
-        (REST tail) lowers to REST("tail")
+        (REST tail) lowers to REST with min_tail 0
         """
 
         src = _list(symbol("REST"), symbol("tail"))
         pat = parse_matcher(src)
         self.assertIsInstance(pat, REST)
         self.assertEqual(pat._slot, "tail")
+        self.assertEqual(pat._min_tail, 0)
+
+
+    def test_rest_min_option(self):
+        """
+        (REST slot min: N) sets min_tail
+        """
+
+        src = _list(
+            symbol("REST"), symbol("tail"),
+            keyword("min"), 1)
+        pat = parse_matcher(src)
+        self.assertIsInstance(pat, REST)
+        self.assertEqual(pat._min_tail, 1)
+
+
+    def test_rest_requires_slot(self):
+        """
+        (REST) with no slot raises
+        """
+
+        src = _list(symbol("REST"))
+        with self.assertRaises(ValueError):
+            parse_matcher(src)
 
 
     def test_tail(self):
         """
-        (TAIL tail) lowers to TAIL("tail"), i.e. OPTIONAL(REST("tail"))
+        (TAIL tail) lowers to OPTIONAL(REST("tail", min_tail=1))
         """
 
         src = _list(symbol("TAIL"), symbol("tail"))
         pat = parse_matcher(src)
-        self.assertIsInstance(pat, TAIL)
-        self.assertEqual(pat._slot, "tail")
+        self.assertIsInstance(pat, OPTIONAL)
+        self.assertIsInstance(pat._sub, REST)
+        self.assertEqual(pat._sub._slot, "tail")
+        self.assertEqual(pat._sub._min_tail, 1)
 
 
     def test_body(self):

@@ -110,6 +110,11 @@ typedef struct {
 
 typedef struct {
   uint32_t subnode;
+  /**
+   * Minimum successful iterations (0 allows zero matches; the CAPTURE
+   * wrapping REPEAT still binds an empty list when min_count is 0).
+   */
+  uint32_t min_count;
 } KosMatchRepeat;
 
 
@@ -120,7 +125,12 @@ typedef struct {
 
 typedef struct {
   uint32_t slot;
-  uint32_t reserved_suffix_min;
+  /**
+   * Minimum spine elements this REST must consume from the current
+   * subject (0 allows an empty remainder; bind nil for KosPair, () for
+   * sequence subjects).
+   */
+  uint32_t min_tail;
 } KosMatchRest;
 
 

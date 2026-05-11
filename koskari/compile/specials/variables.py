@@ -25,9 +25,9 @@ compile/globals, and compile/locals.
 
 
 from ...exceptions import CompilerError, SpecialError
-from ...lib import Datum, OpCode, cons, keyword, nil, symbol
+from ...lib import OpCode, cons, keyword, nil, symbol
 from ...matcher_ng import (BODY, DECL, DEFINE, FORMALS, FORMALS_SOURCE_KEY,
-                           LITERAL_KW, MATCH, PAIR, REST, SYMBOL, TAIL, VALUE)
+                           LITERAL_KW, MATCH, PAIR, REST, SYMBOL, VALUE)
 from ...stdlib import builtin
 from ...syntax_ng import special
 from ...types import is_pair
@@ -77,7 +77,7 @@ def _define_name_type_pos_from_match(matched):
     return namesym, type_expr
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("_"), TAIL("rest")),)
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("_"), REST("rest")),)
 
 
 _SETQ_PATTERNS = [

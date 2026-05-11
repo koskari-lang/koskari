@@ -205,7 +205,7 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define zot
           (compile/syntax-match zot
-            [(zot (REPEAT xs elem: (VALUE e) min_count: 0)) (+ 1 1)]))
+            [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
         await expr()
@@ -223,7 +223,7 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define zot
           (compile/syntax-match zot
-            [(zot (REPEAT ys elem: (LITERAL hello) min_count: 1)) (+ 1 1)]))
+            [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
         await expr()
@@ -265,7 +265,7 @@ class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define zot
           (compile/macro-match zot
-            [(zot (REPEAT ys elem: (LITERAL hello) min_count: 1)) (+ 1 1)]))
+            [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
         await expr()

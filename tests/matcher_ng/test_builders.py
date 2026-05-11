@@ -191,7 +191,7 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
 
         frozen = REPEAT(TEST_ANY()).freeze()
         self.assertEqual(
-            frozen[4], (("TEST", "ANY", -1), ("REPEAT", 0)))
+            frozen[4], (("TEST", "ANY", -1), ("REPEAT", 0, 0)))
 
 
     def test_optional_emits_post_order(self):
@@ -211,7 +211,7 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
 
         frozen = REST("rest").freeze()
         self.assertEqual(frozen[1], ("rest",))
-        self.assertEqual(frozen[4], (("REST", 0),))
+        self.assertEqual(frozen[4], (("REST", 0, 0),))
 
 
     def test_not_emits_post_order(self):

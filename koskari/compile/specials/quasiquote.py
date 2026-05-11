@@ -44,7 +44,7 @@ from ...lib import nil, OpCode, symbol
 from ...types import cons, get_position, is_nil, is_pair, set_position
 from ...exceptions import SpecialError
 from ..compiler import _is_const
-from ...matcher_ng import MATCH, SYMBOL, TAIL
+from ...matcher_ng import MATCH, REST, SYMBOL
 from ...stdlib import builtin
 from ...syntax_ng import special
 
@@ -56,7 +56,7 @@ _symbol_quote_block = symbol("compile/quote-block")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), TAIL("rest")),)
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _qq_expr(compiler, frag, expr, level):

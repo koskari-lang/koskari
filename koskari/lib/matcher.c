@@ -714,10 +714,17 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
     break;
   }
 
-  case KOS_MATCH_NODE_REPEAT:
-    n->min_width = 0;
+  case KOS_MATCH_NODE_REPEAT: {
+    uint32_t sub_min = 1;
+    if (n->as.repeat.subnode != KOS_MATCH_NO_INDEX)
+      sub_min = m->nodes[n->as.repeat.subnode].min_width;
+    uint64_t prod = (uint64_t) n->as.repeat.min_count * (uint64_t) sub_min;
+    n->min_width = prod > (uint64_t) 0xFFFFFFFEu
+        ? (uint32_t) 0xFFFFFFFEu
+        : (uint32_t) prod;
     n->max_width = KOS_MATCH_UNBOUNDED;
     break;
+  }
 
   case KOS_MATCH_NODE_OPTIONAL: {
     uint32_t cmx = 1;
@@ -729,7 +736,7 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
   }
 
   case KOS_MATCH_NODE_REST:
-    n->min_width = 1;
+    n->min_width = n->as.rest.min_tail;
     n->max_width = KOS_MATCH_UNBOUNDED;
     break;
 
@@ -2338,6 +2345,11 @@ static int match_capture(
         engine_rollback(e, snap);
       }
 
+      if (PyList_GET_SIZE(items) < (Py_ssize_t) sub->as.repeat.min_count) {
+        Py_DECREF(items);
+        return 0;
+      }
+
       if (n->as.capture.slot != KOS_MATCH_NO_INDEX) {
         if (engine_set_slot(e, n->as.capture.slot, items))
           return -1;
@@ -2509,6 +2521,7 @@ static int match_repeat(
     Py_ssize_t *cursor) {
 
   uint32_t inner = n->as.repeat.subnode;
+  uint32_t got = 0;
   while (1) {
     Py_ssize_t snap = engine_snapshot(e);
     Py_ssize_t saved = *cursor;
@@ -2520,7 +2533,10 @@ static int match_repeat(
       engine_rollback(e, snap);
       break;
     }
+    got++;
   }
+  if (got < n->as.repeat.min_count)
+    return 0;
   return 1;
 }
 
@@ -2557,13 +2573,21 @@ static int match_rest(
 
   Py_ssize_t consume = available - (Py_ssize_t) trailing_min;
   Py_ssize_t end = *cursor + consume;
+  uint32_t min_tail = n->as.rest.min_tail;
 
-  if (consume < 1)
+  if (consume < (Py_ssize_t) min_tail)
     return 0;
 
   if (n->as.rest.slot != KOS_MATCH_NO_INDEX) {
     PyObject *value;
-    if (end == length) {
+    if (consume == 0) {
+      value = e->subj->vt->tail(e->subj, *cursor);
+      if (! value)
+        return -1;
+      value = kos_datum_from_spine_cell(e->subj, *cursor, value);
+      if (! value)
+        return -1;
+    } else if (end == length) {
       value = e->subj->vt->tail(e->subj, *cursor);
       if (! value)
         return -1;
@@ -3163,6 +3187,31 @@ static int thaw_parse_index(
 }
 
 
+/**
+   Parse a non-negative uint32 for REST.min_tail / REPEAT.min_count.
+*/
+static int thaw_parse_uint32_nonneg(
+    PyObject *o,
+    uint32_t *out,
+    const char *what) {
+
+  if (! PyLong_Check(o)) {
+    PyErr_Format(PyExc_TypeError, "%s must be an int, got %.200s",
+                 what, Py_TYPE(o)->tp_name);
+    return -1;
+  }
+  unsigned long v = PyLong_AsUnsignedLong(o);
+  if (PyErr_Occurred())
+    return -1;
+  if (v > (unsigned long) 0xFFFFFFFEu) {
+    PyErr_Format(PyExc_ValueError, "%s out of range", what);
+    return -1;
+  }
+  *out = (uint32_t) v;
+  return 0;
+}
+
+
 static int thaw_parse_test_kind(PyObject *o, uint16_t *out) {
   if (PyLong_Check(o)) {
     long v = PyLong_AsLong(o);
@@ -3348,15 +3397,23 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
     return (rc < 0) ? -1 : 0;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "REPEAT") == 0) {
-    if (arity != 2) {
+    if (arity != 2 && arity != 3) {
       PyErr_Format(PyExc_ValueError,
-                   "REPEAT node tuple must be 2-tuple, got %zd", arity);
+                   "REPEAT node tuple must be 2- or 3-tuple, got %zd",
+                   arity);
       return -1;
     }
     n.kind = KOS_MATCH_NODE_REPEAT;
     if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
                          &n.as.repeat.subnode, "REPEAT.subnode"))
       return -1;
+    n.as.repeat.min_count = 1;
+    if (arity == 3) {
+      if (thaw_parse_uint32_nonneg(PyTuple_GET_ITEM(t, 2),
+                                   &n.as.repeat.min_count,
+                                   "REPEAT.min_count"))
+        return -1;
+    }
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "OPTIONAL") == 0) {
     if (arity != 2) {
@@ -3371,15 +3428,23 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
       return -1;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "REST") == 0) {
-    if (arity != 2) {
+    if (arity != 2 && arity != 3) {
       PyErr_Format(PyExc_ValueError,
-                   "REST node tuple must be 2-tuple, got %zd", arity);
+                   "REST node tuple must be 2- or 3-tuple, got %zd",
+                   arity);
       return -1;
     }
     n.kind = KOS_MATCH_NODE_REST;
     if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
                          &n.as.rest.slot, "REST.slot"))
       return -1;
+    n.as.rest.min_tail = 1;
+    if (arity == 3) {
+      if (thaw_parse_uint32_nonneg(PyTuple_GET_ITEM(t, 2),
+                                   &n.as.rest.min_tail,
+                                   "REST.min_tail"))
+        return -1;
+    }
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "NOT") == 0) {
     if (arity != 2) {

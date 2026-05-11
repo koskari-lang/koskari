@@ -32,14 +32,14 @@ import operator as _op
 
 from ...lib import nil, OpCode, symbol, cons
 from ...exceptions import SpecialError
-from ...matcher_ng import MATCH, SYMBOL, TAIL, VALUE
+from ...matcher_ng import MATCH, REST, SYMBOL, VALUE
 from ...types import get_position, is_pair, is_symbol, is_keyword, unpack
 from ...stdlib import builtin
 from ...syntax_ng import special
 from ..helpers_ng import const_only_expr, is_symbolish, match
 
 
-_DEFAULT_SPECIAL_PATTERNS = (MATCH(SYMBOL("called-by"), TAIL("rest")),)
+_DEFAULT_SPECIAL_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _reduce_fold(py_fold, compiler, body):

@@ -20,10 +20,14 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, symbol
+from koskari.lib import Datum, cons, keyword, symbol
 from koskari.matcher_ng import (
+    CAPTURE,
     LITERAL,
+    MATCH,
     Matcher,
+    REPEAT,
+    REST,
     parse_explicit_rule_pattern,
 )
 from koskari.types import build_proper
@@ -95,6 +99,50 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         with self.assertRaises(ValueError) as ar:
             parse_explicit_rule_pattern(bad)
         self.assertIn("proper", str(ar.exception).lower())
+
+
+    def test_rest_min_tail_zero_binds_empty_tuple(self):
+        """
+        REST with min: 0 captures an empty spine tail as ()
+        """
+
+        r = symbol("r")
+        form = build_proper(
+            symbol("REST"), r, keyword("min"), 0)
+        rest_pat = parse_explicit_rule_pattern(form)
+        self.assertIsInstance(rest_pat, REST)
+        self.assertEqual(rest_pat._min_tail, 0)
+        pat = MATCH(LITERAL(1), rest_pat)
+        m = Matcher.from_tuple(pat.freeze())
+        res = m.match([1])
+        self.assertTrue(res.matched)
+        self.assertEqual(res.captures["r"].datum, ())
+
+
+    def test_repeat_slot_min_freeze_thaw_match(self):
+        """
+        (REPEAT xs literal min: 2) freezes and matches two repetitions
+        """
+
+        form = build_proper(
+            symbol("REPEAT"), symbol("xs"),
+            build_proper(symbol("LITERAL"), symbol("x")),
+            keyword("min"), 2)
+        p = parse_explicit_rule_pattern(form)
+        self.assertIsInstance(p, CAPTURE)
+        self.assertIsInstance(p._sub, REPEAT)
+        self.assertEqual(p._sub._min_count, 2)
+        m = Matcher.from_tuple(p.freeze())
+        xa = symbol("x")
+        ok = m.match([xa, xa])
+        self.assertTrue(ok.matched)
+        cap = ok.captures["xs"]
+        frames = cap.datum if isinstance(cap, Datum) else cap
+        self.assertEqual(len(frames), 2)
+        bad_one = m.match([xa])
+        self.assertFalse(bad_one.matched)
+        bad_extra = m.match([xa, xa, symbol("z")])
+        self.assertFalse(bad_extra.matched)
 
 
 # The end.

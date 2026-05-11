@@ -24,15 +24,16 @@ Special forms for ``compile/syntax`` and
 
 from ...exceptions import SpecialError
 from ...lib import Datum, cons, gensym, nil, pair, symbol
-from ...matcher_ng import (BIND, DEFINE, LIST, MATCH, REST, SYMBOL, TAIL,
-                          VALUE, parse_explicit_rule_pattern,
-                          pattern_slot_names, repeat_capture)
+from ...matcher_ng import (BIND, DEFINE, LIST, MATCH, REST, SYMBOL, VALUE,
+                           parse_explicit_rule_pattern, pattern_slot_names,
+                           repeat_capture)
 from ...stdlib import builtin
 from ...syntax_ng import (Syntax, SyntaxTransform, hygienic_lower_tuple,
-                          parse_syntax_rules_pattern, serialize_form as _serialize_form,
-                          special)
-from ...types import (build_proper, get_position, is_pair,
-                      is_proper, is_symbol, unpack)
+                          parse_syntax_rules_pattern)
+from ...syntax_ng import serialize_form as _serialize_form
+from ...syntax_ng import special
+from ...types import (build_proper, get_position, is_pair, is_proper,
+                      is_symbol, unpack)
 from ..compiler import Compiler
 from ..helpers_ng import match, match1
 
@@ -69,16 +70,6 @@ _COMPILE_NAME_LITERALS_RULES = [
 _COMPILE_NAME_RULES_TAIL = [
     MATCH(DEFINE("name"), REST("rules")),
 ]
-
-_COMPILE_NAME_LITERALS_RULES_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
-    for m in _COMPILE_NAME_LITERALS_RULES)
-
-_COMPILE_NAME_RULES_TAIL_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
-    for m in _COMPILE_NAME_RULES_TAIL)
-
-_DEFAULT_SYNTAX_PATTERNS = (MATCH(SYMBOL("called-by"), TAIL("rest")),)
 
 
 def _opaque_rule_mr(frame):
@@ -120,8 +111,13 @@ def _opaque_rule_spine(frame):
     return src
 
 
+_MAKE_SYNTAX_PATTERNS = [
+    MATCH(SYMBOL("called-by"), REST("rest")),
+]
+
+
 @builtin("compile/make-syntax")
-@special("compile/make-syntax", patterns=_DEFAULT_SYNTAX_PATTERNS)
+@special("compile/make-syntax", patterns=_MAKE_SYNTAX_PATTERNS)
 def special_compile_syntax(
         compiler: Compiler,
         source: pair,
@@ -147,8 +143,13 @@ def special_compile_syntax(
 _COMPILE_NAME_SPEC_PATTERNS = [MATCH(DEFINE("name"), VALUE("spec"))]
 
 
+_SYNTAX_RULES_PATTERNS = [
+    MATCH(SYMBOL("called-by"), DEFINE("name"), VALUE("literals"), REST("rules")),
+]
+
+
 @builtin("compile/syntax-rules")
-@special("compile/syntax-rules", patterns=_COMPILE_NAME_LITERALS_RULES_FULL)
+@special("compile/syntax-rules", patterns=_SYNTAX_RULES_PATTERNS)
 def special_compile_syntax_rules(compiler, source, tc=False):
     """
     Compile (compile/syntax-rules NAME LITERALS RULES...).
@@ -176,8 +177,13 @@ def special_compile_syntax_rules(compiler, source, tc=False):
     return cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
 
+_MACRO_RULES_PATTERNS = [
+    MATCH(SYMBOL("called-by"), DEFINE("name"), VALUE("literals"), REST("rules")),
+]
+
+
 @builtin("compile/macro-rules")
-@special("compile/macro-rules", patterns=_COMPILE_NAME_LITERALS_RULES_FULL)
+@special("compile/macro-rules", patterns=_MACRO_RULES_PATTERNS)
 def special_compile_macro_rules(compiler, source, tc=False):
     """
     Compile (compile/macro-rules NAME LITERALS RULES...).
@@ -217,8 +223,13 @@ def special_compile_macro_rules(compiler, source, tc=False):
                 *parts, nil)
 
 
+_SYNTAX_MATCH_PATTERNS = [
+    MATCH(SYMBOL("called-by"), DEFINE("name"), REST("rules")),
+]
+
+
 @builtin("compile/syntax-match")
-@special("compile/syntax-match", patterns=_COMPILE_NAME_RULES_TAIL_FULL)
+@special("compile/syntax-match", patterns=_SYNTAX_MATCH_PATTERNS)
 def special_compile_syntax_match(compiler, source, tc=False):
     """
     Compile (compile/syntax-match NAME RULE ...).
@@ -264,8 +275,13 @@ def special_compile_syntax_match(compiler, source, tc=False):
     return cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
 
+_MACRO_MATCH_PATTERNS = [
+    MATCH(SYMBOL("called-by"), DEFINE("name"), REST("rules")),
+]
+
+
 @builtin("compile/macro-match")
-@special("compile/macro-match", patterns=_COMPILE_NAME_RULES_TAIL_FULL)
+@special("compile/macro-match", patterns=_MACRO_MATCH_PATTERNS)
 def special_compile_macro_match(compiler, source, tc=False):
     """
     Compile (compile/macro-match NAME RULE ...).
@@ -311,8 +327,13 @@ def special_compile_macro_match(compiler, source, tc=False):
                 str(namesym), (), *parts, nil)
 
 
+_SPECIAL_RULES_PATTERNS = [
+    MATCH(SYMBOL("called-by"), DEFINE("name"), VALUE("literals"), REST("rules")),
+]
+
+
 @builtin("compile/special-rules")
-@special("compile/special-rules", patterns=_COMPILE_NAME_LITERALS_RULES_FULL)
+@special("compile/special-rules", patterns=_SPECIAL_RULES_PATTERNS)
 def special_compile_special_rules(compiler, source, tc=False):
     """
     Compile (compile/special-rules NAME LITERALS RULES...).
@@ -384,8 +405,13 @@ def special_compile_special_rules(compiler, source, tc=False):
                 *parts, nil)
 
 
+_SPECIAL_MATCH_PATTERNS = [
+    MATCH(SYMBOL("called-by"), DEFINE("name"), REST("rules")),
+]
+
+
 @builtin("compile/special-match")
-@special("compile/special-match", patterns=_COMPILE_NAME_RULES_TAIL_FULL)
+@special("compile/special-match", patterns=_SPECIAL_MATCH_PATTERNS)
 def special_compile_special_match(compiler, source, tc=False):
     """
     Compile (compile/special-match NAME RULE ...).

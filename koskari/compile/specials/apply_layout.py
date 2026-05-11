@@ -29,7 +29,7 @@ forms. Multiple top-level results are wrapped in compile/begin.
 from ...exceptions import SpecialError
 from ...lib import car, cdr, cons, keyword, nil, symbol
 from ...types import is_nil, is_pair, unpack
-from ...matcher_ng import MATCH, SYMBOL, TAIL
+from ...matcher_ng import MATCH, REST, SYMBOL
 from ...stdlib import builtin
 from ...syntax_ng import special
 
@@ -38,7 +38,7 @@ _keyword_block = keyword(':block:')
 _symbol_begin = symbol('compile/begin')
 _symbol_layout_block = symbol('layout/block')
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), TAIL("rest")),)
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _is_block(form):

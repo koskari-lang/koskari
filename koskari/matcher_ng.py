@@ -72,7 +72,6 @@ __all__ = [
     "REPEAT",
     "OPTIONAL",
     "REST",
-    "TAIL",
     "NOT",
     "CLASS",
     "FIELD",
@@ -841,18 +840,32 @@ class ONEOF(Pattern):
 
 class REPEAT(Pattern):
     """
-    Greedily match the inner pattern one-or-more times
+    Greedily match the inner pattern repeatedly; require at least
+    ``min_count`` successful iterations (default 0: Kleene star)
     """
 
 
-    def __init__(self, sub):
+    def __init__(self, sub, min_count=0):
         """
         :param sub: pattern repeated against successive elements
-        :raises TypeError: when sub is not a pattern
+        :param min_count: minimum iterations (0 allows zero matches
+            when wrapped in CAPTURE / repeat_capture)
+        :raises TypeError: when sub is not a pattern or min_count is
+            not an int
+        :raises ValueError: when min_count is negative
         """
 
         check_pattern_arg(sub, "REPEAT sub")
+        if isinstance(min_count, bool) or not isinstance(min_count, int):
+            raise TypeError(
+                "REPEAT min_count must be an int, got %r"
+                % (type(min_count).__name__,))
+        if min_count < 0:
+            raise ValueError(
+                "REPEAT min_count must be non-negative, got %d"
+                % (min_count,))
         self._sub = sub
+        self._min_count = min_count
 
 
     def lower(self, ctx):
@@ -861,7 +874,7 @@ class REPEAT(Pattern):
         """
 
         sub_idx = self._sub.lower(ctx)
-        return ctx.append_node(("REPEAT", sub_idx))
+        return ctx.append_node(("REPEAT", sub_idx, self._min_count))
 
 
     def visit(self, fn):
@@ -903,19 +916,31 @@ class OPTIONAL(Pattern):
 
 class REST(Pattern):
     """
-    Capture the remainder of the source list into the named slot
+    Capture the remainder of the source list into the named slot.
+    ``min_tail`` is the minimum number of spine cells this REST must
+    take (default 0: empty remainder binds KosPair ``nil`` or ``()``).
     """
 
 
-    def __init__(self, slot):
+    def __init__(self, slot, min_tail=0):
         """
         :param slot: target slot name
-        :raises TypeError: when slot is not a str
-        :raises ValueError: when slot is empty
+        :param min_tail: minimum spine elements consumed (default 0)
+        :raises TypeError: when slot is not a str or min_tail is not
+            an int
+        :raises ValueError: when slot is empty or min_tail is negative
         """
 
         check_str_arg(slot, "REST slot")
+        if isinstance(min_tail, bool) or not isinstance(min_tail, int):
+            raise TypeError(
+                "REST min_tail must be an int, got %r"
+                % (type(min_tail).__name__,))
+        if min_tail < 0:
+            raise ValueError(
+                "REST min_tail must be non-negative, got %d" % (min_tail,))
         self._slot = slot
+        self._min_tail = min_tail
 
 
     def lower(self, ctx):
@@ -925,42 +950,7 @@ class REST(Pattern):
 
         ctx.claim_slot_name(self._slot, ("rest", id(self)))
         slot_idx = ctx.intern_slot(self._slot)
-        return ctx.append_node(("REST", slot_idx))
-
-
-class TAIL(Pattern):
-    """
-    Optional remainder capture; equivalent to OPTIONAL(REST(slot))
-
-    When the optional arm matches, REST binds at least one remaining
-    spine cell. When it does not, the slot is omitted from captures
-    """
-
-
-    def __init__(self, slot):
-        """
-        :param slot: str capture slot name for the non-empty remainder
-
-        :raises TypeError: when slot is not a str
-        :raises ValueError: when slot is empty
-        """
-
-        check_str_arg(slot, "TAIL slot")
-        self._slot = slot
-
-
-    def lower(self, ctx):
-        """
-        Emit OPTIONAL wrapping REST for this slot
-        """
-
-        return OPTIONAL(REST(self._slot)).lower(ctx)
-
-
-    def visit(self, fn):
-        fn(self)
-        r = REST(self._slot)
-        OPTIONAL(r).visit(fn)
+        return ctx.append_node(("REST", slot_idx, self._min_tail))
 
 
 class NOT(Pattern):
@@ -1103,7 +1093,7 @@ class FIELD(Pattern):
 def repeat_capture(slot, inner):
     """
     Capture the results of repeating inner across successive subject
-    elements.     The native engine stores matched.captures[slot] as a bare Python
+    elements. The native engine stores matched.captures[slot] as a bare Python
     list of dict objects (not wrapped in Datum): each dict maps slot
     names touched during one iteration to their captured values
     (sparse; absent slots are omitted). Inner patterns should use
@@ -1117,12 +1107,14 @@ def repeat_capture(slot, inner):
 
     check_str_arg(slot, "repeat_capture slot")
     check_pattern_arg(inner, "repeat_capture inner")
+    if isinstance(inner, REPEAT):
+        return CAPTURE(slot, inner)
     return CAPTURE(slot, REPEAT(inner))
 
 
 def slot_prefix(pattern, prefix, sep="__"):
     """
-    Return a copy of pattern with every nested CAPTURE, REST, and TAIL
+    Return a copy of pattern with every nested CAPTURE and REST
     slot renamed to prefix + sep + original, and CAPTURE scope_slot likewise
     prefixed when present. Use before composing the same binding-shaped
     subtree multiple times so freeze-time duplicate-slot detection does
@@ -1175,7 +1167,10 @@ def slot_prefix_copy(pattern, prefix, sep):
             slot_prefix_copy(b, prefix, sep) for b in pattern._branches])
 
     if isinstance(pattern, REPEAT):
-        return REPEAT(slot_prefix_copy(pattern._sub, prefix, sep))
+        return REPEAT(
+            slot_prefix_copy(pattern._sub, prefix, sep),
+            min_count=pattern._min_count,
+        )
 
     if isinstance(pattern, OPTIONAL):
         return OPTIONAL(slot_prefix_copy(pattern._sub, prefix, sep))
@@ -1184,10 +1179,10 @@ def slot_prefix_copy(pattern, prefix, sep):
         return NOT(slot_prefix_copy(pattern._sub, prefix, sep))
 
     if isinstance(pattern, REST):
-        return REST(prefix + sep + pattern._slot)
-
-    if isinstance(pattern, TAIL):
-        return TAIL(prefix + sep + pattern._slot)
+        return REST(
+            prefix + sep + pattern._slot,
+            min_tail=pattern._min_tail,
+        )
 
     if isinstance(pattern, CLASS):
         new_fields = tuple(
@@ -2129,11 +2124,12 @@ def _iter_unpack_lhs_symbols(lhs):
 
 class BODY(Pattern):
     """
-    Scope-region-aware REST capture. Behaves identically to REST at
-    the engine level but additionally registers the slot as a body
-    scope region in the compiled Hygiene plan. The capture is one
-    lexical extent for hygiene: iter_scope_targets yields that value
-    once, not tuple elements
+    Scope-region-aware remainder capture. Lowers to the same native
+    ``REST`` node as ``REST(slot, min_tail=1)`` (minimum one spine cell
+    in the body tail) while registering the slot as a body scope region
+    in the compiled Hygiene plan. The capture is one lexical extent for
+    hygiene: iter_scope_targets yields that value once, not tuple
+    elements
     """
 
 
@@ -2150,11 +2146,11 @@ class BODY(Pattern):
 
     def lower(self, ctx):
         """
-        Emit the underlying REST node
+        Emit ``REST`` with ``min_tail=1`` after recording body scope meta
         """
 
         ctx.on_pattern(self)
-        return REST(self._slot).lower(ctx)
+        return REST(self._slot, min_tail=1).lower(ctx)
 
 
     def iter_introduced_symbols(self, matched):
@@ -2641,7 +2637,7 @@ def slot_with_options_factory(name, ctor, allowed_options):
 def unary_recursive_factory(name, ctor):
     """
     Build a factory for a unary-recursive head, e.g. (NOT pat),
-    (REPEAT pat), (OPTIONAL pat)
+    (OPTIONAL pat)
     """
 
     def factory(head_sym, raw_args):
@@ -2651,6 +2647,107 @@ def unary_recursive_factory(name, ctor):
 
     factory.__name__ = "factory_%s" % (name,)
     return factory
+
+
+_MATCH_MIN_KW = frozenset({"min"})
+
+
+def _min_option_key(elem):
+    """
+    Normalize a Koskari keyword to ``min`` for ``min:`` / ``min``
+    """
+
+    return str(elem).rstrip(":")
+
+
+def repeat_match_factory(head_sym, raw_args):
+    """
+    Lower (REPEAT pat) or (REPEAT slot pat min: N ...).
+    Two-or-more args use repeat_capture(slot, REPEAT(inner, min_count=...)).
+    """
+
+    items = list(unpack(raw_args))
+    if len(items) == 1:
+        return REPEAT(parse_matcher(items[0]))
+    if len(items) < 2:
+        raise ValueError(
+            "(REPEAT ...) with multiple arguments requires slot and pattern")
+    slot = coerce_slot("REPEAT", items[0])
+    inner = parse_matcher(items[1])
+    min_count = 1
+    i = 2
+    n = len(items)
+    while i < n:
+        elem = items[i]
+        if not is_keyword(elem):
+            raise ValueError(
+                "(REPEAT ...) trailing arguments must be keyword/value pairs,"
+                " got %r" % (elem,))
+        if _min_option_key(elem) not in _MATCH_MIN_KW:
+            raise ValueError(
+                "(REPEAT ...) unknown option %r" % (elem,))
+        if i + 1 >= n:
+            raise ValueError(
+                "(REPEAT ...) option %r missing value" % (elem,))
+        mv = items[i + 1]
+        if isinstance(mv, bool) or not isinstance(mv, int):
+            raise TypeError(
+                "(REPEAT ...) min value must be int, got %r"
+                % (type(mv).__name__,))
+        if mv < 0:
+            raise ValueError(
+                "(REPEAT ...) min must be non-negative, got %d" % (mv,))
+        min_count = mv
+        i += 2
+    return repeat_capture(slot, REPEAT(inner, min_count=min_count))
+
+
+def rest_match_factory(head_sym, raw_args):
+    """
+    Lower (REST slot) or (REST slot min: N). Default min_tail is 0.
+    """
+
+    items = list(unpack(raw_args))
+    if not items:
+        raise ValueError("(REST ...) requires a slot name")
+    slot = coerce_slot("REST", items[0])
+    min_tail = 0
+    i = 1
+    n = len(items)
+    while i < n:
+        elem = items[i]
+        if not is_keyword(elem):
+            raise ValueError(
+                "(REST ...) trailing arguments must be keyword/value pairs,"
+                " got %r" % (elem,))
+        if _min_option_key(elem) not in _MATCH_MIN_KW:
+            raise ValueError(
+                "(REST ...) unknown option %r" % (elem,))
+        if i + 1 >= n:
+            raise ValueError(
+                "(REST ...) option %r missing value" % (elem,))
+        mv = items[i + 1]
+        if isinstance(mv, bool) or not isinstance(mv, int):
+            raise TypeError(
+                "(REST ...) min value must be int, got %r"
+                % (type(mv).__name__,))
+        if mv < 0:
+            raise ValueError(
+                "(REST ...) min must be non-negative, got %d" % (mv,))
+        min_tail = mv
+        i += 2
+    return REST(slot, min_tail=min_tail)
+
+
+def tail_match_factory(head_sym, raw_args):
+    """
+    Lower (TAIL slot) to OPTIONAL(REST(slot, min_tail=1))
+    """
+
+    items = list(unpack(raw_args))
+    expect_arity("TAIL", items, 1)
+    slot = coerce_slot("TAIL", items[0])
+    return OPTIONAL(REST(slot, min_tail=1))
 
 
 def form_factory(head_sym, raw_args):
@@ -2799,13 +2896,13 @@ def register_builtin_matchers():
     register_matcher("ONEOF", oneof_factory)
     register_matcher("LIST", list_factory)
     register_matcher("NOT", unary_recursive_factory("NOT", NOT))
-    register_matcher("REPEAT", unary_recursive_factory("REPEAT", REPEAT))
+    register_matcher("REPEAT", repeat_match_factory)
     register_matcher(
         "OPTIONAL", unary_recursive_factory("OPTIONAL", OPTIONAL))
 
     register_matcher("CAPTURE", capture_factory)
-    register_matcher("REST", slot_only_factory("REST", REST))
-    register_matcher("TAIL", slot_only_factory("TAIL", TAIL))
+    register_matcher("REST", rest_match_factory)
+    register_matcher("TAIL", tail_match_factory)
     register_matcher("BIND", slot_only_factory("BIND", BIND))
     register_matcher("VALUE", slot_only_factory("VALUE", VALUE))
     register_matcher("KEYWORD", slot_only_factory("KEYWORD", KEYWORD))
