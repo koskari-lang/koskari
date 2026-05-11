@@ -2248,8 +2248,12 @@ META_PATTERN = ONEOF(
         CAPTURE("class_extern", TYPE("symbol")),
         REST("class_fields"))),
     FORM(MATCH(
+        LITERAL_SYM("CLASS"),
+        CAPTURE("class_extern", TYPE("symbol")))),
+    FORM(MATCH(
         CAPTURE("head", TYPE("symbol")),
         REST("head_args"))),
+    FORM(MATCH(CAPTURE("head", TYPE("symbol")))),
     CAPTURE("bare_symbol", TYPE("symbol")),
     CAPTURE("atom_literal"),
 )
@@ -2305,13 +2309,13 @@ def parse_matcher(elem):
         return LITERAL(c["val_expr"].datum)
 
     if "class_extern" in c:
-        return lower_class(
-            c["class_extern"].datum,
-            c["class_fields"].datum)
+        fields = (
+            c["class_fields"].datum if "class_fields" in c else nil)
+        return lower_class(c["class_extern"].datum, fields)
 
     if "head" in c:
         head = c["head"].datum
-        args = c["head_args"].datum
+        args = c["head_args"].datum if "head_args" in c else nil
         name = str(head)
         factory = MATCHER_REGISTRY.get(name)
         if factory is not None:

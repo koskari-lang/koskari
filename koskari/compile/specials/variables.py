@@ -26,7 +26,7 @@ compile/globals, and compile/locals.
 
 from ...exceptions import CompilerError, SpecialError
 from ...lib import Datum, OpCode, cons, keyword, nil, symbol
-from ...matcher_ng import (DECL, DEFINE, FORMALS, FORMALS_SOURCE_KEY,
+from ...matcher_ng import (BODY, DECL, DEFINE, FORMALS, FORMALS_SOURCE_KEY,
                            LITERAL_KW, MATCH, PAIR, REST, SYMBOL, VALUE)
 from ...stdlib import builtin
 from ...syntax_ng import special
@@ -241,7 +241,7 @@ _DEFINE_INLINE_PATTERNS = [
 ]
 
 _DEFINE_DECL_PATTERNS = [
-    MATCH(SYMBOL("_"), DECL("decl"), FORMALS("formals", scope="body"), REST("body")),
+    MATCH(SYMBOL("_"), DECL("decl"), FORMALS("formals", scope="body"), BODY("body")),
     MATCH(SYMBOL("_"), DECL("decl"), VALUE("value")),
     MATCH(SYMBOL("_"), DECL("decl")),
 ]

@@ -729,7 +729,7 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
   }
 
   case KOS_MATCH_NODE_REST:
-    n->min_width = 0;
+    n->min_width = 1;
     n->max_width = KOS_MATCH_UNBOUNDED;
     break;
 
@@ -1181,7 +1181,7 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
   }
 
   case KOS_MATCH_NODE_REST:
-    c.min = 0;
+    c.min = n->min_width;
     c.max = KOS_MATCH_UNBOUNDED;
     c.is_rest = 1;
     return chunklist_push(cl, c);
@@ -2557,6 +2557,9 @@ static int match_rest(
 
   Py_ssize_t consume = available - (Py_ssize_t) trailing_min;
   Py_ssize_t end = *cursor + consume;
+
+  if (consume < 1)
+    return 0;
 
   if (n->as.rest.slot != KOS_MATCH_NO_INDEX) {
     PyObject *value;
