@@ -45,11 +45,10 @@ from io import StringIO
 from os.path import exists
 from re import UNICODE, VERBOSE
 from re import compile as regex
-from typing import Any, Callable, Protocol, Tuple, runtime_checkable
 
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
 from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
-from ..types import is_pair, is_symbol, unpack
+from ..types import is_pair, unpack
 from .layouts import LayoutHandler
 
 
@@ -1795,8 +1794,8 @@ class LayoutReader(Reader):
             self,
             char,
             macro_fn,
-            terminating = False,
-            predicate = None):
+            terminating=False,
+            predicate=None):
 
         self.add_layout_event_macro(char, macro_fn, terminating, predicate)
         self.add_inner_event_macro(char, macro_fn, terminating, predicate)
@@ -1806,8 +1805,8 @@ class LayoutReader(Reader):
             self,
             char,
             macro_fn,
-            terminating = False,
-            predicate = None):
+            terminating=False,
+            predicate=None):
         super().add_event_macro(char, macro_fn, terminating, predicate)
 
 
@@ -1815,8 +1814,8 @@ class LayoutReader(Reader):
             self,
             char,
             macro_fn,
-            terminating = False,
-            predicate = None):
+            terminating=False,
+            predicate=None):
         self._inner.add_event_macro(char, macro_fn, terminating, predicate)
 
 
@@ -1850,11 +1849,15 @@ class LayoutReader(Reader):
         self.add_event_macro("'", inner._read_quote, True)
         self.add_event_macro("`", inner._read_quasiquote, True)
 
-        self.add_layout_event_macro("'",
-            self._layout_quote_block_reader_macro, True,
+        self.add_layout_event_macro(
+            "'",
+            self._layout_quote_block_reader_macro,
+            True,
             predicate=self._layout_block_quote_predicate)
-        self.add_layout_event_macro("`",
-            self._layout_quasiquote_block_reader_macro, True,
+        self.add_layout_event_macro(
+            "`",
+            self._layout_quasiquote_block_reader_macro,
+            True,
             predicate=self._layout_block_quote_predicate)
 
         # self.add_layout_event_macro("@", self._read_layout_decorate, False)
@@ -2533,7 +2536,6 @@ class LayoutReader(Reader):
         :return: (compile/quasiquote-block (:block: ...)) cons
         """
 
-        inner = self._inner
         with self.temporary_event_macro(",", self._read_unquote, True):
             head, args, _ = self.read_block_header(stream)
             raw = self.read_block(stream, outer_indent, head, args)
@@ -2594,7 +2596,7 @@ class LayoutReader(Reader):
             raise stream.error('invalid syntax after decorators', pos)
 
         deco_list = cons(*decorators, nil)
-        return cons(_symbol_compile_decorate, cons(deco_list, cons(inner, nil)))
+        return cons(_symbol_compile_decorate, deco_list, inner, nil)
 
 
     def _apply_layout(self, stream, outer_indent, source):

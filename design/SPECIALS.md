@@ -33,9 +33,7 @@ invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 (unlike **`macro-rules`** / **`macro-match`**, which receive only keyword args).
 Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
-**Syntax boxes and hygiene** — **`koskari.syntax.Syntax`** wraps call-site
-segments so the hygiene pass does not rename inside boxed payloads;
-**`koskari.syntax.unbox_macro_with_hygiene`** splices after hygiene. See
+**Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; see
 [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
 and [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md).
 
@@ -148,7 +146,7 @@ callee symbol to obtain `SYM`, and the form expands to
 `(compile/call-attr OBJ SYM ARGS...)` the same way.
 
 Otherwise, compiles the first subform (the callee), then parses the remaining
-forms with `gather_parameters_ng` into positionals and
+forms with `gather_parameters` into positionals and
 star-args (interleaved) and keywords and starstar-args (interleaved).
 Positional-only calls emit `CALL n`; keyword calls emit `CALL_NAMES`; any star
 or starstar use emits `CALL_STAR`. Tail-call mode (`tc`) is respected when set
@@ -192,7 +190,7 @@ by the compiler.
 given arguments. Equivalent to `obj.sym(arg...)` in Python. Supports positional
 args, keyword args (`KEY: VAL`), and `*:` / `**:` (emits CALL_ATTR_STAR).
 
-**Behaviour:** Compiles OBJ, then parses ARGS with `gather_parameters_ng`.
+**Behaviour:** Compiles OBJ, then parses ARGS with `gather_parameters`.
 Positional-only emits `CALL_ATTR`; positional + keywords emits `CALL_ATTR_NAMES`;
 any `*:` or `**:` emits `CALL_ATTR_STAR`. SYM must be a symbol (the attribute
 name).

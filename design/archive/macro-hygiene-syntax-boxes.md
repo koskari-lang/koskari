@@ -2,7 +2,8 @@
 
 **Status:** Archived specification (superseded by the implementation described in
 [../language/macro-hygiene-syntax-boxes.md](../language/macro-hygiene-syntax-boxes.md);
-code: `koskari.syntax.Syntax`, `koskari.hygiene`, `koskari.syntax.unbox_macro_with_hygiene`)
+shipping code: **`koskari.syntax.Syntax`**, **`koskari.hygiene`**, and
+**`finalize_macro_hygiene_unbox_one_pass`** for the final splice pass)
 
 This document preserved the original design for a hygiene model for procedural macros that reuses the
 existing binding-aware compiler pass. Macros may return ordinary source forms plus
@@ -32,7 +33,7 @@ Koskari currently supports:
   terminology. **MATCH**-style specs (`syntax-match`, `macro-match`) use
   **`parse_explicit_rule_pattern`** for patterns; the **syntax box** behaviour
   described here is implemented via **`koskari.syntax.Syntax`** and
-  **`unbox_macro_with_hygiene`** (see the language stub linked in the status).
+  **`finalize_macro_hygiene_unbox_one_pass`** in **`hygiene`** (see the language stub linked in the status).
 - A binding-aware compiler pass that:
   - identifies declaring forms
   - determines lexical scopes

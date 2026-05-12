@@ -26,7 +26,13 @@ clear-exception, load-exception, and raise.
 from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import fill_position, get_position, is_keyword, is_pair, unpack
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, helper_using, pycons, special
+from ...matcher import MATCH, REST, SYMBOL
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import helper_begin, helper_using, pycons
+
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 _keyword_except = keyword("except")
@@ -132,7 +138,8 @@ def _collect_catches(compiler, catches):
     return (normal_catches, act_else, act_finally)
 
 
-@special(symbol("compile/check-exception"))
+@builtin("compile/check-exception")
+@special("compile/check-exception", patterns=_DEFAULT_PATTERNS)
 def special_check_exception(compiler, source, tc=False):
     called_by, checks = source
 
@@ -149,7 +156,8 @@ def special_check_exception(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/clear-exception"))
+@builtin("compile/clear-exception")
+@special("compile/clear-exception", patterns=_DEFAULT_PATTERNS)
 def special_clear_exception(compiler, source, tc=False):
     called_by, rest = source
 
@@ -162,7 +170,8 @@ def special_clear_exception(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/load-exception"))
+@builtin("compile/load-exception")
+@special("compile/load-exception", patterns=_DEFAULT_PATTERNS)
 def special_load_exception(compiler, source, tc=False):
     called_by, rest = source
 
@@ -175,7 +184,8 @@ def special_load_exception(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/try"))
+@builtin("compile/try")
+@special("compile/try", patterns=_DEFAULT_PATTERNS)
 def special_try(compiler, source, tc=False):
     called_by, rest = source
     if rest is nil or not is_pair(rest):
@@ -323,8 +333,13 @@ def _except(compiler, catches):
                 fill_position(checksrc, pos)
             define_form = cons(
                 symbol("compile/define"),
-                cons(symbol(str(key)), cons(cons(symbol("load-exception"), nil), nil)))
-            begin_body = cons(define_form, act if is_pair(act) else cons(act, nil))
+                symbol(str(key)),
+                cons(symbol("load-exception"), nil),
+                nil)
+            if is_pair(act):
+                begin_body = cons(define_form, act)
+            else:
+                begin_body = cons(define_form, act, nil)
             mod.append((checksrc, cons(symbol("compile/begin"), begin_body)))
 
     if not has_bare:
@@ -335,7 +350,8 @@ def _except(compiler, catches):
     return compiler.full_compile(expr, False)
 
 
-@special(symbol("compile/raise"))
+@builtin("compile/raise")
+@special("compile/raise", patterns=_DEFAULT_PATTERNS)
 def special_raise(compiler, source, tc=False):
     called_by, rest = source
 

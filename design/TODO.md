@@ -128,6 +128,36 @@ Ref: [language/unified-matcher-transformer-model.md](language/unified-matcher-tr
 
 ---
 
+## Matcher
+
+### Unified matcher rollup (`matcher`)
+
+**Status:** Landed in tree: native core **`koskari/lib/matcher.{c,h}`** and Python
+**`koskari/matcher.py`**. The original **`koskari/matcher.py`** module is
+**removed** after migration; specials and macro surfaces use **`matcher`**,
+**`syntax`**, **`hygiene`**, and **`koskari.compile.helpers`**.
+
+A single matcher model serving syntax matching (macros, syntax
+transformers, special-form dispatch, source-form diagnostics), runtime
+matching (`match/case`, structured unpacking), hygiene extraction, and
+composite matcher authoring (`FORMALS`, `BINDING`, `BINDINGS`). The model
+layers surface matcher syntax, a Python builder API, a canonical
+tagged-tuple frozen representation embedded as code constants, a thawed
+native `Matcher` instance over a compact tagged-node array, and
+invocation with subject plus extern bindings — all expressing the same
+underlying rule program. Subject adapters (runtime `PySequence_Fast` and
+compile-time `KosPair`) keep execution independent of input shape.
+Phased implementation: native core and validator, subject adapters,
+frozen schema and thaw, Python builder API, bootstrap composites, source
+matcher-syntax parser, special-form dispatch integration, runtime
+`match/case`, then hygiene extraction migration.
+
+Ref: [language/matcher-ng-rollup.md](language/matcher-ng-rollup.md);
+[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
+(current matcher to be replaced).
+
+---
+
 ## Import / loader
 
 ### Python AST loader (transformative parser)

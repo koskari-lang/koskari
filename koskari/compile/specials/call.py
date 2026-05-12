@@ -24,10 +24,12 @@ Special form handler for compile/call and compile/call-attr
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, pair, symbol
-from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE, match
+from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE
+from ...stdlib import builtin
+from ...syntax import special
 from ...types import is_symbol
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import gather_parameters_ng, special, special_forms
+from ..helpers import gather_parameters, match
 
 
 def _partition_args(args_seq):
@@ -95,8 +97,13 @@ _CALL_PATTERNS = [
 _sym_call_attr = symbol("compile/call-attr")
 
 
-@special_forms(_CALL_PATTERNS)
-@special(symbol("compile/call"))
+_CALL_PATTERNS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _CALL_PATTERNS)
+
+
+@builtin("compile/call")
+@special("compile/call", patterns=_CALL_PATTERNS_FULL)
 def special_call(
         compiler: Compiler,
         source: pair,
@@ -108,7 +115,7 @@ def special_call(
     if matched is None:
         raise SpecialError("compile/call requires at least a callable", source)
 
-    rest = matched["args"].source if "args" in matched else nil
+    rest = matched["args"].datum if "args" in matched else nil
 
     # rewriting ((attr obj a) args...) to
     # (compile/call-attr obj a args...)
@@ -117,9 +124,9 @@ def special_call(
         attr = matched["attr"]
         return cons(
             _sym_call_attr,
-            obj.source, attr.source, rest)
+            obj.datum, attr.datum, rest)
 
-    callable = matched["callable"].source
+    callable = matched["callable"].datum
 
     use_var_path = is_symbol(callable) and not tc
     name = str(callable) if is_symbol(callable) else None
@@ -140,7 +147,7 @@ def special_call(
     if not use_var_path:
         fragment.merge(compiler.full_compile(callable))
 
-    args_seq, kwds_seq = gather_parameters_ng(rest, source=rest)
+    args_seq, kwds_seq = gather_parameters(rest, source=rest)
     has_star = any(x[0] == "*" for x in args_seq)
     has_starstar = any(x[0] == "**" for x in kwds_seq)
 
@@ -228,9 +235,13 @@ _CALL_ATTR_PATTERNS = [
     MATCH(VALUE("obj"), SYMBOL("attr"), REST("args")),
 ]
 
+_CALL_ATTR_PATTERNS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _CALL_ATTR_PATTERNS)
 
-@special_forms(_CALL_ATTR_PATTERNS)
-@special(_sym_call_attr)
+
+@builtin("compile/call-attr")
+@special("compile/call-attr", patterns=_CALL_ATTR_PATTERNS_FULL)
 def special_call_attr(
         compiler: Compiler,
         source: pair,
@@ -244,9 +255,9 @@ def special_call_attr(
     if matched is None:
         raise SpecialError("compile/call-attr requires obj, attr, and optionally args", source)
 
-    obj = matched["obj"].source
-    attr = matched["attr"].source
-    args_src = matched["args"].source if "args" in matched else nil
+    obj = matched["obj"].datum
+    attr = matched["attr"].datum
+    args_src = matched["args"].datum if "args" in matched else nil
 
     use_var_path = is_symbol(obj) and not tc
 
@@ -254,7 +265,7 @@ def special_call_attr(
     if not use_var_path:
         fragment.merge(compiler.full_compile(obj))
 
-    args_seq, kwds_seq = gather_parameters_ng(args_src, source=args_src)
+    args_seq, kwds_seq = gather_parameters(args_src, source=args_src)
     has_star = any(x[0] == "*" for x in args_seq)
     has_starstar = any(x[0] == "**" for x in kwds_seq)
 

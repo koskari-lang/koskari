@@ -25,9 +25,11 @@ Special form compile/gensym-thunk: placeholder-driven thunk lambda sugar.
 import re
 from ...exceptions import SpecialError
 from ...lib import cons, keyword, nil, symbol, gensym
+from ...matcher import MATCH, REST, SYMBOL
+from ...stdlib import builtin
 from ...types import is_pair, is_symbol
+from ...syntax import special
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import special
 
 
 _keyword_star = keyword("*")
@@ -35,6 +37,8 @@ _monitor = (symbol("gensym-thunk"), symbol("compile/gensym-thunk"))
 
 
 _thunksym = re.compile("^%[1-9][0-9]*$").match
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _transform(pos_map, form):
@@ -124,7 +128,8 @@ def _build_formals(pos_map, source):
         return cons(*[pos_map[k] for k in keysyms], nil)
 
 
-@special(symbol("compile/gensym-thunk"))
+@builtin("compile/gensym-thunk")
+@special("compile/gensym-thunk", patterns=_DEFAULT_PATTERNS)
 def special_gensym_thunk(
         compiler: Compiler,
         source,

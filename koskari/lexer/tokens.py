@@ -51,33 +51,36 @@ Token = namedtuple(
 
 
 def _make_special_names():
-    from koskari.compile.helpers import SPECIALS
-    return frozenset(str(s) for s in SPECIALS)
+    from ..compile.compiler import Compiled
+    from koskari.stdlib import BUILTINS
+    return frozenset(n for n, v in BUILTINS.items()
+                     if isinstance(v, Compiled))
 
 
 def _make_layout_names():
-    from koskari.reader.layouts import LAYOUTS
-    return frozenset(str(s) for s in LAYOUTS)
+    from ..reader.layouts.helpers import LayoutHandler
+    from koskari.stdlib import BUILTINS
+    return frozenset(n for n, v in BUILTINS.items()
+                     if isinstance(v, LayoutHandler))
 
 
 def _make_layout_head_names():
-    from koskari.reader.layouts import LAYOUTS
-    result = set()
-    for s in LAYOUTS:
-        name = str(s)
+    col = []
+    for name in _make_layout_names():
         if name.startswith('layout/'):
-            result.add(name.split('/', 1)[1])
-        else:
-            result.add(name)
-    return frozenset(result)
+            col.append(name[7:])
+    return frozenset(col)
 
 
 def _make_layout_peer_names():
-    from koskari.reader.layouts import LAYOUTS
-    result = set()
-    for handler in LAYOUTS.values():
-        for peer in handler.peers:
-            result.add(str(peer))
+    from koskari.reader.layouts.helpers import LayoutHandler
+    from koskari.stdlib import BUILTINS
+    result = []
+    for v in BUILTINS.values():
+        if not isinstance(v, LayoutHandler):
+            continue
+        for peer in v.peers:
+            result.append(str(peer))
     return frozenset(result)
 
 

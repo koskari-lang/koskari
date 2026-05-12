@@ -196,4 +196,20 @@ class TestDelqSpecial(SpecialsTestCase):
         self.assertIsNone(result)
 
 
+    async def test_delq_removes(self):
+        src_str = """
+        (compile/delq z)
+        """
+        expr, mod = self.compile_expr(src_str, z=1, x=2)
+        result = await expr()
+        self.assertIsNone(result)
+
+        glbls = vars(mod)
+        refx = glbls.ref("x")
+        self.assertFalse(refx.empty)
+
+        refz = glbls.ref("z")
+        self.assertTrue(refz.empty)
+
+
 # The end.

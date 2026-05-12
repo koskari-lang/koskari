@@ -14,7 +14,7 @@
 """
 Tests for syntax expansion and pattern lowering.
 
-Runtime types and ``build_syntax`` come from ``koskari.syntax``.
+Runtime types and ``build_syntax_rules`` come from ``koskari.syntax``.
 ``build_syntax_rules_transformer`` and ``syntax_pattern_to_matcher`` are
 compile-time helpers in ``koskari.compile.specials.syntax``.
 
@@ -27,11 +27,11 @@ import unittest
 import pytest
 
 from koskari.compile import Compiler
-from koskari.compile.specials import SPECIALS
+from koskari.compile.specials import BUILTINS
 from koskari.compile.specials.syntax import (build_syntax_rules_transformer,
                                              syntax_pattern_to_matcher)
 from koskari.lib import Module, ModuleNamespace, car, cdr, cons, nil, symbol
-from koskari.syntax import SyntaxRule, SyntaxRulesTransformer, build_syntax
+from koskari.syntax import Syntax, SyntaxTransform, build_syntax_rules
 from koskari.types import build_proper, is_symbol, unpack
 
 
@@ -40,7 +40,7 @@ pytestmark = pytest.mark.phase_compile
 
 def _make_compiler():
     ns = ModuleNamespace('test', {})
-    for sym, fn in SPECIALS.items():
+    for sym, fn in BUILTINS.items():
         ns.store(str(sym), fn)
     mod = Module(ns)
     return Compiler('<test>', mod, filename=__file__)
@@ -57,17 +57,18 @@ def expand(transformer, input_form):
 
 def rule(macro_name, pat_form, tpl_form):
     """
-    Build a SyntaxRulesTransformer from pattern and template cons trees.
+    Build a Syntax from pattern and template cons trees.
     """
 
     name = symbol(macro_name)
     literals = frozenset({name})
     pat_m = syntax_pattern_to_matcher(pat_form, literals, pat_form)
 
-    return SyntaxRulesTransformer(
+    return Syntax(
         name,
-        literals,
-        [SyntaxRule(pat_m, tpl_form)],
+        (),
+        (SyntaxTransform(pat_m, tpl_form),),
+        serialized_literals=literals,
     )
 
 
@@ -161,8 +162,8 @@ class TestSyntaxExpansion(unittest.TestCase):
             build_proper(symbol('wrap'), symbol('x')),
             build_proper(symbol('list'), symbol('x')),
         )
-        tagged = transformer.to_tuple()
-        rebuilt = build_syntax(symbol('wrap'), tagged)
+        tagged = transformer.to_syntax_rules_tagged()
+        rebuilt = build_syntax_rules(symbol('wrap'), tagged)
         expanded = expand(rebuilt, build_proper(symbol('wrap'), 99))
         expected = build_proper(symbol('list'), 99)
         assert_forms_equal(self, expanded, expected)
@@ -211,10 +212,15 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         pat_form = build_proper(symbol('wrap'), symbol('x'))
         tpl = build_proper(symbol('list'), symbol('x'))
         pat_m = syntax_pattern_to_matcher(pat_form, literals, pat_form)
-        sr = SyntaxRule(pat_m, tpl)
-        sr2 = SyntaxRule.from_tuple(sr.to_tuple())
-        tr = SyntaxRulesTransformer(name, literals, [sr2])
-        expanded = expand(tr, build_proper(symbol('wrap'), 99))
+        syn = Syntax(
+            name,
+            (),
+            (SyntaxTransform(pat_m, tpl),),
+            serialized_literals=literals,
+        )
+        tagged = syn.to_syntax_rules_tagged()
+        syn2 = build_syntax_rules(name, tagged)
+        expanded = expand(syn2, build_proper(symbol('wrap'), 99))
         assert_forms_equal(self, expanded, build_proper(symbol('list'), 99))
 
 

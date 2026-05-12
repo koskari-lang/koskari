@@ -14,7 +14,10 @@
 """
 koskari.reader.layouts.helpers
 
-Layout decorator and LAYOUTS collector for reader block syntax.
+Layout decorator for reader block syntax.
+
+Publish handlers into ``koskari.stdlib.BUILTINS`` with ``koskari.stdlib.builtin``
+as the outermost decorator on each handler stack.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -22,10 +25,7 @@ Layout decorator and LAYOUTS collector for reader block syntax.
 """
 
 
-LAYOUTS = {}
-
-
-class LayoutHandler(object):
+class LayoutHandler:
     """
     Wrapper for layout handlers with optional peer metadata.
 
@@ -40,16 +40,18 @@ class LayoutHandler(object):
 
 def layout(head_symbol, peers=()):
     """
-    Decorator that registers a function as a layout handler.
+    Decorator that wraps a layout handler function in ``LayoutHandler``.
 
     The handler must have signature (source, peers) and return
     the parsed form. Optional ``peers`` declares peer block head symbols
     that the parser should gather contiguously after this block.
+
+    Register bootstrap names with ``koskari.stdlib.builtin`` as the outermost
+    decorator so the handler appears in ``BUILTINS``.
     """
 
     def decorator(fn):
         handler = LayoutHandler(head_symbol, fn, peers=peers)
-        LAYOUTS[head_symbol] = handler
         return handler
 
     return decorator

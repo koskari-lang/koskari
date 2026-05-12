@@ -14,49 +14,49 @@
 """
 koskari.compile.specials.loops
 
-Special form handlers for compile/while, compile/break, and compile/continue.
+Special form handlers for compile/while, compile/for-each, compile/break, and
+compile/continue.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
+:ai-assistant: Claude via Cursor
 """
 
 
-from ...lib import nil, OpCode, symbol
-from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import (
-    BINDING,
-    USING_UNPACK,
-    helper_begin,
-    helper_elsebody,
-    special,
-    special_forms,
-    using_unpack_helper,
-)
-from ...matcher import MATCH, REST, match
+from ...lib import OpCode, nil
+from ...matcher import (BINDING, BODY, MATCH, REST, SYMBOL,
+                           USING_UNPACK, VALUE)
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import helper_begin, helper_elsebody, using_unpack_helper
 
 
-@special(symbol("compile/while"))
-def special_while(compiler, source, tc=False):
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+
+_WHILE_PATTERNS = [
+    MATCH(SYMBOL("_while"), VALUE("test"), REST("body")),
+]
+
+
+@builtin("compile/while")
+@special("compile/while", patterns=_WHILE_PATTERNS, unpack="kwargs")
+def special_while(compiler, tc, _while, test, body):
     """
     Compile (compile/while TEST BODY...). Loop with break and continue support
     """
 
-    called_by, rest = source
-    if rest is nil or not is_pair(rest):
-        raise SpecialError("while requires test and body", source)
+    called_by = str(_while.datum)
 
-    test, body = rest
     fragment = compiler.fragment(called_by)
     loop_head = compiler.gen_label("while.head")
     loop_exit = compiler.gen_label("while.end")
 
     with fragment.child_loop(called_by) as child:
         child.instruction(OpCode.KOS_OP_LABEL, loop_head)
-        child.merge(compiler.full_compile(test, False))
+        child.merge(compiler.full_compile(test.datum, False))
         child.instruction(OpCode.KOS_OP_JUMP_FALSE, loop_exit)
-        helper_begin(child, body, False)
+        helper_begin(child, body.datum, False)
 
         child.instruction(OpCode.KOS_OP_CONTINUE, 1)
         child.instruction(OpCode.KOS_OP_LABEL, loop_exit)
@@ -65,15 +65,21 @@ def special_while(compiler, source, tc=False):
     return fragment
 
 
-_FOREACH_PATTERNS = [
-    MATCH(BINDING("binding", scope="body"), REST("body")),
-    MATCH(USING_UNPACK("binding", scope="body"), REST("body")),
-]
+_FOREACH_PATTERNS = (
+    MATCH(
+        SYMBOL("_foreach"),
+        BINDING("binding", scope="body"),
+        BODY("body")),
+    MATCH(
+        SYMBOL("_foreach"),
+        USING_UNPACK("using", scope="body"),
+        BODY("body")),
+)
 
 
-@special_forms(_FOREACH_PATTERNS)
-@special(symbol("compile/for-each"))
-def special_for_each(compiler, source, tc=False):
+@builtin("compile/for-each")
+@special("compile/for-each", patterns=_FOREACH_PATTERNS, unpack="match")
+def special_for_each(compiler, caps, tc=False):
     """
     Compile (compile/for-each [BINDING EXPR] BODY... [else: ELSEBODY]) or
     (compile/for-each [[PATTERN...] EXPR] BODY... [else: ELSEBODY]).
@@ -83,38 +89,33 @@ def special_for_each(compiler, source, tc=False):
     The loop expression value is None unless break or else provides a value.
     """
 
-    called_by, rest = source
-    matched = match(rest, _FOREACH_PATTERNS)
-    if matched is None:
-        raise SpecialError("for-each requires a binding and body", source)
+    called_by = caps["_foreach"].datum
 
-    binding = matched["binding"]
-    lhs = getattr(binding, "lhs", None)
-    if lhs is None and binding.name is None:
-        raise SpecialError(
-            "for-each requires a named binding or unpack pattern", source)
+    binding = caps.get("binding")
+    using = caps.get("using")
 
-    body = matched["body"].source
+    body = caps["body"].datum
     body, elsebody = helper_elsebody(body)
     has_elsebody = elsebody is not nil and elsebody is not None
 
     fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment.position_of(called_by)
 
     loop_else = compiler.gen_label("foreach.else")
 
-    binding_expr = binding.value
+    expr = binding["expr"] if binding else using["expr"]
 
     fragment.instruction(OpCode.KOS_OP_CONST, None)
-    fragment.merge(compiler.full_compile(binding_expr, False))
+    fragment.merge(compiler.full_compile(expr.datum, False))
     fragment.instruction(OpCode.KOS_OP_PUSH_FOREACH, 0)
     fragment.instruction(OpCode.KOS_OP_ITER_NEXT, loop_else)
 
-    if lhs is not None:
-        fragment.merge(
-            using_unpack_helper(compiler, lhs, binding.source))
+    if using:
+        src = using["source"].datum
+        lhs = using["lhs"].datum
+        fragment.merge(using_unpack_helper(compiler, lhs, src))
     else:
-        binding_name = str(binding.name)
+        binding_name = str(binding["name"].datum)
         fragment.declare_var(binding_name)
         fragment.instruction(OpCode.KOS_OP_VAR_STORE, binding_name)
 
@@ -159,7 +160,8 @@ def _special_break_continue(compiler, source, op):
     return frag
 
 
-@special(symbol("compile/break"))
+@builtin("compile/break")
+@special("compile/break", patterns=_DEFAULT_PATTERNS)
 def special_break(compiler, source, tc=False):
     """
     Compile (compile/break) or (compile/break VAL). Exits innermost loop.
@@ -168,7 +170,8 @@ def special_break(compiler, source, tc=False):
     return _special_break_continue(compiler, source, OpCode.KOS_OP_BREAK)
 
 
-@special(symbol("compile/continue"))
+@builtin("compile/continue")
+@special("compile/continue", patterns=_DEFAULT_PATTERNS)
 def special_continue(compiler, source, tc=False):
     """
     Compile (compile/continue) or (compile/continue VAL). Restarts loop.

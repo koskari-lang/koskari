@@ -24,15 +24,20 @@ compile/dyn-with.
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, nil, pair, symbol
-from ...matcher import MATCH, REST, match
+from ...lib import OpCode, nil, pair
+from ...matcher import BODY, MATCH, REST, SYMBOL, USING
+from ...stdlib import builtin
+from ...syntax import special
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import (USING, gather_bindings, helper_begin,
-                       special, special_forms)
+from ..helpers import gather_bindings, helper_begin
 
 
-@special(symbol("compile/parameterize"))
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+
+
+@builtin("compile/parameterize")
+@special("compile/parameterize", patterns=_DEFAULT_PATTERNS)
 def special_parameterize(
         compiler: Compiler,
         source: pair,
@@ -66,29 +71,31 @@ def special_parameterize(
 
 
 _WITH_PATTERNS = [
-    MATCH(USING("binding", scope="body"), REST("body")),
+    MATCH(SYMBOL("_"), USING("binding", scope="body"), BODY("body")),
 ]
 
 
-@special_forms(_WITH_PATTERNS)
-@special(symbol("compile/with"))
-def special_with(compiler, source, tc=False):
+@builtin("compile/with")
+@special("compile/with", patterns=_WITH_PATTERNS, unpack="match")
+def special_with(compiler, caps, tc=False):
     """
     Compile (compile/with [name? expr] BODY...). Single-shot context manager
     """
 
-    called_by, rest = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    matched = match(rest, _WITH_PATTERNS)
-    if matched is None:
-        raise SpecialError("with requires [name? expr] and body", source)
+    binding = caps["binding"]
 
-    binding = matched["binding"]
-    name = binding.name
-    expr = binding.value
-    body = matched["body"].source
+    nc = binding.get("name")
+    ec = binding.get("expr")
 
-    # print(f"binding: {binding.source}")
+    name = nc.datum if nc else None
+    expr = ec.datum if ec else None
+
+    body = caps["body"].datum
+
+    # print(f"binding: {binding}")
     # print(f"name: {name}")
     # print(f"expr: {expr}")
     # print(f"body: {body}")
@@ -100,7 +107,7 @@ def special_with(compiler, source, tc=False):
         name = str(name)
         fragment.declare_var(name)
 
-    fragment.position_of(source)
+    fragment.position(pos)
     fragment.instruction(OpCode.KOS_OP_PUSH_WITH, name)
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_WITH, 0)
@@ -108,24 +115,25 @@ def special_with(compiler, source, tc=False):
     return fragment
 
 
-@special_forms(_WITH_PATTERNS)
-@special(symbol("compile/dyn-with"))
-def special_dyn_with(compiler, source, tc=False):
+@builtin("compile/dyn-with")
+@special("compile/dyn-with", patterns=_WITH_PATTERNS, unpack="match")
+def special_dyn_with(compiler, caps, tc=False):
     """
     Compile (compile/dyn-with [name? expr] BODY...). Multi-shot context manager
     that participates in transfer plans (exit on unwind, enter on wind).
     """
 
-    called_by, rest = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    matched = match(rest, _WITH_PATTERNS)
-    if matched is None:
-        raise SpecialError("dyn-with requires [name? expr] and body", source)
+    binding = caps["binding"]
 
-    binding = matched["binding"]
-    name = binding.name
-    expr = binding.value
-    body = matched["body"].source
+    nc = binding.get("name")
+    ec = binding.get("expr")
+    name = nc.datum if nc is not None else None
+    expr = ec.datum if ec is not None else None
+
+    body = caps["body"].datum
 
     fragment = compiler.fragment(called_by)
     fragment.merge(compiler.full_compile(expr, False))
@@ -134,7 +142,7 @@ def special_dyn_with(compiler, source, tc=False):
         name = str(name)
         fragment.declare_var(name)
 
-    fragment.position_of(source)
+    fragment.position(pos)
     fragment.instruction(OpCode.KOS_OP_PUSH_DYN_WITH, name)
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_DYN_WITH, 0)

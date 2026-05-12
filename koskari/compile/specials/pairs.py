@@ -26,10 +26,17 @@ compile/cons.
 from ...lib import nil, OpCode, symbol, cons
 from ...types import get_position, is_nil, is_pair, is_keyword
 from ...exceptions import SpecialError
-from ..helpers import requote, special
+from ...matcher import MATCH, REST, SYMBOL
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import requote
 
 
-@special(symbol("compile/quote"))
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+
+
+@builtin("compile/quote")
+@special("compile/quote", patterns=_DEFAULT_PATTERNS)
 def special_quote(compiler, source, tc=False):
     called_by, body = source
 
@@ -51,7 +58,8 @@ def special_quote(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/car"))
+@builtin("compile/car")
+@special("compile/car", patterns=_DEFAULT_PATTERNS)
 def special_car(compiler, source, tc=False):
     """
     Compile (compile/car EXPR). Emit code that evaluates EXPR, then pushes
@@ -75,7 +83,8 @@ def special_car(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/cdr"))
+@builtin("compile/cdr")
+@special("compile/cdr", patterns=_DEFAULT_PATTERNS)
 def special_cdr(compiler, source, tc=False):
     """
     Compile (compile/cdr EXPR). Emit code that evaluates EXPR, then pushes
@@ -99,7 +108,8 @@ def special_cdr(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/cons"))
+@builtin("compile/cons")
+@special("compile/cons", patterns=_DEFAULT_PATTERNS)
 def special_cons(compiler, source, tc=False):
     """
     Variadic: (compile/cons EXPR1 EXPR2 ... EXPR_TAIL). Compile each

@@ -9,14 +9,12 @@
 # See the GNU General Public License for more details.
 
 """
-Hygiene discovery must descend into the ``compile/let`` body when the body is
-a single nested form.
-
-``REST`` body extraction wraps a lone body form as ``(FORM . nil)``. The old
-``collect_binding_symbols`` logic only walked ``cdr`` siblings, so the nested
-``(compile/lambda [y] ...)`` under a ``compile/let`` never contributed lambda
-formals to the binding set—a procedural macro could not hygienically freshen
-``y`` alongside ``let`` names.
+Compile-time specials are ``syntax.Syntax`` dispatchers. Hygiene discovery
+for templates must use ``koskari.hygiene``, which merges binder and
+scope-region plans from each transform arm (``Syntax.hygiene``), matches the
+tail with ``match_for_hygiene``, then walks scope regions such as the let
+``BODY`` capture so a sole body form like ``(compile/lambda [y] ...)`` still
+contributes lambda formals alongside ``compile/let`` binders.
 
 :license: GNU General Public License v3
 """
@@ -26,10 +24,11 @@ import unittest
 import pytest
 
 from koskari.compile import Compiler
-from koskari.compile.specials import SPECIALS
+from koskari.compile.specials import BUILTINS
+# BUILTINS are Syntax values; legacy koskari.hygiene expects Special.forms.
 from koskari.hygiene import collect_binding_symbols, expand_template_with_hygiene
 from koskari.lib import Module, ModuleNamespace, car, cdr, symbol
-from koskari.reader import default_reader, source_str
+from koskari.reader import LayoutReader, source_str
 from koskari.types import is_pair, is_symbol
 
 
@@ -43,38 +42,46 @@ def _register_specials(ns, specials):
 
 def _make_compiler():
     mod_ns = ModuleNamespace("test", {})
-    _register_specials(mod_ns, SPECIALS)
+    _register_specials(mod_ns, BUILTINS)
     module = Module(mod_ns)
     return Compiler("<test>", module, filename=__file__), mod_ns
 
 
+def _read_compile_form(compiler, src, line_no=1):
+    """
+    Read source the same way compile/specials tests do (layout + builtins).
+    """
+
+    stream = source_str(src, __file__, line_no=line_no)
+    return LayoutReader(vars(compiler.module)).read(stream)
+
+
 class TestHygieneLetBodyDescent(unittest.TestCase):
     """
-    Reproducer: ``collect_binding_symbols`` / ``expand_template_with_hygiene``
-    on a parsed ``compile/let`` whose body is one ``compile/lambda``.
+    Regression: ``hygiene.collect_binding_symbols`` and
+    ``expand_template_with_hygiene`` on parsed ``compile/let`` / ``compile/lambda``
+    forms read like procedural macro templates.
     """
 
     def test_collect_standalone_lambda_only_lambda_formals(self):
         """Baseline: hygiene sees ``lambda`` formals without any enclosing ``let``."""
 
         src = "(compile/lambda [y] (+ y))"
-        form = default_reader.read(source_str(src, __file__, line_no=1))
-
         compiler, _mod_ns = _make_compiler()
+        form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
 
         self.assertSetEqual({str(s) for s in syms}, {"y"})
 
     def test_collect_two_let_body_forms_still_include_nested_lambda_formal(self):
         """
-        With several body forms, nested specials are reached via the tail walk
-        (not only the ``(FORM . nil)`` lone-body path); binders must still match.
+        With several body forms, nested specials in the let body region must
+        still contribute binders, not only when the body is a single form.
         """
 
         src = "(compile/let [[t 1]] 0 (compile/lambda [y] (+ t y)))"
-        form = default_reader.read(source_str(src, __file__, line_no=1))
-
         compiler, _mod_ns = _make_compiler()
+        form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
 
         self.assertSetEqual({str(s) for s in syms}, {"t", "y"})
@@ -86,9 +93,8 @@ class TestHygieneLetBodyDescent(unittest.TestCase):
         """
 
         src = "(compile/let [[t 1]] (compile/lambda [y] (+ t y)))"
-        form = default_reader.read(source_str(src, __file__, line_no=1))
-
         compiler, _mod_ns = _make_compiler()
+        form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
 
         self.assertSetEqual({str(s) for s in syms}, {"t", "y"})
@@ -100,9 +106,8 @@ class TestHygieneLetBodyDescent(unittest.TestCase):
         """
 
         src = "(compile/let [[t 1]] (compile/lambda [y] (+ t y)))"
-        form = default_reader.read(source_str(src, __file__, line_no=1))
-
         compiler, _mod_ns = _make_compiler()
+        form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
         out = expand_template_with_hygiene(form, {}, syms, {})
 

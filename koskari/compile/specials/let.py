@@ -22,34 +22,64 @@ Special form handler for compile/let.
 """
 
 
-from ...lib import OpCode, cons, nil, pair, symbol
-from ...matcher import MATCH, REST, SYMBOL, match
-from ..compiler import Compiler
 from ...exceptions import SpecialError
-from ...types import get_position, is_pair
-from ..helpers import BINDINGS, helper_begin, special, special_forms
+from ...lib import Datum, OpCode, cons, nil, symbol
+from ...matcher import BINDINGS, BODY, MATCH, SYMBOL
+from ...stdlib import builtin
+from ...syntax import special
+from ...types import is_pair
+from ..compiler import Compiler
+from ..helpers import helper_begin
 
 
 _sym_call = symbol('compile/call')
 _sym_lambda = symbol('compile/lambda')
 
 
+def _let_bindings_parallel(bindings):
+    """
+    Parallel name symbols and RHS expressions from ``caps['bindings']``.
+
+    ``BINDINGS`` yields a list of per-cell dicts; each dict holds Datum
+    captures under ``name`` and ``expr`` (matcher binding group).
+    """
+
+    if bindings is None:
+        return [], []
+
+    cells = bindings
+
+    # print("cells", cells)
+
+    names = []
+    values = []
+    for fr in cells:
+        nc = fr.get("name")
+        ec = fr.get("expr")
+        names.append(nc.datum if nc is not None else None)
+        values.append(ec.datum if ec is not None else None)
+    return names, values
+
+
 _LET_PATTERNS = [
-    MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
-    MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
+    MATCH(
+        SYMBOL("_"),
+        SYMBOL("name"),
+        BINDINGS("bindings", mode="parallel", scope="body"),
+        BODY("body")),
+
+    MATCH(
+        SYMBOL("_"),
+        BINDINGS("bindings", mode="parallel", scope="body"),
+        BODY("body")),
 ]
 
 
-_LETREC_PATTERNS = [
-    MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
-]
-
-
-@special_forms(_LET_PATTERNS)
-@special(symbol("compile/let"))
+@builtin("compile/let")
+@special("compile/let", patterns=_LET_PATTERNS, unpack="match")
 def special_let(
         compiler: Compiler,
-        source: pair,
+        caps,
         tc: bool = False):
     """
     Compile (compile/let BINDINGS BODY...) or (compile/let NAME BINDINGS
@@ -57,21 +87,18 @@ def special_let(
     (let foo [[a 1] [b 2]] ...body) -> ((lambda foo [a b] ...body) 1 2).
     """
 
-    called_by, rest = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    matched = match(rest, _LET_PATTERNS)
-    if matched is None:
-        raise SpecialError("let requires bindings and body", source)
+    name = caps.get("name")
+    if name:
+        name = name.datum
 
-    name = matched.get("name", None)
-    if name is not None:
-        name = name.source
+    args, vals = _let_bindings_parallel(caps["bindings"])
+    # print("args", args)
+    # print("vals", vals)
 
-    bindings = matched["bindings"]
-    args = bindings.names
-    vals = bindings.values
-
-    body = matched["body"].source
+    body = caps["body"].datum
 
     if name:
         return cons(_sym_call,
@@ -84,18 +111,26 @@ def special_let(
 
     else:
         fragment = compiler.fragment(called_by)
-        fragment.position_of(source)
+        fragment.position(pos)
         with fragment.child_namespace(called_by, args, vals) as frag:
             helper_begin(frag, body, tc)
 
     return fragment
 
 
-@special_forms(_LETREC_PATTERNS)
-@special(symbol("compile/letrec"))
+_LETREC_PATTERNS = [
+    MATCH(
+        SYMBOL("_"),
+        BINDINGS("bindings", mode="parallel", scope="body"),
+        BODY("body")),
+]
+
+
+@builtin("compile/letrec")
+@special("compile/letrec", patterns=_LETREC_PATTERNS, unpack="match")
 def special_letrec(
         compiler: Compiler,
-        source: pair,
+        caps,
         tc: bool = False):
     """
     Compile (compile/letrec BINDINGS BODY...). Each name is declared in a
@@ -104,29 +139,27 @@ def special_letrec(
     so lambdas may close over the same bindings before body runs.
     """
 
-    called_by, rest = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    matched = match(rest, _LETREC_PATTERNS)
-    if matched is None:
-        raise SpecialError("letrec requires bindings and body", source)
+    args, vals = _let_bindings_parallel(caps["bindings"])
+    # print("args", args)
+    # print("vals", vals)
 
-    bindings = matched["bindings"]
-    args = bindings.names
-    vals = bindings.values
-
-    body = matched["body"].source
+    body = caps["body"].datum
 
     if len(args) != len(vals):
-        raise SpecialError("letrec binding name/value mismatch", source)
+        raise SpecialError("letrec binding name/value mismatch", pos)
 
     fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment.position(pos)
     with fragment.child_namespace(called_by, [], []) as frag:
         for name, expr in zip(args, vals):
-            if not is_pair(expr):
+
+            if is_pair(expr):
                 frag.position_of(expr)
-            pos = get_position(expr, get_position(source))
-            frag.declare_var(str(name), position=pos)
+
+            frag.declare_var(str(name))
             frag.merge(compiler.full_compile(expr))
             frag.instruction(OpCode.KOS_OP_VAR_STORE, str(name))
         helper_begin(frag, body, tc)

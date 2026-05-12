@@ -186,6 +186,12 @@ static int initialize_types(void) {
         return -1;
     }
 
+    /* Initialize matcher types (matcher) */
+    if (koskari_matcher_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize matcher types\n");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -258,6 +264,7 @@ int main(int argc, char *argv[]) {
     run_dynchain_tests();
     run_eval_tests();
     run_paramref_tests();
+    run_matcher_tests();
 
     /* Future units:
     run_tco_tests();

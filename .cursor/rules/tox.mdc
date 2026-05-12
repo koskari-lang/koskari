@@ -30,7 +30,7 @@ Instead, always use `tox -e <envname>` to run commands. Tox creates isolated vir
 ✅ **Correct**: `tox -e regen-common`
 
 ❌ **Wrong**: `python -m pytest ...`
-✅ **Correct**: `tox -e py` (or the appropriate test environment)
+✅ **Correct**: `tox -e py -- ...`
 
 ❌ **Wrong**: `pip install jinja2 && python script.py`
 ✅ **Correct**: Create/use a tox environment that includes jinja2
@@ -43,6 +43,6 @@ The only acceptable use of `python` or `python3` is for checking the system Pyth
 ## Useful Targets
 
 `tox -qe test` :  runs all tests in phase order, this is the default
-`tox -qe py -- tests/<...>` : use the 'test' env to run specific tests
+`tox -qe py -- tests/<...>` : use the 'py' env to run specific tests
 `tox -qe gdb -- tests/<...>` : use the 'gdb' env to run specific tests with native debugging output enabled and stracktraces enabled
 `make test-valgrind` : run containerized native tests with valgrind

@@ -23,14 +23,20 @@ compile/ref-item, compile/refq, and compile/bindq.
 """
 
 
-from ...lib import nil, OpCode, symbol
-from ...matcher import DEFINE, MATCH, VALUE, match
+from ...lib import nil, OpCode
+from ...matcher import DEFINE, MATCH, REST, SYMBOL, VALUE
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import const_only_expr, special, special_forms
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import const_only_expr, match
 
 
-@special(symbol("compile/deref"))
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+
+
+@builtin("compile/deref")
+@special("compile/deref", patterns=_DEFAULT_PATTERNS)
 def special_deref(compiler, source, tc=False):
     """
     Compile (compile/deref EXPR). Compile EXPR (produces ref on stack),
@@ -53,7 +59,8 @@ def special_deref(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/ref-attr"))
+@builtin("compile/ref-attr")
+@special("compile/ref-attr", patterns=_DEFAULT_PATTERNS)
 def special_ref_attr(compiler, source, tc=False):
     """
     Compile (compile/ref-attr OBJ SYM). Produce a mutable reference to attribute SYM on OBJ
@@ -76,7 +83,8 @@ def special_ref_attr(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/ref-item"))
+@builtin("compile/ref-item")
+@special("compile/ref-item", patterns=_DEFAULT_PATTERNS)
 def special_ref_item(compiler, source, tc=False):
     """
     Compile (compile/ref-item OBJ KEY). Produce a mutable reference to item at KEY in OBJ
@@ -108,7 +116,8 @@ def special_ref_item(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/refq"))
+@builtin("compile/refq")
+@special("compile/refq", patterns=_DEFAULT_PATTERNS)
 def special_refq(compiler, source, tc=False):
     """
     Compile (compile/refq SYM). Load the value of the binding named SYM
@@ -135,9 +144,13 @@ _BINDQ_PATTERNS = [
     MATCH(DEFINE("name"), VALUE("value")),
 ]
 
+_BINDQ_PATTERNS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _BINDQ_PATTERNS)
 
-@special_forms(_BINDQ_PATTERNS)
-@special(symbol("compile/bindq"))
+
+@builtin("compile/bindq")
+@special("compile/bindq", patterns=_BINDQ_PATTERNS_FULL)
 def special_bindq(compiler, source, tc=False):
     """
     Compile (compile/bindq SYM EXPR). Declare a new binding SYM and initialize
@@ -149,17 +162,18 @@ def special_bindq(compiler, source, tc=False):
     if matched is None:
         raise SpecialError("bindq requires a name and value", source)
 
-    namesym = matched["name"].source
+    namesym = matched["name"].datum
     name = str(namesym)
 
     value = matched["value"]
+    value_datum = value.datum
 
     frag = compiler.fragment(called_by)
     frag.declare_var(name)
 
-    if not is_pair(value.source):
-        frag.position(value.source_pos)
-    frag.merge(compiler.full_compile(value.source))
+    if not is_pair(value_datum):
+        frag.position(value.position)
+    frag.merge(compiler.full_compile(value_datum))
 
     frag.position_of(source)
     frag.instruction(OpCode.KOS_OP_VAR_BIND, name)

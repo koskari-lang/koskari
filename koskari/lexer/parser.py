@@ -37,17 +37,19 @@ def default_layout_reader():
     """
     Return a LayoutReader with default atoms, macros, and layouts.
 
-    Read-only; no execution. Uses a static namespace from LAYOUTS.
-    The reader is cached and reused.
+    Read-only; no execution. Uses ``koskari.stdlib.BUILTINS`` as the layout
+    namespace. The reader is cached and reused.
 
     :return: LayoutReader instance
     """
 
     global _default_reader
     if _default_reader is None:
+        import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
+        import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
         from koskari.reader import LayoutReader
-        from koskari.reader.layouts import LAYOUTS
-        ns = {str(k): v for k, v in LAYOUTS.items()}
+        from koskari.stdlib import BUILTINS
+        ns = dict(BUILTINS)
         _default_reader = LayoutReader(ns)
     return _default_reader
 

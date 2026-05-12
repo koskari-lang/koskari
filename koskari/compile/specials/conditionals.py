@@ -26,13 +26,19 @@ compile/when, and compile/unless.
 from ...lib import keyword, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, special
+from ...matcher import MATCH, REST, SYMBOL
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import helper_begin
 
 
 _keyword_else = keyword("else")
 
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
-@special(symbol("compile/cond"))
+
+@builtin("compile/cond")
+@special("compile/cond", patterns=_DEFAULT_PATTERNS)
 def special_cond(compiler, source, tc=False):
     """
     Compile (compile/cond (TEST BODY...) (TEST BODY...) ... (else: BODY...)).
@@ -78,7 +84,8 @@ def special_cond(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/switch"))
+@builtin("compile/switch")
+@special("compile/switch", patterns=_DEFAULT_PATTERNS)
 def special_switch(compiler, source, tc=False):
     """
     Compile (compile/switch VALUE (COMPARE BODY...) (COMPARE BODY...) ... (else: BODY...)).
@@ -150,7 +157,8 @@ def special_switch(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/and"))
+@builtin("compile/and")
+@special("compile/and", patterns=_DEFAULT_PATTERNS)
 def special_and(compiler, source, tc=False):
     """
     Compile (compile/and EXPR ...). Short-circuit conjunction. Evaluates
@@ -180,7 +188,8 @@ def special_and(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/or"))
+@builtin("compile/or")
+@special("compile/or", patterns=_DEFAULT_PATTERNS)
 def special_or(compiler, source, tc=False):
     """
     Compile (compile/or EXPR ...). Short-circuit disjunction. Evaluates

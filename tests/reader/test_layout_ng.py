@@ -18,12 +18,14 @@ Pass 1: strict layout_ng header semantics TDD.
 
 from unittest import IsolatedAsyncioTestCase
 
+import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
+import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.exceptions import ReaderSyntaxError
 from koskari.compile.helpers import pycons
 from koskari.reader import LINE_END
 from koskari.reader import source_str
 from koskari.reader import LayoutReader
-from koskari.reader.layouts import LAYOUTS
+from koskari.stdlib import BUILTINS
 from koskari.lib import cons, keyword, nil, symbol
 
 import pytest
@@ -32,7 +34,7 @@ pytestmark = pytest.mark.phase_infra
 
 
 def parse_layout_ng(src_str, **defns):
-    builtins = {str(name): value for name, value in LAYOUTS.items()}
+    builtins = dict(BUILTINS)
     builtins.update(defns)
     reader = LayoutReader(builtins)
     stream = source_str(src_str, '<unittest>')
@@ -40,7 +42,7 @@ def parse_layout_ng(src_str, **defns):
 
 
 def parse_layout_ng_mode(src_str, **reader_kwargs):
-    builtins = {str(name): value for name, value in LAYOUTS.items()}
+    builtins = dict(BUILTINS)
     reader = LayoutReader(builtins, **reader_kwargs)
     stream = source_str(src_str, '<unittest>')
     return reader.read(stream)
@@ -383,7 +385,7 @@ class TestLayoutCallSemantics(IsolatedAsyncioTestCase):
 class TestLayoutLineEvents(IsolatedAsyncioTestCase):
 
     async def test_read_header_form_line_end_at_semicolon(self):
-        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        builtins = dict(BUILTINS)
         reader = LayoutReader(builtins)
         stream = source_str(';; tail', '<unittest>')
         stream.skip_whitespace()
@@ -391,13 +393,13 @@ class TestLayoutLineEvents(IsolatedAsyncioTestCase):
         self.assertIs(event, LINE_END)
 
     async def test_quote_open_paren_uses_reader_quote_not_raw_block(self):
-        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        builtins = dict(BUILTINS)
         reader = LayoutReader(builtins)
         stream = source_str("' (1 2)\n", '<unittest>')
         result = reader.read(stream)
         expected = cons(
             symbol('compile/quote'),
-            cons(1, cons(2, nil)),
+            cons(1, 2, nil),
             nil)
         self.assertEqual(result, expected)
 
@@ -405,7 +407,7 @@ class TestLayoutLineEvents(IsolatedAsyncioTestCase):
 class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
 
     async def test_one_line_pair_plus_paren_folds_like_cons_of_parts(self):
-        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        builtins = dict(BUILTINS)
         reader = LayoutReader(builtins)
         src = '(lambda [f] (print f)) (+ 1 10)'
         combined = reader.read(source_str(src, '<t>'))
@@ -414,20 +416,20 @@ class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
         self.assertEqual(combined, cons(head, arg, nil))
 
     async def test_blank_logical_lines_are_skipped(self):
-        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        builtins = dict(BUILTINS)
         reader = LayoutReader(builtins)
         stream = source_str('\n\nfoo\n', '<t>')
         self.assertEqual(reader.read(stream), symbol('foo'))
 
     async def test_implicit_false_errors_on_two_values_one_line(self):
-        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        builtins = dict(BUILTINS)
         reader = LayoutReader(builtins, layout_implicit_calls=False)
         stream = source_str('foo bar', '<t>')
         with self.assertRaises(ReaderSyntaxError):
             reader.read(stream)
 
     async def test_pair_head_block(self):
-        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        builtins = dict(BUILTINS)
         reader = LayoutReader(builtins)
         src = '(foo) a:\n  y\n'
         result = reader.read(source_str(src, '<t>'))

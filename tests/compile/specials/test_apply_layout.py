@@ -26,12 +26,10 @@ and multi-block begin wrapping.
 import unittest
 
 from koskari.compile import Compiler
-from koskari.compile.specials import SPECIALS
+from koskari.compile.specials import BUILTINS
 from koskari.exceptions import SpecialError
 from koskari.lib import Module, ModuleNamespace, cons, keyword, nil, symbol
 from koskari.reader import default_reader, source_str
-from koskari.reader.layouts import LAYOUTS
-
 from . import _register_specials
 
 import pytest
@@ -59,11 +57,6 @@ def _make_block(head_args_tuple, body_tuple):
     return cons(_keyword_block, head_args, body, nil)
 
 
-def _register_layouts(ns):
-    for sym, handler in LAYOUTS.items():
-        ns.store(str(sym), handler)
-
-
 class ApplyLayoutTestCase(unittest.IsolatedAsyncioTestCase):
     """
     Base for compile/apply-layout tests
@@ -73,8 +66,7 @@ class ApplyLayoutTestCase(unittest.IsolatedAsyncioTestCase):
         mod_ns = ModuleNamespace("test", defns)
         module = Module(mod_ns)
         ns = vars(module)
-        _register_specials(ns, SPECIALS)
-        _register_layouts(ns)
+        _register_specials(ns, BUILTINS)
         compiler = Compiler("<unittest>", module, filename=__file__)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(mod_ns)

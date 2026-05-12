@@ -32,9 +32,14 @@ import operator as _op
 
 from ...lib import nil, OpCode, symbol, cons
 from ...exceptions import SpecialError
-from ...matcher import MATCH, VALUE, match
+from ...matcher import MATCH, REST, SYMBOL, VALUE
 from ...types import get_position, is_pair, is_symbol, is_keyword, unpack
-from ..helpers import const_only_expr, is_symbolish, special, special_forms
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import const_only_expr, is_symbolish, match
+
+
+_DEFAULT_SPECIAL_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _reduce_fold(py_fold, compiler, body):
@@ -215,9 +220,13 @@ _FORMAT_PATTERNS = [
     MATCH(VALUE("obj"), VALUE("rules")),
 ]
 
+_FORMAT_PATTERNS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _FORMAT_PATTERNS)
 
-@special_forms(_FORMAT_PATTERNS)
-@special(symbol("compile/format"))
+
+@builtin("compile/format")
+@special("compile/format", patterns=_FORMAT_PATTERNS_FULL)
 def special_format(compiler, source, tc=False):
     """
     Compile (compile/format OBJ [RULES]). Rules may be dynamic, constant str,
@@ -231,12 +240,12 @@ def special_format(compiler, source, tc=False):
             "compile/format requires one or two arguments",
             source)
 
-    obj_expr = matched["obj"].source
+    obj_expr = matched["obj"].datum
     obj_frag = compiler.full_compile(obj_expr)
     obj_is_const, obj_const = const_only_expr(obj_frag)
 
     if "rules" in matched:
-        rules_expr = matched["rules"].source
+        rules_expr = matched["rules"].datum
         rules_frag = compiler.full_compile(rules_expr)
         rules_is_const, rules_const = const_only_expr(rules_frag)
         if rules_is_const and is_symbol(rules_const):
@@ -312,7 +321,8 @@ def _chain_compare(op, compiler, source):
     return frag
 
 
-@special(symbol("compile/=="), aliases=(symbol("compile/equal?"),))
+@builtin("compile/==", "compile/equal?")
+@special("compile/==", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_eq(compiler, source, tc=False):
     """
     Compile (compile/= A B). Test equality via __eq__
@@ -321,7 +331,8 @@ def special_eq(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_EQ, compiler, source)
 
 
-@special(symbol("compile/!="), aliases=(symbol("compile/not-equal?"),))
+@builtin("compile/!=", "compile/not-equal?")
+@special("compile/!=", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_ne(compiler, source, tc=False):
     """
     Compile (compile/!= A B). Test inequality via __ne__
@@ -330,7 +341,8 @@ def special_ne(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_NE, compiler, source)
 
 
-@special(symbol("compile/<"), aliases=(symbol("compile/lt?"),))
+@builtin("compile/<", "compile/lt?")
+@special("compile/<", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_lt(compiler, source, tc=False):
     """
     Compile (compile/< A B). Test less-than via __lt__
@@ -339,7 +351,8 @@ def special_lt(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_LT, compiler, source)
 
 
-@special(symbol("compile/<="), aliases=(symbol("compile/le?"),))
+@builtin("compile/<=", "compile/le?")
+@special("compile/<=", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_le(compiler, source, tc=False):
     """
     Compile (compile/<= A B). Test less-than-or-equal via __le__
@@ -348,7 +361,8 @@ def special_le(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_LE, compiler, source)
 
 
-@special(symbol("compile/>"), aliases=(symbol("compile/gt?"),))
+@builtin("compile/>", "compile/gt?")
+@special("compile/>", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_gt(compiler, source, tc=False):
     """
     Compile (compile/> A B). Test greater-than via __gt__
@@ -357,7 +371,8 @@ def special_gt(compiler, source, tc=False):
     return _chain_compare(OpCode.KOS_OP_OBJECT_GT, compiler, source)
 
 
-@special(symbol("compile/>="), aliases=(symbol("compile/ge?"),))
+@builtin("compile/>=", "compile/ge?")
+@special("compile/>=", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_ge(compiler, source, tc=False):
     """
     Compile (compile/>= A B). Test greater-than-or-equal via __ge__
@@ -370,7 +385,8 @@ def special_ge(compiler, source, tc=False):
 # Predicate interface (NOARG binary / COUNT variadic)
 # ---------------------------------------------------------------------------
 
-@special(symbol("compile/in"))
+@builtin("compile/in")
+@special("compile/in", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_in(compiler, source, tc=False):
     """
     Compile (compile/in ITEM COLLECTION). Membership test via __contains__
@@ -379,7 +395,8 @@ def special_in(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_IN, compiler, source)
 
 
-@special(symbol("compile/not-in"))
+@builtin("compile/not-in")
+@special("compile/not-in", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_not_in(compiler, source, tc=False):
     """
     Compile (compile/not-in ITEM COLLECTION). Negated membership test
@@ -388,7 +405,8 @@ def special_not_in(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_NOT_IN, compiler, source)
 
 
-@special(symbol("compile/is"))
+@builtin("compile/is")
+@special("compile/is", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_is(compiler, source, tc=False):
     """
     Compile (compile/is A B). Identity test
@@ -397,7 +415,8 @@ def special_is(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_IS, compiler, source)
 
 
-@special(symbol("compile/is-not"))
+@builtin("compile/is-not")
+@special("compile/is-not", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_is_not(compiler, source, tc=False):
     """
     Compile (compile/is-not A B). Negated identity test
@@ -451,7 +470,8 @@ def _type_check_op(op, compiler, source):
     return frag
 
 
-@special(symbol("compile/isinstance"))
+@builtin("compile/isinstance")
+@special("compile/isinstance", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_isinstance(compiler, source, tc=False):
     """
     Compile (compile/isinstance OBJ TYPE ...). Instance type check
@@ -461,7 +481,8 @@ def special_isinstance(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_IS_INSTANCE, compiler, source)
 
 
-@special(symbol("compile/issubclass"))
+@builtin("compile/issubclass")
+@special("compile/issubclass", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_issubclass(compiler, source, tc=False):
     """
     Compile (compile/issubclass CLS TYPE ...). Subclass type check
@@ -475,7 +496,8 @@ def special_issubclass(compiler, source, tc=False):
 # Numeric interface — reducible COUNT opcodes with constant folding
 # ---------------------------------------------------------------------------
 
-@special(symbol("compile/+"))
+@builtin("compile/+")
+@special("compile/+", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_add(compiler, source, tc=False):
     """
     Compile (compile/+ A B ...). Variadic addition via __add__
@@ -485,7 +507,8 @@ def special_add(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_ADD, _op.add, compiler, source)
 
 
-@special(symbol("compile/-"))
+@builtin("compile/-")
+@special("compile/-", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_subtract(compiler, source, tc=False):
     """
     Compile (compile/- A B ...). Variadic subtraction via __sub__
@@ -495,7 +518,8 @@ def special_subtract(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_SUBTRACT, _op.sub, compiler, source)
 
 
-@special(symbol("compile/*"))
+@builtin("compile/*")
+@special("compile/*", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_multiply(compiler, source, tc=False):
     """
     Compile (compile/* A B ...). Variadic multiplication via __mul__
@@ -505,7 +529,8 @@ def special_multiply(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_MULTIPLY, _op.mul, compiler, source)
 
 
-@special(symbol("compile/**"))
+@builtin("compile/**")
+@special("compile/**", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_power(compiler, source, tc=False):
     """
     Compile (compile/** BASE EXP [MOD]). Exponentiation via __pow__
@@ -515,7 +540,8 @@ def special_power(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_POWER, None, compiler, source)
 
 
-@special(symbol("compile/&"))
+@builtin("compile/&")
+@special("compile/&", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_bit_and(compiler, source, tc=False):
     """
     Compile (compile/& A B ...). Variadic bitwise AND via __and__
@@ -525,7 +551,8 @@ def special_bit_and(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_BIT_AND, _op.and_, compiler, source)
 
 
-@special(symbol("compile/|"))
+@builtin("compile/|")
+@special("compile/|", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_bit_or(compiler, source, tc=False):
     """
     Compile (compile/| A B ...). Variadic bitwise OR via __or__
@@ -535,7 +562,8 @@ def special_bit_or(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_BIT_OR, _op.or_, compiler, source)
 
 
-@special(symbol("compile/^"))
+@builtin("compile/^")
+@special("compile/^", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_bit_xor(compiler, source, tc=False):
     """
     Compile (compile/^ A B ...). Variadic bitwise XOR via __xor__
@@ -545,7 +573,8 @@ def special_bit_xor(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_BIT_XOR, _op.xor, compiler, source)
 
 
-@special(symbol("compile///"))
+@builtin("compile///")
+@special("compile///", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_floor_divide(compiler, source, tc=False):
     """
     Compile (compile/// A B ...). Variadic floor division via __floordiv__
@@ -555,7 +584,8 @@ def special_floor_divide(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_FLOOR_DIVIDE, _op.floordiv, compiler, source)
 
 
-@special(symbol("compile/@"))
+@builtin("compile/@")
+@special("compile/@", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_matrix_multiply(compiler, source, tc=False):
     """
     Compile (compile/@ A B ...). Variadic matrix multiplication via __matmul__
@@ -569,7 +599,8 @@ def special_matrix_multiply(compiler, source, tc=False):
 # Numeric interface — NOARG binary opcodes (no constant folding)
 # ---------------------------------------------------------------------------
 
-@special(symbol("compile//"))
+@builtin("compile//")
+@special("compile//", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_true_divide(compiler, source, tc=False):
     """
     Compile (compile// A B ...). True division via __truediv__
@@ -579,7 +610,8 @@ def special_true_divide(compiler, source, tc=False):
         OpCode.KOS_OP_OBJECT_TRUE_DIVIDE, _op.truediv, compiler, source)
 
 
-@special(symbol("compile/%"))
+@builtin("compile/%")
+@special("compile/%", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_modulo(compiler, source, tc=False):
     """
     Compile (compile/% A B). Modulo via __mod__
@@ -588,7 +620,8 @@ def special_modulo(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_MODULO, compiler, source, opa=2)
 
 
-@special(symbol("compile/<<"))
+@builtin("compile/<<")
+@special("compile/<<", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_bit_left(compiler, source, tc=False):
     """
     Compile (compile/<< A B). Left bit-shift via __lshift__
@@ -597,7 +630,8 @@ def special_bit_left(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_BIT_LEFT, compiler, source)
 
 
-@special(symbol("compile/>>"))
+@builtin("compile/>>")
+@special("compile/>>", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_bit_right(compiler, source, tc=False):
     """
     Compile (compile/>> A B). Right bit-shift via __rshift__
@@ -606,7 +640,8 @@ def special_bit_right(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_BIT_RIGHT, compiler, source)
 
 
-@special(symbol("compile/divmod"))
+@builtin("compile/divmod")
+@special("compile/divmod", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_divmod(compiler, source, tc=False):
     """
     Compile (compile/divmod A B). Combined quotient and remainder
@@ -619,7 +654,8 @@ def special_divmod(compiler, source, tc=False):
 # General object interface — NOARG unary opcodes
 # ---------------------------------------------------------------------------
 
-@special(symbol("compile/not"))
+@builtin("compile/not")
+@special("compile/not", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_not(compiler, source, tc=False):
     """
     Compile (compile/not OBJ). Boolean negation via __bool__ then invert
@@ -628,7 +664,8 @@ def special_not(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_NOT, compiler, source)
 
 
-@special(symbol("compile/repr"))
+@builtin("compile/repr")
+@special("compile/repr", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_repr(compiler, source, tc=False):
     """
     Compile (compile/repr OBJ). String representation via __repr__
@@ -637,7 +674,8 @@ def special_repr(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_REPR, compiler, source)
 
 
-@special(symbol("compile/truth"))
+@builtin("compile/truth")
+@special("compile/truth", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_truth(compiler, source, tc=False):
     """
     Compile (compile/truth OBJ). Boolean coercion via __bool__
@@ -646,7 +684,8 @@ def special_truth(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_TRUTH, compiler, source)
 
 
-@special(symbol("compile/iter"))
+@builtin("compile/iter")
+@special("compile/iter", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_iter(compiler, source, tc=False):
     """
     Compile (compile/iter OBJ). Iterator creation via __iter__
@@ -655,7 +694,8 @@ def special_iter(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_ITER, compiler, source)
 
 
-@special(symbol("compile/~"))
+@builtin("compile/~")
+@special("compile/~", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_bit_invert(compiler, source, tc=False):
     """
     Compile (compile/~ OBJ). Bitwise inversion via __invert__
@@ -664,7 +704,8 @@ def special_bit_invert(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_BIT_INVERT, compiler, source)
 
 
-@special(symbol("compile/#str"))
+@builtin("compile/#str")
+@special("compile/#str", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_str(compiler, source, tc=False):
     """
     Compile (compile/#str OBJ ...). String conversion via __str__, variadic
@@ -684,7 +725,8 @@ def special_str(compiler, source, tc=False):
         source)
 
 
-@special(symbol("compile/len"))
+@builtin("compile/len")
+@special("compile/len", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_len(compiler, source, tc=False):
     """
     Compile (compile/len OBJ). Length query via __len__
@@ -693,7 +735,8 @@ def special_len(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_LEN, compiler, source)
 
 
-@special(symbol("compile/type"))
+@builtin("compile/type")
+@special("compile/type", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_type(compiler, source, tc=False):
     """
     Compile (compile/type OBJ). Type introspection via type()
@@ -702,7 +745,8 @@ def special_type(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_TYPE, compiler, source)
 
 
-@special(symbol("compile/dir"))
+@builtin("compile/dir")
+@special("compile/dir", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_dir(compiler, source, tc=False):
     """
     Compile (compile/dir OBJ). Attribute listing via __dir__
@@ -711,7 +755,8 @@ def special_dir(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_DIR, compiler, source)
 
 
-@special(symbol("compile/vars"))
+@builtin("compile/vars")
+@special("compile/vars", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_vars(compiler, source, tc=False):
     """
     Compile (compile/vars OBJ). Attribute dict via __dict__
@@ -720,7 +765,8 @@ def special_vars(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_VARS, compiler, source)
 
 
-@special(symbol("compile/aiter"))
+@builtin("compile/aiter")
+@special("compile/aiter", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_aiter(compiler, source, tc=False):
     """
     Compile (compile/aiter OBJ). Async iterator creation via __aiter__
@@ -759,7 +805,8 @@ _INPLACE_OP_MAP = {
 }
 
 
-@special(symbol("compile/inplace"))
+@builtin("compile/inplace")
+@special("compile/inplace", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_inplace(compiler, source, tc=False):
     """
     Compile (compile/inplace OP VAR VALUE). In-place update: VAR OP= VALUE.

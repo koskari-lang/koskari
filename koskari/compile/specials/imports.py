@@ -76,7 +76,14 @@ Opcode sequences produced
 from ...lib import nil, OpCode, symbol
 from ...types import is_keyword, is_pair, is_symbol, unpack
 from ...exceptions import SpecialError
-from ..helpers import helper_using, is_symbolish, special
+from ...matcher import MATCH, REST, SYMBOL
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import helper_using, is_symbolish
+
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+
 
 
 __all__ = (
@@ -257,7 +264,8 @@ def _parse_member(elem, source):
         source)
 
 
-@special(symbol("compile/import"))
+@builtin("compile/import")
+@special("compile/import", patterns=_DEFAULT_PATTERNS)
 def special_import(compiler, source, tc=False):
     """
     Compile (import NAME) and (import NAME as: ALIAS).
@@ -315,7 +323,8 @@ def special_import(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/import-from"))
+@builtin("compile/import-from")
+@special("compile/import-from", patterns=_DEFAULT_PATTERNS)
 def special_import_from(compiler, source, tc=False):
     """
     Compile (import-from NAME MEMBER...) where each MEMBER is either a

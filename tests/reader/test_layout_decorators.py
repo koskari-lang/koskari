@@ -19,9 +19,11 @@ Layout _layout_macros @ prefix producing compile/decorate forms.
 
 from unittest import IsolatedAsyncioTestCase
 
+import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
+import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.lib import keyword, symbol
 from koskari.reader import LayoutReader, source_str
-from koskari.reader.layouts import LAYOUTS
+from koskari.stdlib import BUILTINS
 from koskari.compile.helpers import pycons
 from koskari.exceptions import ReaderSyntaxError
 
@@ -151,7 +153,7 @@ class TestLayoutDecorateErrors(IsolatedAsyncioTestCase):
           x
         """
 
-        builtins = {str(k): v for k, v in LAYOUTS.items()}
+        builtins = dict(BUILTINS)
         reader = LayoutReader(builtins)
         stream = source_str(src, '<unittest>')
 
@@ -174,9 +176,7 @@ class TestLayoutDecorateLayoutMacroDisabled(IsolatedAsyncioTestCase):
                 super()._add_default_macros()
                 del self._layout_macros['@']
 
-        builtins = {}
-        for name, value in LAYOUTS.items():
-            builtins[str(name)] = value
+        builtins = dict(BUILTINS)
 
         reader = LayoutReaderNoAt(builtins)
         stream = source_str('@foo\ndefine-class Obj []:\n  x\n', '<unittest>')

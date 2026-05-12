@@ -20,6 +20,7 @@ Layout handlers for conditional block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, keyword, nil, symbol
+from ...stdlib import builtin
 from ...types import get_position, unpack, is_pair
 from .helpers import layout
 
@@ -30,6 +31,7 @@ _symbol_else = symbol('else')
 _keyword_else = keyword('else')
 
 
+@builtin('layout/if')
 @layout(symbol('layout/if'), peers=(_symbol_elif, _symbol_else))
 def layout_if(source, peers):
     """
@@ -95,6 +97,7 @@ def layout_if(source, peers):
     return cons(symbol('compile/cond'), *clauses, nil)
 
 
+@builtin('layout/switch')
 @layout(symbol('layout/switch'))
 def layout_switch(source, peers):
     """

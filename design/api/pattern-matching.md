@@ -25,28 +25,18 @@ fidelity is the point.
 
 ## Implementation (Current)
 
-The matcher lives in **koskari.matcher**. Builder functions and the `match()` entry point are imported from there:
+The **native** matcher (`koskari.lib.Matcher`) interprets frozen matcher tuples. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`match_pattern_raw`, `gather_bindings`, `gather_formals`, …).
+
+The legacy Python modules **`koskari.matcher`**, **`koskari.compile.helpers`**, **`koskari.syntax`**, and **`koskari.hygiene`** have been removed.
 
 ```python
-from koskari.matcher import MATCH, BIND, REST, PAIR, OPT, ANY_ORDER, SYMBOL, EXPR
-from koskari.matcher import LITERAL, LITERAL_KW, LITERAL_SYM
-from koskari.matcher import match, from_tuple, match_tuple
-from koskari.matcher import is_binder_spec, is_scope_region_spec, extract_binder_symbols
+from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS, HygienicMatchCompiler
+from koskari.compile.helpers import match_pattern_raw, gather_formals
 ```
 
-`BIND_SYM` and `BIND_PAIR` are deprecated aliases for `SYMBOL` and `PAIR`.
+Compile-specific composites (e.g. **BINDINGS**, **FORMALS**) are defined in **`koskari.matcher`** and imported through **`koskari.compile.helpers`** where compile code needs a single import surface.
 
-A compile-specific matcher, **BINDINGS**, lives in **koskari.compile.helpers** (it depends on `gather_bindings`):
-
-```python
-from koskari.compile.helpers import BINDINGS
-```
-
-`BIND_BINDINGS` is a deprecated alias for `BINDINGS`.
-
-Matcher classes are registered via the `@matcher(tag)` decorator into a `MATCHERS` dict. Tagged tuples are deserialized via `from_tuple(tup)`, which looks up the tag in `MATCHERS` and calls the class `from_payload()`.
-
-**Current usage**: The let form and `helper_binding` use the matcher. See `koskari/compile/specials/let.py` and `koskari/compile/helpers.py`.
+**Current usage**: specials use `syntax` and `helpers`; see [`koskari/compile/specials/`](../../koskari/compile/specials/) and [`koskari/syntax.py`](../../koskari/syntax.py).
 
 ---
 
@@ -58,7 +48,7 @@ The following describes the intended unified design. Implementation may lag; see
 
 All matchers follow a regex MatchObject-like model: forms bind by key in the result dict, and some have special unpacking semantics (e.g. BINDINGS yields `(names, values)`).
 
-**Core matchers (koskari.matcher):**
+**Core matchers (native `koskari.lib.Matcher` IR; built via `koskari.matcher`):**
 
 | Matcher | Keyed? | Result | Notes |
 |---------|--------|--------|-------|
@@ -72,7 +62,7 @@ All matchers follow a regex MatchObject-like model: forms bind by key in the res
 | **ANY_ORDER** | structural | — | Order-independent sequence |
 | **MATCH** | structural / optional key | — | Sequence match; see below |
 
-**Compile-specific matchers (koskari.compile.helpers):** BINDINGS, BINDING, FORMALS, DEFINE. These live in helpers (they depend on `gather_bindings` etc.) but register into MATCHERS. Each has special "get at insides" behavior (e.g. BINDINGS unpacks to `(names, values)`).
+**Compile-specific matchers (`koskari.matcher` / `koskari.compile.helpers`):** BINDINGS, BINDING, FORMALS, DEFINE (and related composites). These participate in the same hygiene wire as other `matcher` patterns.
 
 ### MATCH as Structural Form for Pairs
 
@@ -142,7 +132,7 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
     When specs is not None, capturing matchers add specs[key] = self."""
 ```
 
-### Tags (koskari.matcher)
+### Tags (native matcher IR)
 
 | Tag | Payload | Meaning |
 |-----|---------|---------|
@@ -157,7 +147,7 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
 | `matcher/opt` | elem | Optionally match elem (succeed if absent) |
 | `matcher/any-order` | elem, elem, ... | All elements must match, in any order |
 
-### Tags (koskari.compile.helpers)
+### Tags (compile composites in matcher / helpers)
 
 | Tag | Payload | Meaning |
 |-----|---------|---------|
@@ -292,31 +282,23 @@ Serialized:
 Construct patterns ergonomically:
 
 ```python
-from koskari.matcher import MATCH, PAIR, BIND, SYMBOL, REST, OPT, ANY_ORDER
-from koskari.matcher import LITERAL_KW, LITERAL_SYM, LITERAL
-from koskari.matcher import match, from_tuple, match_tuple
-from koskari.compile.helpers import BINDINGS
+from koskari.matcher import LIST, MATCH, LITERAL_KW, SYMBOL, HygienicMatchCompiler
+from koskari.lib import Matcher
 
-# Build (MATCH destructures pairs when sub-expr)
-pattern = MATCH(
-    MATCH(LITERAL_KW("before:"), BIND("before_body")),
-    OPT(MATCH(LITERAL_KW("after:"), BIND("after_body"))),
-    REST("body"),
-)
+hc = HygienicMatchCompiler()
+# pattern = ...  # matcher Pattern tree
+frozen = hc.lower(pattern)
+matcher_obj = Matcher.from_tuple(frozen)
+```
 
-# Serialize
-tup = pattern.to_tuple()
+Serialization and thaw use the same frozen tuple representation consumed by **`koskari.lib.Matcher`**. At match time, use **`Matcher.from_tuple`** on the frozen pattern and call **`.match(source)`** on the result (see `koskari.compile.helpers.match_pattern_raw` for the compile-time wrapper).
 
-# Deserialize (for tagged tuples from koskari or stored forms)
-matcher_obj = from_tuple(tup)
+The snippet below is illustrative; exact combinator names live in **`koskari.matcher`** (see module exports).
 
-# Match (accepts builder objects, tagged tuples, or lists of patterns)
-bindings = match(source, pattern, literals=set())
-if bindings is None:
-    raise SpecialError("expected before: and/or after: clauses", source)
-
-# Convenience: deserialize and match in one step
-bindings = match_tuple(source, tup, literals=set())
+```python
+# Illustrative: build a matcher pattern, lower with HygienicMatchCompiler,
+# then match a source spine with koskari.lib.Matcher.from_tuple(...).match(...)
+pass
 ```
 
 ### Match Function
@@ -425,7 +407,7 @@ These expand to the same tagged tuples the matcher expects.
 2. Special handler receives `source_obj` (the full form, e.g. `(compile/let ...)`).
 3. **With patterns**: Handler calls `match(tail, PATTERNS, literals)`; on success, uses bindings to compile.
 
-**Current adopters**: The let form (`compile/specials/let.py`) and `helper_binding` (`compile/helpers.py`) use the matcher. Others (e.g. dyn-wind) still use manual unpacking.
+**Current adopters**: specials under `compile/specials/` use `syntax` patterns and `helpers` (`match`, `match_pattern_raw`, `gather_bindings`, …). Legacy `compile/helpers.py` and the Python `koskari.matcher` stack are removed.
 
 ### Future Macros
 
@@ -447,7 +429,7 @@ These expand to the same tagged tuples the matcher expects.
 
 ### MATCHERS Registry
 
-Matcher classes register via `@matcher(tag)`. The `from_tuple()` function looks up the tag in `MATCHERS` and calls `cls.from_payload(payload, from_tuple)`. New matcher types can be added by defining a class with `match()`, `from_payload()`, and `to_tuple()`, then registering with the decorator. `BINDINGS` lives in `compile/helpers` but registers into `MATCHERS` (tag `matcher/bind-bindings`) so tagged-tuple deserialization works.
+Matcher classes register into the native engine’s tables when lowered from **`matcher`** (see `HygienicMatchCompiler` and `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.lib.Matcher`** only.
 
 ### Role Helpers (hygiene discovery)
 

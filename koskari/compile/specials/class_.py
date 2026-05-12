@@ -25,13 +25,18 @@ Special form handler for compile/class.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import ParametersError, SpecialError
+from ...matcher import MATCH, REST, SYMBOL
+from ...stdlib import builtin
+from ...syntax import special
 from ..helpers import (
-    gather_parameters_ng,
+    gather_parameters,
     helper_begin,
     is_symbolish,
-    special,
     strip_leading_docstring,
 )
+
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _extract_metaclass(kwds_seq):
@@ -56,7 +61,8 @@ def _compiling_module_name(compiler):
     return str(modname) if modname else None
 
 
-@special(symbol("compile/class"))
+@builtin("compile/class")
+@special("compile/class", patterns=_DEFAULT_PATTERNS)
 def special_class(compiler, source, tc=False):
     """
     Compile (compile/class NAME (SUPERS) BODY...). Creates a class via
@@ -81,7 +87,7 @@ def special_class(compiler, source, tc=False):
     supers, body = rest_tail
 
     try:
-        args_seq, kwds_seq = gather_parameters_ng(supers, source=supers)
+        args_seq, kwds_seq = gather_parameters(supers, source=supers)
     except ParametersError as e:
         raise SpecialError(str(e), source)
 

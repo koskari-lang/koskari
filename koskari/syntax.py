@@ -3,169 +3,113 @@
 # the Free Software Foundation; either version 3 of the License, or
 # (at your option) any later version.
 #
-# This library is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
+
 """
 koskari.syntax
 
-Syntax-domain API: Syntax boxing, transformer models, and runtime
-tagged-tuple builders (including deserialize paths for compiled macros).
+Next-generation syntax dispatch scaffolding: ``Syntax`` (a ``Compiled``
+dispatcher), transform arms, native ``koskari.lib.Datum`` for macro unbox,
+and a
+syntax-rules-compatible pattern lowerer to ``matcher.Pattern`` plus
+MATCH-dialect rule spines via :func:`koskari.matcher.parse_explicit_rule_pattern`.
+
+The compiled dispatcher type here is ``Syntax`` (a ``Compiled`` subclass).
+
+In compound ``(subpat ...)`` rows, a non-literal symbol followed by
+``...`` lowers to ``REST(str(id))`` when more pattern follows in the
+same row (tail capture for ``unless``-style layouts); when it is
+terminal in the row it lowers to ``repeat_capture`` with
+``TEST_ANY`` so ``captures[id]`` is a list of ``Datum``. A bare
+pattern symbol still lowers to ``REST`` (same tail semantics).
+Template expansion treats a lone pattern-variable followed by ``...``
+like quasiquote ``,@`` when that binding is not a ``list``; see
+:func:`koskari.hygiene.expand_template_with_hygiene`. Compound
+``(subpat ...)`` uses ``repeat_capture``; :func:`_promote_repeat_frame_bindings`
+copies per-iteration frame slots up to parallel list columns for template
+symbols before ellipsis expansion. An empty ellipsis region matches a
+subject with zero spine elements (``()``), not ``(nil,)``.
+
+Runtime constructors ``build_syntax`` and ``build_macro_syntax`` /
+``build_special_syntax`` assemble a ``Syntax`` dispatcher from RULE
+patterns. ``build_syntax_match``, ``build_macro_match``, and
+``build_special_match`` use MATCH-dialect patterns (explicit matcher
+spine). Templates and procedural handlers see the full use-site form
+(nil-terminated pair spine) unchanged. For RULE builders, pattern
+literals are only what the caller passes: the first pattern position is
+normally a symbol capture (the actual head, including aliases); include
+the dispatch symbol in ``literals`` when a fixed head is required. Ki
+``syntax-match`` segments use only the macro name as a literal set at
+the compile layer; here MATCH patterns encode structure explicitly.
+These are not registered in bootstrap until the NG cutover.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
+:ai-assistant: Composer via Cursor
 """
 
 
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
-from .hygiene import (
-    apply_syntax_rules_hygiene,
-    collect_binding_symbols,
-    expand_template_with_hygiene,
-)
-from .lib import car, cdr, cons, demand_call, nil, symbol
-from .matcher import (LITERAL, MATCH, Matcher, RepeatResult, match)
-from .matcher import from_tuple as matcher_from_tuple
-from .types import (build_proper, get_position, is_nil, is_pair,
-                    is_proper, unpack)
+from koskari.compile.compiler import Compiled
+from koskari.exceptions import SpecialError
+from koskari.hygiene import (Hygiene, collect_binding_symbols,
+                                expand_template_with_hygiene,
+                                finalize_macro_hygiene_unbox_one_pass)
+from koskari.lib import (Datum, Matcher, car, cdr, cons, demand_call, gensym,
+                         nil, symbol)
+from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST,
+                                TEST_ANY,
+                                HygienicMatchCompiler, check_pattern_arg,
+                                parse_explicit_rule_pattern, repeat_capture)
+from koskari.types import build_proper, is_pair, is_proper, is_symbol, unpack
 
 
 __all__ = (
-    'MacroRule',
-    'MacroRulesSegment',
-    'MacroRulesTransformer',
-    'SpecialRule',
-    'SpecialRulesTransformer',
-    'Syntax',
-    'SyntaxRule',
-    'SyntaxRulesSegment',
-    'SyntaxRulesTransformer',
-    'box_match_capture',
-    'build_macro_syntax',
-    'build_special_match',
-    'build_special_syntax',
-    'build_syntax',
-    'unbox_macro',
-    'unbox_macro_with_hygiene',
+    "Datum",
+    "MacroTransform",
+    "SpecialTransform",
+    "Syntax",
+    "SyntaxTransform",
+    "Transform",
+    "build_macro_match",
+    "build_macro_rules",
+    "build_macro_syntax",
+    "build_special_match",
+    "build_special_match_from_rows",
+    "build_special_rules",
+    "build_special_syntax",
+    "build_syntax_from_datums",
+    "build_syntax_match",
+    "build_syntax_rules",
+    "deserialize_form",
+    "hygienic_lower_tuple",
+    "parse_syntax_rules_pattern",
+    "serialize_form",
+    "special",
 )
 
 
-_MATCH_STRUCT_TYPE = type(MATCH(LITERAL(symbol('_'))))
-
-
-@dataclass(frozen=True)
-class Syntax:
-    """
-    Wraps a Koskari datum with optional source position and optional tag.
-
-    :param datum: underlying form (pair, symbol, nil, literals)
-    :param position: source position tuple or None when unknown
-    :param tag: optional interpretation hint; reserved for future use
-
-    Iteration is defined when ``datum`` is a pair (including empty list
-    ``nil``): each step yields a ``Syntax`` box around one element of
-    ``unpack(datum)``, using the cons cell's position when set. Non-pair
-    datums raise ``TypeError`` (for example when treating a box as a splice
-    source).
-    """
-
-    datum: Any
-    position: Any = None
-    tag: Any = None
-
-
-    def __iter__(self):
-        """
-        Yield ``Syntax`` values for each element from the pair spine.
-
-        :raises TypeError: if ``datum`` is not a pair
-        :return: iterator of Syntax instances
-        """
-
-        d = self.datum
-
-        # TODO: I might want to allow iteration over list or tuple in case
-        # we ever leak those into source forms. Not for now though.
-        if not is_pair(d):
-            raise TypeError(
-                f"cannot iterate Syntax with non-pair datum: {d}")
-
-        cell = d
-        for elem in unpack(d):
-            if is_pair(cell) and not is_nil(cell):
-                pos = get_position(cell) or self.position
-                yield Syntax(elem, pos, self.tag)
-                cell = cdr(cell)
-            else:
-                yield Syntax(elem, self.position, self.tag)
-
-
-    @property
-    def car(self):
-        return self.datum.car
-
-
-    @property
-    def cdr(self):
-        return self.datum.cdr
-
-
-def box_match_capture(value, position_fallback=None):
-    """
-    Build a Syntax value from a simple capture, or box each repetition for
-    RepeatResult.
-
-    :param value: MatchResult (or subclass) or RepeatResult from matching
-    :param position_fallback: used when source_pos is unset and the datum is
-        not a pair with get_position (simple captures only)
-    :return: Syntax instance, or list of per-iteration dicts for RepeatResult,
-        or None if a nested RepeatResult boxing fails
-    """
-
-    if isinstance(value, RepeatResult):
-        rows = []
-        for sub_res, _specs in value.matches:
-            flat = {}
-            for k, v in sub_res.items():
-                boxed = box_match_capture(v, position_fallback)
-                if boxed is None:
-                    return None
-                flat[symbol(k)] = boxed
-            rows.append(flat)
-
-        return rows
-
-    d = value.source
-    pos = value.source_pos
-    if pos is None and is_pair(d):
-        pos = get_position(d)
-    if pos is None:
-        pos = position_fallback
-
-    return Syntax(d, pos)
-
+_symbol_match = symbol("match")
 
 _tag_syntax_rules = symbol("syntax/rules")
 _tag_list = symbol("syntax/list")
 _tag_cons = symbol("syntax/cons")
 
 
-def _serialize_form(form):
+def serialize_form(form):
     """
     Encode a Koskari form as tagged tuples for const-pool persistence
 
     Proper lists use ``syntax/list``; improper pairs use ``syntax/cons``;
     tuples and frozensets recurse structurally; atoms pass through
-
-    :param form: pair tree, tuple, frozenset, or leaf datum
-    :return: tagged tuple, nil, or leaf suitable for ``from_tuple`` round-trip
     """
 
     if form is nil:
@@ -173,25 +117,21 @@ def _serialize_form(form):
 
     if is_pair(form):
         if is_proper(form):
-            return (_tag_list,) + tuple(_serialize_form(x) for x in unpack(form))
-        return (_tag_cons, _serialize_form(car(form)), _serialize_form(cdr(form)))
+            return (_tag_list,) + tuple(serialize_form(x) for x in unpack(form))
+        return (_tag_cons, serialize_form(car(form)), serialize_form(cdr(form)))
 
     if isinstance(form, tuple):
-        return tuple(_serialize_form(x) for x in form)
+        return tuple(serialize_form(x) for x in form)
 
     if isinstance(form, frozenset):
-        return frozenset(_serialize_form(x) for x in form)
+        return frozenset(serialize_form(x) for x in form)
 
     return form
 
 
-def _deserialize_form(payload):
+def deserialize_form(payload):
     """
-    Decode :func:`_serialize_form` output back to Koskari pairs and datums
-
-    :param payload: nil, tagged tuple from serialization, or pass-through leaf
-    :raises ValueError: when a ``syntax/cons`` payload has wrong length
-    :return: cons tree, tuple, frozenset, or leaf
+    Decode :func:`serialize_form` output back to Koskari pairs and datums
     """
 
     if payload is nil:
@@ -201,496 +141,963 @@ def _deserialize_form(payload):
         tag = payload[0]
 
         if tag is _tag_list:
-            return build_proper(*(_deserialize_form(x) for x in payload[1:]))
+            return build_proper(*(deserialize_form(x) for x in payload[1:]))
 
         if tag is _tag_cons:
             if len(payload) != 3:
                 raise ValueError("invalid cons payload")
-            return cons(_deserialize_form(payload[1]), _deserialize_form(payload[2]))
+            return cons(
+                deserialize_form(payload[1]),
+                deserialize_form(payload[2]),
+            )
 
-        return tuple(_deserialize_form(x) for x in payload)
+        return tuple(deserialize_form(x) for x in payload)
 
     if isinstance(payload, frozenset):
-        return frozenset(_deserialize_form(x) for x in payload)
+        return frozenset(deserialize_form(x) for x in payload)
 
     return payload
 
 
-def _match_dict_to_syntax_kwargs(raw, position_fallback=None):
+def hygienic_lower_tuple(pattern):
     """
-    Box macro-rules match results into ``Syntax`` keyword arguments
-
-    Each capture becomes a :class:`Syntax` wrapper (or None on boxing failure).
-    Used when invoking procedural macro lambdas
-
-    :param raw: dict from :func:`~koskari.matcher.match` (string keys)
-    :param position_fallback: default position when captures lack one
-    :return: dict mapping symbol keys to ``Syntax``, or None if boxing failed
+    Lower a matcher pattern with :class:`HygienicMatchCompiler` for
+    persistence (same tables ``SyntaxTransform`` uses when built from a
+    pattern tree)
     """
 
-    if not raw:
-        return {}
+    check_pattern_arg(pattern, "hygienic_lower_tuple pattern")
+    hc = HygienicMatchCompiler()
+    return hc.lower(pattern)
 
-    out = {}
-    for k, v in raw.items():
-        boxed = box_match_capture(v, position_fallback)
-        if boxed is None:
-            return None
 
-        out[symbol(k)] = boxed
+def _init_pattern_fields(instance, pattern, handler):
+    """
+    Attach pattern, frozen matcher tuple, hygiene plan, and thawed matcher
+    """
 
+    check_pattern_arg(pattern, "Transform pattern")
+    if handler is not None and not callable(handler):
+        raise TypeError(
+            "Transform handler must be callable or None, got %r"
+            % (type(handler).__name__,))
+    instance.pattern = pattern
+    instance.handler = handler
+    hc = HygienicMatchCompiler()
+    instance.matcher_tuple = hc.lower(pattern)
+    instance.hygiene = hc.build_hygiene()
+    instance._matcher = Matcher.from_tuple(instance.matcher_tuple)
+
+
+def _captures_to_bindings(captures):
+    """
+    Map string capture keys to koskari symbols for template expansion.
+
+    Values are native matcher captures (often ``Datum``-wrapped); they are
+    stored unchanged so :func:`koskari.hygiene.expand_template_with_hygiene`
+    peels at use sites. Macro handlers receive the same ``Datum``-bearing
+    ``MatchResult.captures`` mapping unchanged from the matcher.
+    """
+
+    return {symbol(k): v for k, v in captures.items()}
+
+
+def _promote_repeat_frame_bindings(bindings):
+    """
+    For each ``repeat_capture`` value (bare list of per-iteration dicts),
+    copy slot columns onto top-level template keys.
+
+    Keys already present in ``bindings`` are left alone so outer captures and
+    the first promoted column win when names collide
+    """
+
+    out = dict(bindings)
+    for v in bindings.values():
+        # Stage 1: Datum at the binding root is never repeat_capture's frame
+        # vector; that structure is always a bare list. A Datum here is one
+        # wrapped cell (often a pair spine for REST or a leaf for BIND). If we
+        # mis-classified that as repeat rows, ellipsis would see wrong shapes.
+        if isinstance(v, Datum):
+            continue
+
+        # Stage 2: only non-empty Python lists can be repeat_capture output.
+        if not (v and isinstance(v, list)):
+            continue
+
+        frames = v
+        # Stage 3: repeat rows are dicts per iteration; anything else is not this
+        # transpose shape (e.g. a flat list of syntax objects from elsewhere).
+        if not all(isinstance(fr, dict) for fr in frames):
+            continue
+
+        # Stage 4: each frame maps string slot names to one iteration's
+        # captures (often Datum-wrapped); transpose into parallel lists for
+        # template ellipsis indexing.
+        slot_keys = set()
+        for fr in frames:
+            slot_keys.update(fr.keys())
+        for sk in slot_keys:
+            sym = symbol(sk) if isinstance(sk, str) else sk
+            if sym in out:
+                continue
+            col = []
+            for fr in frames:
+                if sk not in fr:
+                    col = None
+                    break
+                col.append(fr[sk])
+            if col is None:
+                continue
+            out[sym] = col
     return out
 
 
-def _merge_bindings(dst, src):
+def _finalize_macro_output(compiler, form):
     """
-    Merge ``src`` binding entries into ``dst`` for macro-rules environments
-
-    Keys must agree when both sides bind the same name; list-valued repeats
-    must match exactly between merges
-
-    :param dst: target dict (mutated)
-    :param src: new bindings to fold in
-    :return: True if merge succeeded, False on conflict
+    Discover binding symbols on ``form`` then run the shared in-place hygiene
+    and ``Datum`` peel pass
     """
-
-    for k, v in src.items():
-        if k in dst:
-            cur = dst[k]
-            if isinstance(cur, list) or isinstance(v, list):
-                if not isinstance(cur, list) or not isinstance(v, list):
-                    return False
-                if cur != v:
-                    return False
-            elif cur != v:
-                return False
-        else:
-            dst[k] = v
-
-    return True
-
-
-def _syntax_match_result_to_bindings(raw):
-    """
-    Turn a syntax-rules match dict into plain symbol-to-datum bindings
-
-    Flattens :func:`box_match_capture` output: simple captures become one
-    entry per key; ``RepeatResult`` rows merge into list-valued keys
-
-    :param raw: dict from :func:`~koskari.matcher.match`
-    :return: bindings dict suitable for :func:`apply_syntax_rules_hygiene`, or
-        None if repeat merging conflicts or boxing fails
-    """
-
-    if not raw:
-        return {}
-
-    out = {}
-
-    for k, v in raw.items():
-        boxed = box_match_capture(v)
-        if boxed is None:
-            return None
-
-        if isinstance(boxed, list):
-            merged = {}
-            for item in boxed:
-                for rk, val in item.items():
-                    merged.setdefault(rk, []).append(val.datum)
-
-            if not _merge_bindings(out, merged):
-                return None
-
-        else:
-            if not _merge_bindings(out, {symbol(k): boxed.datum}):
-                return None
-
+    # print('DEBUG syntax _finalize_macro_output', 'form=', repr(form))
+    syms = collect_binding_symbols(form, compiler.find_compiled)
+    # print('DEBUG syntax _finalize_macro_output', 'syms=', repr(syms))
+    out = finalize_macro_hygiene_unbox_one_pass(
+        form, syms, compiler.find_compiled)
+    # print('DEBUG syntax _finalize_macro_output', 'out=', repr(out))
     return out
 
 
-def _unwrap_repeat_macro_rows(val):
+@runtime_checkable
+class Transform(Protocol):
     """
-    Turn :func:`box_match_capture` output for ``RepeatResult`` into a flat list
-
-    After ``box_match_capture``, a repeat region is a list of per-iteration
-    dicts with one key each (the inner pattern variable). Macro bodies expect
-    a list of ``Syntax`` values for ``(apply #list xs)``-style expansions.
-
-    :param val: keyword value (possibly list of one-key dicts)
-    :return: list of boxed captures, or ``val`` if not repeat-shaped
+    One clause of a ``Syntax`` dispatcher: frozen ``matcher`` pattern,
+    hygiene plan, and matcher-backed ``try_expand``
     """
 
-    if not isinstance(val, list) or not val:
-        return val
-
-    if not all(isinstance(row, dict) and len(row) == 1 for row in val):
-        return val
-
-    keys0 = next(iter(val[0]))
-    for row in val:
-        if next(iter(row)) != keys0:
-            return val
-
-    return [row[keys0] for row in val]
+    pattern: Any
+    matcher_tuple: tuple
+    hygiene: Any
+    handler: Any
+    _matcher: Matcher
 
 
-@dataclass(frozen=True)
-class SyntaxRule:
-    pattern_matcher: Matcher
-    template: object
+    def try_expand(self, compiler, source_obj, tc):
+        """
+        Try this arm on ``source_obj``; return compile result or ``None``
 
-    def to_tuple(self):
-        return (self.pattern_matcher.to_tuple(), _serialize_form(self.template))
+        :param compiler: active compiler instance
+        :param source_obj: full special form as a proper list (pair spine)
+        :param tc: tail-call flag
+        :return: fragment or form for ``compile_special``, or ``None`` when the
+            pattern does not match
+        """
+
+        ...
+
+
+class SyntaxTransform(object):
+    """
+    Template arm: capture-only template expand, then shared finalize (hygiene
+    plus ``Datum`` peel for compile)
+    """
+
+    def __init__(self, pattern, template=nil):
+        """
+        :param pattern: matcher pattern tree
+        :param template: syntax-rules template form (often contains pattern vars)
+        """
+
+        _init_pattern_fields(self, pattern, None)
+        self.template = template
+
 
     @classmethod
-    def from_tuple(cls, tup):
-        if not isinstance(tup, tuple) or len(tup) != 2:
-            raise ValueError("invalid syntax rule tuple")
-        return cls(matcher_from_tuple(tup[0]), _deserialize_form(tup[1]))
+    def from_persistent(cls, matcher_tuple, template):
+        """
+        Rebuild from a frozen native matcher tuple and deserialized template
+        """
 
-    def try_expand(self, compiler, source_obj, literals):
-        raw = match(source_obj, self.pattern_matcher, literals=literals)
-        if raw is None:
+        self = cls.__new__(cls)
+        self.pattern = None
+        self.template = template
+        self.handler = None
+        self.matcher_tuple = matcher_tuple
+        self.hygiene = Hygiene({}, {})
+        self._matcher = Matcher.from_tuple(matcher_tuple)
+        return self
+
+
+    def try_expand(self, compiler, source_obj, tc):
+        """
+        Match ``source_obj`` as the full proper-list form; on success expand
+        ``template`` with captures
+
+        :param compiler: active compiler
+        :param source_obj: full special form (proper list spine)
+        :param tc: tail-call flag (unused for template expansion)
+        :return: expanded form or ``None`` when the pattern does not match
+        """
+
+        result = self._matcher.match(source_obj)
+        if not result.matched:
             return None
+        # print('DEBUG syntax SyntaxTransform', 'captures=', repr(result.captures))
+        bindings = _captures_to_bindings(result.captures)
+        bindings = _promote_repeat_frame_bindings(bindings)
+        # print('DEBUG syntax SyntaxTransform', 'bindings=', repr(bindings))
+        subst = expand_template_with_hygiene(
+            self.template, bindings, set(), {})
+        # print('DEBUG syntax SyntaxTransform', 'subst=', repr(subst))
+        return _finalize_macro_output(compiler, subst)
 
-        bindings = _syntax_match_result_to_bindings(raw)
-        if bindings is None:
+
+class MacroTransform(object):
+    """
+    Procedural arm: invoke handler then ``hygiene`` on expanded output
+    """
+
+    def __init__(self, pattern, handler):
+        """
+        :param pattern: matcher pattern tree
+        :param handler:
+            ``(compiler, tc, **captures)`` procedure returning expanded form;
+            ``captures`` are string-keyed match slots from ``match_result.captures``
+        """
+
+        if handler is None or not callable(handler):
+            raise TypeError("MacroTransform handler must be callable,"
+                            f" got {handler!r}")
+        _init_pattern_fields(self, pattern, handler)
+
+
+    @classmethod
+    def from_persistent(cls, matcher_tuple, handler):
+        """
+        Rebuild from a frozen native matcher tuple and procedure.
+
+        Ki procedures are wrapped so ``try_expand`` still passes
+        ``(compiler, tc, **captures)`` while the underlying lambda receives
+        only ``**captures`` via :func:`koskari.lib.demand_call`, matching
+        compile-emitted ``compile/lambda`` formals.
+        """
+
+        if handler is None or not callable(handler):
+            raise TypeError("MacroTransform handler must be callable,"
+                            f" got {handler!r}")
+        self = cls.__new__(cls)
+        self.pattern = None
+        raw = handler
+
+        def _ki_captures_kw(cap):
+            kw = {}
+            for k, v in cap.items():
+                if isinstance(k, str) and k.endswith("__sr"):
+                    base = k[:-4]
+                    if base not in cap:
+                        kw[base] = v
+                else:
+                    kw[k] = v
+            return kw
+
+        def _ki_handler(compiler, tc, **captures):
+            return demand_call(raw, **_ki_captures_kw(captures))
+
+        self.handler = _ki_handler
+        self.matcher_tuple = matcher_tuple
+        self.hygiene = Hygiene({}, {})
+        self._matcher = Matcher.from_tuple(matcher_tuple)
+        return self
+
+
+    def try_expand(self, compiler, source_obj, tc):
+        """
+        Match ``source_obj`` as the full proper-list form, run handler, then
+        procedural macro hygiene on the result
+
+        :param compiler: active compiler
+        :param source_obj: full special form (proper list spine)
+        :param tc: tail-call flag (passed to the handler as ``tc``)
+        :return: hygiened expanded form or ``None`` when the pattern does not
+            match
+        """
+
+        result = self._matcher.match(source_obj)
+        if not result.matched:
             return None
-
-        return apply_syntax_rules_hygiene(
-            self.template, bindings, compiler.find_compiled)
-
-
-@dataclass(frozen=True)
-class SyntaxRulesSegment:
-    literals: frozenset
-    rules: tuple
+        # print('DEBUG syntax MacroTransform', 'captures=', repr(result.captures))
+        expanded = self.handler(compiler, tc, **result.captures)
+        # print('DEBUG syntax MacroTransform', 'expanded=', repr(expanded))
+        return _finalize_macro_output(compiler, expanded)
 
 
-class SyntaxRulesTransformer:
+class SpecialTransform(object):
+    """
+    Special arm: handler return is the compile result (no automatic hygiene)
+    """
 
-    def __init__(self, name, literals, rules):
+    def __init__(self, pattern, handler):
+        """
+        :param pattern: matcher pattern tree
+        :param handler:
+            ``(compiler, source_obj, match_result, tc)`` procedure; use
+            :func:`special` if you need other calling conventions
+        """
+
+        if handler is None or not callable(handler):
+            raise TypeError("SpecialTransform handler must be callable,"
+                            f" got {handler!r}")
+        _init_pattern_fields(self, pattern, handler)
+
+
+    @classmethod
+    def from_persistent(cls, matcher_tuple, handler):
+        """
+        Rebuild from a frozen native matcher tuple and procedure.
+
+        Ki procedures are wrapped so ``try_expand`` still passes
+        ``(compiler, source_obj, match_result, tc)`` while the underlying
+        lambda receives ``(compiler, tc, **captures)`` via
+        :func:`koskari.lib.demand_call`, matching compile-emitted formals.
+        """
+
+        if handler is None or not callable(handler):
+            raise TypeError("SpecialTransform handler must be callable,"
+                            f" got {handler!r}")
+        self = cls.__new__(cls)
+        self.pattern = None
+        raw = handler
+
+        def _ki_captures_kw_special(cap):
+            kw = {}
+            for k, v in cap.items():
+                if isinstance(k, str) and k.endswith("__sr"):
+                    base = k[:-4]
+                    if base not in cap:
+                        kw[base] = v
+                else:
+                    kw[k] = v
+            return kw
+
+        def _ki_handler(compiler, source_obj, match_result, tc):
+            return demand_call(
+                raw, compiler, tc,
+                **_ki_captures_kw_special(match_result.captures))
+
+        self.handler = _ki_handler
+        self.matcher_tuple = matcher_tuple
+        self.hygiene = Hygiene({}, {})
+        self._matcher = Matcher.from_tuple(matcher_tuple)
+        return self
+
+
+    def try_expand(self, compiler, source_obj, tc):
+        """
+        Match ``source_obj`` as the full proper-list form; on success return
+        handler result unchanged
+
+        :param compiler: active compiler
+        :param source_obj: full special form (proper list spine)
+        :param tc: tail-call flag
+        :return: compile product or ``None`` when the pattern does not match
+        """
+
+        result = self._matcher.match(source_obj)
+        if not result.matched:
+            return None
+        return self.handler(compiler, source_obj, result, tc)
+
+
+class Syntax(Compiled):
+    """
+    Ordered dispatcher over ``Transform`` clauses (compiled form). Try order
+    follows ``transforms`` tuple order; use ``__add__`` to prepend clauses
+
+    :param name: primary compile-time symbol for this form
+    :param aliases: additional symbols resolving to this dispatcher
+    :param transforms: ordered transforms tried on each expansion
+    """
+
+    def __init__(self, name, aliases=(), transforms=(), *,
+                 serialized_literals=None):
+        """
+        :param name: symbol or str naming this syntax object
+        :param aliases: iterable of extra names
+        :param transforms: iterable of ``Transform`` instances
+        :param serialized_literals: optional frozenset mirrored into
+            ``to_syntax_rules_tagged`` for Ki const-pool layout
+        """
+
         self.name = name
-        self.segments = (
-            SyntaxRulesSegment(frozenset(literals), tuple(rules)),
-        )
+        self.aliases = tuple(aliases)
+        self.transforms = tuple(transforms)
+        self.serialized_literals = serialized_literals
+        for t in self.transforms:
+            if not isinstance(t, Transform):
+                raise TypeError("Syntax transforms must be Transform instances,"
+                                f" got {t!r}")
 
 
-    @classmethod
-    def from_segments(cls, name, segments):
-        inst = cls.__new__(cls)
-        inst.name = name
-        inst.segments = tuple(segments)
-        return inst
+    @property
+    def hygiene(self):
+        """
+        Merged binder and scope-region plan from all transform arms for
+        :func:`koskari.hygiene.collect_binding_symbols`
+        """
+
+        binders = {}
+        scopes = {}
+        for t in self.transforms:
+            h = t.hygiene
+            if h.is_empty():
+                continue
+            binders.update(dict(h.binders))
+            scopes.update(dict(h.scope_regions))
+        return Hygiene(binders, scopes)
 
 
-    def to_tuple(self):
-        if len(self.segments) != 1:
-            raise ValueError(
-                "SyntaxRulesTransformer.to_tuple requires exactly one "
-                "segment until multi-segment const-pool format exists")
+    def match_for_hygiene(self, rest):
+        """
+        Match ``(self.name . rest)`` against the first arm whose frozen
+        matcher succeeds; return capture mapping for hygiene discovery
+        """
 
-        seg = self.segments[0]
+        head = self.name
+        if not is_symbol(head):
+            head = symbol(str(head))
+        full = cons(head, rest)
+        for t in self.transforms:
+            try:
+                r = t._matcher.match(full)
+            except SpecialError:
+                continue
+            if r.matched:
+                return r.captures
+        return None
+
+
+    def compile_impl(self, compiler, source_obj, tc):
+        """
+        Try each transform in order; first non-``None`` result wins
+
+        :param compiler: active compiler instance
+        :param source_obj: full special form being compiled
+        :param tc: tail-call flag
+        :raises SpecialError: when no arm matches
+        :return: compile product from the winning transform
+        """
+
+        for t in self.transforms:
+            out = t.try_expand(compiler, source_obj, tc)
+            if out is not None:
+                return out
+        raise SpecialError("no matching syntax rule", source_obj)
+
+
+    def to_syntax_rules_tagged(self):
+        """
+        Tagged tuple for ``(build-syntax-rules NAME TAGGED)`` const-pool
+        layout (patterns as native frozen matcher tuples)
+        """
+
+        lit = self.serialized_literals
+        if lit is None:
+            lit = frozenset()
+        rules_out = []
+        for t in self.transforms:
+            if not isinstance(t, SyntaxTransform):
+                raise TypeError(
+                    "to_syntax_rules_tagged requires SyntaxTransform arms,"
+                    " got %r" % (type(t).__name__,))
+            rules_out.append(
+                (t.matcher_tuple, serialize_form(t.template)))
         return (
             _tag_syntax_rules,
-            _serialize_form(self.name),
-            tuple(_serialize_form(x) for x in seg.literals),
-            tuple(r.to_tuple() for r in seg.rules),
+            serialize_form(self.name),
+            tuple(serialize_form(x) for x in sorted(lit, key=str)),
+            tuple(rules_out),
         )
 
 
-    @classmethod
-    def from_tuple(cls, tup):
-        if not isinstance(tup, tuple) or len(tup) != 4 or tup[0] is not _tag_syntax_rules:
-            raise ValueError("invalid syntax-rules tuple")
+    def __add__(self, other):
+        """
+        Return a new ``Syntax`` with ``other``'s transforms prepended before
+        ``self``'s (``other`` is tried first at expansion time)
 
-        name = _deserialize_form(tup[1])
-        literals = frozenset(_deserialize_form(x) for x in tup[2])
-        rules = tuple(SyntaxRule.from_tuple(rt) for rt in tup[3])
-        return cls.from_segments(name, (SyntaxRulesSegment(literals, rules),))
+        :param other: ``Transform`` or ``Syntax``
+        :rtype: Syntax
+        """
 
-
-    def compile_impl(self, compiler, source_obj, tc=False):
-        for segment in self.segments:
-            for rule in segment.rules:
-                expanded = rule.try_expand(
-                    compiler, source_obj, segment.literals)
-                if expanded is not None:
-                    return expanded
-
-        raise ValueError(f"no matching define-syntax rule for {source_obj}")
+        if isinstance(other, Transform):
+            new_transforms = (other,) + self.transforms
+        elif isinstance(other, Syntax):
+            new_transforms = other.transforms + self.transforms
+        else:
+            return NotImplemented
+        return Syntax(
+            self.name, self.aliases, new_transforms,
+            serialized_literals=self.serialized_literals)
 
 
-def unbox_macro(expanded):
+def _normalize_special_patterns(patterns):
     """
-    Strip Syntax wrappers from procedural macro output without hygiene
-
-    :param expanded: form returned by the macro procedure (may contain ``Syntax``)
-    :return: form ready for compilation (no ``Syntax`` wrappers)
-
-    Unboxing updates ``car``/``cdr`` in place on existing pairs so source
-    positions on those cells are preserved
+    Accept one ``Pattern`` or an iterable of patterns for ordered disjunction
     """
 
-    seen = set()
-
-    def walk(x):
-        if isinstance(x, Syntax):
-            return walk(x.datum)
-
-        if is_nil(x):
-            return x
-
-        if is_pair(x):
-            nx = x
-            while nx is not nil:
-                xi = id(nx)
-                if xi in seen:
-                    nx = nx.cdr
-                    continue
-                seen.add(xi)
-
-                head, tail = nx
-                if isinstance(head, Syntax):
-                    nx.car = walk(head.datum)
-                    nx.position = head.position
-                elif is_nil(head):
-                    pass
-                elif is_pair(head):
-                    walk(head)
-                nx = tail
-            return x
-        return x
-
-    return walk(expanded)
+    if isinstance(patterns, (list, tuple)):
+        out = tuple(patterns)
+    else:
+        out = (patterns,)
+    for i, p in enumerate(out):
+        check_pattern_arg(p, "special patterns[%s]" % i)
+    return out
 
 
-def unbox_macro_with_hygiene(expanded, find_compiled):
+def special(form_symbol, *, patterns, unpack=None):
     """
-    Run syntax-rules hygiene on procedural macro output, then strip Syntax
+    Build a ``Syntax`` dispatcher whose arms are ``SpecialTransform`` instances
+    wrapping the decorated function. ``unpack`` selects one of three fixed
+    invoke shapes at decoration time (no per-call unpack dispatch)
 
-    Hygiene runs while ``Syntax`` boxes are still present so
-    ``collect_binding_symbols`` and ``expand_template_with_hygiene`` never
-    descend into boxed captures. Unboxing runs last for the compiler.
-
-    :param expanded: form returned by the macro procedure (may contain ``Syntax``)
-    :param find_compiled: callback used by syntax-rules to resolve special heads
-    :return: form ready for compilation (no ``Syntax`` wrappers)
-
-    Unboxing updates ``car``/``cdr`` in place on existing pairs so source
-    positions on those cells are preserved
+    :param form_symbol: primary compile-time head symbol for this form
+    :param patterns: one ``matcher.Pattern`` or an iterable (try-order)
+    :param unpack: only for this decorator: ``None`` (receive
+        ``compiler, source_obj, tc``), ``match`` (receive
+        ``compiler, captures_dict, tc``), or ``kwargs`` (captures merged after
+        ``tc``). For ``match`` and ``kwargs``, ``captures_dict`` includes only
+        slots the matcher bound; values are matcher outputs (``Datum``
+        wrappers may be present). Not available on ``build_*`` rule rows.
     """
 
-    syms = collect_binding_symbols(expanded, find_compiled)
-    hygiened = expand_template_with_hygiene(expanded, {}, syms, {})
+    if unpack not in (None, "match", "kwargs"):
+        raise ValueError(
+            f"unpack must be None, 'match', or 'kwargs', got {unpack!r}")
 
-    seen = set()
+    def deco(fn):
+        """
+        :param fn: Python handler implementing this special form
+        :rtype: Syntax
+        """
 
-    def walk(x):
-        # xi = id(x)
-        # if xi in seen:
-        #     return x
+        if not callable(fn):
+            raise TypeError("special decorator requires a callable,"
+                            f" got {fn!r}")
 
-        if isinstance(x, Syntax):
-            return walk(x.datum)
+        plist = _normalize_special_patterns(patterns)
+        if unpack is None:
+            def wrapped(compiler, source_obj, match_result, tc):
+                return fn(compiler, source_obj, tc)
 
-        if is_nil(x):
-            return x
+        elif unpack == "match":
+            def wrapped(compiler, source_obj, match_result, tc):
+                return fn(compiler, match_result.captures, tc)
 
-        if is_pair(x):
-            nx = x
-            while nx is not nil:
-                xi = id(nx)
-                if xi in seen:
-                    nx = nx.cdr
-                    continue
-                seen.add(xi)
+        elif unpack == "kwargs":
+            def wrapped(compiler, source_obj, match_result, tc):
+                return fn(compiler, tc=tc, **match_result.captures)
 
-                head, tail = nx
-                if isinstance(head, Syntax):
-                    nx.car = walk(head.datum)
-                    nx.position = head.position
-                elif is_nil(head):
-                    pass
-                elif is_pair(head):
-                    walk(head)
-                nx = tail
-            return x
-        return x
+        else:
+            raise ValueError(f"internal: bad unpack {unpack!r}")
 
-    return walk(hygiened)
+        transforms = tuple(SpecialTransform(p, wrapped) for p in plist)
+        return Syntax(form_symbol, (), transforms)
+
+    return deco
 
 
-@dataclass
-class MacroRule:
-    pattern_matcher: Matcher
-    procedure: Any = None
+def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
+    """
+    Lower a syntax-rules RULE pattern (cons tree) to a ``matcher.Pattern``.
+
+    Supports the same surface as ``parse_rule_pattern`` /
+    ``syntax_pattern_to_matcher`` in ``compile/specials/syntax.py`` (RULE
+    dialect only). Does not implement MATCH-dialect ``matcher/foo`` forms.
+
+    :param pattern_expr: koskari pattern datum
+    :param literals: set or frozenset of literal symbols
+    :param source_ctx: value recorded in error messages
+    :rtype: Pattern
+    """
+
+    if not isinstance(literals, (set, frozenset)):
+        literals = frozenset(literals)
+    return _parse_rule_pattern(pattern_expr, literals, source_ctx)
 
 
-    def expand(self, source_obj, literals):
-        raw = match(source_obj, self.pattern_matcher, literals=literals)
-        if raw is None:
-            return None
+def _parse_rule_pattern(pattern_expr, literals, source_ctx):
+    if is_pair(pattern_expr):
+        head, rest = pattern_expr
+        if head == _symbol_match:
+            if (not is_proper(rest)
+                    or rest.cdr is not nil
+                    or rest is nil):
+                raise ValueError(
+                    f"match pattern must have exactly one form: {pattern_expr!r}"
+                    f" (context {source_ctx!r})"
+                )
+            return _syntax_pattern_to_pattern(rest.car, literals, source_ctx)
 
-        if self.procedure is None:
-            raise ValueError("internal: macro rule missing procedure")
-
-        pos_fb = get_position(source_obj) if is_pair(source_obj) else None
-
-        kwargs = _match_dict_to_syntax_kwargs(raw, position_fallback=pos_fb)
-        if kwargs is None:
-            raise ValueError("macro-rules: failed to box match captures")
-
-        kwargs = {
-            str(k): _unwrap_repeat_macro_rows(v) for k, v in kwargs.items()}
-
-        return demand_call(self.procedure, **kwargs)
+    return _syntax_pattern_to_pattern(pattern_expr, literals, source_ctx)
 
 
-@dataclass
-class SpecialRule:
-    pattern_matcher: Matcher
-    procedure: Any = None
-
-
-    def expand(self, compiler, source_obj, literals, tc=False):
-        raw = match(source_obj, self.pattern_matcher, literals=literals)
-        if raw is None:
-            return None
-
-        if self.procedure is None:
-            raise ValueError("internal: special rule missing procedure")
-
-        pos_fb = get_position(source_obj) if is_pair(source_obj) else None
-
-        kwargs = _match_dict_to_syntax_kwargs(raw, position_fallback=pos_fb)
-        if kwargs is None:
-            raise ValueError("special-rules: failed to box match captures")
-
-        kwargs = {
-            str(k): _unwrap_repeat_macro_rows(v) for k, v in kwargs.items()}
-
-        return demand_call(self.procedure, compiler, tc, **kwargs)
-
-
-@dataclass(frozen=True)
-class MacroRulesSegment:
-    literals: frozenset
-    rules: tuple
-
-
-class MacroRulesTransformer:
-
-    def __init__(self, name, literals, rules):
-        self.name = name
-        self.segments = (
-            MacroRulesSegment(frozenset(literals), tuple(rules)),
+def _syntax_pattern_to_pattern(pattern_expr, literals, source_ctx):
+    if pattern_expr is Ellipsis:
+        raise TypeError(
+            f"invalid ellipsis placement in pattern: {pattern_expr!r}"
+            f" (context {source_ctx!r})"
         )
 
+    if is_symbol(pattern_expr):
+        if pattern_expr in literals:
+            return MATCH(LITERAL(pattern_expr))
+        return MATCH(REST(str(pattern_expr)))
 
-    @classmethod
-    def from_segments(cls, name, segments):
-        inst = cls.__new__(cls)
-        inst.name = name
-        inst.segments = tuple(segments)
-        return inst
+    if not is_pair(pattern_expr):
+        return MATCH(LITERAL(pattern_expr))
 
-
-    def compile_impl(self, compiler, source_obj, tc=False):
-        for segment in self.segments:
-            for rule in segment.rules:
-                expanded = rule.expand(source_obj, segment.literals)
-                if expanded is not None:
-                    return unbox_macro_with_hygiene(
-                        expanded, compiler.find_compiled)
-
-        raise ValueError("no matching macro-rules rule")
+    return MATCH(*_syntax_pattern_specs(
+        list(unpack(pattern_expr)), literals, source_ctx))
 
 
-class SpecialRulesTransformer:
-
-    def __init__(self, name, literals, rules):
-        self.name = name
-        self.segments = (
-            MacroRulesSegment(frozenset(literals), tuple(rules)),
+def _syntax_elem_pattern(pat, literals, source_ctx):
+    if pat is Ellipsis:
+        raise ValueError(
+            f"invalid ellipsis placement in pattern: {pat!r}"
+            f" (context {source_ctx!r})"
         )
 
+    if is_symbol(pat):
+        if pat in literals:
+            return LITERAL(pat)
+        return BIND(str(pat))
 
-    @classmethod
-    def from_segments(cls, name, segments):
-        inst = cls.__new__(cls)
-        inst.name = name
-        inst.segments = tuple(segments)
-        return inst
+    if not is_pair(pat):
+        return LITERAL(pat)
 
-
-    def compile_impl(self, compiler, source_obj, tc=False):
-        for segment in self.segments:
-            for rule in segment.rules:
-                expanded = rule.expand(
-                    compiler, source_obj, segment.literals, tc=tc)
-                if expanded is not None:
-                    return unbox_macro(expanded)
-
-        raise ValueError("no matching special-rules rule")
+    return FORM(MATCH(*_syntax_pattern_specs(
+        list(unpack(pat)), literals, source_ctx)))
 
 
-def build_syntax(name, tagged_tuple):
-    transformer = SyntaxRulesTransformer.from_tuple(tagged_tuple)
-    if name is not None:
-        transformer.name = name
-    return transformer
+def _syntax_pattern_specs(p_items, literals, source_ctx):
+    specs = []
+    i = 0
+    while i < len(p_items):
+        if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
+            pat = p_items[i]
+            if is_symbol(pat) and pat not in literals:
+                if i + 2 < len(p_items):
+                    specs.append(REST(str(pat)))
+                else:
+                    specs.append(repeat_capture(str(pat), TEST_ANY()))
+            else:
+                slot = str(gensym("_repeat"))
+                inner = _syntax_elem_pattern(pat, literals, source_ctx)
+                specs.append(repeat_capture(slot, inner))
+            i += 2
+            continue
+
+        specs.append(_syntax_elem_pattern(p_items[i], literals, source_ctx))
+        i += 1
+
+    return specs
 
 
-def build_macro_syntax(name, literals_tuple, *pattern_and_lambdas):
+def _pattern_literals(literals):
     """
-    Build a MacroRulesTransformer from compile-time lowered arguments: name,
-    serialized literals tuple, then alternating (pattern_tuple, fn) pairs.
+    Frozenset of pattern literals supplied by the caller (no auto-merge)
+    """
+
+    return frozenset(literals) if literals is not None else frozenset()
+
+
+def _normalize_syntax_rule_row(row):
+    """
+    Split a syntax-rules-style row into pattern and template datums
+    """
+
+    if not isinstance(row, (list, tuple)):
+        raise TypeError(
+            f"syntax-rules row must be a sequence, got {row!r}"
+        )
+    seq = tuple(row)
+    if len(seq) != 2:
+        raise ValueError(
+            f"syntax-rules row must be (pattern, template), got length {len(seq)}"
+        )
+    return seq[0], seq[1]
+
+
+def _normalize_proc_rule_row(row):
+    """
+    Split a macro-rules / special-rules row into pattern and procedure
+    """
+
+    if not isinstance(row, (list, tuple)):
+        raise TypeError(
+            f"macro/special rule row must be a sequence, got {row!r}"
+        )
+    seq = tuple(row)
+    if len(seq) != 2:
+        raise ValueError(
+            f"macro/special rule row must be (pattern, procedure), "
+            f"got length {len(seq)}"
+        )
+    pat_d, proc = seq
+    if proc is None or not callable(proc):
+        raise TypeError(
+            f"macro/special rule procedure must be callable, got {proc!r}"
+        )
+    return pat_d, proc
+
+
+def build_syntax_from_datums(name, literals, rules, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``SyntaxTransform`` arms from RULE
+    pattern datums and templates.
+
+    Patterns describe the full use-site form (nil-terminated list spine)
+    passed to ``compile_impl``. The first list element of a rule is a
+    symbol capture unless it appears in ``literals`` (use that to fix the
+    head to one symbol, e.g. for matching only a primary name and not an
+    alias).
+
+    :param name: primary name symbol or string for this macro
+    :param literals: iterable of literal symbols or keywords for patterns
+    :param rules: iterable of ``(pattern_datum, template_datum)`` rows
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    :raises ValueError: when ``rules`` is empty or a row has wrong shape
+    """
+
+    rows = tuple(rules)
+    if not rows:
+        raise ValueError("build_syntax_from_datums requires at least one rule")
+
+    lit = _pattern_literals(literals)
+    transforms = []
+    for row in rows:
+        pat_d, tmpl = _normalize_syntax_rule_row(row)
+        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(SyntaxTransform(ptree, tmpl))
+
+    return Syntax(
+        name, (), tuple(transforms), serialized_literals=lit)
+
+
+def build_syntax_match(name, rules, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``SyntaxTransform`` arms from
+    MATCH-dialect patterns and templates.
+
+    Same row shape as :func:`build_syntax_from_datums`. Each pattern datum is lowered
+    with :func:`koskari.matcher.parse_explicit_rule_pattern`. Ki
+    ``syntax-match`` supplies a literals segment of only the macro name;
+    explicit patterns encode list structure directly, so no separate
+    literals iterable is required here.
+
+    :param name: primary name symbol or string for this macro
+    :param rules: iterable of ``(pattern_datum, template_datum)`` rows
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    :raises ValueError: when ``rules`` is empty or a row has wrong shape
+    """
+
+    rows = tuple(rules)
+    if not rows:
+        raise ValueError("build_syntax_match requires at least one rule")
+
+    transforms = []
+    for row in rows:
+        pat_d, tmpl = _normalize_syntax_rule_row(row)
+        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
+        transforms.append(SyntaxTransform(ptree, tmpl))
+
+    return Syntax(name, (), tuple(transforms))
+
+
+def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``MacroTransform`` arms.
+
+    Patterns describe the full use-site form (nil-terminated list spine).
+    The first list element of a rule is a symbol capture unless it appears
+    in ``literals`` (see :func:`build_syntax_from_datums`).
+
+    Each procedure is invoked as ``procedure(compiler, tc, **captures)``.
+
+    :param name: primary name symbol or string for this macro
+    :param literals: iterable of pattern literals for patterns
+    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("build_macro_syntax requires at least one rule")
+
+    lit = _pattern_literals(literals)
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_proc_rule_row(row)
+        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(MacroTransform(ptree, proc))
+
+    return Syntax(
+        name, (), tuple(transforms), serialized_literals=lit)
+
+
+def build_macro_match(name, rule_rows, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``MacroTransform`` arms using
+    MATCH-dialect patterns.
+
+    Same row shape as :func:`build_macro_syntax`. Parallels Ki
+    ``macro-match`` (no separate literals list; serialized literals tuple
+    is empty at the compile layer).
+
+    Each procedure is invoked as ``procedure(compiler, tc, **captures)``.
+
+    :param name: primary name symbol or string for this macro
+    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("build_macro_match requires at least one rule")
+
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_proc_rule_row(row)
+        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
+        transforms.append(MacroTransform(ptree, proc))
+
+    return Syntax(name, (), tuple(transforms))
+
+
+def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``SpecialTransform`` arms.
+
+    Patterns describe the full use-site form (nil-terminated list spine).
+    The first list element of a rule is a symbol capture unless it appears
+    in ``literals`` (see :func:`build_syntax_from_datums`).
+
+    Each procedure is invoked as
+    ``procedure(compiler, source_obj, match_result, tc)``.
+
+    :param name: primary name symbol or string for this special form macro
+    :param literals: iterable of pattern literals for patterns
+    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
+    :param source_ctx: context value for pattern parse errors
+    :return: ``Syntax`` instance
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("build_special_syntax requires at least one rule")
+
+    lit = _pattern_literals(literals)
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_proc_rule_row(row)
+        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(SpecialTransform(ptree, proc))
+
+    return Syntax(
+        name, (), tuple(transforms), serialized_literals=lit)
+
+
+def build_special_match_from_rows(name, rule_rows, *, source_ctx=None):
+    """
+    Build a ``Syntax`` dispatcher of ``SpecialTransform`` arms using
+    MATCH-dialect patterns.
+
+    Parallels Ki ``special-match``: same row shape as
+    :func:`build_special_syntax`, but each pattern datum is lowered with
+    :func:`koskari.matcher.parse_explicit_rule_pattern` instead of
+    RULE-style :func:`parse_syntax_rules_pattern`.
+
+    Each procedure is invoked as
+    ``procedure(compiler, source_obj, match_result, tc)``.
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("build_special_match_from_rows requires at least one rule")
+
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_proc_rule_row(row)
+        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
+        transforms.append(SpecialTransform(ptree, proc))
+
+    return Syntax(name, (), tuple(transforms))
+
+
+def build_syntax_rules(name, tagged_tuple):
+    """
+    Ki runtime: ``(build-syntax-rules NAME TAGGED)`` deserializer
+    """
+
+    if not isinstance(tagged_tuple, tuple) or len(tagged_tuple) != 4:
+        raise ValueError("invalid syntax-rules tuple")
+    if tagged_tuple[0] is not _tag_syntax_rules:
+        raise ValueError("invalid syntax-rules tuple tag")
+    name_tagged = deserialize_form(tagged_tuple[1])
+    literals = frozenset(deserialize_form(x) for x in tagged_tuple[2])
+    transforms = []
+    for rt in tagged_tuple[3]:
+        if not isinstance(rt, tuple) or len(rt) != 2:
+            raise ValueError("invalid syntax rule tuple")
+        pat_tup, ser_tmpl = rt
+        tmpl = deserialize_form(ser_tmpl)
+        transforms.append(SyntaxTransform.from_persistent(pat_tup, tmpl))
+    use_name = name if name is not None else name_tagged
+    return Syntax(
+        use_name, (), tuple(transforms), serialized_literals=literals)
+
+
+def build_macro_rules(name, literals_tuple, *pattern_and_lambdas):
+    """
+    Ki runtime: ``(build-macro-rules NAME LITERALS PAT LAMBDA ...)``
     """
 
     if len(pattern_and_lambdas) % 2 != 0:
         raise ValueError("build-macro-rules requires pattern/lambda pairs")
-
-    literals = frozenset(_deserialize_form(x) for x in literals_tuple)
-    rules = []
+    literals = frozenset(deserialize_form(x) for x in literals_tuple)
+    transforms = []
     for i in range(0, len(pattern_and_lambdas), 2):
-        pattern_tup = pattern_and_lambdas[i]
+        pat_tup = pattern_and_lambdas[i]
         fn = pattern_and_lambdas[i + 1]
-        pm = matcher_from_tuple(pattern_tup)
-        rules.append(MacroRule(pm, procedure=fn))
-
-    transformer = MacroRulesTransformer(name, literals, rules)
-    return transformer
+        transforms.append(MacroTransform.from_persistent(pat_tup, fn))
+    return Syntax(
+        name, (), tuple(transforms), serialized_literals=literals)
 
 
-def build_special_syntax(name, literals_tuple, *pattern_and_lambdas):
+def build_special_rules(name, literals_tuple, *pattern_and_lambdas):
     """
-    Build a SpecialRulesTransformer from compile-time lowered arguments: name,
-    serialized literals tuple, then alternating (pattern_tuple, fn) pairs.
+    Ki runtime: ``(build-special-rules NAME LITERALS PAT LAMBDA ...)``
     """
 
     if len(pattern_and_lambdas) % 2 != 0:
         raise ValueError("build-special-rules requires pattern/lambda pairs")
-
-    literals = frozenset(_deserialize_form(x) for x in literals_tuple)
-    rules = []
+    literals = frozenset(deserialize_form(x) for x in literals_tuple)
+    transforms = []
     for i in range(0, len(pattern_and_lambdas), 2):
-        pattern_tup = pattern_and_lambdas[i]
+        pat_tup = pattern_and_lambdas[i]
         fn = pattern_and_lambdas[i + 1]
-        pm = matcher_from_tuple(pattern_tup)
-        rules.append(SpecialRule(pm, procedure=fn))
-
-    transformer = SpecialRulesTransformer(name, literals, rules)
-    return transformer
+        transforms.append(SpecialTransform.from_persistent(pat_tup, fn))
+    return Syntax(
+        name, (), tuple(transforms), serialized_literals=literals)
 
 
 def build_special_match(name, *pattern_and_lambdas):
     """
-    Build a SpecialRulesTransformer with no literals (same shape as
-    macro-match).
+    Ki runtime: ``(build-special-match NAME PAT LAMBDA ...)``
     """
 
-    return build_special_syntax(name, (), *pattern_and_lambdas)
+    return build_special_rules(name, (), *pattern_and_lambdas)
 
 
 # The end.

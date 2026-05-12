@@ -256,8 +256,8 @@ define-syntax compile/each:
 
 define-syntax compile/list-each:
   syntax-rules []:
-    match (list-each [binding seq] body ...):
-      (list (each [binding seq] body ...))
+    match (list-each [binding seq] body):
+      (list (each [binding seq] body))
 
 
 define-syntax compile/dict-each:
@@ -269,8 +269,8 @@ define-syntax compile/dict-each:
     match (dict-each [binding seq] unless: condition key: key value: value):
       (dict (each [binding seq] unless: condition #(key value)))
 
-    match (dict-each [binding seq] body ...):
-      (dict (each [binding seq] body ...))
+    match (dict-each [binding seq] body):
+      (dict (each [binding seq] body))
 
 
 define-syntax compile/None?:

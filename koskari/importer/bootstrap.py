@@ -32,18 +32,19 @@ from fractions import Fraction as fraction
 from os.path import dirname, join
 
 from ..types import as_coroutine
-from ..compile.specials import SPECIALS
-from ..syntax import (Syntax,
-                      build_macro_syntax as build_macro_rules,
-                      build_special_match,
-                      build_special_syntax as build_special_rules,
-                      build_syntax as build_syntax_rules)
-from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
+from ..compile import specials as _koskari_compile_specials  # noqa: F401
+from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
+from ..stdlib import BUILTINS
+from ..syntax import (build_macro_rules,
+                         build_special_match,
+                         build_special_rules,
+                         build_syntax_rules)
+from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
+                   MemoizedRef,
                    Module, ModuleNamespace, ParamRef, Ref, apply, build_dict,
                    build_list, build_set, build_tuple, car, cdr, cons, defer,
                    demand, demand_apply, demand_call, deref, gensym, keyword,
                    nil, pair, parameter, setcar, setcdr, symbol, values)
-from ..reader.layouts import LAYOUTS
 from ..types import (TypePredicate, build_proper, is_nil, is_None, is_proper,
                      is_recursive, unpack)
 
@@ -94,7 +95,7 @@ def make_bootstrap():
     _ty('pair', pair)
     _ty('symbol', symbol)
     _ty('values', values)
-    _ty('syntax', Syntax)
+    _ty('syntax', Datum)
 
     _bind('apply', apply)
     _bind('as-coroutine', as_coroutine)
@@ -210,13 +211,8 @@ def make_bootstrap():
     _bind('<<', _op.lshift)
     _bind('>>', _op.rshift)
 
-    # Register all compiler specials so the Compiler can find them
-    for sym, fn in SPECIALS.items():
-        _bind(str(sym), fn)
-
-    # Register all reader layout handlers so the LayoutReader can find them
-    for sym, handler in LAYOUTS.items():
-        _bind(str(sym), handler)
+    for sym, fn in BUILTINS.items():
+        _bind(sym, fn)
 
     # exceptions (all subclasses of BaseException from builtins)
     import builtins as _builtins

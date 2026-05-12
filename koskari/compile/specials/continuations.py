@@ -27,10 +27,17 @@ compile/yield, and compile/await.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair, is_nil
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, is_symbolish, special
+from ...matcher import MATCH, REST, SYMBOL
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import helper_begin, is_symbolish
 
 
-@special(symbol("compile/call/cc"))
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+
+
+@builtin("compile/call/cc")
+@special("compile/call/cc", patterns=_DEFAULT_PATTERNS)
 def special_call_cc(compiler, source, tc=False):
     """
     Compile (compile/call/cc FN). Captures continuation, invokes FN with the
@@ -55,7 +62,8 @@ def special_call_cc(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/let/cc"))
+@builtin("compile/let/cc")
+@special("compile/let/cc", patterns=_DEFAULT_PATTERNS)
 def special_let_cc(compiler, source, tc=False):
     """
     Compile (compile/let/cc K BODY...). Pushes new namespace to hold K,
@@ -84,7 +92,8 @@ def special_let_cc(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/capture/cc"))
+@builtin("compile/capture/cc")
+@special("compile/capture/cc", patterns=_DEFAULT_PATTERNS)
 def special_capture_cc(compiler, source, tc=False):
     """
     Compile (compile/capture/cc K BODY...). Captures continuation, binds to K,
@@ -116,7 +125,8 @@ def special_capture_cc(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/reset"))
+@builtin("compile/reset")
+@special("compile/reset", patterns=_DEFAULT_PATTERNS)
 def special_reset(compiler, source, tc=False):
     """
     Compile (compile/reset EXPR...). Establishes a prompt (tag 0), runs body,
@@ -136,7 +146,8 @@ def special_reset(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/shift"))
+@builtin("compile/shift")
+@special("compile/shift", patterns=_DEFAULT_PATTERNS)
 def special_shift(compiler, source, tc=False):
     """
     Compile (compile/shift K EXPR...). Captures continuation, binds to K, runs
@@ -168,7 +179,8 @@ def special_shift(compiler, source, tc=False):
     return fragment
 
 
-@special(symbol("compile/return"))
+@builtin("compile/return")
+@special("compile/return", patterns=_DEFAULT_PATTERNS)
 def special_return(compiler, source, tc=False):
     """
     Compile (compile/return) or (compile/return VAL). Returns from function
@@ -195,7 +207,8 @@ def special_return(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/yield"))
+@builtin("compile/yield")
+@special("compile/yield", patterns=_DEFAULT_PATTERNS)
 def special_yield(compiler, source, tc=False):
     """
     Compile (compile/yield) or (compile/yield VAL). Yields from function
@@ -222,7 +235,8 @@ def special_yield(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/await"))
+@builtin("compile/await")
+@special("compile/await", patterns=_DEFAULT_PATTERNS)
 def special_await(compiler, source, tc=False):
     """
     Compile (compile/await) or (compile/await EXPR). Zero-arg: bare AWAIT (0)
@@ -246,7 +260,8 @@ def special_await(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/yield-from"))
+@builtin("compile/yield-from")
+@special("compile/yield-from", patterns=_DEFAULT_PATTERNS)
 def special_yield_from(compiler, source, tc=False):
     """
     Compile (compile/yield-from EXPR). Evaluates EXPR, then yields from TOS via

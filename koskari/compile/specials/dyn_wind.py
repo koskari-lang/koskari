@@ -26,9 +26,19 @@ from ...exceptions import SpecialError
 from ...lib import (FormalsSpec, FunctionSpec, OpCode, cons, nil, pair,
                     symbol)
 from ...types import is_pair
-from ...matcher import ANY_ORDER, LITERAL_KW, LIST, MATCH, match, REST, VALUE
+from ...matcher import (
+    LITERAL_KW,
+    LIST,
+    MATCH,
+    ONEOF,
+    REST,
+    SYMBOL,
+    VALUE,
+)
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
-from ..helpers import special, special_forms
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import match
 
 
 def _compile_thunk(compiler, body_src, fragment):
@@ -56,23 +66,29 @@ def _find_segments(source):
             "dyn-wind requires before, body, and after segments",
             source)
 
-    before = matched.get("before_single", nil)
-    body = matched.get("body_single", nil)
-    after = matched.get("after_single", nil)
+    before = matched.get("before_single")
+    body = matched.get("body_single")
+    after = matched.get("after_single")
 
     if body:
-        before_src = before.source
-        body_src = body.source
-        after_src = after.source
+        before_src = before.datum if before else nil
+        body_src = body.datum
+        after_src = after.datum if after else nil
 
     else:
-        before = matched.get("before", nil)
-        body = matched.get("body", nil)
-        after = matched.get("after", nil)
+        before = matched.get("before")
+        body = matched.get("body")
+        after = matched.get("after")
 
-        before_src = cons(symbol("compile/begin"), before.source) if before else nil
-        body_src = cons(symbol("compile/begin"), body.source) if body else nil
-        after_src = cons(symbol("compile/begin"), after.source) if after else nil
+        before_src = (
+            cons(symbol("compile/begin"), before.datum)
+            if before else nil)
+        body_src = (
+            cons(symbol("compile/begin"), body.datum)
+            if body else nil)
+        after_src = (
+            cons(symbol("compile/begin"), after.datum)
+            if after else nil)
 
     if before_src is nil and after_src is nil:
         raise SpecialError(
@@ -91,19 +107,25 @@ _POSITIONAL_2 = MATCH(
     VALUE("body_single"),
     VALUE("after_single"),
 )
-_KEYWORD_ALL = MATCH(ANY_ORDER(
-    LIST(LITERAL_KW("before:"), REST("before")),
-    LIST(LITERAL_KW("body:"), REST("body")),
-    LIST(LITERAL_KW("after:"), REST("after")),
-))
-_KEYWORD_BEFORE_BODY = MATCH(ANY_ORDER(
-    LIST(LITERAL_KW("before:"), REST("before")),
-    LIST(LITERAL_KW("body:"), REST("body")),
-))
-_KEYWORD_BODY_AFTER = MATCH(ANY_ORDER(
-    LIST(LITERAL_KW("body:"), REST("body")),
-    LIST(LITERAL_KW("after:"), REST("after")),
-))
+_KW_BEFORE = LIST(LITERAL_KW("before:"), REST("before"))
+_KW_BODY = LIST(LITERAL_KW("body:"), REST("body"))
+_KW_AFTER = LIST(LITERAL_KW("after:"), REST("after"))
+_KEYWORD_ALL = ONEOF(
+    MATCH(_KW_BEFORE, _KW_BODY, _KW_AFTER),
+    MATCH(_KW_BEFORE, _KW_AFTER, _KW_BODY),
+    MATCH(_KW_BODY, _KW_BEFORE, _KW_AFTER),
+    MATCH(_KW_BODY, _KW_AFTER, _KW_BEFORE),
+    MATCH(_KW_AFTER, _KW_BEFORE, _KW_BODY),
+    MATCH(_KW_AFTER, _KW_BODY, _KW_BEFORE),
+)
+_KEYWORD_BEFORE_BODY = ONEOF(
+    MATCH(_KW_BEFORE, _KW_BODY),
+    MATCH(_KW_BODY, _KW_BEFORE),
+)
+_KEYWORD_BODY_AFTER = ONEOF(
+    MATCH(_KW_BODY, _KW_AFTER),
+    MATCH(_KW_AFTER, _KW_BODY),
+)
 _DYN_WIND_PATTERNS = [
     _KEYWORD_ALL,
     _KEYWORD_BEFORE_BODY,
@@ -112,9 +134,13 @@ _DYN_WIND_PATTERNS = [
     _POSITIONAL_2,
 ]
 
+_DYN_WIND_PATTERNS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), m)
+    for m in _DYN_WIND_PATTERNS)
 
-@special_forms(_DYN_WIND_PATTERNS)
-@special(symbol("compile/dyn-wind"))
+
+@builtin("compile/dyn-wind")
+@special("compile/dyn-wind", patterns=_DYN_WIND_PATTERNS_FULL)
 def special_dyn_wind(
         compiler: Compiler,
         source: pair,

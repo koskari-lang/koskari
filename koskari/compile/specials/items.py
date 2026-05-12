@@ -25,10 +25,17 @@ Special form handlers for compile/item, compile/del-item, and compile/set-item.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import const_only_expr, special
+from ...matcher import MATCH, REST, SYMBOL
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import const_only_expr
 
 
-@special(symbol("compile/item"))
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+
+
+@builtin("compile/item")
+@special("compile/item", patterns=_DEFAULT_PATTERNS)
 def special_item(compiler, source, tc=False):
     """
     Compile (compile/item OBJ KEY). Load item at KEY from OBJ
@@ -60,7 +67,8 @@ def special_item(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/del-item"))
+@builtin("compile/del-item")
+@special("compile/del-item", patterns=_DEFAULT_PATTERNS)
 def special_del_item(compiler, source, tc=False):
     """
     Compile (compile/del-item OBJ KEY). Delete item at KEY from OBJ
@@ -94,7 +102,8 @@ def special_del_item(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/set-item"))
+@builtin("compile/set-item")
+@special("compile/set-item", patterns=_DEFAULT_PATTERNS)
 def special_set_item(compiler, source, tc=False):
     """
     Compile (compile/set-item OBJ KEY VAL). Store VAL at item KEY in OBJ

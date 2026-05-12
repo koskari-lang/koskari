@@ -24,74 +24,84 @@ compile/globals, and compile/locals.
 """
 
 
-from ...lib import cons, keyword, nil, OpCode, symbol
-from ...matcher import (
-    DECL,
-    DEFINE,
-    LITERAL_KW,
-    MATCH,
-    PAIR,
-    REST,
-    SYMBOL,
-    VALUE,
-    match,
-)
-from ...types import get_position, is_pair
 from ...exceptions import CompilerError, SpecialError
-from ..helpers import (
-    FORMALS,
-    special,
-    special_forms,
-    unpack_lhs_bind_symbols,
-    using_unpack_helper,
-)
+from ...lib import OpCode, cons, keyword, nil, symbol
+from ...matcher import (BODY, DECL, DEFINE, FORMALS, FORMALS_SOURCE_KEY,
+                           LITERAL_KW, MATCH, PAIR, REST, SYMBOL, VALUE)
+from ...stdlib import builtin
+from ...syntax import special
+from ...types import is_pair
+from ..helpers import (_parse_decl_tail, parse_decl,
+                          unpack_lhs_bind_symbols, using_unpack_helper)
 
 
-def _define_name_type_pos_from_match(matched, rest):
+def _define_name_type_pos_from_match(matched):
     """
-    Resolve name symbol, optional type expression, and position from a
+    Resolve name symbol, optional type expression from a
     define match (inline DEFINE with ``::`` / ``type:`` or DECL).
+
+    Prefer the DEFINE arm when ``name`` is present so ``decl`` is never
+    mistaken for a declaration result on patterns that only bind ``name``.
+
+    DECL composite captures are native GROUP dicts that include the formals
+    source key, so compile match may adapt the decl slot like a FORMALS group.
+    When the adapted value has no name attribute, recover the symbol and
+    optional type with parse_decl on decl.source. When ``name`` is set but
+    ``type`` is not (``name`` + ``decl_tail`` DECL arm), parse ``decl_tail``
+    like a declaration attribute list.
     """
 
-    if "decl" in matched:
-        decl = matched["decl"]
-        namesym = decl.name
-        type_expr = decl.type
-        pos = decl.source_pos if decl.source_pos is not None else get_position(rest)
-    else:
+    if "name" in matched:
         name_mr = matched["name"]
-        namesym = name_mr.source
+        namesym = name_mr.datum
         rt = matched.get("return_type")
-        type_expr = rt.source if rt is not None else None
-        pos = name_mr.source_pos if name_mr.source_pos is not None else get_position(rest)
-    return namesym, type_expr, pos
+        type_expr = rt.datum if rt else None
+
+    else:
+        decl = matched["decl"]
+        name_cell = decl.get("name")
+        if name_cell is not None:
+            namesym = name_cell.datum
+            tcell = decl.get("type")
+            type_expr = tcell.datum if tcell else None
+            if type_expr is None:
+                dtail = decl.get("decl_tail")
+                if dtail is not None:
+                    ann = _parse_decl_tail(dtail.datum, None)
+                    type_expr = ann.get("type")
+        else:
+            sk = decl.get(FORMALS_SOURCE_KEY)
+            src = sk.datum if sk else None
+            namesym, type_expr = parse_decl(src)
+
+    return namesym, type_expr
 
 
-_SETQ_PATTERNS = [MATCH(SYMBOL("sym"), VALUE("expr"))]
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("_"), REST("rest")),)
 
 
-@special_forms(_SETQ_PATTERNS)
-@special(symbol("compile/setq"))
-def special_setq(compiler, source, tc=False):
+_SETQ_PATTERNS = [
+    MATCH(SYMBOL("_"), SYMBOL("sym"), VALUE("expr")),
+]
+
+
+@builtin("compile/setq")
+@special("compile/setq", patterns=_SETQ_PATTERNS, unpack="match")
+def special_setq(compiler, caps, tc=False):
     """
     Compile (compile/setq SYM EXPR). Store the value of EXPR into the existing
     binding SYM
     """
 
-    called_by, rest = source
-    matched = match(rest, _SETQ_PATTERNS)
-    if matched is None:
-        raise SpecialError("setq takes two arguments", source)
+    sym = str(caps["sym"].datum)
+    pos = caps["sym"].position
+    expr = caps["expr"].datum
 
-    sym = str(matched["sym"].source)
-    expr = matched["expr"].source
-
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(caps["_"].datum)
 
     if not is_pair(expr):
-        frag.position_of(rest)
+        frag.position(pos)
 
-    pos = matched["sym"].source_pos
     frag.request_for_write(sym, position=pos)
     frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
@@ -101,116 +111,91 @@ def special_setq(compiler, source, tc=False):
 
 
 _VALUES_BIND_PATTERNS = [
-    MATCH(SYMBOL("sym"), VALUE("expr")),
-    MATCH(PAIR("lhs"), VALUE("expr")),
+    MATCH(SYMBOL("_"), SYMBOL("lhs"), VALUE("expr")),
+    MATCH(SYMBOL("_"), PAIR("lhs"), VALUE("expr")),
 ]
 
 
-@special_forms(_VALUES_BIND_PATTERNS)
-@special(symbol("compile/setq-values"))
-def special_setq_values(compiler, source, tc=False):
+@builtin("compile/setq-values")
+@special("compile/setq-values", patterns=_VALUES_BIND_PATTERNS, unpack="match")
+def special_setq_values(compiler, caps, tc=False):
     """
     Compile (compile/setq-values PATTERN VALUE). Evaluate VALUE, then store
     into existing bindings given by PATTERN (symbol or unpack list, same as
     compile/for-each unpack binding)
     """
 
-    called_by, rest = source
-    matched = match(rest, _VALUES_BIND_PATTERNS)
-    if matched is None:
-        raise SpecialError(
-            "setq-values takes a pattern and a value expression", source)
+    called_by = caps["_"].datum
+    pos = caps["_"].position
+
+    lhs_mr = caps["lhs"]
+    expr_mr = caps["expr"]
 
     frag = compiler.fragment(called_by)
-    frag.position_of(rest)
 
-    if "sym" in matched:
-        lhs = matched["sym"].source
-        pattern_mr = matched["sym"]
-    else:
-        lhs = matched["lhs"].source
-        pattern_mr = matched["lhs"]
+    lhs = lhs_mr.datum
 
-    expr = matched["expr"].source
-
-    pos = (
-        pattern_mr.source_pos
-        if pattern_mr.source_pos is not None
-        else get_position(rest))
-
-    for namesym in unpack_lhs_bind_symbols(lhs, source=rest, flatten=True):
+    for namesym in unpack_lhs_bind_symbols(lhs, flatten=True):
         frag.request_for_write(str(namesym), position=pos)
 
-    if not is_pair(expr):
-        frag.position_of(rest)
-
-    frag.merge(compiler.full_compile(expr))
+    frag.position(expr_mr.position)
+    frag.merge(compiler.full_compile(expr_mr.datum))
     frag.merge(
-        using_unpack_helper(compiler, lhs, source=rest, declare=False))
+        using_unpack_helper(compiler, lhs, declare=False))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
 
 
-@special_forms(_VALUES_BIND_PATTERNS)
-@special(symbol("compile/define-values"))
-def special_define_values(compiler, source, tc=False):
+@builtin("compile/define-values")
+@special("compile/define-values", patterns=_VALUES_BIND_PATTERNS, unpack="match")
+def special_define_values(compiler, caps, tc=False):
     """
     Compile (compile/define-values PATTERN VALUE). Evaluate VALUE, then bind
     fresh names from PATTERN (symbol or unpack list, same shape as
     compile/setq-values)
     """
 
-    called_by, rest = source
-    matched = match(rest, _VALUES_BIND_PATTERNS)
-    if matched is None:
-        raise SpecialError(
-            "define-values takes a pattern and a value expression", source)
+    called_by = caps["_"].datum
+    pos = caps["_"].position
+
+    lhs_mr = caps["lhs"]
+    expr_mr = caps["expr"]
 
     frag = compiler.fragment(called_by)
-    frag.position_of(rest)
 
-    if "sym" in matched:
-        lhs = matched["sym"].source
-    else:
-        lhs = matched["lhs"].source
+    lhs = lhs_mr.datum
 
-    expr = matched["expr"].source
-
-    if not is_pair(expr):
-        frag.position_of(rest)
-
-    frag.merge(compiler.full_compile(expr))
+    frag.position(expr_mr.position)
+    frag.merge(compiler.full_compile(expr_mr.datum))
     frag.merge(
-        using_unpack_helper(compiler, lhs, source=rest, declare=True))
+        using_unpack_helper(compiler, lhs, declare=True))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
 
 
-_DELQ_PATTERNS = [MATCH(SYMBOL("sym"))]
+_DELQ_PATTERNS = [
+    MATCH(SYMBOL("_"), SYMBOL("sym")),
+]
 
 
-@special_forms(_DELQ_PATTERNS)
-@special(symbol("compile/delq"))
-def special_delq(compiler, source, tc=False):
+@builtin("compile/delq")
+@special("compile/delq", patterns=_DELQ_PATTERNS, unpack="match")
+def special_delq(compiler, caps, tc=False):
     """
     Compile (compile/delq SYM). Clear the binding SYM, resetting it to unset
     """
 
-    called_by, rest = source
-    matched = match(rest, _DELQ_PATTERNS)
-    if matched is None:
-        raise SpecialError("delq takes one argument", source)
-
-    sym = str(matched["sym"].source)
+    called_by = caps["_"].datum
+    pos = caps["_"].position
+    sym = caps["sym"].datum
 
     frag = compiler.fragment(called_by)
 
-    frag.position_of(rest)
-    pos = matched["sym"].source_pos
-    frag.request_for_write(sym, position=pos)
-    frag.instruction(OpCode.KOS_OP_VAR_CLEAR, sym)
+    frag.position(pos)
+    frag.request_for_write(str(sym), position=pos)
+    frag.instruction(OpCode.KOS_OP_VAR_CLEAR, str(sym))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
@@ -218,49 +203,55 @@ def special_delq(compiler, source, tc=False):
 
 _DEFINE_INLINE_PATTERNS = [
     MATCH(
+        SYMBOL("_"),
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
         REST("body")),
     MATCH(
+        SYMBOL("_"),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
         REST("body")),
     MATCH(
+        SYMBOL("_"),
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
         VALUE("value")),
     MATCH(
+        SYMBOL("_"),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         VALUE("value")),
     MATCH(
+        SYMBOL("_"),
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type")),
     MATCH(
+        SYMBOL("_"),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type")),
 ]
 
 _DEFINE_DECL_PATTERNS = [
-    MATCH(DECL("decl"), FORMALS("formals", scope="body"), REST("body")),
-    MATCH(DECL("decl"), VALUE("value")),
-    MATCH(DECL("decl")),
+    MATCH(SYMBOL("_"), DECL("decl"), FORMALS("formals", scope="body"), BODY("body")),
+    MATCH(SYMBOL("_"), DECL("decl"), VALUE("value")),
+    MATCH(SYMBOL("_"), DECL("decl")),
 ]
 
 _DEFINE_PATTERNS = _DEFINE_INLINE_PATTERNS + _DEFINE_DECL_PATTERNS
 
 
-@special_forms(_DEFINE_PATTERNS)
-@special(symbol("compile/define"))
-def special_define(compiler, source, tc=False):
+@builtin("compile/define")
+@special("compile/define", patterns=_DEFINE_PATTERNS, unpack="match")
+def special_define(compiler, caps, tc=False):
     """
     Compile (define X), (define X EXPR), (define X [Y Z] BODY...), or
     typed variants with ``X :: T`` / ``X type: T`` before formals, value,
@@ -268,38 +259,43 @@ def special_define(compiler, source, tc=False):
     (define X (lambda X [Y Z] BODY...)).
     """
 
-    called_by, rest = source
-    matched = match(rest, _DEFINE_PATTERNS)
-    if matched is None:
-        raise SpecialError("define requires a name", source)
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    namesym, type_expr, pos = _define_name_type_pos_from_match(matched, rest)
+    namesym, type_expr = _define_name_type_pos_from_match(caps)
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
 
-    if "body" in matched:
+    if "body" in caps:
         frag.declare_var(name, position=pos)
-        formals = matched["formals"]
-        body = matched["body"]
+        formals = caps["formals"]
+        body = caps["body"]
+        if isinstance(formals, dict):
+            sk = formals.get(FORMALS_SOURCE_KEY)
+            formals_spine = sk.datum if sk is not None else nil
+        else:
+            formals_spine = formals.datum
+        body_spine = body.datum
         if type_expr is not None:
             val_expr = cons(
                 symbol("compile/lambda"),
                 namesym,
                 keyword("::"),
                 type_expr,
-                formals.source,
-                body.source)
+                formals_spine,
+                body_spine)
         else:
             val_expr = cons(symbol("compile/lambda"), namesym,
-                            formals.source, body.source)
+                            formals_spine,
+                            body_spine)
 
-    elif "value" in matched:
+    elif "value" in caps:
         if type_expr is not None:
             frag.declare_var(name, position=pos, type_expr=type_expr)
         else:
             frag.declare_var(name, position=pos)
-        val_expr = matched["value"].source
+        val_expr = caps["value"].datum
 
     else:
         if type_expr is not None:
@@ -309,8 +305,8 @@ def special_define(compiler, source, tc=False):
         frag.instruction(OpCode.KOS_OP_CONST, None)
         return frag
 
-    if not is_pair(val_expr):
-        frag.position_of(rest)
+    if not is_pair(val_expr) and "value" in caps:
+        frag.position(caps["value"].position)
 
     frag.merge(compiler.full_compile(val_expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
@@ -319,7 +315,8 @@ def special_define(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/globals"))
+@builtin("compile/globals")
+@special("compile/globals", patterns=_DEFAULT_PATTERNS)
 def special_globals(compiler, source, tc=False):
     """
     Compile (compile/globals). Push the outermost frame namespace (globals)
@@ -334,7 +331,8 @@ def special_globals(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/locals"))
+@builtin("compile/locals")
+@special("compile/locals", patterns=_DEFAULT_PATTERNS)
 def special_locals(compiler, source, tc=False):
     """
     Compile (compile/locals). Push the current frame namespace (locals)
@@ -349,56 +347,60 @@ def special_locals(compiler, source, tc=False):
     return frag
 
 
-@special_forms(_DEFINE_PATTERNS)
-@special(symbol("compile/define-global"))
-def special_define_global(compiler, source, tc=False):
+@builtin("compile/define-global")
+@special("compile/define-global", patterns=_DEFINE_PATTERNS, unpack="match")
+def special_define_global(compiler, caps, tc=False):
     """
     Compile (define-global X), (define-global X EXPR),
     (define-global X [Y Z] BODY...), or typed ``X :: T`` / ``X type: T``
     variants. Explicit module binding for read and write.
     """
 
-    called_by, rest = source
-    matched = match(rest, _DEFINE_PATTERNS)
-    if matched is None:
-        raise SpecialError("define-global requires a name", source)
+    called_by = caps["_"].datum
 
-    namesym, type_expr, pos = _define_name_type_pos_from_match(matched, rest)
+    namesym, type_expr = _define_name_type_pos_from_match(caps)
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
     try:
-        frag.request_global(name, position=pos)
+        frag.request_global(name)
     except CompilerError:
         raise SpecialError(
             '%r cannot be both local (define) and global (define-global).'
             % (name,),
-            source) from None
+            called_by) from None
 
-    if "body" in matched:
-        formals = matched["formals"]
-        body = matched["body"]
+    if "body" in caps:
+        formals = caps["formals"]
+        body = caps["body"]
+        if isinstance(formals, dict):
+            sk = formals.get(FORMALS_SOURCE_KEY)
+            formals_spine = sk.datum if sk is not None else nil
+        else:
+            formals_spine = formals.datum
+        body_spine = body.datum
         if type_expr is not None:
             val_expr = cons(
                 symbol("compile/lambda"),
                 namesym,
                 keyword("::"),
                 type_expr,
-                formals.source,
-                body.source)
+                formals_spine,
+                body_spine)
         else:
             val_expr = cons(symbol("compile/lambda"), namesym,
-                            formals.source, body.source)
+                            formals_spine,
+                            body_spine)
 
-    elif "value" in matched:
-        val_expr = matched["value"].source
+    elif "value" in caps:
+        val_expr = caps["value"].datum
 
     else:
         frag.instruction(OpCode.KOS_OP_CONST, None)
         return frag
 
-    if not is_pair(val_expr):
-        frag.position_of(rest)
+    if not is_pair(val_expr) and "value" in caps:
+        frag.position(caps["value"].position)
 
     frag.merge(compiler.full_compile(val_expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, name)

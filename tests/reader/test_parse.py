@@ -387,12 +387,10 @@ class TestQuoted(IsolatedAsyncioTestCase):
         `(,@foo)
         """
         col = parse_source(src)
-        exp = cons(symbol("compile/quasiquote"),
-                   cons(cons(symbol("compile/unquote-splicing"),
-                             symbol("foo"),
-                             nil),
-                        nil),
-                   nil)
+        exp = cons(
+            symbol("compile/quasiquote"),
+            cons(cons(symbol("compile/unquote-splicing"), symbol("foo"), nil), nil),
+            nil)
         self.assertEqual(col, exp)
 
 

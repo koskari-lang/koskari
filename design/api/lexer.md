@@ -75,7 +75,7 @@ Initial implementation may use parse-and-walk. A dedicated tokenizer can be adde
 
 **Name sets (for highlighting and completion)**
 
-- **`SPECIAL_NAMES`**: `frozenset(str(s) for s in koskari.compile.helpers.SPECIALS)`
+- **`SPECIAL_NAMES`**: from `koskari.lexer.tokens` (frozenset of compile-time special names derived from `koskari.stdlib.BUILTINS`)
 - **`LAYOUT_NAMES`**: `frozenset(str(s) for s in koskari.reader.layouts.LAYOUTS)` (layout heads like `layout/if`, `layout/block`)
 
 These provide names only; no expansion or execution.

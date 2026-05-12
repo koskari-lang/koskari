@@ -58,7 +58,7 @@ def collect_special_like_names_from_builtins(builtins_dict):
     """
 
     from koskari.compile.compiler import Special
-    from koskari.syntax import SyntaxRulesTransformer
+    from koskari.syntax import Syntax
 
     names = set()
     for name, val in builtins_dict.items():
@@ -66,7 +66,7 @@ def collect_special_like_names_from_builtins(builtins_dict):
             continue
         if isinstance(val, Special):
             names.update(_names_for_special_binding(name))
-        elif isinstance(val, SyntaxRulesTransformer):
+        elif isinstance(val, Syntax):
             names.update(_names_for_special_binding(name))
     return frozenset(names)
 
@@ -76,7 +76,7 @@ def special_names_for_repl():
     Return special-form names for the REPL using the full builtins environment.
 
     Loads builtins via ``make_builtins_demand()`` (bootstrap plus basics.ki),
-    then collects ``Special`` and ``SyntaxRulesTransformer`` bindings.
+    then collects ``Special`` and ``syntax.Syntax`` bindings.
 
     :return: frozenset of name strings for REPL special-form highlighting
     """

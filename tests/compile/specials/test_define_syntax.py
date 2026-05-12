@@ -23,9 +23,8 @@ import pytest
 
 from koskari.dis import dis
 from koskari.lib import OpCode, build_list
-from koskari.syntax import (SpecialRulesTransformer, SyntaxRulesTransformer,
-                            build_macro_syntax, build_special_syntax,
-                            build_syntax)
+from koskari.syntax import (Syntax, build_macro_rules, build_special_rules,
+                               build_syntax_rules)
 
 from . import SpecialsTestCase
 
@@ -36,18 +35,18 @@ pytestmark = pytest.mark.phase_specials
 class DefineSyntaxCompileHelpers(SpecialsTestCase):
 
     def compile_expr(self, src_str, **defns):
-        defns.setdefault('build-syntax-rules', build_syntax)
-        defns.setdefault('build-macro-rules', build_macro_syntax)
-        defns.setdefault('build-special-rules', build_special_syntax)
+        defns.setdefault('build-syntax-rules', build_syntax_rules)
+        defns.setdefault('build-macro-rules', build_macro_rules)
+        defns.setdefault('build-special-rules', build_special_rules)
         return super().compile_expr(src_str, **defns)
 
 
     def compile_to_code(self, src_str, lineno=1, tc=False,
                         resolution_pragma_class=None, resolution_pragma=None,
                         **defns):
-        defns.setdefault('build-syntax-rules', build_syntax)
-        defns.setdefault('build-macro-rules', build_macro_syntax)
-        defns.setdefault('build-special-rules', build_special_syntax)
+        defns.setdefault('build-syntax-rules', build_syntax_rules)
+        defns.setdefault('build-macro-rules', build_macro_rules)
+        defns.setdefault('build-special-rules', build_special_rules)
         return super().compile_to_code(
             src_str, lineno=lineno, tc=tc,
             resolution_pragma_class=resolution_pragma_class,
@@ -83,6 +82,37 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         result = await expr()
         self.assertEqual(40, result)
 
+    async def test_compile_syntax_rules_compound_ellipsis_example_to_list(self):
+        """
+        ``(example fn (a b) ...)`` / ``(#list (fn a b) ...)`` repeats a compound
+        template fragment; use-site expands to ``(#list (+ 1 2) ...)`` and
+        evaluates like ``#[3 7 300 4]`` (``#list`` of those sums).
+        """
+
+        src_str = """
+        (compile/define example
+          (compile/syntax-rules example [#list]
+            [(example fn (a b) ...)
+             (#list (fn a b) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        await expr()
+        defn = {
+            'compile/example': vars(mod)['example'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (example + (1 2) (3 4) (100 200) (5 -1))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual([3, 7, 300, 4], list(result))
+
 
     async def test_compile_syntax_rules_no_matching_rule_raises(self):
         src_str = """
@@ -116,7 +146,7 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
             if op == OpCode.KOS_OP_CONST:
                 consts.append(code.constant(arg))
 
-        self.assertFalse(any(isinstance(v, SyntaxRulesTransformer) for v in consts))
+        self.assertFalse(any(isinstance(v, Syntax) for v in consts))
         self.assertTrue(any(isinstance(v, tuple) for v in consts))
 
 
@@ -159,7 +189,7 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
             [(ellipsis-repro xs ...)
              `(#list ,@xs)]))
         """
-        expr, mod = self.compile_expr(src_str)
+        expr, mod = self.compile_expr(src_str, print=print)
         dis(expr.code)
 
         await expr()
@@ -206,7 +236,7 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define zot
           (compile/syntax-match zot
-            [(zot (REPEAT xs elem: (VALUE e) min_count: 0)) (+ 1 1)]))
+            [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
         await expr()
@@ -224,7 +254,7 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define zot
           (compile/syntax-match zot
-            [(zot (REPEAT ys elem: (LITERAL hello) min_count: 1)) (+ 1 1)]))
+            [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
         await expr()
@@ -266,7 +296,7 @@ class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define zot
           (compile/macro-match zot
-            [(zot (REPEAT ys elem: (LITERAL hello) min_count: 1)) (+ 1 1)]))
+            [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
         await expr()
@@ -286,14 +316,14 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define ident
           (compile/special-rules ident []
-            [(c (ident x) t) x]))
+            [(c (ident x) t) x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
 
         await expr()
         ident = vars(mod)['ident']
-        self.assertIsInstance(ident, SpecialRulesTransformer)
+        self.assertIsInstance(ident, Syntax)
         defn = {'compile/ident': ident}
 
         src_str = """
@@ -320,7 +350,7 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
 
         await expr()
         ident = vars(mod)['ident']
-        self.assertIsInstance(ident, SpecialRulesTransformer)
+        self.assertIsInstance(ident, Syntax)
         defn = {'compile/ident': ident}
 
         src_str = """
@@ -340,14 +370,14 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         (compile/define ident
           (compile/special-match ident
             [(compiler (ident (VALUE x)) t)
-             x]))
+             x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
 
         await expr()
         ident = vars(mod)['ident']
-        self.assertIsInstance(ident, SpecialRulesTransformer)
+        self.assertIsInstance(ident, Syntax)
         defn = {'compile/ident': ident}
 
         src_str = """
@@ -375,7 +405,7 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
 
         await expr()
         ident = vars(mod)['ident']
-        self.assertIsInstance(ident, SpecialRulesTransformer)
+        self.assertIsInstance(ident, Syntax)
         defn = {'compile/ident': ident}
 
         src_str = """

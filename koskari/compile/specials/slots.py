@@ -25,17 +25,23 @@ Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
 from ...lib import OpCode, symbol
 from ...types import is_symbol
 from ...exceptions import SpecialError
-from ..helpers import special, special_forms
-from ...matcher import MATCH, VALUE, SYMBOL, match
+from ...stdlib import builtin
+from ...syntax import special
+from ..helpers import match
+from ...matcher import MATCH, SYMBOL, VALUE
 
 
 _ATTR_FORMS = [
     MATCH(VALUE('obj'), SYMBOL('sym')),
 ]
 
+_ATTR_FORMS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _ATTR_FORMS)
 
-@special_forms(_ATTR_FORMS)
-@special(symbol("compile/attr"))
+
+@builtin("compile/attr")
+@special("compile/attr", patterns=_ATTR_FORMS_FULL)
 def special_attr(compiler, source, tc=False):
     """
     Compile (compile/attr OBJ SYM). Load attribute SYM from OBJ
@@ -47,8 +53,8 @@ def special_attr(compiler, source, tc=False):
     if m is None:
         raise SpecialError("compile/attr requires OBJ SYM", source)
 
-    obj = m.get('obj').source
-    sym = m.get('sym').source
+    obj = m['obj'].datum
+    sym = m['sym'].datum
 
     frag = compiler.fragment(called_by)
     frag.position_of(body)
@@ -68,8 +74,13 @@ _DEL_ATTR_FORMS = [
 ]
 
 
-@special_forms(_DEL_ATTR_FORMS)
-@special(symbol("compile/del-attr"))
+_DEL_ATTR_FORMS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _DEL_ATTR_FORMS)
+
+
+@builtin("compile/del-attr")
+@special("compile/del-attr", patterns=_DEL_ATTR_FORMS_FULL)
 def special_del_attr(compiler, source, tc=False):
     """
     Compile (compile/del-attr OBJ SYM). Delete attribute SYM from OBJ
@@ -81,8 +92,8 @@ def special_del_attr(compiler, source, tc=False):
     if m is None:
         raise SpecialError("compile/del-attr requires OBJ SYM", source)
 
-    obj = m.get('obj').source
-    sym = m.get('sym').source
+    obj = m['obj'].datum
+    sym = m['sym'].datum
 
     frag = compiler.fragment(called_by)
     frag.position_of(body)
@@ -104,9 +115,13 @@ _SET_ATTR_FORMS = [
     MATCH(VALUE('obj'), SYMBOL('sym'), VALUE('val')),
 ]
 
+_SET_ATTR_FORMS_FULL = tuple(
+    MATCH(SYMBOL("called-by"), *m._children)
+    for m in _SET_ATTR_FORMS)
 
-@special_forms(_SET_ATTR_FORMS)
-@special(symbol("compile/set-attr"))
+
+@builtin("compile/set-attr")
+@special("compile/set-attr", patterns=_SET_ATTR_FORMS_FULL)
 def special_set_attr(compiler, source, tc=False):
     """
     Compile (compile/set-attr OBJ SYM VAL). Store VAL into attribute SYM on OBJ
@@ -118,9 +133,9 @@ def special_set_attr(compiler, source, tc=False):
     if m is None:
         raise SpecialError("compile/set-attr requires OBJ SYM VAL", source)
 
-    obj = m.get('obj').source
-    sym = m.get('sym').source
-    val = m.get('val').source
+    obj = m['obj'].datum
+    sym = m['sym'].datum
+    val = m['val'].datum
 
     frag = compiler.fragment(called_by)
     frag.position_of(body)
