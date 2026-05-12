@@ -98,9 +98,8 @@ typedef struct {
 
 
 typedef struct {
-  uint32_t slot;
   uint32_t first_child;
-} KosMatchNamedGroup;
+} KosMatchGroup;
 
 
 typedef struct {
@@ -124,11 +123,10 @@ typedef struct {
 
 
 typedef struct {
-  uint32_t slot;
   /**
    * Minimum spine elements this REST must consume from the current
    * subject (0 allows an empty remainder; bind nil for KosPair, () for
-   * sequence subjects).
+   * sequence subjects). Binding a name requires CAPTURE wrapping REST.
    */
   uint32_t min_tail;
 } KosMatchRest;
@@ -167,7 +165,7 @@ typedef struct {
     KosMatchCapture  capture;
     KosMatchForm     form;
     KosMatchMatch     match;
-    KosMatchNamedGroup group;
+    KosMatchGroup    group;
     KosMatchOneof    oneof;
     KosMatchRepeat   repeat;
     KosMatchOptional optional;
@@ -386,7 +384,7 @@ int KosMatcherBuilder_AddConst(
    current count or higher (forward refs).
 
    Container kinds (MATCH, GROUP, ONEOF) are not accepted here; use
-   KosMatcherBuilder_AppendMatch / KosMatcherBuilder_AppendNamedGroup /
+   KosMatcherBuilder_AppendMatch / KosMatcherBuilder_AppendGroup /
    KosMatcherBuilder_AppendOneof instead.
 
    Returns the index of the appended node, or -1 on error.
@@ -407,23 +405,19 @@ int KosMatcherBuilder_AppendMatch(
     Py_ssize_t count);
 
 /**
-   Append a GROUP node: children are stitched like MATCH. When slot is
-   KOS_MATCH_NO_INDEX the node is an anonymous value-only group (only
-   valid as the direct inner of CAPTURE(REPEAT(...)) in the lowered
-   matcher); otherwise slot is the capture-slot index whose str name
-   becomes the parent dict key for a nested sub-dict of inner captures.
+   Append a GROUP node: children are stitched like MATCH. Inner captures
+   write into a fresh sub-dict; bind that dict with CAPTURE(slot, GROUP(...)).
 
    Returns the index of the new GROUP node, or -1 on error.
  */
-int KosMatcherBuilder_AppendNamedGroup(
+int KosMatcherBuilder_AppendGroup(
     KosMatcherBuilder *builder,
-    uint32_t slot,
     const uint32_t *children,
     Py_ssize_t count);
 
 /**
    Append a ONEOF node whose branches are the supplied node indices in
-   order. Behaves like KosMatcherBuilder_AppendGroup but the chain
+   order. Behaves like KosMatcherBuilder_AppendMatch but the chain
    indicates branch order rather than sibling sequence.
 
    Returns the index of the new ONEOF node, or -1 on error.
@@ -464,7 +458,7 @@ int KosMatcherBuilder_AppendFieldKeyword(
 
 /**
    Append a CLASS node whose fields are the supplied FIELD-node
-   indices in order. Behaves like KosMatcherBuilder_AppendGroup but
+   indices in order. Behaves like KosMatcherBuilder_AppendMatch but
    stitches a chain through FIELD `next` links: positional FIELDs
    must precede any keyword FIELDs (validator enforces this at
    finalize). type_extern is range-checked at finalize against the

@@ -755,17 +755,18 @@ class MATCH(Pattern):
 
 class GROUP(Pattern):
     """
-    Nested capture namespace: inner captures go into a sub-dict. With a
-    named slot the dict is stored under that key in the parent captures;
-    with slot None (anonymous GROUP) each successful match yields one
-    standalone dict used by REPEAT aggregation under repeat_capture
+    Nested capture frame: inner captures go into a sub-dict. The native
+    GROUP node has no slot; when ``slot`` is a non-empty str this pattern
+    lowers to ``CAPTURE(slot, GROUP(children...))`` so naming stays on
+    CAPTURE only. When ``slot`` is None the sub-dict is matched and then
+    discarded unless a parent CAPTURE or REPEAT row collects it
     """
 
 
     def __init__(self, slot, *children):
         """
-        :param slot: dict key / capture slot name for the nested result,
-            or None for an anonymous value-only group row
+        :param slot: dict key for the nested result when lowering wraps
+            CAPTURE, or None for an anonymous group
         :param children: zero or more patterns matched in order inside
             the nested dict
         """
@@ -780,9 +781,8 @@ class GROUP(Pattern):
 
     def lower(self, ctx):
         """
-        Reserve the group slot name when named, run children in a fresh
-        capture scope, emit a GROUP frozen node (slot index or -1 for
-        anonymous, plus child indices)
+        Emit a slot-free GROUP node; when named, wrap with CAPTURE so the
+        slot is claimed only on the outer CAPTURE
         """
 
         if self._slot is not None:
@@ -793,9 +793,11 @@ class GROUP(Pattern):
             idxs = [c.lower(ctx) for c in self._children]
         finally:
             ctx.pop_capture_scope()
+        g_idx = ctx.append_node(("GROUP",) + tuple(idxs))
         if self._slot is None:
-            return ctx.append_node(("GROUP", -1) + tuple(idxs))
-        return ctx.append_node(("GROUP", slot_idx) + tuple(idxs))
+            return g_idx
+        return ctx.append_node(
+            ("CAPTURE", slot_idx, g_idx, 0, -1))
 
 
     def visit(self, fn):
@@ -925,22 +927,24 @@ class OPTIONAL(Pattern):
 
 class REST(Pattern):
     """
-    Capture the remainder of the source list into the named slot.
-    ``min_tail`` is the minimum number of spine cells this REST must
-    take (default 0: empty remainder binds KosPair ``nil`` or ``()``).
+    Consume the remainder of the current spine subject. ``min_tail`` is
+    the minimum number of spine cells this REST must take (default 0).
+    When ``slot`` is set, lowering emits ``CAPTURE(slot, REST(...))`` so
+    only CAPTURE carries a slot index on the wire
     """
 
 
-    def __init__(self, slot, min_tail=0):
+    def __init__(self, slot=None, min_tail=0):
         """
-        :param slot: target slot name
+        :param slot: optional capture slot name for the tail value
         :param min_tail: minimum spine elements consumed (default 0)
-        :raises TypeError: when slot is not a str or min_tail is not
-            an int
+        :raises TypeError: when slot is not None and not str, or
+            min_tail is not an int
         :raises ValueError: when slot is empty or min_tail is negative
         """
 
-        check_str_arg(slot, "REST slot")
+        if slot is not None:
+            check_str_arg(slot, "REST slot")
         if isinstance(min_tail, bool) or not isinstance(min_tail, int):
             raise TypeError(
                 "REST min_tail must be an int, got %r"
@@ -954,12 +958,21 @@ class REST(Pattern):
 
     def lower(self, ctx):
         """
-        Reserve the slot and emit a REST node
+        Emit REST with min_tail only; when named, wrap with CAPTURE
         """
 
-        ctx.claim_slot_name(self._slot, ("rest", id(self)))
-        slot_idx = ctx.intern_slot(self._slot)
-        return ctx.append_node(("REST", slot_idx, self._min_tail))
+        if self._slot is not None:
+            ctx.claim_slot_name(self._slot, ("rest", id(self)))
+            slot_idx = ctx.intern_slot(self._slot)
+        rest_idx = ctx.append_node(("REST", self._min_tail))
+        if self._slot is None:
+            return rest_idx
+        return ctx.append_node(
+            ("CAPTURE", slot_idx, rest_idx, 0, -1))
+
+
+    def visit(self, fn):
+        fn(self)
 
 
 class NOT(Pattern):
@@ -1104,7 +1117,7 @@ def repeat_capture(slot, inner):
     Capture the results of repeating inner across successive subject
     elements. The native engine stores matched.captures[slot] as a bare
     Python list: each element is one iteration result (often a dict for
-    an anonymous GROUP row, or a sparse change dict / Datum when inner
+    a GROUP row dict, or a sparse change dict / Datum when inner
     does not use that shape)
 
     :param slot: outer slot receiving the list of per-iteration values
@@ -1195,6 +1208,8 @@ def slot_prefix_copy(pattern, prefix, sep):
         return NOT(slot_prefix_copy(pattern._sub, prefix, sep))
 
     if isinstance(pattern, REST):
+        if pattern._slot is None:
+            return REST(None, min_tail=pattern._min_tail)
         return REST(
             prefix + sep + pattern._slot,
             min_tail=pattern._min_tail,
@@ -2720,12 +2735,13 @@ def repeat_match_factory(head_sym, raw_args):
 
 def rest_match_factory(head_sym, raw_args):
     """
-    Lower (REST slot) or (REST slot min: N). Default min_tail is 0.
+    Lower (REST), (REST slot), or (REST slot min: N). Default min_tail is
+    0; bare (REST) has no capture slot
     """
 
     items = list(unpack(raw_args))
     if not items:
-        raise ValueError("(REST ...) requires a slot name")
+        return REST(None, min_tail=0)
     slot = coerce_slot("REST", items[0])
     min_tail = 0
     i = 1

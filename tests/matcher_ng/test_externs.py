@@ -49,9 +49,10 @@ def _lambda_style_tuple():
         ("TEST", "ANY", -1),
         ("TEST", "ANY", -1),
         ("REST", 1),
-        ("MATCH", 1, 2, 3, 4, 5),
+        ("CAPTURE", 1, 5, 0, -1),
+        ("MATCH", 1, 2, 3, 4, 6),
     )
-    return ("MATCHER", slots, externs, consts, nodes, 6)
+    return ("MATCHER", slots, externs, consts, nodes, 7)
 
 
 def _two_extern_tuple():

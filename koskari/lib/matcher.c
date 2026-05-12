@@ -148,7 +148,7 @@ static int append_check_node(KosMatcherBuilder *b, const KosMatchNode *node) {
   case KOS_MATCH_NODE_ONEOF:
     PyErr_Format(PyExc_ValueError,
                  "AppendNode does not accept container kinds; "
-                 "use AppendMatch, AppendNamedGroup, or AppendOneof");
+                 "use AppendMatch, AppendGroup, or AppendOneof");
     return -1;
 
   case KOS_MATCH_NODE_CLASS:
@@ -171,7 +171,6 @@ static int append_check_node(KosMatcherBuilder *b, const KosMatchNode *node) {
     break;
 
   case KOS_MATCH_NODE_REST:
-    /* slot is range-checked at finalize */
     break;
 
   case KOS_MATCH_NODE_NOT:
@@ -381,7 +380,6 @@ static int builder_validate_chain_children(
 static int builder_append_chain_container(
     KosMatcherBuilder *b,
     KosMatchNodeKind kind,
-    uint32_t group_slot,
     const uint32_t *children,
     Py_ssize_t count,
     const char *what) {
@@ -398,7 +396,6 @@ static int builder_append_chain_container(
     n.as.match.first_child = head;
     break;
   case KOS_MATCH_NODE_GROUP:
-    n.as.group.slot = group_slot;
     n.as.group.first_child = head;
     break;
   case KOS_MATCH_NODE_ONEOF:
@@ -435,18 +432,17 @@ int KosMatcherBuilder_AppendMatch(
     Py_ssize_t count) {
 
   return builder_append_chain_container(
-      b, KOS_MATCH_NODE_MATCH, 0, children, count, "AppendMatch");
+      b, KOS_MATCH_NODE_MATCH, children, count, "AppendMatch");
 }
 
 
-int KosMatcherBuilder_AppendNamedGroup(
+int KosMatcherBuilder_AppendGroup(
     KosMatcherBuilder *b,
-    uint32_t slot,
     const uint32_t *children,
     Py_ssize_t count) {
 
   return builder_append_chain_container(
-      b, KOS_MATCH_NODE_GROUP, slot, children, count, "AppendNamedGroup");
+      b, KOS_MATCH_NODE_GROUP, children, count, "AppendGroup");
 }
 
 
@@ -456,7 +452,7 @@ int KosMatcherBuilder_AppendOneof(
     Py_ssize_t count) {
 
   return builder_append_chain_container(
-      b, KOS_MATCH_NODE_ONEOF, 0, branches, count, "AppendOneof");
+      b, KOS_MATCH_NODE_ONEOF, branches, count, "AppendOneof");
 }
 
 
@@ -834,25 +830,9 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
       break;
 
     case KOS_MATCH_NODE_REST:
-      if (n->as.rest.slot != KOS_MATCH_NO_INDEX &&
-          (Py_ssize_t) n->as.rest.slot >= n_slots) {
-        PyErr_Format(PyExc_ValueError,
-                     "REST slot %u out of range (slots size=%zd) "
-                     "at node %zd",
-                     (unsigned) n->as.rest.slot, n_slots, i);
-        return -1;
-      }
       break;
 
     case KOS_MATCH_NODE_GROUP:
-      if (n->as.group.slot != KOS_MATCH_NO_INDEX &&
-          (Py_ssize_t) n->as.group.slot >= n_slots) {
-        PyErr_Format(PyExc_ValueError,
-                     "GROUP slot %u out of range (slots size=%zd) "
-                     "at node %zd",
-                     (unsigned) n->as.group.slot, n_slots, i);
-        return -1;
-      }
       break;
 
     case KOS_MATCH_NODE_CLASS:
@@ -2340,7 +2320,7 @@ static int match_repeat(
     uint32_t trailing_min);
 
 
-static int match_anonymous_group(
+static int match_group(
     MatchEngine *e,
     KosMatchNode *n,
     Py_ssize_t *cursor,
@@ -2394,7 +2374,7 @@ static int match_form(
    Run GROUP children in an isolated capture dict. On success *out_sub
    receives a new reference to the populated dict (caller must DECREF).
 */
-static int match_anonymous_group(
+static int match_group(
     MatchEngine *e,
     KosMatchNode *n,
     Py_ssize_t *cursor,
@@ -2446,6 +2426,57 @@ static int match_anonymous_group(
 
 
 /**
+   Build the REST capture value for spine range [start, end) after a
+   successful REST match (consume == end - start).
+*/
+static PyObject *
+rest_value_for_range(
+    MatchEngine *e,
+    Py_ssize_t start,
+    Py_ssize_t end,
+    Py_ssize_t consume,
+    Py_ssize_t length) {
+
+  if (consume == 0) {
+    PyObject *value = e->subj->vt->tail(e->subj, start);
+    if (! value)
+      return NULL;
+    return kos_datum_from_spine_cell(e->subj, start, value);
+  }
+  if (end == length) {
+    PyObject *value = e->subj->vt->tail(e->subj, start);
+    if (! value)
+      return NULL;
+    return kos_datum_from_spine_cell(e->subj, start, value);
+  }
+  return wrap_slice_datums(e->subj, start, end);
+}
+
+
+static int match_rest(
+    MatchEngine *e,
+    KosMatchNode *n,
+    Py_ssize_t *cursor,
+    uint32_t trailing_min) {
+
+  Py_ssize_t length = e->subj->vt->length(e->subj);
+  Py_ssize_t available = length - *cursor;
+  if (available < (Py_ssize_t) trailing_min)
+    return 0;
+
+  Py_ssize_t consume = available - (Py_ssize_t) trailing_min;
+  Py_ssize_t end = *cursor + consume;
+  uint32_t min_tail = n->as.rest.min_tail;
+
+  if (consume < (Py_ssize_t) min_tail)
+    return 0;
+
+  *cursor = end;
+  return 1;
+}
+
+
+/**
    CAPTURE(REPEAT(...)): greedily repeat inner while each iteration
    advances the cursor, honoring trailing_min on inner attempts, and
    append one Python value per iteration (anonymous GROUP dict copy,
@@ -2468,10 +2499,9 @@ static int match_repeat_capture_list(
     Py_ssize_t snap = engine_snapshot(e);
     Py_ssize_t saved = *cursor;
 
-    if (inner->kind == KOS_MATCH_NODE_GROUP &&
-        inner->as.group.slot == KOS_MATCH_NO_INDEX) {
+    if (inner->kind == KOS_MATCH_NODE_GROUP) {
       PyObject *sub_dict = NULL;
-      int r = match_anonymous_group(
+      int r = match_group(
           e, inner, cursor, trailing_min, &sub_dict);
       if (r < 0) {
         Py_DECREF(items);
@@ -2633,6 +2663,37 @@ static int match_capture(
       }
       return 1;
     }
+    if (sub->kind == KOS_MATCH_NODE_GROUP) {
+      PyObject *sub_dict = NULL;
+      int r = match_group(e, sub, cursor, trailing_min, &sub_dict);
+      if (r != 1)
+        return r;
+      if (n->as.capture.slot != KOS_MATCH_NO_INDEX) {
+        if (engine_set_slot(e, n->as.capture.slot, sub_dict))
+          return -1;
+      } else {
+        Py_DECREF(sub_dict);
+      }
+      return 1;
+    }
+    if (sub->kind == KOS_MATCH_NODE_REST) {
+      Py_ssize_t rest_start = *cursor;
+      int r = match_rest(e, sub, cursor, trailing_min);
+      if (r != 1)
+        return r;
+      if (n->as.capture.slot == KOS_MATCH_NO_INDEX)
+        return 1;
+      Py_ssize_t end = *cursor;
+      Py_ssize_t consume = end - rest_start;
+      Py_ssize_t length = e->subj->vt->length(e->subj);
+      PyObject *value = rest_value_for_range(
+          e, rest_start, end, consume, length);
+      if (! value)
+        return -1;
+      if (engine_set_slot(e, n->as.capture.slot, value))
+        return -1;
+      return 1;
+    }
   }
 
   /* Generic CAPTURE: run subnode (or any-1 fallback) and capture the
@@ -2714,27 +2775,6 @@ static int match_match(
 }
 
 
-static int match_named_group(
-    MatchEngine *e,
-    KosMatchNode *n,
-    Py_ssize_t *cursor,
-    uint32_t trailing_min) {
-
-  Py_ssize_t snap = engine_snapshot(e);
-  PyObject *sub = NULL;
-  int r = match_anonymous_group(e, n, cursor, trailing_min, &sub);
-  if (r != 1) {
-    engine_rollback(e, snap);
-    return r;
-  }
-  if (engine_set_slot(e, n->as.group.slot, sub)) {
-    engine_rollback(e, snap);
-    return -1;
-  }
-  return 1;
-}
-
-
 static int match_oneof(
     MatchEngine *e,
     KosMatchNode *n,
@@ -2800,54 +2840,6 @@ static int match_optional(
     return -1;
   *cursor = saved;
   engine_rollback(e, snap);
-  return 1;
-}
-
-
-static int match_rest(
-    MatchEngine *e,
-    KosMatchNode *n,
-    Py_ssize_t *cursor,
-    uint32_t trailing_min) {
-
-  Py_ssize_t length = e->subj->vt->length(e->subj);
-  Py_ssize_t available = length - *cursor;
-  if (available < (Py_ssize_t) trailing_min)
-    return 0;
-
-  Py_ssize_t consume = available - (Py_ssize_t) trailing_min;
-  Py_ssize_t end = *cursor + consume;
-  uint32_t min_tail = n->as.rest.min_tail;
-
-  if (consume < (Py_ssize_t) min_tail)
-    return 0;
-
-  if (n->as.rest.slot != KOS_MATCH_NO_INDEX) {
-    PyObject *value;
-    if (consume == 0) {
-      value = e->subj->vt->tail(e->subj, *cursor);
-      if (! value)
-        return -1;
-      value = kos_datum_from_spine_cell(e->subj, *cursor, value);
-      if (! value)
-        return -1;
-    } else if (end == length) {
-      value = e->subj->vt->tail(e->subj, *cursor);
-      if (! value)
-        return -1;
-      value = kos_datum_from_spine_cell(e->subj, *cursor, value);
-      if (! value)
-        return -1;
-    } else {
-      value = wrap_slice_datums(e->subj, *cursor, end);
-      if (! value)
-        return -1;
-    }
-    if (engine_set_slot(e, n->as.rest.slot, value))
-      return -1;
-  }
-
-  *cursor = end;
   return 1;
 }
 
@@ -3061,14 +3053,14 @@ static int match_node(
   case KOS_MATCH_NODE_MATCH:
     return match_match(e, n, cursor, trailing_min);
 
-  case KOS_MATCH_NODE_GROUP:
-    if (n->as.group.slot == KOS_MATCH_NO_INDEX) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "anonymous GROUP is only valid as the direct inner "
-                      "of CAPTURE(REPEAT(...))");
-      return -1;
-    }
-    return match_named_group(e, n, cursor, trailing_min);
+  case KOS_MATCH_NODE_GROUP: {
+    PyObject *sub = NULL;
+    int r = match_group(e, n, cursor, trailing_min, &sub);
+    if (r != 1)
+      return r;
+    Py_DECREF(sub);
+    return 1;
+  }
 
   case KOS_MATCH_NODE_ONEOF:
     return match_oneof(e, n, cursor, trailing_min);
@@ -3596,16 +3588,11 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
     return (rc < 0) ? -1 : 0;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "GROUP") == 0) {
-    if (arity < 2) {
-      PyErr_Format(PyExc_ValueError,
-                   "GROUP node must be (GROUP, slot, child...), got %zd",
-                   arity);
+    Py_ssize_t cnt = arity - 1;
+    if (cnt < 0) {
+      PyErr_SetString(PyExc_ValueError, "GROUP node must have arity >= 1");
       return -1;
     }
-    uint32_t gslot;
-    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1), &gslot, "GROUP.slot"))
-      return -1;
-    Py_ssize_t cnt = arity - 2;
     uint32_t *children = NULL;
     if (cnt > 0) {
       children = PyMem_Malloc(cnt * sizeof(uint32_t));
@@ -3615,13 +3602,13 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
       }
     }
     for (Py_ssize_t i = 0; i < cnt; i++) {
-      if (thaw_parse_index(PyTuple_GET_ITEM(t, 2 + i), &children[i],
+      if (thaw_parse_index(PyTuple_GET_ITEM(t, 1 + i), &children[i],
                            "GROUP child")) {
         PyMem_Free(children);
         return -1;
       }
     }
-    int rc = KosMatcherBuilder_AppendNamedGroup(b, gslot, children, cnt);
+    int rc = KosMatcherBuilder_AppendGroup(b, children, cnt);
     PyMem_Free(children);
     return (rc < 0) ? -1 : 0;
 
@@ -3678,23 +3665,17 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
       return -1;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "REST") == 0) {
-    if (arity != 2 && arity != 3) {
+    if (arity != 2) {
       PyErr_Format(PyExc_ValueError,
-                   "REST node tuple must be 2- or 3-tuple, got %zd",
+                   "REST node tuple must be (REST, min_tail), got %zd",
                    arity);
       return -1;
     }
     n.kind = KOS_MATCH_NODE_REST;
-    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
-                         &n.as.rest.slot, "REST.slot"))
+    if (thaw_parse_uint32_nonneg(PyTuple_GET_ITEM(t, 1),
+                                 &n.as.rest.min_tail,
+                                 "REST.min_tail"))
       return -1;
-    n.as.rest.min_tail = 1;
-    if (arity == 3) {
-      if (thaw_parse_uint32_nonneg(PyTuple_GET_ITEM(t, 2),
-                                   &n.as.rest.min_tail,
-                                   "REST.min_tail"))
-        return -1;
-    }
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "NOT") == 0) {
     if (arity != 2) {

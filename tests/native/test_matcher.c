@@ -159,14 +159,52 @@ static int append_repeat(KosMatcherBuilder *b, uint32_t subnode) {
 }
 
 
-static int append_named_group_node(
+static int append_group_node(
     KosMatcherBuilder *b,
-    uint32_t slot,
     const uint32_t *children,
     uint32_t count) {
 
-    return KosMatcherBuilder_AppendNamedGroup(
-        b, slot, children, (Py_ssize_t) count);
+    return KosMatcherBuilder_AppendGroup(
+        b, children, (Py_ssize_t) count);
+}
+
+
+static int append_rest_min(KosMatcherBuilder *b, uint32_t min_tail) {
+    KosMatchNode n;
+    memset(&n, 0, sizeof(n));
+    n.kind = KOS_MATCH_NODE_REST;
+    n.as.rest.min_tail = min_tail;
+    return KosMatcherBuilder_AppendNode(b, &n);
+}
+
+
+static int append_rest(KosMatcherBuilder *b) {
+    return append_rest_min(b, 0);
+}
+
+
+static int append_capture_rest(
+    KosMatcherBuilder *b,
+    uint32_t slot_idx,
+    uint32_t min_tail) {
+
+    int ri = append_rest_min(b, min_tail);
+    if (ri < 0)
+        return ri;
+    return append_capture(b, slot_idx, (uint32_t) ri);
+}
+
+
+static int append_capture_group(
+    KosMatcherBuilder *b,
+    uint32_t slot_idx,
+    const uint32_t *children,
+    uint32_t count) {
+
+    int gi = append_group_node(b, children, count);
+    if (gi < 0)
+        return gi;
+    return append_capture(b, slot_idx, (uint32_t) gi);
 }
 
 
@@ -176,21 +214,6 @@ static int append_optional(KosMatcherBuilder *b, uint32_t subnode) {
     n.kind = KOS_MATCH_NODE_OPTIONAL;
     n.as.optional.subnode = subnode;
     return KosMatcherBuilder_AppendNode(b, &n);
-}
-
-
-static int append_rest_min(KosMatcherBuilder *b, uint32_t slot, uint32_t min_tail) {
-    KosMatchNode n;
-    memset(&n, 0, sizeof(n));
-    n.kind = KOS_MATCH_NODE_REST;
-    n.as.rest.slot = slot;
-    n.as.rest.min_tail = min_tail;
-    return KosMatcherBuilder_AppendNode(b, &n);
-}
-
-
-static int append_rest(KosMatcherBuilder *b, uint32_t slot) {
-    return append_rest_min(b, slot, 0);
 }
 
 
@@ -260,7 +283,7 @@ static int test_matcher_validator_widths_basic(void) {
     int n_optional = append_optional(b, (uint32_t) n_test3);
     TEST_ASSERT(n_optional >= 0, "append OPTIONAL");
 
-    int n_rest = append_rest(b, (uint32_t) slot_r);
+    int n_rest = append_capture_rest(b, (uint32_t) slot_r, 0);
     TEST_ASSERT(n_rest >= 0, "append REST");
 
     int n_test4 = append_test_any(b);
@@ -384,8 +407,8 @@ static int test_matcher_validator_double_rest_in_form_branch_rejected(
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     TEST_ASSERT_NOT_NULL(b, "create builder");
 
-    int n_rest1 = append_rest(b, KOS_MATCH_NO_INDEX);
-    int n_rest2 = append_rest(b, KOS_MATCH_NO_INDEX);
+    int n_rest1 = append_rest(b);
+    int n_rest2 = append_rest(b);
 
     uint32_t kids[] = {(uint32_t) n_rest1, (uint32_t) n_rest2};
     int n_grp = append_match(b, kids, 2);
@@ -412,12 +435,12 @@ static int test_matcher_validator_oneof_branch_independence_accepted(
     TEST_ASSERT_NOT_NULL(b, "create builder");
 
     int n_test1 = append_test_any(b);
-    int n_rest1 = append_rest(b, KOS_MATCH_NO_INDEX);
+    int n_rest1 = append_rest(b);
     uint32_t k1[] = {(uint32_t) n_test1, (uint32_t) n_rest1};
     int n_grp1 = append_match(b, k1, 2);
 
     int n_test2 = append_test_any(b);
-    int n_rest2 = append_rest(b, KOS_MATCH_NO_INDEX);
+    int n_rest2 = append_rest(b);
     uint32_t k2[] = {(uint32_t) n_test2, (uint32_t) n_rest2};
     int n_grp2 = append_match(b, k2, 2);
 
@@ -445,7 +468,7 @@ static int test_matcher_validator_post_rest_unbounded_rejected(void) {
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     TEST_ASSERT_NOT_NULL(b, "create builder");
 
-    int n_rest = append_rest(b, KOS_MATCH_NO_INDEX);
+    int n_rest = append_rest(b);
     int n_inner_test = append_test_any(b);
     int n_rep = append_repeat(b, (uint32_t) n_inner_test);
 
@@ -470,7 +493,7 @@ static int test_matcher_validator_post_rest_finite_accepted(void) {
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     TEST_ASSERT_NOT_NULL(b, "create builder");
 
-    int n_rest = append_rest(b, KOS_MATCH_NO_INDEX);
+    int n_rest = append_rest(b);
     int n_t1 = append_test_any(b);
     int n_t2 = append_test_any(b);
 
@@ -496,7 +519,7 @@ static int test_matcher_validator_post_rest_optional_rejected(void) {
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     TEST_ASSERT_NOT_NULL(b, "create builder");
 
-    int n_rest = append_rest(b, KOS_MATCH_NO_INDEX);
+    int n_rest = append_rest(b);
     int n_test = append_test_any(b);
     int n_opt = append_optional(b, (uint32_t) n_test);
 
@@ -867,7 +890,7 @@ static int test_matcher_validator_lambda_shape_accepted(void) {
         int n_lit = append_test_literal(b, (uint32_t) const_dc);
         int n_rt = append_test_any(b);
         int n_fo = append_test_any(b);
-        int n_rest = append_rest(b, (uint32_t) slot_body);
+        int n_rest = append_capture_rest(b, (uint32_t) slot_body, 0);
 
         uint32_t kids[] = {
             (uint32_t) n_cap, (uint32_t) n_lit, (uint32_t) n_rt,
@@ -1376,8 +1399,7 @@ static int test_match_repeat_anonymous_group_dict_rows(void) {
     int t_any = append_test_any(b);
     int cap_val = append_capture(b, (uint32_t) slot_val, (uint32_t) t_any);
     uint32_t inner_kids[] = {(uint32_t) cap_val};
-    int n_anon_grp = append_named_group_node(
-        b, (uint32_t) KOS_MATCH_NO_INDEX, inner_kids, 1);
+    int n_anon_grp = append_group_node(b, inner_kids, 1);
     TEST_ASSERT(n_anon_grp >= 0, "anonymous GROUP");
     int n_rep = append_repeat(b, (uint32_t) n_anon_grp);
     int cap_items = append_capture(b, (uint32_t) slot_items,
@@ -1575,7 +1597,7 @@ static int test_match_rest_terminal_pysequence(void) {
     int slot_r = add_str_slot(b, "rest");
 
     int n_t = append_test_any(b);
-    int n_rest = append_rest(b, (uint32_t) slot_r);
+    int n_rest = append_capture_rest(b, (uint32_t) slot_r, 0);
     uint32_t kids[] = {(uint32_t) n_t, (uint32_t) n_rest};
     int n_grp = append_match(b, kids, 2);
 
@@ -1626,7 +1648,7 @@ static int test_match_rest_terminal_kospair(void) {
     int slot_r = add_str_slot(b, "rest");
 
     int n_t = append_test_any(b);
-    int n_rest = append_rest(b, (uint32_t) slot_r);
+    int n_rest = append_capture_rest(b, (uint32_t) slot_r, 0);
     uint32_t kids[] = {(uint32_t) n_t, (uint32_t) n_rest};
     int n_grp = append_match(b, kids, 2);
 
@@ -1671,7 +1693,7 @@ static int test_match_rest_nonterminal_with_finite_suffix(void) {
     int slot_r = add_str_slot(b, "rest");
 
     int n_t1 = append_test_any(b);
-    int n_rest = append_rest(b, (uint32_t) slot_r);
+    int n_rest = append_capture_rest(b, (uint32_t) slot_r, 0);
     int n_t2 = append_test_any(b);
     uint32_t kids[] = {
         (uint32_t) n_t1, (uint32_t) n_rest, (uint32_t) n_t2};
@@ -1721,7 +1743,7 @@ static int test_match_rest_min0_tail_nil_kospair(void) {
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     int slot_r = add_str_slot(b, "r");
     int n_t = append_test_any(b);
-    int n_rest = append_rest_min(b, (uint32_t) slot_r, 0);
+    int n_rest = append_capture_rest(b, (uint32_t) slot_r, 0);
     uint32_t kids[] = {(uint32_t) n_t, (uint32_t) n_rest};
     int n_grp = append_match(b, kids, 2);
 
@@ -1757,7 +1779,7 @@ static int test_match_rest_min0_tail_empty_tuple_pyseq(void) {
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     int slot_r = add_str_slot(b, "r");
     int n_t = append_test_any(b);
-    int n_rest = append_rest_min(b, (uint32_t) slot_r, 0);
+    int n_rest = append_capture_rest(b, (uint32_t) slot_r, 0);
     uint32_t kids[] = {(uint32_t) n_t, (uint32_t) n_rest};
     int n_grp = append_match(b, kids, 2);
 
@@ -2042,7 +2064,7 @@ static int test_match_lambda_shaped_oneof(void) {
         int t_disc = append_test_literal(b, (uint32_t) discs[i]);
         int t_ret = append_test_any(b);
         int t_form = append_test_any(b);
-        int n_rest = append_rest(b, (uint32_t) slot_body);
+        int n_rest = append_capture_rest(b, (uint32_t) slot_body, 0);
         uint32_t kids[] = {
             (uint32_t) cap_name, (uint32_t) t_disc, (uint32_t) t_ret,
             (uint32_t) t_form, (uint32_t) n_rest};
@@ -2241,13 +2263,13 @@ static int test_thaw_rejects_index_oob(void) {
 
 static int test_thaw_rest_repeat_min_fields(void) {
     /*
-      3-tuple REST and REPEAT nodes preserve min_tail / min_count.
+      3-tuple REPEAT nodes preserve min_count; REST is (REST, min_tail).
     */
     PyObject *empty = PyTuple_New(0);
     PyObject *rname = PyUnicode_FromString("r");
     PyObject *slots = PyTuple_Pack(1, rname);
 
-    PyObject *rest3 = Py_BuildValue("(sii)", "REST", 0, 0);
+    PyObject *rest3 = Py_BuildValue("(si)", "REST", 0);
     PyObject *nodes_r = PyTuple_Pack(1, rest3);
     PyObject *frozen_r = Py_BuildValue("(sOOOOi)",
                                         "MATCHER",
@@ -2317,9 +2339,10 @@ static int test_thaw_full_lambda(void) {
     PyObject *consts = PySequence_Tuple(consts_list);
     Py_DECREF(consts_list);
 
-    /* Build nodes list bottom-up. Each branch is 6 nodes:
-       TEST_TYPE, CAPTURE, TEST_LITERAL, TEST_ANY, TEST_ANY, REST,
-       then GROUP. ONEOF references the GROUPs by index. */
+    /* Build nodes list bottom-up. Each branch is 8 nodes:
+       TEST_TYPE, CAPTURE(name), TEST_LITERAL, TEST_ANY, TEST_ANY,
+       REST(min_tail=1), CAPTURE(body, REST), MATCH(...).
+       ONEOF references the MATCH nodes by index. */
     PyObject *nodes_list = PyList_New(0);
     Py_ssize_t branch_indices[6];
 
@@ -2333,10 +2356,12 @@ static int test_thaw_full_lambda(void) {
         PyObject *t_ret = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
         PyObject *t_form = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
         PyObject *rest = Py_BuildValue("(si)", "REST", 1);
+        PyObject *cap_body = Py_BuildValue("(siiii)", "CAPTURE", 1,
+                                            (int)(base + 5), 0, -1);
         PyObject *grp = Py_BuildValue(
             "(siiiii)", "MATCH",
             (int)(base + 1), (int)(base + 2), (int)(base + 3),
-            (int)(base + 4), (int)(base + 5));
+            (int)(base + 4), (int)(base + 6));
 
         PyList_Append(nodes_list, t_sym);
         PyList_Append(nodes_list, cap);
@@ -2344,6 +2369,7 @@ static int test_thaw_full_lambda(void) {
         PyList_Append(nodes_list, t_ret);
         PyList_Append(nodes_list, t_form);
         PyList_Append(nodes_list, rest);
+        PyList_Append(nodes_list, cap_body);
         PyList_Append(nodes_list, grp);
         Py_DECREF(t_sym);
         Py_DECREF(cap);
@@ -2351,9 +2377,10 @@ static int test_thaw_full_lambda(void) {
         Py_DECREF(t_ret);
         Py_DECREF(t_form);
         Py_DECREF(rest);
+        Py_DECREF(cap_body);
         Py_DECREF(grp);
 
-        branch_indices[i] = base + 6;
+        branch_indices[i] = base + 7;
     }
 
     Py_ssize_t oneof_idx = PyList_GET_SIZE(nodes_list);

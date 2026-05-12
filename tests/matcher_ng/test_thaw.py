@@ -43,10 +43,11 @@ def _make_lambda_matcher_tuple():
         ("TEST", "LITERAL", 0),             # 2: TEST_LITERAL "::"
         ("TEST", "ANY", -1),                # 3: TEST_ANY (return)
         ("TEST", "ANY", -1),                # 4: TEST_ANY (formals)
-        ("REST", 1),                        # 5: REST body
-        ("MATCH", 1, 2, 3, 4, 5),           # 6: MATCH entry
+        ("REST", 1),                        # 5: REST min_tail
+        ("CAPTURE", 1, 5, 0, -1),           # 6: CAPTURE body
+        ("MATCH", 1, 2, 3, 4, 6),           # 7: MATCH entry
     )
-    return ("MATCHER", slots, externs, consts, nodes, 6)
+    return ("MATCHER", slots, externs, consts, nodes, 7)
 
 
 class TestMatcherFromTuple(unittest.TestCase):
@@ -104,13 +105,14 @@ class TestMatcherFromTuple(unittest.TestCase):
         nodes = (
             ("TEST", "ANY", -1),
             ("CAPTURE", 0, 0, 0, -1),
-            ("REST", 1),
-            ("MATCH", 1, 2),
+            ("REST", 0),
+            ("CAPTURE", 1, 2, 0, -1),
+            ("MATCH", 1, 3),
         )
         frozen = (
             "MATCHER",
             ("head", "tail"), (), (),
-            nodes, 3)
+            nodes, 4)
         m = thaw(frozen)
         subj = cons(1, 2, 3, nil)
         result = m.match(subj)
@@ -173,12 +175,13 @@ class TestMatcherFromTuple(unittest.TestCase):
         nodes = (
             ("TEST", "ANY", -1),
             ("CAPTURE", 1, 0, 0, -1),
-            ("GROUP", 0, 1),
+            ("GROUP", 1),
+            ("CAPTURE", 0, 2, 0, -1),
         )
         frozen = (
             "MATCHER",
             ("outer", "inner"), (), (),
-            nodes, 2)
+            nodes, 3)
         m = thaw(frozen)
         result = m.match([42])
         self.assertTrue(result.matched)

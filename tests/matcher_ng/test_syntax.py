@@ -563,14 +563,16 @@ class TestParseCompositeSlotFirst(unittest.TestCase):
         self.assertEqual(pat._min_tail, 1)
 
 
-    def test_rest_requires_slot(self):
+    def test_rest_nil_lowers_bare_rest(self):
         """
-        (REST) with no slot raises
+        (REST) lowers to REST with no capture slot
         """
 
         src = _list(symbol("REST"))
-        with self.assertRaises(ValueError):
-            parse_matcher(src)
+        pat = parse_matcher(src)
+        self.assertIsInstance(pat, REST)
+        self.assertIsNone(pat._slot)
+        self.assertEqual(pat._min_tail, 0)
 
 
     def test_tail(self):

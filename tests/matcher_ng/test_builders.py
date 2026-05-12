@@ -158,8 +158,8 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
 
     def test_named_group_emits_group_node_with_slot_index(self):
         """
-        GROUP(slot, ...) reserves the slot name and emits a GROUP node
-        with slot index then child indices
+        GROUP(slot, ...) reserves the slot name and lowers to GROUP
+        children plus a wrapping CAPTURE for the outer slot
         """
 
         frozen = GROUP("g", CAPTURE("a")).freeze()
@@ -167,8 +167,20 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
         self.assertEqual(
             frozen[4],
             (("CAPTURE", 1, -1, 0, -1),
-             ("GROUP", 0, 0)))
-        self.assertEqual(frozen[5], 1)
+             ("GROUP", 0),
+             ("CAPTURE", 0, 1, 0, -1)))
+        self.assertEqual(frozen[5], 2)
+
+
+    def test_rest_emits_rest_then_capture_when_named(self):
+        """
+        REST with a slot lowers to REST(min_tail) then CAPTURE
+        """
+
+        frozen = REST("rest").freeze()
+        self.assertEqual(frozen[1], ("rest",))
+        self.assertEqual(
+            frozen[4], (("REST", 0), ("CAPTURE", 0, 0, 0, -1)))
 
 
     def test_oneof_collects_branches(self):
@@ -202,16 +214,6 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
         frozen = OPTIONAL(TEST_ANY()).freeze()
         self.assertEqual(
             frozen[4], (("TEST", "ANY", -1), ("OPTIONAL", 0)))
-
-
-    def test_rest_interns_slot(self):
-        """
-        REST writes its slot name into slots and emits a REST node
-        """
-
-        frozen = REST("rest").freeze()
-        self.assertEqual(frozen[1], ("rest",))
-        self.assertEqual(frozen[4], (("REST", 0, 0),))
 
 
     def test_not_emits_post_order(self):
