@@ -310,6 +310,25 @@ PyObject *KosMatcher_Match(
 
 
 /**
+   Run matchers in sequence order against one subject until the first
+   successful match. ``kwargs`` is optional (NULL) and follows the same
+   extern resolution rules as ``Matcher.match`` for each arm.
+
+   Returns ``0`` on success: ``*out_result`` is a new ``MatchResult``
+   reference and ``*out_index`` is the winning index in ``matchers``.
+   Returns ``1`` if no arm matched (outs unchanged; caller should
+   pre-clear). Returns ``-1`` with a Python exception set (outs
+   unchanged).
+ */
+int KosMatcher_MatchSelect(
+    PyObject *matchers,
+    PyObject *subject,
+    PyObject *kwargs,
+    PyObject **out_result,
+    Py_ssize_t *out_index);
+
+
+/**
    Borrowed reference to the mutable matcher extern-defaults mapping.
    Lazily allocates and inserts baseline entries on first call.
  */

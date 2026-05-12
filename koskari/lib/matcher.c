@@ -3175,6 +3175,148 @@ PyObject *KosMatcher_Match(
 }
 
 
+int KosMatcher_MatchSelect(
+    PyObject *matchers,
+    PyObject *subject,
+    PyObject *kwargs,
+    PyObject **out_result,
+    Py_ssize_t *out_index) {
+
+  if (! matchers || ! subject) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosMatcher_MatchSelect requires matchers and subject");
+    return -1;
+  }
+  if (! out_result || ! out_index) {
+    PyErr_SetString(PyExc_SystemError,
+                    "KosMatcher_MatchSelect requires non-NULL out pointers");
+    return -1;
+  }
+  if (kwargs != NULL && ! PyDict_Check(kwargs)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "KosMatcher_MatchSelect kwargs must be a dict or NULL");
+    return -1;
+  }
+
+  PyObject *fast = PySequence_Fast(
+      matchers,
+      "KosMatcher_MatchSelect matchers must be a sequence");
+  if (! fast)
+    return -1;
+
+  Py_ssize_t n = PySequence_Fast_GET_SIZE(fast);
+  if (n == 0) {
+    Py_DECREF(fast);
+    return 1;
+  }
+
+  KosMatchSubject subj;
+  if (subject_from_any(subject, &subj)) {
+    Py_DECREF(fast);
+    return -1;
+  }
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *item = PySequence_Fast_GET_ITEM(fast, i);
+    if (! KosMatcher_Check(item)) {
+      PyErr_Format(PyExc_TypeError,
+                   "KosMatcher_MatchSelect: item %zd is not a Matcher", i);
+      KosMatchSubject_Release(&subj);
+      Py_DECREF(fast);
+      return -1;
+    }
+
+    KosMatcher *m = (KosMatcher *) item;
+
+    PyObject *extern_env = NULL;
+    Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
+    if (n_externs > 0) {
+      extern_env = PyTuple_New(n_externs);
+      if (! extern_env) {
+        KosMatchSubject_Release(&subj);
+        Py_DECREF(fast);
+        return -1;
+      }
+      for (Py_ssize_t j = 0; j < n_externs; j++) {
+        PyObject *name = PyTuple_GET_ITEM(m->externs, j);
+        PyObject *val = NULL;
+        if (kwargs)
+          val = PyDict_GetItemWithError(kwargs, name);
+        if (! val) {
+          if (PyErr_Occurred()) {
+            Py_DECREF(extern_env);
+            KosMatchSubject_Release(&subj);
+            Py_DECREF(fast);
+            return -1;
+          }
+          PyObject *defs = KosMatcher_ExternDefaults();
+          if (! defs) {
+            Py_DECREF(extern_env);
+            KosMatchSubject_Release(&subj);
+            Py_DECREF(fast);
+            return -1;
+          }
+          val = PyDict_GetItemWithError(defs, name);
+          if (! val) {
+            if (PyErr_Occurred()) {
+              Py_DECREF(extern_env);
+              KosMatchSubject_Release(&subj);
+              Py_DECREF(fast);
+              return -1;
+            }
+            PyErr_Format(PyExc_TypeError,
+                         "matcher missing extern binding: %R", name);
+            Py_DECREF(extern_env);
+            KosMatchSubject_Release(&subj);
+            Py_DECREF(fast);
+            return -1;
+          }
+        }
+        Py_INCREF(val);
+        PyTuple_SET_ITEM(extern_env, j, val);
+      }
+    } else if (kwargs && PyDict_GET_SIZE(kwargs) > 0) {
+      PyErr_SetString(PyExc_TypeError,
+                      "matcher takes no extern bindings");
+      KosMatchSubject_Release(&subj);
+      Py_DECREF(fast);
+      return -1;
+    }
+
+    PyObject *res = KosMatcher_Match(m, &subj, extern_env);
+    Py_XDECREF(extern_env);
+    if (! res) {
+      KosMatchSubject_Release(&subj);
+      Py_DECREF(fast);
+      return -1;
+    }
+
+    if (! KosMatchResult_Check(res)) {
+      Py_DECREF(res);
+      PyErr_SetString(PyExc_SystemError,
+                      "internal: KosMatcher_Match did not return MatchResult");
+      KosMatchSubject_Release(&subj);
+      Py_DECREF(fast);
+      return -1;
+    }
+
+    if (((KosMatchResult *) res)->matched) {
+      *out_result = res;
+      *out_index = i;
+      KosMatchSubject_Release(&subj);
+      Py_DECREF(fast);
+      return 0;
+    }
+
+    Py_DECREF(res);
+  }
+
+  KosMatchSubject_Release(&subj);
+  Py_DECREF(fast);
+  return 1;
+}
+
+
 /* === Matcher type === */
 
 
@@ -3981,6 +4123,61 @@ PyTypeObject KosMatcherType = {
 };
 
 
+/* === module functions === */
+
+
+static PyObject *matcher_mod_match_select(
+    PyObject *mod,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  (void) mod;
+
+  PyObject *matchers = NULL;
+  PyObject *subject = NULL;
+
+  if (! PyArg_ParseTuple(args, "OO", &matchers, &subject))
+    return NULL;
+
+  PyObject *res = NULL;
+  Py_ssize_t idx = 0;
+  int rc = KosMatcher_MatchSelect(matchers, subject, kwargs, &res, &idx);
+
+  if (rc < 0)
+    return NULL;
+
+  if (rc > 0)
+    return Py_BuildValue("(iO)", -1, Py_None);
+
+  PyObject *pair = PyTuple_New(2);
+  if (! pair) {
+    Py_DECREF(res);
+    return NULL;
+  }
+  PyObject *ilong = PyLong_FromSsize_t(idx);
+  if (! ilong) {
+    Py_DECREF(pair);
+    Py_DECREF(res);
+    return NULL;
+  }
+  PyTuple_SET_ITEM(pair, 0, ilong);
+  PyTuple_SET_ITEM(pair, 1, res);
+  return pair;
+}
+
+
+static PyMethodDef matcher_mod_methods[] = {
+  { "match_select", (PyCFunction) matcher_mod_match_select,
+    METH_VARARGS | METH_KEYWORDS,
+    "match_select(matchers, subject, /, **externs) -> (index, result)\n\n"
+    "Run each Matcher in ``matchers`` in order against ``subject`` "
+    "until one matches. Returns ``(index, MatchResult)`` for the first "
+    "success, or ``(-1, None)`` if none match. Keyword arguments are "
+    "extern bindings, same as ``Matcher.match``." },
+  { NULL, NULL, 0, NULL },
+};
+
+
 /* === unit lifecycle === */
 
 
@@ -4011,6 +4208,9 @@ int koskari_matcher_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "Datum",
                            (PyObject *) &KosDatumType))
+    return -1;
+
+  if (PyModule_AddFunctions(mod, matcher_mod_methods))
     return -1;
 
   return 0;
