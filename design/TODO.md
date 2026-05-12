@@ -128,36 +128,6 @@ Ref: [language/unified-matcher-transformer-model.md](language/unified-matcher-tr
 
 ---
 
-## Matcher
-
-### Unified matcher rollup (`matcher`)
-
-**Status:** Landed in tree: native core **`koskari/lib/matcher.{c,h}`** and Python
-**`koskari/matcher.py`**. The original **`koskari/matcher.py`** module is
-**removed** after migration; specials and macro surfaces use **`matcher`**,
-**`syntax`**, **`hygiene`**, and **`koskari.compile.helpers`**.
-
-A single matcher model serving syntax matching (macros, syntax
-transformers, special-form dispatch, source-form diagnostics), runtime
-matching (`match/case`, structured unpacking), hygiene extraction, and
-composite matcher authoring (`FORMALS`, `BINDING`, `BINDINGS`). The model
-layers surface matcher syntax, a Python builder API, a canonical
-tagged-tuple frozen representation embedded as code constants, a thawed
-native `Matcher` instance over a compact tagged-node array, and
-invocation with subject plus extern bindings — all expressing the same
-underlying rule program. Subject adapters (runtime `PySequence_Fast` and
-compile-time `KosPair`) keep execution independent of input shape.
-Phased implementation: native core and validator, subject adapters,
-frozen schema and thaw, Python builder API, bootstrap composites, source
-matcher-syntax parser, special-form dispatch integration, runtime
-`match/case`, then hygiene extraction migration.
-
-Ref: [language/matcher-ng-rollup.md](language/matcher-ng-rollup.md);
-[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
-(current matcher to be replaced).
-
----
-
 ## Import / loader
 
 ### Python AST loader (transformative parser)
@@ -229,6 +199,64 @@ Ref: [documentation-goals.md](documentation-goals.md).
 From [FEATURES.md](FEATURES.md) and related docs:
 
 - Performance optimizations (general)
+
+---
+
+## Recorded proposals (evaluate / implement)
+
+The following items are captured from design discussion. Each has a short
+design note and is open for evaluation and possible implementation.
+
+### Seq-values kwargs (in-scope formals apply)
+
+**TODO:** Specify bytecode and runtime surfaces for kwargs-capable seq-values /
+in-scope formals apply; implement and test standalone, then consume from
+runtime match and from `define-values` / `setq-values` kwargs paths.
+
+Ref: [language/seq-values-kwargs-formals-apply.md](language/seq-values-kwargs-formals-apply.md).
+
+### Runtime `match` form, `match/case` layout, and `MATCH_CASE` lowering
+
+**TODO:** Reader layout, compile lowering per arm, opcode applier (analogous to
+`SWITCH_EQ`), constant pools with extern names from local env, and
+syntax-rules-style namespace mapping for committed arms; depends on seq-values
+kwargs foundation where arm binding requires it.
+
+Ref: [language/match-case-form.md](language/match-case-form.md).
+
+### `RETURN` frame-only; `return-shift` for delim continuations
+
+**TODO:** Split ordinary return from delimited-continuation rebound: `RETURN`
+handles frame boundary only; introduce explicit `return-shift` (name TBD) for
+the delim case; migrate any bundled behavior off `RETURN`.
+
+Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
+
+### Destructuring formals, referencing formals, `define-values` fork
+
+**TODO:** Nested patterns in lambda formals (e.g. `(lambda [a (b c) *: d] …)`);
+`(ref …)` formals for rebind-to-Ref and write-through `set!`; if destructuring
+and refs cannot share one formals grammar, limit unpacking to `define-values` /
+`setq-values` with kwargs only (no ref binding there — refs stay on formals).
+
+Ref:
+[language/destructuring-and-referencing-formals.md](language/destructuring-and-referencing-formals.md).
+
+### Multi-dispatch methods (matchers on formals)
+
+**TODO:** Method tables dispatched by type/value/shape matchers over formals,
+structured like `define-special` but feeding **runtime sequence values** into
+the matcher arms instead of source forms.
+
+Ref: [language/multi-dispatch-methods.md](language/multi-dispatch-methods.md).
+
+### Example dispatch call timing harness
+
+**TODO:** Add timed examples (Python, async Python, Koskari, demand Koskari
+callees; Python and Koskari callers); triple timestamps with baseline
+subtraction; ~1000 iterations per cell; aggregate averages.
+
+Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
 ---
 
