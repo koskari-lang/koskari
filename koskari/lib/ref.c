@@ -47,6 +47,9 @@ static PyObject *_str_clear = NULL;  // "clear"
 static PyObject *_str_empty = NULL;  // "empty"
 
 
+static int ref_nb_bool(PyObject *self);
+
+
 /* === Ref (base symbolic reference) === */
 
 
@@ -191,6 +194,11 @@ static void sym_ref_dealloc(PyObject *self) {
 }
 
 
+static PyNumberMethods ref_as_number = {
+  .nb_bool = (inquiry) ref_nb_bool,
+};
+
+
 PyTypeObject KosRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -201,6 +209,7 @@ PyTypeObject KosRefType = {
   .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
   .tp_getset = sym_ref_getset,
   .tp_methods = sym_ref_methods,
+  .tp_as_number = &ref_as_number,
   .tp_new = PyType_GenericNew,
   .tp_init = sym_ref_tp_init,
   .tp_traverse = sym_ref_traverse,
@@ -1647,6 +1656,16 @@ int KosRef_IsEmpty(PyObject *self) {
     Py_DECREF(res);
   }
   return ret;
+}
+
+
+static int ref_nb_bool(PyObject *self) {
+  int empty = KosRef_IsEmpty(self);
+
+  if (empty < 0)
+    return -1;
+
+  return empty ? 0 : 1;
 }
 
 

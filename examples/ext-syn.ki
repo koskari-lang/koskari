@@ -1,0 +1,11 @@
+define-syntax tacos:
+    syntax-rules []:
+        match (tacos):
+             print "Lonely Tacos"
+
+extend-syntax tacos:
+    syntax-rules []:
+        match (tacos friend):
+            print "Tacos with" friend
+
+;; The end.

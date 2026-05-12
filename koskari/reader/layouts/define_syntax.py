@@ -26,7 +26,7 @@ from ...compile.helpers import match, match1
 from ...exceptions import LayoutError
 from ...lib import car, cons, nil, symbol
 from ...matcher import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, VALUE,
-                          repeat_capture)
+                        SYMBOL, repeat_capture)
 from ...stdlib import builtin
 from ...types import (
     get_position,
@@ -50,11 +50,7 @@ _ALLOWED_DEFINE_SYNTAX_TRANSFORMERS = frozenset({
 
 _DEFINE_SYNTAX_FORMS = [
     MATCH(
-        LIST(LITERAL_SYM('define-syntax'), DEFINE('name')),
-        PAIR('transformer')),
-    MATCH(
-        LIST(LITERAL_SYM('compile/define-syntax'), DEFINE('name')),
-        PAIR('transformer')),
+        LIST(SYMBOL('_'), DEFINE('name')), PAIR('transformer')),
 ]
 
 _MATCH_FORM_PATTERN = LIST(LITERAL_SYM('match'), VALUE('inner'))
@@ -338,6 +334,7 @@ def layout_define_syntax(source, peers):
             'define-syntax block requires name and single transformer form',
             get_position(source))
 
+    called_by = m['_'].datum
     name = m['name'].datum
     transformer_spec = m['transformer'].datum
     head = car(transformer_spec)
@@ -347,7 +344,7 @@ def layout_define_syntax(source, peers):
             'syntax-match, macro-match, or special-match',
             get_position(transformer_spec))
 
-    return cons(_symbol_compile_define_syntax, name, transformer_spec, nil)
+    return cons(called_by, name, transformer_spec, nil)
 
 
 # The end.

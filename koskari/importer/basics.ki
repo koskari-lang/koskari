@@ -392,4 +392,45 @@ define-syntax compile/super:
       (compile/call super args ...)
 
 
+define-syntax compile/extend:
+  syntax-rules []:
+    match (extend sym val):
+      set! sym (+ sym val)
+
+
+define-syntax compile/define-extend:
+  syntax-rules []:
+    match (define-extend sym):
+      define sym
+    match (define-extend sym val):
+      if &sym:
+        extend sym val
+      else:
+        define sym val
+
+
+define layout/extend-syntax layout/define-syntax
+
+
+define-syntax compile/extend-syntax:
+  syntax-rules []:
+    match (extend-syntax name (syntax-rules literals rule ...)):
+      define-extend name (syntax-rules name literals rule ...)
+
+    match (extend-syntax name (syntax-match rule ...)):
+      define-extend name (syntax-match name rule ...)
+
+    match (extend-syntax name (macro-rules literals rule ...)):
+      define-extend name (macro-rules name literals rule ...)
+
+    match (extend-syntax name (macro-match rule ...)):
+      compile/define name (macro-match name rule ...)
+
+    match (extend-syntax name (special-rules literals rule ...)):
+      define-extend name (special-rules name literals rule ...)
+
+    match (extend-syntax name (special-match rule ...)):
+      define-extend name (special-match name rule ...)
+
+
 ;; The end.
