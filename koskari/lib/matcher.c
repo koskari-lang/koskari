@@ -4166,6 +4166,34 @@ static PyObject *matcher_mod_match_select(
 }
 
 
+static PyObject *matcher_mod_get_extern_defaults(
+    PyObject *mod,
+    PyObject *unused) {
+
+  (void) mod;
+  (void) unused;
+  PyObject *d = KosMatcher_ExternDefaults();
+  if (! d)
+    return NULL;
+  Py_INCREF(d);
+  return d;
+}
+
+
+static PyObject *matcher_mod_reset_extern_defaults(
+    PyObject *mod,
+    PyObject *unused) {
+
+  (void) mod;
+  (void) unused;
+  PyObject *d = KosMatcher_ResetExternDefaults();
+  if (! d)
+    return NULL;
+  Py_INCREF(d);
+  return d;
+}
+
+
 static PyMethodDef matcher_mod_methods[] = {
   { "match_select", (PyCFunction) matcher_mod_match_select,
     METH_VARARGS | METH_KEYWORDS,
@@ -4174,6 +4202,13 @@ static PyMethodDef matcher_mod_methods[] = {
     "until one matches. Returns ``(index, MatchResult)`` for the first "
     "success, or ``(-1, None)`` if none match. Keyword arguments are "
     "extern bindings, same as ``Matcher.match``." },
+  { "get_extern_defaults", (PyCFunction) matcher_mod_get_extern_defaults,
+    METH_NOARGS,
+    "Return the live matcher extern defaults dict (mutable)." },
+  { "reset_extern_defaults", (PyCFunction) matcher_mod_reset_extern_defaults,
+    METH_NOARGS,
+    "Reset matcher extern defaults to the built-in baseline and "
+    "return the new dict (mutable)." },
   { NULL, NULL, 0, NULL },
 };
 
