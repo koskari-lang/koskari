@@ -32,7 +32,7 @@ from unittest import IsolatedAsyncioTestCase
 
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
-from koskari.compile.helpers import pycons
+from koskari.compile.helpers_ng import pycons
 from koskari.stdlib import BUILTINS
 from koskari.reader.parser import (READ_EOF, IndentAwareStream, LayoutReader,
                                    Reader, SourceStream, default_reader,

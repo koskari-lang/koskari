@@ -21,7 +21,7 @@ class block syntax with optional superclass list.
 from unittest import IsolatedAsyncioTestCase
 
 from koskari.lib import symbol
-from koskari.compile.helpers import pycons
+from koskari.compile.helpers_ng import pycons
 from .. import parse_layout
 
 import pytest

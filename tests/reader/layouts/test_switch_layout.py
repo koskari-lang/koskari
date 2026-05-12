@@ -25,7 +25,7 @@ from unittest import IsolatedAsyncioTestCase
 
 from koskari.exceptions import LayoutError
 from koskari.lib import cons, keyword, symbol, nil
-from koskari.compile.helpers import pycons
+from koskari.compile.helpers_ng import pycons
 
 from .. import parse_layout
 

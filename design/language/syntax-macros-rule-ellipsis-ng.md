@@ -21,7 +21,7 @@ does not.
 - Procedural **macro-rules** (`MacroTransform`, `build_macro_syntax`,
   `build_macro_match`, Ki `**captures`).
 - **Special** forms (`SpecialTransform`, `special(...)`).
-- Legacy **`koskari.syntax.Syntax`** / `SyntaxRule` unless explicitly cited as a
+- **Removed** legacy **`koskari.syntax`** box types / **`SyntaxRule`** unless explicitly cited as a
   **contrast** for behavior that NG does not replicate yet.
 
 ---
@@ -194,8 +194,8 @@ Definition: `koskari/syntax_ng.py`, `_captures_to_bindings` +
 
 **Not implemented**
 
-- **No** logic equivalent to legacy `koskari.syntax._syntax_match_result_to_bindings`
-  that **folds** a list of per-iteration **dict frames** into **multiple**
+- **No** logic equivalent to the **removed** legacy helper
+  **`_syntax_match_result_to_bindings`** (formerly in **`koskari.syntax`**) that **folds** a list of per-iteration **dict frames** into **multiple**
   top-level keys whose values are **lists** of the same length—e.g. turning
 
   ```python
@@ -337,9 +337,9 @@ bindings[symbol("_repeat…")] == [ {"x": Dx0, "y": Dy0}, ... ]
 
 ---
 
-## 9. Contrast: legacy `koskari.syntax` (reference only)
+## 9. Contrast: removed legacy `_syntax_match_result_to_bindings` (reference only)
 
-`koskari/syntax.py` defines `_syntax_match_result_to_bindings` which, for list-
+Before **`koskari/syntax.py`** was deleted, **`_syntax_match_result_to_bindings`** merged, for list-
 shaped boxed repeat results, **merges** inner dict keys into list-valued
 bindings:
 
@@ -348,7 +348,7 @@ merged.setdefault(rk, []).append(val.datum)
 ```
 
 That is exactly the **missing** transpose step for NG `SyntaxTransform` today.
-Legacy `SyntaxRule.try_expand` calls that helper before
+The deleted legacy **`SyntaxRule.try_expand`** path called that helper before
 `apply_syntax_rules_hygiene`.
 
 **This doc does not propose switching RULE macros to legacy**; it records that
@@ -389,7 +389,7 @@ Use this as a task list when implementing; **no code here**.
 |------|-----------|
 | `koskari/syntax_ng.py` | `parse_syntax_rules_pattern`, `_syntax_pattern_specs`, `_captures_to_bindings`, `SyntaxTransform.try_expand`, `build_syntax_from_datums` |
 | `koskari/hygiene_ng.py` | `expand_template_with_hygiene`, `_repeat_count`, `apply_syntax_rules_hygiene` |
-| `koskari/syntax.py` | `_syntax_match_result_to_bindings` (legacy reference) |
+| Removed **`koskari/syntax.py`** | `_syntax_match_result_to_bindings` (historical; see git history) |
 | `koskari/matcher_ng.py` | `repeat_capture`, `REST`, `BIND`, `CAPTURE` |
 | `koskari/lib/matcher.c` | Native `REST`, `CAPTURE`+`REPEAT` semantics |
 | `tests/native/test_matcher.c` | Repeat frame shapes |

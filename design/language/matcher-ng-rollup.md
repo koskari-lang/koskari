@@ -5,8 +5,9 @@
 Phases 1 through 6 of the implementation strategy below are landed. The
 native engine lives in `koskari/lib/matcher.{c,h}`; the Python builder
 API and the cleanroom composite layer live in `koskari/matcher_ng.py`.
-`matcher_ng` does **not** import `koskari.matcher`, `koskari.compile.*`,
-or `koskari.exceptions`, and there is no post-match Python transform
+`matcher_ng` does **not** import **`koskari.exceptions`**, arbitrary
+**`koskari.compile`** submodules, or the removed legacy **`koskari.matcher`**
+module, and there is no post-match Python transform
 layer on the engine itself: `Matcher.match` returns the native
 `MatchResult` directly; captures are final. The frozen matcher constant
 is a **6-tuple** consumed by `Matcher.from_tuple` (see `matcher_from_tuple`
@@ -18,8 +19,8 @@ part of that tuple or of `MatchResult` (see "As-built notes").
 from `koskari/hygiene_ng.py` (for `HygienicMatchCompiler` metadata) and
 shape helpers from **`koskari.types`**, in addition to **`koskari.lib`**
 (`Datum`, `Matcher`, `MatchResult`, `symbol`, `pair`, `nil`, `keyword`,
-etc.). So the builder layer is cleanroom relative to the *legacy matcher*
-and *compile*, but not a single-module island.
+etc.). So the builder layer is cleanroom relative to the **removed** legacy
+matcher / compile-helper stacks, but not a single-module island.
 
 Phase 6 parser/registry surface is landed in `matcher_ng` as
 `META_PATTERN`, `META_MATCHER`, `parse_matcher`,
@@ -34,21 +35,23 @@ building **`syntax_ng.Syntax`** objects with native frozen matchers and
 `koskari/compile/specials/syntax.py` and bootstrap bindings for
 `build-syntax-rules` / `build-macro-rules` in `koskari/importer/bootstrap.py`.
 What remains for this rollup is narrower than the original Phase 7
-bullet: per-special migration off **`koskari.compile.helpers`** where
-those paths still exist, **runtime `match/case`** (Phase 8), and **Cutover
-E**-style removal or renaming of legacy **`koskari/matcher.py`** /
-**`koskari.syntax`** / **`compile.helpers`** once nothing production
-depends on them. Treat Phase 7 in the checklist below as **partially
-landed** for the define-syntax / `Syntax` box story, not "all pending."
+bullet: per-special polish where a form still prefers ad hoc matching over
+shared **`matcher_ng`** / **`helpers_ng`** surfaces, **runtime `match/case`**
+(Phase 8), and optional **rename NG modules to canonical names** once the
+tree stabilizes. Legacy **`koskari/matcher.py`**, **`koskari/syntax.py`**,
+**`koskari/hygiene.py`**, and **`koskari/compile/helpers.py`** are **removed**.
+Treat Phase 7 in the checklist below as **landed** for the define-syntax /
+**`syntax_ng.Syntax`** story, with follow-up only for straggler specials and
+hardening.
 
 **Syntax NG (dispatcher and transforms, landed and wired).**
 `koskari/syntax_ng.py` is the **`Compiled`** implementation for Ki-facing
 **`compile/define-syntax`** output: `koskari/compile/specials/syntax.py`
 imports it, builds **`Syntax`** / **`SyntaxTransform`** (and macro/special
 variants) from lowered patterns, and bootstrap exposes **`build-syntax-rules`**
-and **`build-macro-rules`** (see `koskari/importer/bootstrap.py`). Legacy
-**`koskari/syntax.py`** remains for older transformer glue and docs; the
-production define-syntax path uses **`syntax_ng`** end to end.
+and **`build-macro-rules`** (see `koskari/importer/bootstrap.py`). The
+production define-syntax path uses **`syntax_ng`** end to end; the old
+**`koskari/syntax.py`** transformer glue is gone.
 
 * **`Syntax` (`Compiled`)** — ordered **transform** arms; **`compile_impl`**
   passes the **full** special form **`source_obj`** into each arm's
@@ -164,9 +167,7 @@ system without a separate “planned vs landed” split.
   formals shape. The `FORMALS` composite lowers to `GROUP`; there is
   no bare-symbol formals arm. Compile-side consumption of the GROUP
   payload lives in **`koskari.compile.helpers_ng`** (`gather_formals`,
-  plus `discover_docstring` / `helper_begin` parallel to legacy
-  `compile.helpers`). Legacy `koskari.compile.helpers.gather_formals`
-  remains for the old matcher path.
+  `discover_docstring`, `helper_begin`, and related compile helpers).
 
 * **`BINDINGS` matches one spine cell.** The composite is a `ONEOF`
   between `nil` and `FORM(CAPTURE(slot, REPEAT(GROUP(None, …))))`, so the
@@ -181,9 +182,7 @@ system without a separate “planned vs landed” split.
   **`syntax_ng.Syntax`** transformers; **`koskari/importer/bootstrap.py`**
   registers **`build-syntax-rules`**, **`build-macro-rules`**,
   **`build-special-rules`**, and **`build-special-match`** for basics.ki.
-  **`koskari/syntax.py`** remains as the historical module and for any
-  remaining legacy call sites; Cutover E still targets retiring duplicate
-  transformer plumbing once nothing depends on it.
+  Legacy **`koskari/syntax.py`** has been deleted with the old matcher stack.
 
 * **Compound ellipsis and `repeat_capture`.** Lowered **`repeat_capture`**
   is **`CAPTURE` wrapping `REPEAT` of a slot-free `GROUP(None, …)`**
@@ -1545,9 +1544,9 @@ constructors).
 described under "Syntax NG" above.
 
 **Still pending in the Phase 7 spirit:** migrating every other special that
-today uses **`koskari.compile.helpers`** / legacy matcher surfaces to native
-frozen matchers (or to a single shared funnel), and tightening const-pool
-story for all compiled specials—not only syntax boxes.
+still relies on one-off matching instead of shared **`matcher_ng`** frozen
+matchers (or a single shared funnel), and tightening const-pool story for all
+compiled specials—not only syntax boxes.
 
 Per-special-form authoring remains either Python **`matcher_ng`** builders or,
 after broader **`define-matcher`** integration, surface matcher syntax lowered
@@ -1609,8 +1608,8 @@ not yet required by existing special-form dispatch.
 #### Baseline C — minimal special-form funnel interface
 
 Add a minimal interface on `Special` (not broad `Compiled`) that routes
-matching/hygiene through a stable API. Update `syntax.py` to call this
-funnel instead of directly depending on matcher internals. At this
+matching/hygiene through a stable API. Update **`compile/specials/syntax.py`**
+to call this funnel instead of directly depending on matcher internals. At this
 point, specials may still be backed by legacy matcher/hygiene behavior,
 but all callers go through one indirection surface.
 
@@ -1637,22 +1636,24 @@ shapes and multi-arm **`Syntax`** ordering; audit any macro handlers that still
 expect legacy **`RepeatResult`**-style kwargs instead of raw **`captures`**;
 optional performance work (cached lowers for **`helpers_ng.match`** static
 patterns, etc.—see tune-up notes in reviews, not normative here). Cutover E
-still tracks deleting **`koskari.syntax`** / legacy **`compile.helpers`** once
-unreferenced.
+**landed:** legacy **`koskari.syntax`**, **`koskari.matcher`**, **`koskari.hygiene`**,
+**`koskari.compile.helpers`**, and **`koskari/compile/helpers.py`** are removed from
+the tree.
 
 #### Cutover E — migrate all specials and switch backend
 
-Perform the large migration in one step:
+Perform the large migration in one step (historical checklist; steps 1–5 are
+**done** in tree):
 
 1. Re-declare special-form patterns using the new matcher API
 2. Update `@special_forms` plumbing to attach the hygiene object
 3. Switch special funnel methods to the new matcher/hygiene APIs
-4. Update syntax/macro rule paths to **`syntax_ng`** (or a renamed
-   canonical module): **`Syntax`** dispatch, native matchers, and
-   **`hygiene_ng`** only; retire **`koskari.syntax`** transformer glue
-   that depends on legacy **`koskari.matcher`**
-5. Remove legacy matcher and legacy hygiene modules
-6. Rename NG modules to canonical names
+4. Update syntax/macro rule paths to **`syntax_ng`**: **`Syntax`** dispatch,
+   native matchers, and **`hygiene_ng`** only
+5. Remove legacy matcher, legacy syntax transformer glue, legacy hygiene, and
+   legacy **`compile/helpers.py`**
+6. Rename NG modules to canonical names (**open**; **`matcher_ng`** /
+   **`syntax_ng`** names remain for now)
 
 This cutover is intentionally large, but the preceding baselines ensure
 all framework pieces are already present and individually tested.
@@ -1708,7 +1709,6 @@ The matcher system should be a compiled, frozen, native rule program with ergono
 **Syntax and macros** for **`compile/define-syntax`** already live on
 **`syntax_ng`**: RULE patterns lower to **`matcher_ng`**, and **`Syntax`** is
 the multi-pattern **`Compiled`** dispatcher (**template + finalize**,
-**macro handler + finalize**, **special**). Legacy **`koskari.syntax`** remains
-for older glue and for Cutover E deletion planning; new work should assume
-**`syntax_ng`** + **`hygiene_ng`** for syntax-rule boxes unless explicitly
-touching a legacy-only path.
+**macro handler + finalize**, **special**). New work should assume
+**`syntax_ng`** + **`hygiene_ng`** for syntax-rule boxes; the legacy Python
+**`koskari.syntax`** / **`koskari.matcher`** stack is deleted.

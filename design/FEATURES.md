@@ -32,10 +32,10 @@ This document provides a high-level summary of all features identified from both
   **`syntax-rules`** and **`macro-rules`**. **MATCH** patterns (explicit matcher
   rows **`(PATTERN …)`** per rule) target **`syntax-match`** and
   **`macro-match`**; they lower via **`parse_explicit_rule_pattern`** to the same
-  matcher IR as the **`MATCH(...)`** combinator in `koskari.matcher`. The
+  matcher IR as the **`MATCH(...)`** combinator in **`koskari.matcher_ng`**. The
   **macro spec head** selects which language applies; see
   [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
-- **Hygiene and syntax boxes**: **`koskari.syntax.Syntax`**, **`koskari.hygiene`**, **`unbox_macro_with_hygiene`** — [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md); matcher metadata for specials — [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md)
+- **Hygiene and syntax boxes**: **`koskari.syntax_ng.Syntax`**, **`koskari.hygiene_ng`** (`expand_template_with_hygiene`, `finalize_macro_hygiene_unbox_one_pass`, …) — [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md); matcher metadata for specials — [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md)
 
 ### Control Flow
 - **Conditionals**: cond

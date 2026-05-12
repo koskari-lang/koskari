@@ -999,8 +999,10 @@ def _gather_one_positional_frame(fr: dict, source):
 
 def gather_formals(formals_group, source=None):
     """
-    Parse matcher_ng FORMALS GROUP dict into six values matching
-    koskari.compile.helpers.gather_formals
+    Parse matcher_ng FORMALS GROUP dict into six values for compile specials
+
+    Tuple order matches historical compile formals unpacking:
+    (positional, defaults, kwonly, star, starstar, annotations)
 
     :param formals_group: dict from captures[formals_slot] after match
     :param source: optional spine for error context; defaults to

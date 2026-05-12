@@ -17,7 +17,7 @@ koskari.reader.layouts.exceptions
 Layout handlers for try/except/else/finally block syntax.
 """
 
-from ...compile.helpers import helper_using
+from ...compile.helpers_ng import helper_using
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
 from ...stdlib import builtin
