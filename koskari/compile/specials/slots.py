@@ -26,9 +26,9 @@ from ...lib import OpCode, symbol
 from ...types import is_symbol
 from ...exceptions import SpecialError
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import match
-from ...matcher_ng import MATCH, SYMBOL, VALUE
+from ...syntax import special
+from ..helpers import match
+from ...matcher import MATCH, SYMBOL, VALUE
 
 
 _ATTR_FORMS = [

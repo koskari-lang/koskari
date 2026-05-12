@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Full-stack hygiene proofs: syntax_ng demonstration macros expand to
+Full-stack hygiene proofs: syntax demonstration macros expand to
 compile/lambda-ng forms parsed via LayoutReader; introduced formals are
 renamed; runtime matches expanded lambda behavior.
 """
@@ -24,13 +24,13 @@ from koskari.compile import Compiler
 from koskari.compile.specials import BUILTINS
 from koskari.lib import Datum, Module, car, cdr, cons, nil, symbol
 from koskari.reader import LayoutReader, source_str
-from koskari.syntax_ng import (build_macro_syntax, build_syntax_from_datums,
+from koskari.syntax import (build_macro_syntax, build_syntax_from_datums,
                                build_syntax_match)
 from koskari.types import build_proper, is_pair, is_symbol
 
 from tests.compile.specials import _register_specials
 
-from .test_syntax_ng_lambda_fullstack import LambdaNgFullStackBase
+from .test_syntax_lambda_fullstack import LambdaNgFullStackBase
 
 
 pytestmark = pytest.mark.phase_specials
@@ -127,7 +127,7 @@ class MacroLambdaHygieneFullStackBase(LambdaNgFullStackBase):
 
     def compile_expr_with_demos(self, src_str, lineno=1):
         """
-        Like compile_expr but registers syntax_ng demo macros and lambda-ng
+        Like compile_expr but registers syntax demo macros and lambda-ng
         template in the module namespace before reading source.
         """
 

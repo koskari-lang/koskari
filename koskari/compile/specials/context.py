@@ -25,12 +25,12 @@ compile/dyn-with.
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil, pair
-from ...matcher_ng import BODY, MATCH, REST, SYMBOL, USING
+from ...matcher import BODY, MATCH, REST, SYMBOL, USING
 from ...stdlib import builtin
-from ...syntax_ng import special
+from ...syntax import special
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers_ng import gather_bindings, helper_begin
+from ..helpers import gather_bindings, helper_begin
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)

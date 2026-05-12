@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for matcher_ng.thaw and Matcher.from_tuple.
+Tests for matcher.thaw and Matcher.from_tuple.
 """
 
 
@@ -21,7 +21,7 @@ import unittest
 import pytest
 
 from koskari.lib import Datum, cons, nil, symbol
-from koskari.matcher_ng import Matcher, MatchResult, thaw
+from koskari.matcher import Matcher, MatchResult, thaw
 
 
 pytestmark = pytest.mark.phase_infra

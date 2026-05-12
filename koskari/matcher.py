@@ -13,15 +13,15 @@
 
 
 """
-matcher_ng
+koskari.matcher
 
 Python surface for the next-generation native matcher. Provides the thaw
 helper that reconstructs a native Matcher from its frozen tagged-tuple
 representation, plus a small builder API for authoring matcher patterns
 in Python that lower to the same frozen form. Lowering uses either the
 baseline MatchCompiler (slots, externs, consts, nodes only) or
-HygienicMatchCompiler, which additionally records koskari hygiene_ng
-metadata for source-form matchers. Rule-level MATCH spines use
+HygienicMatchCompiler, which additionally records hygiene
+metadata for source-form matchers (see ``koskari.hygiene``). Rule-level MATCH spines use
 :func:`parse_explicit_rule_pattern`. :func:`repeat_capture` lowers to CAPTURE wrapping REPEAT of an anonymous
 GROUP so each iteration yields one row
 value (dict, Datum slice, etc.); see repeat_capture and
@@ -33,7 +33,7 @@ binding_inner_pattern
 """
 
 
-from koskari.hygiene_ng import Hygiene
+from koskari.hygiene import Hygiene
 from koskari.lib import (
     Datum,
     Matcher,
@@ -281,7 +281,7 @@ class MatchCompiler:
 
 class HygienicMatchCompiler(MatchCompiler):
     """
-    Match compiler that accumulates koskari hygiene_ng binder and
+    Match compiler that accumulates ``koskari.hygiene`` binder and
     scope-region owners alongside the baseline tables. Use for matchers
     over compile-time source forms; runtime-only matchers should use the
     baseline MatchCompiler via MatchCompiler().lower(pattern)
@@ -381,7 +381,7 @@ class HygienicMatchCompiler(MatchCompiler):
 @runtime_checkable
 class Pattern(Protocol):
     """
-    Structural base for matcher_ng pattern builders. Implementations
+    Structural base for matcher pattern builders. Implementations
     define lower(ctx) to append their node tuple to a MatchCompiler and
     return the resulting node index. MatchCompiler.lower and
     HygienicMatchCompiler.lower drive lowering from the root pattern;
@@ -464,7 +464,7 @@ def check_pattern_arg(arg, what):
 
     if not isinstance(arg, Pattern):
         raise TypeError(
-            "%s must be a matcher_ng pattern, got %r"
+            "%s must be a matcher pattern, got %r"
             % (what, type(arg).__name__))
 
 
@@ -1145,10 +1145,10 @@ def slot_prefix(pattern, prefix, sep="__"):
     subtree multiple times so freeze-time duplicate-slot detection does
     not fire
 
-    :param pattern: matcher_ng pattern tree
+    :param pattern: matcher pattern tree
     :param prefix: non-empty prefix string
     :param sep: separator between prefix and original slot name
-    :raises TypeError: when pattern is not a matcher_ng pattern
+    :raises TypeError: when pattern is not a matcher pattern
     :raises ValueError: when prefix is empty
     """
 
@@ -1238,7 +1238,7 @@ FORMALS_SOURCE_KEY = "source"
 
 def binding_inner_pattern():
     """
-    Build the inner shape of a single koskari binding cell as matcher_ng
+    Build the inner shape of a single koskari binding cell as matcher
     primitives: FORM around ONEOF of (SYM EXPR) or (EXPR as: SYM).
     The outer FORM descends into one spine element that is already a
     binding pair (SYM EXPR). For a grouped cell such as ``((t 1))`` from
@@ -1376,14 +1376,14 @@ def make_matcher(pattern):
     Lower a pattern AST into a native Matcher. The matcher carries
     slots, externs, and consts declared by the pattern tree
 
-    :param pattern: a matcher_ng pattern object
-    :raises TypeError: when pattern is not a matcher_ng pattern
+    :param pattern: a matcher pattern object
+    :raises TypeError: when pattern is not a matcher pattern
     :rtype: Matcher
     """
 
     if not isinstance(pattern, Pattern):
         raise TypeError(
-            "make_matcher requires a matcher_ng pattern, got %r"
+            "make_matcher requires a matcher pattern, got %r"
             % (type(pattern).__name__,))
     return pattern.build()
 
@@ -1425,7 +1425,7 @@ def normalize_scopes(scope, scopes, what):
 
 class Composite(Pattern):
     """
-    Base class for matcher_ng composite matchers. Subclasses return
+    Base class for matcher composite matchers. Subclasses return
     a tree of primitive Pattern nodes from _expand; lower on the
     composite lowers that tree. Composites contribute no match-time Python
     behaviour: every semantic concern is encoded structurally
@@ -2243,7 +2243,7 @@ def register_matcher(name, factory):
     :param name: head atom string (the symbol name appearing in
         surface position, e.g. 'FORM' or 'BINDING')
     :param factory: callable invoked as factory(head_sym, raw_args)
-        returning a matcher_ng pattern object; raw_args is the
+        returning a matcher pattern object; raw_args is the
         koskari pair-list tail of the surface form
     :raises TypeError: when name is not a str or factory is not
         callable
@@ -2330,7 +2330,7 @@ META_MATCHER = make_matcher(MATCH(META_PATTERN))
 
 def parse_matcher(elem):
     """
-    Lower one matcher-syntax element to a matcher_ng pattern object.
+    Lower one matcher-syntax element to a matcher pattern object.
     Runs META_MATCHER against (elem,), then dispatches on which
     capture slot is bound. Raises ValueError when elem does not
     satisfy any known surface form
@@ -2395,7 +2395,7 @@ def parse_matcher(elem):
 
 def parse_explicit_rule_pattern(form, source_ctx=None):
     """
-    Lower MATCH-dialect pattern source (a cons tree) to a matcher_ng Pattern.
+    Lower MATCH-dialect pattern source (a cons tree) to a matcher Pattern.
 
     Distinct from :func:`parse_matcher`, which lowers a single META element.
     This walks a rule-level spine: either a registered declaration
@@ -2618,7 +2618,7 @@ def slot_only_factory(name, ctor):
         return ctor(coerce_slot(name, items[0]))
 
     factory.__name__ = "factory_%s" % (name,)
-    factory.matcher_ng_wire_class = ctor
+    factory.matcher_wire_class = ctor
     return factory
 
 
@@ -2661,7 +2661,7 @@ def slot_with_options_factory(name, ctor, allowed_options):
         return ctor(slot, **opts)
 
     factory.__name__ = "factory_%s" % (name,)
-    factory.matcher_ng_wire_class = ctor
+    factory.matcher_wire_class = ctor
     return factory
 
 

@@ -186,7 +186,7 @@ static int initialize_types(void) {
         return -1;
     }
 
-    /* Initialize matcher types (matcher_ng) */
+    /* Initialize matcher types (matcher) */
     if (koskari_matcher_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize matcher types\n");
         return -1;

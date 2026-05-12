@@ -15,7 +15,7 @@
 
 
 /**
-   matcher_ng — native low-level matcher core (Phase 1)
+   matcher — native low-level matcher core (Phase 1)
 
    Implements the tagged-node array, C-internal builder, and validator
    for the new matcher engine. The matching engine and subject adapters
@@ -4116,7 +4116,7 @@ PyTypeObject KosMatcherType = {
   .tp_dealloc = matcher_dealloc,
   .tp_repr = matcher_repr,
   .tp_flags = Py_TPFLAGS_DEFAULT,
-  .tp_doc = "Compiled native matcher (matcher_ng)",
+  .tp_doc = "Compiled native matcher (matcher)",
   .tp_methods = matcher_methods,
   .tp_getset = matcher_getset,
   .tp_new = NULL,

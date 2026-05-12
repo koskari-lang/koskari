@@ -23,11 +23,11 @@ Special form handler for compile/lambda.
 
 
 from ...lib import FormalsSpec, FunctionSpec, OpCode, nil
-from ...matcher_ng import FORMALS, LITERAL_KW, MATCH, BODY, SYMBOL, VALUE
+from ...matcher import FORMALS, LITERAL_KW, MATCH, BODY, SYMBOL, VALUE
 from ...stdlib import builtin
-from ...syntax_ng import special
+from ...syntax import special
 from ..compiler import ByteCodeFragment, CompilerMode
-from ..helpers_ng import discover_docstring, gather_formals, helper_begin
+from ..helpers import discover_docstring, gather_formals, helper_begin
 
 
 _LAMBDA_PATTERNS = (

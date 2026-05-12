@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.hygiene_ng using synthetic Special-like objects.
+Tests for koskari.hygiene using synthetic Special-like objects.
 """
 
 
@@ -21,7 +21,7 @@ import unittest
 import pytest
 
 from koskari.exceptions import CompilerError
-from koskari.hygiene_ng import (
+from koskari.hygiene import (
     Hygiene,
     apply_syntax_rules_hygiene,
     binder_recurse_targets,
@@ -31,7 +31,7 @@ from koskari.hygiene_ng import (
     scope_region_targets,
 )
 from koskari.lib import cons, keyword, nil, symbol
-from koskari.matcher_ng import BODY, DEFINE, MATCH, HygienicMatchCompiler
+from koskari.matcher import BODY, DEFINE, MATCH, HygienicMatchCompiler
 from koskari.types import build_proper, is_symbol
 
 

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.compile.helpers_ng.test_helpers_ng_docstring_and_misc
+tests.compile.helpers.test_helpers_docstring_and_misc
 
 Contract tests for discover_docstring, strip_leading_docstring,
 helper_elsebody, pycons, and requote
@@ -27,7 +27,7 @@ import unittest
 
 import pytest
 
-from koskari.compile.helpers_ng import (
+from koskari.compile.helpers import (
     discover_docstring,
     helper_elsebody,
     pycons,

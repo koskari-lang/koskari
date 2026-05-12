@@ -23,10 +23,10 @@ Special form handler for compile/bytecode.
 
 
 from ...lib import keyword, nil, OpCode, pair, symbol
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher import MATCH, REST, SYMBOL
 from ..compiler import ByteCodeFragment, Compiler
 from ...stdlib import builtin
-from ...syntax_ng import special
+from ...syntax import special
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)

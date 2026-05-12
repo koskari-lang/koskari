@@ -13,7 +13,7 @@
 
 
 """
-Integration tests for syntax_ng.special: full source form matching on pairs
+Integration tests for syntax.special: full source form matching on pairs
 """
 
 
@@ -23,8 +23,8 @@ import pytest
 
 from koskari.exceptions import SpecialError
 from koskari.lib import cons, nil, symbol
-from koskari.matcher_ng import MATCH, SYMBOL, VALUE
-from koskari.syntax_ng import special
+from koskari.matcher import MATCH, SYMBOL, VALUE
+from koskari.syntax import special
 
 
 pytestmark = pytest.mark.phase_infra

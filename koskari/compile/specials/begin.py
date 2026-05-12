@@ -24,10 +24,10 @@ Special form handler for compile/begin.
 
 from ...lib import pair
 from ..compiler import ByteCodeFragment, Compiler
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import helper_begin
+from ...syntax import special
+from ..helpers import helper_begin
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)

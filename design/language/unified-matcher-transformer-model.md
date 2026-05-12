@@ -1,15 +1,15 @@
 # Koskari Unified Matcher & Transformer Model
 
 **Status:** Architecture reference; matches the implementation. The matcher stack,
-**RULE** pattern parsing (`koskari/syntax_ng.py`: `parse_syntax_rules_pattern`,
-`_parse_rule_pattern`), **MATCH** pattern parsing (`koskari/matcher_ng.py`:
+**RULE** pattern parsing (`koskari/syntax.py`: `parse_syntax_rules_pattern`,
+`_parse_rule_pattern`), **MATCH** pattern parsing (`koskari/matcher.py`:
 `parse_explicit_rule_pattern`,
 `_lower_match_pattern_spec`), `syntax-rules` / **`macro-rules`** /
 **`syntax-match`** / **`macro-match`** transformers, **compile-time lowering**
 (`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
 `compile/macro-match` in `koskari/compile/specials/syntax.py`), **template hygiene**
-(`koskari/hygiene_ng.py`), and **syntax boxes** (`koskari.syntax_ng.Syntax`,
-**`finalize_macro_hygiene_unbox_one_pass`** and related helpers in **`hygiene_ng`**) are implemented. Complements
+(`koskari/hygiene.py`), and **syntax boxes** (`koskari.syntax.Syntax`,
+**`finalize_macro_hygiene_unbox_one_pass`** and related helpers in **`hygiene`**) are implemented. Complements
 [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
 
 **Terminology: RULE vs MATCH (macro pattern languages)**
@@ -17,7 +17,7 @@
 These names refer to **two surface pattern languages** for macro rules.
 
 **MATCH** in this sense is **not** a different semantics from the **`MATCH(...)`**
-combinator in **`koskari.matcher_ng`**: the **goal** is the same level of fidelity.
+combinator in **`koskari.matcher`**: the **goal** is the same level of fidelity.
 **MATCH** macro patterns are **Koskari source syntax** for building the same
 expressive matcher structures that specials construct in Python (nested
 `MATCH`, `BIND`, decorated matchers, scope metadata, etc.). The combinator is
@@ -26,8 +26,8 @@ the **lowering** from **MATCH** surface patterns into that same IR.
 
 | Name | Meaning | Where it is used | Implementation status |
 |------|---------|------------------|-------------------------|
-| **RULE** | Scheme-style **list-shaped** patterns (ellipsis, literals, nested list structure), lowered via `parse_syntax_rules_pattern`. | **`(syntax-rules …)`** and **`(macro-rules …)`** specs. | **Implemented** (`parse_syntax_rules_pattern` in **`koskari/syntax_ng.py`**). |
-| **MATCH** | **Rich** patterns that lower to the same matcher vocabulary as **`MATCH(...)`** in **`koskari.matcher_ng`**. | **`(syntax-match …)`** and **`(macro-match …)`**; each rule row is **`(PATTERN TEMPLATE)`** or **`(PATTERN BODY …)`**. | **Implemented:** `parse_explicit_rule_pattern` in **`koskari/matcher_ng.py`**. |
+| **RULE** | Scheme-style **list-shaped** patterns (ellipsis, literals, nested list structure), lowered via `parse_syntax_rules_pattern`. | **`(syntax-rules …)`** and **`(macro-rules …)`** specs. | **Implemented** (`parse_syntax_rules_pattern` in **`koskari/syntax.py`**). |
+| **MATCH** | **Rich** patterns that lower to the same matcher vocabulary as **`MATCH(...)`** in **`koskari.matcher`**. | **`(syntax-match …)`** and **`(macro-match …)`**; each rule row is **`(PATTERN TEMPLATE)`** or **`(PATTERN BODY …)`**. | **Implemented:** `parse_explicit_rule_pattern` in **`koskari/matcher.py`**. |
 
 **How the implementation chooses RULE vs MATCH**
 
@@ -63,7 +63,7 @@ embedded via a **`rule`** wrapper inside RULE columns.
 
 - **Syntax boxes / procedural hygiene**: [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md)
 - **Matcher hygiene metadata (current implementation)**: [matcher-hygiene-extensions.md](../api/matcher-hygiene-extensions.md)
-- **Pattern matching API (tagged tuples, `koskari.matcher_ng` / `koskari.lib.Matcher`)**: [pattern-matching.md](../api/pattern-matching.md)
+- **Pattern matching API (tagged tuples, `koskari.matcher` / `koskari.lib.Matcher`)**: [pattern-matching.md](../api/pattern-matching.md)
 - **Implemented compile-time macros**: [MACROS.md](../MACROS.md)
 - **`compile/define-syntax` and macro specials**: [SPECIALS.md](../SPECIALS.md)
 - **Historical macro notes**: [archive/macros.md](../archive/macros.md)
@@ -85,7 +85,7 @@ This model unifies:
   kind of expansion worker on the shared table.
 * **Procedural macros** — `macro-rules` (pattern + body executed at expand time),
   the other kind of worker on the **same** table.
-* **Python-defined special forms** — same matcher vocabulary (**`koskari.matcher_ng`**)
+* **Python-defined special forms** — same matcher vocabulary (**`koskari.matcher`**)
 for structure and hygiene metadata; dispatch via `compile_impl` today is
   already a parallel entry point on the compiler.
 
@@ -155,7 +155,7 @@ For every rule, after the worker returns:
 
 2. **Unboxing / splice** — Resolve **`Syntax`** boxes; merge call-site segments
    into the final tree (`finalize_macro_hygiene_unbox_one_pass` and related
-   **`hygiene_ng`** helpers). Procedural macros are the
+   **`hygiene`** helpers). Procedural macros are the
    primary consumer when mixing generated skeleton with user subforms.
 
 Schematic order: **match → expand (template *or* macro) → hygiene → unbox → …**
@@ -187,11 +187,11 @@ Schematic order: **match → expand (template *or* macro) → hygiene → unbox 
 The **Matcher IR** in this document is the **target** shape for unifying
 syntax-rules patterns, specials, and (eventually) one matching engine. Today:
 
-* **Specials** use **`koskari.matcher_ng`** (`MATCH`, `SYMBOL`, `VALUE`, `REST`,
+* **Specials** use **`koskari.matcher`** (`MATCH`, `SYMBOL`, `VALUE`, `REST`,
   `LITERAL_*`, `BINDINGS`, scope metadata, etc.) — see
   [pattern-matching.md](../api/pattern-matching.md).
 * **`syntax-rules` / `macro-rules` RULE patterns** are lowered in
-  **`koskari/syntax_ng.py`** (`parse_syntax_rules_pattern` → **`matcher_ng`**
+  **`koskari/syntax.py`** (`parse_syntax_rules_pattern` → **`matcher`**
   trees). Full **unification** of that path with every combinator used by specials is a
   **refactor milestone**, not a blocker for `macro-rules` on the shared rule
   table + post-expand protocol.
@@ -220,7 +220,7 @@ syntax-rules patterns, specials, and (eventually) one matching engine. Today:
 
 Surface syntaxes (**RULE** lists in `syntax-rules` / `macro-rules`, **MATCH**
 rows in `syntax-match` / `macro-match`, layout blocks) **lower** into this IR
-over time; shipped code keeps RULE parsing in **`koskari/syntax_ng.py`** while sharing
+over time; shipped code keeps RULE parsing in **`koskari/syntax.py`** while sharing
 **post-expand** and **metadata** conventions.
 
 ---
@@ -232,7 +232,7 @@ over time; shipped code keeps RULE parsing in **`koskari/syntax_ng.py`** while s
 Each clause: **pattern + template**. The expander performs substitution and
 ellipsis repetition; introduced binders are handled via existing template
 hygiene (e.g. **`collect_binding_symbols`** + gensym in
-**`koskari/hygiene_ng.py`** and **`koskari/syntax_ng.py`**).
+**`koskari/hygiene.py`** and **`koskari/syntax.py`**).
 
 ### `macro-rules` (procedural)
 
@@ -333,7 +333,7 @@ wrap the same underlying rule table; they are **not** required for v1.
 ## Python specials
 
 Special forms stay **authoritative** for compiler builtins. They already use
-**`koskari.matcher_ng`** for parsing and hygiene discovery. Long term, **pattern
+**`koskari.matcher`** for parsing and hygiene discovery. Long term, **pattern
 dispatch** for macros and **matcher metadata** for specials should share
 vocabulary and conventions; full unification of **one** matching engine for both
 syntax-rules patterns and every special is a **refactor milestone**, not a

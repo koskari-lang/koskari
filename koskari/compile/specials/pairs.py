@@ -26,10 +26,10 @@ compile/cons.
 from ...lib import nil, OpCode, symbol, cons
 from ...types import get_position, is_nil, is_pair, is_keyword
 from ...exceptions import SpecialError
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import requote
+from ...syntax import special
+from ..helpers import requote
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.syntax_ng builder functions (build_syntax and relatives).
+Tests for koskari.syntax builder functions (build_syntax and relatives).
 """
 
 
@@ -21,7 +21,7 @@ import unittest
 import pytest
 
 from koskari.lib import cons, nil, symbol
-from koskari.syntax_ng import (build_macro_syntax, build_special_match_from_rows,
+from koskari.syntax import (build_macro_syntax, build_special_match_from_rows,
                                build_special_syntax, build_syntax_from_datums)
 from koskari.types import build_proper
 

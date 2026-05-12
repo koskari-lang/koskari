@@ -35,7 +35,7 @@ from ..types import as_coroutine
 from ..compile import specials as _koskari_compile_specials  # noqa: F401
 from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 from ..stdlib import BUILTINS
-from ..syntax_ng import (build_macro_rules,
+from ..syntax import (build_macro_rules,
                          build_special_match,
                          build_special_rules,
                          build_syntax_rules)

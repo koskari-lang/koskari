@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.compile.helpers_ng.test_helpers_ng_match
+tests.compile.helpers.test_helpers_match
 
 Contract tests for match_pattern_raw, match, and match1
 
@@ -26,9 +26,9 @@ import unittest
 
 import pytest
 
-from koskari.compile.helpers_ng import match, match1, match_pattern_raw
+from koskari.compile.helpers import match, match1, match_pattern_raw
 from koskari.lib import cons, nil, symbol
-from koskari.matcher_ng import LIST, ONEOF, SYMBOL, VALUE
+from koskari.matcher import LIST, ONEOF, SYMBOL, VALUE
 
 
 pytestmark = pytest.mark.phase_compile

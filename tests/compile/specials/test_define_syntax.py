@@ -23,7 +23,7 @@ import pytest
 
 from koskari.dis import dis
 from koskari.lib import OpCode, build_list
-from koskari.syntax_ng import (Syntax, build_macro_rules, build_special_rules,
+from koskari.syntax import (Syntax, build_macro_rules, build_special_rules,
                                build_syntax_rules)
 
 from . import SpecialsTestCase

@@ -13,7 +13,7 @@
 
 """
 Tests for CAPTURE(REPEAT(inner)) frame lists, binding_inner_pattern,
-slot_prefix, BINDING_CELL, and thaw round-trip (matcher_ng phase 4.5).
+slot_prefix, BINDING_CELL, and thaw round-trip (matcher phase 4.5).
 """
 
 
@@ -22,7 +22,7 @@ import unittest
 import pytest
 
 from koskari.lib import Datum, keyword, symbol
-from koskari.matcher_ng import (
+from koskari.matcher import (
     BINDING_CELL,
     MATCH,
     Matcher,
@@ -103,7 +103,7 @@ class TestSlotPrefixAndBindingCell(unittest.TestCase):
         slot_prefix rewrites REST slots when nesting calls for it
         """
 
-        from koskari.matcher_ng import REST
+        from koskari.matcher import REST
 
         pat = slot_prefix(MATCH(REST("tail"), BINDING_CELL("x")), "p")
         frozen = pat.freeze()
@@ -116,7 +116,7 @@ class TestSlotPrefixAndBindingCell(unittest.TestCase):
         surface
         """
 
-        from koskari.matcher_ng import OPTIONAL, REST
+        from koskari.matcher import OPTIONAL, REST
 
         pat = slot_prefix(
             MATCH(OPTIONAL(REST("tail", min_tail=1)), BINDING_CELL("x")), "p")

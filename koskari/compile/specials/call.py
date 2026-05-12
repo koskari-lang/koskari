@@ -24,12 +24,12 @@ Special form handler for compile/call and compile/call-attr
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, pair, symbol
-from ...matcher_ng import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE
+from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE
 from ...stdlib import builtin
-from ...syntax_ng import special
+from ...syntax import special
 from ...types import is_symbol
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers_ng import gather_parameters_ng, match
+from ..helpers import gather_parameters, match
 
 
 def _partition_args(args_seq):
@@ -147,7 +147,7 @@ def special_call(
     if not use_var_path:
         fragment.merge(compiler.full_compile(callable))
 
-    args_seq, kwds_seq = gather_parameters_ng(rest, source=rest)
+    args_seq, kwds_seq = gather_parameters(rest, source=rest)
     has_star = any(x[0] == "*" for x in args_seq)
     has_starstar = any(x[0] == "**" for x in kwds_seq)
 
@@ -265,7 +265,7 @@ def special_call_attr(
     if not use_var_path:
         fragment.merge(compiler.full_compile(obj))
 
-    args_seq, kwds_seq = gather_parameters_ng(args_src, source=args_src)
+    args_seq, kwds_seq = gather_parameters(args_src, source=args_src)
     has_star = any(x[0] == "*" for x in args_seq)
     has_starstar = any(x[0] == "**" for x in kwds_seq)
 

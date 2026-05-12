@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Bootstrap tests for koskari.syntax_ng: parser, Syntax.__add__, Transform freeze
+Bootstrap tests for koskari.syntax: parser, Syntax.__add__, Transform freeze
 """
 
 
@@ -22,7 +22,7 @@ import pytest
 
 from koskari.exceptions import SpecialError
 from koskari.lib import Datum, Matcher, cons, nil, symbol
-from koskari.syntax_ng import (MacroTransform, SpecialTransform, Syntax,
+from koskari.syntax import (MacroTransform, SpecialTransform, Syntax,
                                SyntaxTransform, Transform,
                                parse_syntax_rules_pattern, special)
 from koskari.types import build_proper

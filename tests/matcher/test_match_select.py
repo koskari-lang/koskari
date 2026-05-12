@@ -21,7 +21,7 @@ import unittest
 import pytest
 
 from koskari.lib import Matcher, match_select
-from koskari.matcher_ng import MatchResult, thaw
+from koskari.matcher import MatchResult, thaw
 
 
 pytestmark = pytest.mark.phase_infra

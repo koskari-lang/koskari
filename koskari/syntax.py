@@ -13,16 +13,15 @@
 
 
 """
-koskari.syntax_ng
+koskari.syntax
 
 Next-generation syntax dispatch scaffolding: ``Syntax`` (a ``Compiled``
 dispatcher), transform arms, native ``koskari.lib.Datum`` for macro unbox,
 and a
-syntax-rules-compatible pattern lowerer to ``matcher_ng.Pattern`` plus
-MATCH-dialect rule spines via :func:`koskari.matcher_ng.parse_explicit_rule_pattern`.
+syntax-rules-compatible pattern lowerer to ``matcher.Pattern`` plus
+MATCH-dialect rule spines via :func:`koskari.matcher.parse_explicit_rule_pattern`.
 
-The compiled dispatcher type here is ``syntax_ng.Syntax``. The legacy
-source wrapper remains ``koskari.syntax.Syntax``.
+The compiled dispatcher type here is ``Syntax`` (a ``Compiled`` subclass).
 
 In compound ``(subpat ...)`` rows, a non-literal symbol followed by
 ``...`` lowers to ``REST(str(id))`` when more pattern follows in the
@@ -32,7 +31,7 @@ terminal in the row it lowers to ``repeat_capture`` with
 pattern symbol still lowers to ``REST`` (same tail semantics).
 Template expansion treats a lone pattern-variable followed by ``...``
 like quasiquote ``,@`` when that binding is not a ``list``; see
-:func:`koskari.hygiene_ng.expand_template_with_hygiene`. Compound
+:func:`koskari.hygiene.expand_template_with_hygiene`. Compound
 ``(subpat ...)`` uses ``repeat_capture``; :func:`_promote_repeat_frame_bindings`
 copies per-iteration frame slots up to parallel list columns for template
 symbols before ellipsis expansion. An empty ellipsis region matches a
@@ -61,12 +60,12 @@ from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SpecialError
-from koskari.hygiene_ng import (Hygiene, collect_binding_symbols,
+from koskari.hygiene import (Hygiene, collect_binding_symbols,
                                 expand_template_with_hygiene,
                                 finalize_macro_hygiene_unbox_one_pass)
 from koskari.lib import (Datum, Matcher, car, cdr, cons, demand_call, gensym,
                          nil, symbol)
-from koskari.matcher_ng import (BIND, FORM, LITERAL, MATCH, REST,
+from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST,
                                 TEST_ANY,
                                 HygienicMatchCompiler, check_pattern_arg,
                                 parse_explicit_rule_pattern, repeat_capture)
@@ -162,7 +161,7 @@ def deserialize_form(payload):
 
 def hygienic_lower_tuple(pattern):
     """
-    Lower a matcher_ng pattern with :class:`HygienicMatchCompiler` for
+    Lower a matcher pattern with :class:`HygienicMatchCompiler` for
     persistence (same tables ``SyntaxTransform`` uses when built from a
     pattern tree)
     """
@@ -195,7 +194,7 @@ def _captures_to_bindings(captures):
     Map string capture keys to koskari symbols for template expansion.
 
     Values are native matcher captures (often ``Datum``-wrapped); they are
-    stored unchanged so :func:`koskari.hygiene_ng.expand_template_with_hygiene`
+    stored unchanged so :func:`koskari.hygiene.expand_template_with_hygiene`
     peels at use sites. Macro handlers receive the same ``Datum``-bearing
     ``MatchResult.captures`` mapping unchanged from the matcher.
     """
@@ -258,19 +257,19 @@ def _finalize_macro_output(compiler, form):
     Discover binding symbols on ``form`` then run the shared in-place hygiene
     and ``Datum`` peel pass
     """
-    # print('DEBUG syntax_ng _finalize_macro_output', 'form=', repr(form))
+    # print('DEBUG syntax _finalize_macro_output', 'form=', repr(form))
     syms = collect_binding_symbols(form, compiler.find_compiled)
-    # print('DEBUG syntax_ng _finalize_macro_output', 'syms=', repr(syms))
+    # print('DEBUG syntax _finalize_macro_output', 'syms=', repr(syms))
     out = finalize_macro_hygiene_unbox_one_pass(
         form, syms, compiler.find_compiled)
-    # print('DEBUG syntax_ng _finalize_macro_output', 'out=', repr(out))
+    # print('DEBUG syntax _finalize_macro_output', 'out=', repr(out))
     return out
 
 
 @runtime_checkable
 class Transform(Protocol):
     """
-    One clause of a ``Syntax`` dispatcher: frozen ``matcher_ng`` pattern,
+    One clause of a ``Syntax`` dispatcher: frozen ``matcher`` pattern,
     hygiene plan, and matcher-backed ``try_expand``
     """
 
@@ -303,7 +302,7 @@ class SyntaxTransform(object):
 
     def __init__(self, pattern, template=nil):
         """
-        :param pattern: matcher_ng pattern tree
+        :param pattern: matcher pattern tree
         :param template: syntax-rules template form (often contains pattern vars)
         """
 
@@ -341,24 +340,24 @@ class SyntaxTransform(object):
         result = self._matcher.match(source_obj)
         if not result.matched:
             return None
-        # print('DEBUG syntax_ng SyntaxTransform', 'captures=', repr(result.captures))
+        # print('DEBUG syntax SyntaxTransform', 'captures=', repr(result.captures))
         bindings = _captures_to_bindings(result.captures)
         bindings = _promote_repeat_frame_bindings(bindings)
-        # print('DEBUG syntax_ng SyntaxTransform', 'bindings=', repr(bindings))
+        # print('DEBUG syntax SyntaxTransform', 'bindings=', repr(bindings))
         subst = expand_template_with_hygiene(
             self.template, bindings, set(), {})
-        # print('DEBUG syntax_ng SyntaxTransform', 'subst=', repr(subst))
+        # print('DEBUG syntax SyntaxTransform', 'subst=', repr(subst))
         return _finalize_macro_output(compiler, subst)
 
 
 class MacroTransform(object):
     """
-    Procedural arm: invoke handler then ``hygiene_ng`` on expanded output
+    Procedural arm: invoke handler then ``hygiene`` on expanded output
     """
 
     def __init__(self, pattern, handler):
         """
-        :param pattern: matcher_ng pattern tree
+        :param pattern: matcher pattern tree
         :param handler:
             ``(compiler, tc, **captures)`` procedure returning expanded form;
             ``captures`` are string-keyed match slots from ``match_result.captures``
@@ -424,9 +423,9 @@ class MacroTransform(object):
         result = self._matcher.match(source_obj)
         if not result.matched:
             return None
-        # print('DEBUG syntax_ng MacroTransform', 'captures=', repr(result.captures))
+        # print('DEBUG syntax MacroTransform', 'captures=', repr(result.captures))
         expanded = self.handler(compiler, tc, **result.captures)
-        # print('DEBUG syntax_ng MacroTransform', 'expanded=', repr(expanded))
+        # print('DEBUG syntax MacroTransform', 'expanded=', repr(expanded))
         return _finalize_macro_output(compiler, expanded)
 
 
@@ -437,7 +436,7 @@ class SpecialTransform(object):
 
     def __init__(self, pattern, handler):
         """
-        :param pattern: matcher_ng pattern tree
+        :param pattern: matcher pattern tree
         :param handler:
             ``(compiler, source_obj, match_result, tc)`` procedure; use
             :func:`special` if you need other calling conventions
@@ -541,7 +540,7 @@ class Syntax(Compiled):
     def hygiene(self):
         """
         Merged binder and scope-region plan from all transform arms for
-        :func:`koskari.hygiene_ng.collect_binding_symbols`
+        :func:`koskari.hygiene.collect_binding_symbols`
         """
 
         binders = {}
@@ -659,7 +658,7 @@ def special(form_symbol, *, patterns, unpack=None):
     invoke shapes at decoration time (no per-call unpack dispatch)
 
     :param form_symbol: primary compile-time head symbol for this form
-    :param patterns: one ``matcher_ng.Pattern`` or an iterable (try-order)
+    :param patterns: one ``matcher.Pattern`` or an iterable (try-order)
     :param unpack: only for this decorator: ``None`` (receive
         ``compiler, source_obj, tc``), ``match`` (receive
         ``compiler, captures_dict, tc``), or ``kwargs`` (captures merged after
@@ -706,7 +705,7 @@ def special(form_symbol, *, patterns, unpack=None):
 
 def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
     """
-    Lower a syntax-rules RULE pattern (cons tree) to a ``matcher_ng.Pattern``.
+    Lower a syntax-rules RULE pattern (cons tree) to a ``matcher.Pattern``.
 
     Supports the same surface as ``parse_rule_pattern`` /
     ``syntax_pattern_to_matcher`` in ``compile/specials/syntax.py`` (RULE
@@ -889,7 +888,7 @@ def build_syntax_match(name, rules, *, source_ctx=None):
     MATCH-dialect patterns and templates.
 
     Same row shape as :func:`build_syntax_from_datums`. Each pattern datum is lowered
-    with :func:`koskari.matcher_ng.parse_explicit_rule_pattern`. Ki
+    with :func:`koskari.matcher.parse_explicit_rule_pattern`. Ki
     ``syntax-match`` supplies a literals segment of only the macro name;
     explicit patterns encode list structure directly, so no separate
     literals iterable is required here.
@@ -1016,7 +1015,7 @@ def build_special_match_from_rows(name, rule_rows, *, source_ctx=None):
 
     Parallels Ki ``special-match``: same row shape as
     :func:`build_special_syntax`, but each pattern datum is lowered with
-    :func:`koskari.matcher_ng.parse_explicit_rule_pattern` instead of
+    :func:`koskari.matcher.parse_explicit_rule_pattern` instead of
     RULE-style :func:`parse_syntax_rules_pattern`.
 
     Each procedure is invoked as

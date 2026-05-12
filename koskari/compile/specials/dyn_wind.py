@@ -26,7 +26,7 @@ from ...exceptions import SpecialError
 from ...lib import (FormalsSpec, FunctionSpec, OpCode, cons, nil, pair,
                     symbol)
 from ...types import is_pair
-from ...matcher_ng import (
+from ...matcher import (
     LITERAL_KW,
     LIST,
     MATCH,
@@ -37,8 +37,8 @@ from ...matcher_ng import (
 )
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import match
+from ...syntax import special
+from ..helpers import match
 
 
 def _compile_thunk(compiler, body_src, fragment):

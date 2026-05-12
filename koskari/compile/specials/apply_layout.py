@@ -29,9 +29,9 @@ forms. Multiple top-level results are wrapped in compile/begin.
 from ...exceptions import SpecialError
 from ...lib import car, cdr, cons, keyword, nil, symbol
 from ...types import is_nil, is_pair, unpack
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ...syntax_ng import special
+from ...syntax import special
 
 
 _keyword_block = keyword(':block:')

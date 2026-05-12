@@ -9,8 +9,8 @@
 # See the GNU General Public License for more details.
 
 """
-Compile-time specials are ``syntax_ng.Syntax`` dispatchers. Hygiene discovery
-for templates must use ``koskari.hygiene_ng``, which merges binder and
+Compile-time specials are ``syntax.Syntax`` dispatchers. Hygiene discovery
+for templates must use ``koskari.hygiene``, which merges binder and
 scope-region plans from each transform arm (``Syntax.hygiene``), matches the
 tail with ``match_for_hygiene``, then walks scope regions such as the let
 ``BODY`` capture so a sole body form like ``(compile/lambda [y] ...)`` still
@@ -26,7 +26,7 @@ import pytest
 from koskari.compile import Compiler
 from koskari.compile.specials import BUILTINS
 # BUILTINS are Syntax values; legacy koskari.hygiene expects Special.forms.
-from koskari.hygiene_ng import collect_binding_symbols, expand_template_with_hygiene
+from koskari.hygiene import collect_binding_symbols, expand_template_with_hygiene
 from koskari.lib import Module, ModuleNamespace, car, cdr, symbol
 from koskari.reader import LayoutReader, source_str
 from koskari.types import is_pair, is_symbol
@@ -58,7 +58,7 @@ def _read_compile_form(compiler, src, line_no=1):
 
 class TestHygieneLetBodyDescent(unittest.TestCase):
     """
-    Regression: ``hygiene_ng.collect_binding_symbols`` and
+    Regression: ``hygiene.collect_binding_symbols`` and
     ``expand_template_with_hygiene`` on parsed ``compile/let`` / ``compile/lambda``
     forms read like procedural macro templates.
     """

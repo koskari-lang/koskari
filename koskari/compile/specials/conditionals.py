@@ -26,10 +26,10 @@ compile/when, and compile/unless.
 from ...lib import keyword, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import helper_begin
+from ...syntax import special
+from ..helpers import helper_begin
 
 
 _keyword_else = keyword("else")

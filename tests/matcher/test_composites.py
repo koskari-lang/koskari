@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for matcher_ng composite matchers built from primitives only.
+Tests for matcher composite matchers built from primitives only.
 DEFINE, DECL, BINDING, BINDINGS, FORMALS, USING, and BODY lower into
 trees of base nodes and register freeze-time hygiene owners only;
 captures are produced by the native engine and asserted directly
@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.lib import Datum, cons, keyword, nil, symbol
-from koskari.matcher_ng import (BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE,
+from koskari.matcher import (BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE,
                                 FORMALS, FORMALS_SOURCE_KEY, LITERAL, MATCH,
                                 TYPE, USING, Hygiene, HygienicMatchCompiler,
                                 MatchCompiler, Matcher, MatchResult,
@@ -495,7 +495,7 @@ class TestFORMALS(unittest.TestCase):
 
     def test_formals_rejects_bare_symbol(self):
         """
-        matcher_ng FORMALS matches only proper-list formals cells, not a lone
+        matcher FORMALS matches only proper-list formals cells, not a lone
         symbol
         """
 

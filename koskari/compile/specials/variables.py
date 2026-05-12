@@ -26,12 +26,12 @@ compile/globals, and compile/locals.
 
 from ...exceptions import CompilerError, SpecialError
 from ...lib import OpCode, cons, keyword, nil, symbol
-from ...matcher_ng import (BODY, DECL, DEFINE, FORMALS, FORMALS_SOURCE_KEY,
+from ...matcher import (BODY, DECL, DEFINE, FORMALS, FORMALS_SOURCE_KEY,
                            LITERAL_KW, MATCH, PAIR, REST, SYMBOL, VALUE)
 from ...stdlib import builtin
-from ...syntax_ng import special
+from ...syntax import special
 from ...types import is_pair
-from ..helpers_ng import (_parse_decl_tail, parse_decl,
+from ..helpers import (_parse_decl_tail, parse_decl,
                           unpack_lhs_bind_symbols, using_unpack_helper)
 
 

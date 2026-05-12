@@ -21,7 +21,7 @@ from unittest import IsolatedAsyncioTestCase
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.exceptions import ReaderSyntaxError
-from koskari.compile.helpers_ng import pycons
+from koskari.compile.helpers import pycons
 from koskari.reader import LINE_END
 from koskari.reader import source_str
 from koskari.reader import LayoutReader

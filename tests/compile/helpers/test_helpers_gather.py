@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.compile.helpers_ng.test_helpers_ng_gather
+tests.compile.helpers.test_helpers_gather
 
-Contract tests for gather_parameters_ng and gather_formals (matcher dict
+Contract tests for gather_parameters and gather_formals (matcher dict
 payload)
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -27,10 +27,10 @@ import unittest
 
 import pytest
 
-from koskari.compile.helpers_ng import (
+from koskari.compile.helpers import (
     FORMALS,
     gather_formals,
-    gather_parameters_ng,
+    gather_parameters,
     match_pattern_raw,
 )
 from koskari.exceptions import ParametersError, SpecialError
@@ -45,18 +45,18 @@ class TestGatherParametersNg(unittest.TestCase):
 
     def test_positional_only(self):
         args = cons(symbol("a"), symbol("b"), nil)
-        args_seq, kwds_seq = gather_parameters_ng(args)
+        args_seq, kwds_seq = gather_parameters(args)
         self.assertEqual(args_seq, [(0, symbol("a")), (1, symbol("b"))])
         self.assertEqual(kwds_seq, [])
 
     def test_empty_list(self):
-        args_seq, kwds_seq = gather_parameters_ng(nil)
+        args_seq, kwds_seq = gather_parameters(nil)
         self.assertEqual(args_seq, [])
         self.assertEqual(kwds_seq, [])
 
     def test_single_symbol_rest(self):
         rest = symbol("args")
-        args_seq, kwds_seq = gather_parameters_ng(rest)
+        args_seq, kwds_seq = gather_parameters(rest)
         self.assertEqual(args_seq, [("*", rest)])
         self.assertEqual(kwds_seq, [])
 
@@ -66,7 +66,7 @@ class TestGatherParametersNg(unittest.TestCase):
         v1 = symbol("v1")
         v2 = symbol("v2")
         args = cons(k1, v1, k2, v2, nil)
-        args_seq, kwds_seq = gather_parameters_ng(args)
+        args_seq, kwds_seq = gather_parameters(args)
         self.assertEqual(args_seq, [])
         self.assertEqual(kwds_seq, [("k1", v1), ("k2", v2)])
 
@@ -76,7 +76,7 @@ class TestGatherParametersNg(unittest.TestCase):
         k = keyword("x")
         v = symbol("v")
         args = cons(a, b, k, v, nil)
-        args_seq, kwds_seq = gather_parameters_ng(args)
+        args_seq, kwds_seq = gather_parameters(args)
         self.assertEqual(args_seq, [(0, a), (1, b)])
         self.assertEqual(kwds_seq, [("x", v)])
 
@@ -84,7 +84,7 @@ class TestGatherParametersNg(unittest.TestCase):
         a = symbol("a")
         rest = symbol("rest")
         args = cons(a, rest)
-        args_seq, kwds_seq = gather_parameters_ng(args)
+        args_seq, kwds_seq = gather_parameters(args)
         self.assertEqual(args_seq, [(0, a), ("*", rest)])
         self.assertEqual(kwds_seq, [])
 
@@ -94,7 +94,7 @@ class TestGatherParametersNg(unittest.TestCase):
         k = keyword("*")
         kk = keyword("**")
         args = cons(k, star_sym, kk, starstar_sym, nil)
-        args_seq, kwds_seq = gather_parameters_ng(args)
+        args_seq, kwds_seq = gather_parameters(args)
         self.assertEqual(args_seq, [("*", star_sym)])
         self.assertEqual(kwds_seq, [("**", starstar_sym)])
 
@@ -105,7 +105,7 @@ class TestGatherParametersNg(unittest.TestCase):
         dargs = symbol("dargs")
         k_star = keyword("*")
         args = cons(a, k_star, bargs, c, k_star, dargs, nil)
-        args_seq, kwds_seq = gather_parameters_ng(args)
+        args_seq, kwds_seq = gather_parameters(args)
         self.assertEqual(
             args_seq,
             [(0, a), ("*", bargs), (1, c), ("*", dargs)])
@@ -120,7 +120,7 @@ class TestGatherParametersNg(unittest.TestCase):
         kw2 = symbol("kw2")
         kk = keyword("**")
         args = cons(x, xval, kk, kw1, y, yval, kk, kw2, nil)
-        args_seq, kwds_seq = gather_parameters_ng(args)
+        args_seq, kwds_seq = gather_parameters(args)
         self.assertEqual(args_seq, [])
         self.assertEqual(
             kwds_seq,
@@ -129,7 +129,7 @@ class TestGatherParametersNg(unittest.TestCase):
     def test_missing_value_for_keyword_raises(self):
         args = cons(keyword("a"), nil)
         with self.assertRaises(ParametersError) as ctx:
-            gather_parameters_ng(args)
+            gather_parameters(args)
         self.assertIn("keyword", str(ctx.exception).lower())
 
     def test_star_after_keyword_raises(self):
@@ -140,7 +140,7 @@ class TestGatherParametersNg(unittest.TestCase):
         star_sym = symbol("foo")
         args = cons(a, k, v, k_star, star_sym, nil)
         with self.assertRaises(ParametersError) as ctx:
-            gather_parameters_ng(args)
+            gather_parameters(args)
         self.assertIn("*", str(ctx.exception))
         self.assertIn("before keyword", str(ctx.exception).lower())
 
@@ -150,13 +150,13 @@ class TestGatherParametersNg(unittest.TestCase):
         extra = symbol("extra")
         args = cons(k, v, extra, nil)
         with self.assertRaises(ParametersError) as ctx:
-            gather_parameters_ng(args)
+            gather_parameters(args)
         self.assertIn("positional", str(ctx.exception).lower())
         self.assertIn("before keyword", str(ctx.exception).lower())
 
     def test_not_symbol_or_pair_raises(self):
         with self.assertRaises(ParametersError):
-            gather_parameters_ng(42)
+            gather_parameters(42)
 
 
 def _match_formals_group(spine):

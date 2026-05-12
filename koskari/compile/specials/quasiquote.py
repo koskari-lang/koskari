@@ -44,9 +44,9 @@ from ...lib import nil, OpCode, symbol
 from ...types import cons, get_position, is_nil, is_pair, set_position
 from ...exceptions import SpecialError
 from ..compiler import _is_const
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ...syntax_ng import special
+from ...syntax import special
 
 _symbol_apply_layout = symbol("compile/apply-layout")
 _symbol_quasiquote = symbol("compile/quasiquote")

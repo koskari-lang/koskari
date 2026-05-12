@@ -130,12 +130,12 @@ Ref: [language/unified-matcher-transformer-model.md](language/unified-matcher-tr
 
 ## Matcher
 
-### Unified matcher rollup (`matcher_ng`)
+### Unified matcher rollup (`matcher`)
 
 **Status:** Landed in tree: native core **`koskari/lib/matcher.{c,h}`** and Python
-**`koskari/matcher_ng.py`**. The original **`koskari/matcher.py`** module is
-**removed** after migration; specials and macro surfaces use **`matcher_ng`**,
-**`syntax_ng`**, **`hygiene_ng`**, and **`koskari.compile.helpers_ng`**.
+**`koskari/matcher.py`**. The original **`koskari/matcher.py`** module is
+**removed** after migration; specials and macro surfaces use **`matcher`**,
+**`syntax`**, **`hygiene`**, and **`koskari.compile.helpers`**.
 
 A single matcher model serving syntax matching (macros, syntax
 transformers, special-form dispatch, source-form diagnostics), runtime

@@ -14,7 +14,7 @@
 """
 Tests for syntax expansion and pattern lowering.
 
-Runtime types and ``build_syntax_rules`` come from ``koskari.syntax_ng``.
+Runtime types and ``build_syntax_rules`` come from ``koskari.syntax``.
 ``build_syntax_rules_transformer`` and ``syntax_pattern_to_matcher`` are
 compile-time helpers in ``koskari.compile.specials.syntax``.
 
@@ -31,7 +31,7 @@ from koskari.compile.specials import BUILTINS
 from koskari.compile.specials.syntax import (build_syntax_rules_transformer,
                                              syntax_pattern_to_matcher)
 from koskari.lib import Module, ModuleNamespace, car, cdr, cons, nil, symbol
-from koskari.syntax_ng import Syntax, SyntaxTransform, build_syntax_rules
+from koskari.syntax import Syntax, SyntaxTransform, build_syntax_rules
 from koskari.types import build_proper, is_symbol, unpack
 
 

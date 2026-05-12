@@ -13,7 +13,7 @@
 
 """
 Full-stack tests: compile/lambda-ng implemented as a @special decorator
-(syntax_ng) over matcher_ng patterns with unpack="match". Same compiler
+(syntax) over matcher patterns with unpack="match". Same compiler
 surface as koskari.compile.specials.lambda_.
 """
 
@@ -21,12 +21,12 @@ surface as koskari.compile.specials.lambda_.
 import pytest
 
 from koskari.compile.compiler import CompilerMode
-from koskari.compile.helpers_ng import (discover_docstring, gather_formals,
+from koskari.compile.helpers import (discover_docstring, gather_formals,
                                         helper_begin)
 from koskari.compile.specials.lambda_ import _LAMBDA_PATTERNS
 from koskari.exceptions import SpecialError
 from koskari.lib import FormalsSpec, FunctionSpec, OpCode, nil, symbol
-from koskari.syntax_ng import special
+from koskari.syntax import special
 from tests.compile.specials import SpecialsTestCase
 
 

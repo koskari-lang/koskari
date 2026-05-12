@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for matcher_ng.parse_explicit_rule_pattern (MATCH-dialect rule spines)
+Tests for matcher.parse_explicit_rule_pattern (MATCH-dialect rule spines)
 """
 
 
@@ -21,7 +21,7 @@ import unittest
 import pytest
 
 from koskari.lib import Datum, cons, keyword, symbol
-from koskari.matcher_ng import (
+from koskari.matcher import (
     CAPTURE,
     LITERAL,
     MATCH,

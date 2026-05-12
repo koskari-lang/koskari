@@ -259,7 +259,8 @@ class SpecialError(CompilerError):
 
 class ParametersError(CompilerError):
     """
-    Call-site parameter errors from gather_parameters and gather_parameters_ng
+    Call-site parameter errors from
+    :func:`koskari.compile.helpers.gather_parameters` validation
     """
 
     pass

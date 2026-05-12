@@ -270,7 +270,7 @@ Lexically, `::` and `type:` are **keyword atoms** in s-expression mode (see
 
 If the **first** form in the lambda body is a **string literal**, the compiler
 treats it as the function’s docstring (`discover_docstring` in
-`koskari/compile/helpers_ng.py`). That string is stored as `code.extras['doc']` and
+`koskari/compile/helpers.py`). That string is stored as `code.extras['doc']` and
 exposed on the callable as `__doc__`. If the body begins with
 `(compile/begin ...)`, the implementation may peel that wrapper **only** to look
 for a leading string; the body is still compiled in full.

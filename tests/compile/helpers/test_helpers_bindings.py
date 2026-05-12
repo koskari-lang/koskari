@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.compile.helpers_ng.test_helpers_ng_bindings
+tests.compile.helpers.test_helpers_bindings
 
 Contract tests for helper_binding, helper_using, gather_bindings,
 convert_bindings, and unpack_lhs_bind_symbols
@@ -27,7 +27,7 @@ import unittest
 
 import pytest
 
-from koskari.compile.helpers_ng import (
+from koskari.compile.helpers import (
     convert_bindings,
     gather_bindings,
     helper_binding,

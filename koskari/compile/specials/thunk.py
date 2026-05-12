@@ -25,10 +25,10 @@ Special form compile/gensym-thunk: placeholder-driven thunk lambda sugar.
 import re
 from ...exceptions import SpecialError
 from ...lib import cons, keyword, nil, symbol, gensym
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
 from ...types import is_pair, is_symbol
-from ...syntax_ng import special
+from ...syntax import special
 from ..compiler import ByteCodeFragment, Compiler
 
 

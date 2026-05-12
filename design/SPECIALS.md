@@ -7,7 +7,7 @@ and sibilant-ceval), see [language/special-forms.md](language/special-forms.md).
 
 Specials are registered in the compiler's module namespace; the compiler
 dispatches on the head symbol of a list form. The forms below are implemented in
-`koskari/compile/specials/` and use helpers from `koskari/compile/helpers_ng.py`
+`koskari/compile/specials/` and use helpers from `koskari/compile/helpers.py`
 where applicable.
 
 ## Macros, reader macros, hygiene, and compiler optimizations
@@ -28,12 +28,12 @@ documented in
 [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
 
 **Special-form transformers** — **`special-rules`** and **`special-match`** build
-**`SpecialRulesTransformer`** values (`koskari/syntax_ng.py`): rule procedures are
+**`SpecialRulesTransformer`** values (`koskari/syntax.py`): rule procedures are
 invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 (unlike **`macro-rules`** / **`macro-match`**, which receive only keyword args).
 Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
-**Syntax boxes and hygiene** — **`koskari.syntax_ng`** and **`koskari.hygiene_ng`** own syntax-rule expansion and template hygiene; see
+**Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; see
 [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
 and [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md).
 
@@ -146,7 +146,7 @@ callee symbol to obtain `SYM`, and the form expands to
 `(compile/call-attr OBJ SYM ARGS...)` the same way.
 
 Otherwise, compiles the first subform (the callee), then parses the remaining
-forms with `gather_parameters_ng` into positionals and
+forms with `gather_parameters` into positionals and
 star-args (interleaved) and keywords and starstar-args (interleaved).
 Positional-only calls emit `CALL n`; keyword calls emit `CALL_NAMES`; any star
 or starstar use emits `CALL_STAR`. Tail-call mode (`tc`) is respected when set
@@ -190,7 +190,7 @@ by the compiler.
 given arguments. Equivalent to `obj.sym(arg...)` in Python. Supports positional
 args, keyword args (`KEY: VAL`), and `*:` / `**:` (emits CALL_ATTR_STAR).
 
-**Behaviour:** Compiles OBJ, then parses ARGS with `gather_parameters_ng`.
+**Behaviour:** Compiles OBJ, then parses ARGS with `gather_parameters`.
 Positional-only emits `CALL_ATTR`; positional + keywords emits `CALL_ATTR_NAMES`;
 any `*:` or `**:` emits `CALL_ATTR_STAR`. SYM must be a symbol (the attribute
 name).
@@ -1455,7 +1455,7 @@ the **value** of that expression; bind it with **`(compile/define NAME …)`**.
 **`compile/syntax-rules`**: **`build-syntax-rules`**).
 
 **Behaviour:** Each rule row is **`(PATTERN TEMPLATE)`** where **`PATTERN`** is
-lowered by **`parse_explicit_rule_pattern`** in `koskari/syntax_ng.py` (explicit
+lowered by **`parse_explicit_rule_pattern`** in `koskari/syntax.py` (explicit
 matcher declarations such as **`(VALUE x)`**, **`(REPEAT … elem: …)`**, keyword
 options on registered matchers, etc.). See
 **[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)**.
@@ -1478,8 +1478,8 @@ options on registered matchers, etc.). See
 **Behaviour:** Each rule row is **`(PATTERN BODY …)`**; **`PATTERN`** is passed to
 **`parse_explicit_rule_pattern`**. Per-rule **`compile/lambda`** formals are
 **`matcher_slot_names(pattern_matcher)`** in consume order (see
-`koskari/matcher_ng.py`). Macro procedures are invoked with **keyword** arguments
-from the match result (`koskari/syntax_ng.py`: **`MacroRule.expand`**).
+`koskari/matcher.py`). Macro procedures are invoked with **keyword** arguments
+from the match result (`koskari/syntax.py`: **`MacroRule.expand`**).
 
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_macro_match`
@@ -1509,7 +1509,7 @@ RULE pattern (same ordering as **`compile/macro-rules`** for implicit patterns).
 The literal set includes the macro **`NAME`** automatically (as for other
 rule-based transformers). The built transformer’s **`compile_impl`** passes
 **`compiler`** and **`tc`** into the winning rule and returns **`unbox_macro`**
-of the result (see **`SpecialRulesTransformer`** in **`koskari/syntax_ng.py`**).
+of the result (see **`SpecialRulesTransformer`** in **`koskari/syntax.py`**).
 
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_special_rules`
@@ -2616,7 +2616,7 @@ When implementing a new special form:
    The specials package (`koskari/compile/specials/__init__.py`) imports and
    re-exports all handlers.
 2. If the form needs parameter or formals parsing, use `gather_parameters` or
-  `gather_formals` from `koskari/compile/helpers_ng.py`; add new helpers there if
+  `gather_formals` from `koskari/compile/helpers.py`; add new helpers there if
    needed.
 3. Add the handler to the import line and `__all__` in
   `koskari/compile/specials/__init__.py`.

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.compile.helpers_ng.test_helpers_ng_compiler_fragments
+tests.compile.helpers.test_helpers_compiler_fragments
 
 Contract tests for const_only_expr, helper_begin, and using_unpack_helper
 
@@ -27,7 +27,7 @@ import unittest
 import pytest
 
 from koskari.compile.compiler import Compiler
-from koskari.compile.helpers_ng import (
+from koskari.compile.helpers import (
     const_only_expr,
     helper_begin,
     using_unpack_helper,
@@ -43,7 +43,7 @@ class TestConstOnlyExpr(unittest.TestCase):
 
 
     def setUp(self):
-        self.compiler = Compiler("<helpers_ng_test>", None)
+        self.compiler = Compiler("<helpers_test>", None)
 
 
     def test_single_const_true(self):
@@ -74,7 +74,7 @@ class TestHelperBegin(unittest.TestCase):
 
 
     def setUp(self):
-        self.compiler = Compiler("<helpers_ng_test>", None)
+        self.compiler = Compiler("<helpers_test>", None)
 
 
     def test_empty_body_emits_const_none(self):
@@ -99,7 +99,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
 
 
     def setUp(self):
-        self.compiler = Compiler("<helpers_ng_test>", None)
+        self.compiler = Compiler("<helpers_test>", None)
 
 
     def test_bare_symbol(self):

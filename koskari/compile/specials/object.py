@@ -32,11 +32,11 @@ import operator as _op
 
 from ...lib import nil, OpCode, symbol, cons
 from ...exceptions import SpecialError
-from ...matcher_ng import MATCH, REST, SYMBOL, VALUE
+from ...matcher import MATCH, REST, SYMBOL, VALUE
 from ...types import get_position, is_pair, is_symbol, is_keyword, unpack
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import const_only_expr, is_symbolish, match
+from ...syntax import special
+from ..helpers import const_only_expr, is_symbolish, match
 
 
 _DEFAULT_SPECIAL_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)

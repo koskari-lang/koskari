@@ -12,10 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.compile.helpers_ng
+koskari.compile.helpers
 
-Compile helpers for matcher_ng FORMALS captures (GROUP dict payload).
-Does not import koskari.compile.helpers
+Compile helpers for matcher FORMALS captures (GROUP dict payload)
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -28,7 +27,7 @@ from typing import List
 from ..exceptions import ParametersError, SpecialError
 from ..lib import (Datum, Matcher, OpCode, car, cdr, cons, keyword, nil, pair,
                    symbol)
-from ..matcher_ng import (BINDING, BINDINGS, FORMALS, FORMALS_SOURCE_KEY, LIST,
+from ..matcher import (BINDING, BINDINGS, FORMALS, FORMALS_SOURCE_KEY, LIST,
                           LITERAL_KW, MATCH, REST, SYMBOL, USING, USING_UNPACK,
                           VALUE, HygienicMatchCompiler, Pattern)
 from ..types import (is_keyword, is_pair, is_proper,
@@ -47,7 +46,7 @@ __all__ = (
     "discover_docstring",
     "gather_bindings",
     "gather_formals",
-    "gather_parameters_ng",
+    "gather_parameters",
     "helper_begin",
     "helper_binding",
     "helper_elsebody",
@@ -82,11 +81,11 @@ _BEGIN_HEADS = (_SYM_BEGIN, _SYM_COMPILE_BEGIN)
 
 def match_pattern_raw(source, patterns, literals=None):
     """
-    Try each matcher_ng pattern against ``source`` (pair spine or ``nil``).
+    Try each matcher pattern against ``source`` (pair spine or ``nil``).
     Return native ``MatchResult.captures`` on first match, else ``None``.
 
     Used by :meth:`koskari.compile.compiler.Special.match_for_hygiene` and
-    :func:`koskari.hygiene_ng.collect_binding_symbols`.
+    :func:`koskari.hygiene.collect_binding_symbols`.
     """
 
     if source is not nil and not is_pair(source):
@@ -99,7 +98,7 @@ def match_pattern_raw(source, patterns, literals=None):
     for pat in patterns:
         if not isinstance(pat, Pattern):
             raise TypeError(
-                "compile helpers_ng.match_pattern_raw expects matcher_ng Pattern,"
+                "compile helpers.match_pattern_raw expects matcher Pattern,"
                 f" got {pat!r}")
         hc = HygienicMatchCompiler()
         bm = Matcher.from_tuple(hc.lower(pat))
@@ -116,7 +115,7 @@ def match(
         literals=None,
         with_specs=False):
     """
-    Try each matcher_ng pattern against ``source`` (pair spine or ``nil``).
+    Try each matcher pattern against ``source`` (pair spine or ``nil``).
     Returns native ``MatchResult.captures`` on first match, else ``None``.
     """
 
@@ -444,7 +443,7 @@ def parse_decl(form, source=None):
     return (name, type_expr)
 
 
-def gather_parameters_ng(args, source=None):
+def gather_parameters(args, source=None):
     """
     Parse call-site argument list into interleaved args_seq and kwds_seq
     """
@@ -999,7 +998,7 @@ def _gather_one_positional_frame(fr: dict, source):
 
 def gather_formals(formals_group, source=None):
     """
-    Parse matcher_ng FORMALS GROUP dict into six values for compile specials
+    Parse matcher FORMALS GROUP dict into six values for compile specials
 
     Tuple order matches historical compile formals unpacking:
     (positional, defaults, kwonly, star, starstar, annotations)

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Matrix tests for the six Ki ``define-syntax`` shapes as ``syntax_ng``
+Matrix tests for the six Ki ``define-syntax`` shapes as ``syntax``
 builders (RULE vs MATCH times syntax / macro / special), plus
 pattern-language regression spikes. No legacy ``koskari.syntax`` or
 ``koskari.matcher`` imports.
@@ -24,8 +24,8 @@ import unittest
 import pytest
 
 from koskari.lib import cons, nil, symbol
-from koskari.matcher_ng import parse_explicit_rule_pattern
-from koskari.syntax_ng import (build_macro_match, build_macro_syntax,
+from koskari.matcher import parse_explicit_rule_pattern
+from koskari.syntax import (build_macro_match, build_macro_syntax,
                                build_special_match_from_rows, build_special_syntax,
                                build_syntax_from_datums, build_syntax_match)
 from koskari.types import build_proper

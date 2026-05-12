@@ -13,7 +13,7 @@
 
 
 """
-koskari.hygiene_ng
+koskari.hygiene
 
 Hygiene discovery and template expansion driven by explicit matcher-time
 Hygiene plans plus stable Special-object hooks
@@ -141,7 +141,7 @@ _MATCHER_REGISTRY = None
 
 def hygiene_from_wire_row(row):
     """
-    Rebuild a pattern from a ``hygiene_wire`` tuple using the matcher_ng
+    Rebuild a pattern from a ``hygiene_wire`` tuple using the matcher
     registry
 
     :param row: tuple whose first element is a registered matcher head
@@ -150,10 +150,10 @@ def hygiene_from_wire_row(row):
 
     global _MATCHER_REGISTRY
     if _MATCHER_REGISTRY is None:
-        from .matcher_ng import MATCHER_REGISTRY as _MATCHER_REGISTRY
+        from .matcher import MATCHER_REGISTRY as _MATCHER_REGISTRY
 
     factory = _MATCHER_REGISTRY[row[0]]
-    return factory.matcher_ng_wire_class.hygiene_from_wire(row)
+    return factory.matcher_wire_class.hygiene_from_wire(row)
 
 
 def introduced_symbols_from_match(matched, hygiene):
@@ -236,11 +236,11 @@ def _binding_value_for_expand(val):
 
     orig = val
     # if isinstance(orig, Datum):
-    #     print('DEBUG hygiene_ng _binding_value_for_expand', 'in=', repr(orig))
+    #     print('DEBUG hygiene _binding_value_for_expand', 'in=', repr(orig))
     while isinstance(val, Datum):
         val = val.datum
     # if isinstance(orig, Datum):
-    #     print('DEBUG hygiene_ng _binding_value_for_expand', 'out=', repr(val))
+    #     print('DEBUG hygiene _binding_value_for_expand', 'out=', repr(val))
     return val
 
 
@@ -287,7 +287,7 @@ def expand_template_with_hygiene(
 
     # if introduced == {} and index is None:
     #     print(
-    #         'DEBUG hygiene_ng expand_template_with_hygiene',
+    #         'DEBUG hygiene expand_template_with_hygiene',
     #         'template=', repr(template),
     #         'binding_keys=', repr(list(bindings.keys()) if bindings else []),
     #     )

@@ -15,7 +15,7 @@
 
 
 /**
-   Tests for matcher_ng (Phase 1)
+   Tests for matcher (Phase 1)
 
    Validator-only tests; no matching engine yet (Phase 2).
 
@@ -2882,7 +2882,7 @@ static int test_validator_field_kw_name_const_not_unicode_rejected(void) {
 
 
 int run_matcher_tests(void) {
-    BEGIN_TEST_SUITE("matcher_ng (Phase 1: validator)");
+    BEGIN_TEST_SUITE("matcher (Phase 1: validator)");
 
     RUN_TEST(test_matcher_validator_rejects_forward_ref);
     RUN_TEST(test_matcher_validator_widths_basic);
@@ -2907,7 +2907,7 @@ int run_matcher_tests(void) {
     RUN_TEST(test_matcher_var_size);
     RUN_TEST(test_matcher_validator_lambda_shape_accepted);
 
-    BEGIN_TEST_SUITE("matcher_ng (Phase 2: engine)");
+    BEGIN_TEST_SUITE("matcher (Phase 2: engine)");
 
     RUN_TEST(test_match_group_pysequence);
     RUN_TEST(test_match_group_kospair);
@@ -2931,7 +2931,7 @@ int run_matcher_tests(void) {
     RUN_TEST(test_match_extern_type_test);
     RUN_TEST(test_match_lambda_shaped_oneof);
 
-    BEGIN_TEST_SUITE("matcher_ng (Phase 3: thaw)");
+    BEGIN_TEST_SUITE("matcher (Phase 3: thaw)");
 
     RUN_TEST(test_thaw_minimal);
     RUN_TEST(test_thaw_rejects_short_tuple);
@@ -2940,7 +2940,7 @@ int run_matcher_tests(void) {
     RUN_TEST(test_thaw_rest_repeat_min_fields);
     RUN_TEST(test_thaw_full_lambda);
 
-    BEGIN_TEST_SUITE("matcher_ng (Phase 4: CLASS / FIELD)");
+    BEGIN_TEST_SUITE("matcher (Phase 4: CLASS / FIELD)");
 
     RUN_TEST(test_match_class_kw_only);
     RUN_TEST(test_match_class_positional);

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for the koskari.matcher_ng builder API: per-primitive freeze
+Tests for the koskari.matcher builder API: per-primitive freeze
 shapes, slot/extern/const interning, build->match round-trips, eager
 validation negatives, ergonomic shorthand semantics, and cross-cutting
 integration.
@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.lib import cons, keyword, nil, pair, symbol
-from koskari.matcher_ng import (
+from koskari.matcher import (
     BIND,
     CAPTURE,
     CLASS,

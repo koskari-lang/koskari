@@ -24,18 +24,18 @@ Special forms for ``compile/syntax`` and
 
 from ...exceptions import SpecialError
 from ...lib import Datum, cons, gensym, nil, pair, symbol
-from ...matcher_ng import (BIND, DEFINE, LIST, LITERAL_SYM, MATCH, REST,
+from ...matcher import (BIND, DEFINE, LIST, LITERAL_SYM, MATCH, REST,
                            SYMBOL, VALUE, parse_explicit_rule_pattern,
                            pattern_slot_names, repeat_capture)
 from ...stdlib import builtin
-from ...syntax_ng import (Syntax, SyntaxTransform, hygienic_lower_tuple,
+from ...syntax import (Syntax, SyntaxTransform, hygienic_lower_tuple,
                           parse_syntax_rules_pattern)
-from ...syntax_ng import serialize_form as _serialize_form
-from ...syntax_ng import special
+from ...syntax import serialize_form as _serialize_form
+from ...syntax import special
 from ...types import (build_proper, get_position, is_pair, is_proper,
                       is_symbol, unpack)
 from ..compiler import Compiler
-from ..helpers_ng import match, match1
+from ..helpers import match, match1
 
 
 _SYNTAX_MATCH_RULE_ROW = LIST(BIND("pattern"), VALUE("template"))
@@ -510,7 +510,7 @@ def special_compile_special_match(compiler, source, tc=False):
 def build_syntax_rules_transformer(
         name, literals_expr, rules_expr, *, match_patterns=False):
     """
-    Build a :class:`koskari.syntax_ng.Syntax` from literals and rule forms.
+    Build a :class:`koskari.syntax.Syntax` from literals and rule forms.
 
     :param match_patterns: If True, each rule's pattern column is lowered with
         :func:`parse_explicit_rule_pattern` (MATCH dialect). If False (default),

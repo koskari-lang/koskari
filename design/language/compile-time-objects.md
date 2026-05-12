@@ -276,7 +276,7 @@ produces the expanded source at macro-expansion time.
 
 1. **Add `Compiled`, `Special`, `Macro`, `Alias`** to
    `koskari/compile/compiler.py` (or a new `koskari/compile/objects.py`).
-2. **Update `@special` decorator** in `koskari/compile/helpers_ng.py` to
+2. **Update `@special` decorator** in `koskari/compile/helpers.py` to
    produce `Special` instances and store them in `SPECIALS`.
 3. **Update `_is_compiled`** to `isinstance(v, Compiled)`, keeping the
    duck-typing fallback.

@@ -25,11 +25,11 @@ compile/continue.
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil
-from ...matcher_ng import (BINDING, BODY, MATCH, REST, SYMBOL,
+from ...matcher import (BINDING, BODY, MATCH, REST, SYMBOL,
                            USING_UNPACK, VALUE)
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import helper_begin, helper_elsebody, using_unpack_helper
+from ...syntax import special
+from ..helpers import helper_begin, helper_elsebody, using_unpack_helper
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)

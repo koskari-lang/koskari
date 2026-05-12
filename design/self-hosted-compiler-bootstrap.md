@@ -48,7 +48,7 @@ language or compiler changes.
 ## 2. Current State (Baseline)
 
 - **Compiler:** Python under `koskari/compile/` (notably `compiler.py`,
-  `compile/specials/*.py`, `compile/helpers_ng.py`, `compile/pragma`).
+  `compile/specials/*.py`, `compile/helpers.py`, `compile/pragma`).
 - **Builtin surface:** `koskari.importer.bootstrap.make_bootstrap()` registers
   all `SPECIALS` and loads `basics.ki` into the full builtins dict.
 - **Serialization:** `koskari.serialize.incremental.compile_ki_file_to_kio()`

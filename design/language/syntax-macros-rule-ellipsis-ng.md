@@ -2,7 +2,7 @@
 
 This document is **design and inventory for a future implementation**. It
 describes one important use case (ellipsis with repeated sub-patterns), traces
-the **actual** `syntax_ng` + `hygiene_ng` pipeline for **syntax macros built
+the **actual** `syntax` + `hygiene` pipeline for **syntax macros built
 from RULE specifiers**, and states **precisely** what exists today versus what
 does not.
 
@@ -12,7 +12,7 @@ does not.
   **template**), not `MacroTransform` (procedure), not `SpecialTransform`.
 - **RULE pattern specifiers** only: patterns lowered by
   `parse_syntax_rules_pattern` / `_syntax_pattern_to_pattern` in
-  `koskari/syntax_ng.py`. **Not** MATCH-dialect rules from
+  `koskari/syntax.py`. **Not** MATCH-dialect rules from
   `parse_explicit_rule_pattern` / `build_syntax_match` (different lowerer,
   different surface).
 
@@ -31,9 +31,9 @@ does not.
 - **Use-site form**: the compile-time datum being expanded (proper list spine,
   `nil`-terminated), e.g. `(+ (1 2) (2 3) (3 4))`.
 - **Pattern datum**: first element of a RULE row; lowered to a
-  `matcher_ng.Pattern` then frozen native matcher tuple.
+  `matcher.Pattern` then frozen native matcher tuple.
 - **Template datum**: second element of a RULE row; **not** interpreted as
-  Scheme `quasiquote`; it is a **pair tree** walked by `hygiene_ng` with
+  Scheme `quasiquote`; it is a **pair tree** walked by `hygiene` with
   `Ellipsis` markers in the spine for repetition (see below).
 - **`result.captures`**: string-keyed dict from `Matcher.match` (native engine).
 - **`bindings`**: dict passed to `expand_template_with_hygiene`: keys are
@@ -62,9 +62,9 @@ At expansion time (simplified):
 Sources:
 
 - `build_syntax_from_datums`, `SyntaxTransform.try_expand`:
-  `koskari/syntax_ng.py`
+  `koskari/syntax.py`
 - `apply_syntax_rules_hygiene`:
-  `koskari/hygiene_ng.py`
+  `koskari/hygiene.py`
 
 There is **no** second pass between `_captures_to_bindings` and
 `apply_syntax_rules_hygiene` that reshapes repeat captures into per-variable
@@ -122,7 +122,7 @@ columns `x → [1,2,3]`, `y → [2,3,4]` (or `Datum`-wrapped equivalents) with t
 index.
 
 This document’s **§6–§8** explain what **must** be true in `bindings` for
-`hygiene_ng` to do that, and what **NG actually supplies today**.
+`hygiene` to do that, and what **NG actually supplies today**.
 
 ---
 
@@ -130,7 +130,7 @@ This document’s **§6–§8** explain what **must** be true in `bindings` for
 
 Entry: `parse_syntax_rules_pattern` → `_parse_rule_pattern` →
 `_syntax_pattern_to_pattern` / `_syntax_pattern_specs` / `_syntax_elem_pattern`
-in `koskari/syntax_ng.py`.
+in `koskari/syntax.py`.
 
 ### 4.1 Single symbol at rule top
 
@@ -154,7 +154,7 @@ When the pattern spine has `pat` followed by Python `Ellipsis`:
 
 - **Bare symbol** `pat` not in literals: today the code builds  
   `repeat_capture(str(pat), CAPTURE(str(pat)))`  
-  i.e. **outer slot name equals inner capture name** (`koskari/syntax_ng.py`,
+  i.e. **outer slot name equals inner capture name** (`koskari/syntax.py`,
   `_syntax_pattern_specs`). That duplicates the same string for two different
   roles (outer list of frames vs per-iteration slot) and is **known-broken**
   for capture semantics (see discussion elsewhere; this doc records **fact**,
@@ -167,7 +167,7 @@ When the pattern spine has `pat` followed by Python `Ellipsis`:
 
 ### 4.4 What the native matcher stores for `repeat_capture`
 
-From `matcher_ng.repeat_capture` and native tests (e.g.
+From `matcher.repeat_capture` and native tests (e.g.
 `tests/native/test_matcher.c`, `test_match_repeat_named_per_iteration_frames`):
 
 - **`captures[outer_slot]`** is a **Python `list`**.
@@ -181,7 +181,7 @@ Inner variables like `val` in the C test are **not** duplicated as top-level
 
 ## 5. What `_captures_to_bindings` does today
 
-Definition: `koskari/syntax_ng.py`, `_captures_to_bindings` +
+Definition: `koskari/syntax.py`, `_captures_to_bindings` +
 `_unwrap_syntax_binding_value`.
 
 **Implemented**
@@ -222,7 +222,7 @@ gensym outer key, **`SyntaxTransform` does not today promote `x` / `y` into
 ### 6.1 Entry
 
 `apply_syntax_rules_hygiene(template, bindings, find_compiled)`  
-(`koskari/hygiene_ng.py`)
+(`koskari/hygiene.py`)
 
 - Computes `binding_symbols` via `collect_binding_symbols(template, find_compiled)`.
 - Calls `expand_template_with_hygiene(template, bindings, binding_symbols, {})`.
@@ -275,14 +275,14 @@ expansion for that segment), not an error—another sharp edge for implementers.
 
 | Concern | Implemented today? | Where / notes |
 |--------|---------------------|---------------|
-| RULE patterns lowered via `parse_syntax_rules_pattern` | Yes | `syntax_ng.py` |
+| RULE patterns lowered via `parse_syntax_rules_pattern` | Yes | `syntax.py` |
 | List patterns with `BIND` / `LITERAL` / nested `FORM` | Yes | `_syntax_elem_pattern` |
 | Bare `id ...` lowered with distinct outer/inner slots | **No** (current code uses colliding names) | `_syntax_pattern_specs` |
-| Native `repeat_capture` list-of-frame dicts | Yes | matcher engine + `matcher_ng` |
-| `_captures_to_bindings` unwraps `Datum` / nested lists / dicts | Yes | `syntax_ng.py` |
+| Native `repeat_capture` list-of-frame dicts | Yes | matcher engine + `matcher` |
+| `_captures_to_bindings` unwraps `Datum` / nested lists / dicts | Yes | `syntax.py` |
 | **Transpose** repeat frames → `{pattern_var: […]}` for template | **No** | **Gap** vs legacy `syntax.py` |
-| `expand_template_with_hygiene` ellipsis + `index` | Yes | `hygiene_ng.py` |
-| `apply_syntax_rules_hygiene` | Yes | `hygiene_ng.py` |
+| `expand_template_with_hygiene` ellipsis + `index` | Yes | `hygiene.py` |
+| `apply_syntax_rules_hygiene` | Yes | `hygiene.py` |
 | MATCH-dialect `build_syntax_match` | Different code path | **Out of scope** for this doc |
 
 ---
@@ -318,7 +318,7 @@ repeat lists into “tail `Datum`”.
 
 ### 8.3 Nested `(x y) ...` + template `(skeleton x y) ...`
 
-**Need for `hygiene_ng`:**
+**Need for `hygiene`:**
 
 ```text
 bindings[x] == [Dx0, Dx1, ...]   # same length N
@@ -387,14 +387,14 @@ Use this as a task list when implementing; **no code here**.
 
 | File | Relevance |
 |------|-----------|
-| `koskari/syntax_ng.py` | `parse_syntax_rules_pattern`, `_syntax_pattern_specs`, `_captures_to_bindings`, `SyntaxTransform.try_expand`, `build_syntax_from_datums` |
-| `koskari/hygiene_ng.py` | `expand_template_with_hygiene`, `_repeat_count`, `apply_syntax_rules_hygiene` |
+| `koskari/syntax.py` | `parse_syntax_rules_pattern`, `_syntax_pattern_specs`, `_captures_to_bindings`, `SyntaxTransform.try_expand`, `build_syntax_from_datums` |
+| `koskari/hygiene.py` | `expand_template_with_hygiene`, `_repeat_count`, `apply_syntax_rules_hygiene` |
 | Removed **`koskari/syntax.py`** | `_syntax_match_result_to_bindings` (historical; see git history) |
-| `koskari/matcher_ng.py` | `repeat_capture`, `REST`, `BIND`, `CAPTURE` |
+| `koskari/matcher.py` | `repeat_capture`, `REST`, `BIND`, `CAPTURE` |
 | `koskari/lib/matcher.c` | Native `REST`, `CAPTURE`+`REPEAT` semantics |
 | `tests/native/test_matcher.c` | Repeat frame shapes |
-| `tests/hygiene_ng/test_hygiene_ng.py` | Template ellipsis errors / manual `bindings` |
-| `tests/syntax_ng/test_syntax_ng_bootstrap.py` | RULE ellipsis pattern smoke tests |
+| `tests/hygiene/test_hygiene.py` | Template ellipsis errors / manual `bindings` |
+| `tests/syntax/test_syntax_bootstrap.py` | RULE ellipsis pattern smoke tests |
 
 ---
 
@@ -402,4 +402,4 @@ Use this as a task list when implementing; **no code here**.
 
 - Author intent: capture **syntax macros, RULE only**, ellipsis + template
   alignment (§3), and the **exact NG gap** between matcher output and
-  `hygiene_ng` expectations.
+  `hygiene` expectations.

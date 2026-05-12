@@ -23,7 +23,7 @@ Special form handlers for the Koskari compiler.
 
 
 from ...stdlib import BUILTINS
-from ...syntax_ng import special
+from ...syntax import special
 from .apply_layout import special_apply_layout
 from .begin import special_begin
 from .bytecode import special_bytecode

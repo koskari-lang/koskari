@@ -28,7 +28,7 @@ from koskari.lib import (
     reset_extern_defaults,
     symbol,
 )
-from koskari.matcher_ng import Matcher, MatchResult, thaw
+from koskari.matcher import Matcher, MatchResult, thaw
 
 
 pytestmark = pytest.mark.phase_infra

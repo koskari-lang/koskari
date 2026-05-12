@@ -25,11 +25,11 @@ Special form handler for compile/class.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import ParametersError, SpecialError
-from ...matcher_ng import MATCH, REST, SYMBOL
+from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import (
-    gather_parameters_ng,
+from ...syntax import special
+from ..helpers import (
+    gather_parameters,
     helper_begin,
     is_symbolish,
     strip_leading_docstring,
@@ -87,7 +87,7 @@ def special_class(compiler, source, tc=False):
     supers, body = rest_tail
 
     try:
-        args_seq, kwds_seq = gather_parameters_ng(supers, source=supers)
+        args_seq, kwds_seq = gather_parameters(supers, source=supers)
     except ParametersError as e:
         raise SpecialError(str(e), source)
 

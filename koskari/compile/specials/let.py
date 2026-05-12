@@ -24,12 +24,12 @@ Special form handler for compile/let.
 
 from ...exceptions import SpecialError
 from ...lib import Datum, OpCode, cons, nil, symbol
-from ...matcher_ng import BINDINGS, BODY, MATCH, SYMBOL
+from ...matcher import BINDINGS, BODY, MATCH, SYMBOL
 from ...stdlib import builtin
-from ...syntax_ng import special
+from ...syntax import special
 from ...types import is_pair
 from ..compiler import Compiler
-from ..helpers_ng import helper_begin
+from ..helpers import helper_begin
 
 
 _sym_call = symbol('compile/call')
@@ -41,7 +41,7 @@ def _let_bindings_parallel(bindings):
     Parallel name symbols and RHS expressions from ``caps['bindings']``.
 
     ``BINDINGS`` yields a list of per-cell dicts; each dict holds Datum
-    captures under ``name`` and ``expr`` (matcher_ng binding group).
+    captures under ``name`` and ``expr`` (matcher binding group).
     """
 
     if bindings is None:

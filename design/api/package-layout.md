@@ -17,7 +17,7 @@ koskari/
 ├── compile/          # Compiler, ByteCodeFragment, special forms
 │   ├── __init__.py
 │   ├── compiler.py   # Compiler, ByteCodeFragment
-│   ├── helpers_ng.py # gather_formals, gather_parameters_ng, helper_begin, …
+│   ├── helpers.py # gather_formals, gather_parameters, helper_begin, …
 │   └── specials/     # Special form handlers (conditionals, imports, etc.)
 ├── importer/         # Import hooks for .ki files
 │   ├── importlib.py  # KoskariPathFinder, KoskariSourceFileLoader
@@ -57,7 +57,7 @@ Tests mirror the package by use case:
 - **tests/types/** — Python type layer: `test_predicates`
 - **tests/importer/** — Import system: `test_basics`, `test_importlib`, `test_module`
 - **tests/lexer/** — Lexer and LSP tests
-- **tests/matcher/** — (removed) legacy Python matcher tests; see **tests/** for `matcher_ng` coverage
+- **tests/matcher/** — (removed) legacy Python matcher tests; see **tests/** for `matcher` coverage
 - **tests/cli/** — CLI tests
 - **tests/native/** — C harness and memory tests
 

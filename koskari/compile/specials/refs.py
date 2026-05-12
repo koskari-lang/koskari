@@ -24,12 +24,12 @@ compile/ref-item, compile/refq, and compile/bindq.
 
 
 from ...lib import nil, OpCode
-from ...matcher_ng import DEFINE, MATCH, REST, SYMBOL, VALUE
+from ...matcher import DEFINE, MATCH, REST, SYMBOL, VALUE
 from ...types import is_pair
 from ...exceptions import SpecialError
 from ...stdlib import builtin
-from ...syntax_ng import special
-from ..helpers_ng import const_only_expr, match
+from ...syntax import special
+from ..helpers import const_only_expr, match
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for matcher_ng self-describing matcher syntax: the META_MATCHER
+Tests for matcher self-describing matcher syntax: the META_MATCHER
 walker (parse_matcher), the head registry (MATCHER_REGISTRY,
 register_matcher, lookup_matcher), and end-to-end build/match of
 patterns derived from surface s-expression syntax
@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.lib import cons, keyword, nil, pair, symbol
-from koskari.matcher_ng import (
+from koskari.matcher import (
     BINDING,
     BINDINGS,
     BODY,

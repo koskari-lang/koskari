@@ -26,7 +26,7 @@ from unittest import TestCase
 
 from koskari.exceptions import LayoutError
 from koskari.lib import symbol
-from koskari.compile.helpers_ng import pycons
+from koskari.compile.helpers import pycons
 
 from .. import parse_layout
 

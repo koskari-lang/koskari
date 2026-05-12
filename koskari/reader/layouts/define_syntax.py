@@ -22,10 +22,10 @@ macro-rules, special-rules, syntax-match, macro-match, special-match).
 """
 
 
-from ...compile.helpers_ng import match, match1
+from ...compile.helpers import match, match1
 from ...exceptions import LayoutError
 from ...lib import car, cons, nil, symbol
-from ...matcher_ng import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, VALUE,
+from ...matcher import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, VALUE,
                           repeat_capture)
 from ...stdlib import builtin
 from ...types import (
