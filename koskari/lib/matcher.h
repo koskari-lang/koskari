@@ -407,9 +407,11 @@ int KosMatcherBuilder_AppendMatch(
     Py_ssize_t count);
 
 /**
-   Append a named GROUP node: slot is the capture-slot index whose str
-   name becomes the parent dict key for a nested sub-dict of inner
-   captures. Children are stitched like MATCH.
+   Append a GROUP node: children are stitched like MATCH. When slot is
+   KOS_MATCH_NO_INDEX the node is an anonymous value-only group (only
+   valid as the direct inner of CAPTURE(REPEAT(...)) in the lowered
+   matcher); otherwise slot is the capture-slot index whose str name
+   becomes the parent dict key for a nested sub-dict of inner captures.
 
    Returns the index of the new GROUP node, or -1 on error.
  */

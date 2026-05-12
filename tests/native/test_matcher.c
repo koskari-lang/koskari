@@ -159,6 +159,17 @@ static int append_repeat(KosMatcherBuilder *b, uint32_t subnode) {
 }
 
 
+static int append_named_group_node(
+    KosMatcherBuilder *b,
+    uint32_t slot,
+    const uint32_t *children,
+    uint32_t count) {
+
+    return KosMatcherBuilder_AppendNamedGroup(
+        b, slot, children, (Py_ssize_t) count);
+}
+
+
 static int append_optional(KosMatcherBuilder *b, uint32_t subnode) {
     KosMatchNode n;
     memset(&n, 0, sizeof(n));
@@ -1303,13 +1314,118 @@ static int test_match_oneof_rollback_clean_frame(void) {
 }
 
 
+static int test_match_repeat_trailing_reserves_suffix_literal(void) {
+    /*
+      MATCH(LITERAL(1), REPEAT(TEST_ANY), LITERAL(4)) on [1,2,3,4].
+      REPEAT must honor the trailing literal: only indices 1,2 are
+      consumed by ANY, then LITERAL(4) matches index 3.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    int c1 = add_const_long(b, 1);
+    int c4 = add_const_long(b, 4);
+    TEST_ASSERT(c1 >= 0 && c4 >= 0, "consts");
+
+    int n_lit1 = append_test_literal(b, (uint32_t) c1);
+    int n_any = append_test_any(b);
+    int n_rep = append_repeat(b, (uint32_t) n_any);
+    int n_lit4 = append_test_literal(b, (uint32_t) c4);
+    uint32_t kids[] = {
+        (uint32_t) n_lit1, (uint32_t) n_rep, (uint32_t) n_lit4};
+    int n_match = append_match(b, kids, 3);
+    TEST_ASSERT(n_match >= 0, "MATCH built");
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_match);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *v1 = PyLong_FromLong(1);
+    PyObject *v2 = PyLong_FromLong(2);
+    PyObject *v3 = PyLong_FromLong(3);
+    PyObject *v4 = PyLong_FromLong(4);
+    PyObject *seq = PyTuple_Pack(4, v1, v2, v3, v4);
+
+    PyObject *r = run_match_pyseq((KosMatcher *) m_obj, seq);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    Py_DECREF(r);
+    Py_DECREF(seq);
+    Py_DECREF(v1);
+    Py_DECREF(v2);
+    Py_DECREF(v3);
+    Py_DECREF(v4);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_repeat_anonymous_group_dict_rows(void) {
+    /*
+      CAPTURE(items, REPEAT(GROUP(anon, CAPTURE(val, TEST_ANY))))
+      against [1, 2, 3] — same capture shape as the sparse-frame path
+      but materialized via anonymous GROUP row dicts.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    int slot_items = add_str_slot(b, "items");
+    int slot_val = add_str_slot(b, "val");
+
+    int t_any = append_test_any(b);
+    int cap_val = append_capture(b, (uint32_t) slot_val, (uint32_t) t_any);
+    uint32_t inner_kids[] = {(uint32_t) cap_val};
+    int n_anon_grp = append_named_group_node(
+        b, (uint32_t) KOS_MATCH_NO_INDEX, inner_kids, 1);
+    TEST_ASSERT(n_anon_grp >= 0, "anonymous GROUP");
+    int n_rep = append_repeat(b, (uint32_t) n_anon_grp);
+    int cap_items = append_capture(b, (uint32_t) slot_items,
+                                   (uint32_t) n_rep);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) cap_items);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *two = PyLong_FromLong(2);
+    PyObject *three = PyLong_FromLong(3);
+    PyObject *seq = PyTuple_Pack(3, one, two, three);
+
+    PyObject *r = run_match_pyseq((KosMatcher *) m_obj, seq);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    PyObject *captures = ((KosMatchResult *) r)->captures;
+    PyObject *items = PyDict_GetItemString(captures, "items");
+    TEST_ASSERT_NOT_NULL(items, "items present");
+    TEST_ASSERT(PyList_Check(items), "items is list");
+    TEST_ASSERT_EQ(PyList_GET_SIZE(items), 3, "3 iterations");
+
+    PyObject *iter0 = PyList_GET_ITEM(items, 0);
+    TEST_ASSERT(PyDict_Check(iter0), "iter0 is dict");
+    PyObject *v0 = unwrap_datum_value(PyDict_GetItemString(iter0, "val"));
+    TEST_ASSERT_SAME(v0, one, "iter0.val == 1");
+    Py_DECREF(v0);
+
+    Py_DECREF(r);
+    Py_DECREF(seq);
+    Py_DECREF(one);
+    Py_DECREF(two);
+    Py_DECREF(three);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
 static int test_match_repeat_named_per_iteration_frames(void) {
     /*
-      CAPTURE(items, REPEAT(GROUP(CAPTURE(val, TEST_ANY))))
-      against [1, 2, 3].
+      CAPTURE(items, REPEAT(MATCH(CAPTURE(val, TEST_ANY)))) against
+      [1, 2, 3].
 
-      Result: items = [{val: 1}, {val: 2}, {val: 3}]. The val slot
-      itself is omitted at top level (per-iteration only).
+      Result: items = [{val: 1}, {val: 2}, {val: 3}] via per-iteration
+      change dicts. The val slot is omitted at top level (per-iteration
+      only).
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
 
@@ -2772,6 +2888,8 @@ int run_matcher_tests(void) {
     RUN_TEST(test_match_oneof_first_branch_matches);
     RUN_TEST(test_match_oneof_falls_through);
     RUN_TEST(test_match_oneof_rollback_clean_frame);
+    RUN_TEST(test_match_repeat_trailing_reserves_suffix_literal);
+    RUN_TEST(test_match_repeat_anonymous_group_dict_rows);
     RUN_TEST(test_match_repeat_named_per_iteration_frames);
     RUN_TEST(test_match_repeat_bindings_shaped_two_slots_per_frame);
     RUN_TEST(test_match_rest_terminal_pysequence);

@@ -251,7 +251,8 @@ def _repeat_count(template, bindings):
         len(_binding_value_for_expand(bindings[s]))
         for s in syms
         if s in bindings
-        and isinstance(_binding_value_for_expand(bindings[s]), list)
+        and isinstance(
+            _binding_value_for_expand(bindings[s]), (list, tuple))
     }
     if not counts:
         return 0
@@ -295,7 +296,7 @@ def expand_template_with_hygiene(
         if template in bindings:
             val = bindings[template]
             peeled = _binding_value_for_expand(val)
-            if isinstance(peeled, list):
+            if isinstance(peeled, (list, tuple)):
                 if index is None:
                     raise CompilerError(
                         'ellipsis variable outside repeated template',

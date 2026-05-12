@@ -22,8 +22,9 @@ in Python that lower to the same frozen form. Lowering uses either the
 baseline MatchCompiler (slots, externs, consts, nodes only) or
 HygienicMatchCompiler, which additionally records koskari hygiene_ng
 metadata for source-form matchers. Rule-level MATCH spines use
-:func:`parse_explicit_rule_pattern`. Named repeat captures (CAPTURE wrapping
-REPEAT) produce per-iteration frame dicts; see repeat_capture and
+:func:`parse_explicit_rule_pattern`. :func:`repeat_capture` lowers to CAPTURE wrapping REPEAT of an anonymous
+GROUP so each iteration yields one row
+value (dict, Datum slice, etc.); see repeat_capture and
 binding_inner_pattern
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -754,19 +755,23 @@ class MATCH(Pattern):
 
 class GROUP(Pattern):
     """
-    Named nested capture namespace: inner captures go into a sub-dict
-    stored under the given slot name in the parent dict
+    Nested capture namespace: inner captures go into a sub-dict. With a
+    named slot the dict is stored under that key in the parent captures;
+    with slot None (anonymous GROUP) each successful match yields one
+    standalone dict used by REPEAT aggregation under repeat_capture
     """
 
 
     def __init__(self, slot, *children):
         """
-        :param slot: dict key / capture slot name for the nested result
+        :param slot: dict key / capture slot name for the nested result,
+            or None for an anonymous value-only group row
         :param children: zero or more patterns matched in order inside
             the nested dict
         """
 
-        check_str_arg(slot, "GROUP slot")
+        if slot is not None:
+            check_str_arg(slot, "GROUP slot")
         for c in children:
             check_pattern_arg(c, "GROUP child")
         self._slot = slot
@@ -775,17 +780,21 @@ class GROUP(Pattern):
 
     def lower(self, ctx):
         """
-        Reserve the group slot name, run children in a fresh capture
-        scope, emit a GROUP frozen node (slot index plus child indices)
+        Reserve the group slot name when named, run children in a fresh
+        capture scope, emit a GROUP frozen node (slot index or -1 for
+        anonymous, plus child indices)
         """
 
-        ctx.claim_slot_name(self._slot, ("group", id(self)))
-        slot_idx = ctx.intern_slot(self._slot)
+        if self._slot is not None:
+            ctx.claim_slot_name(self._slot, ("group", id(self)))
+            slot_idx = ctx.intern_slot(self._slot)
         ctx.push_capture_scope()
         try:
             idxs = [c.lower(ctx) for c in self._children]
         finally:
             ctx.pop_capture_scope()
+        if self._slot is None:
+            return ctx.append_node(("GROUP", -1) + tuple(idxs))
         return ctx.append_node(("GROUP", slot_idx) + tuple(idxs))
 
 
@@ -1093,13 +1102,12 @@ class FIELD(Pattern):
 def repeat_capture(slot, inner):
     """
     Capture the results of repeating inner across successive subject
-    elements. The native engine stores matched.captures[slot] as a bare Python
-    list of dict objects (not wrapped in Datum): each dict maps slot
-    names touched during one iteration to their captured values
-    (sparse; absent slots are omitted). Inner patterns should use
-    CAPTURE nodes for fields to collect per iteration
+    elements. The native engine stores matched.captures[slot] as a bare
+    Python list: each element is one iteration result (often a dict for
+    an anonymous GROUP row, or a sparse change dict / Datum when inner
+    does not use that shape)
 
-    :param slot: outer slot receiving the list of frame dicts
+    :param slot: outer slot receiving the list of per-iteration values
     :param inner: pattern run once per repetition (often FORM around
         a MATCH of captures)
     :rtype: CAPTURE
@@ -1108,8 +1116,12 @@ def repeat_capture(slot, inner):
     check_str_arg(slot, "repeat_capture slot")
     check_pattern_arg(inner, "repeat_capture inner")
     if isinstance(inner, REPEAT):
-        return CAPTURE(slot, inner)
-    return CAPTURE(slot, REPEAT(inner))
+        sub = inner._sub
+        mc = inner._min_count
+        return CAPTURE(
+            slot,
+            REPEAT(GROUP(None, sub), min_count=mc))
+    return CAPTURE(slot, REPEAT(GROUP(None, inner)))
 
 
 def slot_prefix(pattern, prefix, sep="__"):
@@ -1158,6 +1170,10 @@ def slot_prefix_copy(pattern, prefix, sep):
             slot_prefix_copy(c, prefix, sep) for c in pattern._children])
 
     if isinstance(pattern, GROUP):
+        if pattern._slot is None:
+            return GROUP(
+                None,
+                *[slot_prefix_copy(c, prefix, sep) for c in pattern._children])
         return GROUP(
             prefix + sep + pattern._slot,
             *[slot_prefix_copy(c, prefix, sep) for c in pattern._children])
@@ -1708,13 +1724,13 @@ class BINDINGS(Composite):
         special-form siblings (e.g. let body) as extra binding rows.
         """
 
-        inner = ONEOF(
+        row = GROUP(None, ONEOF(
             bindings_grouped_list_cell_pattern(),
             binding_group_capture_pattern(),
-        )
+        ))
         return ONEOF(
             CAPTURE(self._slot, LITERAL(nil)),
-            FORM(CAPTURE(self._slot, REPEAT(inner))),
+            FORM(CAPTURE(self._slot, REPEAT(row))),
         )
 
 
@@ -2776,13 +2792,17 @@ def match_factory(head_sym, raw_args):
 
 def group_named_factory(head_sym, raw_args):
     """
-    Lower (GROUP slot pat...). slot names the nested capture dict key
+    Lower (GROUP slot pat...) or (GROUP nil pat...) for an anonymous
+    value-only group row (slot names the nested dict key when named)
     """
 
     items = list(unpack(raw_args))
     if not items:
-        raise ValueError("(GROUP ...) requires a slot name")
-    slot = coerce_slot("GROUP", items[0])
+        raise ValueError("(GROUP ...) requires at least one argument")
+    first = items[0]
+    if first is nil:
+        return GROUP(None, *[parse_matcher(i) for i in items[1:]])
+    slot = coerce_slot("GROUP", first)
     return GROUP(slot, *[parse_matcher(i) for i in items[1:]])
 
 

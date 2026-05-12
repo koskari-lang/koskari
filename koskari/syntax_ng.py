@@ -24,11 +24,14 @@ MATCH-dialect rule spines via :func:`koskari.matcher_ng.parse_explicit_rule_patt
 The compiled dispatcher type here is ``syntax_ng.Syntax``. The legacy
 source wrapper remains ``koskari.syntax.Syntax``.
 
-Bare-pattern ellipsis ``(id ...)`` lowers to ``REST(str(id))`` in the
-RULE pattern lowerer: ``captures[id]`` is the tail-shaped value (often
-``Datum``), not a Python list of repeat frames. Template expansion treats
-a lone pattern-variable followed by ``...`` like quasiquote ``,@`` when
-that binding is not a ``list``; see
+In compound ``(subpat ...)`` rows, a non-literal symbol followed by
+``...`` lowers to ``REST(str(id))`` when more pattern follows in the
+same row (tail capture for ``unless``-style layouts); when it is
+terminal in the row it lowers to ``repeat_capture`` with
+``TEST_ANY`` so ``captures[id]`` is a list of ``Datum``. A bare
+pattern symbol still lowers to ``REST`` (same tail semantics).
+Template expansion treats a lone pattern-variable followed by ``...``
+like quasiquote ``,@`` when that binding is not a ``list``; see
 :func:`koskari.hygiene_ng.expand_template_with_hygiene`. Compound
 ``(subpat ...)`` uses ``repeat_capture``; :func:`_promote_repeat_frame_bindings`
 copies per-iteration frame slots up to parallel list columns for template
@@ -64,6 +67,7 @@ from koskari.hygiene_ng import (Hygiene, collect_binding_symbols,
 from koskari.lib import (Datum, Matcher, car, cdr, cons, demand_call, gensym,
                          nil, symbol)
 from koskari.matcher_ng import (BIND, FORM, LITERAL, MATCH, REST,
+                                TEST_ANY,
                                 HygienicMatchCompiler, check_pattern_arg,
                                 parse_explicit_rule_pattern, repeat_capture)
 from koskari.types import build_proper, is_pair, is_proper, is_symbol, unpack
@@ -780,7 +784,10 @@ def _syntax_pattern_specs(p_items, literals, source_ctx):
         if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
             if is_symbol(pat) and pat not in literals:
-                specs.append(REST(str(pat)))
+                if i + 2 < len(p_items):
+                    specs.append(REST(str(pat)))
+                else:
+                    specs.append(repeat_capture(str(pat), TEST_ANY()))
             else:
                 slot = str(gensym("_repeat"))
                 inner = _syntax_elem_pattern(pat, literals, source_ctx)

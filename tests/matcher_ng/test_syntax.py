@@ -362,6 +362,18 @@ class TestParseCompositeVariadic(unittest.TestCase):
         self.assertEqual(len(pat._children), 2)
 
 
+    def test_group_nil_lowers_anonymous(self):
+        """
+        (GROUP nil pat...) lowers to GROUP(None, ...)
+        """
+
+        src = _list(symbol("GROUP"), nil, symbol("a"))
+        pat = parse_matcher(src)
+        self.assertIsInstance(pat, GROUP)
+        self.assertIsNone(pat._slot)
+        self.assertEqual(len(pat._children), 1)
+
+
     def test_oneof_lowers_branches(self):
         """
         (ONEOF a b) lowers to ONEOF with two branches

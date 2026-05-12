@@ -105,7 +105,8 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
 
     def test_sequence_and_ellipsis(self):
         """
-        (a ... ) lowers to REST(a); captures bind the tail spine
+        Terminal (a ...) lowers to repeat_capture(a, TEST_ANY()); each
+        matched spine element is one list entry (Datum per cell)
         """
 
         a = symbol("a")
@@ -118,14 +119,16 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         cap0 = r.captures["a"]
         self.assertEqual(
             cap0.datum if isinstance(cap0, Datum) else cap0,
-            ())
+            [])
         s1 = symbol("s1")
         s2 = symbol("s2")
         r2 = m.match((s1, s2))
         self.assertTrue(r2.matched)
         cap_a = r2.captures["a"]
         tail = cap_a.datum if isinstance(cap_a, Datum) else cap_a
-        self.assertEqual(tail, (s1, s2))
+        self.assertEqual(len(tail), 2)
+        self.assertEqual(tail[0].datum, s1)
+        self.assertEqual(tail[1].datum, s2)
 
 
     def test_nested_sublist_pattern(self):
