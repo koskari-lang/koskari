@@ -24,6 +24,7 @@ Registration hooks for names merged into the Koskari builtins dict.
 
 
 from typing import Any, Dict
+from ..types import TypePredicate
 
 
 BUILTINS: Dict[str, Any] = {}
@@ -47,6 +48,15 @@ def builtin(name: str, *aliases: str):
         return obj
 
     return decorator
+
+
+def add_builtin(name: str, obj: Any):
+    BUILTINS[name] = obj
+
+
+def add_builtin_type(name: str, typeobj: Any):
+    add_builtin(name, typeobj)
+    add_builtin(name + '?', TypePredicate(name + '?', typeobj))
 
 
 # The end.

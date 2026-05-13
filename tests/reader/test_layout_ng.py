@@ -73,7 +73,7 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-            (symbol("compile/begin"),
+            (symbol("begin"),
              symbol("x"),
              symbol("y"))
         )

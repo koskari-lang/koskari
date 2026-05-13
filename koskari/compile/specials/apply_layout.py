@@ -32,6 +32,7 @@ from ...types import is_nil, is_pair, unpack
 from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
 from ...syntax import special
+from ...reader.layouts import LayoutHandler
 
 
 _keyword_block = keyword(':block:')
@@ -39,6 +40,31 @@ _symbol_begin = symbol('compile/begin')
 _symbol_layout_block = symbol('layout/block')
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+
+
+def _find_layout(ns, name):
+    v = ns.get(name)
+    if v and isinstance(v, LayoutHandler):
+        return v
+    return None
+
+
+def find_layout(ns, name):
+    """
+    Resolve layout/<head> in the module namespace
+
+    :param name: symbol or string for the block head (e.g. if, begin)
+    :return: LayoutHandler instance, or None
+    """
+
+    name = str(name)
+
+    found = _find_layout(ns, name)
+    if found is None:
+        if not name.startswith("layout/"):
+            name = "layout/" + name
+            return _find_layout(ns, name)
+    return found
 
 
 def _is_block(form):
@@ -93,8 +119,7 @@ def _expand_block(compiler, block, rest):
     if is_nil(block_tail) or not is_pair(block_tail):
         raise SpecialError("malformed :block: — missing HEAD-ARGS", block)
 
-    head_args = car(block_tail)
-    body_tail = cdr(block_tail)
+    head_args, body_tail = block_tail
     if is_nil(body_tail) or not is_pair(body_tail):
         raise SpecialError("malformed :block: — missing BODY-EXPRS", block)
 
@@ -111,15 +136,15 @@ def _expand_block(compiler, block, rest):
     else:
         expanded_body = nil
 
-    layout_obj = compiler.find_layout(head)
+    ns = vars(compiler.module)
+    layout_obj = find_layout(ns, str(head))
 
     if layout_obj is None:
-        layout_obj = compiler.find_layout(_symbol_layout_block)
+        layout_obj = find_layout(ns, "layout/block")
         if layout_obj is None:
             raise SpecialError(
                 "layout/block handler not found in module namespace",
                 block)
-        head_args = cons(_symbol_layout_block, *list(unpack(head_args)), nil)
 
     peers = []
     peers_consumed = 0

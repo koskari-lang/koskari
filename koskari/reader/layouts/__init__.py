@@ -29,7 +29,6 @@ from .basics import layout_block, layout_begin, layout_call
 from .classes import layout_define_class, layout_class
 from .conditionals import layout_if, layout_switch
 from .define_syntax import (
-    layout_define_syntax,
     layout_macro_match,
     layout_macro_rules,
     layout_special_match,
@@ -50,7 +49,6 @@ __all__ = (
     "layout_call",
     "layout_class",
     "layout_define_class",
-    "layout_define_syntax",
     "layout_dyn_wind",
     "layout_if",
     "layout_macro_match",

@@ -28,14 +28,12 @@ pluggable input backend that supports both readline and prompt_toolkit.
 import asyncio
 import sys
 import traceback
-
-from argparse import ArgumentParser, REMAINDER
+from argparse import REMAINDER, ArgumentParser
 from os.path import basename
 from traceback import format_exception_only
 
 from koskari.exceptions import LayoutError, ReaderError
-from koskari.reader import READ_EOF
-
+from koskari.reader import READ_EOF, LayoutReader, source_str
 
 __all__ = (
     'main',
@@ -74,12 +72,9 @@ def _make_prompter(histfile=None, get_namespace=None):
         from prompt_toolkit.history import FileHistory
 
         from koskari.lexer.discovery import special_names_for_repl
-        from koskari.lexer.prompt_toolkit import (
-            KoskariCompleter,
-            KoskariLexer,
-            koskari_style,
-            load_koskari_key_bindings,
-        )
+        from koskari.lexer.prompt_toolkit import (KoskariCompleter,
+                                                  KoskariLexer, koskari_style,
+                                                  load_koskari_key_bindings)
 
         repl_special_names = special_names_for_repl()
         history = FileHistory(histfile) if histfile else None
@@ -325,11 +320,16 @@ async def _eval_expression_async(compiler, source, ns):
     :return: eval result or _INCOMPLETE if parse returned None
     """
 
-    from koskari.lexer import parse
+    reader = ns.get("__reader__")
+    if reader is None:
+        reader = LayoutReader(ns)
+        ns["__reader__"] = reader
 
-    source_expr = parse(source, '<stdin>')
+    stream = source_str(source, '<stdin>')
+    source_expr = reader.read(stream)
     if source_expr is READ_EOF:
         return _INCOMPLETE
+
     fragment = compiler.full_compile(source_expr)
     expr = fragment.as_expression(ns)
     return await expr()
@@ -558,11 +558,8 @@ async def run_file_async(mod, filename, execute_kio=False, *, interactive=False)
     :param interactive: passed to load_module_async; retain load facets when True
     """
 
-    from koskari.importer.module import (
-        init_module,
-        load_module_async,
-        load_module_kio_async,
-    )
+    from koskari.importer.module import (init_module, load_module_async,
+                                         load_module_kio_async)
 
     init_module(mod, filename)
     if execute_kio:

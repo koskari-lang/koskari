@@ -250,7 +250,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         # "define" was being mangled to "efine"
 
         expected = pycons(
-          (symbol("compile/begin"),
+          (symbol("begin"),
 
            (symbol("define"), symbol("double"), (symbol("x"),),
             (symbol("compile/begin"),

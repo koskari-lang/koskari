@@ -28,6 +28,7 @@ into s-expressions without compilation or evaluation.
 # prompt_toolkit REPL enhancements.
 
 from koskari.reader.parser import READ_EOF
+from koskari.reader import source_str
 
 
 _default_reader = None
@@ -67,8 +68,6 @@ def parse(source, filename='<string>'):
     :raises ReaderSyntaxError: on syntax errors
     """
 
-    from koskari.reader import source_str
-
     reader = default_layout_reader()
     stream = source_str(source, filename)
     return reader.read(stream)
@@ -83,8 +82,6 @@ def parse_all(source, filename='<string>'):
     :yield: parsed s-expressions
     :raises ReaderSyntaxError: on syntax errors
     """
-
-    from koskari.reader import source_str
 
     reader = default_layout_reader()
     stream = source_str(source, filename)

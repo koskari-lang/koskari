@@ -20,7 +20,7 @@ Layout handlers for basic block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, nil, symbol
-from ...stdlib import builtin
+from ...stdlib import add_builtin, builtin
 from ...types import get_position, is_pair, is_keyword
 from .helpers import layout
 
@@ -32,7 +32,7 @@ def layout_block(source, peers):
     the default block layout handler
 
     eg.
-    layout/block foo x:
+    foo x:
       bar
 
     becomes
@@ -45,10 +45,34 @@ def layout_block(source, peers):
             get_position(source))
 
     header, body = source
-    _called_by, hdr = header
+    header.append(cons(symbol('compile/begin'), body))
+    return header
 
-    hdr.append(cons(symbol('compile/begin'), body))
-    return hdr
+
+@builtin('layout/flat')
+@layout(symbol('layout/flat'))
+def layout_flat(source, peers):
+    """
+    a flat block layout handler. This is a basic block layout
+    that can be copied to other names to give that form a
+    flat block layout.
+
+    eg.
+    foo x:
+      bar
+
+    becomes
+    (foo x bar)
+    """
+
+    if peers:
+        raise LayoutError(
+            'flat does not take peers',
+            get_position(source))
+
+    header, body = source
+    header.extend(body)
+    return header
 
 
 @builtin('layout/call')
@@ -101,27 +125,8 @@ def layout_call(source, peers):
     return cons(symbol('compile/call'), fn, body)
 
 
-@builtin('layout/begin')
-@layout(symbol('layout/begin'))
-def layout_begin(source, peers):
-    """
-    lowers into a compile/begin
-
-    eg.
-    layout/begin:
-      (bar)
-
-    becomes
-    (compile/begin bar)
-    """
-
-    if peers:
-        raise LayoutError(
-            'block does not take peers',
-            get_position(source))
-
-    called_by, exprs = source
-    return cons(symbol('compile/begin'), exprs)
+layout_begin = layout_flat
+add_builtin('layout/begin', layout_begin)
 
 
 # The end.

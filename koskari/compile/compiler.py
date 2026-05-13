@@ -539,17 +539,8 @@ class Compiler:
 
     def _find_compiled(self, name):
         ns = vars(self.module)
-
-        try:
-            r = ns.ref(name)
-        except (KeyError, AttributeError, TypeError):
-            return None
-
-        if r is None or r.empty:
-            return None
-
-        v = r.deref()
-        if _is_special(v):
+        v = ns.get(name)
+        if v and _is_special(v):
             return v
         return None
 
@@ -567,44 +558,7 @@ class Compiler:
         found = self._find_compiled(name)
         if found is None:
             if not name.startswith("compile/"):
-                name = "compile/" + name
-                return self._find_compiled(name)
-        return found
-
-
-    def _find_layout(self, name):
-        from ..reader.layouts.helpers import LayoutHandler
-
-        ns = vars(self.module)
-        try:
-            r = ns.ref(name)
-        except (KeyError, AttributeError, TypeError):
-            return None
-
-        if r is None or r.empty:
-            return None
-
-        v = r.deref()
-        if isinstance(v, LayoutHandler):
-            return v
-        return None
-
-
-    def find_layout(self, name):
-        """
-        Resolve layout/<head> in the module namespace
-
-        :param name: symbol or string for the block head (e.g. if, begin)
-        :return: LayoutHandler instance, or None
-        """
-
-        name = str(name)
-
-        found = self._find_layout(name)
-        if found is None:
-            if not name.startswith("layout/"):
-                name = "layout/" + name
-                return self.find_layout(name)
+                return self._find_compiled("compile/" + name)
         return found
 
 

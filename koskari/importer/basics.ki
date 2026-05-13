@@ -33,6 +33,9 @@
       (compile/define name (special-match name rule ...))]))
 
 
+define layout/define-syntax layout/flat
+
+
 define-syntax compile/set!:
   syntax-rules [item attr deref
                 compile/item compile/attr compile/deref
@@ -409,11 +412,11 @@ define-syntax compile/define-extend:
         define sym val
 
 
-define layout/extend-syntax layout/define-syntax
-
-
 define-syntax compile/extend-syntax:
-  syntax-rules []:
+  syntax-rules [syntax-rules syntax-match
+                macro-rules macro-match
+                special-rules special-match]:
+
     match (extend-syntax name (syntax-rules literals rule ...)):
       define-extend name (syntax-rules name literals rule ...)
 
@@ -431,6 +434,9 @@ define-syntax compile/extend-syntax:
 
     match (extend-syntax name (special-match rule ...)):
       define-extend name (special-match name rule ...)
+
+
+define layout/extend-syntax layout/flat
 
 
 ;; The end.

@@ -1487,6 +1487,101 @@ static int mdl_ns_clear(PyObject *self) {
 }
 
 
+static PyObject *mdl_ns_m_get(PyObject *self, PyObject *args) {
+  PyObject *name = NULL;
+  PyObject *def = Py_None;
+  PyObject *bound = NULL;
+  PyObject *blt = NULL;
+  PyObject *val = NULL;
+
+  if (! PyArg_UnpackTuple(args, "get", 1, 2, &name, &def))
+    return NULL;
+
+  bound = PyDict_GetItem(KosNamespace_BINDS(self), name);
+  if (bound) {
+    val = ns_deref_symbol(self, name);
+    if (! val) {
+      PyErr_Clear();
+      Py_INCREF(def);
+      return def;
+    }
+    return val;
+  }
+
+  blt = KosModuleNamespace_BUILTINS(self);
+  if (! blt) {
+    Py_INCREF(def);
+    return def;
+  }
+
+  val = PyDict_GetItem(blt, name);
+  if (! val) {
+    Py_INCREF(def);
+    return def;
+  }
+
+  Py_INCREF(val);
+  return val;
+}
+
+
+static PyMethodDef mdl_ns_methods[] = {
+  { "ref", (PyCFunction) ns_m_ref, METH_O,
+    "NS.ref(K) -> R\n"
+    "returns the reference for a binding in this namespace" },
+
+  { "deref", (PyCFunction) ns_m_deref, METH_O,
+    "NS.deref(K) -> V\n"
+    "dereferences a binding in this namespace" },
+
+  { "store", (PyCFunction) ns_m_store, METH_VARARGS,
+    "NS.store(K, V) => None\n"
+    "assigns a value to a binding in this namespace" },
+
+  { "clear", (PyCFunction) ns_m_clear, METH_O,
+    "NS.clear(K) => None\n"
+    "removes the value from a binding in this namespace" },
+
+  { "bind", (PyCFunction) ns_m_bind, METH_VARARGS,
+    "NS.bind(K, R) => None\n"
+    "sets the reference for a binding in this namespace" },
+
+  { "bound", (PyCFunction) ns_m_contains, METH_O,
+    "NS.bound(K) => bool\n"
+    "True if the given name has a binding in this namespace" },
+
+  { "raw", (PyCFunction) ns_m_raw, METH_O,
+    "NS.raw(K) => bool\n"
+    "True if the given binding is currently raw in this namespace" },
+
+  { "keys", (PyCFunction) ns_m_keys, METH_NOARGS,
+    "NS.keys() => iter" },
+
+  { "items", (PyCFunction) ns_m_items, METH_NOARGS,
+    "NS.items() => iter" },
+
+  { "__contains__", (PyCFunction) ns_m_contains, METH_O,
+    "(K in NS) => bool" },
+
+  { "find", (PyCFunction) ns_m_find, METH_O,
+    "NS.find(K) => R\n"
+    "traverses this namespace and its parents to find and return a"
+    " reference, or returns None if no binding is found" },
+
+  { "copy", (PyCFunction) ns_m_copy, METH_NOARGS,
+    "NS.copy() => Namespace\n"
+    "copy the top-level namespace only (parent chain not copied)" },
+
+  { "get", (PyCFunction) mdl_ns_m_get, METH_VARARGS,
+    "NS.get(K[, default]) -> V\n"
+    "value from binds or builtins dict without materializing a ref;"
+    " on failure returns default or None without leaving an exception"
+    " set" },
+
+  { NULL },
+};
+
+
 PyTypeObject KosModuleNamespaceType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -1496,6 +1591,7 @@ PyTypeObject KosModuleNamespaceType = {
 
   .tp_base = &KosNamespaceType,
   .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_methods = mdl_ns_methods,
   .tp_new = mdl_ns_new,
   .tp_dealloc = mdl_ns_dealloc,
   .tp_traverse = mdl_ns_traverse,

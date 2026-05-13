@@ -419,7 +419,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
           y
         """
         expected = pycons(
-            (symbol("compile/begin"),
+            (symbol("begin"),
              symbol("x"),
              symbol("y"))
         )

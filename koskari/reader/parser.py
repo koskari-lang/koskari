@@ -48,7 +48,7 @@ from re import compile as regex
 
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
 from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
-from ..types import is_pair, unpack
+from ..types import is_pair
 from .layouts import LayoutHandler
 
 
@@ -81,8 +81,6 @@ class ReadEOFType(object):
 
 
 READ_EOF = ReadEOFType()
-
-_layout_block = symbol("layout/block")
 
 _symbol__str = symbol("compile/#str")
 _symbol_gensym_thunk = symbol("compile/gensym-thunk")
@@ -2101,30 +2099,28 @@ class LayoutReader(Reader):
         return ch == ';' or ch in '\n\r'
 
 
+    def _find_layout(self, name):
+        v = self._ns.get(name)
+        if v and isinstance(v, LayoutHandler):
+            return v
+        return None
+
+
     def find_layout(self, name):
         """
-        Resolve layout/<head> in namespace and builtins
+        Resolve layout/<head> in the module namespace
 
-        :param name: symbol for the block head (e.g. if, let)
-        :return: layout object with .read, or None
+        :param name: symbol or string for the block head (e.g. if, begin)
+        :return: LayoutHandler instance, or None
         """
 
         name = str(name)
-        if not name.startswith('layout/'):
-            name = 'layout/' + name
 
-        try:
-            r = self._ns.ref(name)
-        except (KeyError, AttributeError, TypeError):
-            return None
-
-        if r is None or r.empty:
-            return None
-
-        v = r.deref()
-        if isinstance(v, LayoutHandler):
-            return v
-        return None
+        found = self._find_layout(name)
+        if found is None:
+            if not name.startswith("layout/"):
+                return self._find_layout("layout/" + name)
+        return found
 
 
     def _structural_colon_before_line_end(self, stream):
@@ -2617,16 +2613,10 @@ class LayoutReader(Reader):
             peers = self._collect_peer_blocks(stream, outer_indent, layout_obj)
             return layout_obj.read(source, peers)
 
-        body = source[1]
-        synthetic_header = cons(_layout_block, *list(unpack(header)), nil)
-        default_source = cons(synthetic_header, body)
-        if is_pair(default_source):
-            default_source.set_position(source.get_position())
-
         layout_obj = self.find_layout(symbol('layout/block'))
         if layout_obj is None:
             raise stream.error('layout/block not found', stream.position())
-        return layout_obj.read(default_source, [])
+        return layout_obj.read(source, [])
 
 
     def read_layout_block(self, stream, outer_indent, head=None, args=None):

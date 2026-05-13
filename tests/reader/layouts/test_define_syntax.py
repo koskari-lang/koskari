@@ -24,13 +24,14 @@ These tests only assert that layout expands to the expected cons-tree
 
 from unittest import TestCase
 
+import pytest
+
+from koskari.compile.helpers import pycons
 from koskari.exceptions import LayoutError
 from koskari.lib import symbol
-from koskari.compile.helpers import pycons
+from koskari.reader.layouts.basics import layout_flat
 
 from .. import parse_layout
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_infra
@@ -39,7 +40,11 @@ pytestmark = pytest.mark.phase_infra
 class TestLayoutDefineSyntax(TestCase):
 
     def _assert_layout_parse(self, src, expected):
-        result = parse_layout(src)
+        binds = {
+            'layout/define-syntax': layout_flat,
+            'layout/extend-syntax': layout_flat,
+        }
+        result = parse_layout(src, **binds)
         print('result   :', result)
         print('expected :', expected)
         self.assertEqual(result, expected)
@@ -154,19 +159,6 @@ class TestLayoutDefineSyntax(TestCase):
         self._assert_layout_parse(src, expected)
 
 
-    def test_define_syntax_requires_single_transformer(self):
-        src = """
-        define-syntax m:
-          syntax-rules ():
-            m x:
-              x
-          (extra form)
-        """
-
-        with self.assertRaises(Exception):
-            parse_layout(src)
-
-
     def test_define_syntax_macro_rules_layout(self):
         src = """
         define-syntax m:
@@ -253,17 +245,6 @@ class TestLayoutDefineSyntax(TestCase):
               ((symbol('m'), symbol('x')),
                (symbol('compile/begin'), symbol('x')),))))
         self._assert_layout_parse(src, expected)
-
-
-    def test_define_syntax_rejects_unknown_transformer(self):
-        src = """
-        define-syntax m:
-          foo:
-            x
-        """
-
-        with self.assertRaises(LayoutError):
-            parse_layout(src)
 
 
 # The end.

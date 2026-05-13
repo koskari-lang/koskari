@@ -24,7 +24,7 @@ macro-rules, special-rules, syntax-match, macro-match, special-match).
 
 from ...compile.helpers import match, match1
 from ...exceptions import LayoutError
-from ...lib import car, cons, nil, symbol
+from ...lib import cons, nil, symbol
 from ...matcher import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, VALUE,
                         SYMBOL, repeat_capture)
 from ...stdlib import builtin
@@ -311,40 +311,6 @@ def layout_special_match(source, peers):
         rules.append(cons(pattern, template, nil))
 
     return cons(_symbol_special_match, *rules, nil)
-
-
-@builtin('layout/define-syntax')
-@layout(symbol('layout/define-syntax'))
-def layout_define_syntax(source, peers):
-    """
-    Lower define-syntax block to (compile/define-syntax NAME TRANSFORMER).
-
-    Expects exactly one body form: syntax-rules, macro-rules, special-rules,
-    syntax-match, macro-match, or special-match.
-    """
-
-    if peers:
-        raise LayoutError(
-            'define-syntax block does not take peers',
-            get_position(source))
-
-    m = match(source, _DEFINE_SYNTAX_FORMS)
-    if m is None:
-        raise LayoutError(
-            'define-syntax block requires name and single transformer form',
-            get_position(source))
-
-    called_by = m['_'].datum
-    name = m['name'].datum
-    transformer_spec = m['transformer'].datum
-    head = car(transformer_spec)
-    if not is_symbol(head) or str(head) not in _ALLOWED_DEFINE_SYNTAX_TRANSFORMERS:
-        raise LayoutError(
-            'define-syntax requires syntax-rules, macro-rules, special-rules, '
-            'syntax-match, macro-match, or special-match',
-            get_position(transformer_spec))
-
-    return cons(called_by, name, transformer_spec, nil)
 
 
 # The end.
