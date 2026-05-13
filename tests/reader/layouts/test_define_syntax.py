@@ -67,7 +67,7 @@ class TestLayoutDefineSyntax(TestCase):
              (symbol('print'), 'x and one arg', symbol('x'), symbol('y')),
              (symbol('+'), symbol('x'), symbol('y'))))
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('do-something-with-x'),
              (symbol('syntax-rules'),
               (symbol('x'),),
@@ -90,7 +90,7 @@ class TestLayoutDefineSyntax(TestCase):
             (symbol('ref'), (symbol('item'), symbol('obj'), symbol('name')),),
             (symbol('compile/begin'), (symbol('compile/ref-item'), symbol('obj'), symbol('name')),),)
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('m'),
              (symbol('syntax-rules'),
               (symbol('item'), symbol('compile/item')),
@@ -109,7 +109,7 @@ class TestLayoutDefineSyntax(TestCase):
             (symbol('m'), symbol('x')),
             (symbol('compile/begin'), symbol('x'),))
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('m'),
              (symbol('syntax-rules'),
               (),
@@ -125,7 +125,7 @@ class TestLayoutDefineSyntax(TestCase):
               (+ x x)
         """
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('double'),
              (symbol('syntax-rules'),
               (),
@@ -144,7 +144,7 @@ class TestLayoutDefineSyntax(TestCase):
               (* x 2)
         """
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('double'),
              (symbol('syntax-rules'),
               (),
@@ -178,7 +178,7 @@ class TestLayoutDefineSyntax(TestCase):
             (symbol('m'), symbol('x')),
             (symbol('compile/begin'), symbol('x'),))
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('m'),
              (symbol('macro-rules'),
               (),
@@ -197,7 +197,7 @@ class TestLayoutDefineSyntax(TestCase):
             (symbol('m'), symbol('x')),
             (symbol('compile/begin'), symbol('x'),))
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('m'),
              (symbol('special-rules'),
               (),
@@ -216,7 +216,7 @@ class TestLayoutDefineSyntax(TestCase):
             (symbol('m'), symbol('x')),
             (symbol('compile/begin'), symbol('x'),))
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('m'),
              (symbol('syntax-match'),
               rule1,)))
@@ -231,7 +231,7 @@ class TestLayoutDefineSyntax(TestCase):
               x
         """
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('m'),
              (symbol('macro-match'),
               ((symbol('m'), symbol('x')),
@@ -247,7 +247,7 @@ class TestLayoutDefineSyntax(TestCase):
               x
         """
         expected = pycons(
-            (symbol('compile/define-syntax'),
+            (symbol('define-syntax'),
              symbol('m'),
              (symbol('special-match'),
               ((symbol('m'), symbol('x')),
