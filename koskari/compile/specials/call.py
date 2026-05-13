@@ -78,55 +78,55 @@ def _partition_kwds(kwds_seq):
     return chunks
 
 
-_CALL_PATTERNS = [
-    # call (attr obj attr)
-    MATCH(LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr"))),
-    MATCH(LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr"))),
-
-    # call (attr obj attr) args...
-    MATCH(LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr")),
-          REST("args")),
-    MATCH(LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr")),
-          REST("args")),
-
-    MATCH(VALUE("callable")),
-    MATCH(VALUE("callable"), REST("args")),
-]
-
-
 _sym_call_attr = symbol("compile/call-attr")
 
 
-_CALL_PATTERNS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
-    for m in _CALL_PATTERNS)
+_CALL_PATTERNS = [
+    # call (attr obj attr)
+    MATCH(
+        SYMBOL("_"),
+        LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr"))),
+    MATCH(
+        SYMBOL("_"),
+        LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr"))),
+
+    # call (attr obj attr) args...
+    MATCH(
+        SYMBOL("_"),
+        LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr")),
+        REST("args")),
+    MATCH(
+        SYMBOL("_"),
+        LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr")),
+        REST("args")),
+
+    MATCH(SYMBOL("_"), VALUE("callable")),
+    MATCH(SYMBOL("_"), VALUE("callable"), REST("args")),
+]
 
 
 @builtin("compile/call")
-@special("compile/call", patterns=_CALL_PATTERNS_FULL)
+@special("compile/call", patterns=_CALL_PATTERNS, unpack="match")
 def special_call(
         compiler: Compiler,
-        source: pair,
+        caps: dict,
         tc: bool = False) -> ByteCodeFragment:
 
-    called_by, body = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    matched = match(body, _CALL_PATTERNS)
-    if matched is None:
-        raise SpecialError("compile/call requires at least a callable", source)
-
-    rest = matched["args"].datum if "args" in matched else nil
+    rest = caps["args"].datum if "args" in caps else nil
 
     # rewriting ((attr obj a) args...) to
     # (compile/call-attr obj a args...)
-    if "attr" in matched:
-        obj = matched["obj"]
-        attr = matched["attr"]
+    if "attr" in caps:
+        obj = caps["obj"]
+        attr = caps["attr"]
         return cons(
             _sym_call_attr,
             obj.datum, attr.datum, rest)
 
-    callable = matched["callable"].datum
+    callable = caps["callable"].datum
 
     use_var_path = is_symbol(callable) and not tc
     name = str(callable) if is_symbol(callable) else None
@@ -143,7 +143,7 @@ def special_call(
     if use_var_path:
         fragment.request_var(name)
 
-    fragment.position_of(body)
+    fragment.position(pos)
     if not use_var_path:
         fragment.merge(compiler.full_compile(callable))
 
@@ -155,7 +155,7 @@ def special_call(
         if not kwds_seq:
             for _, expr in args_seq:
                 fragment.merge(compiler.full_compile(expr, False))
-            fragment.position_of(source)
+            fragment.position(pos)
             if use_var_path:
                 fragment.instruction(
                     OpCode.KOS_OP_CALL_VAR, (name, len(args_seq), 0, 0))
@@ -177,7 +177,7 @@ def special_call(
                 fragment.merge(compiler.full_compile(expr, False))
             if not use_var_path:
                 fragment.instruction(OpCode.KOS_OP_CONST, tuple(kw_names))
-            fragment.position_of(source)
+            fragment.position(pos)
             if use_var_path:
                 fragment.instruction(
                     OpCode.KOS_OP_CALL_VAR_NAMES,
@@ -218,7 +218,7 @@ def special_call(
             if len(kwd_chunks) > 1:
                 fragment.instruction(OpCode.KOS_OP_COMBINE_KWDS, len(kwd_chunks))
 
-        fragment.position_of(source)
+        fragment.position(pos)
         if use_var_path:
             fragment.instruction(
                 OpCode.KOS_OP_CALL_VAR_STAR, (name, opa, 0, 0))

@@ -25,6 +25,7 @@ layout_heads:
   - macro-match
   - special-match
   - define-coroutine
+  - switch
 
 # Peer block heads for layouts that declare peers. These are not necessarily
 # special forms, but they do appear as `NAME:` block headers.
@@ -44,6 +45,7 @@ constants:
   - "False"
   - "None"
   - "nil"
+  - "..."
 
 # Paren-list first-symbol tokens to highlight as keyword.control (TextMate),
 # keyword.control (Helix), and font-lock-keyword-face (Emacs). One ordered list
@@ -89,6 +91,7 @@ list_head_specials:
   - dyn-wind
   - dyn-with
   - each
+  - extend-syntax
   - for-each
   - function-compose
   - globals
@@ -119,6 +122,7 @@ list_head_specials:
   - setq
   - setq-values
   - shift
+  - switch
   - syntax-match
   - syntax-rules
   - try

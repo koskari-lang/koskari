@@ -82,9 +82,10 @@
    ;; Source: design/SPECIALS.md, design/LAYOUTS.md
    (list (concat "^\\([ \t]*\\)"
                  "\\(with\\|while\\|when-main\\|when\\|try\\|syntax-rules\\|syntax-match\\|"
-                 "macro-rules\\|macro-match\\|if\\|for-each\\|finally\\|except\\|else\\|elif\\|"
-                 "dyn-with\\|dyn-wind\\|define-syntax\\|define-coroutine\\|define-class\\|"
-                 "define\\|class\\|call\\|begin\\)"
+                 "switch\\|special-rules\\|special-match\\|macro-rules\\|macro-match\\|if\\|"
+                 "for-each\\|finally\\|except\\|else\\|elif\\|dyn-with\\|dyn-wind\\|"
+                 "define-syntax\\|define-coroutine\\|define-class\\|define\\|class\\|call\\|"
+                 "begin\\)"
 
                  "\\b\\([^\n]*?\\)\\(:\\)")
          (list 2 font-lock-keyword-face)
@@ -92,28 +93,30 @@
    ;; Implicit list head (layout line: first atom on line, no leading paren)
    (list (concat "^\\([ \t]*\\)\\("
                  "yield-from\\|yield\\|with\\|while\\|when-main\\|when\\|unless\\|try\\|"
-                 "syntax-rules\\|syntax-match\\|shift\\|setq-values\\|setq\\|set!\\|return\\|"
-                 "reset\\|refq\\|ref\\|raise\\|parameterq\\|parameterize\\|or\\|macro-rules\\|"
-                 "macro-match\\|locals\\|list-each\\|letrec\\|let/cc\\|let-values\\|let\\*\\|let\\|"
-                 "lambda\\|import-from\\|import\\|if\\|globals\\|function-compose\\|for-each\\|"
-                 "each\\|dyn-with\\|dyn-wind\\|dict-each\\|delq\\|define-values\\|"
-                 "define-syntax\\|define-parameter\\|define-global\\|define-demanding\\|"
-                 "define-coroutine\\|define-class\\|define\\|decorate\\|continue\\|cond\\|"
-                 "class\\|capture/cc\\|call/cc\\|break\\|bindq\\|bind!\\|begin\\|await\\|attr\\|and"
+                 "syntax-rules\\|syntax-match\\|switch\\|special-rules\\|special-match\\|"
+                 "shift\\|setq-values\\|setq\\|set!\\|return\\|reset\\|refq\\|ref\\|raise\\|"
+                 "parameterq\\|parameterize\\|or\\|macro-rules\\|macro-match\\|locals\\|"
+                 "list-each\\|letrec\\|let/cc\\|let-values\\|let\\*\\|let\\|lambda\\|import-from\\|"
+                 "import\\|if\\|globals\\|function-compose\\|for-each\\|extend-syntax\\|each\\|"
+                 "dyn-with\\|dyn-wind\\|dict-each\\|delq\\|define-values\\|define-syntax\\|"
+                 "define-parameter\\|define-global\\|define-demanding\\|define-coroutine\\|"
+                 "define-class\\|define\\|decorate\\|continue\\|cond\\|class\\|capture/cc\\|"
+                 "call/cc\\|break\\|bindq\\|bind!\\|begin\\|await\\|attr\\|and"
 
                  "\\)\\>")
          2 font-lock-keyword-face)
    ;; List-head special forms (first symbol in paren form)
    (list (concat "(\\s-*\\("
                  "yield-from\\|yield\\|with\\|while\\|when-main\\|when\\|unless\\|try\\|"
-                 "syntax-rules\\|syntax-match\\|shift\\|setq-values\\|setq\\|set!\\|return\\|"
-                 "reset\\|refq\\|ref\\|raise\\|parameterq\\|parameterize\\|or\\|macro-rules\\|"
-                 "macro-match\\|locals\\|list-each\\|letrec\\|let/cc\\|let-values\\|let\\*\\|let\\|"
-                 "lambda\\|import-from\\|import\\|if\\|globals\\|function-compose\\|for-each\\|"
-                 "each\\|dyn-with\\|dyn-wind\\|dict-each\\|delq\\|define-values\\|"
-                 "define-syntax\\|define-parameter\\|define-global\\|define-demanding\\|"
-                 "define-coroutine\\|define-class\\|define\\|decorate\\|continue\\|cond\\|"
-                 "class\\|capture/cc\\|call/cc\\|break\\|bindq\\|bind!\\|begin\\|await\\|attr\\|and"
+                 "syntax-rules\\|syntax-match\\|switch\\|special-rules\\|special-match\\|"
+                 "shift\\|setq-values\\|setq\\|set!\\|return\\|reset\\|refq\\|ref\\|raise\\|"
+                 "parameterq\\|parameterize\\|or\\|macro-rules\\|macro-match\\|locals\\|"
+                 "list-each\\|letrec\\|let/cc\\|let-values\\|let\\*\\|let\\|lambda\\|import-from\\|"
+                 "import\\|if\\|globals\\|function-compose\\|for-each\\|extend-syntax\\|each\\|"
+                 "dyn-with\\|dyn-wind\\|dict-each\\|delq\\|define-values\\|define-syntax\\|"
+                 "define-parameter\\|define-global\\|define-demanding\\|define-coroutine\\|"
+                 "define-class\\|define\\|decorate\\|continue\\|cond\\|class\\|capture/cc\\|"
+                 "call/cc\\|break\\|bindq\\|bind!\\|begin\\|await\\|attr\\|and"
 
                  "\\)\\>")
          1 font-lock-keyword-face)

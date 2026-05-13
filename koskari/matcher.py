@@ -17,15 +17,14 @@ koskari.matcher
 
 Python surface for the next-generation native matcher. Provides the thaw
 helper that reconstructs a native Matcher from its frozen tagged-tuple
-representation, plus a small builder API for authoring matcher patterns
-in Python that lower to the same frozen form. Lowering uses either the
-baseline MatchCompiler (slots, externs, consts, nodes only) or
-HygienicMatchCompiler, which additionally records hygiene
-metadata for source-form matchers (see ``koskari.hygiene``). Rule-level MATCH spines use
-:func:`parse_explicit_rule_pattern`. :func:`repeat_capture` lowers to CAPTURE wrapping REPEAT of an anonymous
-GROUP so each iteration yields one row
-value (dict, Datum slice, etc.); see repeat_capture and
-binding_inner_pattern
+representation, plus a small builder API for authoring matcher patterns in
+Python that lower to the same frozen form. Lowering uses either the baseline
+MatchCompiler (slots, externs, consts, nodes only) or HygienicMatchCompiler,
+which additionally records hygiene metadata for source-form matchers (see
+``koskari.hygiene``). Rule-level MATCH spines use
+:func:`parse_explicit_rule_pattern`. :func:`repeat_capture` lowers to CAPTURE
+wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
+(dict, Datum slice, etc.); see repeat_capture and binding_inner_pattern
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -33,18 +32,11 @@ binding_inner_pattern
 """
 
 
-from koskari.hygiene import Hygiene
-from koskari.lib import (
-    Datum,
-    Matcher,
-    MatchResult,
-    keyword,
-    nil,
-    pair,
-    symbol,
-)
-from koskari.types import is_keyword, is_pair, is_proper, is_symbol, unpack
 from typing import Protocol, runtime_checkable
+
+from koskari.hygiene import Hygiene
+from koskari.lib import Datum, Matcher, MatchResult, keyword, nil, pair, symbol
+from koskari.types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 
 __all__ = [
@@ -279,6 +271,14 @@ class MatchCompiler:
         return frozen
 
 
+    @classmethod
+    def compile(cls, pattern: "Pattern") -> Matcher:
+        """
+        Compile a pattern into a native Matcher
+        """
+        return Matcher.from_tuple(cls().lower(pattern))
+
+
 class HygienicMatchCompiler(MatchCompiler):
     """
     Match compiler that accumulates ``koskari.hygiene`` binder and
@@ -376,6 +376,20 @@ class HygienicMatchCompiler(MatchCompiler):
             entry,
         )
         return frozen
+
+
+    @classmethod
+    def compile_and_hygiene(
+            cls,
+            pattern: "Pattern") -> tuple[Matcher, Hygiene]:
+        """
+        Compile a pattern into a tuple of (matcher, hygiene plan)
+        """
+
+        hc = cls()
+        matcher = Matcher.from_tuple(hc.lower(pattern))
+        hygiene = hc.build_hygiene()
+        return matcher, hygiene
 
 
 @runtime_checkable

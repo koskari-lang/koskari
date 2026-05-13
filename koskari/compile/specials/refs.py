@@ -29,7 +29,7 @@ from ...types import is_pair
 from ...exceptions import SpecialError
 from ...stdlib import builtin
 from ...syntax import special
-from ..helpers import const_only_expr, match
+from ..helpers import const_only_expr
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
@@ -141,31 +141,25 @@ def special_refq(compiler, source, tc=False):
 
 
 _BINDQ_PATTERNS = [
-    MATCH(DEFINE("name"), VALUE("value")),
+    MATCH(SYMBOL("_"), DEFINE("name"), VALUE("value")),
 ]
-
-_BINDQ_PATTERNS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
-    for m in _BINDQ_PATTERNS)
 
 
 @builtin("compile/bindq")
-@special("compile/bindq", patterns=_BINDQ_PATTERNS_FULL)
-def special_bindq(compiler, source, tc=False):
+@special("compile/bindq", patterns=_BINDQ_PATTERNS, unpack="match")
+def special_bindq(compiler, caps, tc=False):
     """
     Compile (compile/bindq SYM EXPR). Declare a new binding SYM and initialize
     it to EXPR
     """
 
-    called_by, rest = source
-    matched = match(rest, _BINDQ_PATTERNS)
-    if matched is None:
-        raise SpecialError("bindq requires a name and value", source)
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    namesym = matched["name"].datum
+    namesym = caps["name"].datum
     name = str(namesym)
 
-    value = matched["value"]
+    value = caps["value"]
     value_datum = value.datum
 
     frag = compiler.fragment(called_by)
@@ -175,7 +169,7 @@ def special_bindq(compiler, source, tc=False):
         frag.position(value.position)
     frag.merge(compiler.full_compile(value_datum))
 
-    frag.position_of(source)
+    frag.position(pos)
     frag.instruction(OpCode.KOS_OP_VAR_BIND, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 

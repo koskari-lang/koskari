@@ -22,42 +22,33 @@ Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
 """
 
 
-from ...lib import OpCode, symbol
-from ...types import is_symbol
-from ...exceptions import SpecialError
+from ...lib import OpCode
+from ...matcher import MATCH, SYMBOL, VALUE
 from ...stdlib import builtin
 from ...syntax import special
-from ..helpers import match
-from ...matcher import MATCH, SYMBOL, VALUE
+from ...types import is_symbol
 
 
 _ATTR_FORMS = [
-    MATCH(VALUE('obj'), SYMBOL('sym')),
+    MATCH(SYMBOL("_"), VALUE('obj'), SYMBOL('sym')),
 ]
-
-_ATTR_FORMS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
-    for m in _ATTR_FORMS)
 
 
 @builtin("compile/attr")
-@special("compile/attr", patterns=_ATTR_FORMS_FULL)
-def special_attr(compiler, source, tc=False):
+@special("compile/attr", patterns=_ATTR_FORMS, unpack="match")
+def special_attr(compiler, caps, tc=False):
     """
     Compile (compile/attr OBJ SYM). Load attribute SYM from OBJ
     """
 
-    called_by, body = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    m = match(body, _ATTR_FORMS)
-    if m is None:
-        raise SpecialError("compile/attr requires OBJ SYM", source)
-
-    obj = m['obj'].datum
-    sym = m['sym'].datum
+    obj = caps["obj"].datum
+    sym = caps["sym"].datum
 
     frag = compiler.fragment(called_by)
-    frag.position_of(body)
+    frag.position(pos)
 
     if is_symbol(obj):
         frag.request_var(str(obj))
@@ -70,33 +61,25 @@ def special_attr(compiler, source, tc=False):
 
 
 _DEL_ATTR_FORMS = [
-    MATCH(VALUE('obj'), SYMBOL('sym')),
+    MATCH(SYMBOL("_"), VALUE('obj'), SYMBOL('sym')),
 ]
 
 
-_DEL_ATTR_FORMS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
-    for m in _DEL_ATTR_FORMS)
-
-
 @builtin("compile/del-attr")
-@special("compile/del-attr", patterns=_DEL_ATTR_FORMS_FULL)
-def special_del_attr(compiler, source, tc=False):
+@special("compile/del-attr", patterns=_DEL_ATTR_FORMS, unpack="match")
+def special_del_attr(compiler, caps, tc=False):
     """
     Compile (compile/del-attr OBJ SYM). Delete attribute SYM from OBJ
     """
 
-    called_by, body = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    m = match(body, _DEL_ATTR_FORMS)
-    if m is None:
-        raise SpecialError("compile/del-attr requires OBJ SYM", source)
-
-    obj = m['obj'].datum
-    sym = m['sym'].datum
+    obj = caps["obj"].datum
+    sym = caps["sym"].datum
 
     frag = compiler.fragment(called_by)
-    frag.position_of(body)
+    frag.position(pos)
 
     if is_symbol(obj):
         frag.request_var(str(obj))
@@ -112,33 +95,26 @@ def special_del_attr(compiler, source, tc=False):
 
 
 _SET_ATTR_FORMS = [
-    MATCH(VALUE('obj'), SYMBOL('sym'), VALUE('val')),
+    MATCH(SYMBOL("_"), VALUE('obj'), SYMBOL('sym'), VALUE('val')),
 ]
-
-_SET_ATTR_FORMS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
-    for m in _SET_ATTR_FORMS)
 
 
 @builtin("compile/set-attr")
-@special("compile/set-attr", patterns=_SET_ATTR_FORMS_FULL)
-def special_set_attr(compiler, source, tc=False):
+@special("compile/set-attr", patterns=_SET_ATTR_FORMS, unpack="match")
+def special_set_attr(compiler, caps, tc=False):
     """
     Compile (compile/set-attr OBJ SYM VAL). Store VAL into attribute SYM on OBJ
     """
 
-    called_by, body = source
+    called_by = caps["_"].datum
+    pos = caps["_"].position
 
-    m = match(body, _SET_ATTR_FORMS)
-    if m is None:
-        raise SpecialError("compile/set-attr requires OBJ SYM VAL", source)
-
-    obj = m['obj'].datum
-    sym = m['sym'].datum
-    val = m['val'].datum
+    obj = caps["obj"].datum
+    sym = caps["sym"].datum
+    val = caps["val"].datum
 
     frag = compiler.fragment(called_by)
-    frag.position_of(body)
+    frag.position(pos)
 
     if is_symbol(obj):
         frag.request_var(str(obj))

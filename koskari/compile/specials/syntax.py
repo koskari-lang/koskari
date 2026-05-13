@@ -14,22 +14,23 @@
 """
 koskari.compile.specials.syntax
 
-Special forms for ``compile/syntax`` and
-``compile/define-syntax``: Syntax box construction and macro registration.
+Special forms for use with syntax, macro, and special rules. Lowers from
+convenience syntax to runtime call forms of builder functions.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 :ai-assistant: Claude via Cursor
 """
 
+
 from ...exceptions import SpecialError
 from ...lib import Datum, cons, gensym, nil, pair, symbol
-from ...matcher import (BIND, DEFINE, LIST, LITERAL_SYM, MATCH, REST,
-                           SYMBOL, VALUE, parse_explicit_rule_pattern,
-                           pattern_slot_names, repeat_capture)
+from ...matcher import (BIND, DEFINE, LIST, LITERAL_SYM, MATCH, REST, SYMBOL,
+                        VALUE, parse_explicit_rule_pattern, pattern_slot_names,
+                        repeat_capture)
 from ...stdlib import builtin
 from ...syntax import (Syntax, SyntaxTransform, hygienic_lower_tuple,
-                          parse_syntax_rules_pattern)
+                       parse_syntax_rules_pattern)
 from ...syntax import serialize_form as _serialize_form
 from ...syntax import special
 from ...types import (build_proper, get_position, is_pair, is_proper,
@@ -362,7 +363,7 @@ def special_compile_macro_match(compiler, source, tc=False):
 
 
 _SPECIAL_RULES_PATTERNS = [
-    MATCH(SYMBOL("called-by"), DEFINE("name"), VALUE("literals"), REST("rules")),
+    MATCH(SYMBOL("_"), DEFINE("name"), VALUE("literals"), REST("rules")),
 ]
 
 
