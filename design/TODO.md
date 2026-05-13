@@ -111,21 +111,6 @@ Ref: [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [interpreter/kio-format.md](interpreter/kio-format.md) (`.kio` format);
 `koskari.serialize` (incremental compile and `dump_kio`).
 
-### Extend existing syntax (prepend rules)
-
-Investigate and implement a new special form that **copies** the current syntax
-definition for a name (its transformer / merged rule table), **prepends** a new
-rule or match group (first match wins globally), and **stores** the augmented
-definition back into the **same** name slot—so existing surface syntax is
-extended in place without replacing the whole transformer by hand.
-
-Exact surface syntax is open (design sketches mention `extend-syntax`,
-`transformer` + `prepend-rules`, and related merge constructors).
-
-Ref: [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
-(Combining sections: merge, extend, copy; composable operators);
-[MACROS.md](MACROS.md).
-
 ---
 
 ## Import / loader
@@ -178,6 +163,12 @@ Ref: [api/builtins.md](api/builtins.md) (builtin catalog);
 Add Python version, platform, and Koskari version to the Koskari CLI startup
 banner. Also add a `--version` parameter that prints the same version/platform
 information and exits.
+
+### koskari-repr
+
+A **repr** variation that outputs in a more koskari-like way. In koskari, bind
+repr to this, and provide original as py-repr. Expose as kos_repr for python
+users.
 
 ---
 
