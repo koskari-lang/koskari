@@ -7,15 +7,25 @@ are then compiled as normal. For compiler special forms, see
 
 User-facing **`define-syntax`** is not implemented as a compiler special: it is
 handled by the **`compile/define-syntax`** macro in `koskari/importer/basics.ki`
-(bound with `(define compile/define-syntax (syntax-rules …))`). That macro
-rewrites `(define-syntax NAME TRANSFORMER)` into **`(compile/define NAME …)`**
-with a transformer whose head is **`syntax-rules`**, **`macro-rules`**,
+(bound with `(define compile/define-syntax (syntax-rules …))`). The compiler
+resolves the head **`define-syntax`** the same way as other compile-time
+macros (via the **`compile/define-syntax`** binding). That macro rewrites
+**`(define-syntax NAME TRANSFORMER)`** into **`(compile/define NAME …)`** with a
+transformer whose head is **`syntax-rules`**, **`macro-rules`**,
 **`syntax-match`**, **`macro-match`**, **`special-rules`**, or **`special-match`**.
 The compiler then lowers those **`syntax-rules` / `macro-rules` / …** specs via
 the specials **`compile/syntax-rules`**, **`compile/macro-rules`**,
 **`compile/syntax-match`**, **`compile/macro-match`**, **`compile/special-rules`**,
 and **`compile/special-match`** (see [SPECIALS.md](SPECIALS.md)), and binds the
 result with **`compile/define`**.
+
+In **`basics.ki`**, block reading for **`define-syntax`** is configured with
+**`define layout/define-syntax layout/flat`**. **`layout/flat`** splices the
+indented body into the same list as the header (see the **layout/flat** section
+in [LAYOUTS.md](LAYOUTS.md)), so the read result is a flat **`(define-syntax NAME TRANSFORMER)`**
+rather than an extra **`compile/begin`** wrapper around the transformer. The
+**`compile/define-syntax`** macro still performs all transformer-shape checking
+and expansion.
 
 **Design (living):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — matcher IR, **RULE** vs **MATCH** pattern languages (**`syntax-rules`** / **`macro-rules`** vs **`syntax-match`** / **`macro-match`**), post-expand hygiene and **`Syntax`** boxes, and how `define-syntax` transformers align with the same ideas as Python specials. Reader macros, hygiene, and compiler optimizations around macros: [SPECIALS.md](SPECIALS.md) (§ Macros, reader macros, hygiene, and compiler optimizations); [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
 
@@ -38,6 +48,10 @@ forms whose transformer is one of:
 - `(special-rules literals rule …)` → `(compile/define name (special-rules name literals rule …))`
 - `(special-match rule …)` → `(compile/define name (special-match name rule …))`
 
+The **`syntax-rules`** set carried by the macro itself lists
+**`compile/define-syntax`** plus the six transformer heads above (see the
+**`(syntax-rules compile/define-syntax […])`** form at the top of **`basics.ki`**).
+
 **Use-case:** Install a compile-time transformer under the given name. After
 expansion, the **value** of **`compile/define`** is built from the **`syntax-rules`** /
 **`macro-rules`** / **`special-rules`** / … spec (see specials above).
@@ -50,6 +64,33 @@ expansion, the **value** of **`compile/define`** is built from the **`syntax-rul
 **Tests:** `tests/importer/test_basics.py` (where applicable); compile specials
 for **`compile/syntax-rules`** / **`compile/macro-rules`** / **`compile/special-rules`**
 / **`compile/special-match`**: `tests/compile/specials/test_define_syntax.py`
+
+
+## compile/extend-syntax (macro)
+
+**Symbol:** `compile/extend-syntax` — extend an existing macro or special
+transformer in place (merge or replace via **`define-extend`** / **`compile/define`**).
+
+**Syntax:** Defined in **`basics.ki`**. Matches **`(extend-syntax NAME TRANSFORMER)`**
+where **`TRANSFORMER`** is one of:
+
+- **`(syntax-rules literals rule …)`** → **`(define-extend NAME (syntax-rules NAME literals rule …))`**
+- **`(syntax-match rule …)`** → **`(define-extend NAME (syntax-match NAME rule …))`**
+- **`(macro-rules literals rule …)`** → **`(define-extend NAME (macro-rules NAME literals rule …))`**
+- **`(macro-match rule …)`** → **`(compile/define NAME (macro-match NAME rule …))`**
+  (this branch uses **`compile/define`**, not **`define-extend`**)
+- **`(special-rules literals rule …)`** → **`(define-extend NAME (special-rules NAME literals rule …))`**
+- **`(special-match rule …)`** → **`(define-extend NAME (special-match NAME rule …))`**
+
+The macro’s **`syntax-rules`** literals include the six transformer heads above
+(see **`basics.ki`**).
+
+**Reader / layout:** **`basics.ki`** sets **`define layout/extend-syntax layout/flat`**
+so block **`extend-syntax`** reads as a flat **`(extend-syntax NAME TRANSFORMER)`**
+list, same splicing idea as **`define-syntax`** (see **layout/flat** and
+**layout/extend-syntax** in [LAYOUTS.md](LAYOUTS.md)).
+
+**Defined in:** `koskari/importer/basics.ki`
 
 
 ## set!
