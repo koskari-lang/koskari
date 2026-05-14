@@ -225,25 +225,23 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
     def test_invalid_positional_frame_type_raises(self):
         grp = {"positionals": (42,)}
         with self.assertRaises(SpecialError):
-            gather_formals(grp)
+            gather_formals(grp, source=nil)
 
     def test_star_not_symbol_raises(self):
         grp = {
             "positionals": ({"name": Datum(symbol("x"))},),
             "star": Datum(99),
-            "source": Datum(cons(symbol("x"), nil)),
         }
         with self.assertRaises(SpecialError) as ctx:
-            gather_formals(grp)
+            gather_formals(grp, source=cons(symbol("x"), nil))
         self.assertIn("*", str(ctx.exception))
 
     def test_positional_frame_missing_name_raises(self):
         grp = {
             "positionals": ({"type": Datum(symbol("t"))},),
-            "source": Datum(nil),
         }
         with self.assertRaises(SpecialError) as ctx:
-            gather_formals(grp)
+            gather_formals(grp, source=nil)
         self.assertIn("name", str(ctx.exception).lower())
 
 

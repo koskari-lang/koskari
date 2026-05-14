@@ -25,9 +25,9 @@ compile/globals, and compile/locals.
 
 
 from ...exceptions import CompilerError, SpecialError
-from ...lib import OpCode, cons, keyword, nil, symbol
-from ...matcher import (BODY, DECL, DEFINE, FORMALS, FORMALS_SOURCE_KEY,
-                           LITERAL_KW, MATCH, PAIR, REST, SYMBOL, VALUE)
+from ...lib import Datum, OpCode, cons, keyword, nil, symbol
+from ...matcher import (BODY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR,
+                           REST, SYMBOL, VALUE)
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_pair
@@ -43,12 +43,12 @@ def _define_name_type_pos_from_match(matched):
     Prefer the DEFINE arm when ``name`` is present so ``decl`` is never
     mistaken for a declaration result on patterns that only bind ``name``.
 
-    DECL composite captures are native GROUP dicts that include the formals
-    source key, so compile match may adapt the decl slot like a FORMALS group.
+    DECL composite captures are native GROUP dicts or :class:`DatumFrame`
+    values; compile match may adapt the decl slot like a FORMALS group.
     When the adapted value has no name attribute, recover the symbol and
-    optional type with parse_decl on decl.source. When ``name`` is set but
-    ``type`` is not (``name`` + ``decl_tail`` DECL arm), parse ``decl_tail``
-    like a declaration attribute list.
+    optional type with parse_decl on ``decl.source`` (whole-cell spine).
+    When ``name`` is set but ``type`` is not (``name`` + ``decl_tail`` DECL
+    arm), parse ``decl_tail`` like a declaration attribute list.
     """
 
     if "name" in matched:
@@ -70,9 +70,7 @@ def _define_name_type_pos_from_match(matched):
                     ann = _parse_decl_tail(dtail.datum, None)
                     type_expr = ann.get("type")
         else:
-            sk = decl.get(FORMALS_SOURCE_KEY)
-            src = sk.datum if sk else None
-            namesym, type_expr = parse_decl(src)
+            namesym, type_expr = parse_decl(decl.source)
 
     return namesym, type_expr
 
@@ -271,11 +269,10 @@ def special_define(compiler, caps, tc=False):
         frag.declare_var(name, position=pos)
         formals = caps["formals"]
         body = caps["body"]
-        if isinstance(formals, dict):
-            sk = formals.get(FORMALS_SOURCE_KEY)
-            formals_spine = sk.datum if sk is not None else nil
-        else:
+        if isinstance(formals, Datum):
             formals_spine = formals.datum
+        else:
+            formals_spine = formals.source
         body_spine = body.datum
         if type_expr is not None:
             val_expr = cons(
@@ -373,11 +370,10 @@ def special_define_global(compiler, caps, tc=False):
     if "body" in caps:
         formals = caps["formals"]
         body = caps["body"]
-        if isinstance(formals, dict):
-            sk = formals.get(FORMALS_SOURCE_KEY)
-            formals_spine = sk.datum if sk is not None else nil
-        else:
+        if isinstance(formals, Datum):
             formals_spine = formals.datum
+        else:
+            formals_spine = formals.source
         body_spine = body.datum
         if type_expr is not None:
             val_expr = cons(

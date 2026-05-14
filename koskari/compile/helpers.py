@@ -25,13 +25,12 @@ Compile helpers for matcher FORMALS captures (GROUP dict payload)
 from typing import List
 
 from ..exceptions import ParametersError, SpecialError
-from ..lib import (Datum, Matcher, OpCode, car, cdr, cons, keyword, nil, pair,
-                   symbol)
-from ..matcher import (BINDING, BINDINGS, FORMALS, FORMALS_SOURCE_KEY, LIST,
-                          LITERAL_KW, MATCH, REST, SYMBOL, USING, USING_UNPACK,
-                          VALUE, HygienicMatchCompiler, Pattern)
-from ..types import (is_keyword, is_pair, is_proper,
-                     is_symbol, unpack)
+from ..lib import (DatumFrame, Matcher, OpCode, car, cdr, cons, keyword, nil,
+                   pair, symbol)
+from ..matcher import (BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
+                       REST, SYMBOL, USING, USING_UNPACK, VALUE,
+                       HygienicMatchCompiler, Pattern)
+from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 from .compiler import ByteCodeFragment
 
 
@@ -1005,14 +1004,13 @@ def gather_formals(formals_group, source=None):
 
     :param formals_group: dict from captures[formals_slot] after match
     :param source: optional spine for error context; defaults to
-        formals_group[FORMALS_SOURCE_KEY].datum when present
+        ``formals_group.source`` when omitted
     :return: (positional, defaults, kwonly, star, starstar, annotations)
     :raises SpecialError: on invalid structure
     """
 
-    if source is None:
-        sk = formals_group.get(FORMALS_SOURCE_KEY)
-        source = sk.datum if sk else None
+    if source is None and isinstance(formals_group, DatumFrame):
+        source = formals_group.source
 
     annotations = {}
     positional = []

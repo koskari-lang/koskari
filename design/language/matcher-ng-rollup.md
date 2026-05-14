@@ -140,11 +140,11 @@ system without a separate “planned vs landed” split.
   | Composite  | Final shape (sketch)                                                                                                                             |
   |------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
   | `DEFINE`   | `CAPTURE(slot, TYPE("symbol"))`                                                                                                                  |
-  | `BINDING`  | `CAPTURE(slot, binding_inner_pattern())`                                                                                                         |
-  | `BINDINGS` | `ONEOF(CAPTURE(slot, LITERAL(nil)), FORM(CAPTURE(slot, REPEAT(GROUP(None, ONEOF(...))))))` — nil arm first because `REPEAT` with `min_count` 0 always succeeds; each iteration runs a slot-free `GROUP` that produces one frame dict |
-  | `USING`    | `CAPTURE(slot, FORM(ONEOF(...)))` with four ordered `MATCH` branches: unpack, name+expr, expr-as-name, bare expr                                 |
-  | `DECL`     | `CAPTURE(slot, ONEOF(TYPE("symbol"), FORM(MATCH(SYMBOL("name"))), FORM(MATCH(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))), FORM(MATCH(SYMBOL("name"), REST("decl_tail")))))` — inner `name`, `type`, `decl_tail` use `CAPTURE`/`REST` lowering; the matcher does not parse the keyword tail |
-  | `FORMALS`  | `GROUP(slot, CAPTURE(FORMALS_SOURCE_KEY, formals_inner_pattern()))` — lowers to `CAPTURE` for the outer slot wrapping a slot-free `GROUP` around an inner `CAPTURE("source", …)`; the outer slot binds a **plain dict** (`source` plus optional `positionals`, `defaults`, `star`, `kwonly`, `starstar`). No bare-symbol formals arm |
+  | `BINDING`  | `GROUP(slot, binding_inner_pattern())` — pair-backed subjects yield a `DatumFrame`; the whole binding cell spine is `DatumFrame.source` |
+  | `BINDINGS` | `ONEOF(CAPTURE(slot, LITERAL(nil)), FORM(CAPTURE(slot, REPEAT(GROUP(None, ONEOF(...))))))` — nil arm first because `REPEAT` with `min_count` 0 always succeeds; each iteration runs a slot-free `GROUP` that produces one frame dict or `DatumFrame` |
+  | `USING`    | `GROUP(slot, FORM(ONEOF(...)))` with four ordered `MATCH` branches: unpack, name+expr, expr-as-name, bare expr                                 |
+  | `DECL`     | `GROUP(slot, ONEOF(TYPE("symbol"), FORM(MATCH(SYMBOL("name"))), FORM(MATCH(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))), FORM(MATCH(SYMBOL("name"), REST("decl_tail")))))` — inner `name`, `type`, `decl_tail` use `CAPTURE`/`REST` lowering; the matcher does not parse the keyword tail; pair-backed subjects carry the declaration cell on `DatumFrame.source` |
+  | `FORMALS`  | `GROUP(slot, formals_inner_pattern())` — the outer slot binds a dict or `DatumFrame` (`positionals`, `defaults`, `star`, `kwonly`, `starstar`); the whole formals list spine is `DatumFrame.source` for pair-backed subjects. No bare-symbol formals arm |
   | `BODY`     | `REST(slot, min_tail=1)` (lowers to `CAPTURE(slot, REST(min_tail))`) plus a `scope_regions` hygiene entry                                       |
 
 * **Hygiene is a separate data structure; the frozen matcher stays

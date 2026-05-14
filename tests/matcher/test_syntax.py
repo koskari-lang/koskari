@@ -33,10 +33,10 @@ from koskari.matcher import (
     CLASS,
     DECL,
     DEFINE,
+    DatumFrame,
     FIELD,
     FORM,
     FORMALS,
-    FORMALS_SOURCE_KEY,
     GROUP,
     KNOWN_HEADS,
     LIST,
@@ -818,7 +818,9 @@ class TestRecursiveLowering(unittest.TestCase):
         result = m.match(
             (outer,), symbol=symbol, keyword=keyword)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["b"][FORMALS_SOURCE_KEY].datum, cell)
+        b = result.captures["b"]
+        self.assertIsInstance(b, DatumFrame)
+        self.assertIs(b.source, cell)
         self.assertIs(result.captures["b"]["name"].datum, sname)
         self.assertIs(result.captures["b"]["expr"].datum, sval)
 

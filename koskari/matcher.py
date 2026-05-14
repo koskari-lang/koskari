@@ -91,7 +91,6 @@ __all__ = (
     "BINDING",
     "BINDINGS",
     "FORMALS",
-    "FORMALS_SOURCE_KEY",
     "USING",
     "USING_UNPACK",
     "BODY",
@@ -1248,9 +1247,6 @@ def slot_prefix_copy(pattern, prefix, sep):
         % (type(pattern).__name__,))
 
 
-FORMALS_SOURCE_KEY = "source"
-
-
 def binding_inner_pattern():
     """
     Build the inner shape of a single koskari binding cell as matcher
@@ -1277,11 +1273,12 @@ def binding_inner_pattern():
 
 def binding_group_capture_pattern():
     """
-    Whole-cell CAPTURE plus binding_inner_pattern; same inner layout as
-    :class:`BINDING` GROUP dict and each :class:`BINDINGS` repeat frame
+    Same inner layout as :class:`BINDING` GROUP dict and each
+    :class:`BINDINGS` repeat frame (no synthetic source capture; pair-backed
+    matches expose the whole-cell spine on :class:`DatumFrame` ``.source``)
     """
 
-    return CAPTURE(FORMALS_SOURCE_KEY, binding_inner_pattern())
+    return binding_inner_pattern()
 
 
 def bindings_grouped_list_cell_pattern():
@@ -1608,9 +1605,11 @@ class DECL(Composite, HygieneWireSlotScopes):
     one-element list naming the symbol, the (type as: name) form,
     or a (name . tail) form where tail captures the keyword
     attribute pairs verbatim. After a successful match captures[slot]
-    is a dict (native GROUP). Keys include ``source`` (Datum of the whole
-    declaration cell), ``name`` where applicable, ``type`` from the as-form,
-    ``decl_tail`` from the dotted tail arm; other keys are omitted
+    is a dict (native GROUP) or :class:`DatumFrame` for KosPair-backed
+    subjects. Keys include ``name`` where applicable, ``type`` from the
+    as-form, ``decl_tail`` from the dotted tail arm; other keys are omitted.
+    The whole declaration cell spine is available as ``.source`` on
+    :class:`DatumFrame` results (not a dict key)
     """
 
 
@@ -1627,7 +1626,7 @@ class DECL(Composite, HygieneWireSlotScopes):
 
 
     def _expand(self):
-        return GROUP(self._slot, CAPTURE(FORMALS_SOURCE_KEY, ONEOF(
+        return GROUP(self._slot, ONEOF(
             TYPE("symbol"),
             FORM(MATCH(SYMBOL("name"))),
             FORM(MATCH(
@@ -1635,7 +1634,7 @@ class DECL(Composite, HygieneWireSlotScopes):
                 LITERAL_KW("as"),
                 SYMBOL("name"))),
             FORM(MATCH(SYMBOL("name"), REST("decl_tail"))),
-        )))
+        ))
 
 
     def iter_introduced_symbols(self, matched):
@@ -1648,11 +1647,9 @@ class DECL(Composite, HygieneWireSlotScopes):
             if is_symbol(name):
                 yield name
                 return
-        raw = grp.get(FORMALS_SOURCE_KEY)
-        if raw is not None:
-            raw = raw.datum
-            if is_symbol(raw):
-                yield raw
+        raw = grp.source
+        if is_symbol(raw):
+            yield raw
 
 
     def iter_recurse_targets(self, matched):
@@ -1672,9 +1669,11 @@ class BINDING(Composite, HygieneWireSlotScopes):
     """
     Capture a single binding-shaped cell, (NAME EXPR) or
     (EXPR as: NAME). After a successful match captures[slot] is a dict
-    (native GROUP) with ``source`` (Datum of the pair), ``name``, and
-    ``expr`` as produced by binding_inner_pattern. Use BINDING_CELL when
-    several binding-shaped captures must coexist in one matcher
+    (native GROUP) or :class:`DatumFrame` with ``name`` and ``expr`` as
+    produced by binding_inner_pattern. For KosPair-backed subjects the
+    whole binding cell spine is ``.source`` on :class:`DatumFrame`. Use
+    BINDING_CELL when several binding-shaped captures must coexist in one
+    matcher
     """
 
 
@@ -1719,8 +1718,8 @@ class BINDINGS(Composite):
     Capture a binding-list cell: a single element which is either nil
     or a proper list of binding-shaped cells. The nonempty arm uses
     repeat_capture so captures[slot] is a bare Python list of per-cell
-    frame dicts (same keys as :class:`BINDING`: ``source``, ``name``,
-    ``expr``), not Datum-wrapped; the empty arm matches nil and binds
+    frame dicts (same keys as :class:`BINDING`: ``name``, ``expr``), not
+    Datum-wrapped; the empty arm matches nil and binds
     captures[slot] = nil (a Datum in the usual CAPTURE sense). The two
     arms share an outer slot name through ONEOF's per-branch capture
     scoping
@@ -1926,9 +1925,8 @@ class FORMALS(Composite, HygieneWireSlotScopes):
     decompose its structure into a nested capture dict. Improper-list
     formals are rejected because koskari does not allow them as a
     function-formals shape. After a successful match captures[slot] is
-    a dict (native GROUP) whose keys include:
+    a dict (native GROUP) or :class:`DatumFrame` whose keys include:
 
-    * 'source': Datum of the whole formals list spine (pair or nil)
     * 'positionals': bare Python list of frame dicts (one per positional formal)
     * 'defaults': bare Python list of frame dicts (one per default keyword/value)
     * 'star': the symbol after *: (or nil for the *: nil marker)
@@ -1936,9 +1934,10 @@ class FORMALS(Composite, HygieneWireSlotScopes):
     * 'starstar': the symbol after **:
 
     Inner keys for phases that did not run are omitted from the group
-    dict. Use one FORMALS per matcher; multi-instance composition
-    requires slot_prefix because inner slots share the surrounding
-    scope
+    dict. For KosPair-backed subjects the whole formals list spine is
+    ``.source`` on :class:`DatumFrame`. Use one FORMALS per matcher;
+    multi-instance composition requires slot_prefix because inner slots
+    share the surrounding scope
     """
 
 
@@ -1955,8 +1954,7 @@ class FORMALS(Composite, HygieneWireSlotScopes):
 
 
     def _expand(self):
-        return GROUP(self._slot, CAPTURE(
-            FORMALS_SOURCE_KEY, formals_inner_pattern()))
+        return GROUP(self._slot, formals_inner_pattern())
 
 
     def iter_introduced_symbols(self, matched):
@@ -2029,9 +2027,10 @@ class USING(Composite, HygieneWireSlotScopes):
     3. (EXPR as: NAME)     -- as form, captures expr and name
     4. (EXPR)              -- bare expression, captures expr only
 
-    After a successful match captures[slot] is a dict (native GROUP)
-    with ``source`` (Datum of the whole cell) plus whichever of ``lhs``,
-    ``name``, ``expr`` the winning arm binds
+    After a successful match captures[slot] is a dict (native GROUP) or
+    :class:`DatumFrame` with whichever of ``lhs``, ``name``, ``expr`` the
+    winning arm binds. For KosPair-backed subjects the whole cell spine is
+    ``.source`` on :class:`DatumFrame`
     """
 
 
@@ -2048,12 +2047,12 @@ class USING(Composite, HygieneWireSlotScopes):
 
 
     def _expand(self):
-        return GROUP(self._slot, CAPTURE(FORMALS_SOURCE_KEY, FORM(ONEOF(
+        return GROUP(self._slot, FORM(ONEOF(
             MATCH(PAIR("lhs"), VALUE("expr")),
             MATCH(SYMBOL("name"), VALUE("expr")),
             MATCH(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
             MATCH(VALUE("expr")),
-        ))))
+        )))
 
 
     def iter_introduced_symbols(self, matched):
@@ -2079,8 +2078,9 @@ class USING(Composite, HygieneWireSlotScopes):
 class USING_UNPACK(Composite, HygieneWireSlotScopes):
     """
     Capture ``((PATTERN...) EXPR)`` for unpack bindings (e.g. for-each).
-    After a successful match captures[slot] is a dict (native GROUP)
-    with ``source``, ``lhs``, and ``expr``
+    After a successful match captures[slot] is a dict (native GROUP) or
+    :class:`DatumFrame` with ``lhs`` and ``expr``. For KosPair-backed
+    subjects the whole cell spine is ``.source`` on :class:`DatumFrame`
     """
 
 
@@ -2097,9 +2097,7 @@ class USING_UNPACK(Composite, HygieneWireSlotScopes):
 
 
     def _expand(self):
-        return GROUP(self._slot, CAPTURE(
-            FORMALS_SOURCE_KEY,
-            FORM(MATCH(PAIR("lhs"), VALUE("expr")))))
+        return GROUP(self._slot, FORM(MATCH(PAIR("lhs"), VALUE("expr"))))
 
 
     def iter_introduced_symbols(self, matched):

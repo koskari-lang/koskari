@@ -25,10 +25,10 @@ import pytest
 
 from koskari.lib import Datum, cons, keyword, nil, symbol
 from koskari.matcher import (BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE,
-                                FORMALS, FORMALS_SOURCE_KEY, LITERAL, MATCH,
-                                TYPE, USING, Hygiene, HygienicMatchCompiler,
-                                MatchCompiler, Matcher, MatchResult,
-                                make_matcher)
+                                DatumFrame, FORMALS, LITERAL, MATCH, TYPE, USING,
+                                Hygiene, HygienicMatchCompiler, MatchCompiler,
+                                Matcher, MatchResult, make_matcher)
+from koskari.types import build_proper
 
 
 pytestmark = pytest.mark.phase_infra
@@ -161,9 +161,11 @@ class TestDECL(unittest.TestCase):
         pat = MATCH(DECL("d"))
         m = pat.build()
         sa = symbol("foo")
-        result = m.match((sa,))
+        result = m.match(build_proper(sa))
         self.assertTrue(result.matched)
-        self.assertIs(_ucaps(result)["d"][FORMALS_SOURCE_KEY], sa)
+        d = result.captures["d"]
+        self.assertIsInstance(d, DatumFrame)
+        self.assertEqual(d.source, build_proper(sa))
 
 
     def test_decl_one_element_list(self):
@@ -174,10 +176,12 @@ class TestDECL(unittest.TestCase):
         pat = MATCH(DECL("d"))
         m = pat.build()
         sa = symbol("foo")
-        subj = (_list(sa),)
-        result = m.match(subj)
+        inner = _list(sa)
+        result = m.match(build_proper(inner))
         self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["d"][FORMALS_SOURCE_KEY], _list(sa))
+        d = result.captures["d"]
+        self.assertIsInstance(d, DatumFrame)
+        self.assertEqual(d.source, build_proper(inner))
         self.assertIs(_ucaps(result)["d"]["name"], sa)
 
 
@@ -254,10 +258,12 @@ class TestBINDING(unittest.TestCase):
         pat = MATCH(BINDING("b"))
         m = pat.build()
         sa = symbol("foo")
-        subj = (_list(sa, 7),)
-        result = m.match(subj)
+        cell = _list(sa, 7)
+        result = m.match(build_proper(cell))
         self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["b"][FORMALS_SOURCE_KEY], _list(sa, 7))
+        b = result.captures["b"]
+        self.assertIsInstance(b, DatumFrame)
+        self.assertEqual(b.source, build_proper(cell))
         self.assertIs(_ucaps(result)["b"]["name"], sa)
         self.assertEqual(_ucaps(result)["b"]["expr"], 7)
 
@@ -322,16 +328,21 @@ class TestBINDINGS(unittest.TestCase):
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
-        subj = (_list(_list(sa, 1), _list(sb, 2)), "tail")
+        c1 = _list(sa, 1)
+        c2 = _list(sb, 2)
+        subj = build_proper(_list(c1, c2), "tail")
         result = m.match(subj)
         self.assertTrue(result.matched)
+        frames_raw = result.captures["bs"]
+        self.assertIsInstance(frames_raw, list)
+        self.assertEqual(len(frames_raw), 2)
+        self.assertIsInstance(frames_raw[0], DatumFrame)
+        self.assertIs(frames_raw[0].source, c1)
+        self.assertIsInstance(frames_raw[1], DatumFrame)
+        self.assertEqual(frames_raw[1].source, build_proper(c2))
         frames = _ucaps(result)["bs"]
-        self.assertIsInstance(frames, list)
-        self.assertEqual(len(frames), 2)
-        self.assertEqual(frames[0][FORMALS_SOURCE_KEY], _list(sa, 1))
         self.assertIs(frames[0]["name"], sa)
         self.assertEqual(frames[0]["expr"], 1)
-        self.assertEqual(frames[1][FORMALS_SOURCE_KEY], _list(sb, 2))
         self.assertIs(frames[1]["name"], sb)
         self.assertEqual(frames[1]["expr"], 2)
         self.assertEqual(_ucaps(result)["tail"], "tail")
@@ -345,7 +356,7 @@ class TestBINDINGS(unittest.TestCase):
 
         pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
-        result = m.match((nil, "tail"))
+        result = m.match(build_proper(nil, "tail"))
         self.assertTrue(result.matched)
         self.assertIs(_ucaps(result)["bs"], nil)
         self.assertEqual(_ucaps(result)["tail"], "tail")
@@ -515,11 +526,13 @@ class TestFORMALS(unittest.TestCase):
 
         pat = MATCH(FORMALS("f"))
         m = pat.build()
-        result = m.match((nil,))
+        result = m.match(build_proper(nil))
         self.assertTrue(result.matched)
+        f = result.captures["f"]
+        self.assertIsInstance(f, DatumFrame)
+        self.assertEqual(f.source, build_proper(nil))
         c = _ucaps(result)
         f = c["f"]
-        self.assertIs(f[FORMALS_SOURCE_KEY], nil)
         self.assertEqual(f["positionals"], [])
         self.assertEqual(f["defaults"], [])
         self.assertEqual(f["kwonly"], [])
@@ -539,10 +552,12 @@ class TestFORMALS(unittest.TestCase):
         sb = symbol("b")
         sc = symbol("c")
         formals = _list(sa, sb, sc)
-        result = m.match((formals,))
+        result = m.match(build_proper(formals))
         self.assertTrue(result.matched)
+        fr = result.captures["f"]
+        self.assertIsInstance(fr, DatumFrame)
+        self.assertEqual(fr.source, build_proper(formals))
         u = _ucaps(result)
-        self.assertEqual(u["f"][FORMALS_SOURCE_KEY], formals)
         positionals = u["f"]["positionals"]
         self.assertIsInstance(positionals, list)
         self.assertEqual(len(positionals), 3)
@@ -1001,12 +1016,14 @@ class TestComposition(unittest.TestCase):
         sx = symbol("x")
         sy = symbol("y")
         formals = _list(sx, sy)
-        result = m.match((sa, formals, "b1", "b2"))
+        result = m.match(build_proper(sa, formals, "b1", "b2"))
         self.assertTrue(result.matched)
         u = _ucaps(result)
         self.assertIs(u["name"], sa)
-        self.assertEqual(u["formals"][FORMALS_SOURCE_KEY], formals)
-        self.assertEqual(u["body"], ("b1", "b2"))
+        fr = result.captures["formals"]
+        self.assertIsInstance(fr, DatumFrame)
+        self.assertIs(fr.source, formals)
+        self.assertEqual(u["body"], build_proper("b1", "b2"))
         positionals = u["formals"]["positionals"]
         self.assertEqual(len(positionals), 2)
 

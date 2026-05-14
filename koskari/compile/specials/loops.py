@@ -111,7 +111,7 @@ def special_for_each(compiler, caps, tc=False):
     fragment.instruction(OpCode.KOS_OP_ITER_NEXT, loop_else)
 
     if using:
-        src = using["source"].datum
+        src = using.source
         lhs = using["lhs"].datum
         fragment.merge(using_unpack_helper(compiler, lhs, src))
     else:
