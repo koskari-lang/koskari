@@ -31,22 +31,19 @@ from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from os.path import dirname, join
 
-from ..types import as_coroutine
+from .. import syntax as _koskari_syntax  # noqa: F401 registers @builtin
 from ..compile import specials as _koskari_compile_specials  # noqa: F401
+from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
+                   MemoizedRef, Module, ModuleNamespace, ParamRef, Ref, apply,
+                   build_dict, build_list, build_set, build_tuple, car, cdr,
+                   cons, defer, demand, demand_apply, demand_call, deref,
+                   gensym, keyword, nil, pair, parameter, setcar, setcdr,
+                   symbol, values)
 from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 from ..stdlib import BUILTINS
-from ..syntax import (build_macro_rules,
-                         build_special_match,
-                         build_special_rules,
-                         build_syntax_rules)
-from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
-                   MemoizedRef,
-                   Module, ModuleNamespace, ParamRef, Ref, apply, build_dict,
-                   build_list, build_set, build_tuple, car, cdr, cons, defer,
-                   demand, demand_apply, demand_call, deref, gensym, keyword,
-                   nil, pair, parameter, setcar, setcdr, symbol, values)
-from ..types import (TypePredicate, build_proper, is_nil, is_None, is_proper,
-                     is_recursive, unpack)
+from ..types import (TypePredicate, as_coroutine, build_proper, is_nil,
+                     is_None, is_proper, is_recursive, unpack)
+
 
 __all__ = (
     'make_bootstrap',
@@ -189,12 +186,6 @@ def make_bootstrap():
 
     # todo: replace me with a better help built-in
     _bind('help', help)
-
-    # syntax-rule constructor for define-syntax lowering
-    _bind('build-syntax-rules', build_syntax_rules)
-    _bind('build-macro-rules', build_macro_rules)
-    _bind('build-special-rules', build_special_rules)
-    _bind('build-special-match', build_special_match)
 
     import koskari.lib as kl
     for name in ('*', '+', '-', '/', '//', '&', '|', '^',

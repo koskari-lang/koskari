@@ -13,7 +13,7 @@
 
 """
 Tests for CAPTURE(REPEAT(inner)) frame lists, binding_inner_pattern,
-slot_prefix, BINDING_CELL, and thaw round-trip (matcher phase 4.5).
+and thaw round-trip (matcher phase 4.5).
 """
 
 
@@ -23,12 +23,9 @@ import pytest
 
 from koskari.lib import Datum, keyword, symbol
 from koskari.matcher import (
-    BINDING_CELL,
-    MATCH,
     Matcher,
     binding_inner_pattern,
     repeat_capture,
-    slot_prefix,
     thaw,
 )
 
@@ -81,48 +78,6 @@ class TestRepeatCapture(unittest.TestCase):
         self.assertEqual(len(frames), 1)
         self.assertEqual(frames[0]["expr"].datum, 99)
         self.assertEqual(frames[0]["name"].datum, sx)
-
-
-class TestSlotPrefixAndBindingCell(unittest.TestCase):
-
-
-    def test_group_two_binding_cells_freezes(self):
-        """
-        Two BINDING_CELL instances use disjoint mangled slots so freeze
-        succeeds (duplicate bare name/expr would fail without prefix)
-        """
-
-        pat = MATCH(BINDING_CELL("a"), BINDING_CELL("b"))
-        frozen = pat.freeze()
-        self.assertIn("a__name", frozen[1])
-        self.assertIn("b__expr", frozen[1])
-
-
-    def test_slot_prefix_rest_slot(self):
-        """
-        slot_prefix rewrites REST slots when nesting calls for it
-        """
-
-        from koskari.matcher import REST
-
-        pat = slot_prefix(MATCH(REST("tail"), BINDING_CELL("x")), "p")
-        frozen = pat.freeze()
-        slots = frozen[1]
-        self.assertIn("p__tail", slots)
-
-    def test_slot_prefix_tail_slot(self):
-        """
-        slot_prefix rewrites REST inside OPTIONAL from legacy (TAIL slot)
-        surface
-        """
-
-        from koskari.matcher import OPTIONAL, REST
-
-        pat = slot_prefix(
-            MATCH(OPTIONAL(REST("tail", min_tail=1)), BINDING_CELL("x")), "p")
-        frozen = pat.freeze()
-        slots = frozen[1]
-        self.assertIn("p__tail", slots)
 
 
 class TestRepeatFramesThawRoundTrip(unittest.TestCase):

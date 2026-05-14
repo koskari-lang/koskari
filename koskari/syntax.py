@@ -48,7 +48,9 @@ normally a symbol capture (the actual head, including aliases); include
 the dispatch symbol in ``literals`` when a fixed head is required. Ki
 ``syntax-match`` segments use only the macro name as a literal set at
 the compile layer; here MATCH patterns encode structure explicitly.
-These are not registered in bootstrap until the NG cutover.
+``parse-match-pattern``, ``parse-rule-pattern``, and the ``build_*``
+rule constructors register as Ki builtins via :func:`koskari.stdlib.builtin`
+and merge into bootstrap from :data:`koskari.stdlib.BUILTINS`.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -68,6 +70,7 @@ from koskari.lib import (Datum, Matcher, car, cdr, cons, demand_call, gensym,
 from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST, TEST_ANY,
                              HygienicMatchCompiler, check_pattern_arg,
                              parse_explicit_rule_pattern, repeat_capture)
+from koskari.stdlib import builtin
 from koskari.types import build_proper, is_pair, is_proper, is_symbol, unpack
 
 
@@ -99,6 +102,8 @@ __all__ = (
 _symbol_match = symbol("match")
 
 _tag_syntax_rules = symbol("syntax/rules")
+_dialect_rule = symbol("syntax/dialect-rule")
+_dialect_match = symbol("syntax/dialect-match")
 _tag_list = symbol("syntax/list")
 _tag_cons = symbol("syntax/cons")
 
@@ -299,30 +304,20 @@ class SyntaxTransform(object):
     plus ``Datum`` peel for compile)
     """
 
-    def __init__(self, pattern, template=nil):
+    def __init__(
+            self, pattern, template=nil, pattern_src=nil, *,
+            syntax_match_dialect=False):
         """
         :param pattern: matcher pattern tree
         :param template: syntax-rules template form (often contains pattern vars)
+        :param pattern_src: original RULE or MATCH pattern datum for tagging
+        :param syntax_match_dialect: True when arms use MATCH dialect tagging
         """
 
         _init_pattern_fields(self, pattern, None)
         self.template = template
-
-
-    @classmethod
-    def from_persistent(cls, matcher_tuple, template):
-        """
-        Rebuild from a frozen native matcher tuple and deserialized template
-        """
-
-        self = cls.__new__(cls)
-        self.pattern = None
-        self.template = template
-        self.handler = None
-        self.matcher_tuple = matcher_tuple
-        self.hygiene = Hygiene({}, {})
-        self._matcher = Matcher.from_tuple(matcher_tuple)
-        return self
+        self.pattern_src = pattern_src
+        self.syntax_match_dialect = syntax_match_dialect
 
 
     def try_expand(self, compiler, source_obj, tc):
@@ -368,45 +363,6 @@ class MacroTransform(object):
         _init_pattern_fields(self, pattern, handler)
 
 
-    @classmethod
-    def from_persistent(cls, matcher_tuple, handler):
-        """
-        Rebuild from a frozen native matcher tuple and procedure.
-
-        Ki procedures are wrapped so ``try_expand`` still passes
-        ``(compiler, tc, **captures)`` while the underlying lambda receives
-        only ``**captures`` via :func:`koskari.lib.demand_call`, matching
-        compile-emitted ``compile/lambda`` formals.
-        """
-
-        if handler is None or not callable(handler):
-            raise TypeError("MacroTransform handler must be callable,"
-                            f" got {handler!r}")
-        self = cls.__new__(cls)
-        self.pattern = None
-        raw = handler
-
-        def _ki_captures_kw(cap):
-            kw = {}
-            for k, v in cap.items():
-                if isinstance(k, str) and k.endswith("__sr"):
-                    base = k[:-4]
-                    if base not in cap:
-                        kw[base] = v
-                else:
-                    kw[k] = v
-            return kw
-
-        def _ki_handler(compiler, tc, **captures):
-            return demand_call(raw, **_ki_captures_kw(captures))
-
-        self.handler = _ki_handler
-        self.matcher_tuple = matcher_tuple
-        self.hygiene = Hygiene({}, {})
-        self._matcher = Matcher.from_tuple(matcher_tuple)
-        return self
-
-
     def try_expand(self, compiler, source_obj, tc):
         """
         Match ``source_obj`` as the full proper-list form, run handler, then
@@ -445,47 +401,6 @@ class SpecialTransform(object):
             raise TypeError("SpecialTransform handler must be callable,"
                             f" got {handler!r}")
         _init_pattern_fields(self, pattern, handler)
-
-
-    @classmethod
-    def from_persistent(cls, matcher_tuple, handler):
-        """
-        Rebuild from a frozen native matcher tuple and procedure.
-
-        Ki procedures are wrapped so ``try_expand`` still passes
-        ``(compiler, source_obj, match_result, tc)`` while the underlying
-        lambda receives ``(compiler, tc, **captures)`` via
-        :func:`koskari.lib.demand_call`, matching compile-emitted formals.
-        """
-
-        if handler is None or not callable(handler):
-            raise TypeError("SpecialTransform handler must be callable,"
-                            f" got {handler!r}")
-        self = cls.__new__(cls)
-        self.pattern = None
-        raw = handler
-
-        def _ki_captures_kw_special(cap):
-            kw = {}
-            for k, v in cap.items():
-                if isinstance(k, str) and k.endswith("__sr"):
-                    base = k[:-4]
-                    if base not in cap:
-                        kw[base] = v
-                else:
-                    kw[k] = v
-            return kw
-
-        def _ki_handler(compiler, source_obj, match_result, tc):
-            return demand_call(
-                raw, compiler, tc,
-                **_ki_captures_kw_special(match_result.captures))
-
-        self.handler = _ki_handler
-        self.matcher_tuple = matcher_tuple
-        self.hygiene = Hygiene({}, {})
-        self._matcher = Matcher.from_tuple(matcher_tuple)
-        return self
 
 
     def try_expand(self, compiler, source_obj, tc):
@@ -594,7 +509,7 @@ class Syntax(Compiled):
     def to_syntax_rules_tagged(self):
         """
         Tagged tuple for ``(build-syntax-rules NAME TAGGED)`` const-pool
-        layout (patterns as native frozen matcher tuples)
+        layout (pattern source datums, not frozen matcher tuples)
         """
 
         lit = self.serialized_literals
@@ -606,8 +521,16 @@ class Syntax(Compiled):
                 raise TypeError(
                     "to_syntax_rules_tagged requires SyntaxTransform arms,"
                     " got %r" % (type(t).__name__,))
-            rules_out.append(
-                (t.matcher_tuple, serialize_form(t.template)))
+            if t.pattern_src is nil:
+                raise TypeError(
+                    "to_syntax_rules_tagged requires SyntaxTransform.pattern_src"
+                    " set to the original pattern datum")
+            dtag = (
+                _dialect_match if t.syntax_match_dialect else _dialect_rule)
+            rules_out.append((
+                serialize_form(dtag),
+                serialize_form(t.pattern_src),
+                serialize_form(t.template)))
         return (
             _tag_syntax_rules,
             serialize_form(self.name),
@@ -706,9 +629,9 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
     """
     Lower a syntax-rules RULE pattern (cons tree) to a ``matcher.Pattern``.
 
-    Supports the same surface as ``parse_rule_pattern`` /
-    ``syntax_pattern_to_matcher`` in ``compile/specials/syntax.py`` (RULE
-    dialect only). Does not implement MATCH-dialect ``matcher/foo`` forms.
+    RULE dialect only; does not implement MATCH-dialect ``matcher/foo`` forms.
+    Compile-time specials in ``koskari.compile.specials.syntax`` call this when
+    lowering pattern source.
 
     :param pattern_expr: koskari pattern datum
     :param literals: set or frozenset of literal symbols
@@ -747,6 +670,35 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
 
     return MATCH(*_syntax_pattern_specs(
         list(unpack(pattern_expr)), literals, source_ctx))
+
+
+@builtin("parse-match-pattern")
+def parse_match_pattern(form, source_ctx=None):
+    """
+    Ki builtin wrapper for :func:`parse_explicit_rule_pattern`
+    """
+
+    return parse_explicit_rule_pattern(form, source_ctx)
+
+
+@builtin("parse-rule-pattern")
+def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
+    """
+    Ki builtin wrapper for :func:`parse_syntax_rules_pattern`
+
+    When literals is a proper Koskari list, unpack it to a frozenset
+    """
+
+    if literals is nil:
+        lit = frozenset()
+    elif isinstance(literals, (set, frozenset)):
+        lit = frozenset(literals)
+    elif is_pair(literals) and is_proper(literals):
+        lit = frozenset(unpack(literals))
+    else:
+        lit = frozenset((literals,))
+
+    return parse_syntax_rules_pattern(pattern_expr, lit, source_ctx)
 
 
 def _syntax_elem_pattern(pat, literals, source_ctx):
@@ -868,7 +820,8 @@ def build_syntax_from_datums(name, literals, rules, *, source_ctx=None):
     for row in rows:
         pat_d, tmpl = _normalize_syntax_rule_row(row)
         ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
-        transforms.append(SyntaxTransform(ptree, tmpl))
+        transforms.append(
+            SyntaxTransform(ptree, tmpl, pat_d, syntax_match_dialect=False))
 
     return Syntax(
         name, (), tuple(transforms), serialized_literals=lit)
@@ -900,7 +853,8 @@ def build_syntax_match(name, rules, *, source_ctx=None):
     for row in rows:
         pat_d, tmpl = _normalize_syntax_rule_row(row)
         ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
-        transforms.append(SyntaxTransform(ptree, tmpl))
+        transforms.append(
+            SyntaxTransform(ptree, tmpl, pat_d, syntax_match_dialect=True))
 
     return Syntax(name, (), tuple(transforms))
 
@@ -1027,6 +981,29 @@ def build_special_match_from_rows(name, rule_rows, *, source_ctx=None):
     return Syntax(name, (), tuple(transforms))
 
 
+def _wrap_macro_ki_handler(raw):
+    """
+    Adapt a Ki procedure to MacroTransform try_expand calling convention
+    """
+
+    def _ki_handler(compiler, tc, **captures):
+        return demand_call(raw, **captures)
+
+    return _ki_handler
+
+
+def _wrap_special_ki_handler(raw):
+    """
+    Adapt a Ki procedure to SpecialTransform try_expand calling convention
+    """
+
+    def _ki_handler(compiler, source_obj, match_result, tc):
+        return demand_call(raw, compiler, tc, **match_result.captures)
+
+    return _ki_handler
+
+
+@builtin('build-syntax-rules')
 def build_syntax_rules(name, tagged_tuple):
     """
     Ki runtime: ``(build-syntax-rules NAME TAGGED)`` deserializer
@@ -1040,16 +1017,28 @@ def build_syntax_rules(name, tagged_tuple):
     literals = frozenset(deserialize_form(x) for x in tagged_tuple[2])
     transforms = []
     for rt in tagged_tuple[3]:
-        if not isinstance(rt, tuple) or len(rt) != 2:
+        if not isinstance(rt, tuple) or len(rt) != 3:
             raise ValueError("invalid syntax rule tuple")
-        pat_tup, ser_tmpl = rt
+        ser_dtag, ser_pat, ser_tmpl = rt
+        dtag = deserialize_form(ser_dtag)
+        pat_src = deserialize_form(ser_pat)
         tmpl = deserialize_form(ser_tmpl)
-        transforms.append(SyntaxTransform.from_persistent(pat_tup, tmpl))
+        if dtag == _dialect_match:
+            ptree = parse_explicit_rule_pattern(pat_src, None)
+            smd = True
+        elif dtag == _dialect_rule:
+            ptree = parse_syntax_rules_pattern(pat_src, literals, pat_src)
+            smd = False
+        else:
+            raise ValueError("invalid syntax rule dialect tag")
+        transforms.append(SyntaxTransform(
+            ptree, tmpl, pat_src, syntax_match_dialect=smd))
     use_name = name if name is not None else name_tagged
     return Syntax(
         use_name, (), tuple(transforms), serialized_literals=literals)
 
 
+@builtin('build-macro-rules')
 def build_macro_rules(name, literals_tuple, *pattern_and_lambdas):
     """
     Ki runtime: ``(build-macro-rules NAME LITERALS PAT LAMBDA ...)``
@@ -1060,13 +1049,14 @@ def build_macro_rules(name, literals_tuple, *pattern_and_lambdas):
     literals = frozenset(deserialize_form(x) for x in literals_tuple)
     transforms = []
     for i in range(0, len(pattern_and_lambdas), 2):
-        pat_tup = pattern_and_lambdas[i]
+        pat = pattern_and_lambdas[i]
         fn = pattern_and_lambdas[i + 1]
-        transforms.append(MacroTransform.from_persistent(pat_tup, fn))
+        transforms.append(MacroTransform(pat, _wrap_macro_ki_handler(fn)))
     return Syntax(
         name, (), tuple(transforms), serialized_literals=literals)
 
 
+@builtin('build-special-rules')
 def build_special_rules(name, literals_tuple, *pattern_and_lambdas):
     """
     Ki runtime: ``(build-special-rules NAME LITERALS PAT LAMBDA ...)``
@@ -1077,13 +1067,14 @@ def build_special_rules(name, literals_tuple, *pattern_and_lambdas):
     literals = frozenset(deserialize_form(x) for x in literals_tuple)
     transforms = []
     for i in range(0, len(pattern_and_lambdas), 2):
-        pat_tup = pattern_and_lambdas[i]
+        pat = pattern_and_lambdas[i]
         fn = pattern_and_lambdas[i + 1]
-        transforms.append(SpecialTransform.from_persistent(pat_tup, fn))
+        transforms.append(SpecialTransform(pat, _wrap_special_ki_handler(fn)))
     return Syntax(
         name, (), tuple(transforms), serialized_literals=literals)
 
 
+@builtin('build-special-match')
 def build_special_match(name, *pattern_and_lambdas):
     """
     Ki runtime: ``(build-special-match NAME PAT LAMBDA ...)``

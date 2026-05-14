@@ -81,10 +81,8 @@ __all__ = (
     "LIST",
 
     "repeat_capture",
-    "slot_prefix",
     "binding_inner_pattern",
     "bindings_grouped_list_cell_pattern",
-    "BINDING_CELL",
 
     "DEFINE",
     "DECL",
@@ -1151,102 +1149,6 @@ def repeat_capture(slot, inner):
     return CAPTURE(slot, REPEAT(GROUP(None, inner)))
 
 
-def slot_prefix(pattern, prefix, sep="__"):
-    """
-    Return a copy of pattern with every nested CAPTURE and REST
-    slot renamed to prefix + sep + original, and CAPTURE scope_slot likewise
-    prefixed when present. Use before composing the same binding-shaped
-    subtree multiple times so freeze-time duplicate-slot detection does
-    not fire
-
-    :param pattern: matcher pattern tree
-    :param prefix: non-empty prefix string
-    :param sep: separator between prefix and original slot name
-    :raises TypeError: when pattern is not a matcher pattern
-    :raises ValueError: when prefix is empty
-    """
-
-    check_pattern_arg(pattern, "slot_prefix pattern")
-    check_str_arg(prefix, "slot_prefix prefix")
-    return slot_prefix_copy(pattern, prefix, sep)
-
-
-def slot_prefix_copy(pattern, prefix, sep):
-    """
-    Recursive implementation for slot_prefix
-    """
-
-    if isinstance(pattern, CAPTURE):
-        new_scope = None
-        if pattern._scope_slot is not None:
-            new_scope = prefix + sep + pattern._scope_slot
-        sub = (slot_prefix_copy(pattern._sub, prefix, sep)
-               if pattern._sub is not None else None)
-        return CAPTURE(
-            prefix + sep + pattern._slot,
-            sub,
-            hygiene_role=pattern._hygiene_role,
-            scope_slot=new_scope,
-        )
-
-    if isinstance(pattern, FORM):
-        return FORM(slot_prefix_copy(pattern._sub, prefix, sep))
-
-    if isinstance(pattern, MATCH):
-        return MATCH(*[
-            slot_prefix_copy(c, prefix, sep) for c in pattern._children])
-
-    if isinstance(pattern, GROUP):
-        if pattern._slot is None:
-            return GROUP(
-                None,
-                *[slot_prefix_copy(c, prefix, sep) for c in pattern._children])
-        return GROUP(
-            prefix + sep + pattern._slot,
-            *[slot_prefix_copy(c, prefix, sep) for c in pattern._children])
-
-    if isinstance(pattern, ONEOF):
-        return ONEOF(*[
-            slot_prefix_copy(b, prefix, sep) for b in pattern._branches])
-
-    if isinstance(pattern, REPEAT):
-        return REPEAT(
-            slot_prefix_copy(pattern._sub, prefix, sep),
-            min_count=pattern._min_count,
-        )
-
-    if isinstance(pattern, OPTIONAL):
-        return OPTIONAL(slot_prefix_copy(pattern._sub, prefix, sep))
-
-    if isinstance(pattern, NOT):
-        return NOT(slot_prefix_copy(pattern._sub, prefix, sep))
-
-    if isinstance(pattern, REST):
-        if pattern._slot is None:
-            return REST(None, min_tail=pattern._min_tail)
-        return REST(
-            prefix + sep + pattern._slot,
-            min_tail=pattern._min_tail,
-        )
-
-    if isinstance(pattern, CLASS):
-        new_fields = tuple(
-            FIELD(slot_prefix_copy(f._sub, prefix, sep), name=f._name)
-            for f in pattern._fields)
-        return CLASS(pattern._extern, *new_fields)
-
-    if isinstance(pattern, FIELD):
-        return FIELD(slot_prefix_copy(pattern._sub, prefix, sep),
-                     name=pattern._name)
-
-    if isinstance(pattern, (TEST_ANY, LITERAL, TYPE, PREDICATE)):
-        return pattern
-
-    raise TypeError(
-        "slot_prefix: unsupported pattern type %r"
-        % (type(pattern).__name__,))
-
-
 def binding_inner_pattern():
     """
     Build the inner shape of a single koskari binding cell as matcher
@@ -1259,8 +1161,9 @@ def binding_inner_pattern():
     that pair and fail
 
     Does not wrap an outer CAPTURE; when embedding multiple binding
-    cells in one matcher, pass the result through slot_prefix with a
-    unique prefix per cell first
+    cells in one matcher without duplicate-slot errors, use distinct
+    capture slot names, :class:`ONEOF` per-branch capture scopes, or
+    separate :class:`GROUP` arms
 
     :rtype: FORM
     """
@@ -1291,20 +1194,6 @@ def bindings_grouped_list_cell_pattern():
 
     inner = binding_group_capture_pattern()
     return FORM(MATCH(inner))
-
-
-def BINDING_CELL(slot):
-    """
-    One binding-shaped subject element: same as binding_inner_pattern
-    but with captures rewritten to slot + sep + name and slot + sep +
-    expr so multiple cells can coexist in one matcher
-
-    :param slot: logical name prefix for mangled capture slots
-    :rtype: FORM
-    """
-
-    check_str_arg(slot, "BINDING_CELL slot")
-    return slot_prefix(binding_inner_pattern(), slot)
 
 
 # === Ergonomic shorthands ===
@@ -1676,9 +1565,7 @@ class BINDING(Composite, HygieneWireSlotScopes):
     (EXPR as: NAME). After a successful match captures[slot] is a dict
     (native GROUP) or :class:`DatumFrame` with ``name`` and ``expr`` as
     produced by binding_inner_pattern. For KosPair-backed subjects the
-    whole binding cell spine is ``.source`` on :class:`DatumFrame`. Use
-    BINDING_CELL when several binding-shaped captures must coexist in one
-    matcher
+    whole binding cell spine is ``.source`` on :class:`DatumFrame`
     """
 
 
@@ -1940,9 +1827,7 @@ class FORMALS(Composite, HygieneWireSlotScopes):
 
     Inner keys for phases that did not run are omitted from the group
     dict. For KosPair-backed subjects the whole formals list spine is
-    ``.source`` on :class:`DatumFrame`. Use one FORMALS per matcher;
-    multi-instance composition requires slot_prefix because inner slots
-    share the surrounding scope
+    ``.source`` on :class:`DatumFrame`. Use one FORMALS per matcher
     """
 
 

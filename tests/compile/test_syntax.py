@@ -15,8 +15,8 @@
 Tests for syntax expansion and pattern lowering.
 
 Runtime types and ``build_syntax_rules`` come from ``koskari.syntax``.
-``build_syntax_rules_transformer`` and ``syntax_pattern_to_matcher`` are
-compile-time helpers in ``koskari.compile.specials.syntax``.
+``build_syntax_rules_transformer`` and pattern lowering via
+``parse_syntax_rules_pattern`` live in ``koskari.compile.specials.syntax``.
 
 Validate expansion output only, using transformers built via tagged tuples.
 """
@@ -29,7 +29,7 @@ import pytest
 from koskari.compile import Compiler
 from koskari.compile.specials import BUILTINS
 from koskari.compile.specials.syntax import (build_syntax_rules_transformer,
-                                             syntax_pattern_to_matcher)
+                                             parse_syntax_rules_pattern)
 from koskari.lib import Module, ModuleNamespace, car, cdr, cons, nil, symbol
 from koskari.syntax import Syntax, SyntaxTransform, build_syntax_rules
 from koskari.types import build_proper, is_symbol, unpack
@@ -62,12 +62,13 @@ def rule(macro_name, pat_form, tpl_form):
 
     name = symbol(macro_name)
     literals = frozenset({name})
-    pat_m = syntax_pattern_to_matcher(pat_form, literals, pat_form)
+    pat_m = parse_syntax_rules_pattern(pat_form, literals, pat_form)
 
     return Syntax(
         name,
         (),
-        (SyntaxTransform(pat_m, tpl_form),),
+        (SyntaxTransform(
+            pat_m, tpl_form, pat_form, syntax_match_dialect=False),),
         serialized_literals=literals,
     )
 
@@ -211,11 +212,12 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         literals = frozenset({name})
         pat_form = build_proper(symbol('wrap'), symbol('x'))
         tpl = build_proper(symbol('list'), symbol('x'))
-        pat_m = syntax_pattern_to_matcher(pat_form, literals, pat_form)
+        pat_m = parse_syntax_rules_pattern(pat_form, literals, pat_form)
         syn = Syntax(
             name,
             (),
-            (SyntaxTransform(pat_m, tpl),),
+            (SyntaxTransform(
+                pat_m, tpl, pat_form, syntax_match_dialect=False),),
             serialized_literals=literals,
         )
         tagged = syn.to_syntax_rules_tagged()
