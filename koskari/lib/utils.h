@@ -82,6 +82,57 @@ PyObject *KosUtils_Identity(PyObject *value);
 PyObject *KosUtils_Constantly(PyObject *value);
 
 
+/**
+   Koskari-style string for an object.
+
+   Dispatch order: plain ``str`` uses double-quote wrapping; then the
+   type registry (``tp_base`` walk); then a callable ``__kos_repr__`` on
+   the demand path; otherwise ``repr(obj)``. A user ``__kos_repr__`` or
+   registry handler must return ``str`` or ``TypeError`` is raised.
+
+   :param obj: any Python object
+   :return: new unicode string, or NULL with an exception set
+*/
+PyObject *KosUtils_Repr(PyObject *obj);
+
+
+/**
+   Register a ``type`` to ``handler`` for KosUtils_Repr.
+
+   ``type`` must be a type object. ``handler`` must be callable and must
+   not itself be a type object. The handler is called with one argument,
+   the value being printed, and must return ``str``.
+
+   :param type: the type key
+   :param handler: callable taking the object, returning str
+   :return: 0 on success, -1 with an exception set on failure
+*/
+int KosUtils_ReprRegister(PyObject *type, PyObject *handler);
+
+
+/**
+   Remove ``type`` from the kos repr registry if present.
+
+   :param type: the type key
+   :return: 0 on success, -1 with an exception set on failure
+*/
+int KosUtils_ReprUnregister(PyObject *type);
+
+
+/**
+   Clear all entries from the kos repr type registry.
+*/
+void KosUtils_ReprRegistryClear(void);
+
+
+/**
+   Return a shallow copy of the kos repr type registry.
+
+   :return: new dict, or NULL with an exception set on failure
+*/
+PyObject *KosUtils_ReprRegistrySnapshot(void);
+
+
 /* === collection builders === */
 
 

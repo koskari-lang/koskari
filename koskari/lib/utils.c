@@ -18,6 +18,31 @@
 #include "hints.h"
 
 
+/* type -> handler for KosUtils_Repr (see KosUtils_ReprRegister) */
+static PyObject *kos_utils_repr_registry = NULL;
+
+
+/* double-quote escape for KosUtils_Repr on plain str (see pair.c sib_quoted) */
+static PyObject *_str_dq = NULL;
+static PyObject *_str_esc_dq = NULL;
+static PyObject *_str_kos_repr = NULL;
+
+
+static PyObject *kos_utils_unicode_kos_repr(PyObject *obj) {
+
+  PyObject *escaped = NULL;
+  PyObject *result = NULL;
+
+  escaped = PyUnicode_Replace(obj, _str_dq, _str_esc_dq, -1);
+  if (! escaped)
+    return NULL;
+
+  result = PyUnicode_FromFormat("\"%U\"", escaped);
+  Py_DECREF(escaped);
+  return result;
+}
+
+
 /* === Constantly callable type === */
 
 
@@ -376,6 +401,159 @@ PyObject *KosUtils_Constantly(PyObject *value) {
 }
 
 
+int KosUtils_ReprRegister(PyObject *type, PyObject *handler) {
+
+  if (! PyType_Check(type)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "kos_repr_register: first argument must be a type");
+    return -1;
+  }
+
+  if (! PyCallable_Check(handler) || PyType_Check(handler)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "kos_repr_register: second argument must be a callable "
+                    "that is not a type object");
+    return -1;
+  }
+
+  if (! kos_utils_repr_registry) {
+    PyErr_SetString(PyExc_SystemError,
+                    "kos_repr registry is not initialized");
+    return -1;
+  }
+
+  if (PyDict_SetItem(kos_utils_repr_registry, type, handler) < 0)
+    return -1;
+
+  return 0;
+}
+
+
+int KosUtils_ReprUnregister(PyObject *type) {
+
+  if (! PyType_Check(type)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "kos_repr_unregister: argument must be a type");
+    return -1;
+  }
+
+  if (! kos_utils_repr_registry)
+    return 0;
+
+  if (PyDict_DelItem(kos_utils_repr_registry, type) < 0) {
+    if (PyErr_ExceptionMatches(PyExc_KeyError)) {
+      PyErr_Clear();
+      return 0;
+    }
+    return -1;
+  }
+
+  return 0;
+}
+
+
+void KosUtils_ReprRegistryClear(void) {
+
+  if (kos_utils_repr_registry)
+    PyDict_Clear(kos_utils_repr_registry);
+}
+
+
+PyObject *KosUtils_ReprRegistrySnapshot(void) {
+
+  if (! kos_utils_repr_registry)
+    return PyDict_New();
+
+  return PyDict_Copy(kos_utils_repr_registry);
+}
+
+
+static int kos_utils_repr_registry_dispatch(
+    PyObject *obj,
+    PyObject **out) {
+
+  PyTypeObject *ty;
+  PyObject *handler = NULL;
+  PyObject *args = NULL;
+
+  if (! kos_utils_repr_registry)
+    return 1;
+
+  for (ty = Py_TYPE(obj); ty; ty = ty->tp_base) {
+    handler = PyDict_GetItem(kos_utils_repr_registry, (PyObject *) ty);
+
+    if (! handler)
+      continue;
+
+    args = PyTuple_Pack(1, obj);
+    if (! args)
+      return -1;
+
+    int r = Koskari_DemandSyncEx(handler, args, NULL, out);
+    Py_DECREF(args);
+    return r;
+  }
+
+  return 1;
+}
+
+
+PyObject *KosUtils_Repr(PyObject *obj) {
+
+  PyObject *meth = NULL;
+  PyObject *out = NULL;
+
+  int r;
+
+  if (PyUnicode_Check(obj))
+    return kos_utils_unicode_kos_repr(obj);
+
+  r = kos_utils_repr_registry_dispatch(obj, &out);
+  if (r == 0 || r == -1) {
+    return out;
+  }
+
+  meth = PyObject_GetAttr(obj, _str_kos_repr);
+  if (! meth) {
+    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+      PyErr_Clear();
+      return PyObject_Repr(obj);
+    }
+    return NULL;
+  }
+
+  if (! PyCallable_Check(meth)) {
+    Py_DECREF(meth);
+    return PyObject_Repr(obj);
+  }
+
+  // CallNoArgs for object. Formals apply for koscallable accepts NULL
+  // for no args.
+  r = Koskari_DemandSyncEx(meth, NULL, NULL, &out);
+  Py_DECREF(meth);
+
+  if (r == 1) {
+    Py_XDECREF(out);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async suspension is not allowed in __kos_repr__");
+    return NULL;
+  }
+
+  if (r < 0) {
+    Py_XDECREF(out);
+    return NULL;
+  }
+
+  if (! out || ! PyUnicode_Check(out)) {
+    Py_XDECREF(out);
+    PyErr_SetString(PyExc_TypeError, "__kos_repr__ must return str");
+    return NULL;
+  }
+
+  return out;
+}
+
+
 PyObject *KosUtils_BuildTuple(PyObject *const *args, Py_ssize_t nargs) {
 
   PyObject *result = PyTuple_New(nargs);
@@ -548,6 +726,71 @@ static PyObject *m_constantly(PyObject *mod, PyObject *value) {
 }
 
 
+static PyObject *m_kos_repr(PyObject *mod, PyObject *value) {
+
+  (void) mod;
+  return KosUtils_Repr(value);
+}
+
+
+static PyObject *m_kos_repr_register(PyObject *mod, PyObject *args) {
+
+  PyObject *type = NULL;
+  PyObject *handler = NULL;
+
+  (void) mod;
+
+  if (! PyArg_ParseTuple(args, "OO", &type, &handler))
+    return NULL;
+
+  if (KosUtils_ReprRegister(type, handler) < 0)
+    return NULL;
+
+  Py_RETURN_NONE;
+}
+
+
+static PyObject *m_kos_repr_unregister(PyObject *mod, PyObject *args) {
+
+  PyObject *type = NULL;
+
+  (void) mod;
+
+  if (! PyArg_ParseTuple(args, "O", &type))
+    return NULL;
+
+  if (KosUtils_ReprUnregister(type) < 0)
+    return NULL;
+
+  Py_RETURN_NONE;
+}
+
+
+static PyObject *m_kos_repr_registry_clear(PyObject *mod, PyObject *unused) {
+
+  (void) mod;
+  (void) unused;
+
+  KosUtils_ReprRegistryClear();
+  Py_RETURN_NONE;
+}
+
+
+static PyObject *m_kos_repr_registry_snapshot(PyObject *mod, PyObject *unused) {
+
+  PyObject *snap = NULL;
+
+  (void) mod;
+  (void) unused;
+
+  snap = KosUtils_ReprRegistrySnapshot();
+  if (! snap)
+    return NULL;
+
+  return snap;
+}
+
+
 static PyObject *m_pass(PyObject *mod,
                         PyObject *args, PyObject *kwds) {
 
@@ -617,6 +860,30 @@ static PyMethodDef utils_methods[] = {
     "constantly(value) -> callable\n"
     "Returns a callable that always returns value." },
 
+  { "kos_repr", (PyCFunction) m_kos_repr, METH_O,
+    "kos_repr(obj) -> str\n"
+    "Koskari-style string: str uses double quotes; then type registry;\n"
+    "then __kos_repr__; otherwise repr(obj)." },
+
+  { "kos_repr_register", (PyCFunction) m_kos_repr_register, METH_VARARGS,
+    "kos_repr_register(type, handler) -> None\n"
+    "Register a type-to-callable mapping for kos_repr. Handler receives\n"
+    "the object and must return str." },
+
+  { "kos_repr_unregister", (PyCFunction) m_kos_repr_unregister, METH_VARARGS,
+    "kos_repr_unregister(type) -> None\n"
+    "Remove a type from the kos_repr registry if present." },
+
+  { "kos_repr_registry_clear", (PyCFunction) m_kos_repr_registry_clear,
+    METH_NOARGS,
+    "kos_repr_registry_clear() -> None\n"
+    "Clear all kos_repr type registry entries." },
+
+  { "kos_repr_registry_snapshot", (PyCFunction) m_kos_repr_registry_snapshot,
+    METH_NOARGS,
+    "kos_repr_registry_snapshot() -> dict\n"
+    "Return a shallow copy of the type registry for inspection." },
+
   { "_pass", (PyCFunction) m_pass, METH_VARARGS | METH_KEYWORDS,
     "_pass(*args, **kwargs) -> None\n"
     "Accepts any arguments, returns None." },
@@ -653,6 +920,14 @@ int koskari_utils_init(PyObject *mod) {
   if (! mod)
     return -1;
 
+  STR_CONST(_str_dq, "\"");
+  STR_CONST(_str_esc_dq, "\\\"");
+  STR_CONST(_str_kos_repr, "__kos_repr__");
+
+  kos_utils_repr_registry = PyDict_New();
+  if (! kos_utils_repr_registry)
+    return -1;
+
   if (PyType_Ready(&KosConstantlyType) < 0 ||
       PyType_Ready(KOS_CALLABLE_PYTYPE(KosApplyType)) < 0)
     return -1;
@@ -685,6 +960,10 @@ int koskari_utils_clear(PyObject *mod) {
 
   (void) mod;
   Py_CLEAR(KosApplyObject);
+  Py_CLEAR(kos_utils_repr_registry);
+  Py_CLEAR(_str_kos_repr);
+  Py_CLEAR(_str_dq);
+  Py_CLEAR(_str_esc_dq);
   return 0;
 }
 

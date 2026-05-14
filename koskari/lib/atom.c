@@ -226,7 +226,17 @@ static PyObject *symbol_rsplit(
 }
 
 
+static PyObject *symbol_kos_repr(PyObject *self, PyObject *Py_UNUSED(ignored)) {
+
+  return PyUnicode_FromFormat("%S", KosInternedAtom_NAME(self));
+}
+
+
 static PyMethodDef symbol_methods[] = {
+  { "__kos_repr__", (PyCFunction) symbol_kos_repr, METH_NOARGS,
+    "S.__kos_repr__() -> str\n"
+    "Koskari-style symbol text (the bare name)." },
+
   { "split", (PyCFunction) symbol_split, METH_VARARGS|METH_KEYWORDS,
     "S.split(sep=None, maxsplit=-1) -> list of symbols" },
 
@@ -450,7 +460,17 @@ static PyObject *keyword_rsplit(
 }
 
 
+static PyObject *keyword_kos_repr(PyObject *self, PyObject *Py_UNUSED(ignored)) {
+
+  return PyUnicode_FromFormat("%S:", KosInternedAtom_NAME(self));
+}
+
+
 static PyMethodDef keyword_methods[] = {
+  { "__kos_repr__", (PyCFunction) keyword_kos_repr, METH_NOARGS,
+    "K.__kos_repr__() -> str\n"
+    "Koskari-style keyword text (name plus trailing colon)." },
+
   { "split", (PyCFunction) keyword_split, METH_VARARGS|METH_KEYWORDS,
     "K.split(sep=None, maxsplit=-1) -> list of keywords" },
 

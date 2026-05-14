@@ -117,7 +117,12 @@ static int demand_sync_ex(
     SAYF("[demand_sync] args = %R", args);
     SAYF("[demand_sync] kwargs = %R", kwargs);
 
-    result = PyObject_Call(callable, args, kwargs);
+    if (! args && ! kwargs) {
+      result = PyObject_CallNoArgs(callable);
+    } else {
+      result = PyObject_Call(callable, args, kwargs);
+    }
+
     *out_result = result;
     return result? 0: -1;
   }
@@ -143,7 +148,7 @@ static int demand_sync_ex(
 
   /* KosExpression */
   if (KosExpression_CheckExact(callable)) {
-    if (PyTuple_GET_SIZE(call_args) != 0
+    if ((call_args && PyTuple_GET_SIZE(call_args) != 0)
         || (kwargs && PyDict_Size(kwargs) != 0)) {
       PyErr_SetString(PyExc_TypeError,
                       "Expression takes no arguments");

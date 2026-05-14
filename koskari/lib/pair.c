@@ -467,6 +467,99 @@ static PyObject *pair_str(PyObject *self) {
 }
 
 
+static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
+
+  PyObject *tmp = NULL;
+  PyObject *col = PyList_New(0);
+  PyObject *found = PyDict_New();
+  size_t index = 0;
+
+  PyObject *rest = self;
+  PyObject *rest_id;
+
+  (void) _unused;
+
+  if (KosNil_Check(self)) {
+    Py_DECREF(col);
+    Py_DECREF(found);
+    Py_INCREF(_str_nil);
+    return _str_nil;
+  }
+
+  PyList_Append(col, _str_open_paren);
+
+  for (rest = self; KosPair_CheckExact(rest); rest = KosPair_CDR(rest)) {
+    rest_id = PyLong_FromVoidPtr(rest);
+
+    if (PyDict_Contains(found, rest_id)) {
+      /* recursive pair detected */
+      PyList_Append(col, _str_elipsis);
+      PyList_Append(col, _str_close_paren);
+
+      if (rest != self) {
+        tmp = PyDict_GetItem(found, rest_id);
+        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, _str_open_paren);
+        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, _str_dot_space);
+        PyList_Append(col, _str_close_paren);
+      }
+      Py_DECREF(rest_id);
+
+      /* set rest to NULL so we don't try to close it like we would a
+         normal proper or improper list */
+      rest = NULL;
+      break;
+
+    } else {
+      index += 2;
+
+      tmp = PyLong_FromSize_t(index);
+      PyDict_SetItem(found, rest_id, tmp);
+      Py_DECREF(tmp);
+      Py_DECREF(rest_id);
+
+      tmp = KosUtils_Repr(KosPair_CAR(rest));
+      if (! tmp) {
+        Py_DECREF(col);
+        Py_DECREF(found);
+        return NULL;
+      }
+
+      PyList_Append(col, tmp);
+      Py_DECREF(tmp);
+
+      PyList_Append(col, _str_space);
+    }
+  }
+
+  if (KosNil_Check(rest)) {
+    /* end of a proper list */
+
+    Py_INCREF(_str_close_paren);
+    PyList_SetItem(col, index, _str_close_paren);
+
+  } else if (rest) {
+    /* end of an improper list */
+
+    tmp = KosUtils_Repr(rest);
+    if (! tmp) {
+      Py_DECREF(col);
+      Py_DECREF(found);
+      return NULL;
+    }
+    PyList_Append(col, _str_dot_space);
+    PyList_Append(col, tmp);
+    PyList_Append(col, _str_close_paren);
+    Py_DECREF(tmp);
+  }
+
+  tmp = PyUnicode_Join(_str_empty, col);
+  Py_DECREF(col);
+  Py_DECREF(found);
+
+  return tmp;
+}
+
+
 static long pair_eq(PyObject *left, PyObject *right) {
   PyObject *seen = NULL;
   PyObject *left_id, *right_id;
@@ -1158,6 +1251,10 @@ static PyObject *pair_get_position(PyObject *self, PyObject *_noargs) {
 static PyMethodDef pair_methods[] = {
   { "__copy__", (PyCFunction) pair_copy, METH_NOARGS,
     "P.__copy__()" },
+
+  { "__kos_repr__", (PyCFunction) pair_kos_repr, METH_NOARGS,
+    "P.__kos_repr__() -> str\n"
+    "Koskari-style list string for this pair spine." },
 
   { "length", (PyCFunction) pair_length, METH_NOARGS,
     "P.length()" },
