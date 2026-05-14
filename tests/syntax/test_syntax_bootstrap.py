@@ -22,10 +22,12 @@ import pytest
 
 from koskari.exceptions import SpecialError
 from koskari.lib import Datum, Matcher, cons, nil, symbol
+from koskari.matcher import (FORM, GROUP, MATCH, VALUE, DatumFrame,
+                             repeat_capture)
 from koskari.syntax import (MacroTransform, SpecialTransform, Syntax,
-                               SyntaxTransform, Transform,
-                               parse_syntax_rules_pattern, special)
-from koskari.types import build_proper
+                            SyntaxTransform, Transform,
+                            parse_syntax_rules_pattern, special)
+from koskari.types import build_proper, set_position
 
 
 pytestmark = pytest.mark.phase_infra
@@ -405,6 +407,71 @@ class TestDatum(unittest.TestCase):
         self.assertIs(out[0].datum, a)
         self.assertIsInstance(out[1], Datum)
         self.assertIs(out[1].datum, b)
+
+
+class TestDatumFrame(unittest.TestCase):
+
+
+    def test_runtime_sequence_captures_remain_plain_dict(self):
+        matcher = MATCH(VALUE("x")).build()
+        result = matcher.match((symbol("a"),))
+        self.assertTrue(result.matched)
+        self.assertIs(type(result.captures), dict)
+        self.assertNotIsInstance(result.captures, DatumFrame)
+
+
+    def test_source_root_captures_are_datum_frame(self):
+        pos = (1, 0)
+        value = symbol("a")
+        source = build_proper(value)
+        set_position(source, pos)
+        matcher = MATCH(VALUE("x")).build()
+
+        result = matcher.match(source)
+
+        self.assertTrue(result.matched)
+        self.assertIsInstance(result.captures, DatumFrame)
+        self.assertIs(result.captures.source, source)
+        self.assertEqual(result.captures.position, pos)
+        self.assertEqual(set(result.captures.keys()), {"x"})
+
+
+    def test_source_group_captures_are_datum_frame(self):
+        pos = (2, 0)
+        value = symbol("inner")
+        inner = build_proper(value)
+        set_position(inner, pos)
+        source = build_proper(inner)
+        matcher = MATCH(FORM(GROUP("row", VALUE("x")))).build()
+
+        result = matcher.match(source)
+
+        self.assertTrue(result.matched)
+        row = result.captures["row"]
+        self.assertIsInstance(row, DatumFrame)
+        self.assertIs(row.source, inner)
+        self.assertEqual(row.position, pos)
+        self.assertEqual(set(row.keys()), {"x"})
+        self.assertNotIn("source", row)
+        self.assertNotIn("position", row)
+
+
+    def test_repeated_group_rows_preserve_datum_frame(self):
+        one = build_proper(symbol("one"))
+        two = build_proper(symbol("two"))
+        source = build_proper(one, two)
+        matcher = MATCH(repeat_capture("rows", FORM(VALUE("x")))).build()
+
+        result = matcher.match(source)
+
+        self.assertTrue(result.matched)
+        rows = result.captures["rows"]
+        self.assertEqual(len(rows), 2)
+        self.assertIsInstance(rows[0], DatumFrame)
+        self.assertIsInstance(rows[1], DatumFrame)
+        self.assertEqual(set(rows[0].keys()), {"x"})
+        self.assertNotIn("source", rows[0])
+        self.assertNotIn("position", rows[0])
 
 
 # The end.

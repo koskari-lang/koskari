@@ -1736,6 +1736,106 @@ static void kos_datum_annotate_binding(PyObject *value, PyObject *name) {
 }
 
 
+/* === DatumFrame === */
+
+
+static int datum_frame_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosDatumFrame *f = (KosDatumFrame *) self;
+  Py_VISIT(f->source);
+  Py_VISIT(f->position);
+  if (PyDict_Type.tp_traverse)
+    return PyDict_Type.tp_traverse(self, visit, arg);
+  return 0;
+}
+
+
+static int datum_frame_clear(PyObject *self) {
+
+  KosDatumFrame *f = (KosDatumFrame *) self;
+  Py_CLEAR(f->source);
+  Py_CLEAR(f->position);
+  if (PyDict_Type.tp_clear)
+    return PyDict_Type.tp_clear(self);
+  return 0;
+}
+
+
+static void datum_frame_dealloc(PyObject *self) {
+
+  datum_frame_clear(self);
+  PyDict_Type.tp_dealloc(self);
+}
+
+
+static PyObject *datum_frame_repr(PyObject *self) {
+
+  KosDatumFrame *f = (KosDatumFrame *) self;
+  Py_ssize_t nslots = PyDict_Size(self);
+  return PyUnicode_FromFormat(
+      "<DatumFrame source=%R position=%R captures=%zd>",
+      f->source, f->position, nslots);
+}
+
+
+static PyObject *datum_frame_get_source(PyObject *self, void *closure) {
+  (void) closure;
+  KosDatumFrame *f = (KosDatumFrame *) self;
+  Py_INCREF(f->source);
+  return f->source;
+}
+
+
+static PyObject *datum_frame_get_position(PyObject *self, void *closure) {
+  (void) closure;
+  KosDatumFrame *f = (KosDatumFrame *) self;
+  Py_INCREF(f->position);
+  return f->position;
+}
+
+
+static PyGetSetDef datum_frame_getset[] = {
+  { "source", datum_frame_get_source, NULL,
+    "Matched source represented by this capture frame", NULL },
+  { "position", datum_frame_get_position, NULL,
+    "Source position from the frame start, or None", NULL },
+  { NULL }
+};
+
+
+PyTypeObject KosDatumFrameType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+  .tp_name = "koskari.lib.DatumFrame",
+  .tp_basicsize = sizeof(KosDatumFrame),
+  .tp_dealloc = datum_frame_dealloc,
+  .tp_repr = datum_frame_repr,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_doc = "Capture dict with source provenance",
+  .tp_traverse = datum_frame_traverse,
+  .tp_clear = datum_frame_clear,
+  .tp_getset = datum_frame_getset,
+  .tp_base = &PyDict_Type,
+};
+
+
+static PyObject *kos_datum_frame_new(void) {
+
+  PyObject *self = PyObject_CallNoArgs((PyObject *) &KosDatumFrameType);
+  if (! self)
+    return NULL;
+
+  KosDatumFrame *f = (KosDatumFrame *) self;
+  Py_INCREF(Py_None);
+  Py_INCREF(Py_None);
+  f->source = Py_None;
+  f->position = Py_None;
+  return self;
+}
+
+
 /* === MatchResult === */
 
 
@@ -2104,6 +2204,109 @@ static PyObject *wrap_slice_datums(
 }
 
 
+static PyObject *position_from_spine_cell(
+    KosMatchSubject *subj,
+    Py_ssize_t cell_idx) {
+
+  PyObject *pos = Py_None;
+  if (subj->kp_tails && cell_idx >= 0
+      && cell_idx < subj->cached_length) {
+    PyObject *cell = subj->kp_tails[cell_idx];
+    if (KosPair_CheckExact(cell)) {
+      PyObject *p = KosPair_POSITION(cell);
+      pos = p ? p : Py_None;
+    }
+  }
+  Py_INCREF(pos);
+  return pos;
+}
+
+
+static PyObject *source_from_spine_range(
+    KosMatchSubject *subj,
+    Py_ssize_t start,
+    Py_ssize_t end) {
+
+  Py_ssize_t span = end - start;
+  if (span <= 0 || end == subj->cached_length)
+    return subj->vt->tail(subj, start);
+
+  if (span == 1) {
+    PyObject *raw = subj->vt->get(subj, start);
+    Py_INCREF(raw);
+    return raw;
+  }
+
+  return subj->vt->slice(subj, start, end);
+}
+
+
+static int datum_frame_set_source(
+    PyObject *frame,
+    KosMatchSubject *subj,
+    Py_ssize_t start,
+    Py_ssize_t end) {
+
+  if (! KosDatumFrame_Check(frame))
+    return 0;
+
+  PyObject *source = source_from_spine_range(subj, start, end);
+  if (! source)
+    return -1;
+
+  PyObject *position = position_from_spine_cell(subj, start);
+  if (! position) {
+    Py_DECREF(source);
+    return -1;
+  }
+
+  KosDatumFrame *f = (KosDatumFrame *) frame;
+  PyObject *old_source = f->source;
+  PyObject *old_position = f->position;
+  f->source = source;
+  f->position = position;
+  Py_DECREF(old_source);
+  Py_DECREF(old_position);
+  return 0;
+}
+
+
+static PyObject *match_frame_new(MatchEngine *e, Py_ssize_t start) {
+  (void) start;
+  if (e->subj->kp_tails)
+    return kos_datum_frame_new();
+  return PyDict_New();
+}
+
+
+static PyObject *match_frame_copy(PyObject *frame) {
+
+  if (! KosDatumFrame_Check(frame))
+    return PyDict_Copy(frame);
+
+  PyObject *copy = kos_datum_frame_new();
+  if (! copy)
+    return NULL;
+
+  if (PyDict_Update(copy, frame)) {
+    Py_DECREF(copy);
+    return NULL;
+  }
+
+  KosDatumFrame *src = (KosDatumFrame *) frame;
+  KosDatumFrame *dst = (KosDatumFrame *) copy;
+  Py_INCREF(src->source);
+  Py_INCREF(src->position);
+  PyObject *old_source = dst->source;
+  PyObject *old_position = dst->position;
+  dst->source = src->source;
+  dst->position = src->position;
+  Py_DECREF(old_source);
+  Py_DECREF(old_position);
+  return copy;
+}
+
+
 static int engine_grow_changes(MatchEngine *e, Py_ssize_t need) {
   if (e->change_count + need <= e->change_capacity)
     return 0;
@@ -2392,7 +2595,8 @@ static int match_group(
 
   Py_ssize_t snap = engine_snapshot(e);
   PyObject *parent_dict = e->cur_captures;
-  PyObject *sub = PyDict_New();
+  Py_ssize_t start = *cursor;
+  PyObject *sub = match_frame_new(e, start);
   if (! sub)
     return -1;
 
@@ -2420,6 +2624,10 @@ static int match_group(
   }
 
   e->cur_captures = parent_dict;
+  if (datum_frame_set_source(sub, e->subj, start, *cursor)) {
+    Py_DECREF(sub);
+    return -1;
+  }
   *out_sub = sub;
   return 1;
 }
@@ -2549,7 +2757,7 @@ static int match_repeat_capture_list(
         Py_DECREF(elem);
         continue;
       }
-      PyObject *row_copy = PyDict_Copy(sub_dict);
+      PyObject *row_copy = match_frame_copy(sub_dict);
       if (! row_copy) {
         Py_DECREF(sub_dict);
         Py_DECREF(items);
@@ -3126,15 +3334,16 @@ PyObject *KosMatcher_Match(
 
   Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
 
-  PyObject *root = PyDict_New();
-  if (! root)
-    return NULL;
-
   MatchEngine engine = {0};
   engine.m = m;
   engine.subj = subj;
   engine.extern_env = extern_env;
   engine.slot_count = n_slots;
+
+  PyObject *root = match_frame_new(&engine, 0);
+  if (! root)
+    return NULL;
+
   engine.root_captures = root;
   engine.cur_captures = root;
 
@@ -3161,6 +3370,10 @@ PyObject *KosMatcher_Match(
 
   PyObject *out_caps;
   if (matched) {
+    if (datum_frame_set_source(root, subj, 0, cursor)) {
+      Py_DECREF(root);
+      return NULL;
+    }
     out_caps = root;
   } else {
     Py_DECREF(root);
@@ -4233,6 +4446,9 @@ int koskari_matcher_init(PyObject *mod) {
   if (PyType_Ready(&KosDatumType))
     return -1;
 
+  if (PyType_Ready(&KosDatumFrameType))
+    return -1;
+
   if (PyDict_SetItemString(dict, "Matcher",
                            (PyObject *) &KosMatcherType))
     return -1;
@@ -4243,6 +4459,10 @@ int koskari_matcher_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "Datum",
                            (PyObject *) &KosDatumType))
+    return -1;
+
+  if (PyDict_SetItemString(dict, "DatumFrame",
+                           (PyObject *) &KosDatumFrameType))
     return -1;
 
   if (PyModule_AddFunctions(mod, matcher_mod_methods))

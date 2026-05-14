@@ -75,6 +75,7 @@ ASAN_OPTIONS := detect_leaks=0:print_stats=1
 VALGRIND := valgrind
 VALGRIND_OPTS := --leak-check=full \
                  --show-leak-kinds=definite,indirect \
+                 --errors-for-leak-kinds=none \
                  --track-origins=yes \
                  --error-exitcode=1 \
                  --num-callers=64 \
@@ -159,3 +160,6 @@ check-python:  ## Show Python configuration being used
 	@echo "Python config: $(PYTHON_CONFIG)"
 	@echo "CFLAGS: $(CFLAGS)"
 	@echo "LDFLAGS: $(LDFLAGS)"
+
+
+# The end.

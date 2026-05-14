@@ -35,12 +35,14 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 from typing import Protocol, runtime_checkable
 
 from koskari.hygiene import Hygiene
-from koskari.lib import Datum, Matcher, MatchResult, keyword, nil, pair, symbol
+from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, keyword, nil,
+                         pair, symbol)
 from koskari.types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 
-__all__ = [
+__all__ = (
     "Datum",
+    "DatumFrame",
     "Matcher",
     "MatchResult",
     "Hygiene",
@@ -106,8 +108,7 @@ __all__ = [
     "META_MATCHER",
     "KNOWN_HEADS",
     "CAPTURE_OPTION_KEYS",
-
-]
+)
 
 
 def thaw(tagged_tuple):

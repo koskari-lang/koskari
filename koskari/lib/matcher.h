@@ -238,6 +238,23 @@ extern PyTypeObject KosDatumType;
   ((obj) && PyType_IsSubtype((obj)->ob_type, &KosDatumType))
 
 
+/* === DatumFrame (capture dict + source provenance) === */
+
+
+typedef struct KosDatumFrame {
+  PyDictObject dict;
+  PyObject *source;
+  PyObject *position;
+} KosDatumFrame;
+
+
+extern PyTypeObject KosDatumFrameType;
+
+
+#define KosDatumFrame_Check(obj)                                       \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosDatumFrameType))
+
+
 /* === subject adapter === */
 
 

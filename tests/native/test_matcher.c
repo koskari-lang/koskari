@@ -195,19 +195,6 @@ static int append_capture_rest(
 }
 
 
-static int append_capture_group(
-    KosMatcherBuilder *b,
-    uint32_t slot_idx,
-    const uint32_t *children,
-    uint32_t count) {
-
-    int gi = append_group_node(b, children, count);
-    if (gi < 0)
-        return gi;
-    return append_capture(b, slot_idx, (uint32_t) gi);
-}
-
-
 static int append_optional(KosMatcherBuilder *b, uint32_t subnode) {
     KosMatchNode n;
     memset(&n, 0, sizeof(n));

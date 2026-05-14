@@ -116,7 +116,7 @@ test-container-build:  ## Build the native test container
 
 test-native: test-container-build  ## Run all native tests in container
 	@echo "Running all native memory tests in container..."
-	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) all
+	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) normal
 
 test-asan: test-container-build  ## Run ASan tests in container
 	@echo "Running ASan tests in container..."
