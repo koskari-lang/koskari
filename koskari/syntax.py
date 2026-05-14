@@ -61,14 +61,13 @@ from typing import Any, Protocol, runtime_checkable
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SpecialError
 from koskari.hygiene import (Hygiene, collect_binding_symbols,
-                                expand_template_with_hygiene,
-                                finalize_macro_hygiene_unbox_one_pass)
+                             expand_template_with_hygiene,
+                             finalize_macro_hygiene_unbox_one_pass)
 from koskari.lib import (Datum, Matcher, car, cdr, cons, demand_call, gensym,
                          nil, symbol)
-from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST,
-                                TEST_ANY,
-                                HygienicMatchCompiler, check_pattern_arg,
-                                parse_explicit_rule_pattern, repeat_capture)
+from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST, TEST_ANY,
+                             HygienicMatchCompiler, check_pattern_arg,
+                             parse_explicit_rule_pattern, repeat_capture)
 from koskari.types import build_proper, is_pair, is_proper, is_symbol, unpack
 
 
@@ -719,10 +718,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
 
     if not isinstance(literals, (set, frozenset)):
         literals = frozenset(literals)
-    return _parse_rule_pattern(pattern_expr, literals, source_ctx)
 
-
-def _parse_rule_pattern(pattern_expr, literals, source_ctx):
     if is_pair(pattern_expr):
         head, rest = pattern_expr
         if head == _symbol_match:
@@ -733,12 +729,8 @@ def _parse_rule_pattern(pattern_expr, literals, source_ctx):
                     f"match pattern must have exactly one form: {pattern_expr!r}"
                     f" (context {source_ctx!r})"
                 )
-            return _syntax_pattern_to_pattern(rest.car, literals, source_ctx)
+            pattern_expr = rest.car
 
-    return _syntax_pattern_to_pattern(pattern_expr, literals, source_ctx)
-
-
-def _syntax_pattern_to_pattern(pattern_expr, literals, source_ctx):
     if pattern_expr is Ellipsis:
         raise TypeError(
             f"invalid ellipsis placement in pattern: {pattern_expr!r}"

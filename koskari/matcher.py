@@ -1383,6 +1383,7 @@ def LIST(*specs, key=None):
     return CAPTURE(key, inner)
 
 
+
 def make_matcher(pattern):
     """
     Lower a pattern AST into a native Matcher. The matcher carries
@@ -1393,10 +1394,14 @@ def make_matcher(pattern):
     :rtype: Matcher
     """
 
+    if isinstance(pattern, (pair, symbol)):
+        pattern = parse_matcher(pattern)
+
     if not isinstance(pattern, Pattern):
         raise TypeError(
             "make_matcher requires a matcher pattern, got %r"
             % (type(pattern).__name__,))
+
     return pattern.build()
 
 
