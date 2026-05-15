@@ -18,8 +18,7 @@ does not.
 
 **Out of scope (do not read this doc as describing them)**
 
-- Procedural **macro-rules** (`MacroTransform`, `build_macro_syntax`,
-  `build_macro_match`, Ki `**captures`).
+- Procedural **macro-rules** (`MacroTransform`, Ki `**captures`).
 - **Special** forms (`SpecialTransform`, `special(...)`).
 - **Removed** legacy **`koskari.syntax`** box types / **`SyntaxRule`** unless explicitly cited as a
   **contrast** for behavior that NG does not replicate yet.

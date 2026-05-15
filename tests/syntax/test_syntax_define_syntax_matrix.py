@@ -14,8 +14,8 @@
 """
 Matrix tests for the six Koskari ``define-syntax`` shapes as ``syntax``
 builders (RULE vs MATCH times syntax / macro / special), plus
-pattern-language regression spikes. No legacy ``koskari.syntax`` or
-``koskari.matcher`` imports.
+pattern-language regression spikes. Construction uses
+``tests.syntax.datum_syntax_helpers``.
 """
 
 
@@ -25,11 +25,13 @@ import pytest
 
 from koskari.lib import cons, nil, symbol
 from koskari.matcher import parse_explicit_rule_pattern
-from koskari.syntax import (build_macro_match, build_macro_syntax,
-                               build_special_match_from_rows, build_special_syntax)
 from koskari.types import build_proper
 
 from tests.syntax.datum_syntax_helpers import (
+    macro_from_match_rows,
+    macro_from_rule_rows,
+    special_from_match_rows,
+    special_from_rule_rows,
     syntax_from_match_datums,
     syntax_from_rule_datums,
 )
@@ -94,7 +96,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
             saw.append((tc, caps))
             return symbol("macro-rules-out")
 
-        s = build_macro_syntax(m, (), ((build_proper(m, symbol("v")), proc),))
+        s = macro_from_rule_rows(m, (), ((build_proper(m, symbol("v")), proc),))
         comp = _StubCompiler()
         slot = symbol("slotval")
         src = cons(m, slot, nil)
@@ -117,7 +119,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
             saw.append((tc, caps))
             return symbol("macro-match-out")
 
-        s = build_macro_match(m, ((pat, proc),))
+        s = macro_from_match_rows(m, ((pat, proc),))
         comp = _StubCompiler()
         slot = symbol("slotval")
         src = cons(m, slot, nil)
@@ -136,7 +138,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         def proc(compiler, source_obj, result, tc):
             return symbol("special-rules-out")
 
-        s = build_special_syntax(
+        s = special_from_rule_rows(
             m, (), ((build_proper(m, symbol("q")), proc),))
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(None, src, False)
@@ -155,7 +157,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         def proc(compiler, source_obj, result, tc):
             return symbol("special-match-out")
 
-        s = build_special_match_from_rows(m, ((pat, proc),))
+        s = special_from_match_rows(m, ((pat, proc),))
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("special-match-out"))

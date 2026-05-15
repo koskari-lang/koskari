@@ -37,11 +37,9 @@ copies per-iteration frame slots up to parallel list columns for template
 symbols before ellipsis expansion. An empty ellipsis region matches a
 subject with zero spine elements (``()``), not ``(nil,)``.
 
-Runtime Koskari builtin ``build-syntax`` plus Python helpers ``build_macro_syntax`` /
-``build_special_syntax`` assemble ``Syntax`` from RULE patterns.
-Python helpers ``build_macro_match`` and ``build_special_match_from_rows`` use
-MATCH-dialect patterns (explicit matcher spine). Templates and procedural
-handlers see the full use-site form
+Runtime Koskari builtins ``build-syntax``, ``build-macro``, and ``build-special``
+assemble ``Syntax`` from lowered patterns and templates or procedural
+handlers. Templates and procedural handlers see the full use-site form
 (nil-terminated pair spine) unchanged. For RULE builders, pattern
 literals are only what the caller passes: the first pattern position is
 normally a symbol capture (the actual head, including aliases); include
@@ -87,7 +85,6 @@ __all__ = (
     "build_macro",
     "build_special",
     "build_syntax",
-    "hygienic_lower_tuple",
     "parse_syntax_rules_pattern",
     "special",
 )
@@ -95,17 +92,6 @@ __all__ = (
 
 _symbol_match = symbol("match")
 
-
-def hygienic_lower_tuple(pattern):
-    """
-    Lower a matcher pattern with :class:`HygienicMatchCompiler` for
-    persistence (same tables ``SyntaxTransform`` uses when built from a
-    pattern tree)
-    """
-
-    check_pattern_arg(pattern, "hygienic_lower_tuple pattern")
-    hc = HygienicMatchCompiler()
-    return hc.lower(pattern)
 
 
 def _init_pattern_fields(instance, pattern, handler):
@@ -634,159 +620,6 @@ def _syntax_pattern_specs(p_items, literals, source_ctx):
         i += 1
 
     return specs
-
-
-def _pattern_literals(literals):
-    """
-    Frozenset of pattern literals supplied by the caller (no auto-merge)
-    """
-
-    return frozenset(literals) if literals is not None else frozenset()
-
-
-def _normalize_proc_rule_row(row):
-    """
-    Split a macro-rules / special-rules row into pattern and procedure
-    """
-
-    if not isinstance(row, (list, tuple)):
-        raise TypeError(
-            f"macro/special rule row must be a sequence, got {row!r}"
-        )
-    seq = tuple(row)
-    if len(seq) != 2:
-        raise ValueError(
-            f"macro/special rule row must be (pattern, procedure), "
-            f"got length {len(seq)}"
-        )
-    pat_d, proc = seq
-    if proc is None or not callable(proc):
-        raise TypeError(
-            f"macro/special rule procedure must be callable, got {proc!r}"
-        )
-    return pat_d, proc
-
-
-def build_macro_syntax(name, literals, rule_rows, *, source_ctx=None):
-    """
-    Build a ``Syntax`` dispatcher of ``MacroTransform`` arms.
-
-    Patterns describe the full use-site form (nil-terminated list spine).
-    The first list element of a rule is a symbol capture unless it appears
-    in ``literals`` (same convention as syntax-rules pattern rows; see
-    :func:`parse_syntax_rules_pattern`).
-
-    Each procedure is invoked as ``procedure(compiler, tc, **captures)``.
-
-    :param name: primary name symbol or string for this macro
-    :param literals: iterable of pattern literals for patterns
-    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
-    :param source_ctx: context value for pattern parse errors
-    :return: ``Syntax`` instance
-    """
-
-    rows = tuple(rule_rows)
-    if not rows:
-        raise ValueError("build_macro_syntax requires at least one rule")
-
-    lit = _pattern_literals(literals)
-    transforms = []
-    for row in rows:
-        pat_d, proc = _normalize_proc_rule_row(row)
-        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
-        transforms.append(MacroTransform(ptree, proc))
-
-    return Syntax(name, transforms)
-
-
-def build_macro_match(name, rule_rows, *, source_ctx=None):
-    """
-    Build a ``Syntax`` dispatcher of ``MacroTransform`` arms using
-    MATCH-dialect patterns.
-
-    Same row shape as :func:`build_macro_syntax`. Parallels Koskari
-    ``macro-match`` (no separate literals list; serialized literals tuple
-    is empty at the compile layer).
-
-    Each procedure is invoked as ``procedure(compiler, tc, **captures)``.
-
-    :param name: primary name symbol or string for this macro
-    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
-    :param source_ctx: context value for pattern parse errors
-    :return: ``Syntax`` instance
-    """
-
-    rows = tuple(rule_rows)
-    if not rows:
-        raise ValueError("build_macro_match requires at least one rule")
-
-    transforms = []
-    for row in rows:
-        pat_d, proc = _normalize_proc_rule_row(row)
-        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
-        transforms.append(MacroTransform(ptree, proc))
-
-    return Syntax(name, transforms)
-
-
-def build_special_syntax(name, literals, rule_rows, *, source_ctx=None):
-    """
-    Build a ``Syntax`` dispatcher of ``SpecialTransform`` arms.
-
-    Patterns describe the full use-site form (nil-terminated list spine).
-    The first list element of a rule is a symbol capture unless it appears
-    in ``literals`` (same convention as syntax-rules pattern rows; see
-    :func:`parse_syntax_rules_pattern`).
-
-    Each procedure is invoked as
-    ``procedure(compiler, source_obj, match_result, tc)``.
-
-    :param name: primary name symbol or string for this special form macro
-    :param literals: iterable of pattern literals for patterns
-    :param rule_rows: iterable of ``(pattern_datum, procedure)`` rows
-    :param source_ctx: context value for pattern parse errors
-    :return: ``Syntax`` instance
-    """
-
-    rows = tuple(rule_rows)
-    if not rows:
-        raise ValueError("build_special_syntax requires at least one rule")
-
-    lit = _pattern_literals(literals)
-    transforms = []
-    for row in rows:
-        pat_d, proc = _normalize_proc_rule_row(row)
-        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
-        transforms.append(SpecialTransform(ptree, proc))
-
-    return Syntax(name, transforms)
-
-
-def build_special_match_from_rows(name, rule_rows, *, source_ctx=None):
-    """
-    Build a ``Syntax`` dispatcher of ``SpecialTransform`` arms using
-    MATCH-dialect patterns.
-
-    Parallels Koskari ``special-match``: same row shape as
-    :func:`build_special_syntax`, but each pattern datum is lowered with
-    :func:`koskari.matcher.parse_explicit_rule_pattern` instead of
-    RULE-style :func:`parse_syntax_rules_pattern`.
-
-    Each procedure is invoked as
-    ``procedure(compiler, source_obj, match_result, tc)``.
-    """
-
-    rows = tuple(rule_rows)
-    if not rows:
-        raise ValueError("build_special_match_from_rows requires at least one rule")
-
-    transforms = []
-    for row in rows:
-        pat_d, proc = _normalize_proc_rule_row(row)
-        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
-        transforms.append(SpecialTransform(ptree, proc))
-
-    return Syntax(name, transforms)
 
 
 def _wrap_macro_handler(raw):

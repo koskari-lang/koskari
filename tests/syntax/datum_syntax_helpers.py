@@ -15,8 +15,9 @@
 """
 tests.syntax.datum_syntax_helpers
 
-Test-only construction of ``Syntax`` from (pattern_datum, template_datum)
-rows using the same lowering as removed ``build_syntax_*_from_datums``.
+Test-only construction of ``Syntax`` from pattern/template rows (RULE or
+MATCH dialect) and from procedural macro/special ``(pattern, procedure)``
+rows, using the same lowering as ``define-syntax`` compile surfaces.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -26,8 +27,13 @@ rows using the same lowering as removed ``build_syntax_*_from_datums``.
 
 from koskari.lib import nil
 from koskari.matcher import parse_explicit_rule_pattern
-from koskari.syntax import Syntax, SyntaxTransform, parse_syntax_rules_pattern
-
+from koskari.syntax import (
+    MacroTransform,
+    SpecialTransform,
+    Syntax,
+    SyntaxTransform,
+    parse_syntax_rules_pattern,
+)
 
 
 def syntax_from_rule_datums(name, literals, rules, source_ctx=None):
@@ -92,6 +98,102 @@ def syntax_from_match_datums(name, rules, source_ctx=None):
         pat_d, tmpl = seq
         ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
         transforms.append(SyntaxTransform(ptree, nil, tmpl, pat_d))
+
+    return Syntax(name, tuple(transforms))
+
+
+def _normalize_pattern_procedure_row(row):
+    """
+    Split one macro-rules or special-rules row into pattern datum and Python
+    procedure
+    """
+
+    if not isinstance(row, (list, tuple)):
+        raise TypeError(
+            "macro/special rule row must be a sequence, got %r" % (row,))
+    seq = tuple(row)
+    if len(seq) != 2:
+        raise ValueError(
+            "macro/special rule row must be (pattern, procedure), "
+            "got length %s" % (len(seq),))
+    pat_d, proc = seq
+    if proc is None or not callable(proc):
+        raise TypeError(
+            "macro/special rule procedure must be callable, got %r"
+            % (proc,))
+    return pat_d, proc
+
+
+def macro_from_rule_rows(name, literals, rule_rows, source_ctx=None):
+    """
+    Build ``Syntax`` of ``MacroTransform`` arms from RULE-dialect patterns
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("macro_from_rule_rows requires at least one rule")
+
+    lit = frozenset(literals) if literals is not None else frozenset()
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_pattern_procedure_row(row)
+        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(MacroTransform(ptree, proc))
+
+    return Syntax(name, tuple(transforms))
+
+
+def macro_from_match_rows(name, rule_rows, source_ctx=None):
+    """
+    Build ``Syntax`` of ``MacroTransform`` arms from MATCH-dialect patterns
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("macro_from_match_rows requires at least one rule")
+
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_pattern_procedure_row(row)
+        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
+        transforms.append(MacroTransform(ptree, proc))
+
+    return Syntax(name, tuple(transforms))
+
+
+def special_from_rule_rows(name, literals, rule_rows, source_ctx=None):
+    """
+    Build ``Syntax`` of ``SpecialTransform`` arms from RULE-dialect patterns
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("special_from_rule_rows requires at least one rule")
+
+    lit = frozenset(literals) if literals is not None else frozenset()
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_pattern_procedure_row(row)
+        ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
+        transforms.append(SpecialTransform(ptree, proc))
+
+    return Syntax(name, tuple(transforms))
+
+
+def special_from_match_rows(name, rule_rows, source_ctx=None):
+    """
+    Build ``Syntax`` of ``SpecialTransform`` arms from MATCH-dialect patterns
+    """
+
+    rows = tuple(rule_rows)
+    if not rows:
+        raise ValueError("special_from_match_rows requires at least one rule")
+
+    transforms = []
+    for row in rows:
+        pat_d, proc = _normalize_pattern_procedure_row(row)
+        ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
+        transforms.append(SpecialTransform(ptree, proc))
 
     return Syntax(name, tuple(transforms))
 

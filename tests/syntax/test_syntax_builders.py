@@ -12,7 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.syntax builder functions (build_syntax and relatives).
+Tests for ``Syntax`` construction via ``datum_syntax_helpers`` and
+``build-syntax``-style rule rows
 """
 
 
@@ -21,11 +22,14 @@ import unittest
 import pytest
 
 from koskari.lib import cons, nil, symbol
-from koskari.syntax import (build_macro_syntax, build_special_match_from_rows,
-                               build_special_syntax)
 from koskari.types import build_proper
 
-from tests.syntax.datum_syntax_helpers import syntax_from_rule_datums
+from tests.syntax.datum_syntax_helpers import (
+    macro_from_rule_rows,
+    special_from_match_rows,
+    special_from_rule_rows,
+    syntax_from_rule_datums,
+)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -87,9 +91,9 @@ class TestBuildSyntax(unittest.TestCase):
             syntax_from_rule_datums(m, (), ((symbol("a"), symbol("b"), symbol("c")),))
 
 
-class TestBuildMacroSyntax(unittest.TestCase):
+class TestMacroFromRuleRows(unittest.TestCase):
 
-    def test_build_macro_syntax_kwargs_invoke(self):
+    def test_macro_from_rule_rows_kwargs_invoke(self):
         """
         Macro procedures receive captures as keyword arguments plus tc
         """
@@ -101,7 +105,7 @@ class TestBuildMacroSyntax(unittest.TestCase):
             saw.append((tc, caps))
             return symbol("macro-out")
 
-        s = build_macro_syntax(m, (), ((build_proper(m, symbol("v")), proc),))
+        s = macro_from_rule_rows(m, (), ((build_proper(m, symbol("v")), proc),))
         comp = _StubCompiler()
         slot = symbol("slot")
         src = cons(m, slot, nil)
@@ -112,26 +116,26 @@ class TestBuildMacroSyntax(unittest.TestCase):
         self.assertFalse(tc)
         self.assertEqual(caps["v"].datum, slot)
 
-    def test_build_macro_syntax_three_tuple_row_raises(self):
+    def test_macro_from_rule_rows_three_tuple_row_raises(self):
         m = symbol("compile/mm2")
 
         def proc(compiler, tc=None, **caps):
             return symbol("done")
 
         with self.assertRaises(ValueError):
-            build_macro_syntax(
+            macro_from_rule_rows(
                 m, (),
                 ((build_proper(m, symbol("w")), proc, None),))
 
-    def test_build_macro_syntax_empty_raises(self):
+    def test_macro_from_rule_rows_empty_raises(self):
         m = symbol("compile/mm3")
         with self.assertRaises(ValueError):
-            build_macro_syntax(m, (), ())
+            macro_from_rule_rows(m, (), ())
 
-    def test_build_macro_syntax_bad_row_len_raises(self):
+    def test_macro_from_rule_rows_bad_row_len_raises(self):
         m = symbol("compile/mm4")
         with self.assertRaises(ValueError):
-            build_macro_syntax(
+            macro_from_rule_rows(
                 m, (),
                 (
                     (
@@ -142,20 +146,20 @@ class TestBuildMacroSyntax(unittest.TestCase):
                 ))
 
 
-class TestBuildSpecialSyntax(unittest.TestCase):
+class TestSpecialFromRuleRows(unittest.TestCase):
 
-    def test_build_special_syntax_handler_shape(self):
+    def test_special_from_rule_rows_handler_shape(self):
         m = symbol("compile/ss")
 
         def proc(compiler, source_obj, result, tc):
             return symbol("special-out")
 
-        s = build_special_syntax(m, (), ((build_proper(m, symbol("q")), proc),))
+        s = special_from_rule_rows(m, (), ((build_proper(m, symbol("q")), proc),))
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("special-out"))
 
-    def test_build_special_match_uses_match_dialect_pattern(self):
+    def test_special_from_match_rows_uses_match_dialect_pattern(self):
         m = symbol("compile/sm")
         pat = build_proper(
             m, build_proper(symbol("SYMBOL"), symbol("r")))
@@ -163,15 +167,15 @@ class TestBuildSpecialSyntax(unittest.TestCase):
         def proc(compiler, source_obj, result, tc):
             return symbol("match-out")
 
-        s = build_special_match_from_rows(m, ((pat, proc),))
+        s = special_from_match_rows(m, ((pat, proc),))
         src = cons(m, symbol("x"), nil)
         out = s.compile_impl(None, src, False)
         self.assertEqual(out, symbol("match-out"))
 
-    def test_build_special_syntax_empty_raises(self):
+    def test_special_from_rule_rows_empty_raises(self):
         m = symbol("compile/ss2")
         with self.assertRaises(ValueError):
-            build_special_syntax(m, (), ())
+            special_from_rule_rows(m, (), ())
 
 
 # The end.

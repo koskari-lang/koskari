@@ -24,10 +24,10 @@ from koskari.compile import Compiler
 from koskari.compile.specials import BUILTINS
 from koskari.lib import Datum, Module, car, cdr, cons, nil, symbol
 from koskari.reader import LayoutReader, source_str
-from koskari.syntax import build_macro_syntax
 from koskari.types import build_proper, is_pair, is_symbol
 
 from tests.syntax.datum_syntax_helpers import (
+    macro_from_rule_rows,
     syntax_from_match_datums,
     syntax_from_rule_datums,
 )
@@ -78,7 +78,7 @@ def _install_demo_syntaxes(ns, tpl):
     def macro_proc(compiler, tc=None, **kw):
         return tpl
 
-    macro_syn = build_macro_syntax(
+    macro_syn = macro_from_rule_rows(
         SYM_DEMO_MACRO,
         (),
         ((build_proper(SYM_DEMO_MACRO), macro_proc),),
