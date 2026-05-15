@@ -24,9 +24,13 @@ from koskari.compile import Compiler
 from koskari.compile.specials import BUILTINS
 from koskari.lib import Datum, Module, car, cdr, cons, nil, symbol
 from koskari.reader import LayoutReader, source_str
-from koskari.syntax import (build_macro_syntax, build_syntax_from_datums,
-                               build_syntax_match)
+from koskari.syntax import build_macro_syntax
 from koskari.types import build_proper, is_pair, is_symbol
+
+from tests.syntax.datum_syntax_helpers import (
+    syntax_from_match_datums,
+    syntax_from_rule_datums,
+)
 
 from tests.compile.specials import _register_specials
 
@@ -61,12 +65,12 @@ def _install_lambda_ng_template(ns):
 
 
 def _install_demo_syntaxes(ns, tpl):
-    rules_syn = build_syntax_from_datums(
+    rules_syn = syntax_from_rule_datums(
         SYM_DEMO_RULES,
         (),
         ((build_proper(SYM_DEMO_RULES), tpl),),
     )
-    match_syn = build_syntax_match(
+    match_syn = syntax_from_match_datums(
         SYM_DEMO_MATCH,
         ((build_proper(SYM_DEMO_MATCH), tpl),),
     )

@@ -179,12 +179,12 @@ class TestSyntaxAdd(unittest.TestCase):
 
         n = symbol("compile/foo")
         t1 = SyntaxTransform(parse_syntax_rules_pattern(
-            build_proper(n, symbol("a")), frozenset({n}), None))
+            build_proper(n, symbol("a")), frozenset({n}), None), nil)
         t2 = MacroTransform(
             parse_syntax_rules_pattern(
                 build_proper(n, symbol("b")), frozenset({n}), None),
             lambda c, tc=None, **kw: nil)
-        s = Syntax(n, (), (t1,))
+        s = Syntax(n, (t1,))
         s2 = s + t2
         self.assertIsNot(s2, s)
         self.assertEqual(s2.transforms[0], t2)
@@ -198,13 +198,13 @@ class TestSyntaxAdd(unittest.TestCase):
 
         n = symbol("compile/bar")
         ta = SyntaxTransform(parse_syntax_rules_pattern(
-            build_proper(n, symbol("a")), frozenset({n}), None))
+            build_proper(n, symbol("a")), frozenset({n}), None), nil)
         tb = SyntaxTransform(parse_syntax_rules_pattern(
-            build_proper(n, symbol("b")), frozenset({n}), None))
+            build_proper(n, symbol("b")), frozenset({n}), None), nil)
         tc = SyntaxTransform(parse_syntax_rules_pattern(
-            build_proper(n, symbol("c")), frozenset({n}), None))
-        s1 = Syntax(n, (), (ta,))
-        s2 = Syntax(n, (), (tb, tc))
+            build_proper(n, symbol("c")), frozenset({n}), None), nil)
+        s1 = Syntax(n, (ta,))
+        s2 = Syntax(n, (tb, tc))
         s3 = s1 + s2
         self.assertEqual(s3.transforms, (tb, tc, ta))
 
@@ -214,7 +214,7 @@ class TestSyntaxCompileImpl(unittest.TestCase):
 
     def test_compile_impl_no_match_raises_special_error(self):
         n = symbol("compile/stub")
-        s = Syntax(n, (), ())
+        s = Syntax(n, ())
         with self.assertRaises(SpecialError):
             s.compile_impl(None, cons(n, nil), False)
 
@@ -237,7 +237,6 @@ class TestSyntaxCompileImpl(unittest.TestCase):
 
         s = Syntax(
             n,
-            (),
             (
                 SpecialTransform(p1, h1),
                 SpecialTransform(p2, h2),
@@ -263,7 +262,6 @@ class TestSyntaxCompileImpl(unittest.TestCase):
 
         s = Syntax(
             n,
-            (),
             (
                 SpecialTransform(p_need_arg, need_arg),
                 SpecialTransform(p_rest, rest_z),
@@ -280,7 +278,7 @@ class TestTransformFreeze(unittest.TestCase):
         zsym = symbol("compile/z")
         p = parse_syntax_rules_pattern(
             build_proper(zsym, symbol("z")), frozenset({zsym}), None)
-        t = SyntaxTransform(p)
+        t = SyntaxTransform(p, nil)
         self.assertEqual(t.matcher_tuple[0], "MATCHER")
         self.assertEqual(len(t.matcher_tuple), 6)
         self.assertTrue(t.hygiene.is_empty())
@@ -290,7 +288,7 @@ class TestTransformFreeze(unittest.TestCase):
         qsym = symbol("compile/q")
         p = parse_syntax_rules_pattern(
             build_proper(qsym, symbol("q")), frozenset({qsym}), None)
-        self.assertTrue(isinstance(SyntaxTransform(p), Transform))
+        self.assertTrue(isinstance(SyntaxTransform(p, nil), Transform))
         self.assertTrue(isinstance(
             MacroTransform(p, lambda c, tc=None, **kw: nil), Transform))
         self.assertTrue(isinstance(

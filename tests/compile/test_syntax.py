@@ -14,11 +14,13 @@
 """
 Tests for syntax expansion and pattern lowering.
 
-Runtime types and ``build_syntax_rules`` come from ``koskari.syntax``.
-``build_syntax_rules_transformer`` and pattern lowering via
-``parse_syntax_rules_pattern`` live in ``koskari.compile.specials.syntax``.
+Runtime types, ``build_syntax``, and ``parse_syntax_rules_pattern`` come
+from ``koskari.syntax``.
 
-Validate expansion output only, using transformers built via tagged tuples.
+Validate expansion output only, using transformers built from flat
+``build-syntax``-style arguments (pattern/template pairs; patterns lowered
+with ``parse_syntax_rules_pattern`` or ``parse_explicit_rule_pattern`` as
+appropriate).
 """
 
 
@@ -28,10 +30,10 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.compile.specials import BUILTINS
-from koskari.compile.specials.syntax import (build_syntax_rules_transformer,
-                                             parse_syntax_rules_pattern)
 from koskari.lib import Module, ModuleNamespace, car, cdr, cons, nil, symbol
-from koskari.syntax import Syntax, SyntaxTransform, build_syntax_rules
+from koskari.matcher import parse_explicit_rule_pattern
+from koskari.syntax import (Syntax, SyntaxTransform, build_syntax,
+                            parse_syntax_rules_pattern)
 from koskari.types import build_proper, is_symbol, unpack
 
 
@@ -66,10 +68,7 @@ def rule(macro_name, pat_form, tpl_form):
 
     return Syntax(
         name,
-        (),
-        (SyntaxTransform(
-            pat_m, tpl_form, pat_form, syntax_match_dialect=False),),
-        serialized_literals=literals,
+        (SyntaxTransform(pat_m, nil, tpl_form, pat_form),),
     )
 
 
@@ -157,14 +156,13 @@ class TestSyntaxExpansion(unittest.TestCase):
         assert_formal_renamed(self, expanded, 'n')
 
 
-    def test_build_syntax_from_tagged_tuple_roundtrip(self):
-        transformer = rule(
-            'wrap',
-            build_proper(symbol('wrap'), symbol('x')),
-            build_proper(symbol('list'), symbol('x')),
-        )
-        tagged = transformer.to_syntax_rules_tagged()
-        rebuilt = build_syntax_rules(symbol('wrap'), tagged)
+    def test_build_syntax_flat_roundtrip(self):
+        pat = build_proper(symbol('wrap'), symbol('x'))
+        tpl = build_proper(symbol('list'), symbol('x'))
+        name = symbol('wrap')
+        literals = frozenset({name})
+        pat_m = parse_syntax_rules_pattern(pat, literals, pat)
+        rebuilt = build_syntax(name, pat_m, tpl)
         expanded = expand(rebuilt, build_proper(symbol('wrap'), 99))
         expected = build_proper(symbol('list'), 99)
         assert_forms_equal(self, expanded, expected)
@@ -184,10 +182,14 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
             ),
             build_proper(symbol('+'), symbol('x'), symbol('x')),
         )
-        t_plain = build_syntax_rules_transformer(
-            symbol('double'), nil, cons(rule_plain, nil))
-        t_match = build_syntax_rules_transformer(
-            symbol('double'), nil, cons(rule_match, nil))
+        p0, t0 = list(unpack(rule_plain))
+        p1, t1 = list(unpack(rule_match))
+        name = symbol('double')
+        literals = frozenset({name})
+        p0_m = parse_syntax_rules_pattern(p0, literals, p0)
+        p1_m = parse_syntax_rules_pattern(p1, literals, p1)
+        t_plain = build_syntax(name, p0_m, t0)
+        t_match = build_syntax(name, p1_m, t1)
         ex = expand(t_plain, build_proper(symbol('double'), 21))
         assert_forms_equal(
             self, ex, expand(t_match, build_proper(symbol('double'), 21)))
@@ -201,8 +203,9 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
             ),
             build_proper(symbol('+'), symbol('x'), symbol('x')),
         )
-        t = build_syntax_rules_transformer(
-            symbol('double'), nil, cons(rule_row, nil), match_patterns=True)
+        pat, tpl = list(unpack(rule_row))
+        pat_m = parse_explicit_rule_pattern(pat, pat)
+        t = build_syntax(symbol('double'), pat_m, tpl)
         ex = expand(t, build_proper(symbol('double'), 21))
         assert_forms_equal(self, ex, build_proper(symbol('+'), 21, 21))
 
@@ -213,15 +216,7 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         pat_form = build_proper(symbol('wrap'), symbol('x'))
         tpl = build_proper(symbol('list'), symbol('x'))
         pat_m = parse_syntax_rules_pattern(pat_form, literals, pat_form)
-        syn = Syntax(
-            name,
-            (),
-            (SyntaxTransform(
-                pat_m, tpl, pat_form, syntax_match_dialect=False),),
-            serialized_literals=literals,
-        )
-        tagged = syn.to_syntax_rules_tagged()
-        syn2 = build_syntax_rules(name, tagged)
+        syn2 = build_syntax(name, pat_m, tpl)
         expanded = expand(syn2, build_proper(symbol('wrap'), 99))
         assert_forms_equal(self, expanded, build_proper(symbol('list'), 99))
 

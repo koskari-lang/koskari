@@ -29,36 +29,35 @@ head factory registration. Coverage for this surface lives in
 `tests/matcher/test_syntax.py`.
 
 **Phases 7–9 (re-scoped).** Compile-time **syntax-rules / macro-rules /
-special-rules** dispatch for **`compile/define-syntax`** is already
-building **`syntax.Syntax`** objects with native frozen matchers and
-**`SyntaxTransform` / `MacroTransform` / `SpecialTransform`** arms; see
-`koskari/compile/specials/syntax.py` and bootstrap bindings for
-`build-syntax-rules` / `build-macro-rules` in `koskari/importer/bootstrap.py`.
-What remains for this rollup is narrower than the original Phase 7
+special-rules** dispatch for **`compile/define-syntax`** lowers rule surfaces
+in **`koskari/compile/specials/syntax.py`** into quoted runtime call forms
+(**`build-syntax`**, **`build-macro`**, **`build-special`**) backed by
+**`parse-rule-pattern`** / **`parse-match-pattern`**; see bootstrap bindings in
+**`koskari/importer/bootstrap.py`**. What remains for this rollup is narrower than the original Phase 7
 bullet: per-special polish where a form still prefers ad hoc matching over
 shared **`matcher`** / **`helpers`** surfaces, **runtime `match/case`**
 (Phase 8), and optional **rename NG modules to canonical names** once the
-tree stabilizes. Legacy **`koskari/matcher.py`**, **`koskari/syntax.py`**,
-**`koskari/hygiene.py`**, and **`koskari/compile/helpers.py`** are **removed**.
-Treat Phase 7 in the checklist below as **landed** for the define-syntax /
+tree stabilizes. Earlier legacy matcher stacks and duplicate compile-helper paths
+that predated this layout are **removed**. Treat Phase 7 in the checklist below as **landed** for the define-syntax /
 **`syntax.Syntax`** story, with follow-up only for straggler specials and
 hardening.
 
 **Syntax NG (dispatcher and transforms, landed and wired).**
-`koskari/syntax.py` is the **`Compiled`** implementation for Ki-facing
-**`compile/define-syntax`** output: `koskari/compile/specials/syntax.py`
-imports it, builds **`Syntax`** / **`SyntaxTransform`** (and macro/special
-variants) from lowered patterns, and bootstrap exposes **`build-syntax-rules`**
-and **`build-macro-rules`** (see `koskari/importer/bootstrap.py`). The
-production define-syntax path uses **`syntax`** end to end; the old
-**`koskari/syntax.py`** transformer glue is gone.
+`koskari/syntax.py` defines **`Syntax`**, **`SyntaxTransform`**, **`MacroTransform`**, and
+**`SpecialTransform`**, plus runtime builtins **`build-syntax`**, **`build-macro`**, and
+**`build-special`**, with **`parse-rule-pattern`** and **`parse-match-pattern`** lowering
+RULE vs MATCH pattern datums at the use site. **`koskari/compile/specials/syntax.py`**
+emits quoted call forms (for example **`(build-syntax NAME-STR (parse-rule-pattern …) (compile/quote TEMPLATE) …)`**)
+rather than constructing **`Syntax`** during compilation; evaluation of those forms
+produces the **`Compiled`** transformer. Bootstrap wires the hyphenated names into the
+runtime (see **`koskari/importer/bootstrap.py`**).
 
-* **`Syntax` (`Compiled`)** — ordered **transform** arms; **`compile_impl`**
-  passes the **full** special form **`source_obj`** into each arm's
-  **`try_expand`**; first non-``None`` result wins; total miss raises
-  **`SpecialError`**. **`__add__`** prepends clauses. **`match_for_hygiene`**
-  builds **`cons(self.name, rest)`** and tries each arm's thawed
-  **`Matcher`** (same shape as expansion matching).
+* **`Syntax` (`Compiled`)** — ordered **transform** arms backed by a tuple of thawed
+  **`Matcher`** instances; **`compile_impl`** uses **`match_select`** on the full
+  **`source_obj`**, then **`handle_expand`** on the winning arm; total miss raises
+  **`SpecialError`**. **`__add__`** prepends clauses. **`match_for_hygiene`** matches
+  **`cons(symbol(self.name), rest)`** the same way and returns captures from the selected
+  arm.
 * **`Datum`** (`koskari.lib.Datum`) — native match box wrapping the captured
   value, source **`position`**, and optional **`binding`**. Template expansion
   and **`finalize_macro_hygiene_unbox_one_pass`** peel **`Datum`** layers where
@@ -67,20 +66,18 @@ production define-syntax path uses **`syntax`** end to end; the old
 * **`Transform` (`typing.Protocol`, `@runtime_checkable`)** — structural
   contract for arms; concrete classes share **`_init_pattern_fields`** for
   **`HygienicMatchCompiler.lower`**, **`build_hygiene()`**, and a cached
-  thawed **`Matcher`** (``try_expand`` calls ``_matcher.match(subject)``;
-  no per-call Python "engine extern" dict is passed—the native defaults cover
-  **`symbol`** / **`pair`** / **`cons`** / **`nil`** / **`keyword`** for
-  KosPair subjects).
-* **`SyntaxTransform`** — after a successful match: string-keyed captures
-  become symbol-keyed bindings, **`_promote_repeat_frame_bindings`** copies
-  **`repeat_capture`** list-of-frame-dicts into **parallel list columns** for
-  inner pattern variables (so compound ellipsis templates such as
-  **`(#list (fn a b) ...)`** line up with **`(a b) ...`** in syntax-rules),
+  thawed **`Matcher`**. **`try_expand`** runs **`_matcher.match(subject)`** and
+  delegates to **`handle_expand`** on success; no per-call Python "engine extern"
+  dict is passed—the native defaults cover **`symbol`** / **`pair`** / **`cons`** /
+  **`nil`** / **`keyword`** for KosPair subjects.
+* **`SyntaxTransform`** — optional procedural **`transformer`** (**`nil`** for
+  template-only arms); after match, string-keyed captures become symbol-keyed
+  bindings, **`_promote_repeat_frame_bindings`** copies **`repeat_capture`**
+  list-of-frame-dicts into **parallel list columns** for inner pattern variables,
   then **`expand_template_with_hygiene`**, then **`_finalize_macro_output`**
   (**`collect_binding_symbols`** + **`finalize_macro_hygiene_unbox_one_pass`**).
   The older one-shot **`apply_syntax_rules_hygiene`** helper still exists in
-  **`hygiene`** for API parity / tests; **`SyntaxTransform`** does not call
-  it.
+  **`hygiene`** for API parity / tests; **`SyntaxTransform`** does not call it.
 * **`MacroTransform`** — handler **`(compiler, tc, **captures)`** then the
   same **`_finalize_macro_output`** pass on the handler's return value (no
   template expansion inside **`MacroTransform`**).
@@ -89,11 +86,13 @@ production define-syntax path uses **`syntax`** end to end; the old
 * **`special(form_symbol, *, patterns, unpack=None)`** — decorator that builds
   **`Syntax`** from patterns, each arm a **`SpecialTransform`**.
 * **`parse_syntax_rules_pattern`** — lowers **RULE**-dialect syntax-rules
-  patterns to **`matcher`** trees. **MATCH**-dialect surfaces use
-  **`parse_explicit_rule_pattern`** / **`build_syntax_match`** and friends.
+  patterns to **`matcher`** trees. **MATCH**-dialect rule surfaces use
+  **`parse_explicit_rule_pattern`**, invoked from **`parse-match-pattern`** at
+  runtime for **`compile/syntax-match`** emission paths that still call **`build-syntax`**.
 
 Tests include `tests/syntax/test_syntax_bootstrap.py`,
-`tests/syntax/test_syntax_builders.py`, **`tests/compile/specials/test_define_syntax.py`**
+`tests/syntax/test_syntax_builders.py`, **`tests/syntax/datum_syntax_helpers.py`**
+(test-only row builders), **`tests/compile/specials/test_define_syntax.py`**
 (integration), and **`tests/hygiene/test_hygiene.py`** (template ellipsis
 and helpers).
 
@@ -178,11 +177,11 @@ system without a separate “planned vs landed” split.
   arm binds `captures["bs"]` to `nil` for that single cell.
 
 * **Syntax expansion for `compile/define-syntax` is on `syntax`.**
-  **`compile/specials/syntax.py`** lowers Ki rule surfaces into
-  **`syntax.Syntax`** transformers; **`koskari/importer/bootstrap.py`**
-  registers **`build-syntax-rules`**, **`build-macro-rules`**,
-  **`build-special-rules`**, and **`build-special-match`** for basics.ki.
-  Legacy **`koskari/syntax.py`** has been deleted with the old matcher stack.
+  **`compile/specials/syntax.py`** lowers Koskari rule surfaces into quoted
+  **`build-syntax`**, **`build-macro`**, and **`build-special`** call forms
+  (with **`parse-rule-pattern`** / **`parse-match-pattern`**); evaluation yields
+  **`syntax.Syntax`** transformers. **`koskari/importer/bootstrap.py`** registers
+  those runtime builders for the standard library bootstrap.
 
 * **Compound ellipsis and `repeat_capture`.** Lowered **`repeat_capture`**
   is **`CAPTURE` wrapping `REPEAT` of a slot-free `GROUP(None, …)`**
@@ -1622,14 +1621,17 @@ types satisfy.
 #### Baseline D — reduced syntax-rules matcher compiler *(largely landed)*
 
 **Done in tree:** **`koskari/syntax.py`** — **`parse_syntax_rules_pattern`**,
-**`build_*`** constructors, **`Syntax` / `SyntaxTransform` / `MacroTransform` /
-`SpecialTransform`**, **`serialize_form`** / **`deserialize_form`** for tagged
-const-pool rows, **`_promote_repeat_frame_bindings`** for compound ellipsis,
+**`build-syntax`** / **`build-macro`** / **`build-special`** runtime constructors,
+**`Syntax` / `SyntaxTransform` / `MacroTransform` / `SpecialTransform`** with
+**`match_select`** dispatch on **`Syntax`**, **`_promote_repeat_frame_bindings`** for compound ellipsis,
 and **`_finalize_macro_output`** (binding-symbol discovery + one-pass Datum
-peel / introduced renames). **`koskari/compile/specials/syntax.py`** lowers
-**`compile/define-syntax`** (and related match surfaces) into these objects.
-**`koskari/importer/bootstrap.py`** registers **`build-syntax-rules`**,
-**`build-macro-rules`**, **`build-special-rules`**, and **`build-special-match`**.
+peel / introduced renames). Tagged const-pool **`serialize_form`** /
+**`deserialize_form`** rows and **`to_syntax_rules_tagged`** are **gone**;
+recompilation lowers to quoted **`parse-rule-pattern`** / **`parse-match-pattern`**
+plus **`compile/quote`** template segments. **`koskari/compile/specials/syntax.py`** emits
+those forms for **`compile/define-syntax`** (and related match surfaces).
+**`koskari/importer/bootstrap.py`** registers **`build-syntax`**, **`build-macro`**, and
+**`build-special`** (hyphenated builtin names).
 
 **Remaining / hardening:** broaden regression coverage for edge **`Datum`**
 shapes and multi-arm **`Syntax`** ordering; audit any macro handlers that still

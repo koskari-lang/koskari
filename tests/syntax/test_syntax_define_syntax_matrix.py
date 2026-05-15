@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Matrix tests for the six Ki ``define-syntax`` shapes as ``syntax``
+Matrix tests for the six Koskari ``define-syntax`` shapes as ``syntax``
 builders (RULE vs MATCH times syntax / macro / special), plus
 pattern-language regression spikes. No legacy ``koskari.syntax`` or
 ``koskari.matcher`` imports.
@@ -26,9 +26,13 @@ import pytest
 from koskari.lib import cons, nil, symbol
 from koskari.matcher import parse_explicit_rule_pattern
 from koskari.syntax import (build_macro_match, build_macro_syntax,
-                               build_special_match_from_rows, build_special_syntax,
-                               build_syntax_from_datums, build_syntax_match)
+                               build_special_match_from_rows, build_special_syntax)
 from koskari.types import build_proper
+
+from tests.syntax.datum_syntax_helpers import (
+    syntax_from_match_datums,
+    syntax_from_rule_datums,
+)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -55,7 +59,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
             (build_proper(m, onlyhere), symbol("narrow")),
             (build_proper(m, symbol("a"), symbol("b")), symbol("wide")),
         )
-        s = build_syntax_from_datums(m, (onlyhere,), rules)
+        s = syntax_from_rule_datums(m, (onlyhere,), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("solo"), symbol("extra"), nil)
         out = s.compile_impl(comp, src, False)
@@ -71,7 +75,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         pat = build_proper(
             m, build_proper(symbol("SYMBOL"), symbol("u")))
         rules = ((pat, symbol("syntax-match-out")),)
-        s = build_syntax_match(m, rules)
+        s = syntax_from_match_datums(m, rules)
         comp = _StubCompiler()
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(comp, src, False)
@@ -162,14 +166,14 @@ class TestPatternLanguageTraps(unittest.TestCase):
 
     def test_rule_ellipsis_pattern_builds_and_matches(self):
         """
-        RULE dialect ellipsis in ``build_syntax_from_datums`` is accepted
+        RULE dialect ellipsis in ``syntax_from_rule_datums`` is accepted
         """
 
         m = symbol("compile/trap-ell")
         a = symbol("a")
         body_pat = build_proper(m, a, Ellipsis)
         rules = ((body_pat, symbol("ellipsis-ok")),)
-        s = build_syntax_from_datums(m, (), rules)
+        s = syntax_from_rule_datums(m, (), rules)
         comp = _StubCompiler()
         src = build_proper(m, symbol("x"), symbol("y"))
         out = s.compile_impl(comp, src, False)
@@ -186,14 +190,14 @@ class TestPatternLanguageTraps(unittest.TestCase):
         body_pat = build_proper(m, a, Ellipsis)
         rules = ((body_pat, symbol("bad")),)
         with self.assertRaises(ValueError) as ar:
-            build_syntax_match(m, rules)
+            syntax_from_match_datums(m, rules)
         self.assertIn("ellipsis", str(ar.exception).lower())
 
 
     def test_group_pattern_requires_explicit_builder(self):
         """
         A ``GROUP`` head is meaningful under ``parse_explicit_rule_pattern``;
-        ``build_syntax_match`` can use it
+        ``syntax_from_match_datums`` can use it
         """
 
         m = symbol("compile/trap-grp")
@@ -203,7 +207,7 @@ class TestPatternLanguageTraps(unittest.TestCase):
             build_proper(symbol("SYMBOL"), symbol("w")))
         pat = build_proper(m, inner)
         rules = ((pat, symbol("group-out")),)
-        s = build_syntax_match(m, rules)
+        s = syntax_from_match_datums(m, rules)
         comp = _StubCompiler()
         src = cons(m, symbol("inner-form"), nil)
         out = s.compile_impl(comp, src, False)

@@ -22,8 +22,10 @@ import pytest
 
 from koskari.lib import cons, nil, symbol
 from koskari.syntax import (build_macro_syntax, build_special_match_from_rows,
-                               build_special_syntax, build_syntax_from_datums)
+                               build_special_syntax)
 from koskari.types import build_proper
+
+from tests.syntax.datum_syntax_helpers import syntax_from_rule_datums
 
 
 pytestmark = pytest.mark.phase_infra
@@ -50,7 +52,7 @@ class TestBuildSyntax(unittest.TestCase):
             (build_proper(m, symbol("x")), symbol("first")),
             (build_proper(m, symbol("y")), symbol("second")),
         )
-        s = build_syntax_from_datums(m, (), rules)
+        s = syntax_from_rule_datums(m, (), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("z"), nil)
         out = s.compile_impl(comp, src, False)
@@ -68,7 +70,7 @@ class TestBuildSyntax(unittest.TestCase):
             (build_proper(m, onlyhere), symbol("narrow")),
             (build_proper(m, symbol("a"), symbol("b")), symbol("wide")),
         )
-        s = build_syntax_from_datums(m, (onlyhere,), rules)
+        s = syntax_from_rule_datums(m, (onlyhere,), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("solo"), symbol("extra"), nil)
         out = s.compile_impl(comp, src, False)
@@ -77,12 +79,12 @@ class TestBuildSyntax(unittest.TestCase):
     def test_build_syntax_empty_rules_raises(self):
         m = symbol("compile/m3")
         with self.assertRaises(ValueError):
-            build_syntax_from_datums(m, (), ())
+            syntax_from_rule_datums(m, (), ())
 
     def test_build_syntax_bad_row_shape_raises(self):
         m = symbol("compile/m4")
         with self.assertRaises(ValueError):
-            build_syntax_from_datums(m, (), ((symbol("a"), symbol("b"), symbol("c")),))
+            syntax_from_rule_datums(m, (), ((symbol("a"), symbol("b"), symbol("c")),))
 
 
 class TestBuildMacroSyntax(unittest.TestCase):

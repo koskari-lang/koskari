@@ -23,9 +23,8 @@ import pytest
 
 from koskari.dis import dis
 from koskari.lib import OpCode, build_list
-from koskari.syntax import (Syntax, build_macro_rules, build_special_rules,
-                               build_syntax_rules, parse_match_pattern,
-                               parse_rule_pattern)
+from koskari.syntax import (Syntax, build_macro, build_special, build_syntax,
+                            parse_match_pattern, parse_rule_pattern)
 
 from . import SpecialsTestCase
 
@@ -36,9 +35,9 @@ pytestmark = pytest.mark.phase_specials
 class DefineSyntaxCompileHelpers(SpecialsTestCase):
 
     def compile_expr(self, src_str, **defns):
-        defns.setdefault('build-syntax-rules', build_syntax_rules)
-        defns.setdefault('build-macro-rules', build_macro_rules)
-        defns.setdefault('build-special-rules', build_special_rules)
+        defns.setdefault('build-syntax', build_syntax)
+        defns.setdefault('build-macro', build_macro)
+        defns.setdefault('build-special', build_special)
         defns.setdefault('parse-match-pattern', parse_match_pattern)
         defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_expr(src_str, **defns)
@@ -47,9 +46,9 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
     def compile_to_code(self, src_str, lineno=1, tc=False,
                         resolution_pragma_class=None, resolution_pragma=None,
                         **defns):
-        defns.setdefault('build-syntax-rules', build_syntax_rules)
-        defns.setdefault('build-macro-rules', build_macro_rules)
-        defns.setdefault('build-special-rules', build_special_rules)
+        defns.setdefault('build-syntax', build_syntax)
+        defns.setdefault('build-macro', build_macro)
+        defns.setdefault('build-special', build_special)
         defns.setdefault('parse-match-pattern', parse_match_pattern)
         defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_to_code(
@@ -86,6 +85,7 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
 
         result = await expr()
         self.assertEqual(40, result)
+
 
     async def test_compile_syntax_rules_compound_ellipsis_example_to_list(self):
         """
@@ -134,25 +134,6 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         """
         with self.assertRaises(Exception):
             self.compile_expr(src_str, **defn)
-
-
-    def test_compile_syntax_rules_tagged_tuple_constant(self):
-        code = self.compile_to_code(
-            """
-            (compile/define m
-              (compile/syntax-rules m []
-                [(m x) x]))
-            """
-        )
-
-        consts = []
-        for i in range(code.length()):
-            op, arg = code.oparg(i)
-            if op == OpCode.KOS_OP_CONST:
-                consts.append(code.constant(arg))
-
-        self.assertFalse(any(isinstance(v, Syntax) for v in consts))
-        self.assertTrue(any(isinstance(v, tuple) for v in consts))
 
 
 class TestCompileMacroRules(DefineSyntaxCompileHelpers):
