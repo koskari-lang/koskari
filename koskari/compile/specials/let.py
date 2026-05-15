@@ -23,7 +23,7 @@ Special form handler for compile/let.
 
 
 from ...exceptions import SpecialError
-from ...lib import Datum, OpCode, cons, nil, symbol
+from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BINDINGS, BODY, MATCH, SYMBOL
 from ...stdlib import builtin
 from ...syntax import special

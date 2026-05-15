@@ -22,7 +22,7 @@ Special form handlers for compile/item, compile/del-item, and compile/set-item.
 """
 
 
-from ...lib import nil, OpCode, symbol
+from ...lib import nil, OpCode
 from ...types import is_pair
 from ...exceptions import SpecialError
 from ...matcher import MATCH, REST, SYMBOL

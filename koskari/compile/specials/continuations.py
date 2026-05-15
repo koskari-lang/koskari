@@ -24,12 +24,12 @@ compile/yield, and compile/await.
 """
 
 
-from ...lib import nil, OpCode, symbol
-from ...types import is_pair, is_nil
 from ...exceptions import SpecialError
+from ...lib import OpCode, nil
 from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
 from ...syntax import special
+from ...types import is_nil, is_pair
 from ..helpers import helper_begin, is_symbolish
 
 

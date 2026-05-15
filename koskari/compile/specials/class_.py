@@ -22,18 +22,14 @@ Special form handler for compile/class.
 """
 
 
-from ...lib import nil, OpCode, symbol
-from ...types import is_pair
 from ...exceptions import ParametersError, SpecialError
+from ...lib import OpCode, nil
+from ...types import is_pair
 from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
 from ...syntax import special
-from ..helpers import (
-    gather_parameters,
-    helper_begin,
-    is_symbolish,
-    strip_leading_docstring,
-)
+from ..helpers import (gather_parameters, helper_begin, is_symbolish,
+                       strip_leading_docstring)
 
 
 _DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)

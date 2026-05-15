@@ -24,16 +24,13 @@ convenience syntax to runtime call forms of builder functions.
 
 
 from ...exceptions import SpecialError
-from ...lib import Datum, cons, gensym, nil, pair, symbol
+from ...lib import cons, gensym, nil, symbol
 from ...matcher import (BIND, DEFINE, LIST, LITERAL_SYM, MATCH, REST, SYMBOL,
                         VALUE, parse_explicit_rule_pattern, pattern_slot_names,
                         repeat_capture)
 from ...stdlib import builtin
-from ...syntax import parse_syntax_rules_pattern
-from ...syntax import special
-from ...types import (build_proper, get_position, is_pair, is_proper,
-                      is_symbol, unpack)
-from ..compiler import Compiler
+from ...syntax import parse_syntax_rules_pattern, special
+from ...types import build_proper, is_pair, is_proper, is_symbol, unpack
 from ..helpers import match, match1
 
 
@@ -131,35 +128,6 @@ def _syntax_rules_row_pattern_and_template(raw_rule):
     if match_m is not None:
         pattern_src = match_m["inner"].datum
     return pattern_src, template_expr
-
-
-_MAKE_SYNTAX_PATTERNS = [
-    MATCH(SYMBOL("_"), REST("rest")),
-]
-
-
-@builtin("compile/make-syntax")
-@special("compile/make-syntax", patterns=_MAKE_SYNTAX_PATTERNS)
-def special_compile_syntax(
-        compiler: Compiler,
-        source: pair,
-        tc: bool = False):
-    """
-    Compile (compile/make-syntax EXPR). Evaluates EXPR and wraps the result in
-    ``Syntax`` with position from the expression form when available.
-    """
-
-    # Rest must be exactly one expression; emit (syntax EXPR [POS]) for the
-    # runtime wrapper.
-    _, rest = source
-    matched = match(rest, [MATCH(VALUE("expr"))])
-    if matched is None:
-        raise SpecialError("make-syntax requires exactly one expression", source)
-
-    inner = matched["expr"].datum
-    pos = get_position(inner) if is_pair(inner) else get_position(source)
-
-    return cons(symbol("syntax"), inner, pos, nil)
 
 
 _COMPILE_NAME_SPEC_PATTERNS = [MATCH(DEFINE("name"), VALUE("spec"))]
@@ -424,7 +392,6 @@ def special_compile_special_rules(compiler, source, tc=False):
         inner = m["pattern"].datum
         tc_formal = m["tc"].datum if "tc" in m else gensym()
 
-        pattern_matcher = parse_syntax_rules_pattern(inner, literals, raw_rule)
         vars_ordered = collect_pattern_variable_symbols(inner, literals)
 
         parts.append(_emit_parse_rule_pattern(inner, literals))

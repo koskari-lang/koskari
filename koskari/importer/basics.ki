@@ -363,10 +363,19 @@ define on-demand? []:
     False
 
 
+define-syntax compile/datum:
+  macro-rules []:
+    match (_ expr pos):
+      '(call datum expr)
+    match (_ expr):
+      define pos (getattr expr "position" None)
+      `(call datum expr ,pos)
+
+
 define-syntax create-instance-check:
   macro-match:
     match (create-instance-check (BIND name)):
-      define pname (syntax (symbol f"{name.datum}?"))
+      define pname (datum (symbol f"{name.datum}?"))
       `define ,pname:
         let [[tp ,name]]:
           lambda ,pname [value]:

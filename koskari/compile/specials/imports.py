@@ -73,17 +73,13 @@ Opcode sequences produced
 """
 
 
-from ...lib import nil, OpCode, symbol
-from ...types import is_keyword, is_pair, is_symbol, unpack
 from ...exceptions import SpecialError
+from ...lib import OpCode, nil
 from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
 from ...syntax import special
+from ...types import is_keyword, is_pair, is_symbol, unpack
 from ..helpers import helper_using, is_symbolish
-
-
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
-
 
 
 __all__ = (
@@ -91,6 +87,9 @@ __all__ = (
     'special_import',
     'special_import_from',
 )
+
+
+_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
 
 
 def _attr_form_to_dotted(form, source):

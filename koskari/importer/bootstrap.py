@@ -92,7 +92,7 @@ def make_bootstrap():
     _ty('pair', pair)
     _ty('symbol', symbol)
     _ty('values', values)
-    _ty('syntax', Datum)
+    _ty('datum', Datum)
 
     _bind('apply', apply)
     _bind('as-coroutine', as_coroutine)

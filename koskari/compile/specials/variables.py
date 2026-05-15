@@ -27,12 +27,12 @@ compile/globals, and compile/locals.
 from ...exceptions import CompilerError, SpecialError
 from ...lib import Datum, OpCode, cons, keyword, nil, symbol
 from ...matcher import (BODY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR,
-                           REST, SYMBOL, VALUE)
+                        REST, SYMBOL, VALUE)
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_pair
-from ..helpers import (_parse_decl_tail, parse_decl,
-                          unpack_lhs_bind_symbols, using_unpack_helper)
+from ..helpers import (_parse_decl_tail, parse_decl, unpack_lhs_bind_symbols,
+                       using_unpack_helper)
 
 
 def _define_name_type_pos_from_match(matched):
@@ -155,7 +155,6 @@ def special_define_values(compiler, caps, tc=False):
     """
 
     called_by = caps["_"].datum
-    pos = caps["_"].position
 
     lhs_mr = caps["lhs"]
     expr_mr = caps["expr"]
