@@ -366,10 +366,10 @@ define on-demand? []:
 define-syntax compile/datum:
   macro-rules []:
     match (_ expr pos):
-      '(call datum expr)
+      `(call datum ,expr ,pos)
     match (_ expr):
       define pos (getattr expr "position" None)
-      `(call datum expr ,pos)
+      `(call datum ,expr ,pos)
 
 
 define-syntax create-instance-check:
