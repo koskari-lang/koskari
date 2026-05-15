@@ -109,6 +109,9 @@ class TestHygieneLetBodyDescent(unittest.TestCase):
         compiler, _mod_ns = _make_compiler()
         form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
+
+        self.assertSetEqual({str(s) for s in syms}, {"t", "y"})
+
         out = expand_template_with_hygiene(form, {}, syms, {})
 
         self.assertTrue(is_pair(out))

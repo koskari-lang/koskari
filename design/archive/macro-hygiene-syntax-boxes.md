@@ -2,15 +2,17 @@
 
 **Status:** Archived specification (superseded by the implementation described in
 [../language/macro-hygiene-syntax-boxes.md](../language/macro-hygiene-syntax-boxes.md);
-shipping code: **`koskari.syntax.Syntax`**, **`koskari.hygiene`**, and
-**`finalize_macro_hygiene_unbox_one_pass`** for the final splice pass)
+shipping code: **`koskari.lib.Datum`**, **`koskari.hygiene`**, and
+**`finalize_macro_hygiene_unbox_one_pass`** for the final peel pass). In this
+document, **syntax box** means the design concept; the implementation type is
+**`Datum`**, not a separate **`koskari.syntax.Syntax`** wrapper.
 
 This document preserved the original design for a hygiene model for procedural macros that reuses the
 existing binding-aware compiler pass. Macros may return ordinary source forms plus
 **syntax boxes**: opaque segments of source (any expression shape, including full
 subtrees) that represent the forms the macro consumed from the call. Hygiene
 applies only to **non-boxed** regions of the expanded tree; boxed payloads are
-substituted back in at the very end, after binding normalization.
+peeled in at the very end, after binding normalization.
 
 ---
 
@@ -32,8 +34,9 @@ Koskari currently supports:
   [unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md) for
   terminology. **MATCH**-style specs (`syntax-match`, `macro-match`) use
   **`parse_explicit_rule_pattern`** for patterns; the **syntax box** behaviour
-  described here is implemented via **`koskari.syntax.Syntax`** and
-  **`finalize_macro_hygiene_unbox_one_pass`** in **`hygiene`** (see the language stub linked in the status).
+  described here is implemented via **`koskari.lib.Datum`**,
+  **`expand_template_with_hygiene`**, and **`finalize_macro_hygiene_unbox_one_pass`**
+  in **`hygiene`** (see the language stub linked in the status).
 - A binding-aware compiler pass that:
   - identifies declaring forms
   - determines lexical scopes
@@ -93,9 +96,10 @@ The expander may **split**, **reorder**, or **duplicate** boxes as the macro
 logic requires; each box still denotes “this chunk came from the invocation and
 must not be rewritten by hygiene while boxed.”
 
-### 4.2 Syntax box
+### 4.2 Syntax box (implemented as `Datum`)
 
 A syntax box is a distinct runtime/compiler type used only during expansion.
+Shipping code uses **`koskari.lib.Datum`**.
 
 It represents:
 
@@ -103,18 +107,21 @@ It represents:
 > do not treat its interior as subject to the binder’s gensym pass while it
 > remains boxed.
 
-**Properties**
+**Properties (`Datum`)**
 
-Each syntax box contains:
+Each box contains:
 
-- underlying source segment (any expression type the reader/compiler already
-  represents: pairs, atoms, nested forms)
-- optional kind/tag (interpretation may also be driven by payload and compiler
-  context)
+- **`.datum`** — underlying source segment (pairs, atoms, nested forms)
+- **`.position`** — optional source position from the enclosing pair cell
+- **`.binding`** — optional capture slot name when the value came from the matcher
 
-### 4.3 Single syntax box type
+Template expansion inserts pattern-variable values as **`Datum`** captures
+unchanged. The KosPair matcher may read through outer **`Datum`** layers for
+structure matching only; the pair tree and box nodes stay intact until finalize.
 
-There is only **one** syntax box type.
+### 4.3 Single box type
+
+There is only **one** syntax box type (**`Datum`**).
 
 It is a singular placeholder/marker object used during macro expansion and
 finalization. It does **not** imply a family of separate boxed node types.
@@ -143,14 +150,14 @@ Macro returns a tree containing:
 - **Unboxed** structure: the macro’s own emitted forms (templates, wrappers,
   fresh names introduced as ordinary symbols, etc.)
 - **Boxed** segments: arguments or fragments read from the call (possibly whole
-  bodies), which may be arbitrarily large subtrees
+  bodies), usually as **`Datum`** from pattern captures
 
 Example: a macro that receives a body with internal `lambda`/`let` can place that
 body in a box so inner binders are **not** renamed by the post-expansion hygiene
 pass; only the unboxed wrapper the macro built is processed by the binder.
 
-The important point is not multiple box categories, but that the singular syntax
-box type marks “hygiene must not descend here; substitute at the end.”
+The important point is not multiple box categories, but that **`Datum`**
+marks “hygiene must not rename inside this cell; peel at finalize.”
 
 ### Step 2: Binding/hygiene pass (existing, scoped)
 
@@ -158,26 +165,29 @@ Run the existing declaring-form matcher and scope transformer on the expanded
 tree with this rule:
 
 - **Non-boxed** regions: unchanged behavior — `let`, `lambda`, etc. are
-  recognized, scopes determined, gensym substitution applied
-- **Boxed** regions: **opaque**. The pass does not treat the interior of a box
-  as binding structure to rewrite. A box is a single opaque node for hygiene
-  purposes even if its payload is a large subtree
+  recognized, scopes determined, gensym substitution applied to bare symbols
+  in the discovered binding-symbol set
+- **Boxed** regions: **opaque**. **`expand_template_with_hygiene`** does not
+  descend into substituted **`Datum`** values; **`collect_binding_symbols`**
+  uses matcher metadata on unboxed structure
 
-So: the tree walk can see box **nodes**, but **hygiene does not recurse into box
-payloads** for binding discovery or renaming; only unboxed structure is processed
-like today’s pass.
+So: hygiene can see **`Datum`** nodes on the spine, but does not treat boxed
+payloads as template literals to freshen.
 
 ### Step 3: Finalization pass
 
-After binding normalization of the unboxed skeleton:
+**`finalize_macro_hygiene_unbox_one_pass`** runs after template expansion:
 
-- **Substitute** boxed payloads into their positions (unwrap the singular box
-  type)
-- The spliced-in source is then ordinary tree data for subsequent compilation
+- **Peels** **`Datum`** layers in place for compilation (merging pair positions
+  where applicable)
+- **Does not gensym** symbols that were still wrapped in a **`Datum`** car or
+  cdr when the walk started
+- **Does gensym** bare symbols that appear in the binding-symbol set (macro
+  template literals such as internal `loop` in `(compile/define loop ...)`)
 
-How unwrapped segments are treated afterward is normal compiler logic. Until
-finalization, boxed vs unboxed must remain distinguishable so hygiene cannot
-accidentally flatten or rename inside boxes.
+The spliced-in source is then ordinary tree data for subsequent compilation.
+Until finalization, boxed vs unboxed must remain distinguishable so hygiene
+cannot accidentally flatten or rename inside boxes.
 
 ---
 
@@ -188,14 +198,14 @@ accidentally flatten or rename inside boxes.
 Anything the macro emits **without** wrapping in a box is subject to the normal
 declaring-form and gensym behavior.
 
-Anything kept **inside** a box skips that rewriting until after the surrounding
-structure has been normalized, then is spliced in verbatim (from the box’s
-payload).
+Anything kept **inside** a **`Datum`** skips rename during finalize; the payload
+is peeled through for compile afterward.
 
 **Implication:** If the macro **wants** a generated `let` or `lambda` to
 participate in hygiene (e.g. fresh temps), it should emit that structure
-**unboxed**. If it **wants** to preserve call-site bindings and names exactly as
-written, it should keep that subtree **boxed** through Step 2.
+**unboxed** (bare symbols in the template). If it **wants** to preserve
+call-site bindings and names exactly as written, it should insert them via
+pattern variables so they remain **`Datum`**-wrapped through finalize.
 
 ### 6.2 Boxes may hold any source segment
 
@@ -210,7 +220,7 @@ They must NOT degrade into plain pairs or symbols early.
 
 All passes between expansion and finalization must be able to detect:
 
-- boxed vs unboxed
+- boxed (**`Datum`**) vs unboxed
 
 so that hygiene never recurses into boxed payloads by mistake.
 
@@ -226,8 +236,8 @@ so that hygiene never recurses into boxed payloads by mistake.
 
 **New**
 
-- syntax box type
-- final unwrap pass
+- **`Datum`** as the syntax-box type
+- final peel and selective rename pass
 
 **No duplication of**
 
@@ -242,13 +252,13 @@ so that hygiene never recurses into boxed payloads by mistake.
   is still handled by existing gensym logic
 - **Preserving call-site code** — bodies or fragments that include `lambda`,
   `let`, and local definitions stay unmunged by hygiene when carried in boxes
-  until final substitution
-- **Identifier transformation** — call-site identifiers or macro-built names can
-  be carried in boxes when they must not be rewritten with the surrounding scope
+  until final peel
+- **Export names from macros** — e.g. `(compile/define ,name ...)` keeps the
+  real `name` when substituted as **`Datum`**
 - **Procedural power** — arbitrary computation, splitting/recombining boxed
   segments, and structured output
 - **Minimal new machinery** — no full syntax-object taxonomy; one box type plus
-  late splice
+  late peel
 
 ---
 
@@ -259,6 +269,8 @@ This approach does NOT fully solve:
 - Definition-site vs call-site resolution (unless extended)
 - Fine-grained lexical provenance tracking
 - Complex nested hygiene interactions across macro boundaries
+- **`collect_binding_symbols`** recursing into boxed **`expr`** captures via
+  binder metadata (separate follow-up)
 
 These can be addressed later if needed.
 
@@ -269,13 +281,14 @@ These can be addressed later if needed.
 Think of macro expansion as producing:
 
 > A skeleton of macro-written source, with **holes** filled by syntax boxes
-> holding call-site (or otherwise preserved) segments—any size.
+> (**`Datum`**) holding call-site (or otherwise preserved) segments—any size.
 
 Then:
 
-- Binding pass → normalizes **only the unboxed skeleton** (scopes, gensyms)
-- Final pass → **splices** box payloads into place; only then is the full tree
-  ordinary source for the rest of the compiler
+- Binding pass → normalizes **only the unboxed skeleton** (scopes, gensyms on
+  bare template names)
+- Final pass → **peels** **`Datum`** in place; substituted boxes keep their
+  symbols; only then is the full tree ordinary source for the rest of the compiler
 
 ---
 
@@ -292,7 +305,7 @@ For example, the payload could optionally carry:
 
 But the external model remains:
 
-- one box type
+- one box type (**`Datum`**)
 - one placeholder abstraction
 
 ---
@@ -308,7 +321,7 @@ This design provides:
 
 By introducing only one core abstraction:
 
-> **Syntax boxes as opaque segments (any shape) that bypass hygiene until a
-> final splice**
+> **Syntax boxes (`Datum`) as opaque segments (any shape) that bypass rename
+> until finalize peels them for compilation**
 
 This is likely the lowest-complexity path to a robust macro system in Koskari.

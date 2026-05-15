@@ -1915,6 +1915,20 @@ static PyObject *make_match_result(
 }
 
 
+/**
+   Borrow through outer ``Datum`` layers for KosPair spine reads. The
+   underlying pair tree and hygiene boxes are unchanged; only matching
+   sees the inner value.
+*/
+static PyObject *matcher_peel_datum(PyObject *obj) {
+  while (obj && KosDatum_Check(obj)) {
+    KosDatum *d = (KosDatum *) obj;
+    obj = d->datum;
+  }
+  return obj;
+}
+
+
 /* === subject adapters === */
 
 
@@ -1983,7 +1997,7 @@ static Py_ssize_t kospair_length(KosMatchSubject *s) {
 
 
 static PyObject *kospair_get(KosMatchSubject *s, Py_ssize_t i) {
-  return s->kp_cars[i];
+  return matcher_peel_datum(s->kp_cars[i]);
 }
 
 
@@ -2009,7 +2023,7 @@ static PyObject *kospair_slice(
   if (! t)
     return NULL;
   for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *v = s->kp_cars[start + i];
+    PyObject *v = matcher_peel_datum(s->kp_cars[start + i]);
     Py_INCREF(v);
     PyTuple_SET_ITEM(t, i, v);
   }
@@ -2101,15 +2115,6 @@ int KosMatchSubject_FromKosPair(
    Returns 0 on success, -1 on error. Out subject must be released
    with KosMatchSubject_Release.
 */
-static PyObject *matcher_peel_datum(PyObject *obj) {
-  while (obj && KosDatum_Check(obj)) {
-    KosDatum *d = (KosDatum *) obj;
-    obj = d->datum;
-  }
-  return obj;
-}
-
-
 static int subject_from_any(PyObject *value, KosMatchSubject *out) {
   /* Reader output often wraps pair-tree cells in Datum. Iterating a pair as
      a Python sequence yields (car, cdr), which breaks FORM on a single list

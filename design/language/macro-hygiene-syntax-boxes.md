@@ -1,10 +1,11 @@
 # Macro hygiene and syntax boxes
 
 **Implemented.** Procedural and template macro expansion can carry call-site
-subtrees in **`koskari.syntax.Syntax`** wrappers. The hygiene pass
-(**`koskari.hygiene.expand_template_with_hygiene`**, **`apply_syntax_rules_hygiene`**)
-treats boxed segments as opaque for renaming; **`finalize_macro_hygiene_unbox_one_pass`**
-in **`hygiene`** runs after hygiene and splices payloads into the tree for compilation.
+subtrees in **`koskari.lib.Datum`** wrappers (the hygiene “syntax box” type).
+The hygiene pass (**`koskari.hygiene.expand_template_with_hygiene`**,
+**`apply_syntax_rules_hygiene`**) treats boxed segments as opaque for renaming;
+**`finalize_macro_hygiene_unbox_one_pass`** in **`hygiene`** peels **`Datum`**
+for compilation without gensymming substituted captures inside **`Datum`** cells.
 
 **Archived design note:** The original middle-ground write-up (problem statement,
 diagrams, and rationale) is in

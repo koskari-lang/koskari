@@ -66,7 +66,7 @@ from koskari.exceptions import SpecialError
 from koskari.hygiene import (Hygiene, collect_binding_symbols,
                              expand_template_with_hygiene,
                              finalize_macro_hygiene_unbox_one_pass)
-from koskari.lib import (Datum, Matcher, cons, demand_call, gensym,
+from koskari.lib import (Datum, Matcher, demand_call, gensym,
                          match_select, nil, symbol)
 from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST, TEST_ANY,
                              HygienicMatchCompiler, check_pattern_arg,
@@ -180,6 +180,7 @@ def _finalize_macro_output(compiler, form):
     Discover binding symbols on ``form`` then run the shared in-place hygiene
     and ``Datum`` peel pass
     """
+
     # print('DEBUG syntax _finalize_macro_output', 'form=', repr(form))
     syms = collect_binding_symbols(form, compiler.find_compiled)
     # print('DEBUG syntax _finalize_macro_output', 'syms=', repr(syms))
@@ -265,13 +266,13 @@ class SyntaxTransform(Transform):
         if self.handler is not None:
             expanded = self.handler(compiler, tc, **result.captures)
             return _finalize_macro_output(compiler, expanded)
-        # print('DEBUG syntax SyntaxTransform', 'captures=', repr(result.captures))
+
         bindings = _captures_to_bindings(result.captures)
         bindings = _promote_repeat_frame_bindings(bindings)
-        # print('DEBUG syntax SyntaxTransform', 'bindings=', repr(bindings))
+
         subst = expand_template_with_hygiene(
             self.template, bindings, set(), {})
-        # print('DEBUG syntax SyntaxTransform', 'subst=', repr(subst))
+
         return _finalize_macro_output(compiler, subst)
 
 
@@ -389,14 +390,13 @@ class Syntax(Compiled):
         return Hygiene(binders, scopes)
 
 
-    def match_for_hygiene(self, rest):
+    def match_for_hygiene(self, form):
         """
-        Match ``(self.name . rest)`` against the first arm whose frozen
+        Match ``form`` against the first arm whose frozen
         matcher succeeds; return capture mapping for hygiene discovery
         """
 
-        full = cons(symbol(self.name), rest)
-        _idx, result = match_select(self._matchers, full)
+        _idx, result = match_select(self._matchers, form)
         return result and result.captures
 
 

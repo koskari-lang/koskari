@@ -128,8 +128,33 @@ def binder_recurse_targets(matched, hygiene):
 
     for owner in hygiene.binders.values():
         for form in owner.iter_recurse_targets(matched):
-            if form is not None:
+            if form is not None and not isinstance(form, Datum):
                 yield form
+
+
+def _hygiene_collect_walk_roots(form):
+    """
+    Normalize matcher capture values into roots for ``collect_binding_symbols``.
+
+    Scope-region captures (e.g. ``BODY`` / ``REST``) are often ``Datum``-wrapped
+    spine slices; peel one layer for the walk only. Tuple captures expand to
+    per-element roots. Substitution boxes on the expanded tree are not passed
+    through here — only values from ``iter_scope_targets``.
+    """
+
+    if form is None:
+        return
+
+    if isinstance(form, tuple):
+        for elem in form:
+            for root in _hygiene_collect_walk_roots(elem):
+                yield root
+        return
+
+    if isinstance(form, Datum):
+        form = form.datum
+
+    yield form
 
 
 def scope_region_targets(matched, hygiene):
@@ -147,8 +172,8 @@ def scope_region_targets(matched, hygiene):
 
     for owner in hygiene.scope_regions.values():
         for form in owner.iter_scope_targets(matched):
-            if form is not None:
-                yield form
+            for root in _hygiene_collect_walk_roots(form):
+                yield root
 
 
 def _collect_symbols(expr, out):
@@ -299,6 +324,10 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
     map semantics as :func:`expand_template_with_hygiene` with empty
     ``bindings``) and ``Datum`` peeling for compilation.
 
+    ``Datum``-wrapped spine cells are peeled in place but not gensymmed; bare
+    symbols in ``binding_symbols`` are renamed. That preserves substituted
+    pattern captures while freshening template literals
+
     :param form: macro or syntax-rules output (pairs, atoms, ``Datum``)
     :param binding_symbols: symbols to rename when not bound as pattern vars
     :param find_compiled: unused; reserved for API parity with discovery sites
@@ -344,21 +373,23 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
                 continue
             seen.add(i)
 
+            car_was_datum = isinstance(nx.car, Datum)
             c = peel_car_in_place(nx)
 
             if is_symbol(c):
-                if c in binding_symbols:
+                if c in binding_symbols and not car_was_datum:
                     nx.car = gensym_binding(c)
             elif is_pair(c):
                 walk_spine(c)
 
+            cdr_was_datum = isinstance(nx.cdr, Datum)
             tail = peel_cdr_datums_in_place(nx)
             if is_nil(tail):
                 return nil
             if is_pair(tail):
                 nx = tail
                 continue
-            if is_symbol(tail) and tail in binding_symbols:
+            if is_symbol(tail) and tail in binding_symbols and not cdr_was_datum:
                 nx.cdr = gensym_binding(tail)
             return nil
         return nil
@@ -386,9 +417,13 @@ def collect_binding_symbols(node, find_compiled):
     :rtype: set of symbols
     """
 
+    #print('DEBUG hygiene collect_binding_symbols', 'node=', repr(node))
+
     out = set()
-    while isinstance(node, Datum):
-        node = node.datum
+
+    if isinstance(node, Datum):
+        return out
+
     if node is nil or not is_pair(node):
         return out
 
@@ -402,15 +437,18 @@ def collect_binding_symbols(node, find_compiled):
 
     special = find_compiled(head)
     hygiene = getattr(special, "hygiene", None)
-    if special is None or hygiene is None:
+    if not hygiene:
+        # print('DEBUG hygiene collect_binding_symbols', 'no hygiene')
         for elem in rest.unpack():
             out |= collect_binding_symbols(elem, find_compiled)
         return out
 
     matched = None
     try:
-        matched = special.match_for_hygiene(rest)
+        matched = special.match_for_hygiene(node)
+        # print('DEBUG hygiene collect_binding_symbols', 'matched=', repr(matched))
     except SpecialError:
+        # print('DEBUG hygiene collect_binding_symbols', 'match error')
         matched = None
 
     if matched is None:
@@ -427,6 +465,7 @@ def collect_binding_symbols(node, find_compiled):
         out |= collect_binding_symbols(form, find_compiled)
 
     if hygiene.is_empty():
+        # print('DEBUG hygiene collect_binding_symbols', 'empty hygiene')
         for elem in rest.unpack():
             out |= collect_binding_symbols(
                 elem if is_pair(elem) else cons(elem, nil),

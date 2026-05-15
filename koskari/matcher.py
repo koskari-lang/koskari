@@ -1666,9 +1666,7 @@ class BINDINGS(Composite):
         for fr in cells:
             if isinstance(fr, dict):
                 n = fr.get("name")
-                if n is not None:
-                    if isinstance(n, Datum):
-                        n = n.datum
+                if n is not None and not isinstance(n, Datum):
                     if is_symbol(n):
                         yield n
 

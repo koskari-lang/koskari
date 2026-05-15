@@ -27,10 +27,11 @@ from koskari.hygiene import (
     binder_recurse_targets,
     collect_binding_symbols,
     expand_template_with_hygiene,
+    finalize_macro_hygiene_unbox_one_pass,
     introduced_symbols_from_match,
     scope_region_targets,
 )
-from koskari.lib import cons, nil, symbol
+from koskari.lib import Datum, cons, nil, symbol
 from koskari.types import build_proper, is_symbol
 
 
@@ -163,14 +164,14 @@ class TestScopeRegionTargets(unittest.TestCase):
 
     def test_scope_region_yields_body_capture_once(self):
         """
-        Scope-region owners yield the body capture as a single root
+        Scope-region owners normalize captures into walk roots for collect
         """
 
         bsym = symbol("b")
         matched = {"body": (bsym,)}
         roots = list(scope_region_targets(matched, Hygiene({}, {"body": _FakeBodyScope()})))
         self.assertEqual(len(roots), 1)
-        self.assertEqual(roots[0], (bsym,))
+        self.assertIs(roots[0], bsym)
 
 
 class TestExpandTemplate(unittest.TestCase):
@@ -306,6 +307,50 @@ class TestCollectAndApply(unittest.TestCase):
         self.assertEqual(len(parts), 2)
         self.assertIs(parts[0], hd)
         self.assertNotEqual(parts[1], intro)
+
+
+class TestCollectDatumOpaque(unittest.TestCase):
+
+
+    def test_collect_does_not_harvest_inside_datum_on_tree(self):
+        """
+        ``Datum`` on the expanded tree is opaque for binding-symbol discovery
+        """
+
+        hd = symbol("compile/define")
+        export = symbol("compile/caddddr")
+        form = cons(hd, Datum(export), nil)
+        syms = collect_binding_symbols(form, lambda head: None)
+        self.assertNotIn(export, syms)
+
+
+class TestFinalizeDatum(unittest.TestCase):
+
+
+    def test_finalize_skips_gensym_for_datum_car(self):
+        """
+        Datum-wrapped substituted captures keep the real symbol after finalize
+        """
+
+        hd = symbol("compile/define")
+        export = symbol("compile/caddddr")
+        form = cons(hd, Datum(export), nil)
+        out = finalize_macro_hygiene_unbox_one_pass(
+            form, {export}, lambda head: None)
+        self.assertIs(out.cdr.car, export)
+
+
+    def test_finalize_gensyms_bare_introduced_symbol(self):
+        """
+        Bare template literals in binding_symbols are still freshened
+        """
+
+        hd = symbol("compile/define")
+        export = symbol("compile/caddddr")
+        form = cons(hd, export, nil)
+        out = finalize_macro_hygiene_unbox_one_pass(
+            form, {export}, lambda head: None)
+        self.assertIsNot(out.cdr.car, export)
 
 
 # The end.
