@@ -26,8 +26,9 @@ import pytest
 from koskari.lib import Datum, cons, keyword, nil, symbol
 from koskari.matcher import (BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE,
                                 DatumFrame, FORMALS, LITERAL, MATCH, TYPE, USING,
-                                Hygiene, HygienicMatchCompiler, MatchCompiler,
-                                Matcher, MatchResult, make_matcher)
+                                VALUE, HygieneTree, HygienicMatchCompiler,
+                                MatchCompiler, Matcher, MatchResult,
+                                make_matcher)
 from koskari.types import build_proper
 
 
@@ -141,7 +142,7 @@ class TestDEFINE(unittest.TestCase):
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(MATCH(DEFINE("name")))
         hygiene = hc.build_hygiene()
-        binders = hygiene.binders
+        binders = hygiene.root.binders
         self.assertIn("name", binders)
         owner = binders["name"]
         sn = symbol("foo")
@@ -239,7 +240,7 @@ class TestDECL(unittest.TestCase):
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(MATCH(DECL("d")))
         hygiene = hc.build_hygiene()
-        owner = hygiene.binders["d"]
+        owner = hygiene.root.binders["d"]
         sx = symbol("x")
         self.assertEqual(
             set(owner.iter_introduced_symbols(
@@ -304,7 +305,7 @@ class TestBINDING(unittest.TestCase):
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(MATCH(BINDING("b")))
         hygiene = hc.build_hygiene()
-        owner = hygiene.binders["b"]
+        owner = hygiene.root.binders["b"]
         sn = symbol("n")
         self.assertEqual(
             set(owner.iter_introduced_symbols(
@@ -384,7 +385,7 @@ class TestBINDINGS(unittest.TestCase):
         _frozen = hc.lower(MATCH(bs))
         hygiene = hc.build_hygiene()
         self.assertEqual(bs._mode, "parallel")
-        self.assertIs(hygiene.binders["bs"], bs)
+        self.assertIs(hygiene.root.binders["bs"], bs)
 
 
     def test_bindings_sequential_mode_recorded(self):
@@ -397,7 +398,7 @@ class TestBINDINGS(unittest.TestCase):
         _frozen = hc.lower(MATCH(bs))
         hygiene = hc.build_hygiene()
         self.assertEqual(bs._mode, "sequential")
-        self.assertIs(hygiene.binders["bs"], bs)
+        self.assertIs(hygiene.root.binders["bs"], bs)
 
 
 class TestUSING(unittest.TestCase):
@@ -493,7 +494,7 @@ class TestUSING(unittest.TestCase):
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(MATCH(USING("u")))
         hygiene = hc.build_hygiene()
-        owner = hygiene.binders["u"]
+        owner = hygiene.root.binders["u"]
         sn = symbol("n")
         self.assertEqual(
             set(owner.iter_introduced_symbols(
@@ -899,7 +900,7 @@ class TestFORMALS(unittest.TestCase):
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(MATCH(FORMALS("f")))
         hygiene = hc.build_hygiene()
-        owner = hygiene.binders["f"]
+        owner = hygiene.root.binders["f"]
         sf = symbol("rest")
         # FORMALS binder meta expects bare Python lists for positional frames.
         grp = {"positionals": [{"name": Datum(sf)}]}
@@ -934,13 +935,49 @@ class TestBODY(unittest.TestCase):
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(pat)
         hygiene = hc.build_hygiene()
-        regions = hygiene.scope_regions
+        regions = hygiene.root.regions
         self.assertIn("body", regions)
         body_owner = regions["body"]
         bsym = symbol("b")
         roots = list(body_owner.iter_scope_targets({"body": (bsym,)}))
         self.assertEqual(len(roots), 1)
         self.assertEqual(roots[0], (bsym,))
+
+
+class TestVALUE(unittest.TestCase):
+
+
+    def test_value_captures_one_element_like_bind(self):
+        """
+        VALUE captures a single spine element, identical to BIND at the
+        engine level
+        """
+
+        pat = MATCH(CAPTURE("head"), VALUE("expr"))
+        m = pat.build()
+        result = m.match((1, 2))
+        self.assertTrue(result.matched)
+        self.assertEqual(_ucaps(result)["head"], 1)
+        self.assertEqual(_ucaps(result)["expr"], 2)
+
+
+    def test_value_registers_scope_region(self):
+        """
+        VALUE registers a scope-region owner; iter_scope_targets yields
+        the capture once
+        """
+
+        pat = MATCH(CAPTURE("head"), VALUE("expr"))
+        hc = HygienicMatchCompiler()
+        _frozen = hc.lower(pat)
+        hygiene = hc.build_hygiene()
+        regions = hygiene.root.regions
+        self.assertIn("expr", regions)
+        expr_owner = regions["expr"]
+        inner = symbol("inner")
+        roots = list(expr_owner.iter_scope_targets({"expr": inner}))
+        self.assertEqual(len(roots), 1)
+        self.assertIs(roots[0], inner)
 
 
 class TestRuntimeCompileHygiene(unittest.TestCase):
@@ -1060,9 +1097,9 @@ class TestHygieneCompile(unittest.TestCase):
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(pat)
         hygiene = hc.build_hygiene()
-        self.assertIsInstance(hygiene, Hygiene)
-        self.assertIs(hygiene.binders["name"], dn)
-        self.assertIs(hygiene.scope_regions["body"], bod)
+        self.assertIsInstance(hygiene, HygieneTree)
+        self.assertIs(hygiene.root.binders["name"], dn)
+        self.assertIs(hygiene.root.regions["body"], bod)
 
 
 class TestMakeMatcher(unittest.TestCase):

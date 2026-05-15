@@ -63,7 +63,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SpecialError
-from koskari.hygiene import (Hygiene, collect_binding_symbols,
+from koskari.hygiene import (collect_binding_symbols,
                              expand_template_with_hygiene,
                              finalize_macro_hygiene_unbox_one_pass)
 from koskari.lib import (Datum, Matcher, demand_call, gensym,
@@ -372,24 +372,6 @@ class Syntax(Compiled):
         self._matchers = tuple(t._matcher for t in self.transforms)
 
 
-    @property
-    def hygiene(self):
-        """
-        Merged binder and scope-region plan from all transform arms for
-        :func:`koskari.hygiene.collect_binding_symbols`
-        """
-
-        binders = {}
-        scopes = {}
-        for t in self.transforms:
-            h = t.hygiene
-            if h.is_empty():
-                continue
-            binders.update(dict(h.binders))
-            scopes.update(dict(h.scope_regions))
-        return Hygiene(binders, scopes)
-
-
     def match_for_hygiene(self, form):
         """
         Match ``form`` against the first arm whose frozen
@@ -398,6 +380,21 @@ class Syntax(Compiled):
 
         _idx, result = match_select(self._matchers, form)
         return result and result.captures
+
+
+    def match_for_hygiene_with_arm(self, form):
+        """
+        Match ``form`` and return the winning arm index, that arm's
+        hygiene tree, and captures for tree walks
+
+        :param form: special form pair spine
+        :return: ``(idx, hygiene_tree, captures)`` or ``(None, None, None)``
+        """
+
+        idx, result = match_select(self._matchers, form)
+        if result is None:
+            return None, None, None
+        return idx, self.transforms[idx].hygiene, result.captures
 
 
     def compile_impl(self, compiler, source_obj, tc):

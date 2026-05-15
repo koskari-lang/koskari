@@ -599,6 +599,17 @@ class TestParseCompositeSlotFirst(unittest.TestCase):
         self.assertEqual(pat._slot, "body")
 
 
+    def test_value(self):
+        """
+        (VALUE expr) lowers to VALUE("expr") with scope-region meta
+        """
+
+        src = _list(symbol("VALUE"), symbol("expr"))
+        pat = parse_matcher(src)
+        self.assertIsInstance(pat, VALUE)
+        self.assertEqual(pat._slot, "expr")
+
+
     def test_symbol_helper(self):
         """
         (SYMBOL slot) lowers to SYMBOL("slot") -> CAPTURE+TYPE

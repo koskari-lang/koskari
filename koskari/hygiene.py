@@ -15,14 +15,17 @@
 """
 koskari.hygiene
 
-Hygiene discovery and template expansion driven by explicit matcher-time
-Hygiene plans plus stable Special-object hooks
-(match_for_hygiene, hygiene), instead of legacy matcher-spec introspection.
+Hygiene discovery and template expansion driven by freeze-built hygiene
+trees aligned to matcher capture-scope structure, plus stable Syntax hooks
+(match_for_hygiene_with_arm).
 
-Each binder or scope-region slot maps to the Pattern or Composite instance
-that produced it; hygiene interpretation lives on those objects.
-Portable plans use ``Hygiene.to_tuple`` / ``Hygiene.from_tuple`` with tag
-``HYGIENE`` (see method docstrings).
+Capture-shape contract (runtime walk):
+
+* Binder slot -> symbol, Datum, dict (GROUP), or list of dicts (REPEAT)
+* Region slot (BODY/VALUE) -> pair spine, Datum-wrapped spine, or special form
+* group_child edge -> matched[slot] is dict (native GROUP capture)
+* repeat_element edge -> matched[slot] is list of dict frames
+* subform descent -> region value is a compile special; uses that form's arm plan
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -31,7 +34,7 @@ Portable plans use ``Hygiene.to_tuple`` / ``Hygiene.from_tuple`` with tag
 
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Optional, Tuple
 
 from koskari.exceptions import CompilerError, SpecialError
 from koskari.lib import Datum, cons, gensym, nil
@@ -39,107 +42,193 @@ from koskari.types import build_proper, is_nil, is_pair, is_symbol, unpack
 
 
 __all__ = (
+    "HygieneEdge",
+    "HygieneNode",
+    "HygieneTree",
     "Hygiene",
+    "validate_hygiene_tree",
     "introduced_symbols_from_match",
-    "scope_region_targets",
     "binder_recurse_targets",
     "collect_binding_symbols",
     "expand_template_with_hygiene",
     "apply_syntax_rules_hygiene",
     "finalize_macro_hygiene_unbox_one_pass",
+    "walk_hygiene_tree",
 )
 
 
 @dataclass(frozen=True)
-class Hygiene(object):
+class HygieneNode(object):
     """
-    Freeze-time hygiene registration parallel to matcher composites.
+    One capture-scope hygiene context frozen from matcher lowering
 
+    :param node_id: unique node index in the owning tree
+    :param parent_id: parent node id, or None for the root
     :param binders: binder slot names mapped to owning Pattern instances
-    :param scope_regions: scope-region slot names mapped to owning Pattern
-        instances
+    :param regions: scope-region slot names mapped to owning Pattern instances
+    :param scoped_slots: region slots walked via binder ``_scopes`` only
     """
 
+    node_id: int
+    parent_id: Optional[int]
     binders: Mapping[str, object]
-    scope_regions: Mapping[str, object]
+    regions: Mapping[str, object]
+    scoped_slots: frozenset
+
+
+@dataclass(frozen=True)
+class HygieneEdge(object):
+    """
+    Parent-to-child link in a hygiene tree
+
+    :param kind: ``group_child`` or ``repeat_element``
+    :param parent_id: parent node id
+    :param child_id: child node id
+    :param capture_slot: capture key in the parent matched mapping
+    """
+
+    kind: str
+    parent_id: int
+    child_id: int
+    capture_slot: str
+
+
+@dataclass(frozen=True)
+class HygieneTree(object):
+    """
+    Freeze-time hygiene plan: nodes mirror capture-scope nesting; edges
+    encode GROUP and REPEAT child walks
+    """
+
+    nodes: Tuple[HygieneNode, ...]
+    edges: Tuple[HygieneEdge, ...]
+    root_id: int
 
 
     def is_empty(self):
         """
-        True when no binder or scope-region registrations exist
+        True when the root node has no binders, regions, or outgoing edges
         """
 
-        return not bool(self.binders or self.scope_regions)
+        if self.edges:
+            return False
+        root = self.node_by_id(self.root_id)
+        return not bool(root.binders or root.regions)
 
 
-    def is_binder(self, slot):
+    @property
+    def root(self):
         """
-        True when slot carries binder semantics for this plan
-        """
-
-        return slot in self.binders
-
-
-    def is_scope_region(self, slot):
-        """
-        True when slot is registered as a scope-region carrier
+        The root hygiene node
         """
 
-        return slot in self.scope_regions
+        return self.node_by_id(self.root_id)
 
 
-    def __bool__(self):
-        return bool(self.binders or self.scope_regions)
+    def node_by_id(self, node_id):
+        """
+        Return the node for ``node_id``
+
+        :param node_id: node index
+        :rtype: HygieneNode
+        :raises KeyError: when ``node_id`` is unknown
+        """
+
+        for node in self.nodes:
+            if node.node_id == node_id:
+                return node
+        raise KeyError(node_id)
 
 
-def introduced_symbols_from_match(matched, hygiene):
+    def edges_from(self, parent_id):
+        """
+        Yield edges whose parent is ``parent_id``
+        """
+
+        for edge in self.edges:
+            if edge.parent_id == parent_id:
+                yield edge
+
+
+    @classmethod
+    def single_node(cls, binders=None, regions=None, scoped_slots=None):
+        """
+        Build a one-node tree (tests and synthetic plans)
+
+        :param binders: optional binder slot map
+        :param regions: optional region slot map
+        :param scoped_slots: optional scoped region slot names
+        :rtype: HygieneTree
+        """
+
+        ss = frozenset(scoped_slots or ())
+        node = HygieneNode(
+            0, None,
+            dict(binders or {}),
+            dict(regions or {}),
+            ss)
+        return cls((node,), (), 0)
+
+
+Hygiene = HygieneTree
+
+
+def validate_hygiene_tree(tree):
     """
-    Collect symbols introduced by binder composites under hygiene rules.
+    Verify structural invariants of a hygiene tree. Raises ValueError on
+    violation
 
-    :param matched: capture mapping from one successful hygiene-side match
-    :param hygiene: compiled hygiene plan or None
-    :rtype: set of koskari symbols
+    :param tree: HygieneTree instance
     """
 
-    out = set()
-    if not (matched and hygiene):
-        return out
+    if not tree.nodes:
+        raise ValueError("hygiene tree has no nodes")
 
-    for owner in hygiene.binders.values():
-        for sym in owner.iter_introduced_symbols(matched):
-            if sym is not None and is_symbol(sym):
-                out.add(sym)
+    ids = {n.node_id for n in tree.nodes}
+    if len(ids) != len(tree.nodes):
+        raise ValueError("duplicate hygiene node ids")
 
-    return out
+    if tree.root_id not in ids:
+        raise ValueError("root_id not in nodes")
+
+    for node in tree.nodes:
+        if node.parent_id is not None and node.parent_id not in ids:
+            raise ValueError(
+                "node %d parent %r missing"
+                % (node.node_id, node.parent_id))
+        for slot in node.binders:
+            if slot in node.regions:
+                raise ValueError(
+                    "slot %r is both binder and region on node %d"
+                    % (slot, node.node_id))
+        overlap = set(node.regions) & set(node.scoped_slots)
+        if overlap:
+            raise ValueError(
+                "scoped_slots overlap regions on node %d: %r"
+                % (node.node_id, overlap))
+
+    for edge in tree.edges:
+        if edge.parent_id not in ids or edge.child_id not in ids:
+            raise ValueError(
+                "edge %r references missing node" % (edge,))
+        if edge.kind not in ("group_child", "repeat_element"):
+            raise ValueError(
+                "unknown edge kind %r" % (edge.kind,))
 
 
-def binder_recurse_targets(matched, hygiene):
-    """
-    Yield forms nested under binder slots that must be walked for nested
-    binder discovery (initializer arms).
-
-    :param matched: capture mapping from one successful hygiene-side match
-    :param hygiene: compiled hygiene plan or None
-    :rtype: iterable of forms suitable for collect_binding_symbols recursion
-    """
-
-    if matched is None or hygiene is None or hygiene.is_empty():
-        return
-
-    for owner in hygiene.binders.values():
-        for form in owner.iter_recurse_targets(matched):
-            if form is not None and not isinstance(form, Datum):
-                yield form
+def _matched_get(matched, slot):
+    if matched is None:
+        return None
+    if isinstance(matched, dict):
+        return matched.get(slot)
+    return getattr(matched, "get", lambda k, d=None: d)(slot)
 
 
 def _hygiene_collect_walk_roots(form):
     """
-    Normalize matcher capture values into roots for ``collect_binding_symbols``.
-
-    Scope-region captures (e.g. ``BODY`` / ``REST``) are often ``Datum``-wrapped
-    spine slices; peel one layer for the walk only. Tuple captures expand to
-    per-element roots. Substitution boxes on the expanded tree are not passed
-    through here — only values from ``iter_scope_targets``.
+    Normalize matcher capture values into roots for binding-symbol walks.
+    Scope-region captures are often Datum-wrapped spine slices; peel one
+    layer for the walk only. Tuple captures expand to per-element roots
     """
 
     if form is None:
@@ -157,23 +246,170 @@ def _hygiene_collect_walk_roots(form):
     yield form
 
 
-def scope_region_targets(matched, hygiene):
+def _walk_region_roots(matched, owner, find_compiled, out):
     """
-    Enumerate scope-region walk roots: each owner yields its capture once.
-    ``collect_binding_symbols`` walks koskari pair trees only; tuple values
-    from captures are not source and contribute no symbols
+    Walk scope-region targets from ``owner`` into ``out``
+    """
+
+    for form in owner.iter_scope_targets(matched):
+        for root in _hygiene_collect_walk_roots(form):
+            out |= _collect_from_region_root(root, find_compiled)
+
+
+def _walk_binder_scopes(matched, owner, find_compiled, out):
+    """
+    Walk binder ``_scopes`` sibling slots (same matched mapping)
+    """
+
+    scopes = getattr(owner, "_scopes", ())
+    if not scopes:
+        return
+    for scope_slot in scopes:
+        val = _matched_get(matched, scope_slot)
+        if val is None:
+            continue
+        if is_pair(val) or val is nil:
+            for root in _hygiene_collect_walk_roots(val):
+                out |= _collect_from_region_root(root, find_compiled)
+            continue
+        if isinstance(val, Datum):
+            inner = val.datum
+            if is_pair(inner) or inner is nil:
+                for root in _hygiene_collect_walk_roots(inner):
+                    out |= _collect_from_region_root(root, find_compiled)
+                continue
+        out |= _collect_from_region_root(val, find_compiled)
+
+
+def _collect_from_region_root(root, find_compiled):
+    """
+    Descend a scope-region root the same way as ``collect_binding_symbols``
+    on a nested form: specials via their hygiene arm; other pair spines
+    via element-wise recursion without harvesting arbitrary symbols
+    """
+
+    if root is None or root is nil:
+        return set()
+    if isinstance(root, Datum):
+        return _collect_from_region_root(root.datum, find_compiled)
+    if is_symbol(root) or not is_pair(root):
+        return set()
+    head = root.car
+    rest = root.cdr
+    if is_symbol(head) and find_compiled(head) is not None:
+        return collect_binding_symbols(root, find_compiled)
+    if rest is nil and is_pair(head):
+        return collect_binding_symbols(head, find_compiled)
+    out = set()
+    for elem in rest.unpack():
+        out |= collect_binding_symbols(
+            elem if is_pair(elem) else cons(elem, nil),
+            find_compiled)
+    return out
+
+
+def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
+    """
+    Collect binding symbols by walking a hygiene tree against captures
+
+    :param tree: HygieneTree plan
+    :param node_id: node to visit
+    :param matched: capture mapping for this node
+    :param find_compiled: callable mapping head symbols to compiled specials
+    :param tracer: optional dict with list counters (tests only)
+    :rtype: set of symbols
+    """
+
+    if tree is None or matched is None:
+        return set()
+
+    if tracer is not None:
+        tracer.setdefault("node_enter", []).append(node_id)
+
+    node = tree.node_by_id(node_id)
+    out = set()
+
+    for owner in node.binders.values():
+        for sym in owner.iter_introduced_symbols(matched):
+            if sym is not None and is_symbol(sym):
+                out.add(sym)
+
+    for owner in node.binders.values():
+        for form in owner.iter_recurse_targets(matched):
+            if form is not None and not isinstance(form, Datum):
+                out |= collect_binding_symbols(form, find_compiled)
+
+    for owner in node.binders.values():
+        _walk_binder_scopes(matched, owner, find_compiled, out)
+        if tracer is not None:
+            scopes = getattr(owner, "_scopes", ())
+            for scope_slot in scopes:
+                tracer.setdefault("scope_walk", []).append(scope_slot)
+
+    for slot, owner in node.regions.items():
+        if slot in node.scoped_slots:
+            continue
+        if tracer is not None:
+            tracer.setdefault("region_walk", []).append(slot)
+        _walk_region_roots(matched, owner, find_compiled, out)
+
+    for edge in tree.edges_from(node_id):
+        val = _matched_get(matched, edge.capture_slot)
+        if edge.kind == "group_child":
+            if isinstance(val, dict):
+                out |= walk_hygiene_tree(
+                    tree, edge.child_id, val, find_compiled, tracer)
+        elif edge.kind == "repeat_element":
+            frames = val
+            if isinstance(frames, Datum):
+                frames = frames.datum
+            if frames is nil:
+                continue
+            if not isinstance(frames, list):
+                continue
+            for fr in frames:
+                if isinstance(fr, dict):
+                    if tracer is not None:
+                        tracer.setdefault("repeat_element", []).append(
+                            edge.capture_slot)
+                    out |= walk_hygiene_tree(
+                        tree, edge.child_id, fr, find_compiled, tracer)
+
+    return out
+
+
+def introduced_symbols_from_match(matched, hygiene):
+    """
+    Collect symbols introduced by binder composites under hygiene rules.
 
     :param matched: capture mapping from one successful hygiene-side match
-    :param hygiene: compiled hygiene plan or None
+    :param hygiene: HygieneTree plan or None
+    :rtype: set of koskari symbols
+    """
+
+    if not isinstance(hygiene, HygieneTree):
+        return set()
+    return walk_hygiene_tree(hygiene, hygiene.root_id, matched, lambda h: None)
+
+
+def binder_recurse_targets(matched, hygiene):
+    """
+    Yield forms nested under binder slots that must be walked for nested
+    binder discovery (initializer arms).
+
+    :param matched: capture mapping from one successful hygiene-side match
+    :param hygiene: HygieneTree plan or None
+    :rtype: iterable of forms suitable for collect_binding_symbols recursion
     """
 
     if matched is None or hygiene is None or hygiene.is_empty():
         return
 
-    for owner in hygiene.scope_regions.values():
-        for form in owner.iter_scope_targets(matched):
-            for root in _hygiene_collect_walk_roots(form):
-                yield root
+    node = hygiene.node_by_id(hygiene.root_id)
+    for owner in node.binders.values():
+        for form in owner.iter_recurse_targets(matched):
+            if form is not None and not isinstance(form, Datum):
+                yield form
 
 
 def _collect_symbols(expr, out):
@@ -195,12 +431,8 @@ def _binding_value_for_expand(val):
     expansion. Bindings dict still holds matcher captures unchanged elsewhere
     """
 
-    # if isinstance(orig, Datum):
-    #     print('DEBUG hygiene _binding_value_for_expand', 'in=', repr(orig))
     while isinstance(val, Datum):
         val = val.datum
-    # if isinstance(orig, Datum):
-    #     print('DEBUG hygiene _binding_value_for_expand', 'out=', repr(val))
     return val
 
 
@@ -245,13 +477,6 @@ def expand_template_with_hygiene(
     if introduced is None:
         introduced = {}
 
-    # if introduced == {} and index is None:
-    #     print(
-    #         'DEBUG hygiene expand_template_with_hygiene',
-    #         'template=', repr(template),
-    #         'binding_keys=', repr(list(bindings.keys()) if bindings else []),
-    #     )
-
     if is_symbol(template):
         if template in bindings:
             val = bindings[template]
@@ -277,8 +502,6 @@ def expand_template_with_hygiene(
     if not is_pair(template):
         return template
 
-    # TODO: Review. We're losing positional provenance from the template
-    # during this pass.
     items = list(unpack(template))
     out = []
     i = 0
@@ -298,13 +521,6 @@ def expand_template_with_hygiene(
         if is_symbol(elem) and elem in bindings:
             spliced = _binding_value_for_expand(bindings[elem])
         if spliced is not None and not isinstance(spliced, list):
-            # Ellipsis splicing: when splicing a captured list/pair spine,
-            # each captured element must be inserted as syntax data.
-            #
-            # Re-expanding spliced elements with the outer bindings causes
-            # unintended capture substitution inside inserted syntax (e.g.
-            # nested syntax-rules patterns where `name` should remain a
-            # pattern variable rather than the outer macro name).
             out.extend(unpack(spliced))
         else:
             count = _repeat_count(elem, bindings)
@@ -417,8 +633,6 @@ def collect_binding_symbols(node, find_compiled):
     :rtype: set of symbols
     """
 
-    #print('DEBUG hygiene collect_binding_symbols', 'node=', repr(node))
-
     out = set()
 
     if isinstance(node, Datum):
@@ -427,7 +641,8 @@ def collect_binding_symbols(node, find_compiled):
     if node is nil or not is_pair(node):
         return out
 
-    head, rest = node
+    head = node.car
+    rest = node.cdr
     if not is_symbol(head):
         if rest is nil and is_pair(head):
             return collect_binding_symbols(head, find_compiled)
@@ -436,36 +651,38 @@ def collect_binding_symbols(node, find_compiled):
         return out
 
     special = find_compiled(head)
-    hygiene = getattr(special, "hygiene", None)
-    if not hygiene:
-        # print('DEBUG hygiene collect_binding_symbols', 'no hygiene')
+    if special is None:
         for elem in rest.unpack():
             out |= collect_binding_symbols(elem, find_compiled)
         return out
 
     matched = None
-    try:
-        matched = special.match_for_hygiene(node)
-        # print('DEBUG hygiene collect_binding_symbols', 'matched=', repr(matched))
-    except SpecialError:
-        # print('DEBUG hygiene collect_binding_symbols', 'match error')
-        matched = None
+    hygiene = None
+    arm_match = getattr(special, "match_for_hygiene_with_arm", None)
+    if arm_match is not None:
+        try:
+            _idx, hygiene, matched = arm_match(node)
+        except SpecialError:
+            matched = None
+            hygiene = None
+    else:
+        try:
+            matched = special.match_for_hygiene(node)
+        except SpecialError:
+            matched = None
+        if matched is not None:
+            hygiene = getattr(special, "hygiene", None)
 
     if matched is None:
         for elem in rest.unpack():
             out |= collect_binding_symbols(elem, find_compiled)
         return out
 
-    out |= introduced_symbols_from_match(matched, hygiene)
+    if isinstance(hygiene, HygieneTree) and not hygiene.is_empty():
+        out |= walk_hygiene_tree(
+            hygiene, hygiene.root_id, matched, find_compiled)
 
-    for form in scope_region_targets(matched, hygiene):
-        out |= collect_binding_symbols(form, find_compiled)
-
-    for form in binder_recurse_targets(matched, hygiene):
-        out |= collect_binding_symbols(form, find_compiled)
-
-    if hygiene.is_empty():
-        # print('DEBUG hygiene collect_binding_symbols', 'empty hygiene')
+    if not isinstance(hygiene, HygieneTree) or hygiene.is_empty():
         for elem in rest.unpack():
             out |= collect_binding_symbols(
                 elem if is_pair(elem) else cons(elem, nil),

@@ -10,9 +10,8 @@
 
 """
 Compile-time specials are ``syntax.Syntax`` dispatchers. Hygiene discovery
-for templates must use ``koskari.hygiene``, which merges binder and
-scope-region plans from each transform arm (``Syntax.hygiene``), matches the
-tail with ``match_for_hygiene``, then walks scope regions such as the let
+uses each winning transform arm's hygiene tree via
+``match_for_hygiene_with_arm``, then walks scope regions such as the let
 ``BODY`` capture so a sole body form like ``(compile/lambda [y] ...)`` still
 contributes lambda formals alongside ``compile/let`` binders.
 

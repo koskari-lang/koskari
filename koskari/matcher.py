@@ -34,10 +34,18 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 
 from typing import Protocol, runtime_checkable
 
-from koskari.hygiene import Hygiene
+from koskari.hygiene import HygieneEdge, HygieneNode, HygieneTree
 from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, keyword, nil,
                          pair, symbol)
 from koskari.types import is_keyword, is_pair, is_proper, is_symbol, unpack
+
+
+def _intro_suppressed(capture):
+    """
+    True when a binder capture is substitution material, not template intro
+    """
+
+    return isinstance(capture, Datum) and capture.from_datum
 
 
 __all__ = (
@@ -45,7 +53,7 @@ __all__ = (
     "DatumFrame",
     "Matcher",
     "MatchResult",
-    "Hygiene",
+    "HygieneTree",
 
     "thaw",
     "make_matcher",
@@ -138,15 +146,24 @@ class MatchCompiler:
         self.consts = []
         self.nodes = []
         self.capture_scope_stack = [{}]
+        self._hygiene_scope_modes = []
         self.in_class_fields = False
 
 
-    def push_capture_scope(self):
+    def push_capture_scope(self, hygiene_mode=None):
         """
-        Begin an isolated duplicate-slot scope (used per ONEOF branch)
+        Begin an isolated duplicate-slot scope (used per ONEOF branch and
+        GROUP children). When ``hygiene_mode`` is set on a
+        :class:`HygienicMatchCompiler`, the parallel hygiene frame stack
+        uses ``merge`` (ONEOF) or ``link`` (GROUP)
+
+        :param hygiene_mode: ``merge``, ``link``, or None
         """
 
         self.capture_scope_stack.append({})
+        if hygiene_mode is not None:
+            self._hygiene_scope_modes.append(hygiene_mode)
+            self.hygiene_scope_push(hygiene_mode)
 
 
     def pop_capture_scope(self):
@@ -157,7 +174,30 @@ class MatchCompiler:
         if len(self.capture_scope_stack) <= 1:
             raise RuntimeError(
                 "pop_capture_scope underflow (unbalanced ONEOF scope)")
+        mode = None
+        if self._hygiene_scope_modes:
+            mode = self._hygiene_scope_modes.pop()
         self.capture_scope_stack.pop()
+        if mode is not None:
+            self.hygiene_scope_pop(mode)
+
+
+    def hygiene_scope_push(self, mode):
+        """
+        Hook for hygienic compilers when ``push_capture_scope`` receives
+        a hygiene mode
+        """
+
+        _ = mode
+
+
+    def hygiene_scope_pop(self, mode):
+        """
+        Hook for hygienic compilers when ``pop_capture_scope`` closes a
+        scoped hygiene frame
+        """
+
+        _ = mode
 
 
     def intern_slot(self, name):
@@ -277,23 +317,147 @@ class MatchCompiler:
         return Matcher.from_tuple(cls().lower(pattern))
 
 
+class _HygieneFrame(object):
+    """
+    Mutable frame while lowering; frozen into HygieneNode on link pop
+    """
+
+
+    def __init__(self, node_id, parent_id):
+        self.node_id = node_id
+        self.parent_id = parent_id
+        self.binders = {}
+        self.regions = {}
+        self.scoped_slots = set()
+        self.link_slot = None
+
+
 class HygienicMatchCompiler(MatchCompiler):
     """
-    Match compiler that accumulates ``koskari.hygiene`` binder and
-    scope-region owners alongside the baseline tables. Use for matchers
-    over compile-time source forms; runtime-only matchers should use the
-    baseline MatchCompiler via MatchCompiler().lower(pattern)
+    Match compiler that accumulates a :class:`koskari.hygiene.HygieneTree`
+    alongside the baseline tables. Use for matchers over compile-time
+    source forms; runtime-only matchers should use the baseline
+    MatchCompiler via MatchCompiler().lower(pattern)
     """
 
 
     def __init__(self):
         """
-        Construct a match compiler with empty hygiene registration tables
+        Construct a match compiler with an empty hygiene tree builder
         """
 
         super().__init__()
-        self.hygiene_binders = {}
-        self.hygiene_scope_regions = {}
+        self._hygiene_node_id = 0
+        self._hygiene_nodes = []
+        self._hygiene_edges = []
+        self._hygiene_frame_stack = []
+        self._pending_link_slot = None
+        self._last_linked_child_id = None
+        root = self._new_hygiene_frame(None)
+        self._hygiene_current = root
+        self._hygiene_root_id = root.node_id
+
+
+    def _new_hygiene_frame(self, parent_id):
+        nid = self._hygiene_node_id
+        self._hygiene_node_id += 1
+        return _HygieneFrame(nid, parent_id)
+
+
+    def _finalize_hygiene_frame(self, frame):
+        node = HygieneNode(
+            frame.node_id,
+            frame.parent_id,
+            dict(frame.binders),
+            dict(frame.regions),
+            frozenset(frame.scoped_slots))
+        self._hygiene_nodes.append(node)
+        return node
+
+
+    def hygiene_scope_push(self, mode):
+        parent = self._hygiene_current
+        child = self._new_hygiene_frame(parent.node_id)
+        child.link_slot = self._pending_link_slot
+        self._pending_link_slot = None
+        self._hygiene_frame_stack.append(parent)
+        self._hygiene_current = child
+
+
+    def hygiene_scope_pop(self, mode):
+        child = self._hygiene_current
+        parent = self._hygiene_frame_stack.pop()
+        self._hygiene_current = parent
+        if mode == "merge":
+            self._merge_hygiene_frame(parent, child)
+            return
+        if mode == "link":
+            self._finalize_hygiene_frame(child)
+            self._last_linked_child_id = child.node_id
+            slot = child.link_slot
+            if slot is not None:
+                self._hygiene_edges.append(HygieneEdge(
+                    "group_child",
+                    parent.node_id,
+                    child.node_id,
+                    slot))
+
+
+    def _remap_hygiene_parent_id(self, old_id, new_id):
+        """
+        After ONEOF merge, re-home edges and finalized nodes that pointed
+        at the merged-away frame id
+        """
+
+        if old_id == new_id:
+            return
+        remapped = []
+        for edge in self._hygiene_edges:
+            pid = new_id if edge.parent_id == old_id else edge.parent_id
+            remapped.append(HygieneEdge(
+                edge.kind, pid, edge.child_id, edge.capture_slot))
+        self._hygiene_edges = remapped
+        nodes = []
+        for node in self._hygiene_nodes:
+            pid = node.parent_id
+            if pid == old_id:
+                pid = new_id
+            nodes.append(HygieneNode(
+                node.node_id, pid,
+                node.binders, node.regions, node.scoped_slots))
+        self._hygiene_nodes = nodes
+
+
+    def _merge_hygiene_frame(self, parent, child):
+        cid = child.node_id
+        pid = parent.node_id
+        if cid != pid:
+            self._remap_hygiene_parent_id(cid, pid)
+
+        for slot, owner in child.binders.items():
+            if slot in parent.binders:
+                if parent.binders[slot] is not owner:
+                    raise ValueError(
+                        "duplicate binder for slot %r in matcher pattern"
+                        % (slot,))
+            else:
+                parent.binders.setdefault(slot, owner)
+        for slot, owner in child.regions.items():
+            if slot in parent.regions:
+                prev = parent.regions[slot]
+                if prev is owner:
+                    continue
+                prev_slot = getattr(prev, "_slot", None)
+                ow_slot = getattr(owner, "_slot", None)
+                if (type(prev) is type(owner)
+                        and prev_slot == slot
+                        and ow_slot == slot):
+                    continue
+                raise ValueError(
+                    "scope region %r already registered" % (slot,))
+            else:
+                parent.regions.setdefault(slot, owner)
+        parent.scoped_slots |= child.scoped_slots
 
 
     def add_binder(self, slot, owner):
@@ -306,46 +470,74 @@ class HygienicMatchCompiler(MatchCompiler):
             and iter_recurse_targets Hygiene uses at runtime
         """
 
-        if slot in self.hygiene_binders:
+        frame = self._hygiene_current
+        if slot in frame.binders:
             raise ValueError(
                 "duplicate binder for slot %r in matcher pattern"
                 % (slot,))
-        self.hygiene_binders[slot] = owner
+        frame.binders[slot] = owner
+        for scope_slot in getattr(owner, "_scopes", ()):
+            frame.scoped_slots.add(scope_slot)
 
 
     def add_scope_region(self, slot, owner):
         """
         Record the Pattern instance that owns scope-region traversal for
-        this slot. Re-registration of the same owner is idempotent
+        this slot. Skips registration when a binder ``_scopes`` already
+        owns the slot
 
         :param slot: slot name carrying scope-region semantics
         :param owner: HygienicPattern instance whose iter_scope_targets
             Hygiene uses
         """
 
-        existing = self.hygiene_scope_regions.get(slot)
-        if existing is not None:
-            if existing is not owner:
+        frame = self._hygiene_current
+        if slot in frame.scoped_slots:
+            return
+        if slot in frame.regions:
+            if frame.regions[slot] is not owner:
                 raise ValueError(
                     "scope region %r already registered" % (slot,))
             return
-        self.hygiene_scope_regions[slot] = owner
+        frame.regions[slot] = owner
+
+
+    def note_repeat_capture(self, slot, child_node_id):
+        """
+        Link a REPEAT list capture to the hygiene subtree built for the
+        anonymous GROUP row pattern
+        """
+
+        self._hygiene_edges.append(HygieneEdge(
+            "repeat_element",
+            self._hygiene_current.node_id,
+            child_node_id,
+            slot))
 
 
     def build_hygiene(self):
         """
-        Assemble the hygiene plan from accumulated binders and scope
-        regions. Returns an empty Hygiene when no composite has
-        registered anything
+        Assemble the hygiene tree from accumulated frames and edges.
+        Returns an empty HygieneTree when nothing registered
         """
 
-        if not self.hygiene_binders and not self.hygiene_scope_regions:
-            return Hygiene({}, {})
-
-        return Hygiene(
-            dict(self.hygiene_binders),
-            dict(self.hygiene_scope_regions),
-        )
+        if self._hygiene_frame_stack:
+            raise RuntimeError(
+                "unbalanced hygiene scope stack at build_hygiene")
+        root_frame = self._hygiene_current
+        if not self._hygiene_nodes:
+            self._finalize_hygiene_frame(root_frame)
+        elif not any(
+                n.node_id == root_frame.node_id for n in self._hygiene_nodes):
+            self._finalize_hygiene_frame(root_frame)
+        if not self._hygiene_nodes and not self._hygiene_edges:
+            return HygieneTree.single_node()
+        if not any(n.node_id == self._hygiene_root_id for n in self._hygiene_nodes):
+            self._finalize_hygiene_frame(root_frame)
+        return HygieneTree(
+            tuple(self._hygiene_nodes),
+            tuple(self._hygiene_edges),
+            self._hygiene_root_id)
 
 
     def on_pattern(self, pat):
@@ -379,7 +571,7 @@ class HygienicMatchCompiler(MatchCompiler):
     @classmethod
     def compile_and_hygiene(
             cls,
-            pattern: "Pattern") -> tuple[Matcher, Hygiene]:
+            pattern: "Pattern") -> tuple[Matcher, HygieneTree]:
         """
         Compile a pattern into a tuple of (matcher, hygiene plan)
         """
@@ -687,6 +879,13 @@ class CAPTURE(Pattern):
             sub_idx = -1
         else:
             sub_idx = self._sub.lower(ctx)
+            if isinstance(ctx, HygienicMatchCompiler):
+                if isinstance(self._sub, REPEAT):
+                    inner = self._sub._sub
+                    if isinstance(inner, GROUP):
+                        child_id = ctx._last_linked_child_id
+                        if child_id is not None:
+                            ctx.note_repeat_capture(self._slot, child_id)
         if self._scope_slot is None:
             scope_idx = -1
         else:
@@ -800,7 +999,9 @@ class GROUP(Pattern):
         if self._slot is not None:
             ctx.claim_slot_name(self._slot, ("group", id(self)))
             slot_idx = ctx.intern_slot(self._slot)
-        ctx.push_capture_scope()
+        if isinstance(ctx, HygienicMatchCompiler):
+            ctx._pending_link_slot = self._slot
+        ctx.push_capture_scope("link")
         try:
             idxs = [c.lower(ctx) for c in self._children]
         finally:
@@ -847,7 +1048,7 @@ class ONEOF(Pattern):
 
         idxs = []
         for b in self._branches:
-            ctx.push_capture_scope()
+            ctx.push_capture_scope("merge")
             try:
                 idxs.append(b.lower(ctx))
             finally:
@@ -1207,15 +1408,6 @@ def BIND(slot):
     return CAPTURE(slot)
 
 
-def VALUE(slot):
-    """
-    Capture any single element into the named slot. Synonym for BIND;
-    distinguished for forthcoming hygiene-aware lowering in phase 9
-    """
-
-    return CAPTURE(slot)
-
-
 def SYMBOL(slot):
     """
     Capture a symbol element into the named slot. Requires the
@@ -1488,7 +1680,10 @@ class DEFINE(Composite, HygieneWireSlotScopes):
         val = matched.get(self._slot)
         if val is None:
             return
-        val = val.datum
+        if _intro_suppressed(val):
+            return
+        if isinstance(val, Datum):
+            val = val.datum
         if is_symbol(val):
             yield val
 
@@ -1533,15 +1728,33 @@ class DECL(Composite, HygieneWireSlotScopes):
 
     def iter_introduced_symbols(self, matched):
         grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
+        if grp is None:
+            return
+        if isinstance(grp, Datum):
+            if _intro_suppressed(grp):
+                return
+            val = grp.datum
+            if is_symbol(val):
+                yield val
+            return
+        if isinstance(grp, DatumFrame) and grp.from_datum:
+            return
+        if not isinstance(grp, dict):
             return
         name = grp.get("name")
         if name is not None:
-            name = name.datum
+            if _intro_suppressed(name):
+                return
+            if isinstance(name, Datum):
+                name = name.datum
             if is_symbol(name):
                 yield name
                 return
         raw = grp.source
+        if isinstance(raw, Datum):
+            if _intro_suppressed(raw):
+                return
+            raw = raw.datum
         if is_symbol(raw):
             yield raw
 
@@ -1591,7 +1804,10 @@ class BINDING(Composite, HygieneWireSlotScopes):
             return
         name = grp.get("name")
         if name is not None:
-            name = name.datum
+            if _intro_suppressed(name):
+                return
+            if isinstance(name, Datum):
+                name = name.datum
             if is_symbol(name):
                 yield name
 
@@ -1666,7 +1882,11 @@ class BINDINGS(Composite):
         for fr in cells:
             if isinstance(fr, dict):
                 n = fr.get("name")
-                if n is not None and not isinstance(n, Datum):
+                if n is not None:
+                    if _intro_suppressed(n):
+                        continue
+                    if isinstance(n, Datum):
+                        n = n.datum
                     if is_symbol(n):
                         yield n
 
@@ -1854,17 +2074,22 @@ class FORMALS(Composite, HygieneWireSlotScopes):
             if isinstance(fr, dict):
                 n = fr.get("name")
                 if n is not None:
-                    n = n.datum
+                    if _intro_suppressed(n):
+                        continue
+                    if isinstance(n, Datum):
+                        n = n.datum
                     if is_symbol(n):
                         yield n
         star = grp.get("star")
-        if star is not None:
-            star = star.datum
+        if star is not None and not _intro_suppressed(star):
+            if isinstance(star, Datum):
+                star = star.datum
             if is_symbol(star):
                 yield star
         ss = grp.get("starstar")
-        if ss is not None:
-            ss = ss.datum
+        if ss is not None and not _intro_suppressed(ss):
+            if isinstance(ss, Datum):
+                ss = ss.datum
             if is_symbol(ss):
                 yield ss
         kwonly = grp.get("kwonly", ())
@@ -1873,7 +2098,10 @@ class FORMALS(Composite, HygieneWireSlotScopes):
                 continue
             n = fr.get("name")
             if n is not None:
-                n = n.datum
+                if _intro_suppressed(n):
+                    continue
+                if isinstance(n, Datum):
+                    n = n.datum
                 if is_symbol(n):
                     yield n
 
@@ -1949,7 +2177,10 @@ class USING(Composite, HygieneWireSlotScopes):
             return
         name = grp.get("name")
         if name is not None:
-            name = name.datum
+            if _intro_suppressed(name):
+                return
+            if isinstance(name, Datum):
+                name = name.datum
             if is_symbol(name):
                 yield name
 
@@ -1994,6 +2225,8 @@ class USING_UNPACK(Composite, HygieneWireSlotScopes):
             return
         lhs = grp.get("lhs")
         if lhs is None:
+            return
+        if _intro_suppressed(lhs):
             return
         lhs_v = lhs.datum if isinstance(lhs, Datum) else lhs
         yield from _iter_unpack_lhs_symbols(lhs_v)
@@ -2052,6 +2285,78 @@ def _iter_unpack_lhs_symbols(lhs):
             yield from _iter_unpack_lhs_symbols(elt)
         elif is_symbol(elt):
             yield elt
+
+
+class VALUE(Pattern):
+    """
+    Scope-region-aware single-element capture. Lowers to the same native
+    ``CAPTURE`` node as ``BIND(slot)`` while registering the slot as an
+    expression scope region in the compiled Hygiene plan.
+    ``iter_scope_targets`` yields the captured subform once so
+    ``collect_binding_symbols`` can discover binders inside RHS slots
+    (e.g. ``compile/define`` value arms)
+    """
+
+
+    def __init__(self, slot):
+        """
+        :param slot: target slot name
+        :raises TypeError: when slot is not a str
+        :raises ValueError: when slot is empty
+        """
+
+        check_str_arg(slot, "VALUE slot")
+        self._slot = slot
+
+
+    def lower(self, ctx):
+        """
+        Emit ``CAPTURE`` after recording expression scope meta
+        """
+
+        ctx.on_pattern(self)
+        return CAPTURE(self._slot).lower(ctx)
+
+
+    def iter_introduced_symbols(self, matched):
+        yield from ()
+
+
+    def iter_recurse_targets(self, matched):
+        yield from ()
+
+
+    def iter_scope_targets(self, matched):
+        """
+        Yield the value capture as the single scope-region walk root
+        """
+
+        val = matched.get(self._slot)
+        if val is None:
+            return
+        yield val
+
+
+    def hygiene_wire(self):
+        """
+        Wire row is ``("VALUE", slot)``
+        """
+
+        return ("VALUE", self._slot)
+
+
+    @classmethod
+    def hygiene_from_wire(cls, row):
+        """
+        Invert ``hygiene_wire`` for the 2-tuple VALUE shape
+        """
+
+        _, slot = row
+        return cls(slot)
+
+
+    def register_hygiene(self, ctx):
+        ctx.add_scope_region(self._slot, self)
 
 
 class BODY(Pattern):

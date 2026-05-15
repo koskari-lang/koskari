@@ -1497,13 +1497,15 @@ PyObject *KosMatcherBuilder_Finalize(
 static PyObject *kos_datum_new(
     PyObject *datum,
     PyObject *position,
-    PyObject *binding);
+    PyObject *binding,
+    int from_datum);
 
 typedef struct {
   PyObject_HEAD
   PyObject *current;   /* KosPair-or-nil; tail pointer */
   PyObject *fallback;  /* fallback position */
   PyObject *binding;   /* capture slot name or Py_None */
+  int from_datum;      /* inherited from parent Datum */
 } KosDatumIter;
 
 
@@ -1546,7 +1548,8 @@ static PyObject *datum_iter_iternext(PyObject *self) {
   Py_INCREF(elem);
   Py_INCREF(pos);
   Py_INCREF(it->binding);
-  PyObject *out = kos_datum_new(elem, pos, it->binding);
+  PyObject *out = kos_datum_new(
+      elem, pos, it->binding, it->from_datum);
   Py_DECREF(elem);
   Py_DECREF(pos);
   Py_DECREF(it->binding);
@@ -1606,6 +1609,13 @@ static PyObject *datum_get_binding(PyObject *self, void *closure) {
 }
 
 
+static PyObject *datum_get_from_datum(PyObject *self, void *closure) {
+  (void) closure;
+  KosDatum *d = (KosDatum *) self;
+  return PyBool_FromLong(d->from_datum);
+}
+
+
 static PyObject *datum_get_car(PyObject *self, void *closure) {
   (void) closure;
   KosDatum *d = (KosDatum *) self;
@@ -1639,6 +1649,7 @@ static PyObject *datum_iter(PyObject *self) {
   it->current = d->datum;
   it->fallback = d->position;
   it->binding = d->binding;
+  it->from_datum = d->from_datum;
   return (PyObject *) it;
 }
 
@@ -1647,15 +1658,17 @@ static PyObject *datum_tp_new(PyTypeObject *type, PyObject *args, PyObject *kwds
   PyObject *datum;
   PyObject *position = Py_None;
   PyObject *binding = Py_None;
-  static char *kwlist[] = {"datum", "position", "binding", NULL};
+  int from_datum = 0;
+  static char *kwlist[] = {
+    "datum", "position", "binding", "from_datum", NULL};
 
   (void) type;
   if (! PyArg_ParseTupleAndKeywords(
-          args, kwds, "O|OO:Datum", kwlist,
-          &datum, &position, &binding))
+          args, kwds, "O|OOp:Datum", kwlist,
+          &datum, &position, &binding, &from_datum))
     return NULL;
 
-  return kos_datum_new(datum, position, binding);
+  return kos_datum_new(datum, position, binding, from_datum);
 }
 
 
@@ -1666,6 +1679,8 @@ static PyGetSetDef datum_getset[] = {
     "Source position from enclosing pair cell, or None", NULL },
   { "binding", datum_get_binding, NULL,
     "Capture slot name (str) or None", NULL },
+  { "from_datum", datum_get_from_datum, NULL,
+    "True when matched inside a substitution Datum box", NULL },
   { "car", datum_get_car, NULL,
     "Underlying datum car (delegates to pair)", NULL },
   { "cdr", datum_get_cdr, NULL,
@@ -1692,7 +1707,8 @@ PyTypeObject KosDatumType = {
 static PyObject *kos_datum_new(
     PyObject *datum,
     PyObject *position,
-    PyObject *binding) {
+    PyObject *binding,
+    int from_datum) {
 
   KosDatum *d = PyObject_New(KosDatum, &KosDatumType);
   if (! d)
@@ -1705,6 +1721,7 @@ static PyObject *kos_datum_new(
   d->datum = datum;
   d->position = position;
   d->binding = binding;
+  d->from_datum = from_datum ? 1 : 0;
   return (PyObject *) d;
 }
 
@@ -1797,11 +1814,20 @@ static PyObject *datum_frame_get_position(PyObject *self, void *closure) {
 }
 
 
+static PyObject *datum_frame_get_from_datum(PyObject *self, void *closure) {
+  (void) closure;
+  KosDatumFrame *f = (KosDatumFrame *) self;
+  return PyBool_FromLong(f->from_datum);
+}
+
+
 static PyGetSetDef datum_frame_getset[] = {
   { "source", datum_frame_get_source, NULL,
     "Matched source represented by this capture frame", NULL },
   { "position", datum_frame_get_position, NULL,
     "Source position from the frame start, or None", NULL },
+  { "from_datum", datum_frame_get_from_datum, NULL,
+    "True when the matched spine cell was a substitution Datum", NULL },
   { NULL }
 };
 
@@ -1832,6 +1858,7 @@ static PyObject *kos_datum_frame_new(void) {
   Py_INCREF(Py_None);
   f->source = Py_None;
   f->position = Py_None;
+  f->from_datum = 0;
   return self;
 }
 
@@ -2157,10 +2184,27 @@ typedef struct {
   DictChange *change_stack;
   Py_ssize_t change_count;
   Py_ssize_t change_capacity;
+  int in_from_datum;          /* matching inside unpacked substitution */
 } MatchEngine;
 
 
+static int capture_from_datum_flag(
+    MatchEngine *e,
+    KosMatchSubject *subj,
+    Py_ssize_t cell_idx) {
+
+  if (e->in_from_datum)
+    return 1;
+  if (subj->kp_cars && cell_idx >= 0
+      && cell_idx < subj->cached_length
+      && KosDatum_Check(subj->kp_cars[cell_idx]))
+    return 1;
+  return 0;
+}
+
+
 static PyObject *kos_datum_from_spine_cell(
+    MatchEngine *e,
     KosMatchSubject *subj,
     Py_ssize_t cell_idx,
     PyObject *datum_owned) {
@@ -2177,7 +2221,9 @@ static PyObject *kos_datum_from_spine_cell(
       Py_INCREF(pos);
     }
   }
-  PyObject *out = kos_datum_new(datum_owned, pos, Py_None);
+  int from_datum = capture_from_datum_flag(e, subj, cell_idx);
+  PyObject *out = kos_datum_new(
+      datum_owned, pos, Py_None, from_datum);
   Py_DECREF(datum_owned);
   Py_DECREF(pos);
   return out;
@@ -2185,6 +2231,7 @@ static PyObject *kos_datum_from_spine_cell(
 
 
 static PyObject *wrap_slice_datums(
+    MatchEngine *e,
     KosMatchSubject *subj,
     Py_ssize_t start,
     Py_ssize_t end) {
@@ -2198,7 +2245,8 @@ static PyObject *wrap_slice_datums(
   for (Py_ssize_t i = 0; i < n; i++) {
     PyObject *raw = subj->vt->get(subj, start + i);
     Py_INCREF(raw);
-    PyObject *cell = kos_datum_from_spine_cell(subj, start + i, raw);
+    PyObject *cell = kos_datum_from_spine_cell(
+        e, subj, start + i, raw);
     if (! cell) {
       Py_DECREF(t);
       return NULL;
@@ -2247,6 +2295,7 @@ static PyObject *source_from_spine_range(
 
 
 static int datum_frame_set_source(
+    MatchEngine *e,
     PyObject *frame,
     KosMatchSubject *subj,
     Py_ssize_t start,
@@ -2270,6 +2319,13 @@ static int datum_frame_set_source(
   PyObject *old_position = f->position;
   f->source = source;
   f->position = position;
+  f->from_datum = 0;
+  for (Py_ssize_t i = start; i < end; i++) {
+    if (capture_from_datum_flag(e, subj, i)) {
+      f->from_datum = 1;
+      break;
+    }
+  }
   Py_DECREF(old_source);
   Py_DECREF(old_position);
   return 0;
@@ -2546,12 +2602,19 @@ static int match_form(
   if (*cursor + 1 + (Py_ssize_t) trailing_min > length)
     return 0;
 
+  int saved_in = e->in_from_datum;
+  if (e->subj->kp_cars && *cursor >= 0
+      && *cursor < e->subj->cached_length
+      && KosDatum_Check(e->subj->kp_cars[*cursor]))
+    e->in_from_datum = 1;
+
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
 
   KosMatchSubject sub;
   if (subject_from_any(elem, &sub)) {
     /* Not a sequence-like subject — match fails (no exception). */
     PyErr_Clear();
+    e->in_from_datum = saved_in;
     return 0;
   }
 
@@ -2565,6 +2628,7 @@ static int match_form(
 
   Py_ssize_t sub_length = sub.vt->length(&sub);
   e->subj = saved;
+  e->in_from_datum = saved_in;
   KosMatchSubject_Release(&sub);
 
   if (r != 1)
@@ -2629,7 +2693,7 @@ static int match_group(
   }
 
   e->cur_captures = parent_dict;
-  if (datum_frame_set_source(sub, e->subj, start, *cursor)) {
+  if (datum_frame_set_source(e, sub, e->subj, start, *cursor)) {
     Py_DECREF(sub);
     return -1;
   }
@@ -2654,15 +2718,15 @@ rest_value_for_range(
     PyObject *value = e->subj->vt->tail(e->subj, start);
     if (! value)
       return NULL;
-    return kos_datum_from_spine_cell(e->subj, start, value);
+    return kos_datum_from_spine_cell(e, e->subj, start, value);
   }
   if (end == length) {
     PyObject *value = e->subj->vt->tail(e->subj, start);
     if (! value)
       return NULL;
-    return kos_datum_from_spine_cell(e->subj, start, value);
+    return kos_datum_from_spine_cell(e, e->subj, start, value);
   }
-  return wrap_slice_datums(e->subj, start, end);
+  return wrap_slice_datums(e, e->subj, start, end);
 }
 
 
@@ -2732,14 +2796,14 @@ static int match_repeat_capture_list(
         if (span == 1) {
           PyObject *raw = e->subj->vt->get(e->subj, saved);
           Py_INCREF(raw);
-          elem = kos_datum_from_spine_cell(e->subj, saved, raw);
+          elem = kos_datum_from_spine_cell(e, e->subj, saved, raw);
           if (! elem) {
             engine_rollback(e, snap);
             Py_DECREF(items);
             return -1;
           }
         } else if (span > 1) {
-          elem = wrap_slice_datums(e->subj, saved, *cursor);
+          elem = wrap_slice_datums(e, e->subj, saved, *cursor);
           if (! elem) {
             engine_rollback(e, snap);
             Py_DECREF(items);
@@ -2812,14 +2876,14 @@ static int match_repeat_capture_list(
     if (span == 1) {
       PyObject *raw = e->subj->vt->get(e->subj, saved);
       Py_INCREF(raw);
-      elem = kos_datum_from_spine_cell(e->subj, saved, raw);
+      elem = kos_datum_from_spine_cell(e, e->subj, saved, raw);
       if (! elem) {
         engine_rollback(e, snap);
         Py_DECREF(items);
         return -1;
       }
     } else if (span > 1) {
-      elem = wrap_slice_datums(e->subj, saved, *cursor);
+      elem = wrap_slice_datums(e, e->subj, saved, *cursor);
       if (! elem) {
         engine_rollback(e, snap);
         Py_DECREF(items);
@@ -2934,11 +2998,11 @@ static int match_capture(
   if (end - start == 1) {
     PyObject *raw = e->subj->vt->get(e->subj, start);
     Py_INCREF(raw);
-    value = kos_datum_from_spine_cell(e->subj, start, raw);
+    value = kos_datum_from_spine_cell(e, e->subj, start, raw);
     if (! value)
       return -1;
   } else {
-    value = wrap_slice_datums(e->subj, start, end);
+    value = wrap_slice_datums(e, e->subj, start, end);
     if (! value)
       return -1;
   }
@@ -3375,7 +3439,7 @@ PyObject *KosMatcher_Match(
 
   PyObject *out_caps;
   if (matched) {
-    if (datum_frame_set_source(root, subj, 0, cursor)) {
+    if (datum_frame_set_source(&engine, root, subj, 0, cursor)) {
       Py_DECREF(root);
       return NULL;
     }

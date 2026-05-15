@@ -22,17 +22,17 @@ import pytest
 
 from koskari.exceptions import CompilerError
 from koskari.hygiene import (
-    Hygiene,
+    HygieneTree,
     apply_syntax_rules_hygiene,
     binder_recurse_targets,
     collect_binding_symbols,
     expand_template_with_hygiene,
     finalize_macro_hygiene_unbox_one_pass,
     introduced_symbols_from_match,
-    scope_region_targets,
+    walk_hygiene_tree,
 )
 from koskari.lib import Datum, cons, nil, symbol
-from koskari.types import build_proper, is_symbol
+from koskari.types import build_proper, is_pair, is_symbol
 
 
 pytestmark = pytest.mark.phase_infra
@@ -47,7 +47,13 @@ class _FakeBinderOwner(object):
 
     def iter_introduced_symbols(self, matched):
         val = matched.get(self.slot)
-        if val is not None and is_symbol(val):
+        if val is None:
+            return
+        if isinstance(val, Datum) and val.from_datum:
+            return
+        if isinstance(val, Datum):
+            val = val.datum
+        if is_symbol(val):
             yield val
 
 
@@ -126,10 +132,11 @@ class TestHygieneHelpers(unittest.TestCase):
         Hygiene defaults classify slots consistently
         """
 
-        h = Hygiene({}, {})
+        h = HygieneTree.single_node()
         self.assertTrue(h.is_empty())
-        self.assertFalse(h.is_binder("x"))
-        self.assertFalse(h.is_scope_region("x"))
+        root = h.root
+        self.assertNotIn("x", root.binders)
+        self.assertNotIn("x", root.regions)
 
 
 class TestIntroducedAndRecurse(unittest.TestCase):
@@ -141,11 +148,24 @@ class TestIntroducedAndRecurse(unittest.TestCase):
         """
 
         owner = _FakeBinderOwner("nm")
-        hx = Hygiene({"nm": owner}, {})
+        hx = HygieneTree.single_node(binders={"nm": owner})
         sn = symbol("n")
-        matched = {"nm": sn}
+        matched = {"nm": Datum(sn)}
         syms = introduced_symbols_from_match(matched, hx)
         self.assertEqual(syms, {sn})
+
+
+    def test_introduced_symbols_skips_from_datum_capture(self):
+        """
+        Substitution captures with ``from_datum`` do not enter binding_symbols
+        """
+
+        owner = _FakeBinderOwner("nm")
+        hx = HygieneTree.single_node(binders={"nm": owner})
+        sn = symbol("n")
+        matched = {"nm": Datum(sn, from_datum=True)}
+        syms = introduced_symbols_from_match(matched, hx)
+        self.assertEqual(syms, set())
 
 
     def test_binder_recurse_binding_targets_expr(self):
@@ -153,7 +173,7 @@ class TestIntroducedAndRecurse(unittest.TestCase):
         Owner recurse walks the expr capture when present
         """
 
-        hx = Hygiene({"b": _FakeBindingRecurse()}, {})
+        hx = HygieneTree.single_node(binders={"b": _FakeBindingRecurse()})
         matched = {"expr": 42}
         got = list(binder_recurse_targets(matched, hx))
         self.assertEqual(got, [42])
@@ -169,9 +189,11 @@ class TestScopeRegionTargets(unittest.TestCase):
 
         bsym = symbol("b")
         matched = {"body": (bsym,)}
-        roots = list(scope_region_targets(matched, Hygiene({}, {"body": _FakeBodyScope()})))
-        self.assertEqual(len(roots), 1)
-        self.assertIs(roots[0], bsym)
+        tree = HygieneTree.single_node(regions={"body": _FakeBodyScope()})
+        tracer = {}
+        walk_hygiene_tree(
+            tree, tree.root_id, matched, lambda h: None, tracer)
+        self.assertEqual(tracer.get("region_walk"), ["body"])
 
 
 class TestExpandTemplate(unittest.TestCase):
@@ -272,7 +294,7 @@ class TestCollectAndApply(unittest.TestCase):
 
         hd = symbol("rule-head")
         owner = _FakeBinderOwner("nm")
-        hx = Hygiene({"nm": owner}, {})
+        hx = HygieneTree.single_node(binders={"nm": owner})
         intro = symbol("fresh")
         fake = _FakeCompiled(hx, {"nm": intro})
         table = {hd: fake}
@@ -292,7 +314,7 @@ class TestCollectAndApply(unittest.TestCase):
 
         hd = symbol("rule-head")
         owner = _FakeBinderOwner("nm")
-        hx = Hygiene({"nm": owner}, {})
+        hx = HygieneTree.single_node(binders={"nm": owner})
         intro = symbol("fresh")
         fake = _FakeCompiled(hx, {"nm": intro})
         table = {hd: fake}
@@ -307,6 +329,161 @@ class TestCollectAndApply(unittest.TestCase):
         self.assertEqual(len(parts), 2)
         self.assertIs(parts[0], hd)
         self.assertNotEqual(parts[1], intro)
+
+
+def _make_hygiene_compiler():
+    from koskari.compile import Compiler
+    from koskari.compile.specials import BUILTINS
+    from koskari.lib import Module, ModuleNamespace
+
+    mod_ns = ModuleNamespace("test", {})
+    for sym, fn in BUILTINS.items():
+        mod_ns.store(str(sym), fn)
+    module = Module(mod_ns)
+    return Compiler("<test>", module, filename=__file__)
+
+
+def _bootstrap_define_syntax_macro_match_form(macro_name, inner_name):
+    """
+    Post-define-syntax shape for (define-syntax NAME (macro-match ...))
+    """
+
+    pattern = cons(macro_name, cons(inner_name, nil), nil)
+    rule = cons(pattern, cons(nil, nil), nil)
+    macro_match = cons(
+        symbol("compile/macro-match"),
+        Datum(macro_name),
+        cons(rule, nil),
+        nil)
+    return cons(
+        symbol("compile/define"),
+        Datum(macro_name),
+        macro_match,
+        nil)
+
+
+class TestDefineSyntaxBootstrapHygiene(unittest.TestCase):
+
+
+    def test_collect_skips_datum_substitution_export_name(self):
+        """
+        define-syntax ``name`` in a ``Datum`` must not enter binding_symbols
+        """
+
+        macro_name = symbol("foo")
+        inner = symbol("inner")
+        form = _bootstrap_define_syntax_macro_match_form(macro_name, inner)
+        compiler = _make_hygiene_compiler()
+        syms = collect_binding_symbols(form, compiler.find_compiled)
+        self.assertNotIn(macro_name, syms)
+
+
+    def test_finalize_preserves_pattern_literal_matching_macro_name(self):
+        """
+        Pattern head literal must not be gensymmed when export is Datum-only
+        """
+
+        macro_name = symbol("foo")
+        inner = symbol("inner")
+        form = _bootstrap_define_syntax_macro_match_form(macro_name, inner)
+        compiler = _make_hygiene_compiler()
+        syms = collect_binding_symbols(form, compiler.find_compiled)
+        macro_match = form.cdr.cdr.car
+        rule = macro_match.cdr.cdr.car.car
+        pat = rule.car
+        while isinstance(pat, Datum):
+            pat = pat.datum
+        self.assertIs(pat.car, macro_name)
+        finalize_macro_hygiene_unbox_one_pass(
+            form, syms, compiler.find_compiled)
+        pat = rule.car
+        while isinstance(pat, Datum):
+            pat = pat.datum
+        self.assertIs(pat.car, macro_name)
+
+
+    def test_collect_includes_bare_define_export_name(self):
+        """
+        Template (compile/define loop ...) still introes bare export names
+        """
+
+        loop = symbol("loop")
+        form = cons(
+            symbol("compile/define"),
+            loop,
+            cons(nil, nil),
+            nil)
+        compiler = _make_hygiene_compiler()
+        syms = collect_binding_symbols(form, compiler.find_compiled)
+        self.assertIn(loop, syms)
+
+
+    def test_collect_define_value_descent_finds_let_binder(self):
+        """
+        VALUE capture descent finds nested let binders; Datum exports do not
+        """
+
+        tp = symbol("tp")
+        export = symbol("compile/MyType?")
+        inner_type = symbol("compile/MyType")
+        bindings = cons(cons(cons(tp, Datum(inner_type), nil), nil), nil)
+        body = cons(
+            symbol("compile/lambda"),
+            Datum(export),
+            cons(symbol("value"), nil),
+            nil)
+        let_form = cons(symbol("compile/let"), bindings, body, nil)
+        form = cons(symbol("compile/define"), Datum(export), let_form, nil)
+        compiler = _make_hygiene_compiler()
+        syms = collect_binding_symbols(form, compiler.find_compiled)
+        self.assertIn(tp, syms)
+        self.assertNotIn(export, syms)
+        self.assertNotIn(inner_type, syms)
+
+
+    def test_finalize_gensyms_template_let_binder_tp(self):
+        """
+        Template ``tp`` in create-instance-check shape must be gensymmed
+        """
+
+        tp = symbol("tp")
+        export = symbol("foobar?")
+        type_sym = symbol("foobar")
+        bindings = cons(cons(cons(tp, Datum(type_sym), nil), nil), nil)
+        isinstance_form = cons(
+            symbol("compile/isinstance"),
+            symbol("value"),
+            tp,
+            nil)
+        lambda_form = cons(
+            symbol("compile/lambda"),
+            export,
+            cons(cons(symbol("value"), nil), nil),
+            isinstance_form,
+            nil)
+        let_form = cons(symbol("compile/let"), bindings, lambda_form, nil)
+        form = cons(symbol("compile/define"), Datum(export), let_form, nil)
+        compiler = _make_hygiene_compiler()
+        syms = collect_binding_symbols(form, compiler.find_compiled)
+        self.assertIn(tp, syms)
+        finalize_macro_hygiene_unbox_one_pass(
+            form, syms, compiler.find_compiled)
+
+        found = set()
+
+        def walk(node):
+            if is_symbol(node):
+                found.add(node)
+                return
+            if isinstance(node, Datum):
+                walk(node.datum)
+                return
+            if is_pair(node):
+                for elem in node.unpack():
+                    walk(elem)
+
+        walk(form)
+        self.assertNotIn(tp, found)
 
 
 class TestCollectDatumOpaque(unittest.TestCase):
