@@ -63,14 +63,15 @@ from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SpecialError
-from koskari.hygiene import (collect_binding_symbols,
+from koskari.hygiene import (Hygiene, collect_binding_symbols,
                              expand_template_with_hygiene,
                              finalize_macro_hygiene_unbox_one_pass)
-from koskari.lib import (Datum, Matcher, demand_call, gensym,
-                         match_select, nil, symbol)
+from koskari.lib import (Datum, Matcher, demand_call, gensym, match_select,
+                         nil, symbol)
 from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST, TEST_ANY,
-                             HygienicMatchCompiler, check_pattern_arg,
+                             HygienicMatchCompiler, Pattern, check_pattern_arg,
                              parse_explicit_rule_pattern, repeat_capture)
+from koskari.reader.layouts import apply_layout
 from koskari.stdlib import builtin
 from koskari.types import is_pair, is_proper, is_symbol, unpack
 
@@ -91,25 +92,6 @@ __all__ = (
 
 
 _symbol_match = symbol("match")
-
-
-
-def _init_pattern_fields(instance, pattern, handler):
-    """
-    Attach pattern, frozen matcher tuple, hygiene plan, and thawed matcher
-    """
-
-    check_pattern_arg(pattern, "Transform pattern")
-    if handler is not None and not callable(handler):
-        raise TypeError(
-            "Transform handler must be callable or None, got %r"
-            % (type(handler).__name__,))
-    instance.pattern = pattern
-    instance.handler = handler
-    hc = HygienicMatchCompiler()
-    instance.matcher_tuple = hc.lower(pattern)
-    instance.hygiene = hc.build_hygiene()
-    instance._matcher = Matcher.from_tuple(instance.matcher_tuple)
 
 
 def _captures_to_bindings(captures):
@@ -181,13 +163,10 @@ def _finalize_macro_output(compiler, form):
     and ``Datum`` peel pass
     """
 
-    # print('DEBUG syntax _finalize_macro_output', 'form=', repr(form))
+    form = apply_layout(form, vars(compiler.module))
     syms = collect_binding_symbols(form, compiler.find_compiled)
-    # print('DEBUG syntax _finalize_macro_output', 'syms=', repr(syms))
-    out = finalize_macro_hygiene_unbox_one_pass(
-        form, syms, compiler.find_compiled)
-    # print('DEBUG syntax _finalize_macro_output', 'out=', repr(out))
-    return out
+    return finalize_macro_hygiene_unbox_one_pass(
+            form, syms, compiler.find_compiled)
 
 
 @runtime_checkable
@@ -198,10 +177,27 @@ class Transform(Protocol):
     """
 
     pattern: Any
-    matcher_tuple: tuple
-    hygiene: Any
-    handler: Any
-    _matcher: Matcher
+    matcher: Matcher
+    hygiene: Hygiene
+
+
+    def __init__(self, pattern):
+        """
+        :param pattern: matcher pattern tree
+        :param handler: callable invoked by procedural arms; ``None`` for
+            template-only ``SyntaxTransform`` arms
+        """
+
+        if not isinstance(pattern, Pattern):
+            raise TypeError(
+                "Transform pattern must be a matcher pattern, got %r"
+                % (type(pattern).__name__,))
+
+        self.pattern = pattern
+
+        hc = HygienicMatchCompiler()
+        self.matcher = Matcher.from_tuple(hc.lower(pattern))
+        self.hygiene = hc.build_hygiene()
 
 
     def try_expand(self, compiler, source_obj, tc):
@@ -215,7 +211,7 @@ class Transform(Protocol):
             pattern does not match
         """
 
-        result = self._matcher.match(source_obj)
+        result = self.matcher.match(source_obj)
         if not result.matched:
             return None
         return self.handle_expand(compiler, source_obj, result, tc)
@@ -235,7 +231,7 @@ class SyntaxTransform(Transform):
     then shared finalize (hygiene plus ``Datum`` peel for compile)
     """
 
-    def __init__(self, pattern, transformer, template=nil, pattern_src=nil):
+    def __init__(self, pattern, template, pattern_src=nil):
         """
         :param pattern: matcher pattern tree
         :param transformer: ``(compiler, tc, **captures)`` procedure, or
@@ -244,10 +240,8 @@ class SyntaxTransform(Transform):
         :param pattern_src: original RULE or MATCH pattern datum for errors
         """
 
-        handler = None
-        if transformer is not None and transformer is not nil:
-            handler = transformer
-        _init_pattern_fields(self, pattern, handler)
+        super().__init__(pattern)
+
         self.template = template
         self.pattern_src = pattern_src
 
@@ -262,10 +256,6 @@ class SyntaxTransform(Transform):
         :param tc: tail-call flag (passed to ``transformer`` when set)
         :return: expanded form after hygiene and finalize
         """
-
-        if self.handler is not None:
-            expanded = self.handler(compiler, tc, **result.captures)
-            return _finalize_macro_output(compiler, expanded)
 
         bindings = _captures_to_bindings(result.captures)
         bindings = _promote_repeat_frame_bindings(bindings)
@@ -289,10 +279,12 @@ class MacroTransform(Transform):
             ``captures`` are string-keyed match slots from ``match_result.captures``
         """
 
-        if handler is None or not callable(handler):
+        if not callable(handler):
             raise TypeError("MacroTransform handler must be callable,"
                             f" got {handler!r}")
-        _init_pattern_fields(self, pattern, handler)
+
+        super().__init__(pattern)
+        self.handler = handler
 
 
     def handle_expand(self, compiler, source, result, tc):
@@ -306,10 +298,9 @@ class MacroTransform(Transform):
         :return: hygiened expanded form after finalize
         """
 
-        # print('DEBUG syntax MacroTransform', 'captures=', repr(result.captures))
         expanded = self.handler(compiler, tc, **result.captures)
-        # print('DEBUG syntax MacroTransform', 'expanded=', repr(expanded))
-        return _finalize_macro_output(compiler, expanded)
+        result = _finalize_macro_output(compiler, expanded)
+        return result
 
 
 class SpecialTransform(Transform):
@@ -325,10 +316,12 @@ class SpecialTransform(Transform):
             :func:`special` if you need other calling conventions
         """
 
-        if handler is None or not callable(handler):
+        if not callable(handler):
             raise TypeError("SpecialTransform handler must be callable,"
                             f" got {handler!r}")
-        _init_pattern_fields(self, pattern, handler)
+
+        super().__init__(pattern)
+        self.handler = handler
 
 
     def handle_expand(self, compiler, source, result, tc):
@@ -369,32 +362,25 @@ class Syntax(Compiled):
                                 f" got {t!r}")
 
         # fast matching via match_select
-        self._matchers = tuple(t._matcher for t in self.transforms)
+        self._matchers = tuple(t.matcher for t in self.transforms)
 
 
     def match_for_hygiene(self, form):
         """
-        Match ``form`` against the first arm whose frozen
-        matcher succeeds; return capture mapping for hygiene discovery
-        """
-
-        _idx, result = match_select(self._matchers, form)
-        return result and result.captures
-
-
-    def match_for_hygiene_with_arm(self, form):
-        """
-        Match ``form`` and return the winning arm index, that arm's
-        hygiene tree, and captures for tree walks
+        Match ``form`` against the first arm whose frozen matcher succeeds.
 
         :param form: special form pair spine
-        :return: ``(idx, hygiene_tree, captures)`` or ``(None, None, None)``
+        :return: ``(matched, pattern, hygiene)`` where ``matched`` is capture
+            mapping, ``pattern`` is that arm's frozen ``Pattern``, and
+            ``hygiene`` is that arm's plan; or ``(None, None, None)`` when no
+            arm matches
         """
 
         idx, result = match_select(self._matchers, form)
         if result is None:
             return None, None, None
-        return idx, self.transforms[idx].hygiene, result.captures
+        tf = self.transforms[idx]
+        return result.captures, tf.pattern, tf.hygiene
 
 
     def compile_impl(self, compiler, source_obj, tc):
@@ -658,7 +644,7 @@ def build_syntax(name, *pattern_template_pairs):
     for i in range(0, len(pattern_template_pairs), 2):
         pat = pattern_template_pairs[i]
         tmpl = pattern_template_pairs[i + 1]
-        transforms.append(SyntaxTransform(pat, nil, tmpl))
+        transforms.append(SyntaxTransform(pat, tmpl))
 
     return Syntax(name, transforms)
 

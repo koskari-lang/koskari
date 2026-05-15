@@ -25,7 +25,6 @@ rows, using the same lowering as ``define-syntax`` compile surfaces.
 """
 
 
-from koskari.lib import nil
 from koskari.matcher import parse_explicit_rule_pattern
 from koskari.syntax import (
     MacroTransform,
@@ -65,7 +64,7 @@ def syntax_from_rule_datums(name, literals, rules, source_ctx=None):
                 "got length %s" % (len(seq),))
         pat_d, tmpl = seq
         ptree = parse_syntax_rules_pattern(pat_d, lit, source_ctx)
-        transforms.append(SyntaxTransform(ptree, nil, tmpl, pat_d))
+        transforms.append(SyntaxTransform(ptree, tmpl, pat_d))
 
     return Syntax(name, tuple(transforms))
 
@@ -97,7 +96,7 @@ def syntax_from_match_datums(name, rules, source_ctx=None):
                 "got length %s" % (len(seq),))
         pat_d, tmpl = seq
         ptree = parse_explicit_rule_pattern(pat_d, source_ctx)
-        transforms.append(SyntaxTransform(ptree, nil, tmpl, pat_d))
+        transforms.append(SyntaxTransform(ptree, tmpl, pat_d))
 
     return Syntax(name, tuple(transforms))
 

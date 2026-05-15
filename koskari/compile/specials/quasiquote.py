@@ -48,7 +48,6 @@ from ...matcher import MATCH, REST, SYMBOL
 from ...stdlib import builtin
 from ...syntax import special
 
-_symbol_apply_layout = symbol("compile/apply-layout")
 _symbol_quasiquote = symbol("compile/quasiquote")
 _symbol_quasiquote_block = symbol("compile/quasiquote-block")
 _symbol_quote = symbol("compile/quote")
@@ -399,12 +398,12 @@ def special_quasiquote_block(compiler, source, tc=False):
     """
     Compile (compile/quasiquote-block BLOCK-REPR) as a source rewrite
 
-    Purely transformative: returns
-    (compile/quasiquote (compile/apply-layout BLOCK-REPR))
-    for normal compiler dispatch. compile/quasiquote handles all
-    unquote and unquote-splicing slot-filling through the :block: cons
-    structure; compile/apply-layout expands the filled-in block through
-    its layout handlers.
+    Purely transformative: returns (compile/quasiquote BLOCK-REPR) for normal
+    compiler dispatch. compile/quasiquote fills unquote and
+    unquote-splicing sites through the :block: cons structure. The evaluated
+    result is a :block: cons in reader form; callers that need layout expansion
+    (for example macro output) use koskari.reader.layouts.apply_layout before
+    compiling further.
 
     :param compiler: the active Compiler
     :param source: the full source cons (compile/quasiquote-block BLOCK-REPR)
@@ -421,9 +420,7 @@ def special_quasiquote_block(compiler, source, tc=False):
     if rest is not nil:
         raise SpecialError("quasiquote-block takes one argument", source)
 
-    apply_layout_call = cons(_symbol_apply_layout, block_repr, nil)
-    set_position(apply_layout_call, get_position(source))
-    rewritten = cons(_symbol_quasiquote, apply_layout_call, nil)
+    rewritten = cons(_symbol_quasiquote, block_repr, nil)
     set_position(rewritten, get_position(source))
     return rewritten
 

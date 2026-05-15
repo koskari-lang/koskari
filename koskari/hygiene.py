@@ -17,7 +17,7 @@ koskari.hygiene
 
 Hygiene discovery and template expansion driven by freeze-built hygiene
 trees aligned to matcher capture-scope structure, plus stable Syntax hooks
-(match_for_hygiene_with_arm).
+(:meth:`koskari.syntax.Syntax.match_for_hygiene`).
 
 Capture-shape contract (runtime walk):
 
@@ -36,9 +36,10 @@ Capture-shape contract (runtime walk):
 from dataclasses import dataclass
 from typing import Mapping, Optional, Tuple
 
-from koskari.exceptions import CompilerError, SpecialError
+from koskari.exceptions import CompilerError
 from koskari.lib import Datum, cons, gensym, nil
-from koskari.types import build_proper, is_nil, is_pair, is_symbol, unpack
+from koskari.types import (build_proper, is_keyword, is_nil, is_pair,
+                           is_symbol, unpack)
 
 
 __all__ = (
@@ -114,6 +115,10 @@ class HygieneTree(object):
             return False
         root = self.node_by_id(self.root_id)
         return not bool(root.binders or root.regions)
+
+
+    def __bool__(self):
+        return not self.is_empty()
 
 
     @property
@@ -286,25 +291,34 @@ def _collect_from_region_root(root, find_compiled):
     Descend a scope-region root the same way as ``collect_binding_symbols``
     on a nested form: specials via their hygiene arm; other pair spines
     via element-wise recursion without harvesting arbitrary symbols
+
+    A region capture may be a proper list of sibling forms
+    ``(form1 . (form2 . nil))`` or one compile-special application
+    ``(compile/name . args)``. Those shapes share cons structure; when the
+    ``car`` is a resolved compile head we treat the spine as one application,
+    otherwise we walk every element from ``unpack(root)`` so the first
+    sibling is not dropped
     """
 
-    if root is None or root is nil:
-        return set()
+    # print("DEBUG _collect_from_region_root", "root=", repr(root))
+
     if isinstance(root, Datum):
-        return _collect_from_region_root(root.datum, find_compiled)
+        root = root.datum
+
+    if not root:
+        return set()
+
     if is_symbol(root) or not is_pair(root):
         return set()
-    head = root.car
-    rest = root.cdr
-    if is_symbol(head) and find_compiled(head) is not None:
+
+    items = list(unpack(root))
+    first = items[0]
+    if is_symbol(first) and find_compiled(first) is not None:
         return collect_binding_symbols(root, find_compiled)
-    if rest is nil and is_pair(head):
-        return collect_binding_symbols(head, find_compiled)
+
     out = set()
-    for elem in rest.unpack():
-        out |= collect_binding_symbols(
-            elem if is_pair(elem) else cons(elem, nil),
-            find_compiled)
+    for elem in items:
+        out |= collect_binding_symbols(elem, find_compiled)
     return out
 
 
@@ -633,6 +647,8 @@ def collect_binding_symbols(node, find_compiled):
     :rtype: set of symbols
     """
 
+    # print("DEBUG collect_binding_symbols", "node=", repr(node))
+
     out = set()
 
     if isinstance(node, Datum):
@@ -641,48 +657,37 @@ def collect_binding_symbols(node, find_compiled):
     if node is nil or not is_pair(node):
         return out
 
-    head = node.car
-    rest = node.cdr
+    head, rest = node
     if not is_symbol(head):
         if rest is nil and is_pair(head):
             return collect_binding_symbols(head, find_compiled)
-        for elem in rest.unpack():
-            out |= collect_binding_symbols(elem, find_compiled)
-        return out
+        if is_keyword(head):
+            for elem in rest.unpack():
+                out |= collect_binding_symbols(elem, find_compiled)
+            return out
+        return _collect_from_region_root(node, find_compiled)
 
     special = find_compiled(head)
+    # print("DEBUG collect_binding_symbols", "special=", repr(special))
     if special is None:
         for elem in rest.unpack():
             out |= collect_binding_symbols(elem, find_compiled)
         return out
 
-    matched = None
-    hygiene = None
-    arm_match = getattr(special, "match_for_hygiene_with_arm", None)
-    if arm_match is not None:
-        try:
-            _idx, hygiene, matched = arm_match(node)
-        except SpecialError:
-            matched = None
-            hygiene = None
-    else:
-        try:
-            matched = special.match_for_hygiene(node)
-        except SpecialError:
-            matched = None
-        if matched is not None:
-            hygiene = getattr(special, "hygiene", None)
-
+    matched, pattern, hygiene = special.match_for_hygiene(node)
+    # print("DEBUG collect_binding_symbols", "matched=", repr(matched))
+    # print("DEBUG collect_binding_symbols", "pattern=", repr(pattern))
+    # print("DEBUG collect_binding_symbols", "hygiene=", repr(hygiene))
     if matched is None:
         for elem in rest.unpack():
             out |= collect_binding_symbols(elem, find_compiled)
         return out
 
-    if isinstance(hygiene, HygieneTree) and not hygiene.is_empty():
+    if hygiene:
         out |= walk_hygiene_tree(
             hygiene, hygiene.root_id, matched, find_compiled)
 
-    if not isinstance(hygiene, HygieneTree) or hygiene.is_empty():
+    else:
         for elem in rest.unpack():
             out |= collect_binding_symbols(
                 elem if is_pair(elem) else cons(elem, nil),

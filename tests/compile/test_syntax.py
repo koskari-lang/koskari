@@ -30,7 +30,7 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.compile.specials import BUILTINS
-from koskari.lib import Module, ModuleNamespace, car, cdr, cons, nil, symbol
+from koskari.lib import Module, ModuleNamespace, car, cdr, cons, symbol
 from koskari.matcher import parse_explicit_rule_pattern
 from koskari.syntax import (Syntax, SyntaxTransform, build_syntax,
                             parse_syntax_rules_pattern)
@@ -68,7 +68,7 @@ def rule(macro_name, pat_form, tpl_form):
 
     return Syntax(
         name,
-        (SyntaxTransform(pat_m, nil, tpl_form, pat_form),),
+        (SyntaxTransform(pat_m, tpl_form, pat_form),),
     )
 
 

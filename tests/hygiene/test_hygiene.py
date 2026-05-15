@@ -121,7 +121,7 @@ class _FakeCompiled(object):
 
 
     def match_for_hygiene(self, rest):
-        return self._matched
+        return self._matched, None, self.hygiene
 
 
 class TestHygieneHelpers(unittest.TestCase):
@@ -305,6 +305,34 @@ class TestCollectAndApply(unittest.TestCase):
         template = cons(hd, nil)
         syms = collect_binding_symbols(template, find_compiled)
         self.assertEqual(syms, {intro})
+
+
+    def test_collect_sibling_form_list_includes_car_form(self):
+        """
+        A proper list of peer forms must collect binders from the first form,
+        not only from the cdr (layout blocks and macro bodies use this shape)
+        """
+
+        hd1 = symbol("peer-one")
+        hd2 = symbol("peer-two")
+        owner1 = _FakeBinderOwner("a")
+        owner2 = _FakeBinderOwner("b")
+        hx1 = HygieneTree.single_node(binders={"a": owner1})
+        hx2 = HygieneTree.single_node(binders={"b": owner2})
+        intro1 = symbol("x")
+        intro2 = symbol("y")
+        fake1 = _FakeCompiled(hx1, {"a": intro1})
+        fake2 = _FakeCompiled(hx2, {"b": intro2})
+        table = {hd1: fake1, hd2: fake2}
+
+        def find_compiled(head):
+            return table.get(head)
+
+        first_form = cons(hd1, nil)
+        second_form = cons(hd2, nil)
+        peer_list = cons(first_form, second_form, nil)
+        syms = collect_binding_symbols(peer_list, find_compiled)
+        self.assertEqual(syms, {intro1, intro2})
 
 
     def test_apply_syntax_rules_hygiene_round_trip(self):

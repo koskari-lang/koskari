@@ -23,7 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, nil, symbol
+from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
 from koskari.matcher import parse_explicit_rule_pattern
 from koskari.types import build_proper
 
@@ -41,6 +41,10 @@ pytestmark = pytest.mark.phase_infra
 
 
 class _StubCompiler(object):
+
+
+    def __init__(self):
+        self.module = Module(ModuleNamespace('stub', {}))
 
 
     def find_compiled(self, sym):

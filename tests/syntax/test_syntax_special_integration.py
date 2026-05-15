@@ -22,7 +22,7 @@ import unittest
 import pytest
 
 from koskari.exceptions import SpecialError
-from koskari.lib import cons, nil, symbol
+from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
 from koskari.matcher import MATCH, SYMBOL, VALUE
 from koskari.syntax import special
 
@@ -34,6 +34,10 @@ class _StubCompiler(object):
     """
     Minimal compiler for Syntax.compile_impl
     """
+
+    def __init__(self):
+        self.module = Module(ModuleNamespace('stub', {}))
+
 
     def find_compiled(self, sym):
         return None

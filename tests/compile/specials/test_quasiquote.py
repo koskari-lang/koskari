@@ -455,11 +455,11 @@ class TestQuasiquoteErrors(SpecialsTestCase):
 from koskari.compile import Compiler
 from koskari.compile.specials import BUILTINS
 from koskari.reader import LayoutReader, source_str
-from koskari.lib import Module, ModuleNamespace, keyword as _kw_type, symbol as _sym_type
+from koskari.lib import Module, ModuleNamespace, keyword as _kw_type
+from koskari.reader.layouts import apply_layout as _apply_layout_macro
 from koskari.types import is_pair
 
 _keyword_block = _kw_type(':block:')
-_symbol_apply_layout = _sym_type('compile/apply-layout')
 
 
 def _make_block(head_args_tuple, body_tuple):
@@ -479,11 +479,12 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
     """
     Base for compile/quasiquote-block tests.
 
-    compile/quasiquote-block is a macro-writing tool. When compiled and run,
-    it produces an intermediate source cons of the form
-    (compile/apply-layout (:block: ...)) with all unquote slots filled in.
-    That source cons is the result of running the first compilation phase;
-    a second compile+run is needed to obtain the final evaluated value.
+    compile/quasiquote-block rewrites to compile/quasiquote on the raw :block:
+    cons. When compiled and run, it produces a :block: cons with all unquote
+    slots filled in — the same shape the reader uses for blocks, without an
+    embedded layout wrapper in the datum. Macro expansion applies
+    koskari.reader.layouts.apply_layout to such output; these tests mirror
+    that for the second compile+run phase.
     """
 
     def make_module(self, **defns):
@@ -504,12 +505,12 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def compile_cons_to_source(self, source, **defns):
         """
-        Compile a cons source form and run it to obtain the intermediate
-        source cons produced by compile/quasiquote-block.
+        Compile a cons source form and run it to obtain the filled :block:
+        cons produced by compile/quasiquote-block (via compile/quasiquote).
 
         :param source: a cons to compile (typically compile/quasiquote-block ...)
         :param defns: name->value bindings placed in the module namespace
-        :return: (intermediate_source_cons, module, mod_ns, compiler)
+        :return: (intermediate :block: cons, module, mod_ns, compiler)
         """
 
         module, mod_ns, compiler = self.make_module(**defns)
@@ -522,14 +523,14 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
     async def compile_layout_src_to_source(self, src_str, **defns):
         """
         Read a layout-syntax source string, compile it, and run it to obtain
-        the intermediate source cons produced by compile/quasiquote-block.
+        the filled :block: cons produced by compile/quasiquote-block.
 
         Uses a LayoutReader with all layout handlers registered so block syntax
         (e.g. `begin: ...) is correctly parsed.
 
         :param src_str: koskari layout source containing a quasiquote-block form
         :param defns: name->value bindings placed in the module namespace
-        :return: (intermediate_source_cons, module, mod_ns, compiler)
+        :return: (intermediate :block: cons, module, mod_ns, compiler)
         """
 
         module, mod_ns, compiler = self.make_module(**defns)
@@ -545,33 +546,31 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def run_source(self, intermediate, module, mod_ns, compiler):
         """
-        Compile and run an intermediate source cons (the second phase).
+        Compile and run the second phase: expand :block: through layouts
+        (as macro output does via apply_layout), then evaluate.
 
-        :param intermediate: the source cons from the first phase
+        :param intermediate: the :block: cons from the first phase
         :param module: the module with specials and layouts registered
         :param mod_ns: the module namespace
         :param compiler: the compiler to reuse
         :return: the final evaluated value
         """
 
-        fragment2 = compiler.full_compile(intermediate)
+        expanded = _apply_layout_macro(intermediate, vars(module))
+        fragment2 = compiler.full_compile(expanded)
         expr2 = fragment2.as_expression(mod_ns)
         return await expr2()
 
 
 class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
     """
-    Type-1 tests: verify the shape of the intermediate source cons produced
-    by running compiled compile/quasiquote-block code.
-
-    The result of running a compiled compile/quasiquote-block form is a
-    (compile/apply-layout (:block: ...)) cons with unquote slots filled in.
+    Type-1 tests: verify the shape of the intermediate :block: cons produced
+    by running compiled compile/quasiquote-block code (unquote slots filled).
     """
 
     async def test_static_begin_block_shape(self):
         """
-        Static block with no unquotes produces
-        (compile/apply-layout (:block: (begin) (42)))
+        Static block with no unquotes produces (:block: (begin) (42))
         """
 
         block = _make_block((symbol('begin'),), (42,))
@@ -579,13 +578,16 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         intermediate, _, _, _ = await self.compile_cons_to_source(source)
 
         self.assertTrue(is_pair(intermediate))
-        head, tail = intermediate
-        self.assertIs(head, _symbol_apply_layout)
-        self.assertTrue(is_pair(tail))
-        block_repr, rest = tail
+        kw, block_tail = intermediate
+        self.assertIs(kw, _keyword_block)
+        self.assertTrue(is_pair(block_tail))
+        head_args, body_tail = block_tail
+        self.assertTrue(is_pair(head_args))
+        self.assertEqual(head_args[0], symbol('begin'))
+        body_exprs, rest = body_tail
         self.assertIs(rest, nil)
-        self.assertTrue(is_pair(block_repr))
-        self.assertIs(block_repr[0], _keyword_block)
+        self.assertTrue(is_pair(body_exprs))
+        self.assertEqual(body_exprs[0], 42)
 
 
     async def test_unquote_slot_filled(self):
@@ -600,11 +602,9 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         intermediate, _, _, _ = await self.compile_cons_to_source(source, x=99)
 
         self.assertTrue(is_pair(intermediate))
-        apply_sym, apply_tail = intermediate
-        self.assertIs(apply_sym, _symbol_apply_layout)
-        block_repr, _ = apply_tail
-        _, block_tail = block_repr
-        head_args, body_tail = block_tail
+        block_kw, block_tail = intermediate
+        self.assertIs(block_kw, _keyword_block)
+        _, body_tail = block_tail
         body_exprs, _ = body_tail
         first_body_elem, _ = body_exprs
         self.assertEqual(first_body_elem, 99)
@@ -623,11 +623,9 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         intermediate, _, _, _ = await self.compile_cons_to_source(source, forms=forms)
 
         self.assertTrue(is_pair(intermediate))
-        apply_sym, apply_tail = intermediate
-        self.assertIs(apply_sym, _symbol_apply_layout)
-        block_repr, _ = apply_tail
-        _, block_tail = block_repr
-        head_args, body_tail = block_tail
+        block_kw, block_tail = intermediate
+        self.assertIs(block_kw, _keyword_block)
+        _, body_tail = block_tail
         body_exprs, _ = body_tail
         first_elem, rest_elems = body_exprs
         second_elem, _ = rest_elems
@@ -639,9 +637,9 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
     """
     Type-2 tests: two-phase compile of compile/quasiquote-block forms.
 
-    Phase 1 compiles and runs the quasiquote-block, producing an intermediate
-    (compile/apply-layout (:block: ...)) source cons with slots filled.
-    Phase 2 compiles and runs that source cons to obtain the final value.
+    Phase 1 compiles and runs the quasiquote-block, producing a :block: cons
+    with slots filled. Phase 2 runs koskari.reader.layouts.apply_layout,
+    then compiles and runs to obtain the final value.
     """
 
     async def test_static_begin_block(self):
@@ -720,8 +718,8 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
 class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
     """
     Full-stack integration tests: read layout source via the default reader,
-    compile, run (producing the intermediate source cons), then compile+run
-    again to obtain the final value.
+    compile, run (producing the filled :block: cons), then apply_layout plus
+    compile+run again to obtain the final value.
     """
 
     async def test_static_begin_block(self):

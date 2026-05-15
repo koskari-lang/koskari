@@ -49,7 +49,7 @@ from re import compile as regex
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
 from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
 from ..types import is_pair
-from .layouts import LayoutHandler
+from .layouts import find_layout
 
 
 __all__ = (
@@ -2099,28 +2099,8 @@ class LayoutReader(Reader):
         return ch == ';' or ch in '\n\r'
 
 
-    def _find_layout(self, name):
-        v = self._ns.get(name)
-        if v and isinstance(v, LayoutHandler):
-            return v
-        return None
-
-
     def find_layout(self, name):
-        """
-        Resolve layout/<head> in the module namespace
-
-        :param name: symbol or string for the block head (e.g. if, begin)
-        :return: LayoutHandler instance, or None
-        """
-
-        name = str(name)
-
-        found = self._find_layout(name)
-        if found is None:
-            if not name.startswith("layout/"):
-                return self._find_layout("layout/" + name)
-        return found
+        return find_layout(self._ns, name)
 
 
     def _structural_colon_before_line_end(self, stream):

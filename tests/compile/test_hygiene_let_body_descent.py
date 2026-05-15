@@ -11,9 +11,10 @@
 """
 Compile-time specials are ``syntax.Syntax`` dispatchers. Hygiene discovery
 uses each winning transform arm's hygiene tree via
-``match_for_hygiene_with_arm``, then walks scope regions such as the let
-``BODY`` capture so a sole body form like ``(compile/lambda [y] ...)`` still
-contributes lambda formals alongside ``compile/let`` binders.
+``Syntax.match_for_hygiene`` (``(matched, pattern, hygiene)``), then walks
+scope regions such as the let ``BODY`` capture so a sole body form like
+``(compile/lambda [y] ...)`` still contributes lambda formals alongside
+``compile/let`` binders.
 
 :license: GNU General Public License v3
 """

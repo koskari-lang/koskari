@@ -21,7 +21,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, nil, symbol
+from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
 from koskari.types import build_proper
 
 from tests.syntax.datum_syntax_helpers import (
@@ -39,6 +39,10 @@ class _StubCompiler(object):
     """
     Minimal compiler supplying find_compiled for template hygiene
     """
+
+    def __init__(self):
+        self.module = Module(ModuleNamespace('stub', {}))
+
 
     def find_compiled(self, sym):
         return None
