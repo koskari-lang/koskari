@@ -10,7 +10,10 @@ Add a fenced foreign-literal mechanism to Koskari source. A fenced block capture
 
 This is **not** a runtime parser feature. The fence handler is a compile-time transliterator that receives raw fenced source plus source metadata and returns Koskari source to compile in place.
 
-The core special is `compile/apply-fence`, deliberately parallel to `compile/apply-layout`.
+The core special is `compile/apply-fence`, deliberately parallel to compile-time
+`:block:` layout expansion (`koskari.reader.layouts.apply_layout`): a dedicated
+compiler form that turns captured structure into ordinary source before further
+compilation.
 
 ## Motivation
 
@@ -41,7 +44,13 @@ The goal is to let authors write the notation that best matches the data they ar
 
 ## Architectural Fit
 
-Koskari already has a two-phase model where reader-produced source can be transformed before ordinary compilation. `compile/quasiquote-block` rewrites through `compile/apply-layout`, and `compile/apply-layout` performs depth-first layout expansion and returns ordinary source for further compilation. This fence mechanism should follow the same pattern rather than teaching the reader to directly execute fence handlers.
+Koskari already separates capturing reader structure from expanding it: block
+backtick rewrites to `compile/quasiquote`, and macro/syntax finalize applies
+`koskari.reader.layouts.apply_layout` in module namespace before hygiene —
+without handing fence policy to the reader itself. This fence mechanism should
+follow the same pattern (reader lowers to a compile-time applicator; handler
+returns ordinary source) rather than teaching the reader to execute fence
+handlers directly.
 
 Accordingly:
 
@@ -113,7 +122,8 @@ Where:
 4. requires the handler to return valid Koskari source
 5. compiles the returned source in place
 
-This is analogous to `compile/apply-layout`, but for foreign fenced source instead of `:block:` layout structures.
+This is analogous to `apply_layout` for `:block:` conses, but for foreign fenced
+source instead of layout reader structure.
 
 ## Reader Responsibilities
 

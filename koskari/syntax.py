@@ -166,7 +166,7 @@ def _finalize_macro_output(compiler, form):
     form = apply_layout(form, vars(compiler.module))
     syms = collect_binding_symbols(form, compiler.find_compiled)
     return finalize_macro_hygiene_unbox_one_pass(
-            form, syms, compiler.find_compiled)
+        form, syms, compiler.find_compiled)
 
 
 @runtime_checkable

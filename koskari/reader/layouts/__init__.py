@@ -25,7 +25,8 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 
 
 from ...lib import cons, keyword, nil
-from ...types import is_pair, is_symbol, build_proper
+from ...types import build_proper, is_pair, is_symbol
+from ...stdlib import builtin
 from .basics import layout_begin, layout_block, layout_call
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_switch
@@ -89,6 +90,7 @@ def find_layout(ns, name):
 _keyword_block = keyword(':block:')
 
 
+@builtin('apply-layouts')
 def apply_layouts(blocks, namespace):
     """
     Walk a proper cons spine of forms and expand each :block: through the
@@ -151,9 +153,15 @@ def apply_layouts(blocks, namespace):
     return build_proper(*out)
 
 
+@builtin('apply-layout')
 def apply_layout(block, namespace):
     """
-    Apply a layout handler to a block
+    Apply a layout handler to a single block of form
+    ```(:block: (HEAD ARG ...) (BODY ...))```
+
+    :param block: the block to apply the layout handler to
+    :param namespace: the namespace to use for layout handler lookup
+    :return: the layout form
     """
 
     if block and is_pair(block) and block.car is _keyword_block:

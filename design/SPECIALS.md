@@ -33,7 +33,7 @@ invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 (unlike **`macro-rules`** / **`macro-match`**, which receive only keyword args).
 Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
-**Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; see
+**Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; macro output runs **`koskari.reader.layouts.apply_layout`** (module namespace) before binding-symbol discovery and the hygiene / Datum finalize passes; see
 [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
 and [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md).
 
@@ -1969,22 +1969,21 @@ produces:
     (:block: (else) ((compile/unquote else))))))
 ```
 
-**Behaviour:** Purely transformative. Rewrites to:
+**Behaviour:** Purely transformative. Rewrites to `(compile/quasiquote
+BLOCK-REPR)` for normal compiler dispatch. `compile/quasiquote` walks the
+`:block:` structure and fills unquote / unquote-splicing sites; it does **not**
+invoke layout handlers, so the filled structure remains `:block:` reader form
+where the quasi-quote produced blocks.
 
-```
-(compile/quasiquote (compile/apply-layout BLOCK-REPR))
-```
-
-`compile/quasiquote` then quasi-quotes the whole form. When the compiled code
-runs (at macro-expansion time), it produces a new source cons:
-
-```
-(compile/apply-layout (:block: ... filled slots ...))
-```
-
-The compiler sees that cons and dispatches `compile/apply-layout`, which
-performs depth-first layout expansion and returns the final compiled form.
-This is the standard koskari two-phase compile model for macros.
+For **`define-syntax`** expansions, **`koskari.syntax._finalize_macro_output`**
+(applied after **`MacroTransform`** handlers and **`SyntaxTransform`** template
+substitution) calls **`koskari.reader.layouts.apply_layout`** on the expanded
+form using **`vars(compiler.module)`** **before** binding-symbol discovery and
+the shared hygiene / **`Datum`** finalize pass. That performs depth-first
+`:block:` expansion through **`layout/<head>`** handlers with peer consumption,
+matching reader layout semantics. Custom expansion pipelines that bypass that
+finalize step must call **`apply_layout`** (or **`apply_layouts`**) themselves
+when layout-expanded source is required.
 
 **Nesting:** `_qq_expr` recognises `compile/quasiquote-block` at depth > 0
 and reconstructs it as literal data, exactly like nested `compile/quasiquote`.
@@ -1993,56 +1992,8 @@ and reconstructs it as literal data, exactly like nested `compile/quasiquote`.
 
 **Tests:** `tests/compile/specials/test_quasiquote.py` (`TestQuasiquoteBlockShape`,
 `TestQuasiquoteBlockTwoPhase`, `TestQuasiquoteBlockFullStack`),
-`tests/reader/layouts/test_quasiquote.py`
-
-## compile/apply-layout
-
-**Symbol:** `compile/apply-layout`
-
-**Syntax:** `(compile/apply-layout BLOCK ...)`
-
-**Use-case:** Compile-time depth-first expansion of one or more `:block:` cons
-literals through the layout handler system. This is how block structure
-(captured by `compile/quote-block` or `compile/quasiquote-block`) is turned
-into normal compiled forms. It is also the second phase of macro expansion
-when `compile/quasiquote-block` is used.
-
-**Behaviour:**
-
-1. Each argument must be a `:block:` cons; a non-block argument raises
-  `SpecialError`.
-2. Recursively expands any nested `:block:` elements in the body of each block
-  before invoking its layout handler.
-3. Looks up the layout handler for the block head via `compiler.find_layout`
-  (resolves `layout/<head>` in the module namespace). Falls back to
-   `layout/block` (the generic handler) if no specific handler is found.
-4. Scans the following sibling arguments for declared peer blocks (e.g. `else`
-  after `if`), consuming them.
-5. Calls `layout_obj.read(source, peers)` with the expanded source cons.
-6. If multiple top-level results remain after peer consumption, wraps them in
-  `(compile/begin ...)`.
-7. Compiles and returns the final form.
-
-**Examples:**
-
-```scheme
-;; Expand a begin block directly
-(compile/apply-layout (:block: (begin) (42)))        ; → 42
-
-;; Expand if/else peers
-(compile/apply-layout
-  (:block: (if True) (1))
-  (:block: (else) (2)))                              ; → 1
-
-;; Typical use: second phase of quasiquote-block macro expansion
-;; (this form is produced at runtime by compiled quasiquote-block code)
-(compile/apply-layout (:block: (begin) ((compile/unquote x))))
-```
-
-**Implementation:** `koskari/compile/specials/apply_layout.py`
-
-**Tests:** `tests/compile/specials/test_apply_layout.py`,
-`tests/compile/specials/test_quasiquote.py`
+`tests/reader/layouts/test_quasiquote.py`; runtime layout expansion behaviour:
+`tests/reader/layouts/test_apply_layout_runtime.py`
 
 ## compile/unquote
 

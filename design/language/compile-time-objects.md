@@ -266,9 +266,10 @@ Compiles to code that, when run, registers `compile/my-if` as a `Macro`
 whose `expand` function calls the quasiquote-block body with `cond`,
 `then`, `else` bound to the unevaluated arguments from the call site.
 
-The two-phase compile model (`compile/quasiquote-block` → runtime source
-cons → `compile/apply-layout` → final form) is exactly how the macro body
-produces the expanded source at macro-expansion time.
+The macro expansion pipeline (`compile/quasiquote-block` → `compile/quasiquote`
+→ quasi-evaluated source that may still contain `:block:` shells →
+`apply_layout` in finalize → hygiene / Datum peel) is how block-syntax macro
+bodies yield layout-expanded source before ordinary compilation continues.
 
 ---
 

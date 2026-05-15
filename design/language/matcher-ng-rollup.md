@@ -55,29 +55,31 @@ runtime (see **`koskari/importer/bootstrap.py`**).
 * **`Syntax` (`Compiled`)** — ordered **transform** arms backed by a tuple of thawed
   **`Matcher`** instances; **`compile_impl`** uses **`match_select`** on the full
   **`source_obj`**, then **`handle_expand`** on the winning arm; total miss raises
-  **`SpecialError`**. **`__add__`** prepends clauses. **`match_for_hygiene`** matches
-  **`cons(symbol(self.name), rest)`** the same way and returns captures from the selected
-  arm.
+  **`SpecialError`**. **`__add__`** prepends clauses. **`match_for_hygiene`** uses the
+  same **`match_select`** and returns **`(captures, pattern, hygiene)`** for the
+  winning arm, or **`(None, None, None)`** when no arm matches.
 * **`Datum`** (`koskari.lib.Datum`) — native match box wrapping the captured
   value, source **`position`**, and optional **`binding`**. Template expansion
   and **`finalize_macro_hygiene_unbox_one_pass`** peel **`Datum`** layers where
   needed for compile. **`matcher`** hygiene walks keep **`Datum`** on
   recurse/scope yields where the engine produced them.
 * **`Transform` (`typing.Protocol`, `@runtime_checkable`)** — structural
-  contract for arms; concrete classes share **`_init_pattern_fields`** for
-  **`HygienicMatchCompiler.lower`**, **`build_hygiene()`**, and a cached
-  thawed **`Matcher`**. **`try_expand`** runs **`_matcher.match(subject)`** and
-  delegates to **`handle_expand`** on success; no per-call Python "engine extern"
-  dict is passed—the native defaults cover **`symbol`** / **`pair`** / **`cons`** /
-  **`nil`** / **`keyword`** for KosPair subjects.
-* **`SyntaxTransform`** — optional procedural **`transformer`** (**`nil`** for
-  template-only arms); after match, string-keyed captures become symbol-keyed
+  contract for arms; **`__init__(pattern)`** requires a matcher **`Pattern`**,
+  runs **`HygienicMatchCompiler.lower`** / **`build_hygiene()`**, and caches a
+  thawed **`Matcher`** as **`self.matcher`**. **`try_expand`** runs
+  **`self.matcher.match(subject)`** and delegates to **`handle_expand`** on success;
+  no per-call Python "engine extern" dict is passed—the native defaults cover
+  **`symbol`** / **`pair`** / **`cons`** / **`nil`** / **`keyword`** for KosPair
+  subjects.
+* **`SyntaxTransform`** — template-only arm (**`pattern`**, **`template`**, optional
+  **`pattern_src`**); after match, string-keyed captures become symbol-keyed
   bindings, **`_promote_repeat_frame_bindings`** copies **`repeat_capture`**
   list-of-frame-dicts into **parallel list columns** for inner pattern variables,
   then **`expand_template_with_hygiene`**, then **`_finalize_macro_output`**
-  (**`collect_binding_symbols`** + **`finalize_macro_hygiene_unbox_one_pass`**).
-  The older one-shot **`apply_syntax_rules_hygiene`** helper still exists in
-  **`hygiene`** for API parity / tests; **`SyntaxTransform`** does not call it.
+  (**`apply_layout`** + **`collect_binding_symbols`** +
+  **`finalize_macro_hygiene_unbox_one_pass`**). The older one-shot
+  **`apply_syntax_rules_hygiene`** helper still exists in **`hygiene`** for API
+  parity / tests; **`SyntaxTransform`** does not call it.
 * **`MacroTransform`** — handler **`(compiler, tc, **captures)`** then the
   same **`_finalize_macro_output`** pass on the handler's return value (no
   template expansion inside **`MacroTransform`**).

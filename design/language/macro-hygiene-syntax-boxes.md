@@ -2,6 +2,9 @@
 
 **Implemented.** Procedural and template macro expansion can carry call-site
 subtrees in **`koskari.lib.Datum`** wrappers (the hygiene “syntax box” type).
+Macro/syntax expansion finishes through **`koskari.syntax._finalize_macro_output`**,
+which applies **`koskari.reader.layouts.apply_layout`** (module namespace) before
+**`koskari.hygiene.collect_binding_symbols`** and the hygiene passes below.
 The hygiene pass (**`koskari.hygiene.expand_template_with_hygiene`**,
 **`apply_syntax_rules_hygiene`**) treats boxed segments as opaque for renaming;
 **`finalize_macro_hygiene_unbox_one_pass`** in **`hygiene`** peels **`Datum`**

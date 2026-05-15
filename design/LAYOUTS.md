@@ -34,6 +34,21 @@ and it is a `LayoutHandler`, that handler's `read(source, peers)` is invoked.
 If not found, the block is treated as a default block and routed through
 `layout/block`.
 
+## `:block:` cons data and `apply_layout`
+
+Read-time layout handlers turn indented blocks into ordinary list forms. Some
+compiler paths preserve **`(:block: …)`** cons structure as **data** — notably
+**`compile/quote-block`**, filled **`compile/quasiquote`** / **`compile/quasiquote-block`**
+results, and macro templates that intentionally retain blocks.
+
+**`koskari.reader.layouts`** exports **`find_layout`**, **`apply_layout`** (one
+primary block), and **`apply_layouts`** (walk a proper spine, consuming declared
+peers). **`LayoutReader.find_layout`** delegates to the same **`find_layout`**
+helper. **`koskari.syntax._finalize_macro_output`** calls **`apply_layout`** on
+macro and **`syntax-rules`** output before hygiene discovery so expansion matches
+reader layout behaviour. See [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block
+and [MACROS.md](MACROS.md).
+
 **Flat blocks (`layout/flat`) and Ki aliases:** The handler **`layout/flat`**
 splices the indented body into the header list: **`(HEAD ARG … FORM …)`** with
 no extra wrapper around the body forms. Many block heads only need that shape.

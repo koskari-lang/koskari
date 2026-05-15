@@ -29,6 +29,22 @@ and expansion.
 
 **Design (living):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — matcher IR, **RULE** vs **MATCH** pattern languages (**`syntax-rules`** / **`macro-rules`** vs **`syntax-match`** / **`macro-match`**), post-expand hygiene and **`Syntax`** boxes, and how `define-syntax` transformers align with the same ideas as Python specials. Reader macros, hygiene, and compiler optimizations around macros: [SPECIALS.md](SPECIALS.md) (§ Macros, reader macros, hygiene, and compiler optimizations); [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
 
+### Block quasiquote and `:block:` layout expansion
+
+Block backtick reads as **`(compile/quasiquote-block (:block: …))`**, which the
+compiler rewrites to **`(compile/quasiquote (:block: …))`** — quasi-quotation
+only; **`compile/quasiquote`** does not expand layouts.
+
+`define-syntax` template and procedural arms finish through
+**`koskari.syntax._finalize_macro_output`**, which applies
+**`koskari.reader.layouts.apply_layout`** against **`vars(compiler.module)`**
+before **`koskari.hygiene.collect_binding_symbols`** and
+**`finalize_macro_hygiene_unbox_one_pass`**. Shared helpers **`find_layout`**,
+**`apply_layout`**, and **`apply_layouts`** live in **`koskari.reader.layouts`**
+(the reader’s **`LayoutReader`** delegates **`find_layout`** there). See
+[SPECIALS.md](SPECIALS.md) § compile/quasiquote-block and
+**`tests/reader/layouts/test_apply_layout_runtime.py`**.
+
 Macros documented here are defined in `koskari/importer/basics.ki` and are
 available in every module without import. The format mirrors SPECIALS.md to
 ease future migration of purely transformative forms from specials to macros.

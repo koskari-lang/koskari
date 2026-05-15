@@ -506,8 +506,15 @@ Possible helper API:
 
 ```python
 special.get_match_patterns() -> list[MatchPattern]
-special.match_for_hygiene(rest) -> (pattern, matched) | None
+# Syntax (multi-arm Compiled): first matching arm
+syntax.match_for_hygiene(form) -> (captures, pattern, hygiene) | (None, None, None)
 ```
+
+For **`Syntax`** transformers, **`match_for_hygiene`** returns the winning arm’s
+capture mapping, frozen **`Pattern`**, and hygiene plan so **`koskari.hygiene`**
+can walk **`HygieneTree`** data aligned to that pattern. Other **`Compiled`**
+specials participate through the same discovery entry points **`hygiene`**
+uses when **`find_compiled`** resolves the head.
 
 Optional helper:
 
