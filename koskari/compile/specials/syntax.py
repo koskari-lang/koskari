@@ -89,7 +89,7 @@ SPECIAL_PATTERN_BREAKOUT = [
 
 # After compile/define-syntax, (compile/<rules-kind> NAME LITERALS . RULES).
 _COMPILE_NAME_LITERALS_RULES = [
-    MATCH(DEFINE("name"), VALUE("literals"), REST("rules")),
+    MATCH(SYMBOL("name"), BIND("literals"), REST("rules")),
 ]
 
 # After compile/define-syntax, (compile/<match-kind> NAME . RULES).
@@ -134,7 +134,7 @@ _COMPILE_NAME_SPEC_PATTERNS = [MATCH(DEFINE("name"), VALUE("spec"))]
 
 
 _SYNTAX_RULES_PATTERNS = [
-    MATCH(SYMBOL("_"), DEFINE("name"), VALUE("literals"), REST("rules")),
+    MATCH(SYMBOL("_"), SYMBOL("name"), BIND("literals"), REST("rules")),
 ]
 
 
@@ -185,7 +185,7 @@ def special_compile_syntax_rules(compiler, source, tc=False):
 
 
 _MACRO_RULES_PATTERNS = [
-    MATCH(SYMBOL("_"), DEFINE("name"), VALUE("literals"), REST("rules")),
+    MATCH(SYMBOL("_"), SYMBOL("name"), BIND("literals"), REST("rules")),
 ]
 
 
@@ -229,7 +229,7 @@ def special_compile_macro_rules(compiler, source, tc=False):
 
 
 _SYNTAX_MATCH_PATTERNS = [
-    MATCH(SYMBOL("_"), DEFINE("name"), REST("rules")),
+    MATCH(SYMBOL("_"), SYMBOL("name"), REST("rules")),
 ]
 
 
@@ -276,7 +276,7 @@ def special_compile_syntax_match(compiler, source, tc=False):
 
 
 _MACRO_MATCH_PATTERNS = [
-    MATCH(SYMBOL("called-by"), DEFINE("name"), REST("rules")),
+    MATCH(SYMBOL("called-by"), SYMBOL("name"), REST("rules")),
 ]
 
 
@@ -329,7 +329,7 @@ def special_compile_macro_match(compiler, source, tc=False):
 
 
 _SPECIAL_RULES_PATTERNS = [
-    MATCH(SYMBOL("_"), DEFINE("name"), VALUE("literals"), REST("rules")),
+    MATCH(SYMBOL("_"), SYMBOL("name"), BIND("literals"), REST("rules")),
 ]
 
 
@@ -403,7 +403,7 @@ def special_compile_special_rules(compiler, source, tc=False):
 
 
 _SPECIAL_MATCH_PATTERNS = [
-    MATCH(SYMBOL("called-by"), DEFINE("name"), REST("rules")),
+    MATCH(SYMBOL("called-by"), SYMBOL("name"), REST("rules")),
 ]
 
 
