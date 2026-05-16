@@ -546,6 +546,12 @@ int koskari_atom_init(PyObject *mod) {
   if (PyType_Ready(&KosKeywordType))
     return -1;
 
+  if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosSymbolType))
+    return -1;
+
+  if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosKeywordType))
+    return -1;
+
   /* add types to module dict */
   if (PyDict_SetItemString(dict, "symbol", (PyObject *) &KosSymbolType))
     return -1;

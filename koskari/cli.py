@@ -32,8 +32,9 @@ from argparse import REMAINDER, ArgumentParser
 from os.path import basename
 from traceback import format_exception_only
 
-from koskari.exceptions import LayoutError, ReaderError
-from koskari.reader import READ_EOF, LayoutReader, source_str
+from .lib import kos_repr
+from .exceptions import LayoutError, ReaderError
+from .reader import READ_EOF, LayoutReader, source_str
 
 __all__ = (
     'main',
@@ -480,7 +481,7 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
             ns.store('_', result) if hasattr(ns, 'store') else ns.__setitem__('_', result)
 
             if result is not None:
-                print(repr(result), file=stdout)
+                print(kos_repr(result), file=stdout)
 
         except KeyboardInterrupt:
             print('', file=stderr)

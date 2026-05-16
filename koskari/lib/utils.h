@@ -111,6 +111,19 @@ int KosUtils_ReprRegister(PyObject *type, PyObject *handler);
 
 
 /**
+   Register a builtin type for KosUtils_Repr using its ``__kos_repr__``.
+
+   ``type`` must be a type object with a callable ``__kos_repr__`` (usually
+   from ``tp_methods``). That attribute is looked up on the type and stored
+   in the kos repr registry.
+
+   :param type: the type key
+   :return: 0 on success, -1 with an exception set on failure
+*/
+int KosUtils_ReprRegisterBuiltin(PyObject *type);
+
+
+/**
    Remove ``type`` from the kos repr registry if present.
 
    :param type: the type key

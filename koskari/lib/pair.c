@@ -1550,6 +1550,12 @@ static PyObject *nil_repr(PyObject *self) {
 }
 
 
+static PyObject *nil_kos_repr(PyObject *self, PyObject *Py_UNUSED(_unused)) {
+  Py_INCREF(_str_nil);
+  return _str_nil;
+}
+
+
 static PyObject *nil_iter(PyObject *self) {
   KosPairIterator *i = PyObject_New(KosPairIterator, &KosPairIteratorType);
   if(! i)
@@ -1596,6 +1602,15 @@ static PyNumberMethods nil_as_number = {
 };
 
 
+static PyMethodDef nil_methods[] = {
+  { "__kos_repr__", (PyCFunction) nil_kos_repr, METH_NOARGS,
+    "nil.__kos_repr__() -> str\n"
+    "Koskari-style nil token." },
+
+  { NULL, NULL, 0, NULL },
+};
+
+
 PyTypeObject KosNilType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -1613,6 +1628,7 @@ PyTypeObject KosNilType = {
 
   .tp_repr = nil_repr,
   .tp_str = nil_repr,
+  .tp_methods = nil_methods,
   .tp_iter = nil_iter,
   .tp_as_number = &nil_as_number,
   .tp_as_sequence = &nil_as_sequence,
@@ -1952,6 +1968,12 @@ int koskari_pair_init(PyObject *mod) {
     return -1;
 
   if (PyType_Ready(&KosNilType))
+    return -1;
+
+  if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosPairType))
+    return -1;
+
+  if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosNilType))
     return -1;
 
   /* add types and nil to module dict */

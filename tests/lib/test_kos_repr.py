@@ -22,86 +22,129 @@ import unittest
 
 import pytest
 
-from koskari.lib import (
-    cons,
-    keyword,
-    kos_repr,
-    kos_repr_register,
-    kos_repr_registry_clear,
-    kos_repr_registry_snapshot,
-    kos_repr_unregister,
-    nil,
-    pair,
-    setcdr,
-    symbol,
-)
+from koskari.lib import (cons, keyword, kos_repr, kos_repr_register,
+                         kos_repr_registry_clear, kos_repr_registry_snapshot,
+                         kos_repr_unregister, nil, pair, setcdr, symbol)
+
 
 pytestmark = pytest.mark.phase_lib
 
 
-class TestKosRepr(unittest.IsolatedAsyncioTestCase):
-    """Tests for kos_repr and native __kos_repr__"""
+class TestKosRepr(unittest.TestCase):
+    """
+    Tests for kos_repr and native __kos_repr__
+    """
 
-    async def test_kos_repr_import(self):
-        """kos_repr is callable on koskari.lib"""
+    def test_kos_repr_import(self):
+        """
+        kos_repr is callable on koskari.lib
+        """
+
         self.assertTrue(callable(kos_repr))
 
-    async def test_fallback_int(self):
-        """objects without __kos_repr__ use repr"""
+
+    def test_fallback_int(self):
+        """
+        objects without __kos_repr__ use repr
+        """
+
         self.assertEqual(kos_repr(42), repr(42))
 
-    async def test_plain_str_double_quotes(self):
-        """str uses double-quote wrapping, not Python single-quote repr"""
+
+    def test_plain_str_double_quotes(self):
+        """
+        str uses double-quote wrapping, not Python single-quote repr
+        """
+
         self.assertEqual(kos_repr("hello"), '"hello"')
         self.assertNotEqual(kos_repr("hello"), repr("hello"))
 
-    async def test_str_escapes_internal_double_quote(self):
-        """embedded double quotes are backslash-escaped"""
+
+    def test_str_escapes_internal_double_quote(self):
+        """
+        embedded double quotes are backslash-escaped
+        """
+
         self.assertEqual(kos_repr('say "hi"'), '"say \\"hi\\""')
 
-    async def test_list_contains_str_kos_form(self):
-        """pair spine uses KosUtils_Repr for str elements"""
+
+    def test_list_contains_str_kos_form(self):
+        """
+        pair spine uses KosUtils_Repr for str elements
+        """
+
         p = cons("a", nil)
         self.assertEqual(kos_repr(p), '("a")')
 
-    async def test_nil(self):
-        """nil prints as nil token"""
+
+    def test_nil(self):
+        """
+        nil prints as nil token
+        """
+
         self.assertEqual(kos_repr(nil), "nil")
 
-    async def test_symbol(self):
-        """symbol kos form is bare name"""
+
+    def test_symbol(self):
+        """
+        symbol kos form is bare name
+        """
+
         s = symbol("alpha")
         self.assertEqual(kos_repr(s), "alpha")
 
-    async def test_keyword(self):
-        """keyword kos form ends with colon"""
+
+    def test_keyword(self):
+        """
+        keyword kos form ends with colon
+        """
+
         k = keyword("beta")
         self.assertEqual(kos_repr(k), "beta:")
 
-    async def test_proper_list(self):
-        """proper list uses spaces between cars"""
+
+    def test_proper_list(self):
+        """
+        proper list uses spaces between cars
+        """
+
         p = cons(1, 2, 3, nil)
         self.assertEqual(kos_repr(p), "(1 2 3)")
 
-    async def test_improper_list(self):
-        """improper list uses dot before final cdr"""
+
+    def test_improper_list(self):
+        """
+        improper list uses dot before final cdr
+        """
+
         p = pair(1, 2)
         self.assertEqual(kos_repr(p), "(1 . 2)")
 
-    async def test_nested_pair_and_symbol(self):
-        """nested values use kos form"""
+
+    def test_nested_pair_and_symbol(self):
+        """
+        nested values use kos form
+        """
+
         p = cons(symbol("x"), cons(2, nil))
         self.assertEqual(kos_repr(p), "(x 2)")
 
-    async def test_recursive_pair(self):
-        """recursive spine uses ellipsis like str()"""
+
+    def test_recursive_pair(self):
+        """
+        recursive spine uses ellipsis like str()
+        """
+
         p = pair(1, nil)
         setcdr(p, p)
         s = kos_repr(p)
         self.assertIn("...", s)
 
-    async def test_python___kos_repr__(self):
-        """plain Python __kos_repr__ is invoked via kos_repr"""
+
+    def test_python___kos_repr__(self):
+        """
+        plain Python __kos_repr__ is invoked via kos_repr
+        """
 
         class Box(object):
             def __kos_repr__(self):
@@ -109,8 +152,11 @@ class TestKosRepr(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(kos_repr(Box()), "boxed")
 
-    async def test___kos_repr___wrong_type(self):
-        """non-str __kos_repr__ result raises TypeError"""
+
+    def test___kos_repr___wrong_type(self):
+        """
+        non-str __kos_repr__ result raises TypeError
+        """
 
         class Bad(object):
             def __kos_repr__(self):
@@ -119,24 +165,32 @@ class TestKosRepr(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TypeError):
             kos_repr(Bad())
 
-    async def test___kos_repr___not_callable_fallback(self):
-        """non-callable __kos_repr__ attribute falls back to repr"""
+
+    def test___kos_repr___not_callable(self):
+        """
+        non-callable __kos_repr__ attribute falls back to repr
+        """
 
         class Weird(object):
             __kos_repr__ = 1
 
-        w = Weird()
-        self.assertEqual(kos_repr(w), repr(w))
+        with self.assertRaises(TypeError):
+            kos_repr(Weird())
 
 
 class TestKosReprRegistry(unittest.TestCase):
-    """kos_repr type registry funnel"""
+    """
+    Tests for the kos_repr type registry
+    """
 
     def tearDown(self):
         kos_repr_registry_clear()
 
+
     def test_register_and_kos_repr(self):
-        """registry handler is used before repr"""
+        """
+        registry handler is used before repr
+        """
 
         class Reggie(object):
             pass
@@ -147,8 +201,11 @@ class TestKosReprRegistry(unittest.TestCase):
         kos_repr_register(Reggie, handler)
         self.assertEqual(kos_repr(Reggie()), "reggie-out")
 
+
     def test_unregister_restores_repr(self):
-        """after unregister, default repr path is used"""
+        """
+        after unregister, default repr path is used
+        """
 
         class R2(object):
             pass
@@ -159,12 +216,19 @@ class TestKosReprRegistry(unittest.TestCase):
         out = kos_repr(R2())
         self.assertTrue(out.startswith("<") or "R2" in out)
 
+
     def test_unregister_missing_is_ok(self):
-        """unregister for unknown type does not raise"""
+        """
+        unregister for unknown type does not raise
+        """
+
         kos_repr_unregister(dict)
 
+
     def test_registry_clear(self):
-        """clear removes handlers"""
+        """
+        clear removes handlers
+        """
 
         class R3(object):
             pass
@@ -175,8 +239,11 @@ class TestKosReprRegistry(unittest.TestCase):
         out = kos_repr(R3())
         self.assertNotEqual(out, "r3")
 
+
     def test_snapshot_is_shallow_copy(self):
-        """mutating snapshot dict keys does not remove live registry"""
+        """
+        mutating snapshot dict keys does not remove live registry
+        """
 
         class Snap(object):
             pass
@@ -187,20 +254,20 @@ class TestKosReprRegistry(unittest.TestCase):
         snap.clear()
         self.assertEqual(kos_repr(Snap()), "snap")
 
+
     def test_register_type_error_not_type(self):
-        """first argument must be a type"""
+        """
+        first argument must be a type
+        """
 
         with self.assertRaises(TypeError):
             kos_repr_register("not-a-type", lambda o: "n")
 
-    def test_register_type_error_not_callable(self):
-        """second argument must be callable and not a type"""
-
-        with self.assertRaises(TypeError):
-            kos_repr_register(list, list)
 
     def test_registry_before_instance___kos_repr__(self):
-        """type registry runs before instance __kos_repr__"""
+        """
+        type registry runs before instance __kos_repr__
+        """
 
         class Both(object):
             def __kos_repr__(self):

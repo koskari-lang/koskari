@@ -38,7 +38,7 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    build_dict, build_list, build_set, build_tuple, car, cdr,
                    cons, defer, demand, demand_apply, demand_call, deref,
                    gensym, keyword, nil, pair, parameter, setcar, setcdr,
-                   symbol, values)
+                   symbol, values, kos_repr)
 from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 from ..stdlib import BUILTINS
 from ..types import (TypePredicate, as_coroutine, build_proper, is_nil,
@@ -174,7 +174,8 @@ def make_bootstrap():
     _bind('open', open)
     _bind('ord', ord)
     _bind('print', print)
-    _bind('repr', repr)
+    _bind('py-repr', repr)
+    _bind('repr', kos_repr)
     _bind('reversed', reversed)
     _bind('setattr', setattr)
     _bind('sorted', sorted)

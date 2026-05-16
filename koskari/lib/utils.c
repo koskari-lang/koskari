@@ -409,23 +409,41 @@ int KosUtils_ReprRegister(PyObject *type, PyObject *handler) {
     return -1;
   }
 
-  if (! PyCallable_Check(handler) || PyType_Check(handler)) {
+  if (! (PyCallable_Check(handler) || KosCallable_Check(handler))) {
     PyErr_SetString(PyExc_TypeError,
-                    "kos_repr_register: second argument must be a callable "
-                    "that is not a type object");
+                    "kos_repr_register: second argument must be a callable");
     return -1;
   }
 
+  // we might be called before the module is initialized, so let's allow
+  // pre-creating the registry if it doesn't exist yet.
   if (! kos_utils_repr_registry) {
-    PyErr_SetString(PyExc_SystemError,
-                    "kos_repr registry is not initialized");
-    return -1;
+    kos_utils_repr_registry = PyDict_New();
+    if (! kos_utils_repr_registry)
+      return -1;
   }
 
   if (PyDict_SetItem(kos_utils_repr_registry, type, handler) < 0)
     return -1;
 
   return 0;
+}
+
+
+int KosUtils_ReprRegisterBuiltin(PyObject *type) {
+
+  // we have to potentially handle this being called before the module is
+  // initialized, so let's just verify the STR_CONST exists
+  STR_CONST(_str_kos_repr, "__kos_repr__");
+
+  PyObject *handler = PyObject_GetAttr(type, _str_kos_repr);
+  if (! handler) {
+    return -1;
+  }
+
+  int res = KosUtils_ReprRegister(type, handler);
+  Py_DECREF(handler);
+  return res;
 }
 
 
@@ -475,6 +493,9 @@ static int kos_utils_repr_registry_dispatch(
   PyTypeObject *ty;
   PyObject *handler = NULL;
   PyObject *args = NULL;
+  PyCFunction meth = NULL;
+  int flags = 0;
+  int r = 0;
 
   if (! kos_utils_repr_registry)
     return 1;
@@ -485,11 +506,30 @@ static int kos_utils_repr_registry_dispatch(
     if (! handler)
       continue;
 
+    if (PyCFunction_Check(handler)) {
+      flags = PyCFunction_GetFlags(handler);
+      if ((flags & ~METH_CLASS) == METH_NOARGS) {
+        meth = PyCFunction_GetFunction(handler);
+        if (! meth)
+          return -1;
+        *out = meth(obj, NULL);
+        if (! *out)
+          return -1;
+        if (! PyUnicode_CheckExact(*out)) {
+          Py_DECREF(*out);
+          *out = NULL;
+          PyErr_SetString(PyExc_TypeError, "kos_repr handler must return str");
+          return -1;
+        }
+        return 0;
+      }
+    }
+
     args = PyTuple_Pack(1, obj);
     if (! args)
       return -1;
 
-    int r = Koskari_DemandSyncEx(handler, args, NULL, out);
+    r = Koskari_DemandSyncEx(handler, args, NULL, out);
     Py_DECREF(args);
     return r;
   }
@@ -505,14 +545,20 @@ PyObject *KosUtils_Repr(PyObject *obj) {
 
   int r;
 
-  if (PyUnicode_Check(obj))
+  if (PyUnicode_CheckExact(obj))
     return kos_utils_unicode_kos_repr(obj);
 
   r = kos_utils_repr_registry_dispatch(obj, &out);
-  if (r == 0 || r == -1) {
+  if (r != 1) {
+    // 0 is success, -1 is error, 1 means nothing found
     return out;
   }
 
+  // would it literally be faster for our builtin lib types if
+  // I just used the registry dispatch for __kos_repr__, avoiding
+  // the bound method creation?
+
+  // TODO: Use PyObject_GetOptionalAttr for 3.13+
   meth = PyObject_GetAttr(obj, _str_kos_repr);
   if (! meth) {
     if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
@@ -520,11 +566,6 @@ PyObject *KosUtils_Repr(PyObject *obj) {
       return PyObject_Repr(obj);
     }
     return NULL;
-  }
-
-  if (! PyCallable_Check(meth)) {
-    Py_DECREF(meth);
-    return PyObject_Repr(obj);
   }
 
   // CallNoArgs for object. Formals apply for koscallable accepts NULL
@@ -544,7 +585,7 @@ PyObject *KosUtils_Repr(PyObject *obj) {
     return NULL;
   }
 
-  if (! out || ! PyUnicode_Check(out)) {
+  if (! out || ! PyUnicode_CheckExact(out)) {
     Py_XDECREF(out);
     PyErr_SetString(PyExc_TypeError, "__kos_repr__ must return str");
     return NULL;
@@ -924,9 +965,13 @@ int koskari_utils_init(PyObject *mod) {
   STR_CONST(_str_esc_dq, "\\\"");
   STR_CONST(_str_kos_repr, "__kos_repr__");
 
-  kos_utils_repr_registry = PyDict_New();
-  if (! kos_utils_repr_registry)
-    return -1;
+  if (! kos_utils_repr_registry) {
+    // registration will create this, so it may have already
+    // been allocated when lib objects registered themselves.
+    kos_utils_repr_registry = PyDict_New();
+    if (! kos_utils_repr_registry)
+      return -1;
+  }
 
   if (PyType_Ready(&KosConstantlyType) < 0 ||
       PyType_Ready(KOS_CALLABLE_PYTYPE(KosApplyType)) < 0)
