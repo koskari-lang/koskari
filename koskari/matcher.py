@@ -19,9 +19,9 @@ Python surface for the next-generation native matcher. Provides the thaw
 helper that reconstructs a native Matcher from its frozen tagged-tuple
 representation, plus a small builder API for authoring matcher patterns in
 Python that lower to the same frozen form. Lowering uses either the baseline
-MatchCompiler (slots, externs, consts, nodes only) or HygienicMatchCompiler,
-which additionally records hygiene metadata for source-form matchers (see
-``koskari.hygiene``). Rule-level MATCH spines use
+MatchCompiler (slots, externs, consts, nodes only) or HygienicMatchCompiler
+for patterns that need parallel compile-time metadata alongside the frozen
+matcher (see that class). Rule-level MATCH spines use
 :func:`parse_explicit_rule_pattern`. :func:`repeat_capture` lowers to CAPTURE
 wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 (dict, Datum slice, etc.); see repeat_capture and binding_inner_pattern
@@ -142,58 +142,30 @@ class MatchCompiler:
         self.consts = []
         self.nodes = []
         self.capture_scope_stack = [{}]
-        self._hygiene_scope_modes = []
         self.in_class_fields = False
 
 
-    def push_capture_scope(self, hygiene_mode=None):
+    def begin_nested_claims(self, **kwargs):
         """
-        Begin an isolated duplicate-slot scope (used per ONEOF branch and
-        GROUP children). When ``hygiene_mode`` is set on a
-        :class:`HygienicMatchCompiler`, the parallel hygiene frame stack
-        uses ``merge`` (ONEOF) or ``link`` (GROUP)
-
-        :param hygiene_mode: ``merge``, ``link``, or None
+        Begin a nested region where duplicate capture slot names are isolated
+        (for example ONEOF branches or GROUP children). Keyword arguments are
+        reserved for subclasses; the baseline compiler ignores them
         """
 
+        _ = kwargs
         self.capture_scope_stack.append({})
-        if hygiene_mode is not None:
-            self._hygiene_scope_modes.append(hygiene_mode)
-            self.hygiene_scope_push(hygiene_mode)
 
 
-    def pop_capture_scope(self):
+    def end_nested_claims(self, **kwargs):
         """
-        End the innermost duplicate-slot scope
+        End the innermost nested duplicate-slot region
         """
 
+        _ = kwargs
         if len(self.capture_scope_stack) <= 1:
             raise RuntimeError(
-                "pop_capture_scope underflow (unbalanced ONEOF scope)")
-        mode = None
-        if self._hygiene_scope_modes:
-            mode = self._hygiene_scope_modes.pop()
+                "end_nested_claims underflow (unbalanced nested scope)")
         self.capture_scope_stack.pop()
-        if mode is not None:
-            self.hygiene_scope_pop(mode)
-
-
-    def hygiene_scope_push(self, mode):
-        """
-        Hook for hygienic compilers when ``push_capture_scope`` receives
-        a hygiene mode
-        """
-
-        _ = mode
-
-
-    def hygiene_scope_pop(self, mode):
-        """
-        Hook for hygienic compilers when ``pop_capture_scope`` closes a
-        scoped hygiene frame
-        """
-
-        _ = mode
 
 
     def intern_slot(self, name):
@@ -278,7 +250,7 @@ class MatchCompiler:
 
     def on_pattern(self, pat):
         """
-        Hook invoked when a pattern node begins lowering; baseline compiler
+        Invoked when a pattern participates in lowering; baseline compiler
         ignores it
         """
 
@@ -336,6 +308,24 @@ class HygienicMatchCompiler(MatchCompiler):
         root = self._new_hygiene_frame(None)
         self._hygiene_current = root
         self._hygiene_root_id = root.node_id
+        self._hygiene_nested_modes = []
+
+
+    def begin_nested_claims(self, **kwargs):
+        if 'link_slot' in kwargs:
+            self._pending_link_slot = kwargs['link_slot']
+            mode = 'link'
+        else:
+            mode = 'merge'
+        self._hygiene_nested_modes.append(mode)
+        super().begin_nested_claims(**kwargs)
+        self._push_hygiene_frame(mode)
+
+
+    def end_nested_claims(self, **kwargs):
+        mode = self._hygiene_nested_modes.pop()
+        super().end_nested_claims(**kwargs)
+        self._pop_hygiene_frame(mode)
 
 
     def _new_hygiene_frame(self, parent_id):
@@ -355,7 +345,7 @@ class HygienicMatchCompiler(MatchCompiler):
         return node
 
 
-    def hygiene_scope_push(self, mode):
+    def _push_hygiene_frame(self, mode):
         parent = self._hygiene_current
         child = self._new_hygiene_frame(parent.node_id)
         child.link_slot = self._pending_link_slot
@@ -364,7 +354,7 @@ class HygienicMatchCompiler(MatchCompiler):
         self._hygiene_current = child
 
 
-    def hygiene_scope_pop(self, mode):
+    def _pop_hygiene_frame(self, mode):
         child = self._hygiene_current
         parent = self._hygiene_frame_stack.pop()
         self._hygiene_current = parent
@@ -530,24 +520,6 @@ class HygienicMatchCompiler(MatchCompiler):
             pat.register_hygiene(self)
 
 
-    def lower(self, root):
-        """
-        Lower root into this compiler and return the frozen matcher tuple.
-        Hygiene owners register via on_pattern during lowering
-        """
-
-        entry = root.lower(self)
-        frozen = (
-            "MATCHER",
-            tuple(Pattern._slot_names(self)),
-            tuple(Pattern._extern_names(self)),
-            tuple(self.consts),
-            tuple(self.nodes),
-            entry,
-        )
-        return frozen
-
-
     @classmethod
     def compile_and_hygiene(
             cls,
@@ -565,13 +537,12 @@ class HygienicMatchCompiler(MatchCompiler):
 @runtime_checkable
 class Pattern(Protocol):
     """
-    Structural base for matcher pattern builders. Implementations
-    define lower(ctx) to append their node tuple to a MatchCompiler and
-    return the resulting node index. MatchCompiler.lower and
-    HygienicMatchCompiler.lower drive lowering from the root pattern;
-    composites and BODY call ctx.on_pattern(self) before expanding so
-    hygienic compilers register in the same walk; freeze, build, and
-    match use the baseline MatchCompiler path
+    Structural base for matcher pattern builders. Implementations define
+    lower(ctx); the compiler passes itself as ctx when lowering a root
+    pattern. Composite and some other patterns call ctx.on_pattern(self)
+    before expanding. GROUP and ONEOF bracket nested lowering with
+    begin_nested_claims and end_nested_claims. Methods freeze and build use
+    MatchCompiler by default for standalone compilation
     """
 
 
@@ -667,7 +638,7 @@ def check_str_arg(arg, what, *, allow_empty=False):
 
 def pattern_slot_names(pattern):
     """
-    Slot names for ``pattern`` in declaration order (hygienic lower)
+    Slot names for ``pattern`` in declaration order via HygienicMatchCompiler
     """
 
     check_pattern_arg(pattern, "pattern_slot_names pattern")
@@ -979,13 +950,11 @@ class GROUP(Pattern):
         if self._slot is not None:
             ctx.claim_slot_name(self._slot, ("group", id(self)))
             slot_idx = ctx.intern_slot(self._slot)
-        if isinstance(ctx, HygienicMatchCompiler):
-            ctx._pending_link_slot = self._slot
-        ctx.push_capture_scope("link")
+        ctx.begin_nested_claims(link_slot=self._slot)
         try:
             idxs = [c.lower(ctx) for c in self._children]
         finally:
-            ctx.pop_capture_scope()
+            ctx.end_nested_claims()
         g_idx = ctx.append_node(("GROUP",) + tuple(idxs))
         if self._slot is None:
             return g_idx
@@ -1028,11 +997,11 @@ class ONEOF(Pattern):
 
         idxs = []
         for b in self._branches:
-            ctx.push_capture_scope("merge")
+            ctx.begin_nested_claims()
             try:
                 idxs.append(b.lower(ctx))
             finally:
-                ctx.pop_capture_scope()
+                ctx.end_nested_claims()
         return ctx.append_node(("ONEOF",) + tuple(idxs))
 
 
@@ -1622,15 +1591,15 @@ class HygieneWireSlotScopes(object):
 
 
     def iter_introduced_symbols(self, matched):
-        yield from ()
+        return ()
 
 
     def iter_recurse_targets(self, matched):
-        yield from ()
+        return ()
 
 
     def iter_scope_targets(self, matched):
-        yield from ()
+        return ()
 
 
 class DEFINE(Composite, HygieneWireSlotScopes):
@@ -1887,7 +1856,7 @@ class BINDINGS(Composite):
 
 
     def iter_scope_targets(self, matched):
-        yield from ()
+        return ()
 
 
     def register_hygiene(self, ctx):
