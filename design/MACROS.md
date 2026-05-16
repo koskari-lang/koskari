@@ -27,7 +27,7 @@ rather than an extra **`compile/begin`** wrapper around the transformer. The
 **`compile/define-syntax`** macro still performs all transformer-shape checking
 and expansion.
 
-**Design (living):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — matcher IR, **RULE** vs **MATCH** pattern languages (**`syntax-rules`** / **`macro-rules`** vs **`syntax-match`** / **`macro-match`**), post-expand hygiene and **`Syntax`** boxes, and how `define-syntax` transformers align with the same ideas as Python specials. Reader macros, hygiene, and compiler optimizations around macros: [SPECIALS.md](SPECIALS.md) (§ Macros, reader macros, hygiene, and compiler optimizations); [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
+**Design (living):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — matcher IR, **RULE** vs **MATCH** pattern languages (**`syntax-rules`** / **`macro-rules`** vs **`syntax-match`** / **`macro-match`**), post-expand hygiene and **`Syntax`** boxes, and how `define-syntax` transformers align with the same ideas as Python specials. [MATCHER.md](MATCHER.md) — canonical matcher syntax, **`Datum`** / **`DatumFrame`**, composites (**BINDINGS**, **FORMALS**, …), and hygiene-by-matcher tables. Reader macros, hygiene, and compiler optimizations around macros: [SPECIALS.md](SPECIALS.md) (§ Macros, reader macros, hygiene, and compiler optimizations); [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
 
 ### Block quasiquote and `:block:` layout expansion
 
@@ -39,7 +39,8 @@ only; **`compile/quasiquote`** does not expand layouts.
 **`koskari.syntax._finalize_macro_output`**, which applies
 **`koskari.reader.layouts.apply_layout`** against **`vars(compiler.module)`**
 before **`koskari.hygiene.collect_binding_symbols`** and
-**`finalize_macro_hygiene_unbox_one_pass`**. Shared helpers **`find_layout`**,
+**`finalize_macro_hygiene_unbox_one_pass`** (hygiene walks use the same matcher
+plans as specials; see [MATCHER.md](MATCHER.md)). Shared helpers **`find_layout`**,
 **`apply_layout`**, and **`apply_layouts`** live in **`koskari.reader.layouts`**
 (the reader’s **`LayoutReader`** delegates **`find_layout`** there). See
 [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block and
@@ -80,6 +81,9 @@ expansion, the **value** of **`compile/define`** is built from the **`syntax-rul
 **Tests:** `tests/importer/test_basics.py` (where applicable); compile specials
 for **`compile/syntax-rules`** / **`compile/macro-rules`** / **`compile/special-rules`**
 / **`compile/special-match`**: `tests/compile/specials/test_define_syntax.py`
+
+**See also:** [MATCHER.md](MATCHER.md) — rule-level **`parse_explicit_rule_pattern`**
+vs special **`patterns=`** matchers; **RULE** vs **MATCH** dialects.
 
 
 ## compile/extend-syntax (macro)

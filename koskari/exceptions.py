@@ -23,7 +23,8 @@ Base exception classes for Koskari.
 import linecache
 from traceback import format_exception_only
 
-from .lib import KoskariSyncViolation, kos_repr
+from .lib import KoskariSyncViolation, car, kos_repr
+from .types import is_pair
 
 
 __all__ = (
@@ -281,6 +282,52 @@ class SpecialError(CompilerError):
     Special-form validation errors
     """
 
+    pass
+
+
+def _format_accept_pattern(pattern, source):
+    """
+    Render one accepted-arm pattern for SyntaxMatchError.explain only
+    """
+
+    from .matcher import CALLEDBY, MATCH
+
+    if isinstance(pattern, MATCH):
+        children = pattern._children
+    else:
+        try:
+            return kos_repr(pattern)
+        except Exception:
+            return "<unrenderable pattern>"
+
+    if children and isinstance(children[0], CALLEDBY):
+        try:
+            if source is not None and is_pair(source):
+                head = kos_repr(car(source))
+            else:
+                head = "(CALLEDBY)"
+        except Exception:
+            head = "(CALLEDBY)"
+        try:
+            rest = " ".join(kos_repr(c) for c in children[1:])
+        except Exception:
+            rest = "<unrenderable pattern>"
+        if rest:
+            return "(%s %s)" % (head, rest)
+        return "(%s)" % head
+
+    try:
+        body = " ".join(kos_repr(c) for c in children)
+    except Exception:
+        return "<unrenderable pattern>"
+    return "(%s)" % body
+
+
+class SyntaxMatchError(CompilerError):
+    """
+    Syntax dispatch errors when no matcher arm matches the source form
+    """
+
     def __init__(self, message, source=None, position=None, filename=None,
                  *, syntax=None, patterns=None):
         super().__init__(message, source, position, filename)
@@ -293,9 +340,6 @@ class SpecialError(CompilerError):
         User-facing error text for REPL and similar UIs
         """
 
-        if not self.patterns:
-            return CompilerError.explain(self)
-
         name = self.syntax.name if self.syntax is not None else None
         if name is not None:
             head = "no matching syntax rule for %s" % (name,)
@@ -307,12 +351,10 @@ class SpecialError(CompilerError):
                 lines.append("  form: %s" % kos_repr(self.source))
             except Exception:
                 lines.append("  form: <unrenderable source>")
-        lines.append("  accepts:")
-        for pat in self.patterns:
-            try:
-                lines.append("    %s" % kos_repr(pat))
-            except Exception:
-                lines.append("    <unrenderable pattern>")
+        if self.patterns:
+            lines.append("  accepts:")
+            for pat in self.patterns:
+                lines.append("    %s" % _format_accept_pattern(pat, self.source))
         source_line = self._format_source_line()
         if source_line is not None:
             lines.append(source_line)

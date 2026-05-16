@@ -26,8 +26,8 @@ compile/globals, and compile/locals.
 
 from ...exceptions import CompilerError, SpecialError
 from ...lib import Datum, OpCode, cons, keyword, nil, symbol
-from ...matcher import (BODY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR,
-                        REST, SYMBOL, VALUE)
+from ...matcher import (BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH,
+                        PAIR, REST, SYMBOL, VALUE)
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_pair
@@ -75,11 +75,11 @@ def _define_name_type_pos_from_match(matched):
     return namesym, type_expr
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("_"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 _SETQ_PATTERNS = [
-    MATCH(SYMBOL("_"), SYMBOL("sym"), VALUE("expr")),
+    MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr")),
 ]
 
 
@@ -95,7 +95,7 @@ def special_setq(compiler, caps, tc=False):
     pos = caps["sym"].position
     expr = caps["expr"].datum
 
-    frag = compiler.fragment(caps["_"].datum)
+    frag = compiler.fragment(caps["called-by"].datum)
 
     if not is_pair(expr):
         frag.position(pos)
@@ -109,8 +109,8 @@ def special_setq(compiler, caps, tc=False):
 
 
 _VALUES_BIND_PATTERNS = [
-    MATCH(SYMBOL("_"), SYMBOL("lhs"), VALUE("expr")),
-    MATCH(SYMBOL("_"), PAIR("lhs"), VALUE("expr")),
+    MATCH(CALLEDBY(), SYMBOL("lhs"), VALUE("expr")),
+    MATCH(CALLEDBY(), PAIR("lhs"), VALUE("expr")),
 ]
 
 
@@ -123,8 +123,8 @@ def special_setq_values(compiler, caps, tc=False):
     compile/for-each unpack binding)
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     lhs_mr = caps["lhs"]
     expr_mr = caps["expr"]
@@ -154,7 +154,7 @@ def special_define_values(compiler, caps, tc=False):
     compile/setq-values)
     """
 
-    called_by = caps["_"].datum
+    called_by = caps["called-by"].datum
 
     lhs_mr = caps["lhs"]
     expr_mr = caps["expr"]
@@ -173,7 +173,7 @@ def special_define_values(compiler, caps, tc=False):
 
 
 _DELQ_PATTERNS = [
-    MATCH(SYMBOL("_"), SYMBOL("sym")),
+    MATCH(CALLEDBY(), SYMBOL("sym")),
 ]
 
 
@@ -184,8 +184,8 @@ def special_delq(compiler, caps, tc=False):
     Compile (compile/delq SYM). Clear the binding SYM, resetting it to unset
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
     sym = caps["sym"].datum
 
     frag = compiler.fragment(called_by)
@@ -200,47 +200,47 @@ def special_delq(compiler, caps, tc=False):
 
 _DEFINE_INLINE_PATTERNS = [
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
         REST("body")),
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
         REST("body")),
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
         VALUE("value")),
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         VALUE("value")),
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type")),
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type")),
 ]
 
 _DEFINE_DECL_PATTERNS = [
-    MATCH(SYMBOL("_"), DECL("decl"), FORMALS("formals", scope="body"), BODY("body")),
-    MATCH(SYMBOL("_"), DECL("decl"), VALUE("value")),
-    MATCH(SYMBOL("_"), DECL("decl")),
+    MATCH(CALLEDBY(), DECL("decl"), FORMALS("formals", scope="body"), BODY("body")),
+    MATCH(CALLEDBY(), DECL("decl"), VALUE("value")),
+    MATCH(CALLEDBY(), DECL("decl")),
 ]
 
 _DEFINE_PATTERNS = _DEFINE_INLINE_PATTERNS + _DEFINE_DECL_PATTERNS
@@ -256,8 +256,8 @@ def special_define(compiler, caps, tc=False):
     (define X (lambda X [Y Z] BODY...)).
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     namesym, type_expr = _define_name_type_pos_from_match(caps)
     name = str(namesym)
@@ -352,7 +352,7 @@ def special_define_global(compiler, caps, tc=False):
     variants. Explicit module binding for read and write.
     """
 
-    called_by = caps["_"].datum
+    called_by = caps["called-by"].datum
 
     namesym, type_expr = _define_name_type_pos_from_match(caps)
     name = str(namesym)

@@ -25,13 +25,13 @@ Special form handlers for compile/item, compile/del-item, and compile/set-item.
 from ...lib import nil, OpCode
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ...matcher import MATCH, REST, SYMBOL
+from ...matcher import CALLEDBY, MATCH, REST
 from ...stdlib import builtin
 from ...syntax import special
 from ..helpers import const_only_expr
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 @builtin("compile/item")

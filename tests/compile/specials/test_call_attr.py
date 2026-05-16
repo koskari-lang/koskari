@@ -21,7 +21,7 @@ then convert_fast lowers matching opcodes to CALL_FAST_ATTR* in the final Code.
 
 
 from koskari.lib import OpCode
-from koskari.exceptions import SpecialError
+from koskari.exceptions import SpecialError, SyntaxMatchError
 
 from . import SpecialsTestCase
 
@@ -166,8 +166,8 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 
 class TestCallAttrNameMustBeSymbol(SpecialsTestCase):
 
-    async def test_non_symbol_name_raises_special_error(self):
-        with self.assertRaises(SpecialError):
+    async def test_non_symbol_name_raises_syntax_match_error(self):
+        with self.assertRaises(SyntaxMatchError):
             self.compile_expr("(compile/call-attr obj 42)", obj="hello")
 
 

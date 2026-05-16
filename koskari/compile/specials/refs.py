@@ -24,7 +24,7 @@ compile/ref-item, compile/refq, and compile/bindq.
 
 
 from ...lib import nil, OpCode
-from ...matcher import DEFINE, MATCH, REST, SYMBOL, VALUE
+from ...matcher import CALLEDBY, DEFINE, MATCH, REST, VALUE
 from ...types import is_pair
 from ...exceptions import SpecialError
 from ...stdlib import builtin
@@ -32,7 +32,7 @@ from ...syntax import special
 from ..helpers import const_only_expr
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 @builtin("compile/deref")
@@ -141,7 +141,7 @@ def special_refq(compiler, source, tc=False):
 
 
 _BINDQ_PATTERNS = [
-    MATCH(SYMBOL("_"), DEFINE("name"), VALUE("value")),
+    MATCH(CALLEDBY(), DEFINE("name"), VALUE("value")),
 ]
 
 
@@ -153,8 +153,8 @@ def special_bindq(compiler, caps, tc=False):
     it to EXPR
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     namesym = caps["name"].datum
     name = str(namesym)

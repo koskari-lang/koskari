@@ -20,7 +20,7 @@ import unittest
 
 import pytest
 
-from koskari.exceptions import SpecialError
+from koskari.exceptions import SyntaxMatchError
 from koskari.lib import Datum, Matcher, cons, nil, symbol
 from koskari.matcher import (FORM, GROUP, MATCH, VALUE, DatumFrame,
                              HygienicMatchCompiler,
@@ -213,10 +213,10 @@ class TestSyntaxAdd(unittest.TestCase):
 class TestSyntaxCompileImpl(unittest.TestCase):
 
 
-    def test_compile_impl_no_match_raises_special_error(self):
+    def test_compile_impl_no_match_raises_syntax_match_error(self):
         n = symbol("compile/stub")
         s = Syntax(n, ())
-        with self.assertRaises(SpecialError):
+        with self.assertRaises(SyntaxMatchError):
             s.compile_impl(None, cons(n, nil), False)
 
 

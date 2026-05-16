@@ -62,7 +62,7 @@ from functools import wraps
 from typing import Any, Protocol, runtime_checkable
 
 from koskari.compile.compiler import Compiled
-from koskari.exceptions import SpecialError
+from koskari.exceptions import SyntaxMatchError
 from koskari.hygiene import (Hygiene, collect_binding_symbols,
                              expand_template_with_hygiene,
                              finalize_macro_hygiene_unbox_one_pass)
@@ -94,79 +94,91 @@ __all__ = (
 _symbol_match = symbol("match")
 
 
-def _captures_to_bindings(captures):
+class Syntax(Compiled):
     """
-    Map string capture keys to koskari symbols for template expansion.
+    Ordered dispatcher over ``Transform`` clauses (compiled form). Try order
+    follows ``transforms`` tuple order; use ``__add__`` to prepend clauses
 
-    Values are native matcher captures (often ``Datum``-wrapped); they are
-    stored unchanged so :func:`koskari.hygiene.expand_template_with_hygiene`
-    peels at use sites. Macro handlers receive the same ``Datum``-bearing
-    ``MatchResult.captures`` mapping unchanged from the matcher.
-    """
-
-    return {symbol(k): v for k, v in captures.items()}
-
-
-def _promote_repeat_frame_bindings(bindings):
-    """
-    For each ``repeat_capture`` value (bare list of per-iteration dicts),
-    copy slot columns onto top-level template keys.
-
-    Keys already present in ``bindings`` are left alone so outer captures and
-    the first promoted column win when names collide
+    :param name: primary compile-time symbol for this form
+    :param transforms: ordered transforms tried on each expansion
     """
 
-    out = dict(bindings)
-    for v in bindings.values():
-        # Stage 1: Datum at the binding root is never repeat_capture's frame
-        # vector; that structure is always a bare list. A Datum here is one
-        # wrapped cell (often a pair spine for REST or a leaf for BIND). If we
-        # mis-classified that as repeat rows, ellipsis would see wrong shapes.
-        if isinstance(v, Datum):
-            continue
+    def __init__(self, name, transforms=()):
+        """
+        :param name: symbol or str naming this syntax object
+        :param transforms: iterable of ``Transform`` instances
+        """
 
-        # Stage 2: only non-empty Python lists can be repeat_capture output.
-        if not (v and isinstance(v, list)):
-            continue
+        self.name = name
+        self.transforms = tuple(transforms)
 
-        frames = v
-        # Stage 3: repeat rows are dicts per iteration; anything else is not this
-        # transpose shape (e.g. a flat list of syntax objects from elsewhere).
-        if not all(isinstance(fr, dict) for fr in frames):
-            continue
+        for t in self.transforms:
+            if not isinstance(t, Transform):
+                raise TypeError("Syntax transforms must be Transform instances,"
+                                f" got {t!r}")
 
-        # Stage 4: each frame maps string slot names to one iteration's
-        # captures (often Datum-wrapped); transpose into parallel lists for
-        # template ellipsis indexing.
-        slot_keys = set()
-        for fr in frames:
-            slot_keys.update(fr.keys())
-        for sk in slot_keys:
-            sym = symbol(sk) if isinstance(sk, str) else sk
-            if sym in out:
-                continue
-            col = []
-            for fr in frames:
-                if sk not in fr:
-                    col = None
-                    break
-                col.append(fr[sk])
-            if col is None:
-                continue
-            out[sym] = col
-    return out
+        # fast matching via match_select
+        self._matchers = tuple(t.matcher for t in self.transforms)
 
 
-def _finalize_macro_output(compiler, form):
-    """
-    Discover binding symbols on ``form`` then run the shared in-place hygiene
-    and ``Datum`` peel pass
-    """
+    def match_for_hygiene(self, form):
+        """
+        Match ``form`` against the first arm whose frozen matcher succeeds.
 
-    form = apply_layout(form, vars(compiler.module))
-    syms = collect_binding_symbols(form, compiler.find_compiled)
-    return finalize_macro_hygiene_unbox_one_pass(
-        form, syms, compiler.find_compiled)
+        :param form: special form pair spine
+        :return: ``(matched, pattern, hygiene)`` where ``matched`` is capture
+            mapping, ``pattern`` is that arm's frozen ``Pattern``, and
+            ``hygiene`` is that arm's plan; or ``(None, None, None)`` when no
+            arm matches
+        """
+
+        idx, result = match_select(self._matchers, form)
+        if result is None:
+            return None, None, None
+        tf = self.transforms[idx]
+        return result.captures, tf.pattern, tf.hygiene
+
+
+    def compile_impl(self, compiler, source_obj, tc):
+        """
+        Try each transform in order; first non-``None`` result wins
+
+        :param compiler: active compiler instance
+        :param source_obj: full special form being compiled
+        :param tc: tail-call flag
+        :raises SyntaxMatchError: when no arm matches
+        :return: compile product from the winning transform
+        """
+
+        idx, result = match_select(self._matchers, source_obj)
+        if result is None:
+            raise SyntaxMatchError(
+                "no matching syntax rule",
+                source_obj,
+                syntax=self,
+                patterns=tuple(t.pattern for t in self.transforms),
+            )
+
+        tf = self.transforms[idx]
+        return tf.handle_expand(compiler, source_obj, result, tc)
+
+
+    def __add__(self, other):
+        """
+        Return a new ``Syntax`` with ``other``'s transforms prepended before
+        ``self``'s (``other`` is tried first at expansion time)
+
+        :param other: ``Transform`` or ``Syntax``
+        :rtype: Syntax
+        """
+
+        if isinstance(other, Transform):
+            new_transforms = (other,) + self.transforms
+        elif isinstance(other, Syntax):
+            new_transforms = other.transforms + self.transforms
+        else:
+            return NotImplemented
+        return Syntax(self.name, new_transforms)
 
 
 @runtime_checkable
@@ -338,91 +350,79 @@ class SpecialTransform(Transform):
         return self.handler(compiler, source, result, tc)
 
 
-class Syntax(Compiled):
+def _captures_to_bindings(captures):
     """
-    Ordered dispatcher over ``Transform`` clauses (compiled form). Try order
-    follows ``transforms`` tuple order; use ``__add__`` to prepend clauses
+    Map string capture keys to koskari symbols for template expansion.
 
-    :param name: primary compile-time symbol for this form
-    :param transforms: ordered transforms tried on each expansion
+    Values are native matcher captures (often ``Datum``-wrapped); they are
+    stored unchanged so :func:`koskari.hygiene.expand_template_with_hygiene`
+    peels at use sites. Macro handlers receive the same ``Datum``-bearing
+    ``MatchResult.captures`` mapping unchanged from the matcher.
     """
 
-    def __init__(self, name, transforms=()):
-        """
-        :param name: symbol or str naming this syntax object
-        :param transforms: iterable of ``Transform`` instances
-        """
-
-        self.name = name
-        self.transforms = tuple(transforms)
-
-        for t in self.transforms:
-            if not isinstance(t, Transform):
-                raise TypeError("Syntax transforms must be Transform instances,"
-                                f" got {t!r}")
-
-        # fast matching via match_select
-        self._matchers = tuple(t.matcher for t in self.transforms)
+    return {symbol(k): v for k, v in captures.items()}
 
 
-    def match_for_hygiene(self, form):
-        """
-        Match ``form`` against the first arm whose frozen matcher succeeds.
+def _promote_repeat_frame_bindings(bindings):
+    """
+    For each ``repeat_capture`` value (bare list of per-iteration dicts),
+    copy slot columns onto top-level template keys.
 
-        :param form: special form pair spine
-        :return: ``(matched, pattern, hygiene)`` where ``matched`` is capture
-            mapping, ``pattern`` is that arm's frozen ``Pattern``, and
-            ``hygiene`` is that arm's plan; or ``(None, None, None)`` when no
-            arm matches
-        """
+    Keys already present in ``bindings`` are left alone so outer captures and
+    the first promoted column win when names collide
+    """
 
-        idx, result = match_select(self._matchers, form)
-        if result is None:
-            return None, None, None
-        tf = self.transforms[idx]
-        return result.captures, tf.pattern, tf.hygiene
+    out = dict(bindings)
+    for v in bindings.values():
+        # Stage 1: Datum at the binding root is never repeat_capture's frame
+        # vector; that structure is always a bare list. A Datum here is one
+        # wrapped cell (often a pair spine for REST or a leaf for BIND). If we
+        # mis-classified that as repeat rows, ellipsis would see wrong shapes.
+        if isinstance(v, Datum):
+            continue
+
+        # Stage 2: only non-empty Python lists can be repeat_capture output.
+        if not (v and isinstance(v, list)):
+            continue
+
+        frames = v
+        # Stage 3: repeat rows are dicts per iteration; anything else is not this
+        # transpose shape (e.g. a flat list of syntax objects from elsewhere).
+        if not all(isinstance(fr, dict) for fr in frames):
+            continue
+
+        # Stage 4: each frame maps string slot names to one iteration's
+        # captures (often Datum-wrapped); transpose into parallel lists for
+        # template ellipsis indexing.
+        slot_keys = set()
+        for fr in frames:
+            slot_keys.update(fr.keys())
+        for sk in slot_keys:
+            sym = symbol(sk) if isinstance(sk, str) else sk
+            if sym in out:
+                continue
+            col = []
+            for fr in frames:
+                if sk not in fr:
+                    col = None
+                    break
+                col.append(fr[sk])
+            if col is None:
+                continue
+            out[sym] = col
+    return out
 
 
-    def compile_impl(self, compiler, source_obj, tc):
-        """
-        Try each transform in order; first non-``None`` result wins
+def _finalize_macro_output(compiler, form):
+    """
+    Discover binding symbols on ``form`` then run the shared in-place hygiene
+    and ``Datum`` peel pass
+    """
 
-        :param compiler: active compiler instance
-        :param source_obj: full special form being compiled
-        :param tc: tail-call flag
-        :raises SpecialError: when no arm matches
-        :return: compile product from the winning transform
-        """
-
-        idx, result = match_select(self._matchers, source_obj)
-        if result is None:
-            raise SpecialError(
-                "no matching syntax rule",
-                source_obj,
-                syntax=self,
-                patterns=tuple(t.pattern for t in self.transforms),
-            )
-
-        tf = self.transforms[idx]
-        return tf.handle_expand(compiler, source_obj, result, tc)
-
-
-    def __add__(self, other):
-        """
-        Return a new ``Syntax`` with ``other``'s transforms prepended before
-        ``self``'s (``other`` is tried first at expansion time)
-
-        :param other: ``Transform`` or ``Syntax``
-        :rtype: Syntax
-        """
-
-        if isinstance(other, Transform):
-            new_transforms = (other,) + self.transforms
-        elif isinstance(other, Syntax):
-            new_transforms = other.transforms + self.transforms
-        else:
-            return NotImplemented
-        return Syntax(self.name, new_transforms)
+    form = apply_layout(form, vars(compiler.module))
+    syms = collect_binding_symbols(form, compiler.find_compiled)
+    return finalize_macro_hygiene_unbox_one_pass(
+        form, syms, compiler.find_compiled)
 
 
 def _normalize_special_patterns(patterns):

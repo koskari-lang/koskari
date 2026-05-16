@@ -26,13 +26,13 @@ compile/cons.
 from ...lib import nil, OpCode, symbol, cons
 from ...types import get_position, is_nil, is_pair, is_keyword
 from ...exceptions import SpecialError
-from ...matcher import MATCH, REST, SYMBOL
+from ...matcher import CALLEDBY, MATCH, REST
 from ...stdlib import builtin
 from ...syntax import special
 from ..helpers import requote
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 @builtin("compile/quote")

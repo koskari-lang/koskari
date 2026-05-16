@@ -83,6 +83,7 @@ __all__ = (
     "binding_inner_pattern",
     "bindings_grouped_list_cell_pattern",
 
+    "CALLEDBY",
     "DEFINE",
     "DECL",
     "BINDING",
@@ -1798,6 +1799,24 @@ class HygieneWireSlotScopes(object):
 
     def iter_scope_targets(self, matched):
         return ()
+
+
+class CALLEDBY(Composite):
+    """
+    Capture the compile-head symbol into the called-by slot
+    """
+
+
+    def _expand(self):
+        return CAPTURE("called-by", TYPE("symbol"))
+
+
+    def __repr__(self):
+        return "CALLEDBY()"
+
+
+    def __kos_repr__(self):
+        return "(CALLEDBY)"
 
 
 class DEFINE(Composite, HygieneWireSlotScopes):

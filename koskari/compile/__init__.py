@@ -12,6 +12,7 @@ from ..exceptions import (
     CompilerError,
     ParametersError,
     SpecialError,
+    SyntaxMatchError,
     UncaughtCompilerError,
 )
 from ..stdlib import BUILTINS
@@ -24,6 +25,7 @@ __all__ = (
     "CompilerMode",
     "ParametersError",
     "SpecialError",
+    "SyntaxMatchError",
     "UncaughtCompilerError",
 
     "BUILTINS",

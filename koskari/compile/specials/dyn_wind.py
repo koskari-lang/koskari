@@ -27,12 +27,12 @@ from ...lib import (FormalsSpec, FunctionSpec, OpCode, cons, nil, pair,
                     symbol)
 from ...types import is_pair
 from ...matcher import (
+    CALLEDBY,
     LITERAL_KW,
     LIST,
     MATCH,
     ONEOF,
     REST,
-    SYMBOL,
     VALUE,
 )
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
@@ -135,7 +135,7 @@ _DYN_WIND_PATTERNS = [
 ]
 
 _DYN_WIND_PATTERNS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), m)
+    MATCH(CALLEDBY(), m)
     for m in _DYN_WIND_PATTERNS)
 
 

@@ -24,7 +24,7 @@ Special form handler for compile/let.
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, symbol
-from ...matcher import BINDINGS, BODY, MATCH, SYMBOL
+from ...matcher import BINDINGS, BODY, CALLEDBY, MATCH, SYMBOL
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_pair
@@ -63,13 +63,13 @@ def _let_bindings_parallel(bindings):
 
 _LET_PATTERNS = [
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         SYMBOL("name"),
         BINDINGS("bindings", mode="parallel", scope="body"),
         BODY("body")),
 
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         BINDINGS("bindings", mode="parallel", scope="body"),
         BODY("body")),
 ]
@@ -87,8 +87,8 @@ def special_let(
     (let foo [[a 1] [b 2]] ...body) -> ((lambda foo [a b] ...body) 1 2).
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     name = caps.get("name")
     if name:
@@ -120,7 +120,7 @@ def special_let(
 
 _LETREC_PATTERNS = [
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         BINDINGS("bindings", mode="parallel", scope="body"),
         BODY("body")),
 ]
@@ -139,8 +139,8 @@ def special_letrec(
     so lambdas may close over the same bindings before body runs.
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     args, vals = _let_bindings_parallel(caps["bindings"])
     # print("args", args)

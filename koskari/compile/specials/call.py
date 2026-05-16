@@ -24,7 +24,7 @@ Special form handler for compile/call and compile/call-attr
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, pair, symbol
-from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE
+from ...matcher import CALLEDBY, LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_symbol
@@ -84,24 +84,24 @@ _sym_call_attr = symbol("compile/call-attr")
 _CALL_PATTERNS = [
     # call (attr obj attr)
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr"))),
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr"))),
 
     # call (attr obj attr) args...
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr")),
         REST("args")),
     MATCH(
-        SYMBOL("_"),
+        CALLEDBY(),
         LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr")),
         REST("args")),
 
-    MATCH(SYMBOL("_"), VALUE("callable")),
-    MATCH(SYMBOL("_"), VALUE("callable"), REST("args")),
+    MATCH(CALLEDBY(), VALUE("callable")),
+    MATCH(CALLEDBY(), VALUE("callable"), REST("args")),
 ]
 
 
@@ -112,8 +112,8 @@ def special_call(
         caps: dict,
         tc: bool = False) -> ByteCodeFragment:
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     rest = caps["args"].datum if "args" in caps else nil
 
@@ -236,7 +236,7 @@ _CALL_ATTR_PATTERNS = [
 ]
 
 _CALL_ATTR_PATTERNS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
+    MATCH(CALLEDBY(), *m._children)
     for m in _CALL_ATTR_PATTERNS)
 
 

@@ -75,7 +75,7 @@ Opcode sequences produced
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil
-from ...matcher import MATCH, REST, SYMBOL
+from ...matcher import CALLEDBY, MATCH, REST
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_keyword, is_pair, is_symbol, unpack
@@ -89,7 +89,7 @@ __all__ = (
 )
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 def _attr_form_to_dotted(form, source):

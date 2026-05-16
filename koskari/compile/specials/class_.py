@@ -25,14 +25,14 @@ Special form handler for compile/class.
 from ...exceptions import ParametersError, SpecialError
 from ...lib import OpCode, nil
 from ...types import is_pair
-from ...matcher import MATCH, REST, SYMBOL
+from ...matcher import CALLEDBY, MATCH, REST
 from ...stdlib import builtin
 from ...syntax import special
 from ..helpers import (gather_parameters, helper_begin, is_symbolish,
                        strip_leading_docstring)
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 def _extract_metaclass(kwds_seq):

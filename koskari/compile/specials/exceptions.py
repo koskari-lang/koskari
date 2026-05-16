@@ -26,13 +26,13 @@ clear-exception, load-exception, and raise.
 from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import fill_position, get_position, is_keyword, is_pair, unpack
 from ...exceptions import SpecialError
-from ...matcher import MATCH, REST, SYMBOL
+from ...matcher import CALLEDBY, MATCH, REST
 from ...stdlib import builtin
 from ...syntax import special
 from ..helpers import helper_begin, helper_using, pycons
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 _keyword_except = keyword("except")

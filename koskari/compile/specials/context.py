@@ -25,7 +25,7 @@ compile/dyn-with.
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil, pair
-from ...matcher import BODY, MATCH, REST, SYMBOL, USING
+from ...matcher import BODY, CALLEDBY, MATCH, REST, USING
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_pair
@@ -33,7 +33,7 @@ from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import gather_bindings, helper_begin
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 @builtin("compile/parameterize")
@@ -71,7 +71,7 @@ def special_parameterize(
 
 
 _WITH_PATTERNS = [
-    MATCH(SYMBOL("_"), USING("binding", scope="body"), BODY("body")),
+    MATCH(CALLEDBY(), USING("binding", scope="body"), BODY("body")),
 ]
 
 
@@ -82,8 +82,8 @@ def special_with(compiler, caps, tc=False):
     Compile (compile/with [name? expr] BODY...). Single-shot context manager
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     binding = caps["binding"]
 
@@ -123,8 +123,8 @@ def special_dyn_with(compiler, caps, tc=False):
     that participates in transfer plans (exit on unwind, enter on wind).
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     binding = caps["binding"]
 

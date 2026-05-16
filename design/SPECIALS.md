@@ -8,7 +8,9 @@ and sibilant-ceval), see [language/special-forms.md](language/special-forms.md).
 Specials are registered in the compiler's module namespace; the compiler
 dispatches on the head symbol of a list form. The forms below are implemented in
 `koskari/compile/specials/` and use helpers from `koskari/compile/helpers.py`
-where applicable.
+where applicable. Many handlers declare structure with **`koskari.matcher`**
+patterns (`@special(..., patterns=...)`); see [MATCHER.md](MATCHER.md) for
+matcher syntax, capture shapes, and hygiene behaviour.
 
 ## Macros, reader macros, hygiene, and compiler optimizations
 
@@ -26,6 +28,8 @@ see **`compile/define-syntax`** and the **`compile/syntax-rules`**,
 **RULE** vs **MATCH** pattern languages and the shared transformer model are
 documented in
 [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
+Canonical matcher and hygiene reference:
+[MATCHER.md](MATCHER.md).
 
 **Special-form transformers** — **`special-rules`** and **`special-match`** build
 **`SpecialRulesTransformer`** values (`koskari/syntax.py`): rule procedures are
@@ -34,8 +38,10 @@ invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
 **Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; macro output runs **`koskari.reader.layouts.apply_layout`** (module namespace) before binding-symbol discovery and the hygiene / Datum finalize passes; see
-[language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
-and [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md).
+[language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md),
+[api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md), and
+[MATCHER.md](MATCHER.md) ( **`Datum`**, **`DatumFrame`**, which matchers capture
+and which register hygiene regions).
 
 
 ## compile/bytecode
@@ -242,7 +248,8 @@ symbols become their name strings).
 
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
-for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers).
+for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers and
+the **FORMALS** composite in [MATCHER.md](MATCHER.md)).
 Parameter types may use `::` / `type:` on individual parameters (see formals
 helpers).
 
@@ -298,7 +305,8 @@ constant tuple for defaulted keywords.
 - Named: `(compile/let NAME BINDINGS BODY ...)`
 
 **Bindings:** A list of binding forms; each is `[SYM EXPR]` or `(EXPR as: SYM)`.
-Parsed with `gather_bindings` (see helpers).
+Parsed with `gather_bindings` (see helpers). Matcher shape: **BINDINGS** with
+`scope: body` in [MATCHER.md](MATCHER.md).
 
 **Use-case:** Lexical bindings for the duration of the body. Unnamed let pushes a
 child namespace (PUSH_NS), binds names to compiled values, runs the body, and
@@ -1301,7 +1309,8 @@ compiler (parse-only / metadata for tooling), except that function shorthand
 passes the type through to `compile/lambda` as the return annotation.
 
 **Behaviour:** With **DECL**, parses the first argument with `parse_decl`. With
-**inline type**, the matcher binds `NAME`, `::` or `type:`, and `TYPE`. Declares
+**inline type**, the matcher binds `NAME`, `::` or `type:`, and `TYPE` (see
+[MATCHER.md](MATCHER.md) — **DECL** composite). Declares
 the introduced name. For declaration-only: emits CONST None. For
 declare-and-store: compiles EXPR, emits `VAR_STORE` to store the value, then
 CONST None. For function shorthand: builds the `compile/lambda` form as above and
@@ -1402,6 +1411,7 @@ with **`NAME`** repeated as the first argument. Block syntax via
 **Implementation:** `koskari/importer/basics.ki` (macro definition).
 
 **See also:** [MACROS.md](MACROS.md) — **compile/define-syntax (macro)**;
+[MATCHER.md](MATCHER.md) — matcher syntax, composites, and hygiene tables;
 [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
 (**RULE** vs **MATCH** pattern languages; unified matcher IR, transformer
 pipeline, and post-expand hygiene/unbox for `define-syntax`, `macro-rules`, and
@@ -1425,6 +1435,9 @@ the **value** of that expression; bind it with **`(compile/define NAME …)`**.
 `special_compile_syntax_rules`
 
 **Tests:** `tests/compile/specials/test_define_syntax.py`
+
+**See also:** [MATCHER.md](MATCHER.md) — **`compile/syntax-rules`** hygiene
+patterns (`DEFINE`, `BIND` for literals, `REST` for rules).
 
 
 ## compile/macro-rules
@@ -1458,7 +1471,8 @@ the **value** of that expression; bind it with **`(compile/define NAME …)`**.
 lowered by **`parse_explicit_rule_pattern`** in `koskari/syntax.py` (explicit
 matcher declarations such as **`(VALUE x)`**, **`(REPEAT … elem: …)`**, keyword
 options on registered matchers, etc.). See
-**[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)**.
+**[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)**
+and **[MATCHER.md](MATCHER.md)** (`parse_explicit_rule_pattern`, surface heads).
 
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_syntax_match`
@@ -1478,8 +1492,9 @@ options on registered matchers, etc.). See
 **Behaviour:** Each rule row is **`(PATTERN BODY …)`**; **`PATTERN`** is passed to
 **`parse_explicit_rule_pattern`**. Per-rule **`compile/lambda`** formals are
 **`matcher_slot_names(pattern_matcher)`** in consume order (see
-`koskari/matcher.py`). Macro procedures are invoked with **keyword** arguments
-from the match result (`koskari/syntax.py`: **`MacroRule.expand`**).
+`koskari/matcher.py` and [MATCHER.md](MATCHER.md)). Macro procedures are invoked
+with **keyword** arguments from the match result (`koskari/syntax.py`:
+**`MacroRule.expand`**).
 
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_macro_match`
@@ -2568,7 +2583,9 @@ When implementing a new special form:
    re-exports all handlers.
 2. If the form needs parameter or formals parsing, use `gather_parameters` or
   `gather_formals` from `koskari/compile/helpers.py`; add new helpers there if
-   needed.
+   needed. Declare form structure with **`koskari.matcher`** patterns on
+   `@special(..., patterns=...)` and choose binders vs capture-only slots per
+   [MATCHER.md](MATCHER.md).
 3. Add the handler to the import line and `__all__` in
   `koskari/compile/specials/__init__.py`.
 4. Add a section to this document: symbol, syntax, use-case, behaviour, and at

@@ -26,7 +26,7 @@ compile/aiter.
 """
 
 
-from koskari.exceptions import SpecialError
+from koskari.exceptions import SpecialError, SyntaxMatchError
 from koskari.lib import OpCode, OpStyle
 from koskari.dis import dis
 
@@ -1128,12 +1128,12 @@ class TestObjectFormat(SpecialsTestCase):
 
 
     async def test_format_requires_at_least_one_arg(self):
-        with self.assertRaises(SpecialError):
+        with self.assertRaises(SyntaxMatchError):
             self.compile_to_code("(compile/format)")
 
 
     async def test_format_rejects_three_args(self):
-        with self.assertRaises(SpecialError):
+        with self.assertRaises(SyntaxMatchError):
             self.compile_to_code("(compile/format a b c)")
 
 

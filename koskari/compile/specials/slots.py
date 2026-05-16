@@ -23,14 +23,14 @@ Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
 
 
 from ...lib import OpCode
-from ...matcher import MATCH, SYMBOL, VALUE
+from ...matcher import CALLEDBY, MATCH, SYMBOL, VALUE
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_symbol
 
 
 _ATTR_FORMS = [
-    MATCH(SYMBOL("_"), VALUE('obj'), SYMBOL('sym')),
+    MATCH(CALLEDBY(), VALUE('obj'), SYMBOL('sym')),
 ]
 
 
@@ -41,8 +41,8 @@ def special_attr(compiler, caps, tc=False):
     Compile (compile/attr OBJ SYM). Load attribute SYM from OBJ
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     obj = caps["obj"].datum
     sym = caps["sym"].datum
@@ -61,7 +61,7 @@ def special_attr(compiler, caps, tc=False):
 
 
 _DEL_ATTR_FORMS = [
-    MATCH(SYMBOL("_"), VALUE('obj'), SYMBOL('sym')),
+    MATCH(CALLEDBY(), VALUE('obj'), SYMBOL('sym')),
 ]
 
 
@@ -72,8 +72,8 @@ def special_del_attr(compiler, caps, tc=False):
     Compile (compile/del-attr OBJ SYM). Delete attribute SYM from OBJ
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     obj = caps["obj"].datum
     sym = caps["sym"].datum
@@ -95,7 +95,7 @@ def special_del_attr(compiler, caps, tc=False):
 
 
 _SET_ATTR_FORMS = [
-    MATCH(SYMBOL("_"), VALUE('obj'), SYMBOL('sym'), VALUE('val')),
+    MATCH(CALLEDBY(), VALUE('obj'), SYMBOL('sym'), VALUE('val')),
 ]
 
 
@@ -106,8 +106,8 @@ def special_set_attr(compiler, caps, tc=False):
     Compile (compile/set-attr OBJ SYM VAL). Store VAL into attribute SYM on OBJ
     """
 
-    called_by = caps["_"].datum
-    pos = caps["_"].position
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     obj = caps["obj"].datum
     sym = caps["sym"].datum

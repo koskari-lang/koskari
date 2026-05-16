@@ -25,7 +25,7 @@ compile/when, and compile/unless.
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, keyword
-from ...matcher import MATCH, REST, SYMBOL
+from ...matcher import CALLEDBY, MATCH, REST
 from ...stdlib import builtin
 from ...syntax import special
 from ...types import is_pair
@@ -34,7 +34,7 @@ from ..helpers import helper_begin
 
 _keyword_else = keyword("else")
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 @builtin("compile/cond")

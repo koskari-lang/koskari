@@ -24,7 +24,7 @@ from koskari.compile.compiler import CompilerMode
 from koskari.compile.helpers import (discover_docstring, gather_formals,
                                         helper_begin)
 from koskari.compile.specials.lambda_ import _LAMBDA_PATTERNS
-from koskari.exceptions import SpecialError
+from koskari.exceptions import SyntaxMatchError
 from koskari.lib import FormalsSpec, FunctionSpec, OpCode, nil, symbol
 from koskari.syntax import special
 from tests.compile.specials import SpecialsTestCase
@@ -253,7 +253,7 @@ class TestLambdaNgErrors(LambdaNgFullStackBase):
 
     def test_ng_no_match_raises_special_error(self):
         src = "(compile/lambda-ng)"
-        with self.assertRaises(SpecialError):
+        with self.assertRaises(SyntaxMatchError):
             self.compile_expr(src)
 
 

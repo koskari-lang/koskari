@@ -32,14 +32,14 @@ import operator as _op
 
 from ...lib import nil, OpCode, symbol, cons
 from ...exceptions import SpecialError
-from ...matcher import MATCH, REST, SYMBOL, VALUE
+from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...types import get_position, is_pair, is_symbol, is_keyword, unpack
 from ...stdlib import builtin
 from ...syntax import special
 from ..helpers import const_only_expr, is_symbolish, match
 
 
-_DEFAULT_SPECIAL_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_SPECIAL_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 def _reduce_fold(py_fold, compiler, body):
@@ -221,7 +221,7 @@ _FORMAT_PATTERNS = [
 ]
 
 _FORMAT_PATTERNS_FULL = tuple(
-    MATCH(SYMBOL("called-by"), *m._children)
+    MATCH(CALLEDBY(), *m._children)
     for m in _FORMAT_PATTERNS)
 
 

@@ -23,7 +23,7 @@ Special form handler for compile/lambda.
 
 
 from ...lib import FormalsSpec, FunctionSpec, OpCode, nil
-from ...matcher import FORMALS, LITERAL_KW, MATCH, BODY, SYMBOL, VALUE
+from ...matcher import BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE
 from ...stdlib import builtin
 from ...syntax import special
 from ..compiler import ByteCodeFragment, CompilerMode
@@ -32,38 +32,38 @@ from ..helpers import discover_docstring, gather_formals, helper_begin
 
 _LAMBDA_PATTERNS = (
     MATCH(
-        SYMBOL("called-by"),
+        CALLEDBY(),
         SYMBOL("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
         BODY("body")),
     MATCH(
-        SYMBOL("called-by"),
+        CALLEDBY(),
         SYMBOL("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
         BODY("body")),
     MATCH(
-        SYMBOL("called-by"),
+        CALLEDBY(),
         LITERAL_KW("::"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
         BODY("body")),
     MATCH(
-        SYMBOL("called-by"),
+        CALLEDBY(),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         FORMALS("formals", scope="body"),
         BODY("body")),
     MATCH(
-        SYMBOL("called-by"),
+        CALLEDBY(),
         SYMBOL("name"),
         FORMALS("formals", scope="body"),
         BODY("body")),
     MATCH(
-        SYMBOL("called-by"),
+        CALLEDBY(),
         FORMALS("formals", scope="body"),
         BODY("body")),
 )

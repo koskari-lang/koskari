@@ -25,7 +25,8 @@ convenience syntax to runtime call forms of builder functions.
 
 from ...exceptions import SpecialError
 from ...lib import cons, gensym, nil, symbol
-from ...matcher import (BIND, DEFINE, LIST, LITERAL_SYM, MATCH, REST, SYMBOL,
+from ...matcher import (BIND, CALLEDBY, DEFINE, LIST, LITERAL_SYM, MATCH, REST,
+                        SYMBOL,
                         VALUE, parse_explicit_rule_pattern, pattern_slot_names,
                         repeat_capture)
 from ...stdlib import builtin
@@ -134,7 +135,7 @@ _COMPILE_NAME_SPEC_PATTERNS = [MATCH(DEFINE("name"), VALUE("spec"))]
 
 
 _SYNTAX_RULES_PATTERNS = [
-    MATCH(SYMBOL("_"), SYMBOL("name"), BIND("literals"), REST("rules")),
+    MATCH(CALLEDBY(), SYMBOL("name"), BIND("literals"), REST("rules")),
 ]
 
 
@@ -185,7 +186,7 @@ def special_compile_syntax_rules(compiler, source, tc=False):
 
 
 _MACRO_RULES_PATTERNS = [
-    MATCH(SYMBOL("_"), SYMBOL("name"), BIND("literals"), REST("rules")),
+    MATCH(CALLEDBY(), SYMBOL("name"), BIND("literals"), REST("rules")),
 ]
 
 
@@ -229,7 +230,7 @@ def special_compile_macro_rules(compiler, source, tc=False):
 
 
 _SYNTAX_MATCH_PATTERNS = [
-    MATCH(SYMBOL("_"), SYMBOL("name"), REST("rules")),
+    MATCH(CALLEDBY(), SYMBOL("name"), REST("rules")),
 ]
 
 
@@ -276,7 +277,7 @@ def special_compile_syntax_match(compiler, source, tc=False):
 
 
 _MACRO_MATCH_PATTERNS = [
-    MATCH(SYMBOL("called-by"), SYMBOL("name"), REST("rules")),
+    MATCH(CALLEDBY(), SYMBOL("name"), REST("rules")),
 ]
 
 
@@ -329,7 +330,7 @@ def special_compile_macro_match(compiler, source, tc=False):
 
 
 _SPECIAL_RULES_PATTERNS = [
-    MATCH(SYMBOL("_"), SYMBOL("name"), BIND("literals"), REST("rules")),
+    MATCH(CALLEDBY(), SYMBOL("name"), BIND("literals"), REST("rules")),
 ]
 
 
@@ -403,7 +404,7 @@ def special_compile_special_rules(compiler, source, tc=False):
 
 
 _SPECIAL_MATCH_PATTERNS = [
-    MATCH(SYMBOL("called-by"), SYMBOL("name"), REST("rules")),
+    MATCH(CALLEDBY(), SYMBOL("name"), REST("rules")),
 ]
 
 

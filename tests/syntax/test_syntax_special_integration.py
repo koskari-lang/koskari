@@ -21,9 +21,9 @@ import unittest
 
 import pytest
 
-from koskari.exceptions import SpecialError
+from koskari.exceptions import SyntaxMatchError
 from koskari.lib import Module, ModuleNamespace, cons, kos_repr, nil, symbol
-from koskari.matcher import MATCH, SYMBOL, VALUE
+from koskari.matcher import CALLEDBY, MATCH, SYMBOL, VALUE
 from koskari.syntax import special
 
 
@@ -101,20 +101,20 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         self.assertNotIn("b", seen[0])
 
 
-    def test_special_no_match_raises_special_error(self):
+    def test_special_no_match_raises_syntax_match_error(self):
         """
         No arm matches the full form
         """
 
         primary = symbol("compile/ng-miss")
-        pat = MATCH(SYMBOL("head"), VALUE("x"), VALUE("y"))
+        pat = MATCH(CALLEDBY(), VALUE("x"), VALUE("y"))
 
         h = special(primary, patterns=pat, unpack="match")(
             lambda c, caps, tc: symbol("never"))
 
         src = cons(symbol("h"), symbol("only-one"), nil)
         comp = _StubCompiler()
-        with self.assertRaises(SpecialError) as ctx:
+        with self.assertRaises(SyntaxMatchError) as ctx:
             h.compile_impl(comp, src, False)
 
         exc = ctx.exception
@@ -123,8 +123,10 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         self.assertIs(exc.patterns[0], pat)
         explained = exc.explain()
         self.assertIn(kos_repr(src), explained)
-        self.assertIn(kos_repr(pat), explained)
         self.assertIn("accepts:", explained)
+        self.assertIn("(h (VALUE x) (VALUE y))", explained)
+        self.assertNotIn("(MATCH", explained)
+        self.assertNotIn("(CALLEDBY)", explained)
 
 
     def test_improper_list_raises_type_error(self):

@@ -25,13 +25,14 @@ compile/continue.
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil
-from ...matcher import BINDING, BODY, MATCH, REST, SYMBOL, USING_UNPACK, VALUE
+from ...matcher import (BINDING, BODY, CALLEDBY, MATCH, REST, SYMBOL, USING_UNPACK,
+                        VALUE)
 from ...stdlib import builtin
 from ...syntax import special
 from ..helpers import helper_begin, helper_elsebody, using_unpack_helper
 
 
-_DEFAULT_PATTERNS = (MATCH(SYMBOL("called-by"), REST("rest")),)
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 _WHILE_PATTERNS = [
     MATCH(SYMBOL("_while"), VALUE("test"), REST("body")),

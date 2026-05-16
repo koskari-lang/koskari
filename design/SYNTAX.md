@@ -3,6 +3,10 @@
 Formal BNF description of the koskari reader syntax, covering both the base
 s-expression layer and the layout block layer.
 
+Compile-time structure on special forms and macros (matcher composites such as
+**DECL**, **BINDINGS**, **FORMALS**, hygiene, and **`Datum`** captures) is
+documented in [MATCHER.md](MATCHER.md).
+
 ---
 
 ## Layers
@@ -222,7 +226,9 @@ Inside `<list>`, a single `.` token separates the car side from the cdr:
 These are not separate reader forms: they use the same atoms, lists, and
 keywords as the base grammar. They are called out here because they affect how
 `compile/define`, `compile/define-global`, and `compile/lambda` are written and
-what metadata the compiler records.
+what metadata the compiler records. The compiler recognizes these shapes via the
+**DECL**, **FORMALS**, and related matcher composites; see
+[MATCHER.md](MATCHER.md).
 
 ### DECL (alternative first argument to `compile/define` and `compile/define-global`)
 
@@ -398,6 +404,10 @@ line is consumed as an additional peer block at the same nesting level.
 | `try`           | `except`+, `else`?, `finally`? |
 
 (`*` = zero or more, `?` = zero or one, `+` = one or more)
+
+**`define-syntax`** and **`syntax-rules`** layout blocks lower to macro
+transformer specs whose rule patterns use the same matcher language as compile
+specials; see [MATCHER.md](MATCHER.md) and [MACROS.md](MACROS.md).
 
 ### Default block handler (`layout/block`)
 
