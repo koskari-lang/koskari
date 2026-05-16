@@ -462,7 +462,12 @@ static PyObject *keyword_rsplit(
 
 static PyObject *keyword_kos_repr(PyObject *self, PyObject *Py_UNUSED(ignored)) {
 
-  return PyUnicode_FromFormat("%S:", KosInternedAtom_NAME(self));
+  PyObject *name = KosInternedAtom_NAME(self);
+
+  if (! PyUnicode_GET_LENGTH(name))
+    return PyUnicode_FromString("::");
+
+  return PyUnicode_FromFormat("%S:", name);
 }
 
 

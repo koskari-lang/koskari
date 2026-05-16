@@ -103,6 +103,25 @@ class TestKosRepr(unittest.TestCase):
         self.assertEqual(kos_repr(k), "beta:")
 
 
+    def test_empty_keyword(self):
+        """
+        empty keyword kos form is double colon, not lone colon
+        """
+
+        k = keyword("")
+        self.assertEqual(kos_repr(k), "::")
+
+
+    def test_symbol_colon(self):
+        """
+        lone colon is a symbol, distinct from empty keyword
+        """
+
+        s = symbol(":")
+        self.assertEqual(kos_repr(s), ":")
+        self.assertNotEqual(kos_repr(s), kos_repr(keyword("")))
+
+
     def test_proper_list(self):
         """
         proper list uses spaces between cars

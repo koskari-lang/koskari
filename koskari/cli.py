@@ -33,7 +33,7 @@ from os.path import basename
 from traceback import format_exception_only
 
 from .lib import kos_repr
-from .exceptions import LayoutError, ReaderError
+from .exceptions import ReaderError
 from .reader import READ_EOF, LayoutReader, source_str
 
 __all__ = (
@@ -492,46 +492,40 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
             stderr.flush()
             break
 
-        except SyntaxError:
-            # also catches LayoutError
-            exc_type, exc_val, _ = sys.exc_info()
-            sys.last_type = exc_type
-            sys.last_value = exc_val
-            sys.last_traceback = None
-            msg = ''.join(format_exception_only(exc_type, exc_val))
-            print(msg, end='', file=stderr)
-            stderr.flush()
-            buffer = ''
-            prompt = '>>> '
-
         except Exception:
             exc_type, exc_val, tb = sys.exc_info()
+            display = exc_val
             if isinstance(exc_val, REPLCodeBoundary) and exc_val.__cause__ is not None:
-                cause = exc_val.__cause__
-                if isinstance(cause, ReaderError):
-                    msg_str = getattr(cause, 'message', str(cause))
+                display = exc_val.__cause__
+                if isinstance(display, ReaderError):
+                    msg_str = getattr(display, 'message', str(display))
                     if msg_str and 'unexpected' in msg_str.lower() and 'eof' in msg_str.lower():
                         prompt = '... '
                         stdout.flush()
                         continue
+
+            explain_fn = getattr(display, 'explain', None)
+            if callable(explain_fn):
+                sys.last_type = type(display)
+                sys.last_value = display
+                sys.last_traceback = None
+                print(explain_fn(), end='', file=stderr)
+            elif isinstance(exc_val, REPLCodeBoundary) and exc_val.__cause__ is not None:
+                cause = exc_val.__cause__
                 sys.last_type = type(cause)
                 sys.last_value = cause
-
-                if isinstance(cause, LayoutError):
-                    msg = ''.join(format_exception_only(type(cause), cause))
-                    sys.last_traceback = None
-                else:
-                    tb_filtered = _filter_infrastructure_tb(cause.__traceback__)
-                    sys.last_traceback = tb_filtered
-                    tb_for_format = tb_filtered if tb_filtered is not None else cause.__traceback__
-                    msg = ''.join(format_exception_with_koskari_trace(
-                        type(cause), cause, tb_for_format, chain_root=exc_val))
+                tb_filtered = _filter_infrastructure_tb(cause.__traceback__)
+                sys.last_traceback = tb_filtered
+                tb_for_format = tb_filtered if tb_filtered is not None else cause.__traceback__
+                msg = ''.join(format_exception_with_koskari_trace(
+                    type(cause), cause, tb_for_format, chain_root=exc_val))
+                print(msg, end='', file=stderr)
             else:
                 sys.last_type = exc_type
                 sys.last_value = exc_val
                 sys.last_traceback = tb
                 msg = ''.join(format_exception_with_koskari_trace(exc_type, exc_val, tb))
-            print(msg, end='', file=stderr)
+                print(msg, end='', file=stderr)
             stderr.flush()
             buffer = ''
             prompt = '>>> '

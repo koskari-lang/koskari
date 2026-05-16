@@ -396,7 +396,12 @@ class Syntax(Compiled):
 
         idx, result = match_select(self._matchers, source_obj)
         if result is None:
-            raise SpecialError("no matching syntax rule", source_obj)
+            raise SpecialError(
+                "no matching syntax rule",
+                source_obj,
+                syntax=self,
+                patterns=tuple(t.pattern for t in self.transforms),
+            )
 
         tf = self.transforms[idx]
         return tf.handle_expand(compiler, source_obj, result, tc)

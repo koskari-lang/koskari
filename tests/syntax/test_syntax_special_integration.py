@@ -22,7 +22,7 @@ import unittest
 import pytest
 
 from koskari.exceptions import SpecialError
-from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
+from koskari.lib import Module, ModuleNamespace, cons, kos_repr, nil, symbol
 from koskari.matcher import MATCH, SYMBOL, VALUE
 from koskari.syntax import special
 
@@ -114,8 +114,17 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
 
         src = cons(symbol("h"), symbol("only-one"), nil)
         comp = _StubCompiler()
-        with self.assertRaises(SpecialError):
+        with self.assertRaises(SpecialError) as ctx:
             h.compile_impl(comp, src, False)
+
+        exc = ctx.exception
+        self.assertIs(exc.syntax, h)
+        self.assertEqual(len(exc.patterns), 1)
+        self.assertIs(exc.patterns[0], pat)
+        explained = exc.explain()
+        self.assertIn(kos_repr(src), explained)
+        self.assertIn(kos_repr(pat), explained)
+        self.assertIn("accepts:", explained)
 
 
     def test_improper_list_raises_type_error(self):

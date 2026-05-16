@@ -21,7 +21,9 @@ Base exception classes for Koskari.
 """
 
 import linecache
-from .lib import KoskariSyncViolation
+from traceback import format_exception_only
+
+from .lib import KoskariSyncViolation, kos_repr
 
 
 __all__ = (
@@ -72,6 +74,14 @@ class KoskariSyntaxError(SyntaxError):
         self.location = location
         self.filename = filename
         self.text = text
+
+
+    def explain(self):
+        """
+        User-facing error text for REPL and similar UIs
+        """
+
+        return ''.join(format_exception_only(type(self), self))
 
 
 class ReaderError(KoskariSyntaxError):
@@ -249,12 +259,64 @@ class CompilerError(KoskariException):
         return rendered
 
 
+    def explain(self):
+        """
+        User-facing error text for REPL and similar UIs
+        """
+
+        lines = ["%s: %s" % (type(self).__name__, self._format_message())]
+        if self.source is not None:
+            try:
+                lines.append("  form: %s" % kos_repr(self.source))
+            except Exception:
+                lines.append("  form: <unrenderable source>")
+        source_line = self._format_source_line()
+        if source_line is not None:
+            lines.append(source_line)
+        return "\n".join(lines) + "\n"
+
+
 class SpecialError(CompilerError):
     """
     Special-form validation errors
     """
 
-    pass
+    def __init__(self, message, source=None, position=None, filename=None,
+                 *, syntax=None, patterns=None):
+        super().__init__(message, source, position, filename)
+        self.syntax = syntax
+        self.patterns = patterns
+
+
+    def explain(self):
+        """
+        User-facing error text for REPL and similar UIs
+        """
+
+        if not self.patterns:
+            return CompilerError.explain(self)
+
+        name = self.syntax.name if self.syntax is not None else None
+        if name is not None:
+            head = "no matching syntax rule for %s" % (name,)
+        else:
+            head = self._format_message()
+        lines = ["%s: %s" % (type(self).__name__, head)]
+        if self.source is not None:
+            try:
+                lines.append("  form: %s" % kos_repr(self.source))
+            except Exception:
+                lines.append("  form: <unrenderable source>")
+        lines.append("  accepts:")
+        for pat in self.patterns:
+            try:
+                lines.append("    %s" % kos_repr(pat))
+            except Exception:
+                lines.append("    <unrenderable pattern>")
+        source_line = self._format_source_line()
+        if source_line is not None:
+            lines.append(source_line)
+        return "\n".join(lines) + "\n"
 
 
 class ParametersError(CompilerError):
