@@ -34,33 +34,24 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 
 from typing import Protocol, runtime_checkable
 
-from koskari.hygiene import HygieneEdge, HygieneNode, HygieneTree
+from koskari.hygiene import Hygiene, HygieneEdge, HygieneNode
 from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, keyword, nil,
                          pair, symbol)
 from koskari.types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 
-def _intro_suppressed(capture):
-    """
-    True when a binder capture is substitution material, not template intro
-    """
-
-    return isinstance(capture, Datum) and capture.from_datum
-
-
 __all__ = (
-    "Datum",
-    "DatumFrame",
-    "Matcher",
-    "MatchResult",
-    "HygieneTree",
-
     "thaw",
     "make_matcher",
+
+    "Matcher",
+    "MatchResult",
 
     "Pattern",
     "Composite",
     "MatchCompiler",
+
+    "HygienicPattern",
     "HygienicMatchCompiler",
 
     "TEST_ANY",
@@ -101,8 +92,6 @@ __all__ = (
     "USING_UNPACK",
     "BODY",
 
-    "HygienicPattern",
-
     "MATCHER_REGISTRY",
     "register_matcher",
     "lookup_matcher",
@@ -114,6 +103,14 @@ __all__ = (
     "KNOWN_HEADS",
     "CAPTURE_OPTION_KEYS",
 )
+
+
+def _intro_suppressed(capture):
+    """
+    True when a binder capture is substitution material, not template intro
+    """
+
+    return isinstance(capture, Datum) and capture.from_datum
 
 
 def thaw(tagged_tuple):
@@ -134,7 +131,6 @@ class MatchCompiler:
     insertion-ordered tables that become the slots, externs, consts, and
     nodes of the frozen 6-tuple, plus capture-scope bookkeeping
     """
-
 
     def __init__(self):
         """
@@ -317,29 +313,13 @@ class MatchCompiler:
         return Matcher.from_tuple(cls().lower(pattern))
 
 
-class _HygieneFrame(object):
-    """
-    Mutable frame while lowering; frozen into HygieneNode on link pop
-    """
-
-
-    def __init__(self, node_id, parent_id):
-        self.node_id = node_id
-        self.parent_id = parent_id
-        self.binders = {}
-        self.regions = {}
-        self.scoped_slots = set()
-        self.link_slot = None
-
-
 class HygienicMatchCompiler(MatchCompiler):
     """
-    Match compiler that accumulates a :class:`koskari.hygiene.HygieneTree`
+    Match compiler that accumulates a :class:`koskari.hygiene.Hygiene`
     alongside the baseline tables. Use for matchers over compile-time
     source forms; runtime-only matchers should use the baseline
     MatchCompiler via MatchCompiler().lower(pattern)
     """
-
 
     def __init__(self):
         """
@@ -361,7 +341,7 @@ class HygienicMatchCompiler(MatchCompiler):
     def _new_hygiene_frame(self, parent_id):
         nid = self._hygiene_node_id
         self._hygiene_node_id += 1
-        return _HygieneFrame(nid, parent_id)
+        return HygieneNode(nid, parent_id)
 
 
     def _finalize_hygiene_frame(self, frame):
@@ -518,7 +498,7 @@ class HygienicMatchCompiler(MatchCompiler):
     def build_hygiene(self):
         """
         Assemble the hygiene tree from accumulated frames and edges.
-        Returns an empty HygieneTree when nothing registered
+        Returns an empty Hygiene when nothing registered
         """
 
         if self._hygiene_frame_stack:
@@ -531,10 +511,10 @@ class HygienicMatchCompiler(MatchCompiler):
                 n.node_id == root_frame.node_id for n in self._hygiene_nodes):
             self._finalize_hygiene_frame(root_frame)
         if not self._hygiene_nodes and not self._hygiene_edges:
-            return HygieneTree.single_node()
+            return Hygiene.single_node()
         if not any(n.node_id == self._hygiene_root_id for n in self._hygiene_nodes):
             self._finalize_hygiene_frame(root_frame)
-        return HygieneTree(
+        return Hygiene(
             tuple(self._hygiene_nodes),
             tuple(self._hygiene_edges),
             self._hygiene_root_id)
@@ -571,7 +551,7 @@ class HygienicMatchCompiler(MatchCompiler):
     @classmethod
     def compile_and_hygiene(
             cls,
-            pattern: "Pattern") -> tuple[Matcher, HygieneTree]:
+            pattern: "Pattern") -> tuple[Matcher, Hygiene]:
         """
         Compile a pattern into a tuple of (matcher, hygiene plan)
         """

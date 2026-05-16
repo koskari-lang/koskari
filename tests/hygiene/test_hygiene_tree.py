@@ -21,7 +21,7 @@ import unittest
 
 import pytest
 
-from koskari.hygiene import HygieneTree, validate_hygiene_tree, walk_hygiene_tree
+from koskari.hygiene import Hygiene, validate_hygiene_tree, walk_hygiene_tree
 from koskari.lib import Datum, symbol
 from koskari.matcher import (
     BINDINGS,
@@ -38,7 +38,7 @@ from koskari.matcher import (
 pytestmark = pytest.mark.phase_infra
 
 
-class TestValidateHygieneTree(unittest.TestCase):
+class TestValidateHygiene(unittest.TestCase):
 
 
     def test_validate_accepts_minimal_tree(self):
@@ -46,7 +46,7 @@ class TestValidateHygieneTree(unittest.TestCase):
         validate_hygiene_tree accepts a single root node
         """
 
-        tree = HygieneTree.single_node()
+        tree = Hygiene.single_node()
         validate_hygiene_tree(tree)
 
 
@@ -55,8 +55,8 @@ class TestValidateHygieneTree(unittest.TestCase):
         Duplicate node ids are a structural error
         """
 
-        node = HygieneTree.single_node().root
-        dup = HygieneTree(
+        node = Hygiene.single_node().root
+        dup = Hygiene(
             (node, node),
             (),
             0)
@@ -64,7 +64,7 @@ class TestValidateHygieneTree(unittest.TestCase):
             validate_hygiene_tree(dup)
 
 
-class TestHygieneTreeLower(unittest.TestCase):
+class TestHygieneLower(unittest.TestCase):
 
 
     def test_define_value_registers_region(self):
@@ -125,7 +125,7 @@ class TestHygieneTreeLower(unittest.TestCase):
             hc.lower(pat)
 
 
-class TestHygieneTreeWalk(unittest.TestCase):
+class TestHygieneWalk(unittest.TestCase):
 
 
     def test_repeat_walk_visits_each_row(self):

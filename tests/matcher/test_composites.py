@@ -26,7 +26,7 @@ import pytest
 from koskari.lib import Datum, cons, keyword, nil, symbol
 from koskari.matcher import (BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE,
                                 DatumFrame, FORMALS, LITERAL, MATCH, TYPE, USING,
-                                VALUE, HygieneTree, HygienicMatchCompiler,
+                                VALUE, Hygiene, HygienicMatchCompiler,
                                 MatchCompiler, Matcher, MatchResult,
                                 make_matcher)
 from koskari.types import build_proper
@@ -1097,7 +1097,7 @@ class TestHygieneCompile(unittest.TestCase):
         hc = HygienicMatchCompiler()
         _frozen = hc.lower(pat)
         hygiene = hc.build_hygiene()
-        self.assertIsInstance(hygiene, HygieneTree)
+        self.assertIsInstance(hygiene, Hygiene)
         self.assertIs(hygiene.root.binders["name"], dn)
         self.assertIs(hygiene.root.regions["body"], bod)
 

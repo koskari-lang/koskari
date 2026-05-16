@@ -22,7 +22,7 @@ import pytest
 
 from koskari.exceptions import CompilerError
 from koskari.hygiene import (
-    HygieneTree,
+    Hygiene,
     apply_syntax_rules_hygiene,
     binder_recurse_targets,
     collect_binding_symbols,
@@ -132,7 +132,7 @@ class TestHygieneHelpers(unittest.TestCase):
         Hygiene defaults classify slots consistently
         """
 
-        h = HygieneTree.single_node()
+        h = Hygiene.single_node()
         self.assertTrue(h.is_empty())
         root = h.root
         self.assertNotIn("x", root.binders)
@@ -148,7 +148,7 @@ class TestIntroducedAndRecurse(unittest.TestCase):
         """
 
         owner = _FakeBinderOwner("nm")
-        hx = HygieneTree.single_node(binders={"nm": owner})
+        hx = Hygiene.single_node(binders={"nm": owner})
         sn = symbol("n")
         matched = {"nm": Datum(sn)}
         syms = introduced_symbols_from_match(matched, hx)
@@ -161,7 +161,7 @@ class TestIntroducedAndRecurse(unittest.TestCase):
         """
 
         owner = _FakeBinderOwner("nm")
-        hx = HygieneTree.single_node(binders={"nm": owner})
+        hx = Hygiene.single_node(binders={"nm": owner})
         sn = symbol("n")
         matched = {"nm": Datum(sn, from_datum=True)}
         syms = introduced_symbols_from_match(matched, hx)
@@ -173,7 +173,7 @@ class TestIntroducedAndRecurse(unittest.TestCase):
         Owner recurse walks the expr capture when present
         """
 
-        hx = HygieneTree.single_node(binders={"b": _FakeBindingRecurse()})
+        hx = Hygiene.single_node(binders={"b": _FakeBindingRecurse()})
         matched = {"expr": 42}
         got = list(binder_recurse_targets(matched, hx))
         self.assertEqual(got, [42])
@@ -189,7 +189,7 @@ class TestScopeRegionTargets(unittest.TestCase):
 
         bsym = symbol("b")
         matched = {"body": (bsym,)}
-        tree = HygieneTree.single_node(regions={"body": _FakeBodyScope()})
+        tree = Hygiene.single_node(regions={"body": _FakeBodyScope()})
         tracer = {}
         walk_hygiene_tree(
             tree, tree.root_id, matched, lambda h: None, tracer)
@@ -294,7 +294,7 @@ class TestCollectAndApply(unittest.TestCase):
 
         hd = symbol("rule-head")
         owner = _FakeBinderOwner("nm")
-        hx = HygieneTree.single_node(binders={"nm": owner})
+        hx = Hygiene.single_node(binders={"nm": owner})
         intro = symbol("fresh")
         fake = _FakeCompiled(hx, {"nm": intro})
         table = {hd: fake}
@@ -317,8 +317,8 @@ class TestCollectAndApply(unittest.TestCase):
         hd2 = symbol("peer-two")
         owner1 = _FakeBinderOwner("a")
         owner2 = _FakeBinderOwner("b")
-        hx1 = HygieneTree.single_node(binders={"a": owner1})
-        hx2 = HygieneTree.single_node(binders={"b": owner2})
+        hx1 = Hygiene.single_node(binders={"a": owner1})
+        hx2 = Hygiene.single_node(binders={"b": owner2})
         intro1 = symbol("x")
         intro2 = symbol("y")
         fake1 = _FakeCompiled(hx1, {"a": intro1})
@@ -342,7 +342,7 @@ class TestCollectAndApply(unittest.TestCase):
 
         hd = symbol("rule-head")
         owner = _FakeBinderOwner("nm")
-        hx = HygieneTree.single_node(binders={"nm": owner})
+        hx = Hygiene.single_node(binders={"nm": owner})
         intro = symbol("fresh")
         fake = _FakeCompiled(hx, {"nm": intro})
         table = {hd: fake}

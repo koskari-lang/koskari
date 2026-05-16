@@ -512,7 +512,7 @@ syntax.match_for_hygiene(form) -> (captures, pattern, hygiene) | (None, None, No
 
 For **`Syntax`** transformers, **`match_for_hygiene`** returns the winning arm’s
 capture mapping, frozen **`Pattern`**, and hygiene plan so **`koskari.hygiene`**
-can walk **`HygieneTree`** data aligned to that pattern. Other **`Compiled`**
+can walk **`Hygiene`** data aligned to that pattern. Other **`Compiled`**
 specials participate through the same discovery entry points **`hygiene`**
 uses when **`find_compiled`** resolves the head.
 

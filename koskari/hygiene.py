@@ -22,7 +22,8 @@ trees aligned to matcher capture-scope structure, plus stable Syntax hooks
 Capture-shape contract (runtime walk):
 
 * Binder slot -> symbol, Datum, dict (GROUP), or list of dicts (REPEAT)
-* Region slot (BODY/VALUE) -> pair spine, Datum-wrapped spine, or special form
+* Region slot (BODY/VALUE) -> pair spine, optional Datum wrapper (never nested),
+  or special form
 * group_child edge -> matched[slot] is dict (native GROUP capture)
 * repeat_element edge -> matched[slot] is list of dict frames
 * subform descent -> region value is a compile special; uses that form's arm plan
@@ -33,8 +34,8 @@ Capture-shape contract (runtime walk):
 """
 
 
-from dataclasses import dataclass
-from typing import Mapping, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Optional, Tuple, Union
 
 from koskari.exceptions import CompilerError
 from koskari.lib import Datum, cons, gensym, nil
@@ -45,7 +46,6 @@ from koskari.types import (build_proper, is_keyword, is_nil, is_pair,
 __all__ = (
     "HygieneEdge",
     "HygieneNode",
-    "HygieneTree",
     "Hygiene",
     "validate_hygiene_tree",
     "introduced_symbols_from_match",
@@ -58,23 +58,33 @@ __all__ = (
 )
 
 
-@dataclass(frozen=True)
+# --- Hygiene tree types
+
+
+@dataclass
 class HygieneNode(object):
     """
-    One capture-scope hygiene context frozen from matcher lowering
+    One capture-scope hygiene context from matcher lowering
+
+    While :class:`koskari.matcher.HygienicMatchCompiler` builds a plan,
+    binders and regions are dicts and scoped_slots is a set. Each node
+    finalized onto :class:`Hygiene` uses copied dicts and a frozenset for
+    scoped_slots
 
     :param node_id: unique node index in the owning tree
     :param parent_id: parent node id, or None for the root
     :param binders: binder slot names mapped to owning Pattern instances
     :param regions: scope-region slot names mapped to owning Pattern instances
     :param scoped_slots: region slots walked via binder ``_scopes`` only
+    :param link_slot: GROUP link capture slot during lowering only; cleared on freeze
     """
 
     node_id: int
     parent_id: Optional[int]
-    binders: Mapping[str, object]
-    regions: Mapping[str, object]
-    scoped_slots: frozenset
+    binders: dict = field(default_factory=dict)
+    regions: dict = field(default_factory=dict)
+    scoped_slots: Union[set, frozenset] = field(default_factory=set)
+    link_slot: Optional[str] = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -95,7 +105,7 @@ class HygieneEdge(object):
 
 
 @dataclass(frozen=True)
-class HygieneTree(object):
+class Hygiene(object):
     """
     Freeze-time hygiene plan: nodes mirror capture-scope nesting; edges
     encode GROUP and REPEAT child walks
@@ -163,7 +173,7 @@ class HygieneTree(object):
         :param binders: optional binder slot map
         :param regions: optional region slot map
         :param scoped_slots: optional scoped region slot names
-        :rtype: HygieneTree
+        :rtype: Hygiene
         """
 
         ss = frozenset(scoped_slots or ())
@@ -175,7 +185,7 @@ class HygieneTree(object):
         return cls((node,), (), 0)
 
 
-Hygiene = HygieneTree
+# --- Tree validation
 
 
 def validate_hygiene_tree(tree):
@@ -183,7 +193,7 @@ def validate_hygiene_tree(tree):
     Verify structural invariants of a hygiene tree. Raises ValueError on
     violation
 
-    :param tree: HygieneTree instance
+    :param tree: Hygiene instance
     """
 
     if not tree.nodes:
@@ -221,12 +231,7 @@ def validate_hygiene_tree(tree):
                 "unknown edge kind %r" % (edge.kind,))
 
 
-def _matched_get(matched, slot):
-    if matched is None:
-        return None
-    if isinstance(matched, dict):
-        return matched.get(slot)
-    return getattr(matched, "get", lambda k, d=None: d)(slot)
+# --- Matcher capture walk (internal)
 
 
 def _hygiene_collect_walk_roots(form):
@@ -270,20 +275,18 @@ def _walk_binder_scopes(matched, owner, find_compiled, out):
     if not scopes:
         return
     for scope_slot in scopes:
-        val = _matched_get(matched, scope_slot)
+        val = matched and matched.get(scope_slot)
         if val is None:
             continue
-        if is_pair(val) or val is nil:
-            for root in _hygiene_collect_walk_roots(val):
-                out |= _collect_from_region_root(root, find_compiled)
+        if isinstance(val, Datum) and (is_pair(val.datum) or val.datum is nil):
+            spine = val.datum
+        elif is_pair(val) or val is nil:
+            spine = val
+        else:
+            out |= _collect_from_region_root(val, find_compiled)
             continue
-        if isinstance(val, Datum):
-            inner = val.datum
-            if is_pair(inner) or inner is nil:
-                for root in _hygiene_collect_walk_roots(inner):
-                    out |= _collect_from_region_root(root, find_compiled)
-                continue
-        out |= _collect_from_region_root(val, find_compiled)
+        for root in _hygiene_collect_walk_roots(spine):
+            out |= _collect_from_region_root(root, find_compiled)
 
 
 def _collect_from_region_root(root, find_compiled):
@@ -305,10 +308,7 @@ def _collect_from_region_root(root, find_compiled):
     if isinstance(root, Datum):
         root = root.datum
 
-    if not root:
-        return set()
-
-    if is_symbol(root) or not is_pair(root):
+    if not root or is_symbol(root) or not is_pair(root):
         return set()
 
     items = list(unpack(root))
@@ -326,9 +326,9 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
     """
     Collect binding symbols by walking a hygiene tree against captures
 
-    :param tree: HygieneTree plan
+    :param tree: Hygiene plan
     :param node_id: node to visit
-    :param matched: capture mapping for this node
+    :param matched: capture dict (``MatchResult.captures``-shaped) for this node
     :param find_compiled: callable mapping head symbols to compiled specials
     :param tracer: optional dict with list counters (tests only)
     :rtype: set of symbols
@@ -336,6 +336,8 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
 
     if tree is None or matched is None:
         return set()
+
+    assert isinstance(matched, dict)
 
     if tracer is not None:
         tracer.setdefault("node_enter", []).append(node_id)
@@ -347,13 +349,9 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
         for sym in owner.iter_introduced_symbols(matched):
             if sym is not None and is_symbol(sym):
                 out.add(sym)
-
-    for owner in node.binders.values():
         for form in owner.iter_recurse_targets(matched):
             if form is not None and not isinstance(form, Datum):
                 out |= collect_binding_symbols(form, find_compiled)
-
-    for owner in node.binders.values():
         _walk_binder_scopes(matched, owner, find_compiled, out)
         if tracer is not None:
             scopes = getattr(owner, "_scopes", ())
@@ -368,7 +366,7 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
         _walk_region_roots(matched, owner, find_compiled, out)
 
     for edge in tree.edges_from(node_id):
-        val = _matched_get(matched, edge.capture_slot)
+        val = matched and matched.get(edge.capture_slot)
         if edge.kind == "group_child":
             if isinstance(val, dict):
                 out |= walk_hygiene_tree(
@@ -397,11 +395,11 @@ def introduced_symbols_from_match(matched, hygiene):
     Collect symbols introduced by binder composites under hygiene rules.
 
     :param matched: capture mapping from one successful hygiene-side match
-    :param hygiene: HygieneTree plan or None
+    :param hygiene: Hygiene plan or None
     :rtype: set of koskari symbols
     """
 
-    if not isinstance(hygiene, HygieneTree):
+    if not isinstance(hygiene, Hygiene):
         return set()
     return walk_hygiene_tree(hygiene, hygiene.root_id, matched, lambda h: None)
 
@@ -412,7 +410,7 @@ def binder_recurse_targets(matched, hygiene):
     binder discovery (initializer arms).
 
     :param matched: capture mapping from one successful hygiene-side match
-    :param hygiene: HygieneTree plan or None
+    :param hygiene: Hygiene plan or None
     :rtype: iterable of forms suitable for collect_binding_symbols recursion
     """
 
@@ -424,6 +422,9 @@ def binder_recurse_targets(matched, hygiene):
         for form in owner.iter_recurse_targets(matched):
             if form is not None and not isinstance(form, Datum):
                 yield form
+
+
+# --- Template expansion
 
 
 def _collect_symbols(expr, out):
@@ -441,24 +442,23 @@ def _collect_symbols(expr, out):
 
 def _binding_value_for_expand(val):
     """
-    Peel outer ``Datum`` layers so list/pair/tuple shape is visible to template
-    expansion. Bindings dict still holds matcher captures unchanged elsewhere
+    Peel a single outer ``Datum`` wrapper when present so list, pair, or tuple
+    shape is visible to template expansion. The bindings dict still holds
+    matcher captures unchanged elsewhere
     """
 
-    while isinstance(val, Datum):
-        val = val.datum
-    return val
+    return val.datum if isinstance(val, Datum) else val
 
 
 def _repeat_count(template, bindings):
     syms = set()
     _collect_symbols(template, syms)
     counts = {
-        len(_binding_value_for_expand(bindings[s]))
+        len(v)
         for s in syms
         if s in bindings
         and isinstance(
-            _binding_value_for_expand(bindings[s]), (list, tuple))
+            (v := _binding_value_for_expand(bindings[s])), (list, tuple))
     }
     if not counts:
         return 0
@@ -480,9 +480,9 @@ def expand_template_with_hygiene(
 
     :param template: template form (pairs, symbols, or Syntax-like opaque)
     :param bindings: dict from pattern variable symbol to capture value
-        (often ``Datum``-wrapped); outer ``Datum`` layers are peeled only
-        when expanding list or ellipsis structure, not when returning an
-        unexpanded binding reference unchanged
+        (often ``Datum``-wrapped); a single outer ``Datum`` wrapper is peeled
+        only when expanding list or ellipsis structure, not when returning
+        an unexpanded binding reference unchanged
     :param binding_symbols: set of symbols needing gensym when not bound
     :param introduced: optional map mutated from symbol to gensym
     :param index: ellipsis repetition slice index when repeating
@@ -548,6 +548,9 @@ def expand_template_with_hygiene(
     return build_proper(*out)
 
 
+# --- Macro output finalize
+
+
 def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
     """
     One pass combining introduced binding-symbol renaming (same ``introduced``
@@ -576,9 +579,8 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
     def peel_car_in_place(nx):
         c = nx.car
         first_pos = None
-        while isinstance(c, Datum):
-            if first_pos is None:
-                first_pos = c.position
+        if isinstance(c, Datum):
+            first_pos = c.position
             c = c.datum
         if first_pos is not None:
             nx.position = first_pos
@@ -586,6 +588,7 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
         return nx.car
 
     def peel_cdr_datums_in_place(nx):
+        # Repeated Datum wrappers along the cdr chain (not Datum-in-Datum).
         tail = nx.cdr
         while isinstance(tail, Datum):
             tail = tail.datum
@@ -624,7 +627,7 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
             return nil
         return nil
 
-    while isinstance(form, Datum):
+    if isinstance(form, Datum):
         form = form.datum
     if is_symbol(form):
         if form in binding_symbols:
@@ -633,6 +636,9 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
     if is_pair(form):
         walk_spine(form)
     return form
+
+
+# --- Binding-symbol discovery
 
 
 def collect_binding_symbols(node, find_compiled):
@@ -669,16 +675,13 @@ def collect_binding_symbols(node, find_compiled):
 
     special = find_compiled(head)
     # print("DEBUG collect_binding_symbols", "special=", repr(special))
-    if special is None:
-        for elem in rest.unpack():
-            out |= collect_binding_symbols(elem, find_compiled)
-        return out
-
-    matched, pattern, hygiene = special.match_for_hygiene(node)
+    matched = None
+    hygiene = None
+    if special is not None:
+        matched, _, hygiene = special.match_for_hygiene(node)
     # print("DEBUG collect_binding_symbols", "matched=", repr(matched))
-    # print("DEBUG collect_binding_symbols", "pattern=", repr(pattern))
     # print("DEBUG collect_binding_symbols", "hygiene=", repr(hygiene))
-    if matched is None:
+    if special is None or matched is None:
         for elem in rest.unpack():
             out |= collect_binding_symbols(elem, find_compiled)
         return out
