@@ -35,8 +35,8 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 from typing import Protocol, runtime_checkable
 
 from koskari.hygiene import Hygiene, HygieneEdge, HygieneNode
-from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, keyword, nil,
-                         pair, symbol)
+from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, keyword,
+                         kos_repr, nil, pair, symbol)
 from koskari.types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 
@@ -672,6 +672,14 @@ class TEST_ANY(Pattern):
         return ctx.append_node(("TEST", "ANY", -1))
 
 
+    def __repr__(self):
+        return "TEST_ANY()"
+
+
+    def __kos_repr__(self):
+        return "(TEST_ANY)"
+
+
 class LITERAL(Pattern):
     """
     Match a single element equal to the given literal value
@@ -703,6 +711,18 @@ class LITERAL(Pattern):
         return ctx.append_node(("TEST", "LITERAL", idx))
 
 
+    def __repr__(self):
+        return f"LITERAL({repr(self._value)})"
+
+
+    def __kos_repr__(self):
+        if is_symbol(self._value):
+            return str(self._value)
+        if is_keyword(self._value):
+            return '(LITERAL_KW "%s")' % (str(self._value).rstrip(':'),)
+        return "(LITERAL %s)" % (kos_repr(self._value),)
+
+
 class TYPE(Pattern):
     """
     Match a single element which is an instance of the named extern type
@@ -728,6 +748,14 @@ class TYPE(Pattern):
 
         idx = ctx.intern_extern(self._extern)
         return ctx.append_node(("TEST", "TYPE", idx))
+
+
+    def __repr__(self):
+        return 'TYPE(%r)' % (self._extern,)
+
+
+    def __kos_repr__(self):
+        return "(:: %s)" % (self._extern,)
 
 
 class PREDICATE(Pattern):
@@ -756,6 +784,14 @@ class PREDICATE(Pattern):
 
         idx = ctx.intern_extern(self._extern)
         return ctx.append_node(("TEST", "PREDICATE", idx))
+
+
+    def __repr__(self):
+        return 'PREDICATE(%r)' % (self._extern,)
+
+
+    def __kos_repr__(self):
+        return "(PREDICATE %s)" % (self._extern,)
 
 
 class CAPTURE(Pattern):
@@ -852,6 +888,55 @@ class CAPTURE(Pattern):
             self._sub.visit(fn)
 
 
+    def __repr__(self):
+        parts = [f"CAPTURE({self._slot!r}"]
+        if self._sub is not None:
+            parts.append(f"{repr(self._sub)}")
+        if self._hygiene_role != 0:
+            parts.append(f"hygiene_role={self._hygiene_role}")
+        if self._scope_slot is not None:
+            parts.append(f"scope_slot={self._scope_slot!r}")
+        if len(parts) > 1:
+            return ', '.join(parts) + ')'
+        return parts[0] + ')'
+
+
+    def __kos_repr__(self):
+        sub = self._sub
+        slot = self._slot
+        if isinstance(sub, REPEAT):
+            inner = sub._sub
+            if (isinstance(inner, GROUP)
+                    and inner._slot is None
+                    and len(inner._children) == 1):
+                inner = inner._children[0]
+            parts = ['REPEAT', slot, kos_repr(inner)]
+            if sub._min_count != 0:
+                parts.extend(['min:', str(sub._min_count)])
+            return f"({' '.join(parts)})"
+        if isinstance(sub, REST):
+            parts = ['REST', slot]
+            if sub._min_tail != 0:
+                parts.extend(['min:', str(sub._min_tail)])
+            return f"({' '.join(parts)})"
+        parts = [slot]
+        if self._scope_slot is not None:
+            parts.extend([kos_repr(keyword('scope')), self._scope_slot])
+        if self._hygiene_role != 0:
+            parts.extend([kos_repr(keyword('role')), str(self._hygiene_role)])
+        if sub is None:
+            if len(parts) == 1:
+                return slot
+            return f"({' '.join(parts)})"
+        if isinstance(sub, TYPE):
+            parts.extend(['::', sub._extern])
+        elif isinstance(sub, LITERAL):
+            parts.extend(['::', f"(LITERAL {kos_repr(sub._value)})"])
+        else:
+            parts.extend(['::', kos_repr(sub)])
+        return f"({' '.join(parts)})"
+
+
 class FORM(Pattern):
     """
     Descend into a single source element treated as a pair-tree and
@@ -881,6 +966,14 @@ class FORM(Pattern):
     def visit(self, fn):
         fn(self)
         self._sub.visit(fn)
+
+
+    def __repr__(self):
+        return f"FORM({repr(self._sub)})"
+
+
+    def __kos_repr__(self):
+        return f"(FORM {kos_repr(self._sub)})"
 
 
 class MATCH(Pattern):
@@ -913,6 +1006,18 @@ class MATCH(Pattern):
         fn(self)
         for c in self._children:
             c.visit(fn)
+
+
+    def __repr__(self):
+        if not self._children:
+            return "MATCH()"
+        return f"MATCH({', '.join(map(repr, self._children))})"
+
+
+    def __kos_repr__(self):
+        if not self._children:
+            return "(MATCH)"
+        return f"(MATCH {' '.join(map(kos_repr, self._children))})"
 
 
 class GROUP(Pattern):
@@ -968,6 +1073,19 @@ class GROUP(Pattern):
             c.visit(fn)
 
 
+    def __repr__(self):
+        slot = self._slot
+        if self._children:
+            ch = ', '.join(map(repr, self._children))
+            return f"GROUP({slot}, {ch})"
+        return f"GROUP({slot})"
+
+
+    def __kos_repr__(self):
+        head = 'nil' if self._slot is None else self._slot
+        return f"(GROUP {head} {' '.join(map(kos_repr, self._children))})"
+
+
 class ONEOF(Pattern):
     """
     Disjunction: try each branch in order until one matches
@@ -1009,6 +1127,14 @@ class ONEOF(Pattern):
         fn(self)
         for b in self._branches:
             b.visit(fn)
+
+
+    def __repr__(self):
+        return f"ONEOF({', '.join(map(repr, self._branches))})"
+
+
+    def __kos_repr__(self):
+        return f"(ONEOF {' '.join(map(kos_repr, self._branches))})"
 
 
 class REPEAT(Pattern):
@@ -1055,6 +1181,18 @@ class REPEAT(Pattern):
         self._sub.visit(fn)
 
 
+    def __repr__(self):
+        if self._min_count == 0:
+            return f"REPEAT({repr(self._sub)})"
+        return f"REPEAT({repr(self._sub)}, min_count={self._min_count})"
+
+
+    def __kos_repr__(self):
+        if self._min_count == 0:
+            return f"(REPEAT {kos_repr(self._sub)})"
+        return f"(REPEAT {kos_repr(self._sub)} min: {self._min_count})"
+
+
 class OPTIONAL(Pattern):
     """
     Match the inner pattern at most once. When the inner pattern does
@@ -1085,6 +1223,14 @@ class OPTIONAL(Pattern):
     def visit(self, fn):
         fn(self)
         self._sub.visit(fn)
+
+
+    def __repr__(self):
+        return f"OPTIONAL({repr(self._sub)})"
+
+
+    def __kos_repr__(self):
+        return f"(OPTIONAL {kos_repr(self._sub)})"
 
 
 class REST(Pattern):
@@ -1137,6 +1283,26 @@ class REST(Pattern):
         fn(self)
 
 
+    def __repr__(self):
+        if self._slot is None and self._min_tail == 0:
+            return "REST()"
+        if self._slot is None:
+            return f"REST(min_tail={self._min_tail})"
+        if self._min_tail == 0:
+            return f"REST({self._slot})"
+        return f"REST({self._slot}, min_tail={self._min_tail})"
+
+
+    def __kos_repr__(self):
+        if self._slot is None:
+            if self._min_tail == 0:
+                return "(REST)"
+            return f"(REST min: {self._min_tail})"
+        if self._min_tail != 0:
+            return f"(REST {self._slot} min: {self._min_tail})"
+        return f"(REST {self._slot})"
+
+
 class NOT(Pattern):
     """
     Negative lookahead: succeed when the inner pattern does not match
@@ -1168,6 +1334,14 @@ class NOT(Pattern):
         self._sub.visit(fn)
 
 
+    def __repr__(self):
+        return f"NOT({repr(self._sub)})"
+
+
+    def __kos_repr__(self):
+        return f"(NOT {kos_repr(self._sub)})"
+
+
 class CLASS(Pattern):
     """
     Match a single element which is an instance of the named extern
@@ -1191,7 +1365,7 @@ class CLASS(Pattern):
             if not isinstance(f, FIELD):
                 raise TypeError(
                     "CLASS field arguments must be FIELD instances, "
-                    "got %r" % (type(f).__name__,))
+                    f"got {f!r}")
         self._extern = type_extern
         self._fields = fields
 
@@ -1220,6 +1394,18 @@ class CLASS(Pattern):
         fn(self)
         for f in self._fields:
             f.visit(fn)
+
+
+    def __repr__(self):
+        if not self._fields:
+            return f"CLASS({self._extern!r})"
+        return f"CLASS({self._extern!r}, {', '.join(map(repr, self._fields))})"
+
+
+    def __kos_repr__(self):
+        if not self._fields:
+            return f"(CLASS {self._extern})"
+        return f"(CLASS {self._extern} {' '.join(map(kos_repr, self._fields))})"
 
 
 class FIELD(Pattern):
@@ -1272,6 +1458,18 @@ class FIELD(Pattern):
     def visit(self, fn):
         fn(self)
         self._sub.visit(fn)
+
+
+    def __repr__(self):
+        if self._name is None:
+            return f"FIELD({repr(self._sub)})"
+        return f"FIELD({repr(self._sub)}, name={self._name!r})"
+
+
+    def __kos_repr__(self):
+        if self._name is None:
+            return f"(FIELD {kos_repr(self._sub)})"
+        return f"(FIELD {kos_repr(self._sub)} {self._name})"
 
 
 def repeat_capture(slot, inner):
@@ -1625,6 +1823,14 @@ class DEFINE(Composite, HygieneWireSlotScopes):
         return CAPTURE(self._slot, TYPE("symbol"))
 
 
+    def __repr__(self):
+        return 'DEFINE(%r)' % (self._slot,)
+
+
+    def __kos_repr__(self):
+        return '(DEFINE %s)' % (self._slot,)
+
+
     def iter_introduced_symbols(self, matched):
         val = matched.get(self._slot)
         if val is None:
@@ -1661,6 +1867,14 @@ class DECL(Composite, HygieneWireSlotScopes):
         check_str_arg(slot, "DECL slot")
         self._slot = slot
         self._scopes = normalize_scopes(scope, scopes, "DECL")
+
+
+    def __repr__(self):
+        return 'DECL(%r)' % (self._slot,)
+
+
+    def __kos_repr__(self):
+        return '(DECL %s)' % (self._slot,)
 
 
     def _expand(self):
@@ -1747,6 +1961,14 @@ class BINDING(Composite, HygieneWireSlotScopes):
         return GROUP(self._slot, binding_group_capture_pattern())
 
 
+    def __repr__(self):
+        return 'BINDING(%r)' % (self._slot,)
+
+
+    def __kos_repr__(self):
+        return '(BINDING %s)' % (self._slot,)
+
+
     def iter_introduced_symbols(self, matched):
         grp = matched.get(self._slot)
         if grp is None or not isinstance(grp, dict):
@@ -1801,6 +2023,19 @@ class BINDINGS(Composite):
         self._slot = slot
         self._mode = mode
         self._scopes = normalize_scopes(scope, scopes, "BINDINGS")
+
+
+    def __repr__(self):
+        if self._mode == 'parallel':
+            return 'BINDINGS(%r)' % (self._slot,)
+        return "BINDINGS(%r, mode=%r)" % (self._slot, self._mode)
+
+
+    def __kos_repr__(self):
+        parts = ['BINDINGS', self._slot]
+        if self._mode != 'parallel':
+            parts.extend(['mode:', kos_repr(self._mode)])
+        return '(%s)' % (' '.join(parts),)
 
 
     def _expand(self):
@@ -2014,6 +2249,14 @@ class FORMALS(Composite, HygieneWireSlotScopes):
         return GROUP(self._slot, formals_inner_pattern())
 
 
+    def __repr__(self):
+        return 'FORMALS(%r)' % (self._slot,)
+
+
+    def __kos_repr__(self):
+        return '(FORMALS %s)' % (self._slot,)
+
+
     def iter_introduced_symbols(self, matched):
         grp = matched.get(self._slot)
         if grp is None or not isinstance(grp, dict):
@@ -2111,6 +2354,14 @@ class USING(Composite, HygieneWireSlotScopes):
         self._scopes = normalize_scopes(scope, scopes, "USING")
 
 
+    def __repr__(self):
+        return 'USING(%r)' % (self._slot,)
+
+
+    def __kos_repr__(self):
+        return '(USING %s)' % (self._slot,)
+
+
     def _expand(self):
         return GROUP(self._slot, FORM(ONEOF(
             MATCH(PAIR("lhs"), VALUE("expr")),
@@ -2162,6 +2413,14 @@ class USING_UNPACK(Composite, HygieneWireSlotScopes):
         check_str_arg(slot, "USING_UNPACK slot")
         self._slot = slot
         self._scopes = normalize_scopes(scope, scopes, "USING_UNPACK")
+
+
+    def __repr__(self):
+        return 'USING_UNPACK(%r)' % (self._slot,)
+
+
+    def __kos_repr__(self):
+        return '(USING_UNPACK %s)' % (self._slot,)
 
 
     def _expand(self):
@@ -2267,6 +2526,14 @@ class VALUE(Pattern):
         return CAPTURE(self._slot).lower(ctx)
 
 
+    def __repr__(self):
+        return 'VALUE(%r)' % (self._slot,)
+
+
+    def __kos_repr__(self):
+        return '(VALUE %s)' % (self._slot,)
+
+
     def iter_introduced_symbols(self, matched):
         yield from ()
 
@@ -2358,6 +2625,14 @@ class BODY(Pattern):
         yield val
 
 
+    def __repr__(self):
+        return f"BODY({self._slot!r})"
+
+
+    def __kos_repr__(self):
+        return f"(BODY {self._slot})"
+
+
     def hygiene_wire(self):
         """
         Wire row is ``("BODY", slot)``
@@ -2408,19 +2683,16 @@ def register_matcher(name, factory):
 
     if not isinstance(name, str):
         raise TypeError(
-            "register_matcher name must be a str, got %r"
-            % (type(name).__name__,))
+            f"register_matcher name must be a str, got {name!r}")
     if not name:
         raise ValueError("register_matcher name must be non-empty")
     if not callable(factory):
         raise TypeError(
-            "register_matcher factory must be callable, got %r"
-            % (type(factory).__name__,))
+            f"register_matcher factory must be callable, got {factory!r}")
     existing = MATCHER_REGISTRY.get(name)
     if existing is not None and existing is not factory:
         raise ValueError(
-            "matcher %r already registered to a different factory"
-            % (name,))
+            f"matcher {name!r} already registered to a different factory")
     MATCHER_REGISTRY[name] = factory
 
 
@@ -2501,7 +2773,7 @@ def parse_matcher(elem):
         (elem,), symbol=symbol, keyword=keyword)
     if not result.matched:
         raise ValueError(
-            "not a valid matcher pattern: %r" % (elem,))
+            f"not a valid matcher pattern: {elem!r}")
     c = result.captures
 
     if "bare_symbol" in c:
@@ -2511,8 +2783,7 @@ def parse_matcher(elem):
         atom = c["atom_literal"].datum
         if isinstance(atom, pair):
             raise ValueError(
-                "improper list is not a valid matcher pattern: %r"
-                % (atom,))
+                f"improper list is not a valid matcher pattern: {atom!r}")
         return LITERAL(atom)
 
     if "quoted_symbol" in c:
@@ -2544,8 +2815,7 @@ def parse_matcher(elem):
         return lower_named_capture(head, args)
 
     raise ValueError(
-        "internal: meta-matcher matched %r with no recognised slot bound"
-        % (elem,))
+        f"internal: meta-matcher matched {elem!r} with no recognised slot bound")
 
 
 def parse_explicit_rule_pattern(form, source_ctx=None):
@@ -2601,8 +2871,7 @@ def lower_anon_constraint(tag, args, source):
     items = list(unpack(args))
     if len(items) != 1:
         raise ValueError(
-            "(%s ...) expects exactly one payload, got %d in %r"
-            % (tag, len(items), source))
+            f"({tag}) expects exactly one payload, got {len(items)} in {source!r}")
     payload = items[0]
     if tag == "val:":
         return LITERAL(payload)
@@ -2624,8 +2893,8 @@ def lower_class(extern_sym, fields):
         lowered = parse_matcher(f)
         if not isinstance(lowered, FIELD):
             raise ValueError(
-                "(CLASS %s ...) field elements must lower to FIELD,"
-                " got %r" % (type_name, type(lowered).__name__))
+                f"(CLASS {type_name} ...) field elements must lower to FIELD,"
+                f" got {lowered!r}")
         field_objs.append(lowered)
     return CLASS(type_name, *field_objs)
 
@@ -2772,7 +3041,7 @@ def slot_only_factory(name, ctor):
         expect_arity(name, items, 1)
         return ctor(coerce_slot(name, items[0]))
 
-    factory.__name__ = "factory_%s" % (name,)
+    factory.__name__ = f"factory_{name}"
     factory.matcher_wire_class = ctor
     return factory
 
@@ -2815,7 +3084,7 @@ def slot_with_options_factory(name, ctor, allowed_options):
             i += 2
         return ctor(slot, **opts)
 
-    factory.__name__ = "factory_%s" % (name,)
+    factory.__name__ = f"factory_{name}"
     factory.matcher_wire_class = ctor
     return factory
 
@@ -2831,7 +3100,7 @@ def unary_recursive_factory(name, ctor):
         expect_arity(name, items, 1)
         return ctor(parse_matcher(items[0]))
 
-    factory.__name__ = "factory_%s" % (name,)
+    factory.__name__ = f"factory_{name}"
     return factory
 
 
@@ -3011,8 +3280,7 @@ def capture_factory(head_sym, raw_args):
     slot_sym = items[0]
     if not is_symbol(slot_sym):
         raise ValueError(
-            "(CAPTURE ...) slot must be a symbol, got %r"
-            % (type(slot_sym).__name__,))
+            f"(CAPTURE ...) slot must be a symbol, got {slot_sym!r}")
     _, tail = raw_args
     return lower_named_capture(slot_sym, tail)
 
@@ -3050,7 +3318,7 @@ def str_arg_factory(name, ctor):
         expect_arity(name, items, 1)
         return ctor(coerce_str_arg(name, items[0]))
 
-    factory.__name__ = "factory_%s" % (name,)
+    factory.__name__ = f"factory_{name}"
     return factory
 
 
@@ -3068,11 +3336,10 @@ def field_factory(head_sym, raw_args):
         first = items[0]
         if not is_symbol(first):
             raise ValueError(
-                "(FIELD NAME pat) NAME must be a symbol, got %r"
-                % (type(first).__name__,))
+                f"(FIELD NAME pat) NAME must be a symbol, got {first!r}")
         return FIELD(parse_matcher(items[1]), name=str(first))
     raise ValueError(
-        "(FIELD ...) expects 1 or 2 arguments, got %d" % (len(items),))
+        f"(FIELD ...) expects 1 or 2 arguments, got {len(items)}")
 
 
 def register_builtin_matchers():
