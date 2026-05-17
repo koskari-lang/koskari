@@ -32,14 +32,13 @@ import sys
 from importlib.abc import FileLoader
 from importlib.machinery import FileFinder, PathFinder
 from os import getcwd
+from os.path import exists
 
 
 __all__ = (
     'KoskariPathFinder',
     'KoskariSourceFileLoader',
     'KoskariFileFinder',
-    'path_hooks',
-    'path_importer_cache',
     'install',
     'is_installed',
     'uninstall',
@@ -98,11 +97,16 @@ class KoskariSourceFileLoader(FileLoader):
     def create_module(self, spec):
         return None
 
+
     def get_source(self, fullname):
         path = self.get_filename(fullname)
+
         if path.endswith('.kio'):
-            return ''
+            path = path[:-1]
+            if not exists(path):
+                return ''
         return self.get_data(path).decode('utf-8')
+
 
     async def exec_module_async(self, module):
         from koskari.importer.module import (
@@ -132,6 +136,7 @@ class KoskariSourceFileLoader(FileLoader):
                 setattr(module, name, val)
             except AttributeError:
                 pass
+
 
     def exec_module_demand(self, module):
         """
@@ -169,6 +174,7 @@ class KoskariSourceFileLoader(FileLoader):
             except AttributeError:
                 pass
 
+
     def exec_module(self, module):
         return self.exec_module_demand(module)
 
@@ -189,7 +195,7 @@ class KoskariFileFinder(FileFinder):
 
 
 path_hooks.append(
-    KoskariFileFinder.path_hook((KoskariSourceFileLoader, ('.ki', '.kio')))
+    KoskariFileFinder.path_hook((KoskariSourceFileLoader, ('.kio', '.ki')))
 )
 
 

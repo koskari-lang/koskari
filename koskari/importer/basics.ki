@@ -40,110 +40,110 @@ define-syntax compile/set!:
   syntax-rules [item attr deref
                 compile/item compile/attr compile/deref
                 + - * / // % ** @ << >> & ^ |]:
-    match (set! (item obj name) value):
+    case (set! (item obj name) value):
       (compile/set-item obj name value)
-    match (set! (compile/item obj name) value):
+    case (set! (compile/item obj name) value):
       (compile/set-item obj name value)
 
-    match (set! (attr obj name) value):
+    case (set! (attr obj name) value):
       (compile/set-attr obj name value)
-    match (set! (compile/attr obj name) value):
+    case (set! (compile/attr obj name) value):
       (compile/set-attr obj name value)
 
-    match (set! (deref ref) value):
+    case (set! (deref ref) value):
       (compile/set-ref ref value)
-    match (set! (compile/deref ref) value):
+    case (set! (compile/deref ref) value):
       (compile/set-ref ref value)
 
-    match (set! (values pattern ...) value):
+    case (set! (values pattern ...) value):
       (compile/setq-values [pattern ...] value)
 
-    match (set! name (+ name value)):
+    case (set! name (+ name value)):
       (compile/inplace + name value)
-    match (set! name (- name value)):
+    case (set! name (- name value)):
       (compile/inplace - name value)
-    match (set! name (* name value)):
+    case (set! name (* name value)):
       (compile/inplace * name value)
-    match (set! name (/ name value)):
+    case (set! name (/ name value)):
       (compile/inplace / name value)
-    match (set! name (// name value)):
+    case (set! name (// name value)):
       (compile/inplace // name value)
-    match (set! name (% name value)):
+    case (set! name (% name value)):
       (compile/inplace % name value)
-    match (set! name (** name value)):
+    case (set! name (** name value)):
       (compile/inplace ** name value)
-    match (set! name (@ name value)):
+    case (set! name (@ name value)):
       (compile/inplace @ name value)
-    match (set! name (<< name value)):
+    case (set! name (<< name value)):
       (compile/inplace << name value)
-    match (set! name (>> name value)):
+    case (set! name (>> name value)):
       (compile/inplace >> name value)
-    match (set! name (& name value)):
+    case (set! name (& name value)):
       (compile/inplace & name value)
-    match (set! name (^ name value)):
+    case (set! name (^ name value)):
       (compile/inplace ^ name value)
-    match (set! name (| name value)):
+    case (set! name (| name value)):
       (compile/inplace | name value)
 
-    match (set! name value):
+    case (set! name value):
       (setq name value)
 
 
 define-syntax compile/del!:
   syntax-rules []:
-    match (del! name):
+    case (del! name):
       (delq name)
-    match (del! (item obj name)):
+    case (del! (item obj name)):
       (del-item obj name)
-    match (del! (compile/item obj name)):
+    case (del! (compile/item obj name)):
       (del-item obj name)
-    match (del! (attr obj name)):
+    case (del! (attr obj name)):
       (del-attr obj name)
-    match (del! (compile/attr obj name)):
+    case (del! (compile/attr obj name)):
       (del-attr obj name)
 
 
 define-syntax compile/let-values:
   syntax-rules []:
-    match (let-values [pattern value] body ...):
+    case (let-values [pattern value] body ...):
       (let [[resolved value]]
         (compile/define-values pattern resolved) body ...)
 
 
 define-syntax compile/let*:
   syntax-rules [let let*]:
-    match (let* [] body ...):
+    case (let* [] body ...):
       (let [] body ...)
-    match (let* [first] body ...):
+    case (let* [first] body ...):
       (let [first] body ...)
-    match (let* [first rest ...] body ...):
+    case (let* [first rest ...] body ...):
       (let [first] (let* [rest ...] body ...))
 
 
 define-syntax compile/item*:
   syntax-rules []:
-    match (item* obj key):
+    case (item* obj key):
       (item obj key)
-    match (item* obj key rest ...):
+    case (item* obj key rest ...):
       (item* (item obj key) rest ...)
 
 
 define-syntax compile/ref:
   syntax-rules [item compile/item attr compile/attr parameter]:
-    match (ref (item obj name)):
+    case (ref (item obj name)):
       (compile/ref-item obj name)
-    match (ref (compile/item obj name)):
+    case (ref (compile/item obj name)):
       (compile/ref-item obj name)
 
-    match (ref (attr obj name)):
+    case (ref (attr obj name)):
       (compile/ref-attr obj name)
-    match (ref (compile/attr obj name)):
+    case (ref (compile/attr obj name)):
       (compile/ref-attr obj name)
 
-    match (ref (parameter name)):
+    case (ref (parameter name)):
       (ParamRef 'name)
 
-    match (ref name):
+    case (ref name):
       (compile/refq name)
 
 
@@ -155,43 +155,43 @@ define-syntax compile/bind!:
                 memoized
                 parameter]:
 
-    match (bind! name (item obj key)):
+    case (bind! name (item obj key)):
       (compile/bindq name (ref-item obj key))
-    match (bind! name (compile/item obj key)):
+    case (bind! name (compile/item obj key)):
       (compile/bindq name (ref-item obj key))
 
-    match (bind! name (attr obj key)):
+    case (bind! name (attr obj key)):
       (compile/bindq name (ref-attr obj key))
-    match (bind! name (compile/attr obj key)):
+    case (bind! name (compile/attr obj key)):
       (compile/bindq name (ref-attr obj key))
 
-    match (bind! name (dynamic r ...)):
+    case (bind! name (dynamic r ...)):
       (compile/bindq name (DynamicRef 'name r ...))
 
-    match (bind! name (constant value)):
+    case (bind! name (constant value)):
       (compile/bindq name (ConstantRef 'name value))
 
-    match (bind! name (memoized getfn)):
+    case (bind! name (memoized getfn)):
       (compile/bindq name (MemoizedRef 'name getfn))
 
-    match (bind! name (parameter param-name r ...)):
+    case (bind! name (parameter param-name r ...)):
       (compile/bindq name (ParamRef 'param-name r ...))
 
-    match (bind! name value):
+    case (bind! name value):
       (compile/bindq name value)
 
 
 define-syntax compile/if:
   syntax-rules []:
-    match (if condition then: then else: else):
+    case (if condition then: then else: else):
       (compile/cond
         [condition then]
         [else: else])
-    match (if condition then else):
+    case (if condition then else):
       (compile/cond
         [condition then]
         [else: else])
-    match (if condition then):
+    case (if condition then):
       (compile/cond
         [condition then]
         [else: None])
@@ -199,7 +199,7 @@ define-syntax compile/if:
 
 define-syntax compile/when:
   syntax-rules []:
-    match (when condition then):
+    case (when condition then):
       (compile/cond
         [condition then]
         [else: None])
@@ -207,7 +207,7 @@ define-syntax compile/when:
 
 define-syntax compile/unless:
   syntax-rules []:
-    match (unless condition then):
+    case (unless condition then):
       (compile/cond
         [condition None]
         [else: then])
@@ -215,96 +215,96 @@ define-syntax compile/unless:
 
 define-syntax compile/define-parameter:
   syntax-rules []:
-    match (define-parameter name):
+    case (define-parameter name):
       (compile/define name)
       (compile/bindq name (ParamRef 'name))
-    match (define-parameter name default):
+    case (define-parameter name default):
       (compile/define name)
       (compile/bindq name (ParamRef 'name default))
 
 
 define-syntax compile/parameterq:
   syntax-rules []:
-    match (parameterq name):
+    case (parameterq name):
       (parameter 'name)
-    match (parameterq name default):
+    case (parameterq name default):
       (parameter 'name default)
 
 
 define-syntax define-coroutine:
   syntax-rules []:
-    match (define-coroutine name args body ...):
+    case (define-coroutine name args body ...):
       (define name (as-coroutine (lambda name args body ...)))
 
 
 define-syntax when-main:
   syntax-rules []:
-    match (when-main body ...):
+    case (when-main body ...):
       when (equal? __name__ "__main__"):
         (begin body ...)
 
 
 define-syntax compile/each:
   syntax-rules [when: unless:]:
-    match (each [binding seq] when: condition body):
+    case (each [binding seq] when: condition body):
       ((lambda each [] (for-each [binding seq]
          (when condition (yield body)))))
-    match (each [binding seq] unless: condition body):
+    case (each [binding seq] unless: condition body):
       ((lambda each [] (for-each [binding seq]
          (unless condition (yield body)))))
-    match (each [binding seq] body):
+    case (each [binding seq] body):
       ((lambda each [] (for-each [binding seq]
          (yield body))))
 
 
 define-syntax compile/list-each:
   syntax-rules []:
-    match (list-each [binding seq] body):
+    case (list-each [binding seq] body):
       (list (each [binding seq] body))
 
 
 define-syntax compile/dict-each:
   syntax-rules [when: unless: key: value:]:
-    match (dict-each [binding seq] key: key value: value):
+    case (dict-each [binding seq] key: key value: value):
       (dict (each [binding seq] #(key value) ))
-    match (dict-each [binding seq] when: condition key: key value: value):
+    case (dict-each [binding seq] when: condition key: key value: value):
       (dict (each [binding seq] when: condition #(key value)))
-    match (dict-each [binding seq] unless: condition key: key value: value):
+    case (dict-each [binding seq] unless: condition key: key value: value):
       (dict (each [binding seq] unless: condition #(key value)))
 
-    match (dict-each [binding seq] body):
+    case (dict-each [binding seq] body):
       (dict (each [binding seq] body))
 
 
 define-syntax compile/None?:
   syntax-rules []:
-    match (None? value):
+    case (None? value):
       (compile/is None value)
 
 
 define-syntax compile/nil?:
   syntax-rules []:
-    match (nil? value):
+    case (nil? value):
       (compile/is nil value)
 
 
 define-syntax compile/define-class:
   syntax-rules []:
-    match (define-class name supers body ...):
+    case (define-class name supers body ...):
       (define name (class name supers body ...))
 
 
 define-syntax compile/define-demanding:
   syntax-rules []:
-    match (define-demanding name formals body ...):
+    case (define-demanding name formals body ...):
       (define name (demand (lambda name formals body ...)))
 
 
 define-syntax compile/function-compose:
   macro-rules []:
-    match (function-compose fn1):
+    case (function-compose fn1):
       fn1
-    match (function-compose fn1 ...):
+    case (function-compose fn1 ...):
       define acc `(*: args **: kwds)
       define elems (list-each [fn fn1] #((gensym) fn))
       for-each [[sym fn] (reversed elems)]:
@@ -315,17 +315,17 @@ define-syntax compile/function-compose:
 
 define-syntax compile/decorate:
   syntax-rules [define-class define compile/define-class compile/define]:
-    match (decorate [] fn):
+    case (decorate [] fn):
       fn
-    match (decorate [decorators ...] (define-class name supers body ...)):
+    case (decorate [decorators ...] (define-class name supers body ...)):
       (define name (decorate [decorators ...] (class name supers (begin body ...))))
-    match (decorate [decorators ...] (compile/define-class name supers body ...)):
+    case (decorate [decorators ...] (compile/define-class name supers body ...)):
       (define name (decorate [decorators ...] (class name supers (begin body ...))))
-    match (decorate [decorators ...] (define name formals body ...)):
+    case (decorate [decorators ...] (define name formals body ...)):
       (define name (decorate [decorators ...] (lambda name formals body ...)))
-    match (decorate [decorators ...] (compile/define name formals body ...)):
+    case (decorate [decorators ...] (compile/define name formals body ...)):
       (define name (decorate [decorators ...] (lambda name formals body ...)))
-    match (decorate [decorators ...] fn):
+    case (decorate [decorators ...] fn):
       ((function-compose decorators ...) fn)
 
 
@@ -365,16 +365,16 @@ define on-demand? []:
 
 define-syntax compile/datum:
   macro-rules []:
-    match (_ expr pos):
+    case (_ expr pos):
       `(call datum ,expr ,pos)
-    match (_ expr):
+    case (_ expr):
       define pos (getattr expr "position" None)
       `(call datum ,expr ,pos)
 
 
 define-syntax create-instance-check:
   macro-match:
-    match (create-instance-check (BIND name)):
+    case (create-instance-check (BIND name)):
       define pname (datum (symbol f"{name.datum}?"))
       `define ,pname:
         let [[tp ,name]]:
@@ -384,9 +384,9 @@ define-syntax create-instance-check:
 
 define-syntax compile/define-dataclass:
   syntax-rules [begin]:
-    match (define-dataclass name (members ...)):
+    case (define-dataclass name (members ...)):
       (define-dataclass name [] (members ...))
-    match (define-dataclass name supers members ...):
+    case (define-dataclass name supers members ...):
       define name:
         let []:
           import-from dataclasses dataclass field
@@ -398,23 +398,23 @@ define-syntax compile/define-dataclass:
 
 define-syntax compile/super:
   syntax-rules []:
-    match (super):
+    case (super):
       (compile/call super (type self) self)
-    match (super args ...):
+    case (super args ...):
       (compile/call super args ...)
 
 
 define-syntax compile/extend:
   syntax-rules []:
-    match (extend sym val):
+    case (extend sym val):
       set! sym (+ sym val)
 
 
 define-syntax compile/define-extend:
   syntax-rules []:
-    match (define-extend sym):
+    case (define-extend sym):
       define sym
-    match (define-extend sym val):
+    case (define-extend sym val):
       if &sym:
         extend sym val
       else:
@@ -426,36 +426,36 @@ define-syntax compile/extend-syntax:
                 macro-rules macro-match
                 special-rules special-match]:
 
-    match (extend-syntax name (syntax-rules literals rule ...)):
+    case (extend-syntax name (syntax-rules literals rule ...)):
       define-extend name (syntax-rules name literals rule ...)
 
-    match (extend-syntax name (syntax-match rule ...)):
+    case (extend-syntax name (syntax-match rule ...)):
       define-extend name (syntax-match name rule ...)
 
-    match (extend-syntax name (macro-rules literals rule ...)):
+    case (extend-syntax name (macro-rules literals rule ...)):
       define-extend name (macro-rules name literals rule ...)
 
-    match (extend-syntax name (macro-match rule ...)):
+    case (extend-syntax name (macro-match rule ...)):
       compile/define name (macro-match name rule ...)
 
-    match (extend-syntax name (special-rules literals rule ...)):
+    case (extend-syntax name (special-rules literals rule ...)):
       define-extend name (special-rules name literals rule ...)
 
-    match (extend-syntax name (special-match rule ...)):
+    case (extend-syntax name (special-match rule ...)):
       define-extend name (special-match name rule ...)
 
 
 define layout/extend-syntax layout/flat
 
 
-define-syntax compile/kos-help:
+define-syntax compile/help:
   syntax-rules []:
-    match (_ obj ns):
-      (compile/call kos-help obj ns)
-    match (_ obj):
-      (compile/call kos-help 'obj (globals))
-    match (_):
-      (compile/call kos-help 'kos-help (globals))
+    case (help obj ns):
+      (compile/call help obj ns)
+    case (help obj):
+      (compile/call help 'obj (globals))
+    case (help):
+      (compile/call help 'help (globals))
 
 
 ;; The end.

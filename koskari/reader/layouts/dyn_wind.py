@@ -17,75 +17,84 @@ koskari.reader.layouts.dyn_wind
 Layout handler for layout/dyn-wind block syntax.
 """
 
-
 from ...exceptions import LayoutError
-from ...lib import car, cdr, cons, nil, symbol
+from ...lib import cons, keyword, nil, symbol
 from ...stdlib import builtin
-from ...types import get_position, unpack
+from ...types import get_position
 from .helpers import layout
 
 
 _symbol_before = symbol('before')
-_symbol_body = symbol('body')
 _symbol_after = symbol('after')
+_symbol_begin = symbol('begin')
 
 
 @builtin('layout/dyn-wind')
-@layout(
-    symbol('layout/dyn-wind'),
-    peers=(_symbol_before, _symbol_body, _symbol_after))
+@layout(symbol('layout/dyn-wind'), peers=(_symbol_before, _symbol_after))
 def layout_dyn_wind(source, peers):
     """
     Lower layout/dyn-wind block with before/body/after peers to
     (compile/dyn-wind [before] [body] [after]) for compilation.
 
     body is required; at least one of before or after is required.
+
+    Usage:
+
+    ```
+    dyn-wind:
+      body-exprs ...
+    before:
+      before-exprs ...
+    after:
+      after-exprs ...
+    ```
     """
 
+    (blk, (head, (body, _rest))) = source
+    if blk is not keyword("block") or _rest:
+        raise LayoutError(
+            'malformed dyn-wind block',
+            get_position(source))
+
     before_form = nil
-    body_form = nil
     after_form = nil
+
+    _called_by, hrest = head
+    if hrest:
+        raise LayoutError(
+            'dyn-wind block header does not accept arguments',
+            get_position(head))
 
     for peer in peers:
         pheader, pbody = peer
-        phead = car(pheader)
-        ppargs = list(unpack(cdr(pheader)))
+        phead, ppargs = pheader
+
         if phead is _symbol_before:
+            if before_form is not nil:
+                raise LayoutError(
+                    'before block appears twice',
+                    get_position(peer))
             if ppargs:
                 raise LayoutError(
                     'before block does not take arguments',
                     get_position(peer))
-            before_form = cons(symbol('compile/begin'), pbody if pbody is not nil else nil)
-        elif phead is _symbol_body:
-            if ppargs:
-                raise LayoutError(
-                    'body block does not take arguments',
-                    get_position(peer))
-            body_form = cons(symbol('compile/begin'), pbody if pbody is not nil else nil)
+            before_form = pbody and cons(_symbol_begin, pbody)
+
         elif phead is _symbol_after:
+            if after_form is not nil:
+                raise LayoutError(
+                    'after block appears twice',
+                    get_position(peer))
             if ppargs:
                 raise LayoutError(
                     'after block does not take arguments',
                     get_position(peer))
-            after_form = cons(symbol('compile/begin'), pbody if pbody is not nil else nil)
-        else:
-            raise LayoutError(
-                'invalid peer for dyn-wind block: %r' % (phead,),
-                get_position(peer))
-
-    if body_form is nil:
-        raise LayoutError(
-            'dyn-wind requires a body block',
-            get_position(source))
-    if before_form is nil and after_form is nil:
-        raise LayoutError(
-            'dyn-wind requires at least one of before or after block',
-            get_position(source))
+            after_form = pbody and cons(_symbol_begin, pbody)
 
     return cons(
         symbol('compile/dyn-wind'),
         before_form,
-        body_form,
+        cons(_symbol_begin, body),
         after_form,
         nil)
 

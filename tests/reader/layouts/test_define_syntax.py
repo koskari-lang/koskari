@@ -88,7 +88,7 @@ class TestLayoutDefineSyntax(TestCase):
         src = """
         define-syntax m:
           syntax-rules [item compile/item]:
-            match (ref (item obj name)):
+            case (ref (item obj name)):
               (compile/ref-item obj name)
         """
         rule1 = (

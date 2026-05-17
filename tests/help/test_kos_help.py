@@ -26,6 +26,7 @@ import unittest
 import pytest
 
 from koskari.matcher import CALLEDBY, MATCH, VALUE
+from koskari.reader.layouts import layout_if
 from koskari.syntax import special
 from koskari.help import kos_help_text
 
@@ -92,6 +93,20 @@ class TestKosHelp(unittest.TestCase):
     def test_special_steals_doc(self):
         syn = _make_foo_syntax()
         self.assertIn('Doc line for compile/foo', syn.__doc__)
+
+
+    def test_kos_help_uses_layout_handler_help(self):
+        ns = {'layout/if': layout_if}
+        text = _plain_help(kos_help_text('if', ns))
+        self.assertIn('layout/if', text)
+        self.assertIn('Lower if/elif/else block sources', text)
+        self.assertIn('Peers', text)
+        self.assertIn('elif', text)
+        self.assertIn('else', text)
+
+
+    def test_layout_steals_doc(self):
+        self.assertIn('Lower if/elif/else block sources', layout_if.__doc__)
 
 
 # The end.

@@ -175,6 +175,7 @@ def make_bootstrap():
     _bind('open', open)
     _bind('ord', ord)
     _bind('print', print)
+    _bind('py-help', help)
     _bind('py-repr', repr)
     _bind('repr', kos_repr)
     _bind('reversed', reversed)
@@ -185,9 +186,6 @@ def make_bootstrap():
     _bind('sum', sum)
     _bind('vars', vars)
     _bind('zip', zip)
-
-    # todo: replace me with a better help built-in
-    _bind('help', help)
 
     import koskari.lib as kl
     for name in ('*', '+', '-', '/', '//', '&', '|', '^',

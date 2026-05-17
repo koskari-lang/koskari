@@ -34,6 +34,7 @@ from .tools import (
 )
 
 from .syntax import help_for_syntax  # registers Syntax handler
+from .layout import help_for_layout_handler  # registers LayoutHandler
 
 
 __all__ = (
@@ -48,6 +49,7 @@ __all__ = (
     'kos_help_text',
 
     'help_for_syntax',
+    'help_for_layout_handler',
 )
 
 

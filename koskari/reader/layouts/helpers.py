@@ -52,6 +52,9 @@ def layout(head_symbol, peers=()):
 
     def decorator(fn):
         handler = LayoutHandler(head_symbol, fn, peers=peers)
+        doc = fn.__doc__
+        if doc:
+            handler.__doc__ = doc
         return handler
 
     return decorator

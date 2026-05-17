@@ -291,7 +291,7 @@ def kos_help_text(name, namespace):
     return doc.render()
 
 
-@builtin("kos-help")
+@builtin("help")
 def kos_help(name, namespace):
     """
     Display help for name in namespace via the system pager
