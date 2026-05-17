@@ -14,7 +14,7 @@
 """
 koskari.types
 
-Koskari native types, predicates, and helper functions.
+Koskari native types, predicates, and helper functions
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

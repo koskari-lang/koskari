@@ -486,7 +486,11 @@ def special(form_symbol, *, patterns, unpack=None):
             raise ValueError(f"internal: bad unpack {unpack!r}")
 
         transforms = [SpecialTransform(p, wrapped) for p in plist]
-        return Syntax(form_symbol, transforms)
+        syn = Syntax(form_symbol, transforms)
+        doc = fn.__doc__
+        if doc:
+            syn.__doc__ = doc
+        return syn
 
     return deco
 

@@ -285,9 +285,9 @@ class SpecialError(CompilerError):
     pass
 
 
-def _format_accept_pattern(pattern, source):
+def format_accept_pattern(pattern, source=None):
     """
-    Render one accepted-arm pattern for SyntaxMatchError.explain only
+    Render one accepted-arm pattern for help text and SyntaxMatchError
     """
 
     from .matcher import CALLEDBY, MATCH
@@ -313,14 +313,14 @@ def _format_accept_pattern(pattern, source):
         except Exception:
             rest = "<unrenderable pattern>"
         if rest:
-            return "(%s %s)" % (head, rest)
-        return "(%s)" % head
+            return f"({head} {rest})"
+        return f"({head})"
 
     try:
         body = " ".join(kos_repr(c) for c in children)
     except Exception:
         return "<unrenderable pattern>"
-    return "(%s)" % body
+    return f"({body})"
 
 
 class SyntaxMatchError(CompilerError):
@@ -354,7 +354,7 @@ class SyntaxMatchError(CompilerError):
         if self.patterns:
             lines.append("  accepts:")
             for pat in self.patterns:
-                lines.append("    %s" % _format_accept_pattern(pat, self.source))
+                lines.append("    %s" % format_accept_pattern(pat, self.source))
         source_line = self._format_source_line()
         if source_line is not None:
             lines.append(source_line)

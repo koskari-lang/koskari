@@ -1,0 +1,288 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+koskari.help.tools
+
+HelpFormatter, registry dispatch, and kos-help builtins
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+:ai-assistant: Composer via Cursor
+"""
+
+
+import pydoc
+
+from ..stdlib import builtin
+
+
+_registry = {}
+
+
+_HELP_PREFIXES = ('compile/', 'layout/', 'match/')
+
+
+class HelpFormatter(object):
+    """
+    Mutable help document builder with pydoc-style section rendering
+    """
+
+
+    def __init__(self, title=None, level=0):
+        self.title = title
+        self.level = level
+        self._paragraphs = []
+        self._items = []
+        self._children = []
+
+
+    def is_empty(self):
+        """
+        True when this formatter has no title, text, or nested sections
+        """
+
+        if self.title:
+            return False
+        if self._paragraphs or self._items or self._children:
+            return False
+        return True
+
+
+    def paragraph(self, text):
+        """
+        Append a prose paragraph in the current section
+        """
+
+        if text:
+            self._paragraphs.append(str(text))
+
+
+    def item(self, text):
+        """
+        Append a bullet item in the current section
+        """
+
+        if text:
+            self._items.append(str(text))
+
+
+    def section(self, title):
+        """
+        Open a top-level section and return a child formatter scoped to it
+        """
+
+        child = HelpFormatter(title=str(title), level=1)
+        self._children.append(child)
+        return child
+
+
+    def subsection(self, title):
+        """
+        Open a nested subsection and return a child formatter scoped to it
+        """
+
+        child = HelpFormatter(title=str(title), level=2)
+        self._children.append(child)
+        return child
+
+
+    def render(self):
+        """
+        Render this formatter and nested sections to a single string
+        """
+
+        parts = []
+        if self.title:
+            parts.append(self._render_heading(self.title, self.level))
+        for para in self._paragraphs:
+            parts.append(para)
+        for bullet in self._items:
+            parts.append('    * %s' % bullet)
+        for child in self._children:
+            rendered = child.render()
+            if rendered:
+                parts.append(rendered.rstrip('\n'))
+        if not parts:
+            return ''
+        return '\n'.join(parts) + '\n'
+
+
+    def _render_heading(self, title, level):
+        """
+        Format a section title with an underline
+        """
+
+        if level <= 1:
+            underline = '=' * len(title)
+        else:
+            underline = '-' * len(title)
+        return '%s\n%s' % (title, underline)
+
+
+def help_for(typeobj):
+    """
+    Decorator to register a help handler for a type
+    """
+
+    def decorator(handler):
+        help_register(typeobj, handler)
+        return handler
+    return decorator
+
+
+def help_register(typeobj, handler):
+    """
+    Register a type-specific help renderer
+
+    :param typeobj: type object to match via MRO
+    :param handler: callable ``(obj, formatter) -> None``
+    """
+
+    _registry[typeobj] = handler
+
+
+def help_unregister(typeobj):
+    """
+    Remove a type from the help registry if present
+    """
+
+    _registry.pop(typeobj, None)
+
+
+def help_registry_clear():
+    """
+    Clear all help registry entries
+    """
+
+    _registry.clear()
+
+
+def help_registry_snapshot():
+    """
+    Return a shallow copy of the help registry dict
+    """
+
+    return dict(_registry)
+
+
+def _default_help(obj, formatter):
+    """
+    Fallback help: stripped __doc__ when present
+    """
+
+    doc = getattr(obj, '__doc__', None)
+    if doc:
+        formatter.paragraph(doc.strip())
+
+
+def _help_protocol(obj, formatter):
+    """
+    Invoke __kos_help__ or legacy __help__ on obj
+    """
+
+    for attr in ('__kos_help__', '__help__'):
+        meth = getattr(obj, attr, None)
+        if not callable(meth):
+            continue
+        try:
+            meth(formatter)
+        except TypeError:
+            text = meth()
+            if isinstance(text, str) and text.strip():
+                formatter.paragraph(text.strip())
+        return True
+    return False
+
+
+def help_into(formatter, obj):
+    """
+    Render help for obj into formatter using registry, protocol, or default
+
+    :param formatter: HelpFormatter scoped to the current binding section
+    :param obj: value to describe
+    """
+
+    for ty in type(obj).__mro__:
+        handler = _registry.get(ty)
+        if handler is not None:
+            handler(obj, formatter)
+            return
+    if _help_protocol(obj, formatter):
+        return
+    _default_help(obj, formatter)
+
+
+def _help_lookup_keys(name):
+    """
+    Namespace keys to try for a help subject name
+    """
+
+    name = str(name)
+    if name.startswith(_HELP_PREFIXES):
+        return (name,)
+    return (name,
+            'compile/' + name,
+            'layout/' + name,
+            'match/' + name)
+
+
+def _namespace_get(namespace, key):
+    """
+    Fetch one binding from a namespace mapping
+    """
+
+    if hasattr(namespace, 'get'):
+        return namespace.get(key)
+    try:
+        return namespace[key]
+    except KeyError:
+        return None
+
+
+def kos_help_text(name, namespace):
+    """
+    Collect help text for name and related namespace keys
+
+    :param name: subject name (symbol or string)
+    :param namespace: mapping of names to bindings (required)
+    :return: combined help sections, or empty string when nothing found
+    :raises TypeError: when namespace is None
+    """
+
+    if namespace is None:
+        raise TypeError('namespace is required')
+
+    doc = HelpFormatter()
+    for key in _help_lookup_keys(name):
+        val = _namespace_get(namespace, key)
+        if val is None:
+            continue
+        sec = doc.section(key)
+        help_into(sec, val)
+
+    if doc.is_empty():
+        return ''
+    return doc.render()
+
+
+@builtin("kos-help")
+def kos_help(name, namespace):
+    """
+    Display help for name in namespace via the system pager
+    """
+
+    pydoc.pager(kos_help_text(name, namespace))
+
+
+# The end.

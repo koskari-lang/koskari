@@ -448,4 +448,14 @@ define-syntax compile/extend-syntax:
 define layout/extend-syntax layout/flat
 
 
+define-syntax compile/kos-help:
+  syntax-rules []:
+    match (_ obj ns):
+      (compile/call kos-help obj ns)
+    match (_ obj):
+      (compile/call kos-help 'obj (globals))
+    match (_):
+      (compile/call kos-help 'kos-help (globals))
+
+
 ;; The end.

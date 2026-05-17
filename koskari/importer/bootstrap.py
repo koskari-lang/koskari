@@ -31,6 +31,7 @@ from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from os.path import dirname, join
 
+from .. import help as _koskari_help  # noqa: F401 registers @builtin
 from .. import syntax as _koskari_syntax  # noqa: F401 registers @builtin
 from ..compile import specials as _koskari_compile_specials  # noqa: F401
 from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
