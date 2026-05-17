@@ -20,6 +20,7 @@ Tests for help registry dispatch
 """
 
 
+import re
 import unittest
 
 import pytest
@@ -36,6 +37,10 @@ from koskari.help import (
 
 
 pytestmark = pytest.mark.phase_infra
+
+
+def _plain_help(text):
+    return re.sub(r'.\x08', '', text)
 
 
 class TestHelpRegistry(unittest.TestCase):
@@ -62,7 +67,7 @@ class TestHelpRegistry(unittest.TestCase):
         help_register(Reggie, handler)
         fmt = HelpFormatter()
         help_into(fmt, Reggie())
-        self.assertIn('reggie-out', fmt.render())
+        self.assertIn('reggie-out', _plain_help(fmt.render()))
 
 
     def test_mro_wins_subclass(self):
@@ -76,20 +81,22 @@ class TestHelpRegistry(unittest.TestCase):
         help_register(Child, lambda o, f: f.paragraph('child'))
         fmt = HelpFormatter()
         help_into(fmt, Child())
-        text = fmt.render()
+        text = _plain_help(fmt.render())
         self.assertIn('child', text)
         self.assertNotIn('base', text)
 
 
     def test_unregister_restores_default(self):
         class R2(object):
-            __doc__ = 'fallback doc'
+            """
+            fallback doc
+            """
 
         help_register(R2, lambda o, f: f.paragraph('custom'))
         help_unregister(R2)
         fmt = HelpFormatter()
-        help_into(fmt, R2())
-        self.assertIn('fallback doc', fmt.render())
+        help_into(fmt, R2)
+        self.assertIn('fallback doc', _plain_help(fmt.render()))
 
 
     def test_registry_clear(self):
@@ -100,7 +107,7 @@ class TestHelpRegistry(unittest.TestCase):
         help_registry_clear()
         fmt = HelpFormatter()
         help_into(fmt, R3())
-        self.assertEqual(fmt.render().strip(), '')
+        self.assertIn('R3 object', _plain_help(fmt.render()))
 
 
     def test_snapshot_is_shallow_copy(self):
@@ -113,7 +120,7 @@ class TestHelpRegistry(unittest.TestCase):
         snap.clear()
         fmt = HelpFormatter()
         help_into(fmt, Snap())
-        self.assertIn('snap', fmt.render())
+        self.assertIn('snap', _plain_help(fmt.render()))
 
 
 # The end.

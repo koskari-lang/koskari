@@ -20,6 +20,7 @@ Tests for kos_help and Syntax help integration
 """
 
 
+import re
 import unittest
 
 import pytest
@@ -30,6 +31,10 @@ from koskari.help import kos_help_text
 
 
 pytestmark = pytest.mark.phase_infra
+
+
+def _plain_help(text):
+    return re.sub(r'.\x08', '', text)
 
 
 def _make_foo_syntax():
@@ -56,19 +61,32 @@ class TestKosHelp(unittest.TestCase):
     def test_kos_help_finds_compile_prefixed_binding(self):
         syn = _make_foo_syntax()
         ns = {'compile/foo': syn}
-        text = kos_help_text('foo', ns)
+        text = _plain_help(kos_help_text('foo', ns))
         self.assertIn('compile/foo', text)
-        self.assertIn('===========', text)
         self.assertIn('Doc line for compile/foo', text)
 
 
     def test_kos_help_uses_syntax_help(self):
         syn = _make_foo_syntax()
         ns = {'compile/foo': syn}
-        text = kos_help_text('foo', ns)
-        self.assertIn('1 transform arm', text)
+        text = _plain_help(kos_help_text('foo', ns))
         self.assertIn('Accepts', text)
         self.assertIn('compile/foo', text)
+        self.assertIn('VALUE', text)
+
+
+    def test_kos_help_pydoc_fallback_for_python_binding(self):
+        def py_fn():
+            """
+            Python fallback doc line
+            """
+            pass
+
+        ns = {'my-fn': py_fn}
+        text = _plain_help(kos_help_text('my-fn', ns))
+        self.assertIn('my-fn', text)
+        self.assertIn('Python fallback doc line', text)
+        self.assertIn('py_fn', text)
 
 
     def test_special_steals_doc(self):

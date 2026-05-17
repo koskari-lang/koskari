@@ -35,27 +35,29 @@ _HELP_PREFIXES = ('compile/', 'layout/', 'match/')
 
 class HelpFormatter(object):
     """
-    Mutable help document builder with pydoc-style section rendering
+    Mutable help document builder rendered via pydoc.TextDoc
     """
 
 
-    def __init__(self, title=None, level=0):
+    def __init__(self, title=None):
         self.title = title
-        self.level = level
+        self._textdoc = pydoc.TextDoc()
         self._paragraphs = []
-        self._items = []
+        self._lines = []
+        self._raw = []
         self._children = []
 
 
     def is_empty(self):
         """
-        True when this formatter has no title, text, or nested sections
+        True when this formatter has no text or nested sections with content
         """
 
-        if self.title:
+        if self._paragraphs or self._lines or self._raw:
             return False
-        if self._paragraphs or self._items or self._children:
-            return False
+        for child in self._children:
+            if not child.is_empty():
+                return False
         return True
 
 
@@ -70,11 +72,23 @@ class HelpFormatter(object):
 
     def item(self, text):
         """
-        Append a bullet item in the current section
+        Append an indented line in the current section
         """
 
         if text:
-            self._items.append(str(text))
+            self._lines.append(str(text))
+
+
+    def raw(self, text):
+        """
+        Append pre-formatted pydoc text without re-indenting
+        """
+
+        if text is None:
+            return
+        text = str(text).rstrip()
+        if text:
+            self._raw.append(text)
 
 
     def section(self, title):
@@ -82,7 +96,7 @@ class HelpFormatter(object):
         Open a top-level section and return a child formatter scoped to it
         """
 
-        child = HelpFormatter(title=str(title), level=1)
+        child = HelpFormatter(title=str(title))
         self._children.append(child)
         return child
 
@@ -92,9 +106,28 @@ class HelpFormatter(object):
         Open a nested subsection and return a child formatter scoped to it
         """
 
-        child = HelpFormatter(title=str(title), level=2)
+        child = HelpFormatter(title=str(title))
         self._children.append(child)
         return child
+
+
+    def _render_body(self):
+        """
+        Assemble section body before TextDoc.section wrapping
+        """
+
+        parts = []
+        for chunk in self._raw:
+            parts.append(chunk)
+        for para in self._paragraphs:
+            parts.append(para)
+        if self._lines:
+            parts.append('\n'.join(self._lines))
+        for child in self._children:
+            rendered = child.render()
+            if rendered:
+                parts.append(rendered.rstrip('\n'))
+        return '\n\n'.join(parts)
 
 
     def render(self):
@@ -102,32 +135,16 @@ class HelpFormatter(object):
         Render this formatter and nested sections to a single string
         """
 
-        parts = []
         if self.title:
-            parts.append(self._render_heading(self.title, self.level))
-        for para in self._paragraphs:
-            parts.append(para)
-        for bullet in self._items:
-            parts.append('    * %s' % bullet)
-        for child in self._children:
-            rendered = child.render()
-            if rendered:
-                parts.append(rendered.rstrip('\n'))
-        if not parts:
+            body = self._render_body()
+            if not body:
+                return ''
+            return self._textdoc.section(self.title, body)
+
+        body = self._render_body()
+        if not body:
             return ''
-        return '\n'.join(parts) + '\n'
-
-
-    def _render_heading(self, title, level):
-        """
-        Format a section title with an underline
-        """
-
-        if level <= 1:
-            underline = '=' * len(title)
-        else:
-            underline = '-' * len(title)
-        return '%s\n%s' % (title, underline)
+        return body + '\n'
 
 
 def help_for(typeobj):
@@ -178,12 +195,10 @@ def help_registry_snapshot():
 
 def _default_help(obj, formatter):
     """
-    Fallback help: stripped __doc__ when present
+    Fallback help via pydoc.TextDoc.document
     """
 
-    doc = getattr(obj, '__doc__', None)
-    if doc:
-        formatter.paragraph(doc.strip())
+    formatter.raw(pydoc.TextDoc().document(obj))
 
 
 def _help_protocol(obj, formatter):
