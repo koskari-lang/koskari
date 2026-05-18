@@ -38,12 +38,13 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    MemoizedRef, Module, ModuleNamespace, ParamRef, Ref, apply,
                    build_dict, build_list, build_set, build_tuple, car, cdr,
                    cons, defer, demand, demand_apply, demand_call, deref,
-                   gensym, keyword, nil, pair, parameter, setcar, setcdr,
-                   symbol, values, kos_repr)
+                   gensym, keyword, kos_repr, nil, pair, parameter, setcar,
+                   setcdr, symbol, values)
 from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 from ..stdlib import BUILTINS
 from ..types import (TypePredicate, as_coroutine, build_proper, is_nil,
                      is_None, is_proper, is_recursive, unpack)
+from .module import init_module, load_module_async, load_module_demand
 
 
 __all__ = (
@@ -230,14 +231,11 @@ async def make_builtins():
     if _BUILTINS_CACHE is not None:
         return _BUILTINS_CACHE
 
-    from . import module as _mod
-    from .module import init_module, load_module_async
-
     bootstrap = make_bootstrap()
     ns = ModuleNamespace("koskari.basics", bootstrap)
     basics_module = Module(ns)
 
-    _mod._ns_store(ns, '__name__', 'koskari.basics')
+    ns['__name__'] = 'koskari.basics'
 
     basics_path = join(dirname(__file__), 'basics.ki')
     init_module(basics_module, basics_path)
@@ -270,14 +268,11 @@ def make_builtins_demand():
     if _BUILTINS_CACHE is not None:
         return _BUILTINS_CACHE
 
-    from . import module as _mod
-    from .module import init_module, load_module_demand
-
     bootstrap = make_bootstrap()
     ns = ModuleNamespace("koskari.basics", bootstrap)
     basics_module = Module(ns)
 
-    _mod._ns_store(ns, '__name__', 'koskari.basics')
+    ns['__name__'] = 'koskari.basics'
 
     basics_path = join(dirname(__file__), 'basics.ki')
     init_module(basics_module, basics_path)

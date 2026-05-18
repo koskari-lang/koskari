@@ -43,12 +43,6 @@ from ..lib import Module, ModuleNamespace, demand_call
 from ..reader import READ_EOF, IndentAwareStream, LayoutReader, source_open
 
 
-MODULE_LOAD_FACET_NAMES = (
-    '__compiler__',
-    '__reader__',
-)
-
-
 __all__ = (
     'MODULE_LOAD_FACET_NAMES',
     'attach_module_load_facets',
@@ -60,6 +54,12 @@ __all__ = (
     'load_module_kio_async',
     'load_module_kio_demand',
     'new_module_demand',
+)
+
+
+MODULE_LOAD_FACET_NAMES = (
+    '__compiler__',
+    '__reader__',
 )
 
 
@@ -81,9 +81,9 @@ async def new_module(name, package=None, system=False):
     ns = ModuleNamespace(name, bltns)
     module = Module(ns)
 
-    _ns_store(ns, '__name__', name)
+    ns['__name__'] = name
     if package is not None:
-        _ns_store(ns, '__package__', package)
+        ns['__package__'] = package
 
     if system:
         sys.modules[name] = module
@@ -109,9 +109,9 @@ def new_module_demand(name, package=None, system=False):
     ns = ModuleNamespace(name, bltns)
     module = Module(ns)
 
-    _ns_store(ns, '__name__', name)
+    ns['__name__'] = name
     if package is not None:
-        _ns_store(ns, '__package__', package)
+        ns['__package__'] = package
 
     if system:
         sys.modules[name] = module
@@ -134,18 +134,18 @@ def init_module(module, filename, spec=None):
 
     ns = vars(module)
 
-    _ns_store(ns, '__file__', filename)
+    ns['__file__'] = filename
 
     dirpart, basename = split(filename)
     if basename.startswith('__init__.'):
-        _ns_store(ns, '__path__', [dirpart])
+        ns['__path__'] = [dirpart]
 
     if spec is not None:
-        _ns_store(ns, '__spec__', spec)
+        ns['__spec__'] = spec
         if spec.loader is not None:
-            _ns_store(ns, '__loader__', spec.loader)
+            ns['__loader__'] = spec.loader
         if spec.submodule_search_locations is not None:
-            _ns_store(ns, '__path__', list(spec.submodule_search_locations))
+            ns['__path__'] = list(spec.submodule_search_locations)
 
 
 async def load_module_async(module, *, interactive=False):
@@ -305,8 +305,8 @@ def attach_module_load_facets(module, compiler, reader):
     """
 
     ns = vars(module)
-    _ns_store(ns, '__compiler__', compiler)
-    _ns_store(ns, '__reader__', reader)
+    ns['__compiler__'] = compiler
+    ns['__reader__'] = reader
 
 
 def detach_module_load_facets(module):
@@ -321,46 +321,7 @@ def detach_module_load_facets(module):
 
     ns = vars(module)
     for name in MODULE_LOAD_FACET_NAMES:
-        _ns_clear(ns, name)
-
-
-def _ns_clear(ns, name):
-    """
-    Clear a binding in a namespace or dict if present.
-
-    :param ns: ModuleNamespace or dict
-    :param name: str name to clear
-    """
-
-    if hasattr(ns, 'store'):
-        r = ns.ref(name)
-        if not r.empty:
-            r.clear()
-    else:
-        ns.pop(name, None)
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _ns_store(ns, name, value):
-    """
-    Store name -> value in a namespace or dict without creating a closure ref.
-
-    Handles both ModuleNamespace (which uses .store()) and plain dicts
-    (used in tests).
-
-    :param ns: ModuleNamespace or dict
-    :param name: str name to bind
-    :param value: value to store
-    """
-
-    if hasattr(ns, 'store'):
-        ns.store(name, value)
-    else:
-        ns[name] = value
+        del ns[name]
 
 
 # The end.
