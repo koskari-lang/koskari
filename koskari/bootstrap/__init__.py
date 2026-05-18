@@ -28,7 +28,7 @@ import operator as _op
 from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from os.path import dirname, join
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    MemoizedRef, Module, ModuleNamespace, ParamRef, Ref, apply,
@@ -41,15 +41,22 @@ from ..types import (TypePredicate, as_coroutine, build_proper, is_nil,
 
 
 __all__ = (
+    'builtin',
+    'add_builtin',
+    'add_builtin_type',
     'make_bootstrap',
     'make_builtins',
     'make_builtins_demand',
 )
 
 
+# registry filled via the `@builtin` decorator
 _BUILTIN_REGISTRY: Dict[str, Any] = {}
 
-_BUILTINS_CACHE = None
+# cache of the builtins dict, None is a sentinel for uninitialized
+_BUILTINS_CACHE: Optional[Dict[str, Any]] = None
+
+# order-specific sources for constructing the builtins
 _BUILTINS_SOURCES = (
     # baseline define-syntax meta-macros
     '_define_syntax.ki',
@@ -76,6 +83,10 @@ def make_bootstrap():
 
     :return: dict of builtin name -> value
     """
+
+    # delayed imports to avoid circular dependencies, but we do need to ensure
+    # they're loaded. They each have decorated builtins that self-register
+    # into the _BUILTIN_REGISTRY.
 
     from .. import help as _koskari_help  # noqa: F401
     from .. import syntax as _koskari_syntax  # noqa: F401
@@ -219,7 +230,7 @@ def make_bootstrap():
     for sym, fn in _BUILTIN_REGISTRY.items():
         _bind(sym, fn)
 
-    # exceptions (all subclasses of BaseException from builtins)
+    # Python's builtins, exceptions (all subclasses of BaseException)
     import builtins as _builtins
     for _name in dir(_builtins):
         _val = getattr(_builtins, _name)
