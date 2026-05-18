@@ -17,6 +17,9 @@ koskari.dis_ng
 
 Experimental koskari-native disassembler aiming for parity with
 koskari.dis output shape.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
 """
 
 

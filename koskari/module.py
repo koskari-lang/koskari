@@ -169,6 +169,8 @@ async def load_module_async(module, *, interactive=False):
     filename = getattr(module, '__file__', '<unknown>')
     ns = vars(module)
 
+    docstr = None
+
     with source_open(filename) as source_stream:
 
         compiler = Compiler(
@@ -191,6 +193,14 @@ async def load_module_async(module, *, interactive=False):
                 source_expr = reader.read(stream)
                 if source_expr is READ_EOF:
                     break
+
+                if docstr is None:
+                    if isinstance(source_expr, str):
+                        ns['__doc__'] = source_expr
+                        docstr = True
+                        continue
+                    else:
+                        docstr = False
 
                 fragment = compiler.full_compile(source_expr)
                 expr = fragment.as_expression(ns)
@@ -218,6 +228,8 @@ def load_module_demand(module, *, interactive=False):
     filename = getattr(module, '__file__', '<unknown>')
     ns = vars(module)
 
+    docstr = None
+
     with source_open(filename) as source_stream:
 
         compiler = Compiler(
@@ -241,6 +253,14 @@ def load_module_demand(module, *, interactive=False):
 
                 if source_expr is READ_EOF:
                     break
+
+                if docstr is None:
+                    if isinstance(source_expr, str):
+                        ns['__doc__'] = source_expr
+                        docstr = True
+                        continue
+                    else:
+                        docstr = False
 
                 fragment = compiler.full_compile(source_expr)
                 expr = fragment.as_expression(ns)

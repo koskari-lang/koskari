@@ -513,7 +513,7 @@ class Compiler:
             name = r.deref()
         self.name = name
 
-        r = ns.ref("__path__")
+        r = ns.ref("__file__")
         if r.empty:
             r.store(filename)
         elif filename is None:
