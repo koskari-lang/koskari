@@ -25,7 +25,7 @@ import types
 import unittest
 
 from koskari.importer import install, uninstall
-from koskari.importer.importlib import KoskariSourceFileLoader
+from koskari.importer import KoskariSourceFileLoader
 from koskari.serialize.incremental import compile_ki_file_to_kio
 
 import pytest

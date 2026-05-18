@@ -361,11 +361,11 @@ class TestCollectAndApply(unittest.TestCase):
 
 def _make_hygiene_compiler():
     from koskari.compile import Compiler
-    from koskari.compile.specials import BUILTINS
+    from koskari.bootstrap import _BUILTIN_REGISTRY
     from koskari.lib import Module, ModuleNamespace
 
     mod_ns = ModuleNamespace("test", {})
-    for sym, fn in BUILTINS.items():
+    for sym, fn in _BUILTIN_REGISTRY.items():
         mod_ns.store(str(sym), fn)
     module = Module(mod_ns)
     return Compiler("<test>", module, filename=__file__)

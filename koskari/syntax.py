@@ -15,42 +15,7 @@
 """
 koskari.syntax
 
-Next-generation syntax dispatch scaffolding: ``Syntax`` (a ``Compiled``
-dispatcher), transform arms, native ``koskari.lib.Datum`` for macro unbox,
-and a
-syntax-rules-compatible pattern lowerer to ``matcher.Pattern`` plus
-MATCH-dialect rule spines via :func:`koskari.matcher.parse_explicit_rule_pattern`.
-
-The compiled dispatcher type here is ``Syntax`` (a ``Compiled`` subclass).
-
-In compound ``(subpat ...)`` rows, a non-literal symbol followed by
-``...`` lowers to ``REST(str(id))`` when more pattern follows in the
-same row (tail capture for ``unless``-style layouts); when it is
-terminal in the row it lowers to ``repeat_capture`` with
-``TEST_ANY`` so ``captures[id]`` is a list of ``Datum``. A bare
-pattern symbol still lowers to ``REST`` (same tail semantics).
-Template expansion treats a lone pattern-variable followed by ``...``
-like quasiquote ``,@`` when that binding is not a ``list``; see
-:func:`koskari.hygiene.expand_template_with_hygiene`. Compound
-``(subpat ...)`` uses ``repeat_capture``; :func:`_promote_repeat_frame_bindings`
-copies per-iteration frame slots up to parallel list columns for template
-symbols before ellipsis expansion. An empty ellipsis region matches a
-subject with zero spine elements (``()``), not ``(nil,)``.
-
-Runtime Koskari builtins ``build-syntax``, ``build-macro``, and ``build-special``
-assemble ``Syntax`` from lowered patterns and templates or procedural
-handlers. Templates and procedural handlers see the full use-site form
-(nil-terminated pair spine) unchanged. For RULE builders, pattern
-literals are only what the caller passes: the first pattern position is
-normally a symbol capture (the actual head, including aliases); include
-the dispatch symbol in ``literals`` when a fixed head is required. Koskari
-``syntax-match`` segments use only the macro name as a literal set at
-the compile layer; here MATCH patterns encode structure explicitly.
-``parse-match-pattern``, ``parse-rule-pattern``, and the ``build_*``
-rule constructors register as Koskari builtins via :func:`koskari.stdlib.builtin`
-and merge into bootstrap from :data:`koskari.stdlib.BUILTINS`.
-``build-syntax`` accepts lowered pattern values and quoted templates at
-runtime (no tagged const-pool tuple).
+Syntax dispatch scaffolding
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -72,7 +37,7 @@ from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST, TEST_ANY,
                              HygienicMatchCompiler, Pattern, check_pattern_arg,
                              parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
-from koskari.stdlib import builtin
+from koskari.bootstrap import builtin
 from koskari.types import is_pair, is_proper, is_symbol, unpack
 
 

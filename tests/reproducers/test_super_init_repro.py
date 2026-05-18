@@ -25,7 +25,7 @@ __init__ via (super) with arguments.
 import os
 import unittest
 
-from koskari.importer.module import init_module, load_module_async, new_module
+from koskari.module import init_module, load_module_async, new_module
 
 import pytest
 

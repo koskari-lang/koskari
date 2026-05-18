@@ -24,6 +24,7 @@ import unittest
 
 import pytest
 
+from koskari.importer import install
 from koskari.lib import Code, FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 
@@ -38,6 +39,9 @@ def _dis_ng():
     Return koskari.dis_ng, importing on first use so collection does not
     import it
     """
+
+    # just in case, some tests may have uninstalled the importer
+    install()
 
     global _dis_ng_mod
     if _dis_ng_mod is None:

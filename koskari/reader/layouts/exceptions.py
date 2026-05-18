@@ -20,7 +20,7 @@ Layout handlers for try/except/else/finally block syntax.
 from ...compile.helpers import helper_using
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...types import fill_position, get_position, is_pair, unpack
 from .helpers import layout
 

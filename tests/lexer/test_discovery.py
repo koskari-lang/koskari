@@ -21,7 +21,7 @@ from koskari.lexer.discovery import (
     collect_special_like_names_from_builtins,
     special_names_for_repl,
 )
-from koskari.importer.bootstrap import make_bootstrap
+from koskari.bootstrap import make_bootstrap
 
 from unittest import IsolatedAsyncioTestCase
 

@@ -26,7 +26,7 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 
 from ...lib import cons, keyword, nil
 from ...types import build_proper, is_pair, is_symbol
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from .basics import layout_begin, layout_block, layout_call
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_switch

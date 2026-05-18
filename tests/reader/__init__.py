@@ -4,12 +4,12 @@
 from koskari.reader import LayoutReader, source_str
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
-from koskari.stdlib import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 
 
 def parse_layout(src_str, **defns):
 
-    builtins = dict(BUILTINS)
+    builtins = dict(_BUILTIN_REGISTRY)
     builtins.update(defns)
 
     reader = LayoutReader(builtins)

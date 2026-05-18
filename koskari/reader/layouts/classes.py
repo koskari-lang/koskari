@@ -20,7 +20,7 @@ Layout handlers for class block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...types import get_position, unpack
 from .helpers import layout
 

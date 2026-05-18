@@ -24,7 +24,7 @@ HelpFormatter, registry dispatch, and kos-help builtins
 
 import pydoc
 
-from ..stdlib import builtin
+from ..bootstrap import builtin
 
 
 _registry = {}

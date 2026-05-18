@@ -36,7 +36,7 @@ from ...matcher import (
     VALUE,
 )
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ..helpers import match
 

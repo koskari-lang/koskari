@@ -25,7 +25,7 @@ Special form handler for compile/bytecode.
 from ...lib import keyword, nil, OpCode, pair, symbol
 from ...matcher import CALLEDBY, MATCH, REST
 from ..compiler import ByteCodeFragment, Compiler
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 
 

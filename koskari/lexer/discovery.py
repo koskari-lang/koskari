@@ -81,7 +81,7 @@ def special_names_for_repl():
     :return: frozenset of name strings for REPL special-form highlighting
     """
 
-    from koskari.importer.bootstrap import make_builtins_demand
+    from koskari.bootstrap import make_builtins_demand
 
     return collect_special_like_names_from_builtins(make_builtins_demand())
 

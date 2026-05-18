@@ -27,7 +27,7 @@ from ...exceptions import SpecialError
 from ...lib import OpCode, nil
 from ...matcher import (BINDING, BODY, CALLEDBY, MATCH, REST, SYMBOL, USING_UNPACK,
                         VALUE)
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ..helpers import helper_begin, helper_elsebody, using_unpack_helper
 

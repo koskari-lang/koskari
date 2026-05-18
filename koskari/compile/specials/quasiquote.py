@@ -45,7 +45,7 @@ from ...types import cons, get_position, is_nil, is_pair, set_position
 from ...exceptions import SpecialError
 from ..compiler import _is_const
 from ...matcher import CALLEDBY, MATCH, REST
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 
 _symbol_quasiquote = symbol("compile/quasiquote")

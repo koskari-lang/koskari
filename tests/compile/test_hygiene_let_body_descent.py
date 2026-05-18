@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.compile import Compiler
-from koskari.compile.specials import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 # BUILTINS are Syntax values; legacy koskari.hygiene expects Special.forms.
 from koskari.hygiene import collect_binding_symbols, expand_template_with_hygiene
 from koskari.lib import Module, ModuleNamespace, car, cdr, symbol
@@ -42,7 +42,7 @@ def _register_specials(ns, specials):
 
 def _make_compiler():
     mod_ns = ModuleNamespace("test", {})
-    _register_specials(mod_ns, BUILTINS)
+    _register_specials(mod_ns, _BUILTIN_REGISTRY)
     module = Module(mod_ns)
     return Compiler("<test>", module, filename=__file__), mod_ns
 

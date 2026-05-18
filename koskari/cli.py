@@ -11,6 +11,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
+
 """
 koskari.cli
 
@@ -32,18 +33,23 @@ from argparse import REMAINDER, ArgumentParser
 from os.path import basename
 from traceback import format_exception_only
 
-from .lib import kos_repr
 from .exceptions import ReaderError
+from .lexer.discovery import special_names_for_repl
+from .lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
+                                   koskari_style, load_koskari_key_bindings)
+from .lib import kos_repr
+from .module import new_module
 from .reader import READ_EOF, LayoutReader, source_str
 
+
 __all__ = (
+    'REPLCodeBoundary',
+    'cli_async',
+    'format_exception_with_koskari_trace',
     'main',
     'option_parser',
-    'cli_async',
-    'run_file_async',
     'repl_async',
-    'REPLCodeBoundary',
-    'format_exception_with_koskari_trace',
+    'run_file_async',
 )
 
 
@@ -71,11 +77,6 @@ def _make_prompter(histfile=None, get_namespace=None):
         from prompt_toolkit import PromptSession
         from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
         from prompt_toolkit.history import FileHistory
-
-        from koskari.lexer.discovery import special_names_for_repl
-        from koskari.lexer.prompt_toolkit import (KoskariCompleter,
-                                                  KoskariLexer, koskari_style,
-                                                  load_koskari_key_bindings)
 
         repl_special_names = special_names_for_repl()
         history = FileHistory(histfile) if histfile else None
@@ -405,7 +406,7 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
     """
 
     from koskari.compile import Compiler
-    from koskari.importer.module import attach_module_load_facets, init_module
+    from koskari.module import attach_module_load_facets, init_module
     from koskari.reader import LayoutReader
 
     stdin = stdin or sys.stdin
@@ -553,8 +554,8 @@ async def run_file_async(mod, filename, execute_kio=False, *, interactive=False)
     :param interactive: passed to load_module_async; retain load facets when True
     """
 
-    from koskari.importer.module import (init_module, load_module_async,
-                                         load_module_kio_async)
+    from koskari.module import (init_module, load_module_async,
+                                load_module_kio_async)
 
     init_module(mod, filename)
     if execute_kio:
@@ -588,11 +589,6 @@ async def cli_async(options):
             options.compile_kio,
             source_filename=options.compile_kio_source_name)
         return
-
-    from koskari.importer import install
-    from koskari.importer.module import new_module
-
-    install()
 
     if filename:
         sys.argv = [filename] + list(options.args)

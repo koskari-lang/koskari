@@ -1,0 +1,68 @@
+
+
+define-syntax compile/if:
+  syntax-rules []:
+    case (if condition then: then else: else):
+      (compile/cond
+        [condition then]
+        [else: else])
+    case (if condition then else):
+      (compile/cond
+        [condition then]
+        [else: else])
+    case (if condition then):
+      (compile/cond
+        [condition then]
+        [else: None])
+
+
+define-syntax compile/when:
+  syntax-rules []:
+    case (when condition then):
+      (compile/cond
+        [condition then]
+        [else: None])
+
+
+define-syntax compile/unless:
+  syntax-rules []:
+    case (unless condition then):
+      (compile/cond
+        [condition None]
+        [else: then])
+
+
+define-syntax compile/when-main:
+  syntax-rules []:
+    case (when-main body ...):
+      when (equal? __name__ "__main__"):
+        (begin body ...)
+
+
+define-syntax compile/None?:
+  syntax-rules []:
+    case (None? value):
+      (compile/is None value)
+
+
+define-syntax compile/nil?:
+  syntax-rules []:
+    case (nil? value):
+      (compile/is nil value)
+
+
+define on-demand? []:
+  """
+  True if current context is being evaluated via demand-call and
+  cannot use `await` to suspend.
+  """
+  import-from koskari.exceptions KoskariSyncViolation
+  try:
+    (await)
+  except [KoskariSyncViolation]:
+    True
+  else:
+    False
+
+
+;; The end.

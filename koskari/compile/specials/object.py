@@ -34,7 +34,7 @@ from ...lib import nil, OpCode, symbol, cons
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...types import get_position, is_pair, is_symbol, is_keyword, unpack
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ..helpers import const_only_expr, is_symbolish, match
 

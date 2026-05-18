@@ -32,7 +32,7 @@ from koskari.cli import (
     format_exception_with_koskari_trace,
     _filter_infrastructure_tb,
 )
-from koskari.importer.module import new_module
+from koskari.module import new_module
 
 import pytest
 

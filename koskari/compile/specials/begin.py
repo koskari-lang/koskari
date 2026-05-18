@@ -25,7 +25,7 @@ Special form handler for compile/begin.
 from ...lib import pair
 from ..compiler import ByteCodeFragment, Compiler
 from ...matcher import CALLEDBY, MATCH, REST
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ..helpers import helper_begin
 

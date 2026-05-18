@@ -20,6 +20,9 @@ koskari - A LISP dialect for Python
 
 
 import koskari.importer as importer
+
+builtins = None
+
 importer.install()
 
 

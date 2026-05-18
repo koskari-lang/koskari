@@ -24,7 +24,7 @@ Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
 
 from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, SYMBOL, VALUE
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_symbol
 

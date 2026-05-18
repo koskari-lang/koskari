@@ -24,7 +24,7 @@ Base class and helpers for testing koskari.compile.specials handlers.
 import unittest
 
 from koskari.compile import Compiler, CompilerMode
-from koskari.compile.specials import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import FunctionSpec, OpCode
 from koskari.reader import LayoutReader, default_reader, source_str
 from koskari.lib import Module, ModuleNamespace
@@ -51,10 +51,10 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         return reader.read(stream)
 
 
-    def compile_expr(self, src_str, lineno=1, specials=BUILTINS,
+    def compile_expr(self, src_str, lineno=1, specials=_BUILTIN_REGISTRY,
                      resolution_pragma_class=None, **defns):
         """
-        Compile source to an expression; specials=None uses BUILTINS
+        Compile source to an expression; specials=None uses _BUILTIN_REGISTRY
         """
 
         mod_ns = self.get_glbls(**defns)
@@ -85,7 +85,7 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         mod_ns = self.get_glbls(**defns)
         module = Module(mod_ns)
         ns = vars(module)
-        _register_specials(ns, BUILTINS)
+        _register_specials(ns, _BUILTIN_REGISTRY)
 
         source = self.parse_source(src_str, lineno=lineno)
         kwargs = {}

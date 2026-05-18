@@ -27,7 +27,7 @@ from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import fill_position, get_position, is_keyword, is_pair, unpack
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ..helpers import helper_begin, helper_using, pycons
 

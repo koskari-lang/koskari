@@ -19,7 +19,7 @@ Layout handler for layout/dyn-wind block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...types import get_position
 from .helpers import layout
 

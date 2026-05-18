@@ -27,7 +27,7 @@ from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
 from ...matcher import (CALLEDBY, LIST, LITERAL, MATCH, PAIR,
                         SYMBOL, repeat_capture)
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...types import get_position, unpack
 from .helpers import layout
 

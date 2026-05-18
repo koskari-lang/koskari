@@ -22,7 +22,7 @@ full builtins (make_builtins) to be loaded.
 from types import SimpleNamespace
 
 from koskari.compile import Compiler
-from koskari.importer.bootstrap import make_builtins, make_builtins_demand
+from koskari.bootstrap import make_builtins, make_builtins_demand
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
 

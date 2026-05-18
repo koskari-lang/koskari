@@ -25,7 +25,7 @@ from koskari.types import is_pair, unpack
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.reader import READ_EOF, LayoutReader, source_str
-from koskari.stdlib import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 
 from . import parse_layout
@@ -269,7 +269,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
 
 
 def _parse_layout_all(src_str):
-    builtins = dict(BUILTINS)
+    builtins = dict(_BUILTIN_REGISTRY)
 
     reader = LayoutReader(builtins)
     stream = source_str(src_str, '<unittest>')

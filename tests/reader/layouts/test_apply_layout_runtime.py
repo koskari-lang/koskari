@@ -27,7 +27,7 @@ handlers, mirroring scenarios formerly covered via compile/apply-layout.
 import unittest
 
 from koskari.compile import Compiler
-from koskari.compile.specials import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import Module, ModuleNamespace, cons, keyword, nil, symbol
 from koskari.reader.layouts import apply_layout, apply_layouts
 from koskari.types import unpack
@@ -73,7 +73,7 @@ class ApplyLayoutRuntimeTestCase(unittest.IsolatedAsyncioTestCase):
         mod_ns = ModuleNamespace("test", defns)
         module = Module(mod_ns)
         ns = vars(module)
-        _register_specials(ns, BUILTINS)
+        _register_specials(ns, _BUILTIN_REGISTRY)
         compiler = Compiler("<unittest>", module, filename=__file__)
         return module, mod_ns, compiler, ns
 

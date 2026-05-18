@@ -25,7 +25,7 @@ Special form handler for compile/call and compile/call-attr
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, pair, symbol
 from ...matcher import CALLEDBY, LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_symbol
 from ..compiler import ByteCodeFragment, Compiler

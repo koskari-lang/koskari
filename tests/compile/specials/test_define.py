@@ -17,7 +17,7 @@ Tests for koskari.compile compile/define special form.
 
 
 from koskari.compile import Compiler
-from koskari.compile.specials import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import Module, symbol
 from koskari.reader import LayoutReader, source_str
 from . import SpecialsTestCase
@@ -145,7 +145,7 @@ class TestDefineAnnotationBindings(SpecialsTestCase):
         mod_ns = self.get_glbls(**defns)
         module = Module(mod_ns)
         ns = vars(module)
-        _register_specials(ns, BUILTINS)
+        _register_specials(ns, _BUILTIN_REGISTRY)
         stream = source_str(src_str, __file__, line_no=lineno)
         source = LayoutReader(ns).read(stream)
         compiler = Compiler("<unittest>", module, filename=__file__)

@@ -38,9 +38,9 @@ This is the koskari analogue of sibilant.module from python-sibilant.
 import sys
 from os.path import split
 
-from ..compile import Compiler
-from ..lib import Module, ModuleNamespace, demand_call
-from ..reader import READ_EOF, IndentAwareStream, LayoutReader, source_open
+from .compile import Compiler
+from .lib import Module, ModuleNamespace, demand_call
+from .reader import READ_EOF, IndentAwareStream, LayoutReader, source_open
 
 
 __all__ = (
@@ -263,7 +263,7 @@ async def load_module_kio_async(module):
     filename = getattr(module, '__file__', '<unknown>')
     ns = vars(module)
 
-    from ..serialize.codex import KioFile
+    from .serialize.codex import KioFile
 
     kio_file = KioFile.read(filename)
     for code in kio_file.codes:
@@ -283,7 +283,7 @@ def load_module_kio_demand(module):
     filename = getattr(module, '__file__', '<unknown>')
     ns = vars(module)
 
-    from ..serialize.codex import KioFile
+    from .serialize.codex import KioFile
 
     kio_file = KioFile.read(filename)
     for code in kio_file.codes:

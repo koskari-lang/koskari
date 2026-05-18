@@ -3,48 +3,41 @@
 # the Free Software Foundation; either version 3 of the License, or
 # (at your option) any later version.
 #
-# This library is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
+
 """
-koskari.importer.builtins
+koskari.stdlib
 
-Builtin environment for Koskari modules.
-
-Provides make_bootstrap() (minimal Python-only layer) and make_builtins()
-(merge of bootstrap and basics.ki).  The full builtins dict is passed to
-ModuleNamespace for every .ki module.  make_builtins loads basics.ki
-using bootstrap as its builtins, then merges both and caches the result.
+Registration hooks for names merged into the Koskari builtins dict.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
+:ai-assistant: Composer via Cursor
 """
 
+
+import sys
 import operator as _op
 from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from os.path import dirname, join
+from typing import Any, Dict
 
-from .. import help as _koskari_help  # noqa: F401 registers @builtin
-from .. import syntax as _koskari_syntax  # noqa: F401 registers @builtin
-from ..compile import specials as _koskari_compile_specials  # noqa: F401
 from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    MemoizedRef, Module, ModuleNamespace, ParamRef, Ref, apply,
                    build_dict, build_list, build_set, build_tuple, car, cdr,
                    cons, defer, demand, demand_apply, demand_call, deref,
                    gensym, keyword, kos_repr, nil, pair, parameter, setcar,
                    setcdr, symbol, values)
-from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
-from ..stdlib import BUILTINS
 from ..types import (TypePredicate, as_coroutine, build_proper, is_nil,
                      is_None, is_proper, is_recursive, unpack)
-from .module import init_module, load_module_async, load_module_demand
 
 
 __all__ = (
@@ -54,7 +47,22 @@ __all__ = (
 )
 
 
+_BUILTIN_REGISTRY: Dict[str, Any] = {}
+
 _BUILTINS_CACHE = None
+_BUILTINS_SOURCES = (
+    # baseline define-syntax meta-macros
+    '_define_syntax.ki',
+
+    # additional features
+    '_conditionals.ki',
+    '_variables.ki',
+    '_class.ki',
+    '_iter.ki',
+
+    # final stub
+    'basics.ki',
+)
 
 
 def make_bootstrap():
@@ -68,6 +76,11 @@ def make_bootstrap():
 
     :return: dict of builtin name -> value
     """
+
+    from .. import help as _koskari_help  # noqa: F401
+    from .. import syntax as _koskari_syntax  # noqa: F401
+    from ..compile import specials as _koskari_compile_specials  # noqa: F401
+    from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 
     bltns = {}
 
@@ -203,7 +216,7 @@ def make_bootstrap():
     _bind('<<', _op.lshift)
     _bind('>>', _op.rshift)
 
-    for sym, fn in BUILTINS.items():
+    for sym, fn in _BUILTIN_REGISTRY.items():
         _bind(sym, fn)
 
     # exceptions (all subclasses of BaseException from builtins)
@@ -231,18 +244,29 @@ async def make_builtins():
     if _BUILTINS_CACHE is not None:
         return _BUILTINS_CACHE
 
-    bootstrap = make_bootstrap()
-    ns = ModuleNamespace("koskari.basics", bootstrap)
-    basics_module = Module(ns)
+    import koskari
 
-    ns['__name__'] = 'koskari.basics'
+    if koskari.builtins is None:
+        from ..module import load_module_async
+        bootstrap = make_bootstrap()
+        ns = ModuleNamespace("koskari.basics", {})
+        module = Module(ns)
 
-    basics_path = join(dirname(__file__), 'basics.ki')
-    init_module(basics_module, basics_path)
+        for name, val in bootstrap.items():
+            ns[name] = val
 
-    await load_module_async(basics_module)
+        ns['__name__'] = 'koskari.builtins'
+        ns['__package__'] = 'koskari'
 
-    for key, val in vars(basics_module).items():
+        for src in _BUILTINS_SOURCES:
+            ns['__file__'] = join(dirname(__file__), src)
+            await load_module_async(module)
+
+        # final fake setup
+        sys.modules['koskari.builtins'] = module
+        koskari.builtins = module
+
+    for key, val in vars(module).items():
         if not key.startswith('__'):
             try:
                 bootstrap[key] = val.deref()
@@ -268,18 +292,29 @@ def make_builtins_demand():
     if _BUILTINS_CACHE is not None:
         return _BUILTINS_CACHE
 
-    bootstrap = make_bootstrap()
-    ns = ModuleNamespace("koskari.basics", bootstrap)
-    basics_module = Module(ns)
+    import koskari
 
-    ns['__name__'] = 'koskari.basics'
+    if koskari.builtins is None:
+        from ..module import load_module_demand
+        bootstrap = make_bootstrap()
+        ns = ModuleNamespace("koskari.basics", {})
+        module = Module(ns)
 
-    basics_path = join(dirname(__file__), 'basics.ki')
-    init_module(basics_module, basics_path)
+        for name, val in bootstrap.items():
+            ns[name] = val
 
-    load_module_demand(basics_module)
+        ns['__name__'] = 'koskari.builtins'
+        ns['__package__'] = 'koskari'
 
-    for key, val in vars(basics_module).items():
+        for src in _BUILTINS_SOURCES:
+            ns['__file__'] = join(dirname(__file__), src)
+            load_module_demand(module)
+
+        # final fake setup
+        sys.modules['koskari.builtins'] = module
+        koskari.builtins = module
+
+    for key, val in vars(module).items():
         if not key.startswith('__'):
             try:
                 bootstrap[key] = val.deref()
@@ -288,6 +323,35 @@ def make_builtins_demand():
 
     _BUILTINS_CACHE = bootstrap
     return bootstrap
+
+
+def builtin(name: str, *aliases: str):
+    """
+    Register the decorated object under explicit stdlib string keys
+
+    Each name must be the bootstrap string for that binding (no inference).
+
+    :param names: one or more builtin name strings
+    :return: decorator that registers ``obj`` and returns it unchanged
+    :raises TypeError: when ``names`` is empty or any entry is not a ``str``
+    """
+
+    def decorator(obj):
+        _BUILTIN_REGISTRY[name] = obj
+        for alias in aliases:
+            _BUILTIN_REGISTRY[alias] = obj
+        return obj
+
+    return decorator
+
+
+def add_builtin(name: str, obj: Any):
+    _BUILTIN_REGISTRY[name] = obj
+
+
+def add_builtin_type(name: str, typeobj: Any):
+    add_builtin(name, typeobj)
+    add_builtin(name + '?', TypePredicate(name + '?', typeobj))
 
 
 # The end.

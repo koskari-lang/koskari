@@ -1,0 +1,35 @@
+
+
+define-syntax compile/each:
+  syntax-rules [when: unless:]:
+    case (each [binding seq] when: condition body):
+      ((lambda each [] (for-each [binding seq]
+         (when condition (yield body)))))
+    case (each [binding seq] unless: condition body):
+      ((lambda each [] (for-each [binding seq]
+         (unless condition (yield body)))))
+    case (each [binding seq] body):
+      ((lambda each [] (for-each [binding seq]
+         (yield body))))
+
+
+define-syntax compile/list-each:
+  syntax-rules []:
+    case (list-each [binding seq] body):
+      (list (each [binding seq] body))
+
+
+define-syntax compile/dict-each:
+  syntax-rules [when: unless: key: value:]:
+    case (dict-each [binding seq] key: key value: value):
+      (dict (each [binding seq] #(key value) ))
+    case (dict-each [binding seq] when: condition key: key value: value):
+      (dict (each [binding seq] when: condition #(key value)))
+    case (dict-each [binding seq] unless: condition key: key value: value):
+      (dict (each [binding seq] unless: condition #(key value)))
+
+    case (dict-each [binding seq] body):
+      (dict (each [binding seq] body))
+
+
+;; The end.

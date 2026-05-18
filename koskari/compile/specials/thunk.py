@@ -26,7 +26,7 @@ import re
 from ...exceptions import SpecialError
 from ...lib import cons, keyword, nil, symbol, gensym
 from ...matcher import CALLEDBY, MATCH, REST
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...types import is_pair, is_symbol
 from ...syntax import special
 from ..compiler import ByteCodeFragment, Compiler

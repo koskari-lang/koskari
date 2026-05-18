@@ -21,7 +21,7 @@ renamed; runtime matches expanded lambda behavior.
 import pytest
 
 from koskari.compile import Compiler
-from koskari.compile.specials import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import Datum, Module, car, cdr, cons, nil, symbol
 from koskari.reader import LayoutReader, source_str
 from koskari.types import build_proper, is_pair, is_symbol
@@ -93,7 +93,7 @@ def _make_compiler_and_ns(testcase):
     mod_ns = testcase.get_glbls()
     module = Module(mod_ns)
     ns = vars(module)
-    _register_specials(ns, BUILTINS)
+    _register_specials(ns, _BUILTIN_REGISTRY)
     tpl = _install_lambda_ng_template(ns)
     _install_demo_syntaxes(ns, tpl)
     compiler = Compiler("<unittest>", module, filename=__file__)
@@ -138,7 +138,7 @@ class MacroLambdaHygieneFullStackBase(LambdaNgFullStackBase):
         mod_ns = self.get_glbls()
         module = Module(mod_ns)
         ns = vars(module)
-        _register_specials(ns, BUILTINS)
+        _register_specials(ns, _BUILTIN_REGISTRY)
         tpl = _install_lambda_ng_template(ns)
         _install_demo_syntaxes(ns, tpl)
         stream = source_str(src_str, __file__, line_no=lineno)

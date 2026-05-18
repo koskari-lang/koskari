@@ -29,6 +29,7 @@ without compilation.
 # prompt_toolkit REPL enhancements.
 
 
+from ..bootstrap import make_builtins_demand
 from collections import namedtuple
 from re import compile as regex
 from re import UNICODE
@@ -52,15 +53,13 @@ Token = namedtuple(
 
 def _make_special_names():
     from ..compile.compiler import Compiled
-    from koskari.stdlib import BUILTINS
-    return frozenset(n for n, v in BUILTINS.items()
+    return frozenset(n for n, v in make_builtins_demand().items()
                      if isinstance(v, Compiled))
 
 
 def _make_layout_names():
     from ..reader.layouts.helpers import LayoutHandler
-    from koskari.stdlib import BUILTINS
-    return frozenset(n for n, v in BUILTINS.items()
+    return frozenset(n for n, v in make_builtins_demand().items()
                      if isinstance(v, LayoutHandler))
 
 
@@ -74,9 +73,8 @@ def _make_layout_head_names():
 
 def _make_layout_peer_names():
     from koskari.reader.layouts.helpers import LayoutHandler
-    from koskari.stdlib import BUILTINS
     result = []
-    for v in BUILTINS.values():
+    for v in make_builtins_demand().values():
         if not isinstance(v, LayoutHandler):
             continue
         for peer in v.peers:

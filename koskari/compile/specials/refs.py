@@ -27,7 +27,7 @@ from ...lib import nil, OpCode
 from ...matcher import CALLEDBY, DEFINE, MATCH, REST, VALUE
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ..helpers import const_only_expr
 

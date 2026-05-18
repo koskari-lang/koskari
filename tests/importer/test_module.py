@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.importer.module: new_module, init_module, load_module_demand,
+Tests for koskari.module: new_module, init_module, load_module_demand,
 new_module_demand.
 """
 
@@ -24,9 +24,9 @@ import unittest
 import pytest
 
 from koskari.compile import Compiler
-from koskari.importer.module import (init_module, load_module_demand,
-                                     new_module, new_module_demand)
 from koskari.lib import Module
+from koskari.module import (init_module, load_module_demand, new_module,
+                            new_module_demand)
 from koskari.reader import LayoutReader
 
 

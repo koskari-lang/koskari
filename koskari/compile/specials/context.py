@@ -26,7 +26,7 @@ compile/dyn-with.
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil, pair
 from ...matcher import BODY, CALLEDBY, MATCH, REST, USING
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler

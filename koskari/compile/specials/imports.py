@@ -76,7 +76,7 @@ Opcode sequences produced
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil
 from ...matcher import CALLEDBY, MATCH, REST
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_keyword, is_pair, is_symbol, unpack
 from ..helpers import helper_using, is_symbolish

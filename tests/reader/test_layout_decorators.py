@@ -23,7 +23,7 @@ import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.lib import keyword, symbol
 from koskari.reader import LayoutReader, source_str
-from koskari.stdlib import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 from koskari.exceptions import ReaderSyntaxError
 
@@ -153,7 +153,7 @@ class TestLayoutDecorateErrors(IsolatedAsyncioTestCase):
           x
         """
 
-        builtins = dict(BUILTINS)
+        builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
         stream = source_str(src, '<unittest>')
 
@@ -176,7 +176,7 @@ class TestLayoutDecorateLayoutMacroDisabled(IsolatedAsyncioTestCase):
                 super()._add_default_macros()
                 del self._layout_macros['@']
 
-        builtins = dict(BUILTINS)
+        builtins = dict(_BUILTIN_REGISTRY)
 
         reader = LayoutReaderNoAt(builtins)
         stream = source_str('@foo\ndefine-class Obj []:\n  x\n', '<unittest>')

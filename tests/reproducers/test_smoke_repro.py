@@ -29,7 +29,7 @@ import sys
 import unittest
 
 from koskari.cli import run_file_async
-from koskari.importer.module import new_module
+from koskari.module import new_module
 
 import pytest
 

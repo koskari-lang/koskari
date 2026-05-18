@@ -29,7 +29,7 @@ import unittest
 import pytest
 
 from koskari.compile import Compiler
-from koskari.compile.specials import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import Module, ModuleNamespace, car, cdr, cons, symbol
 from koskari.matcher import parse_explicit_rule_pattern
 from koskari.syntax import (Syntax, SyntaxTransform, build_syntax,
@@ -42,7 +42,7 @@ pytestmark = pytest.mark.phase_compile
 
 def _make_compiler():
     ns = ModuleNamespace('test', {})
-    for sym, fn in BUILTINS.items():
+    for sym, fn in _BUILTIN_REGISTRY.items():
         ns.store(str(sym), fn)
     mod = Module(ns)
     return Compiler('<test>', mod, filename=__file__)

@@ -1,0 +1,39 @@
+;; koskari.importer.basics
+;;
+;; Koskari-defined builtins loaded on top of bootstrap.  This module is
+;; merged with bootstrap to form the full builtins environment for
+;; all .ki modules.  Add macros, helpers, and other builtin definitions
+;; here; they will be available in every module without import.
+
+
+define-syntax compile/cadr:
+  (syntax-rules [] [(cadr x) (car (cdr x))])
+
+define-syntax compile/caddr:
+  (syntax-rules [] [(caddr x) (car (cdr (cdr x)))])
+
+define-syntax compile/cadddr:
+  (syntax-rules [] [(cadddr x) (car (cdr (cdr (cdr x))))])
+
+define-syntax compile/caddddr:
+  (syntax-rules [] [(caddddr x) (car (cdr (cdr (cdr (cdr x)))))])
+
+
+define compile/first compile/car
+define compile/second compile/cadr
+define compile/third compile/caddr
+define compile/fourth compile/cadddr
+define compile/fifth compile/caddddr
+
+
+define-syntax compile/help:
+  syntax-rules []:
+    case (help obj ns):
+      (compile/call help obj ns)
+    case (help obj):
+      (compile/call help 'obj (globals))
+    case (help):
+      (compile/call help 'help (globals))
+
+
+;; The end.

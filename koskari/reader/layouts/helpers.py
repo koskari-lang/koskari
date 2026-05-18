@@ -11,17 +11,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
+
 """
 koskari.reader.layouts.helpers
 
 Layout decorator for reader block syntax.
 
-Publish handlers into ``koskari.stdlib.BUILTINS`` with ``koskari.stdlib.builtin``
-as the outermost decorator on each handler stack.
-
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.5 via Cursor
 """
 
 
@@ -45,9 +42,6 @@ def layout(head_symbol, peers=()):
     The handler must have signature (source, peers) and return
     the parsed form. Optional ``peers`` declares peer block head symbols
     that the parser should gather contiguously after this block.
-
-    Register bootstrap names with ``koskari.stdlib.builtin`` as the outermost
-    decorator so the handler appears in ``BUILTINS``.
     """
 
     def decorator(fn):

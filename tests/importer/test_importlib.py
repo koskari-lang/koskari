@@ -26,7 +26,7 @@ import types
 import unittest
 
 from koskari.importer import install, is_installed, uninstall
-from koskari.importer.importlib import KoskariPathFinder, KoskariSourceFileLoader
+from koskari.importer import KoskariPathFinder, KoskariSourceFileLoader
 
 import pytest
 

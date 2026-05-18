@@ -24,7 +24,7 @@ Special form handler for compile/lambda.
 
 from ...lib import FormalsSpec, FunctionSpec, OpCode, nil
 from ...matcher import BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import special
 from ..compiler import ByteCodeFragment, CompilerMode
 from ..helpers import discover_docstring, gather_formals, helper_begin

@@ -20,7 +20,7 @@ Layout handlers for conditional block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, keyword, nil, symbol
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...types import get_position, unpack, is_pair
 from .helpers import layout
 

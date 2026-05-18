@@ -109,7 +109,7 @@ class KoskariSourceFileLoader(FileLoader):
 
 
     async def exec_module_async(self, module):
-        from koskari.importer.module import (
+        from koskari.module import (
             init_module,
             load_module_async,
             load_module_kio_async,
@@ -146,7 +146,7 @@ class KoskariSourceFileLoader(FileLoader):
         load_module_demand so no event loop or await is required.
         """
 
-        from koskari.importer.module import (
+        from koskari.module import (
             init_module,
             load_module_demand,
             load_module_kio_demand,

@@ -14,20 +14,10 @@
 """
 koskari.importer
 
-Install/remove hooks that allow .ki files to be imported transparently.
-
-Implementation is delegated to the top-level ``koskari_importer`` module so
-``import koskari`` can register the hook without loading this subpackage.
-
-The primary entry points are install() and is_installed().  Installing
-inserts KoskariPathFinder at the front of sys.meta_path so that .ki
-source files are found before Python's own PathFinder can claim a
-directory as a namespace package.
-
-Auto-installation is suppressed when the environment variable
-KOSKARI_NOIMPORTER is set to a non-zero value, or when the -X
-KOSKARI_NOIMPORTER Python flag is set.  koskari/__init__.py calls
-_auto_enable_importer() at import time.
+Re-exports the import machinery from the top-level ``koskari_importer``
+module so existing ``from koskari.importer.importlib import ...`` continues
+to work.  Implementation lives in ``koskari_importer`` to avoid pulling
+``koskari.compile`` in when only the hook is needed.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -35,10 +25,24 @@ _auto_enable_importer() at import time.
 """
 
 
-from koskari_importer import install, is_installed, uninstall
+from koskari_importer import (
+    KoskariFileFinder,
+    KoskariPathFinder,
+    KoskariSourceFileLoader,
+    path_hooks,
+    path_importer_cache,
+    install,
+    is_installed,
+    uninstall,
+)
 
 
 __all__ = (
+    'KoskariPathFinder',
+    'KoskariSourceFileLoader',
+    'KoskariFileFinder',
+    'path_hooks',
+    'path_importer_cache',
     'install',
     'is_installed',
     'uninstall',

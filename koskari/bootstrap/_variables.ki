@@ -1,0 +1,166 @@
+
+
+define-syntax compile/set!:
+  syntax-rules [item attr deref
+                compile/item compile/attr compile/deref
+                + - * / // % ** @ << >> & ^ |]:
+    case (set! (item obj name) value):
+      (compile/set-item obj name value)
+    case (set! (compile/item obj name) value):
+      (compile/set-item obj name value)
+
+    case (set! (attr obj name) value):
+      (compile/set-attr obj name value)
+    case (set! (compile/attr obj name) value):
+      (compile/set-attr obj name value)
+
+    case (set! (deref ref) value):
+      (compile/set-ref ref value)
+    case (set! (compile/deref ref) value):
+      (compile/set-ref ref value)
+
+    case (set! (values pattern ...) value):
+      (compile/setq-values [pattern ...] value)
+
+    case (set! name (+ name value)):
+      (compile/inplace + name value)
+    case (set! name (- name value)):
+      (compile/inplace - name value)
+    case (set! name (* name value)):
+      (compile/inplace * name value)
+    case (set! name (/ name value)):
+      (compile/inplace / name value)
+    case (set! name (// name value)):
+      (compile/inplace // name value)
+    case (set! name (% name value)):
+      (compile/inplace % name value)
+    case (set! name (** name value)):
+      (compile/inplace ** name value)
+    case (set! name (@ name value)):
+      (compile/inplace @ name value)
+    case (set! name (<< name value)):
+      (compile/inplace << name value)
+    case (set! name (>> name value)):
+      (compile/inplace >> name value)
+    case (set! name (& name value)):
+      (compile/inplace & name value)
+    case (set! name (^ name value)):
+      (compile/inplace ^ name value)
+    case (set! name (| name value)):
+      (compile/inplace | name value)
+
+    case (set! name value):
+      (setq name value)
+
+
+define-syntax compile/del!:
+  syntax-rules []:
+    case (del! name):
+      (delq name)
+    case (del! (item obj name)):
+      (del-item obj name)
+    case (del! (compile/item obj name)):
+      (del-item obj name)
+    case (del! (attr obj name)):
+      (del-attr obj name)
+    case (del! (compile/attr obj name)):
+      (del-attr obj name)
+
+
+define-syntax compile/ref:
+  syntax-rules [item compile/item attr compile/attr parameter]:
+    case (ref (item obj name)):
+      (compile/ref-item obj name)
+    case (ref (compile/item obj name)):
+      (compile/ref-item obj name)
+
+    case (ref (attr obj name)):
+      (compile/ref-attr obj name)
+    case (ref (compile/attr obj name)):
+      (compile/ref-attr obj name)
+
+    case (ref (parameter name)):
+      (ParamRef 'name)
+
+    case (ref name):
+      (compile/refq name)
+
+
+define-syntax compile/bind!:
+  syntax-rules [item compile/item
+                attr compile/attr
+                dynamic
+                constant
+                memoized
+                parameter]:
+
+    case (bind! name (item obj key)):
+      (compile/bindq name (ref-item obj key))
+    case (bind! name (compile/item obj key)):
+      (compile/bindq name (ref-item obj key))
+
+    case (bind! name (attr obj key)):
+      (compile/bindq name (ref-attr obj key))
+    case (bind! name (compile/attr obj key)):
+      (compile/bindq name (ref-attr obj key))
+
+    case (bind! name (dynamic r ...)):
+      (compile/bindq name (DynamicRef 'name r ...))
+
+    case (bind! name (constant value)):
+      (compile/bindq name (ConstantRef 'name value))
+
+    case (bind! name (memoized getfn)):
+      (compile/bindq name (MemoizedRef 'name getfn))
+
+    case (bind! name (parameter param-name r ...)):
+      (compile/bindq name (ParamRef 'param-name r ...))
+
+    case (bind! name value):
+      (compile/bindq name value)
+
+
+define-syntax compile/define-parameter:
+  syntax-rules []:
+    case (define-parameter name):
+      (compile/define name)
+      (compile/bindq name (ParamRef 'name))
+    case (define-parameter name default):
+      (compile/define name)
+      (compile/bindq name (ParamRef 'name default))
+
+
+define-syntax compile/parameterq:
+  syntax-rules []:
+    case (parameterq name):
+      (parameter 'name)
+    case (parameterq name default):
+      (parameter 'name default)
+
+
+define-syntax compile/let-values:
+  syntax-rules []:
+    case (let-values [pattern value] body ...):
+      (let [[resolved value]]
+        (compile/define-values pattern resolved) body ...)
+
+
+define-syntax compile/let*:
+  syntax-rules [let let*]:
+    case (let* [] body ...):
+      (let [] body ...)
+    case (let* [first] body ...):
+      (let [first] body ...)
+    case (let* [first rest ...] body ...):
+      (let [first] (let* [rest ...] body ...))
+
+
+define-syntax compile/item*:
+  syntax-rules []:
+    case (item* obj key):
+      (item obj key)
+    case (item* obj key rest ...):
+      (item* (item obj key) rest ...)
+
+
+;; The end.

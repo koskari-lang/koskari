@@ -29,7 +29,7 @@ from ...matcher import (BIND, CALLEDBY, DEFINE, LIST, LITERAL_SYM, MATCH, REST,
                         SYMBOL,
                         VALUE, parse_explicit_rule_pattern, pattern_slot_names,
                         repeat_capture)
-from ...stdlib import builtin
+from ...bootstrap import builtin
 from ...syntax import parse_syntax_rules_pattern, special
 from ...types import build_proper, is_pair, is_proper, is_symbol, unpack
 from ..helpers import match, match1

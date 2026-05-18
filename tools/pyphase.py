@@ -244,16 +244,14 @@ def load_phases(config):
 
 def main():
     plugin = PhaseRunnerPlugin()
+    args = sys.argv[1:]
+
+    if not args:
+        args = ["--no-summary", "tests/"]
 
     # --no-summary suppresses pytest's built-in final summary line,
     # so you won't get the usual "... deselected ..." / default totals.
-    return pytest.main(
-        [
-            "--no-summary",
-            "tests/",
-        ],
-        plugins=[plugin],
-    )
+    return pytest.main(args, plugins=[plugin])
 
 
 if __name__ == "__main__":

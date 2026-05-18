@@ -1,0 +1,44 @@
+
+
+define-syntax define-coroutine:
+  syntax-rules []:
+    case (define-coroutine name args body ...):
+      (define name (as-coroutine (lambda name args body ...)))
+
+
+define-syntax compile/define-demanding:
+  syntax-rules []:
+    case (define-demanding name formals body ...):
+      (define name (demand (lambda name formals body ...)))
+
+
+define-syntax compile/function-compose:
+  macro-rules []:
+    case (function-compose fn1):
+      fn1
+    case (function-compose fn1 ...):
+      define acc `(*: args **: kwds)
+      define elems (list-each [fn fn1] #((gensym) fn))
+      for-each [[sym fn] (reversed elems)]:
+        set! acc `((,sym ,@acc))
+      `(let [,@(each [[sym fn] elems] (cons sym fn nil))]
+        (lambda [*: args **: kwds] ,@acc))
+
+
+define-syntax compile/decorate:
+  syntax-rules [define-class define compile/define-class compile/define]:
+    case (decorate [] fn):
+      fn
+    case (decorate [decorators ...] (define-class name supers body ...)):
+      (define name (decorate [decorators ...] (class name supers (begin body ...))))
+    case (decorate [decorators ...] (compile/define-class name supers body ...)):
+      (define name (decorate [decorators ...] (class name supers (begin body ...))))
+    case (decorate [decorators ...] (define name formals body ...)):
+      (define name (decorate [decorators ...] (lambda name formals body ...)))
+    case (decorate [decorators ...] (compile/define name formals body ...)):
+      (define name (decorate [decorators ...] (lambda name formals body ...)))
+    case (decorate [decorators ...] fn):
+      ((function-compose decorators ...) fn)
+
+
+;; The end.

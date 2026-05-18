@@ -453,7 +453,7 @@ class TestQuasiquoteErrors(SpecialsTestCase):
 
 
 from koskari.compile import Compiler
-from koskari.compile.specials import BUILTINS
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.reader import LayoutReader, source_str
 from koskari.lib import Module, ModuleNamespace, keyword as _kw_type
 from koskari.reader.layouts import apply_layout as _apply_layout_macro
@@ -498,7 +498,7 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
         mod_ns = ModuleNamespace("test", defns)
         module = Module(mod_ns)
         ns = vars(module)
-        _register_specials(ns, BUILTINS)
+        _register_specials(ns, _BUILTIN_REGISTRY)
         compiler = Compiler("<unittest>", module, filename=__file__)
         return module, mod_ns, compiler
 
@@ -534,7 +534,7 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
         """
 
         module, mod_ns, compiler = self.make_module(**defns)
-        layout_builtins = dict(BUILTINS)
+        layout_builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(layout_builtins)
         stream = source_str(src_str, __file__)
         source = reader.read(stream)

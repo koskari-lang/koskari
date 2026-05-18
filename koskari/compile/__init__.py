@@ -15,7 +15,6 @@ from ..exceptions import (
     SyntaxMatchError,
     UncaughtCompilerError,
 )
-from ..stdlib import BUILTINS
 
 
 __all__ = (
@@ -27,8 +26,6 @@ __all__ = (
     "SpecialError",
     "SyntaxMatchError",
     "UncaughtCompilerError",
-
-    "BUILTINS",
 )
 
 

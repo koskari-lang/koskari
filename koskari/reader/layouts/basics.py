@@ -20,7 +20,7 @@ Layout handlers for basic block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, nil, symbol
-from ...stdlib import add_builtin, builtin
+from ...bootstrap import add_builtin, builtin
 from ...types import get_position, is_pair, is_keyword
 from .helpers import layout
 
