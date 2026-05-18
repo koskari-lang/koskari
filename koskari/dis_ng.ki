@@ -1,18 +1,35 @@
-;; koskari.dis_ng
-;;
-;; Experimental koskari-native disassembler aiming for parity with
-;; koskari.dis output shape.
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-(import-from koskari.lib Code Function NamespaceSpec OpCode OpStyle)
+
+"""
+koskari.dis_ng
+
+Experimental koskari-native disassembler aiming for parity with
+koskari.dis output shape.
+"""
 
 
-(define __all__
+import-from koskari.lib Code Function NamespaceSpec OpCode OpStyle
+
+
+define __all__
   #("dis"
     "_get_code"
     "_get_instruction_lines"
     "_format_constant"
     "_build_ns_const_map"
-    "_format_nspec_inline"))
+    "_format_nspec_inline")
 
 
 define _get_code [x]:

@@ -24,7 +24,7 @@ Special form handler for compile/call and compile/call-attr
 
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, pair, symbol
-from ...matcher import CALLEDBY, LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE
+from ...matcher import CALLEDBY, LIST, LITERAL_SYM, MATCH, BODY, SYMBOL, VALUE
 from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_symbol
@@ -94,14 +94,14 @@ _CALL_PATTERNS = [
     MATCH(
         CALLEDBY(),
         LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr")),
-        REST("args")),
+        BODY("args")),
     MATCH(
         CALLEDBY(),
         LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr")),
-        REST("args")),
+        BODY("args")),
 
     MATCH(CALLEDBY(), VALUE("callable")),
-    MATCH(CALLEDBY(), VALUE("callable"), REST("args")),
+    MATCH(CALLEDBY(), VALUE("callable"), BODY("args")),
 ]
 
 
@@ -232,7 +232,7 @@ def special_call(
 
 _CALL_ATTR_PATTERNS = [
     MATCH(VALUE("obj"), SYMBOL("attr")),
-    MATCH(VALUE("obj"), SYMBOL("attr"), REST("args")),
+    MATCH(VALUE("obj"), SYMBOL("attr"), BODY("args")),
 ]
 
 _CALL_ATTR_PATTERNS_FULL = tuple(
