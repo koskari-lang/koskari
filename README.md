@@ -29,7 +29,8 @@ This version aims to be a perfect playground - a language with all the useful fe
 **Parser:**
 - `BaseSourceStream`: Native C base for efficient character I/O with Unicode position tracking
 - `SourceStream`: Python stream wrapper with error handling
-- `Reader`: Extensible s-expression reader with macro support
+- `Reader`, `LayoutReader`: Extensible s-expression reader with layout block syntax and reader macros
+- `lexer`: Token stream for REPL and LSP
 
 **Compiler:**
 - many special forms implemented; see [design/SPECIALS.md](design/SPECIALS.md) for the current list
@@ -78,11 +79,17 @@ make build-ext
 # Run tests
 make test
 
-# Run all Python version tests
-make test-all
+# Run tests across Python versions (containerized)
+make test-pyversions
+
+# Full tox suite (tests, flake8, ...)
+make tox
 
 # Lint code
 make lint
+
+# Type-check
+make typecheck
 
 # Clean build artifacts
 make clean
@@ -91,68 +98,111 @@ make clean
 
 ## Project Structure
 
+The repository root is the Koskari project. Import symbols from the submodule that defines them; the top-level `koskari` package does not re-export.
+
+```
+.
+├── design/                  # Design documentation (see design/README.md)
+├── editors/                 # Editor syntax assets (emacs, helix, textmate)
+├── examples/                # Example koskari programs (.ki files)
+├── koskari/                 # Main Python package
+├── koskari_importer.py      # Import hooks for .ki and .kio modules
+├── koskari.pth              # Enables import hooks when installed
+├── tests/                   # Test suite (mirrors package layout)
+├── tools/                   # Opcode/editor regeneration and container helpers
+├── setup.py, setup.cfg      # Package build and tox configuration
+├── Makefile                 # Build, test, and lint targets
+└── Containerfile            # Runtime container image
+```
+
+### koskari package
+
 ```
 koskari/
-├── design/              # Design documentation
-├── koskari/             # Main package (import from submodules; see design/api/package-layout.md)
-│   ├── __init__.py      # Minimal; no re-exports
-│   ├── exceptions.py    # All exceptions (Koskari*, Reader*, Layout*, Compiler*, etc.)
-│   ├── types.py         # Value types from lib + Python predicates/helpers
-│   ├── reader/          # S-expression parser, layout block syntax, reader macros
-│   │   ├── parser.py    # Reader, SourceStream, LayoutReader, parse errors
-│   │   └── layouts/     # Layout handlers (conditionals, try, class, define-syntax, etc.)
-│   ├── lexer/           # Lexical parsing, prompt_toolkit, LSP integration
-│   ├── matcher.py       # Pattern matching for special forms
-│   ├── importer/        # Import hooks for .ki files
-│   ├── dis.py           # Disassembler for Code objects
-│   ├── compile/         # Compiler, ByteCodeFragment, special forms
-│   └── lib/             # C extension sources
-│       ├── atom.c       # Symbol/keyword implementation
-│       ├── pair.c       # Cons cell implementation
-│       ├── namespace.c  # Namespace implementation
-│       ├── formals.c    # Parameter binding
-│       ├── ref.c        # Reference cells
-│       ├── values.c     # Multi-value returns
-│       ├── operator.c   # Operator helpers
-│       ├── parse.c      # Native stream I/O
-│       └── ...
-├── tests/               # Test suite (see design/api/package-layout.md)
-│   ├── lib/             # Native extension and ceval tests
-│   ├── compile/         # Compiler and bytecode fragment tests
-│   ├── reader/          # Parser and layout tests
-│   ├── dis/             # Disassembler tests
-│   ├── types/           # Type predicate/helper tests
-│   ├── importer/        # Import system tests
-│   ├── lexer/           # Lexer tests
-│   ├── matcher/         # Matcher tests
-│   ├── cli/             # CLI tests
-│   └── native/          # Native memory tests (ASan, Valgrind)
-└── examples/            # Example koskari code (.ki files)
+├── __init__.py              # Package init; registers import hooks
+├── __main__.py              # python -m koskari entry
+├── exceptions.py            # Koskari*, Reader*, Layout*, Compiler* exceptions
+├── types.py                 # Value types from lib + Python predicates/helpers
+├── syntax.py                # Syntax form definitions
+├── hygiene.py               # Macro hygiene
+├── matcher.py               # Pattern matching for special forms (Python layer)
+├── builtins.py              # Builtins module placeholder (filled by bootstrap)
+├── cli.py                   # koskari REPL CLI
+├── module.py                # Module lifecycle for .ki source files
+├── importer.py              # Re-exports koskari_importer hooks
+├── dis.py                   # Disassembler for Code objects
+├── dis_ng.ki                # Self-hosted disassembler sources
+├── bootstrap/               # Bootstrap koskari sources and loader
+│   ├── *.ki                 # Core forms compiled into builtins
+│   ├── __init__.py          # Bootstrap loader
+│   └── compile/             # Self-hosted compiler pieces (in progress)
+├── reader/                  # S-expression parser and layout block syntax
+│   ├── parser.py            # Reader, SourceStream, LayoutReader
+│   └── layouts/             # Layout handlers (conditionals, try, class, ...)
+├── lexer/                   # Token lexer, prompt_toolkit REPL, LSP server
+│   ├── tokens.py, parser.py, discovery.py
+│   ├── prompt_toolkit/      # REPL integration
+│   └── lsp/                 # koskari-lsp language server
+├── help/                    # In-REPL help for syntax, layouts, and tools
+├── compile/                 # Compiler, bytecode fragments, special forms
+│   ├── compiler.py
+│   ├── helpers.py
+│   ├── pragma/              # Compile-time pragma resolution
+│   └── specials/            # Special form handlers
+├── serialize/               # Code serialization (codex format)
+└── lib/                     # C extension (native types, bytecode, evaluator)
+    ├── atom.c, pair.c, namespace.c, formals.c, ref.c, values.c, ...
+    ├── bytecode.c, eval.c, cont.c, dynchain.c, matcher.c, ...
+    ├── dynchain/            # Dynamic extent handlers (with, wind, try, ...)
+    ├── eval/                # Evaluator state machine
+    └── opcode/              # Per-opcode implementations
+```
+
+### tests
+
+```
+tests/
+├── lib/                     # Native extension and evaluator tests
+│   └── opcode/              # Opcode-specific tests
+├── compile/                 # Compiler and special-form tests
+│   ├── helpers/
+│   └── specials/
+├── reader/                  # Parser and layout tests
+│   └── layouts/
+├── dis/                     # Disassembler tests
+├── types/                   # Type predicate tests
+├── importer/                # Import hook tests
+├── lexer/                   # Lexer, LSP, and prompt_toolkit tests
+├── matcher/                 # Matcher tests
+├── syntax/                  # Syntax form tests
+├── hygiene/                 # Hygiene tests
+├── help/                    # Help system tests
+├── exceptions/              # Exception hierarchy tests
+├── serialize/               # Serialization tests
+├── cli/                     # CLI tests
+├── reproducers/             # Regression reproducers
+└── native/                  # C harness and container memory tests
 ```
 
 
 ## Design Documentation
 
-Comprehensive design documentation is available in the [design/](design/) directory, including:
-- Language features (special forms, operators, macros, syntax)
-- API documentation (types, builtins, runtime)
-- Interpreter architecture (bytecode, compiler, evaluator)
-- Call/CC design considerations
+Comprehensive design documentation lives in [design/](design/). Start with [design/README.md](design/README.md) for the index. Topics include language features (special forms, operators, macros, layouts), API and types, interpreter architecture (bytecode, compiler, evaluator), and call/CC design.
 
 
 ## Testing
 
 ```bash
-# Run Python tests
+# Run Python tests (via tox)
 make test
 
-# Run native memory tests (requires container or local tools)
+# Run native memory tests in container (requires podman or docker)
 make test-native           # Basic native tests
-make test-native-asan      # AddressSanitizer
-make test-native-valgrind  # Valgrind memcheck
+make test-asan             # AddressSanitizer
+make test-valgrind         # Valgrind memcheck
 
-# Container-based testing
-make container-test        # All native tests in container
+# Run tests across Python versions in containers
+make test-pyversions
 ```
 
 

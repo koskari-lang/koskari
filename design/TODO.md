@@ -147,28 +147,11 @@ Ref: [ideas.md](ideas.md); [api/import-system.md](api/import-system.md) (async v
 
 ## Builtins
 
-### help builtin
-
-A **help** builtin that extends the core Pythonic `help` function: special-form
-and layout aware, and dispatching to object-specific help data via a `__help__`
-method when present. Design and implement the builtin, layout integration, and
-the `__help__` protocol.
-
-Ref: [api/builtins.md](api/builtins.md) (builtin catalog);
-[api/dunder-adapter.md](api/dunder-adapter.md) (dunder/slot pattern for `__help__`);
-[LAYOUTS.md](LAYOUTS.md) (layout syntax for layout-aware help).
-
 ### CLI startup version banner and --version
 
 Add Python version, platform, and Koskari version to the Koskari CLI startup
 banner. Also add a `--version` parameter that prints the same version/platform
 information and exits.
-
-### koskari-repr
-
-A **repr** variation that outputs in a more koskari-like way. In koskari, bind
-repr to this, and provide original as py-repr. Expose as kos_repr for python
-users.
 
 ---
 
