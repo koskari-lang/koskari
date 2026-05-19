@@ -84,6 +84,22 @@ define-syntax compile/del!:
       (del-attr obj name)
 
 
+define-syntax compile/incr!:
+  syntax-rules []:
+    case (incr! name):
+      (compile/inplace + name 1)
+    case (incr! name value):
+      (compile/inplace + name value)
+
+
+define-syntax compile/decr!:
+  syntax-rules []:
+    case (decr! name):
+      (compile/inplace - name 1)
+    case (decr! name value):
+      (compile/inplace - name value)
+
+
 define-syntax compile/ref:
   syntax-rules [item compile/item attr compile/attr parameter]:
     case (ref (item obj name)):

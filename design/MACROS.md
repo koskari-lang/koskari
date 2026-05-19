@@ -169,6 +169,43 @@ respectively. The first match in the syntax-rules wins.
 **Defined in:** `koskari/importer/basics.ki`
 
 
+## incr! and decr!
+
+**Symbols:** `incr!`, `decr!` (defined as `compile/incr!`, `compile/decr!`)
+
+**Syntax:**
+
+- `(incr! NAME)` — add `1` to `NAME`
+- `(incr! NAME VALUE)` — add `VALUE` to `NAME`
+- `(decr! NAME)` — subtract `1` from `NAME`
+- `(decr! NAME VALUE)` — subtract `VALUE` from `NAME`
+
+**Use-case:** Shorthand for in-place increment and decrement on a variable,
+analogous to `x += 1` / `x -= n` in Python. Prefer these over writing
+`(set! x (+ x 1))` when the update is a simple add or subtract.
+
+**Behaviour:** Expands via `syntax-rules` to **`compile/inplace`** (see
+[SPECIALS.md](SPECIALS.md) § compile/inplace):
+
+- `(incr! name)` → `(compile/inplace + name 1)`
+- `(incr! name value)` → `(compile/inplace + name value)`
+- `(decr! name)` → `(compile/inplace - name 1)`
+- `(decr! name value)` → `(compile/inplace - name value)`
+
+`NAME` must be a symbol naming a mutable variable binding.
+
+**Examples:**
+
+```scheme
+(incr! counter)
+(decr! remaining)
+(incr! total step)
+(decr! balance amount)
+```
+
+**Defined in:** `koskari/bootstrap/_variables.ki`
+
+
 ## let-values
 
 **Symbol:** `let-values` (defined as `compile/let-values`)
