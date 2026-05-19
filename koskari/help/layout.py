@@ -45,7 +45,7 @@ def help_for_layout_handler(obj, formatter):
         formatter.paragraph(doc)
 
     if obj.peers:
-        sec = formatter.subsection('Peers')
+        sec = formatter.section('Peers')
         for peer in obj.peers:
             sec.item(_peer_label(peer))
 

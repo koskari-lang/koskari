@@ -57,7 +57,7 @@ class TestHelpFormatter(unittest.TestCase):
     def test_subsection_and_items(self):
         root = HelpFormatter()
         sec = root.section('Outer')
-        sub = sec.subsection('Inner')
+        sub = sec.section('Inner')
         sub.item('first arm')
         sub.item('second arm')
         text = _plain_help(root.render())

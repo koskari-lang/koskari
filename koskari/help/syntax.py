@@ -70,7 +70,7 @@ def help_for_syntax(obj, formatter):
         formatter.paragraph(doc)
 
     if obj.transforms:
-        acc = formatter.subsection('Accepts')
+        acc = formatter.section('Accepts')
         head = str(obj.name)
         for transform in obj.transforms:
             acc.item(format_accept_pattern(transform.pattern, head))

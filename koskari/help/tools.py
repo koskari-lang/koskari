@@ -93,17 +93,7 @@ class HelpFormatter(object):
 
     def section(self, title):
         """
-        Open a top-level section and return a child formatter scoped to it
-        """
-
-        child = HelpFormatter(title=str(title))
-        self._children.append(child)
-        return child
-
-
-    def subsection(self, title):
-        """
-        Open a nested subsection and return a child formatter scoped to it
+        Open a section and return a child formatter scoped to it
         """
 
         child = HelpFormatter(title=str(title))
