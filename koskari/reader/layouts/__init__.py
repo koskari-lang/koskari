@@ -36,6 +36,7 @@ from .define_syntax import (layout_macro_match, layout_macro_rules,
 from .dyn_wind import layout_dyn_wind
 from .exceptions import layout_try
 from .helpers import LayoutHandler, layout
+from .loops import layout_loop
 
 
 __all__ = (
@@ -57,6 +58,9 @@ __all__ = (
     "layout_syntax_rules",
     "layout_switch",
     "layout_try",
+    "layout_while",
+    "layout_for_each",
+    "layout_loop",
 
     "apply_layouts",
     "find_layout",

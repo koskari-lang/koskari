@@ -651,15 +651,22 @@ value onto the stack (e.g. for binding with as: NAME).
 
 **Symbol:** `compile/while`
 
-**Syntax:** `(compile/while TEST BODY...)`
+**Syntax:** `(compile/while TEST BODY... [else: ELSEBODY])`
 
 **Use-case:** Loop that runs body while TEST is truthy. Supports `compile/break`
-and `compile/continue` inside the body.
+and `compile/continue` inside the body. An optional `[else: ELSEBODY]` clause
+runs only when the loop exits because TEST is false (i.e. not via
+`compile/break`); its value becomes the loop's expression value. Without an
+else clause the loop evaluates to `None`. In block syntax, the same clause comes
+from an `else:` peer; see `layout/while` in [LAYOUTS.md](LAYOUTS.md).
 
-**Behaviour:** Uses `child_loop` to emit PUSH_LOOP (break target after POP_LOOP),
-loop head label, test, JUMP_FALSE to exit, body, JUMP to head, LABEL exit,
-CLEAR_LOOP. The first instruction after PUSH_LOOP is the continue target.
-Evaluates to the loop result (from break, continue, or None on normal exit).
+**Behaviour:** Emits PUSH_LOOP (break target after POP_LOOP). The continue
+target is the first instruction after PUSH_LOOP. Compiles TEST; on false,
+jumps to the loop exit label. Compiles the body with `helper_begin`, then
+CONTINUE 1 back to the test. On normal exit (test false), when an else body is
+present, emits CLEAR_LOOP, compiles ELSEBODY, then BREAK 1 so the else result
+reaches the parent stack before POP_LOOP. User `compile/break` jumps to the
+break target with its value and does not run the else clause.
 
 **Examples:**
 
@@ -673,7 +680,14 @@ Evaluates to the loop result (from break, continue, or None on normal exit).
 (compile/while True
   (compile/cond [done (compile/break result)]
                 [else: (compile/call step)]))
+
+;; Else runs when TEST becomes false
+(compile/while x
+  (compile/setq x (compile/call sub x 1))
+  [else: "done"])
 ```
+
+**Tests:** `tests/compile/specials/test_while.py`
 
 ## compile/for-each
 
@@ -683,10 +697,11 @@ Evaluates to the loop result (from break, continue, or None on normal exit).
 
 **Use-case:** Iterate over the sequence produced by EXPR, binding each element
 to BINDING and evaluating BODY on each iteration. Supports `compile/break` and
-`compile/continue` inside the body. An optional `[else: ELSEBODY]` clause runs
-only when the iterator is exhausted naturally (i.e. not via `compile/break`);
-its value becomes the loop's expression value. Without an else clause the loop
-evaluates to `None`.
+`compile/continue` inside the body. An optional trailing **`[else: ELSEBODY]`**
+keyword clause runs only when the iterator is exhausted naturally (i.e. not via
+`compile/break`); its value becomes the loop's expression value. Without an
+else clause the loop evaluates to `None`. In block syntax, the same clause comes
+from an `else:` peer; see `layout/for-each` in [LAYOUTS.md](LAYOUTS.md).
 
 **Behaviour:** Emits CONST None (default loop result), compiles EXPR (the
 iterable), then PUSH_FOREACH whose break target is set to a label after
