@@ -33,7 +33,9 @@ define-syntax compile/each:
 define-syntax compile/list-each:
   syntax-rules []:
     case (list-each [binding seq] body):
-      (list (each [binding seq] body))
+      letrec [[col (list)] [colap col.append]]:
+        for-each [binding seq] (colap body)
+        col
 
 
 define-syntax compile/dict-each:

@@ -27,12 +27,14 @@ KOS_OP_HANDLER(BREAK) {
   if (opa == 0) {
     result = Py_None;
     Py_INCREF(result);
+
   } else if (opa == 1) {
     result = KosEvalState_StackPopRef(es);
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK pop underrun");
       return KOS_OP_POST_ERR();
     }
+
   } else {
     result = KosEvalState_StackPopTail(es, (size_t) opa);
     if (! result) {

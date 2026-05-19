@@ -56,7 +56,7 @@ class NotYetImplemented(KoskariException):
     pass
 
 
-class KoskariSyntaxError(SyntaxError):
+class KoskariSyntaxError(SyntaxError, KoskariException):
     """
     An error in Koskari syntax, either during read or compile time.
     """
@@ -323,7 +323,7 @@ def format_accept_pattern(pattern, source=None):
     return f"({body})"
 
 
-class SyntaxMatchError(CompilerError):
+class SyntaxMatchError(SpecialError):
     """
     Syntax dispatch errors when no matcher arm matches the source form
     """

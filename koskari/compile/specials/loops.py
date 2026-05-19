@@ -23,19 +23,17 @@ compile/continue.
 """
 
 
+from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode, nil
-from ...matcher import (BINDING, BODY, CALLEDBY, MATCH, REST, SYMBOL, USING_UNPACK,
+from ...matcher import (BINDING, BODY, CALLEDBY, MATCH, OPTIONAL, USING_UNPACK,
                         VALUE)
-from ...bootstrap import builtin
 from ...syntax import special
 from ..helpers import helper_begin, helper_elsebody, using_unpack_helper
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
-
 _WHILE_PATTERNS = [
-    MATCH(SYMBOL("_while"), VALUE("test"), REST("body")),
+    MATCH(CALLEDBY("_while"), VALUE("test"), BODY("body")),
 ]
 
 
@@ -43,35 +41,46 @@ _WHILE_PATTERNS = [
 @special("compile/while", patterns=_WHILE_PATTERNS, unpack="kwargs")
 def special_while(compiler, tc, _while, test, body):
     """
-    Compile (compile/while TEST BODY...). Loop with break and continue support
+    Compile (compile/while TEST BODY... [else: ELSEBODY]). Loop with break and continue support
     """
 
     called_by = str(_while.datum)
 
     fragment = compiler.fragment(called_by)
-    loop_head = compiler.gen_label("while.head")
     loop_exit = compiler.gen_label("while.end")
 
-    with fragment.child_loop(called_by) as child:
-        child.instruction(OpCode.KOS_OP_LABEL, loop_head)
-        child.merge(compiler.full_compile(test.datum, False))
-        child.instruction(OpCode.KOS_OP_JUMP_FALSE, loop_exit)
-        helper_begin(child, body.datum, False)
+    body = body.datum
+    body, elsebody = helper_elsebody(body)
+    has_elsebody = elsebody is not nil and elsebody is not None
 
-        child.instruction(OpCode.KOS_OP_CONTINUE, 1)
-        child.instruction(OpCode.KOS_OP_LABEL, loop_exit)
-        child.instruction(OpCode.KOS_OP_CLEAR_LOOP, 0)
+    fragment.instruction(OpCode.KOS_OP_PUSH_LOOP, 0)
+
+    # loop test
+    fragment.merge(compiler.full_compile(test.datum, False))
+    fragment.instruction(OpCode.KOS_OP_JUMP_FALSE, loop_exit)
+
+    helper_begin(fragment, body, False)
+    fragment.instruction(OpCode.KOS_OP_CONTINUE, 1)
+
+    fragment.instruction(OpCode.KOS_OP_LABEL, loop_exit)
+
+    if has_elsebody:
+        fragment.instruction(OpCode.KOS_OP_CLEAR_LOOP, 0)
+        fragment.merge(compiler.full_compile(elsebody, False))
+        fragment.instruction(OpCode.KOS_OP_BREAK, 1)
+
+    fragment.instruction(OpCode.KOS_OP_POP_LOOP, 0)
 
     return fragment
 
 
 _FOREACH_PATTERNS = (
     MATCH(
-        SYMBOL("_foreach"),
+        CALLEDBY("_foreach"),
         BINDING("binding", scope="body"),
         BODY("body")),
     MATCH(
-        SYMBOL("_foreach"),
+        CALLEDBY("_foreach"),
         USING_UNPACK("using", scope="body"),
         BODY("body")),
 )
@@ -105,8 +114,13 @@ def special_for_each(compiler, caps, tc=False):
 
     expr = binding["expr"] if binding else using["expr"]
 
+    # default loop result is None
     fragment.instruction(OpCode.KOS_OP_CONST, None)
+
+    # the iterable expression
     fragment.merge(compiler.full_compile(expr.datum, False))
+
+    # set up the loop and get the first value
     fragment.instruction(OpCode.KOS_OP_PUSH_FOREACH, 0)
     fragment.instruction(OpCode.KOS_OP_ITER_NEXT, loop_else)
 
@@ -119,13 +133,13 @@ def special_for_each(compiler, caps, tc=False):
         fragment.declare_var(binding_name)
         fragment.instruction(OpCode.KOS_OP_VAR_STORE, binding_name)
 
+    # perform the loop body, then continue back up at the ITER_NEXT
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_CONTINUE, 1)
 
     fragment.instruction(OpCode.KOS_OP_LABEL, loop_else)
-    fragment.instruction(OpCode.KOS_OP_CLEAR_FOREACH, 0)
-
     if has_elsebody:
+        fragment.instruction(OpCode.KOS_OP_CLEAR_FOREACH, 0)
         fragment.merge(compiler.full_compile(elsebody, False))
         fragment.instruction(OpCode.KOS_OP_BREAK, 1)
 
@@ -158,6 +172,9 @@ def _special_break_continue(compiler, source, op):
     frag.merge(compiler.full_compile(val, False))
     frag.instruction(op, 1)
     return frag
+
+
+_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), OPTIONAL(VALUE("val"))),)
 
 
 @builtin("compile/break")

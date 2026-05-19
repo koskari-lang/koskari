@@ -36,9 +36,11 @@ def test_import_koskari_subprocess_does_not_load_compile_or_lib():
     code = (
         'import sys\n'
         'import koskari\n'
+        'assert "koskari.builtins" not in sys.modules\n'
+        'assert "koskari.bootstrap" not in sys.modules\n'
         'assert "koskari.compile" not in sys.modules\n'
         'assert "koskari.lib" not in sys.modules\n'
-        'assert "koskari_importer" in sys.modules\n'
+        'assert "koskari.importer" in sys.modules\n'
     )
     subprocess.check_call([sys.executable, '-c', code])
 

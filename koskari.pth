@@ -1,1 +1,1 @@
-import koskari_importer; koskari_importer.install()
+import koskari

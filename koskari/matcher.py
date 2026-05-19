@@ -1806,17 +1806,29 @@ class CALLEDBY(Composite):
     Capture the compile-head symbol into the called-by slot
     """
 
+    def __init__(self, slot=None):
+        """
+        :param slot: target slot name
+        """
+
+        self._slot = slot
+
 
     def _expand(self):
-        return CAPTURE("called-by", TYPE("symbol"))
+        slot = self._slot or "called-by"
+        return CAPTURE(slot, TYPE("symbol"))
 
 
     def __repr__(self):
-        return "CALLEDBY()"
+        if self._slot is None:
+            return "CALLEDBY()"
+        return f"CALLEDBY({self._slot!r})"
 
 
     def __kos_repr__(self):
-        return "(CALLEDBY)"
+        if self._slot is None:
+            return "(CALLEDBY)"
+        return f"(CALLEDBY {self._slot!r})"
 
 
 class DEFINE(Composite, HygieneWireSlotScopes):
