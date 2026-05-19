@@ -21,7 +21,7 @@ Layout decorator for reader block syntax.
 :license: GNU General Public License v3
 """
 
-from ...bootstrap import add_builtin
+from ...bootstrap import builtin
 from ...lib import cons, keyword, symbol
 from ...exceptions import LayoutError
 from ...types import get_position
@@ -32,12 +32,7 @@ _symbol_else = symbol('else')
 _keyword_else = keyword('else')
 
 
-@layout(symbol("layout/loop"), peers=(_symbol_else,))
-def layout_loop(source, peers):
-    """
-    Layout handler for loop blocks.
-    """
-
+def _layout_loop(source, peers):
     header, body = source
     header.extend(body)
 
@@ -67,8 +62,39 @@ def layout_loop(source, peers):
     return header
 
 
-add_builtin("layout/for-each", layout_loop)
-add_builtin("layout/while", layout_loop)
+@builtin("layout/for-each")
+@layout(symbol("layout/for-each"), peers=(_symbol_else,))
+def layout_for_each(source, peers):
+    """
+    Layout handler for for-each blocks
+
+    eg. ```
+    for-each [x (range 0 3)]:
+        (print x)
+    else:
+        (print "done")
+    ```
+    """
+
+    return _layout_loop(source, peers)
+
+
+@builtin("layout/while")
+@layout(symbol("layout/while"), peers=(_symbol_else,))
+def layout_while(source, peers):
+    """
+    Layout handler for while blocks
+
+    eg. ```
+    while (< x 3):
+        (print x)
+        set! x (+ x 1)
+    else:
+        (print "done")
+    ```
+    """
+
+    return _layout_loop(source, peers)
 
 
 # The end.

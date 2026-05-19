@@ -24,9 +24,9 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 """
 
 
+from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
 from ...types import build_proper, is_pair, is_symbol
-from ...bootstrap import builtin
 from .basics import layout_begin, layout_block, layout_call
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_switch
@@ -36,7 +36,7 @@ from .define_syntax import (layout_macro_match, layout_macro_rules,
 from .dyn_wind import layout_dyn_wind
 from .exceptions import layout_try
 from .helpers import LayoutHandler, layout
-from .loops import layout_loop
+from .loops import layout_for_each, layout_while
 
 
 __all__ = (
@@ -60,7 +60,6 @@ __all__ = (
     "layout_try",
     "layout_while",
     "layout_for_each",
-    "layout_loop",
 
     "apply_layouts",
     "find_layout",
