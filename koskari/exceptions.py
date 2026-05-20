@@ -23,6 +23,7 @@ Base exception classes for Koskari.
 import linecache
 from traceback import format_exception_only
 
+from .bootstrap import builtin, add_builtin
 from .lib import KoskariSyncViolation, car, kos_repr
 from .types import is_pair
 
@@ -39,6 +40,10 @@ __all__ = (
 )
 
 
+add_builtin("KoskariSyncViolation", KoskariSyncViolation)
+
+
+@builtin("KoskariException")
 class KoskariException(Exception):
     """
     Base class for error-driven Exceptions raised by Koskari.
@@ -47,6 +52,7 @@ class KoskariException(Exception):
     pass
 
 
+@builtin("NotYetImplemented")
 class NotYetImplemented(KoskariException):
     """
     Raised as a placeholder for features that have not been
@@ -56,6 +62,7 @@ class NotYetImplemented(KoskariException):
     pass
 
 
+@builtin("KoskariSyntaxError")
 class KoskariSyntaxError(SyntaxError, KoskariException):
     """
     An error in Koskari syntax, either during read or compile time.
@@ -85,6 +92,7 @@ class KoskariSyntaxError(SyntaxError, KoskariException):
         return ''.join(format_exception_only(type(self), self))
 
 
+@builtin("ReaderError")
 class ReaderError(KoskariSyntaxError):
     """
     Base class for reader-phase errors
@@ -93,6 +101,7 @@ class ReaderError(KoskariSyntaxError):
     pass
 
 
+@builtin("ReaderSyntaxError")
 class ReaderSyntaxError(ReaderError):
     """
     Low-level parse errors during s-expression or layout reading
@@ -101,6 +110,7 @@ class ReaderSyntaxError(ReaderError):
     pass
 
 
+@builtin("FormatStringSyntaxError")
 class FormatStringSyntaxError(ReaderSyntaxError):
     """
     Errors in format string (f-string) syntax
@@ -109,6 +119,7 @@ class FormatStringSyntaxError(ReaderSyntaxError):
     pass
 
 
+@builtin("LayoutError")
 class LayoutError(ReaderError):
     """
     Layout block structure errors
@@ -117,6 +128,7 @@ class LayoutError(ReaderError):
     pass
 
 
+@builtin("CompilerError")
 class CompilerError(KoskariException):
     """
     Base class for compile-phase errors
@@ -277,6 +289,7 @@ class CompilerError(KoskariException):
         return "\n".join(lines) + "\n"
 
 
+@builtin("SpecialError")
 class SpecialError(CompilerError):
     """
     Special-form validation errors
@@ -323,6 +336,7 @@ def format_accept_pattern(pattern, source=None):
     return f"({body})"
 
 
+@builtin("SyntaxMatchError")
 class SyntaxMatchError(SpecialError):
     """
     Syntax dispatch errors when no matcher arm matches the source form
@@ -361,6 +375,7 @@ class SyntaxMatchError(SpecialError):
         return "\n".join(lines) + "\n"
 
 
+@builtin("ParametersError")
 class ParametersError(CompilerError):
     """
     Call-site parameter errors from
@@ -370,6 +385,7 @@ class ParametersError(CompilerError):
     pass
 
 
+@builtin("UncaughtCompilerError")
 class UncaughtCompilerError(CompilerError):
     """
     Wraps unexpected exceptions raised during compilation

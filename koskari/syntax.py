@@ -86,6 +86,16 @@ class Syntax(Compiled):
         self._matchers = tuple(t.matcher for t in self.transforms)
 
 
+    @property
+    def matcher(self):
+        return self._matchers
+
+
+    @property
+    def patterns(self):
+        return tuple(t.pattern for t in self.transforms)
+
+
     def match_for_hygiene(self, form):
         """
         Match ``form`` against the first arm whose frozen matcher succeeds.

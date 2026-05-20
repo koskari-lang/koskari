@@ -6,8 +6,8 @@ define app (fastapi.FastAPI title: "Koskari Demo")
 
 define-syntax define-route:
     syntax-rules []:
-        define-route path name args body...:
-            define name args body...
+        define-route path name args body ...:
+            define name args body ...
             (app.add_api_route path (as-coroutine name)
                 methods: #["GET"])
 

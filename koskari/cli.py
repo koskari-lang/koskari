@@ -33,7 +33,7 @@ from argparse import REMAINDER, ArgumentParser
 from os.path import basename
 from traceback import format_exception_only
 
-from .exceptions import ReaderError
+from .exceptions import ReaderError, UncaughtCompilerError
 from .lexer.discovery import special_names_for_repl
 from .lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
                                    koskari_style, load_koskari_key_bindings)
@@ -300,6 +300,8 @@ async def _boundary_call_async(fn, /, *a, **kw):
 
     try:
         return await fn(*a, **kw)
+    except UncaughtCompilerError:
+        raise
     except Exception as e:
         raise REPLCodeBoundary() from e
 

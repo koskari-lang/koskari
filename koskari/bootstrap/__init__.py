@@ -23,8 +23,8 @@ Registration hooks for names merged into the Koskari builtins dict.
 """
 
 
-import sys
 import operator as _op
+import sys
 from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from os.path import dirname, join
@@ -38,7 +38,6 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    setcdr, symbol, values)
 from ..types import (TypePredicate, as_coroutine, build_proper, is_nil,
                      is_None, is_proper, is_recursive, unpack)
-
 
 __all__ = (
     'builtin',
@@ -88,6 +87,7 @@ def make_bootstrap():
     # they're loaded. They each have decorated builtins that self-register
     # into the _BUILTIN_REGISTRY.
 
+    from .. import exceptions as _koskari_exceptions  # noqa: F401
     from .. import help as _koskari_help  # noqa: F401
     from .. import syntax as _koskari_syntax  # noqa: F401
     from ..compile import specials as _koskari_compile_specials  # noqa: F401

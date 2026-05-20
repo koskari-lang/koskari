@@ -196,4 +196,12 @@ define-syntax compile/item*:
       (item* (item obj key) rest ...)
 
 
+define-syntax compile/attr*:
+  syntax-rules []:
+    case (attr* obj name):
+      (attr obj name)
+    case (attr* obj name rest ...):
+      (attr* (attr obj name) rest ...)
+
+
 ;; The end.

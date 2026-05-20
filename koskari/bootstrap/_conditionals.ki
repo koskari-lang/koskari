@@ -74,23 +74,12 @@ define on-demand? :: bool []:
   cannot use `await` to suspend.
   """
 
-  import-from koskari.exceptions KoskariSyncViolation
   try:
     (await)
   except [KoskariSyncViolation]:
     True
   else:
     False
-
-
-define-syntax compile/on-demand?:
-  syntax-rules []:
-    case (on-demand? yes no):
-      (if (compile/call on-demand?) yes no)
-    case (on-demand? yes):
-      (if (compile/call on-demand?) yes None)
-    case (on-demand?):
-      (compile/call on-demand?)
 
 
 ;; The end.

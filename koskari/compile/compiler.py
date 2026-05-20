@@ -22,33 +22,14 @@ The koskari compiler. Converts source forms into bytecode fragments.
 
 
 from contextlib import contextmanager
-from enum import auto, IntEnum
+from enum import IntEnum, auto
 from typing import Protocol, runtime_checkable
 
-from ..lib import (
-    cons,
-    keyword,
-    nil,
-    symbol,
-    Code,
-    FormalsSpec,
-    FunctionSpec,
-    Module,
-    ModuleNamespace,
-    Namespace,
-    NamespaceSpec,
-    OpCode,
-    OpStyle,
-)
-
-from ..types import (
-    is_pair,
-    is_proper,
-    is_symbol,
-    get_position,
-)
-
 from ..exceptions import CompilerError, UncaughtCompilerError
+from ..lib import (Code, FormalsSpec, FunctionSpec, Module,
+                   ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle,
+                   cons, keyword, nil, symbol)
+from ..types import get_position, is_pair, is_proper, is_symbol
 from .pragma import KoskariPragma
 
 
@@ -89,10 +70,6 @@ def _is_alias(v):
     # TODO: we'll likely want to add a distinct type for aliases.
     # for now aliasing is disabled in compile_symbol
     return isinstance(v, Alias)
-
-
-def _is_lazygensym(x):
-    return False
 
 
 CONST_TYPES = (
@@ -167,8 +144,12 @@ _symbol_None = symbol("None")
 _symbol_True = symbol("True")
 _symbol_False = symbol("False")
 _symbol_attr = symbol("compile/attr")
-_symbol_ellipsis = symbol("ellipsis")
+_symbol_Ellipsis = symbol("Ellipsis")
+_symbol_ellipsis = symbol("...")
 _symbol_nil = symbol("nil")
+
+_symbol_call = symbol("compile/call")
+_symbol_cons = symbol("compile/cons")
 
 
 def unique_append(lst, val):
@@ -465,6 +446,16 @@ _SWITCH_SQUASHES = {
 }
 
 
+_COMPILER_LITERALS = {
+    _symbol_None: None,
+    _symbol_True: True,
+    _symbol_False: False,
+    _symbol_Ellipsis: ...,
+    _symbol_ellipsis: ...,
+    _symbol_nil: nil,
+}
+
+
 class Compiler:
 
     def __init__(self, name, module, filename=None, tco_enabled=True,
@@ -616,58 +607,45 @@ class Compiler:
         # source list -- the aliases would only expand the symbol
         # itself.
 
+        if sym in _COMPILER_LITERALS:
+            return self.compile_const(fragment, _COMPILER_LITERALS[sym], tc)
+
         # comp = self.find_compiled(sym)
         # if comp and _is_alias(comp):
         #     return self.compile_special(fragment, comp, sym, tc)
+
+        # This is handled by the reader macros now.
+        # ex = sym.rsplit(".", 1)
+        # if len(ex) > 1:
+        #     source = cons(_symbol_attr, *ex, nil)
+        #     return self.compile_pair(fragment, source, tc)
+
         return self.compile_raw_symbol(fragment, sym, tc)
 
 
     def compile_raw_symbol(self, fragment, sym, tc):
-        if sym is _symbol_None or str(sym) == "None":
-            return self.compile_const(fragment, None, tc)
-
-        if sym is _symbol_True or str(sym) == "True":
-            return self.compile_const(fragment, True, tc)
-
-        if sym is _symbol_False or str(sym) == "False":
-            return self.compile_const(fragment, False, tc)
-
-        if sym is _symbol_ellipsis or str(sym) == "ellipsis":
-            return self.compile_const(fragment, ..., tc)
-
-        if sym is _symbol_nil or str(sym) == "nil":
-            return self.compile_const(fragment, nil, tc)
-
-        if _is_lazygensym(sym):
-            fragment.request_var(sym)
-            fragment.instruction(OpCode.KOS_OP_VAR, sym)
-            return fragment
-
-        ex = sym.rsplit(".", 1)
-        if len(ex) == 1:
-            sym = str(sym)
-            fragment.request_var(sym)
-            fragment.instruction(OpCode.KOS_OP_VAR, sym)
-            return fragment
-
-        source = cons(_symbol_attr, *ex, nil)
-        return self.compile_pair(fragment, source, tc)
+        strsym = str(sym)
+        fragment.request_var(strsym)
+        fragment.instruction(OpCode.KOS_OP_VAR, strsym)
+        return fragment
 
 
     def compile_pair(self, fragment, source_obj, tc):
+        # print("compile_pair", kos_repr(source_obj))
+
         if source_obj is nil:
             return self.compile_const(fragment, nil, False)
 
         fragment.position_of(source_obj)
 
-        if not is_proper(source_obj):
-            raise CompilerError(
-                "Cannot evaluate improper lists as expressions",
-                source_obj)
+        if is_proper(source_obj):
+            head, tail = source_obj
+        else:
+            # we're going to treat improper lists as the datatype itself,
+            # but still evaluate the internal elements (so not quoted)
+            return cons(_symbol_cons, *source_obj.unpack(), nil)
 
-        head, tail = source_obj
-
-        if is_symbol(head) or _is_lazygensym(head):
+        if is_symbol(head):
             comp = self.find_compiled(head)
             if comp:
                 return self.compile_special(fragment, comp, source_obj, tc)
@@ -675,18 +653,16 @@ class Compiler:
             if comp is symbol('compile/call'):
                 raise CompilerError("compile/call not found", source_obj)
 
-            expr = cons(symbol('compile/call'), head, tail)
+            expr = cons(_symbol_call, head, tail)
             return expr
 
         else:
             head = self.compile(head)
 
         if isinstance(head, ByteCodeFragment):
-            expr = cons(symbol('compile/call'), head, tail)
-            return expr
-
-        expr = cons(head, tail)
-        return expr
+            return cons(_symbol_call, head, tail)
+        else:
+            return cons(head, tail)
 
 
     def compile_special(self, fragment, comp, source_obj, tc):

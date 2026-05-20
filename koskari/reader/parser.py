@@ -128,7 +128,7 @@ _fraction_re = regex(r"-?\d+/\d+").match
 _complex_re = regex(r"^-?\d*\.?\d+\+\d*\.?\d*[ij]$").match
 _keyword_re = regex(r"^(:.+|.+:)$").match
 _dotted_attr_atom_re = regex(
-    r"^[a-zA-Z_][a-zA-Z0-9_-]*(\.[a-zA-Z_][a-zA-Z0-9_-]*)+$").match
+    r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z_][a-zA-Z0-9/_-]*)+$").match
 _ref_atom_re = regex(r"^&\S+$").match
 _ellipsis_atom_re = regex(r"^\.\.\.$").match
 _py_singleton_atom_re = regex(r"^(None|True|False)$").match
@@ -212,6 +212,7 @@ def _as_dotted_attr_atom(s):
     obj = symbol(parts[0])
     for name in parts[1:]:
         obj = cons(_symbol_attr, obj, symbol(name), nil)
+
     return obj
 
 
