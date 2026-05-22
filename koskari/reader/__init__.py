@@ -22,7 +22,7 @@ Koskari s-expression reader and layout block parsing.
 """
 
 
-from ..exceptions import ReaderSyntaxError, FormatStringSyntaxError
+from ..exceptions import ReaderEOF, ReaderSyntaxError, FormatStringSyntaxError
 from .parser import (
     DEFER,
     LINE_END,
@@ -44,6 +44,7 @@ __all__ = (
     "LINE_END",
     "Atom",
     "ReaderSyntaxError",
+    "ReaderEOF",
     "FormatStringSyntaxError",
     "SourceStream",
     "IndentAwareStream",

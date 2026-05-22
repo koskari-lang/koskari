@@ -24,14 +24,17 @@ import traceback
 import unittest
 
 from koskari.cli import (
+    REPLCodeBoundary,
+    REPL_INFRASTRUCTURE_MODULES,
+    _boundary_call_async,
     main,
     option_parser,
     repl_async,
     run_file_async,
-    REPLCodeBoundary,
-    format_exception_with_koskari_trace,
-    _filter_infrastructure_tb,
 )
+from koskari.exceptions import (CodeBoundary, format_code_boundary_exception,
+                                format_exception_with_koskari_trace)
+from koskari.exceptions import _filter_infrastructure_tb
 from koskari.module import new_module
 
 import pytest
@@ -60,7 +63,13 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], opts.args)
         self.assertTrue(opts.tweakpath)
         self.assertFalse(opts.interactive)
+        self.assertFalse(opts.repl_full_trace)
         self.assertIsNone(opts.histfile)
+
+
+    async def test_repl_full_trace_flag(self):
+        opts = self._parse('--repl-full-trace')
+        self.assertTrue(opts.repl_full_trace)
 
 
     async def test_filename_positional(self):
@@ -143,7 +152,7 @@ class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
 class TestRepl(unittest.IsolatedAsyncioTestCase):
 
-    async def _run_repl(self, lines):
+    async def _run_repl(self, lines, full_trace=False):
         """
         Drive the REPL with a sequence of input lines.
 
@@ -161,7 +170,12 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
                 raise EOFError
 
         mod = await new_module('__main__')
-        await repl_async(mod, prompter=prompter, stdout=stdout, stderr=stderr)
+        await repl_async(
+            mod,
+            prompter=prompter,
+            stdout=stdout,
+            stderr=stderr,
+            full_trace=full_trace)
         return stdout.getvalue(), stderr.getvalue()
 
 
@@ -225,16 +239,57 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         """
         _, err = await self._run_repl(['(/ 1 0)'])
 
-        print(err)
-
         self.assertIn('ZeroDivisionError', err)
         self.assertIn('Koskari dynchain', err)
 
 
+    async def test_repl_compiler_error_uses_explain_only(self):
+        """
+        Compile-phase errors show explain() without a Python traceback.
+        """
+        form = '((lambda () (compile/setq _repl_typo_undeclared 1)))'
+        _, err = await self._run_repl([form])
+        self.assertTrue(len(err.strip()) > 0)
+        self.assertNotIn('Traceback (most recent call last)', err)
+        self.assertIn('not declared', err)
+
+
+    async def test_repl_full_trace_shows_boundary_frames(self):
+        _, err = await self._run_repl(['(/ 1 0)'], full_trace=True)
+        self.assertIn('ZeroDivisionError', err)
+        self.assertIn('koskari.cli', err)
+
+
 class TestREPLCodeBoundary(unittest.IsolatedAsyncioTestCase):
 
-    async def test_repl_code_boundary_exported(self):
+    async def test_repl_code_boundary_subclasses_code_boundary(self):
+        self.assertTrue(issubclass(REPLCodeBoundary, CodeBoundary))
         self.assertTrue(issubclass(REPLCodeBoundary, Exception))
+
+
+class TestCodeBoundaryFormatting(unittest.IsolatedAsyncioTestCase):
+
+    async def test_format_code_boundary_folds_infrastructure(self):
+        async def boom():
+            raise ValueError('folded')
+
+        try:
+            await _boundary_call_async(boom)
+        except REPLCodeBoundary as boundary:
+            lines, last_type, last_val, last_tb = format_code_boundary_exception(
+                boundary,
+                infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
+        else:
+            self.fail('expected REPLCodeBoundary')
+
+        rendered = ''.join(lines)
+        self.assertIn('ValueError', rendered)
+        self.assertIs(last_type, ValueError)
+        if last_tb is not None:
+            for frame, _lineno in traceback.walk_tb(last_tb):
+                mod = frame.f_globals.get('__name__', '')
+                self.assertNotIn('koskari.cli', mod)
+                self.assertNotIn('asyncio', mod)
 
 
 class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
@@ -290,7 +345,7 @@ class TestFilterInfrastructureTb(unittest.IsolatedAsyncioTestCase):
         else:
             self.fail('expected ValueError')
         original_count = len(list(traceback.walk_tb(tb)))
-        result = _filter_infrastructure_tb(tb)
+        result = _filter_infrastructure_tb(tb, REPL_INFRASTRUCTURE_MODULES)
         self.assertIsNotNone(result)
         filtered_count = len(list(traceback.walk_tb(result)))
         self.assertLess(filtered_count, original_count)
@@ -303,7 +358,7 @@ class TestFilterInfrastructureTb(unittest.IsolatedAsyncioTestCase):
             exc_type, exc_val, tb = sys.exc_info()
         else:
             self.fail('expected ValueError')
-        result = _filter_infrastructure_tb(tb)
+        result = _filter_infrastructure_tb(tb, REPL_INFRASTRUCTURE_MODULES)
         self.assertIsNotNone(result)
         formatted = ''.join(traceback.format_exception(exc_type, exc_val, result))
         self.assertIn('ValueError', formatted)

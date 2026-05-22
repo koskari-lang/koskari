@@ -190,6 +190,7 @@ def make_bootstrap():
     _bind('hasattr', hasattr)
     _bind('hash', hash)
     _bind('id', id)
+    _bind('input', input)
     _bind('isinstance', isinstance)
     _bind('iter', iter)
     _bind('len', len)

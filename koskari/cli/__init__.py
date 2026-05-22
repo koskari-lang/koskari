@@ -28,23 +28,26 @@ pluggable input backend that supports both readline and prompt_toolkit.
 
 import asyncio
 import sys
-import traceback
 from argparse import REMAINDER, ArgumentParser
 from os.path import basename
-from traceback import format_exception_only
 
-from .exceptions import ReaderError, UncaughtCompilerError
-from .lexer.discovery import special_names_for_repl
-from .lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
-                                   koskari_style, load_koskari_key_bindings)
-from .lib import kos_repr
-from .module import new_module
-from .reader import READ_EOF, LayoutReader, source_str
+from ..exceptions import (CodeBoundary, CompilerError, ReaderEOF, ReaderError,
+                          ReaderSyntaxError, UncaughtCompilerError,
+                          apply_sys_last_exc, format_code_boundary_exception,
+                          format_exception_with_koskari_trace)
+from ..lexer.discovery import special_names_for_repl
+from ..lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
+                                    koskari_style, load_koskari_key_bindings)
+from ..lib import kos_repr
+from ..module import new_module
+from ..reader import READ_EOF, LayoutReader, source_str
 
 
 __all__ = (
+    'CodeBoundary',
     'REPLCodeBoundary',
     'cli_async',
+    'format_code_boundary_exception',
     'format_exception_with_koskari_trace',
     'main',
     'option_parser',
@@ -136,179 +139,23 @@ REPL_INFRASTRUCTURE_MODULES = frozenset((
 ))
 
 
-def _render_koskari_dynchain(trace_data):
+class REPLCodeBoundary(CodeBoundary):
     """
-    Render dynchain metadata attached to synthetic koskari native frames.
-
-    trace_data is built innermost-first by the C runtime; it is reversed
-    before rendering so output matches Python's root-first traceback order.
-    Non-dict entries in trace_data are silently skipped.
-
-    :param trace_data: iterable of dict-like frame metadata
-    :return: list[str] of traceback-formatted lines
+    REPL eval boundary between infrastructure and user expression evaluation
     """
 
-    if not isinstance(trace_data, (list, tuple)) or not trace_data:
-        return []
-
-    frames = list(trace_data)
-    frames.reverse()
-    lines = ['  Koskari dynchain (native eval):\n']
-    for frame in frames:
-        if not isinstance(frame, dict):
-            continue
-
-        name = frame.get('name', '<anonymous>')
-        filename = frame.get('filename', '<unknown>')
-        line = frame.get('line', 0)
-        col = frame.get('col', 0)
-        pc = frame.get('pc', 0)
-        lines.append(f'    at {name} ({filename}:{line}:{col}) [pc={pc}]\n')
-
-    return lines
-
-
-def _find_dynchain_in_chain(exc_val):
-    """
-    Walk the exception chain (exc_val, __cause__, __context__) and return
-    __koskari_dynchain__ from the first exception that has it.
-
-    :param exc_val: exception value to start from
-    :return: dynchain data or None
-    """
-    seen = set()
-    to_visit = [exc_val]
-    while to_visit:
-        current = to_visit.pop()
-        if current is None or id(current) in seen:
-            continue
-        seen.add(id(current))
-        if hasattr(current, '__koskari_dynchain__'):
-            trace_data = getattr(current, '__koskari_dynchain__', None)
-            if trace_data is not None:
-                return trace_data
-        for attr in ('__cause__', '__context__'):
-            link = getattr(current, attr, None)
-            if link is not None:
-                to_visit.append(link)
-    return None
-
-
-def format_exception_with_koskari_trace(exc_type, exc_val, tb, chain_root=None):
-    """
-    Format an exception traceback, interleaving koskari native dynchain data
-    after synthetic native frames that carry ``__koskari_trace__`` in globals.
-    Falls back to exc_val.__koskari_dynchain__ when no such frame exists.
-    When chain_root is given, searches that exception chain for dynchain.
-
-    Falls back to normal traceback formatting when no traceback is present.
-
-    :param chain_root: optional exception to walk (__cause__/__context__) for dynchain
-    :return: list[str], matching traceback.format_exception style
-    """
-
-    if tb is None:
-        fallback = None
-        trace_data = _find_dynchain_in_chain(chain_root if chain_root is not None else exc_val)
-        if trace_data is not None:
-            fallback = _render_koskari_dynchain(trace_data)
-        if fallback:
-            out = ['Traceback (most recent call last):\n']
-            out.extend(fallback)
-            out.extend(format_exception_only(exc_type, exc_val))
-            return out
-        return list(format_exception_only(exc_type, exc_val))
-
-    found_dynchain = False
-    for frame, _lineno in traceback.walk_tb(tb):
-        if frame.f_globals.get('__koskari_trace__') is not None:
-            found_dynchain = True
-            break
-
-    fallback_dynchain = None
-    trace_data = _find_dynchain_in_chain(chain_root if chain_root is not None else exc_val)
-    if not found_dynchain and trace_data is not None:
-        fallback_dynchain = _render_koskari_dynchain(trace_data)
-
-    if not found_dynchain and not fallback_dynchain:
-        return traceback.format_exception(exc_type, exc_val, tb)
-
-    out = ['Traceback (most recent call last):\n']
-    extracted = traceback.extract_tb(tb)
-    walked = list(traceback.walk_tb(tb))
-
-    for summary, (frame, _lineno) in zip(extracted, walked):
-        out.extend(traceback.format_list([summary]))
-        trace_data = frame.f_globals.get('__koskari_trace__')
-        out.extend(_render_koskari_dynchain(trace_data))
-
-    if fallback_dynchain:
-        out.extend(fallback_dynchain)
-
-    out.extend(format_exception_only(exc_type, exc_val))
-    return out
-
-
-def _filter_infrastructure_tb(tb):
-    """
-    Remove infrastructure frames from a traceback.
-
-    Walks the chain, drops frames whose __name__ is in
-    REPL_INFRASTRUCTURE_MODULES, and relinks.  Returns the filtered head.
-
-    Mutates the traceback chain in place by rewriting tb_next on existing
-    traceback objects.  Code that holds references to the same traceback
-    (e.g. debuggers, logging) will see the modified chain.  Python does not
-    provide a straightforward way to build new traceback chains without
-    mutation.
-
-    :param tb: traceback object (root of chain)
-    :return: filtered traceback, or original if all frames would be removed
-    """
-
-    if tb is None:
-        return tb
-    filtered = []
-    current = tb
-    while current is not None:
-        frame = current.tb_frame
-        mod = frame.f_globals.get('__name__', '')
-        if mod not in REPL_INFRASTRUCTURE_MODULES:
-            filtered.append(current)
-        current = current.tb_next
-    if not filtered:
-        return None
-    for i in range(len(filtered) - 1):
-        filtered[i].tb_next = filtered[i + 1]
-    filtered[-1].tb_next = None
-    return filtered[0]
-
-
-class REPLCodeBoundary(Exception):
-    """
-    Internal marker for the boundary between REPL infrastructure and user
-    expression evaluation.  Never shown to the user.
-    """
-
-
-async def _boundary_call_async(fn, /, *a, **kw):
-    """
-    Await fn with the given arguments.  If an exception is raised, re-raise
-    REPLCodeBoundary from it so the cause's traceback can be used for display
-    (omitting REPL infrastructure frames).
-    """
-
-    try:
-        return await fn(*a, **kw)
-    except UncaughtCompilerError:
-        raise
-    except Exception as e:
-        raise REPLCodeBoundary() from e
+    pass
 
 
 # ---------------------------------------------------------------------------
 # REPL
 # ---------------------------------------------------------------------------
+
+
+class REPLReaderError(ReaderError):
+    """
+    Reader error in the REPL
+    """
 
 
 _INCOMPLETE = object()
@@ -330,13 +177,26 @@ async def _eval_expression_async(compiler, source, ns):
         ns["__reader__"] = reader
 
     stream = source_str(source, '<stdin>')
-    source_expr = reader.read(stream)
+    try:
+        source_expr = reader.read(stream)
+
+    except ReaderEOF:
+        return _INCOMPLETE
+
+    except ReaderSyntaxError as e:
+        raise REPLReaderError(e.message) from e
+
     if source_expr is READ_EOF:
         return _INCOMPLETE
 
-    fragment = compiler.full_compile(source_expr)
-    expr = fragment.as_expression(ns)
-    return await expr()
+    try:
+        fragment = compiler.full_compile(source_expr)
+        expr = fragment.as_expression(ns)
+        return await expr()
+    except (UncaughtCompilerError, CompilerError):
+        raise
+    except Exception as e:
+        raise REPLCodeBoundary() from e
 
 
 def _in_block_body(buffer):
@@ -389,7 +249,7 @@ def _continuation_indent(buffer):
 
 
 async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
-                     stderr=None):
+                     stderr=None, full_trace=False):
     """
     Run an interactive read-eval-print loop for a koskari module.
 
@@ -405,6 +265,7 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
     :param stdin: input stream, defaults to sys.stdin
     :param stdout: output stream, defaults to sys.stdout
     :param stderr: error stream, defaults to sys.stderr
+    :param full_trace: when True, show REPL boundary wrapper frames in errors
     """
 
     from koskari.compile import Compiler
@@ -471,8 +332,7 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
                 continue
 
         try:
-            result = await _boundary_call_async(
-                _eval_expression_async, compiler, buffer, ns)
+            result = await _eval_expression_async(compiler, buffer, ns)
 
             if result is _INCOMPLETE:
                 prompt = '... '
@@ -495,40 +355,45 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
             stderr.flush()
             break
 
+        except REPLReaderError as e:
+            orig = e.__cause__ or e
+            print(f"{type(orig).__name__}: {orig.message}", file=stderr)
+            stderr.flush()
+            buffer = ''
+            prompt = '>>> '
+
+        except REPLCodeBoundary as boundary:
+            lines, last_type, last_val, last_tb = format_code_boundary_exception(
+                boundary,
+                nofold=full_trace,
+                infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
+            apply_sys_last_exc(last_type, last_val, last_tb)
+            print(''.join(lines), end='', file=stderr)
+            stderr.flush()
+            buffer = ''
+            prompt = '>>> '
+
+        except UncaughtCompilerError as exc:
+            lines = format_exception_with_koskari_trace(
+                type(exc), exc, exc.__traceback__)
+            apply_sys_last_exc(type(exc), exc, exc.__traceback__)
+            print(''.join(lines), end='', file=stderr)
+            stderr.flush()
+            buffer = ''
+            prompt = '>>> '
+
+        except CompilerError as exc:
+            apply_sys_last_exc(type(exc), exc, None)
+            print(exc.explain(), end='', file=stderr)
+            stderr.flush()
+            buffer = ''
+            prompt = '>>> '
+
         except Exception:
             exc_type, exc_val, tb = sys.exc_info()
-            display = exc_val
-            if isinstance(exc_val, REPLCodeBoundary) and exc_val.__cause__ is not None:
-                display = exc_val.__cause__
-                if isinstance(display, ReaderError):
-                    msg_str = getattr(display, 'message', str(display))
-                    if msg_str and 'unexpected' in msg_str.lower() and 'eof' in msg_str.lower():
-                        prompt = '... '
-                        stdout.flush()
-                        continue
-
-            explain_fn = getattr(display, 'explain', None)
-            if callable(explain_fn):
-                sys.last_type = type(display)
-                sys.last_value = display
-                sys.last_traceback = None
-                print(explain_fn(), end='', file=stderr)
-            elif isinstance(exc_val, REPLCodeBoundary) and exc_val.__cause__ is not None:
-                cause = exc_val.__cause__
-                sys.last_type = type(cause)
-                sys.last_value = cause
-                tb_filtered = _filter_infrastructure_tb(cause.__traceback__)
-                sys.last_traceback = tb_filtered
-                tb_for_format = tb_filtered if tb_filtered is not None else cause.__traceback__
-                msg = ''.join(format_exception_with_koskari_trace(
-                    type(cause), cause, tb_for_format, chain_root=exc_val))
-                print(msg, end='', file=stderr)
-            else:
-                sys.last_type = exc_type
-                sys.last_value = exc_val
-                sys.last_traceback = tb
-                msg = ''.join(format_exception_with_koskari_trace(exc_type, exc_val, tb))
-                print(msg, end='', file=stderr)
+            lines = format_exception_with_koskari_trace(exc_type, exc_val, tb)
+            apply_sys_last_exc(exc_type, exc_val, tb)
+            print(''.join(lines), end='', file=stderr)
             stderr.flush()
             buffer = ''
             prompt = '>>> '
@@ -612,7 +477,10 @@ async def cli_async(options):
         if not options.interactive:
             return
 
-    await repl_async(mod, histfile=options.histfile)
+    await repl_async(
+        mod,
+        histfile=options.histfile,
+        full_trace=options.repl_full_trace)
 
 
 # ---------------------------------------------------------------------------
@@ -643,6 +511,13 @@ def option_parser(name):
         action='store',
         default=None,
         help="REPL history file path")
+
+    parser.add_argument(
+        '--repl-full-trace',
+        dest='repl_full_trace',
+        action='store_true',
+        default=False,
+        help='Show REPL infrastructure frames in runtime error tracebacks')
 
     parser.add_argument(
         '-i', '--interactive',

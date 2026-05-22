@@ -46,7 +46,7 @@ from os.path import exists
 from re import UNICODE, VERBOSE
 from re import compile as regex
 
-from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
+from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
 from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
 from ..types import is_pair
 from .layouts import find_layout
@@ -54,6 +54,7 @@ from .layouts import find_layout
 
 __all__ = (
     "ReaderSyntaxError",
+    "ReaderEOF",
     "FormatStringSyntaxError",
     "SourceStream",
     "IndentAwareStream",
@@ -441,6 +442,30 @@ class SourceStream(BaseSourceStream):
 
         return ReaderSyntaxError(message, position,
                                  text=text, filename=self.filename)
+
+
+    def reader_eof(self, position=None, *, context=None):
+        """
+        Build a ReaderEOF for stream end inside an unfinished form
+
+        Does not read the source file for a source line snippet; callers
+        raise this immediately and REPL parse paths map it to incomplete
+        input without displaying the exception.
+
+        :param position: optional (line, col) tuple; uses current if None
+        :param context: optional phrase appended after unexpected EOF
+        :return: a ReaderEOF instance (caller should raise it)
+        """
+
+        if position is None:
+            position = self.lin, self.col
+
+        message = "unexpected EOF"
+        if context:
+            message = f"{message} in {context}"
+
+        return ReaderEOF(message, position,
+                         text=None, filename=self.filename)
 
 
     def __iter__(self):
@@ -1372,7 +1397,7 @@ class Reader:
                     break
 
             elif event is EOF:
-                raise stream.error("unexpected EOF")
+                raise stream.reader_eof(position)
 
             elif result is nil:
                 result = cons(value, nil)
@@ -1545,7 +1570,7 @@ class Reader:
             if is_escp(C):
                 result.append(sr())
         else:
-            raise stream.error("Unexpected EOF")
+            raise stream.reader_eof(stream.position())
 
         res = "".join(result)
         if with_escapes:
@@ -1587,7 +1612,7 @@ class Reader:
             stream.read(1)
 
         else:
-            raise stream.error("Unexpected EOF")
+            raise stream.reader_eof(stream.position())
 
         if with_escapes:
             value = _as_unicode(value)
@@ -1606,8 +1631,10 @@ class Reader:
 
         event, pos, child = self._read(stream)
 
+        if event is EOF:
+            raise stream.reader_eof(pos)
         if event is not VALUE:
-            msg = "invalid use of %s" % char
+            msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
         return VALUE, cons(_symbol_quote, child, nil)
@@ -1625,8 +1652,10 @@ class Reader:
         with self.temporary_event_macro(",", self._read_unquote, True):
             event, pos, child = self._read(stream)
 
+        if event is EOF:
+            raise stream.reader_eof(pos)
         if event is not VALUE:
-            msg = "invalid use of %s" % char
+            msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
         return VALUE, cons(_symbol_quasiquote, child, nil)
@@ -1644,8 +1673,10 @@ class Reader:
         with self.temporary_event_macro("@", self._read_splice, True):
             event, pos, child = self._read(stream)
 
+        if event is EOF:
+            raise stream.reader_eof(pos)
         if event is not VALUE:
-            msg = "invalid use of %s" % char
+            msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
         if is_pair(child) and child[0] is _symbol_splice:
@@ -1667,8 +1698,10 @@ class Reader:
 
         event, pos, child = self._read(stream)
 
+        if event is EOF:
+            raise stream.reader_eof(pos)
         if event is not VALUE:
-            msg = "invalid use of %s" % char
+            msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
         return VALUE, cons(_symbol_splice, child, nil)
@@ -2188,7 +2221,7 @@ class LayoutReader(Reader):
         if event is COLON:
             raise stream.error('block header must have a head', pos)
         if event is EOF:
-            raise stream.error('unexpected EOF in block header', pos)
+            raise stream.reader_eof(pos, context='block header')
 
         args, found_colon = self._read_header_args(stream)
         if not found_colon:
@@ -2555,7 +2588,8 @@ class LayoutReader(Reader):
             stream.skip_whitespace()
             pk = stream.peek(1)
             if not pk:
-                raise stream.error('unexpected EOF after decorator', stream.position())
+                raise stream.reader_eof(
+                    stream.position(), context='after decorator')
 
             col = stream.position()[1]
             if col != outer_indent:
@@ -2821,6 +2855,8 @@ class FormatStringReader(object):
 
                 peek = stream.peek(2)
 
+        except ReaderEOF:
+            raise
         except ReaderSyntaxError as rex:
             raise FormatStringSyntaxError(rex.message, rex.location,
                                           filename=rex.filename,
