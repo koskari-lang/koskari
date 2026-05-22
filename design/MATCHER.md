@@ -181,6 +181,7 @@ hygienic composite or by `VALUE` / `BODY`.
 | Pattern | Match behaviour | Capture |
 |---------|-----------------|---------|
 | `TEST_ANY()` | Any one spine element | No |
+| `SAME(slot, depth=0)` | One element equal to prior `slot` bind in current capture dict (`depth` 1 = parent `GROUP` frame; `depth` > 1 fails). `DatumFrame` operands are unsupported (match fails). Duplicate `BIND`/`CAPTURE` for the same slot is a freeze error — use `SAME`. RULE patterns lower repeats to `SAME`. | No |
 | `LITERAL(v)` | Equal to `v` | No |
 | `TYPE(extern)` | Extern predicate (`symbol`, `pair`, `keyword`, …) | No |
 | `PREDICATE(name)` | Named extern predicate | No |

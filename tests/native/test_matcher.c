@@ -106,6 +106,20 @@ static int append_capture(
 }
 
 
+static int append_same(
+    KosMatcherBuilder *b,
+    uint32_t slot,
+    uint32_t depth) {
+
+    KosMatchNode n;
+    memset(&n, 0, sizeof(n));
+    n.kind = KOS_MATCH_NODE_SAME;
+    n.as.same.slot = slot;
+    n.as.same.depth = depth;
+    return KosMatcherBuilder_AppendNode(b, &n);
+}
+
+
 static int append_form(KosMatcherBuilder *b, uint32_t subnode) {
     KosMatchNode n;
     memset(&n, 0, sizeof(n));
@@ -1241,6 +1255,77 @@ static int test_match_form_descends_into_pair(void) {
     Py_DECREF(one);
     Py_DECREF(two);
     Py_DECREF(three);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_same_symbol_equal(void) {
+    /*
+      MATCH(CAPTURE x, SAME x) on a KosPair spine of two equal symbols.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    int slot_x = add_str_slot(b, "x");
+    int n_cap = append_capture(b, (uint32_t) slot_x, KOS_MATCH_NO_INDEX);
+    int n_same = append_same(b, (uint32_t) slot_x, 0);
+    uint32_t kids[] = {(uint32_t) n_cap, (uint32_t) n_same};
+    int n_match = append_match(b, kids, 2);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_match);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *nm = PyUnicode_FromString("a");
+    PyObject *sym = KosSymbol_FromString(nm);
+    Py_DECREF(nm);
+    PyObject *items[2] = { sym, sym };
+    PyObject *cons = make_kospair(items, 2);
+
+    PyObject *r = run_match_kospair((KosMatcher *) m_obj, cons);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    Py_DECREF(r);
+    Py_DECREF(cons);
+    Py_DECREF(sym);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_same_symbol_unequal(void) {
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    int slot_x = add_str_slot(b, "x");
+    int n_cap = append_capture(b, (uint32_t) slot_x, KOS_MATCH_NO_INDEX);
+    int n_same = append_same(b, (uint32_t) slot_x, 0);
+    uint32_t kids[] = {(uint32_t) n_cap, (uint32_t) n_same};
+    int n_match = append_match(b, kids, 2);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_match);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *nm_a = PyUnicode_FromString("a");
+    PyObject *sym_a = KosSymbol_FromString(nm_a);
+    Py_DECREF(nm_a);
+    PyObject *nm_b = PyUnicode_FromString("b");
+    PyObject *sym_b = KosSymbol_FromString(nm_b);
+    Py_DECREF(nm_b);
+    PyObject *items[2] = { sym_a, sym_b };
+    PyObject *cons = make_kospair(items, 2);
+
+    PyObject *r = run_match_kospair((KosMatcher *) m_obj, cons);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(! ((KosMatchResult *) r)->matched, "not matched");
+
+    Py_DECREF(r);
+    Py_DECREF(cons);
+    Py_DECREF(sym_b);
+    Py_DECREF(sym_a);
     Py_DECREF(m_obj);
     KosMatcherBuilder_Free(b);
     return 0;
@@ -3010,6 +3095,8 @@ int run_matcher_tests(void) {
     RUN_TEST(test_match_kospair_datum_transparent);
     RUN_TEST(test_match_kospair_bare_capture_not_from_datum);
     RUN_TEST(test_match_form_descends_into_pair);
+    RUN_TEST(test_match_same_symbol_equal);
+    RUN_TEST(test_match_same_symbol_unequal);
     RUN_TEST(test_match_oneof_first_branch_matches);
     RUN_TEST(test_match_oneof_falls_through);
     RUN_TEST(test_match_oneof_rollback_clean_frame);

@@ -31,7 +31,7 @@ import pytest
 from koskari.compile import Compiler
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import Module, ModuleNamespace, car, cdr, cons, symbol
-from koskari.matcher import parse_explicit_rule_pattern
+from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (Syntax, SyntaxTransform, build_syntax,
                             parse_syntax_rules_pattern)
 from koskari.types import build_proper, is_symbol, unpack
@@ -247,6 +247,49 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         assert_forms_equal(self, expanded, build_proper(symbol('list'), 1, 2))
         expanded0 = expand(transformer, build_proper(symbol('take')))
         assert_forms_equal(self, expanded0, build_proper(symbol('list')))
+
+
+    def test_repeated_pattern_variable_uses_same(self):
+        """
+        (set! name (+ name value)) requires the two name positions to match
+        """
+
+        pat_form = build_proper(
+            symbol('set!'),
+            symbol('name'),
+            build_proper(symbol('+'), symbol('name'), symbol('value')))
+        pat_m = parse_syntax_rules_pattern(pat_form, frozenset(), pat_form)
+        matcher = make_matcher(pat_m)
+        ok = build_proper(
+            symbol('set!'),
+            symbol('a'),
+            build_proper(symbol('+'), symbol('a'), 1))
+        bad = build_proper(
+            symbol('set!'),
+            symbol('a'),
+            build_proper(symbol('+'), symbol('b'), 1))
+        self.assertTrue(matcher.match(ok).matched)
+        self.assertFalse(matcher.match(bad).matched)
+
+
+    def test_inplace_set_rule_expands(self):
+        pat_form = build_proper(
+            symbol('set!'),
+            symbol('name'),
+            build_proper(symbol('+'), symbol('name'), symbol('value')))
+        tpl = build_proper(
+            symbol('compile/inplace'),
+            symbol('+'),
+            symbol('name'),
+            symbol('value'))
+        transformer = rule('compile/set!', pat_form, tpl)
+        expanded = expand(
+            transformer,
+            build_proper(
+                symbol('set!'),
+                symbol('n'),
+                build_proper(symbol('+'), symbol('n'), 99)))
+        assert_head(self, expanded, 'compile/inplace')
 
 
 # The end.

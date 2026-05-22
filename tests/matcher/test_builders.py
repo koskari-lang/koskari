@@ -635,14 +635,25 @@ class TestEagerValidation(unittest.TestCase):
             FIELD(TEST_ANY()).freeze()
 
 
-    def test_duplicate_plain_capture_allowed_on_freeze(self):
+    def test_duplicate_plain_capture_rejected_on_freeze(self):
         """
-        Two plain CAPTURE nodes for the same slot are allowed at freeze time
-        so syntax-rules can repeat a pattern variable (match requires equal
-        values at runtime)
+        Two plain CAPTURE nodes for the same slot raise at freeze; use SAME
         """
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x"))
+        with self.assertRaises(ValueError) as ctx:
+            pat.freeze()
+        self.assertIn("SAME", str(ctx.exception))
+
+
+    def test_same_references_prior_slot_freezes(self):
+        """
+        MATCH(BIND x, SAME x) lowers and freezes
+        """
+
+        from koskari.matcher import SAME
+
+        pat = MATCH(CAPTURE("x"), SAME("x"))
         pat.freeze()
 
 

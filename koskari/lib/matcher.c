@@ -178,6 +178,9 @@ static int append_check_node(KosMatcherBuilder *b, const KosMatchNode *node) {
       return -1;
     break;
 
+  case KOS_MATCH_NODE_SAME:
+    break;
+
   default:
     PyErr_Format(PyExc_ValueError, "unhandled node kind: %u",
                  (unsigned) node->kind);
@@ -637,6 +640,7 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
 
   switch (n->kind) {
   case KOS_MATCH_NODE_TEST:
+  case KOS_MATCH_NODE_SAME:
     n->min_width = 1;
     n->max_width = 1;
     break;
@@ -810,6 +814,16 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
       }
       break;
 
+    case KOS_MATCH_NODE_SAME:
+      if ((Py_ssize_t) n->as.same.slot >= n_slots) {
+        PyErr_Format(PyExc_ValueError,
+                     "SAME slot %u out of range (slots size=%zd) "
+                     "at node %zd",
+                     (unsigned) n->as.same.slot, n_slots, i);
+        return -1;
+      }
+      break;
+
     case KOS_MATCH_NODE_CAPTURE:
       if (n->as.capture.slot != KOS_MATCH_NO_INDEX &&
           (Py_ssize_t) n->as.capture.slot >= n_slots) {
@@ -905,6 +919,7 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
     return 1;
 
   case KOS_MATCH_NODE_TEST:
+  case KOS_MATCH_NODE_SAME:
   case KOS_MATCH_NODE_REST:
     return 0;
 
@@ -1101,6 +1116,7 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
 
   switch (n->kind) {
   case KOS_MATCH_NODE_TEST:
+  case KOS_MATCH_NODE_SAME:
   case KOS_MATCH_NODE_FORM:
   case KOS_MATCH_NODE_CLASS: {
     c.min = 1;
@@ -2180,6 +2196,7 @@ typedef struct {
   PyObject *extern_env;       /* PyTuple aligned to m->externs, or NULL */
   PyObject *root_captures;
   PyObject *cur_captures;
+  PyObject *capture_parent;
   Py_ssize_t slot_count;
   DictChange *change_stack;
   Py_ssize_t change_count;
@@ -2664,11 +2681,13 @@ static int match_group(
 
   Py_ssize_t snap = engine_snapshot(e);
   PyObject *parent_dict = e->cur_captures;
+  PyObject *old_capture_parent = e->capture_parent;
   Py_ssize_t start = *cursor;
   PyObject *sub = match_frame_new(e, start);
   if (! sub)
     return -1;
 
+  e->capture_parent = e->cur_captures;
   e->cur_captures = sub;
 
   for (uint32_t cidx = n->as.group.first_child;
@@ -2686,6 +2705,7 @@ static int match_group(
     int r = match_node(e, cidx, cursor, child_trailing);
     if (r != 1) {
       e->cur_captures = parent_dict;
+      e->capture_parent = old_capture_parent;
       engine_rollback(e, snap);
       Py_DECREF(sub);
       return r;
@@ -2693,6 +2713,7 @@ static int match_group(
   }
 
   e->cur_captures = parent_dict;
+  e->capture_parent = old_capture_parent;
   if (datum_frame_set_source(e, sub, e->subj, start, *cursor)) {
     Py_DECREF(sub);
     return -1;
@@ -3321,6 +3342,49 @@ static int match_node(
     return 1;
   }
 
+  case KOS_MATCH_NODE_SAME: {
+    Py_ssize_t length = e->subj->vt->length(e->subj);
+    if (*cursor + 1 + (Py_ssize_t) trailing_min > length)
+      return 0;
+    if (n->as.same.depth > 1)
+      return 0;
+
+    PyObject *dict = e->cur_captures;
+    if (n->as.same.depth == 1) {
+      if (! e->capture_parent)
+        return 0;
+      dict = e->capture_parent;
+    }
+
+    if ((Py_ssize_t) n->as.same.slot >= e->slot_count)
+      return 0;
+
+    PyObject *name = PyTuple_GET_ITEM(e->m->slots, n->as.same.slot);
+    PyObject *prev = PyDict_GetItemWithError(dict, name);
+    if (! prev) {
+      if (PyErr_Occurred())
+        return -1;
+      return 0;
+    }
+
+    PyObject *elem = e->subj->vt->get(e->subj, *cursor);
+    PyObject *got = matcher_peel_datum(elem);
+    prev = matcher_peel_datum(prev);
+    if (KosDatumFrame_Check(got) || KosDatumFrame_Check(prev))
+      return 0;
+    if (got == prev) {
+      (*cursor)++;
+      return 1;
+    }
+    int cmp = PyObject_RichCompareBool(got, prev, Py_EQ);
+    if (cmp < 0)
+      return -1;
+    if (! cmp)
+      return 0;
+    (*cursor)++;
+    return 1;
+  }
+
   case KOS_MATCH_NODE_CAPTURE:
     return match_capture(e, n, cursor, trailing_min);
 
@@ -3415,6 +3479,7 @@ PyObject *KosMatcher_Match(
 
   engine.root_captures = root;
   engine.cur_captures = root;
+  engine.capture_parent = NULL;
 
   Py_ssize_t cursor = 0;
   int r = -1;
@@ -4110,6 +4175,21 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
     n.kind = KOS_MATCH_NODE_NOT;
     if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
                          &n.as.not_.subnode, "NOT.subnode"))
+      return -1;
+
+  } else if (PyUnicode_CompareWithASCIIString(tag, "SAME") == 0) {
+    if (arity != 3) {
+      PyErr_Format(PyExc_ValueError,
+                   "SAME node tuple must be 3-tuple, got %zd", arity);
+      return -1;
+    }
+    n.kind = KOS_MATCH_NODE_SAME;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
+                         &n.as.same.slot, "SAME.slot"))
+      return -1;
+    if (thaw_parse_uint32_nonneg(PyTuple_GET_ITEM(t, 2),
+                                 &n.as.same.depth,
+                                 "SAME.depth"))
       return -1;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "CLASS") == 0) {

@@ -55,6 +55,7 @@ __all__ = (
     "HygienicMatchCompiler",
 
     "TEST_ANY",
+    "SAME",
     "LITERAL",
     "TYPE",
     "PREDICATE",
@@ -223,11 +224,10 @@ class MatchCompiler:
 
     def claim_slot_name(self, name, signature):
         """
-        Reject incompatible duplicate slot bindings within the current capture
-        scope. A second claim with the same ``signature`` as the first is
-        allowed so syntax-rules patterns can repeat a pattern variable (the
-        native engine requires the same value twice). ONEOF branches use a fresh
-        scope per branch so alternate arms may reuse slot names
+        Reject duplicate slot bindings within the current capture scope.
+        Repeat a pattern variable with :class:`SAME` instead of a second
+        CAPTURE. ONEOF branches use a fresh scope per branch so alternate
+        arms may reuse slot names
 
         :param name: capture slot name
         :param signature: hashable tuple describing this claim
@@ -236,16 +236,16 @@ class MatchCompiler:
         top = self.capture_scope_stack[-1]
         if name in top:
             prev = top[name]
-            if prev == signature:
-                return
             if (isinstance(prev, tuple) and isinstance(signature, tuple)
                     and len(prev) >= 1 and len(signature) >= 1
                     and prev[0] == "capture" and signature[0] == "capture"):
                 raise ValueError(
                     "duplicate slot name %r in matcher pattern "
-                    "(differing matcher type)" % (name,))
+                    "(differing matcher type); use SAME for repeats"
+                    % (name,))
             raise ValueError(
-                "duplicate slot name %r in matcher pattern" % (name,))
+                "duplicate slot name %r in matcher pattern; use SAME "
+                "for repeats" % (name,))
         top[name] = signature
 
 
@@ -649,6 +649,66 @@ def pattern_slot_names(pattern):
 
 
 # === Primitive builders ===
+
+
+class SAME(Pattern):
+    """
+    Match one element equal to an earlier capture in this frame
+    """
+
+
+    def __init__(self, slot, depth=0):
+        """
+        :param slot: capture slot name bound earlier in the pattern
+        :param depth: 0 for current capture dict, 1 for parent GROUP frame
+        :raises TypeError: when slot is not a str or depth is not an int
+        :raises ValueError: when slot is empty or depth is negative
+        """
+
+        check_str_arg(slot, "SAME slot")
+        if isinstance(depth, bool) or not isinstance(depth, int):
+            raise TypeError(
+                "SAME depth must be an int, got %r"
+                % type(depth).__name__)
+        if depth < 0:
+            raise ValueError(
+                "SAME depth must be non-negative, got %d" % (depth,))
+        self._slot = slot
+        self._depth = depth
+
+
+    def lower(self, ctx):
+        """
+        Emit a SAME node referencing an existing slot index
+        """
+
+        slot_idx = None
+        for i, nm in enumerate(ctx.slot_names):
+            if nm == self._slot:
+                slot_idx = i
+                break
+        if slot_idx is None:
+            raise ValueError(
+                "SAME slot %r is not bound earlier in this pattern"
+                % (self._slot,))
+        return ctx.append_node(
+            ("SAME", slot_idx, self._depth))
+
+
+    def visit(self, fn):
+        fn(self)
+
+
+    def __repr__(self):
+        if self._depth:
+            return "SAME(%r, depth=%d)" % (self._slot, self._depth)
+        return "SAME(%r)" % (self._slot,)
+
+
+    def __kos_repr__(self):
+        if self._depth:
+            return "(SAME %s depth: %d)" % (self._slot, self._depth)
+        return "(SAME %s)" % (self._slot,)
 
 
 class TEST_ANY(Pattern):

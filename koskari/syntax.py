@@ -33,7 +33,7 @@ from koskari.hygiene import (Hygiene, collect_binding_symbols,
                              finalize_macro_hygiene_unbox_one_pass)
 from koskari.lib import (Datum, Matcher, demand_call, gensym, match_select,
                          nil, symbol)
-from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST, TEST_ANY,
+from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
                              HygienicMatchCompiler, Pattern, check_pattern_arg,
                              parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
@@ -514,7 +514,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
         return MATCH(LITERAL(pattern_expr))
 
     return MATCH(*_syntax_pattern_specs(
-        list(unpack(pattern_expr)), literals, source_ctx))
+        list(unpack(pattern_expr)), literals, source_ctx, set()))
 
 
 @builtin("parse-match-pattern")
@@ -546,7 +546,7 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
     return parse_syntax_rules_pattern(pattern_expr, lit, source_ctx)
 
 
-def _syntax_elem_pattern(pat, literals, source_ctx):
+def _syntax_elem_pattern(pat, literals, source_ctx, seen):
     if pat is Ellipsis:
         raise ValueError(
             f"invalid ellipsis placement in pattern: {pat!r}"
@@ -556,16 +556,20 @@ def _syntax_elem_pattern(pat, literals, source_ctx):
     if is_symbol(pat):
         if pat in literals:
             return LITERAL(pat)
-        return BIND(str(pat))
+        name = str(pat)
+        if name in seen:
+            return SAME(name)
+        seen.add(name)
+        return BIND(name)
 
     if not is_pair(pat):
         return LITERAL(pat)
 
     return FORM(MATCH(*_syntax_pattern_specs(
-        list(unpack(pat)), literals, source_ctx)))
+        list(unpack(pat)), literals, source_ctx, seen)))
 
 
-def _syntax_pattern_specs(p_items, literals, source_ctx):
+def _syntax_pattern_specs(p_items, literals, source_ctx, seen):
     specs = []
     i = 0
     while i < len(p_items):
@@ -578,12 +582,14 @@ def _syntax_pattern_specs(p_items, literals, source_ctx):
                     specs.append(repeat_capture(str(pat), TEST_ANY()))
             else:
                 slot = str(gensym("_repeat"))
-                inner = _syntax_elem_pattern(pat, literals, source_ctx)
+                inner = _syntax_elem_pattern(
+                    pat, literals, source_ctx, set())
                 specs.append(repeat_capture(slot, inner))
             i += 2
             continue
 
-        specs.append(_syntax_elem_pattern(p_items[i], literals, source_ctx))
+        specs.append(_syntax_elem_pattern(
+            p_items[i], literals, source_ctx, seen))
         i += 1
 
     return specs

@@ -38,6 +38,7 @@ typedef enum {
   KOS_MATCH_NODE_NOT,
   KOS_MATCH_NODE_CLASS,
   KOS_MATCH_NODE_FIELD,
+  KOS_MATCH_NODE_SAME,
   KOS_MATCH_NODE_KIND_COUNT
 } KosMatchNodeKind;
 
@@ -153,6 +154,12 @@ typedef struct {
 
 
 typedef struct {
+  uint32_t slot;
+  uint32_t depth;
+} KosMatchSame;
+
+
+typedef struct {
   uint16_t kind;
   uint16_t flags;
   uint32_t next;         /* next sibling in GROUP, next branch in ONEOF,
@@ -173,6 +180,7 @@ typedef struct {
     KosMatchNot      not_;
     KosMatchClass    class_;
     KosMatchField    field;
+    KosMatchSame     same;
   } as;
 } KosMatchNode;
 
