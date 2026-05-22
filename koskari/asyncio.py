@@ -41,13 +41,9 @@ def coroutine_fn(fn):
 
 @builtin("create-task")
 def create_task(coro):
-    print("create-task", coro)
     if isinstance(coro, (defer, Coroutine)):
         coro = as_coroutine(coro)
-    def ct(c):
-        print("asyncio.create_task", c)
-        return asyncio.create_task(c)
-    return defer(ct, coro)
+    return defer(asyncio.create_task, coro)
 
 
 @builtin("run-until-complete")
