@@ -1,5 +1,6 @@
-import fastapi as: fastapi
-import uvicorn as: uvicorn
+import sys
+import fastapi
+import uvicorn
 
 
 ;; Application definition
@@ -17,17 +18,17 @@ define-syntax define-route:
 
 
 define-route "/" home []:
-    (print "home")
+    (print "-> home")
     #{ok: True
       message: "hello from Koskari"
       routes: #["/" "/healthz" "/echo/{name}"]}
 
 define-route "/healthz" healthz []:
-    (print "healthz")
+    (print "-> healthz")
     #{ok: True}
 
 define-route "/echo/{name}" echo [name: "<anon>"]:
-    (print "echo" name)
+    (print "-> echo" name)
     #{ok: True
       echo: name}
 
@@ -57,11 +58,39 @@ define stop []:
         set! server None
 
 
+;; Client for interactive mode
+
+
+define create-client []:
+    import-from httpx AsyncClient
+
+    define-global client:
+        AsyncClient base_url: "http://127.0.0.1:8000/"
+
+    define-global GET [path: ""]:
+        .json (client.get path)
+
+
 ;; Script entry point
 
 
+define main []:
+    define-parameter *interactive* False
+
+    if *interactive*:
+        create-task (defer start)
+        (create-client)
+        (await)
+
+        ; now you can define additional routes, and use GET to test them, and
+        ; it all happens in the same event loop
+
+    else:
+        (start)
+
+
 when-main:
-    (start)
+    (main)
 
 
 ;; The end.

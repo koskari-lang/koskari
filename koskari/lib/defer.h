@@ -25,8 +25,7 @@
 
 
 typedef enum {
-  KOS_DEFER_PENDING = 0,
-  KOS_DEFER_DELEGATING,
+  KOS_DEFER_DELEGATING = 0,
   KOS_DEFER_DONE,
   KOS_DEFER_FAILED,
   KOS_DEFER_MOVED_FROM,
@@ -40,11 +39,6 @@ typedef struct KosDefer {
   PyObject_HEAD
   KosDeferState state;
   union {
-    struct {
-      PyObject *fn;
-      PyObject *args;
-      PyObject *kwds;
-    } pending;
     PyObject *inner;
     PyObject *value;
     struct {
@@ -75,15 +69,15 @@ extern PyTypeObject KosDeferType;
 
 
 /**
-  Create a new defer in PENDING state capturing fn, args, kwds.
-  args and kwds may be NULL (treated as empty).
+  Create a new defer: invoke fn(*args, **kwds) immediately, normalize
+  (including defer-of-defer adopt). On call failure, return NULL with
+  active exception. args and kwds may be NULL (treated as empty).
   Returns new reference.
 */
 PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds);
 
 /**
-  Single step: if PENDING invoke fn(*args,**kwds), normalize (including
-  defer-of-defer adopt). If DONE return value (new ref). If DELEGATING
+  Resolve at await time. If DONE return value (new ref). If DELEGATING
   set *suspended=1 and *yielded=inner, return NULL. If FAILED/MOVED_FROM
   set exception, return NULL.
 */

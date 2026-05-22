@@ -17,8 +17,8 @@
 /**
    koskari.lib defer
 
-   Single-shot await-handle (DeferCoroutine). Excluded from implicit
-   auto-await; driven by explicit AWAIT.
+   Single-shot await-handle (DeferCoroutine). Invokes its target at
+   construction; excluded from implicit auto-await; driven by explicit AWAIT.
 
    author: Christopher O'Brien <obriencj@preoccupied.net>
    license: GPL v.3
@@ -43,15 +43,6 @@ static int is_awaitable(PyObject *obj) {
 */
 static void defer_adopt(KosDefer *self, KosDefer *donor) {
   switch (donor->state) {
-    case KOS_DEFER_PENDING:
-      self->state = KOS_DEFER_PENDING;
-      self->u.pending.fn = donor->u.pending.fn;
-      self->u.pending.args = donor->u.pending.args;
-      self->u.pending.kwds = donor->u.pending.kwds;
-      donor->u.pending.fn = NULL;
-      donor->u.pending.args = NULL;
-      donor->u.pending.kwds = NULL;
-      break;
     case KOS_DEFER_DELEGATING:
       self->state = KOS_DEFER_DELEGATING;
       self->u.inner = donor->u.inner;
@@ -77,41 +68,80 @@ static void defer_adopt(KosDefer *self, KosDefer *donor) {
 }
 
 
+/**
+   Normalize result into self (defer-of-defer adopt loop). On failure set
+   PyErr and return -1. fn/args/kwds are borrowed (not stored on self).
+*/
+static int defer_normalize_from_call(
+    KosDefer *self,
+    PyObject *fn,
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *owned_args = NULL;
+  PyObject *call_args = args;
+
+  if (! call_args) {
+    owned_args = PyTuple_New(0);
+    if (! owned_args)
+      return -1;
+    call_args = owned_args;
+  }
+
+  PyObject *result = PyObject_Call(fn, call_args, kwds);
+  Py_XDECREF(owned_args);
+
+  if (! result)
+    return -1;
+
+  for (;;) {
+    if (KosDefer_CheckExact(result)) {
+      KosDefer *other = (KosDefer *) result;
+      defer_adopt(self, other);
+      Py_DECREF(result);
+      return 0;
+    }
+
+    if (is_awaitable(result)) {
+      self->state = KOS_DEFER_DELEGATING;
+      self->u.inner = result;
+      return 0;
+    }
+
+    self->state = KOS_DEFER_DONE;
+    self->u.value = result;
+    return 0;
+  }
+}
+
+
 /* === type methods === */
 
 
 static PyObject *defer_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
   (void) type;
+
   if (! args || PyTuple_GET_SIZE(args) < 1) {
     PyErr_SetString(PyExc_TypeError, "defer requires at least one argument (fn)");
     return NULL;
   }
   PyObject *fn = PyTuple_GET_ITEM(args, 0);
   Py_INCREF(fn);
+
   PyObject *defer_args = NULL;
   if (PyTuple_GET_SIZE(args) > 1) {
     defer_args = PyTuple_GetSlice(args, 1, PyTuple_GET_SIZE(args));
-    if (! defer_args) {
-      Py_DECREF(fn);
-      return NULL;
-    }
   } else {
     defer_args = PyTuple_New(0);
-    if (! defer_args) {
-      Py_DECREF(fn);
-      return NULL;
-    }
   }
-  PyObject *defer_kwds = kwds ? PyDict_Copy(kwds) : NULL;
-  if (kwds && ! defer_kwds) {
+  if (! defer_args) {
     Py_DECREF(fn);
-    Py_DECREF(defer_args);
     return NULL;
   }
-  PyObject *self = KosDefer_New(fn, defer_args, defer_kwds);
+
+  PyObject *self = KosDefer_New(fn, defer_args, kwds);
   Py_DECREF(fn);
   Py_DECREF(defer_args);
-  Py_XDECREF(defer_kwds);
   return self;
 }
 
@@ -120,11 +150,6 @@ static void defer_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
   KosDefer *d = (KosDefer *) self;
   switch (d->state) {
-    case KOS_DEFER_PENDING:
-      Py_CLEAR(d->u.pending.fn);
-      Py_CLEAR(d->u.pending.args);
-      Py_CLEAR(d->u.pending.kwds);
-      break;
     case KOS_DEFER_DELEGATING:
       Py_CLEAR(d->u.inner);
       break;
@@ -145,11 +170,6 @@ static void defer_dealloc(PyObject *self) {
 static int defer_traverse(PyObject *self, visitproc visit, void *arg) {
   KosDefer *d = (KosDefer *) self;
   switch (d->state) {
-    case KOS_DEFER_PENDING:
-      Py_VISIT(d->u.pending.fn);
-      Py_VISIT(d->u.pending.args);
-      Py_VISIT(d->u.pending.kwds);
-      break;
     case KOS_DEFER_DELEGATING:
       Py_VISIT(d->u.inner);
       break;
@@ -170,11 +190,6 @@ static int defer_traverse(PyObject *self, visitproc visit, void *arg) {
 static int defer_clear(PyObject *self) {
   KosDefer *d = (KosDefer *) self;
   switch (d->state) {
-    case KOS_DEFER_PENDING:
-      Py_CLEAR(d->u.pending.fn);
-      Py_CLEAR(d->u.pending.args);
-      Py_CLEAR(d->u.pending.kwds);
-      break;
     case KOS_DEFER_DELEGATING:
       Py_CLEAR(d->u.inner);
       break;
@@ -195,12 +210,6 @@ static int defer_clear(PyObject *self) {
 static PyObject *defer_repr(PyObject *self) {
   KosDefer *d = (KosDefer *) self;
   switch (d->state) {
-    case KOS_DEFER_PENDING: {
-      Py_ssize_t n = d->u.pending.args ? PyTuple_GET_SIZE(d->u.pending.args) : 0;
-      Py_ssize_t k = d->u.pending.kwds ? PyDict_Size(d->u.pending.kwds) : 0;
-      return PyUnicode_FromFormat("<defer pending fn=%R args=%zd kwds=%zd>",
-                                 d->u.pending.fn, n, k);
-    }
     case KOS_DEFER_DELEGATING:
       return PyUnicode_FromFormat("<defer delegating inner=%R>", d->u.inner);
     case KOS_DEFER_DONE:
@@ -223,22 +232,12 @@ PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds) {
   if (! self)
     return NULL;
   PyObject_Init((PyObject *) self, &KosDeferType);
-  self->state = KOS_DEFER_PENDING;
-  self->u.pending.fn = fn;
-  Py_INCREF(fn);
-  if (args) {
-    self->u.pending.args = args;
-    Py_INCREF(args);
-  } else {
-    self->u.pending.args = PyTuple_New(0);
-    if (! self->u.pending.args) {
-      Py_DECREF(self);
-      return NULL;
-    }
+
+  if (defer_normalize_from_call(self, fn, args, kwds) < 0) {
+    Py_DECREF(self);
+    return NULL;
   }
-  self->u.pending.kwds = kwds ? kwds : NULL;
-  if (kwds)
-    Py_INCREF(kwds);
+
   PyObject_GC_Track((PyObject *) self);
   return (PyObject *) self;
 }
@@ -273,66 +272,6 @@ PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded) {
     return NULL;
   }
 
-  /* PENDING: invoke fn, normalize (loop for defer-of-defer) */
-  while (self->state == KOS_DEFER_PENDING) {
-    PyObject *result = PyObject_Call(self->u.pending.fn,
-                                     self->u.pending.args,
-                                     self->u.pending.kwds);
-    Py_CLEAR(self->u.pending.fn);
-    Py_CLEAR(self->u.pending.args);
-    Py_CLEAR(self->u.pending.kwds);
-
-    if (! result) {
-      PyObject *exc_typ = NULL;
-      PyObject *exc_val = NULL;
-      PyObject *exc_tb = NULL;
-      PyErr_Fetch(&exc_typ, &exc_val, &exc_tb);
-      self->state = KOS_DEFER_FAILED;
-      self->u.failed.exc_type = exc_typ;
-      Py_INCREF(exc_typ);
-      self->u.failed.exc = exc_val ? exc_val : exc_typ;
-      Py_INCREF(self->u.failed.exc);
-      PyErr_Restore(exc_typ, exc_val, exc_tb);
-      return NULL;
-    }
-
-    /* Normalize return */
-    if (KosDefer_CheckExact(result)) {
-      KosDefer *other = (KosDefer *) result;
-      defer_adopt(self, other);
-      Py_DECREF(result);
-      continue;
-    }
-
-    if (is_awaitable(result)) {
-      self->state = KOS_DEFER_DELEGATING;
-      self->u.inner = result;
-      *suspended = 1;
-      *yielded = result;
-      Py_INCREF(*yielded);
-      return NULL;
-    }
-
-    self->state = KOS_DEFER_DONE;
-    self->u.value = result;
-    return result;
-  }
-
-  /* state changed by adopt to DELEGATING/DONE/FAILED - handle */
-  if (self->state == KOS_DEFER_DONE) {
-    Py_INCREF(self->u.value);
-    return self->u.value;
-  }
-  if (self->state == KOS_DEFER_FAILED) {
-    PyErr_SetObject(self->u.failed.exc_type, self->u.failed.exc);
-    return NULL;
-  }
-  if (self->state == KOS_DEFER_DELEGATING) {
-    *suspended = 1;
-    *yielded = self->u.inner;
-    Py_INCREF(*yielded);
-    return NULL;
-  }
   PyErr_SetString(PyExc_RuntimeError, "defer in unexpected state");
   return NULL;
 }
@@ -372,7 +311,7 @@ void KosDefer_FeedException(KosDefer *self, PyObject *exc_type, PyObject *exc_va
 
    Trivial iterator for the non-awaitable (DONE) case: first __next__
    raises StopIteration(value). Created when defer.__await__() is called
-   and fn returns a plain value.
+   on a defer already in DONE state.
 */
 
 
@@ -450,9 +389,9 @@ static PyTypeObject KosDeferValueIteratorType = {
 
 
 /**
-   defer.__await__(): invoke fn at iterator-creation time. If fn returns
-   a non-awaitable value, create a trivial iterator that StopIterations
-   with it. If fn returns an awaitable, return its __await__() directly.
+   defer.__await__(): resolve defer at await time. If already DONE,
+   return a trivial iterator that StopIterations with the value. If
+   DELEGATING, return inner's __await__() directly.
 */
 static PyObject *defer_await(PyObject *self) {
   KosDefer *defer = (KosDefer *) self;

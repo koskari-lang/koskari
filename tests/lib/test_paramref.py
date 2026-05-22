@@ -232,6 +232,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         result = await make_callable(code, ns)()
         self.assertEqual(result, 30)
 
+
     async def test_empty_tracks_binding_state(self):
         """
         ParamRef.empty follows active-domain binding state.

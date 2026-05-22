@@ -38,7 +38,7 @@ from ..exceptions import (CodeBoundary, CompilerError, ReaderEOF, ReaderError,
 from ..lexer.discovery import special_names_for_repl
 from ..lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
                                     koskari_style, load_koskari_key_bindings)
-from ..lib import kos_repr
+from ..lib import Domain, ParamRef, kos_repr
 from ..module import new_module
 from ..reader import READ_EOF, LayoutReader, source_str
 
@@ -470,22 +470,25 @@ async def cli_async(options):
     if options.tweakpath:
         sys.path.insert(0, '.')
 
-    mod = await new_module('__main__')
+    with Domain():
+        mod = await new_module('__main__')
+        p = ParamRef("*interactive*")
+        p.store(options.interactive)
 
-    if filename:
-        await run_file_async(
+        if filename:
+            await run_file_async(
+                mod,
+                filename,
+                execute_kio=options.execute_kio,
+                interactive=options.interactive)
+
+            if not options.interactive:
+                return
+
+        await repl_async(
             mod,
-            filename,
-            execute_kio=options.execute_kio,
-            interactive=options.interactive)
-
-        if not options.interactive:
-            return
-
-    await repl_async(
-        mod,
-        histfile=options.histfile,
-        full_trace=options.repl_full_trace)
+            histfile=options.histfile,
+            full_trace=options.repl_full_trace)
 
 
 # ---------------------------------------------------------------------------

@@ -46,38 +46,67 @@ class TestDeferType(unittest.TestCase):
 
     def test_defer_construct_positional(self):
         """
-        defer(fn, a, b) creates a pending defer
+        defer(fn, a, b) invokes fn and leaves a done defer for sync result
         """
 
         def fn(x, y):
             return x + y
         d = lib.defer(fn, 1, 2)
         self.assertIsInstance(d, lib.defer)
-        self.assertIn("pending", repr(d))
+        self.assertIn("done", repr(d))
 
 
     def test_defer_construct_with_kwds(self):
         """
-        defer(fn, a, key=val) creates a pending defer with kwds
+        defer(fn, a, key=val) invokes fn with kwds and completes when sync
         """
 
         def fn(x, key=0):
             return x + key
         d = lib.defer(fn, 1, key=10)
         self.assertIsInstance(d, lib.defer)
-        self.assertIn("pending", repr(d))
+        self.assertIn("done", repr(d))
 
 
     def test_defer_construct_single_arg(self):
         """
-        defer(fn) creates a pending defer with no args
+        defer(fn) invokes fn with no args and completes when sync
         """
 
         def fn():
             return 42
         d = lib.defer(fn)
         self.assertIsInstance(d, lib.defer)
-        self.assertIn("pending", repr(d))
+        self.assertIn("done", repr(d))
+
+
+    def test_fn_invoked_at_construction(self):
+        """
+        Deferred function runs when defer is created, not on await
+        """
+
+        calls = []
+
+        def track(x):
+            calls.append(x)
+            return x * 2
+
+        d = lib.defer(track, 21)
+        self.assertEqual(calls, [21])
+        self.assertIn("done", repr(d))
+
+
+    def test_construct_raises(self):
+        """
+        defer(fn) propagates exceptions from fn at construction time
+        """
+
+        def fn_raises():
+            raise ValueError("oops")
+
+        with self.assertRaises(ValueError) as ctx:
+            lib.defer(fn_raises)
+        self.assertIn("oops", str(ctx.exception))
 
 
 class TestDeferNoAutoAwait(unittest.IsolatedAsyncioTestCase):
@@ -87,7 +116,7 @@ class TestDeferNoAutoAwait(unittest.IsolatedAsyncioTestCase):
 
     async def test_call_returns_defer_as_value(self):
         """
-        Calling (defer fn 42) returns a defer, not the result of fn(42)
+        Calling (defer fn 42) returns a defer handle, not the bare value 42
         """
 
         code, ns = build_expr([
@@ -99,12 +128,12 @@ class TestDeferNoAutoAwait(unittest.IsolatedAsyncioTestCase):
         ], values={"defer": lib.defer, "identity": lib.identity})
         result = await make_callable(code, ns)()
         self.assertIsInstance(result, lib.defer)
-        self.assertIn("pending", repr(result))
+        self.assertIn("done", repr(result))
 
 
 class TestDeferExplicitAwait(unittest.IsolatedAsyncioTestCase):
     """
-    Explicit (await (defer f a b)) runs f(a,b) once and returns the value
+    Explicit (await (defer f a b)) resolves the defer handle to a value
     """
 
     async def test_await_defer_returns_value(self):
@@ -126,7 +155,7 @@ class TestDeferExplicitAwait(unittest.IsolatedAsyncioTestCase):
 
     async def test_await_defer_calls_fn_once(self):
         """
-        Deferred function is invoked exactly once on first await
+        Deferred function is invoked exactly once at defer construction
         """
 
         calls = []
@@ -165,16 +194,16 @@ class TestDeferPythonAwait(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 3)
 
 
-    async def test_python_await_defer_inner_raises(self):
+    async def test_python_await_defer_construct_raises(self):
         """
-        When inner raises, exception propagates to Python caller
+        defer(fn_raises) raises at construction; await is not required
         """
 
         def fn_raises():
             raise ValueError("oops")
-        d = lib.defer(fn_raises)
+
         with self.assertRaises(ValueError) as ctx:
-            await d
+            lib.defer(fn_raises)
         self.assertIn("oops", str(ctx.exception))
 
 
@@ -209,10 +238,8 @@ class TestDeferOfDefer(unittest.IsolatedAsyncioTestCase):
             return x + 10
 
         def g(d):
-            return lib.defer(lambda: 99)  # return another defer
+            return lib.defer(lambda: 99)
 
-        # g(defer(f, 1)) -> defer(g, defer(f, 1)); await runs g(defer(f,1))
-        # which returns defer(lambda: 99). Adopt then await that -> 99.
         code, ns = build_expr([
             ["VAR", "defer"],
             ["VAR", "g"],

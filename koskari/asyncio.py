@@ -27,10 +27,8 @@ from koskari.bootstrap import builtin, add_builtin
 import asyncio
 
 
-def as_coroutine(awaitable):
-    async def coro():
-        return await awaitable
-    return coro()
+async def as_coroutine(awaitable):
+    return await awaitable
 
 
 @builtin("coroutine-fn")
@@ -43,10 +41,13 @@ def coroutine_fn(fn):
 
 @builtin("create-task")
 def create_task(coro):
+    print("create-task", coro)
     if isinstance(coro, (defer, Coroutine)):
         coro = as_coroutine(coro)
-    task = asyncio.create_task(coro)
-    return defer(lambda: task)
+    def ct(c):
+        print("asyncio.create_task", c)
+        return asyncio.create_task(c)
+    return defer(ct, coro)
 
 
 @builtin("run-until-complete")

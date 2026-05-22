@@ -26,13 +26,7 @@ koskari.dis output shape.
 import-from koskari.lib Code Function NamespaceSpec OpCode OpStyle
 
 
-define __all__
-  #("dis"
-    "_get_code"
-    "_get_instruction_lines"
-    "_format_constant"
-    "_build_ns_const_map"
-    "_format_nspec_inline")
+(declare-exports dis)
 
 
 define _get_code [x]:

@@ -281,4 +281,23 @@ define-syntax compile/attr*:
       (attr* (attr obj name) rest ...)
 
 
+define-syntax compile/declare-exports:
+  """
+  Declare a list of names as exports
+
+  Expands to a global definition of __all__ with the given names as strings,
+  sorted and deduplicated.
+
+  (declare-exports name1 name2 ...)
+
+  is equivalent to
+
+  (define-global __all__ #("name1" "name2" ...))
+  """
+
+  macro-rules []:
+    case (declare-exports names ...):
+      `(define-global __all__ #(,@(sorted (set (map str names)))))
+
+
 ;; The end.
