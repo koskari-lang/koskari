@@ -341,7 +341,7 @@ class TestFilterInfrastructureTb(unittest.IsolatedAsyncioTestCase):
 
 class TestMain(unittest.IsolatedAsyncioTestCase):
     """
-    main() uses asyncio.run(); run it in a thread to avoid nested loop.
+    main() uses _drive_cli_async; run it in a thread to avoid nested loop.
     """
 
     async def _capture_main(self, *argv):

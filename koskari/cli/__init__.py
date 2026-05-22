@@ -309,6 +309,10 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
         except KeyboardInterrupt:
             print('', file=stderr)
             stderr.flush()
+            if buffer.strip():
+                buffer = ''
+                prompt = '>>> '
+                continue
             break
 
         except EOFError:
@@ -341,13 +345,12 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
             buffer = ''
             prompt = '>>> '
 
-            ns.store('_', result) if hasattr(ns, 'store') else ns.__setitem__('_', result)
-
+            ns['_'] = result
             if result is not None:
                 print(kos_repr(result), file=stdout)
 
         except KeyboardInterrupt:
-            print("KeyboardInterrupt", file=stderr)
+            print("", file=stderr)
             stderr.flush()
             buffer = ''
             prompt = '>>> '
@@ -569,6 +572,38 @@ def option_parser(name):
 # ---------------------------------------------------------------------------
 
 
+def _drive_cli_async(coro):
+    """
+    Run the CLI coroutine without asyncio.Runner SIGINT handling.
+
+    asyncio.run installs a handler that cancels the main task on the first
+    Ctrl-C, which defers interrupt until the next await.  A plain loop lets
+    PyErr_CheckSignals in koskari eval see the default pending interrupt.
+    """
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        try:
+            _cancel_all_tasks(loop)
+        finally:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.run_until_complete(loop.shutdown_default_executor())
+            asyncio.set_event_loop(None)
+            loop.close()
+
+
+def _cancel_all_tasks(loop):
+    to_cancel = asyncio.all_tasks(loop)
+    if not to_cancel:
+        return
+    for task in to_cancel:
+        task.cancel()
+    loop.run_until_complete(asyncio.gather(*to_cancel, return_exceptions=True))
+
+
 def main(argv=None):
     """
     Entry point for the koskari command-line interface.
@@ -593,7 +628,7 @@ def main(argv=None):
         parser.error('--execute-kio requires a script filename')
 
     try:
-        asyncio.run(cli_async(options))
+        _drive_cli_async(cli_async(options))
 
     except KeyboardInterrupt:
         print('', file=sys.stderr)
