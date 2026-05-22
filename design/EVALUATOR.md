@@ -33,14 +33,17 @@ flowchart TD
         P2["Phase 2: eval_phase_transfer<br/>Drain active transfer plan; terminal RETURN if empty"]
         loop_start["dispatch loop (computed goto: goto eval_prologue; switch: for(;;))"]
 
-        subgraph loop["Loop body"]
-            Xfer["run_transfer_plan_to_completion<br/>(if plan active)"]
-            P3["Phase 3: eval_phase_pending_exception<br/>PyErr_Occurred? → process_raise"]
+        subgraph loop["Loop body (prologue reunion)"]
+            Xfer["eval_step_drain_transfer_plan"]
+            P3["eval_phase_pending_exception<br/>PyErr_Occurred? → process_raise"]
+            PostEv["eval_dispatch_maybe_post_opcode_event"]
             Native{"Frame has native_handler?"}
+            Poll["GIL poll + PyErr_CheckSignals<br/>see §1.6"]
             P4["Phase 4: KOS_EVAL_PREPARE_NEXT_INSN<br>fetch insn; acting_pc; pre-advance pc"]
             P5["Phase 5: opcode dispatch<br/>computed goto → op_xxx(es, out_ev, insn)"]
             P6["Phase 6: eval_phase_post_opcode<br>op_res != 0 handling"]
-            next["re-enter prologue (or RUN tail-dispatch)"]
+            Tail["RUN tail-dispatch<br/>every 2048 ops → Poll"]
+            next["re-enter prologue"]
         end
 
         P1 --> mode_check
@@ -48,11 +51,13 @@ flowchart TD
         mode_check -->|"RAISE"| fill_out_ev["fill out_ev, STOP_EVENT"]
         mode_check -->|"else"| P2
         P2 --> loop_start
-        loop_start --> Xfer --> P3 --> Native
-        Native -->|yes| run_native["run native handler as frame evaluator"]
-        Native -->|no| P4
+        loop_start --> Xfer --> P3 --> PostEv --> Native
+        Native -->|yes| run_native["eval_step_native_iteration"]
+        Native -->|no| Poll
         run_native --> next
-        P4 --> P5 --> P6 --> next
+        Poll --> P4 --> P5
+        P5 -->|RUN| Tail --> P4
+        P5 -->|POST/FAIL/PROLOGUE| P6 --> next
         next --> loop_start
     end
 ```
@@ -133,6 +138,71 @@ Optional **`KOS_DEBUG_PATCH_DYN_CACHES`**: after **`PatchDynCaches`**, compare *
 
 Coroutine drivers outside the bytecode loop (**`coro.c`**) still hold a **`KosContext *`** on the **`KosCoroutine`** object; they construct a short-lived **`KosEvalState`** when they need the same Python-bridge helpers as **`revive_await`**.
 
+### 1.6 GIL cooperation and signal polling
+
+Long-running bytecode loops must yield the GIL occasionally and honor Python
+pending signals (for example **Ctrl-C** / **KeyboardInterrupt**). This is
+implemented in **`koskari_eval_dispatch_computed_goto`** and
+**`koskari_eval_dispatch_switch`** (`eval.c`), not on **`KosContext`** or
+**`KosEvalState`**.
+
+| Mechanism | Role |
+| --------- | ---- |
+| **`gil_poll_ops`** (stack local) | Incremented on each **RUN** tail-dispatch (fast path). When **`(++gil_poll_ops & KOS_EVAL_GIL_POLL_MASK) == 0`** (`KOS_EVAL_GIL_POLL_MASK` = 1024), control jumps to the poll site — effectively every **2048** opcodes. |
+| **`gil_poll_last_ns`** (stack local) | Monotonic timestamp of the last paired GIL release (`clock_gettime(CLOCK_MONOTONIC)`). |
+| **`KOS_EVAL_GIL_POLL_INTERVAL_NS`** | Minimum **5 ms** between time-based GIL yields (when the clock read succeeds). |
+| **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** | Brief paired release at the poll site (same C block). Other threads may run; the evaluator immediately re-acquires. |
+| **`PyErr_CheckSignals()`** | Runs at every poll site so pending interrupts become **`PyErr_Occurred()`** and route through **`eval_phase_pending_exception`**. |
+
+**Where polling runs**
+
+1. **Prologue reunion** — After transfer drain, pending-exception check,
+   post-opcode event handling, and optional native-frame iteration, and **before**
+   **`KOS_EVAL_PREPARE_NEXT_INSN`** (labels **`cg_poll`** / **`sw_poll`**).
+2. **RUN tail-dispatch** — After a **`KOS_LOP_RUN`** opcode, if the opcode
+   counter hits the mask, branch back to the poll site instead of fetching the
+   next instruction immediately.
+
+**Poll-site sequence** (computed-goto path; switch loop is the same idea with
+slightly different ordering for **`PyErr_CheckSignals`** vs GIL due):
+
+```mermaid
+flowchart TD
+    poll["cg_poll / sw_poll"]
+    time{"≥ 5 ms since last<br/>GIL release, or<br/>first poll?"}
+    gil["Py_BEGIN_ALLOW_THREADS<br/>Py_END_ALLOW_THREADS"]
+    sig["PyErr_CheckSignals()"]
+    pyerr{"PyErr_Occurred()?"}
+    pend["eval_phase_pending_exception"]
+    dispatch["prepare insn + dispatch"]
+
+    poll --> time
+    time -->|yes| gil
+    time -->|no| sig
+    gil --> sig
+    sig --> pyerr
+    pyerr -->|yes| pend
+    pyerr -->|no| dispatch
+    pend -->|STOP| stop["return 0"]
+    pend -->|REPROLOGUE| prologue["cg_prologue / sw_loop_head"]
+    pend -->|CONTINUE| dispatch
+```
+
+On the **switch**-loop build, GIL release is skipped when **`Py_GIL_DISABLED`**
+(free-threaded CPython); **`PyErr_CheckSignals()`** and the opcode counter still
+run. The computed-goto build always performs the paired allow-thread block when
+the time gate passes.
+
+**Relationship to Phase 3:** **`eval_phase_pending_exception`** still runs at the
+start of each prologue (before the poll site). **`PyErr_CheckSignals()`** at the
+poll site may set **`PyErr`** again; a second **`eval_phase_pending_exception`**
+then runs so interrupts are not deferred until the next full prologue cycle.
+
+**Future work:** Domain-scoped **`maybe_cooperate()`** / **`ensure_gil()`** and
+cooperation inside dynchain walks are described in
+[interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) (design
+proposal; not yet the primary mechanism). See also [TODO.md](TODO.md) § GIL.
+
 ---
 
 ## 2. Phase Detail Diagrams
@@ -200,7 +270,10 @@ flowchart TD
 
 ### 2.3 Phase 3: Pending Exception Check
 
-At each loop top, **eval_phase_pending_exception** handles `PyErr_Occurred()` (e.g. from a signal handler or async exception):
+At each **prologue reunion**, **eval_phase_pending_exception** handles
+`PyErr_Occurred()` (opcode failure, continuation apply, async exception, etc.).
+The same helper runs again at the **GIL poll site** when **`PyErr_CheckSignals()`**
+sets a pending interrupt (see §1.6).
 
 ```mermaid
 flowchart TD
@@ -242,7 +315,7 @@ When a **KosPyAsyncGen** is resumed from Python drivers (**`iter.c`**, **`demand
 flowchart LR
     dispatch["optable[op] → op_XXX → KosOpOutcome"]
     mode{"mode?"}
-    fast["KOS_LOP_RUN:<br/>prepare insn, tail dispatch"]
+    fast["KOS_LOP_RUN:<br/>tail-dispatch next insn<br/>or → poll every 2048 ops"]
     other["not RUN:<br/>FAIL, PROLOGUE,<br/>or POST"]
 
     dispatch --> mode
@@ -251,10 +324,11 @@ flowchart LR
 ```
 
 Handlers return **`KosOpOutcome`**: **`KOS_LOP_RUN`** is the hot path (no
-**`eval_phase_post_opcode`**). Other modes include **`KOS_LOP_FAIL`**,
-**`KOS_LOP_PROLOGUE`**, and **`KOS_LOP_POST`**; only **`KOS_LOP_POST`** maps
-**`post_tag`** through **`kos_op_post_tag_to_res`** to the legacy **`op_res`**
-values in §2.6–3.
+**`eval_phase_post_opcode`**). On **RUN**, the loop may fetch the next instruction
+immediately or branch to the **GIL poll site** (§1.6) when the opcode counter
+wraps. Other modes include **`KOS_LOP_FAIL`**, **`KOS_LOP_PROLOGUE`**, and
+**`KOS_LOP_POST`**; only **`KOS_LOP_POST`** maps **`post_tag`** through
+**`kos_op_post_tag_to_res`** to the legacy **`op_res`** values in §2.6–3.
 
 ### 2.6 Phase 6: Post-Opcode Handling
 
@@ -778,6 +852,15 @@ When the top frame has `native_handler != NULL`, the loop runs that handler as t
 2. `run_transfer_plan_to_completion` fetches PyErr, calls `inject_eval_frame_traceback`, fills `out_ev` with KOS_EV_RAISE, sets context DEAD, returns -1.
 3. Caller (eval loop or entry) sees -1; exits with `eval_ret = 0`, `out_ev` already filled.
 
+### 9.8 Scenario: Ctrl-C during a tight bytecode loop
+
+1. User runs a long Koskari loop (for example the CLI REPL evaluating many forms).
+2. Every **2048** **RUN** tail-dispatches (and on each prologue reunion), the loop
+   reaches **`cg_poll`** / **`sw_poll`**.
+3. **`PyErr_CheckSignals()`** converts the pending **SIGINT** into **`PyErr`** (typically **KeyboardInterrupt**).
+4. **`eval_phase_pending_exception`** runs **`process_raise`**; if no handler catches it, **`out_ev`** becomes **`KOS_EV_RAISE`** and the driver exits.
+5. Between signal checks, a time-based **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** pair may run so other Python threads make progress (at most about every **5 ms** when the monotonic clock is available).
+
 ---
 
 ## 10. Summary Table: Modes and Outcomes
@@ -801,6 +884,8 @@ When the top frame has `native_handler != NULL`, the loop runs that handler as t
 
 ## 11. Related Documentation
 
+- [design/interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) — proposed domain-TLS **`maybe_cooperate()`** / **`ensure_gil()`** (beyond current eval-loop polling)
+- [design/TODO.md](TODO.md) — open work including GIL MVP notes
 - [design/kos_eval_state_api_migration.md](kos_eval_state_api_migration.md) — `KosEvalState_*` facade, opcode migration, verification greps
 - [design/interpreter/evaluator.md](interpreter/evaluator.md) — VM structures, C API reference
 - [design/interpreter/event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md) — Eval event handlers, exception boundaries, `out_ev` contracts

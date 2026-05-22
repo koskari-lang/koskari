@@ -1,6 +1,6 @@
 # DeferCoroutine (`defer`) — single-shot await-handle
 
-**Implementation status**: Implemented in `koskari/lib/defer.c` and `koskari/lib/defer.h`; wired into the evaluator (push_or_await skips defer, AWAIT opcode drives via defer_drive). Tests in `tests/lib/test_defer.py`.
+**Implementation status**: Implemented in `koskari/lib/defer.c` and `koskari/lib/defer.h`; wired into the evaluator (push_or_await skips defer, AWAIT opcode drives via `KosDefer_Start`). Tests in `tests/lib/test_defer.py`.
 
 ## Purpose
 
@@ -8,13 +8,12 @@ Koskari's default async model performs **implicit greedy await** in selected eva
 
 `defer` introduces a **single-shot, awaitable adapter**:
 
-* It **does not invoke** its target function at construction time.
-* On **first explicit await**, it invokes the target exactly once.
-* If that invocation yields an awaitable, it **delegates** to it.
-* If that invocation yields a value or raises, it completes immediately.
-* It is **excluded from implicit auto-await**, so it can be passed around as a handle.
+* It **invokes** its target function at **construction** time (eager call).
+* If that invocation yields an awaitable, the defer **delegates** to it until explicit await completes.
+* If that invocation yields a plain value or raises, the defer is **terminal** immediately (DONE or FAILED).
+* It is **excluded from implicit auto-await**, so it can be passed around as a handle even when the underlying call already ran.
 
-This makes "anything awaitable", lazily, while preserving Koskari's flattened/greedy default for ordinary calls.
+This preserves Koskari's flattened/greedy default for ordinary calls while still allowing deferred **await** of async results.
 
 ---
 
@@ -27,11 +26,11 @@ This makes "anything awaitable", lazily, while preserving Koskari's flattened/gr
 (defer f a b key: val other: 2)
 ```
 
-`defer` accepts all argument types: positional and keyword. It produces a `DeferCoroutine` that stores `fn`, `args` (positional list), and `kwds` (keyword dict) for application. The target is not invoked at construction time; application happens on first explicit `await`.
+`defer` accepts all argument types: positional and keyword. It produces a `DeferCoroutine` that stores no pending call — `fn(*args, **kwds)` runs **during** `defer(...)` construction via a path that does not trigger implicit auto-await on the return value. The object is born in **DELEGATING**, **DONE**, or **FAILED** (or **MOVED_FROM** after adoption).
 
 ### Intended usage patterns
 
-**Pass a handle without triggering auto-await**:
+**Pass a handle without triggering auto-await** (call already happened; await later):
 
 ```lisp
 (let [h (defer do-work x y)]:
@@ -44,7 +43,7 @@ This makes "anything awaitable", lazily, while preserving Koskari's flattened/gr
 
 ```lisp
 ;; if (foo ...) would auto-await and produce a value,
-;; (defer foo ...) produces a handle instead.
+;; (defer foo ...) produces a handle instead (foo already ran).
 (let [h (defer foo 1 2 3)]:
   (await h))
 ```
@@ -53,6 +52,7 @@ This makes "anything awaitable", lazily, while preserving Koskari's flattened/gr
 
 ```lisp
 ;; `maybe-async` may return either a value or an awaitable.
+;; defer invokes it immediately; await completes delegation if needed.
 (await (defer maybe-async arg))
 ```
 
@@ -62,7 +62,7 @@ This makes "anything awaitable", lazily, while preserving Koskari's flattened/gr
 
 ### Explicit await
 
-`DeferCoroutine` is **awaitable**. The explicit `await` special/opcode must drive it.
+`DeferCoroutine` is **awaitable**. The explicit `await` special/opcode must drive it via `KosDefer_Start` (and `KosDefer_FeedResult` / `KosDefer_FeedException` when delegating).
 
 ### Implicit greedy await
 
@@ -79,64 +79,64 @@ This is the central design rule that makes `defer` a transportable handle.
 
 ## Lifecycle model (state machine)
 
-A `DeferCoroutine` transitions through a small set of states.
+A `DeferCoroutine` has no **PENDING** state. Construction runs the call and normalizes the result immediately.
 
 ### States
 
-* **PENDING**
-
-  * Holds `fn`, `args`, and `kwds` for application.
-  * Has not invoked `fn`.
-
 * **DELEGATING(inner)**
 
-  * `fn(*args, **kwds)` has been invoked exactly once.
+  * `fn(*args, **kwds)` was invoked at construction.
   * The return value was awaitable (`inner`).
   * `DeferCoroutine` delegates await-driving behavior to `inner`.
 
 * **DONE(value)**
 
-  * Completed successfully.
+  * Completed successfully at construction (sync result) or after await finished delegation.
   * `value` is cached.
 
 * **FAILED(exc)**
 
-  * Completed exceptionally.
+  * Completed exceptionally at construction or after delegated await raised.
   * `exc` is cached.
 
-* **MOVED_FROM** (optional internal state)
+* **MOVED_FROM** (internal state)
 
   * Donor object after adoption (see "defer-of-defer collapse").
   * Any await attempts should deterministically raise.
 
-### Transitions
+### Transitions at construction
 
-On **first explicit await** while in **PENDING**:
+On **`defer(fn, *args, **kwds)`** (via `KosDefer_New`):
 
-1. Invoke `fn(*args, **kwds)` **exactly once**.
-2. Immediately drop references to `fn`, `args`, and `kwds` after invocation (to avoid retention).
-3. Normalize the return:
+1. Invoke `fn(*args, **kwds)` **exactly once** (no stored `fn` / `args` / `kwds` afterward).
+2. Normalize the return:
 
    * If return is `DeferCoroutine`: adopt/merge state (see below) and re-normalize.
    * Else if return is awaitable: transition to **DELEGATING(inner)**.
    * Else: transition to **DONE(value)**.
-4. If invocation raises: transition to **FAILED(exc)**.
+3. If invocation raises: construction fails with that exception (no defer object).
+
+### Transitions on explicit await
 
 While in **DELEGATING(inner)**:
 
-* Await-driving operations are forwarded to `inner`.
-* If `inner` completes with `value`: transition to **DONE(value)**.
-* If `inner` raises: transition to **FAILED(exc)**.
+* `KosDefer_Start` suspends with `inner` as the yielded awaitable.
+* If `inner` completes with `value`: **FeedResult** → **DONE(value)**.
+* If `inner` raises: **FeedException** → **FAILED(exc)**.
 
-Terminal states (**DONE**, **FAILED**) are immutable.
+While in **DONE** or **FAILED**:
+
+* `KosDefer_Start` returns the cached value or re-raises immediately.
+
+Terminal states (**DONE**, **FAILED**) are immutable after delegation completes.
 
 ### Multiple awaits
 
-The object is **single-shot in invocation**, not single-consumption of result:
+The object is **single-shot in invocation** (at construction), not single-consumption of result:
 
-* `fn(*args, **kwds)` is invoked at most once.
+* `fn(*args, **kwds)` is invoked at most once (always at construction).
 * Subsequent awaits do **not** re-invoke `fn`.
-* Subsequent awaits return cached `DONE(value)` or re-raise cached `FAILED(exc)`.
+* Subsequent awaits return cached **DONE(value)** or re-raise cached **FAILED(exc)**.
 
 This yields deterministic "joinable handle" behavior after resolution.
 
@@ -148,19 +148,18 @@ If a deferred invocation returns another `DeferCoroutine`, the outer `DeferCorou
 
 ### Rule
 
-When normalizing the result of the deferred invocation:
+When normalizing the result of the construction-time invocation:
 
 * If `r` is a `DeferCoroutine`, perform `adopt(self, r)`:
 
   * Move `r`'s state into `self` (O(1) pointer/state transfer).
   * Transition `r` to **MOVED_FROM**.
-  * Continue normalization on `self` (may be PENDING/DELEGATING/DONE/FAILED).
+  * Continue normalization on `self` (may be DELEGATING/DONE/FAILED).
 
 ### Adoption behavior by donor state
 
 If donor `r` is:
 
-* **PENDING**: move donor's `fn`, `args`, and `kwds` into `self`; `self` remains effectively PENDING.
 * **DELEGATING(inner)**: `self` becomes DELEGATING(inner).
 * **DONE(value)**: `self` becomes DONE(value).
 * **FAILED(exc)**: `self` becomes FAILED(exc).
@@ -183,8 +182,7 @@ When executing `AWAIT` on operand `x`:
 
 1. If `x` is `DeferCoroutine`:
 
-   * If PENDING: invoke the deferred call using a **raw-call primitive** that does not trigger implicit auto-await.
-   * Normalize the return (including defer-of-defer adoption).
+   * Call `KosDefer_Start` (no construction-time call — already done).
    * If DONE/FAILED: return/raise immediately.
    * If DELEGATING(inner): set `x = inner` and proceed.
 
@@ -197,31 +195,30 @@ When executing `AWAIT` on operand `x`:
 
      * use the generic await bridge (Python awaitable protocol or equivalent).
 
-3. On completion:
+3. On completion (when the original operand was a delegating defer):
 
-   * If the original awaited object was a `DeferCoroutine`, cache terminal DONE/FAILED on the defer wrapper.
+   * **FeedResult** or **FeedException** on the defer wrapper.
    * Return value or raise exception.
 
 ### Important constraint
 
-The "invoke deferred call" step must not pass through a path that performs implicit greedy await on its return value.
+The construction-time invocation must not pass through a path that performs implicit greedy await on its return value.
 
-* This is why the deferred invocation uses a raw-call primitive.
 * Delegation and explicit await then handle awaitables correctly.
+* Auto-await at CALL boundaries must skip `DeferCoroutine` results.
 
 ---
 
 ## Memory / retention rules
 
-To keep `defer` safe as a long-lived handle:
+`DeferCoroutine` never retains `fn`, `args`, or `kwds` after construction:
 
-* After first invocation, clear stored `fn`, `args`, and `kwds` immediately.
 * Only retain:
 
   * `inner` while delegating, or
   * cached terminal `value` / `exc`.
 
-This prevents `DeferCoroutine` from pinning argument graphs indefinitely.
+This prevents pinning argument graphs after the eager call completes.
 
 ---
 
@@ -229,30 +226,25 @@ This prevents `DeferCoroutine` from pinning argument graphs indefinitely.
 
 ### Synchronous exceptions
 
-If `fn(*args, **kwds)` raises during first await:
+If `fn(*args, **kwds)` raises during construction:
 
-* transition to FAILED(exc)
-* raise exc
+* the exception propagates from `defer(...)`; no defer object is returned.
 
 ### Awaited exceptions
 
 If delegating to an inner awaitable that raises:
 
 * transition to FAILED(exc)
-* raise exc
+* raise exc on await
 
 ### Cancellation / close / throw (if supported)
 
 If the await protocol supports cancellation or throwing into awaits:
 
-* While PENDING:
-
-  * if cancellation is delivered before invocation, cancellation should be terminal (FAILED(Cancelled)).
-
 * While DELEGATING(inner):
 
   * forward cancellation/throw/close to `inner`.
-  * cache the resulting terminal state.
+  * cache the resulting terminal state on the defer wrapper.
 
 (The precise cancellation object/type is runtime-defined.)
 
@@ -264,58 +256,58 @@ Minimal helpful behaviors:
 
 * `repr` includes state:
 
-  * `<defer pending fn=... args=N kwds=K>` (or similar)
   * `<defer delegating inner=...>`
   * `<defer done>`
   * `<defer failed exc=...>`
+  * `<defer moved_from>`
 
 Optional:
 
-* `started?`, `done?`
+* `done?`
 * `result()` / `exception()` for already-terminal objects
 
 ---
 
 ## Invariants
 
-1. **Single invocation**: `fn(*args, **kwds)` is invoked at most once.
+1. **Single invocation**: `fn(*args, **kwds)` is invoked at most once, at construction.
 2. **No implicit wake-up**: implicit/greedy await sites do not auto-await `DeferCoroutine`.
-3. **Explicit await drives**: explicit `await` always drives `DeferCoroutine`.
-4. **Terminal immutability**: DONE/FAILED are immutable and cached.
+3. **Explicit await drives**: explicit `await` drives delegation or returns cached terminal state.
+4. **Terminal immutability**: DONE/FAILED are immutable and cached after delegation completes.
 5. **Adoption is O(1)**: defer-of-defer collapse performs state transfer without allocation.
-6. **No retention after start**: after first invocation, `fn`, `args`, and `kwds` references are cleared.
+6. **No call retention**: `fn`, `args`, and `kwds` are never stored on the defer object.
 
 ---
 
 ## Implementation sketch (VM-side)
 
-* New object type: `DeferCoroutine`
+* Object type: `DeferCoroutine` (`KosDefer`)
 
   * fields:
 
-    * state tag
+    * state tag (DELEGATING | DONE | FAILED | MOVED_FROM)
     * union payload:
 
-      * pending: (fn, args, kwds)
       * delegating: inner
       * done: value
-      * failed: exc
+      * failed: exc_type, exc
 
-* Add helper functions:
+* Helpers:
 
-  * `is_defer(obj)`
-  * `defer_adopt(self, other)`
-  * `defer_start(self)` (invokes fn with stored args/kwds once, normalizes, clears fn/args/kwds)
+  * `KosDefer_Check` / `KosDefer_CheckExact`
+  * `defer_adopt(self, other)` (in defer.c)
+  * `KosDefer_New(fn, args, kwds)` — invoke once, normalize
+  * `KosDefer_Start` — await entry
+  * `KosDefer_FeedResult` / `KosDefer_FeedException`
 
-* Modify implicit call auto-await path:
+* Implicit call auto-await path:
 
   * `if is_awaitable(r) && !is_defer(r) => auto-await`
 
-* Extend `AWAIT` opcode:
+* `AWAIT` opcode:
 
-  * recognize and drive `DeferCoroutine`
-  * normalize defers (including adoption)
-  * fast-path Koskari-native coroutine awaits
+  * recognize and drive `DeferCoroutine` via `KosDefer_Start`
+  * feed terminal state back into defer when inner completes
 
 ---
 

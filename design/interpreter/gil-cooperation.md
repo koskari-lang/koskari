@@ -2,7 +2,7 @@
 
 This document describes a design for voluntary GIL release in the Koskari evaluator and related C code, using a **counter + timer** policy with **Domain** as the storage for cooperation state and the existing **domain TLS** for zero-argument, call-site-friendly APIs.
 
-**Status**: Design proposal. Current implementation uses a simple opcode-interval counter (every 255 dispatches) and an on-exit release; this design generalizes to time-based fairness and cooperation in GIL-free zones.
+**Status**: Design proposal. Current implementation is in **`koskari/lib/eval.c`**: prologue reunion plus RUN tail-dispatch poll every 2048 opcodes, **`PyErr_CheckSignals()`**, and paired **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** when due (opcode mask or 5 ms). See [EVALUATOR.md](../EVALUATOR.md) §1.6. This document generalizes to domain-TLS state and cooperation in GIL-free zones.
 
 ---
 

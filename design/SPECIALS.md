@@ -19,7 +19,7 @@ matcher syntax, capture shapes, and hygiene behaviour.
 and default readers for quote, quasiquote, unquote, and unquote-splicing.
 
 **Compile-time macros** — User-facing **`(define-syntax NAME SPEC)`** is expanded
-by the **`compile/define-syntax`** macro in `koskari/importer/basics.ki` (not a
+by the **`compile/define-syntax`** macro in `koskari/bootstrap/_define_syntax.ki` (not a
 `@special`). **`SPEC`** must begin with **`syntax-rules`**, **`macro-rules`**,
 **`syntax-match`**, **`macro-match`**, **`special-rules`**, or **`special-match`**;
 see **`compile/define-syntax`** and the **`compile/syntax-rules`**,
@@ -364,7 +364,7 @@ None for the fall-through case.
 ```
 
 **Note:** The higher-level forms `compile/if`, `compile/when`, and
-`compile/unless` are now macros in basics.ki (see [MACROS.md](MACROS.md)).
+`compile/unless` are macros in `koskari/bootstrap/_conditionals.ki` (see [MACROS.md](MACROS.md)).
 
 ## compile/switch
 
@@ -956,9 +956,10 @@ so their final value is what you usually see on the stack. You rarely need an
 explicit await for those paths. `compile/await` exists for values that are
 **not** eagerly awaited—most importantly values produced by the **`defer`**
 builtin (`defer(fn, *args, **kwds)` in Python; see `design/api/types.md` and
-`design/api/defer-coroutine.md`). A defer is a single-shot continuation handle:
-it wraps a pending call so the VM does **not** run it immediately, which lets you
-pass the handle around as a first-class value and choose **when** to drive it.
+`design/api/defer-coroutine.md`). A defer is a single-shot await handle: the
+wrapped call runs at **defer construction** (without auto-await on its result),
+but the VM does **not** auto-await the defer itself, so you can pass the handle
+around and choose **when** to await delegation or a cached sync result.
 Use `(compile/await EXPR)` when `EXPR` evaluates to such a defer (or any other
 awaitable you need to await explicitly at this program point).
 
@@ -1409,7 +1410,7 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 
 **Not a compiler special.** User-facing **`(define-syntax NAME TRANSFORMER)`** is
 expanded by the **`compile/define-syntax`** **macro** in
-`koskari/importer/basics.ki` (there is no registered `@special` for
+`koskari/bootstrap/_define_syntax.ki` (there is no registered `@special` for
 `compile/define-syntax`). The macro rewrites to **`(compile/define NAME …)`** with a
 transformer whose head is **`syntax-rules`**, **`macro-rules`**, **`syntax-match`**,
 **`macro-match`**, **`special-rules`**, or **`special-match`**. Those specs are
@@ -1423,7 +1424,7 @@ with **`NAME`** repeated as the first argument. Block syntax via
 `layout/define-syntax` and `layout/syntax-rules` produces the same shape; see
 [LAYOUTS.md](LAYOUTS.md).
 
-**Implementation:** `koskari/importer/basics.ki` (macro definition).
+**Implementation:** `koskari/bootstrap/_define_syntax.ki` (macro definition).
 
 **See also:** [MACROS.md](MACROS.md) — **compile/define-syntax (macro)**;
 [MATCHER.md](MATCHER.md) — matcher syntax, composites, and hygiene tables;
@@ -2153,7 +2154,7 @@ the first non-constant argument to preserve dunder dispatch semantics.
 (compile/+ a 1 2)   ; → VAR a, CONST 1, CONST 2, OBJECT_ADD 3  (no fold)
 ```
 
-`compile/**`, `compile/isinstance`, and `compile/issubclass` never fold
+`compile/**`, `compile/instance?`, and `compile/subclass?` never fold
 (non-trivial multi-argument semantics).
 
 ---
@@ -2208,10 +2209,10 @@ Examples:
 **Type checks (COUNT, at least 2 args):**
 
 ```scheme
-(compile/isinstance OBJ TYPE)
-(compile/isinstance OBJ TYPE1 TYPE2 ...)
-(compile/issubclass CLS BASE)
-(compile/issubclass CLS BASE1 BASE2 ...)
+(compile/instance? OBJ TYPE)
+(compile/instance? OBJ TYPE1 TYPE2 ...)
+(compile/subclass? CLS BASE)
+(compile/subclass? CLS BASE1 BASE2 ...)
 ```
 
 The opcode argument encodes the number of type arguments. With a single type
@@ -2219,10 +2220,10 @@ the C handler pops value and type individually (arg=1). With multiple types it
 collects them into a tuple via `PopTail(N)` (arg=N).
 
 
-| Special              | Opcode               |
-| -------------------- | -------------------- |
-| `compile/isinstance` | `OBJECT_IS_INSTANCE` |
-| `compile/issubclass` | `OBJECT_IS_SUBCLASS` |
+| Special               | Opcode               |
+| --------------------- | -------------------- |
+| `compile/instance?`   | `OBJECT_IS_INSTANCE` |
+| `compile/subclass?`   | `OBJECT_IS_SUBCLASS` |
 
 
 ---
