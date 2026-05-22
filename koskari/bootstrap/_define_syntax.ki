@@ -25,6 +25,11 @@ Portion of koskari.builtins
        macro-rules macro-match
        special-rules special-match]
 
+    [(define-syntax name docstr (form ...))
+      (begin
+        (define-syntax name (form ...))
+        (set-attr name __doc__ docstr))]
+
     [(define-syntax name (syntax-rules literals rule ...))
       (compile/define name (syntax-rules name literals rule ...))]
 
@@ -48,7 +53,10 @@ define layout/define-syntax layout/flat
 
 
 define-syntax compile/extend-syntax:
-  ;; the macro for extending macros
+  """
+  Extends an existing Syntax definition with new rules. The newer rules
+  take precedence over existing rules.
+  """
 
   syntax-rules [syntax-rules syntax-match
                 macro-rules macro-match
@@ -77,6 +85,10 @@ define layout/extend-syntax layout/flat
 
 
 define-syntax compile/datum:
+  """
+  Captures `expr` form in a datum, recording the source position
+  """
+
   macro-rules []:
     case (_ expr pos):
       `(call datum ,expr ,pos)

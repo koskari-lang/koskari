@@ -18,6 +18,10 @@ Portion of koskari.builtins
 
 
 define-syntax compile/set!:
+  """
+  Flexible assignment syntax
+  """
+
   syntax-rules [item attr deref
                 compile/item compile/attr compile/deref
                 + - * / // % ** @ << >> & ^ |]:
@@ -85,6 +89,10 @@ define-syntax compile/del!:
 
 
 define-syntax compile/incr!:
+  """
+  Increment a variable in-place. If `value` is not provided, increment by 1.
+  """
+
   syntax-rules []:
     case (incr! name):
       (compile/inplace + name 1)
@@ -93,6 +101,10 @@ define-syntax compile/incr!:
 
 
 define-syntax compile/decr!:
+  """
+  Decrement a variable in-place. If `value` is not provided, decrement by 1.
+  """
+
   syntax-rules []:
     case (decr! name):
       (compile/inplace - name 1)
@@ -101,6 +113,10 @@ define-syntax compile/decr!:
 
 
 define-syntax compile/ref:
+  """
+  Obtain a reference to a storage location
+  """
+
   syntax-rules [item compile/item attr compile/attr parameter]:
     case (ref (item obj name)):
       (compile/ref-item obj name)
@@ -154,12 +170,22 @@ define-syntax compile/bind!:
 
 
 define-syntax compile/global:
+  """
+  Declare a name as a global variable in a scope. Convenience wrapper for
+  `compile/define-global`.
+  """
+
   syntax-rules []:
     case (global name):
       (compile/define-global name)
 
 
 define-syntax compile/local:
+  """
+  Declare a name as a local variable in a scope, and optionally
+  assign a value to it. Convenience wrapper for `compile/define`.
+  """
+
   syntax-rules []:
     case (local name):
       (compile/define name)
@@ -186,6 +212,18 @@ define-syntax compile/parameterq:
 
 
 define-syntax compile/let-values:
+  """
+  Evaluates body in a new scope with binding values defined from unpacking
+  the sequence `value` according to `pattern`.
+
+
+  (let-values [[a b *: more] my-val]
+    body ...)
+
+  performs an unpacking assignment from sequence `my-val` into the bindings
+  `a`, `b`, and `more`, with `more` being a sequence of the remaining values.
+  """
+
   syntax-rules []:
     case (let-values [pattern value] body ...):
       (let [[resolved value]]
@@ -193,6 +231,11 @@ define-syntax compile/let-values:
 
 
 define-syntax compile/let*:
+  """
+  Nested `let` bindings, where the bindings are evaluated in order
+  from left to right.
+  """
+
   syntax-rules [let let*]:
     case (let* [] body ...):
       (let [] body ...)
@@ -203,6 +246,16 @@ define-syntax compile/let*:
 
 
 define-syntax compile/item*:
+  """
+  Nested item access, where the key is evaluated in order from left to right.
+
+  (item* obj key1 key2)
+
+  is equivalent to
+
+  (item (item obj key1) key2)
+  """
+
   syntax-rules []:
     case (item* obj key):
       (item obj key)
@@ -211,6 +264,16 @@ define-syntax compile/item*:
 
 
 define-syntax compile/attr*:
+  """
+  Nested attribute access, where the name is evaluated in order from left to right.
+
+  (attr* obj name1 name2)
+
+  is equivalent to
+
+  (attr (attr obj name1) name2)
+  """
+
   syntax-rules []:
     case (attr* obj name):
       (attr obj name)

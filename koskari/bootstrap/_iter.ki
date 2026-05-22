@@ -18,6 +18,10 @@ Portion of koskari.builtins
 
 
 define-syntax compile/each:
+  """
+  Generator comprehension over a sequence
+  """
+
   syntax-rules [when: unless:]:
     case (each [binding seq] when: condition body):
       ((lambda each [] (for-each [binding seq]
@@ -31,6 +35,10 @@ define-syntax compile/each:
 
 
 define-syntax compile/list-each:
+  """
+  List comprehension over a sequence
+  """
+
   syntax-rules []:
     case (list-each [binding seq] body):
       letrec [[col (list)] [colap col.append]]:
@@ -39,6 +47,10 @@ define-syntax compile/list-each:
 
 
 define-syntax compile/dict-each:
+  """
+  Dict comprehension over a sequence via `compile/each`
+  """
+
   syntax-rules [when: unless: key: value:]:
     case (dict-each [binding seq] key: key value: value):
       (dict (each [binding seq] #(key value) ))

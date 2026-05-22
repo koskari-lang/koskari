@@ -16,7 +16,7 @@ Tests for koskari.compile object operator special forms (specials/object.py).
 
 Covers compile/=, compile/!=, compile/<, compile/<=, compile/>, compile/>=,
 compile/in, compile/not-in, compile/is, compile/is-not,
-compile/isinstance, compile/issubclass,
+compile/instance?, compile/subclass?,
 compile/+, compile/-, compile/*, compile/**, compile/&, compile/|, compile/^,
 compile///, compile/@, compile//, compile/%, compile/<<, compile/>>,
 compile/divmod,
@@ -389,19 +389,19 @@ class TestObjectIsInstance(SpecialsTestCase):
 
     async def test_isinstance_true(self):
         expr, mod = self.compile_expr(
-            "(compile/isinstance a b)", a=42, b=int)
+            "(compile/instance? a b)", a=42, b=int)
         self.assertTrue(await expr())
 
 
     async def test_isinstance_false(self):
         expr, mod = self.compile_expr(
-            "(compile/isinstance a b)", a="hello", b=int)
+            "(compile/instance? a b)", a="hello", b=int)
         self.assertFalse(await expr())
 
 
     async def test_isinstance_single_type_emits_arg_one(self):
         # single type: arg=1 uses the pop-two-separately C path
-        code = self.compile_to_code("(compile/isinstance a b)")
+        code = self.compile_to_code("(compile/instance? a b)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_IS_INSTANCE)
         self.assertIsNotNone(arg)
         self.assertEqual(1, arg)
@@ -409,7 +409,7 @@ class TestObjectIsInstance(SpecialsTestCase):
 
     async def test_isinstance_multi_type_emits_arg_n(self):
         # two types: arg=2 uses the PopTail(2) C path
-        code = self.compile_to_code("(compile/isinstance a b c)")
+        code = self.compile_to_code("(compile/instance? a b c)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_IS_INSTANCE)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
@@ -417,37 +417,37 @@ class TestObjectIsInstance(SpecialsTestCase):
 
     async def test_isinstance_requires_at_least_two_args(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/isinstance a)")
+            self.compile_to_code("(compile/instance? a)")
 
 
     async def test_isinstance_requires_at_least_one_arg(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/isinstance)")
+            self.compile_to_code("(compile/instance?)")
 
 
 class TestObjectIsSubclass(SpecialsTestCase):
 
     async def test_issubclass_true(self):
         expr, mod = self.compile_expr(
-            "(compile/issubclass a b)", a=bool, b=int)
+            "(compile/subclass? a b)", a=bool, b=int)
         self.assertTrue(await expr())
 
 
     async def test_issubclass_false(self):
         expr, mod = self.compile_expr(
-            "(compile/issubclass a b)", a=str, b=int)
+            "(compile/subclass? a b)", a=str, b=int)
         self.assertFalse(await expr())
 
 
     async def test_issubclass_single_type_emits_arg_one(self):
-        code = self.compile_to_code("(compile/issubclass a b)")
+        code = self.compile_to_code("(compile/subclass? a b)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_IS_SUBCLASS)
         self.assertIsNotNone(arg)
         self.assertEqual(1, arg)
 
 
     async def test_issubclass_multi_type_emits_arg_n(self):
-        code = self.compile_to_code("(compile/issubclass a b c)")
+        code = self.compile_to_code("(compile/subclass? a b c)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_IS_SUBCLASS)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)

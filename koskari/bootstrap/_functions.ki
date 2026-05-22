@@ -18,18 +18,39 @@ Portion of koskari.builtins
 
 
 define-syntax compile/define-coroutine:
+  """
+  Defines a function whose result will be converted to a Python
+  coroutine object.
+  """
+
   syntax-rules []:
     case (define-coroutine name args body ...):
       (define name (coroutine-fn (lambda name args body ...)))
 
 
 define-syntax compile/define-demanding:
+  """
+  Defines a function which will be run on the demand path, where
+  `await` it denied.
+  """
+
   syntax-rules []:
     case (define-demanding name formals body ...):
       (define name (demand (lambda name formals body ...)))
 
 
 define-syntax compile/function-compose:
+  """
+  Composes multiple functions into a single function, eg.
+
+  (function-compose fn1 fn2 fn3)
+
+  is equivalent to
+
+  (lambda [*: args **: kwds]
+    (fn1 (fn2 (fn3 *: args **: kwds))))
+  """
+
   macro-rules []:
     case (function-compose fn1):
       fn1
@@ -43,6 +64,11 @@ define-syntax compile/function-compose:
 
 
 define-syntax compile/decorate:
+  """
+  Handler for the decorator layout syntax, can also be used to apply
+  decorator-style wrappers to an s-expr form.
+  """
+
   syntax-rules [define-class define compile/define-class compile/define]:
     case (decorate [] fn):
       fn

@@ -436,8 +436,8 @@ def _type_check_op(op, compiler, source):
     at least 2 arguments (value plus at least one type).
 
     Calling forms:
-      (compile/isinstance VAL TYPE)         -> arg = 1  (single type)
-      (compile/isinstance VAL T1 T2 ...)    -> arg = N  (N types as tuple)
+      (compile/instance? VAL TYPE)         -> arg = 1  (single type)
+      (compile/instance? VAL T1 T2 ...)    -> arg = N  (N types as tuple)
 
     :param op: OpCode.KOS_OP_OBJECT_IS_INSTANCE or KOS_OP_OBJECT_IS_SUBCLASS
     :param compiler: active Compiler
@@ -470,22 +470,22 @@ def _type_check_op(op, compiler, source):
     return frag
 
 
-@builtin("compile/isinstance")
-@special("compile/isinstance", patterns=_DEFAULT_SPECIAL_PATTERNS)
+@builtin("compile/instance?")
+@special("compile/instance?", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_isinstance(compiler, source, tc=False):
     """
-    Compile (compile/isinstance OBJ TYPE ...). Instance type check
+    Compile (compile/instance? OBJ TYPE ...). Instance type check
     """
 
     return _type_check_op(
         OpCode.KOS_OP_OBJECT_IS_INSTANCE, compiler, source)
 
 
-@builtin("compile/issubclass")
-@special("compile/issubclass", patterns=_DEFAULT_SPECIAL_PATTERNS)
+@builtin("compile/subclass?")
+@special("compile/subclass?", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_issubclass(compiler, source, tc=False):
     """
-    Compile (compile/issubclass CLS TYPE ...). Subclass type check
+    Compile (compile/subclass? CLS TYPE ...). Subclass type check
     """
 
     return _type_check_op(
