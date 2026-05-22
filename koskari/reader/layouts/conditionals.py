@@ -19,7 +19,7 @@ Layout handlers for conditional block syntax.
 
 
 from ...exceptions import LayoutError
-from ...lib import car, cdr, cons, keyword, nil, symbol
+from ...lib import cons, keyword, nil, symbol
 from ...bootstrap import builtin
 from ...types import get_position, unpack, is_pair
 from .helpers import layout
@@ -63,8 +63,8 @@ def layout_if(source, peers):
 
     for peer in peers:
         pheader, pbody = peer
-        phead = car(pheader)
-        ppargs = list(unpack(cdr(pheader)))
+        phead = pheader.car
+        ppargs = list(unpack(pheader.cdr))
 
         if phead is _symbol_elif:
             if saw_else:

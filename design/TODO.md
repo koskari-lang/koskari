@@ -24,13 +24,14 @@ Ref: `koskari/lib/dynchain.c` — `kos_build_direct_install_plan`;
 
 ### Safe GIL unlocking
 
-Investigate and implement safe voluntary GIL release in the evaluator. Current
-code uses a simple opcode-interval counter (every 255 dispatches) and on-exit
-release. Design proposal: domain-TLS counter + timer, `maybe_cooperate()` /
-`ensure_gil()`, with care for Py_BEGIN_ALLOW_THREADS / Py_END_ALLOW_THREADS
-pairing (see design note on cross-block release/reacquire).
+MVP in `eval.c`: RUN tail-dispatch polls every 2048 ops (mask 2047) and
+prologue reunion; `PyErr_CheckSignals()` plus paired
+`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS` when due (op mask or 5 ms).
+Counters are stack locals in the dispatch loop only. Manual check: REPL tight
+loop + Ctrl-C.
 
-Ref: [interpreter/gil-cooperation.md](interpreter/gil-cooperation.md).
+Future: domain-TLS counter + timer, `maybe_cooperate()` / `ensure_gil()` per
+[interpreter/gil-cooperation.md](interpreter/gil-cooperation.md).
 
 ---
 

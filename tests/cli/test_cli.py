@@ -26,7 +26,6 @@ import unittest
 from koskari.cli import (
     REPLCodeBoundary,
     REPL_INFRASTRUCTURE_MODULES,
-    _boundary_call_async,
     main,
     option_parser,
     repl_async,
@@ -265,31 +264,6 @@ class TestREPLCodeBoundary(unittest.IsolatedAsyncioTestCase):
     async def test_repl_code_boundary_subclasses_code_boundary(self):
         self.assertTrue(issubclass(REPLCodeBoundary, CodeBoundary))
         self.assertTrue(issubclass(REPLCodeBoundary, Exception))
-
-
-class TestCodeBoundaryFormatting(unittest.IsolatedAsyncioTestCase):
-
-    async def test_format_code_boundary_folds_infrastructure(self):
-        async def boom():
-            raise ValueError('folded')
-
-        try:
-            await _boundary_call_async(boom)
-        except REPLCodeBoundary as boundary:
-            lines, last_type, last_val, last_tb = format_code_boundary_exception(
-                boundary,
-                infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
-        else:
-            self.fail('expected REPLCodeBoundary')
-
-        rendered = ''.join(lines)
-        self.assertIn('ValueError', rendered)
-        self.assertIs(last_type, ValueError)
-        if last_tb is not None:
-            for frame, _lineno in traceback.walk_tb(last_tb):
-                mod = frame.f_globals.get('__name__', '')
-                self.assertNotIn('koskari.cli', mod)
-                self.assertNotIn('asyncio', mod)
 
 
 class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):

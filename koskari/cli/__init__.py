@@ -347,8 +347,10 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
                 print(kos_repr(result), file=stdout)
 
         except KeyboardInterrupt:
-            print('', file=stderr)
+            print("KeyboardInterrupt", file=stderr)
             stderr.flush()
+            buffer = ''
+            prompt = '>>> '
 
         except EOFError:
             print('', file=stderr)

@@ -68,6 +68,7 @@
 
 #include <stdint.h>
 #include <frameobject.h>
+#include <time.h>
 
 
 /* Every handler has (ctx, out_ev, insn).  Cast unused parameters to (void)
@@ -2395,6 +2396,23 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
   Code from es->code first (hot cache); if NULL, KosDynFrame_CODE (e.g. tail
   reset cleared heap slot before es->code was updated).  On OOB, goto on_bad.
 */
+
+/* GIL poll: stack locals in dispatch loops only (not KosContext / KosEvalState). */
+#define KOS_EVAL_GIL_POLL_MASK           1024u
+
+// 5 milliseconds (5,000,000 nanoseconds)
+#define KOS_EVAL_GIL_POLL_INTERVAL_NS    5000000ULL
+
+
+static inline uint64_t kos_eval_gil_poll_now_ns(void) {
+  struct timespec ts;
+
+  if (unlikely(clock_gettime(CLOCK_MONOTONIC, &ts) != 0))
+    return 0;
+  return (uint64_t) ts.tv_sec * 1000000000ULL + (uint64_t) ts.tv_nsec;
+}
+
+
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
     KosCode *_kos_code = KosEvalState_CODE(es);                            \
@@ -2431,6 +2449,8 @@ static int koskari_eval_dispatch_computed_goto(
   KosOp insn;
   KosOpOutcome op_out;
   int eval_ret = 0;
+  uint32_t gil_poll_ops = 0;
+  uint64_t gil_poll_last_ns = 0;
 
   goto cg_prologue;
 
@@ -2489,6 +2509,31 @@ cg_prologue:
   }
   #endif
 
+  goto cg_poll;
+
+cg_poll:
+  {
+    uint64_t now_ns = kos_eval_gil_poll_now_ns();
+    if ((! gil_poll_last_ns) || (! now_ns) ||
+        (now_ns - gil_poll_last_ns >= KOS_EVAL_GIL_POLL_INTERVAL_NS)) {
+      Py_BEGIN_ALLOW_THREADS
+      gil_poll_ops = 0;
+      gil_poll_last_ns = now_ns;
+      Py_END_ALLOW_THREADS
+    }
+  }
+
+  PyErr_CheckSignals();
+  if (unlikely(PyErr_Occurred())) {
+    KosEvalStep pend = eval_phase_pending_exception(es, out_ev);
+    if (pend == KOS_STEP_STOP_EVENT)
+      return 0;
+    if (pend == KOS_STEP_REPROLOGUE)
+      goto cg_prologue;
+  }
+
+cg_normal_dispatch:
+
   KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
   goto *optable[insn.op];
 
@@ -2496,6 +2541,8 @@ cg_prologue:
     cg_TARGET_##name:                                                  \
       KOS_TRACE_OP_WRAP(name, op_out = op_##name(es, out_ev, &insn));  \
       if (likely(op_out.mode == KOS_LOP_RUN)) {                        \
+        if (unlikely((++gil_poll_ops & KOS_EVAL_GIL_POLL_MASK) == 0))  \
+          goto cg_poll;                                                \
         KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);      \
         goto *optable[insn.op];                                        \
       }                                                                \
@@ -2541,6 +2588,8 @@ static int koskari_eval_dispatch_switch(
   int need_prologue = 1;
   KosOp insn;
   KosOpOutcome op_out;
+  uint32_t gil_poll_ops = 0;
+  uint64_t gil_poll_last_ns = 0;
 
   for (;;) {
 
@@ -2605,8 +2654,41 @@ static int koskari_eval_dispatch_switch(
       }
       #endif
 
-      need_prologue = 0;
+      goto sw_poll;
     }
+
+  sw_poll:
+
+  (void) PyErr_CheckSignals();
+  {
+    uint64_t now_ns = kos_eval_gil_poll_now_ns();
+    int due = ((gil_poll_ops & KOS_EVAL_GIL_POLL_MASK) == 0)
+        || ! gil_poll_last_ns
+        || (now_ns
+            && now_ns - gil_poll_last_ns >= KOS_EVAL_GIL_POLL_INTERVAL_NS);
+
+    if (due) {
+#ifndef Py_GIL_DISABLED
+      Py_BEGIN_ALLOW_THREADS
+      Py_END_ALLOW_THREADS
+#endif
+      gil_poll_ops = 0;
+      if (now_ns)
+        gil_poll_last_ns = now_ns;
+    }
+  }
+
+  if (PyErr_Occurred()) {
+    KosEvalStep pend = eval_phase_pending_exception(es, out_ev);
+    if (pend == KOS_STEP_STOP_EVENT)
+      return 0;
+    if (pend == KOS_STEP_REPROLOGUE) {
+      need_prologue = 1;
+      goto sw_loop_head;
+    }
+  }
+
+  need_prologue = 0;
 
   sw_prepare_and_dispatch:
 
@@ -2625,8 +2707,11 @@ static int koskari_eval_dispatch_switch(
       return -1;
     }
 
-    if (likely(op_out.mode == KOS_LOP_RUN))
+    if (likely(op_out.mode == KOS_LOP_RUN)) {
+      if (unlikely((++gil_poll_ops & KOS_EVAL_GIL_POLL_MASK) == 0))
+        goto sw_poll;
       goto sw_prepare_and_dispatch;
+    }
 
     if (op_out.mode == KOS_LOP_FAIL)
       return -1;
