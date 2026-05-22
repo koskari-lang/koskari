@@ -75,29 +75,29 @@ extern PyTypeObject KosDeferType;
 
 
 /**
-   Create a new defer in PENDING state capturing fn, args, kwds.
-   args and kwds may be NULL (treated as empty).
-   Returns new reference.
+  Create a new defer in PENDING state capturing fn, args, kwds.
+  args and kwds may be NULL (treated as empty).
+  Returns new reference.
 */
 PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds);
 
 /**
-   Single step: if PENDING invoke fn(*args,**kwds), normalize (including
-   defer-of-defer adopt). If DONE return value (new ref). If DELEGATING
-   set *suspended=1 and *yielded=inner, return NULL. If FAILED/MOVED_FROM
-   set exception, return NULL.
+  Single step: if PENDING invoke fn(*args,**kwds), normalize (including
+  defer-of-defer adopt). If DONE return value (new ref). If DELEGATING
+  set *suspended=1 and *yielded=inner, return NULL. If FAILED/MOVED_FROM
+  set exception, return NULL.
 */
 PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded);
 
 /**
-   Transition DELEGATING to DONE(result). Only valid when state is
-   KOS_DEFER_DELEGATING. Call on AWAIT resume when inner completed.
+  Transition DELEGATING to DONE(result). Only valid when state is
+  KOS_DEFER_DELEGATING. Call on AWAIT resume when inner completed.
 */
 void KosDefer_FeedResult(KosDefer *self, PyObject *result);
 
 /**
-   Transition DELEGATING to FAILED(exc). Only valid when state is
-   KOS_DEFER_DELEGATING. Call when inner awaitable raised.
+  Transition DELEGATING to FAILED(exc). Only valid when state is
+  KOS_DEFER_DELEGATING. Call when inner awaitable raised.
 */
 void KosDefer_FeedException(KosDefer *self, PyObject *exc_type, PyObject *exc_val);
 

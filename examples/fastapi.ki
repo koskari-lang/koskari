@@ -1,6 +1,10 @@
 import fastapi as: fastapi
 import uvicorn as: uvicorn
 
+
+;; Application definition
+
+
 define app (fastapi.FastAPI title: "Koskari Demo")
 
 
@@ -8,7 +12,7 @@ define-syntax define-route:
     syntax-rules []:
         define-route path name args body ...:
             define name args body ...
-            (app.add_api_route path (as-coroutine name)
+            (app.add_api_route path (coroutine-fn name)
                 methods: #["GET"])
 
 
@@ -28,14 +32,36 @@ define-route "/echo/{name}" echo [name: "<anon>"]:
       echo: name}
 
 
-define main []:
-  define config (uvicorn.Config app host: "127.0.0.1" port: 8000)
-  define server (uvicorn.Server config)
-  (server.serve)
+;; Server management
+
+
+define server None
+
+
+define create-server [host: "127.0.0.1" port: 8000]:
+    define config (uvicorn.Config app host: host port: port)
+    (uvicorn.Server config)
+
+
+define start [host: "127.0.0.1" port: 8000]:
+    global server
+    when (None? server):
+        set! server (create-server host: host port: port)
+    (server.serve)
+
+
+define stop []:
+    global server
+    unless (None? server):
+        (server.shutdown)
+        set! server None
+
+
+;; Script entry point
 
 
 when-main:
-    (main)
+    (start)
 
 
 ;; The end.

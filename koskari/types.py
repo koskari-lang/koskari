@@ -21,9 +21,21 @@ Koskari native types, predicates, and helper functions
 """
 
 import operator
-from functools import partial, wraps
+from functools import partial
 
 from .lib import cons, keyword, nil, pair, symbol
+
+
+__all__ = (
+    "TypePredicate",
+    "BuiltinPredicate",
+    "is_nil",
+    "is_None",
+    "is_proper",
+    "is_recursive",
+    "build_proper",
+    "unpack",
+)
 
 
 class TypePredicate(partial):
@@ -59,10 +71,9 @@ class BuiltinPredicate(partial):
 
 is_symbol = TypePredicate("symbol?", symbol)
 is_keyword = TypePredicate("keyword?", keyword)
-
 is_pair = TypePredicate("pair?", pair)
-is_nil = BuiltinPredicate("nil?", operator.is_, nil)
 
+is_nil = BuiltinPredicate("nil?", operator.is_, nil)
 is_None = BuiltinPredicate("None?", operator.is_, None)
 
 
@@ -146,21 +157,6 @@ def fill_position(value, position, follow=True):
 
     if position and is_pair(value):
         value.fill_position(position, follow)
-
-
-def as_coroutine(awaitable):
-    """
-    Return a coroutine that, when awaited, awaits the given awaitable
-    and returns its result. Accepts arbitrary awaitables (e.g. custom
-    __await__), not just coroutines. asyncio.run requires a coroutine,
-    so use this to adapt before passing to asyncio.run
-    """
-
-    @wraps(awaitable)
-    async def _as_coroutine(*args, **kwargs):
-        return await awaitable(*args, **kwargs)
-
-    return _as_coroutine
 
 
 # The end.

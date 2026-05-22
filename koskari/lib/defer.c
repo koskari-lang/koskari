@@ -462,7 +462,7 @@ static PyObject *defer_await(PyObject *self) {
 
   if (result) {
     KosDeferValueIterator *it = PyObject_GC_New(KosDeferValueIterator,
-                                                 &KosDeferValueIteratorType);
+                                                &KosDeferValueIteratorType);
     if (! it) {
       Py_DECREF(result);
       return NULL;

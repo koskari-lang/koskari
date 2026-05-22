@@ -36,8 +36,10 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    cons, defer, demand, demand_apply, demand_call, deref,
                    gensym, keyword, kos_repr, nil, pair, parameter, setcar,
                    setcdr, symbol, values)
-from ..types import (TypePredicate, as_coroutine, build_proper, is_nil,
-                     is_None, is_proper, is_recursive, unpack)
+
+from ..types import (TypePredicate, is_nil, is_None, is_proper, is_recursive,
+                     build_proper, unpack)
+
 
 __all__ = (
     'builtin',
@@ -62,6 +64,7 @@ _BUILTINS_SOURCES = (
 
     # additional features
     '_conditionals.ki',
+    '_functions.ki',
     '_variables.ki',
     '_class.ki',
     '_iter.ki',
@@ -87,11 +90,13 @@ def make_bootstrap():
     # they're loaded. They each have decorated builtins that self-register
     # into the _BUILTIN_REGISTRY.
 
+    from .. import asyncio as _koskari_asyncio  # noqa: F401
     from .. import exceptions as _koskari_exceptions  # noqa: F401
     from .. import help as _koskari_help  # noqa: F401
     from .. import syntax as _koskari_syntax  # noqa: F401
     from ..compile import specials as _koskari_compile_specials  # noqa: F401
     from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
+
 
     bltns = {}
 
@@ -111,7 +116,7 @@ def make_bootstrap():
     _ty('ParamRef', ParamRef)
     _bind('ref?', TypePredicate('ref?', Ref))
 
-    # pair types and operations
+    # types from koskari.lib
     _ty('defer', defer)
     _ty('demand', demand)
     _ty('keyword', keyword)
@@ -120,9 +125,8 @@ def make_bootstrap():
     _ty('values', values)
     _ty('datum', Datum)
 
+    # functions from koskari.lib
     _bind('apply', apply)
-    _bind('as-coroutine', as_coroutine)
-    _bind('build-proper', build_proper)
     _bind('car', car)
     _bind('cdr', cdr)
     _bind('cons', cons)
@@ -131,13 +135,10 @@ def make_bootstrap():
     _bind('deref', deref)
     _bind('gensym', gensym)
     _bind('nil', nil)
-    _bind('nil?', is_nil)
     _bind('parameter', parameter)
-    _bind('proper?', is_proper)
-    _bind('recursive?', is_recursive)
+    _bind('repr', kos_repr)
     _bind('set-car', setcar)
     _bind('set-cdr', setcdr)
-    _bind('unpack', unpack)
 
     # builders
     _bind('#dict', build_dict)
@@ -170,28 +171,35 @@ def make_bootstrap():
     # These are parsed as literals, not as named references, similar
     # to numbers and strings.
     _bind('None', None)
-    _bind('None?', is_None)
     _bind('True', True)
     _bind('False', False)
     _bind('Ellipsis', Ellipsis)
     _bind('...', ...)
 
-    # common builtins
+    # utils from koskari.types
+    _bind('nil?', is_nil)
+    _bind('None?', is_None)
+    _bind('proper?', is_proper)
+    _bind('recursive?', is_recursive)
+    _bind('build-proper', build_proper)
+    _bind('unpack', unpack)
+
+    # common Python builtins
     _bind('abs', abs)
-    _bind('all', all)
-    _bind('any', any)
-    _bind('callable', callable)
+    _bind('all?', all)
+    _bind('any?', any)
+    _bind('callable?', callable)
     _bind('chr', chr)
     _bind('dir', dir)
     _bind('enumerate', enumerate)
     _bind('filter', filter)
     _bind('format', format)
     _bind('getattr', getattr)
-    _bind('hasattr', hasattr)
+    _bind('hasattr?', hasattr)
     _bind('hash', hash)
     _bind('id', id)
     _bind('input', input)
-    _bind('isinstance', isinstance)
+    _bind('instance?', isinstance)
     _bind('iter', iter)
     _bind('len', len)
     _bind('map', map)
@@ -203,12 +211,11 @@ def make_bootstrap():
     _bind('print', print)
     _bind('py-help', help)
     _bind('py-repr', repr)
-    _bind('repr', kos_repr)
     _bind('reversed', reversed)
     _bind('setattr', setattr)
     _bind('sorted', sorted)
     _bind('super', super)
-    _bind('issubclass', issubclass)
+    _bind('subclass?', issubclass)
     _bind('sum', sum)
     _bind('vars', vars)
     _bind('zip', zip)

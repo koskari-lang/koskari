@@ -153,6 +153,20 @@ define-syntax compile/bind!:
       (compile/bindq name value)
 
 
+define-syntax compile/global:
+  syntax-rules []:
+    case (global name):
+      (compile/define-global name)
+
+
+define-syntax compile/local:
+  syntax-rules []:
+    case (local name):
+      (compile/define name)
+    case (local name value):
+      (compile/define name value)
+
+
 define-syntax compile/define-parameter:
   syntax-rules []:
     case (define-parameter name):

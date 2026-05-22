@@ -17,10 +17,10 @@ Portion of koskari.builtins
 """
 
 
-define-syntax define-coroutine:
+define-syntax compile/define-coroutine:
   syntax-rules []:
     case (define-coroutine name args body ...):
-      (define name (as-coroutine (lambda name args body ...)))
+      (define name (coroutine-fn (lambda name args body ...)))
 
 
 define-syntax compile/define-demanding:

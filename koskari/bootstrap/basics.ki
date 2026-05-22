@@ -47,4 +47,19 @@ define-syntax compile/help:
       (compile/call help 'help (globals))
 
 
+define macroexpand-1 [ns form]:
+  define compiler (item ns "__compiler__")
+  define name (if (pair? form) (car form) form)
+  define special (compiler.find_compiled name)
+  unless special:
+    raise (Exception "macroexpand-1: special form {name} not found")
+  special.compile_impl compiler form False
+
+
+define-syntax compile/macroexpand-1:
+  syntax-rules []:
+    case (macroexpand-1 form):
+      (call macroexpand-1 (globals) (quote form))
+
+
 ;; The end.
