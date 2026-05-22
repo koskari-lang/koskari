@@ -17,7 +17,9 @@ layout_heads:
   - with
   - dyn-with
   - define-class
+  - define-dataclass
   - define-syntax
+  - extend-syntax
   - syntax-rules
   - macro-rules
   - special-rules
@@ -37,6 +39,16 @@ layout_peers:
     - except
     - else
     - finally
+  switch:
+    - case
+    - else
+  while:
+    - else
+  for-each:
+    - else
+  dyn-wind:
+    - before
+    - after
 
 # Literal constants reserved for future editor highlighting. The first
 # iteration keeps these in the spec but does not wire them into grammars yet.
@@ -49,44 +61,53 @@ constants:
 
 # Paren-list first-symbol tokens to highlight as keyword.control (TextMate),
 # keyword.control (Helix), and font-lock-keyword-face (Emacs). One ordered list
-# for all three; adjust order here if you care about alternation precedence.
+# for all three; regen sorts reverse alphabetically for regex longest-match.
 #
 # Entries are short names for compiler specials registered as compile/... (see
 # design/SPECIALS.md and koskari/lexer/discovery.py: both the prefixed and
 # stripped names resolve for highlighting) plus short names for macros from
-# koskari/importer/basics.ki (design/MACROS.md; define-syntax compile/NAME
+# koskari/bootstrap/*.ki (design/MACROS.md; define-syntax compile/NAME
 # registers NAME without the compile/ prefix).
 #
 # TextMate: editors/textmate/syntaxes/koskari.tmLanguage.json.j2 renders this
 # word set into #list-head-special and #bare-line-call-head (same alternation);
-# regenerate the JSON after edits.
+# regenerate the JSON after edits (tox -e regen-editors or make editors-regen).
 # Emacs: editors/emacs/koskari-mode.el.j2 uses the same list for paren list-head
-# and for implicit layout lines (line-start, optional indent, head word); regenerate
-# koskari-mode.el after edits.
+# and for implicit layout lines (line-start, optional indent, head word);
+# regenerate koskari-mode.el after edits.
 # Keep entries aligned when adding or renaming.
 list_head_specials:
   - and
   - attr
+  - attr*
   - await
   - begin
   - bind!
-  - bindq
   - break
+  - bytecode
+  - call-attr
   - call/cc
   - capture/cc
+  - car
+  - cdr
   - class
   - cond
+  - cons
   - continue
+  - declare-exports
   - decorate
   - define
   - define-class
   - define-coroutine
+  - define-dataclass
   - define-demanding
   - define-global
   - define-parameter
   - define-syntax
   - define-values
-  - delq
+  - del!
+  - del-item
+  - deref
   - dict-each
   - dyn-wind
   - dyn-with
@@ -94,10 +115,16 @@ list_head_specials:
   - extend-syntax
   - for-each
   - function-compose
+  - gensym-thunk
+  - global
   - globals
   - if
   - import
   - import-from
+  - incr!
+  - instance?
+  - item
+  - item*
   - lambda
   - let
   - let*
@@ -105,28 +132,39 @@ list_head_specials:
   - let/cc
   - letrec
   - list-each
+  - local
   - locals
   - macro-match
   - macro-rules
+  - macroexpand-1
+  - nil?
+  - None?
   - or
-  - special-match
-  - special-rules
-  - parameterq
   - parameterize
+  - parameterq
+  - quasiquote
+  - quote
   - raise
   - ref
-  - refq
+  - ref-item
   - reset
   - return
   - set!
+  - set-item
   - setq
   - setq-values
   - shift
+  - subclass?
+  - super
   - switch
   - syntax-match
   - syntax-rules
+  - special-match
+  - special-rules
   - try
   - unless
+  - unquote
+  - unquote-splicing
   - when
   - when-main
   - while
