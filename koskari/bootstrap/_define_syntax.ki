@@ -63,22 +63,22 @@ define-syntax compile/extend-syntax:
                 special-rules special-match]:
 
     case (extend-syntax name (syntax-rules literals rule ...)):
-      setq name (syntax-rules name literals rule ...)
+      setq name (+ name (syntax-rules name literals rule ...))
 
     case (extend-syntax name (syntax-match rule ...)):
-      setq name (syntax-match name rule ...)
+      setq name (+ name (syntax-match name rule ...))
 
     case (extend-syntax name (macro-rules literals rule ...)):
-      setq name (macro-rules name literals rule ...)
+      setq name (+ name (macro-rules name literals rule ...))
 
     case (extend-syntax name (macro-match rule ...)):
-      setq name (macro-match name rule ...)
+      setq name (+ name (macro-match name rule ...))
 
     case (extend-syntax name (special-rules literals rule ...)):
-      setq name (special-rules name literals rule ...)
+      setq name (+ name (special-rules name literals rule ...))
 
     case (extend-syntax name (special-match rule ...)):
-      setq name (special-match name rule ...)
+      setq name (+ name (special-match name rule ...))
 
 
 define layout/extend-syntax layout/flat

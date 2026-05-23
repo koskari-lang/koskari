@@ -1,3 +1,23 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Example demonstrating using define-syntax and extend-syntax to
+produce macros.
+"""
+
+
 define-syntax tacos:
     syntax-rules []:
         match (tacos):
@@ -7,5 +27,20 @@ extend-syntax tacos:
     syntax-rules []:
         match (tacos friend):
             print "Tacos with" friend
+
+extend-syntax tacos:
+    syntax-rules []:
+        match (tacos f1 f2):
+            (tacos f"{f1}, and {f2}")
+        match (tacos f1 f2 f3 ...):
+            (tacos f"{f1}, {f2}" f3 ...)
+
+
+(tacos)
+(tacos 'Zoe)
+(tacos 'Zoe 'Mike)
+(tacos 'Zoe 'Mike 'Lang)
+(tacos 'Zoe 'Mike 'Lang 'Jane)
+
 
 ;; The end.
