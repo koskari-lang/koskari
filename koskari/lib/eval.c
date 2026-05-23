@@ -182,6 +182,7 @@ static inline KosOpOutcome kos_op_outcome_from_call_int(KosEvalState *es, int r)
 #include "eval/eval_chain.c"
 #include "eval/eval_state.c"
 #include "eval/eval_utils.c"
+#include "eval/eval_gil.c"
 
 
 /**
@@ -2430,13 +2431,12 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
   } while (0)
 
 
-#if KOS_USE_COMPUTED_GOTO
 /**
    Opcode loop for GCC/Clang: computed goto, tail-dispatch on RUN, prologue
    via cg_prologue.  Must be a single function: label addresses and optable
    live here only.
 */
-static int koskari_eval_dispatch_computed_goto(
+static inline int koskari_eval_dispatch_computed_goto(
     KosEvalState *es,
     KosEvent *out_ev) {
 
@@ -2455,7 +2455,6 @@ static int koskari_eval_dispatch_computed_goto(
   goto cg_prologue;
 
 cg_prologue:
-
   /* es mirrors ctx via Init, ApplyDynCaches after dyn surgery, and targeted
      SyncFromContext on transfer/error paths — not a full sync every prologue. */
 
@@ -2514,15 +2513,19 @@ cg_prologue:
 cg_poll:
   {
     gil_poll_ops = 0;
-    uint64_t now_ns = kos_eval_gil_poll_now_ns();
-    if (gil_poll_last_ns && now_ns &&
-        (now_ns - gil_poll_last_ns > KOS_EVAL_GIL_POLL_INTERVAL_NS)) {
-      Py_BEGIN_ALLOW_THREADS
-      gil_poll_last_ns = now_ns;
-      Py_END_ALLOW_THREADS
+    if (koskari_gil_drop_requested()) {
+      uint64_t now_ns = kos_eval_gil_poll_now_ns();
+      if (gil_poll_last_ns && now_ns &&
+          (now_ns - gil_poll_last_ns > KOS_EVAL_GIL_POLL_INTERVAL_NS)) {
+        Py_BEGIN_ALLOW_THREADS
+        gil_poll_last_ns = now_ns;
+        Py_END_ALLOW_THREADS
+      }
     }
+    goto cg_check_signals;
   }
 
+cg_check_signals:
   PyErr_CheckSignals();
   if (unlikely(PyErr_Occurred())) {
     KosEvalStep pend = eval_phase_pending_exception(es, out_ev);
@@ -2531,9 +2534,9 @@ cg_poll:
     if (pend == KOS_STEP_REPROLOGUE)
       goto cg_prologue;
   }
+  goto cg_normal_dispatch;
 
 cg_normal_dispatch:
-
   KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
   goto *optable[insn.op];
 
@@ -2556,7 +2559,6 @@ cg_pc_bounds_error:
   return -1;
 
 cg_handle_op_outcome:
-
   if (op_out.mode == KOS_LOP_FAIL)
     return -1;
 
@@ -2576,168 +2578,6 @@ cg_handle_op_outcome:
   return eval_ret;
 }
 
-#else
-
-/**
-   Opcode loop without computed goto: for(;;), need_prologue, switch dispatch.
-*/
-static int koskari_eval_dispatch_switch(
-    KosEvalState *es, KosEvent *out_ev) {
-
-  int eval_ret = 0;
-  int need_prologue = 1;
-  KosOp insn;
-  KosOpOutcome op_out;
-  uint32_t gil_poll_ops = 0;
-  uint64_t gil_poll_last_ns = 0;
-
-  for (;;) {
-
-  sw_loop_head:
-
-    if (need_prologue) {
-
-      /* See cg_prologue: no unconditional SyncFromContext here. */
-
-      #if KOS_STACK_TRACE
-      {
-        KosStackBlock **_kos_tr = KosEvalState_BLOCK(es);
-        trace_stack("  after ",
-                    (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
-      }
-      #endif
-
-      {
-        KosEvalStep xfer = eval_step_drain_transfer_plan(es, out_ev);
-        if (xfer == KOS_STEP_STOP_EVENT)
-          return 0;
-      }
-
-      {
-        KosEvalStep pend = eval_phase_pending_exception(es, out_ev);
-        if (pend == KOS_STEP_STOP_EVENT)
-          return 0;
-        if (pend == KOS_STEP_REPROLOGUE) {
-          need_prologue = 1;
-          goto sw_loop_head;
-        }
-      }
-
-      {
-        KosEvalStep pp = eval_dispatch_maybe_post_opcode_event(es, out_ev, &eval_ret);
-        if (pp == KOS_STEP_FATAL_ERROR)
-          return eval_ret;
-        if (pp == KOS_STEP_STOP_EVENT)
-          return eval_ret;
-        if (pp == KOS_STEP_REPROLOGUE) {
-          need_prologue = 1;
-          goto sw_loop_head;
-        }
-      }
-
-      if (KosEvalState_FRAME(es)
-          && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) != NULL) {
-        KosEvalStep ns = eval_step_native_iteration(es, out_ev, &eval_ret);
-        if (ns == KOS_STEP_FATAL_ERROR)
-          return eval_ret;
-        if (ns == KOS_STEP_STOP_EVENT)
-          return eval_ret;
-        need_prologue = 1;
-        goto sw_loop_head;
-      }
-
-      #if KOS_STACK_TRACE
-      {
-        KosStackBlock **_kos_tr = KosEvalState_BLOCK(es);
-        trace_stack("  before",
-                    (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
-      }
-      #endif
-
-      goto sw_poll;
-    }
-
-  sw_poll:
-  {
-    gil_poll_ops = 0;
-    uint64_t now_ns = kos_eval_gil_poll_now_ns();
-    int due = ((gil_poll_ops >= KOS_EVAL_GIL_POLL) == 0)
-        || ! gil_poll_last_ns
-        || (now_ns
-            && now_ns - gil_poll_last_ns >= KOS_EVAL_GIL_POLL_INTERVAL_NS);
-
-    if (due) {
-      Py_BEGIN_ALLOW_THREADS
-      gil_poll_last_ns = now_ns;
-      Py_END_ALLOW_THREADS
-    }
-  }
-
-  (void) PyErr_CheckSignals();
-  if (PyErr_Occurred()) {
-    KosEvalStep pend = eval_phase_pending_exception(es, out_ev);
-    if (pend == KOS_STEP_STOP_EVENT)
-      return 0;
-    if (pend == KOS_STEP_REPROLOGUE) {
-      need_prologue = 1;
-      goto sw_loop_head;
-    }
-  }
-
-  need_prologue = 0;
-
-  sw_prepare_and_dispatch:
-
-    KOS_EVAL_PREPARE_NEXT_INSN(es, insn, sw_pc_bounds_error);
-
-    switch (insn.op) {
-    #define OP(name, ...)                                                \
-      case KOS_OP_##name:                                                \
-        KOS_TRACE_OP_WRAP(name, op_out = op_##name(es, out_ev, &insn));    \
-        break;
-    #include "opcodes.incl"
-    #undef OP
-    default:
-      PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
-                   (unsigned) insn.op);
-      return -1;
-    }
-
-    if (likely(op_out.mode == KOS_LOP_RUN)) {
-      if (unlikely((++gil_poll_ops >= KOS_EVAL_GIL_POLL)))
-        goto sw_poll;
-      goto sw_prepare_and_dispatch;
-    }
-
-    if (op_out.mode == KOS_LOP_FAIL)
-      return -1;
-
-    if (op_out.mode == KOS_LOP_PROLOGUE) {
-      need_prologue = 1;
-      goto sw_loop_head;
-    }
-
-    if (op_out.mode == KOS_LOP_POST) {
-      int op_res = kos_op_post_tag_to_res(op_out.post_tag);
-      KosEvalStep ps = eval_phase_post_opcode(es, out_ev, op_res);
-      if (ps == KOS_STEP_FATAL_ERROR)
-        return -1;
-      if (ps == KOS_STEP_STOP_EVENT)
-        return 0;
-      need_prologue = 1;
-      goto sw_loop_head;
-    }
-  }
-
-sw_pc_bounds_error:
-  kos_eval_report_pc_bounds_error(es);
-  return -1;
-
-  /* All iterations return or branch; keep a fallback for static analysis. */
-  return -1;
-}
-
-#endif
 
 #undef KOS_EVAL_PREPARE_NEXT_INSN
 
@@ -2794,12 +2634,7 @@ int koskari_eval(
   /* Clear resume kind once before loop; post_opcode clears it when handling
      non-zero results so the hot path (tail-dispatch) never touches it. */
   KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
-
-#if KOS_USE_COMPUTED_GOTO
   eval_ret = koskari_eval_dispatch_computed_goto(&es, out_ev);
-#else
-  eval_ret = koskari_eval_dispatch_switch(&es, out_ev);
-#endif
 
 koskari_eval_cleanup:
   KosEvalState_FlushLiveRegsToFrame(&es);

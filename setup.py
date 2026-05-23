@@ -48,6 +48,7 @@ def extra_compile_args(platform=None, debug=False):
         args.append("-O0")
     else:
         args.append("-O2")
+        args.append("-fno-gcse")
 
     for env in passenvs:
         if environ.get(env) == "1":

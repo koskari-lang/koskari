@@ -44,10 +44,11 @@
    so the compiler can inline handler bodies. Both paths use tail-dispatch to
    next_insn. Build may override with -DKOS_USE_COMPUTED_GOTO=0 or =1. */
 #ifndef KOS_USE_COMPUTED_GOTO
-# if (defined(__GNUC__) || defined(__clang__)) && !defined(__STRICT_ANSI__)
+# if (defined(__GNUC__) || defined(__clang__))
 #  define KOS_USE_COMPUTED_GOTO 1
 # else
 #  define KOS_USE_COMPUTED_GOTO 0
+#  error "Unsupported compiler, no computed goto"
 # endif
 #endif
 

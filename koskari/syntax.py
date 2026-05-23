@@ -23,8 +23,9 @@ Syntax dispatch scaffolding
 """
 
 
+from abc import ABC, abstractmethod
 from functools import wraps
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
@@ -156,8 +157,7 @@ class Syntax(Compiled):
         return Syntax(self.name, new_transforms)
 
 
-@runtime_checkable
-class Transform(Protocol):
+class Transform(ABC):
     """
     One clause of a ``Syntax`` dispatcher: frozen ``matcher`` pattern,
     hygiene plan, and matcher-backed ``try_expand``
@@ -204,6 +204,7 @@ class Transform(Protocol):
         return self.handle_expand(compiler, source_obj, result, tc)
 
 
+    @abstractmethod
     def handle_expand(self, compiler, source, result, tc):
         """
         When the pattern matches, handle the expansion.
