@@ -146,6 +146,13 @@ void koskari_Err_Format(PyObject *exc_type, const char *format, ...);
 void koskari_Err_SetObject(PyObject *exc_type, PyObject *value);
 
 
+/**
+   Return 1 if another thread has requested this thread drop the GIL,
+   else 0. On free-threaded builds (Py_GIL_DISABLED), always 0
+ */
+int koskari_gil_drop_requested(void);
+
+
 #endif
 
 
