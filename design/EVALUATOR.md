@@ -2,7 +2,7 @@
 
 This document describes the operation of the koskari eval loop in `koskari/lib/eval.c`: its stages, how opcodes are invoked and signal back, exception handling, control transit (event-driven handle/unwind model), transfer plans, tail calls, call installs, and resumption paths.
 
-Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval.h` (including suspension tagging, Python await/resume bridge fields, and domain TLS scope wrappers in `eval.c`), `koskari/lib/dynchain.c` / `koskari/lib/dynchain.h`, and `design/interpreter/evaluator.md`. For the staged `KosEvalState` surface and migration rationale, see `design/kos_eval_state_api_migration.md`.
+Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval/eval_gil.c` (included into `eval.c`; `koskari_gil_drop_requested`), `koskari/lib/eval.h` (including suspension tagging, Python await/resume bridge fields, and domain TLS scope wrappers in `eval.c`), `koskari/lib/dynchain.c` / `koskari/lib/dynchain.h`, and `design/interpreter/evaluator.md`. For the staged `KosEvalState` surface and migration rationale, see `design/kos_eval_state_api_migration.md`.
 
 ---
 
@@ -31,18 +31,18 @@ flowchart TD
         P1["Phase 1: eval_phase_entry<br/>Resolve mode from suspension state + send_val/throw_exc"]
         mode_check{"mode?"}
         P2["Phase 2: eval_phase_transfer<br/>Drain active transfer plan; terminal RETURN if empty"]
-        loop_start["dispatch loop (computed goto: goto eval_prologue; switch: for(;;))"]
+        loop_start["dispatch loop (computed goto: cg_prologue)"]
 
         subgraph loop["Loop body (prologue reunion)"]
             Xfer["eval_step_drain_transfer_plan"]
             P3["eval_phase_pending_exception<br/>PyErr_Occurred? → process_raise"]
             PostEv["eval_dispatch_maybe_post_opcode_event"]
             Native{"Frame has native_handler?"}
-            Poll["GIL poll + PyErr_CheckSignals<br/>see §1.6"]
+            Poll["cg_poll: optional GIL yield<br/>cg_check_signals<br/>see §1.6"]
             P4["Phase 4: KOS_EVAL_PREPARE_NEXT_INSN<br>fetch insn; acting_pc; pre-advance pc"]
             P5["Phase 5: opcode dispatch<br/>computed goto → op_xxx(es, out_ev, insn)"]
             P6["Phase 6: eval_phase_post_opcode<br>op_res != 0 handling"]
-            Tail["RUN tail-dispatch<br/>every 2048 ops → Poll"]
+            Tail["RUN tail-dispatch<br/>every 1024 ops → cg_poll"]
             next["re-enter prologue"]
         end
 
@@ -140,43 +140,60 @@ Coroutine drivers outside the bytecode loop (**`coro.c`**) still hold a **`KosCo
 
 ### 1.6 GIL cooperation and signal polling
 
-Long-running bytecode loops must yield the GIL occasionally and honor Python
-pending signals (for example **Ctrl-C** / **KeyboardInterrupt**). This is
-implemented in **`koskari_eval_dispatch_computed_goto`** and
-**`koskari_eval_dispatch_switch`** (`eval.c`), not on **`KosContext`** or
+Long-running bytecode loops must yield the GIL when CPython has asked this
+thread to drop it, and must honor Python pending signals (for example **Ctrl-C**
+/ **KeyboardInterrupt**). This is implemented in
+**`koskari_eval_dispatch_computed_goto`** (`eval.c`), with
+**`koskari_gil_drop_requested`** in **`koskari/lib/eval/eval_gil.c`** (textually
+included from **`eval.c`**). It is not stored on **`KosContext`** or
 **`KosEvalState`**.
 
 | Mechanism | Role |
 | --------- | ---- |
-| **`gil_poll_ops`** (stack local) | Incremented on each **RUN** tail-dispatch (fast path). When **`(++gil_poll_ops & KOS_EVAL_GIL_POLL_MASK) == 0`** (`KOS_EVAL_GIL_POLL_MASK` = 1024), control jumps to the poll site — effectively every **2048** opcodes. |
+| **`koskari_gil_drop_requested()`** | Static inline in **`eval_gil.c`**. Returns **1** when another thread has set CPython’s per-thread or per-interpreter **gil drop request** (see below); **0** on free-threaded builds (**`Py_GIL_DISABLED`**). On unsupported CPython minor versions (outside the 3.9–3.13+ probes), returns **1** so time-gated release can still run. |
+| **`gil_poll_ops`** (stack local) | Reset to **0** at **`cg_poll`**. Incremented on each **RUN** tail-dispatch; when **`++gil_poll_ops > KOS_EVAL_GIL_POLL`** (**1024**), control jumps to **`cg_poll`**. |
 | **`gil_poll_last_ns`** (stack local) | Monotonic timestamp of the last paired GIL release (`clock_gettime(CLOCK_MONOTONIC)`). |
-| **`KOS_EVAL_GIL_POLL_INTERVAL_NS`** | Minimum **5 ms** between time-based GIL yields (when the clock read succeeds). |
-| **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** | Brief paired release at the poll site (same C block). Other threads may run; the evaluator immediately re-acquires. |
-| **`PyErr_CheckSignals()`** | Runs at every poll site so pending interrupts become **`PyErr_Occurred()`** and route through **`eval_phase_pending_exception`**. |
+| **`KOS_EVAL_GIL_POLL_INTERVAL_NS`** | Minimum **5 ms** between paired GIL yields (when the clock read succeeds and **`gil_poll_last_ns`** is already set). |
+| **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** | Brief paired release at **`cg_poll`** only when **drop requested** and the interval gate passes (same C block). |
+| **`PyErr_CheckSignals()`** | Runs at **`cg_check_signals`** after **`cg_poll`** on every visit to the poll site. |
+
+**`koskari_gil_drop_requested` and CPython layout**
+
+The probe reads CPython interpreter internals (not a public API). Layout
+differs by version:
+
+| CPython | Field read |
+| ------- | ---------- |
+| **3.13+** | **`PyThreadState`**: **`eval_breaker`**, GIL-drop request is bit **0**. |
+| **3.9–3.12** | **`PyInterpreterState` → `ceval.gil_drop_request`** (version-specific struct sizes in **`eval_gil.c`**). |
+| **`Py_GIL_DISABLED`** | Always **0** (no GIL to drop). |
+| **Other minors** | Always **1** (cannot detect request; poll may still attempt interval-gated release). |
 
 **Where polling runs**
 
 1. **Prologue reunion** — After transfer drain, pending-exception check,
-   post-opcode event handling, and optional native-frame iteration, and **before**
-   **`KOS_EVAL_PREPARE_NEXT_INSN`** (labels **`cg_poll`** / **`sw_poll`**).
-2. **RUN tail-dispatch** — After a **`KOS_LOP_RUN`** opcode, if the opcode
-   counter hits the mask, branch back to the poll site instead of fetching the
-   next instruction immediately.
+   post-opcode event handling, and optional native-frame iteration, **`goto
+   cg_poll`** before **`KOS_EVAL_PREPARE_NEXT_INSN`**.
+2. **RUN tail-dispatch** — After a **`KOS_LOP_RUN`** opcode, when
+   **`gil_poll_ops`** exceeds **`KOS_EVAL_GIL_POLL`**, branch to **`cg_poll`**
+   instead of fetching the next instruction immediately.
 
-**Poll-site sequence** (computed-goto path; switch loop is the same idea with
-slightly different ordering for **`PyErr_CheckSignals`** vs GIL due):
+**Poll-site sequence** (computed-goto labels in **`eval.c`**):
 
 ```mermaid
 flowchart TD
-    poll["cg_poll / sw_poll"]
-    time{"≥ 5 ms since last<br/>GIL release, or<br/>first poll?"}
-    gil["Py_BEGIN_ALLOW_THREADS<br/>Py_END_ALLOW_THREADS"]
-    sig["PyErr_CheckSignals()"]
+    poll["cg_poll"]
+    drop{"koskari_gil_drop_requested()?"}
+    time{"gil_poll_last_ns set and<br/>≥ 5 ms since last release?"}
+    gil["Py_BEGIN_ALLOW_THREADS<br/>Py_END_ALLOW_THREADS<br/>gil_poll_last_ns = now"]
+    sig["cg_check_signals:<br/>PyErr_CheckSignals()"]
     pyerr{"PyErr_Occurred()?"}
     pend["eval_phase_pending_exception"]
-    dispatch["prepare insn + dispatch"]
+    dispatch["cg_normal_dispatch"]
 
-    poll --> time
+    poll --> drop
+    drop -->|yes| time
+    drop -->|no| sig
     time -->|yes| gil
     time -->|no| sig
     gil --> sig
@@ -184,18 +201,18 @@ flowchart TD
     pyerr -->|yes| pend
     pyerr -->|no| dispatch
     pend -->|STOP| stop["return 0"]
-    pend -->|REPROLOGUE| prologue["cg_prologue / sw_loop_head"]
+    pend -->|REPROLOGUE| prologue["cg_prologue"]
     pend -->|CONTINUE| dispatch
 ```
 
-On the **switch**-loop build, GIL release is skipped when **`Py_GIL_DISABLED`**
-(free-threaded CPython); **`PyErr_CheckSignals()`** and the opcode counter still
-run. The computed-goto build always performs the paired allow-thread block when
-the time gate passes.
+Signal checking is unconditional at **`cg_check_signals`**. GIL release is
+conditional: no **`Py_BEGIN_ALLOW_THREADS`** unless CPython (or the unsupported-
+minor fallback) reports a drop request **and** at least **5 ms** have passed
+since the timestamp recorded at the previous release.
 
 **Relationship to Phase 3:** **`eval_phase_pending_exception`** still runs at the
-start of each prologue (before the poll site). **`PyErr_CheckSignals()`** at the
-poll site may set **`PyErr`** again; a second **`eval_phase_pending_exception`**
+start of each prologue (before **`cg_poll`**). **`PyErr_CheckSignals()`** at
+**`cg_check_signals`** may set **`PyErr`** again; **`eval_phase_pending_exception`**
 then runs so interrupts are not deferred until the next full prologue cycle.
 
 **Future work:** Domain-scoped **`maybe_cooperate()`** / **`ensure_gil()`** and
@@ -315,7 +332,7 @@ When a **KosPyAsyncGen** is resumed from Python drivers (**`iter.c`**, **`demand
 flowchart LR
     dispatch["optable[op] → op_XXX → KosOpOutcome"]
     mode{"mode?"}
-    fast["KOS_LOP_RUN:<br/>tail-dispatch next insn<br/>or → poll every 2048 ops"]
+    fast["KOS_LOP_RUN:<br/>tail-dispatch next insn<br/>or → cg_poll every 1024 ops"]
     other["not RUN:<br/>FAIL, PROLOGUE,<br/>or POST"]
 
     dispatch --> mode
@@ -855,11 +872,11 @@ When the top frame has `native_handler != NULL`, the loop runs that handler as t
 ### 9.8 Scenario: Ctrl-C during a tight bytecode loop
 
 1. User runs a long Koskari loop (for example the CLI REPL evaluating many forms).
-2. Every **2048** **RUN** tail-dispatches (and on each prologue reunion), the loop
-   reaches **`cg_poll`** / **`sw_poll`**.
+2. Every **1024** **RUN** tail-dispatches (and on each prologue reunion), the loop
+   reaches **`cg_poll`** then **`cg_check_signals`**.
 3. **`PyErr_CheckSignals()`** converts the pending **SIGINT** into **`PyErr`** (typically **KeyboardInterrupt**).
 4. **`eval_phase_pending_exception`** runs **`process_raise`**; if no handler catches it, **`out_ev`** becomes **`KOS_EV_RAISE`** and the driver exits.
-5. Between signal checks, a time-based **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** pair may run so other Python threads make progress (at most about every **5 ms** when the monotonic clock is available).
+5. Between signal checks, a paired **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** may run only when **`koskari_gil_drop_requested()`** is true and at least **5 ms** have passed since the last recorded release (see §1.6).
 
 ---
 
