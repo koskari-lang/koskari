@@ -14,25 +14,39 @@
 """
 koskari.asyncio
 
-Python asyncio support for Koskari.
+Python asyncio support for Koskari. Primarily focuses on compatability with
+asyncio loops which specifically check for the Python coroutine type.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-from functools import wraps
-from koskari.lib import defer, Coroutine
-from koskari.bootstrap import builtin, add_builtin
 import asyncio
+from functools import wraps
+
+from koskari.bootstrap import add_builtin, builtin
+from koskari.lib import Coroutine, defer
 
 
 async def as_coroutine(awaitable):
+    """
+    Convert an awaitable into a Python coroutine function. This is
+    a compatibility layer for asyncio loops which specifically check
+    for the coroutine type.
+    """
+
     return await awaitable
 
 
 @builtin("coroutine-fn")
 def coroutine_fn(fn):
+    """
+    Convert an async function into a Python coroutine function. This is
+    a compatibility layer for asyncio loops which specifically check
+    for the coroutine type.
+    """
+
     @wraps(fn)
     async def wrapper(*args, **kwargs):
         return await fn(*args, **kwargs)
@@ -41,6 +55,12 @@ def coroutine_fn(fn):
 
 @builtin("create-task")
 def create_task(coro):
+    """
+    Create and schedule a Task from an awaitable. Will automatically convert a
+    defer or Koskari Coroutine into a Python coroutine object. The resulting
+    Task will be wrapped in a defer object to prevent implicit auto-await.
+    """
+
     if isinstance(coro, (defer, Coroutine)):
         coro = as_coroutine(coro)
     return defer(asyncio.create_task, coro)
@@ -48,6 +68,12 @@ def create_task(coro):
 
 @builtin("run-until-complete")
 def run_until_complete(coro):
+    """
+    Run a coroutine until completion. Will automatically convert a defer or
+    Koskari Coroutine into a Python coroutine object. Blocks until the
+    coroutine completes and returns the result or raises an exception.
+    """
+
     if isinstance(coro, (defer, Coroutine)):
         coro = as_coroutine(coro)
     return asyncio.run_until_complete(coro)

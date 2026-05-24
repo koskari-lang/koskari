@@ -575,7 +575,7 @@ def option_parser(name):
 # ---------------------------------------------------------------------------
 
 
-def _drive_cli_async(coro):
+def drive_async_loop(coro):
     """
     Run the CLI coroutine without asyncio.Runner SIGINT handling.
 
@@ -587,24 +587,24 @@ def _drive_cli_async(coro):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
+        # the main CLI
         return loop.run_until_complete(coro)
     finally:
         try:
-            _cancel_all_tasks(loop)
+            # cancel all tasks before shutting down the loop
+            to_cancel = asyncio.all_tasks(loop)
+            if to_cancel:
+                for task in to_cancel:
+                    task.cancel()
+                loop.run_until_complete(
+                    asyncio.gather(*to_cancel, return_exceptions=True))
+
         finally:
+            # shutdown the loop
             loop.run_until_complete(loop.shutdown_asyncgens())
             loop.run_until_complete(loop.shutdown_default_executor())
             asyncio.set_event_loop(None)
             loop.close()
-
-
-def _cancel_all_tasks(loop):
-    to_cancel = asyncio.all_tasks(loop)
-    if not to_cancel:
-        return
-    for task in to_cancel:
-        task.cancel()
-    loop.run_until_complete(asyncio.gather(*to_cancel, return_exceptions=True))
 
 
 def main(argv=None):
@@ -631,7 +631,7 @@ def main(argv=None):
         parser.error('--execute-kio requires a script filename')
 
     try:
-        _drive_cli_async(cli_async(options))
+        drive_async_loop(cli_async(options))
 
     except KeyboardInterrupt:
         print('', file=sys.stderr)
