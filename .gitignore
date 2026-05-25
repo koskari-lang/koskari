@@ -79,3 +79,4 @@ vgcore.*
 uv.lock
 *.elc
 tmp
+trace.json
