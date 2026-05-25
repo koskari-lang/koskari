@@ -151,6 +151,7 @@ document uses **finalize** for that VM-oriented stage to avoid confusion with
 | String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
 | Literal value          | Constant pool index     | CONST |
 | Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key); INVOKE_K_VAR |
+| `(name, value, …)`     | Extra-table index       | VAR_STORE_CONST (§12); may lower to FAST_STORE_CONST (§13) |
 | Name → slot (optional) | Fast local index       | VAR may be lowered to FAST*; then arg is slot index |
 | (unchanged)            | (unchanged)             | NOARG, COUNT, etc. |
 | 0 (no arg; break target derived at runtime from extent table `pop_pc + 1`) | 0 (unused) | PUSH_FOREACH, PUSH_LOOP |
@@ -200,6 +201,7 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `LABEL` vs prior jump | If the **`KOS_OP_LABEL`** name equals the prior instruction’s target: for prior **`KOS_OP_JUMP`**, drop the jump; for prior **`KOS_OP_JUMP_TRUE`** / **`KOS_OP_JUMP_FALSE`**, if the instruction before the jump is **`KOS_OP_CONST`**, drop const and jump; else replace the conditional jump with **`KOS_OP_POP`** **1**. |
 | Implicit `None` | **`KOS_OP_CONST`** **`None`** immediately before **`KOS_OP_RETURN`** / **`KOS_OP_BREAK`** / **`KOS_OP_CONTINUE`** / **`KOS_OP_YIELD`** with **arg 1** → remove the const and set the control opcode’s **arg** to **0**. |
 | `CAR` / `CDR` merge | Two consecutive **same** opcodes **`KOS_OP_CAR`** or **`KOS_OP_CDR`** → one instruction with **args summed**. |
+| `VAR_STORE` fusion | Prior **`KOS_OP_CONST`** `value` immediately followed by **`KOS_OP_VAR_STORE`** `name` → **`KOS_OP_VAR_STORE_CONST`** with arg **`(name, value, None, None)`** (drop the **`CONST`**). Only the **immediate** prior instruction counts. |
 | Epilogue | If the stream does not end with **`KOS_OP_RETURN`**: if the last op is **`KOS_OP_CONST`** **`None`**, replace it with **`KOS_OP_RETURN`** **0**; otherwise append **`KOS_OP_RETURN`** **1**. |
 
 **`_CHECK_SQUASHES`** (prior opcode → opcode replacing the **`JUMP_FALSE`** pair):
@@ -243,7 +245,7 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 - **BIND** takes a reference (or value that becomes a reference) and makes it the resolution for a name. It changes *what the name refers to*.
 - **STORE** takes a value and writes it into the storage that the name already refers to. It changes *the content* at that reference; it does not change the binding itself.
 
-Use **VAR_BIND** / **FAST_BIND** when introducing or re-binding a name. Use **VAR_STORE** / **FAST_STORE** when updating the value at an existing binding.
+Use **VAR_BIND** / **FAST_BIND** when introducing or re-binding a name. Use **VAR_STORE** / **FAST_STORE** when updating the value at an existing binding. When the stored value is a compile-time constant, **`Compiler.compress`** may fuse **`CONST`** + **`VAR_STORE`** into **`VAR_STORE_CONST`** (no stack); **`convert_fast`** may then lower that to **`FAST_STORE_CONST`** for locals.
 
 ### 1.10 Maintaining this document
 
@@ -277,8 +279,8 @@ When adding or changing an opcode:
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_REL, IMPORT_FROM
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_ATTR*
-- [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_ATTR*
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*
+- [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, CONST_ITEM, and variants
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -350,9 +352,11 @@ When adding or changing an opcode:
 | VAR | VAR | Load by name | [§12](#kos_op_var) |
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](#kos_op_var_bind) |
 | VAR_STORE | VAR | STORE: write TOS value into name | [§12](#kos_op_var_store) |
+| VAR_STORE_CONST | EXTRA | STORE: write constant into name (no stack) | [§12](#kos_op_var_store_const) |
 | FAST | FASTVAR | Load from slot | [§13](#kos_op_fast) |
 | FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](#kos_op_fast_bind) |
 | FAST_STORE | FASTVAR | STORE: write TOS value into slot | [§13](#kos_op_fast_store) |
+| FAST_STORE_CONST | EXTRA | STORE: write constant into slot (no stack) | [§13](#kos_op_fast_store_const) |
 | ATTR | CONST | Get attribute | [§14](#kos_op_attr) |
 | ATTR_STORE | CONST | Set attribute | [§14](#kos_op_attr_store) |
 | ITEM | NOARG | Get item (key on stack) | [§15](#kos_op_item) |
@@ -1657,6 +1661,29 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 | 0     | CONST     | 0   | 0 (10)   | stack: [..., 10] |
 | 1     | VAR_STORE | 1   | 1 ('x')  | STORE: write 10 into name "x"; stack: [...] |
 
+---
+
+### KOS_OP_VAR_STORE_CONST {#kos_op_var_store_const}
+
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG). Arg = extra-table index (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [...]` (no stack effect). **STORE**: store the constant value into the given name via `frame_ns_store`. Same semantics as **VAR_STORE**, but the value is taken from the constant pool (extra row field `a1`), not from TOS.
+- **Peephole**: **`Compiler.compress`** fuses **`KOS_OP_CONST`** `value` immediately followed by **`KOS_OP_VAR_STORE`** `name` into this opcode with pre-compile arg **`(name, value, None, None)`**; the **`CONST`** is removed from the stream. See §1.8.
+- **Lowering**: **`Compiler.convert_fast`** (when the name has a fixed fast slot in FUNCTION mode) may replace **`VAR_STORE_CONST`** with **`FAST_STORE_CONST`**, rewriting the VAR field to a slot index and preserving the constant operand.
+- **Invariants**: Name must already be bound. Name and value are internalized into the extra row at finalize.
+- **Compiler form:** Pre-compile arg = 4-tuple `(name, value, None, None)`; post-compile arg = extra index.
+- **Implementation**: `koskari/lib/opcode/VAR_STORE_CONST.c`
+- **Covered by**: `tests/compile/test_compress.py`, `tests/compile/test_convert_fast.py`, `tests/lib/opcode/test_store_const.py`
+
+**Example:** Store constant 42 into name `"x"` without pushing 42. Pre-compile stream after compress: one **`VAR_STORE_CONST`**; pool/extra filled at finalize. Post-compile arg view uses extra index **0** (illustrative).
+
+| index | opcode          | arg | arg view              | comment |
+|------:|-----------------|-----|-----------------------|---------|
+| 0     | VAR_STORE_CONST | 0   | 0 → ('x', 42, …)      | STORE 42 into "x"; stack unchanged |
+| 1     | RETURN          | 1   | 1                     | |
+
+**Example (fusion source):** `(compile/setq x 42)` emits value, **`VAR_STORE`**, **`CONST`** `None`; compress turns **`CONST`** `42` + **`VAR_STORE`** `x` into **`VAR_STORE_CONST`**.
+
 
 ### 12.1 Attribute access on variables (VAR_ATTR_*)
 
@@ -1774,6 +1801,27 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 |------:|------------|-----|----------|---------|
 | 0     | CONST      | 0   | 0 (99)   | stack: [..., 99] |
 | 1     | FAST_STORE | 0   | 0 (a)    | STORE: write 99 into slot 0; stack: [...] |
+
+---
+
+### KOS_OP_FAST_STORE_CONST {#kos_op_fast_store_const}
+
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG). Arg = extra-table index (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [...]` (no stack effect). **STORE**: store the constant value into the given fast slot via `KosNamespace_FastStore`. Same semantics as **FAST_STORE**, but the value is from the constant pool (extra row `a1`), not TOS.
+- **Peephole**: Not fused directly from **`CONST`** + **`FAST_STORE`** in **`compress`** today; typically appears when **`VAR_STORE_CONST`** is lowered by **`convert_fast`** for a local or closure name.
+- **Invariants**: Slot must already be bound; slot index in range; frame namespace must support fast locals (`KosNamespace_SupportsFast`).
+- **Compiler form:** Pre-compile arg = 4-tuple `(slot, value, None, None)` (slot may be integer after **`convert_fast`**); post-compile arg = extra index.
+- **Implementation**: `koskari/lib/opcode/FAST_STORE_CONST.c`
+- **Covered by**: `tests/compile/test_convert_fast.py`, `tests/lib/opcode/test_store_const.py`
+
+**Example:** Store constant 100 in slot 0 without pushing 100.
+
+| index | opcode           | arg | arg view           | comment |
+|------:|------------------|-----|--------------------|---------|
+| 0     | FAST_STORE_CONST | 0   | 0 → (0, 100, …)    | STORE 100 in slot 0; stack unchanged |
+| 1     | FAST             | 0   | 0 (a)              | stack: [..., 100] |
+| 2     | RETURN           | 1   | 1                  | |
 
 
 ### 13.1 Attribute access on fast locals (FAST_ATTR_*)

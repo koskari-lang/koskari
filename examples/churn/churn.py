@@ -69,13 +69,9 @@ def print_trace_report_if_enabled():
     if not report.get("flags", {}).get("events"):
         return
 
-    sys.stdout.flush()
-    print(file=sys.stderr)
-    print(
-        "--- get_trace_report() (events are cumulative counts, not wall time) ---",
-        file=sys.stderr,
-    )
-    print(json.dumps(report, indent=2, default=str))
+    with open("trace.json", "w") as f:
+        json.dump(report, f, indent=2, default=str)
+    print("get_trace_report() written to trace.json")
 
 
 if __name__ == "__main__":

@@ -251,5 +251,34 @@ class TestCompress(unittest.TestCase):
              (OpCode.KOS_OP_CDR, 1),
              (OpCode.KOS_OP_RETURN, 1)])
 
+    def test_var_store_const_squash(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_CONST, 42),
+            (OpCode.KOS_OP_VAR_STORE, "x"),
+        ])
+        self.assertEqual(
+            out,
+            [(OpCode.KOS_OP_VAR_STORE_CONST, ("x", 42, None, None)),
+             (OpCode.KOS_OP_RETURN, 1)])
+
+    def test_var_store_not_squashed_without_const(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_VAR, "y"),
+            (OpCode.KOS_OP_VAR_STORE, "x"),
+        ])
+        self.assertIn((OpCode.KOS_OP_VAR_STORE, "x"), out)
+        self.assertNotIn(OpCode.KOS_OP_VAR_STORE_CONST, [op for op, _ in out])
+
+    def test_var_store_not_squashed_when_prior_not_const(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_CONST, 1),
+            (OpCode.KOS_OP_VAR, "y"),
+            (OpCode.KOS_OP_VAR_STORE, "x"),
+        ])
+        self.assertIn((OpCode.KOS_OP_CONST, 1), out)
+        self.assertIn((OpCode.KOS_OP_VAR, "y"), out)
+        self.assertIn((OpCode.KOS_OP_VAR_STORE, "x"), out)
+        self.assertNotIn(OpCode.KOS_OP_VAR_STORE_CONST, [op for op, _ in out])
+
 
 # The end.

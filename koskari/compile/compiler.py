@@ -761,6 +761,13 @@ class Compiler:
                 squished[-1] = (prev_op, prev_arg + arg)
                 continue
 
+            elif op == OpCode.KOS_OP_VAR_STORE:
+                prior = squished[-1]
+                if prior[0] == OpCode.KOS_OP_CONST:
+                    del squished[-1]
+                    op = OpCode.KOS_OP_VAR_STORE_CONST
+                    arg = (arg, prior[1], None, None)
+
             squished.append((op, arg))
 
         if squished[-1][0] != OpCode.KOS_OP_RETURN:

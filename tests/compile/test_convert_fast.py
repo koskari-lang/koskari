@@ -105,6 +105,34 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(arg, ("obj", "upper", (), 0))
 
 
+    async def test_var_store_const_lowers_to_fast_store_const(self):
+        """
+        VAR_STORE_CONST with local name converts to FAST_STORE_CONST
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("x",), ())
+        instr = [(OpCode.KOS_OP_VAR_STORE_CONST, ("x", 99, None, None))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_FAST_STORE_CONST)
+        self.assertEqual(arg, (0, 99, None, None))
+
+
+    async def test_var_store_const_non_local_unchanged(self):
+        """
+        VAR_STORE_CONST with name not in findex remains unchanged
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("x",), ())
+        instr = [(OpCode.KOS_OP_VAR_STORE_CONST, ("other", 99, None, None))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_VAR_STORE_CONST)
+        self.assertEqual(arg, ("other", 99, None, None))
+
+
 class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
     """
     convert_fast lowers CALL_VAR* to CALL_FAST* when name is local
