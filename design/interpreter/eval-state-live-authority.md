@@ -14,6 +14,7 @@
 | [../EVALUATOR.md](../EVALUATOR.md) | Eval loop, prologue, transfer plans |
 | [../api/tracing.md](../api/tracing.md) | `eval_state_sync` counters (`KOS_TRACE_EVAL_SYNC`) |
 | [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md) | Global execution invariants |
+| [dyn-chain-eval-state-violations.md](dyn-chain-eval-state-violations.md) | Audit ledger: ctx vs `es` authority violations (grep-backed) |
 
 ---
 

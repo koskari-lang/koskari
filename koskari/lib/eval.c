@@ -971,8 +971,10 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
   { /* Lazy and evil */
     KosEvalState es;
+
     KosEvalState_Init(&es, ctx);
     kos_dyn_rebuild_live_from_chain(&es);
+    KosEvalState_FreezeDerivedToContext(&es);
   }
 
   return ctx;
@@ -2603,6 +2605,8 @@ int koskari_eval(
 
   KosEvalState es;
   KosEvalState_Init(&es, ctx);
+  if (KosContext_DYN_TOP(ctx))
+    kos_dyn_rebuild_live_from_chain(&es);
 
   /* Mark context as running */
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;

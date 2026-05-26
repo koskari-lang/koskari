@@ -52,54 +52,14 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
 
 void KosEvalState_SyncFromContext(KosEvalState *es) {
 
-  KosContext *ctx;
-
   KOS_TRACE_EVAL_SYNC_BEGIN();
 
-  ctx = KosEvalState_CONTEXT(es);
-  if (! ctx)
+  if (! es || ! KosEvalState_CONTEXT(es))
     goto done;
 
-  {
-    KosDynFrame *ft = KosContext_FRAME_TOP(ctx);
-    KosStackBlock **bl = KosContext_BLOCK(ctx);
-    PyObject *ns = KosContext_NAMESPACE(ctx);
-    KosDynFrame *ef = KosEvalState_FRAME(es);
-    if (! ns && ft)
-      ns = KosDynFrame_NS(ft);
-
-    if (ef == ft &&
-        KosEvalState_BLOCK(es) == bl &&
-        KosEvalState_NAMESPACE(es) == ns) {
-      if (! ft) {
-        if (! KosEvalState_CODE(es) && ! (es)->pc && ! (es)->acting_pc)
-          goto done;
-        KosEvalState_CODE(es) = NULL;
-        (es)->pc = 0;
-        (es)->acting_pc = 0;
-        goto done;
-      }
-      if (KosEvalState_CODE(es) == KosDynFrame_CODE(ft))
-        goto done;
-      KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
-      (es)->pc = KosDynFrame_PC(ft);
-      (es)->acting_pc = KosDynFrame_ACTING_PC(ft);
-      goto done;
-    }
-
-    KosEvalState_FRAME(es) = ft;
-    KosEvalState_BLOCK(es) = bl;
-    KosEvalState_NAMESPACE(es) = ns;
-    if (ft) {
-      KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
-      (es)->pc = KosDynFrame_PC(ft);
-      (es)->acting_pc = KosDynFrame_ACTING_PC(ft);
-    } else {
-      KosEvalState_CODE(es) = NULL;
-      (es)->pc = 0;
-      (es)->acting_pc = 0;
-    }
-  }
+  /* ctx->frame_top/block/namespace are freeze snapshots; during RUN they may
+     lag es after Tier-1 retarget. Rebuild live fields from dyn_top instead. */
+  kos_dyn_rebuild_live_from_chain(es);
 
 done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_sync_from_context);

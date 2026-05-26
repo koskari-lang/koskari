@@ -51,7 +51,6 @@ static void kos_dyn_apply_live(
     KosDynFrame *ft,
     KosStackBlock **bl,
     PyObject *ns);
-static void kos_dyn_snapshot_ctx_derived(KosEvalState *es);
 static void kos_dyn_walk_live_from(
     KosEvalState *es,
     KosDynNode *start,
@@ -327,8 +326,8 @@ KosDynFrame *kos_dyn_globals_frame(KosEvalState *es) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
   if (KosContext_CHAIN_VERSION(ctx) != KosContext_GLOBALS_CACHE_VERSION(ctx)) {
-    KosDynNode *n = (KosDynNode *) KosContext_FRAME_TOP(ctx);
-    KosDynFrame *outer = KosContext_FRAME_TOP(ctx);
+    KosDynNode *n = (KosDynNode *) KosEvalState_FRAME(es);
+    KosDynFrame *outer = KosEvalState_FRAME(es);
 
     while (n && KosDynNode_PARENT(n)) {
       n = KosDynNode_PARENT(n);
@@ -600,30 +599,6 @@ static void kos_dyn_apply_live(
 
 
 /**
-   Copy es live frame, block, and namespace into ctx derived snapshot fields.
-
-   Keeps ctx->frame_top, block, and namespace aligned with the authoritative
-   RUN view for KosContext_New thaw, domain scope, and other readers that still
-   use ctx. Called at the end of every successful retarget or rebuild; not a
-   substitute for KosEvalState_FreezeDerivedToContext at eval exit.
-*/
-static void kos_dyn_snapshot_ctx_derived(KosEvalState *es) {
-
-  KosContext *ctx;
-
-  if (! es)
-    return;
-  ctx = KosEvalState_CONTEXT(es);
-  if (! ctx)
-    return;
-
-  KosContext_FRAME_TOP(ctx) = KosEvalState_FRAME(es);
-  KosContext_BLOCK(ctx) = KosEvalState_BLOCK(es);
-  KosContext_NAMESPACE(ctx) = KosEvalState_NAMESPACE(es);
-}
-
-
-/**
    Find innermost frame, stack slot, and namespace along the chain from start.
 
    Walks parent links from start toward older nodes. Stops when all three
@@ -678,8 +653,7 @@ static void kos_dyn_walk_live_from(
 
    Call from kos_dyn_push and kos_dyn_push_noinstall immediately after
    KosContext_DYN_TOP is set to new_node and kos_dyn_install has run (push
-   only). Caller must already have called KosEvalState_FlushLiveRegsToFrame.
-   new_node must be the current dyn_top. Frame nodes replace frame, code, block,
+   only). new_node must be the current dyn_top. Frame nodes replace frame, code, block,
    and namespace; other nodes update only the slots they carry on the node.
    Do not use after splices, gen install, or xfer INSTALL/PUSH; use
    kos_dyn_rebuild_live_from_chain instead.
@@ -714,7 +688,6 @@ static void kos_dyn_retarget_after_push(
   }
 
   kos_dyn_apply_live(es, ft, bl, ns);
-  kos_dyn_snapshot_ctx_derived(es);
 
 #if KOS_DEBUG_PATCH_DYN_CACHES
   {
@@ -785,7 +758,6 @@ static void kos_dyn_retarget_after_pop(
       && new_top && KosDynNode_STACK(new_top)) {
     kos_dyn_apply_live(es, KosEvalState_FRAME(es), &KosDynNode_STACK(new_top),
                        KosEvalState_NAMESPACE(es));
-    kos_dyn_snapshot_ctx_derived(es);
     return;
   }
 
@@ -799,7 +771,6 @@ static void kos_dyn_retarget_after_pop(
     ns = KosEvalState_NAMESPACE(es);
 
   kos_dyn_apply_live(es, ft, bl, ns);
-  kos_dyn_snapshot_ctx_derived(es);
 }
 
 
@@ -810,7 +781,7 @@ static void kos_dyn_retarget_after_pop(
    INSTALL or PUSH, kos_dyn_gen_install, KosContext_New bootstrap, tail koscall
    frame replacement, opcode paths that assign a stack block after push, or any
    time dyn_top was published without new_top == parent(removed). Walks from
-   ctx->dyn_top toward parents, then kos_dyn_apply_live and snapshot onto ctx.
+   ctx->dyn_top toward parents, then kos_dyn_apply_live on es.
    Prefer kos_dyn_retarget_after_push or kos_dyn_retarget_after_pop inside
    kos_dyn_push and kos_dyn_commit_dyn_top when the edit is a single-head push
    or parent pop.
@@ -855,7 +826,6 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
          (void *) KosContext_DYN_TOP(ctx));
 
   kos_dyn_apply_live(es, ft, bl, ns);
-  kos_dyn_snapshot_ctx_derived(es);
 
 done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_refresh_dyn_caches);
@@ -865,9 +835,8 @@ done:
 /**
    Link node as DYN_TOP, bump chain_version, run install, retarget live fields.
 
-   Flushes live PCs to the outgoing frame before replacing dyn_top, then calls
-   kos_dyn_retarget_after_push. This is the normal entry for pushing a node
-   that needs kos_dyn_install.
+   kos_dyn_retarget_after_push updates es; frame-boundary flush runs in
+   kos_dyn_apply_live when the pushed node is a frame.
 */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -875,7 +844,6 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   if (! node)
     return -1;
 
-  KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = node;
   KosContext_CHAIN_VERSION(ctx)++;
 
@@ -922,7 +890,6 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
     return -1;
 
   ctx = KosEvalState_CONTEXT(es);
-  KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = node;
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dyn_retarget_after_push(es, node);
@@ -938,7 +905,8 @@ static int kos_dyn_uninstall_core(
 
   int r;
 
-  KosEvalState_FlushLiveRegsToFrame(es);
+  if (KosEvalState_FRAME(es) == (KosDynFrame *) node)
+    KosEvalState_FlushLiveRegsToFrame(es);
   r = kos_dyn_uninstall_handler(es, node, event, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
