@@ -945,8 +945,6 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) top;
   KosContext_FRAME_TOP(ctx) = top;
-  KosContext_GLOBALS_FRAME(ctx) = top;
-  KosContext_GLOBALS_CACHE_VERSION(ctx) = 0;
 
   KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
@@ -955,7 +953,6 @@ KosContext *KosContext_New(KosDynFrame *top) {
   /* Initialize transfer plan state */
   KosContext_PLAN(ctx) = NULL;
   KosContext_PLAN_STACK(ctx) = NULL;
-  KosContext_CHAIN_VERSION(ctx) = 0;
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
 
   /* Initialize Python await bridging */

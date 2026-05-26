@@ -14,8 +14,8 @@
 */
 
 /**
-   GLOBALS: arg unused. Push the namespace of the outermost frame in the
-   dynamic chain (globals) onto the stack.
+   GLOBALS: arg unused. Push module globals: walk KosNamespace_PARENT from the
+   current frame's namespace to the outermost parent (not dyn_top or let scope).
 */
 
 KOS_OP_HANDLER(GLOBALS) {

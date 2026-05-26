@@ -633,4 +633,31 @@ static inline KosGetNextResult op_get_next_from_iter(
 }
 
 
+/**
+  Globals
+*/
+static inline PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  PyObject *ns;
+
+  if (! frame) {
+    PyErr_SetString(PyExc_RuntimeError, "no frame for globals lookup");
+    return NULL;
+  }
+
+  ns = KosDynFrame_NS(frame);
+  if (! ns || ! KosNamespace_Check(ns)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "frame has no namespace for globals lookup");
+    return NULL;
+  }
+
+  while (KosNamespace_PARENT(ns))
+    ns = KosNamespace_PARENT(ns);
+
+  return ns;
+}
+
+
 // The end.

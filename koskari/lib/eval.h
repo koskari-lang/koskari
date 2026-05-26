@@ -352,9 +352,6 @@ struct KosContext {
   KosStackBlock **block;     /* non-owning: &innermost dynnode stack; frozen snapshot */
   PyObject *namespace;       /* borrowed: active namespace object */
 
-  KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
-  uint32_t globals_cache_version; /* chain_version when globals_frame was set */
-
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
   PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
 
@@ -370,7 +367,6 @@ struct KosContext {
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
-  uint32_t chain_version;       /* incremented on chain modifications */
 
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
@@ -397,8 +393,6 @@ struct KosContext {
 #define KosContext_FRAME_TOP(c)              (((KosContext *)(c))->frame_top)
 #define KosContext_BLOCK(c)                  (((KosContext *)(c))->block)
 #define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
-#define KosContext_GLOBALS_FRAME(c)          (((KosContext *)(c))->globals_frame)
-#define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
 #define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
@@ -406,7 +400,6 @@ struct KosContext {
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
-#define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)

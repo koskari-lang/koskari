@@ -137,7 +137,6 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
         break;
       }
     }
-    KosContext_CHAIN_VERSION(ctx)++;
     kos_dyn_rebuild_live_from_chain(es);
   }
 

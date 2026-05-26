@@ -238,15 +238,6 @@ static inline int KosEvalState_TakeInjectThrow(
 }
 
 
-static inline PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  kos_dyn_globals_frame(es);
-  return KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
-}
-
-
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,
     KosDynFrame *frame,

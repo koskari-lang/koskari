@@ -293,9 +293,7 @@ static PyObject *context_to_dict(KosContext *ctx) {
       || domain_snapshot_set_item(out, "context_id", PyLong_FromVoidPtr((void *) ctx)) < 0
       || domain_snapshot_set_uint(out, "flags", KosContext_FLAGS(ctx)) < 0
       || domain_snapshot_set_uint(out, "suspension_event",
-                                  (uint32_t) KosContext_SUSPENSION_EVENT(ctx)) < 0
-      || domain_snapshot_set_uint(out, "chain_version",
-                                  KosContext_CHAIN_VERSION(ctx)) < 0) {
+                                  (uint32_t) KosContext_SUSPENSION_EVENT(ctx)) < 0) {
     Py_DECREF(out);
     return NULL;
   }

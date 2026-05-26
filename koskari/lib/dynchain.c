@@ -314,33 +314,6 @@ int kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node, KosEvent
 }
 
 
-/* === Globals frame cache (CONTEXT_GLOBALS_FRAME / opcode GLOBALS, IMPORT_REL) === */
-
-
-/**
-   Outermost FRAME on the chain, cached across chain_version. Recomputed when
-   the cache is stale so GLOBALS and IMPORT_REL resolve the module namespace.
-   Callers: opcode GLOBALS, IMPORT_REL, any code needing top-level frame.
-*/
-KosDynFrame *kos_dyn_globals_frame(KosEvalState *es) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (KosContext_CHAIN_VERSION(ctx) != KosContext_GLOBALS_CACHE_VERSION(ctx)) {
-    KosDynNode *n = (KosDynNode *) KosEvalState_FRAME(es);
-    KosDynFrame *outer = KosEvalState_FRAME(es);
-
-    while (n && KosDynNode_PARENT(n)) {
-      n = KosDynNode_PARENT(n);
-      if (KosDynNode_IS_FRAME(n))
-        outer = (KosDynFrame *) n;
-    }
-    KosContext_GLOBALS_FRAME(ctx) = outer;
-    KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
-  }
-  return KosContext_GLOBALS_FRAME(ctx);
-}
-
-
 /**
    Pop a region node without going through normal opcode POP_* when a push
    must be rolled back (e.g. setup failure). Dispatches to the matching
@@ -833,7 +806,7 @@ done:
 
 
 /**
-   Link node as DYN_TOP, bump chain_version, run install, retarget live fields.
+   Link node as DYN_TOP, run install, retarget live fields.
 
    kos_dyn_retarget_after_push updates es; frame-boundary flush runs in
    kos_dyn_apply_live when the pushed node is a frame.
@@ -845,7 +818,6 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
     return -1;
 
   KosContext_DYN_TOP(ctx) = node;
-  KosContext_CHAIN_VERSION(ctx)++;
 
   if (kos_dyn_install(es, node, NULL) < 0) {
     KosEvalState_SyncFromContext(es);
@@ -857,8 +829,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
 
 
 /**
-   Flush live PCs, set dyn_top to new_top, bump chain_version, retarget live
-   fields on es.
+   Flush live PCs, set dyn_top to new_top, retarget live fields on es.
 
    Central commit for pops and any dyn_top publish that is not a push. Captures
    the old dyn_top as removed and calls kos_dyn_retarget_after_pop. Use for
@@ -874,7 +845,6 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
   if (KosEvalState_FRAME(es) == (KosDynFrame *) removed)
     KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = new_top;
-  KosContext_CHAIN_VERSION(ctx)++;
   kos_dyn_retarget_after_pop(es, removed, new_top);
 }
 
@@ -891,7 +861,6 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 
   ctx = KosEvalState_CONTEXT(es);
   KosContext_DYN_TOP(ctx) = node;
-  KosContext_CHAIN_VERSION(ctx)++;
   kos_dyn_retarget_after_push(es, node);
   return 0;
 }
@@ -1384,7 +1353,6 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen,
 
   /* 3. Put GEN's old parent onto ctx's active */
   KosContext_DYN_TOP(ctx) = saved_parent;
-  KosContext_CHAIN_VERSION(ctx)++;
   kos_dyn_rebuild_live_from_chain(es);
 
   owner = KosDynGen_OWNER(gen);
@@ -3035,7 +3003,6 @@ int kos_build_transfer_plan(
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = target;
-  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3067,7 +3034,6 @@ int kos_build_return_plan(
     int is_throw,
     KosTransferPlan **out_plan) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosTransferPlan *plan = kos_transfer_plan_alloc(2);  /* INSTALL + INJECT */
   if (! plan) {
     KosEvalState_SyncFromContext(es);
@@ -3077,7 +3043,6 @@ int kos_build_return_plan(
   KosTransferPlan_ACTION_COUNT(plan) = 2;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = segment;
-  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3102,7 +3067,6 @@ int kos_build_delimited_push_plan(
     int is_throw,
     KosTransferPlan **out_plan) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! segment) {
     PyErr_SetString(PyExc_RuntimeError,
                     "delimited push: empty continuation segment");
@@ -3122,7 +3086,6 @@ int kos_build_delimited_push_plan(
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = segment;
-  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3199,7 +3162,6 @@ int kos_build_direct_install_plan(
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = target;
-  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3243,13 +3205,11 @@ int kos_build_cc_unwind_plan(
   if (! cur) {
     /* Empty chain: the sentinel becomes dyn_top directly. */
     KosContext_DYN_TOP(ctx) = (KosDynNode *) raise_node;
-    KosContext_CHAIN_VERSION(ctx)++;
   } else {
     /* Walk to the bottom of the chain and attach below it. */
     while (KosDynNode_PARENT(cur))
       cur = KosDynNode_PARENT(cur);
     KosDynNode_PARENT(cur) = (KosDynNode *) raise_node;
-    KosContext_CHAIN_VERSION(ctx)++;
   }
 
   /* Build a plan that unwinds from dyn_top all the way to NULL, running
@@ -3286,7 +3246,6 @@ int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt,
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = prompt_node;
-  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3334,7 +3293,6 @@ int kos_dyn_build_push_shift_unwind_plan(KosEvalState *es, KosDynPrompt *prompt,
   KosTransferPlan_ACTION_COUNT(plan) = pop_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = prompt_node;
-  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3396,7 +3354,6 @@ int kos_build_install_only_plan(
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = target;
-  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3628,8 +3585,6 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
       kos_dynchain_free(old_top, NULL);
   }
 
-  KosContext_GLOBALS_FRAME(ctx) = KosEvalState_FRAME(es);
-  KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
   if (KosTransferPlan_RESUME_STACK(plan)) {
     KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
     KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
@@ -3655,7 +3610,6 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
   if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1 && KosEvalState_FRAME(es)) {
     KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
   }
-  KosContext_CHAIN_VERSION(ctx)++;
 
   #if KOS_XFER_TRACE
   if (KosEvalState_FRAME(es)) {
@@ -3668,7 +3622,6 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
   }
   #endif
 
-  KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
   {
     KosDynNode *chain_bottom = seg;
     while (chain_bottom && KosDynNode_PARENT(chain_bottom))
@@ -3724,8 +3677,6 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
 
   KosContext_DYN_TOP(ctx) = seg;
   kos_dyn_rebuild_live_from_chain(es);
-  KosContext_GLOBALS_FRAME(ctx) = KosEvalState_FRAME(es);
-  KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
 
   if (KosTransferPlan_RESUME_STACK(plan)) {
     KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
@@ -3749,7 +3700,6 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
       && KosEvalState_FRAME(es)) {
     KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
   }
-  KosContext_CHAIN_VERSION(ctx)++;
 
   {
     int wind_r = kos_dyn_run_install_wind_span(es, seg, current_top, out_ev,
@@ -4072,14 +4022,6 @@ int kos_resume_transfer_plan(KosEvalState *es) {
   KosContext_PLAN(ctx) = KosContext_PLAN_STACK(ctx);
   KosContext_PLAN_STACK(ctx) = KosContext_PLAN(ctx)->suspended;
   KosContext_PLAN(ctx)->suspended = NULL;
-
-  if (KosContext_CHAIN_VERSION(ctx) != KosTransferPlan_CHAIN_VERSION(KosContext_PLAN(ctx))) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "chain version changed during nested transfer; "
-                    "replanning not yet implemented");
-    KosEvalState_SyncFromContext(es);
-    return -1;
-  }
 
   return 0;
 }

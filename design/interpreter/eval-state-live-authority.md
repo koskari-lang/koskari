@@ -431,9 +431,11 @@ Audit each: switch to `KosEvalState_*` or document as post-freeze only.
 
 Each calls **`kos_dyn_rebuild_live_from_chain`** after assigning the operand stack on the dyn node **post-push**. Tier-1 `kos_dyn_retarget_after_push` runs before the stack slot exists, so these opcodes are **not** redundant; Phase 2 may add a narrow “stack slot now live” retarget instead of a full walk.
 
-### 9.4 `globals_frame` / `globals_cache_version`
+### 9.4 Module globals (`GLOBALS` / `IMPORT_REL`)
 
-Still updated on frame identity change (xfer INSTALL/PUSH, `kos_dyn_globals_frame`). **Separate** from live `es` fields; keep behavior, do not conflate with block/namespace retarget.
+Resolved at opcode time by walking `KosNamespace_PARENT` from
+`KosDynFrame_NS(KosEvalState_FRAME(es))` to the outermost parent. Not cached on
+`KosContext`; not derived from `dyn_top` or inner `PUSH_NS` scope.
 
 ---
 

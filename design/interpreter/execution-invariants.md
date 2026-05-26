@@ -316,19 +316,7 @@ suspended along with the context.
 
 ---
 
-## 19. Chain Version Tracking (Invariant)
-
-* The context maintains a `chain_version` counter.
-* The counter increments on every chain modification (push/pop any node).
-* Transfer plans record the version at creation time.
-* Nested transfers that modify the chain are detectable via version mismatch.
-
-**Use**: Enables safe resumption of suspended transfer plans after nested
-continuation invocations.
-
----
-
-## 20. Introspection Is Read-Only (Invariant)
+## 19. Introspection Is Read-Only (Invariant)
 
 * The evaluator provides a read-only introspection mechanism (TraceView
   snapshot; see [introspection-trace.md](introspection-trace.md)).

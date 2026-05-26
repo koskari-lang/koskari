@@ -21,7 +21,7 @@ opcodes.
 
 import builtins
 
-from koskari.lib import FormalsSpec
+from koskari.lib import FormalsSpec, NamespaceSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 
@@ -89,6 +89,23 @@ class TestNamespaceAndCall(CevalTest):
         ])
         result = await make_callable(code, ns)()
         self.assertIs(result, ns)
+
+
+    async def test_globals_inside_push_ns_returns_module_namespace(self):
+        """
+        GLOBALS inside PUSH_NS returns module ns, not the inner let scope
+        """
+
+        child_nspec = NamespaceSpec("let", (), ())
+        code, ns = build_expr([
+            ["PUSH_NS", (child_nspec, None, 0, 0)],
+            ["GLOBALS", 0],
+            ["POP_NS", 1],
+            ["RETURN", 1],
+        ], values={"mod_marker": 99})
+        result = await make_callable(code, ns)()
+        self.assertIs(result, ns)
+        self.assertEqual(result["mod_marker"], 99)
 
 
     async def test_locals_pushes_locals_dict(self):

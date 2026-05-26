@@ -554,9 +554,8 @@ typedef struct KosTransferAction {
    suspended and pushed onto the suspended stack. On completion,
    the suspended plan is resumed.
 
-   The original_target and chain_version are used to detect if
-   the dynamic chain has changed during nested transfers. If so,
-   the remaining actions must be recomputed.
+   The original_target is retained for future replanning when nested
+   transfers change the dynamic chain during a suspended plan.
 */
 
 struct KosTransferPlan {
@@ -567,7 +566,6 @@ struct KosTransferPlan {
   size_t action_capacity;       /* slots allocated (>= action_count) */
 
   KosDynNode *original_target;  /* target for chain-change detection */
-  uint32_t chain_version;       /* version at plan creation */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
   KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
   KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
@@ -588,7 +586,6 @@ struct KosTransferPlan {
 #define KosTransferPlan_ACTION_INDEX(p)     (((KosTransferPlan *)(p))->action_index)
 #define KosTransferPlan_ACTION_CAPACITY(p)  (((KosTransferPlan *)(p))->action_capacity)
 #define KosTransferPlan_ORIGINAL_TARGET(p)  (((KosTransferPlan *)(p))->original_target)
-#define KosTransferPlan_CHAIN_VERSION(p)   (((KosTransferPlan *)(p))->chain_version)
 #define KosTransferPlan_RESUME_PC(p)       (((KosTransferPlan *)(p))->resume_pc)
 #define KosTransferPlan_RESUME_FRAME(p)    (((KosTransferPlan *)(p))->resume_frame)
 #define KosTransferPlan_RESUME_STACK(p)    (((KosTransferPlan *)(p))->resume_stack)
@@ -839,7 +836,7 @@ KosDynNode *kos_clone_chain_segment(
 /**
    Push a node onto the context's dynamic chain.  Caller must have
    allocated the node and set its parent.  Calls install handler if
-   the type has one.  Updates dyn_top and chain_version.
+   the type has one.  Updates dyn_top.
 
    :param ctx: execution context
    :param node: node to push (parent already set)
@@ -856,8 +853,7 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 
 
 /**
-   Flush live PCs, set dyn_top to new_top, bump chain_version, retarget live
-   fields on es.
+   Flush live PCs, set dyn_top to new_top, retarget live fields on es.
 
    Use for pops, splices, gen install, and any dyn_top change that is not
    kos_dyn_push. Internally captures the previous dyn_top and calls
@@ -921,7 +917,6 @@ int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node);
    Push a new frame onto the context's dynamic chain.
 
    Creates a new frame and sets it as dyn_top. Updates frame_top cache.
-   Increments chain_version.
 
    :param ctx: execution context
    :param code: bytecode object (borrowed)
@@ -1001,7 +996,6 @@ int kos_dyn_gen_unwind_exhausted(KosEvalState *es);
 
    Frees the frame and updates dyn_top to the frame's parent.
    Updates frame_top cache to find the new topmost frame.
-   Increments chain_version.
 
    :param ctx: execution context
 
@@ -1032,18 +1026,6 @@ int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame);
    :return: 0 on success, -1 if top is not a frame
 */
 int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
-
-
-/**
-   Return the outermost frame on the parent chain starting from the current
-   acting frame. When the dynamic chain has changed since the last refresh,
-   recomputes KosContext globals_frame and globals_cache_version.
-
-   :param ctx: execution context
-
-   :return: cached globals frame (at least the current frame)
-*/
-KosDynFrame *kos_dyn_globals_frame(KosEvalState *es);
 
 
 /**

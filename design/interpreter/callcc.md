@@ -196,8 +196,7 @@ struct KosTransferPlan {
   KosTransferAction *actions;   /* action array */
   size_t action_count;          /* total actions */
   size_t action_index;          /* next action index */
-  KosDynNode *original_target;  /* for chain-change detection */
-  uint32_t chain_version;       /* version at plan creation */
+  KosDynNode *original_target;  /* for future replanning after nested transfers */
 };
 ```
 
@@ -234,8 +233,9 @@ When a hook invokes another continuation:
 1. **Suspend current plan**: Push onto `ctx->plan_stack`
 2. **Create new plan**: Build transfer plan for new continuation
 3. **Execute new plan**: Run to completion (may recurse)
-4. **Resume suspended plan**: Pop and check chain consistency
-5. **Replan if needed**: If chain changed, recompute remaining actions
+4. **Resume suspended plan**: Pop and continue remaining actions
+5. **Replan if needed** (future): If chain changed, recompute remaining actions
+   using `original_target`
 
 ```c
 void kos_suspend_transfer_plan(KosEvalState *es);
@@ -244,14 +244,9 @@ int kos_resume_transfer_plan(KosEvalState *es);
 
 ### Chain-Change Detection
 
-After a nested transfer completes, the dynamic chain may have changed. The
-suspended plan detects this via `chain_version`:
-
-```c
-if (ctx->chain_version != plan->chain_version) {
-  /* Chain changed during nested transfer - may need to replan */
-}
-```
+After a nested transfer completes, the dynamic chain may have changed.
+`original_target` on the plan is retained for future replanning; there is no
+version counter.
 
 ## Wind/Unwind Semantics
 
