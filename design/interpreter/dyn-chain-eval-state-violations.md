@@ -24,8 +24,8 @@ This document records violations of the live-authority model for dynamic-chain t
 | Rule | Meaning |
 |------|---------|
 | **P1 — `es` during RUN** | `es->frame`, `es->code`, `es->block`, `es->namespace`, `es->pc`, `es->acting_pc` are the live registers opcodes and hot helpers use. |
-| **P2 — `ctx` derived during RUN** | `ctx->frame_top`, `ctx->block`, `ctx->namespace` are freeze/revive snapshots. They are published at eval exit via `KosEvalState_FreezeDerivedToContext`, not on every region push or pop. |
-| **P3 — `ctx` structural during RUN** | `ctx->dyn_top`, `chain_version`, transfer plan, flags, and related structural fields remain authoritative for chain shape, GC, capture, and walks. |
+| **P2 — `ctx` derived between drives** | `ctx->frame_top`, `ctx->block`, `ctx->namespace` are revive snapshots. During RUN they are NULL on ctx (stolen onto `es`); restored at eval exit via `KosEvalState_FreezeToContext`. |
+| **P3 — `ctx` structural between drives** | `ctx->dyn_top`, `plan`, `plan_stack` are revive snapshots. During RUN they are NULL on ctx; live chain/plan live on `es` only (`KosEvalState_DYN_TOP`, `KosEvalState_PLAN`). GC while RUNNING uses TLS active `es` in `KosContext_Traverse`. |
 | **P4 — flush on frame identity only** | `KosEvalState_FlushLiveRegsToFrame` runs when pushing or removing a **frame** (when `es->frame` identity changes). Region push/pop (LOOP, TRY, FOREACH, WITH, …) with unchanged frame must not flush live PCs to the heap frame. |
 | **P5 — no success-path repair sync** | `KosEvalState_SyncFromContext` (`ctx` derived → `es` full repair) belongs on error/guard paths only, not on successful Tier-1 push/pop retarget. |
 | **P6 — no dual publish** | Successful chain edits update `es` live fields at choke points. Writing `ctx->frame_top` / `block` / `namespace` on every retarget duplicates authority during RUN. |

@@ -98,9 +98,8 @@ KosDynDelim *kos_dyn_push_delim(
     KosDynFrame *frame,
     KosDynNode *node) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
-  KosDynDelim *delim = kos_dyndelim_new(KosContext_DYN_TOP(ctx),
+  KosDynDelim *delim = kos_dyndelim_new(KosEvalState_DYN_TOP(es),
                                         mode,
                                         chain,
                                         pc,
@@ -122,8 +121,7 @@ KosDynDelim *kos_dyn_push_delim(
    Pop DELIM marker from top of chain.
 */
 void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) delim) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) delim) {
     KosEvalState_SyncFromContext(es);
     return;
   }
@@ -143,9 +141,8 @@ void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
    Find nearest DELIM from dyn_top toward root; optional mode filter.
 */
 KosDynDelim *kos_find_nearest_delim(KosEvalState *es, uint8_t mode) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *node;
-  for (node = KosContext_DYN_TOP(ctx); node; node = KosDynNode_PARENT(node)) {
+  for (node = KosEvalState_DYN_TOP(es); node; node = KosDynNode_PARENT(node)) {
     if (! KosDynNode_IS_DELIM(node))
       continue;
     if (! mode || KosDynDelim_MODE((KosDynDelim *) node) == mode)

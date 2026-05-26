@@ -191,10 +191,9 @@ KosDynWith *kos_dyn_push_with(
     uint32_t resume_pc,
     uint8_t shot) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
   KosDynWith *node = kos_dyn_with_allocate(
-      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc, shot);
+      KosEvalState_DYN_TOP(es), mgr, enter, exit, name, resume_pc, shot);
   if (! node)
     return NULL;
 
@@ -232,9 +231,8 @@ KosDynWith *kos_dyn_push_with_provisional(
     uint32_t resume_pc,
     uint8_t shot) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynWith *node = kos_dyn_with_allocate(
-      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc, shot);
+      KosEvalState_DYN_TOP(es), mgr, enter, exit, name, resume_pc, shot);
   if (! node)
     return NULL;
 
@@ -265,8 +263,7 @@ KosDynWith *kos_dyn_push_dyn_with_provisional(
    Unlink WITH when top without running __exit__ (fast path only).
 */
 void kos_dyn_pop_with(KosEvalState *es, KosDynWith *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
     KosEvalState_SyncFromContext(es);
     return;
   }

@@ -48,13 +48,13 @@ Phase 1 is **complete** and verified with **`tox -qe test`** (full pass, no hang
 | Incremental retarget after pop (+ fallback) | **Done** | `static kos_dyn_retarget_after_pop`; fallback when `new_top != parent(removed)` |
 | Full chain rebuild | **Done** | `kos_dyn_rebuild_live_from_chain` (public in `dynchain.h`) |
 | `es` first, ctx snapshot at retarget end | **Done** | `kos_dyn_apply_live`, `kos_dyn_snapshot_ctx_derived` |
-| Freeze at eval exit | **Done** | `KosEvalState_FreezeDerivedToContext` in `eval_state.c`; `koskari_eval_cleanup` in `eval.c` |
+| Freeze at eval exit | **Done** | `KosEvalState_FreezeToContext` in `eval_state.c`; `koskari_eval_cleanup` in `eval.c` |
 | `PatchDynCaches` / `RefreshDynCaches` / `ApplyDynCaches` | **Removed** | Replaced by dynchain helpers above |
 | Scatter `SyncFromContext` on `dyn_*.c` **success** paths | **Mostly removed** | Error / guard paths remain (§4.1, Tier 4) |
 | Xfer step completion sync | **Removed** | Plan driver comment: steps leave `es` coherent via rebuild |
 | Opcode `PUSH_*` post-push rebuild | **Kept intentionally** | Stack assigned after push; see §9.3 |
 
-**Phase 2 (not done):** tail koscall via Tier-1 commit, Tier-2 xfer incremental retarget, straggler `dyn_top` / `ctx` reader audit, optional defer of ctx derived writes until freeze only. See §10.
+**Phase 2 (storage relocation, done):** `es->dyn_top`, `plan`, `plan_stack` with steal-on-thaw / freeze-restore (`KosEvalState_ThawFromContext`, `KosEvalState_FreezeToContext`); `KosEvalState_DYN_TOP` never reads ctx during RUN; TLS active-`es` for `KosContext_Traverse` while `KOS_CTX_RUNNING`. Remaining open: tail koscall via Tier-1 commit, Tier-2 xfer incremental retarget. See §10.
 
 ---
 
@@ -407,7 +407,7 @@ Do **not** special-case kinds in Tier 1 beyond the generic STACK/NS/FRAME macros
 | `eval/eval_utils.c` | `KosEvalState_TailKoscallReplaceFrame` ~549–560 — **should** call Tier-1 commit helper after refactor |
 | `dynchain/dyn_next.c` | ~130 conditional |
 
-**Gate (from migration doc):** `rg 'KosContext_DYN_TOP\([^)]+\)\s*=' koskari/lib` → only `dynchain.c`, `eval.c`, and documented exceptions.
+**Gate:** `grep -rnE 'KosContext_DYN_TOP\([^)]+\)[[:space:]]*=' koskari/lib` → thaw/freeze, `KosContext_New`/`Free`, and documented non-RUN setup only; no `KosContext_DYN_TOP` in `dynchain.c` or `dynchain/`.
 
 ### 9.2 Mid-run readers of `ctx->frame_top` / `block` / `namespace`
 
@@ -491,10 +491,11 @@ These are **not** modified by this refactor but are the main source of **infinit
 
 | Check | Command |
 |-------|---------|
-| No removed refresh APIs | `rg 'PatchDynCaches|RefreshDynCaches|ApplyDynCaches' koskari/lib` — **no matches** |
-| Rebuild call sites | `rg 'kos_dyn_rebuild_live_from_chain' koskari/lib` — Tier 2, bootstrap, tail koscall, opcodes, pop fallback only |
-| Sync call sites | `rg 'KosEvalState_SyncFromContext' koskari/lib` — Tier-4 only (Phase 2 audit; ~140 today) |
-| dyn_top assigns | `rg 'KosContext_DYN_TOP\([^)]+\)\s*=' koskari/lib` — per §9.1 |
+| No removed refresh APIs | `grep -rn 'PatchDynCaches\|RefreshDynCaches\|ApplyDynCaches' koskari/lib` — **no matches** |
+| Rebuild call sites | `grep -rn 'kos_dyn_rebuild_live_from_chain' koskari/lib` — Tier 2, bootstrap, tail koscall, opcodes, pop fallback only |
+| Sync call sites | `grep -rn 'KosEvalState_SyncFromContext' koskari/lib` — Tier-4 only |
+| dyn_top on ctx during RUN | `grep -rn 'KosContext_DYN_TOP' koskari/lib/dynchain` — **no matches** |
+| dyn_top assigns | `grep -rnE 'KosContext_DYN_TOP\([^)]+\)[[:space:]]*=' koskari/lib` — per §9.1 |
 
 ### 12.3 Optional (after tests green; performance)
 

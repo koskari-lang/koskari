@@ -16,8 +16,8 @@
 /**
    koskari/lib/eval/eval_state.c
 
-   KosEvalState init, sync-from-context repair, freeze-to-context, and
-   stack-owner helpers; included into eval.c.
+   KosEvalState init, thaw-steal, freeze-restore, sync repair, and stack-owner
+   helpers; included into eval.c.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -29,10 +29,44 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
 
   KOS_TRACE_EVAL_SYNC_BEGIN();
 
+  if (es)
+    memset(es, 0, sizeof(KosEvalState));
   KosEvalState_CONTEXT(es) = ctx;
+
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
+}
+
+
+void KosEvalState_ThawFromContext(KosEvalState *es) {
+
+  KosContext *ctx;
+
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
+  if (! es)
+    goto done;
+  ctx = KosEvalState_CONTEXT(es);
+  if (! ctx)
+    goto done;
+
+  KosEvalState_DYN_TOP(es) = KosContext_DYN_TOP(ctx);
+  KosContext_DYN_TOP(ctx) = NULL;
+
+  KosEvalState_PLAN(es) = KosContext_PLAN(ctx);
+  KosContext_PLAN(ctx) = NULL;
+
+  KosEvalState_PLAN_STACK(es) = KosContext_PLAN_STACK(ctx);
+  KosContext_PLAN_STACK(ctx) = NULL;
+
   KosEvalState_FRAME(es) = KosContext_FRAME_TOP(ctx);
+  KosContext_FRAME_TOP(ctx) = NULL;
+
   KosEvalState_BLOCK(es) = KosContext_BLOCK(ctx);
+  KosContext_BLOCK(ctx) = NULL;
+
   KosEvalState_NAMESPACE(es) = KosContext_NAMESPACE(ctx);
+  KosContext_NAMESPACE(ctx) = NULL;
+
   if (! KosEvalState_NAMESPACE(es) && KosEvalState_FRAME(es))
     KosEvalState_NAMESPACE(es) = KosDynFrame_NS(KosEvalState_FRAME(es));
 
@@ -46,6 +80,7 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
     (es)->acting_pc = 0;
   }
 
+done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
 }
 
@@ -57,8 +92,6 @@ void KosEvalState_SyncFromContext(KosEvalState *es) {
   if (! es || ! KosEvalState_CONTEXT(es))
     goto done;
 
-  /* ctx->frame_top/block/namespace are freeze snapshots; during RUN they may
-     lag es after Tier-1 retarget. Rebuild live fields from dyn_top instead. */
   kos_dyn_rebuild_live_from_chain(es);
 
 done:
@@ -66,14 +99,7 @@ done:
 }
 
 
-/**
-   Snapshot es live frame, block, and namespace onto ctx before leaving RUN.
-
-   Call from koskari_eval_cleanup after KosEvalState_FlushLiveRegsToFrame.
-   Copies authoritative es fields into ctx derived snapshots for the next eval
-   entry; does not modify pc slots on heap frames beyond the prior flush.
-*/
-void KosEvalState_FreezeDerivedToContext(KosEvalState *es) {
+void KosEvalState_FreezeToContext(KosEvalState *es) {
 
   KosContext *ctx;
 
@@ -83,15 +109,37 @@ void KosEvalState_FreezeDerivedToContext(KosEvalState *es) {
   if (! ctx)
     return;
 
+  KosContext_DYN_TOP(ctx) = KosEvalState_DYN_TOP(es);
+  KosEvalState_DYN_TOP(es) = NULL;
+
+  KosContext_PLAN(ctx) = KosEvalState_PLAN(es);
+  KosEvalState_PLAN(es) = NULL;
+
+  KosContext_PLAN_STACK(ctx) = KosEvalState_PLAN_STACK(es);
+  KosEvalState_PLAN_STACK(es) = NULL;
+
   KosContext_FRAME_TOP(ctx) = KosEvalState_FRAME(es);
+  KosEvalState_FRAME(es) = NULL;
+
   KosContext_BLOCK(ctx) = KosEvalState_BLOCK(es);
+  KosEvalState_BLOCK(es) = NULL;
+
   KosContext_NAMESPACE(ctx) = KosEvalState_NAMESPACE(es);
+  KosEvalState_NAMESPACE(es) = NULL;
+
+  KosEvalState_CODE(es) = NULL;
+  (es)->pc = 0;
+  (es)->acting_pc = 0;
+
+  if (KosContext_PLAN(ctx))
+    KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  else
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
 }
 
 
 KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *n = KosContext_DYN_TOP(ctx);
+  KosDynNode *n = KosEvalState_DYN_TOP(es);
   while (n) {
     if (KosDynNode_STACK(n))
       return n;

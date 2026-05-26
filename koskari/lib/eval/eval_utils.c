@@ -381,18 +381,12 @@ static inline int do_frame_prep(
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
 
   if (wants && tail_call) {
-    KosContext *ctx;
-
     kos_dynframe_reset_for_tail(frame);
     KosEvalState_CODE(es) = NULL;
     KosEvalState_NAMESPACE(es) = NULL;
     KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
     (es)->pc = 0;
     (es)->acting_pc = 0;
-    ctx = KosEvalState_CONTEXT(es);
-    KosContext_FRAME_TOP(ctx) = frame;
-    KosContext_BLOCK(ctx) = KosEvalState_BLOCK(es);
-    KosContext_NAMESPACE(ctx) = NULL;
     return 0;
   }
 

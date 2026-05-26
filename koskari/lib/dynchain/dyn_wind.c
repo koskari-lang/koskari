@@ -221,8 +221,7 @@ KosDynWind *kos_dyn_push_wind(
     PyObject *before_thunk,
     PyObject *after_thunk) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynWind *wind = kos_dynwind_new(KosContext_DYN_TOP(ctx),
+  KosDynWind *wind = kos_dynwind_new(KosEvalState_DYN_TOP(es),
                                      before_thunk, after_thunk);
   if (! wind)
     return NULL;
@@ -240,8 +239,7 @@ KosDynWind *kos_dyn_push_wind(
    kos_dyn_uninstall for extent teardown when thunks must run.
 */
 int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) wind) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) wind) {
     PyErr_SetString(PyExc_RuntimeError, "wind node is not at top of chain");
     KosEvalState_SyncFromContext(es);
     return -1;

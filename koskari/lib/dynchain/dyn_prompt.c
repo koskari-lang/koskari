@@ -79,9 +79,8 @@ static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
 */
 KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
-  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
+  KosDynPrompt *prompt = kos_dynprompt_new(KosEvalState_DYN_TOP(es), prompt_id);
   if (! prompt)
     return NULL;
 
@@ -98,9 +97,8 @@ KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
    Pop prompt via barrier-crossing policy API using shared uninstall machinery.
 */
 int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   int r;
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) prompt) {
     r = 0;
   }
   else {

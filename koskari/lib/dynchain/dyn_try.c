@@ -73,8 +73,7 @@ static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
    Push TRY as DYN_TOP without kos_dyn_install. Callers: opcode PUSH_TRY.
 */
 KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynTry *node = kos_dyntry_new(KosContext_DYN_TOP(ctx), handler_pc);
+  KosDynTry *node = kos_dyntry_new(KosEvalState_DYN_TOP(es), handler_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
@@ -89,8 +88,7 @@ KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
    Pop TRY when it is top (fast path). Callers: abort_push_region, POP_TRY.
 */
 void kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
     KosEvalState_SyncFromContext(es);
     return;
   }

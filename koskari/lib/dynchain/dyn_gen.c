@@ -78,16 +78,15 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
 */
 int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
   KosDynNode *active;
   KosDynNode *n;
 
   SAYF("[gen] install ENTER ctx=%p gen=%p dyn_top=%p ctx_dyn_top_kind=%s "
        "active=%p",
        (void *) ctx, (void *) gen,
-       (void *) KosContext_DYN_TOP(ctx),
-       KosContext_DYN_TOP(ctx)
-           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
+       (void *) KosEvalState_DYN_TOP(es),
+       KosEvalState_DYN_TOP(es)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
            : "NULL",
        (void *) KosDynGen_ACTIVE(gen));
 
@@ -115,7 +114,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 
   /* 1. GEN's parent = current ctx's active node */
   KosEvalState_FlushLiveRegsToFrame(es);
-  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
+  KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
   /* 2. Incref GEN */
   kos_dyngen_acquire(gen);
   /* 3. Put GEN's active onto ctx's active; 4. NULL GEN's active.
@@ -129,40 +128,32 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     return -1;
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p chain: ",
-       (void *) KosContext_DYN_TOP(ctx),
-       KosContext_DYN_TOP(ctx)
-           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
+       (void *) KosEvalState_DYN_TOP(es),
+       KosEvalState_DYN_TOP(es)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
            : "NULL",
        (void *) KosEvalState_FRAME(es));
-  for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
+  for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
   SAY("(end)");
   return 0;
 }
 
 
-static int kos_dyn_gen_frozen_needs_install_ctx(KosContext *eval_ctx, KosDynGen *g) {
+int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *g) {
 
   KosDynNode *n;
 
-  if (! eval_ctx || ! g)
+  if (! es || ! g)
     return 0;
   if (! KosDynGen_ACTIVE(g))
     return 0;
 
-  for (n = KosContext_DYN_TOP(eval_ctx); n; n = KosDynNode_PARENT(n)) {
+  for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n)) {
     if (n == (KosDynNode *) g)
       return 0;
   }
   return 1;
-}
-
-
-int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *g) {
-
-  if (! es)
-    return 0;
-  return kos_dyn_gen_frozen_needs_install_ctx(KosEvalState_CONTEXT(es), g);
 }
 
 
@@ -173,8 +164,7 @@ int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *g) {
    Frees the chain from frame down to gen, restores consumer, releases gen.
 */
 int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *frame = KosContext_DYN_TOP(ctx);
+  KosDynNode *frame = KosEvalState_DYN_TOP(es);
   if (! frame || ! KosDynNode_IS_FRAME(frame)) {
     KosEvalState_SyncFromContext(es);
     return -1;

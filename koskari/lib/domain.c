@@ -37,6 +37,8 @@
 typedef struct {
   KosContext *ctx_stack[KOS_TLS_STACK_MAX];
   size_t ctx_depth;
+  KosEvalState *eval_stack[KOS_TLS_STACK_MAX];
+  size_t eval_depth;
   KosEvaluatorToken *token_stack[KOS_TLS_STACK_MAX];
   size_t token_depth;
   PyObject *python_domain_stack[KOS_TLS_STACK_MAX];
@@ -53,6 +55,7 @@ static KosTlsState *get_or_alloc_tls_state(void) {
     if (! s)
       return NULL;
     s->ctx_depth = 0;
+    s->eval_depth = 0;
     s->token_depth = 0;
     s->python_domain_depth = 0;
     PyThread_tss_set(&tls_state_key, s);
@@ -92,6 +95,38 @@ static void pop_active_ctx(void) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
   if (s && s->ctx_depth > 0)
     s->ctx_depth--;
+}
+
+
+void kos_tls_push_active_eval(KosEvalState *es) {
+  KosTlsState *s = get_or_alloc_tls_state();
+  if (s && es && s->eval_depth < KOS_TLS_STACK_MAX)
+    s->eval_stack[s->eval_depth++] = es;
+}
+
+
+void kos_tls_pop_active_eval(void) {
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  if (s && s->eval_depth > 0)
+    s->eval_depth--;
+}
+
+
+KosEvalState *kos_tls_active_eval_for_ctx(KosContext *ctx) {
+  KosTlsState *s;
+  size_t i;
+
+  if (! ctx)
+    return NULL;
+  s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  if (! s)
+    return NULL;
+  for (i = s->eval_depth; i > 0; i--) {
+    KosEvalState *es = s->eval_stack[i - 1];
+    if (es && KosEvalState_CONTEXT(es) == ctx)
+      return es;
+  }
+  return NULL;
 }
 
 
@@ -305,21 +340,37 @@ static PyObject *context_to_dict(KosContext *ctx) {
     return NULL;
   }
 
-  PyObject *ns = KosContext_NAMESPACE(ctx) ? KosContext_NAMESPACE(ctx) : Py_None;
-  Py_INCREF(ns);
-  if (domain_snapshot_set_item(out, "namespace", ns) < 0) {
-    Py_DECREF(out);
-    return NULL;
+  {
+    KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
+    PyObject *ns;
+
+    if (active_es && KosEvalState_NAMESPACE(active_es))
+      ns = KosEvalState_NAMESPACE(active_es);
+    else if (KosContext_NAMESPACE(ctx))
+      ns = KosContext_NAMESPACE(ctx);
+    else
+      ns = Py_None;
+    Py_INCREF(ns);
+    if (domain_snapshot_set_item(out, "namespace", ns) < 0) {
+      Py_DECREF(out);
+      return NULL;
+    }
   }
 
-  PyObject *nodes = kos_dynchain_snapshot_to_list(KosContext_DYN_TOP(ctx));
-  if (! nodes) {
-    Py_DECREF(out);
-    return NULL;
-  }
-  if (domain_snapshot_set_item(out, "dynnodes", nodes) < 0) {
-    Py_DECREF(out);
-    return NULL;
+  {
+    KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
+    KosDynNode *dyn_top = active_es
+        ? KosEvalState_DYN_TOP(active_es)
+        : KosContext_DYN_TOP(ctx);
+    PyObject *nodes = kos_dynchain_snapshot_to_list(dyn_top);
+    if (! nodes) {
+      Py_DECREF(out);
+      return NULL;
+    }
+    if (domain_snapshot_set_item(out, "dynnodes", nodes) < 0) {
+      Py_DECREF(out);
+      return NULL;
+    }
   }
 
   return out;

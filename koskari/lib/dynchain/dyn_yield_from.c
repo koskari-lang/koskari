@@ -143,8 +143,7 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 */
 KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
   KosDynNode *n;
 
   if (top && KosDynNode_IS_YIELD_FROM(top)
@@ -168,8 +167,8 @@ KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
 */
 int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf, KosEvent *out_ev) {
-
   KosContext *ctx = KosEvalState_CONTEXT(es);
+
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *frame = KosEvalState_FRAME(es);
   PyObject *const *tos;

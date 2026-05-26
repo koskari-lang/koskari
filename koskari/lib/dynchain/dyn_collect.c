@@ -83,10 +83,9 @@ void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node) {
 KosDynCollect *kos_dyn_push_collect(
     KosEvalState *es,
     PyObject *ns) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
   KosDynCollect *col_node = kos_dyncollect_new(
-      KosContext_DYN_TOP(ctx), ns);
+      KosEvalState_DYN_TOP(es), ns);
   if (! col_node)
     return NULL;
 
@@ -102,9 +101,8 @@ KosDynCollect *kos_dyn_push_collect(
    Pop COLLECT when top. Callers: POP_COLLECT.
 */
 void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) ||
-      KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (! KosEvalState_DYN_TOP(es) ||
+      KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
     KosEvalState_SyncFromContext(es);
     return;
   }

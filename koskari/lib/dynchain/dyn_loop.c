@@ -85,8 +85,7 @@ static int dynnode_to_dict_loop(KosDynNode *node, PyObject *data) {
    Push LOOP as DYN_TOP. Callers: opcode PUSH_LOOP.
 */
 KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynLoop *node = kos_dynloop_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
+  KosDynLoop *node = kos_dynloop_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
@@ -101,8 +100,7 @@ KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t cont
    Pop LOOP when top. Callers: abort_push_region, kos_dyn_transfer_to_loop, POP.
 */
 void kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
     KosEvalState_SyncFromContext(es);
     return;
   }

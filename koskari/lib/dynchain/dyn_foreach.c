@@ -107,8 +107,7 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
    Push FOREACH as DYN_TOP. Callers: opcode PUSH_FOREACH.
 */
 KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynForeach *node = kos_dynforeach_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
+  KosDynForeach *node = kos_dynforeach_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
@@ -123,8 +122,7 @@ KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_
    Pop FOREACH when top. Callers: abort_push_region, kos_dyn_transfer_to_loop.
 */
 void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
     KosEvalState_SyncFromContext(es);
     return;
   }

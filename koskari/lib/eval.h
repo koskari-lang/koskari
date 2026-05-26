@@ -339,10 +339,9 @@ typedef struct KosEvalResult {
     re-entering koskari_eval.
   - Resumption injects the result back into the VM via the stack.
 
-  During koskari_eval, treat this object as cold storage updated only through
-  dynchain helpers (mutating APIs take KosEvalState *). A concurrent
-  KosEvalState snapshot holds the borrowed ctx pointer plus frame/code caches
-  for the active eval slice.
+  Between koskari_eval drives, holds dyn_top, plan, plan_stack, and derived
+  revive snapshots. During RUN those fields are NULL on ctx (stolen onto
+  KosEvalState); see KosEvalState_ThawFromContext and KosEvalState_FreezeToContext.
 */
 
 struct KosContext {
@@ -429,16 +428,11 @@ struct KosContext {
   See design/interpreter/freeze-thaw-context-segments.md and
   design/interpreter/eval-state-live-authority.md.
 
-  Call KosEvalState_Init before use (thaw from ctx). While koskari_eval runs,
-  es->frame, code, block, namespace, pc, and acting_pc are authoritative.
-  Chain surgery updates them via kos_dyn_* commit paths in dynchain.c
-  (kos_dyn_retarget_after_push, kos_dyn_retarget_after_pop,
-  kos_dyn_rebuild_live_from_chain). KosEvalState_SyncFromContext is error
-  recovery only. KosEvalState_FreezeDerivedToContext snapshots live fields
-  onto ctx at eval exit.
-
-  KosContext keeps dyn_top and other cold storage; ctx->frame_top, block, and
-  namespace are revive snapshots, not read for hot-path decisions during RUN.
+  KosEvalState_Init only binds ctx and clears es. koskari_eval calls
+  KosEvalState_ThawFromContext to move dyn_top, plan, plan_stack, and derived
+  snapshots from ctx onto es (NULL on ctx). While RUN, es owns chain and plan;
+  KosEvalState_DYN_TOP and KosEvalState_PLAN never read ctx. Freeze restores
+  onto ctx and NULLs es. KosEvalState_SyncFromContext is error recovery only.
 
   With KOS_TRACE_EVAL_SYNC, call counts and total wall time per sync API are
   recorded for kos_trace_report / get_trace_report under eval_state_sync.
@@ -446,7 +440,10 @@ struct KosContext {
 
 struct KosEvalState {
   KosContext *ctx;
-  KosDynFrame *frame; /* live top frame; Init and kos_dyn_* retarget */
+  KosDynNode *dyn_top;       /* RUN: top of dynamic chain (stolen from ctx) */
+  KosTransferPlan *plan;     /* RUN: active transfer plan */
+  KosTransferPlan *plan_stack; /* RUN: suspended plans (via plan->suspended) */
+  KosDynFrame *frame; /* live top frame; thaw and kos_dyn_* retarget */
   KosCode *code;      /* live code from frame */
   KosStackBlock **block; /* live innermost stack slot; non-owning */
   PyObject *namespace;   /* live namespace; borrowed */
@@ -456,6 +453,9 @@ struct KosEvalState {
 
 
 #define KosEvalState_CONTEXT(es) ((es)->ctx)
+#define KosEvalState_DYN_TOP(es)     ((es)->dyn_top)
+#define KosEvalState_PLAN(es)        ((es)->plan)
+#define KosEvalState_PLAN_STACK(es)  ((es)->plan_stack)
 #define KosEvalState_FRAME(es) ((es)->frame)
 #define KosEvalState_CODE(es) ((es)->code)
 #define KosEvalState_BLOCK(es) ((es)->block)
@@ -478,7 +478,7 @@ struct KosEvalState {
 
 
 #define KosEvalState_CurrentNode(es) \
-  KosContext_DYN_TOP(KosEvalState_CONTEXT(es))
+  KosEvalState_DYN_TOP(es)
 
 #define KosEvalState_CurrentCode(es) KosEvalState_CODE(es)
 
@@ -596,24 +596,33 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
 
 
 /**
-  Reload es from ctx derived snapshots (error recovery only; not steady-state).
-  Implemented in eval/eval_state.c included into eval.c.
+  Steal dyn_top, plan, plan_stack, and derived snapshots from ctx onto es and
+  NULL those slots on ctx. Call at koskari_eval entry after Init. Does not
+  steal ctx flags or Python bridge fields.
+*/
+
+void KosEvalState_ThawFromContext(KosEvalState *es);
+
+
+/**
+  Reload es live fields from es->dyn_top (error recovery only; not steady-state).
+  Does not read stolen NULL ctx chain fields during RUN.
 */
 
 void KosEvalState_SyncFromContext(KosEvalState *es);
 
 
 /**
-  Snapshot es live frame, block, and namespace onto ctx before leaving RUN.
-
-  Call once from koskari_eval_cleanup after KosEvalState_FlushLiveRegsToFrame.
-  Does not walk the chain; copies the authoritative es fields so the next
-  KosEvalState_Init can thaw a consistent revive image. Not used for per-push
-  or per-pop updates during execution (those use kos_dyn_* retarget in
-  dynchain.c).
+  Restore dyn_top, plan, plan_stack, and derived snapshots from es onto ctx and
+  NULL es. Call from koskari_eval_cleanup after FlushLiveRegsToFrame. Updates
+  KOS_CTX_IN_TRANSFER from restored plan.
 */
 
-void KosEvalState_FreezeDerivedToContext(KosEvalState *es);
+void KosEvalState_FreezeToContext(KosEvalState *es);
+
+
+/** @deprecated name; use KosEvalState_FreezeToContext */
+#define KosEvalState_FreezeDerivedToContext(es) KosEvalState_FreezeToContext(es)
 
 
 /**
@@ -783,6 +792,23 @@ int koskari_eval(
   Callable from native Python object methods (e.g. ParamRef resolution).
 */
 KosContext *kos_ctx_current(void);
+
+
+/**
+  Push active KosEvalState for GC traverse while KOS_CTX_RUNNING (steal model).
+*/
+
+void kos_tls_push_active_eval(KosEvalState *es);
+
+
+void kos_tls_pop_active_eval(void);
+
+
+/**
+  Innermost TLS eval slice for ctx, or NULL when not in koskari_eval on this thread.
+*/
+
+KosEvalState *kos_tls_active_eval_for_ctx(KosContext *ctx);
 
 
 /**
