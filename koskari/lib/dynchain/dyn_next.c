@@ -122,7 +122,6 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
   KosDynNode *node = (KosDynNode *) next;
   KosDynNode *p = KosDynNode_PARENT(node);
 
-  KosEvalState_FlushLiveRegsToFrame(es);
   if (KosEvalState_DYN_TOP(es) == node) {
     kos_dyn_commit_dyn_top(es, p);
   } else {

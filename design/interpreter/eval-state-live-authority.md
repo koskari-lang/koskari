@@ -55,7 +55,7 @@ Phase 1 is **complete** and verified with **`tox -qe test`** (full pass, no hang
 | WITH/COLLECT stack at node alloc | **Done** | `dyn_with.c` / `dyn_collect.c`; opcodes do not rebuild (§9.3) |
 | Delimited pop return retarget | **Done** | `kos_dyn_finish_delimited_pop_return` load-or-rebuild after `pop_delim` |
 
-**Phase 2 (storage relocation, done):** `es->dyn_top`, `plan`, `plan_stack` with steal-on-thaw / freeze-restore (`KosEvalState_ThawFromContext`, `KosEvalState_FreezeToContext`); `KosEvalState_DYN_TOP` never reads ctx during RUN; TLS active-`es` for `KosContext_Traverse` while `KOS_CTX_RUNNING`. Remaining open: Tier-2 xfer incremental retarget; splice-helper flush audit. See §10.
+**Phase 2 (storage relocation, done):** `es->dyn_top`, `plan`, `plan_stack` with steal-on-thaw / freeze-restore (`KosEvalState_ThawFromContext`, `KosEvalState_FreezeToContext`); `KosEvalState_DYN_TOP` never reads ctx during RUN; TLS active-`es` for `KosContext_Traverse` while `KOS_CTX_RUNNING`. Remaining open: Tier-2 xfer incremental retarget; §9.1/§9.2 straggler audits. See §10.
 
 ---
 
@@ -200,8 +200,8 @@ All live-field updates for chain shape changes must funnel through these tiers. 
 |--------|------|-----------------|-----------|
 | `kos_dyn_push` | `dynchain.c` | ~859–879 | Push + `kos_dyn_install` → `kos_dyn_retarget_after_push` |
 | `kos_dyn_push_noinstall` | `dynchain.c` | ~904–920 | Region nodes (TRY, LOOP, …) → retarget after push |
-| `kos_dyn_commit_dyn_top` | `dynchain.c` | ~892–901 | Pop, splice head, uninstall commit → `kos_dyn_retarget_after_pop` |
-| `kos_dyn_uninstall` / `kos_dyn_uninstall_core` | `dynchain.c` | ~924+ | Frame-conditional flush (same rule as `commit_dyn_top`); no repair sync |
+| `kos_dyn_commit_dyn_top` | `dynchain.c` | ~892–901 | Pop, splice head, uninstall commit → `kos_dyn_retarget_after_pop`; no pre-flush (H20b) |
+| `kos_dyn_uninstall` / `kos_dyn_uninstall_core` | `dynchain.c` | ~924+ | Handler then commit; frame flush only in `apply_live` via retarget (H20b) |
 
 **Retarget implementation:** `static` helpers in `koskari/lib/dynchain.c` (§6). **`kos_dyn_rebuild_live_from_chain`** is the only exported rebuild API (`dynchain.h`).
 
@@ -225,7 +225,7 @@ Sites where **incremental pop/push rules are insufficient**. Each calls **`kos_d
 | `xfer_step_install` | `dynchain.c` | ~3626–3708 | Replaces entire `dyn_top` segment; rebuild after stack graft ~3670 |
 | `xfer_step_push` | `dynchain.c` | ~3719–3779 | Grafts segment onto `dyn_top`; rebuild after stack graft ~3765 |
 | `kos_dyn_finish_delimited_pop_return` | `dynchain.c` | ~4301+ | After `pop_delim`: `kos_dyn_load_live_regs_from_frame` when `es->frame == ret_frame`, else rebuild; else-branch when DELIM not dyn_top |
-| `kos_dyn_unlink_next_node` (non–dyn_top) | `dyn_next.c` | ~130–141 | Splices parent links without `commit_dyn_top` |
+| `kos_dyn_unlink_next_node` (non–dyn_top) | `dyn_next.c` | ~130–141 | Splices parent links without `commit_dyn_top`; no pre-flush before rewire (P4; H20) |
 | `KosContext_New` bootstrap | `eval.c` | ~985 | Thaw/freeze bootstrap after `KosEvalState_Init` |
 | `do_frame_prep` tail recycle | `eval_utils.c` | ~383–390 | In-place `es` frame reset (no ctx derived writes) |
 | Gen install / xfer fallback inside pop retarget | `dynchain.c` | `kos_dyn_retarget_after_pop` | `new_top != parent(removed)` |
@@ -269,7 +269,7 @@ Parent walk from `start` for innermost frame, stack slot, and namespace. Used by
 
 **Critical fallback (implemented):** if `!removed` or `new_top != KosDynNode_PARENT(removed)`, call **`kos_dyn_rebuild_live_from_chain`** (required for gen install, splices, xfer-shaped head changes).
 
-Otherwise update only slots the removed node owned; one `kos_dyn_walk_live_from` when needed.
+Otherwise update only slots the removed node owned; one `kos_dyn_walk_live_from` when needed. When the removed node owned `es->frame`, **`kos_dyn_apply_live`** flushes live PCs to the outgoing heap frame (H20b: not in `commit_dyn_top` or `uninstall_core`).
 
 ### 6.5 `void kos_dyn_rebuild_live_from_chain(es)` (public)
 
@@ -342,7 +342,7 @@ Do **not** require extending debug compares or running debug builds for every PR
 
 ### 7.4 Tracing — performance diagnosis after correctness
 
-**`KOS_TRACE_EVAL_SYNC`** and `eval_state_sync` in `get_trace_report()` ([tracing.md](../api/tracing.md)) measure call counts and wall time per sync API. Use **after** tests pass to confirm `sync_from_context` and `refresh_dyn_caches` traffic dropped — not as a substitute for functional tests.
+**`KOS_TRACE_EVAL_SYNC`** and `eval_state_sync` in `get_trace_report()` ([tracing.md](../api/tracing.md)) measure call counts and wall time per retarget/rebuild/flush sites. Use **after** tests pass to compare `retarget_after_push` and `rebuild_live_from_chain` traffic — not as a substitute for functional tests.
 
 ### 7.5 Frame change rule (unchanged)
 
@@ -378,28 +378,27 @@ Do **not** special-case kinds in Tier 1 beyond the generic STACK/NS/FRAME macros
 
 ## 9. Straggler inventory (must not bypass Tier 1)
 
-### 9.1 Direct `KosContext_DYN_TOP(ctx) =` assignments
+### 9.1 Direct `KosContext_DYN_TOP(ctx) =` assignments (audit 2026-05-26)
 
-| File | Notes |
-|------|--------|
-| `dynchain.c` | `kos_dyn_push`, `commit_dyn_top`, xfer INSTALL/PUSH, raise path ~2964, rewind ~1081 |
-| `eval.c` | `KosContext_New` ~946; agen flatten ~1588; attach paths ~947 |
-| `eval/eval_utils.c` | `KosEvalState_TailKoscallReplaceFrame` ~549–560 — **should** call Tier-1 commit helper after refactor |
-| `dynchain/dyn_next.c` | ~130 conditional |
+| File | Line (approx.) | Role |
+|------|----------------|------|
+| `eval/eval_state.c` | thaw/freeze | Steal/restore `dyn_top` between drives |
+| `eval.c` | ~962 | `KosContext_New` bootstrap |
+| `eval.c` | ~1008, ~1620 | Context free; agen flatten clears agen ctx chain head |
 
-**Gate:** `grep -rnE 'KosContext_DYN_TOP\([^)]+\)[[:space:]]*=' koskari/lib` → thaw/freeze, `KosContext_New`/`Free`, and documented non-RUN setup only; no `KosContext_DYN_TOP` in `dynchain.c` or `dynchain/`.
+During RUN, `KosEvalState_DYN_TOP(es)` is authoritative; no assigns in `dynchain.c` or `dynchain/`.
 
-### 9.2 Mid-run readers of `ctx->frame_top` / `block` / `namespace`
+**Gate:** `grep -rnE 'KosContext_DYN_TOP\([^)]+\)[[:space:]]*=' koskari/lib` → rows above only.
+
+### 9.2 Mid-run readers of `ctx->frame_top` / `block` / `namespace` (audit 2026-05-26)
 
 | File | Usage |
 |------|--------|
-| `eval/eval_state.c` | Init, sync, refresh (implementation) |
-| `eval/eval_chain.c` | ~263 namespace assign |
-| `dynchain.c` | ~309 globals helper; ~4279 delim return |
-| `eval.c` | `KosContext_New` ~947; agen ~1589 |
-| `domain.c` | ~310 `KosContext_NAMESPACE` for scope display |
+| `eval/eval_state.c` | Thaw steals derived fields onto `es`; freeze restores to `ctx` |
+| `eval.c` | `KosContext_New` bootstrap ~963; agen flatten ~1621 |
+| `domain.c` | ~347–350 snapshot: TLS `active_es` namespace first, else frozen `ctx` field |
 
-Audit each: switch to `KosEvalState_*` or document as post-freeze only.
+No mid-RUN derived writes in `eval_chain.c` or `dynchain.c` (H13). Opcodes use `KosEvalState_*` during RUN.
 
 ### 9.3 WITH / COLLECT operand stacks (**at node allocation**)
 
@@ -435,9 +434,9 @@ Resolved at opcode time by walking `KosNamespace_PARENT` from
 | 5b | `SyncFromContext` removal | **Done** — grep gate zero |
 | — | Delimited pop return incremental retarget | **Done** — `kos_dyn_load_live_regs_from_frame` |
 | 6 | Tier 2 xfer INSTALL/PUSH: incremental retarget vs full rebuild | **Open** — high risk, defer |
-| 7 | Straggler audit: splice-helper unconditional flush (`dyn_next`, `dyn_yield_from`, `dyn_gen` install) | **Open** |
-| 8 | Straggler audit: `dyn_top` assigns (§9.1), `ctx` derived readers (§9.2) | **Open** |
-| — | Trace bucket rename (`patch_dyn_caches` labels) | **Open** — cosmetic |
+| 7 | Straggler audit: splice-helper unconditional flush (`dyn_next`, `dyn_yield_from`, `dyn_gen` install) | **Done** — H20; pre-splice flush removed |
+| 8 | Straggler audit: `dyn_top` assigns (§9.1), `ctx` derived readers (§9.2) | **Done** — grep pass 2026-05-26; H13/H14 |
+| — | Trace bucket rename (`patch_dyn_caches` labels) | **Done** — H7 |
 
 ---
 
@@ -522,8 +521,8 @@ These are **not** modified by this refactor but are the main source of **infinit
 - [x] `SyncFromContext` removed; fail-fast pops (§12.2)
 - [x] Delimited pop return load-or-rebuild after `pop_delim`
 - [x] Native harness thaw/freeze documented (`tests/native/README.md`)
-- [ ] Audit splice-helper unconditional flush (violations doc H20 follow-up)
-- [ ] Audit §9.1 `dyn_top` assigns and §9.2 `ctx` derived readers
+- [x] Audit splice-helper unconditional flush (violations doc H20 follow-up)
+- [x] Audit §9.1 `dyn_top` assigns and §9.2 `ctx` derived readers
 - [ ] Optional: xfer INSTALL/PUSH incremental retarget (§10 step 6)
 - [ ] Do **not** “optimize” transfer plans or re-add success-path sync to fix tests
 - [ ] Performance: human runs `KOS_TRACE_EVAL_SYNC` comparison (§7.4, §12.3)

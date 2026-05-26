@@ -58,7 +58,7 @@ Each entry: **ID**, status, premise, evidence. **Resolved** entries kept for aud
 | H1 | `kos_dyn_snapshot_ctx_derived` on every retarget | API removed; Tier-1 updates `es` only |
 | H2 | Unconditional flush in `push_noinstall` | No pre-push flush; `apply_live` flushes on frame change only |
 | H3 | Unconditional flush in `kos_dyn_push` | Same as H2 |
-| H4 | Unconditional flush in `uninstall_core` | Frame-conditional flush (matches `commit_dyn_top`) |
+| H4 | Unconditional flush in `uninstall_core` | Pre-handler flush removed; frame flush in `apply_live` only (H20b) |
 | H5 | `kos_dyn_push` dual-publish path | Uses `KosEvalState_DYN_TOP`; no ctx snapshot |
 | H6 | Install failure `SyncFromContext` | `dyn_top` rollback only |
 | H8 | Rebuild always snapshots ctx | Rebuild is `apply_live` only |
@@ -70,17 +70,17 @@ Each entry: **ID**, status, premise, evidence. **Resolved** entries kept for aud
 | H16 | Stale push retarget comment | Docstring updated in `dynchain.c` |
 | H17 | Authority §0 vs RUN-only `es` | Authority doc §0 row updated |
 | H19 | Removed APIs, surviving behavior | Snapshot/sync APIs gone; rebuild has no snapshot |
+| H20 | Pre-splice flush at splice helpers | Pre-splice flush removed at three sites; frame-boundary flush via `apply_live` only (P4) |
+| H20b | Double flush on frame pop | Flush removed from `commit_dyn_top` and `uninstall_core`; `apply_live` only (P4) |
+| H7 | Stale trace bucket names | Renamed to `retarget_after_push` / `rebuild_live_from_chain`; unused slots labeled |
+| H13 | `eval_chain.c` ctx derived writes | Grep audit: no `FRAME_TOP`/`BLOCK`/`NAMESPACE` assigns in `eval_chain.c` |
+| H14 | Lifecycle ctx derived writes | Bootstrap and agen flatten only; documented exceptions, not RUN violations |
 
 ### Open (follow-up work)
 
 | ID | Premises | Detail | Evidence |
 |----|----------|--------|----------|
-| H7 | Observability | Trace ends use `KOS_TEVS_patch_dyn_caches` / `KOS_TEVS_refresh_dyn_caches` though APIs are removed | `dynchain.c` retarget/rebuild trace ends |
-| H13 | P2, P6 | Re-verify `eval_chain.c` for ctx derived writes during transition | `grep KosContext_FRAME_TOP` in `eval_chain.c` |
-| H14 | P2 | Lifecycle exceptions: `KosContext_New` sets `frame_top` at bootstrap; agen flatten NULLs consumer ctx fields | `eval.c` ~963, ~1621 |
 | H18 | Performance | LOOP push/pop dyn node + stack alloc cost per `while` extent | `PUSH_LOOP` / `POP_LOOP` opcodes |
-| H20 | P4 | Unconditional flush before splice rewire in `kos_dyn_unlink_next_node`, `kos_dyn_unlink_yield_from`; `kos_dyn_gen_install` flushes before graft | `dyn_next.c` ~125, `dyn_yield_from.c` ~278, `dyn_gen.c` ~114 |
-| H20b | P4 | Double flush when frame identity changes: `commit_dyn_top` + `apply_live` both may flush | `dynchain.c` ~856, ~548 |
 
 ---
 
@@ -91,7 +91,7 @@ Each entry: **ID**, status, premise, evidence. **Resolved** entries kept for aud
 | Push-side unconditional flush | **Done** — `push_noinstall` has no pre-push flush |
 | Tier-4 `SyncFromContext` | **Done** — API removed |
 | Opcode PUSH_* post-push rebuild | **Done** — stack at node alloc |
-| Splice-helper unconditional flush | **Open** — see H20 |
+| Splice-helper unconditional flush | **Done** — see H20 |
 
 ---
 
@@ -111,14 +111,11 @@ grep -rn 'KosEvalState_SyncFromContext' koskari/lib
 
 | File | Line | Notes |
 |------|------|--------|
-| `dynchain.c` | 548 | `kos_dyn_apply_live` when `ef != ft` |
-| `dynchain.c` | 856 | `kos_dyn_commit_dyn_top` when removed == `es->frame` |
-| `dynchain.c` | 885 | `kos_dyn_uninstall_core` when node == `es->frame` |
+| `dynchain.c` | 548 | `kos_dyn_apply_live` when `ef != ft` (sole retarget flush; H20b) |
 | `eval.c` | 633 | `kos_eval_emit_raise_from_pyerr` |
 | `eval.c` | 2675 | `koskari_eval_cleanup` |
-| `dyn_yield_from.c` | 210, 278 | deliver yield; unlink splice (H20) |
-| `dyn_next.c` | 125 | unlink splice (H20) |
-| `dyn_gen.c` | 114, 179 | gen install / unwind exhausted |
+| `dyn_yield_from.c` | 210 | deliver inner yield; suspend boundary |
+| `dyn_gen.c` | 179 | gen unwind exhausted; frame at dyn_top |
 | `opcode/YIELD_FROM.c` | 181, 449 | opcode handler |
 
 No flush in `kos_dyn_push` or `kos_dyn_push_noinstall`.
@@ -146,11 +143,17 @@ No flush in `kos_dyn_push` or `kos_dyn_push_noinstall`.
 
 ## 8. Verification commands (regenerate inventories)
 
+Last straggler audit pass: 2026-05-26 (§9.1/§9.2, H13/H14). Gates below expected
+zero matches for removed APIs; `dyn_top` assigns only lifecycle paths.
+
 ```bash
 grep -rn 'KosEvalState_SyncFromContext\|kos_dyn_snapshot_ctx_derived\|PatchDynCaches\|RefreshDynCaches\|ApplyDynCaches' koskari/lib
 grep -rn 'KosEvalState_FlushLiveRegsToFrame' koskari/lib
 grep -rn 'KosContext_FRAME_TOP\|KosContext_BLOCK\|KosContext_NAMESPACE' koskari/lib | grep '='
 grep -rn 'kos_dyn_rebuild_live_from_chain' koskari/lib
+grep -rnE 'KosContext_DYN_TOP\([^)]+\)[[:space:]]*=' koskari/lib
+grep -rn 'KosContext_DYN_TOP' koskari/lib/dynchain
+grep -rn 'KosContext_FRAME_TOP' koskari/lib/eval/eval_chain.c
 ```
 
 ---

@@ -275,7 +275,6 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
     return kos_dyn_pop_yield_from(es, yf);
 
   p = KosDynNode_PARENT(node);
-  KosEvalState_FlushLiveRegsToFrame(es);
   for (c = KosEvalState_DYN_TOP(es); c; c = KosDynNode_PARENT(c)) {
     if (KosDynNode_PARENT(c) == node) {
       KosDynNode_PARENT(c) = p;

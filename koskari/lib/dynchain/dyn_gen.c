@@ -111,7 +111,6 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   }
 
   /* 1. GEN's parent = current ctx's active node */
-  KosEvalState_FlushLiveRegsToFrame(es);
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
   /* 2. Incref GEN */
   kos_dyngen_acquire(gen);

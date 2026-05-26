@@ -690,7 +690,7 @@ static void kos_dyn_retarget_after_push(
 #endif
 
 done:
-  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_patch_dyn_caches);
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_retarget_after_push);
 }
 
 
@@ -698,8 +698,8 @@ done:
    Live-field update after dyn_top changes to new_top and removed is unlinked.
 
    Call from kos_dyn_commit_dyn_top only. Caller must pass the previous
-   dyn_top as removed and the new head as new_top, with flush already done.
-   When new_top is not KosDynNode_PARENT(removed) (splice, gen install, xfer
+   dyn_top as removed and the new head as new_top. Frame-boundary flush runs
+   in kos_dyn_apply_live when the removed node owned es->frame. When new_top
    segment replace), delegates to kos_dyn_rebuild_live_from_chain. For a normal
    single-head pop, updates only the live slots the removed node owned; returns
    without work when the pop did not own frame, block, or namespace on es.
@@ -792,7 +792,7 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
 
     if (! ft && KosDynNode_IS_FRAME(node)) {
       ft = (KosDynFrame *) node;
-      SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=%p (%s)\n",
+      SAYF("[gen] rebuild_live_from_chain dyn_top=%p -> frame_top=%p (%s)\n",
            (void *) KosEvalState_DYN_TOP(es), (void *) node,
            kos_dynnode_kind_name(KosDynNode_KIND(node)));
     }
@@ -804,13 +804,13 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
   }
 
   if (! ft)
-    SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=NULL (no frame)\n",
+    SAYF("[gen] rebuild_live_from_chain dyn_top=%p -> frame_top=NULL (no frame)\n",
          (void *) KosEvalState_DYN_TOP(es));
 
   kos_dyn_apply_live(es, ft, bl, ns);
 
 done:
-  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_refresh_dyn_caches);
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_rebuild_live_from_chain);
 }
 
 
@@ -852,8 +852,6 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
   KosDynNode *removed;
 
   removed = KosEvalState_DYN_TOP(es);
-  if (KosEvalState_FRAME(es) == (KosDynFrame *) removed)
-    KosEvalState_FlushLiveRegsToFrame(es);
   KosEvalState_DYN_TOP(es) = new_top;
   kos_dyn_retarget_after_pop(es, removed, new_top);
 }
@@ -881,8 +879,6 @@ static int kos_dyn_uninstall_core(
 
   int r;
 
-  if (KosEvalState_FRAME(es) == (KosDynFrame *) node)
-    KosEvalState_FlushLiveRegsToFrame(es);
   r = kos_dyn_uninstall_handler(es, node, event, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
