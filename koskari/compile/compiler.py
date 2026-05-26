@@ -31,6 +31,7 @@ from ..lib import (Code, FormalsSpec, FunctionSpec, Module,
                    cons, keyword, nil, symbol)
 from ..types import get_position, is_pair, is_proper, is_symbol
 from .pragma import KoskariPragma
+from ..lib import kos_repr
 
 
 @runtime_checkable
@@ -650,7 +651,7 @@ class Compiler:
             if comp:
                 return self.compile_special(fragment, comp, source_obj, tc)
 
-            if comp is symbol('compile/call'):
+            if head is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
             expr = cons(_symbol_call, head, tail)

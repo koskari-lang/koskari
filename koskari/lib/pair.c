@@ -837,6 +837,11 @@ long KosPair_IsProper(PyObject *self) {
   long result = 0;
 
   for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+    if (KosNil_Check(self)) {
+      result = 1;
+      break;
+    }
+
     pair_id = PyLong_FromVoidPtr(self);
 
     if (PySet_Contains(seen, pair_id)) {

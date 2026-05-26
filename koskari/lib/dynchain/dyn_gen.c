@@ -189,11 +189,18 @@ int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
 
 /**
    GC traverse a KOS_DYN_GEN: visit owner and, when frozen, the active chain.
+
+   active is the chain head stored by kos_dyn_gen_freeze (dyn_top at yield);
+   it may be FOREACH, FRAME, or another kind, not only FRAME. Traverse from
+   active down to this GEN node (exclusive) via kos_dynchain_traverse.
 */
 static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
   if (KosDynGen_ACTIVE((KosDynGen *) node))
-    return dynnode_traverse_frame(
-        KosDynGen_ACTIVE((KosDynGen *) node), visit, arg);
+    return kos_dynchain_traverse(
+        KosDynGen_ACTIVE((KosDynGen *) node),
+        node,
+        visit,
+        arg);
   return 0;
 }
