@@ -299,7 +299,6 @@ static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
 static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *with_node) {
 
   if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_ENTER_AWAIT) {
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
 
@@ -328,7 +327,6 @@ static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *
 
   KosDynWith_ENTERED(with_node) = 1;
   KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -340,7 +338,6 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
                                             int do_pop_node) {
 
   if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
 
@@ -381,7 +378,6 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
       KosEvalState_SyncFromContext(es);
       return -1;
     }
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
 
@@ -410,7 +406,6 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
     kos_dyn_with_shot_after_exit_done(with_node);
     kos_dyn_pop_with(es, with_node);
   }
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -420,14 +415,12 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
 */
 static int kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node, KosEvent *out_ev) {
   if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE) {
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
 
   PyObject *enter_fn = KosDynWith_ENTER(node);
   int r = KosEvalState_CallNoArgs(es, out_ev, enter_fn, 0);
   if (r == 1) {
-    KosEvalState_SyncFromContext(es);
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   }
   if (r < 0) {
@@ -455,7 +448,6 @@ static int kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node, KosEvent *o
 
   KosDynWith_ENTERED(node) = 1;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -469,7 +461,6 @@ int kos_dyn_with_unwind(
     KosEvent *out_ev) {
 
   if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE) {
-    KosEvalState_SyncFromContext(es);
     return KOS_DYN_UNWIND_PROTOCOL_SKIPPED;
   }
 
@@ -509,7 +500,6 @@ int kos_dyn_with_unwind(
     KosDynWith_EXC_VAL(node) = val;
     KosDynWith_EXC_TB(node) = tb;
     KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
-    KosEvalState_SyncFromContext(es);
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   }
 
@@ -556,7 +546,6 @@ int kos_dyn_with_unwind(
       return -1;
     }
 
-    KosEvalState_SyncFromContext(es);
     return KOS_DYN_UNWIND_SWALLOWED;
 
   } else if (typ != Py_None) {
@@ -578,7 +567,6 @@ int kos_dyn_with_unwind(
       return -1;
     }
   }
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -601,7 +589,6 @@ int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
 
   KosDynWith_ENTERED(with_node) = 1;
   KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

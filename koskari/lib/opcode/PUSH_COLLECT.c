@@ -61,7 +61,7 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
     kos_dyn_pop_collect(es, col_node);
     return KOS_OP_POST_ERR();
   }
-  KosEvalState_RefreshDynCaches(es);
+  kos_dyn_rebuild_live_from_chain(es);
 
   (void) out_ev;
   return KOS_OP_RUN();

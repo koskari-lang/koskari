@@ -261,7 +261,12 @@ int KosEvalState_SetFrameCodeAndNamespace(
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = code;
   KosContext_NAMESPACE(ctx) = ns;
-  KosEvalState_SyncFromContext(es);
+  if (KosEvalState_FRAME(es) == frame) {
+    KosEvalState_NAMESPACE(es) = ns;
+    KosEvalState_CODE(es) = code;
+    KosContext_FRAME_TOP(ctx) = frame;
+    KosContext_BLOCK(ctx) = KosEvalState_BLOCK(es);
+  }
   return 0;
 }
 

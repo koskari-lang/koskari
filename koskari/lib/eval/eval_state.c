@@ -16,11 +16,12 @@
 /**
    koskari/lib/eval/eval_state.c
 
-   Derived-cache and stack-owner helpers for KosEvalState; included  into
-   eval.c.
+   KosEvalState init, sync-from-context repair, freeze-to-context, and
+   stack-owner helpers; included into eval.c.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
+   :ai-assistant: claude-4.6-sonnet-high via Cursor
 */
 
 
@@ -105,6 +106,29 @@ done:
 }
 
 
+/**
+   Snapshot es live frame, block, and namespace onto ctx before leaving RUN.
+
+   Call from koskari_eval_cleanup after KosEvalState_FlushLiveRegsToFrame.
+   Copies authoritative es fields into ctx derived snapshots for the next eval
+   entry; does not modify pc slots on heap frames beyond the prior flush.
+*/
+void KosEvalState_FreezeDerivedToContext(KosEvalState *es) {
+
+  KosContext *ctx;
+
+  if (! es)
+    return;
+  ctx = KosEvalState_CONTEXT(es);
+  if (! ctx)
+    return;
+
+  KosContext_FRAME_TOP(ctx) = KosEvalState_FRAME(es);
+  KosContext_BLOCK(ctx) = KosEvalState_BLOCK(es);
+  KosContext_NAMESPACE(ctx) = KosEvalState_NAMESPACE(es);
+}
+
+
 KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *n = KosContext_DYN_TOP(ctx);
@@ -115,171 +139,6 @@ KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
   }
   return NULL;
 }
-
-
-/**
-   Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes, then apply
-   them to es without a full KosEvalState_SyncFromContext traversal.
-*/
-void KosEvalState_RefreshDynCaches(KosEvalState *es) {
-    KosContext *ctx;
-    KosDynNode *node;
-
-  KOS_TRACE_EVAL_SYNC_BEGIN();
-
-  ctx = KosEvalState_CONTEXT(es);
-  if (unlikely(! ctx))
-    goto done;
-
-  KosDynFrame *ft = NULL;
-  KosStackBlock **bl = NULL;
-  PyObject *ns = NULL;
-
-  node = KosContext_DYN_TOP(ctx);
-  while (node) {
-    if (! bl && KosDynNode_STACK(node))
-      bl = &KosDynNode_STACK(node);
-
-    if (! ns && KosDynNode_NS(node))
-      ns = KosDynNode_NS(node);
-
-    if (! ft && KosDynNode_IS_FRAME(node)) {
-      ft = (KosDynFrame *) node;
-      SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=%p (%s)\n",
-           (void *) KosContext_DYN_TOP(ctx), (void *) node,
-           kos_dynnode_kind_name(KosDynNode_KIND(node)));
-    }
-
-    if (ft && bl && ns)
-      break;
-
-    node = KosDynNode_PARENT(node);
-  }
-
-  KosContext_FRAME_TOP(ctx) = ft;
-  KosContext_BLOCK(ctx) = bl;
-  KosContext_NAMESPACE(ctx) = ns;
-
-  /*
-   It is normal for one or more of ft, bl, or ns to remain NULL after the walk
-   (namespace-only extent, detached-gen topology, prompt-only head). Missing a
-   FRAME when one exists deeper on the chain would be a bug in node linking,
-   not something Refresh alone can assert without a full chain audit.
-  */
-
-  if (! ft)
-    SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=NULL (no frame)\n",
-         (void *) KosContext_DYN_TOP(ctx));
-
-  KosEvalState_ApplyDynCaches(es);
-
-done:
-  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_refresh_dyn_caches);
-}
-
-
-/**
-   Push-only derived-cache patch; see eval.h. new_node must already be dyn_top.
-*/
-void KosEvalState_PatchDynCaches(
-    KosEvalState *es,
-    KosDynNode *new_node) {
-
-  KosContext *ctx;
-
-  KOS_TRACE_EVAL_SYNC_BEGIN();
-
-  ctx = KosEvalState_CONTEXT(es);
-  if (unlikely(! es || ! ctx || ! new_node))
-    goto done;
-
-  if (KosDynNode_IS_FRAME(new_node)) {
-    KosDynFrame *ft = (KosDynFrame *) new_node;
-
-    KosContext_FRAME_TOP(ctx) = ft;
-    KosContext_BLOCK(ctx) = &KosDynNode_STACK(new_node);
-    KosContext_NAMESPACE(ctx) = KosDynNode_NS(new_node);
-
-  } else {
-    if (KosDynNode_NS(new_node))
-      KosContext_NAMESPACE(ctx) = KosDynNode_NS(new_node);
-
-    if (KosDynNode_STACK(new_node))
-      KosContext_BLOCK(ctx) = &KosDynNode_STACK(new_node);
-  }
-
-  KosEvalState_ApplyDynCaches(es);
-
-done:
-#if KOS_DEBUG_PATCH_DYN_CACHES
-  if (es && new_node) {
-    KosContext *ctx_d = KosEvalState_CONTEXT(es);
-    if (ctx_d) {
-      KosDynFrame *ft_dbg = KosContext_FRAME_TOP(ctx_d);
-      KosStackBlock **bl_dbg = KosContext_BLOCK(ctx_d);
-      PyObject *ns_dbg = KosContext_NAMESPACE(ctx_d);
-
-      KosEvalState_RefreshDynCaches(es);
-      if (ft_dbg != KosContext_FRAME_TOP(ctx_d)
-          || bl_dbg != KosContext_BLOCK(ctx_d)
-          || ns_dbg != KosContext_NAMESPACE(ctx_d)) {
-        PyErr_SetString(PyExc_SystemError,
-                        "KosEvalState_PatchDynCaches: cache drift vs refresh");
-      }
-    }
-  }
-#endif
-  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_patch_dyn_caches);
-}
-
-
-void KosEvalState_ApplyDynCaches(KosEvalState *es) {
-
-  KosContext *ctx;
-  KosDynFrame *ft;
-  KosStackBlock **bl;
-  PyObject *ns;
-  KosDynFrame *ef;
-
-  KOS_TRACE_EVAL_SYNC_BEGIN();
-
-  if (! es)
-    goto done;
-
-  ctx = KosEvalState_CONTEXT(es);
-  if (! ctx)
-    goto done;
-
-  ft = KosContext_FRAME_TOP(ctx);
-  bl = KosContext_BLOCK(ctx);
-  ns = KosContext_NAMESPACE(ctx);
-  ef = KosEvalState_FRAME(es);
-
-  if (ef != ft) {
-    if (ef)
-      KosEvalState_FlushLiveRegsToFrame(es);
-    KosEvalState_FRAME(es) = ft;
-    KosEvalState_BLOCK(es) = bl;
-    KosEvalState_NAMESPACE(es) = ns;
-    if (ft) {
-      KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
-      es->pc = KosDynFrame_PC(ft);
-      es->acting_pc = KosDynFrame_ACTING_PC(ft);
-    } else {
-      KosEvalState_CODE(es) = NULL;
-      es->pc = 0;
-      es->acting_pc = 0;
-    }
-    goto done;
-  }
-
-  KosEvalState_BLOCK(es) = bl;
-  KosEvalState_NAMESPACE(es) = ns;
-
-done:
-  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_apply_dyn_caches);
-}
-
 
 
 #define KosEvalState_GetConstant(es, index) \

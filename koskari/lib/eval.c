@@ -972,7 +972,7 @@ KosContext *KosContext_New(KosDynFrame *top) {
   { /* Lazy and evil */
     KosEvalState es;
     KosEvalState_Init(&es, ctx);
-    KosEvalState_RefreshDynCaches(&es);
+    kos_dyn_rebuild_live_from_chain(&es);
   }
 
   return ctx;
@@ -2455,8 +2455,8 @@ static inline int koskari_eval_dispatch_computed_goto(
   goto cg_prologue;
 
 cg_prologue:
-  /* es mirrors ctx via Init, ApplyDynCaches after dyn surgery, and targeted
-     SyncFromContext on transfer/error paths — not a full sync every prologue. */
+  /* es live fields via Init, kos_dyn_* retarget after chain surgery, freeze at
+     cleanup, and SyncFromContext on error paths only. */
 
   #if KOS_STACK_TRACE
   {
@@ -2638,6 +2638,7 @@ int koskari_eval(
 
 koskari_eval_cleanup:
   KosEvalState_FlushLiveRegsToFrame(&es);
+  KosEvalState_FreezeDerivedToContext(&es);
   KosEvalState_LeaveDomainScope(&es);
   return eval_ret;
 }

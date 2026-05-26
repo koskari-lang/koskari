@@ -856,11 +856,30 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 
 
 /**
-   Flush live PCs, set dyn_top to new_top, bump chain_version, full
-   RefreshDynCaches walk. Used for pops, splices, and manual rewinds — not for
-   ordinary single-node pushes (those use KosEvalState_PatchDynCaches).
+   Flush live PCs, set dyn_top to new_top, bump chain_version, retarget live
+   fields on es.
+
+   Use for pops, splices, gen install, and any dyn_top change that is not
+   kos_dyn_push. Internally captures the previous dyn_top and calls
+   kos_dyn_retarget_after_pop (incremental parent pop or full rebuild).
+   Ordinary pushes must use kos_dyn_push or kos_dyn_push_noinstall instead.
 */
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
+
+
+/**
+   Full chain walk: recompute live frame, block, and namespace on es from
+   dyn_top, then snapshot onto ctx.
+
+   Call from outside the dynchain TU when eval lifecycle or opcodes must refresh
+   live fields after a non-standard chain edit (KosContext_New bootstrap, tail
+   koscall, stack assigned on dyn_top after push). Inside dynchain.c, xfer
+   INSTALL/PUSH, gen install fallback, and kos_dyn_retarget_after_pop when the
+   edit is not a single-head parent pop use this instead of incremental retarget.
+   Do not call on every opcode; ordinary pushes and pops go through
+   kos_dyn_push and kos_dyn_commit_dyn_top.
+*/
+void kos_dyn_rebuild_live_from_chain(KosEvalState *es);
 
 
 /**

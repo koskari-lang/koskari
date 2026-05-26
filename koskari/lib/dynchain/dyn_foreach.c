@@ -157,7 +157,6 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
   KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
   agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
   agen->in_progress = 0;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -187,7 +186,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
   Py_DECREF(val);
   KosEvent_PAYLOAD(out_ev) = NULL;
   KosEvent_KIND(out_ev) = KOS_EV_NONE;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

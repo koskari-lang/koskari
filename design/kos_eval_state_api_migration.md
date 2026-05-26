@@ -83,7 +83,7 @@ inject fields by name.
 |-------|--------|
 | New `KosTransferPlan` IR | This migration moves **call sites** only; plan **semantics** stay. |
 | Language semantics | Refactor-only; same observable behavior. |
-| **Incremental** `RefreshDynCaches` | **Deferred:** requires proving every `dyn_top` mutation funnels through one commit. **Until then:** keep **full** `RefreshDynCaches` at commit (current behavior). |
+| **Incremental** pop/push retarget at every `dyn_top` publish | **Phase 1 done** for Tier 1 (`kos_dyn_retarget_*` in `dynchain.c`); see [eval-state-live-authority.md](interpreter/eval-state-live-authority.md). Tier 2 xfer / tail koscall still use full `kos_dyn_rebuild_live_from_chain`. |
 
 ---
 
@@ -664,3 +664,4 @@ centralizes the write.
 | 2026-04-27 | Third pass: TOC, glossary, Appendix B, IN_TRANSFER vs ArmTransferPlan, naming alignment, phase ordering (**C** after **B1**), removed redundant **`LeaveTransfer`** from public §10.2 |
 | 2026-04-27 | Fourth pass: §10 **Current / New / refactor** tables; **`KReturnDelimited`** (§10.12), **`TailKoscallReplaceFrame`** (§10.13), opcode plan builders §10.14; **`DisarmTransferPlan`** ↔ **`clear_and_free_transfer_plan`**. |
 | 2026-05-26 | Cross-link: [eval-state-live-authority.md](interpreter/eval-state-live-authority.md) (choke-point funnel, parity constraints; orthogonal to opcode `ctx` macro migration). |
+| 2026-05-26 | §1.3: incremental Tier-1 retarget landed; Tier 2 rebuild deferred per live-authority Phase 2. |

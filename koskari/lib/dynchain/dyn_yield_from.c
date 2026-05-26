@@ -209,7 +209,6 @@ int kos_dyn_yield_from_deliver_inner_yield(
   KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -251,7 +250,6 @@ int kos_dyn_yield_from_deliver_inner_return(
     KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es) + 1u);
 
   kos_dyn_pop_yield_from(es, yf);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

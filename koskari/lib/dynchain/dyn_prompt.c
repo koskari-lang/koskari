@@ -106,7 +106,6 @@ int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
   else {
     r = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE, NULL);
   }
-  KosEvalState_SyncFromContext(es);
   return r;
 }
 

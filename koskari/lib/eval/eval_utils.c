@@ -551,7 +551,7 @@ static inline int KosEvalState_TailKoscallReplaceFrame(
   frame = kos_dynframe_new(parent, code, ns, NULL);
   if (! frame) {
     KosContext_DYN_TOP(ctx) = (KosDynNode *) old;
-    KosEvalState_RefreshDynCaches(es);
+    kos_dyn_rebuild_live_from_chain(es);
     return -1;
   }
 
@@ -559,7 +559,7 @@ static inline int KosEvalState_TailKoscallReplaceFrame(
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
   KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
+  kos_dyn_rebuild_live_from_chain(es);
 
   return 0;
 }
