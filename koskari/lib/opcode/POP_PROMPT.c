@@ -82,8 +82,10 @@ KOS_OP_HANDLER(POP_PROMPT) {
 
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = val;
-    if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim)
-      kos_dyn_pop_delim(es, ret_delim);
+    if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim) {
+      if (unlikely(kos_dyn_pop_delim(es, ret_delim) < 0))
+        return KOS_OP_POST_ERR();
+    }
     KosEvalState_MarkSuspendedNotRunning(es);
     (void) insn;
     return KOS_OP_POST_SUSPEND();

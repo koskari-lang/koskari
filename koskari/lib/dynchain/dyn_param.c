@@ -287,12 +287,12 @@ KosDynParam *kos_dyn_push_param(
 /**
    Restore and unlink PARAM when top. Callers: POP_PARAM, transfer pop.
 */
-void kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
+int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
-    KosEvalState_SyncFromContext(es);
-    return;
+    PyErr_SetString(PyExc_RuntimeError, "PARAM node is not at top of chain");
+    return -1;
   }
 
   kos_dynparam_restore(ctx, node);
@@ -303,6 +303,7 @@ void kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dynparam_free(node);
   }
+  return 0;
 }
 
 

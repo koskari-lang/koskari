@@ -100,7 +100,6 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 
   if (! gen || ! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL ctx or gen for gen_install");
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -108,7 +107,6 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   if (! active) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_gen_install: GEN has no active frame");
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -166,12 +164,14 @@ int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *g) {
 int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
   KosDynNode *frame = KosEvalState_DYN_TOP(es);
   if (! frame || ! KosDynNode_IS_FRAME(frame)) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_gen_unwind_exhausted: dyn_top is not a frame");
     return -1;
   }
   KosDynGen *gen = (KosDynGen *) KosDynNode_PARENT(frame);
   if (! gen || ! KosDynNode_IS_GEN((KosDynNode *) gen)) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_gen_unwind_exhausted: frame parent is not GEN");
     return -1;
   }
   KosDynNode *consumer = KosDynNode_PARENT(gen);

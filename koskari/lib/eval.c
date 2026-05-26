@@ -256,7 +256,7 @@ static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
   if (dn)
     kos_dyn_unlink_next_node(es, dn);
   if (yf)
-    kos_dyn_pop_yield_from(es, yf);
+    (void) kos_dyn_unlink_yield_from(es, yf);
 }
 
 
@@ -1705,14 +1705,16 @@ static int op_attach_koskari_agen_frame_for_yield_from(
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
   if (! gen || ! KosDynGen_ACTIVE(gen)) {
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     agen->in_progress = 0;
     PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
     return -1;
   }
 
   if (kos_attach_agen_gen_flatten(es, agen, gen) < 0) {
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     agen->in_progress = 0;
     return -1;
   }
@@ -2486,7 +2488,7 @@ static inline int koskari_eval_dispatch_computed_goto(
 
 cg_prologue:
   /* es live fields via Init, kos_dyn_* retarget after chain surgery, freeze at
-     cleanup, and SyncFromContext on error paths only. */
+     cleanup; chain errors propagate without rebuild. */
 
   #if KOS_STACK_TRACE
   {

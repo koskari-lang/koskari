@@ -89,10 +89,10 @@ KosDynNs *kos_dyn_push_ns(
 /**
    Unlink and free NS when top. Callers: POP_NS.
 */
-void kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
+int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
-    KosEvalState_SyncFromContext(es);
-    return;
+    PyErr_SetString(PyExc_RuntimeError, "NS node is not at top of chain");
+    return -1;
   }
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
@@ -101,6 +101,7 @@ void kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dynns_free(node);
   }
+  return 0;
 }
 
 

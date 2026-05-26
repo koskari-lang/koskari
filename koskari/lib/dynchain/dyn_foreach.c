@@ -121,10 +121,10 @@ KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_
 /**
    Pop FOREACH when top. Callers: abort_push_region, kos_dyn_transfer_to_loop.
 */
-void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
-  if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
-    KosEvalState_SyncFromContext(es);
-    return;
+int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+    PyErr_SetString(PyExc_RuntimeError, "FOREACH node is not at top of chain");
+    return -1;
   }
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
@@ -133,6 +133,7 @@ void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dynforeach_free(node);
   }
+  return 0;
 }
 
 
@@ -145,7 +146,6 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
   KosPyAsyncGen *agen;
 
   if (KosEvalState_StackPushRef(es, payload) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
   Py_DECREF(payload);
@@ -169,7 +169,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
 
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
     Py_DECREF(val);
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 

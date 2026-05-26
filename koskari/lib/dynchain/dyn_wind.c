@@ -109,7 +109,6 @@ int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node) {
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
   if (KosEvalState_CallNoArgs(es, NULL, KosDynWind_BEFORE_THUNK(node), 0) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -136,7 +135,6 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
         && body_result) {
       if (KosEvalState_StackPushRef(es, body_result) < 0) {
         KosDynWind_BODY_RESULT(node) = body_result;
-        KosEvalState_SyncFromContext(es);
         return -1;
       }
     }
@@ -149,12 +147,10 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
   {
     PyObject *args = PyTuple_New(0);
     if (! args) {
-      KosEvalState_SyncFromContext(es);
       return -1;
     }
     if (KosEvalState_CallArgs(es, NULL, KosDynWind_AFTER_THUNK(node), args, NULL, 0) < 0) {
       Py_DECREF(args);
-      KosEvalState_SyncFromContext(es);
       return -1;
     }
     Py_DECREF(args);
@@ -241,7 +237,6 @@ KosDynWind *kos_dyn_push_wind(
 int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) wind) {
     PyErr_SetString(PyExc_RuntimeError, "wind node is not at top of chain");
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
   {

@@ -432,7 +432,8 @@ struct KosContext {
   KosEvalState_ThawFromContext to move dyn_top, plan, plan_stack, and derived
   snapshots from ctx onto es (NULL on ctx). While RUN, es owns chain and plan;
   KosEvalState_DYN_TOP and KosEvalState_PLAN never read ctx. Freeze restores
-  onto ctx and NULLs es. KosEvalState_SyncFromContext is error recovery only.
+  onto ctx and NULLs es. Chain shape changes refresh live fields via
+  kos_dyn_retarget_after_push/pop or kos_dyn_rebuild_live_from_chain.
 
   With KOS_TRACE_EVAL_SYNC, call counts and total wall time per sync API are
   recorded for kos_trace_report / get_trace_report under eval_state_sync.
@@ -605,14 +606,6 @@ void KosEvalState_ThawFromContext(KosEvalState *es);
 
 
 /**
-  Reload es live fields from es->dyn_top (error recovery only; not steady-state).
-  Does not read stolen NULL ctx chain fields during RUN.
-*/
-
-void KosEvalState_SyncFromContext(KosEvalState *es);
-
-
-/**
   Restore dyn_top, plan, plan_stack, and derived snapshots from es onto ctx and
   NULL es. Call from koskari_eval_cleanup after FlushLiveRegsToFrame. Updates
   KOS_CTX_IN_TRANSFER from restored plan.
@@ -677,8 +670,7 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es);
 
 /**
   Eval-facing dynamic-chain transition dispatcher; implemented in
-  eval/eval_transition.c included into eval.c. On -1, performs a single
-  KosEvalState_SyncFromContext when es is non-NULL (internal paths do not sync).
+  eval/eval_chain.c included into eval.c. On -1, propagates PyErr.
 */
 int KosEvalState_Transition(
     KosEvalState *es,

@@ -108,14 +108,12 @@ sequenceDiagram
   kos_dyn_push->>ctx: kos_dyn_snapshot_ctx_derived
 ```
 
-### H6 — `kos_dyn_push` install failure: `SyncFromContext`
+### H6 — `kos_dyn_push` install failure: `SyncFromContext` — **resolved**
 
 | Field | Detail |
 |-------|--------|
-| **Premises** | P5 (acceptable as error path if chain inconsistent; still full ctx→es repair) |
-| **Violation** | On `kos_dyn_install` failure, `KosEvalState_SyncFromContext(es)` reloads `es` from `ctx` derived snapshots after partial publish. |
-| **Evidence** | `koskari/lib/dynchain.c` ~882–884. |
-| **Affected** | Failed install on `kos_dyn_push`. |
+| **Resolution** | On install failure, `dyn_top` is restored to the previous head; no rebuild. |
+| **Evidence** | `koskari/lib/dynchain.c` `kos_dyn_push`. |
 
 ### H7 — Trace buckets mislabel retarget/rebuild work
 
@@ -135,23 +133,19 @@ sequenceDiagram
 | **Evidence** | `koskari/lib/dynchain.c` ~818–858. |
 | **Affected** | xfer INSTALL/PUSH, pop fallback when `new_top != parent(removed)`, `KosContext_New` bootstrap, tail paths, opcode post-assign stack paths (per authority doc §9.3). |
 
-### H9 — `SyncFromContext` call sites (~141) outside Tier-4-only goal
+### H9 — `SyncFromContext` call sites — **resolved**
 
 | Field | Detail |
 |-------|--------|
-| **Premises** | P5 |
-| **Violation** | `KosEvalState_SyncFromContext` remains at many sites in `dynchain.c` and `dyn_*.c`. Authority doc §12.2 target: Tier-4 only; §4.3 reports ~140 calls remain. |
-| **Evidence** | Appendix A. Definition: `koskari/lib/eval/eval_state.c` ~53–106. |
-| **Affected** | Transfers, unwind walks, capture, WITH/WIND/NEXT/GEN paths, guards. |
+| **Resolution** | `KosEvalState_SyncFromContext` removed from `koskari/lib`; `grep` gate zero. |
+| **Evidence** | Appendix A (historical inventory). |
 
-### H10 — `kos_dyn_pop_loop` dyn_top mismatch → `SyncFromContext`
+### H10 — `kos_dyn_pop_*` mismatch → `SyncFromContext` — **resolved**
 
 | Field | Detail |
 |-------|--------|
-| **Premises** | P5 |
-| **Violation** | When `dyn_top != node`, repair via full `SyncFromContext` before return (guard path). |
-| **Evidence** | `koskari/lib/dynchain/dyn_loop.c` ~105–107. |
-| **Affected** | POP_LOOP when chain head does not match expected LOOP node. |
+| **Resolution** | Region pops return `int`; mismatch sets `PyErr` and `-1` without rebuild. |
+| **Evidence** | `koskari/lib/dynchain/dyn_*.c`, `kos_dyn_pop_yield_from` in `dynchain.c`. |
 
 ### H11 — Tail koscall writes ctx derived during RUN
 
@@ -251,7 +245,7 @@ sequenceDiagram
 |------|--------|
 | Push-side conditional flush | POP_LOOP plan scoped pop-only; `push_noinstall` ~925 unchanged. |
 | Defer ctx derived writes to freeze-only | Authority doc §10 Phase 2 “Optional: defer ctx derived writes…” — open. |
-| Tier-4-only `SyncFromContext` | §12.2 audit open; ~141 call sites (Appendix A). |
+| Tier-4 `SyncFromContext` | **Removed** (Appendix A is historical). |
 | Opcode PUSH_* post-push full rebuild | §9.3 kept intentionally. |
 
 ---

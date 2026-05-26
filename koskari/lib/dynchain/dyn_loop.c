@@ -99,10 +99,10 @@ KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t cont
 /**
    Pop LOOP when top. Callers: abort_push_region, kos_dyn_transfer_to_loop, POP.
 */
-void kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
-  if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
-    KosEvalState_SyncFromContext(es);
-    return;
+int kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+    PyErr_SetString(PyExc_RuntimeError, "LOOP node is not at top of chain");
+    return -1;
   }
   {
     KosDynNode *parent = KosDynNode_PARENT(node);
@@ -111,6 +111,7 @@ void kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
     KosDynNode_PARENT(node) = NULL;
     kos_dynloop_free(node);
   }
+  return 0;
 }
 
 

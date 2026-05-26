@@ -1072,7 +1072,7 @@ KosDynDelim *kos_dyn_push_delim(
    :param ctx: execution context
    :param delim: DELIM node to pop (must be dyn_top)
 */
-void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
+int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
 
 
 /**
@@ -1109,7 +1109,7 @@ KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc);
    :param ctx: execution context
    :param cc: the CC node to pop (must be at dyn_top)
 */
-void kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
+int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
 
 
 /**
@@ -1246,10 +1246,10 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node);
    :param ctx: execution context
    :param region: region to pop (must be dyn_top)
 */
-void kos_dyn_pop_try(KosEvalState *es, KosDynTry *node);
-void kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node);
-void kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node);
-void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
+int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node);
+int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node);
+int kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node);
+int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
 
 
 /**
@@ -1284,7 +1284,7 @@ KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *ns);
    :param ctx: execution context
    :param node: NS node to pop (must be dyn_top)
 */
-void kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
+int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
 
 
 /**
@@ -1305,7 +1305,7 @@ KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *ns);
    :param ctx: execution context
    :param node: COLLECT node to pop (must be dyn_top)
 */
-void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node);
+int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node);
 
 
 void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node);
@@ -1353,7 +1353,7 @@ KosDynParam *kos_dyn_push_param(
    :param ctx: execution context
    :param node: PARAM node to pop (must be dyn_top)
 */
-void kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
+int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
 
 
 /**
@@ -1428,7 +1428,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src);
    :param ctx: execution context
    :param node: WITH node to pop (must be dyn_top)
 */
-void kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
+int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
 
 
 /**
@@ -1720,7 +1720,17 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
    :param ctx: execution context
    :param node: YIELD_FROM node to pop (must be current dyn_top)
 */
-void kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node);
+int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node);
+
+
+/**
+   Unlink a YIELD_FROM node whether or not it is dyn_top. When it is top,
+   delegates to kos_dyn_pop_yield_from; otherwise splices the chain and
+   rebuilds live fields.
+
+   :return: 0 on success, -1 on error (sets PyErr)
+*/
+int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 
 
 /* === Prompt lookup and continuation capture === */

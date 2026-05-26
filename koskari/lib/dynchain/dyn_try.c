@@ -87,10 +87,10 @@ KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
 /**
    Pop TRY when it is top (fast path). Callers: abort_push_region, POP_TRY.
 */
-void kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
-  if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
-    KosEvalState_SyncFromContext(es);
-    return;
+int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+    PyErr_SetString(PyExc_RuntimeError, "TRY node is not at top of chain");
+    return -1;
   }
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
@@ -99,6 +99,7 @@ void kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dyntry_free(node);
   }
+  return 0;
 }
 
 

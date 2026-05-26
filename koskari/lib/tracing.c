@@ -125,7 +125,7 @@ static kos_trace_evs_slot_t kos_tevs_slots[KOS_TEVS__COUNT];
 
 static const char *const kos_tevs_names[KOS_TEVS__COUNT] = {
   "init",
-  "sync_from_context",
+  "rebuild_live_from_chain_unused",
   "flush_live_regs",
   "apply_dyn_caches",
   "refresh_dyn_caches",

@@ -12,13 +12,23 @@ static KosDynCollect *kos_dyncollect_new(
     KosDynNode *parent,
     PyObject *ns) {
   KosDynCollect *col_node = (KosDynCollect *) kos_dynnode_alloc();
+  KosStackBlock *stack;
+
   if (! col_node) {
+    Py_DECREF(ns);
+    return NULL;
+  }
+
+  stack = KosStackBlock_NewEmpty();
+  if (! stack) {
+    kos_dynnode_return_to_freelist((KosDynNode *) col_node);
     Py_DECREF(ns);
     return NULL;
   }
 
   kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent, 0);
   KosDynNode_NS((KosDynNode *) col_node) = ns;
+  KosDynNode_STACK((KosDynNode *) col_node) = stack;
   return col_node;
 }
 
@@ -100,11 +110,11 @@ KosDynCollect *kos_dyn_push_collect(
 /**
    Pop COLLECT when top. Callers: POP_COLLECT.
 */
-void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
+int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
   if (! KosEvalState_DYN_TOP(es) ||
       KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
-    KosEvalState_SyncFromContext(es);
-    return;
+    PyErr_SetString(PyExc_RuntimeError, "COLLECT node is not at top of chain");
+    return -1;
   }
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
@@ -113,6 +123,7 @@ void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dyncollect_free(node);
   }
+  return 0;
 }
 
 

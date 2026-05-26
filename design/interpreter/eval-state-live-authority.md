@@ -50,7 +50,7 @@ Phase 1 is **complete** and verified with **`tox -qe test`** (full pass, no hang
 | `es` first, ctx snapshot at retarget end | **Done** | `kos_dyn_apply_live`, `kos_dyn_snapshot_ctx_derived` |
 | Freeze at eval exit | **Done** | `KosEvalState_FreezeToContext` in `eval_state.c`; `koskari_eval_cleanup` in `eval.c` |
 | `PatchDynCaches` / `RefreshDynCaches` / `ApplyDynCaches` | **Removed** | Replaced by dynchain helpers above |
-| Scatter `SyncFromContext` on `dyn_*.c` **success** paths | **Mostly removed** | Error / guard paths remain (§4.1, Tier 4) |
+| `KosEvalState_SyncFromContext` | **Removed** | Fail-fast pops; rebuild only on shape change (Tier 1–2) |
 | Xfer step completion sync | **Removed** | Plan driver comment: steps leave `es` coherent via rebuild |
 | Opcode `PUSH_*` post-push rebuild | **Kept intentionally** | Stack assigned after push; see §9.3 |
 
@@ -75,7 +75,7 @@ This refactor is **bookkeeping only**. The running program must behave identical
 ### 1.2 In scope
 
 - **How** `KosEvalState` fields (`frame`, `code`, `block`, `namespace`, `pc`, `acting_pc`) are updated after chain edits that **already happen today**
-- **Removing** redundant `KosEvalState_SyncFromContext` / full-chain `RefreshDynCaches` from scattered call sites
+- **Removed** `KosEvalState_SyncFromContext`; use `kos_dyn_retarget_after_*` or `kos_dyn_rebuild_live_from_chain` only when the chain shape changes
 - **Centralizing** live-field updates in a small set of **choke-point** functions (DRY)
 - **Optional:** deferring writes to `ctx->frame_top` / `block` / `namespace` until freeze boundaries, once no RUN-path reader depends on them being fresh
 
@@ -91,7 +91,7 @@ This refactor is **bookkeeping only**. The running program must behave identical
 |------|---------|
 | **Correctness** | Already correct today; preserve observable behavior |
 | **Performance** | Cut hot-path cost: fewer chain walks, fewer `ctx`↔`es` round-trips, less pointer chasing |
-| **DRY** | One funnel for live-field updates on push/pop/commit, not ~130 `SyncFromContext` call sites |
+| **DRY** | One funnel for live-field updates on push/pop/commit; no error-path full-chain rebuild |
 | **Future work** | Clear `es`-authoritative model enables C-local stack optimizations (see freeze-thaw doc) |
 
 **Success metrics:**
@@ -100,7 +100,7 @@ This refactor is **bookkeeping only**. The running program must behave identical
 |--------|---------|----------------|
 | **`tox -qe test`** (no hang, full pass) | **Met** | Keep met |
 | No `PatchDynCaches` / `RefreshDynCaches` in lib | **Met** | Keep met |
-| `SyncFromContext` only at Tier-4 sites | **Partial** (~140 calls remain; many are error paths) | Full Tier-4 audit (§12.2) |
+| No `SyncFromContext` in `koskari/lib` | **Met** | `grep` gate zero; mismatch pops return `-1` |
 | `kos_dyn_rebuild_live_from_chain` only at Tier-2 + fallback | **Met** (grep) | Optional: reduce Tier-2 rebuild count |
 
 **Performance follow-up (human-driven, after correctness lands):**
@@ -250,16 +250,9 @@ Sites where **incremental pop/push rules are insufficient**. Each calls **`kos_d
 | `koskari_eval_cleanup` | `eval.c` | ~2641 | `FlushLiveRegsToFrame` then **`KosEvalState_FreezeDerivedToContext`** |
 | `kos_eval_emit_raise_from_pyerr` | `eval.c` | ~616–617 | Flush before traceback when `es` given |
 
-### Tier 4 — Error recovery only (`SyncFromContext`)
+### Tier 4 — Removed (`SyncFromContext` audit complete)
 
-Keep `KosEvalState_SyncFromContext` **only** where the chain or `ctx` may be inconsistent after failure:
-
-| Site | Reason |
-|------|--------|
-| `kos_dyn_push` install failure | `dynchain.c` ~875 |
-| `kos_dyn_uninstall` failure | `dynchain.c` (handlers) |
-| `KosEvalState_Transition` / `kos_dyn_transition` on `-1` | `eval/eval_chain.c` ~166; migration doc D3 |
-| Straggler `dyn_top` writes until Phase F folded | See §9 |
+`KosEvalState_SyncFromContext` is deleted. Detected inconsistencies (`dyn_top !=` expected node, validation failure before useful work) set `PyErr` and return `-1` without rebuilding live fields. `kos_dyn_push` rolls back `dyn_top` on install failure. `kos_dyn_pop_*` helpers return `int`. Non-top yield-from cleanup uses `kos_dyn_unlink_yield_from`.
 
 ---
 
@@ -548,7 +541,7 @@ These are **not** modified by this refactor but are the main source of **infinit
 - [ ] Fix `do_frame_prep` tail reset without `SyncFromContext` (§9.1)
 - [ ] Audit §9.1 `dyn_top` assigns and §9.2 `ctx` derived readers
 - [ ] Optional: xfer INSTALL/PUSH incremental retarget (§10 step 6)
-- [ ] Tier-4-only `SyncFromContext` grep audit (§12.2)
+- [x] Tier-4 `SyncFromContext` removed; fail-fast pops (§12.2)
 - [ ] Do **not** “optimize” transfer plans or re-add success-path sync to fix tests
 - [ ] Performance: human runs `KOS_TRACE_EVAL_SYNC` comparison (§7.4, §12.3)
 

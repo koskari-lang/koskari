@@ -85,20 +85,6 @@ done:
 }
 
 
-void KosEvalState_SyncFromContext(KosEvalState *es) {
-
-  KOS_TRACE_EVAL_SYNC_BEGIN();
-
-  if (! es || ! KosEvalState_CONTEXT(es))
-    goto done;
-
-  kos_dyn_rebuild_live_from_chain(es);
-
-done:
-  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_sync_from_context);
-}
-
-
 void KosEvalState_FreezeToContext(KosEvalState *es) {
 
   KosContext *ctx;

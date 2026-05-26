@@ -174,12 +174,13 @@ int kos_dyn_yield_from_deliver_inner_yield(
   PyObject *const *tos;
 
   if (! frame || ! payload) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_yield_from_deliver_inner_yield: missing frame "
+                    "or payload");
     return -1;
   }
 
   if (KosEvalState_StackPushRef(es, payload) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
   Py_DECREF(payload);
@@ -197,7 +198,8 @@ int kos_dyn_yield_from_deliver_inner_yield(
 
   tos = KosEvalState_StackTailPtr(es, 1);
   if (! tos) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_yield_from_deliver_inner_yield: empty stack");
     return -1;
   }
 
@@ -234,7 +236,6 @@ int kos_dyn_yield_from_deliver_inner_return(
    free it and the GEN node, restore dyn_top to the YIELD_FROM consumer.
    */
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -248,7 +249,42 @@ int kos_dyn_yield_from_deliver_inner_return(
   if (df && code && KosEvalState_ACTING_PC(es) + 1u < KosCode_CODE_LEN(code))
     KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es) + 1u);
 
-  kos_dyn_pop_yield_from(es, yf);
+  if (kos_dyn_pop_yield_from(es, yf) < 0)
+    return -1;
+  return 0;
+}
+
+
+/**
+   Remove YIELD_FROM from the chain whether or not it is dyn_top.
+*/
+int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
+
+  KosDynNode *node;
+  KosDynNode *p;
+  KosDynNode *c;
+
+  if (! es || ! yf) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_unlink_yield_from: invalid arguments");
+    return -1;
+  }
+
+  node = (KosDynNode *) yf;
+  if (KosEvalState_DYN_TOP(es) == node)
+    return kos_dyn_pop_yield_from(es, yf);
+
+  p = KosDynNode_PARENT(node);
+  KosEvalState_FlushLiveRegsToFrame(es);
+  for (c = KosEvalState_DYN_TOP(es); c; c = KosDynNode_PARENT(c)) {
+    if (KosDynNode_PARENT(c) == node) {
+      KosDynNode_PARENT(c) = p;
+      break;
+    }
+  }
+  kos_dyn_rebuild_live_from_chain(es);
+  KosDynNode_PARENT(node) = NULL;
+  kos_dynyieldfrom_free(yf);
   return 0;
 }
 

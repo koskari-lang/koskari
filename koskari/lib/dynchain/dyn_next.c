@@ -16,7 +16,6 @@ int kos_dyn_push_next_for_kos_agen(
   // CONTEXT: dirty, touches context directly
   KosDynNode *node = kos_dynnode_alloc();
   if (! node) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -49,8 +48,10 @@ void kos_dyn_next_abort_after_failed_attach(KosEvalState *es) {
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT(top) = NULL;
     kos_dyn_next_free_payload(top);
-  } else
-    KosEvalState_SyncFromContext(es);
+  } else {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_next_abort_after_failed_attach: top is not NEXT");
+  }
 }
 
 
@@ -147,12 +148,12 @@ int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev) {
   KosPyAsyncGen *agen;
 
   if (! next) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_next_deliver_yield: no NEXT boundary");
     return -1;
   }
   payload = KosEvent_PAYLOAD(out_ev);
   if (KosEvalState_StackPushRef(es, payload) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
   Py_DECREF(payload);
@@ -175,7 +176,8 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
   int nn;
 
   if (! next) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_next_deliver_return: no NEXT boundary");
     return -1;
   }
   val = KosEvent_PAYLOAD(out_ev);
@@ -183,7 +185,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
 
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
     Py_DECREF(val);
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -196,7 +197,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
             es,
             KosDynNext_DEFAULT_VAL((KosDynNode *) next)) < 0) {
       Py_DECREF(val);
-      KosEvalState_SyncFromContext(es);
       return -1;
     }
     Py_DECREF(val);

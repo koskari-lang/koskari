@@ -66,17 +66,6 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
     return KOS_OP_POST_ERR();
   }
 
-  KosDynNode_STACK((KosDynNode *) with_node) = KosStackBlock_NewEmpty();
-  if (! KosDynNode_STACK((KosDynNode *) with_node)) {
-    kos_dyn_pop_with(es, with_node);
-    Py_DECREF(name_obj);
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
-    return KOS_OP_POST_ERR();
-  }
-  kos_dyn_rebuild_live_from_chain(es);
-
   int r = kos_dyn_wind(es, (KosDynNode *) with_node, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
     uint32_t same_pc = KosEvalState_ACTING_PC(es);

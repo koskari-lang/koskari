@@ -29,8 +29,7 @@
    walk, loop transfer, local raise. Fills out status and raw result codes.
    Callers: eval.c opcode and event dispatch.
 
-   Error paths return -1 without syncing es; KosEvalState_Transition performs
-   at most one KosEvalState_SyncFromContext on -1 when es is non-NULL.
+   Error paths return -1; caller propagates PyErr.
 */
 static inline int kos_dyn_transition_internal(
     KosEvalState *es,
@@ -160,11 +159,7 @@ int KosEvalState_Transition(
     KosTransitionResult *out,
     KosEvent *out_ev) {
 
-  int r = kos_dyn_transition_internal(es, req, out, out_ev);
-
-  if (r < 0)
-    KosEvalState_SyncFromContext(es);
-  return r;
+  return kos_dyn_transition_internal(es, req, out, out_ev);
 }
 
 
@@ -416,8 +411,10 @@ static inline int KosEvalState_KReturnDelimited(
   KosDynDelim_RETURN_PC(delim) = (uint32_t)-1;
   KosDynDelim_RETURN_FRAME_NODE(delim) = NULL;
   KosDynDelim_RETURN_NODE(delim) = NULL;
-  if (KosEvalState_DYN_TOP(es) == (KosDynNode *) delim)
-    kos_dyn_pop_delim(es, delim);
+  if (KosEvalState_DYN_TOP(es) == (KosDynNode *) delim) {
+    if (kos_dyn_pop_delim(es, delim) < 0)
+      return -1;
+  }
   if (run_transfer_plan_to_completion(es, out_ev) < 0)
     return -1;
   return 0;

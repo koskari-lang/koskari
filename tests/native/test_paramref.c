@@ -81,16 +81,26 @@ static KosDynParam *push_dyn_param(
     PyObject **values) {
 
     KosEvalState es;
+    KosDynParam *node;
+
     KosEvalState_Init(&es, ctx);
-    return kos_dyn_push_param(&es, count, params, values);
+    KosEvalState_ThawFromContext(&es);
+    node = kos_dyn_push_param(&es, count, params, values);
+    KosEvalState_FreezeToContext(&es);
+    return node;
 }
 
 
-static void pop_dyn_param(KosContext *ctx, KosDynParam *node) {
+static int pop_dyn_param(KosContext *ctx, KosDynParam *node) {
 
     KosEvalState es;
+    int r;
+
     KosEvalState_Init(&es, ctx);
-    kos_dyn_pop_param(&es, node);
+    KosEvalState_ThawFromContext(&es);
+    r = kos_dyn_pop_param(&es, node);
+    KosEvalState_FreezeToContext(&es);
+    return r;
 }
 
 
@@ -390,7 +400,7 @@ static int test_dynparam_push_pop_restore(void) {
     TEST_ASSERT(val == 999, "value is 999");
     Py_DECREF(value);
 
-    pop_dyn_param(ctx, param_node);
+    TEST_ASSERT(pop_dyn_param(ctx, param_node) == 0, "pop param");
 
     /* After pop, restored to prior (unset -> default) */
     value = KosRef_Deref(param_ref);
@@ -459,14 +469,14 @@ static int test_dynparam_nested_restore(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(value), 16, "inner value");
     Py_DECREF(value);
 
-    pop_dyn_param(ctx, inner_node);
+    TEST_ASSERT(pop_dyn_param(ctx, inner_node) == 0, "pop inner param");
 
     value = KosRef_Deref(param_ref);
     TEST_ASSERT_NOT_NULL(value, "deref after inner pop");
     TEST_ASSERT_EQ(PyLong_AsLong(value), 8, "restored to outer");
     Py_DECREF(value);
 
-    pop_dyn_param(ctx, outer_node);
+    TEST_ASSERT(pop_dyn_param(ctx, outer_node) == 0, "pop outer param");
 
     value = KosRef_Deref(param_ref);
     TEST_ASSERT_NOT_NULL(value, "deref after outer pop");

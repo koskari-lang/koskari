@@ -120,10 +120,10 @@ KosDynDelim *kos_dyn_push_delim(
 /**
    Pop DELIM marker from top of chain.
 */
-void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
+int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) delim) {
-    KosEvalState_SyncFromContext(es);
-    return;
+    PyErr_SetString(PyExc_RuntimeError, "DELIM node is not at top of chain");
+    return -1;
   }
 
   kos_dyn_uninstall_handler(es, (KosDynNode *) delim, KOS_XFER_EVENT_NONE, NULL);
@@ -134,6 +134,7 @@ void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
   }
+  return 0;
 }
 
 
