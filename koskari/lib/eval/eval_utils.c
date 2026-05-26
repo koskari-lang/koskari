@@ -381,9 +381,18 @@ static inline int do_frame_prep(
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
 
   if (wants && tail_call) {
-    /* TODO: single API KosEvalState_ResetFrameForTail; SyncFromContext hack */
+    KosContext *ctx;
+
     kos_dynframe_reset_for_tail(frame);
-    KosEvalState_SyncFromContext(es);
+    KosEvalState_CODE(es) = NULL;
+    KosEvalState_NAMESPACE(es) = NULL;
+    KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
+    (es)->pc = 0;
+    (es)->acting_pc = 0;
+    ctx = KosEvalState_CONTEXT(es);
+    KosContext_FRAME_TOP(ctx) = frame;
+    KosContext_BLOCK(ctx) = KosEvalState_BLOCK(es);
+    KosContext_NAMESPACE(ctx) = NULL;
     return 0;
   }
 
@@ -524,44 +533,6 @@ int KosEvalState_CallNoArgs(
   if (r == 0 && tail_call)
     r = KOS_OP_RES_CONTROL_RETURNED;
   return r;
-}
-
-
-/* === Koskari call operations (tail koscall) === */
-
-static inline int KosEvalState_TailKoscallReplaceFrame(
-    KosEvalState *es,
-    KosCode *code,
-    PyObject *ns) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  if (! ctx || ! KosEvalState_FRAME(es)) {
-    PyErr_SetString(PyExc_RuntimeError, "no frame for tail_koscall");
-    return -1;
-  }
-
-  KosDynFrame *old = KosEvalState_FRAME(es);
-  KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) old);
-  KosDynFrame *frame;
-
-  KosEvalState_FlushLiveRegsToFrame(es);
-  KosContext_DYN_TOP(ctx) = parent;
-
-  frame = kos_dynframe_new(parent, code, ns, NULL);
-  if (! frame) {
-    KosContext_DYN_TOP(ctx) = (KosDynNode *) old;
-    kos_dyn_rebuild_live_from_chain(es);
-    return -1;
-  }
-
-  kos_dynframe_free(old);
-
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dyn_rebuild_live_from_chain(es);
-
-  return 0;
 }
 
 
