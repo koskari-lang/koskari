@@ -4,6 +4,7 @@
 
 | If you want to… | Read |
 |-----------------|------|
+| Centralize live `KosEvalState` updates (performance; remove scatter sync) | [interpreter/eval-state-live-authority.md](interpreter/eval-state-live-authority.md) |
 | Understand the end-state rule (what may touch `KosContext`) | §1, §2 |
 | See what lives on `KosContext` vs `KosEvalState` today | §3, Glossary |
 | Know which opcodes still use `ctx` directly | §5 |
@@ -662,3 +663,4 @@ centralizes the write.
 | 2026-04-27 | Second pass: decisions, field appendix, API list, phases |
 | 2026-04-27 | Third pass: TOC, glossary, Appendix B, IN_TRANSFER vs ArmTransferPlan, naming alignment, phase ordering (**C** after **B1**), removed redundant **`LeaveTransfer`** from public §10.2 |
 | 2026-04-27 | Fourth pass: §10 **Current / New / refactor** tables; **`KReturnDelimited`** (§10.12), **`TailKoscallReplaceFrame`** (§10.13), opcode plan builders §10.14; **`DisarmTransferPlan`** ↔ **`clear_and_free_transfer_plan`**. |
+| 2026-05-26 | Cross-link: [eval-state-live-authority.md](interpreter/eval-state-live-authority.md) (choke-point funnel, parity constraints; orthogonal to opcode `ctx` macro migration). |

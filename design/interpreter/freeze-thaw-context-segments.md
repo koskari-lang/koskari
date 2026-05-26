@@ -12,6 +12,9 @@ This document summarizes the design direction for improving Koskari's interprete
 
 The primary goal is to reduce indirection and conditional checks in the hot opcode path while preserving the ability to suspend, resume, and capture execution state.
 
+**Implementation spec (choke points, scatter sync removal, behavioral freeze):**
+[eval-state-live-authority.md](eval-state-live-authority.md).
+
 ---
 
 # 1. Architectural Overview

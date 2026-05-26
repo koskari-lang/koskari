@@ -14,6 +14,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
 - **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md); [Python inspect interop for native callables](api/inspect-interop-kos-callables.md) (`KosFunction`, `KosBoundMethod`)
 - **[EVALUATOR.md](EVALUATOR.md)**: Evaluator operation—phase flow diagrams, opcode signaling, exceptions, transfer plans, tail calls, call installs, play-by-play scenarios
+- **[interpreter/eval-state-live-authority.md](interpreter/eval-state-live-authority.md)**: `KosEvalState` as live authority during RUN; Tier-1 choke points; scatter sync removal (performance refactor spec)
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
   evaluation model, continuation application (including evaluator-token model),
   and [Koskari Domain](interpreter/domain.md) (ambient dynamic context, design proposal)
