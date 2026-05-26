@@ -567,6 +567,22 @@ static void kos_dyn_apply_live(
 
 
 /**
+   Load live frame, code, and PCs from a heap frame without flushing or
+   changing block/namespace. Call when block/ns were already retargeted.
+*/
+static void kos_dyn_load_live_regs_from_frame(KosEvalState *es, KosDynFrame *ft) {
+
+  if (! es || ! ft)
+    return;
+
+  KosEvalState_FRAME(es) = ft;
+  KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
+  es->pc = KosDynFrame_PC(ft);
+  es->acting_pc = KosDynFrame_ACTING_PC(ft);
+}
+
+
+/**
    Find innermost frame, stack slot, and namespace along the chain from start.
 
    Walks parent links from start toward older nodes. Stops when all three
@@ -620,11 +636,11 @@ static void kos_dyn_walk_live_from(
    O(1) live-field update after a single-node push onto dyn_top.
 
    Call from kos_dyn_push and kos_dyn_push_noinstall immediately after
-   KosContext_DYN_TOP is set to new_node and kos_dyn_install has run (push
-   only). new_node must be the current dyn_top. Frame nodes replace frame, code, block,
-   and namespace; other nodes update only the slots they carry on the node.
-   Do not use after splices, gen install, or xfer INSTALL/PUSH; use
-   kos_dyn_rebuild_live_from_chain instead.
+   new_node is KosEvalState_DYN_TOP(es) (and kos_dyn_install has run for push).
+   Frame nodes replace frame, code, block, and namespace; other nodes update
+   only the slots they carry. Frame-boundary flush runs inside kos_dyn_apply_live
+   when the frame pointer changes. Do not use after splices, gen install, or
+   xfer INSTALL/PUSH; use kos_dyn_rebuild_live_from_chain instead.
 */
 static void kos_dyn_retarget_after_push(
     KosEvalState *es,
@@ -4362,8 +4378,14 @@ int kos_dyn_finish_delimited_pop_return(
   if (KosEvalState_DYN_TOP(es) == (KosDynNode *) delim) {
     if (kos_dyn_pop_delim(es, delim) < 0)
       return -1;
+    if (KosEvalState_FRAME(es) == ret_frame)
+      kos_dyn_load_live_regs_from_frame(es, ret_frame);
+    else
+      kos_dyn_rebuild_live_from_chain(es);
+  } else {
+    /* DELIM not dyn_top: pop already done; full rebuild for live coherence. */
+    kos_dyn_rebuild_live_from_chain(es);
   }
-  kos_dyn_rebuild_live_from_chain(es);
   return 0;
 }
 
