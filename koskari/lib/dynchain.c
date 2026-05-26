@@ -781,6 +781,14 @@ static void kos_dyn_retarget_after_pop(
   if (! need_frame && ! need_block && ! need_ns)
     return;
 
+  if (need_block && ! need_frame && ! need_ns
+      && new_top && KosDynNode_STACK(new_top)) {
+    kos_dyn_apply_live(es, KosEvalState_FRAME(es), &KosDynNode_STACK(new_top),
+                       KosEvalState_NAMESPACE(es));
+    kos_dyn_snapshot_ctx_derived(es);
+    return;
+  }
+
   kos_dyn_walk_live_from(es, new_top, &ft, &bl, &ns);
 
   if (! need_frame)
@@ -895,7 +903,8 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
   KosDynNode *removed;
 
   removed = KosContext_DYN_TOP(ctx);
-  KosEvalState_FlushLiveRegsToFrame(es);
+  if (KosEvalState_FRAME(es) == (KosDynFrame *) removed)
+    KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = new_top;
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dyn_retarget_after_pop(es, removed, new_top);
