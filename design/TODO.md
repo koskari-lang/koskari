@@ -20,21 +20,6 @@ Ref: `koskari/lib/dynchain.c` — `kos_build_direct_install_plan`;
 
 ---
 
-## GIL
-
-### Safe GIL unlocking
-
-MVP in `eval.c`: RUN tail-dispatch polls every 2048 ops (mask 2047) and
-prologue reunion; `PyErr_CheckSignals()` plus paired
-`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS` when due (op mask or 5 ms).
-Counters are stack locals in the dispatch loop only. Manual check: REPL tight
-loop + Ctrl-C.
-
-Future: domain-TLS counter + timer, `maybe_cooperate()` / `ensure_gil()` per
-[interpreter/gil-cooperation.md](interpreter/gil-cooperation.md).
-
----
-
 ## Evaluator performance
 
 ### Fast local stack
