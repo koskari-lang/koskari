@@ -339,21 +339,17 @@ typedef struct KosEvalResult {
     re-entering koskari_eval.
   - Resumption injects the result back into the VM via the stack.
 
-  During koskari_eval, treat this object as cold storage updated only through
-  dynchain helpers (mutating APIs take KosEvalState *). A concurrent
-  KosEvalState snapshot holds the borrowed ctx pointer plus frame/code caches
-  for the active eval slice.
+  Between koskari_eval drives, holds dyn_top, plan, plan_stack, and derived
+  revive snapshots. During RUN those fields are NULL on ctx (stolen onto
+  KosEvalState); see KosEvalState_ThawFromContext and KosEvalState_FreezeToContext.
 */
 
 struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
-  KosStackBlock **block;     /* non-owning: &innermost dynnode stack; see KosEvalState_RefreshDynCaches */
+  KosStackBlock **block;     /* non-owning: &innermost dynnode stack; frozen snapshot */
   PyObject *namespace;       /* borrowed: active namespace object */
-
-  KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
-  uint32_t globals_cache_version; /* chain_version when globals_frame was set */
 
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
   PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
@@ -370,7 +366,6 @@ struct KosContext {
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
-  uint32_t chain_version;       /* incremented on chain modifications */
 
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
@@ -397,8 +392,6 @@ struct KosContext {
 #define KosContext_FRAME_TOP(c)              (((KosContext *)(c))->frame_top)
 #define KosContext_BLOCK(c)                  (((KosContext *)(c))->block)
 #define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
-#define KosContext_GLOBALS_FRAME(c)          (((KosContext *)(c))->globals_frame)
-#define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
 #define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
@@ -406,7 +399,6 @@ struct KosContext {
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
-#define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
@@ -429,40 +421,19 @@ struct KosContext {
 /* === KosEvalState: C-local execution snapshot (API scaffolding) === */
 
 /**
-  KosEvalState holds a borrowed pointer to the heap KosContext plus cached
-  pointers to the current frame and code object for the hot path.
+  KosEvalState holds a borrowed pointer to the heap KosContext plus the live
+  frame, code, operand-stack block pointer, and namespace for the active eval
+  slice.
 
-  See design/interpreter/freeze-thaw-context-segments.md for the freeze/thaw
-  model. Part 2 of design/api/opcode-access-and-koscontext-surface.md lists
-  opcode-level responsibilities consolidated under this API surface.
+  See design/interpreter/freeze-thaw-context-segments.md and
+  design/interpreter/eval-state-live-authority.md.
 
-  Call KosEvalState_Init before use; both KosEvalState_Init and
-  KosEvalState_SyncFromContext are declared in this header and implemented in
-  eval/eval_state*.c fragments (included into eval.c via eval/eval_state.c).
-  After chain
-  surgery, prefer KosEvalState_PatchDynCaches after a single-node push,
-  KosEvalState_RefreshDynCaches for pops and other edits, and
-  KosEvalState_ApplyDynCaches on the kos_dyn_* commit paths; the full mirror
-  reload KosEvalState_SyncFromContext remains for existing call sites, not for
-  new code.
-
-  Execution model (live vs cold storage):
-  - KosEvalState is the only supported handle for mutating the dynamic chain
-    from opcode handlers, callable helpers, and eval drivers: use
-    kos_dyn_*(KosEvalState *, ...) (and related helpers) declared in dynchain.h.
-    Chain changes must go through those commit paths: they flush live PCs to
-    the outgoing frame, mutate ctx, recompute frame_top/block, then
-    KosEvalState_ApplyDynCaches. The RUN hot path and post-Apply paths keep
-    es coherent without ad-hoc resync on every dispatch prologue.
-  - KosContext remains the heap-allocated VM state owned by a coroutine,
-    async generator, or continuation segment. It is authoritative for dyn_top,
-    frame_top, and block (cold storage). While running, KosEvalState mirrors
-    frame, code, block, and holds the sole live pc and acting_pc registers.
-    Heap KosDynFrame pc slots are updated only at freeze boundaries (e.g.
-  KosEvalState_FlushLiveRegsToFrame before chain surgery or koskari_eval
-  exit). Init loads cold frame values into es; incremental cache updates
-  refresh es when frame_top or block change without clobbering live pc when
-  the code pointer still matches.
+  KosEvalState_Init only binds ctx and clears es. koskari_eval calls
+  KosEvalState_ThawFromContext to move dyn_top, plan, plan_stack, and derived
+  snapshots from ctx onto es (NULL on ctx). While RUN, es owns chain and plan;
+  KosEvalState_DYN_TOP and KosEvalState_PLAN never read ctx. Freeze restores
+  onto ctx and NULLs es. Chain shape changes refresh live fields via
+  kos_dyn_retarget_after_push/pop or kos_dyn_rebuild_live_from_chain.
 
   With KOS_TRACE_EVAL_SYNC, call counts and total wall time per sync API are
   recorded for kos_trace_report / get_trace_report under eval_state_sync.
@@ -470,16 +441,22 @@ struct KosContext {
 
 struct KosEvalState {
   KosContext *ctx;
-  KosDynFrame *frame; /* cached top frame; maintained by Init/Sync */
-  KosCode *code;      /* cached from frame */
-  KosStackBlock **block; /* mirror of ctx->block; non-owning */
-  PyObject *namespace;   /* mirror of ctx->namespace; borrowed */
+  KosDynNode *dyn_top;       /* RUN: top of dynamic chain (stolen from ctx) */
+  KosTransferPlan *plan;     /* RUN: active transfer plan */
+  KosTransferPlan *plan_stack; /* RUN: suspended plans (via plan->suspended) */
+  KosDynFrame *frame; /* live top frame; thaw and kos_dyn_* retarget */
+  KosCode *code;      /* live code from frame */
+  KosStackBlock **block; /* live innermost stack slot; non-owning */
+  PyObject *namespace;   /* live namespace; borrowed */
   uint32_t pc;        /* live next-instruction PC (freeze copies to frame) */
   uint32_t acting_pc; /* live acting PC (freeze copies to frame) */
 };
 
 
 #define KosEvalState_CONTEXT(es) ((es)->ctx)
+#define KosEvalState_DYN_TOP(es)     ((es)->dyn_top)
+#define KosEvalState_PLAN(es)        ((es)->plan)
+#define KosEvalState_PLAN_STACK(es)  ((es)->plan_stack)
 #define KosEvalState_FRAME(es) ((es)->frame)
 #define KosEvalState_CODE(es) ((es)->code)
 #define KosEvalState_BLOCK(es) ((es)->block)
@@ -502,7 +479,7 @@ struct KosEvalState {
 
 
 #define KosEvalState_CurrentNode(es) \
-  KosContext_DYN_TOP(KosEvalState_CONTEXT(es))
+  KosEvalState_DYN_TOP(es)
 
 #define KosEvalState_CurrentCode(es) KosEvalState_CODE(es)
 
@@ -620,15 +597,25 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
 
 
 /**
-  Reload es from KosEvalState_CONTEXT(es) when frame_top, block, or code on the
-  heap may differ from the es cache (full mirror reload versus incremental
-  KosEvalState_RefreshDynCaches / KosEvalState_ApplyDynCaches). Implemented in
-  eval/eval_state*.c included into eval.c). Prefer structured cache updates on
-  kos_dyn_* commit paths for new
-  code; this remains for existing call sites until they are rewired.
+  Steal dyn_top, plan, plan_stack, and derived snapshots from ctx onto es and
+  NULL those slots on ctx. Call at koskari_eval entry after Init. Does not
+  steal ctx flags or Python bridge fields.
 */
 
-void KosEvalState_SyncFromContext(KosEvalState *es);
+void KosEvalState_ThawFromContext(KosEvalState *es);
+
+
+/**
+  Restore dyn_top, plan, plan_stack, and derived snapshots from es onto ctx and
+  NULL es. Call from koskari_eval_cleanup after FlushLiveRegsToFrame. Updates
+  KOS_CTX_IN_TRANSFER from restored plan.
+*/
+
+void KosEvalState_FreezeToContext(KosEvalState *es);
+
+
+/** @deprecated name; use KosEvalState_FreezeToContext */
+#define KosEvalState_FreezeDerivedToContext(es) KosEvalState_FreezeToContext(es)
 
 
 /**
@@ -651,44 +638,6 @@ static inline void KosEvalState_FlushLiveRegsToFrame(KosEvalState *es) {
 done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_flush_live_regs);
 }
-
-
-/**
-  After RecomputeFrameTopAndBlock, mirror ctx->frame_top, ctx->block, and
-  ctx->namespace into es. If the frame pointer changed, flush live
-  pc/acting_pc onto the outgoing cached frame, then load code and PCs from
-  the new frame. If only block/namespace changed, update es caches without
-  clobbering pc/acting_pc.
-*/
-void KosEvalState_ApplyDynCaches(KosEvalState *es);
-
-
-/**
-  Recompute ctx->frame_top, ctx->block, and ctx->namespace from the
-  dynamic chain after
-  dyn_top / chain changes, then apply them to es (incremental; avoids a full
-  context-wide mirror reload when frame and PCs are already coherent).
-*/
-void KosEvalState_RefreshDynCaches(KosEvalState *es);
-
-
-/**
-  Trusting push-only derived-cache update: caller guarantees new_node is already
-  KosContext_DYN_TOP and that the chain gained exactly this head (no pop or
-  splice). Walk-free. Frame nodes refresh frame_top, block, and namespace from
-  that frame; non-frame nodes optionally refresh namespace and/or block slots
-  when present on the node. Always ends with KosEvalState_ApplyDynCaches.
-*/
-void KosEvalState_PatchDynCaches(KosEvalState *es, KosDynNode *new_node);
-
-
-/**
-  Commit contract for dynchain: do not assign to ctx dyn fields and return
-  to the eval loop without going through a kos_dyn_* path that ends in
-  KosEvalState_PatchDynCaches, KosEvalState_RefreshDynCaches, or
-  KosEvalState_SyncFromContext after failure recovery. Builds with
-  KOS_DEBUG_PATCH_DYN_CACHES compare PatchDynCaches against Refresh for drift.
-*/
 
 
 /**
@@ -721,8 +670,7 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es);
 
 /**
   Eval-facing dynamic-chain transition dispatcher; implemented in
-  eval/eval_transition.c included into eval.c. On -1, performs a single
-  KosEvalState_SyncFromContext when es is non-NULL (internal paths do not sync).
+  eval/eval_chain.c included into eval.c. On -1, propagates PyErr.
 */
 int KosEvalState_Transition(
     KosEvalState *es,
@@ -836,6 +784,23 @@ int koskari_eval(
   Callable from native Python object methods (e.g. ParamRef resolution).
 */
 KosContext *kos_ctx_current(void);
+
+
+/**
+  Push active KosEvalState for GC traverse while KOS_CTX_RUNNING (steal model).
+*/
+
+void kos_tls_push_active_eval(KosEvalState *es);
+
+
+void kos_tls_pop_active_eval(void);
+
+
+/**
+  Innermost TLS eval slice for ctx, or NULL when not in koskari_eval on this thread.
+*/
+
+KosEvalState *kos_tls_active_eval_for_ctx(KosContext *ctx);
 
 
 /**

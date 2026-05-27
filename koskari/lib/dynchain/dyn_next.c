@@ -13,16 +13,14 @@ void kos_dyn_next_free_payload(KosDynNode *node) {
 int kos_dyn_push_next_for_kos_agen(
     KosEvalState *es, PyObject *agen_obj, PyObject *default_val, int n) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
   KosDynNode *node = kos_dynnode_alloc();
   if (! node) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
   kos_dynnode_init(
-      node, KOS_DYN_NEXT, KosContext_DYN_TOP(ctx), KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY);
+      node, KOS_DYN_NEXT, KosEvalState_DYN_TOP(es), KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY);
   Py_INCREF(agen_obj);
   KosDynNext_AGEN_OBJ(node) = agen_obj;
   if (default_val) {
@@ -43,23 +41,23 @@ int kos_dyn_push_next_for_kos_agen(
 
 void kos_dyn_next_abort_after_failed_attach(KosEvalState *es) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
   if (top && KosDynNode_IS_NEXT(top)) {
     KosDynNode *parent = KosDynNode_PARENT(top);
 
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT(top) = NULL;
     kos_dyn_next_free_payload(top);
-  } else
-    KosEvalState_SyncFromContext(es);
+  } else {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_next_abort_after_failed_attach: top is not NEXT");
+  }
 }
 
 
 KosDynForeach *kos_dyn_find_awaiting_foreach(KosEvalState *es) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
 
   /*
    After freeze, dyn_top can be the FOREACH region (parent of the detached GEN)
@@ -91,8 +89,7 @@ KosDynForeach *kos_dyn_find_awaiting_foreach(KosEvalState *es) {
 
 KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
 
   /*
    After kos_dyn_gen_freeze_and_release, dyn_top is the KOS_DYN_NEXT node
@@ -122,23 +119,20 @@ KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es) {
 
 void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *node = (KosDynNode *) next;
   KosDynNode *p = KosDynNode_PARENT(node);
 
-  KosEvalState_FlushLiveRegsToFrame(es);
-  if (KosContext_DYN_TOP(ctx) == node) {
+  if (KosEvalState_DYN_TOP(es) == node) {
     kos_dyn_commit_dyn_top(es, p);
   } else {
     KosDynNode *c;
-    for (c = KosContext_DYN_TOP(ctx); c; c = KosDynNode_PARENT(c)) {
+    for (c = KosEvalState_DYN_TOP(es); c; c = KosDynNode_PARENT(c)) {
       if (KosDynNode_PARENT(c) == node) {
         KosDynNode_PARENT(c) = p;
         break;
       }
     }
-    KosContext_CHAIN_VERSION(ctx)++;
-    KosEvalState_RefreshDynCaches(es);
+    kos_dyn_rebuild_live_from_chain(es);
   }
 
   KosDynNode_PARENT(node) = NULL;
@@ -153,12 +147,12 @@ int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev) {
   KosPyAsyncGen *agen;
 
   if (! next) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_next_deliver_yield: no NEXT boundary");
     return -1;
   }
   payload = KosEvent_PAYLOAD(out_ev);
   if (KosEvalState_StackPushRef(es, payload) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
   Py_DECREF(payload);
@@ -181,7 +175,8 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
   int nn;
 
   if (! next) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_next_deliver_return: no NEXT boundary");
     return -1;
   }
   val = KosEvent_PAYLOAD(out_ev);
@@ -189,7 +184,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
 
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
     Py_DECREF(val);
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -202,7 +196,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
             es,
             KosDynNext_DEFAULT_VAL((KosDynNode *) next)) < 0) {
       Py_DECREF(val);
-      KosEvalState_SyncFromContext(es);
       return -1;
     }
     Py_DECREF(val);

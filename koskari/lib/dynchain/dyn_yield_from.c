@@ -143,8 +143,7 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 */
 KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
   KosDynNode *n;
 
   if (top && KosDynNode_IS_YIELD_FROM(top)
@@ -168,19 +167,20 @@ KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
 */
 int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf, KosEvent *out_ev) {
-
   KosContext *ctx = KosEvalState_CONTEXT(es);
+
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *frame = KosEvalState_FRAME(es);
   PyObject *const *tos;
 
   if (! frame || ! payload) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_yield_from_deliver_inner_yield: missing frame "
+                    "or payload");
     return -1;
   }
 
   if (KosEvalState_StackPushRef(es, payload) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
   Py_DECREF(payload);
@@ -198,7 +198,8 @@ int kos_dyn_yield_from_deliver_inner_yield(
 
   tos = KosEvalState_StackTailPtr(es, 1);
   if (! tos) {
-    KosEvalState_SyncFromContext(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_yield_from_deliver_inner_yield: empty stack");
     return -1;
   }
 
@@ -209,7 +210,6 @@ int kos_dyn_yield_from_deliver_inner_yield(
   KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -236,7 +236,6 @@ int kos_dyn_yield_from_deliver_inner_return(
    free it and the GEN node, restore dyn_top to the YIELD_FROM consumer.
    */
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -250,8 +249,41 @@ int kos_dyn_yield_from_deliver_inner_return(
   if (df && code && KosEvalState_ACTING_PC(es) + 1u < KosCode_CODE_LEN(code))
     KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es) + 1u);
 
-  kos_dyn_pop_yield_from(es, yf);
-  KosEvalState_SyncFromContext(es);
+  if (kos_dyn_pop_yield_from(es, yf) < 0)
+    return -1;
+  return 0;
+}
+
+
+/**
+   Remove YIELD_FROM from the chain whether or not it is dyn_top.
+*/
+int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
+
+  KosDynNode *node;
+  KosDynNode *p;
+  KosDynNode *c;
+
+  if (! es || ! yf) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_unlink_yield_from: invalid arguments");
+    return -1;
+  }
+
+  node = (KosDynNode *) yf;
+  if (KosEvalState_DYN_TOP(es) == node)
+    return kos_dyn_pop_yield_from(es, yf);
+
+  p = KosDynNode_PARENT(node);
+  for (c = KosEvalState_DYN_TOP(es); c; c = KosDynNode_PARENT(c)) {
+    if (KosDynNode_PARENT(c) == node) {
+      KosDynNode_PARENT(c) = p;
+      break;
+    }
+  }
+  kos_dyn_rebuild_live_from_chain(es);
+  KosDynNode_PARENT(node) = NULL;
+  kos_dynyieldfrom_free(yf);
   return 0;
 }
 

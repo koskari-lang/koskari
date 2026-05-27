@@ -30,13 +30,13 @@ KOS_OP_HANDLER(POP_LOOP) {
   PyObject *result = KosDynLoop_RESULT(loop);
   Py_INCREF(result);
 
-  kos_dyn_pop_loop(es, loop);
-
-  if (unlikely(KosEvalState_StackPushRef(es, result) < 0)) {
+  if (unlikely(kos_dyn_pop_loop(es, loop) < 0)) {
     Py_DECREF(result);
     return KOS_OP_POST_ERR();
   }
-  Py_DECREF(result);
+
+  if (unlikely(KosEvalState_StackPUSH(es, result) < 0))
+    return KOS_OP_POST_ERR();
   return KOS_OP_RUN();
 }
 

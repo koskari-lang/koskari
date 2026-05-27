@@ -243,11 +243,13 @@ static int yield_from_drive_sync_iter(
     if (! PyErr_ExceptionMatches(PyExc_StopIteration))
       return -1;
     yield_from_discard_stop_iteration_value();
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     return 0;
   }
 
-  kos_dyn_pop_yield_from(es, yf);
+  if (kos_dyn_pop_yield_from(es, yf) < 0)
+    return -1;
   return 0;
 }
 
@@ -289,7 +291,8 @@ static int yield_from_drive_sync_gen(
       }
     }
     kos_yieldfrom_close_delegate(yf);
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     return -1;
   }
 
@@ -307,7 +310,8 @@ static int yield_from_drive_sync_gen(
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
       Py_XDECREF(res);
       yield_from_discard_stop_iteration_value();
-      kos_dyn_pop_yield_from(es, yf);
+      if (kos_dyn_pop_yield_from(es, yf) < 0)
+        return -1;
       return 0;
     }
 
@@ -413,7 +417,8 @@ static int yield_from_drive_py_async(
 
   } else if (action == KOS_YF_CLOSE) {
     /* PY_ASYNC_ITER has no aclose; treat as exhausted. */
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     return 0;
   }
 
@@ -532,12 +537,14 @@ static int yield_from_drive_kos_async_gen(
   }
 
   if (agen->closed) {
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     return 0;
   }
 
   if (! agen->gen || ! KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     return 0;
   }
 

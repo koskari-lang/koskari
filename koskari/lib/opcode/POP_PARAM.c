@@ -18,24 +18,12 @@
 */
 
 KOS_OP_HANDLER(POP_PARAM) {
-  KosDynNode *top = KosEvalState_CurrentNode(es);
-  if (unlikely(! top)) {
-    PyErr_SetString(PyExc_RuntimeError, "POP_PARAM: dyn_top is NULL");
-    return KOS_OP_POST_ERR();
-  }
-
-  if (unlikely(! KosDynNode_IS_PARAM(top))) {
-    PyErr_Format(
-      PyExc_RuntimeError,
-      "POP_PARAM: top is %s (expected PARAM), node=%p",
-      kos_dynnode_kind_name(KosDynNode_KIND(top)), (void *) top);
-    return KOS_OP_POST_ERR();
-  }
-
-  kos_dyn_pop_param(es, (KosDynParam *) top);
-
   (void) out_ev;
   (void) insn;
+
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (unlikely(kos_dyn_pop_param(es, (KosDynParam *) top) < 0))
+    return KOS_OP_POST_ERR();
   return KOS_OP_RUN();
 }
 

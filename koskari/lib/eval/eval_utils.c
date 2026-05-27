@@ -381,9 +381,12 @@ static inline int do_frame_prep(
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
 
   if (wants && tail_call) {
-    /* TODO: single API KosEvalState_ResetFrameForTail; SyncFromContext hack */
     kos_dynframe_reset_for_tail(frame);
-    KosEvalState_SyncFromContext(es);
+    KosEvalState_CODE(es) = NULL;
+    KosEvalState_NAMESPACE(es) = NULL;
+    KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
+    (es)->pc = 0;
+    (es)->acting_pc = 0;
     return 0;
   }
 
@@ -527,44 +530,6 @@ int KosEvalState_CallNoArgs(
 }
 
 
-/* === Koskari call operations (tail koscall) === */
-
-static inline int KosEvalState_TailKoscallReplaceFrame(
-    KosEvalState *es,
-    KosCode *code,
-    PyObject *ns) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  if (! ctx || ! KosEvalState_FRAME(es)) {
-    PyErr_SetString(PyExc_RuntimeError, "no frame for tail_koscall");
-    return -1;
-  }
-
-  KosDynFrame *old = KosEvalState_FRAME(es);
-  KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) old);
-  KosDynFrame *frame;
-
-  KosEvalState_FlushLiveRegsToFrame(es);
-  KosContext_DYN_TOP(ctx) = parent;
-
-  frame = kos_dynframe_new(parent, code, ns, NULL);
-  if (! frame) {
-    KosContext_DYN_TOP(ctx) = (KosDynNode *) old;
-    KosEvalState_RefreshDynCaches(es);
-    return -1;
-  }
-
-  kos_dynframe_free(old);
-
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
-
-  return 0;
-}
-
-
 /* === Python iter next (NEXT / ITER_NEXT opcodes) === */
 
 /**
@@ -659,6 +624,33 @@ static inline KosGetNextResult op_get_next_from_iter(
 
   PyErr_SetString(PyExc_TypeError, "not an iterator");
   return GET_NEXT_ERROR;
+}
+
+
+/**
+  Globals
+*/
+static inline PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  PyObject *ns;
+
+  if (! frame) {
+    PyErr_SetString(PyExc_RuntimeError, "no frame for globals lookup");
+    return NULL;
+  }
+
+  ns = KosDynFrame_NS(frame);
+  if (! ns || ! KosNamespace_Check(ns)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "frame has no namespace for globals lookup");
+    return NULL;
+  }
+
+  while (KosNamespace_PARENT(ns))
+    ns = KosNamespace_PARENT(ns);
+
+  return ns;
 }
 
 

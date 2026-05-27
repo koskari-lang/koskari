@@ -23,21 +23,15 @@ KOS_OP_HANDLER(POP_COLLECT) {
   (void) insn;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
-  if (unlikely(! top || ! KosDynNode_IS_COLLECT(top))) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "POP_COLLECT: top is not a collector scope");
+  PyObject *collector = KosDynNode_NS(top);
+  Py_INCREF(collector);
+
+  if (unlikely(kos_dyn_pop_collect(es, (KosDynCollect *) top) < 0)) {
+    Py_DECREF(collector);
     return KOS_OP_POST_ERR();
   }
 
-  KosDynCollect *col_node = (KosDynCollect *) top;
-  PyObject *collector = KosDynNode_NS(col_node);
-  Py_INCREF(collector);
-
-  kos_dyn_pop_collect(es, col_node);
-
-  int res = KosEvalState_StackPushRef(es, collector);
-  Py_DECREF(collector);
-
+  int res = KosEvalState_StackPUSH(es, collector);
   return kos_op_outcome_from_int_step(res);
 }
 

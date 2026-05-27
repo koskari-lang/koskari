@@ -50,6 +50,15 @@ class TestCompileGlobals(SpecialsTestCase):
         self.assertEqual(42, result["marker"])
 
 
+    async def test_globals_inside_let_returns_module_namespace(self):
+        expr, mod = self.compile_expr(
+            "(compile/let [[x 10]] (compile/globals))",
+            marker=42)
+        result = await expr()
+        self.assertIsInstance(result, ModuleNamespace)
+        self.assertEqual(42, result["marker"])
+
+
 class TestCompileLocals(SpecialsTestCase):
 
     async def test_locals_emits_opcode(self):

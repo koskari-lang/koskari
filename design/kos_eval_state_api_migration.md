@@ -4,6 +4,7 @@
 
 | If you want to… | Read |
 |-----------------|------|
+| Centralize live `KosEvalState` updates (performance; remove scatter sync) | [interpreter/eval-state-live-authority.md](interpreter/eval-state-live-authority.md) |
 | Understand the end-state rule (what may touch `KosContext`) | §1, §2 |
 | See what lives on `KosContext` vs `KosEvalState` today | §3, Glossary |
 | Know which opcodes still use `ctx` directly | §5 |
@@ -82,7 +83,7 @@ inject fields by name.
 |-------|--------|
 | New `KosTransferPlan` IR | This migration moves **call sites** only; plan **semantics** stay. |
 | Language semantics | Refactor-only; same observable behavior. |
-| **Incremental** `RefreshDynCaches` | **Deferred:** requires proving every `dyn_top` mutation funnels through one commit. **Until then:** keep **full** `RefreshDynCaches` at commit (current behavior). |
+| **Incremental** pop/push retarget at every `dyn_top` publish | **Phase 1 done** for Tier 1 (`kos_dyn_retarget_*` in `dynchain.c`); see [eval-state-live-authority.md](interpreter/eval-state-live-authority.md). Tier 2 xfer / tail koscall still use full `kos_dyn_rebuild_live_from_chain`. |
 
 ---
 
@@ -95,7 +96,7 @@ inject fields by name.
 | **D3** | **`KosEvalState_Transition`** is the **public** name for `kos_dyn_transition`. Implementation stays in `dynchain.c` until renamed; **on `-1`**, call **`KosEvalState_SyncFromContext(es)`** before returning (same class of repair as `kos_dyn_uninstall` error paths). After all call sites switch, **`kos_dyn_transition` may become `static`** in `dynchain.c` and drop from `dynchain.h`. |
 | **D4** | **No new** `KosContext_DYN_TOP(ctx) = …` outside **`dynchain.c`** and **`eval.c`** (tail-koscall / agen paths). Existing stragglers are listed in Phase **F** for folding into **`kos_dyn_commit_dyn_top`** (or a single `eval.c` helper). |
 | **D5** | **Pure** chain-editing helpers (clone segment, splice under a given node) take **explicit** `KosDynNode *` arguments — they do **not** read `KosContext_DYN_TOP` internally. **Publishing** the new live head remains **`kos_dyn_commit_dyn_top(es, new_top)`** (or push/install). |
-| **D6** | Writers of **`globals_frame`** / **`globals_cache_version`** are **`KosContext_New`**, **`kos_dyn_globals_frame`**, and xfer **INSTALL/PUSH** in `dynchain.c` — nowhere else. Opcodes read module globals only through **`KosEvalState_GlobalsNamespace(es)`**. |
+| **D6** | Module globals: **`KosEvalState_GlobalsNamespace(es)`** walks **`KosNamespace_PARENT`** from the current frame's namespace (no **`KosContext`** cache). |
 
 ---
 
@@ -107,10 +108,10 @@ inject fields by name.
 |--------|--------|
 | Chain | `dyn_top` |
 | Derived from walking chain | `frame_top`, `block`, `namespace` |
-| Module globals | `globals_frame`, `globals_cache_version` |
+| Module globals | (none on context; parent walk at opcode time) |
 | Identity | `token`, `domain` |
 | Unwind / return staging | `unwind_target_frame`, `pending_return_value`, `pending_return_to_parent` |
-| Transfer | `plan`, `plan_stack`, `chain_version` |
+| Transfer | `plan`, `plan_stack` |
 | Python bridge | `py_resume_inject`, `py_resume_kind`, `py_await_iter` |
 | Exception inject | `inject_mode`, `inject_type`, `inject_value` |
 | Revive hint | `suspension_event` |
@@ -304,9 +305,8 @@ points.
 |-------|--------------------------|---------------------------|
 | `dyn_top` | **`kos_dyn_commit_dyn_top`**, **`kos_dyn_push`**, xfer INSTALL/PUSH, **`kos_tail_koscall`**, gen install/freeze, CC plan, agen flatten | Walks; **`KosEvalState_CurrentNode`** |
 | `frame_top`, `block`, `namespace` | **`KosEvalState_RefreshDynCaches`** | **`ApplyDynCaches`**, **`SyncFromContext`** |
-| `globals_frame`, `globals_cache_version` | **`KosContext_New`**, **`kos_dyn_globals_frame`**, xfer INSTALL/PUSH | **`GLOBALS.c`**, **`IMPORT_REL.c`** |
+| (module globals) | **`KosEvalState_GlobalsNamespace`** in **`eval_chain.c`** (parent walk) | **`GLOBALS.c`**, **`IMPORT_REL.c`** |
 | `plan`, `plan_stack` | **`eval.c`**, shift opcodes, xfer arm, suspend/resume | Prologue driver |
-| `chain_version` | Chain mutation helpers | Plan capture; globals cache |
 | `flags` | Opcodes (YIELD, AWAIT, RETURN, SHIFT, PROMPT), **`eval.c`**, **`dynchain.c`** | Prologue / revive |
 | `pending_return_*` | **`RETURN`**, **`POP_PROMPT`**, **`utils.c`** | Parent return delivery |
 | `unwind_target_frame` | **`POP_WIND`**, **`dynchain.c`** unwind | Resume after async wind |
@@ -421,7 +421,7 @@ PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es);
 
 | Wrapper | Current implementation | New API / refactor |
 |--------|-------------------------|-------------------|
-| **`GlobalsNamespace`** | **`opcode/GLOBALS.c`**: **`kos_dyn_globals_frame(es)`** then **`KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx))`**; **`IMPORT_REL.c`** same pattern. | **`PyObject *` returned** is the **namespace object** (caller **`INCREF`**’s today before push — wrapper returns **borrowed** reference matching **`KosDynFrame_NS`** semantics, or document **new ref** if you choose to **`INCREF` inside — **must match** opcode expectations). **Recommendation:** return **borrowed** (same as today’s **`ns`** before **`INCREF`** in **`GLOBALS.c`**). |
+| **`GlobalsNamespace`** | **`eval_chain.c`**: walk **`KosNamespace_PARENT`** from **`KosDynFrame_NS(FRAME(es))`**. | Return **borrowed** namespace; callers **`INCREF`** as in **`GLOBALS.c`**. |
 
 ---
 
@@ -662,3 +662,5 @@ centralizes the write.
 | 2026-04-27 | Second pass: decisions, field appendix, API list, phases |
 | 2026-04-27 | Third pass: TOC, glossary, Appendix B, IN_TRANSFER vs ArmTransferPlan, naming alignment, phase ordering (**C** after **B1**), removed redundant **`LeaveTransfer`** from public §10.2 |
 | 2026-04-27 | Fourth pass: §10 **Current / New / refactor** tables; **`KReturnDelimited`** (§10.12), **`TailKoscallReplaceFrame`** (§10.13), opcode plan builders §10.14; **`DisarmTransferPlan`** ↔ **`clear_and_free_transfer_plan`**. |
+| 2026-05-26 | Cross-link: [eval-state-live-authority.md](interpreter/eval-state-live-authority.md) (choke-point funnel, parity constraints; orthogonal to opcode `ctx` macro migration). |
+| 2026-05-26 | §1.3: incremental Tier-1 retarget landed; Tier 2 rebuild deferred per live-authority Phase 2. |

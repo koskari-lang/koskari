@@ -194,7 +194,6 @@ static int apply_native_handler(
   if (detached)
     kos_dynframe_free(detached);
 
-  KosEvalState_SyncFromContext(es);
   return KosEvalState_PushOrAwait(es, out_ev, result);
 }
 

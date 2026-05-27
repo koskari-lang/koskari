@@ -73,7 +73,6 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("context_id", entry)
                 self.assertIn("flags", entry)
                 self.assertIn("suspension_event", entry)
-                self.assertIn("chain_version", entry)
                 self.assertIn("domain", entry)
                 self.assertIn("namespace", entry)
                 self.assertIn("dynnodes", entry)

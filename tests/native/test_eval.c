@@ -71,8 +71,17 @@ static PyObject *make_instr_int(int op, int arg) {
 static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
 
     KosEvalState es;
+    int r;
+
     KosEvalState_Init(&es, ctx);
-    return kos_dyn_gen_install(&es, gen);
+    KosEvalState_ThawFromContext(&es);
+    if (! gen || ! kos_dyn_gen_frozen_needs_install_es(&es, gen)) {
+        KosEvalState_FreezeToContext(&es);
+        return 0;
+    }
+    r = kos_dyn_gen_install(&es, gen);
+    KosEvalState_FreezeToContext(&es);
+    return r;
 }
 
 

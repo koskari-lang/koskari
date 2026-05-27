@@ -157,8 +157,6 @@ static KosEvalStep eval_phase_post_opcode(
 */
 static inline KosOpOutcome kos_op_outcome_from_call_int(KosEvalState *es, int r) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   if (r < 0)
     return KOS_OP_POST_ERR();
   if (r == KOS_OP_RES_CONTROL_RETURNED)
@@ -168,7 +166,7 @@ static inline KosOpOutcome kos_op_outcome_from_call_int(KosEvalState *es, int r)
   if (r == 1)
     return KOS_OP_POST_SUSPEND();
   if (r == 0) {
-    if (KosContext_PLAN(ctx))
+    if (KosEvalState_PLAN(es))
       return KOS_OP_PROLOGUE();
     if (KosEvalState_FRAME(es)
         && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)))
@@ -191,10 +189,22 @@ static inline KosOpOutcome kos_op_outcome_from_call_int(KosEvalState *es, int r)
 */
 static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx);
-  KosDynFrame *cf = KosEvalState_FRAME(&es);
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  KosEvalState local;
+  KosEvalState *es = kos_tls_active_eval_for_ctx(ctx);
+  KosDynFrame *cf;
+  KosDynNode *top;
+
+  if (! es) {
+    KosEvalState_Init(&local, ctx);
+    if (KosContext_DYN_TOP(ctx)) {
+      local.dyn_top = KosContext_DYN_TOP(ctx);
+      kos_dyn_rebuild_live_from_chain(&local);
+    }
+    es = &local;
+  }
+
+  cf = KosEvalState_FRAME(es);
+  top = KosEvalState_DYN_TOP(es);
   KosDynNext *dn;
   KosDynForeach *fe;
   KosDynYieldFrom *yf = NULL;
@@ -209,8 +219,8 @@ static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
       return;
   }
 
-  dn = kos_dyn_find_next_above_frame(&es);
-  fe = kos_dyn_find_awaiting_foreach(&es);
+  dn = kos_dyn_find_next_above_frame(es);
+  fe = kos_dyn_find_awaiting_foreach(es);
   if (! dn && ! fe) {
     for (w = KosDynNode_PARENT((KosDynNode *) cf); w; w = KosDynNode_PARENT(w)) {
       if (KosDynNode_IS_YIELD_FROM(w)
@@ -234,7 +244,7 @@ static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
 
   {
     KosDynFrame *detached_frame = NULL;
-    if (kos_dyn_detach_top_frame(&es, &detached_frame) == 0 && detached_frame) {
+    if (kos_dyn_detach_top_frame(es, &detached_frame) == 0 && detached_frame) {
       agen->closed = 1;
       agen->in_progress = 0;
       kos_dynframe_free(detached_frame);
@@ -244,9 +254,9 @@ static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
   if (fe)
     KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
   if (dn)
-    kos_dyn_unlink_next_node(&es, dn);
+    kos_dyn_unlink_next_node(es, dn);
   if (yf)
-    kos_dyn_pop_yield_from(&es, yf);
+    (void) kos_dyn_unlink_yield_from(es, yf);
 }
 
 
@@ -262,8 +272,7 @@ static KosEvalMode revive_plan(
     PyObject *throw_typ,
     PyObject *throw_exc) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosTransferPlan *plan = KosContext_PLAN(ctx);
+  KosTransferPlan *plan = KosEvalState_PLAN(es);
 
   if (throw_exc != NULL) {
     PyErr_SetObject(throw_typ, throw_exc);
@@ -427,7 +436,7 @@ static KosEvalMode revive_yield(
        "throw_typ=%p throw_exc=%p dyn_top=%p frame_top=%p\n",
        KosEvalState_SuspensionEvent(es),
        (void *) send_val, (void *) throw_typ, (void *) throw_exc,
-       (void *) KosContext_DYN_TOP(KosEvalState_CONTEXT(es)),
+       (void *) KosEvalState_DYN_TOP(es),
        (void *) KosEvalState_FRAME(es));
 
   if (throw_exc != NULL) {
@@ -444,7 +453,7 @@ static KosEvalMode revive_yield(
   }
   SAYF("[gen] revive_yield DONE frame_top=%p dyn_top=%p\n",
        (void *) KosEvalState_FRAME(es),
-       (void *) KosContext_DYN_TOP(KosEvalState_CONTEXT(es)));
+       (void *) KosEvalState_DYN_TOP(es));
   return KOS_MODE_NORMAL;
 }
 
@@ -463,7 +472,13 @@ static void decorate_exception_with_dynchain(
     return;
   }
 
-  for (KosDynNode *node = KosContext_DYN_TOP(ctx); node; node = KosDynNode_PARENT(node)) {
+  {
+    KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
+    KosDynNode *chain_top = active_es
+        ? KosEvalState_DYN_TOP(active_es)
+        : KosContext_DYN_TOP(ctx);
+
+    for (KosDynNode *node = chain_top; node; node = KosDynNode_PARENT(node)) {
     if (! KosDynNode_IS_FRAME(node)) {
       continue;
     }
@@ -498,6 +513,7 @@ static void decorate_exception_with_dynchain(
     Py_XDECREF(pc_o);
     PyList_Append(frames, meta);
     Py_DECREF(meta);
+    }
   }
 
   if (PyObject_SetAttrString(exc_val, "__koskari_dynchain__", frames) < 0) {
@@ -945,8 +961,6 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) top;
   KosContext_FRAME_TOP(ctx) = top;
-  KosContext_GLOBALS_FRAME(ctx) = top;
-  KosContext_GLOBALS_CACHE_VERSION(ctx) = 0;
 
   KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
@@ -955,7 +969,6 @@ KosContext *KosContext_New(KosDynFrame *top) {
   /* Initialize transfer plan state */
   KosContext_PLAN(ctx) = NULL;
   KosContext_PLAN_STACK(ctx) = NULL;
-  KosContext_CHAIN_VERSION(ctx) = 0;
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
 
   /* Initialize Python await bridging */
@@ -971,8 +984,11 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
   { /* Lazy and evil */
     KosEvalState es;
+
     KosEvalState_Init(&es, ctx);
-    KosEvalState_RefreshDynCaches(&es);
+    KosEvalState_ThawFromContext(&es);
+    kos_dyn_rebuild_live_from_chain(&es);
+    KosEvalState_FreezeToContext(&es);
   }
 
   return ctx;
@@ -1027,6 +1043,11 @@ int KosContext_Traverse(
     visitproc visit,
     void *arg) {
 
+  KosDynNode *dyn_top;
+  KosTransferPlan *plan;
+  KosEvalState *active_es;
+  int res;
+
   if (! ctx)
     return 0;
 
@@ -1037,13 +1058,24 @@ int KosContext_Traverse(
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
 
-  /* Traverse the dynamic chain */
-  int res = kos_dynchain_traverse(KosContext_DYN_TOP(ctx), NULL, visit, arg);
+  dyn_top = KosContext_DYN_TOP(ctx);
+  plan = KosContext_PLAN(ctx);
+  if ((! dyn_top || ! plan)
+      && (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING)) {
+    active_es = kos_tls_active_eval_for_ctx(ctx);
+    if (active_es) {
+      if (! dyn_top)
+        dyn_top = KosEvalState_DYN_TOP(active_es);
+      if (! plan)
+        plan = KosEvalState_PLAN(active_es);
+    }
+  }
+
+  res = kos_dynchain_traverse(dyn_top, NULL, visit, arg);
   if (res)
     return res;
 
-  /* Traverse transfer plan */
-  res = kos_transferplan_traverse(KosContext_PLAN(ctx), visit, arg);
+  res = kos_transferplan_traverse(plan, visit, arg);
   if (res)
     return res;
 
@@ -1673,14 +1705,16 @@ static int op_attach_koskari_agen_frame_for_yield_from(
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
   if (! gen || ! KosDynGen_ACTIVE(gen)) {
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     agen->in_progress = 0;
     PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
     return -1;
   }
 
   if (kos_attach_agen_gen_flatten(es, agen, gen) < 0) {
-    kos_dyn_pop_yield_from(es, yf);
+    if (kos_dyn_pop_yield_from(es, yf) < 0)
+      return -1;
     agen->in_progress = 0;
     return -1;
   }
@@ -1781,7 +1815,7 @@ static KosEvalStep eval_phase_entry(
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
   KosEvalMode mode = KOS_MODE_NORMAL;
-  if (KosContext_PLAN(ctx)) {
+  if (KosEvalState_PLAN(es)) {
     mode = revive_plan(es, send_val, throw_typ, throw_exc);
     if (mode != KOS_MODE_NORMAL && mode != KOS_MODE_TRANSFER)
       goto entry_mode_dispatch;
@@ -2315,9 +2349,7 @@ static KosEvalStep eval_step_drain_transfer_plan(
     KosEvalState *es,
     KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  if (! KosContext_PLAN(ctx))
+  if (! KosEvalState_PLAN(es))
     return KOS_STEP_CONTINUE;
   if (run_transfer_plan_to_completion(es, out_ev) < 0)
     return KOS_STEP_STOP_EVENT;
@@ -2455,8 +2487,8 @@ static inline int koskari_eval_dispatch_computed_goto(
   goto cg_prologue;
 
 cg_prologue:
-  /* es mirrors ctx via Init, ApplyDynCaches after dyn surgery, and targeted
-     SyncFromContext on transfer/error paths — not a full sync every prologue. */
+  /* es live fields via Init, kos_dyn_* retarget after chain surgery, freeze at
+     cleanup; chain errors propagate without rebuild. */
 
   #if KOS_STACK_TRACE
   {
@@ -2603,12 +2635,14 @@ int koskari_eval(
 
   KosEvalState es;
   KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+  if (KosEvalState_DYN_TOP(&es))
+    kos_dyn_rebuild_live_from_chain(&es);
 
-  /* Mark context as running */
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
 
-  /* Push domain scope (token, context, live_depth) onto per-thread TLS */
   KosEvalState_EnterDomainScope(&es);
+  kos_tls_push_active_eval(&es);
 
   /* Phase 1: entry/revive normalization */
   KosEvalMode mode = KOS_MODE_NORMAL;
@@ -2626,7 +2660,7 @@ int koskari_eval(
 
   /* Phase 2: transfer-plan synchronization (only when mode warrants it) */
   if (mode == KOS_MODE_NORMAL || mode == KOS_MODE_TRANSFER) {
-    if (unlikely(KosContext_PLAN(ctx)))
+    if (unlikely(KosEvalState_PLAN(&es)))
       if (eval_phase_transfer(&es, out_ev) != KOS_STEP_CONTINUE)
         goto koskari_eval_cleanup;
   }
@@ -2637,7 +2671,10 @@ int koskari_eval(
   eval_ret = koskari_eval_dispatch_computed_goto(&es, out_ev);
 
 koskari_eval_cleanup:
+  kos_tls_pop_active_eval();
   KosEvalState_FlushLiveRegsToFrame(&es);
+  KosEvalState_FreezeToContext(&es);
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosEvalState_LeaveDomainScope(&es);
   return eval_ret;
 }

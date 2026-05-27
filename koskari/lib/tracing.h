@@ -93,11 +93,11 @@ typedef enum KosTracePostOpId {
 
 typedef enum KosTraceEvalSyncId {
   KOS_TEVS_init = 0,
-  KOS_TEVS_sync_from_context,
+  KOS_TEVS_unused_sync_from_context,
   KOS_TEVS_flush_live_regs,
-  KOS_TEVS_apply_dyn_caches,
-  KOS_TEVS_refresh_dyn_caches,
-  KOS_TEVS_patch_dyn_caches,
+  KOS_TEVS_unused_apply_dyn_caches,
+  KOS_TEVS_rebuild_live_from_chain,
+  KOS_TEVS_retarget_after_push,
   KOS_TEVS__COUNT
 } KosTraceEvalSyncId;
 

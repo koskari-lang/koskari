@@ -653,10 +653,17 @@ static int install_frozen_gen_for_resume(
   g = (KosDynGen *) agen->gen;
   {
     KosEvalState es;
+    int r;
+
     KosEvalState_Init(&es, eval_ctx);
-    if (! g || ! kos_dyn_gen_frozen_needs_install_es(&es, g))
+    KosEvalState_ThawFromContext(&es);
+    if (! g || ! kos_dyn_gen_frozen_needs_install_es(&es, g)) {
+      KosEvalState_FreezeToContext(&es);
       return 0;
-    return kos_dyn_gen_install(&es, g);
+    }
+    r = kos_dyn_gen_install(&es, g);
+    KosEvalState_FreezeToContext(&es);
+    return r;
   }
 }
 

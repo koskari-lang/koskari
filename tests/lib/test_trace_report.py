@@ -159,10 +159,11 @@ class TestTraceReport(unittest.TestCase):
         sec = report["eval_state_sync"]
         expected = (
             "init",
-            "sync_from_context",
+            "unused_sync_from_context",
             "flush_live_regs",
-            "apply_dyn_caches",
-            "refresh_dyn_caches",
+            "unused_apply_dyn_caches",
+            "rebuild_live_from_chain",
+            "retarget_after_push",
         )
         for key in expected:
             self.assertIn(key, sec, msg="missing eval_state_sync key %r" % (key,))

@@ -104,17 +104,14 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
 */
 int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node) {
   if (! node || ! KosDynWind_BEFORE_THUNK(node)) {
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
   if (KosEvalState_CallNoArgs(es, NULL, KosDynWind_BEFORE_THUNK(node), 0) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
-  KosEvalState_SyncFromContext(es);
   return KOS_DYN_UNWIND_ASYNC_STARTED;
 }
 
@@ -125,7 +122,6 @@ int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node) {
 */
 int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
   if (! node || ! KosDynWind_ENTERED(node)) {
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
 
@@ -139,13 +135,11 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
         && body_result) {
       if (KosEvalState_StackPushRef(es, body_result) < 0) {
         KosDynWind_BODY_RESULT(node) = body_result;
-        KosEvalState_SyncFromContext(es);
         return -1;
       }
     }
     if (body_result)
       Py_DECREF(body_result);
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
 
@@ -153,17 +147,14 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
   {
     PyObject *args = PyTuple_New(0);
     if (! args) {
-      KosEvalState_SyncFromContext(es);
       return -1;
     }
     if (KosEvalState_CallArgs(es, NULL, KosDynWind_AFTER_THUNK(node), args, NULL, 0) < 0) {
       Py_DECREF(args);
-      KosEvalState_SyncFromContext(es);
       return -1;
     }
     Py_DECREF(args);
   }
-  KosEvalState_SyncFromContext(es);
   return KOS_DYN_UNWIND_ASYNC_STARTED;
 }
 
@@ -175,7 +166,6 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
   if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
              ? *KosEvalState_BLOCK(es)
              : NULL)) {
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
 
@@ -185,7 +175,6 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     PyObject *val = KosEvalState_StackPopRef(es);
     if (val)
       Py_DECREF(val);
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER) {
@@ -215,7 +204,6 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     }
     return 0;
   }
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -229,8 +217,7 @@ KosDynWind *kos_dyn_push_wind(
     PyObject *before_thunk,
     PyObject *after_thunk) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynWind *wind = kos_dynwind_new(KosContext_DYN_TOP(ctx),
+  KosDynWind *wind = kos_dynwind_new(KosEvalState_DYN_TOP(es),
                                      before_thunk, after_thunk);
   if (! wind)
     return NULL;
@@ -248,10 +235,8 @@ KosDynWind *kos_dyn_push_wind(
    kos_dyn_uninstall for extent teardown when thunks must run.
 */
 int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) wind) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) wind) {
     PyErr_SetString(PyExc_RuntimeError, "wind node is not at top of chain");
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
   {

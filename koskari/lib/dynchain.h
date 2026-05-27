@@ -554,9 +554,8 @@ typedef struct KosTransferAction {
    suspended and pushed onto the suspended stack. On completion,
    the suspended plan is resumed.
 
-   The original_target and chain_version are used to detect if
-   the dynamic chain has changed during nested transfers. If so,
-   the remaining actions must be recomputed.
+   The original_target is retained for future replanning when nested
+   transfers change the dynamic chain during a suspended plan.
 */
 
 struct KosTransferPlan {
@@ -567,7 +566,6 @@ struct KosTransferPlan {
   size_t action_capacity;       /* slots allocated (>= action_count) */
 
   KosDynNode *original_target;  /* target for chain-change detection */
-  uint32_t chain_version;       /* version at plan creation */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
   KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
   KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
@@ -588,7 +586,6 @@ struct KosTransferPlan {
 #define KosTransferPlan_ACTION_INDEX(p)     (((KosTransferPlan *)(p))->action_index)
 #define KosTransferPlan_ACTION_CAPACITY(p)  (((KosTransferPlan *)(p))->action_capacity)
 #define KosTransferPlan_ORIGINAL_TARGET(p)  (((KosTransferPlan *)(p))->original_target)
-#define KosTransferPlan_CHAIN_VERSION(p)   (((KosTransferPlan *)(p))->chain_version)
 #define KosTransferPlan_RESUME_PC(p)       (((KosTransferPlan *)(p))->resume_pc)
 #define KosTransferPlan_RESUME_FRAME(p)    (((KosTransferPlan *)(p))->resume_frame)
 #define KosTransferPlan_RESUME_STACK(p)    (((KosTransferPlan *)(p))->resume_stack)
@@ -839,7 +836,7 @@ KosDynNode *kos_clone_chain_segment(
 /**
    Push a node onto the context's dynamic chain.  Caller must have
    allocated the node and set its parent.  Calls install handler if
-   the type has one.  Updates dyn_top and chain_version.
+   the type has one.  Updates dyn_top.
 
    :param ctx: execution context
    :param node: node to push (parent already set)
@@ -856,11 +853,29 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 
 
 /**
-   Flush live PCs, set dyn_top to new_top, bump chain_version, full
-   RefreshDynCaches walk. Used for pops, splices, and manual rewinds — not for
-   ordinary single-node pushes (those use KosEvalState_PatchDynCaches).
+   Flush live PCs, set dyn_top to new_top, retarget live fields on es.
+
+   Use for pops, splices, gen install, and any dyn_top change that is not
+   kos_dyn_push. Internally captures the previous dyn_top and calls
+   kos_dyn_retarget_after_pop (incremental parent pop or full rebuild).
+   Ordinary pushes must use kos_dyn_push or kos_dyn_push_noinstall instead.
 */
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
+
+
+/**
+   Full chain walk: recompute live frame, block, and namespace on es from
+   dyn_top, then snapshot onto ctx.
+
+   Call from outside the dynchain TU when eval lifecycle or opcodes must refresh
+   live fields after a non-standard chain edit (KosContext_New bootstrap, tail
+   koscall, stack assigned on dyn_top after push). Inside dynchain.c, xfer
+   INSTALL/PUSH, gen install fallback, and kos_dyn_retarget_after_pop when the
+   edit is not a single-head parent pop use this instead of incremental retarget.
+   Do not call on every opcode; ordinary pushes and pops go through
+   kos_dyn_push and kos_dyn_commit_dyn_top.
+*/
+void kos_dyn_rebuild_live_from_chain(KosEvalState *es);
 
 
 /**
@@ -902,7 +917,6 @@ int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node);
    Push a new frame onto the context's dynamic chain.
 
    Creates a new frame and sets it as dyn_top. Updates frame_top cache.
-   Increments chain_version.
 
    :param ctx: execution context
    :param code: bytecode object (borrowed)
@@ -982,7 +996,6 @@ int kos_dyn_gen_unwind_exhausted(KosEvalState *es);
 
    Frees the frame and updates dyn_top to the frame's parent.
    Updates frame_top cache to find the new topmost frame.
-   Increments chain_version.
 
    :param ctx: execution context
 
@@ -1013,18 +1026,6 @@ int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame);
    :return: 0 on success, -1 if top is not a frame
 */
 int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
-
-
-/**
-   Return the outermost frame on the parent chain starting from the current
-   acting frame. When the dynamic chain has changed since the last refresh,
-   recomputes KosContext globals_frame and globals_cache_version.
-
-   :param ctx: execution context
-
-   :return: cached globals frame (at least the current frame)
-*/
-KosDynFrame *kos_dyn_globals_frame(KosEvalState *es);
 
 
 /**
@@ -1071,7 +1072,7 @@ KosDynDelim *kos_dyn_push_delim(
    :param ctx: execution context
    :param delim: DELIM node to pop (must be dyn_top)
 */
-void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
+int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
 
 
 /**
@@ -1108,7 +1109,7 @@ KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc);
    :param ctx: execution context
    :param cc: the CC node to pop (must be at dyn_top)
 */
-void kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
+int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
 
 
 /**
@@ -1245,10 +1246,10 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node);
    :param ctx: execution context
    :param region: region to pop (must be dyn_top)
 */
-void kos_dyn_pop_try(KosEvalState *es, KosDynTry *node);
-void kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node);
-void kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node);
-void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
+int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node);
+int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node);
+int kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node);
+int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
 
 
 /**
@@ -1283,7 +1284,7 @@ KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *ns);
    :param ctx: execution context
    :param node: NS node to pop (must be dyn_top)
 */
-void kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
+int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
 
 
 /**
@@ -1304,7 +1305,7 @@ KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *ns);
    :param ctx: execution context
    :param node: COLLECT node to pop (must be dyn_top)
 */
-void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node);
+int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node);
 
 
 void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node);
@@ -1352,7 +1353,7 @@ KosDynParam *kos_dyn_push_param(
    :param ctx: execution context
    :param node: PARAM node to pop (must be dyn_top)
 */
-void kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
+int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
 
 
 /**
@@ -1427,7 +1428,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src);
    :param ctx: execution context
    :param node: WITH node to pop (must be dyn_top)
 */
-void kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
+int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
 
 
 /**
@@ -1719,7 +1720,17 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
    :param ctx: execution context
    :param node: YIELD_FROM node to pop (must be current dyn_top)
 */
-void kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node);
+int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node);
+
+
+/**
+   Unlink a YIELD_FROM node whether or not it is dyn_top. When it is top,
+   delegates to kos_dyn_pop_yield_from; otherwise splices the chain and
+   rebuilds live fields.
+
+   :return: 0 on success, -1 on error (sets PyErr)
+*/
+int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 
 
 /* === Prompt lookup and continuation capture === */

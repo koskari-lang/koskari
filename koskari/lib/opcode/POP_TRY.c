@@ -20,19 +20,9 @@
 */
 
 KOS_OP_HANDLER(POP_TRY) {
-  KosDynNode *top = KosEvalState_CurrentNode(es);
-  if (unlikely(! top)) {
-    PyErr_SetString(PyExc_RuntimeError, "POP_TRY: dyn_top is NULL");
-    return KOS_OP_POST_ERR();
-  }
+  (void) out_ev;
 
-  if (unlikely(! KosDynNode_IS_TRY(top))) {
-    PyErr_Format(
-      PyExc_RuntimeError,
-      "POP_TRY: top is %s (expected TRY), node=%p",
-      kos_dynnode_kind_name(KosDynNode_KIND(top)), (void *) top);
-    return KOS_OP_POST_ERR();
-  }
+  KosDynNode *top = KosEvalState_CurrentNode(es);
 
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
@@ -41,12 +31,13 @@ KOS_OP_HANDLER(POP_TRY) {
   if (unlikely(! value))
     return KOS_OP_POST_ERR();
 
-  kos_dyn_pop_try(es, (KosDynTry *) top);
+  if (unlikely(kos_dyn_pop_try(es, (KosDynTry *) top) < 0)) {
+    Py_DECREF(value);
+    return KOS_OP_POST_ERR();
+  }
 
   if (unlikely(KosEvalState_StackPUSH(es, value) < 0))
     return KOS_OP_POST_ERR();
-
-  (void) out_ev;
   return KOS_OP_RUN();
 }
 

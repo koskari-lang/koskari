@@ -21,6 +21,9 @@
 */
 
 KOS_OP_HANDLER(POP_WITH) {
+  (void) out_ev;
+  (void) insn;
+
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (unlikely(! top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WITH: dyn_top is NULL");
@@ -51,10 +54,8 @@ KOS_OP_HANDLER(POP_WITH) {
     return KOS_OP_POST_ERR();
 
   /* all is well, we've completed the unwind, pop the node and return */
-  kos_dyn_pop_with(es, (KosDynWith *) top);
-
-  (void) out_ev;
-  (void) insn;
+  if (unlikely(kos_dyn_pop_with(es, (KosDynWith *) top) < 0))
+    return KOS_OP_POST_ERR();
   return KOS_OP_RUN();
 }
 

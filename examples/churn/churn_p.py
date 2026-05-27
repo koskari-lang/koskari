@@ -26,4 +26,19 @@ def churn_tree(depth: int, x: int = 1) -> int:
     return ((a + ((b ^ x) * 33)) ^ ((a << 7) & MASK32) ^ (b >> 3)) & MASK32
 
 
+def churn_step(x: int, i: int) -> int:
+    x = (x * 1664525 + 1013904223) & MASK32
+    x ^= (x << 13) & MASK32
+    x ^= (x >> 17)
+    x ^= (x << 5) & MASK32
+    return (x + i * 1103515245) & MASK32
+
+
+def churn_list_each(n: int, x: int = 1) -> int:
+    acc = 0
+    for v in [churn_step(x, i) for i in range(n)]:
+        acc ^= v
+    return acc & MASK32
+
+
 # The end.

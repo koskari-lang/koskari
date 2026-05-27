@@ -27,4 +27,19 @@ define churn_tree [depth x: 1]:
         (& (^ (+ a (* (^ b x) 33)) (^ (& (<< a 7) MASK32) (>> b 3))) MASK32)
 
 
+define churn_step [x i]:
+    (set! x (& (+ (* x 1664525) 1013904223) MASK32))
+    (set! x (^ x (& (<< x 13) MASK32)))
+    (set! x (^ x (>> x 17)))
+    (set! x (^ x (& (<< x 5) MASK32)))
+    (& (+ x (* i 1103515245)) MASK32)
+
+
+define churn_list_each [n x: 1]:
+    (define acc 0)
+    (for-each [v (list-each [i (range n)] (churn_step x i))]
+      (set! acc (^ acc v)))
+    (& acc MASK32)
+
+
 ;; The end.

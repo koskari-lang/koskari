@@ -53,9 +53,8 @@ static void kos_dyncc_free(KosDynCC *cc) {
 */
 KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
-  KosDynCC *cc = kos_dyncc_new(KosContext_DYN_TOP(ctx), resume_pc);
+  KosDynCC *cc = kos_dyncc_new(KosEvalState_DYN_TOP(es), resume_pc);
   if (! cc)
     return NULL;
 
@@ -70,10 +69,11 @@ KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc) {
 /**
    Unlink CC from top when it matches; free node. Callers: POP_CC fast path.
 */
-void kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) cc)
-    return;
+int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) cc) {
+    PyErr_SetString(PyExc_RuntimeError, "CC node is not at top of chain");
+    return -1;
+  }
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) cc);
 
@@ -81,6 +81,7 @@ void kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
     KosDynNode_PARENT((KosDynNode *) cc) = NULL;
     kos_dyncc_free(cc);
   }
+  return 0;
 }
 
 

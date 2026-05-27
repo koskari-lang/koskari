@@ -120,9 +120,8 @@ KosDynFrame *kos_dyn_push_frame(
     KosCode *code,
     PyObject *ns) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
-  KosDynFrame *frame = kos_dynframe_new(KosContext_DYN_TOP(ctx), code, ns, NULL);
+  KosDynFrame *frame = kos_dynframe_new(KosEvalState_DYN_TOP(es), code, ns, NULL);
   if (! frame)
     return NULL;
 
@@ -170,19 +169,18 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
    (no extent teardown). Callers: simple frame exit when no extra nodes on top.
 */
 int kos_dyn_pop_frame(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx)) {
+  if (! KosEvalState_DYN_TOP(es)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to pop");
     return -1;
   }
 
-  if (! KosDynNode_IS_FRAME(KosContext_DYN_TOP(ctx))) {
+  if (! KosDynNode_IS_FRAME(KosEvalState_DYN_TOP(es))) {
     PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
     return -1;
   }
 
   {
-    KosDynNode *old_top = KosContext_DYN_TOP(ctx);
+    KosDynNode *old_top = KosEvalState_DYN_TOP(es);
     KosDynNode *parent = KosDynNode_PARENT(old_top);
 
     kos_dyn_commit_dyn_top(es, parent);
@@ -196,7 +194,7 @@ int kos_dyn_pop_frame(KosEvalState *es) {
 /**
    Attach an existing frame to the context's dynamic chain (no allocation).
 
-   Reparents the frame so its parent is KosContext_DYN_TOP(ctx), then sets it as
+   Reparents the frame so its parent is KosEvalState_DYN_TOP(es), then sets it as
    dyn_top/frame_top. Used to run a generator frame in the current context
    (e.g. async gen step). Does not free the frame on detach.
 
@@ -206,12 +204,11 @@ int kos_dyn_pop_frame(KosEvalState *es) {
    :return: 0 on success, -1 on error
 */
 int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! frame) {
     PyErr_SetString(PyExc_RuntimeError, "NULL frame for attach");
     return -1;
   }
-  KosDynNode_PARENT(frame) = KosContext_DYN_TOP(ctx);
+  KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
   if (kos_dyn_push_noinstall(es, (KosDynNode *) frame) < 0)
     return -1;
   return 0;
@@ -221,7 +218,7 @@ int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
 /**
    Detach the top frame from the context's dynamic chain without freeing it.
 
-   Sets KosContext_DYN_TOP(ctx) to the frame's parent and updates frame_top. Clears the
+   Sets KosEvalState_DYN_TOP(es) to the frame's parent and updates frame_top. Clears the
    detached frame's parent link so it is fully disconnected from the chain.
    The frame is returned in *frame_out; caller may keep it (e.g. for async
    gen storage in agen->ctx).
@@ -232,16 +229,15 @@ int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
    :return: 0 on success, -1 if top is not a frame
 */
 int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx)) {
+  if (! KosEvalState_DYN_TOP(es)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to detach");
     return -1;
   }
-  if (! KosDynNode_IS_FRAME(KosContext_DYN_TOP(ctx))) {
+  if (! KosDynNode_IS_FRAME(KosEvalState_DYN_TOP(es))) {
     PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
     return -1;
   }
-  KosDynFrame *frame = (KosDynFrame *) KosContext_DYN_TOP(ctx);
+  KosDynFrame *frame = (KosDynFrame *) KosEvalState_DYN_TOP(es);
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
 
   kos_dyn_commit_dyn_top(es, parent);

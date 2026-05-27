@@ -98,9 +98,8 @@ KosDynDelim *kos_dyn_push_delim(
     KosDynFrame *frame,
     KosDynNode *node) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
-  KosDynDelim *delim = kos_dyndelim_new(KosContext_DYN_TOP(ctx),
+  KosDynDelim *delim = kos_dyndelim_new(KosEvalState_DYN_TOP(es),
                                         mode,
                                         chain,
                                         pc,
@@ -121,11 +120,10 @@ KosDynDelim *kos_dyn_push_delim(
 /**
    Pop DELIM marker from top of chain.
 */
-void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) delim) {
-    KosEvalState_SyncFromContext(es);
-    return;
+int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) delim) {
+    PyErr_SetString(PyExc_RuntimeError, "DELIM node is not at top of chain");
+    return -1;
   }
 
   kos_dyn_uninstall_handler(es, (KosDynNode *) delim, KOS_XFER_EVENT_NONE, NULL);
@@ -136,6 +134,7 @@ void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
   }
+  return 0;
 }
 
 
@@ -143,9 +142,8 @@ void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
    Find nearest DELIM from dyn_top toward root; optional mode filter.
 */
 KosDynDelim *kos_find_nearest_delim(KosEvalState *es, uint8_t mode) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *node;
-  for (node = KosContext_DYN_TOP(ctx); node; node = KosDynNode_PARENT(node)) {
+  for (node = KosEvalState_DYN_TOP(es); node; node = KosDynNode_PARENT(node)) {
     if (! KosDynNode_IS_DELIM(node))
       continue;
     if (! mode || KosDynDelim_MODE((KosDynDelim *) node) == mode)

@@ -29,8 +29,7 @@
    walk, loop transfer, local raise. Fills out status and raw result codes.
    Callers: eval.c opcode and event dispatch.
 
-   Error paths return -1 without syncing es; KosEvalState_Transition performs
-   at most one KosEvalState_SyncFromContext on -1 when es is non-NULL.
+   Error paths return -1; caller propagates PyErr.
 */
 static inline int kos_dyn_transition_internal(
     KosEvalState *es,
@@ -160,11 +159,7 @@ int KosEvalState_Transition(
     KosTransitionResult *out,
     KosEvent *out_ev) {
 
-  int r = kos_dyn_transition_internal(es, req, out, out_ev);
-
-  if (r < 0)
-    KosEvalState_SyncFromContext(es);
-  return r;
+  return kos_dyn_transition_internal(es, req, out, out_ev);
 }
 
 
@@ -178,9 +173,10 @@ int KosEvalState_Transition(
   For PUSH_SHIFT unwind plans, transfers continuation_ref to the prompt's
   pending_shift_wrapper so the opcode can push the handler on re-entry.
 */
-static void clear_and_free_transfer_plan(KosContext *ctx) {
-  KosTransferPlan *p = KosContext_PLAN(ctx);
-  KosContext_PLAN(ctx) = NULL;
+static void clear_and_free_transfer_plan(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosTransferPlan *p = KosEvalState_PLAN(es);
+  KosEvalState_PLAN(es) = NULL;
   KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
   if (p && KosTransferPlan_CONTINUATION_REF(p)
       && KosTransferPlan_ORIGINAL_TARGET(p)
@@ -196,7 +192,7 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 static inline void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
   if (unlikely(! es))
     return;
-  clear_and_free_transfer_plan(KosEvalState_CONTEXT(es));
+  clear_and_free_transfer_plan(es);
 }
 
 
@@ -238,30 +234,22 @@ static inline int KosEvalState_TakeInjectThrow(
 }
 
 
-static inline PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  kos_dyn_globals_frame(es);
-  return KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
-}
-
-
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,
     KosDynFrame *frame,
     KosCode *code,
     PyObject *ns) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = ns;
   Py_XINCREF(code);
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = code;
-  KosContext_NAMESPACE(ctx) = ns;
-  KosEvalState_SyncFromContext(es);
+  if (KosEvalState_FRAME(es) == frame) {
+    KosEvalState_NAMESPACE(es) = ns;
+    KosEvalState_CODE(es) = code;
+    KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
+  }
   return 0;
 }
 
@@ -330,23 +318,20 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
 
 void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosTransferPlan *old = KosContext_PLAN(ctx);
+  KosTransferPlan *old = KosEvalState_PLAN(es);
 
   if (old)
     kos_free_transfer_plan(old);
-  KosContext_PLAN(ctx) = plan;
+  KosEvalState_PLAN(es) = plan;
   KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
 }
 
 
 static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
 
-  KosContext *ctx;
-
   if (! es)
     return 0;
-  ctx = KosEvalState_CONTEXT(es);
-  return KosContext_PLAN(ctx) != NULL;
+  return KosEvalState_PLAN(es) != NULL;
 }
 
 
@@ -361,10 +346,10 @@ static int run_transfer_plan_to_completion(
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
-  while (KosContext_PLAN(ctx)) {
+  while (KosEvalState_PLAN(es)) {
     SAYF("[eval] transfer step %zu/%zu\n",
-         (size_t) KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)),
-         (size_t) KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx)));
+         (size_t) KosTransferPlan_ACTION_INDEX(KosEvalState_PLAN(es)),
+         (size_t) KosTransferPlan_ACTION_COUNT(KosEvalState_PLAN(es)));
     int plan_res = kos_run_transfer_step(es, out_ev);
 
     if (plan_res < 0) {
@@ -383,7 +368,7 @@ static int run_transfer_plan_to_completion(
       continue;
 
     SAYF("[eval] transfer complete dyn_top=%p\n",
-         (void *) KosContext_DYN_TOP(ctx));
+         (void *) KosEvalState_DYN_TOP(es));
     KosEvalState_DisarmTransferPlan(es);
   }
 
@@ -401,7 +386,6 @@ static inline int KosEvalState_KReturnDelimited(
     PyObject *val,
     KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *ret_chain = KosDynDelim_RETURN_CHAIN(delim);
   uint32_t ret_pc = KosDynDelim_RETURN_PC(delim);
 
@@ -427,8 +411,10 @@ static inline int KosEvalState_KReturnDelimited(
   KosDynDelim_RETURN_PC(delim) = (uint32_t)-1;
   KosDynDelim_RETURN_FRAME_NODE(delim) = NULL;
   KosDynDelim_RETURN_NODE(delim) = NULL;
-  if (KosContext_DYN_TOP(ctx) == (KosDynNode *) delim)
-    kos_dyn_pop_delim(es, delim);
+  if (KosEvalState_DYN_TOP(es) == (KosDynNode *) delim) {
+    if (kos_dyn_pop_delim(es, delim) < 0)
+      return -1;
+  }
   if (run_transfer_plan_to_completion(es, out_ev) < 0)
     return -1;
   return 0;

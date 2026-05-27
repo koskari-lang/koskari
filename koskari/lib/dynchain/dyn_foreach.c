@@ -107,8 +107,7 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
    Push FOREACH as DYN_TOP. Callers: opcode PUSH_FOREACH.
 */
 KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynForeach *node = kos_dynforeach_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
+  KosDynForeach *node = kos_dynforeach_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
@@ -122,11 +121,10 @@ KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_
 /**
    Pop FOREACH when top. Callers: abort_push_region, kos_dyn_transfer_to_loop.
 */
-void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
-    KosEvalState_SyncFromContext(es);
-    return;
+int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+    PyErr_SetString(PyExc_RuntimeError, "FOREACH node is not at top of chain");
+    return -1;
   }
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
@@ -135,6 +133,7 @@ void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dynforeach_free(node);
   }
+  return 0;
 }
 
 
@@ -147,7 +146,6 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
   KosPyAsyncGen *agen;
 
   if (KosEvalState_StackPushRef(es, payload) < 0) {
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
   Py_DECREF(payload);
@@ -157,7 +155,6 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
   KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
   agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
   agen->in_progress = 0;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -172,7 +169,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
 
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
     Py_DECREF(val);
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -187,7 +183,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
   Py_DECREF(val);
   KosEvent_PAYLOAD(out_ev) = NULL;
   KosEvent_KIND(out_ev) = KOS_EV_NONE;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

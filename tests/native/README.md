@@ -136,6 +136,27 @@ nspec + code + frame + context from a Python list of instruction tuples.
 Note that `kos_dynframe_new` **steals** the `ns` reference; the helper
 accounts for this — do not `Py_DECREF(ns)` after passing it.
 
+### Direct dyn-chain calls outside `koskari_eval`
+
+During `koskari_eval`, live chain state lives on a stack `KosEvalState` after
+`KosEvalState_ThawFromContext`; it is written back with `KosEvalState_FreezeToContext`
+at eval exit. Native tests that call `kos_dyn_*` helpers directly must use the
+same contract:
+
+1. `KosEvalState_Init(&es, ctx)`
+2. `KosEvalState_ThawFromContext(&es)`
+3. mutate the chain (push, pop, gen install, …)
+4. `KosEvalState_FreezeToContext(&es)` before the next `koskari_eval` on `ctx`
+
+Canonical patterns in this tree:
+
+- `install_frozen_gen` in `tests/native/test_eval.c` (mirrors
+  `install_frozen_gen_for_resume` in `koskari/lib/iter.c`)
+- `push_dyn_param` / `pop_dyn_param` in `tests/native/test_paramref.c`
+
+`KosEvalState_Init` alone does not load `ctx->dyn_top` into `es`; skipping thaw
+or freeze makes tests read or write the wrong authority.
+
 ## Adding Tests for a New Type
 
 When adding a new native type (e.g., `values.c`), follow these steps:

@@ -20,6 +20,8 @@
 */
 
 KOS_OP_HANDLER(POP_FINALLY) {
+  (void) out_ev;
+
   KosDynNode *region = KosEvalState_CurrentNode(es);
   if (! region || ! KosDynNode_IS_FINALLY(region)) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -34,20 +36,25 @@ KOS_OP_HANDLER(POP_FINALLY) {
     PyErr_SetExcInfo(NULL, NULL, NULL);
     KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 0;
   }
+
   if (KosDynFinally_HANDLING_RETURN((KosDynFinally *) region))
     KosDynFinally_HANDLING_RETURN((KosDynFinally *) region) = 0;
+
   {
     PyObject *promoted = KosStackBlock_PopRef(&KosDynNode_STACK(region));
     if (! promoted)
       return KOS_OP_POST_ERR();
-    kos_dyn_pop_finally(es, (KosDynFinally *) region);
+    if (unlikely(kos_dyn_pop_finally(es, (KosDynFinally *) region) < 0)) {
+      Py_DECREF(promoted);
+      return KOS_OP_POST_ERR();
+    }
     if (KosEvalState_StackPushRef(es, promoted) < 0) {
       Py_DECREF(promoted);
       return KOS_OP_POST_ERR();
     }
     Py_DECREF(promoted);
   }
-  (void) out_ev;
+
   /* Restoring the active exception must run through the prologue so
      eval_phase_pending_exception observes PyErr before the next opcode. */
   if (PyErr_Occurred())

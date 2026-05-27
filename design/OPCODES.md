@@ -1460,8 +1460,9 @@ Pool: 0 = `"os.path"`, 1 = `"path"`, 2 = None.
   `(import .foo)`, 2 for `(import ..foo)`).
 - **`name`**: Module name after the dots, or `None` for a bare relative import
   (e.g. `(import .)` which imports the enclosing package itself).
-- **Anchor resolution**: The globals namespace of the outermost frame is passed as
-  the `globals` argument to `PyImport_ImportModuleLevelObject` so Python can read
+- **Anchor resolution**: The module globals namespace (outermost parent of the
+  current frame's namespace) is passed as the `globals` argument to
+  `PyImport_ImportModuleLevelObject` so Python can read
   `__name__` and `__package__` to resolve the anchor package. This is identical to
   what Python's own relative import mechanism does.
 - **Compiler form:** Pre-compile arg = `(level, name)` Python tuple; post-compile

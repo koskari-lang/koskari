@@ -49,9 +49,8 @@ static void kos_dynshift_free(KosDynShift *shift) {
    Push SHIFT node via kos_dyn_push. Callers: opcode PUSH_SHIFT.
 */
 int kos_dyn_push_shift(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   // CONTEXT: dirty, touches context directly
-  KosDynShift *shift = kos_dynshift_new(KosContext_DYN_TOP(ctx));
+  KosDynShift *shift = kos_dynshift_new(KosEvalState_DYN_TOP(es));
   if (! shift)
     return -1;
 

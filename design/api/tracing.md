@@ -270,19 +270,20 @@ with only **`count`** and **`total_ns`** (no share fields). Wall time is
 | Key | Instrumented API / site |
 |-----|-------------------------|
 | **init** | `KosEvalState_Init` (`eval/eval_state.c`) |
-| **sync_from_context** | `KosEvalState_SyncFromContext` |
+| **unused_sync_from_context** | Reserved slot (removed API; never incremented) |
 | **flush_live_regs** | `KosEvalState_FlushLiveRegsToFrame` (inline in `eval.h`) |
-| **apply_dyn_caches** | `KosEvalState_ApplyDynCaches` |
-| **refresh_dyn_caches** | `KosEvalState_RefreshDynCaches` (ends with a call to Apply) |
-| **patch_dyn_caches** | `KosEvalState_PatchDynCaches` |
+| **unused_apply_dyn_caches** | Reserved slot (removed API; never incremented) |
+| **rebuild_live_from_chain** | `kos_dyn_rebuild_live_from_chain` (`dynchain.c`) |
+| **retarget_after_push** | `kos_dyn_retarget_after_push` (`dynchain.c`) |
 
 Add new ids in `tracing.h` (`KosTraceEvalSyncId`) and `tracing.c` (`kos_tevs_names`)
-only by **appending** entries.
+only by **appending** entries. Renaming existing slot strings in place is allowed
+when enum indices stay fixed.
 
 Example entry:
 
 ```python
-"sync_from_context": {"count": 128643000, "total_ns": 3472847736}
+"rebuild_live_from_chain": {"count": 128643000, "total_ns": 3472847736}
 ```
 
 ### `opcode_timing`
