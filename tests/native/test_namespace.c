@@ -364,6 +364,171 @@ static int test_namespace_nested(void) {
 }
 
 
+static int test_namespace_get_local_no_materialize(void) {
+    /*
+      Test Namespace.get retrieves local value without materializing a ref.
+    */
+    PyObject *name = PyUnicode_FromString("ns");
+    PyObject *key = PyUnicode_FromString("x");
+    PyObject *local = PyTuple_Pack(1, key);
+    PyObject *value = PyLong_FromLong(101);
+
+    TEST_ASSERT_NOT_NULL(name, "create name");
+    TEST_ASSERT_NOT_NULL(key, "create key");
+    TEST_ASSERT_NOT_NULL(local, "create local");
+    TEST_ASSERT_NOT_NULL(value, "create value");
+
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+
+    TEST_ASSERT_EQ(KosNamespace_Store(ns, key, value), 0, "store value");
+    TEST_ASSERT_SAME(KosNamespace_LOOSE_REF(ns, key), Py_None, "binding is raw before get");
+
+    PyObject *retrieved = PyObject_CallMethod(ns, "get", "O", key);
+    TEST_ASSERT_NOT_NULL(retrieved, "get local value");
+    TEST_ASSERT_EQ(PyLong_AsLong(retrieved), 101, "value matches");
+    TEST_ASSERT_SAME(KosNamespace_LOOSE_REF(ns, key), Py_None, "binding remains raw after get");
+
+    Py_DECREF(retrieved);
+    Py_DECREF(ns);
+    Py_DECREF(value);
+    Py_DECREF(local);
+    Py_DECREF(key);
+    Py_DECREF(name);
+    return 0;
+}
+
+
+static int test_namespace_get_parent_chain(void) {
+    /*
+      Test Namespace.get walks up the parent chain.
+    */
+    PyObject *parent_name = PyUnicode_FromString("parent");
+    PyObject *child_name = PyUnicode_FromString("child");
+    PyObject *key_foo = PyUnicode_FromString("foo");
+    PyObject *key_bar = PyUnicode_FromString("bar");
+    PyObject *parent_local = PyTuple_Pack(1, key_foo);
+    PyObject *child_local = PyTuple_Pack(1, key_bar);
+    PyObject *value = PyLong_FromLong(202);
+
+    TEST_ASSERT_NOT_NULL(parent_name, "create parent name");
+    TEST_ASSERT_NOT_NULL(child_name, "create child name");
+    TEST_ASSERT_NOT_NULL(key_foo, "create key foo");
+    TEST_ASSERT_NOT_NULL(key_bar, "create key bar");
+    TEST_ASSERT_NOT_NULL(parent_local, "create parent local");
+    TEST_ASSERT_NOT_NULL(child_local, "create child local");
+    TEST_ASSERT_NOT_NULL(value, "create value");
+
+    PyObject *parent = KosNamespace_NewFull(parent_name, NULL, parent_local, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(parent, "create parent namespace");
+    TEST_ASSERT_EQ(KosNamespace_Store(parent, key_foo, value), 0, "store parent value");
+
+    PyObject *child = KosNamespace_NewFull(child_name, parent, child_local, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(child, "create child namespace");
+
+    PyObject *retrieved = PyObject_CallMethod(child, "get", "O", key_foo);
+    TEST_ASSERT_NOT_NULL(retrieved, "get parent value from child");
+    TEST_ASSERT_EQ(PyLong_AsLong(retrieved), 202, "parent value matches");
+
+    Py_DECREF(retrieved);
+    Py_DECREF(child);
+    Py_DECREF(parent);
+    Py_DECREF(value);
+    Py_DECREF(child_local);
+    Py_DECREF(parent_local);
+    Py_DECREF(key_bar);
+    Py_DECREF(key_foo);
+    Py_DECREF(child_name);
+    Py_DECREF(parent_name);
+    return 0;
+}
+
+
+static int test_namespace_get_missing_default_no_bind(void) {
+    /*
+      Test Namespace.get returns default and does not create bindings on miss.
+    */
+    PyObject *name = PyUnicode_FromString("ns");
+    PyObject *key = PyUnicode_FromString("missing");
+    PyObject *def = PyLong_FromLong(303);
+
+    TEST_ASSERT_NOT_NULL(name, "create name");
+    TEST_ASSERT_NOT_NULL(key, "create key");
+    TEST_ASSERT_NOT_NULL(def, "create default");
+
+    PyObject *ns = KosNamespace_NewFull(name, NULL, NULL, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+
+    PyObject *retrieved = PyObject_CallMethod(ns, "get", "OO", key, def);
+    TEST_ASSERT_NOT_NULL(retrieved, "get default on miss");
+    TEST_ASSERT_SAME(retrieved, def, "returned provided default");
+    TEST_ASSERT_NULL(KosNamespace_LOOSE_REF(ns, key), "no binding created");
+
+    Py_DECREF(retrieved);
+    Py_DECREF(ns);
+    Py_DECREF(def);
+    Py_DECREF(key);
+    Py_DECREF(name);
+    return 0;
+}
+
+
+static int test_namespace_get_missing_none(void) {
+    /*
+      Test Namespace.get returns None when missing and no default given.
+    */
+    PyObject *name = PyUnicode_FromString("ns");
+    PyObject *key = PyUnicode_FromString("missing");
+
+    TEST_ASSERT_NOT_NULL(name, "create name");
+    TEST_ASSERT_NOT_NULL(key, "create key");
+
+    PyObject *ns = KosNamespace_NewFull(name, NULL, NULL, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+
+    PyObject *retrieved = PyObject_CallMethod(ns, "get", "O", key);
+    TEST_ASSERT_NOT_NULL(retrieved, "get missing without default");
+    TEST_ASSERT_SAME(retrieved, Py_None, "missing returns None");
+
+    Py_DECREF(retrieved);
+    Py_DECREF(ns);
+    Py_DECREF(key);
+    Py_DECREF(name);
+    return 0;
+}
+
+
+static int test_namespace_get_empty_binding_default(void) {
+    /*
+      Test Namespace.get returns default for empty existing binding.
+    */
+    PyObject *name = PyUnicode_FromString("ns");
+    PyObject *key = PyUnicode_FromString("x");
+    PyObject *local = PyTuple_Pack(1, key);
+    PyObject *def = PyLong_FromLong(404);
+
+    TEST_ASSERT_NOT_NULL(name, "create name");
+    TEST_ASSERT_NOT_NULL(key, "create key");
+    TEST_ASSERT_NOT_NULL(local, "create local");
+    TEST_ASSERT_NOT_NULL(def, "create default");
+
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+
+    PyObject *retrieved = PyObject_CallMethod(ns, "get", "OO", key, def);
+    TEST_ASSERT_NOT_NULL(retrieved, "get with empty binding");
+    TEST_ASSERT_SAME(retrieved, def, "empty binding returns default");
+
+    Py_DECREF(retrieved);
+    Py_DECREF(ns);
+    Py_DECREF(def);
+    Py_DECREF(local);
+    Py_DECREF(key);
+    Py_DECREF(name);
+    return 0;
+}
+
+
 static int test_namespace_fast_index(void) {
     /*
       Test fast index lookup.
@@ -848,6 +1013,11 @@ int run_namespace_tests(void) {
     RUN_TEST(test_namespace_ref);
     RUN_TEST(test_namespace_bind);
     RUN_TEST(test_namespace_nested);
+    RUN_TEST(test_namespace_get_local_no_materialize);
+    RUN_TEST(test_namespace_get_parent_chain);
+    RUN_TEST(test_namespace_get_missing_default_no_bind);
+    RUN_TEST(test_namespace_get_missing_none);
+    RUN_TEST(test_namespace_get_empty_binding_default);
     RUN_TEST(test_namespace_fast_index);
     RUN_TEST(test_namespace_fast_store_deref);
 

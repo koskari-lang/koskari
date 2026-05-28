@@ -139,15 +139,15 @@ class TestDisNgOutput(unittest.IsolatedAsyncioTestCase):
         text = buf.getvalue()
         self.assertIn("KOS_OP_PUSH_NS", text)
         self.assertIn("ns#0", text)
-        self.assertIn("'let'", text)
+        self.assertIn("\"let\"", text)
 
     async def test_fast_slot_labels(self):
         code = _make_fast_code()
         buf = io.StringIO()
         await _dis_ng().dis(code, file=buf)
         text = buf.getvalue()
-        self.assertIn("local 'a'", text)
-        self.assertIn("closure 'outer'", text)
+        self.assertIn("local \"a\"", text)
+        self.assertIn("closure \"outer\"", text)
 
 
 class TestDisNgHelpers(unittest.IsolatedAsyncioTestCase):
@@ -162,8 +162,11 @@ class TestDisNgHelpers(unittest.IsolatedAsyncioTestCase):
 
     async def test_nspec_inline(self):
         nspec = NamespaceSpec("let", ("a",), ())
+
+        # uses the kos_repr, so strings are double-quoted
         self.assertEqual(
-            await _dis_ng()._format_nspec_inline(5, nspec), "ns#5 'let'")
+            await _dis_ng()._format_nspec_inline(5, nspec),
+            "ns#5 \"let\"")
 
     async def test_format_constant(self):
         self.assertEqual(await _dis_ng()._format_constant(42), "42")

@@ -57,17 +57,15 @@ def collect_special_like_names_from_builtins(builtins_dict):
         contributes the unprefixed name)
     """
 
-    from koskari.compile.compiler import Special
-    from koskari.syntax import Syntax
+    from koskari.compile.compiler import Compiled
 
     names = set()
     for name, val in builtins_dict.items():
         if name.startswith('__'):
             continue
-        if isinstance(val, Special):
+        if isinstance(val, Compiled):
             names.update(_names_for_special_binding(name))
-        elif isinstance(val, Syntax):
-            names.update(_names_for_special_binding(name))
+
     return frozenset(names)
 
 

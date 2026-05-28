@@ -693,6 +693,33 @@ static PyObject *ns_m_deref(PyObject *self, PyObject *key) {
 }
 
 
+static PyObject *ns_m_get(PyObject *self, PyObject *args) {
+  PyObject *name = NULL;
+  PyObject *def = Py_None;
+
+  if (! PyArg_UnpackTuple(args, "get", 1, 2, &name, &def))
+    return NULL;
+
+  while (self) {
+    PyObject *bound = PyDict_GetItem(KosNamespace_BINDS(self), name);
+    if (bound) {
+      PyObject *val = ns_deref_symbol(self, name);
+      if (! val) {
+        PyErr_Clear();
+        Py_INCREF(def);
+        return def;
+      }
+      return val;
+    }
+
+    self = KosNamespace_PARENT(self);
+  }
+
+  Py_INCREF(def);
+  return def;
+}
+
+
 static PyObject *ns_m_store(PyObject *self, PyObject *args) {
   PyObject *key = NULL;
   PyObject *val = NULL;
@@ -823,6 +850,12 @@ static PyMethodDef ns_methods[] = {
   { "deref", (PyCFunction) ns_m_deref, METH_O,
     "NS.deref(K) -> V\n"
     "dereferences a binding in this namespace" },
+
+  { "get", (PyCFunction) ns_m_get, METH_VARARGS,
+    "NS.get(K[, default]) -> V\n"
+    "value from this namespace chain without materializing a ref;"
+    " on failure returns default or None without leaving an exception"
+    " set" },
 
   { "store", (PyCFunction) ns_m_store, METH_VARARGS,
     "NS.store(K, V) => None\n"

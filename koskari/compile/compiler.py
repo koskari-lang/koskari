@@ -21,36 +21,27 @@ The koskari compiler. Converts source forms into bytecode fragments.
 """
 
 
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from enum import IntEnum, auto
-from typing import Protocol, runtime_checkable
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Code, FormalsSpec, FunctionSpec, Module,
-                   ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle,
-                   cons, keyword, nil, symbol)
+from ..lib import (Code, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
+                   Namespace, NamespaceSpec, OpCode, OpStyle, cons, keyword,
+                   nil, symbol)
 from ..types import get_position, is_pair, is_proper, is_symbol
 from .pragma import KoskariPragma
-from ..lib import kos_repr
 
 
-@runtime_checkable
-class Compiled(Protocol):
+class Compiled(ABC):
 
+    @abstractmethod
     def compile_impl(self, compiler, source_obj, tc):
+        """
+        Compile a source object into a bytecode fragment
+        """
+
         ...
-
-
-class Special(Compiled):
-
-    def __init__(self, name, compile_impl, aliases=()):
-        self.name = name
-        self.aliases = aliases
-        self.forms = []
-        self._impl = compile_impl
-
-    def compile_impl(self, compiler, source_obj, tc):
-        return self._impl(compiler, source_obj, tc)
 
 
 class Alias(Compiled):
@@ -61,16 +52,6 @@ class Alias(Compiled):
 
     def compile_impl(self, compiler, source_obj, tc):
         return self._impl(compiler, source_obj, tc)
-
-
-def _is_special(v):
-    return isinstance(v, Special) or hasattr(v, "compile_impl")
-
-
-def _is_alias(v):
-    # TODO: we'll likely want to add a distinct type for aliases.
-    # for now aliasing is disabled in compile_symbol
-    return isinstance(v, Alias)
 
 
 CONST_TYPES = (
@@ -513,7 +494,7 @@ class Compiler:
     def _find_compiled(self, name):
         ns = vars(self.module)
         v = ns.get(name)
-        if v and _is_special(v):
+        if v and isinstance(v, Compiled):
             return v
         return None
 

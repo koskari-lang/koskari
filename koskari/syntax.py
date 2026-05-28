@@ -97,6 +97,21 @@ class Syntax(Compiled):
         return tuple(t.pattern for t in self.transforms)
 
 
+    def match_transformer(self, form):
+        """
+        Match ``form`` against the first arm whose frozen matcher succeeds.
+
+        :param form: special form pair spine
+        :return: ``(transform, result)`` where ``transform`` is the matching
+            transform and ``result`` is the match result
+        """
+
+        idx, result = match_select(self._matchers, form)
+        if result is None:
+            return None, None
+        return self.transforms[idx], result
+
+
     def match_for_hygiene(self, form):
         """
         Match ``form`` against the first arm whose frozen matcher succeeds.
