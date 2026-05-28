@@ -562,6 +562,24 @@ class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertIs(pn.deref('a'), ns.deref('a'))
 
 
+    async def test_gathered_syms_readable_not_exported(self):
+        """
+        Closure syms stay in binds for evaluation but are omitted from keys()
+        and dict() so BUILD_CLASS does not export them as class attributes
+        """
+
+        pn = Namespace("pn", None, ('int',), ())
+        pn['int'] = int
+
+        cn = CollectorNamespace("cn", pn, ('foo',), ('int',))
+        cn['foo'] = 1
+
+        self.assertIs(cn.deref('int'), int)
+        self.assertIn('foo', list(cn.keys()))
+        self.assertNotIn('int', list(cn.keys()))
+        self.assertEqual(dict(cn), {'foo': 1})
+
+
 class TestModule(unittest.IsolatedAsyncioTestCase):
     """Tests for the Module type"""
 

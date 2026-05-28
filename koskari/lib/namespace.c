@@ -1416,6 +1416,164 @@ int KosNamespace_FastBind(
 /* === CollectorNamespace === */
 
 
+static int collector_is_declaration_key(PyObject *self, PyObject *key) {
+
+  int idx = ns_fast_index(self, key);
+
+  if (idx < 0)
+    return 1;
+
+  return KosNameBind_RAW(KosNamespace_GET_FAST(self, (size_t) idx)) != 0;
+}
+
+
+static Py_ssize_t collector_mp_length(PyObject *self) {
+
+  Py_ssize_t count = 0;
+  PyObject *binds = KosNamespace_BINDS(self);
+  PyObject *key = NULL;
+  Py_ssize_t pos = 0;
+
+  while (PyDict_Next(binds, &pos, &key, NULL)) {
+    if (collector_is_declaration_key(self, key))
+      count++;
+  }
+
+  return count;
+}
+
+
+static PyObject *collector_m_keys(PyObject *self) {
+
+  PyObject *keys = PyList_New(0);
+  if (! keys)
+    return NULL;
+
+  PyObject *binds = KosNamespace_BINDS(self);
+  PyObject *key = NULL;
+  Py_ssize_t pos = 0;
+
+  while (PyDict_Next(binds, &pos, &key, NULL)) {
+    if (! collector_is_declaration_key(self, key))
+      continue;
+
+    if (PyList_Append(keys, key) < 0) {
+      Py_DECREF(keys);
+      return NULL;
+    }
+  }
+
+  return keys;
+}
+
+
+static PyObject *collector_m_items(PyObject *self) {
+
+  PyObject *items = PyList_New(0);
+  if (! items)
+    return NULL;
+
+  PyObject *binds = KosNamespace_BINDS(self);
+  PyObject *key = NULL;
+  Py_ssize_t pos = 0;
+
+  while (PyDict_Next(binds, &pos, &key, NULL)) {
+    PyObject *val = NULL;
+    PyObject *pair = NULL;
+
+    if (! collector_is_declaration_key(self, key))
+      continue;
+
+    val = ns_deref_symbol(self, key);
+    if (! val) {
+      Py_DECREF(items);
+      return NULL;
+    }
+
+    pair = PyTuple_Pack(2, key, val);
+    Py_DECREF(val);
+    if (! pair) {
+      Py_DECREF(items);
+      return NULL;
+    }
+
+    if (PyList_Append(items, pair) < 0) {
+      Py_DECREF(pair);
+      Py_DECREF(items);
+      return NULL;
+    }
+
+    Py_DECREF(pair);
+  }
+
+  return items;
+}
+
+
+static PyMappingMethods collector_as_mapping = {
+  .mp_length = collector_mp_length,
+  .mp_subscript = ns_deref_symbol,
+  .mp_ass_subscript = ns_store_symbol,
+};
+
+
+static PyMethodDef collector_methods[] = {
+  { "ref", (PyCFunction) ns_m_ref, METH_O,
+    "NS.ref(K) -> R\n"
+    "returns the reference for a binding in this namespace" },
+
+  { "deref", (PyCFunction) ns_m_deref, METH_O,
+    "NS.deref(K) -> V\n"
+    "dereferences a binding in this namespace" },
+
+  { "get", (PyCFunction) ns_m_get, METH_VARARGS,
+    "NS.get(K[, default]) -> V\n"
+    "value from this namespace chain without materializing a ref;"
+    " on failure returns default or None without leaving an exception"
+    " set" },
+
+  { "store", (PyCFunction) ns_m_store, METH_VARARGS,
+    "NS.store(K, V) => None\n"
+    "assigns a value to a binding in this namespace" },
+
+  { "clear", (PyCFunction) ns_m_clear, METH_O,
+    "NS.clear(K) => None\n"
+    "removes the value from a binding in this namespace" },
+
+  { "bind", (PyCFunction) ns_m_bind, METH_VARARGS,
+    "NS.bind(K, R) => None\n"
+    "sets the reference for a binding in this namespace" },
+
+  { "bound", (PyCFunction) ns_m_contains, METH_O,
+    "NS.bound(K) => bool\n"
+    "True if the given name has a binding in this namespace" },
+
+  { "raw", (PyCFunction) ns_m_raw, METH_O,
+    "NS.raw(K) => bool\n"
+    "True if the given binding is currently raw in this namespace" },
+
+  { "keys", (PyCFunction) collector_m_keys, METH_NOARGS,
+    "NS.keys() => list of declaration names only" },
+
+  { "items", (PyCFunction) collector_m_items, METH_NOARGS,
+    "NS.items() => list of declaration (name, value) pairs only" },
+
+  { "__contains__", (PyCFunction) ns_m_contains, METH_O,
+    "(K in NS) => bool" },
+
+  { "find", (PyCFunction) ns_m_find, METH_O,
+    "NS.find(K) => R\n"
+    "traverses this namespace and its parents to find and return a"
+    " reference, or returns None if no binding is found" },
+
+  { "copy", (PyCFunction) ns_m_copy, METH_NOARGS,
+    "NS.copy() => Namespace\n"
+    "copy the top-level namespace only (parent chain not copied)" },
+
+  { NULL },
+};
+
+
 PyTypeObject KosCollectorNamespaceType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -1425,6 +1583,9 @@ PyTypeObject KosCollectorNamespaceType = {
 
   .tp_base = &KosNamespaceType,
   .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_methods = collector_methods,
+  .tp_as_mapping = &collector_as_mapping,
+  .tp_as_sequence = &ns_seq,
   // .tp_repr = ns_repr,
 };
 

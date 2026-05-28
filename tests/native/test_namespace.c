@@ -717,6 +717,81 @@ static int test_collector_blocks_closure(void) {
 }
 
 
+static int test_collector_gathered_not_in_keys(void) {
+    /*
+      Gathered closure syms remain in binds for deref but are omitted from
+      keys() so BUILD_CLASS does not export them.
+    */
+    PyObject *name_p = PyUnicode_FromString("parent");
+    PyObject *name_c = PyUnicode_FromString("collector");
+    PyObject *s_y = PyUnicode_FromString("y");
+    PyObject *s_x = PyUnicode_FromString("x");
+    PyObject *local_p = PyTuple_Pack(1, s_y);
+    PyObject *local_c = PyTuple_Pack(1, s_x);
+    PyObject *closure_c = PyTuple_Pack(1, s_y);
+    PyObject *parent = NULL;
+    PyObject *collector = NULL;
+    PyObject *key_y = NULL;
+    PyObject *key_x = NULL;
+    PyObject *keys = NULL;
+    int has_key = 0;
+    PyObject *val_y = NULL;
+    PyObject *val_store = NULL;
+
+    Py_XDECREF(s_y);
+    Py_XDECREF(s_x);
+
+    TEST_ASSERT_NOT_NULL(name_p, "create name_p");
+    TEST_ASSERT_NOT_NULL(name_c, "create name_c");
+    TEST_ASSERT_NOT_NULL(local_p, "create local_p");
+    TEST_ASSERT_NOT_NULL(local_c, "create local_c");
+    TEST_ASSERT_NOT_NULL(closure_c, "create closure_c");
+
+    parent = KosNamespace_NewFull(name_p, NULL, local_p, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(parent, "create parent");
+
+    key_y = PyUnicode_FromString("y");
+    val_store = PyLong_FromLong(10);
+    TEST_ASSERT_NOT_NULL(val_store, "create value");
+    KosNamespace_Store(parent, key_y, val_store);
+    Py_DECREF(val_store);
+
+    collector = KosCollectorNamespace_NewFull(
+        name_c, parent, local_c, closure_c, NULL);
+    TEST_ASSERT_NOT_NULL(collector, "create collector");
+
+    TEST_ASSERT_NOT_NULL(
+        PyDict_GetItem(KosNamespace_BINDS(collector), key_y),
+        "gathered sym y is in binds");
+
+    val_y = KosNamespace_Deref(collector, key_y);
+    TEST_ASSERT_NOT_NULL(val_y, "deref gathered sym y");
+    TEST_ASSERT_EQ(PyLong_AsLong(val_y), 10, "gathered sym y value");
+    Py_DECREF(val_y);
+
+    keys = PyObject_CallMethod(collector, "keys", NULL);
+    TEST_ASSERT_NOT_NULL(keys, "collector keys()");
+    has_key = PySequence_Contains(keys, key_y);
+    TEST_ASSERT_EQ(has_key, 0, "gathered sym y not in keys()");
+
+    key_x = PyUnicode_FromString("x");
+    has_key = PySequence_Contains(keys, key_x);
+    TEST_ASSERT_EQ(has_key, 1, "local sym x in keys()");
+    Py_DECREF(key_x);
+    Py_DECREF(keys);
+
+    Py_DECREF(collector);
+    Py_DECREF(parent);
+    Py_DECREF(key_y);
+    Py_DECREF(closure_c);
+    Py_DECREF(local_c);
+    Py_DECREF(local_p);
+    Py_DECREF(name_c);
+    Py_DECREF(name_p);
+    return 0;
+}
+
+
 /* === ModuleNamespace tests === */
 
 
@@ -1024,6 +1099,7 @@ int run_namespace_tests(void) {
     /* CollectorNamespace tests */
     RUN_TEST(test_collector_create);
     RUN_TEST(test_collector_blocks_closure);
+    RUN_TEST(test_collector_gathered_not_in_keys);
 
     /* ModuleNamespace tests */
     RUN_TEST(test_modns_create);
