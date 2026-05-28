@@ -14,7 +14,7 @@ Bootstrap loads these sources in order (`koskari/bootstrap/__init__.py`,
 4. `_variables.ki` — assignment, refs, bindings, comprehensions helpers
 5. `_class.ki` — classes, dataclasses, `super`
 6. `_iter.ki` — `each`, `list-each`, `dict-each`
-7. `basics.ki` — list accessors, `help`, `macroexpand-1`
+7. `basics.ki` — list accessors, `help`, macro expansion, compile/evaluate helpers
 
 The merged module is exposed as `koskari.builtins`. Macros are available in every
 module without import.
@@ -146,10 +146,22 @@ bare **`(await)`**).
 
 ### compile/function-compose
 
-**Syntax:** `(function-compose FN)` or `(function-compose FN1 FN2 ...)`
+**Syntax:** `(function-compose FN)` or `(function-compose FN1 FN2 …)`
 
-**Behaviour:** Single **FN** unchanged; multiple **FN**s expand to a **`lambda [*: args **: kwds]`**
-that nests calls (outermost decorator applied last in the fold).
+**Behaviour:** **`macro-rules`** expansion. A single **FN** is unchanged. Two or more
+**FN**s expand to a **`lambda [*: args **: kwds]`** that nests calls from right to left:
+the rightmost **FN** receives **`*: args **: kwds`**, and each **FN** to the left wraps
+the accumulated call (same order as **`(decorate [DECORATOR …] FN)`** folding). Example
+from the macro docstring:
+
+```text
+(function-compose fn1 (fn2 foo) fn3)
+  ⇒ (lambda [*: args **: kwds]
+       (fn1 ((fn2 foo) (fn3 *: args **: kwds))))
+```
+
+Composition is syntactic: argument expressions are not evaluated until the composed
+function is invoked.
 
 
 ### compile/decorate
@@ -322,13 +334,69 @@ the **`syntax-rules`** patterns).
 
 **Syntax:** **`(help)`**, **`(help obj)`**, **`(help obj ns)`**
 
-**Behaviour:** Calls runtime **`help`** with **`globals`** when namespace omitted.
+**Behaviour:** **`(compile/call help …)`** — no namespace: **`(help 'help (globals))`**;
+object only: **`(help 'obj (globals))`**; object and namespace passed through.
+
+
+### Runtime macro expansion (not macros)
+
+**Symbols:** **`macroexpand-1`**, **`macroexpand`** (`define-global` in the same file).
+
+**Behaviour:** Look up **`__compiler__`** on the namespace, **`find_compiled`** on the form
+head, match a **`Syntax`** transformer, and run **`handle_expand`** once
+(**`macroexpand-1`**) or in a loop until no macro applies (**`macroexpand`**). If the
+result is a single-expression **`begin`** / **`compile/begin`**, that wrapper is stripped.
 
 
 ### compile/macroexpand-1
 
-**Syntax:** **`(macroexpand-1 form)`**
+**Syntax:** **`(macroexpand-1 form)`**, **`(macroexpand-1 form ns)`**
 
-**Behaviour:** **`(call macroexpand-1 (globals) (quote form))`** using **`macroexpand-1`**
-function defined in the same file (looks up **`compiler.find_compiled`** and runs
-**`compile_impl`** once).
+**Behaviour:** **`(call macroexpand-1 form (globals))`** or **`(call macroexpand-1 form ns)`**.
+
+
+### compile/macroexpand
+
+**Syntax:** **`(macroexpand form)`**, **`(macroexpand form ns)`**
+
+**Behaviour:** **`(call macroexpand form (globals))`** or **`(call macroexpand form ns)`**.
+
+
+### compile/macroexpandq-1
+
+**Syntax:** **`(macroexpandq-1 form)`**, **`(macroexpandq-1 form ns)`**
+
+**Behaviour:** **`(call macroexpand-1 (quote form) (globals))`** or
+**`(call macroexpand-1 (quote form) ns)`**.
+
+
+### compile/macroexpandq
+
+**Syntax:** **`(macroexpandq form)`**, **`(macroexpandq form ns)`**
+
+**Behaviour:** **`(call macroexpand (quote form) (globals))`** or
+**`(call macroexpand (quote form) ns)`**.
+
+
+### Runtime compile and evaluate (not macros)
+
+**Symbols:** **`compile`**, **`evaluate`** (`define-global`).
+
+**Behaviour:** **`compile`** resolves **`__compiler__`** from **`ns`**, runs
+**`full_compile`**, returns an **`Expression`** (or passes through if already
+**`Expression`** / **`Function`**). **`evaluate`** compiles when needed, then invokes
+**`as_expression`**.
+
+
+### compile/evaluate
+
+**Syntax:** **`(evaluate form)`**, **`(evaluate form ns)`**
+
+**Behaviour:** **`(call evaluate form (locals))`** or **`(call evaluate form ns)`**.
+
+
+### compile/compileq
+
+**Syntax:** **`(compileq form)`**, **`(compileq form ns)`**
+
+**Behaviour:** **`(call compile (quote form) (locals))`** or **`(call compile (quote form) ns)`**.

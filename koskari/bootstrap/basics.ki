@@ -51,17 +51,14 @@ let []:
   import-from koskari.syntax Syntax SyntaxTransform MacroTransform
 
 
-  define-global macroexpand [form ns]:
+  define-global macroexpand-1 [form ns]:
     """
-    Apply an expansion step to a source object in the given namespace
+    Apply an expansion step to a source form object in the given namespace.
     """
 
     define compiler (item ns "__compiler__")
     define name (if (pair? form) (car form) form)
     define special (compiler.find_compiled name)
-
-    unless special:
-      raise (Exception "macroexpand-1: special form {name} not found")
 
     unless (instance? special Syntax):
       return form
@@ -81,25 +78,102 @@ let []:
       ;; many of the macros written in layout form have an additional
       ;; `begin` wrapper, so we strip it if it's present and not needed
       ;; to combine multiple expressions.
-      cdr expanded
+      cadr expanded
     else:
       expanded
 
 
+  define-global macroexpand [form ns]:
+    """
+    Expand a source form object in the given namespace. Repeat until the
+    result is no longer a macro.
+    """
+
+    define compiler (item ns "__compiler__")
+
+    while True:
+      define name (if (pair? form) (car form) form)
+      define special (compiler.find_compiled name)
+
+      unless (instance? special Syntax):
+        return form
+
+      define-values [tf mr] (special.match_transformer form)
+      unless tf:
+        return form
+
+      unless (instance? tf #(SyntaxTransform MacroTransform)):
+        return form
+
+      define expanded (tf.handle_expand compiler form mr False)
+
+      if (and (pair? expanded)
+              (equal? (.length expanded) 2)
+              (in (car expanded) #('begin 'compile/begin))):
+        ;; many of the macros written in layout form have an additional
+        ;; `begin` wrapper, so we strip it if it's present and not needed
+        ;; to combine multiple expressions.
+        set! form (cadr expanded)
+      else:
+        set! form expanded
+
+
+define-syntax compile/macroexpand-1:
+  """
+  Apply a single expansion step to a source form object in the given
+  namespace, or the current globals namespace if unspecified.
+  """
+
+  syntax-rules []:
+    case (macroexpand-1 form ns):
+      (call macroexpand-1 form ns)
+    case (macroexpand-1 form):
+      (call macroexpand-1 form (globals))
+
+
 define-syntax compile/macroexpand:
+  """
+  Expand a source form object in the given namespace, or the current globals
+  namespace if unspecified. Repeat until the result is no longer a
+  macro.
+  """
+
   syntax-rules []:
     case (macroexpand form ns):
       (call macroexpand form ns)
     case (macroexpand form):
-      (call macroexpand form (locals))
+      (call macroexpand form (globals))
+
+
+define-syntax compile/macroexpandq-1:
+  """
+  Quote and expand a source object in the given namespace, or
+  the current globals namespace if unspecified.
+
+  See also: macroexpand-1
+  """
+
+  syntax-rules []:
+    case (macroexpandq-1 form ns):
+      (call macroexpand-1 (quote form) ns)
+    case (macroexpandq-1 form):
+      (call macroexpand-1 (quote form) (globals))
 
 
 define-syntax compile/macroexpandq:
+  """
+  Quote and expand a source object in the given namespace, or
+  the current globals namespace if unspecified. Repeat until the result
+  is no longer a macro.
+
+  See also: macroexpand
+  """
+
   syntax-rules []:
     case (macroexpandq form ns):
       (call macroexpand (quote form) ns)
     case (macroexpandq form):
-      (call macroexpand (quote form) (locals))
+      (call macroexpand (quote form) (globals))
 
 
 let []:
