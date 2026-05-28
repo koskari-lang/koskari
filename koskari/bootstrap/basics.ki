@@ -73,7 +73,17 @@ let []:
     unless (instance? tf #(SyntaxTransform MacroTransform)):
       return form
 
-    tf.handle_expand compiler form mr False
+    define expanded (tf.handle_expand compiler form mr False)
+
+    if (and (pair? expanded)
+            (equal? (.length expanded) 2)
+            (in (car expanded) #('begin 'compile/begin))):
+      ;; many of the macros written in layout form have an additional
+      ;; `begin` wrapper, so we strip it if it's present and not needed
+      ;; to combine multiple expressions.
+      cdr expanded
+    else:
+      expanded
 
 
 define-syntax compile/macroexpand:
