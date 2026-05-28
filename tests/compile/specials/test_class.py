@@ -159,6 +159,24 @@ class TestClassAnnotations(SpecialsTestCase):
         self.assertEqual(getattr(C, "__annotations__", {}), {})
 
 
+    async def test_class_intenum_with_typed_define(self):
+        from enum import IntEnum
+
+        src_str = """
+        (compile/begin
+          (compile/define E
+            (compile/class E (IntEnum)
+              (compile/define foo :: int 1)))
+          E)
+        """
+        expr, mod = self.compile_expr(src_str, IntEnum=IntEnum, int=int)
+        E = await expr()
+        self.assertTrue(issubclass(E, IntEnum))
+        self.assertEqual(E.foo.value, 1)
+        self.assertEqual(E.__annotations__, {'foo': int})
+        self.assertFalse(hasattr(E, 'int'))
+
+
 class TestClassWithAttribute(SpecialsTestCase):
 
     async def test_class_with_define(self):
