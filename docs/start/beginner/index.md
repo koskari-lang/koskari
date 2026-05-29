@@ -1,9 +1,23 @@
 # Beginner track
 
-```{admonition} Under construction
-:class: warning
+A short introduction for readers who are **new to programming**. Each chapter
+is written as a dialogue: questions you can answer (or predict) before reading
+the reply.
 
-Tutorial pages for readers new to programming are planned but not written yet.
+You need [Install and run](../install-run.md) finished first — at minimum, the
+`koskari` command should start a REPL session.
 
-Start with [Install and run](../install-run.md) and the [Glossary](../../reference/glossary.md) instead.
+```{toctree}
+:maxdepth: 1
+
+00-hello-change
+01-words-and-punctuation
+02-calling-things
+03-results-and-messages
+04-repeating-patterns
+where-next
 ```
+
+When a chapter shows `koskari>`, that line is something you type at the REPL
+prompt. Lines without the prompt are output from Koskari or notes about what
+you should see.
