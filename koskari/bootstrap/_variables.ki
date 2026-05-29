@@ -75,7 +75,11 @@ define-syntax compile/set!:
 
 
 define-syntax compile/del!:
-  syntax-rules []:
+  """
+  Clears a binding, or deletes an attribute, or item.
+  """
+
+  syntax-rules [item compile/item attr compile/attr]:
     case (del! name):
       (delq name)
     case (del! (item obj name)):

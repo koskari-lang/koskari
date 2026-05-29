@@ -49,6 +49,31 @@ Portion of koskari.builtins
       (compile/define name (special-match name rule ...))]))
 
 
+set-attr compile/define-syntax __doc__:
+  """
+  Define a syntax transformer
+
+  `syntax-rules`, `macro-rules`, and `special-rules` accept a literals
+  list and a list of rules. Each rule is gated by a rule-shaped
+  pattern.
+
+  `syntax-match`, `macro-match`, and `special-match` accept a list of rules.
+  Each rule is a pair of a pattern and a template, where the pattern is
+  an explicit match-style pattern.
+
+  `syntax-rules` and `syntax-match` map rules to templates. Templates are
+  declarative transformations of the input source form.
+
+  `macro-rules` and `macro-match` map rules to macros. Macros are procedurally
+  evaluated to produce an output form.
+
+  `special-rules` and `special-match` map rules to low-level compiler
+  transformations.
+
+  Transformers can be extended with `extend-syntax`
+  """
+
+
 define layout/define-syntax layout/flat
 
 
@@ -89,11 +114,45 @@ define-syntax compile/datum:
   Captures `expr` form in a datum, recording the source position
   """
 
-  macro-rules []:
-    case (_ expr pos):
+  macro-rules [datum]:
+    case (datum expr pos):
       `(call datum ,expr ,pos)
-    case (_ expr):
+    case (datum expr):
       `(call datum ,expr ,(getattr expr "position" None))
+
+
+define-syntax compile/datumq:
+  """
+  Captures `expr` form in a datum, recording the source position
+  """
+
+  macro-rules [datumq]:
+    case (datumq expr pos):
+      `(call datum (quote ,expr) ,pos)
+    case (datumq expr):
+      `(call datum (quote ,expr) ,(getattr expr "position" None))
+
+
+define-syntax compile/parse-match-patternq:
+  """
+  Parse a match style pattern to a Pattern.
+  """
+
+  syntax-rules []:
+    case (parse-match-patternq form):
+      (call parse-match-pattern (quote form))
+
+
+define-syntax compile/parse-rule-patternq:
+  """
+  Parse a syntax-rules style pattern and literals list to a Pattern.
+  """
+
+  syntax-rules []:
+    case (parse-rule-patternq form literals):
+      (call parse-rule-pattern (quote form) (quote literals))
+    case (parse-rule-patternq form):
+      (call parse-rule-pattern (quote form) ())
 
 
 ; The end.

@@ -536,7 +536,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
 @builtin("parse-match-pattern")
 def parse_match_pattern(form, source_ctx=None):
     """
-    Koskari builtin wrapper for :func:`parse_explicit_rule_pattern`
+    Parse a match style pattern to a Pattern.
     """
 
     return parse_explicit_rule_pattern(form, source_ctx)
@@ -545,12 +545,10 @@ def parse_match_pattern(form, source_ctx=None):
 @builtin("parse-rule-pattern")
 def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
     """
-    Koskari builtin wrapper for :func:`parse_syntax_rules_pattern`
-
-    When literals is a proper Koskari list, unpack it to a frozenset
+    Parse a syntax-rules style pattern and literals list to a Pattern.
     """
 
-    if literals is nil:
+    if not literals:
         lit = frozenset()
     elif isinstance(literals, (set, frozenset, list, tuple)):
         lit = frozenset(literals)
