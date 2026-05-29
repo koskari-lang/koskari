@@ -210,7 +210,27 @@ Relationship to `design/OPCODES.md`:
 | `project/vm-and-opcodes.md` | Process: add opcode in `opcodes.incl` first; update `reference/vm` and `design/OPCODES.md` per policy; PR checklist. |
 | `project/release-and-versioning.md` | Versioning, compatibility, changelog; helps Python-adjacent users plan upgrades. |
 
-### 4.9 Cross-cutting pages
+### 4.9 `corpus/` — Language conformance corpus
+
+The corpus is the **source of truth** for canonical Koskari examples and
+verified language behavior. User docs, regression tests, and published ML
+datasets derive from it rather than maintaining parallel example sets.
+Schema philosophy and verification model:
+[corpus-schema-philosophy.md](corpus-schema-philosophy.md).
+
+| Section | Summary |
+|--------|---------|
+| `corpus/SCHEMA.md` | Corpus record semantics: phases, `verify` boundaries, failure expectations; human-readable companion to JSON Schema. |
+| `corpus/SCHEMA.json` | Structural validation for corpus records (required fields, types, enums—not language semantics). |
+| `corpus/README.md` | How to add records, run corpus verification, and regenerate downstream artifacts. |
+| `corpus/datasets.md` | Published dataset views (including Hugging Face): transforms, column glossaries, provenance back to corpus `id`. |
+| `corpus/records/` or generated index | Machine-readable corpus storage (format TBD: JSONL, directory tree, or generated index from tests). |
+
+Tutorial and reference pages should prefer **corpus-backed examples** where
+possible. Stability labels on corpus records should align with page-level
+stability labels (§ 6).
+
+### 4.10 Cross-cutting pages
 
 | Section | Summary |
 |--------|---------|
@@ -245,6 +265,10 @@ surfaces gaps.
 - **Syntax:** `reference/grammar.md` and `reference/reader-layout.md` should
   align with tests and with `design/SYNTAX.md` (or supersede it for public
   wording while design stays the scratchpad).
+- **Corpus:** canonical examples and cross-phase verification live in the
+  language conformance corpus ([corpus-schema-philosophy.md](corpus-schema-philosophy.md)).
+  Docs snippets, tests, and Hugging Face dataset views should be generated or
+  verified from corpus records—not maintained as independent example corpora.
 - **Glossary:** one file; tutorials link in instead of redefining terms.
 - **Stability labels** on pages or sections reduce surprise when the language
   or VM still moves quickly.
@@ -263,6 +287,9 @@ version its own content on release tags.
 
 ## 8. See also
 
+- [corpus-schema-philosophy.md](corpus-schema-philosophy.md) — corpus-first
+  schema, verification model, and Hugging Face dataset publication from corpus
+  records.
 - [OPCODES.md](OPCODES.md) — opcode semantics and invariants (implementer-focused).
 - [interpreter/bytecode.md](interpreter/bytecode.md) — bytecode format and
   layout.
