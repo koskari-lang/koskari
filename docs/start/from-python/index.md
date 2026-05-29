@@ -1,9 +1,24 @@
 # From Python track
 
-```{admonition} Under construction
-:class: warning
+A Rosetta-style on-ramp for readers who already know Python. Each chapter is
+written as a dialogue: map a Python habit to Koskari, predict the outcome, then
+read the answer.
 
-Rosetta-style pages for Python developers are planned but not written yet.
+You need [Install and run](../install-run.md) finished first. If parentheses
+feel unfamiliar, skim the [beginner track](../beginner/index.md) — chapter 2
+covers calling in plain language.
 
-See [Special forms](../../reference/specials/index.md) and [Layouts](../../reference/layouts/index.md) for language shape.
+```{toctree}
+:maxdepth: 1
+
+map
+runtime-and-tooling
+data-and-control
+functions-and-scope
+errors-and-debugging
+interop
+where-next
 ```
+
+When a chapter shows `koskari>`, that line is REPL input. Python snippets use
+normal Python syntax for contrast only.
