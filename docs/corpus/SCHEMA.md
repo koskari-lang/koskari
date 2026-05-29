@@ -44,3 +44,16 @@ validates **structure only**; semantics are checked by corpus test runners.
 : Maintainer metadata; not copied verbatim into training exports.
 
 See [SCHEMA.json](SCHEMA.json) for machine validation.
+
+## Eval value conventions (seed records)
+
+Until a corpus runner exists, `verify.eval` strings in seed records use an
+informal encoding:
+
+| Form | Meaning |
+|------|---------|
+| `42`, `"hello"`, `true`, `false`, `null` | JSON-like scalar results |
+| `symbol:x` | Koskari symbol |
+| `proper-list:[1,2,3]` | Proper list via unpack |
+| `improper-list:(1 2 . 3)` | Improper list shape |
+| `opcode:NAME count:N` | Expected bytecode shape at compile stage |

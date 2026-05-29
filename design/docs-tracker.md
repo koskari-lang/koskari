@@ -121,7 +121,7 @@ reference pages and bootstrap scripts output).
 | SCHEMA.json | Done | `docs/corpus/SCHEMA.json` | Draft structural schema |
 | README.md | Done | `docs/corpus/README.md` | |
 | datasets.md | Partial | `docs/corpus/datasets.md` | Philosophy only; no HF publish |
-| records/ | Not started | `docs/corpus/records/` | Empty placeholder |
+| records/ | Partial | `docs/corpus/records/specials.jsonl` | 43 compile/specials seed records |
 
 ### 4.10 Cross-cutting
 
@@ -165,7 +165,7 @@ reference pages and bootstrap scripts output).
 | Deliverable | Status | Notes |
 |-------------|--------|-------|
 | Corpus-first schema docs | **Done** | SCHEMA.md + SCHEMA.json |
-| Corpus records | **Not started** | records/ empty |
+| Corpus records | **Partial** | `records/specials.jsonl` (43 compile/specials seeds) |
 | Corpus test runner | **Not started** | tests/ implicit today |
 | Docs embed from corpus | **Not started** | |
 | HF dataset views | **Not started** | datasets.md describes pipeline |

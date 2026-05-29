@@ -649,14 +649,20 @@ similar exports are downstream transforms.
 ## Adding records
 
 1. Define a record matching [SCHEMA.json](SCHEMA.json)
-2. Place it under `records/` (format TBD: JSONL or directory tree)
+2. Place it under `records/` (JSONL, one record per line)
 3. Run corpus verification (runner not implemented yet)
 
 ## Status
 
-Schema documentation exists; records and automated verification are **not
-started**. Tests under `tests/` currently serve as the implicit conformance
-corpus.
+Schema documentation exists. Initial records live under `records/`:
+
+| File | Focus | Records |
+|------|-------|---------|
+| [specials.jsonl](records/specials.jsonl) | Compiler special forms | see file |
+
+Records cite originating tests under `tests/compile/specials/` where
+applicable. A corpus verification runner is **not implemented** yet; tests
+under `tests/` currently serve as the live verifier.
 ''')
 
     write('corpus/SCHEMA.md', '''
@@ -706,6 +712,19 @@ validates **structure only**; semantics are checked by corpus test runners.
 : Maintainer metadata; not copied verbatim into training exports.
 
 See [SCHEMA.json](SCHEMA.json) for machine validation.
+
+## Eval value conventions (seed records)
+
+Until a corpus runner exists, `verify.eval` strings in seed records use an
+informal encoding:
+
+| Form | Meaning |
+|------|---------|
+| `42`, `"hello"`, `true`, `false`, `null` | JSON-like scalar results |
+| `symbol:x` | Koskari symbol |
+| `proper-list:[1,2,3]` | Proper list via unpack |
+| `improper-list:(1 2 . 3)` | Improper list shape |
+| `opcode:NAME count:N` | Expected bytecode shape at compile stage |
 ''')
 
     write('corpus/SCHEMA.json', '''{
