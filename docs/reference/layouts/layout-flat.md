@@ -1,11 +1,4 @@
 # layout/flat
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/flat`
 
 **Use-case:** Block syntax where the read result should be a single list: the
@@ -38,6 +31,3 @@ foo x:
 
 **Implementation:** `koskari/reader/layouts/basics.layout_flat`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

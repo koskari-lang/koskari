@@ -1,11 +1,4 @@
 # KOS_OP_JUMP_FALSE
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: Pops one value; if false, jump to `arg`; else advance PC.
@@ -24,8 +17,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 5     | CONST      | 2   | 2 (0)    | stack: [..., 0] |
 | 6     | RETURN     | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

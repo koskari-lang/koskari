@@ -1,11 +1,4 @@
 # KOS_OP_CONST_ITEM
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of key (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., obj, value]`. Get item with constant key.
@@ -19,8 +12,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 0     | VAR        | 0   | 0 ('obj')| stack: [..., obj] |
 | 1     | CONST_ITEM | 1   | 1 ('key')| stack: [..., obj, obj['key']] |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

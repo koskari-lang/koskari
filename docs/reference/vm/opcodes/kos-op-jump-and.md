@@ -1,11 +1,4 @@
 # KOS_OP_JUMP_AND
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Short-circuit AND: jump if TOS is false.
 - **Status**: Implemented.
 - **Stack**: Pops one value; if false, push it back and jump to `arg`; if true,
@@ -38,8 +31,3 @@ done:
 | 3     | JUMP_AND  | 4   | 4 (-> 4) | if not b → pc=4 |
 | 4     | LABEL     | —   | —        | fail (or result) |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

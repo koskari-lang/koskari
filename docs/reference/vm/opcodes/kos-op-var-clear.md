@@ -1,11 +1,4 @@
 # KOS_OP_VAR_CLEAR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
 - **Status**: Implemented.
 - **Stack**: No stack effect. Delete name from namespace.
@@ -18,8 +11,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 |------:|-----------|-----|----------|---------|
 | 2     | VAR_CLEAR | 0   | 0 ('tmp')| delete "tmp" from namespace |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,14 +1,7 @@
 # compile/quasiquote-block
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/quasiquote-block`
 
-**Syntax:** ``HEAD: BODY` (reader shorthand) or `(compile/quasiquote-block BLOCK-REPR)`
+**Syntax:** ``HEAD: BODY` (reader shorthand) or `(quasiquote-block BLOCK-REPR)`
 
 **Use-case:** The block-syntax analogue of `compile/quasiquote`. Captures an
 entire indented block (including nested peer blocks such as `if`/`else`) as a
@@ -28,7 +21,7 @@ sub-block headers and bodies.
 produces:
 
 ```
-(compile/quasiquote-block (:block: (begin) ((compile/unquote-splicing forms))))
+(quasiquote-block (:block: (begin) ((unquote-splicing forms))))
 ```
 
 Peers are represented as sibling `:block:` nodes inside the enclosing body:
@@ -44,13 +37,13 @@ Peers are represented as sibling `:block:` nodes inside the enclosing body:
 produces:
 
 ```
-(compile/quasiquote-block
+(quasiquote-block
   (:block: (begin)
-   ((:block: (if (compile/unquote cond)) ((compile/unquote then)))
-    (:block: (else) ((compile/unquote else))))))
+   ((:block: (if (unquote cond)) ((unquote then)))
+    (:block: (else) ((unquote else))))))
 ```
 
-**Behaviour:** Purely transformative. Rewrites to `(compile/quasiquote
+**Behaviour:** Purely transformative. Rewrites to `(quasiquote
 BLOCK-REPR)` for normal compiler dispatch. `compile/quasiquote` walks the
 `:block:` structure and fills unquote / unquote-splicing sites; it does **not**
 invoke layout handlers, so the filled structure remains `:block:` reader form
@@ -71,11 +64,4 @@ and reconstructs it as literal data, exactly like nested `compile/quasiquote`.
 
 **Implementation:** `koskari/compile/specials/quasiquote.py`
 
-**Tests:** `tests/compile/specials/test_quasiquote.py` (`TestQuasiquoteBlockShape`,
-`TestQuasiquoteBlockTwoPhase`, `TestQuasiquoteBlockFullStack`),
-`tests/reader/layouts/test_quasiquote.py`; runtime layout expansion behaviour:
-`tests/reader/layouts/test_apply_layout_runtime.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

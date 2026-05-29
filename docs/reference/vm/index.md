@@ -1,11 +1,4 @@
 # Koskari bytecode overview
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 ## 1. Overview and conventions
 
 ### 1.1 How to use this document
@@ -31,8 +24,8 @@ linking from design notes, PRs, or other docs.
   stack; "below TOS" = second element, etc.
 - **Stack effect**: Written as "Before → After" (e.g. `[..., callable, a, b] → [..., result]`).
 - **Chain**: The dynamic chain (frames, prompts, regions, etc.) is described
-  when an opcode pushes or pops nodes. See [interpreter/execution-invariants.md](../../design/interpreter/execution-invariants.md)
-  and [interpreter/bytecode-metadata-tables.md](../../design/interpreter/bytecode-metadata-tables.md).
+  when an opcode pushes or pops nodes. See interpreter/execution-invariants.md
+  and interpreter/bytecode-metadata-tables.md.
 
 ### 1.3 Glossary
 
@@ -80,8 +73,8 @@ Long comments (stack, branch conditions) may span the cell; keep index and opcod
 
 Unless specified otherwise for an opcode:
 
-- Execution obeys the invariants in [interpreter/execution-invariants.md](../../design/interpreter/execution-invariants.md).
-- Extent and location metadata are as in [interpreter/bytecode-metadata-tables.md](../../design/interpreter/bytecode-metadata-tables.md).
+- Execution obeys the invariants in interpreter/execution-invariants.md.
+- Extent and location metadata are as in interpreter/bytecode-metadata-tables.md.
 - **Jump locality**: Control-flow jump opcodes (JUMP, JUMP_FALSE, JUMP_TRUE,
   JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*) may only target a pc inside the current
   extent or at its `pop_pc` (leaving the block). See bytecode-metadata-tables.md
@@ -646,7 +639,7 @@ bottom to top matches push order).
 - **Status**: Implemented.
 - **Stack**: Pops the return value(s) per `arg`. Does **not** push onto the caller inside the opcode handler: after **`kos_dyn_transition`** (**`KOS_TRANS_WALK_RETURN_TO_FRAME`**) and **`kos_dyn_pop_frame`**, a **non-GEN** parent path returns **`KOS_OP_POST_PARENT_RETURN()`** (**`KosOpOutcome` / `KOS_LOP_POST`**), and **`eval_parent_return_deliver`** (post-opcode) performs iterator-boundary delivery, native-handler delivery, or **`KosStackBlock_PushRef`** onto the caller, then **`kos_dynnode_on_control_returned`**. **Top-level** or **GEN** parent: **`KOS_EV_RETURN`** in **`out_ev`**, **`KOS_OP_POST_SUSPEND()`** — driver-visible completion boundary. **Delimited** continuation returns (`RETURN_TARGET_CHAIN`) are a separate early path.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
-- **See also**: [EVALUATOR.md](../../design/EVALUATOR.md) §2.6–3; **`koskari/lib/opcode/RETURN.c`**.
+- **See also**: EVALUATOR.md §2.6–3; **`koskari/lib/opcode/RETURN.c`**.
 
 **Example:** Return TOS (arg = 1). Pool: 0 = 42.
 
@@ -663,7 +656,7 @@ bottom to top matches push order).
 - **Status**: Implemented.
 - **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. Opcode sets **`out_ev = KOS_EV_YIELD`** and returns **`KOS_OP_POST_SUSPEND()`**; **`eval_event_yield`** (post-opcode) runs **`eval_yield_handle_walk_and_freeze`** (**`kos_dyn_walk_handle_yield`** via **`kos_dyn_transition`**), then either **`eval_event_yield_deliver_to_boundary`** when **`kos_dyn_need_kos_agen_boundary_deliver`** (flattened **NEXT** / **FOREACH** / **YIELD_FROM**, often **REPROLOGUE** without stopping **`koskari_eval`**) or **`STOP_EVENT`** with **`KOS_SUSP_YIELD`** for the outer driver.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
-- **See also**: [EVALUATOR.md](../../design/EVALUATOR.md) §2.6, §5.7; **`koskari/lib/opcode/YIELD.c`**.
+- **See also**: EVALUATOR.md §2.6, §5.7; **`koskari/lib/opcode/YIELD.c`**.
 
 **Example:** Yield TOS (arg = 1). Pool: 0 = 100.
 
@@ -684,7 +677,7 @@ bottom to top matches push order).
 - **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as values only.
 - **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The opcode is re-entered on each loop iteration until the delegate exhausts, yields (boundary KOS_EV_YIELD), or suspends on await (boundary KOS_EV_AWAIT).
 - **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize, rollback PC, fetch StopIteration value, emit yield, complete with value, drive sync iter/gen and Python/Koskari async) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
-- **Design**: [design/archive/yield-from-execution-model.md](../../design/archive/yield-from-execution-model.md) (archived narrative; see [EVALUATOR.md](../../design/EVALUATOR.md) §5)
+- **Design**: design/archive/yield-from-execution-model.md (archived narrative; see EVALUATOR.md §5)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
 
 **Example:** Delegate to a sync iterator; each yielded value is emitted (or pushed in-loop); final value is pushed when the iterator exhausts. Pool: 0 = [1, 2, 3].
@@ -1122,7 +1115,7 @@ compare the scrutinee **`s`** at TOS to an RHS from the extra row. On
 **match**, **`s`** is popped and the PC jumps to **`a0`**. On **mismatch**,
 the stack is **unchanged** and execution falls through.
 
-See [archive/switch-eq-opcodes.md](../../design/archive/switch-eq-opcodes.md) for family rationale and the
+See archive/switch-eq-opcodes.md for family rationale and the
 surface `compile/switch` form. The full SWITCH_EQ family is implemented.
 
 ### KOS_OP_SWITCH_EQ
@@ -1362,7 +1355,7 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ---
 
-**Trace snapshots (design only):** Read-only stack/frame introspection for debugging is discussed in [interpreter/introspection-trace.md](../../design/interpreter/introspection-trace.md). There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here.
+**Trace snapshots (design only):** Read-only stack/frame introspection for debugging is discussed in interpreter/introspection-trace.md. There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here.
 
 ## 11. Exception handling
 
@@ -2087,7 +2080,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 - **Status**: Implemented.
 - **Stack**: `[..., obj, arg_0, ..., arg_{N-1}] → [..., result]`. Attr name from constant pool (EXTRA row). Resolve `obj.name` via `kos_resolve_named_attr`; then invoke. Unbound class method (plain PyFunction/KosFunction from MRO): call `fn(obj, *args)`. Bound or instance-dict callable: call `callable(*args)`. Resolver return: -1 err, 0 = send self, 1 = omit self.
 - **Invariants**: Stack has at least 1 + N elements (obj, N args). Resolved attribute must be callable or TypeError.
-- **Design**: [design/interpreter/attr-lookup-cache.md](../../design/interpreter/attr-lookup-cache.md)
+- **Design**: design/interpreter/attr-lookup-cache.md
 
 **Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval.c):
 
@@ -2260,7 +2253,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 ### 18.1 Context managers (with / dyn-with)
 
-Full design: [interpreter/with-dyn-with.md](../../design/interpreter/with-dyn-with.md). Summary below.
+Full design: interpreter/with-dyn-with.md. Summary below.
 
 ### KOS_OP_PUSH_WITH {#kos_op_push_with}
 
@@ -2277,8 +2270,6 @@ Full design: [interpreter/with-dyn-with.md](../../design/interpreter/with-dyn-wi
 - **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
 - **Behaviour:** Call exit (no-exception form); auto-await if needed; pop owned stack block; pop dyn node; push `None`. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push `None`; on suspend (r==1) return KOS_EV_AWAIT; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
 - **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is always `None`; exit return is used only for swallow logic and is never the value seen by RETURN.
-- **Covered by:** `tests/lib/opcode/test_with.py`, `tests/compile/specials/test_with.py` (sync and async).
-
 ### KOS_OP_PUSH_DYN_WITH {#kos_op_push_dyn_with}
 
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
@@ -3207,7 +3198,7 @@ PUSH_CC resume target).
 
 ## 22. Dynamic wind
 
-Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](../../design/interpreter/extent-wind-unwind.md). The unified API (`kos_extent_run_wind`, `kos_extent_run_unwind`) dispatches by node kind for simple pop and transfer plans.
+Unified extent wind/unwind is described in interpreter/extent-wind-unwind.md. The unified API (`kos_extent_run_wind`, `kos_extent_run_unwind`) dispatches by node kind for simple pop and transfer plans.
 
 ### KOS_OP_PUSH_WIND
 
@@ -3283,8 +3274,3 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](.
 | 1     | THEEND | 0   | 0        | unreachable; VM raises if pc lands here |
 
 
----
-
----
-
-Source: [design/OPCODES.md](../../design/OPCODES.md)

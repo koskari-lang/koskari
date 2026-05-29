@@ -1,14 +1,7 @@
 # compile/special-match
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/special-match`
 
-**Syntax:** `(compile/special-match NAME (PATTERN BODY ...) ...)`
+**Syntax:** `(special-match NAME (PATTERN BODY ...) ...)`
 
 **Use-case:** **MATCH**-dialect special rules (same **`build-special-rules`**
 lowering as **`compile/special-rules`**, with an empty literals tuple — same
@@ -24,8 +17,4 @@ Emits **`build-special-rules`** with **`()`** for the serialized literals tuple.
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_special_match`
 
-**Tests:** `tests/compile/specials/test_define_syntax.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

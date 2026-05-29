@@ -1,16 +1,9 @@
 # KOS_OP_CALL_ATTR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, arg_0, ..., arg_{N-1}] → [..., result]`. Attr name from constant pool (EXTRA row). Resolve `obj.name` via `kos_resolve_named_attr`; then invoke. Unbound class method (plain PyFunction/KosFunction from MRO): call `fn(obj, *args)`. Bound or instance-dict callable: call `callable(*args)`. Resolver return: -1 err, 0 = send self, 1 = omit self.
 - **Invariants**: Stack has at least 1 + N elements (obj, N args). Resolved attribute must be callable or TypeError.
-- **Design**: [design/interpreter/attr-lookup-cache.md](../../../design/interpreter/attr-lookup-cache.md)
+- **Design**: design/interpreter/attr-lookup-cache.md
 
 **Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval.c):
 
@@ -41,8 +34,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 2     | CALL_ATTR| 0   | 0 (extra idx) | resolve; call add_one(c, 41); push 42. stack: [..., 42] |
 | 3     | RETURN   | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # dyn-with
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/dyn-with`
 
 **Syntax:** `(dyn-with [name? expr] body ...)`
@@ -19,16 +12,13 @@ instance.
 
 **Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
 Expression value is always `None`. See
-[interpreter/with-dyn-with.md](../../design/interpreter/with-dyn-with.md).
+interpreter/with-dyn-with.md.
 
 **Examples:**
 
 ```scheme
 ;; Capture continuation inside dyn-with; invoke outside runs exit then enter
 (dyn-with [r (make-resource)]
-  (compile/call k (compile/refq r)))
+  (k (refq r)))
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

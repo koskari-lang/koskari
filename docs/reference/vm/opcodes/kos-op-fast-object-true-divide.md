@@ -1,11 +1,4 @@
 # KOS_OP_FAST_OBJECT_TRUE_DIVIDE
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: FASTVAR.
 - **Status**: Implemented.
 - **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
@@ -35,6 +28,3 @@ reset and owns the COW stack block for the delimited region; PUSH_SHIFT and
 POP_SHIFT delimit the shift block (handler); the continuation is the code
 between POP_SHIFT and POP_PROMPT.
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

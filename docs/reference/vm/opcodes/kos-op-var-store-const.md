@@ -1,11 +1,4 @@
 # KOS_OP_VAR_STORE_CONST
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG). Arg = extra-table index (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[...] → [...]` (no stack effect). **STORE**: store the constant value into the given name via `frame_ns_store`. Same semantics as **VAR_STORE**, but the value is taken from the constant pool (extra row field `a1`), not from TOS.
@@ -25,6 +18,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 **Example (fusion source):** `(compile/setq x 42)` emits value, **`VAR_STORE`**, **`CONST`** `None`; compress turns **`CONST`** `42` + **`VAR_STORE`** `x` into **`VAR_STORE_CONST`**.
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

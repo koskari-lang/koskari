@@ -1,11 +1,4 @@
 # layout/call
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/call`
 
 **Use-case:** Block syntax for a function call: the callee is the only header
@@ -24,7 +17,7 @@ arguments (the keyword, then the cdr), matching the usual **`compile/call`**
 keyword-argument layout. Ordinary forms are unchanged.
 
 For **`*:`**, splices, and the full **`compile/call`** surface, see
-[SPECIALS.md](../../design/SPECIALS.md) § compile/call.
+SPECIALS.md § compile/call.
 
 **Syntax:**
 
@@ -58,6 +51,3 @@ layout/call foo:
 
 **Implementation:** `koskari/reader/layouts/conditionals.layout_call`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

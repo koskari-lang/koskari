@@ -1,11 +1,4 @@
 # KOS_OP_DEREF
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., ref] → [..., value]`. Pop one value (a Ref with a deref method). Call `ref.deref()`, push result. Raises TypeError if TOS has no deref method.
@@ -21,6 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 16. Argument production
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

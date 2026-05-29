@@ -1,11 +1,4 @@
 # compile/super
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
-
 **Syntax:** **`(super)`**, **`(super ARGS …)`**
 
 **Behaviour:** **`(super)`** → **`(compile/call super (type self) self)`**;
@@ -14,6 +7,3 @@ Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
 
 ## koskari/bootstrap/_iter.ki
 
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)

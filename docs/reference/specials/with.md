@@ -1,11 +1,4 @@
 # with
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/with`
 
 **Syntax:** `(with [name? expr] body ...)`
@@ -25,24 +18,18 @@ POP_WITH. PUSH_WITH looks up the WITH extent at its PC and stores
 `resume_pc = pop_pc + 1` on the node for use when exit swallows an exception.
 The expression value is always `None`. Both sync and async context managers
 are supported (VM auto-awaits enter/exit when they return awaitables). See
-[interpreter/with-dyn-with.md](../../design/interpreter/with-dyn-with.md).
+interpreter/with-dyn-with.md.
 
-**Tests:** Opcode tests (`tests/lib/opcode/test_with.py`) and special-form
-tests (`tests/compile/specials/test_with.py`) cover sync and async
-enter/exit, normal completion, and exception propagation/swallow.
 
 **Examples:**
 
 ```scheme
 ;; With binding
 (with [f (open-file path)]
-  (compile/call read-all f))
+  (read-all f))
 
 ;; Without binding
 (with [(make-lock)]
-  (compile/call do-work))
+  (do-work))
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

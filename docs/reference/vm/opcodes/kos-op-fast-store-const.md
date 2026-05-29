@@ -1,11 +1,4 @@
 # KOS_OP_FAST_STORE_CONST
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG). Arg = extra-table index (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[...] → [...]` (no stack effect). **STORE**: store the constant value into the given fast slot via `KosNamespace_FastStore`. Same semantics as **FAST_STORE**, but the value is from the constant pool (extra row `a1`), not TOS.
@@ -23,6 +16,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 1     | FAST             | 0   | 0 (a)              | stack: [..., 100] |
 | 2     | RETURN           | 1   | 1                  | |
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

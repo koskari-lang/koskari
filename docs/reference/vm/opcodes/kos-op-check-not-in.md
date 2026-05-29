@@ -1,11 +1,4 @@
 # KOS_OP_CHECK_NOT_IN
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[..., container, value]` (value = TOS). Pops both; tests `value not in container`. If **true** (i.e. value not in container), jump to `arg`; else fall through. Stack after: `[...]` in both cases.
@@ -22,8 +15,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 3     | RETURN     | 1   | 1        | |
 | 5     | LABEL      | —   | —        | miss |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # KOS_OP_FAST_STORE
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: FASTVAR. Arg = fast local slot index.
 - **Status**: Implemented.
 - **Stack**: `[..., value] → [...]`. **STORE**: store this value in the given
@@ -20,8 +13,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 0     | CONST      | 0   | 0 (99)   | stack: [..., 99] |
 | 1     | FAST_STORE | 0   | 0 (a)    | STORE: write 99 into slot 0; stack: [...] |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

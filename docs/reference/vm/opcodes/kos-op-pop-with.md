@@ -1,17 +1,5 @@
 # KOS_OP_POP_WITH
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG (or COUNT per existing opcodes.incl; design assumes no arg).
 - **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
 - **Behaviour:** Call exit (no-exception form); auto-await if needed; pop owned stack block; pop dyn node; push `None`. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push `None`; on suspend (r==1) return KOS_EV_AWAIT; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
 - **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is always `None`; exit return is used only for swallow logic and is never the value seen by RETURN.
-- **Covered by:** `tests/lib/opcode/test_with.py`, `tests/compile/specials/test_with.py` (sync and async).
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

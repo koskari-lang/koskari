@@ -1,11 +1,4 @@
 # layout/block (default)
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/block`
 
 **Use-case:** The default layout for blocks whose head has no dedicated
@@ -40,6 +33,3 @@ unknown x:
 
 **Implementation:** `koskari/reader/layouts/basics.layout_block`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

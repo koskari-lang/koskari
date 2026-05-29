@@ -1,11 +1,4 @@
 # layout/for-each
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbols:** `layout/while`, `layout/for-each`
 
 **Use-case:** Block syntax for `while` and `for-each` loops with an optional
@@ -58,6 +51,3 @@ else:
 
 See also layout/while above; for-each uses the same handler family with different head routing.
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

@@ -185,6 +185,11 @@ docs:  ## Build user documentation via tox
 	@echo "Building documentation..."
 	@tox -qe sphinx
 
+docs-preview: docs  ## Build docs and serve build/docs for local preview
+	@$(call checkfor,$(PYTHON))
+	@echo "Serving documentation at http://127.0.0.1:8000/ (Ctrl+C to stop)"
+	@cd $(BUILD_DIR)/docs && $(PYTHON) -m http.server 8000
+
 
 ##@ Cleanup
 

@@ -1,14 +1,7 @@
 # compile/item
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/item`
 
-**Syntax:** `(compile/item OBJ KEY)`
+**Syntax:** `(item OBJ KEY)`
 
 **Use-case:** Load the item at key KEY from OBJ (subscript/getitem). If KEY
 compiles to a single constant, uses CONST_ITEM; otherwise compiles KEY and
@@ -21,10 +14,7 @@ key fragment and emits ITEM 0.
 **Examples:**
 
 ```scheme
-(compile/item vec 0)
-(compile/item tbl (compile/call compute-key))
+(item vec 0)
+(item tbl (compute-key))
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

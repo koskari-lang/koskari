@@ -1,11 +1,4 @@
 # KOS_OP_NEXT
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = 1 or 2: 1 = TOS is iterator or async iterator (StopIteration raises on exhaustion); 2 = TOS = default, below = iterator or async iterator (StopIteration pushes default).
 - **Status**: Implemented.
 - **Stack**: Stack-based next from iterator or async iterator. May suspend on async iterator.
@@ -29,6 +22,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 8. Jumps
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

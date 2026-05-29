@@ -1,11 +1,4 @@
 # KOS_OP_UNPACK_VAR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA (`VAR`, `VAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` = constant
   pool indices of the two names (strings).
 - **Status**: Implemented. (`koskari/lib/opcode/UNPACK_VAR.c`)
@@ -19,8 +12,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 - **Compiler form:** Pre-compile extra tuple `(name0, name1, 0, 0)`; names
   intern to cpool like other `VAR` extra fields.
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

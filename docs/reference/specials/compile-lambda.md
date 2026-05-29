@@ -1,11 +1,4 @@
 # compile/lambda
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/lambda`
 
 **Syntax** (most specific forms first; `NAME` is optional in all groups):
@@ -13,12 +6,12 @@ Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
 
 | Shape                        | Form                                               |
 | ---------------------------- | -------------------------------------------------- |
-| Named + return               | `(compile/lambda NAME :: RET FORMALS BODY ...)`    |
-| Named + return (`type:`)     | `(compile/lambda NAME type: RET FORMALS BODY ...)` |
-| Anonymous + return           | `(compile/lambda :: RET FORMALS BODY ...)`         |
-| Anonymous + return (`type:`) | `(compile/lambda type: RET FORMALS BODY ...)`      |
-| Named, no return             | `(compile/lambda NAME FORMALS BODY ...)`           |
-| Anonymous, no return         | `(compile/lambda FORMALS BODY ...)`                |
+| Named + return               | `(lambda NAME :: RET FORMALS BODY ...)`    |
+| Named + return (`type:`)     | `(lambda NAME type: RET FORMALS BODY ...)` |
+| Anonymous + return           | `(lambda :: RET FORMALS BODY ...)`         |
+| Anonymous + return (`type:`) | `(lambda type: RET FORMALS BODY ...)`      |
+| Named, no return             | `(lambda NAME FORMALS BODY ...)`           |
+| Anonymous, no return         | `(lambda FORMALS BODY ...)`                |
 
 
 `RET` is a single expression (not a formal parameter). It is recorded as compiler
@@ -30,14 +23,14 @@ symbols become their name strings).
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
 for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers and
-the **FORMALS** composite in [MATCHER.md](../../design/MATCHER.md)).
+the **FORMALS** composite in MATCHER.md).
 Parameter types may use `::` / `type:` on individual parameters (see formals
 helpers).
 
 **Docstring:** If the first form in `BODY` is a string literal, it is taken as
 the function docstring (`discover_docstring` in helpers). It is attached to the
 fragment, stored on `Code` as `code.extras['doc']`, and appears on the callable
-as `__doc__`. A leading `(compile/begin ...)` in the body is peeled only for
+as `__doc__`. A leading `(begin ...)` in the body is peeled only for
 docstring discovery; the body is still compiled in full.
 
 **Use-case:** Create an anonymous or named function value. Named lambdas bind the
@@ -56,26 +49,23 @@ constant tuple for defaulted keywords.
 
 ```scheme
 ;; Anonymous identity
-(compile/lambda [x] x)
+(lambda [x] x)
 
 ;; Anonymous two-argument function
-(compile/lambda [a b] (compile/call add a b))
+(lambda [a b] (add a b))
 
 ;; Named lambda for recursion
-(compile/lambda fact [n]
-  (compile/call fact ...))
+(lambda fact [n]
+  (fact ...))
 
 ;; Keyword parameter with default
-(compile/lambda [x flag: true] ...)
+(lambda [x flag: true] ...)
 
 ;; Return type (named and anonymous)
-(compile/lambda f :: int [x] x)
-(compile/lambda :: str [x] "hi")
+(lambda f :: int [x] x)
+(lambda :: str [x] "hi")
 
 ;; Docstring + return type
-(compile/lambda g :: int [x] "doc for g" x)
+(lambda g :: int [x] "doc for g" x)
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

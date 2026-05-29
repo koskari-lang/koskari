@@ -1,14 +1,7 @@
 # compile/parameterize
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/parameterize`
 
-**Syntax:** `(compile/parameterize BINDINGS BODY ...)`
+**Syntax:** `(parameterize BINDINGS BODY ...)`
 
 **Bindings:** Same as let: list of `[SYM EXPR]` or `(EXPR as: SYM)`; parsed with
 `gather_bindings`.
@@ -28,16 +21,11 @@ restore on exit (and on unwind) is handled by the evaluator.
 
 ```scheme
 ;; Parameterize format; consumer pretty reads it via ParamRef("format").deref()
-(compile/parameterize [[format "woot %r woot"]]
-  (compile/call pretty 100))
+(parameterize [[format "woot %r woot"]]
+  (pretty 100))
 
 ;; Multiple parameters
-(compile/parameterize [[a 100] [b 101]]
-  (compile/call check_both))
+(parameterize [[a 100] [b 101]]
+  (check_both))
 ```
 
-See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
-
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_PROMPT
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
 - **Stack**: Pushes a new COW stack block (so the reset body has an isolated stack), then pushes the prompt node onto the dynamic chain.
@@ -25,8 +18,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 5     | …          | …   | …        | continuation (body after shift) |
 | 6     | POP_PROMPT | 0   | 0        | drop stack block; pop prompt |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

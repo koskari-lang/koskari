@@ -1,14 +1,7 @@
 # compile/locals
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/locals`
 
-**Syntax:** `(compile/locals)`
+**Syntax:** `(locals)`
 
 **Use-case:** Obtain the current frame's namespace (locals), analogous to
 Python's `locals()`.
@@ -19,13 +12,9 @@ onto the stack. Any arguments are rejected with `SpecialError`.
 **Examples:**
 
 ```scheme
-(compile/locals)
+(locals)
 ```
 
 **Implementation:** `koskari/compile/specials/variables.special_locals`
 
-**Tests:** `tests/compile/specials/test_namespace_specials.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

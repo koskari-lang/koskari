@@ -1,16 +1,9 @@
-# compile/cadr, caddr, cadddr, caddddr
+# cadr, caddr, cadddr, caddddr, first … fifth
 
-```{admonition} Reference status
-:class: note
+**Syntax:** **`(cadr pair)`**, **`(caddr pair)`**, **`(cadddr pair)`**,
+**`(caddddr pair)`**; also **`(first pair)`** … **`(fifth pair)`**
 
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
-
-**Syntax:** **`(cadr pair)`**, etc.
-
-**Behaviour:** Expand to nested **`car`** / **`cdr`** (not **`compile/`**-prefixed heads in
-the **`syntax-rules`** patterns).
-
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)
+**Behaviour:** **`cadr`**, **`caddr`**, **`cadddr`**, and **`caddddr`** expand to nested
+**`car`** / **`cdr`**. **`first`** … **`fifth`** are aliases for **`car`** …
+**`caddddr`** respectively (**`second`** = **`cadr`**, **`third`** = **`caddr`**, and so
+on).

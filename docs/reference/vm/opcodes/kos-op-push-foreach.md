@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_FOREACH
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`).
 - **Status**: Implemented.
 - **Stack**: Pops iterable (TOS) and loop_result (below TOS); creates iterator; pushes FOREACH node and stack block. ITER_NEXT uses the node's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_FOREACH).
@@ -26,8 +19,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 6     | POP_FOREACH  | 0   | 0        | |
 | 7     | LABEL        | —   | —        | break / exhausted (= pop_pc+1) |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

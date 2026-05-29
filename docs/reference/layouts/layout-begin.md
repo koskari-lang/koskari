@@ -1,11 +1,4 @@
 # layout/begin
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/begin`
 
 **Use-case:** A block whose head is **`begin`** (or **`layout/begin`** when
@@ -38,6 +31,3 @@ begin:
 **Implementation:** `koskari/reader/layouts/basics` (`layout_begin` is the same
 callable as **`layout_flat`**)
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

@@ -1,11 +1,4 @@
 # KOS_OP_ITER_NEXT
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Arg = else branch pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: Uses region iterator (PUSH_FOREACH). If next available: push value; else jump to `arg`. Auto-await if iterator is async.
@@ -24,8 +17,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 5     | POP_FOREACH | 0 | 0        | |
 | 6     | LABEL    | —   | —        | else (exhausted) |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # layout/try
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/try`
 
 **Use-case:** try/except/else/finally block syntax. Lowers to `(try ...)` for
@@ -96,8 +89,4 @@ finally:
 
 **Implementation:** `koskari/reader/layouts/exceptions.layout_try`
 
-**Tests:** `tests/reader/layouts/test_try.py`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

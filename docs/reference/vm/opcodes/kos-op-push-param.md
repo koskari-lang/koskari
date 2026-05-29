@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_PARAM
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of names tuple `(name_0, name_1, ...)`.
 - **Status**: Implemented.
 - **Stack**: `[..., val_0, val_1, ..., val_{n-1}]` → `[]`. Values consumed; names come from constant.
@@ -21,8 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 3     | …          | …   | …            | body                       |
 | N     | POP_PARAM  | 0   | 0            | pop param extent           |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

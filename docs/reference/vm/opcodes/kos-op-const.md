@@ -1,11 +1,4 @@
 # KOS_OP_CONST
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[...] → [..., c]` where `c = cpool[arg]`.
@@ -21,6 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 0     | CONST  | 0   | 0 (42)   | stack: [..., 42] |
 | 1     | RETURN | 1   | 1        | |
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

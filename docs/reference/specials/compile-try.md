@@ -1,11 +1,4 @@
 # compile/try
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/try`
 
 **Syntax:** `(try BODY CLAUSE...)`
@@ -21,10 +14,7 @@ In addition, two keyword-head clauses are accepted:
 - `(else: BODY...)` — run when the try body completed without exception
 - `(finally: BODY...)` — always run; must be last
 
-**Use-case:** Exception handling. Runs BODY; on exception, matches against
-clauses in order and runs the first matching handler. Optional `else:` runs
-when no exception occurred. Optional `finally:` always runs (on normal exit
-or exception). At least one except-style clause or `finally:` is required.
+**Use-case:** Exception handling. Runs BODY; on exception, matches against clauses in order and runs the first matching handler. Optional `else:` runs when no exception occurred. Optional `finally:` always runs (on normal exit or exception). At least one except-style clause or `finally:` is required.
 
 **Behaviour:** Uses PUSH_TRY, CLEAR_TRY, POP_TRY, PUSH_FINALLY, POP_FINALLY.
 Exception handlers use EXCEPTION_MATCH, EXCEPTION_CLEAR, EXCEPTION opcodes.
@@ -45,7 +35,7 @@ paths).
 
 ;; Named binding
 (try (parse input)
-  [[e ValueError] (compile/call log e)])
+  [[e ValueError] (log e)])
 
 ;; Bare catch-all
 (try (risky-call)
@@ -63,8 +53,4 @@ paths).
   [finally: (cleanup)])
 ```
 
-**Tests:** `tests/compile/specials/test_try.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

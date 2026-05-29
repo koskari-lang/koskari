@@ -1,11 +1,4 @@
 # KOS_OP_IMPORT
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of module name string (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[...] → [..., module]`. Perform an absolute module import and push
@@ -31,8 +24,3 @@ Pool: 0 = `"os.path"`, 1 = `"path"`, 2 = None.
 | 2     | CONST    | 2   | 2 (None)       | statement value; stack: [..., None] |
 | 3     | RETURN   | 1   | 1              | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

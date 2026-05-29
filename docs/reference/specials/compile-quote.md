@@ -1,18 +1,11 @@
 # compile/quote
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/quote`
 
-**Syntax:** `(compile/quote FORM)`
+**Syntax:** `(quote FORM)`
 
 **Use-case:** Prevent evaluation; FORM is produced as a literal value. For
 atoms, a single CONST is emitted. For non-nil lists, the form is rewritten to
-(compile/cons (compile/quote e1) (compile/quote e2) ...) and that form is
+(cons (quote e1) (quote e2) ...) and that form is
 compiled so each element is quoted and combined via the CONS opcode.
 
 **Behaviour:** One argument required. If FORM is a non-nil pair, rewrite with
@@ -23,11 +16,8 @@ compiles it. Otherwise emit CONST FORM.
 **Examples:**
 
 ```scheme
-(compile/quote 42)
-(compile/quote x)
-(compile/quote (a b c))
+(quote 42)
+(quote x)
+(quote (a b c))
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

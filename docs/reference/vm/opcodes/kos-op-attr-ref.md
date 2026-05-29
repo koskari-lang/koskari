@@ -1,11 +1,4 @@
 # KOS_OP_ATTR_REF
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of attribute name.
 - **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., obj, attr_ref]`. Push attribute reference.
@@ -21,6 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 15. Items
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # layout/if
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/if`
 
 **Use-case:** Multi-branch conditional with optional `elif` and `else` peers.
@@ -45,6 +38,3 @@ else:
 
 **Implementation:** `koskari/reader/layouts/conditionals.layout_if`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

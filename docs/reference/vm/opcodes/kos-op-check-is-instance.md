@@ -1,11 +1,4 @@
 # KOS_OP_CHECK_IS_INSTANCE
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL (or COUNT for type tuple). Arg = target pc.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, type]` (or obj + N types). Pops operands; if isinstance(obj, type) fails, jump to `arg`; else fall through. Stack after: `[...]`.
@@ -21,8 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 3     | RETURN          | 1   | 1        | handle |
 | 5     | LABEL           | —   | —        | re-raise |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # KOS_OP_FAST
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: FASTVAR. Arg = fast local slot index.
 - **Status**: Implemented.
 - **Stack**: `[...] → [..., value]`. Load from slot.
@@ -21,8 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 0     | FAST   | 0   | 0 (a)    | stack: [..., value] |
 | 1     | RETURN | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # KOS_OP_SWITCH_EQ
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[..., left, right]` (right = TOS). Compares `left == right` with
@@ -38,6 +31,3 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 | 9     | CONST     | 3   | 3 (2)     | stack: [..., 2] |
 | 10    | RETURN    | 1   | 1         | |
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

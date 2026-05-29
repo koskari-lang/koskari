@@ -1,11 +1,4 @@
 # KOS_OP_JUMP_OR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Short-circuit OR: jump if TOS is true.
 - **Status**: Implemented.
 - **Stack**: Pops one value; if true, push it back and jump to `arg`; if false,
@@ -44,6 +37,3 @@ done:
 
 Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; jump locality applies.
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

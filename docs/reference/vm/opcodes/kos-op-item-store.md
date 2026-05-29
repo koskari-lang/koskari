@@ -1,11 +1,4 @@
 # KOS_OP_ITEM_STORE
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG. Key and value from stack.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, key, value] → [..., obj]`. Set item.
@@ -20,8 +13,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 2     | CONST      | 2   | 2 (42)   | stack: [..., d, 'k', 42] |
 | 3     | ITEM_STORE | 0   | 0        | d['k'] = 42; stack: [..., d] |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

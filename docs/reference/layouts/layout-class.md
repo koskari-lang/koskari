@@ -1,16 +1,9 @@
 # layout/class
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/class`
 
 **Use-case:** Class **expression** block syntax. Lowers to `(compile/class NAME SUPERS
 (compile/begin BODY))`. The form evaluates to the new class object; it does **not**
-by itself bind **NAME** in the module (see [SPECIALS.md](../../design/SPECIALS.md) §
+by itself bind **NAME** in the module (see SPECIALS.md §
 compile/class). To define a named class in one step, use **`layout/define-class`**
 or wrap with **`compile/define`**.
 
@@ -52,6 +45,3 @@ class C ():
 
 **Implementation:** `koskari/reader/layouts/classes.layout_class`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

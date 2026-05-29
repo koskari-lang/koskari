@@ -1,11 +1,4 @@
 # KOS_OP_SWITCH_EQ_FAST_ATTR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA. Schema `(LABEL, FASTVAR, CONST, NOARG)`.
 - **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `obj = KosNamespace_FastDeref(ns, a1)`,
@@ -18,6 +11,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 10. Introspection
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

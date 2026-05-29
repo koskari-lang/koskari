@@ -1,16 +1,10 @@
 # compile/help
 
-```{admonition} Reference status
-:class: note
+**Syntax:** `(help)`, `(help obj)`, `(help obj ns)`
 
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
+**Behaviour:** Expands to a call to the **`help`** runtime function. **`(help)`**
+looks up help for the name **`help`** in **`(globals)`**. **`(help obj)`** quotes
+**`obj`** and uses **`(globals)`**. **`(help obj ns)`** passes **`obj`** and the
+given namespace through unchanged.
 
-**Syntax:** **`(help)`**, **`(help obj)`**, **`(help obj ns)`**
-
-**Behaviour:** **`(compile/call help …)`** — no namespace: **`(help 'help (globals))`**;
-object only: **`(help 'obj (globals))`**; object and namespace passed through.
-
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)
+See [help](../runtime/help.md).

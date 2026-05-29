@@ -1,11 +1,4 @@
 # KOS_OP_CHECK_IS_NOT
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[..., left, right]` (right = TOS). Pops both; if left is right, jump to `arg`; else fall through. Stack after: `[...]`.
@@ -22,8 +15,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 3     | RETURN     | 1   | 1        | |
 | 5     | LABEL      | —   | —        | same |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

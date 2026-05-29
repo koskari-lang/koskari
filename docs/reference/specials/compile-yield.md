@@ -1,14 +1,7 @@
 # compile/yield
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/yield`
 
-**Syntax:** `(compile/yield)` or `(compile/yield VAL)`
+**Syntax:** `(yield)` or `(yield VAL)`
 
 **Use-case:** Yield a value from a generator (or coroutine). Suspends the
 current frame and returns the value to the driver; resumption is via
@@ -28,10 +21,7 @@ consumes the event (freezes the dynamic chain and suspends), sets
 **Examples:**
 
 ```scheme
-(compile/yield)
-(compile/yield (compile/call compute-next))
+(yield)
+(yield (compute-next))
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

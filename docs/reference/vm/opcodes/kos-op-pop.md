@@ -1,11 +1,4 @@
 # KOS_OP_POP
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = number of elements to pop.
 - **Status**: Implemented.
 - **Stack**: `[..., a_1, ..., a_n] → [...]` (pop `arg` elements).
@@ -20,6 +13,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 2     | POP    | 1   | 1        | stack: [..., 1] |
 | 3     | RETURN | 1   | 1        | |
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

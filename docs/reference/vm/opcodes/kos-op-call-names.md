@@ -1,11 +1,4 @@
 # KOS_OP_CALL_NAMES
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = N (number of positional arguments).
 - **Status**: Implemented.
 - **Stack**: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. TailPtr for callable + args + kwnames; validate names tuple; kos_callable_vcall; DropNoErr. No tuple or dict allocation.
@@ -22,8 +15,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 4     | CALL_NAMES| 1   | 1        | stack: [..., result] |
 | 5     | RETURN    | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

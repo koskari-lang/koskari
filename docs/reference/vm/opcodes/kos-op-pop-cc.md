@@ -1,11 +1,4 @@
 # KOS_OP_POP_CC
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Stack**: Pops CC block from dynamic chain. When the captured continuation
   is invoked, the VM jumps *to* this opcode with the invoked value (or values)
@@ -15,8 +8,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
   when the continuation is invoked; stack holds the value(s) passed to the
   continuation; after POP_CC, execution continues at index 5 (resume).
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

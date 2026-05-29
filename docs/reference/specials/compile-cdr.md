@@ -1,14 +1,7 @@
 # compile/cdr
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/cdr`
 
-**Syntax:** `(compile/cdr EXPR)`
+**Syntax:** `(cdr EXPR)`
 
 **Use-case:** Compile code that evaluates EXPR (must produce a pair), then
 pushes the cdr of that pair. One argument.
@@ -22,9 +15,6 @@ with the sum of their counts (same for **CAR**).
 **Example:**
 
 ```scheme
-(compile/cdr (compile/cons 1 (compile/cons 2 nil)))   ; → (2 . nil)
+(cdr (cons 1 (cons 2 nil)))   ; → (2 . nil)
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

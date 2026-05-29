@@ -1,11 +1,4 @@
 # KOS_OP_PAIR_SPLICE
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = number of segments on stack (bottom = first segment,
   top = last segment).
 - **Status**: Implemented. (`koskari/lib/opcode/PAIR_SPLICE.c`)
@@ -36,6 +29,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 6. Mode control
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

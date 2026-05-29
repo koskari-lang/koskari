@@ -1,11 +1,4 @@
 # KOS_OP_ATTR_STORE
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of attribute name.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, value] → [..., obj]`. Pop value, set attribute on obj.
@@ -19,8 +12,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 1     | CONST      | 1   | 1 (10)   | stack: [..., obj, 10] |
 | 2     | ATTR_STORE | 2   | 2 ('x')  | obj.x = 10; stack: [..., obj] |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

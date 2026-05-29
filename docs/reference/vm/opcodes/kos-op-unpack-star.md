@@ -1,11 +1,4 @@
 # KOS_OP_UNPACK_STAR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA (`COUNT`, `COUNT`, `NOARG`, `NOARG`). Instruction arg =
   index into the code object's **extra** table; that row has `a0 = left`,
   `a1 = right` (both non-negative counts).
@@ -39,8 +32,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 1     | UNPACK_STAR  | 0   | 0 (2, 1, …) | extra row: left=2, right=1 |
 | 2     | RETURN       | 4   | 4          | stack bottom..top: 4, (3,), 2, 1 |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

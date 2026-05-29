@@ -1,11 +1,4 @@
 # KOS_OP_ITEM_REF
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG. Key from stack.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, key] → [..., obj, item_ref]`. Push item reference.
@@ -19,8 +12,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 1     | CONST    | 1   | 1 ('k')  | stack: [..., d, 'k'] |
 | 2     | ITEM_REF | 0   | 0        | stack: [..., d, item_ref] |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # KOS_OP_JUMP
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: No change.
@@ -30,8 +23,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 1     | CONST  | 0   | 0 (99)   | dead code |
 | 2     | RETURN | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_NS
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA. Schema: CONST (cpool index of NamespaceSpec), CONST (cpool index of names tuple or None), NOARG, NOARG. Instruction `arg` is the extra-row index. Binding count is `len(names)` when names is a tuple, or `0` when names is `None`.
 - **Status**: Implemented.
 - **Constant pool**: NSPEC and NAMES are loaded from the pool; they are not placed on the stack by preceding `CONST` opcodes.
@@ -21,8 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 1     | …      | …   | …        | body |
 | 2     | POP_NS | 0   | 0        | pop NS; restore previous namespace |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

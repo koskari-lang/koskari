@@ -1,16 +1,9 @@
 # compile/macroexpandq-1
 
-```{admonition} Reference status
-:class: note
+**Syntax:** `(macroexpandq-1 form)`, `(macroexpandq-1 form ns)`
 
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
+**Behaviour:** Expands to **`(call macroexpand-1 (quote form) …)`**. With one argument,
+the namespace is **`(globals)`**; with two, the given namespace is used. The form
+is quoted before expansion, so you write surface syntax directly.
 
-**Syntax:** **`(macroexpandq-1 form)`**, **`(macroexpandq-1 form ns)`**
-
-**Behaviour:** **`(call macroexpand-1 (quote form) (globals))`** or
-**`(call macroexpand-1 (quote form) ns)`**.
-
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)
+See [macroexpand-1](../runtime/macroexpand-1.md).

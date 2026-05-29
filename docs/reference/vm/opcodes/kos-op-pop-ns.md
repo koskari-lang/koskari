@@ -1,11 +1,4 @@
 # KOS_OP_POP_NS
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Restore frame namespace from saved_ns; pop NS node. No stack block.
@@ -31,6 +24,3 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

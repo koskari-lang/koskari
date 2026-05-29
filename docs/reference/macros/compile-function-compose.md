@@ -1,11 +1,4 @@
 # compile/function-compose
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
-
 **Syntax:** `(function-compose FN)` or `(function-compose FN1 FN2 …)`
 
 **Behaviour:** **`macro-rules`** expansion. A single **FN** is unchanged. Two or more
@@ -23,6 +16,3 @@ from the macro docstring:
 Composition is syntactic: argument expressions are not evaluated until the composed
 function is invoked.
 
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)

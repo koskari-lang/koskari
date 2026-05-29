@@ -1,11 +1,4 @@
 # import
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `import`
 
 **Syntax:**
@@ -59,8 +52,4 @@ by `VAR_BIND` and `CONST None`.
 (import ..parent)
 ```
 
-**Tests:** `tests/compile/specials/test_import.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

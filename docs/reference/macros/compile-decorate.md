@@ -1,11 +1,4 @@
 # compile/decorate
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
-
 **Syntax:**
 
 - `(decorate [] FN)`
@@ -19,6 +12,3 @@ composes decorators for a bare callable.
 
 ## koskari/bootstrap/_variables.ki
 
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)

@@ -1,14 +1,7 @@
 # compile/inplace
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/inplace`
 
-**Syntax:** `(compile/inplace OP VAR VALUE)`
+**Syntax:** `(inplace OP VAR VALUE)`
 
 **Use-case:** In-place update: compute `VAR OP VALUE` and store the result back
 into VAR. Equivalent to Python augmented assignment (`x += 1`, `x &= mask`, etc.).
@@ -30,12 +23,9 @@ FAST_OBJECT_* when VAR has a fixed slot.
 (set! bits (| bits mask))  ; bits |= mask
 
 ;; Direct use
-(compile/inplace + counter 1)
-(compile/inplace // total divisor)
+(inplace + counter 1)
+(inplace // total divisor)
 ```
 
 **Implementation:** `koskari/compile/specials/object.py` — `special_inplace`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

@@ -1,17 +1,10 @@
 # layout/define-class
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/define-class`
 
 **Use-case:** Class **definition** block syntax: lowers to
 `(compile/define-class NAME SUPERS (compile/begin BODY))`, which the
 **`compile/define-class`** macro expands to **`define`** plus **`class`** (see
-[MACROS.md](../../design/MACROS.md) § compile/define-class). Same header shape as
+MACROS.md § compile/define-class). Same header shape as
 **`layout/class`**, but the read result binds **NAME** to the class after
 expansion.
 
@@ -46,6 +39,3 @@ define-class C (Base):
 
 **Implementation:** `koskari/reader/layouts/classes.layout_define_class`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

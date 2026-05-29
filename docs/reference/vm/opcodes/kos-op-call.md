@@ -1,11 +1,4 @@
 # KOS_OP_CALL
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = number of positional arguments.
 - **Status**: Implemented.
 - **Stack**: `[..., callable, arg_1, ..., arg_n] → [..., result]`. KosExpression/KosFunction: new frame pushed, in-loop execution. Python callable: may suspend on awaitable.
@@ -21,8 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 2     | CALL   | 1   | 1        | pop callable + 1 arg; push result. stack: [..., result] |
 | 3     | RETURN | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

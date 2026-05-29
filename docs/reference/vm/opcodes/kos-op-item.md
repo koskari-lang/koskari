@@ -1,11 +1,4 @@
 # KOS_OP_ITEM
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG. Key from stack (below object).
 - **Status**: Implemented.
 - **Stack**: `[..., obj, key] → [..., obj, value]`. Get item; push value.
@@ -20,8 +13,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 2     | ITEM   | 0   | 0        | stack: [..., d, d['k']] |
 | 3     | RETURN | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

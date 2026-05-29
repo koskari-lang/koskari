@@ -1,11 +1,4 @@
 # KOS_OP_BREAK
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = number of stack elements to pop before jumping.
 - **Status**: Implemented.
 - **Stack**: Pops `arg` elements; control transfers to break target of innermost LOOP/FOREACH extent.
@@ -19,8 +12,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | …     | …      | …   | …        | |
 | 6     | POP_LOOP | 0 | 0        | break target (LOOP extent; use POP_FOREACH for FOREACH) |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

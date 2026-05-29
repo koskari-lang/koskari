@@ -1,14 +1,7 @@
 # compile/switch
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/switch`
 
-**Syntax:** `(compile/switch VALUE [COMPARE-LIST BODY...] ... [else: BODY...])`
+**Syntax:** `(switch VALUE [COMPARE-LIST BODY...] ... [else: BODY...])`
 
 **Use-case:** Multi-way equality branching against one discriminant value.
 `VALUE` is evaluated once, then each clause compares one or more candidate values
@@ -39,8 +32,8 @@ The head may be written as `switch` or `compile/switch`; compiler lookup resolve
 
 ```scheme
 (switch VALUE
-  ((COND1 COND2 ...) (compile/begin BODY...))
-  (else: (compile/begin BODY...)))
+  ((COND1 COND2 ...) (begin BODY...))
+  (else: (begin BODY...)))
 ```
 
 This shape is valid because each clause body is still a list of forms for
@@ -51,7 +44,7 @@ the sequencing.
 
 ```scheme
 ;; Direct s-expression form
-(compile/switch 5
+(switch 5
   [[1] "one"]
   [[2] "two"]
   [[5 6] "five-or-six"]
@@ -59,22 +52,17 @@ the sequencing.
 ;; -> "five-or-six"
 
 ;; No match with else
-(compile/switch 5
+(switch 5
   [[1] "one"]
   [[2 3] "two-or-three"]
   [else: "meh"])
 ;; -> "meh"
 
 ;; No match and no else
-(compile/switch 5
+(switch 5
   [[1] "one"]
   [[2] "two"])
 ;; -> None
 ```
 
-**Tests:** `tests/compile/specials/test_switch.py`,
-`tests/reader/layouts/test_switch_layout.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

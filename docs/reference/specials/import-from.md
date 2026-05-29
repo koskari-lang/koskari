@@ -1,11 +1,4 @@
 # import-from
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `import-from`
 
 **Syntax:**
@@ -62,8 +55,4 @@ that keeps IMPORT_FROM's stack invariant sound.
 (import-from .util (helper as: h))
 ```
 
-**Tests:** `tests/compile/specials/test_import.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

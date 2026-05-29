@@ -1,11 +1,4 @@
 # KOS_OP_LABEL
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COMPILE. Compile-time only.
 - **Status**: Compile-time; stripped in post-compile under normal circumstances. If retained, no-op at runtime.
 - **Stack**: No change.
@@ -39,8 +32,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 2     | LABEL  | 0   | —        | target "done"; no-op if executed |
 | 3     | RETURN | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

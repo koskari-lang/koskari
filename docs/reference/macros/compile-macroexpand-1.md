@@ -1,15 +1,8 @@
 # compile/macroexpand-1
 
-```{admonition} Reference status
-:class: note
+**Syntax:** `(macroexpand-1 form)`, `(macroexpand-1 form ns)`
 
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
+**Behaviour:** Expands to a call to the **`macroexpand-1`** runtime function. With one
+argument, the namespace is **`(globals)`**; with two, the given namespace is used.
 
-**Syntax:** **`(macroexpand-1 form)`**, **`(macroexpand-1 form ns)`**
-
-**Behaviour:** **`(call macroexpand-1 form (globals))`** or **`(call macroexpand-1 form ns)`**.
-
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)
+See [macroexpand-1](../runtime/macroexpand-1.md).

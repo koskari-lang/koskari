@@ -1,11 +1,4 @@
 # KOS_OP_IMPORT_FROM
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of attribute name string
   (post-compile).
 - **Status**: Implemented.
@@ -47,11 +40,8 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ---
 
-**Trace snapshots (design only):** Read-only stack/frame introspection for debugging is discussed in [interpreter/introspection-trace.md](../../../design/interpreter/introspection-trace.md). There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here.
+**Trace snapshots (design only):** Read-only stack/frame introspection for debugging is discussed in interpreter/introspection-trace.md. There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here.
 
 
 ## 11. Exception handling
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

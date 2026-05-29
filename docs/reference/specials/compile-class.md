@@ -1,14 +1,7 @@
 # compile/class
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/class`
 
-**Syntax:** `(compile/class NAME (SUPERS) BODY ...)`
+**Syntax:** `(class NAME (SUPERS) BODY ...)`
 
 - **NAME**: symbol — used for the Python class `__name__` (and the BUILD_CLASS
   position tuple); **not** a compile-time binding target for this special
@@ -21,7 +14,7 @@ run the body in a CollectorNamespace. The **value of the form** is the new class
 object (default metaclass is KosType; use `meta: MyMeta` in SUPERS for a custom
 metaclass). To **bind** the class to a name in the surrounding scope, wrap with
 `compile/define` (or use the **`define-class`** macro — see
-[MACROS.md](../../design/MACROS.md) § compile/define-class).
+MACROS.md § compile/define-class).
 
 **Behaviour:** Builds a position tuple `(name, bases)` or
 `(name, bases, metaclass)` with BUILD_ARGS, opens a collector namespace
@@ -44,26 +37,22 @@ or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
 
 ```scheme
 ;; Expression value is the class (e.g. bind with compile/define)
-(compile/define C (compile/class C ()))
+(define C (class C ()))
 
 ;; Class with attribute
-(compile/define C
-  (compile/class C ()
-    (compile/define x 42)))
+(define C
+  (class C ()
+    (define x 42)))
 
 ;; Class with superclass (object is available from bootstrap)
-(compile/define C
-  (compile/class C (object)
-    (compile/define x 1)))
+(define C
+  (class C (object)
+    (define x 1)))
 
 ;; Custom metaclass
-(compile/define C
-  (compile/class C (Base meta: MyMeta)
-    (compile/define x 1)))
+(define C
+  (class C (Base meta: MyMeta)
+    (define x 1)))
 ```
 
-**Tests:** `tests/compile/specials/test_class.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

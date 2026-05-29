@@ -1,11 +1,4 @@
 # KOS_OP_IMPORT_REL
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of a `(level:int, name:str|None)` tuple
   (post-compile).
 - **Status**: Implemented.
@@ -35,8 +28,3 @@ Pool: 0 = `(1, "foo")`, 1 = `"foo"`, 2 = None.
 | 2     | CONST      | 2   | 2 (None)       | statement value |
 | 3     | RETURN     | 1   | 1              | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

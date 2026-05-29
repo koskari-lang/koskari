@@ -1,11 +1,4 @@
 # layout/switch
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/switch`
 
 **Use-case:** Multi-way equality dispatch in block syntax. Lowers to `switch`
@@ -73,8 +66,4 @@ switch x:
 
 **Implementation:** `koskari/reader/layouts/conditionals.layout_switch`
 
-**Tests:** `tests/reader/layouts/test_switch_layout.py`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_WITH
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
 - **Status**: Implemented (single-shot with; sync and async __enter__/__exit__; VM auto-awaits when enter returns awaitable).
 - **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand stack block.
@@ -13,6 +6,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 - **Pushes:** KOS_DYN_WITH (single-shot; transfer barrier). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
 - **Invariants:** Node owns one operand stack block; stack restoration is structural (block pop), not height-mark. A WITH extent must exist at the PUSH_WITH PC; otherwise RuntimeError.
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

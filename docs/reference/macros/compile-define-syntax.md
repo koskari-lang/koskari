@@ -1,11 +1,4 @@
 # compile/define-syntax
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/define-syntax`
 
 **Syntax:** Matches **`(define-syntax NAME TRANSFORMER)`** where **`TRANSFORMER`** is:
@@ -20,8 +13,4 @@ Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
 
 **Layout:** `define layout/define-syntax layout/flat` (flat block read).
 
-**Tests:** `tests/compile/specials/test_define_syntax.py`
 
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)

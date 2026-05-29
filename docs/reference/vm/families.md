@@ -1,11 +1,4 @@
 # Opcode families
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - [3. No-op and compile-time](#3-no-op-and-compile-time) — NOOP, LABEL, POSITION
 - [4. Stack](#4-stack) — DUP, POP, UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST
 - [5. Constants](#5-constants) — CONST
@@ -144,6 +137,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 **Completeness:** Every member of the `KosOpCode` enum in `koskari/lib/opcodes.incl` has a dedicated `### KOS_OP_*` heading in this document (some sections group related opcodes under one narrative first, then list each name). Search for `### KOS_OP_` to enumerate. Design-only or future opcodes belong in design notes, not here, until they are added to `opcodes.incl`.
 
----
-
-Source: [design/OPCODES.md](../../design/OPCODES.md)

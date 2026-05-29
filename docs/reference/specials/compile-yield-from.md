@@ -1,19 +1,12 @@
 # compile/yield-from
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/yield-from`
 
-**Syntax:** `(compile/yield-from EXPR)` — exactly one argument.
+**Syntax:** `(yield-from EXPR)` — exactly one argument.
 
 **Use-case:** Delegate to another iterable or async-iterable and yield each
 produced value through the current async generator, analogous to Python's
 `yield from`. Prefer this over `compile/for-each` plus `compile/yield` when you
-only forward an entire sequence (for example `(compile/call items data)` for
+only forward an entire sequence (for example `(items data)` for
 `dict.items()`).
 
 **Behaviour:** Compiles `EXPR` onto the stack, emits `YIELD_FROM` with operand
@@ -29,16 +22,11 @@ with `KOS_CODE_YIELDS`. Full stack and suspension details are in
 **Examples:**
 
 ```scheme
-(compile/yield-from (compile/call items data))
+(yield-from (items data))
 
 ;; Same consumer-visible values as:
-(compile/for-each [pair (compile/call items data)]
-  (compile/yield pair))
+(for-each [pair (items data)]
+  (yield pair))
 ```
 
-**Tests:** `tests/compile/specials/test_yield_from_special.py`,
-`tests/lib/opcode/test_yield_from.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

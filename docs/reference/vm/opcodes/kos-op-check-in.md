@@ -1,11 +1,4 @@
 # KOS_OP_CHECK_IN
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[..., container, value]` (value = TOS). Pops both; tests `value in container` (PySequence_Contains). If **false** (check fails), jump to `arg`; else fall through. Stack after: `[...]` in both cases (both operands always popped).
@@ -25,8 +18,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 6     | CONST    | 3   | 3 (0)      | stack: [..., 0] |
 | 7     | RETURN   | 1   | 1          | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

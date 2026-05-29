@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_LOOP
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`). Continue target = instruction immediately following PUSH_LOOP (i.e. `CURRENT_PC` after the evaluator has advanced past the opcode).
 - **Status**: Implemented.
 - **Stack**: Pushes LOOP node and stack block. Break/continue use `break_pc` (derived at runtime) and `continue_pc` (next instruction after PUSH_LOOP). Initializes node result to `None`.
@@ -25,8 +18,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 5     | POP_LOOP  | 0   | 0        | |
 | 6     | LABEL     | —   | —        | break target (= pop_pc+1) |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,14 +1,7 @@
 # compile/or
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/or`
 
-**Syntax:** `(compile/or EXPR ...)`
+**Syntax:** `(or EXPR ...)`
 
 **Use-case:** Short-circuit disjunction. Evaluates expressions left-to-right
 and returns the first truthy value, skipping the rest. If all values are falsy,
@@ -30,15 +23,11 @@ term).
 **Examples:**
 
 ```scheme
-(compile/or)              ; → False
-(compile/or 42)           ; → 42
-(compile/or None False 0) ; → 0   (all falsy, last value)
-(compile/or None 99 0)    ; → 99  (short-circuit at second term)
-(compile/or False 42)     ; → 42
+(or)              ; → False
+(or 42)           ; → 42
+(or None False 0) ; → 0   (all falsy, last value)
+(or None 99 0)    ; → 99  (short-circuit at second term)
+(or False 42)     ; → 42
 ```
 
-**Tests:** `tests/compile/specials/test_cond.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

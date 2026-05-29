@@ -1,11 +1,4 @@
 # layout/while
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbols:** `layout/while`, `layout/for-each`
 
 **Use-case:** Block syntax for `while` and `for-each` loops with an optional
@@ -56,6 +49,3 @@ else:
 **Implementation:** `koskari/reader/layouts/loops.layout_loop` (registered as
 `layout/while` and `layout/for-each` via `add_builtin`)
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

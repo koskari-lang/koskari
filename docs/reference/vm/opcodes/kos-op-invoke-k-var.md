@@ -1,11 +1,4 @@
 # KOS_OP_INVOKE_K_VAR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of name (post-compile).
 - **Status**: Implemented.
 - **Stack**: Pops value; looks up continuation by name; invokes it with value. Same push model as INVOKE_K; prompt need not be in chain.
@@ -28,6 +21,3 @@ jump to the POP_CC opcode**, with a value pushed onto the stack; POP_CC then
 runs (pops the CC block) and execution continues at the next instruction (the
 PUSH_CC resume target).
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

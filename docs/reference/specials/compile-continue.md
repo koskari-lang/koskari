@@ -1,14 +1,7 @@
 # compile/continue
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/continue`
 
-**Syntax:** `(compile/continue)` or `(compile/continue VAL)`
+**Syntax:** `(continue)` or `(continue VAL)`
 
 **Use-case:** Restart the innermost loop iteration. Must be inside a
 `compile/while` or `compile/for-each` body.
@@ -20,12 +13,8 @@ ITER_NEXT for for-each).
 **Examples:**
 
 ```scheme
-(compile/continue)
-(compile/continue last-value)
+(continue)
+(continue last-value)
 ```
 
-**Tests:** `tests/compile/specials/test_cond.py`, `tests/compile/specials/test_while.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

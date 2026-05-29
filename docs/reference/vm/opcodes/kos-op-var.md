@@ -1,11 +1,4 @@
 # KOS_OP_VAR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: VAR. Arg = constant pool index of variable name (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[...] → [..., value]`. Load value bound to name in frame namespace.
@@ -19,8 +12,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 0     | VAR    | 0   | 0 ('x')  | stack: [..., value] |
 | 1     | RETURN | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # compile/set!
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `set!` (`compile/set!`)
 
 **Syntax:** Plain **`(set! SYM EXPR)`**; **`(set! (values PATTERN ...) VALUE)`**;
@@ -15,6 +8,3 @@ variants).
 
 **Behaviour:** Expands to **`setq`**, **`compile/setq-values`**, **`compile/inplace`**, **`compile/set-item`**, **`compile/set-attr`**, or **`compile/set-ref`**.
 
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)

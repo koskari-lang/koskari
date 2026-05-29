@@ -1,11 +1,4 @@
 # layout/define-syntax
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/define-syntax`
 
 **Use-case:** Block surface syntax for **`define-syntax`**. In the full builtins
@@ -17,7 +10,7 @@ at the block level.
 
 **Behaviour:** Implemented only as that **`layout/flat`** alias in **`basics.ki`**.
 Transformer choice and validation happen in the **`compile/define-syntax`** macro
-at compile time (see **compile/define-syntax** in [MACROS.md](../../design/MACROS.md)). Does not
+at compile time (see **compile/define-syntax** in MACROS.md). Does not
 accept peers.
 
 **Syntax:**
@@ -54,8 +47,4 @@ define-syntax do-something-with-x:
 
 **Implementation:** `koskari/importer/basics.ki` (**`define layout/define-syntax layout/flat`**); handler code in **`koskari/reader/layouts/basics.layout_flat`**.
 
-**Tests:** `tests/reader/layouts/test_define_syntax.py`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

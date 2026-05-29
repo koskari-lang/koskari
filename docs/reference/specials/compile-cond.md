@@ -1,14 +1,7 @@
 # compile/cond
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/cond`
 
-**Syntax:** `(compile/cond [TEST BODY...] [TEST BODY...] ... [else: BODY...])`
+**Syntax:** `(cond [TEST BODY...] [TEST BODY...] ... [else: BODY...])`
 
 **Use-case:** Multi-branch conditional. Evaluates clauses in order; the first
 truthful test's body is evaluated and returned. No match yields `None`. The
@@ -23,24 +16,21 @@ None for the fall-through case.
 
 ```scheme
 ;; Empty cond → None
-(compile/cond)
+(cond)
 
 ;; Single clause
-(compile/cond [True 100])
+(cond [True 100])
 
 ;; else-only
-(compile/cond [else: 100])
+(cond [else: 100])
 
 ;; Multi-clause with else fallthrough
-(compile/cond
+(cond
   [False 100]
   [True 101]
   [else: 102])
 ```
 
 **Note:** The higher-level forms `compile/if`, `compile/when`, and
-`compile/unless` are macros in `koskari/bootstrap/_conditionals.ki` (see [MACROS.md](../../design/MACROS.md)).
+`compile/unless` are macros in `koskari/bootstrap/_conditionals.ki` (see MACROS.md).
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

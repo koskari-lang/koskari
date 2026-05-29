@@ -1,14 +1,7 @@
 # compile/delq
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/delq`
 
-**Syntax:** `(compile/delq SYM)`
+**Syntax:** `(delq SYM)`
 
 **Use-case:** Delete the binding named SYM from the current scope. The form
 evaluates to None.
@@ -19,9 +12,6 @@ None.
 **Examples:**
 
 ```scheme
-(compile/delq temp)
+(delq temp)
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

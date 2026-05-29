@@ -30,6 +30,7 @@ You can skip straight to reference if you already know Lisp-like languages.
 | [Special forms](../reference/specials/index.md) | Compiler specials (`compile/...`) |
 | [Layouts](../reference/layouts/index.md) | Block syntax handlers |
 | [Macros](../reference/macros/index.md) | Bootstrap macros (`if`, `define`, ...) |
+| [Runtime](../reference/runtime/index.md) | Bootstrap functions (`help`, `macroexpand`, ...) |
 | [Bytecode](../reference/vm/index.md) | Opcode reference and disassembly |
 | [API](../api/index.md) | Python modules (`koskari.dis`, ...) |
 

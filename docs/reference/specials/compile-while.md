@@ -1,21 +1,14 @@
 # compile/while
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/while`
 
-**Syntax:** `(compile/while TEST BODY... [else: ELSEBODY])`
+**Syntax:** `(while TEST BODY... [else: ELSEBODY])`
 
 **Use-case:** Loop that runs body while TEST is truthy. Supports `compile/break`
 and `compile/continue` inside the body. An optional `[else: ELSEBODY]` clause
 runs only when the loop exits because TEST is false (i.e. not via
 `compile/break`); its value becomes the loop's expression value. Without an
 else clause the loop evaluates to `None`. In block syntax, the same clause comes
-from an `else:` peer; see `layout/while` in [LAYOUTS.md](../../design/LAYOUTS.md).
+from an `else:` peer; see `layout/while` in LAYOUTS.md.
 
 **Behaviour:** Emits PUSH_LOOP (break target after POP_LOOP). The continue
 target is the first instruction after PUSH_LOOP. Compiles TEST; on false,
@@ -29,23 +22,19 @@ break target with its value and does not run the else clause.
 
 ```scheme
 ;; Simple loop
-(compile/while x
-  (compile/call append c x)
-  (compile/setq x (compile/call sub x 1)))
+(while x
+  (append c x)
+  (setq x (sub x 1)))
 
 ;; With break
-(compile/while True
-  (compile/cond [done (compile/break result)]
-                [else: (compile/call step)]))
+(while True
+  (cond [done (break result)]
+                [else: (step)]))
 
 ;; Else runs when TEST becomes false
-(compile/while x
-  (compile/setq x (compile/call sub x 1))
+(while x
+  (setq x (sub x 1))
   [else: "done"])
 ```
 
-**Tests:** `tests/compile/specials/test_while.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

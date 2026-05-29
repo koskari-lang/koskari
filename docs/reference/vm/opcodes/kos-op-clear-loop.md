@@ -1,11 +1,4 @@
 # KOS_OP_CLEAR_LOOP
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: No stack effect. Disables the top LOOP region (sets `enabled` to 0) and clears the loop stack block. Used on normal exit from a while-loop body (before POP_LOOP), or on iterator exhaustion in patterns that only use LOOP extents.
@@ -13,8 +6,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 - **Example:** On `break` from a while loop: CLEAR_LOOP (and possibly CLEAR_TRY) then jump to break_pc; POP_LOOP at target.
 - **Implementation**: `koskari/lib/opcode/CLEAR_LOOP.c`
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

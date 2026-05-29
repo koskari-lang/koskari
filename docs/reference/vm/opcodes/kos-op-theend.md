@@ -1,11 +1,4 @@
 # KOS_OP_THEEND
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: No runtime implementation.
 - **Stack**: Unreachable for normal execution.
@@ -23,11 +16,11 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## See also
 
-- [interpreter/bytecode.md](../../../design/interpreter/bytecode.md) — Bytecode format, KosCode layout, API
-- [interpreter/bytecode-metadata-tables.md](../../../design/interpreter/bytecode-metadata-tables.md) — Extents, location table, jump locality
-- [interpreter/execution-invariants.md](../../../design/interpreter/execution-invariants.md) — Execution model
-- [interpreter/evaluator.md](../../../design/interpreter/evaluator.md) — Evaluation loop
-- [FEATURES.md](../../../design/FEATURES.md) — Implementation status and feature list
+- interpreter/bytecode.md — Bytecode format, KosCode layout, API
+- interpreter/bytecode-metadata-tables.md — Extents, location table, jump locality
+- interpreter/execution-invariants.md — Execution model
+- interpreter/evaluator.md — Evaluation loop
+- FEATURES.md — Implementation status and feature list
 - `koskari/lib/opcodes.incl` — Authoritative opcode enum and order
 - `koskari.dis` — Runtime disassembly of KosCode objects
 
@@ -40,6 +33,3 @@ substantive update: pre/post-compile representation (§1.5–1.10), LABEL/POSITI
 stripping, quick-reference index, glossary, maintaining checklist, and
 intended/current notes for stubs.
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

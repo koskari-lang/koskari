@@ -1,14 +1,7 @@
 # compile/special-rules
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/special-rules`
 
-**Syntax:** `(compile/special-rules NAME LITERALS RULE ...)`
+**Syntax:** `(special-rules NAME LITERALS RULE ...)`
 
 **Use-case:** Lower a **`special-rules`**-style transformer spec to a
 **`build-special-rules`** call form. Rule procedures are **compiler-aware**:
@@ -31,8 +24,4 @@ of the result (see **`SpecialRulesTransformer`** in **`koskari/syntax.py`**).
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_special_rules`
 
-**Tests:** `tests/compile/specials/test_define_syntax.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

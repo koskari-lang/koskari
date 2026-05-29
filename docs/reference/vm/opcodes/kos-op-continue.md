@@ -1,11 +1,4 @@
 # KOS_OP_CONTINUE
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = number of stack elements to pop before jumping.
 - **Status**: Implemented.
 - **Stack**: Pops `arg` elements; control transfers to continue target of innermost LOOP/FOREACH extent.
@@ -18,8 +11,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 4     | CONTINUE| 0   | 0        | pop 0, jump to continue target (e.g. pc 1) |
 | …     | …       | …   | …        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

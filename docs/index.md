@@ -1,17 +1,7 @@
 # Koskari documentation
 
-Koskari is a LISP dialect for Python: an extensible language with indent-based
-layout syntax, macros, and a custom bytecode evaluator.
+Koskari is a LISP dialect for Python: an extensible language with indent-based layout syntax, macros, and a custom bytecode evaluator.
 
-This site is the **user-facing** documentation. Maintainer design notes live
-in the repository under `design/` and are linked from contributor pages only.
-
-```{admonition} Pre-alpha
-:class: note
-
-Koskari is under active development. Behaviour and documentation may change
-between releases. Pages marked with stability notes call out evolving areas.
-```
 
 ## Getting started
 
@@ -43,6 +33,7 @@ reference/cli-and-config
 reference/specials/index
 reference/layouts/index
 reference/macros/index
+reference/runtime/index
 reference/vm/index
 reference/grammar
 reference/error-codes

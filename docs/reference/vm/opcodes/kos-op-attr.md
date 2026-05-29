@@ -1,11 +1,4 @@
 # KOS_OP_ATTR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of attribute name (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., obj, value]`. Get attribute; push value.
@@ -20,8 +13,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 1     | ATTR   | 1   | 1 ('name') | stack: [..., obj, value] |
 | 2     | RETURN | 1   | 1          | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

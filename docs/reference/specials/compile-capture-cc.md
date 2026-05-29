@@ -1,14 +1,7 @@
 # compile/capture/cc
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/capture/cc`
 
-**Syntax:** `(compile/capture/cc K BODY ...)`
+**Syntax:** `(capture/cc K BODY ...)`
 
 **Use-case:** Lowest-level undelimited continuation capture. Like
 `compile/let/cc` but binds `K` in the **current** (ambient) namespace rather
@@ -24,14 +17,10 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 
 ```scheme
 ;; Capture into ambient namespace; k accessible later
-(compile/capture/cc k
-  (compile/begin
-    (compile/call do-work k)
-    (compile/call k 0)))
+(capture/cc k
+  (begin
+    (do-work k)
+    (k 0)))
 ```
 
-**Tests:** `tests/compile/specials/test_call_cc.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

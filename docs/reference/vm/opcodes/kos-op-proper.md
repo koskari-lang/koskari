@@ -1,11 +1,4 @@
 # KOS_OP_PROPER
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = number of element values on stack.
 - **Status**: Implemented. (`koskari/lib/opcode/PROPER.c`)
 - **Stack**: `[..., e_0, ..., e_{count-1}] → [..., result]` where result is the
@@ -25,6 +18,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 2     | CONST  | 2   | 2 (sym c)  | stack: [..., a, b, c] |
 | 3     | PROPER | 3   | 3          | stack: [..., (a b c)] |
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

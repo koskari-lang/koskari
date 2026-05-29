@@ -1,14 +1,7 @@
 # compile/set-item
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/set-item`
 
-**Syntax:** `(compile/set-item OBJ KEY VAL)`
+**Syntax:** `(set-item OBJ KEY VAL)`
 
 **Use-case:** Set the item at KEY in OBJ to VAL. The form evaluates to None.
 Same constant-key optimization as compile/item.
@@ -20,9 +13,6 @@ ITEM_STORE 0. Then CONST None.
 **Examples:**
 
 ```scheme
-(compile/set-item vec 0 99)
+(set-item vec 0 99)
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

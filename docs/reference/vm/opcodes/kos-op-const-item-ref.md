@@ -1,11 +1,4 @@
 # KOS_OP_CONST_ITEM_REF
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of key.
 - **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., obj, item_ref]`. Push item reference for constant key.
@@ -21,6 +14,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 15.1 Reference dereference
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

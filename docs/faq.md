@@ -12,7 +12,7 @@ versions via containerized tox runs.
 ## Where are the design documents?
 
 In the repository under `design/`. They target maintainers and agents, not
-first-time learners. This user site links to them from contributor pages only.
+first-time learners. This user site does not link into `design/`.
 
 ## How do I report bugs or contribute?
 

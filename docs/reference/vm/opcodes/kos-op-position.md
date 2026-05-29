@@ -1,11 +1,4 @@
 # KOS_OP_POSITION
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COMPILE. Compile-time only.
 - **Status**: Compile-time; **stripped** in post-compile under normal circumstances. If retained, no-op at runtime.
 - **Stack**: No change.
@@ -24,6 +17,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 4. Stack
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

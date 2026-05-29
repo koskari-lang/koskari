@@ -1,11 +1,4 @@
 # KOS_OP_UNPACK
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = `n` (number of values to push).
 - **Status**: Implemented. (`koskari/lib/opcode/UNPACK.c`)
 - **Stack**: `[..., raw] → [..., v_{n-1}, ..., v_1, v_0]` where `v_i` is the
@@ -29,8 +22,3 @@ bottom to top matches push order).
 | 1     | UNPACK  | 3   | 3        | stack: [..., 3, 2, 1]; TOS = 1 |
 | 2     | RETURN  | 3   | 3        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

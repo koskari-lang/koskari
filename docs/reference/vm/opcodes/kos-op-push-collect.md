@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_COLLECT
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of NamespaceSpec.
 - **Status**: Implemented.
 - **Stack**: Does not consume the stack. Loads NamespaceSpec from constant pool at
@@ -16,8 +9,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
   restore on POP_COLLECT), then a stack block for the body.
 - **Invariants**: Extent kind KOS_EXT_COLLECT. Frame namespace must be KosNamespace.
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

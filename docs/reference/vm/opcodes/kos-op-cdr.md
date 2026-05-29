@@ -1,11 +1,4 @@
 # KOS_OP_CDR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: COUNT. Arg = repeat count: apply **cdr** that many times to the
   stack top (each step pops one pair and pushes its cdr).
 - **Status**: Implemented.
@@ -17,6 +10,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
   is not a pair or is nil, **TypeError** (message includes step index and type /
   `nil`).
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

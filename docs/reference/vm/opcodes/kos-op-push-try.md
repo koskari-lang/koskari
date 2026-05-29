@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_TRY
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Handler targets in extent table.
 - **Status**: Implemented.
 - **Stack**: Pushes TRY node and a KosStackBlock (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_TRY runs. Node unwind (e.g. BREAK through TRY) also drops the block.
@@ -23,8 +16,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 4     | LABEL  | —   | —        | except handler (except_pc) |
 | 5     | LABEL  | —   | —        | exit |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

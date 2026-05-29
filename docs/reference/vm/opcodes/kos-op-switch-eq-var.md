@@ -1,11 +1,4 @@
 # KOS_OP_SWITCH_EQ_VAR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA. Schema `(LABEL, VAR, NOARG, NOARG)`.
 - **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `rhs = frame_ns_deref(var_name)` from `a1`,
@@ -15,6 +8,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 - **Compiler form:** tuple arg `("label", "name", 0, 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_VAR.c`
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

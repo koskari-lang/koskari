@@ -1,11 +1,4 @@
 # KOS_OP_YIELD_FROM
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`, roll back PC so the next loop iteration re-dispatches to YIELD_FROM. On each resume: drive one step of the delegate (or handle send/throw/close inject). On completion: pop the dyn node, push final value. PC does not advance until delegation completes.
@@ -14,7 +7,7 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 - **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as values only.
 - **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The opcode is re-entered on each loop iteration until the delegate exhausts, yields (boundary KOS_EV_YIELD), or suspends on await (boundary KOS_EV_AWAIT).
 - **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize, rollback PC, fetch StopIteration value, emit yield, complete with value, drive sync iter/gen and Python/Koskari async) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
-- **Design**: [design/archive/yield-from-execution-model.md](../../../design/archive/yield-from-execution-model.md) (archived narrative; see [EVALUATOR.md](../../../design/EVALUATOR.md) §5)
+- **Design**: design/archive/yield-from-execution-model.md (archived narrative; see EVALUATOR.md §5)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
 
 **Example:** Delegate to a sync iterator; each yielded value is emitted (or pushed in-loop); final value is pushed when the iterator exhausts. Pool: 0 = [1, 2, 3].
@@ -28,6 +21,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 7. Iteration
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

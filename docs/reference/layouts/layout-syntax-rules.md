@@ -1,11 +1,4 @@
 # layout/syntax-rules
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/syntax-rules`
 
 **Use-case:** Block syntax for the `syntax-rules` transformer within a
@@ -57,6 +50,3 @@ syntax-rules [item]:
 
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_syntax_rules`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

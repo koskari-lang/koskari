@@ -1,11 +1,4 @@
 # layout/syntax-match
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/syntax-match`
 
 **Use-case:** Block syntax for the `syntax-match` transformer within a
@@ -27,6 +20,3 @@ syntax-match:
 
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_syntax_match`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

@@ -1,7 +1,6 @@
 # Python API reference
 
-Autodoc reference for Koskari Python modules. The `koskari.bootstrap`
-package is intentionally omitted (internal bootstrap loader only).
+Autodoc reference for Koskari Python modules
 
 ```{toctree}
 :maxdepth: 1

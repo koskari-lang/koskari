@@ -1,20 +1,13 @@
 # compile/define-global
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/define-global`
 
 **Syntax:** Same arities and spellings as `compile/define`: **inline type**
 (`NAME :: TYPE` / `NAME type: TYPE`) or **DECL** as the first argument:
 
-- `(compile/define-global NAME :: TYPE)` … (and `type:`), or `(compile/define-global DECL)`
-- `(compile/define-global NAME :: TYPE EXPR)` or `(compile/define-global DECL EXPR)`
-- `(compile/define-global NAME :: TYPE FORMALS BODY ...)` or
-`(compile/define-global DECL FORMALS BODY ...)`
+- `(define-global NAME :: TYPE)` … (and `type:`), or `(define-global DECL)`
+- `(define-global NAME :: TYPE EXPR)` or `(define-global DECL EXPR)`
+- `(define-global NAME :: TYPE FORMALS BODY ...)` or
+`(define-global DECL FORMALS BODY ...)`
 
 See **compile/define** for the meaning of **DECL** and function-shorthand
 lowering to `compile/lambda` (including `NAME :: TYPE` when a return type is
@@ -37,22 +30,18 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 
 ```scheme
 ;; Explicit global; setq writes to module
-(compile/define-global x 1)
-(compile/setq x 42)
+(define-global x 1)
+(setq x 42)
 
 ;; Shared counter across nested closures
 ((lambda ()
-   (compile/define-global counter 0)
+   (define-global counter 0)
    (define inc (lambda []
-     (compile/setq counter (compile/call + counter 1))
+     (setq counter (+ counter 1))
      counter))
-   (compile/call inc)))
+   (inc)))
 ```
 
-**Tests:** `tests/compile/specials/test_resolution_model.py`
 
 **Implementation:** `koskari/compile/specials/variables.special_define_global`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

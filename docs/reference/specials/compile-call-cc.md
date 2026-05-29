@@ -1,14 +1,7 @@
 # compile/call/cc
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/call/cc`
 
-**Syntax:** `(compile/call/cc FN)`
+**Syntax:** `(call/cc FN)`
 
 **Use-case:** Undelimited call-with-current-continuation (Scheme-like). Captures
 the current continuation at the call site, wraps it in a `Continuation` object,
@@ -29,21 +22,17 @@ a different eval context triggers the segmented-transfer path.
 
 ```scheme
 ;; Capture and immediately invoke: returns 42
-(compile/call/cc
-  (compile/lambda [k]
-    (compile/call k 42)))
+(call/cc
+  (lambda [k]
+    (k 42)))
 
 ;; Escape continuation: short-circuit a computation
-(compile/call/cc
-  (compile/lambda [escape]
-    (compile/begin
-      (compile/call do-setup)
-      (compile/call escape "early-exit")
-      (compile/call do-cleanup))))
+(call/cc
+  (lambda [escape]
+    (begin
+      (do-setup)
+      (escape "early-exit")
+      (do-cleanup))))
 ```
 
-**Tests:** `tests/compile/specials/test_call_cc.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

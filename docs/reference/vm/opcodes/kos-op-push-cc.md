@@ -1,11 +1,4 @@
 # KOS_OP_PUSH_CC
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG. The instruction has no argument. The resume PC (instruction
   index to continue at when the continuation is invoked) is **not** stored in
   the bytecode; the evaluator obtains it from the **block table** (extent
@@ -29,8 +22,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 4     | POP_CC     | 0   | 0          | invoke lands here with value on stack; pop CC; next pc = 5 (resume) |
 | 5     | RETURN     | 1   | 1          | yield TOS (42) |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # KOS_OP_POP_SHIFT
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Pops TOS as result; builds a transfer plan that unwinds from the current position through the matching SHIFT and PROMPT nodes (TRUNCATE_AND_INJECT step drops both and their stack block), then injects the single result value onto the outer frame's stack (below the PROMPT's block boundary). Handler returns without invoking k.
@@ -18,8 +11,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 |------:|----------|-----|----------|---------|
 | 4     | POP_SHIFT| 0   | 0        | pop result; unwind through SHIFT+PROMPT; drop stack block; inject result onto outer stack |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

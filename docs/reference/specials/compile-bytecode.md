@@ -1,14 +1,7 @@
 # compile/bytecode
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/bytecode`
 
-**Syntax:** `(compile/bytecode [OP ARG] ...)`
+**Syntax:** `(bytecode [OP ARG] ...)`
 
 **Use-case:** Direct bytecode injection for tests, debugging, or hand-written
 code. Each element of the body is a pair (or list) `[OP ARG]` where `OP` is an
@@ -24,12 +17,12 @@ or without the `KOS_OP_` prefix.
 
 ```scheme
 ;; Return a constant string
-(compile/bytecode
+(bytecode
   [CONST "Hello World"]
   [RETURN 1])
 
 ;; Load two variables and call a function of two arguments
-(compile/bytecode
+(bytecode
   [VAR add]
   [VAR value_a]
   [VAR value_b]
@@ -37,6 +30,3 @@ or without the `KOS_OP_` prefix.
   [RETURN 1])
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

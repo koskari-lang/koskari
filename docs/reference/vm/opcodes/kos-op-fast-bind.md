@@ -1,11 +1,4 @@
 # KOS_OP_FAST_BIND
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: FASTVAR. Arg = fast local slot index.
 - **Status**: Implemented.
 - **Stack**: `[..., ref] → [...]`. **BIND**: use this reference to resolve the
@@ -20,8 +13,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 0     | CONST    | 0   | 0 (1)    | stack: [..., ref] |
 | 1     | FAST_BIND| 0   | 0 (a)    | BIND: slot 0 resolves to this ref; stack: [...] |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

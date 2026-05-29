@@ -1,11 +1,4 @@
 # layout/macro-match
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/macro-match`
 
 **Use-case:** Block syntax for the `macro-match` transformer within a
@@ -27,6 +20,3 @@ macro-match:
 
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_macro_match`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)

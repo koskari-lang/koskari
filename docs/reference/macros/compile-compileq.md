@@ -1,15 +1,6 @@
 # compile/compileq
 
-```{admonition} Reference status
-:class: note
+**Syntax:** `(compileq form)`, `(compileq form ns)`
 
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
-
-**Syntax:** **`(compileq form)`**, **`(compileq form ns)`**
-
-**Behaviour:** **`(call compile (quote form) (locals))`** or **`(call compile (quote form) ns)`**.
-
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)
+**Behaviour:** Expands to **`(call compile (quote form) …)`**. With one argument,
+the namespace is **`(locals)`**; with two, the given namespace is used.

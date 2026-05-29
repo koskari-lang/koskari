@@ -1,11 +1,4 @@
 # KOS_OP_POP_PROMPT
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when a nearest **`KOS_DYN_DELIM`** with mode **`KOS_DYN_DELIM_MODE_POP_PROMPT`** is present (`kos_find_nearest_delim`), pops TOS as result, unwinds continuation frames back to the invocation site per that node’s return metadata, drops the PROMPT's stack block, pushes result, sets PC to post-INVOKE_K, and resumes.
@@ -19,8 +12,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 |------:|-----------|-----|----------|---------|
 | 6     | POP_PROMPT| 0   | 0        | pop result; drop stack block; pop prompt; push result to outer stack |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

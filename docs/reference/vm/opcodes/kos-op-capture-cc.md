@@ -1,11 +1,4 @@
 # KOS_OP_CAPTURE_CC
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Stack**: Captures the continuation of the CC dynamic extent (from current pc
   until the extent is exited at POP_CC); pushes it (KosPyContinuation) onto
@@ -18,8 +11,5 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 22. Dynamic wind
 
-Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](../../../design/interpreter/extent-wind-unwind.md). The unified API (`kos_extent_run_wind`, `kos_extent_run_unwind`) dispatches by node kind for simple pop and transfer plans.
+Unified extent wind/unwind is described in interpreter/extent-wind-unwind.md. The unified API (`kos_extent_run_wind`, `kos_extent_run_unwind`) dispatches by node kind for simple pop and transfer plans.
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,14 +1,7 @@
 # compile/reset
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/reset`
 
-**Syntax:** `(compile/reset BODY ...)`
+**Syntax:** `(reset BODY ...)`
 
 **Use-case:** Establish a prompt delimiter for delimited continuations
 (`compile/shift`). The body is evaluated with a prompt on the dynamic chain;
@@ -22,12 +15,9 @@ emits `POP_PROMPT 0`.
 
 ```scheme
 ;; (reset (+ 1 (shift k (k 5)))) => 6
-(compile/reset
-  (compile/call +
+(reset
+  (+
     1
-    (compile/shift k (compile/call k 5))))
+    (shift k (k 5))))
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

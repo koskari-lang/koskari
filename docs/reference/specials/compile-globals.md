@@ -1,14 +1,7 @@
 # compile/globals
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/globals`
 
-**Syntax:** `(compile/globals)`
+**Syntax:** `(globals)`
 
 **Use-case:** Obtain the module globals namespace for the current frame:
 walk `KosNamespace_PARENT` from the frame's namespace to the outermost parent
@@ -22,13 +15,9 @@ stack as the expression's value. Any arguments are rejected with `SpecialError`.
 
 ```scheme
 ;; Module globals namespace for the current frame
-(compile/globals)
+(globals)
 ```
 
 **Implementation:** `koskari/compile/specials/variables.special_globals`
 
-**Tests:** `tests/compile/specials/test_namespace_specials.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

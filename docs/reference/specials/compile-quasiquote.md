@@ -1,14 +1,7 @@
 # compile/quasiquote
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/quasiquote`
 
-**Syntax:** ``EXPR` (reader shorthand) or `(compile/quasiquote EXPR)`
+**Syntax:** ``EXPR` (reader shorthand) or `(quasiquote EXPR)`
 
 **Use-case:** Quasi-quotation: construct a pair structure at compile time with
 selected sub-expressions evaluated at runtime. Inside the body, `,EXPR`
@@ -17,21 +10,21 @@ flattens a list into the surrounding list.
 
 **Reader shorthands:**
 
-- ``EXPR` → `(compile/quasiquote EXPR)`
-- `,EXPR` → `(compile/unquote EXPR)` (only valid inside a quasiquote body)
-- `,@EXPR` → `(compile/unquote-splicing EXPR)` (only valid inside a quasiquote body)
-- ``HEAD: BODY` → `(compile/quasiquote-block (:block: ...))` (block quasiquote; see below)
+- ``EXPR` → `(quasiquote EXPR)`
+- `,EXPR` → `(unquote EXPR)` (only valid inside a quasiquote body)
+- `,@EXPR` → `(unquote-splicing EXPR)` (only valid inside a quasiquote body)
+- ``HEAD: BODY` → `(quasiquote-block (:block: ...))` (block quasiquote; see below)
 
 **Behaviour:** One argument required. The compiler walks the expression
 recursively at a nesting *level* (starting at 0):
 
 - **Atoms and constants** (symbols, keywords, numbers, nil): emitted as `CONST`.
-- `**(compile/unquote INNER)`** at level 0: `INNER` is compiled normally
+- `**(unquote INNER)`** at level 0: `INNER` is compiled normally
 (evaluated at runtime); its result becomes that position's value.
-- `**(compile/unquote INNER)**` at level > 0: the unquote form is reconstructed
+- `**(unquote INNER)**` at level > 0: the unquote form is reconstructed
 literally as a pair — `CONST compile/unquote`, recurse on INNER at level − 1,
 `PROPER 2`.
-- `**(compile/quasiquote INNER)**` at any level: reconstructed literally at
+- `**(quasiquote INNER)**` at any level: reconstructed literally at
 level + 1.
 - **Proper lists**: walked element by element. Consecutive non-splice elements
 are accumulated into *segments*:
@@ -76,13 +69,9 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 `(a . 42)     ; → (a . 42)
 
 ;; Nested quasiquote — inner unquote is NOT evaluated at outer level
-``(a ,(+ 1 2)) ; → (compile/quasiquote (a (compile/unquote (+ 1 2))))
+``(a ,(+ 1 2)) ; → (quasiquote (a (unquote (+ 1 2))))
 ```
 
 **Implementation:** `koskari/compile/specials/quasiquote.py`
 
-**Tests:** `tests/compile/specials/test_quasiquote.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

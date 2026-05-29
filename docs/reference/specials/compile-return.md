@@ -1,14 +1,7 @@
 # compile/return
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/return`
 
-**Syntax:** `(compile/return)` or `(compile/return VAL)`
+**Syntax:** `(return)` or `(return VAL)`
 
 **Use-case:** Return a value from the current function and transfer control back to
 the caller. With no argument, returns `None`.
@@ -24,10 +17,7 @@ event `KOS_EV_RETURN` and the evaluator exits.
 **Examples:**
 
 ```scheme
-(compile/return)
-(compile/return result)
+(return)
+(return result)
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

@@ -1,11 +1,4 @@
 # KOS_OP_EXCEPTION_MATCH
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Pop TOS (exception type or tuple of types). Push True if current exception matches that value, else False.
@@ -22,6 +15,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 12. Variables by name
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

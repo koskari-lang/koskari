@@ -1,14 +1,7 @@
 # compile/car
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/car`
 
-**Syntax:** `(compile/car EXPR)`
+**Syntax:** `(car EXPR)`
 
 **Use-case:** Compile code that evaluates EXPR (must produce a pair), then
 pushes the car of that pair. One argument.
@@ -22,9 +15,6 @@ with the sum of their counts (same for **CDR**).
 **Example:**
 
 ```scheme
-(compile/car (compile/cons 1 nil))   ; → 1
+(car (cons 1 nil))   ; → 1
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

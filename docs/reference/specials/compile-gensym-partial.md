@@ -1,21 +1,14 @@
 # compile/gensym-partial
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/gensym-thunk`
 
-**Syntax:** `(compile/gensym-thunk BODY ...)`
+**Syntax:** `(gensym-thunk BODY ...)`
 
 **Reader — thunk syntax:** In s-expression mode, `{BODY ...}` is **thunk syntax**
-(also called **the thunk form**). It reads as `(compile/gensym-thunk BODY ...)`
+(also called **the thunk form**). It reads as `(gensym-thunk BODY ...)`
 — the same special with no extra macro. Nested `{...}` inside `BODY` read as
-nested `(compile/gensym-thunk ...)`. The head `gensym-partial` also resolves
+nested `(gensym-thunk ...)`. The head `gensym-partial` also resolves
 to this special via the usual `compile/` prefix. See
-[archive/brace-lambdas-gensym-partial.md](../../design/archive/brace-lambdas-gensym-partial.md)
+archive/brace-lambdas-gensym-partial.md
 for the full language design.
 
 **Use-case:** Short anonymous callables with inferred parameters: positional
@@ -34,14 +27,14 @@ list segments (`keyword("*")` and the rest gensym) for interop with
 After rewriting, placeholders must be contiguous `%1` … `%N`; otherwise
 `SpecialError`. Builds inferred **formals** for `compile/lambda` (positionals in
 order, then `*` and rest if `...` appeared) and returns the source form
-`(compile/lambda FORMALS . BODY)` for the compiler to compile (same lowering
+`(lambda FORMALS . BODY)` for the compiler to compile (same lowering
 pattern as other macros that expand to a lambda).
 
 **Examples:**
 
 ```scheme
 ;; Unary: { (+ %1 1) }  =>  thunk taking one argument
-(compile/gensym-thunk (+ %1 1))
+(gensym-thunk (+ %1 1))
 
 ;; Thunk syntax in source
 { (print "hello") }
@@ -50,11 +43,7 @@ pattern as other macros that expand to a lambda).
 { 99 }
 
 ;; Variadic rest: ... in the body becomes * and a rest formal
-(compile/gensym-thunk (f ...))
+(gensym-thunk (f ...))
 ```
 
-**Tests:** `tests/compile/specials/test_thunk.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

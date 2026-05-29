@@ -1,14 +1,7 @@
 # compile/let/cc
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/let/cc`
 
-**Syntax:** `(compile/let/cc K BODY ...)`
+**Syntax:** `(let/cc K BODY ...)`
 
 **Use-case:** Koskari-specific undelimited continuation capture. Pushes a new
 child namespace, captures the current continuation and binds it to the name `K`
@@ -27,15 +20,11 @@ namespace. `K` is not visible after the `compile/let/cc` form.
 
 ```scheme
 ;; Bind escape continuation k, use it inside the body
-(compile/let/cc k
-  (compile/begin
-    (compile/call do-step-one)
-    (compile/call k "done")
-    (compile/call never-reached)))
+(let/cc k
+  (begin
+    (do-step-one)
+    (k "done")
+    (never-reached)))
 ```
 
-**Tests:** `tests/compile/specials/test_call_cc.py`
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

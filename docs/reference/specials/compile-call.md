@@ -1,14 +1,7 @@
 # compile/call
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/SPECIALS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `compile/call`
 
-**Syntax:** `(compile/call CALLEE ARG ...)`
+**Syntax:** `(CALLEE ARG ...)`
 
 Argument specifiers (order matters; analogous to Python 3.5+):
 
@@ -26,14 +19,14 @@ Positionals may interleave with `*:` (star args); keywords may interleave with
 `**:`; a keyword cannot be followed by `*:` or a positional. Full form examples:
 
 ```scheme
-(compile/call fn a b *: more x: xval y: yval **: kwargs)
+(fn a b *: more x: xval y: yval **: kwargs)
 ```
 
 is equivalent to `fn(a, b, *more, x=xval, y=yval, **kwargs)` in Python.
 
 ```scheme
-(compile/call fn a *: bargs c *: dargs)
-(compile/call fn x: 1 **: kw1 y: 2 **: kw2)
+(fn a *: bargs c *: dargs)
+(fn x: 1 **: kw1 y: 2 **: kw2)
 ```
 
 are equivalent to `fn(a, *bargs, c, *dargs)` and
@@ -43,13 +36,13 @@ are equivalent to `fn(a, *bargs, c, *dargs)` and
 argument, then emits CALL (positional only), CALL_NAMES (positional + keywords),
 or CALL_STAR (any use of `*:` or `**:`).
 
-**Behaviour:** If the callee is `(attr OBJ SYM)` or `(compile/attr OBJ SYM)`,
-the form expands to `(compile/call-attr OBJ SYM ARGS...)` and that form is
+**Behaviour:** If the callee is `(attr OBJ SYM)` or `(attr OBJ SYM)`,
+the form expands to `(call-attr OBJ SYM ARGS...)` and that form is
 compiled instead. If the callee is a symbol whose name begins with `.` and
 there is at least one argument, the first argument is treated as the receiver
 `OBJ` and the remainder as `ARGS...`; the leading dot is stripped from the
 callee symbol to obtain `SYM`, and the form expands to
-`(compile/call-attr OBJ SYM ARGS...)` the same way.
+`(call-attr OBJ SYM ARGS...)` the same way.
 
 Otherwise, compiles the first subform (the callee), then parses the remaining
 forms with `gather_parameters` into positionals and
@@ -62,30 +55,27 @@ by the compiler.
 
 ```scheme
 ;; Positional
-(compile/call add 1 2)
-(compile/call my-func a b c)
+(add 1 2)
+(my-func a b c)
 
 ;; Keyword (KEY: VAL)
-(compile/call fn 1 2 name: "x")
+(fn 1 2 name: "x")
 
 ;; Star args (*: EXPR) and star kwargs (**: EXPR)
-(compile/call apply-fn *: args)
-(compile/call merge *: pos **: kw)
-(compile/call fn a b *: rest x: 1 **: extra)
+(apply-fn *: args)
+(merge *: pos **: kw)
+(fn a b *: rest x: 1 **: extra)
 
 ;; Interleaved (Python 3.5+ style)
-(compile/call fn a *: bargs c *: dargs)
-(compile/call fn x: 1 **: kw1 y: 2 **: kw2)
+(fn a *: bargs c *: dargs)
+(fn x: 1 **: kw1 y: 2 **: kw2)
 
-;; Method call via attr expansion: (compile/call (attr obj m) args) → compile/call-attr
-(compile/call (attr s upper))
-(compile/call (compile/attr obj split sep) "-")
+;; Method call via attr expansion: ((attr obj m) args) → compile/call-attr
+((attr s upper))
+((attr obj split sep) "-")
 
-;; Dot-prefix callee: (compile/call .m obj args...) → compile/call-attr (same as attr)
-(compile/call .upper s)
-(compile/call .split s "-")
+;; Dot-prefix callee: (.m obj args...) → compile/call-attr (same as attr)
+(.upper s)
+(.split s "-")
 ```
 
----
-
-Source: [design/SPECIALS.md](../../design/SPECIALS.md)

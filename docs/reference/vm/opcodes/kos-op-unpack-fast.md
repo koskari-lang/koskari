@@ -1,11 +1,4 @@
 # KOS_OP_UNPACK_FAST
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA (`FASTVAR`, `FASTVAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` =
   fast local slot indices.
 - **Status**: Implemented. (`koskari/lib/opcode/UNPACK_FAST.c`)
@@ -24,6 +17,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 5. Constants
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

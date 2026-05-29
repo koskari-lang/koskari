@@ -1,11 +1,4 @@
 # compile/dict-each
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
-```
-
 **Syntax:** **`(dict-each [BINDING SEQ] key: KEY value: VALUE)`** (with optional **`when:`** /
 **`unless:`**); or **`(dict-each [BINDING SEQ] BODY …)`** for pair-producing bodies.
 
@@ -14,6 +7,3 @@ Adapted from design/MACROS.md. Stability: evolving unless noted otherwise.
 
 ## koskari/bootstrap/basics.ki
 
----
-
-Source: [design/MACROS.md](../../design/MACROS.md)

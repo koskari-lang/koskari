@@ -1,11 +1,4 @@
 # KOS_OP_CHECK_EXCEPTION
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: Pop TOS (exception type or tuple of types). If current exception matches that value, leave PC unchanged; else set PC to arg (branch to next handler).
@@ -42,9 +35,6 @@ compare the scrutinee **`s`** at TOS to an RHS from the extra row. On
 **match**, **`s`** is popped and the PC jumps to **`a0`**. On **mismatch**,
 the stack is **unchanged** and execution falls through.
 
-See [archive/switch-eq-opcodes.md](../../../design/archive/switch-eq-opcodes.md) for family rationale and the
+See archive/switch-eq-opcodes.md for family rationale and the
 surface `compile/switch` form. The full SWITCH_EQ family is implemented.
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

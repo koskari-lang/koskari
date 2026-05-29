@@ -1,11 +1,4 @@
 # KOS_OP_SWITCH_EQ_FAST
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: EXTRA. Schema `(LABEL, FASTVAR, NOARG, NOARG)`.
 - **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `rhs = KosNamespace_FastDeref(ns, a1)`, then
@@ -15,6 +8,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 - **Compiler form:** tuple arg `("label", slot_index, 0, 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST.c`
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

@@ -1,11 +1,4 @@
 # KOS_OP_ATTR_CLEAR
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: CONST. Arg = constant pool index of attribute name.
 - **Status**: Implemented.
 - **Stack**: `[..., obj] → [...]`. Delete attribute.
@@ -18,8 +11,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 0     | VAR        | 0   | 0 ('obj') | stack: [..., obj] |
 | 1     | ATTR_CLEAR | 1   | 1 ('attr')| del obj.attr |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

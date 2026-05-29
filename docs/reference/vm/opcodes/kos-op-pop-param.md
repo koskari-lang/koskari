@@ -1,11 +1,4 @@
 # KOS_OP_POP_PARAM
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: No change.
@@ -16,6 +9,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 
 ## 24. Sentinel
 
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

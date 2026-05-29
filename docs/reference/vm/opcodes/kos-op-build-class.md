@@ -1,11 +1,4 @@
 # KOS_OP_BUILD_CLASS
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
-```
-
 - **Style**: NOARG. Argument unused.
 - **Status**: Implemented.
 - **Stack**: Expects `[..., pos, ns]` with TOS = ns, TOS-1 = pos. Pops ns, pos.
@@ -28,8 +21,3 @@ Adapted from design/OPCODES.md. Stability: evolving unless noted otherwise.
 | 5     | BUILD_CLASS| 0   | 0        | metaclass(name,bases,dict); push cls |
 | 6     | RETURN     | 1   | 1        | |
 
----
-
----
-
-Source: [design/OPCODES.md](../../../design/OPCODES.md)

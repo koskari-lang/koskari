@@ -1,11 +1,4 @@
 # layout/macro-rules
-
-```{admonition} Reference status
-:class: note
-
-Adapted from design/LAYOUTS.md. Stability: evolving unless noted otherwise.
-```
-
 **Symbol:** `layout/macro-rules`
 
 **Use-case:** Block syntax for the `macro-rules` transformer within a
@@ -27,6 +20,3 @@ macro-rules [LIT ...]:
 
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_macro_rules`
 
----
-
-Source: [design/LAYOUTS.md](../../design/LAYOUTS.md)
