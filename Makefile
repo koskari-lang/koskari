@@ -180,6 +180,11 @@ typecheck:  ## Run type checking (mypy) via tox
 	@echo "Running mypy..."
 	@tox -qe mypy
 
+docs:  ## Build user documentation via tox
+	@$(call checkfor,tox)
+	@echo "Building documentation..."
+	@tox -qe sphinx
+
 
 ##@ Cleanup
 
