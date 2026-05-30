@@ -43,7 +43,7 @@ class TestBadGeneratorReproducer(unittest.IsolatedAsyncioTestCase):
     """
 
     async def load_module(self):
-        mod = await new_module('tests.reproducers.life_repro')
+        mod = new_module('tests.reproducers.life_repro')
         init_module(mod, os.path.abspath(_LIFE_KI))
         await load_module_async(mod)
         return mod

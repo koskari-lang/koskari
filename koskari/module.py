@@ -16,10 +16,9 @@ koskari.importer.module
 
 Module lifecycle for Koskari source files.
 
-Provides new_module, init_module, load_module_async, and a parallel demand
-chain (new_module_demand, load_module_demand) which drive execution via
-demand_call instead of coroutines.  The loader may use either path; swapping
-is a one-line change in exec_module.
+Provides new_module, init_module, load_module_async, and load_module_demand.
+new_module is synchronous and copies parent bindings from koskari.builtins.
+Module body loading may use the async or demand execution path.
 
 Each top-level expression is read, compiled to a Code object, executed as a
 koskari expression coroutine (async path) or via demand_call (demand path),
@@ -53,7 +52,6 @@ __all__ = (
     'load_module_demand',
     'load_module_kio_async',
     'load_module_kio_demand',
-    'new_module_demand',
 )
 
 
@@ -63,50 +61,33 @@ MODULE_LOAD_FACET_NAMES = (
 )
 
 
-async def new_module(name, package=None, system=False):
+def public_vars(obj):
     """
-    Create a new koskari Module with an initialised ModuleNamespace.
+    Return a shallow dict of public attributes from obj
 
-    The namespace receives a fresh builtins dict from make_builtins() and
-    has the module name stored as '__name__'.
+    Names starting with ``__`` are omitted.
+    """
+
+    return {k: v for k, v in vars(obj).items() if not k.startswith('__')}
+
+
+def new_module(name, package=None, system=False):
+    """
+    Create a new koskari Module with an initialised ModuleNamespace
+
+    Parent bindings are copied from the loaded koskari.builtins Python
+    module (bootstrap registry plus basics.ki).  No event loop or await
+    is required.
 
     :param name: fully-qualified module name string
     :param package: parent package name string, or None
+    :param system: when True, register the module in sys.modules
     :return: koskari Module instance
     """
 
-    from .bootstrap import make_builtins
+    import koskari.builtins as builtins
 
-    bltns = await make_builtins()
-    ns = ModuleNamespace(name, bltns)
-    module = Module(ns)
-
-    ns['__name__'] = name
-    if package is not None:
-        ns['__package__'] = package
-
-    if system:
-        sys.modules[name] = module
-
-    return module
-
-
-def new_module_demand(name, package=None, system=False):
-    """
-    Create a new koskari Module with an initialised ModuleNamespace (demand path).
-
-    Same as new_module but uses make_builtins_demand() so no event loop or
-    await is required.  Used by the loader's exec_module_demand path.
-
-    :param name: fully-qualified module name string
-    :param package: parent package name string, or None
-    :return: koskari Module instance
-    """
-
-    from .bootstrap import make_builtins_demand
-
-    bltns = make_builtins_demand()
-    ns = ModuleNamespace(name, bltns)
+    ns = ModuleNamespace(name, public_vars(builtins))
     module = Module(ns)
 
     ns['__name__'] = name

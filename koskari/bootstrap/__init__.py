@@ -24,11 +24,10 @@ Registration hooks for names merged into the Koskari builtins dict.
 
 
 import operator as _op
-import sys
 from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from os.path import dirname, join
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    MemoizedRef, Module, ModuleNamespace, ParamRef, Ref, apply,
@@ -54,8 +53,6 @@ __all__ = (
 # registry filled via the `@builtin` decorator
 _BUILTIN_REGISTRY: Dict[str, Any] = {}
 
-# cache of the builtins dict, None is a sentinel for uninitialized
-_BUILTINS_CACHE: Optional[Dict[str, Any]] = None
 
 # order-specific sources for constructing the builtins
 _BUILTINS_SOURCES = (
@@ -255,100 +252,67 @@ def make_bootstrap():
     return bltns
 
 
+def _init_ns():
+    """
+    Create a ModuleNamespace pre-filled with the Python bootstrap registry
+    """
+
+    bootstrap = make_bootstrap()
+    ns = ModuleNamespace("koskari.builtins", {})
+
+    for name, val in bootstrap.items():
+        ns[name] = val
+
+    ns['__name__'] = 'koskari.builtins'
+    ns['__package__'] = 'koskari'
+
+    return ns
+
+
 async def make_builtins():
     """
-    Assemble the full builtins dict (bootstrap + basics.ki).
+    Assemble the full builtins module (bootstrap registry plus basics.ki)
 
-    Loads basics.ki using bootstrap as its builtins, merges both into a
-    single dict, caches the result, and returns it.  Subsequent calls
-    return the cached dict.
+    Uses load_module_async to evaluate basics.ki.  Prefer importing
+    koskari.builtins for normal use; this helper remains for callers that
+    need a koskari Module handle assembled on the async path.
 
-    :return: dict of builtin name -> value
+    :return: koskari Module with bootstrap and basics.ki bindings in its namespace
     """
 
-    global _BUILTINS_CACHE
-    if _BUILTINS_CACHE is not None:
-        return _BUILTINS_CACHE
+    from ..module import load_module_async
 
-    import koskari
+    ns = _init_ns()
+    module = Module(ns)
 
-    if koskari.builtins is None:
-        from ..module import load_module_async
-        bootstrap = make_bootstrap()
-        ns = ModuleNamespace("koskari.basics", {})
-        module = Module(ns)
+    for src in _BUILTINS_SOURCES:
+        ns['__file__'] = join(dirname(__file__), src)
+        await load_module_async(module)
 
-        for name, val in bootstrap.items():
-            ns[name] = val
-
-        ns['__name__'] = 'koskari.builtins'
-        ns['__package__'] = 'koskari'
-
-        for src in _BUILTINS_SOURCES:
-            ns['__file__'] = join(dirname(__file__), src)
-            await load_module_async(module)
-
-        # final fake setup
-        sys.modules['koskari.builtins'] = module
-        koskari.builtins = module
-
-    for key, val in vars(module).items():
-        if not key.startswith('__'):
-            try:
-                bootstrap[key] = val.deref()
-            except Exception:
-                pass
-
-    _BUILTINS_CACHE = bootstrap
-    return bootstrap
+    return module
 
 
 def make_builtins_demand():
     """
-    Assemble the full builtins dict (bootstrap + basics.ki) via the demand path.
+    Assemble the full builtins module (bootstrap registry plus basics.ki)
 
-    Same as make_builtins but uses load_module_demand to load basics.ki so no
-    event loop or await is required.  Shares _BUILTINS_CACHE with make_builtins;
-    whichever path runs first populates the cache.
+    Same as make_builtins but uses load_module_demand so no event loop or
+    await is required.  koskari.builtins calls this at import time via
+    _setup().
 
-    :return: dict of builtin name -> value
+    :return: koskari Module with bootstrap and basics.ki bindings in its namespace
     """
 
-    global _BUILTINS_CACHE
-    if _BUILTINS_CACHE is not None:
-        return _BUILTINS_CACHE
+    from ..module import load_module_demand
 
-    import koskari
+    ns = _init_ns()
+    module = Module(ns)
 
-    if koskari.builtins is None:
-        from ..module import load_module_demand
-        bootstrap = make_bootstrap()
-        ns = ModuleNamespace("koskari.basics", {})
-        module = Module(ns)
+    for src in _BUILTINS_SOURCES:
+        ns['__file__'] = join(dirname(__file__), src)
+        load_module_demand(module)
 
-        for name, val in bootstrap.items():
-            ns[name] = val
-
-        ns['__name__'] = 'koskari.builtins'
-        ns['__package__'] = 'koskari'
-
-        for src in _BUILTINS_SOURCES:
-            ns['__file__'] = join(dirname(__file__), src)
-            load_module_demand(module)
-
-        # final fake setup
-        sys.modules['koskari.builtins'] = module
-        koskari.builtins = module
-
-    for key, val in vars(module).items():
-        if not key.startswith('__'):
-            try:
-                bootstrap[key] = val.deref()
-            except Exception:
-                pass
-
-    _BUILTINS_CACHE = bootstrap
-    return bootstrap
+    return module
 
 
 def builtin(name: str, *aliases: str):

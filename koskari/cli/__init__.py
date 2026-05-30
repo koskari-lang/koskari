@@ -471,7 +471,7 @@ async def cli_async(options):
         sys.path.insert(0, '.')
 
     with Domain():
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
         p = ParamRef("*interactive*")
         p.store(options.interactive)
 

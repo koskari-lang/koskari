@@ -66,7 +66,7 @@ make install
 Or for development:
 
 ```bash
-uv install -e .[prompt_toolkit]
+uv install -e .[repl]
 uv run koskari
 ```
 

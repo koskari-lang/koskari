@@ -38,6 +38,7 @@ from koskari.module import new_module
 
 import pytest
 
+
 pytestmark = pytest.mark.phase_cli
 
 
@@ -116,7 +117,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
     async def test_hello_prints_to_stdout(self):
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
         captured = io.StringIO()
         orig = sys.stdout
         sys.stdout = captured
@@ -129,7 +130,7 @@ class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
     async def test_define_and_print_produces_42(self):
 
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
 
         captured = io.StringIO()
         orig = sys.stdout
@@ -143,7 +144,7 @@ class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_run_file_raises_system_exit(self):
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
         with self.assertRaises(SystemExit) as ctx:
             await run_file_async(mod, _script('exit_code.ki'))
         self.assertEqual(42, ctx.exception.code)
@@ -168,7 +169,7 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
             except StopIteration:
                 raise EOFError
 
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
         await repl_async(
             mod,
             prompter=prompter,

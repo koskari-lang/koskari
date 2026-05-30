@@ -50,7 +50,7 @@ class TestSmokeReproducer(unittest.IsolatedAsyncioTestCase):
     """
 
     async def test_smoke_script_prints_computed_value(self):
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
         captured = io.StringIO()
         orig = sys.stdout
         sys.stdout = captured

@@ -22,9 +22,6 @@ koskari - A LISP dialect for Python
 
 import koskari.importer as importer
 
-# this is a placeholder for the builtins module which is virtual
-# and produced by the bootstrap process
-builtins = None
 
 importer.install()
 

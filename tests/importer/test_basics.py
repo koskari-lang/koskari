@@ -12,17 +12,16 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.importer.basics (koskari-written builtins in basics.ki)
+Tests for macros and bindings from koskari.builtins (basics.ki)
 
-Tests for compile/set!, compile/ref (and other macros) that require the
-full builtins (make_builtins) to be loaded.
+Covers compile/set!, compile/ref, and related macros that require
+import koskari.builtins so basics.ki has been loaded.
 """
 
 
 from types import SimpleNamespace
 
 from koskari.compile import Compiler
-from koskari.bootstrap import make_builtins, make_builtins_demand
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
 
@@ -37,36 +36,42 @@ class TestBasicsModuleLoads(unittest.IsolatedAsyncioTestCase):
 
     async def test_basics_module_loads(self):
         """
-        make_builtins loads basics.ki; compile/set! from basics.ki is present
+        koskari.builtins includes compile/set! from basics.ki after import
         """
-        builtins = await make_builtins()
-        self.assertIn('compile/set!', builtins, 'compile/set! from basics.ki should be in builtins')
+
+        import koskari.builtins as builtins
+        bltns = vars(builtins)
+
+        self.assertIn('compile/set!', bltns, 'compile/set! from basics.ki should be in builtins')
 
 
 class TestMakeBuiltinsDemand(unittest.IsolatedAsyncioTestCase):
-    """Tests for make_builtins_demand (demand path, shares cache with make_builtins)."""
+    """
+    Tests that import koskari.builtins exposes bootstrap and basics.ki bindings
+    """
 
     def test_make_builtins_demand_returns_builtins_dict(self):
-        builtins = make_builtins_demand()
-        self.assertIn('cons', builtins)
-        self.assertIn('compile/set!', builtins)
+        import koskari.builtins as builtins
+        bltns = vars(builtins)
 
-    async def test_shared_cache_with_make_builtins(self):
-        demand_builtins = make_builtins_demand()
-        async_builtins = await make_builtins()
-        self.assertIs(demand_builtins, async_builtins,
-                      'make_builtins and make_builtins_demand share _BUILTINS_CACHE')
+        self.assertIn('cons', bltns)
+        self.assertIn('compile/set!', bltns)
 
 
 class TestRefMacro(unittest.IsolatedAsyncioTestCase):
     """
-    Tests for the compile/ref macro in basics.ki. Requires make_builtins
-    so the macro is present for expansion.
+    Tests for the compile/ref macro in basics.ki
+
+    Requires import koskari.builtins so the macro is present for expansion.
     """
 
-    async def compile_expr(self, src_str, lineno=1, **defns):
-        bltns = dict(await make_builtins())
-        bltns.update(defns)
+    def compile_expr(self, src_str, lineno=1, **defns):
+        import koskari.builtins as builtins
+        bltns = vars(builtins)
+        if defns:
+            bltns = dict(bltns)
+            bltns.update(defns)
+
         mod_ns = ModuleNamespace("test", bltns)
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
@@ -83,7 +88,7 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
         def deref(r):
             return r.deref()
 
-        expr, mod = await self.compile_expr(src_str, deref=deref)
+        expr, mod = self.compile_expr(src_str, deref=deref)
         result = await expr()
         self.assertEqual(10, result)
 
@@ -96,7 +101,7 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
         def deref(r):
             return r.deref()
 
-        expr, mod = await self.compile_expr(src_str, obj=obj, deref=deref)
+        expr, mod = self.compile_expr(src_str, obj=obj, deref=deref)
         result = await expr()
         self.assertEqual(5, result)
 
@@ -109,7 +114,7 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
         def deref(r):
             return r.deref()
 
-        expr, mod = await self.compile_expr(src_str, obj=obj, deref=deref)
+        expr, mod = self.compile_expr(src_str, obj=obj, deref=deref)
         result = await expr()
         self.assertEqual(7, result)
 
@@ -122,26 +127,32 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
         def deref(r):
             return r.deref()
 
-        expr, mod = await self.compile_expr(src_str, lst=lst, deref=deref)
+        expr, mod = self.compile_expr(src_str, lst=lst, deref=deref)
         result = await expr()
         self.assertEqual(20, result)
 
 
 class TestLetStarMacro(unittest.IsolatedAsyncioTestCase):
     """
-    Tests for compile/let* from basics.ki (nested let expansion). Requires
-    make_builtins so the macro is present for expansion.
+    Tests for compile/let* from basics.ki (nested let expansion)
+
+    Requires import koskari.builtins so the macro is present for expansion.
     """
 
-    async def compile_expr(self, src_str, lineno=1, **defns):
-        bltns = dict(await make_builtins())
-        bltns.update(defns)
+    def compile_expr(self, src_str, lineno=1, **defns):
+        import koskari.builtins as builtins
+        bltns = vars(builtins)
+        if defns:
+            bltns = dict(bltns)
+            bltns.update(defns)
+
         mod_ns = ModuleNamespace("test", bltns)
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
         fragment = compiler.full_compile(source)
         return fragment.as_expression(mod_ns), module
+
 
     async def test_let_star_single_binding(self):
         src_str = """
@@ -152,7 +163,7 @@ class TestLetStarMacro(unittest.IsolatedAsyncioTestCase):
         def add(x, y):
             return x + y
 
-        expr, mod = await self.compile_expr(src_str, add=add)
+        expr, mod = self.compile_expr(src_str, add=add)
         result = await expr()
         self.assertEqual(1, result)
 
@@ -165,20 +176,25 @@ class TestLetStarMacro(unittest.IsolatedAsyncioTestCase):
         def add(x, y):
             return x + y
 
-        expr, mod = await self.compile_expr(src_str, add=add)
+        expr, mod = self.compile_expr(src_str, add=add)
         result = await expr()
         self.assertEqual(2, result)
 
 
 class TestConditionalMacros(unittest.IsolatedAsyncioTestCase):
     """
-    Tests for the compile/if, compile/when, compile/unless macros in basics.ki.
-    Requires make_builtins so the macros are present for expansion.
+    Tests for compile/if, compile/when, and compile/unless from basics.ki
+
+    Requires import koskari.builtins so the macros are present for expansion.
     """
 
-    async def compile_expr(self, src_str, lineno=1, **defns):
-        bltns = dict(await make_builtins())
-        bltns.update(defns)
+    def compile_expr(self, src_str, lineno=1, **defns):
+        import koskari.builtins as builtins
+        bltns = vars(builtins)
+        if defns:
+            bltns = dict(bltns)
+            bltns.update(defns)
+
         mod_ns = ModuleNamespace("test", bltns)
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
@@ -189,31 +205,31 @@ class TestConditionalMacros(unittest.IsolatedAsyncioTestCase):
 
     async def test_if_then_else(self):
         src_str_t = "(compile/if True 1 2)"
-        expr, mod = await self.compile_expr(src_str_t)
+        expr, mod = self.compile_expr(src_str_t)
         self.assertEqual(await expr(), 1)
 
         src_str_f = "(compile/if False 1 2)"
-        expr, mod = await self.compile_expr(src_str_f)
+        expr, mod = self.compile_expr(src_str_f)
         self.assertEqual(await expr(), 2)
 
 
     async def test_when(self):
         src_str_t = "(compile/when True 42)"
-        expr, mod = await self.compile_expr(src_str_t)
+        expr, mod = self.compile_expr(src_str_t)
         self.assertEqual(await expr(), 42)
 
         src_str_f = "(compile/when False 42)"
-        expr, mod = await self.compile_expr(src_str_f)
+        expr, mod = self.compile_expr(src_str_f)
         self.assertEqual(await expr(), None)
 
 
     async def test_unless(self):
         src_str_f = "(compile/unless False 42)"
-        expr, mod = await self.compile_expr(src_str_f)
+        expr, mod = self.compile_expr(src_str_f)
         self.assertEqual(await expr(), 42)
 
         src_str_t = "(compile/unless True 42)"
-        expr, mod = await self.compile_expr(src_str_t)
+        expr, mod = self.compile_expr(src_str_t)
         self.assertEqual(await expr(), None)
 
 

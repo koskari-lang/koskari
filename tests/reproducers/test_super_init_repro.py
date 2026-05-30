@@ -41,7 +41,7 @@ class TestSuperInitReproducer(unittest.IsolatedAsyncioTestCase):
     """
 
     async def load_module(self):
-        mod = await new_module('tests.reproducers.super_init_repro')
+        mod = new_module('tests.reproducers.super_init_repro')
         init_module(mod, os.path.abspath(_SUPER_INIT_KI))
         await load_module_async(mod)
         return mod

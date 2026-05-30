@@ -25,7 +25,7 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 from ..compile.compiler import Compiler, CompilerMode
 from ..lib import demand_call
 from ..module import (attach_module_load_facets, detach_module_load_facets,
-                      init_module, new_module_demand)
+                      init_module, new_module)
 from ..reader import (READ_EOF, IndentAwareStream, LayoutReader, source_open,
                       source_str)
 from .codex import KioFile
@@ -100,7 +100,7 @@ def compile_ki_file_to_kio(
 
     display = source_filename if source_filename is not None else ki_path
 
-    mod = new_module_demand(mod_name, system=False)
+    mod = new_module(mod_name, system=False)
     init_module(mod, ki_path, spec=None)
     compiler = Compiler(mod_name, mod, filename=display)
 
@@ -130,7 +130,7 @@ def compile_ki_source_to_kio(
 
     display = source_filename if source_filename is not None else '<compile_ki_source>'
 
-    mod = new_module_demand(mod_name, system=False)
+    mod = new_module(mod_name, system=False)
     init_module(mod, display, spec=None)
     compiler = Compiler(mod_name, mod, filename=display)
 
