@@ -27,7 +27,7 @@ define-class NAME (Base1 Base2):
 
 **Examples:**
 
-```scheme
+```koskari
 define-class C:
   x
 ;; → (compile/define-class C () (compile/begin x))

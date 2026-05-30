@@ -21,7 +21,7 @@ with `KOS_CODE_YIELDS`. Full stack and suspension details are in
 
 **Examples:**
 
-```scheme
+```koskari
 (yield-from (items data))
 
 ;; Same consumer-visible values as:

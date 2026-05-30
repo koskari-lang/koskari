@@ -18,13 +18,13 @@ Positionals may interleave with `*:` (star args); keywords may interleave with
 `**:` (star kwargs). All positionals and `*:` must come before any keywords or
 `**:`; a keyword cannot be followed by `*:` or a positional. Full form examples:
 
-```scheme
+```koskari
 (fn a b *: more x: xval y: yval **: kwargs)
 ```
 
 is equivalent to `fn(a, b, *more, x=xval, y=yval, **kwargs)` in Python.
 
-```scheme
+```koskari
 (fn a *: bargs c *: dargs)
 (fn x: 1 **: kw1 y: 2 **: kw2)
 ```
@@ -53,7 +53,7 @@ by the compiler.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Positional
 (add 1 2)
 (my-func a b c)

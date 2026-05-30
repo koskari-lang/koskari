@@ -20,7 +20,7 @@ begin:
 
 **Examples:**
 
-```scheme
+```koskari
 begin:
   (bar)
   (baz)

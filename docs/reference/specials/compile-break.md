@@ -11,7 +11,7 @@ optionally with a result value.
 
 **Examples:**
 
-```scheme
+```koskari
 (break)
 (break 99)
 ```

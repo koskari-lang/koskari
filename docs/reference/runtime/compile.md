@@ -21,7 +21,7 @@ to **`(call compile …)`**. See [compile/compileq](../macros/compile-compileq.m
 
 **Examples:**
 
-```scheme
+```koskari
 (call compile '(lambda [x] (+ x 1)) (locals))
 ```
 

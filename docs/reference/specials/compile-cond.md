@@ -14,7 +14,7 @@ None for the fall-through case.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Empty cond → None
 (cond)
 

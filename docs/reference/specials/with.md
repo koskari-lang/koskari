@@ -23,7 +23,7 @@ interpreter/with-dyn-with.md.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; With binding
 (with [f (open-file path)]
   (read-all f))

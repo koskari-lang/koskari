@@ -59,7 +59,7 @@ tests. This chapter maps that workflow to Koskari.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > koskari> (+ 1 2)
 > 3
 > koskari> (define n 10)

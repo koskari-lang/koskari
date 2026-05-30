@@ -12,7 +12,7 @@
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Positional: before, body, after
 (dyn-wind
   (begin (setup))

@@ -15,7 +15,7 @@ or without the `KOS_OP_` prefix.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Return a constant string
 (bytecode
   [CONST "Hello World"]

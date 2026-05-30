@@ -11,7 +11,7 @@ pieces you will see in almost every Koskari program.
 >
 > **A:** It is a **number** — a kind of value. At the REPL you can type it alone:
 >
-> ```scheme
+> ```koskari
 > koskari> 42
 > ```
 >
@@ -30,7 +30,7 @@ pieces you will see in almost every Koskari program.
 >
 > **A:** Put it in **double quotes**:
 >
-> ```scheme
+> ```koskari
 > "Hello, Koskari!"
 > ```
 >
@@ -69,7 +69,7 @@ pieces you will see in almost every Koskari program.
 > **A:** It starts a **group**. The matching `)` ends the group. Everything
 > between them belongs together:
 >
-> ```scheme
+> ```koskari
 > (+ 1 2)
 > ```
 >
@@ -80,7 +80,7 @@ pieces you will see in almost every Koskari program.
 >
 > **A:** Yes:
 >
-> ```scheme
+> ```koskari
 > (+ 1 (+ 2 3))
 > ```
 >
@@ -95,7 +95,7 @@ pieces you will see in almost every Koskari program.
 > **A:** Koskari allows flexible spacing inside a group. These are the same
 > idea:
 >
-> ```scheme
+> ```koskari
 > (+ 1 2)
 > (+  1   2)
 > ```

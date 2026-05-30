@@ -20,7 +20,7 @@ break target with its value and does not run the else clause.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Simple loop
 (while x
   (append c x)

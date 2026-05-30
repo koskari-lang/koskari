@@ -13,7 +13,7 @@ reader to read the entire block as a raw `:block:` cons with `,`/`,@` unquote
 reader macros active for all header arguments, body forms, and nested
 sub-block headers and bodies.
 
-```scheme
+```koskari
 `begin:
   ,@forms
 ```
@@ -26,7 +26,7 @@ produces:
 
 Peers are represented as sibling `:block:` nodes inside the enclosing body:
 
-```scheme
+```koskari
 `begin:
   if ,cond:
     ,then

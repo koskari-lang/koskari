@@ -12,7 +12,7 @@ part of programming — not a separate skill for “later.”
 > **A:** At the REPL, when a line **finishes with a useful value**, Koskari
 > prints that value so you can see it:
 >
-> ```scheme
+> ```koskari
 > koskari> (+ 1 2)
 > 3
 > ```
@@ -37,7 +37,7 @@ part of programming — not a separate skill for “later.”
 >
 > **A:** Yes. Type an underscore:
 >
-> ```scheme
+> ```koskari
 > koskari> (+ 3 4)
 > 7
 > koskari> _
@@ -54,7 +54,7 @@ part of programming — not a separate skill for “later.”
 >
 > **A:** Koskari cannot read the program. Try:
 >
-> ```scheme
+> ```koskari
 > koskari> ( 1 2 ]
 > ```
 >
@@ -84,7 +84,7 @@ part of programming — not a separate skill for “later.”
 > **A:** Yes. The program can be **readable** but ask for something impossible.
 > Example:
 >
-> ```scheme
+> ```koskari
 > koskari> (/ 1 0)
 > ```
 >
@@ -106,7 +106,7 @@ part of programming — not a separate skill for “later.”
 >
 > **A:** Koskari may wait for the rest of the group. This is fine:
 >
-> ```scheme
+> ```koskari
 > koskari> (+ 1
 > ...> 2)
 > 3

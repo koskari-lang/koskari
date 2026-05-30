@@ -12,7 +12,7 @@ ITER_NEXT for for-each).
 
 **Examples:**
 
-```scheme
+```koskari
 (continue)
 (continue last-value)
 ```

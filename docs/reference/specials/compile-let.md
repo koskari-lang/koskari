@@ -22,7 +22,7 @@ expressions; body compiled with `helper_begin`. Named: rewrite to
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Unnamed let
 (let [[x 1] [y 2]] (+ x y))
 

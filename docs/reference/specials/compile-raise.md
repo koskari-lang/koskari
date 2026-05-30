@@ -11,7 +11,7 @@ emits RAISE 1 (raise the value as exception).
 
 **Examples:**
 
-```scheme
+```koskari
 (raise)
 (raise (ValueError "invalid"))
 ```

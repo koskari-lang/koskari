@@ -19,7 +19,7 @@ treated as opaque data — no layout expansion takes place.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Reader shorthand: produces (:block: (begin) (foo bar)) as data
 'begin:
   foo

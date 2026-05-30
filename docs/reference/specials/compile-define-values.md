@@ -17,7 +17,7 @@ MACROS.md.
 
 **Examples:**
 
-```scheme
+```koskari
 (define-values [a b] (pair 1 2))
 (define-values [a *: b c] seq)
 

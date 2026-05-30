@@ -13,7 +13,7 @@ stack as the expression's value. Any arguments are rejected with `SpecialError`.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Module globals namespace for the current frame
 (globals)
 ```

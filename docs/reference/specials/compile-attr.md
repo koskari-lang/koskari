@@ -10,7 +10,7 @@
 
 **Examples:**
 
-```scheme
+```koskari
 (attr obj "value")
 (attr thing count)
 ```

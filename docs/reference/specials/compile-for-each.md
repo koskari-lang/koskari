@@ -29,7 +29,7 @@ parent stack.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Basic iteration; loop value is None
 (for-each [i items]
   (append result i))

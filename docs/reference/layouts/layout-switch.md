@@ -45,7 +45,7 @@ switch VALUE:
 
 **Examples:**
 
-```scheme
+```koskari
 switch x:
   case [1]:
     "one"

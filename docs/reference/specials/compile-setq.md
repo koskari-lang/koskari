@@ -17,7 +17,7 @@ stores, and related forms.
 
 **Examples:**
 
-```scheme
+```koskari
 (setq x 42)
 (setq counter (+ counter 1))
 ```

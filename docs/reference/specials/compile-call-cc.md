@@ -20,7 +20,7 @@ a different eval context triggers the segmented-transfer path.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Capture and immediately invoke: returns 42
 (call/cc
   (lambda [k]

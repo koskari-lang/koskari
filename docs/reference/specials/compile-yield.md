@@ -20,7 +20,7 @@ consumes the event (freezes the dynamic chain and suspends), sets
 
 **Examples:**
 
-```scheme
+```koskari
 (yield)
 (yield (compute-next))
 ```

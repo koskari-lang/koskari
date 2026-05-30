@@ -11,7 +11,7 @@ None.
 
 **Examples:**
 
-```scheme
+```koskari
 (delq temp)
 ```
 

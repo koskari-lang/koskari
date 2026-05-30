@@ -58,7 +58,7 @@ variations so the pattern sticks.
 >
 > **A:** Predict `40`, then:
 >
-> ```scheme
+> ```koskari
 > koskari> (define width 10)
 > koskari> (define height 4)
 > koskari> (* width height)
@@ -78,7 +78,7 @@ variations so the pattern sticks.
 >
 > **A:** Yes. Each line is a form Koskari runs in order:
 >
-> ```scheme
+> ```koskari
 > (define x 6)
 > (define y 7)
 > (print x y (* x y))

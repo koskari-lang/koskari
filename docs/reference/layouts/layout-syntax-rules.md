@@ -30,7 +30,7 @@ syntax-rules [LIT ...]:
 
 **Examples:**
 
-```scheme
+```koskari
 syntax-rules [x]:
   do-something-with-x:
     (print "no args" x)

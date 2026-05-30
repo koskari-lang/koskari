@@ -13,7 +13,7 @@ The runtime `deref` builtin remains available for higher-order use (e.g.
 
 **Examples:**
 
-```scheme
+```koskari
 (deref r)   ; compiles expr for r, emits DEREF
 *r                  ; reader: (deref r)
 (deref r)           ; runtime call; use when passing deref as first-class fn

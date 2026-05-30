@@ -19,7 +19,7 @@ VALUE, then emits unpack store bytecode via the same helper as unpack-style
 
 **Examples:**
 
-```scheme
+```koskari
 (setq-values [a b] (pair 1 2))
 (setq-values [a *: b c] seq)
 

@@ -12,7 +12,7 @@ the rule in plain language and practices it.
 > **A:** A call is a parenthesized group whose **first word** is the thing to
 > do. The rest are **inputs**:
 >
-> ```scheme
+> ```koskari
 > (print "Hello")
 > ```
 >
@@ -26,7 +26,7 @@ the rule in plain language and practices it.
 >
 > Think, then try at the REPL:
 >
-> ```scheme
+> ```koskari
 > koskari> (+ 1 2)
 > ```
 >
@@ -44,7 +44,7 @@ the rule in plain language and practices it.
 >
 > **A:** Yes:
 >
-> ```scheme
+> ```koskari
 > (+ 1 2 3 4)
 > ```
 >
@@ -63,7 +63,7 @@ the rule in plain language and practices it.
 >
 > **A:** Yes. Use `define`:
 >
-> ```scheme
+> ```koskari
 > koskari> (define x 6)
 > koskari> (define y 7)
 > ```

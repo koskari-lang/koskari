@@ -13,7 +13,7 @@ emits `POP_PROMPT 0`.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; (reset (+ 1 (shift k (k 5)))) => 6
 (reset
   (+

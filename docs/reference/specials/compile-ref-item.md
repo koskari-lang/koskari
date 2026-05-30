@@ -10,7 +10,7 @@ constant-key optimization as compile/item.
 
 **Examples:**
 
-```scheme
+```koskari
 (ref-item lst i)
 ```
 

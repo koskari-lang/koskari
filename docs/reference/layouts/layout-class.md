@@ -29,7 +29,7 @@ class NAME (Base1 Base2):
 
 **Examples:**
 
-```scheme
+```koskari
 class C:
   x
 ;; → (compile/class C () (compile/begin x))

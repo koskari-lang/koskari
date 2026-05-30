@@ -11,7 +11,7 @@ name, then pushes CONST None.
 
 **Examples:**
 
-```scheme
+```koskari
 (set-attr obj "value" 42)
 ```
 

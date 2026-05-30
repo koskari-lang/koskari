@@ -27,7 +27,7 @@ omitted. See [compile/macroexpand-1](../macros/compile-macroexpand-1.md).
 
 **Examples:**
 
-```scheme
+```koskari
 ;; One expansion step using the current globals namespace
 (macroexpand-1 (when condition action))
 

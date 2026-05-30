@@ -10,7 +10,7 @@ Run a minimal Koskari program.
 
 Create `hello.ki`:
 
-```scheme
+```koskari
 (print "Hello, Koskari!")
 ```
 
@@ -24,7 +24,7 @@ koskari hello.ki
 
 Layout style:
 
-```scheme
+```koskari
 print:
   "Hello from a block!"
 ```

@@ -19,7 +19,7 @@ used as a variable).
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Positional only
 (call-attr s upper)
 (call-attr s split sep)

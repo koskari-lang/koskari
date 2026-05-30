@@ -9,7 +9,7 @@
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Single expression: just that value
 (begin (print "hello"))
 

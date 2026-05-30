@@ -14,7 +14,7 @@ Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Capture k; invoke immediately
 (reset
   (shift k

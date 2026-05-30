@@ -16,7 +16,7 @@ event `KOS_EV_RETURN` and the evaluator exits.
 
 **Examples:**
 
-```scheme
+```koskari
 (return)
 (return result)
 ```

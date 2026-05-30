@@ -28,7 +28,7 @@ paths).
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Type-only catch
 (try (risky-call)
   [[Exception] (handle-exception)])

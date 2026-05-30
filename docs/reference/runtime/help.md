@@ -25,7 +25,7 @@ for the name **`help`** itself. With one argument, **`obj`** is quoted and
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Help for the help function itself
 (help)
 

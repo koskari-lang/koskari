@@ -45,7 +45,7 @@ finally:
 
 **Examples:**
 
-```scheme
+```koskari
 try:
   x
 except [Exception]:

@@ -11,7 +11,7 @@ stack is a Ref for that name.
 
 **Examples:**
 
-```scheme
+```koskari
 (refq my-var)
 ```
 

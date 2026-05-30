@@ -28,7 +28,7 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Explicit global; setq writes to module
 (define-global x 1)
 (setq x 42)

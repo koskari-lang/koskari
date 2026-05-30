@@ -28,7 +28,7 @@ else:
 
 **Examples:**
 
-```scheme
+```koskari
 while (some_test 123):
   loopbody...
 else:

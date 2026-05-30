@@ -141,6 +141,14 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(sym.type, 'special')
 
 
+    async def test_tokenize_surface_define_with_repl_names(self):
+        from koskari.lexer.discovery import special_names_for_repl
+        toks = list(tokenize(
+            '(define x 1)', special_names=special_names_for_repl()))
+        sym = next(t for t in toks if t.text == 'define')
+        self.assertEqual(sym.type, 'special')
+
+
     async def test_tokenize_layout_head(self):
         toks = list(tokenize('if'))
         self.assertEqual(len(toks), 1)

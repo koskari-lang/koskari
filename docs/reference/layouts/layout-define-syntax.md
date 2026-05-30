@@ -30,7 +30,7 @@ layout sections below.
 
 **Examples:**
 
-```scheme
+```koskari
 define-syntax do-something-with-x:
   syntax-rules [x]:
     do-something-with-x:

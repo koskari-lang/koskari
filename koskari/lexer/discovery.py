@@ -28,8 +28,20 @@ _COMPILE_PREFIX = 'compile/'
 
 __all__ = (
     'collect_special_like_names_from_builtins',
+    'ensure_builtins_loaded',
     'special_names_for_repl',
 )
+
+
+def ensure_builtins_loaded():
+    """
+    Load the full Koskari builtins module (bootstrap plus basics.ki)
+
+    Highlighting and name discovery must call this before reading the
+    merged builtins environment. Importing ``koskari`` alone is not enough.
+    """
+
+    import koskari.builtins  # noqa: F401
 
 
 def _names_for_special_binding(name):
@@ -73,12 +85,13 @@ def special_names_for_repl():
     """
     Return special-form names for the REPL using the full builtins environment.
 
-    Loads builtins via ``make_builtins_demand()`` (bootstrap plus basics.ki),
-    then collects ``Special`` and ``syntax.Syntax`` bindings.
+    Loads builtins via ``import koskari.builtins`` then ``make_builtins_demand()``,
+    then collects ``Compiled`` and ``Syntax`` bindings.
 
     :return: frozenset of name strings for REPL special-form highlighting
     """
 
+    ensure_builtins_loaded()
     from koskari.bootstrap import make_builtins_demand
 
     return collect_special_like_names_from_builtins(make_builtins_demand())

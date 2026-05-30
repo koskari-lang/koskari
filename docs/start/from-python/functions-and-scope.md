@@ -11,7 +11,7 @@ This chapter maps them without pretending the models are identical.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (define double [x]
 >   (* x 2))
 > ```
@@ -25,7 +25,7 @@ This chapter maps them without pretending the models are identical.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (lambda [x] (+ x 1))
 > ```
 
@@ -33,7 +33,7 @@ This chapter maps them without pretending the models are identical.
 >
 > **A:** Supported in formals, Python-style:
 >
-> ```scheme
+> ```koskari
 > (define greet [name greeting: "hello"]
 >   (print greeting name))
 > ```
@@ -58,7 +58,7 @@ This chapter maps them without pretending the models are identical.
 >
 > **A:** **`let`** — lexical scope for the body:
 >
-> ```scheme
+> ```koskari
 > (let [[x 1] [y 2]]
 >   (+ x y))
 > ```
@@ -76,7 +76,7 @@ This chapter maps them without pretending the models are identical.
 >
 > **A:** Recursion-shaped loop (Lisp idiom):
 >
-> ```scheme
+> ```koskari
 > (let loop [[n 10]]
 >   (when (gt n 0)
 >     (print n)

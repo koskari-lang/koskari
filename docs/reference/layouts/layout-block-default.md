@@ -20,7 +20,7 @@ HEAD ARG ... :
 
 **Examples:**
 
-```scheme
+```koskari
 ;; foo x: ... → (foo x (compile/begin ...))
 foo x:
   bar

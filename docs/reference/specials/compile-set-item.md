@@ -12,7 +12,7 @@ ITEM_STORE 0. Then CONST None.
 
 **Examples:**
 
-```scheme
+```koskari
 (set-item vec 0 99)
 ```
 

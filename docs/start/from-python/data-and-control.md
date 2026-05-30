@@ -34,7 +34,7 @@ syntax diverges.
 >
 > **A:** Reader shorthand:
 >
-> ```scheme
+> ```koskari
 > #[1 2 3]
 > ```
 >
@@ -56,7 +56,7 @@ syntax diverges.
 >
 > **A:** Often built with **`cons`**:
 >
-> ```scheme
+> ```koskari
 > (cons 1 2 3 nil)    ; → (1 2 3) as nested pairs
 > ```
 >
@@ -70,7 +70,7 @@ syntax diverges.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (define x 6)
 > ```
 
@@ -78,7 +78,7 @@ syntax diverges.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (set! x 7)
 > ```
 >
@@ -88,7 +88,7 @@ syntax diverges.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (set! x (+ x 1))
 > ```
 >
@@ -103,7 +103,7 @@ syntax diverges.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (if test a b)
 > ```
 >
@@ -114,7 +114,7 @@ syntax diverges.
 >
 > **A:** Use **`cond`** — first truthful test wins:
 >
-> ```scheme
+> ```koskari
 > (cond
 >   [(lt x 0) "negative"]
 >   [(eq x 0) "zero"]
@@ -125,7 +125,7 @@ syntax diverges.
 >
 > **A:** **`when`**:
 >
-> ```scheme
+> ```koskari
 > (when test body ...)
 > ```
 
@@ -137,7 +137,7 @@ syntax diverges.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (while test
 >   body ...)
 > ```
@@ -145,7 +145,7 @@ syntax diverges.
 > Optional Python-like **`else`** on loop exit (runs when the test becomes
 > false, not when `break` fires):
 >
-> ```scheme
+> ```koskari
 > (while x
 >   (set! x (- x 1))
 >   [else: "done"])
@@ -155,7 +155,7 @@ syntax diverges.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (for-each [item seq]
 >   body ...)
 > ```
@@ -190,7 +190,7 @@ syntax diverges.
 > **A:** Yes — **layout** handlers read indented blocks into the same forms
 > above. Example shape (conceptual):
 >
-> ```scheme
+> ```koskari
 > if condition:
 >   body
 > else:

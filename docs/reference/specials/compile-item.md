@@ -13,7 +13,7 @@ key fragment and emits ITEM 0.
 
 **Examples:**
 
-```scheme
+```koskari
 (item vec 0)
 (item tbl (compute-key))
 ```

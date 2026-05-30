@@ -26,7 +26,7 @@ skill every other chapter builds on.
 >
 > **A:** Yes. Type this at the prompt:
 >
-> ```scheme
+> ```koskari
 > koskari> (print "Hello, Koskari!")
 > ```
 >
@@ -46,7 +46,7 @@ skill every other chapter builds on.
 >
 > **A:** Yes. Put the line in a file named `hello.ki`:
 >
-> ```scheme
+> ```koskari
 > (print "Hello, Koskari!")
 > ```
 >
@@ -68,7 +68,7 @@ skill every other chapter builds on.
 > **A:** Try it. Edit the string, save the file if you are using one, and run
 > again:
 >
-> ```scheme
+> ```koskari
 > (print "Hello, world!")
 > ```
 >

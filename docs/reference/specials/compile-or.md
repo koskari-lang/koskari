@@ -22,7 +22,7 @@ term).
 
 **Examples:**
 
-```scheme
+```koskari
 (or)              ; → False
 (or 42)           ; → 42
 (or None False 0) ; → 0   (all falsy, last value)

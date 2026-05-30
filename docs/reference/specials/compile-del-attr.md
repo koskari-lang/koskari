@@ -9,7 +9,7 @@
 
 **Examples:**
 
-```scheme
+```koskari
 (del-attr obj x)
 ```
 

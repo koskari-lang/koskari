@@ -16,7 +16,7 @@ interpreter/with-dyn-with.md.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Capture continuation inside dyn-with; invoke outside runs exit then enter
 (dyn-with [r (make-resource)]
   (k (refq r)))

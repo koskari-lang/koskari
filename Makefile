@@ -240,6 +240,7 @@ python:  ## Show Python executable
 	clean-ext \
 	clean-native \
 	clean-pyc \
+	docs \
 	gdb \
 	handlers \
 	help \

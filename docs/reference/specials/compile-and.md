@@ -13,7 +13,7 @@ next expression can be evaluated. The last expression is compiled without a jump
 
 **Examples:**
 
-```scheme
+```koskari
 (and)             ; → True
 (and 42)          ; → 42
 (and 1 2 3)       ; → 3   (all truthy, last value)

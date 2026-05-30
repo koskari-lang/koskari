@@ -20,13 +20,13 @@ reproduction. Koskari aligns with that — with a few Koskari-specific frames.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > koskari> ( 1 2 ]
 > ```
 >
 > Syntax error → stderr, often “mismatched” delimiters.
 >
-> ```scheme
+> ```koskari
 > koskari> (/ 1 0)
 > ```
 >
@@ -40,7 +40,7 @@ reproduction. Koskari aligns with that — with a few Koskari-specific frames.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (try (risky-call)
 >   [[ValueError] (handle e)]
 >   [else: (on-success)]
@@ -59,7 +59,7 @@ reproduction. Koskari aligns with that — with a few Koskari-specific frames.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (try (risky-call)
 >   [except: (handle-anything)])
 > ```
@@ -105,7 +105,7 @@ reproduction. Koskari aligns with that — with a few Koskari-specific frames.
 >
 > **A:** Still valid:
 >
-> ```scheme
+> ```koskari
 > (print "here" x (attr x "value"))
 > ```
 

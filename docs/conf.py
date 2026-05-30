@@ -5,6 +5,7 @@ Sphinx configuration for Koskari user documentation.
 
 import os
 import sys
+import koskari  # noqa: F401
 
 
 def load_setup():
@@ -41,6 +42,12 @@ def skip_bootstrap(app, what, name, obj, skip, options):
 
 def setup(app):
     app.connect('autodoc-skip-member', skip_bootstrap)
+    try:
+        import koskari.builtins  # noqa: F401
+        from koskari.lexer.pygments import register_sphinx_lexer
+        register_sphinx_lexer(app)
+    except ImportError:
+        pass
 
 
 extensions = [

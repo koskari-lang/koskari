@@ -18,7 +18,7 @@ namespace. `K` is not visible after the `compile/let/cc` form.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Bind escape continuation k, use it inside the body
 (let/cc k
   (begin

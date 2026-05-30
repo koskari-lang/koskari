@@ -218,6 +218,16 @@ subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
+### `getattr*` — chained attribute access with default
+
+**TODO:** Add **`getattr*`** as a function (or macro) analogous to **`attr*`** /
+**`compile/attr*`**: left-nested attribute walk on **`obj`**, with a caller-supplied
+default returned when any step fails (missing intermediate, missing attribute, or
+other **`attr`** failure) instead of raising.
+
+Ref: **`compile/attr*`** in `koskari/bootstrap/_variables.ki`;
+[MACROS.md](MACROS.md) § compile/item* and compile/attr*.
+
 ---
 
 ## Reference

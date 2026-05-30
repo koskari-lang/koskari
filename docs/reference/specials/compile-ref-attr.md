@@ -10,7 +10,7 @@ SYM on OBJ. The reference can be deref'd or stored into.
 
 **Examples:**
 
-```scheme
+```koskari
 (ref-attr obj count)
 ```
 

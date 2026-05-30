@@ -22,7 +22,7 @@ HEAD ARG ... :
 
 **Examples:**
 
-```scheme
+```koskari
 foo x:
   bar
   baz

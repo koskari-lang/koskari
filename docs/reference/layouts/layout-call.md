@@ -32,7 +32,7 @@ it to keyword plus value as described above.
 
 **Examples:**
 
-```scheme
+```koskari
 layout/call print:
   "hello"
 ;; → (compile/call print "hello")

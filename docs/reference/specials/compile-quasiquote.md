@@ -51,7 +51,7 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Atom: just a constant
 `42           ; → 42
 `foo          ; → symbol foo

@@ -54,7 +54,7 @@ koskari examples/hello.ki
 
 Minimal example (`examples/hello.ki`):
 
-```scheme
+```koskari
 (print "Hello, Koskari!")
 ```
 

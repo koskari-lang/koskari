@@ -25,7 +25,7 @@ are handled by the **`compile/macroexpand`** macro. The **`macroexpandq`** and
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Fully expand a form in the globals namespace
 (macroexpand (define x 1))
 

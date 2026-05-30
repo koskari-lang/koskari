@@ -38,7 +38,7 @@ that keeps IMPORT_FROM's stack invariant sound.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Single name from absolute module
 (import-from os path)
 

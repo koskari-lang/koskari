@@ -32,7 +32,7 @@ by `VAR_BIND` and `CONST None`.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Absolute import — binds 'os' in current namespace
 (import os)
 

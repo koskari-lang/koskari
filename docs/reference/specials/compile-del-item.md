@@ -11,7 +11,7 @@ ITEM_CLEAR, then CONST None.
 
 **Examples:**
 
-```scheme
+```koskari
 (del-item d "key")
 ```
 

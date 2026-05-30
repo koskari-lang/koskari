@@ -19,6 +19,7 @@ Unit tests for koskari.lexer.discovery.
 
 from koskari.lexer.discovery import (
     collect_special_like_names_from_builtins,
+    ensure_builtins_loaded,
     special_names_for_repl,
 )
 from koskari.bootstrap import make_bootstrap
@@ -33,6 +34,7 @@ pytestmark = pytest.mark.phase_infra
 class TestDiscovery(IsolatedAsyncioTestCase):
 
     async def test_collect_from_bootstrap_includes_known_special(self):
+        ensure_builtins_loaded()
         bltns = make_bootstrap()
         names = collect_special_like_names_from_builtins(bltns)
         self.assertIn('compile/define', names)
@@ -43,6 +45,7 @@ class TestDiscovery(IsolatedAsyncioTestCase):
         self.assertGreater(len(names), 0)
         self.assertIn('compile/define', names)
         self.assertIn('define', names)
+        self.assertIn('import', names)
 
 
 # The end.

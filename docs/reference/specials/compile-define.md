@@ -49,7 +49,7 @@ compiles it, then emits `VAR_STORE`.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Declaration only; assign later with compile/setq
 (define x)
 (setq x 42)

@@ -22,7 +22,7 @@ else:
 
 **Examples:**
 
-```scheme
+```koskari
 if x:
   y
 ;; → (compile/cond (x y))

@@ -15,7 +15,7 @@ compiles it. Otherwise emit CONST FORM.
 
 **Examples:**
 
-```scheme
+```koskari
 (quote 42)
 (quote x)
 (quote (a b c))

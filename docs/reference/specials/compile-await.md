@@ -12,7 +12,7 @@ With **no arguments**, `compile/await` emits a **bare** cooperative suspend (`AW
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Await a defer stored in d (defer was used so d is not auto-awaited)
 (await d)
 

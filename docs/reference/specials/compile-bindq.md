@@ -11,7 +11,7 @@ pushes CONST None.
 
 **Examples:**
 
-```scheme
+```koskari
 (bindq local 10)
 ```
 

@@ -32,7 +32,7 @@ pattern as other macros that expand to a lambda).
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Unary: { (+ %1 1) }  =>  thunk taking one argument
 (gensym-thunk (+ %1 1))
 

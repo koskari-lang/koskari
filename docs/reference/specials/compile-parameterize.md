@@ -19,7 +19,7 @@ restore on exit (and on unwind) is handled by the evaluator.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Parameterize format; consumer pretty reads it via ParamRef("format").deref()
 (parameterize [[format "woot %r woot"]]
   (pretty 100))

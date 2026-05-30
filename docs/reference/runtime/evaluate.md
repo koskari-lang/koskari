@@ -24,7 +24,7 @@ evaluate …)`** with **`(locals)`** when the namespace argument is omitted. See
 
 **Examples:**
 
-```scheme
+```koskari
 ;; One-argument form uses (locals) via the compile/evaluate macro
 (evaluate (+ 1 2))
 

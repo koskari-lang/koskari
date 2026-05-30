@@ -47,7 +47,7 @@ constant tuple for defaulted keywords.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Anonymous identity
 (lambda [x] x)
 

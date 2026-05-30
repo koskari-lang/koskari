@@ -25,39 +25,13 @@ Koskari syntax highlighting for prompt_toolkit.
 # prompt_toolkit REPL enhancements.
 
 
-from prompt_toolkit.lexers import Lexer
+try:
+    from prompt_toolkit.lexers import Lexer
+except ImportError:
+    Lexer = object
 
+from ..highlight import prompt_toolkit_style_class
 from ..tokens import SPECIAL_NAMES, tokenize
-
-
-_TOKEN_TYPE_TO_CLASS = {
-    'symbol': 'class:koskari.symbol',
-    'keyword': 'class:koskari.keyword',
-    'ellipsis': 'class:koskari.ellipsis',
-    'py_singleton': 'class:koskari.py_singleton',
-    'string': 'class:koskari.string',
-    'number': 'class:koskari.number',
-    'comment': 'class:koskari.comment',
-    'special': 'class:koskari.special',
-    'layout': 'class:koskari.layout',
-    'paren_open': 'class:koskari.punctuation',
-    'paren_close': 'class:koskari.punctuation',
-    'bracket_open': 'class:koskari.punctuation',
-    'bracket_close': 'class:koskari.punctuation',
-    'brace_open': 'class:koskari.punctuation',
-    'brace_close': 'class:koskari.punctuation',
-    'collection_open': 'class:koskari.punctuation',
-    'dot': 'class:koskari.punctuation',
-    'comma': 'class:koskari.punctuation',
-    'colon': 'class:koskari.punctuation',
-    'quote': 'class:koskari.punctuation',
-    'quasiquote': 'class:koskari.punctuation',
-    'unquote_splicing': 'class:koskari.punctuation',
-}
-
-
-def _style_class(tok_type):
-    return _TOKEN_TYPE_TO_CLASS.get(tok_type, 'class:koskari.symbol')
 
 
 def _slice_token_on_line(tok, line_no, raw_line):
@@ -149,7 +123,7 @@ class KoskariLexer(Lexer):
                 if line_start_col > col:
                     parts.append((default_style, raw[col - 1:line_start_col - 1]))
                 parts.append((
-                    _style_class(tok.type),
+                    prompt_toolkit_style_class(tok.type),
                     raw[start_idx:end_idx]))
                 col = end_idx + 1
             if col <= len(raw):

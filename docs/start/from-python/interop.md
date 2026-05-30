@@ -11,7 +11,7 @@ boundary in both directions.
 >
 > **A:** Same names as Python:
 >
-> ```scheme
+> ```koskari
 > (import os)
 > (import-from os path getcwd)
 > (import-from os (path as: osp))
@@ -23,7 +23,7 @@ boundary in both directions.
 >
 > **A:** Bind it, then call — or call attributes directly:
 >
-> ```scheme
+> ```koskari
 > (import-from math sqrt)
 > koskari> (sqrt 9)
 > 3.0
@@ -31,7 +31,7 @@ boundary in both directions.
 >
 > Method calls:
 >
-> ```scheme
+> ```koskari
 > (define s "hello")
 > (call-attr s upper)
 > ```
@@ -40,7 +40,7 @@ boundary in both directions.
 >
 > **A:**
 >
-> ```scheme
+> ```koskari
 > (attr obj field)
 > (item obj key)
 > (set! (attr obj field) value)
@@ -127,7 +127,7 @@ boundary in both directions.
 >
 > **A:** At `koskari>`:
 >
-> ```scheme
+> ```koskari
 > (import-from math pi)
 > (* pi 2)
 > ```

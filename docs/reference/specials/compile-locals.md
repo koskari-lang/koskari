@@ -11,7 +11,7 @@ onto the stack. Any arguments are rejected with `SpecialError`.
 
 **Examples:**
 
-```scheme
+```koskari
 (locals)
 ```
 

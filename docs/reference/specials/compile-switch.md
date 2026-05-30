@@ -30,7 +30,7 @@ The head may be written as `switch` or `compile/switch`; compiler lookup resolve
 
 **Expected lowered shape from layout/switch:**
 
-```scheme
+```koskari
 (switch VALUE
   ((COND1 COND2 ...) (begin BODY...))
   (else: (begin BODY...)))
@@ -42,7 +42,7 @@ the sequencing.
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Direct s-expression form
 (switch 5
   [[1] "one"]

@@ -15,7 +15,7 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Capture into ambient namespace; k accessible later
 (capture/cc k
   (begin

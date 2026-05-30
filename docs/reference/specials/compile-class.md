@@ -35,7 +35,7 @@ or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
 
 **Examples:**
 
-```scheme
+```koskari
 ;; Expression value is the class (e.g. bind with compile/define)
 (define C (class C ()))
 
