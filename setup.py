@@ -1,5 +1,19 @@
 #! /usr/bin/env python3
 
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
 """
 Koskari, a LISP dialect for Python
 
@@ -7,9 +21,12 @@ Koskari, a LISP dialect for Python
 :license: GPL v.3
 """
 
+
 from os import environ
 from pathlib import Path
+
 from setuptools import Extension, setup
+from setuptools.command.build_py import build_py
 
 
 passenvs = (
@@ -83,8 +100,24 @@ def extension(platform=None, debug=None):
     )
 
 
+class build_py_pth(build_py):
+    """
+    Copy koskari.pth into build_lib for site-packages installation
+    """
+
+    def run(self):
+        super().run()
+
+        # the fact that pyproject.toml cannot do this, even as the vaunted
+        # next generation of python packaging, is a goddamned joke.
+        self.copy_file('koskari.pth', self.build_lib, preserve_mode=False)
+
+
 if __name__ == '__main__':
-    setup(ext_modules=[extension()])
+    setup(
+        cmdclass={'build_py': build_py_pth},
+        ext_modules=[extension()],
+    )
 
 
 # The end.

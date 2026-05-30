@@ -1,1 +1,2 @@
+include koskari.pth
 recursive-include koskari/lib *.c *.h *.incl
