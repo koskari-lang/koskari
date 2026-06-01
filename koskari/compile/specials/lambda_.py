@@ -30,6 +30,119 @@ from ..compiler import ByteCodeFragment, CompilerMode
 from ..helpers import discover_docstring, gather_formals, helper_begin
 
 
+def helper_function(compiler, caps, selfref):
+    """
+    Helper for compile/function and compile/lambda.
+
+    :param compiler: Compiler instance
+    :param caps: Matcher captures
+    :param selfref: Whether to add a self-reference to the function
+    :return: ByteCodeFragment
+    """
+
+    called_by = caps["called-by"].datum
+
+    named = caps.get("name")
+    if named is not None:
+        named = named.datum
+
+    return_type_mr = caps.get("return_type")
+    return_type_src = return_type_mr.datum if return_type_mr else None
+
+    pos, defaults, kwonly, star, starstar, ann = gather_formals(
+        caps["formals"])
+
+    body_src = caps["body"].datum
+
+    proper_name = str(named) if named else None
+    fragment_name = proper_name or "<lambda>"
+
+    pre_kwd = []
+    pos = [str(k) for k in pos]
+    star = str(star) if star else None
+    starstar = str(starstar) if starstar else None
+
+    frag = compiler.fragment(called_by)
+    for k, expr in defaults:
+        pre_kwd.append(str(k))
+        frag.merge(compiler.full_compile(expr))
+
+    defnames = list(pre_kwd)
+    for k, expr in kwonly:
+        if expr is not nil:
+            defnames.append(str(k))
+            frag.merge(compiler.full_compile(expr))
+
+    if defnames:
+        frag.instruction(OpCode.KOS_OP_CONST, tuple(defnames))
+
+    lamb = compiler.fragment(fragment_name)
+    lamb.declare_vars(pos)
+    lamb.declare_vars(pre_kwd)
+    if star:
+        lamb.declare_var(star)
+    lamb.declare_vars([str(k) for k, _ in kwonly])
+    if starstar:
+        lamb.declare_var(starstar)
+
+    # selfref indicates whether the function should receive a direct
+    # self-reference at function creation. lambdas with a name get
+    # a self-ref, but functions do not. This allows a function to
+    # refer to a wrapped definition of itself, such as via decorators,
+    # while the lambda form is always purely the exact function.
+    if selfref and proper_name is not None:
+        lamb.declare_var(proper_name)
+
+    lamb.doc = discover_docstring(body_src)
+
+    with compiler.pragma_scope():
+        lamb = helper_begin(lamb, body_src, True)
+    code = compiler.complete(lamb, CompilerMode.FUNCTION)
+    if return_type_src is not None:
+        code.extras['return'] = return_type_src
+    fspec = FunctionSpec(proper_name, FormalsSpec(
+        tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
+        star, starstar, ann), code)
+    frag.instruction(OpCode.KOS_OP_CONST, fspec)
+    frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(defnames))
+
+    return frag
+
+
+_FUNCTION_PATTERNS = (
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+)
+
+
+@builtin("compile/function")
+@special("compile/function", patterns=_FUNCTION_PATTERNS, unpack="match")
+def special_function(compiler, caps, tc=False) -> ByteCodeFragment:
+    """
+    Compile (function [args] body) or (function name [args] body).
+    Named form binds name in the function scope for self-reference.
+    """
+
+    return helper_function(compiler, caps, selfref=False)
+
+
 _LAMBDA_PATTERNS = (
     MATCH(
         CALLEDBY(),
@@ -77,67 +190,7 @@ def special_lambda(compiler, caps, tc=False) -> ByteCodeFragment:
     Named form binds name in the function scope for self-reference.
     """
 
-    called_by = caps["called-by"].datum
-
-    named = caps.get("name")
-    if named is not None:
-        named = named.datum
-
-    return_type_mr = caps.get("return_type")
-    return_type_src = return_type_mr.datum if return_type_mr else None
-
-    pos, defaults, kwonly, star, starstar, ann = gather_formals(
-        caps["formals"])
-
-    body_src = caps["body"].datum
-
-    proper_name = str(named) if named else None
-    fragment_name = proper_name or "<lambda>"
-
-    pre_kwd = []
-    pos = [str(k) for k in pos]
-    star = str(star) if star else None
-    starstar = str(starstar) if starstar else None
-
-    frag = compiler.fragment(called_by)
-    for k, expr in defaults:
-        pre_kwd.append(str(k))
-        frag.merge(compiler.full_compile(expr))
-
-    defnames = list(pre_kwd)
-    for k, expr in kwonly:
-        if expr is not nil:
-            defnames.append(str(k))
-            frag.merge(compiler.full_compile(expr))
-
-    if defnames:
-        frag.instruction(OpCode.KOS_OP_CONST, tuple(defnames))
-
-    lamb = compiler.fragment(fragment_name)
-    lamb.declare_vars(pos)
-    lamb.declare_vars(pre_kwd)
-    if star:
-        lamb.declare_var(star)
-    lamb.declare_vars([str(k) for k, _ in kwonly])
-    if starstar:
-        lamb.declare_var(starstar)
-    if proper_name is not None:
-        lamb.declare_var(proper_name)
-
-    lamb.doc = discover_docstring(body_src)
-
-    with compiler.pragma_scope():
-        lamb = helper_begin(lamb, body_src, True)
-    code = compiler.complete(lamb, CompilerMode.FUNCTION)
-    if return_type_src is not None:
-        code.extras['return'] = return_type_src
-    fspec = FunctionSpec(proper_name, FormalsSpec(
-        tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
-        star, starstar, ann), code)
-    frag.instruction(OpCode.KOS_OP_CONST, fspec)
-    frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(defnames))
-
-    return frag
+    return helper_function(compiler, caps, selfref=True)
 
 
 # The end.

@@ -1,0 +1,84 @@
+import-from functools [lru_cache as: memoize]
+
+
+define fib-recur [n]:
+    """
+    Good old Fibonacci sequence, defined recursively.
+    """
+
+    if (< n 2):
+        if (< n 1) 0 n
+    else:
+        + (fib-recur (- n 1)) (fib-recur (- n 2))
+
+
+;; Note that in order for LRU cache to work, we need to
+;; move it into the demand path, so it's no longer returning
+;; a coroutine. If we rewrite the lru_cache in koskari, we
+;; can move away from this.
+@(memoize maxsize: None)
+@demand
+define fib-recur-decorated [n]:
+    """
+    Good old Fibonacci sequence, defined recursively, with a
+    memoizing decorator.
+    """
+
+    if (< n 2):
+        if (< n 1) 0 n
+    else:
+        + (fib-recur-decorated (- n 1)) (fib-recur-decorated (- n 2))
+
+
+define fib-recur-cached [n]:
+    """
+    Good old Fibonacci sequence, defined recursively with
+    a cache.
+    """
+
+    define cache #{}
+    let inner [[n n]]:
+        if (contains? n cache):
+            item cache n
+
+        elif (< n 2):
+            if (< n 1) 0 n
+
+        else:
+            define result (+ (inner (- n 1))
+                             (inner (- n 2)))
+            set! (item cache n) result
+            result
+
+
+define fib-tail-recur [n]:
+    """
+    Fibonacci sequence, defined recursively with
+    tail-call optimization.
+    """
+
+    let inner [[n n] [v 0] [accu 1]]:
+        if (< n 1):
+            v
+        else:
+            inner (- n 1) accu (+ accu v)
+
+
+define fib-loop [n]:
+    """
+    Fibonacci sequence, defined iteratively.
+    """
+
+    define tmp 0
+    define v 0
+    define accu 1
+
+    while (> n 0):
+        decr! n
+        set! tmp accu
+        set! accu (+ accu v)
+        set! v tmp
+    v
+
+
+;; The end.

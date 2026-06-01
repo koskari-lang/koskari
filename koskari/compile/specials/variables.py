@@ -275,14 +275,14 @@ def special_define(compiler, caps, tc=False):
         body_spine = body.datum
         if type_expr is not None:
             val_expr = cons(
-                symbol("compile/lambda"),
+                symbol("compile/function"),
                 namesym,
                 keyword("::"),
                 type_expr,
                 formals_spine,
                 body_spine)
         else:
-            val_expr = cons(symbol("compile/lambda"), namesym,
+            val_expr = cons(symbol("compile/function"), namesym,
                             formals_spine,
                             body_spine)
 
