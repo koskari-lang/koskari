@@ -28,23 +28,26 @@ are rejected (declarations do not carry a value).
 **Use-case:** Variable and function definition for module-level loading.
 Declaration-only leaves the ref in scope but empty (reading before assignment
 raises). Declare-and-store evaluates EXPR and stores the result in the slot
-(equivalent to compile/bindq). Function shorthand lowers to a named
-`compile/lambda`: if a return type is present (inline or in `DECL`), the
-expansion is `(lambda NAME :: TYPE FORMALS BODY ...)` (using the `::`
-keyword); if not, `(lambda NAME FORMALS BODY ...)`.
+(equivalent to compile/bindq). Function shorthand lowers to
+[compile/function](compile-function.md): if a return type is present (inline or
+in `DECL`), the expansion is `(function NAME :: TYPE FORMALS BODY ...)` (using
+the `::` keyword); if not, `(function NAME FORMALS BODY ...)`.
 
 For declaration-only or value binding with a type (e.g.
 `(define [x :: int])` or `(define x :: int 99)`), the type is
 accepted by the parser but is not stored on the variable binding in the current
 compiler (parse-only / metadata for tooling), except that function shorthand
-passes the type through to `compile/lambda` as the return annotation.
+passes the type through to `compile/function` as the return annotation.
+
+Recursive calls in function shorthand (e.g. `fact` below) use the **module/local
+binding** after `VAR_STORE`, not an inner closure self-ref for the name.
 
 **Behaviour:** With **DECL**, parses the first argument with `parse_decl`. With
 **inline type**, the matcher binds `NAME`, `::` or `type:`, and `TYPE` (see
 MATCHER.md — **DECL** composite). Declares
 the introduced name. For declaration-only: emits CONST None. For
 declare-and-store: compiles EXPR, emits `VAR_STORE` to store the value, then
-CONST None. For function shorthand: builds the `compile/lambda` form as above and
+CONST None. For function shorthand: builds the `compile/function` form as above and
 compiles it, then emits `VAR_STORE`.
 
 **Examples:**

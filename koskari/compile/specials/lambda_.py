@@ -137,7 +137,11 @@ _FUNCTION_PATTERNS = (
 def special_function(compiler, caps, tc=False) -> ByteCodeFragment:
     """
     Compile (function [args] body) or (function name [args] body).
-    Named form binds name in the function scope for self-reference.
+
+    Unlike lambda, function does not implicitly bind the function
+    object into its own scope. This allows a function to refer to an
+    outer definition of itself, which may be wrapped such as via
+    decorators.
     """
 
     return helper_function(compiler, caps, selfref=False)
@@ -187,7 +191,8 @@ _LAMBDA_PATTERNS = (
 def special_lambda(compiler, caps, tc=False) -> ByteCodeFragment:
     """
     Compile (lambda [args] body) or (lambda name [args] body).
-    Named form binds name in the function scope for self-reference.
+
+    The Named form binds name in the function scope for self-reference.
     """
 
     return helper_function(compiler, caps, selfref=True)

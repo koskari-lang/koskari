@@ -35,7 +35,11 @@ docstring discovery; the body is still compiled in full.
 
 **Use-case:** Create an anonymous or named function value. Named lambdas bind the
 given name in the function's scope so the function can refer to itself (e.g. for
-recursion).
+recursion in a named `let` or inline `(lambda NAME ...)`).
+
+**See also:** [compile/function](compile-function.md) — named functions **without**
+a closure self-binding at creation; used by `define` / `define-global` function
+shorthand and decorator macros.
 
 **Behaviour:** Matches one of the shapes above, parses formals with
 `gather_formals`, builds a fragment that declares the parameter names, compiles

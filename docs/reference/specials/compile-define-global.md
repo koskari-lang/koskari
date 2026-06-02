@@ -10,8 +10,9 @@
 `(define-global DECL FORMALS BODY ...)`
 
 See **compile/define** for the meaning of **DECL** and function-shorthand
-lowering to `compile/lambda` (including `NAME :: TYPE` when a return type is
-present).
+lowering to [compile/function](compile-function.md) (including `NAME :: TYPE`
+when a return type is present). Same inner form as `define`; additionally calls
+`request_global(name)` and stores via `VAR_STORE` into the module binding.
 
 **Use-case:** Explicit module binding for read and write. When using strict
 resolution (KoskariPragma), writes to undeclared names raise at compile time;

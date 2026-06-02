@@ -114,6 +114,7 @@ list_head_specials:
   - each
   - extend-syntax
   - for-each
+  - function
   - function-compose
   - gensym-thunk
   - global

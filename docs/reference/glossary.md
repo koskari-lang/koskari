@@ -6,7 +6,8 @@ Shared terms used across tutorials and reference pages.
 : A Koskari expression: atoms, lists, or layout-derived s-expressions.
 
 **special form**
-: A form whose head is a compiler symbol such as `compile/call` or `compile/lambda`.
+: A form whose head is a compiler symbol such as `compile/call`, `compile/lambda`,
+  or `compile/function`.
   Specials are implemented in Python under `koskari.compile.specials`.
 
 **macro**
