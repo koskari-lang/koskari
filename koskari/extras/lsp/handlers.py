@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.lexer.lsp.handlers
+koskari.extras.lsp.handlers
 
 LSP request/notification handlers for diagnostics, hover, and completion.
 """
@@ -35,7 +35,7 @@ from lsprotocol.types import (
 
 from koskari.exceptions import ReaderError
 from koskari.lexer import LAYOUT_BLOCK_NAMES, SPECIAL_NAMES, parse_all, tokenize
-from koskari.lexer.lsp.utils import get_word_at_position, koskari_to_lsp_range
+from koskari.extras.lsp.utils import get_word_at_position, koskari_to_lsp_range
 
 
 def collect_diagnostics(source, uri):

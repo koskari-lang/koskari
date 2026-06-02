@@ -93,7 +93,16 @@ make typecheck
 
 # Clean build artifacts
 make clean
+
+# Build user documentation (Sphinx)
+make docs
 ```
+
+Optional extras: `repl` (prompt_toolkit), `lsp`, `pygments`, `sphinx`.
+Install documentation support with `pip install koskari[sphinx]` (or the
+equivalent in your environment). Downstream Sphinx projects should enable
+`extensions = ['koskari.extras.sphinx']` so autodoc renders `Function`, `Syntax`,
+and `LayoutHandler` bindings with signatures and pattern/peer sections.
 
 
 ## Project Structure
@@ -139,9 +148,12 @@ koskari/
 ├── reader/                  # S-expression parser and layout block syntax
 │   ├── parser.py            # Reader, SourceStream, LayoutReader
 │   └── layouts/             # Layout handlers (conditionals, try, class, ...)
-├── lexer/                   # Token lexer, prompt_toolkit REPL, LSP server
-│   ├── tokens.py, parser.py, discovery.py
-│   ├── prompt_toolkit/      # REPL integration
+├── lexer/                   # Token lexer and prompt_toolkit REPL
+│   ├── tokens.py, parser.py, discovery.py, highlight.py
+│   └── prompt_toolkit/      # REPL integration
+├── extras/                  # Optional integrations (namespace; no __init__.py)
+│   ├── pygments/            # Syntax highlighting lexer
+│   ├── sphinx/              # Sphinx extension and autodocumenters
 │   └── lsp/                 # koskari-lsp language server
 ├── help/                    # In-REPL help for syntax, layouts, and tools
 ├── compile/                 # Compiler, bytecode fragments, special forms
@@ -172,7 +184,7 @@ tests/
 ├── dis/                     # Disassembler tests
 ├── types/                   # Type predicate tests
 ├── importer/                # Import hook tests
-├── lexer/                   # Lexer, LSP, and prompt_toolkit tests
+├── lexer/                   # Lexer and prompt_toolkit tests
 ├── matcher/                 # Matcher tests
 ├── syntax/                  # Syntax form tests
 ├── hygiene/                 # Hygiene tests
@@ -181,6 +193,10 @@ tests/
 ├── serialize/               # Serialization tests
 ├── cli/                     # CLI tests
 ├── reproducers/             # Regression reproducers
+├── extras/                  # Optional integration tests (phase_extras)
+│   ├── pygments/
+│   ├── sphinx/
+│   └── lsp/
 └── native/                  # C harness and container memory tests
 ```
 

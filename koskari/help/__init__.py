@@ -33,8 +33,8 @@ from .tools import (
     kos_help_text,
 )
 
-from .syntax import help_for_syntax  # registers Syntax handler
-from .layout import help_for_layout_handler  # registers LayoutHandler
+from .syntax import format_accept_pattern, help_for_syntax  # registers Syntax
+from .layout import format_layout_peer, help_for_layout_handler  # registers Layout
 
 
 __all__ = (
@@ -48,6 +48,8 @@ __all__ = (
     'kos_help',
     'kos_help_text',
 
+    'format_accept_pattern',
+    'format_layout_peer',
     'help_for_syntax',
     'help_for_layout_handler',
 )

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.lexer.lsp.server
+koskari.extras.lsp.server
 
 LSP server entry point and registration.
 """
@@ -30,7 +30,7 @@ from lsprotocol.types import (
 
 from pygls.lsp.server import LanguageServer
 
-from koskari.lexer.lsp.handlers import (
+from koskari.extras.lsp.handlers import (
     handle_completion,
     handle_did_change,
     handle_did_open,

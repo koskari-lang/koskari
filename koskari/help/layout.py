@@ -26,7 +26,7 @@ from ..reader.layouts.helpers import LayoutHandler
 from .tools import help_for
 
 
-def _peer_label(peer):
+def format_layout_peer(peer):
     """
     Render one peer head symbol for help text
     """
@@ -47,7 +47,7 @@ def help_for_layout_handler(obj, formatter):
     if obj.peers:
         sec = formatter.section('Peers')
         for peer in obj.peers:
-            sec.item(_peer_label(peer))
+            sec.item(format_layout_peer(peer))
 
 
 # The end.

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.lexer.pygments.lexer
+koskari.extras.pygments.lexer
 
 Pygments Lexer implementation for Koskari source.
 
@@ -22,9 +22,9 @@ Pygments Lexer implementation for Koskari source.
 """
 
 
-from ..discovery import special_names_for_repl
-from ..highlight import pygments_token_type, token_start_index
-from ..tokens import tokenize
+from koskari.lexer.discovery import special_names_for_repl
+from koskari.lexer.highlight import pygments_token_type, token_start_index
+from koskari.lexer.tokens import tokenize
 
 
 def build_koskari_lexer_class():

@@ -17,8 +17,10 @@ koskari-help
 koskari-hygiene
 koskari-importer
 koskari-lexer
-koskari-lexer-lsp
 koskari-lexer-prompt_toolkit
+koskari-extras-pygments
+koskari-extras-sphinx
+koskari-extras-lsp
 koskari-lib
 koskari-matcher
 koskari-module

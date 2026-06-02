@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.lexer.pygments
+koskari.extras.pygments
 
 Optional Pygments integration for Koskari syntax highlighting.
 

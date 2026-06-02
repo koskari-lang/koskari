@@ -12,15 +12,15 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.lexer.lsp.test_handlers
+tests.extras.lsp.test_handlers
 
-Unit tests for koskari.lexer.lsp handlers.
+Unit tests for koskari.extras.lsp handlers.
 """
 
 
 from unittest import IsolatedAsyncioTestCase
 from lsprotocol.types import CompletionParams, HoverParams, Position
-from koskari.lexer.lsp.handlers import (
+from koskari.extras.lsp.handlers import (
     collect_diagnostics,
     handle_completion,
     handle_hover,
@@ -28,7 +28,7 @@ from koskari.lexer.lsp.handlers import (
 
 import pytest
 
-pytestmark = pytest.mark.phase_infra
+pytestmark = pytest.mark.phase_extras
 
 
 class _FakeDoc:

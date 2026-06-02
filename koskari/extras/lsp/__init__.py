@@ -12,32 +12,22 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.lexer.lsp.test_server
+koskari.extras.lsp
 
-Unit tests for koskari.lexer.lsp server.
+LSP server for Koskari source. Requires koskari[lsp] (pygls).
 """
 
-
-from unittest import IsolatedAsyncioTestCase
-from koskari.lexer.lsp import create_server
-
-import pytest
-
-pytestmark = pytest.mark.phase_infra
+# This file was entirely generated via prompt, as the basis for the
+# prompt_toolkit LSP enhancements.
 
 
-class TestCreateServer(IsolatedAsyncioTestCase):
-
-    async def test_returns_server(self):
-        server = create_server()
-        self.assertIsNotNone(server)
+from koskari.extras.lsp.server import create_server, main
 
 
-    async def test_server_has_diagnostics_attr(self):
-        server = create_server()
-        self.assertTrue(hasattr(server, 'diagnostics'))
-
-
+__all__ = (
+    'create_server',
+    'main',
+)
 
 
 # The end.

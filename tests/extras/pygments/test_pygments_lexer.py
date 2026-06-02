@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.lexer.test_pygments_lexer
+tests.extras.pygments.test_pygments_lexer
 
-Unit tests for optional koskari.lexer.pygments integration.
+Unit tests for optional koskari.extras.pygments integration.
 """
 
 
@@ -27,7 +27,7 @@ from koskari.lexer.tokens import tokenize
 
 import pytest
 
-pytestmark = pytest.mark.phase_infra
+pytestmark = pytest.mark.phase_extras
 
 
 class TestHighlightHelpers(unittest.TestCase):
@@ -59,7 +59,7 @@ class TestPygmentsOptional(unittest.TestCase):
     def test_pygments_subpackage_import_without_pygments_installed(self):
         if 'pygments' in sys.modules:
             raise unittest.SkipTest('pygments already loaded in this process')
-        mod = importlib.import_module('koskari.lexer.pygments')
+        mod = importlib.import_module('koskari.extras.pygments')
         self.assertTrue(hasattr(mod, 'register_sphinx_lexer'))
 
 
@@ -67,7 +67,7 @@ class TestPygmentsLexer(unittest.TestCase):
 
     def setUp(self):
         pytest.importorskip('pygments')
-        from koskari.lexer.pygments import KoskariLexer
+        from koskari.extras.pygments import KoskariLexer
         self.KoskariLexer = KoskariLexer
 
 
@@ -106,20 +106,20 @@ class TestPygmentsLexer(unittest.TestCase):
 
 
     def test_highlight_define(self):
-        from koskari.lexer.pygments import highlight_source
+        from koskari.extras.pygments import highlight_source
         html = highlight_source('(define x 1)')
         self.assertIn('define', html)
 
 
     def test_highlight_collections(self):
-        from koskari.lexer.pygments import highlight_source
+        from koskari.extras.pygments import highlight_source
         for source in ('#[1 2 3]', '#{(a 1)}', '(import os)'):
             html = highlight_source(source)
             self.assertIn('<span', html)
 
 
     def test_highlight_layout_head(self):
-        from koskari.lexer.pygments import highlight_source
+        from koskari.extras.pygments import highlight_source
         html = highlight_source('if:\n  (print 1)')
         self.assertIn('if', html)
 

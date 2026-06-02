@@ -112,7 +112,7 @@ prompt_toolkit `Completer` that suggests:
 
 Can be passed to `PromptSession` as `completer=...`.
 
-## Optional Submodule: koskari.lexer.lsp
+## Optional Submodule: koskari.extras.lsp
 
 **Extras**: `koskari[lsp]` adds `pygls` as a dependency.
 
@@ -193,13 +193,16 @@ def __getattr__(name):
     raise AttributeError(name)
 ```
 
-Or document that `koskari.lexer.prompt_toolkit` / `koskari.lexer.lsp` require their extras and will raise `ImportError` if dependencies are missing.
+Or document that `koskari.lexer.prompt_toolkit` / `koskari.extras.lsp` require their extras and will raise `ImportError` if dependencies are missing.
+
+Pygments highlighting lives in `koskari.extras.pygments` (extra `pygments`).
 
 ## Test Layout
 
 - **tests/lexer/**: `test_parser.py`, `test_tokens.py`
 - **tests/lexer/prompt_toolkit/**: `test_lexer.py` (optional; skip if prompt_toolkit not installed)
-- **tests/lexer/lsp/**: `test_handlers.py` (optional; skip if pygls not installed)
+- **tests/extras/lsp/**: `test_handlers.py` (phase_extras; skip if pygls not installed)
+- **tests/extras/pygments/**, **tests/extras/sphinx/**: phase_extras integration tests
 
 Core lexer tests run in the default tox env. Optional integration tests use `pytest.importorskip("prompt_toolkit")` or `pytest.importorskip("pygls")`.
 
