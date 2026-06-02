@@ -99,12 +99,6 @@ typedef struct {
 } KosEvalStackLR;
 
 
-typedef struct {
-  PyObject *container;
-  PyObject *value;
-} KosEvalStackContains;
-
-
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
 static PyObject *str_await = NULL;
@@ -1496,21 +1490,22 @@ static PyObject *binary_is_not_result(PyObject *left, PyObject *right) {
 }
 
 
-/* Pop value then container; PySequence_Contains(container, value). Branch to
-   KosOp_ARG(insn) when cmp == branch_when (CHECK_IN: 0, CHECK_NOT_IN: 1). */
+/* Pop right (container) then left (item); PySequence_Contains(right, left).
+   Branch to KosOp_ARG(insn) when cmp == branch_when (CHECK_IN: 0,
+   CHECK_NOT_IN: 1). */
 static int kos_check_contains(
     KosEvalState *es,
     KosEvent *out_ev,
     KosOp *insn,
     int branch_when) {
 
-  KosEvalStackContains args = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, args))
+  KosEvalStackLR lr = {0};
+  if (KOS_EVALSTATE_POP_ARGS(es, lr))
     return -1;
 
-  int cmp = PySequence_Contains(args.container, args.value);
-  Py_DECREF(args.value);
-  Py_DECREF(args.container);
+  int cmp = PySequence_Contains(lr.right, lr.left);
+  Py_DECREF(lr.left);
+  Py_DECREF(lr.right);
   if (unlikely(cmp < 0))
     return -1;
 

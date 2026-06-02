@@ -38,7 +38,7 @@ define fib-recur-cached [n]:
 
     define cache #{}
     let inner [[n n]]:
-        if (contains? n cache):
+        if (in n cache):
             item cache n
 
         elif (< n 2):

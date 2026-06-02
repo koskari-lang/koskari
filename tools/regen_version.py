@@ -148,7 +148,7 @@ def assemble_version(release, state, now=None):
             if now is None:
                 now = datetime.now(timezone.utc)
             stamp = now.strftime('%Y%m%dT%H%M%S')
-            local = local + '.d' + stamp
+            local = local + '-dev-' + stamp
         version = release + '+' + local
 
     Version(version)

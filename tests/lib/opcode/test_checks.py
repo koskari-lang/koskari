@@ -77,8 +77,8 @@ class TestCheckOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", [1, 2, 3]],
             ["CONST", 99],
+            ["CONST", [1, 2, 3]],
             ["CHECK_IN", "miss"],
             ["CONST", 1],
             ["RETURN", 1],
@@ -96,8 +96,8 @@ class TestCheckOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", [1, 2, 3]],
             ["CONST", 2],
+            ["CONST", [1, 2, 3]],
             ["CHECK_IN", "miss"],
             ["CONST", 1],
             ["RETURN", 1],
@@ -230,8 +230,8 @@ class TestCheckOpcodes(CevalTest):
         CHECK_NOT_IN jumps when value in container
         """
         code, ns = build_expr([
-            ["CONST", [1, 2, 3]],
             ["CONST", 2],
+            ["CONST", [1, 2, 3]],
             ["CHECK_NOT_IN", "in_it"],
             ["CONST", 0],
             ["RETURN", 1],
@@ -249,8 +249,8 @@ class TestCheckOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", [1, 2, 3]],
             ["CONST", 99],
+            ["CONST", [1, 2, 3]],
             ["CHECK_NOT_IN", "in_it"],
             ["CONST", 42],
             ["RETURN", 1],

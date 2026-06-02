@@ -14,7 +14,7 @@
 */
 
 /**
-   CHECK_IN: arg = target PC. Branch if "in" check fails. Stack: container, value (TOS).
+   CHECK_IN: arg = target PC. Branch if "in" check fails. Stack: item, container (TOS).
 */
 
 KOS_OP_HANDLER(CHECK_IN) {
