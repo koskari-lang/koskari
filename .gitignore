@@ -6,6 +6,9 @@ __pycache__/
 *.pyd
 .Python
 
+# Generated at build time
+koskari/_version.py
+
 # Distribution / packaging
 build/
 develop-eggs/

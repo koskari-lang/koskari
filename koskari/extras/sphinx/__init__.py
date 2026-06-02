@@ -72,18 +72,8 @@ def setup(app):
     register_sphinx_lexer(app)
 
     try:
-        from configparser import ConfigParser
-        import os
-
-        conf = ConfigParser()
-        conf.read([os.path.join(
-            os.path.dirname(__file__),
-            '..',
-            '..',
-            '..',
-            'setup.cfg')])
-        version = conf['metadata']['version']
-    except Exception:
+        from koskari._version import __version__ as version
+    except ImportError:
         version = '0.0.0'
 
     return {

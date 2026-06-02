@@ -27,6 +27,7 @@ pluggable input backend that supports both readline and prompt_toolkit.
 
 
 import asyncio
+import platform
 import sys
 from argparse import REMAINDER, ArgumentParser
 from os.path import basename
@@ -54,6 +55,49 @@ __all__ = (
     'repl_async',
     'run_file_async',
 )
+
+
+# ---------------------------------------------------------------------------
+# Version display
+# ---------------------------------------------------------------------------
+
+
+def _load_version():
+    """
+    Return koskari __version__ or a fallback when _version is missing
+
+    :return: version string
+    """
+
+    try:
+        from .._version import __version__
+    except ImportError:
+        return 'unknown'
+    return __version__
+
+
+def version_line():
+    """
+    One-line version string for --version output
+
+    :return: version line beginning with koskari
+    """
+
+    return 'koskari %s' % (_load_version(),)
+
+
+def startup_lines():
+    """
+    REPL startup banner lines modeled on CPython interactive startup
+
+    :return: list of banner lines
+    """
+
+    version = _load_version()
+    return [
+        'Koskari %s on %s' % (version, platform.system()),
+        'Python %s' % (sys.version,),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +293,7 @@ def _continuation_indent(buffer):
 
 
 async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
-                     stderr=None, full_trace=False):
+                     stderr=None, full_trace=False, quiet=False):
     """
     Run an interactive read-eval-print loop for a koskari module.
 
@@ -266,6 +310,7 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
     :param stdout: output stream, defaults to sys.stdout
     :param stderr: error stream, defaults to sys.stderr
     :param full_trace: when True, show REPL boundary wrapper frames in errors
+    :param quiet: when True, suppress REPL startup version banner
     """
 
     from koskari.compile import Compiler
@@ -295,6 +340,11 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
 
     reader = LayoutReader(mod)
     attach_module_load_facets(mod, compiler, reader)
+
+    if not quiet:
+        for line in startup_lines():
+            print(line, file=stdout)
+        print('', file=stdout)
 
     buffer = ''
     prompt = '>>> '
@@ -488,7 +538,8 @@ async def cli_async(options):
         await repl_async(
             mod,
             histfile=options.histfile,
-            full_trace=options.repl_full_trace)
+            full_trace=options.repl_full_trace,
+            quiet=options.quiet)
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +556,20 @@ def option_parser(name):
     """
 
     parser = ArgumentParser(prog=basename(name))
+
+    parser.add_argument(
+        '--version',
+        dest='show_version',
+        action='store_true',
+        default=False,
+        help='Print Koskari and Python version information, then exit')
+
+    parser.add_argument(
+        '-q', '--quiet',
+        dest='quiet',
+        action='store_true',
+        default=False,
+        help='Suppress REPL startup version banner')
 
     parser.add_argument(
         '--no-tweak-path',
@@ -629,6 +694,12 @@ def main(argv=None):
             '--compile-kio-source-name requires --compile-kio')
     if options.execute_kio and not options.filename:
         parser.error('--execute-kio requires a script filename')
+
+    if options.show_version:
+        print(version_line())
+        print('')
+        print('Python %s' % (sys.version,))
+        return 0
 
     try:
         drive_async_loop(cli_async(options))

@@ -23,20 +23,14 @@ import sys
 import traceback
 import unittest
 
-from koskari.cli import (
-    REPLCodeBoundary,
-    REPL_INFRASTRUCTURE_MODULES,
-    main,
-    option_parser,
-    repl_async,
-    run_file_async,
-)
-from koskari.exceptions import (CodeBoundary, format_code_boundary_exception,
-                                format_exception_with_koskari_trace)
-from koskari.exceptions import _filter_infrastructure_tb
-from koskari.module import new_module
-
 import pytest
+
+from koskari.cli import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary, main,
+                         option_parser, repl_async, run_file_async,
+                         startup_lines)
+from koskari.exceptions import (CodeBoundary, _filter_infrastructure_tb,
+                                format_exception_with_koskari_trace)
+from koskari.module import new_module
 
 
 pytestmark = pytest.mark.phase_cli
@@ -64,6 +58,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(opts.tweakpath)
         self.assertFalse(opts.interactive)
         self.assertFalse(opts.repl_full_trace)
+        self.assertFalse(opts.quiet)
         self.assertIsNone(opts.histfile)
 
 
@@ -102,6 +97,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('script.ki', opts.filename)
         self.assertEqual(['arg1', 'arg2'], opts.args)
 
+
     async def test_compile_kio_source_name(self):
         opts = self._parse(
             '--compile-kio',
@@ -112,6 +108,11 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('out.kio', opts.compile_kio)
         self.assertEqual('pkg/foo.ki', opts.compile_kio_source_name)
         self.assertEqual('x.ki', opts.filename)
+
+
+    async def test_quiet_flag(self):
+        opts = self._parse('-q')
+        self.assertTrue(opts.quiet)
 
 
 class TestRunFile(unittest.IsolatedAsyncioTestCase):
@@ -152,7 +153,7 @@ class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
 class TestRepl(unittest.IsolatedAsyncioTestCase):
 
-    async def _run_repl(self, lines, full_trace=False):
+    async def _run_repl(self, lines, full_trace=False, quiet=False):
         """
         Drive the REPL with a sequence of input lines.
 
@@ -175,13 +176,26 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
             prompter=prompter,
             stdout=stdout,
             stderr=stderr,
-            full_trace=full_trace)
+            full_trace=full_trace,
+            quiet=quiet)
         return stdout.getvalue(), stderr.getvalue()
 
 
     async def test_simple_expression_prints_result(self):
         out, _ = await self._run_repl(['(+ 1 2)'])
         self.assertIn('3', out)
+
+
+    async def test_repl_startup_banner(self):
+        out, _ = await self._run_repl([])
+        for line in startup_lines():
+            self.assertIn(line, out)
+
+
+    async def test_repl_quiet_suppresses_startup_banner(self):
+        out, _ = await self._run_repl([], quiet=True)
+        for line in startup_lines():
+            self.assertNotIn(line, out)
 
 
     async def test_none_result_not_printed(self):
@@ -296,6 +310,7 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
         self.assertIn('at inner-fn (example.ki:12:3) [pc=42]', rendered)
         self.assertIn('ZeroDivisionError', rendered)
 
+
     async def test_falls_back_to_standard_format_without_special_frame(self):
         try:
             1 / 0
@@ -324,6 +339,7 @@ class TestFilterInfrastructureTb(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         filtered_count = len(list(traceback.walk_tb(result)))
         self.assertLess(filtered_count, original_count)
+
 
     async def test_preserves_non_infrastructure_frames(self):
         ns = {'__name__': '__main__'}
@@ -364,15 +380,18 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, run)
 
+
     async def test_main_run_hello_exits_zero(self):
         code, out = await self._capture_main(_script('hello.ki'))
         self.assertEqual(0, code)
         self.assertIn('Hello, koskari!', out)
 
+
     async def test_main_run_define_and_print(self):
         code, out = await self._capture_main(_script('define_and_print.ki'))
         self.assertEqual(0, code)
         self.assertIn('42', out)
+
 
     async def test_main_exit_code_script_raises_system_exit(self):
         def run():
@@ -382,6 +401,14 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SystemExit) as ctx:
             await loop.run_in_executor(None, run)
         self.assertEqual(42, ctx.exception.code)
+
+
+    async def test_version_flag(self):
+        code, out = await self._capture_main('--version')
+        self.assertEqual(0, code)
+        self.assertIn('koskari', out)
+        self.assertIn('Python', out)
+
 
     async def test_main_no_args_runs_repl_and_exits(self):
         def run():
