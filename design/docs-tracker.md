@@ -121,7 +121,7 @@ reference pages and bootstrap scripts output).
 | SCHEMA.json | Done | `docs/corpus/SCHEMA.json` | Draft structural schema |
 | README.md | Done | `docs/corpus/README.md` | |
 | datasets.md | Partial | `docs/corpus/datasets.md` | Philosophy only; no HF publish |
-| records/ | Partial | `docs/corpus/records/` JSONL shards (conditionals, variables, objects, functions, syntax, specials) | 27 + 30 + 41 + 21 + 32 + 14 seeds |
+| records/ | Partial | `docs/corpus/records/` JSONL shards (conditionals, variables, objects, functions, syntax, specials) | 33 + 30 + 41 + 21 + 32 + 14 seeds |
 
 ### 4.10 Cross-cutting
 
@@ -166,7 +166,7 @@ reference pages and bootstrap scripts output).
 | Deliverable | Status | Notes |
 |-------------|--------|-------|
 | Corpus-first schema docs | **Done** | SCHEMA.md + SCHEMA.json |
-| Corpus records | **Partial** | `records/conditionals.jsonl` (27), `variables.jsonl` (30), `objects.jsonl` (41), `functions.jsonl` (21), `syntax.jsonl` (32), `specials.jsonl` (14) |
+| Corpus records | **Partial** | `records/conditionals.jsonl` (33), `variables.jsonl` (30), `objects.jsonl` (41), `functions.jsonl` (21), `syntax.jsonl` (32), `specials.jsonl` (14) |
 | Corpus test runner | **Not started** | tests/ implicit today |
 | Docs embed from corpus | **Not started** | |
 | HF dataset views | **Not started** | datasets.md describes pipeline |

@@ -9,7 +9,7 @@ Bootstrap loads these sources in order (`koskari/bootstrap/__init__.py`,
 `_BUILTINS_SOURCES`):
 
 1. `_define_syntax.ki` — meta-macros for `define-syntax` / `extend-syntax`
-2. `_conditionals.ki` — `if`, `when`, `unless`, predicates
+2. `_conditionals.ki` — `if`, `when`, `unless`, `?`, `bool`, predicates
 3. `_functions.ki` — coroutine/demand defines, decorators, composition
 4. `_variables.ki` — assignment, refs, bindings, comprehensions helpers
 5. `_class.ki` — classes, dataclasses, `super`
@@ -101,6 +101,22 @@ source position for hygiene.
 **Syntax:** `(unless COND THEN)`
 
 **Behaviour:** **`(compile/cond [COND None] [else: THEN])`**.
+
+
+### compile/?
+
+**Symbol:** `compile/?` (surface: `?`)
+
+**Syntax:** `(? COND THEN ELSE)`, `(? COND THEN)` (else **`False`**), or `(? COND)` (boolean test only).
+
+**Behaviour:** Two- and three-argument forms expand to **`compile/cond`** with an **`else:`** arm. The unary form expands to **`(compile/truth COND)`**.
+
+
+### compile/bool
+
+**Syntax:** `(bool VALUE)`
+
+**Behaviour:** **`(compile/truth VALUE)`** — Koskari truthiness as a boolean.
 
 
 ### compile/when-main

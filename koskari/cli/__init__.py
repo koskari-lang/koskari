@@ -62,17 +62,6 @@ __all__ = (
 # ---------------------------------------------------------------------------
 
 
-def _load_version():
-    """
-    Return koskari __version__ or a fallback when _version is missing
-
-    :return: version string
-    """
-
-    import koskari
-    return koskari.__version__
-
-
 def version_line():
     """
     One-line version string for --version output
@@ -80,7 +69,10 @@ def version_line():
     :return: version line beginning with koskari
     """
 
-    return 'koskari %s' % (_load_version(),)
+    import koskari
+    version = koskari.__version__
+
+    return 'koskari %s' % (version,)
 
 
 def startup_lines():
@@ -90,7 +82,9 @@ def startup_lines():
     :return: list of banner lines
     """
 
-    version = _load_version()
+    import koskari
+    version = koskari.__version__
+
     return [
         'Koskari %s on %s' % (version, platform.system()),
         'Python %s' % (sys.version,),

@@ -31,6 +31,7 @@ None for the fall-through case.
   [else: 102])
 ```
 
-**Note:** The higher-level forms `compile/if`, `compile/when`, and
-`compile/unless` are macros in `koskari/bootstrap/_conditionals.ki` (see MACROS.md).
+**Note:** The higher-level forms `compile/if`, `compile/when`,
+`compile/unless`, `compile/?`, and `compile/bool` are macros in
+`koskari/bootstrap/_conditionals.ki` (see MACROS.md).
 
