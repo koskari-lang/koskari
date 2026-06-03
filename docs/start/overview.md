@@ -36,6 +36,6 @@ You can skip straight to reference if you already know Lisp-like languages.
 
 ## Stability
 
-Reference material adapted from implementer docs is marked **evolving** unless
-a page states otherwise. For the implementation contract, see `design/` in
-the repository.
+Reference material is marked **evolving** unless a page states otherwise. For
+cross-cutting topics (bindings, demand vs async, macros), see
+[Concepts](../reference/concepts/index.md) in the language reference.

@@ -16,8 +16,9 @@ from nested calls and `define`.
 > **Q:** Do I need every reference page first?
 >
 > **A:** No. Keep the [glossary](../../reference/glossary.md) open when a word
-> is new. Use [reference](../../reference/index.md) when you want exact rules
-> for one form.
+> is new. Use [concepts](../../reference/concepts/index.md) when a term needs
+> more than a one-line definition. Use [reference](../../reference/index.md)
+> when you want exact rules for one form.
 
 ---
 

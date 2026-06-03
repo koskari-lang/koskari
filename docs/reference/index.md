@@ -10,6 +10,7 @@ Language reference: glossary, compile-time forms, runtime library, VM opcodes, a
 :caption: Overview
 
 glossary
+concepts/index
 cli-and-config
 grammar
 error-codes

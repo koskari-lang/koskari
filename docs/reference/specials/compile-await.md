@@ -4,7 +4,7 @@
 **Syntax:** `(await)` or `(await EXPR)`
 
 **Use-case:** Koskari runs code under an async evaluator: ordinary Python calls that return a coroutine or awaitable are **auto-awaited** at the CALL boundary, so their final value is what you usually see on the stack. You rarely need an explicit await for those paths. `compile/await` exists for values that are **not** eagerly awaited—most importantly values produced by the **`defer`**
-builtin (`defer(fn, *args, **kwds)` in Python; see `design/api/types.md` and `design/api/defer-coroutine.md`). A defer is a single-shot await handle: the wrapped call runs at **defer construction** (without auto-await on its result), but the VM does **not** auto-await the defer itself, so you can pass the handle around and choose **when** to await delegation or a cached sync result. Use `(await EXPR)` when `EXPR` evaluates to such a defer (or any other awaitable you need to await explicitly at this program point).
+builtin (`defer(fn, *args, **kwds)` in Python; see [koskari.lib](../../api/koskari-lib.md) and [Demand, async, and defer](../concepts/demand-async-and-defer.md)). A defer is a single-shot await handle: the wrapped call runs at **defer construction** (without auto-await on its result), but the VM does **not** auto-await the defer itself, so you can pass the handle around and choose **when** to await delegation or a cached sync result. Use `(await EXPR)` when `EXPR` evaluates to such a defer (or any other awaitable you need to await explicitly at this program point).
 
 With **no arguments**, `compile/await` emits a **bare** cooperative suspend (`AWAIT` with stack count `0`) and then **`CONST None`** so the expression’s value is `None`.
 

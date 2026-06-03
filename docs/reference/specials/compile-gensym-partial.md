@@ -7,9 +7,8 @@
 (also called **the thunk form**). It reads as `(gensym-thunk BODY ...)`
 — the same special with no extra macro. Nested `{...}` inside `BODY` read as
 nested `(gensym-thunk ...)`. The head `gensym-partial` also resolves
-to this special via the usual `compile/` prefix. See
-archive/brace-lambdas-gensym-partial.md
-for the full language design.
+to this special via the usual `compile/` prefix. See the [Glossary](../glossary.md)
+entry for **thunk**.
 
 **Use-case:** Short anonymous callables with inferred parameters: positional
 placeholders `%1`, `%2`, … (contiguous from `%1`), optional rest from `...`
