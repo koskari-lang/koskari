@@ -135,7 +135,7 @@ reference pages and bootstrap scripts output).
 | Area | Status | Doc path | Notes |
 |------|--------|----------|-------|
 | Python API | Done | `docs/api/` | 22 modules; excludes koskari.bootstrap |
-| koskari.builtins | Done | `docs/api/koskari-builtins.md` | Virtual module; `koskari.extras.sphinx` autodoc |
+| koskari.builtins | Done | `docs/api/koskari-builtins.md` | Virtual module; `.. kos-builtins::` (Runtime/Compile/Reader) |
 | koskari.extras | Done | `koskari/extras/` | Namespace; pygments, sphinx, lsp optional extras |
 | koskari.bootstrap | N/A | | Intentionally omitted |
 

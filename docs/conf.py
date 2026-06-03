@@ -60,6 +60,12 @@ exclude_patterns = ['build', 'Thumbs.db', '.DS_Store']
 root_doc = 'index'
 
 html_theme = 'sphinx_rtd_theme'
+html_theme_options = {
+    'navigation_depth': 2,
+    'collapse_navigation': True,
+    'titles_only': True,
+    'includehidden': True,
+}
 html_static_path = ['_static']
 
 source_suffix = {

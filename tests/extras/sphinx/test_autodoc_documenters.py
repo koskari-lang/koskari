@@ -33,9 +33,10 @@ from koskari.extras.sphinx.autodoc import (
     KosFunctionDocumenter,
     KosLayoutDocumenter,
     KosSyntaxDocumenter,
+    pick_documenter,
 )
 from koskari.syntax import special
-from sphinx.ext.autodoc import DataDocumenter, FunctionDocumenter
+from sphinx.ext.autodoc import DataDocumenter, FunctionDocumenter, ModuleDocumenter
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
@@ -86,6 +87,21 @@ class TestAutodocDocumenters(unittest.TestCase):
             fn, 'attr', True, parent))
         self.assertFalse(FunctionDocumenter.can_document_member(
             fn, 'attr', True, parent))
+
+
+    def test_pick_documenter_prefers_kos_function(self):
+        fn = _make_function()
+        bridge = self._documenter_bridge()
+        bridge.env = MagicMock()
+        bridge.env._registry = MagicMock()
+        bridge.env._registry.documenters = {
+            'function': FunctionDocumenter,
+            'kosyntax': KosSyntaxDocumenter,
+        }
+        parent = ModuleDocumenter(bridge, 'koskari.builtins')
+        doccls = pick_documenter(
+            fn, 'fn', False, parent, bridge.env._registry)
+        self.assertIs(doccls, KosFunctionDocumenter)
 
 
     def test_kos_syntax_documenter_matches_syntax(self):

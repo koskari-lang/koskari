@@ -68,6 +68,9 @@ def setup(app):
     from .autodoc import register_autodocumenters
     register_autodocumenters(app)
 
+    from .builtins_directive import KosBuiltinsDirective
+    app.add_directive('kos-builtins', KosBuiltinsDirective)
+
     from koskari.extras.pygments import register_sphinx_lexer
     register_sphinx_lexer(app)
 

@@ -6,7 +6,9 @@ Koskari is a LISP dialect for Python: an extensible language with indent-based l
 ## Getting started
 
 ```{toctree}
-:maxdepth: 2
+:hidden:
+:maxdepth: 1
+:caption: Getting started
 
 start/overview
 start/install-run
@@ -16,7 +18,9 @@ faq
 ## Tutorials
 
 ```{toctree}
-:maxdepth: 2
+:hidden:
+:maxdepth: 1
+:caption: Tutorials
 
 start/beginner/index
 start/from-python/index
@@ -26,23 +30,19 @@ guide/index
 ## Reference
 
 ```{toctree}
-:maxdepth: 2
+:hidden:
+:maxdepth: 1
+:caption: Reference
 
-reference/glossary
-reference/cli-and-config
-reference/specials/index
-reference/layouts/index
-reference/macros/index
-reference/runtime/index
-reference/vm/index
-reference/grammar
-reference/error-codes
+reference/index
 ```
 
 ## Patterns and API
 
 ```{toctree}
-:maxdepth: 2
+:hidden:
+:maxdepth: 1
+:caption: Patterns and API
 
 patterns/index
 api/index
@@ -51,7 +51,9 @@ api/index
 ## Project and corpus
 
 ```{toctree}
-:maxdepth: 2
+:hidden:
+:maxdepth: 1
+:caption: Project and corpus
 
 project/build-test
 project/architecture-map

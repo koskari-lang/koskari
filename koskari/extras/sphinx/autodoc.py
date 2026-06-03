@@ -23,7 +23,17 @@ Custom Sphinx autodocumenters for Koskari object instances
 """
 
 
-from sphinx.ext.autodoc import DataDocumenter, FunctionDocumenter
+from sphinx.ext.autodoc import (
+    AttributeDocumenter,
+    ClassDocumenter,
+    DataDocumenter,
+    DecoratorDocumenter,
+    ExceptionDocumenter,
+    FunctionDocumenter,
+    MethodDocumenter,
+    ModuleDocumenter,
+    PropertyDocumenter,
+)
 
 from .rst import layout_peers_lines, syntax_accepts_lines
 
@@ -80,6 +90,7 @@ class KosSyntaxDocumenter(DataDocumenter):
 
     objtype = 'kosyntax'
     priority = _KOS_PRIORITY
+    titles_allowed = True
 
     @classmethod
     def can_document_member(cls, member, membername, isattr, parent):
@@ -95,8 +106,24 @@ class KosSyntaxDocumenter(DataDocumenter):
             return kos_name
         return super().format_name()
 
-    def add_content(self, more_content, no_docstring=False):
-        super().add_content(more_content, no_docstring)
+    def format_signature(self, **kwargs):
+        return ''
+
+
+    def add_directive_header(self, sig):
+        """
+        Use a plain reST subsection; py:kosyntax cannot represent names with /
+        """
+
+        sourcename = self.get_sourcename()
+        name = self.format_name()
+        self.add_line('', sourcename)
+        self.add_line(name, sourcename)
+        self.add_line('~' * len(name), sourcename)
+
+
+    def add_content(self, more_content=None):
+        super().add_content(more_content)
         for line in syntax_accepts_lines(self.object):
             self.add_line(line, self.get_sourcename())
 
@@ -108,6 +135,7 @@ class KosLayoutDocumenter(DataDocumenter):
 
     objtype = 'kolayout'
     priority = _KOS_PRIORITY
+    titles_allowed = True
 
     @classmethod
     def can_document_member(cls, member, membername, isattr, parent):
@@ -125,10 +153,104 @@ class KosLayoutDocumenter(DataDocumenter):
                 return text
         return super().format_name()
 
-    def add_content(self, more_content, no_docstring=False):
-        super().add_content(more_content, no_docstring)
+    def format_signature(self, **kwargs):
+        return ''
+
+
+    def add_directive_header(self, sig):
+        """
+        Use a plain reST subsection; py:kolayout cannot represent names with /
+        """
+
+        sourcename = self.get_sourcename()
+        name = self.format_name()
+        self.add_line('', sourcename)
+        self.add_line(name, sourcename)
+        self.add_line('~' * len(name), sourcename)
+
+
+    def add_content(self, more_content=None):
+        super().add_content(more_content)
         for line in layout_peers_lines(self.object):
             self.add_line(line, self.get_sourcename())
+
+
+def member_documenter_classes(registry):
+    """
+    Documenter classes used when scanning koskari.builtins members
+
+    Sphinx 9's default autodoc registry may omit legacy stock documenters;
+    include them explicitly so C callables, types, and exceptions render
+
+    :param registry: Sphinx build registry
+    :return: list of Documenter subclasses
+    """
+
+    classes = [
+        ExceptionDocumenter,
+        ClassDocumenter,
+        KosFunctionDocumenter,
+        KosSyntaxDocumenter,
+        KosLayoutDocumenter,
+        PropertyDocumenter,
+        AttributeDocumenter,
+        MethodDocumenter,
+        FunctionDocumenter,
+        DecoratorDocumenter,
+        DataDocumenter,
+    ]
+    for cls in registry.documenters.values():
+        if cls not in classes:
+            classes.append(cls)
+    return classes
+
+
+def bind_builtin_member(documenter, name, value, builtins_module):
+    """
+    Attach a koskari.builtins binding without parse_name/import_object
+
+    :param documenter: legacy Documenter instance
+    :param name: module attribute name
+    :param value: bound object
+    :param builtins_module: loaded koskari.builtins module
+    """
+
+    full_name = 'koskari.builtins.%s' % name
+    documenter.modname = 'koskari.builtins'
+    documenter.objpath = [name]
+    documenter.fullname = full_name
+    documenter.object = value
+    documenter.object_name = name
+    documenter.parent = builtins_module
+    documenter.module = builtins_module
+
+    if isinstance(documenter, ClassDocumenter):
+        if isinstance(value, type) and hasattr(value, '__name__'):
+            documenter.doc_as_attr = documenter.objpath[-1] != value.__name__
+        else:
+            documenter.doc_as_attr = True
+
+
+def pick_documenter(member, membername, isattr, parent, registry):
+    """
+    Choose the highest-priority documenter for a builtins member
+
+    :param member: object to document
+    :param membername: attribute name on koskari.builtins
+    :param isattr: True when documented as attribute not routine
+    :param parent: ModuleDocumenter instance for koskari.builtins
+    :param registry: Sphinx build registry
+    :return: Documenter subclass, or None
+    """
+
+    classes = [
+        cls
+        for cls in member_documenter_classes(registry)
+        if cls.can_document_member(member, membername, isattr, parent)]
+    if not classes:
+        return None
+    classes.sort(key=lambda cls: cls.priority)
+    return classes[-1]
 
 
 def register_autodocumenters(app):
@@ -138,9 +260,9 @@ def register_autodocumenters(app):
     :param app: Sphinx application instance
     """
 
-    app.add_autodocumenter(KosFunctionDocumenter, override=True)
-    app.add_autodocumenter(KosSyntaxDocumenter, override=True)
-    app.add_autodocumenter(KosLayoutDocumenter, override=True)
+    app.add_autodocumenter(KosFunctionDocumenter, override=False)
+    app.add_autodocumenter(KosSyntaxDocumenter, override=False)
+    app.add_autodocumenter(KosLayoutDocumenter, override=False)
 
 
 # The end.

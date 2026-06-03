@@ -22,7 +22,7 @@ Auto-generated at build time. Do not edit by hand.
 """
 
 
-__version__ = "%(version)s"
+version = "%(version)s"
 release = "%(release)s"
 build_kind = "%(build_kind)s"
 commit = %(commit)s

@@ -74,6 +74,28 @@ define-syntax compile/set!:
       (setq name value)
 
 
+define-syntax compile/unassigned?:
+  """
+  True if a storage location currently has no value
+  """
+
+  syntax-rules []:
+    case (unassigned? location):
+      (not (ref location))
+
+
+define-syntax compile/default!:
+  """
+  Assigns value to a storage location if that location is not already
+  assigned to a truthy value of its own.
+  """
+
+  syntax-rules []:
+    case (default! location value):
+      unless (and (ref location) location):
+        set! location value
+
+
 define-syntax compile/del!:
   """
   Clears a binding, or deletes an attribute, or item.
@@ -175,19 +197,21 @@ define-syntax compile/bind!:
 
 define-syntax compile/global:
   """
-  Declare a name as a global variable in a scope. Convenience wrapper for
-  `compile/define-global`.
+  Declare a name as a global variable in a scope, and optionally
+  assign a value to it. Convenience wrapper for `compile/define-global`
   """
 
   syntax-rules []:
     case (global name):
       (compile/define-global name)
+    case (global name value):
+      (compile/define-global name value)
 
 
 define-syntax compile/local:
   """
   Declare a name as a local variable in a scope, and optionally
-  assign a value to it. Convenience wrapper for `compile/define`.
+  assign a value to it. Convenience wrapper for `compile/define`
   """
 
   syntax-rules []:

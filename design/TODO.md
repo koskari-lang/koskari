@@ -228,6 +228,18 @@ other **`attr`** failure) instead of raising.
 Ref: **`compile/attr*`** in `koskari/bootstrap/_variables.ki`;
 [MACROS.md](MACROS.md) § compile/item* and compile/attr*.
 
+### DynamicRef accessors on demand path
+
+**TODO:** Make **DynamicRef** accessor handlers (`getfn`, `setfn`, `delfn`,
+`emptyfn`) run on the demand path when they are Koskari callables: use in-eval
+`demand_sync_ex` / eval-state injection where the VM is already on demand, and
+route ref opcodes (e.g. **`DEREF`**) through **`KosRef_Deref`** /
+**`KosRef_Store`** / **`KosRef_Clear`** instead of **`PyObject_CallMethod`**.
+
+Ref: `koskari/lib/ref.c` (DynamicRef handlers); `koskari/lib/opcode/DEREF.c`;
+`koskari/lib/demand.c`; [api/NAMESPACE-AND-REFS.md](api/NAMESPACE-AND-REFS.md);
+[archive/demand-sync-await-violation-at-site.md](archive/demand-sync-await-violation-at-site.md).
+
 ---
 
 ## Reference
