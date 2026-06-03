@@ -199,49 +199,49 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_none_result_not_printed(self):
-        out, _ = await self._run_repl(['(define x 99)'])
+        out, _ = await self._run_repl(['(define x 99)'], quiet=True)
         self.assertNotIn('99', out)
 
 
     async def test_underscore_stores_last_result(self):
-        out, _ = await self._run_repl(['(+ 3 4)', '_'])
+        out, _ = await self._run_repl(['(+ 3 4)', '_'], quiet=True)
         lines = [ln for ln in out.splitlines() if ln.strip()]
         self.assertIn('7', lines[0])
         self.assertIn('7', lines[1])
 
 
     async def test_empty_lines_ignored(self):
-        out, _ = await self._run_repl(['', '   ', '(+ 1 1)'])
+        out, _ = await self._run_repl(['', '   ', '(+ 1 1)'], quiet=True)
         self.assertIn('2', out)
 
 
     async def test_incomplete_s_expr_continues_on_next_line(self):
-        out, _ = await self._run_repl(['(+ 1', '2)'])
+        out, _ = await self._run_repl(['(+ 1', '2)'], quiet=True)
         self.assertIn('3', out)
 
 
     async def test_syntax_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['( 1 2 ]'])
+        _, err = await self._run_repl(['( 1 2 ]'], quiet=True)
         self.assertIn('mismatched', err.lower())
 
 
     async def test_runtime_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['(/ 1 0)'])
+        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
         self.assertTrue(len(err) > 0)
 
 
     async def test_eof_exits_cleanly(self):
-        out, err = await self._run_repl([])
+        out, err = await self._run_repl([], quiet=True)
         self.assertEqual(0, len(err.strip()))
 
 
     async def test_multiple_expressions_accumulate_state(self):
-        out, _ = await self._run_repl(['(define n 10)', '(* n n)'])
+        out, _ = await self._run_repl(['(define n 10)', '(* n n)'], quiet=True)
         self.assertIn('100', out)
 
 
     async def test_repl_exception_traceback_trimmed(self):
-        _, err = await self._run_repl(['(/ 1 0)'])
+        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
         self.assertIn('ZeroDivisionError', err)
         self.assertNotIn(' in repl\n', err)
         self.assertNotIn(' in repl ', err)
@@ -251,7 +251,7 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         """
         Koskari exceptions via REPL show dynchain, not wrapper traceback.
         """
-        _, err = await self._run_repl(['(/ 1 0)'])
+        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
 
         self.assertIn('ZeroDivisionError', err)
         self.assertIn('Koskari dynchain', err)
@@ -262,14 +262,14 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         Compile-phase errors show explain() without a Python traceback.
         """
         form = '((lambda () (compile/setq _repl_typo_undeclared 1)))'
-        _, err = await self._run_repl([form])
+        _, err = await self._run_repl([form], quiet=True)
         self.assertTrue(len(err.strip()) > 0)
         self.assertNotIn('Traceback (most recent call last)', err)
         self.assertIn('not declared', err)
 
 
     async def test_repl_full_trace_shows_boundary_frames(self):
-        _, err = await self._run_repl(['(/ 1 0)'], full_trace=True)
+        _, err = await self._run_repl(['(/ 1 0)'], full_trace=True, quiet=True)
         self.assertIn('ZeroDivisionError', err)
         self.assertIn('koskari.cli', err)
 
