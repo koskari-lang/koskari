@@ -24,7 +24,12 @@ Schema documentation exists. Initial records live under `records/`:
 
 | File | Focus | Records |
 |------|-------|---------|
-| [specials.jsonl](records/specials.jsonl) | Compiler special forms | 43 |
+| [conditionals.jsonl](records/conditionals.jsonl) | Conditionals: compile/cond, switch, and, or; macros when, unless | 27 |
+| [variables.jsonl](records/variables.jsonl) | Bindings: define, define-global, let, letrec, refs, delq, parameters | 30 |
+| [objects.jsonl](records/objects.jsonl) | Object operators, inplace, incr!/decr!, class, define-class | 41 |
+| [functions.jsonl](records/functions.jsonl) | lambda, function, define function shorthand, gensym-thunk, compose, decorate | 21 |
+| [syntax.jsonl](records/syntax.jsonl) | define-syntax, extend-syntax, rules/match, datum, pattern parsers | 32 |
+| [specials.jsonl](records/specials.jsonl) | Other compiler special forms | 14 |
 
 Records cite originating tests under `tests/compile/specials/` where
 applicable. A corpus verification runner is **not implemented** yet; tests
