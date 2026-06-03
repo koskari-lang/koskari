@@ -30,8 +30,6 @@ from configparser import ConfigParser
 from datetime import datetime, timezone
 from pathlib import Path
 
-from packaging.version import Version
-
 
 def project_root(root=None):
     """
@@ -46,12 +44,12 @@ def project_root(root=None):
     return Path(__file__).resolve().parent.parent
 
 
-def read_release(root=None):
+def read_version(root=None):
     """
-    Read the release version from setup.cfg metadata
+    Read the version from setup.cfg metadata
 
     :param root: repository root path
-    :return: release version string
+    :return: version string
     """
 
     root = project_root(root)
@@ -118,7 +116,7 @@ def git_state(root=None):
     }
 
 
-def assemble_version(release, state, now=None):
+def assemble_version(version, state, now=None):
     """
     Build version metadata from release string and git state
 
@@ -131,31 +129,36 @@ def assemble_version(release, state, now=None):
     commit = state.get('commit')
     exact_tag = state.get('exact_tag')
     dirty = bool(state.get('dirty'))
-    expected_tag = 'v' + release
+    expected_tag = 'v' + version
 
     if (not dirty
             and exact_tag == expected_tag
             and commit is not None):
-        version = release
         build_kind = 'release'
+        release = 'ga'
     elif commit is None:
-        version = release
         build_kind = 'release'
+        release = 'ga'
     else:
         build_kind = 'dev'
-        local = 'g' + commit
+        release = 'dev+' + commit
         if dirty:
             if now is None:
                 now = datetime.now(timezone.utc)
             stamp = now.strftime('%Y%m%dT%H%M%S')
-            local = local + '-dev-' + stamp
-        version = release + '+' + local
+            release = release + '+' + stamp
 
-    Version(version)
+    major, minor, micro = version.split('.')
+
+    version_info = (int(major), int(minor), int(micro), release)
 
     return {
         'version': version,
+        'major': major,
+        'minor': minor,
+        'micro': micro,
         'release': release,
+        'version_info': version_info,
         'build_kind': build_kind,
         'commit': commit,
         'dirty': dirty,
@@ -172,14 +175,7 @@ def render_version_py(info, template_path):
     """
 
     template = template_path.read_text()
-    fields = {
-        'version': info['version'],
-        'release': info['release'],
-        'build_kind': info['build_kind'],
-        'commit': repr(info['commit']),
-        'dirty': repr(info['dirty']),
-    }
-    return template % fields
+    return template % info
 
 
 def should_regen(root=None):
@@ -211,8 +207,11 @@ def regen_version_py(root=None, dest=None):
     """
 
     root = project_root(root)
-    release = read_release(root)
-    info = assemble_version(release, git_state(root))
+
+    version = read_version(root)
+
+    info = assemble_version(version, git_state(root))
+
     template_path = root / 'koskari' / '_version.py.in'
     output_path = Path(dest) if dest else root / 'koskari' / '_version.py'
     rendered = render_version_py(info, template_path)

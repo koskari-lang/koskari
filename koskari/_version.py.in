@@ -21,12 +21,18 @@ Auto-generated at build time. Do not edit by hand.
 :license: GNU General Public License v3
 """
 
+version = %(version)r
+major = %(major)r
+minor = %(minor)r
+micro = %(micro)r
+release = %(release)r
 
-version = "%(version)s"
-release = "%(release)s"
-build_kind = "%(build_kind)s"
-commit = %(commit)s
-dirty = %(dirty)s
+version_info = %(version_info)r
+__version__ = f"{version}+{release}"
+
+build_kind = %(build_kind)r
+commit = %(commit)r
+dirty = %(dirty)r
 
 
 # The end.

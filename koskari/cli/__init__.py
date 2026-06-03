@@ -69,11 +69,8 @@ def _load_version():
     :return: version string
     """
 
-    try:
-        from .._version import __version__
-    except ImportError:
-        return 'unknown'
-    return __version__
+    import koskari
+    return koskari.__version__
 
 
 def version_line():
