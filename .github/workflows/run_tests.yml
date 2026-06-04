@@ -1,0 +1,64 @@
+# Reusable test workflow for koskari.
+# Invoke via workflow_call, workflow_dispatch, or from ci-*.yml triggers.
+
+name: Run tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: run-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tox
+        run: python -m pip install --disable-pip-version-check tox
+
+      - name: Flake8
+        run: tox -qe flake8
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - '3.9'
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
+          - '3.14'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
+
+      - name: Install tox
+        run: python -m pip install --disable-pip-version-check tox
+
+      - name: Unit tests (phased)
+        run: tox -qe test

@@ -1,0 +1,13 @@
+# Push to default branch: run tests only (reusable workflow).
+
+name: CI push main
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  tests:
+    uses: ./.github/workflows/run_tests.yml
