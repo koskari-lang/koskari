@@ -1,7 +1,16 @@
 # Data and control
 
-Values and control flow are where Python habits help most — and where surface
-syntax diverges.
+Values and control flow are where Python habits help most. This chapter
+assumes you have read [Layout and calls](layout-and-calls.md) — examples below
+use indented blocks, not only parenthesized forms.
+
+---
+
+## What this chapter builds
+
+You will bind names, branch with `if` / `elif` / `else`, loop with `while` and
+`for-each`, and use `incr!` / `decr!` for counter updates. Everything still
+evaluates to Python objects.
 
 ---
 
@@ -44,23 +53,22 @@ syntax diverges.
 >
 > **A:**
 >
-> ```text
+> ```koskari
 > #(1 2 3)
-> #{(a 1) (b 2)}
+> #{(a . 1) (b . 2)}
 > ```
 >
-> These read as constructor forms; evaluation produces normal Python tuple and
-> dict values.
+> Evaluation produces normal Python tuple and dict values.
 
 > **Q:** Linked lists?
 >
-> **A:** Often built with **`cons`**:
+> **A:** Often built with **`cons`** for macro and list-processing code:
 >
 > ```koskari
-> (cons 1 2 3 nil)    ; → (1 2 3) as nested pairs
+> (cons 1 2 3 nil)
 > ```
 >
-> **Not yet:** full pair/list idioms live in the guide and reference.
+> For everyday data, prefer `#[…]` and Python APIs.
 
 ---
 
@@ -71,84 +79,110 @@ syntax diverges.
 > **A:**
 >
 > ```koskari
-> (define x 6)
+> define x 6
 > ```
+>
+> Or `(define x 6)` on one line.
 
 > **Q:** Reassign `x = 7`?
 >
 > **A:**
 >
 > ```koskari
-> (set! x 7)
+> set! x 7
 > ```
->
-> Plain `(setq x 7)` is the underlying special; `set!` is the usual macro.
 
-> **Q:** `x += 1`?
+> **Q:** `x += 1` / `n -= 1`?
 >
-> **A:**
+> **A:** Use **`incr!`** and **`decr!`** (macros over inplace update):
 >
 > ```koskari
-> (set! x (+ x 1))
+> incr! x
+> decr! n
+> decr! n 2
 > ```
 >
-> Augmented forms like `(set! x (+ x 1))` also have dedicated `set!` macro
-> rules for `(set! x (+ x 1))`-style infix sugar — see [set!](../../reference/macros/compile-set.md).
+> Typical in counting `while` loops. See
+> [incr! / decr!](../../reference/macros/compile-incr-and-compile-decr.md).
+
+> **Q:** Subscript and attribute assignment?
+>
+> **A:** `set!` accepts `(item obj key)` and `(attr obj name)` as assignment
+> targets, same idea as Python’s `obj[k] = v` and `obj.attr = v`.
 
 ---
 
-## Conditionals
+## Conditionals (layout)
 
-> **Q:** `if test: a else: b`?
+> **Q:** `(if test a b)`?
 >
-> **A:**
+> **A:** Layout peers (preferred in `.ki` files):
 >
 > ```koskari
-> (if test a b)
+> if test:
+>   a
+> else:
+>   b
 > ```
 >
-> Keyword form also works: `(if test then: a else: b)`. One-arm `if` without
-> else yields `None`.
+> One-arm `if` without else yields `None`. Use **`when`** when you only need the
+> true branch.
 
 > **Q:** `elif` chains?
 >
-> **A:** Use **`cond`** — first truthful test wins:
+> **A:** `elif` peers after the first body (same as Python):
 >
 > ```koskari
-> (cond
->   [(lt x 0) "negative"]
->   [(eq x 0) "zero"]
->   [else: "positive"])
+> if (lt x 0):
+>   "negative"
+> elif (equal? x 0):
+>   "zero"
+> else:
+>   "positive"
+> ```
+>
+> Under the hood this becomes **`cond`**. You can also write `(cond …)` directly;
+> see [compile/cond](../../reference/specials/compile-cond.md).
+
+> **Q:** `if test: body` with no else?
+>
+> **A:**
+>
+> ```koskari
+> when test:
+>   body
 > ```
 
-> **Q:** `if test: body` with no else (statement style)?
+> **Q:** `if not test: body`?
 >
-> **A:** **`when`**:
+> **A:**
 >
 > ```koskari
-> (when test body ...)
+> unless test:
+>   body
 > ```
 
 ---
 
-## Loops
+## Loops (layout)
 
 > **Q:** `while test: body`?
 >
 > **A:**
 >
 > ```koskari
-> (while test
->   body ...)
+> while test:
+>   body
 > ```
 >
-> Optional Python-like **`else`** on loop exit (runs when the test becomes
-> false, not when `break` fires):
+> Optional **`else:`** peer (runs when the test becomes false, not when `break`
+> fires), matching Python:
 >
 > ```koskari
-> (while x
->   (set! x (- x 1))
->   [else: "done"])
+> while (> n 0):
+>   decr! n
+> else:
+>   "done"
 > ```
 
 > **Q:** `for item in seq: body`?
@@ -156,12 +190,12 @@ syntax diverges.
 > **A:**
 >
 > ```koskari
-> (for-each [item seq]
->   body ...)
+> for-each [item seq]:
+>   body
 > ```
 >
-> Works on Python iterables. Supports `break`, `continue`, and `[else: ...]`
-> like `while`.
+> Works on Python iterables. Supports `break`, `continue`, and an `else:` peer
+> like `while`. See [layout/for-each](../../reference/layouts/layout-for-each.md).
 
 > **Q:** `break` / `continue`?
 >
@@ -174,37 +208,69 @@ syntax diverges.
 > **Q:** Are arguments evaluated left-to-right like Python 3?
 >
 > **A:** Yes for nested calls: inner forms finish before outer calls use their
-> values. `(print (+ 1 2))` evaluates `(+ 1 2)` first.
+> values.
 
 > **Q:** Short-circuit `and` / `or`?
 >
-> **A:** Available as special forms — same practical idea as Python’s
-> `and`/`or` for boolean combinations. See reference for exact rules.
+> **A:** Available as special forms — same practical idea as Python’s `and` /
+> `or`. See the specials reference when you need exact rules.
 
 ---
 
-## Layout syntax (optional)
+## Runnable mini-program: countdown
 
-> **Q:** Can I write indent blocks instead of parentheses?
->
-> **A:** Yes — **layout** handlers read indented blocks into the same forms
-> above. Example shape (conceptual):
->
-> ```koskari
-> if condition:
->   body
-> else:
->   other
-> ```
->
-> **Not yet:** full layout catalog — see [Layouts](../../reference/layouts/index.md). Parenthesized forms remain the contract the compiler sees.
+Save as `countdown.ki`:
+
+```koskari
+define countdown [n]:
+  while (> n 0):
+    print n
+    decr! n
+  else:
+    print "lift-off"
+
+when-main:
+  (countdown 3)
+```
+
+Run:
+
+```bash
+koskari countdown.ki
+```
+
+Expected:
+
+```text
+3
+2
+1
+lift-off
+```
+
+Full recipe: [Countdown pattern](../../patterns/recipes/countdown.md).
 
 ---
 
-## What you should remember
+## Try it
 
-Literals and Python collections interop directly. Use `define` / `set!` for
-bindings, `if`/`cond`/`when` for branches, `while`/`for-each` for loops.
-Truthiness matches Python; `nil` does not.
+In the REPL, bind a list and walk it:
+
+```koskari
+koskari> define total 0
+koskari> for-each [x #[1 2 3]]:
+  ....   incr! total x
+koskari> total
+```
+
+You should see `6` (sum of the list).
+
+---
+
+## Remember
+
+Literals and Python collections interop directly. Use `define` / `set!` /
+`incr!` / `decr!` for bindings and updates. Branch and loop with layout blocks;
+truthiness matches Python; `nil` does not.
 
 Next: [Functions and scope](functions-and-scope.md).

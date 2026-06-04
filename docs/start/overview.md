@@ -6,8 +6,8 @@ ecosystem.
 
 ## What Koskari offers
 
-- **Layout syntax** -- indent-based blocks (`if`, `while`, `class`, ...) read
-  into s-expressions at parse time
+- **Layout syntax** -- indent-based blocks (`if`, `while`, `define-class`, ...)
+  read into forms at parse time
 - **Macros and syntax extension** -- `define-syntax`, quasiquote, hygienic
   expansion
 - **Custom bytecode VM** -- coroutines, async generators, continuations,
@@ -16,23 +16,25 @@ ecosystem.
 
 ## How this documentation is organized
 
-Two tutorial on-ramps are planned:
+Two tutorial on-ramps:
 
-- **New to programming** -- under `start/beginner/` (under construction)
-- **From Python** -- under `start/from-python/` (under construction)
+- **New to programming** -- under `start/beginner/` (in progress)
+- **From Python** -- under `start/from-python/` (layout-first track with runnable
+  examples)
 
-Both paths converge on the shared **guide** and the **reference** sections.
+Both paths can meet at the shared **guide** and the **reference** sections.
 You can skip straight to reference if you already know Lisp-like languages.
 
 | Section | Purpose |
 |---------|---------|
 | [Install and run](install-run.md) | Build, install, first REPL session |
+| [From Python](from-python/index.md) | Python developer on-ramp |
 | [Special forms](../reference/specials/index.md) | Compiler specials (`compile/...`) |
 | [Layouts](../reference/layouts/index.md) | Block syntax handlers |
 | [Macros](../reference/macros/index.md) | Bootstrap macros (`if`, `define`, ...) |
+| [Patterns](../patterns/index.md) | Task-oriented recipes |
 | [Runtime](../reference/runtime/index.md) | Bootstrap functions (`help`, `macroexpand`, ...) |
-| [Bytecode](../reference/vm/index.md) | Opcode reference and disassembly |
-| [API](../api/index.md) | Python modules (`koskari.dis`, ...) |
+| [API](../api/index.md) | Python modules for embedding |
 
 ## Stability
 

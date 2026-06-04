@@ -1,30 +1,43 @@
 # Runtime and tooling
 
 Python developers already have a workflow: venv, `python script.py`, REPL,
-tests. This chapter maps that workflow to Koskari.
+tests. This chapter maps that workflow to Koskari for **writing and running
+`.ki` programs**.
 
 ---
 
-## Two commands, one ecosystem
+## What you need day to day
 
-> **Q:** What replaces `python`?
+Two commands share one virtual environment: **`python`** for `.py`, **`koskari`**
+for `.ki`. Install Koskari into the same venv you use for Python libraries
+(see [Install and run](../install-run.md)).
+
+---
+
+## Running Koskari
+
+> **Q:** What replaces `python myscript.py`?
 >
-> **A:** The **`koskari`** command for `.ki` source:
+> **A:**
 >
 > ```bash
-> koskari              # REPL
-> koskari myprog.ki    # run a script
-> koskari -i myprog.ki # run script, then REPL
+> koskari myprog.ki
+> koskari -i myprog.ki    # run script, then REPL
+> koskari                  # REPL only
 > ```
 >
-> For Python itself you still use `python`. Koskari is installed **into** your
-> Python environment (`pip install -e ".[prompt_toolkit]"` from
-> [Install and run](../install-run.md)).
-
-> **Q:** Is `python -m koskari` the same?
->
-> **A:** Yes — same entry point as the `koskari` script. See
+> `python -m koskari` is the same entry point. See
 > [CLI and configuration](../../reference/cli-and-config.md).
+
+> **Q:** First program to open?
+>
+> **A:** From the repository root after install:
+>
+> ```bash
+> koskari examples/hello.ki
+> ```
+>
+> It defines a small class, constructs an instance, and prints attribute values.
 
 ---
 
@@ -32,60 +45,47 @@ tests. This chapter maps that workflow to Koskari.
 
 > **Q:** Where do `.ki` files live?
 >
-> **A:** Where Python modules live. Koskari registers an importer so
-> `import mypkg.mod` can load `mypkg/mod.ki` when the Koskari importer is
-> enabled (default when you `import koskari`). For scripts, any path works:
->
-> ```bash
-> koskari examples/hello.ki
-> ```
+> **A:** Alongside Python modules. With the Koskari importer enabled (default
+> when you `import koskari`), `import mypkg.mod` can load `mypkg/mod.ki`.
 
-> **Q:** Does Koskari tweak `sys.path` like running a script?
+> **Q:** Does Koskari tweak `sys.path`?
 >
-> **A:** By default, yes — the current directory is added unless you pass
-> `--no-tweak-path`.
-
-> **Q:** How do I run tests in this repo?
->
-> **A:** Same as other Python projects here: **`tox`** and **`make test`**
-> (see [Build and test](../../project/build-test.md)). Koskari’s own tests are
-> Python tests that drive the compiler and VM.
+> **A:** By default the current directory is added when running a script, unless
+> you pass `--no-tweak-path`.
 
 ---
 
-## REPL habits (Python vs Koskari)
+## REPL habits
 
-> **Q:** What feels like `python` REPL?
+> **Q:** What feels like the Python REPL?
 >
 > **A:**
 >
 > ```koskari
 > koskari> (+ 1 2)
 > 3
-> koskari> (define n 10)
+> koskari> define n 10
 > koskari> (* n n)
 > 100
 > koskari> _
 > 100
 > ```
 >
-> Expression results print when they are worth showing. `_` recalls the last
-> result — handy when experimenting.
+> Useful results print; `_` recalls the last result. You can define functions with
+> layout blocks at the REPL when the reader is waiting for the full indented body.
 
 > **Q:** What feels different?
 >
-> **A:** Syntax errors often mention **mismatched delimiters** because the
-> reader is strict. Incomplete forms continue on the next line until
-> parentheses balance — similar spirit to Python’s `...` continuation, but
-> driven by `(` / `)`.
+> **A:** Syntax errors often mention **mismatched delimiters**. Incomplete forms
+> continue on the next line until parentheses balance.
 
 ---
 
 ## Compile artifacts
 
-> **Q:** Can I precompile like `.pyc`?
+> **Q:** Precompile like `.pyc`?
 >
-> **A:** Yes, to **`.kio`** (Koskari bytecode object):
+> **A:**
 >
 > ```bash
 > koskari --compile-kio out.kio myprog.ki
@@ -98,21 +98,45 @@ tests. This chapter maps that workflow to Koskari.
 
 ## Tooling extras
 
-> **Q:** Is there an LSP?
+> **Q:** Highlighted REPL?
 >
-> **A:** **`koskari-lsp`** — see [CLI and configuration](../../reference/cli-and-config.md). Optional **`prompt_toolkit`** extra gives a highlighted REPL.
+> **A:** Install with the `prompt_toolkit` extra for syntax-colored input.
 
-> **Q:** Where is Python API documentation?
+> **Q:** Editor support?
 >
-> **A:** [Python API reference](../../api/index.md) — `koskari.importer`,
-> `koskari.module`, `koskari.dis`, and related modules for embedding.
+> **A:** TextMate, Emacs, and tree-sitter grammars ship with Koskari under
+> `editors/`. **`koskari-lsp`** is documented in
+> [CLI and configuration](../../reference/cli-and-config.md).
+
+> **Q:** Embedding Koskari in a Python application?
+>
+> **A:** See [Interop](interop.md) and the [Python API reference](../../api/index.md)
+> — not required for everyday `.ki` scripting.
 
 ---
 
-## What you should remember
+## Maintainers only
 
-Use `koskari` for `.ki`, `python` for `.py`, same venv for both. Scripts,
-REPL, path tweaking, and `-i` mirror Python ergonomics. Tests and packaging
-stay in the Python toolchain you already use.
+Contributors to the Koskari project itself run the Python test suite via
+**`tox`** and **`make test`** (see project docs). That workflow is separate from
+learning to write `.ki` programs.
+
+---
+
+## Try it
+
+```bash
+koskari examples/hello.ki
+```
+
+You should see a greeting and output from a small class. Open the file and
+match each `print` to the source.
+
+---
+
+## Remember
+
+Use `koskari` for `.ki`, `python` for `.py`, same venv for both. Use the REPL
+for quick experiments; reach for API docs only when embedding.
 
 Next: [Data and control](data-and-control.md).

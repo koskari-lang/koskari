@@ -1,8 +1,8 @@
 # From Python track
 
-A Rosetta-style on-ramp for readers who already know Python. Each chapter is
-written as a dialogue: map a Python habit to Koskari, predict the outcome, then
-read the answer.
+An on-ramp for readers who already know Python. Each chapter mixes short
+narrative, Q&A callouts for Python↔Koskari deltas, and runnable examples in
+**layout-first** style.
 
 You need [Install and run](../install-run.md) finished first. If parentheses
 feel unfamiliar, skim the [beginner track](../beginner/index.md) — chapter 2
@@ -12,9 +12,12 @@ covers calling in plain language.
 :maxdepth: 1
 
 map
+layout-and-calls
 runtime-and-tooling
 data-and-control
 functions-and-scope
+classes-and-objects
+programs-and-modules
 errors-and-debugging
 interop
 where-next

@@ -1,78 +1,79 @@
 # Where next
 
-You have a Rosetta map, tooling parity with Python, data and control forms,
-functions, errors, and interop basics.
+You have a Rosetta map, layout-first syntax, tooling parity with Python, data
+and control, functions, classes, programs, errors, and interop basics.
 
 ---
 
-## Into the shared guide
+## Patterns and examples
 
-> **Q:** What should I read next?
+> **Q:** Where are idiomatic full programs?
 >
-> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) — short,
-> names read/eval/data explicitly. You likely already live this model; the
-> guide makes it precise for both on-ramps.
+> **A:** The repository **`examples/`** tree and the [Patterns](../../patterns/index.md)
+> cookbook:
+>
+> - [Fibonacci](../../patterns/recipes/fibonacci.md) — `examples/fib.ki`
+> - [Point class](../../patterns/recipes/point-class.md) — `examples/dataclass.ki`
+> - [Script entry point](../../patterns/recipes/script-main.md) — `when-main`
+> - [Hello world](../../patterns/recipes/hello.md)
 
-> **Q:** Which guide chapters matter most for Python refugees?
->
-> **A:** Skim in this order when you need depth:
->
-> 1. [Forms and combining](../../guide/01-forms-and-combining.md) — nesting,
->    grouping, how layout expands.
-> 2. [Bindings and environments](../../guide/02-bindings-and-environments.md)
->    — shadowing, persistence.
-> 3. [Modules and program structure](../../guide/06-modules-and-program-structure.md)
->    — `.ki` projects aligned with import rules.
-> 4. [Macros or syntax extension](../../guide/07-macros-or-syntax-extension.md)
->    — when you outgrow built-in forms.
->
-> Stubs without content yet — check back or use reference meanwhile.
+Run any example with `koskari path/to/file.ki` after install.
 
 ---
 
-## Reference vs tutorial
+## Shared guide
 
-> **Q:** When do I stop reading tutorials?
+> **Q:** What should I read next in the guide?
 >
-> **A:** When you are **looking up one form** rather than learning order.
-> Then use:
+> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) is complete
+> and short. Later guide chapters (forms, bindings, modules, macros) are still
+> **under construction** — use this from-python track and reference pages until
+> those land.
+
+> **Q:** Which reference sections matter day to day?
 >
-> - [Special forms](../../reference/specials/index.md)
-> - [Macros](../../reference/macros/index.md)
-> - [Layouts](../../reference/layouts/index.md)
+> **A:**
+>
+> - [Layouts](../../reference/layouts/index.md) — block syntax you write in files
+> - [Special forms](../../reference/specials/index.md) — compiler forms
+> - [Macros](../../reference/macros/index.md) — `define`, `set!`, `when-main`, …
 > - [Glossary](../../reference/glossary.md)
 
-> **Q:** I never learned Lisp — should I read the beginner track?
+---
+
+## Macros and syntax extension
+
+> **Q:** When do I learn `define-syntax`?
 >
-> **A:** Optional. Chapters 2–3 (calling, REPL results) are the useful overlap
-> if parentheses still feel alien.
+> **A:** When you repeat a code pattern that cannot be a function. Start with
+> [examples/ext-syn.ki](../../../examples/ext-syn.ki) and
+> [Macros or syntax extension](../../guide/07-macros-or-syntax-extension.md)
+> (stub — reference macros are authoritative for now).
 
 ---
 
-## Patterns and corpus
+## Embedding in Python apps
 
-> **Q:** Where are idiomatic examples?
+> **Q:** Building a long-lived host for Koskari?
 >
-> **A:** [Patterns](../../patterns/index.md) and recipes (e.g.
-> [Hello world](../../patterns/recipes/hello.md)). The [corpus](../../corpus/index.md)
-> collects real programs as documentation matures.
-
----
-
-## If you are embedding
-
-> **Q:** Building a Python app that hosts Koskari?
->
-> **A:** Finish [Interop](interop.md), then read
+> **A:** Finish [Interop](interop.md), then
 > [Python API reference](../../api/index.md) (`koskari-importer`,
-> `koskari-module`, `koskari-asyncio`). Run the importer and CLI tests under
-> `tests/importer/` and `tests/cli/` for executable examples.
+> `koskari-module`, `koskari-asyncio`). Advanced example:
+> [examples/fastapi/fastapi.ki](../../../examples/fastapi/fastapi.ki).
 
 ---
 
-## What you should remember
+## Other on-ramps
 
-This track gets you productive in Koskari syntax with Python semantics under
-the hood. The guide adds depth; reference adds precision. Same evaluation
-story as the beginner path — pick the on-ramp that matched your background,
-then converge on the guide.
+> **Q:** I never learned Python — is there another track?
+>
+> **A:** [Beginner track](../beginner/index.md) teaches the same language from
+> first principles. Both paths share [Model of evaluation](../../guide/00-model-of-evaluation.md).
+
+---
+
+## Remember
+
+This track is meant to get you **writing `.ki` code** with Python semantics
+under the hood. Use `examples/` and patterns for copy-paste starting points;
+use reference for one-form lookup; use the API only when you embed.
