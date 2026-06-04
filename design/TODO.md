@@ -240,6 +240,17 @@ Ref: `koskari/lib/ref.c` (DynamicRef handlers); `koskari/lib/opcode/DEREF.c`;
 `koskari/lib/demand.c`; [api/NAMESPACE-AND-REFS.md](api/NAMESPACE-AND-REFS.md);
 [archive/demand-sync-await-violation-at-site.md](archive/demand-sync-await-violation-at-site.md).
 
+### Flat layout as default (replace `layout/block` fallback)
+
+**TODO:** Evaluate and implement switching the reader’s default block fallback
+from **`layout/block`** (`(HEAD … (compile/begin BODY …))`) to **`layout/flat`**
+(`(HEAD … BODY …)`); fix **`layout/switch`** child shapes, syntax-rules rule
+template wrapping, tests, and docs; keep **`layout/block`** as opt-in.
+
+Ref: [language/flat-layout-default.md](language/flat-layout-default.md);
+[LAYOUTS.md](LAYOUTS.md); `koskari/reader/layouts/basics.py`;
+`koskari/bootstrap/_define_syntax.ki`.
+
 ---
 
 ## Reference

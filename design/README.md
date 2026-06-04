@@ -18,7 +18,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
   evaluation model, continuation application (including evaluator-token model),
   and [Koskari Domain](interpreter/domain.md) (ambient dynamic context, design proposal)
-- **Proposals**: [fenced-foreign-literal.md](fenced-foreign-literal.md) — triple-backtick fenced foreign literals (JSON, etc.) lowered at compile time via `compile/apply-fence`; [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md) — bundles as namespace facets for cohesive feature delivery with export facades and compile-time activation
+- **Proposals**: [fenced-foreign-literal.md](fenced-foreign-literal.md) — triple-backtick fenced foreign literals (JSON, etc.) lowered at compile time via `compile/apply-fence`; [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md) — bundles as namespace facets for cohesive feature delivery with export facades and compile-time activation; [language/flat-layout-default.md](language/flat-layout-default.md) — default block fallback as flat splice instead of `compile/begin` wrap
 - **[documentation-goals.md](documentation-goals.md)**: Meta-spec for future user-facing `docs/` tree (audiences, IA, maintenance)
 - **[corpus-schema-philosophy.md](corpus-schema-philosophy.md)**: Language conformance corpus schema, verification model, and Hugging Face dataset views derived from corpus records
 - **[docs-tracker.md](docs-tracker.md)**: User documentation site status (correlates documentation-goals and corpus plans with `docs/` progress)

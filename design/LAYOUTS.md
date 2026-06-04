@@ -34,6 +34,11 @@ and it is a `LayoutHandler`, that handler's `read(source, peers)` is invoked.
 If not found, the block is treated as a default block and routed through
 `layout/block`.
 
+**Proposal:** A design to make **`layout/flat`** the default fallback and keep
+**`layout/block`** opt-in is in
+[language/flat-layout-default.md](language/flat-layout-default.md) (see also
+[TODO.md](TODO.md)).
+
 ## `:block:` cons data and `apply_layout`
 
 Read-time layout handlers turn indented blocks into ordinary list forms. Some
