@@ -1,21 +1,126 @@
 # Demand, async evaluation, and defer
 
-Koskari bytecode runs on an **async-native** evaluator: many Python calls that
-return coroutines or awaitables are **auto-awaited** at call boundaries. How you
-**host** that evaluator (with or without an asyncio event loop) is a separate
-choice. This page ties together **demand evaluation**, **async evaluation**,
-**defer**, and related forms.
+Koskari bytecode runs on an **async-native** evaluator: suspension and resumption
+are normal, and many Python calls that return coroutines or awaitables are
+**auto-awaited** at call boundaries. How you **host** that evaluator (with or
+without an asyncio event loop) is a separate choice. This page explains the
+**ambient async** execution model, **demand evaluation**, **defer**, and how
+they relate to Python.
 
-## Async-native evaluation
+## Ambient async execution
 
-At runtime, Koskari code can suspend and resume (await Python awaitables,
-`yield`, async iteration, and similar). Ordinary calls into Python often finish
-with the awaited result on the stack, so you rarely write explicit
-[`await`](../specials/compile-await.md) for those paths.
+Python treats asynchronous execution as opt-in: functions are marked `async`,
+and calling an async function returns a coroutine that must be awaited.
 
-Coroutines, async generators, and `with` / `dyn-with` on async context managers
-follow the same model. See [compile/await](../specials/compile-await.md) and the
+Koskari treats asynchronous execution as the default. Every function can
+suspend and resume; the runtime tries to produce a **concrete value** at each
+step and only suspends when it cannot continue. A stackless evaluator (frames on
+the heap, not the C stack) makes that model practical for tail calls,
+continuations, generators, and async work in one pipeline.
+
+In practice:
+
+- Every Koskari function is capable of suspension.
+- Most code **reads** synchronously — explicit [`await`](../specials/compile-await.md)
+  is uncommon.
+- Suspension propagates through the evaluator rather than through coroutine
+  objects at every call site.
+
+A useful shorthand:
+
+> Python often defaults to returning awaitables; Koskari defaults to returning
+> values when it can.
+
+## Compared with Python
+
+```python
+async def fetch_user():
+    return await db.get_user()
+
+result = fetch_user()
+print(result)  # <coroutine object ...>
+```
+
+The caller must `await` (or schedule) the coroutine. Async tends to spread
+through callers — sometimes called async contagion.
+
+In Koskari:
+
+```koskari
+define fetch-user []:
+  (db.get-user)
+
+define user (fetch-user)
+(print user)
+```
+
+If `db.get-user` finishes immediately, `user` is a normal value and `print`
+runs. If it must wait on Python, the evaluator suspends the current context and
+resumes when the result is ready — without requiring `async` on `fetch-user`
+or an explicit await at the call site.
+
+Conceptually, `(fetch-user)` at a use site behaves like Python's
+`await fetch_user()` when suspension is needed, except the await is implicit
+and managed by the runtime.
+
+| Behaviour | Python | Koskari |
+| --------- | ------ | ------- |
+| Functions async by default | No | Yes (capable of suspend) |
+| Explicit `async` declaration | Required for async defs | Not required |
+| Explicit `await` at most call sites | Usually yes | Usually no |
+| Call returns coroutine object by default | Yes (for async def) | No — value or suspend |
+| Runtime tries immediate value resolution | No | Yes |
+| Suspension handled by evaluator | No (caller awaits) | Yes |
+| Intentionally hold work for later | Tasks, coroutines | [`defer`](#defer) |
+| Python dunder / slot may suspend | No | No — see [demand](#demand-evaluation) |
+| Demand (sync-forbidden) execution path | N/A | Yes |
+
+## Auto-await at call boundaries
+
+Coroutines, async generators, and async context managers (`with` / `dyn-with`)
+integrate with the same evaluator. Ordinary calls into Python that return
+awaitables are typically driven to completion at the boundary, so the stack
+holds the result rather than a bare coroutine. See
+[compile/await](../specials/compile-await.md) and the
 [VM opcode reference](../vm/index.md) for opcode-level detail.
+
+## Suspension in sequential code
+
+```koskari
+define fetch-user [id]:
+  (db.fetch-user id)
+
+define user (fetch-user id)
+(print user)
+```
+
+If `db.fetch-user` cannot complete immediately, the evaluator suspends, other
+work may run on the host loop, the result arrives, execution resumes, and
+`print` runs. The source stays sequential even though suspension occurred.
+
+## defer
+
+Sometimes a program must **not** resolve a value immediately. A **defer** is a
+single-shot await handle (Python builtin `defer`, also exposed in bootstrap).
+The wrapped call runs when the defer is **constructed**; the VM does **not**
+auto-await the defer value at the next use site.
+
+```koskari
+define task (defer fetch-user)
+;; ... pass task around ...
+(await task)
+```
+
+That mirrors holding a coroutine or task in Python, but defer is explicit —
+immediate resolution remains the default for ordinary calls.
+
+Use explicit [`(await expr)`](../specials/compile-await.md) when `expr` is a defer
+or any other awaitable you must suspend on at that program point. See
+[`koskari.lib`](../../api/koskari-lib.md) for the C/Python type surface.
+
+Bare **`(await)`** with no argument performs a cooperative suspend on the
+async-hosted path; on the demand path it triggers **`KoskariSyncViolation`**
+(see [on-demand?](#authoring-for-both-paths) below).
 
 ## Demand evaluation
 
@@ -35,9 +140,30 @@ On the demand path, suspension that requires waiting on a Python awaitable
 raises **`KoskariSyncViolation`**. Koskari code meant to run under demand must
 not rely on `await` at points where the host cannot resume.
 
-## Async evaluation (module load and REPL)
+### Why demand exists
 
-**Async evaluation** loads or runs code under an asyncio-driven host: each
+Many **Python integration points must not suspend**: numeric operators, attribute
+access, sequence protocols, iterator hooks, and most CPython slot implementations
+expect a synchronous result or an exception — not a suspended computation.
+
+```python
+x + y  # cannot yield to an event loop mid-operation
+```
+
+When Python invokes a Koskari dunder (for example `__add__`), the runtime routes
+that work through **demand execution**: produce a value now, or raise; never
+suspend. That preserves predictable behaviour for `obj + other` and similar
+calls while still allowing suspension inside ordinary Koskari-to-Koskari
+evaluation.
+
+Demand establishes a boundary:
+
+- Inside Koskari evaluation (async-hosted), suspension is allowed.
+- At synchronous Python-facing boundaries, suspension is forbidden.
+
+## Async-hosted evaluation
+
+**Async-hosted evaluation** loads or runs code under an asyncio-driven host: each
 compiled top-level expression is awaited. The CLI and
 [`load_module_async`](../../api/koskari-module.md) use this path when an event loop
 is available.
@@ -50,30 +176,10 @@ suspensions.
 | Host loop | None required for the Koskari run | asyncio (or compatible) |
 | Top-level module run | `load_module_demand` | `load_module_async` |
 | `await` in Koskari | Forbidden where sync completion is required | Allowed when the awaitable can run |
+| Python dunder / slot entry | Demand only | Demand only |
 
 Importer details: [`koskari.importer`](../../api/koskari-importer.md),
 [`koskari.module`](../../api/koskari-module.md).
-
-## defer
-
-A **defer** is a single-shot await handle (Python builtin `defer`, also exposed
-in bootstrap). The wrapped call runs when the defer is **constructed**; the VM
-does **not** auto-await the defer value at the next use site.
-
-That lets you pass the handle around and choose when to wait:
-
-```koskari
-;; defer was used so d is not auto-awaited at the call that produced it
-(await d)
-```
-
-Use explicit [`(await expr)`](../specials/compile-await.md) when `expr` is a defer
-or any other awaitable you must suspend on at that program point. See
-[`koskari.lib`](../../api/koskari-lib.md) for the C/Python type surface.
-
-Bare **`(await)`** with no argument performs a cooperative suspend on the
-async path; on the demand path it triggers **`KoskariSyncViolation`** (see
-**on-demand?** below).
 
 ## Authoring for both paths
 

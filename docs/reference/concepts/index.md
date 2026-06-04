@@ -17,5 +17,5 @@ macro-matching-and-hygiene
 | Page | Covers |
 |------|--------|
 | [Bindings and refs](bindings-and-refs.md) | Namespace, bind vs store, ref, deref, unpack |
-| [Demand, async, and defer](demand-async-and-defer.md) | Demand vs async-hosted evaluation, defer, on-demand? |
+| [Demand, async, and defer](demand-async-and-defer.md) | Ambient async model, demand path, defer, on-demand? |
 | [Macro matching and hygiene](macro-matching-and-hygiene.md) | Pattern match at expand time, datum forms and wrappers |
