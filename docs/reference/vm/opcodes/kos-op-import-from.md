@@ -40,7 +40,9 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ---
 
-**Trace snapshots (design only):** Read-only stack/frame introspection for debugging is discussed in interpreter/introspection-trace.md. There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here.
+**Note:** There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in
+`koskari/lib/opcodes.incl` today. Any future stack/frame introspection opcode
+would be added there first, then documented here.
 
 
 ## 11. Exception handling

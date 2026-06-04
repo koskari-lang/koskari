@@ -16,8 +16,9 @@ consumes the iterable value on TOS, classifies it (sync iterator or generator,
 Python async iterator or async generator, Koskari async generator), rejects bare
 coroutines, and drives the delegate until exhaustion while forwarding yields and
 send/throw/close semantics. Like `compile/yield`, participating code is marked
-with `KOS_CODE_YIELDS`. Full stack and suspension details are in
-`design/OPCODES.md` (KOS_OP_YIELD_FROM) and `koskari/lib/opcode/YIELD_FROM.c`.
+with `KOS_CODE_YIELDS`. Opcode behaviour is documented in
+[KOS_OP_YIELD_FROM](../vm/opcodes/kos-op-yield-from.md); implementation is in
+`koskari/lib/opcode/YIELD_FROM.c`.
 
 **Examples:**
 

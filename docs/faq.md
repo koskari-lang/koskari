@@ -9,11 +9,6 @@ No. Development status is **Pre-Alpha**. Expect breaking changes.
 Python 3.9 through 3.14 (see `setup.cfg` classifiers). CI exercises multiple
 versions via containerized tox runs.
 
-## Where are the design documents?
-
-In the repository under `design/`. They target maintainers and agents, not
-first-time learners. This user site does not link into `design/`.
-
 ## How do I report bugs or contribute?
 
 Use the project issue tracker and follow `make test` / `make lint` before

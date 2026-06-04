@@ -12,15 +12,11 @@ and **`compile/special-match`** (below).
 **Typical surface form:** **`(define-syntax NAME (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...))`**
 — the macro expands that to **`compile/define`** plus a **`syntax-rules`** spec
 with **`NAME`** repeated as the first argument. Block syntax via
-`layout/define-syntax` and `layout/syntax-rules` produces the same shape; see
-LAYOUTS.md.
+[layout/define-syntax](../layouts/layout-define-syntax.md) and
+[layout/syntax-rules](../layouts/layout-syntax-rules.md) produces the same shape.
 
 **Implementation:** `koskari/bootstrap/_define_syntax.ki` (macro definition).
 
-**See also:** MACROS.md — **compile/define-syntax (macro)**;
-MATCHER.md — matcher syntax, composites, and hygiene tables;
-language/unified-matcher-transformer-model.md
-(**RULE** vs **MATCH** pattern languages; unified matcher IR, transformer
-pipeline, and post-expand hygiene/unbox for `define-syntax`, `macro-rules`, and
-specials).
-
+**See also:** [Macros](../macros/index.md),
+[Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md),
+**`compile/syntax-rules`**, **`compile/syntax-match`**.

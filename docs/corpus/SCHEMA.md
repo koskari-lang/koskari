@@ -35,7 +35,7 @@ validates **structure only**; semantics are checked by corpus test runners.
   or `error`.
 
 **references**
-: Links to user docs or design anchors.
+: Links to pages under `docs/` (reference, start, guide, etc.).
 
 **stability** (optional)
 : `stable`, `evolving`, or `experimental`.

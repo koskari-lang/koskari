@@ -23,7 +23,7 @@ symbols become their name strings).
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
 for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers and
-the **FORMALS** composite in MATCHER.md).
+[`koskari.matcher`](../../api/koskari-matcher.md)).
 Parameter types may use `::` / `type:` on individual parameters (see formals
 helpers).
 

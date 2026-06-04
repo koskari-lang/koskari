@@ -1,5 +1,20 @@
 # compile/ge?
 **Symbol:** `compile/ge?`
+**Aliases:** `compile/>=`
 
-See Object operator overview and design/SPECIALS.md for the full operator tables.
+**Syntax:** `(ge? A B ...)`
 
+**Use-case:** Chained comparison — at least two values. Succeeds when
+each adjacent pair is ordered descending or equal, like Python chained comparisons.
+
+**Behaviour:** Compiles each argument, emits the corresponding `OBJECT_*`
+opcode with operand count.
+
+**Examples:**
+
+```koskari
+(ge? 3 2)
+(ge? 1 3)   ; false
+```
+
+See [Object operator overview](object-operators/index.md) for the full comparison table.

@@ -17,7 +17,7 @@ FAST_OBJECT_* when VAR has a fixed slot.
 **Examples:**
 
 ```koskari
-;; Via set! macro (see MACROS.md)
+;; Via set! macro
 (set! x (+ x 1))    ; x += 1
 (set! n (* n 2))    ; n *= 2
 (set! bits (| bits mask))  ; bits |= mask

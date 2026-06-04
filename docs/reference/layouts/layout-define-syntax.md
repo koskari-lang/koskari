@@ -10,7 +10,8 @@ at the block level.
 
 **Behaviour:** Implemented only as that **`layout/flat`** alias in **`basics.ki`**.
 Transformer choice and validation happen in the **`compile/define-syntax`** macro
-at compile time (see **compile/define-syntax** in MACROS.md). Does not
+at compile time (see [compile/define-syntax](../specials/compile-define-syntax.md)).
+Does not
 accept peers.
 
 **Syntax:**

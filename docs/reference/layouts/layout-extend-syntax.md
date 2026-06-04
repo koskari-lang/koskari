@@ -7,7 +7,7 @@ extra **`compile/begin`** wrapper around the transformer at read time.
 
 **Behaviour:** Same **`layout/flat`** splicing as documented under **layout/flat**
 above. Compile-time behaviour is **`compile/extend-syntax`** (see
-**compile/extend-syntax** in MACROS.md). Does not accept peers.
+[Macros](../macros/index.md)). Does not accept peers.
 
 **Syntax:**
 

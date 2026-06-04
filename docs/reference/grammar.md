@@ -1,9 +1,9 @@
 # Grammar
 
-```{admonition} Under construction
-:class: warning
+Koskari source combines **layout blocks** (indentation-based forms such as
+`if`, `while`, and `define-syntax`) with **parenthesized** S-expressions. The
+reader turns both into list structure; the compiler then expands macros and
+dispatches on special forms.
 
-A public syntax reference will be adapted from design/SYNTAX.md.
-
-See [Layouts](layouts/index.md) and [Special forms](specials/index.md) for implemented surface syntax today.
-```
+A full formal grammar is not published here yet. For surface syntax you can use
+today, see [Layouts](layouts/index.md) and [Special forms](specials/index.md).

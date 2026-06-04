@@ -14,7 +14,8 @@ run the body in a CollectorNamespace. The **value of the form** is the new class
 object (default metaclass is KosType; use `meta: MyMeta` in SUPERS for a custom
 metaclass). To **bind** the class to a name in the surrounding scope, wrap with
 `compile/define` (or use the **`define-class`** macro — see
-MACROS.md § compile/define-class).
+[define-class macro](../macros/index.md) and
+[layout/define-class](../layouts/layout-define-class.md)).
 
 **Behaviour:** Builds a position tuple `(name, bases)` or
 `(name, bases, metaclass)` with BUILD_ARGS, opens a collector namespace

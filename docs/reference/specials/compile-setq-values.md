@@ -15,7 +15,7 @@ VALUE, then emits unpack store bytecode via the same helper as unpack-style
 `using` bindings (`declare=False`). The form evaluates to None.
 
 **Note:** The `set!` macro expands `(set! (values pattern ...) value)` to
-`(setq-values [pattern ...] value)`; see MACROS.md.
+`(setq-values [pattern ...] value)`; see [Macros](../macros/index.md).
 
 **Examples:**
 
@@ -23,7 +23,7 @@ VALUE, then emits unpack store bytecode via the same helper as unpack-style
 (setq-values [a b] (pair 1 2))
 (setq-values [a *: b c] seq)
 
-;; Via set! (see MACROS.md)
+;; Via set! macro expansion
 (set! (values x y) point)
 ```
 

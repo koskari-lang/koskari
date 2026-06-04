@@ -17,7 +17,7 @@ arguments (the keyword, then the cdr), matching the usual **`compile/call`**
 keyword-argument layout. Ordinary forms are unchanged.
 
 For **`*:`**, splices, and the full **`compile/call`** surface, see
-SPECIALS.md § compile/call.
+[compile/call](../specials/compile-call.md).
 
 **Syntax:**
 

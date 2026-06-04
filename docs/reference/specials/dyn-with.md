@@ -12,7 +12,8 @@ instance.
 
 **Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
 Expression value is always `None`. See
-interpreter/with-dyn-with.md.
+[PUSH_DYN_WITH / POP_DYN_WITH](../vm/index.md#kos_op_push_dyn_with) in the VM
+reference.
 
 **Examples:**
 

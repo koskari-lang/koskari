@@ -7,7 +7,7 @@
 pushes the cdr of that pair. One argument.
 
 **Behaviour:** Compile EXPR, then emit **CDR 1**. At runtime, CDR applies cdr
-once per unit of arg (see [OPCODES §5.1](OPCODES.md#kos_op_cdr)). If a popped
+once per unit of arg (see [KOS_OP_CDR](../vm/opcodes/kos-op-cdr.md)). If a popped
 value is not a pair or is nil, TypeError is raised. Consecutive **CDR**
 instructions may be merged by the compiler **compress** pass into one **CDR**
 with the sum of their counts (same for **CAR**).

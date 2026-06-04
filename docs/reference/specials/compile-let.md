@@ -8,7 +8,7 @@
 
 **Bindings:** A list of binding forms; each is `[SYM EXPR]` or `(EXPR as: SYM)`.
 Parsed with `gather_bindings` (see helpers). Matcher shape: **BINDINGS** with
-`scope: body` in MATCHER.md.
+[`koskari.matcher`](../../api/koskari-matcher.md).
 
 **Use-case:** Lexical bindings for the duration of the body. Unnamed let pushes a
 child namespace (PUSH_NS), binds names to compiled values, runs the body, and

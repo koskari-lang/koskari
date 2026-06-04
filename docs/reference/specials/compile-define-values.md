@@ -13,7 +13,7 @@ according to PATTERN (parallel to `compile/define` for a single name).
 prior `request_for_write`). The form evaluates to None.
 
 **Note:** The `let-values` macro sequences this form inside `let`; see
-MACROS.md.
+[Macros](../macros/index.md).
 
 **Examples:**
 
@@ -21,7 +21,7 @@ MACROS.md.
 (define-values [a b] (pair 1 2))
 (define-values [a *: b c] seq)
 
-;; Via let-values (see MACROS.md)
+;; Via let-values macro
 (let-values [(x y) point] (use x y))
 ```
 

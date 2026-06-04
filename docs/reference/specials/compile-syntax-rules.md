@@ -14,6 +14,7 @@ the **value** of that expression; bind it with **`(define NAME …)`**.
 `special_compile_syntax_rules`
 
 
-**See also:** MATCHER.md — **`compile/syntax-rules`** hygiene
-patterns (`DEFINE`, `BIND` for literals, `REST` for rules).
+**See also:** [Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md)
+— **`compile/syntax-rules`** hygiene patterns (`DEFINE`, `BIND` for literals,
+`REST` for rules).
 

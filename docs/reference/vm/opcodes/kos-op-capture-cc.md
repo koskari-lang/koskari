@@ -11,5 +11,8 @@
 
 ## 22. Dynamic wind
 
-Unified extent wind/unwind is described in interpreter/extent-wind-unwind.md. The unified API (`kos_extent_run_wind`, `kos_extent_run_unwind`) dispatches by node kind for simple pop and transfer plans.
+Unified extent wind/unwind uses `kos_extent_run_wind` and `kos_extent_run_unwind`,
+which dispatch by dynamic-chain node kind for simple pop and transfer plans.
+See [compile/capture-cc](../../specials/compile-capture-cc.md) and
+[compile/dyn-wind](../../specials/compile-dyn-wind.md).
 

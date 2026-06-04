@@ -135,5 +135,6 @@
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§24](#kos_op_theend) |
 
-**Completeness:** Every member of the `KosOpCode` enum in `koskari/lib/opcodes.incl` has a dedicated `### KOS_OP_*` heading in this document (some sections group related opcodes under one narrative first, then list each name). Search for `### KOS_OP_` to enumerate. Design-only or future opcodes belong in design notes, not here, until they are added to `opcodes.incl`.
+**Completeness:** Every member of the `KosOpCode` enum in `koskari/lib/opcodes.incl` has a dedicated `### KOS_OP_*` heading in this document (some sections group related opcodes under one narrative first, then list each name). Search for `### KOS_OP_` to enumerate. Opcodes not listed in `opcodes.incl` are
+not documented here until they are added to the enum.
 

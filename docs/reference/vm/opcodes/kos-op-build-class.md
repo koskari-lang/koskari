@@ -7,7 +7,7 @@
   derived/composite metaclass, `__prepare__`, merge, metaclass call); pushes
   resulting class.
 - **Compiler form:** Build pos with BUILD_ARGS; use with_collector_namespace for
-  PUSH_COLLECT/body/POP_COLLECT; then BUILD_CLASS. See design/api/OBJECT-MODEL.md.
+  PUSH_COLLECT/body/POP_COLLECT; then BUILD_CLASS. See [compile/class](../../specials/compile-class.md).
 
 **Example:** Empty class C. PUSH_COLLECT arg = constant pool index of nspec.
 

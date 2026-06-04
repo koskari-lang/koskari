@@ -16,20 +16,6 @@
 
 ## See also
 
-- interpreter/bytecode.md — Bytecode format, KosCode layout, API
-- interpreter/bytecode-metadata-tables.md — Extents, location table, jump locality
-- interpreter/execution-invariants.md — Execution model
-- interpreter/evaluator.md — Evaluation loop
-- FEATURES.md — Implementation status and feature list
+- [VM overview](../index.md) — notation, invariants, and opcode catalog
 - `koskari/lib/opcodes.incl` — Authoritative opcode enum and order
 - `koskari.dis` — Runtime disassembly of KosCode objects
-
-
-## Document status
-
-This document is the design target for Koskari opcodes. When semantics or
-invariants change, update this file and the implementation together. Last
-substantive update: pre/post-compile representation (§1.5–1.10), LABEL/POSITION
-stripping, quick-reference index, glossary, maintaining checklist, and
-intended/current notes for stubs.
-

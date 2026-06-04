@@ -25,8 +25,3 @@ flowchart LR
 
 Bootstrap `.ki` sources compile into `koskari.builtins`; that loading
 machinery is internal and not part of this user documentation.
-
-## Contributor design docs
-
-Implementation contracts and in-progress design live under `design/` in the
-repository. Start at `design/README.md`.

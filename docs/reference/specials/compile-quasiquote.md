@@ -47,7 +47,8 @@ three-element proper list `(a compile/unquote x)` (because `(a . (unquote x))`
 collapses to a proper list). Only atomic tails produce genuine improper pairs
 (e.g. ``(a . 42)` or ``(a . b)`).
 
-**Opcodes emitted:** `CONST`, `PROPER`, `CONS`, `PAIR_SPLICE` (see OPCODES.md §5.1).
+**Opcodes emitted:** `CONST`, `PROPER`, `CONS`, `PAIR_SPLICE` (see
+[VM reference](../vm/index.md)).
 
 **Examples:**
 
