@@ -7,13 +7,13 @@ on:
   workflow_call:
     inputs:
       image-tag:
-        description: Tag for the container image (defaults to git SHA)
+        description: Tag for the container image (defaults to version report)
         required: false
         type: string
   workflow_dispatch:
     inputs:
       image-tag:
-        description: Tag for the container image (defaults to git SHA)
+        description: Tag for the container image (defaults to version report)
         required: false
         type: string
 
@@ -38,12 +38,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve image tag
-        id: meta
+      - name: Resolve version metadata
+        id: version
         run: |
+          eval "$(python3 -B tools/regen_version.py --report)"
+          echo "commit=$KOSKARI_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "dirty=$KOSKARI_DIRTY" >> "$GITHUB_OUTPUT"
+          echo "exact_tag=$KOSKARI_EXACT_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$KOSKARI_VERSION" >> "$GITHUB_OUTPUT"
           tag="${{ inputs.image-tag }}"
           if [ -z "$tag" ]; then
-            tag="${GITHUB_SHA}"
+            tag="$(python3 -B tools/regen_version.py --report tag)"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
@@ -54,8 +59,13 @@ jobs:
           context: .
           file: Containerfile
           push: true
+          build-args: |
+            KOSKARI_COMMIT=${{ steps.version.outputs.commit }}
+            KOSKARI_DIRTY=${{ steps.version.outputs.dirty }}
+            KOSKARI_EXACT_TAG=${{ steps.version.outputs.exact_tag }}
+            KOSKARI_VERSION=${{ steps.version.outputs.version }}
           tags: |
-            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
-            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.version.outputs.image }}:${{ steps.version.outputs.tag }}
+            ${{ steps.version.outputs.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -164,8 +164,14 @@ test-py314: handlers  ## Run tests in container for Python 3.14
 
 build-container:  ## Build koskari runtime container image
 	@echo "Building koskari container image..."
-	@$(CONTAINER_ENGINE) build -t $(PROJECT):$(VERSION) -f Containerfile .
-	@echo "Container image $(PROJECT):$(VERSION) built"
+	@build_args=$$(mktemp); \
+	trap 'rm -f "$$build_args"' EXIT; \
+	tox -qqe regen-version -- --report > "$$build_args"; \
+	$(CONTAINER_ENGINE) build \
+	  --build-arg-file "$$build_args" \
+	  -t $(PROJECT):$(VERSION)-dev \
+	  -f Containerfile .; \
+	echo "Container image $(PROJECT):$(VERSION)-dev built"
 
 
 ##@ Code Quality

@@ -5,16 +5,35 @@ RUN pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-c
     uv
 
 WORKDIR /build
-COPY setup.py setup.cfg pyproject.toml MANIFEST.in \
-     LICENSE README.md koskari.pth \
-     /build/
-COPY koskari/ /build/koskari/
 COPY tools/regen_version.py /build/tools/
+COPY setup.py setup.cfg pyproject.toml MANIFEST.in \
+     LICENSE README.md koskari.pth ./
+COPY koskari/ ./koskari/
+
+ARG KOSKARI_COMMIT=
+ARG KOSKARI_DIRTY=0
+ARG KOSKARI_EXACT_TAG=
+ENV KOSKARI_FORCE_VERSION_REGEN=1 \
+    KOSKARI_COMMIT=${KOSKARI_COMMIT} \
+    KOSKARI_DIRTY=${KOSKARI_DIRTY} \
+    KOSKARI_EXACT_TAG=${KOSKARI_EXACT_TAG}
 
 RUN uv build .
 
 
 FROM python:3.14-alpine
+
+ARG KOSKARI_COMMIT=
+ARG KOSKARI_VERSION=
+
+LABEL org.opencontainers.image.title="koskari" \
+      org.opencontainers.image.source="https://github.com/obriencj/koskari" \
+      org.opencontainers.image.description="Koskari: A LISP dialect for Python" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later" \
+      org.opencontainers.image.authors="Christopher O'Brien <obriencj@gmail.com>" \
+      org.opencontainers.image.vendor="Koskari" \
+      org.opencontainers.image.version="${KOSKARI_VERSION}" \
+      org.opencontainers.image.revision="${KOSKARI_COMMIT}"
 
 ENTRYPOINT ["koskari"]
 COPY --from=builder /build/dist /dist
