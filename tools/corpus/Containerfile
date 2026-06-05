@@ -1,0 +1,34 @@
+# Containerfile for corpus JSONL to parquet export.
+#
+# Build (repository root):
+#   podman build -t koskari-corpus-export -f tools/corpus/Containerfile .
+#
+# Run:
+#   mkdir -p build/corpus/datasets
+#   podman run --rm \
+#     -v ./build/corpus/datasets:/out:Z \
+#     koskari-corpus-export
+#
+# author: Christopher O'Brien <obriencj@gmail.com>
+# license: GPL v.3
+
+FROM python:3.14-alpine
+
+LABEL maintainer="obriencj@gmail.com" \
+      description="Export Koskari corpus JSONL to parquet dataset views"
+
+RUN pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-check \
+    pyarrow
+
+WORKDIR /work
+
+COPY tools/corpus/ /work/tools/corpus/
+COPY tools/regen_version.py /work/tools/
+COPY docs/corpus/SCHEMA.json /work/docs/corpus/SCHEMA.json
+COPY docs/corpus/records/ /work/docs/corpus/records/
+
+ENTRYPOINT ["python", "-B", "tools/corpus/export.py"]
+CMD ["--view", "koskari-eval", "--output-dir", "/out/koskari-eval"]
+
+
+# The end.

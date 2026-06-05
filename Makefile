@@ -174,6 +174,26 @@ build-container:  ## Build koskari runtime container image
 	echo "Container image $(PROJECT):$(VERSION)-dev built"
 
 
+##@ Corpus
+
+CORPUS_IMAGE := koskari-corpus-export
+
+corpus-parquet:  ## Export koskari-eval parquet from corpus JSONL via tox
+	@$(call checkfor,tox)
+	@echo "Exporting corpus view koskari-eval..."
+	@tox -qe regen-corpus -- --view koskari-eval
+
+corpus-parquet-container-build:  ## Build corpus parquet export container image
+	@echo "Building corpus export container image $(CORPUS_IMAGE)..."
+	@$(CONTAINER_ENGINE) build -q -t $(CORPUS_IMAGE) -f tools/corpus/Containerfile .
+
+corpus-parquet-container: corpus-parquet-container-build  ## Run corpus export container; writes to build/corpus/datasets/
+	@mkdir -p $(BUILD_DIR)/corpus/datasets
+	@$(CONTAINER_ENGINE) run --rm \
+	  -v $(PWD)/$(BUILD_DIR)/corpus/datasets:/out:Z \
+	  $(CORPUS_IMAGE)
+
+
 ##@ Code Quality
 
 lint:  ## Run linting (flake8) via tox
@@ -242,6 +262,9 @@ python:  ## Show Python executable
 	build \
 	build-ext \
 	clean \
+	corpus-parquet \
+	corpus-parquet-container \
+	corpus-parquet-container-build \
 	clean-built \
 	clean-ext \
 	clean-native \
