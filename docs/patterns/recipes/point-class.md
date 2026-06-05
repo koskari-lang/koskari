@@ -8,18 +8,17 @@ yields neighbor points using `each` and `itertools.product`.
 - [Install and run](../../start/install-run.md)
 - [From Python: Classes and objects](../../start/from-python/classes-and-objects.md)
 
-## Source
+## Try it
 
-Repository file: [examples/dataclass.ki](../../../examples/dataclass.ki)
-
-## Run
+Save the core shape below as `point.ki`, fill in any helpers you want to
+experiment with, and run:
 
 ```bash
-koskari examples/dataclass.ki
+koskari point.ki
 ```
 
-Expected output includes `Point` metadata, `Point(3, 5)`, and a list of neighbor
-coordinates printed under `p.neighbors:`.
+A complete version prints `Point` metadata, a point such as `Point(3, 5)`, and
+neighbor coordinates.
 
 ## Core shape
 

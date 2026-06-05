@@ -9,15 +9,14 @@ and control, functions, classes, programs, errors, and interop basics.
 
 > **Q:** Where are idiomatic full programs?
 >
-> **A:** The repository **`examples/`** tree and the [Patterns](../../patterns/index.md)
-> cookbook:
+> **A:** Start with the [Patterns](../../patterns/index.md) cookbook:
 >
-> - [Fibonacci](../../patterns/recipes/fibonacci.md) — `examples/fib.ki`
-> - [Point class](../../patterns/recipes/point-class.md) — `examples/dataclass.ki`
+> - [Fibonacci](../../patterns/recipes/fibonacci.md) — recursion and function calls
+> - [Point class](../../patterns/recipes/point-class.md) — data and methods
 > - [Script entry point](../../patterns/recipes/script-main.md) — `when-main`
-> - [Hello world](../../patterns/recipes/hello.md)
+> - [Hello world](../../patterns/recipes/hello.md) — the smallest runnable script
 
-Run any example with `koskari path/to/file.ki` after install.
+Copy a pattern into a `.ki` file, run it, and change one line at a time.
 
 ---
 
@@ -25,10 +24,9 @@ Run any example with `koskari path/to/file.ki` after install.
 
 > **Q:** What should I read next in the guide?
 >
-> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) is complete
-> and short. Later guide chapters (forms, bindings, modules, macros) are still
-> **under construction** — use this from-python track and reference pages until
-> those land.
+> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) is the
+> first shared chapter. Continue through forms, bindings, functions, data,
+> control flow, modules, macros, types, effects, and testing as needed.
 
 > **Q:** Which reference sections matter day to day?
 >
@@ -46,9 +44,9 @@ Run any example with `koskari path/to/file.ki` after install.
 > **Q:** When do I learn `define-syntax`?
 >
 > **A:** When you repeat a code pattern that cannot be a function. Start with
-> [examples/ext-syn.ki](../../../examples/ext-syn.ki) and
-> [Macros or syntax extension](../../guide/07-macros-or-syntax-extension.md)
-> (stub — reference macros are authoritative for now).
+> [Macros or syntax extension](../../guide/07-macros-or-syntax-extension.md),
+> then use the [macro reference](../../reference/macros/index.md) for exact
+> syntax.
 
 ---
 
@@ -58,8 +56,7 @@ Run any example with `koskari path/to/file.ki` after install.
 >
 > **A:** Finish [Interop](interop.md), then
 > [Python API reference](../../api/index.md) (`koskari-importer`,
-> `koskari-module`, `koskari-asyncio`). Advanced example:
-> [examples/fastapi/fastapi.ki](../../../examples/fastapi/fastapi.ki).
+> `koskari-module`, `koskari-asyncio`).
 
 ---
 
@@ -75,5 +72,5 @@ Run any example with `koskari path/to/file.ki` after install.
 ## Remember
 
 This track is meant to get you **writing `.ki` code** with Python semantics
-under the hood. Use `examples/` and patterns for copy-paste starting points;
-use reference for one-form lookup; use the API only when you embed.
+under the hood. Use patterns for copy-paste starting points; use reference for one-form lookup;
+use the API only when you embed.

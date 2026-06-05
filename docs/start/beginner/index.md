@@ -2,7 +2,8 @@
 
 A short introduction for readers who are **new to programming**. Each chapter
 is written as a dialogue: questions you can answer (or predict) before reading
-the reply.
+the reply. The path starts with printing text, then grows into names, choices,
+and tiny functions.
 
 You need [Install and run](../install-run.md) finished first — at minimum, the
 `koskari` command should start a REPL session.
@@ -15,6 +16,8 @@ You need [Install and run](../install-run.md) finished first — at minimum, the
 02-calling-things
 03-results-and-messages
 04-repeating-patterns
+05-making-choices
+06-tiny-functions
 where-next
 ```
 
