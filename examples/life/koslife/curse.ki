@@ -205,22 +205,22 @@ define curses-main [stdscr options]:
 
     elif (< 0 event 256):
       (define echar (chr event))
-      if (in " \n" echar):
+      if (in echar " \n"):
         (board.toggle x-pos y-pos)
         (board.display)
-      elif (in "Cc" echar):
+      elif (in echar "Cc"):
         (continuous-mode stdscr board menu-y)
-      elif (in "Ee" echar):
+      elif (in echar "Ee"):
         (board.clear)
         (board.display)
-      elif (in "Qq" echar):
+      elif (in echar "Qq"):
         (break)
-      elif (in "Rr" echar):
+      elif (in echar "Rr"):
         (board.randomize)
         (board.display)
-      elif (in "Ss" echar):
+      elif (in echar "Ss"):
         (step stdscr board)
-      elif (in digits echar):
+      elif (in echar digits):
         (multi-step stdscr board menu-y (** 10 (digits.index echar)))
 
     elif (equal? event KEY_UP):
