@@ -218,6 +218,54 @@ subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
+### `getattr*` — chained attribute access with default
+
+**TODO:** Add **`getattr*`** as a function (or macro) analogous to **`attr*`** /
+**`compile/attr*`**: left-nested attribute walk on **`obj`**, with a caller-supplied
+default returned when any step fails (missing intermediate, missing attribute, or
+other **`attr`** failure) instead of raising.
+
+Ref: **`compile/attr*`** in `koskari/bootstrap/_variables.ki`;
+[MACROS.md](MACROS.md) § compile/item* and compile/attr*.
+
+### DynamicRef accessors on demand path
+
+**TODO:** Make **DynamicRef** accessor handlers (`getfn`, `setfn`, `delfn`,
+`emptyfn`) run on the demand path when they are Koskari callables: use in-eval
+`demand_sync_ex` / eval-state injection where the VM is already on demand, and
+route ref opcodes (e.g. **`DEREF`**) through **`KosRef_Deref`** /
+**`KosRef_Store`** / **`KosRef_Clear`** instead of **`PyObject_CallMethod`**.
+
+Ref: `koskari/lib/ref.c` (DynamicRef handlers); `koskari/lib/opcode/DEREF.c`;
+`koskari/lib/demand.c`; [api/NAMESPACE-AND-REFS.md](api/NAMESPACE-AND-REFS.md);
+[archive/demand-sync-await-violation-at-site.md](archive/demand-sync-await-violation-at-site.md).
+
+### Flat layout as default (replace `layout/block` fallback)
+
+**TODO:** Evaluate and implement switching the reader’s default block fallback
+from **`layout/block`** (`(HEAD … (compile/begin BODY …))`) to **`layout/flat`**
+(`(HEAD … BODY …)`); fix **`layout/switch`** child shapes, syntax-rules rule
+template wrapping, tests, and docs; keep **`layout/block`** as opt-in.
+
+Ref: [language/flat-layout-default.md](language/flat-layout-default.md);
+[LAYOUTS.md](LAYOUTS.md); `koskari/reader/layouts/basics.py`;
+`koskari/bootstrap/_define_syntax.ki`.
+
+### kos_repr formatters for list, tuple, dict
+
+**TODO:** Register `kos_repr` handlers for built-in `list`, `tuple`, and `dict`
+so REPL and debug output use Koskari surface syntax instead of Python `repr`:
+
+| Python value | Python `repr` | Koskari `kos_repr` |
+|--------------|---------------|--------------------|
+| `[1, 2, 3]`  | `[1, 2, 3]`   | `#[1 2 3]`         |
+| `(1, 2, 3)`  | `(1, 2, 3)`   | `#(1 2 3)`         |
+| `{"foo": 4}` | `{'foo': 4}`  | `#{("foo" . 4)}`   |
+
+Ref: `koskari/lib/utils.c` (`KosUtils_Repr`, `kos_repr_register`);
+`koskari/lib/pair.c` (`__kos_repr__` for pairs and `nil`);
+`koskari/bootstrap/__init__.py` (`repr` bound to `kos_repr`).
+
 ---
 
 ## Reference

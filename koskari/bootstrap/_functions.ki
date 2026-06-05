@@ -25,7 +25,7 @@ define-syntax compile/define-coroutine:
 
   syntax-rules []:
     case (define-coroutine name args body ...):
-      (define name (coroutine-fn (lambda name args body ...)))
+      (define name (coroutine-fn (function name args body ...)))
 
 
 define-syntax compile/define-demanding:
@@ -36,7 +36,7 @@ define-syntax compile/define-demanding:
 
   syntax-rules []:
     case (define-demanding name formals body ...):
-      (define name (demand (lambda name formals body ...)))
+      (define name (demand (function name formals body ...)))
 
 
 define-syntax compile/function-compose:
@@ -78,9 +78,9 @@ define-syntax compile/decorate:
     case (decorate [decorators ...] (compile/define-class name supers body ...)):
       (define name (decorate [decorators ...] (class name supers (begin body ...))))
     case (decorate [decorators ...] (define name formals body ...)):
-      (define name (decorate [decorators ...] (lambda name formals body ...)))
+      (define name (decorate [decorators ...] (function name formals body ...)))
     case (decorate [decorators ...] (compile/define name formals body ...)):
-      (define name (decorate [decorators ...] (lambda name formals body ...)))
+      (define name (decorate [decorators ...] (function name formals body ...)))
     case (decorate [decorators ...] fn):
       ((function-compose decorators ...) fn)
 

@@ -424,8 +424,7 @@ define dis [x file: None]:
     define extra_schema (if (getattr op "extra" None) (tuple op.extra) None)
     define ns_label None
 
-    ;; marker for (in) operator
-    when (in ns_const_map i):
+    when (in i ns_const_map):
       define ns_idx (item ns_const_map i)
       set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx))
     (define arg_str
@@ -468,8 +467,7 @@ define _get_instruction_lines [code]:
     define extra_schema (if (getattr op "extra" None) (tuple op.extra) None)
     define ns_label None
 
-    ;; marker for (in) operator
-    when (in ns_const_map i):
+    when (in i ns_const_map):
       define ns_idx (item ns_const_map i)
       set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx))
     (define arg_str

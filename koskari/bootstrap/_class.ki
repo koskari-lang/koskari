@@ -27,6 +27,10 @@ define-syntax create-instance-check:
 
 
 define-syntax compile/define-class:
+  """
+  Defines a class and a typecheck function for it
+  """
+
   syntax-rules []:
     case (define-class name supers body ...):
       (define name (class name supers body ...))

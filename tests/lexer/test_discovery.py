@@ -21,28 +21,34 @@ from koskari.lexer.discovery import (
     collect_special_like_names_from_builtins,
     special_names_for_repl,
 )
-from koskari.bootstrap import make_bootstrap
 
-from unittest import IsolatedAsyncioTestCase
+from unittest import TestCase
 
 import pytest
 
 pytestmark = pytest.mark.phase_infra
 
 
-class TestDiscovery(IsolatedAsyncioTestCase):
+class TestDiscovery(TestCase):
 
-    async def test_collect_from_bootstrap_includes_known_special(self):
-        bltns = make_bootstrap()
+    def test_collect_from_builtins_includes_known_special(self):
+        """
+        collect_special_like_names_from_builtins finds compile/define from basics.ki
+        """
+
+        import koskari.builtins as builtins
+        bltns = vars(builtins)
         names = collect_special_like_names_from_builtins(bltns)
         self.assertIn('compile/define', names)
         self.assertIn('define', names)
 
-    async def test_special_names_for_repl_non_empty(self):
+
+    def test_special_names_for_repl_non_empty(self):
         names = special_names_for_repl()
         self.assertGreater(len(names), 0)
         self.assertIn('compile/define', names)
         self.assertIn('define', names)
+        self.assertIn('import', names)
 
 
 # The end.

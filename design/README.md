@@ -8,7 +8,7 @@ This directory contains the design documentation for koskari, organized into thr
 
 ## Structure
 
-- **[SPECIALS.md](SPECIALS.md)**: Reference for implemented compiler special forms (compile/bytecode, compile/begin, compile/call, compile/lambda, compile/try, compile/class, compile/define-syntax, import, import-from, and many more; see SPECIALS.md for full list), with use-cases and examples
+- **[SPECIALS.md](SPECIALS.md)**: Reference for implemented compiler special forms (compile/bytecode, compile/begin, compile/call, compile/lambda, compile/function, compile/try, compile/class, compile/define-syntax, import, import-from, and many more; see SPECIALS.md for full list), with use-cases and examples
 - **[MACROS.md](MACROS.md)**: Reference for implemented macros (set!, ref, etc.) defined in basics.ki; format mirrors SPECIALS.md
 - **[OPCODES.md](OPCODES.md)**: Canonical reference for implemented opcodes
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
@@ -18,9 +18,10 @@ This directory contains the design documentation for koskari, organized into thr
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
   evaluation model, continuation application (including evaluator-token model),
   and [Koskari Domain](interpreter/domain.md) (ambient dynamic context, design proposal)
-- **Proposals**: [fenced-foreign-literal.md](fenced-foreign-literal.md) — triple-backtick fenced foreign literals (JSON, etc.) lowered at compile time via `compile/apply-fence`; [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md) — bundles as namespace facets for cohesive feature delivery with export facades and compile-time activation
+- **Proposals**: [fenced-foreign-literal.md](fenced-foreign-literal.md) — triple-backtick fenced foreign literals (JSON, etc.) lowered at compile time via `compile/apply-fence`; [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md) — bundles as namespace facets for cohesive feature delivery with export facades and compile-time activation; [language/flat-layout-default.md](language/flat-layout-default.md) — default block fallback as flat splice instead of `compile/begin` wrap
 - **[documentation-goals.md](documentation-goals.md)**: Meta-spec for future user-facing `docs/` tree (audiences, IA, maintenance)
 - **[corpus-schema-philosophy.md](corpus-schema-philosophy.md)**: Language conformance corpus schema, verification model, and Hugging Face dataset views derived from corpus records
+- **[docs-tracker.md](docs-tracker.md)**: User documentation site status (correlates documentation-goals and corpus plans with `docs/` progress)
 - **[ideas.md](ideas.md)**: Potential concepts and options (e.g. feature flag for demand vs run_sync imports) — not committed plans, just notes to revisit
 
 ## Purpose

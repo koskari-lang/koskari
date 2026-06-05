@@ -23,9 +23,6 @@ lexical highlighting (REPL and editors).
 """
 
 
-_COMPILE_PREFIX = 'compile/'
-
-
 __all__ = (
     'collect_special_like_names_from_builtins',
     'special_names_for_repl',
@@ -39,8 +36,8 @@ def _names_for_special_binding(name):
     """
 
     yield name
-    if name.startswith(_COMPILE_PREFIX):
-        yield name[len(_COMPILE_PREFIX):]
+    if name.startswith('compile/'):
+        yield name[8:]
 
 
 def collect_special_like_names_from_builtins(builtins_dict):
@@ -71,17 +68,16 @@ def collect_special_like_names_from_builtins(builtins_dict):
 
 def special_names_for_repl():
     """
-    Return special-form names for the REPL using the full builtins environment.
+    Return special-form names for the REPL using the full builtins environment
 
-    Loads builtins via ``make_builtins_demand()`` (bootstrap plus basics.ki),
-    then collects ``Special`` and ``syntax.Syntax`` bindings.
+    Imports koskari.builtins (which loads basics.ki on first import) and
+    collects Compiled bindings from the module namespace.
 
     :return: frozenset of name strings for REPL special-form highlighting
     """
 
-    from koskari.bootstrap import make_builtins_demand
-
-    return collect_special_like_names_from_builtins(make_builtins_demand())
+    import koskari.builtins as builtins
+    return collect_special_like_names_from_builtins(vars(builtins))
 
 
 # The end.

@@ -112,7 +112,7 @@ class KoskariSourceFileLoader(FileLoader):
 
         filename = self.get_filename(module.__name__)
 
-        ki_mod = await new_module(
+        ki_mod = new_module(
             module.__name__,
             package=getattr(module, '__package__', None))
 
@@ -139,20 +139,20 @@ class KoskariSourceFileLoader(FileLoader):
         """
         Execute the module synchronously via the demand path (demand_call).
 
-        Same steps as exec_module_async but uses new_module_demand and
-        load_module_demand so no event loop or await is required.
+        Same steps as exec_module_async but uses load_module_demand so no
+        event loop or await is required.
         """
 
         from koskari.module import (
             init_module,
             load_module_demand,
             load_module_kio_demand,
-            new_module_demand,
+            new_module,
         )
 
         filename = self.get_filename(module.__name__)
 
-        ki_mod = new_module_demand(
+        ki_mod = new_module(
             module.__name__,
             package=getattr(module, '__package__', None))
 

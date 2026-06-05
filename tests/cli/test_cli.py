@@ -23,20 +23,15 @@ import sys
 import traceback
 import unittest
 
-from koskari.cli import (
-    REPLCodeBoundary,
-    REPL_INFRASTRUCTURE_MODULES,
-    main,
-    option_parser,
-    repl_async,
-    run_file_async,
-)
-from koskari.exceptions import (CodeBoundary, format_code_boundary_exception,
+import pytest
+
+from koskari.cli import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary, main,
+                         option_parser, repl_async, run_file_async,
+                         startup_lines)
+from koskari.exceptions import (CodeBoundary, _filter_infrastructure_tb,
                                 format_exception_with_koskari_trace)
-from koskari.exceptions import _filter_infrastructure_tb
 from koskari.module import new_module
 
-import pytest
 
 pytestmark = pytest.mark.phase_cli
 
@@ -63,6 +58,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(opts.tweakpath)
         self.assertFalse(opts.interactive)
         self.assertFalse(opts.repl_full_trace)
+        self.assertFalse(opts.quiet)
         self.assertIsNone(opts.histfile)
 
 
@@ -101,6 +97,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('script.ki', opts.filename)
         self.assertEqual(['arg1', 'arg2'], opts.args)
 
+
     async def test_compile_kio_source_name(self):
         opts = self._parse(
             '--compile-kio',
@@ -113,10 +110,15 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('x.ki', opts.filename)
 
 
+    async def test_quiet_flag(self):
+        opts = self._parse('-q')
+        self.assertTrue(opts.quiet)
+
+
 class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
     async def test_hello_prints_to_stdout(self):
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
         captured = io.StringIO()
         orig = sys.stdout
         sys.stdout = captured
@@ -129,7 +131,7 @@ class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
     async def test_define_and_print_produces_42(self):
 
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
 
         captured = io.StringIO()
         orig = sys.stdout
@@ -143,7 +145,7 @@ class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_run_file_raises_system_exit(self):
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
         with self.assertRaises(SystemExit) as ctx:
             await run_file_async(mod, _script('exit_code.ki'))
         self.assertEqual(42, ctx.exception.code)
@@ -151,7 +153,7 @@ class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
 class TestRepl(unittest.IsolatedAsyncioTestCase):
 
-    async def _run_repl(self, lines, full_trace=False):
+    async def _run_repl(self, lines, full_trace=False, quiet=False):
         """
         Drive the REPL with a sequence of input lines.
 
@@ -168,13 +170,14 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
             except StopIteration:
                 raise EOFError
 
-        mod = await new_module('__main__')
+        mod = new_module('__main__')
         await repl_async(
             mod,
             prompter=prompter,
             stdout=stdout,
             stderr=stderr,
-            full_trace=full_trace)
+            full_trace=full_trace,
+            quiet=quiet)
         return stdout.getvalue(), stderr.getvalue()
 
 
@@ -183,50 +186,62 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         self.assertIn('3', out)
 
 
+    async def test_repl_startup_banner(self):
+        out, _ = await self._run_repl([])
+        for line in startup_lines():
+            self.assertIn(line, out)
+
+
+    async def test_repl_quiet_suppresses_startup_banner(self):
+        out, _ = await self._run_repl([], quiet=True)
+        for line in startup_lines():
+            self.assertNotIn(line, out)
+
+
     async def test_none_result_not_printed(self):
-        out, _ = await self._run_repl(['(define x 99)'])
+        out, _ = await self._run_repl(['(define x 99)'], quiet=True)
         self.assertNotIn('99', out)
 
 
     async def test_underscore_stores_last_result(self):
-        out, _ = await self._run_repl(['(+ 3 4)', '_'])
+        out, _ = await self._run_repl(['(+ 3 4)', '_'], quiet=True)
         lines = [ln for ln in out.splitlines() if ln.strip()]
         self.assertIn('7', lines[0])
         self.assertIn('7', lines[1])
 
 
     async def test_empty_lines_ignored(self):
-        out, _ = await self._run_repl(['', '   ', '(+ 1 1)'])
+        out, _ = await self._run_repl(['', '   ', '(+ 1 1)'], quiet=True)
         self.assertIn('2', out)
 
 
     async def test_incomplete_s_expr_continues_on_next_line(self):
-        out, _ = await self._run_repl(['(+ 1', '2)'])
+        out, _ = await self._run_repl(['(+ 1', '2)'], quiet=True)
         self.assertIn('3', out)
 
 
     async def test_syntax_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['( 1 2 ]'])
+        _, err = await self._run_repl(['( 1 2 ]'], quiet=True)
         self.assertIn('mismatched', err.lower())
 
 
     async def test_runtime_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['(/ 1 0)'])
+        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
         self.assertTrue(len(err) > 0)
 
 
     async def test_eof_exits_cleanly(self):
-        out, err = await self._run_repl([])
+        out, err = await self._run_repl([], quiet=True)
         self.assertEqual(0, len(err.strip()))
 
 
     async def test_multiple_expressions_accumulate_state(self):
-        out, _ = await self._run_repl(['(define n 10)', '(* n n)'])
+        out, _ = await self._run_repl(['(define n 10)', '(* n n)'], quiet=True)
         self.assertIn('100', out)
 
 
     async def test_repl_exception_traceback_trimmed(self):
-        _, err = await self._run_repl(['(/ 1 0)'])
+        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
         self.assertIn('ZeroDivisionError', err)
         self.assertNotIn(' in repl\n', err)
         self.assertNotIn(' in repl ', err)
@@ -236,7 +251,7 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         """
         Koskari exceptions via REPL show dynchain, not wrapper traceback.
         """
-        _, err = await self._run_repl(['(/ 1 0)'])
+        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
 
         self.assertIn('ZeroDivisionError', err)
         self.assertIn('Koskari dynchain', err)
@@ -247,14 +262,14 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         Compile-phase errors show explain() without a Python traceback.
         """
         form = '((lambda () (compile/setq _repl_typo_undeclared 1)))'
-        _, err = await self._run_repl([form])
+        _, err = await self._run_repl([form], quiet=True)
         self.assertTrue(len(err.strip()) > 0)
         self.assertNotIn('Traceback (most recent call last)', err)
         self.assertIn('not declared', err)
 
 
     async def test_repl_full_trace_shows_boundary_frames(self):
-        _, err = await self._run_repl(['(/ 1 0)'], full_trace=True)
+        _, err = await self._run_repl(['(/ 1 0)'], full_trace=True, quiet=True)
         self.assertIn('ZeroDivisionError', err)
         self.assertIn('koskari.cli', err)
 
@@ -295,6 +310,7 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
         self.assertIn('at inner-fn (example.ki:12:3) [pc=42]', rendered)
         self.assertIn('ZeroDivisionError', rendered)
 
+
     async def test_falls_back_to_standard_format_without_special_frame(self):
         try:
             1 / 0
@@ -323,6 +339,7 @@ class TestFilterInfrastructureTb(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         filtered_count = len(list(traceback.walk_tb(result)))
         self.assertLess(filtered_count, original_count)
+
 
     async def test_preserves_non_infrastructure_frames(self):
         ns = {'__name__': '__main__'}
@@ -363,15 +380,18 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, run)
 
+
     async def test_main_run_hello_exits_zero(self):
         code, out = await self._capture_main(_script('hello.ki'))
         self.assertEqual(0, code)
         self.assertIn('Hello, koskari!', out)
 
+
     async def test_main_run_define_and_print(self):
         code, out = await self._capture_main(_script('define_and_print.ki'))
         self.assertEqual(0, code)
         self.assertIn('42', out)
+
 
     async def test_main_exit_code_script_raises_system_exit(self):
         def run():
@@ -381,6 +401,14 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SystemExit) as ctx:
             await loop.run_in_executor(None, run)
         self.assertEqual(42, ctx.exception.code)
+
+
+    async def test_version_flag(self):
+        code, out = await self._capture_main('--version')
+        self.assertEqual(0, code)
+        self.assertIn('koskari', out)
+        self.assertIn('Python', out)
+
 
     async def test_main_no_args_runs_repl_and_exits(self):
         def run():

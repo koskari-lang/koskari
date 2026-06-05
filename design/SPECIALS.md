@@ -261,7 +261,13 @@ docstring discovery; the body is still compiled in full.
 
 **Use-case:** Create an anonymous or named function value. Named lambdas bind the
 given name in the function's scope so the function can refer to itself (e.g. for
-recursion).
+recursion in an immediately-invoked named `compile/let` or inline `(compile/lambda NAME ...)`).
+
+**See also:** `compile/function` — named function values **without** a closure
+self-binding at `BUILD_FUNCTION` time. Prefer `compile/function` for
+`compile/define` / `compile/define-global` function shorthand and decorator
+wrappers; prefer named `compile/lambda` when the body must call the exact
+function object being created (e.g. named `compile/let`).
 
 **Behaviour:** Matches one of the shapes above, parses formals with
 `gather_formals`, builds a fragment that declares the parameter names, compiles
@@ -294,6 +300,58 @@ constant tuple for defaulted keywords.
 ;; Docstring + return type
 (compile/lambda g :: int [x] "doc for g" x)
 ```
+
+**Tests:** `tests/compile/specials/test_lambda.py`
+
+## compile/function
+
+**Symbol:** `compile/function`
+
+**Syntax** (named only; most specific forms first):
+
+
+| Shape                    | Form                                                  |
+| ------------------------ | ----------------------------------------------------- |
+| Named + return           | `(compile/function NAME :: RET FORMALS BODY ...)`     |
+| Named + return (`type:`) | `(compile/function NAME type: RET FORMALS BODY ...)` |
+| Named, no return         | `(compile/function NAME FORMALS BODY ...)`            |
+
+
+There is no anonymous `compile/function` form; use `compile/lambda` for that.
+
+**Formals, return type, and docstring:** Same rules as `compile/lambda` (see
+that section). `RET` is recorded on `Code` as `code.extras['return']` and
+exposed as `__annotations__['return']`. A leading string in `BODY` becomes
+`__doc__`.
+
+**Use-case:** Create a **named** function value whose body must **not** receive
+a closure self-binding for `NAME` at `BUILD_FUNCTION` time. The name in the
+body resolves via outer or module bindings instead — e.g. after decorators wrap
+the stored definition, or when `compile/define` / `compile/define-global`
+function shorthand stores the function and recursive calls use that binding.
+
+**Behaviour:** Same pipeline as `compile/lambda` via `helper_function` with
+`selfref=False`: `gather_formals`, `helper_begin`, `FunctionSpec`,
+`BUILD_FUNCTION`. Does **not** call `declare_var` for `NAME` on the inner
+function fragment (contrast named `compile/lambda`).
+
+**Examples:**
+
+```scheme
+;; Named function (no inner self-ref for double)
+(compile/function double [x] (compile/call mul x 2))
+
+;; Return type
+(compile/function f :: int [x] x)
+
+;; Docstring + return type
+(compile/function g :: int [x] "doc for g" x)
+```
+
+**Implementation:** `koskari/compile/specials/lambda_.py`
+
+**Tests:** `tests/compile/specials/test_lambda.py` (shared helper);
+`tests/compile/specials/test_define.py` (define / define-global shorthand)
 
 ## compile/let
 
@@ -1313,23 +1371,26 @@ are rejected (declarations do not carry a value).
 **Use-case:** Variable and function definition for module-level loading.
 Declaration-only leaves the ref in scope but empty (reading before assignment
 raises). Declare-and-store evaluates EXPR and stores the result in the slot
-(equivalent to compile/bindq). Function shorthand lowers to a named
-`compile/lambda`: if a return type is present (inline or in `DECL`), the
-expansion is `(compile/lambda NAME :: TYPE FORMALS BODY ...)` (using the `::`
-keyword); if not, `(compile/lambda NAME FORMALS BODY ...)`.
+(equivalent to compile/bindq). Function shorthand lowers to
+`compile/function`: if a return type is present (inline or in `DECL`), the
+expansion is `(compile/function NAME :: TYPE FORMALS BODY ...)` (using the `::`
+keyword); if not, `(compile/function NAME FORMALS BODY ...)`.
 
 For declaration-only or value binding with a type (e.g.
 `(compile/define [x :: int])` or `(compile/define x :: int 99)`), the type is
 accepted by the parser but is not stored on the variable binding in the current
 compiler (parse-only / metadata for tooling), except that function shorthand
-passes the type through to `compile/lambda` as the return annotation.
+passes the type through to `compile/function` as the return annotation.
+
+Recursive calls in function shorthand (e.g. `fact` below) use the **module/local
+binding** after `VAR_STORE`, not an inner closure self-ref for the name.
 
 **Behaviour:** With **DECL**, parses the first argument with `parse_decl`. With
 **inline type**, the matcher binds `NAME`, `::` or `type:`, and `TYPE` (see
 [MATCHER.md](MATCHER.md) — **DECL** composite). Declares
 the introduced name. For declaration-only: emits CONST None. For
 declare-and-store: compiles EXPR, emits `VAR_STORE` to store the value, then
-CONST None. For function shorthand: builds the `compile/lambda` form as above and
+CONST None. For function shorthand: builds the `compile/function` form as above and
 compiles it, then emits `VAR_STORE`.
 
 **Examples:**
@@ -1370,8 +1431,9 @@ compiles it, then emits `VAR_STORE`.
 `(compile/define-global DECL FORMALS BODY ...)`
 
 See **compile/define** for the meaning of **DECL** and function-shorthand
-lowering to `compile/lambda` (including `NAME :: TYPE` when a return type is
-present).
+lowering to `compile/function` (including `NAME :: TYPE` when a return type is
+present). Same inner form as `compile/define`; additionally calls
+`request_global(name)` and stores via `VAR_STORE` into the module binding.
 
 **Use-case:** Explicit module binding for read and write. When using strict
 resolution (KoskariPragma), writes to undeclared names raise at compile time;

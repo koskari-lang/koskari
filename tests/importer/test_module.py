@@ -12,8 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.module: new_module, init_module, load_module_demand,
-new_module_demand.
+Tests for koskari.module: new_module, init_module, load_module_demand
 """
 
 
@@ -25,75 +24,74 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.lib import Module
-from koskari.module import (init_module, load_module_demand, new_module,
-                            new_module_demand)
+from koskari.module import (init_module, load_module_demand, new_module)
 from koskari.reader import LayoutReader
 
 
 pytestmark = pytest.mark.phase_importer
 
 
-class TestNewModule(unittest.IsolatedAsyncioTestCase):
+class TestNewModule(unittest.TestCase):
 
-    async def test_returns_module_instance(self):
-        mod = await new_module('mymod')
+    def test_returns_module_instance(self):
+        mod = new_module('mymod')
         self.assertIsInstance(mod, Module)
 
 
-    async def test_name_stored_in_namespace(self):
-        mod = await new_module('mymod')
+    def test_name_stored_in_namespace(self):
+        mod = new_module('mymod')
         self.assertEqual('mymod', getattr(mod, '__name__', None))
 
 
-    async def test_package_stored_when_given(self):
-        mod = await new_module('mypkg.mymod', package='mypkg')
+    def test_package_stored_when_given(self):
+        mod = new_module('mypkg.mymod', package='mypkg')
         self.assertEqual('mypkg', getattr(mod, '__package__', None))
 
 
-    async def test_package_absent_when_not_given(self):
-        mod = await new_module('mymod')
+    def test_package_absent_when_not_given(self):
+        mod = new_module('mymod')
         ns = vars(mod)
         self.assertTrue(ns.ref('__package__').empty)
 
 
-    async def test_builtins_present(self):
-        mod = await new_module('mymod')
+    def test_builtins_present(self):
+        mod = new_module('mymod')
         ns = vars(mod)
         for name in ('cons', 'car', 'cdr', 'nil', 'pair', 'symbol'):
             self.assertFalse(ns.ref(name).empty,
                              "builtin %r missing from new module namespace" % name)
 
 
-    async def test_nil_is_nil(self):
+    def test_nil_is_nil(self):
         from koskari.lib import nil
-        mod = await new_module('mymod')
+        mod = new_module('mymod')
         ns = vars(mod)
         self.assertIs(nil, ns.ref('nil').deref())
 
 
-class TestInitModule(unittest.IsolatedAsyncioTestCase):
+class TestInitModule(unittest.TestCase):
 
-    async def test_file_stored(self):
-        mod = await new_module('mymod')
+    def test_file_stored(self):
+        mod = new_module('mymod')
         init_module(mod, '/some/path/mymod.ki')
         self.assertEqual('/some/path/mymod.ki', getattr(mod, '__file__', None))
 
 
-    async def test_path_set_for_init_ki(self):
-        mod = await new_module('mypkg')
+    def test_path_set_for_init_ki(self):
+        mod = new_module('mypkg')
         init_module(mod, '/some/path/mypkg/__init__.ki')
         self.assertEqual(['/some/path/mypkg'], getattr(mod, '__path__', None))
 
 
-    async def test_path_not_set_for_plain_module(self):
-        mod = await new_module('mymod')
+    def test_path_not_set_for_plain_module(self):
+        mod = new_module('mymod')
         init_module(mod, '/some/path/mymod.ki')
         ns = vars(mod)
         self.assertTrue(ns.ref('__path__').empty)
 
 
-    async def test_spec_and_loader_stored(self):
-        mod = await new_module('mymod')
+    def test_spec_and_loader_stored(self):
+        mod = new_module('mymod')
 
         class FakeLoader:
             pass
@@ -107,32 +105,6 @@ class TestInitModule(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(getattr(mod, '__loader__', None), FakeLoader)
 
 
-class TestNewModuleDemand(unittest.TestCase):
-    """Sync tests for new_module_demand (demand path)."""
-
-    def test_returns_module_instance(self):
-        mod = new_module_demand('mymod')
-        self.assertIsInstance(mod, Module)
-
-
-    def test_name_stored_in_namespace(self):
-        mod = new_module_demand('mymod')
-        self.assertEqual('mymod', getattr(mod, '__name__', None))
-
-
-    def test_package_stored_when_given(self):
-        mod = new_module_demand('mypkg.mymod', package='mypkg')
-        self.assertEqual('mypkg', getattr(mod, '__package__', None))
-
-
-    def test_builtins_present(self):
-        mod = new_module_demand('mymod')
-        ns = vars(mod)
-        for name in ('cons', 'car', 'cdr', 'nil', 'pair', 'symbol'):
-            self.assertFalse(ns.ref(name).empty,
-                             "builtin %r missing from new module namespace" % name)
-
-
 class TestLoadModuleDemand(unittest.TestCase):
     """Tests for load_module_demand (demand path)."""
 
@@ -142,7 +114,7 @@ class TestLoadModuleDemand(unittest.TestCase):
             path = os.path.join(tmpdir, 'demand_mod.ki')
             with open(path, 'w', encoding='utf-8') as fh:
                 fh.write('(define answer 99)\n')
-            mod = new_module_demand('demand_mod')
+            mod = new_module('demand_mod')
             init_module(mod, path)
             load_module_demand(mod)
             ns = vars(mod)
@@ -158,7 +130,7 @@ class TestLoadModuleDemand(unittest.TestCase):
             path = os.path.join(tmpdir, 'facet_mod.ki')
             with open(path, 'w', encoding='utf-8') as fh:
                 fh.write('(define x 1)\n')
-            mod = new_module_demand('facet_mod')
+            mod = new_module('facet_mod')
             init_module(mod, path)
             load_module_demand(mod)
             ns = vars(mod)
@@ -175,7 +147,7 @@ class TestLoadModuleDemand(unittest.TestCase):
             path = os.path.join(tmpdir, 'facet_interactive.ki')
             with open(path, 'w', encoding='utf-8') as fh:
                 fh.write('(define x 1)\n')
-            mod = new_module_demand('facet_interactive')
+            mod = new_module('facet_interactive')
             init_module(mod, path)
             load_module_demand(mod, interactive=True)
             ns = vars(mod)

@@ -22,8 +22,25 @@ koskari.builtins
 
 # creates the actual module and stores it in sys.modules and
 # on the koskari package.
-from .bootstrap import make_builtins_demand
-make_builtins_demand()
+def _setup():
+    from .bootstrap import make_builtins_demand
+
+    glbls = globals()
+    ns = vars(make_builtins_demand())
+
+    for key, val in ns.items():
+        if key.startswith('__'):
+            continue
+
+        try:
+            glbls[key] = val.deref()
+        except Exception:
+            pass
+
+    del glbls["_setup"]
+
+
+_setup()
 
 
 # The end.

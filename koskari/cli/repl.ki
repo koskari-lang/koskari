@@ -1,9 +1,28 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
+
+"""
+koskari.cli.repl - read-eval-print loop for koskari
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
 
 
 define prompt_toolkit_prompter [histfile: None get_namespace: None]:
   """
-
+  Return a callable suitable for prompting the user in the REPL
   """
 
   import-from prompt_toolkit import PromptSession
@@ -31,7 +50,7 @@ define prompt_toolkit_prompter [histfile: None get_namespace: None]:
 
 define readline_prompter [histfile: None get_namespace: None]:
   """
-  Return a callable suitable for prompting the user in the REPL.
+  Return a callable suitable for prompting the user in the REPL
   """
 
   when histfile:
@@ -264,6 +283,12 @@ define boundary_call [fn *: args **: kwargs]:
 define _INCOMPLETE (object)
 
 
+define-syntax incomplete?:
+  syntax-rules []:
+    case (incomplete? result):
+      (is result _INCOMPLETE)
+
+
 define eval_expression [compiler source ns]:
   """
   Run one REPL expression.
@@ -351,7 +376,7 @@ define repl_async [
   printed to stdout.  The last result is stored as '_' in the namespace.
 
   :param mod: koskari Module to use as the execution context
-  :param prompter: callable with the same signature as input(); when
+  :param prompter: callable with the same signature as input()
   """
 
   set! stdin (or stdin sys.stdin)
@@ -408,7 +433,7 @@ define repl_async [
       define result:
         boundary_call eval_expression compiler buffer ns
 
-      if (is result _INCOMPLETE):
+      if (incomplete? result):
         set! prompt "..."
         (continue)
 

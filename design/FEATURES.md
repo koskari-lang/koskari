@@ -21,7 +21,7 @@ Highlights (not an exhaustive list):
 
 | Area | Implemented as |
 | ---- | -------------- |
-| Core | `compile/quote`, `compile/quasiquote`, `compile/unquote`, `compile/unquote-splicing`, `compile/quote-block`, `compile/quasiquote-block`, `compile/begin`, `compile/lambda`, `compile/let`, `compile/define`, `compile/define-global`, `compile/setq`, `compile/delq`, `compile/refq`, `compile/bindq`, `compile/cons`, `compile/car`, `compile/cdr`, `compile/class` |
+| Core | `compile/quote`, `compile/quasiquote`, `compile/unquote`, `compile/unquote-splicing`, `compile/quote-block`, `compile/quasiquote-block`, `compile/begin`, `compile/lambda`, `compile/function`, `compile/let`, `compile/define`, `compile/define-global`, `compile/setq`, `compile/delq`, `compile/refq`, `compile/bindq`, `compile/cons`, `compile/car`, `compile/cdr`, `compile/class` |
 | Control | `compile/cond`, `compile/switch`, `compile/and`, `compile/or`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, internal exception helpers |
 | Context | `compile/with`, `compile/dyn-with`, `compile/dyn-wind`, `compile/parameterize` |
 | Generators / async | `compile/yield`, `compile/yield-from`, `compile/await` |
@@ -59,6 +59,8 @@ Unknown heads fall back to **`layout/block`**. See [LAYOUTS.md](LAYOUTS.md).
 ### Functions and formals
 
 - **`compile/lambda`** (named and anonymous; optional return type and docstring).
+- **`compile/function`** (named only; no closure self-ref at creation — used by
+  `compile/define` / `compile/define-global` function shorthand).
 - **`define-class`**, **`define-dataclass`**, **`define-coroutine`** (`coroutine-fn`), **`define-demanding`** (`demand` wrapper) — macros in bootstrap.
 - Formals: positionals, defaults, `*:`, `**:`, keyword-only (see `gather_formals`).
 
@@ -84,9 +86,8 @@ These appear in [language/special-forms.md](language/special-forms.md) or older 
 | **`declare-async`** | Use **`define-coroutine`** + **`coroutine-fn`** instead |
 | **`await-for-each`** | No dedicated form; async iteration uses normal **`for-each`** / **`compile/for-each`** under the async evaluator |
 | **`await-with`** | No separate form; **`compile/with`** handles async managers |
-| **`function`** (python-sibilant named `function` special) | **`compile/lambda`** with a name |
 | **`method-call` / `!`** | Call-attr and dot-prefix sugar |
-| **`doc`** special | Docstrings via leading string on **`compile/lambda`** / class body |
+| **`doc`** special | Docstrings via leading string on **`compile/lambda`** / **`compile/function`** / class body |
 | **`build-tuple`**, **`build-list`**, … as specials | Runtime **`build_tuple`**, **`build_list`**, … in bootstrap ([api/builtins.md](api/builtins.md)) |
 | Slices, fenced literals, bundles, match-case, … | [TODO.md](TODO.md) |
 

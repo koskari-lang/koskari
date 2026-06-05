@@ -180,6 +180,16 @@ typecheck:  ## Run type checking (mypy) via tox
 	@echo "Running mypy..."
 	@tox -qe mypy
 
+docs:  ## Build user documentation via tox
+	@$(call checkfor,tox)
+	@echo "Building documentation..."
+	@tox -qe sphinx
+
+docs-preview: docs  ## Build docs and serve build/docs for local preview
+	@$(call checkfor,$(PYTHON))
+	@echo "Serving documentation at http://127.0.0.1:8000/ (Ctrl+C to stop)"
+	@cd $(BUILD_DIR)/docs && $(PYTHON) -m http.server 8000
+
 
 ##@ Cleanup
 
@@ -230,6 +240,7 @@ python:  ## Show Python executable
 	clean-ext \
 	clean-native \
 	clean-pyc \
+	docs \
 	gdb \
 	handlers \
 	help \

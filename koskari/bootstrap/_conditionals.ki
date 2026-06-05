@@ -49,6 +49,26 @@ define-syntax compile/unless:
         [else: then])
 
 
+define-syntax compile/?:
+  syntax-rules []:
+    case (? condition then else):
+      (compile/cond
+        [condition then]
+        [else: else])
+    case (? condition then):
+      (compile/cond
+        [condition then]
+        [else: False])
+    case (? condition):
+      (compile/truth condition)
+
+
+define-syntax compile/bool:
+  syntax-rules []:
+    case (bool value):
+      (compile/truth value)
+
+
 define-syntax compile/when-main:
   syntax-rules []:
     case (when-main body ...):
@@ -59,13 +79,13 @@ define-syntax compile/when-main:
 define-syntax compile/None?:
   syntax-rules []:
     case (None? value):
-      (compile/is None value)
+      (compile/is value None)
 
 
 define-syntax compile/nil?:
   syntax-rules []:
     case (nil? value):
-      (compile/is nil value)
+      (compile/is value nil)
 
 
 define on-demand? :: bool []:

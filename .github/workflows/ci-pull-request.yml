@@ -1,0 +1,13 @@
+# PR gate: run tests only (reusable workflow).
+
+name: CI pull request
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  tests:
+    uses: ./.github/workflows/run_tests.yml

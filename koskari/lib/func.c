@@ -1321,6 +1321,50 @@ static PyObject *func_obtain_call_namespace(KosFunction *fn) {
 }
 
 
+/**
+  Stores self-reference in frame_ns if the function's name is listed in the Code's local_syms.
+
+  :param fn: KosFunction instance
+  :param frame_ns: KosNamespace instance
+  :param self: self-reference to bind :return: 0 if self-bind not applied, 1 if applied, -1 on error
+*/
+static int kos_function_bind_self_if_local(
+    KosFunction *fn,
+    PyObject *frame_ns,
+    PyObject *self) {
+
+  PyObject *name = KosFunction_NAME(fn);
+  PyObject *code;
+  PyObject *nspec;
+  PyObject *locals;
+
+  if (! name)
+    return 0;
+
+  code = KosFunction_CODE(fn);
+  if (! code)
+    return 0;
+
+  nspec = KosCode_NSPEC(code);
+  if (! nspec)
+    return 0;
+
+  locals = KosNamespaceSpec_LOCAL_SYMS(nspec);
+  if (! locals || locals == Py_None)
+    return 0;
+
+  int bind = PySequence_Contains(locals, name);
+
+  if (bind < 0)
+    return -1;
+
+  if (! bind)
+    return 0;
+
+  return KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self);
+}
+
+
 PyObject *KosFunction_Call(PyObject *self,
                            PyObject *args, PyObject *kwds) {
 
@@ -1335,10 +1379,8 @@ PyObject *KosFunction_Call(PyObject *self,
   if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0)
     goto fail;
 
-  if (KosFunction_NAME(fn) != NULL) {
-    if (KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self) < 0)
-      goto fail;
-  }
+  if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0)
+    goto fail;
 
   coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
   Py_DECREF(frame_ns);
@@ -1364,11 +1406,9 @@ PyObject *KosFunction_PrepareCallNamespace(
     Py_DECREF(frame_ns);
     return NULL;
   }
-  if (KosFunction_NAME(fn) != NULL) {
-    if (KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self) < 0) {
-      Py_DECREF(frame_ns);
-      return NULL;
-    }
+  if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0) {
+    Py_DECREF(frame_ns);
+    return NULL;
   }
   return frame_ns;
 }
@@ -1390,11 +1430,9 @@ PyObject *KosFunction_PrepareCallNamespaceFromVector(
     Py_DECREF(frame_ns);
     return NULL;
   }
-  if (KosFunction_NAME(fn) != NULL) {
-    if (KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self) < 0) {
-      Py_DECREF(frame_ns);
-      return NULL;
-    }
+  if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0) {
+    Py_DECREF(frame_ns);
+    return NULL;
   }
   return frame_ns;
 }
@@ -1419,10 +1457,8 @@ PyObject *KosFunction_VectorCall(
                                  args, (size_t) nargs, kwnames) < 0)
     goto fail;
 
-  if (KosFunction_NAME(fn) != NULL) {
-    if (KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self) < 0)
-      goto fail;
-  }
+  if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0)
+    goto fail;
 
   coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
   Py_DECREF(frame_ns);

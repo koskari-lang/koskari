@@ -44,16 +44,6 @@ class Compiled(ABC):
         ...
 
 
-class Alias(Compiled):
-
-    def __init__(self, name, compile_impl):
-        self.name = name
-        self._impl = compile_impl
-
-    def compile_impl(self, compiler, source_obj, tc):
-        return self._impl(compiler, source_obj, tc)
-
-
 CONST_TYPES = (
     str, bytes,
     bool, int, float, complex,

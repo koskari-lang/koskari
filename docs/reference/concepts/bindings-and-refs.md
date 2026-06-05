@@ -1,0 +1,93 @@
+# Bindings and refs
+
+Koskari names do not hold values directly. Each binding in a **namespace**
+maps a name to a **ref** (reference cell). Reading and writing go through that
+cell. This page explains the vocabulary used across assignment, macros, and the
+VM.
+
+## Namespace
+
+A **namespace** is a lexical scope: a table of names, each tied to a ref.
+Modules, `let` bodies, and function frames each use namespaces (often chained
+to a parent). See the [Glossary](../glossary.md) entry for **namespace**.
+
+## Ref
+
+A **ref** is a mutable handle: `deref` reads the current value, `store` writes,
+`clear` empties the slot. Refs can represent a local name, an attribute, a
+subscript, a parameter, or other custom get/set logic.
+
+Surface forms:
+
+- **`(ref sym)`** — ref to a variable ([`compile/ref`](../macros/compile-ref.md))
+- Reader **`&expr`** — wraps an expression in `(ref expr)`
+- **`(ref (attr obj name))`**, **`(ref (item coll key))`**, parameters, etc.
+
+Bytecode **`VAR_REF`** pushes the ref for a name; attribute and item refs use
+their own opcodes.
+
+## Bind vs store
+
+These words describe different operations. They are not interchangeable.
+
+| Operation | Meaning | Typical compile form |
+|-----------|---------|----------------------|
+| **Bind** | Attach a name to a ref (introduce or replace the mapping) | [`compile/bindq`](../specials/compile-bindq.md), [`bind!`](../macros/compile-bind.md) |
+| **Store** | Write a value through the ref a name already uses | [`compile/setq`](../specials/compile-setq.md), `set!` |
+
+- **Bind** answers: “what ref does this name resolve to?”
+- **Store** answers: “what value lives in that ref right now?”
+
+You must **bind** before you can **store** into a new local. Reassignment of an
+existing variable is **store**, not a new bind.
+
+The [`bind!`](../macros/compile-bind.md) macro can install typed refs (item,
+attribute, dynamic, parameter, and others) while still using bind under the hood.
+
+## Deref
+
+**Deref** means read through a ref and use the value.
+
+- **`(deref expr)`** — [`compile/deref`](../specials/compile-deref.md)
+- Reader **`*name`** — for simple identifiers, `*name` reads as `(deref name)`
+- Runtime **`deref`** builtin — when you need `deref` as a first-class function
+
+Use **`ref`** when you need the cell (for example passing a mutable slot to
+another form). Use **deref** when you need the contents.
+
+## Assignment macros
+
+[`set!`](../macros/compile-set.md) expands to the right special:
+
+- Symbol assignment → `setq` (store)
+- Places such as items, attributes, or refs → `set-item`, `set-attr`, `set-ref`,
+  or `inplace`
+- **`(set! (values pattern ...) value)`** → [`compile/setq-values`](../specials/compile-setq-values.md)
+
+## Unpack
+
+**Unpack** splits one value across several names using a **pattern** (list
+shape, optional `*:` rest segments). Same pattern family as `for-each` bindings.
+
+- Introduce names: [`compile/define-values`](../specials/compile-define-values.md),
+  [`let-values`](../macros/compile-let-values.md)
+- Store into existing names: [`compile/setq-values`](../specials/compile-setq-values.md)
+
+```koskari
+(define-values [x y] (pair 1 2))
+(set! (values a b) point)
+(let-values [[u v] pair] (+ u v))
+```
+
+The compiler emits unpack opcodes that evaluate the right-hand side once, then
+assign each binder.
+
+## Quick reference
+
+| Term | One line |
+|------|----------|
+| bind | Name → ref mapping |
+| store | Value → through existing ref |
+| ref | Handle to a mutable location |
+| deref | Read through a ref |
+| unpack | One value → many names via pattern |

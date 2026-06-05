@@ -30,51 +30,14 @@ from ..compiler import ByteCodeFragment, CompilerMode
 from ..helpers import discover_docstring, gather_formals, helper_begin
 
 
-_LAMBDA_PATTERNS = (
-    MATCH(
-        CALLEDBY(),
-        SYMBOL("name"),
-        LITERAL_KW("::"),
-        VALUE("return_type"),
-        FORMALS("formals", scope="body"),
-        BODY("body")),
-    MATCH(
-        CALLEDBY(),
-        SYMBOL("name"),
-        LITERAL_KW("type:"),
-        VALUE("return_type"),
-        FORMALS("formals", scope="body"),
-        BODY("body")),
-    MATCH(
-        CALLEDBY(),
-        LITERAL_KW("::"),
-        VALUE("return_type"),
-        FORMALS("formals", scope="body"),
-        BODY("body")),
-    MATCH(
-        CALLEDBY(),
-        LITERAL_KW("type:"),
-        VALUE("return_type"),
-        FORMALS("formals", scope="body"),
-        BODY("body")),
-    MATCH(
-        CALLEDBY(),
-        SYMBOL("name"),
-        FORMALS("formals", scope="body"),
-        BODY("body")),
-    MATCH(
-        CALLEDBY(),
-        FORMALS("formals", scope="body"),
-        BODY("body")),
-)
-
-
-@builtin("compile/lambda")
-@special("compile/lambda", patterns=_LAMBDA_PATTERNS, unpack="match")
-def special_lambda(compiler, caps, tc=False) -> ByteCodeFragment:
+def helper_function(compiler, caps, selfref):
     """
-    Compile (lambda [args] body) or (lambda name [args] body).
-    Named form binds name in the function scope for self-reference.
+    Helper for compile/function and compile/lambda.
+
+    :param compiler: Compiler instance
+    :param caps: Matcher captures
+    :param selfref: Whether to add a self-reference to the function
+    :return: ByteCodeFragment
     """
 
     called_by = caps["called-by"].datum
@@ -121,7 +84,13 @@ def special_lambda(compiler, caps, tc=False) -> ByteCodeFragment:
     lamb.declare_vars([str(k) for k, _ in kwonly])
     if starstar:
         lamb.declare_var(starstar)
-    if proper_name is not None:
+
+    # selfref indicates whether the function should receive a direct
+    # self-reference at function creation. lambdas with a name get
+    # a self-ref, but functions do not. This allows a function to
+    # refer to a wrapped definition of itself, such as via decorators,
+    # while the lambda form is always purely the exact function.
+    if selfref and proper_name is not None:
         lamb.declare_var(proper_name)
 
     lamb.doc = discover_docstring(body_src)
@@ -138,6 +107,95 @@ def special_lambda(compiler, caps, tc=False) -> ByteCodeFragment:
     frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(defnames))
 
     return frag
+
+
+_FUNCTION_PATTERNS = (
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+)
+
+
+@builtin("compile/function")
+@special("compile/function", patterns=_FUNCTION_PATTERNS, unpack="match")
+def special_function(compiler, caps, tc=False) -> ByteCodeFragment:
+    """
+    Compile (function [args] body) or (function name [args] body).
+
+    Unlike lambda, function does not implicitly bind the function
+    object into its own scope. This allows a function to refer to an
+    outer definition of itself, which may be wrapped such as via
+    decorators.
+    """
+
+    return helper_function(compiler, caps, selfref=False)
+
+
+_LAMBDA_PATTERNS = (
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        SYMBOL("name"),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+    MATCH(
+        CALLEDBY(),
+        FORMALS("formals", scope="body"),
+        BODY("body")),
+)
+
+
+@builtin("compile/lambda")
+@special("compile/lambda", patterns=_LAMBDA_PATTERNS, unpack="match")
+def special_lambda(compiler, caps, tc=False) -> ByteCodeFragment:
+    """
+    Compile (lambda [args] body) or (lambda name [args] body).
+
+    The Named form binds name in the function scope for self-reference.
+    """
+
+    return helper_function(compiler, caps, selfref=True)
 
 
 # The end.
