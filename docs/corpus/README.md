@@ -15,7 +15,7 @@ similar exports are downstream transforms.
 ## Adding records
 
 1. Define a record matching [SCHEMA.json](SCHEMA.json)
-2. Place it under `records/` (format TBD: JSONL or directory tree)
+2. Place it under `records/` as JSONL, matching the existing topic files
 3. Run corpus verification (runner not implemented yet)
 
 ## Status

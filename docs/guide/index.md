@@ -21,6 +21,7 @@ bytecode-mental-model
 from-source-to-stack
 ```
 
-Chapters without content yet remain stubs. Start with [Model of
-evaluation](00-model-of-evaluation.md) after the [beginner
-track](../start/beginner/index.md) or the [from-Python track](../start/from-python/index.md).
+Start with [Model of evaluation](00-model-of-evaluation.md) after the
+[beginner track](../start/beginner/index.md) or the
+[from-Python track](../start/from-python/index.md). The optional bytecode chapters
+are for readers who want implementation intuition after the main guide.

@@ -1,7 +1,8 @@
 # Where next
 
-You can run Koskari, read basic results and errors, and write small programs
-from nested calls and `define`.
+You can run Koskari, read basic results and errors, write small programs
+from nested calls and `define`, choose with `if`/`cond`, and define small
+functions.
 
 ---
 
@@ -9,7 +10,7 @@ from nested calls and `define`.
 
 > **Q:** What should I read next?
 >
-> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) in the
+> **A:** If the beginner track felt comfortable, continue with [Model of evaluation](../../guide/00-model-of-evaluation.md) in the
 > shared guide. It names what “read,” “evaluate,” and “data” mean — the story
 > both tutorial tracks build on.
 
@@ -37,8 +38,9 @@ from nested calls and `define`.
 > **Q:** How do I get better?
 >
 > **A:** Same loop as chapter 0: change a program, run it, read the result.
-> Try [Hello world](../../patterns/recipes/hello.md) and vary one line at a
-> time.
+> Try [Hello world](../../patterns/recipes/hello.md),
+> [Countdown](../../patterns/recipes/countdown.md), and
+> [Fibonacci](../../patterns/recipes/fibonacci.md). Vary one line at a time.
 
 ---
 

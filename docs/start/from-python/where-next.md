@@ -25,10 +25,10 @@ Run any example with `koskari path/to/file.ki` after install.
 
 > **Q:** What should I read next in the guide?
 >
-> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) is complete
-> and short. Later guide chapters (forms, bindings, modules, macros) are still
-> **under construction** — use this from-python track and reference pages until
-> those land.
+> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) is the
+> shared starting point. Continue through forms, bindings, functions, data,
+> control flow, modules, and macros when you want a guided path instead of a
+> lookup table.
 
 > **Q:** Which reference sections matter day to day?
 >
@@ -47,8 +47,9 @@ Run any example with `koskari path/to/file.ki` after install.
 >
 > **A:** When you repeat a code pattern that cannot be a function. Start with
 > [examples/ext-syn.ki](../../../examples/ext-syn.ki) and
-> [Macros or syntax extension](../../guide/07-macros-or-syntax-extension.md)
-> (stub — reference macros are authoritative for now).
+> [Macros or syntax extension](../../guide/07-macros-or-syntax-extension.md).
+> Use the macro reference pages when you need exact matching and expansion
+> rules.
 
 ---
 

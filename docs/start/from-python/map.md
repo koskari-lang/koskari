@@ -119,8 +119,8 @@ The [Layout and calls](layout-and-calls.md) chapter is the hands-on introduction
 > **Q:** What about the shared guide?
 >
 > **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) names read /
-> eval / data explicitly. Several later guide chapters are still stubs — this
-> track is meant to stand alone for writing `.ki` code.
+> eval / data explicitly. The later guide chapters now give a slower conceptual
+> path; this track remains the fastest Rosetta map for writing `.ki` code.
 
 ---
 
