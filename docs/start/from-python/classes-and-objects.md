@@ -23,7 +23,9 @@ instances and calls methods.
 >
 > ```koskari
 > define-class Point []:
->   """A point in 2D space"""
+>   """
+>   A point in 2D space
+>   """
 >   define x :: int 0
 >   define y :: int 0
 > ```
