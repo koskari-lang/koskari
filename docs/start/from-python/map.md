@@ -119,8 +119,9 @@ The [Layout and calls](layout-and-calls.md) chapter is the hands-on introduction
 > **Q:** What about the shared guide?
 >
 > **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) names read /
-> eval / data explicitly. Several later guide chapters are still stubs — this
-> track is meant to stand alone for writing `.ki` code.
+> eval / data explicitly. The shared guide now continues into forms, bindings,
+> functions, data, control flow, modules, macros, effects, and testing; this
+> track remains the fastest Rosetta-style route for Python readers.
 
 ---
 

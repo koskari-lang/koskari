@@ -24,13 +24,15 @@ Save as `tool.ki` and run:
 koskari tool.ki
 ```
 
-## Examples in the repository
+## When to use it
 
-| File | What `when-main` does |
+Use `when-main:` for code that should run only from the command line:
+
+| File role | What `when-main` usually does |
 |------|------------------------|
-| [examples/dataclass.ki](../../../examples/dataclass.ki) | Demo prints for `Point` |
-| [examples/fastapi/fastapi.ki](../../../examples/fastapi/fastapi.ki) | Starts or drives the demo server |
-| [examples/life/koslife/cli.ki](../../../examples/life/koslife/cli.ki) | Life game CLI |
+| Small demo | Prints example output for the definitions above it |
+| CLI wrapper | Parses arguments and calls a `main` function |
+| Web or service entry point | Starts the server or dispatches to the host framework |
 
 ## See also
 

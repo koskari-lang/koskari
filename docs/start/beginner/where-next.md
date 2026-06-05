@@ -1,7 +1,7 @@
 # Where next
 
 You can run Koskari, read basic results and errors, and write small programs
-from nested calls and `define`.
+from nested calls, `define`, conditionals, and tiny functions.
 
 ---
 

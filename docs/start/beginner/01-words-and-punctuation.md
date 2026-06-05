@@ -48,7 +48,7 @@ pieces you will see in almost every Koskari program.
 > **Q:** What is `x`?
 >
 > **A:** By itself, `x` is a **name**. A name is a word you choose. Names hold
-> values once you **define** them (coming soon in chapter 2).
+> values once you **define** them (chapter 2).
 
 > **Q:** Is `print` a name?
 >
