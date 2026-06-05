@@ -31,7 +31,6 @@ from sphinx.ext.autodoc import (
     ExceptionDocumenter,
     FunctionDocumenter,
     MethodDocumenter,
-    ModuleDocumenter,
     PropertyDocumenter,
 )
 

@@ -58,31 +58,6 @@ def read_version(root=None):
     return conf['metadata']['version']
 
 
-def _git_run(root, *args):
-    """
-    Run a git command and return stripped stdout, or None on failure
-
-    :param root: repository root path
-    :param args: git command arguments after the git binary
-    :return: stdout text or None
-    """
-
-    try:
-        proc = subprocess.run(
-            ['git'] + list(args),
-            cwd=str(root),
-            check=False,
-            capture_output=True,
-            text=True)
-    except OSError:
-        return None
-
-    if proc.returncode != 0:
-        return None
-
-    return proc.stdout.strip()
-
-
 def git_state(root=None):
     """
     Collect git metadata for version assembly
@@ -91,29 +66,46 @@ def git_state(root=None):
     :return: dict with commit, exact_tag, and dirty keys
     """
 
+    result = {
+        'commit': None,
+        'exact_tag': None,
+        'dirty': False,
+    }
+
     root = project_root(root)
     git_dir = root / '.git'
     if not git_dir.exists():
-        return {
-            'commit': None,
-            'exact_tag': None,
-            'dirty': False,
-        }
+        return result
 
-    commit = _git_run(root, 'rev-parse', '--short', 'HEAD')
-    exact_tag = _git_run(root, 'describe', '--exact-match', '--tags', 'HEAD')
+    try:
+        commit_proc = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=str(root),
+            check=False,
+            capture_output=True,
+            text=True)
+        if commit_proc.returncode == 0:
+            result['commit'] = commit_proc.stdout.strip()
 
-    dirty_proc = subprocess.run(
-        ['git', 'diff-index', '--quiet', 'HEAD', '--'],
-        cwd=str(root),
-        check=False)
-    dirty = dirty_proc.returncode != 0
+        tag_proc = subprocess.run(
+            ['git', 'describe', '--exact-match', '--tags', 'HEAD'],
+            cwd=str(root),
+            check=False,
+            capture_output=True,
+            text=True)
+        if tag_proc.returncode == 0:
+            result['exact_tag'] = tag_proc.stdout.strip()
 
-    return {
-        'commit': commit,
-        'exact_tag': exact_tag,
-        'dirty': dirty,
-    }
+        dirty_proc = subprocess.run(
+            ['git', 'diff-index', '--quiet', 'HEAD', '--'],
+            cwd=str(root),
+            check=False)
+        result['dirty'] = dirty_proc.returncode != 0
+
+    except OSError:
+        pass
+
+    return result
 
 
 def assemble_version(version, state, now=None):
