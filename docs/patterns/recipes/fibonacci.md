@@ -10,18 +10,16 @@ memoization, manual cache, tail recursion, and an iterative `while` loop with
 - [From Python: Functions and scope](../../start/from-python/functions-and-scope.md)
 - [From Python: Data and control](../../start/from-python/data-and-control.md)
 
-## Source
+## Try it
 
-Repository file: [examples/fib.ki](../../../examples/fib.ki)
-
-## Run
+Save the snippet you want to explore as `fib.ki`, then run it with:
 
 ```bash
-koskari examples/fib.ki
+koskari fib.ki
 ```
 
-The file defines functions but does not print by default. Try in the REPL after
-loading, or add a short `when-main:` block:
+For a file that defines functions but does not print by default, add a short
+`when-main:` block:
 
 ```koskari
 when-main:
