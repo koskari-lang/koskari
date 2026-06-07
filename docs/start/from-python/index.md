@@ -20,6 +20,7 @@ classes-and-objects
 programs-and-modules
 errors-and-debugging
 interop
+macros-and-dsls
 where-next
 ```
 
