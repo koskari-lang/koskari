@@ -19,6 +19,9 @@ message                    ;; a name lookup
 The parenthesized call rule is the one from the tutorials: evaluate the inputs,
 then apply the thing in the first position.
 
+For layout blocks and lines in `.ki` files, see
+[Layout and s-expressions](../reference/concepts/layout-and-s-expressions.md).
+
 ---
 
 ## Several forms in order

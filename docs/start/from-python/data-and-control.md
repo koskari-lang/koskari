@@ -114,6 +114,10 @@ evaluates to Python objects.
 
 ## Conditionals (layout)
 
+For the relationship between layout blocks, layout lines, and s-expressions when
+writing conditionals, see
+[Layout and s-expressions](../../reference/concepts/layout-and-s-expressions.md).
+
 > **Q:** `(if test a b)`?
 >
 > **A:** Layout peers (preferred in `.ki` files):

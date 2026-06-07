@@ -1,6 +1,10 @@
-# Layout handlers
+# Layout handler reference
 
-This document describes the layout system used by the Koskari reader for indent-based block syntax. Layouts are resolved at read time and transform block sources into s-expressions for the compiler.
+Per-head read-time lowering for indent-based block syntax. General layout
+**syntax** (blocks, lines, colon rules, peers) lives in
+[Reader and layout syntax](../reader-layout.md). Motivation and the layout /
+s-expression relationship are in
+[Layout and s-expressions](../concepts/layout-and-s-expressions.md).
 
 The `LayoutReader` resolves layout heads from a namespace (`layout/<head>`); handlers live in `koskari/reader/layouts/`. A **`.ki`** module can reuse an existing handler by binding **`layout/<head>`** to another layout name (for example **`define layout/foo layout/flat`** in **`basics.ki`**) instead of adding Python code.
 
@@ -19,6 +23,8 @@ A **block** is the basic unit of layout syntax. It consists of:
 **Top-level detection:** At top level (not inside `()`, `[]`, or `{}`), the reader treats the input as a block: it reads a header until a colon, then reads the indented body. Inside delimiters, layout mode is disabled and the base s-expression reader is used.
 
 **Resolution:** The reader looks up `layout/<head>` in the namespace. If found and it is a `LayoutHandler`, that handler's `read(source, peers)` is invoked. If not found, the block is treated as a default block and routed through `layout/block`.
+
+See [Reader and layout syntax](../reader-layout.md) for the full block and peer rules.
 
 ## `:block:` cons data and `apply_layout`
 

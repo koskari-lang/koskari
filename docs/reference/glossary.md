@@ -41,7 +41,20 @@ with examples, see [Concepts](concepts/index.md).
 : A Koskari expression: atoms, lists, or layout-derived s-expressions.
 
 **layout**
-: A read-time handler for indent-based block syntax (`layout/if`, `layout/block`, ...).
+: A read-time handler for a block head (`layout/if`, `layout/block`, …). For
+  general layout syntax, see [Layout and s-expressions](concepts/layout-and-s-expressions.md).
+
+**layout block**
+: A header line ending in structural `:`, a newline, and an indented body.
+  See [Reader and layout syntax](reader-layout.md).
+
+**layout line**
+: A depth-0 source line without a structural trailing `:`. See
+  [Reader and layout syntax](reader-layout.md).
+
+**layout mode**
+: The layout reader surface at depth 0: blocks, lines, and embedded
+  s-expressions. See [Reader and layout syntax](reader-layout.md).
 
 **macro**
 : A compile-time transformer defined with `define-syntax`. Expands to ordinary

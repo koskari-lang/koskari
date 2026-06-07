@@ -13,6 +13,7 @@ glossary
 concepts/index
 cli-and-config
 grammar
+reader-layout
 error-codes
 ```
 

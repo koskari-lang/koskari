@@ -134,4 +134,13 @@ indentation, as above.
 - `if` / `elif` / `else` peers mirror Python’s chain; see
   [Data and control](data-and-control.md) for loops and assignment next.
 
+---
+
+## See also
+
+- [Layout and s-expressions](../../reference/concepts/layout-and-s-expressions.md)
+  — mental model and three authoring surfaces
+- [Reader and layout syntax](../../reference/reader-layout.md) — normative syntax
+  rules
+
 Next: [Runtime and tooling](runtime-and-tooling.md).

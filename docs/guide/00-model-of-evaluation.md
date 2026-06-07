@@ -33,6 +33,11 @@ rules per form.
 > punctuation fails before evaluation starts (syntax errors from the beginner
 > track).
 
+> **Q:** How does layout syntax fit in?
+>
+> **A:** In `.ki` files the reader also accepts indent-based blocks and lines.
+> See [Layout and s-expressions](../reference/concepts/layout-and-s-expressions.md).
+
 > **Q:** Do numbers and strings need much reading?
 >
 > **A:** They are already simple values. `"hello"` reads as text data. `42`
