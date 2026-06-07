@@ -1,5 +1,12 @@
 # Koskari layout call semantics (single-symbol values)
 
+**Status:** Superseded
+
+**Superseded by:** [docs/reference/reader-layout.md](../../docs/reference/reader-layout.md)
+§ Layout lines (any first form may head a multi-form fold; not symbol-only).
+
+---
+
 ## Overview
 
 Layout bodies support a call-oriented surface syntax where multi-form

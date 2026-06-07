@@ -78,7 +78,9 @@ reference pages and bootstrap scripts output).
 | Page | Status | Doc path | Notes |
 |------|--------|----------|-------|
 | grammar | Stub | `docs/reference/grammar.md` | Needs SYNTAX.md adaptation |
-| reader-layout | Generated | `docs/reference/layouts/` | 17 layout pages from LAYOUTS.md |
+| reader-layout | Done | `docs/reference/reader-layout.md` | Normative layout syntax + EBNF |
+| layout-and-s-expressions | Done | `docs/reference/concepts/layout-and-s-expressions.md` | Three surfaces, YAML/JSON model |
+| layout-handlers | Generated | `docs/reference/layouts/` | 17 handler pages from LAYOUTS.md |
 | special-forms | Generated | `docs/reference/specials/` | 89 pages from SPECIALS.md |
 | stdlib | Not started | `docs/reference/stdlib/` | Use macros + builtins API for now |
 | cli-and-config | Done | `docs/reference/cli-and-config.md` | |

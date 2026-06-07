@@ -1,8 +1,18 @@
 # Koskari Syntax & Layout System (Revised Draft)
 
+**Status:** Superseded
+
+**Superseded by:** [docs/reference/reader-layout.md](../../docs/reference/reader-layout.md)
+and [docs/reference/concepts/layout-and-s-expressions.md](../../docs/reference/concepts/layout-and-s-expressions.md).
+§9 fence blocks below remain **planned**; see also
+[fenced-foreign-literal.md](../fenced-foreign-literal.md).
+
+---
+
 This document describes the **default Koskari syntax** and the layout-based reader model we have decided on.
 
-**Formal syntax:** The authoritative grammar is defined in [layout-syntax-formal.md](layout-syntax-formal.md) (EBNF). This document covers the design model; the formal spec covers lexical preprocessing, logical lines, delimiter depth, and the grammar.
+**Formal syntax:** Graduated to [docs/reference/reader-layout.md](../../docs/reference/reader-layout.md).
+Historical EBNF: [layout-syntax-formal.md](layout-syntax-formal.md) in this archive.
 
 Koskari now has a first-class, whitespace-friendly surface syntax that lowers into canonical s-expressions. Pure s-expr syntax remains fully supported and may be embedded anywhere.
 
@@ -56,7 +66,7 @@ Each layout head (e.g. `layout/if`) may implement:
 
 # 2. Block Syntax
 
-The formal grammar (see [layout-syntax-formal.md](layout-syntax-formal.md)) defines:
+The formal grammar (see [layout-syntax-formal.md](layout-syntax-formal.md) in this archive) defines:
 
 * **Logical lines** — a physical newline ends a logical line only when delimiter depth is 0
 * **Header terminator** — the final `:` at delimiter depth 0, after which only whitespace/comment remain; it is not part of header content

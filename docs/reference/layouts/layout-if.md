@@ -1,6 +1,8 @@
 # layout/if
 **Symbol:** `layout/if`
 
+General block syntax: [Reader and layout syntax](../reader-layout.md).
+
 **Use-case:** Multi-branch conditional with optional `elif` and `else` peers.
 Lowers to `compile/cond`.
 

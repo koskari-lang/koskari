@@ -144,9 +144,7 @@ including:
 
 * [LAYOUTS.md](../LAYOUTS.md) — default fallback section
 * [SYNTAX.md](../SYNTAX.md) — default block handler
-* [language/layout-syntax.md](layout-syntax.md) — fallback description (still
-  mentions synthetic **`layout/block`** prepend in places; reconcile with
-  implementation in **`koskari/reader/parser.py`**)
+* [docs/reference/reader-layout.md](../../docs/reference/reader-layout.md) — normative layout syntax and default fallback
 
 ## Layouts unchanged by default flip
 
@@ -185,7 +183,7 @@ rule blocks.
 
 * [LAYOUTS.md](../LAYOUTS.md) — handler reference
 * [SYNTAX.md](../SYNTAX.md) — block mode and default handler
-* [language/layout-syntax.md](layout-syntax.md) — layout reader model
+* [docs/reference/reader-layout.md](../../docs/reference/reader-layout.md) — layout reader model
 * **`koskari/reader/layouts/basics.py`** — **`layout_block`**, **`layout_flat`**
 * **`koskari/bootstrap/_define_syntax.ki`** — flat aliases for define-syntax
 * [MACROS.md](../MACROS.md) — define-syntax layout notes

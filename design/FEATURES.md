@@ -164,7 +164,7 @@ Items below are **done** in koskari-ng unless noted in [TODO.md](TODO.md).
 | ----- | --- |
 | Special forms | [SPECIALS.md](SPECIALS.md) |
 | Macros | [MACROS.md](MACROS.md) |
-| Layout syntax | [LAYOUTS.md](LAYOUTS.md), [language/layout-syntax.md](language/layout-syntax.md) |
+| Layout syntax | [LAYOUTS.md](LAYOUTS.md), [docs/reference/reader-layout.md](../docs/reference/reader-layout.md) |
 | Planned language surface | [language/special-forms.md](language/special-forms.md), [language/async.md](language/async.md) |
 | Import | [api/import-system.md](api/import-system.md) |
 | GIL (future domain-TLS design) | [interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) |

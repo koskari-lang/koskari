@@ -15,29 +15,17 @@ Python code.
 
 ## Blocks
 
-A **block** is the basic unit of layout syntax. It consists of:
+Normative layout syntax (blocks, lines, colon rules, peers, EBNF) is in
+[docs/reference/reader-layout.md](../docs/reference/reader-layout.md).
+Three authoring surfaces (layout block, layout line, s-expression) are in
+[docs/reference/concepts/layout-and-s-expressions.md](../docs/reference/concepts/layout-and-s-expressions.md).
 
-1. **Header:** forms parsed until a block opener (colon) is seen. The first form
-   is the **head**; remaining forms are **args**.
-2. **Body:** indented forms following the header, read until dedent or EOF.
+Agent summary:
 
-**Block opener:** A standalone colon `:` or a keyword ending with `:` (e.g.
-`else:`). The parser treats `x:` and `x :` identically.
-
-**Top-level detection:** At top level (not inside `()`, `[]`, or `{}`), the
-reader treats the input as a block: it reads a header until a colon, then reads
-the indented body. Inside delimiters, layout mode is disabled and the base
-s-expression reader is used.
-
-**Resolution:** The reader looks up `layout/<head>` in the namespace. If found
-and it is a `LayoutHandler`, that handler's `read(source, peers)` is invoked.
-If not found, the block is treated as a default block and routed through
-`layout/block`.
-
-**Proposal:** A design to make **`layout/flat`** the default fallback and keep
-**`layout/block`** opt-in is in
-[language/flat-layout-default.md](language/flat-layout-default.md) (see also
-[TODO.md](TODO.md)).
+- **Layout block:** header + structural `:` + **mandatory newline** + indented body
+- **Layout line:** depth-0 line without structural trailing `:`; multiple forms fold to `(first . rest…)` when implicit calls are enabled (any first form, not symbol-only)
+- **Default fallback:** unknown heads use **`layout/block`** → `(HEAD ARG … (compile/begin BODY …))`
+- **Flat proposal (not implemented):** [language/flat-layout-default.md](language/flat-layout-default.md)
 
 ## `:block:` cons data and `apply_layout`
 

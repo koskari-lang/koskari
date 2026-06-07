@@ -39,6 +39,13 @@ exports, FAQ, guides).
 **Corpus** (`docs/corpus/`): `references` and maintainer `notes` follow the same
 rules — cite `docs/` paths only, never `design/`.
 
+## `corpus/` - hugging-face datasets
+
+Generates agent-oriented datasets of language examples.
+
+User documentation should not refer to the corpus. However the corpus
+may link into the user documentation for clarification.
+
 ## `design/` — internal documentation
 
 For the maintainer and agents: ideas, drafts, rollups, snapshots, VM/compiler

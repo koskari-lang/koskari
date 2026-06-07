@@ -2,7 +2,7 @@
 
 ## Layout System
 
-Koskari supports a layout-based, indentation-friendly surface syntax that lowers into canonical s-expressions. See [layout-syntax.md](layout-syntax.md) for the full design.
+Koskari supports a layout-based, indentation-friendly surface syntax that lowers into canonical s-expressions. See [docs/reference/reader-layout.md](../../docs/reference/reader-layout.md) for normative rules.
 
 Key concepts:
 

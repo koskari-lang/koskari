@@ -434,7 +434,8 @@ begin:
   form2
 ```
 
-becomes `(compile/begin form1 form2)`.
+becomes `(begin form1 form2)` via **`layout/begin`** / **`layout/flat`** (not
+**`compile/begin`**).
 
 ### `if` / `elif` / `else`
 
@@ -497,6 +498,11 @@ header. A `:` inside a nested delimiter is not treated as the block opener.
 **Depth guard.** Layout-block detection is suppressed when inside any `()`,
 `[]`, or `{}`. Forms inside delimiters always use plain `Reader` rules,
 regardless of indentation.
+
+**Layout lines.** At delimiter depth 0, a logical line without a structural
+trailing `:` may contain several top-level forms; when implicit calls are
+enabled, they fold to `(first . rest…)`. Any first form may head the fold. See
+[docs/reference/reader-layout.md](../docs/reference/reader-layout.md) § Layout lines.
 
 **`#!` shebang lines.** A `#!` line at the very start of a file is skipped
 automatically before any form is read.

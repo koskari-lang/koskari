@@ -11,8 +11,8 @@ This directory documents the language-level features of Koskari, including synta
 - **macro-hygiene-syntax-boxes.md**: Implemented syntax-box hygiene (`koskari.syntax.Syntax`, `koskari.hygiene`); archived full design note in [archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)
 - **unified-matcher-transformer-model.md**: Shared Matcher IR and transformer pipeline for `define-syntax`, `macro-rules`, specials, and post-expand hygiene/unbox
 - **syntax.md**: Syntax elements, literals, and parsing rules
-- **layout-syntax.md**: Layout-based block syntax, layout heads, and reader model
-- **layout-syntax-formal.md**: Formal EBNF specification of the Koskari Layout Syntax (lexical preprocessing, logical lines, grammar)
+- **Layout syntax (user docs):** [docs/reference/reader-layout.md](../docs/reference/reader-layout.md), [docs/reference/concepts/layout-and-s-expressions.md](../docs/reference/concepts/layout-and-s-expressions.md); archived drafts in [archive/layout-syntax.md](../archive/layout-syntax.md), [archive/layout-syntax-formal.md](../archive/layout-syntax-formal.md)
+- **flat-layout-default.md**: Proposed default fallback change (`layout/block` → `layout/flat`)
 - **control-flow.md**: Control flow constructs (loops, conditionals, exceptions)
 - **functions.md**: Function definition and calling conventions
 - **async.md**: Async/await and coroutine features

@@ -1,5 +1,12 @@
 # Koskari Layout Syntax — Formal Specification (EBNF)
 
+**Status:** Superseded
+
+**Superseded by:** [docs/reference/reader-layout.md](../../docs/reference/reader-layout.md)
+§ Formal grammar (single-pass colon; no probe/replay).
+
+---
+
 This document is the **formal declaration of the Koskari Layout Syntax** (the default Koskari reader mode).
 
 It specifies:
