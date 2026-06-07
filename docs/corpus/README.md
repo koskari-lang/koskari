@@ -24,7 +24,7 @@ Schema documentation exists. Initial records live under `records/`:
 
 | File | Focus | Records |
 |------|-------|---------|
-| [conditionals.jsonl](records/conditionals.jsonl) | Conditionals: compile/cond, switch, and, or; macros when, unless, ?, bool | 33 |
+| [conditionals.jsonl](records/conditionals.jsonl) | Conditionals: compile/cond, switch, and, or; macros when, unless, ?, bool; layout if/when/unless | 55 |
 | [variables.jsonl](records/variables.jsonl) | Bindings: define, define-global, let, letrec, refs, delq, parameters | 30 |
 | [objects.jsonl](records/objects.jsonl) | Object operators, inplace, incr!/decr!, class, define-class | 41 |
 | [functions.jsonl](records/functions.jsonl) | lambda, function, define function shorthand, gensym-thunk, compose, decorate | 21 |
