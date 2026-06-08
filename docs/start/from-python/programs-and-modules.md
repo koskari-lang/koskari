@@ -87,42 +87,136 @@ See [compile/when-main](../../reference/macros/compile-when-main.md).
 
 ## Comprehensions: `each` and `list-each`
 
+Python gives you several related shapes:
+
+```python
+squares_iter = (x * x for x in range(6))
+squares_list = [x * x for x in range(6)]
+evens = [x for x in range(10) if x % 2 == 0]
+```
+
+Koskari splits those shapes into names that say what they produce. **`each`** is
+for generators. **`list-each`** is for a Python list. **`dict-each`** is for a
+Python dict.
+
 > **Q:** Generator expression `(f(x) for x in seq)`?
 >
-> **A:** **`each`** builds a generator:
+> **A:** **`each`** builds a generator. The layout body is the value yielded for
+> each item:
 >
 > ```koskari
-> each [x #[1 2 3]]:
+> each [x (range 0 6)]:
 >   (* x x)
 > ```
 >
-> Optional filters: `when:` or `unless:` on the `each` form.
+> When you need to nest the generator inside another call, use the parenthesized
+> spelling:
+>
+> ```koskari
+> print (list (each [x (range 0 6)] (* x x)))
+> ```
+
+> **Q:** Generator expression with an `if` clause?
+>
+> **A:** Put `when:` or `unless:` on the `each` header:
+>
+> ```koskari
+> each [x (range 0 10)] when: (equal? 0 (% x 2)):
+>   x
+> ```
+>
+> Read that as “for each `x`, when this condition is true, yield the body.” The
+> `unless:` variant is delightful for “skip the dull cases”:
+>
+> ```koskari
+> each [name names] unless: (name.startswith "_"):
+>   (name.upper)
+> ```
+>
+> The same filter works in s-expression form when the whole generator is an
+> argument:
+>
+> ```koskari
+> (list (each [x (range 0 10)] when: (equal? 0 (% x 2)) x))
+> ```
 
 > **Q:** List comprehension `[f(x) for x in seq]`?
 >
-> **A:** **`list-each`**:
+> **A:** **`list-each`** produces a Python list immediately:
 >
 > ```koskari
-> list-each [x #[1 2 3]]:
+> list-each [x (range 0 6)]:
 >   (* x x)
 > ```
 >
-> Produces a Python list.
+> If you are building an API response, a test fixture, or any value you plan to
+> index more than once, reach for `list-each` instead of `each`.
+>
+> Nested as an argument:
+>
+> ```koskari
+> print (list-each [word words] (word.title))
+> ```
+
+> **Q:** Plain `for item in seq: ...` with side effects?
+>
+> **A:** Use **`for-each`**. It is a loop, not a comprehension, so its body is for
+> doing work: printing, appending, calling methods, breaking, and continuing.
+>
+> ```koskari
+> for-each [path paths]:
+>   print "checking" path
+>   unless (path.exists):
+>     continue
+>   (upload path)
+> ```
+>
+> Parenthesized `for-each` is useful inside macro output or compact examples:
+>
+> ```koskari
+> (for-each [path paths]
+>   (print "checking" path)
+>   (upload path))
+> ```
+
+> **Q:** What about Python `for` / `else`?
+>
+> **A:** `for-each` has an `else:` peer, like Python. The peer runs when the
+> iterable is exhausted naturally, not when `break` exits the loop:
+>
+> ```koskari
+> define find-user [users email]:
+>   for-each [user users]:
+>     when (equal? user.email email):
+>       break user
+>   else:
+>     None
+> ```
 
 > **Q:** Dict comprehension?
 >
-> **A:** **`dict-each`** with `key:` and `value:` clauses — see the macros
-> reference when you need exact shapes.
+> **A:** **`dict-each`** with `key:` and `value:` clauses — see
+> [compile/dict-each](../../reference/macros/compile-dict-each.md) when you need
+> exact shapes.
+>
+> ```koskari
+> dict-each [name names] key: name value: (len name)
+> ```
 
 > **Q:** Generator over a Cartesian product (like nested `for` loops)?
 >
-> **A:** Combine **`each`** with a Python iterable, for example `itertools.product`:
+> **A:** Combine **`each`** with a Python iterable, for example
+> `itertools.product`:
 >
 > ```koskari
 > (import-from itertools product)
+>
 > each [[x y] (product (range 0 w) (range 0 h))]:
->   (yield (x y))
+>   #(x y)
 > ```
+>
+> Destructuring in the binding (`[x y]`) is the Koskari version of Python’s
+> `for x, y in ...`.
 
 ---
 

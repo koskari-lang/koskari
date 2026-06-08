@@ -166,6 +166,46 @@ writing conditionals, see
 >   body
 > ```
 
+### Fast-return checks with `unless`
+
+Python code often starts with a guard clause: check the boring case, return
+early, then let the rest of the function tell the happy-path story.
+
+```python
+def invite(user):
+    if not user:
+        return "missing user"
+    if not user.email:
+        return "missing email"
+    return f"sent invite to {user.email}"
+```
+
+In Koskari, **`unless`** makes those negative checks read like a little safety
+rail at the top of the function:
+
+```koskari
+define invite [user]:
+  unless user:
+    return "missing user"
+  unless user.email:
+    return "missing email"
+  f"sent invite to {user.email}"
+```
+
+That is a macro, not a new kind of `if`: it expands to a conditional whose body
+runs only when the test is false. The s-expression spelling is handy when the
+check is nested inside another form:
+
+```koskari
+(lambda [user]
+  (unless user (return "missing user"))
+  (send-invite user))
+```
+
+Use `unless` for short, local “stop here if this is not true” moments. If the
+negative branch grows large, an `if` / `else:` pair is usually kinder to future
+you.
+
 ---
 
 ## Loops (layout)
