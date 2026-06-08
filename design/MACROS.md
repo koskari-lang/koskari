@@ -9,11 +9,11 @@ Bootstrap loads these sources in order (`koskari/bootstrap/__init__.py`,
 `_BUILTINS_SOURCES`):
 
 1. `_define_syntax.ki` — meta-macros for `define-syntax` / `extend-syntax`
-2. `_conditionals.ki` — `if`, `when`, `unless`, `?`, `bool`, predicates
+2. `_conditionals.ki` — `if`, `when`, `unless`, `?`, `bool`, `None?`, `nil?`
 3. `_functions.ki` — coroutine/demand defines, decorators, composition
 4. `_variables.ki` — assignment, refs, bindings, comprehensions helpers
 5. `_class.ki` — classes, dataclasses, `super`
-6. `_iter.ki` — `each`, `list-each`, `dict-each`
+6. `_iter.ki` — `each`, `list-each`, `dict-each`, `has?`, slice helpers
 7. `basics.ki` — list accessors, `help`, macro expansion, compile/evaluate helpers
 
 The merged module is exposed as `koskari.builtins`. Macros are available in every
@@ -132,7 +132,8 @@ source position for hygiene.
 
 **Syntax:** `(None? VALUE)`, `(nil? VALUE)`
 
-**Behaviour:** **`(compile/is None VALUE)`** and **`(compile/is nil VALUE)`**.
+**Behaviour:** Identity predicates for the **`None`** and **`nil`** singletons. Expand to
+**`(compile/is VALUE None)`** and **`(compile/is VALUE nil)`**.
 
 
 ### on-demand?
@@ -328,6 +329,45 @@ variants).
 **`unless:`**); or **`(dict-each [BINDING SEQ] BODY …)`** for pair-producing bodies.
 
 **Behaviour:** **`dict`** over **`compile/each`** results.
+
+
+### compile/has?
+
+**Symbol:** `compile/has?` (surface: `has?`)
+
+**Syntax:** `(has? COLLECTION ELEMENT)`
+
+**Behaviour:** **`(compile/in ELEMENT COLLECTION)`** — true when **COLLECTION** contains
+**ELEMENT**.
+
+
+### build-slice
+
+Not a macro: a **`define`** function in `_iter.ki` that constructs a Python
+**`slice`** from keyword arguments **`start:`**, **`stop:`**, and **`step:`** (each
+defaults to **`None`**). **`(build-slice)`** → **`(slice None None None)`**.
+
+
+### compile/slice
+
+**Symbol:** `compile/slice` (surface: `slice`)
+
+**Syntax:** **`(slice)`**, **`(slice ARGS …)`**
+
+**Behaviour:** Adapter that routes slice construction to **`build-slice`** so keyword
+arguments work. **`(slice)`** → **`(call build-slice)`**; **`(slice ARGS …)`** →
+**`(call build-slice ARGS …)`**.
+
+
+### compile/item-slice
+
+**Symbol:** `compile/item-slice` (surface: `item-slice`)
+
+**Syntax:** **`(item-slice SEQUENCE)`**, **`(item-slice SEQUENCE ARGS …)`**
+
+**Behaviour:** Sequence slicing via **`item`**. **`(item-slice SEQUENCE)`** →
+**`(item SEQUENCE (call build-slice))`**. With slice arguments, equivalent to
+**`(item SEQUENCE (slice ARGS …))`**.
 
 
 ## koskari/bootstrap/basics.ki

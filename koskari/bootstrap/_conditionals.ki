@@ -34,6 +34,11 @@ define-syntax compile/if:
 
 
 define-syntax compile/when:
+  """
+  Evaluates the body only when the condition is true
+  Evaluates as None otherwise.
+  """
+
   syntax-rules []:
     case (when condition then):
       (compile/cond
@@ -42,6 +47,11 @@ define-syntax compile/when:
 
 
 define-syntax compile/unless:
+  """
+  Evaluates the body only when the condition is false.
+  Evaluates as None otherwise.
+  """
+
   syntax-rules []:
     case (unless condition then):
       (compile/cond
@@ -70,6 +80,10 @@ define-syntax compile/bool:
 
 
 define-syntax compile/when-main:
+  """
+  Evaluates the body only when the current module's name is "__main__"
+  """
+
   syntax-rules []:
     case (when-main body ...):
       when (equal? __name__ "__main__"):
@@ -77,12 +91,20 @@ define-syntax compile/when-main:
 
 
 define-syntax compile/None?:
+  """
+  Identity predicate for the None singleton
+  """
+
   syntax-rules []:
     case (None? value):
       (compile/is value None)
 
 
 define-syntax compile/nil?:
+  """
+  Identity predicate for the nil singleton
+  """
+
   syntax-rules []:
     case (nil? value):
       (compile/is value nil)

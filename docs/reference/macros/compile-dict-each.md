@@ -3,7 +3,3 @@
 **`unless:`**); or **`(dict-each [BINDING SEQ] BODY …)`** for pair-producing bodies.
 
 **Behaviour:** **`dict`** over **`compile/each`** results.
-
-
-## koskari/bootstrap/basics.ki
-

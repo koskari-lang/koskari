@@ -41,11 +41,11 @@ define-syntax compile/define-demanding:
 
 define-syntax compile/function-compose:
   """
-  Composes multiple functions into a single function, eg.
+  Composes multiple functions into a single function, eg.::
 
   (function-compose fn1 (fn2 foo) fn3))
 
-  is equivalent to
+  is equivalent to::
 
   (lambda [*: args **: kwds]
     (fn1 ((fn2 foo) (fn3 *: args **: kwds))))

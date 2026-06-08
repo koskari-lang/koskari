@@ -34,7 +34,8 @@ Example skeleton:
 import-from sys argv
 
 define main []:
-  for-each [arg (cdr argv)]:
+  define args (item-slice argv 1)
+  for-each [arg args]:
     (process arg)
 
 define process [name]:
@@ -43,6 +44,9 @@ define process [name]:
 when-main:
   (main)
 ```
+
+**`item-slice`** drops the first element of **`argv`**; see
+[compile/item-slice](../../reference/macros/compile-slice-and-compile-item-slice.md).
 
 ---
 

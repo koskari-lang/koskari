@@ -41,14 +41,14 @@ define-syntax compile/define-dataclass:
   """
   Defines a dataclass and a typecheck function for it.
 
-  eg.
+  eg.::
 
   (define-dataclass Point [x y]
     (define x :: int 0)
     (define y :: int 0)
   )
 
-  is equivalent to
+  is equivalent to::
 
   (define Point
     (dataclass (class Point [] (define x :: int 0) (define y :: int 0))))

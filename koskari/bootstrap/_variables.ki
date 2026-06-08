@@ -162,6 +162,10 @@ define-syntax compile/ref:
 
 
 define-syntax compile/bind!:
+  """
+  Bind a reference to a name in the current scope
+  """
+
   syntax-rules [item compile/item
                 attr compile/attr
                 dynamic
@@ -244,6 +248,7 @@ define-syntax compile/let-values:
   Evaluates body in a new scope with binding values defined from unpacking
   the sequence `value` according to `pattern`.
 
+  Example::
 
   (let-values [[a b *: more] my-val]
     body ...)
@@ -277,11 +282,13 @@ define-syntax compile/item*:
   """
   Nested item access, where the key is evaluated in order from left to right.
 
-  (item* obj key1 key2)
+  For example::
 
-  is equivalent to
+  (item* obj key1 key2 key3)
 
-  (item (item obj key1) key2)
+  is equivalent to::
+
+  (item (item (item obj key1) key2) key3)
   """
 
   syntax-rules []:
@@ -295,9 +302,11 @@ define-syntax compile/attr*:
   """
   Nested attribute access, where the name is evaluated in order from left to right.
 
+  For example::
+
   (attr* obj name1 name2)
 
-  is equivalent to
+  is equivalent to::
 
   (attr (attr obj name1) name2)
   """

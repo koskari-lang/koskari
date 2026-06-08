@@ -63,4 +63,55 @@ define-syntax compile/dict-each:
       (dict (each [binding seq] body))
 
 
+define-syntax compile/has?:
+  """
+  True if the collection contains the element
+  """
+
+  syntax-rules []:
+    case (has? collection element):
+      (compile/in element collection)
+
+
+define build-slice [start: None stop: None step: None]:
+  """
+  Simple slice class constructor that accepts keyword arguments
+  """
+
+  (slice start stop step)
+
+
+define-syntax compile/slice:
+  """
+  Adapter to route slice invocations to the build-slice function to
+  enable keyword argument passing
+  """
+
+  syntax-rules []:
+    case (slice):
+      (call build-slice)
+    case (slice args ...):
+      (call build-slice args ...)
+
+
+define-syntax compile/item-slice:
+  """
+  Slice a sequence.
+
+  Example::
+
+  (item-slice sequence start ...)
+
+  is equivalent to::
+
+  (item sequence (slice start ...))
+  """
+
+  syntax-rules []:
+    case (item-slice sequence):
+      (item sequence (call build-slice))
+    case (item-slice sequence args ...):
+      (item sequence (call build-slice args ...))
+
+
 ;; The end.

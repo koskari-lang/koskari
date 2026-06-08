@@ -8,7 +8,3 @@
 
 **Behaviour:** Wraps **`class`** / **`lambda`** inside **`define`** / **`define-class`**, or
 composes decorators for a bare callable.
-
-
-## koskari/bootstrap/_variables.ki
-

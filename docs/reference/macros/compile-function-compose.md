@@ -7,12 +7,15 @@ the rightmost **FN** receives **`*: args **: kwds`**, and each **FN** to the lef
 the accumulated call (same order as **`(decorate [DECORATOR …] FN)`** folding). Example
 from the macro docstring:
 
-```text
+```koskari
 (function-compose fn1 (fn2 foo) fn3)
-  ⇒ (lambda [*: args **: kwds]
-       (fn1 ((fn2 foo) (fn3 *: args **: kwds))))
+```
+
+is equivalent to:
+```koskari
+(lambda [*: args **: kwds]
+  (fn1 ((fn2 foo) (fn3 *: args **: kwds))))
 ```
 
 Composition is syntactic: argument expressions are not evaluated until the composed
 function is invoked.
-
