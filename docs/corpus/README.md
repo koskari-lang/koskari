@@ -31,6 +31,7 @@ Schema documentation exists. Initial records live under `records/`:
 | [functions.jsonl](records/functions.jsonl) | lambda, function, define function shorthand, gensym-thunk, compose, decorate | 21 |
 | [syntax.jsonl](records/syntax.jsonl) | define-syntax, extend-syntax, rules/match, datum, pattern parsers | 32 |
 | [specials.jsonl](records/specials.jsonl) | Other compiler special forms | 14 |
+| [iter.jsonl](records/iter.jsonl) | Slicing, indexing, range, collection literals | 23 |
 
 Records cite originating tests under `tests/compile/specials/` where
 applicable; standalone seed examples use notes to describe the syntax focus. A

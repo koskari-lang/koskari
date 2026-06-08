@@ -553,6 +553,24 @@ class TestCollections(IsolatedAsyncioTestCase):
                                    nil))
 
 
+    async def test_dict_pairs(self):
+        src = "#{(key . val) (key2 . val2)}"
+        col = parse_source(src)
+        self.assertEqual(col, cons(symbol("#dict"),
+                                   cons(symbol("key"), symbol("val")),
+                                   cons(symbol("key2"), symbol("val2")),
+                                   nil))
+
+
+    async def test_dict_keywords(self):
+        src = "#{key: val key2: val2}"
+        col = parse_source(src)
+        self.assertEqual(col, cons(symbol("#dict"),
+                                   keyword("key"), symbol("val"),
+                                   keyword("key2"), symbol("val2"),
+                                   nil))
+
+
 class TestReader(IsolatedAsyncioTestCase):
 
     async def test_read_atom(self):
