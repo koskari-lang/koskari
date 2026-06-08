@@ -55,6 +55,7 @@ informal encoding:
 | `42`, `"hello"`, `true`, `false`, `null` | JSON-like scalar results |
 | `symbol:x` | Koskari symbol |
 | `list:[1,2,3]` | Python list (from `list`, `#[…]`, or `list-each`) |
-| `proper-list:[1,2,3]` | Koskari proper list (cons chain ending in nil) |
+| `tuple:(1,2,3)` | Python tuple (from `tuple`, or `#(…)`) |
+| `proper-list:(1 2 3)` | Koskari proper list (cons chain ending in nil) |
 | `improper-list:(1 2 . 3)` | Improper list shape |
 | `opcode:NAME count:N` | Expected bytecode shape at compile stage |
