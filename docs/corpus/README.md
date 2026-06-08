@@ -27,10 +27,12 @@ Schema documentation exists. Initial records live under `records/`:
 | [conditionals.jsonl](records/conditionals.jsonl) | Conditionals: compile/cond, switch, and, or; macros when, unless, ?, bool; layout if/when/unless | 55 |
 | [variables.jsonl](records/variables.jsonl) | Bindings: define, define-global, let, letrec, refs, delq, parameters | 30 |
 | [objects.jsonl](records/objects.jsonl) | Object operators, inplace, incr!/decr!, class, define-class | 41 |
+| [classes.jsonl](records/classes.jsonl) | Layout class definitions with Python dunders, dataclass, staticmethod, classmethod, property, inheritance | 16 |
 | [functions.jsonl](records/functions.jsonl) | lambda, function, define function shorthand, gensym-thunk, compose, decorate | 21 |
 | [syntax.jsonl](records/syntax.jsonl) | define-syntax, extend-syntax, rules/match, datum, pattern parsers | 32 |
 | [specials.jsonl](records/specials.jsonl) | Other compiler special forms | 14 |
 
 Records cite originating tests under `tests/compile/specials/` where
-applicable. A corpus verification runner is **not implemented** yet; tests
-under `tests/` currently serve as the live verifier.
+applicable; standalone seed examples use notes to describe the syntax focus. A
+corpus verification runner is **not implemented** yet; tests under `tests/`
+currently serve as the live verifier.
