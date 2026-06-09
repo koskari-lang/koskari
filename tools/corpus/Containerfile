@@ -1,4 +1,4 @@
-# Containerfile for corpus JSONL to parquet export.
+# Containerfile for corpus YAML to parquet export.
 #
 # Build (repository root):
 #   podman build -t koskari-corpus-export -f tools/corpus/Containerfile .
@@ -15,10 +15,10 @@
 FROM python:3.14-alpine
 
 LABEL maintainer="obriencj@gmail.com" \
-      description="Export Koskari corpus JSONL to parquet dataset views"
+      description="Export Koskari corpus YAML to parquet dataset views"
 
 RUN pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-check \
-    pyarrow
+    pyarrow PyYAML
 
 WORKDIR /work
 

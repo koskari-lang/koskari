@@ -23,6 +23,7 @@ Corpus record loading, expected-value parsing, verify handlers, and test base.
 """
 
 
+import importlib.util
 import json
 import re
 import unittest
@@ -107,32 +108,31 @@ def default_schema_path(root=None):
     return project_root(root) / 'docs' / 'corpus' / 'SCHEMA.json'
 
 
+def _import_corpus_load(root=None):
+    """
+    Load tools.corpus.load as a module
+
+    :param root: optional repository root override
+    :return: corpus load module
+    """
+
+    path = project_root(root) / 'tools' / 'corpus' / 'load.py'
+    spec = importlib.util.spec_from_file_location('corpus_load', path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def load_records(records_dir):
     """
-    Load all corpus records from JSONL shards in a directory
+    Load all corpus records from YAML shards in a directory
 
-    :param records_dir: directory containing *.jsonl files
+    :param records_dir: directory containing *.yaml files
     :return: list of record dicts
-    :raises ValueError: on malformed JSON with shard name in message
+    :raises ValueError: on malformed YAML with shard name in message
     """
 
-    records = []
-    records_path = Path(records_dir)
-    shards = sorted(records_path.glob('*.jsonl'))
-
-    for shard in shards:
-        text = shard.read_text()
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                records.append(json.loads(stripped))
-            except json.JSONDecodeError as exc:
-                msg = '%s:%d: %s' % (shard.name, line_no, exc)
-                raise ValueError(msg) from exc
-
-    return records
+    return _import_corpus_load().load_records(records_dir)
 
 
 def load_schema(schema_path):

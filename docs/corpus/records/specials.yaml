@@ -1,0 +1,151 @@
+id: special-quote-number-001
+feature: special/compile/quote
+source: (quote 42)
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-quote.md
+stability: evolving
+tags:
+  - special
+  - quote
+  - data
+---
+id: special-quote-symbol-001
+feature: special/compile/quote
+source: (quote x)
+verify:
+  eval: "symbol:x"
+references:
+  - reference/specials/compile-quote.md
+stability: evolving
+tags:
+  - special
+  - quote
+---
+id: special-quote-list-001
+feature: special/compile/quote
+source: (quote (1 2 3))
+verify:
+  eval: "proper-list:[1,2,3]"
+references:
+  - reference/specials/compile-quote.md
+stability: evolving
+tags:
+  - special
+  - quote
+---
+id: special-quote-improper-001
+feature: special/compile/quote
+source: (quote (1 2 . 3))
+verify:
+  eval: "improper-list:(1 2 . 3)"
+references:
+  - reference/specials/compile-quote.md
+stability: evolving
+tags:
+  - special
+  - quote
+---
+id: special-begin-sequence-001
+feature: special/compile/begin
+source: (begin 1 2 3)
+verify:
+  eval: "3"
+references:
+  - reference/specials/compile-begin.md
+stability: evolving
+tags:
+  - special
+  - begin
+notes: compile/begin returns last expression value
+---
+id: special-cons-001
+feature: special/compile/cons
+source: (cons 1 2 nil)
+verify:
+  eval: "proper-list:[1,2]"
+references:
+  - reference/specials/compile-cons.md
+stability: evolving
+tags:
+  - special
+  - pair
+notes: compile/cons examples
+---
+id: special-car-001
+feature: special/compile/car
+source: (car (quote (a b c)))
+verify:
+  eval: "symbol:a"
+references:
+  - reference/specials/compile-car.md
+stability: evolving
+tags:
+  - special
+  - pair
+notes: pair access specials
+---
+id: special-bytecode-const-001
+feature: special/compile/bytecode
+source: (bytecode [CONST "Hello World"] [RETURN 1])
+verify:
+  eval: '"Hello World"'
+references:
+  - reference/specials/compile-bytecode.md
+stability: evolving
+tags:
+  - special
+  - bytecode
+---
+id: special-call-cc-invoke-001
+feature: special/compile/call/cc
+source: (call/cc (lambda [k] (call k 42)))
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-call-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+---
+id: special-let-cc-001
+feature: special/compile/let/cc
+source: (let/cc k 42)
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-let-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+---
+id: special-try-else-001
+feature: special/compile/try
+source: "(try 567 (else: 888))"
+verify:
+  eval: "888"
+references:
+  - reference/specials/compile-try.md
+  - reference/layouts/layout-try.md
+stability: evolving
+tags:
+  - special
+  - try
+  - exception
+---
+id: special-try-bare-except-001
+feature: special/compile/try
+source: "(try (call bad_guy 111) (except: 999))"
+verify:
+  eval: "999"
+references:
+  - reference/specials/compile-try.md
+stability: evolving
+tags:
+  - special
+  - try
+  - exception
+notes: requires bad_guy raising at eval; pattern from test_try.py bare except family

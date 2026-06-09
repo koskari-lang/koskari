@@ -42,7 +42,7 @@ class TestCorpusSchema(unittest.TestCase):
 
     def test_all_records_validate_against_schema(self):
         """
-        Every JSONL record satisfies docs/corpus/SCHEMA.json
+        Every YAML record satisfies docs/corpus/SCHEMA.json
         """
 
         records = load_records(default_records_dir())

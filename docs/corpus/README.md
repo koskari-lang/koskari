@@ -18,7 +18,8 @@ similar exports are downstream transforms.
 ## Adding records
 
 1. Define a record matching [SCHEMA.json](SCHEMA.json)
-2. Place it under `records/` (format TBD: JSONL or directory tree)
+2. Append it as a new document (`---` separator) in the appropriate shard
+   under `records/` (multi-document YAML; see [SCHEMA.md](SCHEMA.md))
 3. Run corpus verification: `tox -qe py -- tests/corpus/ -m phase_corpus`
 
 ## Status
@@ -27,16 +28,16 @@ Schema documentation exists. Initial records live under `records/`:
 
 | File | Focus |
 |------|-------|
-| [conditionals.jsonl](records/conditionals.jsonl) | Conditionals: compile/cond, switch, and, or; macros when, unless, ?, bool; layout if/when/unless |
-| [variables.jsonl](records/variables.jsonl) | Bindings: define, define-global, let, letrec, refs, delq, parameters |
-| [variables-invalid.jsonl](records/variables-invalid.jsonl) | Illegal binding forms (documented with verify.invalid) |
-| [objects.jsonl](records/objects.jsonl) | Object operators, inplace, incr!/decr!, class, define-class |
-| [classes.jsonl](records/classes.jsonl) | Layout class definitions with Python dunders, dataclass, staticmethod, classmethod, property, inheritance |
-| [functions.jsonl](records/functions.jsonl) | lambda, function, define function shorthand, gensym-thunk, compose, decorate |
-| [functions-invalid.jsonl](records/functions-invalid.jsonl) | Illegal gensym-thunk forms and compile-time placeholder errors |
-| [syntax.jsonl](records/syntax.jsonl) | define-syntax, extend-syntax, rules/match, datum, pattern parsers |
-| [specials.jsonl](records/specials.jsonl) | Other compiler special forms |
-| [iter.jsonl](records/iter.jsonl) | Slicing, indexing, range, collection literals |
+| [conditionals.yaml](records/conditionals.yaml) | Conditionals: compile/cond, switch, and, or; macros when, unless, ?, bool; layout if/when/unless |
+| [variables.yaml](records/variables.yaml) | Bindings: define, define-global, let, letrec, refs, delq, parameters |
+| [variables-invalid.yaml](records/variables-invalid.yaml) | Illegal binding forms (documented with verify.invalid) |
+| [objects.yaml](records/objects.yaml) | Object operators, inplace, incr!/decr!, class, define-class |
+| [classes.yaml](records/classes.yaml) | Layout class definitions with Python dunders, dataclass, staticmethod, classmethod, property, inheritance |
+| [functions.yaml](records/functions.yaml) | lambda, function, define function shorthand, gensym-thunk, compose, decorate |
+| [functions-invalid.yaml](records/functions-invalid.yaml) | Illegal gensym-thunk forms and compile-time placeholder errors |
+| [syntax.yaml](records/syntax.yaml) | define-syntax, extend-syntax, rules/match, datum, pattern parsers |
+| [specials.yaml](records/specials.yaml) | Other compiler special forms |
+| [iter.yaml](records/iter.yaml) | Slicing, indexing, range, collection literals |
 
 Records cite originating tests under `tests/compile/specials/` where
 applicable; standalone seed examples use notes to describe the syntax focus.

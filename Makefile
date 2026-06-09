@@ -178,7 +178,7 @@ build-container:  ## Build koskari runtime container image
 
 CORPUS_IMAGE := koskari-corpus-export
 
-corpus-parquet:  ## Export koskari-eval parquet from corpus JSONL via tox
+corpus-parquet:  ## Export koskari-eval parquet from corpus YAML via tox
 	@$(call checkfor,tox)
 	@echo "Exporting corpus view koskari-eval..."
 	@tox -qe regen-corpus -- --view koskari-eval

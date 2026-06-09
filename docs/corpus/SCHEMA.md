@@ -5,18 +5,21 @@ validates **structure only**; semantics are checked by corpus test runners.
 
 ## Recommended record
 
-```json
-{
-  "id": "layout-if-basic-001",
-  "feature": "layout/if",
-  "source": "if x:\n  y",
-  "verify": {
-    "read": "(compile/cond (x y))"
-  },
-  "references": [
-    "reference/layouts/layout-if.md"
-  ]
-}
+Shards are multi-document YAML under `records/`. Each record is one document
+separated by `---`. Use a literal block scalar (`|-`) for multi-line `source`;
+keep single-line s-expressions inline.
+
+```yaml
+---
+id: layout-if-basic-001
+feature: layout/if
+source: |-
+  if x:
+    y
+verify:
+  read: (compile/cond (x y))
+references:
+  - reference/layouts/layout-if.md
 ```
 
 ## Fields
@@ -56,11 +59,11 @@ Install transformers and use them in separate top-level forms (or separate
 compilation units). Use-site behaviour belongs in `phase_specials` tests under
 `tests/compile/specials/` when a corpus record cannot pre-bind the name.
 
-## Invalid source shards (`*-invalid.jsonl`)
+## Invalid source shards (`*-invalid.yaml`)
 
 Some records document **illegal Koskari** — expressions that must not appear in
 real programs. Keep them in companion shards such as
-`variables-invalid.jsonl` or `conditionals-invalid.jsonl`, not in the primary
+`variables-invalid.yaml` or `conditionals-invalid.yaml`, not in the primary
 shard for that topic.
 
 Use **`verify.invalid`** with a prose explanation of why the source is wrong.
@@ -123,4 +126,4 @@ outcomes that an agent writing Koskari source would care about:
 **Forbidden in corpus records:** opcodes, bytecode shape, disassembly, tail-call
 opcode choice, constant-folding internals, or any other VM implementation detail.
 That coverage belongs in `phase_specials` unit tests under `tests/compile/`,
-not in JSONL shards.
+not in corpus YAML shards.

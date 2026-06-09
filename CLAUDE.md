@@ -83,7 +83,7 @@ Native memory tests (C-level) require a container: `make test-native`, `make tes
 
 ### Corpus (`docs/corpus/records/`)
 
-Language behavior test cases stored as JSONL shards. Each record has `id`, `feature`, `source`, and `verify` fields (with expected results at `read`, `expand`, `compile`, and/or `eval` phases). Export to Parquet: `make corpus-parquet`.
+Language behavior test cases stored as multi-document YAML shards. Each record has `id`, `feature`, `source`, and `verify` fields (with expected results at `read`, `expand`, `compile`, and/or `eval` phases). Export to Parquet: `make corpus-parquet`.
 
 ### Documentation Boundaries
 

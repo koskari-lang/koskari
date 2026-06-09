@@ -1,0 +1,15 @@
+id: variable-bind-macro-value-001
+feature: macro/compile/bind!
+source: (begin (bind! y 42) y)
+verify:
+  invalid: bind! and bindq attach a Ref to a name, not a plain value; (bind! y 42) tries to store 42 in the binding slot instead of binding y to a ref cell
+references:
+  - reference/macros/compile-bind.md
+  - reference/concepts/bindings-and-refs.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - bind!
+  - invalid
+notes: "Illegal: use (local y 42) or (setq y 42) after declare to store a value; bind! accepts (item …), (attr …), (dynamic …), (constant …), (memoized …), (parameter …), or another Ref — not a bare literal or computed value"

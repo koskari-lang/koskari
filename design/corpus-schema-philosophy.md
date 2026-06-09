@@ -293,7 +293,7 @@ Published datasets should be **generated from** corpus records.
 Examples:
 
 ```text
-Corpus JSONL
+Corpus YAML
       │
       ▼
  Transformation

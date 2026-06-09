@@ -15,7 +15,7 @@
 """
 tools.corpus.export
 
-Export corpus JSONL records to parquet dataset views.
+Export corpus YAML records to parquet dataset views.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -99,32 +99,30 @@ def git_ref(root=None):
     return state.get('commit') or ''
 
 
+def _import_corpus_load():
+    """
+    Load tools.corpus.load as a module
+
+    :return: corpus load module
+    """
+
+    path = Path(__file__).resolve().parent / 'load.py'
+    spec = importlib.util.spec_from_file_location('corpus_load', path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def load_records(records_dir):
     """
-    Load all corpus records from JSONL shards in a directory
+    Load all corpus records from YAML shards in a directory
 
-    :param records_dir: directory containing *.jsonl files
+    :param records_dir: directory containing *.yaml files
     :return: list of record dicts
-    :raises ValueError: on malformed JSON with shard name in message
+    :raises ValueError: on malformed YAML with shard name in message
     """
 
-    records = []
-    records_path = Path(records_dir)
-    shards = sorted(records_path.glob('*.jsonl'))
-
-    for shard in shards:
-        text = shard.read_text()
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                records.append(json.loads(stripped))
-            except json.JSONDecodeError as exc:
-                msg = '%s:%d: %s' % (shard.name, line_no, exc)
-                raise ValueError(msg) from exc
-
-    return records
+    return _import_corpus_load().load_records(records_dir)
 
 
 def apply_view(records, transform, provenance):
@@ -173,7 +171,7 @@ def export_corpus(
     Export one corpus dataset view to parquet
 
     :param view: view name registered in views.VIEWS
-    :param records_dir: directory containing JSONL shards
+    :param records_dir: directory containing YAML shards
     :param schema_path: path to SCHEMA.json
     :param output_dir: directory for train.parquet
     :param root: repository root for git provenance
@@ -211,7 +209,7 @@ def main(argv=None):
 
     parser = argparse.ArgumentParser(
         prog='corpus-export',
-        description='Export corpus JSONL records to parquet dataset views')
+        description='Export corpus YAML records to parquet dataset views')
     parser.add_argument(
         '--view',
         default=default_view,
@@ -219,7 +217,7 @@ def main(argv=None):
     parser.add_argument(
         '--records-dir',
         default=str(default_records),
-        help='directory of JSONL shards (default: %(default)s)')
+        help='directory of YAML shards (default: %(default)s)')
     parser.add_argument(
         '--schema',
         default=str(default_schema),

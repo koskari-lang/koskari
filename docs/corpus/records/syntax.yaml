@@ -1,0 +1,429 @@
+id: syntax-define-syntax-sr-expand-001
+feature: macro/compile/define-syntax
+source: "(define-syntax unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
+verify:
+  expand: "(compile/define unless (syntax-rules unless unless (else:) ...))"
+references:
+  - reference/macros/compile-define-syntax.md
+  - reference/specials/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - syntax-rules
+notes: koskari/bootstrap/_define_syntax.ki; requires builtins at expand
+---
+id: syntax-define-syntax-sm-expand-001
+feature: macro/compile/define-syntax
+source: (define-syntax double (syntax-match [(double (VALUE x)) (+ x x)]))
+verify:
+  expand: (compile/define double (syntax-match double ...))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - syntax-match
+notes: koskari/bootstrap/_define_syntax.ki syntax-match arm
+---
+id: syntax-define-syntax-mr-expand-001
+feature: macro/compile/define-syntax
+source: (define-syntax ident (macro-rules [] [(ident x) x]))
+verify:
+  expand: (compile/define ident (macro-rules ident [] [(ident x) x]))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - macro-rules
+notes: koskari/bootstrap/_define_syntax.ki macro-rules arm
+---
+id: syntax-define-syntax-mm-expand-001
+feature: macro/compile/define-syntax
+source: (define-syntax ident (macro-match [(ident (VALUE x)) x]))
+verify:
+  expand: (compile/define ident (macro-match ident ...))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - macro-match
+notes: koskari/bootstrap/_define_syntax.ki macro-match arm
+---
+id: syntax-define-syntax-spr-expand-001
+feature: macro/compile/define-syntax
+source: (define-syntax ident (special-rules [] [(c (ident x) t) x.datum]))
+verify:
+  expand: (compile/define ident (special-rules ident [] ...))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - special-rules
+notes: koskari/bootstrap/_define_syntax.ki special-rules arm
+---
+id: syntax-define-syntax-spm-expand-001
+feature: macro/compile/define-syntax
+source: (define-syntax ident (special-match [(compiler (ident (VALUE x)) t) x.datum]))
+verify:
+  expand: (compile/define ident (special-match ident ...))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - special-match
+notes: koskari/bootstrap/_define_syntax.ki special-match arm
+---
+id: syntax-extend-syntax-sr-expand-001
+feature: macro/compile/extend-syntax
+source: (extend-syntax pick (syntax-rules [] [(pick a b) a]))
+verify:
+  expand: (setq pick (+ pick (syntax-rules pick [] ...)))
+references:
+  - reference/macros/compile-extend-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - extend-syntax
+  - syntax-rules
+notes: koskari/bootstrap/_define_syntax.ki; newer rules take precedence via Syntax.__add__
+---
+id: syntax-syntax-rules-unless-001
+feature: special/compile/syntax-rules
+source: "(define unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
+verify:
+  read: "(define unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
+references:
+  - reference/specials/compile-syntax-rules.md
+stability: evolving
+tags:
+  - syntax
+  - syntax-rules
+notes: define-only
+---
+id: syntax-syntax-rules-ellipsis-001
+feature: special/compile/syntax-rules
+source: "(define example (syntax-rules example [#list] [(example fn (a b) ...) (#list (fn a b) ...)]))"
+verify:
+  read: "(define example (syntax-rules example [#list] [(example fn (a b) ...) (#list (fn a b) ...)]))"
+references:
+  - reference/specials/compile-syntax-rules.md
+stability: evolving
+tags:
+  - syntax
+  - syntax-rules
+  - ellipsis
+notes: define-only
+---
+id: syntax-macro-rules-identity-001
+feature: special/compile/macro-rules
+source: (define ident (macro-rules ident [] [(ident x) x]))
+verify:
+  read: (define ident (macro-rules ident [] [(ident x) x]))
+references:
+  - reference/specials/compile-macro-rules.md
+stability: evolving
+tags:
+  - syntax
+  - macro-rules
+notes: define-only
+---
+id: syntax-macro-rules-ellipsis-001
+feature: special/compile/macro-rules
+source: "(define ellipsis-repro (macro-rules ellipsis-repro [] [(ellipsis-repro xs ...) `(#list ,@xs)]))"
+verify:
+  read: "(define ellipsis-repro (macro-rules ellipsis-repro [] [(ellipsis-repro xs ...) `(#list ,@xs)]))"
+references:
+  - reference/specials/compile-macro-rules.md
+stability: evolving
+tags:
+  - syntax
+  - macro-rules
+  - ellipsis
+notes: define-only
+---
+id: syntax-syntax-match-double-001
+feature: special/compile/syntax-match
+source: (define double (syntax-match double [(double (VALUE x)) (+ x x)]))
+verify:
+  read: (define double (syntax-match double [(double (VALUE x)) (+ x x)]))
+references:
+  - reference/specials/compile-syntax-match.md
+stability: evolving
+tags:
+  - syntax
+  - syntax-match
+notes: define-only
+---
+id: syntax-syntax-match-repeat-empty-001
+feature: special/compile/syntax-match
+source: "(define zot (syntax-match zot [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))"
+verify:
+  read: "(define zot (syntax-match zot [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))"
+references:
+  - reference/specials/compile-syntax-match.md
+stability: evolving
+tags:
+  - syntax
+  - syntax-match
+notes: define-only
+---
+id: syntax-syntax-match-repeat-literal-001
+feature: special/compile/syntax-match
+source: "(define zot (syntax-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
+verify:
+  read: "(define zot (syntax-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
+references:
+  - reference/specials/compile-syntax-match.md
+stability: evolving
+tags:
+  - syntax
+  - syntax-match
+notes: define-only
+---
+id: syntax-macro-match-identity-001
+feature: special/compile/macro-match
+source: (define ident (macro-match ident [(ident (VALUE x)) x]))
+verify:
+  read: (define ident (macro-match ident [(ident (VALUE x)) x]))
+references:
+  - reference/specials/compile-macro-match.md
+stability: evolving
+tags:
+  - syntax
+  - macro-match
+notes: define-only
+---
+id: syntax-macro-match-repeat-literal-001
+feature: special/compile/macro-match
+source: "(define zot (macro-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
+verify:
+  read: "(define zot (macro-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
+references:
+  - reference/specials/compile-macro-match.md
+stability: evolving
+tags:
+  - syntax
+  - macro-match
+notes: define-only
+---
+id: syntax-special-rules-identity-001
+feature: special/compile/special-rules
+source: (define ident (special-rules ident [] [(c (ident x) t) x.datum]))
+verify:
+  read: (define ident (special-rules ident [] [(c (ident x) t) x.datum]))
+references:
+  - reference/specials/compile-special-rules.md
+stability: evolving
+tags:
+  - syntax
+  - special-rules
+notes: define-only
+---
+id: syntax-special-rules-bare-form-001
+feature: special/compile/special-rules
+source: (define ident (special-rules ident [] [(c x t) (car (cdr x.datum))]))
+verify:
+  read: (define ident (special-rules ident [] [(c x t) (car (cdr x.datum))]))
+references:
+  - reference/specials/compile-special-rules.md
+stability: evolving
+tags:
+  - syntax
+  - special-rules
+notes: define-only
+---
+id: syntax-special-match-identity-001
+feature: special/compile/special-match
+source: (define ident (special-match ident [(compiler (ident (VALUE x)) t) x.datum]))
+verify:
+  read: (define ident (special-match ident [(compiler (ident (VALUE x)) t) x.datum]))
+references:
+  - reference/specials/compile-special-match.md
+stability: evolving
+tags:
+  - syntax
+  - special-match
+notes: define-only
+---
+id: syntax-special-match-bare-form-001
+feature: special/compile/special-match
+source: (define ident (special-match ident [(c x t) (car (cdr x.datum))]))
+verify:
+  read: (define ident (special-match ident [(c x t) (car (cdr x.datum))]))
+references:
+  - reference/specials/compile-special-match.md
+stability: evolving
+tags:
+  - syntax
+  - special-match
+notes: define-only
+---
+id: syntax-layout-define-syntax-sr-001
+feature: layout/define-syntax
+source: |-
+  define-syntax double:
+    syntax-rules ():
+      double x:
+        (+ x x)
+verify:
+  read: (define-syntax double (syntax-rules () ((double x) (compile/begin (+ x x)))))
+references:
+  - reference/macros/compile-define-syntax.md
+  - reference/layouts/index.md
+stability: evolving
+tags:
+  - syntax
+  - layout
+  - syntax-rules
+notes: informal read shape
+---
+id: syntax-layout-macro-rules-001
+feature: layout/define-syntax
+source: |-
+  define-syntax m:
+    macro-rules ():
+      m x:
+        x
+verify:
+  read: (define-syntax m (macro-rules () ((m x) (compile/begin x))))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - layout
+  - macro-rules
+---
+id: syntax-extend-syntax-precedence-001
+feature: macro/compile/extend-syntax
+source: (begin (define-syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (syntax-rules [] [(pick a b) a])))
+verify:
+  read: (begin (define-syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (syntax-rules [] [(pick a b) a])))
+references:
+  - reference/macros/compile-extend-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - extend-syntax
+notes: install only; no pick use in same form
+---
+id: syntax-datum-expand-default-pos-001
+feature: macro/compile/datum
+source: (datum (+ 1 1))
+verify:
+  expand: (call datum (+ 1 1) ...)
+references:
+  - reference/macros/compile-datum.md
+  - reference/macros/index.md
+stability: evolving
+tags:
+  - syntax
+  - datum
+  - hygiene
+notes: koskari/bootstrap/_define_syntax.ki; position from expr when omitted
+---
+id: syntax-datum-expand-explicit-pos-001
+feature: macro/compile/datum
+source: (datum (+ 1 1) here)
+verify:
+  expand: (call datum (+ 1 1) here)
+references:
+  - reference/macros/compile-datum.md
+stability: evolving
+tags:
+  - syntax
+  - datum
+  - hygiene
+notes: koskari/bootstrap/_define_syntax.ki two-argument form
+---
+id: syntax-datumq-expand-001
+feature: macro/compile/datumq
+source: (datumq hello)
+verify:
+  expand: (call datum (quote hello) ...)
+references:
+  - reference/macros/compile-datum.md
+  - reference/macros/index.md
+stability: evolving
+tags:
+  - syntax
+  - datumq
+  - hygiene
+notes: koskari/bootstrap/_define_syntax.ki; quotes expr before wrapping
+---
+id: syntax-datum-unwrap-001
+feature: macro/compile/datum
+source: (begin (define d (datum 42)) (attr d datum))
+verify:
+  eval: "42"
+references:
+  - reference/macros/compile-datum.md
+stability: evolving
+tags:
+  - syntax
+  - datum
+notes: koskari.lib.Datum constructor at eval; requires datum in builtins namespace
+---
+id: syntax-datumq-unwrap-001
+feature: macro/compile/datumq
+source: (begin (define d (datumq hello)) (attr d datum))
+verify:
+  eval: "symbol:hello"
+references:
+  - reference/macros/compile-datum.md
+stability: evolving
+tags:
+  - syntax
+  - datumq
+notes: datumq expands then Datum wraps quoted symbol; requires builtins at expand
+---
+id: syntax-parse-match-patternq-expand-001
+feature: macro/compile/parse-match-patternq
+source: (parse-match-patternq (double (VALUE x)))
+verify:
+  expand: (call parse-match-pattern (quote (double (VALUE x))))
+references:
+  - reference/macros/index.md
+  - reference/concepts/macro-matching-and-hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - parse-match-patternq
+notes: koskari/bootstrap/_define_syntax.ki; koskari.syntax.parse_match_pattern
+---
+id: syntax-parse-rule-patternq-literals-expand-001
+feature: macro/compile/parse-rule-patternq
+source: (parse-rule-patternq (m v) [m item])
+verify:
+  expand: (call parse-rule-pattern (quote (m v)) (quote [m item]))
+references:
+  - reference/macros/index.md
+  - reference/concepts/macro-matching-and-hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - parse-rule-patternq
+notes: koskari/bootstrap/_define_syntax.ki; koskari.syntax.parse_rule_pattern
+---
+id: syntax-parse-rule-patternq-empty-literals-expand-001
+feature: macro/compile/parse-rule-patternq
+source: (parse-rule-patternq (m v))
+verify:
+  expand: (call parse-rule-pattern (quote (m v)) ...)
+references:
+  - reference/macros/index.md
+stability: evolving
+tags:
+  - syntax
+  - parse-rule-patternq
+notes: koskari/bootstrap/_define_syntax.ki; empty literals list when second arg omitted

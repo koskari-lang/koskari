@@ -224,7 +224,7 @@ Schema philosophy and verification model:
 | `corpus/SCHEMA.json` | Structural validation for corpus records (required fields, types, enums—not language semantics). |
 | `corpus/README.md` | How to add records, run corpus verification, and regenerate downstream artifacts. |
 | `corpus/datasets.md` | Published dataset views (including Hugging Face): transforms, column glossaries, provenance back to corpus `id`. |
-| `corpus/records/` or generated index | Machine-readable corpus storage (format TBD: JSONL, directory tree, or generated index from tests). |
+| `corpus/records/` or generated index | Machine-readable corpus storage (multi-document YAML shards under `records/`). |
 
 Tutorial and reference pages should prefer **corpus-backed examples** where
 possible. Stability labels on corpus records should align with page-level

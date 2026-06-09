@@ -1,0 +1,291 @@
+id: function-lambda-invoke-001
+feature: special/compile/lambda
+source: ((lambda [x] x) 42)
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-lambda.md
+stability: evolving
+tags:
+  - function
+  - lambda
+---
+id: function-lambda-named-001
+feature: special/compile/lambda
+source: ((lambda fact [n] n) 10)
+verify:
+  eval: "10"
+references:
+  - reference/specials/compile-lambda.md
+stability: evolving
+tags:
+  - function
+  - lambda
+notes: closure self-ref at BUILD_FUNCTION
+---
+id: function-lambda-return-type-001
+feature: special/compile/lambda
+source: "(lambda :: int [x] x)"
+verify:
+  compile: __annotations__ return int on built function
+references:
+  - reference/specials/compile-lambda.md
+stability: evolving
+tags:
+  - function
+  - lambda
+notes: build step only — invoke in function-lambda-return-type-invoke-001
+---
+id: function-lambda-return-type-invoke-001
+feature: special/compile/lambda
+source: "((lambda :: int [x] x) 3)"
+verify:
+  eval: "3"
+references:
+  - reference/specials/compile-lambda.md
+stability: evolving
+tags:
+  - function
+  - lambda
+notes: call step only — no compile annotation check on a value result
+---
+id: function-lambda-named-return-001
+feature: special/compile/lambda
+source: "(lambda f :: int [x] x)"
+verify:
+  compile: __annotations__ return int on built function
+references:
+  - reference/specials/compile-lambda.md
+stability: evolving
+tags:
+  - function
+  - lambda
+notes: build step — invoke in function-lambda-named-return-invoke-001
+---
+id: function-lambda-named-return-invoke-001
+feature: special/compile/lambda
+source: "((lambda f :: int [x] x) 7)"
+verify:
+  eval: "7"
+references:
+  - reference/specials/compile-lambda.md
+stability: evolving
+tags:
+  - function
+  - lambda
+notes: call step only
+---
+id: function-named-invoke-001
+feature: special/compile/function
+source: ((function id [x] x) 7)
+verify:
+  eval: "7"
+references:
+  - reference/specials/compile-function.md
+  - reference/specials/compile-lambda.md
+stability: evolving
+tags:
+  - function
+notes: compile/function; no inner self-ref for NAME at BUILD_FUNCTION
+---
+id: function-named-return-type-001
+feature: special/compile/function
+source: "(function g :: int [x] x)"
+verify:
+  compile: __annotations__ return int; selfref=False
+references:
+  - reference/specials/compile-function.md
+stability: evolving
+tags:
+  - function
+notes: shared helper_function pipeline with lambda
+---
+id: function-define-shorthand-001
+feature: special/compile/define
+source: (begin (define double [x] (* x 2)) (double 5))
+verify:
+  eval: "10"
+references:
+  - reference/specials/compile-define.md
+  - reference/specials/compile-function.md
+stability: evolving
+tags:
+  - function
+  - define
+notes: lowers to compile/function
+---
+id: function-define-fact-001
+feature: special/compile/define
+source: "(begin (define fact [n] (cond [(== n 0) 1] [else: (* n (fact (- n 1)))])) (fact 5))"
+verify:
+  eval: "120"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+notes: requires eq mul sub at eval
+---
+id: function-define-return-type-001
+feature: special/compile/define
+source: "(begin (define f :: int [x] (* x 2)) f)"
+verify:
+  compile: __annotations__ return int on built function
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+notes: build step only — invoke in function-define-return-type-invoke-001
+---
+id: function-define-return-type-invoke-001
+feature: special/compile/define
+source: "(begin (define f :: int [x] (* x 2)) (f 5))"
+verify:
+  eval: "10"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+notes: call step only — no compile annotation check on a value result
+---
+id: function-define-global-shorthand-001
+feature: special/compile/define-global
+source: (begin (define-global bump [x] (+ x 1)) (bump 41))
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-define-global.md
+  - reference/specials/compile-function.md
+stability: evolving
+tags:
+  - function
+  - define-global
+notes: define-global function shorthand mirrors define; koskari/compile/specials/variables.py
+---
+id: function-gensym-thunk-unary-001
+feature: special/compile/gensym-thunk
+source: ((gensym-thunk (+ %1 1)) 5)
+verify:
+  eval: "6"
+references:
+  - reference/specials/compile-gensym-partial.md
+stability: evolving
+tags:
+  - function
+  - gensym-thunk
+notes: reader thunk syntax { (+ %1 1) }
+---
+id: function-gensym-thunk-binary-001
+feature: special/compile/gensym-thunk
+source: ((gensym-thunk (* %1 %2)) 3 4)
+verify:
+  eval: "12"
+references:
+  - reference/specials/compile-gensym-partial.md
+stability: evolving
+tags:
+  - function
+  - gensym-thunk
+---
+id: function-gensym-thunk-zeroary-001
+feature: special/compile/gensym-thunk
+source: ((gensym-thunk 99))
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-gensym-partial.md
+stability: evolving
+tags:
+  - function
+  - gensym-thunk
+notes: zero placeholders
+---
+id: function-compose-identity-001
+feature: macro/compile/function-compose
+source: (begin (define id [x] x) (function-compose id))
+verify:
+  compile: single fn unchanged
+references:
+  - reference/macros/compile-function-compose.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - function-compose
+notes: koskari/bootstrap/_functions.ki; requires builtins at expand
+---
+id: function-compose-chain-001
+feature: macro/compile/function-compose
+source: (begin (define double [x] (* x 2)) (define add-one [x] (+ x 1)) ((function-compose add-one double) 5))
+verify:
+  eval: "11"
+references:
+  - reference/macros/compile-function-compose.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - function-compose
+notes: koskari/bootstrap/_functions.ki; composes right-to-left around call
+---
+id: function-decorate-empty-lambda-001
+feature: macro/compile/decorate
+source: ((decorate [] (lambda [x] x)) 9)
+verify:
+  eval: "9"
+references:
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+notes: koskari/bootstrap/_functions.ki decorate [] fn; requires builtins at expand
+---
+id: function-decorate-define-001
+feature: macro/compile/decorate
+source: (begin (decorate [] (define sq [x] (* x x))) (sq 4))
+verify:
+  eval: "16"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+notes: koskari/bootstrap/_functions.ki; define form wraps function shorthand
+---
+id: function-define-coroutine-001
+feature: macro/compile/define-coroutine
+source: (define-coroutine idle [] 1)
+verify:
+  expand: (define idle (coroutine-fn (function idle [] 1)))
+references:
+  - reference/macros/compile-define-coroutine.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - define-coroutine
+notes: koskari/bootstrap/_functions.ki; eval yields coroutine via coroutine-fn; requires builtins at expand
+---
+id: function-define-demanding-001
+feature: macro/compile/define-demanding
+source: (define-demanding sync-id [x] x)
+verify:
+  expand: (define sync-id (demand (function sync-id [x] x)))
+references:
+  - reference/macros/compile-define-demanding.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - define-demanding
+notes: koskari/bootstrap/_functions.ki; demand wrapper for on-demand eval path

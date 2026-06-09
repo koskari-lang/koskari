@@ -1,0 +1,345 @@
+id: iter-slice-macro-empty-001
+feature: macro/compile/slice
+source: (slice)
+verify:
+  expand: (call build-slice)
+references:
+  - reference/macros/compile-slice-and-compile-item-slice.md
+  - reference/runtime/build-slice.md
+stability: evolving
+tags:
+  - iter
+  - slice
+  - macro
+  - expand
+  - "surface:sexpr"
+notes: koskari/bootstrap/_iter.ki; requires koskari.builtins at expand
+---
+id: iter-slice-macro-keywords-001
+feature: macro/compile/slice
+source: "(slice start: 1 stop: 4)"
+verify:
+  expand: "(call build-slice start: 1 stop: 4)"
+references:
+  - reference/macros/compile-slice-and-compile-item-slice.md
+  - reference/runtime/build-slice.md
+stability: evolving
+tags:
+  - iter
+  - slice
+  - macro
+  - expand
+  - "surface:sexpr"
+notes: koskari/bootstrap/_iter.ki keyword slice bounds via build-slice
+---
+id: iter-item-slice-macro-empty-001
+feature: macro/compile/item-slice
+source: (item-slice seq)
+verify:
+  expand: (item seq (call build-slice))
+references:
+  - reference/macros/compile-slice-and-compile-item-slice.md
+stability: evolving
+tags:
+  - iter
+  - item-slice
+  - macro
+  - expand
+  - "surface:sexpr"
+notes: koskari/bootstrap/_iter.ki; full slice via build-slice
+---
+id: iter-item-slice-macro-keywords-001
+feature: macro/compile/item-slice
+source: "(item-slice seq start: 1 stop: 3)"
+verify:
+  expand: "(item seq (call build-slice start: 1 stop: 3))"
+references:
+  - reference/macros/compile-slice-and-compile-item-slice.md
+stability: evolving
+tags:
+  - iter
+  - item-slice
+  - macro
+  - expand
+  - "surface:sexpr"
+notes: koskari/bootstrap/_iter.ki; routes slice args through build-slice
+---
+id: iter-build-slice-predicate-001
+feature: runtime/build-slice
+source: "(slice? (build-slice stop: 5))"
+verify:
+  eval: "true"
+references:
+  - reference/runtime/build-slice.md
+stability: evolving
+tags:
+  - iter
+  - build-slice
+  - predicate
+notes: slice? from _ty('slice', slice) in koskari/bootstrap/__init__.py
+---
+id: iter-build-slice-not-range-001
+feature: runtime/build-slice
+source: (range? (build-slice))
+verify:
+  eval: "false"
+references:
+  - reference/runtime/build-slice.md
+stability: evolving
+tags:
+  - iter
+  - build-slice
+  - predicate
+notes: range? from _ty('range', range) in bootstrap
+---
+id: iter-item-constant-key-001
+feature: special/compile/item
+source: "(begin (define lst #[10 20 30]) (item lst 0))"
+verify:
+  eval: "10"
+references:
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - item
+  - indexing
+  - "surface:sexpr"
+---
+id: iter-item-variable-key-001
+feature: special/compile/item
+source: "(begin (define lst #[10 20 30]) (let [[i 2]] (item lst i)))"
+verify:
+  eval: "30"
+references:
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - item
+  - indexing
+  - "surface:sexpr"
+---
+id: iter-set-item-store-001
+feature: special/compile/set-item
+source: "(begin (define lst #[1 2 3]) (set-item lst 1 99) (item lst 1))"
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-set-item.md
+stability: evolving
+tags:
+  - iter
+  - set-item
+  - indexing
+  - "surface:sexpr"
+---
+id: iter-item-slice-list-stop-001
+feature: macro/compile/item-slice
+source: "(item-slice #[0 1 2 3 4] stop: 3)"
+verify:
+  eval: "list:[0,1,2]"
+references:
+  - reference/macros/compile-slice-and-compile-item-slice.md
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - item-slice
+  - slice
+  - "surface:sexpr"
+notes: "item-slice on list with stop: keyword; requires koskari.builtins at eval"
+---
+id: iter-item-slice-tuple-step-001
+feature: macro/compile/item-slice
+source: "(item (item-slice #(0 1 2 3 4 5) start: 1 step: 2) 0)"
+verify:
+  eval: "1"
+references:
+  - reference/macros/compile-slice-and-compile-item-slice.md
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - item-slice
+  - slice
+  - "surface:sexpr"
+notes: "tuple slice with start: and step:; first element checked via item"
+---
+id: iter-range-stop-001
+feature: runtime/range
+source: (list (range 5))
+verify:
+  eval: "list:[0,1,2,3,4]"
+references:
+  - start/from-python/data-and-control.md
+stability: evolving
+tags:
+  - iter
+  - range
+  - "surface:sexpr"
+notes: range type from bootstrap; single stop argument
+---
+id: iter-range-start-stop-001
+feature: runtime/range
+source: (list (range 2 5))
+verify:
+  eval: "list:[2,3,4]"
+references:
+  - start/from-python/data-and-control.md
+stability: evolving
+tags:
+  - iter
+  - range
+  - "surface:sexpr"
+notes: two-argument range start and stop
+---
+id: iter-range-step-001
+feature: runtime/range
+source: (list (range 0 10 3))
+verify:
+  eval: "list:[0,3,6,9]"
+references:
+  - start/from-python/data-and-control.md
+stability: evolving
+tags:
+  - iter
+  - range
+  - "surface:sexpr"
+notes: three-argument range with step
+---
+id: iter-range-predicate-001
+feature: builtin/range?
+source: (range? (range 0 3))
+verify:
+  eval: "true"
+references:
+  - start/from-python/data-and-control.md
+stability: evolving
+tags:
+  - iter
+  - range
+  - predicate
+notes: range? from _ty('range', range) in bootstrap
+---
+id: iter-slice-predicate-range-negative-001
+feature: builtin/slice?
+source: (slice? (range 0 3))
+verify:
+  eval: "false"
+references:
+  - reference/runtime/build-slice.md
+stability: evolving
+tags:
+  - iter
+  - slice
+  - predicate
+notes: slice? rejects range instances
+---
+id: iter-literal-tuple-read-001
+feature: "reader/#tuple"
+source: "#(1 2 3 4)"
+verify:
+  read: "(#tuple 1 2 3 4)"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+---
+id: iter-literal-list-read-001
+feature: "reader/#list"
+source: "#[1 2 3 4]"
+verify:
+  read: "(#list 1 2 3 4)"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+---
+id: iter-literal-dict-alternating-read-001
+feature: "reader/#dict"
+source: "#{a 1 b 2}"
+verify:
+  read: "(#dict a 1 b 2)"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+---
+id: iter-literal-dict-pairs-read-001
+feature: "reader/#dict"
+source: "#{(key . val) (key2 . val2)}"
+verify:
+  read: "(#dict (key . val) (key2 . val2))"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+notes: improper pair entries
+---
+id: iter-literal-dict-keywords-read-001
+feature: "reader/#dict"
+source: "#{key: val key2: val2}"
+verify:
+  read: "(#dict key: val key2: val2)"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+---
+id: iter-literal-list-eval-001
+feature: "reader/#list"
+source: "(item #[10 20 30] 1)"
+verify:
+  eval: "20"
+references:
+  - start/from-python/data-and-control.md
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - literal
+  - item
+  - "surface:sexpr"
+notes: "list literal #[...] evaluates to Python list for item access"
+---
+id: iter-literal-dict-eval-001
+feature: "reader/#dict"
+source: "(item #{key: 10 key2: 20} \"key\")"
+verify:
+  eval: "10"
+references:
+  - start/from-python/data-and-control.md
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - literal
+  - dict
+  - "surface:sexpr"
+notes: "keyword dict #{key: val ...} lowers to str keys; lookup via string key"

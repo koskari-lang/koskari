@@ -49,6 +49,7 @@ def load_module(name, path):
 
 
 export = load_module('corpus_export', ROOT / 'tools' / 'corpus' / 'export.py')
+corpus_load = load_module('corpus_load', ROOT / 'tools' / 'corpus' / 'load.py')
 eval_view = load_module('corpus_view_eval', ROOT / 'tools' / 'corpus' / 'views' / 'eval.py')
 
 
@@ -114,16 +115,23 @@ class TestCorpusExport(unittest.TestCase):
         self.schema_path.write_text(json.dumps(SCHEMA_FIXTURE))
         self.output_dir = self.root / 'out' / 'koskari-eval'
 
-        shard = self.records_dir / 'fixture.jsonl'
-        lines = [json.dumps(record) for record in FIXTURE_RECORDS]
-        shard.write_text('\n'.join(lines) + '\n')
+        shard = self.records_dir / 'fixture.yaml'
+        corpus_load.write_shard(shard, FIXTURE_RECORDS)
 
     def tearDown(self):
         self.tempdir.cleanup()
 
-    def test_load_records_skips_blank_lines(self):
-        shard = self.records_dir / 'blank.jsonl'
-        shard.write_text('\n\n{"id": "x", "feature": "f", "source": "s", "verify": {"eval": "1"}}\n\n')
+    def test_load_records_skips_blank_documents(self):
+        shard = self.records_dir / 'blank.yaml'
+        shard.write_text(
+            '---\n'
+            'id: x\n'
+            'feature: f\n'
+            'source: s\n'
+            'verify:\n'
+            '  eval: "1"\n'
+            '\n'
+            '---\n')
         records = export.load_records(self.records_dir)
         ids = [record['id'] for record in records]
         self.assertIn('x', ids)
@@ -156,12 +164,12 @@ class TestCorpusExport(unittest.TestCase):
         self.assertEqual(row['schema_version'], SCHEMA_FIXTURE['$id'])
         self.assertIn('git_ref', row)
 
-    def test_malformed_json_reports_shard(self):
-        bad = self.records_dir / 'bad.jsonl'
-        bad.write_text('not json\n')
+    def test_malformed_yaml_reports_shard(self):
+        bad = self.records_dir / 'bad.yaml'
+        bad.write_text('id: [unclosed\n')
         with self.assertRaises(ValueError) as ctx:
             export.load_records(self.records_dir)
-        self.assertIn('bad.jsonl:1:', str(ctx.exception))
+        self.assertIn('bad.yaml', str(ctx.exception))
 
 
 # The end.

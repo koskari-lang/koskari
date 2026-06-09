@@ -4,7 +4,7 @@ Published ML datasets are **views** generated from corpus records, not the
 authoritative schema.
 
 ```text
-Corpus JSONL
+Corpus YAML
       |
       v
  Transformation
