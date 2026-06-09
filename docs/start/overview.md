@@ -16,13 +16,15 @@ ecosystem.
 
 ## How this documentation is organized
 
-Two tutorial on-ramps:
+Two tutorial on-ramps — pick the one that fits your background:
 
-- **New to programming** -- under `start/beginner/` (in progress)
-- **From Python** -- under `start/from-python/` (layout-first track with runnable
-  examples)
+- **[From Python](from-python/index.md)** -- if you already know Python, start here.
+  Layout-first style, Python↔Koskari side-by-side comparisons, runnable examples.
+  This is the recommended path for most readers.
+- **[New to programming](beginner/index.md)** -- if you are new to programming,
+  start here. Dialogue-style chapters, no assumed background.
 
-Both paths can meet at the shared **guide** and the **reference** sections.
+Both paths converge at the shared **guide** and **reference** sections.
 You can skip straight to reference if you already know Lisp-like languages.
 
 | Section | Purpose |

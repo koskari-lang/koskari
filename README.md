@@ -1,6 +1,20 @@
 # Koskari
 
-Koskari is a LISP dialect for Python
+Koskari is a LISP dialect for Python — indent-based layout syntax, macros, and a
+custom bytecode evaluator that runs on CPython.
+
+```koskari
+define greet [name]:
+  print (+ "Hello, " name "!")
+
+when-main:
+  greet "world"
+```
+
+```bash
+koskari hello.ki
+# Hello, world!
+```
 
 
 ## Overview
@@ -11,6 +25,39 @@ Koskari is the fourth iteration of the Sibilant idea, learning from the experien
 - **sibilant-ceval**: Custom bytecode evaluator (blocked on call/cc implementation)
 
 This version aims to be a perfect playground - a language with all the useful features of Python but significantly fewer restrictions, designed to make writing code a joyous expression of will upon the computer.
+
+
+## Quick Start
+
+### Building
+
+```bash
+make build
+```
+
+### Installing
+
+```bash
+make install
+```
+
+Or for development:
+
+```bash
+pip install -e ".[repl]"
+```
+
+The `repl` extra enables syntax-highlighted REPL input via `prompt_toolkit`. Other
+optional extras: `lsp`, `pygments`, `sphinx`.
+
+### Running
+
+```bash
+koskari            # interactive REPL
+koskari hello.ki   # run a script
+```
+
+See [docs/start/install-run.md](docs/start/install-run.md) for the full first-session walkthrough.
 
 
 ## Implementation Status
@@ -49,28 +96,7 @@ This version aims to be a perfect playground - a language with all the useful fe
 Many ideas are under evaluation, see [design/TODO.md](design/TODO.md) for what's on the table.
 
 
-## Quick Start
-
-### Building
-
-```bash
-make build
-```
-
-### Installing
-
-```bash
-make install
-```
-
-Or for development:
-
-```bash
-uv install -e .[repl]
-uv run koskari
-```
-
-### Development
+## Development
 
 ```bash
 # Build native extensions
@@ -98,9 +124,7 @@ make clean
 make docs
 ```
 
-Optional extras: `repl` (prompt_toolkit), `lsp`, `pygments`, `sphinx`.
-Install documentation support with `pip install koskari[sphinx]` (or the
-equivalent in your environment). Downstream Sphinx projects should enable
+Downstream Sphinx projects should enable
 `extensions = ['koskari.extras.sphinx']` so autodoc renders `Function`, `Syntax`,
 and `LayoutHandler` bindings with signatures and pattern/peer sections.
 

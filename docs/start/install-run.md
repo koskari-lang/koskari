@@ -25,10 +25,10 @@ make install
 Or for development:
 
 ```bash
-pip install -e ".[prompt_toolkit]"
+pip install -e ".[repl]"
 ```
 
-The optional `prompt_toolkit` extra enables syntax-highlighted REPL input.
+The optional `repl` extra enables syntax-highlighted REPL input.
 
 ## Verify
 
@@ -66,6 +66,23 @@ koskari --execute-kio out.kio
 ```
 
 See [CLI and configuration](../reference/cli-and-config.md) for all flags.
+
+## Editor setup
+
+Syntax highlighting and (optionally) LSP support are available for three editors.
+Files live under `editors/` in the repository root.
+
+| Editor | What's included | Setup |
+|--------|-----------------|-------|
+| **Emacs** | Major mode with syntax highlighting, indentation, comment support | Load `editors/emacs/koskari-mode.el` — see `editors/emacs/README.md` |
+| **Helix** | Tree-sitter grammar + LSP integration | Requires building the grammar — see `editors/helix/README.md` |
+| **VSCode / TextMate** | TextMate grammar for syntax highlighting | Install from folder or VSIX — see `editors/textmate/README.md` |
+
+For Helix and LSP support, install the `lsp` extra first:
+
+```bash
+pip install -e ".[repl,lsp]"
+```
 
 ## Next steps
 
