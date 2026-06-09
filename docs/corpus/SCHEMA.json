@@ -28,7 +28,8 @@
         "expand": { "type": "string" },
         "compile": { "type": "string" },
         "eval": { "type": "string" },
-        "error": { "type": "string" }
+        "error": { "type": "string" },
+        "invalid": { "type": "string" }
       }
     },
     "references": {
