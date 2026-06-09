@@ -268,6 +268,23 @@ Ref: `koskari/lib/utils.c` (`KosUtils_Repr`, `kos_repr_register`);
 
 ---
 
+## Packaging / installed CLI
+
+### `koskari_scripts` setuptools integration
+
+**TODO:** Evaluate the proposed design for **`koskari.extras.setuptools`**
+(build-time mirroring of **`koskari_scripts`** entry points to
+**`console_scripts`**) and **`koskari.launcher`** (runtime async host for
+installed koskari application commands). Decide open questions (group name,
+**`sys.path`** policy, build-system weight), then implement in phased order if
+accepted.
+
+Ref: [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md);
+[api/import-system.md](api/import-system.md); `koskari/cli/__init__.py`;
+`examples/life/`.
+
+---
+
 ## Reference
 
 - **Implemented specials:** [SPECIALS.md](SPECIALS.md)
