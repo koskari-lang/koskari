@@ -39,7 +39,8 @@ from os.path import split
 
 from .compile import Compiler
 from .lib import Module, ModuleNamespace, demand_call
-from .reader import READ_EOF, IndentAwareStream, LayoutReader, source_open
+from .reader import (READ_EOF, IndentAwareStream, LayoutReader, source_open,
+                     source_str)
 
 
 __all__ = (
@@ -52,6 +53,7 @@ __all__ = (
     'load_module_demand',
     'load_module_kio_async',
     'load_module_kio_demand',
+    'load_module_source_async',
 )
 
 
@@ -249,6 +251,62 @@ def load_module_demand(module, *, interactive=False):
         finally:
             if not interactive:
                 detach_module_load_facets(module)
+
+
+async def load_module_source_async(module, source, *, interactive=False):
+    """
+    Execute koskari source passed as a string.
+
+    Same top-level expression loop as :func:`load_module_async`, but reads
+    from ``source`` instead of opening ``module``'s ``__file__``.
+
+    :param module: koskari Module instance with ``__file__`` set
+    :param source: koskari source text to execute
+    :param interactive: when False, detach load facets after the load loop
+    """
+
+    filename = getattr(module, '__file__', '<string>')
+    ns = vars(module)
+
+    docstr = None
+
+    source_stream = source_str(source, filename, auto_skip_exec=False)
+
+    compiler = Compiler(
+        getattr(module, '__name__', '<module>'),
+        module,
+        filename=filename)
+
+    reader = LayoutReader(module)
+    attach_module_load_facets(module, compiler, reader)
+    try:
+        stream = IndentAwareStream(
+            source_stream.stream,
+            source_stream.filename,
+            auto_skip_exec=False,
+            line_no=source_stream.lin,
+            col_no=source_stream.col,
+            max_indent=None)
+
+        while True:
+            source_expr = reader.read(stream)
+            if source_expr is READ_EOF:
+                break
+
+            if docstr is None:
+                if isinstance(source_expr, str):
+                    ns['__doc__'] = source_expr
+                    docstr = True
+                    continue
+                else:
+                    docstr = False
+
+            fragment = compiler.full_compile(source_expr)
+            expr = fragment.as_expression(ns)
+            await expr()
+    finally:
+        if not interactive:
+            detach_module_load_facets(module)
 
 
 async def load_module_kio_async(module):

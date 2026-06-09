@@ -5,7 +5,7 @@ The `koskari` command runs scripts and the REPL.
 ## Usage
 
 ```
-koskari [options] [filename] [args ...]
+koskari [options] [-c CMD | filename] [args ...]
 ```
 
 ## Options
@@ -16,12 +16,15 @@ koskari [options] [filename] [args ...]
 | `--histfile PATH` | REPL readline/prompt_toolkit history file |
 | `--repl-full-trace` | Show REPL infrastructure frames in error tracebacks |
 | `-i`, `--interactive` | Enter REPL after running a script |
-| `--compile-kio OUT` | Compile `.ki` to `.kio` at OUT, then exit |
+| `-c CMD`, `--command CMD` | Run koskari source from CMD, then exit |
+| `--compile-kio OUT SRC` | Compile `SRC` `.ki` to `.kio` at `OUT`, then exit |
 | `--compile-kio-source-name PATH` | Logical source path stored in `.kio` |
-| `--execute-kio` | Run filename as precompiled `.kio` |
+| `--execute-kio SRC` | Run precompiled `.kio` at `SRC` |
 
-Positional `filename` runs as a script. Remaining arguments are forwarded to
-the script or REPL session.
+Exactly one run target is required for script execution: `-c CMD`,
+`--compile-kio OUT SRC`, `--execute-kio SRC`, or positional `filename`.
+Those forms are mutually exclusive. Remaining arguments are forwarded to the
+script or REPL session; with `-c`, `sys.argv[0]` is `'-c'`.
 
 ## Related commands
 

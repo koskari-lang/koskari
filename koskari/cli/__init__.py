@@ -29,7 +29,7 @@ pluggable input backend that supports both readline and prompt_toolkit.
 import asyncio
 import platform
 import sys
-from argparse import REMAINDER, ArgumentParser
+from argparse import REMAINDER, ArgumentParser, Action
 from os.path import basename
 
 from ..exceptions import (CodeBoundary, CompilerError, ReaderEOF, ReaderError,
@@ -53,6 +53,7 @@ __all__ = (
     'main',
     'option_parser',
     'repl_async',
+    'run_command_async',
     'run_file_async',
 )
 
@@ -477,6 +478,25 @@ async def run_file_async(mod, filename, execute_kio=False, *, interactive=False)
         await load_module_async(mod, interactive=interactive)
 
 
+async def run_command_async(mod, command, *, interactive=False):
+    """
+    Load and execute koskari source from a command-line string into mod.
+
+    Sets ``__file__`` to ``'<string>'`` and runs each top-level expression
+    in order, matching file execution semantics.
+
+    :param mod: koskari Module to execute into
+    :param command: koskari source text from ``-c`` / ``--command``
+    :param interactive: passed to load_module_source_async; retain load
+        facets when True
+    """
+
+    from koskari.module import init_module, load_module_source_async
+
+    init_module(mod, '<string>')
+    await load_module_source_async(mod, command, interactive=interactive)
+
+
 # ---------------------------------------------------------------------------
 # CLI orchestration
 # ---------------------------------------------------------------------------
@@ -494,6 +514,7 @@ async def cli_async(options):
     """
 
     filename = options.filename
+    command = options.command
 
     if options.compile_kio:
         from koskari.serialize.incremental import compile_ki_file_to_kio
@@ -503,7 +524,9 @@ async def cli_async(options):
             source_filename=options.compile_kio_source_name)
         return
 
-    if filename:
+    if command is not None:
+        sys.argv = ['-c'] + list(options.args)
+    elif filename:
         sys.argv = [filename] + list(options.args)
     else:
         sys.argv = list(options.args)
@@ -516,7 +539,16 @@ async def cli_async(options):
         p = ParamRef("*interactive*")
         p.store(options.interactive)
 
-        if filename:
+        if command is not None:
+            await run_command_async(
+                mod,
+                command,
+                interactive=options.interactive)
+
+            if not options.interactive:
+                return
+
+        elif filename:
             await run_file_async(
                 mod,
                 filename,
@@ -536,6 +568,80 @@ async def cli_async(options):
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
+
+
+class _CompileKioSourceNameAction(Action):
+    """
+    Reject --compile-kio-source-name unless --compile-kio is also present
+    """
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if namespace.compile_kio is None:
+            parser.error('--compile-kio-source-name requires --compile-kio')
+        setattr(namespace, self.dest, values)
+
+
+def _reject_option_like_rest(parser, rest):
+    """
+    Error when REMAINDER captured tokens that look like misplaced options
+    """
+
+    for item in rest:
+        if item == '--' or item.startswith('-'):
+            parser.error('unrecognized arguments: %s' % (item,))
+
+
+def _resolve_cli_target(parser, options):
+    """
+    Flatten the exclusive run-target group into legacy option fields
+
+    Script paths and forwarded arguments live in ``rest`` (REMAINDER) so
+    ``-c`` can accept arguments without competing with an optional filename
+    positional.
+
+    :param parser: ArgumentParser used for parse_args (for error reporting)
+    :param options: namespace returned by parse_args
+    :return: the same namespace, with compile_kio, filename, and execute_kio set
+    """
+
+    rest = list(options.rest)
+
+    if options.command is not None:
+        options.filename = None
+        options.args = rest
+        options.execute_kio = False
+        return options
+
+    if options.compile_kio is not None:
+        if rest:
+            parser.error(
+                'unexpected extra arguments: %s' % (' '.join(rest),))
+        out, src = options.compile_kio
+        options.compile_kio = out
+        options.filename = src
+        options.args = []
+        options.execute_kio = False
+        return options
+
+    if options.execute_kio_file is not None:
+        if rest:
+            parser.error(
+                'unexpected extra arguments: %s' % (' '.join(rest),))
+        options.execute_kio = True
+        options.filename = options.execute_kio_file[0]
+        options.args = []
+        return options
+
+    if rest:
+        _reject_option_like_rest(parser, rest)
+        options.filename = rest[0]
+        options.args = rest[1:]
+    else:
+        options.filename = None
+        options.args = []
+
+    options.execute_kio = False
+    return options
 
 
 def option_parser(name):
@@ -590,38 +696,44 @@ def option_parser(name):
         default=False,
         help="Enter interactive mode after executing the given script")
 
-    parser.add_argument(
+    target = parser.add_mutually_exclusive_group()
+
+    target.add_argument(
+        '-c', '--command',
+        dest='command',
+        metavar='CMD',
+        default=None,
+        help='Program passed in as a string, then exit')
+
+    target.add_argument(
         '--compile-kio',
         dest='compile_kio',
-        metavar='OUT',
+        nargs=2,
+        metavar=('OUT', 'SRC'),
         default=None,
-        help='Compile the given .ki file to OUT as .kio, then exit')
+        help='Compile SRC .ki to OUT as .kio, then exit')
+
+    target.add_argument(
+        '--execute-kio',
+        dest='execute_kio_file',
+        metavar='SRC',
+        nargs=1,
+        default=None,
+        help='Run SRC as a precompiled .kio')
 
     parser.add_argument(
         '--compile-kio-source-name',
         dest='compile_kio_source_name',
         metavar='PATH',
         default=None,
+        action=_CompileKioSourceNameAction,
         help='Logical .ki path stored in the .kio for tracebacks (default: input path)')
 
     parser.add_argument(
-        '--execute-kio',
-        dest='execute_kio',
-        action='store_true',
-        default=False,
-        help='Run filename as a precompiled .kio (instead of .ki source)')
-
-    parser.add_argument(
-        'filename',
-        nargs='?',
-        default=None,
-        help="Run filename as a script")
-
-    parser.add_argument(
-        'args',
+        'rest',
         nargs=REMAINDER,
         default=[],
-        help="Arguments forwarded to the script or REPL session")
+        help="Script path and arguments forwarded to the script or REPL session")
 
     return parser
 
@@ -676,15 +788,7 @@ def main(argv=None):
 
     name, *args = argv
     parser = option_parser(name)
-    options = parser.parse_args(args)
-
-    if options.compile_kio and not options.filename:
-        parser.error('--compile-kio requires a .ki source file argument')
-    if options.compile_kio_source_name and not options.compile_kio:
-        parser.error(
-            '--compile-kio-source-name requires --compile-kio')
-    if options.execute_kio and not options.filename:
-        parser.error('--execute-kio requires a script filename')
+    options = _resolve_cli_target(parser, parser.parse_args(args))
 
     if options.show_version:
         print(version_line())

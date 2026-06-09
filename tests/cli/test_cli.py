@@ -26,8 +26,9 @@ import unittest
 import pytest
 
 from koskari.cli import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary, main,
-                         option_parser, repl_async, run_file_async,
-                         startup_lines)
+                         option_parser, repl_async, run_command_async,
+                         run_file_async, startup_lines,
+                         _resolve_cli_target)
 from koskari.exceptions import (CodeBoundary, _filter_infrastructure_tb,
                                 format_exception_with_koskari_trace)
 from koskari.module import new_module
@@ -48,7 +49,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
     def _parse(self, *args):
         parser = option_parser('koskari')
-        return parser.parse_args(list(args))
+        return _resolve_cli_target(parser, parser.parse_args(list(args)))
 
 
     async def test_defaults(self):
@@ -102,17 +103,64 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         opts = self._parse(
             '--compile-kio',
             'out.kio',
+            'x.ki',
             '--compile-kio-source-name',
-            'pkg/foo.ki',
-            'x.ki')
+            'pkg/foo.ki')
         self.assertEqual('out.kio', opts.compile_kio)
         self.assertEqual('pkg/foo.ki', opts.compile_kio_source_name)
         self.assertEqual('x.ki', opts.filename)
 
 
+    async def test_command_conflicts_with_compile_kio(self):
+        parser = option_parser('koskari')
+        with self.assertRaises(SystemExit):
+            parser.parse_args(['-c', '(print 1)', '--compile-kio', 'out.kio', 'x.ki'])
+
+
+    async def test_command_conflicts_with_execute_kio(self):
+        parser = option_parser('koskari')
+        with self.assertRaises(SystemExit):
+            parser.parse_args(['-c', '(print 1)', '--execute-kio', 'x.kio'])
+
+
+    async def test_filename_conflicts_with_compile_kio(self):
+        parser = option_parser('koskari')
+        with self.assertRaises(SystemExit):
+            _resolve_cli_target(
+                parser,
+                parser.parse_args(
+                    ['--compile-kio', 'out.kio', 'x.ki', 'hello.ki']))
+
+
+    async def test_misplaced_option_in_rest_errors(self):
+        parser = option_parser('koskari')
+        with self.assertRaises(SystemExit):
+            _resolve_cli_target(
+                parser,
+                parser.parse_args(
+                    ['hello.ki', '--compile-kio', 'out.kio', 'x.ki']))
+
+
     async def test_quiet_flag(self):
         opts = self._parse('-q')
         self.assertTrue(opts.quiet)
+
+
+    async def test_command_short(self):
+        opts = self._parse('-c', '(print 1)')
+        self.assertEqual('(print 1)', opts.command)
+        self.assertIsNone(opts.filename)
+
+
+    async def test_command_long(self):
+        opts = self._parse('--command', '(+ 1 2)')
+        self.assertEqual('(+ 1 2)', opts.command)
+
+
+    async def test_command_forwards_args(self):
+        opts = self._parse('-c', '(print 1)', 'arg1', 'arg2')
+        self.assertEqual('(print 1)', opts.command)
+        self.assertEqual(['arg1', 'arg2'], opts.args)
 
 
 class TestRunFile(unittest.IsolatedAsyncioTestCase):
@@ -148,6 +196,33 @@ class TestRunFile(unittest.IsolatedAsyncioTestCase):
         mod = new_module('__main__')
         with self.assertRaises(SystemExit) as ctx:
             await run_file_async(mod, _script('exit_code.ki'))
+        self.assertEqual(42, ctx.exception.code)
+
+
+class TestRunCommand(unittest.IsolatedAsyncioTestCase):
+
+    async def test_print_to_stdout(self):
+        mod = new_module('__main__')
+        captured = io.StringIO()
+        orig = sys.stdout
+        sys.stdout = captured
+        try:
+            await run_command_async(mod, '(print "Hello, koskari!")')
+        finally:
+            sys.stdout = orig
+        self.assertIn('Hello, koskari!', captured.getvalue())
+
+
+    async def test_sets_string_filename(self):
+        mod = new_module('__main__')
+        await run_command_async(mod, '(define x 1)')
+        self.assertEqual('<string>', getattr(mod, '__file__', None))
+
+
+    async def test_run_command_raises_system_exit(self):
+        mod = new_module('__main__')
+        with self.assertRaises(SystemExit) as ctx:
+            await run_command_async(mod, '(raise (SystemExit 42))')
         self.assertEqual(42, ctx.exception.code)
 
 
@@ -391,6 +466,27 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         code, out = await self._capture_main(_script('define_and_print.ki'))
         self.assertEqual(0, code)
         self.assertIn('42', out)
+
+
+    async def test_main_run_command_exits_zero(self):
+        code, out = await self._capture_main('-c', '(print "Hello, koskari!")')
+        self.assertEqual(0, code)
+        self.assertIn('Hello, koskari!', out)
+
+
+    async def test_main_command_sets_sys_argv(self):
+        def run():
+            orig_argv = sys.argv
+            try:
+                code = main(['koskari', '-c', '(print 1)', 'extra'])
+                return code, list(sys.argv)
+            finally:
+                sys.argv = orig_argv
+
+        loop = asyncio.get_running_loop()
+        code, argv = await loop.run_in_executor(None, run)
+        self.assertEqual(0, code)
+        self.assertEqual(['-c', 'extra'], argv)
 
 
     async def test_main_exit_code_script_raises_system_exit(self):

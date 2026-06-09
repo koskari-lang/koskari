@@ -23,3 +23,8 @@ alwaysApply: true
 
 When running individual tests, use `tox -qe py -- tests/<...>`
 See additional rules in @tox.mdc
+
+
+If the agent needs a python terminal to verify API, use `uv run python3`
+
+If the agent needs a koskari terminal to verify syntax or API, use `uv run koskari`

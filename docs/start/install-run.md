@@ -65,6 +65,8 @@ koskari --compile-kio out.kio examples/hello.ki
 koskari --execute-kio out.kio
 ```
 
+`--compile-kio` and `--execute-kio` take source paths on the flag itself.
+
 See [CLI and configuration](../reference/cli-and-config.md) for all flags.
 
 ## Editor setup
