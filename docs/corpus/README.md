@@ -6,11 +6,10 @@ The Koskari corpus describes language behaviour at subsystem boundaries:
 
 - read (reader and layouts)
 - expand (macros)
-- compile (author-visible outcomes such as return annotations or defined types)
-- eval (runtime)
+- eval (runtime, including `@`-marked complex checks)
 
 Corpus records must not assert VM opcodes or bytecode shape. See
-[SCHEMA.md](SCHEMA.md) compile conventions.
+[SCHEMA.md](SCHEMA.md) eval and expand conventions.
 
 Records are **not** shaped like ML training rows at source. Hugging Face and
 similar exports are downstream transforms.
@@ -21,6 +20,21 @@ similar exports are downstream transforms.
 2. Append it as a new document (`---` separator) in the appropriate shard
    under `records/` (multi-document YAML; see [SCHEMA.md](SCHEMA.md))
 3. Run corpus verification: `tox -qe py -- tests/corpus/ -m phase_corpus`
+
+## Record quality rubric
+
+A corpus record is acceptable when:
+
+- **Source is pasteable** — idiomatic Koskari a reader could copy into docs or
+  the REPL; avoid meaningless literal bodies used only as placeholders.
+- **Verify matches stage** — macros include `expand` on a top-level macro form;
+  layout features include `read`; runtime behavior uses `eval`.
+- **Behavior is exercised** — eval source calls or reads the feature (slot
+  access, invoke, predicate), not only returns a constructor.
+- **Complex outcomes use `@`** — types, annotations, and similar values use
+  marked encodings documented in [SCHEMA.md](SCHEMA.md); never English prose
+  labels in verify strings.
+- **References cite docs/** — link to the page the example could live on.
 
 ## Status
 

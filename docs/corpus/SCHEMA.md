@@ -110,20 +110,25 @@ informal encoding:
 | `proper-list:(1 2 3)` | Koskari proper list (cons chain ending in nil) |
 | `improper-list:(1 2 . 3)` | Improper list shape |
 
-## Compile value conventions (seed records)
+## Marked complex eval encodings
 
-`verify.compile` is optional. Use it only for **author-visible** compile
-outcomes that an agent writing Koskari source would care about:
+When the eval result is not a simple literal, prefix the `verify.eval` string
+with `@`. The harness strips `@` and runs a registered complex check.
 
 | Form | Meaning |
 |------|---------|
-| `__annotations__ return int` | Built function carries return annotation |
-| `code.extras return annotation int` | Lambda code object records return type |
-| `special:class yields KosType named C` | Class special defines a KosType |
-| `macro expands to define + class; yields KosType C` | define-class macro result |
-| `single fn unchanged` | Macro compose identity on one function |
+| `@kostype:NAME` | Eval result is a KosType named NAME |
+| `@annotations:return:TYPE` | Eval result is callable with `__annotations__['return'] == TYPE` |
+| `@code.extras:return:SYM` | Eval result is callable with `code.extras['return']` symbol SYM |
 
-**Forbidden in corpus records:** opcodes, bytecode shape, disassembly, tail-call
-opcode choice, constant-folding internals, or any other VM implementation detail.
-That coverage belongs in `phase_specials` unit tests under `tests/compile/`,
-not in corpus YAML shards.
+**Forbidden in marked encodings:** opcodes, bytecode shape, disassembly,
+tail-call opcode choice, constant-folding internals, or any other VM
+implementation detail. That coverage belongs in `phase_specials` unit tests
+under `tests/compile/`, not in corpus YAML shards.
+
+## Expand stage conventions
+
+`verify.expand` compares one macro-expansion step on the **outer** form head.
+Use a source whose macro invocation is top-level (not wrapped in `begin`),
+unless testing `begin` itself. Use `...` wildcards for irrelevant tail forms,
+as in [syntax.yaml](records/syntax.yaml).

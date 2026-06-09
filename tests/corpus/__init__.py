@@ -54,7 +54,7 @@ from koskari.types import is_pair, is_proper, is_symbol, unpack
 
 _WILDCARD = object()
 
-_FORBIDDEN_COMPILE_PATTERNS = (
+_FORBIDDEN_MARKED_EVAL_PATTERNS = (
     r'^opcode:',
     r'^lambda-body:opcode:',
     r'^expression:opcode:',
@@ -339,6 +339,83 @@ def eval_values_equal(got, expected):
     return got == expected
 
 
+def parse_eval_expected(text):
+    """
+    Parse a verify.eval string into literal or marked complex form
+
+    :param text: verify.eval string
+    :return: tuple ('literal', value) or ('marked', payload without @)
+    """
+
+    text = text.strip()
+    if text.startswith('@'):
+        return ('marked', text[1:])
+    return ('literal', parse_eval_value(text))
+
+
+def _check_marked_kostype(case, got, name):
+    """
+    Assert eval result is a KosType with the given name
+    """
+
+    case.assertIsInstance(got, type)
+    case.assertEqual(got.__name__, name)
+    case.assertIs(type(got), KosType)
+
+
+def _check_marked_annotations_return(case, got, type_name):
+    """
+    Assert eval result is callable with return annotation
+    """
+
+    case.assertTrue(callable(got))
+    case.assertEqual(got.__annotations__.get('return'), type_name)
+
+
+def _check_marked_code_extras_return(case, got, sym_name):
+    """
+    Assert eval result callable has code.extras return symbol
+    """
+
+    case.assertTrue(callable(got))
+    case.assertEqual(got.code.extras.get('return'), symbol(sym_name))
+
+
+def run_marked_eval_check(case, got, payload):
+    """
+    Run a marked complex verify.eval check
+
+    :param case: unittest case for assertions
+    :param got: runtime eval result
+    :param payload: marked encoding without leading @
+    :raises ValueError: on forbidden or unknown marked encoding
+    """
+
+    for pattern in _FORBIDDEN_MARKED_EVAL_PATTERNS:
+        if re.match(pattern, payload):
+            raise ValueError(
+                'corpus verify.eval marked encoding must not use bytecode'
+                ' or opcodes (see docs/corpus/SCHEMA.md): %r' % payload)
+
+    if payload.startswith('kostype:'):
+        name = payload.split(':', 1)[1]
+        _check_marked_kostype(case, got, name)
+        return
+
+    if payload.startswith('annotations:return:'):
+        type_name = payload.split(':', 2)[2]
+        _check_marked_annotations_return(case, got, type_name)
+        return
+
+    if payload.startswith('code.extras:return:'):
+        sym_name = payload.split(':', 2)[2]
+        _check_marked_code_extras_return(case, got, sym_name)
+        return
+
+    kind = payload.split(':', 1)[0]
+    raise ValueError('unknown marked eval encoding: %r' % kind)
+
+
 def forms_equal(got, expected_form):
     """
     Exact structural equality of two read forms
@@ -413,70 +490,6 @@ def form_matches_pattern(got_form, expected_form):
         _pattern_from_form(expected_form))
 
 
-def check_compile_expected(case, code, expected, tc=False):
-    """
-    Assert a Code object satisfies a verify.compile expected string
-
-    :param case: unittest case for assertions
-    :param code: compiled Code object
-    :param expected: verify.compile string
-    :param tc: whether tail-call tracking was enabled
-    :raises AssertionError: when expectation is not met
-    :raises ValueError: when expected string uses forbidden bytecode checks
-    """
-
-    text = expected.strip()
-
-    for pattern in _FORBIDDEN_COMPILE_PATTERNS:
-        if re.match(pattern, text):
-            raise ValueError(
-                'corpus verify.compile must not use bytecode or opcodes'
-                ' (see docs/corpus/SCHEMA.md): %r' % text)
-
-    if text == 'code.extras return annotation int':
-        expr = code.expression(case.module_ns)
-        fn = demand_call(expr)
-        case.assertEqual(fn.code.extras.get('return'), symbol('int'))
-        return
-
-    if text in (
-            '__annotations__ return int on built function',
-            '__annotations__ return int; selfref=False',
-            '__annotations__ return int'):
-        expr = code.expression(case.module_ns)
-        fn = demand_call(expr)
-        case.assertEqual(fn.__annotations__.get('return'), 'int')
-        return
-
-    m = re.match(
-        r'^special:class yields KosType named ([A-Z][A-Za-z0-9_]*)$',
-        text)
-    if m:
-        _check_kostype_named(case, code, m.group(1))
-        return
-
-    if text == 'macro expands to define + class; yields KosType C':
-        _check_kostype_named(case, code, 'C')
-        return
-
-    if text == 'single fn unchanged':
-        return
-
-    raise ValueError('unknown compile expectation: %r' % text)
-
-
-def _check_kostype_named(case, code, name):
-    """
-    Compile and eval code expecting a KosType with the given name
-    """
-
-    expr = code.expression(case.module_ns)
-    result = demand_call(expr)
-    case.assertIsInstance(result, type)
-    case.assertEqual(result.__name__, name)
-    case.assertIs(type(result), KosType)
-
-
 def parse_error_expected(text):
     """
     Parse verify.error string into exception class name and optional message
@@ -538,18 +551,6 @@ def verify_expand(case, expected):
         % (case.record['id'], got, exp))
 
 
-def verify_compile(case, expected):
-    """
-    Verify compile stage expectation for the bound corpus record
-
-    :param case: CorpusTestCase instance
-    :param expected: verify.compile string
-    """
-
-    code = case.compile_source(case.record['source'])
-    check_compile_expected(case, code, expected)
-
-
 def verify_eval(case, expected):
     """
     Verify eval stage expectation for the bound corpus record
@@ -558,12 +559,15 @@ def verify_eval(case, expected):
     :param expected: verify.eval string
     """
 
+    kind, payload = parse_eval_expected(expected)
     got = case.eval_source(case.record['source'])
-    exp = parse_eval_value(expected)
+    if kind == 'marked':
+        run_marked_eval_check(case, got, payload)
+        return
     case.assertTrue(
-        eval_values_equal(got, exp),
+        eval_values_equal(got, payload),
         'eval mismatch for %s\n got: %r\n exp: %r'
-        % (case.record['id'], got, exp))
+        % (case.record['id'], got, payload))
 
 
 def verify_error(case, expected):
@@ -597,7 +601,6 @@ def verify_error(case, expected):
 HANDLERS = {
     'read': verify_read,
     'expand': verify_expand,
-    'compile': verify_compile,
     'eval': verify_eval,
     'error': verify_error,
 }

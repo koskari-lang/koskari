@@ -456,11 +456,25 @@ tags:
   - object
   - unary
 ---
-id: object-class-empty-001
+id: object-class-slot-001
 feature: special/compile/class
-source: (class C () 5)
+source: (begin (define Box (class Box () (define label "hi"))) (compile/attr Box label))
 verify:
-  compile: "special:class yields KosType named C"
+  eval: '"hi"'
+references:
+  - reference/specials/compile-class.md
+  - reference/specials/compile-attr.md
+stability: evolving
+tags:
+  - object
+  - class
+notes: class with class-level slot; read via compile/attr on the type
+---
+id: object-class-type-001
+feature: special/compile/class
+source: (begin (define Box (class Box () (define label "hi"))) Box)
+verify:
+  eval: "@kostype:Box"
 references:
   - reference/specials/compile-class.md
 stability: evolving
@@ -468,11 +482,11 @@ tags:
   - object
   - class
 ---
-id: object-define-class-001
+id: object-define-class-expand-001
 feature: macro/compile/define-class
-source: (begin (define-class C [] 5) C)
+source: (define-class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (compile/attr self n) 1))))
 verify:
-  compile: macro expands to define + class; yields KosType C
+  expand: "(compile/begin (define Counter (class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (compile/attr self n) 1))))) (create-instance-check Counter))"
 references:
   - reference/macros/compile-define-class.md
   - reference/specials/compile-class.md
@@ -481,4 +495,61 @@ tags:
   - object
   - macro
   - define-class
-notes: koskari/bootstrap/_class.ki; requires builtins at expand; also defines C? predicate
+notes: top-level macro form for expand stage; koskari/bootstrap/_class.ki
+---
+id: object-define-class-eval-001
+feature: macro/compile/define-class
+source: |-
+  (begin
+    (define-class Counter [] (define n 0))
+    (let [[c (Counter)]]
+      (begin (set-attr c n 1) (compile/attr c n))))
+verify:
+  eval: "1"
+references:
+  - reference/macros/compile-define-class.md
+  - reference/specials/compile-class.md
+  - reference/specials/compile-attr.md
+stability: evolving
+tags:
+  - object
+  - macro
+  - define-class
+notes: instance slot mutation via define-class and set-attr
+---
+id: object-define-class-type-001
+feature: macro/compile/define-class
+source: (begin (define-class Counter [] (define n 0)) Counter)
+verify:
+  eval: "@kostype:Counter"
+references:
+  - reference/macros/compile-define-class.md
+  - reference/specials/compile-class.md
+stability: evolving
+tags:
+  - object
+  - macro
+  - define-class
+notes: koskari/bootstrap/_class.ki; also defines Counter? predicate at expand
+---
+id: object-define-class-layout-001
+feature: layout/define-class
+source: |-
+  define-class Counter []:
+    define n 0
+    define bump [self]:
+      (set-attr self n (+ (compile/attr self n) 1))
+verify:
+  read: "(compile/define-class Counter () (compile/begin (define n 0) (define bump [self] (compile/begin (set-attr self n (+ (compile/attr self n) 1))))))"
+references:
+  - reference/layouts/layout-define-class.md
+  - reference/macros/compile-define-class.md
+  - reference/specials/compile-class.md
+stability: evolving
+tags:
+  - object
+  - macro
+  - define-class
+  - layout
+  - "surface:block"
+notes: layout counterpart of object-define-class-expand-001

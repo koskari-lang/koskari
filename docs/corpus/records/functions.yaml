@@ -27,7 +27,7 @@ id: function-lambda-return-type-001
 feature: special/compile/lambda
 source: "(lambda :: int [x] x)"
 verify:
-  compile: __annotations__ return int on built function
+  eval: "@annotations:return:int"
 references:
   - reference/specials/compile-lambda.md
 stability: evolving
@@ -53,7 +53,7 @@ id: function-lambda-named-return-001
 feature: special/compile/lambda
 source: "(lambda f :: int [x] x)"
 verify:
-  compile: __annotations__ return int on built function
+  eval: "@annotations:return:int"
 references:
   - reference/specials/compile-lambda.md
 stability: evolving
@@ -92,7 +92,7 @@ id: function-named-return-type-001
 feature: special/compile/function
 source: "(function g :: int [x] x)"
 verify:
-  compile: __annotations__ return int; selfref=False
+  eval: "@annotations:return:int"
 references:
   - reference/specials/compile-function.md
 stability: evolving
@@ -131,7 +131,7 @@ id: function-define-return-type-001
 feature: special/compile/define
 source: "(begin (define f :: int [x] (* x 2)) f)"
 verify:
-  compile: __annotations__ return int on built function
+  eval: "@annotations:return:int"
 references:
   - reference/specials/compile-define.md
 stability: evolving
@@ -207,9 +207,9 @@ notes: zero placeholders
 ---
 id: function-compose-identity-001
 feature: macro/compile/function-compose
-source: (begin (define id [x] x) (function-compose id))
+source: (begin (define id [x] x) ((function-compose id) 42))
 verify:
-  compile: single fn unchanged
+  eval: "42"
 references:
   - reference/macros/compile-function-compose.md
 stability: evolving
