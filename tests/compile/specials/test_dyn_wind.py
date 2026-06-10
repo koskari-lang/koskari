@@ -265,4 +265,92 @@ class TestDynWindSpecial(SpecialsTestCase):
         self.assertEqual(log, ["before", "after"])
 
 
+class TestDynWindContinuations(SpecialsTestCase):
+    """
+    Tests for interactions between compile/dyn-wind and compile/let/cc.
+    These exercise the interrupted-transfer machinery: when a wind thunk
+    invokes a continuation while an outer transfer plan is already active,
+    the outer plan must be suspended, the inner transfer must complete, and
+    then the outer plan must be replanned and finished.
+    """
+
+    async def test_after_thunk_fires_on_continuation_caused_unwind(self):
+        """
+        When a continuation captured outside a dyn-wind is invoked from
+        inside the body, the after-thunk runs before the continuation lands.
+        """
+
+        log = []
+
+        def record(s):
+            log.append(s)
+            return s
+
+        src_str = """
+        (compile/let/cc k
+          (compile/dyn-wind
+            nil
+            (compile/call k 42)
+            (compile/call record "after")))
+        """
+        expr, mod = self.compile_expr(src_str, record=record)
+        result = await expr()
+        self.assertEqual(result, 42)
+        self.assertEqual(log, ["after"])
+
+
+    async def test_continuation_invoked_from_after_thunk_during_transfer(self):
+        """
+        Invoking a second continuation from a dyn-wind after-thunk during an
+        active outer transfer (interrupted transfer) must not discard the outer
+        plan.  Both transfers must reach their targets: the inner continuation
+        (inner-k) runs first, then the outer (outer-k) is replanned and
+        completes with its own injected value.
+        """
+
+        src_str = """
+        (compile/let/cc outer-k
+          (compile/let/cc inner-k
+            (compile/dyn-wind
+              nil
+              (compile/call outer-k 42)
+              (compile/call inner-k 99))))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, 42)
+
+
+    async def test_continuation_invoked_from_before_thunk_during_transfer(self):
+        """
+        Invoking an escape continuation from a dyn-wind before-thunk (which
+        fires on re-entry during a transfer plan) also exercises the interrupted
+        transfer path.  The escape wins and the outer transfer is replanned.
+        """
+
+        log = []
+
+        def record(s):
+            log.append(s)
+            return s
+
+        src_str = """
+        (compile/let/cc escape
+          (compile/let/cc k
+            (compile/dyn-wind
+              (compile/begin
+                (compile/call record "before")
+                (compile/call escape 99))
+              (compile/begin
+                (compile/call record "body")
+                42)
+              nil)
+            (compile/call k 0)))
+        """
+        expr, mod = self.compile_expr(src_str, record=record)
+        result = await expr()
+        self.assertEqual(result, 99)
+        self.assertIn("before", log)
+
+
 # The end.

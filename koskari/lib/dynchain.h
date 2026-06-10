@@ -566,6 +566,7 @@ struct KosTransferPlan {
   size_t action_capacity;       /* slots allocated (>= action_count) */
 
   KosDynNode *original_target;  /* target for chain-change detection */
+  uint32_t graft_point_id;      /* node_id for LCA fallback when replanning */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
   KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
   KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
@@ -586,6 +587,7 @@ struct KosTransferPlan {
 #define KosTransferPlan_ACTION_INDEX(p)     (((KosTransferPlan *)(p))->action_index)
 #define KosTransferPlan_ACTION_CAPACITY(p)  (((KosTransferPlan *)(p))->action_capacity)
 #define KosTransferPlan_ORIGINAL_TARGET(p)  (((KosTransferPlan *)(p))->original_target)
+#define KosTransferPlan_GRAFT_POINT_ID(p)   (((KosTransferPlan *)(p))->graft_point_id)
 #define KosTransferPlan_RESUME_PC(p)       (((KosTransferPlan *)(p))->resume_pc)
 #define KosTransferPlan_RESUME_FRAME(p)    (((KosTransferPlan *)(p))->resume_frame)
 #define KosTransferPlan_RESUME_STACK(p)    (((KosTransferPlan *)(p))->resume_stack)
@@ -1897,8 +1899,9 @@ int kos_build_transfer_plan(
 
 
 /**
-   RESERVED - NOT YET WIRED IN.  Build a transfer plan with no unwind
-   (direct install across barrier).  Use when path crosses PROMPT.
+   Build a transfer plan with no unwind (INSTALL + wind + INJECT only).
+   Use when the current and target chains are disjoint, such as after a
+   nested transfer interrupted an outer plan's wind thunk.
    Caller sets RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
 
    :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
@@ -2002,24 +2005,28 @@ void kos_free_transfer_plan(KosTransferPlan *plan);
 
 
 /**
-   RESERVED - NOT YET WIRED IN.  Suspend current plan for nested transfer.
-   MUST be called before inner continuation invoke when wind thunk invokes k.
-   Pushes active plan onto plan_stack, clears it.
-
-   :param es: execution/eval state
+   Suspend current transfer plan for a nested transfer.  Called by
+   kos_invoke_continuation when a continuation is invoked while another
+   transfer is in progress.  Pushes active plan onto plan_stack, clears it.
 */
 void kos_suspend_transfer_plan(KosEvalState *es);
 
 
 /**
-   RESERVED - NOT YET WIRED IN.  Resume suspended plan after nested
-   transfer completes.  Pairs with kos_suspend_transfer_plan.
-
-   :param es: execution/eval state
+   Resume a suspended transfer plan after the nested transfer completes.
+   Pops from plan_stack and restores it as the active plan.  Pairs with
+   kos_suspend_transfer_plan.
 
    :return: 0 on success, 0 when nothing to resume
 */
 int kos_resume_transfer_plan(KosEvalState *es);
+
+
+/**
+   Free all suspended transfer plans on plan_stack.  Used when abandoning
+   a nested transfer nest after a fatal error.
+*/
+void kos_free_transfer_plan_stack(KosEvalState *es);
 
 
 /* === Continuation invocation === */

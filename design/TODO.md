@@ -9,14 +9,19 @@ design docs for detail.
 
 ### Interrupted transfer plans
 
-Interrupted transfer plans are not wired in yet. When a transfer plan is
-interrupted (e.g. by an exception or a new transfer being triggered), resumption
-should use `kos_build_direct_install_plan` to rebuild or complete the plan; this
-path is not yet connected.
+**Nested continuation interrupt — done:** suspend/resume/replan when a wind thunk
+invokes another continuation during an active transfer (`interrupted_transfer`
+branch). See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5.
 
-Ref: `koskari/lib/dynchain.c` — `kos_build_direct_install_plan`;
-[EVALUATOR.md](EVALUATOR.md) (transfer plans, revive_plan);
-[interpreter/callcc.md](interpreter/callcc.md) (continuation invoke, plan build).
+**Failed transfer abandonment — not done (next):** on exception during any
+transfer step, abandon plan + `plan_stack`, dispatch via `try_local` on the
+manifested chain (in-place migration model; no transactional transfer). Full
+implementation plan: same doc §3–§4.
+
+**Later follow-ups:** delimited replan builder selection; async nested await
+during transfer.
+
+Ref: [interpreter/callcc.md](interpreter/callcc.md) (re-entrant transfers).
 
 ---
 

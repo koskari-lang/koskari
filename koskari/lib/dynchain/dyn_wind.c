@@ -125,6 +125,12 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
     return 0;
   }
 
+  /* After-thunk is already executing (PRE_AFTER); treat the node as already
+     exiting so a nested transfer plan does not re-fire the thunk. */
+  if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_AFTER) {
+    return 0;
+  }
+
   if (! KosDynWind_AFTER_THUNK(node)) {
     /* No after-thunk: push stored body result and finish uninstall */
     PyObject *body_result = KosDynWind_BODY_RESULT(node);
@@ -159,10 +165,26 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
 }
 
 
+static int kos_dyn_wind_is_on_chain(KosEvalState *es, KosDynWind *wind) {
+
+  for (KosDynNode *n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n)) {
+    if (n == (KosDynNode *) wind)
+      return 1;
+  }
+  return 0;
+}
+
+
 /**
    Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
 */
 static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) {
+
+  /* A nested transfer can replace the chain while a wind thunk is still
+     unwinding; ignore stale control-returned for a detached wind node. */
+  if (! kos_dyn_wind_is_on_chain(es, wind))
+    return 0;
+
   if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
              ? *KosEvalState_BLOCK(es)
              : NULL)) {
@@ -170,17 +192,52 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
   }
 
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN) {
+    if (! KosDynWind_BEFORE_THUNK(wind))
+      return 0;
+
+    if (KosEvalState_PLAN(es)) {
+      KosTransferPlan *plan = KosEvalState_PLAN(es);
+      size_t idx = KosTransferPlan_ACTION_INDEX(plan);
+      if (idx < KosTransferPlan_ACTION_COUNT(plan)) {
+        KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
+        if (KosTransferAction_STEP(a) != KOS_XFER_EXTENT_ACTION
+            || KosTransferAction_EXTENT_NODE(a) != (KosDynNode *) wind
+            || KosTransferAction_EXTENT_PHASE(a) != KOS_XFER_EXTENT_PHASE_WIND)
+          return 0;
+      }
+    }
+
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_BEGIN;
     KosDynWind_ENTERED(wind) = 1;
-    PyObject *val = KosEvalState_StackPopRef(es);
-    if (val)
-      Py_DECREF(val);
+    if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+        && KosStackBlock_LEN(*KosEvalState_BLOCK(es))) {
+      PyObject *val = KosEvalState_StackPopRef(es);
+      if (val)
+        Py_DECREF(val);
+    }
     return 0;
   }
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER) {
-    PyObject *thunk_ret = KosEvalState_StackPopRef(es);
-    if (thunk_ret)
-      Py_DECREF(thunk_ret);
+    /* When a wind thunk tail-invokes a continuation, a new transfer plan
+       replaces the EXTENT_ACTION that started this thunk; defer cleanup
+       until that nested transfer finishes and replans. */
+    if (KosEvalState_PLAN(es)) {
+      KosTransferPlan *plan = KosEvalState_PLAN(es);
+      size_t idx = KosTransferPlan_ACTION_INDEX(plan);
+      if (idx < KosTransferPlan_ACTION_COUNT(plan)) {
+        KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
+        if (KosTransferAction_STEP(a) != KOS_XFER_EXTENT_ACTION
+            || KosTransferAction_EXTENT_NODE(a) != (KosDynNode *) wind)
+          return 0;
+      }
+    }
+
+    if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+        && KosStackBlock_LEN(*KosEvalState_BLOCK(es))) {
+      PyObject *thunk_ret = KosEvalState_StackPopRef(es);
+      if (thunk_ret)
+        Py_DECREF(thunk_ret);
+    }
 
     PyObject *body_result = KosDynWind_BODY_RESULT(wind);
     KosDynWind_BODY_RESULT(wind) = NULL;
@@ -193,6 +250,21 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
       kos_dyn_commit_dyn_top(es, parent);
       KosDynNode_PARENT((KosDynNode *) wind) = NULL;
       kos_dynwind_free(wind);
+    }
+
+    /* The EXTENT_ACTION that fired this after-thunk returned
+       KOS_XFER_SUSPENDED_AWAIT without advancing action_index; advance it
+       now that the thunk has completed. */
+    if (KosEvalState_PLAN(es)) {
+      KosTransferPlan *plan = KosEvalState_PLAN(es);
+      size_t idx = KosTransferPlan_ACTION_INDEX(plan);
+      if (idx < KosTransferPlan_ACTION_COUNT(plan)) {
+        KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
+        if (KosTransferAction_STEP(a) == KOS_XFER_EXTENT_ACTION
+            && KosTransferAction_EXTENT_NODE(a) == (KosDynNode *) wind
+            && KosTransferAction_EXTENT_PHASE(a) == KOS_XFER_EXTENT_PHASE_UNWIND)
+          KosTransferPlan_ACTION_INDEX(plan)++;
+      }
     }
 
     if (body_result) {

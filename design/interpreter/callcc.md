@@ -196,7 +196,8 @@ struct KosTransferPlan {
   KosTransferAction *actions;   /* action array */
   size_t action_count;          /* total actions */
   size_t action_index;          /* next action index */
-  KosDynNode *original_target;  /* for future replanning after nested transfers */
+  KosDynNode *original_target;  /* template chain; cloned before replan */
+  uint32_t graft_point_id;      /* LCA fallback when chains are disjoint */
 };
 ```
 
@@ -234,8 +235,9 @@ When a hook invokes another continuation:
 2. **Create new plan**: Build transfer plan for new continuation
 3. **Execute new plan**: Run to completion (may recurse)
 4. **Resume suspended plan**: Pop and continue remaining actions
-5. **Replan if needed** (future): If chain changed, recompute remaining actions
-   using `original_target`
+5. **Replan if needed**: Clone `original_target` before disarm, then rebuild
+   remaining actions with `kos_build_direct_install_plan` (preserves
+   `graft_point_id` and inject/resume PC/stack)
 
 ```c
 void kos_suspend_transfer_plan(KosEvalState *es);
@@ -245,8 +247,8 @@ int kos_resume_transfer_plan(KosEvalState *es);
 ### Chain-Change Detection
 
 After a nested transfer completes, the dynamic chain may have changed.
-`original_target` on the plan is retained for future replanning; there is no
-version counter.
+`original_target` on the suspended plan is cloned before disarm and passed to
+`kos_build_direct_install_plan`; there is no version counter.
 
 ## Wind/Unwind Semantics
 

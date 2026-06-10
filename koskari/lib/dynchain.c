@@ -2924,6 +2924,7 @@ int kos_build_transfer_plan(
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = target;
+  KosTransferPlan_GRAFT_POINT_ID(plan) = graft_point_id;
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3019,24 +3020,16 @@ int kos_build_delimited_push_plan(
 }
 
 
-/*
- * ============================================================================
- * RESERVED: NOT YET WIRED IN - NO CALLERS
- * ============================================================================
- *
- * Build a transfer plan that skips unwind (INSTALL + wind + INJECT only).
- * Use when the path from current to target crosses a PROMPT barrier that
- * kos_dyn_pop_top cannot traverse.
- *
- * Current code uses kos_build_transfer_plan, kos_build_delimited_push_plan,
- * kos_build_return_plan instead. When adding control operators that need to
- * transfer to an ancestor across a barrier without unwinding, call this and
- * wire the result into the transfer-plan execution path.
- *
- * Caller must set RESUME_PC, RESUME_FRAME, RESUME_STACK on the plan.
- * Returns 0 on success, -1 on error.
- * ============================================================================
- */
+/**
+   Build a transfer plan that skips unwind (INSTALL + wind + INJECT only).
+   Use when the current and target chains are disjoint or when the path
+   crosses a PROMPT barrier that kos_dyn_pop_top cannot traverse, such as
+   after a nested transfer interrupted and completed an outer plan's wind
+   thunk.
+
+   Caller must set RESUME_PC, RESUME_FRAME, RESUME_STACK on the plan.
+   Returns 0 on success, -1 on error.
+*/
 int kos_build_direct_install_plan(
     KosEvalState *es,
     KosDynNode *target,
@@ -3076,6 +3069,7 @@ int kos_build_direct_install_plan(
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = target;
+  KosTransferPlan_GRAFT_POINT_ID(plan) = graft_point_id;
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3257,6 +3251,7 @@ int kos_build_install_only_plan(
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
   KosTransferPlan_ORIGINAL_TARGET(plan) = target;
+  KosTransferPlan_GRAFT_POINT_ID(plan) = graft_point_id;
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -3863,24 +3858,16 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
 }
 
 
-/*
- * ============================================================================
- * RESERVED: NOT YET WIRED IN - NO CALLERS
- * ============================================================================
- *
- * Suspend the current transfer plan for nested transfer. Pushes active plan
- * onto ctx->plan_stack and clears KosEvalState_PLAN(es).
- *
- * MUST be called when a wind thunk (EXTENT_ACTION during transfer) invokes
- * another continuation. Without this, the inner invoke would clobber the
- * outer plan and the outer transfer would be lost.
- *
- * Call kos_suspend_transfer_plan(es) before building/running the inner plan,
- * then call kos_resume_transfer_plan(es) when the inner plan completes.
- *
- * See design/interpreter/callcc.md "When a hook invokes another continuation".
- * ============================================================================
- */
+/**
+   Suspend the current transfer plan for a nested transfer.  Pushes the
+   active plan onto plan_stack and clears KosEvalState_PLAN(es).
+
+   Called by kos_invoke_continuation when a continuation is invoked while
+   a transfer is already in progress (e.g. from a dynamic-wind thunk).
+   After the inner transfer completes, run_transfer_plan_to_completion calls
+   kos_resume_transfer_plan and rebuilds the remaining steps via
+   kos_build_direct_install_plan.
+*/
 void kos_suspend_transfer_plan(KosEvalState *es) {
 
   if (! KosEvalState_PLAN(es))
@@ -3892,20 +3879,13 @@ void kos_suspend_transfer_plan(KosEvalState *es) {
 }
 
 
-/*
- * ============================================================================
- * RESERVED: NOT YET WIRED IN - NO CALLERS
- * ============================================================================
- *
- * Resume a suspended transfer plan after nested transfer completes. Pops from
- * ctx->plan_stack and restores it as KosEvalState_PLAN(es).
- *
- * Must be called after the inner continuation transfer finishes, to continue
- * the outer plan. Pairs with kos_suspend_transfer_plan.
- *
- * Returns 0 on success, 0 when nothing to resume (plan_stack empty).
- * ============================================================================
- */
+/**
+   Resume a suspended transfer plan after a nested transfer completes.  Pops
+   from plan_stack and restores it as KosEvalState_PLAN(es).  Pairs with
+   kos_suspend_transfer_plan.
+
+   Returns 0 on success (or when nothing to resume).
+*/
 int kos_resume_transfer_plan(KosEvalState *es) {
 
   if (! KosEvalState_PLAN_STACK(es))
@@ -3916,6 +3896,19 @@ int kos_resume_transfer_plan(KosEvalState *es) {
   KosEvalState_PLAN(es)->suspended = NULL;
 
   return 0;
+}
+
+
+/**
+   Free all suspended transfer plans on plan_stack.
+*/
+void kos_free_transfer_plan_stack(KosEvalState *es) {
+
+  while (KosEvalState_PLAN_STACK(es)) {
+    KosTransferPlan *p = KosEvalState_PLAN_STACK(es);
+    KosEvalState_PLAN_STACK(es) = KosTransferPlan_SUSPENDED(p);
+    kos_free_transfer_plan(p);
+  }
 }
 
 
@@ -4033,6 +4026,7 @@ int kos_invoke_continuation(
     return -1;
   }
 
+  KosTransferPlan_GRAFT_POINT_ID(plan) = KosContinuation_GRAFT_POINT_ID(to_use);
   KosTransferPlan_RESUME_PC(plan) = KosContinuation_RESUME_PC(k);
   KosTransferPlan_RESUME_FRAME(plan) = to_use->resume_frame;  /* template; INSTALL uses fresh */
   /* DeepCopy of template stack for this invoke; released in kos_free_transfer_plan. */
@@ -4043,7 +4037,10 @@ int kos_invoke_continuation(
          (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
   #endif
 
-  /* Plan replacement: one active plan at a time; discard any existing plan */
+  /* If a transfer is already in progress (e.g. we were called from a wind
+     thunk during an EXTENT_ACTION step), suspend the outer plan so it can be
+     replanned and resumed after this inner transfer completes. */
+  kos_suspend_transfer_plan(es);
   KosEvalState_ArmTransferPlan(es, plan);
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
   if (continuation_ref) {

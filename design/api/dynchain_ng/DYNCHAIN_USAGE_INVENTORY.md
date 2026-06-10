@@ -122,7 +122,8 @@ Legend: **Ext** = referenced outside `dynchain.c` (must remain linkable and beha
 | `kos_dyn_build_pop_shift_plan` / `kos_dyn_build_push_shift_unwind_plan` | Y | POP_SHIFT, PUSH_SHIFT |
 | `kos_run_transfer_step` | Y | eval |
 | `kos_free_transfer_plan` | Y | eval, opcodes, tests |
-| `kos_suspend_transfer_plan` / `kos_resume_transfer_plan` | Int | reserved per header comments |
+| `kos_suspend_transfer_plan` / `kos_resume_transfer_plan` | Y | nested invoke during transfer; eval_chain replan |
+| `kos_free_transfer_plan_stack` | Y | fatal transfer errors in eval_chain |
 | `kos_invoke_continuation` | Y | eval, INVOKE_K*, cont |
 | `kos_dynnode_traverse` / `kos_dynchain_traverse` | Y | eval, iter |
 | `kos_continuation_traverse` / `kos_transferplan_traverse` | Y | eval, cont |
