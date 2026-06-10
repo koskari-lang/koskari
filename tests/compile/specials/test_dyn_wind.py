@@ -374,7 +374,7 @@ class TestDynWindTransferWindReproducer(SpecialsTestCase):
             return s
 
         def before_thunk():
-            record("before-%s" % before_pass[0])
+            record(f"before-{before_pass[0]}")
             before_pass[0] += 1
 
         def stash(k):
@@ -382,7 +382,7 @@ class TestDynWindTransferWindReproducer(SpecialsTestCase):
             saved.append(k)
 
         def invoke_saved():
-            record("invoke-saved-py saved=%s" % bool(saved))
+            record(f"invoke-saved-py saved={bool(saved)}")
             k = saved[0]
             saved.clear()
             return k(99)
@@ -412,14 +412,24 @@ class TestDynWindTransferWindReproducer(SpecialsTestCase):
             invoke_saved=invoke_saved,
             record=record,
             saved=saved)
+
         result = await expr()
-        self.assertGreaterEqual(
-            before_pass[0], 2,
-            msg="log=%r before_pass=%r" % (log, before_pass[0]))
-        self.assertTrue(
-            any(isinstance(entry, str) and "invoke-saved-py" in entry
-                for entry in log),
-            msg="log=%r" % (log,))
+
+        self.assertEqual(result, 99, msg=f"log={log}")
+        self.assertEqual(log, [
+            "before-setup",
+            "before-0",
+            "stash",
+            "stash-py",
+            "capture-body",
+            "after-setup",
+            42,
+            "invoke-saved-py saved=True",
+            "before-setup",
+            "before-1",
+            "after-setup",
+            99,
+        ])
 
 
 class TestDynWindTransferFailures(SpecialsTestCase):
@@ -448,7 +458,7 @@ class TestDynWindTransferFailures(SpecialsTestCase):
             return s
 
         def wind_before():
-            record("wind-before-%s" % wind_pass[0])
+            record(f"wind-before-{wind_pass[0]}")
             wind_pass[0] += 1
             if wind_pass[0] >= 2:
                 raise ValueError("wind-fail")
@@ -458,7 +468,7 @@ class TestDynWindTransferFailures(SpecialsTestCase):
             saved.append(k)
 
         def invoke_saved():
-            record("invoke-saved-py saved=%s" % bool(saved))
+            record(f"invoke-saved-py saved={bool(saved)}")
             k = saved[0]
             saved.clear()
             return k(99)
@@ -491,12 +501,24 @@ class TestDynWindTransferFailures(SpecialsTestCase):
             record=record,
             saved=saved,
             Exception=Exception)
+
         result = await expr()
-        self.assertEqual(result, "caught", msg="log=%r" % (log,))
-        self.assertIn("caught", log)
-        self.assertIn("stash", log)
-        self.assertIn("invoke-saved-py", log)
-        self.assertGreaterEqual(wind_pass[0], 2)
+
+        self.assertEqual(result, "caught")
+        self.assertEqual(log, [
+            "before-setup",
+            "wind-before-0",
+            "stash",
+            "stash-py",
+            "capture-body",
+            "after-setup",
+            "invoke-saved-py saved=True",
+            "before-setup",
+            "wind-before-1",
+            "caught",
+            "after-setup",
+        ])
+        self.assertEqual(wind_pass[0], 2)
 
 
     async def test_try_except_catches_koskari_raise_in_before_thunk_during_transfer(
@@ -515,7 +537,7 @@ class TestDynWindTransferFailures(SpecialsTestCase):
             return s
 
         def should_raise():
-            record("should-raise-%s" % wind_pass[0])
+            record(f"should-raise-{wind_pass[0]}")
             wind_pass[0] += 1
             return wind_pass[0] >= 2
 
@@ -524,7 +546,7 @@ class TestDynWindTransferFailures(SpecialsTestCase):
             saved.append(k)
 
         def invoke_saved():
-            record("invoke-saved-py saved=%s" % bool(saved))
+            record(f"invoke-saved-py saved={bool(saved)}")
             k = saved[0]
             saved.clear()
             return k(99)
@@ -572,17 +594,32 @@ class TestDynWindTransferFailures(SpecialsTestCase):
             Exception=Exception,
             ValueError=ValueError)
 
-        result = await expr()
+        try:
+          result = await expr()
 
-        # Dear AI agent. DO NOT REMOVE THIS PRINT STATEMENT. NO MATTER WHAT.
-        print(f"result: {result}")
-        print(f"log: {log}")
+        finally:
+          # Dear AI agent. DO NOT REMOVE THIS PRINT STATEMENT. NO MATTER WHAT.
+          print(f"log: {log}")
 
-        self.assertEqual(result, "caught", msg="log=%r" % (log,))
-        self.assertIn("caught", log)
-        self.assertIn("stash", log)
-        self.assertIn("invoke-saved-py", log)
-        self.assertGreaterEqual(wind_pass[0], 2)
+        self.assertEqual(result, "caught")
+        self.assertEqual(log, [
+            "before-setup",
+            "should-raise-0",
+            "before-setup-ok",
+            "stash",
+            "stash-py",
+            "capture-body",
+            "after-setup",
+            42,
+            "invoke-saved-py saved=True",
+            "before-setup",
+            "should-raise-1",
+            "raise",
+            "caught",
+            "after-setup",
+            "caught",
+        ])
+        self.assertEqual(wind_pass[0], 2)
 
 
 # The end.

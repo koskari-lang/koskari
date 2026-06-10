@@ -3171,8 +3171,9 @@ int kos_build_cc_unwind_plan(
      target=NULL treats lca=NULL, so it emits EXTENT_ACTION steps for every
      node that has NEEDS_UNWIND_ACTION (including our sentinel at the bottom),
      then INSTALL(NULL), then INJECT.  When the plan reaches the KosDynCCRaise
-     EXTENT_ACTION, cc_raise_unwind sets PyErr and returns -1, which causes
-     run_transfer_plan_to_completion to package it as KOS_EV_RAISE. */
+     EXTENT_ACTION, cc_raise_unwind sets PyErr and returns -1; eval_chain.c
+     special-cases that sentinel step (not generic plan failure) and packages
+     it as KOS_EV_RAISE for the parent eval loop. */
   return kos_build_transfer_plan(es, NULL, Py_None, 0, 0, out_plan);
 }
 

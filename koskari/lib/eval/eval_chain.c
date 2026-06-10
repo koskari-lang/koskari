@@ -364,6 +364,44 @@ static int abandon_xfer_and_try_local(KosEvalState *es, KosEvent *out_ev) {
 
 
 /**
+  True when the current (failed) plan step is a KosDynCCRaise sentinel
+  re-emit from kos_build_cc_unwind_plan (foreign apply signal delivery).
+*/
+static int xfer_plan_step_is_cc_raise_reemit(KosEvalState *es) {
+
+  KosTransferPlan *plan = KosEvalState_PLAN(es);
+  if (! plan)
+    return 0;
+
+  size_t idx = KosTransferPlan_ACTION_INDEX(plan);
+  if (idx >= KosTransferPlan_ACTION_COUNT(plan))
+    return 0;
+
+  KosTransferAction *action = &KosTransferPlan_ACTIONS(plan)[idx];
+  if (KosTransferAction_STEP(action) != KOS_XFER_EXTENT_ACTION)
+    return 0;
+
+  KosDynNode *node = KosTransferAction_EXTENT_NODE(action);
+  return node && KosDynNode_IS_CC_RAISE(node);
+}
+
+
+/**
+  Foreign cc-unwind sentinel step: emit KOS_EV_RAISE upward, disarm nest.
+  Not a failed transfer; do not route through try_local.
+
+  :return: -1 with out_ev set to KOS_EV_RAISE
+*/
+static int xfer_emit_cc_unwind_signal(KosEvalState *es, KosEvent *out_ev) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
+  kos_abandon_transfer_nest(es);
+  return -1;
+}
+
+
+/**
   Run the current transfer plan to completion.
 
   :return: 0 on success (plan cleared or suspended on await),
@@ -375,12 +413,24 @@ static int run_transfer_plan_to_completion(
     KosEvent *out_ev) {
 
   while (KosEvalState_PLAN(es)) {
+    if (PyErr_Occurred()) {
+      if (! (KoskariContinuationApply
+             && PyErr_ExceptionMatches(KoskariContinuationApply))) {
+        SAY("[eval] transfer drain with pending PyErr -> abandon + try_local\n");
+        return abandon_xfer_and_try_local(es, out_ev);
+      }
+    }
+
     SAYF("[eval] transfer step %zu/%zu\n",
          (size_t) KosTransferPlan_ACTION_INDEX(KosEvalState_PLAN(es)),
          (size_t) KosTransferPlan_ACTION_COUNT(KosEvalState_PLAN(es)));
     int plan_res = kos_run_transfer_step(es, out_ev);
 
     if (plan_res < 0) {
+      if (xfer_plan_step_is_cc_raise_reemit(es)) {
+        SAY("[eval] cc-unwind sentinel re-emit -> KOS_EV_RAISE\n");
+        return xfer_emit_cc_unwind_signal(es, out_ev);
+      }
       SAY("[eval] transfer step failed -> abandon + try_local\n");
       return abandon_xfer_and_try_local(es, out_ev);
     }

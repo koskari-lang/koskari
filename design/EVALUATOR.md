@@ -264,7 +264,7 @@ flowchart TD
     has_plan{"plan?"}
     step["plan_res = kos_run_transfer_step(es, out_ev)"]
     step_check{"plan_res?"}
-    fail["plan_res < 0<br/>disarm + free plan_stack<br/>KOS_EV_RAISE (today)"]
+    fail["plan_res < 0<br/>abandon + try_local<br/>(or KOS_EV_RAISE if unhandled<br/>or cc-unwind signal emit)"]
     suspend["plan_res == KOS_XFER_SUSPENDED_AWAIT<br/>return 0 (plan stays)"]
     next_step["next step"]
     clear["KosEvalState_DisarmTransferPlan(es)"]
@@ -296,10 +296,13 @@ plan is suspended on **`plan_stack`**. After the inner plan drains,
 disarm (UAF avoidance), rebuilds via **`kos_build_direct_install_plan`**, and
 continues draining. See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5.
 
-**Failed transfer (not yet implemented):** on step failure the plan is disarmed and
-**`plan_stack`** is freed, then **`KOS_EV_RAISE`** is emitted. Planned behavior:
-abandon the nest and run **`try_local_exception_handler`** on the manifested chain
-(in-place migration model; see interrupted-transfer-plans.md §3–§4).
+**Failed transfer (implemented):** on step failure (except foreign cc-unwind
+sentinel re-emit), **`kos_abandon_transfer_nest`** disarms the plan and frees
+**`plan_stack`**, then **`try_local_exception_handler`** runs on the manifested
+chain. Return `1` continues the eval loop when a handler applies; unhandled
+exceptions emit **`KOS_EV_RAISE`**. **`KOS_DYN_CC_RAISE`** sentinel steps emit
+**`KOS_EV_RAISE`** upward without **`try_local`**. See
+[interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §3–§4.
 
 ### 2.3 Phase 3: Pending Exception Check
 
@@ -753,9 +756,12 @@ frame on the dyn chain), not a nested eval invocation. Thunk failure may be
 sync ( **`CallNoArgs`** returns -1) or async (bytecode raises under a suspended
 plan).
 
-**Failed transfer (planned, not implemented):** abandon plan + **`plan_stack`**,
-then **`try_local`** on the manifested chain. Undelimited invoke does not expect
-a return at the invoke site on success or failure.
+**Failed transfer (implemented):** abandon plan + **`plan_stack`**, then
+**`try_local`** on the manifested chain (cc-unwind sentinel carve-out excepted).
+Undelimited invoke does not expect a return at the invoke site on success or
+failure. Exception policy is still split across **`process_raise`**,
+**`eval_phase_entry`**, and **`run_transfer_plan_to_completion`** — see
+[event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md).
 
 ### 6.5 Call Sites for run_transfer_plan_to_completion
 
@@ -919,13 +925,13 @@ Tests: **`TestDynWindContinuations`** in `tests/compile/specials/test_dyn_wind.p
 
 ### 9.8 Scenario: Transfer Plan Step Fails
 
-**Current behavior:**
+1. Plan is draining. `kos_run_transfer_step` returns < 0 (e.g. sync failure in extent action, **`CallNoArgs`** error, or cc-unwind sentinel re-emit).
+2. **Foreign cc-unwind** (`KOS_DYN_CC_RAISE` `EXTENT_ACTION`): **`xfer_emit_cc_unwind_signal`** fills **`out_ev`** with **`KOS_EV_RAISE`** and disarms the nest — no **`try_local`** (dyn-with teardown already ran with PyErr clear).
+3. **Ordinary failure:** **`abandon_xfer_and_try_local`** abandons the nest and runs **`try_local_exception_handler`**. Return `1` → caller **`REPROLOGUE`** / **`CONTINUE`**; return `-1` → **`KOS_EV_RAISE`**, **`STOP_EVENT`**.
+4. **Thunk bytecode raise** under **`KOS_XFER_SUSPENDED_AWAIT`**: prologue **`eval_phase_pending_exception`** runs **`process_raise`** (which abandons the plan) before plan drain; same **`try_local`** path.
+5. Manifested dyn chain is left wherever steps got to; no transactional rollback to the invoke site.
 
-1. Plan is draining. `kos_run_transfer_step` returns < 0 (e.g. sync failure in extent action, or **`CallNoArgs`** error starting a wind thunk).
-2. **`run_transfer_plan_to_completion`** disarms the active plan, calls **`kos_free_transfer_plan_stack`**, fetches PyErr, fills **`out_ev`** with **`KOS_EV_RAISE`**, returns -1.
-3. Caller exits with **`KOS_STEP_STOP_EVENT`**; the manifested dyn chain is left wherever the steps got to.
-
-**Planned behavior** (see [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §4): after abandon, run **`try_local_exception_handler`** on the manifested chain; continue the eval loop if a handler applies. Same abandon path when **`PyErr`** arises during a thunk running under **`KOS_XFER_SUSPENDED_AWAIT`**. No transactional rollback to the invoke site.
+See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §4.
 
 ### 9.9 Scenario: Ctrl-C during a tight bytecode loop
 

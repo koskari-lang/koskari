@@ -2509,17 +2509,22 @@ cg_prologue:
   }
   #endif
 
-  {
-    KosEvalStep xfer = eval_step_drain_transfer_plan(es, out_ev);
-    if (xfer == KOS_STEP_STOP_EVENT)
-      return 0;
-  }
-
+  /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a wind
+     before-thunk) must run abandon + try_local before draining the plan;
+     otherwise the wind EXTENT_ACTION can complete while PyErr is still set. */
   {
     KosEvalStep pend = eval_phase_pending_exception(es, out_ev);
     if (pend == KOS_STEP_STOP_EVENT)
       return 0;
     if (pend == KOS_STEP_REPROLOGUE)
+      goto cg_prologue;
+  }
+
+  {
+    KosEvalStep xfer = eval_step_drain_transfer_plan(es, out_ev);
+    if (xfer == KOS_STEP_STOP_EVENT)
+      return 0;
+    if (xfer == KOS_STEP_REPROLOGUE)
       goto cg_prologue;
   }
 

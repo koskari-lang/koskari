@@ -1,10 +1,10 @@
 # Interrupted and failed transfer plans
 
-**Status:** Nested continuation interrupt **done** (branch `interrupted_transfer`).
-Failed/exception transfer abandonment **not started** — next work item.
+**Status:** **Complete** on branch `interrupted_transfer`. Nested continuation
+interrupt (§5) and failed/exception transfer abandonment (§4) are both landed.
 
-**Audience:** Agents continuing the feature; maintainers reviewing continuation +
-dyn-wind integration.
+**Audience:** Maintainers and agents reviewing continuation + dyn-wind
+integration; reference for follow-up work (delimited replan, async nested await).
 
 **Repository root:** `sibilant-ng/`
 
@@ -28,16 +28,17 @@ dyn-wind integration.
 
 | If you need to… | Read |
 |-----------------|------|
-| See what is already implemented | §2 Implementation status |
-| Understand the in-place migration model (why failed transfers raise on the manifested chain) | §3 Architectural decision |
-| Implement failed/exception transfer handling (your task) | §4 Failed transfer plans — implementation plan |
-| Understand nested continuation interrupt (already done) | §5 Nested continuation interrupt (done) |
+| See what is implemented | §2 Implementation status |
+| Understand the in-place migration model (why failed transfers dispatch on the manifested chain) | §3 Architectural decision |
+| Review failed/exception transfer behavior (landed) | §4 Failed transfer abandonment (done) |
+| Understand nested continuation interrupt | §5 Nested continuation interrupt (done) |
 | Reference data structures and runtime flow | §6 Runtime reference |
 | Run regression tests | §7 Test plan |
-| Know when the next milestone is complete | §8 Acceptance criteria |
+| Acceptance criteria (both milestones) | §8 Acceptance criteria |
 
-**Do not** abandon and rewrite the transfer machinery. Nested interrupt is landed;
-failed-transfer work layers on top via abandon + normal exception dispatch.
+**Do not** abandon and rewrite the transfer machinery. Failed-transfer handling
+layers on nested interrupt via **`kos_abandon_transfer_nest`** + normal exception
+dispatch, with a carve-out for foreign cc-unwind signal re-emit (§4.3).
 
 **Do not commit** unless the user explicitly requests it (repository git rules).
 
@@ -57,14 +58,15 @@ continuation. The outer plan must be **suspended**, the inner transfer must run
 to completion, then the outer plan must be **replanned** from the *current*
 dynamic chain to its `original_target` via `kos_build_direct_install_plan`.
 
-### 1.2 Failed transfer (exception during plan) — **NOT DONE**
+### 1.2 Failed transfer (exception during plan) — **DONE**
 
 While a plan is stepping, any step may fail with an exception — notably a
 before/after thunk raising during wind/unwind, or a synchronous failure in
-`kos_run_transfer_step`. The plan must be **abandoned** (disarmed + `plan_stack`
-freed). Exception dispatch must then proceed on the **manifested chain** as
-normal eval (via `try_local_exception_handler`), not as a hard `KOS_EV_RAISE`
-to an invoke site.
+`kos_run_transfer_step`. The plan nest is **abandoned** (disarmed + `plan_stack`
+freed). Exception dispatch proceeds on the **manifested chain** via
+`try_local_exception_handler`; if a handler applies, the eval loop continues.
+Unhandled exceptions still surface as **`KOS_EV_RAISE`**. Foreign cc-unwind
+sentinel re-emit is **not** a failure — see §4.3 carve-out.
 
 **Explicit non-goal for now:** transactional/scratch-space transfer (build full
 target chain off to the side, then swap atomically). Transfer is **in-place
@@ -74,7 +76,7 @@ migration** step by step; see §3.
 
 ## 2. Implementation status
 
-### 2.1 Done (landed on `interrupted_transfer`)
+### 2.1 Done — nested continuation interrupt (§5)
 
 | Item | Location | Notes |
 |------|----------|-------|
@@ -83,38 +85,50 @@ migration** step by step; see §3.
 | UAF fix: clone `original_target` before disarm | replan block in `eval_chain.c` | `target_keep` via `kos_clone_chain_segment` |
 | `graft_point_id` on `KosTransferPlan` | `dynchain.h`, plan builders, invoke | preserved on replan |
 | `resume_frame = NULL` on replan | `eval_chain.c` | INSTALL finds frame from segment |
-| `kos_free_transfer_plan_stack` | `dynchain.c`, `dynchain.h` | called on fatal transfer errors |
+| `kos_free_transfer_plan_stack` | `dynchain.c`, `dynchain.h` | called on abandon / fatal paths |
 | `dyn_wind` nested-transfer guards | `dyn_wind.c` | `on_chain`, EXTENT_ACTION matching, safe stack pops |
 | `PRE_AFTER` unwind guard | `dyn_wind.c` | no double after-thunk during nested unwind |
 | `action_index++` on after-thunk return | `dyn_wind.c` | guarded to matching EXTENT_ACTION |
 | Tests: `TestDynWindContinuations` (3) | `test_dyn_wind.py` | all pass |
-| Full `test_dyn_wind.py` (13) | | all pass |
-| Regression: `test_call_cc`, `test_continuations`, `test_reset_shift_nested` | | all pass |
-| Design docs partial update | `TODO.md`, `callcc.md`, `DYNCHAIN_USAGE_INVENTORY.md` | nested interrupt marked done |
 
-### 2.2 Not done (next agent work)
+### 2.2 Done — failed transfer abandonment (§4)
+
+| Item | Location | Notes |
+|------|----------|-------|
+| `kos_abandon_transfer_nest` | `eval_chain.c` (static) | disarm + `kos_free_transfer_plan_stack` |
+| `abandon_xfer_and_try_local` | `eval_chain.c` | abandon then `try_local_exception_handler` |
+| `plan_res < 0` → abandon + `try_local` | `run_transfer_plan_to_completion` | return `1` if handler applied |
+| cc-unwind signal carve-out | `eval_chain.c` | `xfer_plan_step_is_cc_raise_reemit` → `KOS_EV_RAISE`, not `try_local` |
+| Replan clone / `direct_install` failures | `eval_chain.c` | same abandon + `try_local` |
+| Abandon on `PyErr` during suspended thunk | `process_raise` | skip when `KoskariContinuationApply` |
+| Abandon on entry `KOS_MODE_EXCEPTION` | `eval_phase_entry` | before `try_local` |
+| Prologue ordering | `cg_prologue` | `eval_phase_pending_exception` before plan drain |
+| `try_local` when `dyn_top == frame_top` | `kos_dyn_try_local_raise_body` | `try_local_extent_on_current_frame` (extent table) |
+| Caller plumbing return `1` | `eval_phase_transfer`, `eval_step_drain_transfer_plan` | CONTINUE / REPROLOGUE on handler applied |
+| Tests: `TestDynWindTransferFailures` (2) | `test_dyn_wind.py` | Python + Koskari raise in before-thunk under `try` |
+| Tests: `TestDynWindTransferWindReproducer` (1) | `test_dyn_wind.py` | before-thunk runs twice on transfer |
+| Foreign apply + dyn-with | `test_continuations.py` | `__exit__` sees no exception during cc-unwind |
+
+### 2.3 Follow-ups (not started)
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| **Abandon plan + `try_local` on transfer failure** | **P0** | §4 — core deliverable |
-| **`try_local` when `dyn_top == frame_top`** | **P0** | likely required for thunk failures; see §4.4 |
-| Abandon plan when `PyErr` during suspended transfer (thunk in opcode loop) | P0 | same helper, different call site |
-| `eval_phase_transfer` / `eval_step_drain_transfer_plan` continue on handler applied | P0 | return REPROLOGUE/CONTINUE, not STOP |
-| Tests: `try/except` on installed segment during transfer wind | P0 | §7.2 |
-| Delimited replan builder selection | P2 | §6.7 — `PUSH` vs `INSTALL` |
-| Async nested await + `plan_stack` | P2 | §6.8 |
+| Delimited replan builder selection | P2 | §6.5 — `PUSH` vs `INSTALL` |
+| Async nested await + `plan_stack` | P2 | §6.5 |
+| Unified RAISE ingress (event-driven eval) | P2 | see [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md), [TODO.md](../TODO.md) |
 | Triple-nested `let/cc` tests | P3 | optional coverage |
 | Transactional transfer (scratch build) | **deferred** | explicit non-goal |
 
-### 2.3 Files touched (completed work)
+### 2.4 Files touched
 
 | File | Changes |
 |------|---------|
-| `koskari/lib/eval/eval_chain.c` | replan loop, target clone, graft_id, resume_frame null, plan_stack cleanup |
-| `koskari/lib/dynchain.c` | suspend in invoke, `kos_free_transfer_plan_stack`, graft_id in builders |
+| `koskari/lib/eval/eval_chain.c` | replan loop, abandon helpers, cc-unwind carve-out, return codes |
+| `koskari/lib/eval.c` | `process_raise` abandon guard, prologue ordering, caller plumbing |
+| `koskari/lib/dynchain.c` | suspend in invoke, `kos_free_transfer_plan_stack`, `try_local` extent fix |
 | `koskari/lib/dynchain.h` | `graft_point_id` field, helper decl |
 | `koskari/lib/dynchain/dyn_wind.c` | nested-transfer CONTROL_RETURNED guards |
-| `tests/compile/specials/test_dyn_wind.py` | `TestDynWindContinuations` |
+| `tests/compile/specials/test_dyn_wind.py` | `TestDynWindContinuations`, `TestDynWindTransferFailures`, `TestDynWindTransferWindReproducer` |
 
 ---
 
@@ -161,16 +175,21 @@ separate `koskari_eval` invocations.
 
 Two failure shapes:
 
-| Shape | How it happens | Today |
-|-------|----------------|-------|
-| **Sync call failure** | `CallNoArgs` returns `-1` before thunk bytecode runs | `plan_res < 0` → disarm → `KOS_EV_RAISE` (no `try_local`) |
-| **Thunk bytecode raises** | Plan suspended (`KOS_XFER_SUSPENDED_AWAIT`); opcode loop runs thunk; `PyErr` in post_opcode | `eval_event_raise` → `try_local`, but plan still armed; `try_local` gaps |
+| Shape | How it happens | Behavior (landed) |
+|-------|----------------|-------------------|
+| **Sync call failure** | `CallNoArgs` returns `-1` before thunk bytecode runs | `plan_res < 0` → abandon + `try_local` (or `KOS_EV_RAISE` if unhandled) |
+| **Thunk bytecode raises** | Plan suspended (`KOS_XFER_SUSPENDED_AWAIT`); opcode loop runs thunk; `PyErr` in post_opcode | prologue `eval_phase_pending_exception` → `process_raise` abandons plan → `try_local` |
+
+**Known gap:** exception policy is still split across `process_raise`, `eval_phase_entry`,
+and `run_transfer_plan_to_completion` rather than one event-driven handler. See
+[event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md) §3.3, §6.
 
 ---
 
-## 4. Failed transfer plans — implementation plan
+## 4. Failed transfer abandonment (done)
 
-This section is the **actionable bootstrap** for the next agent.
+This section documents the **landed** behavior. For the original bootstrap plan,
+see git history on `interrupted_transfer`.
 
 ### 4.1 Goal (one sentence)
 
@@ -181,12 +200,7 @@ eval loop**; if not, emit `KOS_EV_RAISE` as today.
 
 ### 4.2 Core helper: `kos_abandon_transfer_nest`
 
-**Add** to `dynchain.c` (or `eval_chain.c` if eval-only), declare in `dynchain.h`
-or `eval.h`:
-
-```c
-void kos_abandon_transfer_nest(KosEvalState *es);
-```
+**Location:** `eval_chain.c` (static). Paired with **`abandon_xfer_and_try_local`**.
 
 **Behavior:**
 
@@ -201,27 +215,11 @@ Idempotent if called when no plan active (disarm no-op, stack walk empty).
 
 **File:** `koskari/lib/eval/eval_chain.c`
 
-**Current code** (on `plan_res < 0` and replan errors):
-
-```c
-kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-KosEvalState_DisarmTransferPlan(es);
-kos_free_transfer_plan_stack(es);
-return -1;
-```
-
-**Replace with:**
-
-```c
-kos_abandon_transfer_nest(es);
-int tl = try_local_exception_handler(es, out_ev);  /* or KosEvalState_Transition KOS_TRANS_TRY_LOCAL_RAISE */
-if (tl > 0)
-  return 1;   /* new return code: handler applied, continue eval */
-if (tl < 0)
-  return -1;  /* fatal PyErr */
-/* tl == 0: out_ev already KOS_EV_RAISE, PyErr cleared */
-return -1;
-```
+On `plan_res < 0` (and replan allocation failures), **`abandon_xfer_and_try_local`**
+runs unless the failing step is a **`KOS_DYN_CC_RAISE`** `EXTENT_ACTION` (foreign
+cc-unwind sentinel re-emit). That carve-out calls **`xfer_emit_cc_unwind_signal`**
+(`kos_eval_emit_raise_from_pyerr` + disarm) — **not** `try_local`. See
+`test_continuation_passes_through_intermediate_context_with_dyn_with_unwind`.
 
 **Return code convention** for `run_transfer_plan_to_completion`:
 
@@ -235,83 +233,41 @@ Apply the same abandon + `try_local` pattern on **replan clone failure** and
 **`kos_build_direct_install_plan` failure** paths (after freeing `target_keep`
 if allocated), not only `plan_res < 0`.
 
+**Exception:** when `plan_res < 0` on a `KOS_DYN_CC_RAISE` `EXTENT_ACTION`
+(foreign cc-unwind sentinel re-emit), emit `KOS_EV_RAISE` via
+`kos_eval_emit_raise_from_pyerr` and disarm the nest — do **not** call
+`try_local`. See §3.1.
+
 ### 4.4 Call site B — exception during suspended transfer (thunk in opcode loop)
 
-When a wind/unwind thunk runs under `KOS_XFER_SUSPENDED_AWAIT`, the plan remains
-armed. If the thunk raises, `eval_event_raise` → `process_raise` →
-`try_local_exception_handler` runs **with the plan still active** — inconsistent.
+**Landed in two places:**
 
-**Add** at the start of `process_raise` or `eval_event_raise` in `eval.c`:
+1. **`process_raise`** (`eval.c`): abandons plan nest when active, **except** when
+   PyErr is **`KoskariContinuationApply`** (nested interrupt / foreign apply arms a
+   new plan).
+2. **`cg_prologue`** (`eval.c`): **`eval_phase_pending_exception`** runs **before**
+   **`eval_step_drain_transfer_plan`**, so a thunk raise under
+   **`KOS_XFER_SUSPENDED_AWAIT`** abandons via `process_raise` before the wind
+   `EXTENT_ACTION` can complete with PyErr still set.
 
-```c
-if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
-  kos_abandon_transfer_nest(es);
-```
-
-Then existing `try_local` runs on a clean post-transfer state.
-
-**Careful:** do **not** call abandon on `KoskariContinuationApply` before
-`handle_continuation_apply` — that path **arms** a new plan. Only abandon when
-dispatching an ordinary exception, not when installing a continuation transfer.
-
-Suggested guard:
-
-```c
-if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es)) {
-  if (! (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply)))
-    kos_abandon_transfer_nest(es);
-}
-```
+**`eval_phase_entry`** (`KOS_MODE_EXCEPTION`): also abandons plan nest before
+`try_local` when reviving with `throw_exc`.
 
 ### 4.5 Caller plumbing — continue eval on handler applied
 
-Two callers invoke `run_transfer_plan_to_completion`:
+**Landed.** Callers distinguish return `1` (handler applied) from `-1` (unhandled):
 
-| Caller | File | Change |
-|--------|------|--------|
-| `eval_phase_transfer` | `eval.c` (~1937) | if return `1` → `KOS_STEP_CONTINUE` (enter dispatch loop) |
-| `eval_step_drain_transfer_plan` | `eval.c` (~2349) | if return `1` → `KOS_STEP_REPROLOGUE` or `KOS_STEP_CONTINUE` |
+| Caller | File | On return `1` |
+|--------|------|---------------|
+| `eval_phase_transfer` | `eval.c` | `KOS_STEP_CONTINUE` |
+| `eval_step_drain_transfer_plan` | `eval.c` | `KOS_STEP_REPROLOGUE` |
 
-Today both map any `< 0` to `KOS_STEP_STOP_EVENT`. Teach them to distinguish
-`1` (handler applied) from `-1` (unhandled raise).
+### 4.6 `try_local` when `dyn_top == frame_top`
 
-Also verify `eval_phase_entry` path when `revive_plan` gets `throw_exc` with an
-active plan — may need abandon before `KOS_MODE_EXCEPTION` → `try_local`.
-
-### 4.6 `try_local` gap: `dyn_top == frame_top`
-
-**File:** `kos_dyn_try_local_raise_body` in `dynchain.c`
-
-The walk loop only runs while `dyn_top != frame_top`. When a **before-thunk
-frame** raises, `dyn_top` is often **the thunk frame** — equal to `frame_top` —
-so the walk never runs and handler search fails immediately.
-
-**Minimum fix** (choose one):
-
-**Option A — extent table on current frame first:**
-
-At the top of `kos_dyn_try_local_raise_body`, if `dyn_top == frame_top` and
-`PyErr_Occurred()` and `KosEvalState_FRAME(es)`:
-
-```c
-KosTryHandler th;
-if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
-                        KosEvalState_ACTING_PC(es), &th) == 0
-    && th.except_pc != KOS_EXTENT_NONE)
-  /* jump to th.except_pc, same as CONSUMED path for TRY */
-```
-
-**Option B — walk from parent:**
-
-If `dyn_top == frame_top`, set walk start to `KosDynNode_PARENT(frame)` and
-continue the existing loop (still need TRY node on chain above frame).
-
-**Reference:** `tests/lib/test_demand_sync.py` documents the same class of bug
-outside transfers (`TestDemandSyncTryExceptAwaitInject`).
-
-Without this fix, wiring abandon → `try_local` may be structurally correct but
-**won't catch ancestor `try`** during transfer wind failures (the motivating
-`do-foo` / `do-something` / dyn-wind scenario).
+**Landed (Option A).** `kos_dyn_try_local_raise_body` calls
+**`try_local_extent_on_current_frame`** when `dyn_top == frame_top` and PyErr is
+set, using the bytecode extent table before the dyn-chain walk. Required for
+before-thunk raises during transfer wind (`TestDynWindTransferFailures`).
 
 ### 4.7 What we are **not** doing on failure
 
@@ -325,18 +281,10 @@ Without this fix, wiring abandon → `try_local` may be structurally correct but
 Optional **phase 2:** if handler swallows but entered outer winds need after-thunks,
 rely on normal `try`/`finally` unwind — do not add unless tests prove resource leaks.
 
-### 4.8 Suggested implementation order
+### 4.8 Implementation order (completed)
 
-1. Read §3 and §5 (context).
-2. `make build-ext`; confirm `TestDynWindContinuations` still passes (regression gate).
-3. Implement `kos_abandon_transfer_nest`.
-4. Wire call site A in `run_transfer_plan_to_completion`; update return codes.
-5. Wire caller plumbing (§4.5).
-6. Wire call site B in `process_raise` / `eval_event_raise` with continuation guard.
-7. Fix `try_local` `dyn_top == frame_top` (§4.6).
-8. Add tests §7.2 (failed transfer + `try/except`).
-9. Full regression §7.1.
-10. Update `design/TODO.md` when green.
+Steps 1–9 from the original bootstrap plan are done. Regression gate §7.1 and
+new tests §7.2 pass.
 
 ### 4.9 Motivating scenario (test sketch)
 
@@ -494,18 +442,18 @@ tox -qe py -- tests/compile/specials/test_call_cc.py tests/lib/opcode/test_conti
 tox -qe py -- tests/reproducers/test_reset_shift_nested.py -q
 ```
 
-### 7.2 New tests for failed transfer (add these)
+### 7.2 Failed transfer tests (landed)
 
-| Test | Purpose |
-|------|---------|
-| `try/except` on installed segment catches wind before-thunk error during transfer | Core §4.9 scenario (simplified) |
-| Sync Python error in before-thunk during transfer | Call site A path |
-| Koskari before-thunk `raise` during transfer | Call site B + `try_local` fix |
-| Nested interrupt still passes after failed-transfer wiring | No regression on §5 |
+| Test class / method | Purpose |
+|---------------------|---------|
+| `TestDynWindTransferFailures::test_try_except_catches_python_error_in_before_thunk_during_transfer` | Python error in before-thunk; `try/except` on installed segment |
+| `TestDynWindTransferFailures::test_try_except_catches_koskari_raise_in_before_thunk_during_transfer` | Koskari `compile/raise` under suspended thunk; prologue ordering + extent fix |
+| `TestDynWindTransferWindReproducer::test_before_thunk_runs_on_transfer_into_dyn_wind_body` | Wind re-entry during transfer (no failure) |
+| `TestDynWindContinuations` (3) | Nested interrupt regression after failed-transfer wiring |
+| `test_continuation_passes_through_intermediate_context_with_dyn_with_unwind` | cc-unwind carve-out; dyn-with `__exit__` sees no exception |
 
-Place in `tests/compile/specials/test_dyn_wind.py` (new class e.g.
-`TestDynWindTransferFailures`) or `tests/reproducers/`. No type annotations;
-use `tox` only per [testing rules](../../.cursor/rules/testing.mdc).
+All in `tests/compile/specials/test_dyn_wind.py` or `tests/lib/opcode/test_continuations.py`.
+Use `tox` only per [testing rules](../../.cursor/rules/testing.mdc).
 
 ### 7.3 Trace debugging
 
@@ -525,15 +473,13 @@ KOS_XFER_TRACE=1 KOS_STACK_TRACE=1 tox -qe gdb -- \
 3. No regressions in call_cc, continuations, reset_shift_nested.
 4. §5.2 UAF fix, §5.3 dyn_wind guards, `graft_point_id`, `plan_stack` cleanup.
 
-### 8.2 Failed transfer abandonment — **NEXT MILESTONE**
+### 8.2 Failed transfer abandonment — **COMPLETE**
 
-1. `kos_abandon_transfer_nest` implemented and used at all failure paths (§4.3–4.5).
-2. Exception during transfer wind reaches `try/except` on manifested chain when
-   handler exists (§4.9 scenario).
-3. `try_local` handles `dyn_top == frame_top` for thunk-frame faults (§4.6).
-4. Nested continuation tests still pass (§7.1).
-5. `design/TODO.md` updated to split "nested interrupt" (done) from "failed
-   transfer" (done when §8.2 complete).
+1. `kos_abandon_transfer_nest` and `abandon_xfer_and_try_local` at failure paths (§4.3–4.5).
+2. Transfer wind failures reach `try/except` on manifested chain when handler exists.
+3. `try_local` handles `dyn_top == frame_top` via extent table (§4.6).
+4. cc-unwind sentinel carve-out preserves foreign-apply dyn-with semantics.
+5. Nested continuation and full regression gate pass (§7.1).
 
 ### 8.3 Explicitly out of scope
 
@@ -546,12 +492,12 @@ KOS_XFER_TRACE=1 KOS_STACK_TRACE=1 tox -qe gdb -- \
 
 ## 9. Regression checklist
 
-- [ ] `make build-ext` clean.
-- [ ] `TestDynWindContinuations` — 3/3.
-- [ ] Full `test_dyn_wind.py` — 13/13.
-- [ ] `test_call_cc`, `test_continuations`, `test_reset_shift_nested`.
-- [ ] New failed-transfer tests (§7.2) green.
-- [ ] Grep: no `RESERVED — NOT YET WIRED` on suspend/resume/direct_install.
+- [x] `make build-ext` clean.
+- [x] `TestDynWindContinuations` — 3/3.
+- [x] `TestDynWindTransferFailures` — 2/2.
+- [x] `TestDynWindTransferWindReproducer` — 1/1.
+- [x] `test_call_cc`, `test_continuations`, `test_reset_shift_nested`.
+- [x] `test_continuation_passes_through_intermediate_context_with_dyn_with_unwind`.
 - [ ] Trace nested interrupt once if touching `dyn_wind.c` or replan block.
 
 ---
@@ -569,9 +515,9 @@ KOS_XFER_TRACE=1 KOS_STACK_TRACE=1 tox -qe gdb -- \
 | `kos_invoke_continuation` | `dynchain.c` |
 | `kos_dyn_wind_on_control_returned` | `dynchain/dyn_wind.c` |
 | `kos_build_direct_install_plan` | `dynchain.c` |
-
-**Add:** `kos_abandon_transfer_nest` — suggested home `dynchain.c` alongside
-`kos_free_transfer_plan_stack`.
+| `kos_abandon_transfer_nest`, `abandon_xfer_and_try_local` | `eval/eval_chain.c` |
+| `xfer_plan_step_is_cc_raise_reemit`, `xfer_emit_cc_unwind_signal` | `eval/eval_chain.c` |
+| `try_local_extent_on_current_frame` | `dynchain.c` |
 
 ---
 

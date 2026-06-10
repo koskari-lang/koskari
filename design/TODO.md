@@ -5,23 +5,33 @@ design docs for detail.
 
 ---
 
-## Continuations / transfer plans
+## Evaluator architecture
 
-### Interrupted transfer plans
+### Event-driven eval handlers (RAISE / RETURN migration)
 
-**Nested continuation interrupt — done:** suspend/resume/replan when a wind thunk
-invokes another continuation during an active transfer (`interrupted_transfer`
-branch). See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5.
+**Status:** Partially realized. YIELD and RETURN boundary delivery to
+**`KOS_DYN_NEXT`** / **`KOS_DYN_FOREACH`** share eval-owned helpers; most
+**`RETURN`** unwind/parent delivery still lives in the opcode. **RAISE** is not
+fully unified: **`process_raise`** is the central hub, but **`eval_phase_entry`**
+(**`KOS_MODE_EXCEPTION`**), **`run_transfer_plan_to_completion`**, and
+**`KOS_MODE_RAISE`** still embed parallel exception policy.
 
-**Failed transfer abandonment — not done (next):** on exception during any
-transfer step, abandon plan + `plan_stack`, dispatch via `try_local` on the
-manifested chain (in-place migration model; no transactional transfer). Full
-implementation plan: same doc §3–§4.
+**Review:** migrate further toward a single “exception received” state in the
+eval loop — all PyErr / **`KOS_EV_RAISE`** ingress (normal eval, call results,
+transfer-plan step outcomes, revive throw) should converge on one handler that
+consults sub-states (normal vs mid-transfer vs continuation signal) instead of
+special cases inside phase-specific functions. See
+[interpreter/event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md)
+§3.3, §6.
 
-**Later follow-ups:** delimited replan builder selection; async nested await
-during transfer.
+---
 
-Ref: [interpreter/callcc.md](interpreter/callcc.md) (re-entrant transfers).
+## Continuations / transfer plans (follow-ups)
+
+Delimited replan builder selection; async nested await during transfer.
+
+Ref: [interpreter/callcc.md](interpreter/callcc.md),
+[interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md).
 
 ---
 

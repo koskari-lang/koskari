@@ -133,10 +133,11 @@ Loaded via **`koskari.bootstrap.make_builtins()`** / **`make_builtins_demand()`*
   **`kos_build_direct_install_plan`**. See
   [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5;
   tests in **`TestDynWindContinuations`**.
-- **Failed transfer abandonment (not done):** on exception during a transfer step,
+- **Failed transfer abandonment (done):** on exception during a transfer step,
   abandon plan + **`plan_stack`** and dispatch via **`try_local`** on the
-  manifested chain (in-place migration; no scratch-space transfer). See same doc
-  §3–§4 and [TODO.md](TODO.md).
+  manifested chain (in-place migration; no scratch-space transfer). Foreign
+  cc-unwind sentinel re-emit is carved out (signal delivery, not failure). See
+  [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §4.
 
 ---
 
@@ -151,8 +152,9 @@ Items below are **done** in koskari-ng unless noted in [TODO.md](TODO.md).
 **Utilities (C)** — `apply`, `reapply`, `identity`, `constantly`, collection builders.
 
 **Evaluator core** — `KosContext`, dynamic chain (`KosDynNode`), transfer plans
-(including suspend/resume/replan on nested continuation invoke), wind/unwind,
-`koskari_eval`, coroutine/async-gen wrappers, GC hooks.
+(including suspend/resume/replan on nested continuation invoke and abandon +
+**`try_local`** on failed steps), wind/unwind, `koskari_eval`, coroutine/async-gen
+wrappers, GC hooks.
 
 **Bytecode** — `Code`, full opcode surface per [OPCODES.md](OPCODES.md) §1.6 (runtime implementations for all shipped opcodes except compile-time labels and **THEEND**).
 
