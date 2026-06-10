@@ -1,10 +1,11 @@
 # Interrupted and failed transfer plans
 
-**Status:** **Complete** on branch `interrupted_transfer`. Nested continuation
-interrupt (§5) and failed/exception transfer abandonment (§4) are both landed.
+**Status:** Nested continuation interrupt (§5) and failed/exception transfer
+abandonment (§4) are **landed** on branch `interrupted_transfer`. **Next work:**
+delimited nested-interrupt **fail-fast** (§6.6) and async nested await (§6.7).
 
-**Audience:** Maintainers and agents reviewing continuation + dyn-wind
-integration; reference for follow-up work (delimited replan, async nested await).
+**Audience:** Maintainers and agents implementing §6.6–6.7; reviewers of
+continuation + dyn-wind integration.
 
 **Repository root:** `sibilant-ng/`
 
@@ -33,8 +34,10 @@ integration; reference for follow-up work (delimited replan, async nested await)
 | Review failed/exception transfer behavior (landed) | §4 Failed transfer abandonment (done) |
 | Understand nested continuation interrupt | §5 Nested continuation interrupt (done) |
 | Reference data structures and runtime flow | §6 Runtime reference |
+| Implement delimited nested-interrupt forbid (next) | §6.6 |
+| Implement async nested await coverage (later) | §6.7 |
 | Run regression tests | §7 Test plan |
-| Acceptance criteria (both milestones) | §8 Acceptance criteria |
+| Acceptance criteria | §8 Acceptance criteria |
 
 **Do not** abandon and rewrite the transfer machinery. Failed-transfer handling
 layers on nested interrupt via **`kos_abandon_transfer_nest`** + normal exception
@@ -56,7 +59,12 @@ Two distinct interruption kinds exist:
 While a plan is active, a wind/unwind thunk (or bytecode) invokes **another**
 continuation. The outer plan must be **suspended**, the inner transfer must run
 to completion, then the outer plan must be **replanned** from the *current*
-dynamic chain to its `original_target` via `kos_build_direct_install_plan`.
+dynamic chain to its `original_target`.
+
+**Undelimited (`let/cc`) plans** use `kos_build_direct_install_plan` (INSTALL +
+wind + INJECT). **Delimited (`reset`/`shift`) PUSH plans** are **not** replanned
+correctly today; §6.6 forbids nested invoke with an explicit `RuntimeError`
+instead of silent wrong topology.
 
 ### 1.2 Failed transfer (exception during plan) — **DONE**
 
@@ -109,17 +117,24 @@ migration** step by step; see §3.
 | Tests: `TestDynWindTransferWindReproducer` (1) | `test_dyn_wind.py` | before-thunk runs twice on transfer |
 | Foreign apply + dyn-with | `test_continuations.py` | `__exit__` sees no exception during cc-unwind |
 
-### 2.3 Follow-ups (not started)
+### 2.3 Next work (not started)
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| Delimited replan builder selection | P2 | §6.5 — `PUSH` vs `INSTALL` |
-| Async nested await + `plan_stack` | P2 | §6.5 |
-| Unified RAISE ingress (event-driven eval) | P2 | see [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md), [TODO.md](../TODO.md) |
-| Triple-nested `let/cc` tests | P3 | optional coverage |
-| Transactional transfer (scratch build) | **deferred** | explicit non-goal |
+| **Delimited nested-interrupt fail-fast** | **P0** | §6.6 — elected interim policy |
+| Async nested await + `plan_stack` | P1 | §6.7 |
+| Full delimited PUSH replan (real fix) | **deferred** | replace §6.6 forbid when implemented |
 
-### 2.4 Files touched
+### 2.4 Known gap (why §6.6 exists)
+
+The replan loop in `run_transfer_plan_to_completion` always calls
+`kos_build_direct_install_plan` (INSTALL semantics). A suspended **delimited**
+outer plan was built with `kos_build_delimited_push_plan` (PUSH semantics:
+caller chain preserved, `KOS_DYN_DELIM` return metadata). Replanning with
+`direct_install` can produce **unknown/wrong chain topology**. Until a correct
+PUSH replan exists, **fail closed** with `RuntimeError` (§6.6).
+
+### 2.5 Files touched (landed work)
 
 | File | Changes |
 |------|---------|
@@ -331,11 +346,15 @@ outer plan active (EXTENT_ACTION running after-thunk)
             clone original_target → target_keep  // BEFORE disarm
             extract inject, resume_pc, resume_stack, graft_id
             DisarmTransferPlan(outer)
-            kos_build_direct_install_plan(es, target_keep, ...)
+            kos_build_direct_install_plan(es, target_keep, ...)  ; undelimited only
             RESUME_FRAME = NULL on new plan
             ArmTransferPlan(new_plan)
             continue drain loop
 ```
+
+**Delimited outer plans:** replan must **not** reach `direct_install` (§6.6). Nested
+invoke during an active PUSH plan is rejected at invoke time; replan has a
+catch-all if a PUSH outer is resumed anyway.
 
 ### 5.2 Critical ownership rule (UAF fix)
 
@@ -421,13 +440,189 @@ Builds: `INSTALL` + wind `EXTENT_ACTION`s + `INJECT`. Skips unwind. Used for
 replan after nested interrupt. Caller sets `RESUME_PC`, `RESUME_STACK`; prefer
 `RESUME_FRAME = NULL`.
 
-### 6.5 Follow-ups (not started)
+### 6.6 Delimited nested-interrupt fail-fast — **NEXT** (elected policy)
 
-**Delimited replan (§6.7):** outer delimited `PUSH` plan may need
-`kos_build_delimited_push_plan` on replan, not always `direct_install`.
+#### 6.6.1 Policy
 
-**Async nested await (§6.8):** outer suspended while inner thunk awaits; not
-tested with `plan_stack` depth > 0.
+Until a correct **PUSH replan** is implemented, nested continuation invoke
+during an active **delimited PUSH transfer** must **not** proceed. Prefer
+**fail-fast** over silent wrong topology.
+
+**Two layers (both required):**
+
+| Layer | When | Purpose |
+|-------|------|---------|
+| **Primary — invoke time** | Before `kos_suspend_transfer_plan` in `kos_invoke_continuation` | Reject as early as possible; inner transfer never starts |
+| **Catch-all — replan time** | After `kos_resume_transfer_plan`, before `kos_build_direct_install_plan` | Defense in depth if a PUSH outer reaches replan |
+
+Both layers set the **same** `PyErr`, then route through **`abandon_xfer_and_try_local`**
+(replan) or abandon + return `-1` from invoke (see §6.6.5).
+
+**Explicit non-goal for this milestone:** implementing `kos_build_delimited_push_plan`
+on replan. That remains a future replacement for the forbid.
+
+#### 6.6.2 What is forbidden vs allowed
+
+| Scenario | Active / resumed plan shape | Nested invoke | Policy |
+|----------|----------------------------|---------------|--------|
+| `let/cc` outer, `let/cc` inner | INSTALL (`kos_build_transfer_plan`) | Yes | **Allowed** — existing `TestDynWindContinuations` |
+| Delimited PUSH outer, undelimited inner | PUSH | Yes | **Forbidden** at invoke (§6.6.4) |
+| Delimited PUSH outer, delimited inner | PUSH | Yes | **Forbidden** at invoke |
+| Undelimited outer on `plan_stack`, delimited inner active | INSTALL suspended, PUSH active | Inner only | **Allowed** — replan uses `direct_install` for INSTALL outer |
+| PUSH outer resumes for replan | PUSH | N/A | **Catch-all** raises (§6.6.4) — must not call `direct_install` |
+
+**Detection rule:** a plan is **delimited PUSH** if **any** action in the plan
+(not only the current `action_index`) has step `KOS_XFER_PUSH`. Do **not** use
+`prompt_id` alone — the plan object is authoritative. Undelimited plans use
+`KOS_XFER_INSTALL`; `kos_build_return_plan` is INSTALL+INJECT only (no false
+positive).
+
+#### 6.6.3 Shared helper
+
+Add to `dynchain.c`, declare in `dynchain.h`:
+
+```c
+/**
+   True when plan includes a KOS_XFER_PUSH step (delimited invoke plan).
+*/
+int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan);
+```
+
+Implementation: scan `i in [0, action_count)`; return 1 if any
+`KosTransferAction_STEP(actions[i]) == KOS_XFER_PUSH`, else 0. NULL plan → 0.
+
+Optional native unit test in `tests/native/test_dynchain.c`: build a plan via
+`kos_build_delimited_push_plan` in a minimal eval fixture (or scan a hand-built
+plan) and assert the helper returns 1; assert a `kos_build_transfer_plan` returns 0.
+
+#### 6.6.4 Call sites
+
+**A — Primary: `kos_invoke_continuation` (`dynchain.c`)**
+
+Immediately **before** `kos_suspend_transfer_plan(es)` (after the **new** plan is
+built and resume fields are set on local `plan`, but **before** arming it).
+
+Test the **currently active** outer plan on `KosEvalState_PLAN(es)`, not the new
+`plan` local (the new plan is the inner invoke being attempted):
+
+```c
+if (kos_xfer_plan_is_delimited_push(KosEvalState_PLAN(es))) {
+  kos_free_transfer_plan(plan);
+  if (ret_delim && kos_dyn_pop_delim(es, ret_delim) < 0)
+    return -1;
+  if (to_use != k)
+    kos_continuation_free(to_use);
+  kos_abandon_transfer_nest(es);
+  PyErr_SetString(PyExc_RuntimeError,
+      "nested continuation invoke during an active delimited transfer"
+      " is not supported");
+  return -1;
+}
+```
+
+Use the exact message string above (tests may match on substring
+`delimited transfer`).
+
+Cleanup order: free the unarmed new `plan` and invoke-side resources first, then
+`kos_abandon_transfer_nest` to disarm the active PUSH outer. Mirror the existing
+`res < 0` cleanup block after plan build for `ret_delim` / `to_use`.
+
+**B — Catch-all: replan block (`eval_chain.c`)**
+
+After `kos_resume_transfer_plan(es)` and extracting metadata from `outer`, **before**
+cloning `target` / calling `kos_build_direct_install_plan`:
+
+```c
+if (kos_xfer_plan_is_delimited_push(outer)) {
+  Py_XDECREF(inject_val);
+  if (rstack)
+    KosStackBlock_ReleaseChain(rstack);
+  PyErr_SetString(PyExc_RuntimeError,
+      "nested continuation invoke during an active delimited transfer"
+      " is not supported");
+  return abandon_xfer_and_try_local(es, out_ev);
+}
+```
+
+Do **not** clone `target_keep` or call `direct_install` on this path.
+
+#### 6.6.5 Abandon nest on invoke failure
+
+`kos_invoke_continuation` returning `-1` with PyErr set is **not** enough when an
+**active PUSH plan** was already stepping: the outer plan remains armed.
+
+**Required:** when invoke is rejected (§6.6.4 A) or fails after a PUSH plan was
+active, abandon the transfer nest before exception dispatch.
+
+**Recommended implementation:**
+
+1. **Export** `kos_abandon_transfer_nest` — move the function from `eval_chain.c`
+   to `dynchain.c` (next to `kos_free_transfer_plan_stack`), declare in
+   `dynchain.h`. Body unchanged: `KosEvalState_DisarmTransferPlan` +
+   `kos_free_transfer_plan_stack`. Keep `abandon_xfer_and_try_local` static in
+   `eval_chain.c` calling the exported symbol.
+
+2. §6.6.4 A includes `kos_abandon_transfer_nest(es)` after freeing the unarmed new
+   plan (clears the active PUSH outer). Then set PyErr (abandon does not clear
+   PyErr).
+
+3. In **`handle_continuation_apply`** (`eval.c`), when `kos_invoke_continuation`
+   returns `-1` and PyErr is **not** `KoskariContinuationApply`:
+
+   ```c
+   if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
+     kos_abandon_transfer_nest(es);
+   ```
+
+   (Idempotent if invoke already abandoned.) Then fall through to existing
+   `KOS_MODE_RAISE` / `process_raise` → `try_local` on the next boundary.
+
+**Exception dispatch:** the `RuntimeError` follows the same paths as other
+transfer failures (§4): `try_local` on the **manifested** chain if a handler
+exists; otherwise `KOS_EV_RAISE`. No cc-unwind carve-out.
+
+**Handler reachability note:** at invoke time the chain is wherever the PUSH plan
+had stepped to (often mid-wind before-thunk). A `try/except` wrapped only around
+the original `(k val)` call site may not catch the error; unhandled `RuntimeError`
+is acceptable and still **explicit**.
+
+#### 6.6.6 Implementation order
+
+1. Read §5 and §4 (abandon + try_local context).
+2. `make build-ext`; run §7.1 regression gate (baseline green).
+3. Add `kos_xfer_plan_is_delimited_push` + optional native test.
+4. Export `kos_abandon_transfer_nest` to `dynchain.c` / `dynchain.h`.
+5. Wire §6.6.4 A in `kos_invoke_continuation` (invoke-time forbid + abandon).
+6. Wire `handle_continuation_apply` abandon on invoke failure (§6.6.5).
+7. Wire §6.6.4 B in replan block (catch-all).
+8. Add §7.4 tests; run full gate.
+9. Update `design/TODO.md` Continuations follow-ups line to note forbid landed.
+10. Update §2.3 / §8.4 in this doc to **done** when green.
+
+**Do not commit** unless the user explicitly requests it.
+
+#### 6.6.7 Future replacement
+
+When implementing real delimited replan, replace the catch-all with builder
+selection: if outer plan has `KOS_XFER_PUSH`, call
+`kos_build_delimited_push_plan` (or a dedicated replan variant) instead of
+`kos_build_direct_install_plan`, and remove the invoke-time forbid. Until then,
+§6.6 is the canonical behavior.
+
+---
+
+### 6.7 Async nested await + `plan_stack` (later)
+
+Not started. When a wind/unwind thunk under an active or suspended transfer
+returns `KOS_XFER_SUSPENDED_AWAIT`, `plan_stack` must remain coherent across
+`KOS_EV_AWAIT` freeze/thaw, including when `plan_stack` depth > 0.
+
+**Verify:** prologue ordering (`eval_phase_pending_exception` before plan drain),
+abandon paths after resume, `dyn_wind` on_chain / EXTENT_ACTION guards.
+
+**Tests to add:** async before/after thunk during undelimited nested interrupt
+(`let/cc` + `dyn-wind` + `async def` or Koskari await); optional delimited case
+after §6.6 forbid is in place.
 
 ---
 
@@ -462,6 +657,91 @@ KOS_XFER_TRACE=1 KOS_STACK_TRACE=1 tox -qe gdb -- \
   tests/compile/specials/test_dyn_wind.py::TestDynWindContinuations -s
 ```
 
+### 7.4 Delimited nested-interrupt forbid tests (add for §6.6)
+
+Place in `tests/compile/specials/test_continuations.py` (class
+`TestDelimitedTransferNestedForbid`) or `tests/compile/specials/test_dyn_wind.py`.
+No type annotations; use `tox` only.
+
+**Regression gate after implementation:**
+
+```bash
+make build-ext
+tox -qe py -- tests/compile/specials/test_continuations.py -v -k DelimitedTransferNestedForbid
+tox -qe py -- tests/compile/specials/test_dyn_wind.py::TestDynWindContinuations -v
+tox -qe py -- tests/reproducers/test_reset_shift_nested.py -q
+```
+
+#### Test 1 — invoke-time forbid (primary, required)
+
+**Name:** `test_nested_invoke_during_delimited_push_transfer_raises`
+
+**Intent:** Delimited continuation invoke starts a PUSH plan; a before-thunk on
+the captured segment calls the **same** continuation again while the PUSH plan
+is still active → `RuntimeError` at invoke time; transfer nest abandoned.
+
+**Source sketch:**
+
+```scheme
+(compile/begin
+  (compile/define k
+    (compile/reset
+      (compile/shift k
+        (compile/dyn-wind
+          (compile/call k 99)
+          42
+          nil))))
+  (compile/call k 0))
+```
+
+**Flow:**
+
+1. `(define k (reset (shift k ...)))` captures delimited `k`.
+2. `(k 0)` starts PUSH transfer into the segment (includes `dyn-wind`).
+3. Wind `EXTENT_ACTION` runs the before-thunk `(k 99)` while the PUSH plan is
+   still armed.
+4. §6.6.4 A rejects before suspend; `RuntimeError` propagates.
+
+**Assertions:**
+
+```python
+with self.assertRaises(RuntimeError) as ctx:
+    await expr()
+self.assertIn("delimited transfer", str(ctx.exception))
+```
+
+**Must not:** complete with value 42 or 99; must not leave `KOS_CTX_IN_TRANSFER`
+set (no leaked plan — verify by clean subsequent eval if needed).
+
+#### Test 2 — undelimited nested interrupt still passes (required)
+
+Re-run existing `TestDynWindContinuations` (all 3). Ensures §6.6.4 A does not
+false-positive on INSTALL plans.
+
+#### Test 3 — helper unit test (recommended)
+
+**File:** `tests/native/test_dynchain.c` (if a minimal plan-build fixture exists)
+**or** a small Python-side test that builds/drains a trivial delimited invoke and
+relies on Test 1 for integration.
+
+**Name:** `test_xfer_plan_is_delimited_push_detects_push_action`
+
+Assert `kos_xfer_plan_is_delimited_push` returns 1 on a plan from
+`kos_build_delimited_push_plan` and 0 on one from `kos_build_transfer_plan`.
+
+#### Test 4 — catch-all replan (optional)
+
+Hard to trigger in integration once invoke-time forbid works. Acceptable coverage:
+native test that constructs a `KosTransferPlan` with one `KOS_XFER_PUSH` action,
+passes it to the helper, and documents that replan block checks the same helper.
+Full replan-path test is optional defense-in-depth.
+
+#### Test 5 — try/except on manifested segment (optional)
+
+If the before-thunk raises inside a `compile/try` on the **captured segment**,
+assert the handler runs after abandon (same pattern as `TestDynWindTransferFailures`).
+Not required for §6.6 minimum if Test 1 asserts unhandled `RuntimeError`.
+
 ---
 
 ## 8. Acceptance criteria
@@ -481,11 +761,21 @@ KOS_XFER_TRACE=1 KOS_STACK_TRACE=1 tox -qe gdb -- \
 4. cc-unwind sentinel carve-out preserves foreign-apply dyn-with semantics.
 5. Nested continuation and full regression gate pass (§7.1).
 
-### 8.3 Explicitly out of scope
+### 8.3 Delimited nested-interrupt fail-fast — **NEXT**
+
+1. `kos_xfer_plan_is_delimited_push` implemented and exported.
+2. `kos_abandon_transfer_nest` exported to `dynchain.c` / `dynchain.h`.
+3. Invoke-time forbid (§6.6.4 A) before `kos_suspend_transfer_plan`.
+4. Replan catch-all (§6.6.4 B) before `kos_build_direct_install_plan`.
+5. `handle_continuation_apply` abandons nest on invoke failure when plan/stack active.
+6. Test 1 and Test 2 from §7.4 pass; §7.1 regression gate passes.
+7. `design/TODO.md` follow-ups line updated.
+
+### 8.4 Explicitly out of scope
 
 - Transactional/scratch-space transfer.
 - Replan after exception (distinct from nested continuation replan).
-- Delimited replan builder selection (unless bundled intentionally).
+- Full delimited PUSH replan (replacement for §6.6 forbid).
 - Exception-interrupted transfer that **resumes** the same plan after handler.
 
 ---
@@ -499,6 +789,7 @@ KOS_XFER_TRACE=1 KOS_STACK_TRACE=1 tox -qe gdb -- \
 - [x] `test_call_cc`, `test_continuations`, `test_reset_shift_nested`.
 - [x] `test_continuation_passes_through_intermediate_context_with_dyn_with_unwind`.
 - [ ] Trace nested interrupt once if touching `dyn_wind.c` or replan block.
+- [ ] §6.6: `TestDelimitedTransferNestedForbid` green (§7.4).
 
 ---
 
@@ -508,14 +799,17 @@ KOS_XFER_TRACE=1 KOS_STACK_TRACE=1 tox -qe gdb -- \
 |--------|------|
 | `run_transfer_plan_to_completion` | `eval/eval_chain.c` |
 | `eval_phase_transfer`, `eval_step_drain_transfer_plan` | `eval.c` |
+| `handle_continuation_apply` | `eval.c` — abandon on invoke failure (§6.6.5) |
 | `process_raise`, `eval_event_raise` | `eval.c` |
 | `try_local_exception_handler` | `eval.c` → `kos_dyn_try_local_raise_body` |
 | `kos_suspend_transfer_plan`, `kos_resume_transfer_plan` | `dynchain.c` |
 | `kos_free_transfer_plan_stack` | `dynchain.c` |
-| `kos_invoke_continuation` | `dynchain.c` |
+| `kos_invoke_continuation` | `dynchain.c` — §6.6.4 A |
+| `kos_xfer_plan_is_delimited_push` | `dynchain.c` — **add** §6.6.3 |
+| `kos_abandon_transfer_nest` | `eval/eval_chain.c` today → **export** `dynchain.c` §6.6.5 |
 | `kos_dyn_wind_on_control_returned` | `dynchain/dyn_wind.c` |
-| `kos_build_direct_install_plan` | `dynchain.c` |
-| `kos_abandon_transfer_nest`, `abandon_xfer_and_try_local` | `eval/eval_chain.c` |
+| `kos_build_direct_install_plan`, `kos_build_delimited_push_plan` | `dynchain.c` |
+| `abandon_xfer_and_try_local` | `eval/eval_chain.c` — replan catch-all §6.6.4 B |
 | `xfer_plan_step_is_cc_raise_reemit`, `xfer_emit_cc_unwind_signal` | `eval/eval_chain.c` |
 | `try_local_extent_on_current_frame` | `dynchain.c` |
 
