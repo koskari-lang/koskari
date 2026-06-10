@@ -148,4 +148,77 @@ class TestDynWithSpecial(SpecialsTestCase):
         self.assertTrue(mgr.exited)
 
 
+class TestDynWithTransferWindReproducer(SpecialsTestCase):
+    """
+    Minimal reproducer: continuation invoke into a dyn-with body should
+    re-run __enter__ as part of the transfer plan wind step.
+    """
+
+    async def test_enter_runs_on_transfer_into_dyn_with_body(self):
+        """
+        capture/cc inside dyn-with body; gated invoke_saved after setup.
+        Transfer into the captured segment must run enter again.
+        """
+
+        log = []
+        enter_count = [0]
+        saved = []
+
+        def record(s):
+            log.append(s)
+            return s
+
+        def make_mgr():
+            mgr = SimpleMgr(42)
+            orig_enter = mgr.__enter__
+
+            def counting_enter():
+                record("enter-%s" % enter_count[0])
+                enter_count[0] += 1
+                return orig_enter()
+
+            mgr.__enter__ = counting_enter
+            return mgr
+
+        def stash(k):
+            record("stash-py")
+            saved.append(k)
+
+        def invoke_saved():
+            record("invoke-saved-py saved=%s" % bool(saved))
+            k = saved[0]
+            saved.clear()
+            return k(99)
+
+        src_str = """
+        (compile/begin
+          (compile/define result
+            (compile/dyn-with [x (compile/call make_mgr)]
+              (compile/capture/cc k
+                (compile/begin
+                  (compile/call record "stash")
+                  (compile/call stash k)
+                  (compile/call record "capture-body")
+                  42))))
+          (compile/call record "after-setup")
+          (compile/call record result)
+          (compile/cond [saved (invoke_saved)] [else: result]))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            make_mgr=make_mgr,
+            stash=stash,
+            invoke_saved=invoke_saved,
+            record=record,
+            saved=saved)
+        await expr()
+        self.assertGreaterEqual(
+            enter_count[0], 2,
+            msg="log=%r enter_count=%r" % (log, enter_count[0]))
+        self.assertTrue(
+            any(isinstance(entry, str) and "invoke-saved-py" in entry
+                for entry in log),
+            msg="log=%r" % (log,))
+
+
 # The end.

@@ -777,6 +777,12 @@ static KosEvalMode process_raise(KosEvalState *es, KosEvent *out_ev) {
     return KOS_MODE_RAISE;
   }
 
+  if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es)) {
+    if (! (KoskariContinuationApply
+           && PyErr_ExceptionMatches(KoskariContinuationApply)))
+      kos_abandon_transfer_nest(es);
+  }
+
   if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply))
     return handle_continuation_apply(es, out_ev);
   clear_kos_agen_boundary_on_error(ctx);
@@ -1869,6 +1875,8 @@ entry_mode_dispatch:
   if (mode == KOS_MODE_EXCEPTION) {
     int tl;
     clear_kos_agen_boundary_on_error(ctx);
+    if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
+      kos_abandon_transfer_nest(es);
     tl = try_local_exception_handler(es, out_ev);
     SAYF("[eval] phase_entry try_local ret=%d out_kind=%d\n",
          tl, (int) KosEvent_KIND(out_ev));
@@ -1933,9 +1941,12 @@ entry_mode_dispatch:
 static KosEvalStep eval_phase_transfer(KosEvalState *es, KosEvent *out_ev) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  int xfer = run_transfer_plan_to_completion(es, out_ev);
 
-  if (run_transfer_plan_to_completion(es, out_ev) < 0)
+  if (xfer < 0)
     return KOS_STEP_STOP_EVENT;
+  if (xfer > 0)
+    return KOS_STEP_CONTINUE;
 
   if (! KosEvalState_FRAME(es)) {
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
@@ -2346,8 +2357,13 @@ static KosEvalStep eval_step_drain_transfer_plan(
 
   if (! KosEvalState_PLAN(es))
     return KOS_STEP_CONTINUE;
-  if (run_transfer_plan_to_completion(es, out_ev) < 0)
-    return KOS_STEP_STOP_EVENT;
+  {
+    int xfer = run_transfer_plan_to_completion(es, out_ev);
+    if (xfer < 0)
+      return KOS_STEP_STOP_EVENT;
+    if (xfer > 0)
+      return KOS_STEP_REPROLOGUE;
+  }
   return KOS_STEP_CONTINUE;
 }
 

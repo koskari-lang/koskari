@@ -336,15 +336,43 @@ static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
 
 
 /**
-  Run the current transfer plan to completion.  Returns 0 on success (plan
-  cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
-  caller should return 0 from koskari_eval).
+  Disarm the active transfer plan and free any suspended outers on plan_stack.
+  Does not clear PyErr or mutate dyn_top / frame_top / stack.
+*/
+static void kos_abandon_transfer_nest(KosEvalState *es) {
+
+  KosEvalState_DisarmTransferPlan(es);
+  kos_free_transfer_plan_stack(es);
+}
+
+
+/**
+  Abandon any transfer nest, then dispatch PyErr through local handlers.
+
+  :return: 1 if a handler was applied, -1 if unhandled raise or fatal error
+*/
+static int abandon_xfer_and_try_local(KosEvalState *es, KosEvent *out_ev) {
+
+  kos_abandon_transfer_nest(es);
+  int tl = try_local_exception_handler(es, out_ev);
+  if (tl > 0)
+    return 1;
+  if (tl < 0)
+    return -1;
+  return -1;
+}
+
+
+/**
+  Run the current transfer plan to completion.
+
+  :return: 0 on success (plan cleared or suspended on await),
+           1 if plan abandoned and a local handler was applied,
+           -1 if a step failed with no handler or on fatal error
 */
 static int run_transfer_plan_to_completion(
     KosEvalState *es,
     KosEvent *out_ev) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   while (KosEvalState_PLAN(es)) {
     SAYF("[eval] transfer step %zu/%zu\n",
@@ -353,11 +381,8 @@ static int run_transfer_plan_to_completion(
     int plan_res = kos_run_transfer_step(es, out_ev);
 
     if (plan_res < 0) {
-      SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
-      kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-      KosEvalState_DisarmTransferPlan(es);
-      kos_free_transfer_plan_stack(es);
-      return -1;
+      SAY("[eval] transfer step failed -> abandon + try_local\n");
+      return abandon_xfer_and_try_local(es, out_ev);
     }
 
     if (plan_res == KOS_XFER_SUSPENDED_AWAIT) {
@@ -406,10 +431,7 @@ static int run_transfer_plan_to_completion(
         Py_XDECREF(inject_val);
         if (rstack)
           KosStackBlock_ReleaseChain(rstack);
-        KosEvalState_DisarmTransferPlan(es);
-        kos_free_transfer_plan_stack(es);
-        kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-        return -1;
+        return abandon_xfer_and_try_local(es, out_ev);
       }
       bottom = target_keep;
       while (bottom && KosDynNode_PARENT(bottom))
@@ -433,9 +455,7 @@ static int run_transfer_plan_to_completion(
       if (rstack)
         KosStackBlock_ReleaseChain(rstack);
       kos_dynchain_free(target_keep, NULL);
-      kos_free_transfer_plan_stack(es);
-      kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-      return -1;
+      return abandon_xfer_and_try_local(es, out_ev);
     }
     /* kos_build_direct_install_plan incremented inject_val; release our ref. */
     Py_XDECREF(inject_val);
@@ -489,7 +509,10 @@ static inline int KosEvalState_KReturnDelimited(
     if (kos_dyn_pop_delim(es, delim) < 0)
       return -1;
   }
-  if (run_transfer_plan_to_completion(es, out_ev) < 0)
-    return -1;
+  {
+    int xfer = run_transfer_plan_to_completion(es, out_ev);
+    if (xfer < 0)
+      return -1;
+  }
   return 0;
 }

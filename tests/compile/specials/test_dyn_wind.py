@@ -353,4 +353,236 @@ class TestDynWindContinuations(SpecialsTestCase):
         self.assertIn("before", log)
 
 
+class TestDynWindTransferWindReproducer(SpecialsTestCase):
+    """
+    Minimal reproducer: continuation invoke into a dyn-wind body should
+    re-run the before-thunk as part of the transfer plan wind step.
+    """
+
+    async def test_before_thunk_runs_on_transfer_into_dyn_wind_body(self):
+        """
+        capture/cc inside dyn-wind body; gated invoke_saved after setup.
+        Transfer into the captured segment must run before-thunk again.
+        """
+
+        log = []
+        before_pass = [0]
+        saved = []
+
+        def record(s):
+            log.append(s)
+            return s
+
+        def before_thunk():
+            record("before-%s" % before_pass[0])
+            before_pass[0] += 1
+
+        def stash(k):
+            record("stash-py")
+            saved.append(k)
+
+        def invoke_saved():
+            record("invoke-saved-py saved=%s" % bool(saved))
+            k = saved[0]
+            saved.clear()
+            return k(99)
+
+        src_str = """
+        (compile/begin
+          (compile/define result
+            (compile/dyn-wind
+              (compile/begin
+                (compile/call record "before-setup")
+                (compile/call before_thunk))
+              (compile/capture/cc k
+                (compile/begin
+                  (compile/call record "stash")
+                  (compile/call stash k)
+                  (compile/call record "capture-body")
+                  42))
+              nil))
+          (compile/call record "after-setup")
+          (compile/call record result)
+          (compile/cond [saved (invoke_saved)] [else: result]))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            before_thunk=before_thunk,
+            stash=stash,
+            invoke_saved=invoke_saved,
+            record=record,
+            saved=saved)
+        result = await expr()
+        self.assertGreaterEqual(
+            before_pass[0], 2,
+            msg="log=%r before_pass=%r" % (log, before_pass[0]))
+        self.assertTrue(
+            any(isinstance(entry, str) and "invoke-saved-py" in entry
+                for entry in log),
+            msg="log=%r" % (log,))
+
+
+class TestDynWindTransferFailures(SpecialsTestCase):
+    """
+    Failed transfer abandonment: when a transfer plan step raises during
+    dyn-wind before-thunk execution, the plan nest is abandoned and the
+    exception is dispatched through try/except on the manifested chain.
+    """
+
+    async def test_try_except_catches_python_error_in_before_thunk_during_transfer(
+            self):
+        """
+        A Python error in a dyn-wind before-thunk during continuation transfer
+        is caught by an enclosing try/except on the installed segment.
+
+        try wraps dyn-wind; let/cc captures inside the body; invoke_saved runs
+        once (gated on saved) after setup in the same expression.
+        """
+
+        log = []
+        wind_pass = [0]
+        saved = []
+
+        def record(s):
+            log.append(s)
+            return s
+
+        def wind_before():
+            record("wind-before-%s" % wind_pass[0])
+            wind_pass[0] += 1
+            if wind_pass[0] >= 2:
+                raise ValueError("wind-fail")
+
+        def stash(k):
+            record("stash-py")
+            saved.append(k)
+
+        def invoke_saved():
+            record("invoke-saved-py saved=%s" % bool(saved))
+            k = saved[0]
+            saved.clear()
+            return k(99)
+
+        src_str = """
+        (compile/begin
+          (compile/define result
+            (compile/try
+              (compile/dyn-wind
+                (compile/begin
+                  (compile/call record "before-setup")
+                  (compile/call wind_before))
+                (compile/let/cc k
+                  (compile/begin
+                    (compile/call record "stash")
+                    (compile/call stash k)
+                    (compile/call record "capture-body")
+                    42))
+                nil)
+              ([Exception] (compile/call record "caught"))))
+          (compile/begin
+            (compile/call record "after-setup")
+            (compile/cond [saved (invoke_saved)] [else: result])))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            stash=stash,
+            invoke_saved=invoke_saved,
+            wind_before=wind_before,
+            record=record,
+            saved=saved,
+            Exception=Exception)
+        result = await expr()
+        self.assertEqual(result, "caught", msg="log=%r" % (log,))
+        self.assertIn("caught", log)
+        self.assertIn("stash", log)
+        self.assertIn("invoke-saved-py", log)
+        self.assertGreaterEqual(wind_pass[0], 2)
+
+
+    async def test_try_except_catches_koskari_raise_in_before_thunk_during_transfer(
+            self):
+        """
+        A Koskari raise in a dyn-wind before-thunk during continuation transfer
+        is caught by an enclosing try/except on the installed segment.
+        """
+
+        log = []
+        wind_pass = [0]
+        saved = []
+
+        def record(s):
+            log.append(s)
+            return s
+
+        def should_raise():
+            record("should-raise-%s" % wind_pass[0])
+            wind_pass[0] += 1
+            return wind_pass[0] >= 2
+
+        def stash(k):
+            record("stash-py")
+            saved.append(k)
+
+        def invoke_saved():
+            record("invoke-saved-py saved=%s" % bool(saved))
+            k = saved[0]
+            saved.clear()
+            return k(99)
+
+        src_str = """
+        (compile/begin
+          (compile/define result
+            (compile/try
+              (compile/dyn-wind
+                (compile/begin
+                  (compile/call record "before-setup")
+                  (compile/cond
+                    [(compile/call should_raise)
+                      (compile/begin
+                        (compile/call record "raise")
+                        (compile/raise (ValueError "wind-fail")))]
+                    [else:
+                      (compile/begin
+                        (compile/call record "before-setup-ok")
+                        0)]))
+                (compile/let/cc k
+                  (compile/call record "stash")
+                  (compile/call stash k)
+                  (compile/call record "capture-body")
+                  42)
+                nil)
+              ([Exception] (compile/call record "caught"))))
+
+          (compile/call record "after-setup")
+          (compile/call record result)
+
+          (compile/cond
+            [saved (invoke_saved)]
+            [else: result])
+
+        )
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            stash=stash,
+            invoke_saved=invoke_saved,
+            should_raise=should_raise,
+            record=record,
+            saved=saved,
+            Exception=Exception,
+            ValueError=ValueError)
+
+        result = await expr()
+
+        # Dear AI agent. DO NOT REMOVE THIS PRINT STATEMENT. NO MATTER WHAT.
+        print(f"result: {result}")
+        print(f"log: {log}")
+
+        self.assertEqual(result, "caught", msg="log=%r" % (log,))
+        self.assertIn("caught", log)
+        self.assertIn("stash", log)
+        self.assertIn("invoke-saved-py", log)
+        self.assertGreaterEqual(wind_pass[0], 2)
+
+
 # The end.

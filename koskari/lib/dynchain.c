@@ -1842,6 +1842,44 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
 
 
 /**
+   When dyn_top is the current frame, consult the extent table for except_pc
+   before walking the chain.
+
+   :return: 1 if a handler was applied, 0 if none, -1 on error
+*/
+static int try_local_extent_on_current_frame(KosEvalState *es, KosEvent *out_ev) {
+
+  (void) out_ev;
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  if (! frame || ! PyErr_Occurred())
+    return 0;
+
+  KosTryHandler th;
+  if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
+                          KosEvalState_ACTING_PC(es), &th) != 0
+      || th.except_pc == KOS_EXTENT_NONE)
+    return 0;
+
+  if (KosEvalState_StackClearBlock(es) < 0)
+    return -1;
+
+  SAYF("[try_local] extent handler pc=%u on current frame\n",
+       (unsigned) th.except_pc);
+  KosEvalState_SET_PC(es, th.except_pc);
+
+  {
+    PyObject *typ = NULL, *val = NULL, *tb = NULL;
+    PyErr_Fetch(&typ, &val, &tb);
+    PyErr_SetExcInfo(typ, val, tb);
+    PyErr_Clear();
+  }
+
+  return 1;
+}
+
+
+/**
    Walk dyn_top down toward frame_top, handle(RAISE) then pop until a TRY or
    FINALLY consumes (jump to handler) or no handler remains. Same semantics as
    legacy try_local_exception_handler in eval.c: return 1 if handler applied,
@@ -1868,16 +1906,27 @@ int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
          (void *) KosEvalState_DYN_TOP(es));
   }
 
-  if (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL
-      && KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)) {
-    SAYF("[try_local] skip_search dyn_top==frame_top %p\n",
-         (void *) KosEvalState_DYN_TOP(es));
-  }
   #endif
 
   PyObject *saved_exc_typ = NULL;
   PyObject *saved_exc_val = NULL;
   PyObject *saved_exc_tb = NULL;
+
+  if (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL
+      && KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)
+      && PyErr_Occurred()) {
+    int extent = try_local_extent_on_current_frame(es, out_ev);
+    if (extent != 0)
+      return extent;
+
+    {
+      KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
+      if (parent && ! KosDynNode_IS_GEN(parent)) {
+        if (kos_dyn_pop_frame(es) < 0)
+          return -1;
+      }
+    }
+  }
 
   while (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL
          && KosEvalState_DYN_TOP(es) != (KosDynNode *) KosEvalState_FRAME(es)) {
@@ -3445,6 +3494,40 @@ static int kos_dyn_run_install_wind_span(
 
 
 /**
+   After INSTALL clones a template segment onto the live chain, remap
+   EXTENT_NODE pointers in remaining plan actions from template nodes to
+   their live twins (parallel parent walk from segment tops).
+*/
+static void xfer_remap_extent_nodes(
+    KosTransferPlan *plan,
+    KosDynNode *template_top,
+    KosDynNode *live_top) {
+
+  size_t idx = KosTransferPlan_ACTION_INDEX(plan) + 1;
+  size_t count = KosTransferPlan_ACTION_COUNT(plan);
+
+  while (idx < count) {
+    KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
+    if (KosTransferAction_STEP(a) == KOS_XFER_EXTENT_ACTION) {
+      KosDynNode *template_node = KosTransferAction_EXTENT_NODE(a);
+      KosDynNode *t = template_top;
+      KosDynNode *l = live_top;
+
+      while (t && l) {
+        if (t == template_node) {
+          KosTransferAction_EXTENT_NODE(a) = l;
+          break;
+        }
+        t = KosDynNode_PARENT(t);
+        l = KosDynNode_PARENT(l);
+      }
+    }
+    idx++;
+  }
+}
+
+
+/**
    Execute an INSTALL step: replace the current dynamic chain with a fresh
    clone of the plan's target segment, restore the frame's stack and PC
    from the plan's resume state, and run param_enter for each PARAM node
@@ -3506,6 +3589,8 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
   if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1 && KosEvalState_FRAME(es)) {
     KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
   }
+
+  xfer_remap_extent_nodes(plan, template_seg, seg);
 
   #if KOS_XFER_TRACE
   if (KosEvalState_FRAME(es)) {

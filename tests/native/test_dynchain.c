@@ -122,7 +122,7 @@ static int test_dynwind_clone(void) {
     TEST_ASSERT_NOT_NULL(clone, "clone wind");
 
     TEST_ASSERT_NOT_SAME(wind, clone, "clone is different object");
-    TEST_ASSERT_EQ(KosDynWind_ENTERED(clone), 1, "clone has same entered state");
+    TEST_ASSERT_EQ(KosDynWind_ENTERED(clone), 0, "clone resets entered for transfer");
     TEST_ASSERT(KosDynNode_FLAGS(clone) & KOS_DYNF_CLONED, "clone has CLONED flag");
 
     kos_dynwind_free(clone);

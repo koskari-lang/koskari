@@ -56,8 +56,8 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (KosDynWind_AFTER_THUNK(clone))
     Py_INCREF(KosDynWind_AFTER_THUNK(clone));
   KosDynWind_BODY_RESULT(clone) = NULL;
-  KosDynWind_ENTERED(clone) = KosDynWind_ENTERED(wind);
-  KosDynWind_PHASE(clone) = KosDynWind_PHASE(wind);
+  KosDynWind_ENTERED(clone) = 0;
+  KosDynWind_PHASE(clone) = KOS_WIND_PHASE_IDLE;
   return clone;
 }
 
@@ -104,6 +104,10 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
 */
 int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node) {
   if (! node || ! KosDynWind_BEFORE_THUNK(node)) {
+    return 0;
+  }
+
+  if (KosDynWind_ENTERED(node)) {
     return 0;
   }
 
@@ -214,6 +218,20 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
       PyObject *val = KosEvalState_StackPopRef(es);
       if (val)
         Py_DECREF(val);
+    }
+    /* The EXTENT_ACTION that fired this before-thunk returned
+       KOS_XFER_SUSPENDED_AWAIT without advancing action_index; advance it
+       now that the thunk has completed. */
+    if (KosEvalState_PLAN(es)) {
+      KosTransferPlan *plan = KosEvalState_PLAN(es);
+      size_t idx = KosTransferPlan_ACTION_INDEX(plan);
+      if (idx < KosTransferPlan_ACTION_COUNT(plan)) {
+        KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
+        if (KosTransferAction_STEP(a) == KOS_XFER_EXTENT_ACTION
+            && KosTransferAction_EXTENT_NODE(a) == (KosDynNode *) wind
+            && KosTransferAction_EXTENT_PHASE(a) == KOS_XFER_EXTENT_PHASE_WIND)
+          KosTransferPlan_ACTION_INDEX(plan)++;
+      }
     }
     return 0;
   }
