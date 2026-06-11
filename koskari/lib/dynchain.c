@@ -4076,6 +4076,107 @@ int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan) {
 }
 
 
+/**
+   Refuse nested continuation invoke while a delimited PUSH transfer runs.
+*/
+int kos_xfer_forbid_nested_delimited(KosEvalState *es) {
+
+  if (kos_xfer_plan_is_delimited_push(KosEvalState_PLAN(es))) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "nested continuation invoke during an active delimited"
+                    " transfer is not supported");
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
+   Replan a suspended outer transfer after a nested continuation completes.
+   Disarms outer and arms a fresh direct-install plan on success.
+
+   :return: 0 to continue draining, 1 when outer had no target (done),
+            -1 on error (PyErr may be set)
+*/
+int kos_xfer_replan_outer_after_nested(
+    KosEvalState *es,
+    KosTransferPlan *outer,
+    struct KosEvent *out_ev) {
+
+  size_t outer_ac;
+  KosTransferAction *inject_a;
+  KosDynNode *target;
+  PyObject *inject_val;
+  int inject_throw;
+  uint32_t rpc;
+  KosStackBlock *rstack;
+  uint32_t graft_id;
+  KosDynNode *target_keep;
+  KosDynNode *stop;
+  KosTransferPlan *new_plan;
+
+  (void) out_ev;
+
+  if (kos_xfer_forbid_nested_delimited(es) < 0)
+    return -1;
+
+  outer_ac = KosTransferPlan_ACTION_COUNT(outer);
+  inject_a = &KosTransferPlan_ACTIONS(outer)[outer_ac - 1];
+  target = KosTransferPlan_ORIGINAL_TARGET(outer);
+  inject_val = KosTransferAction_INJECT_VALUE(inject_a);
+  inject_throw = KosTransferAction_INJECT_IS_THROW(inject_a);
+  rpc = KosTransferPlan_RESUME_PC(outer);
+  rstack = KosTransferPlan_RESUME_STACK(outer);
+  graft_id = KosTransferPlan_GRAFT_POINT_ID(outer);
+
+  Py_XINCREF(inject_val);
+  KosTransferPlan_RESUME_STACK(outer) = NULL;
+
+  target_keep = NULL;
+  if (target) {
+    kos_chain_segment_bounds(target, NULL, &stop);
+    target_keep = kos_clone_chain_segment(target, stop);
+    if (! target_keep) {
+      Py_XDECREF(inject_val);
+      if (rstack)
+        KosStackBlock_ReleaseChain(rstack);
+      return -1;
+    }
+    kos_chain_detach_template(target_keep);
+  }
+
+  {
+    KosContext *ctx = KosEvalState_CONTEXT(es);
+    KosTransferPlan *old = KosEvalState_PLAN(es);
+    KosEvalState_PLAN(es) = NULL;
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
+    kos_free_transfer_plan(old);
+  }
+
+  if (! target_keep) {
+    Py_XDECREF(inject_val);
+    if (rstack)
+      KosStackBlock_ReleaseChain(rstack);
+    return 1;
+  }
+
+  if (kos_build_direct_install_plan(es, target_keep, inject_val, inject_throw,
+                                    graft_id, &new_plan) < 0) {
+    Py_XDECREF(inject_val);
+    if (rstack)
+      KosStackBlock_ReleaseChain(rstack);
+    kos_dynchain_free(target_keep, NULL);
+    return -1;
+  }
+  Py_XDECREF(inject_val);
+  KosTransferPlan_RESUME_PC(new_plan) = rpc;
+  KosTransferPlan_RESUME_FRAME(new_plan) = NULL;
+  KosTransferPlan_RESUME_STACK(new_plan) = rstack;
+  KosEvalState_ArmTransferPlan(es, new_plan);
+  return 0;
+}
+
+
 /* === Continuation invocation === */
 
 
@@ -4201,16 +4302,13 @@ int kos_invoke_continuation(
          (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
   #endif
 
-  if (kos_xfer_plan_is_delimited_push(KosEvalState_PLAN(es))) {
+  if (kos_xfer_forbid_nested_delimited(es) < 0) {
     kos_free_transfer_plan(plan);
     if (ret_delim && kos_dyn_pop_delim(es, ret_delim) < 0)
       return -1;
     if (to_use != k)
       kos_continuation_free(to_use);
     kos_abandon_transfer_nest(es);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "nested continuation invoke during an active delimited"
-                    " transfer is not supported");
     return -1;
   }
 

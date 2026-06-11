@@ -436,70 +436,14 @@ static int run_transfer_plan_to_completion(
        original_target using kos_build_direct_install_plan, then continue
        draining the new plan. */
     kos_resume_transfer_plan(es);
-    KosTransferPlan *outer = KosEvalState_PLAN(es);
-    if (kos_xfer_plan_is_delimited_push(outer)) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "nested continuation invoke during an active delimited"
-                      " transfer is not supported");
-      return abandon_xfer_and_try_local(es, out_ev);
-    }
-    size_t outer_ac = KosTransferPlan_ACTION_COUNT(outer);
-    KosTransferAction *inject_a = &KosTransferPlan_ACTIONS(outer)[outer_ac - 1];
-    KosDynNode  *target       = KosTransferPlan_ORIGINAL_TARGET(outer);
-    PyObject    *inject_val   = KosTransferAction_INJECT_VALUE(inject_a);
-    int          inject_throw = KosTransferAction_INJECT_IS_THROW(inject_a);
-    uint32_t     rpc          = KosTransferPlan_RESUME_PC(outer);
-    KosStackBlock *rstack     = KosTransferPlan_RESUME_STACK(outer);
-    uint32_t     graft_id     = KosTransferPlan_GRAFT_POINT_ID(outer);
-    /* Take a ref on inject_val before DisarmTransferPlan releases the plan's
-       copy, and steal resume_stack so the plan does not release it. */
-    Py_XINCREF(inject_val);
-    KosTransferPlan_RESUME_STACK(outer) = NULL;
-
-    KosDynNode *target_keep = NULL;
-    if (target) {
-      KosDynNode *bottom = target;
-      while (bottom && KosDynNode_PARENT(bottom))
-        bottom = KosDynNode_PARENT(bottom);
-      KosDynNode *stop = bottom ? KosDynNode_PARENT(bottom) : NULL;
-      target_keep = kos_clone_chain_segment(target, stop);
-      if (! target_keep) {
-        Py_XDECREF(inject_val);
-        if (rstack)
-          KosStackBlock_ReleaseChain(rstack);
+    {
+      int replan = kos_xfer_replan_outer_after_nested(
+          es, KosEvalState_PLAN(es), out_ev);
+      if (replan < 0)
         return abandon_xfer_and_try_local(es, out_ev);
-      }
-      bottom = target_keep;
-      while (bottom && KosDynNode_PARENT(bottom))
-        bottom = KosDynNode_PARENT(bottom);
-      KosDynNode_PARENT(bottom) = NULL;
+      if (replan > 0)
+        break;
     }
-
-    KosEvalState_DisarmTransferPlan(es);
-
-    if (! target_keep) {
-      Py_XDECREF(inject_val);
-      if (rstack)
-        KosStackBlock_ReleaseChain(rstack);
-      break;
-    }
-
-    KosTransferPlan *new_plan = NULL;
-    if (kos_build_direct_install_plan(es, target_keep, inject_val, inject_throw,
-                                      graft_id, &new_plan) < 0) {
-      Py_XDECREF(inject_val);
-      if (rstack)
-        KosStackBlock_ReleaseChain(rstack);
-      kos_dynchain_free(target_keep, NULL);
-      return abandon_xfer_and_try_local(es, out_ev);
-    }
-    /* kos_build_direct_install_plan incremented inject_val; release our ref. */
-    Py_XDECREF(inject_val);
-    KosTransferPlan_RESUME_PC(new_plan) = rpc;
-    KosTransferPlan_RESUME_FRAME(new_plan) = NULL;
-    KosTransferPlan_RESUME_STACK(new_plan) = rstack;
-    KosEvalState_ArmTransferPlan(es, new_plan);
-    /* Continue to drain the new plan in the next loop iteration. */
   }
 
   return 0;
