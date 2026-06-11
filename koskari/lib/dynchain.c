@@ -2300,6 +2300,112 @@ static KosContinuation *kos_continuation_create(
 
 
 /**
+   Clear parent link at the bottom of a cloned template chain.
+*/
+static void kos_chain_detach_template(KosDynNode *chain) {
+
+  KosDynNode *bottom = chain;
+
+  if (! bottom)
+    return;
+  while (KosDynNode_PARENT(bottom))
+    bottom = KosDynNode_PARENT(bottom);
+  KosDynNode_PARENT(bottom) = NULL;
+}
+
+
+/**
+   Innermost FRAME on a cloned chain segment (dyn_top downward).
+*/
+static KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
+
+  KosDynNode *node = chain;
+
+  while (node) {
+    if (KosDynNode_IS_FRAME(node))
+      return (KosDynFrame *) node;
+    node = KosDynNode_PARENT(node);
+  }
+  return NULL;
+}
+
+
+/**
+   Operand stack for resume: frame stack or innermost stack owner on chain.
+*/
+static KosStackBlock *kos_chain_resume_stack(
+    KosDynNode *chain,
+    KosDynFrame *frame) {
+
+  KosStackBlock *stack = KosDynFrame_STACK(frame);
+
+  if (stack)
+    return stack;
+  {
+    KosDynNode *node = chain;
+    while (node && ! KosDynNode_STACK(node))
+      node = KosDynNode_PARENT(node);
+    return node ? KosDynNode_STACK(node) : NULL;
+  }
+}
+
+
+/**
+   Clone segment_top..stop, detach template, wire KosContinuation. Caller
+   supplies prompt_id, graft_point_id, one_shot, and no_frame_err text.
+*/
+static KosContinuation *kos_continuation_capture_segment(
+    KosEvalState *es,
+    KosDynNode *segment_top,
+    KosDynNode *stop,
+    uint32_t resume_pc,
+    uint32_t prompt_id,
+    uint32_t graft_point_id,
+    int one_shot,
+    const char *no_frame_err) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosDynNode *captured_chain;
+  KosDynFrame *resume_frame;
+  KosStackBlock *resume_stack;
+  KosContinuation *k;
+  PyObject *token;
+
+  captured_chain = kos_clone_chain_segment(segment_top, stop);
+  if (! captured_chain && segment_top != stop)
+    return NULL;
+  if (captured_chain)
+    kos_chain_detach_template(captured_chain);
+
+  resume_frame = kos_chain_first_frame(captured_chain);
+  if (! resume_frame) {
+    if (captured_chain)
+      kos_dynchain_free(captured_chain, NULL);
+    PyErr_SetString(PyExc_RuntimeError, no_frame_err);
+    return NULL;
+  }
+
+  resume_stack = kos_chain_resume_stack(captured_chain, resume_frame);
+  token = KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL;
+  k = kos_continuation_create(
+      captured_chain,
+      resume_frame,
+      resume_pc,
+      resume_stack,
+      prompt_id,
+      graft_point_id,
+      one_shot,
+      token);
+  if (! k) {
+    if (captured_chain)
+      kos_dynchain_free(captured_chain, NULL);
+    return NULL;
+  }
+  return k;
+}
+
+
+/**
    Delimited shift: validate prompt, walk handle(SHIFT), clone chain segment for
    invoke template, build one-shot KosContinuation. Callers: opcode PUSH_SHIFT.
 */
@@ -2308,7 +2414,6 @@ int kos_shift_capture(
     uint32_t prompt_id,
     uint32_t resume_pc,
     KosContinuation **out_k) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   /* Find the prompt */
   KosDynPrompt *prompt = kos_find_prompt(es, prompt_id);
@@ -2330,10 +2435,10 @@ int kos_shift_capture(
   /* Clone the chain segment restored on invoke: from dyn_top through the
    * prompt and frames below (heritage nodes above the prompt, e.g. WIND,
    * are included so delimited PUSH can replay their wind hooks). */
-  KosDynNode *segment_top = KosEvalState_DYN_TOP(es);
-  KosDynNode *stop = NULL;
-  if (KOS_XFER_TRACE) {
+  #if KOS_XFER_TRACE
+  {
     KosDynNode *frame_inside = KosDynNode_PARENT(prompt);
+    KosDynNode *segment_top = KosEvalState_DYN_TOP(es);
     if (frame_inside && KosDynNode_IS_FRAME(frame_inside)) {
       KosDynFrame *f = (KosDynFrame *) frame_inside;
       SAYF("[xfer] shift_capture segment_top=%p dyn_top kind=%u frame_inside=%p stack=%p len=%zu",
@@ -2352,68 +2457,23 @@ int kos_shift_capture(
            (void *) frame_inside);
     }
   }
+  #endif
 
-  KosDynNode *captured_chain = kos_clone_chain_segment(segment_top, stop);
-  if (! captured_chain && segment_top != stop) {
-    /* Clone failed */
-    return -1;
-  }
+  {
+    KosContinuation *k = kos_continuation_capture_segment(
+        es,
+        KosEvalState_DYN_TOP(es),
+        NULL,
+        resume_pc,
+        prompt_id,
+        0,
+        1,
+        "PUSH_SHIFT: no frame in captured chain");
 
-  /* Make the template self-contained: clear the bottom's parent so we do not
-   * retain a reference to the original chain (e.g. the prompt).  Otherwise
-   * INSTALL would follow parent into freed memory when cloning from template. */
-  if (captured_chain) {
-    KosDynNode *bottom = captured_chain;
-    while (bottom->parent)
-      bottom = bottom->parent;
-    bottom->parent = NULL;
+    if (! k)
+      return -1;
+    *out_k = k;
   }
-
-  /* Find the topmost frame in the captured chain */
-  KosDynFrame *resume_frame = NULL;
-  KosDynNode *node = captured_chain;
-  while (node) {
-    if (KOS_XFER_TRACE)
-      SAYF("[xfer] shift_capture walk node=%p kind=%u",
-           (void *) node, (unsigned) KosDynNode_KIND(node));
-    if (KosDynNode_IS_FRAME(node)) {
-      resume_frame = (KosDynFrame *) node;
-      break;
-    }
-    node = KosDynNode_PARENT(node);
-  }
-  if (! resume_frame) {
-    kos_dynchain_free(captured_chain, NULL);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "PUSH_SHIFT: no frame in captured chain");
-    return -1;
-  }
-
-  KosStackBlock *resume_stack = KosDynFrame_STACK(resume_frame);
-  if (! resume_stack) {
-    KosDynNode *rs_node = captured_chain;
-    while (rs_node && ! KosDynNode_STACK(rs_node))
-      rs_node = KosDynNode_PARENT(rs_node);
-    resume_stack = rs_node ? KosDynNode_STACK(rs_node) : NULL;
-  }
-  uint32_t pc = resume_frame ? resume_pc : 0;
-  uint32_t graft_point_id = stop ? KosDynNode_NODE_ID(stop) : 0;
-  KosContinuation *k = kos_continuation_create(
-      captured_chain,
-      resume_frame,
-      pc,
-      resume_stack,
-      prompt_id,
-      graft_point_id,
-      1,  /* one-shot */
-      KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL);
-
-  if (! k) {
-    kos_dynchain_free(captured_chain, NULL);
-    return -1;
-  }
-
-  *out_k = k;
   return 0;
 }
 
@@ -2423,7 +2483,6 @@ int kos_shift_capture(
    undelimited prompt id. Callers: opcode CAPTURE_CC.
 */
 int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   KosDynCC *cc = kos_find_cc(es);
   if (! cc) {
@@ -2443,60 +2502,21 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
     return -1;
   }
 
-  KosDynNode *captured_chain = kos_clone_chain_segment(segment_top, NULL);
-  if (! captured_chain) {
-    return -1;
-  }
-
-  /* Make the template self-contained */
   {
-    KosDynNode *bottom = captured_chain;
-    while (bottom->parent)
-      bottom = bottom->parent;
-    bottom->parent = NULL;
+    KosContinuation *k = kos_continuation_capture_segment(
+        es,
+        segment_top,
+        NULL,
+        KosDynCC_RESUME_PC(cc),
+        KOS_PROMPT_ID_UNDELIMITED,
+        0,
+        0,
+        "CAPTURE_CC: no frame in captured segment");
+
+    if (! k)
+      return -1;
+    *out_k = k;
   }
-
-  /* Find the topmost frame in the captured chain (the resume frame) */
-  KosDynFrame *resume_frame = NULL;
-  KosDynNode *node = captured_chain;
-  while (node) {
-    if (KosDynNode_IS_FRAME(node)) {
-      resume_frame = (KosDynFrame *) node;
-      break;
-    }
-    node = KosDynNode_PARENT(node);
-  }
-
-  if (! resume_frame) {
-    kos_dynchain_free(captured_chain, NULL);
-    PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC: no frame in captured segment");
-    return -1;
-  }
-
-  KosStackBlock *resume_stack_cc = KosDynFrame_STACK(resume_frame);
-  if (! resume_stack_cc) {
-    KosDynNode *rs_node = captured_chain;
-    while (rs_node && ! KosDynNode_STACK(rs_node))
-      rs_node = KosDynNode_PARENT(rs_node);
-    resume_stack_cc = rs_node ? KosDynNode_STACK(rs_node) : NULL;
-  }
-
-  KosContinuation *k = kos_continuation_create(
-      captured_chain,
-      resume_frame,
-      KosDynCC_RESUME_PC(cc),
-      resume_stack_cc,
-      KOS_PROMPT_ID_UNDELIMITED,
-      0,  /* graft_point_id: capture-cc captures to root */
-      0,  /* multi-shot */
-      KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL);
-
-  if (! k) {
-    kos_dynchain_free(captured_chain, NULL);
-    return -1;
-  }
-
-  *out_k = k;
   return 0;
 }
 
@@ -2558,15 +2578,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
     return NULL;
   }
 
-  KosDynFrame *resume_frame = NULL;
-  KosDynNode *node = cloned_chain;
-  while (node) {
-    if (KosDynNode_IS_FRAME(node)) {
-      resume_frame = (KosDynFrame *) node;
-      break;
-    }
-    node = KosDynNode_PARENT(node);
-  }
+  KosDynFrame *resume_frame = kos_chain_first_frame(cloned_chain);
   if (KosContinuation_CAPTURED_CHAIN(k) && ! resume_frame) {
     PyErr_SetString(PyExc_RuntimeError,
                     "continuation clone has no frame");
