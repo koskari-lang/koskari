@@ -47,6 +47,6 @@ Completed design drafts (historical) live under **[archive/](../archive/)** — 
 | Evaluator core | Implemented | `eval.c`, `eval.h` |
 | KosCoroutine / run-code-as-coroutine | Implemented | `func.c`, `func.h` |
 | Opcode dispatch | Implemented | `eval.c` (per [OPCODES.md](../OPCODES.md) §1.6) |
-| Continuation support | Implemented | `eval.c`, `dynchain.c` |
+| Continuation support | Implemented | `eval.c`, `eval/eval_chain.c`, `dynchain.c`, `dynchain/xfer_plan.c` |
 | Compiler | Substantially implemented — see [SPECIALS.md](../SPECIALS.md) | `koskari/compile/compiler.py`, `koskari/compile/specials/` |
 | `.kio` cache format | Design only | `design/interpreter/kio-format.md` |

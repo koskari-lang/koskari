@@ -11,6 +11,19 @@ Generated for replacing `koskari/lib/dynchain.c` while preserving **all symbols 
 
 There is no separate opcode include tree: opcode `*.c` files are compiled with the same headers as the eval core (via generated build / unity pattern used in this project).
 
+### 1.1 `dynchain.c` translation unit
+
+`koskari/lib/dynchain.c` is the shell. It `#include`s:
+
+| Include | Role |
+|---------|------|
+| `dynchain/dyn_*.c` | Per-kind push/pop/wind/unwind |
+| `dynchain/dyn_walk.c` | Chain walks, pop/unwind, `kos_dyn_transition`, local raise |
+| `dynchain/xfer_plan.c` | Transfer plan build (`KosXferPlanOptions`, `kos_build_xfer_plan`), `kos_run_transfer_step`, suspend/resume, `kos_invoke_continuation` |
+
+All units compile into one `dynchain.o`. Symbols declared in `dynchain.h` are
+exported from that object file regardless of which included file defines them.
+
 ## 2. `KosContext` fields (eval.h) — dynchain / transfer / delimited control
 
 These fields **must** remain coherent with any new implementation:
@@ -119,11 +132,13 @@ Legend: **Ext** = referenced outside `dynchain.c` (must remain linkable and beha
 | `kos_continuation_free` / `free_exclude` / `clone` | Y | opcodes, cont, eval |
 | `kos_compute_lca` | Y | tests |
 | `kos_build_transfer_plan` / `direct_install` / `delimited_push` / `return` / `install_only` | Y | tests; eval uses return + cc_unwind |
-| `kos_dyn_build_pop_shift_plan` / `kos_dyn_build_push_shift_unwind_plan` | Y | POP_SHIFT, PUSH_SHIFT |
+| `kos_dyn_build_pop_shift_plan` | Y | POP_SHIFT |
 | `kos_run_transfer_step` | Y | eval |
 | `kos_free_transfer_plan` | Y | eval, opcodes, tests |
 | `kos_suspend_transfer_plan` / `kos_resume_transfer_plan` | Y | nested invoke during transfer; eval_chain replan |
 | `kos_free_transfer_plan_stack` | Y | fatal transfer errors in eval_chain |
+| `kos_abandon_transfer_nest` | Y | eval, eval_chain, xfer_plan invoke forbid |
+| `kos_xfer_plan_is_delimited_push` | Y | xfer_plan invoke, eval_chain replan |
 | `kos_invoke_continuation` | Y | eval, INVOKE_K*, cont |
 | `kos_dynnode_traverse` / `kos_dynchain_traverse` | Y | eval, iter |
 | `kos_continuation_traverse` / `kos_transferplan_traverse` | Y | eval, cont |
@@ -211,7 +226,7 @@ instead of **`KosContext *ctx`**.
 | `YIELD_FROM.c` | Extensive `KosDynYieldFrom_*`, `kos_dyn_push_yield_from`, `kos_dyn_pop_yield_from`, `KosContext_DYN_TOP`, `KosDynFrame_*`, `KosDynNode_IS_YIELD_FROM` |
 | `POP_PROMPT.c` | `KosContext_DYN_TOP`, `KosDynNode_IS_PROMPT`, `kos_dyn_transition`, `kos_dynnode_kind_name`, `KosDynFrame_*`, `kos_dyn_pop_prompt` |
 | `POP_SHIFT.c` | `KosDynNode_*`, chain walk `PARENT`, `kos_dyn_build_pop_shift_plan`, `KosTransferPlan_*`, `kos_free_transfer_plan` |
-| `PUSH_SHIFT.c` | `kos_find_prompt`, `KosDynPrompt_PENDING_SHIFT_WRAPPER`, `kos_dyn_push_shift`, `kos_shift_capture`, `kos_continuation_free`, `kos_dyn_build_push_shift_unwind_plan`, `KosTransferPlan_CONTINUATION_REF`, `kos_shift_ic_for`, `KosDynFrame_ACTING_PC` |
+| `PUSH_SHIFT.c` | `kos_find_prompt`, `KosDynPrompt_PENDING_SHIFT_WRAPPER`, `kos_dyn_push_shift`, `kos_shift_capture`, `kos_continuation_free`, `KosTransferPlan_CONTINUATION_REF`, `kos_shift_ic_for`, `KosDynFrame_ACTING_PC` |
 | `POP_WIND.c` | `kos_dyn_pop_top`, `KosDynWind_*`, `KosDynNode_PARENT` |
 | `PUSH_WIND.c` | `kos_dyn_push_wind`, `kos_dyn_wind`, `KosDynWind_ENTERED` |
 | `PUSH_WITH.c` | `kos_dyn_push_with_provisional`, `kos_dyn_wind`, `kos_dyn_pop_with`, `KosDynFrame_ACTING_PC` |

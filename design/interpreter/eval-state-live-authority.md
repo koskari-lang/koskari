@@ -222,8 +222,8 @@ Sites where **incremental pop/push rules are insufficient**. Each calls **`kos_d
 
 | Site | File | Lines (approx.) | Why |
 |------|------|-----------------|-----|
-| `xfer_step_install` | `dynchain.c` | ~3626–3708 | Replaces entire `dyn_top` segment; rebuild after stack graft ~3670 |
-| `xfer_step_push` | `dynchain.c` | ~3719–3779 | Grafts segment onto `dyn_top`; rebuild after stack graft ~3765 |
+| `xfer_step_install` | `dynchain/xfer_plan.c` | static | Replaces entire `dyn_top` segment via `xfer_step_land_segment` (`graft_parent == NULL`) |
+| `xfer_step_push` | `dynchain/xfer_plan.c` | static | Grafts segment onto `dyn_top` via `xfer_step_land_segment` (non-NULL `graft_parent`) |
 | `kos_dyn_finish_delimited_pop_return` | `dynchain.c` | ~4301+ | After `pop_delim`: `kos_dyn_load_live_regs_from_frame` when `es->frame == ret_frame`, else rebuild; else-branch when DELIM not dyn_top |
 | `kos_dyn_unlink_next_node` (non–dyn_top) | `dyn_next.c` | ~130–141 | Splices parent links without `commit_dyn_top`; no pre-flush before rewire (P4; H20) |
 | `KosContext_New` bootstrap | `eval.c` | ~985 | Thaw/freeze bootstrap after `KosEvalState_Init` |

@@ -257,24 +257,34 @@ Delete the unused **`ctx`** binding in:
 
 ## 7. `dynchain.c` and `dynchain/*.c`
 
-### 7.1 Surface
+### 7.1 Translation unit
+
+**`koskari/lib/dynchain.c`** is the shell. It `#include`s per-kind
+**`dynchain/dyn_*.c`**, **`dynchain/dyn_walk.c`** (walks, pop/unwind,
+**`kos_dyn_transition`**), and **`dynchain/xfer_plan.c`** (plan build via
+**`KosXferPlanOptions`** / **`kos_build_xfer_plan`**, **`kos_run_transfer_step`**,
+suspend/resume, **`kos_invoke_continuation`**). One **`dynchain.o`**; public API
+in **`dynchain.h`**.
+
+### 7.2 Surface
 
 **Public `kos_dyn_*` functions take `KosEvalState *es` first.** They reach context
 via **`KosEvalState_CONTEXT(es)`** and mutate **`KosContext`** fields.
 
-### 7.2 Where `KosContext` is mutated heavily
+### 7.3 Where `KosContext` is mutated heavily
 
-| Area | Key symbols |
-|------|-------------|
-| Commit head | **`kos_dyn_commit_dyn_top`**, **`kos_dyn_push`** |
-| Pop / uninstall | **`kos_dyn_uninstall`**, pop family |
-| Transitions | **`kos_dyn_transition`** |
-| Xfer steps | **`xfer_step_install`**, **`xfer_step_push`**, inject/truncate actions |
-| Generator | **`kos_dyn_gen_freeze`**, **`kos_dyn_gen_install`** (`dyn_gen.c`) |
-| CC unwind setup | **`kos_build_cc_unwind_plan`** |
-| Plan nesting | **`plan_stack`** suspend/resume in **`dynchain.c`** |
+| Area | Key symbols | File |
+|------|-------------|------|
+| Commit head | **`kos_dyn_commit_dyn_top`**, **`kos_dyn_push`** | `dynchain.c` |
+| Pop / uninstall | **`kos_dyn_uninstall`**, pop family | `dyn_walk.c`, `dyn_*.c` |
+| Transitions | **`kos_dyn_transition`** | `dyn_walk.c` |
+| Xfer steps | **`xfer_step_install`**, **`xfer_step_push`**, **`xfer_step_inject`** | `xfer_plan.c` (static; drained via **`kos_run_transfer_step`**) |
+| Generator | **`kos_dyn_gen_freeze`**, **`kos_dyn_gen_install`** | `dyn_gen.c` |
+| CC unwind setup | **`kos_build_cc_unwind_plan`** | `xfer_plan.c` |
+| Plan nesting | **`plan_stack`** suspend/resume | `xfer_plan.c` |
+| Transfer drain / replan | **`run_transfer_plan_to_completion`** | `eval/eval_chain.c` |
 
-### 7.3 Public API still taking `KosContext *`
+### 7.4 Public API still taking `KosContext *`
 
 | Symbol | Callers | Migration |
 |--------|---------|-----------|

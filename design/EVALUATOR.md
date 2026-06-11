@@ -2,7 +2,7 @@
 
 This document describes the operation of the koskari eval loop in `koskari/lib/eval.c`: its stages, how opcodes are invoked and signal back, exception handling, control transit (event-driven handle/unwind model), transfer plans, tail calls, call installs, and resumption paths.
 
-Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval/eval_gil.c` (included into `eval.c`; `koskari_gil_drop_requested`), `koskari/lib/eval.h` (including suspension tagging, Python await/resume bridge fields, and domain TLS scope wrappers in `eval.c`), `koskari/lib/dynchain.c` / `koskari/lib/dynchain.h`, and `design/interpreter/evaluator.md`. For the staged `KosEvalState` surface and migration rationale, see `design/kos_eval_state_api_migration.md`. For live-field authority, choke-point funnel, and removing scatter `SyncFromContext` (performance; behavioral freeze), see `design/interpreter/eval-state-live-authority.md`.
+Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval/eval_gil.c` (included into `eval.c`; `koskari_gil_drop_requested`), `koskari/lib/eval/eval_chain.c` (included into `eval.c`; transfer-plan drain and replan), `koskari/lib/eval.h` (including suspension tagging, Python await/resume bridge fields, and domain TLS scope wrappers in `eval.c`), `koskari/lib/dynchain.c` / `koskari/lib/dynchain.h` / `koskari/lib/dynchain/dyn_walk.c` / `koskari/lib/dynchain/xfer_plan.c` (walk and xfer units are `#include`d by `dynchain.c`), and `design/interpreter/evaluator.md`. For the staged `KosEvalState` surface and migration rationale, see `design/kos_eval_state_api_migration.md`. For live-field authority, choke-point funnel, and removing scatter `SyncFromContext` (performance; behavioral freeze), see `design/interpreter/eval-state-live-authority.md`.
 
 ---
 
@@ -694,7 +694,9 @@ the find phase before unwind if no loop exists in-frame.
   YIELD_FROM emits only YIELD or AWAIT boundary events (no `KOS_SUSP_YIELD_FROM`
   or `revive_yield_from`).
 
-Primary code: `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`, `koskari/lib/eval.c`.
+Primary code: `koskari/lib/dynchain.c` (shell plus `#include` of `dynchain/dyn_*.c`,
+`dynchain/dyn_walk.c`, `dynchain/xfer_plan.c`), `koskari/lib/dynchain.h`,
+`koskari/lib/eval.c`, `koskari/lib/eval/eval_chain.c`.
 
 ---
 
@@ -768,6 +770,32 @@ failure. Exception policy is still split across **`process_raise`**,
 1. **eval_phase_transfer** — at loop start when plan is active.
 2. **Inside dispatch loop** — at each iteration top before phase 3.
 3. **eval_phase_entry** — when re-entering with an active plan (e.g. after yield-from or boundary return).
+
+### 6.6 Implementation layout
+
+| Unit | Path | Responsibility |
+|------|------|----------------|
+| Shell | `koskari/lib/dynchain.c` | Node allocators, continuation capture, `#include` orchestration |
+| Per-kind | `koskari/lib/dynchain/dyn_*.c` | Kind-specific push/pop/wind/unwind |
+| Walk | `koskari/lib/dynchain/dyn_walk.c` | Pop/unwind walks, `kos_dyn_transition`, local raise |
+| Xfer | `koskari/lib/dynchain/xfer_plan.c` | Plan build (`KosXferPlanOptions`, `kos_build_xfer_plan`), `kos_run_transfer_step`, suspend/resume, `kos_invoke_continuation` |
+| Drain | `koskari/lib/eval/eval_chain.c` | `run_transfer_plan_to_completion`, nested replan, failed-transfer abandon |
+
+**Plan build:** public `kos_build_*` functions fill **`KosXferPlanOptions`** and
+call **`kos_build_xfer_plan`** (static in `xfer_plan.c`).
+
+**Step hot path:** INSTALL and PUSH land through **`xfer_step_land_segment`**
+(`KOS_OP_INLINE`; `graft_parent == NULL` for INSTALL, non-NULL for PUSH).
+**`kos_chain_segment_bounds`** and **`xfer_plan_apply_resume_state`** are
+`KOS_OP_INLINE` on the step path. INJECT is handled inline in **`xfer_step_inject`**.
+
+**Capture:** **`kos_continuation_capture_segment`** in `dynchain.c` serves
+`kos_shift_capture` and `kos_capture_cc`.
+
+**Nested replan:** `run_transfer_plan_to_completion` in `eval_chain.c` resumes the
+outer plan, clones `original_target`, disarms, calls **`kos_build_direct_install_plan`**,
+and continues drain. Delimited PUSH outers are rejected via
+**`kos_xfer_plan_is_delimited_push`** at invoke time and in the replan block.
 
 ---
 
