@@ -3521,6 +3521,103 @@ static void xfer_remap_extent_nodes(
 }
 
 
+typedef enum KosXferLandMode {
+  KOS_XFER_LAND_REPLACE = 0,
+  KOS_XFER_LAND_GRAFT,
+} KosXferLandMode;
+
+
+/**
+   Deliver a continuation result: throw inject mode or stack push.
+*/
+static int kos_context_inject_value(
+    KosContext *ctx,
+    KosEvalState *es,
+    PyObject *val,
+    PyObject *exc_type,
+    int is_throw,
+    int require_frame) {
+
+  if (is_throw) {
+    KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
+    Py_XINCREF(val);
+    Py_XDECREF(KosContext_INJECT_VALUE(ctx));
+    KosContext_INJECT_VALUE(ctx) = val;
+    Py_XDECREF(KosContext_INJECT_TYPE(ctx));
+    KosContext_INJECT_TYPE(ctx) = exc_type;
+    if (exc_type)
+      Py_INCREF(exc_type);
+    return 0;
+  }
+
+  if (! KosEvalState_FRAME(es)) {
+    if (require_frame) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "INJECT requires a current frame");
+      return -1;
+    }
+    return 0;
+  }
+
+  if (KosEvalState_StackPushRef(es, val) < 0)
+    return -1;
+  return 0;
+}
+
+
+/**
+   Publish cloned segment on dyn_top: replace chain or graft onto graft_parent.
+   Restores resume state, remaps extent nodes, runs install-phase wind.
+*/
+static int xfer_step_land_segment(
+    KosEvalState *es,
+    KosTransferPlan *plan,
+    KosDynNode *template_seg,
+    KosDynNode *seg,
+    KosXferLandMode mode,
+    KosDynNode *graft_parent,
+    KosEvent *out_ev,
+    const char *xfer_tag) {
+
+  if (mode == KOS_XFER_LAND_REPLACE) {
+    KosDynNode *old_top = KosEvalState_DYN_TOP(es);
+    KosEvalState_DYN_TOP(es) = seg;
+    kos_dyn_rebuild_live_from_chain(es);
+    if (old_top)
+      kos_dynchain_free(old_top, NULL);
+  } else {
+    KosDynNode *seg_bottom = NULL;
+    kos_chain_segment_bounds(seg, &seg_bottom, NULL);
+    if (seg_bottom)
+      KosDynNode_PARENT(seg_bottom) = graft_parent;
+    KosEvalState_DYN_TOP(es) = seg;
+    kos_dyn_rebuild_live_from_chain(es);
+  }
+
+  xfer_plan_apply_resume_state(es, plan);
+
+  if (mode == KOS_XFER_LAND_REPLACE)
+    xfer_remap_extent_nodes(plan, template_seg, seg);
+
+  {
+    KosDynNode *wind_stop = NULL;
+    if (mode == KOS_XFER_LAND_REPLACE)
+      kos_chain_segment_bounds(seg, NULL, &wind_stop);
+    else
+      wind_stop = graft_parent;
+    int wind_r = kos_dyn_run_install_wind_span(es, seg, wind_stop, out_ev,
+                                               xfer_tag);
+    if (wind_r != 0)
+      return wind_r;
+  }
+
+  if (mode == KOS_XFER_LAND_GRAFT)
+    xfer_remap_extent_nodes(plan, template_seg, seg);
+
+  return 0;
+}
+
+
 /**
    Execute an INSTALL step: replace the current dynamic chain with a fresh
    clone of the plan's target segment, restore the frame's stack and PC
@@ -3536,11 +3633,13 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
   KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
   KosDynNode *stop = NULL;
+  KosDynNode *seg;
+
   kos_chain_segment_bounds(template_seg, NULL, &stop);
-  KosDynNode *seg = kos_clone_chain_segment(template_seg, stop);
+  seg = kos_clone_chain_segment(template_seg, stop);
   if (! seg && template_seg) {
     SAY("[xfer] INSTALL clone segment failed");
-    KosTransferPlan_ACTION_INDEX(plan)--;  /* leave step for retry or caller */
+    KosTransferPlan_ACTION_INDEX(plan)--;
     return -1;
   }
   #if KOS_XFER_TRACE
@@ -3548,17 +3647,14 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
          (void *) seg, (unsigned) KosTransferPlan_RESUME_PC(plan),
          (void *) KosEvalState_DYN_TOP(es), (void *) KosEvalState_FRAME(es));
   #endif
+
   {
-    KosDynNode *old_top = KosEvalState_DYN_TOP(es);
-    KosEvalState_DYN_TOP(es) = seg;
-    kos_dyn_rebuild_live_from_chain(es);
-    if (old_top)
-      kos_dynchain_free(old_top, NULL);
+    int land_r = xfer_step_land_segment(es, plan, template_seg, seg,
+                                        KOS_XFER_LAND_REPLACE, NULL, out_ev,
+                                        "INSTALL");
+    if (land_r != 0)
+      return land_r;
   }
-
-  xfer_plan_apply_resume_state(es, plan);
-
-  xfer_remap_extent_nodes(plan, template_seg, seg);
 
   #if KOS_XFER_TRACE
   if (KosEvalState_FRAME(es)) {
@@ -3570,15 +3666,6 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
          (unsigned) KosTransferPlan_RESUME_PC(plan));
   }
   #endif
-
-  {
-    KosDynNode *chain_stop = NULL;
-    kos_chain_segment_bounds(seg, NULL, &chain_stop);
-    int wind_r = kos_dyn_run_install_wind_span(es, seg, chain_stop, out_ev,
-                                               "INSTALL");
-    if (wind_r != 0)
-      return wind_r;
-  }
 
   SAYF("[xfer] INSTALL after: dyn_top=%p frame_top=%p",
        (void *) KosEvalState_DYN_TOP(es), (void *) KosEvalState_FRAME(es));
@@ -3598,8 +3685,11 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
   KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
   KosDynNode *stop = NULL;
+  KosDynNode *seg;
+  KosDynNode *current_top;
+
   kos_chain_segment_bounds(template_seg, NULL, &stop);
-  KosDynNode *seg = kos_clone_chain_segment(template_seg, stop);
+  seg = kos_clone_chain_segment(template_seg, stop);
   if (! seg && template_seg) {
     if (KOS_XFER_TRACE)
       SAY("[xfer] PUSH clone segment failed");
@@ -3611,26 +3701,14 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
          (void *) seg, (void *) KosEvalState_DYN_TOP(es),
          (void *) KosEvalState_FRAME(es));
 
-  /* Graft bottom of segment to current dyn_top */
-  KosDynNode *current_top = KosEvalState_DYN_TOP(es);
-  KosDynNode *seg_bottom = NULL;
-  kos_chain_segment_bounds(seg, &seg_bottom, NULL);
-  if (seg_bottom)
-    KosDynNode_PARENT(seg_bottom) = current_top;
-
-  KosEvalState_DYN_TOP(es) = seg;
-  kos_dyn_rebuild_live_from_chain(es);
-
-  xfer_plan_apply_resume_state(es, plan);
-
+  current_top = KosEvalState_DYN_TOP(es);
   {
-    int wind_r = kos_dyn_run_install_wind_span(es, seg, current_top, out_ev,
-                                               "PUSH");
-    if (wind_r != 0)
-      return wind_r;
+    int land_r = xfer_step_land_segment(es, plan, template_seg, seg,
+                                        KOS_XFER_LAND_GRAFT, current_top,
+                                        out_ev, "PUSH");
+    if (land_r != 0)
+      return land_r;
   }
-
-  xfer_remap_extent_nodes(plan, template_seg, seg);
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] PUSH after: dyn_top=%p frame_top=%p",
@@ -3657,31 +3735,16 @@ static int xfer_step_inject(KosEvalState *es, KosTransferAction *action) {
          _inject_len,
          KosTransferAction_INJECT_IS_THROW(action));
   #endif
-  if (KosTransferAction_INJECT_IS_THROW(action)) {
-    KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
-    Py_XINCREF(KosTransferAction_INJECT_VALUE(action));
-    Py_XDECREF(KosContext_INJECT_VALUE(ctx));
-    KosContext_INJECT_VALUE(ctx) = KosTransferAction_INJECT_VALUE(action);
-    Py_XDECREF(KosContext_INJECT_TYPE(ctx));
-    KosContext_INJECT_TYPE(ctx) = KosTransferAction_INJECT_TYPE(action);
-    if (KosContext_INJECT_TYPE(ctx))
-      Py_INCREF(KosContext_INJECT_TYPE(ctx));
-  } else {
-    if (! KosEvalState_FRAME(es)) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "INJECT requires a current frame");
-      Py_XDECREF(KosTransferAction_INJECT_VALUE(action));
-      KosTransferAction_INJECT_VALUE(action) = NULL;
-      return -1;
-    }
-    if (KosEvalState_StackPushRef(es, KosTransferAction_INJECT_VALUE(action))
-        < 0) {
-      if (KOS_XFER_TRACE)
-        SAY("[xfer] INJECT PushRef failed");
-      Py_XDECREF(KosTransferAction_INJECT_VALUE(action));
-      KosTransferAction_INJECT_VALUE(action) = NULL;
-      return -1;
-    }
+  if (kos_context_inject_value(ctx, es,
+                               KosTransferAction_INJECT_VALUE(action),
+                               KosTransferAction_INJECT_TYPE(action),
+                               KosTransferAction_INJECT_IS_THROW(action),
+                               1) < 0) {
+    if (KOS_XFER_TRACE)
+      SAY("[xfer] INJECT delivery failed");
+    Py_XDECREF(KosTransferAction_INJECT_VALUE(action));
+    KosTransferAction_INJECT_VALUE(action) = NULL;
+    return -1;
   }
   Py_DECREF(KosTransferAction_INJECT_VALUE(action));
   KosTransferAction_INJECT_VALUE(action) = NULL;
@@ -3747,38 +3810,22 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
     KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
   }
 
-  if (KosTransferAction_TRUNCATE_IS_THROW(action)) {
-    if (KOS_XFER_TRACE)
-      SAY("[xfer] TRUNCATE_AND_INJECT: setting inject mode to THROW");
-    KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
-    Py_XINCREF(KosTransferAction_TRUNCATE_VALUE(action));
-    Py_XDECREF(KosContext_INJECT_VALUE(ctx));
-    KosContext_INJECT_VALUE(ctx) = KosTransferAction_TRUNCATE_VALUE(action);
-    Py_XDECREF(KosContext_INJECT_TYPE(ctx));
-    KosContext_INJECT_TYPE(ctx) = KosTransferAction_TRUNCATE_TYPE(action);
-    if (KosContext_INJECT_TYPE(ctx))
-      Py_INCREF(KosContext_INJECT_TYPE(ctx));
-  } else if (KosEvalState_FRAME(es)) {
-    size_t stack_len_before = 0;
-    if (KOS_XFER_TRACE) {
-      stack_len_before = KosEvalState_StackLen(es);
-      SAYF("[xfer] TRUNCATE_AND_INJECT: pushing value %R onto frame=%p stack (len before=%zu)",
-           KosTransferAction_TRUNCATE_VALUE(action),
-           (void *) KosEvalState_FRAME(es), stack_len_before);
-    }
-    (void) stack_len_before;
-    {
-      if (KosEvalState_StackPushRef(es, KosTransferAction_TRUNCATE_VALUE(action))
-          < 0) {
-        Py_DECREF(KosTransferAction_TRUNCATE_VALUE(action));
-        return -1;
-      }
-    }
-    if (KOS_XFER_TRACE) {
-      size_t stack_len_after = KosEvalState_StackLen(es);
-      SAYF("[xfer] TRUNCATE_AND_INJECT: stack len after=%zu", stack_len_after);
-      (void) stack_len_after;
-    }
+  if (KOS_XFER_TRACE && ! KosTransferAction_TRUNCATE_IS_THROW(action)
+      && KosEvalState_FRAME(es)) {
+    SAYF("[xfer] TRUNCATE_AND_INJECT: pushing value %R onto frame=%p",
+         KosTransferAction_TRUNCATE_VALUE(action),
+         (void *) KosEvalState_FRAME(es));
+  }
+  if (kos_context_inject_value(ctx, es,
+                               KosTransferAction_TRUNCATE_VALUE(action),
+                               KosTransferAction_TRUNCATE_TYPE(action),
+                               KosTransferAction_TRUNCATE_IS_THROW(action),
+                               0) < 0) {
+    Py_DECREF(KosTransferAction_TRUNCATE_VALUE(action));
+    return -1;
+  }
+  if (! KosTransferAction_TRUNCATE_IS_THROW(action)
+      && KosEvalState_FRAME(es)) {
     Py_DECREF(KosTransferAction_TRUNCATE_VALUE(action));
   }
   KosTransferAction_TRUNCATE_VALUE(action) = NULL;
