@@ -2031,23 +2031,6 @@ void kos_abandon_transfer_nest(KosEvalState *es);
 int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan);
 
 
-/**
-   Refuse nested continuation invoke during an active delimited PUSH xfer.
-*/
-int kos_xfer_forbid_nested_delimited(KosEvalState *es);
-
-
-/**
-   Replan suspended outer transfer after nested continuation completes.
-
-   :return: 0 continue draining, 1 outer had no target, -1 on error
-*/
-int kos_xfer_replan_outer_after_nested(
-    KosEvalState *es,
-    KosTransferPlan *outer,
-    struct KosEvent *out_ev);
-
-
 /* === Continuation invocation === */
 
 

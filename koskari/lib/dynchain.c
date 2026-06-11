@@ -1561,7 +1561,7 @@ static KosContinuation *kos_continuation_create(
 /**
    Clear parent link at the bottom of a cloned template chain.
 */
-static void kos_chain_detach_template(KosDynNode *chain) {
+static inline void kos_chain_detach_template(KosDynNode *chain) {
 
   KosDynNode *bottom = chain;
 
@@ -1576,7 +1576,7 @@ static void kos_chain_detach_template(KosDynNode *chain) {
 /**
    Innermost FRAME on a cloned chain segment (dyn_top downward).
 */
-static KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
+static inline KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
 
   KosDynNode *node = chain;
 
@@ -1592,7 +1592,7 @@ static KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
 /**
    Operand stack for resume: frame stack or innermost stack owner on chain.
 */
-static KosStackBlock *kos_chain_resume_stack(
+static inline KosStackBlock *kos_chain_resume_stack(
     KosDynNode *chain,
     KosDynFrame *frame) {
 
