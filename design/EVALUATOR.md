@@ -264,10 +264,12 @@ flowchart TD
     has_plan{"plan?"}
     step["plan_res = kos_run_transfer_step(es, out_ev)"]
     step_check{"plan_res?"}
-    fail["plan_res < 0<br/>KOS_EV_RAISE, inject traceback<br/>return -1"]
+    fail["plan_res < 0<br/>abandon + try_local<br/>(or KOS_EV_RAISE if unhandled<br/>or cc-unwind signal emit)"]
     suspend["plan_res == KOS_XFER_SUSPENDED_AWAIT<br/>return 0 (plan stays)"]
     next_step["next step"]
     clear["KosEvalState_DisarmTransferPlan(es)"]
+    stack_check{"plan_stack?"}
+    replan["resume outer, clone target,<br/>kos_build_direct_install_plan,<br/>arm new plan"]
     frame_check{"CURRENT_FRAME(ctx)?"}
     ret_none["KOS_EV_RETURN(None)<br/>STOP_EVENT"]
 
@@ -280,10 +282,27 @@ flowchart TD
     step_check -->|0| next_step
     next_step --> has_plan
     has_plan -->|no| clear
-    clear --> frame_check
+    clear --> stack_check
+    stack_check -->|non-empty| replan
+    replan --> has_plan
+    stack_check -->|empty| frame_check
     frame_check -->|NULL| ret_none
     frame_check -->|non-NULL| loop_next["continue to dispatch"]
 ```
+
+When a wind thunk invokes a nested continuation during an active plan, the outer
+plan is suspended on **`plan_stack`**. After the inner plan drains,
+**`kos_resume_transfer_plan`** pops the outer, clones **`original_target`** before
+disarm (UAF avoidance), rebuilds via **`kos_build_direct_install_plan`**, and
+continues draining. See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5.
+
+**Failed transfer (implemented):** on step failure (except foreign cc-unwind
+sentinel re-emit), **`kos_abandon_transfer_nest`** disarms the plan and frees
+**`plan_stack`**, then **`try_local_exception_handler`** runs on the manifested
+chain. Return `1` continues the eval loop when a handler applies; unhandled
+exceptions emit **`KOS_EV_RAISE`**. **`KOS_DYN_CC_RAISE`** sentinel steps emit
+**`KOS_EV_RAISE`** upward without **`try_local`**. See
+[interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §3–§4.
 
 ### 2.3 Phase 3: Pending Exception Check
 
@@ -716,9 +735,35 @@ flowchart LR
 | **0** | Step complete; continue to next step. |
 | **1** | Plan complete; plan is cleared. |
 | **KOS_XFER_SUSPENDED_AWAIT** (2) | Step suspended on await; plan stays; driver resumes and feeds inject. |
-| **< 0** | Error; PyErr set; plan fails, `run_transfer_plan_to_completion` fills out_ev with KOS_EV_RAISE. |
+| **< 0** | Error; PyErr set; plan fails; nest disarmed and **`plan_stack`** freed; **`KOS_EV_RAISE`** today (local handler dispatch planned). |
 
-### 6.4 Call Sites for run_transfer_plan_to_completion
+### 6.4 In-place migration and nested interrupt
+
+Transfer plans **mutate live eval state** step by step (unwind, INSTALL, wind,
+INJECT). There is no scratch dynchain swapped in at the end. Once stepping
+begins, the evaluator has left the pure invoke-site topology; after INSTALL the
+chain is the destination segment (cloned, but live).
+
+**Nested continuation interrupt (implemented):** **`kos_invoke_continuation`**
+calls **`kos_suspend_transfer_plan`** before arming the inner plan. After inner
+completion, **`run_transfer_plan_to_completion`** replans the outer via
+**`kos_build_direct_install_plan`**, preserving **`graft_point_id`** and
+resume PC/stack. **`KosTransferPlan_RESUME_FRAME`** is set to NULL on replan;
+INSTALL discovers the frame from the installed segment.
+
+**Wind thunks** during transfer run in the **same** **`koskari_eval`** loop (child
+frame on the dyn chain), not a nested eval invocation. Thunk failure may be
+sync ( **`CallNoArgs`** returns -1) or async (bytecode raises under a suspended
+plan).
+
+**Failed transfer (implemented):** abandon plan + **`plan_stack`**, then
+**`try_local`** on the manifested chain (cc-unwind sentinel carve-out excepted).
+Undelimited invoke does not expect a return at the invoke site on success or
+failure. Exception policy is still split across **`process_raise`**,
+**`eval_phase_entry`**, and **`run_transfer_plan_to_completion`** — see
+[event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md).
+
+### 6.5 Call Sites for run_transfer_plan_to_completion
 
 1. **eval_phase_transfer** — at loop start when plan is active.
 2. **Inside dispatch loop** — at each iteration top before phase 3.
@@ -757,6 +802,11 @@ TAIL_CALL opcodes return `KOS_OP_RES_CONTROL_RETURNED` when they install a new f
 ### 7.4 Transfer Plan Integration
 
 An install that invokes a continuation builds a transfer plan and arms it with **`KosEvalState_ArmTransferPlan(es, plan)`** ( **`ctx->plan`** plus **`KOS_CTX_IN_TRANSFER`** ). The eval loop drains it on the next iteration. No recursion.
+
+If a continuation is invoked while a plan is already active (e.g. from a wind
+thunk), **`kos_suspend_transfer_plan`** pushes the outer onto **`plan_stack`**
+before the inner plan is armed. **`kos_free_transfer_plan_stack`** drains
+suspended plans on fatal transfer errors.
 
 ---
 
@@ -831,10 +881,20 @@ When the top frame has `native_handler != NULL`, the loop runs that handler as t
 2. `PyErr_Occurred()` at next loop top (or after opcode). `process_raise` runs.
 3. `handle_continuation_apply` sees own token: fetches continuation and value, clears PyErr, calls `kos_invoke_continuation(&es, …)` (eval state for the current context).
 4. `kos_invoke_continuation` builds the transfer plan using `es`, sets `KosContext_PLAN(ctx) = plan`, syncs eval caches, returns 0. `handle_continuation_apply` returns `KOS_MODE_TRANSFER`.
-5. Loop continues (or entry yields TRANSFER). `run_transfer_plan_to_completion` drains plan: unwind extents, install captured chain, inject value.
+5. Loop continues (or entry yields TRANSFER). `run_transfer_plan_to_completion` drains plan: unwind extents, install captured chain, wind extents, inject value.
 6. Execution resumes at captured PC with value on stack.
 
-### 9.4 Scenario: AWAIT Suspend and Resume
+### 9.4 Scenario: Nested Continuation During Transfer
+
+1. Outer transfer plan is draining (e.g. dyn-wind after-thunk running during unwind).
+2. Thunk invokes a second continuation. **`kos_invoke_continuation`** calls **`kos_suspend_transfer_plan`**, then arms the inner plan.
+3. Inner plan drains to completion (unwind → INSTALL → wind → INJECT).
+4. **`run_transfer_plan_to_completion`** sees **`plan_stack`** non-empty: resumes outer, clones **`original_target`**, disarms outer, **`kos_build_direct_install_plan`**, arms replanned outer, continues drain.
+5. Outer completes with its inject value (e.g. outer-k wins over inner-k in the nested after-thunk test).
+
+Tests: **`TestDynWindContinuations`** in `tests/compile/specials/test_dyn_wind.py`.
+
+### 9.5 Scenario: AWAIT Suspend and Resume
 
 1. AWAIT opcode yields awaitable. Sets `out_ev = KOS_EV_AWAIT`, stores the iterator with **`KosEvalState_PythonAwaitSetIter`**, returns 1.
 2. Post-opcode calls **`KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT)`**, returns STOP_EVENT. Evaluator exits.
@@ -846,7 +906,7 @@ When the top frame has `native_handler != NULL`, the loop runs that handler as t
 
 **Throw resume (`throw_typ` / `throw_exc` non-NULL):** When **`KosEvalState_PythonAwaitIter(es)`** is set, `revive_await` calls `throw` on that iterator before installing `PyErr` for the VM. If the iterator completes (`StopIteration`), the completion value is staged like a normal send resume (**`KosEvalState_PythonResumeSet`** / stack push). If `throw` returns a new object, `out_ev` is `KOS_EV_AWAIT` again and eval stops (second suspend). If `throw` fails or leaves an exception, `KOS_MODE_EXCEPTION` runs `try_local` as usual. If there is no stored await iterator, behavior matches the old path (`PyErr_SetObject` only).
 
-### 9.5 Scenario: YIELD Suspend and Resume
+### 9.6 Scenario: YIELD Suspend and Resume
 
 1. Generator is running; frame's parent is GEN. Plain `YIELD` or `YIELD_FROM` sets `out_ev = KOS_EV_YIELD`, sets payload, marks context DEAD, returns suspend post tag (**`op_res` 1**).
 2. Post-opcode tail: **`eval_event_yield`** → **`eval_yield_handle_walk_and_freeze`** → **`kos_dyn_walk_handle_yield`**. GEN receives handle(YIELD) and **consumes** it (e.g. **`kos_dyn_gen_freeze_and_release`**): dynchain is frozen.
@@ -855,7 +915,7 @@ When the top frame has `native_handler != NULL`, the loop runs that handler as t
 5. Entry: `SUSPENSION_EVENT == YIELD`, `send_val` provided → `revive_yield(send_val, ...)`.
 6. `revive_yield` pushes `send_val` onto the stack. Mode = NORMAL. Loop continues; next instruction runs with the sent value on the stack.
 
-### 9.6 Scenario: Tail Call
+### 9.7 Scenario: Tail Call
 
 1. TAIL_CALL opcode calls `kos_callable_tail_call`. Callable has `tp_kos_tail_install`.
 2. Install resets current frame (code, ns, stack, pc) for the new function, returns 0.
@@ -863,13 +923,17 @@ When the top frame has `native_handler != NULL`, the loop runs that handler as t
 4. Post-opcode: `kos_dynnode_on_control_returned` runs (wind thunks if any). Returns `KOS_STEP_REPROLOGUE`.
 5. Loop continues; next instruction is first instruction of the new function (same frame, new content).
 
-### 9.7 Scenario: Transfer Plan Step Fails
+### 9.8 Scenario: Transfer Plan Step Fails
 
-1. Plan is draining. `kos_run_transfer_step` returns < 0 (e.g. exception in extent action).
-2. `run_transfer_plan_to_completion` fetches PyErr, calls `inject_eval_frame_traceback`, fills `out_ev` with KOS_EV_RAISE, sets context DEAD, returns -1.
-3. Caller (eval loop or entry) sees -1; exits with `eval_ret = 0`, `out_ev` already filled.
+1. Plan is draining. `kos_run_transfer_step` returns < 0 (e.g. sync failure in extent action, **`CallNoArgs`** error, or cc-unwind sentinel re-emit).
+2. **Foreign cc-unwind** (`KOS_DYN_CC_RAISE` `EXTENT_ACTION`): **`xfer_emit_cc_unwind_signal`** fills **`out_ev`** with **`KOS_EV_RAISE`** and disarms the nest — no **`try_local`** (dyn-with teardown already ran with PyErr clear).
+3. **Ordinary failure:** **`abandon_xfer_and_try_local`** abandons the nest and runs **`try_local_exception_handler`**. Return `1` → caller **`REPROLOGUE`** / **`CONTINUE`**; return `-1` → **`KOS_EV_RAISE`**, **`STOP_EVENT`**.
+4. **Thunk bytecode raise** under **`KOS_XFER_SUSPENDED_AWAIT`**: prologue **`eval_phase_pending_exception`** runs **`process_raise`** (which abandons the plan) before plan drain; same **`try_local`** path.
+5. Manifested dyn chain is left wherever steps got to; no transactional rollback to the invoke site.
 
-### 9.8 Scenario: Ctrl-C during a tight bytecode loop
+See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §4.
+
+### 9.9 Scenario: Ctrl-C during a tight bytecode loop
 
 1. User runs a long Koskari loop (for example the CLI REPL evaluating many forms).
 2. Every **1024** **RUN** tail-dispatches (and on each prologue reunion), the loop

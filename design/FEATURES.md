@@ -127,6 +127,17 @@ Loaded via **`koskari.bootstrap.make_builtins()`** / **`make_builtins_demand()`*
 - **Delimited**: `compile/reset`, `compile/shift`; **INVOKE_K** / graft model ([interpreter/callcc.md](interpreter/callcc.md)).
 - **Undelimited**: `compile/call/cc`, `compile/let/cc`, `compile/capture/cc`; Python invoke via **`KoskariContinuationApply`**.
 - **Dynamic wind**: `compile/dyn-wind`; **PUSH_WIND** / **POP_WIND** on transfer.
+- **Nested interrupt during transfer (done):** when a wind thunk invokes another
+  continuation while a transfer plan is active, the outer plan is suspended on
+  **`plan_stack`**, the inner transfer completes, then the outer is replanned via
+  **`kos_build_direct_install_plan`**. See
+  [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5;
+  tests in **`TestDynWindContinuations`**.
+- **Failed transfer abandonment (done):** on exception during a transfer step,
+  abandon plan + **`plan_stack`** and dispatch via **`try_local`** on the
+  manifested chain (in-place migration; no scratch-space transfer). Foreign
+  cc-unwind sentinel re-emit is carved out (signal delivery, not failure). See
+  [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §4.
 
 ---
 
@@ -140,7 +151,10 @@ Items below are **done** in koskari-ng unless noted in [TODO.md](TODO.md).
 
 **Utilities (C)** — `apply`, `reapply`, `identity`, `constantly`, collection builders.
 
-**Evaluator core** — `KosContext`, dynamic chain (`KosDynNode`), transfer plans, wind/unwind, `koskari_eval`, coroutine/async-gen wrappers, GC hooks.
+**Evaluator core** — `KosContext`, dynamic chain (`KosDynNode`), transfer plans
+(including suspend/resume/replan on nested continuation invoke and abandon +
+**`try_local`** on failed steps), wind/unwind, `koskari_eval`, coroutine/async-gen
+wrappers, GC hooks.
 
 **Bytecode** — `Code`, full opcode surface per [OPCODES.md](OPCODES.md) §1.6 (runtime implementations for all shipped opcodes except compile-time labels and **THEEND**).
 

@@ -5,18 +5,55 @@ design docs for detail.
 
 ---
 
+## Evaluator architecture
+
+### Event-driven eval handlers (RAISE / RETURN migration)
+
+**Status:** Partially realized. YIELD and RETURN boundary delivery to
+**`KOS_DYN_NEXT`** / **`KOS_DYN_FOREACH`** share eval-owned helpers; most
+**`RETURN`** unwind/parent delivery still lives in the opcode. **RAISE** is not
+fully unified: **`process_raise`** is the central hub, but **`eval_phase_entry`**
+(**`KOS_MODE_EXCEPTION`**), **`run_transfer_plan_to_completion`**, and
+**`KOS_MODE_RAISE`** still embed parallel exception policy.
+
+**Review:** migrate further toward a single “exception received” state in the
+eval loop — all PyErr / **`KOS_EV_RAISE`** ingress (normal eval, call results,
+transfer-plan step outcomes, revive throw) should converge on one handler that
+consults sub-states (normal vs mid-transfer vs continuation signal) instead of
+special cases inside phase-specific functions. See
+[interpreter/event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md)
+§3.3, §6.
+
+---
+
 ## Continuations / transfer plans
 
-### Interrupted transfer plans
+**Landed** on branch `interrupted_transfer` (see
+[interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md)):
 
-Interrupted transfer plans are not wired in yet. When a transfer plan is
-interrupted (e.g. by an exception or a new transfer being triggered), resumption
-should use `kos_build_direct_install_plan` to rebuild or complete the plan; this
-path is not yet connected.
+- Nested undelimited interrupt: suspend, replan via
+  `kos_build_direct_install_plan` (`TestDynWindContinuations`).
+- Failed transfer abandonment: `kos_abandon_transfer_nest` + `try_local` on the
+  manifested chain (`TestDynWindTransferFailures`, cc-unwind carve-out).
+- §6.6 delimited nested-interrupt **fail-fast** (`kos_invoke_continuation`
+  forbid, replan catch-all, `TestDelimitedTransferNestedForbid`).
+- PUSH_SHIFT **heritage capture** in place (no peel-to-prompt plan);
+  `test_dyn_wind_around_shift_*` in `test_reset_shift.py` (10/10 green).
 
-Ref: `koskari/lib/dynchain.c` — `kos_build_direct_install_plan`;
-[EVALUATOR.md](EVALUATOR.md) (transfer plans, revive_plan);
-[interpreter/callcc.md](interpreter/callcc.md) (continuation invoke, plan build).
+**Open:**
+
+- **Delimited invoke two-path model** — resume-in-place when the prompt is in
+  live ancestry; PUSH graft when not. Addresses in-shift double wind/unwind on
+  remote vs in-tree invoke. Design:
+  [interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md).
+  Regression spec: `test_reset_shift.py` (capture + invoke cases).
+- **Async nested await** during transfer with non-empty `plan_stack` (§6.7 in
+  interrupted-transfer-plans.md).
+- **Full delimited PUSH replan** — deferred; §6.6 forbid remains until then.
+
+Ref: [interpreter/callcc.md](interpreter/callcc.md),
+[interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md),
+[interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md).
 
 ---
 

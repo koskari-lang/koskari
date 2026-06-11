@@ -15,9 +15,11 @@
 
 /**
    PUSH_SHIFT: arg = constant index of prompt_id. Capture the continuation
-   from POP_SHIFT+1 to POP_PROMPT (via extent), unwind to the matching
-   prompt, push a SHIFT node (stack block, no frame/namespace), push k
-   on stack, and enter the shift block (first instruction = push_pc + 1).
+   from POP_SHIFT+1 to POP_PROMPT (via extent) when the prompt lies in
+   acceptable chain heritage (kos_validate_capture and handle(SHIFT) walk),
+   push a SHIFT node on the current dyn_top, push k on stack, and enter the
+   shift block (first instruction = push_pc + 1).  Does not peel nodes above
+   the prompt via a transfer plan.
 */
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
@@ -25,61 +27,15 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   KosContinuation *k = NULL;
   uint32_t resume_pc;
   uint32_t shift_body_pc;
-  KosTransferPlan *plan = NULL;
 
   if (get_prompt_id_from_insn(KosEvalState_CurrentCode(es), insn, &prompt_id) < 0)
     return KOS_OP_POST_ERR();
 
-  KosDynPrompt *prompt = kos_find_prompt(es, prompt_id);
-  if (! prompt) {
+  if (! kos_find_prompt(es, prompt_id)) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: prompt not found");
     return KOS_OP_POST_ERR();
   }
 
-  /* Re-entry after plan completed: push shift node and continuation */
-  if (KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt)
-      && KosEvalState_CurrentNode(es) == (KosDynNode *) prompt) {
-    PyObject *wrapper = KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt);
-    KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
-
-    shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
-    if (kos_dyn_push_shift(es) < 0) {
-      KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = wrapper;
-      return KOS_OP_POST_ERR();
-    }
-
-    KosEvalState_SET_PC(es, shift_body_pc);
-    return kos_op_outcome_PUSH(es, wrapper);
-  }
-
-  /* Already at prompt: capture, push shift node, done */
-  if (KosEvalState_CurrentNode(es) == (KosDynNode *) prompt) {
-    resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
-                                 KosEvalState_ACTING_PC(es));
-    if (resume_pc == KOS_EXTENT_NONE) {
-      PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
-      return KOS_OP_POST_ERR();
-    }
-    if (kos_shift_capture(es, prompt_id, resume_pc, &k) < 0)
-      return KOS_OP_POST_ERR();
-
-    PyObject *wrapper = KosPyDelimitedContinuation_New(k);
-    if (! wrapper) {
-      kos_continuation_free(k);
-      return KOS_OP_POST_ERR();
-    }
-
-    shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
-    if (kos_dyn_push_shift(es) < 0) {
-      Py_DECREF(wrapper);
-      return KOS_OP_POST_ERR();
-    }
-
-    KosEvalState_SET_PC(es, shift_body_pc);
-    return kos_op_outcome_PUSH(es, wrapper);
-  }
-
-  /* Need to unwind: build plan, capture, set continuation on plan, roll back PC */
   resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
                                KosEvalState_ACTING_PC(es));
   if (resume_pc == KOS_EXTENT_NONE) {
@@ -87,12 +43,8 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     return KOS_OP_POST_ERR();
   }
 
-  SAYF("[eval] PUSH_SHIFT prompt_id=%u resume_pc=%u\n",
-       (unsigned) prompt_id, (unsigned) resume_pc);
-  if (kos_shift_capture(es, prompt_id, resume_pc, &k) < 0) {
-    SAY("[eval] PUSH_SHIFT capture failed\n");
+  if (kos_shift_capture(es, prompt_id, resume_pc, &k) < 0)
     return KOS_OP_POST_ERR();
-  }
 
   PyObject *wrapper = KosPyDelimitedContinuation_New(k);
   if (! wrapper) {
@@ -100,19 +52,12 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     return KOS_OP_POST_ERR();
   }
 
-  if (kos_dyn_build_push_shift_unwind_plan(es, prompt, &plan) < 0) {
+  shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
+  if (kos_dyn_push_shift(es) < 0) {
     Py_DECREF(wrapper);
     return KOS_OP_POST_ERR();
   }
 
-  /* Plan consumes the wrapper's refcount from New; kos_free_transfer_plan
-   * Py_XDECREFs continuation_ref. (Unlike kos_invoke_continuation, there is
-   * no separate caller-owned ref, so no extra INCREF here.) */
-  KosTransferPlan_CONTINUATION_REF(plan) = wrapper;
-
-  KosEvalState_ArmTransferPlan(es, plan);
-
-  /* Roll back PC so we re-enter PUSH_SHIFT after plan completes */
-  KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
-  return KOS_OP_PROLOGUE();
+  KosEvalState_SET_PC(es, shift_body_pc);
+  return kos_op_outcome_PUSH(es, wrapper);
 }

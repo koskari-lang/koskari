@@ -90,7 +90,8 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Context lifecycle**: Each evaluator context records an explicit lifecycle state (at least: active, sleeping/await/yield, exited). It is an error to apply a continuation whose owning context state does not permit invocation. Attempting to invoke an unusable continuation (delimited or full) raises an exception at the invocation site.
 
-- **Transfer plan atomicity**: Continuation application is done via a **transfer plan**. The plan runs atomically with respect to normal VM execution; the VM does not interleave opcode dispatch with mid-transfer state. Exception: hooks may suspend on AWAIT, in which case the transfer plan is suspended with the context.
+- **Transfer plan atomicity**: Continuation application is done via a **transfer plan**. The plan runs atomically with respect to normal VM execution; the VM does not interleave arbitrary opcode dispatch with mid-transfer state. Exceptions: (1) wind/unwind thunks may suspend on AWAIT — the plan stays armed and the same **`koskari_eval`** loop runs the thunk frame; (2) a nested continuation invoke suspends the outer plan on **`plan_stack`** while the inner plan drains, then the outer is replanned (**implemented**; see [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5).
+- **Transfer in-place migration**: Transfer steps mutate live **`dyn_top`** / **`frame_top`** (unwind, INSTALL, wind, INJECT). There is no scratch dynchain swapped in at the end. Once stepping begins, the evaluator has left the invoke-site topology; after INSTALL the chain is the destination segment. On failure, exception dispatch uses the **manifested** chain (**`try_local`** after abandoning the plan nest), not a transactional rollback to the invoke site (**implemented**; see [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §3–§4). Foreign cc-unwind re-emit is a signal path, not a failed-transfer path. Undelimited continuation invoke does not expect a return value at the invoke site.
 
 - **Introspection is read-only**: The evaluator provides a read-only introspection mechanism (TraceView snapshot; see `design/interpreter/introspection-trace.md`). Introspection does not mutate evaluator state, expose raw C structs, inject execution, or interact with continuations. Snapshot objects remain valid even if the VM continues. Exception trace reporting attaches a TraceView to raised exceptions (e.g. `exc.__koskari_trace__`).
 
@@ -144,7 +145,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosContinuation**: Captured segment: `captured_chain`, `resume_frame`, `resume_pc`, `resume_stack`, `prompt_id`, `graft_point_id` (node_id of graft point for LCA fallback when chains disjoint; 0 for capture-cc), `one_shot`, `token_ref` (PyObject * KosEvaluatorToken; ownership marker for evaluator identity). Multi-shot clones on each invoke.
 
-- **KosTransferPlan**: Ordered list of steps: `KOS_XFER_EXTENT_ACTION`, `KOS_XFER_INSTALL`, `KOS_XFER_INJECT`. Tracks `original_target` for future replanning after nested transfers. For invocation: `resume_pc`, `resume_frame`, `resume_stack`, `continuation_ref`.
+- **KosTransferPlan**: Ordered list of steps: `KOS_XFER_EXTENT_ACTION`, `KOS_XFER_INSTALL`, `KOS_XFER_INJECT`, and related step kinds (`PUSH`, `POP_ONE`, `TRUNCATE_AND_INJECT`). Holds `original_target` (template segment; **clone before disarm** when replanning), `graft_point_id` (LCA fallback when chains are disjoint), `resume_pc`, `resume_frame`, `resume_stack`, `continuation_ref`, `invoke_clone`. Nested invoke: outer plan linked via `suspended` / **`plan_stack`**; after inner completion, **`kos_build_direct_install_plan`** rebuilds the outer plan from the current chain position.
 
 
 **Ownership**: Context owns the dynamic chain. On continuation capture, chains are cloned for multi-shot. Only Python-visible wrappers are GC-tracked; C structs are traversed via wrapper `tp_traverse`.
@@ -175,7 +176,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 ## 7. Continuation and Wind Semantics
 
 - **Capture (shift)**: Find prompt by `prompt_id`, validate prompt reachable in chain, clone chain segment, build `KosContinuation`, abort to prompt (handler runs if present).
-- **Invoke**: Clone if multi-shot, build transfer plan (after hooks → install segment → before hooks → inject value/throw), run plan. Nested invocation suspends current plan and pushes it onto `plan_stack`.
+- **Invoke**: Clone if multi-shot, build transfer plan (unwind hooks → install segment → before hooks → inject value/throw), run plan. Nested invocation **suspends** the current plan onto **`plan_stack`**, runs the inner plan to completion, then **replans** the outer via **`kos_build_direct_install_plan`** (implemented). Exception during a transfer step: abandon nest and dispatch on manifested chain via **`try_local`** (implemented); cc-unwind sentinel re-emit propagates **`KoskariContinuationApply`** upward without **`try_local`**.
 - **Wind order on transfer**: Unwind: run **after** hooks from current toward LCA (inner to outer). Install: splice target chain. Wind: run **before** hooks from LCA toward target (outer to inner), set `entered` on each.
 
 ---

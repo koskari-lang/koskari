@@ -725,6 +725,8 @@ static KosEvalMode handle_continuation_apply(
       Py_DECREF(cont_obj);
       return KOS_MODE_TRANSFER;
     }
+    if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
+      kos_abandon_transfer_nest(es);
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "KoskariContinuationApply: invoke failed without PyErr");
@@ -775,6 +777,12 @@ static KosEvalMode process_raise(KosEvalState *es, KosEvent *out_ev) {
     KosEvent_PAYLOAD(out_ev) = NULL;
     KosEvent_EXC_TYPE(out_ev) = NULL;
     return KOS_MODE_RAISE;
+  }
+
+  if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es)) {
+    if (! (KoskariContinuationApply
+           && PyErr_ExceptionMatches(KoskariContinuationApply)))
+      kos_abandon_transfer_nest(es);
   }
 
   if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply))
@@ -1869,6 +1877,8 @@ entry_mode_dispatch:
   if (mode == KOS_MODE_EXCEPTION) {
     int tl;
     clear_kos_agen_boundary_on_error(ctx);
+    if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
+      kos_abandon_transfer_nest(es);
     tl = try_local_exception_handler(es, out_ev);
     SAYF("[eval] phase_entry try_local ret=%d out_kind=%d\n",
          tl, (int) KosEvent_KIND(out_ev));
@@ -1933,9 +1943,12 @@ entry_mode_dispatch:
 static KosEvalStep eval_phase_transfer(KosEvalState *es, KosEvent *out_ev) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  int xfer = run_transfer_plan_to_completion(es, out_ev);
 
-  if (run_transfer_plan_to_completion(es, out_ev) < 0)
+  if (xfer < 0)
     return KOS_STEP_STOP_EVENT;
+  if (xfer > 0)
+    return KOS_STEP_CONTINUE;
 
   if (! KosEvalState_FRAME(es)) {
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
@@ -2346,8 +2359,13 @@ static KosEvalStep eval_step_drain_transfer_plan(
 
   if (! KosEvalState_PLAN(es))
     return KOS_STEP_CONTINUE;
-  if (run_transfer_plan_to_completion(es, out_ev) < 0)
-    return KOS_STEP_STOP_EVENT;
+  {
+    int xfer = run_transfer_plan_to_completion(es, out_ev);
+    if (xfer < 0)
+      return KOS_STEP_STOP_EVENT;
+    if (xfer > 0)
+      return KOS_STEP_REPROLOGUE;
+  }
   return KOS_STEP_CONTINUE;
 }
 
@@ -2493,17 +2511,22 @@ cg_prologue:
   }
   #endif
 
-  {
-    KosEvalStep xfer = eval_step_drain_transfer_plan(es, out_ev);
-    if (xfer == KOS_STEP_STOP_EVENT)
-      return 0;
-  }
-
+  /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a wind
+     before-thunk) must run abandon + try_local before draining the plan;
+     otherwise the wind EXTENT_ACTION can complete while PyErr is still set. */
   {
     KosEvalStep pend = eval_phase_pending_exception(es, out_ev);
     if (pend == KOS_STEP_STOP_EVENT)
       return 0;
     if (pend == KOS_STEP_REPROLOGUE)
+      goto cg_prologue;
+  }
+
+  {
+    KosEvalStep xfer = eval_step_drain_transfer_plan(es, out_ev);
+    if (xfer == KOS_STEP_STOP_EVENT)
+      return 0;
+    if (xfer == KOS_STEP_REPROLOGUE)
       goto cg_prologue;
   }
 

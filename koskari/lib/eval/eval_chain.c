@@ -170,21 +170,12 @@ int KosEvalState_Transition(
   Clear the context's transfer plan and free it.  Plan pointer is nulled
   before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
   triggering Python dealloc/__del__) does not see the plan while it is freed.
-  For PUSH_SHIFT unwind plans, transfers continuation_ref to the prompt's
-  pending_shift_wrapper so the opcode can push the handler on re-entry.
 */
 static void clear_and_free_transfer_plan(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosTransferPlan *p = KosEvalState_PLAN(es);
   KosEvalState_PLAN(es) = NULL;
   KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
-  if (p && KosTransferPlan_CONTINUATION_REF(p)
-      && KosTransferPlan_ORIGINAL_TARGET(p)
-      && KosDynNode_IS_PROMPT(KosTransferPlan_ORIGINAL_TARGET(p))) {
-    KosDynPrompt *prompt = (KosDynPrompt *) KosTransferPlan_ORIGINAL_TARGET(p);
-    KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = KosTransferPlan_CONTINUATION_REF(p);
-    KosTransferPlan_CONTINUATION_REF(p) = NULL;
-  }
   kos_free_transfer_plan(p);
 }
 
@@ -336,27 +327,92 @@ static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
 
 
 /**
-  Run the current transfer plan to completion.  Returns 0 on success (plan
-  cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
-  caller should return 0 from koskari_eval).
+  Abandon any transfer nest, then dispatch PyErr through local handlers.
+
+  :return: 1 if a handler was applied, -1 if unhandled raise or fatal error
+*/
+static int abandon_xfer_and_try_local(KosEvalState *es, KosEvent *out_ev) {
+
+  kos_abandon_transfer_nest(es);
+  int tl = try_local_exception_handler(es, out_ev);
+  if (tl > 0)
+    return 1;
+  if (tl < 0)
+    return -1;
+  return -1;
+}
+
+
+/**
+  True when the current (failed) plan step is a KosDynCCRaise sentinel
+  re-emit from kos_build_cc_unwind_plan (foreign apply signal delivery).
+*/
+static int xfer_plan_step_is_cc_raise_reemit(KosEvalState *es) {
+
+  KosTransferPlan *plan = KosEvalState_PLAN(es);
+  if (! plan)
+    return 0;
+
+  size_t idx = KosTransferPlan_ACTION_INDEX(plan);
+  if (idx >= KosTransferPlan_ACTION_COUNT(plan))
+    return 0;
+
+  KosTransferAction *action = &KosTransferPlan_ACTIONS(plan)[idx];
+  if (KosTransferAction_STEP(action) != KOS_XFER_EXTENT_ACTION)
+    return 0;
+
+  KosDynNode *node = KosTransferAction_EXTENT_NODE(action);
+  return node && KosDynNode_IS_CC_RAISE(node);
+}
+
+
+/**
+  Foreign cc-unwind sentinel step: emit KOS_EV_RAISE upward, disarm nest.
+  Not a failed transfer; do not route through try_local.
+
+  :return: -1 with out_ev set to KOS_EV_RAISE
+*/
+static int xfer_emit_cc_unwind_signal(KosEvalState *es, KosEvent *out_ev) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
+  kos_abandon_transfer_nest(es);
+  return -1;
+}
+
+
+/**
+  Run the current transfer plan to completion.
+
+  :return: 0 on success (plan cleared or suspended on await),
+           1 if plan abandoned and a local handler was applied,
+           -1 if a step failed with no handler or on fatal error
 */
 static int run_transfer_plan_to_completion(
     KosEvalState *es,
     KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   while (KosEvalState_PLAN(es)) {
+    if (PyErr_Occurred()) {
+      if (! (KoskariContinuationApply
+             && PyErr_ExceptionMatches(KoskariContinuationApply))) {
+        SAY("[eval] transfer drain with pending PyErr -> abandon + try_local\n");
+        return abandon_xfer_and_try_local(es, out_ev);
+      }
+    }
+
     SAYF("[eval] transfer step %zu/%zu\n",
          (size_t) KosTransferPlan_ACTION_INDEX(KosEvalState_PLAN(es)),
          (size_t) KosTransferPlan_ACTION_COUNT(KosEvalState_PLAN(es)));
     int plan_res = kos_run_transfer_step(es, out_ev);
 
     if (plan_res < 0) {
-      SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
-      kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-      KosEvalState_DisarmTransferPlan(es);
-      return -1;
+      if (xfer_plan_step_is_cc_raise_reemit(es)) {
+        SAY("[eval] cc-unwind sentinel re-emit -> KOS_EV_RAISE\n");
+        return xfer_emit_cc_unwind_signal(es, out_ev);
+      }
+      SAY("[eval] transfer step failed -> abandon + try_local\n");
+      return abandon_xfer_and_try_local(es, out_ev);
     }
 
     if (plan_res == KOS_XFER_SUSPENDED_AWAIT) {
@@ -370,6 +426,80 @@ static int run_transfer_plan_to_completion(
     SAYF("[eval] transfer complete dyn_top=%p\n",
          (void *) KosEvalState_DYN_TOP(es));
     KosEvalState_DisarmTransferPlan(es);
+
+    if (! KosEvalState_PLAN_STACK(es))
+      break;
+
+    /* An outer transfer was suspended when a wind thunk invoked a nested
+       continuation.  That inner transfer just completed.  Rebuild a fresh
+       plan from the current chain position to the outer plan's
+       original_target using kos_build_direct_install_plan, then continue
+       draining the new plan. */
+    kos_resume_transfer_plan(es);
+    KosTransferPlan *outer = KosEvalState_PLAN(es);
+    if (kos_xfer_plan_is_delimited_push(outer)) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "nested continuation invoke during an active delimited"
+                      " transfer is not supported");
+      return abandon_xfer_and_try_local(es, out_ev);
+    }
+    size_t outer_ac = KosTransferPlan_ACTION_COUNT(outer);
+    KosTransferAction *inject_a = &KosTransferPlan_ACTIONS(outer)[outer_ac - 1];
+    KosDynNode  *target       = KosTransferPlan_ORIGINAL_TARGET(outer);
+    PyObject    *inject_val   = KosTransferAction_INJECT_VALUE(inject_a);
+    int          inject_throw = KosTransferAction_INJECT_IS_THROW(inject_a);
+    uint32_t     rpc          = KosTransferPlan_RESUME_PC(outer);
+    KosStackBlock *rstack     = KosTransferPlan_RESUME_STACK(outer);
+    uint32_t     graft_id     = KosTransferPlan_GRAFT_POINT_ID(outer);
+    /* Take a ref on inject_val before DisarmTransferPlan releases the plan's
+       copy, and steal resume_stack so the plan does not release it. */
+    Py_XINCREF(inject_val);
+    KosTransferPlan_RESUME_STACK(outer) = NULL;
+
+    KosDynNode *target_keep = NULL;
+    if (target) {
+      KosDynNode *bottom = target;
+      while (bottom && KosDynNode_PARENT(bottom))
+        bottom = KosDynNode_PARENT(bottom);
+      KosDynNode *stop = bottom ? KosDynNode_PARENT(bottom) : NULL;
+      target_keep = kos_clone_chain_segment(target, stop);
+      if (! target_keep) {
+        Py_XDECREF(inject_val);
+        if (rstack)
+          KosStackBlock_ReleaseChain(rstack);
+        return abandon_xfer_and_try_local(es, out_ev);
+      }
+      bottom = target_keep;
+      while (bottom && KosDynNode_PARENT(bottom))
+        bottom = KosDynNode_PARENT(bottom);
+      KosDynNode_PARENT(bottom) = NULL;
+    }
+
+    KosEvalState_DisarmTransferPlan(es);
+
+    if (! target_keep) {
+      Py_XDECREF(inject_val);
+      if (rstack)
+        KosStackBlock_ReleaseChain(rstack);
+      break;
+    }
+
+    KosTransferPlan *new_plan = NULL;
+    if (kos_build_direct_install_plan(es, target_keep, inject_val, inject_throw,
+                                      graft_id, &new_plan) < 0) {
+      Py_XDECREF(inject_val);
+      if (rstack)
+        KosStackBlock_ReleaseChain(rstack);
+      kos_dynchain_free(target_keep, NULL);
+      return abandon_xfer_and_try_local(es, out_ev);
+    }
+    /* kos_build_direct_install_plan incremented inject_val; release our ref. */
+    Py_XDECREF(inject_val);
+    KosTransferPlan_RESUME_PC(new_plan) = rpc;
+    KosTransferPlan_RESUME_FRAME(new_plan) = NULL;
+    KosTransferPlan_RESUME_STACK(new_plan) = rstack;
+    KosEvalState_ArmTransferPlan(es, new_plan);
+    /* Continue to drain the new plan in the next loop iteration. */
   }
 
   return 0;
@@ -415,7 +545,10 @@ static inline int KosEvalState_KReturnDelimited(
     if (kos_dyn_pop_delim(es, delim) < 0)
       return -1;
   }
-  if (run_transfer_plan_to_completion(es, out_ev) < 0)
-    return -1;
+  {
+    int xfer = run_transfer_plan_to_completion(es, out_ev);
+    if (xfer < 0)
+      return -1;
+  }
   return 0;
 }

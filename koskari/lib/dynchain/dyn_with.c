@@ -107,7 +107,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   Py_XINCREF(KosDynWith_ENTER(node));
   KosDynWith_EXIT(node) = KosDynWith_EXIT(src);
   Py_XINCREF(KosDynWith_EXIT(node));
-  KosDynWith_ENTERED(node) = KosDynWith_ENTERED(src);
+  KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_SHOT(node) = KosDynWith_SHOT(src);
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
