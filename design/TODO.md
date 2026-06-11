@@ -32,12 +32,16 @@ special cases inside phase-specific functions. See
 forbid, replan catch-all, `TestDelimitedTransferNestedForbid`). PUSH_SHIFT now
 captures in place when the prompt is in heritage (no peel-to-prompt plan).
 
-**Open:** dyn-wind-around-shift delimited invoke (`block cannot grow over limit`
-during PUSH when WIND is in captured segment — see failing tests in
-`test_reset_shift.py`). Delimited PUSH replan builder selection; async nested
-await during transfer (§6.7).
+**Open:** delimited invoke refactor — two-path model (resume-in-place when
+prompt is in live ancestry; PUSH graft when not). Fixes in-shift double
+wind/unwind; see
+[interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md).
+Dyn-wind-around-shift invoke tests in `test_reset_shift.py` are the regression
+spec. Delimited PUSH replan builder selection; async nested await during
+transfer (§6.7).
 
 Ref: [interpreter/callcc.md](interpreter/callcc.md),
+[interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md),
 [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md).
 
 ---

@@ -25,7 +25,8 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **opcode-eval-helpers-inventory.md**: Static helpers in `eval.c` and opcode `.c` files — opcode cross-reference, redundancies, suggested public names for native/runtime API
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView; proposed CAPTURE_FRAME opcode is design-only, see that doc §5)
-- **callcc.md**: Call/cc implementation design
+- **callcc.md**: Call/cc implementation design (current PUSH delimited invoke)
+- **delimited-invoke-model.md**: Target delimited invoke — lineage fork, bookmarked return, double-wind fix (not implemented)
 - **generic-dynnode-protocol.md**: Generic DynNode interface design, API reference, and type-specific bypass cases (when opcodes use type-named APIs)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
 - **domain.md**: Koskari Domain (ambient dynamic context) — design proposal for parameters and dynamic-extent scoping across AWAIT, boundaries, and continuations
