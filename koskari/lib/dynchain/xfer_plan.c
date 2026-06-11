@@ -335,7 +335,7 @@ typedef enum KosXferPlanInjectKind {
 } KosXferPlanInjectKind;
 
 
-typedef struct KosXferPlanRecipe {
+typedef struct KosXferPlanOptions {
   KosDynNode *target;
   int unwind_from_current;
   KosDynNode *unwind_stop;
@@ -345,7 +345,7 @@ typedef struct KosXferPlanRecipe {
   KosXferPlanInjectKind inject_kind;
   KosDynNode *truncate_node;
   uint32_t graft_point_id;
-} KosXferPlanRecipe;
+} KosXferPlanOptions;
 
 
 /**
@@ -379,11 +379,11 @@ static KosDynNode *kos_xfer_resolve_lca(
 
 
 /**
-   Allocate and fill a transfer plan from a recipe.  Returns 0 on success.
+   Allocate and fill a transfer plan from options.  Returns 0 on success.
 */
 static int kos_build_xfer_plan(
     KosEvalState *es,
-    const KosXferPlanRecipe *recipe,
+    const KosXferPlanOptions *options,
     PyObject *value,
     int is_throw,
     KosTransferPlan **out_plan) {
@@ -396,20 +396,20 @@ static int kos_build_xfer_plan(
   KosTransferPlan *plan;
   PyObject *throw_type;
 
-  if (recipe->unwind_from_current)
+  if (options->unwind_from_current)
     unwind_count = xfer_plan_count_unwind_and_params(current,
-                                                     recipe->unwind_stop);
-  if (recipe->with_wind)
-    wind_count = xfer_plan_count_wind_before(recipe->target,
-                                             recipe->wind_lca);
+                                                     options->unwind_stop);
+  if (options->with_wind)
+    wind_count = xfer_plan_count_wind_before(options->target,
+                                             options->wind_lca);
 
   action_count = unwind_count;
-  if (recipe->segment_op == KOS_XFER_INSTALL
-      || recipe->segment_op == KOS_XFER_PUSH)
+  if (options->segment_op == KOS_XFER_INSTALL
+      || options->segment_op == KOS_XFER_PUSH)
     action_count += 1;
   action_count += wind_count;
-  if (recipe->inject_kind == KOS_XFER_PLAN_INJECT
-      || recipe->inject_kind == KOS_XFER_PLAN_TRUNCATE_AND_INJECT)
+  if (options->inject_kind == KOS_XFER_PLAN_INJECT
+      || options->inject_kind == KOS_XFER_PLAN_TRUNCATE_AND_INJECT)
     action_count += 1;
 
   plan = kos_transfer_plan_alloc(action_count);
@@ -418,31 +418,31 @@ static int kos_build_xfer_plan(
 
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
-  KosTransferPlan_ORIGINAL_TARGET(plan) = recipe->target;
-  KosTransferPlan_GRAFT_POINT_ID(plan) = recipe->graft_point_id;
+  KosTransferPlan_ORIGINAL_TARGET(plan) = options->target;
+  KosTransferPlan_GRAFT_POINT_ID(plan) = options->graft_point_id;
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
 
-  if (recipe->unwind_from_current)
-    xfer_plan_fill_unwind_actions(plan, &idx, current, recipe->unwind_stop);
-  if (recipe->segment_op == KOS_XFER_INSTALL)
-    xfer_plan_fill_install_action(plan, &idx, recipe->target);
-  else if (recipe->segment_op == KOS_XFER_PUSH)
-    xfer_plan_fill_push_action(plan, &idx, recipe->target);
-  if (recipe->with_wind) {
-    if (xfer_plan_fill_wind_actions(plan, &idx, recipe->target,
-                                    recipe->wind_lca, wind_count) < 0) {
+  if (options->unwind_from_current)
+    xfer_plan_fill_unwind_actions(plan, &idx, current, options->unwind_stop);
+  if (options->segment_op == KOS_XFER_INSTALL)
+    xfer_plan_fill_install_action(plan, &idx, options->target);
+  else if (options->segment_op == KOS_XFER_PUSH)
+    xfer_plan_fill_push_action(plan, &idx, options->target);
+  if (options->with_wind) {
+    if (xfer_plan_fill_wind_actions(plan, &idx, options->target,
+                                    options->wind_lca, wind_count) < 0) {
       return -1;
     }
   }
 
   throw_type = is_throw ? (PyObject *) Py_TYPE(value) : NULL;
-  if (recipe->inject_kind == KOS_XFER_PLAN_INJECT) {
+  if (options->inject_kind == KOS_XFER_PLAN_INJECT) {
     xfer_plan_fill_inject_action(plan, &idx, value, throw_type, is_throw);
-  } else if (recipe->inject_kind == KOS_XFER_PLAN_TRUNCATE_AND_INJECT) {
+  } else if (options->inject_kind == KOS_XFER_PLAN_TRUNCATE_AND_INJECT) {
     xfer_plan_fill_truncate_and_inject_action(plan, &idx,
-                                              recipe->truncate_node,
+                                              options->truncate_node,
                                               value, throw_type, is_throw);
   }
 
@@ -468,7 +468,7 @@ int kos_build_transfer_plan(
     uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
-  KosXferPlanRecipe recipe;
+  KosXferPlanOptions options;
   KosDynNode *current = KosEvalState_DYN_TOP(es);
   KosDynNode *lca;
 
@@ -479,17 +479,17 @@ int kos_build_transfer_plan(
     SAYF("[xfer] build_plan current=%p target=%p lca=%p",
          (void *) current, (void *) target, (void *) lca);
 
-  recipe.target = target;
-  recipe.unwind_from_current = 1;
-  recipe.unwind_stop = lca;
-  recipe.segment_op = KOS_XFER_INSTALL;
-  recipe.with_wind = 1;
-  recipe.wind_lca = lca;
-  recipe.inject_kind = KOS_XFER_PLAN_INJECT;
-  recipe.truncate_node = NULL;
-  recipe.graft_point_id = graft_point_id;
+  options.target = target;
+  options.unwind_from_current = 1;
+  options.unwind_stop = lca;
+  options.segment_op = KOS_XFER_INSTALL;
+  options.with_wind = 1;
+  options.wind_lca = lca;
+  options.inject_kind = KOS_XFER_PLAN_INJECT;
+  options.truncate_node = NULL;
+  options.graft_point_id = graft_point_id;
 
-  return kos_build_xfer_plan(es, &recipe, value, is_throw, out_plan);
+  return kos_build_xfer_plan(es, &options, value, is_throw, out_plan);
 }
 
 
@@ -506,20 +506,20 @@ int kos_build_return_plan(
     int is_throw,
     KosTransferPlan **out_plan) {
 
-  KosXferPlanRecipe recipe;
+  KosXferPlanOptions options;
 
   (void) es;
-  recipe.target = segment;
-  recipe.unwind_from_current = 0;
-  recipe.unwind_stop = NULL;
-  recipe.segment_op = KOS_XFER_INSTALL;
-  recipe.with_wind = 0;
-  recipe.wind_lca = NULL;
-  recipe.inject_kind = KOS_XFER_PLAN_INJECT;
-  recipe.truncate_node = NULL;
-  recipe.graft_point_id = 0;
+  options.target = segment;
+  options.unwind_from_current = 0;
+  options.unwind_stop = NULL;
+  options.segment_op = KOS_XFER_INSTALL;
+  options.with_wind = 0;
+  options.wind_lca = NULL;
+  options.inject_kind = KOS_XFER_PLAN_INJECT;
+  options.truncate_node = NULL;
+  options.graft_point_id = 0;
 
-  return kos_build_xfer_plan(es, &recipe, value, is_throw, out_plan);
+  return kos_build_xfer_plan(es, &options, value, is_throw, out_plan);
 }
 
 
@@ -534,7 +534,7 @@ int kos_build_delimited_push_plan(
     int is_throw,
     KosTransferPlan **out_plan) {
 
-  KosXferPlanRecipe recipe;
+  KosXferPlanOptions options;
 
   if (! segment) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -542,17 +542,17 @@ int kos_build_delimited_push_plan(
     return -1;
   }
 
-  recipe.target = segment;
-  recipe.unwind_from_current = 0;
-  recipe.unwind_stop = NULL;
-  recipe.segment_op = KOS_XFER_PUSH;
-  recipe.with_wind = 1;
-  recipe.wind_lca = NULL;
-  recipe.inject_kind = KOS_XFER_PLAN_INJECT;
-  recipe.truncate_node = NULL;
-  recipe.graft_point_id = 0;
+  options.target = segment;
+  options.unwind_from_current = 0;
+  options.unwind_stop = NULL;
+  options.segment_op = KOS_XFER_PUSH;
+  options.with_wind = 1;
+  options.wind_lca = NULL;
+  options.inject_kind = KOS_XFER_PLAN_INJECT;
+  options.truncate_node = NULL;
+  options.graft_point_id = 0;
 
-  return kos_build_xfer_plan(es, &recipe, value, is_throw, out_plan);
+  return kos_build_xfer_plan(es, &options, value, is_throw, out_plan);
 }
 
 
@@ -574,7 +574,7 @@ int kos_build_direct_install_plan(
     uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
-  KosXferPlanRecipe recipe;
+  KosXferPlanOptions options;
   KosDynNode *current = KosEvalState_DYN_TOP(es);
   KosDynNode *lca;
 
@@ -583,17 +583,17 @@ int kos_build_direct_install_plan(
     SAYF("[xfer] direct_install_plan current=%p target=%p lca=%p",
          (void *) current, (void *) target, (void *) lca);
 
-  recipe.target = target;
-  recipe.unwind_from_current = 0;
-  recipe.unwind_stop = NULL;
-  recipe.segment_op = KOS_XFER_INSTALL;
-  recipe.with_wind = 1;
-  recipe.wind_lca = lca;
-  recipe.inject_kind = KOS_XFER_PLAN_INJECT;
-  recipe.truncate_node = NULL;
-  recipe.graft_point_id = graft_point_id;
+  options.target = target;
+  options.unwind_from_current = 0;
+  options.unwind_stop = NULL;
+  options.segment_op = KOS_XFER_INSTALL;
+  options.with_wind = 1;
+  options.wind_lca = lca;
+  options.inject_kind = KOS_XFER_PLAN_INJECT;
+  options.truncate_node = NULL;
+  options.graft_point_id = graft_point_id;
 
-  return kos_build_xfer_plan(es, &recipe, value, is_throw, out_plan);
+  return kos_build_xfer_plan(es, &options, value, is_throw, out_plan);
 }
 
 
@@ -647,20 +647,20 @@ int kos_build_cc_unwind_plan(
 int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt,
                                  PyObject *value, KosTransferPlan **out_plan) {
 
-  KosXferPlanRecipe recipe;
+  KosXferPlanOptions options;
   KosDynNode *prompt_node = (KosDynNode *) prompt;
 
-  recipe.target = prompt_node;
-  recipe.unwind_from_current = 1;
-  recipe.unwind_stop = prompt_node;
-  recipe.segment_op = 0;
-  recipe.with_wind = 0;
-  recipe.wind_lca = NULL;
-  recipe.inject_kind = KOS_XFER_PLAN_TRUNCATE_AND_INJECT;
-  recipe.truncate_node = prompt_node;
-  recipe.graft_point_id = 0;
+  options.target = prompt_node;
+  options.unwind_from_current = 1;
+  options.unwind_stop = prompt_node;
+  options.segment_op = 0;
+  options.with_wind = 0;
+  options.wind_lca = NULL;
+  options.inject_kind = KOS_XFER_PLAN_TRUNCATE_AND_INJECT;
+  options.truncate_node = prompt_node;
+  options.graft_point_id = 0;
 
-  return kos_build_xfer_plan(es, &recipe, value, 0, out_plan);
+  return kos_build_xfer_plan(es, &options, value, 0, out_plan);
 }
 
 
@@ -676,7 +676,7 @@ int kos_build_install_only_plan(
     uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
-  KosXferPlanRecipe recipe;
+  KosXferPlanOptions options;
   KosDynNode *current = KosEvalState_DYN_TOP(es);
   KosDynNode *lca;
 
@@ -687,17 +687,17 @@ int kos_build_install_only_plan(
     SAYF("[xfer] install_only_plan current=%p target=%p lca=%p",
          (void *) current, (void *) target, (void *) lca);
 
-  recipe.target = target;
-  recipe.unwind_from_current = 0;
-  recipe.unwind_stop = NULL;
-  recipe.segment_op = KOS_XFER_INSTALL;
-  recipe.with_wind = 1;
-  recipe.wind_lca = lca;
-  recipe.inject_kind = KOS_XFER_PLAN_INJECT_NONE;
-  recipe.truncate_node = NULL;
-  recipe.graft_point_id = graft_point_id;
+  options.target = target;
+  options.unwind_from_current = 0;
+  options.unwind_stop = NULL;
+  options.segment_op = KOS_XFER_INSTALL;
+  options.with_wind = 1;
+  options.wind_lca = lca;
+  options.inject_kind = KOS_XFER_PLAN_INJECT_NONE;
+  options.truncate_node = NULL;
+  options.graft_point_id = graft_point_id;
 
-  return kos_build_xfer_plan(es, &recipe, NULL, 0, out_plan);
+  return kos_build_xfer_plan(es, &options, NULL, 0, out_plan);
 }
 
 

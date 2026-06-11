@@ -1,7 +1,8 @@
 # Delimited Continuation Implementation
 
 This document describes the delimited continuation implementation in Koskari,
-as realized in `eval.c`/`eval.h` and `dynchain.c`/`dynchain.h`.
+as realized in `eval.c`/`eval.h`, `eval/eval_chain.c`, `dynchain.c`/`dynchain.h`,
+and the included units `dynchain/dyn_walk.c` and `dynchain/xfer_plan.c`.
 
 **Target invoke model (not yet implemented):** [delimited-invoke-model.md](delimited-invoke-model.md) — two-path invoke (resume-in-place when the prompt is in live ancestry; PUSH graft when not); bookmarked return via DELIM; prompt-bounded capture. The sections below document **current** behavior (PUSH-only delimited invoke).
 

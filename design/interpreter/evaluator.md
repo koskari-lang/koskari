@@ -1,7 +1,8 @@
 # Evaluation Model
 
 This document describes the Koskari evaluator implementation in `eval.c`/`eval.h`
-and the supporting DynNode chain infrastructure in `dynchain.c`/`dynchain.h`.
+and the supporting DynNode chain infrastructure in `koskari/lib/dynchain.c`,
+`koskari/lib/dynchain.h`, and the `#include` units under `koskari/lib/dynchain/`.
 The KosCoroutine type and `kos_run_code_as_coroutine` (the Python-facing
 entry that creates a coroutine from code+namespace) live in `func.c`/`func.h`;
 driving a KosCoroutine (send/await) invokes `koskari_eval()` from func.c.
@@ -194,6 +195,57 @@ struct KosTransferPlan {
 };
 ```
 
+### Dynchain source layout
+
+`koskari/lib/dynchain.c` is the translation-unit shell. It `#include`s per-kind
+units (`dynchain/dyn_*.c`), **`dynchain/dyn_walk.c`** (chain walks, pop/unwind,
+transition dispatch, local raise), and **`dynchain/xfer_plan.c`** (transfer plan
+build and step execution). The layout compiles to a single `dynchain.o`; the
+public C API is **`dynchain.h`**.
+
+### Transfer plan construction (`xfer_plan.c`)
+
+Plan builders populate **`KosXferPlanOptions`** and call **`kos_build_xfer_plan`**
+(static). Options fields:
+
+| Field | Role |
+|-------|------|
+| `target` | Segment root for INSTALL/PUSH or plan metadata |
+| `unwind_from_current` | When set, emit unwind `EXTENT_ACTION`s from `dyn_top` to `unwind_stop` |
+| `unwind_stop` | Unwind bound (often LCA or prompt node) |
+| `segment_op` | `KOS_XFER_INSTALL`, `KOS_XFER_PUSH`, or `0` (no segment step) |
+| `with_wind` | When set, emit wind-before `EXTENT_ACTION`s from target toward `wind_lca` |
+| `wind_lca` | Wind bound (LCA or `NULL` for delimited PUSH) |
+| `inject_kind` | `KOS_XFER_PLAN_INJECT`, `KOS_XFER_PLAN_TRUNCATE_AND_INJECT`, or none |
+| `truncate_node` | Node for `TRUNCATE_AND_INJECT` (e.g. prompt on POP_SHIFT) |
+| `graft_point_id` | Stored on the plan; LCA fallback when chains are disjoint |
+
+Public builders (`kos_build_transfer_plan`, `kos_build_return_plan`,
+`kos_build_delimited_push_plan`, `kos_build_direct_install_plan`,
+`kos_build_install_only_plan`, `kos_dyn_build_pop_shift_plan`) fill options and
+delegate to **`kos_build_xfer_plan`**. LCA edge cases for direct install and
+install-only paths use **`kos_xfer_resolve_lca`**.
+
+### Transfer step execution (`xfer_plan.c`)
+
+**`kos_run_transfer_step`** dispatches one plan action per call. INSTALL and PUSH
+share **`xfer_step_land_segment`** (`KOS_OP_INLINE`): `graft_parent == NULL`
+replaces the chain; a non-NULL `graft_parent` grafts the segment bottom onto the
+current `dyn_top`. **`kos_chain_segment_bounds`** and
+**`xfer_plan_apply_resume_state`** are `KOS_OP_INLINE` helpers on the step path.
+INJECT delivers throw or stack push inline in **`xfer_step_inject`**.
+
+Plan-build unwind counting and filling share **`xfer_plan_unwind_includes`**
+(`static inline` predicate).
+
+### Continuation capture (`dynchain.c`)
+
+**`kos_shift_capture`** and **`kos_capture_cc`** call
+**`kos_continuation_capture_segment`**: clone `segment_top..stop`, detach the
+template bottom (**`kos_chain_detach_template`**), resolve resume frame
+(**`kos_chain_first_frame`**) and stack (**`kos_chain_resume_stack`**), then
+**`kos_continuation_create`**.
+
 ## Python-Facing Wrapper Types
 
 **KosPyContinuation** (cont.c):
@@ -273,8 +325,9 @@ vs semantic-only for paths where the caller unlinks). See
 
 ### DynNode Chain Management
 
-Chain operations dispatch on `KosDynKind` and `KOS_DYN_CAP_*` in `dynchain.c`
-(switch-based helpers per kind). See
+Chain operations dispatch on `KosDynKind` and `KOS_DYN_CAP_*` across
+`dynchain.c` and the included `dynchain/dyn_*.c` units (switch-based helpers
+per kind). Walk/pop/transition helpers live in **`dynchain/dyn_walk.c`**. See
 [dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md) for the capability model.
 
 **Eval state:** Mutators and chain-aware helpers exposed from `dynchain.h` take
@@ -367,6 +420,10 @@ void kos_free_transfer_plan(KosTransferPlan *plan);
 /* Suspend/resume for nested transfers */
 void kos_suspend_transfer_plan(KosEvalState *es);
 int kos_resume_transfer_plan(KosEvalState *es);
+
+/* Nested delimited PUSH detection; abandon active plan + plan_stack */
+int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan);
+void kos_abandon_transfer_nest(KosEvalState *es);
 ```
 
 ### Context and Frame Lifecycle

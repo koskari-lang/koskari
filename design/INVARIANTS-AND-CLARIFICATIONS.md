@@ -202,9 +202,9 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Stack: block-structured storage (stack.c); region metadata in DynRegion.
 - Bytecode: Code, 4-byte instructions, position table, constant pool, read-only protection (bytecode.c).
 - Parser/reader: BaseSourceStream (parse.c), SourceStream, IndentAwareStream, Reader, LayoutReader (koskari/reader/parser.py).
-- Dynamic chain: all DynNode types (TRY, FINALLY, LOOP, FOREACH, WITH, DYN_WITH, SHIFT, and others), push/pop, clone, free, `kos_find_node_for_raise`, `kos_find_node_for_loop` (dynchain.c).
-- Continuation: capture, validate, clone, invoke, transfer plan, LCA (dynchain.c, eval.c).
-- Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
+- Dynamic chain: all DynNode types (TRY, FINALLY, LOOP, FOREACH, WITH, DYN_WITH, SHIFT, and others), push/pop, clone, free, `kos_find_node_for_raise`, `kos_find_node_for_loop` (`dynchain.c` shell and `dynchain/dyn_*.c`; walks in `dynchain/dyn_walk.c`).
+- Continuation: capture (`kos_continuation_capture_segment`), validate, clone, invoke, transfer plan, LCA (`dynchain.c`, `dynchain/xfer_plan.c`, `eval.c`, `eval/eval_chain.c`).
+- Wind: push/pop wind, hook runner, begin/hook_active/end_hook (`dynchain/dyn_wind.c`, `eval.c`).
 - Evaluator core: **KosEvalState** (eval.h), **KosContext** (with domain field), KosFrame, KosContext_New/free, kos_frame_new/clone/free (eval.c). **eval.c** also implements suspension-event and Python await/resume accessors; **KosEvalState_EnterDomainScope** / **LeaveDomainScope** (forward to **kos_domain_push_scope** / **pop_scope** on **`KosEvalState_CONTEXT(es)`**). Domain: KosDomain type (param value store: name -> value), ParamRef (Ref subclass; resolves via kos_domain_current and kos_domain_get_param), TLS (KosTlsState, ctx_stack, token_stack), kos_ctx_current, kos_domain_current, kos_domain_push_scope, kos_domain_pop_scope (domain.c).
 - Drive loop: `koskari_eval()` builds **KosEvalState**, enters domain scope, and runs opcode fetch, dispatch table, and boundary handling. **CALL** (stack [callable, arg_0, ..., arg_{N-1}]): for Continuation/DelimitedContinuation, same-token invoke applies directly, different-token sets KoskariContinuationApply and returns -1; for KosExpression/KosFunction pushes the callee frame and continues in the same loop (flattened); for other callables goes through Python (push_or_await result). **NEXT/ITER_NEXT** for a Koskari async gen attach the gen’s frame to the current context and continue in the same loop until the gen yields or completes (flattened). **YIELD/RETURN** with a parent frame detach and push value onto the parent, then continue in the same loop; only with no parent do they set a boundary event. Opcode implementation status: see [OPCODES.md](OPCODES.md) §1.6.
 - Python wrappers: KosPyContinuation (cont.c); KosCoroutine and `KosCoroutine_NewFromCode` (coro.c); KosPyAsyncGen, KosPyAsyncGenASend (iter.c). KosCoroutine drive (send/throw/close) in coro.c; async-gen drive and eager-step await in eval.c / iter.c. Sync: `Coroutine.demand()` (coro.c); `tp_iter` → DemandGenerator (iter.c / demand.c).
@@ -246,8 +246,8 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 | Coroutine / run-code | (this doc, evaluator.md)       | koskari/lib/coro.c, coro.h              |
 | Async generator   | (this doc, evaluator.md)         | koskari/lib/iter.c, iter.h              |
 | Demand path       | (this doc)                       | koskari/lib/demand.c, demand.h; `as_coroutine` in koskari/types.py |
-| Dynamic chain     | interpreter/evaluator.md          | koskari/lib/dynchain.c, dynchain.h      |
-| Continuations     | interpreter/callcc.md             | dynchain.c (capture/invoke), eval.c     |
+| Dynamic chain     | interpreter/evaluator.md          | koskari/lib/dynchain.c, dynchain.h, dynchain/dyn_*.c, dynchain/dyn_walk.c |
+| Continuations     | interpreter/callcc.md, interrupted-transfer-plans.md | dynchain.c, dynchain/xfer_plan.c, eval.c, eval/eval_chain.c |
 | Bytecode          | interpreter/bytecode.md, bytecode-metadata-tables.md | koskari/lib/bytecode.c, bytecode.h, opcodes.incl |
 | Types             | api/types.md                     | koskari/lib/*.c, koskari/types.py       |
 | Builtins/API      | api/builtins.md, api/runtime.md   | koskari/lib/lib.c, operator.c           |
