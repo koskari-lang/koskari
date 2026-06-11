@@ -105,7 +105,7 @@ migration** step by step; see §3.
 
 | Item | Location | Notes |
 |------|----------|-------|
-| `kos_abandon_transfer_nest` | `eval_chain.c` (static) | disarm + `kos_free_transfer_plan_stack` |
+| `kos_abandon_transfer_nest` | `dynchain.c` | disarm + `kos_free_transfer_plan_stack` |
 | `abandon_xfer_and_try_local` | `eval_chain.c` | abandon then `try_local_exception_handler` |
 | `plan_res < 0` → abandon + `try_local` | `run_transfer_plan_to_completion` | return `1` if handler applied |
 | cc-unwind signal carve-out | `eval_chain.c` | `xfer_plan_step_is_cc_raise_reemit` → `KOS_EV_RAISE`, not `try_local` |
@@ -139,12 +139,13 @@ migration** step by step; see §3.
 | Segment includes dyn_top..prompt | `kos_shift_capture` | WIND and other heritage nodes in template |
 | `POP_SHIFT` extent lookup | `POP_SHIFT.c` | walks ancestors to enclosing PROMPT extent |
 | Removed peel machinery | `dynchain.c` | `kos_dyn_build_push_shift_unwind_plan` deleted |
-| Regression | `test_reset_shift.py` | capture: `test_dyn_wind_around_shift_captures_in_place`; **invoke: known bug** — `test_dyn_wind_around_shift_invoke_*` (failing) |
+| Regression | `test_reset_shift.py` | `test_dyn_wind_around_shift_captures_in_place`, `test_dyn_wind_around_shift_invoke_after_capture`, `test_dyn_wind_around_shift_invoke_inside_shift_body` (green) |
 
 ### 2.5 Next work (not started)
 
 | Item | Priority | Notes |
 |------|----------|-------|
+| Delimited invoke two-path model | P1 | [delimited-invoke-model.md](delimited-invoke-model.md); in-shift vs remote invoke |
 | Async nested await + `plan_stack` | P1 | §6.7 |
 | Full delimited PUSH replan (real fix) | **deferred** | replace §6.6 forbid when implemented |
 
