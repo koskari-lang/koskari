@@ -28,20 +28,6 @@ special cases inside phase-specific functions. See
 
 ## Continuations / transfer plans
 
-**Landed** on branch `interrupted_transfer` (see
-[interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md)):
-
-- Nested undelimited interrupt: suspend, replan via
-  `kos_build_direct_install_plan` (`TestDynWindContinuations`).
-- Failed transfer abandonment: `kos_abandon_transfer_nest` + `try_local` on the
-  manifested chain (`TestDynWindTransferFailures`, cc-unwind carve-out).
-- §6.6 delimited nested-interrupt **fail-fast** (`kos_invoke_continuation`
-  forbid, replan catch-all, `TestDelimitedTransferNestedForbid`).
-- PUSH_SHIFT **heritage capture** in place (no peel-to-prompt plan);
-  `test_dyn_wind_around_shift_*` in `test_reset_shift.py` (10/10 green).
-
-**Open:**
-
 - **Delimited invoke two-path model** — resume-in-place when the prompt is in
   live ancestry; PUSH graft when not. Addresses in-shift double wind/unwind on
   remote vs in-tree invoke. Design:
