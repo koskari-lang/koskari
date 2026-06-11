@@ -2698,6 +2698,22 @@ static KosTransferPlan *kos_transfer_plan_alloc(
 
 
 /**
+   True when node contributes an unwind EXTENT_ACTION during plan build.
+*/
+static int xfer_plan_unwind_includes(KosDynNode *node) {
+
+  if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_UNWIND_ACTION))
+    return 0;
+  if (KosDynNode_IS_WIND(node)) {
+    KosDynWind *wind = (KosDynWind *) node;
+    return KosDynWind_ENTERED(wind) && KosDynWind_AFTER_THUNK(wind);
+  }
+
+  return 1;
+}
+
+
+/**
    Count how many transfer actions are needed to unwind from current to lca.
    Walks the dynamic chain from current inward toward lca.  For each node:
    - WIND with an "after" hook (unwind): one RUN_HOOK action.
@@ -2711,15 +2727,8 @@ static size_t xfer_plan_count_unwind_and_params(
   size_t n = 0;
   KosDynNode *node = current;
   while (node && node != lca) {
-    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_UNWIND_ACTION)) {
-      if (KosDynNode_IS_WIND(node)) {
-        KosDynWind *wind = (KosDynWind *) node;
-        if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_THUNK(wind))
-          n++;
-      } else {
-        n++;
-      }
-    }
+    if (xfer_plan_unwind_includes(node))
+      n++;
     node = KosDynNode_PARENT(node);
   }
   return n;
@@ -2765,27 +2774,14 @@ static void xfer_plan_fill_unwind_actions(
 
   KosDynNode *node = current;
   while (node && node != lca) {
-    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_UNWIND_ACTION)) {
-      if (KosDynNode_IS_WIND(node)) {
-        KosDynWind *wind = (KosDynWind *) node;
-        if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_THUNK(wind)) {
-          KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_ACTION;
-          KosTransferAction_EXTENT_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = node;
-          KosTransferAction_EXTENT_PHASE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_PHASE_UNWIND;
-          if (KOS_XFER_TRACE)
-            SAYF("[xfer] plan action[%zu] = EXTENT_ACTION (unwind wind) node=%p",
-                 *idx, (void *) node);
-          (*idx)++;
-        }
-      } else {
-        /* PARAM or DYN_WITH with NEEDS_UNWIND_ACTION */
-        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_ACTION;
-        KosTransferAction_EXTENT_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = node;
-        KosTransferAction_EXTENT_PHASE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_PHASE_UNWIND;
-        if (KOS_XFER_TRACE)
-          SAYF("[xfer] plan action[%zu] = EXTENT_ACTION (unwind) node=%p", *idx, (void *) node);
-        (*idx)++;
-      }
+    if (xfer_plan_unwind_includes(node)) {
+      KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_ACTION;
+      KosTransferAction_EXTENT_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = node;
+      KosTransferAction_EXTENT_PHASE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_PHASE_UNWIND;
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] plan action[%zu] = EXTENT_ACTION (unwind) node=%p",
+             *idx, (void *) node);
+      (*idx)++;
     }
     node = KosDynNode_PARENT(node);
   }
@@ -3346,6 +3342,59 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
 
 
 /**
+   Walk segment top to bottom; set stop to parent of bottom (clone bound).
+*/
+static void kos_chain_segment_bounds(
+    KosDynNode *top,
+    KosDynNode **bottom_out,
+    KosDynNode **stop_out) {
+
+  KosDynNode *bottom = top;
+
+  while (bottom && KosDynNode_PARENT(bottom))
+    bottom = KosDynNode_PARENT(bottom);
+  if (bottom_out)
+    *bottom_out = bottom;
+  if (stop_out)
+    *stop_out = bottom ? KosDynNode_PARENT(bottom) : NULL;
+}
+
+
+/**
+   Transfer resume_stack onto the innermost stack owner and set resume PC.
+*/
+static void xfer_plan_apply_resume_state(
+    KosEvalState *es,
+    KosTransferPlan *plan) {
+
+  if (KosTransferPlan_RESUME_STACK(plan)) {
+    KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
+    KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
+    if (! owner && KosEvalState_FRAME(es))
+      owner = (KosDynNode *) KosEvalState_FRAME(es);
+
+    if (owner) {
+      KosStackBlock *old_stack = KosDynNode_STACK(owner);
+      KosDynNode_STACK(owner) = new_stack;
+      KosTransferPlan_RESUME_STACK(plan) = NULL;
+
+      if (old_stack && old_stack != new_stack)
+        KosStackBlock_ReleaseChain(old_stack);
+      kos_dyn_rebuild_live_from_chain(es);
+    } else {
+      KosStackBlock_ReleaseChain(new_stack);
+      KosTransferPlan_RESUME_STACK(plan) = NULL;
+    }
+  }
+
+  if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1
+      && KosEvalState_FRAME(es)) {
+    KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
+  }
+}
+
+
+/**
    Execute an EXTENT_ACTION step: run extent wind (enter) or unwind
    (exit) for the stored node.  Dispatches via kos_dyn_wind or
    kos_dynnode_run_transfer_unwind.  Returns 0 on sync completion, -1
@@ -3486,10 +3535,8 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
                              KosEvent *out_ev) {
   KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
-  KosDynNode *template_bottom = template_seg;
-  while (template_bottom && KosDynNode_PARENT(template_bottom))
-    template_bottom = KosDynNode_PARENT(template_bottom);
-  KosDynNode *stop = template_bottom ? KosDynNode_PARENT(template_bottom) : NULL;
+  KosDynNode *stop = NULL;
+  kos_chain_segment_bounds(template_seg, NULL, &stop);
   KosDynNode *seg = kos_clone_chain_segment(template_seg, stop);
   if (! seg && template_seg) {
     SAY("[xfer] INSTALL clone segment failed");
@@ -3509,31 +3556,7 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
       kos_dynchain_free(old_top, NULL);
   }
 
-  if (KosTransferPlan_RESUME_STACK(plan)) {
-    KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
-    KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
-    if (! owner && KosEvalState_FRAME(es))
-      owner = (KosDynNode *) KosEvalState_FRAME(es);
-
-    if (owner) {
-      KosStackBlock *old_stack = KosDynNode_STACK(owner);
-      KosDynNode_STACK(owner) = new_stack;
-      KosTransferPlan_RESUME_STACK(plan) = NULL;  /* ownership transferred */
-
-      if (old_stack && old_stack != new_stack) {
-        KosStackBlock_ReleaseChain(old_stack);
-      }
-      kos_dyn_rebuild_live_from_chain(es);
-
-    } else {
-      KosStackBlock_ReleaseChain(new_stack);
-      KosTransferPlan_RESUME_STACK(plan) = NULL;
-    }
-  }
-
-  if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1 && KosEvalState_FRAME(es)) {
-    KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
-  }
+  xfer_plan_apply_resume_state(es, plan);
 
   xfer_remap_extent_nodes(plan, template_seg, seg);
 
@@ -3549,10 +3572,8 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
   #endif
 
   {
-    KosDynNode *chain_bottom = seg;
-    while (chain_bottom && KosDynNode_PARENT(chain_bottom))
-      chain_bottom = KosDynNode_PARENT(chain_bottom);
-    KosDynNode *chain_stop = chain_bottom ? KosDynNode_PARENT(chain_bottom) : NULL;
+    KosDynNode *chain_stop = NULL;
+    kos_chain_segment_bounds(seg, NULL, &chain_stop);
     int wind_r = kos_dyn_run_install_wind_span(es, seg, chain_stop, out_ev,
                                                "INSTALL");
     if (wind_r != 0)
@@ -3576,10 +3597,8 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
                           KosEvent *out_ev) {
   KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
-  KosDynNode *template_bottom = template_seg;
-  while (template_bottom && KosDynNode_PARENT(template_bottom))
-    template_bottom = KosDynNode_PARENT(template_bottom);
-  KosDynNode *stop = template_bottom ? KosDynNode_PARENT(template_bottom) : NULL;
+  KosDynNode *stop = NULL;
+  kos_chain_segment_bounds(template_seg, NULL, &stop);
   KosDynNode *seg = kos_clone_chain_segment(template_seg, stop);
   if (! seg && template_seg) {
     if (KOS_XFER_TRACE)
@@ -3594,37 +3613,15 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
 
   /* Graft bottom of segment to current dyn_top */
   KosDynNode *current_top = KosEvalState_DYN_TOP(es);
-  KosDynNode *seg_bottom = seg;
-  while (seg_bottom && KosDynNode_PARENT(seg_bottom))
-    seg_bottom = KosDynNode_PARENT(seg_bottom);
+  KosDynNode *seg_bottom = NULL;
+  kos_chain_segment_bounds(seg, &seg_bottom, NULL);
   if (seg_bottom)
     KosDynNode_PARENT(seg_bottom) = current_top;
 
   KosEvalState_DYN_TOP(es) = seg;
   kos_dyn_rebuild_live_from_chain(es);
 
-  if (KosTransferPlan_RESUME_STACK(plan)) {
-    KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
-    KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
-    if (! owner && KosEvalState_FRAME(es))
-      owner = (KosDynNode *) KosEvalState_FRAME(es);
-    if (owner) {
-      KosStackBlock *old_stack = KosDynNode_STACK(owner);
-      KosDynNode_STACK(owner) = new_stack;
-      KosTransferPlan_RESUME_STACK(plan) = NULL;  /* ownership transferred */
-      if (old_stack && old_stack != new_stack) {
-        KosStackBlock_ReleaseChain(old_stack);
-      }
-      kos_dyn_rebuild_live_from_chain(es);
-    } else {
-      KosStackBlock_ReleaseChain(new_stack);
-      KosTransferPlan_RESUME_STACK(plan) = NULL;
-    }
-  }
-  if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1
-      && KosEvalState_FRAME(es)) {
-    KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
-  }
+  xfer_plan_apply_resume_state(es, plan);
 
   {
     int wind_r = kos_dyn_run_install_wind_span(es, seg, current_top, out_ev,
