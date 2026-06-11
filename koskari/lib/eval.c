@@ -725,6 +725,8 @@ static KosEvalMode handle_continuation_apply(
       Py_DECREF(cont_obj);
       return KOS_MODE_TRANSFER;
     }
+    if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
+      kos_abandon_transfer_nest(es);
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "KoskariContinuationApply: invoke failed without PyErr");

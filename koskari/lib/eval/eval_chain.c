@@ -170,21 +170,12 @@ int KosEvalState_Transition(
   Clear the context's transfer plan and free it.  Plan pointer is nulled
   before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
   triggering Python dealloc/__del__) does not see the plan while it is freed.
-  For PUSH_SHIFT unwind plans, transfers continuation_ref to the prompt's
-  pending_shift_wrapper so the opcode can push the handler on re-entry.
 */
 static void clear_and_free_transfer_plan(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosTransferPlan *p = KosEvalState_PLAN(es);
   KosEvalState_PLAN(es) = NULL;
   KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
-  if (p && KosTransferPlan_CONTINUATION_REF(p)
-      && KosTransferPlan_ORIGINAL_TARGET(p)
-      && KosDynNode_IS_PROMPT(KosTransferPlan_ORIGINAL_TARGET(p))) {
-    KosDynPrompt *prompt = (KosDynPrompt *) KosTransferPlan_ORIGINAL_TARGET(p);
-    KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = KosTransferPlan_CONTINUATION_REF(p);
-    KosTransferPlan_CONTINUATION_REF(p) = NULL;
-  }
   kos_free_transfer_plan(p);
 }
 
@@ -336,17 +327,6 @@ static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
 
 
 /**
-  Disarm the active transfer plan and free any suspended outers on plan_stack.
-  Does not clear PyErr or mutate dyn_top / frame_top / stack.
-*/
-static void kos_abandon_transfer_nest(KosEvalState *es) {
-
-  KosEvalState_DisarmTransferPlan(es);
-  kos_free_transfer_plan_stack(es);
-}
-
-
-/**
   Abandon any transfer nest, then dispatch PyErr through local handlers.
 
   :return: 1 if a handler was applied, -1 if unhandled raise or fatal error
@@ -457,6 +437,12 @@ static int run_transfer_plan_to_completion(
        draining the new plan. */
     kos_resume_transfer_plan(es);
     KosTransferPlan *outer = KosEvalState_PLAN(es);
+    if (kos_xfer_plan_is_delimited_push(outer)) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "nested continuation invoke during an active delimited"
+                      " transfer is not supported");
+      return abandon_xfer_and_try_local(es, out_ev);
+    }
     size_t outer_ac = KosTransferPlan_ACTION_COUNT(outer);
     KosTransferAction *inject_a = &KosTransferPlan_ACTIONS(outer)[outer_ac - 1];
     KosDynNode  *target       = KosTransferPlan_ORIGINAL_TARGET(outer);

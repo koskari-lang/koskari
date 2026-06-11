@@ -19,7 +19,9 @@
 
    Expects DYN_TOP to be a KOS_DYN_SHIFT node.  Uses a transfer plan to
    unwind (EXTENT_ACTION for the shift, then TRUNCATE_AND_INJECT) and
-   inject the result past the prompt.
+   inject the result past the prompt.  Heritage bytecode extents between
+   SHIFT and PROMPT (e.g. WIND) are skipped when resolving the enclosing
+   PROMPT extent for resume PC.
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
@@ -76,11 +78,27 @@ KOS_OP_HANDLER(POP_SHIFT) {
     return KOS_OP_POST_ERR();
   }
 
-  prompt_extent = kos_extent_desc((PyObject *) code, parent_id);
-  if (! prompt_extent || prompt_extent->kind != KOS_EXT_PROMPT) {
+  /* SHIFT may sit under heritage extents (e.g. WIND) between it and PROMPT. */
+  {
+    uint32_t walk_id = parent_id;
+    prompt_extent = NULL;
+    while (walk_id != KOS_EXTENT_NONE) {
+      KosExtentDesc *candidate = kos_extent_desc((PyObject *) code, walk_id);
+      if (! candidate) {
+        Py_DECREF(result);
+        return KOS_OP_POST_ERR();
+      }
+      if (candidate->kind == KOS_EXT_PROMPT) {
+        prompt_extent = candidate;
+        break;
+      }
+      walk_id = candidate->parent_extent_id;
+    }
+  }
+  if (! prompt_extent) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
-                    "POP_SHIFT: parent of SHIFT is not PROMPT extent");
+                    "POP_SHIFT: no enclosing PROMPT extent for SHIFT");
     return KOS_OP_POST_ERR();
   }
 

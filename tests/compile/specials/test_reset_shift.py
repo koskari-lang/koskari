@@ -19,7 +19,7 @@ handler. Mirrors the semantics in design/language/control-flow.md.
 """
 
 from . import SpecialsTestCase
-from koskari.lib import ParamRef
+from koskari.lib import DelimitedContinuation, ParamRef
 from koskari.dis import dis
 
 import pytest
@@ -177,6 +177,69 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
         result = await expr()
         self.assertEqual(result, (None, 101, 110, 109, 102))
+
+
+    async def test_dyn_wind_around_shift_captures_in_place(self):
+        """
+        dyn-wind wrapping shift captures in place; shift body POP_SHIFT and
+        POP_WIND complete without extent or wind topology errors.
+        """
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (compile/begin)
+            (compile/shift k k)
+            nil))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertIsInstance(result, DelimitedContinuation)
+
+
+    async def test_dyn_wind_around_shift_invoke_after_capture(self):
+        """
+        KNOWN BUG: delimited invoke after capture with dyn-wind wrapping shift.
+
+        Capture completes (see test_dyn_wind_around_shift_captures_in_place) but
+        (call k N) raises RuntimeError block cannot grow over limit — unbounded
+        stack growth during delimited PUSH when the captured segment includes
+        heritage WIND nodes (segment_top = dyn_top in kos_shift_capture).
+        """
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/setq captured
+              (compile/reset
+                (compile/dyn-wind
+                  (compile/begin)
+                  (compile/shift k k)
+                  nil)))
+            (compile/call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, 5)
+
+
+    async def test_dyn_wind_around_shift_invoke_inside_shift_body(self):
+        """
+        KNOWN BUG: same stack blow-up when invoke runs inside the shift body.
+
+        (reset (dyn-wind ... (shift k (call k 5)))) should return 5.
+        """
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (compile/begin)
+            (compile/shift k (compile/call k 5))
+            nil))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, 5)
 
 
 # The end.

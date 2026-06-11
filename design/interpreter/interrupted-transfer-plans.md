@@ -1,8 +1,9 @@
 # Interrupted and failed transfer plans
 
 **Status:** Nested continuation interrupt (§5) and failed/exception transfer
-abandonment (§4) are **landed** on branch `interrupted_transfer`. **Next work:**
-delimited nested-interrupt **fail-fast** (§6.6) and async nested await (§6.7).
+abandonment (§4) are **landed** on branch `interrupted_transfer`. **Delimited
+nested-interrupt fail-fast (§6.6)** and **PUSH_SHIFT heritage capture** are
+**landed**. **Next work:** async nested await (§6.7).
 
 **Audience:** Maintainers and agents implementing §6.6–6.7; reviewers of
 continuation + dyn-wind integration.
@@ -34,7 +35,7 @@ continuation + dyn-wind integration.
 | Review failed/exception transfer behavior (landed) | §4 Failed transfer abandonment (done) |
 | Understand nested continuation interrupt | §5 Nested continuation interrupt (done) |
 | Reference data structures and runtime flow | §6 Runtime reference |
-| Implement delimited nested-interrupt forbid (next) | §6.6 |
+| Implement delimited nested-interrupt forbid | §6.6 — **done** |
 | Implement async nested await coverage (later) | §6.7 |
 | Run regression tests | §7 Test plan |
 | Acceptance criteria | §8 Acceptance criteria |
@@ -63,8 +64,8 @@ dynamic chain to its `original_target`.
 
 **Undelimited (`let/cc`) plans** use `kos_build_direct_install_plan` (INSTALL +
 wind + INJECT). **Delimited (`reset`/`shift`) PUSH plans** are **not** replanned
-correctly today; §6.6 forbids nested invoke with an explicit `RuntimeError`
-instead of silent wrong topology.
+correctly today; §6.6 **forbids** nested invoke with an explicit `RuntimeError`
+instead of silent wrong topology (**landed**).
 
 ### 1.2 Failed transfer (exception during plan) — **DONE**
 
@@ -117,15 +118,36 @@ migration** step by step; see §3.
 | Tests: `TestDynWindTransferWindReproducer` (1) | `test_dyn_wind.py` | before-thunk runs twice on transfer |
 | Foreign apply + dyn-with | `test_continuations.py` | `__exit__` sees no exception during cc-unwind |
 
-### 2.3 Next work (not started)
+### 2.3 Done — delimited nested-interrupt fail-fast (§6.6)
+
+| Item | Location | Notes |
+|------|----------|-------|
+| `kos_xfer_plan_is_delimited_push` | `dynchain.c`, `dynchain.h` | detects PUSH in active plan |
+| Invoke-time forbid + abandon | `kos_invoke_continuation` | §6.6.4 A |
+| Replan catch-all | `eval_chain.c` | §6.6.4 B before `direct_install` |
+| `handle_continuation_apply` abandon | `eval.c` | §6.6.5 on invoke failure |
+| `kos_abandon_transfer_nest` | `dynchain.c` | exported; clears nest |
+| Test: `TestDelimitedTransferNestedForbid` | `test_continuations.py` | green |
+
+### 2.4 Done — PUSH_SHIFT heritage capture
+
+| Item | Location | Notes |
+|------|----------|-------|
+| In-place capture only | `PUSH_SHIFT.c` | no peel-to-prompt transfer plan |
+| Heritage gating | `kos_shift_capture` | `kos_validate_capture` + `handle(SHIFT)` walk |
+| Segment includes dyn_top..prompt | `kos_shift_capture` | WIND and other heritage nodes in template |
+| `POP_SHIFT` extent lookup | `POP_SHIFT.c` | walks ancestors to enclosing PROMPT extent |
+| Removed peel machinery | `dynchain.c` | `kos_dyn_build_push_shift_unwind_plan` deleted |
+| Regression | `test_reset_shift.py` | capture: `test_dyn_wind_around_shift_captures_in_place`; **invoke: known bug** — `test_dyn_wind_around_shift_invoke_*` (failing) |
+
+### 2.5 Next work (not started)
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| **Delimited nested-interrupt fail-fast** | **P0** | §6.6 — elected interim policy |
 | Async nested await + `plan_stack` | P1 | §6.7 |
 | Full delimited PUSH replan (real fix) | **deferred** | replace §6.6 forbid when implemented |
 
-### 2.4 Known gap (why §6.6 exists)
+### 2.6 Known gap (why §6.6 exists)
 
 The replan loop in `run_transfer_plan_to_completion` always calls
 `kos_build_direct_install_plan` (INSTALL semantics). A suspended **delimited**
@@ -134,16 +156,20 @@ caller chain preserved, `KOS_DYN_DELIM` return metadata). Replanning with
 `direct_install` can produce **unknown/wrong chain topology**. Until a correct
 PUSH replan exists, **fail closed** with `RuntimeError` (§6.6).
 
-### 2.5 Files touched (landed work)
+### 2.7 Files touched (landed work)
 
 | File | Changes |
 |------|---------|
 | `koskari/lib/eval/eval_chain.c` | replan loop, abandon helpers, cc-unwind carve-out, return codes |
 | `koskari/lib/eval.c` | `process_raise` abandon guard, prologue ordering, caller plumbing |
-| `koskari/lib/dynchain.c` | suspend in invoke, `kos_free_transfer_plan_stack`, `try_local` extent fix |
+| `koskari/lib/dynchain.c` | suspend in invoke, `kos_free_transfer_plan_stack`, `try_local` extent fix, §6.6 forbid, heritage capture segment, removed peel plan |
 | `koskari/lib/dynchain.h` | `graft_point_id` field, helper decl |
 | `koskari/lib/dynchain/dyn_wind.c` | nested-transfer CONTROL_RETURNED guards |
+| `koskari/lib/opcode/PUSH_SHIFT.c` | in-place capture; no unwind plan |
+| `koskari/lib/opcode/POP_SHIFT.c` | PROMPT extent ancestor walk |
 | `tests/compile/specials/test_dyn_wind.py` | `TestDynWindContinuations`, `TestDynWindTransferFailures`, `TestDynWindTransferWindReproducer` |
+| `tests/compile/specials/test_continuations.py` | `TestDelimitedTransferNestedForbid` |
+| `tests/compile/specials/test_reset_shift.py` | dyn-wind-around-shift capture regression |
 
 ---
 
@@ -761,7 +787,7 @@ Not required for §6.6 minimum if Test 1 asserts unhandled `RuntimeError`.
 4. cc-unwind sentinel carve-out preserves foreign-apply dyn-with semantics.
 5. Nested continuation and full regression gate pass (§7.1).
 
-### 8.3 Delimited nested-interrupt fail-fast — **NEXT**
+### 8.3 Delimited nested-interrupt fail-fast — **COMPLETE**
 
 1. `kos_xfer_plan_is_delimited_push` implemented and exported.
 2. `kos_abandon_transfer_nest` exported to `dynchain.c` / `dynchain.h`.
@@ -770,6 +796,7 @@ Not required for §6.6 minimum if Test 1 asserts unhandled `RuntimeError`.
 5. `handle_continuation_apply` abandons nest on invoke failure when plan/stack active.
 6. Test 1 and Test 2 from §7.4 pass; §7.1 regression gate passes.
 7. `design/TODO.md` follow-ups line updated.
+8. PUSH_SHIFT in-place heritage capture; POP_SHIFT PROMPT ancestor walk.
 
 ### 8.4 Explicitly out of scope
 
@@ -788,8 +815,9 @@ Not required for §6.6 minimum if Test 1 asserts unhandled `RuntimeError`.
 - [x] `TestDynWindTransferWindReproducer` — 1/1.
 - [x] `test_call_cc`, `test_continuations`, `test_reset_shift_nested`.
 - [x] `test_continuation_passes_through_intermediate_context_with_dyn_with_unwind`.
-- [ ] Trace nested interrupt once if touching `dyn_wind.c` or replan block.
-- [ ] §6.6: `TestDelimitedTransferNestedForbid` green (§7.4).
+- [x] §6.6: `TestDelimitedTransferNestedForbid` green (§7.4).
+- [x] PUSH_SHIFT heritage capture; `test_dyn_wind_around_shift_captures_in_place`.
+- [ ] **Known bug:** dyn-wind-around-shift delimited invoke — `test_dyn_wind_around_shift_invoke_after_capture`, `test_dyn_wind_around_shift_invoke_inside_shift_body` (must fail until fixed).
 
 ---
 
@@ -805,8 +833,8 @@ Not required for §6.6 minimum if Test 1 asserts unhandled `RuntimeError`.
 | `kos_suspend_transfer_plan`, `kos_resume_transfer_plan` | `dynchain.c` |
 | `kos_free_transfer_plan_stack` | `dynchain.c` |
 | `kos_invoke_continuation` | `dynchain.c` — §6.6.4 A |
-| `kos_xfer_plan_is_delimited_push` | `dynchain.c` — **add** §6.6.3 |
-| `kos_abandon_transfer_nest` | `eval/eval_chain.c` today → **export** `dynchain.c` §6.6.5 |
+| `kos_xfer_plan_is_delimited_push` | `dynchain.c` — §6.6.3 |
+| `kos_abandon_transfer_nest` | `dynchain.c` §6.6.5 |
 | `kos_dyn_wind_on_control_returned` | `dynchain/dyn_wind.c` |
 | `kos_build_direct_install_plan`, `kos_build_delimited_push_plan` | `dynchain.c` |
 | `abandon_xfer_and_try_local` | `eval/eval_chain.c` — replan catch-all §6.6.4 B |

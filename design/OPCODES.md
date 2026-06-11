@@ -3241,16 +3241,16 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: Captures continuation from POP_SHIFT+1 to POP_PROMPT; builds an unwind transfer plan to unwind from the current position to the matching prompt (exclusive); runs the plan; pushes the captured continuation onto the prompt's stack (which is now the active stack after PUSH_PROMPT's block push); enters the shift block. Shift body runs with k on stack. SHIFT does not push its own stack block; the PROMPT's block is the active block throughout.
+- **Stack**: Captures the continuation from POP_SHIFT+1 through POP_PROMPT when the matching prompt is in acceptable chain heritage (`kos_validate_capture` and `handle(SHIFT)` walk). Clones the chain segment from current `dyn_top` through the prompt (including heritage nodes such as WIND above the prompt). Pushes a KOS_DYN_SHIFT marker on current `dyn_top` (which may be WIND, not PROMPT), pushes the captured continuation wrapper on stack, and enters the shift block. Does **not** peel nodes above the prompt via a transfer plan.
 - **Pushes:** KOS_DYN_SHIFT (simple marker; no stack block, no handlers).
-- **Invariants**: Capture validated by kos_validate_capture (prompt reachability in chain). Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
+- **Invariants**: Capture validated by `kos_validate_capture` (prompt reachability) and `kos_dyn_walk_handle_shift_to_prompt`. Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
 - **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
 
-**Example:** shift k: body. Capture k, run shift body with k on stack. Pool: 0 = prompt_id.
+**Example:** shift k: body. Capture k in place, run shift body with k on stack. Pool: 0 = prompt_id.
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 2     | PUSH_SHIFT| 0   | 0 (pid)  | capture k; unwind to prompt; push k (onto prompt's stack); enter shift block |
+| 2     | PUSH_SHIFT| 0   | 0 (pid)  | capture k in place; push SHIFT on dyn_top; enter shift block |
 
 ---
 
@@ -3259,7 +3259,7 @@ between POP_SHIFT and POP_PROMPT.
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Pops TOS as result; builds a transfer plan that unwinds from the current position through the matching SHIFT and PROMPT nodes (TRUNCATE_AND_INJECT step drops both and their stack block), then injects the single result value onto the outer frame's stack (below the PROMPT's block boundary). Handler returns without invoking k.
-- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). Stack block owned by PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
+- **Invariants**: Must be inside a PUSH_SHIFT extent. When heritage extents (e.g. WIND) sit between SHIFT and PROMPT in the bytecode extent table, POP_SHIFT walks ancestors to find the enclosing PROMPT extent for resume PC. Stack block owned by PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
 - **Compiler form:** No argument.
 
 **Example:** Shift handler returns value without invoking k.

@@ -2327,29 +2327,29 @@ int kos_shift_capture(
     return -1;
   }
 
-  /* Clone the chain segment that will be restored on invoke: the prompt and
-   * the frames below it (ns, frame).  Include the frame so resume_frame is
-   * found and the push segment contains a frame for kos_dyn_rebuild_live_from_chain.
-   * That way the resumed context has a prompt to POP_PROMPT and can return
-   * to the invoker. */
-  KosDynNode *frame_inside = KosDynNode_PARENT(prompt);
-  KosDynNode *segment_top = (KosDynNode *) prompt;
-  KosDynNode *stop = NULL;  /* capture full chain so frame is included */
-  if (KOS_XFER_TRACE && frame_inside) {
-    if (KosDynNode_IS_FRAME(frame_inside)) {
+  /* Clone the chain segment restored on invoke: from dyn_top through the
+   * prompt and frames below (heritage nodes above the prompt, e.g. WIND,
+   * are included so delimited PUSH can replay their wind hooks). */
+  KosDynNode *segment_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *stop = NULL;
+  if (KOS_XFER_TRACE) {
+    KosDynNode *frame_inside = KosDynNode_PARENT(prompt);
+    if (frame_inside && KosDynNode_IS_FRAME(frame_inside)) {
       KosDynFrame *f = (KosDynFrame *) frame_inside;
-      SAYF("[xfer] shift_capture segment_top=%p (prompt) frame_inside=%p kind=%u stack=%p len=%zu",
-           (void *) segment_top, (void *) frame_inside,
-           (unsigned) KosDynNode_KIND(frame_inside),
+      SAYF("[xfer] shift_capture segment_top=%p dyn_top kind=%u frame_inside=%p stack=%p len=%zu",
+           (void *) segment_top,
+           (unsigned) KosDynNode_KIND(segment_top),
+           (void *) frame_inside,
            (void *) KosDynFrame_STACK(f),
            KosDynFrame_STACK(f)
                ? (size_t) KosStackBlock_LEN(KosDynFrame_STACK(f)) : 0);
       (void) f;
 
     } else {
-      SAYF("[xfer] shift_capture segment_top=%p (prompt) frame_inside=%p kind=%u",
-           (void *) segment_top, (void *) frame_inside,
-           (unsigned) KosDynNode_KIND(frame_inside));
+      SAYF("[xfer] shift_capture segment_top=%p kind=%u frame_inside=%p",
+           (void *) segment_top,
+           (unsigned) KosDynNode_KIND(segment_top),
+           (void *) frame_inside);
     }
   }
 
@@ -2903,16 +2903,6 @@ static void xfer_plan_fill_inject_action(
 }
 
 
-/**
-   Append one KOS_XFER_POP_ONE slot (uninstall current top during plan run).
-   Callers: kos_dyn_build_push_shift_unwind_plan.
-*/
-static void xfer_plan_fill_pop_one_action(KosTransferPlan *plan, size_t *idx) {
-  KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_POP_ONE;
-  (*idx)++;
-}
-
-
 static void xfer_plan_fill_truncate_and_inject_action(
     KosTransferPlan *plan,
     size_t *idx,
@@ -3058,10 +3048,10 @@ int kos_build_delimited_push_plan(
   KosTransferPlan_RESUME_STACK(plan) = NULL;
 
   size_t idx = 0;
+  xfer_plan_fill_push_action(plan, &idx, segment);
   if (xfer_plan_fill_wind_actions(plan, &idx, segment, NULL, wind_count) < 0) {
     return -1;
   }
-  xfer_plan_fill_push_action(plan, &idx, segment);
   xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
@@ -3214,56 +3204,10 @@ int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt,
 
 
 /**
-   Plan: POP_ONE repeatedly until dyn_top is prompt (abort path before inject).
-   Callers: PUSH_SHIFT unwind-to-prompt setup.
-*/
-int kos_dyn_build_push_shift_unwind_plan(KosEvalState *es, KosDynPrompt *prompt,
-                                         KosTransferPlan **out_plan) {
-
-  KosDynNode *current = KosEvalState_DYN_TOP(es);
-  KosDynNode *prompt_node = (KosDynNode *) prompt;
-
-  size_t pop_count = 0;
-  KosDynNode *node = current;
-  while (node && node != prompt_node) {
-    pop_count++;
-    node = KosDynNode_PARENT(node);
-  }
-  if (node != prompt_node) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "push_shift_unwind: prompt not on chain");
-    return -1;
-  }
-
-  KosTransferPlan *plan = kos_transfer_plan_alloc(pop_count);
-  if (! plan) {
-    return -1;
-  }
-
-  KosTransferPlan_ACTION_COUNT(plan) = pop_count;
-  KosTransferPlan_ACTION_INDEX(plan) = 0;
-  KosTransferPlan_ORIGINAL_TARGET(plan) = prompt_node;
-  KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
-  KosTransferPlan_RESUME_FRAME(plan) = NULL;
-  KosTransferPlan_RESUME_STACK(plan) = NULL;
-
-  size_t idx = 0;
-  node = current;
-  while (node && node != prompt_node) {
-    xfer_plan_fill_pop_one_action(plan, &idx);
-    node = KosDynNode_PARENT(node);
-  }
-
-  *out_plan = plan;
-  return 0;
-}
-
-
-/**
    Build a transfer plan with only INSTALL and wind-before hooks (no
    INJECT).  Use when the caller will push a frame and value manually
-   after the plan runs (e.g. PUSH_SHIFT abort-to-prompt).  Skips unwind
-   entirely, so safe when path crosses PROMPT.  Returns 0 on success.
+   after the plan runs.  Skips unwind entirely, so safe when path crosses
+   PROMPT.  Returns 0 on success.
 */
 int kos_build_install_only_plan(
     KosEvalState *es,
@@ -3688,6 +3632,9 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
     if (wind_r != 0)
       return wind_r;
   }
+
+  xfer_remap_extent_nodes(plan, template_seg, seg);
+
   if (KOS_XFER_TRACE)
     SAYF("[xfer] PUSH after: dyn_top=%p frame_top=%p",
          (void *) KosEvalState_DYN_TOP(es), (void *) KosEvalState_FRAME(es));
@@ -3998,6 +3945,45 @@ void kos_free_transfer_plan_stack(KosEvalState *es) {
 }
 
 
+/**
+   Disarm the active transfer plan and free any suspended outers on
+   plan_stack.  Does not clear PyErr or mutate dyn_top / frame_top / stack.
+*/
+void kos_abandon_transfer_nest(KosEvalState *es) {
+
+  KosContext *ctx;
+  KosTransferPlan *p;
+
+  if (! es)
+    return;
+
+  ctx = KosEvalState_CONTEXT(es);
+  p = KosEvalState_PLAN(es);
+  KosEvalState_PLAN(es) = NULL;
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
+  kos_free_transfer_plan(p);
+  kos_free_transfer_plan_stack(es);
+}
+
+
+/**
+   True when plan includes a KOS_XFER_PUSH step (delimited invoke plan).
+*/
+int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan) {
+
+  if (! plan)
+    return 0;
+
+  for (size_t i = 0; i < KosTransferPlan_ACTION_COUNT(plan); i++) {
+    if (KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[i])
+        == KOS_XFER_PUSH)
+      return 1;
+  }
+
+  return 0;
+}
+
+
 /* === Continuation invocation === */
 
 
@@ -4122,6 +4108,19 @@ int kos_invoke_continuation(
     SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
          (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
   #endif
+
+  if (kos_xfer_plan_is_delimited_push(KosEvalState_PLAN(es))) {
+    kos_free_transfer_plan(plan);
+    if (ret_delim && kos_dyn_pop_delim(es, ret_delim) < 0)
+      return -1;
+    if (to_use != k)
+      kos_continuation_free(to_use);
+    kos_abandon_transfer_nest(es);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "nested continuation invoke during an active delimited"
+                    " transfer is not supported");
+    return -1;
+  }
 
   /* If a transfer is already in progress (e.g. we were called from a wind
      thunk during an EXTENT_ACTION step), suspend the outer plan so it can be

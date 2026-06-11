@@ -1986,17 +1986,6 @@ int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt,
 
 
 /**
-   Build a plan for PUSH_SHIFT unwind: POP_ONE for each node from current
-   top down to (but not including) the prompt.  After completion,
-   dyn_top == prompt.
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_build_push_shift_unwind_plan(KosEvalState *es, KosDynPrompt *prompt,
-                                         KosTransferPlan **out_plan);
-
-
-/**
    Free a transfer plan and its actions.
 
    :param plan: plan to free (may be NULL)
@@ -2027,6 +2016,19 @@ int kos_resume_transfer_plan(KosEvalState *es);
    a nested transfer nest after a fatal error.
 */
 void kos_free_transfer_plan_stack(KosEvalState *es);
+
+
+/**
+   Disarm the active transfer plan and free any suspended outers on
+   plan_stack.  Does not clear PyErr or mutate dyn_top / frame_top / stack.
+*/
+void kos_abandon_transfer_nest(KosEvalState *es);
+
+
+/**
+   True when plan includes a KOS_XFER_PUSH step (delimited invoke plan).
+*/
+int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan);
 
 
 /* === Continuation invocation === */
