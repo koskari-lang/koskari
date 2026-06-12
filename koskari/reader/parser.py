@@ -48,7 +48,7 @@ from re import compile as regex
 
 from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
 from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
-from ..types import get_position, is_pair
+from ..types import is_pair
 from .layouts import apply_layout, apply_layouts, find_layout
 
 
@@ -67,6 +67,8 @@ __all__ = (
     "READ_EOF",
     "DEFER",
     "LINE_END",
+    "BLOCK",
+    "BLOCKS",
 )
 
 
@@ -104,6 +106,7 @@ _keyword_block = keyword(":block:")
 IN_PROGRESS = keyword("work-in-progress")
 VALUE = keyword("value")
 BLOCK = keyword("block")
+BLOCKS = keyword("blocks")
 ATOM = keyword("atom")
 DOT = keyword("dot")
 SKIP = keyword("skip")
@@ -2297,26 +2300,6 @@ class LayoutReader(Reader):
         return body
 
 
-    def _read_block_source(self, stream, outer_indent, head, args):
-        """
-        Build the raw block source structure: ((head . args) . body...)
-
-        :param stream: source stream positioned after the block header colon
-        :param outer_indent: column of the block head line
-        :param head: the block head symbol
-        :param args: list of forms between head and colon
-        :return: cons((head . args) . body...) with position set
-        """
-
-        pos = stream.position()
-        body = self.read_block_body(stream, outer_indent)
-        header = cons(head, *args, nil)
-        source = cons(header, *body, nil)
-        if is_pair(source):
-            source.set_position(pos)
-        return source
-
-
     def _peek_peer_block_head(self, stream, outer_indent):
         """
         Non-consumingly check whether the next line starts a declared peer
@@ -2450,7 +2433,7 @@ class LayoutReader(Reader):
         :param outer_indent: column of the enclosing block head
         :param layout_obj: LayoutHandler whose peers attribute lists allowed
             peer head symbols
-        :return: list of raw source structures, one per peer block
+        :return: list of (:block: ...) conses, one per peer block
         """
 
         declared = tuple(layout_obj.peers or ())
@@ -2470,7 +2453,7 @@ class LayoutReader(Reader):
                 break
 
             phead, pargs, _opener = self.read_block_header(stream)
-            peers.append(self._read_block_source(stream, outer_indent, phead, pargs))
+            peers.append(self._build_block(stream, outer_indent, phead, pargs))
 
         return peers
 
@@ -2500,8 +2483,9 @@ class LayoutReader(Reader):
         """
         Read a block as a :block: cons without invoking layout handlers
 
-        Sets _block_mode so that sub-block detection routes through
-        read_block instead of read_layout_block at every nesting level.
+        Used when :attr:`_block_mode` is set (quote/quasiquote inner blocks).
+        Sets _block_mode for the duration of the body read so nested colons
+        also produce raw :block: conses.
 
         :param stream: the source stream, positioned after the header colon
             and its trailing whitespace
@@ -2520,6 +2504,26 @@ class LayoutReader(Reader):
             return self._build_block(stream, outer_indent, head, args)
         finally:
             self._block_mode = prev
+
+
+    def _read_block_with_peers(self, stream, outer_indent, head, args):
+        """
+        Read a primary :block: and any stream-collected peer :block: conses
+
+        :param stream: source stream positioned after the header colon
+        :param outer_indent: column of the block head line
+        :param head: block head symbol
+        :param args: header argument forms
+        :return: (primary_block, peer_blocks) where peer_blocks may be empty
+        """
+
+        primary = self._build_block(stream, outer_indent, head, args)
+        layout_obj = self.find_layout(head)
+        peer_blocks = []
+        if layout_obj and layout_obj.peers:
+            peer_blocks = self._collect_peer_blocks(
+                stream, outer_indent, layout_obj)
+        return primary, peer_blocks
 
 
     def _read_quote_block(self, stream, outer_indent):
@@ -2615,80 +2619,14 @@ class LayoutReader(Reader):
             stream.read(1)
 
         event, pos, inner = self.read_form(stream)
-        if event is not VALUE and event is not BLOCK:
+        if event is not VALUE and event is not BLOCK and event is not BLOCKS:
             raise stream.error('invalid syntax after decorators', pos)
+
+        if event is BLOCKS:
+            inner = apply_layouts(inner, self._ns).car
 
         deco_list = cons(*decorators, nil)
         return cons(_symbol_compile_decorate, deco_list, inner, nil)
-
-
-    def expand_layout(self, source, peers=(), layout_obj=None):
-        """
-        Apply pass-two layout expansion to a block source and its peers
-
-        :param source: cons of the form ((head . args) . body-forms)
-        :param peers: list of peer block source pairs
-        :param layout_obj: optional resolved layout handler
-        :return: the expanded form produced by the layout handler
-        """
-
-        if layout_obj is None:
-            head = source[0][0]
-            layout_obj = self.find_layout(head)
-            if layout_obj is None:
-                layout_obj = self.find_layout(symbol('layout/block'))
-            if layout_obj is None:
-                raise RuntimeError('layout/block handler not found')
-
-        header = source[0]
-
-        if layout_obj.raw:
-            return layout_obj.read(self._ns, source, peers)
-
-        _, body = source
-        expanded_body = apply_layouts(body, self._ns)
-
-        expanded_peers = []
-        for peer in peers:
-            pheader, pbody = peer
-            expanded_pbody = apply_layouts(pbody, self._ns)
-            expanded_peers.append(cons(pheader, expanded_pbody))
-
-        expanded_source = cons(header, expanded_body)
-        source_pos = get_position(source)
-        if source_pos and is_pair(expanded_source):
-            expanded_source.set_position(source_pos)
-        return layout_obj.read(self._ns, expanded_source, expanded_peers)
-
-
-    def read_layout_block(self, stream, outer_indent, head=None, args=None):
-        """
-        Read a block and apply its layout handler, producing a layout form
-
-        Pass one reads the block source and any declared peer blocks without
-        expanding nested block children. Pass two expands through
-        :meth:`expand_layout`.
-
-        :param stream: the source stream, positioned after the header colon
-            and its trailing whitespace
-        :param outer_indent: column of the block head line
-        :param head: block head symbol if already read by the caller
-        :param args: header argument forms if already read by the caller
-        :return: the transformed form produced by the layout handler
-        """
-
-        if head is None:
-            head, args, opener = self.read_block_header(stream)
-
-        source = self._read_block_source(stream, outer_indent, head, args)
-
-        layout_obj = self.find_layout(source[0][0])
-        peers = []
-        if layout_obj and layout_obj.peers:
-            peers = self._collect_peer_blocks(
-                stream, outer_indent, layout_obj)
-
-        return self.expand_layout(source, peers, layout_obj)
 
 
     def read_form(self, stream):
@@ -2703,11 +2641,10 @@ class LayoutReader(Reader):
         the current logical line until ``LINE_END``, ``EOF``, or structural
         ``COLON`` (horizontal whitespace only between tokens). Empty lines are
         skipped. At ``LINE_END`` with several values, folds with ``cons`` or
-        errors per :attr:`layout_implicit_calls`. At ``COLON``, reads a raw
-        block source (pass one) or a :block: cons when :attr:`_block_mode` is
-        set, returning ``BLOCK``. Top-level colon reads use
-        :meth:`read_layout_block` and return ``VALUE``. Pass-one ``BLOCK``
-        forms are expanded from :meth:`read`.
+        errors per :attr:`layout_implicit_calls`. At ``COLON``, returns
+        ``BLOCK`` for a single :block: cons, or ``BLOCKS`` for a primary
+        :block: plus stream-collected peer :block: conses on a spine.
+        Expansion is deferred to :meth:`read`.
 
         :param stream: source stream positioned at the start of the next form
         :return: (event, position, value)
@@ -2756,8 +2693,8 @@ class LayoutReader(Reader):
                     return EOF, stream.position(), None
 
                 event, pos, value = self._read_header_form(stream)
-                if event is BLOCK:
-                    return BLOCK, pos, value
+                if event is BLOCK or event is BLOCKS:
+                    return event, pos, value
                 if event is LINE_END:
                     if not values:
                         break
@@ -2775,13 +2712,17 @@ class LayoutReader(Reader):
                     head = values[0]
                     args = values[1:]
                     header_indent = first_value_pos[1]
-                    if self._block_mode or self._reading_block_body:
+                    if self._block_mode:
                         return BLOCK, position, self.read_block(
                             stream, header_indent, head, args)
-                    else:
-                        block = self.read_layout_block(
-                            stream, header_indent, head, args)
-                        return VALUE, position, block
+                    primary, peer_blocks = self._read_block_with_peers(
+                        stream, header_indent, head, args)
+                    if peer_blocks:
+                        tail = nil
+                        for pb in reversed(peer_blocks):
+                            tail = cons(pb, tail)
+                        return BLOCKS, position, cons(primary, tail)
+                    return BLOCK, position, primary
                 if event is EOF:
                     if not values:
                         return EOF, pos, None
@@ -2813,6 +2754,9 @@ class LayoutReader(Reader):
 
         At EOF returns READ_EOF (same as Reader.read), not None, so callers
         can distinguish end-of-stream from a parsed Python None literal.
+
+        ``BLOCK`` values are expanded via :func:`apply_layout`; ``BLOCKS``
+        spines via :func:`apply_layouts` (returning the expanded car).
         """
 
         if not isinstance(reader_stream, IndentAwareStream):
@@ -2827,6 +2771,8 @@ class LayoutReader(Reader):
 
         if event is BLOCK:
             return apply_layout(value, self._ns)
+        elif event is BLOCKS:
+            return apply_layouts(value, self._ns).car
         elif event is VALUE:
             return value
         elif event is EOF:

@@ -26,7 +26,7 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
-from ...types import is_pair, is_symbol
+from ...types import get_position, is_pair, is_symbol
 from .basics import (layout_block, layout_block_begin, layout_call,
                      layout_quasiquote, layout_quote)
 from .classes import layout_class, layout_define_class
@@ -149,8 +149,12 @@ def apply_layouts(blocks, namespace):
                     peers.append(cons(sibling_head, sibling_exprs))
                     tail = blocks.cdr = tail.cdr
 
+            block_pos = get_position(form)
+
             if layout_obj.raw:
                 source = cons(head_args, body_exprs)
+                if block_pos and is_pair(source):
+                    source.set_position(block_pos)
                 blocks.car = layout_obj.read(namespace, source, peers)
             else:
                 expanded_body = apply_layouts(body_exprs, namespace)
@@ -160,6 +164,8 @@ def apply_layouts(blocks, namespace):
                     expanded_pbody = apply_layouts(pbody, namespace)
                     expanded_peers.append(cons(pheader, expanded_pbody))
                 source = cons(head_args, expanded_body)
+                if block_pos and is_pair(source):
+                    source.set_position(block_pos)
                 blocks.car = layout_obj.read(namespace, source, expanded_peers)
 
         else:
