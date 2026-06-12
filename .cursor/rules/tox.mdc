@@ -8,7 +8,7 @@ This repository uses tox to manage Python virtual environments and dependencies.
 
 ## Rule: Always Use Tox
 
-**NEVER invoke `python` or `python3` directly for execution.**
+**NEVER invoke `python` or `python3` directly for test execution.**
 
 Instead, always use `tox -e <envname>` to run commands. Tox creates isolated virtual environments, installs dependencies automatically, and ensures consistent execution.
 
@@ -35,14 +35,12 @@ Instead, always use `tox -e <envname>` to run commands. Tox creates isolated vir
 ❌ **Wrong**: `pip install jinja2 && python script.py`
 ✅ **Correct**: Create/use a tox environment that includes jinja2
 
-## Exception
-
-The only acceptable use of `python` or `python3` is for checking the system Python version (e.g., `python3 --version`) when determining compatibility, not for execution.
-
+❌ **Wrong**: `tox -qe py -- -c "import ..."`
+✅ **Correct**: Use `uv run python3` or `uv run koskari` to perform short behavior probes
 
 ## Useful Targets
 
-`tox -qe test` :  runs all tests in phase order, this is the default
+`make test` or `tox -qe test` :  runs all tests in phase order, this is the default
 `tox -qe py -- tests/<...>` : use the 'py' env to run specific tests
 `tox -qe gdb -- tests/<...>` : use the 'gdb' env to run specific tests with native debugging output enabled and stracktraces enabled
 `make test-valgrind` : run containerized native tests with valgrind

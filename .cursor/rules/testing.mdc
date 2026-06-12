@@ -1,6 +1,7 @@
 ---
 alwaysApply: true
 ---
+
 # Testing Rules
 
 - Place all automated tests under the `tests/` directory.
@@ -15,15 +16,10 @@ alwaysApply: true
 - Running `pip` is illegal
 - Running `pytest` is illegal
 - All python unit tests must be invoked via `tox`
-- NO EXECUTION WORKAROUNDS ARE PERMITTED.
-- DO NOT ATTEMPT TO EXECUTE PYTHON BY SEPARATE PATHS
-- ONLY TOX. ONLY TOX. ONLY TOX.
 - SKIPPING TESTS IS A FAILURE.
-
 
 When running individual tests, use `tox -qe py -- tests/<...>`
 See additional rules in @tox.mdc
-
 
 If the agent needs a python terminal to verify API, use `uv run python3`
 
