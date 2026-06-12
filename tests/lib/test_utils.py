@@ -686,4 +686,170 @@ class TestHasAttrStar(unittest.TestCase):
         self.assertFalse(lib.hasattr_star(Bad(), ['boom']))
 
 
+class TestGetItemStar(unittest.TestCase):
+    """
+    Tests for the getitem_star runtime builtin (surface: getitem*)
+    """
+
+    def test_single_step_success(self):
+        """
+        getitem_star returns the item when present
+        """
+
+        self.assertEqual(lib.getitem_star({'x': 1}, ['x']), 1)
+
+
+    def test_chain_dict_success(self):
+        """
+        getitem_star walks nested mappings left to right
+        """
+
+        obj = {'a': {'b': 2}}
+        self.assertEqual(lib.getitem_star(obj, ['a', 'b']), 2)
+
+
+    def test_chain_list_success(self):
+        """
+        getitem_star walks nested sequences left to right
+        """
+
+        self.assertEqual(lib.getitem_star([[1, 2]], [0, 1]), 2)
+
+
+    def test_empty_keylist_raises(self):
+        """
+        getitem_star with an empty keylist raises ValueError
+        """
+
+        with self.assertRaises(ValueError):
+            lib.getitem_star({}, [])
+
+
+    def test_missing_leaf_returns_default(self):
+        """
+        getitem_star returns default on LookupError at the leaf
+        """
+
+        self.assertEqual(lib.getitem_star({}, ['missing'], 99), 99)
+
+
+    def test_missing_intermediate_returns_default(self):
+        """
+        getitem_star returns default when an intermediate link is missing
+        """
+
+        self.assertEqual(
+            lib.getitem_star({}, ['a', 'b'], 'default'),
+            'default')
+
+
+    def test_missing_without_default_raises_key_error(self):
+        """
+        getitem_star propagates KeyError when default is omitted
+        """
+
+        with self.assertRaises(KeyError):
+            lib.getitem_star({}, ['missing'])
+
+
+    def test_missing_index_without_default_raises(self):
+        """
+        getitem_star propagates IndexError when default is omitted
+        """
+
+        with self.assertRaises(IndexError):
+            lib.getitem_star([[]], [0, 99])
+
+
+    def test_requires_keylist(self):
+        """
+        getitem_star requires element and keylist
+        """
+
+        with self.assertRaises(TypeError):
+            lib.getitem_star({})
+
+
+    def test_non_lookup_error_propagates(self):
+        """
+        getitem_star propagates exceptions other than LookupError
+        """
+
+        class Bad(dict):
+
+            def __getitem__(self, key):
+                raise ValueError('nope')
+
+        with self.assertRaises(ValueError):
+            lib.getitem_star(Bad(), ['boom'], None)
+
+
+class TestHasItemStar(unittest.TestCase):
+    """
+    Tests for the hasitem_star runtime builtin (surface: hasitem*)
+    """
+
+    def test_single_step_true(self):
+        """
+        hasitem_star is true when the item is present
+        """
+
+        self.assertTrue(lib.hasitem_star({'x': 1}, ['x']))
+
+
+    def test_chain_true(self):
+        """
+        hasitem_star walks nested items left to right
+        """
+
+        self.assertTrue(lib.hasitem_star({'a': {'b': 2}}, ['a', 'b']))
+
+
+    def test_empty_keylist_raises(self):
+        """
+        hasitem_star with an empty keylist raises ValueError
+        """
+
+        with self.assertRaises(ValueError):
+            lib.hasitem_star({}, [])
+
+
+    def test_missing_leaf_false(self):
+        """
+        hasitem_star is false when the leaf item is missing
+        """
+
+        self.assertFalse(lib.hasitem_star({}, ['nope']))
+
+
+    def test_missing_intermediate_false(self):
+        """
+        hasitem_star is false when an intermediate link is missing
+        """
+
+        self.assertFalse(lib.hasitem_star({}, ['a', 'b']))
+
+
+    def test_requires_keylist(self):
+        """
+        hasitem_star requires element and keylist
+        """
+
+        with self.assertRaises(TypeError):
+            lib.hasitem_star({})
+
+
+    def test_lookup_exception_false(self):
+        """
+        hasitem_star is false when lookup raises
+        """
+
+        class Bad(dict):
+
+            def __getitem__(self, key):
+                raise ValueError('nope')
+
+        self.assertFalse(lib.hasitem_star(Bad(), ['boom']))
+
+
 # The end.

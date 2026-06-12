@@ -730,6 +730,93 @@ PyObject *KosUtils_HasAttrStar(
 }
 
 
+PyObject *KosUtils_GetItemStar(
+    PyObject *element,
+    PyObject *keylist,
+    PyObject *default_val) {
+
+  Py_ssize_t count = 0;
+  Py_ssize_t i = 0;
+
+  keylist = PySequence_Fast(keylist, "keylist must be a sequence");
+  if (! keylist)
+    return NULL;
+
+  count = PySequence_Fast_GET_SIZE(keylist);
+  if (! count) {
+    Py_DECREF(keylist);
+    PyErr_SetString(PyExc_ValueError, "keylist is empty");
+    return NULL;
+  }
+
+  Py_INCREF(element);
+
+  for (i = 0; i < count; i++) {
+    PyObject *key = PySequence_Fast_GET_ITEM(keylist, i);
+    PyObject *val = PyObject_GetItem(element, key);
+
+    if (! val) {
+      Py_DECREF(element);
+      Py_DECREF(keylist);
+
+      if (default_val && PyErr_ExceptionMatches(PyExc_LookupError)) {
+        PyErr_Clear();
+        Py_INCREF(default_val);
+        return default_val;
+      }
+      return NULL;
+    }
+
+    Py_DECREF(element);
+    element = val;
+  }
+
+  Py_DECREF(keylist);
+  return element;
+}
+
+
+PyObject *KosUtils_HasItemStar(
+    PyObject *element,
+    PyObject *keylist) {
+
+  Py_ssize_t count = 0;
+  Py_ssize_t i = 0;
+
+  keylist = PySequence_Fast(keylist, "keylist must be a sequence");
+  if (! keylist)
+    return NULL;
+
+  count = PySequence_Fast_GET_SIZE(keylist);
+  if (! count) {
+    Py_DECREF(keylist);
+    PyErr_SetString(PyExc_ValueError, "keylist is empty");
+    return NULL;
+  }
+
+  Py_INCREF(element);
+
+  for (i = 0; i < count; i++) {
+    PyObject *key = PySequence_Fast_GET_ITEM(keylist, i);
+    PyObject *val = PyObject_GetItem(element, key);
+
+    if (! val) {
+      Py_DECREF(element);
+      Py_DECREF(keylist);
+      PyErr_Clear();
+      Py_RETURN_FALSE;
+    }
+
+    Py_DECREF(element);
+    element = val;
+  }
+
+  Py_DECREF(element);
+  Py_DECREF(keylist);
+  Py_RETURN_TRUE;
+}
+
+
 PyObject *KosUtils_BuildDict(PyObject *args, PyObject *kwargs) {
 
   PyObject *result = PyDict_New();
@@ -977,6 +1064,35 @@ static PyObject *m_hasattr_star(PyObject *mod, PyObject *args) {
 }
 
 
+static PyObject *m_getitem_star(PyObject *mod, PyObject *args) {
+
+  PyObject *element = NULL;
+  PyObject *keylist = NULL;
+  PyObject *default_val = NULL;
+
+  (void) mod;
+
+  if (! PyArg_ParseTuple(args, "OO|O", &element, &keylist, &default_val))
+    return NULL;
+
+  return KosUtils_GetItemStar(element, keylist, default_val);
+}
+
+
+static PyObject *m_hasitem_star(PyObject *mod, PyObject *args) {
+
+  PyObject *element = NULL;
+  PyObject *keylist = NULL;
+
+  (void) mod;
+
+  if (! PyArg_ParseTuple(args, "OO", &element, &keylist))
+    return NULL;
+
+  return KosUtils_HasItemStar(element, keylist);
+}
+
+
 static PyObject *m_build_dict(PyObject *mod,
                               PyObject *args, PyObject *kwds) {
 
@@ -1064,6 +1180,15 @@ static PyMethodDef utils_methods[] = {
   { "hasattr_star", (PyCFunction) m_hasattr_star, METH_VARARGS,
     "hasattr_star(obj, attrlist) -> bool\n"
     "Chained attribute presence test; false on first failed step." },
+
+  { "getitem_star", (PyCFunction) m_getitem_star, METH_VARARGS,
+    "getitem_star(obj, keylist[, default]) -> value\n"
+    "Chained item access through keylist; optional default on\n"
+    "LookupError." },
+
+  { "hasitem_star", (PyCFunction) m_hasitem_star, METH_VARARGS,
+    "hasitem_star(obj, keylist) -> bool\n"
+    "Chained item presence test; false on first failed step." },
 
   { "build_dict", (PyCFunction) m_build_dict, METH_VARARGS | METH_KEYWORDS,
     "build_dict(*pairs, **kwargs) -> dict\n"

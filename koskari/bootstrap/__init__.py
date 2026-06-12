@@ -33,7 +33,8 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    MemoizedRef, Module, ModuleNamespace, ParamRef, Ref, apply,
                    build_dict, build_list, build_set, build_tuple, car, cdr,
                    cons, defer, demand, demand_apply, demand_call, deref,
-                   gensym, getattr_star, hasattr_star, keyword, kos_repr, nil,
+                   gensym, getattr_star, getitem_star, hasattr_star,
+                   hasitem_star, keyword, kos_repr, nil,
                    pair, parameter, setcar, setcdr, symbol, values)
 
 from ..types import (TypePredicate, is_nil, is_None, is_proper, is_recursive,
@@ -200,8 +201,10 @@ def make_bootstrap():
     _bind('format', format)
     _bind('getattr', getattr)
     _bind('getattr*', getattr_star)
+    _bind('getitem*', getitem_star)
     _bind('hasattr?', hasattr)
     _bind('hasattr*', hasattr_star)
+    _bind('hasitem*', hasitem_star)
     _bind('hash', hash)
     _bind('id', id)
     _bind('input', input)

@@ -216,6 +216,42 @@ PyObject *KosUtils_HasAttrStar(
 
 
 /**
+   Chained getitem through a sequence of keys.
+
+   Walks element through each key in keylist left to right. When
+   default_val is non-NULL, return it on LookupError; otherwise
+   propagate LookupError. Other exceptions always propagate.
+
+   :param element: starting object
+   :param keylist: sequence of keys
+   :param default_val: default value or NULL when omitted
+   :return: final item value or default_val
+   :raises ValueError: when keylist is empty
+*/
+PyObject *KosUtils_GetItemStar(
+    PyObject *element,
+    PyObject *keylist,
+    PyObject *default_val);
+
+
+/**
+   Chained hasitem through a sequence of keys.
+
+   Walks element through each key in keylist left to right. Returns
+   Py_True only when every step succeeds; Py_False on the first failed
+   lookup (any exception cleared).
+
+   :param element: starting object
+   :param keylist: sequence of keys
+   :return: Py_True or Py_False
+   :raises ValueError: when keylist is empty
+*/
+PyObject *KosUtils_HasItemStar(
+    PyObject *element,
+    PyObject *keylist);
+
+
+/**
    Build a dict from key-value pair arguments.
 
    Each positional argument should be an iterable of length 2 (key, value).
