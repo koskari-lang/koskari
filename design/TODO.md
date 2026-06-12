@@ -72,17 +72,6 @@ Ref: [api/tracing.md](api/tracing.md).
 
 ## Compiler
 
-### Slice atom and slice syntax
-
-Bring over Python-sibilant slicing support in both forms:
-
-- **Slice atom form** — a first-class slice object form (atom-level) that can be
-  used in expression trees and lowered consistently.
-- **Slice surface syntax** — reader/compiler support for bracket slicing syntax
-  (start/stop/step variants) so user code can write slices directly.
-
-Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
-
 ### Fenced foreign literal
 
 Add a compile-time fenced foreign-literal mechanism: the reader recognizes
@@ -154,26 +143,42 @@ Ref: [ideas.md](ideas.md); [api/import-system.md](api/import-system.md) (async v
 
 ---
 
-## Builtins
-
-### CLI startup version banner and --version
-
-Add Python version, platform, and Koskari version to the Koskari CLI startup
-banner. Also add a `--version` parameter that prints the same version/platform
-information and exits.
-
----
-
 ## User documentation
 
-### Bootstrap human-facing docs from meta spec
+### User documentation — remaining gaps
 
-Create a top-level `docs/` tree (or external site) using the information
-architecture, audiences, and maintenance rules in the documentation goals
-meta-document (two on-ramps, shared guide, reference, VM/opcode tier,
-patterns, contributor pages).
+**Status:** Bootstrapped. The Sphinx `docs/` tree is live: both `start/` on-ramps
+(beginner and from-python, each through `where-next.md`), the shared `guide/`
+spine (00–10 plus optional bytecode chapters), `reference/` (glossary,
+grammar shell, reader-layout, cli-and-config, concepts, specials/layouts/macros,
+thin `runtime/`, monolithic `vm/index.md` plus per-opcode pages), `patterns/`
+(five recipes), `corpus/` (schema, README, records, datasets), `project/`
+(build-test, architecture-map, release-and-versioning), `api/` autodoc, `faq.md`,
+and `changelog.md`.
 
-Ref: [documentation-goals.md](documentation-goals.md).
+**Still incomplete** (per [documentation-goals.md](documentation-goals.md)):
+
+- **`reference/grammar.md`** — layout and handler links exist; the base
+  s-expression grammar section is still marked TBD.
+- **`reference/stdlib/`** — no per-topic user stdlib reference; `reference/runtime/`
+  covers only a handful of bootstrap entry points (builtins surface mainly in
+  `api/koskari-builtins.md` autodoc).
+- **`reference/error-codes.md`** — exception-class guide only; no stable
+  identifier or message-pattern catalog for deep links from REPL output.
+- **`reference/vm/`** — contract lives in one large `index.md`; ~155 of 218
+  `opcodes/*.md` pages are thin stubs. Split maintainer-facing pages from the
+  spec (standalone bytecode-format, disassembly-and-debugging,
+  peephole-and-lowering) are not separate; per-opcode public entries need depth.
+- **`project/vm-and-opcodes.md`** — contributor opcode checklist (add to
+  `opcodes.incl`, regen handlers, update VM reference) not written.
+- **`patterns/recipes/`** — expand beyond the initial five recipes as usage
+  surfaces gaps.
+- **`exercises/`** — optional exercise track from the meta spec not started.
+- **Maintenance process** — per-page stability labels not applied outside corpus
+  records; tutorial/guide examples are not corpus-linked or verified; no CI guard
+  for opcode-doc drift vs `koskari/lib/opcodes.incl`.
+- **`changelog.md`** — skeleton only (single 0.1.0 entry); needs release-driven
+  updates. **`faq.md`** is thin in places (e.g. free-threading answer incomplete).
 
 ---
 
