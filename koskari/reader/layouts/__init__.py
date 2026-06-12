@@ -26,7 +26,7 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
-from ...types import build_proper, is_pair, is_symbol, unpack
+from ...types import is_pair, is_symbol
 from .basics import (layout_begin, layout_block, layout_block_begin,
                      layout_call, layout_flat, layout_quote,
                      layout_quasiquote)
@@ -114,15 +114,10 @@ def apply_layouts(blocks, namespace, reader=None):
     :return: proper cons list of expanded forms
     """
 
-    from koskari.lib import kos_repr
-
     result = blocks
 
     while blocks:
-        print("blocks: ", kos_repr(blocks))
-
         form, tail = blocks
-        print("form: ", kos_repr(form))
 
         if not form or not is_pair(form):
             pass
@@ -175,7 +170,6 @@ def apply_layouts(blocks, namespace, reader=None):
 
         blocks = tail
 
-    print("result: ", kos_repr(result))
     return result
 
 
