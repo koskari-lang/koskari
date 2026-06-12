@@ -74,9 +74,6 @@ set-attr compile/define-syntax __doc__:
   """
 
 
-define layout/define-syntax layout/flat
-
-
 define-syntax compile/extend-syntax:
   """
   Extends an existing Syntax definition with new rules. The newer rules
@@ -104,9 +101,6 @@ define-syntax compile/extend-syntax:
 
     case (extend-syntax name (special-match rule ...)):
       setq name (+ name (special-match name rule ...))
-
-
-define layout/extend-syntax layout/flat
 
 
 define-syntax compile/datum:

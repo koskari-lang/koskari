@@ -55,7 +55,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/begin"), (symbol("compile/quasiquote"), symbol("hello"))))
+           (symbol("compile/quasiquote"), symbol("hello")))
         )
 
         result = parse_layout(src)
@@ -73,10 +73,9 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/begin"),
-            (symbol("compile/quasiquote"),
-             (symbol('hello'),
-              (symbol("compile/unquote"), symbol("world"))))))
+           (symbol("compile/quasiquote"),
+            (symbol('hello'),
+             (symbol("compile/unquote"), symbol("world")))))
         )
 
         result = parse_layout(src)
@@ -94,10 +93,9 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/begin"),
-            (symbol("compile/quasiquote"),
-             (symbol('hello'),
-             (symbol("compile/unquote-splicing"), symbol("world"))))))
+           (symbol("compile/quasiquote"),
+            (symbol('hello'),
+             (symbol("compile/unquote-splicing"), symbol("world")))))
         )
 
         result = parse_layout(src)
@@ -116,14 +114,12 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/begin"),
-            (symbol("without"),
-             (symbol("compile/quasiquote"),
-              (symbol("who"),
-               (symbol("compile/unquote-splicing"), symbol("hello")))),
-             symbol("we"),
-             (symbol("compile/begin"),
-              (symbol("sing"))))))
+           (symbol("without"),
+            (symbol("compile/quasiquote"),
+             (symbol("who"),
+              (symbol("compile/unquote-splicing"), symbol("hello")))),
+            symbol("we"),
+            symbol("sing")))
         )
 
         result = parse_layout(src)
@@ -144,12 +140,10 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/begin"),
-            (symbol("compile/quasiquote-block"),
-             (_kw_block,
-              (symbol("begin"),),
-              ((symbol("compile/unquote-splicing"), symbol("hello")),)))))
-        )
+           (symbol("compile/quasiquote"),
+            (_kw_block,
+             (symbol("begin"),),
+             ((symbol("compile/unquote-splicing"), symbol("hello")),)))))
 
         result = parse_layout(src)
         print("result   :", result)
@@ -178,18 +172,16 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-cond"), nil,
-           (symbol("compile/begin"),
-            (symbol("compile/quasiquote-block"),
-             (_kw_block,
-              (symbol("begin"),),
-              ((_kw_block,
-                (symbol("if"),
-                 (symbol("compile/unquote"), symbol("test-expr"))),
-                ((symbol("compile/unquote"), symbol("result")),)),
-               (_kw_block,
-                (symbol("else"),),
-                ((symbol("compile/unquote"), symbol("fallback")),)),)))))
-        )
+           (symbol("compile/quasiquote"),
+            (_kw_block,
+             (symbol("begin"),),
+             ((_kw_block,
+               (symbol("if"),
+                (symbol("compile/unquote"), symbol("test-expr"))),
+               ((symbol("compile/unquote"), symbol("result")),)),
+              (_kw_block,
+               (symbol("else"),),
+               ((symbol("compile/unquote"), symbol("fallback")),)))))))
 
         result = parse_layout(src)
         print("result   :", result)
@@ -301,11 +293,10 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (symbol("define"), symbol("get-block"), nil,
-             (symbol("compile/begin"),
-              (symbol("compile/quote"),
-               (_keyword_block,
-                (symbol("begin"),),
-                (symbol("foo"), symbol("bar"))))))
+             (symbol("compile/quote"),
+              (_keyword_block,
+               (symbol("begin"),),
+               (symbol("foo"), symbol("bar")))))
         )
 
         result = parse_layout(src)

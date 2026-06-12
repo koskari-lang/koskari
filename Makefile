@@ -68,10 +68,6 @@ build: handlers clean-built report-python  ## Build wheel package using uv via t
 	@tox -qe build
 	@echo "Build complete: $(DIST_DIR)/$(PROJECT)-$(VERSION)-*.whl"
 
-build-ext: handlers report-python  ## Build native extensions only
-	@echo "Building native extensions (DEBUG=$(DEBUG))..."
-	@DEBUG=$(DEBUG) $(PYTHON) setup.py build_ext --inplace
-
 install: build  ## Install package for current user
 	@echo "Installing $(PROJECT) $(VERSION)..."
 	@$(PYTHON) -m pip install --user --no-deps $(DIST_DIR)/$(PROJECT)-$(VERSION)-*.whl

@@ -40,9 +40,9 @@ define-syntax compile/when:
   """
 
   syntax-rules []:
-    case (when condition then):
+    case (when condition then ...):
       (compile/cond
-        [condition then]
+        [condition then ...]
         [else: None])
 
 
@@ -53,10 +53,10 @@ define-syntax compile/unless:
   """
 
   syntax-rules []:
-    case (unless condition then):
+    case (unless condition then ...):
       (compile/cond
         [condition None]
-        [else: then])
+        [else: then ...])
 
 
 define-syntax compile/?:

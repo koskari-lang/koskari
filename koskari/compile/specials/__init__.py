@@ -95,7 +95,6 @@ from .object import (
 from .pairs import special_car, special_cdr, special_cons, special_quote
 from .quasiquote import (
     special_quasiquote,
-    special_quasiquote_block,
     special_quote_block,
     special_unquote,
     special_unquote_splicing,
@@ -214,7 +213,6 @@ __all__ = (
     "special_parameterize",
     "special_power",
     "special_quasiquote",
-    "special_quasiquote_block",
     "special_quote",
     "special_quote_block",
     "special_raise",

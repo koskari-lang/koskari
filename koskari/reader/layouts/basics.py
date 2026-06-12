@@ -27,35 +27,9 @@ from .helpers import layout
 
 @builtin('layout/block')
 @layout(symbol('layout/block'))
-def layout_block(source, peers):
+def layout_block(parser, source, peers):
     """
     the default block layout handler
-
-    eg.
-    foo x:
-      bar
-
-    becomes
-    (foo x (compile/begin bar))
-    """
-
-    if peers:
-        raise LayoutError(
-            'block does not take peers',
-            get_position(source))
-
-    header, body = source
-    header.append(cons(symbol('compile/begin'), body))
-    return header
-
-
-@builtin('layout/flat')
-@layout(symbol('layout/flat'))
-def layout_flat(source, peers):
-    """
-    a flat block layout handler. This is a basic block layout
-    that can be copied to other names to give that form a
-    flat block layout.
 
     eg.
     foo x:
@@ -67,7 +41,7 @@ def layout_flat(source, peers):
 
     if peers:
         raise LayoutError(
-            'flat does not take peers',
+            'block does not take peers',
             get_position(source))
 
     header, body = source
@@ -75,9 +49,37 @@ def layout_flat(source, peers):
     return header
 
 
+@builtin('layout/block-begin')
+@layout(symbol('layout/block-begin'))
+def layout_block_begin(parser, source, peers):
+    """
+    block layout handler that wraps the body in compile/begin
+
+    eg.
+    foo x:
+      bar
+
+    becomes
+    (foo x (compile/begin bar))
+    """
+
+    if peers:
+        raise LayoutError(
+            'block-begin does not take peers',
+            get_position(source))
+
+    header, body = source
+    header.append(cons(symbol('compile/begin'), body))
+    return header
+
+
+layout_flat = layout_block
+add_builtin('layout/flat', layout_flat)
+
+
 @builtin('layout/call')
 @layout(symbol('layout/call'))
-def layout_call(source, peers):
+def layout_call(parser, source, peers):
     """
     a breakout of a call as a block
 
@@ -125,8 +127,73 @@ def layout_call(source, peers):
     return cons(symbol('compile/call'), fn, body)
 
 
-layout_begin = layout_flat
+layout_begin = layout_block
 add_builtin('layout/begin', layout_begin)
+
+
+_symbol_compile_quote = symbol('compile/quote')
+_symbol_compile_quasiquote = symbol('compile/quasiquote')
+
+
+@builtin('layout/quote')
+@layout(symbol('layout/quote'), raw=True)
+def layout_quote(parser, source, peers):
+    """
+    Unbox a synthetic quote layout block to ``(compile/quote INNER-BLOCK)``
+
+    INNER-BLOCK is the raw ``:block:`` from the quoted form, not layout-expanded
+    """
+
+    if peers:
+        raise LayoutError(
+            'quote block does not take peers',
+            get_position(source))
+
+    header, body = source
+
+    if body is nil or not is_pair(body):
+        raise LayoutError(
+            'quote block requires one inner block',
+            get_position(source))
+
+    inner, rest = body
+    if rest is not nil:
+        raise LayoutError(
+            'quote block requires one inner block',
+            get_position(source))
+
+    return cons(_symbol_compile_quote, inner, nil)
+
+
+@builtin('layout/quasiquote')
+@layout(symbol('layout/quasiquote'), raw=True)
+def layout_quasiquote(parser, source, peers):
+    """
+    Unbox a synthetic quasiquote layout block to
+    ``(compile/quasiquote INNER-BLOCK)``
+
+    INNER-BLOCK is the raw ``:block:`` from the quasiquoted form
+    """
+
+    if peers:
+        raise LayoutError(
+            'quasiquote block does not take peers',
+            get_position(source))
+
+    header, body = source
+
+    if body is nil or not is_pair(body):
+        raise LayoutError(
+            'quasiquote block requires one inner block',
+            get_position(source))
+
+    inner, rest = body
+    if rest is not nil:
+        raise LayoutError(
+            'quasiquote block requires one inner block',
+            get_position(source))
+
+    return cons(_symbol_compile_quasiquote, inner, nil)
 
 
 # The end.

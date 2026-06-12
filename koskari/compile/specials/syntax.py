@@ -63,9 +63,7 @@ def _emit_parse_match_pattern(pattern_src):
         nil)
 
 
-_SYNTAX_MATCH_RULE_ROW = LIST(BIND("pattern"), VALUE("template"))
-SYNTAX_MATCH_RULES_PATTERN = MATCH(
-    repeat_capture("rules", _SYNTAX_MATCH_RULE_ROW))
+_SYNTAX_MATCH_BODY_PATTERN = MATCH(repeat_capture("rules", BIND("rule")))
 
 # Opaque one-cell rows for compile-time parsing of ``syntax-rules`` /
 # ``macro-rules`` / ``special-rules`` surfaces (Koskari rules are not always
@@ -260,16 +258,16 @@ def special_compile_syntax_match(compiler, source, tc=False):
 
     rules_expr = matched["rules"].datum
 
-    # RULES is a list of (PATTERN TEMPLATE) rows.
-    rules_m = match(rules_expr, SYNTAX_MATCH_RULES_PATTERN)
-    if rules_m is None:
+    rules_m = match(rules_expr, _SYNTAX_MATCH_BODY_PATTERN)
+    if rules_m is None or not rules_m["rules"]:
         raise SpecialError(
             "syntax-match requires at least one valid rule", rules_expr)
 
     parts = []
-    for sub_res in rules_m["rules"]:
-        pattern_src = sub_res["pattern"].datum
-        template_expr = sub_res["template"].datum
+    for res in rules_m["rules"]:
+        raw_rule = res["rule"].datum
+        pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
+            raw_rule)
         parts.append(_emit_parse_match_pattern(pattern_src))
         parts.append(cons(_sym_compile_quote, template_expr, nil))
 

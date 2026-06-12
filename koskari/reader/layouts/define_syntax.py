@@ -19,258 +19,250 @@ macro-rules, special-rules, syntax-match, macro-match, special-match).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
+:ai-assistant: Claude Opus 4.6 via Cursor
 """
 
 
-from ...compile.helpers import match, match1
+from ...compile.helpers import match1
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...matcher import (CALLEDBY, LIST, LITERAL, MATCH, PAIR,
-                        SYMBOL, repeat_capture)
+from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH, SYMBOL
 from ...bootstrap import builtin
 from ...types import get_position, unpack
-from .helpers import layout
-
-
-_ALLOWED_DEFINE_SYNTAX_TRANSFORMERS = frozenset((
-    'syntax-rules',
-    'macro-rules',
-    'special-rules',
-    'syntax-match',
-    'macro-match',
-    'special-match',
-))
+from .helpers import block_source_from_cons, layout, match_block_source
 
 
 _case_symbol = symbol('case')
 
 
-_DEFINE_SYNTAX_FORMS = [
-    MATCH(
-        LIST(SYMBOL('_'), SYMBOL('name')), PAIR('transformer')),
-]
+_MATCH_FORM_PATTERN = LIST(LITERAL(_case_symbol), BIND('inner'))
 
-_MATCH_FORM_PATTERN = LIST(LITERAL(_case_symbol), PAIR('inner'))
+_RULES_HEAD_PATTERN = MATCH(
+    LIST(CALLEDBY(), BIND('literals_expr')))
 
-_RULES_FORM = MATCH(
-    LIST(CALLEDBY(), PAIR('literals_expr')),
-    repeat_capture('rules', PAIR('rule')))
-
-_MATCH_FORM = MATCH(
-    LIST(CALLEDBY()),
-    repeat_capture('rules', PAIR('rule')))
+_MATCH_HEAD_PATTERN = MATCH(
+    LIST(CALLEDBY()))
 
 
+_symbol_compile_begin = symbol('compile/begin')
 _symbol_syntax_rules = symbol('syntax-rules')
 _symbol_macro_rules = symbol('macro-rules')
 _symbol_special_rules = symbol('special-rules')
 _symbol_syntax_match = symbol('syntax-match')
 _symbol_macro_match = symbol('macro-match')
 _symbol_special_match = symbol('special-match')
-_symbol_compile_define_syntax = symbol('compile/define-syntax')
 
 
-def _pattern_template_from_rule(rule_source):
+def _pattern_from_header(header):
     """
-    Split a syntax-rules-shaped rule block into pattern and template
+    Build a rule pattern from a block header, unwrapping ``case`` when present
 
-    :param rule_source: pair source for one rule block
-    :return: ``(pattern, template)``
+    :param header: block header forms ``(head . args)``
+    :return: pattern datum for one rule row
     """
 
-    rule_parts = list(unpack(rule_source))
-    if len(rule_parts) < 2:
-        raise LayoutError(
-            'rule block must have pattern and template',
-            get_position(rule_source))
-    pattern = cons(*rule_parts[:-1], nil)
-    template = rule_parts[-1]
+    pattern = header
     match_m = match1(pattern, [_MATCH_FORM_PATTERN])
     if match_m is not None:
         pattern = match_m['inner'].datum
-    return pattern, template
+    return pattern
 
 
-def _syntax_rules_like_rows(rule_matches):
+def _rule_row(parser, rule_source, layout_body=False):
     """
-    Build (PATTERN TEMPLATE) rows for syntax-rules / macro-rules / special-rules.
+    Lower one raw rule block to ``(pattern . template-forms...)``
 
-    :param rule_matches: list of repeat frames from a syntax-rules-shaped rule list
-    :return: list of ``cons(pattern, template, nil)`` forms
+    :param parser: layout reader used when layout_body is true
+    :param rule_source: pass-one block source for one rule
+    :param layout_body: expand nested :block: forms in the template body
+    :return: one rule row cons
+    """
+
+    rule_source = block_source_from_cons(rule_source) or rule_source
+    matched = match_block_source(rule_source)
+    if matched is None:
+        raise LayoutError(
+            'rule must be a block',
+            get_position(rule_source))
+
+    header = matched['header'].datum
+    body = matched['body'].datum
+
+    if body is nil:
+        raise LayoutError(
+            'rule block must have pattern and template',
+            get_position(rule_source))
+
+    pattern = _pattern_from_header(header)
+    if layout_body:
+        from . import apply_layouts
+        body = apply_layouts(body, parser._ns, parser)
+    template = cons(_symbol_compile_begin, body)
+    return cons(pattern, template, nil)
+
+
+def _rule_rows(parser, parent_body, layout_body=False):
+    """
+    Lower each raw rule block in a transformer body
+
+    :param parser: layout reader used when layout_body is true
+    :param parent_body: body spine following the transformer header
+    :param layout_body: expand nested :block: forms in each rule body
+    :return: list of rule row cons forms
     """
 
     rules = []
-    for sub_res in rule_matches:
-        pattern, template = _pattern_template_from_rule(
-            sub_res['rule'].datum)
-        rules.append(cons(pattern, template, nil))
+    for rule_source in unpack(parent_body):
+        rules.append(_rule_row(parser, rule_source, layout_body))
     return rules
 
 
-@builtin('layout/syntax-rules')
-@layout(symbol('layout/syntax-rules'))
-def layout_syntax_rules(source, peers):
+def _lower_rules_with_literals(parser, source, peers, head_sym,
+                               layout_body=False):
     """
-    Lower syntax-rules block to (syntax-rules (LIT ...) ((PAT) TMPL) ...).
+    Lower a ``*-rules`` block with literals list and raw rule children
 
-    Each rule block becomes ((pattern) template) where pattern is the block
-    header and template is the block body wrapped in compile/begin.
+    :param parser: layout reader
+    :param source: pass-one block source for the transformer block
+    :param peers: peer block sources, must be empty
+    :param head_sym: emitted form head symbol
+    :return: lowered transformer form
     """
 
     if peers:
         raise LayoutError(
-            'syntax-rules block does not take peers',
+            '%s block does not take peers' % (head_sym,),
             get_position(source))
 
-    m = match(source, _RULES_FORM)
-    if m is None:
+    parent_header, parent_body = source
+
+    head_m = match1(parent_header, [_RULES_HEAD_PATTERN])
+    if head_m is None:
         raise LayoutError(
-            'syntax-rules requires literals list and at least one rule',
+            '%s requires literals list and at least one rule' % (head_sym,),
             get_position(source))
 
-    literals = m['literals_expr'].datum
-    rules = _syntax_rules_like_rows(m['rules'])
+    literals = head_m['literals_expr'].datum
+    rules = _rule_rows(parser, parent_body, layout_body)
 
-    return cons(_symbol_syntax_rules, literals, *rules, nil)
+    if not rules:
+        raise LayoutError(
+            '%s requires at least one rule' % (head_sym,),
+            get_position(source))
+
+    return cons(head_sym, literals, *rules, nil)
+
+
+def _lower_match_rules(parser, source, peers, head_sym, layout_body=False):
+    """
+    Lower a ``*-match`` block with raw rule children and no literals list
+
+    :param parser: layout reader
+    :param source: pass-one block source for the transformer block
+    :param peers: peer block sources, must be empty
+    :param head_sym: emitted form head symbol
+    :return: lowered transformer form
+    """
+
+    if peers:
+        raise LayoutError(
+            '%s block does not take peers' % (head_sym,),
+            get_position(source))
+
+    parent_header, parent_body = source
+
+    head_m = match1(parent_header, [_MATCH_HEAD_PATTERN])
+    if head_m is None:
+        raise LayoutError(
+            '%s requires at least one rule' % (head_sym,),
+            get_position(source))
+
+    rules = _rule_rows(parser, parent_body, layout_body)
+
+    if not rules:
+        raise LayoutError(
+            '%s requires at least one rule' % (head_sym,),
+            get_position(source))
+
+    return cons(head_sym, *rules, nil)
+
+
+@builtin('layout/syntax-rules')
+@layout(symbol('layout/syntax-rules'), raw=True)
+def layout_syntax_rules(parser, source, peers):
+    """
+    Lower syntax-rules block to ``(syntax-rules (LIT ...) (PATTERN . TMPL...) ...)``.
+
+    Each raw rule child supplies the pattern column from its header and
+    template forms from its body.
+    """
+
+    return _lower_rules_with_literals(
+        parser, source, peers, _symbol_syntax_rules)
 
 
 @builtin('layout/macro-rules')
-@layout(symbol('layout/macro-rules'))
-def layout_macro_rules(source, peers):
+@layout(symbol('layout/macro-rules'), raw=True)
+def layout_macro_rules(parser, source, peers):
     """
-    Lower macro-rules block to (macro-rules (LIT ...) ((PAT) TMPL) ...).
+    Lower macro-rules block to ``(macro-rules (LIT ...) (PATTERN . BODY...) ...)``.
 
     Same block shape as syntax-rules; only the emitted head differs.
     """
 
-    if peers:
-        raise LayoutError(
-            'macro-rules block does not take peers',
-            get_position(source))
-
-    m = match(source, _RULES_FORM)
-    if m is None:
-        raise LayoutError(
-            'macro-rules requires literals list and at least one rule',
-            get_position(source))
-
-    literals = m['literals_expr'].datum
-    rules = _syntax_rules_like_rows(m['rules'])
-
-    return cons(_symbol_macro_rules, literals, *rules, nil)
+    return _lower_rules_with_literals(
+        parser, source, peers, _symbol_macro_rules, layout_body=True)
 
 
 @builtin('layout/special-rules')
-@layout(symbol('layout/special-rules'))
-def layout_special_rules(source, peers):
+@layout(symbol('layout/special-rules'), raw=True)
+def layout_special_rules(parser, source, peers):
     """
-    Lower special-rules block to (special-rules (LIT ...) ((PAT) TMPL) ...).
+    Lower special-rules block to ``(special-rules (LIT ...) (PATTERN . BODY...) ...)``.
 
     Same block shape as macro-rules; only the emitted head differs.
     """
 
-    if peers:
-        raise LayoutError(
-            'special-rules block does not take peers',
-            get_position(source))
-
-    m = match(source, _RULES_FORM)
-    if m is None:
-        raise LayoutError(
-            'special-rules requires literals list and at least one rule',
-            get_position(source))
-
-    literals = m['literals_expr'].datum
-    rules = _syntax_rules_like_rows(m['rules'])
-
-    return cons(_symbol_special_rules, literals, *rules, nil)
+    return _lower_rules_with_literals(
+        parser, source, peers, _symbol_special_rules, layout_body=True)
 
 
 @builtin('layout/syntax-match')
-@layout(symbol('layout/syntax-match'))
-def layout_syntax_match(source, peers):
+@layout(symbol('layout/syntax-match'), raw=True)
+def layout_syntax_match(parser, source, peers):
     """
-    Lower syntax-match block to (syntax-match (PAT TMPL) ...).
+    Lower syntax-match block to ``(syntax-match (PATTERN . TMPL...) ...)``.
 
-    No literals list; each rule is (pattern . (template . nil)).
+    No literals list; each raw rule child supplies pattern and template forms.
     """
 
-    if peers:
-        raise LayoutError(
-            'syntax-match block does not take peers',
-            get_position(source))
-
-    m = match(source, _MATCH_FORM)
-    if m is None:
-        raise LayoutError(
-            'syntax-match requires at least one rule',
-            get_position(source))
-
-    rules = []
-    for sub_res in m['rules']:
-        pattern, template = _pattern_template_from_rule(
-            sub_res['rule'].datum)
-        rules.append(cons(pattern, template, nil))
-
-    return cons(_symbol_syntax_match, *rules, nil)
+    return _lower_match_rules(parser, source, peers, _symbol_syntax_match)
 
 
 @builtin('layout/macro-match')
-@layout(symbol('layout/macro-match'))
-def layout_macro_match(source, peers):
+@layout(symbol('layout/macro-match'), raw=True)
+def layout_macro_match(parser, source, peers):
     """
-    Lower macro-match block to (macro-match (PATTERN BODY ...) ...).
+    Lower macro-match block to ``(macro-match (PATTERN . BODY...) ...)``.
 
-    Same rule shape as macro-rules blocks: pattern forms then template / body.
+    Same rule shape as macro-rules blocks.
     """
 
-    if peers:
-        raise LayoutError(
-            'macro-match block does not take peers',
-            get_position(source))
-
-    m = match(source, _MATCH_FORM)
-    if m is None:
-        raise LayoutError(
-            'macro-match requires at least one rule',
-            get_position(source))
-
-    rules = []
-    for sub_res in m['rules']:
-        pattern, template = _pattern_template_from_rule(
-            sub_res['rule'].datum)
-        rules.append(cons(pattern, template, nil))
-
-    return cons(_symbol_macro_match, *rules, nil)
+    return _lower_match_rules(
+        parser, source, peers, _symbol_macro_match, layout_body=True)
 
 
 @builtin('layout/special-match')
-@layout(symbol('layout/special-match'))
-def layout_special_match(source, peers):
+@layout(symbol('layout/special-match'), raw=True)
+def layout_special_match(parser, source, peers):
     """
-    Lower special-match block to (special-match (PATTERN BODY ...) ...).
+    Lower special-match block to ``(special-match (PATTERN . BODY...) ...)``.
 
-    Same rule shape as macro-match blocks: pattern forms then template / body.
+    Same rule shape as macro-match blocks.
     """
 
-    if peers:
-        raise LayoutError(
-            'special-match block does not take peers',
-            get_position(source))
-
-    m = match(source, _MATCH_FORM)
-    if m is None:
-        raise LayoutError(
-            'special-match requires at least one rule',
-            get_position(source))
-
-    rules = []
-    for sub_res in m['rules']:
-        pattern, template = _pattern_template_from_rule(
-            sub_res['rule'].datum)
-        rules.append(cons(pattern, template, nil))
-
-    return cons(_symbol_special_match, *rules, nil)
+    return _lower_match_rules(
+        parser, source, peers, _symbol_special_match, layout_body=True)
 
 
 # The end.

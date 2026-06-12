@@ -48,8 +48,8 @@ from re import compile as regex
 
 from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
 from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
-from ..types import is_pair
-from .layouts import find_layout
+from ..types import get_position, is_pair
+from .layouts import apply_layout, apply_layouts, find_layout
 
 
 __all__ = (
@@ -89,9 +89,10 @@ _symbol_decimal = symbol("decimal")
 _symbol_format = symbol("format")
 _symbol_fraction = symbol("fraction")
 _symbol_quasiquote = symbol("compile/quasiquote")
-_symbol_quasiquote_block = symbol("compile/quasiquote-block")
 _symbol_attr = symbol("compile/attr")
 _symbol_quote = symbol("compile/quote")
+_symbol_layout_quote = symbol("quote")
+_symbol_layout_quasiquote = symbol("quasiquote")
 _symbol_compile_decorate = symbol("compile/decorate")
 _symbol_ref = symbol("compile/ref")
 _symbol_refq = symbol("compile/refq")
@@ -102,6 +103,7 @@ _keyword_block = keyword(":block:")
 
 IN_PROGRESS = keyword("work-in-progress")
 VALUE = keyword("value")
+BLOCK = keyword("block")
 ATOM = keyword("atom")
 DOT = keyword("dot")
 SKIP = keyword("skip")
@@ -1793,6 +1795,7 @@ class LayoutReader(Reader):
             self._ns = namespace
 
         self._block_mode = False
+        self._reading_block_body = False
         self._layout_macros = {}
 
         self.layout_enabled = layout_enabled
@@ -2047,7 +2050,7 @@ class LayoutReader(Reader):
 
         _lin, col = stream.position()
         outer_indent = col - 1
-        return VALUE, self._read_quote_block(stream, outer_indent)
+        return BLOCK, self._read_quote_block(stream, outer_indent)
 
 
     def _layout_quasiquote_block_reader_macro(self, stream, c):
@@ -2060,7 +2063,7 @@ class LayoutReader(Reader):
 
         _lin, col = stream.position()
         outer_indent = col - 1
-        return VALUE, self._read_quasiquote_block(stream, outer_indent)
+        return BLOCK, self._read_quasiquote_block(stream, outer_indent)
 
 
     def _is_structural_colon_in_ahead(self, ahead, colon_index):
@@ -2272,6 +2275,8 @@ class LayoutReader(Reader):
         old_indent = stream._max_indent
         stream._max_indent = outer_indent
         body = []
+        prev_body = self._reading_block_body
+        self._reading_block_body = True
 
         try:
             while True:
@@ -2285,6 +2290,7 @@ class LayoutReader(Reader):
                     break
                 body.append(form)
         finally:
+            self._reading_block_body = prev_body
             stream._max_indent = old_indent
             stream.dedented = False
 
@@ -2520,17 +2526,20 @@ class LayoutReader(Reader):
         """
         Block-macro handler for the ' prefix
 
-        Reads the block header and body, then wraps the raw :block: cons
-        in (compile/quote ...).
+        Reads the block header and body, then wraps the raw :block: cons in a
+        synthetic (:block: quote () (INNER)) for layout/quote to unbox
 
         :param stream: the source stream, positioned after the ' character
         :param outer_indent: column of the block head line
-        :return: (compile/quote (:block: ...)) cons
+        :return: synthetic (:block: quote () (INNER)) cons
         """
 
         head, args, _ = self.read_block_header(stream)
         raw = self.read_block(stream, outer_indent, head, args)
-        return cons(_symbol_quote, raw, nil)
+        return cons(_keyword_block,
+                    cons(_symbol_layout_quote, nil),
+                    cons(raw, nil),
+                    nil)
 
 
     def _read_quasiquote_block(self, stream, outer_indent):
@@ -2539,17 +2548,20 @@ class LayoutReader(Reader):
 
         Installs the , and ,@ unquote reader macros for the duration of
         the header and body read so that unquote sites are recognised.
-        Wraps the result in (compile/quasiquote-block ...).
+        Wraps the raw :block: cons in a synthetic (:block: quasiquote () (INNER))
 
         :param stream: the source stream, positioned after the ` character
         :param outer_indent: column of the block head line
-        :return: (compile/quasiquote-block (:block: ...)) cons
+        :return: synthetic (:block: quasiquote () (INNER)) cons
         """
 
         with self.temporary_event_macro(",", self._read_unquote, True):
             head, args, _ = self.read_block_header(stream)
             raw = self.read_block(stream, outer_indent, head, args)
-        return cons(_symbol_quasiquote_block, raw, nil)
+        return cons(_keyword_block,
+                    cons(_symbol_layout_quasiquote, nil),
+                    cons(raw, nil),
+                    nil)
 
 
     def _combine_implicit_line_tail_forms(self, forms):
@@ -2603,20 +2615,32 @@ class LayoutReader(Reader):
             stream.read(1)
 
         event, pos, inner = self.read_form(stream)
-        if event is not VALUE:
+        if event is not VALUE and event is not BLOCK:
             raise stream.error('invalid syntax after decorators', pos)
 
         deco_list = cons(*decorators, nil)
         return cons(_symbol_compile_decorate, deco_list, inner, nil)
 
 
-    def _apply_layout(self, stream, outer_indent, source):
+    def expand_form(self, form):
         """
-        Apply a layout handler to an already-read block source cons
+        Expand one body form during pass-two layout reading
 
-        :param stream: IndentAwareStream positioned after the primary block body
-        :param outer_indent: column of the block head line
+        :param form: one body element, possibly a deferred block source
+        :return: expanded form
+        """
+
+        if is_pair(form) and form.car is _keyword_block:
+            return apply_layout(form, self._ns, self)
+        return form
+
+
+    def expand_layout(self, source, peers=()):
+        """
+        Apply pass-two layout expansion to a block source and its peers
+
         :param source: cons of the form ((head . args) . body-forms)
+        :param peers: list of peer block source pairs
         :return: the expanded form produced by the layout handler
         """
 
@@ -2624,19 +2648,37 @@ class LayoutReader(Reader):
         head = header[0]
 
         layout_obj = self.find_layout(head)
-        if layout_obj is not None:
-            peers = self._collect_peer_blocks(stream, outer_indent, layout_obj)
-            return layout_obj.read(source, peers)
-
-        layout_obj = self.find_layout(symbol('layout/block'))
         if layout_obj is None:
-            raise stream.error('layout/block not found', stream.position())
-        return layout_obj.read(source, [])
+            layout_obj = self.find_layout(symbol('layout/block'))
+        if layout_obj is None:
+            raise RuntimeError('layout/block handler not found')
+
+        if layout_obj.raw:
+            return layout_obj.read(self, source, peers)
+
+        _, body = source
+        expanded_body = apply_layouts(body, self._ns, self)
+
+        expanded_peers = []
+        for peer in peers:
+            pheader, pbody = peer
+            expanded_pbody = apply_layouts(pbody, self._ns, self)
+            expanded_peers.append(cons(pheader, expanded_pbody))
+
+        expanded_source = cons(header, expanded_body)
+        source_pos = get_position(source)
+        if source_pos and is_pair(expanded_source):
+            expanded_source.set_position(source_pos)
+        return layout_obj.read(self, expanded_source, expanded_peers)
 
 
     def read_layout_block(self, stream, outer_indent, head=None, args=None):
         """
         Read a block and apply its layout handler, producing a layout form
+
+        Pass one reads the block source and any declared peer blocks without
+        expanding nested block children. Pass two expands through
+        :meth:`expand_layout`.
 
         :param stream: the source stream, positioned after the header colon
             and its trailing whitespace
@@ -2650,7 +2692,22 @@ class LayoutReader(Reader):
             head, args, opener = self.read_block_header(stream)
 
         source = self._read_block_source(stream, outer_indent, head, args)
-        return self._apply_layout(stream, outer_indent, source)
+
+        header = source[0]
+        head_sym = header[0]
+
+        layout_obj = self.find_layout(head_sym)
+        if layout_obj is None:
+            layout_obj = self.find_layout(symbol('layout/block'))
+        if layout_obj is None:
+            raise stream.error('layout/block not found', stream.position())
+
+        peers = []
+        if layout_obj.peers:
+            peers = self._collect_peer_blocks(
+                stream, outer_indent, layout_obj)
+
+        return self.expand_layout(source, peers)
 
 
     def read_form(self, stream):
@@ -2665,9 +2722,11 @@ class LayoutReader(Reader):
         the current logical line until ``LINE_END``, ``EOF``, or structural
         ``COLON`` (horizontal whitespace only between tokens). Empty lines are
         skipped. At ``LINE_END`` with several values, folds with ``cons`` or
-        errors per :attr:`layout_implicit_calls`. At ``COLON``, reads the block
-        body and applies layout (any head; non-symbols use the ``layout/block``
-        fallback via :meth:`_apply_layout`).
+        errors per :attr:`layout_implicit_calls`. At ``COLON``, reads a raw
+        block source (pass one) or a :block: cons when :attr:`_block_mode` is
+        set, returning ``BLOCK``. Top-level colon reads use
+        :meth:`read_layout_block` and return ``VALUE``. Pass-one ``BLOCK``
+        forms are expanded from :meth:`read`.
 
         :param stream: source stream positioned at the start of the next form
         :return: (event, position, value)
@@ -2705,7 +2764,7 @@ class LayoutReader(Reader):
                 result = layout_macro(stream, outer_indent)
                 if is_pair(result):
                     result.fill_position(position)
-                return VALUE, position, result
+                return BLOCK, position, result
 
             values = []
             first_value_pos = None
@@ -2716,6 +2775,8 @@ class LayoutReader(Reader):
                     return EOF, stream.position(), None
 
                 event, pos, value = self._read_header_form(stream)
+                if event is BLOCK:
+                    return BLOCK, pos, value
                 if event is LINE_END:
                     if not values:
                         break
@@ -2736,10 +2797,15 @@ class LayoutReader(Reader):
                     if self._block_mode:
                         block = self.read_block(
                             stream, header_indent, head, args)
+                        return BLOCK, position, block
+                    elif self._reading_block_body:
+                        block = self.read_block(
+                            stream, header_indent, head, args)
+                        return BLOCK, position, block
                     else:
                         block = self.read_layout_block(
                             stream, header_indent, head, args)
-                    return VALUE, position, block
+                        return VALUE, position, block
                 if event is EOF:
                     if not values:
                         return EOF, pos, None
@@ -2783,7 +2849,9 @@ class LayoutReader(Reader):
 
         event, pos, value = self.read_form(reader_stream)
 
-        if event is VALUE:
+        if event is BLOCK:
+            return apply_layout(value, self._ns, self)
+        elif event is VALUE:
             return value
         elif event is EOF:
             return READ_EOF
