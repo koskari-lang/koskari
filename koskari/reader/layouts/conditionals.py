@@ -33,7 +33,7 @@ _keyword_else = keyword('else')
 
 @builtin('layout/if')
 @layout(symbol('layout/if'), peers=(_symbol_elif, _symbol_else))
-def layout_if(parser, source, peers):
+def layout_if(ns, source, peers):
     """
     Lower if/elif/else block sources to compile/cond for compilation.
 
@@ -99,7 +99,7 @@ def layout_if(parser, source, peers):
 
 @builtin('layout/switch')
 @layout(symbol('layout/switch'))
-def layout_switch(parser, source, peers):
+def layout_switch(ns, source, peers):
     """
     Lower a switch block source into a flat switch form for compilation
 

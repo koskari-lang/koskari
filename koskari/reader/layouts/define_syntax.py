@@ -68,11 +68,11 @@ def _pattern_from_header(header):
     return pattern
 
 
-def _rule_row(parser, rule_source, layout_body=False):
+def _rule_row(ns, rule_source, layout_body=False):
     """
     Lower one raw rule block to ``(pattern . template-forms...)``
 
-    :param parser: layout reader used when layout_body is true
+    :param ns: layout handler namespace used when layout_body is true
     :param rule_source: pass-one block source for one rule
     :param layout_body: expand nested :block: forms in the template body
     :return: one rule row cons
@@ -96,16 +96,16 @@ def _rule_row(parser, rule_source, layout_body=False):
     pattern = _pattern_from_header(header)
     if layout_body:
         from . import apply_layouts
-        body = apply_layouts(body, parser._ns, parser)
+        body = apply_layouts(body, ns)
     template = cons(_symbol_compile_begin, body)
     return cons(pattern, template, nil)
 
 
-def _rule_rows(parser, parent_body, layout_body=False):
+def _rule_rows(ns, parent_body, layout_body=False):
     """
     Lower each raw rule block in a transformer body
 
-    :param parser: layout reader used when layout_body is true
+    :param ns: layout handler namespace used when layout_body is true
     :param parent_body: body spine following the transformer header
     :param layout_body: expand nested :block: forms in each rule body
     :return: list of rule row cons forms
@@ -113,16 +113,16 @@ def _rule_rows(parser, parent_body, layout_body=False):
 
     rules = []
     for rule_source in unpack(parent_body):
-        rules.append(_rule_row(parser, rule_source, layout_body))
+        rules.append(_rule_row(ns, rule_source, layout_body))
     return rules
 
 
-def _lower_rules(parser, source, peers, head_sym, head_pattern,
+def _lower_rules(ns, source, peers, head_sym, head_pattern,
                  with_literals, layout_body=False):
     """
     Lower a transformer block with raw rule children
 
-    :param parser: layout reader
+    :param ns: layout handler namespace
     :param source: pass-one block source for the transformer block
     :param peers: peer block sources, must be empty
     :param head_sym: emitted form head symbol
@@ -150,7 +150,7 @@ def _lower_rules(parser, source, peers, head_sym, head_pattern,
             '%s requires at least one rule' % (head_sym,),
             get_position(source))
 
-    rules = _rule_rows(parser, parent_body, layout_body)
+    rules = _rule_rows(ns, parent_body, layout_body)
 
     if not rules:
         raise LayoutError(
@@ -166,7 +166,7 @@ def _lower_rules(parser, source, peers, head_sym, head_pattern,
 
 @builtin('layout/syntax-rules')
 @layout(symbol('layout/syntax-rules'), raw=True)
-def layout_syntax_rules(parser, source, peers):
+def layout_syntax_rules(ns, source, peers):
     """
     Lower syntax-rules block to ``(syntax-rules (LIT ...) (PATTERN . TMPL...) ...)``.
 
@@ -175,13 +175,13 @@ def layout_syntax_rules(parser, source, peers):
     """
 
     return _lower_rules(
-        parser, source, peers, _symbol_syntax_rules,
+        ns, source, peers, _symbol_syntax_rules,
         _RULES_HEAD_PATTERN, True)
 
 
 @builtin('layout/macro-rules')
 @layout(symbol('layout/macro-rules'), raw=True)
-def layout_macro_rules(parser, source, peers):
+def layout_macro_rules(ns, source, peers):
     """
     Lower macro-rules block to ``(macro-rules (LIT ...) (PATTERN . BODY...) ...)``.
 
@@ -189,13 +189,13 @@ def layout_macro_rules(parser, source, peers):
     """
 
     return _lower_rules(
-        parser, source, peers, _symbol_macro_rules,
+        ns, source, peers, _symbol_macro_rules,
         _RULES_HEAD_PATTERN, True, layout_body=True)
 
 
 @builtin('layout/special-rules')
 @layout(symbol('layout/special-rules'), raw=True)
-def layout_special_rules(parser, source, peers):
+def layout_special_rules(ns, source, peers):
     """
     Lower special-rules block to ``(special-rules (LIT ...) (PATTERN . BODY...) ...)``.
 
@@ -203,13 +203,13 @@ def layout_special_rules(parser, source, peers):
     """
 
     return _lower_rules(
-        parser, source, peers, _symbol_special_rules,
+        ns, source, peers, _symbol_special_rules,
         _RULES_HEAD_PATTERN, True, layout_body=True)
 
 
 @builtin('layout/syntax-match')
 @layout(symbol('layout/syntax-match'), raw=True)
-def layout_syntax_match(parser, source, peers):
+def layout_syntax_match(ns, source, peers):
     """
     Lower syntax-match block to ``(syntax-match (PATTERN . TMPL...) ...)``.
 
@@ -217,13 +217,13 @@ def layout_syntax_match(parser, source, peers):
     """
 
     return _lower_rules(
-        parser, source, peers, _symbol_syntax_match,
+        ns, source, peers, _symbol_syntax_match,
         _MATCH_HEAD_PATTERN, False)
 
 
 @builtin('layout/macro-match')
 @layout(symbol('layout/macro-match'), raw=True)
-def layout_macro_match(parser, source, peers):
+def layout_macro_match(ns, source, peers):
     """
     Lower macro-match block to ``(macro-match (PATTERN . BODY...) ...)``.
 
@@ -231,13 +231,13 @@ def layout_macro_match(parser, source, peers):
     """
 
     return _lower_rules(
-        parser, source, peers, _symbol_macro_match,
+        ns, source, peers, _symbol_macro_match,
         _MATCH_HEAD_PATTERN, False, layout_body=True)
 
 
 @builtin('layout/special-match')
 @layout(symbol('layout/special-match'), raw=True)
-def layout_special_match(parser, source, peers):
+def layout_special_match(ns, source, peers):
     """
     Lower special-match block to ``(special-match (PATTERN . BODY...) ...)``.
 
@@ -245,7 +245,7 @@ def layout_special_match(parser, source, peers):
     """
 
     return _lower_rules(
-        parser, source, peers, _symbol_special_match,
+        ns, source, peers, _symbol_special_match,
         _MATCH_HEAD_PATTERN, False, layout_body=True)
 
 

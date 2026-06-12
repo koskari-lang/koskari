@@ -2643,22 +2643,22 @@ class LayoutReader(Reader):
         header = source[0]
 
         if layout_obj.raw:
-            return layout_obj.read(self, source, peers)
+            return layout_obj.read(self._ns, source, peers)
 
         _, body = source
-        expanded_body = apply_layouts(body, self._ns, self)
+        expanded_body = apply_layouts(body, self._ns)
 
         expanded_peers = []
         for peer in peers:
             pheader, pbody = peer
-            expanded_pbody = apply_layouts(pbody, self._ns, self)
+            expanded_pbody = apply_layouts(pbody, self._ns)
             expanded_peers.append(cons(pheader, expanded_pbody))
 
         expanded_source = cons(header, expanded_body)
         source_pos = get_position(source)
         if source_pos and is_pair(expanded_source):
             expanded_source.set_position(source_pos)
-        return layout_obj.read(self, expanded_source, expanded_peers)
+        return layout_obj.read(self._ns, expanded_source, expanded_peers)
 
 
     def read_layout_block(self, stream, outer_indent, head=None, args=None):
@@ -2683,13 +2683,8 @@ class LayoutReader(Reader):
         source = self._read_block_source(stream, outer_indent, head, args)
 
         layout_obj = self.find_layout(source[0][0])
-        if layout_obj is None:
-            layout_obj = self.find_layout(symbol('layout/block'))
-        if layout_obj is None:
-            raise stream.error('layout/block not found', stream.position())
-
         peers = []
-        if layout_obj.peers:
+        if layout_obj and layout_obj.peers:
             peers = self._collect_peer_blocks(
                 stream, outer_indent, layout_obj)
 
@@ -2831,7 +2826,7 @@ class LayoutReader(Reader):
         event, pos, value = self.read_form(reader_stream)
 
         if event is BLOCK:
-            return apply_layout(value, self._ns, self)
+            return apply_layout(value, self._ns)
         elif event is VALUE:
             return value
         elif event is EOF:

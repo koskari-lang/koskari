@@ -64,7 +64,7 @@ def _layout_loop(source, peers):
 
 @builtin("layout/for-each")
 @layout(symbol("layout/for-each"), peers=(_symbol_else,))
-def layout_for_each(parser, source, peers):
+def layout_for_each(ns, source, peers):
     """
     Layout handler for for-each blocks
 
@@ -81,7 +81,7 @@ def layout_for_each(parser, source, peers):
 
 @builtin("layout/while")
 @layout(symbol("layout/while"), peers=(_symbol_else,))
-def layout_while(parser, source, peers):
+def layout_while(ns, source, peers):
     """
     Layout handler for while blocks
 

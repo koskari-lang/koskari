@@ -20,16 +20,17 @@ Layout handlers for basic block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, nil, symbol
-from ...bootstrap import add_builtin, builtin
+from ...bootstrap import builtin
 from ...types import get_position, is_pair, is_keyword
 from .helpers import layout
 
 
 @builtin('layout/block')
 @layout(symbol('layout/block'))
-def layout_block(parser, source, peers):
+def layout_block(ns, source, peers):
     """
-    the default block layout handler
+    the default block layout handler. Simply splices the applied layout of
+    its body onto the header.
 
     eg.
     foo x:
@@ -51,7 +52,7 @@ def layout_block(parser, source, peers):
 
 @builtin('layout/block-begin')
 @layout(symbol('layout/block-begin'))
-def layout_block_begin(parser, source, peers):
+def layout_block_begin(ns, source, peers):
     """
     block layout handler that wraps the body in compile/begin
 
@@ -73,13 +74,9 @@ def layout_block_begin(parser, source, peers):
     return header
 
 
-layout_flat = layout_block
-add_builtin('layout/flat', layout_flat)
-
-
 @builtin('layout/call')
 @layout(symbol('layout/call'))
-def layout_call(parser, source, peers):
+def layout_call(ns, source, peers):
     """
     a breakout of a call as a block
 
@@ -127,15 +124,11 @@ def layout_call(parser, source, peers):
     return cons(symbol('compile/call'), fn, body)
 
 
-layout_begin = layout_block
-add_builtin('layout/begin', layout_begin)
-
-
 _symbol_compile_quote = symbol('compile/quote')
 _symbol_compile_quasiquote = symbol('compile/quasiquote')
 
 
-def _unbox_compile_layout(parser, source, peers, compile_sym, label):
+def _unbox_compile_layout(source, peers, compile_sym, label):
     if peers:
         raise LayoutError(
             '%s block does not take peers' % (label,),
@@ -159,7 +152,7 @@ def _unbox_compile_layout(parser, source, peers, compile_sym, label):
 
 @builtin('layout/quote')
 @layout(symbol('layout/quote'), raw=True)
-def layout_quote(parser, source, peers):
+def layout_quote(ns, source, peers):
     """
     Unbox a synthetic quote layout block to ``(compile/quote INNER-BLOCK)``
 
@@ -167,12 +160,12 @@ def layout_quote(parser, source, peers):
     """
 
     return _unbox_compile_layout(
-        parser, source, peers, _symbol_compile_quote, 'quote')
+        source, peers, _symbol_compile_quote, 'quote')
 
 
 @builtin('layout/quasiquote')
 @layout(symbol('layout/quasiquote'), raw=True)
-def layout_quasiquote(parser, source, peers):
+def layout_quasiquote(ns, source, peers):
     """
     Unbox a synthetic quasiquote layout block to
     ``(compile/quasiquote INNER-BLOCK)``
@@ -181,7 +174,7 @@ def layout_quasiquote(parser, source, peers):
     """
 
     return _unbox_compile_layout(
-        parser, source, peers, _symbol_compile_quasiquote, 'quasiquote')
+        source, peers, _symbol_compile_quasiquote, 'quasiquote')
 
 
 # The end.

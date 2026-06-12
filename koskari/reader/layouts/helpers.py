@@ -102,7 +102,7 @@ class LayoutHandler:
     """
     Wrapper for layout handlers with optional peer metadata.
 
-    A handler is called as read_fn(parser, source, peers).
+    A handler is called as read_fn(ns, source, peers).
     """
 
     def __init__(self, head_symbol, read_fn, peers=(), raw=False):
@@ -116,7 +116,7 @@ def layout(head_symbol, peers=(), raw=False):
     """
     Decorator that wraps a layout handler function in ``LayoutHandler``.
 
-    The handler must have signature (parser, source, peers) and return
+    The handler must have signature (ns, source, peers) and return
     the parsed form. Optional ``peers`` declares peer block head symbols
     that the parser should gather contiguously after this block.
 

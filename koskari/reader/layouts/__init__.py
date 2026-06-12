@@ -27,9 +27,8 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
 from ...types import is_pair, is_symbol
-from .basics import (layout_begin, layout_block, layout_block_begin,
-                     layout_call, layout_flat, layout_quote,
-                     layout_quasiquote)
+from .basics import (layout_block, layout_block_begin, layout_call,
+                     layout_quasiquote, layout_quote)
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_switch
 from .define_syntax import (layout_macro_match, layout_macro_rules,
@@ -47,8 +46,7 @@ __all__ = (
 
     "layout_block",
     "layout_block_begin",
-    "layout_flat",
-    "layout_begin",
+
     "layout_call",
     "layout_quote",
     "layout_quasiquote",
@@ -67,6 +65,7 @@ __all__ = (
     "layout_while",
     "layout_for_each",
 
+    "apply_layout",
     "apply_layouts",
     "find_layout",
 )
@@ -100,7 +99,7 @@ _keyword_block = keyword(':block:')
 
 
 @builtin('apply-layouts')
-def apply_layouts(blocks, namespace, reader=None):
+def apply_layouts(blocks, namespace):
     """
     Walk a proper cons spine of forms and expand each :block: through the
     layout handler namespace. Declared peer blocks are consumed from the cdr
@@ -110,7 +109,6 @@ def apply_layouts(blocks, namespace, reader=None):
 
     :param blocks: proper cons list of forms
     :param namespace: mapping used for layout handler lookup
-    :param reader: optional layout reader passed to layout handlers
     :return: proper cons list of expanded forms
     """
 
@@ -153,20 +151,19 @@ def apply_layouts(blocks, namespace, reader=None):
 
             if layout_obj.raw:
                 source = cons(head_args, body_exprs)
-                blocks.car = layout_obj.read(reader, source, peers)
+                blocks.car = layout_obj.read(namespace, source, peers)
             else:
-                expanded_body = apply_layouts(body_exprs, namespace, reader)
+                expanded_body = apply_layouts(body_exprs, namespace)
                 expanded_peers = []
                 for peer in peers:
                     pheader, pbody = peer
-                    expanded_pbody = apply_layouts(
-                        pbody, namespace, reader)
+                    expanded_pbody = apply_layouts(pbody, namespace)
                     expanded_peers.append(cons(pheader, expanded_pbody))
                 source = cons(head_args, expanded_body)
-                blocks.car = layout_obj.read(reader, source, expanded_peers)
+                blocks.car = layout_obj.read(namespace, source, expanded_peers)
 
         else:
-            blocks.car = apply_layouts(form, namespace, reader)
+            blocks.car = apply_layouts(form, namespace)
 
         blocks = tail
 
@@ -174,23 +171,22 @@ def apply_layouts(blocks, namespace, reader=None):
 
 
 @builtin('apply-layout')
-def apply_layout(block, namespace, reader=None):
+def apply_layout(block, namespace):
     """
     Apply a layout handler to a single block of form
     ```(:block: (HEAD ARG ...) (BODY ...))```
 
     :param block: the block to apply the layout handler to
     :param namespace: the namespace to use for layout handler lookup
-    :param reader: optional layout reader passed to layout handlers
     :return: the layout form
     """
 
     if block and is_pair(block):
         if block.car is _keyword_block:
-            res = apply_layouts(cons(block, nil), namespace, reader)
+            res = apply_layouts(cons(block, nil), namespace)
             return res.car
         else:
-            return apply_layouts(block, namespace, reader)
+            return apply_layouts(block, namespace)
     return block
 
 

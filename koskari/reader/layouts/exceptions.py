@@ -35,7 +35,7 @@ _keyword_finally = keyword('finally')
 
 @builtin('layout/try')
 @layout(symbol('layout/try'), peers=(_symbol_except, _symbol_else, _symbol_finally))
-def layout_try(parser, source, peers):
+def layout_try(ns, source, peers):
     """
     Lower try/except/else/finally block sources to (try ...) for compilation.
 
