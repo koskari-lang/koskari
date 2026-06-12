@@ -15,7 +15,7 @@
 koskari.compile.specials.quasiquote
 
 Special form handlers for compile/quasiquote, compile/unquote,
-compile/unquote-splicing, and compile/quote-block.
+and compile/unquote-splicing.
 
 Quasi-quote constructs a pair structure at runtime, with selected
 sub-expressions evaluated via unquote (,) and lists spliced in via
@@ -40,7 +40,7 @@ accepts tuples as segments natively.
 
 
 from ...lib import nil, OpCode, symbol
-from ...types import cons, get_position, is_nil, is_pair, set_position
+from ...types import is_nil, is_pair
 from ...exceptions import SpecialError
 from ..compiler import _is_const
 from ...matcher import CALLEDBY, MATCH, REST
@@ -49,7 +49,6 @@ from ...syntax import special
 
 _symbol_quasiquote = symbol("compile/quasiquote")
 _symbol_quote = symbol("compile/quote")
-_symbol_quote_block = symbol("compile/quote-block")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
 
@@ -347,35 +346,6 @@ def special_quasiquote(compiler, source, tc=False):
     frag.position_of(source)
     _qq_expr(compiler, frag, expr, 0)
     return frag
-
-
-@builtin("compile/quote-block")
-@special("compile/quote-block", patterns=_DEFAULT_PATTERNS)
-def special_quote_block(compiler, source, tc=False):
-    """
-    Compile (compile/quote-block BLOCK-REPR) as (compile/quote BLOCK-REPR)
-
-    The :block: cons is opaque data — no different from any other quoted
-    cons. Delegate directly to compile/quote by returning the rewritten
-    form for normal compiler dispatch.
-
-    :param compiler: the active Compiler
-    :param source: the full source cons (compile/quote-block BLOCK-REPR)
-    :param tc: tail-call flag (unused)
-    :return: (compile/quote BLOCK-REPR) cons for further compilation
-    """
-
-    called_by, body = source
-
-    if body is nil or not is_pair(body):
-        raise SpecialError("quote-block requires one argument", source)
-
-    if not is_pair(body[0]) or body[1] is not nil:
-        raise SpecialError("quote-block takes one argument", source)
-
-    rewritten = cons(_symbol_quote, body, nil)
-    set_position(rewritten, get_position(source))
-    return rewritten
 
 
 @builtin("compile/unquote")

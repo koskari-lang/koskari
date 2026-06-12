@@ -117,15 +117,18 @@ def _rule_rows(parser, parent_body, layout_body=False):
     return rules
 
 
-def _lower_rules_with_literals(parser, source, peers, head_sym,
-                               layout_body=False):
+def _lower_rules(parser, source, peers, head_sym, head_pattern,
+                 with_literals, layout_body=False):
     """
-    Lower a ``*-rules`` block with literals list and raw rule children
+    Lower a transformer block with raw rule children
 
     :param parser: layout reader
     :param source: pass-one block source for the transformer block
     :param peers: peer block sources, must be empty
     :param head_sym: emitted form head symbol
+    :param head_pattern: matcher pattern for the block header
+    :param with_literals: whether the header includes a literals list
+    :param layout_body: expand nested :block: forms in each rule body
     :return: lowered transformer form
     """
 
@@ -136,43 +139,13 @@ def _lower_rules_with_literals(parser, source, peers, head_sym,
 
     parent_header, parent_body = source
 
-    head_m = match1(parent_header, [_RULES_HEAD_PATTERN])
+    head_m = match1(parent_header, [head_pattern])
     if head_m is None:
-        raise LayoutError(
-            '%s requires literals list and at least one rule' % (head_sym,),
-            get_position(source))
-
-    literals = head_m['literals_expr'].datum
-    rules = _rule_rows(parser, parent_body, layout_body)
-
-    if not rules:
-        raise LayoutError(
-            '%s requires at least one rule' % (head_sym,),
-            get_position(source))
-
-    return cons(head_sym, literals, *rules, nil)
-
-
-def _lower_match_rules(parser, source, peers, head_sym, layout_body=False):
-    """
-    Lower a ``*-match`` block with raw rule children and no literals list
-
-    :param parser: layout reader
-    :param source: pass-one block source for the transformer block
-    :param peers: peer block sources, must be empty
-    :param head_sym: emitted form head symbol
-    :return: lowered transformer form
-    """
-
-    if peers:
-        raise LayoutError(
-            '%s block does not take peers' % (head_sym,),
-            get_position(source))
-
-    parent_header, parent_body = source
-
-    head_m = match1(parent_header, [_MATCH_HEAD_PATTERN])
-    if head_m is None:
+        if with_literals:
+            raise LayoutError(
+                '%s requires literals list and at least one rule' % (
+                    head_sym,),
+                get_position(source))
         raise LayoutError(
             '%s requires at least one rule' % (head_sym,),
             get_position(source))
@@ -183,6 +156,10 @@ def _lower_match_rules(parser, source, peers, head_sym, layout_body=False):
         raise LayoutError(
             '%s requires at least one rule' % (head_sym,),
             get_position(source))
+
+    if with_literals:
+        literals = head_m['literals_expr'].datum
+        return cons(head_sym, literals, *rules, nil)
 
     return cons(head_sym, *rules, nil)
 
@@ -197,8 +174,9 @@ def layout_syntax_rules(parser, source, peers):
     template forms from its body.
     """
 
-    return _lower_rules_with_literals(
-        parser, source, peers, _symbol_syntax_rules)
+    return _lower_rules(
+        parser, source, peers, _symbol_syntax_rules,
+        _RULES_HEAD_PATTERN, True)
 
 
 @builtin('layout/macro-rules')
@@ -210,8 +188,9 @@ def layout_macro_rules(parser, source, peers):
     Same block shape as syntax-rules; only the emitted head differs.
     """
 
-    return _lower_rules_with_literals(
-        parser, source, peers, _symbol_macro_rules, layout_body=True)
+    return _lower_rules(
+        parser, source, peers, _symbol_macro_rules,
+        _RULES_HEAD_PATTERN, True, layout_body=True)
 
 
 @builtin('layout/special-rules')
@@ -223,8 +202,9 @@ def layout_special_rules(parser, source, peers):
     Same block shape as macro-rules; only the emitted head differs.
     """
 
-    return _lower_rules_with_literals(
-        parser, source, peers, _symbol_special_rules, layout_body=True)
+    return _lower_rules(
+        parser, source, peers, _symbol_special_rules,
+        _RULES_HEAD_PATTERN, True, layout_body=True)
 
 
 @builtin('layout/syntax-match')
@@ -236,7 +216,9 @@ def layout_syntax_match(parser, source, peers):
     No literals list; each raw rule child supplies pattern and template forms.
     """
 
-    return _lower_match_rules(parser, source, peers, _symbol_syntax_match)
+    return _lower_rules(
+        parser, source, peers, _symbol_syntax_match,
+        _MATCH_HEAD_PATTERN, False)
 
 
 @builtin('layout/macro-match')
@@ -248,8 +230,9 @@ def layout_macro_match(parser, source, peers):
     Same rule shape as macro-rules blocks.
     """
 
-    return _lower_match_rules(
-        parser, source, peers, _symbol_macro_match, layout_body=True)
+    return _lower_rules(
+        parser, source, peers, _symbol_macro_match,
+        _MATCH_HEAD_PATTERN, False, layout_body=True)
 
 
 @builtin('layout/special-match')
@@ -261,8 +244,9 @@ def layout_special_match(parser, source, peers):
     Same rule shape as macro-match blocks.
     """
 
-    return _lower_match_rules(
-        parser, source, peers, _symbol_special_match, layout_body=True)
+    return _lower_rules(
+        parser, source, peers, _symbol_special_match,
+        _MATCH_HEAD_PATTERN, False, layout_body=True)
 
 
 # The end.

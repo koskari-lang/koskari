@@ -2622,36 +2622,25 @@ class LayoutReader(Reader):
         return cons(_symbol_compile_decorate, deco_list, inner, nil)
 
 
-    def expand_form(self, form):
-        """
-        Expand one body form during pass-two layout reading
-
-        :param form: one body element, possibly a deferred block source
-        :return: expanded form
-        """
-
-        if is_pair(form) and form.car is _keyword_block:
-            return apply_layout(form, self._ns, self)
-        return form
-
-
-    def expand_layout(self, source, peers=()):
+    def expand_layout(self, source, peers=(), layout_obj=None):
         """
         Apply pass-two layout expansion to a block source and its peers
 
         :param source: cons of the form ((head . args) . body-forms)
         :param peers: list of peer block source pairs
+        :param layout_obj: optional resolved layout handler
         :return: the expanded form produced by the layout handler
         """
 
-        header = source[0]
-        head = header[0]
+        if layout_obj is None:
+            head = source[0][0]
+            layout_obj = self.find_layout(head)
+            if layout_obj is None:
+                layout_obj = self.find_layout(symbol('layout/block'))
+            if layout_obj is None:
+                raise RuntimeError('layout/block handler not found')
 
-        layout_obj = self.find_layout(head)
-        if layout_obj is None:
-            layout_obj = self.find_layout(symbol('layout/block'))
-        if layout_obj is None:
-            raise RuntimeError('layout/block handler not found')
+        header = source[0]
 
         if layout_obj.raw:
             return layout_obj.read(self, source, peers)
@@ -2693,10 +2682,7 @@ class LayoutReader(Reader):
 
         source = self._read_block_source(stream, outer_indent, head, args)
 
-        header = source[0]
-        head_sym = header[0]
-
-        layout_obj = self.find_layout(head_sym)
+        layout_obj = self.find_layout(source[0][0])
         if layout_obj is None:
             layout_obj = self.find_layout(symbol('layout/block'))
         if layout_obj is None:
@@ -2707,7 +2693,7 @@ class LayoutReader(Reader):
             peers = self._collect_peer_blocks(
                 stream, outer_indent, layout_obj)
 
-        return self.expand_layout(source, peers)
+        return self.expand_layout(source, peers, layout_obj)
 
 
     def read_form(self, stream):
@@ -2794,14 +2780,9 @@ class LayoutReader(Reader):
                     head = values[0]
                     args = values[1:]
                     header_indent = first_value_pos[1]
-                    if self._block_mode:
-                        block = self.read_block(
+                    if self._block_mode or self._reading_block_body:
+                        return BLOCK, position, self.read_block(
                             stream, header_indent, head, args)
-                        return BLOCK, position, block
-                    elif self._reading_block_body:
-                        block = self.read_block(
-                            stream, header_indent, head, args)
-                        return BLOCK, position, block
                     else:
                         block = self.read_layout_block(
                             stream, header_indent, head, args)

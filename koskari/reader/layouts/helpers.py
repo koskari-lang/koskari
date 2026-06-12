@@ -80,17 +80,6 @@ def match_block_cons(form):
     return matched
 
 
-def is_block_source(form):
-    """
-    True when form is a deferred pass-one block source
-
-    :param form: candidate form from a block body read
-    :return: whether form should be expanded as a nested block
-    """
-
-    return match_block_source(form) is not None
-
-
 def block_source_from_cons(form):
     """
     Convert a ``:block:`` cons to a pass-one block source pair

@@ -135,6 +135,28 @@ _symbol_compile_quote = symbol('compile/quote')
 _symbol_compile_quasiquote = symbol('compile/quasiquote')
 
 
+def _unbox_compile_layout(parser, source, peers, compile_sym, label):
+    if peers:
+        raise LayoutError(
+            '%s block does not take peers' % (label,),
+            get_position(source))
+
+    header, body = source
+
+    if body is nil or not is_pair(body):
+        raise LayoutError(
+            '%s block requires one inner block' % (label,),
+            get_position(source))
+
+    inner, rest = body
+    if rest is not nil:
+        raise LayoutError(
+            '%s block requires one inner block' % (label,),
+            get_position(source))
+
+    return cons(compile_sym, inner, nil)
+
+
 @builtin('layout/quote')
 @layout(symbol('layout/quote'), raw=True)
 def layout_quote(parser, source, peers):
@@ -144,25 +166,8 @@ def layout_quote(parser, source, peers):
     INNER-BLOCK is the raw ``:block:`` from the quoted form, not layout-expanded
     """
 
-    if peers:
-        raise LayoutError(
-            'quote block does not take peers',
-            get_position(source))
-
-    header, body = source
-
-    if body is nil or not is_pair(body):
-        raise LayoutError(
-            'quote block requires one inner block',
-            get_position(source))
-
-    inner, rest = body
-    if rest is not nil:
-        raise LayoutError(
-            'quote block requires one inner block',
-            get_position(source))
-
-    return cons(_symbol_compile_quote, inner, nil)
+    return _unbox_compile_layout(
+        parser, source, peers, _symbol_compile_quote, 'quote')
 
 
 @builtin('layout/quasiquote')
@@ -175,25 +180,8 @@ def layout_quasiquote(parser, source, peers):
     INNER-BLOCK is the raw ``:block:`` from the quasiquoted form
     """
 
-    if peers:
-        raise LayoutError(
-            'quasiquote block does not take peers',
-            get_position(source))
-
-    header, body = source
-
-    if body is nil or not is_pair(body):
-        raise LayoutError(
-            'quasiquote block requires one inner block',
-            get_position(source))
-
-    inner, rest = body
-    if rest is not nil:
-        raise LayoutError(
-            'quasiquote block requires one inner block',
-            get_position(source))
-
-    return cons(_symbol_compile_quasiquote, inner, nil)
+    return _unbox_compile_layout(
+        parser, source, peers, _symbol_compile_quasiquote, 'quasiquote')
 
 
 # The end.
