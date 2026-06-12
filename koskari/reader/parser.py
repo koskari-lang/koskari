@@ -2625,12 +2625,11 @@ class LayoutReader(Reader):
         if event is not VALUE and event is not BLOCK and event is not BLOCKS:
             raise stream.error('invalid syntax after decorators', pos)
 
-        # TODO: we shouldn't manually apply here like this
-        if event is BLOCKS:
-            inner = apply_layouts(inner, self._ns).car
-
         deco_list = cons(*decorators, nil)
-        return cons(_symbol_compile_decorate, deco_list, inner, nil)
+        if event is BLOCKS:
+            return cons(_symbol_compile_decorate, deco_list, inner)
+        else:
+            return cons(_symbol_compile_decorate, deco_list, inner, nil)
 
 
     def read_form(self, stream):
