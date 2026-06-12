@@ -124,7 +124,6 @@ clean:  ## Remove build artifacts
 
 test: $(TARGET)  ## Run tests normally
 	@echo "Running native memory tests..."
-	@echo "Make sure the extension is built: cd ../.. && make build-ext"
 	@echo ""
 	$(TARGET)
 
@@ -136,13 +135,11 @@ $(TARGET)-asan: $(TEST_SRCS) $(LIB_SRCS) test_harness.h | $(OBJDIR)
 
 test-asan: $(TARGET)-asan  ## Run tests with AddressSanitizer
 	@echo "Running native memory tests with AddressSanitizer..."
-	@echo "Make sure the extension is built: cd ../.. && make build-ext"
 	@echo ""
 	ASAN_OPTIONS=$(ASAN_OPTIONS) $(TARGET)-asan
 
 test-valgrind: $(TARGET)  ## Run tests under Valgrind
 	@echo "Running native memory tests under Valgrind..."
-	@echo "Make sure the extension is built: cd ../.. && make build-ext"
 	@echo ""
 	@if [ ! -f valgrind-python.supp ]; then \
 		echo "Warning: valgrind-python.supp not found, expect false positives"; \

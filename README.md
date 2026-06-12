@@ -99,8 +99,8 @@ Many ideas are under evaluation, see [design/TODO.md](design/TODO.md) for what's
 ## Development
 
 ```bash
-# Build native extensions
-make build-ext
+# build wheel
+make build
 
 # Run tests
 make test

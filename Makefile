@@ -256,7 +256,6 @@ python:  ## Show Python executable
 
 .PHONY: \
 	build \
-	build-ext \
 	clean \
 	corpus-parquet \
 	corpus-parquet-container \

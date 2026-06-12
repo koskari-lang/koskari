@@ -588,7 +588,6 @@ after §6.6 forbid is in place.
 ### 7.1 Regression gate (must pass before and after your changes)
 
 ```bash
-make build-ext
 tox -qe py -- tests/compile/specials/test_dyn_wind.py -v
 tox -qe py -- tests/compile/specials/test_call_cc.py tests/lib/opcode/test_continuations.py -q
 tox -qe py -- tests/reproducers/test_reset_shift_nested.py -q
@@ -623,7 +622,6 @@ No type annotations; use `tox` only.
 **Regression gate after implementation:**
 
 ```bash
-make build-ext
 tox -qe py -- tests/compile/specials/test_continuations.py -v -k DelimitedTransferNestedForbid
 tox -qe py -- tests/compile/specials/test_dyn_wind.py::TestDynWindContinuations -v
 tox -qe py -- tests/reproducers/test_reset_shift_nested.py -q
@@ -740,7 +738,6 @@ Not required for §6.6 minimum if Test 1 asserts unhandled `RuntimeError`.
 
 ## 9. Regression checklist
 
-- [x] `make build-ext` clean.
 - [x] `TestDynWindContinuations` — 3/3.
 - [x] `TestDynWindTransferFailures` — 2/2.
 - [x] `TestDynWindTransferWindReproducer` — 1/1.

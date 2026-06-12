@@ -7,12 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **All Python execution must go through tox — never invoke `python`, `python3`, or `pytest` directly.**
 
 ```bash
-# Build native C extensions (required before running tests)
-make build-ext
-
 # Run full test suite (phases in order)
 make test
-tox -qe test
 
 # Run a specific test file or directory
 tox -qe py -- tests/lib/test_pair.py

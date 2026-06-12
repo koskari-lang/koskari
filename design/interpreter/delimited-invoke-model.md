@@ -244,7 +244,6 @@ pressure but policy should be revisited after Path A exists.
 **Build / run:**
 
 ```bash
-make build-ext
 tox -qe py -- tests/compile/specials/test_reset_shift.py -v
 ```
 

@@ -180,6 +180,42 @@ PyObject *KosUtils_BuildSet(PyObject *const *args, Py_ssize_t nargs);
 
 
 /**
+   Chained getattr through a sequence of attribute names.
+
+   Walks element through each name in attrlist left to right. When
+   default_val is non-NULL, return it on AttributeError; otherwise
+   propagate AttributeError. Other exceptions always propagate.
+
+   :param element: starting object
+   :param attrlist: sequence of attribute names
+   :param default_val: default value or NULL when omitted
+   :return: final attribute value or default_val
+   :raises ValueError: when attrlist is empty
+*/
+PyObject *KosUtils_GetAttrStar(
+    PyObject *element,
+    PyObject *attrlist,
+    PyObject *default_val);
+
+
+/**
+   Chained hasattr through a sequence of attribute names.
+
+   Walks element through each name in attrlist left to right. Returns
+   Py_True only when every step succeeds; Py_False on the first failed
+   lookup (any exception cleared, Python hasattr semantics per step).
+
+   :param element: starting object
+   :param attrlist: sequence of attribute names
+   :return: Py_True or Py_False
+   :raises ValueError: when attrlist is empty
+*/
+PyObject *KosUtils_HasAttrStar(
+    PyObject *element,
+    PyObject *attrlist);
+
+
+/**
    Build a dict from key-value pair arguments.
 
    Each positional argument should be an iterable of length 2 (key, value).

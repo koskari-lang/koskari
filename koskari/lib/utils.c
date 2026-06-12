@@ -643,6 +643,93 @@ PyObject *KosUtils_BuildSet(PyObject *const *args, Py_ssize_t nargs) {
 }
 
 
+PyObject *KosUtils_GetAttrStar(
+    PyObject *element,
+    PyObject *attrlist,
+    PyObject *default_val) {
+
+  Py_ssize_t count = 0;
+  Py_ssize_t i = 0;
+
+  attrlist = PySequence_Fast(attrlist, "attrlist must be a sequence");
+  if (! attrlist)
+    return NULL;
+
+  count = PySequence_Fast_GET_SIZE(attrlist);
+  if (! count) {
+    Py_DECREF(attrlist);
+    PyErr_SetString(PyExc_ValueError, "attrlist is empty");
+    return NULL;
+  }
+
+  Py_INCREF(element);
+
+  for (i = 0; i < count; i++) {
+    PyObject *name = PySequence_Fast_GET_ITEM(attrlist, i);
+    PyObject *val = PyObject_GetAttr(element, name);
+
+    if (! val) {
+      Py_DECREF(element);
+      Py_DECREF(attrlist);
+
+      if (default_val && PyErr_ExceptionMatches(PyExc_AttributeError)) {
+        PyErr_Clear();
+        Py_INCREF(default_val);
+        return default_val;
+      }
+      return NULL;
+    }
+
+    Py_DECREF(element);
+    element = val;
+  }
+
+  Py_DECREF(attrlist);
+  return element;
+}
+
+
+PyObject *KosUtils_HasAttrStar(
+    PyObject *element,
+    PyObject *attrlist) {
+
+  Py_ssize_t count = 0;
+  Py_ssize_t i = 0;
+
+  attrlist = PySequence_Fast(attrlist, "attrlist must be a sequence");
+  if (! attrlist)
+    return NULL;
+
+  count = PySequence_Fast_GET_SIZE(attrlist);
+  if (! count) {
+    Py_DECREF(attrlist);
+    PyErr_SetString(PyExc_ValueError, "attrlist is empty");
+    return NULL;
+  }
+
+  Py_INCREF(element);
+
+  for (i = 0; i < count; i++) {
+    PyObject *name = PySequence_Fast_GET_ITEM(attrlist, i);
+    PyObject *val = PyObject_GetAttr(element, name);
+
+    if (! val) {
+      Py_DECREF(element);
+      Py_DECREF(attrlist);
+      PyErr_Clear();
+      Py_RETURN_FALSE;
+    }
+
+    Py_DECREF(element);
+    element = val;
+  }
+
+  Py_DECREF(element);
+  Py_DECREF(attrlist);
+  Py_RETURN_TRUE;
+}
+
+
 PyObject *KosUtils_BuildDict(PyObject *args, PyObject *kwargs) {
 
   PyObject *result = PyDict_New();
@@ -861,6 +948,35 @@ FASTCALL_WRAPPER(BuildList);
 FASTCALL_WRAPPER(BuildSet);
 
 
+static PyObject *m_getattr_star(PyObject *mod, PyObject *args) {
+
+  PyObject *element = NULL;
+  PyObject *attrlist = NULL;
+  PyObject *default_val = NULL;
+
+  (void) mod;
+
+  if (! PyArg_ParseTuple(args, "OO|O", &element, &attrlist, &default_val))
+    return NULL;
+
+  return KosUtils_GetAttrStar(element, attrlist, default_val);
+}
+
+
+static PyObject *m_hasattr_star(PyObject *mod, PyObject *args) {
+
+  PyObject *element = NULL;
+  PyObject *attrlist = NULL;
+
+  (void) mod;
+
+  if (! PyArg_ParseTuple(args, "OO", &element, &attrlist))
+    return NULL;
+
+  return KosUtils_HasAttrStar(element, attrlist);
+}
+
+
 static PyObject *m_build_dict(PyObject *mod,
                               PyObject *args, PyObject *kwds) {
 
@@ -939,6 +1055,15 @@ static PyMethodDef utils_methods[] = {
   { "build_set", (PyCFunction) m_BuildSet, FASTCALL_METHOD_TYPE,
     "build_set(*args) -> set\n"
     "Build a set from arguments." },
+
+  { "getattr_star", (PyCFunction) m_getattr_star, METH_VARARGS,
+    "getattr_star(obj, attrlist[, default]) -> value\n"
+    "Chained attribute access through attrlist; optional default on\n"
+    "AttributeError." },
+
+  { "hasattr_star", (PyCFunction) m_hasattr_star, METH_VARARGS,
+    "hasattr_star(obj, attrlist) -> bool\n"
+    "Chained attribute presence test; false on first failed step." },
 
   { "build_dict", (PyCFunction) m_build_dict, METH_VARARGS | METH_KEYWORDS,
     "build_dict(*pairs, **kwargs) -> dict\n"

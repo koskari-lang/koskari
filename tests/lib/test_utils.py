@@ -505,4 +505,185 @@ class TestBuildDict(unittest.TestCase):
         self.assertEqual(result, {'x': 1, 'y': 2, 'z': 3})
 
 
+class TestGetAttrStar(unittest.TestCase):
+    """
+    Tests for the getattr_star runtime builtin (surface: getattr*)
+    """
+
+    def test_single_step_success(self):
+        """
+        getattr_star returns the attribute when present
+        """
+
+        class Box(object):
+            x = 1
+
+        self.assertEqual(lib.getattr_star(Box(), ['x']), 1)
+
+
+    def test_chain_success(self):
+        """
+        getattr_star walks nested attributes left to right
+        """
+
+        class Inner(object):
+            y = 2
+
+        class Outer(object):
+            inner = Inner()
+
+        obj = Outer()
+        self.assertEqual(lib.getattr_star(obj, ['inner', 'y']), 2)
+
+
+    def test_empty_attrlist_raises(self):
+        """
+        getattr_star with an empty attrlist raises ValueError
+        """
+
+        with self.assertRaises(ValueError):
+            lib.getattr_star(object(), [])
+
+
+    def test_missing_leaf_returns_default(self):
+        """
+        getattr_star returns default on AttributeError at the leaf
+        """
+
+        class Box(object):
+            pass
+
+        self.assertEqual(lib.getattr_star(Box(), ['missing'], 99), 99)
+
+
+    def test_missing_intermediate_returns_default(self):
+        """
+        getattr_star returns default when an intermediate link is missing
+        """
+
+        class Box(object):
+            pass
+
+        self.assertEqual(
+            lib.getattr_star(Box(), ['a', 'b'], 'default'),
+            'default')
+
+
+    def test_missing_without_default_raises(self):
+        """
+        getattr_star propagates AttributeError when default is omitted
+        """
+
+        class Box(object):
+            pass
+
+        with self.assertRaises(AttributeError):
+            lib.getattr_star(Box(), ['missing'])
+
+
+    def test_requires_attrlist(self):
+        """
+        getattr_star requires element and attrlist
+        """
+
+        with self.assertRaises(TypeError):
+            lib.getattr_star(object())
+
+
+    def test_non_attribute_error_propagates(self):
+        """
+        getattr_star propagates exceptions other than AttributeError
+        """
+
+        class Bad(object):
+
+            @property
+            def boom(self):
+                raise ValueError('nope')
+
+        with self.assertRaises(ValueError):
+            lib.getattr_star(Bad(), ['boom'], None)
+
+
+class TestHasAttrStar(unittest.TestCase):
+    """
+    Tests for the hasattr_star runtime builtin (surface: hasattr*)
+    """
+
+    def test_single_step_true(self):
+        """
+        hasattr_star is true when the attribute is present
+        """
+
+        class Box(object):
+            x = 1
+
+        self.assertTrue(lib.hasattr_star(Box(), ['x']))
+
+
+    def test_chain_true(self):
+        """
+        hasattr_star walks nested attributes left to right
+        """
+
+        class Inner(object):
+            y = 2
+
+        class Outer(object):
+            inner = Inner()
+
+        self.assertTrue(lib.hasattr_star(Outer(), ['inner', 'y']))
+
+
+    def test_empty_attrlist_raises(self):
+        """
+        hasattr_star with an empty attrlist raises ValueError
+        """
+
+        with self.assertRaises(ValueError):
+            lib.hasattr_star(object(), [])
+
+
+    def test_missing_leaf_false(self):
+        """
+        hasattr_star is false when the leaf attribute is missing
+        """
+
+        self.assertFalse(lib.hasattr_star(object(), ['nope']))
+
+
+    def test_missing_intermediate_false(self):
+        """
+        hasattr_star is false when an intermediate link is missing
+        """
+
+        class Box(object):
+            pass
+
+        self.assertFalse(lib.hasattr_star(Box(), ['a', 'b']))
+
+
+    def test_requires_attrlist(self):
+        """
+        hasattr_star requires element and attrlist
+        """
+
+        with self.assertRaises(TypeError):
+            lib.hasattr_star(object())
+
+
+    def test_lookup_exception_false(self):
+        """
+        hasattr_star is false when lookup raises (Python hasattr semantics)
+        """
+
+        class Bad(object):
+
+            @property
+            def boom(self):
+                raise ValueError('nope')
+
+        self.assertFalse(lib.hasattr_star(Bad(), ['boom']))
+
+
 # The end.
