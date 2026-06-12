@@ -2291,7 +2291,10 @@ class LayoutReader(Reader):
                 event, pos, form = self.read_form(stream)
                 if event is EOF:
                     break
-                body.append(form)
+                elif event is BLOCKS:
+                    body.extend(form.unpack())
+                else:
+                    body.append(form)
         finally:
             self._reading_block_body = prev_body
             stream._max_indent = old_indent
@@ -2622,6 +2625,7 @@ class LayoutReader(Reader):
         if event is not VALUE and event is not BLOCK and event is not BLOCKS:
             raise stream.error('invalid syntax after decorators', pos)
 
+        # TODO: we shouldn't manually apply here like this
         if event is BLOCKS:
             inner = apply_layouts(inner, self._ns).car
 
