@@ -98,7 +98,7 @@ as a layout line.
 | Surface | Example source | Reader output (informal) |
 | ------- | -------------- | ------------------------ |
 | Layout block `if` | `if True:` / `1` / `else:` / `2` | `(compile/cond (True 1) (else: 2))` |
-| Layout block `when` | `when True:` / `42` | `(when True (compile/begin 42))` |
+| Layout block `when` | `when True:` / `42` | `(when True 42)` |
 | Layout line `if` | `if True 1 2` | `(if True 1 2)` |
 | S-expression `if` | `(if True 1 2)` | `(if True 1 2)` |
 
@@ -155,7 +155,7 @@ unless False 42
 ## Where to go next
 
 - [Reader and layout syntax](../reader-layout.md) — normative block, line, colon, and peer rules
-- [Layout handler reference](../layouts/index.md) — per-head lowering (`layout/if`, `layout/flat`, …)
+- [Layout handler reference](../layouts/index.md) — per-head lowering (`layout/if`, …)
 - [layout/if](../layouts/layout-if.md) — block conditional peers
 - [compile/if](../macros/compile-if.md), [compile/when](../macros/compile-when.md), [compile/unless](../macros/compile-unless.md) — macro forms for line and s-expression surfaces
 - [Layout and calls](../../start/from-python/layout-and-calls.md) — tutorial patterns in `.ki` files

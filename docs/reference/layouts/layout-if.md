@@ -6,8 +6,10 @@ General block syntax: [Reader and layout syntax](../reader-layout.md).
 **Use-case:** Multi-branch conditional with optional `elif` and `else` peers.
 Lowers to `compile/cond`.
 
-**Behaviour:** Accepts optional peer blocks `elif` and `else`. Gathers contiguous
-peer blocks at the same indent level after the `if` body. Produces
+**Behaviour:** Accepts optional peer blocks `elif` and `else`. The reader gathers
+contiguous peer blocks at the same indent level after the `if` body (including
+when `if`/`else` appears nested inside another block's body) and expands them
+with the primary through **`apply_layouts`**. Produces
 `(compile/cond (TEST BODY) (TEST BODY) ... (else: BODY))`. Rules: `elif` cannot
 follow `else`; `else` takes no arguments; only one `else` is allowed.
 

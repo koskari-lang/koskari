@@ -11,6 +11,6 @@
 - `(special-match rule …)` → `(compile/define name (special-match name rule …))`
 - `(define-syntax name docstr (form …))` — re-expands with docstring attached via `set-attr` on `__doc__`
 
-**Layout:** `define layout/define-syntax layout/flat` (flat block read).
+**Layout:** default **`layout/block`** flat splice at read time.
 
 

@@ -3,11 +3,12 @@
 **Status:** Implemented
 **Author:** Christopher O'Brien <obriencj@preoccupied.net>
 
-**Historical note:** Subsequent implementation moved `:block:` expansion for macro
-output out of the **`compile/apply-layout`** compiler special into
-**`koskari.reader.layouts.apply_layout`** (**`koskari.syntax._finalize_macro_output`**).
-Sections below that reference **`compile/apply-layout`** describe the earlier
-two-phase wiring; see **[SPECIALS.md](../SPECIALS.md)** § compile/quasiquote-block.
+**Superseded for reader layout behaviour:** [LAYOUTS.md](../LAYOUTS.md),
+[docs/reference/reader-layout.md](../../docs/reference/reader-layout.md).
+Macro finalize uses **`koskari.reader.layouts.apply_layout`**
+(**`koskari.syntax._finalize_macro_output`**). Remaining sections are an
+implementation archive; see **[SPECIALS.md](../SPECIALS.md)** §
+compile/quasiquote-block for the current special.
 
 ---
 

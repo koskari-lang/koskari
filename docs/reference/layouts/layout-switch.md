@@ -6,20 +6,10 @@ clause lists consumed by `compile/switch`.
 
 **Behaviour:** Does not accept peers. Header must be exactly
 `switch VALUE:` (one value expression). Inner `case` and `else` blocks are
-left as default block layouts (no dedicated `layout/case` or `layout/else`).
-So children are read first by `layout/block` as:
+expanded by default **`layout/block`** (flat splice). `layout/switch` validates
+each child and emits:
 
-- `case COND:` -> `(case COND (compile/begin BODY...))`
-- `else:` -> `(else (compile/begin BODY...))`
-
-`layout/switch` validates and rewrites those child forms into:
-
-- case clause: `(COND-LIST (compile/begin BODY...))`
-- else clause: `(else: (compile/begin BODY...))`
-
-It then returns:
-
-`(switch VALUE (COND-LIST (compile/begin ...)) ... (else: (compile/begin ...)))`
+`(switch VALUE (COND-LIST BODY...) ... (else: BODY...))`
 
 Rules:
 
@@ -53,17 +43,12 @@ switch x:
     "two-or-three"
   else:
     "meh"
-;; -> (switch x
-;;      ([1] (compile/begin "one"))
-;;      ([2 3] (compile/begin "two-or-three"))
-;;      (else: (compile/begin "meh")))
+;; -> (switch x ([1] "one") ([2 3] "two-or-three") (else: "meh"))
 
 switch x:
   case [1]:
     "one"
-;; -> (switch x ([1] (compile/begin "one")))
+;; -> (switch x ([1] "one"))
 ```
 
 **Implementation:** `koskari/reader/layouts/conditionals.layout_switch`
-
-

@@ -51,8 +51,6 @@ hygiene (see [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block).
 - `(special-match rule …)` → `(compile/define name (special-match name rule …))`
 - `(define-syntax name docstr (form …))` — re-expands with docstring attached via `set-attr` on `__doc__`
 
-**Layout:** `define layout/define-syntax layout/flat` (flat block read).
-
 **Tests:** `tests/compile/specials/test_define_syntax.py`
 
 
@@ -66,8 +64,6 @@ hygiene (see [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block).
 **Behaviour:** Replaces **`NAME`** via **`setq`** with a new **`syntax-rules`** /
 **`syntax-match`** / **`macro-rules`** / **`special-rules`** / **`special-match`**
 spec (each expansion passes **`NAME`** as the first argument to the builder form).
-
-**Layout:** `define layout/extend-syntax layout/flat`.
 
 
 ### compile/datum

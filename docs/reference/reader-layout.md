@@ -11,8 +11,8 @@ see [Layout and s-expressions](concepts/layout-and-s-expressions.md).
 The **layout reader** (`LayoutReader`) is the default reader for Koskari
 modules. It accepts indentation-based **blocks** and **lines** at delimiter
 depth 0, embeds ordinary **s-expressions** inside `(`, `[`, and `{`, and
-delegates block heads to **layout handlers** (`layout/<head>`) that lower block
-source into list forms for the compiler.
+parses colon blocks as **`:block:`** conses and expands them through
+**layout handlers** (`layout/<head>`) into list forms for the compiler.
 
 Reading is strict: malformed layout or punctuation fails before evaluation.
 
@@ -124,9 +124,10 @@ if x:
   y
 ```
 
-Sub-blocks may appear in the body. Each sub-block is read through the full
-layout path (including handler resolution and peers) before its result becomes
-a body element.
+Sub-blocks may appear in the body. Each is parsed as a **`:block:`** cons.
+Peer heads declared for the sub-block's layout (for example `else` after nested
+`if`) are gathered on the same spine and expanded together when the enclosing
+block is expanded.
 
 ### Invalid block shape
 
@@ -142,7 +143,8 @@ Some layout handlers declare **peer** head symbols (for example `elif` and
 `else` for [layout/if](layouts/layout-if.md)). After the primary block body,
 the reader checks the next content at the same **outer indent** as the primary
 header. If the line begins a block whose head is a declared peer, that block is
-consumed as a peer and passed to the handler's `read(source, peers)` hook.
+consumed as a peer. Peer blocks are expanded together with the primary block
+through **`apply_layouts`**.
 
 Peers are separate blocks: each peer has its own header, structural `:`, newline,
 and indented body.
@@ -203,34 +205,49 @@ does not use peer blocks and cannot express `elif` chains.
 
 ---
 
-## Layout handler resolution
+## Block representation and layout expansion
 
-For each block, the reader builds **source** = `(header . body)` where
-`header` = `(head . args)` and `body` is a list of body forms. It then resolves
-a layout handler:
+Parsing and layout expansion are separate steps.
 
-1. Look up `layout/<head>` in module globals, then builtins, when `head` is a
-   symbol
-2. If found and it is a `LayoutHandler`, call `read(source, peers)`
-3. If not found, use default **`layout/block`**, which wraps the body in
-   `compile/begin` and appends it after the head and args:
+### Parse
+
+A colon block is read as a **`:block:`** cons:
+
+```
+(:block: (HEAD ARG ...) (BODY-FORM ...))
+```
+
+Stream-collected peer blocks (when the layout declares peer heads) form a spine
+of **`:block:`** conses that are expanded as one unit.
+
+Block quote and quasiquote prefixes (`'head:` and `` `head: ``) read raw
+**`:block:`** conses in the header and body without expanding nested layout.
+They are wrapped for **`layout/quote`** and **`layout/quasiquote`** to lower at
+expansion time.
+
+### Expand
+
+**`LayoutReader.read()`** calls **`apply_layout`** (one block) or
+**`apply_layouts`** (primary plus peers on a spine) from
+**`koskari.reader.layouts`**. Each lookup resolves **`layout/<head>`** in the
+module namespace, then builtins. Handlers are invoked as
+**`read(namespace, source, peers)`**, where **`source`** is
+**`(header . body)`** with **`header`** = **`(head . args)`**.
+
+When no named layout matches, **`layout/block`** splices body forms after the
+header:
 
 ```koskari
 foobar [x y z]:
   (print x y z)
-;; → (foobar [x y z] (compile/begin (print x y z)))
+;; → (foobar [x y z] (print x y z))
 ```
 
-**`layout/flat`** splices body forms into the header list with no
-`compile/begin` wrapper. Many heads only need that shape. In `.ki` modules you
-can alias handlers:
+For an explicit **`compile/begin`** wrapper, bind
+**`define layout/<head> layout/block-begin`** in a **`.ki`** module. See
+[layout/block-begin](layouts/layout-block-begin.md).
 
-```koskari
-define layout/my-head layout/flat
-```
-
-See [Layout handler reference](layouts/index.md) for `:block:` data,
-`apply_layout`, and the per-head catalogue.
+See [Layout handler reference](layouts/index.md) for the per-head catalogue.
 
 ---
 
@@ -301,13 +318,13 @@ ExprPart      ::= ATOM | SEXPR ;
   `(`, `[`, or `{`, the s-expression reader consumes a complete balanced form
   as one `SEXPR`. Newlines inside that form do not end the outer logical line.
 - **Layout head resolution:** For `BlockLine` with header parts `H0 H1 …`,
-  when `H0` is a symbol the reader may resolve `layout/<H0>` and delegate
-  lowering; otherwise default block behaviour applies.
+  expansion resolves `layout/<H0>` when `H0` is a symbol; otherwise
+  **`layout/block`** applies.
 - **Peer blocks:** Peers are `BlockLine` nodes at the same indent as the
   primary header, gathered only when the active handler declares their head
-  symbols.
-- **Block source shape:** Handlers receive `source` = `(header . body)` and
-  `peers` = list of `(pheader . pbody)` pairs.
+  symbols, then expanded with the primary through **`apply_layouts`**.
+- **Handler inputs:** `source` = `(header . body)`; `peers` = list of
+  `(pheader . pbody)` pairs (peer headers and bodies before expansion).
 
 ### Conforming examples
 

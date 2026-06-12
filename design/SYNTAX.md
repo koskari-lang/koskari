@@ -312,10 +312,10 @@ form on that line is the **head**; it need not be a symbol.
 This mirrors **lists** in the base grammar: several sibling forms in one list are
 read as an implicit **call** shape (the compiler lowers multi-head application
 with `compile/call`). At layout depth 0, a block whose head does **not** name
-a registered layout handler is still a well-formed block: it is passed to the
-default **`layout/block`** handler, which wraps the body in `compile/begin` and
-places it after the head and header arguments—i.e. an implicit **block** shape
-analogous to that implicit **call** shape for lists.
+a registered layout handler is still a well-formed block: expansion uses the
+default **`layout/block`** handler, which splices body forms after the head and
+header arguments—i.e. an implicit **block** shape analogous to that implicit
+**call** shape for lists.
 
 ```bnf
 <colon-block>   ::= <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
@@ -361,7 +361,8 @@ prefix is treated as a plain `<quote-form>` or `<quasiquote-form>`.
 <block-quote-form>
                 ::= "'" <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
-                  ; desugars to: (compile/quote (:block: (<head> . <args>) <body>...))
+                  ; reads raw (:block: (<head> . <args>) <body>...); layout/quote
+                  ; lowers to (compile/quote (:block: ...)) at expansion
 
 <quasiquote-block-form>
                 ::= "`" <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
@@ -395,7 +396,6 @@ line is consumed as an additional peer block at the same nesting level.
 | Head symbol     | Peer heads allowed (in order)              |
 |---|---|
 | *(default)*     | none — any unknown head falls back to layout/block |
-| `begin`         | none |
 | `class`         | none |
 | `define-syntax` | none |
 | `dyn-wind`      | `before`, `body`, `after` |
@@ -409,6 +409,12 @@ line is consumed as an additional peer block at the same nesting level.
 transformer specs whose rule patterns use the same matcher language as compile
 specials; see [MATCHER.md](MATCHER.md) and [MACROS.md](MACROS.md).
 
+### Parse and expand
+
+Colon blocks parse as **`:block:`** conses. **`LayoutReader.read()`** calls
+**`apply_layout`** or **`apply_layouts`** to invoke **`layout/<head>`** handlers
+as **`read(namespace, source, peers)`**.
+
 ### Default block handler (`layout/block`)
 
 Any block whose head does not resolve to a **named** layout handler (including
@@ -420,11 +426,10 @@ head arg1 arg2 ... :
   body-form2
 ```
 
-becomes `(head arg1 arg2 (compile/begin body-form1 body-form2))`.
+becomes `(head arg1 arg2 body-form1 body-form2)`.
 
-So a compound head such as `(callee) arg:` is read like a symbol-headed block:
-the list `(callee)` is the head, `arg` is a header argument, and the indented
-body is wrapped the same way after `layout/block` dispatch.
+Opt-in **`compile/begin`** wrapping uses **`layout/block-begin`**
+(**`define layout/<head> layout/block-begin`** in **`.ki`**).
 
 ### `begin` block
 
@@ -434,8 +439,7 @@ begin:
   form2
 ```
 
-becomes `(begin form1 form2)` via **`layout/begin`** / **`layout/flat`** (not
-**`compile/begin`**).
+becomes `(begin form1 form2)` via default **`layout/block`** (flat splice).
 
 ### `if` / `elif` / `else`
 

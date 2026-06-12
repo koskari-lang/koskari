@@ -2695,6 +2695,7 @@ class LayoutReader(Reader):
                 event, pos, value = self._read_header_form(stream)
                 if event is BLOCK or event is BLOCKS:
                     return event, pos, value
+
                 if event is LINE_END:
                     if not values:
                         break
@@ -2703,8 +2704,8 @@ class LayoutReader(Reader):
                     if self.layout_implicit_calls:
                         return VALUE, first_value_pos, cons(
                             values[0], *values[1:], nil)
-                    raise stream.error(
-                        'multiple forms on one layout line', pos)
+                    raise stream.error('multiple forms on one layout line', pos)
+
                 if event is COLON:
                     if not values:
                         raise stream.error(
@@ -2718,11 +2719,9 @@ class LayoutReader(Reader):
                     primary, peer_blocks = self._read_block_with_peers(
                         stream, header_indent, head, args)
                     if peer_blocks:
-                        tail = nil
-                        for pb in reversed(peer_blocks):
-                            tail = cons(pb, tail)
-                        return BLOCKS, position, cons(primary, tail)
+                        return BLOCKS, position, cons(primary, *peer_blocks, nil)
                     return BLOCK, position, primary
+
                 if event is EOF:
                     if not values:
                         return EOF, pos, None
@@ -2731,10 +2730,11 @@ class LayoutReader(Reader):
                     if self.layout_implicit_calls:
                         return VALUE, first_value_pos, cons(
                             values[0], *values[1:], nil)
-                    raise stream.error(
-                        'multiple forms on one layout line', pos)
+                    raise stream.error('multiple forms on one layout line', pos)
+
                 if event is DOT:
                     raise stream.error('invalid syntax', pos)
+
                 if event is not VALUE:
                     raise stream.error('invalid syntax', pos)
 
