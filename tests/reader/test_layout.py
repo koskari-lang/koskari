@@ -48,7 +48,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('foo'),
            symbol('x'),
-           (symbol('compile/begin'), symbol('y')),
+           symbol('y'),
           )
         )
 
@@ -67,9 +67,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
           (symbol('foo'),
           ((symbol('x'), 1000),
            (symbol('y'), 2000),),
-           (symbol('compile/begin'),
-            (symbol('do_something'), symbol('x'), symbol('y')),
-           )
+           (symbol('do_something'), symbol('x'), symbol('y')),
           )
         )
 
@@ -91,7 +89,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('unknown'),
            ((symbol('foo'),), keyword('as'), symbol('x')),
-           (symbol('compile/begin'), symbol('y')))
+           symbol('y'))
         )
 
         result = parse_layout(src)
@@ -112,7 +110,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('unknown'),
            (symbol('foo'), keyword('as'), symbol('x')),
-           (symbol('compile/begin'), symbol('y')))
+           symbol('y'))
         )
 
         result = parse_layout(src)
@@ -129,10 +127,8 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('foo'),
            ((symbol('x'), 1),),
-           (symbol('compile/begin'),
-             ((symbol('bar'), symbol('x'),
-              (symbol('compile/begin'),
-               (symbol('baz'), symbol('x')))))))
+           (symbol('bar'), symbol('x'),
+            (symbol('baz'), symbol('x'))))
         )
 
         result = parse_layout(src)
@@ -155,8 +151,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('unknown'),
            symbol('x'),
-           (symbol('compile/begin'),
-            (symbol('print'), symbol('x'))))
+           (symbol('print'), symbol('x')))
         )
 
         result_no_space = parse_layout(src_no_space)
@@ -178,9 +173,8 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('foo'),
            symbol('x'),
-           (symbol('compile/begin'),
-            symbol('a'),
-            symbol('b'),))
+           symbol('a'),
+           symbol('b'),)
           )
 
         result = parse_layout(src)
@@ -196,8 +190,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('unknown'),
            symbol('x'),
-           (symbol('compile/begin'),
-            (symbol('print'), symbol('x'))))
+           (symbol('print'), symbol('x')))
           )
 
         result = parse_layout(src)
@@ -253,12 +246,10 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
           (symbol("begin"),
 
            (symbol("define"), symbol("double"), (symbol("x"),),
-            (symbol("compile/begin"),
-             (symbol("+"), symbol("x"), symbol("x")))),
+            (symbol("+"), symbol("x"), symbol("x"))),
 
            (symbol("define"), symbol("tagged-double"), (symbol("x"),),
-            (symbol("compile/begin"),
-             (symbol("double-result"), (symbol("double"), symbol("x"))))))
+            (symbol("double-result"), (symbol("double"), symbol("x")))))
         )
 
         result = parse_layout(src)
@@ -294,7 +285,7 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')))
+             symbol('y'))
         )
 
         result = parse_layout(src)
@@ -310,7 +301,7 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')))
+             symbol('y'))
         )
 
         result = parse_layout(src)
@@ -327,7 +318,7 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')))
+             symbol('y'))
         )
 
         result = parse_layout(src)
@@ -345,7 +336,7 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('a'), symbol('b')))
+             symbol('a'), symbol('b'))
         )
 
         result = parse_layout(src)
@@ -363,7 +354,7 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('a')))
+             symbol('a'))
         )
 
         result = parse_layout(src)
@@ -383,8 +374,7 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
             (symbol('define'),
              symbol('foobar'),
              (symbol('a'), symbol('b')),
-             (symbol('compile/begin'),
-              (symbol('+'), symbol('a'), symbol('b'))))
+             (symbol('+'), symbol('a'), symbol('b')))
         )
 
         result = parse_layout(src)

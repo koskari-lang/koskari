@@ -47,7 +47,6 @@ from koskari.lib import (
 )
 from koskari.module import new_module, public_vars
 from koskari.reader import READ_EOF, LayoutReader, default_reader, source_str
-from koskari.reader.layouts.basics import layout_flat
 from koskari.syntax import MacroTransform, Syntax, SyntaxTransform
 from koskari.types import is_pair, is_proper, is_symbol, unpack
 
@@ -630,7 +629,6 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
 
         ns_dict = dict(public_vars(builtins))
         ns_dict.update(_CORPUS_FIXTURES)
-        self._inject_layout_handlers(ns_dict, record)
 
         self.module = new_module('corpus.test')
         mod_ns = vars(self.module)
@@ -643,18 +641,6 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
             '<corpus>',
             self.module,
             filename='corpus:%s' % record['id'])
-
-
-    def _inject_layout_handlers(self, ns_dict, record):
-        """
-        Add layout reader handlers required by specific records
-        """
-
-        feature = record.get('feature') or ''
-        if feature.startswith('layout/define-syntax'):
-            ns_dict['layout/define-syntax'] = layout_flat
-        if feature.startswith('layout/extend-syntax'):
-            ns_dict['layout/extend-syntax'] = layout_flat
 
 
     def _reader_for(self, record, ns):

@@ -663,7 +663,7 @@ source: |-
   when True:
     42
 verify:
-  read: (when True (compile/begin 42))
+  read: (when True 42)
   eval: "42"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -683,7 +683,7 @@ source: |-
   when False:
     42
 verify:
-  read: (when False (compile/begin 42))
+  read: (when False 42)
   eval: "null"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -703,7 +703,7 @@ source: |-
   unless False:
     42
 verify:
-  read: (unless False (compile/begin 42))
+  read: (unless False 42)
   eval: "42"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -723,7 +723,7 @@ source: |-
   unless True:
     42
 verify:
-  read: (unless True (compile/begin 42))
+  read: (unless True 42)
   eval: "null"
 references:
   - reference/concepts/layout-and-s-expressions.md

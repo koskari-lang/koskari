@@ -26,8 +26,9 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
-from ...types import build_proper, is_pair, is_symbol
-from .basics import layout_begin, layout_block, layout_call
+from ...types import get_position, is_pair, is_symbol
+from .basics import (layout_block, layout_block_begin, layout_call,
+                     layout_quasiquote, layout_quote)
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_switch
 from .define_syntax import (layout_macro_match, layout_macro_rules,
@@ -44,8 +45,11 @@ __all__ = (
     "LayoutHandler",
 
     "layout_block",
-    "layout_begin",
+    "layout_block_begin",
+
     "layout_call",
+    "layout_quote",
+    "layout_quasiquote",
     "layout_class",
     "layout_define_class",
     "layout_dyn_wind",
@@ -61,6 +65,7 @@ __all__ = (
     "layout_while",
     "layout_for_each",
 
+    "apply_layout",
     "apply_layouts",
     "find_layout",
 )
@@ -107,16 +112,17 @@ def apply_layouts(blocks, namespace):
     :return: proper cons list of expanded forms
     """
 
-    out = []
+    result = blocks
 
     while blocks:
         form, tail = blocks
 
-        if is_pair(form) and form.car is _keyword_block:
+        if not form or not is_pair(form):
+            pass
+
+        elif form.car is _keyword_block:
             (head_args, (body_exprs, _)) = form.cdr
             head = head_args.car
-
-            expanded_body = apply_layouts(body_exprs, namespace)
 
             layout_obj = None
             if is_symbol(head):
@@ -140,20 +146,34 @@ def apply_layouts(blocks, namespace):
                     if str(sibling_head.car) not in declared:
                         break
 
-                    peer_body = apply_layouts(sibling_exprs, namespace)
-                    peers.append(cons(sibling_head, peer_body))
-                    tail = tail.cdr
+                    peers.append(cons(sibling_head, sibling_exprs))
+                    tail = blocks.cdr = tail.cdr
 
-            source = cons(head_args, expanded_body)
-            out.append(layout_obj.read(source, peers))
+            block_pos = get_position(form)
 
-            blocks = tail
+            if layout_obj.raw:
+                source = cons(head_args, body_exprs)
+                if block_pos and is_pair(source):
+                    source.set_position(block_pos)
+                blocks.car = layout_obj.read(namespace, source, peers)
+            else:
+                expanded_body = apply_layouts(body_exprs, namespace)
+                expanded_peers = []
+                for peer in peers:
+                    pheader, pbody = peer
+                    expanded_pbody = apply_layouts(pbody, namespace)
+                    expanded_peers.append(cons(pheader, expanded_pbody))
+                source = cons(head_args, expanded_body)
+                if block_pos and is_pair(source):
+                    source.set_position(block_pos)
+                blocks.car = layout_obj.read(namespace, source, expanded_peers)
 
         else:
-            out.append(form)
-            blocks = tail
+            blocks.car = apply_layouts(form, namespace)
 
-    return build_proper(*out)
+        blocks = tail
+
+    return result
 
 
 @builtin('apply-layout')
@@ -167,9 +187,12 @@ def apply_layout(block, namespace):
     :return: the layout form
     """
 
-    if block and is_pair(block) and block.car is _keyword_block:
-        res = apply_layouts(cons(block, nil), namespace)
-        return res.car
+    if block and is_pair(block):
+        if block.car is _keyword_block:
+            res = apply_layouts(cons(block, nil), namespace)
+            return res.car
+        else:
+            return apply_layouts(block, namespace)
     return block
 
 

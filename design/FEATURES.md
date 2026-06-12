@@ -52,7 +52,7 @@ Highlights (not an exhaustive list):
 Indentation-based blocks; heads via `layout/<name>` in the module namespace.
 Implemented handlers include:
 
-`layout/if`, `layout/switch`, `layout/try`, `layout/while`, `layout/for-each`, `layout/dyn-wind`, `layout/class`, `layout/define-class`, `layout/call`, `layout/begin`, `layout/block`, `layout/flat`, `layout/define-syntax`, `layout/extend-syntax`, `layout/syntax-rules`, `layout/macro-rules`, `layout/special-rules`, `layout/syntax-match`, `layout/macro-match`, `layout/special-match`.
+`layout/if`, `layout/switch`, `layout/try`, `layout/while`, `layout/for-each`, `layout/dyn-wind`, `layout/class`, `layout/define-class`, `layout/call`, `layout/block`, `layout/block-begin`, `layout/quote`, `layout/quasiquote`, `layout/syntax-rules`, `layout/macro-rules`, `layout/special-rules`, `layout/syntax-match`, `layout/macro-match`, `layout/special-match`.
 
 Unknown heads fall back to **`layout/block`**. See [LAYOUTS.md](LAYOUTS.md).
 

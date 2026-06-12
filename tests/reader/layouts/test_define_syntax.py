@@ -29,7 +29,6 @@ import pytest
 from koskari.compile.helpers import pycons
 from koskari.exceptions import LayoutError
 from koskari.lib import symbol
-from koskari.reader.layouts.basics import layout_flat
 
 from .. import parse_layout
 
@@ -40,11 +39,7 @@ pytestmark = pytest.mark.phase_infra
 class TestLayoutDefineSyntax(TestCase):
 
     def _assert_layout_parse(self, src, expected):
-        binds = {
-            'layout/define-syntax': layout_flat,
-            'layout/extend-syntax': layout_flat,
-        }
-        result = parse_layout(src, **binds)
+        result = parse_layout(src)
         print('result   :', result)
         print('expected :', expected)
         self.assertEqual(result, expected)
@@ -65,7 +60,7 @@ class TestLayoutDefineSyntax(TestCase):
             (symbol('do-something-with-x'),),
             (symbol('compile/begin'),
              (symbol('print'), 'x and no args', symbol('x')),
-             symbol('x'),),)
+             symbol('x'),))
         rule2 = (
             (symbol('do-something-with-x'), symbol('y')),
             (symbol('compile/begin'),
@@ -93,7 +88,8 @@ class TestLayoutDefineSyntax(TestCase):
         """
         rule1 = (
             (symbol('ref'), (symbol('item'), symbol('obj'), symbol('name')),),
-            (symbol('compile/begin'), (symbol('compile/ref-item'), symbol('obj'), symbol('name')),),)
+            (symbol('compile/begin'),
+             (symbol('compile/ref-item'), symbol('obj'), symbol('name')),))
         expected = pycons(
             (symbol('define-syntax'),
              symbol('m'),
@@ -227,7 +223,7 @@ class TestLayoutDefineSyntax(TestCase):
              symbol('m'),
              (symbol('macro-match'),
               ((symbol('m'), symbol('x')),
-               (symbol('compile/begin'), symbol('x')),))))
+               (symbol('compile/begin'), symbol('x'),)))))
         self._assert_layout_parse(src, expected)
 
 
@@ -243,7 +239,7 @@ class TestLayoutDefineSyntax(TestCase):
              symbol('m'),
              (symbol('special-match'),
               ((symbol('m'), symbol('x')),
-               (symbol('compile/begin'), symbol('x')),))))
+               (symbol('compile/begin'), symbol('x'),)))))
         self._assert_layout_parse(src, expected)
 
 

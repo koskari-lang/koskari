@@ -31,7 +31,7 @@ _symbol_begin = symbol('begin')
 
 @builtin('layout/dyn-wind')
 @layout(symbol('layout/dyn-wind'), peers=(_symbol_before, _symbol_after))
-def layout_dyn_wind(source, peers):
+def layout_dyn_wind(ns, source, peers):
     """
     Lower layout/dyn-wind block with before/body/after peers to
     (compile/dyn-wind [before] [body] [after]) for compilation.

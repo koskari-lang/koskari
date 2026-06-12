@@ -8,5 +8,5 @@
 **`syntax-match`** / **`macro-rules`** / **`special-rules`** / **`special-match`**
 spec (each expansion passes **`NAME`** as the first argument to the builder form).
 
-**Layout:** `define layout/extend-syntax layout/flat`.
+**Layout:** default **`layout/block`** flat splice at read time.
 

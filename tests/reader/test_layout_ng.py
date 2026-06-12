@@ -124,7 +124,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')),
+             symbol('y'),
              )
         )
 
@@ -140,7 +140,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')),
+             symbol('y'),
              )
         )
 
@@ -157,7 +157,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
             (symbol('unknown'),
              keyword('as'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')),
+             symbol('y'),
              )
         )
 
@@ -174,7 +174,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
             (symbol('unknown'),
              keyword('x'),
              symbol('y'),
-             (symbol('compile/begin'), symbol('z')),
+             symbol('z'),
              )
         )
 
@@ -190,7 +190,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              keyword('x'),
-             (symbol('compile/begin'), symbol('z')),
+             symbol('z'),
              )
         )
 
@@ -203,7 +203,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')),
+             symbol('y'),
              )
         )
 
@@ -219,7 +219,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              ((symbol('foo'),), keyword('as'), symbol('x')),
-             (symbol('compile/begin'), symbol('y')),
+             symbol('y'),
              )
         )
 
@@ -282,8 +282,7 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
             (symbol('foo'),
              ((symbol('x'), 1000),
               (symbol('y'), 2000),),
-             (symbol('compile/begin'),
-              (symbol('do_something'), symbol('x'), symbol('y')))
+             (symbol('do_something'), symbol('x'), symbol('y'))
             )
         )
 
@@ -299,8 +298,7 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              ((symbol('foo'),), keyword('as'), symbol('x')),
-             (symbol('compile/begin'), symbol('y')))
-        )
+             symbol('y')))
 
         result = parse_layout_ng(src)
         self.assertEqual(result, expected)
@@ -314,8 +312,7 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              (symbol('foo'), keyword('as'), symbol('x')),
-             (symbol('compile/begin'), symbol('y')))
-        )
+             symbol('y')))
 
         result = parse_layout_ng(src)
         self.assertEqual(result, expected)
@@ -436,7 +433,7 @@ class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
         expected = pycons(
             (cons(symbol('foo'), nil),
              symbol('a'),
-             (symbol('compile/begin'), symbol('y')),
+             symbol('y'),
              )
         )
         self.assertEqual(result, expected)

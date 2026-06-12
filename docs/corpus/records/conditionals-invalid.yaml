@@ -5,7 +5,7 @@ source: |-
   else:
     b
 verify:
-  read: (compile/begin (if (< n 1) a) (else (compile/begin b)))
+  read: (compile/begin (if (< n 1) a) (else b))
   invalid: "surprising layout: line-mode if completes as (if (< n 1) a); else: is not an if peer — reads as (else (compile/begin b)), a call to unbound else, not conditional fallthrough; no LayoutError, runtime error if else is undefined"
 references:
   - reference/layouts/layout-if.md
@@ -27,7 +27,7 @@ source: |-
   elif (== n 1):
     b
 verify:
-  read: (compile/begin (if (< n 1) a) (elif (== n 1) (compile/begin b)))
+  read: (compile/begin (if (< n 1) a) (elif (== n 1) b))
   invalid: "surprising layout: line-mode if completes first; elif: is not an if peer — reads as (elif (== n 1) (compile/begin b)), a call to unbound elif; no LayoutError, runtime error if elif is undefined"
 references:
   - reference/layouts/layout-if.md
@@ -187,7 +187,7 @@ source: |-
   then:
     2
 verify:
-  read: (compile/begin (compile/cond (False 1)) (then (compile/begin 2)))
+  read: (compile/begin (compile/cond (False 1)) (then 2))
   invalid: "surprising layout: then: is not an if peer (only elif and else are collected); reads as separate (then (compile/begin 2)) call to unbound then — not LayoutError invalid peer for if block"
 references:
   - reference/layouts/layout-if.md
@@ -210,7 +210,7 @@ source: |-
   else:
     "other"
 verify:
-  read: (compile/begin (compile/switch x ([1] (compile/begin "one"))) (else (compile/begin "other")))
+  read: (compile/begin (compile/switch x ([1] "one")) (else "other"))
   invalid: "surprising layout: else: at switch indent is not a switch peer or inner clause; switch reads without else arm, then else: is separate (else (compile/begin \"other\")) call to unbound else; no LayoutError — put else: inside switch body"
 references:
   - reference/layouts/layout-switch.md

@@ -6,7 +6,7 @@
 the block head (`while` or `for-each`) and is compiled by `compile/while` or
 `compile/for-each`.
 
-**Behaviour:** Same flat splicing as `layout/flat`: body forms are appended to
+**Behaviour:** Body forms are appended to
 the header list (no `compile/begin` wrapper). Accepts at most one optional peer
 `else`. When present, the else peer body is appended as a final
 `(else: BODY...)` clause (not merged into the main loop body). Rules: only

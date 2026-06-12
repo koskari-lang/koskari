@@ -6,33 +6,53 @@ Per-head read-time lowering for indent-based block syntax. General layout
 s-expression relationship are in
 [Layout and s-expressions](../concepts/layout-and-s-expressions.md).
 
-The `LayoutReader` resolves layout heads from a namespace (`layout/<head>`); handlers live in `koskari/reader/layouts/`. A **`.ki`** module can reuse an existing handler by binding **`layout/<head>`** to another layout name (for example **`define layout/foo layout/flat`** in **`basics.ki`**) instead of adding Python code.
+The `LayoutReader` resolves layout heads from a namespace (`layout/<head>`);
+handlers live in `koskari/reader/layouts/`. A **`.ki`** module can reuse an
+existing handler by binding **`layout/<head>`** to another layout name (for
+example **`define layout/my-head layout/block-begin`**) instead of adding Python
+code.
 
 Block syntax rules are in [Reader and layout syntax](../reader-layout.md).
 
-## `:block:` cons data and `apply_layout`
+## `:block:` conses and layout expansion
 
-Read-time layout handlers turn indented blocks into ordinary list forms. Some compiler paths preserve **`(:block: …)`** cons structure as **data** — notably **`compile/quote-block`**, filled **`compile/quasiquote`** / **`compile/quasiquote-block`** results, and macro templates that intentionally retain blocks.
+Indented blocks are first read as **`:block:`** conses:
 
-**`koskari.reader.layouts`** exports **`find_layout`**, **`apply_layout`** (one primary block), and **`apply_layouts`** (walk a proper spine, consuming declared peers). **`LayoutReader.find_layout`** delegates to the same **`find_layout`** helper. **`koskari.syntax._finalize_macro_output`** calls **`apply_layout`** on macro and **`syntax-rules`** output before hygiene discovery so expansion matches reader layout behaviour.
+```
+(:block: (HEAD ARG ...) (BODY-FORM ...))
+```
 
-**Flat blocks (`layout/flat`) and Ki aliases:** The handler **`layout/flat`**
-splices the indented body into the header list: **`(HEAD ARG … FORM …)`** with no extra wrapper around the body forms. Many block heads only need that shape. In **`koskari/importer/basics.ki`**, **`define layout/define-syntax layout/flat`** and **`define layout/extend-syntax layout/flat`** attach the same handler to
-those heads so **`define-syntax`** and **`extend-syntax`** blocks read as flat **`(define-syntax NAME TRANSFORMER)`** and **`(extend-syntax NAME TRANSFORMER)`** lists. That avoids a dedicated Python layout for those forms and avoids wrapping the transformer in **`compile/begin`** at read time. For any new head with the same “call-like header + body as tail arguments” shape, you can **`define
-layout/<head> layout/flat`** in **`.ki`** instead of implementing a handler in Python.
+**`LayoutReader.read()`** expands those conses through
+**`koskari.reader.layouts`**: **`apply_layout`** for a single block,
+**`apply_layouts`** for a primary block plus stream-collected peer blocks on one
+spine. Each call looks up **`layout/<head>`** in the module namespace (then
+builtins) and invokes the handler as **`read(namespace, source, peers)`**.
+
+Unknown symbol heads use the default **`layout/block`** handler (flat splice).
+See [layout/block](layout-block-default.md). Opt-in **`compile/begin`** wrapping
+uses [layout/block-begin](layout-block-begin.md).
+
+Some paths preserve **`:block:`** structure as data instead of expanding it —
+quoted and quasiquoted blocks (via **`layout/quote`** and
+**`layout/quasiquote`**), and macro templates that retain blocks. Macro and
+**`syntax-rules`** output is finalized through
+**`koskari.syntax._finalize_macro_output`**, which calls **`apply_layout`**
+before hygiene discovery so expansion matches reader layout behaviour.
 
 ## Adding new layouts
 
 1. When a block only needs flat splicing (header forms followed by body forms in
-   one list), prefer **`define layout/<head> layout/flat`** in **`.ki`** — the
-   same pattern as **`layout/define-syntax`** and **`layout/extend-syntax`** in
-   **`basics.ki`**.
-2. Otherwise implement a handler with signature **`(source, peers)`** in the
-   appropriate module under **`koskari/reader/layouts/`**, decorate with
+   one list), no dedicated handler is required — the default **`layout/block`**
+   applies when no **`layout/<head>`** is registered.
+2. When the body must be wrapped in **`compile/begin`**, add
+   **`define layout/<head> layout/block-begin`** in **`.ki`**, or implement a
+   custom handler.
+3. Otherwise implement a handler with signature **`(namespace, source, peers)`**
+   in the appropriate module under **`koskari/reader/layouts/`**, decorate with
    **`@layout(symbol('layout/head'), peers=(...))`** when peer blocks are
    needed, and register the handler in the layout namespace (builtins or module
    globals).
-3. Add a handler page under **`docs/reference/layouts/`** documenting syntax,
+4. Add a handler page under **`docs/reference/layouts/`** documenting syntax,
    read shape, and peers.
 
 ```{toctree}

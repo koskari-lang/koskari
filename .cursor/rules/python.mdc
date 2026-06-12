@@ -7,7 +7,7 @@ alwaysApply: true
 - Favor pure functions for stateless transformations; introduce classes only for objects with mutable behavior or identity.
 - Never create classes solely as namespaces for static helpers.
 - Use `setup.py` only as a minimal `setup()` invocation; place package configuration, `tox`, `flake8`, and `pytest` settings inside `setup.cfg`.
-- Do not add `pyproject.toml`, Poetry files, or Black configuration; these tools are disallowed.
+- Poetry files, or Black configuration; these tools are disallowed.
 - Adopt `tox` as the orchestration entry point for linting and tests.
 - New Python modules must begin with the GPLv3 short-form comment, followed by a blank line and a module docstring that includes:
   - Module name and a short description

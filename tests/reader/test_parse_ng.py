@@ -346,8 +346,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')))
-        )
+             symbol('y')))
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)
 
@@ -375,10 +374,9 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'),
-              (symbol('bar'),
-               symbol('y'),
-               (symbol('compile/begin'), symbol('z')))))
+             (symbol('bar'),
+              symbol('y'),
+              symbol('z')))
         )
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)
@@ -440,8 +438,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), symbol('y')))
-        )
+             symbol('y')))
         self.assertEqual(result, expected)
 
 

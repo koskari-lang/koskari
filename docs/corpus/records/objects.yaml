@@ -540,7 +540,7 @@ source: |-
     define bump [self]:
       (set-attr self n (+ (compile/attr self n) 1))
 verify:
-  read: "(compile/define-class Counter () (compile/begin (define n 0) (define bump [self] (compile/begin (set-attr self n (+ (compile/attr self n) 1))))))"
+  read: "(compile/define-class Counter () (compile/begin (define n 0) (define bump [self] (set-attr self n (+ (compile/attr self n) 1)))))"
 references:
   - reference/layouts/layout-define-class.md
   - reference/macros/compile-define-class.md

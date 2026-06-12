@@ -574,7 +574,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         """
 
         block = _make_block((symbol('begin'),), (42,))
-        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        source = cons(symbol('compile/quasiquote'), block, nil)
         intermediate, _, _, _ = await self.compile_cons_to_source(source)
 
         self.assertTrue(is_pair(intermediate))
@@ -598,7 +598,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
 
         unquote_x = cons(symbol('compile/unquote'), symbol('x'), nil)
         block = _make_block((symbol('begin'),), (unquote_x,))
-        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        source = cons(symbol('compile/quasiquote'), block, nil)
         intermediate, _, _, _ = await self.compile_cons_to_source(source, x=99)
 
         self.assertTrue(is_pair(intermediate))
@@ -618,7 +618,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
 
         splice = cons(symbol('compile/unquote-splicing'), symbol('forms'), nil)
         block = _make_block((symbol('begin'),), (splice,))
-        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        source = cons(symbol('compile/quasiquote'), block, nil)
         forms = cons(10, 20, nil)
         intermediate, _, _, _ = await self.compile_cons_to_source(source, forms=forms)
 
@@ -648,7 +648,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         """
 
         block = _make_block((symbol('begin'),), (42,))
-        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        source = cons(symbol('compile/quasiquote'), block, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(source)
         result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 42)
@@ -661,7 +661,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
 
         unquote_x = cons(symbol('compile/unquote'), symbol('x'), nil)
         block = _make_block((symbol('begin'),), (unquote_x,))
-        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        source = cons(symbol('compile/quasiquote'), block, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, x=99)
         result = await self.run_source(intermediate, module, mod_ns, compiler)
@@ -675,7 +675,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
 
         splice = cons(symbol('compile/unquote-splicing'), symbol('forms'), nil)
         block = _make_block((symbol('begin'),), (splice,))
-        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        source = cons(symbol('compile/quasiquote'), block, nil)
         forms = cons(1, 2, 3, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, forms=forms)
@@ -692,7 +692,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         if_block = _make_block((symbol('if'), unquote_cond), (1,))
         else_block = _make_block((symbol('else'),), (2,))
         outer = _make_block((symbol('begin'),), (if_block, else_block))
-        source = cons(symbol('compile/quasiquote-block'), outer, nil)
+        source = cons(symbol('compile/quasiquote'), outer, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, cond=True)
         result = await self.run_source(intermediate, module, mod_ns, compiler)
@@ -708,7 +708,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         if_block = _make_block((symbol('if'), unquote_cond), (1,))
         else_block = _make_block((symbol('else'),), (2,))
         outer = _make_block((symbol('begin'),), (if_block, else_block))
-        source = cons(symbol('compile/quasiquote-block'), outer, nil)
+        source = cons(symbol('compile/quasiquote'), outer, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, cond=False)
         result = await self.run_source(intermediate, module, mod_ns, compiler)

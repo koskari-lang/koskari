@@ -15,9 +15,8 @@
 Tests for koskari.reader.layouts.conditionals layout_switch
 
 Switch / case / else block syntax parsing. Inner case and else blocks
-are read by the default layout/block, so layout_switch sees children
-shaped (case COND (compile/begin BODY...)) and (else (compile/begin
-BODY...)).
+are read by the default layout/block, which splices body forms after
+the header.
 """
 
 
@@ -36,7 +35,6 @@ pytestmark = pytest.mark.phase_infra
 
 
 _symbol_switch = symbol('compile/switch')
-_compile_begin = symbol('compile/begin')
 _keyword_else = keyword('else')
 
 
@@ -55,9 +53,9 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_symbol_switch, symbol('x'),
-             (cons(1, nil), (_compile_begin, "one")),
-             (cons(2, nil), (_compile_begin, "two")),
-             (_keyword_else, (_compile_begin, "meh")))
+             (cons(1, nil), "one"),
+             (cons(2, nil), "two"),
+             (_keyword_else, "meh"))
         )
 
         result = parse_layout(src)
@@ -79,8 +77,8 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_symbol_switch, symbol('x'),
-             (cons(1, nil), (_compile_begin, "one")),
-             (cons(2, nil), (_compile_begin, "two")))
+             (cons(1, nil), "one"),
+             (cons(2, nil), "two"))
         )
 
         result = parse_layout(src)
@@ -100,7 +98,7 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_symbol_switch, symbol('x'),
-             (_keyword_else, (_compile_begin, "meh")))
+             (_keyword_else, "meh"))
         )
 
         result = parse_layout(src)
@@ -124,9 +122,9 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_symbol_switch, symbol('x'),
-             (cons(1, nil), (_compile_begin, (symbol('foo'),), (symbol('bar'),))),
+             (cons(1, nil), (symbol('foo'),), (symbol('bar'),)),
              (_keyword_else,
-              (_compile_begin, (symbol('baz'),), (symbol('qux'),))))
+              (symbol('baz'),), (symbol('qux'),)))
         )
 
         result = parse_layout(src)
@@ -183,16 +181,6 @@ class TestLayoutSwitchValidation(IsolatedAsyncioTestCase):
         switch x:
           case 1 2:
             "one"
-        """
-
-        self.assertRaises(LayoutError, parse_layout, src)
-
-
-    async def test_switch_else_with_args(self):
-        src = """
-        switch x:
-          else x:
-            "meh"
         """
 
         self.assertRaises(LayoutError, parse_layout, src)

@@ -12,7 +12,7 @@ This directory documents the language-level features of Koskari, including synta
 - **unified-matcher-transformer-model.md**: Shared Matcher IR and transformer pipeline for `define-syntax`, `macro-rules`, specials, and post-expand hygiene/unbox
 - **syntax.md**: Syntax elements, literals, and parsing rules
 - **Layout syntax (user docs):** [docs/reference/reader-layout.md](../docs/reference/reader-layout.md), [docs/reference/concepts/layout-and-s-expressions.md](../docs/reference/concepts/layout-and-s-expressions.md); archived drafts in [archive/layout-syntax.md](../archive/layout-syntax.md), [archive/layout-syntax-formal.md](../archive/layout-syntax-formal.md)
-- **flat-layout-default.md**: Proposed default fallback change (`layout/block` → `layout/flat`)
+- **flat-layout-default.md**: Default **`layout/block`** flat splice and read pipeline
 - **control-flow.md**: Control flow constructs (loops, conditionals, exceptions)
 - **functions.md**: Function definition and calling conventions
 - **async.md**: Async/await and coroutine features

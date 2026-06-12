@@ -33,7 +33,7 @@ _keyword_else = keyword('else')
 
 @builtin('layout/if')
 @layout(symbol('layout/if'), peers=(_symbol_elif, _symbol_else))
-def layout_if(source, peers):
+def layout_if(ns, source, peers):
     """
     Lower if/elif/else block sources to compile/cond for compilation.
 
@@ -99,7 +99,7 @@ def layout_if(source, peers):
 
 @builtin('layout/switch')
 @layout(symbol('layout/switch'))
-def layout_switch(source, peers):
+def layout_switch(ns, source, peers):
     """
     Lower a switch block source into a flat switch form for compilation
 
@@ -115,14 +115,13 @@ def layout_switch(source, peers):
         (print "other")
 
     The inner case and else children are read by the default layout/block,
-    which produces forms shaped (case COMP (compile/begin BODY...)) and
-    (else (compile/begin BODY...)). This handler walks the switch body,
-    validates each child shape, and emits
+    which splices body forms after the header. This handler walks the switch
+    body, validates each child shape, and emits
 
         (switch VALUE
-          ([COMP...]  (compile/begin BODY...))
+          ([COMP...]  BODY...)
           ...
-          (else: (compile/begin BODY...)))
+          (else: BODY...))
 
     :param source: ((switch VALUE) . BODY) pair
     :param peers: must be empty
@@ -160,22 +159,26 @@ def layout_switch(source, peers):
                 raise LayoutError(
                     'case cannot follow else',
                     get_position(form))
-            if len(rest_parts) != 2:
+            if len(rest_parts) < 2:
                 raise LayoutError(
                     'case requires condition list and body',
                     get_position(form))
-            clauses.append(form.cdr)
+            if not is_pair(rest_parts[0]):
+                raise LayoutError(
+                    'case condition must be a bracketed list of values',
+                    get_position(form))
+            clauses.append(cons(*rest_parts, nil))
 
         elif head is _symbol_else:
             if saw_else:
                 raise LayoutError(
                     'multiple else clauses are not allowed',
                     get_position(form))
-            if len(rest_parts) != 1:
+            if not rest_parts:
                 raise LayoutError(
-                    'else block does not take arguments',
+                    'else block requires a body',
                     get_position(form))
-            clauses.append(cons(_keyword_else, rest_parts[0], nil))
+            clauses.append(cons(_keyword_else, *rest_parts, nil))
             saw_else = True
 
         else:

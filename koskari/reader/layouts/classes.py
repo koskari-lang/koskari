@@ -27,7 +27,7 @@ from .helpers import layout
 
 @builtin('layout/class')
 @layout(symbol('layout/class'))
-def layout_class(source, peers):
+def layout_class(ns, source, peers):
     """
     Lower class block to (compile/class NAME SUPERS (compile/begin BODY)).
     SUPERS may be omitted; when missing, use nil.
@@ -64,7 +64,7 @@ def layout_class(source, peers):
 
 @builtin('layout/define-class')
 @layout(symbol('layout/define-class'))
-def layout_define_class(source, peers):
+def layout_define_class(ns, source, peers):
     """
     Lower define-class block to (compile/define-class NAME SUPERS (compile/begin BODY)).
     SUPERS may be omitted; when missing, use nil.

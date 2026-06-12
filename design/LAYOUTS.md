@@ -9,8 +9,8 @@ Layouts are registered via the `layout` decorator and collected in `LAYOUTS`.
 The `LayoutReader` resolves layout heads from a namespace (`layout/<head>`);
 handlers live in `koskari/reader/layouts/`. A **`.ki`** module can reuse an
 existing handler by binding **`layout/<head>`** to another layout name (for
-example **`define layout/foo layout/flat`** in **`basics.ki`**) instead of adding
-Python code.
+example **`define layout/foo layout/block-begin`**) instead of adding Python
+code.
 
 
 ## Blocks
@@ -24,60 +24,43 @@ Agent summary:
 
 - **Layout block:** header + structural `:` + **mandatory newline** + indented body
 - **Layout line:** depth-0 line without structural trailing `:`; multiple forms fold to `(first . rest…)` when implicit calls are enabled (any first form, not symbol-only)
-- **Default fallback:** unknown heads use **`layout/block`** → `(HEAD ARG … (compile/begin BODY …))`
-- **Flat proposal (not implemented):** [language/flat-layout-default.md](language/flat-layout-default.md)
+- **Parse IR:** colon blocks → **`(:block: (HEAD ARG …) (BODY …))`**; stream peers → spine of **`:block:`** conses
+- **Expand:** **`LayoutReader.read()`** → **`apply_layout`** / **`apply_layouts`**; handlers **`read(namespace, source, peers)`**
+- **Default fallback:** unknown heads → **`layout/block`** → **`(HEAD ARG … BODY …)`** (flat splice)
+- **Opt-in begin wrap:** **`layout/block-begin`** → **`(HEAD ARG … (compile/begin BODY …))`**
 
-## `:block:` cons data and `apply_layout`
+## `:block:` conses and layout expansion
 
-Read-time layout handlers turn indented blocks into ordinary list forms. Some
-compiler paths preserve **`(:block: …)`** cons structure as **data** — notably
-**`compile/quote-block`**, filled **`compile/quasiquote`** / **`compile/quasiquote-block`**
-results, and macro templates that intentionally retain blocks.
+Colon blocks parse as **`:block:`** conses. **`LayoutReader.read()`** expands
+them through **`koskari.reader.layouts`**:
 
-**`koskari.reader.layouts`** exports **`find_layout`**, **`apply_layout`** (one
-primary block), and **`apply_layouts`** (walk a proper spine, consuming declared
-peers). **`LayoutReader.find_layout`** delegates to the same **`find_layout`**
-helper. **`koskari.syntax._finalize_macro_output`** calls **`apply_layout`** on
-macro and **`syntax-rules`** output before hygiene discovery so expansion matches
-reader layout behaviour. See [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block
-and [MACROS.md](MACROS.md).
+- **`apply_layout(block, namespace)`** — one **`:block:`** cons
+- **`apply_layouts(spine, namespace)`** — proper list spine; declared peer
+  **`:block:`** siblings after each primary are consumed and passed to the
+  handler
 
-**Flat blocks (`layout/flat`) and Ki aliases:** The handler **`layout/flat`**
-splices the indented body into the header list: **`(HEAD ARG … FORM …)`** with
-no extra wrapper around the body forms. Many block heads only need that shape.
-In **`koskari/importer/basics.ki`**, **`define layout/define-syntax layout/flat`**
-and **`define layout/extend-syntax layout/flat`** attach the same handler to
-those heads so **`define-syntax`** and **`extend-syntax`** blocks read as flat
-**`(define-syntax NAME TRANSFORMER)`** and **`(extend-syntax NAME TRANSFORMER)`**
-lists. That avoids a dedicated Python layout for those forms and avoids wrapping
-the transformer in **`compile/begin`** at read time. For any new head with the
-same “call-like header + body as tail arguments” shape, you can **`define
-layout/<head> layout/flat`** in **`.ki`** instead of implementing a handler in
-Python (see **Adding New Layouts** below).
+**`LayoutReader.read_form`** returns raw **`:block:`** (or a spine for peer
+groups). **`read()`** performs expansion. Quote and quasiquote block prefixes
+set **`_block_mode`** so nested colons stay raw until **`layout/quote`** /
+**`layout/quasiquote`** unbox at expansion.
+
+Some compiler paths preserve **`:block:`** as data — quoted blocks,
+**`compile/quasiquote-block`**, and macro templates. **`koskari.syntax._finalize_macro_output`**
+calls **`apply_layout`** on macro and **`syntax-rules`** output before hygiene.
+See [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block and [MACROS.md](MACROS.md).
+
+User-facing normative syntax: [docs/reference/reader-layout.md](../docs/reference/reader-layout.md).
 
 
-## layout/flat
+## layout/block (default)
 
-**Symbol:** `layout/flat`
+**Symbol:** `layout/block`
 
-**Use-case:** Block syntax where the read result should be a single list: the
-header forms followed by every body form, with no extra structure between them.
-Used as the implementation for **`layout/begin`** (same handler object) and as
-the target of **`define layout/… layout/flat`** aliases in **`basics.ki`**
-(**`layout/define-syntax`**, **`layout/extend-syntax`**).
+**Use-case:** Default when **`apply_layout`** / **`apply_layouts`** finds no
+**`layout/<head>`** for the block head. Head symbol is preserved.
 
-**Behaviour:** Does not accept peers. **`source`** is **`(header . body)`** as
-for other layouts; the handler extends the header list with the body list and
-returns it. Example: header **`(foo x)`** and body **`(bar baz)`** yields
-**`(foo x bar baz)`**.
-
-**Syntax:**
-
-```
-HEAD ARG ... :
-  BODY-FORM
-  ...
-```
+**Behaviour:** Splices body onto header: **`(HEAD ARG … BODY-FORM …)`**. No
+peers.
 
 **Examples:**
 
@@ -86,81 +69,26 @@ foo x:
   bar
   baz
 ;; → (foo x bar baz)
-```
 
-**Implementation:** `koskari/reader/layouts/basics.layout_flat`
-
-
-## layout/block (default)
-
-**Symbol:** `layout/block`
-
-**Use-case:** The default layout for blocks whose head has no dedicated
-**`layout/<head>`** handler in the namespace. The reader still dispatches to the
-handler registered as **`layout/block`**, passing the same **`source`** pair
-(**header** plus **body** list) that a named layout would receive; the head is
-**not** rewritten to **`layout/block`** first.
-
-**Behaviour:** Produces `(HEAD ARGS (compile/begin BODY))`. The body is wrapped
-in `compile/begin` for sequential evaluation. Does not accept peers.
-
-**Syntax:**
-
-```
-HEAD ARG ... :
-  BODY-FORM
-  ...
-```
-
-**Examples:**
-
-```scheme
-;; foo x: ... → (foo x (compile/begin ...))
-foo x:
-  bar
-  baz
-
-;; unknown x: ... → (unknown x (compile/begin ...))
-unknown x:
-  (print x)
+begin:
+  (bar)
+  (baz)
+;; → (begin (bar) (baz))
 ```
 
 **Implementation:** `koskari/reader/layouts/basics.layout_block`
 
 
-## layout/begin
+## layout/block-begin
 
-**Symbol:** `layout/begin`
+**Symbol:** `layout/block-begin`
 
-**Use-case:** A block whose head is **`begin`** (or **`layout/begin`** when
-spelled that way): read as a flat list **`(begin FORM …)`** so the body forms
-sit directly after **`begin`**, not inside **`compile/begin`**. Useful for an
-indented sequence of forms at the same level as a surrounding expression.
+**Use-case:** Opt-in **`compile/begin`** wrap. Bind with
+**`define layout/<head> layout/block-begin`** in **`.ki`**.
 
-**Behaviour:** Same handler as **`layout/flat`** (registered under the
-**`layout/begin`** name). Does not accept peers. Produces **`(begin BODY-FORM
-…)`**.
+**Behaviour:** **`(HEAD ARG … (compile/begin BODY …))`**. No peers.
 
-**Syntax:**
-
-```
-begin:
-  FORM
-  ...
-```
-
-**Examples:**
-
-```scheme
-begin:
-  (bar)
-  (baz)
-
-;; → (begin (bar) (baz))
-```
-
-**Implementation:** `koskari/reader/layouts/basics` (`layout_begin` is the same
-callable as **`layout_flat`**)
+**Implementation:** `koskari/reader/layouts/basics.layout_block_begin`
 
 
 ## layout/call
@@ -361,8 +289,8 @@ else:
 the block head (`while` or `for-each`) and is compiled by `compile/while` or
 `compile/for-each`.
 
-**Behaviour:** Same flat splicing as `layout/flat`: body forms are appended to
-the header list (no `compile/begin` wrapper). Accepts at most one optional peer
+**Behaviour:** Body forms are appended to the header list (flat splice via
+default **`layout/block`** on inner heads where applicable). Accepts at most one optional peer
 `else`. When present, the else peer body is appended as a final
 `(else: BODY...)` clause (not merged into the main loop body). Rules: only
 `else` is allowed as a peer; `else` takes no arguments; at most one `else` peer.
@@ -415,19 +343,10 @@ clause lists consumed by `compile/switch`.
 **Behaviour:** Does not accept peers. Header must be exactly
 `switch VALUE:` (one value expression). Inner `case` and `else` blocks are
 left as default block layouts (no dedicated `layout/case` or `layout/else`).
-So children are read first by `layout/block` as:
+Inner `case` and `else` children are expanded by default **`layout/block`**
+(flat splice). `layout/switch` validates each child and emits clause lists:
 
-- `case COND:` -> `(case COND (compile/begin BODY...))`
-- `else:` -> `(else (compile/begin BODY...))`
-
-`layout/switch` validates and rewrites those child forms into:
-
-- case clause: `(COND-LIST (compile/begin BODY...))`
-- else clause: `(else: (compile/begin BODY...))`
-
-It then returns:
-
-`(switch VALUE (COND-LIST (compile/begin ...)) ... (else: (compile/begin ...)))`
+`(switch VALUE (COND-LIST BODY...) ... (else: BODY...))`
 
 Rules:
 
@@ -461,15 +380,12 @@ switch x:
     "two-or-three"
   else:
     "meh"
-;; -> (switch x
-;;      ([1] (compile/begin "one"))
-;;      ([2 3] (compile/begin "two-or-three"))
-;;      (else: (compile/begin "meh")))
+;; -> (switch x ([1] "one") ([2 3] "two-or-three") (else: "meh"))
 
 switch x:
   case [1]:
     "one"
-;; -> (switch x ([1] (compile/begin "one")))
+;; -> (switch x ([1] "one"))
 ```
 
 **Implementation:** `koskari/reader/layouts/conditionals.layout_switch`
@@ -702,17 +618,13 @@ macro-match:
 
 **Symbol:** `layout/define-syntax`
 
-**Use-case:** Block surface syntax for **`define-syntax`**. In the full builtins
-environment, **`basics.ki`** defines **`define layout/define-syntax layout/flat`**, so
-this head uses the same splicing behaviour as **`layout/flat`**: the read result
-is **`(define-syntax NAME TRANSFORMER …)`** with the transformer form(s) from the
-indented body inlined after **`NAME`**, not wrapped in an extra **`compile/begin`**
-at the block level.
+**Use-case:** Block surface syntax for **`define-syntax`**. With no dedicated
+handler registered, default **`layout/block`** splices the transformer after the
+name: **`(define-syntax NAME TRANSFORMER …)`**.
 
-**Behaviour:** Implemented only as that **`layout/flat`** alias in **`basics.ki`**.
-Transformer choice and validation happen in the **`compile/define-syntax`** macro
-at compile time (see **compile/define-syntax** in [MACROS.md](MACROS.md)). Does not
-accept peers.
+**Behaviour:** Transformer choice and validation happen in the
+**`compile/define-syntax`** macro at compile time (see **compile/define-syntax**
+in [MACROS.md](MACROS.md)). Does not accept peers.
 
 **Syntax:**
 
@@ -746,7 +658,7 @@ define-syntax do-something-with-x:
 ;;       ((do-something-with-x y) (compile/begin (print "x and one arg" x y) (+ x y)))))
 ```
 
-**Implementation:** `koskari/importer/basics.ki` (**`define layout/define-syntax layout/flat`**); handler code in **`koskari/reader/layouts/basics.layout_flat`**.
+**Implementation:** default **`layout/block`** (`koskari/reader/layouts/basics.layout_block`)
 
 **Tests:** `tests/reader/layouts/test_define_syntax.py`
 
@@ -755,12 +667,10 @@ define-syntax do-something-with-x:
 
 **Symbol:** `layout/extend-syntax`
 
-**Use-case:** Block surface syntax for **`extend-syntax`**, wired the same way as
-**`layout/define-syntax`**: **`basics.ki`** has **`define layout/extend-syntax layout/flat`**, so the read result is **`(extend-syntax NAME TRANSFORMER …)`** with no
-extra **`compile/begin`** wrapper around the transformer at read time.
+**Use-case:** Block surface syntax for **`extend-syntax`**. Default **`layout/block`**
+splices the transformer: **`(extend-syntax NAME TRANSFORMER …)`**.
 
-**Behaviour:** Same **`layout/flat`** splicing as documented under **layout/flat**
-above. Compile-time behaviour is **`compile/extend-syntax`** (see
+**Behaviour:** Compile-time behaviour is **`compile/extend-syntax`** (see
 **compile/extend-syntax** in [MACROS.md](MACROS.md)). Does not accept peers.
 
 **Syntax:**
@@ -772,14 +682,15 @@ extend-syntax NAME:
       TEMPLATE...
 ```
 
-**Implementation:** `koskari/importer/basics.ki` (**`define layout/extend-syntax layout/flat`**); **`koskari/reader/layouts/basics.layout_flat`**.
+**Implementation:** default **`layout/block`** (`koskari/reader/layouts/basics.layout_block`)
 
 
 ## Peers
 
-Some layouts declare **peer** block heads. After reading the main block's body,
+Some layouts declare **peer** block heads. After parsing the primary block body,
 the reader checks for sibling blocks at the same indent whose head matches one
-of the declared peers. These are gathered contiguously and passed to the layout
+of the declared peers. These are gathered as **`:block:`** conses on a spine and
+expanded with the primary through **`apply_layouts`**, then passed to the
 handler as the `peers` argument.
 
 `layout/if` declares `peers=(elif, else)`, so `elif` and `else` blocks at the
@@ -792,14 +703,12 @@ Layouts without peers receive an empty list.
 
 ## Adding New Layouts
 
-1. Implement a handler with signature `(reader, source, peers)` in the
-   appropriate module under `koskari/reader/layouts/`, **unless** the block only
-   needs flat splicing (header forms followed by body forms in one list). In
-   that case, prefer **`define layout/<head> layout/flat`** in **`.ki`** (same
-pattern as **`layout/define-syntax`** / **`layout/extend-syntax`** in
-**`basics.ki`**; see **Adding New Layouts** below).
-2. Decorate with `@layout(symbol('layout/head'), peers=(...))` if the layout
-   has peer blocks (Python handlers only).
-3. Register the handler in the layout namespace (e.g. via `LAYOUTS` for tests,
-   or the module / builtins namespace for production).
-4. Add a section to this document.
+1. Flat splicing only (header followed by body forms in one list): no handler
+   needed — default **`layout/block`** applies.
+2. **`compile/begin`** wrap: **`define layout/<head> layout/block-begin`** in
+   **`.ki`**, or implement a custom handler.
+3. Otherwise implement **`read(namespace, source, peers)`** under
+   `koskari/reader/layouts/`, decorate with `@layout(symbol('layout/head'),
+   peers=(...))` when peer blocks are needed, and register in the layout
+   namespace.
+4. Add a section to this document and a page under `docs/reference/layouts/`.
