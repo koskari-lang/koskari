@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "python3 .cursor/hooks/git-readonly.py",
+        "matcher": "git",
+        "failClosed": true
+      }
+    ]
+  }
+}
