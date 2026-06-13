@@ -131,8 +131,8 @@ Third-party apps can ship pip-installable CLI commands whose sources stay in
 | Piece | Role |
 | ----- | ---- |
 | **`koskari_scripts`** entry point group | Author declares **`name = module:callable`** (e.g. **`koslife = koslife.cli:main`**) |
-| **`koskari.extras.setuptools`** | Build-time plugin: mirror each name into **`console_scripts`** as **`koskari.launcher:dispatch`**, add **`*.ki`** / **`*.kio`** to **`package_data`** for author-declared **`packages=`**, set **`zip_safe = False`** |
-| **`koskari.launcher`** | Runtime: **`dispatch()`** resolves **`koskari_scripts`** by script basename, runs target under **`drive_async_loop`** + async module load |
+| **`koskari.extras.setuptools`** | Build-time plugin: mirror each name into **`console_scripts`**, patch **`ScriptWriter`** for dist-scoped stubs, add **`*.ki`** / **`*.kio`** to **`package_data`** for author-declared **`packages=`**, set **`zip_safe = False`** |
+| **`koskari.launcher`** | Runtime: **`run_resolved_script(spec, name)`** resolves one distribution's **`koskari_scripts`** metadata, runs target under **`drive_async_loop`** + async module load |
 | **`koskari.importer.import_module_async`** | Async **`.ki`** / **`.kio`** import path for hosted scripts |
 
 **Author metadata:** declare **`packages=`** explicitly; list **`koskari`** in
@@ -152,7 +152,7 @@ User-facing recipe (no **`design/`** links from user docs):
 **`docs/patterns/recipes/packaging-installed-scripts.md`**.
 
 **Deferred:** end-to-end pip-install integration test; native **`koskari`**
-binary / koskari shebang **`ScriptWriter`**.
+binary / koskari shebang for installed commands.
 
 ### Continuations (summary)
 

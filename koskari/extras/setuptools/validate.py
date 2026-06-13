@@ -24,11 +24,13 @@ Validation helpers for koskari_scripts distribution metadata.
 
 import warnings
 
-from .errors import KoskariScriptsSetupError
+from setuptools.errors import SetupError
+
 from ...launcher import KOSKARI_SCRIPTS_GROUP, parse_entry_target
 
 
 __all__ = (
+    'KoskariScriptsSetupError',
     'entry_points_group_lines',
     'entry_points_lines_as_dict',
     'parse_entry_point_line',
@@ -36,6 +38,12 @@ __all__ = (
     'validate_koskari_scripts',
     'warn_koskari_scripts_metadata',
 )
+
+
+class KoskariScriptsSetupError(SetupError):
+    """
+    Invalid or conflicting koskari_scripts packaging metadata
+    """
 
 
 def entry_points_lines_as_dict(entry_points):
@@ -102,14 +110,14 @@ def parse_entry_point_line(line):
     line = line.strip()
     if not line or '=' not in line:
         raise KoskariScriptsSetupError(
-            'invalid entry point line %r' % (line,))
+            f'invalid entry point line {line!r}')
 
     name, value = line.split('=', 1)
     name = name.strip()
     value = value.strip()
     if not name or not value:
         raise KoskariScriptsSetupError(
-            'invalid entry point line %r' % (line,))
+            f'invalid entry point line {line!r}')
 
     return name, value
 
@@ -154,8 +162,7 @@ def validate_koskari_scripts(dist):
 
     if len(koskari_names) != len(set(koskari_names)):
         raise KoskariScriptsSetupError(
-            'duplicate names in koskari_scripts: %r'
-            % (koskari_names,))
+            f'duplicate names in koskari_scripts: {koskari_names!r}')
 
     console_names = set()
     for line in console_lines:
@@ -166,7 +173,7 @@ def validate_koskari_scripts(dist):
     if overlap:
         raise KoskariScriptsSetupError(
             'koskari_scripts names must not also appear in console_scripts:'
-            ' %s' % (', '.join(overlap),))
+            f' {", ".join(overlap)}')
 
 
 def warn_koskari_scripts_metadata(dist):

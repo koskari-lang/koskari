@@ -24,7 +24,6 @@ Domain and the koskari asyncio host without per-app Python shims.
 """
 
 
-import inspect
 import sys
 from importlib import metadata
 from os.path import basename
@@ -34,16 +33,16 @@ from koskari.lib import Domain, drive_async_loop
 
 
 KOSKARI_SCRIPTS_GROUP = 'koskari_scripts'
-DISPATCH_TARGET = 'koskari.launcher:dispatch'
+MIRROR_CONSOLE_TARGET = 'koskari.launcher:run_resolved_script'
 
 
 __all__ = (
-    'DISPATCH_TARGET',
     'KOSKARI_SCRIPTS_GROUP',
-    'dispatch',
+    'MIRROR_CONSOLE_TARGET',
     'hosted_run',
     'parse_entry_target',
-    'run_entry',
+    'resolve_koskari_script_value',
+    'run_resolved_script',
     'run_target',
     'script_name_from_argv',
 )
@@ -125,55 +124,79 @@ def parse_entry_target(value):
     return module_name, callable_name
 
 
-def _resolve_koskari_script_entry(name):
+def _koskari_script_entry_points(dist):
     """
-    Look up a koskari_scripts entry point by script name
+    Yield koskari_scripts entry points declared on one distribution
 
-    :param name: console script basename
-    :return: entry point value string (module:callable)
-    :raises EntryNotFoundError: when no matching entry exists
+    :param dist: importlib.metadata.Distribution instance
     """
+
+    eps = dist.entry_points
+    if hasattr(eps, 'select'):
+        return eps.select(group=KOSKARI_SCRIPTS_GROUP)
+    return [ep for ep in eps if ep.group == KOSKARI_SCRIPTS_GROUP]
+
+
+def resolve_koskari_script_value(spec, name):
+    """
+    Resolve a koskari_scripts entry value from one installed distribution
+
+    Reads packaging metadata only; does not load the target callable.
+
+    :param spec: distribution spec string (distname==version)
+    :param name: koskari_scripts entry name / installed command basename
+    :return: entry point value string (module:callable)
+    :raises EntryNotFoundError: when spec or entry is missing
+    """
+
+    dist_name, sep, _version = spec.partition('==')
+    dist_name = dist_name.strip()
+    if not dist_name:
+        raise EntryNotFoundError(
+            'invalid distribution spec for koskari_scripts %r: %r'
+            % (name, spec))
+
+    try:
+        dist = metadata.distribution(dist_name)
+    except metadata.PackageNotFoundError:
+        raise EntryNotFoundError(
+            'no installed distribution %r for koskari_scripts command %r'
+            % (dist_name, name))
+
+    if sep and _version.strip():
+        dist_version = dist.version
+        if dist_version != _version.strip():
+            raise EntryNotFoundError(
+                'distribution %r version mismatch for koskari_scripts %r: '
+                'expected %r, found %r'
+                % (dist_name, name, _version.strip(), dist_version))
 
     matches = []
-    for ep in metadata.entry_points(group=KOSKARI_SCRIPTS_GROUP):
+    for ep in _koskari_script_entry_points(dist):
         if ep.name == name:
             matches.append(ep)
 
     if not matches:
         raise EntryNotFoundError(
-            'no koskari_scripts entry for command %r' % (name,))
+            'no koskari_scripts entry %r in distribution %r'
+            % (name, dist_name))
 
     if len(matches) > 1:
         raise EntryNotFoundError(
-            'multiple koskari_scripts entries for command %r' % (name,))
+            'multiple koskari_scripts entries for command %r in %r'
+            % (name, dist_name))
 
     return matches[0].value
 
 
-def _invoke_entry_callable(fn, argv):
+def _isawaitable(obj):
     """
-    Call an entry callable with argv when its signature accepts it
-
-    :param fn: callable loaded from the target module
-    :param argv: sys.argv-style list for the script
-    :return: callable result, possibly awaitable
+    Return True when obj looks like an awaitable coroutine result
     """
 
-    try:
-        sig = inspect.signature(fn)
-    except (TypeError, ValueError):
-        sig = None
-
-    if sig is None:
-        try:
-            return fn(argv)
-        except TypeError:
-            return fn()
-
-    params = list(sig.parameters.values())
-    if not params:
-        return fn()
-    return fn(argv)
+    if obj is None or isinstance(obj, (str, bytes)):
+        return False
+    return hasattr(obj, '__await__')
 
 
 async def _normalize_exit(result):
@@ -184,7 +207,7 @@ async def _normalize_exit(result):
     :return: integer exit code
     """
 
-    if inspect.isawaitable(result):
+    if _isawaitable(result):
         result = await result
 
     if result is None:
@@ -212,7 +235,7 @@ async def hosted_run(module_name, callable_name, script_name, argv):
     with Domain():
         mod = await import_module_async(module_name)
         fn = getattr(mod, callable_name)
-        result = _invoke_entry_callable(fn, sys.argv)
+        result = fn()
         return await _normalize_exit(result)
 
 
@@ -239,11 +262,15 @@ def run_target(target, argv=None, script_name=None):
         hosted_run(module_name, callable_name, script_name, argv))
 
 
-def run_entry(name, argv=None):
+def run_resolved_script(spec, name, argv=None):
     """
-    Dispatch a koskari_scripts entry by installed command name
+    Run a koskari_scripts entry resolved from one distribution spec
 
-    :param name: script basename matching koskari_scripts metadata
+    Installed command stubs embed spec and name at build time, then call
+    this entry without scanning all installed packages.
+
+    :param spec: distribution spec string (distname==version)
+    :param name: koskari_scripts entry name / installed command basename
     :param argv: optional argument list excluding argv[0]; defaults to
         sys.argv[1:]
     :return: integer exit code
@@ -251,27 +278,14 @@ def run_entry(name, argv=None):
     :raises EntryTargetError: when the entry value is unsupported
     """
 
-    target = _resolve_koskari_script_entry(name)
-    module_name, callable_name = parse_entry_target(target)
-    if argv is None:
-        argv = sys.argv[1:]
-
-    return drive_async_loop(
-        hosted_run(module_name, callable_name, name, argv))
-
-
-def dispatch():
-    """
-    console_scripts entry for mirrored koskari_scripts commands
-
-    Resolves the real target from koskari_scripts metadata using the
-    installed script basename, then runs it under drive_async_loop.
-
-    :return: integer exit code
-    """
-
     try:
-        return run_entry(script_name_from_argv())
+        target = resolve_koskari_script_value(spec, name)
+        module_name, callable_name = parse_entry_target(target)
+        if argv is None:
+            argv = sys.argv[1:]
+
+        return drive_async_loop(
+            hosted_run(module_name, callable_name, name, argv))
 
     except KeyboardInterrupt:
         print('', file=sys.stderr)

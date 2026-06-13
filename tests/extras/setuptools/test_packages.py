@@ -28,7 +28,6 @@ from koskari.extras.setuptools.packages import (
     augment_koskari_packages,
     packages_for_module_name,
     packages_from_koskari_scripts,
-    scan_koskari_packages,
     warn_undeclared_script_packages,
 )
 
@@ -79,19 +78,6 @@ class TestAugmentKoskariPackages(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
-
-    def _write_ki(self, relpath):
-        path = os.path.join(self._tmpdir, relpath)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as fh:
-            fh.write(';; test\n')
-
-    def test_scan_is_diagnostic_only(self):
-        self._write_ki('koslife/cli.ki')
-        dist = FakeDist(script_name=self._setup_path)
-        self.assertEqual(
-            sorted(scan_koskari_packages(dist)),
-            ['koslife'])
 
     def test_packages_from_scripts(self):
         dist = FakeDist(entry_points={

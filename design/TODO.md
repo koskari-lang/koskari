@@ -283,8 +283,7 @@ Ref: `koskari/lib/utils.c` (`KosUtils_Repr`, `kos_repr_register`);
 discovery, validation), **`koskari.launcher`**, **`import_module_async`**, unit
 tests under **`tests/extras/setuptools/`**.
 
-**Follow-up:** migrate **`examples/life`**, end-to-end pip-install test, user
-docs under **`docs/`**, native binary + koskari shebang **`ScriptWriter`**.
+**Follow-up:** end-to-end pip-install test; native binary for installed commands.
 
 Ref: [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md);
 [api/import-system.md](api/import-system.md); `koskari/cli/__init__.py`;

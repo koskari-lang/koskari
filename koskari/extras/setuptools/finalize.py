@@ -22,8 +22,11 @@ Setuptools finalize hook for koskari_scripts packaging.
 """
 
 
-from ...launcher import DISPATCH_TARGET, KOSKARI_SCRIPTS_GROUP
+from setuptools.dist import Distribution
+
+from ...launcher import KOSKARI_SCRIPTS_GROUP, MIRROR_CONSOLE_TARGET
 from .packages import augment_koskari_packages
+from .scripts import ensure_koskari_script_writer
 from .validate import (entry_points_group_lines, entry_points_lines_as_dict,
                        parse_entry_point_line, validate_koskari_scripts,
                        warn_koskari_scripts_metadata)
@@ -77,6 +80,7 @@ def mirror_koskari_scripts(dist):
     validate_koskari_scripts(dist)
     augment_koskari_packages(dist)
     warn_koskari_scripts_metadata(dist)
+    ensure_koskari_script_writer()
 
     mapping = entry_points_lines_as_dict(dist.entry_points)
     console_lines = _ensure_console_scripts_list(mapping)
@@ -88,7 +92,7 @@ def mirror_koskari_scripts(dist):
 
     for line in koskari_lines:
         name, _value = parse_entry_point_line(line)
-        mirror_line = '%s = %s' % (name, DISPATCH_TARGET)
+        mirror_line = '%s = %s' % (name, MIRROR_CONSOLE_TARGET)
         if mirror_line in console_lines:
             continue
         if name in existing:
@@ -108,8 +112,6 @@ def _patch_parse_config_files():
 
     if _PARSE_CONFIG_PATCHED:
         return
-
-    from setuptools.dist import Distribution
 
     orig = Distribution.parse_config_files
     if getattr(orig, '_koskari_wrapped', False):

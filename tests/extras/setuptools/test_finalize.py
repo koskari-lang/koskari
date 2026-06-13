@@ -22,9 +22,10 @@ import os
 import tempfile
 import unittest
 
-from koskari.extras.setuptools.errors import KoskariScriptsSetupError
+from koskari.extras.setuptools.validate import KoskariScriptsSetupError
 from koskari.extras.setuptools.finalize import mirror_koskari_scripts
-from koskari.launcher import DISPATCH_TARGET
+from koskari.extras.setuptools.scripts import ensure_koskari_script_writer
+from koskari.launcher import MIRROR_CONSOLE_TARGET
 
 import pytest
 
@@ -66,12 +67,15 @@ class TestMirrorKoskariScripts(unittest.TestCase):
         }, packages=['koslife'])
         mirror_koskari_scripts(dist)
         self.assertIn(
-            'koslife = %s' % (DISPATCH_TARGET,),
+            'koslife = %s' % (MIRROR_CONSOLE_TARGET,),
             dist.entry_points['console_scripts'])
         self.assertEqual(
             dist.entry_points['koskari_scripts'],
             ['koslife = koslife.cli:main'])
         self.assertFalse(dist.zip_safe)
+
+        from koskari.extras.setuptools import scripts as kos_scripts
+        self.assertTrue(kos_scripts._SCRIPT_WRITER_PATCHED)
 
     def test_collision_with_console_scripts_raises(self):
         dist = FakeDist({
@@ -133,7 +137,7 @@ koskari_scripts =
                 os.chdir(old)
 
         self.assertIn(
-            'demotool = %s' % (DISPATCH_TARGET,),
+            'demotool = %s' % (MIRROR_CONSOLE_TARGET,),
             dist.entry_points['console_scripts'])
         self.assertEqual(
             dist.entry_points['koskari_scripts'],

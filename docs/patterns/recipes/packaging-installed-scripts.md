@@ -16,15 +16,16 @@ Koskari uses a **`koskari_scripts`** entry point group (similar in spirit to
 Python **`console_scripts`**, but for async Koskari programs). At build time,
 the koskari setuptools plugin:
 
-- mirrors each name into **`console_scripts`** pointing at
-  **`koskari.launcher:dispatch`**
+- mirrors each name into **`console_scripts`** (installer bookkeeping)
+- patches setuptools **`ScriptWriter`** to emit stubs that call
+  **`run_resolved_script(dist==version, name)`** directly
 - adds **`*.ki`** and **`*.kio`** to **`package_data`** for each package you
   list in **`packages=`**
 - sets **`zip_safe = False`** so installed sources remain discoverable
 
-At install time, pip writes a **`bin/mytool`** wrapper. At runtime, the
-launcher loads your **`koskari_scripts`** target under the koskari async host
-(no per-app **`asyncio.run`** shim).
+At install time, pip writes a **`bin/mytool`** wrapper. At runtime, the stub
+resolves the **`koskari_scripts`** target from that package's dist-info only,
+then runs it under the koskari async host (no per-app **`asyncio.run`** shim).
 
 ## Minimal packaging
 
@@ -76,18 +77,21 @@ requires = ["setuptools>=61", "koskari"]
 build-backend = "setuptools.build_meta"
 ```
 
-**`mypkg/cli.ki`** — expose **`main`** (optionally accepting **`argv`**):
+**`mypkg/cli.ki`** — expose **`main`** with the same contract as Python
+**`console_scripts`**: **no parameters**; read CLI args from **`sys.argv`**:
 
 ```koskari
 (import sys)
 (import-from argparse ArgumentParser)
 
-define main [argv: None]:
-  when (None? argv):
-    (set! argv sys.argv)
-  ;; parse argv, run your program, return an integer exit code
+define main []:
+  (define-values [prog *: args] sys.argv)
+  ;; parse args, run your program, return an integer exit code
   0
 ```
+
+An optional **`argv`** parameter with a default of **`sys.argv`** is also
+fine when **`main`** is called with zero arguments.
 
 ## Package **`__init__.py`**
 
@@ -119,11 +123,14 @@ After install, verify metadata:
 
 ```text
 [console_scripts]
-mytool = koskari.launcher:dispatch
+mytool = koskari.launcher:run_resolved_script
 
 [koskari_scripts]
 mytool = mypkg.cli:main
 ```
+
+The **`console_scripts`** row is installer metadata. The installed **`bin/mytool`**
+file calls **`run_resolved_script('myapp==…', 'mytool')`** directly.
 
 Run:
 
@@ -136,6 +143,8 @@ mytool --help
 | Topic | Guidance |
 | ----- | -------- |
 | Entry value | Use **`module:callable`** (for example **`mypkg.cli:main`**) |
+| Entry callable | **`main()`** with **no parameters** — same as **`console_scripts`**; read **`sys.argv`** |
+| Return value | Integer exit code, **`None`** (treated as 0), or an awaitable producing one |
 | **`packages=`** | Declare explicitly; the plugin does not guess package names |
 | **`package_data`** | Omit **`*.ki`** / **`*.kio`**; the plugin adds them |
 | **`zip_safe`** | Omit; the plugin sets **`False`** when **`koskari_scripts`** is present |
