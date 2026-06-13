@@ -18,6 +18,8 @@ Unit tests for koskari_scripts console_scripts mirroring.
 """
 
 
+import os
+import tempfile
 import unittest
 
 from koskari.extras.setuptools.errors import KoskariScriptsSetupError
@@ -95,6 +97,51 @@ class TestMirrorKoskariScripts(unittest.TestCase):
         })
         with self.assertRaises(KoskariScriptsSetupError):
             mirror_koskari_scripts(dist)
+
+    def test_setup_cfg_entry_points_mirrored_after_parse_config_files(self):
+        pytest.importorskip('setuptools')
+        from setuptools.dist import Distribution
+
+        cfg_text = """
+[metadata]
+name = demo
+version = 0.1.0
+
+[options]
+packages =
+    demopkg
+install_requires =
+    koskari
+
+[options.entry_points]
+koskari_scripts =
+    demotool = demopkg.cli:main
+"""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = os.path.join(tmp, 'setup.cfg')
+            with open(cfg_path, 'w') as fh:
+                fh.write(cfg_text)
+
+            old = os.getcwd()
+            try:
+                os.chdir(tmp)
+                dist = Distribution({'script_name': 'setup.py'})
+                self.assertIsNone(dist.entry_points)
+                dist.parse_config_files()
+            finally:
+                os.chdir(old)
+
+        self.assertIn(
+            'demotool = %s' % (DISPATCH_TARGET,),
+            dist.entry_points['console_scripts'])
+        self.assertEqual(
+            dist.entry_points['koskari_scripts'],
+            ['demotool = demopkg.cli:main'])
+        self.assertEqual(
+            dist.package_data.get('demopkg'),
+            ['*.ki', '*.kio'])
+        self.assertFalse(dist.zip_safe)
 
 
 # The end.

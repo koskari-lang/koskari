@@ -1,15 +1,39 @@
+# koslife
 
-WIP port of siblife. Declare **`packages`** and **`koskari_scripts`** in
-**`setup.py`**; **`koskari.extras.setuptools`** adds **`*.ki`** /
-**`*.kio`** **`package_data`** for declared packages during the build.
+Conway's Game of Life in the terminal, written in Koskari. This package is
+the reference example for a **`koskari_scripts`** installed application:
+sources live under **`koslife/*.ki`**, with no Python entry shim beyond a
+minimal **`__init__.py`** that imports koskari.
 
-Local validation with **uv** (from **`examples/life/`**):
+## Running
 
-1. Ensure **koskari** is installable in the build env (**`pyproject.toml`**
-   lists it under **`build-system.requires`**).
-2. **`uv pip install -e .`** (or **`uv pip install .`**).
-3. Inspect **`.dist-info/entry_points.txt`**: **`[koskari_scripts]`** plus
-   mirrored **`koslife = koskari.launcher:dispatch`** under
-   **`[console_scripts]`**.
-4. Run **`koslife`** (or **`uv run koslife`**) and confirm the curses UI
-   starts without the old Python **`asyncio.run`** shim.
+Install from the parent **`examples/life/`** directory (requires koskari):
+
+```bash
+uv pip install .
+koslife --help
+koslife --color
+```
+
+During development, install koskari first, then the example package.
+Build isolation may need to be disabled when koskari is only available locally.
+
+## Layout
+
+| Path | Role |
+| ---- | ---- |
+| **`cli.ki`** | Argument parser and **`main`** entry |
+| **`curse.ki`** | Curses UI loop |
+| **`life.ki`** | Board simulation |
+| **`__init__.py`** | Ensures the koskari import hook is active |
+
+Packaging metadata is in **`../setup.cfg`** (with a minimal **`../setup.py`**
+shim): **`packages`**, **`koskari_scripts`**, and **`install_requires`**. The
+koskari setuptools plugin adds **`*.ki`** / **`*.kio`** **`package_data`** at
+build time.
+
+## Options
+
+**`koslife`** accepts **`--wrap`**, and a renderer choice among **`--digits`**,
+**`--dots`**, **`--color`**, or **`--default`**. Run **`koslife --help`** for
+details.

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "koskari"]
+requires = ["setuptools>=61", "koskari"]
 build-backend = "setuptools.build_meta"
 
 # The end.

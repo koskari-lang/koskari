@@ -10,6 +10,7 @@ track and reference material. Each recipe points at a runnable file under
 recipes/hello
 recipes/countdown
 recipes/script-main
+recipes/packaging-installed-scripts
 recipes/point-class
 recipes/fibonacci
 ```

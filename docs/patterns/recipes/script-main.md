@@ -36,5 +36,6 @@ Use `when-main:` for code that should run only from the command line:
 
 ## See also
 
+- [Packaging an installed command](packaging-installed-scripts.md)
 - [compile/when-main](../../reference/macros/compile-when-main.md)
 - [Hello world](hello.md)

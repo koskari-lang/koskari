@@ -14,6 +14,7 @@ and control, functions, classes, programs, errors, and interop basics.
 > - [Fibonacci](../../patterns/recipes/fibonacci.md) — recursion and function calls
 > - [Point class](../../patterns/recipes/point-class.md) — data and methods
 > - [Script entry point](../../patterns/recipes/script-main.md) — `when-main`
+> - [Packaging an installed command](../../patterns/recipes/packaging-installed-scripts.md) — pip-installable CLI
 > - [Hello world](../../patterns/recipes/hello.md) — the smallest runnable script
 
 Copy a pattern into a `.ki` file, run it, and change one line at a time.

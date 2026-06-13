@@ -17,7 +17,10 @@
 
 
 """
-Curses life in Sibilant
+Curses life in Koskari
+
+Package metadata lives in setup.cfg. koskari.extras.setuptools adds
+*.ki/*.kio package_data for declared packages during the build finalize hook.
 
 author: Christopher O'Brien <obriencj@gmail.com>
 license: LGPL v.3
@@ -27,43 +30,7 @@ license: LGPL v.3
 from setuptools import setup
 
 
-TROVE_CLASSIFIERS = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-]
-
-
-setup(name = "koskari-curses-life",
-      version = "0.9.0",
-
-      packages = ["koslife"],
-
-      entry_points = {
-          "koskari_scripts": [
-              'koslife=koslife.cli:main',
-          ],
-      },
-
-      install_requires = [
-          "koskari",
-      ],
-
-      # koskari.extras.setuptools adds *.ki/*.kio package_data and sets
-      # zip_safe=False for declared packages during the build finalize hook.
-
-      # PyPI information
-      author = "Christopher O'Brien",
-      author_email = "obriencj@gmail.com",
-      url = "https://github.com/obriencj/python-sibilant/",
-      license = "GNU General Public License v3",
-
-      description = "Curses life in Koskari",
-
-      classifiers = TROVE_CLASSIFIERS)
+setup()
 
 
 # The end.

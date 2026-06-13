@@ -260,6 +260,9 @@ Expected: `[0, 1, 4, 9, 16, 25]` (Python list printed).
 
 Full recipe: [Script entry point](../../patterns/recipes/script-main.md).
 
+To ship a command users install with pip, see
+[Packaging an installed command](../../patterns/recipes/packaging-installed-scripts.md).
+
 ---
 
 ## Try it

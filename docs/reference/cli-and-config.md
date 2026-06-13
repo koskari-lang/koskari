@@ -32,6 +32,7 @@ script or REPL session; with `-c`, `sys.argv[0]` is `'-c'`.
 |---------|---------|
 | `koskari-lsp` | Language server (LSP) |
 | `python -m koskari` | Same as `koskari` |
+| Installed app commands | Declared with **`koskari_scripts`**; see [Packaging an installed command](../patterns/recipes/packaging-installed-scripts.md) |
 
 ## Environment
 
