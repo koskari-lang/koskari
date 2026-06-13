@@ -22,6 +22,7 @@ kio files via Python's importlib machinery.
 """
 
 
+import importlib.util
 import sys
 from importlib.abc import FileLoader
 from importlib.machinery import FileFinder, PathFinder
@@ -33,6 +34,7 @@ __all__ = (
     'KoskariPathFinder',
     'KoskariSourceFileLoader',
     'KoskariFileFinder',
+    'import_module_async',
     'install',
     'is_installed',
     'uninstall',
@@ -251,6 +253,42 @@ def uninstall():
     sys.meta_path[:] = [
         f for f in sys.meta_path if f is not KoskariPathFinder
     ]
+
+
+async def import_module_async(fullname):
+    """
+    Import fullname under a running event loop using the async loader path
+
+    When the module loader provides exec_module_async (koskari .ki/.kio
+    sources), that path is used so module load may suspend on await. Pure
+    Python modules fall back to exec_module.
+
+    :param fullname: dotted module name to import
+    :return: loaded module object
+    :raises ModuleNotFoundError: when find_spec returns None
+    :raises ImportError: when the spec has no loader
+    """
+
+    if fullname in sys.modules:
+        return sys.modules[fullname]
+
+    spec = importlib.util.find_spec(fullname)
+    if spec is None:
+        raise ModuleNotFoundError(fullname)
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[fullname] = module
+
+    if spec.loader is None:
+        raise ImportError('missing loader for %r' % (fullname,))
+
+    loader = spec.loader
+    if hasattr(loader, 'exec_module_async'):
+        await loader.exec_module_async(module)
+    else:
+        loader.exec_module(module)
+
+    return module
 
 
 # The end.

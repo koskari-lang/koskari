@@ -279,12 +279,12 @@ Ref: `koskari/lib/utils.c` (`KosUtils_Repr`, `kos_repr_register`);
 
 ### `koskari_scripts` setuptools integration
 
-**TODO:** Evaluate the proposed design for **`koskari.extras.setuptools`**
-(build-time mirroring of **`koskari_scripts`** entry points to
-**`console_scripts`**) and **`koskari.launcher`** (runtime async host for
-installed koskari application commands). Decide open questions (group name,
-**`sys.path`** policy, build-system weight), then implement in phased order if
-accepted.
+**v1 done:** **`koskari.extras.setuptools`** (finalize mirror hook + validation),
+**`koskari.launcher`** (runtime async host), **`import_module_async`**, unit
+tests under **`tests/extras/setuptools/`**.
+
+**Follow-up:** migrate **`examples/life`**, end-to-end pip-install test, user
+docs under **`docs/`**, native binary + koskari shebang **`ScriptWriter`**.
 
 Ref: [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md);
 [api/import-system.md](api/import-system.md); `koskari/cli/__init__.py`;

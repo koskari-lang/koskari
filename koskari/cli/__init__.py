@@ -29,13 +29,14 @@ pluggable input backend that supports both readline and prompt_toolkit.
 import asyncio
 import platform
 import sys
-from argparse import REMAINDER, ArgumentParser, Action
+from argparse import REMAINDER, Action, ArgumentParser
 from os.path import basename
 
 from ..exceptions import (CodeBoundary, CompilerError, ReaderEOF, ReaderError,
                           ReaderSyntaxError, UncaughtCompilerError,
                           apply_sys_last_exc, format_code_boundary_exception,
                           format_exception_with_koskari_trace)
+from ..launcher import drive_async_loop
 from ..lexer.discovery import special_names_for_repl
 from ..lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
                                     koskari_style, load_koskari_key_bindings)
@@ -741,38 +742,6 @@ def option_parser(name):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-
-
-def drive_async_loop(coro):
-    """
-    Run the CLI coroutine without asyncio.Runner SIGINT handling.
-
-    asyncio.run installs a handler that cancels the main task on the first
-    Ctrl-C, which defers interrupt until the next await.  A plain loop lets
-    PyErr_CheckSignals in koskari eval see the default pending interrupt.
-    """
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        # the main CLI
-        return loop.run_until_complete(coro)
-    finally:
-        try:
-            # cancel all tasks before shutting down the loop
-            to_cancel = asyncio.all_tasks(loop)
-            if to_cancel:
-                for task in to_cancel:
-                    task.cancel()
-                loop.run_until_complete(
-                    asyncio.gather(*to_cancel, return_exceptions=True))
-
-        finally:
-            # shutdown the loop
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.run_until_complete(loop.shutdown_default_executor())
-            asyncio.set_event_loop(None)
-            loop.close()
 
 
 def main(argv=None):

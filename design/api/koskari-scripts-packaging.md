@@ -2,7 +2,21 @@
 
 ## Status
 
-Proposed design. Not implemented.
+**v1 implemented** (launcher + setuptools plugin + unit tests).
+
+Implemented:
+
+* **`koskari.launcher`** — `dispatch`, `drive_async_loop`, `hosted_run`, `run_entry`, `run_target`
+* **`koskari.importer.import_module_async`** — async `.ki`/`.kio` import under a running loop
+* **`koskari.extras.setuptools`** — `mirror_koskari_scripts` finalize hook, validation helpers
+* Unit tests under **`tests/extras/setuptools/`**
+
+Deferred from v1:
+
+* **`examples/life`** migration to **`koskari_scripts`**
+* End-to-end pip-install integration test
+* User-facing **`docs/`** packaging guide
+* Native **`koskari`** binary and koskari shebang **`ScriptWriter`**
 
 ## Summary
 
@@ -397,16 +411,20 @@ Internal:
 
 ### Phase 1 — Runtime launcher
 
-* Add **`koskari/launcher.py`**
-* Factor shared hosting helpers from **`koskari.cli`**
-* Unit tests for **`run_target`** against a minimal **`.ki`** fixture
+**Done.**
+
+* **`koskari/launcher.py`**
+* **`koskari.importer.import_module_async`**
+* **`drive_async_loop`** moved from **`koskari.cli`**; CLI imports from launcher
+* Unit tests in **`tests/extras/setuptools/test_launcher.py`**
 
 ### Phase 2 — Setuptools plugin
 
-* Add **`koskari/extras/setuptools/`**
-* Implement **`mirror_koskari_scripts`**
-* Register entry point in **`setup.cfg`**
-* Tests for mirroring and collision detection
+**Done.**
+
+* **`koskari/extras/setuptools/`** (`finalize`, `validate`, `errors`)
+* Registered in **`setup.cfg`** as **`setuptools.finalize_distribution_options`**
+* Tests in **`tests/extras/setuptools/test_finalize.py`**, **`test_validate.py`**
 
 ### Phase 3 — Integration
 
