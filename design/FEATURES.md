@@ -122,6 +122,38 @@ Loaded via **`koskari.bootstrap.make_builtins()`** / **`make_builtins_demand()`*
 - **`koskari.importer`**: `.ki` / `.kio` on `sys.meta_path`; **`exec_module`** defaults to demand path; **`KOSKARI_NOIMPORTER`** to disable auto-install.
 - Compiler **`import`** / **`import-from`** → **IMPORT** / **IMPORT_REL** / **IMPORT_FROM** opcodes.
 
+### Packaging: installed commands (`koskari_scripts`)
+
+Third-party apps can ship pip-installable CLI commands whose sources stay in
+**`.ki`** / **`.kio`** files — no per-app Python **`main`** shim or
+**`asyncio.run`** wrapper.
+
+| Piece | Role |
+| ----- | ---- |
+| **`koskari_scripts`** entry point group | Author declares **`name = module:callable`** (e.g. **`koslife = koslife.cli:main`**) |
+| **`koskari.extras.setuptools`** | Build-time plugin: mirror each name into **`console_scripts`** as **`koskari.launcher:dispatch`**, add **`*.ki`** / **`*.kio`** to **`package_data`** for author-declared **`packages=`**, set **`zip_safe = False`** |
+| **`koskari.launcher`** | Runtime: **`dispatch()`** resolves **`koskari_scripts`** by script basename, runs target under **`drive_async_loop`** + async module load |
+| **`koskari.importer.import_module_async`** | Async **`.ki`** / **`.kio`** import path for hosted scripts |
+
+**Author metadata:** declare **`packages=`** explicitly; list **`koskari`** in
+**`install_requires`** and **`build-system.requires`**. Prefer **`setup.cfg`**
+(or **`pyproject.toml`**) plus a minimal **`setup.py`** shim calling
+**`setup()`** — see **`examples/life`**.
+
+**Setuptools ordering:** **`finalize_distribution_options`** runs during
+**`Distribution.__init__`**, before **`setup.cfg`** is parsed. The plugin
+therefore mirrors on **two paths**: the finalize hook (inline **`setup()`**
+kwargs) and a lazy **`parse_config_files`** wrapper (config-file entry points).
+Both invoke the same idempotent **`mirror_koskari_scripts`**.
+
+**Reference example:** **`examples/life`** (**`koslife`** command).
+**Detail:** [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md).
+User-facing recipe (no **`design/`** links from user docs):
+**`docs/patterns/recipes/packaging-installed-scripts.md`**.
+
+**Deferred:** end-to-end pip-install integration test; native **`koskari`**
+binary / koskari shebang **`ScriptWriter`**.
+
 ### Continuations (summary)
 
 - **Delimited**: `compile/reset`, `compile/shift`; **INVOKE_K** / graft model ([interpreter/callcc.md](interpreter/callcc.md)).
@@ -181,4 +213,5 @@ wrappers, GC hooks.
 | Layout syntax | [LAYOUTS.md](LAYOUTS.md), [docs/reference/reader-layout.md](../docs/reference/reader-layout.md) |
 | Planned language surface | [language/special-forms.md](language/special-forms.md), [language/async.md](language/async.md) |
 | Import | [api/import-system.md](api/import-system.md) |
+| Installed scripts (`koskari_scripts`) | [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md) |
 | GIL (future domain-TLS design) | [interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) |
