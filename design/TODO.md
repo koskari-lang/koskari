@@ -292,6 +292,25 @@ Ref: [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md);
 
 ---
 
+## Concurrent async (`async` form)
+
+**Status:** Proposed — evaluate and possibly implement.
+
+Add bootstrap macro **`compile/async`** and small runtime helpers for
+concurrent fan-out/join on the current asyncio loop. Fixed job lists expand to
+**`gather`** of **`(create-task (defer …))`**; streaming **`(async (each …))`**
+and **`limit:`** variants expand to runtime **`async-each`** (iterator-driven
+spawn with optional in-flight cap). Cooperative concurrency only — not multicore
+parallelism.
+
+**TODO:** Evaluate design; if accepted, implement in order: **`gather`** builtin,
+**`with-limit`** / **`async-each`**, **`_async.ki`** macro, tests, user docs.
+
+Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
+[defer-coroutine.md](api/defer-coroutine.md).
+
+---
+
 ## Reference
 
 - **Implemented specials:** [SPECIALS.md](SPECIALS.md)
