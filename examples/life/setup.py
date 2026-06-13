@@ -27,16 +27,14 @@ license: LGPL v.3
 from setuptools import setup
 
 
-TROVE_CLASSIFIERS = (
+TROVE_CLASSIFIERS = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved"
-    " :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Software Development :: Libraries :: Python Modules",
-)
+]
 
 
 setup(name = "koskari-curses-life",
@@ -44,23 +42,18 @@ setup(name = "koskari-curses-life",
 
       packages = ["koslife"],
 
-      package_data = {
-          "koslife": ["*.ki"],
-      },
-
       entry_points = {
-          "console_scripts": [
-              'koslife=koslife:main',
+          "koskari_scripts": [
+              'koslife=koslife.cli:main',
           ],
       },
 
-      requires = [
+      install_requires = [
           "koskari",
       ],
 
-      # important -- currently zip_safe must be False in order for the
-      # sibilant importer to discover .lspy files
-      zip_safe = False,
+      # koskari.extras.setuptools adds *.ki/*.kio package_data and sets
+      # zip_safe=False for declared packages during the build finalize hook.
 
       # PyPI information
       author = "Christopher O'Brien",
@@ -73,5 +66,4 @@ setup(name = "koskari-curses-life",
       classifiers = TROVE_CLASSIFIERS)
 
 
-#
 # The end.

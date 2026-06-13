@@ -279,8 +279,8 @@ Ref: `koskari/lib/utils.c` (`KosUtils_Repr`, `kos_repr_register`);
 
 ### `koskari_scripts` setuptools integration
 
-**v1 done:** **`koskari.extras.setuptools`** (finalize mirror hook + validation),
-**`koskari.launcher`** (runtime async host), **`import_module_async`**, unit
+**v1 done:** **`koskari.extras.setuptools`** (finalize mirror hook, `.ki` package
+discovery, validation), **`koskari.launcher`**, **`import_module_async`**, unit
 tests under **`tests/extras/setuptools/`**.
 
 **Follow-up:** migrate **`examples/life`**, end-to-end pip-install test, user

@@ -127,6 +127,7 @@ koskari/
     └── setuptools/
         ├── __init__.py         # Public helpers / version note
         ├── finalize.py         # finalize_distribution_options hook
+        ├── packages.py         # .ki/.kio package discovery and augmentation
         └── validate.py         # Optional: check dist metadata in tests/CI
 ```
 
@@ -206,8 +207,12 @@ requires = ["setuptools>=61", "koskari"]
 build-backend = "setuptools.build_meta"
 ```
 
-**Package data:** `.ki` files must be installed (**`package_data`**, **`zip_safe = False`**
-when needed for importer discovery — see **`examples/life/setup.py`**).
+**Package data:** authors declare **`packages=`** explicitly. When
+**`koskari_scripts`** is also declared, the finalize hook adds **`package_data`**
+patterns (**`*.ki`**, **`*.kio`**) for each listed package and sets
+**`zip_safe = False`**. It warns when entry point module paths reference
+packages not listed in **`packages=`**. It does not infer package names from
+the filesystem or entry points alone.
 
 **Runtime dependency:**
 
@@ -422,7 +427,7 @@ Internal:
 
 **Done.**
 
-* **`koskari/extras/setuptools/`** (`finalize`, `validate`, `errors`)
+* **`koskari/extras/setuptools/`** (`finalize`, `packages`, `validate`, `errors`)
 * Registered in **`setup.cfg`** as **`setuptools.finalize_distribution_options`**
 * Tests in **`tests/extras/setuptools/test_finalize.py`**, **`test_validate.py`**
 

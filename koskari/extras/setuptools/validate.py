@@ -188,15 +188,11 @@ def warn_koskari_scripts_metadata(dist):
             stacklevel=2)
 
     if getattr(dist, 'zip_safe', False):
-        package_data = getattr(dist, 'package_data', None) or {}
-        for _package, patterns in package_data.items():
-            for pattern in patterns:
-                if pattern.endswith('.ki') or pattern == '*.ki':
-                    warnings.warn(
-                        'koskari_scripts with zip_safe=True may prevent .ki'
-                        ' discovery; set zip_safe=False',
-                        stacklevel=2)
-                    return
+        warnings.warn(
+            'koskari_scripts with zip_safe=True may prevent .ki'
+            ' discovery; setuptools plugin sets zip_safe=False when'
+            ' koskari packages are discovered',
+            stacklevel=2)
 
 
 # The end.

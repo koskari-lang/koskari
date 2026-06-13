@@ -35,8 +35,9 @@ class FakeDist(object):
             self,
             entry_points=None,
             install_requires=None,
-            zip_safe=False,
-            package_data=None):
+            zip_safe=True,
+            package_data=None,
+            packages=None):
 
         self.entry_points = entry_points
         if install_requires is None:
@@ -44,6 +45,7 @@ class FakeDist(object):
         self.install_requires = install_requires
         self.zip_safe = zip_safe
         self.package_data = package_data or {}
+        self.packages = packages
 
 
 class TestMirrorKoskariScripts(unittest.TestCase):
@@ -59,7 +61,7 @@ class TestMirrorKoskariScripts(unittest.TestCase):
         dist = FakeDist({
             'koskari_scripts': ['koslife = koslife.cli:main'],
             'console_scripts': ['koskari = koskari.cli:main'],
-        })
+        }, packages=['koslife'])
         mirror_koskari_scripts(dist)
         self.assertIn(
             'koslife = %s' % (DISPATCH_TARGET,),
@@ -67,6 +69,7 @@ class TestMirrorKoskariScripts(unittest.TestCase):
         self.assertEqual(
             dist.entry_points['koskari_scripts'],
             ['koslife = koslife.cli:main'])
+        self.assertFalse(dist.zip_safe)
 
     def test_collision_with_console_scripts_raises(self):
         dist = FakeDist({

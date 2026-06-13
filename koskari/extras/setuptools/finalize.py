@@ -14,7 +14,7 @@
 """
 koskari.extras.setuptools.finalize
 
-Setuptools finalize hook that mirrors koskari_scripts into console_scripts.
+Setuptools finalize hook for koskari_scripts packaging.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -23,6 +23,7 @@ Setuptools finalize hook that mirrors koskari_scripts into console_scripts.
 
 
 from ...launcher import DISPATCH_TARGET, KOSKARI_SCRIPTS_GROUP
+from .packages import augment_koskari_packages
 from .validate import (entry_points_group_lines, entry_points_lines_as_dict,
                        parse_entry_point_line, validate_koskari_scripts,
                        warn_koskari_scripts_metadata)
@@ -64,6 +65,7 @@ def mirror_koskari_scripts(dist):
         return
 
     validate_koskari_scripts(dist)
+    augment_koskari_packages(dist)
     warn_koskari_scripts_metadata(dist)
 
     mapping = entry_points_lines_as_dict(dist.entry_points)

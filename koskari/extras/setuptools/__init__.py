@@ -25,10 +25,21 @@ so this finalize hook mirrors installed commands into console_scripts.
 
 
 from .finalize import mirror_koskari_scripts
+from .packages import (
+    augment_koskari_packages,
+    declared_packages,
+    packages_from_koskari_scripts,
+    scan_koskari_packages,
+)
 from .validate import validate_koskari_scripts, warn_koskari_scripts_metadata
 
+
 __all__ = (
+    'augment_koskari_packages',
+    'declared_packages',
     'mirror_koskari_scripts',
+    'packages_from_koskari_scripts',
+    'scan_koskari_packages',
     'validate_koskari_scripts',
     'warn_koskari_scripts_metadata',
 )
