@@ -64,6 +64,7 @@ struct KosEvent;
 #include "utils.h"
 #include "values.h"
 #include "defer.h"
+#include "async_loop.h"
 
 
 /* === unit initializers === */

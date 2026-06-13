@@ -24,14 +24,13 @@ Domain and the koskari asyncio host without per-app Python shims.
 """
 
 
-import asyncio
 import inspect
 import sys
 from importlib import metadata
 from os.path import basename
 
 from koskari.importer import import_module_async
-from koskari.lib import Domain
+from koskari.lib import Domain, drive_async_loop
 
 
 KOSKARI_SCRIPTS_GROUP = 'koskari_scripts'
@@ -42,7 +41,6 @@ __all__ = (
     'DISPATCH_TARGET',
     'KOSKARI_SCRIPTS_GROUP',
     'dispatch',
-    'drive_async_loop',
     'hosted_run',
     'parse_entry_target',
     'run_entry',
@@ -67,38 +65,6 @@ class EntryTargetError(LauncherError):
     """
     Entry point value is not a supported module:callable target
     """
-
-
-def drive_async_loop(coro):
-    """
-    Run a coroutine without asyncio.Runner SIGINT handling
-
-    asyncio.run installs a handler that cancels the main task on the first
-    Ctrl-C, which defers interrupt until the next await. A plain loop lets
-    PyErr_CheckSignals in koskari eval see the default pending interrupt.
-
-    :param coro: awaitable to run to completion
-    :return: coroutine result
-    """
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        try:
-            to_cancel = asyncio.all_tasks(loop)
-            if to_cancel:
-                for task in to_cancel:
-                    task.cancel()
-                loop.run_until_complete(
-                    asyncio.gather(*to_cancel, return_exceptions=True))
-
-        finally:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.run_until_complete(loop.shutdown_default_executor())
-            asyncio.set_event_loop(None)
-            loop.close()
 
 
 def script_name_from_argv(argv=None):
@@ -268,6 +234,7 @@ def run_target(target, argv=None, script_name=None):
         argv = sys.argv[1:]
     if script_name is None:
         script_name = module_name.rsplit('.', 1)[-1]
+
     return drive_async_loop(
         hosted_run(module_name, callable_name, script_name, argv))
 
@@ -288,6 +255,7 @@ def run_entry(name, argv=None):
     module_name, callable_name = parse_entry_target(target)
     if argv is None:
         argv = sys.argv[1:]
+
     return drive_async_loop(
         hosted_run(module_name, callable_name, name, argv))
 

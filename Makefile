@@ -78,6 +78,11 @@ install-dev:  ## Install package in development mode
 	@$(PYTHON) -m pip install -e .
 	@echo "Development installation complete"
 
+koskari-bin: handlers report-python  ## Build native koskari executable (build/koskari-bin/koskari)
+	@echo "Building native koskari executable..."
+	@$(PYTHON) -B setup.py build_ext --inplace
+	@echo "Native koskari built at $(BUILD_DIR)/koskari-bin/koskari"
+
 uninstall:  ## Uninstall package
 	@echo "Uninstalling $(PROJECT)..."
 	@$(PYTHON) -m pip uninstall -y $(PROJECT) || true
@@ -270,6 +275,7 @@ python:  ## Show Python executable
 	help \
 	install \
 	install-dev \
+	koskari-bin \
 	lint \
 	project \
 	purge \

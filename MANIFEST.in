@@ -1,3 +1,4 @@
 include koskari.pth
 include koskari/_version.py
+include koskari/app/main.c
 recursive-include koskari/lib *.c *.h *.incl

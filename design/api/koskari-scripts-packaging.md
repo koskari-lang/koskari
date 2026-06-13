@@ -14,7 +14,21 @@ Implemented:
 Deferred from v1:
 
 * End-to-end pip-install integration test
-* Native **`koskari`** binary and koskari shebang **`ScriptWriter`**
+* koskari shebang **`ScriptWriter`** for installed **`koskari_scripts`** commands
+
+Phase A native host (implemented):
+
+* **`koskari.lib.drive_async_loop`** — C asyncio host (SIGINT-safe)
+* Native **`koskari`** executable — embeds CPython, calls **`prepare_cli_async`**
+  then native **`drive_async_loop`**
+* **`pip install`** / editable install place the native binary on PATH (not
+  **`console_scripts`** wrapper for **`koskari`**)
+
+Deferred after Phase A:
+
+* Static link of **`koskari.lib`** into the executable with fake import
+  injection
+* Binary dispatch for **`koskari_scripts`** entry points
 
 Also done since initial v1 landing:
 

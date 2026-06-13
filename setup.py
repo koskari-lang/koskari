@@ -22,12 +22,18 @@ Koskari, a LISP dialect for Python
 """
 
 
+import importlib.util
+import os
+import shlex
+import subprocess
+import sys
 from os import environ
 from pathlib import Path
-import importlib.util
 
 from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
+from setuptools.command.install_scripts import install_scripts
 from setuptools.command.sdist import sdist
 
 
@@ -46,6 +52,10 @@ baseline_args = (
     "-Werror",
     "-flto=auto",
 )
+
+KOSKARI_APP_MAIN = Path("koskari/app/main.c")
+KOSKARI_BIN_NAME = "koskari"
+KOSKARI_BIN_SUBDIR = "koskari-bin"
 
 
 def extra_compile_args(platform=None, debug=False):
@@ -102,6 +112,81 @@ def extension(platform=None, debug=None):
     )
 
 
+def koskari_executable_path(build_base="build"):
+    """
+    Return the build output path for the native koskari executable
+    """
+
+    return Path(build_base) / KOSKARI_BIN_SUBDIR / KOSKARI_BIN_NAME
+
+
+def _python_config_names(python=None):
+    python = python or sys.executable
+    prefix = os.path.splitext(python)[0]
+    names = []
+    for candidate in (prefix + "-config", "python3-config", "python-config"):
+        if candidate not in names:
+            names.append(candidate)
+    return names
+
+
+def _python_config_output(args, python=None):
+    """
+    Run python-config and return stripped stdout
+    """
+
+    errors = []
+    for config_name in _python_config_names(python):
+        try:
+            return subprocess.check_output(
+                [config_name] + list(args),
+                stderr=subprocess.STDOUT,
+                text=True,
+            ).strip()
+        except (OSError, subprocess.CalledProcessError) as exc:
+            errors.append("%s: %s" % (config_name, exc))
+
+    raise RuntimeError(
+        "failed to query python-config (%s)"
+        % ("; ".join(errors),))
+
+
+def _python_embed_cflags(python=None):
+    try:
+        return _python_config_output(["--cflags", "--embed"], python)
+    except RuntimeError:
+        return _python_config_output(["--cflags"], python)
+
+
+def _python_embed_ldflags(python=None):
+    try:
+        return _python_config_output(["--ldflags", "--embed"], python)
+    except RuntimeError:
+        return _python_config_output(["--ldflags"], python)
+
+
+def build_koskari_executable(output_path, python=None):
+    """
+    Compile the embed koskari command into output_path
+    """
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not KOSKARI_APP_MAIN.is_file():
+        raise FileNotFoundError("missing embed entry %s" % (KOSKARI_APP_MAIN,))
+
+    cc = environ.get("CC", "gcc")
+    cflags = shlex.split(_python_embed_cflags(python))
+    ldflags = shlex.split(_python_embed_ldflags(python))
+    compile_cmd = (
+        [cc, str(KOSKARI_APP_MAIN), "-o", str(output_path)]
+        + cflags
+        + ldflags
+    )
+    subprocess.check_call(compile_cmd)
+
+
 class kos_build_py(build_py):
     """
     Copy koskari.pth into build_lib for site-packages installation
@@ -117,6 +202,42 @@ class kos_build_py(build_py):
         # the fact that pyproject.toml cannot do this, even as the vaunted
         # next generation of python packaging, is a goddamned joke.
         self.copy_file('koskari.pth', self.build_lib, preserve_mode=False)
+
+
+class kos_build_ext(build_ext):
+    """
+    Build koskari.lib and the native koskari executable
+    """
+
+    def run(self):
+        super().run()
+        build_cmd = self.get_finalized_command('build')
+        output_path = koskari_executable_path(build_cmd.build_base)
+        build_koskari_executable(output_path)
+        self.koskari_executable = output_path
+
+
+class kos_install_scripts(install_scripts):
+    """
+    Install the native koskari executable into bindir
+    """
+
+    def run(self):
+        build_ext_cmd = self.get_finalized_command("build_ext")
+        build_cmd = self.get_finalized_command("build")
+        output_path = getattr(
+            build_ext_cmd,
+            "koskari_executable",
+            koskari_executable_path(build_cmd.build_base),
+        )
+        if not output_path.is_file():
+            build_koskari_executable(output_path)
+
+        self.mkpath(self.install_dir)
+        dest = os.path.join(self.install_dir, KOSKARI_BIN_NAME)
+        self.copy_file(str(output_path), dest, preserve_mode=True)
+        os.chmod(dest, 0o755)
+        super().run()
 
 
 def maybe_regen_version(force=False):
@@ -150,6 +271,8 @@ class kos_sdist(sdist):
 if __name__ == '__main__':
     setup(
         cmdclass={
+            'build_ext': kos_build_ext,
+            'install_scripts': kos_install_scripts,
             'sdist': kos_sdist,
             'build_py': kos_build_py,
         },
