@@ -14,7 +14,7 @@
 """
 tests.cli.test_koskari_bin
 
-Smoke tests for the native koskari executable when built or installed.
+Smoke tests for the native koskari embed executable (make koskari-bin).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

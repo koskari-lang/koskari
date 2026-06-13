@@ -19,16 +19,19 @@ Deferred from v1:
 Phase A native host (implemented):
 
 * **`koskari.lib.drive_async_loop`** — C asyncio host (SIGINT-safe)
-* Native **`koskari`** executable — embeds CPython, calls **`prepare_cli_async`**
-  then native **`drive_async_loop`**
-* **`pip install`** / editable install place the native binary on PATH (not
-  **`console_scripts`** wrapper for **`koskari`**)
+* **`koskari.cli.prepare_cli_async`** — shared CLI parse path for embed entry
+* Native **`koskari`** embed executable — **`make koskari-bin`**; not shipped
+  in PyPI wheels (setuptools has no first-class binary entry point)
+* **`pip install`** places **`koskari`** on PATH via **`console_scripts`**
+  (**`koskari.cli:main`**) which still uses native **`drive_async_loop`**
 
 Deferred after Phase A:
 
 * Static link of **`koskari.lib`** into the executable with fake import
   injection
 * Binary dispatch for **`koskari_scripts`** entry points
+* Optional native **`koskari`** binary in RPM or other system packaging (not
+  wheel/sdist)
 
 Also done since initial v1 landing:
 
