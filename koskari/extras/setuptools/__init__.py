@@ -25,8 +25,8 @@ so the finalize hook installs koskari command stubs at build time.
 
 
 try:
-    from .finalize import configure_koskari_scripts
-    from .validate import KoskariScriptsSetupError, validate_koskari_scripts
+    from .metadata import KoskariScriptsSetupError, validate_koskari_scripts
+    from .plugin import configure_koskari_scripts
 
 except ImportError:
     pass

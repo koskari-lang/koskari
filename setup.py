@@ -148,12 +148,18 @@ class kos_sdist(sdist):
 
 
 if __name__ == '__main__':
+    Path('build').mkdir(exist_ok=True)
     setup(
         cmdclass={
             'sdist': kos_sdist,
             'build_py': kos_build_py,
         },
         ext_modules=[extension()],
+        options={
+            'egg_info': {
+                'egg_base': 'build',
+            },
+        },
     )
 
 

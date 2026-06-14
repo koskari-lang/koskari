@@ -146,6 +146,7 @@ mytool --help
 | **`package_data`** | Omit **`*.ki`** / **`*.kio`**; the plugin adds them |
 | **`zip_safe`** | Omit; the plugin sets **`False`** when **`koskari_scripts`** is present |
 | Name collisions | Do not register the same command name under **`console_scripts`** |
+| CI validation | **`from koskari.extras.setuptools import validate_koskari_scripts`** checks entry names and **`module:callable`** values on a **`Distribution`** mock |
 
 ## Complete example
 

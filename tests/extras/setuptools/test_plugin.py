@@ -12,21 +12,29 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.extras.setuptools.test_finalize
+tests.extras.setuptools.test_plugin
 
-Unit tests for koskari_scripts finalize hook configuration.
+Unit tests for koskari_scripts setuptools plugin integration.
 """
 
 
 import os
+import sys
 import tempfile
+import types
 import unittest
+from importlib import import_module
 
-from koskari.extras.setuptools.validate import KoskariScriptsSetupError
-from koskari.extras.setuptools.finalize import configure_koskari_scripts
-from koskari.extras.setuptools.scripts import (
+from koskari.extras.setuptools.metadata import (
+    KOSKARI_SCRIPTS_GROUP,
+    KoskariScriptsSetupError,
+)
+from koskari.extras.setuptools.plugin import (
     KoskariEditableWheel,
     KoskariInstallScripts,
+    configure_koskari_scripts,
+    iter_koskari_script_args,
+    koskari_script_source,
 )
 
 import pytest
@@ -53,6 +61,66 @@ class FakeDist(object):
         self.package_data = package_data or {}
         self.packages = packages
         self.cmdclass = cmdclass or {}
+
+
+class FakeEntryPoint(object):
+
+    def __init__(self, name, value, group):
+        self.name = name
+        self.value = value
+        self.group = group
+
+
+class FakeEntryPoints(object):
+
+    def __init__(self, groups):
+        self._groups = groups
+
+    def select(self, group=None, name=None):
+        if group is None:
+            eps = []
+            for items in self._groups.values():
+                eps.extend(items)
+        else:
+            eps = list(self._groups.get(group, []))
+        if name is not None:
+            eps = [ep for ep in eps if ep.name == name]
+        return eps
+
+
+class FakeScriptDist(object):
+
+    def __init__(self, entry_points, name='myapp', version='1.0'):
+        self.name = name
+        self.version = version
+        self.entry_points = entry_points
+
+
+class TestPluginImport(unittest.TestCase):
+
+    def test_plugin_imports_without_koskari_lib(self):
+        saved = {}
+        for name in list(sys.modules):
+            if name in (
+                    'koskari.extras.setuptools.plugin',
+                    'koskari.launcher',
+                    'koskari.lib'):
+                saved[name] = sys.modules.pop(name)
+
+        stub = types.ModuleType('koskari.lib')
+        sys.modules['koskari.lib'] = stub
+
+        try:
+            mod = import_module('koskari.extras.setuptools.metadata')
+        finally:
+            sys.modules.pop('koskari.lib', None)
+            for name, value in saved.items():
+                if value is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = value
+
+        self.assertTrue(hasattr(mod, 'parse_entry_target'))
 
 
 class TestConfigureKoskariScripts(unittest.TestCase):
@@ -164,6 +232,52 @@ koskari_scripts =
         calls.clear()
         cmd._run_install('data')
         self.assertEqual(calls, [])
+
+
+class TestKoskariScriptSource(unittest.TestCase):
+
+    def test_emits_run_resolved_script_call(self):
+        src = koskari_script_source(
+            'myapp==1.0',
+            KOSKARI_SCRIPTS_GROUP,
+            'koslife')
+        self.assertIn("run_resolved_script('myapp==1.0', 'koslife')", src)
+        self.assertIn('KOSKARI-SCRIPT-ENTRY', src)
+
+
+class TestIterKoskariScriptArgs(unittest.TestCase):
+
+    def test_yields_koskari_stub_for_koskari_scripts_group(self):
+        dist = FakeScriptDist(FakeEntryPoints({
+            KOSKARI_SCRIPTS_GROUP: [
+                FakeEntryPoint(
+                    'koslife', 'koslife.cli:main', KOSKARI_SCRIPTS_GROUP),
+            ],
+        }))
+
+        scripts = {}
+        for name, contents in iter_koskari_script_args(
+                dist, header='#!python\n'):
+            scripts[name] = contents
+
+        self.assertIn('run_resolved_script', scripts['koslife'])
+        self.assertIn("KOSKARI-SCRIPT-ENTRY: 'myapp==1.0'", scripts['koslife'])
+        self.assertNotIn('load_entry_point', scripts['koslife'])
+
+    def test_empty_when_no_koskari_scripts(self):
+        dist = FakeScriptDist(FakeEntryPoints({
+            'console_scripts': [
+                FakeEntryPoint('plain', 'plain.cli:main', 'console_scripts'),
+            ],
+        }))
+        self.assertEqual(list(iter_koskari_script_args(dist)), [])
+
+
+class TestKoskariInstallScripts(unittest.TestCase):
+
+    def test_subclasses_setuptools_install_scripts(self):
+        from setuptools.command.install_scripts import install_scripts
+        self.assertTrue(issubclass(KoskariInstallScripts, install_scripts))
 
 
 # The end.

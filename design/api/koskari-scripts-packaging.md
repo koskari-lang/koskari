@@ -8,7 +8,7 @@ Implemented:
 
 * **`koskari.launcher`** — `run_resolved_script`, `drive_async_loop`, `hosted_run`, `run_target`
 * **`koskari.importer.import_module_async`** — async `.ki`/`.kio` import under a running loop
-* **`koskari.extras.setuptools`** — `configure_koskari_scripts` finalize hook, **`KoskariInstallScripts`**, validation helpers
+* **`koskari.extras.setuptools`** — `configure_koskari_scripts` plugin hook, **`KoskariInstallScripts`**, metadata validation helpers (`metadata.py` + `plugin.py`)
 * Unit tests under **`tests/extras/setuptools/`**
 
 Deferred from v1:
@@ -142,19 +142,27 @@ Two layers:
 
 ## Package layout
 
-New modules (proposed):
+Implemented layout (two modules under **`koskari.extras.setuptools`**):
 
 ```
 koskari/
 ├── launcher.py                 # Runtime: run_resolved_script, hosted bootstrap
+│                               # (re-exports metadata helpers for public API)
 └── extras/
     └── setuptools/
-        ├── __init__.py         # Public helpers / version note
-        ├── finalize.py         # configure hook + parse_config_files wrapper
-        ├── scripts.py          # KoskariInstallScripts + stub template
-        ├── packages.py         # .ki/.kio package discovery and augmentation
-        └── validate.py         # Optional: check dist metadata in tests/CI
+        ├── __init__.py         # configure_koskari_scripts, validate_koskari_scripts
+        ├── metadata.py         # Pure Python: constants, entry parsing, validation,
+        │                       # package_data augmentation (import-safe)
+        └── plugin.py           # Setuptools hook, parse_config_files patch,
+                                # stub generation, KoskariInstallScripts /
+                                # KoskariEditableWheel
 ```
+
+**Import rule:** **`plugin.py`** imports **`metadata.py`** only. **`launcher.py`**
+imports shared symbols from **`metadata.py`** (not **`plugin.py`**), so the
+**`setuptools.finalize_distribution_options`** entry point can load without
+pulling in **`koskari.lib`** or setuptools command modules until a distribution
+actually declares **`koskari_scripts`**.
 
 **Registration in koskari's own `setup.cfg`:**
 
@@ -166,11 +174,15 @@ packages =
 
 [options.entry_points]
 setuptools.finalize_distribution_options =
-    koskari_scripts = koskari.extras.setuptools.finalize:configure_koskari_scripts
+    koskari_scripts = koskari.extras.setuptools.plugin:configure_koskari_scripts
 console_scripts =
   koskari = koskari.cli:main
   ; koskari-lsp unchanged
 ```
+
+Koskari's own **`setup.py`** redirects **`egg_info`** output to **`build/`**
+(**`options.egg_info.egg_base`**) so tox sdist builds and legacy **`setup.py`**
+invocations do not leave **`koskari.egg-info/`** in the project root.
 
 **`koskari.extras.setuptools`** is part of the default **`koskari`** install
 (not gated behind an optional extra). It is tiny and has no dependencies beyond
@@ -251,7 +263,9 @@ Authors must **not** also register the same command name under
 
 ## Build-time: `configure_koskari_scripts`
 
-**Module:** **`koskari.extras.setuptools.finalize`**
+**Hook module:** **`koskari.extras.setuptools.plugin`**
+
+**Shared metadata module:** **`koskari.extras.setuptools.metadata`**
 
 **Entry point group:** **`setuptools.finalize_distribution_options`**
 
@@ -266,8 +280,9 @@ below. It is idempotent (safe to invoke more than once on the same
 1. Read **`dist.entry_points`** (dict or **`EntryPoints`**-like mapping).
 2. If **`koskari_scripts`** is absent or empty, return.
 3. Validate names and values; augment **`package_data`** / **`zip_safe`** for
-   declared **`packages=`** (see **`packages.py`**).
-4. Register **`dist.cmdclass['install_scripts'] = KoskariInstallScripts`**.
+   declared **`packages=`** (see **`metadata.py`**).
+4. Register **`dist.cmdclass['install_scripts'] = KoskariInstallScripts`** and
+   **`editable_wheel = KoskariEditableWheel`**.
 
 No mutation of **`console_scripts`**. Stub files are written during
 **`install_scripts`** (including wheel builds where **`no_ep=True`** skips
@@ -297,7 +312,7 @@ The plugin therefore uses **two invocation paths**:
 | **`setuptools.finalize_distribution_options`** | **`Distribution.finalize_options()`** during **`__init__`** | Inline **`setup()`** kwargs; installs the **`parse_config_files`** wrapper |
 | **`parse_config_files` wrapper** | End of **`Distribution.parse_config_files()`** | **`setup.cfg`**, **`pyproject.toml`**, and any config applied after **`__init__`** |
 
-On first finalize hook entry, **`finalize.py`** lazily wraps
+On first finalize hook entry, **`plugin.py`** wraps
 **`Distribution.parse_config_files`** so step 3 re-invokes
 **`configure_koskari_scripts`** after config is loaded. No author-facing
 difference: declarative **`koskari_scripts`** in **`setup.cfg`** and inline
@@ -332,7 +347,7 @@ sys.exit(run_resolved_script('myapp==1.0', 'koslife'))
 
 ### Stub install (`KoskariInstallScripts`)
 
-**Module:** **`koskari.extras.setuptools.scripts`**
+**Module:** **`koskari.extras.setuptools.plugin`**
 
 When **`configure_koskari_scripts`** runs, it registers **`KoskariInstallScripts`**
 which writes one stub per **`koskari_scripts`** entry during **`install_scripts`**.
@@ -469,24 +484,25 @@ active under editable installs. **`cli.ki`** **`define main`** is unchanged.
 
 ## Testing plan
 
-| Test | Location (proposed) |
-| ---- | ------------------- |
-| Finalize hook configures koskari_scripts | **`tests/extras/setuptools/test_finalize.py`** |
-| **`setup.cfg`** path after **`parse_config_files`** | same (**`test_setup_cfg_entry_points_configured_after_parse_config_files`**) |
-| Collision with **`console_scripts`** raises | same |
+| Test | Location |
+| ---- | -------- |
+| Metadata helpers (entry target, validation, package_data) | **`tests/extras/setuptools/test_metadata.py`** |
+| Plugin hook, patch, stubs, cmdclasses | **`tests/extras/setuptools/test_plugin.py`** |
+| **`setup.cfg`** path after **`parse_config_files`** | **`test_plugin.py`** (**`test_setup_cfg_entry_points_configured_after_parse_config_files`**) |
+| Collision with **`console_scripts`** raises | **`test_plugin.py`** |
+| Import **`metadata`** without **`koskari.lib`** | **`test_plugin.py`** (**`test_plugin_imports_without_koskari_lib`**) |
 | **`run_resolved_script`** resolves metadata, runs entry | **`tests/extras/setuptools/test_launcher.py`** |
-| **`KoskariInstallScripts`** stub generation | **`tests/extras/setuptools/test_scripts.py`** |
 | End-to-end: build tiny fixture package, install in tmp env, run script | integration test (tox env or **`tests/extras/setuptools/fixtures/`**) |
 | SIGINT / exit code parity with **`koskari.cli`** | launcher tests |
 
 Use **`tox`** per project rules. Packaging tests may use **`venv`** + **`pip install`** on a fixture sdist/wheel.
 
-## Documentation (when implemented)
+## Documentation
 
 User-facing (**`docs/`** only — no **`design/`** links from user docs):
 
 * **`docs/patterns/recipes/packaging-installed-scripts.md`** — declaring
-  **`koskari_scripts`**, **`setup.cfg`** layout, build notes
+  **`koskari_scripts`**, **`setup.cfg`** layout, build notes, CI validation
 * Cross-links from **`docs/patterns/recipes/script-main.md`**, CLI docs,
   **`examples/life/koslife/README.md`**
 
@@ -494,7 +510,7 @@ Internal:
 
 * This document
 * **`design/api/import-system.md`** — cross-link async load path for launchers
-* **`design/api/package-layout.md`** — new subpackage
+* **`design/api/package-layout.md`** — subpackage listing
 
 ## Implementation phases
 
@@ -511,11 +527,13 @@ Internal:
 
 **Done.**
 
-* **`koskari/extras/setuptools/`** (`finalize`, `packages`, `validate`, `errors`)
+* **`koskari/extras/setuptools/`** — **`metadata.py`** (pure Python helpers) +
+  **`plugin.py`** (hook, patch, stub install commands)
 * Registered in **`setup.cfg`** as **`setuptools.finalize_distribution_options`**
+  → **`koskari.extras.setuptools.plugin:configure_koskari_scripts`**
 * **`parse_config_files`** wrapper for **`setup.cfg`** / **`pyproject.toml`**
   entry points (setuptools ordering)
-* Tests in **`tests/extras/setuptools/test_finalize.py`**, **`test_validate.py`**
+* Tests in **`tests/extras/setuptools/test_metadata.py`**, **`test_plugin.py`**
 
 ### Phase 3 — Integration
 

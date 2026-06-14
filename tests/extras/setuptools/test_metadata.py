@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.extras.setuptools.test_packages
+tests.extras.setuptools.test_metadata
 
-Unit tests for koskari package augmentation on declared packages.
+Unit tests for koskari_scripts metadata helpers.
 """
 
 
@@ -24,10 +24,18 @@ import tempfile
 import unittest
 import warnings
 
-from koskari.extras.setuptools.packages import (
+from koskari.extras.setuptools.metadata import (
+    EntryTargetError,
+    KOSKARI_SCRIPTS_GROUP,
+    KoskariScriptsSetupError,
     augment_koskari_packages,
     packages_for_module_name,
     packages_from_koskari_scripts,
+    parse_entry_point_line,
+    parse_entry_target,
+    validate_entry_point_value,
+    validate_koskari_scripts,
+    warn_koskari_scripts_metadata,
     warn_undeclared_script_packages,
 )
 
@@ -41,18 +49,79 @@ class FakeDist(object):
     def __init__(
             self,
             entry_points=None,
-            packages=None,
+            install_requires=None,
+            zip_safe=False,
             package_data=None,
+            packages=None,
             script_name=None,
-            package_dir=None,
-            zip_safe=True):
+            package_dir=None):
 
         self.entry_points = entry_points
-        self.packages = packages
+        if install_requires is None:
+            install_requires = ['koskari']
+        self.install_requires = install_requires
+        self.zip_safe = zip_safe
         self.package_data = package_data or {}
+        self.packages = packages
         self.script_name = script_name
         self.package_dir = package_dir
-        self.zip_safe = zip_safe
+
+
+class TestEntryTarget(unittest.TestCase):
+
+    def test_koskari_scripts_group_constant(self):
+        self.assertEqual(KOSKARI_SCRIPTS_GROUP, 'koskari_scripts')
+
+    def test_parse_entry_target(self):
+        self.assertEqual(
+            parse_entry_target('koslife.cli:main'),
+            ('koslife.cli', 'main'))
+
+    def test_parse_entry_target_rejects_bare_module(self):
+        with self.assertRaises(EntryTargetError):
+            parse_entry_target('koslife.cli')
+
+
+class TestValidateHelpers(unittest.TestCase):
+
+    def test_parse_entry_point_line(self):
+        self.assertEqual(
+            parse_entry_point_line('koslife = koslife.cli:main'),
+            ('koslife', 'koslife.cli:main'))
+
+    def test_parse_entry_point_line_rejects_empty(self):
+        with self.assertRaises(KoskariScriptsSetupError):
+            parse_entry_point_line('broken')
+
+    def test_validate_entry_point_value_accepts_callable_form(self):
+        validate_entry_point_value('koslife.cli:main')
+
+    def test_validate_entry_point_value_rejects_bare_module(self):
+        with self.assertRaises(KoskariScriptsSetupError):
+            validate_entry_point_value('koslife.cli')
+
+    def test_validate_koskari_scripts_noop_when_absent(self):
+        validate_koskari_scripts(FakeDist({'console_scripts': []}))
+
+    def test_warn_missing_install_requires(self):
+        dist = FakeDist({
+            'koskari_scripts': ['koslife = koslife.cli:main'],
+        }, install_requires=[])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            warn_koskari_scripts_metadata(dist)
+        self.assertTrue(caught)
+        self.assertIn('install_requires', str(caught[0].message))
+
+    def test_warn_zip_safe_with_ki_package_data(self):
+        dist = FakeDist({
+            'koskari_scripts': ['koslife = koslife.cli:main'],
+        }, zip_safe=True, package_data={'koslife': ['*.ki']})
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            warn_koskari_scripts_metadata(dist)
+        self.assertTrue(caught)
+        self.assertIn('zip_safe', str(caught[0].message))
 
 
 class TestPackagesForModuleName(unittest.TestCase):

@@ -23,6 +23,10 @@ koskari/
 │   ├── importlib.py  # KoskariPathFinder, KoskariSourceFileLoader
 │   ├── module.py     # new_module, load_module_async
 │   └── bootstrap.py  # make_builtins
+├── launcher.py       # Installed-script runtime: run_resolved_script, hosted_run
+├── cli/              # koskari console entry (REPL, run file, compile-kio)
+├── extras/
+│   └── setuptools/   # koskari_scripts build plugin (metadata.py, plugin.py)
 └── lib/              # C extension (native types and runtime)
     ├── *.c, *.h     # atom, pair, namespace, formals, ref, values, bytecode, eval, ...
 ```
@@ -39,6 +43,8 @@ koskari/
 | Parsing | `koskari.reader` | `Reader`, `LayoutReader`, `SourceStream`, `source_str`, `source_open`, `default_reader` |
 | Compilation | `koskari.compile` | `Compiler`, `ByteCodeFragment`, `SPECIALS` (from compiler.py, specials/) |
 | Disassembly | `koskari.dis` | `dis`, and internal helpers |
+| Installed scripts | `koskari.launcher` | `run_resolved_script`, `run_target`, `hosted_run`, `drive_async_loop` |
+| Packaging plugin | `koskari.extras.setuptools` | `configure_koskari_scripts`, `validate_koskari_scripts` (`metadata.py`, `plugin.py`) |
 
 ## Import policy
 
@@ -59,6 +65,7 @@ Tests mirror the package by use case:
 - **tests/lexer/** — Lexer and LSP tests
 - **tests/matcher/** — (removed) legacy Python matcher tests; see **tests/** for `matcher` coverage
 - **tests/cli/** — CLI tests
+- **tests/extras/setuptools/** — `koskari_scripts` packaging plugin and launcher tests
 - **tests/native/** — C harness and memory tests
 
 Test helpers (e.g. `make_callable`) live in `tests/__init__.py` and import from `koskari.lib` and `koskari.types` as needed.

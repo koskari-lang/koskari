@@ -131,7 +131,7 @@ Third-party apps can ship pip-installable CLI commands whose sources stay in
 | Piece | Role |
 | ----- | ---- |
 | **`koskari_scripts`** entry point group | Author declares **`name = module:callable`** (e.g. **`koslife = koslife.cli:main`**) |
-| **`koskari.extras.setuptools`** | Build-time plugin: register **`install_scripts`** hook for koskari stub files, add **`*.ki`** / **`*.kio`** to **`package_data`** for author-declared **`packages=`**, set **`zip_safe = False`** |
+| **`koskari.extras.setuptools`** | Build-time plugin (`metadata.py` + `plugin.py`): register **`install_scripts`** hook for koskari stub files, add **`*.ki`** / **`*.kio`** to **`package_data`** for author-declared **`packages=`**, set **`zip_safe = False`** |
 | **`koskari.launcher`** | Runtime: **`run_resolved_script(spec, name)`** resolves one distribution's **`koskari_scripts`** metadata, runs target under **`drive_async_loop`** + async module load |
 | **`koskari.importer.import_module_async`** | Async **`.ki`** / **`.kio`** import path for hosted scripts |
 

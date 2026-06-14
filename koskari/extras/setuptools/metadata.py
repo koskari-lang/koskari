@@ -12,9 +12,10 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.extras.setuptools.validate
+koskari.extras.setuptools.metadata
 
-Validation helpers for koskari_scripts distribution metadata.
+Pure-Python koskari_scripts metadata helpers shared by the build plugin and
+koskari.launcher without importing the C extension.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -26,24 +27,78 @@ import warnings
 
 from setuptools.errors import SetupError
 
-from ...launcher import KOSKARI_SCRIPTS_GROUP, parse_entry_target
-
 
 __all__ = (
+    'EntryTargetError',
+    'KOSKARI_PACKAGE_DATA_PATTERNS',
+    'KOSKARI_SCRIPTS_GROUP',
     'KoskariScriptsSetupError',
+    'augment_koskari_packages',
+    'declared_packages',
     'entry_points_group_lines',
     'entry_points_lines_as_dict',
+    'packages_for_module_name',
+    'packages_from_koskari_scripts',
     'parse_entry_point_line',
+    'parse_entry_target',
     'validate_entry_point_value',
     'validate_koskari_scripts',
     'warn_koskari_scripts_metadata',
+    'warn_undeclared_script_packages',
 )
+
+
+KOSKARI_SCRIPTS_GROUP = 'koskari_scripts'
+
+KOSKARI_PACKAGE_DATA_PATTERNS = ('*.ki', '*.kio')
+
+
+class EntryTargetError(Exception):
+    """
+    Entry point value is not a supported module:callable target
+    """
 
 
 class KoskariScriptsSetupError(SetupError):
     """
     Invalid or conflicting koskari_scripts packaging metadata
     """
+
+
+def parse_entry_target(value):
+    """
+    Parse a koskari_scripts entry value into module and callable names
+
+    v1 supports module:callable only. Bare script-module targets are rejected.
+
+    :param value: entry point value string from packaging metadata
+    :return: (module_name, callable_name) pair
+    :raises EntryTargetError: when value is not module:callable form
+    """
+
+    value = value.strip()
+    if not value:
+        raise EntryTargetError("empty koskari_scripts entry value")
+
+    if ':' not in value:
+        raise EntryTargetError(
+            f"koskari_scripts entry {value!r} must use"
+            " module:callable form")
+
+    module_name, callable_name = value.split(':', 1)
+    module_name = module_name.strip()
+    callable_name = callable_name.strip()
+
+    if not module_name or not callable_name:
+        raise EntryTargetError(
+            f"koskari_scripts entry {value!r} must use"
+            " module:callable form")
+
+    if '.' in callable_name:
+        raise EntryTargetError(
+            f"nested callable paths are not supported in v1: {value!r}")
+
+    return module_name, callable_name
 
 
 def entry_points_lines_as_dict(entry_points):
@@ -132,7 +187,7 @@ def validate_entry_point_value(value):
 
     try:
         parse_entry_target(value)
-    except Exception as exc:
+    except EntryTargetError as exc:
         raise KoskariScriptsSetupError(
             "invalid koskari_scripts entry value"
             f" {value!r}: {exc}") from exc
@@ -200,6 +255,113 @@ def warn_koskari_scripts_metadata(dist):
             " discovery; setuptools plugin sets zip_safe=False when"
             " koskari packages are discovered",
             stacklevel=2)
+
+
+def declared_packages(dist):
+    """
+    Return the package names explicitly declared on the Distribution
+
+    :param dist: setuptools Distribution being finalized
+    :return: sorted package names from dist.packages
+    """
+
+    packages = getattr(dist, 'packages', None) or []
+    return sorted(set(packages))
+
+
+def packages_for_module_name(module_name):
+    """
+    Return parent package names required for a dotted module name
+
+    :param module_name: dotted module path from an entry point value
+    :return: sorted package names
+    """
+
+    parts = module_name.split('.')
+    if len(parts) < 2:
+        return []
+
+    return ['.'.join(parts[:index]) for index in range(1, len(parts))]
+
+
+def packages_from_koskari_scripts(entry_points):
+    """
+    Derive package names referenced by koskari_scripts entry points
+
+    :param entry_points: Distribution.entry_points value
+    :return: set of package names
+    """
+
+    packages = set()
+    for line in entry_points_group_lines(entry_points, KOSKARI_SCRIPTS_GROUP):
+        _name, value = parse_entry_point_line(line)
+        module_name, _callable_name = parse_entry_target(value)
+        packages.update(packages_for_module_name(module_name))
+    return packages
+
+
+def warn_undeclared_script_packages(dist):
+    """
+    Warn when koskari_scripts targets are outside declared packages
+
+    :param dist: setuptools Distribution being finalized
+    """
+
+    declared = set(declared_packages(dist))
+    if not declared:
+        return
+
+    required = packages_from_koskari_scripts(dist.entry_points)
+    missing = sorted(required.difference(declared))
+    if not missing:
+        return
+
+    warnings.warn(
+        "koskari_scripts entry points reference packages not listed in"
+        f" packages={sorted(declared)!r}: {', '.join(missing)}",
+        stacklevel=2)
+
+
+def _ensure_package_data(dist, packages):
+    package_data = dict(getattr(dist, 'package_data', None) or {})
+    for package_name in packages:
+        patterns = list(package_data.get(package_name, []))
+        for pattern in KOSKARI_PACKAGE_DATA_PATTERNS:
+            if pattern not in patterns:
+                patterns.append(pattern)
+        package_data[package_name] = patterns
+    dist.package_data = package_data
+
+
+def augment_koskari_packages(dist):
+    """
+    Add koskari source patterns to author-declared packages
+
+    When koskari_scripts is declared, ensure each package listed in
+    dist.packages includes *.ki and *.kio in package_data and set
+    zip_safe False. Authors must declare packages= explicitly; this
+    hook does not infer package names from entry points or filesystem
+    scans.
+
+    :param dist: setuptools Distribution being finalized
+    """
+
+    koskari_lines = entry_points_group_lines(
+        dist.entry_points, KOSKARI_SCRIPTS_GROUP)
+    if not koskari_lines:
+        return
+
+    packages = declared_packages(dist)
+    if not packages:
+        warnings.warn(
+            'koskari_scripts declared but packages= is empty; declare'
+            ' koskari packages explicitly in setup metadata',
+            stacklevel=2)
+        return
+
+    warn_undeclared_script_packages(dist)
+    _ensure_package_data(dist, packages)
+    dist.zip_safe = False
 
 
 # The end.

@@ -27,11 +27,17 @@ Domain and the koskari asyncio host without per-app Python shims.
 import sys
 from importlib import metadata
 
+from koskari.extras.setuptools.metadata import (
+    EntryTargetError,
+    KOSKARI_SCRIPTS_GROUP,
+    parse_entry_target,
+)
 from koskari.importer import import_module_async
 from koskari.lib import Domain, drive_async_loop
 
 
 __all__ = (
+    'EntryTargetError',
     'KOSKARI_SCRIPTS_GROUP',
     'hosted_run',
     'parse_entry_target',
@@ -39,9 +45,6 @@ __all__ = (
     'run_resolved_script',
     'run_target',
 )
-
-
-KOSKARI_SCRIPTS_GROUP = 'koskari_scripts'
 
 
 class LauncherError(Exception):
@@ -54,48 +57,6 @@ class EntryNotFoundError(LauncherError):
     """
     No koskari_scripts entry matches the requested script name
     """
-
-
-class EntryTargetError(LauncherError):
-    """
-    Entry point value is not a supported module:callable target
-    """
-
-
-def parse_entry_target(value):
-    """
-    Parse a koskari_scripts entry value into module and callable names
-
-    v1 supports module:callable only. Bare script-module targets are rejected.
-
-    :param value: entry point value string from packaging metadata
-    :return: (module_name, callable_name) pair
-    :raises EntryTargetError: when value is not module:callable form
-    """
-
-    value = value.strip()
-    if not value:
-        raise EntryTargetError("empty koskari_scripts entry value")
-
-    if ':' not in value:
-        raise EntryTargetError(
-            f"koskari_scripts entry {value!r} must use"
-            " module:callable form")
-
-    module_name, callable_name = value.split(':', 1)
-    module_name = module_name.strip()
-    callable_name = callable_name.strip()
-
-    if not module_name or not callable_name:
-        raise EntryTargetError(
-            f"koskari_scripts entry {value!r} must use"
-            " module:callable form")
-
-    if '.' in callable_name:
-        raise EntryTargetError(
-            f"nested callable paths are not supported in v1: {value!r}")
-
-    return module_name, callable_name
 
 
 def _koskari_script_entry_points(dist):
@@ -163,36 +124,6 @@ def resolve_koskari_script_value(spec, name):
     return matches[0].value
 
 
-def _isawaitable(obj):
-    """
-    Return True when obj looks like an awaitable coroutine result
-    """
-
-    if obj is None or isinstance(obj, (str, bytes)):
-        return False
-    return hasattr(obj, '__await__')
-
-
-async def _normalize_exit(result):
-    """
-    Convert a target return value into a process exit code
-
-    :param result: return value from the entry callable, possibly awaitable
-    :return: integer exit code
-    """
-
-    if _isawaitable(result):
-        result = await result
-
-    if result is None:
-        return 0
-    if isinstance(result, bool):
-        return 0 if result else 1
-    if isinstance(result, int):
-        return result
-    return 0
-
-
 async def hosted_run(module_name, callable_name, script_name, argv):
     """
     Async bootstrap for a packaged koskari_scripts target
@@ -210,7 +141,9 @@ async def hosted_run(module_name, callable_name, script_name, argv):
         mod = await import_module_async(module_name)
         fn = getattr(mod, callable_name)
         result = fn()
-        return await _normalize_exit(result)
+        if hasattr(result, '__await__'):
+            result = await result
+        return result
 
 
 def run_target(target, argv=None, script_name=None):

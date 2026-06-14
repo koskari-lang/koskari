@@ -29,9 +29,7 @@ from unittest.mock import patch
 from koskari.importer import install, uninstall
 from koskari.launcher import (
     EntryNotFoundError,
-    EntryTargetError,
     hosted_run,
-    parse_entry_target,
     resolve_koskari_script_value,
     run_resolved_script,
     run_target,)
@@ -39,18 +37,6 @@ from koskari.launcher import (
 import pytest
 
 pytestmark = pytest.mark.phase_extras
-
-
-class TestLauncherHelpers(unittest.TestCase):
-
-    def test_parse_entry_target(self):
-        self.assertEqual(
-            parse_entry_target('koslife.cli:main'),
-            ('koslife.cli', 'main'))
-
-    def test_parse_entry_target_rejects_bare_module(self):
-        with self.assertRaises(EntryTargetError):
-            parse_entry_target('koslife.cli')
 
 
 class TestResolveKoskariScriptValue(unittest.TestCase):

@@ -3,8 +3,8 @@
 PYTHON ?= $(shell which python3 python 2>/dev/null | head -n1)
 PYTHON := $(PYTHON)
 
-PROJECT := $(shell $(PYTHON) -B setup.py --name)
-VERSION := $(shell $(PYTHON) -B setup.py --version)
+PROJECT := $(shell awk -F' = ' '/^\[metadata\]/{m=1} m && /^name = /{print $$2; exit}' setup.cfg)
+VERSION := $(shell awk -F' = ' '/^\[metadata\]/{m=1} m && /^version = /{print $$2; exit}' setup.cfg)
 
 
 # Build configuration
@@ -84,7 +84,8 @@ koskari-bin: handlers report-python $(KOSKARI_BIN)  ## Build native koskari exec
 
 $(KOSKARI_BIN): $(KOSKARI_APP_MAIN)
 	@echo "Building native koskari executable..."
-	@$(PYTHON) -B setup.py build_ext --inplace
+	@mkdir -p $(BUILD_DIR)
+	@$(PYTHON) -B setup.py --egg-base $(BUILD_DIR) build_ext --inplace
 	@mkdir -p $(BUILD_DIR)/koskari-bin
 	@set -e; \
 	CC="$${CC:-gcc}"; \
@@ -235,7 +236,7 @@ docs-preview: docs  ## Build docs and serve build/docs for local preview
 
 clean-built:  ## Remove build artifacts
 	@echo "Cleaning build artifacts..."
-	@rm -rf $(BUILD_DIR)/ $(DIST_DIR)/ *.egg-info/
+	@rm -rf $(BUILD_DIR) $(DIST_DIR) .eggdir/*.egg-info/
 
 clean-ext:  ## Remove compiled extensions
 	@echo "Cleaning compiled extensions..."
