@@ -13,6 +13,8 @@ BUILD_DIR := build
 DIST_DIR := dist
 KOSKARI_APP_MAIN := koskari/app/main.c
 KOSKARI_BIN := $(BUILD_DIR)/koskari-bin/koskari
+KOSKARI_NATIVE_SRC := $(shell find koskari/lib -type f \
+	\( -name '*.c' -o -name '*.h' -o -name '*.incl' \) | sort)
 
 define checkfor
 	@if ! which $(1) >/dev/null 2>&1 ; then \
@@ -197,10 +199,15 @@ build-container:  ## Build koskari runtime container image
 	@uv venv -q --clear
 
 
-.venv/bin/koskari: .venv
+.venv/.koskari-built: .venv setup.py setup.cfg $(KOSKARI_NATIVE_SRC)
 	@$(call checkfor,uv)
 	@echo "Installing koskari..."
 	@uv pip install -qe .[repl]
+	@touch $@
+
+
+.venv/bin/koskari: .venv/.koskari-built
+	@test -x $@
 
 
 .venv/bin/koslife: .venv/bin/koskari
