@@ -101,9 +101,8 @@ def warn_undeclared_script_packages(dist):
         return
 
     warnings.warn(
-        'koskari_scripts entry points reference packages not listed in'
-        ' packages=%r: %s'
-        % (sorted(declared), ', '.join(missing)),
+        "koskari_scripts entry points reference packages not listed in"
+        f" packages={sorted(declared)!r}: {', '.join(missing)}",
         stacklevel=2)
 
 
@@ -139,8 +138,8 @@ def augment_koskari_packages(dist):
     packages = declared_packages(dist)
     if not packages:
         warnings.warn(
-            'koskari_scripts declared but packages= is empty; declare'
-            ' koskari packages explicitly in setup metadata',
+            "koskari_scripts declared but packages= is empty; declare"
+            " koskari packages explicitly in setup metadata",
             stacklevel=2)
         return
 

@@ -26,26 +26,22 @@ Domain and the koskari asyncio host without per-app Python shims.
 
 import sys
 from importlib import metadata
-from os.path import basename
 
 from koskari.importer import import_module_async
 from koskari.lib import Domain, drive_async_loop
 
 
-KOSKARI_SCRIPTS_GROUP = 'koskari_scripts'
-MIRROR_CONSOLE_TARGET = 'koskari.launcher:run_resolved_script'
-
-
 __all__ = (
     'KOSKARI_SCRIPTS_GROUP',
-    'MIRROR_CONSOLE_TARGET',
     'hosted_run',
     'parse_entry_target',
     'resolve_koskari_script_value',
     'run_resolved_script',
     'run_target',
-    'script_name_from_argv',
 )
+
+
+KOSKARI_SCRIPTS_GROUP = 'koskari_scripts'
 
 
 class LauncherError(Exception):
@@ -66,27 +62,6 @@ class EntryTargetError(LauncherError):
     """
 
 
-def script_name_from_argv(argv=None):
-    """
-    Derive the installed script basename from argv[0]
-
-    Strips setuptools wrapper suffixes so dispatch can match entry point names.
-
-    :param argv: argument list; defaults to sys.argv when None
-    :return: script name suitable for koskari_scripts lookup
-    """
-
-    if argv is None:
-        argv = sys.argv
-
-    name = basename(argv[0].replace('\\', '/'))
-    if name.endswith('-script.py'):
-        name = name[:-len('-script.py')]
-    if name.endswith('.exe'):
-        name = name[:-len('.exe')]
-    return name
-
-
 def parse_entry_target(value):
     """
     Parse a koskari_scripts entry value into module and callable names
@@ -100,12 +75,12 @@ def parse_entry_target(value):
 
     value = value.strip()
     if not value:
-        raise EntryTargetError('empty koskari_scripts entry value')
+        raise EntryTargetError("empty koskari_scripts entry value")
 
     if ':' not in value:
         raise EntryTargetError(
-            'koskari_scripts entry %r must use module:callable form'
-            % (value,))
+            f"koskari_scripts entry {value!r} must use"
+            " module:callable form")
 
     module_name, callable_name = value.split(':', 1)
     module_name = module_name.strip()
@@ -113,13 +88,12 @@ def parse_entry_target(value):
 
     if not module_name or not callable_name:
         raise EntryTargetError(
-            'koskari_scripts entry %r must use module:callable form'
-            % (value,))
+            f"koskari_scripts entry {value!r} must use"
+            " module:callable form")
 
     if '.' in callable_name:
         raise EntryTargetError(
-            'nested callable paths are not supported in v1: %r'
-            % (value,))
+            f"nested callable paths are not supported in v1: {value!r}")
 
     return module_name, callable_name
 
@@ -153,8 +127,8 @@ def resolve_koskari_script_value(spec, name):
     dist_name = dist_name.strip()
     if not dist_name:
         raise EntryNotFoundError(
-            'invalid distribution spec for koskari_scripts %r: %r'
-            % (name, spec))
+            "invalid distribution spec for"
+            f" koskari_scripts {name!r}: {spec!r}")
 
     try:
         dist = metadata.distribution(dist_name)

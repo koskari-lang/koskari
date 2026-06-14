@@ -34,9 +34,7 @@ from koskari.launcher import (
     parse_entry_target,
     resolve_koskari_script_value,
     run_resolved_script,
-    run_target,
-    script_name_from_argv,
-)
+    run_target,)
 
 import pytest
 
@@ -44,16 +42,6 @@ pytestmark = pytest.mark.phase_extras
 
 
 class TestLauncherHelpers(unittest.TestCase):
-
-    def test_script_name_from_argv_strips_script_suffix(self):
-        self.assertEqual(
-            script_name_from_argv(['/usr/bin/koslife-script.py']),
-            'koslife')
-
-    def test_script_name_from_argv_strips_exe_suffix(self):
-        self.assertEqual(
-            script_name_from_argv(['C:\\Tools\\koslife.exe']),
-            'koslife')
 
     def test_parse_entry_target(self):
         self.assertEqual(

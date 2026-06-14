@@ -24,40 +24,24 @@ Setuptools finalize hook for koskari_scripts packaging.
 
 from setuptools.dist import Distribution
 
-from ...launcher import KOSKARI_SCRIPTS_GROUP, MIRROR_CONSOLE_TARGET
+from ...launcher import KOSKARI_SCRIPTS_GROUP
 from .packages import augment_koskari_packages
-from .scripts import ensure_koskari_script_writer
-from .validate import (entry_points_group_lines, entry_points_lines_as_dict,
-                       parse_entry_point_line, validate_koskari_scripts,
+from .scripts import KoskariEditableWheel, KoskariInstallScripts
+from .validate import (entry_points_group_lines, validate_koskari_scripts,
                        warn_koskari_scripts_metadata)
 
 
 __all__ = (
-    'mirror_koskari_scripts',
+    'configure_koskari_scripts',
 )
 
 
 _PARSE_CONFIG_PATCHED = False
 
 
-def _ensure_console_scripts_list(mapping):
+def configure_koskari_scripts(dist):
     """
-    Return the console_scripts line list, creating it when absent
-
-    :param mapping: normalized entry_points dict
-    :return: mutable list of console_scripts lines
-    """
-
-    lines = mapping.setdefault('console_scripts', [])
-    if isinstance(lines, str):
-        lines = [lines]
-        mapping['console_scripts'] = lines
-    return lines
-
-
-def mirror_koskari_scripts(dist):
-    """
-    Mirror koskari_scripts into console_scripts and augment package_data
+    Validate koskari_scripts metadata and register install_scripts hook
 
     Registered as setuptools.finalize_distribution_options and also invoked
     after Distribution.parse_config_files so setup.cfg metadata is visible.
@@ -80,32 +64,16 @@ def mirror_koskari_scripts(dist):
     validate_koskari_scripts(dist)
     augment_koskari_packages(dist)
     warn_koskari_scripts_metadata(dist)
-    ensure_koskari_script_writer()
 
-    mapping = entry_points_lines_as_dict(dist.entry_points)
-    console_lines = _ensure_console_scripts_list(mapping)
-
-    existing = set()
-    for line in console_lines:
-        name, _value = parse_entry_point_line(line)
-        existing.add(name)
-
-    for line in koskari_lines:
-        name, _value = parse_entry_point_line(line)
-        mirror_line = '%s = %s' % (name, MIRROR_CONSOLE_TARGET)
-        if mirror_line in console_lines:
-            continue
-        if name in existing:
-            continue
-        console_lines.append(mirror_line)
-        existing.add(name)
-
-    dist.entry_points = mapping
+    cmdclass = dict(getattr(dist, 'cmdclass', None) or {})
+    cmdclass['install_scripts'] = KoskariInstallScripts
+    cmdclass['editable_wheel'] = KoskariEditableWheel
+    dist.cmdclass = cmdclass
 
 
 def _patch_parse_config_files():
     """
-    Run mirror_koskari_scripts after setup.cfg / pyproject.toml are loaded
+    Run configure_koskari_scripts after setup.cfg / pyproject.toml are loaded
     """
 
     global _PARSE_CONFIG_PATCHED
@@ -124,7 +92,7 @@ def _patch_parse_config_files():
             ignore_option_errors=False):
 
         orig(self, filenames, ignore_option_errors=ignore_option_errors)
-        mirror_koskari_scripts(self)
+        configure_koskari_scripts(self)
 
     parse_config_files._koskari_wrapped = True
     Distribution.parse_config_files = parse_config_files

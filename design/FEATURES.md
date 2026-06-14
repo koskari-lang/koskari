@@ -131,7 +131,7 @@ Third-party apps can ship pip-installable CLI commands whose sources stay in
 | Piece | Role |
 | ----- | ---- |
 | **`koskari_scripts`** entry point group | Author declares **`name = module:callable`** (e.g. **`koslife = koslife.cli:main`**) |
-| **`koskari.extras.setuptools`** | Build-time plugin: mirror each name into **`console_scripts`**, patch **`ScriptWriter`** for dist-scoped stubs, add **`*.ki`** / **`*.kio`** to **`package_data`** for author-declared **`packages=`**, set **`zip_safe = False`** |
+| **`koskari.extras.setuptools`** | Build-time plugin: register **`install_scripts`** hook for koskari stub files, add **`*.ki`** / **`*.kio`** to **`package_data`** for author-declared **`packages=`**, set **`zip_safe = False`** |
 | **`koskari.launcher`** | Runtime: **`run_resolved_script(spec, name)`** resolves one distribution's **`koskari_scripts`** metadata, runs target under **`drive_async_loop`** + async module load |
 | **`koskari.importer.import_module_async`** | Async **`.ki`** / **`.kio`** import path for hosted scripts |
 
@@ -144,7 +144,7 @@ Third-party apps can ship pip-installable CLI commands whose sources stay in
 **`Distribution.__init__`**, before **`setup.cfg`** is parsed. The plugin
 therefore mirrors on **two paths**: the finalize hook (inline **`setup()`**
 kwargs) and a lazy **`parse_config_files`** wrapper (config-file entry points).
-Both invoke the same idempotent **`mirror_koskari_scripts`**.
+Both invoke the same idempotent **`configure_koskari_scripts`**.
 
 **Reference example:** **`examples/life`** (**`koslife`** command).
 **Detail:** [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md).

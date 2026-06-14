@@ -16,7 +16,7 @@ koskari.extras.setuptools
 
 Build-time helpers for koskari_scripts packaging. Application packages
 declare koskari_scripts entry points and list koskari in build-system.requires
-so the finalize hook mirrors installed commands into console_scripts.
+so the finalize hook installs koskari command stubs at build time.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -25,7 +25,7 @@ so the finalize hook mirrors installed commands into console_scripts.
 
 
 try:
-    from .finalize import mirror_koskari_scripts
+    from .finalize import configure_koskari_scripts
     from .validate import KoskariScriptsSetupError, validate_koskari_scripts
 
 except ImportError:
@@ -34,7 +34,7 @@ except ImportError:
 else:
     __all__ = (
         'KoskariScriptsSetupError',
-        'mirror_koskari_scripts',
+        'configure_koskari_scripts',
         'validate_koskari_scripts',
     )
 

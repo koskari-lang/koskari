@@ -27,7 +27,7 @@ Build isolation may need to be disabled when koskari is only available locally.
 | **`life.ki`** | Board simulation |
 | **`__init__.py`** | Ensures the koskari import hook is active |
 
-Packaging metadata is in **`../setup.cfg`** (with a minimal **`../setup.py`**
+Packaging metadata is in **`setup.cfg`** (with a minimal **`setup.py`**
 shim): **`packages`**, **`koskari_scripts`**, and **`install_requires`**. The
 koskari setuptools plugin adds **`*.ki`** / **`*.kio`** **`package_data`** at
 build time.

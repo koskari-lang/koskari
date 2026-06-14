@@ -16,16 +16,16 @@ Koskari uses a **`koskari_scripts`** entry point group (similar in spirit to
 Python **`console_scripts`**, but for async Koskari programs). At build time,
 the koskari setuptools plugin:
 
-- mirrors each name into **`console_scripts`** (installer bookkeeping)
-- patches setuptools **`ScriptWriter`** to emit stubs that call
-  **`run_resolved_script(dist==version, name)`** directly
+- writes a pre-built stub for each command into the wheel (via
+  **`install_scripts`**) that calls **`run_resolved_script(dist==version, name)`**
 - adds **`*.ki`** and **`*.kio`** to **`package_data`** for each package you
   list in **`packages=`**
 - sets **`zip_safe = False`** so installed sources remain discoverable
 
-At install time, pip writes a **`bin/mytool`** wrapper. At runtime, the stub
-resolves the **`koskari_scripts`** target from that package's dist-info only,
-then runs it under the koskari async host (no per-app **`asyncio.run`** shim).
+At install time, pip copies the stub from the wheel into **`bin/mytool`**. At
+runtime the stub resolves the **`koskari_scripts`** target from that package's
+dist-info only, then runs it under the koskari async host (no per-app
+**`asyncio.run`** shim).
 
 ## Minimal packaging
 
@@ -122,15 +122,12 @@ first, or by disabling build isolation for that build.
 After install, verify metadata:
 
 ```text
-[console_scripts]
-mytool = koskari.launcher:run_resolved_script
-
 [koskari_scripts]
 mytool = mypkg.cli:main
 ```
 
-The **`console_scripts`** row is installer metadata. The installed **`bin/mytool`**
-file calls **`run_resolved_script('myapp==…', 'mytool')`** directly.
+The installed **`bin/mytool`** file calls
+**`run_resolved_script('myapp==…', 'mytool')`** directly.
 
 Run:
 

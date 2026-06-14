@@ -14,20 +14,18 @@
 """
 tests.extras.setuptools.test_scripts
 
-Unit tests for koskari_scripts ScriptWriter customization.
+Unit tests for koskari_scripts stub generation and install_scripts hook.
 """
 
 
 import unittest
 
 from koskari.extras.setuptools.scripts import (
-    KoskariScriptWriter,
-    KoskariWindowsExecutableLauncherWriter,
-    KoskariWindowsScriptWriter,
-    ensure_koskari_script_writer,
-    koskari_script_names,
+    KoskariInstallScripts,
+    iter_koskari_script_args,
+    koskari_script_source,
 )
-from koskari.launcher import KOSKARI_SCRIPTS_GROUP, MIRROR_CONSOLE_TARGET
+from koskari.launcher import KOSKARI_SCRIPTS_GROUP
 
 import pytest
 
@@ -67,72 +65,50 @@ class FakeDist(object):
         self.entry_points = entry_points
 
 
-class TestKoskariScriptNames(unittest.TestCase):
+class TestKoskariScriptSource(unittest.TestCase):
 
-    def test_collects_koskari_scripts_names(self):
-        dist = FakeDist(None)
-        dist.entry_points = {
-            'koskari_scripts': ['koslife = koslife.cli:main'],
-        }
-        self.assertEqual(koskari_script_names(dist), {'koslife'})
+    def test_emits_run_resolved_script_call(self):
+        src = koskari_script_source(
+            'myapp==1.0',
+            KOSKARI_SCRIPTS_GROUP,
+            'koslife')
+        self.assertIn("run_resolved_script('myapp==1.0', 'koslife')", src)
+        self.assertIn('KOSKARI-SCRIPT-ENTRY', src)
 
 
-class TestKoskariScriptWriter(unittest.TestCase):
+class TestIterKoskariScriptArgs(unittest.TestCase):
 
-    def setUp(self):
-        ensure_koskari_script_writer()
-        self.writer = KoskariScriptWriter
-
-    def test_koskari_command_emits_run_resolved_script_stub(self):
+    def test_yields_koskari_stub_for_koskari_scripts_group(self):
         dist = FakeDist(FakeEntryPoints({
-            'console_scripts': [
-                FakeEntryPoint('koslife', MIRROR_CONSOLE_TARGET, 'console_scripts'),
-                FakeEntryPoint('plain', 'plain.cli:main', 'console_scripts'),
-            ],
             KOSKARI_SCRIPTS_GROUP: [
-                FakeEntryPoint('koslife', 'koslife.cli:main', KOSKARI_SCRIPTS_GROUP),
+                FakeEntryPoint(
+                    'koslife', 'koslife.cli:main', KOSKARI_SCRIPTS_GROUP),
             ],
         }))
 
         scripts = {}
-        for args in self.writer.get_args(dist, header='#!python\n'):
-            if len(args) == 2:
-                name, contents = args
-            else:
-                name, contents = args[0], args[1]
+        for name, contents in iter_koskari_script_args(
+                dist, header='#!python\n'):
             scripts[name] = contents
 
         self.assertIn('run_resolved_script', scripts['koslife'])
         self.assertIn("KOSKARI-SCRIPT-ENTRY: 'myapp==1.0'", scripts['koslife'])
-        self.assertIn('load_entry_point', scripts['plain'])
+        self.assertNotIn('load_entry_point', scripts['koslife'])
 
-    def test_patch_swaps_setuptools_script_writers(self):
-        ensure_koskari_script_writer()
-        from setuptools import _scripts
-        self.assertIs(_scripts.ScriptWriter, KoskariScriptWriter)
-        self.assertIs(_scripts.WindowsScriptWriter, KoskariWindowsScriptWriter)
-        self.assertIs(
-            _scripts.WindowsExecutableLauncherWriter,
-            KoskariWindowsExecutableLauncherWriter)
+    def test_empty_when_no_koskari_scripts(self):
+        dist = FakeDist(FakeEntryPoints({
+            'console_scripts': [
+                FakeEntryPoint('plain', 'plain.cli:main', 'console_scripts'),
+            ],
+        }))
+        self.assertEqual(list(iter_koskari_script_args(dist)), [])
 
-    def test_patch_is_idempotent(self):
-        ensure_koskari_script_writer()
-        from setuptools import _scripts
-        self.assertIs(_scripts.ScriptWriter, KoskariScriptWriter)
-        ensure_koskari_script_writer()
-        self.assertIs(_scripts.ScriptWriter, KoskariScriptWriter)
 
-    def test_windows_mixin_combines_koskari_and_launcher_behaviour(self):
-        stock_launcher = KoskariWindowsExecutableLauncherWriter.__bases__[1]
-        mro = KoskariWindowsExecutableLauncherWriter.__mro__
-        self.assertIn(KoskariScriptWriter, mro)
-        self.assertIn(stock_launcher, mro)
-        self.assertIs(
-            KoskariWindowsExecutableLauncherWriter._get_script_args.__func__,
-            stock_launcher._get_script_args.__func__)
-        self.assertIs(
-            KoskariWindowsExecutableLauncherWriter.get_args.__func__,
-            KoskariScriptWriter.get_args.__func__)
+class TestKoskariInstallScripts(unittest.TestCase):
+
+    def test_subclasses_setuptools_install_scripts(self):
+        from setuptools.command.install_scripts import install_scripts
+        self.assertTrue(issubclass(KoskariInstallScripts, install_scripts))
 
 
 # The end.

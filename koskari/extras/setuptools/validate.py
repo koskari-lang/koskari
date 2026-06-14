@@ -77,7 +77,7 @@ def entry_points_lines_as_dict(entry_points):
             return {}
         for group in groups:
             result[group] = [
-                '%s = %s' % (ep.name, ep.value)
+                f'{ep.name} = {ep.value}'
                 for ep in entry_points.select(group=group)
             ]
         return result
@@ -117,7 +117,7 @@ def parse_entry_point_line(line):
     value = value.strip()
     if not name or not value:
         raise KoskariScriptsSetupError(
-            f'invalid entry point line {line!r}')
+            f"invalid entry point line {line!r}")
 
     return name, value
 
@@ -134,8 +134,8 @@ def validate_entry_point_value(value):
         parse_entry_target(value)
     except Exception as exc:
         raise KoskariScriptsSetupError(
-            'invalid koskari_scripts entry value %r: %s'
-            % (value, exc)) from exc
+            "invalid koskari_scripts entry value"
+            f" {value!r}: {exc}") from exc
 
 
 def validate_koskari_scripts(dist):
@@ -162,7 +162,7 @@ def validate_koskari_scripts(dist):
 
     if len(koskari_names) != len(set(koskari_names)):
         raise KoskariScriptsSetupError(
-            f'duplicate names in koskari_scripts: {koskari_names!r}')
+            f"duplicate names in koskari_scripts: {koskari_names!r}")
 
     console_names = set()
     for line in console_lines:
@@ -172,8 +172,8 @@ def validate_koskari_scripts(dist):
     overlap = sorted(set(koskari_names).intersection(console_names))
     if overlap:
         raise KoskariScriptsSetupError(
-            'koskari_scripts names must not also appear in console_scripts:'
-            f' {", ".join(overlap)}')
+            "koskari_scripts names must not also appear in console_scripts:"
+            f" {', '.join(overlap)}")
 
 
 def warn_koskari_scripts_metadata(dist):
@@ -191,14 +191,14 @@ def warn_koskari_scripts_metadata(dist):
     install_reqs = set(getattr(dist, 'install_requires', None) or [])
     if 'koskari' not in install_reqs:
         warnings.warn(
-            'koskari_scripts declared but koskari is not in install_requires',
+            "koskari_scripts declared but koskari is not in install_requires",
             stacklevel=2)
 
     if getattr(dist, 'zip_safe', False):
         warnings.warn(
-            'koskari_scripts with zip_safe=True may prevent .ki'
-            ' discovery; setuptools plugin sets zip_safe=False when'
-            ' koskari packages are discovered',
+            "koskari_scripts with zip_safe=True may prevent .ki"
+            " discovery; setuptools plugin sets zip_safe=False when"
+            " koskari packages are discovered",
             stacklevel=2)
 
 

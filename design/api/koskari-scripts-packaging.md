@@ -8,7 +8,7 @@ Implemented:
 
 * **`koskari.launcher`** — `run_resolved_script`, `drive_async_loop`, `hosted_run`, `run_target`
 * **`koskari.importer.import_module_async`** — async `.ki`/`.kio` import under a running loop
-* **`koskari.extras.setuptools`** — `mirror_koskari_scripts` finalize hook, custom **`ScriptWriter`**, validation helpers
+* **`koskari.extras.setuptools`** — `configure_koskari_scripts` finalize hook, **`KoskariInstallScripts`**, validation helpers
 * Unit tests under **`tests/extras/setuptools/`**
 
 Deferred from v1:
@@ -36,9 +36,11 @@ Also done since initial v1 landing:
 
 * **`examples/life`** migrated to **`koskari_scripts`** ( **`setup.cfg`** + minimal **`setup.py`** )
 * User-facing packaging guide: **`docs/patterns/recipes/packaging-installed-scripts.md`**
-* **`parse_config_files`** wrapper so **`setup.cfg`** entry points mirror correctly
-* Custom **`ScriptWriter`** stubs embed **`run_resolved_script(spec, name)`** for
-  **`koskari_scripts`** commands (dist-scoped metadata resolve, no global scan)
+* **`parse_config_files`** wrapper so **`setup.cfg`** entry points configure correctly
+* **`KoskariInstallScripts`** writes **`run_resolved_script(spec, name)`** stubs into
+  wheel **`.data/scripts/`** (dist-scoped metadata resolve, no global scan)
+* **`KoskariEditableWheel`** ensures PEP 660 editable builds run **`install_scripts`**
+  for **`koskari_scripts`** (stock **`editable_wheel`** skips scripts otherwise)
 
 ## Summary
 
@@ -49,11 +51,11 @@ entry points (analogous to **`console_scripts`**) that install as normal
 `bin/` commands but run through the koskari async runtime host instead of a bare
 Python import-and-call.
 
-When **`koskari`** is installed, its setuptools plugin mirrors each
-**`koskari_scripts`** name into **`console_scripts`** pointing at a shared
-launcher. **`pip install`** therefore generates wrappers the same way it does
-for Python CLIs, while runtime dispatch resolves the real koskari target from
-**`koskari_scripts`** metadata.
+When **`koskari`** is installed, its setuptools plugin registers an
+**`install_scripts`** hook that writes one stub file per **`koskari_scripts`**
+name during wheel build. **`pip install`** copies those stubs into **`bin/`**;
+runtime dispatch resolves the real koskari target from **`koskari_scripts`**
+metadata in dist-info.
 
 ## Motivation
 
@@ -104,7 +106,7 @@ modules, **`Domain`**, event loop, then dispatch.
 * A native C executable embedding CPython
 * Custom pip patches or non-standard install paths
 * Auto-generating **`when-main:`** entry modules; authors supply **`main`** or a script module explicitly
-* **`gui_scripts`** parity (can follow later using the same mirroring pattern)
+* **`gui_scripts`** parity (can follow later using the same install_scripts pattern)
 
 ## Architecture overview
 
@@ -112,14 +114,14 @@ modules, **`Domain`**, event loop, then dispatch.
 flowchart TB
     subgraph build [Build time — app package]
         A["[koskari_scripts]\nkoslife = koslife.cli:main"]
-        B["setuptools.finalize_distribution_options\n(koskari.extras.setuptools)"]
-        C["Mirrored console_scripts\nkoslife = koskari.launcher:run_resolved_script"]
-        D["entry_points.txt in wheel/sdist"]
+        B["configure_koskari_scripts\n(koskari.extras.setuptools)"]
+        C["KoskariInstallScripts writes stub"]
+        D["entry_points.txt + .data/scripts/ in wheel"]
         A --> B --> C --> D
     end
 
     subgraph install [pip install]
-        D --> E["bin/koslife stub\n(Koskari ScriptWriter template)"]
+        D --> E["bin/koslife from wheel .data/scripts/"]
     end
 
     subgraph runtime [Runtime]
@@ -132,7 +134,7 @@ flowchart TB
 Two layers:
 
 1. **Build-time (`koskari.extras.setuptools`)** — registers the setuptools
-   plugin, mirrors **`koskari_scripts`** → **`console_scripts`**, augments
+   plugin, installs koskari stub files via **`install_scripts`**, augments
    **`package_data`** / **`zip_safe`**, optional validation helpers for app
    authors.
 2. **Runtime (`koskari.launcher`)** — shared dispatch and hosted execution;
@@ -148,8 +150,8 @@ koskari/
 └── extras/
     └── setuptools/
         ├── __init__.py         # Public helpers / version note
-        ├── finalize.py         # mirror hook + parse_config_files wrapper
-        ├── scripts.py          # KoskariScriptWriter patch + stub template
+        ├── finalize.py         # configure hook + parse_config_files wrapper
+        ├── scripts.py          # KoskariInstallScripts + stub template
         ├── packages.py         # .ki/.kio package discovery and augmentation
         └── validate.py         # Optional: check dist metadata in tests/CI
 ```
@@ -164,7 +166,7 @@ packages =
 
 [options.entry_points]
 setuptools.finalize_distribution_options =
-    koskari_scripts = koskari.extras.setuptools.finalize:mirror_koskari_scripts
+    koskari_scripts = koskari.extras.setuptools.finalize:configure_koskari_scripts
 console_scripts =
   koskari = koskari.cli:main
   ; koskari-lsp unchanged
@@ -247,17 +249,17 @@ dependencies = ["koskari"]
 Authors must **not** also register the same command name under
 **`console_scripts`**. The finalize hook should error on collisions.
 
-## Build-time: `mirror_koskari_scripts`
+## Build-time: `configure_koskari_scripts`
 
 **Module:** **`koskari.extras.setuptools.finalize`**
 
 **Entry point group:** **`setuptools.finalize_distribution_options`**
 
-**Hook name:** **`koskari_scripts`** (or **`mirror_koskari_scripts`**)
+**Hook name:** **`koskari_scripts`** (or **`configure_koskari_scripts`**)
 
 ### Algorithm
 
-**`mirror_koskari_scripts(dist)`** runs the same steps in both hook paths
+**`configure_koskari_scripts(dist)`** runs the same steps in both hook paths
 below. It is idempotent (safe to invoke more than once on the same
 **`Distribution`**).
 
@@ -265,14 +267,11 @@ below. It is idempotent (safe to invoke more than once on the same
 2. If **`koskari_scripts`** is absent or empty, return.
 3. Validate names and values; augment **`package_data`** / **`zip_safe`** for
    declared **`packages=`** (see **`packages.py`**).
-4. Normalize entries to **`name = value`** strings.
-5. For each name in **`koskari_scripts`**:
-   * If name already exists in **`console_scripts`**, raise
-     **`KoskariScriptsSetupError`** with a clear message.
-   * Append **`f"{name} = koskari.launcher:run_resolved_script"`** to **`console_scripts`**
-     unless that mirror line is already present.
-6. Write the updated mapping back to **`dist.entry_points`**. Leave
-   **`koskari_scripts`** unchanged (launcher reads it at runtime).
+4. Register **`dist.cmdclass['install_scripts'] = KoskariInstallScripts`**.
+
+No mutation of **`console_scripts`**. Stub files are written during
+**`install_scripts`** (including wheel builds where **`no_ep=True`** skips
+stock entry-point script generation).
 
 ### When the hook runs (setuptools ordering)
 
@@ -281,7 +280,7 @@ Setuptools **`setup()`** order matters:
 1. **`Distribution.__init__(attrs)`** — applies kwargs passed to **`setup(...)`**
 2. **`Distribution.finalize_options()`** — runs
    **`setuptools.finalize_distribution_options`** entry points (including
-   **`mirror_koskari_scripts`**)
+   **`configure_koskari_scripts`**)
 3. **`Distribution.parse_config_files()`** — loads **`setup.cfg`** and
    relevant **`pyproject.toml`** sections
 
@@ -300,7 +299,7 @@ The plugin therefore uses **two invocation paths**:
 
 On first finalize hook entry, **`finalize.py`** lazily wraps
 **`Distribution.parse_config_files`** so step 3 re-invokes
-**`mirror_koskari_scripts`** after config is loaded. No author-facing
+**`configure_koskari_scripts`** after config is loaded. No author-facing
 difference: declarative **`koskari_scripts`** in **`setup.cfg`** and inline
 **`setup()`** kwargs produce the same wheel metadata.
 
@@ -311,41 +310,38 @@ environment:
 | ------------ | -------------- |
 | **`pip install .`** with koskari already in env | Yes |
 | PEP 517 isolated build with **`build-system.requires = [..., "koskari"]`** | Yes |
-| PEP 517 build without koskari in build deps | No — **`koskari_scripts` not mirrored**; document as author error |
+| PEP 517 build without koskari in build deps | No — **`koskari_scripts` stubs not written**; document as author error |
 | Legacy **`python setup.py install`** with koskari installed | Yes |
 
-### Resulting `entry_points.txt`
+### Resulting wheel artifacts
+
+**`entry_points.txt`:**
 
 ```ini
-[console_scripts]
-koslife = koskari.launcher:run_resolved_script
-
 [koskari_scripts]
 koslife = koslife.cli:main
 ```
 
-**`pip install`** and setuptools **`install_scripts`** both consume
-**`console_scripts`**; **`koskari_scripts`** is preserved for the launcher.
-The installed **`bin/koslife`** stub body is generated by
-**`koskari.extras.setuptools.scripts`** and calls **`run_resolved_script`**
-directly; the **`console_scripts`** row is bookkeeping metadata.
+**`.data/scripts/koslife`** (pre-built stub, copied to **`bin/`** on install):
 
-### Custom `ScriptWriter` (implemented)
+```python
+# KOSKARI-SCRIPT-ENTRY: 'myapp==1.0', 'koskari_scripts', 'koslife'
+from koskari.launcher import run_resolved_script
+sys.exit(run_resolved_script('myapp==1.0', 'koslife'))
+```
+
+### Stub install (`KoskariInstallScripts`)
 
 **Module:** **`koskari.extras.setuptools.scripts`**
 
-When **`mirror_koskari_scripts`** runs, it patches setuptools **`ScriptWriter`**
-so each **`koskari_scripts`** command installs a stub like:
-
-```python
-# KOSKARI-SCRIPT-ENTRY: 'myapp==1.0', 'koskari_scripts', 'mytool'
-from koskari.launcher import run_resolved_script
-sys.exit(run_resolved_script('myapp==1.0', 'mytool'))
-```
+When **`configure_koskari_scripts`** runs, it registers **`KoskariInstallScripts`**
+which writes one stub per **`koskari_scripts`** entry during **`install_scripts`**.
+Wheel builds set **`no_ep=True`** (skip stock **`console_scripts`** generation)
+but koskari stubs still land in **`.data/scripts/`**.
 
 This matches setuptools' dist-scoped resolve model: one **`dist-info`** read,
 no global **`entry_points()`** scan. Other **`console_scripts`** on the same
-distribution keep the stock setuptools template.
+distribution keep the stock setuptools template when **`no_ep`** is false.
 
 ## Runtime: `koskari.launcher`
 
@@ -475,11 +471,11 @@ active under editable installs. **`cli.ki`** **`define main`** is unchanged.
 
 | Test | Location (proposed) |
 | ---- | ------------------- |
-| Finalize hook mirrors entries | **`tests/extras/setuptools/test_finalize.py`** |
-| **`setup.cfg`** path after **`parse_config_files`** | same (**`test_setup_cfg_entry_points_mirrored_after_parse_config_files`**) |
+| Finalize hook configures koskari_scripts | **`tests/extras/setuptools/test_finalize.py`** |
+| **`setup.cfg`** path after **`parse_config_files`** | same (**`test_setup_cfg_entry_points_configured_after_parse_config_files`**) |
 | Collision with **`console_scripts`** raises | same |
 | **`run_resolved_script`** resolves metadata, runs entry | **`tests/extras/setuptools/test_launcher.py`** |
-| **`KoskariScriptWriter`** stub generation | **`tests/extras/setuptools/test_scripts.py`** |
+| **`KoskariInstallScripts`** stub generation | **`tests/extras/setuptools/test_scripts.py`** |
 | End-to-end: build tiny fixture package, install in tmp env, run script | integration test (tox env or **`tests/extras/setuptools/fixtures/`**) |
 | SIGINT / exit code parity with **`koskari.cli`** | launcher tests |
 
@@ -530,7 +526,7 @@ Internal:
 ### Phase 4 — Polish (optional)
 
 * End-to-end pip-install integration test
-* **`gui_scripts`** mirror if needed
+* **`gui_scripts`** support if needed
 
 ## Open questions
 
@@ -543,7 +539,7 @@ Internal:
    later if builds become too heavy?
 4. **Script module vs callable** — Support both in v1, or callable-only to reduce
    **`__name__`** / **`when-main:`** ambiguity?
-5. **Editable installs** — Verify mirroring under **`pip install -e`**; setuptools
+5. **Editable installs** — Verify stub install under **`pip install -e`**; setuptools
    editable backends differ; add explicit test.
 
 ## References
@@ -552,7 +548,7 @@ Internal:
 * **[../interpreter/domain.md](../interpreter/domain.md)** — **`Domain`** scope
 * **`koskari/cli/__init__.py`** — **`drive_async_loop`**, **`cli_async`**
 * **`examples/life/`** — reference **`koskari_scripts`** application
-* Setuptools **`ScriptWriter`** — **`setuptools/_scripts.py`**
+* Setuptools **`install_scripts`** — **`setuptools/command/install_scripts.py`**
 * Entry points spec — [packaging.python.org](https://packaging.python.org/en/latest/specifications/entry-points/)
 
 ## See also

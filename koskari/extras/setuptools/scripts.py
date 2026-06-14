@@ -14,7 +14,7 @@
 """
 koskari.extras.setuptools.scripts
 
-Custom setuptools ScriptWriter for koskari_scripts installed commands.
+Install koskari_scripts commands as pre-built stub files via install_scripts.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -22,133 +22,146 @@ Custom setuptools ScriptWriter for koskari_scripts installed commands.
 """
 
 
+import sys
 import textwrap
 
 from setuptools import _scripts as scripts
 from setuptools._importlib import metadata as setuptools_metadata
+from setuptools.command import install_scripts as install_scripts_module
+from setuptools.command.editable_wheel import editable_wheel
 from setuptools.warnings import SetuptoolsWarning
 
 from ...launcher import KOSKARI_SCRIPTS_GROUP
-from .validate import entry_points_group_lines, parse_entry_point_line
+from .validate import entry_points_group_lines
 
 
 __all__ = (
-    'KoskariScriptWriter',
-    'KoskariWindowsExecutableLauncherWriter',
-    'KoskariWindowsScriptWriter',
-    'ensure_koskari_script_writer',
-    'koskari_script_names',
+    'KoskariEditableWheel',
+    'KoskariInstallScripts',
+    'iter_koskari_script_args',
+    'koskari_script_source',
 )
-
-
-_SCRIPT_WRITER_PATCHED = False
 
 
 def koskari_script_source(spec, group, name):
     src = f"""
     # KOSKARI-SCRIPT-ENTRY: {spec!r},{group!r},{name!r}
-    import re
-    import sys
-
+    from sys import argv, exit
     from koskari.launcher import run_resolved_script
 
-    if __name__ == '__main__':
-        sys.argv[0] = re.sub(r'(-script\\.pyw?|\\.exe)?$', '', sys.argv[0])
-        sys.exit(run_resolved_script({spec!r}, {name!r}))
+    program = argv[0]
+    if program.endswith('script.pyw'):
+        argv[0] = program[:-len('script.pyw')]
+    elif program.endswith('.exe'):
+        argv[0] = program[:-len('.exe')]
+
+    exit(run_resolved_script({spec!r}, {name!r}))
     """
     return textwrap.dedent(src).lstrip()
 
 
-def koskari_script_names(dist):
+def _metadata_distribution(dist):
     """
-    Return koskari_scripts entry names declared on a distribution
+    Return an importlib.metadata Distribution for script generation
 
-    :param dist: setuptools Distribution being built
-    :return: set of script basenames
-    """
-
-    eps = dist.entry_points
-    if hasattr(eps, 'select'):
-        return {ep.name for ep in eps.select(group=KOSKARI_SCRIPTS_GROUP)}
-
-    names = set()
-    for line in entry_points_group_lines(eps, KOSKARI_SCRIPTS_GROUP):
-        name, _value = parse_entry_point_line(line)
-        names.add(name)
-    return names
-
-
-class KoskariScriptWriter(scripts.ScriptWriter):
-    """
-    Emit direct run_resolved_script stubs for koskari_scripts commands
+    :param dist: setuptools Distribution or metadata Distribution
+    :return: metadata Distribution with entry_points.select
     """
 
-    @classmethod
-    def get_args(cls, dist, header=None):
-        if not hasattr(dist, 'entry_points'):
-            SetuptoolsWarning.emit("Unsupported distribution encountered.")
-            dist = setuptools_metadata.Distribution.at(dist.egg_info)
+    if hasattr(dist, 'entry_points') and hasattr(dist.entry_points, 'select'):
+        return dist
 
-        names = koskari_script_names(dist)
+    if hasattr(dist, 'egg_info'):
+        return setuptools_metadata.Distribution.at(dist.egg_info)
 
-        if header is None:
-            header = cls.get_header()
-        spec = f'{dist.name}=={dist.version}'
-
-        for type_ in ('console', 'gui'):
-            group = f'{type_}_scripts'
-            for ep in dist.entry_points.select(group=group):
-                cls._ensure_safe_name(ep.name)
-                if ep.name in names:
-                    script_text = koskari_script_source(
-                        spec,
-                        KOSKARI_SCRIPTS_GROUP,
-                        ep.name)
-                else:
-                    script_text = cls.template % {
-                        'spec': spec,
-                        'group': group,
-                        'name': ep.name,
-                    }
-                yield from cls._get_script_args(
-                    type_, ep.name, header, script_text)
+    SetuptoolsWarning.emit("Unsupported distribution encountered.")
+    return dist
 
 
-class KoskariWindowsScriptWriter(
-        KoskariScriptWriter,
-        scripts.WindowsScriptWriter):
+def iter_koskari_script_args(dist, header=None, executable=None):
     """
-    koskari_scripts stub generation with Windows script extensions
+    Yield name and contents tuples for koskari_scripts entry points
+
+    Uses stock ScriptWriter helpers for shebang and platform naming.
+
+    :param dist: setuptools or metadata Distribution
+    :param header: optional script header; defaults to ScriptWriter header
+    :param executable: optional interpreter for the shebang line
+    :yield: (script_name, script_contents) pairs
     """
 
-
-class KoskariWindowsExecutableLauncherWriter(
-        KoskariScriptWriter,
-        scripts.WindowsExecutableLauncherWriter):
-    """
-    koskari_scripts stub generation with Windows exe launchers
-    """
-
-
-def ensure_koskari_script_writer():
-    """
-    Patch setuptools ScriptWriter to emit koskari_scripts stubs
-
-    Idempotent. Replaces stock ScriptWriter classes in setuptools._scripts
-    with koskari-aware mixins, including Windows launcher variants.
-    """
-
-    global _SCRIPT_WRITER_PATCHED
-
-    if _SCRIPT_WRITER_PATCHED:
+    mdist = _metadata_distribution(dist)
+    eps = mdist.entry_points.select(group=KOSKARI_SCRIPTS_GROUP)
+    if not eps:
         return
 
-    scripts.ScriptWriter = KoskariScriptWriter
-    scripts.WindowsScriptWriter = KoskariWindowsScriptWriter
-    scripts.WindowsExecutableLauncherWriter = \
-        KoskariWindowsExecutableLauncherWriter
+    writer = scripts.ScriptWriter.best()
+    if header is None:
+        header = writer.get_header(executable=executable)
+    spec = f'{mdist.name}=={mdist.version}'
 
-    _SCRIPT_WRITER_PATCHED = True
+    for ep in eps:
+        writer._ensure_safe_name(ep.name)
+        script_text = koskari_script_source(
+            spec,
+            KOSKARI_SCRIPTS_GROUP,
+            ep.name)
+        yield from writer._get_script_args(
+            'console', ep.name, header, script_text)
+
+
+class KoskariInstallScripts(install_scripts_module.install_scripts):
+    """
+    Install koskari_scripts stubs before the no_ep early return
+
+    Wheel builds set no_ep True to skip console_scripts generation; koskari
+    stubs are written as ordinary script files into .data/scripts/ instead.
+    """
+
+    def run(self):
+        self.run_command('egg_info')
+        if self.distribution.scripts:
+            install_scripts_module.orig.install_scripts.run(self)
+        else:
+            self.outfiles = []
+        self._install_koskari_scripts()
+        if self.no_ep:
+            return
+        self._install_ep_scripts()
+
+    def _install_koskari_scripts(self):
+        ei_cmd = self.get_finalized_command('egg_info')
+        dist = setuptools_metadata.Distribution.at(path=ei_cmd.egg_info)
+        if not list(dist.entry_points.select(group=KOSKARI_SCRIPTS_GROUP)):
+            return
+
+        bs_cmd = self.get_finalized_command('build_scripts')
+        exec_param = getattr(bs_cmd, 'executable', None)
+        if exec_param == sys.executable:
+            exec_param = [exec_param]
+
+        header = scripts.ScriptWriter.best().get_header(executable=exec_param)
+        for args in iter_koskari_script_args(dist, header=header):
+            self.write_script(*args)
+
+
+class KoskariEditableWheel(editable_wheel):
+    """
+    Run install_scripts for koskari_scripts during PEP 660 editable builds
+
+    editable_wheel only installs scripts when distribution.has_scripts() is
+    true, which checks the classic scripts= list rather than koskari_scripts
+    entry points.
+    """
+
+    def _run_install(self, category):
+        if category == 'scripts':
+            if entry_points_group_lines(
+                    self.distribution.entry_points,
+                    KOSKARI_SCRIPTS_GROUP):
+                self.run_command('install_scripts')
+                return
+        super()._run_install(category)
 
 
 # The end.
