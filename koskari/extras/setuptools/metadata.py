@@ -15,7 +15,7 @@
 koskari.extras.setuptools.metadata
 
 Pure-Python koskari_scripts metadata helpers shared by the build plugin and
-koskari.launcher without importing the C extension.
+koskari.launcher without importing the C extension or setuptools.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -24,8 +24,6 @@ koskari.launcher without importing the C extension.
 
 
 import warnings
-
-from setuptools.errors import SetupError
 
 
 __all__ = (
@@ -59,7 +57,7 @@ class EntryTargetError(Exception):
     """
 
 
-class KoskariScriptsSetupError(SetupError):
+class KoskariScriptsSetupError(Exception):
     """
     Invalid or conflicting koskari_scripts packaging metadata
     """

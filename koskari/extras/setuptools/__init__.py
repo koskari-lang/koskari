@@ -26,7 +26,6 @@ so the finalize hook installs koskari command stubs at build time.
 
 try:
     from .metadata import KoskariScriptsSetupError, validate_koskari_scripts
-    from .plugin import configure_koskari_scripts
 
 except ImportError:
     pass
@@ -34,7 +33,6 @@ except ImportError:
 else:
     __all__ = (
         'KoskariScriptsSetupError',
-        'configure_koskari_scripts',
         'validate_koskari_scripts',
     )
 

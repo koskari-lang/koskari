@@ -129,6 +129,10 @@ Implementation exists under `koskari.serialize` (read/write sectioned `.kio`,
 incremental compile from `.ki`). Loader integration and packaging follow the
 self-hosting roadmap.
 
+**Near-term packaging:** add `.kio` beside `.ki` during `bdist_wheel` (additive;
+sdist `.ki`-only); loaders prefer `.kio` when both exist. See
+[interpreter/kio-setuptools-build.md](interpreter/kio-setuptools-build.md).
+
 Ref: [interpreter/kio-format.md](interpreter/kio-format.md);
 [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [api/import-system.md](api/import-system.md).

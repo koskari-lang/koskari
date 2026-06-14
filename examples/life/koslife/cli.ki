@@ -10,7 +10,6 @@
 (import sys)
 (import-from argparse ArgumentParser)
 (import-from os.path basename)
-(import-from .curse cli)
 
 
 define create-option-parser [name]:
@@ -56,6 +55,9 @@ define main [argv: None]:
 
   define parser (create-option-parser prog)
   define options (parser.parse_args args)
+
+  ;; Defer curse/life/curses until after argparse (--help exits earlier).
+  (import-from .curse cli)
 
   try:
     (cli options)

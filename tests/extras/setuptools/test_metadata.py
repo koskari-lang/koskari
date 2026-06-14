@@ -20,6 +20,8 @@ Unit tests for koskari_scripts metadata helpers.
 
 import os
 import shutil
+import sys
+import subprocess
 import tempfile
 import unittest
 import warnings
@@ -42,6 +44,27 @@ from koskari.extras.setuptools.metadata import (
 import pytest
 
 pytestmark = pytest.mark.phase_extras
+
+
+class TestMetadataImport(unittest.TestCase):
+
+    def test_metadata_imports_without_setuptools(self):
+        import subprocess
+
+        script = (
+            'import importlib, sys\n'
+            'importlib.import_module("koskari.extras.setuptools.metadata")\n'
+            'assert "setuptools" not in sys.modules\n')
+
+        result = subprocess.run(
+            [sys.executable, '-c', script],
+            capture_output=True,
+            text=True)
+
+        self.assertEqual(
+            result.returncode,
+            0,
+            result.stderr or result.stdout)
 
 
 class FakeDist(object):

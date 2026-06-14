@@ -198,6 +198,10 @@ Work can overlap, but **dependency order** matters.
 2. **Makefile / tox env:** `stage0` target produces the tree deterministically
    (clean build directory first).
 
+Near-term wheel packaging (add `.kio` beside `.ki` on `bdist_wheel`; sdist
+`.ki`-only; additive, never remove sources) is specified separately in
+[interpreter/kio-setuptools-build.md](interpreter/kio-setuptools-build.md).
+
 ### Phase 4 — Pass B harness
 
 1. Implement a **thin Python** (or later minimal C) **harness** that:

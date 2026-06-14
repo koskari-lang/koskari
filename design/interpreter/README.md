@@ -32,6 +32,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **domain.md**: Koskari Domain (ambient dynamic context) — design proposal for parameters and dynamic-extent scoping across AWAIT, boundaries, and continuations
 - **gil-cooperation.md**: GIL cooperation design — domain-TLS counter + timer, maybe_cooperate/ensure_gil, candidate call sites, and cost–benefit of options
 - **kio-format.md**: `.kio` compiled cache format — binary file layout, softened/hardened serialization levels, constant pool policy, `TaggedTuple`, cache invalidation, and loader algorithm
+- **kio-setuptools-build.md**: `.kio` precompilation during `bdist_wheel` (sdist `.ki` only; wheel adds `.kio` beside `.ki`), loader preference, and why not `__pycache__`
 
 Completed design drafts (historical) live under **[archive/](../archive/)** — e.g.
 `dynamic-node-unified-api.md` (partial dynnode migration spec), `compiler.md` (stub),
