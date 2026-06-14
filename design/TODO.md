@@ -262,21 +262,6 @@ Ref: `koskari/lib/ref.c` (DynamicRef handlers); `koskari/lib/opcode/DEREF.c`;
 `koskari/lib/demand.c`; [api/NAMESPACE-AND-REFS.md](api/NAMESPACE-AND-REFS.md);
 [archive/demand-sync-await-violation-at-site.md](archive/demand-sync-await-violation-at-site.md).
 
-### kos_repr formatters for list, tuple, dict
-
-**TODO:** Register `kos_repr` handlers for built-in `list`, `tuple`, and `dict`
-so REPL and debug output use Koskari surface syntax instead of Python `repr`:
-
-| Python value | Python `repr` | Koskari `kos_repr` |
-|--------------|---------------|--------------------|
-| `[1, 2, 3]`  | `[1, 2, 3]`   | `#[1 2 3]`         |
-| `(1, 2, 3)`  | `(1, 2, 3)`   | `#(1 2 3)`         |
-| `{"foo": 4}` | `{'foo': 4}`  | `#{("foo" . 4)}`   |
-
-Ref: `koskari/lib/utils.c` (`KosUtils_Repr`, `kos_repr_register`);
-`koskari/lib/pair.c` (`__kos_repr__` for pairs and `nil`);
-`koskari/bootstrap/__init__.py` (`repr` bound to `kos_repr`).
-
 ---
 
 ## Packaging / installed CLI

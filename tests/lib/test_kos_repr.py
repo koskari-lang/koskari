@@ -160,6 +160,73 @@ class TestKosRepr(unittest.TestCase):
         self.assertIn("...", s)
 
 
+    def test_list_empty(self):
+        """
+        empty list uses hash-bracket form
+        """
+
+        self.assertEqual(kos_repr([]), "#[]")
+
+
+    def test_list_values(self):
+        """
+        list elements use kos form inside hash-brackets
+        """
+
+        self.assertEqual(kos_repr([1, 2, 3]), "#[1 2 3]")
+
+
+    def test_tuple_empty(self):
+        """
+        empty tuple uses hash-paren form
+        """
+
+        self.assertEqual(kos_repr(()), "#()")
+
+
+    def test_tuple_values(self):
+        """
+        tuple elements use kos form inside hash-parens
+        """
+
+        self.assertEqual(kos_repr((1, 2, 3)), "#(1 2 3)")
+
+
+    def test_dict_empty(self):
+        """
+        empty dict uses hash-brace form
+        """
+
+        self.assertEqual(kos_repr({}), "#{}")
+
+
+    def test_dict_pairs(self):
+        """
+        dict entries use improper-pair form
+        """
+
+        self.assertEqual(kos_repr({"foo": 4}), '#{("foo" . 4)}')
+
+
+    def test_nested_list_in_pair(self):
+        """
+        python list nested in pair uses hash-bracket form
+        """
+
+        p = cons(1, cons([2, 3], nil))
+        self.assertEqual(kos_repr(p), "(1 #[2 3])")
+
+
+    def test_recursive_list(self):
+        """
+        cyclic list uses ellipsis inside hash-brackets
+        """
+
+        lst = []
+        lst.append(lst)
+        self.assertEqual(kos_repr(lst), "#[#[...]]")
+
+
     def test_python___kos_repr__(self):
         """
         plain Python __kos_repr__ is invoked via kos_repr

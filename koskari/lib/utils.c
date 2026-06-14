@@ -27,6 +27,24 @@ static PyObject *_str_dq = NULL;
 static PyObject *_str_esc_dq = NULL;
 static PyObject *_str_kos_repr = NULL;
 
+static PyObject *_str_close_paren = NULL;
+static PyObject *_str_dot_space = NULL;
+static PyObject *_str_empty = NULL;
+static PyObject *_str_hash_dict_cycle = NULL;
+static PyObject *_str_hash_dict_empty = NULL;
+static PyObject *_str_hash_dict_open = NULL;
+static PyObject *_str_hash_list_cycle = NULL;
+static PyObject *_str_hash_list_empty = NULL;
+static PyObject *_str_hash_list_open = NULL;
+static PyObject *_str_hash_tuple_cycle = NULL;
+static PyObject *_str_hash_tuple_empty = NULL;
+static PyObject *_str_hash_tuple_open = NULL;
+static PyObject *_str_dict_close = NULL;
+static PyObject *_str_list_close = NULL;
+static PyObject *_str_open_paren = NULL;
+static PyObject *_str_space = NULL;
+static PyObject *_str_tuple_close = NULL;
+
 
 static PyObject *kos_utils_unicode_kos_repr(PyObject *obj) {
 
@@ -592,6 +610,194 @@ PyObject *KosUtils_Repr(PyObject *obj) {
 
   return out;
 }
+
+
+static PyObject *list_kos_repr(PyObject *self, PyObject *_unused) {
+
+  PyObject *col = NULL;
+  PyObject *tmp = NULL;
+  Py_ssize_t i, n;
+
+  (void) _unused;
+
+  if (Py_ReprEnter(self) != 0) {
+    PyErr_Clear();
+    Py_INCREF(_str_hash_list_cycle);
+    return _str_hash_list_cycle;
+  }
+
+  n = PyList_GET_SIZE(self);
+  if (n == 0) {
+    Py_ReprLeave(self);
+    Py_INCREF(_str_hash_list_empty);
+    return _str_hash_list_empty;
+  }
+
+  col = PyList_New(0);
+  if (! col)
+    goto error;
+
+  PyList_Append(col, _str_hash_list_open);
+
+  for (i = 0; i < n; i++) {
+    tmp = KosUtils_Repr(PyList_GET_ITEM(self, i));
+    if (! tmp)
+      goto error;
+
+    PyList_Append(col, tmp);
+    Py_DECREF(tmp);
+
+    if (i + 1 < n)
+      PyList_Append(col, _str_space);
+  }
+
+  PyList_Append(col, _str_list_close);
+
+  tmp = PyUnicode_Join(_str_empty, col);
+  Py_DECREF(col);
+  Py_ReprLeave(self);
+  return tmp;
+
+ error:
+  Py_XDECREF(col);
+  Py_ReprLeave(self);
+  return NULL;
+}
+
+
+static PyObject *tuple_kos_repr(PyObject *self, PyObject *_unused) {
+
+  PyObject *col = NULL;
+  PyObject *tmp = NULL;
+  Py_ssize_t i, n;
+
+  (void) _unused;
+
+  if (Py_ReprEnter(self) != 0) {
+    PyErr_Clear();
+    Py_INCREF(_str_hash_tuple_cycle);
+    return _str_hash_tuple_cycle;
+  }
+
+  n = PyTuple_GET_SIZE(self);
+  if (n == 0) {
+    Py_ReprLeave(self);
+    Py_INCREF(_str_hash_tuple_empty);
+    return _str_hash_tuple_empty;
+  }
+
+  col = PyList_New(0);
+  if (! col)
+    goto error;
+
+  PyList_Append(col, _str_hash_tuple_open);
+
+  for (i = 0; i < n; i++) {
+    tmp = KosUtils_Repr(PyTuple_GET_ITEM(self, i));
+    if (! tmp)
+      goto error;
+
+    PyList_Append(col, tmp);
+    Py_DECREF(tmp);
+
+    if (i + 1 < n)
+      PyList_Append(col, _str_space);
+  }
+
+  PyList_Append(col, _str_tuple_close);
+
+  tmp = PyUnicode_Join(_str_empty, col);
+  Py_DECREF(col);
+  Py_ReprLeave(self);
+  return tmp;
+
+ error:
+  Py_XDECREF(col);
+  Py_ReprLeave(self);
+  return NULL;
+}
+
+
+static PyObject *dict_kos_repr(PyObject *self, PyObject *_unused) {
+
+  PyObject *col = NULL;
+  PyObject *tmp = NULL;
+  PyObject *key = NULL;
+  PyObject *val = NULL;
+  Py_ssize_t pos = 0;
+  int first = 1;
+
+  (void) _unused;
+
+  if (Py_ReprEnter(self) != 0) {
+    PyErr_Clear();
+    Py_INCREF(_str_hash_dict_cycle);
+    return _str_hash_dict_cycle;
+  }
+
+  if (PyDict_GET_SIZE(self) == 0) {
+    Py_ReprLeave(self);
+    Py_INCREF(_str_hash_dict_empty);
+    return _str_hash_dict_empty;
+  }
+
+  col = PyList_New(0);
+  if (! col)
+    goto error;
+
+  PyList_Append(col, _str_hash_dict_open);
+
+  while (PyDict_Next(self, &pos, &key, &val)) {
+    if (! first)
+      PyList_Append(col, _str_space);
+    first = 0;
+
+    PyList_Append(col, _str_open_paren);
+
+    tmp = KosUtils_Repr(key);
+    if (! tmp)
+      goto error;
+    PyList_Append(col, tmp);
+    Py_DECREF(tmp);
+
+    PyList_Append(col, _str_dot_space);
+
+    tmp = KosUtils_Repr(val);
+    if (! tmp)
+      goto error;
+    PyList_Append(col, tmp);
+    Py_DECREF(tmp);
+
+    PyList_Append(col, _str_close_paren);
+  }
+
+  PyList_Append(col, _str_dict_close);
+
+  tmp = PyUnicode_Join(_str_empty, col);
+  Py_DECREF(col);
+  Py_ReprLeave(self);
+  return tmp;
+
+ error:
+  Py_XDECREF(col);
+  Py_ReprLeave(self);
+  return NULL;
+}
+
+
+static PyMethodDef list_kos_repr_def = {
+  "list_kos_repr", (PyCFunction) list_kos_repr, METH_NOARGS, NULL
+};
+
+
+static PyMethodDef tuple_kos_repr_def = {
+  "tuple_kos_repr", (PyCFunction) tuple_kos_repr, METH_NOARGS, NULL
+};
+
+
+static PyMethodDef dict_kos_repr_def = {
+  "dict_kos_repr", (PyCFunction) dict_kos_repr, METH_NOARGS, NULL
+};
 
 
 PyObject *KosUtils_BuildTuple(PyObject *const *args, Py_ssize_t nargs) {
@@ -1214,6 +1420,24 @@ int koskari_utils_init(PyObject *mod) {
   STR_CONST(_str_esc_dq, "\\\"");
   STR_CONST(_str_kos_repr, "__kos_repr__");
 
+  STR_CONST(_str_close_paren, ")");
+  STR_CONST(_str_dot_space, " . ");
+  STR_CONST(_str_empty, "");
+  STR_CONST(_str_hash_dict_cycle, "#{...}");
+  STR_CONST(_str_hash_dict_empty, "#{}");
+  STR_CONST(_str_hash_dict_open, "#{");
+  STR_CONST(_str_hash_list_cycle, "#[...]");
+  STR_CONST(_str_hash_list_empty, "#[]");
+  STR_CONST(_str_hash_list_open, "#[");
+  STR_CONST(_str_hash_tuple_cycle, "#(...)");
+  STR_CONST(_str_hash_tuple_empty, "#()");
+  STR_CONST(_str_hash_tuple_open, "#(");
+  STR_CONST(_str_dict_close, "}");
+  STR_CONST(_str_list_close, "]");
+  STR_CONST(_str_open_paren, "(");
+  STR_CONST(_str_space, " ");
+  STR_CONST(_str_tuple_close, ")");
+
   if (! kos_utils_repr_registry) {
     // registration will create this, so it may have already
     // been allocated when lib objects registered themselves.
@@ -1246,6 +1470,48 @@ int koskari_utils_init(PyObject *mod) {
   if (PyObject_SetAttrString(mod, "apply", KosApplyObject) < 0)
     return -1;
 
+  {
+    PyObject *handler = PyCFunction_New(&list_kos_repr_def, NULL);
+
+    if (! handler)
+      return -1;
+
+    if (KosUtils_ReprRegister((PyObject *) &PyList_Type, handler) < 0) {
+      Py_DECREF(handler);
+      return -1;
+    }
+
+    Py_DECREF(handler);
+  }
+
+  {
+    PyObject *handler = PyCFunction_New(&tuple_kos_repr_def, NULL);
+
+    if (! handler)
+      return -1;
+
+    if (KosUtils_ReprRegister((PyObject *) &PyTuple_Type, handler) < 0) {
+      Py_DECREF(handler);
+      return -1;
+    }
+
+    Py_DECREF(handler);
+  }
+
+  {
+    PyObject *handler = PyCFunction_New(&dict_kos_repr_def, NULL);
+
+    if (! handler)
+      return -1;
+
+    if (KosUtils_ReprRegister((PyObject *) &PyDict_Type, handler) < 0) {
+      Py_DECREF(handler);
+      return -1;
+    }
+
+    Py_DECREF(handler);
+  }
+
   return 0;
 }
 
@@ -1255,6 +1521,23 @@ int koskari_utils_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(KosApplyObject);
   Py_CLEAR(kos_utils_repr_registry);
+  Py_CLEAR(_str_close_paren);
+  Py_CLEAR(_str_dot_space);
+  Py_CLEAR(_str_empty);
+  Py_CLEAR(_str_hash_dict_cycle);
+  Py_CLEAR(_str_hash_dict_empty);
+  Py_CLEAR(_str_hash_dict_open);
+  Py_CLEAR(_str_hash_list_cycle);
+  Py_CLEAR(_str_hash_list_empty);
+  Py_CLEAR(_str_hash_list_open);
+  Py_CLEAR(_str_hash_tuple_cycle);
+  Py_CLEAR(_str_hash_tuple_empty);
+  Py_CLEAR(_str_hash_tuple_open);
+  Py_CLEAR(_str_dict_close);
+  Py_CLEAR(_str_list_close);
+  Py_CLEAR(_str_open_paren);
+  Py_CLEAR(_str_space);
+  Py_CLEAR(_str_tuple_close);
   Py_CLEAR(_str_kos_repr);
   Py_CLEAR(_str_dq);
   Py_CLEAR(_str_esc_dq);
