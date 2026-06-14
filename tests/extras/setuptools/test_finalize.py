@@ -14,7 +14,7 @@
 """
 tests.extras.setuptools.test_finalize
 
-Unit tests for koskari_scripts console_scripts mirroring.
+Unit tests for koskari_scripts finalize hook configuration.
 """
 
 
@@ -22,9 +22,12 @@ import os
 import tempfile
 import unittest
 
-from koskari.extras.setuptools.errors import KoskariScriptsSetupError
-from koskari.extras.setuptools.finalize import mirror_koskari_scripts
-from koskari.launcher import DISPATCH_TARGET
+from koskari.extras.setuptools.validate import KoskariScriptsSetupError
+from koskari.extras.setuptools.finalize import configure_koskari_scripts
+from koskari.extras.setuptools.scripts import (
+    KoskariEditableWheel,
+    KoskariInstallScripts,
+)
 
 import pytest
 
@@ -39,7 +42,8 @@ class FakeDist(object):
             install_requires=None,
             zip_safe=True,
             package_data=None,
-            packages=None):
+            packages=None,
+            cmdclass=None):
 
         self.entry_points = entry_points
         if install_requires is None:
@@ -48,29 +52,31 @@ class FakeDist(object):
         self.zip_safe = zip_safe
         self.package_data = package_data or {}
         self.packages = packages
+        self.cmdclass = cmdclass or {}
 
 
-class TestMirrorKoskariScripts(unittest.TestCase):
+class TestConfigureKoskariScripts(unittest.TestCase):
 
     def test_no_koskari_scripts_is_noop(self):
         dist = FakeDist({'console_scripts': ['koskari = koskari.cli:main']})
-        mirror_koskari_scripts(dist)
-        self.assertEqual(
-            dist.entry_points['console_scripts'],
-            ['koskari = koskari.cli:main'])
+        configure_koskari_scripts(dist)
+        self.assertEqual(dist.cmdclass, {})
 
-    def test_mirror_appends_console_scripts(self):
+    def test_registers_install_scripts_cmdclass(self):
         dist = FakeDist({
             'koskari_scripts': ['koslife = koslife.cli:main'],
             'console_scripts': ['koskari = koskari.cli:main'],
         }, packages=['koslife'])
-        mirror_koskari_scripts(dist)
-        self.assertIn(
-            'koslife = %s' % (DISPATCH_TARGET,),
-            dist.entry_points['console_scripts'])
+        configure_koskari_scripts(dist)
+        self.assertIs(dist.cmdclass['install_scripts'], KoskariInstallScripts)
+        self.assertIs(dist.cmdclass['editable_wheel'], KoskariEditableWheel)
         self.assertEqual(
             dist.entry_points['koskari_scripts'],
             ['koslife = koslife.cli:main'])
+        self.assertNotIn(
+            'koslife',
+            [line.split('=')[0].strip()
+             for line in dist.entry_points.get('console_scripts', [])])
         self.assertFalse(dist.zip_safe)
 
     def test_collision_with_console_scripts_raises(self):
@@ -79,7 +85,7 @@ class TestMirrorKoskariScripts(unittest.TestCase):
             'console_scripts': ['koslife = koslife:main'],
         })
         with self.assertRaises(KoskariScriptsSetupError):
-            mirror_koskari_scripts(dist)
+            configure_koskari_scripts(dist)
 
     def test_duplicate_koskari_scripts_raises(self):
         dist = FakeDist({
@@ -89,16 +95,16 @@ class TestMirrorKoskariScripts(unittest.TestCase):
             ],
         })
         with self.assertRaises(KoskariScriptsSetupError):
-            mirror_koskari_scripts(dist)
+            configure_koskari_scripts(dist)
 
     def test_invalid_entry_value_raises(self):
         dist = FakeDist({
             'koskari_scripts': ['koslife = koslife.cli'],
         })
         with self.assertRaises(KoskariScriptsSetupError):
-            mirror_koskari_scripts(dist)
+            configure_koskari_scripts(dist)
 
-    def test_setup_cfg_entry_points_mirrored_after_parse_config_files(self):
+    def test_setup_cfg_entry_points_configured_after_parse_config_files(self):
         pytest.importorskip('setuptools')
         from setuptools.dist import Distribution
 
@@ -132,9 +138,12 @@ koskari_scripts =
             finally:
                 os.chdir(old)
 
-        self.assertIn(
-            'demotool = %s' % (DISPATCH_TARGET,),
-            dist.entry_points['console_scripts'])
+        self.assertIs(
+            dist.cmdclass['install_scripts'],
+            KoskariInstallScripts)
+        self.assertIs(
+            dist.cmdclass['editable_wheel'],
+            KoskariEditableWheel)
         self.assertEqual(
             dist.entry_points['koskari_scripts'],
             ['demotool = demopkg.cli:main'])
@@ -142,6 +151,19 @@ koskari_scripts =
             dist.package_data.get('demopkg'),
             ['*.ki', '*.kio'])
         self.assertFalse(dist.zip_safe)
+
+    def test_editable_wheel_installs_koskari_scripts(self):
+        cmd = KoskariEditableWheel.__new__(KoskariEditableWheel)
+        cmd.distribution = FakeDist({
+            'koskari_scripts': ['koslife = koslife.cli:main'],
+        })
+        calls = []
+        cmd.run_command = calls.append
+        cmd._run_install('scripts')
+        self.assertEqual(calls, ['install_scripts'])
+        calls.clear()
+        cmd._run_install('data')
+        self.assertEqual(calls, [])
 
 
 # The end.

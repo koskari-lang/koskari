@@ -21,7 +21,7 @@ Unit tests for koskari_scripts metadata validation helpers.
 import unittest
 import warnings
 
-from koskari.extras.setuptools.errors import KoskariScriptsSetupError
+from koskari.extras.setuptools.validate import KoskariScriptsSetupError
 from koskari.extras.setuptools.validate import (
     parse_entry_point_line,
     validate_entry_point_value,

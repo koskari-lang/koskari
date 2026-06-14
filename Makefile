@@ -11,6 +11,8 @@ VERSION := $(shell $(PYTHON) -B setup.py --version)
 DEBUG ?= 0
 BUILD_DIR := build
 DIST_DIR := dist
+KOSKARI_APP_MAIN := koskari/app/main.c
+KOSKARI_BIN := $(BUILD_DIR)/koskari-bin/koskari
 
 define checkfor
 	@if ! which $(1) >/dev/null 2>&1 ; then \
@@ -77,6 +79,22 @@ install-dev:  ## Install package in development mode
 	@echo "Installing $(PROJECT) in development mode..."
 	@$(PYTHON) -m pip install -e .
 	@echo "Development installation complete"
+
+koskari-bin: handlers report-python $(KOSKARI_BIN)  ## Build native koskari executable (build/koskari-bin/koskari)
+
+$(KOSKARI_BIN): $(KOSKARI_APP_MAIN)
+	@echo "Building native koskari executable..."
+	@$(PYTHON) -B setup.py build_ext --inplace
+	@mkdir -p $(BUILD_DIR)/koskari-bin
+	@set -e; \
+	CC="$${CC:-gcc}"; \
+	PCFG="$$( $(PYTHON) -c "import os, sys; print(os.path.splitext(sys.executable)[0] + '-config')" )"; \
+	if [ ! -x "$$PCFG" ]; then PCFG=python3-config; fi; \
+	if [ ! -x "$$PCFG" ]; then PCFG=python-config; fi; \
+	CFLAGS=$$("$$PCFG" --cflags --embed 2>/dev/null || "$$PCFG" --cflags); \
+	LDFLAGS=$$("$$PCFG" --ldflags --embed 2>/dev/null || "$$PCFG" --ldflags); \
+	$$CC $(KOSKARI_APP_MAIN) -o $@ $$CFLAGS $$LDFLAGS
+	@echo "Native koskari built at $(KOSKARI_BIN)"
 
 uninstall:  ## Uninstall package
 	@echo "Uninstalling $(PROJECT)..."
@@ -270,6 +288,7 @@ python:  ## Show Python executable
 	help \
 	install \
 	install-dev \
+	koskari-bin \
 	lint \
 	project \
 	purge \

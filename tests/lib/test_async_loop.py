@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.extras.setuptools.errors
+tests.lib.test_async_loop
 
-Setup errors for koskari_scripts packaging validation.
+Smoke tests for koskari.lib.drive_async_loop.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -22,19 +22,32 @@ Setup errors for koskari_scripts packaging validation.
 """
 
 
-try:
-    from setuptools.errors import SetupError
-except ImportError:
-    try:
-        from distutils.errors import DistutilsSetupError as SetupError
-    except ImportError:
-        SetupError = Exception
+import asyncio
+
+import pytest
+
+from koskari.lib import drive_async_loop
+
+pytestmark = pytest.mark.phase_lib
 
 
-class KoskariScriptsSetupError(SetupError):
-    """
-    Invalid or conflicting koskari_scripts packaging metadata
-    """
+async def _return_value(value):
+    return value
+
+
+def test_drive_async_loop_runs_coroutine():
+    result = drive_async_loop(_return_value(42))
+    assert result == 42
+
+
+def test_drive_async_loop_is_native_callable():
+    assert type(drive_async_loop).__name__ == 'builtin_function_or_method'
+
+
+def test_drive_async_loop_delegates_to_same_module():
+    from koskari.launcher import drive_async_loop as launcher_drive
+
+    assert launcher_drive is drive_async_loop
 
 
 # The end.

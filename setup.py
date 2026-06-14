@@ -22,9 +22,9 @@ Koskari, a LISP dialect for Python
 """
 
 
+import importlib.util
 from os import environ
 from pathlib import Path
-import importlib.util
 
 from setuptools import Extension, setup
 from setuptools.command.build_py import build_py

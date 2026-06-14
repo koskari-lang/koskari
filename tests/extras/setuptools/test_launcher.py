@@ -23,6 +23,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from importlib import metadata
 from unittest.mock import patch
 
 from koskari.importer import install, uninstall
@@ -31,10 +32,9 @@ from koskari.launcher import (
     EntryTargetError,
     hosted_run,
     parse_entry_target,
-    run_entry,
-    run_target,
-    script_name_from_argv,
-)
+    resolve_koskari_script_value,
+    run_resolved_script,
+    run_target,)
 
 import pytest
 
@@ -42,16 +42,6 @@ pytestmark = pytest.mark.phase_extras
 
 
 class TestLauncherHelpers(unittest.TestCase):
-
-    def test_script_name_from_argv_strips_script_suffix(self):
-        self.assertEqual(
-            script_name_from_argv(['/usr/bin/koslife-script.py']),
-            'koslife')
-
-    def test_script_name_from_argv_strips_exe_suffix(self):
-        self.assertEqual(
-            script_name_from_argv(['C:\\Tools\\koslife.exe']),
-            'koslife')
 
     def test_parse_entry_target(self):
         self.assertEqual(
@@ -61,6 +51,45 @@ class TestLauncherHelpers(unittest.TestCase):
     def test_parse_entry_target_rejects_bare_module(self):
         with self.assertRaises(EntryTargetError):
             parse_entry_target('koslife.cli')
+
+
+class TestResolveKoskariScriptValue(unittest.TestCase):
+
+    def test_resolve_from_distribution_metadata(self):
+        class FakeEntry(object):
+            name = 'ki-tool'
+            value = 'ki_launcher_entry:main'
+            group = 'koskari_scripts'
+
+        class FakeDist(object):
+            version = '1.0'
+
+            @property
+            def entry_points(self):
+                return [FakeEntry()]
+
+        with patch('koskari.launcher.metadata.distribution', return_value=FakeDist()):
+            value = resolve_koskari_script_value('kiapp==1.0', 'ki-tool')
+        self.assertEqual(value, 'ki_launcher_entry:main')
+
+    def test_resolve_missing_distribution_raises(self):
+        with patch(
+                'koskari.launcher.metadata.distribution',
+                side_effect=metadata.PackageNotFoundError):
+            with self.assertRaises(EntryNotFoundError):
+                resolve_koskari_script_value('missing==1.0', 'ki-tool')
+
+    def test_resolve_version_mismatch_raises(self):
+        class FakeDist(object):
+            version = '2.0'
+
+            @property
+            def entry_points(self):
+                return []
+
+        with patch('koskari.launcher.metadata.distribution', return_value=FakeDist()):
+            with self.assertRaises(EntryNotFoundError):
+                resolve_koskari_script_value('kiapp==1.0', 'ki-tool')
 
 
 class TestHostedRun(unittest.IsolatedAsyncioTestCase):
@@ -94,7 +123,7 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
     async def test_hosted_run_sets_sys_argv(self):
         self._write_ki(
             'ki_launcher_argv',
-            '(define main [argv] (len argv))')
+            '(import sys)\n(define main [] (len sys.argv))')
         code = await hosted_run(
             'ki_launcher_argv', 'main', 'ki-tool', ['--flag'])
         self.assertEqual(code, 2)
@@ -105,22 +134,25 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
         code = run_target('ki_launcher_run:main', argv=[])
         self.assertEqual(code, 7)
 
-    def test_run_entry_resolves_metadata(self):
+    def test_run_resolved_script(self):
         self._write_ki('ki_launcher_entry', '(define main [] 11)')
         self._loaded.append('ki_launcher_entry')
 
         class FakeEntry(object):
             name = 'ki-tool'
             value = 'ki_launcher_entry:main'
+            group = 'koskari_scripts'
 
-        with patch('koskari.launcher.metadata.entry_points', return_value=[FakeEntry()]):
-            code = run_entry('ki-tool', argv=[])
+        class FakeDist(object):
+            version = '1.0'
+
+            @property
+            def entry_points(self):
+                return [FakeEntry()]
+
+        with patch('koskari.launcher.metadata.distribution', return_value=FakeDist()):
+            code = run_resolved_script('kiapp==1.0', 'ki-tool', argv=[])
         self.assertEqual(code, 11)
-
-    def test_run_entry_missing_metadata_raises(self):
-        with patch('koskari.launcher.metadata.entry_points', return_value=[]):
-            with self.assertRaises(EntryNotFoundError):
-                run_entry('missing-tool', argv=[])
 
 
 # The end.

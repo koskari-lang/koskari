@@ -22,7 +22,6 @@ Augment author-declared packages with koskari source package_data.
 """
 
 
-import os
 import warnings
 
 from ...launcher import KOSKARI_SCRIPTS_GROUP, parse_entry_target
@@ -35,22 +34,11 @@ __all__ = (
     'declared_packages',
     'packages_for_module_name',
     'packages_from_koskari_scripts',
-    'scan_koskari_packages',
     'warn_undeclared_script_packages',
 )
 
 
-KOSKARI_SOURCE_SUFFIXES = ('.ki', '.kio')
 KOSKARI_PACKAGE_DATA_PATTERNS = ('*.ki', '*.kio')
-
-EXCLUDE_DIR_NAMES = frozenset((
-    '.git',
-    '.tox',
-    '__pycache__',
-    'build',
-    'dist',
-    'node_modules',
-))
 
 
 def declared_packages(dist):
@@ -113,95 +101,9 @@ def warn_undeclared_script_packages(dist):
         return
 
     warnings.warn(
-        'koskari_scripts entry points reference packages not listed in'
-        ' packages=%r: %s'
-        % (sorted(declared), ', '.join(missing)),
+        "koskari_scripts entry points reference packages not listed in"
+        f" packages={sorted(declared)!r}: {', '.join(missing)}",
         stacklevel=2)
-
-
-def _should_skip_dir(name):
-    if name in EXCLUDE_DIR_NAMES:
-        return True
-    if name.endswith('.egg-info'):
-        return True
-    return False
-
-
-def _package_name_for_dir(root, dirpath):
-    rel = os.path.relpath(dirpath, root)
-    if rel == '.':
-        return None
-    return rel.replace(os.sep, '.')
-
-
-def _packages_for_tree_root(root):
-    packages = set()
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            name for name in dirnames
-            if not _should_skip_dir(name)
-        ]
-        has_koskari_source = any(
-            filename.endswith(KOSKARI_SOURCE_SUFFIXES)
-            for filename in filenames
-        )
-        if not has_koskari_source:
-            continue
-
-        package_name = _package_name_for_dir(root, dirpath)
-        if not package_name:
-            continue
-
-        packages.add(package_name)
-        parts = package_name.split('.')
-        for index in range(1, len(parts)):
-            packages.add('.'.join(parts[:index]))
-
-    return packages
-
-
-def _project_root(dist):
-    script_name = getattr(dist, 'script_name', None)
-    if script_name:
-        return os.path.dirname(os.path.abspath(script_name))
-    return os.getcwd()
-
-
-def _scan_roots(dist, project_root):
-    package_dir = getattr(dist, 'package_dir', None) or {}
-    if not package_dir:
-        return [project_root]
-
-    roots = []
-    seen = set()
-    for path in package_dir.values():
-        abspath = os.path.normpath(os.path.join(project_root, path))
-        if abspath in seen:
-            continue
-        seen.add(abspath)
-        roots.append(abspath)
-
-    if not roots:
-        roots.append(project_root)
-    return roots
-
-
-def scan_koskari_packages(dist):
-    """
-    Walk project source roots and find directories containing koskari sources
-
-    Diagnostic helper only; package lists are not inferred from this scan
-    during augment_koskari_packages.
-
-    :param dist: setuptools Distribution being finalized
-    :return: set of package names seen on disk
-    """
-
-    project_root = _project_root(dist)
-    packages = set()
-    for root in _scan_roots(dist, project_root):
-        packages.update(_packages_for_tree_root(root))
-    return packages
 
 
 def _ensure_package_data(dist, packages):
@@ -236,8 +138,8 @@ def augment_koskari_packages(dist):
     packages = declared_packages(dist)
     if not packages:
         warnings.warn(
-            'koskari_scripts declared but packages= is empty; declare'
-            ' koskari packages explicitly in setup metadata',
+            "koskari_scripts declared but packages= is empty; declare"
+            " koskari packages explicitly in setup metadata",
             stacklevel=2)
         return
 

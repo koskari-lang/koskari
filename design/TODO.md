@@ -279,16 +279,34 @@ Ref: `koskari/lib/utils.c` (`KosUtils_Repr`, `kos_repr_register`);
 
 ### `koskari_scripts` setuptools integration
 
-**v1 done:** **`koskari.extras.setuptools`** (finalize mirror hook, `.ki` package
+**v1 done:** **`koskari.extras.setuptools`** (finalize configure hook, `.ki` package
 discovery, validation), **`koskari.launcher`**, **`import_module_async`**, unit
 tests under **`tests/extras/setuptools/`**.
 
-**Follow-up:** migrate **`examples/life`**, end-to-end pip-install test, user
-docs under **`docs/`**, native binary + koskari shebang **`ScriptWriter`**.
+**Follow-up:** end-to-end pip-install test; native binary for installed commands.
 
 Ref: [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md);
 [api/import-system.md](api/import-system.md); `koskari/cli/__init__.py`;
 `examples/life/`.
+
+---
+
+## Concurrent async (`async` form)
+
+**Status:** Proposed — evaluate and possibly implement.
+
+Add bootstrap macro **`compile/async`** and small runtime helpers for
+concurrent fan-out/join on the current asyncio loop. Fixed job lists expand to
+**`gather`** of **`(create-task (defer …))`**; streaming **`(async (each …))`**
+and **`limit:`** variants expand to runtime **`async-each`** (iterator-driven
+spawn with optional in-flight cap). Cooperative concurrency only — not multicore
+parallelism.
+
+**TODO:** Evaluate design; if accepted, implement in order: **`gather`** builtin,
+**`with-limit`** / **`async-each`**, **`_async.ki`** macro, tests, user docs.
+
+Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
+[defer-coroutine.md](api/defer-coroutine.md).
 
 ---
 

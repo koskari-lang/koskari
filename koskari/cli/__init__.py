@@ -36,11 +36,10 @@ from ..exceptions import (CodeBoundary, CompilerError, ReaderEOF, ReaderError,
                           ReaderSyntaxError, UncaughtCompilerError,
                           apply_sys_last_exc, format_code_boundary_exception,
                           format_exception_with_koskari_trace)
-from ..launcher import drive_async_loop
 from ..lexer.discovery import special_names_for_repl
 from ..lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
                                     koskari_style, load_koskari_key_bindings)
-from ..lib import Domain, ParamRef, kos_repr
+from ..lib import Domain, ParamRef, drive_async_loop, kos_repr
 from ..module import new_module
 from ..reader import READ_EOF, LayoutReader, source_str
 
@@ -53,6 +52,7 @@ __all__ = (
     'format_exception_with_koskari_trace',
     'main',
     'option_parser',
+    'prepare_cli_async',
     'repl_async',
     'run_command_async',
     'run_file_async',
@@ -744,12 +744,13 @@ def option_parser(name):
 # ---------------------------------------------------------------------------
 
 
-def main(argv=None):
+def prepare_cli_async(argv=None):
     """
-    Entry point for the koskari command-line interface.
+    Parse CLI arguments and return either a sync exit code or async coroutine
 
     :param argv: argument list; defaults to sys.argv when None
-    :return: integer exit code
+    :return: (exit_code, coroutine) pair; exactly one of exit_code or
+        coroutine is non-None
     """
 
     if argv is None:
@@ -763,10 +764,25 @@ def main(argv=None):
         print(version_line())
         print('')
         print('Python %s' % (sys.version,))
-        return 0
+        return 0, None
+
+    return None, cli_async(options)
+
+
+def main(argv=None):
+    """
+    Entry point for the koskari command-line interface.
+
+    :param argv: argument list; defaults to sys.argv when None
+    :return: integer exit code
+    """
 
     try:
-        drive_async_loop(cli_async(options))
+        exit_code, coro = prepare_cli_async(argv)
+        if exit_code is not None:
+            return exit_code
+
+        drive_async_loop(coro)
 
     except KeyboardInterrupt:
         print('', file=sys.stderr)
