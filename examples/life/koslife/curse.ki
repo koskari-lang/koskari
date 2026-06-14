@@ -1,6 +1,6 @@
-;; examples/siblife/curse.ki
+;; examples/life/koslife/curse.ki
 ;;
-;; Curses front-end for siblife. Ported from python-sibilant sibilant-life.
+;; Curses front-end for koslife. Ported from python-sibilant sibilant-life.
 ;;
 ;; :author: Christopher O'Brien <obriencj@preoccupied.net>
 ;; :license: GNU General Public License v3

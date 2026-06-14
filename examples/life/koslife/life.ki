@@ -1,4 +1,4 @@
-;; examples/siblife/life.ki
+;; examples/life/koslife/life.ki
 ;;
 ;; Conway's Game of Life board (sparse dict). Ported from python-sibilant
 ;; sibilant-life (LGPL-3); this koskari example under the project GPLv3.

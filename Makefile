@@ -189,6 +189,46 @@ build-container:  ## Build koskari runtime container image
 	echo "Container image $(PROJECT):$(VERSION)-dev built"
 
 
+##@ Virtual Environment
+
+.venv:
+	@$(call checkfor,uv)
+	@echo "Ensuring virtual environment..."
+	@uv venv -q --clear
+
+
+.venv/bin/koskari: .venv
+	@$(call checkfor,uv)
+	@echo "Installing koskari..."
+	@uv pip install -qe .[repl]
+
+
+.venv/bin/koslife: .venv/bin/koskari
+	@$(call checkfor,uv)
+	@echo "Installing koslife..."
+	@uv pip install -q setuptools
+	@uv pip install -qe ./examples/life --no-build-isolation
+
+
+venv: .venv/bin/koskari ## Create virtual environment
+	@echo "Virtual environment ready"
+	@echo "   'make venv-activate' to activate it"
+	@echo "   'uv run koskari' to run the REPL"
+
+
+venv-activate: venv  ## Activate virtual environment
+	@echo "Activating virtual environment..."
+	@source .venv/bin/activate
+	@echo "Virtual environment activated"
+
+
+venv-koslife: .venv/bin/koslife ## Install koslife example
+	@echo "koslife installed"
+	@echo "   'uv run koslife' to run the life example"
+	@echo
+	@uv run koslife --help
+
+
 ##@ Corpus
 
 CORPUS_IMAGE := koskari-corpus-export
@@ -234,7 +274,7 @@ docs-preview: docs  ## Build docs and serve build/docs for local preview
 
 ##@ Cleanup
 
-CLEAN_DIRS := koskari $(BUILD_DIR) tests examples
+CLEAN_DIRS := koskari tests tools examples
 
 clean-built:  ## Remove build artifacts
 	@echo "Cleaning build artifacts..."
@@ -260,7 +300,7 @@ clean: clean-built clean-ext clean-pyc clean-native  ## Remove all build artifac
 	@echo "Clean complete"
 
 purge: clean  ## Deep clean (includes .tox, .eggs, etc.)
-	@rm -rf .eggs .tox .mypy_cache .pytest_cache
+	@rm -rf .eggs .tox .venv .mypy_cache .pytest_cache
 	@rm -rf .coverage htmlcov/
 	@echo "Purge complete"
 
@@ -314,6 +354,7 @@ python:  ## Show Python executable
 	tox \
 	typecheck \
 	uninstall \
+	venv \
 	version
 
 

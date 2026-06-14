@@ -1,6 +1,6 @@
-;; examples/siblife/cli.ki
+;; examples/life/koslife/cli.ki
 ;;
-;; Entry point for the siblife example. Ported from python-sibilant
+;; Entry point for the koslife example. Ported from python-sibilant
 ;; sibilant-life (LGPL-3); this koskari example under the project GPLv3.
 ;;
 ;; :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -14,10 +14,12 @@
 
 define create-option-parser [name]:
   """
-  Argument parser for siblife
+  Argument parser for koslife
   """
 
-  define parser (ArgumentParser prog: (basename name) description: "This is siblife")
+  define parser (ArgumentParser
+    prog: (basename name)
+    description: "Conway's Game of Life in the terminal, written in Koskari")
 
   (parser.add_argument "--wrap" action: "store_true" default: False
                        help: "Game board wraps at edges")
@@ -45,7 +47,7 @@ define create-option-parser [name]:
 
 define main [argv: None]:
   """
-  siblife CLI entry
+  koslife CLI entry
   """
 
   when (None? argv):

@@ -17,6 +17,7 @@ koslife --color
 
 During development, install koskari first, then the example package.
 Build isolation may need to be disabled when koskari is only available locally.
+See the root `Makefile` `venv-koslife` target for hints.
 
 ## Layout
 
