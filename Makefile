@@ -234,21 +234,24 @@ docs-preview: docs  ## Build docs and serve build/docs for local preview
 
 ##@ Cleanup
 
+CLEAN_DIRS := koskari $(BUILD_DIR) tests examples
+
 clean-built:  ## Remove build artifacts
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR) $(DIST_DIR) .eggdir/*.egg-info/
 
 clean-ext:  ## Remove compiled extensions
 	@echo "Cleaning compiled extensions..."
-	@find . -type f -name "*.so" -delete
-	@find . -type f -name "*.pyd" -delete
+	@find $(CLEAN_DIRS) -type f -name "*.so" -delete 2>/dev/null || true
+	@find $(CLEAN_DIRS) -type f -name "*.pyd" -delete 2>/dev/null || true
+	@find $(CLEAN_DIRS) -type f -name "*.dylib" -delete 2>/dev/null || true
 	@find koskari -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 
 clean-pyc:  ## Remove Python cache files
 	@echo "Cleaning Python cache..."
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type f -name "*.pyc" -delete
-	@find . -type f -name "*.pyo" -delete
+	@find $(CLEAN_DIRS) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find $(CLEAN_DIRS) -type f -name "*.pyc" -delete 2>/dev/null || true
+	@find $(CLEAN_DIRS) -type f -name "*.pyo" -delete 2>/dev/null || true
 
 clean-native:  ## Remove native test build artifacts
 	@$(MAKE) -C tests/native -f tests.mk clean
