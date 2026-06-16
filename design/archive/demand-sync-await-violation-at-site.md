@@ -1,12 +1,13 @@
 # Proposal: Raise KoskariSyncViolation at the await site (demand path)
 
-**Archived.** The approach described here is **implemented** for
-`demand_sync` / `Koskari_DemandSyncEx` when driving a **KosCallable** via
-`run_eval`: on `KOS_EV_AWAIT` or `KOS_EV_YIELD`, `demand_sync_ex` injects
-`KoskariSyncViolation` with a second `koskari_eval` (throw into the suspended
-context) so `TRY`/`finally` can run. See `koskari/lib/demand.c` (`demand_sync_ex`).
-**DemandSyncGenerator** stepping still surfaces await at the iterator boundary;
-that path was explicitly out of scope for the in-eval inject.
+**Archived.** The **in-eval deny** goal of this proposal is specified for
+implementation in [interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md).
+The tree **today** still uses a **host inject loop** in `demand_sync_ex`
+(`koskari/lib/demand.c`): on `KOS_EV_AWAIT` or `KOS_EV_YIELD`, a second
+`koskari_eval` throws `KoskariSyncViolation` so `TRY`/`finally` can run.
+Phase 1 replaces that loop with guards inside the eval loop. **DemandSyncGenerator**
+stepping still surfaces await at the iterator boundary; that path remains out of
+scope for phase 1.
 
 ---
 

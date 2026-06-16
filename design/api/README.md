@@ -14,7 +14,8 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **OBJECT-MODEL.md**: Koskari object model (KosType, class creation, synchronous `kostype_tp_call`, composite metaclass bases, method binding)
 - **dunder-adapter.md**: Dunder adapter design — demand_sync and demand_next for Python slot interop, no-suspend sync bridge, slot wiring for KosType, `__init__` via `kostype_tp_call` (§5.4)
 - **demand-wrapper.md**: `Demand` adapter type for Python interop; descriptor binding (`BoundMethod(Demand, obj)`); `demand_call` / `demand_apply`; Ki bootstrap bindings
-- **demand-sync-await-violation-at-site.md** (archived): Historical proposal for in-eval KoskariSyncViolation at await under demand path — see [archive/demand-sync-await-violation-at-site.md](../archive/demand-sync-await-violation-at-site.md); implemented for `demand_sync_ex` / KosCallable `run_eval` in `koskari/lib/demand.c`
+- **demand-evalex-phase1.md** (interpreter): Phase 1 implementation plan — frame marker `KOS_FRAME_DEMAND`, in-eval suspend denial, delete inject loop; see [interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md)
+- **demand-sync-await-violation-at-site.md** (archived): Historical proposal for in-eval KoskariSyncViolation at await under demand path — see [archive/demand-sync-await-violation-at-site.md](../archive/demand-sync-await-violation-at-site.md); **superseded for implementation detail** by [interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md) (current tree still uses inject loop until phase 1 lands)
 - **NAMESPACE-AND-REFS.md**: Namespace, Ref types, and related special forms
 - **inspect-interop-kos-callables.md**: Python `inspect` (and related typing) interoperability for `KosFunction` and `KosBoundMethod` — `__signature__`, bound-method semantics, annotations, non-goals
 - **import-system.md**: Import system for `.ki` files (meta_path, KoskariPathFinder, load_module_async)
