@@ -254,9 +254,46 @@ The adapter discards the temporary evaluator context before raising.
 | `demand_sync`        | Host path: drives dunder calls without suspension    |
 | `demand_next`        | Host path: drives sync iteration without suspension  |
 | `Coroutine.demand()` | **Not** used for dunders. Completes a KosCoroutine on the demand path; dunder adapter uses `demand_sync` / `Koskari_DemandSyncEx` instead. |
-| `__init__` (KosType) | demand dunder: kostype_tp_call uses Koskari_DemandSyncEx(__init__, ...). C() returns instance directly; C.new removed. |
+| `__init__` (KosType) | demand dunder: `kostype_tp_call` uses `tp_new` + MRO `__init__` lookup + `Koskari_DemandSyncEx`; `C(...)` returns the instance synchronously. See §5.4. |
 
 ---
+
+## 5.4 Instance construction (`kostype_tp_call`)
+
+Python `C(...)` and Koskari `(C ...)` both use the default `PyObject_Call` path.
+For Koskari-defined classes, that reaches **`KosType.tp_call`** (`kostype_tp_call`)
+via the class metaclass (pure `KosType` or composite `KosCombinedMeta_*` that
+inherits `KosType` in its MRO).
+
+**Hybrid constructor** (implemented in `koskari/lib/object.c`):
+
+```text
+C(*args, **kwargs)
+  → kostype_tp_call(cls, args, kwargs)
+  → instance = cls.tp_new(cls, args, kwargs)   // not tp_alloc
+  → if __new__ returned a non-instance: return it
+  → init = PyType_Lookup(cls, "__init__")     // MRO, not tp_dict only
+  → if init is NULL or object.__init__: return instance
+  → Koskari_DemandSyncEx(init, (instance, *args), kwargs)
+  → return instance
+```
+
+Notes:
+
+- **`tp_new`** runs the real allocation path (Pydantic `ModelMetaclass.__new__`,
+  `IntEnum` machinery, Python base `__new__`, etc.).
+- **`__init__`** is resolved on the MRO so inherited inits apply (e.g.
+  `BaseModel.__init__` for Pydantic subclasses, `KosBase.__init__` for empty
+  Python subclasses of a Kos class).
+- There is **no** wholesale delegate to `PyType_Type.tp_call` for composite
+  metaclasses; that path broke Koskari `__init__` (coroutine leak) while fixing
+  only part of the `__new__` story.
+- Koskari `Function` `__init__` methods run on the demand path; plain Python
+  `__init__` runs through `Koskari_DemandSyncEx`'s non-KosCallable branch.
+
+**Regression coverage**: `tests/reproducers/scripts/class_hierarchy.ki` and
+`tests/reproducers/test_class_hierarchy_repro.py` (Kos→Kos, Kos→Python,
+Kos→IntEnum, Kos→ABC, `@dataclass`, Python→Kos, plus existing Pydantic script).
 
 ## 8. Advantages of This Design
 
@@ -287,4 +324,7 @@ Implementation steps:
 6. Wire KosType `tp_setattro` (or equivalent) to trigger slot refresh when a dunder attribute is set. — **deferred**.
 7. Change OBJECT_* opcodes to use `push_or_await` instead of `push_result` where results may be awaitable. — **deferred**; current slot shims return concrete values via demand_sync.
 
-Additionally: `__init__` is a demand dunder. `kostype_tp_call` uses alloc + Koskari_DemandSyncEx(__init__, ...); C() returns the instance directly. KosType no longer extends KosCallable; (Foo 1 2) and C(...) both use the default PyObject_Call path.
+Additionally: `__init__` is a demand dunder. `kostype_tp_call` uses **`tp_new`**
++ **MRO `__init__` lookup** (`PyType_Lookup`) + **`Koskari_DemandSyncEx`**; see
+§5.4. `C()` returns the instance directly. KosType no longer extends KosCallable;
+`(Foo 1 2)` and `C(...)` both use the default `PyObject_Call` path.

@@ -24,6 +24,18 @@
 extern PyTypeObject KosDemandType;
 
 
+#define KosDemand_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == &KosDemandType))
+
+
+/**
+   Return the inner callable held by a Demand instance.
+
+   obj must be a Demand. Returns a borrowed reference.
+*/
+PyObject *KosDemand_GetWrapped(PyObject *obj);
+
+
 int koskari_demand_init(PyObject *mod);
 int koskari_demand_clear(PyObject *mod);
 

@@ -1,0 +1,17 @@
+;; Reproducer: define-class with pydantic.BaseModel, field access via kwargs.
+
+
+import-from pydantic BaseModel
+
+
+define-class Point [BaseModel]:
+    define x :: int 0
+    define y :: int 0
+
+
+define verify_pydantic_model []:
+    define p (Point x: 10 y: 20)
+    (and (equal? p.x 10) (equal? p.y 20))
+
+
+;; The end.

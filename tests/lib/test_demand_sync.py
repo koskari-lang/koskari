@@ -21,6 +21,7 @@ Tests for demand_call: invoke Koskari callables synchronously without suspension
 import unittest
 
 from koskari.lib import (
+    BoundMethod,
     KoskariSyncViolation,
     demand,
     demand_apply,
@@ -413,6 +414,89 @@ class TestDemandWrapperAndApply(unittest.TestCase):
             demand_apply(fn, (2, 3), None),
             demand_call(fn, 2, 3),
         )
+
+
+class TestDemandDescriptor(unittest.TestCase):
+    """
+    Demand tp_descr_get binds wrapped descriptors for instance access
+    """
+
+    def _self_add_one(self):
+        """
+        Build KosFunction (self) -> self + 1
+        """
+
+        code, base_ns = build_expr([
+            ["VAR", "self"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        fspec = FormalsSpec(("self",), None, ())
+        return code.function(fspec(), base_ns)
+
+
+    def test_demand_repr_named_function(self):
+        """
+        repr(demand(fn)) shows the wrapped callable name
+        """
+
+        fn = self._self_add_one()
+        wrapped = demand(fn)
+        self.assertEqual(repr(wrapped), "<Demand 'expr'>")
+
+
+    def test_demand_descr_get_class_returns_self(self):
+        """
+        Demand.__get__(None, owner) returns the unbound Demand wrapper
+        """
+
+        fn = self._self_add_one()
+        wrapped = demand(fn)
+        result = wrapped.__get__(None, type(None))
+        self.assertIs(result, wrapped)
+
+
+    def test_demand_descr_get_instance_wraps_bound_method(self):
+        """
+        Demand.__get__(obj, owner) returns BoundMethod(Demand(...), obj)
+        """
+
+        fn = self._self_add_one()
+        wrapped = demand(fn)
+        obj = 41
+        result = wrapped.__get__(obj, type(obj))
+        self.assertIsNot(result, wrapped)
+        self.assertIsInstance(result, BoundMethod)
+        self.assertIs(result.__func__, wrapped)
+        self.assertIs(result.__func__.__wrapped__, fn)
+        self.assertIs(result.__self__, obj)
+
+
+    def test_boundmethod_demand_call_sync(self):
+        """
+        BoundMethod(Demand(fn), obj)() runs synchronously on the demand path
+        """
+
+        fn = self._self_add_one()
+
+        class C(int):
+            method = demand(fn)
+
+        self.assertEqual(getattr(C(41), "method")(), 42)
+
+
+    def test_demand_bound_method_via_getattr(self):
+        """
+        getattr(instance, method) on Demand-wrapped KosFunction binds self
+        """
+
+        fn = self._self_add_one()
+
+        class C(int):
+            method = demand(fn)
+
+        self.assertEqual(demand_call(getattr(C(41), "method")), 42)
 
 
 # The end.

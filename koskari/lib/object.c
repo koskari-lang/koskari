@@ -17,7 +17,7 @@
 /**
    koskari/lib/object.c
 
-   KosType native metaclass: tp_call uses alloc + demand_sync(__init__).
+   KosType native metaclass: tp_call uses tp_new + demand_sync(__init__).
    (C ...) in Koskari bytecode uses the default PyCall path.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -35,6 +35,8 @@
 
 static PyObject *KoskariSyncViolation = NULL;
 static PyObject *CompositeMetaCache = NULL;
+static PyObject *str_init_name = NULL;
+static PyObject *object_init = NULL;
 
 static void koskari_fixup_slot_dispatchers(PyTypeObject *type);
 
@@ -311,19 +313,23 @@ static PyObject *kostype_tp_call(PyObject *cls, PyObject *args,
   SAYF("kostype_tp_call: cls = %R, args = %R, kwargs = %R", cls, args, kwargs);
 
   PyTypeObject *type = (PyTypeObject *) cls;
-  PyObject *instance = type->tp_alloc(type, 0);
+  PyObject *instance = type->tp_new(type, args, kwargs);
   if (! instance)
     return NULL;
+
+  if (! PyType_IsSubtype(Py_TYPE(instance), type))
+    return instance;
 
   SAYF("kostype_tp_call: instance = %R", instance);
 
   PyObject *init = NULL;
-  if (type->tp_dict)
-    init = PyDict_GetItemString(type->tp_dict, "__init__");
+
+  if (str_init_name)
+    init = PyType_Lookup(type, str_init_name);
 
   SAYF("kostype_tp_call: init = %R", init);
 
-  if (! init)
+  if (! init || init == object_init)
     return instance;
 
   PyObject *init_args = PyTuple_Pack(1, instance);
@@ -345,7 +351,11 @@ static PyObject *kostype_tp_call(PyObject *cls, PyObject *args,
   SAYF("kostype_tp_call: init_args = %R", init_args);
 
   PyObject *init_result = NULL;
-  int r = Koskari_DemandSyncEx(init, init_args, kwargs, &init_result);
+  int r;
+
+  Py_INCREF(init);
+  r = Koskari_DemandSyncEx(init, init_args, kwargs, &init_result);
+  Py_DECREF(init);
   Py_DECREF(init_args);
 
   SAYF("kostype_tp_call: r = %d, init_result = %R", r, init_result);
@@ -698,6 +708,15 @@ int koskari_object_init(PyObject *mod) {
                            (PyObject *) &KosTypeType) < 0)
     return -1;
 
+  str_init_name = PyUnicode_InternFromString("__init__");
+  if (! str_init_name)
+    return -1;
+
+  object_init = PyObject_GetAttrString(
+      (PyObject *) &PyBaseObject_Type, "__init__");
+  if (! object_init)
+    return -1;
+
   /* Cache KoskariSyncViolation for dunder slot shims (sync_init runs first) */
   KoskariSyncViolation = PyDict_GetItemString(dict, "KoskariSyncViolation");
   Py_XINCREF(KoskariSyncViolation);
@@ -710,6 +729,8 @@ int koskari_object_clear(PyObject *mod) {
 
   Py_CLEAR(KoskariSyncViolation);
   Py_CLEAR(CompositeMetaCache);
+  Py_CLEAR(str_init_name);
+  Py_CLEAR(object_init);
   (void) mod;
   return 0;
 }
