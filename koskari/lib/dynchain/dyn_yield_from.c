@@ -170,7 +170,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosDynFrame *const frame = KosEvalState_FRAME(es);
   PyObject *const *tos;
 
   if (! frame || ! payload) {

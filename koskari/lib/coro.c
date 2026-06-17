@@ -109,7 +109,7 @@ static void coroutine_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
 
-  KosCoroutine *coro = (KosCoroutine *) self;
+  KosCoroutine *const coro = (KosCoroutine *) self;
 
   if (coro->ctx)
     KosContext_Free(coro->ctx);
@@ -125,7 +125,7 @@ static int coroutine_traverse(
     visitproc visit,
     void *arg) {
 
-  KosCoroutine *coro = (KosCoroutine *) self;
+  KosCoroutine *const coro = (KosCoroutine *) self;
 
   Py_VISIT(coro->pending_await);
 
@@ -139,7 +139,7 @@ static int coroutine_traverse(
 
 static int coroutine_clear(PyObject *self) {
 
-  KosCoroutine *coro = (KosCoroutine *) self;
+  KosCoroutine *const coro = (KosCoroutine *) self;
 
   Py_CLEAR(coro->pending_await);
 
@@ -172,7 +172,7 @@ static PyObject *coroutine_iternext(PyObject *self) {
 
 static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
-  KosCoroutine *coro = (KosCoroutine *) self;
+  KosCoroutine *const coro = (KosCoroutine *) self;
 
   /* Re-entrancy guard */
   if (coro->in_send) {
@@ -317,7 +317,7 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
 static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
 
-  KosCoroutine *coro = (KosCoroutine *) self;
+  KosCoroutine *const coro = (KosCoroutine *) self;
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   if (! PyArg_ParseTuple(args, "O|OO:throw", &typ, &val, &tb))
@@ -425,7 +425,7 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
 
 static PyObject *coroutine_close(PyObject *self) {
 
-  KosCoroutine *coro = (KosCoroutine *) self;
+  KosCoroutine *const coro = (KosCoroutine *) self;
 
   if (coro->state == KOS_CORO_DONE) {
     Py_RETURN_NONE;
@@ -476,7 +476,7 @@ static PyObject *coroutine_close(PyObject *self) {
 */
 static PyObject *coroutine_demand(PyObject *self) {
 
-  KosCoroutine *coro = (KosCoroutine *) self;
+  KosCoroutine *const coro = (KosCoroutine *) self;
 
   for (;;) {
     PyObject *step = coroutine_send(self, Py_None);
@@ -534,7 +534,7 @@ static PyAsyncMethods coroutine_async_methods = {
 
 static PyObject *coroutine_repr(PyObject *self) {
 
-  KosCoroutine *coro = (KosCoroutine *) self;
+  KosCoroutine *const coro = (KosCoroutine *) self;
   const char *state_str;
 
   switch (coro->state) {

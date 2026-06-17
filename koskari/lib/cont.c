@@ -125,7 +125,7 @@ static int call_call_continuation(
     if (! token_ref) {
       target_dead = 1;
     } else if (PyObject_TypeCheck(token_ref, &KosEvaluatorTokenType)) {
-      KosEvaluatorToken *token = (KosEvaluatorToken *) token_ref;
+      KosEvaluatorToken *const token = (KosEvaluatorToken *) token_ref;
       if (token->live_depth == 0)
         target_dead = 1;
     }
@@ -299,7 +299,7 @@ static PyObject *continuation_call(
     if (! token_ref) {
       target_dead = 1;
     } else if (PyObject_TypeCheck(token_ref, &KosEvaluatorTokenType)) {
-      KosEvaluatorToken *token = (KosEvaluatorToken *) token_ref;
+      KosEvaluatorToken *const token = (KosEvaluatorToken *) token_ref;
       if (token->live_depth == 0)
         target_dead = 1;
     }

@@ -358,7 +358,7 @@ static PyObject *defer_valiter_iternext(PyObject *self) {
 }
 
 
-static PyObject *defer_valiter_send(PyObject *self, PyObject *arg) {
+static PyObject *defer_valiter_send(PyObject *self, const PyObject *arg) {
   if (arg != Py_None) {
     PyErr_SetString(PyExc_TypeError, "can't send non-None value to a just-started coroutine");
     return NULL;

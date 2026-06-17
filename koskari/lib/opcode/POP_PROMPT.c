@@ -20,6 +20,8 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
+  (void) insn;
+
   KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_POP_PROMPT);
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
@@ -115,12 +117,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
        (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
-  if (result) {
-    if (KosEvalState_StackPUSH(es, result) < 0) {
-      return KOS_OP_POST_ERR();
-    }
+  if (KosEvalState_StackPUSH(es, result) < 0) {
+    return KOS_OP_POST_ERR();
   }
-
-  (void) insn;
   return KOS_OP_RUN();
 }

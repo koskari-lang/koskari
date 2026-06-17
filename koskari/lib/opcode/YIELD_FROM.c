@@ -14,6 +14,10 @@
 */
 
 
+#define yield_from_check_coro(obj) \
+  (KosCoroutine_Check(obj) || PyCoro_CheckExact(obj))
+
+
 /**
    Normalize TOS to a (delegate, kind) for yield-from. On success returns 0
    and sets *delegate_out (new ref) and *kind_out. On failure returns -1.
@@ -35,11 +39,7 @@ static int yield_from_normalize(
   /* --- Reject non-iterables ---
      Coroutines are awaitable, not iterable. Using yield-from on a
      coroutine is a type error (like yield from 1). */
-  if (KosCoroutine_Check(obj)
-#ifdef PyCoro_CheckExact
-      || PyCoro_CheckExact(obj)
-#endif
-      ) {
+  if (yield_from_check_coro(obj)) {
     PyErr_SetString(PyExc_TypeError,
                     "coroutine object is not async iterable");
     return -1;
@@ -92,11 +92,7 @@ static int yield_from_normalize(
     if (! gen)
       return -1;
 
-    if (KosCoroutine_Check(gen)
-#ifdef PyCoro_CheckExact
-        || PyCoro_CheckExact(gen)
-#endif
-        ) {
+    if (yield_from_check_coro(gen)) {
       Py_DECREF(gen);
       PyErr_SetString(PyExc_TypeError,
                       "coroutine object is not async iterable");

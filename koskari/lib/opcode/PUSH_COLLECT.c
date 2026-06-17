@@ -26,7 +26,6 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
   PyObject *nspec = NULL;
   PyObject *parent = CURRENT_NS();
   PyObject *new_ns = NULL;
-  KosDynCollect *col_node = NULL;
 
   if (cidx >= KosCode_CPOOL_LEN(code)) {
     PyErr_Format(PyExc_IndexError, "PUSH_COLLECT constant index out of"
@@ -51,7 +50,7 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
     return KOS_OP_POST_ERR();
   }
 
-  col_node = kos_dyn_push_collect(es, new_ns);
+  KosDynCollect *const col_node = kos_dyn_push_collect(es, new_ns);
   if (! col_node)
     return KOS_OP_POST_ERR();
 

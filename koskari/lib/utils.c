@@ -1211,8 +1211,12 @@ static PyObject *m_kos_repr_registry_snapshot(PyObject *mod, PyObject *unused) {
 }
 
 
-static PyObject *m_pass(PyObject *mod,
-                        PyObject *args, PyObject *kwds) {
+static PyObject *m_pass(const PyObject *mod,
+                        const PyObject *args, const PyObject *kwds) {
+
+  (void) mod;
+  (void) args;
+  (void) kwds;
 
   Py_RETURN_NONE;
 }

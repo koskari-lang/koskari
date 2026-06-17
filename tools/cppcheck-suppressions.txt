@@ -1,0 +1,43 @@
+# Baseline suppressions for pre-existing cppcheck findings in koskari/lib.
+# Populated during initial static-analysis setup; do not fix issues here by
+# editing koskari sources from this file alone.
+
+syntaxError:koskari/lib/opcodes.incl:43
+
+missingReturn:koskari/lib/domain.c:246
+missingReturn:koskari/lib/formals.c:498
+missingReturn:koskari/lib/iter.c:564
+missingReturn:koskari/lib/namespace.c:731
+missingReturn:koskari/lib/namespace.c:739
+missingReturn:koskari/lib/namespace.c:753
+missingReturn:koskari/lib/namespace.c:810
+missingReturn:koskari/lib/operator.c:221
+missingReturn:koskari/lib/operator.c:240
+missingReturn:koskari/lib/pair.c:1217
+missingReturn:koskari/lib/pair.c:1244
+missingReturn:koskari/lib/pair.c:1355
+missingReturn:koskari/lib/pair.c:1788
+missingReturn:koskari/lib/pair.c:1798
+missingReturn:koskari/lib/pair.c:1813
+missingReturn:koskari/lib/pair.c:1829
+missingReturn:koskari/lib/ref.c:1382
+missingReturn:koskari/lib/ref.c:327
+missingReturn:koskari/lib/ref.c:339
+missingReturn:koskari/lib/ref.c:535
+missingReturn:koskari/lib/ref.c:547
+missingReturn:koskari/lib/ref.c:712
+missingReturn:koskari/lib/stack.c:1096
+missingReturn:koskari/lib/stack.c:1105
+missingReturn:koskari/lib/stack.c:1119
+missingReturn:koskari/lib/stack.c:1159
+missingReturn:koskari/lib/stack.c:1174
+missingReturn:koskari/lib/stack.c:1189
+missingReturn:koskari/lib/stack.c:1220
+missingReturn:koskari/lib/stack.c:1235
+missingReturn:koskari/lib/stack.c:1244
+missingReturn:koskari/lib/stack.c:1300
+missingReturn:koskari/lib/utils.c:1167
+missingReturn:koskari/lib/utils.c:1183
+missingReturn:koskari/lib/utils.c:1217
+
+# The end.

@@ -674,7 +674,7 @@ static PyObject *ns_m_ref(PyObject *self, PyObject *key) {
 
 
 static int ns_contains(PyObject *self, PyObject *key) {
-  PyObject *ref = KosNamespace_REF(self, key);
+  PyObject *const ref = KosNamespace_REF(self, key);
   if (! ref && PyErr_Occurred()) {
     return -1;
   } else {
@@ -701,7 +701,7 @@ static PyObject *ns_m_get(PyObject *self, PyObject *args) {
     return NULL;
 
   while (self) {
-    PyObject *bound = PyDict_GetItem(KosNamespace_BINDS(self), name);
+    PyObject *const bound = PyDict_GetItem(KosNamespace_BINDS(self), name);
     if (bound) {
       PyObject *val = ns_deref_symbol(self, name);
       if (! val) {
@@ -798,7 +798,7 @@ static PyObject *ns_m_contains(PyObject *self, PyObject *key) {
 
 
 static PyObject *ns_m_raw(PyObject *self, PyObject *key) {
-  PyObject *ref = KosNamespace_LOOSE_REF(self, key);
+  PyObject *const ref = KosNamespace_LOOSE_REF(self, key);
   if (! ref) {
     PyErr_Format(PyExc_NameError, "No such reference: %S", key);
     return NULL;
@@ -1233,16 +1233,13 @@ int KosNamespace_FindRef(PyObject *namespace, PyObject *key,
 
 
 int KosNamespace_Contains(PyObject *namespace, PyObject *key) {
-  PyObject *ref = NULL;
-
-  if (KosNamespace_Check(namespace)) {
-    ref = KosNamespace_REF(namespace, key);
-
-  } else {
+  if (! KosNamespace_Check(namespace)) {
     PyErr_Format(PyExc_TypeError, "expected Namespace instance,"
                  " found %R", namespace);
     return -1;
   }
+
+  PyObject *const ref = KosNamespace_REF(namespace, key);
 
   if (! ref && PyErr_Occurred()) {
     return -1;
@@ -1684,14 +1681,13 @@ static int mdl_ns_clear(PyObject *self) {
 static PyObject *mdl_ns_m_get(PyObject *self, PyObject *args) {
   PyObject *name = NULL;
   PyObject *def = Py_None;
-  PyObject *bound = NULL;
   PyObject *blt = NULL;
   PyObject *val = NULL;
 
   if (! PyArg_UnpackTuple(args, "get", 1, 2, &name, &def))
     return NULL;
 
-  bound = PyDict_GetItem(KosNamespace_BINDS(self), name);
+  PyObject *const bound = PyDict_GetItem(KosNamespace_BINDS(self), name);
   if (bound) {
     val = ns_deref_symbol(self, name);
     if (! val) {

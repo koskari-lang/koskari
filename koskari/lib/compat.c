@@ -281,7 +281,7 @@ PyObject *PyObject_GetAwaitable(PyObject *o) {
 /* === unit lifecycle === */
 
 
-int koskari_compat_init(PyObject *mod) {
+int koskari_compat_init(const PyObject *mod) {
 
   STR_CONST(_str_send, "send");
   STR_CONST(_str_await, "__await__");

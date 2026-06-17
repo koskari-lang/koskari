@@ -253,7 +253,7 @@ static PyObject *pair_new(PyTypeObject *type,
 }
 
 
-static Py_ssize_t pair_len(PyObject *self) {
+static Py_ssize_t pair_len(const PyObject *self) {
   return 2;
 }
 
@@ -1463,7 +1463,7 @@ static PyGetSetDef pair_getsets[] = {
 
 
 static PySequenceMethods pair_as_sequence = {
-  .sq_length = pair_len,
+  .sq_length = (lenfunc) pair_len,
   .sq_item = pair_getitem,
   .sq_ass_item = pair_setitem,
 };
@@ -1544,7 +1544,8 @@ static PyObject *nil_new(PyTypeObject *type,
 }
 
 
-static void nil_dealloc(PyObject *self) {
+static void nil_dealloc(const PyObject *self) {
+  (void) self;
   ;  /* nil is statically allocated, do not free it */
 }
 
@@ -1573,7 +1574,8 @@ static PyObject *nil_iter(PyObject *self) {
 }
 
 
-static Py_ssize_t nil_length(PyObject *self) {
+static Py_ssize_t nil_length(const PyObject *self) {
+  (void) self;
   return 0;
 }
 
@@ -1591,13 +1593,14 @@ static int nil_setitem(PyObject *self, Py_ssize_t index, PyObject *val) {
 
 
 static PySequenceMethods nil_as_sequence = {
-  .sq_length = nil_length,
+  .sq_length = (lenfunc) nil_length,
   .sq_item = nil_getitem,
   .sq_ass_item = nil_setitem,
 };
 
 
-static int nil_bool(PyObject *v) {
+static int nil_bool(const PyObject *v) {
+  (void) v;
   return 0;
 }
 
@@ -1626,7 +1629,7 @@ PyTypeObject KosNilType = {
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_base = &KosPairType,
   .tp_new = nil_new,
-  .tp_dealloc = nil_dealloc,
+  .tp_dealloc = (destructor) nil_dealloc,
 
   .tp_traverse = NULL,
   .tp_clear = NULL,
@@ -1686,7 +1689,7 @@ int KosPair_MakeRecursive(PyObject *pair) {
   if (KosNil_Check(pair) || ! KosPair_Check(pair))
     return -1;
 
-  PyObject *cdr = KosPair_CDR(pair);
+  PyObject *const cdr = KosPair_CDR(pair);
   if (cdr == KosNil || cdr == pair) {
     /* single pair: self-loop; or already recursive */
     if (cdr != pair)

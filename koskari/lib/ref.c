@@ -1179,7 +1179,7 @@ static PyObject *weak_ref_get_empty(PyObject *self, void *_unused) {
   }
 #else
   {
-    PyObject *obj = PyWeakref_GetObject(wr);
+    PyObject *const obj = PyWeakref_GetObject(wr);
     if (obj == Py_None) {
       Py_CLEAR(KosSymbolicRef_VALUE(self));
       Py_RETURN_TRUE;
@@ -1514,7 +1514,7 @@ PyObject *KosParamRef_New(PyObject *key, PyObject *default_value) {
 
 
 PyObject *KosRef_Deref(PyObject *self) {
-  PyTypeObject *tp = self->ob_type;
+  PyTypeObject *const tp = self->ob_type;
 
   if (tp == &KosRefType ||
       tp == &KosConstantRefType) {
@@ -1546,7 +1546,7 @@ PyObject *KosRef_Deref(PyObject *self) {
 
 int KosRef_Store(PyObject *self, PyObject *value) {
   PyObject *res = NULL;
-  PyTypeObject *tp = self->ob_type;
+  PyTypeObject *const tp = self->ob_type;
 
   if (tp == &KosRefType) {
     res = sym_ref_m_store(self, value);
@@ -1586,7 +1586,7 @@ int KosRef_Store(PyObject *self, PyObject *value) {
 
 int KosRef_Clear(PyObject *self) {
   PyObject *res = NULL;
-  PyTypeObject *tp = self->ob_type;
+  PyTypeObject *const tp = self->ob_type;
 
   if (tp == &KosRefType ||
       tp == &KosWeakRefType ||
@@ -1624,7 +1624,7 @@ int KosRef_Clear(PyObject *self) {
 
 int KosRef_IsEmpty(PyObject *self) {
   PyObject *res = NULL;
-  PyTypeObject *tp = self->ob_type;
+  PyTypeObject *const tp = self->ob_type;
 
   if (tp == &KosRefType ||
       tp == &KosConstantRefType ||

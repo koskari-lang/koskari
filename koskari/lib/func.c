@@ -317,7 +317,7 @@ static PyMemberDef function_spec_members[] = {
 
 
 static PyObject *function_spec_call(PyObject *self,
-                                    PyObject *args, PyObject *kwds) {
+                                    PyObject *args, const PyObject *kwds) {
 
   if (kwds) {
     PyErr_SetString(
@@ -340,7 +340,7 @@ static PyObject *function_spec_call(PyObject *self,
 static PyObject *function_spec_new(
     PyTypeObject *type,
     PyObject *args,
-    PyObject *kwds) {
+    const PyObject *kwds) {
 
   if (kwds) {
     PyErr_SetString(
@@ -391,8 +391,8 @@ PyTypeObject KosFunctionSpecType = {
   .tp_basicsize = sizeof(KosFunctionSpec),
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_members = function_spec_members,
-  .tp_new = function_spec_new,
-  .tp_call = function_spec_call,
+  .tp_new = (newfunc) function_spec_new,
+  .tp_call = (ternaryfunc) function_spec_call,
   .tp_dealloc = function_spec_dealloc,
   .tp_traverse = function_spec_traverse,
   .tp_clear = function_spec_clear,

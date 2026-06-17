@@ -63,7 +63,7 @@ static int koskari_lib_init(PyObject *mod) {
   if (! mod)
     return -1;
 
-  PyObject *dict = PyModule_GetDict(mod);
+  PyObject *const dict = PyModule_GetDict(mod);
   if (! dict)
     return -1;
 
@@ -104,7 +104,7 @@ int koskari_lib_clear(PyObject *mod) {
   if (! mod)
     return -1;
 
-  PyObject *dict = PyModule_GetDict(mod);
+  PyObject *const dict = PyModule_GetDict(mod);
   if (! dict)
     return -1;
 

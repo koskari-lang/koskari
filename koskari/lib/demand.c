@@ -497,7 +497,7 @@ static int demand_init(PyObject *self, PyObject *args, PyObject *kwds) {
 
 PyObject *KosDemand_GetWrapped(PyObject *obj) {
 
-  KosDemandObject *d = (KosDemandObject *) obj;
+  KosDemandObject *const d = (KosDemandObject *) obj;
 
   return d->wrapped;
 }
@@ -508,7 +508,7 @@ static PyObject *demand_descr_get(
     PyObject *obj,
     PyObject *owner) {
 
-  KosDemandObject *d = (KosDemandObject *) self;
+  KosDemandObject *const d = (KosDemandObject *) self;
 
   (void) owner;
 
@@ -526,7 +526,7 @@ static PyObject *demand_descr_get(
 }
 
 
-static PyObject *demand_get_wrapped_attr(PyObject *self, void *closure) {
+static PyObject *demand_get_wrapped_attr(PyObject *self, const void *closure) {
 
   const char *name = (const char *) closure;
   KosDemandObject *d = (KosDemandObject *) self;
@@ -860,7 +860,7 @@ static PyObject *demand_gen_throw(PyObject *self, PyObject *args) {
     return NULL;
 
   {
-    KosPyAsyncGen *wa = (KosPyAsyncGen *) gen->async_agen;
+    KosPyAsyncGen *const wa = (KosPyAsyncGen *) gen->async_agen;
     if (! wa || wa->closed) {
       PyErr_SetNone(PyExc_StopIteration);
       return NULL;

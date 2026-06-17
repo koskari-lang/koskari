@@ -463,7 +463,7 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
    Free nodes from node toward the root, stopping before stop (stop is not
    freed). Used to tear down a suffix of chain or a cloned template.
 */
-void kos_dynchain_free(KosDynNode *node, KosDynNode *stop) {
+void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop) {
 
   while (node && node != stop) {
     KosDynNode *parent = node->parent;
@@ -537,12 +537,10 @@ static void kos_dyn_apply_live(
     KosStackBlock **bl,
     PyObject *ns) {
 
-  KosDynFrame *ef;
-
   if (! es)
     return;
 
-  ef = KosEvalState_FRAME(es);
+  KosDynFrame *const ef = KosEvalState_FRAME(es);
   if (ef != ft) {
     if (ef)
       KosEvalState_FlushLiveRegsToFrame(es);
@@ -2049,7 +2047,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
 */
 int kos_dynchain_traverse(
     KosDynNode *node,
-    KosDynNode *stop,
+    const KosDynNode *stop,
     visitproc visit,
     void *arg) {
 
@@ -2207,7 +2205,7 @@ int kos_dyn_deliver_iterator_boundary_return_event(
   // TODO: this is bad, it hard-coded specific node types. It should use
   // a capability-based approach.
 
-  KosDynNext *next = kos_dyn_find_next_above_frame(es);
+  KosDynNext *const next = kos_dyn_find_next_above_frame(es);
 
   if (next)
     return kos_dyn_next_deliver_return(es, out_ev);
@@ -2244,7 +2242,7 @@ int kos_dyn_deliver_yield_to_iter_boundary(
   // TODO: this is bad, it hard-coded specific node types. It should use
   // a capability-based approach.
 
-  KosDynNext *next = kos_dyn_find_next_above_frame(es);
+  KosDynNext *const next = kos_dyn_find_next_above_frame(es);
 
   if (next) {
     if (kos_dyn_next_deliver_yield(es, out_ev) < 0)

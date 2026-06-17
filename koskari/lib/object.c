@@ -547,7 +547,7 @@ static PyObject *dunder_slot_iter_shim(PyObject *self) {
 }
 
 
-static PyObject *dunder_lookup_in_mro(PyTypeObject *type,
+static PyObject *dunder_lookup_in_mro(const PyTypeObject *type,
                                       const char *dunder) {
 
   PyObject *mro = type->tp_mro;
