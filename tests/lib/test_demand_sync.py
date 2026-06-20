@@ -373,7 +373,7 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
 
 class TestDemandSyncPlainPython(unittest.TestCase):
     """
-    demand_call on plain Python callables
+    demand_call on plain Python callables, including coroutine functions.
     """
 
     def test_plain_python_callable(self):
@@ -389,6 +389,50 @@ class TestDemandSyncPlainPython(unittest.TestCase):
         """
         with self.assertRaises(ZeroDivisionError):
             demand_call(lambda: 1 / 0)
+
+
+    def test_python_coroutine_completes_immediately(self):
+        """
+        A Python coroutine that completes without suspending returns its value.
+        """
+
+        async def pure_sync():
+            return 42
+
+        self.assertEqual(demand_call(pure_sync), 42)
+
+
+    def test_python_coroutine_suspends_raises_violation(self):
+        """
+        A Python coroutine that suspends raises KoskariSyncViolation.
+        """
+        import asyncio
+
+        async def suspends():
+            await asyncio.sleep(0)
+            return 99
+
+        with self.assertRaises(KoskariSyncViolation):
+            demand_call(suspends)
+
+
+    def test_python_coroutine_catches_violation_and_returns(self):
+        """
+        A Python coroutine whose __await__ iterator catches KoskariSyncViolation
+        and returns a value yields that value to demand_call.
+        """
+
+        class RecoveringAwaitable:
+            def __await__(self):
+                try:
+                    yield "suspend"
+                except KoskariSyncViolation:
+                    return "recovered"
+
+        async def fn():
+            return await RecoveringAwaitable()
+
+        self.assertEqual(demand_call(fn), "recovered")
 
 
 class TestDemandWrapperAndApply(unittest.TestCase):
