@@ -42,7 +42,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WITH: no WITH extent at this PC");
     return KOS_OP_POST_ERR();
   }
-  KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
+  KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
     Py_DECREF(exit);
     Py_DECREF(enter);

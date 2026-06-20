@@ -180,7 +180,7 @@ static int kos_dyn_pop_one_unwind_walk(
 
   KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
 
-  KosDynNode *top = KosEvalState_DYN_TOP(es);
+  KosDynNode *const top = KosEvalState_DYN_TOP(es);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_pop_one_unwind_walk: empty dynamic chain");
@@ -195,7 +195,7 @@ static int kos_dyn_pop_one_unwind_walk(
    Pop until dyn_top == target or empty. PROMPT uses kos_dyn_pop_prompt so
    walks can cross delimiters. Callers: transfer helpers, targeted unwind.
 */
-int kos_dyn_unwind_to_node(KosEvalState *es, KosDynNode *target,
+int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
                            KosXferEvent event, KosEvent *out_ev) {
 
   if (KOS_XFER_TRACE)

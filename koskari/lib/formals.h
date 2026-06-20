@@ -193,7 +193,7 @@ PyObject *KosFormals_NamespaceSpec(
 
 
 int koskari_formals_init(PyObject *mod);
-int koskari_formals_clear(PyObject *mod);
+int koskari_formals_clear(const PyObject *mod);
 
 
 #endif

@@ -165,6 +165,7 @@ def make_bootstrap():
     _ty('int', int)
     _ty('list', list)
     _ty('object', object)
+    _ty('property', property)
     _ty('range', range)
     _ty('set', set)
     _ty('staticmethod', staticmethod)

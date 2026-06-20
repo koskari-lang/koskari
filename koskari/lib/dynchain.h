@@ -813,7 +813,7 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node);
    :param node: top of chain to free
    :param stop: stop at this node (not freed), or NULL to free all
 */
-void kos_dynchain_free(KosDynNode *node, KosDynNode *stop);
+void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop);
 
 
 /**
@@ -1505,7 +1505,7 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
                                   PyObject *val, struct KosEvent *out_ev);
 
 
-int kos_dyn_unwind_to_node(KosEvalState *es, KosDynNode *target,
+int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
                            KosXferEvent event, struct KosEvent *out_ev);
 
 
@@ -2086,7 +2086,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg);
 */
 int kos_dynchain_traverse(
    KosDynNode *node,
-   KosDynNode *stop,
+   const KosDynNode *stop,
    visitproc visit,
    void *arg);
 

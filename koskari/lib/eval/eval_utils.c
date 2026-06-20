@@ -378,7 +378,7 @@ static inline int do_frame_prep(
     wants = ctyp->tp_kos_wants_frame;
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
+  KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
 
   if (wants && tail_call) {
     kos_dynframe_reset_for_tail(frame);
@@ -415,7 +415,7 @@ int KosEvalState_Call(
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
-      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
+      KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
       if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;
     }
@@ -455,7 +455,7 @@ int KosEvalState_CallArgs(
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
-      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
+      KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
       if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;
     }
@@ -506,7 +506,7 @@ int KosEvalState_CallNoArgs(
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
-      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
+      KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
       if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;
     }

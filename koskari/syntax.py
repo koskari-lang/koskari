@@ -88,7 +88,7 @@ class Syntax(Compiled):
 
 
     @property
-    def matcher(self):
+    def matchers(self):
         return self._matchers
 
 

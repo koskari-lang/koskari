@@ -96,7 +96,7 @@ static PyMethodDef formals_spec_methods[] = {
 
 
 static PyObject *formals_spec_call(PyObject *self,
-                                   PyObject *args, PyObject *kwds) {
+                                   PyObject *args, const PyObject *kwds) {
   PyObject *defaults = NULL;
 
   if (kwds) {
@@ -178,7 +178,7 @@ PyTypeObject KosFormalsSpecType = {
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_members = formals_spec_members,
   .tp_methods = formals_spec_methods,
-  .tp_call = formals_spec_call,
+  .tp_call = (ternaryfunc) formals_spec_call,
   .tp_new = formals_spec_new,
   .tp_dealloc = formals_spec_dealloc,
   .tp_traverse = formals_spec_traverse,
@@ -509,7 +509,7 @@ static PyMethodDef formals_methods[] = {
 
 
 static PyObject *formals_call(PyObject *self,
-                              PyObject *args, PyObject *kwds) {
+                              PyObject *args, const PyObject *kwds) {
 
   if (kwds) {
     PyErr_SetString(PyExc_TypeError, "Formals.apply does not accept"
@@ -591,7 +591,7 @@ PyTypeObject KosFormalsType = {
   .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
   .tp_members = formals_members,
   .tp_methods = formals_methods,
-  .tp_call = formals_call,
+  .tp_call = (ternaryfunc) formals_call,
   .tp_new = formals_new,
   .tp_dealloc = formals_dealloc,
   .tp_traverse = formals_traverse,
@@ -1586,8 +1586,9 @@ int koskari_formals_init(PyObject *mod) {
 }
 
 
-int koskari_formals_clear(PyObject *mod) {
+int koskari_formals_clear(const PyObject *mod) {
 
+  (void) mod;
   return 0;
 }
 

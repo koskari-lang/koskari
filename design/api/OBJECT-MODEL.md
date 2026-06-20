@@ -10,9 +10,8 @@ call (see §2.4).
 
 ## 1. Scope
 
-* Minimal deviation from CPython's PyObject and PyTypeObject semantics.
-* Explicit async construction support.
-* Native KosCallable integration for Koskari-side invocation.
+* Synchronous construction via `kostype_tp_call` (`tp_new` + demand `__init__`).
+* KosCallable integration for functions and bound methods (not KosType).
 * Descriptor-based method binding via __get__.
 
 This phase deliberately does **not** preserve Ref semantics at the class
@@ -108,78 +107,62 @@ Koskari-defined classes is KosType by default (or a subclass).
 
 ### 3.2 KosCallable Integration
 
-KosType implements the KosCallable interface. When invoked from Koskari code:
+KosType is **not** a KosCallable. Class construction from Python or Koskari
+uses `PyObject_Call` on the class object, which dispatches to the metaclass
+`tp_call` (`kostype_tp_call`; see §4.2 and
+[dunder-adapter.md](dunder-adapter.md) §5.4).
 
-* Constructor dispatch uses KosCallable.
-* Execution installs frames onto the **current KosContext**.
-* No new context is created.
-* Async behavior participates in normal Koskari call semantics.
-
-Python invocation does **not** use KosCallable directly (see §4).
+KosFunction and KosBoundMethod remain KosCallables for ordinary invocation.
+When Koskari bytecode calls a **function**, dispatch uses KosCallable as today.
+Class calls are a separate host path through `kostype_tp_call`.
 
 ---
 
 ## 4. Construction Semantics
 
-Construction is unified internally but exposed differently by caller context.
+### 4.1 Implemented constructor (`kostype_tp_call`)
 
-### 4.1 Internal Constructor Engine
+Python `C(...)` and Koskari `(C ...)` both reach the metaclass `tp_call`.
+For Koskari-defined classes that is **`kostype_tp_call`** (pure `KosType` or
+composite `KosCombinedMeta_*` inheriting `KosType`).
 
-Primitive:
+Steps (see [dunder-adapter.md](dunder-adapter.md) §5.4 for detail):
 
-```
-kos_construct(cls, args, kwargs, mode)
-```
+1. **`tp_new(cls, args, kwargs)`** — real allocation (`object.__new__`, Pydantic
+   model setup, enum machinery, etc.).
+2. If `__new__` returned a non-instance of `cls`, return it (CPython rule).
+3. **`PyType_Lookup(cls, "__init__")`** — MRO resolution; skip bare
+   `object.__init__`.
+4. **`Koskari_DemandSyncEx(init, (instance, *args), kwargs)`** — demand path
+   for Koskari `__init__`; plain Python call for foreign `__init__`.
+5. Return **`instance`** synchronously (not a coroutine or awaitable).
 
-Steps:
+### 4.2 Composite metaclass and foreign bases
 
-1. Allocate instance.
-2. Call __init__.
-3. Interpret result based on mode.
+When a Koskari class subclasses a foreign base (plain Python, `ABC`, `IntEnum`,
+`pydantic.BaseModel`, etc.), `kos_build_class` may install a composite
+metaclass (`KosCombinedMeta_<foreign>`). Instance construction still uses
+`kostype_tp_call` as long as `KosType` appears in the metaclass MRO.
 
-### 4.2 Python Constructor (tp_call) – Awaitable by Default
+This requires **`tp_new`** (foreign `__new__` must run) and **MRO `__init__`**
+(inherited foreign or Kos inits must be found). Full-stack reproducers live under
+`tests/reproducers/scripts/class_hierarchy.ki` and
+`tests/reproducers/scripts/pydantic_model.ki`.
 
-KosType.tp_call returns an **awaitable construction result**.
+### 4.3 Deferred: awaitable `tp_call`
 
-* Allocate instance.
-* Call __init__.
-* If __init__ returns:
-  * None → return an awaitable that resolves immediately to the instance.
-  * Awaitable / KosCoroutine → return an awaitable that awaits init
-    completion, then yields the instance.
+An earlier design called for `KosType.tp_call` to return an **awaitable**
+construction result so Python could `await SomeType(...)`. That is **not**
+implemented. Sync construction via `C(...)` is the supported Python entrypoint
+today.
 
-Python usage:
+### 4.4 Deferred: `C.new` classmethod
 
-```python
-inst = await SomeType(1, 2, 3)
-```
+A synchronous `C.new(*args, **kwargs)` adapter was sketched as an explicit
+escape hatch. It is **not** implemented; `C(...)` already constructs
+synchronously on the demand path.
 
-Notes:
-
-* This is a deliberate deviation from CPython's usual synchronous
-  constructor contract, enabled because we control tp_call for Koskari types.
-* The awaitable returned by tp_call is the primary async-friendly
-  constructor entrypoint.
-
-### 4.3 Synchronous Constructor Adapter (C.new)
-
-Every KosType exposes:
-
-```
-C.new(*args, **kwargs) -> instance
-```
-
-* Implemented as a runtime-provided classmethod.
-* Runs construction to completion synchronously.
-* If __init__ is async, synchronizes via _sync.run(...).
-
-Python usage:
-
-```python
-inst = SomeType.new(1, 2, 3)
-```
-
-### 4.4 Koskari-Side Construction
+### 4.5 Koskari-side construction
 
 When Koskari code calls a class:
 
@@ -187,10 +170,10 @@ When Koskari code calls a class:
 (C ...)
 ```
 
-* Dispatch occurs through KosCallable.
-* Async init participates in Koskari's async semantics.
-* Execution installs frames onto the current KosContext; may suspend
-  according to normal Koskari call rules.
+* Dispatch is `PyObject_Call` on the class → `kostype_tp_call` as above.
+* Koskari `__init__` runs via `Koskari_DemandSyncEx` (no suspension).
+* If `__init__` were written to suspend, construction raises
+  `KoskariSyncViolation` on the Python/demand path.
 
 No special form is required in Koskari.
 
@@ -217,8 +200,20 @@ This allows storing KosFunction directly in the class dict.
 
 Minimal wrapper object:
 
-* Fields: func (KosFunction), self (bound instance).
-* Implements KosCallable by prepending self to call arguments.
+* Fields: `func` (`KosFunction` or `Demand`), `self` (bound instance).
+* Implements KosCallable by prepending `self` to call arguments.
+* When `func` is `Demand`, `__call__` routes through `Koskari_DemandSync`
+  (sync path); eval install resolves the inner `KosFunction` when present.
+
+### 5.3 Demand as descriptor
+
+`Demand` implements `tp_descr_get` for `define-demanding` and similar:
+
+* Class access (`obj is None`) → return the unbound `Demand` wrapper.
+* Instance access → **`KosBoundMethod(Demand(fn), obj)`** (not
+  `Demand(BoundMethod(...))`).
+
+See [demand-wrapper.md](demand-wrapper.md) §3.4.
 
 Future optimization (optional): vectorcall-style fast path.
 
@@ -251,11 +246,12 @@ class creation.
 
 ## 8. Invariants (First Cut)
 
-* Python `C(...)` returns an awaitable; sync construction uses `C.new(...)`.
-* Koskari `(C ...)` uses KosCallable semantics.
+* Python `C(...)` and Koskari `(C ...)` construct synchronously via
+  `kostype_tp_call` (`tp_new` + demand `__init__`).
 * Class dictionaries are plain Python dicts.
-* Method binding is descriptor-based via KosFunction.__get__.
-* No implicit event loop execution occurs in Python paths.
+* Method binding is descriptor-based: `KosFunction.__get__` → `KosBoundMethod`;
+  `Demand.__get__` → `KosBoundMethod(Demand, obj)`.
+* No implicit event loop execution occurs in Python host paths.
 
 ---
 
@@ -289,14 +285,17 @@ From `sibceval/specials.py` (equivalent semantics, different encoding):
 
 ### 9.3 Koskari Infrastructure to Add
 
-* KosType – metaclass implementing tp_call (awaitable), KosCallable, and
-  C.new classmethod.
+* KosType – metaclass implementing synchronous `kostype_tp_call` (§4.1).
 * KosObject – base for Koskari instances (or standard PyObject of heap type).
-* KosFunction – function type implementing __get__ for descriptor binding.
-* KosBoundMethod – bound method wrapper implementing KosCallable.
+* KosFunction – function type implementing `__get__` for descriptor binding.
+* KosBoundMethod – bound method wrapper; `func` may be `KosFunction` or
+  `Demand`.
+* Demand – sync adapter type with `tp_descr_get` (see demand-wrapper.md).
 * KOS_DYN_COLLECT – chain node storing saved_ns for restore on POP_COLLECT.
 * PUSH_COLLECT / POP_COLLECT / BUILD_CLASS opcode handlers (implemented).
 * class special form in koskari compile/specials.
+
+Deferred from the original sketch: awaitable `tp_call`, `C.new` classmethod.
 
 ### 9.4 Namespace → dict for Class Bodies
 

@@ -130,7 +130,7 @@ static inline int xfer_plan_unwind_includes(KosDynNode *node) {
 */
 static size_t xfer_plan_count_unwind_and_params(
     KosDynNode *current,
-    KosDynNode *lca) {
+    const KosDynNode *lca) {
 
   size_t n = 0;
   KosDynNode *node = current;
@@ -152,7 +152,7 @@ static size_t xfer_plan_count_unwind_and_params(
 */
 static size_t xfer_plan_count_wind_before(
     KosDynNode *target,
-    KosDynNode *lca) {
+    const KosDynNode *lca) {
 
   size_t n = 0;
   KosDynNode *node = target;
@@ -178,7 +178,7 @@ static void xfer_plan_fill_unwind_actions(
     KosTransferPlan *plan,
     size_t *idx,
     KosDynNode *current,
-    KosDynNode *lca) {
+    const KosDynNode *lca) {
 
   KosDynNode *node = current;
   while (node && node != lca) {
@@ -243,7 +243,7 @@ static int xfer_plan_fill_wind_actions(
     KosTransferPlan *plan,
     size_t *idx,
     KosDynNode *target,
-    KosDynNode *lca,
+    const KosDynNode *lca,
     size_t wind_count) {
 
   if (wind_count == 0)
@@ -871,7 +871,7 @@ static int xfer_step_extent_action(KosEvalState *es, KosTransferAction *action,
 static int kos_dyn_run_install_wind_span(
     KosEvalState *es,
     KosDynNode *seg,
-    KosDynNode *chain_stop,
+    const KosDynNode *chain_stop,
     KosEvent *out_ev,
     const char *xfer_fail_tag) {
 
@@ -947,7 +947,7 @@ static void xfer_remap_extent_nodes(
   while (idx < count) {
     KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
     if (KosTransferAction_STEP(a) == KOS_XFER_EXTENT_ACTION) {
-      KosDynNode *template_node = KosTransferAction_EXTENT_NODE(a);
+      KosDynNode *const template_node = KosTransferAction_EXTENT_NODE(a);
       KosDynNode *t = template_top;
       KosDynNode *l = live_top;
 
@@ -1177,7 +1177,7 @@ static int xfer_step_inject(KosEvalState *es, KosTransferAction *action) {
    Supports async (e.g. WITH exit returning awaitable).
 */
 static int xfer_step_pop_one(KosEvalState *es, KosEvent *out_ev) {
-  KosDynNode *top = KosEvalState_DYN_TOP(es);
+  KosDynNode *const top = KosEvalState_DYN_TOP(es);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError, "POP_ONE: empty chain");
     return -1;
@@ -1197,8 +1197,8 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *stop_node = KosTransferAction_TRUNCATE_NODE(action);
-  KosDynNode *new_top = stop_node ? KosDynNode_PARENT(stop_node) : NULL;
-  KosDynNode *current = KosEvalState_DYN_TOP(es);
+  KosDynNode *const new_top = stop_node ? KosDynNode_PARENT(stop_node) : NULL;
+  KosDynNode *const current = KosEvalState_DYN_TOP(es);
 
   if (! current) {
     PyErr_SetString(PyExc_RuntimeError, "TRUNCATE_AND_INJECT: empty chain");

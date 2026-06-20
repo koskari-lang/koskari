@@ -146,6 +146,18 @@ static int demand_sync_ex(
     Py_INCREF(call_args);
   }
 
+  /* BoundMethod may unwrap to Demand or other non-KosCallable */
+  if (! KosCallable_Check(callable)) {
+    if (! call_args && ! kwargs) {
+      result = PyObject_CallNoArgs(callable);
+    } else {
+      result = PyObject_Call(callable, call_args, kwargs);
+    }
+    Py_DECREF(call_args);
+    *out_result = result;
+    return result ? 0 : -1;
+  }
+
   /* KosExpression */
   if (KosExpression_CheckExact(callable)) {
     if ((call_args && PyTuple_GET_SIZE(call_args) != 0)
@@ -483,7 +495,38 @@ static int demand_init(PyObject *self, PyObject *args, PyObject *kwds) {
 }
 
 
-static PyObject *demand_get_wrapped_attr(PyObject *self, void *closure) {
+PyObject *KosDemand_GetWrapped(PyObject *obj) {
+
+  KosDemandObject *const d = (KosDemandObject *) obj;
+
+  return d->wrapped;
+}
+
+
+static PyObject *demand_descr_get(
+    PyObject *self,
+    PyObject *obj,
+    PyObject *owner) {
+
+  KosDemandObject *const d = (KosDemandObject *) self;
+
+  (void) owner;
+
+  if (! d->wrapped) {
+    PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+    return NULL;
+  }
+
+  if (obj == NULL) {
+    Py_INCREF(self);
+    return self;
+  }
+
+  return KosBoundMethod_New(self, obj);
+}
+
+
+static PyObject *demand_get_wrapped_attr(PyObject *self, const void *closure) {
 
   const char *name = (const char *) closure;
   KosDemandObject *d = (KosDemandObject *) self;
@@ -535,7 +578,21 @@ static PyObject *demand_tp_call(
 
 static PyObject *demand_repr(PyObject *self) {
   KosDemandObject *d = (KosDemandObject *) self;
-  return PyUnicode_FromFormat("Demand(%p)", (void *) d->wrapped);
+  PyObject *name = NULL;
+  PyObject *result = NULL;
+
+  if (! d->wrapped)
+    return PyUnicode_FromString("<Demand ?>");
+
+  name = PyObject_GetAttrString(d->wrapped, "__name__");
+  if (! name) {
+    PyErr_Clear();
+    return PyUnicode_FromString("<Demand <lambda>>");
+  }
+
+  result = PyUnicode_FromFormat("<Demand %R>", name);
+  Py_DECREF(name);
+  return result;
 }
 
 
@@ -580,6 +637,7 @@ PyTypeObject KosDemandType = {
   .tp_getset = demand_getset,
   .tp_repr = demand_repr,
   .tp_call = demand_tp_call,
+  .tp_descr_get = demand_descr_get,
   .tp_new = demand_new,
   .tp_init = demand_init,
 };
@@ -802,7 +860,7 @@ static PyObject *demand_gen_throw(PyObject *self, PyObject *args) {
     return NULL;
 
   {
-    KosPyAsyncGen *wa = (KosPyAsyncGen *) gen->async_agen;
+    KosPyAsyncGen *const wa = (KosPyAsyncGen *) gen->async_agen;
     if (! wa || wa->closed) {
       PyErr_SetNone(PyExc_StopIteration);
       return NULL;

@@ -77,9 +77,14 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
    None. Callers: eval when entering generator body from consumer.
 */
 int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosContext *const ctx = KosEvalState_CONTEXT(es);
   KosDynNode *active;
   KosDynNode *n;
+
+  if (! es || ! gen) {
+    PyErr_SetString(PyExc_RuntimeError, "NULL es or gen for gen_install");
+    return -1;
+  }
 
   SAYF("[gen] install ENTER ctx=%p gen=%p dyn_top=%p ctx_dyn_top_kind=%s "
        "active=%p",

@@ -30,7 +30,6 @@ KOS_OP_HANDLER(PUSH_NS) {
   PyObject *const *args = NULL;
   PyObject *parent = CURRENT_NS();
   PyObject *new_ns = NULL;
-  KosDynNs *ns_node = NULL;
   int opa = 0;
 
   if (unlikely(eidx >= KosCode_EXTRA_LEN(code))) {
@@ -122,7 +121,7 @@ KOS_OP_HANDLER(PUSH_NS) {
     KosEvalState_StackDropNoErr(es, (size_t) opa);
   }
 
-  ns_node = kos_dyn_push_ns(es, new_ns);
+  KosDynNs *const ns_node = kos_dyn_push_ns(es, new_ns);
   if (unlikely(! ns_node)) {
     return KOS_OP_POST_ERR();
   }

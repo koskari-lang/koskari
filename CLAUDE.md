@@ -31,6 +31,10 @@ make tox
 
 # Regenerate opcode handler dispatch table (needed after editing opcodes.incl)
 make handlers
+
+# Static analysis on koskari/lib (no compile step)
+make cppcheck        # cppcheck via pre-built container; writes build/cppcheck.sarif
+make flawfinder      # Flawfinder via tox
 ```
 
 ## Architecture

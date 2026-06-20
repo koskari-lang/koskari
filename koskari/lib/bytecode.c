@@ -162,7 +162,7 @@ static int soften_label_map_add_pc(
   if (! key)
     return -1;
 
-  PyObject *existing = PyDict_GetItemWithError(label_map, key);
+  PyObject *const existing = PyDict_GetItemWithError(label_map, key);
   if (! existing && PyErr_Occurred()) {
     Py_DECREF(key);
     return -1;
@@ -240,7 +240,7 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
 
       KosExtra row = KosCode_GetExtra(self, eidx);
       KosExtraSchema schema = kos_opcode_extra_schema(op);
-      uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
+      const uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
 
       for (int slot = 0; slot < 4; slot++) {
         KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
@@ -1959,11 +1959,11 @@ static int is_jump_op(KosOpCode op) {
    Only applies to control-flow jump opcodes, not PUSH_*.
 */
 static int validate_jump_locality(
-    KosOp *code,
+    const KosOp *code,
     uint32_t code_len,
-    KosExtentDesc *extents,
+    const KosExtentDesc *extents,
     uint32_t extent_len,
-    uint16_t *top_extent_id) {
+    const uint16_t *top_extent_id) {
 
   if (! top_extent_id || extent_len == 0) {
     return 0;
@@ -1994,7 +1994,7 @@ static int validate_jump_locality(
       continue;
     }
 
-    KosExtentDesc *e = &extents[eid];
+    const KosExtentDesc *const e = &extents[eid];
     uint32_t enter_pc = e->push_pc + 1;
     uint32_t pop_pc = e->pop_pc;
 
@@ -2021,11 +2021,11 @@ static int validate_jump_locality(
    Called after derive_extents.
 */
 static int validate_iter_next_in_foreach(
-    KosOp *code,
+    const KosOp *code,
     uint32_t code_len,
-    KosExtentDesc *extents,
+    const KosExtentDesc *extents,
     uint32_t extent_len,
-    uint16_t *top_extent_id) {
+    const uint16_t *top_extent_id) {
 
   if (! top_extent_id) {
     return 0;
@@ -2172,7 +2172,7 @@ static int validate_fast_slots(
     PyObject *self,
     KosOp *code,
     uint32_t code_len,
-    KosExtra *extra,
+    const KosExtra *extra,
     uint32_t extra_len,
     PyObject **cpool,
     uint32_t cpool_len) {
@@ -2797,7 +2797,7 @@ uint32_t kos_extent_top(PyObject *code, uint32_t pc) {
     return KOS_EXTENT_NONE;
   }
 
-  uint16_t *top = KosCode_TOP_EXTENT_ID(code);
+  uint16_t *const top = KosCode_TOP_EXTENT_ID(code);
   if (! top || pc >= KosCode_CODE_LEN(code)) {
     return KOS_EXTENT_NONE;
   }
@@ -2813,7 +2813,7 @@ uint32_t kos_extent_top(PyObject *code, uint32_t pc) {
 uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind) {
 
   uint32_t eid = kos_extent_top(code, pc);
-  KosExtentDesc *extents = KosCode_EXTENTS(code);
+  const KosExtentDesc *const extents = KosCode_EXTENTS(code);
   uint32_t extent_len = KosCode_EXTENT_LEN(code);
 
   while (eid != KOS_EXTENT_NONE && eid < extent_len) {
@@ -2834,7 +2834,7 @@ uint32_t kos_extent_find_by_pop_pc(PyObject *code, uint32_t pop_pc,
     return KOS_EXTENT_NONE;
   }
 
-  KosExtentDesc *extents = KosCode_EXTENTS(code);
+  const KosExtentDesc *const extents = KosCode_EXTENTS(code);
   uint32_t extent_len = KosCode_EXTENT_LEN(code);
 
   for (uint32_t eid = 0; eid < extent_len; eid++) {
@@ -2879,7 +2879,7 @@ int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
     return -1;
   }
 
-  KosExtentDesc *e = kos_extent_desc(code, eid);
+  const KosExtentDesc *const e = kos_extent_desc(code, eid);
   if (! e) {
     SAYF("[extent] kos_try_handler_for pc=%u eid=%u desc NULL\n",
          (unsigned) pc, (unsigned) eid);
@@ -2930,7 +2930,7 @@ uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc) {
     return KOS_EXTENT_NONE;
   }
 
-  KosExtentDesc *e = kos_extent_desc(code, eid);
+  const KosExtentDesc *const e = kos_extent_desc(code, eid);
   if (! e) {
     return KOS_EXTENT_NONE;
   }

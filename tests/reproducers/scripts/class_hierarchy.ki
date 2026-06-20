@@ -1,0 +1,84 @@
+;; Full-stack reproducers for KosType instance construction across bases.
+
+
+;; Koskari subclassing Koskari
+
+define-class KosBase []:
+
+    define __init__ [self x]:
+        set! self.x x
+
+
+define-class KosChild [KosBase]:
+
+    define __init__ [self x y]:
+        (.__init__ (super) x)
+        set! self.y y
+
+
+define verify_kos_inherits_kos []:
+    define c (KosChild 10 20)
+    (and (equal? c.x 10) (equal? c.y 20))
+
+
+;; Koskari subclassing bare Python (PlainBase injected by test harness)
+
+define-class KosPlainChild [PlainBase]:
+
+    define __init__ [self tag extra]:
+        (.__init__ (super) tag)
+        set! self.extra extra
+
+
+define verify_kos_inherits_python []:
+    define o (KosPlainChild "tag" 99)
+    (and (equal? o.tag "tag") (equal? o.extra 99))
+
+
+;; Koskari subclassing IntEnum
+
+import-from enum IntEnum
+
+
+define-class Color [IntEnum]:
+    define RED 1
+    define GREEN 2
+
+
+define verify_kos_inherits_intenum []:
+    and:
+        equal? Color.RED.value 1
+        equal? Color.GREEN.value 2
+
+
+;; Koskari subclassing Python ABC (Animal injected by test harness)
+
+define-class Dog [Animal]:
+
+    define __init__ [self name breed]:
+        (.__init__ (super) name)
+        set! self.breed breed
+
+
+define verify_kos_inherits_abc []:
+    define d (Dog "fido" "mutt")
+    (and (equal? d.name "fido") (equal? d.breed "mutt"))
+
+
+;; Koskari dataclass adapter
+
+import-from dataclasses dataclass
+
+
+@dataclass
+define-class DCPoint []:
+    define x :: int 0
+    define y :: int 0
+
+
+define verify_dataclass []:
+    define p (DCPoint 3 4)
+    (and (equal? p.x 3) (equal? p.y 4))
+
+
+;; The end.

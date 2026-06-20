@@ -185,8 +185,9 @@ typedef struct {
 
 
 /**
-   Create a KosBoundMethod (func, self). Used by KosFunction.__get__
-   when accessed via instance. Caller must Py_DECREF when done.
+   Create a KosBoundMethod (func, self). func may be KosFunction or Demand.
+   Used by KosFunction.__get__ and Demand.__get__ when accessed via instance.
+   Caller must Py_DECREF when done.
 */
 PyObject *KosBoundMethod_New(PyObject *func, PyObject *self);
 

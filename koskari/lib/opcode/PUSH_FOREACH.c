@@ -47,7 +47,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
                     "PUSH_FOREACH: no FOREACH extent at this PC");
     return KOS_OP_POST_ERR();
   }
-  KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
+  KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
     Py_DECREF(loop_result);
     Py_DECREF(iterable);

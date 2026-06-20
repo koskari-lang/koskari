@@ -7,8 +7,6 @@ static inline int koskari_gil_drop_requested(void) {
 #if defined(Py_GIL_DISABLED) && Py_GIL_DISABLED
     return 0;
 #else
-    PyThreadState *tstate;
-#endif
 
 #if PY_MINOR_VERSION >= 13
     /*
@@ -23,7 +21,7 @@ static inline int koskari_gil_drop_requested(void) {
         uintptr_t eval_breaker;
     };
 
-    tstate = PyThreadState_Get();
+    PyThreadState *const tstate = PyThreadState_Get();
     if (! tstate)
     return 0;
 
@@ -72,7 +70,7 @@ static inline int koskari_gil_drop_requested(void) {
 
     PyInterpreterState *interp;
 
-    tstate = PyThreadState_Get();
+    PyThreadState *const tstate = PyThreadState_Get();
     if (! tstate || ! tstate->interp)
         return 0;
 
@@ -113,7 +111,7 @@ static inline int koskari_gil_drop_requested(void) {
 
     PyInterpreterState *interp;
 
-    tstate = PyThreadState_Get();
+    PyThreadState *const tstate = PyThreadState_Get();
     if (! tstate || ! tstate->interp)
         return 0;
 
@@ -145,7 +143,7 @@ static inline int koskari_gil_drop_requested(void) {
 
     PyInterpreterState *interp;
 
-    tstate = PyThreadState_Get();
+    PyThreadState *const tstate = PyThreadState_Get();
     if (! tstate || ! tstate->interp)
         return 0;
 
@@ -177,7 +175,7 @@ static inline int koskari_gil_drop_requested(void) {
 
     PyInterpreterState *interp;
 
-    tstate = PyThreadState_Get();
+    PyThreadState *const tstate = PyThreadState_Get();
     if (! tstate || ! tstate->interp)
         return 0;
 
@@ -189,4 +187,7 @@ static inline int koskari_gil_drop_requested(void) {
     return 1;
 
 #endif
+
+#endif
+
 }

@@ -28,8 +28,6 @@ KOS_OP_HANDLER(POP_SHIFT) {
   PyObject *result;
   uint32_t eid;
   uint32_t parent_id;
-  KosExtentDesc *shift_extent;
-  KosExtentDesc *prompt_extent;
   uint32_t prompt_pop_pc;
   KosCode *code = KosEvalState_CurrentCode(es);
   KosDynPrompt *prompt = NULL;
@@ -65,7 +63,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
     return KOS_OP_POST_ERR();
   }
 
-  shift_extent = kos_extent_desc((PyObject *) code, eid);
+  KosExtentDesc *const shift_extent = kos_extent_desc((PyObject *) code, eid);
   if (! shift_extent) {
     Py_DECREF(result);
     return KOS_OP_POST_ERR();
@@ -79,9 +77,9 @@ KOS_OP_HANDLER(POP_SHIFT) {
   }
 
   /* SHIFT may sit under heritage extents (e.g. WIND) between it and PROMPT. */
+  KosExtentDesc *found_prompt = NULL;
   {
     uint32_t walk_id = parent_id;
-    prompt_extent = NULL;
     while (walk_id != KOS_EXTENT_NONE) {
       KosExtentDesc *candidate = kos_extent_desc((PyObject *) code, walk_id);
       if (! candidate) {
@@ -89,12 +87,13 @@ KOS_OP_HANDLER(POP_SHIFT) {
         return KOS_OP_POST_ERR();
       }
       if (candidate->kind == KOS_EXT_PROMPT) {
-        prompt_extent = candidate;
+        found_prompt = candidate;
         break;
       }
       walk_id = candidate->parent_extent_id;
     }
   }
+  KosExtentDesc *const prompt_extent = found_prompt;
   if (! prompt_extent) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,

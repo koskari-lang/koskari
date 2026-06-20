@@ -144,6 +144,39 @@ test-valgrind: test-container-build  ## Run Valgrind tests in container
 	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
 
 
+##@ Static analysis
+
+CPPCHECK_IMAGE ?= ghcr.io/cnescatlab/cppcheck:latest
+CPPCHECK_REPORT ?= $(BUILD_DIR)/cppcheck.sarif
+
+cppcheck:  ## Run cppcheck on koskari/lib; SARIF report written to CPPCHECK_REPORT
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@mkdir -p $(dir $(CPPCHECK_REPORT))
+	@echo "Running cppcheck via $(CPPCHECK_IMAGE)..."
+	@$(CONTAINER_ENGINE) run --rm \
+		-v $(PWD):/src:Z \
+		-w /src \
+		$(CPPCHECK_IMAGE) \
+		cppcheck \
+			--output-format=sarif \
+			--output-file=$(CPPCHECK_REPORT) \
+			--enable=warning,style,performance,portability \
+			--error-exitcode=1 \
+			--inline-suppr \
+			--suppress=missingIncludeSystem \
+			-I koskari/lib \
+			--suppressions-list=tools/cppcheck-suppressions.txt \
+			koskari/lib/; \
+	rc=$$?; \
+	if command -v jq >/dev/null 2>&1 && test -f $(CPPCHECK_REPORT); then \
+		echo ""; \
+		jq -r -f tools/cppcheck-sarif-summary.jq $(CPPCHECK_REPORT); \
+	fi; \
+	echo ""; \
+	echo "Full output saved to $(CPPCHECK_REPORT)"; \
+	exit $$rc
+
+
 ##@ Multi-version Container Testing
 
 RUN_ARGS ?=  ## Extra args for tox (e.g. make test-py312 RUN_ARGS="-it")
@@ -268,6 +301,11 @@ typecheck:  ## Run type checking (mypy) via tox
 	@echo "Running mypy..."
 	@tox -qe mypy
 
+flawfinder:  ## Run Flawfinder on koskari/lib via tox
+	@$(call checkfor,tox)
+	@echo "Running flawfinder..."
+	@tox -qe flawfinder
+
 docs:  ## Build user documentation via tox
 	@$(call checkfor,tox)
 	@echo "Building documentation..."
@@ -333,7 +371,9 @@ python:  ## Show Python executable
 	clean-ext \
 	clean-native \
 	clean-pyc \
+	cppcheck \
 	docs \
+	flawfinder \
 	gdb \
 	handlers \
 	help \

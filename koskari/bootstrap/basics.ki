@@ -67,7 +67,7 @@ let []:
     unless tf:
       return form
 
-    unless (instance? tf #(SyntaxTransform MacroTransform)):
+    when (instance? tf #(SyntaxTransform MacroTransform)):
       return form
 
     define expanded (tf.handle_expand compiler form mr False)

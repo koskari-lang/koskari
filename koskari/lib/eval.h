@@ -800,7 +800,7 @@ void kos_tls_pop_active_eval(void);
   Innermost TLS eval slice for ctx, or NULL when not in koskari_eval on this thread.
 */
 
-KosEvalState *kos_tls_active_eval_for_ctx(KosContext *ctx);
+KosEvalState *kos_tls_active_eval_for_ctx(const KosContext *ctx);
 
 
 /**

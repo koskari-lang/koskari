@@ -1,8 +1,8 @@
 FROM python:3.14-alpine as builder
 
-RUN apk add gcc musl-dev python3-dev
-RUN pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-check \
-    uv
+RUN apk add gcc musl-dev python3-dev && \
+    pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-check \
+        uv
 
 WORKDIR /build
 COPY tools/regen_version.py /build/tools/

@@ -72,7 +72,7 @@ PyObject *koskari_StopAsyncIteration_FromValue(PyObject *payload);
 
 /* === compat unit lifecycle === */
 
-int koskari_compat_init(PyObject *mod);
+int koskari_compat_init(const PyObject *mod);
 int koskari_compat_clear(PyObject *mod);
 
 

@@ -8,6 +8,9 @@ Koskari callables), the split between **call** and **apply** entry points
 exposes the wrapper type as **`demand`** (constructor), plus `demand_call` and
 `demand_apply`; Ki bootstrap binds the name **`demand`** to that type.
 `demand_sync` remains available as a deprecated alias for `demand_call`.
+In-eval suspend denial (frame marker, no inject loop) is **planned** in
+[interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md);
+the tree still uses the `demand_sync_ex` inject loop until that phase lands.
 
 ---
 
@@ -39,14 +42,10 @@ Today, `demand_sync(callable, *args, **kwargs)` is the host primitive. Ki
 bootstrap binds the name **`demand`** to that function, so `(demand expr)` means
 “invoke now.”
 
-For **adapter** use cases, `basics.ki` defines **`demanding`** as
-`(wraps fn) (partial demand fn)`, i.e. `functools.partial` around the sync
-primitive. That works but:
-
-- `partial` plus a C function is awkward for tooling that builds signatures.
-- The word **demand** in user mental model should mean “this object always runs
-  on the demand path when Python calls it,” not necessarily “invoke this
-  expression right now.”
+For **adapter** use cases, `define-demanding` expands to
+`(define name (demand (function ...)))` — a `Demand` wrapper with no partial
+arguments. Older sketches used `functools.partial` around the sync primitive;
+that pattern is obsolete now that `Demand` is a proper `tp_call` type.
 
 A small **`Demand`** type (implemented in C alongside `demand.c`, or a thin Python
 type delegating to C) can:
@@ -93,11 +92,32 @@ already expects).
 
 - **Constructor**: `Demand(callable)` — stores callable, no bound arguments.
 - **`__call__`**: forwards to `demand_apply(__wrapped__, args, kwargs)`.
+- **`tp_repr`**: `<Demand 'name'>` from wrapped `__name__` (does not call
+  `repr(wrapped)`; avoids recursion through dunder adapters).
+- **`tp_descr_get`**: class access returns unbound `Demand`; instance access
+  returns **`KosBoundMethod(Demand, obj)`** (see §3.4).
 - **Introspection**: forward metadata from `__wrapped__` as described in §2.
-- **Type name**: e.g. `koskari.lib.Demand` (exact `tp_name` TBD).
+- **Type name**: `koskari.lib.Demand`.
 
 Optional: class method or module-level **`demand`** factory alias to `Demand`
 for symmetry with Ki.
+
+### 3.4 Descriptor binding
+
+`Demand` is a non-data descriptor for class attributes (`define-demanding`,
+`class.method = demand(fn)`, etc.):
+
+| Access | Result |
+| ------ | ------ |
+| `Cls.method` | unbound `Demand(fn)` |
+| `instance.method` | `BoundMethod(Demand(fn), instance)` |
+
+`BoundMethod.__func__` may therefore be a `Demand` wrapper. Eval install and
+inspect resolve through to the inner `KosFunction` when present; Python
+`BoundMethod.__call__` uses `Koskari_DemandSync` when `__func__` is `Demand`.
+
+`demand_sync_ex` unwraps `BoundMethod` before dispatch, so
+`demand_call(getattr(obj, "method"), ...)` works for bound demand methods.
 
 ---
 
@@ -122,8 +142,7 @@ in `*.ki` when implementing.
 
 ## 5. Related surfaces to update
 
-- **`koskari/importer/basics.ki`**: `demanding` — stop using `partial`; use
-  `Demand` + metadata.
+- **`koskari/bootstrap/_functions.ki`**: `define-demanding` wraps with `Demand`.
 - **`koskari/importer/module.py`**, **`importlib.py`**, docs that say
   `demand_sync(expr)` → `demand_call(expr)` in prose; loader code imports
   updated symbol.

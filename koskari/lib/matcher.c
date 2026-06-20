@@ -582,7 +582,7 @@ int KosMatcherBuilder_AppendClass(
                    (unsigned) fidx, b->node_count);
       return -1;
     }
-    KosMatchNode *fn = &b->nodes[fidx];
+    KosMatchNode *const fn = &b->nodes[fidx];
     if (fn->kind != KOS_MATCH_NODE_FIELD) {
       PyErr_Format(PyExc_ValueError,
                    "AppendClass child %u is not a FIELD node",
@@ -636,7 +636,7 @@ int KosMatcherBuilder_AppendClass(
 
 
 static int compute_one_width(KosMatcher *m, uint32_t idx) {
-  KosMatchNode *n = &m->nodes[idx];
+  KosMatchNode *const n = &m->nodes[idx];
 
   switch (n->kind) {
   case KOS_MATCH_NODE_TEST:
@@ -650,7 +650,7 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
       n->min_width = 1;
       n->max_width = 1;
     } else {
-      KosMatchNode *sub = &m->nodes[n->as.capture.subnode];
+      KosMatchNode *const sub = &m->nodes[n->as.capture.subnode];
       n->min_width = sub->min_width;
       n->max_width = sub->max_width;
     }
@@ -754,7 +754,7 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
       n->min_width = 1;
       n->max_width = 1;
     } else {
-      KosMatchNode *sub = &m->nodes[n->as.field.subnode];
+      KosMatchNode *const sub = &m->nodes[n->as.field.subnode];
       n->min_width = sub->min_width;
       n->max_width = sub->max_width;
     }
@@ -780,7 +780,7 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
   Py_ssize_t n_consts = PyTuple_GET_SIZE(m->consts);
 
   for (Py_ssize_t i = 0; i < Py_SIZE(m); i++) {
-    KosMatchNode *n = &m->nodes[i];
+    KosMatchNode *const n = &m->nodes[i];
 
     switch (n->kind) {
     case KOS_MATCH_NODE_TEST:
@@ -912,7 +912,7 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
   if (idx == KOS_MATCH_NO_INDEX)
     return 0;
 
-  KosMatchNode *n = &m->nodes[idx];
+  KosMatchNode *const n = &m->nodes[idx];
 
   switch (n->kind) {
   case KOS_MATCH_NODE_CAPTURE:
@@ -970,7 +970,7 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
 
 static int validate_repeat_and_not(KosMatcher *m) {
   for (Py_ssize_t i = 0; i < Py_SIZE(m); i++) {
-    KosMatchNode *n = &m->nodes[i];
+    KosMatchNode *const n = &m->nodes[i];
 
     if (n->kind == KOS_MATCH_NODE_REPEAT) {
       if (n->as.repeat.subnode == KOS_MATCH_NO_INDEX) {
@@ -1071,7 +1071,7 @@ static int subtree_has_rest(KosMatcher *m, uint32_t idx) {
   if (idx == KOS_MATCH_NO_INDEX)
     return 0;
 
-  KosMatchNode *n = &m->nodes[idx];
+  KosMatchNode *const n = &m->nodes[idx];
 
   switch (n->kind) {
   case KOS_MATCH_NODE_REST:
@@ -1111,7 +1111,7 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
   if (idx == KOS_MATCH_NO_INDEX)
     return 0;
 
-  KosMatchNode *n = &m->nodes[idx];
+  KosMatchNode *const n = &m->nodes[idx];
   BranchChunk c;
 
   switch (n->kind) {
@@ -1268,7 +1268,7 @@ static int validate_class_and_field_structure(KosMatcher *m) {
   }
 
   for (Py_ssize_t i = 0; i < total; i++) {
-    KosMatchNode *n = &m->nodes[i];
+    KosMatchNode *const n = &m->nodes[i];
     if (n->kind != KOS_MATCH_NODE_CLASS)
       continue;
 
@@ -1285,7 +1285,7 @@ static int validate_class_and_field_structure(KosMatcher *m) {
         return -1;
       }
 
-      KosMatchNode *fn = &m->nodes[fidx];
+      KosMatchNode *const fn = &m->nodes[fidx];
       if (fn->kind != KOS_MATCH_NODE_FIELD) {
         PyErr_Format(PyExc_ValueError,
                      "CLASS at node %zd references non-FIELD node %u",
@@ -1362,7 +1362,7 @@ static int validate_branches(KosMatcher *m) {
     return -1;
 
   for (Py_ssize_t i = 0; i < Py_SIZE(m); i++) {
-    KosMatchNode *n = &m->nodes[i];
+    KosMatchNode *const n = &m->nodes[i];
 
     switch (n->kind) {
     case KOS_MATCH_NODE_FORM:
@@ -1396,7 +1396,7 @@ static int validate_branches(KosMatcher *m) {
       for (uint32_t fidx = n->as.class_.first_field;
            fidx != KOS_MATCH_NO_INDEX;
            fidx = m->nodes[fidx].next) {
-        KosMatchNode *fn = &m->nodes[fidx];
+        KosMatchNode *const fn = &m->nodes[fidx];
         if (fn->kind != KOS_MATCH_NODE_FIELD)
           break;
         if (fn->as.field.subnode != KOS_MATCH_NO_INDEX &&
@@ -1965,7 +1965,7 @@ static PyObject *make_match_result(
 */
 static PyObject *matcher_peel_datum(PyObject *obj) {
   while (obj && KosDatum_Check(obj)) {
-    KosDatum *d = (KosDatum *) obj;
+    KosDatum *const d = (KosDatum *) obj;
     obj = d->datum;
   }
   return obj;
@@ -1975,7 +1975,7 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 /* === subject adapters === */
 
 
-static Py_ssize_t pyseq_length(KosMatchSubject *s) {
+static Py_ssize_t pyseq_length(const KosMatchSubject *s) {
   return s->cached_length;
 }
 
@@ -2006,7 +2006,7 @@ static void pyseq_release(KosMatchSubject *s) {
 
 
 static const KosMatchSubjectVTable pyseq_vtable = {
-  .length = pyseq_length,
+  .length = (Py_ssize_t (*)(KosMatchSubject *)) pyseq_length,
   .get = pyseq_get,
   .tail = pyseq_tail,
   .slice = pyseq_slice,
@@ -2034,7 +2034,7 @@ int KosMatchSubject_FromPySequence(PyObject *seq, KosMatchSubject *out) {
 }
 
 
-static Py_ssize_t kospair_length(KosMatchSubject *s) {
+static Py_ssize_t kospair_length(const KosMatchSubject *s) {
   return s->cached_length;
 }
 
@@ -2085,7 +2085,7 @@ static void kospair_release(KosMatchSubject *s) {
 
 
 static const KosMatchSubjectVTable kospair_vtable = {
-  .length = kospair_length,
+  .length = (Py_ssize_t (*)(KosMatchSubject *)) kospair_length,
   .get = kospair_get,
   .tail = kospair_tail,
   .slice = kospair_slice,
@@ -2206,7 +2206,7 @@ typedef struct {
 
 
 static int capture_from_datum_flag(
-    MatchEngine *e,
+    const MatchEngine *e,
     KosMatchSubject *subj,
     Py_ssize_t cell_idx) {
 
@@ -2349,7 +2349,7 @@ static int datum_frame_set_source(
 }
 
 
-static PyObject *match_frame_new(MatchEngine *e, Py_ssize_t start) {
+static PyObject *match_frame_new(const MatchEngine *e, Py_ssize_t start) {
   (void) start;
   if (e->subj->kp_tails)
     return kos_datum_frame_new();
@@ -2453,7 +2453,7 @@ static int engine_set_slot(
 }
 
 
-static Py_ssize_t engine_snapshot(MatchEngine *e) {
+static Py_ssize_t engine_snapshot(const MatchEngine *e) {
   return e->change_count;
 }
 
@@ -2603,7 +2603,7 @@ static int match_repeat(
 
 static int match_group(
     MatchEngine *e,
-    KosMatchNode *n,
+    const KosMatchNode *n,
     Py_ssize_t *cursor,
     uint32_t trailing_min,
     PyObject **out_sub);
@@ -2611,7 +2611,7 @@ static int match_group(
 
 static int match_form(
     MatchEngine *e,
-    KosMatchNode *n,
+    const KosMatchNode *n,
     Py_ssize_t *cursor,
     uint32_t trailing_min) {
 
@@ -2665,7 +2665,7 @@ static int match_form(
 */
 static int match_group(
     MatchEngine *e,
-    KosMatchNode *n,
+    const KosMatchNode *n,
     Py_ssize_t *cursor,
     uint32_t trailing_min,
     PyObject **out_sub) {
@@ -2693,7 +2693,7 @@ static int match_group(
   for (uint32_t cidx = n->as.group.first_child;
        cidx != KOS_MATCH_NO_INDEX;
        cidx = e->m->nodes[cidx].next) {
-    KosMatchNode *child = &e->m->nodes[cidx];
+    KosMatchNode *const child = &e->m->nodes[cidx];
     uint32_t child_min = child->min_width;
     if (child_min == KOS_MATCH_UNBOUNDED)
       child_min = 0;
@@ -3036,7 +3036,7 @@ static int match_capture(
 
 static int match_match(
     MatchEngine *e,
-    KosMatchNode *n,
+    const KosMatchNode *n,
     Py_ssize_t *cursor,
     uint32_t trailing_min) {
 
@@ -3056,7 +3056,7 @@ static int match_match(
   for (uint32_t cidx = n->as.match.first_child;
        cidx != KOS_MATCH_NO_INDEX;
        cidx = e->m->nodes[cidx].next) {
-    KosMatchNode *child = &e->m->nodes[cidx];
+    KosMatchNode *const child = &e->m->nodes[cidx];
     uint32_t child_min = child->min_width;
     if (child_min == KOS_MATCH_UNBOUNDED)
       child_min = 0;
@@ -3125,7 +3125,7 @@ static int match_repeat(
 
 static int match_optional(
     MatchEngine *e,
-    KosMatchNode *n,
+    const KosMatchNode *n,
     Py_ssize_t *cursor,
     uint32_t trailing_min) {
 
@@ -3144,7 +3144,7 @@ static int match_optional(
 
 static int match_not(
     MatchEngine *e,
-    KosMatchNode *n,
+    const KosMatchNode *n,
     Py_ssize_t *cursor) {
 
   Py_ssize_t snap = engine_snapshot(e);
@@ -3858,7 +3858,7 @@ static PyObject *matcher_missing_externs_method(
         Py_DECREF(lst);
         return NULL;
       }
-      PyObject *dv = PyDict_GetItemWithError(defs, name);
+      PyObject *const dv = PyDict_GetItemWithError(defs, name);
       if (PyErr_Occurred()) {
         Py_DECREF(lst);
         return NULL;

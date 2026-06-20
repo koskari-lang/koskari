@@ -27,7 +27,7 @@ KOS_OP_HANDLER(PUSH_CC) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_CC: no CC extent at this PC");
     return KOS_OP_POST_ERR();
   }
-  KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
+  KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_CC: invalid extent");
     return KOS_OP_POST_ERR();

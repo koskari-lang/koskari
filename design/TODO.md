@@ -250,6 +250,18 @@ subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
+### Demand in-eval denial (phase 1)
+
+**TODO:** Deny suspension inside the evaluator when execution is on the demand
+path: turn `KOS_EV_AWAIT` / `KOS_EV_YIELD` into an in-loop
+`KoskariSyncViolation` at the deny site so `TRY` / `finally` can run; remove
+the post-`koskari_eval` inject loop in `demand_sync_ex` once in-loop denial is
+complete. Phase 1 only — no `KOS_DYN_DEMAND`, wrapper, or
+`define-demanding` changes.
+
+Ref: [interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md);
+[archive/demand-sync-await-violation-at-site.md](archive/demand-sync-await-violation-at-site.md).
+
 ### DynamicRef accessors on demand path
 
 **TODO:** Make **DynamicRef** accessor handlers (`getfn`, `setfn`, `delfn`,

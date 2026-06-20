@@ -24,6 +24,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **iteration-yield-boundaries.md**: YIELD vs YIELD_FROM vs PUSH_FOREACH/ITER_NEXT — implementation map, underlying calls, consolidation proposals
 - **opcode-eval-helpers-inventory.md**: Static helpers in `eval.c` and opcode `.c` files — opcode cross-reference, redundancies, suggested public names for native/runtime API
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
+- **demand-evalex-phase1.md**: Phase 1 — in-eval `KoskariSyncViolation` at AWAIT/YIELD under `KOS_FRAME_DEMAND`; remove `demand_sync_ex` inject loop (implementation checklist for agents)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView; proposed CAPTURE_FRAME opcode is design-only, see that doc §5)
 - **callcc.md**: Call/cc implementation design (current PUSH delimited invoke)
 - **delimited-invoke-model.md**: Target delimited invoke — lineage fork, bookmarked return, double-wind fix (not implemented)

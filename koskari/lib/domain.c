@@ -112,7 +112,7 @@ void kos_tls_pop_active_eval(void) {
 }
 
 
-KosEvalState *kos_tls_active_eval_for_ctx(KosContext *ctx) {
+KosEvalState *kos_tls_active_eval_for_ctx(const KosContext *ctx) {
   KosTlsState *s;
   size_t i;
 
@@ -188,7 +188,7 @@ int kos_domain_push_python_scope(PyObject *domain) {
 }
 
 
-int kos_domain_pop_python_scope(PyObject *domain) {
+int kos_domain_pop_python_scope(const PyObject *domain) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
 
   if (! s || s->python_domain_depth == 0) {
@@ -389,7 +389,7 @@ static PyObject *domain_current_domain(PyObject *cls, PyObject *unused) {
 }
 
 
-static PyObject *domain_get_contexts(PyObject *self, PyObject *unused) {
+static PyObject *domain_get_contexts(const PyObject *self, PyObject *unused) {
 
   (void) unused;
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);

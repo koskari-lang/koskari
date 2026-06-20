@@ -27,8 +27,27 @@ __self__ in a leading section).
 """
 
 
-from koskari.lib import (BoundMethod, Code, Expression, Function,
+from koskari.lib import (BoundMethod, Code, Expression, Function, demand,
                          NamespaceSpec, OpCode, OpStyle)
+
+
+def _boundmethod_inner_function(bm):
+    """
+    Return the KosFunction behind a BoundMethod, unwrapping Demand if needed
+
+    :param bm: BoundMethod instance
+    :return: Function instance
+    :raises TypeError: when __func__ is not Function or Demand(Function)
+    """
+
+    func = bm.__func__
+    if isinstance(func, demand):
+        func = func.__wrapped__
+    if not isinstance(func, Function):
+        raise TypeError(
+            'BoundMethod __func__ must be Function or Demand(Function), got %s'
+            % type(func).__name__)
+    return func
 
 
 def _get_code(x):
@@ -329,7 +348,7 @@ def dis(x, file=None):
             file = sys.stdout
         _write_function_instance_section(file, x)
     elif isinstance(x, BoundMethod):
-        fn = x.__func__
+        fn = _boundmethod_inner_function(x)
         code = fn.code
         if file is None:
             import sys
