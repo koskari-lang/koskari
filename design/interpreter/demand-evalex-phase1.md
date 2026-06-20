@@ -5,11 +5,11 @@ This document specifies **phase 1** of demand-scoped evaluation: deny suspension
 of returning `KOS_EV_AWAIT` / `KOS_EV_YIELD` to an outer host loop that injects
 `KoskariSyncViolation` after `koskari_eval` returns.
 
-**Implementation status:** **Not started** (design). Current tree still uses
-the **inject loop** in `demand_sync_ex` (`koskari/lib/demand.c`). See
+**Implementation status:** **Complete** (branch `demand_in_eval`). The inject
+loop in `demand_sync_ex` has been removed; in-loop denial guards are in place at
+all P0 and P1 sites. See
 [archive/demand-sync-await-violation-at-site.md](../archive/demand-sync-await-violation-at-site.md)
-for the historical proposal; phase 1 **replaces** the inject-loop half of that
-story with in-loop denial while keeping the same user-visible exception type.
+for the historical proposal that phase 1 supersedes.
 
 **Audience:** maintainers and agents implementing or reviewing this change.
 

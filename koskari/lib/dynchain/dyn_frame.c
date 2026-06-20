@@ -125,6 +125,13 @@ KosDynFrame *kos_dyn_push_frame(
   if (! frame)
     return NULL;
 
+  /* Inherit demand extent from the current executing frame so that every
+     child frame on the demand path carries the flag directly, enabling O(1)
+     checks in kos_eval_in_demand without walking the dynchain. */
+  KosDynFrame *cur = KosEvalState_FRAME(es);
+  if (cur)
+    KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
+
   if (kos_dyn_push_noinstall(es, (KosDynNode *) frame) < 0) {
     kos_dynframe_free(frame);
     return NULL;
@@ -159,7 +166,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_CODE(frame) = NULL;
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
-  KosDynFrame_FLAGS(frame) = 0;
+  KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
 }
 

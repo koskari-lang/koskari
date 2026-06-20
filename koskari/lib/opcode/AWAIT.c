@@ -24,6 +24,9 @@ KOS_OP_HANDLER(AWAIT) {
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u) {
+    if (kos_eval_demand_deny_suspend(es,
+        "async suspension is not allowed in demand_sync"))
+      return KOS_OP_POST_ERR();
     KosEvalState_MarkSuspendedNotRunning(es);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     Py_INCREF(Py_None);

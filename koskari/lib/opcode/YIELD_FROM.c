@@ -157,6 +157,10 @@ static int yield_from_emit_yield(
     KosDynYieldFrom *yf,
     KosEvent *out_ev) {
 
+  if (kos_eval_demand_deny_suspend(es,
+      "async suspension is not allowed in demand_sync"))
+    return -1;
+
   PyObject *const *tos = KosEvalState_StackTailPtr(es, 1);
   if (! tos) {
     if (! PyErr_Occurred())
@@ -437,6 +441,12 @@ static int yield_from_drive_py_async(
       es, awaitable, &suspended, &yielded);
 
   if (suspended && yielded) {
+    if (kos_eval_demand_deny_suspend(es,
+        "async suspension is not allowed in demand_sync")) {
+      Py_DECREF(awaitable);
+      Py_DECREF(yielded);
+      return -1;
+    }
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
     KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_AWAIT);
     KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));

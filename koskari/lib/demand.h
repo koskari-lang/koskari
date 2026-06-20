@@ -64,6 +64,15 @@ int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
 PyObject *KosDemandGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
 
 
+/**
+   Set KoskariSyncViolation on PyErr with msg as the message string.
+
+   Called from eval guard sites (kos_eval_demand_deny_suspend) to raise the
+   violation as an in-eval exception without duplicating exception registration.
+*/
+void kos_demand_set_sync_violation(const char *msg);
+
+
 #endif /* KOSKARI_DEMAND_H */
 
 

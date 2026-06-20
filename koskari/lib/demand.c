@@ -17,12 +17,17 @@
 /**
    koskari/lib/demand.c
 
-   Demand path and KoskariSyncViolation. demand_call invokes Koskari callable
+   Demand path and KoskariSyncViolation. demand_call invokes a Koskari callable
    without suspension (callee as root).
-   Yielding KosFunctions return DemandGenerator instead of raising.
-   AWAIT/YIELD inject (in-eval KoskariSyncViolation) is implemented only in
-   demand_sync_ex run_eval; DemandGenerator (demand_gen_step) still raises
-   at the iterator boundary on AWAIT.
+
+   For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; any
+   attempt to suspend (KOS_EV_AWAIT or KOS_EV_YIELD) is converted into an
+   in-eval KoskariSyncViolation at the deny site so TRY/finally can run;
+   uncaught, the exception surfaces as KOS_EV_RAISE.
+
+   Yielding KosFunctions return DemandGenerator instead of raising; the
+   DemandGenerator boundary raises KoskariSyncViolation on AWAIT from the
+   iterator protocol (that path does not use KOS_FRAME_DEMAND).
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -37,6 +42,11 @@
 
 
 static PyObject *KoskariSyncViolation = NULL;
+
+
+void kos_demand_set_sync_violation(const char *msg) {
+  PyErr_SetString(KoskariSyncViolation, msg);
+}
 
 
 static int register_koskari_sync_exception(PyObject *mod,
@@ -78,11 +88,10 @@ static PyTypeObject KosDemandGeneratorType;
   Base implementation: returns 0 (success with *out_result) or -1 (error,
   PyErr set).
 
-  For KosCallable run_eval: on KOS_EV_AWAIT or KOS_EV_YIELD, injects
-  KoskariSyncViolation via a second koskari_eval (throw into suspended context)
-  so TRY/finally can run; uncaught, surfaces as KOS_EV_RAISE (-1, PyErr set).
-  demand_sync_impl keeps defensive r==1 handling though run_eval no longer
-  returns 1. DemandGenerator stepping is unchanged (see demand.c).
+  For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; in-eval
+  deny guards convert AWAIT/YIELD into KoskariSyncViolation before koskari_eval
+  returns, so KOS_EV_AWAIT and KOS_EV_YIELD are unreachable here.
+  DemandGenerator stepping is unchanged (see demand.c).
 
   callable, args, kwargs are borrowed. Never decref them.
  */
@@ -287,77 +296,23 @@ static int demand_sync_ex(
   goto ret_fail;
 
 run_eval:
+  /* Mark this frame as a demand root; in-eval deny guards will detect it
+     when walking ancestors and convert any AWAIT/YIELD into an in-eval
+     KoskariSyncViolation before koskari_eval returns. */
+  KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
+
   ctx = KosContext_New(frame);
   frame = NULL;
-  if (! ctx) {
-    if (frame)
-      kos_dynframe_free(frame);
+  if (! ctx)
     goto ret_fail;
-  }
 
-  {
-    unsigned inject_iter = 0;
-    const unsigned demand_sync_inject_cap = 1024;
-
-    r = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-
-    for (;;) {
-      if (r < 0) {
-        KosContext_Free(ctx);
-        ctx = NULL;
-        goto ret_fail;
-      }
-
-      if (KosEvent_KIND(&ev) != KOS_EV_AWAIT
-          && KosEvent_KIND(&ev) != KOS_EV_YIELD)
-        break;
-
-      if (++inject_iter > demand_sync_inject_cap) {
-        if (KosEvent_PAYLOAD(&ev))
-          Py_DECREF(KosEvent_PAYLOAD(&ev));
-        KosEvent_PAYLOAD(&ev) = NULL;
-        PyErr_SetString(PyExc_RuntimeError,
-                        "demand_sync: suspend inject cap exceeded");
-        KosContext_Free(ctx);
-        ctx = NULL;
-        goto ret_fail;
-      }
-
-      SAYF("[demand_sync] inject iter=%u kind=%d\n",
-           (unsigned) inject_iter, (int) KosEvent_KIND(&ev));
-
-      if (KosEvent_PAYLOAD(&ev)) {
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
-        KosEvent_PAYLOAD(&ev) = NULL;
-      }
-
-      {
-        PyObject *msg = PyUnicode_FromString(
-            "async suspension is not allowed in demand_sync");
-        PyObject *exc_val;
-
-        if (! msg) {
-          KosContext_Free(ctx);
-          ctx = NULL;
-          goto ret_fail;
-        }
-        exc_val = PyObject_CallOneArg(KoskariSyncViolation, msg);
-        Py_DECREF(msg);
-        if (! exc_val) {
-          KosContext_Free(ctx);
-          ctx = NULL;
-          goto ret_fail;
-        }
-        r = koskari_eval(ctx, &ev, NULL, KoskariSyncViolation, exc_val);
-        Py_DECREF(exc_val);
-        SAYF("[demand_sync] inject post_eval r=%d kind=%d\n",
-             r, (int) KosEvent_KIND(&ev));
-      }
-    }
-  }
+  r = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
   KosContext_Free(ctx);
   ctx = NULL;
+
+  if (r < 0)
+    goto ret_fail;
 
   switch (KosEvent_KIND(&ev)) {
     case KOS_EV_RETURN:
@@ -385,16 +340,15 @@ run_eval:
 
     case KOS_EV_AWAIT:
     case KOS_EV_YIELD:
+      /* In-eval deny guards should have converted suspension into
+         KOS_EV_RAISE before we get here; this is a bug if reached. */
       if (KosEvent_PAYLOAD(&ev))
         Py_DECREF(KosEvent_PAYLOAD(&ev));
       PyErr_SetString(PyExc_RuntimeError,
-                      "demand_sync: unexpected suspension after inject");
+                      "demand_sync: unexpected suspension (missing deny guard)");
       break;
 
     case KOS_EV_NONE:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
-      break;
-
     default:
       PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
       break;
@@ -429,14 +383,7 @@ static PyObject *demand_sync_impl(
     PyObject *kwargs) {
 
   PyObject *result = NULL;
-  int r = demand_sync_ex(callable, args, kwargs, &result);
-
-  /* Defensive: run_eval no longer returns 1 (suspend -> inject). Plain
-     Python and other paths do not use r==1 either. */
-  if (r == 1) {
-    PyErr_Format(KoskariSyncViolation,
-                 "async suspension is not allowed in demand_call");
-  }
+  demand_sync_ex(callable, args, kwargs, &result);
   return result;
 }
 
