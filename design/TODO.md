@@ -250,17 +250,26 @@ subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
-### Demand in-eval denial (phase 1)
+### Demand in-eval denial (phase 1) — **Complete**
 
-**TODO:** Deny suspension inside the evaluator when execution is on the demand
-path: turn `KOS_EV_AWAIT` / `KOS_EV_YIELD` into an in-loop
-`KoskariSyncViolation` at the deny site so `TRY` / `finally` can run; remove
-the post-`koskari_eval` inject loop in `demand_sync_ex` once in-loop denial is
-complete. Phase 1 only — no `KOS_DYN_DEMAND`, wrapper, or
-`define-demanding` changes.
+`KOS_FRAME_DEMAND` flag on the root frame; in-loop deny guards at all P0/P1
+suspend sites; inject loop in `demand_sync_ex` removed; `demand_step_python_result`
+enforces demand semantics for plain-Python callables at the boundary (branch
+`demand_in_eval`).
 
-Ref: [interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md);
-[archive/demand-sync-await-violation-at-site.md](archive/demand-sync-await-violation-at-site.md).
+Ref: [interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md).
+
+### Demand call flattening (phase 2)
+
+**TODO:** When koskari bytecode calls `Demand(KosCallable)`, detect the pattern
+in `KosEvalState_Call*` (eval_utils.c), unwrap the inner callable, install its
+frame via the normal KosCallable path, and set `KOS_FRAME_DEMAND` on the
+resulting frame — eliminating the C-stack round-trip through `demand_tp_call` /
+`demand_sync_ex` / new `KosContext`. Fall-through to existing `demand_tp_call`
+for Python callables and yielding functions (DemandGenerator path unchanged).
+Phase 2 only — `BoundMethod(Demand(fn))` flattening is deferred.
+
+Ref: [interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md).
 
 ### DynamicRef accessors on demand path
 
