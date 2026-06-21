@@ -1170,10 +1170,7 @@ static PyObject *boundmethod_call(
   if (! bound_args)
     return NULL;
 
-  if (KosDemand_CheckExact(func))
-    result = Koskari_DemandSync(func, bound_args, kwargs);
-  else
-    result = KosFunction_Call(func, bound_args, kwargs);
+  result = PyObject_Call(func, bound_args, kwargs);
 
   Py_DECREF(bound_args);
   return result;
