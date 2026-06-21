@@ -23,7 +23,7 @@ Koskari native types, predicates, and helper functions
 import operator
 from functools import partial
 
-from .lib import cons, keyword, nil, pair, symbol
+from .lib import KoskariSyncViolation, cons, keyword, nil, pair, symbol
 
 
 __all__ = (
@@ -35,6 +35,7 @@ __all__ = (
     "is_recursive",
     "build_proper",
     "unpack",
+    "is_on_demand",
 )
 
 
@@ -116,6 +117,36 @@ def unpack(value):
     """
 
     return value.unpack() if is_pair(value) else iter(value)
+
+
+class _DemandProbe:
+    """
+    Minimal awaitable used by is_on_demand to probe the execution context.
+    """
+
+    def __await__(self):
+        yield
+
+
+async def is_on_demand():
+    """
+    Return True if the current execution context is a demand context.
+
+    Probes by attempting a single suspension. If running under demand_call
+    or demand(fn), KoskariSyncViolation is thrown into the coroutine at the
+    yield point and caught here, returning True. If running normally (event
+    loop or top-level async), the suspension succeeds and the function
+    returns False.
+
+    Intended for Python library code that needs to choose a code path based
+    on whether it is being called from a demand context.
+    """
+
+    try:
+        await _DemandProbe()
+        return False
+    except KoskariSyncViolation:
+        return True
 
 
 def get_position(value, default=None):

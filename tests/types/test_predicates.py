@@ -20,7 +20,7 @@ Unit tests for type predicates and helper functions
 
 import unittest
 
-from koskari.lib import cons, keyword, nil, pair, symbol
+from koskari.lib import cons, demand_call, keyword, nil, pair, symbol
 from koskari.types import (
     BuiltinPredicate,
     TypePredicate,
@@ -29,6 +29,7 @@ from koskari.types import (
     get_position,
     is_keyword,
     is_nil,
+    is_on_demand,
     is_pair,
     is_proper,
     is_recursive,
@@ -397,6 +398,33 @@ class TestFillPosition(unittest.IsolatedAsyncioTestCase):
         fill_position(outer, (5, 5), follow=True)
         self.assertEqual(get_position(outer), (5, 5))
         self.assertEqual(get_position(inner), (5, 5))
+
+
+class TestIsOnDemand(unittest.IsolatedAsyncioTestCase):
+    """
+    Tests for the is_on_demand async predicate.
+
+    Probes the execution context by attempting a single suspension: if
+    KoskariSyncViolation is thrown into the coroutine, we are on the demand
+    path; if the suspension succeeds normally, we are not.
+    """
+
+    def test_returns_true_under_demand_call(self):
+        """
+        is_on_demand returns True when driven by demand_call.
+        """
+
+        result = demand_call(is_on_demand)
+        self.assertTrue(result)
+
+
+    async def test_returns_false_in_async_context(self):
+        """
+        is_on_demand returns False when awaited in a normal async context.
+        """
+
+        result = await is_on_demand()
+        self.assertFalse(result)
 
 
 # The end.
