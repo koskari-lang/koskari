@@ -948,6 +948,35 @@ class TestDemandCallFlattening(unittest.TestCase):
         self.assertIn('suspension', str(ctx.exception))
 
 
+    def test_fallback_python_callable_from_bytecode(self):
+        """
+        demand(python_fn) called from koskari bytecode takes the fallback path:
+        demand_sync_ex calls the Python callable synchronously and pushes the
+        result on the stack (no KosCallable flatten, no frame push).
+        """
+
+        python_fn = lambda: 99
+        wrapped = demand(python_fn)
+
+        _, outer_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('w',),
+            values={'w': wrapped},
+        )
+        outer_code = build_code(
+            [
+                ["FAST", 0],
+                ["CALL", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('w',),
+            name='call_demand_python',
+        )
+        outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
+        self.assertEqual(demand_call(outer_fn), 99)
+
+
     def test_fallback_yielding_function_returns_generator(self):
         """
         demand(yielding_fn) called from koskari bytecode takes the fallback

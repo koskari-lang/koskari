@@ -836,6 +836,52 @@ thunk), **`kos_suspend_transfer_plan`** pushes the outer onto **`plan_stack`**
 before the inner plan is armed. **`kos_free_transfer_plan_stack`** drains
 suspended plans on fatal transfer errors.
 
+### 7.5 `KosCallableTypeObject` and Demand
+
+**`KosCallableTypeObject`** extends `PyTypeObject` with four additional slots:
+
+```c
+int tp_kos_wants_frame;       // static: 1 = install always needs a new frame
+tp_kos_wants_frame_fn;        // dynamic: per-instance wants-frame query
+tp_kos_install;               // non-vectorcall install (args tuple + kwds dict)
+tp_kos_vinstall;              // vectorcall install (C array + kwnames)
+```
+
+Types carrying this structure pass `KosCallable_Check`. The current
+`KosCallable` types are **`KosFunction`**, **`KosExpression`**,
+**`KosDemand`**, and **`KosBoundMethod`**. Python callables do not pass
+`KosCallable_Check` and are invoked via `PyObject_Call` / `PyObject_CallNoArgs`.
+
+Before calling an install slot, the CALL / TAIL_CALL opcodes consult
+**`do_frame_prep`**: if `tp_kos_wants_frame_fn` is set it is called; otherwise
+`tp_kos_wants_frame` is used. When the result is 0 (no new frame needed),
+`do_frame_prep` is a no-op and the install slot is responsible for pushing its
+result on the operand stack itself.
+
+**Demand and `KOS_FRAME_DEMAND`.** `KosDemandCallableType` sets
+`tp_kos_wants_frame_fn = demand_wants_frame`, which delegates to
+`demand_inner_is_flattenable`: returns 1 for a non-yielding `KosFunction` or
+`KosExpression`, 0 otherwise. `demand_kos_install` handles both cases:
+
+- **Flattenable path (wants_frame=1):** calls `KosCallable_CallArgs(inner, ...)`,
+  which installs the inner function's frame (a `KosDynFrame`). On success
+  (`r == 0`) it sets `KOS_FRAME_DEMAND` on that frame. The deny guards at AWAIT
+  and YIELD sites check this flag and raise `KoskariSyncViolation` if set. Child
+  frames inherit the flag via tail-reset and frame-push preservation.
+
+- **Fallback path (wants_frame=0):** calls `demand_sync_ex(ctx, out_ev, inner,
+  args, kwds)`, which drives the callable synchronously and pushes the result on
+  the operand stack. No new frame is installed; the evaluator continues in the
+  current frame on the next iteration.
+
+`KosBoundMethod` delegates `tp_kos_wants_frame_fn` through to its inner
+callable's wants-frame slot, so a `BoundMethod(Demand(fn))` correctly reports
+the same flattenability as `Demand(fn)` alone.
+
+See [design/interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md)
+and [design/interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md)
+for full implementation detail.
+
 ---
 
 ## 8. Resume Paths
@@ -1001,4 +1047,7 @@ See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) — Install slots and invocation
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution invariants
 - [design/interpreter/iteration-yield-boundaries.md](interpreter/iteration-yield-boundaries.md) — Iteration vs yield-from vs for-each: implementation map and consolidation proposals
+- [design/interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md) — Demand in-eval denial: `KOS_FRAME_DEMAND` flag, AWAIT/YIELD guard sites
+- [design/interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md) — Demand call flattening: `KosDemandCallableType`, `demand_kos_install`, BoundMethod cleanup
+- [design/api/demand-wrapper.md](api/demand-wrapper.md) — Public `Demand` API, `demand_call`, `demand_sync_ex`
 - [design/archive/dynnode-event-model.md](archive/dynnode-event-model.md) — Earlier standalone write-up of the same event model (archived)

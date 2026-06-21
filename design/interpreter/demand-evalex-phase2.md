@@ -427,16 +427,20 @@ When koskari resolves an attribute access `obj.method` where `method` is a
 `Demand(fn)` class attribute, `Demand.__get__` returns
 `KosBoundMethod(Demand(fn), obj)`. Calling this bound method goes through the
 `KosBoundMethod` install slot, which prepends `obj` to the arg list and then
-calls the inner func (`Demand(fn)`) via `demand_tp_call`.
+dispatches to the inner func.
 
-Phase 2 does **not** intercept this path. `Demand(fn)` is dispatched from
-inside the BoundMethod install slot, not from `KosEvalState_Call*`. The result
-is correct (demand_tp_call handles it) but not flattened.
+**As of the demand_in_eval branch** (companion to phase 2), the `KosBoundMethod`
+install slot no longer special-cases `Demand`. It removes the earlier
+`boundmethod_resolve_function` unwrap and calls `KosCallable_CallArgs(func, ...)`
+directly. Because `KosDemandType` is now a `KosCallableTypeObject`,
+`KosCallable_CallArgs` dispatches to `demand_kos_install`, which installs the
+inner function's frame and sets `KOS_FRAME_DEMAND`. The frame-flag deny guards
+at AWAIT/YIELD sites then apply to the entire call, including any child frames.
 
-A future **phase 3** could intercept at BoundMethod install: detect
-`KosDemand_CheckExact(bm->func)`, unwrap to `fn`, install `fn`'s frame with
-self prepended to args, set `KOS_FRAME_DEMAND`. This requires changes to the
-`KosBoundMethod` install slot and is deferred.
+`kos_boundmethod_wants_frame` likewise delegates through `KosCallable`'s
+`tp_kos_wants_frame_fn`, so the CALL opcode's pre-install `do_frame_prep`
+correctly skips frame setup when the inner callable is not flattenable. No
+`KosDemand_CheckExact` check remains in the BoundMethod install path.
 
 ---
 
@@ -456,10 +460,10 @@ with marker `phase_lib` (or extend `TestDemandInEvalDenial`):
 | `test_flatten_yielding_function_falls_through` | `demand(gen_fn)()` falls through to `demand_tp_call` and produces `DemandGenerator` (not a raw generator) |
 | `test_flatten_python_callable_falls_through` | `demand(lambda: None)()` from koskari hits `demand_step_python_result` path, not the KosCallable flatten |
 
-Most of these tests can be written using the `build_code` / `make_callable`
-test helpers already used in `TestDemandInEvalDenial`. The koskari-from-koskari
-call can be constructed by building two code objects and linking them via a
-namespace.
+All tests above are implemented in `tests/lib/test_demand_sync.py`,
+`TestDemandCallFlattening` (marker `phase_lib`). The koskari-from-koskari call
+pattern uses two `build_code` / `make_callable` objects linked via a shared
+namespace, as established in `TestDemandInEvalDenial`.
 
 ---
 
@@ -467,7 +471,7 @@ namespace.
 
 | Topic | Phase 2 | Later |
 | ----- | ------- | ----- |
-| `BoundMethod(Demand(fn))` flattening | No | Phase 3 (BoundMethod install change) |
+| `BoundMethod(Demand(fn))` flattening | Via §11 cleanup | Resolved on demand_in_eval branch |
 | `Demand(Demand(fn))` optimization | No | Trivial to add if needed |
 | `define-demanding` compile-time Demand elision | No | Compiler change; demand semantics still correct without it |
 | `KOS_DYN_DEMAND` dyn node | No | Would enable dynamic-extent checks outside the frame |
