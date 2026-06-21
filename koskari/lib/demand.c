@@ -49,7 +49,11 @@ static PyObject *str_throw = NULL;
 
 
 void kos_demand_set_sync_violation(const char *msg) {
-  PyErr_SetString(KoskariSyncViolation, msg);
+  PyObject *exc = PyObject_CallFunction(KoskariSyncViolation, "s", msg);
+  if (! exc)
+    return;
+  PyErr_SetObject(KoskariSyncViolation, exc);
+  Py_DECREF(exc);
 }
 
 
@@ -149,8 +153,7 @@ static PyObject *demand_step_python_result(PyObject *result) {
 
   /* throw() returned without raising: still suspended. */
   Py_DECREF(step);
-  PyErr_SetString(KoskariSyncViolation,
-                  "async suspension is not allowed in demand_sync");
+  kos_demand_set_sync_violation("async suspension is not allowed in demand_sync");
 
 iter_fail:
   Py_DECREF(await_iter);

@@ -512,8 +512,7 @@ class TestDemandInEvalDenial(unittest.TestCase):
                 ["CALL", 0],
                 ["POP", 1],
                 ["EXCEPTION", 0],
-                ["POP_FINALLY", 0],   # re-raises if exception; pops extent either way
-                ["RAISE", 1],         # re-raise: on exception path EXCEPTION pushed exc obj
+                ["POP_FINALLY", 0],
             ],
             local_syms=(),
             closure_syms=('a', 'mark'),
