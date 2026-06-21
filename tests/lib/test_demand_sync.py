@@ -698,6 +698,102 @@ class TestDemandDescriptor(unittest.TestCase):
         self.assertEqual(demand_call(getattr(C(41), "method")), 42)
 
 
+    def test_bound_method_demand_from_bytecode_returns_value(self):
+        """
+        koskari CALL on BoundMethod(Demand(fn), obj) dispatches through
+        demand_kos_install rather than bypassing it via boundmethod_resolve_function.
+        """
+
+        fn = self._self_add_one()
+
+        class C(int):
+            method = demand(fn)
+
+        bound_method = getattr(C(41), "method")
+
+        _, outer_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('bm',),
+            values={'bm': bound_method},
+        )
+        outer_code = build_code(
+            [
+                ["FAST", 0],
+                ["CALL", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('bm',),
+            name='call_bound_method',
+        )
+        outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
+        self.assertEqual(demand_call(outer_fn), 42)
+
+
+    def test_bound_method_demand_from_bytecode_denies_await(self):
+        """
+        koskari CALL on BoundMethod(Demand(fn_that_awaits), obj) now sets
+        KOS_FRAME_DEMAND via demand_kos_install and raises KoskariSyncViolation.
+
+        Previously kos_install_boundmethod called kos_install_function(resolved)
+        directly, bypassing demand_kos_install, so KOS_FRAME_DEMAND was never set
+        and the await would not be denied.
+        """
+
+        def _it():
+            yield
+
+        class SuspendingAwaitable:
+            def __await__(self_inner):
+                return _it()
+
+        awaitable = SuspendingAwaitable()
+        _, inner_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': awaitable},
+        )
+        # slot 0 = self (local), slot 1 = a (closure)
+        inner_code = build_code(
+            [
+                ["FAST", 1],
+                ["AWAIT", 1],
+                ["RETURN", 1],
+            ],
+            local_syms=('self',),
+            closure_syms=('a',),
+            name='self_awaiting_fn',
+        )
+        inner_fn = make_callable(
+            inner_code, inner_ns, FormalsSpec(("self",), None, ()))
+
+        class C(int):
+            method = demand(inner_fn)
+
+        bound_method = getattr(C(41), "method")
+
+        _, outer_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('bm',),
+            values={'bm': bound_method},
+        )
+        outer_code = build_code(
+            [
+                ["FAST", 0],
+                ["CALL", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('bm',),
+            name='call_demand_bound_method',
+        )
+        outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
+
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            demand_call(outer_fn)
+        self.assertIn('suspension', str(ctx.exception))
+
+
 class TestDemandCallFlattening(unittest.TestCase):
     """
     Phase-2 demand call flattening: KosDemand is now a KosCallable.

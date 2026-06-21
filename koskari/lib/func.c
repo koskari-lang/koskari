@@ -51,15 +51,16 @@ static PyObject *boundmethod_resolve_function(PyObject *func);
 static int kos_boundmethod_wants_frame(PyObject *callable) {
 
   PyObject *func = KosBoundMethod_FUNC(callable);
-  PyObject *resolved = boundmethod_resolve_function(func);
-  int wants;
+  KosCallableTypeObject *ctyp;
 
-  if (! resolved)
+  if (! KosCallable_Check(func))
     return 1;
 
-  wants = kos_function_wants_frame(resolved);
-  Py_DECREF(resolved);
-  return wants;
+  ctyp = (KosCallableTypeObject *) Py_TYPE(func);
+  if (ctyp->tp_kos_wants_frame_fn)
+    return ctyp->tp_kos_wants_frame_fn(func);
+
+  return ctyp->tp_kos_wants_frame;
 }
 
 
@@ -1075,22 +1076,20 @@ static int kos_install_boundmethod(
 
   PyObject *func = KosBoundMethod_FUNC(callable);
   PyObject *self = KosBoundMethod_SELF(callable);
-  PyObject *resolved = boundmethod_resolve_function(func);
   Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
   PyObject *bound_args = NULL;
   int r;
 
-  if (! resolved) {
+  if (! KosCallable_Check(func)) {
     PyErr_SetString(PyExc_TypeError,
-                    "KosBoundMethod eval requires Function or Demand(Function)");
+                    "KosBoundMethod eval requires a KosCallable func");
     return -1;
   }
 
   bound_args = PyTuple_New(1 + n);
-  if (! bound_args) {
-    Py_DECREF(resolved);
+  if (! bound_args)
     return -1;
-  }
+
   Py_INCREF(self);
   PyTuple_SET_ITEM(bound_args, 0, self);
   for (Py_ssize_t i = 0; i < n; i++) {
@@ -1098,10 +1097,8 @@ static int kos_install_boundmethod(
     Py_INCREF(item);
     PyTuple_SET_ITEM(bound_args, 1 + i, item);
   }
-  r = kos_install_function(es, out_ev, resolved, bound_args, kwds_dict,
-                           tail_call);
+  r = KosCallable_CallArgs(es, out_ev, func, bound_args, kwds_dict, tail_call);
   Py_DECREF(bound_args);
-  Py_DECREF(resolved);
   return r;
 }
 
@@ -1117,21 +1114,19 @@ static int kos_vinstall_boundmethod(
 
   PyObject *func = KosBoundMethod_FUNC(callable);
   PyObject *self = KosBoundMethod_SELF(callable);
-  PyObject *resolved = boundmethod_resolve_function(func);
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
   Py_ssize_t total_slots = 1 + nargs + nkw;
   PyObject **new_args = NULL;
   int r;
 
-  if (! resolved) {
+  if (! KosCallable_Check(func)) {
     PyErr_SetString(PyExc_TypeError,
-                    "KosBoundMethod eval requires Function or Demand(Function)");
+                    "KosBoundMethod eval requires a KosCallable func");
     return -1;
   }
 
   new_args = PyMem_New(PyObject *, (size_t) total_slots);
   if (! new_args) {
-    Py_DECREF(resolved);
     PyErr_NoMemory();
     return -1;
   }
@@ -1140,10 +1135,9 @@ static int kos_vinstall_boundmethod(
     new_args[1 + i] = args[i];
   for (Py_ssize_t i = 0; i < nkw; i++)
     new_args[1 + nargs + i] = args[nargs + i];
-  r = kos_vinstall_function(es, out_ev, resolved, new_args, nargs + 1,
-                            kwnames, tail_call);
+  r = KosCallable_Call(es, out_ev, func, new_args, nargs + 1, kwnames,
+                       tail_call);
   PyMem_Del(new_args);
-  Py_DECREF(resolved);
   return r;
 }
 
