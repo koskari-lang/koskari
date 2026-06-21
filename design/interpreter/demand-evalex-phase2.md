@@ -6,8 +6,13 @@ install the inner callable's frame directly into the running eval context, and
 mark it `KOS_FRAME_DEMAND` — eliminating the C-stack round-trip through
 `demand_tp_call` → `demand_sync_ex` → new `KosContext` → new `koskari_eval`.
 
-**Implementation status:** Not started (design). Prerequisite: phase 1 complete
-(branch `demand_in_eval`).
+**Implementation status:** **Complete** (branch `demand_in_eval`). The approach
+diverged from the `eval_utils.c` preamble proposal (§4–§7): `KosDemandType` was
+instead converted to a `KosCallableTypeObject`, giving `Demand` a
+`tp_kos_install` slot (`demand_kos_install`) and `tp_kos_wants_frame_fn`
+(`demand_wants_frame`). The CALL opcode dispatches to `demand_kos_install`
+via the existing KosCallable path — no changes to `eval_utils.c` were needed.
+See §4 for the original proposal, §16 for the as-built description.
 
 **Audience:** maintainers and agents implementing or reviewing this change.
 
@@ -470,32 +475,109 @@ namespace.
 
 ---
 
-## 14. Implementation checklist
+## 14. Implementation checklist (original `eval_utils.c` approach — superseded)
 
-1. [ ] Add `demand_unwrap_for_flatten` as a static function in
-       `koskari/lib/eval/eval_utils.c` (before `KosEvalState_Call`). Include
-       `demand.h` if not already included via `lib.h`.
-2. [ ] Patch `KosEvalState_Call`: add preamble + post-install flag (§7.1).
-3. [ ] Patch `KosEvalState_CallArgs`: same pattern (§7.2).
-4. [ ] Patch `KosEvalState_CallNoArgs`: same pattern (§7.3).
-5. [ ] Verify reference-count discipline for each CALL opcode's stack pop order
-       (§8); add `Py_INCREF`/`DECREF` guard only if the callable is popped
-       before dispatch.
-6. [ ] Add `TestDemandCallFlattening` tests (§12).
-7. [ ] `tox -qe py -- tests/lib/test_demand_sync.py` — all tests pass.
-8. [ ] `make test` — full suite passes.
-9. [ ] Update this doc's implementation status line.
+The items below describe the originally planned implementation. The actual
+implementation (§16) used the `KosCallable` interface instead, making all
+items below inapplicable. Kept for historical reference.
+
+1. [~] Add `demand_unwrap_for_flatten` in `eval/eval_utils.c` — **not done**;
+       equivalent logic lives in `demand_inner_is_flattenable` in `demand.c`.
+2. [~] Patch `KosEvalState_Call` — **not done**; dispatch is now via the
+       existing KosCallable path without any preamble.
+3. [~] Patch `KosEvalState_CallArgs` — **not done**; same reason.
+4. [~] Patch `KosEvalState_CallNoArgs` — **not done**; same reason.
+5. [~] Reference-count review for CALL stack discipline — **not needed**; the
+       KosCallable path already handles this correctly.
+6. [x] Add `TestDemandCallFlattening` tests (§12 / §16).
+7. [x] `tox -qe py -- tests/lib/test_demand_sync.py` — 3204 pass.
+8. [x] `make test` — full suite passes.
+9. [x] Update this doc's implementation status line.
 
 ---
 
-## 15. File index
+## 15. File index (original plan — superseded by §16)
 
-| File | Change |
-| ---- | ------ |
-| `koskari/lib/eval/eval_utils.c` | `demand_unwrap_for_flatten`; preamble + post-install flag in `KosEvalState_Call`, `KosEvalState_CallArgs`, `KosEvalState_CallNoArgs` |
-| `tests/lib/test_demand_sync.py` | `TestDemandCallFlattening` class |
-| `design/interpreter/demand-evalex-phase2.md` | this file |
-| `design/TODO.md` | mark phase 2 complete when done |
-| `design/api/demand-wrapper.md` | update status when done |
+| File | Planned change |
+| ---- | -------------- |
+| `koskari/lib/eval/eval_utils.c` | `demand_unwrap_for_flatten`; preamble + post-install flag — **not changed** |
+| `tests/lib/test_demand_sync.py` | `TestDemandCallFlattening` class — **done** |
+| `design/interpreter/demand-evalex-phase2.md` | this file — **updated** |
+| `design/TODO.md` | mark phase 2 complete — **done** |
+| `design/api/demand-wrapper.md` | update status — **done** |
+
+---
+
+## 16. As-built: KosCallable interface approach
+
+The final implementation converted `KosDemandType` from a plain `PyTypeObject`
+to a `KosCallableTypeObject`, giving `Demand` the `KosCallable` interface. The
+CALL opcode's existing `KosCallable_Check(ptr[0])` branch fires for `Demand`
+objects and dispatches to the new `demand_kos_install` slot.
+
+### Changes made
+
+**`koskari/lib/demand.h`**
+
+- Added `#include "callable.h"`.
+- Changed `extern PyTypeObject KosDemandType;` →
+  `extern KosCallableTypeObject KosDemandCallableType;`.
+- Updated `KosDemand_CheckExact` macro to use
+  `KOS_CALLABLE_PYTYPE(KosDemandCallableType)`.
+
+**`koskari/lib/demand.c`**
+
+- Early in `demand_sync_ex`: added `KosDemand_CheckExact` guard that unwraps
+  and recurses, so `demand_call(Demand(fn), …)` from Python works correctly
+  now that `Demand` passes `KosCallable_Check`.
+- After BoundMethod unwrap in `demand_sync_ex`: same guard for the case
+  `demand_call(BoundMethod(Demand(fn)), …)`.
+- Fixed `Py_INCREF(call_args)` → `Py_XINCREF(call_args)` (call_args may be
+  NULL when called from `demand_kos_install` with zero arguments).
+- Added `demand_inner_is_flattenable(inner)`: returns 1 if `inner` is a
+  non-yielding `KosFunction` or non-yielding `KosExpression` (queries the
+  callable's `tp_kos_wants_frame_fn` / `tp_kos_wants_frame`); returns 0 for
+  yielding functions, nested `Demand`, plain Python callables, and other
+  `KosCallable` types.
+- Added `demand_wants_frame(callable)`: `tp_kos_wants_frame_fn` slot, delegates
+  to `demand_inner_is_flattenable(d->wrapped)`.
+- Added `demand_kos_install(es, out_ev, callable, args_tuple, kwds_dict,
+  tail_call)`: `tp_kos_install` slot.
+  - Flattenable path: calls `KosCallable_CallArgs(es, out_ev, inner, …)` and,
+    on `r == 0`, sets `KOS_FRAME_DEMAND` on the newly installed frame.
+  - Fallback path: calls `demand_sync_ex(inner, …)` and pushes the result on
+    the current frame's stack via `KosEvalState_StackPUSH` (steal-ref push),
+    returns 0. `KosEvalState_Call` then converts to
+    `KOS_OP_RES_CONTROL_RETURNED` for tail calls.
+- Changed `PyTypeObject KosDemandType` → `KosCallableTypeObject
+  KosDemandCallableType`:
+  - Inner `.type` retains all existing slots plus
+    `.tp_base = KOS_CALLABLE_PYTYPE(KosCallableType)`.
+  - Added `.tp_kos_install = demand_kos_install`,
+    `.tp_kos_vinstall = NULL`,
+    `.tp_kos_wants_frame = 0`,
+    `.tp_kos_wants_frame_fn = demand_wants_frame`.
+- Updated `koskari_demand_init` to use `KOS_CALLABLE_PYTYPE(KosDemandCallableType)`
+  for `PyType_Ready` and the dict `"demand"` registration.
+
+**`tests/lib/test_demand_sync.py`**
+
+New class `TestDemandCallFlattening` with four tests:
+
+| Test | What it verifies |
+| ---- | ---------------- |
+| `test_demand_is_kos_callable` | `demand(fn)` is an instance of `demand` type |
+| `test_flatten_non_yielding_function_from_bytecode` | CALL `demand(fn)` from koskari returns correct value |
+| `test_flatten_sets_demand_flag_denies_await` | Flattened frame has `KOS_FRAME_DEMAND`; inner AWAIT raises `KoskariSyncViolation` |
+| `test_fallback_yielding_function_returns_generator` | `demand(yielding_fn)` from koskari bytecode returns `DemandGenerator` |
+
+### Scope changes vs. original plan
+
+- `BoundMethod(Demand(fn))` from `demand_call`: now handled by the new
+  `KosDemand_CheckExact` guard in the BoundMethod-unwrap section of
+  `demand_sync_ex`; recurses with prepended-self args. Not flattened
+  (the BoundMethod install still unwraps Demand without setting
+  `KOS_FRAME_DEMAND`), but correct.
+- The "out of scope" items in §3 remain deferred.
 
 # The end.

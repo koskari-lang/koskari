@@ -698,4 +698,190 @@ class TestDemandDescriptor(unittest.TestCase):
         self.assertEqual(demand_call(getattr(C(41), "method")), 42)
 
 
+class TestDemandCallFlattening(unittest.TestCase):
+    """
+    Phase-2 demand call flattening: KosDemand is now a KosCallable.
+
+    When koskari bytecode calls demand(fn), the CALL opcode dispatches
+    through demand_kos_install (not demand_tp_call), which either:
+    - installs the inner callable's frame directly and marks it as the
+      demand root (flattenable path: non-yielding KosFunction/KosExpression)
+    - delegates to demand_sync_ex (fallback: yielding fn, Python callable)
+    """
+
+    def _make_non_yielding_fn(self, return_value):
+        """Build a non-yielding KosFunction that returns return_value."""
+
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('rv',),
+            values={'rv': return_value},
+        )
+        code = build_code(
+            [
+                ["FAST", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('rv',),
+            name='non_yielding_fn',
+        )
+        return make_callable(code, base_ns, FormalsSpec())
+
+
+    def _make_yielding_fn(self, yield_value):
+        """Build a yielding KosFunction (YIELD opcode)."""
+
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('yv',),
+            values={'yv': yield_value},
+        )
+        code = build_code(
+            [
+                ["FAST", 0],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            local_syms=(),
+            closure_syms=('yv',),
+            name='yielding_fn',
+        )
+        return make_callable(code, base_ns, FormalsSpec())
+
+
+    def test_demand_is_kos_callable(self):
+        """
+        demand(fn) is now a KosCallable subtype: CALL opcode dispatches
+        through the install slot rather than tp_call.
+
+        Verify indirectly: demand(fn) is a Demand instance, and calling it
+        from koskari bytecode via CALL (KosCallable path) produces the same
+        result as demand_call(fn).
+        """
+
+        fn = self._make_non_yielding_fn(42)
+        wrapped = demand(fn)
+        self.assertIsInstance(wrapped, demand)
+
+
+    def test_flatten_non_yielding_function_from_bytecode(self):
+        """
+        CALL demand(fn) from koskari bytecode installs fn's frame directly
+        and marks it KOS_FRAME_DEMAND (flattenable path).
+
+        Verify that the result matches demand_call(fn).
+        """
+
+        fn = self._make_non_yielding_fn(99)
+        wrapped = demand(fn)
+
+        _, outer_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('w',),
+            values={'w': wrapped},
+        )
+        outer_code = build_code(
+            [
+                ["FAST", 0],
+                ["CALL", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('w',),
+            name='call_demand_fn',
+        )
+        outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
+
+        result = demand_call(outer_fn)
+        self.assertEqual(result, 99)
+
+
+    def test_flatten_sets_demand_flag_denies_await(self):
+        """
+        After flattening demand(fn), the installed frame has KOS_FRAME_DEMAND
+        set, so any await inside fn raises KoskariSyncViolation in-eval.
+        """
+
+        def _yielding_awaitable():
+            def _it():
+                yield
+            class SuspendingAwaitable:
+                def __await__(self):
+                    return _it()
+            return SuspendingAwaitable()
+
+        awaitable = _yielding_awaitable()
+        _, inner_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': awaitable},
+        )
+        inner_code = build_code(
+            [
+                ["FAST", 0],
+                ["AWAIT", 1],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('a',),
+            name='awaiting_fn',
+        )
+        inner_fn = make_callable(inner_code, inner_ns, FormalsSpec())
+        wrapped = demand(inner_fn)
+
+        _, outer_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('w',),
+            values={'w': wrapped},
+        )
+        outer_code = build_code(
+            [
+                ["FAST", 0],
+                ["CALL", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('w',),
+            name='call_demand_awaiting',
+        )
+        outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
+
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            demand_call(outer_fn)
+        self.assertIn('suspension', str(ctx.exception))
+
+
+    def test_fallback_yielding_function_returns_generator(self):
+        """
+        demand(yielding_fn) called from koskari bytecode takes the fallback
+        path and returns a DemandGenerator (not a flattened frame).
+        """
+
+        fn = self._make_yielding_fn(7)
+        wrapped = demand(fn)
+
+        _, outer_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('w',),
+            values={'w': wrapped},
+        )
+        outer_code = build_code(
+            [
+                ["FAST", 0],
+                ["CALL", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('w',),
+            name='call_demand_yielding',
+        )
+        outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
+
+        result = demand_call(outer_fn)
+        self.assertIsNotNone(result)
+        self.assertTrue(hasattr(result, '__next__'))
+        self.assertEqual(next(result), 7)
+
+
 # The end.

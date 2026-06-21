@@ -259,15 +259,14 @@ enforces demand semantics for plain-Python callables at the boundary (branch
 
 Ref: [interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md).
 
-### Demand call flattening (phase 2)
+### Demand call flattening (phase 2) — **Complete**
 
-**TODO:** When koskari bytecode calls `Demand(KosCallable)`, detect the pattern
-in `KosEvalState_Call*` (eval_utils.c), unwrap the inner callable, install its
-frame via the normal KosCallable path, and set `KOS_FRAME_DEMAND` on the
-resulting frame — eliminating the C-stack round-trip through `demand_tp_call` /
-`demand_sync_ex` / new `KosContext`. Fall-through to existing `demand_tp_call`
-for Python callables and yielding functions (DemandGenerator path unchanged).
-Phase 2 only — `BoundMethod(Demand(fn))` flattening is deferred.
+`KosDemandType` converted to `KosCallableTypeObject` (`KosDemandCallableType`)
+with `tp_kos_install = demand_kos_install` and `tp_kos_wants_frame_fn =
+demand_wants_frame`. When koskari bytecode calls `Demand(non_yielding_fn)`, the
+CALL opcode's KosCallable branch fires, installs the inner fn's frame directly,
+and sets `KOS_FRAME_DEMAND`. Python callable, yielding fn, and nested `Demand`
+fall through to `demand_sync_ex`. `BoundMethod(Demand(fn))` flattening deferred.
 
 Ref: [interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md).
 

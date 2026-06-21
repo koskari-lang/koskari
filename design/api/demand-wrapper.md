@@ -11,8 +11,9 @@ exposes the wrapper type as **`demand`** (constructor), plus `demand_call` and
 In-eval suspend denial (frame marker, inject loop removed) is **complete** — see
 [interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md).
 Plain-Python eager-await enforcement (`demand_step_python_result`) is also
-complete (branch `demand_in_eval`). Call flattening (bypassing `demand_tp_call`
-for `Demand(KosCallable)` calls from bytecode) is **planned** in
+complete (branch `demand_in_eval`). Call flattening (`KosDemandType` converted
+to `KosCallableTypeObject`; CALL opcode dispatches through `demand_kos_install`)
+is **complete** — see
 [interpreter/demand-evalex-phase2.md](../interpreter/demand-evalex-phase2.md).
 
 ---

@@ -214,6 +214,17 @@ static int demand_sync_ex(
   // for the __repr__
   SAYF("[demand_sync] callable = %p", callable);
 
+  /* KosDemand wrapper: unwrap and recurse on the inner callable directly.
+     Must come before KosCallable_Check since Demand is now a KosCallable. */
+  if (KosDemand_CheckExact(callable)) {
+    PyObject *inner = KosDemand_GetWrapped(callable);
+    if (! inner) {
+      PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+      return -1;
+    }
+    return demand_sync_ex(inner, args, kwargs, out_result);
+  }
+
   /* Plain Python (not KosCallable): call, then eagerly step any awaitable. */
   if (! KosCallable_Check(callable)) {
     SAYF("[demand_sync] Plain Python (not KosCallable): callable = %p", callable);
@@ -249,10 +260,23 @@ static int demand_sync_ex(
 
   } else {
     call_args = args;
-    Py_INCREF(call_args);
+    Py_XINCREF(call_args);
   }
 
-  /* BoundMethod may unwrap to Demand or other non-KosCallable */
+  /* BoundMethod may unwrap to Demand: recurse with bound args. */
+  if (KosDemand_CheckExact(callable)) {
+    PyObject *inner = KosDemand_GetWrapped(callable);
+    if (! inner) {
+      Py_DECREF(call_args);
+      PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+      return -1;
+    }
+    int r = demand_sync_ex(inner, call_args, kwargs, out_result);
+    Py_DECREF(call_args);
+    return r;
+  }
+
+  /* BoundMethod may also unwrap to other non-KosCallable */
   if (! KosCallable_Check(callable)) {
     if (! call_args && ! kwargs) {
       result = PyObject_CallNoArgs(callable);
@@ -668,24 +692,107 @@ static int demand_clear(PyObject *self) {
 }
 
 
-PyTypeObject KosDemandType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+/**
+  Return 1 if inner is a non-yielding KosFunction or KosExpression that can be
+  installed directly into the current frame. Returning 0 routes to the
+  demand_sync_ex fallback path (Python callable, yielding function, nested
+  Demand, or any other KosCallable type).
+*/
+static int demand_inner_is_flattenable(PyObject *inner) {
 
-  .tp_name = "koskari.lib.Demand",
-  .tp_basicsize = sizeof(KosDemandObject),
-  .tp_itemsize = 0,
-  .tp_dealloc = demand_dealloc,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Callable adapter that runs its wrapped callable on the demand path",
-  .tp_traverse = demand_traverse,
-  .tp_clear = demand_clear,
-  .tp_members = demand_members,
-  .tp_getset = demand_getset,
-  .tp_repr = demand_repr,
-  .tp_call = demand_tp_call,
-  .tp_descr_get = demand_descr_get,
-  .tp_new = demand_new,
-  .tp_init = demand_init,
+  if (KosDemand_CheckExact(inner))
+    return 0;
+
+  if (! KosCallable_Check(inner))
+    return 0;
+
+  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) Py_TYPE(inner);
+
+  if (ctyp->tp_kos_wants_frame_fn)
+    return ctyp->tp_kos_wants_frame_fn(inner);
+
+  return ctyp->tp_kos_wants_frame;
+}
+
+
+static int demand_wants_frame(PyObject *callable) {
+
+  KosDemandObject *d = (KosDemandObject *) callable;
+  return demand_inner_is_flattenable(d->wrapped);
+}
+
+
+static int demand_kos_install(
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call) {
+
+  KosDemandObject *d = (KosDemandObject *) callable;
+  PyObject *inner = d->wrapped;
+
+  if (! inner) {
+    PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+    return -1;
+  }
+
+  if (demand_inner_is_flattenable(inner)) {
+    /* Install inner directly into the frame prepared by do_frame_prep, then
+       mark that frame as the demand root so in-eval deny guards fire. */
+    int r = KosCallable_CallArgs(es, out_ev, inner, args_tuple, kwds_dict,
+                                 tail_call);
+    if (r == 0) {
+      KosDynFrame *frame = KosEvalState_FRAME(es);
+      if (frame)
+        KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
+    }
+    return r;
+  }
+
+  /* Fallback: Python callable, yielding function, nested Demand, or
+     unsupported KosCallable.  demand_sync_ex creates its own context and
+     returns a concrete result (or DemandGenerator for yielding functions).
+     Push that result on the current frame's stack and return 0 so that
+     KosEvalState_Call handles tail-call conversion the same way
+     kos_install_function does for yielding KosFunctions. */
+  PyObject *result = NULL;
+  if (demand_sync_ex(inner, args_tuple, kwds_dict, &result) < 0)
+    return -1;
+
+  if (KosEvalState_StackPUSH(es, result) < 0)
+    return -1;  /* PUSH steals reference; already decremented on failure */
+
+  return 0;
+}
+
+
+KosCallableTypeObject KosDemandCallableType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.Demand",
+    .tp_basicsize = sizeof(KosDemandObject),
+    .tp_itemsize = 0,
+    .tp_dealloc = demand_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "Callable adapter that runs its wrapped callable on the demand path",
+    .tp_traverse = demand_traverse,
+    .tp_clear = demand_clear,
+    .tp_members = demand_members,
+    .tp_getset = demand_getset,
+    .tp_repr = demand_repr,
+    .tp_call = demand_tp_call,
+    .tp_descr_get = demand_descr_get,
+    .tp_new = demand_new,
+    .tp_init = demand_init,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_install = demand_kos_install,
+  .tp_kos_vinstall = NULL,
+  .tp_kos_wants_frame = 0,
+  .tp_kos_wants_frame_fn = demand_wants_frame,
 };
 
 
@@ -1122,7 +1229,7 @@ int koskari_demand_init(PyObject *mod) {
   if (PyType_Ready(&KosDemandGeneratorType) < 0)
     return -1;
 
-  if (PyType_Ready(&KosDemandType) < 0)
+  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosDemandCallableType)) < 0)
     return -1;
 
   demand_call_func = PyCFunction_New(&demand_call_methoddef, mod);
@@ -1143,7 +1250,8 @@ int koskari_demand_init(PyObject *mod) {
   }
   Py_DECREF(demand_apply_func);
 
-  if (PyDict_SetItemString(dict, "demand", (PyObject *) &KosDemandType) < 0)
+  if (PyDict_SetItemString(dict, "demand",
+                          (PyObject *) KOS_CALLABLE_PYTYPE(KosDemandCallableType)) < 0)
     return -1;
 
   /* Native test harness uses _koskari_test; no koskari package available */

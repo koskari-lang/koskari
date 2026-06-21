@@ -20,12 +20,14 @@
 
 #include <Python.h>
 
+#include "callable.h"
 
-extern PyTypeObject KosDemandType;
+
+extern KosCallableTypeObject KosDemandCallableType;
 
 
 #define KosDemand_CheckExact(obj) \
-  ((obj) && ((obj)->ob_type == &KosDemandType))
+  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosDemandCallableType)))
 
 
 /**
