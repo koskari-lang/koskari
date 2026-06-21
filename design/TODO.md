@@ -250,29 +250,6 @@ subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
-### Demand in-eval denial (phase 1) — **Complete**
-
-`KOS_FRAME_DEMAND` flag on the root frame; in-loop deny guards at all P0/P1
-suspend sites; inject loop in `demand_sync_ex` removed; `demand_step_python_result`
-enforces demand semantics for plain-Python callables at the boundary (branch
-`demand_in_eval`).
-
-Ref: [interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md).
-
-### Demand call flattening (phase 2) — **Complete**
-
-`KosDemandType` converted to `KosCallableTypeObject` (`KosDemandCallableType`)
-with `tp_kos_install = demand_kos_install` and `tp_kos_wants_frame_fn =
-demand_wants_frame`. When koskari bytecode calls `Demand(non_yielding_fn)`, the
-CALL opcode's KosCallable branch fires, installs the inner fn's frame directly,
-and sets `KOS_FRAME_DEMAND`. Python callable, yielding fn, and nested `Demand`
-fall through to `demand_sync_ex`. `KosBoundMethod` install path also cleaned up:
-`boundmethod_resolve_function` removed from install and wants-frame paths;
-`KosCallable_CallArgs` dispatch now naturally routes through `demand_kos_install`
-so `BoundMethod(Demand(fn))` sets `KOS_FRAME_DEMAND` via the KosCallable chain.
-
-Ref: [interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md).
-
 ### KosPartial: KosCallable-aware `functools.partial`
 
 **TODO:** Implement `KosPartial` as a C-level subtype of CPython's
