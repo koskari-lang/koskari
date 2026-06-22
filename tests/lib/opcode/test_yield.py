@@ -260,6 +260,53 @@ class TestYieldKoskariCallPath(CevalTest):
         self.assertEqual(result, 42)
 
 
+class TestKoskariIterKoskariGenerator(CevalTest):
+    """
+    Koskari PUSH_FOREACH/ITER_NEXT over a Koskari AsyncGenerator.
+
+    PUSH_FOREACH calls iter(agen) which invokes AsyncGenerator.__iter__,
+    returning a DemandGenerator.  ITER_NEXT then calls next() on that
+    DemandGenerator, stepping the inner generator via demand_gen_step.
+    This is the implicit demand path baked into every Koskari async generator.
+    """
+
+    async def test_koskari_foreach_over_koskari_generator(self):
+        """
+        Koskari consumer sums values yielded by a Koskari AsyncGenerator
+        using PUSH_FOREACH / ITER_NEXT, exercising the implicit demand path.
+        """
+        inner_code, inner_ns = build_expr([
+            ["CONST", 10],
+            ["YIELD", 1],
+            ["CONST", 20],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        inner_gen = make_callable(inner_code, inner_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "total"],
+            ["CONST", None],
+            ["VAR", "gen"],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR", "total"],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "total"],
+            ["CONTINUE", 0],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_FOREACH", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["VAR", "total"],
+            ["RETURN", 1],
+        ], values={"gen": inner_gen, "total": 0})
+        result = await make_callable(consumer_code, consumer_ns)()
+        self.assertEqual(result, 30)
+
+
 class TestAgenDeallocWhenFrozen(CevalTest):
     """
     Phase 8: Agen freed while suspended runs GeneratorExit teardown

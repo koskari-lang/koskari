@@ -71,9 +71,9 @@ class TestDemandSyncExpression(unittest.TestCase):
         self.assertEqual(ctx.exception.args, ("demand_call raise test",))
 
 
-    def test_yield_violation(self):
+    def test_yield_produces_demand_generator(self):
         """
-        demand_call(expr) raises KoskariSyncViolation on YIELD
+        demand_call(expr) on a yielding expression returns a DemandGenerator
         """
         code, ns = build_expr([
             ["CONST", 1],
@@ -81,9 +81,10 @@ class TestDemandSyncExpression(unittest.TestCase):
             ["RETURN", 0],
         ])
         expr = make_callable(code, ns)
-        with self.assertRaises(KoskariSyncViolation) as ctx:
-            demand_call(expr)
-        self.assertIn("suspension", str(ctx.exception))
+        gen = demand_call(expr)
+        self.assertEqual(next(gen), 1)
+        with self.assertRaises(StopIteration):
+            next(gen)
 
 
 class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
@@ -791,6 +792,59 @@ class TestDemandDescriptor(unittest.TestCase):
         with self.assertRaises(KoskariSyncViolation) as ctx:
             demand_call(outer_fn)
         self.assertIn('suspension', str(ctx.exception))
+
+
+class TestKoskariIterDemandGenerator(unittest.TestCase):
+    """
+    Koskari PUSH_FOREACH/ITER_NEXT over a DemandGenerator.
+
+    A DemandGenerator is a sync iterator (__iter__ returns self, __next__
+    runs demand_gen_step).  PUSH_FOREACH dispatches through it directly.
+    """
+
+    def test_koskari_foreach_over_demand_generator(self):
+        """
+        Koskari consumer sums values from a DemandGenerator via
+        PUSH_FOREACH / ITER_NEXT, run via demand_call on the consumer.
+        """
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            values={},
+        )
+        inner_code = build_code(
+            [
+                ["CONST", 10],
+                ["YIELD", 1],
+                ["CONST", 20],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            name='inner_gen',
+        )
+        inner_fn = make_callable(inner_code, base_ns, FormalsSpec())
+        dsg = demand_call(inner_fn)
+
+        consumer_code, consumer_ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "total"],
+            ["CONST", None],
+            ["VAR", "dsg"],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR", "total"],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "total"],
+            ["CONTINUE", 0],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_FOREACH", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["VAR", "total"],
+            ["RETURN", 1],
+        ], values={"dsg": dsg, "total": 0})
+        result = demand_call(make_callable(consumer_code, consumer_ns))
+        self.assertEqual(result, 30)
 
 
 class TestDemandCallFlattening(unittest.TestCase):

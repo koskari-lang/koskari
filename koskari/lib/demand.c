@@ -306,6 +306,9 @@ static int demand_sync_ex(
     Py_INCREF(ns);
     if (KosCode_YIELDS((KosCode *) code)) {
       KosDynGen *gen_node = kos_dyngen_new(NULL);
+      PyObject *agen_obj;
+      KosPyAsyncGen *agen;
+
       if (! gen_node) {
         Py_DECREF(ns);
         goto ret_fail;
@@ -317,7 +320,49 @@ static int demand_sync_ex(
         Py_DECREF(ns);
         goto ret_fail;
       }
-      KosDynGen_OWNER(gen_node) = NULL;  /* demand_sync: no owner; yield = violation */
+      KosDynGen_ACTIVE(gen_node) = (struct KosDynNode *) frame;
+      ctx = KosContext_New(frame);
+      frame = NULL;
+      if (! ctx)
+        goto ret_fail;
+      agen_obj = KosPyAsyncGen_New(ctx);
+      if (! agen_obj) {
+        KosContext_Free(ctx);
+        goto ret_fail;
+      }
+      agen = (KosPyAsyncGen *) agen_obj;
+      KosDynGen_OWNER(gen_node) = (PyObject *) agen;
+      agen->gen = (void *) gen_node;
+      kos_dyngen_acquire(gen_node);
+      Py_XINCREF(KosCode_NAME((KosCode *) code));
+      agen->code_name = KosCode_NAME((KosCode *) code);
+
+      {
+        /* KosDemandGenerator holds no KosContext; eval state is only on agen->ctx. */
+        KosDemandGenerator *dsg =
+            (KosDemandGenerator *)
+            PyObject_GC_New(KosDemandGenerator, &KosDemandGeneratorType);
+        PyObject *gen_out;
+
+        if (! dsg) {
+          Py_DECREF(agen_obj);
+          goto ret_fail;
+        }
+        dsg->code_name = NULL;
+        if (agen->code_name) {
+          Py_INCREF(agen->code_name);
+          dsg->code_name = agen->code_name;
+        }
+        Py_INCREF(agen);
+        dsg->async_agen = (PyObject *) agen;
+
+        PyObject_GC_Track((PyObject *) dsg);
+        gen_out = (PyObject *) dsg;
+        Py_DECREF(agen_obj);
+        Py_XDECREF(call_args);
+        *out_result = gen_out;
+      }
+      return 0;
     }
     else {
       frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
@@ -466,8 +511,7 @@ run_eval:
 
     case KOS_EV_AWAIT:
     case KOS_EV_YIELD:
-      /* In-eval deny guards should have converted suspension into
-         KOS_EV_RAISE before we get here; this is a bug if reached. */
+      /* Both should be intercepted before reaching here — this is a bug. */
       if (KosEvent_PAYLOAD(&ev))
         Py_DECREF(KosEvent_PAYLOAD(&ev));
       PyErr_SetString(PyExc_RuntimeError,

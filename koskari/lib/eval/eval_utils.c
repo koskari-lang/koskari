@@ -179,8 +179,9 @@ static int kos_eval_in_demand(KosEvalState *es) {
    If execution is under a demand extent, set KoskariSyncViolation on PyErr
    and return 1. Otherwise return 0 (caller continues normally).
 
-   On return 1: caller must return -1 / KOS_OP_POST_ERR() so the exception
-   propagates through eval_event_raise and TRY/finally can run.
+   Used only by YIELD_FROM sites whose pre-event state mutations (phase,
+   inflight, PC flush) must not occur when denying. All other suspension
+   paths are intercepted centrally in eval_phase_post_opcode_tail.
 */
 static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
   if (! kos_eval_in_demand(es))
@@ -233,11 +234,6 @@ static int push_or_await_common(
   }
 
   if (suspended && yielded) {
-    if (kos_eval_demand_deny_suspend(es,
-        "async suspension is not allowed in demand_sync")) {
-      Py_DECREF(yielded);
-      return -1;
-    }
     KosEvalState_MarkSuspendedNotRunning(es);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
@@ -316,11 +312,6 @@ static inline int op_push_or_await(
   }
 
   if (suspended && yielded) {
-    if (kos_eval_demand_deny_suspend(es,
-        "async suspension is not allowed in demand_sync")) {
-      Py_DECREF(yielded);
-      return -1;
-    }
     KosEvalState_MarkSuspendedNotRunning(es);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
@@ -592,11 +583,6 @@ static KosGetNextResult next_from_python_async_iter(
   Py_DECREF(awaitable);
 
   if (suspended && yielded) {
-    if (kos_eval_demand_deny_suspend(es,
-        "async suspension is not allowed in demand_sync")) {
-      Py_DECREF(yielded);
-      return GET_NEXT_ERROR;
-    }
     KosEvalState_MarkSuspendedNotRunning(es);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
