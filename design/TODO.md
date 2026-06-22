@@ -250,17 +250,18 @@ subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
-### Demand in-eval denial (phase 1)
+### KosPartial: KosCallable-aware `functools.partial`
 
-**TODO:** Deny suspension inside the evaluator when execution is on the demand
-path: turn `KOS_EV_AWAIT` / `KOS_EV_YIELD` into an in-loop
-`KoskariSyncViolation` at the deny site so `TRY` / `finally` can run; remove
-the post-`koskari_eval` inject loop in `demand_sync_ex` once in-loop denial is
-complete. Phase 1 only — no `KOS_DYN_DEMAND`, wrapper, or
-`define-demanding` changes.
+**TODO:** Implement `KosPartial` as a C-level subtype of CPython's
+`functools.partial` (dynamic `tp_base` set at init time before `PyType_Ready`)
+with `KosCallableTypeObject` slots. `tp_kos_wants_frame_fn` delegates to the
+inner callable's wants-frame slot. `tp_kos_install` merges `partial.args` +
+call args and `partial.keywords` + call kwargs, then tail-calls through to the
+inner callable's install slot unconditionally (partial has no epilogue; one frame
+regardless of nesting depth). Falls back to `PyObject_Call` for non-KosCallable
+inner callables. `isinstance(obj, functools.partial)` continues to work.
 
-Ref: [interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md);
-[archive/demand-sync-await-violation-at-site.md](archive/demand-sync-await-violation-at-site.md).
+Ref: [interpreter/kospartial.md](interpreter/kospartial.md).
 
 ### DynamicRef accessors on demand path
 

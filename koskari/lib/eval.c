@@ -2125,6 +2125,17 @@ static KosEvalStep eval_phase_post_opcode_tail(
   }
 
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+    if (kos_eval_in_demand(es)) {
+      Py_CLEAR(KosEvent_PAYLOAD(out_ev));
+      KosEvent_KIND(out_ev) = KOS_EV_NONE;
+      KosContext_FLAGS(KosEvalState_CONTEXT(es)) &= ~KOS_CTX_DEAD;
+      KosContext_FLAGS(KosEvalState_CONTEXT(es)) |= KOS_CTX_RUNNING;
+      kos_demand_set_sync_violation(
+          "async suspension is not allowed in demand_sync");
+      KosEvalStep rs;
+      KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es, out_ev));
+      return rs;
+    }
     KOS_TRACE_POST_OP_WRAP(event_await,
         KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT));
 

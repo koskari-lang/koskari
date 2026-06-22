@@ -161,6 +161,36 @@ static PyObject *get_await_next(PyObject *val) {
 }
 
 
+/* === Demand extent detection and suspension denial === */
+
+
+/**
+   Return 1 if the current frame carries KOS_FRAME_DEMAND. O(1): the flag is
+   inherited by kos_dyn_push_frame at install time, so the current frame always
+   answers for the entire demand extent.
+*/
+static int kos_eval_in_demand(KosEvalState *es) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  return frame && (KosDynFrame_FLAGS(frame) & KOS_FRAME_DEMAND);
+}
+
+
+/**
+   If execution is under a demand extent, set KoskariSyncViolation on PyErr
+   and return 1. Otherwise return 0 (caller continues normally).
+
+   Used only by YIELD_FROM sites whose pre-event state mutations (phase,
+   inflight, PC flush) must not occur when denying. All other suspension
+   paths are intercepted centrally in eval_phase_post_opcode_tail.
+*/
+static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
+  if (! kos_eval_in_demand(es))
+    return 0;
+  kos_demand_set_sync_violation(msg);
+  return 1;
+}
+
+
 /**
    Push val, or if val is awaitable run eager_step and either push the
    result or suspend (KOS_EV_AWAIT). Use only for (1) the result of a

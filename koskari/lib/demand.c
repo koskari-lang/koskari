@@ -17,12 +17,17 @@
 /**
    koskari/lib/demand.c
 
-   Demand path and KoskariSyncViolation. demand_call invokes Koskari callable
+   Demand path and KoskariSyncViolation. demand_call invokes a Koskari callable
    without suspension (callee as root).
-   Yielding KosFunctions return DemandGenerator instead of raising.
-   AWAIT/YIELD inject (in-eval KoskariSyncViolation) is implemented only in
-   demand_sync_ex run_eval; DemandGenerator (demand_gen_step) still raises
-   at the iterator boundary on AWAIT.
+
+   For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; any
+   attempt to suspend (KOS_EV_AWAIT or KOS_EV_YIELD) is converted into an
+   in-eval KoskariSyncViolation at the deny site so TRY/finally can run;
+   uncaught, the exception surfaces as KOS_EV_RAISE.
+
+   Yielding KosFunctions return DemandGenerator instead of raising; the
+   DemandGenerator boundary raises KoskariSyncViolation on AWAIT from the
+   iterator protocol (that path does not use KOS_FRAME_DEMAND).
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -37,6 +42,19 @@
 
 
 static PyObject *KoskariSyncViolation = NULL;
+
+static PyObject *str_await = NULL;
+static PyObject *str_send = NULL;
+static PyObject *str_throw = NULL;
+
+
+void kos_demand_set_sync_violation(const char *msg) {
+  PyObject *exc = PyObject_CallFunction(KoskariSyncViolation, "s", msg);
+  if (! exc)
+    return;
+  PyErr_SetObject(KoskariSyncViolation, exc);
+  Py_DECREF(exc);
+}
 
 
 static int register_koskari_sync_exception(PyObject *mod,
@@ -55,6 +73,95 @@ static int register_koskari_sync_exception(PyObject *mod,
     return -1;
 
   return PyModule_AddObject(mod, attr_name, *out_exc);
+}
+
+
+/* === Eager-await for Python awaitables at the demand boundary === */
+
+
+/**
+   Eagerly step a Python awaitable returned at the demand boundary. On
+   immediate completion (StopIteration), return the value. On suspension
+   (the awaitable yields before completing), inject KoskariSyncViolation
+   via .throw(); the callee may catch it and return a value, or re-raise.
+
+   Steals the reference to `result`. Returns a new reference to the final
+   value, or NULL with PyErr set. If `result` is not awaitable (no
+   __await__), it is returned unchanged (still stolen).
+*/
+static PyObject *demand_step_python_result(PyObject *result) {
+
+  PyObject *await_iter = NULL;
+  PyObject *step = NULL;
+
+  /* Try __await__; if absent, not an awaitable -- return as-is. */
+  PyObject *await_meth = PyObject_GetAttr(result, str_await);
+  if (! await_meth) {
+    if (! PyErr_ExceptionMatches(PyExc_AttributeError))
+      goto steal_fail;
+    PyErr_Clear();
+    return result;
+  }
+  await_iter = PyObject_CallNoArgs(await_meth);
+  Py_DECREF(await_meth);
+  Py_DECREF(result);
+  result = NULL;
+  if (! await_iter)
+    return NULL;
+
+  /* First step: send(None). */
+  step = PyObject_CallMethodObjArgs(await_iter, str_send, Py_None, NULL);
+
+  if (! step) {
+    if (! PyErr_ExceptionMatches(PyExc_StopIteration))
+      goto iter_fail;
+    /* Completed immediately. */
+    PyObject *value = NULL;
+    if (PyGen_FetchStopIterationValue(&value) < 0)
+      goto iter_fail;
+    Py_DECREF(await_iter);
+    return value ? value : (Py_INCREF(Py_None), Py_None);
+  }
+
+  /* Suspended: discard yielded value, inject KoskariSyncViolation. */
+  Py_DECREF(step);
+  step = NULL;
+
+  {
+    static const char msg[] = "async suspension is not allowed in demand_sync";
+    PyObject *msg_str = PyUnicode_FromString(msg);
+    if (! msg_str)
+      goto iter_fail;
+    PyObject *exc = PyObject_CallOneArg(KoskariSyncViolation, msg_str);
+    Py_DECREF(msg_str);
+    if (! exc)
+      goto iter_fail;
+    step = PyObject_CallMethodObjArgs(await_iter, str_throw, exc, NULL);
+    Py_DECREF(exc);
+  }
+
+  if (! step) {
+    if (! PyErr_ExceptionMatches(PyExc_StopIteration))
+      goto iter_fail;
+    /* Callee caught the violation and returned a value. */
+    PyObject *value = NULL;
+    if (PyGen_FetchStopIterationValue(&value) < 0)
+      goto iter_fail;
+    Py_DECREF(await_iter);
+    return value ? value : (Py_INCREF(Py_None), Py_None);
+  }
+
+  /* throw() returned without raising: still suspended. */
+  Py_DECREF(step);
+  kos_demand_set_sync_violation("async suspension is not allowed in demand_sync");
+
+iter_fail:
+  Py_DECREF(await_iter);
+  return NULL;
+
+steal_fail:
+  Py_DECREF(result);
+  return NULL;
 }
 
 
@@ -78,11 +185,10 @@ static PyTypeObject KosDemandGeneratorType;
   Base implementation: returns 0 (success with *out_result) or -1 (error,
   PyErr set).
 
-  For KosCallable run_eval: on KOS_EV_AWAIT or KOS_EV_YIELD, injects
-  KoskariSyncViolation via a second koskari_eval (throw into suspended context)
-  so TRY/finally can run; uncaught, surfaces as KOS_EV_RAISE (-1, PyErr set).
-  demand_sync_impl keeps defensive r==1 handling though run_eval no longer
-  returns 1. DemandGenerator stepping is unchanged (see demand.c).
+  For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; in-eval
+  deny guards convert AWAIT/YIELD into KoskariSyncViolation before koskari_eval
+  returns, so KOS_EV_AWAIT and KOS_EV_YIELD are unreachable here.
+  DemandGenerator stepping is unchanged (see demand.c).
 
   callable, args, kwargs are borrowed. Never decref them.
  */
@@ -111,7 +217,18 @@ static int demand_sync_ex(
   // for the __repr__
   SAYF("[demand_sync] callable = %p", callable);
 
-  /* Plain Python (not KosCallable): direct call, reject awaitable */
+  /* KosDemand wrapper: unwrap and recurse on the inner callable directly.
+     Must come before KosCallable_Check since Demand is now a KosCallable. */
+  if (KosDemand_CheckExact(callable)) {
+    PyObject *inner = KosDemand_GetWrapped(callable);
+    if (! inner) {
+      PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+      return -1;
+    }
+    return demand_sync_ex(inner, args, kwargs, out_result);
+  }
+
+  /* Plain Python (not KosCallable): call, then eagerly step any awaitable. */
   if (! KosCallable_Check(callable)) {
     SAYF("[demand_sync] Plain Python (not KosCallable): callable = %p", callable);
     SAYF("[demand_sync] args = %R", args);
@@ -123,8 +240,11 @@ static int demand_sync_ex(
       result = PyObject_Call(callable, args, kwargs);
     }
 
+    if (result)
+      result = demand_step_python_result(result);
+
     *out_result = result;
-    return result? 0: -1;
+    return result ? 0 : -1;
   }
 
   /* KosBoundMethod: unwrap and prepend self to args */
@@ -143,10 +263,23 @@ static int demand_sync_ex(
 
   } else {
     call_args = args;
-    Py_INCREF(call_args);
+    Py_XINCREF(call_args);
   }
 
-  /* BoundMethod may unwrap to Demand or other non-KosCallable */
+  /* BoundMethod may unwrap to Demand: recurse with bound args. */
+  if (KosDemand_CheckExact(callable)) {
+    PyObject *inner = KosDemand_GetWrapped(callable);
+    if (! inner) {
+      Py_DECREF(call_args);
+      PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+      return -1;
+    }
+    int r = demand_sync_ex(inner, call_args, kwargs, out_result);
+    Py_DECREF(call_args);
+    return r;
+  }
+
+  /* BoundMethod may also unwrap to other non-KosCallable */
   if (! KosCallable_Check(callable)) {
     if (! call_args && ! kwargs) {
       result = PyObject_CallNoArgs(callable);
@@ -154,6 +287,8 @@ static int demand_sync_ex(
       result = PyObject_Call(callable, call_args, kwargs);
     }
     Py_DECREF(call_args);
+    if (result)
+      result = demand_step_python_result(result);
     *out_result = result;
     return result ? 0 : -1;
   }
@@ -171,6 +306,9 @@ static int demand_sync_ex(
     Py_INCREF(ns);
     if (KosCode_YIELDS((KosCode *) code)) {
       KosDynGen *gen_node = kos_dyngen_new(NULL);
+      PyObject *agen_obj;
+      KosPyAsyncGen *agen;
+
       if (! gen_node) {
         Py_DECREF(ns);
         goto ret_fail;
@@ -182,7 +320,49 @@ static int demand_sync_ex(
         Py_DECREF(ns);
         goto ret_fail;
       }
-      KosDynGen_OWNER(gen_node) = NULL;  /* demand_sync: no owner; yield = violation */
+      KosDynGen_ACTIVE(gen_node) = (struct KosDynNode *) frame;
+      ctx = KosContext_New(frame);
+      frame = NULL;
+      if (! ctx)
+        goto ret_fail;
+      agen_obj = KosPyAsyncGen_New(ctx);
+      if (! agen_obj) {
+        KosContext_Free(ctx);
+        goto ret_fail;
+      }
+      agen = (KosPyAsyncGen *) agen_obj;
+      KosDynGen_OWNER(gen_node) = (PyObject *) agen;
+      agen->gen = (void *) gen_node;
+      kos_dyngen_acquire(gen_node);
+      Py_XINCREF(KosCode_NAME((KosCode *) code));
+      agen->code_name = KosCode_NAME((KosCode *) code);
+
+      {
+        /* KosDemandGenerator holds no KosContext; eval state is only on agen->ctx. */
+        KosDemandGenerator *dsg =
+            (KosDemandGenerator *)
+            PyObject_GC_New(KosDemandGenerator, &KosDemandGeneratorType);
+        PyObject *gen_out;
+
+        if (! dsg) {
+          Py_DECREF(agen_obj);
+          goto ret_fail;
+        }
+        dsg->code_name = NULL;
+        if (agen->code_name) {
+          Py_INCREF(agen->code_name);
+          dsg->code_name = agen->code_name;
+        }
+        Py_INCREF(agen);
+        dsg->async_agen = (PyObject *) agen;
+
+        PyObject_GC_Track((PyObject *) dsg);
+        gen_out = (PyObject *) dsg;
+        Py_DECREF(agen_obj);
+        Py_XDECREF(call_args);
+        *out_result = gen_out;
+      }
+      return 0;
     }
     else {
       frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
@@ -287,77 +467,23 @@ static int demand_sync_ex(
   goto ret_fail;
 
 run_eval:
+  /* Mark this frame as a demand root; in-eval deny guards will detect it
+     when walking ancestors and convert any AWAIT/YIELD into an in-eval
+     KoskariSyncViolation before koskari_eval returns. */
+  KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
+
   ctx = KosContext_New(frame);
   frame = NULL;
-  if (! ctx) {
-    if (frame)
-      kos_dynframe_free(frame);
+  if (! ctx)
     goto ret_fail;
-  }
 
-  {
-    unsigned inject_iter = 0;
-    const unsigned demand_sync_inject_cap = 1024;
-
-    r = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-
-    for (;;) {
-      if (r < 0) {
-        KosContext_Free(ctx);
-        ctx = NULL;
-        goto ret_fail;
-      }
-
-      if (KosEvent_KIND(&ev) != KOS_EV_AWAIT
-          && KosEvent_KIND(&ev) != KOS_EV_YIELD)
-        break;
-
-      if (++inject_iter > demand_sync_inject_cap) {
-        if (KosEvent_PAYLOAD(&ev))
-          Py_DECREF(KosEvent_PAYLOAD(&ev));
-        KosEvent_PAYLOAD(&ev) = NULL;
-        PyErr_SetString(PyExc_RuntimeError,
-                        "demand_sync: suspend inject cap exceeded");
-        KosContext_Free(ctx);
-        ctx = NULL;
-        goto ret_fail;
-      }
-
-      SAYF("[demand_sync] inject iter=%u kind=%d\n",
-           (unsigned) inject_iter, (int) KosEvent_KIND(&ev));
-
-      if (KosEvent_PAYLOAD(&ev)) {
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
-        KosEvent_PAYLOAD(&ev) = NULL;
-      }
-
-      {
-        PyObject *msg = PyUnicode_FromString(
-            "async suspension is not allowed in demand_sync");
-        PyObject *exc_val;
-
-        if (! msg) {
-          KosContext_Free(ctx);
-          ctx = NULL;
-          goto ret_fail;
-        }
-        exc_val = PyObject_CallOneArg(KoskariSyncViolation, msg);
-        Py_DECREF(msg);
-        if (! exc_val) {
-          KosContext_Free(ctx);
-          ctx = NULL;
-          goto ret_fail;
-        }
-        r = koskari_eval(ctx, &ev, NULL, KoskariSyncViolation, exc_val);
-        Py_DECREF(exc_val);
-        SAYF("[demand_sync] inject post_eval r=%d kind=%d\n",
-             r, (int) KosEvent_KIND(&ev));
-      }
-    }
-  }
+  r = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
   KosContext_Free(ctx);
   ctx = NULL;
+
+  if (r < 0)
+    goto ret_fail;
 
   switch (KosEvent_KIND(&ev)) {
     case KOS_EV_RETURN:
@@ -385,16 +511,14 @@ run_eval:
 
     case KOS_EV_AWAIT:
     case KOS_EV_YIELD:
+      /* Both should be intercepted before reaching here — this is a bug. */
       if (KosEvent_PAYLOAD(&ev))
         Py_DECREF(KosEvent_PAYLOAD(&ev));
       PyErr_SetString(PyExc_RuntimeError,
-                      "demand_sync: unexpected suspension after inject");
+                      "demand_sync: unexpected suspension (missing deny guard)");
       break;
 
     case KOS_EV_NONE:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
-      break;
-
     default:
       PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
       break;
@@ -429,14 +553,7 @@ static PyObject *demand_sync_impl(
     PyObject *kwargs) {
 
   PyObject *result = NULL;
-  int r = demand_sync_ex(callable, args, kwargs, &result);
-
-  /* Defensive: run_eval no longer returns 1 (suspend -> inject). Plain
-     Python and other paths do not use r==1 either. */
-  if (r == 1) {
-    PyErr_Format(KoskariSyncViolation,
-                 "async suspension is not allowed in demand_call");
-  }
+  demand_sync_ex(callable, args, kwargs, &result);
   return result;
 }
 
@@ -622,24 +739,107 @@ static int demand_clear(PyObject *self) {
 }
 
 
-PyTypeObject KosDemandType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+/**
+  Return 1 if inner is a non-yielding KosFunction or KosExpression that can be
+  installed directly into the current frame. Returning 0 routes to the
+  demand_sync_ex fallback path (Python callable, yielding function, nested
+  Demand, or any other KosCallable type).
+*/
+static int demand_inner_is_flattenable(PyObject *inner) {
 
-  .tp_name = "koskari.lib.Demand",
-  .tp_basicsize = sizeof(KosDemandObject),
-  .tp_itemsize = 0,
-  .tp_dealloc = demand_dealloc,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Callable adapter that runs its wrapped callable on the demand path",
-  .tp_traverse = demand_traverse,
-  .tp_clear = demand_clear,
-  .tp_members = demand_members,
-  .tp_getset = demand_getset,
-  .tp_repr = demand_repr,
-  .tp_call = demand_tp_call,
-  .tp_descr_get = demand_descr_get,
-  .tp_new = demand_new,
-  .tp_init = demand_init,
+  if (KosDemand_CheckExact(inner))
+    return 0;
+
+  if (! KosCallable_Check(inner))
+    return 0;
+
+  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) Py_TYPE(inner);
+
+  if (ctyp->tp_kos_wants_frame_fn)
+    return ctyp->tp_kos_wants_frame_fn(inner);
+
+  return ctyp->tp_kos_wants_frame;
+}
+
+
+static int demand_wants_frame(PyObject *callable) {
+
+  KosDemandObject *d = (KosDemandObject *) callable;
+  return demand_inner_is_flattenable(d->wrapped);
+}
+
+
+static int demand_kos_install(
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call) {
+
+  KosDemandObject *d = (KosDemandObject *) callable;
+  PyObject *inner = d->wrapped;
+
+  if (! inner) {
+    PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+    return -1;
+  }
+
+  if (demand_inner_is_flattenable(inner)) {
+    /* Install inner directly into the frame prepared by do_frame_prep, then
+       mark that frame as the demand root so in-eval deny guards fire. */
+    int r = KosCallable_CallArgs(es, out_ev, inner, args_tuple, kwds_dict,
+                                 tail_call);
+    if (r == 0) {
+      KosDynFrame *frame = KosEvalState_FRAME(es);
+      if (frame)
+        KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
+    }
+    return r;
+  }
+
+  /* Fallback: Python callable, yielding function, nested Demand, or
+     unsupported KosCallable.  demand_sync_ex creates its own context and
+     returns a concrete result (or DemandGenerator for yielding functions).
+     Push that result on the current frame's stack and return 0 so that
+     KosEvalState_Call handles tail-call conversion the same way
+     kos_install_function does for yielding KosFunctions. */
+  PyObject *result = NULL;
+  if (demand_sync_ex(inner, args_tuple, kwds_dict, &result) < 0)
+    return -1;
+
+  if (KosEvalState_StackPUSH(es, result) < 0)
+    return -1;  /* PUSH steals reference; already decremented on failure */
+
+  return 0;
+}
+
+
+KosCallableTypeObject KosDemandCallableType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.Demand",
+    .tp_basicsize = sizeof(KosDemandObject),
+    .tp_itemsize = 0,
+    .tp_dealloc = demand_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "Callable adapter that runs its wrapped callable on the demand path",
+    .tp_traverse = demand_traverse,
+    .tp_clear = demand_clear,
+    .tp_members = demand_members,
+    .tp_getset = demand_getset,
+    .tp_repr = demand_repr,
+    .tp_call = demand_tp_call,
+    .tp_descr_get = demand_descr_get,
+    .tp_new = demand_new,
+    .tp_init = demand_init,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_install = demand_kos_install,
+  .tp_kos_vinstall = NULL,
+  .tp_kos_wants_frame = 0,
+  .tp_kos_wants_frame_fn = demand_wants_frame,
 };
 
 
@@ -1062,6 +1262,10 @@ int koskari_demand_init(PyObject *mod) {
   if (! dict)
     return -1;
 
+  STR_CONST(str_await, "__await__");
+  STR_CONST(str_send, "send");
+  STR_CONST(str_throw, "throw");
+
   if (register_koskari_sync_exception(mod,
           "koskari.lib.KoskariSyncViolation",
           "KoskariSyncViolation",
@@ -1072,7 +1276,7 @@ int koskari_demand_init(PyObject *mod) {
   if (PyType_Ready(&KosDemandGeneratorType) < 0)
     return -1;
 
-  if (PyType_Ready(&KosDemandType) < 0)
+  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosDemandCallableType)) < 0)
     return -1;
 
   demand_call_func = PyCFunction_New(&demand_call_methoddef, mod);
@@ -1093,7 +1297,8 @@ int koskari_demand_init(PyObject *mod) {
   }
   Py_DECREF(demand_apply_func);
 
-  if (PyDict_SetItemString(dict, "demand", (PyObject *) &KosDemandType) < 0)
+  if (PyDict_SetItemString(dict, "demand",
+                          (PyObject *) KOS_CALLABLE_PYTYPE(KosDemandCallableType)) < 0)
     return -1;
 
   /* Native test harness uses _koskari_test; no koskari package available */
@@ -1113,6 +1318,9 @@ int koskari_demand_init(PyObject *mod) {
 int koskari_demand_clear(PyObject *mod) {
 
   KoskariSyncViolation = NULL;
+  Py_CLEAR(str_await);
+  Py_CLEAR(str_send);
+  Py_CLEAR(str_throw);
   (void) mod;
   return 0;
 }

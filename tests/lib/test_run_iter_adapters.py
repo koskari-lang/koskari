@@ -131,6 +131,31 @@ class TestAsyncGeneratorDemandIter(unittest.TestCase):
     __iter__ returns a native DemandGenerator
     """
 
+    def test_iter_on_async_gen_returns_demand_generator(self):
+        """
+        iter(agen) on a Koskari AsyncGenerator returns a DemandGenerator.
+        The DemandGenerator is its own iterator and yields the same values
+        via next() as the async generator would via anext().
+        """
+        code, ns = build_expr([
+            ["CONST", 7],
+            ["YIELD", 1],
+            ["CONST", 8],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(code, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+        dsg = iter(agen)
+        self.assertIsNot(dsg, agen)
+        self.assertIs(iter(dsg), dsg)
+        self.assertEqual(next(dsg), 7)
+        self.assertEqual(next(dsg), 8)
+        with self.assertRaises(StopIteration):
+            next(dsg)
+
+
     def test_two_fresh_agens_list_same(self):
         """
         Two fresh async generators list to the same values

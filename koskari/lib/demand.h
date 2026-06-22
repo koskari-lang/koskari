@@ -20,12 +20,14 @@
 
 #include <Python.h>
 
+#include "callable.h"
 
-extern PyTypeObject KosDemandType;
+
+extern KosCallableTypeObject KosDemandCallableType;
 
 
 #define KosDemand_CheckExact(obj) \
-  ((obj) && ((obj)->ob_type == &KosDemandType))
+  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosDemandCallableType)))
 
 
 /**
@@ -62,6 +64,15 @@ int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
    agen (kos_dyn_gen_install). Caller must not overlap with async iteration
 */
 PyObject *KosDemandGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
+
+
+/**
+   Set KoskariSyncViolation on PyErr with msg as the message string.
+
+   Called from eval guard sites (kos_eval_demand_deny_suspend) to raise the
+   violation as an in-eval exception without duplicating exception registration.
+*/
+void kos_demand_set_sync_violation(const char *msg);
 
 
 #endif /* KOSKARI_DEMAND_H */

@@ -1505,6 +1505,7 @@ static int test_eval_yield_empty_resume(void) {
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
+    kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1560,6 +1561,7 @@ static int test_eval_yield_send_resume(void) {
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
+    kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1789,6 +1791,7 @@ static int test_eval_yield_throw_resume(void) {
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
+    kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1868,6 +1871,7 @@ static int test_eval_yield_throw_caught(void) {
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
+    kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;

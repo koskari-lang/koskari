@@ -381,8 +381,9 @@ tag). Order matters:
    follow-up: **`kos_dynnode_on_control_returned`** (wind thunks, etc.).
 3. **Tail** (**`eval_phase_post_opcode_tail`**): **`PyErr`** →
    **`eval_event_raise`** / **`eval_boundary_raise_dispatch`**; then **`out_ev`**
-   kind handling (AWAIT/YIELD walk, **`KOS_EV_RETURN`** + iterator boundary when
-   applicable), or STOP_EVENT.
+   kind handling — demand denial for **`KOS_EV_AWAIT`** when `KOS_FRAME_DEMAND`
+   is set (see §7.5), AWAIT/YIELD walk, **`KOS_EV_RETURN`** + iterator boundary
+   when applicable, or STOP_EVENT.
 
 ```mermaid
 flowchart TD
@@ -836,6 +837,78 @@ thunk), **`kos_suspend_transfer_plan`** pushes the outer onto **`plan_stack`**
 before the inner plan is armed. **`kos_free_transfer_plan_stack`** drains
 suspended plans on fatal transfer errors.
 
+### 7.5 `KosCallableTypeObject` and Demand
+
+**`KosCallableTypeObject`** extends `PyTypeObject` with four additional slots:
+
+```c
+int tp_kos_wants_frame;       // static: 1 = install always needs a new frame
+tp_kos_wants_frame_fn;        // dynamic: per-instance wants-frame query
+tp_kos_install;               // non-vectorcall install (args tuple + kwds dict)
+tp_kos_vinstall;              // vectorcall install (C array + kwnames)
+```
+
+Types carrying this structure pass `KosCallable_Check`. The current
+`KosCallable` types are **`KosFunction`**, **`KosExpression`**,
+**`KosDemand`**, and **`KosBoundMethod`**. Python callables do not pass
+`KosCallable_Check` and are invoked via `PyObject_Call` / `PyObject_CallNoArgs`.
+
+Before calling an install slot, the CALL / TAIL_CALL opcodes consult
+**`do_frame_prep`**: if `tp_kos_wants_frame_fn` is set it is called; otherwise
+`tp_kos_wants_frame` is used. When the result is 0 (no new frame needed),
+`do_frame_prep` is a no-op and the install slot is responsible for pushing its
+result on the operand stack itself.
+
+**Demand and `KOS_FRAME_DEMAND`.** `KosDemandCallableType` sets
+`tp_kos_wants_frame_fn = demand_wants_frame`, which delegates to
+`demand_inner_is_flattenable`: returns 1 for a non-yielding `KosFunction` or
+`KosExpression`, 0 otherwise. `demand_kos_install` handles both cases:
+
+- **Flattenable path (wants_frame=1):** calls `KosCallable_CallArgs(inner, ...)`,
+  which installs the inner function's frame (a `KosDynFrame`). On success
+  (`r == 0`) it sets `KOS_FRAME_DEMAND` on that frame. Child frames inherit
+  the flag via tail-reset and frame-push preservation.
+
+- **Fallback path (wants_frame=0):** calls `demand_sync_ex(ctx, out_ev, inner,
+  args, kwds)`, which drives the callable synchronously and pushes the result on
+  the operand stack. No new frame is installed; the evaluator continues in the
+  current frame on the next iteration. Yielding callables (`KosCode_YIELDS`)
+  produce a `KosDemandGenerator` and return early; non-yielding callables run
+  to `KOS_EV_RETURN`.
+
+**Demand denial is centralized in `eval_phase_post_opcode_tail`.** When
+`KOS_EV_AWAIT` is about to be committed and `kos_eval_in_demand(es)` is true
+(i.e. `KOS_FRAME_DEMAND` is set on the current frame), the tail phase:
+1. Frees the event payload.
+2. Resets the event kind to `KOS_EV_NONE`.
+3. Restores context flags (`KOS_CTX_RUNNING`; clears `KOS_CTX_DEAD`) — undoing
+   whatever `MarkSuspendedNotRunning` or `MarkDeadAfterYield` had done.
+4. Calls `kos_demand_set_sync_violation` and then `eval_event_raise`.
+
+This single check intercepts async suspension regardless of origin — opcodes,
+native handlers, or future sites — making it impossible to bypass by emitting
+`KOS_EV_AWAIT` without going through `eval_phase_post_opcode_tail`.
+
+**YIELD is never denied by the demand guard.** Yielding is a synchronous
+generator protocol; blocking it at the eval level would incorrectly prevent
+generators from yielding even when iterated inside a demand context. The
+`KOS_EV_YIELD` path in `eval_phase_post_opcode_tail` has no demand check.
+
+**Remaining early-exit guards (`kos_eval_demand_deny_suspend`).** Two sites in
+`YIELD_FROM.c` retain a pre-event guard: `yield_from_emit_yield` and the AWAIT
+path in the inline driver. Both mutate `YIELD_FROM`-specific state (phase,
+inflight ref, PC flush) before the event is filled; the guard fires before those
+mutations to avoid leaving dirty state on denial. All other suspension sites
+rely solely on the centralized check.
+
+`KosBoundMethod` delegates `tp_kos_wants_frame_fn` through to its inner
+callable's wants-frame slot, so a `BoundMethod(Demand(fn))` correctly reports
+the same flattenability as `Demand(fn)` alone.
+
+See [design/interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md)
+and [design/interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md)
+for full implementation detail.
+
 ---
 
 ## 8. Resume Paths
@@ -1001,4 +1074,7 @@ See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) — Install slots and invocation
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution invariants
 - [design/interpreter/iteration-yield-boundaries.md](interpreter/iteration-yield-boundaries.md) — Iteration vs yield-from vs for-each: implementation map and consolidation proposals
+- [design/interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md) — Demand in-eval denial: `KOS_FRAME_DEMAND` flag; centralized AWAIT denial in `eval_phase_post_opcode_tail`; YIELD_FROM early-exit guards
+- [design/interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md) — Demand call flattening: `KosDemandCallableType`, `demand_kos_install`, BoundMethod cleanup
+- [design/api/demand-wrapper.md](api/demand-wrapper.md) — Public `Demand` API, `demand_call`, `demand_sync_ex`
 - [design/archive/dynnode-event-model.md](archive/dynnode-event-model.md) — Earlier standalone write-up of the same event model (archived)

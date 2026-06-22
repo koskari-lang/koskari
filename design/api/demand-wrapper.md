@@ -8,9 +8,13 @@ Koskari callables), the split between **call** and **apply** entry points
 exposes the wrapper type as **`demand`** (constructor), plus `demand_call` and
 `demand_apply`; Ki bootstrap binds the name **`demand`** to that type.
 `demand_sync` remains available as a deprecated alias for `demand_call`.
-In-eval suspend denial (frame marker, no inject loop) is **planned** in
-[interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md);
-the tree still uses the `demand_sync_ex` inject loop until that phase lands.
+In-eval suspend denial (frame marker, inject loop removed) is **complete** — see
+[interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md).
+Plain-Python eager-await enforcement (`demand_step_python_result`) is also
+complete (branch `demand_in_eval`). Call flattening (`KosDemandType` converted
+to `KosCallableTypeObject`; CALL opcode dispatches through `demand_kos_install`)
+is **complete** — see
+[interpreter/demand-evalex-phase2.md](../interpreter/demand-evalex-phase2.md).
 
 ---
 

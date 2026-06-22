@@ -5,11 +5,11 @@ This document specifies **phase 1** of demand-scoped evaluation: deny suspension
 of returning `KOS_EV_AWAIT` / `KOS_EV_YIELD` to an outer host loop that injects
 `KoskariSyncViolation` after `koskari_eval` returns.
 
-**Implementation status:** **Not started** (design). Current tree still uses
-the **inject loop** in `demand_sync_ex` (`koskari/lib/demand.c`). See
+**Implementation status:** **Complete** (branch `demand_in_eval`). The inject
+loop in `demand_sync_ex` has been removed; in-loop denial guards are in place at
+all P0 and P1 sites. See
 [archive/demand-sync-await-violation-at-site.md](../archive/demand-sync-await-violation-at-site.md)
-for the historical proposal; phase 1 **replaces** the inject-loop half of that
-story with in-loop denial while keeping the same user-visible exception type.
+for the historical proposal that phase 1 supersedes.
 
 **Audience:** maintainers and agents implementing or reviewing this change.
 
@@ -269,49 +269,24 @@ continuation capture in phase 1.
 | `define-demanding` / `Demand` wrapper | No | [demand-wrapper.md](../api/demand-wrapper.md) |
 | `kos_install_boundmethod` unwrapping `Demand` | No | Separate fix |
 | `on-demand?` in `_conditionals.ki` | No | Dyn walk or primitive |
-| Plain Python `async def` in `demand_call` | No | Eager-await mimic (§8.1) |
+| Plain Python `async def` in `demand_call` | **Done** | `demand_step_python_result` in `demand.c` |
 
-### 8.1 Plain Python `demand_call` — eager-await mimic (follow-up)
+### 8.1 Plain Python `demand_call` — eager-await mimic — **Complete**
 
-Today `demand_sync_ex` calls `PyObject_Call` for non-`KosCallable` targets and
-returns whatever comes back. `demand_call(asyncio.sleep, 1)` therefore returns
-a **coroutine object**; it never runs `sleep` and never raises
-`KoskariSyncViolation`. The comment “reject awaitable” in `demand.c` is not
-implemented.
+Implemented as `demand_step_python_result` in `koskari/lib/demand.c` (branch
+`demand_in_eval`). Called from both plain-Python branches of `demand_sync_ex`
+(initial non-`KosCallable` check and post-`BoundMethod`-unwrap check). Uses
+`__await__()` + `send(None)` + `.throw(KoskariSyncViolation)` on suspension,
+consistent with the in-eval `eager_step_awaitable` policy. No `KosContext` is
+created.
 
-**Intended behavior:** mimic the in-eval **`push_or_await`** policy without
-spinning up a `KosContext`:
+Tests added to `TestDemandSyncPlainPython`:
+- `test_python_coroutine_completes_immediately`
+- `test_python_coroutine_suspends_raises_violation`
+- `test_python_coroutine_catches_violation_and_returns`
 
-1. `result = PyObject_Call(callable, args, kwargs)` (or vectorcall equivalent).
-2. If `result` is not awaitable (`tp_as_async` / `am_await`), return it.
-3. If awaitable, run the same **one speculative step** as
-   `eager_step_awaitable` in `eval/eval_utils.c` (`__await__()` then
-   `send(None)`):
-   - **`StopIteration(value)`** → return the completed value (sync path
-     succeeded).
-   - **`send` returns an intermediate value** (would suspend toward an event
-     loop) → raise **`KoskariSyncViolation`** at the host boundary (no
-     `py_await_iter` stash; no second eval drive).
-   - **Other exception from `send`** → propagate normally.
-
-So `demand_call(asyncio.sleep, 1)` raises when `sleep(1)` cannot complete on
-the first eager step — same practical rule as Koskari code under demand hitting
-`(await (asyncio.sleep 1))`, but implemented in the **`demand_sync_ex` plain
-Python branch** rather than in opcode handlers.
-
-**Implementation hints:**
-
-- Factor `eager_step_awaitable` (or a demand-only variant that does not touch
-  `KosContext_PY_AWAIT_ITER`) into a shared helper exported from `eval.h` /
-  `demand.h` so eval and `demand.c` stay in sync.
-- Apply the same check when `BoundMethod` / `Demand.__call__` resolves to a
-  plain Python callable.
-- **Do not** loop `send` or run `asyncio` inside `demand_call`; one step only.
-- Tests: `demand_call(asyncio.sleep, 0)` may complete if the eager step
-  finishes immediately in the environment; `demand_call(asyncio.sleep, 1)` (or
-  any call that yields on first step) must raise `KoskariSyncViolation`.
-
-Phase 1 can land without §8.1; Koskari-under-demand eager deny is the priority.
+Call flattening for `Demand(KosCallable)` from bytecode is the next open item —
+see [demand-evalex-phase2.md](demand-evalex-phase2.md).
 
 ---
 
@@ -333,18 +308,18 @@ if one exists; otherwise a small `build_expr` repro in `test_demand_sync.py`.
 
 ---
 
-## 10. Implementation checklist (agent)
+## 10. Implementation checklist — **All complete** (branch `demand_in_eval`)
 
-1. [ ] `#define KOS_FRAME_DEMAND` in `dynchain.h` (or `eval.h` if preferred).
-2. [ ] `kos_eval_in_demand` + `kos_eval_demand_deny_suspend` (+ `demand.h` export for exception).
-3. [ ] Guards at P0 sites (§5).
-4. [ ] Guards at P1 YIELD / YIELD_FROM if tests require.
-5. [ ] `KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND` in `demand_sync_ex`.
-6. [ ] Remove inject loop in `demand_sync_ex`.
-7. [ ] Preserve `KOS_FRAME_DEMAND` in `kos_dynframe_reset_for_tail`.
-8. [ ] Update `demand.c` header comment and archive cross-link.
-9. [ ] `tox -qe py -- tests/lib/test_demand_sync.py`
-10. [ ] Optional: note in [demand-wrapper.md](../api/demand-wrapper.md) §implementation status that in-eval denial is phase 1 of demand-evalex.
+1. [x] `#define KOS_FRAME_DEMAND` in `dynchain.h`.
+2. [x] `kos_eval_in_demand` (O(1), reads current frame) + `kos_eval_demand_deny_suspend`; `kos_demand_set_sync_violation` in `demand.h`/`demand.c`.
+3. [x] Guards at P0 sites: `push_or_await_common`, `op_push_or_await`, `next_from_python_async_iter`, bare `AWAIT` (arg==0).
+4. [x] Guards at P1 sites: `YIELD.c`, `YIELD_FROM.c` (`yield_from_emit_yield` and async-delegate path).
+5. [x] `KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND` at `run_eval:` in `demand_sync_ex`.
+6. [x] Inject loop removed from `demand_sync_ex`; `KOS_EV_AWAIT`/`KOS_EV_YIELD` post-eval case is now a bug-report `RuntimeError`.
+7. [x] `kos_dynframe_reset_for_tail`: `= 0` → `&= KOS_FRAME_DEMAND`. Child frames inherit flag in `kos_dyn_push_frame`.
+8. [x] `demand.c` module docstring and phase1.md implementation status updated.
+9. [x] `tox -qe py -- tests/lib/test_demand_sync.py` passes (27 tests).
+10. [x] `demand-wrapper.md` status updated; phase 2 cross-linked.
 
 ---
 
