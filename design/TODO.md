@@ -72,6 +72,18 @@ Ref: [api/tracing.md](api/tracing.md).
 
 ## Compiler
 
+### Tail-call promotion bytecode pass
+
+Move tail-call optimization out of special forms into a `complete()` bytecode
+pass: specials always emit `CALL*`; `promote_tail_calls` rewrites eligible sites
+to `TAIL_CALL*` using extent-aware heuristics. Removes the `tc` parameter from
+all special signatures and simplifies `compile/call` and `compile/call-attr`.
+Gate with `Compiler.tco_enabled` for now; pragma gating deferred. v1 promotes
+only opcodes that already have `TAIL_CALL` analogues (`CALL`, `CALL_NAMES`,
+`CALL_STAR`).
+
+Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
+
 ### Fenced foreign literal
 
 Add a compile-time fenced foreign-literal mechanism: the reader recognizes
