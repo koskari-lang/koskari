@@ -32,4 +32,19 @@ typedef enum PySendResult {
 PySendResult PyIter_Send(PyObject *iter, PyObject *arg, PyObject **presult);
 
 
+/* Py_NewRef / Py_XNewRef added in 3.10 */
+__attribute__((always_inline))
+static inline PyObject *Py_NewRef(PyObject *obj) {
+  Py_INCREF(obj);
+  return obj;
+}
+
+
+__attribute__((always_inline))
+static inline PyObject *Py_XNewRef(PyObject *obj) {
+  Py_XINCREF(obj);
+  return obj;
+}
+
+
 // The end.
