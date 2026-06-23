@@ -36,8 +36,6 @@ KOS_OP_HANDLER(POP_WIND) {
   KosOpResult kr = kos_dyn_pop_top(es, KOS_XFER_EVENT_RETURN);
   if (kr.kind == KOS_RES_REPROLOGUE) {
     /* after-thunk frame started; eval continues in thunk; RETURN resumes unwind */
-    KosEvalState_SetUnwindTargetFrame(
-        es, (KosDynFrame *) KosDynNode_PARENT((KosDynNode *) wind));
     return EVAL_NORMAL();
   }
   if (kr.kind == KOS_RES_RAISE) {

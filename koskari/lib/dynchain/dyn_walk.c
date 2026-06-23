@@ -286,12 +286,10 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
     KosOpResult pop_res = kos_dyn_pop_one_unwind_walk(es, KOS_XFER_EVENT_RETURN);
     if (pop_res.kind == KOS_RES_AWAIT) {
       Py_XDECREF(pop_res.val);
-      KosEvalState_SetUnwindTargetFrame(es, frame);
       Py_DECREF(val);
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
     if (pop_res.kind == KOS_RES_REPROLOGUE) {
-      KosEvalState_SetUnwindTargetFrame(es, frame);
       Py_DECREF(val);
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
@@ -300,7 +298,6 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
       return -1;
     }
   }
-  KosEvalState_SetUnwindTargetFrame(es, NULL);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] walk_return: done, dyn_top=%p",
          (void *) KosEvalState_DYN_TOP(es));
@@ -343,17 +340,14 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
     KosOpResult pop_res = kos_dyn_pop_one_unwind_walk(es, event);
     if (pop_res.kind == KOS_RES_AWAIT) {
       Py_XDECREF(pop_res.val);
-      KosEvalState_SetUnwindTargetFrame(es, frame);
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
     if (pop_res.kind == KOS_RES_REPROLOGUE) {
-      KosEvalState_SetUnwindTargetFrame(es, frame);
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
     if (pop_res.kind != KOS_RES_NORMAL)
       return -1;
   }
-  KosEvalState_SetUnwindTargetFrame(es, NULL);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));
   return 0;
@@ -430,11 +424,9 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
     KosOpResult pop_res = kos_dyn_pop_nonbarrier_top(es, event);
     if (pop_res.kind == KOS_RES_AWAIT) {
       Py_XDECREF(pop_res.val);
-      KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
     if (pop_res.kind == KOS_RES_REPROLOGUE) {
-      KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
     if (pop_res.kind != KOS_RES_NORMAL) {
@@ -652,22 +644,18 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
         saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
       }
       if (pop_res.kind == KOS_RES_AWAIT) {
-        KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
         return pop_res;
       }
       if (pop_res.kind == KOS_RES_REPROLOGUE) {
-        KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
         return EVAL_REPROLOGUE();
       }
       if (pop_res.kind != KOS_RES_NORMAL) {
         if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
           KosOpResult exc_res = kos_dyn_exception_unwind(es, top);
           if (exc_res.kind == KOS_RES_AWAIT) {
-            KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
             return exc_res;
           }
           if (exc_res.kind == KOS_RES_REPROLOGUE) {
-            KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
             return EVAL_REPROLOGUE();
           }
           if (exc_res.kind == KOS_RES_NORMAL)

@@ -907,7 +907,6 @@ KosContext *KosContext_New(KosDynFrame *top) {
   KosContext_DYN_TOP(ctx) = (KosDynNode *) top;
   KosContext_FRAME_TOP(ctx) = top;
 
-  KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
   KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
 
@@ -2034,28 +2033,34 @@ static KosOpResult eval_event_return(KosEvalState *es, PyObject *val) {
   KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
   int has_parent = (parent != NULL && ! KosDynNode_IS_GEN(parent));
 
-  KosTransitionReq treq = {
-    .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-    .target_frame = KosEvalState_FRAME(es),
-    .payload = val,
-  };
-  KosTransitionResult tres = {0};
-  if (KosEvalState_Transition(es, &treq, &tres) < 0) {
-    Py_DECREF(val);
-    return EVAL_FATAL();
-  }
-  int unw = tres.raw;
-  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    KosEvalState_SetPendingReturn(es, val, has_parent);
-    return EVAL_REPROLOGUE();
-  }
-  if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
-    /* val delivered to finally block; eval resumes there */
-    return EVAL_REPROLOGUE();
-  }
-  if (unw < 0) {
-    Py_DECREF(val);
-    return EVAL_FATAL();
+  /* Fast path: dyn_top is the frame itself — no try/with/wind nodes are
+     nested inside this call, so the walk has nothing to do.  Skip the
+     transition dispatch entirely and fall through to pop + deliver. */
+  if (unlikely(KosEvalState_DYN_TOP(es)
+               != (KosDynNode *) KosEvalState_FRAME(es))) {
+    KosTransitionReq treq = {
+      .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
+      .target_frame = KosEvalState_FRAME(es),
+      .payload = val,
+    };
+    KosTransitionResult tres = {0};
+    if (KosEvalState_Transition(es, &treq, &tres) < 0) {
+      Py_DECREF(val);
+      return EVAL_FATAL();
+    }
+    int unw = tres.raw;
+    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      KosEvalState_SetPendingReturn(es, val, has_parent);
+      return EVAL_REPROLOGUE();
+    }
+    if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
+      /* val delivered to finally block; eval resumes there */
+      return EVAL_REPROLOGUE();
+    }
+    if (unw < 0) {
+      Py_DECREF(val);
+      return EVAL_FATAL();
+    }
   }
 
   if (has_parent) {

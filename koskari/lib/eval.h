@@ -224,8 +224,6 @@ struct KosContext {
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
   PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
 
-  KosDynFrame *unwind_target_frame;
-
   /* When unwind returns ASYNC_STARTED (wind after-thunk), RETURN stashes the
      value here and resumes unwinding when the thunk returns.  If
      pending_return_to_parent is set, push onto parent and detach; else
@@ -264,7 +262,6 @@ struct KosContext {
 #define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
-#define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
 #define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
@@ -524,11 +521,6 @@ void KosEvalState_SetPendingReturn(
     KosEvalState *es,
     PyObject *val,
     int to_parent);
-
-/**
-  Target frame for resume after async dynamic-wind pop (KOS_DYN_UNWIND_ASYNC_STARTED).
-*/
-void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame);
 
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,

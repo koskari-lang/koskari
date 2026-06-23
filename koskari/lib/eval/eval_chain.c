@@ -204,14 +204,6 @@ void KosEvalState_SetPendingReturn(
 }
 
 
-void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
-}
-
-
 static inline int KosEvalState_TakeInjectThrow(
     KosEvalState *es,
     PyObject **type_out,
