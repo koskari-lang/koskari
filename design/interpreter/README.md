@@ -40,7 +40,9 @@ Completed design drafts (historical) live under **[archive/](../archive/)** — 
 `yield-from-revamped-operational-model.md`, `eval-loop-mode-refactor.md`, `eval-result-unification.md`,
 `demand-evalex-phase1.md`, `demand-evalex-phase2.md`,
 `interrupted-transfer-plans.md`, `bytecode-metadata-tables.md`,
-`node-owned-operand-stack.md`, `kos_eval_state_api_migration.md`.
+`node-owned-operand-stack.md`, `kos_eval_state_api_migration.md`,
+`kosevent-elimination.md`, `kosevent-elimination-merged.md`,
+`kosevent-elimination-simplification-response.md`.
 
 ## Implementation Status
 
