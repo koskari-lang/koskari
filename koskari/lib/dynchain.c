@@ -1122,7 +1122,7 @@ KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
       return wr;
     }
     case KOS_DYN_CC_RAISE: {
-      int r = cc_raise_unwind(ctx, node, NULL);
+      int r = cc_raise_unwind(ctx, node);
       return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
     }
     case KOS_DYN_GEN:
