@@ -21,7 +21,6 @@
 */
 
 KOS_OP_HANDLER(BREAK) {
-  KosEvent _op_ev = {0};
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 
@@ -50,12 +49,10 @@ KOS_OP_HANDLER(BREAK) {
       .xfer_event = KOS_XFER_EVENT_BREAK,
       .payload = result,
     };
-    KosTransitionResult tres = {0};
-    if (KosEvalState_Transition(es, &treq, &tres, &_op_ev) < 0) {
+    KosOpResult kr = KosEvalState_TransitionOp(es, &treq);
+    if (kr.kind == KOS_RES_RAISE)
       Py_DECREF(result);
-      return EVAL_RAISE();
-    }
-    return kos_op_result_from_int_step(tres.raw, &_op_ev);
+    return kr;
   }
 }
 
