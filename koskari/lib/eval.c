@@ -2083,7 +2083,7 @@ static KosOpResult eval_event_return(KosEvalState *es, PyObject *val) {
 
   /* Root frame / GEN parent: eval is done; but may need iterator boundary
      delivery (e.g. RETURN from a flattened agen inside ITER_NEXT). */
-  SAYF("[eval] RETURN -> KOS_EV_RETURN (root frame)\n");
+  SAY("[eval] RETURN -> boundary (root frame)");
   KosEvalState_MarkDeadAfterReturn(es);
   if (kos_dyn_need_kos_agen_boundary_deliver(es))
     return eval_event_return_deliver_to_boundary(es, val);
@@ -2209,7 +2209,7 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 
   case KOS_RES_RETURN: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(event_return, r = eval_event_return(es, res.val));
+    KOS_TRACE_POST_OP_WRAP(return_boundary, r = eval_event_return(es, res.val));
     return r;
   }
 

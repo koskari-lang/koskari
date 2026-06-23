@@ -245,7 +245,7 @@ void kos_trace_clear(void) {
 
 /* === report builder === */
 
-static int add_fl_section(const PyObject *report) {
+static int add_fl_section(PyObject *report) {
 #if KOS_TRACE_FREELIST
   PyObject *freelists = PyDict_New();
   if (! freelists)
@@ -330,7 +330,7 @@ static int cmp_op_agg_avg_ns_desc(const void *a, const void *b) {
 #endif
 
 
-static int add_events_section(const PyObject *report) {
+static int add_events_section(PyObject *report) {
 #if KOS_TRACE_EVENTS
   PyObject *events = PyDict_New();
   if (! events)
@@ -361,7 +361,7 @@ static int add_events_section(const PyObject *report) {
 }
 
 
-static int add_eval_state_sync_section(const PyObject *report) {
+static int add_eval_state_sync_section(PyObject *report) {
 #if KOS_TRACE_EVAL_SYNC
   PyObject *sec = PyDict_New();
   Py_ssize_t i;
