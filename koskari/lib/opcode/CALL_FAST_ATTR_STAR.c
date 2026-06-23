@@ -55,12 +55,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR_STAR on NULL namespace");
     return EVAL_RAISE();
   }
-  if (! KosNamespace_SupportsFast(ns)) {
-    PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_STAR on %R", ns);
-    return EVAL_RAISE();
-  }
-
-  PyObject *obj = KosNamespace_FastDeref(ns, (size_t) slot_idx);
+  PyObject *obj = kos_ns_fast_deref(ns, (size_t) slot_idx);
   if (! obj)
     return EVAL_RAISE();
 

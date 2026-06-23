@@ -32,17 +32,11 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
                     "SWITCH_EQ_FAST_ATTR invoked on NULL namespace");
     return EVAL_RAISE();
   }
-  if (unlikely(! KosNamespace_SupportsFast(ns))) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "SWITCH_EQ_FAST_ATTR invoked on %R", ns);
-    return EVAL_RAISE();
-  }
-
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a2);
   if (unlikely(! attr_name))
     return EVAL_RAISE();
 
-  PyObject *obj = KosNamespace_FastDeref(ns, (size_t) row.a1);
+  PyObject *obj = kos_ns_fast_deref(ns, (size_t) row.a1);
   if (unlikely(! obj))
     return EVAL_RAISE();
 

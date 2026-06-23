@@ -19,6 +19,7 @@
 
 
 #include <Python.h>
+#include <stdint.h>
 
 
 /* === NamespaceSpec === */
@@ -66,31 +67,24 @@ PyObject *KosNamespaceSpec_New(
 extern PyTypeObject KosNamespaceType;
 
 
-typedef struct KosNameBind {
-  PyObject *name;
-
-  PyObject *held;   // raw? value: reference(value)
-
-  int raw;          // 0 or 1, indicating whether the held value is
-                    // wrapped in a reference or not.
-} KosNameBind;
-
-
-#define KosNameBind_NAME(nb)  (((KosNameBind *)(nb))->name)
-#define KosNameBind_HELD(nb)  (((KosNameBind *)(nb))->held)
-#define KosNameBind_RAW(nb)   (((KosNameBind *)(nb))->raw)
+/* Maximum number of fast slots per namespace. Two uint64_t fields cover
+   bits 0-63 and 64-127 respectively. */
+#define KosNamespace_FAST_SLOT_MAX  128
 
 
 typedef struct KosNamespace {
   PyObject_VAR_HEAD
 
-  PyObject *name;     // PyUnicodeObject
+  PyObject *name;       // PyUnicodeObject
 
-  PyObject *parent;   // KosNamespace
-  PyObject *binds;    // PyDictObject
+  PyObject *parent;     // KosNamespace
+  PyObject *binds;      // PyDictObject
 
-  size_t fast_count;    // count of fast allocated with this Namespace
-  KosNameBind fast[0];  // fast entries
+  size_t fast_count;    // number of fast slots
+  PyObject *fast_names; // PyTupleObject of slot names, shared across copies
+  uint64_t fast_raw_lo; // raw-flag bits for slots 0-63
+  uint64_t fast_raw_hi; // raw-flag bits for slots 64-127
+  PyObject *fast[0];    // slot values: raw value (if raw bit set) or KosRef
 } KosNamespace;
 
 
@@ -262,8 +256,17 @@ int KosNamespace_FastBind(
 #define KosNamespace_FAST_COUNT(ns)             \
   (((KosNamespace *) ns)->fast_count)
 
-#define KosNamespace_GET_FAST(ns, i)            \
-  &(((KosNamespace *) ns)->fast[i])
+#define KosNamespace_FAST_NAMES(ns)             \
+  (((KosNamespace *) ns)->fast_names)
+
+#define KosNamespace_FAST_RAW_LO(ns)            \
+  (((KosNamespace *) ns)->fast_raw_lo)
+
+#define KosNamespace_FAST_RAW_HI(ns)            \
+  (((KosNamespace *) ns)->fast_raw_hi)
+
+#define KosNamespace_GET_FAST_VAL(ns, i)        \
+  (((KosNamespace *) ns)->fast[(i)])
 
 #define KosNamespace_Check(obj)                                         \
   ((obj) && PyType_IsSubtype((obj)->ob_type, &KosNamespaceType))
@@ -314,6 +317,77 @@ PyObject *KosCollectorNamespace_NewFull(
 
 #define KosNamespace_SupportsFast(ns)                                   \
   (KosNamespace_CheckExact(ns) || KosCollectorNamespace_CheckExact(ns))
+
+
+/* === Raw-bit helpers (available to all includers) === */
+
+
+static inline int kos_ns_is_raw(PyObject *ns, size_t idx) {
+  if (idx < 64)
+    return (int) ((KosNamespace_FAST_RAW_LO(ns) >> idx) & 1ULL);
+  else
+    return (int) ((KosNamespace_FAST_RAW_HI(ns) >> (idx - 64)) & 1ULL);
+}
+
+
+static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
+  uint64_t bit;
+  if (idx < 64) {
+    bit = 1ULL << idx;
+    if (raw)
+      KosNamespace_FAST_RAW_LO(ns) |= bit;
+    else
+      KosNamespace_FAST_RAW_LO(ns) &= ~bit;
+  } else {
+    bit = 1ULL << (idx - 64);
+    if (raw)
+      KosNamespace_FAST_RAW_HI(ns) |= bit;
+    else
+      KosNamespace_FAST_RAW_HI(ns) &= ~bit;
+  }
+}
+
+
+/* === Opcode-only fast inline helpers === */
+/*
+   The following inlines are ONLY for use in opcode handlers where the
+   compiler guarantees the namespace type and slot index are valid.
+   Do NOT call them from public API functions or namespace.c internals.
+*/
+
+#include "ref.h"
+
+
+static inline PyObject *kos_ns_fast_deref(PyObject *ns, size_t idx) {
+  if (kos_ns_is_raw(ns, idx)) {
+    PyObject *val = KosNamespace_GET_FAST_VAL(ns, idx);
+    if (! val) {
+      PyObject *names = KosNamespace_FAST_NAMES(ns);
+      if (names && idx < (size_t) PyTuple_GET_SIZE(names))
+        PyErr_Format(PyExc_NameError, "Empty reference: %S",
+                     PyTuple_GET_ITEM(names, (Py_ssize_t) idx));
+      else
+        PyErr_Format(PyExc_NameError, "Empty reference at slot %zu", idx);
+      return NULL;
+    }
+    Py_INCREF(val);
+    return val;
+  } else {
+    return KosRef_Deref(KosNamespace_GET_FAST_VAL(ns, idx));
+  }
+}
+
+
+static inline int kos_ns_fast_store(PyObject *ns, size_t idx, PyObject *val) {
+  if (kos_ns_is_raw(ns, idx)) {
+    Py_INCREF(val);
+    Py_XDECREF(KosNamespace_GET_FAST_VAL(ns, idx));
+    KosNamespace_GET_FAST_VAL(ns, idx) = val;
+    return 0;
+  } else {
+    return KosRef_Store(KosNamespace_GET_FAST_VAL(ns, idx), val);
+  }
+}
 
 
 /* === ModuleNamespace === */

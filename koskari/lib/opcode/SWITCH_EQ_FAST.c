@@ -31,14 +31,8 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST) {
                     "SWITCH_EQ_FAST invoked on NULL namespace");
     return EVAL_RAISE();
   }
-  if (unlikely(! KosNamespace_SupportsFast(ns))) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "SWITCH_EQ_FAST invoked on %R", ns);
-    return EVAL_RAISE();
-  }
-
   size_t idx = (size_t) row.a1;
-  PyObject *rhs = KosNamespace_FastDeref(ns, idx);
+  PyObject *rhs = kos_ns_fast_deref(ns, idx);
   if (unlikely(! rhs))
     return EVAL_RAISE();
 

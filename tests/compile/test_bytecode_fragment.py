@@ -55,7 +55,7 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
     """Tests for the Code type and fragment-based construction."""
 
     async def test_fields(self):
-        """Code stores name, filename, namespace_spec, and yields flag."""
+        """Code stores name, filename, namespace_spec, yields, and uses_fast."""
         nspec = NamespaceSpec(None, (), ())
         instr = ([OpCode.KOS_OP_CONST, None], [OpCode.KOS_OP_RETURN, 1])
         code = Code(nspec, instr, "testing")
@@ -64,6 +64,25 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         self.assertIs(code.namespace_spec, nspec)
         self.assertEqual(len(code.constants_pool), 1)
         self.assertFalse(code.yields)
+        self.assertFalse(code.uses_fast)
+
+    async def test_uses_fast_flag(self):
+        """Code.uses_fast is True when FAST opcodes appear at root scope."""
+        nspec_fast = NamespaceSpec(None, ("x",), ())
+        instr_fast = (
+            [OpCode.KOS_OP_FAST, 0],
+            [OpCode.KOS_OP_RETURN, 1],
+        )
+        code_fast = Code(nspec_fast, instr_fast)
+        self.assertTrue(code_fast.uses_fast)
+
+        nspec_nofast = NamespaceSpec(None, ("x",), ())
+        instr_nofast = (
+            [OpCode.KOS_OP_CONST, 42],
+            [OpCode.KOS_OP_RETURN, 1],
+        )
+        code_nofast = Code(nspec_nofast, instr_nofast)
+        self.assertFalse(code_nofast.uses_fast)
 
     async def test_transform(self):
         """Instruction fragments are resolved: labels, constants, opargs."""
