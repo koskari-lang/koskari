@@ -140,17 +140,14 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
 int kos_dyn_foreach_deliver_yield_kos_agen(
     KosEvalState *es,
     KosDynForeach *fe,
-    struct KosEvent *out_ev) {
+    PyObject *val) {
 
-  PyObject *payload = KosEvent_PAYLOAD(out_ev);
   KosPyAsyncGen *agen;
 
-  if (KosEvalState_StackPushRef(es, payload) < 0) {
+  if (KosEvalState_StackPushRef(es, val) < 0) {
     return -1;
   }
-  Py_DECREF(payload);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
+  Py_DECREF(val);
 
   KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
   agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
@@ -162,9 +159,8 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
 int kos_dyn_foreach_deliver_return_kos_agen(
     KosEvalState *es,
     KosDynForeach *fe,
-    struct KosEvent *out_ev) {
+    PyObject *val) {
 
-  PyObject *val = KosEvent_PAYLOAD(out_ev);
   KosPyAsyncGen *agen;
 
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
@@ -181,8 +177,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
   KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
 
   Py_DECREF(val);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
   return 0;
 }
 

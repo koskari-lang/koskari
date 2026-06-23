@@ -634,6 +634,31 @@ void kos_eval_emit_raise_from_pyerr(
 
 
 /**
+   Inject traceback into the current PyErr in-place, leave PyErr set, and
+   mark the context dead.  Call only when PyErr is set.  When es is non-NULL,
+   flushes live pc/acting_pc onto the top frame first so traceback sees the
+   current instruction.
+
+   This is the successor to kos_eval_emit_raise_from_pyerr for paths that
+   return KosOpResult: the RAISE invariant requires PyErr to be set on every
+   KOS_RES_RAISE boundary, so we inject and restore rather than clear.
+*/
+void kos_eval_prepare_boundary_raise(
+    KosContext *ctx,
+    KosEvalState *es) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
+  if (es)
+    KosEvalState_FlushLiveRegsToFrame(es);
+  PyErr_Fetch(&typ, &val, &tb);
+  inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+  PyErr_Restore(typ, val, tb);
+  kos_eval_mark_context_dead(ctx);
+}
+
+
+/**
    Intercept a KoskariContinuationApply exception and install the appropriate
    transfer plan.  PyErr must be set to KoskariContinuationApply on entry.
 
@@ -1945,8 +1970,8 @@ entry_mode_dispatch:
   }
 
   if (mode == KOS_MODE_RAISE) {
-    kos_eval_emit_raise_from_pyerr(ctx, &_ev, es);
-    return kos_ev_to_opresult(&_ev);
+    kos_eval_prepare_boundary_raise(ctx, es);
+    return EVAL_RAISE();
   }
 
   /* Resume delivery: if we revived with a value and top frame has native_handler, deliver to it */
@@ -2070,17 +2095,13 @@ static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
 static KosOpResult eval_event_yield_deliver_to_boundary(
     KosEvalState *es, PyObject *val) {
 
-  KosEvent _ev = {0};
-  KosEvent_KIND(&_ev) = KOS_EV_YIELD;
-  KosEvent_PAYLOAD(&_ev) = val;
-
-  int r = kos_dyn_deliver_yield_to_iter_boundary(es, &_ev);
+  PyObject *new_val = NULL;
+  int r = kos_dyn_deliver_yield_to_iter_boundary(es, val, &new_val);
 
   if (r < 0)
     return EVAL_FATAL();
   if (r == 1) {
-    /* YIELD_FROM: _ev.payload is a new value; original val was consumed */
-    PyObject *new_val = KosEvent_PAYLOAD(&_ev);
+    /* YIELD_FROM: new_val is the outer yield value; inner val was consumed */
     KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
     return EVAL_YIELD(new_val);
   }
@@ -2096,11 +2117,7 @@ static KosOpResult eval_event_yield_deliver_to_boundary(
 static KosOpResult eval_deliver_iterator_boundary_return_step(
     KosEvalState *es, PyObject *val) {
 
-  KosEvent _ev = {0};
-  KosEvent_KIND(&_ev) = KOS_EV_RETURN;
-  KosEvent_PAYLOAD(&_ev) = val;
-
-  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, &_ev);
+  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, val);
 
   if (dr < 0) {
     if (PyErr_Occurred())
@@ -2272,8 +2289,7 @@ static KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
 
   {
-    KosEvent _ev = {0};
-    int bd = kos_dyn_try_deliver_iterator_boundary_after_pop(es, &val, &_ev);
+    int bd = kos_dyn_try_deliver_iterator_boundary_after_pop(es, &val);
     /* val is consumed via *p_val=NULL on bd==0 or bd<0 */
     if (bd == 0)
       return EVAL_REPROLOGUE();

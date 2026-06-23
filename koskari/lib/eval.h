@@ -932,6 +932,18 @@ void kos_eval_emit_raise_from_pyerr(
     KosEvalState *es);
 
 
+/**
+   Inject traceback into the current PyErr in-place, leave PyErr set, and
+   mark the context dead.  Call only when PyErr is set.  Successor to
+   kos_eval_emit_raise_from_pyerr for KosOpResult-returning paths: the RAISE
+   invariant requires PyErr to remain set on every KOS_RES_RAISE boundary.
+   When es is non-NULL, flushes live pc/acting_pc first.
+*/
+void kos_eval_prepare_boundary_raise(
+    KosContext *ctx,
+    KosEvalState *es);
+
+
 int koskari_eval_init(PyObject *mod);
 int koskari_eval_clear(PyObject *mod);
 

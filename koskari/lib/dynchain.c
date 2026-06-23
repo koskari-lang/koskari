@@ -2221,16 +2221,15 @@ int kos_dyn_finish_delimited_pop_return(
 
 
 /**
-   Shared path for KOS_EV_RETURN delivery to KOS_DYN_NEXT or awaiting
+   Shared path for RETURN delivery to KOS_DYN_NEXT or awaiting
    KOS_DYN_FOREACH after a flattened Koskari async generator completes.
-   Expects KosEvent_KIND(out_ev) == KOS_EV_RETURN and payload set.
+   val ownership is transferred to the boundary consumer.
 
-   :return: same as kos_dyn_next_deliver_return / foreach deliver (0 success,
-      -1 error; next may leave no PyErr for REPROLOGUE)
+   :return: 0 on success, -1 on error (next may leave no PyErr for REPROLOGUE)
 */
 int kos_dyn_deliver_iterator_boundary_return_event(
     KosEvalState *es,
-    struct KosEvent *out_ev) {
+    PyObject *val) {
 
   // TODO: this is bad, it hard-coded specific node types. It should use
   // a capability-based approach.
@@ -2238,15 +2237,15 @@ int kos_dyn_deliver_iterator_boundary_return_event(
   KosDynNext *const next = kos_dyn_find_next_above_frame(es);
 
   if (next)
-    return kos_dyn_next_deliver_return(es, out_ev);
+    return kos_dyn_next_deliver_return(es, val);
 
   KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
   if (fe)
-    return kos_dyn_foreach_deliver_return_kos_agen(es, fe, out_ev);
+    return kos_dyn_foreach_deliver_return_kos_agen(es, fe, val);
 
   KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
   if (yf)
-    return kos_dyn_yield_from_deliver_inner_return(es, yf, out_ev);
+    return kos_dyn_yield_from_deliver_inner_return(es, yf, val);
 
   PyErr_SetString(PyExc_RuntimeError,
                   "iterator boundary RETURN without NEXT/FOREACH/YIELD_FROM "
@@ -2256,18 +2255,21 @@ int kos_dyn_deliver_iterator_boundary_return_event(
 
 
 /**
- Delivers KOS_EV_YIELD to the first matching iterator boundary, in the same
+ Delivers a YIELD value to the first matching iterator boundary, in the same
  order as kos_dyn_deliver_iterator_boundary_return_event: NEXT, then
  FOREACH (Koskari agen await), then YIELD_FROM.
 
+ :param val: inner yield value; ownership transferred to the boundary consumer.
+ :param out_new_yield_val: set to the new outer yield value when r==1
+        (YIELD_FROM path); caller owns the reference.
  :return: 0 if NEXT or FOREACH delivered (caller should REPROLOGUE);
-          1 if YIELD_FROM delivered (caller sets KOS_SUSP_YIELD and returns
-          STOP to the outer driver);
+          1 if YIELD_FROM delivered (*out_new_yield_val set; caller yields);
           -1 on error
 */
 int kos_dyn_deliver_yield_to_iter_boundary(
     KosEvalState *es,
-    struct KosEvent *out_ev) {
+    PyObject *val,
+    PyObject **out_new_yield_val) {
 
   // TODO: this is bad, it hard-coded specific node types. It should use
   // a capability-based approach.
@@ -2275,21 +2277,21 @@ int kos_dyn_deliver_yield_to_iter_boundary(
   KosDynNext *const next = kos_dyn_find_next_above_frame(es);
 
   if (next) {
-    if (kos_dyn_next_deliver_yield(es, out_ev) < 0)
+    if (kos_dyn_next_deliver_yield(es, val) < 0)
       return -1;
     return 0;
   }
 
   KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
   if (fe) {
-    if (kos_dyn_foreach_deliver_yield_kos_agen(es, fe, out_ev) < 0)
+    if (kos_dyn_foreach_deliver_yield_kos_agen(es, fe, val) < 0)
       return -1;
     return 0;
   }
 
   KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
   if (yf) {
-    if (kos_dyn_yield_from_deliver_inner_yield(es, yf, out_ev) < 0)
+    if (kos_dyn_yield_from_deliver_inner_yield(es, yf, val, out_new_yield_val) < 0)
       return -1;
     return 1;
   }
@@ -2315,20 +2317,14 @@ int kos_dyn_deliver_yield_to_iter_boundary(
 */
 int kos_dyn_try_deliver_iterator_boundary_after_pop(
     KosEvalState *es,
-    PyObject **p_val,
-    struct KosEvent *out_ev) {
-
-  PyObject *val;
+    PyObject **p_val) {
 
   if (! kos_dyn_need_kos_agen_boundary_deliver(es)) {
     return 1;
   }
 
-  val = *p_val;
-  KosEvent_KIND(out_ev) = KOS_EV_RETURN;
-  KosEvent_PAYLOAD(out_ev) = val;
-
-  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, out_ev);
+  PyObject *val = *p_val;
+  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, val);
   if (dr < 0) {
     if (PyErr_Occurred()) {
       *p_val = NULL;

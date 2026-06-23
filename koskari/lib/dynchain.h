@@ -1210,34 +1210,35 @@ KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es);
 
 void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *node);
 
-int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev);
+int kos_dyn_next_deliver_yield(KosEvalState *es, PyObject *val);
 
-int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev);
+int kos_dyn_next_deliver_return(KosEvalState *es, PyObject *val);
 
 int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynForeach *fe, PyObject *val);
 
 int kos_dyn_foreach_deliver_return_kos_agen(
-    KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynForeach *fe, PyObject *val);
 
 int kos_dyn_need_kos_agen_boundary_deliver(KosEvalState *es);
 
 KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es);
 
 int kos_dyn_yield_from_deliver_inner_yield(
-    KosEvalState *es, KosDynYieldFrom *yf, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynYieldFrom *yf,
+    PyObject *inner_val, PyObject **out_new_yield_val);
 
 int kos_dyn_yield_from_deliver_inner_return(
-    KosEvalState *es, KosDynYieldFrom *yf, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
 
 int kos_dyn_deliver_iterator_boundary_return_event(
-    KosEvalState *es, struct KosEvent *out_ev);
+    KosEvalState *es, PyObject *val);
 
 int kos_dyn_deliver_yield_to_iter_boundary(
-    KosEvalState *es, struct KosEvent *out_ev);
+    KosEvalState *es, PyObject *val, PyObject **out_new_yield_val);
 
 int kos_dyn_try_deliver_iterator_boundary_after_pop(
-    KosEvalState *es, PyObject **p_val, struct KosEvent *out_ev);
+    KosEvalState *es, PyObject **p_val);
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 
