@@ -1,5 +1,11 @@
 # Demand in-eval denial (phase 1)
 
+**Status:** Implemented (archived 2026-06-22). Canonical summary:
+[EVALUATOR.md](../EVALUATOR.md) §7 (demand and `KOS_FRAME_DEMAND`);
+[api/demand-wrapper.md](../api/demand-wrapper.md) (public API).
+
+---
+
 This document specifies **phase 1** of demand-scoped evaluation: deny suspension
 **inside the evaluator** when execution is under a demand frame marker, instead
 of returning `KOS_EV_AWAIT` / `KOS_EV_YIELD` to an outer host loop that injects

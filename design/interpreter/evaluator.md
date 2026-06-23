@@ -124,6 +124,28 @@ struct KosStackBlock {
 };
 ```
 
+### Operand stack authority
+
+The active operand stack for execution is **`KosContext.block`** (during RUN,
+mirrored on **`KosEvalState`** via **`KosEvalState_Stack*`** helpers). That
+pointer tracks the innermost **`KosDynNode.stack`** extent installed on the
+dynamic chain — not a separate “frame stack” authority.
+
+Rules (landed; archived proposal [node-owned-operand-stack.md](../archive/node-owned-operand-stack.md)):
+
+1. **Single source of truth** — opcodes push/pop via **`KosEvalState_Stack*`** /
+   **`ctx->block`**; they do not infer region boundaries from
+   **`KosStackBlock.back`** on the hot path.
+2. **Symmetric lifecycle** — installing a dyn node that owns a stack extent
+   sets **`ctx->block`** to that node's **`stack`**; uninstalling restores the
+   previous extent (TRY, FINALLY, LOOP, FOREACH, WITH, COLLECT, etc.).
+3. **Node-owned snapshots** — continuation capture and transfer plans clone or
+   reinstall nodes together with their owned **`stack`** blocks so chain and
+   operand storage stay aligned across delimited transfer.
+
+Region nodes without an owned stack (**`stack == NULL`**) inherit the current
+block from an ancestor frame or enclosing extent.
+
 ### KosEvent — Boundary Event from koskari_eval
 
 Driver-facing stop reasons are exactly these `KosEventKind` values (plus `KOS_EV_NONE` for cleared in-loop state). Internal staging of parent delivery after a callee **RETURN** does **not** add new public kinds: opcodes return `EVAL_PARENT_RETURN(val)` (`KOS_RES_PARENT_RETURN` in `KosOpResult`) and `cg_handle_op_result` dispatches to `eval_parent_return_deliver` (see **Opcode result dispatch** under the drive loop).

@@ -163,13 +163,13 @@ binary / koskari shebang for installed commands.
   continuation while a transfer plan is active, the outer plan is suspended on
   **`plan_stack`**, the inner transfer completes, then the outer is replanned via
   **`kos_build_direct_install_plan`**. See
-  [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5;
+  [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §5;
   tests in **`TestDynWindContinuations`**.
 - **Failed transfer abandonment (done):** on exception during a transfer step,
   abandon plan + **`plan_stack`** and dispatch via **`try_local`** on the
   manifested chain (in-place migration; no scratch-space transfer). Foreign
   cc-unwind sentinel re-emit is carved out (signal delivery, not failure). See
-  [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §4.
+  [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §4.
 
 ---
 

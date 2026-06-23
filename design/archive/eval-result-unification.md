@@ -1,7 +1,13 @@
 # Eval result unification: collapsing KosOpOutcome + out_ev into KosOpResult
 
+**Status:** Implemented (archived 2026-06-22). Canonical summary:
+[EVALUATOR.md](../EVALUATOR.md) §3 (opcode signaling, `KosOpResult` / `EVAL_*`
+macros). Supersedes [eval-loop-mode-refactor.md](eval-loop-mode-refactor.md).
+
+---
+
 This document is a follow-up to
-[event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md).
+[event-driven-eval-event-handlers.md](../interpreter/event-driven-eval-event-handlers.md).
 That document addressed centralising event handling inside the eval loop.
 This document addresses the layer below it: the communication channel from
 opcode handlers back to the eval loop.
@@ -1098,7 +1104,7 @@ incorrect as written; those defines remain load-bearing.
 
 Four design files updated; no behavior changes.
 
-**`design/interpreter/eval-result-unification.md` (this file):**
+**`design/archive/eval-result-unification.md` (this file):**
 - Preamble updated from "speculative" to "all phases complete"; commit refs added.
 
 **`design/interpreter/evaluator.md`:**
@@ -1112,7 +1118,7 @@ Four design files updated; no behavior changes.
 - "Authoritative handler shape" block updated to `KosOpResult op_NAME(es, insn)`;
   note added that Part 1 `KOS_OP_POST_ERR` counts are stale (those sites now use `EVAL_RAISE()`).
 
-**`design/interpreter/demand-evalex-phase1.md`:**
+**`archive/demand-evalex-phase1.md`:**
 - Propagation paragraph: replaced `KOS_OP_POST_ERR → eval_phase_post_opcode` chain
   with `EVAL_RAISE() → cg_handle_op_result → eval_event_raise` description.
 - Guard sites table P2 row: replaced `eval_phase_post_opcode_tail` reference with

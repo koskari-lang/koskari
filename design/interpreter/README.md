@@ -16,15 +16,14 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 
 ## Contents
 
-- **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`)
-- **bytecode-metadata-tables.md**: Static metadata tables (location table, extent table with tagged-union KosExtentDesc); O(1) control targets, no forward scans; JUMP locality validation; **implemented** in bytecode.c
+- **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`); extent/location tables — archived spec [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
 - **bytecode-finalization.md**: Final form phase design — collect/size/allocate/emit pipeline, identity-based cpool dedup, unified block with extra table; **design proposal**
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, phase flow, opcode signaling, exceptions, transfer plans, tail calls, call installs, and play-by-play scenarios
 - **iteration-yield-boundaries.md**: YIELD vs YIELD_FROM vs PUSH_FOREACH/ITER_NEXT — implementation map, underlying calls, consolidation proposals
 - **opcode-eval-helpers-inventory.md**: Static helpers in `eval.c` and opcode `.c` files — opcode cross-reference, redundancies, suggested public names for native/runtime API
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
-- **demand-evalex-phase1.md**: Phase 1 — in-eval `KoskariSyncViolation` at AWAIT/YIELD under `KOS_FRAME_DEMAND`; remove `demand_sync_ex` inject loop (implementation checklist for agents)
+- **demand-evalex-phase1.md** / **demand-evalex-phase2.md** (archived under [archive/](../archive/)): demand in-eval denial and call flattening — see [EVALUATOR.md](../EVALUATOR.md) §7 and [api/demand-wrapper.md](../api/demand-wrapper.md)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView; proposed CAPTURE_FRAME opcode is design-only, see that doc §5)
 - **callcc.md**: Call/cc implementation design (current PUSH delimited invoke)
 - **delimited-invoke-model.md**: Target delimited invoke — lineage fork, bookmarked return, double-wind fix (not implemented)
@@ -38,7 +37,10 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 Completed design drafts (historical) live under **[archive/](../archive/)** — e.g.
 `dynamic-node-unified-api.md` (partial dynnode migration spec), `compiler.md` (stub),
 `dynnode-event-model.md`, `yield-from-execution-model.md`,
-`yield-from-revamped-operational-model.md`, `eval-loop-mode-refactor.md`, `block-quasiquote.md`.
+`yield-from-revamped-operational-model.md`, `eval-loop-mode-refactor.md`, `eval-result-unification.md`,
+`demand-evalex-phase1.md`, `demand-evalex-phase2.md`,
+`interrupted-transfer-plans.md`, `bytecode-metadata-tables.md`,
+`node-owned-operand-stack.md`, `kos_eval_state_api_migration.md`.
 
 ## Implementation Status
 

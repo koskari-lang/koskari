@@ -9,12 +9,12 @@ exposes the wrapper type as **`demand`** (constructor), plus `demand_call` and
 `demand_apply`; Ki bootstrap binds the name **`demand`** to that type.
 `demand_sync` remains available as a deprecated alias for `demand_call`.
 In-eval suspend denial (frame marker, inject loop removed) is **complete** — see
-[interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md).
+[archive/demand-evalex-phase1.md](../archive/demand-evalex-phase1.md).
 Plain-Python eager-await enforcement (`demand_step_python_result`) is also
-complete (branch `demand_in_eval`). Call flattening (`KosDemandType` converted
+complete. Call flattening (`KosDemandType` converted
 to `KosCallableTypeObject`; CALL opcode dispatches through `demand_kos_install`)
 is **complete** — see
-[interpreter/demand-evalex-phase2.md](../interpreter/demand-evalex-phase2.md).
+[archive/demand-evalex-phase2.md](../archive/demand-evalex-phase2.md).
 
 ---
 

@@ -2,7 +2,7 @@
 
 This document describes the operation of the koskari eval loop in `koskari/lib/eval.c`: its stages, how opcodes are invoked and signal back, exception handling, control transit (event-driven handle/unwind model), transfer plans, tail calls, call installs, and resumption paths.
 
-Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval/eval_gil.c` (included into `eval.c`; `koskari_gil_drop_requested`), `koskari/lib/eval/eval_chain.c` (included into `eval.c`; transfer-plan drain and replan), `koskari/lib/eval.h` (including suspension tagging, Python await/resume bridge fields, and domain TLS scope wrappers in `eval.c`), `koskari/lib/dynchain.c` / `koskari/lib/dynchain.h` / `koskari/lib/dynchain/dyn_walk.c` / `koskari/lib/dynchain/xfer_plan.c` (walk and xfer units are `#include`d by `dynchain.c`), and `design/interpreter/evaluator.md`. For the staged `KosEvalState` surface and migration rationale, see `design/kos_eval_state_api_migration.md`. For live-field authority, choke-point funnel, and removing scatter `SyncFromContext` (performance; behavioral freeze), see `design/interpreter/eval-state-live-authority.md`.
+Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval/eval_gil.c` (included into `eval.c`; `koskari_gil_drop_requested`), `koskari/lib/eval/eval_chain.c` (included into `eval.c`; transfer-plan drain and replan), `koskari/lib/eval.h` (including suspension tagging, Python await/resume bridge fields, and domain TLS scope wrappers in `eval.c`), `koskari/lib/dynchain.c` / `koskari/lib/dynchain.h` / `koskari/lib/dynchain/dyn_walk.c` / `koskari/lib/dynchain/xfer_plan.c` (walk and xfer units are `#include`d by `dynchain.c`), and `design/interpreter/evaluator.md`. For the staged `KosEvalState` surface, see `design/archive/kos_eval_state_api_migration.md` (archived). For live-field authority, choke-point funnel, and removing scatter `SyncFromContext` (performance; behavioral freeze), see `design/interpreter/eval-state-live-authority.md`.
 
 ---
 
@@ -293,7 +293,7 @@ When a wind thunk invokes a nested continuation during an active plan, the outer
 plan is suspended on **`plan_stack`**. After the inner plan drains,
 **`kos_resume_transfer_plan`** pops the outer, clones **`original_target`** before
 disarm (UAF avoidance), rebuilds via **`kos_build_direct_install_plan`**, and
-continues draining. See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §5.
+continues draining. See [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §5.
 
 **Failed transfer (implemented):** on step failure (except foreign cc-unwind
 sentinel re-emit), **`kos_abandon_transfer_nest`** disarms the plan and frees
@@ -301,7 +301,7 @@ sentinel re-emit), **`kos_abandon_transfer_nest`** disarms the plan and frees
 chain. Return `1` continues the eval loop when a handler applies; unhandled
 exceptions emit **`KOS_EV_RAISE`**. **`KOS_DYN_CC_RAISE`** sentinel steps emit
 **`KOS_EV_RAISE`** upward without **`try_local`**. See
-[interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §3–§4.
+[archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §3–§4.
 
 ### 2.3 Phase 3: Pending Exception Check
 
@@ -890,9 +890,10 @@ suspension sites rely solely on the centralized check in `eval_event_await`.
 callable's wants-frame slot, so a `BoundMethod(Demand(fn))` correctly reports
 the same flattenability as `Demand(fn)` alone.
 
-See [design/interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md)
-and [design/interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md)
-for full implementation detail.
+See [api/demand-wrapper.md](api/demand-wrapper.md) and [EVALUATOR.md](EVALUATOR.md) §7
+(demand and `KOS_FRAME_DEMAND`). Archived implementation specs:
+[archive/demand-evalex-phase1.md](archive/demand-evalex-phase1.md),
+[archive/demand-evalex-phase2.md](archive/demand-evalex-phase2.md).
 
 ---
 
@@ -1017,7 +1018,7 @@ Tests: **`TestDynWindContinuations`** in `tests/compile/specials/test_dyn_wind.p
 4. **Thunk bytecode raise** under **`KOS_XFER_SUSPENDED_AWAIT`**: prologue **`eval_phase_pending_exception`** runs **`process_raise`** (which abandons the plan) before plan drain; same **`try_local`** path.
 5. Manifested dyn chain is left wherever steps got to; no transactional rollback to the invoke site.
 
-See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md) §4.
+See [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §4.
 
 ### 9.9 Scenario: Ctrl-C during a tight bytecode loop
 
@@ -1051,15 +1052,18 @@ See [interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer
 
 ## 11. Related Documentation
 
-- [design/interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) — proposed domain-TLS **`maybe_cooperate()`** / **`ensure_gil()`** (beyond current eval-loop polling)
-- [design/TODO.md](TODO.md) — open work including GIL MVP notes
-- [design/kos_eval_state_api_migration.md](kos_eval_state_api_migration.md) — `KosEvalState_*` facade, opcode migration, verification greps
+- [design/interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) — eval-loop GIL polling (implemented); proposed domain-TLS **`maybe_cooperate()`** / **`ensure_gil()`**
+- [design/TODO.md](TODO.md) — open work including GIL expansion and async nested await during transfer
+- [design/archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md) — archived `KosEvalState_*` opcode migration ledger
+- [design/archive/eval-result-unification.md](archive/eval-result-unification.md) — archived `KosOpResult` landing record
 - [design/interpreter/evaluator.md](interpreter/evaluator.md) — VM structures, C API reference
 - [design/interpreter/event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md) — Eval event handlers, exception boundaries, `out_ev` contracts
+- [design/interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) — Staged parent delivery (partial)
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) — Install slots and invocation
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution invariants
-- [design/interpreter/iteration-yield-boundaries.md](interpreter/iteration-yield-boundaries.md) — Iteration vs yield-from vs for-each: implementation map and consolidation proposals
-- [design/interpreter/demand-evalex-phase1.md](interpreter/demand-evalex-phase1.md) — Demand in-eval denial: `KOS_FRAME_DEMAND` flag; centralized AWAIT denial in `eval_event_await`; YIELD_FROM early-exit guards
-- [design/interpreter/demand-evalex-phase2.md](interpreter/demand-evalex-phase2.md) — Demand call flattening: `KosDemandCallableType`, `demand_kos_install`, BoundMethod cleanup
+- [design/interpreter/iteration-yield-boundaries.md](interpreter/iteration-yield-boundaries.md) — Iteration vs yield-from vs for-each: implementation map
 - [design/api/demand-wrapper.md](api/demand-wrapper.md) — Public `Demand` API, `demand_call`, `demand_sync_ex`
+- [design/archive/demand-evalex-phase1.md](archive/demand-evalex-phase1.md) — Archived: demand in-eval denial
+- [design/archive/demand-evalex-phase2.md](archive/demand-evalex-phase2.md) — Archived: demand call flattening
+- [design/archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) — Archived: nested interrupt and failed-transfer abandonment
 - [design/archive/dynnode-event-model.md](archive/dynnode-event-model.md) — Earlier standalone write-up of the same event model (archived)

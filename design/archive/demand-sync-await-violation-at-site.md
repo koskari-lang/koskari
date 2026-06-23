@@ -1,13 +1,11 @@
 # Proposal: Raise KoskariSyncViolation at the await site (demand path)
 
-**Archived.** The **in-eval deny** goal of this proposal is specified for
-implementation in [interpreter/demand-evalex-phase1.md](../interpreter/demand-evalex-phase1.md).
-The tree **today** still uses a **host inject loop** in `demand_sync_ex`
-(`koskari/lib/demand.c`): on `KOS_EV_AWAIT` or `KOS_EV_YIELD`, a second
-`koskari_eval` throws `KoskariSyncViolation` so `TRY`/`finally` can run.
-Phase 1 replaces that loop with guards inside the eval loop. **DemandSyncGenerator**
-stepping still surfaces await at the iterator boundary; that path remains out of
-scope for phase 1.
+**Archived.** The **in-eval deny** goal of this proposal is **implemented**;
+see [demand-evalex-phase1.md](demand-evalex-phase1.md) (archived) and
+[EVALUATOR.md](../EVALUATOR.md) §7. The host inject loop in `demand_sync_ex`
+has been removed; denial runs inside the eval loop via `KOS_FRAME_DEMAND` and
+`eval_event_await`. **DemandSyncGenerator** stepping still surfaces await at
+the iterator boundary; that path remains out of scope for phase 1.
 
 ---
 

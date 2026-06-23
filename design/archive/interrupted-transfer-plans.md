@@ -1,9 +1,11 @@
 # Interrupted and failed transfer plans
 
-**Status:** Nested continuation interrupt (§5) and failed/exception transfer
-abandonment (§4) are **landed** on branch `interrupted_transfer`. **Delimited
-nested-interrupt fail-fast (§6.6)** and **PUSH_SHIFT heritage capture** are
-**landed**. **Next work:** async nested await (§6.7).
+**Status:** Implemented (archived 2026-06-22). Nested continuation interrupt (§5),
+failed-transfer abandonment (§4), delimited nested-interrupt forbid (§6.6), and
+PUSH_SHIFT heritage capture are **landed**. Canonical summary:
+[EVALUATOR.md](../EVALUATOR.md) §6. **Open follow-up:** async nested await
+during transfer with non-empty `plan_stack` — see [TODO.md](../TODO.md)
+(Continuations / transfer plans) and §6.7 below.
 
 **Audience:** Maintainers and agents implementing §6.6–6.7; reviewers of
 continuation + dyn-wind integration.
@@ -17,11 +19,11 @@ continuation + dyn-wind integration.
 | Document | Relationship |
 |----------|----------------|
 | [../TODO.md](../TODO.md) | Status rollup; follow-up items |
-| [callcc.md](callcc.md) | Re-entrant transfers, plan structure, `original_target` |
-| [delimited-invoke-model.md](delimited-invoke-model.md) | Target delimited invoke (lineage fork, double-wind fix) |
+| [callcc.md](../interpreter/callcc.md) | Re-entrant transfers, plan structure, `original_target` |
+| [delimited-invoke-model.md](../interpreter/delimited-invoke-model.md) | Target delimited invoke (lineage fork, double-wind fix) |
 | [../EVALUATOR.md](../EVALUATOR.md) | Eval loop, `revive_plan`, transfer draining |
 | [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md) | `plan` / `plan_stack`, transfer atomicity |
-| [../kos_eval_state_api_migration.md](../kos_eval_state_api_migration.md) | `SuspendActivePlan` / `ResumeSuspendedPlan` |
+| [kos_eval_state_api_migration.md](kos_eval_state_api_migration.md) | `SuspendActivePlan` / `ResumeSuspendedPlan` |
 | [../api/dynchain_ng/DYNCHAIN_USAGE_INVENTORY.md](../api/dynchain_ng/DYNCHAIN_USAGE_INVENTORY.md) | Symbol inventory |
 | [extent-wind-unwind.md](extent-wind-unwind.md) | Wind/unwind thunk execution model |
 
@@ -227,7 +229,7 @@ Two failure shapes:
 
 **Known gap:** exception policy is still split across `process_raise`, `eval_phase_entry`,
 and `run_transfer_plan_to_completion` rather than one event-driven handler. See
-[event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md) §3.3, §6.
+[interpreter/event-driven-eval-event-handlers.md](../interpreter/event-driven-eval-event-handlers.md) §3.3, §6.
 
 ---
 

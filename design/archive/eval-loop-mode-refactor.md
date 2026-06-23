@@ -2,7 +2,12 @@
 
 This document describes a refactor of the Koskari eval loop around a **mode** as the single outcome of each opcode (and of the loop prologue). The goal is to optimize the common case—**MODE_NORMAL** ("just continue handling opcodes")—by gating prologue checks and using tail-dispatch so that the fast path does not run transfer plan, pending exception, or native-frame checks.
 
-**Status:** Implemented in `koskari/lib/eval.c` and `koskari/lib/eval.h` (April 2026). Opcode handlers return **`KosOpOutcome`** with **`KosLoopOpMode`**: **`KOS_LOP_RUN`** (tail-dispatch, skip prologue), **`KOS_LOP_PROLOGUE`**, **`KOS_LOP_POST`** (via `post_tag` → `eval_phase_post_opcode`), **`KOS_LOP_FAIL`** (evaluator fault, return -1 without raise handling). **`KosEvalResult`** / **`kos_eval_result_to_event`** bridge stop boundaries to existing **`KosEvent *out_ev`**. See `KOS_OP_*` macros and **`kos_op_outcome_from_*`** helpers in `eval.h`.
+**Status:** Implemented in `koskari/lib/eval.c` and `koskari/lib/eval.h` (April 2026).
+**Superseded (2026-06-22):** Opcode outcome surface is now **`KosOpResult`** /
+**`EVAL_*`** macros — see [eval-result-unification.md](eval-result-unification.md)
+(archived) and [EVALUATOR.md](../EVALUATOR.md) §3. This document describes the
+intermediate **`KosOpOutcome`** / **`KosLoopOpMode`** refactor that preceded
+that unification.
 
 **Outcome → loop (implemented):**
 

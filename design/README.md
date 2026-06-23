@@ -15,7 +15,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
 - **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md); [Python inspect interop for native callables](api/inspect-interop-kos-callables.md) (`KosFunction`, `KosBoundMethod`)
 - **[EVALUATOR.md](EVALUATOR.md)**: Evaluator operation—phase flow diagrams, opcode signaling, exceptions, transfer plans, tail calls, call installs, play-by-play scenarios
-- **[interpreter/eval-state-live-authority.md](interpreter/eval-state-live-authority.md)**: `KosEvalState` live authority during RUN (Phase 1 landed); Tier-1 retarget funnel; Phase 2 stragglers and xfer optimization
+- **[interpreter/eval-state-live-authority.md](interpreter/eval-state-live-authority.md)**: `KosEvalState` live authority during RUN (Phase 1 landed); Tier-2 xfer incremental retarget; see [archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md) (archived opcode migration ledger)
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
   evaluation model, continuation application (including evaluator-token model),
   and [Koskari Domain](interpreter/domain.md) (ambient dynamic context, design proposal)
@@ -23,6 +23,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **Layout defaults**: [language/flat-layout-default.md](language/flat-layout-default.md) — default **`layout/block`** flat splice and **`layout/block-begin`** opt-in wrap
 - **[documentation-goals.md](documentation-goals.md)**: Meta-spec for future user-facing `docs/` tree (audiences, IA, maintenance)
 - **[corpus-schema-philosophy.md](corpus-schema-philosophy.md)**: Language conformance corpus schema, verification model, and Hugging Face dataset views derived from corpus records
+- **archive/**: Completed implementation specs and superseded proposals (e.g. demand-evalex phase 1–2, eval-result unification, kos_eval_state migration, interrupted-transfer-plans, bytecode-metadata-tables, node-owned-operand-stack)
 - **[docs-tracker.md](docs-tracker.md)**: User documentation site status (correlates documentation-goals and corpus plans with `docs/` progress)
 - **[ideas.md](ideas.md)**: Potential concepts and options (e.g. feature flag for demand vs run_sync imports) — not committed plans, just notes to revisit
 

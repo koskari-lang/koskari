@@ -1,6 +1,11 @@
 # Koskari — Static Bytecode Metadata Tables (Locations + Extents)
 
-This document records design decisions to move from **dynamic, opcode-driven block push/pop** patterns toward **statically compiled metadata tables** attached to a code object. **Status: Implemented** (extent table, location API, JUMP locality validation, evaluator integration for TRY).
+**Status:** Implemented (archived 2026-06-22). Canonical summary:
+[interpreter/bytecode.md](../interpreter/bytecode.md) (extent table, location API).
+
+---
+
+This document records design decisions to move from **dynamic, opcode-driven block push/pop** patterns toward **statically compiled metadata tables** attached to a code object. Extent table, location API, JUMP locality validation, and evaluator integration for TRY are in `koskari/lib/bytecode.c`.
 
 Primary goals:
 

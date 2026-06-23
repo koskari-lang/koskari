@@ -1,5 +1,10 @@
 # Demand call flattening (phase 2)
 
+**Status:** Implemented (archived 2026-06-22). Canonical summary:
+[EVALUATOR.md](../EVALUATOR.md) §7; [api/demand-wrapper.md](../api/demand-wrapper.md).
+
+---
+
 This document specifies **phase 2** of demand-scoped evaluation: when koskari
 bytecode calls `Demand(KosCallable)`, detect the pattern at call-dispatch time,
 install the inner callable's frame directly into the running eval context, and
@@ -506,7 +511,7 @@ items below inapplicable. Kept for historical reference.
 | ---- | -------------- |
 | `koskari/lib/eval/eval_utils.c` | `demand_unwrap_for_flatten`; preamble + post-install flag — **not changed** |
 | `tests/lib/test_demand_sync.py` | `TestDemandCallFlattening` class — **done** |
-| `design/interpreter/demand-evalex-phase2.md` | this file — **updated** |
+| `design/archive/demand-evalex-phase2.md` | this file — **updated** |
 | `design/TODO.md` | mark phase 2 complete — **done** |
 | `design/api/demand-wrapper.md` | update status — **done** |
 

@@ -33,13 +33,18 @@ special cases inside phase-specific functions. See
   remote vs in-tree invoke. Design:
   [interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md).
   Regression spec: `test_reset_shift.py` (capture + invoke cases).
-- **Async nested await** during transfer with non-empty `plan_stack` (§6.7 in
-  interrupted-transfer-plans.md).
+- **Async nested await during transfer** — when a wind/unwind thunk under an
+  active or suspended transfer returns `KOS_XFER_SUSPENDED_AWAIT`, `plan_stack`
+  must remain coherent across `KOS_EV_AWAIT` freeze/thaw, including when
+  `plan_stack` depth > 0. Verify prologue ordering, abandon paths after resume,
+  and `dyn_wind` on_chain / EXTENT_ACTION guards. Tests: async before/after thunk
+  during undelimited nested interrupt (`let/cc` + `dyn-wind` + async Koskari
+  await). Archived spec: [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §6.7.
 - **Full delimited PUSH replan** — deferred; §6.6 forbid remains until then.
 
 Ref: [interpreter/callcc.md](interpreter/callcc.md),
 [interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md),
-[interpreter/interrupted-transfer-plans.md](interpreter/interrupted-transfer-plans.md).
+[archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md).
 
 ---
 

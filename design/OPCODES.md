@@ -12,7 +12,7 @@ See §1.6. Other design docs should refer here instead of duplicating status.
 
 **See also:** [interpreter/bytecode.md](interpreter/bytecode.md) (format, layout,
 metadata tables), [interpreter/execution-invariants.md](interpreter/execution-invariants.md)
-(execution model), [interpreter/bytecode-metadata-tables.md](interpreter/bytecode-metadata-tables.md)
+(execution model), [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md)
 (extents, jump locality), [interpreter/evaluator.md](interpreter/evaluator.md)
 (VM structures, C API), [EVALUATOR.md](EVALUATOR.md) (eval loop, post-opcode
 delivery, **`KosOpOutcome`**), [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md)
@@ -45,7 +45,7 @@ linking from design notes, PRs, or other docs.
 - **Stack effect**: Written as "Before → After" (e.g. `[..., callable, a, b] → [..., result]`).
 - **Chain**: The dynamic chain (frames, prompts, regions, etc.) is described
   when an opcode pushes or pops nodes. See [interpreter/execution-invariants.md](interpreter/execution-invariants.md)
-  and [interpreter/bytecode-metadata-tables.md](interpreter/bytecode-metadata-tables.md).
+  and [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md).
 
 ### 1.3 Glossary
 
@@ -59,7 +59,7 @@ linking from design notes, PRs, or other docs.
 - **extent**: A statically described block (stored in the code object's extent
   table) with kind `KosExtentKind` (KOS_EXT_TRY, KOS_EXT_LOOP, KOS_EXT_FOREACH,
   KOS_EXT_PROMPT, KOS_EXT_NS, KOS_EXT_COLLECT, etc.), enter/exit pcs, and
-  kind-specific targets; see bytecode-metadata-tables.md.
+  kind-specific targets; see [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md).
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
   nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP,
   KOS_DYN_FOREACH, KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_PROMPT, KOS_DYN_CC,
@@ -94,10 +94,10 @@ Long comments (stack, branch conditions) may span the cell; keep index and opcod
 Unless specified otherwise for an opcode:
 
 - Execution obeys the invariants in [interpreter/execution-invariants.md](interpreter/execution-invariants.md).
-- Extent and location metadata are as in [interpreter/bytecode-metadata-tables.md](interpreter/bytecode-metadata-tables.md).
+- Extent and location metadata are as in [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md).
 - **Jump locality**: Control-flow jump opcodes (JUMP, JUMP_FALSE, JUMP_TRUE,
   JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*) may only target a pc inside the current
-  extent or at its `pop_pc` (leaving the block). See bytecode-metadata-tables.md
+  extent or at its `pop_pc` (leaving the block). See [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md)
   § "Jump Legality and Locality".
 
 The **Invariants** bullets per opcode (and this section) form the **contract**:
@@ -3464,7 +3464,7 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](i
 ## See also
 
 - [interpreter/bytecode.md](interpreter/bytecode.md) — Bytecode format, KosCode layout, API
-- [interpreter/bytecode-metadata-tables.md](interpreter/bytecode-metadata-tables.md) — Extents, location table, jump locality
+- [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md) — Extents, location table, jump locality
 - [interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution model
 - [interpreter/evaluator.md](interpreter/evaluator.md) — Evaluation loop
 - [FEATURES.md](FEATURES.md) — Implementation status and feature list

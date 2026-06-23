@@ -1,8 +1,11 @@
 # GIL Cooperation: Domain-TLS Counter and Timer
 
-This document describes a design for voluntary GIL release in the Koskari evaluator and related C code, using a **counter + timer** policy with **Domain** as the storage for cooperation state and the existing **domain TLS** for zero-argument, call-site-friendly APIs.
+This document describes voluntary GIL release in the Koskari evaluator and
+related C code.
 
-**Status**: Implemented in `koskari/lib/eval.c`. The dispatch loop combines:
+## Implemented (eval loop polling)
+
+The dispatch loop in `koskari/lib/eval.c` combines:
 
 - An opcode counter (`gil_poll_ops` / `KOS_EVAL_GIL_POLL`) to amortize checks.
 - A GIL-drop request probe (`koskari_gil_drop_requested()`).
@@ -11,14 +14,19 @@ This document describes a design for voluntary GIL release in the Koskari evalua
   `Py_END_ALLOW_THREADS`.
 - Signal handling at the same cadence via `PyErr_CheckSignals()`.
 
-See `koskari/lib/eval.c` (labels `cg_poll` and `cg_check_signals`) and
-[EVALUATOR.md](../EVALUATOR.md) §1.6. The remainder of this document is a
-design for generalizing cooperation state (counter/timer) to domain TLS and
-for expanding cooperation call sites beyond the dispatch loop.
+See labels `cg_poll` and `cg_check_signals` and [EVALUATOR.md](../EVALUATOR.md) §1.6.
+
+## Proposed (domain-TLS generalization)
+
+The sections below describe a **counter + timer** policy with **Domain** as
+storage for cooperation state and **domain TLS** for zero-argument
+`maybe_cooperate()` / `ensure_gil()` at dynchain, stack, and transfer-plan call
+sites. This generalization is **not** implemented; only eval-loop polling above
+is landed.
 
 ---
 
-## 1. Goals
+## 1. Goals (proposed generalization)
 
 - **Be kind to other threads**: Allow other Python threads to run periodically during long eval runs and during long stretches of C work that do not touch Python objects.
 - **Low overhead**: The hot path (no release) should cost at most a decrement, a compare, and a branch; timer reads only when the counter hits zero.
@@ -27,7 +35,7 @@ for expanding cooperation call sites beyond the dispatch loop.
 
 ---
 
-## 2. Overview
+## 2. Overview (proposed)
 
 - **Storage**: Cooperation state (counter, last-release timestamp, interval) lives on the **Domain**. The Domain is the evaluator-level owner of this policy; it is already the ambient context and is unique per evaluator scope.
 - **Resolving the domain**: `maybe_cooperate()` and `ensure_gil()` take **no arguments**. They use `kos_domain_current()` to obtain the active domain (which in turn uses the existing TLS scope stack). When not in an eval (no current domain), they no-op.
@@ -36,7 +44,7 @@ for expanding cooperation call sites beyond the dispatch loop.
 
 ---
 
-## 3. State and API
+## 3. State and API (proposed)
 
 ### 3.1 Cooperation state (on Domain)
 
@@ -61,7 +69,7 @@ All state is C-side; no Python API is used to read or write it.
 
 ---
 
-## 4. Cost–benefit analysis of options
+## 4. Cost–benefit analysis of options (proposed)
 
 ### 4.1 Counter-only vs timer-only vs hybrid
 
@@ -103,11 +111,11 @@ All state is C-side; no Python API is used to read or write it.
 
 ---
 
-## 5. Candidate call sites for `maybe_cooperate()`
+## 5. Candidate call sites for `maybe_cooperate()` (proposed)
 
 Places identified as good candidates (low or no PyObject/refcount work; or single point per iteration):
 
-### 5.1 Eval loop (already in use)
+### 5.1 Eval loop (partially in use today)
 
 - **Loop boundary (on_normal / next_insn)**: Once per opcode dispatch. Current implementation already does a counter-based release every 255 iterations here; would become one call to `maybe_cooperate()`.
 - **Before final event (eval exit)**: Once per return/yield/raise/await. Optional extra cooperation point so other threads get a slice before control returns to the caller.
