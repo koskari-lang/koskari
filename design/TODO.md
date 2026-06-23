@@ -46,6 +46,31 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 
 ## Evaluator performance
 
+### Namespace fast-slot layout and hot-path guard removal
+
+`FAST` is 21.7% of total runtime at 1.56 billion executions. Two structural
+changes address its dominant costs:
+
+1. **`KosNameBind` layout restructuring** — the current 24-byte slot struct
+   stores a cold `name` pointer alongside the hot `held` pointer and `raw` flag,
+   limiting cache density to ~2.67 slots per 64-byte cache line. Replace the
+   slot array with a plain `PyObject *fast[]` (8 bytes/slot, 8 per cache line)
+   and move the `raw` flags to a `uint64_t fast_raw_bitmap` on `KosNamespace`.
+   Cold names move to a lazily-materialized `fast_names` tuple consulted only
+   on `NameError`.
+
+2. **`KosNamespace_SupportsFast` guard removal** — this 2-load type check runs
+   on every dispatch of FAST, FAST\_STORE, FAST\_OBJECT\_\*, CALL\_FAST\*, and
+   ~30 other opcodes (~2.8B executions total). The compiler guarantees the
+   namespace type; the check defends against a compiler bug, not user error.
+   Convert to a debug-only assertion.
+
+Together these save an estimated 15–30 seconds on the benchmark workload
+(8–17 s from cache density, 3–6 s from guard removal, 4–7 s from inlining
+`FastDeref`/`FastStore`).
+
+Ref: [interpreter/namespace-fast-slot-layout.md](interpreter/namespace-fast-slot-layout.md).
+
 ### Fast local stack
 
 Explore a fast local stack (or stack layout) to speed up the evaluator (C-local
