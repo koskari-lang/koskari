@@ -515,11 +515,10 @@ static int run_transfer_plan_to_completion(
    Handle delimited k(value) return: build plan, install it, run to completion.
    Caller has popped val; we consume it. Return 0 on success, -1 on error.
 */
-static inline int KosEvalState_KReturnDelimited(
+static inline KosOpResult KosEvalState_KReturnDelimited(
     KosEvalState *es,
     KosDynDelim *delim,
-    PyObject *val,
-    KosEvent *out_ev) {
+    PyObject *val) {
 
   KosDynNode *ret_chain = KosDynDelim_RETURN_CHAIN(delim);
   uint32_t ret_pc = KosDynDelim_RETURN_PC(delim);
@@ -530,7 +529,7 @@ static inline int KosEvalState_KReturnDelimited(
   if (kos_build_return_plan(es, ret_chain,
                             val, 0, &plan) < 0) {
     Py_DECREF(val);
-    return -1;
+    return EVAL_RAISE();
   }
   Py_DECREF(val);
   KosTransferPlan_RESUME_PC(plan) = ret_pc;
@@ -548,12 +547,15 @@ static inline int KosEvalState_KReturnDelimited(
   KosDynDelim_RETURN_NODE(delim) = NULL;
   if (KosEvalState_DYN_TOP(es) == (KosDynNode *) delim) {
     if (kos_dyn_pop_delim(es, delim) < 0)
-      return -1;
+      return EVAL_RAISE();
   }
   {
-    int xfer = run_transfer_plan_to_completion(es, out_ev);
+    KosEvent _ev = {0};
+    int xfer = run_transfer_plan_to_completion(es, &_ev);
+    Py_XDECREF(KosEvent_PAYLOAD(&_ev));
     if (xfer < 0)
-      return -1;
+      return EVAL_RAISE();
   }
-  return 0;
+  return KosEvalState_HasActiveTransferPlan(es) ? EVAL_REPROLOGUE()
+                                                : EVAL_NORMAL();
 }

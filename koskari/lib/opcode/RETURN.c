@@ -61,12 +61,7 @@ KOS_OP_HANDLER(RETURN) {
   if (unlikely(ret_delim
                && KosDynDelim_RETURN_CHAIN(ret_delim) != NULL
                && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1)) {
-    KosEvent _op_ev = {0};
-    int rd = KosEvalState_KReturnDelimited(es, ret_delim, val, &_op_ev);
-    if (rd < 0)
-      return EVAL_RAISE();
-    return KosEvalState_HasActiveTransferPlan(es) ? EVAL_REPROLOGUE()
-                                                  : EVAL_NORMAL();
+    return KosEvalState_KReturnDelimited(es, ret_delim, val);
   }
 
   /* === Phase 2b/2c: centralized in eval_event_return === */
