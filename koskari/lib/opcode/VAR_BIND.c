@@ -19,18 +19,20 @@
 */
 
 KOS_OP_HANDLER(VAR_BIND) {
-  (void) out_ev;
 
   PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   int res = frame_ns_bind(es, name, val);
   Py_DECREF(val);
 
-  return kos_op_outcome_from_int_step(res);
+  return kos_op_result_from_push_int(res);
 }
+
+
+// The end.

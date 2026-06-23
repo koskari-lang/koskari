@@ -25,24 +25,24 @@ KOS_OP_HANDLER(PROPER) {
 
   /* Push nil onto the stack as the implicit proper tail. */
   if (unlikely(KosEvalState_StackPushRef(es, KosNil)))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   /* PROPER 0 just returns nil, which we already pushed */
   if (unlikely(count == 0))
-    return KOS_OP_RUN();
+    return EVAL_NORMAL();
 
   /* Now the stack has count elements + nil = count+1 items. */
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count + 1);
   if (! ptr)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *result = KosPair_ConsFromPtr(ptr, (int)(count + 1));
   if (! result)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   KosEvalState_StackDropNoErr(es, count + 1);
 
-  return kos_op_outcome_PUSH(es, result);
+  return kos_op_result_PUSH(es, result);
 }
 
 

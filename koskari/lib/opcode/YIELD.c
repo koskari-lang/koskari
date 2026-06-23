@@ -31,22 +31,22 @@ KOS_OP_HANDLER(YIELD) {
     val = KosEvalState_StackPopRef(es);
     if (! val) {
       SAY("[eval] YIELD pop underrun\n");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
 
   } else {
     val = KosEvalState_StackPopTail(es, (size_t) opa);
     if (! val) {
       SAY("[eval] YIELD PopTail underrun\n");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
   /* Frame has parent (not GEN): return into parent in same loop
      (CALL return or async gen step).  Parent is GEN => top-level yield. */
 
-  KosEvent_KIND(out_ev) = KOS_EV_YIELD;
-  KosEvent_PAYLOAD(out_ev) = val;
-  KosEvalState_MarkDeadAfterYield(es);
-  return KOS_OP_POST_SUSPEND();
+  return EVAL_YIELD(val);
 }
+
+
+// The end.

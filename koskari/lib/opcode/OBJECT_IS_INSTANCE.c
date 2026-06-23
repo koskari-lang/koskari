@@ -25,20 +25,20 @@ KOS_OP_HANDLER(OBJECT_IS_INSTANCE) {
   if (opa < 2) {
     match = KosEvalState_StackPopRef(es);
     if (! match)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     value = KosEvalState_StackPopRef(es);
     if (! value) {
       Py_DECREF(match);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   } else {
     match = KosEvalState_StackPopTail(es, (size_t) opa);
     if (! match)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     value = KosEvalState_StackPopRef(es);
     if (! value) {
       Py_DECREF(match);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
@@ -46,9 +46,12 @@ KOS_OP_HANDLER(OBJECT_IS_INSTANCE) {
   Py_DECREF(value);
   Py_DECREF(match);
   if (res < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *out = (res ? Py_True : Py_False);
   Py_INCREF(out);
-  return kos_op_outcome_PUSH(es, out);
+  return kos_op_result_PUSH(es, out);
 }
+
+
+// The end.

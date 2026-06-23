@@ -20,14 +20,16 @@
 KOS_OP_HANDLER(ATTR_CLEAR) {
   PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   int res = PyObject_DelAttr(obj, name);
   Py_DECREF(obj);
   if (res < 0)
-    return KOS_OP_POST_ERR();
-  (void) out_ev;
-  return KOS_OP_RUN();
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

@@ -20,16 +20,19 @@
 KOS_OP_HANDLER(ITEM_REF) {
   PyObject *key = KosEvalState_StackPopRef(es);
   if (! key)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj) {
     Py_DECREF(key);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   PyObject *ref = KosItemRef_New(NULL, obj, key);
   Py_DECREF(obj);
   Py_DECREF(key);
   if (! ref)
-    return KOS_OP_POST_ERR();
-  return kos_op_outcome_PUSH(es, ref);
+    return EVAL_RAISE();
+  return kos_op_result_PUSH(es, ref);
 }
+
+
+// The end.

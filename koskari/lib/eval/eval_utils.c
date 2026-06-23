@@ -389,6 +389,86 @@ static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
 }
 
 
+/* Map 0/-1 int result (push, binary op) to KosOpResult. */
+static inline KosOpResult kos_op_result_from_push_int(int r) {
+  return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+}
+
+
+/* Push val without auto-await (plain stack push only). */
+static inline KosOpResult kos_op_result_PUSH(
+    KosEvalState *es,
+    PyObject *val) {
+
+  if (unlikely(! val))
+    return EVAL_RAISE();
+
+  return kos_op_result_from_push_int(KosEvalState_StackPUSH(es, val));
+}
+
+
+/**
+  Map legacy int-step result to KosOpResult.  When r==1, extract kind and
+  payload from ev (KOS_EV_YIELD or KOS_EV_AWAIT); ev is cleared on exit.
+  When r==4, extract PARENT_RETURN payload from ev.
+*/
+static inline KosOpResult kos_op_result_from_int_step(int r, KosEvent *ev) {
+  switch (r) {
+  case 0:
+    return EVAL_NORMAL();
+  case 1: {
+    KosEventKind k = ev ? KosEvent_KIND(ev) : KOS_EV_NONE;
+    PyObject *val = ev ? KosEvent_PAYLOAD(ev) : NULL;
+    if (ev) {
+      KosEvent_PAYLOAD(ev) = NULL;
+      KosEvent_KIND(ev) = KOS_EV_NONE;
+    }
+    if (k == KOS_EV_YIELD)
+      return EVAL_YIELD(val);
+    if (k == KOS_EV_AWAIT)
+      return EVAL_AWAIT(val);
+    Py_XDECREF(val);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_op_result_from_int_step: unexpected suspend event kind");
+    return EVAL_RAISE();
+  }
+  case KOS_OP_RES_CONTROL_RETURNED:
+    return EVAL_CONTROL_RETURNED();
+  case KOS_OP_RES_PARENT_RETURN_DELIVER: {
+    PyObject *val = ev ? KosEvent_PAYLOAD(ev) : NULL;
+    if (ev)
+      KosEvent_PAYLOAD(ev) = NULL;
+    return EVAL_PARENT_RETURN(val);
+  }
+  default:
+    return EVAL_RAISE();
+  }
+}
+
+
+/* KosOpResult variant of kos_op_outcome_PUSH_OR_AWAIT. */
+static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
+    KosEvalState *es,
+    PyObject *val) {
+
+  if (unlikely(! val))
+    return EVAL_RAISE();
+
+  KosEvent _push_ev = {0};
+  int r = op_push_or_await(es, &_push_ev, val);
+  if (likely(r == 0))
+    return EVAL_NORMAL();
+
+  if (r == 1) {
+    PyObject *awaitable = KosEvent_PAYLOAD(&_push_ev);
+    KosEvent_PAYLOAD(&_push_ev) = NULL;
+    return EVAL_AWAIT(awaitable);
+  }
+
+  return EVAL_RAISE();
+}
+
+
 /**
   Prepare frame stack for a KosCallable install per wants_frame / tail_call.
   Inlines effective wants_frame resolution (hook vs static flag).

@@ -22,6 +22,7 @@
 */
 
 KOS_OP_HANDLER(CALL_FAST_NAMES) {
+  KosEvent _op_ev = {0};
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
@@ -31,27 +32,27 @@ KOS_OP_HANDLER(CALL_FAST_NAMES) {
   PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_NAMES on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_NAMES on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *callable = KosNamespace_FastDeref(ns, (size_t) slot_idx);
   if (! callable)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
   if (! names) {
     Py_DECREF(callable);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_NAMES names must be tuple"
                  ", not %R", names);
     Py_DECREF(callable);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
@@ -61,20 +62,20 @@ KOS_OP_HANDLER(CALL_FAST_NAMES) {
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, ntotal);
   if (! ptr) {
     Py_DECREF(callable);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
     if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0) {
       Py_DECREF(callable);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
-    int r = KosEvalState_Call(es, out_ev, callable, steal.vals,
+    int r = KosEvalState_Call(es, &_op_ev, callable, steal.vals,
                             npos, names, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
-    return kos_op_outcome_from_call_int(es, r);
+    return kos_op_result_from_call_int(es, r, &_op_ev);
   }
 
   PyObject *result = PyObject_Vectorcall(callable, ptr, (size_t) npos,
@@ -82,7 +83,7 @@ KOS_OP_HANDLER(CALL_FAST_NAMES) {
   KosEvalState_StackDropNoErr(es, ntotal);
   Py_DECREF(callable);
 
-  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
+  return kos_op_result_PUSH_OR_AWAIT(es, result);
 }
 
 

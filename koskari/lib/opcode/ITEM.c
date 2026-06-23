@@ -20,12 +20,12 @@
 KOS_OP_HANDLER(ITEM) {
   PyObject *key = KosEvalState_StackPopRef(es);
   if (unlikely(! key))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (unlikely(! obj)) {
     Py_DECREF(key);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *item = PyObject_GetItem(obj, key);
@@ -33,9 +33,9 @@ KOS_OP_HANDLER(ITEM) {
   Py_DECREF(key);
 
   if (unlikely(! item))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
-  return kos_op_outcome_PUSH(es, item);
+  return kos_op_result_PUSH(es, item);
 }
 
 

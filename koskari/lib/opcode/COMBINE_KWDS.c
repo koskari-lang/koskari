@@ -24,30 +24,29 @@ KOS_OP_HANDLER(COMBINE_KWDS) {
 
   PyObject *built = PyDict_New();
   if (! built)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (opa == 0) {
     if (KosEvalState_StackPushRef(es, built) < 0) {
       Py_DECREF(built);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     Py_DECREF(built);
-    (void) out_ev;
-    return KOS_OP_RUN();
+    return EVAL_NORMAL();
   }
 
   PyObject *const *vals = KosEvalState_StackTailPtr(es,
                                                  (size_t) opa);
   if (! vals) {
     Py_DECREF(built);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   for (unsigned i = 0; i < opa; i++) {
     if (PyDict_Merge(built, vals[i], 1) != 0) {
       Py_DECREF(built);
       KosEvalState_StackDropNoErr(es, (size_t) opa);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
@@ -55,10 +54,12 @@ KOS_OP_HANDLER(COMBINE_KWDS) {
 
   if (KosEvalState_StackPushRef(es, built) < 0) {
     Py_DECREF(built);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   Py_DECREF(built);
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

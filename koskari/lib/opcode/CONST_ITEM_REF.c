@@ -21,13 +21,16 @@ KOS_OP_HANDLER(CONST_ITEM_REF) {
   PyObject *key = KosCode_GetConstant((PyObject *) KosEvalState_CurrentCode(es),
                                       KosOp_ARG(insn));
   if (! key)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   PyObject *ref = KosItemRef_New(NULL, obj, key);
   Py_DECREF(obj);
   if (! ref)
-    return KOS_OP_POST_ERR();
-  return kos_op_outcome_PUSH(es, ref);
+    return EVAL_RAISE();
+  return kos_op_result_PUSH(es, ref);
 }
+
+
+// The end.

@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(CONTINUE) {
+  KosEvent _op_ev = {0};
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 
@@ -32,14 +33,14 @@ KOS_OP_HANDLER(CONTINUE) {
     result = KosEvalState_StackPopRef(es);
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE pop underrun");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
 
   } else {
     result = KosEvalState_StackPopTail(es, (size_t) opa);
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE PopTail underrun");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
@@ -50,10 +51,13 @@ KOS_OP_HANDLER(CONTINUE) {
       .payload = result,
     };
     KosTransitionResult tres = {0};
-    if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
+    if (KosEvalState_Transition(es, &treq, &tres, &_op_ev) < 0) {
       Py_DECREF(result);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
-    return kos_op_outcome_from_int_step(tres.raw);
+    return kos_op_result_from_int_step(tres.raw, &_op_ev);
   }
 }
+
+
+// The end.

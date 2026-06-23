@@ -19,13 +19,15 @@
 */
 
 KOS_OP_HANDLER(POP_CC) {
-  (void) out_ev;
   (void) insn;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
 
   if (unlikely(kos_dyn_pop_cc(es, (KosDynCC *) top) < 0))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

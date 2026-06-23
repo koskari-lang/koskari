@@ -21,15 +21,18 @@ KOS_OP_HANDLER(FAST) {
   PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST invoked on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST invoked on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *val = KosNamespace_FastDeref(ns, idx);
   if (! val)
-    return KOS_OP_POST_ERR();
-  return kos_op_outcome_PUSH(es, val);
+    return EVAL_RAISE();
+  return kos_op_result_PUSH(es, val);
 }
+
+
+// The end.

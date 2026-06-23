@@ -20,19 +20,18 @@
 KOS_OP_HANDLER(JUMP_FALSE) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   int res = PyObject_Not(val);
   Py_DECREF(val);
 
   if (unlikely(res < 0))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (res)
     KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

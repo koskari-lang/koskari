@@ -20,16 +20,19 @@
 KOS_OP_HANDLER(CONST_ITEM) {
   PyObject *key = KosEvalState_GetConstant(es, KosOp_ARG(insn));
   if (! key)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *item = PyObject_GetItem(obj, key);
   Py_DECREF(obj);
   if (! item)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
-  return kos_op_outcome_PUSH(es, item);
+  return kos_op_result_PUSH(es, item);
 }
+
+
+// The end.

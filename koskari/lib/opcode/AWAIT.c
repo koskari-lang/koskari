@@ -24,22 +24,23 @@ KOS_OP_HANDLER(AWAIT) {
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u) {
-    KosEvalState_MarkSuspendedNotRunning(es);
-    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-    Py_INCREF(Py_None);
-    KosEvent_PAYLOAD(out_ev) = Py_None;
-    return KOS_OP_POST_SUSPEND();
+    return EVAL_AWAIT(Py_NewRef(Py_None));
   }
 
   if (arg != 1u) {
     PyErr_Format(PyExc_RuntimeError,
                  "AWAIT: arg must be 0 or 1 (stack count), got %u",
                  (unsigned) arg);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_push_int(kos_await_dispatch(es, out_ev, val));
+    return EVAL_RAISE();
+  KosEvent _op_ev = {0};
+  return kos_op_result_from_int_step(kos_await_dispatch(es, &_op_ev, val),
+                                     &_op_ev);
 }
+
+
+// The end.

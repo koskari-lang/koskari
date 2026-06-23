@@ -143,6 +143,15 @@ static KosEvalStep eval_phase_post_opcode(
         KosEvent *out_ev,
         int op_res);
 
+static KosEvalStep eval_event_yield(KosEvalState *es, KosEvent *out_ev,
+    PyObject *val);
+
+static KosEvalStep eval_event_await(KosEvalState *es, KosEvent *out_ev,
+    PyObject *val);
+
+static KosEvalStep eval_event_return(KosEvalState *es, KosEvent *out_ev,
+    PyObject *val);
+
 
 /**
   Map KosEvalState_Call / KosCallable_Call legacy int r to KosOpOutcome.  When
@@ -168,6 +177,41 @@ static inline KosOpOutcome kos_op_outcome_from_call_int(KosEvalState *es, int r)
     return KOS_OP_RUN();
   }
   return KOS_OP_POST_ERR();
+}
+
+
+/**
+  Map KosEvalState_Call int result to KosOpResult, extracting any awaitable
+  or return value from ev.  Mirrors kos_op_outcome_from_call_int but returns
+  the unified result struct and takes ownership of ev's payload on r==1 or
+  r==KOS_OP_RES_PARENT_RETURN_DELIVER.
+*/
+static inline KosOpResult kos_op_result_from_call_int(
+    KosEvalState *es, int r, KosEvent *ev) {
+
+  if (r < 0)
+    return EVAL_RAISE();
+  if (r == KOS_OP_RES_CONTROL_RETURNED)
+    return EVAL_CONTROL_RETURNED();
+  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER) {
+    PyObject *val = KosEvent_PAYLOAD(ev);
+    KosEvent_PAYLOAD(ev) = NULL;
+    return EVAL_PARENT_RETURN(val);
+  }
+  if (r == 1) {
+    PyObject *val = KosEvent_PAYLOAD(ev);
+    KosEvent_PAYLOAD(ev) = NULL;
+    return EVAL_AWAIT(val);
+  }
+  if (r == 0) {
+    if (KosEvalState_PLAN(es))
+      return EVAL_REPROLOGUE();
+    if (KosEvalState_FRAME(es)
+        && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)))
+      return EVAL_REPROLOGUE();
+    return EVAL_NORMAL();
+  }
+  return EVAL_RAISE();
 }
 
 
@@ -1416,7 +1460,6 @@ static int kos_await_dispatch(KosEvalState *es, KosEvent *out_ev, PyObject *valu
  */
 static int obj_op_reducing(
     KosEvalState *es,
-    KosEvent *out_ev,
     KosOp *insn,
     KosOperatorReducing *fn) {
 
@@ -1447,7 +1490,6 @@ static int obj_op_reducing(
 
 static int obj_op_binary(
     KosEvalState *es,
-    KosEvent *out_ev,
     KosOp *insn,
     PyObject *(*fn)(PyObject *left, PyObject *right)) {
 
@@ -1503,7 +1545,6 @@ static PyObject *binary_is_not_result(PyObject *left, PyObject *right) {
    CHECK_NOT_IN: 1). */
 static int kos_check_contains(
     KosEvalState *es,
-    KosEvent *out_ev,
     KosOp *insn,
     int branch_when) {
 
@@ -1520,7 +1561,6 @@ static int kos_check_contains(
   if (cmp == branch_when)
     KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
-  (void) out_ev;
   return 0;
 }
 
@@ -1529,7 +1569,6 @@ static int kos_check_contains(
    (CHECK_IS: 0 so branch when not equal; CHECK_IS_NOT: 1 so branch when equal). */
 static int kos_check_identity(
     KosEvalState *es,
-    KosEvent *out_ev,
     KosOp *insn,
     int branch_when_equal) {
 
@@ -1543,7 +1582,6 @@ static int kos_check_identity(
   if (cmp == branch_when_equal)
     KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
-  (void) out_ev;
   return 0;
 }
 
@@ -1551,7 +1589,6 @@ static int kos_check_identity(
 /* Pop right then left; call check(left, right). Branch to KosOp_ARG(insn) when res == 0. */
 static int kos_check_two_arg(
     KosEvalState *es,
-    KosEvent *out_ev,
     KosOp *insn,
     int (*check)(PyObject *, PyObject *)) {
 
@@ -1568,7 +1605,6 @@ static int kos_check_two_arg(
   if (res == 0)
     KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
-  (void) out_ev;
   return 0;
 }
 
@@ -1577,7 +1613,6 @@ static int kos_check_two_arg(
    jump to KosOp_ARG(insn) if comparison fails (res == 0). */
 static int kos_check_cmp(
     KosEvalState *es,
-    KosEvent *out_ev,
     KosOp *insn,
     int cmp_op) {
 
@@ -1595,7 +1630,6 @@ static int kos_check_cmp(
   if (res == 0)
     KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
-  (void) out_ev;
   return 0;
 }
 
@@ -1732,9 +1766,8 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 /*
   Includes the implementation of all opcodes from the opcode/ directory.
 */
-#define KOS_OP_HANDLER(name)                                            \
-  KOS_OP_INLINE KosOpOutcome op_##name(KosEvalState *es, KosEvent *out_ev, \
-                                       KosOp *insn)
+#define KOS_OP_HANDLER(name) \
+  KOS_OP_INLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
 #include "handlers.incl"
 #undef CURRENT_NS
@@ -2080,10 +2113,19 @@ static KosEvalStep eval_yield_handle_walk_and_freeze(
 
 
 /**
-   Post-opcode handling for KOS_EV_YIELD: walk_handle_yield, optional flattened
-   agen boundary delivery, else tag suspension for outer koskari_eval.
+   Centralized YIELD handler.  Sets out_ev, flushes live registers to the
+   frame, marks the generator dead-after-yield, walks the dynchain, handles
+   optional async-gen boundary delivery, and tags the suspension event.
+   val is a new reference and ownership transfers to out_ev on success.
 */
-static KosEvalStep eval_event_yield(KosEvalState *es, KosEvent *out_ev) {
+static KosEvalStep eval_event_yield(
+    KosEvalState *es, KosEvent *out_ev, PyObject *val) {
+
+  KosEvent_KIND(out_ev) = KOS_EV_YIELD;
+  KosEvent_PAYLOAD(out_ev) = val;
+
+  KosEvalState_FlushLiveRegsToFrame(es);
+  KosEvalState_MarkDeadAfterYield(es);
 
   SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
        (void *) KosEvalState_CurrentNode(es));
@@ -2096,6 +2138,92 @@ static KosEvalStep eval_event_yield(KosEvalState *es, KosEvent *out_ev) {
   if (kos_dyn_need_kos_agen_boundary_deliver(es))
     return eval_event_yield_deliver_to_boundary(es, out_ev);
   KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
+  return KOS_STEP_STOP_EVENT;
+}
+
+
+/**
+   Centralized AWAIT handler.  Demand-checks, marks suspended, fills out_ev
+   with KOS_EV_AWAIT + val, and tags the suspension event.  val ownership
+   transfers to out_ev on success, or is released on demand denial.
+*/
+static KosEvalStep eval_event_await(
+    KosEvalState *es, KosEvent *out_ev, PyObject *val) {
+
+  if (kos_eval_in_demand(es)) {
+    Py_DECREF(val);
+    KosContext_FLAGS(KosEvalState_CONTEXT(es)) &= ~KOS_CTX_DEAD;
+    KosContext_FLAGS(KosEvalState_CONTEXT(es)) |= KOS_CTX_RUNNING;
+    kos_demand_set_sync_violation(
+        "async suspension is not allowed in demand_sync");
+    KosEvalStep rs;
+    KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es, out_ev));
+    return rs;
+  }
+
+  KosEvalState_MarkSuspendedNotRunning(es);
+  KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+  KosEvent_PAYLOAD(out_ev) = val;
+  KOS_TRACE_POST_OP_WRAP(event_await,
+      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT));
+  return KOS_STEP_STOP_EVENT;
+}
+
+
+/**
+   Centralized RETURN handler (Phase 2b/2c from RETURN opcode).  Walks the
+   dynchain to unwind finally blocks; either pops the frame and delivers to
+   the parent (Phase 2b) or marks the root frame dead and stops (Phase 2c).
+   val is a new reference; ownership is consumed by this function.
+*/
+static KosEvalStep eval_event_return(
+    KosEvalState *es, KosEvent *out_ev, PyObject *val) {
+
+  KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
+  int has_parent = (parent != NULL && ! KosDynNode_IS_GEN(parent));
+
+  KosTransitionReq treq = {
+    .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
+    .target_frame = KosEvalState_FRAME(es),
+    .payload = val,
+  };
+  KosTransitionResult tres = {0};
+  if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
+    Py_DECREF(val);
+    return KOS_STEP_FATAL_ERROR;
+  }
+  int unw = tres.raw;
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosEvalState_SetPendingReturn(es, val, has_parent);
+    return KOS_STEP_REPROLOGUE;
+  }
+  if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
+    /* val delivered to finally block; eval resumes there */
+    return KOS_STEP_REPROLOGUE;
+  }
+  if (unw < 0) {
+    Py_DECREF(val);
+    return KOS_STEP_FATAL_ERROR;
+  }
+
+  if (has_parent) {
+    if (unlikely(kos_dyn_pop_frame(es) < 0)) {
+      Py_DECREF(val);
+      return KOS_STEP_FATAL_ERROR;
+    }
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = val;
+    return eval_parent_return_deliver(es, out_ev);
+  }
+
+  /* Root frame / GEN parent: eval is done; but may need iterator boundary
+     delivery (e.g. RETURN from a flattened agen inside ITER_NEXT). */
+  SAYF("[eval] RETURN -> KOS_EV_RETURN (root frame)\n");
+  KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+  KosEvent_PAYLOAD(out_ev) = val;
+  KosEvalState_MarkDeadAfterReturn(es);
+  if (kos_dyn_need_kos_agen_boundary_deliver(es))
+    return eval_event_return_deliver_to_boundary(es, out_ev);
   return KOS_STEP_STOP_EVENT;
 }
 
@@ -2141,8 +2269,10 @@ static KosEvalStep eval_phase_post_opcode_tail(
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
     KosEvalStep ys;
+    PyObject *yval = KosEvent_PAYLOAD(out_ev);
+    KosEvent_PAYLOAD(out_ev) = NULL;
 
-    KOS_TRACE_POST_OP_WRAP(event_yield, ys = eval_event_yield(es, out_ev));
+    KOS_TRACE_POST_OP_WRAP(event_yield, ys = eval_event_yield(es, out_ev, yval));
 
     if (ys != KOS_STEP_STOP_EVENT)
       return ys;
@@ -2503,7 +2633,7 @@ static inline int koskari_eval_dispatch_computed_goto(
   #undef OP
 
   KosOp insn;
-  KosOpOutcome op_out;
+  KosOpResult op_res;
   int eval_ret = 0;
   uint32_t gil_poll_ops = 0;
   uint64_t gil_poll_last_ns = 0;
@@ -2601,16 +2731,16 @@ cg_normal_dispatch:
   KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
   goto *optable[insn.op];
 
-  #define OP(name, ...)                                                \
-    cg_TARGET_##name:                                                  \
-      KOS_TRACE_OP_WRAP(name, op_out = op_##name(es, out_ev, &insn));  \
-      if (likely(op_out.mode == KOS_LOP_RUN)) {                        \
-        if (unlikely((++gil_poll_ops > KOS_EVAL_GIL_POLL)))            \
-          goto cg_poll;                                                \
-        KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);      \
-        goto *optable[insn.op];                                        \
-      }                                                                \
-      goto cg_handle_op_outcome;
+  #define OP(name, ...)                                               \
+    cg_TARGET_##name:                                                 \
+      KOS_TRACE_OP_WRAP(name, op_res = op_##name(es, &insn));         \
+      if (likely(op_res.kind == KOS_RES_NORMAL)) {                    \
+        if (unlikely((++gil_poll_ops > KOS_EVAL_GIL_POLL)))           \
+          goto cg_poll;                                               \
+        KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);     \
+        goto *optable[insn.op];                                       \
+      }                                                               \
+      goto cg_handle_op_result;
 
   #include "opcodes.incl"
   #undef OP
@@ -2619,21 +2749,62 @@ cg_pc_bounds_error:
   kos_eval_report_pc_bounds_error(es);
   return -1;
 
-cg_handle_op_outcome:
-  if (op_out.mode == KOS_LOP_FAIL)
+cg_handle_op_result:
+  KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
+  switch (op_res.kind) {
+  case KOS_RES_NORMAL:
+    break;
+  case KOS_RES_REPROLOGUE:
+    goto cg_prologue;
+  case KOS_RES_FATAL:
     return -1;
-
-  if (op_out.mode == KOS_LOP_PROLOGUE)
+  case KOS_RES_RAISE: {
+    KosEvalStep rs;
+    KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es, out_ev));
+    if (rs == KOS_STEP_FATAL_ERROR) return -1;
+    if (rs == KOS_STEP_STOP_EVENT)  return 0;
     goto cg_prologue;
-
-  if (op_out.mode == KOS_LOP_POST) {
-    int op_res = kos_op_post_tag_to_res(op_out.post_tag);
-    KosEvalStep ps = eval_phase_post_opcode(es, out_ev, op_res);
-    if (ps == KOS_STEP_FATAL_ERROR)
-      return -1;
-    if (ps == KOS_STEP_STOP_EVENT)
-      return 0;
+  }
+  case KOS_RES_YIELD: {
+    KosEvalStep ys;
+    KOS_TRACE_POST_OP_WRAP(event_yield,
+        ys = eval_event_yield(es, out_ev, op_res.val));
+    if (ys == KOS_STEP_FATAL_ERROR) return -1;
+    if (ys == KOS_STEP_STOP_EVENT)  return 0;
     goto cg_prologue;
+  }
+  case KOS_RES_AWAIT: {
+    KosEvalStep aws;
+    KOS_TRACE_POST_OP_WRAP(event_await,
+        aws = eval_event_await(es, out_ev, op_res.val));
+    if (aws == KOS_STEP_FATAL_ERROR) return -1;
+    if (aws == KOS_STEP_STOP_EVENT)  return 0;
+    goto cg_prologue;
+  }
+  case KOS_RES_RETURN: {
+    KosEvalStep rs;
+    KOS_TRACE_POST_OP_WRAP(event_return,
+        rs = eval_event_return(es, out_ev, op_res.val));
+    if (rs == KOS_STEP_FATAL_ERROR) return -1;
+    if (rs == KOS_STEP_STOP_EVENT)  return 0;
+    goto cg_prologue;
+  }
+  case KOS_RES_CONTROL_RETURNED: {
+    KosEvalStep cs = kos_eval_post_opcode_control_returned_after_hook(es, out_ev);
+    if (cs == KOS_STEP_FATAL_ERROR) return -1;
+    if (cs == KOS_STEP_STOP_EVENT)  return 0;
+    goto cg_prologue;
+  }
+  case KOS_RES_PARENT_RETURN: {
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = op_res.val;
+    KosEvalStep ps = eval_parent_return_deliver(es, out_ev);
+    if (ps == KOS_STEP_FATAL_ERROR) return -1;
+    if (ps == KOS_STEP_STOP_EVENT)  return 0;
+    goto cg_prologue;
+  }
+  default:
+    return -1;
   }
 
   return eval_ret;

@@ -42,7 +42,7 @@ KOS_OP_HANDLER(RETURN) {
            (void *) KosEvalState_StackHead(es),
            (unsigned long) KosEvalState_StackLen(es));
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
 
   } else {
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(RETURN) {
     if (! val) {
       SAY("[eval] RETURN PopTail underrun\n");
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
@@ -61,91 +61,17 @@ KOS_OP_HANDLER(RETURN) {
   if (unlikely(ret_delim
                && KosDynDelim_RETURN_CHAIN(ret_delim) != NULL
                && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1)) {
-    int rd = KosEvalState_KReturnDelimited(es, ret_delim, val, out_ev);
+    KosEvent _op_ev = {0};
+    int rd = KosEvalState_KReturnDelimited(es, ret_delim, val, &_op_ev);
     if (rd < 0)
-      return KOS_OP_POST_ERR();
-    return KosEvalState_HasActiveTransferPlan(es) ? KOS_OP_PROLOGUE()
-                                                   : KOS_OP_RUN();
+      return EVAL_RAISE();
+    return KosEvalState_HasActiveTransferPlan(es) ? EVAL_REPROLOGUE()
+                                                  : EVAL_NORMAL();
   }
 
-  /* === Phase 2b: Frame has parent (normal call return) ===
-     We are returning from a callee into its caller. Unwind (run wind/finally
-     etc), detach our frame, then deliver the value to the parent.
-     Skip when parent is GEN (generator boundary): treat as top-level return. */
-  {
-    KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
-    if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
-
-    /* Walk RETURN to frame (handle phase: FINALLY may consume and run). */
-    KosTransitionReq treq = {
-      .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-      .target_frame = KosEvalState_FRAME(es),
-      .payload = val,
-    };
-    KosTransitionResult tres = {0};
-    if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
-      Py_DECREF(val);
-      return KOS_OP_POST_ERR();
-    }
-    int unw = tres.raw;
-    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosEvalState_SetPendingReturn(es, val, 1);
-      return KOS_OP_RUN();
-    }
-    if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
-      /* Delivered to finally block; eval continues at finally (val on block) */
-      return KOS_OP_RUN();
-    }
-    if (unw < 0) {
-      Py_DECREF(val);
-      return KOS_OP_POST_ERR();
-    }
-
-    if (unlikely(kos_dyn_pop_frame(es) < 0)) {
-      Py_DECREF(val);
-      return KOS_OP_POST_ERR();
-    }
-
-    /* Stage B: eval runs iterator-boundary delivery, native handler, stack
-       push, and kos_dynnode_on_control_returned via eval_parent_return_deliver. */
-    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
-    KosEvent_PAYLOAD(out_ev) = val;
-    return KOS_OP_POST_PARENT_RETURN();
-  }
-  }
-
-  /* === Phase 2c: Top-level return (no parent or parent is GEN) ===
-     We are the root frame; returning means the evaluator is done. */
-  {
-    KosTransitionReq treq = {
-      .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-      .target_frame = KosEvalState_FRAME(es),
-      .payload = val,
-    };
-    KosTransitionResult tres = {0};
-    if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
-      Py_DECREF(val);
-      return KOS_OP_POST_ERR();
-    }
-    int unw = tres.raw;
-    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosEvalState_SetPendingReturn(es, val, 0);
-      return KOS_OP_RUN();
-    }
-    if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
-      return KOS_OP_RUN();
-    }
-    if (unw < 0) {
-      Py_DECREF(val);
-      return KOS_OP_POST_ERR();
-    }
-
-    /* Emit boundary event: eval is complete. */
-    SAYF("[eval] RETURN count=%u -> KOS_EV_RETURN\n", opa);
-    SAYF("[eval] RETURN payload: %R\n", val);
-    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
-    KosEvent_PAYLOAD(out_ev) = val;
-    KosEvalState_MarkDeadAfterReturn(es);
-    return KOS_OP_POST_SUSPEND();
-  }
+  /* === Phase 2b/2c: centralized in eval_event_return === */
+  return EVAL_RETURN(val);
 }
+
+
+// The end.

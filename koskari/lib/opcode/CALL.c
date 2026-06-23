@@ -20,23 +20,24 @@
 */
 
 KOS_OP_HANDLER(CALL) {
+  KosEvent _op_ev = {0};
   unsigned n = KosOp_ARG(insn);
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
   if (! ptr)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   SAYF("CALL: callable=%R", ptr[0]);
 
   if (KosCallable_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
     if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)(n + 1)) < 0)
-      return KOS_OP_POST_ERR();
-    int r = KosEvalState_Call(es, out_ev, steal.vals[0],
+      return EVAL_RAISE();
+    int r = KosEvalState_Call(es, &_op_ev, steal.vals[0],
                             (n > 0) ? &steal.vals[1] : NULL,
                             (Py_ssize_t) n, NULL, 0);
     KosStackSteal_Free(&steal);
-    return kos_op_outcome_from_call_int(es, r);
+    return kos_op_result_from_call_int(es, r, &_op_ev);
 
   } else {
     PyObject *result;
@@ -49,6 +50,9 @@ KOS_OP_HANDLER(CALL) {
 
     SAYF("CALL: result=%R", result);
     KosEvalState_StackDropNoErr(es, n + 1);
-    return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
+    return kos_op_result_PUSH_OR_AWAIT(es, result);
   }
 }
+
+
+// The end.

@@ -18,5 +18,8 @@
 */
 
 KOS_OP_HANDLER(CHECK_NOT_IN) {
-  return kos_op_outcome_from_int_step(kos_check_contains(es, out_ev, insn, 1));
+  return kos_op_result_from_push_int(kos_check_contains(es, insn, 1));
 }
+
+
+// The end.

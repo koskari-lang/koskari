@@ -23,7 +23,7 @@ KOS_OP_HANDLER(POP_LOOP) {
   if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_LOOP: top is not a LOOP region");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   KosDynLoop *loop = (KosDynLoop *) region;
@@ -32,12 +32,12 @@ KOS_OP_HANDLER(POP_LOOP) {
 
   if (unlikely(kos_dyn_pop_loop(es, loop) < 0)) {
     Py_DECREF(result);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (unlikely(KosEvalState_StackPUSH(es, result) < 0))
-    return KOS_OP_POST_ERR();
-  return KOS_OP_RUN();
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
 
 

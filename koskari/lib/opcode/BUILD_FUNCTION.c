@@ -24,14 +24,14 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *fspec = KosEvalState_StackPopRef(es);
   if (! fspec)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *defaults = NULL;
   if (opa > 0) {
     defaults = KosEvalState_StackPopTailDictNames(es, (size_t) opa);
     if (! defaults) {
       Py_DECREF(fspec);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
@@ -40,14 +40,16 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
   Py_DECREF(fspec);
   Py_XDECREF(defaults);
   if (! fn)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (KosEvalState_StackPushRef(es, fn) < 0) {
     Py_DECREF(fn);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   Py_DECREF(fn);
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

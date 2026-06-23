@@ -18,5 +18,8 @@
 */
 
 KOS_OP_HANDLER(CHECK_EQ) {
-  return kos_op_outcome_from_int_step(kos_check_cmp(es, out_ev, insn, Py_EQ));
+  return kos_op_result_from_push_int(kos_check_cmp(es, insn, Py_EQ));
 }
+
+
+// The end.

@@ -257,6 +257,41 @@ typedef struct KosOpOutcome {
 
 
 /**
+  KosOpResultKind encodes what the opcode handler wants the eval dispatch loop
+  to do after the handler returns.  NORMAL means "continue with the next
+  instruction"; all other values name an event or control transfer.
+*/
+typedef enum KosOpResultKind {
+  KOS_RES_NORMAL = 0,      /* continue to next opcode */
+  KOS_RES_REPROLOGUE,      /* restart prologue (PyErr set, or plan armed) */
+  KOS_RES_YIELD,           /* generator yielded val */
+  KOS_RES_AWAIT,           /* suspend on awaitable val */
+  KOS_RES_RETURN,          /* return val (needs walk+pop via eval_event_return) */
+  KOS_RES_RAISE,           /* PyErr is set; run exception handler */
+  KOS_RES_CONTROL_RETURNED,/* dyn-node control-returned hook */
+  KOS_RES_PARENT_RETURN,   /* return already popped; deliver val to parent */
+  KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
+} KosOpResultKind;
+
+
+typedef struct KosOpResult {
+  KosOpResultKind kind;
+  PyObject *val;  /* strong ref where documented; NULL otherwise */
+} KosOpResult;
+
+
+#define EVAL_NORMAL()           ((KosOpResult){ KOS_RES_NORMAL, NULL })
+#define EVAL_REPROLOGUE()       ((KosOpResult){ KOS_RES_REPROLOGUE, NULL })
+#define EVAL_RAISE()            ((KosOpResult){ KOS_RES_RAISE, NULL })
+#define EVAL_YIELD(v)           ((KosOpResult){ KOS_RES_YIELD, (v) })
+#define EVAL_AWAIT(v)           ((KosOpResult){ KOS_RES_AWAIT, (v) })
+#define EVAL_RETURN(v)          ((KosOpResult){ KOS_RES_RETURN, (v) })
+#define EVAL_CONTROL_RETURNED() ((KosOpResult){ KOS_RES_CONTROL_RETURNED, NULL })
+#define EVAL_PARENT_RETURN(v)   ((KosOpResult){ KOS_RES_PARENT_RETURN, (v) })
+#define EVAL_FATAL()            ((KosOpResult){ KOS_RES_FATAL, NULL })
+
+
+/**
   KosEvent is the out_ev buffer passed into koskari_eval for the whole run.
 
   Handlers and post_opcode write kind, payload, and exc_type as each

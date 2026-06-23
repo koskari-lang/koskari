@@ -20,6 +20,7 @@
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER(CALL_ATTR) {
+  KosEvent _op_ev = {0};
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;
@@ -28,25 +29,25 @@ KOS_OP_HANDLER(CALL_ATTR) {
 
   PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
   if (! ptr)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *obj = ptr[0];
 
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
   if (send_self < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *result;
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
     if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)count) < 0) {
       Py_DECREF(resolved);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     PyObject *const *args;
     Py_ssize_t nargs;
@@ -57,10 +58,10 @@ KOS_OP_HANDLER(CALL_ATTR) {
       args = (n > 0) ? &steal.vals[1] : NULL;
       nargs = (Py_ssize_t) n;
     }
-    int r = KosEvalState_Call(es, out_ev, resolved, args, nargs, NULL, 0);
+    int r = KosEvalState_Call(es, &_op_ev, resolved, args, nargs, NULL, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_outcome_from_call_int(es, r);
+    return kos_op_result_from_call_int(es, r, &_op_ev);
   }
 
   if (send_self == 0) {
@@ -72,5 +73,8 @@ KOS_OP_HANDLER(CALL_ATTR) {
   KosEvalState_StackDropNoErr(es, count);
   Py_DECREF(resolved);
 
-  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
+  return kos_op_result_PUSH_OR_AWAIT(es, result);
 }
+
+
+// The end.

@@ -21,15 +21,17 @@
 KOS_OP_HANDLER(VAR_STORE) {
   PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   if (frame_ns_store(es, name, val) < 0) {
     Py_DECREF(val);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   Py_DECREF(val);
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

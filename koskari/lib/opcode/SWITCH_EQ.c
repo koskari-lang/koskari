@@ -23,11 +23,11 @@
 KOS_OP_HANDLER(SWITCH_EQ) {
   PyObject *const *tail = KosEvalState_StackTailPtr(es, 2);
   if (unlikely(! tail))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   int res = PyObject_RichCompareBool(tail[0], tail[1], Py_EQ);
   if (unlikely(res < 0))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 2);
@@ -36,8 +36,7 @@ KOS_OP_HANDLER(SWITCH_EQ) {
     KosEvalState_StackDropNoErr(es, 1);
   }
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

@@ -25,13 +25,15 @@ KOS_OP_HANDLER(ITEM_STORE) {
   } args = {0};
 
   if (KOS_EVALSTATE_POP_ARGS(es, args))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   int res = PyObject_SetItem(args.obj, args.key, args.val);
   Py_DECREF(args.obj);
   Py_DECREF(args.key);
   Py_DECREF(args.val);
   if (res < 0)
-    return KOS_OP_POST_ERR();
-  (void) out_ev;
-  return KOS_OP_RUN();
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

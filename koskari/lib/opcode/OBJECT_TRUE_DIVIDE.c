@@ -19,5 +19,8 @@
 */
 
 KOS_OP_HANDLER(OBJECT_TRUE_DIVIDE) {
-  return kos_op_outcome_from_int_step(obj_op_reducing(es, out_ev, insn, KosOperator_TrueDivide));
+  return kos_op_result_from_push_int(obj_op_reducing(es, insn, KosOperator_TrueDivide));
 }
+
+
+// The end.

@@ -21,7 +21,7 @@
 KOS_OP_HANDLER(OBJECT_AITER) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *res = NULL;
   PyTypeObject *type = Py_TYPE(val);
@@ -30,9 +30,12 @@ KOS_OP_HANDLER(OBJECT_AITER) {
   if (! res) {
     PyErr_Format(PyExc_RuntimeError, "cannot await for elements of %R", val);
     Py_DECREF(val);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   Py_DECREF(val);
   (void) insn;
-  return kos_op_outcome_PUSH(es, res);
+  return kos_op_result_PUSH(es, res);
 }
+
+
+// The end.

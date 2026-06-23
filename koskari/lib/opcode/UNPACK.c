@@ -20,16 +20,15 @@
 
 KOS_OP_HANDLER(UNPACK) {
   Py_ssize_t n = (Py_ssize_t) KosOp_ARG(insn);
-  (void) out_ev;
 
   PyObject *raw = KosEvalState_StackPopRef(es);
   if (! raw)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen != n) {
@@ -37,7 +36,7 @@ KOS_OP_HANDLER(UNPACK) {
     PyErr_Format(PyExc_ValueError,
                  "UNPACK expected sequence of length %zd, got %zd",
                  n, slen);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   Py_ssize_t j = n;
@@ -46,12 +45,12 @@ KOS_OP_HANDLER(UNPACK) {
 
     if (KosEvalState_StackPushRef(es, item) < 0) {
       Py_DECREF(seq);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
   Py_DECREF(seq);
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

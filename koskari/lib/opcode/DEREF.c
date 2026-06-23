@@ -25,10 +25,13 @@
 KOS_OP_HANDLER(DEREF) {
   PyObject *ref = KosEvalState_StackPopRef(es);
   if (! ref)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *val = PyObject_CallMethod(ref, "deref", NULL);
   Py_DECREF(ref);
 
-  return kos_op_outcome_PUSH(es, val);
+  return kos_op_result_PUSH(es, val);
 }
+
+
+// The end.

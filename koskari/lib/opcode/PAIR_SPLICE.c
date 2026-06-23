@@ -79,21 +79,21 @@ KOS_OP_HANDLER(PAIR_SPLICE) {
 
   if (count == 0) {
     Py_INCREF(KosNil);
-    return kos_op_outcome_PUSH(es, KosNil);
+    return kos_op_result_PUSH(es, KosNil);
   }
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
   if (! ptr)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *coll = PyList_New(0);
   if (! coll)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   for (size_t i = 0; i < count; i++) {
     if (pair_splice_extend(coll, ptr[i]) < 0) {
       Py_DECREF(coll);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
@@ -107,18 +107,21 @@ KOS_OP_HANDLER(PAIR_SPLICE) {
     /* Append nil to make the result a proper list. */
     if (PyList_Append(coll, KosNil) < 0) {
       Py_DECREF(coll);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     result = KosPair_Cons(coll);
     Py_DECREF(coll);
     if (! result)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
   }
 
   if (KosEvalState_StackDrop(es, count) < 0) {
     Py_DECREF(result);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
-  return kos_op_outcome_PUSH(es, result);
+  return kos_op_result_PUSH(es, result);
 }
+
+
+// The end.

@@ -19,7 +19,6 @@
 */
 
 KOS_OP_HANDLER(POP_COLLECT) {
-  (void) out_ev;
   (void) insn;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
@@ -28,11 +27,11 @@ KOS_OP_HANDLER(POP_COLLECT) {
 
   if (unlikely(kos_dyn_pop_collect(es, (KosDynCollect *) top) < 0)) {
     Py_DECREF(collector);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   int res = KosEvalState_StackPUSH(es, collector);
-  return kos_op_outcome_from_int_step(res);
+  return kos_op_result_from_push_int(res);
 }
 
 

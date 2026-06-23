@@ -19,33 +19,35 @@
 */
 
 KOS_OP_HANDLER(FAST_OBJECT_BIT_RIGHT) {
-  (void) out_ev;
 
   PyObject *ns = CURRENT_NS();
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "FAST_OBJECT_BIT_RIGHT invoked on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *obj = KosNamespace_FastDeref(ns, idx);
   if (unlikely(! obj))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *rhs = KosEvalState_StackPopRef(es);
   if (unlikely(! rhs)) {
     Py_DECREF(obj);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *result = PyNumber_InPlaceRshift(obj, rhs);
   Py_DECREF(obj);
   Py_DECREF(rhs);
   if (unlikely(! result))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   int res = KosNamespace_FastStore(ns, idx, result);
   Py_DECREF(result);
-  return kos_op_outcome_from_int_step(res);
+  return kos_op_result_from_push_int(res);
 }
+
+
+// The end.

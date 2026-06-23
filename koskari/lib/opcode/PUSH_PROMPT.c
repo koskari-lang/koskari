@@ -21,9 +21,11 @@
 KOS_OP_HANDLER(PUSH_PROMPT) {
   uint32_t prompt_id;
   if (get_prompt_id_from_insn(KosEvalState_CurrentCode(es), insn, &prompt_id) < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   if (! kos_dyn_push_prompt(es, prompt_id))
-    return KOS_OP_POST_ERR();
-  (void) out_ev;
-  return KOS_OP_RUN();
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

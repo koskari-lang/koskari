@@ -26,20 +26,19 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
   if (opa == 0) {
     PyObject *empty = PyTuple_New(0);
     if (! empty)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     if (KosEvalState_StackPushRef(es, empty) < 0) {
       Py_DECREF(empty);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     Py_DECREF(empty);
-    (void) out_ev;
-    return KOS_OP_RUN();
+    return EVAL_NORMAL();
   }
 
   if (opa == 1) {
     PyObject *v = KosEvalState_StackPopRef(es);
     if (! v)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
 
     if (! PyTuple_CheckExact(v)) {
       PyObject *s = PySequence_Tuple(v);
@@ -48,32 +47,31 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
     }
 
     if (! v)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
 
     if (KosEvalState_StackPushRef(es, v) < 0) {
       Py_DECREF(v);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     Py_DECREF(v);
-    (void) out_ev;
-    return KOS_OP_RUN();
+    return EVAL_NORMAL();
   }
 
   PyObject *const *vals = KosEvalState_StackTailPtr(es,
                                                  (size_t) opa);
   if (! vals)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *built = PyList_New(0);
   if (! built)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   for (unsigned i = 0; i < opa; i++) {
     PyObject *nb = PySequence_InPlaceConcat(built, vals[i]);
     Py_DECREF(built);
     if (! nb) {
       KosEvalState_StackDropNoErr(es, (size_t) opa);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     built = nb;
   }
@@ -83,14 +81,16 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
   PyObject *result = PySequence_Tuple(built);
   Py_DECREF(built);
   if (! result)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (KosEvalState_StackPushRef(es, result) < 0) {
     Py_DECREF(result);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   Py_DECREF(result);
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

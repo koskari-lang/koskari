@@ -18,7 +18,9 @@
 */
 
 KOS_OP_HANDLER(NOOP) {
-  (void) out_ev;
   (void) insn;
-  return KOS_OP_RUN();  /* continue */
+  return EVAL_NORMAL();  /* continue */
 }
+
+
+// The end.
