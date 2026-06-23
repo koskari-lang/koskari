@@ -848,11 +848,27 @@ static int xfer_step_extent_action(KosEvalState *es, KosTransferAction *action,
                                    KosEvent *out_ev) {
   KosDynNode *node = KosTransferAction_EXTENT_NODE(action);
   int phase = KosTransferAction_EXTENT_PHASE(action);
+  KosOpResult kr;
 
   if (phase == KOS_XFER_EXTENT_PHASE_WIND)
-    return kos_dynnode_run_wind(es, node, out_ev);
-  return kos_dynnode_run_transfer_unwind(es, node, KOS_XFER_EVENT_NONE,
-                                         out_ev);
+    kr = kos_dynnode_run_wind(es, node);
+  else
+    kr = kos_dynnode_run_transfer_unwind(es, node, KOS_XFER_EVENT_NONE);
+  if (kr.kind == KOS_RES_AWAIT) {
+    if (out_ev) {
+      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+      KosEvent_PAYLOAD(out_ev) = kr.val;
+      KosEvent_EXC_TYPE(out_ev) = NULL;
+    } else {
+      Py_XDECREF(kr.val);
+    }
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  }
+  if (kr.kind == KOS_RES_REPROLOGUE)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  if (kr.kind != KOS_RES_NORMAL)
+    return -1;
+  return 0;
 }
 
 
@@ -911,13 +927,25 @@ static int kos_dyn_run_install_wind_span(
 
   /* Run wind in reverse order (outer nodes first) */
   for (size_t i = wind_count; i > 0; i--) {
-    int r = kos_dynnode_run_wind(es, wind_nodes[i - 1], out_ev);
-    if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosOpResult wr = kos_dynnode_run_wind(es, wind_nodes[i - 1]);
+    if (wr.kind == KOS_RES_AWAIT) {
+      if (out_ev) {
+        KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+        KosEvent_PAYLOAD(out_ev) = wr.val;
+        KosEvent_EXC_TYPE(out_ev) = NULL;
+      } else {
+        Py_XDECREF(wr.val);
+      }
       if (wind_nodes != stack_buf)
         PyMem_Free(wind_nodes);
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
-    if (r < 0) {
+    if (wr.kind == KOS_RES_REPROLOGUE) {
+      if (wind_nodes != stack_buf)
+        PyMem_Free(wind_nodes);
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    }
+    if (wr.kind != KOS_RES_NORMAL) {
       if (wind_nodes != stack_buf)
         PyMem_Free(wind_nodes);
       if (KOS_XFER_TRACE)
@@ -1182,7 +1210,22 @@ static int xfer_step_pop_one(KosEvalState *es, KosEvent *out_ev) {
     PyErr_SetString(PyExc_RuntimeError, "POP_ONE: empty chain");
     return -1;
   }
-  return kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_NONE, out_ev);
+  KosOpResult kr = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_NONE);
+  if (kr.kind == KOS_RES_AWAIT) {
+    if (out_ev) {
+      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+      KosEvent_PAYLOAD(out_ev) = kr.val;
+      KosEvent_EXC_TYPE(out_ev) = NULL;
+    } else {
+      Py_XDECREF(kr.val);
+    }
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  }
+  if (kr.kind == KOS_RES_REPROLOGUE)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  if (kr.kind != KOS_RES_NORMAL)
+    return -1;
+  return 0;
 }
 
 
@@ -1210,11 +1253,20 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
          (void *) current, (void *) stop_node, (void *) new_top);
 
   while (KosEvalState_DYN_TOP(es) && KosEvalState_DYN_TOP(es) != new_top) {
-    int pop_res = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE,
-                                                out_ev);
-    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
+    KosOpResult pop_res = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE);
+    if (pop_res.kind == KOS_RES_AWAIT) {
+      if (out_ev) {
+        KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+        KosEvent_PAYLOAD(out_ev) = pop_res.val;
+        KosEvent_EXC_TYPE(out_ev) = NULL;
+      } else {
+        Py_XDECREF(pop_res.val);
+      }
       return KOS_DYN_UNWIND_ASYNC_STARTED;
-    if (pop_res < 0)
+    }
+    if (pop_res.kind == KOS_RES_REPROLOGUE)
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    if (pop_res.kind != KOS_RES_NORMAL)
       return -1;
   }
   if (KosEvalState_DYN_TOP(es) != new_top) {

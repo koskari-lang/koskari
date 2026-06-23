@@ -455,7 +455,8 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
    Run context manager __exit__ during kos_dyn_unwind.
    Returns EVAL_AWAIT when __exit__ returned an awaitable (payload in kr.val).
    Returns EVAL_REPROLOGUE when the exit was swallowed (exception suppressed,
-   resume_pc already updated — caller must not pop the node).
+   resume_pc updated and Py_None pushed to parent stack; kos_dyn_unwind maps
+   this to EVAL_NORMAL so the node is popped before REPROLOGUE is returned).
    Returns EVAL_NORMAL on ordinary success.
    Returns EVAL_RAISE on error.
 */

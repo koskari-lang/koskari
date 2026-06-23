@@ -100,85 +100,84 @@ int kos_dyn_walk_handle_yield(KosEvalState *es, KosEvent *out_ev) {
                   "yield outside generator: no generator boundary on chain");
   return -1;
 }
-int kos_dyn_exception_unwind(
+KosOpResult kos_dyn_exception_unwind(
     KosEvalState *es,
-    KosDynNode *node,
-    KosEvent *out_ev) {
+    KosDynNode *node) {
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT:
-      (void) out_ev;
       if (KOS_XFER_TRACE)
         SAYF("[xfer] prompt_unwind_exception node=%p: unlinking prompt", (void *) node);
-      if (kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE, out_ev) < 0) {
-        return -1;
+      {
+        KosOpResult kr = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE);
+        if (kr.kind != KOS_RES_NORMAL && kr.kind != KOS_RES_REPROLOGUE
+            && kr.kind != KOS_RES_AWAIT)
+          return kr;
       }
       /* Exception propagates past the prompt boundary; continue unwinding */
-      return 0;
-    case KOS_DYN_DELIM:
-      (void) out_ev;
-      return kos_dyn_pop_delim(es, (KosDynDelim *) node);
+      return EVAL_NORMAL();
+    case KOS_DYN_DELIM: {
+      int r = kos_dyn_pop_delim(es, (KosDynDelim *) node);
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
     default:
-      return 0;
+      return EVAL_NORMAL();
   }
 }
-int kos_dyn_pop_nonbarrier_top(
+KosOpResult kos_dyn_pop_nonbarrier_top(
     KosEvalState *es,
-    KosXferEvent event,
-    KosEvent *out_ev) {
+    KosXferEvent event) {
 
   KosDynNode *top = KosEvalState_DYN_TOP(es);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
-    return -1;
+    return EVAL_RAISE();
   }
 
   if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER)) {
     PyErr_SetString(PyExc_RuntimeError, "cannot unwind past barrier node");
-    return -1;
+    return EVAL_RAISE();
   }
 
-  int r = kos_dyn_uninstall_core(es, top, event, out_ev);
-  return r;
+  return kos_dyn_uninstall_core(es, top, event);
 }
 
 
-int kos_dyn_pop_top_allow_barrier(
+KosOpResult kos_dyn_pop_top_allow_barrier(
     KosEvalState *es,
-    KosXferEvent event,
-    KosEvent *out_ev) {
+    KosXferEvent event) {
 
   KosDynNode *top = KosEvalState_DYN_TOP(es);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
-    return -1;
+    return EVAL_RAISE();
   }
 
-  int r = kos_dyn_uninstall_core(es, top, event, out_ev);
-  return r;
+  return kos_dyn_uninstall_core(es, top, event);
 }
 
 
 KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event) {
-  int r = kos_dyn_pop_nonbarrier_top(es, event, NULL);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
+  KosOpResult kr = kos_dyn_pop_nonbarrier_top(es, event);
+  if (kr.kind == KOS_RES_AWAIT) {
+    Py_XDECREF(kr.val);
     return EVAL_REPROLOGUE();
-  return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+  }
+  return kr;
 }
 
 
 /**
-   Pop dyn_top during an unwind walk toward a frame or node.  PROMPT
-   nodes use kos_dyn_pop_prompt; others use kos_dyn_pop_top.  Unlike
+   Pop dyn_top during an unwind walk toward a frame or node.  Unlike
    kos_dyn_pop_top alone, barriers are popped here because these walks
    deliberately unwind through delimited prompt boundaries.
 
-   :return: same as kos_dyn_pop_top, or 0 after popping a prompt
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_AWAIT or EVAL_REPROLOGUE when async started
 */
-static int kos_dyn_pop_one_unwind_walk(
+static KosOpResult kos_dyn_pop_one_unwind_walk(
     KosEvalState *es,
-    KosXferEvent event,
-    KosEvent *out_ev) {
+    KosXferEvent event) {
 
   KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
 
@@ -186,10 +185,10 @@ static int kos_dyn_pop_one_unwind_walk(
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_pop_one_unwind_walk: empty dynamic chain");
-    return -1;
+    return EVAL_RAISE();
   }
 
-  return kos_dyn_pop_top_allow_barrier(es, event, out_ev);
+  return kos_dyn_pop_top_allow_barrier(es, event);
 }
 
 
@@ -214,13 +213,15 @@ int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
            kos_dynnode_kind_name(KosDynNode_KIND(trace_top)));
     }
 #endif
-    int pop_res = kos_dyn_pop_one_unwind_walk(es, event, out_ev);
-    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      return pop_res;
+    KosOpResult pop_res = kos_dyn_pop_one_unwind_walk(es, event);
+    if (pop_res.kind == KOS_RES_AWAIT) {
+      Py_XDECREF(pop_res.val);
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
-    if (pop_res != 0) {
+    if (pop_res.kind == KOS_RES_REPROLOGUE)
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    if (pop_res.kind != KOS_RES_NORMAL)
       return -1;
-    }
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));
@@ -287,14 +288,19 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
     if (KOS_XFER_TRACE)
       SAYF("[xfer] walk_return: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
-    int pop_res = kos_dyn_pop_one_unwind_walk(es, KOS_XFER_EVENT_RETURN,
-                                             out_ev);
-    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosOpResult pop_res = kos_dyn_pop_one_unwind_walk(es, KOS_XFER_EVENT_RETURN);
+    if (pop_res.kind == KOS_RES_AWAIT) {
+      Py_XDECREF(pop_res.val);
       KosEvalState_SetUnwindTargetFrame(es, frame);
       Py_DECREF(val);
-      return pop_res;
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
-    if (pop_res != 0) {
+    if (pop_res.kind == KOS_RES_REPROLOGUE) {
+      KosEvalState_SetUnwindTargetFrame(es, frame);
+      Py_DECREF(val);
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    }
+    if (pop_res.kind != KOS_RES_NORMAL) {
       Py_DECREF(val);
       return -1;
     }
@@ -339,14 +345,18 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
     if (KOS_XFER_TRACE)
       SAYF("[xfer] unwind_to_frame: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
-    int pop_res = kos_dyn_pop_one_unwind_walk(es, event, out_ev);
-    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosOpResult pop_res = kos_dyn_pop_one_unwind_walk(es, event);
+    if (pop_res.kind == KOS_RES_AWAIT) {
+      Py_XDECREF(pop_res.val);
       KosEvalState_SetUnwindTargetFrame(es, frame);
-      return pop_res;
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
-    if (pop_res != 0) {
+    if (pop_res.kind == KOS_RES_REPROLOGUE) {
+      KosEvalState_SetUnwindTargetFrame(es, frame);
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    }
+    if (pop_res.kind != KOS_RES_NORMAL)
       return -1;
-    }
   }
   KosEvalState_SetUnwindTargetFrame(es, NULL);
   if (KOS_XFER_TRACE)
@@ -422,12 +432,17 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
 
   /* Walk from DYN_TOP toward region; unwind each node with event */
   while (KosEvalState_DYN_TOP(es) != (KosDynNode *) region) {
-    int pop_res = kos_dyn_pop_nonbarrier_top(es, event, out_ev);
-    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosOpResult pop_res = kos_dyn_pop_nonbarrier_top(es, event);
+    if (pop_res.kind == KOS_RES_AWAIT) {
+      Py_XDECREF(pop_res.val);
       KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
-    if (pop_res < 0) {
+    if (pop_res.kind == KOS_RES_REPROLOGUE) {
+      KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    }
+    if (pop_res.kind != KOS_RES_NORMAL) {
       return -1;
     }
   }
@@ -484,9 +499,7 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
 
    :return: 1 if a handler was applied, 0 if none, -1 on error
 */
-static int try_local_extent_on_current_frame(KosEvalState *es, KosEvent *out_ev) {
-
-  (void) out_ev;
+static int try_local_extent_on_current_frame(KosEvalState *es) {
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
   if (! frame || ! PyErr_Occurred())
@@ -518,12 +531,12 @@ static int try_local_extent_on_current_frame(KosEvalState *es, KosEvent *out_ev)
 
 /**
    Walk dyn_top down toward frame_top, handle(RAISE) then pop until a TRY or
-   FINALLY consumes (jump to handler) or no handler remains. Same semantics as
-   legacy try_local_exception_handler in eval.c: return 1 if handler applied,
-   0 if out_ev gets RAISE, -1 on error. Callers: eval transition
-   KOS_TRANS_TRY_LOCAL_RAISE.
+   FINALLY consumes (jump to handler) or no handler remains.
+   Returns EVAL_REPROLOGUE if a handler was applied, EVAL_RAISE if no handler
+   (PyErr set and boundary raise prepared), EVAL_AWAIT if async unwind started.
+   Callers: eval transition KOS_TRANS_TRY_LOCAL_RAISE.
 */
-int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
+KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   #if VERBOSE_DEBUG
   if (! ctx) {
@@ -552,15 +565,17 @@ int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
   if (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL
       && KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)
       && PyErr_Occurred()) {
-    int extent = try_local_extent_on_current_frame(es, out_ev);
-    if (extent != 0)
-      return extent;
+    int extent = try_local_extent_on_current_frame(es);
+    if (extent > 0)
+      return EVAL_REPROLOGUE();
+    if (extent < 0)
+      return EVAL_FATAL();
 
     {
       KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
       if (parent && ! KosDynNode_IS_GEN(parent)) {
         if (kos_dyn_pop_frame(es) < 0)
-          return -1;
+          return EVAL_FATAL();
       }
     }
   }
@@ -578,7 +593,7 @@ int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
     /* Handle phase: offer RAISE to node before unwind.  If consumed,
        deliver to handler and return.  Otherwise pop and continue. */
     {
-      KosHandleResult hr = kos_dyn_handle(es, top, KOS_XFER_EVENT_RAISE, out_ev);
+      KosHandleResult hr = kos_dyn_handle(es, top, KOS_XFER_EVENT_RAISE, NULL);
       SAYF("[try_local] kos_dyn_handle RAISE hr=%d (%s)\n",
            (int) hr,
            hr == KOS_HANDLE_CONSUMED ? "CONSUMED"
@@ -588,8 +603,8 @@ int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
 
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_GEN(top)) {
-          kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-          return 0;
+          kos_eval_prepare_boundary_raise(ctx, es);
+          return EVAL_RAISE();
         }
         KosDynNode *region = top;
         uint32_t handler_pc =
@@ -597,7 +612,7 @@ int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
 
         if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
           if (KosEvalState_StackClearBlock(es) < 0) {
-            return -1;
+            return EVAL_FATAL();
           }
         }
 
@@ -620,11 +635,11 @@ int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
 
         if (KosDynNode_IS_FINALLY(region))
           KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 1;
-        return 1;
+        return EVAL_REPROLOGUE();
       }
 
       if (hr == KOS_HANDLE_ERROR) {
-        return -1;
+        return EVAL_FATAL();
       }
     }
 
@@ -636,47 +651,51 @@ int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
           || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
       if (needs_preserve && PyErr_Occurred())
         PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
-      int pop_res = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_RAISE,
-                                               out_ev);
+      KosOpResult pop_res = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_RAISE);
       if (saved_exc_typ != NULL) {
         PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
         saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
       }
-      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      if (pop_res.kind == KOS_RES_AWAIT) {
         KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
-        return 1;
+        return pop_res;
       }
-      if (pop_res != 0) {
+      if (pop_res.kind == KOS_RES_REPROLOGUE) {
+        KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
+        return EVAL_REPROLOGUE();
+      }
+      if (pop_res.kind != KOS_RES_NORMAL) {
         if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
-          int exc_res = kos_dyn_exception_unwind(es, top, out_ev);
-          if (exc_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+          KosOpResult exc_res = kos_dyn_exception_unwind(es, top);
+          if (exc_res.kind == KOS_RES_AWAIT) {
             KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
-            return 1;
+            return exc_res;
           }
-          if (exc_res == 1) {
-            return 1;
+          if (exc_res.kind == KOS_RES_REPROLOGUE) {
+            KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
+            return EVAL_REPROLOGUE();
           }
-          if (exc_res == 0)
+          if (exc_res.kind == KOS_RES_NORMAL)
             continue;
         }
-        SAY("[try_local] pop/unwind path -> KOS_EV_RAISE\n");
-        kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-        return 0;
+        SAY("[try_local] pop/unwind path -> RAISE\n");
+        kos_eval_prepare_boundary_raise(ctx, es);
+        return EVAL_RAISE();
       }
       if (top_may_swallow && ! PyErr_Occurred()) {
         if (catch_resume_pc != (uint32_t) -1 && KosEvalState_FRAME(es)) {
           KosEvalState_SET_PC(es, catch_resume_pc);
         }
-        return 1;
+        return EVAL_REPROLOGUE();
       }
     }
   }
 
   /* No handler found */
   {
-    SAY("[try_local] no handler found -> KOS_EV_RAISE\n");
-    kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-    return 0;
+    SAY("[try_local] no handler found -> RAISE\n");
+    kos_eval_prepare_boundary_raise(ctx, es);
+    return EVAL_RAISE();
   }
 }
 /**

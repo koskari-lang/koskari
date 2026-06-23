@@ -131,17 +131,32 @@ static inline int kos_dyn_transition_internal(
     return 0;
   }
   case KOS_TRANS_TRY_LOCAL_RAISE: {
-    int r = kos_dyn_try_local_raise_body(es, out_ev);
-    out->raw = r;
-    if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      return -1;
-    }
-    if (r == 1)
+    KosOpResult kr = kos_dyn_try_local_raise_body(es);
+    out->raw = (int) kr.kind;
+    if (kr.kind == KOS_RES_REPROLOGUE) {
       out->status = KOS_TRANS_STATUS_HANDLER_APPLIED;
-    else
+      return 0;
+    }
+    if (kr.kind == KOS_RES_RAISE) {
+      /* No local handler; kos_eval_prepare_boundary_raise was called */
       out->status = KOS_TRANS_STATUS_NO_LOCAL_HANDLER;
-    return 0;
+      return 0;
+    }
+    if (kr.kind == KOS_RES_AWAIT) {
+      /* Async unwind started; surface via out_ev */
+      if (out_ev) {
+        KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+        KosEvent_PAYLOAD(out_ev) = kr.val;
+        KosEvent_EXC_TYPE(out_ev) = NULL;
+      } else {
+        Py_XDECREF(kr.val);
+      }
+      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
+      return 0;
+    }
+    /* FATAL or unexpected */
+    out->status = KOS_TRANS_STATUS_ERROR;
+    return -1;
   }
   default:
     PyErr_Format(PyExc_RuntimeError,
@@ -329,16 +344,29 @@ static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
 /**
   Abandon any transfer nest, then dispatch PyErr through local handlers.
 
-  :return: 1 if a handler was applied, -1 if unhandled raise or fatal error
+  :return: 1 if a handler was applied (or async unwind started),
+           -1 if unhandled raise or fatal error (out_ev set to KOS_EV_RAISE)
 */
 static int abandon_xfer_and_try_local(KosEvalState *es, KosEvent *out_ev) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   kos_abandon_transfer_nest(es);
-  int tl = try_local_exception_handler(es, out_ev);
-  if (tl > 0)
+  KosOpResult tl = try_local_exception_handler(es);
+  if (tl.kind == KOS_RES_REPROLOGUE)
     return 1;
-  if (tl < 0)
-    return -1;
+  if (tl.kind == KOS_RES_AWAIT) {
+    if (out_ev) {
+      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+      KosEvent_PAYLOAD(out_ev) = tl.val;
+      KosEvent_EXC_TYPE(out_ev) = NULL;
+    } else {
+      Py_XDECREF(tl.val);
+    }
+    return 1;
+  }
+  /* RAISE or FATAL: PyErr is set; emit into out_ev so caller can use
+     kos_ev_to_opresult to restore it. */
+  kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
   return -1;
 }
 

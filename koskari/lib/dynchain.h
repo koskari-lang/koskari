@@ -379,7 +379,7 @@ typedef struct KosTransitionResult {
    eval/eval_transition.c included from eval.c.
 */
 
-int kos_dyn_try_local_raise_body(KosEvalState *es, struct KosEvent *out_ev);
+KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es);
 
 
 typedef struct KosDynNode KosDynPrompt;
@@ -892,11 +892,11 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es);
 
    :param event: transfer event (RETURN, RAISE, etc.); KOS_XFER_EVENT_NONE if unknown
 
-   :return: 0 on success, -1 on error or BARRIER, KOS_DYN_UNWIND_ASYNC_STARTED
-     when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error or BARRIER,
+     EVAL_AWAIT or EVAL_REPROLOGUE when async
 */
-int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                      struct KosEvent *out_ev);
+KosOpResult kos_dyn_uninstall(KosEvalState *es, KosDynNode *node,
+                               KosXferEvent event);
 #define kos_dyn_pop kos_dyn_uninstall
 
 
@@ -1458,17 +1458,15 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node);
   Pop the top node of the dynamic chain with non-barrier policy.
   Namespace ownership is node-local; popping reveals next owner by chain walk.
 
-  :param ctx: execution context
-  :param out_ev: event output for suspend (required when WITH may have async exit)
+  :param es: eval state
   :param event: transfer event; KOS_XFER_EVENT_NONE if unknown
 
-  :return: 0 on success, -1 on error or if top is a barrier,
-    KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started
+  :return: EVAL_NORMAL on success, EVAL_RAISE on error or if top is a barrier,
+    EVAL_AWAIT or EVAL_REPROLOGUE when async extent action started
 */
-int kos_dyn_pop_nonbarrier_top(
+KosOpResult kos_dyn_pop_nonbarrier_top(
     KosEvalState *es,
-    KosXferEvent event,
-    struct KosEvent *out_ev);
+    KosXferEvent event);
 
 
 /**
@@ -1476,15 +1474,14 @@ int kos_dyn_pop_nonbarrier_top(
 
   Internal prompt-crossing unwind/transfer paths use this variant.
 */
-int kos_dyn_pop_top_allow_barrier(
+KosOpResult kos_dyn_pop_top_allow_barrier(
     KosEvalState *es,
-    KosXferEvent event,
-    struct KosEvent *out_ev);
+    KosXferEvent event);
 
 
 /**
-  Backward-compatible alias for non-barrier policy pop.
-  Returns EVAL_REPROLOGUE when an async wind-thunk frame was started,
+  Non-barrier policy pop returning KosOpResult.
+  EVAL_REPROLOGUE when a wind-thunk frame was started (AWAIT val dropped),
   EVAL_NORMAL on sync success, EVAL_RAISE on error.
 */
 KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event);
@@ -1578,18 +1575,21 @@ int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
      Returns KosOpResult: AWAIT for async WITH enter, REPROLOGUE when a WIND
      before-thunk frame was started, NORMAL on sync success, RAISE on error.
    kos_dyn_unwind: run unwind (exit) for extent nodes; may start async.
+     Returns KosOpResult: AWAIT when WITH __exit__ returned awaitable,
+     REPROLOGUE when WITH swallowed the exception or WIND started async,
+     NORMAL on success, RAISE on error.
    kos_dyn_exception_unwind: called when exception propagation reaches a
-     HANDLES_EXCEPTIONS node; returns 0 to continue, 1 if swallowed,
-     KOS_DYN_UNWIND_ASYNC_STARTED if async, -1 on error.
+     HANDLES_EXCEPTIONS node. Returns EVAL_NORMAL to continue unwinding,
+     EVAL_REPROLOGUE if handler applied, EVAL_AWAIT if async started,
+     EVAL_RAISE on error.
    kos_dyn_clone: allocate a copy of the node; NULL return on error or if
      the type forbids cloning.
 */
-int kos_dyn_install(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
+int kos_dyn_install(KosEvalState *es, KosDynNode *node);
 KosOpResult kos_dyn_wind(KosEvalState *es, KosDynNode *node);
-int kos_dyn_unwind(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                   struct KosEvent *out_ev);
-int kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node,
-                               struct KosEvent *out_ev);
+KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
+                            KosXferEvent event);
+KosOpResult kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node);
 
 /**
    Offer a control transit to a node.  Does not unlink; only decides

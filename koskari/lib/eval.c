@@ -117,7 +117,7 @@ static void inject_eval_frame_traceback(KosContext *ctx,
 
 static void kos_eval_mark_context_dead(KosContext *ctx);
 
-static int try_local_exception_handler(KosEvalState *es, KosEvent *out_ev);
+static KosOpResult try_local_exception_handler(KosEvalState *es);
 
 static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val);
 
@@ -795,6 +795,9 @@ static KosEvalMode process_raise(KosEvalState *es, KosEvent *out_ev) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (! PyErr_Occurred()) {
+    PyErr_SetString(PyExc_SystemError,
+                    "process_raise: no exception set");
+    kos_eval_prepare_boundary_raise(ctx, es);
     KosEvent_KIND(out_ev) = KOS_EV_RAISE;
     KosEvent_PAYLOAD(out_ev) = NULL;
     KosEvent_EXC_TYPE(out_ev) = NULL;
@@ -812,10 +815,20 @@ static KosEvalMode process_raise(KosEvalState *es, KosEvent *out_ev) {
   clear_kos_agen_boundary_on_error(ctx);
 
   {
-    int tl = try_local_exception_handler(es, out_ev);
-    if (tl > 0)
+    KosOpResult tl = try_local_exception_handler(es);
+    if (tl.kind == KOS_RES_REPROLOGUE)
       return KOS_MODE_NORMAL;
-    /* tl<0: PyErr set; tl==0: out_ev is KOS_EV_RAISE, PyErr cleared */
+    if (tl.kind == KOS_RES_AWAIT) {
+      /* Async unwind started: surface AWAIT to caller via out_ev */
+      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+      KosEvent_PAYLOAD(out_ev) = tl.val;
+      KosEvent_EXC_TYPE(out_ev) = NULL;
+      return KOS_MODE_AWAIT;
+    }
+    /* RAISE or FATAL: PyErr set by kos_eval_prepare_boundary_raise */
+    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    KosEvent_EXC_TYPE(out_ev) = NULL;
     return KOS_MODE_RAISE;
   }
 }
@@ -1765,31 +1778,15 @@ static int op_attach_koskari_agen_frame_for_yield_from(
    Try to handle an exception locally by finding a TRY or FINALLY region
    and jumping to its handler.  Call when PyErr_Occurred() is set.
 
-   Delegates to KosEvalState_Transition(KOS_TRANS_TRY_LOCAL_RAISE).
+   Delegates to kos_dyn_try_local_raise_body directly.
 
-   :param ctx: execution context
-   :param out_ev: event to fill if no handler is found
-
-   :return: 1 if a handler was applied (caller should continue the loop),
-            0 if no handler (out_ev set to KOS_EV_RAISE, caller should return),
-            -1 on error (PyErr set)
+   :return: EVAL_REPROLOGUE if a handler was applied (caller should continue),
+            EVAL_RAISE if no handler (kos_eval_prepare_boundary_raise was called),
+            EVAL_AWAIT if async unwind started,
+            EVAL_FATAL on error
 */
-static int try_local_exception_handler(
-    KosEvalState *es,
-    KosEvent *out_ev) {
-
-  KosTransitionReq req = { .kind = KOS_TRANS_TRY_LOCAL_RAISE };
-  KosTransitionResult res = {0};
-
-  if (KosEvalState_Transition(es, &req, &res, out_ev) < 0)
-    return -1;
-  if (res.status == KOS_TRANS_STATUS_HANDLER_APPLIED)
-    return 1;
-  if (res.status == KOS_TRANS_STATUS_NO_LOCAL_HANDLER)
-    return 0;
-  PyErr_SetString(PyExc_RuntimeError,
-                  "try_local_exception_handler: unexpected transition status");
-  return -1;
+static KosOpResult try_local_exception_handler(KosEvalState *es) {
+  return kos_dyn_try_local_raise_body(es);
 }
 
 
@@ -1945,28 +1942,27 @@ entry_mode_dispatch:
   }
 
   if (mode == KOS_MODE_EXCEPTION) {
-    int tl;
     clear_kos_agen_boundary_on_error(ctx);
     if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
       kos_abandon_transfer_nest(es);
-    tl = try_local_exception_handler(es, &_ev);
-    SAYF("[eval] phase_entry try_local ret=%d out_kind=%d\n",
-         tl, (int) KosEvent_KIND(&_ev));
+    KosOpResult tl = try_local_exception_handler(es);
+    SAYF("[eval] phase_entry try_local kind=%d\n", (int) tl.kind);
 
-    if (tl > 0) {
-      Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-      Py_XDECREF(KosEvent_PAYLOAD(&_ev));
+    if (tl.kind == KOS_RES_REPROLOGUE) {
       *mode_out = KOS_MODE_NORMAL;
       return EVAL_NORMAL();
     }
-
-    if (tl < 0)
+    if (tl.kind == KOS_RES_AWAIT) {
+      /* Async unwind: surface AWAIT */
+      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+      KosEvalState_MarkSuspendedNotRunning(es);
+      return tl;
+    }
+    if (tl.kind == KOS_RES_FATAL)
       return EVAL_FATAL();
-    /* try_local_exception_handler returning 0 has already filled _ev with
-       KOS_EV_RAISE and the exception payload, and cleared PyErr.  Just mark
-       the context dead and stop; do not call PyErr_Fetch again. */
+    /* RAISE: kos_eval_prepare_boundary_raise already called; PyErr is set */
     kos_eval_mark_context_dead(ctx);
-    return kos_ev_to_opresult(&_ev);
+    return EVAL_RAISE();
   }
 
   if (mode == KOS_MODE_RAISE) {
@@ -2032,17 +2028,18 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
 /**
    Single PyErr / RAISE ordering contract after process_raise: propagate RAISE,
    resuspend on AWAIT, or REPROLOGUE after local recovery.
+
+   With the new KosOpResult protocol, process_raise calls
+   kos_eval_prepare_boundary_raise (leaves PyErr set) and fills _ev with
+   KOS_EV_RAISE.  We return EVAL_RAISE() so the caller sees PyErr set.
 */
 static KosOpResult eval_boundary_raise_dispatch(KosEvalState *es) {
   KosEvent _ev = {0};
   KosEvalMode raise_mode = process_raise(es, &_ev);
   if (raise_mode == KOS_MODE_RAISE) {
-    if (PyErr_Occurred()) {
-      Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-      Py_XDECREF(KosEvent_PAYLOAD(&_ev));
-      return EVAL_FATAL();
-    }
-    return kos_ev_to_opresult(&_ev);
+    Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
+    Py_XDECREF(KosEvent_PAYLOAD(&_ev));
+    return EVAL_RAISE();
   }
 
   if (KosEvent_KIND(&_ev) == KOS_EV_AWAIT) {

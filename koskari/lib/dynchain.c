@@ -40,8 +40,8 @@
 /* === Forward declarations === */
 
 
-static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
-                                     KosXferEvent event, KosEvent *out_ev);
+static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
+                                             KosXferEvent event);
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
@@ -831,7 +831,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   prev = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = node;
 
-  if (kos_dyn_install(es, node, NULL) < 0) {
+  if (kos_dyn_install(es, node) < 0) {
     KosEvalState_DYN_TOP(es) = prev;
     return -1;
   }
@@ -872,24 +872,19 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 }
 
 
-static int kos_dyn_uninstall_core(
+static KosOpResult kos_dyn_uninstall_core(
     KosEvalState *es,
     KosDynNode *node,
-    KosXferEvent event,
-    KosEvent *out_ev) {
+    KosXferEvent event) {
 
-  int r;
-
-  r = kos_dyn_uninstall_handler(es, node, event, out_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  if (r < 0)
-    return -1;
+  KosOpResult kr = kos_dyn_uninstall_handler(es, node, event);
+  if (kr.kind != KOS_RES_NORMAL)
+    return kr;
 
   kos_dyn_commit_dyn_top(es, KosDynNode_PARENT(node));
   KosDynNode_PARENT(node) = NULL;
   kos_dynnode_free(node);
-  return 0;
+  return EVAL_NORMAL();
 }
 
 
@@ -898,19 +893,19 @@ static int kos_dyn_uninstall_core(
    refresh FRAME_TOP. Must be the current top. Callers: kos_dyn_pop_top,
    xfer_step_pop_one, explicit unwinds.
 */
-int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                      KosEvent *out_ev) {
+KosOpResult kos_dyn_uninstall(KosEvalState *es, KosDynNode *node,
+                               KosXferEvent event) {
   if (! node || KosEvalState_DYN_TOP(es) != node) {
     PyErr_SetString(PyExc_RuntimeError, "kos_dyn_uninstall: node is not dyn_top");
-    return -1;
+    return EVAL_RAISE();
   }
 
   if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BARRIER)) {
     PyErr_SetString(PyExc_RuntimeError, "cannot unwind past barrier node");
-    return -1;
+    return EVAL_RAISE();
   }
 
-  return kos_dyn_uninstall_core(es, node, event, out_ev);
+  return kos_dyn_uninstall_core(es, node, event);
 }
 
 
@@ -939,23 +934,11 @@ int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node) {
 /**
    Run INSTALL-phase wind (enter) for a node with NEEDS_INSTALL_WIND.
    Used by xfer_step_install and xfer_step_push.
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_REPROLOGUE or EVAL_AWAIT when async started
 */
-static int kos_dynnode_run_wind(KosEvalState *es, KosDynNode *node,
-                                KosEvent *out_ev) {
-  KosOpResult kr = kos_dyn_wind(es, node);
-  if (kr.kind == KOS_RES_AWAIT) {
-    if (out_ev) {
-      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-      KosEvent_PAYLOAD(out_ev) = kr.val;
-    } else {
-      Py_XDECREF(kr.val);
-    }
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  }
-  if (kr.kind == KOS_RES_REPROLOGUE)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  return (kr.kind == KOS_RES_RAISE) ? -1 : 0;
+static KosOpResult kos_dynnode_run_wind(KosEvalState *es, KosDynNode *node) {
+  return kos_dyn_wind(es, node);
 }
 
 
@@ -963,17 +946,13 @@ static int kos_dynnode_run_wind(KosEvalState *es, KosDynNode *node,
    Run transfer-plan unwind for a node with NEEDS_UNWIND_ACTION.
    Uses kos_dyn_unwind; teardown (drop block, pop) for nodes with
    NEEDS_TRANSFER_TEARDOWN. Used by kos_run_transfer_step for EXTENT_ACTION.
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_AWAIT or EVAL_REPROLOGUE when async started
 */
-static int kos_dynnode_run_transfer_unwind(KosEvalState *es, KosDynNode *node,
-                                           KosXferEvent event,
-                                           KosEvent *out_ev) {
-  int r = kos_dyn_unwind(es, node, event, out_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  if (r < 0)
-    return -1;
-  return 0;
+static KosOpResult kos_dynnode_run_transfer_unwind(KosEvalState *es,
+                                                   KosDynNode *node,
+                                                   KosXferEvent event) {
+  return kos_dyn_unwind(es, node, event);
 }
 
 
@@ -986,14 +965,13 @@ static int kos_dynnode_run_transfer_unwind(KosEvalState *es, KosDynNode *node,
 
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-int kos_dyn_install(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
+int kos_dyn_install(KosEvalState *es, KosDynNode *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   int r;
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT: {
       /* Operand stack stays on the frame below; PROMPT is a barrier only.
          SHIFT inherits the same stack via KosDynNode_STACK == NULL. */
-      (void) out_ev;
       (void) node;
       r = 0;
       break;
@@ -1030,12 +1008,13 @@ int kos_dyn_install(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
 
 /**
    Run the pop handler for a node being popped off the chain.  Types with
-   no pop action return 0 immediately via the default case.
+   no pop action return EVAL_NORMAL() immediately via the default case.
 
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_AWAIT or EVAL_REPROLOGUE when async started
 */
-static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
-                                     KosXferEvent event, KosEvent *out_ev) {
+static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
+                                              KosXferEvent event) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT: {
       if (KOS_XFER_TRACE) {
@@ -1045,41 +1024,35 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
              (void *) node, len_before);
         (void) len_before;
       }
-      return 0;
+      return EVAL_NORMAL();
     }
     case KOS_DYN_DELIM:
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_WIND:
-      return kos_dyn_unwind(es, node, event, out_ev);
+      return kos_dyn_unwind(es, node, event);
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
     case KOS_DYN_LOOP:
     case KOS_DYN_FOREACH:
-      (void) out_ev;
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_NS:
       (void) es;
-      (void) out_ev;
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_COLLECT: {
       (void) es;
-      (void) out_ev;
-      return 0;
+      return EVAL_NORMAL();
     }
     case KOS_DYN_PARAM:
-      (void) out_ev;
       kos_dyn_param_unwind(es, (KosDynParam *) node);
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_YIELD_FROM:
-      (void) out_ev;
       kos_dyn_yieldfrom_unwind(es, (KosDynYieldFrom *) node);
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_WITH: {
-      return kos_dyn_unwind(es, node, event, out_ev);
+      return kos_dyn_unwind(es, node, event);
     }
     default:
-      (void) out_ev;
-      return 0;
+      return EVAL_NORMAL();
   }
 }
 
@@ -1114,73 +1087,54 @@ KosOpResult kos_dyn_wind(KosEvalState *es, KosDynNode *node) {
 
 
 /**
-   Run unwind (exit) for an extent node.  May start async for WITH/DYN_WITH.
+   Run unwind (exit) for an extent node.  May start async for WITH.
 
    :param event: transfer event; nodes can distinguish RETURN, RAISE, etc.
-   :param out_ev: event output; may be NULL for nodes that do not suspend
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_AWAIT when WITH __exit__ returned awaitable,
+     EVAL_REPROLOGUE when WITH swallowed the exception
 */
-int kos_dyn_unwind(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                   KosEvent *out_ev) {
+KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
+                            KosXferEvent event) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  int r;
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_DELIM:
-      (void) out_ev;
-      r = 0;
-      break;
+      return EVAL_NORMAL();
     case KOS_DYN_SHIFT:
-      (void) out_ev;
-      r = 0;
-      break;
+      return EVAL_NORMAL();
     case KOS_DYN_PARAM:
-      (void) out_ev;
       kos_dyn_param_unwind(es, (KosDynParam *) node);
-      r = 0;
-      break;
-    case KOS_DYN_WIND:
-      (void) out_ev;
-      r = kos_dyn_wind_unwind(es, (KosDynWind *) node);
-      break;
-    case KOS_DYN_WITH: {
-      KosOpResult kr = kos_dyn_with_unwind(es, (KosDynWith *) node);
-      if (kr.kind == KOS_RES_AWAIT) {
-        if (out_ev) {
-          KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-          KosEvent_PAYLOAD(out_ev) = kr.val;
-        } else {
-          Py_XDECREF(kr.val);
-        }
-        r = KOS_DYN_UNWIND_ASYNC_STARTED;
-      } else if (kr.kind == KOS_RES_REPROLOGUE) {
-        r = KOS_DYN_UNWIND_SWALLOWED;
-      } else if (kr.kind == KOS_RES_RAISE) {
-        r = -1;
-      } else {
-        r = 0;
-      }
-      break;
+      return EVAL_NORMAL();
+    case KOS_DYN_WIND: {
+      int r = kos_dyn_wind_unwind(es, (KosDynWind *) node);
+      return (r < 0) ? EVAL_RAISE()
+           : (r == KOS_DYN_UNWIND_ASYNC_STARTED) ? EVAL_REPROLOGUE()
+           : EVAL_NORMAL();
     }
-    case KOS_DYN_CC_RAISE:
-      (void) out_ev;
-      r = cc_raise_unwind(ctx, node, NULL);
-      break;
+    case KOS_DYN_WITH: {
+      KosOpResult wr = kos_dyn_with_unwind(es, (KosDynWith *) node);
+      /* REPROLOGUE: exception swallowed; resume_pc set and Py_None pushed to
+         parent stack by dyn_with_unwind.  Map to NORMAL so kos_dyn_uninstall_core
+         pops the WITH node and commits the stack — then kos_dyn_try_local_raise_body's
+         top_may_swallow check returns REPROLOGUE to restart past POP_WITH. */
+      if (wr.kind == KOS_RES_REPROLOGUE)
+        return EVAL_NORMAL();
+      return wr;
+    }
+    case KOS_DYN_CC_RAISE: {
+      int r = cc_raise_unwind(ctx, node, NULL);
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
     case KOS_DYN_GEN:
-      (void) out_ev;
-      r = 0;
-      break;
+      return EVAL_NORMAL();
     case KOS_DYN_NEXT:
-      (void) out_ev;
-      r = 0;
-      break;
+      return EVAL_NORMAL();
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_unwind: node kind %u has no unwind",
                    (unsigned) KosDynNode_KIND(node));
-      r = -1;
-      break;
+      return EVAL_RAISE();
   }
-  return r;
 }
 
 
