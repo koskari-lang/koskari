@@ -41,8 +41,7 @@ Completed design drafts (historical) live under **[archive/](../archive/)** — 
 `demand-evalex-phase1.md`, `demand-evalex-phase2.md`,
 `interrupted-transfer-plans.md`, `bytecode-metadata-tables.md`,
 `node-owned-operand-stack.md`, `kos_eval_state_api_migration.md`,
-`kosevent-elimination.md`, `kosevent-elimination-merged.md`,
-`kosevent-elimination-simplification-response.md`.
+`kosevent-elimination.md`.
 
 ## Implementation Status
 

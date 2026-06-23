@@ -7,7 +7,7 @@ macros). Supersedes [eval-loop-mode-refactor.md](eval-loop-mode-refactor.md).
 ---
 
 This document is a follow-up to
-[event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md).
+[archive/kosevent-elimination.md](kosevent-elimination.md).
 That document addressed centralising event handling inside the eval loop.
 This document addresses the layer below it: the communication channel from
 opcode handlers back to the eval loop.
@@ -24,7 +24,7 @@ original feasibility assessment; §15–§19 contain the landing record and
 follow-up plan executed in the same branch.
 
 Companion documents:
-[event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md),
+[archive/kosevent-elimination.md](kosevent-elimination.md),
 [evaluator.md](evaluator.md).
 
 ---
@@ -536,7 +536,7 @@ local must be carefully reviewed.
 **The RETURN migration dependency:** The full benefit of this change is
 realized only if `RETURN.c` Phase 2b/2c is simultaneously migrated into
 `eval_event_return` (as described in
-[event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md)
+[kosevent-elimination.md](kosevent-elimination.md)
 §12). If `KosOpResult` is introduced but `RETURN.c` still runs its own walk
 and pop, then RETURN's result kind is `EVAL_RETURN(val)` but `eval_event_return`
 receives a frame already popped by the opcode — a latent ordering violation.

@@ -87,16 +87,13 @@ struct KosContext {
   KosDynNode *dyn_top;
   KosDynFrame *frame_top;
   KosStackBlock **block;
-  KosDynFrame *globals_frame;
-  uint32_t globals_cache_version;
+  PyObject *namespace;
   KosEvaluatorToken *token;
   PyObject *domain;
-  KosDynFrame *unwind_target_frame;
   PyObject *pending_return_value;
   int pending_return_to_parent;
   KosTransferPlan *plan;
   KosTransferPlan *plan_stack;
-  uint32_t chain_version;
   PyObject *py_resume_inject;
   uint8_t py_resume_kind;
   PyObject *py_await_iter;
@@ -528,7 +525,7 @@ as AWAIT, YIELD, RETURN-boundary, or PyErr by
 `kos_eval_post_opcode_control_returned_after_hook`. All paths use `KosOpResult`
 directly.
 
-See [boundary-control-reemit.md](boundary-control-reemit.md) for the design intent and [../archive/event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md) for the archived handler-centric migration spec.
+See [boundary-control-reemit.md](boundary-control-reemit.md) for the design intent and [../archive/kosevent-elimination.md](../archive/kosevent-elimination.md) for the archived elimination spec.
 
 #### Exception ownership note
 
@@ -590,7 +587,7 @@ This matches Scheme's `dynamic-wind` semantics.
 ## Related Documentation
 
 - [boundary-control-reemit.md](boundary-control-reemit.md) — Staged parent delivery and eval post-opcode helpers (RETURN/YIELD/RAISE)
-- [../archive/event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md) — Archived: event-driven eval handlers (implemented)
+- [../archive/kosevent-elimination.md](../archive/kosevent-elimination.md) — Archived: KosEvent elimination (implemented)
 - [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)
 - [introspection-trace.md](introspection-trace.md) — Read-only introspection

@@ -1,17 +1,16 @@
 # Boundary Control Re-emit Model
 
-**Status:** Frame-crossing vs consumer-delivery split is largely implemented:
-thin **`RETURN`**, **`eval_event_*`** helpers, and **`apply_kos_op_result`** own
-unwind/pop and boundary routing. **Open:** generic dynnode boundary dispatch
-(§5.2) — evolve or replace **`kos_dynnode_on_control_returned`** with a
-capacity-driven router for NEXT / FOREACH / YIELD_FROM consumers.
+**Status:** Frame-crossing vs consumer-delivery split is implemented for opcodes
+and eval helpers: thin **`RETURN`**, **`eval_event_*`**, and
+**`apply_kos_op_result`** own unwind/pop and boundary routing. **Open:** generic
+dynnode boundary dispatch (§5.2).
 
-This document proposes an event-driven boundary model where frame-local
-outcomes are emitted first, then re-emitted as boundary control events after
-crossing a frame boundary.
+This document describes the boundary model where frame-local outcomes are
+signaled first, then delivered to parent consumers after crossing a frame
+boundary.
 
 Companion docs:
-- [event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md) (archived; implemented)
+- [kosevent-elimination.md](../archive/kosevent-elimination.md) (archived; implemented)
 - [event-driven-node-delivery.md](../archive/event-driven-node-delivery.md)
 - [generic-dynnode-protocol.md](generic-dynnode-protocol.md)
 - [evaluator.md](evaluator.md)
@@ -19,19 +18,19 @@ Companion docs:
 
 ## 1. Problem statement
 
-Current code still contains paths that combine two responsibilities in one
-flow:
+Boundary outcomes combine two responsibilities:
 
 1) Transfer out of a frame (unwind/pop/freeze across frame and GEN boundaries)
-2) Immediate consumer delivery (stack push, PC rewrite, boundary node semantics)
+2) Consumer delivery (stack push, PC rewrite, boundary node semantics)
 
-This coupling appears in:
-- `koskari/lib/opcode/RETURN.c` (callee unwind/pop and parent delivery)
-- `koskari/lib/dynchain/dyn_next.c` return delivery helpers
-- `koskari/lib/dynchain/dyn_yield_from.c` inner-return delivery
+**Opcode and eval staging (implemented):** `RETURN.c` pops operands and returns
+`EVAL_RETURN(val)`; `eval_event_return` and `eval_parent_return_deliver` own
+unwind, frame pop, and parent delivery. `YIELD` returns `EVAL_YIELD(val)`;
+`eval_event_yield` owns walk/freeze and boundary delivery.
 
-This violates the intended event-driven split where producer and consumer
-stages are separate.
+**Remaining coupling:** dyn helpers still cross frame boundaries and apply
+NEXT/FOREACH/YIELD_FROM consumer semantics inline instead of routing through a
+single generic boundary dispatcher (§5.2).
 
 
 ## 2. Core model
@@ -153,20 +152,17 @@ consumers from active chain state.
   - avoid split responsibilities between opcode and separate exception paths
 
 
-## 6. Current deviations to remove
+## 6. Remaining deviations
 
-These are concrete places to migrate:
+| Location | Issue |
+|----------|-------|
+| `koskari/lib/dynchain/dyn_next.c` | Return delivery helpers cross GEN/frame boundary and immediately apply NEXT/FOREACH consumer semantics instead of a generic boundary dispatcher |
+| `koskari/lib/dynchain/dyn_yield_from.c` | Inner-return helper crosses boundary and immediately performs YIELD_FROM consumer semantics |
+| `eval.c` (`eval_parent_return_deliver`) | Calls `kos_dyn_try_deliver_iterator_boundary_after_pop` and `kos_dynnode_on_control_returned` directly; should converge on §5.2 dispatcher |
+| `eval.c` (exception paths) | `process_raise`, `eval_phase_entry`, `run_transfer_plan_to_completion`, and `KOS_MODE_RAISE` embed parallel RAISE policy (§5.3) |
 
-- `koskari/lib/opcode/RETURN.c`
-  - currently does unwind/pop + immediate parent/boundary delivery
-
-- `koskari/lib/dynchain/dyn_next.c`
-  - return delivery helpers cross GEN/frame boundary and immediately apply
-    NEXT/FOREACH consumer semantics
-
-- `koskari/lib/dynchain/dyn_yield_from.c`
-  - inner-return helper crosses boundary and immediately performs YIELD_FROM
-    consumer semantics
+**Done:** `koskari/lib/opcode/RETURN.c` — pop operands, optional delimited
+`k(value)`, then `EVAL_RETURN(val)` only.
 
 
 ## 7. Invariants
@@ -189,12 +185,12 @@ These are concrete places to migrate:
 
 ## 8. Migration plan (incremental)
 
-1. Introduce boundary-control event kinds and dispatch helper contracts
-2. Move RETURN parent-delivery logic out of opcode and into boundary dispatcher
-3. Route NEXT/FOREACH/YIELD_FROM return consumers through new dispatcher
+1. ~~Introduce `KosOpResult` boundary kinds and `apply_kos_op_result` routing~~
+2. ~~Move RETURN parent-delivery logic out of opcode into `eval_event_return`~~
+3. Route NEXT/FOREACH/YIELD_FROM return consumers through generic dispatcher (§5.2)
 4. Align YIELD boundary routing to same dispatcher surface
-5. Normalize RAISE routing under same staged model
-6. Remove obsolete ad-hoc paths and compatibility shims
+5. Normalize RAISE routing under one ingress contract (§5.3)
+6. Remove obsolete ad-hoc delivery paths and compatibility shims
 
 
 ## 9. Testing strategy

@@ -2,7 +2,7 @@
 
 **Status:** Milestone implemented (archived 2026-04-16). `KosContext.pending_agen*`
 removed; boundary state on **`KOS_DYN_NEXT`** / **`KOS_DYN_FOREACH`**. Active
-follow-up: [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md),
+follow-up: [kosevent-elimination.md](kosevent-elimination.md),
 [boundary-control-reemit.md](../interpreter/boundary-control-reemit.md).
 
 This document specifies a **target architecture** for Koskari iteration and generator boundaries: **boundary outcomes** (yield, return, exhaustion, raise) are described by a **canonical `KosEvent` on the evaluation context**, and **consumption** (stack effects, PC updates, branch to `for`/`else`, default handling) moves into **dynamic nodes** and **generic dynchain dispatch**. Opcodes and `eval.c` stop encoding feature-specific state in **`KosContext` ad-hoc fields** (notably the pending async-generator slots documented below).
@@ -11,7 +11,7 @@ The document is written for implementers: it states goals, proposes concrete mec
 
 **Related documentation**
 
-- [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md) — **next** milestone: escape overloaded `RETURN`, `eval_event_*` helpers, RAISE/RETURN/YIELD handler routing (implemented; archived)
+- [kosevent-elimination.md](kosevent-elimination.md) — KosEvent elimination and thin RETURN / `eval_event_*` routing (implemented; consolidated archive)
 - [iteration-yield-boundaries.md](../interpreter/iteration-yield-boundaries.md) — current opcode map and file locations
 - [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md) — generic vs type-specific bypass; `kos_dynnode_on_control_returned` today
 - [dynamic-node-unified-api.md](dynamic-node-unified-api.md) — capability model (partially adopted; archived spec)
@@ -360,5 +360,6 @@ to **one** internal **`dispatch_boundary_event(ctx, out_ev)`** that:
 
 - **2026-04-16** — Initial design draft for event-driven boundary delivery and node-centric consumption.
 - **2026-04-16** — Agreed decisions: **`KOS_DYN_NEXT`** scope (**`NEXT`** opcode only), **`ITER_NEXT`** on **`FOREACH`** only, **no** new opcodes (**runtime push** + **self-pop**), **`KosContext.pending_agen*`** removal; diagrams and §4/§5 updated.
-- **2026-04-16** — Linked follow-on **`eval_event_*`** / thin-RETURN design doc (`design/interpreter/event-driven-eval-event-handlers.md`).
-- **2026-04-16** — Document moved to **`design/archive/`** (superseded-as-stable snapshot of boundary ideology; active follow-up is **`event-driven-eval-event-handlers`**).
+- **2026-06-22** — Follow-on **`eval_event_*`** / thin-RETURN work consolidated into **`kosevent-elimination.md`** (implemented).
+- **2026-04-16** — Linked follow-on **`eval_event_*`** / thin-RETURN design doc (later consolidated).
+- **2026-04-16** — Document moved to **`design/archive/`** (superseded-as-stable snapshot of boundary ideology).

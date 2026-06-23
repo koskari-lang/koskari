@@ -5,20 +5,20 @@ design docs for detail.
 
 ---
 
-### Evaluator architecture (remaining)
+## Evaluator architecture
 
-**Status:** KosEvent elimination and thin **`RETURN`** / **`apply_kos_op_result`**
-routing are **complete** (see [archive/kosevent-elimination-merged.md](archive/kosevent-elimination-merged.md),
-[archive/event-driven-eval-event-handlers.md](archive/event-driven-eval-event-handlers.md)).
-
-**Open:** unify **RAISE** ingress further — **`process_raise`** is the central hub,
-but **`eval_phase_entry`** (**`KOS_MODE_EXCEPTION`**), **`run_transfer_plan_to_completion`**,
-and **`KOS_MODE_RAISE`** still embed parallel exception policy. Migrate toward a
-single “exception received” state in the eval loop: all PyErr / **`KOS_RES_RAISE`**
-ingress (normal eval, call results, transfer-plan step outcomes, revive throw)
-should converge on one handler that consults sub-states (normal vs mid-transfer
-vs continuation signal). Generic boundary dynnode dispatch remains open; see
-[interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
+- **RAISE ingress unification** — `process_raise` is the central hub, but
+  `eval_phase_entry` (`KOS_MODE_EXCEPTION`), `run_transfer_plan_to_completion`,
+  and `KOS_MODE_RAISE` still embed parallel exception policy. Migrate toward a
+  single “exception received” path: all PyErr / `KOS_RES_RAISE` ingress (normal
+  eval, call results, transfer-plan step outcomes, revive throw) should
+  converge on one handler that consults sub-states (normal vs mid-transfer vs
+  continuation signal).
+- **Generic boundary dynnode dispatch** — evolve `kos_dynnode_on_control_returned`
+  or add `kos_dynnode_on_boundary_event` so NEXT / FOREACH / YIELD_FROM
+  consumers route through one capacity-driven dispatcher instead of scattered
+  calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
+  Ref: [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
 
 ---
 
@@ -60,12 +60,8 @@ Ref: [interpreter/freeze-thaw-context-segments.md](interpreter/freeze-thaw-conte
 
 ## Profiling / instrumentation
 
-### Profiling compile-time options and runtime hooks
-
-**Status:** Freelist tracing, **`KOS_TRACE_EVENTS`** (VM/dynchain counters via
-`get_trace_report()["events"]`), and **`KOS_TRACE_TIMING`** (per-opcode and
-post-handler timing) are implemented. Remaining work: optional opcode-level
-histograms.
+- Optional opcode-level histograms (freelist tracing, `KOS_TRACE_EVENTS`, and
+  `KOS_TRACE_TIMING` already exist).
 
 Ref: [api/tracing.md](api/tracing.md).
 
@@ -110,8 +106,6 @@ Ref: [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md).
 
 ### Self-hosted compiler and bootstrap (roadmap)
 
-**Status:** Design only; phased implementation.
-
 Split the Python compiler into a **bootstrap** package, reimplement the
 compiler in **`.ki`**, compile to **`.kio`** with the bootstrap stack, then
 recompile with **loaded `.kio`** (stage0 → final) and verify fixpoint. Native
@@ -138,9 +132,7 @@ Ref: [python-ast-loader.md](python-ast-loader.md); [api/import-system.md](api/im
 
 ### .kio compiled cache
 
-Implementation exists under `koskari.serialize` (read/write sectioned `.kio`,
-incremental compile from `.ki`). Loader integration and packaging follow the
-self-hosting roadmap.
+Loader integration and packaging follow the self-hosting roadmap.
 
 **Near-term packaging:** add `.kio` beside `.ki` during `bdist_wheel` (additive;
 sdist `.ki`-only); loaders prefer `.kio` when both exist. See
@@ -162,18 +154,7 @@ Ref: [ideas.md](ideas.md); [api/import-system.md](api/import-system.md) (async v
 
 ## User documentation
 
-### User documentation — remaining gaps
-
-**Status:** Bootstrapped. The Sphinx `docs/` tree is live: both `start/` on-ramps
-(beginner and from-python, each through `where-next.md`), the shared `guide/`
-spine (00–10 plus optional bytecode chapters), `reference/` (glossary,
-grammar shell, reader-layout, cli-and-config, concepts, specials/layouts/macros,
-thin `runtime/`, monolithic `vm/index.md` plus per-opcode pages), `patterns/`
-(five recipes), `corpus/` (schema, README, records, datasets), `project/`
-(build-test, architecture-map, release-and-versioning), `api/` autodoc, `faq.md`,
-and `changelog.md`.
-
-**Still incomplete** (per [documentation-goals.md](documentation-goals.md)):
+Gaps per [documentation-goals.md](documentation-goals.md):
 
 - **`reference/grammar.md`** — layout and handler links exist; the base
   s-expression grammar section is still marked TBD.
@@ -214,7 +195,7 @@ design note and is open for evaluation and possible implementation.
 
 ### Seq-values kwargs (in-scope formals apply)
 
-**TODO:** Specify bytecode and runtime surfaces for kwargs-capable seq-values /
+Specify bytecode and runtime surfaces for kwargs-capable seq-values /
 in-scope formals apply; implement and test standalone, then consume from
 runtime match and from `define-values` / `setq-values` kwargs paths.
 
@@ -222,7 +203,7 @@ Ref: [language/seq-values-kwargs-formals-apply.md](language/seq-values-kwargs-fo
 
 ### Runtime `match` form, `match/case` layout, and `MATCH_CASE` lowering
 
-**TODO:** Reader layout, compile lowering per arm, opcode applier (analogous to
+Reader layout, compile lowering per arm, opcode applier (analogous to
 `SWITCH_EQ`), constant pools with extern names from local env, and
 syntax-rules-style namespace mapping for committed arms; depends on seq-values
 kwargs foundation where arm binding requires it.
@@ -231,7 +212,7 @@ Ref: [language/match-case-form.md](language/match-case-form.md).
 
 ### `RETURN` frame-only; `return-shift` for delim continuations
 
-**TODO:** Split ordinary return from delimited-continuation rebound: `RETURN`
+Split ordinary return from delimited-continuation rebound: `RETURN`
 handles frame boundary only; introduce explicit `return-shift` (name TBD) for
 the delim case; migrate any bundled behavior off `RETURN`.
 
@@ -239,7 +220,7 @@ Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
 
 ### Destructuring formals, referencing formals, `define-values` fork
 
-**TODO:** Nested patterns in lambda formals (e.g. `(lambda [a (b c) *: d] …)`);
+Nested patterns in lambda formals (e.g. `(lambda [a (b c) *: d] …)`);
 `(ref …)` formals for rebind-to-Ref and write-through `set!`; if destructuring
 and refs cannot share one formals grammar, limit unpacking to `define-values` /
 `setq-values` with kwargs only (no ref binding there — refs stay on formals).
@@ -249,7 +230,7 @@ Ref:
 
 ### Multi-dispatch methods (matchers on formals)
 
-**TODO:** Method tables dispatched by type/value/shape matchers over formals,
+Method tables dispatched by type/value/shape matchers over formals,
 structured like `define-special` but feeding **runtime sequence values** into
 the matcher arms instead of source forms.
 
@@ -257,7 +238,7 @@ Ref: [language/multi-dispatch-methods.md](language/multi-dispatch-methods.md).
 
 ### Example dispatch call timing harness
 
-**TODO:** Add timed examples (Python, async Python, Koskari, demand Koskari
+Add timed examples (Python, async Python, Koskari, demand Koskari
 callees; Python and Koskari callers); triple timestamps with baseline
 subtraction; ~1000 iterations per cell; aggregate averages.
 
@@ -265,7 +246,7 @@ Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
 ### KosPartial: KosCallable-aware `functools.partial`
 
-**TODO:** Implement `KosPartial` as a C-level subtype of CPython's
+Implement `KosPartial` as a C-level subtype of CPython's
 `functools.partial` (dynamic `tp_base` set at init time before `PyType_Ready`)
 with `KosCallableTypeObject` slots. `tp_kos_wants_frame_fn` delegates to the
 inner callable's wants-frame slot. `tp_kos_install` merges `partial.args` +
@@ -278,7 +259,7 @@ Ref: [interpreter/kospartial.md](interpreter/kospartial.md).
 
 ### DynamicRef accessors on demand path
 
-**TODO:** Make **DynamicRef** accessor handlers (`getfn`, `setfn`, `delfn`,
+Make **DynamicRef** accessor handlers (`getfn`, `setfn`, `delfn`,
 `emptyfn`) run on the demand path when they are Koskari callables: use in-eval
 `demand_sync_ex` / eval-state injection where the VM is already on demand, and
 route ref opcodes (e.g. **`DEREF`**) through **`KosRef_Deref`** /
@@ -292,14 +273,8 @@ Ref: `koskari/lib/ref.c` (DynamicRef handlers); `koskari/lib/opcode/DEREF.c`;
 
 ## Packaging / installed CLI
 
-### `koskari_scripts` setuptools integration
-
-**v1 done:** **`koskari.extras.setuptools`** (`metadata.py`, `plugin.py` configure
-hook, `.ki` package discovery, validation), **`koskari.launcher`**, **`import_module_async`**,
-unit tests under **`tests/extras/setuptools/`** (`test_metadata.py`, **`test_plugin.py`**,
-**`test_launcher.py`**).
-
-**Follow-up:** end-to-end pip-install test; native binary for installed commands.
+- End-to-end pip-install test for `koskari_scripts` setuptools integration.
+- Native binary for installed commands.
 
 Ref: [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md);
 [api/import-system.md](api/import-system.md); `koskari/cli/__init__.py`;
@@ -309,8 +284,6 @@ Ref: [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md);
 
 ## Concurrent async (`async` form)
 
-**Status:** Proposed — evaluate and possibly implement.
-
 Add bootstrap macro **`compile/async`** and small runtime helpers for
 concurrent fan-out/join on the current asyncio loop. Fixed job lists expand to
 **`gather`** of **`(create-task (defer …))`**; streaming **`(async (each …))`**
@@ -318,8 +291,8 @@ and **`limit:`** variants expand to runtime **`async-each`** (iterator-driven
 spawn with optional in-flight cap). Cooperative concurrency only — not multicore
 parallelism.
 
-**TODO:** Evaluate design; if accepted, implement in order: **`gather`** builtin,
-**`with-limit`** / **`async-each`**, **`_async.ki`** macro, tests, user docs.
+Implement in order: **`gather`** builtin, **`with-limit`** / **`async-each`**,
+**`_async.ki`** macro, tests, user docs.
 
 Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 [defer-coroutine.md](api/defer-coroutine.md).

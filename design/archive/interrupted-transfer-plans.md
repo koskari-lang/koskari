@@ -229,7 +229,7 @@ Two failure shapes:
 
 **Known gap:** exception policy is still split across `process_raise`, `eval_phase_entry`,
 and `run_transfer_plan_to_completion` rather than one event-driven handler. See
-[interpreter/event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md).
+[archive/kosevent-elimination.md](../archive/kosevent-elimination.md).
 
 ---
 

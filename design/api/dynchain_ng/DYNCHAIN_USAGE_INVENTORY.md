@@ -36,7 +36,6 @@ These fields **must** remain coherent with any new implementation:
 | `globals_frame` | Outermost frame for `GLOBALS` |
 | `globals_cache_version` | Invalidation vs `chain_version` |
 | `token` / `domain` | Evaluator identity / ambient KosDomain |
-| `unwind_target_frame` | Unwind targeting |
 | `pending_return_value` / `pending_return_to_parent` | Async wind / return deferral |
 | `plan` | Active `KosTransferPlan *` |
 | `plan_stack` | Suspended nested plans |
