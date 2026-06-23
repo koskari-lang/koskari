@@ -133,40 +133,6 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 static KosOpResult eval_event_raise(KosEvalState *es);
 
 
-/**
-  Map KosEvalState_Call int result to KosOpResult, extracting any awaitable
-  or return value from ev.  Mirrors kos_op_outcome_from_call_int but returns
-  the unified result struct and takes ownership of ev's payload on r==1 or
-  r==KOS_OP_RES_PARENT_RETURN_DELIVER.
-*/
-static inline KosOpResult kos_op_result_from_call_int(
-    KosEvalState *es, int r, KosEvent *ev) {
-
-  if (r < 0)
-    return EVAL_RAISE();
-  if (r == KOS_OP_RES_CONTROL_RETURNED)
-    return EVAL_CONTROL_RETURNED();
-  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER) {
-    PyObject *val = KosEvent_PAYLOAD(ev);
-    KosEvent_PAYLOAD(ev) = NULL;
-    return EVAL_PARENT_RETURN(val);
-  }
-  if (r == 1) {
-    PyObject *val = KosEvent_PAYLOAD(ev);
-    KosEvent_PAYLOAD(ev) = NULL;
-    return EVAL_AWAIT(val);
-  }
-  if (r == 0) {
-    if (KosEvalState_PLAN(es))
-      return EVAL_REPROLOGUE();
-    if (KosEvalState_FRAME(es)
-        && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)))
-      return EVAL_REPROLOGUE();
-    return EVAL_NORMAL();
-  }
-  return EVAL_RAISE();
-}
-
 
 #include "eval/eval_chain.c"
 #include "eval/eval_state.c"
@@ -1431,16 +1397,7 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
 
 
 static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
-  KosEvent _aw_ev = {0};
-  int r = push_or_await_common(es, &_aw_ev, value, 1);
-  if (likely(r == 0))
-    return EVAL_NORMAL();
-  if (r == 1) {
-    PyObject *aw = KosEvent_PAYLOAD(&_aw_ev);
-    KosEvent_PAYLOAD(&_aw_ev) = NULL;
-    return EVAL_AWAIT(aw);
-  }
-  return EVAL_RAISE();
+  return push_or_await_common(es, value, 1);
 }
 
 

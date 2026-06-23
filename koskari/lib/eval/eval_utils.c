@@ -204,24 +204,23 @@ static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
 
    val is consumed (new reference).
 
-   :return: 0 continue, 1 stop (AWAIT), -1 error
+   :return: EVAL_NORMAL, EVAL_AWAIT, or EVAL_RAISE
 */
-static int push_or_await_common(
+static KosOpResult push_or_await_common(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *val,
     int await_defer) {
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (! await_defer && KosDefer_Check(val)) {
-    return KosEvalState_StackPUSH(es, val);
+    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
 
   PyTypeObject *type = Py_TYPE(val);
   SAYF("[eval] push_or_await entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
-    return KosEvalState_StackPUSH(es, val);
+    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
 
   int suspended = 0;
@@ -230,19 +229,17 @@ static int push_or_await_common(
   Py_DECREF(val);
 
   if (result) {
-    return KosEvalState_StackPUSH(es, result);
+    return (KosEvalState_StackPUSH(es, result) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
 
   if (suspended && yielded) {
     KosEvalState_MarkSuspendedNotRunning(es);
-    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-    KosEvent_PAYLOAD(out_ev) = yielded;
     SAYF("[eval] push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
-    return 1;
+    return EVAL_AWAIT(yielded);
   }
 
-  return -1;
+  return EVAL_RAISE();
 }
 
 
@@ -250,18 +247,7 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  KosEvent _poa_ev = {0};
-  int r = push_or_await_common(es, &_poa_ev, val, 0);
-  if (likely(r == 0))
-    return EVAL_NORMAL();
-
-  if (r == 1) {
-    PyObject *aw = KosEvent_PAYLOAD(&_poa_ev);
-    KosEvent_PAYLOAD(&_poa_ev) = NULL;
-    return EVAL_AWAIT(aw);
-  }
-
-  return EVAL_RAISE();
+  return push_or_await_common(es, val, 0);
 }
 
 
@@ -342,22 +328,11 @@ static inline KosOpResult kos_op_result_from_push_int(int r) {
 }
 
 
-/* Push val without auto-await (plain stack push only). */
-static inline KosOpResult kos_op_result_PUSH(
-    KosEvalState *es,
-    PyObject *val) {
-
-  if (unlikely(! val))
-    return EVAL_RAISE();
-
-  return kos_op_result_from_push_int(KosEvalState_StackPUSH(es, val));
-}
-
-
 /**
-  Map legacy int-step result to KosOpResult.  When r==1, extract kind and
-  payload from ev (KOS_EV_YIELD or KOS_EV_AWAIT); ev is cleared on exit.
-  When r==4, extract PARENT_RETURN payload from ev.
+  Map legacy int-step result (0/1/-1/KOS_OP_RES_*) to KosOpResult.
+  When r==1, extract kind and payload from ev; ev is cleared on exit.
+  When r==KOS_OP_RES_PARENT_RETURN_DELIVER, extract payload from ev.
+  Used by YIELD_FROM.c drive functions.
 */
 static inline KosOpResult kos_op_result_from_int_step(int r, KosEvent *ev) {
   switch (r) {
@@ -388,9 +363,20 @@ static inline KosOpResult kos_op_result_from_int_step(int r, KosEvent *ev) {
     return EVAL_PARENT_RETURN(val);
   }
   default:
-    /* Unexpected int-step value; no valid PyErr or event to recover from. */
     return EVAL_FATAL();
   }
+}
+
+
+/* Push val without auto-await (plain stack push only). */
+static inline KosOpResult kos_op_result_PUSH(
+    KosEvalState *es,
+    PyObject *val) {
+
+  if (unlikely(! val))
+    return EVAL_RAISE();
+
+  return kos_op_result_from_push_int(KosEvalState_StackPUSH(es, val));
 }
 
 
@@ -483,11 +469,12 @@ KosOpResult KosEvalState_Call(
         : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
     if (! result)
       return EVAL_RAISE();
-    KosEvent _ev = {0};
-    int r = push_or_await_common(es, &_ev, result, 0);
-    if (r == 0 && tail_call)
-      return EVAL_CONTROL_RETURNED();
-    return kos_op_result_from_int_step(r, &_ev);
+    {
+      KosOpResult por = push_or_await_common(es, result, 0);
+      if (por.kind == KOS_RES_NORMAL && tail_call)
+        return EVAL_CONTROL_RETURNED();
+      return por;
+    }
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
@@ -531,11 +518,12 @@ KosOpResult KosEvalState_CallArgs(
     if (! result)
       return EVAL_RAISE();
 
-    KosEvent _ev = {0};
-    int r = push_or_await_common(es, &_ev, result, 0);
-    if (r == 0 && tail_call)
-      return EVAL_CONTROL_RETURNED();
-    return kos_op_result_from_int_step(r, &_ev);
+    {
+      KosOpResult por = push_or_await_common(es, result, 0);
+      if (por.kind == KOS_RES_NORMAL && tail_call)
+        return EVAL_CONTROL_RETURNED();
+      return por;
+    }
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
@@ -561,11 +549,12 @@ KosOpResult KosEvalState_CallNoArgs(
     PyObject *result = PyObject_CallNoArgs(callable);
     if (! result)
       return EVAL_RAISE();
-    KosEvent _ev = {0};
-    int r = push_or_await_common(es, &_ev, result, 0);
-    if (r == 0 && tail_call)
-      return EVAL_CONTROL_RETURNED();
-    return kos_op_result_from_int_step(r, &_ev);
+    {
+      KosOpResult por = push_or_await_common(es, result, 0);
+      if (por.kind == KOS_RES_NORMAL && tail_call)
+        return EVAL_CONTROL_RETURNED();
+      return por;
+    }
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
