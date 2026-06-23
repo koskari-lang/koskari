@@ -221,7 +221,7 @@ when it completes; that value must **not** become the with-expression value.
   `kos_complete_pending_with_exit(ctx)`, which pops TOS (the exit result),
   applies swallow logic, drops the owned stack block, pops the WITH node, sets
   frame PC to `resume_pc`, and pushes `None`.
-- **Suspend (r==1):** The evaluator returns `KOS_EV_AWAIT`; the context has
+- **Suspend:** The evaluator returns `KOS_RES_AWAIT`; the context has
   `PENDING_WITH_EXIT_*` set (node, typ, val, tb, normal). The driver sends
   the await result and re-enters `koskari_eval`. On re-entry, **revive** runs
   before the next opcode: for AWAIT it pushes the send value, then if
@@ -286,7 +286,7 @@ wind/unwind steps:
 **Transfer plan suspension:** Enter/exit may suspend (auto-await). When a wind
 or unwind step returns an awaitable, the plan suspends. The implementation
 records progress (e.g. which step suspended, inject slot for the result) and
-resumes the plan when the await completes: the driver receives `KOS_EV_AWAIT`,
+resumes the plan when the await completes: the driver receives `KOS_RES_AWAIT`,
 sends the result back on the next `koskari_eval`, and the eval loop feeds the
 inject into the plan and calls `kos_run_transfer_step` again. Transfer plans
 therefore support **suspension and resumption** (interruptible plans). See

@@ -171,7 +171,7 @@ static KosOpResult yield_from_emit_yield(
   KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
   PyObject *payload = *tos;
   Py_INCREF(payload);
-  SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_EV_YIELD\n",
+  SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_RES_YIELD\n",
        (void *) KosEvalState_CurrentNode(es), (void *) KosEvalState_FRAME(es),
        (void *) payload);
 

@@ -60,7 +60,7 @@
    KOS_DYN_SHIFT     - Shift handler block (push stack block; no frame/namespace)
    KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
                        for the foreign-token transfer path; its unwind re-raises the
-                       stored exception so the eval loop exits with KOS_EV_RAISE
+                       stored exception so the eval loop exits with KOS_RES_RAISE
    KOS_DYN_GEN       - Generator boundary; intercepts handle(YIELD/RETURN/RAISE),
                        denies handle(SHIFT)
 */
@@ -1509,10 +1509,11 @@ int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
 
 
 /**
-   Return value from extent wind/unwind helpers when they start async
-   exit code (e.g. wind after hook, WITH __exit__ returning awaitable).
-   Caller must not pop the node yet; the evaluator runs the hook or
-   awaits the exit then resumes unwinding.
+   Internal xfer-layer status: extent wind/unwind started async work (e.g.
+   wind after hook, WITH __exit__ returning awaitable).  Caller must not
+   pop the node yet; the evaluator runs the hook or awaits the exit then
+   resumes unwinding.  Eval boundaries map this to EVAL_AWAIT(awaitable)
+   or EVAL_REPROLOGUE() via KosEvalState_TransitionOp / kos_dyn_pop_top.
 */
 #define KOS_DYN_UNWIND_ASYNC_STARTED 1
 

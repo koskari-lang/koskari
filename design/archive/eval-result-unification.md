@@ -7,7 +7,7 @@ macros). Supersedes [eval-loop-mode-refactor.md](eval-loop-mode-refactor.md).
 ---
 
 This document is a follow-up to
-[event-driven-eval-event-handlers.md](../interpreter/event-driven-eval-event-handlers.md).
+[event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md).
 That document addressed centralising event handling inside the eval loop.
 This document addresses the layer below it: the communication channel from
 opcode handlers back to the eval loop.

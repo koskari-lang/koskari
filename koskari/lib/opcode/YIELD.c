@@ -15,7 +15,8 @@
 
 /**
    YIELD: arg = 0 (None), 1 (single value), or N (tuple of N values).
-   Pop the value(s) from the stack and suspend with KOS_EV_YIELD.
+   Pop the value(s) from the stack and return EVAL_YIELD(val); apply_kos_op_result
+   routes to eval_event_yield for walk/freeze and boundary delivery.
    Resumption (send value) is handled by py_resume_inject at re-entry.
 */
 

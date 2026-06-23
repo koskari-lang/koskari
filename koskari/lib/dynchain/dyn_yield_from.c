@@ -163,7 +163,7 @@ KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
 
 /**
    Inner Koskari async gen yielded: push through to delegating frame and
-   surface KOS_EV_YIELD to the outer koskari_eval caller.
+   surface KOS_RES_YIELD to the outer koskari_eval caller.
 */
 int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf,

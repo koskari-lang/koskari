@@ -450,7 +450,7 @@ Section 16 addresses the concern that freeze/thaw overhead may exceed savings; t
 
 `KosContext` is a heap-allocated struct holding persistent VM state: dynchain, frame cache, **`block`** (pointer to the current operand-stack `KosStackBlock *`), transfer plans, Python bridge (await/yield), exception injection, suspension bookkeeping, and flags. Delimited invoke return metadata lives on **`KOS_DYN_DELIM`** nodes, not in extra context fields.
 
-`koskari_eval()` drives the interpreter. Opcodes receive **`(KosEvalState *es, KosEvent *out_ev, KosOp *insn)`** and use **`KosEvalState_*`** stack helpers and/or `KosContext_BLOCK(ctx)` after cache refresh. Eval-local macros in `eval.c` still map `CURRENT_FRAME(ctx)` → `frame_top`, `CURRENT_CODE` / `CURRENT_PC` from that frame; the operand stack is the block referenced from **`ctx->block`**, which tracks **`KosDynNode.stack`** on installed nodes (operand stack authority;
+`koskari_eval()` drives the interpreter. Opcodes receive **`(KosEvalState *es, KosOp *insn)`** and return **`KosOpResult`** via **`EVAL_*()`** macros; they use **`KosEvalState_*`** stack helpers and/or `KosContext_BLOCK(ctx)` after cache refresh. Eval-local macros in `eval.c` still map `CURRENT_FRAME(ctx)` → `frame_top`, `CURRENT_CODE` / `CURRENT_PC` from that frame; the operand stack is the block referenced from **`ctx->block`**, which tracks **`KosDynNode.stack`** on installed nodes (operand stack authority;
 see **Operand stack authority** in [evaluator.md](evaluator.md) and archived
 [node-owned-operand-stack.md](../archive/node-owned-operand-stack.md)).
 
@@ -471,7 +471,7 @@ see **Operand stack authority** in [evaluator.md](evaluator.md) and archived
 Opcodes are dispatched via computed goto or switch. Each handler has signature:
 
 ```c
-KosOpOutcome op_<name>(KosEvalState *es, KosEvent *out_ev, KosOp *insn);
+KosOpResult op_<name>(KosEvalState *es, KosOp *insn);
 ```
 
 `KOS_EVAL_PREPARE_NEXT_INSN` sets `insn` to the current instruction in **`KosCode_CODE`** before each dispatch. Post-opcode handling does not use a separate dispatch struct. Opcodes use `KosEvalState_Context(es)` where they need `ctx`, and **`KosEvalState_Stack*`** / related helpers for operand-stack access.
@@ -547,13 +547,12 @@ Introduce `kos_es_push`, `kos_es_pop`, `kos_es_peek`, `kos_es_drop`, etc., opera
 Migrate opcodes from:
 
 ```c
-int op_X(KosContext *ctx, KosEvent *out_ev, KosOp *insn);
+KosOpResult op_X(KosEvalState *es, KosOp *insn);
 ```
 
 to:
 
 ```c
-int op_X(KosEvalState *es, KosEvent *out_ev, KosOp *insn);
 ```
 
 `ctx` remains available as `es->ctx`. Replace `CURRENT_STACK(ctx)` with `kos_es_*` calls. `CURRENT_FRAME`, `CURRENT_CODE`, `CURRENT_PC` become `es->frame`, `es->code`, `es->pc` (or macros).
@@ -587,7 +586,7 @@ For PUSH_LOOP, PUSH_TRY, etc.:
 
 1. Define `KosEvalState` with `ctx`, `frame`, `code`, `pc`, and a single `heap_block` pointer (no inline block yet).
 2. At `koskari_eval` entry, populate `es` from `ctx` and pass `&es` through dispatch.
-3. Change opcode signatures to `(KosEvalState *es, KosEvent *out_ev, KosOp *insn)` and replace `CURRENT_*` with `es->*` access. Keep using existing `KosStackBlock_*` APIs via `es->heap_block` (or `KosDynFrame_STACK(es->frame)` temporarily).
+3. Opcode signatures are **`(KosEvalState *es, KosOp *insn)`** returning **`KosOpResult`**; replace `CURRENT_*` with `es->*` access. Keep using existing `KosStackBlock_*` APIs via `es->heap_block` (or `KosDynFrame_STACK(es->frame)` temporarily).
 4. Ensure all opcodes and dynchain helpers that touch the stack during eval go through `es`. Update `eval.c` phase helpers and any shared code.
 
 ### Phase 3: Remove CoW from Eval Path

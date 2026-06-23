@@ -21,9 +21,9 @@
    without suspension (callee as root).
 
    For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; any
-   attempt to suspend (KOS_EV_AWAIT or KOS_EV_YIELD) is converted into an
+   attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) is converted into an
    in-eval KoskariSyncViolation at the deny site so TRY/finally can run;
-   uncaught, the exception surfaces as KOS_EV_RAISE.
+   uncaught, the exception surfaces as KOS_RES_RAISE.
 
    Yielding KosFunctions return DemandGenerator instead of raising; the
    DemandGenerator boundary raises KoskariSyncViolation on AWAIT from the
@@ -187,7 +187,7 @@ static PyTypeObject KosDemandGeneratorType;
 
   For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; in-eval
   deny guards convert AWAIT/YIELD into KoskariSyncViolation before koskari_eval
-  returns, so KOS_EV_AWAIT and KOS_EV_YIELD are unreachable here.
+  returns, so KOS_RES_AWAIT and KOS_RES_YIELD are unreachable here.
   DemandGenerator stepping is unchanged (see demand.c).
 
   callable, args, kwargs are borrowed. Never decref them.
@@ -824,7 +824,7 @@ KosCallableTypeObject KosDemandCallableType = {
 
 
 /* In-eval suspend violation (second koskari_eval throw) is not applied here;
-   only demand_sync_ex run_eval; see demand_gen_step KOS_EV_AWAIT. */
+   only demand_sync_ex run_eval; see demand_gen_step KOS_RES_AWAIT. */
 
 
 static void demand_gen_dealloc(PyObject *self) {

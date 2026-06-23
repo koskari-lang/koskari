@@ -15,8 +15,8 @@
 
 /**
    RETURN: arg = 0 (None), 1 (single value), or N (tuple of N values).
-   Pop the return value(s) from the stack and stop the context with
-   KOS_EV_RETURN.
+   Pop the return value(s) from the stack; eval_event_return delivers
+   KOS_RES_RETURN at the driver boundary.
 */
 
 KOS_OP_HANDLER(RETURN) {

@@ -750,7 +750,7 @@ plan).
 Undelimited invoke does not expect a return at the invoke site on success or
 failure. Exception policy is still split across **`process_raise`**,
 **`eval_phase_entry`**, and **`run_transfer_plan_to_completion`** — see
-[event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md).
+[event-driven-eval-event-handlers.md](archive/event-driven-eval-event-handlers.md).
 
 ### 6.5 Call Sites for run_transfer_plan_to_completion
 
@@ -1045,7 +1045,7 @@ See [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.m
 - [design/archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md) — archived `KosEvalState_*` opcode migration ledger
 - [design/archive/eval-result-unification.md](archive/eval-result-unification.md) — archived `KosOpResult` landing record
 - [design/interpreter/evaluator.md](interpreter/evaluator.md) — VM structures, C API reference
-- [design/interpreter/event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md) — Eval event handlers, exception boundaries, KosOpResult event dispatch
+- [design/archive/event-driven-eval-event-handlers.md](archive/event-driven-eval-event-handlers.md) — Archived: eval event handlers migration (implemented)
 - [design/interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) — Staged parent delivery (partial)
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) — Install slots and invocation
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution invariants

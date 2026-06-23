@@ -202,7 +202,7 @@ typedef KosOpResult (*KosNativeHandlerFn)(KosEvalState *, PyObject *);
   - While RUNNING, exactly one Python wrapper (KosPyCoroutine) may own it.
 
   Suspension and resumption:
-  - When koskari_eval returns KOS_EV_AWAIT, the context is suspended.
+  - When koskari_eval returns KOS_RES_AWAIT, the context is suspended.
   - py_await_iter holds in-flight Python await machinery
     (iterator from __await__(), defer payload). Frozen GEN resume uses
     KosPyAsyncGen::gen plus kos_dyn_gen_install at the driver before
@@ -229,7 +229,7 @@ struct KosContext {
   /* When unwind returns ASYNC_STARTED (wind after-thunk), RETURN stashes the
      value here and resumes unwinding when the thunk returns.  If
      pending_return_to_parent is set, push onto parent and detach; else
-     set KOS_EV_RETURN. */
+     return KOS_RES_RETURN. */
   PyObject *pending_return_value;
   int pending_return_to_parent;
 

@@ -15,7 +15,7 @@ This document reflects the **Koskari revision**: defer cookies and dedicated nat
 
 **Partially implemented.**
 
-- **Implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`kos_callable_call`, `kos_callable_tail_call`) as the canonical interface; single dispatch for CALL, CALL_NAMES, CALL_STAR, TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; type-slot lookup; handler contract (signature, return 0/1/-1); install slots are the only path for KosCallable; non-KosCallable or KosCallable without install use default (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply all use install slots; native handler as frame evaluator; resume via `frame->pc` as native label; transfer plan model (context holds plan, eval loop drains it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else native frame with handler for `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await). TAIL_* opcodes have explicit Plain Python paths (frame pop when parent exists, call, push); they return KOS_OP_RES_CONTROL_RETURNED when continuing to trigger kos_dynnode_on_control_returned for wind thunks.
+- **Implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`KosEvalState_Call`, `KosEvalState_CallArgs`, `KosEvalState_CallNoArgs`) as the canonical interface; single dispatch for CALL, CALL_NAMES, CALL_STAR, TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; type-slot lookup; install slots return `KosOpResult`; install slots are the only path for KosCallable; non-KosCallable or KosCallable without install use default (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply all use install slots; native handler as frame evaluator; resume via `frame->pc` as native label; transfer plan model (context holds plan, eval loop drains it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else native frame with handler for `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await). TAIL_* opcodes have explicit Plain Python paths (frame pop when parent exists, call, push); they return `EVAL_CONTROL_RETURNED()` when continuing to trigger `kos_dynnode_on_control_returned` for wind thunks.
 - **Not implemented**: kos next protocol.
 
 ## Purpose
@@ -63,12 +63,12 @@ State captured by continuations/templates is therefore captured by **frame cloni
 `KosCallable` defines two type slots; there is no `is_tail` parameter—the slot identity implies the mode:
 
 ```c
-typedef int (*KosInstallFunc)(
-    KosContext *ctx,
-    KosEvent   *out_ev,
+typedef KosOpResult (*KosInstallFunc)(
+    KosEvalState *es,
     PyObject   *callable,
     PyObject   *args_tuple,
-    PyObject   *kwds_dict   /* may be NULL */
+    PyObject   *kwds_dict,   /* may be NULL */
+    int tail_call
 );
 
 typedef struct {
@@ -97,10 +97,11 @@ The invocation layer does *not* push or reset; it only dispatches to the appropr
 The CALL and TAIL_CALL opcodes call the unified entry points:
 
 ```c
-int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
-                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+KosOpResult KosEvalState_Call(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args, Py_ssize_t nargs,
+    PyObject *kwnames, int tail_call);
 ```
 
 **kos_callable_call**: Look up `tp_kos_install`. If non-NULL, invoke it. Else fall back to default (Python call + push_or_await).
@@ -109,7 +110,7 @@ int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
 
 ### Return convention
 
-Install returns 0 (continue), 1 (suspend, out_ev set), or -1 (error). On 0, the evaluator loop proceeds with the top frame (bytecode dispatch or native handler).
+Install returns `KosOpResult` (`EVAL_NORMAL`, `EVAL_AWAIT`, `EVAL_CONTROL_RETURNED`, etc.). On `EVAL_NORMAL` or `EVAL_REPROLOGUE`, the evaluator loop proceeds with the top frame (bytecode dispatch or native handler).
 
 ### Transfer plan integration
 
@@ -155,11 +156,9 @@ When a frame has `native_handler != NULL`, that handler **is** the frame's evalu
 ### Signature (unified for call and resume)
 
 ```c
-typedef int (*KosNativeFrameHandler)(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *delivered_value);  /* only when is_resume != 0; new ref */
+typedef KosOpResult (*KosNativeFrameHandler)(
+    KosEvalState *es,
+    PyObject *delivered_value);  /* new ref; NULL for iteration call */
 ```
 
 **Initial call** (`is_resume == 0`): The handler is invoked as the frame evaluator. The frame's `pc` may be used as an entry label.
@@ -201,7 +200,7 @@ All CALL-family opcodes reduce to:
 
 There is no separate "begin argument" channel; argument handling is entirely the responsibility of the install function.
 
-**Current implementation**: CALL, CALL_NAMES, and CALL_STAR use `kos_callable_call`. TAIL_CALL, TAIL_CALL_NAMES, and TAIL_CALL_STAR use `kos_callable_tail_call` (or `kos_callable_tail_vcall` for vectorcall paths). TAIL_* opcodes branch on KosCallable vs Plain Python: KosCallable uses tail install; Plain Python path performs `kos_dyn_pop_frame` when parent exists, then call, push. When the Plain Python path pushes and continues, opcodes return KOS_OP_RES_CONTROL_RETURNED to trigger `kos_dynnode_on_control_returned`.
+**Current implementation**: CALL, CALL_NAMES, and CALL_STAR use `kos_callable_call`. TAIL_CALL, TAIL_CALL_NAMES, and TAIL_CALL_STAR use `kos_callable_tail_call` (or `kos_callable_tail_vcall` for vectorcall paths). TAIL_* opcodes branch on KosCallable vs Plain Python: KosCallable uses tail install; Plain Python path performs `kos_dyn_pop_frame` when parent exists, then call, push. When the Plain Python path pushes and continues, opcodes return `EVAL_CONTROL_RETURNED()` to trigger `kos_dynnode_on_control_returned`.
 
 ### Resume precedence — native handler is the frame evaluator (Tweak 2)
 

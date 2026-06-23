@@ -1,11 +1,17 @@
 # Boundary Control Re-emit Model
 
+**Status:** Frame-crossing vs consumer-delivery split is largely implemented:
+thin **`RETURN`**, **`eval_event_*`** helpers, and **`apply_kos_op_result`** own
+unwind/pop and boundary routing. **Open:** generic dynnode boundary dispatch
+(§5.2) — evolve or replace **`kos_dynnode_on_control_returned`** with a
+capacity-driven router for NEXT / FOREACH / YIELD_FROM consumers.
+
 This document proposes an event-driven boundary model where frame-local
 outcomes are emitted first, then re-emitted as boundary control events after
 crossing a frame boundary.
 
 Companion docs:
-- [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md)
+- [event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md) (archived; implemented)
 - [event-driven-node-delivery.md](../archive/event-driven-node-delivery.md)
 - [generic-dynnode-protocol.md](generic-dynnode-protocol.md)
 - [evaluator.md](evaluator.md)
@@ -57,18 +63,18 @@ operations.
 
 ### Implementation notes (eval-owned staging)
 
-Public `KosEventKind` values for embedders are unchanged. Internal staging uses
-`KosOpOutcome` with `KOS_LOP_POST` and `KOS_OP_POST_TAG_PARENT_RETURN` mapped
-to `KOS_OP_RES_PARENT_RETURN_DELIVER` in `eval_phase_post_opcode`. After
-`RETURN` pops the callee frame, the opcode sets `KOS_EV_RETURN` and defers to
-`eval_parent_return_deliver` (iterator boundary via
-`kos_dyn_try_deliver_iterator_boundary_after_pop`, native handler or stack
-push, then `kos_dynnode_on_control_returned`). Shared iterator return delivery
-mapping lives in `eval_deliver_iterator_boundary_return_step`. Post-opcode
-tail logic after the control-returned hook is `eval_phase_post_opcode_tail`.
-YIELD uses `eval_yield_handle_walk_and_freeze` then
-`eval_event_yield_deliver_to_boundary`. Active `PyErr` in post-opcode flows
-through `eval_boundary_raise_dispatch` (wraps `process_raise`).
+Boundary results use **`KosOpResult`** (`KOS_RES_*`). Opcodes return **`EVAL_*()`**
+macros; **`apply_kos_op_result`** routes non-`NORMAL` results to **`eval_event_*`**
+helpers. **`RETURN`** pops the value and returns **`EVAL_RETURN(val)`**;
+**`eval_event_return`** runs unwind, frame pop, and delivery. Parent-frame delivery
+uses **`eval_parent_return_deliver`** (iterator boundary via
+**`kos_dyn_try_deliver_iterator_boundary_after_pop`**, native handler or stack
+push, then **`kos_dynnode_on_control_returned`**). Shared iterator return delivery
+mapping lives in **`eval_deliver_iterator_boundary_return_step`**. **`YIELD`**
+returns **`EVAL_YIELD(val)`**; **`eval_event_yield`** runs
+**`eval_yield_handle_walk_and_freeze`** then **`eval_event_yield_deliver_to_boundary`**.
+Active **`PyErr`** flows through **`eval_boundary_raise_dispatch`** (wraps
+**`process_raise`**).
 
 
 ## 3. Boundary control event kinds
@@ -116,7 +122,7 @@ Add explicit boundary re-emit handling in eval loop:
 4. dispatch to dynnode consumer in parent context
 5. apply fallback behavior when unconsumed
 
-`eval_phase_post_opcode` and helper functions should own this pipeline.
+`apply_kos_op_result` and helper functions should own this pipeline.
 
 ### 5.2 Dynnode dispatch API
 

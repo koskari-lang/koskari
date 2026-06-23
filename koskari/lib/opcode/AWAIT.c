@@ -15,8 +15,8 @@
 
 /**
    AWAIT: arg = stack element count. 1: pop TOS (awaitable), start/resume
-   awaiting it; may suspend with KOS_EV_AWAIT or push the result. 0: bare
-   cooperative suspend — no stack effect; KOS_EV_AWAIT with Py_None payload
+   awaiting it; may return EVAL_AWAIT(val) or push the result. 0: bare
+   cooperative suspend — no stack effect; EVAL_AWAIT(Py_None) payload
    and no py_await_iter.
 */
 

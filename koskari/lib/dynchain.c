@@ -2258,7 +2258,7 @@ int kos_dyn_deliver_yield_to_iter_boundary(
 /**
  After kos_dyn_pop_frame from a callee: if a flattened Koskari async-gen
  consumer (NEXT or ITER_NEXT) is active, deliver the return value using the
- same logic as eval dispatch_boundary_event for KOS_EV_RETURN.
+ same logic as eval_event_return for KOS_RES_RETURN.
 
  On success or error paths that consume the value, sets *p_val to NULL.
  On return 1, *p_val is unchanged and the caller must deliver to the parent

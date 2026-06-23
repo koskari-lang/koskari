@@ -124,7 +124,7 @@ install slot falls through to the Python call path (§4.2).
 ```c
 static int kospartial_kos_install(
     KosEvalState *es,
-    KosEvent *out_ev,
+    KosEvalState *es,
     PyObject *self,
     PyObject *args_tuple,
     PyObject *kwds_dict,

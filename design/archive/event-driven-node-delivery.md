@@ -2,7 +2,7 @@
 
 **Status:** Milestone implemented (archived 2026-04-16). `KosContext.pending_agen*`
 removed; boundary state on **`KOS_DYN_NEXT`** / **`KOS_DYN_FOREACH`**. Active
-follow-up: [event-driven-eval-event-handlers.md](../interpreter/event-driven-eval-event-handlers.md),
+follow-up: [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md),
 [boundary-control-reemit.md](../interpreter/boundary-control-reemit.md).
 
 This document specifies a **target architecture** for Koskari iteration and generator boundaries: **boundary outcomes** (yield, return, exhaustion, raise) are described by a **canonical `KosEvent` on the evaluation context**, and **consumption** (stack effects, PC updates, branch to `for`/`else`, default handling) moves into **dynamic nodes** and **generic dynchain dispatch**. Opcodes and `eval.c` stop encoding feature-specific state in **`KosContext` ad-hoc fields** (notably the pending async-generator slots documented below).
@@ -11,7 +11,7 @@ The document is written for implementers: it states goals, proposes concrete mec
 
 **Related documentation**
 
-- [event-driven-eval-event-handlers.md](../interpreter/event-driven-eval-event-handlers.md) — **next** milestone: escape overloaded `RETURN`, `eval_event_*` helpers, RAISE/RETURN/YIELD handler routing
+- [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md) — **next** milestone: escape overloaded `RETURN`, `eval_event_*` helpers, RAISE/RETURN/YIELD handler routing (implemented; archived)
 - [iteration-yield-boundaries.md](../interpreter/iteration-yield-boundaries.md) — current opcode map and file locations
 - [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md) — generic vs type-specific bypass; `kos_dynnode_on_control_returned` today
 - [dynamic-node-unified-api.md](dynamic-node-unified-api.md) — capability model (partially adopted; archived spec)

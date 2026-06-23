@@ -193,7 +193,7 @@ static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
 
 /**
    Push val, or if val is awaitable run eager_step and either push the
-   result or suspend (KOS_EV_AWAIT). Use only for (1) the result of a
+   result or suspend (KOS_RES_AWAIT). Use only for (1) the result of a
    call (CALL opcode: callable returned a coroutine) and (2) the AWAIT
    opcode (explicitly awaiting TOS). All other paths must use KosEvalState_StackPUSH
    so we do not auto-await values that are merely loaded or computed.
@@ -234,7 +234,7 @@ static KosOpResult push_or_await_common(
 
   if (suspended && yielded) {
     KosEvalState_MarkSuspendedNotRunning(es);
-    SAYF("[eval] push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
+    SAYF("[eval] push_or_await set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
     return EVAL_AWAIT(yielded);
   }
@@ -308,7 +308,7 @@ static inline KosOpResult op_push_or_await(
 
   if (suspended && yielded) {
     KosEvalState_MarkSuspendedNotRunning(es);
-    SAYF("[eval] op_push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
+    SAYF("[eval] op_push_or_await set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
     return EVAL_AWAIT(yielded);
   }

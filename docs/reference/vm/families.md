@@ -49,8 +49,8 @@
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
 | RAISE | COUNT | Pop N, raise exception | [§6](#kos_op_raise) |
-| RETURN | COUNT | Pop return value; non-GEN parent delivery in **`eval_parent_return_deliver`** (post-opcode), or **`KOS_EV_RETURN`** at top / GEN parent | [§6](#kos_op_return) |
-| YIELD | COUNT | Pop value; **`KOS_EV_YIELD`** + post-opcode **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](#kos_op_yield) |
+| RETURN | COUNT | Pop return value; `EVAL_RETURN(val)` → **`eval_event_return`**; **`KOS_RES_RETURN`** at driver boundary | [§6](#kos_op_return) |
+| YIELD | COUNT | Pop value; `EVAL_YIELD(val)` → **`apply_kos_op_result`** → **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](#kos_op_yield) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](#kos_op_yield_from) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](#kos_op_iter_next) |
 | NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](#kos_op_next) |

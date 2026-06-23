@@ -635,7 +635,7 @@ int kos_build_cc_unwind_plan(
      then INSTALL(NULL), then INJECT.  When the plan reaches the KosDynCCRaise
      EXTENT_ACTION, cc_raise_unwind sets PyErr and returns -1; eval_chain.c
      special-cases that sentinel step (not generic plan failure) and packages
-     it as KOS_EV_RAISE for the parent eval loop. */
+     it as KOS_RES_RAISE for the parent eval loop. */
   return kos_build_transfer_plan(es, NULL, Py_None, 0, 0, out_plan);
 }
 

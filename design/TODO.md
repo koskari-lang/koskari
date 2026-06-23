@@ -5,24 +5,20 @@ design docs for detail.
 
 ---
 
-## Evaluator architecture
+### Evaluator architecture (remaining)
 
-### Event-driven eval handlers (RAISE / RETURN migration)
+**Status:** KosEvent elimination and thin **`RETURN`** / **`apply_kos_op_result`**
+routing are **complete** (see [archive/kosevent-elimination-merged.md](archive/kosevent-elimination-merged.md),
+[archive/event-driven-eval-event-handlers.md](archive/event-driven-eval-event-handlers.md)).
 
-**Status:** Partially realized. YIELD and RETURN boundary delivery to
-**`KOS_DYN_NEXT`** / **`KOS_DYN_FOREACH`** share eval-owned helpers; most
-**`RETURN`** unwind/parent delivery still lives in the opcode. **RAISE** is not
-fully unified: **`process_raise`** is the central hub, but **`eval_phase_entry`**
-(**`KOS_MODE_EXCEPTION`**), **`run_transfer_plan_to_completion`**, and
-**`KOS_MODE_RAISE`** still embed parallel exception policy.
-
-**Review:** migrate further toward a single “exception received” state in the
-eval loop — all PyErr / **`KOS_EV_RAISE`** ingress (normal eval, call results,
-transfer-plan step outcomes, revive throw) should converge on one handler that
-consults sub-states (normal vs mid-transfer vs continuation signal) instead of
-special cases inside phase-specific functions. See
-[interpreter/event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md)
-§3.3, §6.
+**Open:** unify **RAISE** ingress further — **`process_raise`** is the central hub,
+but **`eval_phase_entry`** (**`KOS_MODE_EXCEPTION`**), **`run_transfer_plan_to_completion`**,
+and **`KOS_MODE_RAISE`** still embed parallel exception policy. Migrate toward a
+single “exception received” state in the eval loop: all PyErr / **`KOS_RES_RAISE`**
+ingress (normal eval, call results, transfer-plan step outcomes, revive throw)
+should converge on one handler that consults sub-states (normal vs mid-transfer
+vs continuation signal). Generic boundary dynnode dispatch remains open; see
+[interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
 
 ---
 
@@ -35,7 +31,7 @@ special cases inside phase-specific functions. See
   Regression spec: `test_reset_shift.py` (capture + invoke cases).
 - **Async nested await during transfer** — when a wind/unwind thunk under an
   active or suspended transfer returns `KOS_XFER_SUSPENDED_AWAIT`, `plan_stack`
-  must remain coherent across `KOS_EV_AWAIT` freeze/thaw, including when
+  must remain coherent across `KOS_RES_AWAIT` freeze/thaw, including when
   `plan_stack` depth > 0. Verify prologue ordering, abandon paths after resume,
   and `dyn_wind` on_chain / EXTENT_ACTION guards. Tests: async before/after thunk
   during undelimited nested interrupt (`let/cc` + `dyn-wind` + async Koskari

@@ -162,7 +162,7 @@ throughout:
 ```c
 int kos_callable_vcall(
     KosContext *ctx,
-    KosEvent *out_ev,
+    KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -195,7 +195,7 @@ And `call_default_python_vcall`:
 
 ```c
 static int call_default_python_vcall(
-    KosContext *ctx, KosEvent *out_ev,
+    KosContext *ctx, KosEvalState *es,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs,
     PyObject *kwnames) {
@@ -222,7 +222,7 @@ Extend `KosCallableTypeObject` with vectorcall install slots:
 
 typedef int (*KosVectorInstallFunc)(
     struct KosContext *ctx,
-    struct KosEvent *out_ev,
+    struct KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -266,7 +266,7 @@ The new vectorcall install slots for `KosFunctionType`:
 
 ```c
 static int kos_vinstall_function(
-    KosContext *ctx, KosEvent *out_ev,
+    KosContext *ctx, KosEvalState *es,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs,
     PyObject *kwnames) {
@@ -284,7 +284,7 @@ static int kos_vinstall_function(
 }
 
 static int kos_tail_vinstall_function(
-    KosContext *ctx, KosEvent *out_ev,
+    KosContext *ctx, KosEvalState *es,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs,
     PyObject *kwnames) {
@@ -516,8 +516,8 @@ follow-on concern and are left for a subsequent design pass.
 | `func.h` | Add `vectorcall` field to `KosFunction`; add `KosFunction_VECTORCALL_OFFSET`; declare `KosFunction_VectorCall` and `KosFunction_PrepareCallNamespaceFromVector` |
 | `func.c` | Implement `kos_function_vectorcall`, `kos_vinstall_function`, `kos_tail_vinstall_function`; set flag and offset in `KosFunctionType`; initialize `fn->vectorcall` in constructors |
 | `opcode/CALL.c` | Replace `PopTail` + `PopRef` with `TailPtr` + `PeekAt` + `vcall` + `Drop N+1` |
-| `opcode/TAIL_CALL.c` | Extract via PopTailPtr/PopTail before vcall; KosCallable path + Plain Python (frame pop, call, push); return KOS_OP_RES_CONTROL_RETURNED when continuing |
+| `opcode/TAIL_CALL.c` | Extract via PopTailPtr/PopTail before vcall; KosCallable path + Plain Python (frame pop, call, push); return EVAL_CONTROL_RETURNED() when continuing |
 | `opcode/CALL_NAMES.c` | Replace tuple + dict allocation with `TailPtr` + kwnames passthrough |
-| `opcode/TAIL_CALL_NAMES.c` | Extract via PopTailPtr/PopTail (mirrors TAIL_CALL); both paths use extracted storage; Plain Python path; return KOS_OP_RES_CONTROL_RETURNED when continuing |
+| `opcode/TAIL_CALL_NAMES.c` | Extract via PopTailPtr/PopTail (mirrors TAIL_CALL); both paths use extracted storage; Plain Python path; return EVAL_CONTROL_RETURNED() when continuing |
 | `opcode/CALL_STAR.c` | No change (tuple path; uses kos_callable_call) |
 | `opcode/TAIL_CALL_STAR.c` | KosCallable path via kos_callable_tail_call; Plain Python path (frame pop, PyObject_Call, push) |

@@ -40,7 +40,7 @@
    5. In-loop flattening: Koskari-to-Koskari CALL and async gen stepping
       run in the same koskari_eval loop. When the current frame has a
       parent, YIELD and RETURN detach and push value onto the parent
-      (no boundary event); only the top-level frame produces KOS_EV_*
+      (no boundary event); only the top-level frame produces KOS_RES_*
       on yield/return/raise/await.
 
    6. Cross-context continuation invocation (segmented transfer): when a
@@ -52,7 +52,7 @@
       WITH/finally extents in the current context (calling their exit
       handlers with no active exception), and then the sentinel's unwind
       callback re-raises the original exception.  The eval loop exits with
-      KOS_EV_RAISE, propagating the exception upward through the Python
+      KOS_RES_RAISE, propagating the exception upward through the Python
       async call chain to the owning eval context.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -70,9 +70,6 @@
 #include <frameobject.h>
 #include <time.h>
 
-
-/* Every handler has (ctx, out_ev, insn).  Cast unused parameters to (void)
-   to silence warnings and make intent explicit, e.g. (void) out_ev; (void) insn; */
 
 /* eval.c-local static inline helpers (not KosEvalState bodies; see eval/eval_state.c). */
 
@@ -594,7 +591,7 @@ void kos_eval_prepare_boundary_raise(
    Fetch and clear PyErr, insert a KosDynCCRaise sentinel at the root of the
    dynamic chain, and build a NULL-target transfer plan that unwinds all local
    WITH/finally extents and then re-raises the original exception via the
-   sentinel's unwind callback.  The eval loop then exits with KOS_EV_RAISE so
+   sentinel's unwind callback.  The eval loop then exits with KOS_RES_RAISE so
    the exception propagates upward to the owning context.
 
    :return: EVAL_REPROLOGUE on success, EVAL_RAISE on error
@@ -1313,18 +1310,6 @@ static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
 /* === Opcode handlers (always inlined; return KosOpResult via EVAL_* macros) === */
 
 
-// uncomment the following when we need this stub again.
-/*
-static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
-  (void) ctx;
-  (void) out_ev;
-  PyErr_Format(PyExc_RuntimeError, "unimplemented opcode %u",
-               (unsigned) KosOp_OP(insn));
-  return -1;
-}
-*/
-
-
 /*
    Opcode families (for quick navigation):
    NOOP, LABEL, POSITION - no-op / debug
@@ -2001,7 +1986,7 @@ static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
   KosEvalState_FlushLiveRegsToFrame(es);
   KosEvalState_MarkDeadAfterYield(es);
 
-  SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
+  SAYF("[eval] post_opcode KOS_RES_YIELD -> walk_handle_yield dyn_top=%p\n",
        (void *) KosEvalState_CurrentNode(es));
   {
     KosOpResult ws = eval_yield_handle_walk_and_freeze(es);

@@ -16,7 +16,7 @@ Koskari's evaluator implements:
 - **VM-native dynamic wind/unwind hooks** (bytecode blocks, not Python callables)
 - **Flattened async execution**
 - **Unified dynamic chain** for all control flow concerns
-- **Eval-owned boundary staging** where frame crossing (unwind/pop) is separated from parent-consumer delivery using `KosOpResult` and `eval_event_*` helpers in `eval.c` (no extra public `KosEventKind` values); see [boundary-control-reemit.md](boundary-control-reemit.md)
+- **Eval-owned boundary staging** where frame crossing (unwind/pop) is separated from parent-consumer delivery using `KosOpResult` and `eval_event_*` helpers in `eval.c` (no `KosEvent` struct); see [boundary-control-reemit.md](boundary-control-reemit.md)
 
 ## Core VM Structures
 
@@ -528,7 +528,7 @@ as AWAIT, YIELD, RETURN-boundary, or PyErr by
 `kos_eval_post_opcode_control_returned_after_hook`. All paths use `KosOpResult`
 directly.
 
-See [boundary-control-reemit.md](boundary-control-reemit.md) for the design intent and [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md) for handler-centric event flow.
+See [boundary-control-reemit.md](boundary-control-reemit.md) for the design intent and [../archive/event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md) for the archived handler-centric migration spec.
 
 #### Exception ownership note
 
@@ -590,7 +590,7 @@ This matches Scheme's `dynamic-wind` semantics.
 ## Related Documentation
 
 - [boundary-control-reemit.md](boundary-control-reemit.md) — Staged parent delivery and eval post-opcode helpers (RETURN/YIELD/RAISE)
-- [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md) — Event-driven eval handlers and KosOpResult event dispatch
+- [../archive/event-driven-eval-event-handlers.md](../archive/event-driven-eval-event-handlers.md) — Archived: event-driven eval handlers (implemented)
 - [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)
 - [introspection-trace.md](introspection-trace.md) — Read-only introspection

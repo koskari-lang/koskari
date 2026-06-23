@@ -160,7 +160,7 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
 
 3. **Execute transfer**: Run the plan to completion
    ```c
-   int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
+   KosOpResult kos_run_transfer_step(KosEvalState *es);
    ```
 
 ### KosDynCCRaise Sentinel
@@ -176,7 +176,7 @@ unwinds from innermost to outermost, normal WITH/dyn-with/finally extents run
 their exit handlers first (with no active exception). When the sentinel is
 reached last, its `cc_raise_unwind` callback calls `PyErr_SetObject` with the
 stored exception and returns `-1`, causing the transfer to exit with
-`KOS_EV_RAISE` and propagate the exception upward.
+`KOS_RES_RAISE` and propagate the exception upward.
 
 The sentinel is never cloned (cloning raises `RuntimeError`) and is freed by
 `kos_dynnode_free` via the standard freelist.

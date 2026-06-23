@@ -1,10 +1,16 @@
 # Event-driven eval handlers: RETURN escape, RAISE, YIELD, and node dispatch
 
-This document specifies the **next** refactor after the completed NEXT boundary milestone (delivered: `KOS_DYN_NEXT`, FOREACH phases, removal of `KosContext.pending_agen*`). Background: [event-driven-node-delivery.md](../archive/event-driven-node-delivery.md). It focuses on **escaping the overloaded `RETURN` opcode**, unifying **RAISE**, **RETURN**, and **YIELD** behind **eval-owned** routing, and introducing **`eval_event_*`** helpers that encapsulate non-trivial handling (transitions, transfer plans, dyn walks).
+**Status:** Implemented (archived 2026-06-22). Canonical summary:
+[EVALUATOR.md](../EVALUATOR.md) (phases, `apply_kos_op_result`, `eval_event_*`);
+[archive/kosevent-elimination-merged.md](kosevent-elimination-merged.md).
 
-**Implementation status:** The design is **only partially realized** in the tree. Post-opcode **YIELD** and **RETURN** boundary delivery to **`KOS_DYN_NEXT` / `KOS_DYN_FOREACH`** share helpers with the opcode path for the **iterator exhaustion** slice of **`RETURN`**. The bulk of **`RETURN`** Phase **2** (see [`RETURN.c`](../../koskari/lib/opcode/RETURN.c) comments: **2a** delimited, **2b** normal unwind and parent delivery, **2c** top-level completion) **still lives in the opcode**. See §12 for migration proposals.
+---
 
-Companion documents: [evaluator.md](evaluator.md), [generic-dynnode-protocol.md](generic-dynnode-protocol.md).
+This document specifies the **next** refactor after the completed NEXT boundary milestone (delivered: `KOS_DYN_NEXT`, FOREACH phases, removal of `KosContext.pending_agen*`). Background: [event-driven-node-delivery.md](event-driven-node-delivery.md). It focuses on **escaping the overloaded `RETURN` opcode**, unifying **RAISE**, **RETURN**, and **YIELD** behind **eval-owned** routing, and introducing **`eval_event_*`** helpers that encapsulate non-trivial handling (transitions, transfer plans, dyn walks).
+
+**Implementation status (historical):** At archive time this design was **only partially realized** in the tree. Post-opcode **YIELD** and **RETURN** boundary delivery to **`KOS_DYN_NEXT` / `KOS_DYN_FOREACH`** shared helpers with the opcode path for the **iterator exhaustion** slice of **`RETURN`**. The bulk of **`RETURN`** Phase **2** still lived in the opcode. See §12 for migration proposals that have since been completed.
+
+Companion documents: [evaluator.md](../interpreter/evaluator.md), [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md).
 
 ---
 
