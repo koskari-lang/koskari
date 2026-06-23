@@ -639,13 +639,9 @@ void kos_eval_prepare_boundary_raise(
    sentinel's unwind callback.  The eval loop then exits with KOS_EV_RAISE so
    the exception propagates upward to the owning context.
 
-   :return: KOS_MODE_TRANSFER on success, KOS_MODE_RAISE on error
+   :return: EVAL_REPROLOGUE on success, EVAL_RAISE on error
 */
-static KosEvalMode handle_continuation_apply(
-    KosEvalState *es,
-    KosEvent *out_ev) {
-
-  (void) out_ev;
+static KosOpResult handle_continuation_apply(KosEvalState *es) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
@@ -657,14 +653,14 @@ static KosEvalMode handle_continuation_apply(
     Py_XDECREF(typ);
     PyErr_SetString(PyExc_RuntimeError,
                     "KoskariContinuationApply: missing exception value");
-    return KOS_MODE_RAISE;
+    return EVAL_RAISE();
   }
 
   PyObject *exc_target = PyObject_GetAttrString(val, "target");
   if (! exc_target) {
     Py_DECREF(typ);
     Py_DECREF(val);
-    return KOS_MODE_RAISE;
+    return EVAL_RAISE();
   }
 
   int is_own = (exc_target == (PyObject *) KosContext_TOKEN(ctx));
@@ -711,7 +707,7 @@ static KosEvalMode handle_continuation_apply(
       Py_DECREF(typ);
       Py_DECREF(val);
       Py_DECREF(cont_obj);
-      return KOS_MODE_TRANSFER;
+      return EVAL_REPROLOGUE();
     }
     if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
       kos_abandon_transfer_nest(es);
@@ -730,7 +726,7 @@ own_fail:
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "KoskariContinuationApply: invalid continuation");
-    return KOS_MODE_RAISE;
+    return EVAL_RAISE();
   }
 
   /* Foreign-token path: unwind this context to null and re-raise. */
@@ -738,13 +734,13 @@ own_fail:
   if (kos_build_cc_unwind_plan(es, typ, val, &plan) < 0) {
     Py_DECREF(typ);
     Py_DECREF(val);
-    return KOS_MODE_RAISE;
+    return EVAL_RAISE();
   }
   Py_DECREF(typ);
   Py_DECREF(val);
 
   KosEvalState_ArmTransferPlan(es, plan);
-  return KOS_MODE_TRANSFER;
+  return EVAL_REPROLOGUE();
 }
 
 
@@ -754,20 +750,17 @@ own_fail:
    handlers (try/except/finally, WITH exit, unwind), or returns RAISE. Call
    only when mode is EXCEPTION.
 
-   :return: KOS_MODE_NORMAL or KOS_MODE_TRANSFER to continue, KOS_MODE_RAISE
-            to propagate (out_ev set to KOS_EV_RAISE)
+   :return: EVAL_REPROLOGUE to continue, EVAL_AWAIT on async unwind,
+            EVAL_RAISE to propagate (PyErr set)
 */
-static KosEvalMode process_raise(KosEvalState *es, KosEvent *out_ev) {
+static KosOpResult process_raise(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (! PyErr_Occurred()) {
     PyErr_SetString(PyExc_SystemError,
                     "process_raise: no exception set");
     kos_eval_prepare_boundary_raise(ctx, es);
-    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    KosEvent_EXC_TYPE(out_ev) = NULL;
-    return KOS_MODE_RAISE;
+    return EVAL_RAISE();
   }
 
   if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es)) {
@@ -777,25 +770,19 @@ static KosEvalMode process_raise(KosEvalState *es, KosEvent *out_ev) {
   }
 
   if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply))
-    return handle_continuation_apply(es, out_ev);
+    return handle_continuation_apply(es);
   clear_kos_agen_boundary_on_error(ctx);
 
   {
     KosOpResult tl = try_local_exception_handler(es);
     if (tl.kind == KOS_RES_REPROLOGUE)
-      return KOS_MODE_NORMAL;
+      return EVAL_REPROLOGUE();
     if (tl.kind == KOS_RES_AWAIT) {
-      /* Async unwind started: surface AWAIT to caller via out_ev */
-      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-      KosEvent_PAYLOAD(out_ev) = tl.val;
-      KosEvent_EXC_TYPE(out_ev) = NULL;
-      return KOS_MODE_AWAIT;
+      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+      return tl;
     }
     /* RAISE or FATAL: PyErr set by kos_eval_prepare_boundary_raise */
-    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    KosEvent_EXC_TYPE(out_ev) = NULL;
-    return KOS_MODE_RAISE;
+    return EVAL_RAISE();
   }
 }
 
@@ -1982,31 +1969,9 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
 /**
    Single PyErr / RAISE ordering contract after process_raise: propagate RAISE,
    resuspend on AWAIT, or REPROLOGUE after local recovery.
-
-   With the new KosOpResult protocol, process_raise calls
-   kos_eval_prepare_boundary_raise (leaves PyErr set) and fills _ev with
-   KOS_EV_RAISE.  We return EVAL_RAISE() so the caller sees PyErr set.
 */
 static KosOpResult eval_boundary_raise_dispatch(KosEvalState *es) {
-  KosEvent _ev = {0};
-  KosEvalMode raise_mode = process_raise(es, &_ev);
-  if (raise_mode == KOS_MODE_RAISE) {
-    Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-    Py_XDECREF(KosEvent_PAYLOAD(&_ev));
-    return EVAL_RAISE();
-  }
-
-  if (KosEvent_KIND(&_ev) == KOS_EV_AWAIT) {
-    PyObject *aw = KosEvent_PAYLOAD(&_ev);
-    KosEvent_PAYLOAD(&_ev) = NULL;
-    Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-    KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-    return EVAL_AWAIT(aw);
-  }
-
-  Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-  Py_XDECREF(KosEvent_PAYLOAD(&_ev));
-  return EVAL_REPROLOGUE();
+  return process_raise(es);
 }
 
 
