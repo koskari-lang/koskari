@@ -1397,8 +1397,17 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
  */
 
 
-static int kos_await_dispatch(KosEvalState *es, KosEvent *out_ev, PyObject *value) {
-  return push_or_await_common(es, out_ev, value, 1);
+static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
+  KosEvent _aw_ev = {0};
+  int r = push_or_await_common(es, &_aw_ev, value, 1);
+  if (likely(r == 0))
+    return EVAL_NORMAL();
+  if (r == 1) {
+    PyObject *aw = KosEvent_PAYLOAD(&_aw_ev);
+    KosEvent_PAYLOAD(&_aw_ev) = NULL;
+    return EVAL_AWAIT(aw);
+  }
+  return EVAL_RAISE();
 }
 
 

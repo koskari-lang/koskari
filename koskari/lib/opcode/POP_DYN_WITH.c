@@ -21,8 +21,6 @@
 */
 
 KOS_OP_HANDLER(POP_DYN_WITH) {
-  KosEvent _op_ev = {0};
-
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_WITH(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_DYN_WITH: top is not a with node");
@@ -30,17 +28,16 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
   }
   KosDynWith *with_node = (KosDynWith *) top;
 
-  int unw = kos_dyn_with_unwind(es, with_node, &_op_ev);
-  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+  KosOpResult kr = kos_dyn_with_unwind(es, with_node);
+  if (kr.kind == KOS_RES_AWAIT) {
     uint32_t same_pc = KosEvalState_ACTING_PC(es);
     KosEvalState_SET_PC(es, same_pc);
-    PyObject *aw = KosEvent_PAYLOAD(&_op_ev);
-    KosEvent_PAYLOAD(&_op_ev) = NULL;
-    return EVAL_AWAIT(aw);
+    return kr;
   }
-  if (unw == KOS_DYN_UNWIND_SWALLOWED)
+  /* REPROLOGUE = exception swallowed; resume_pc already set, node stays on chain */
+  if (kr.kind == KOS_RES_REPROLOGUE)
     return EVAL_NORMAL();
-  if (unw != KOS_DYN_UNWIND_PROTOCOL_SKIPPED && unw < 0)
+  if (kr.kind == KOS_RES_RAISE)
     return EVAL_RAISE();
 
   if (KosDynNode_STACK((KosDynNode *) with_node)

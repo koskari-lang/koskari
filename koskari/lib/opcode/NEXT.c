@@ -21,7 +21,6 @@
 */
 
 KOS_OP_HANDLER(NEXT) {
-  KosEvent _op_ev = {0};
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
     PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
@@ -99,7 +98,8 @@ KOS_OP_HANDLER(NEXT) {
   }
 
   PyObject *value = NULL;
-  KosGetNextResult get_res = op_get_next_from_iter(es, &_op_ev, iter, &value);
+  PyObject *_await = NULL;
+  KosGetNextResult get_res = op_get_next_from_iter(es, &_await, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
       if (KosEvalState_StackPushRef(es, value) < 0) {
@@ -132,6 +132,7 @@ KOS_OP_HANDLER(NEXT) {
         if (KosEvalState_StackPushRef(es, default_val) < 0) {
           Py_DECREF(default_val);
           Py_DECREF(iter);
+          Py_XDECREF(_await);
           return EVAL_RAISE();
         }
       }
@@ -142,15 +143,12 @@ KOS_OP_HANDLER(NEXT) {
           Py_DECREF(default_val);
         }
         Py_DECREF(iter);
+        Py_XDECREF(_await);
         return EVAL_RAISE();
       }
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      {
-        PyObject *aw = KosEvent_PAYLOAD(&_op_ev);
-        KosEvent_PAYLOAD(&_op_ev) = NULL;
-        return EVAL_AWAIT(aw);
-      }
+      return EVAL_AWAIT(_await);
 
     case GET_NEXT_ERROR:
       Py_DECREF(iter);

@@ -112,8 +112,11 @@ int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node) {
   }
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
-  if (KosEvalState_CallNoArgs(es, NULL, KosDynWind_BEFORE_THUNK(node), 0) < 0) {
-    return -1;
+  {
+    KosOpResult wr = KosEvalState_CallNoArgs(es, KosDynWind_BEFORE_THUNK(node), 0);
+    if (wr.kind == KOS_RES_RAISE)
+      return -1;
+    Py_XDECREF(wr.val);  /* drop any AWAIT payload; wind thunk is Koskari-synchronous */
   }
 
   return KOS_DYN_UNWIND_ASYNC_STARTED;
@@ -159,11 +162,11 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
     if (! args) {
       return -1;
     }
-    if (KosEvalState_CallArgs(es, NULL, KosDynWind_AFTER_THUNK(node), args, NULL, 0) < 0) {
-      Py_DECREF(args);
-      return -1;
-    }
+    KosOpResult wr = KosEvalState_CallArgs(es, KosDynWind_AFTER_THUNK(node), args, NULL, 0);
     Py_DECREF(args);
+    if (wr.kind == KOS_RES_RAISE)
+      return -1;
+    Py_XDECREF(wr.val);  /* drop any AWAIT payload; wind thunk is Koskari-synchronous */
   }
   return KOS_DYN_UNWIND_ASYNC_STARTED;
 }

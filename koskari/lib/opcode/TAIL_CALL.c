@@ -23,7 +23,6 @@
 */
 
 KOS_OP_HANDLER(TAIL_CALL) {
-  KosEvent _op_ev = {0};
   unsigned n = KosOp_ARG(insn);
   size_t count = (size_t)(n + 1);
 
@@ -35,11 +34,9 @@ KOS_OP_HANDLER(TAIL_CALL) {
   PyObject *const *args =
     (n > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
 
-  int res = KosEvalState_Call(es, &_op_ev, callable, args,
-                            (Py_ssize_t) n, NULL, 1);
-
+  KosOpResult res = KosEvalState_Call(es, callable, args, (Py_ssize_t) n, NULL, 1);
   KosStackSteal_Free(&steal);
-  return kos_op_result_from_call_int(es, res, &_op_ev);
+  return res;
 }
 
 

@@ -39,7 +39,6 @@ static int ensure_tuple_fast_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_FAST_STAR) {
-  KosEvent _op_ev = {0};
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
@@ -113,12 +112,12 @@ KOS_OP_HANDLER(CALL_FAST_STAR) {
     kwd = NULL;
   }
 
-  int res = KosEvalState_CallArgs(es, &_op_ev, callable, pos, kwd, 0);
+  KosOpResult res = KosEvalState_CallArgs(es, callable, pos, kwd, 0);
 
   Py_DECREF(callable);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return kos_op_result_from_call_int(es, res, &_op_ev);
+  return res;
 }
 
 

@@ -850,7 +850,7 @@ static int xfer_step_extent_action(KosEvalState *es, KosTransferAction *action,
   int phase = KosTransferAction_EXTENT_PHASE(action);
 
   if (phase == KOS_XFER_EXTENT_PHASE_WIND)
-    return kos_dyn_wind(es, node, out_ev);
+    return kos_dynnode_run_wind(es, node, out_ev);
   return kos_dynnode_run_transfer_unwind(es, node, KOS_XFER_EVENT_NONE,
                                          out_ev);
 }

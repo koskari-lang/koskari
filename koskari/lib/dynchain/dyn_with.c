@@ -415,31 +415,31 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
 /**
    INSTALL wind: sync __enter__ during transfer. Callers: kos_dyn_wind.
 */
-static int kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node, KosEvent *out_ev) {
+static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
   if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE) {
-    return 0;
+    return EVAL_NORMAL();
   }
 
   PyObject *enter_fn = KosDynWith_ENTER(node);
-  int r = KosEvalState_CallNoArgs(es, out_ev, enter_fn, 0);
-  if (r == 1) {
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  KosOpResult kr = KosEvalState_CallNoArgs(es, enter_fn, 0);
+  if (kr.kind == KOS_RES_AWAIT) {
+    return kr;
   }
-  if (r < 0) {
-    return -1;
+  if (kr.kind == KOS_RES_RAISE) {
+    return EVAL_RAISE();
   }
 
   {
     PyObject *result = KosEvalState_StackPopRef(es);
     if (! result) {
-      return -1;
+      return EVAL_RAISE();
     }
 
     PyObject *name = KosDynWith_NAME(node);
     if (name && name != Py_None) {
       if (frame_ns_store(es, name, result) < 0) {
         Py_DECREF(result);
-        return -1;
+        return EVAL_RAISE();
       }
     }
     Py_DECREF(result);
@@ -447,20 +447,22 @@ static int kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node, KosEvent *o
 
   KosDynWith_ENTERED(node) = 1;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  return 0;
+  return EVAL_NORMAL();
 }
 
 
 /**
    Run context manager __exit__ during kos_dyn_unwind.
+   Returns EVAL_AWAIT when __exit__ returned an awaitable (payload in kr.val).
+   Returns EVAL_REPROLOGUE when the exit was swallowed (exception suppressed,
+   resume_pc already updated — caller must not pop the node).
+   Returns EVAL_NORMAL on ordinary success.
+   Returns EVAL_RAISE on error.
 */
-int kos_dyn_with_unwind(
-    KosEvalState *es,
-    KosDynWith *node,
-    KosEvent *out_ev) {
+KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
 
   if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE) {
-    return KOS_DYN_UNWIND_PROTOCOL_SKIPPED;
+    return EVAL_NORMAL();
   }
 
   PyObject *exit_fn = KosDynWith_EXIT(node);
@@ -486,26 +488,26 @@ int kos_dyn_with_unwind(
     Py_DECREF(typ);
     Py_DECREF(val);
     Py_DECREF(tb);
-    return -1;
+    return EVAL_RAISE();
   }
 
-  int r = KosEvalState_CallArgs(es, out_ev, exit_fn, args, NULL, 0);
+  KosOpResult kr = KosEvalState_CallArgs(es, exit_fn, args, NULL, 0);
   Py_DECREF(args);
 
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+  if (kr.kind == KOS_RES_AWAIT) {
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
     KosDynWith_EXC_TYP(node) = typ;
     KosDynWith_EXC_VAL(node) = val;
     KosDynWith_EXC_TB(node) = tb;
     KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
+    return kr;
   }
 
-  if (r < 0) {
+  if (kr.kind == KOS_RES_RAISE) {
     Py_DECREF(typ);
     Py_DECREF(val);
     Py_DECREF(tb);
-    return -1;
+    return EVAL_RAISE();
   }
 
   if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
@@ -514,7 +516,7 @@ int kos_dyn_with_unwind(
     Py_DECREF(typ);
     Py_DECREF(val);
     Py_DECREF(tb);
-    return -1;
+    return EVAL_RAISE();
   }
 
   PyObject *result = KosEvalState_StackPopRef(es);
@@ -522,7 +524,7 @@ int kos_dyn_with_unwind(
     Py_DECREF(typ);
     Py_DECREF(val);
     Py_DECREF(tb);
-    return -1;
+    return EVAL_RAISE();
   }
 
   if (typ != Py_None && PyObject_IsTrue(result)) {
@@ -537,10 +539,10 @@ int kos_dyn_with_unwind(
       KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
 
     if (KosEvalState_ParentStackPushRef(es, Py_None) < 0) {
-      return -1;
+      return EVAL_RAISE();
     }
 
-    return KOS_DYN_UNWIND_SWALLOWED;
+    return EVAL_REPROLOGUE();
 
   } else if (typ != Py_None) {
     PyErr_Restore(typ, val, tb);
@@ -557,10 +559,10 @@ int kos_dyn_with_unwind(
     if (KosEvalState_FRAME(es))
       KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
     if (kos_dyn_with_post_unwind_deliver(es, node) < 0) {
-      return -1;
+      return EVAL_RAISE();
     }
   }
-  return 0;
+  return EVAL_NORMAL();
 }
 
 

@@ -40,7 +40,6 @@ static int ensure_tuple_var_attr_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_VAR_ATTR_STAR) {
-  KosEvent _op_ev = {0};
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;
@@ -148,12 +147,12 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_STAR) {
 
   Py_DECREF(obj);
 
-  int res = KosEvalState_CallArgs(es, &_op_ev, resolved, args_for_call, kwd, 0);
+  KosOpResult res = KosEvalState_CallArgs(es, resolved, args_for_call, kwd, 0);
 
   Py_DECREF(resolved);
   Py_DECREF(args_for_call);
   Py_XDECREF(kwd);
-  return kos_op_result_from_call_int(es, res, &_op_ev);
+  return res;
 }
 
 

@@ -20,7 +20,6 @@
 */
 
 KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
-  KosEvent _op_ev = {0};
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
@@ -91,10 +90,10 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
       args = (total > 0) ? steal.vals : NULL;
       nargs = npos;
     }
-    int r = KosEvalState_Call(es, &_op_ev, resolved, args, nargs, names, 0);
+    KosOpResult r = KosEvalState_Call(es, resolved, args, nargs, names, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_result_from_call_int(es, r, &_op_ev);
+    return r;
   }
 
   KosStackSteal steal = { 0 };

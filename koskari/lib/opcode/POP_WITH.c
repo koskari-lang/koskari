@@ -21,7 +21,6 @@
 */
 
 KOS_OP_HANDLER(POP_WITH) {
-  KosEvent _op_ev = {0};
   (void) insn;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
@@ -39,23 +38,21 @@ KOS_OP_HANDLER(POP_WITH) {
   }
 
   /* the unwind will pass the value to the upper stack */
-  int unw = kos_dyn_with_unwind(es, (KosDynWith *) top, &_op_ev);
+  KosOpResult kr = kos_dyn_with_unwind(es, (KosDynWith *) top);
 
   /* Async path, need to suspend, we'll resume at this opcode when we
      wake back up. */
-  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+  if (kr.kind == KOS_RES_AWAIT) {
     uint32_t same_pc = KosEvalState_ACTING_PC(es);
     KosEvalState_SET_PC(es, same_pc);
-    PyObject *aw = KosEvent_PAYLOAD(&_op_ev);
-    KosEvent_PAYLOAD(&_op_ev) = NULL;
-    return EVAL_AWAIT(aw);
+    return kr;
   }
 
   /* Error path, bail out. */
-  if (unw != KOS_DYN_UNWIND_PROTOCOL_SKIPPED && unw < 0)
+  if (kr.kind == KOS_RES_RAISE)
     return EVAL_RAISE();
 
-  /* all is well, we've completed the unwind, pop the node and return */
+  /* all is well (NORMAL or REPROLOGUE/swallowed), pop the node and return */
   if (unlikely(kos_dyn_pop_with(es, (KosDynWith *) top) < 0))
     return EVAL_RAISE();
   return EVAL_NORMAL();

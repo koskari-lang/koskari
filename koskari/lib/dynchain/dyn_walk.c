@@ -159,9 +159,11 @@ int kos_dyn_pop_top_allow_barrier(
 }
 
 
-int kos_dyn_pop_top(KosEvalState *es, KosXferEvent event, KosEvent *out_ev) {
-
-  return kos_dyn_pop_nonbarrier_top(es, event, out_ev);
+KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event) {
+  int r = kos_dyn_pop_nonbarrier_top(es, event, NULL);
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
+    return EVAL_REPROLOGUE();
+  return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
 }
 
 

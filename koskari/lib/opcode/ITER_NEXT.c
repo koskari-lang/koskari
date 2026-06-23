@@ -20,7 +20,6 @@
 */
 
 KOS_OP_HANDLER(ITER_NEXT) {
-  KosEvent _op_ev = {0};
   KosDynNode *region = kos_find_node_for_loop(es);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -55,7 +54,8 @@ KOS_OP_HANDLER(ITER_NEXT) {
   }
 
   PyObject *value = NULL;
-  KosGetNextResult get_res = op_get_next_from_iter(es, &_op_ev, iter, &value);
+  PyObject *_await = NULL;
+  KosGetNextResult get_res = op_get_next_from_iter(es, &_await, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
       if (KosEvalState_StackPushRef(es, value) < 0) {
@@ -69,11 +69,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
       KosEvalState_SET_PC(es, KosOp_ARG(insn));
       return EVAL_NORMAL();
     case GET_NEXT_SUSPEND:
-      {
-        PyObject *aw = KosEvent_PAYLOAD(&_op_ev);
-        KosEvent_PAYLOAD(&_op_ev) = NULL;
-        return EVAL_AWAIT(aw);
-      }
+      return EVAL_AWAIT(_await);
     case GET_NEXT_ERROR:
       return EVAL_RAISE();
     default:

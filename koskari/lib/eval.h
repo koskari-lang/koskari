@@ -36,6 +36,54 @@
 #include <stdint.h>
 #include <string.h>
 
+
+/* === KosOpResult — defined before dynchain.h so dynchain can use it === */
+
+
+/**
+  Return values from KosEvalState_Call and related low-level helpers.
+  0 = normal; 1 = suspend or WITH async rollback; 2 = control returned to
+  awaiting dyn node; 4 = parent-frame return delivery staged in eval (post-pop).
+*/
+#define KOS_OP_RES_CONTROL_RETURNED 2
+#define KOS_OP_RES_PARENT_RETURN_DELIVER 4
+
+
+/**
+  KosOpResultKind encodes what the opcode handler wants the eval dispatch loop
+  to do after the handler returns.  NORMAL means "continue with the next
+  instruction"; all other values name an event or control transfer.
+*/
+typedef enum KosOpResultKind {
+  KOS_RES_NORMAL = 0,      /* continue to next opcode */
+  KOS_RES_REPROLOGUE,      /* restart prologue (PyErr set, or plan armed) */
+  KOS_RES_YIELD,           /* generator yielded val */
+  KOS_RES_AWAIT,           /* suspend on awaitable val */
+  KOS_RES_RETURN,          /* return val (needs walk+pop via eval_event_return) */
+  KOS_RES_RAISE,           /* PyErr is set; run exception handler */
+  KOS_RES_CONTROL_RETURNED,/* dyn-node control-returned hook */
+  KOS_RES_PARENT_RETURN,   /* return already popped; deliver val to parent */
+  KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
+} KosOpResultKind;
+
+
+typedef struct KosOpResult {
+  KosOpResultKind kind;
+  PyObject *val;  /* strong ref where documented; NULL otherwise */
+} KosOpResult;
+
+
+#define EVAL_NORMAL()           ((KosOpResult){ KOS_RES_NORMAL, NULL })
+#define EVAL_REPROLOGUE()       ((KosOpResult){ KOS_RES_REPROLOGUE, NULL })
+#define EVAL_RAISE()            ((KosOpResult){ KOS_RES_RAISE, NULL })
+#define EVAL_YIELD(v)           ((KosOpResult){ KOS_RES_YIELD, (v) })
+#define EVAL_AWAIT(v)           ((KosOpResult){ KOS_RES_AWAIT, (v) })
+#define EVAL_RETURN(v)          ((KosOpResult){ KOS_RES_RETURN, (v) })
+#define EVAL_CONTROL_RETURNED() ((KosOpResult){ KOS_RES_CONTROL_RETURNED, NULL })
+#define EVAL_PARENT_RETURN(v)   ((KosOpResult){ KOS_RES_PARENT_RETURN, (v) })
+#define EVAL_FATAL()            ((KosOpResult){ KOS_RES_FATAL, NULL })
+
+
 #include "dynchain.h"
 #include "tracing.h"
 
@@ -185,50 +233,6 @@ typedef enum KosGetNextResult {
   GET_NEXT_SUSPEND,
   GET_NEXT_ERROR
 } KosGetNextResult;
-
-
-/**
-  Return values from KosEvalState_Call and related low-level helpers.
-  0 = normal; 1 = suspend or WITH async rollback; 2 = control returned to
-  awaiting dyn node; 4 = parent-frame return delivery staged in eval (post-pop).
-*/
-#define KOS_OP_RES_CONTROL_RETURNED 2
-#define KOS_OP_RES_PARENT_RETURN_DELIVER 4
-
-
-/**
-  KosOpResultKind encodes what the opcode handler wants the eval dispatch loop
-  to do after the handler returns.  NORMAL means "continue with the next
-  instruction"; all other values name an event or control transfer.
-*/
-typedef enum KosOpResultKind {
-  KOS_RES_NORMAL = 0,      /* continue to next opcode */
-  KOS_RES_REPROLOGUE,      /* restart prologue (PyErr set, or plan armed) */
-  KOS_RES_YIELD,           /* generator yielded val */
-  KOS_RES_AWAIT,           /* suspend on awaitable val */
-  KOS_RES_RETURN,          /* return val (needs walk+pop via eval_event_return) */
-  KOS_RES_RAISE,           /* PyErr is set; run exception handler */
-  KOS_RES_CONTROL_RETURNED,/* dyn-node control-returned hook */
-  KOS_RES_PARENT_RETURN,   /* return already popped; deliver val to parent */
-  KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
-} KosOpResultKind;
-
-
-typedef struct KosOpResult {
-  KosOpResultKind kind;
-  PyObject *val;  /* strong ref where documented; NULL otherwise */
-} KosOpResult;
-
-
-#define EVAL_NORMAL()           ((KosOpResult){ KOS_RES_NORMAL, NULL })
-#define EVAL_REPROLOGUE()       ((KosOpResult){ KOS_RES_REPROLOGUE, NULL })
-#define EVAL_RAISE()            ((KosOpResult){ KOS_RES_RAISE, NULL })
-#define EVAL_YIELD(v)           ((KosOpResult){ KOS_RES_YIELD, (v) })
-#define EVAL_AWAIT(v)           ((KosOpResult){ KOS_RES_AWAIT, (v) })
-#define EVAL_RETURN(v)          ((KosOpResult){ KOS_RES_RETURN, (v) })
-#define EVAL_CONTROL_RETURNED() ((KosOpResult){ KOS_RES_CONTROL_RETURNED, NULL })
-#define EVAL_PARENT_RETURN(v)   ((KosOpResult){ KOS_RES_PARENT_RETURN, (v) })
-#define EVAL_FATAL()            ((KosOpResult){ KOS_RES_FATAL, NULL })
 
 
 /**
@@ -822,20 +826,16 @@ extern PyObject *KoskariContinuationError;
    Accepts any PyObject* callable. Performs KosCallable_Check; if true,
    dispatches to KosCallable_Call with the same es after applying frame
    behavior per wants_frame and tail_call. If false, invokes
-   PyObject_Vectorcall and KosEvalState_PushOrAwait.
+   PyObject_Vectorcall and pushes or auto-awaits the result.
 
    Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
    -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.
 
    Caller must ensure stack is clear before calling when tail_call is true
    (use KosStackSteal). callable, args, kwnames are borrowed.
-
-   Returns 0 continue, 1 suspend, -1 error. On tail_call success, may return
-   KOS_OP_RES_CONTROL_RETURNED to signal control returned (wind thunks).
 */
-int KosEvalState_Call(
+KosOpResult KosEvalState_Call(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -851,9 +851,8 @@ int KosEvalState_Call(
 
    callable, args_tuple, kwds_dict are borrowed.
 */
-int KosEvalState_CallArgs(
+KosOpResult KosEvalState_CallArgs(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
@@ -866,9 +865,8 @@ int KosEvalState_CallArgs(
    Same semantics as KosEvalState_Call. Uses PyObject_CallNoArgs for
    non-KosCallable path. callable is borrowed.
 */
-int KosEvalState_CallNoArgs(
+KosOpResult KosEvalState_CallNoArgs(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     int tail_call);
 
@@ -878,7 +876,7 @@ int KosEvalState_CallNoArgs(
 
 /**
    Push val onto the current frame stack, or if val is awaitable run one step
-   and either push the result or suspend with KOS_EV_AWAIT.
+   and either push the result or suspend.
 
    Use from code outside opcode dispatch that must not apply the CALL* POP,1
    peephole. Implementation: koskari/lib/eval/eval_utils.c included into the
@@ -888,11 +886,8 @@ int KosEvalState_CallNoArgs(
    unit, which may elide push plus a trailing POP,1.
 
    val is consumed (ownership transferred).
-
-   :return: 0 continue, 1 stop (AWAIT), -1 error
 */
-int KosEvalState_PushOrAwait(
-    KosEvalState *es, KosEvent *out_ev, PyObject *val);
+KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
 
 
 /**

@@ -40,7 +40,6 @@ static int ensure_tuple_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(TAIL_CALL_STAR) {
-  KosEvent _op_ev = {0};
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *fun = NULL;
@@ -110,12 +109,12 @@ KOS_OP_HANDLER(TAIL_CALL_STAR) {
     kwd = NULL;
   }
 
-  int res = KosEvalState_CallArgs(es, &_op_ev, fun, pos, kwd, 1);
+  KosOpResult res = KosEvalState_CallArgs(es, fun, pos, kwd, 1);
 
   Py_DECREF(fun);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return kos_op_result_from_call_int(es, res, &_op_ev);
+  return res;
 }
 
 

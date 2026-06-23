@@ -210,16 +210,9 @@ static KosOpResult apply_native_handler(
   if (detached)
     kos_dynframe_free(detached);
 
-  KosEvent _push_ev = {0};
-  int r = KosEvalState_PushOrAwait(es, &_push_ev, result);
-  if (r == 0) return EVAL_REPROLOGUE();
-  if (r == 1) {
-    PyObject *aw = KosEvent_PAYLOAD(&_push_ev);
-    KosEvent_PAYLOAD(&_push_ev) = NULL;
-    return EVAL_AWAIT(aw);
-  }
-  if (r == KOS_OP_RES_CONTROL_RETURNED) return EVAL_CONTROL_RETURNED();
-  return EVAL_RAISE();
+  KosOpResult pr = KosEvalState_PushOrAwait(es, result);
+  if (pr.kind == KOS_RES_NORMAL) return EVAL_REPROLOGUE();
+  return pr;
 }
 
 

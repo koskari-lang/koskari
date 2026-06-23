@@ -37,9 +37,7 @@ KOS_OP_HANDLER(AWAIT) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return EVAL_RAISE();
-  KosEvent _op_ev = {0};
-  return kos_op_result_from_int_step(kos_await_dispatch(es, &_op_ev, val),
-                                     &_op_ev);
+  return kos_await_dispatch(es, val);
 }
 
 

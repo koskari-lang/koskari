@@ -21,7 +21,6 @@
 */
 
 KOS_OP_HANDLER(PUSH_DYN_WITH) {
-  KosEvent _op_ev = {0};
   PyObject *mgr = KosEvalState_StackPopRef(es);
   if (! mgr)
     return EVAL_RAISE();
@@ -67,16 +66,14 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
     return EVAL_RAISE();
   }
 
-  int r = kos_dyn_wind(es, (KosDynNode *) with_node, &_op_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+  KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
+  if (wr.kind == KOS_RES_AWAIT) {
     uint32_t same_pc = KosEvalState_ACTING_PC(es);
     KosEvalState_SET_PC(es, same_pc);
-    PyObject *aw = KosEvent_PAYLOAD(&_op_ev);
-    KosEvent_PAYLOAD(&_op_ev) = NULL;
-    return EVAL_AWAIT(aw);
+    return wr;
   }
 
-  if (r < 0) {
+  if (wr.kind == KOS_RES_RAISE) {
     kos_dyn_pop_with(es, with_node);
     return EVAL_RAISE();
   }

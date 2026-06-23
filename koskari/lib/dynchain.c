@@ -940,7 +940,19 @@ int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node) {
 */
 static int kos_dynnode_run_wind(KosEvalState *es, KosDynNode *node,
                                 KosEvent *out_ev) {
-  return kos_dyn_wind(es, node, out_ev);
+  KosOpResult kr = kos_dyn_wind(es, node);
+  if (kr.kind == KOS_RES_AWAIT) {
+    if (out_ev) {
+      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+      KosEvent_PAYLOAD(out_ev) = kr.val;
+    } else {
+      Py_XDECREF(kr.val);
+    }
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  }
+  if (kr.kind == KOS_RES_REPROLOGUE)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  return (kr.kind == KOS_RES_RAISE) ? -1 : 0;
 }
 
 
@@ -1076,26 +1088,25 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
 
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-int kos_dyn_wind(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
-  int r;
+KosOpResult kos_dyn_wind(KosEvalState *es, KosDynNode *node) {
   switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PARAM:
-      r = kos_dyn_param_wind(es, (KosDynParam *) node);
-      break;
+    case KOS_DYN_PARAM: {
+      int r = kos_dyn_param_wind(es, (KosDynParam *) node);
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
     case KOS_DYN_WITH:
-      r = kos_dyn_dyn_with_wind(es, (KosDynWith *) node, out_ev);
-      break;
-    case KOS_DYN_WIND:
-      r = kos_dyn_wind_wind(es, (KosDynWind *) node);
-      break;
+      return kos_dyn_dyn_with_wind(es, (KosDynWith *) node);
+    case KOS_DYN_WIND: {
+      int r = kos_dyn_wind_wind(es, (KosDynWind *) node);
+      if (r == KOS_DYN_UNWIND_ASYNC_STARTED) return EVAL_REPROLOGUE();
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_wind: node kind %u has no wind",
                    (unsigned) KosDynNode_KIND(node));
-      r = -1;
-      break;
+      return EVAL_RAISE();
   }
-  return r;
 }
 
 
@@ -1128,9 +1139,25 @@ int kos_dyn_unwind(KosEvalState *es, KosDynNode *node, KosXferEvent event,
       (void) out_ev;
       r = kos_dyn_wind_unwind(es, (KosDynWind *) node);
       break;
-    case KOS_DYN_WITH:
-      r = kos_dyn_with_unwind(es, (KosDynWith *) node, out_ev);
+    case KOS_DYN_WITH: {
+      KosOpResult kr = kos_dyn_with_unwind(es, (KosDynWith *) node);
+      if (kr.kind == KOS_RES_AWAIT) {
+        if (out_ev) {
+          KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+          KosEvent_PAYLOAD(out_ev) = kr.val;
+        } else {
+          Py_XDECREF(kr.val);
+        }
+        r = KOS_DYN_UNWIND_ASYNC_STARTED;
+      } else if (kr.kind == KOS_RES_REPROLOGUE) {
+        r = KOS_DYN_UNWIND_SWALLOWED;
+      } else if (kr.kind == KOS_RES_RAISE) {
+        r = -1;
+      } else {
+        r = 0;
+      }
       break;
+    }
     case KOS_DYN_CC_RAISE:
       (void) out_ev;
       r = cc_raise_unwind(ctx, node, NULL);

@@ -20,7 +20,6 @@
 */
 
 KOS_OP_HANDLER(PUSH_WIND) {
-  KosEvent _op_ev = {0};
   unsigned count = KosOp_ARG(insn);
   PyObject *before = NULL;
   PyObject *after = NULL;  /* set only when count==2 */
@@ -76,13 +75,12 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (a)
     Py_DECREF(a);
 
-  int r = kos_dyn_wind(es, (KosDynNode *) wind, &_op_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-    return EVAL_NORMAL();
-  if (r < 0)
+  KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) wind);
+  if (wr.kind == KOS_RES_RAISE)
     return EVAL_RAISE();
-  /* No before thunk or sync before: wind phase done, mark entered */
-  KosDynWind_ENTERED(wind) = 1;
+  /* REPROLOGUE = before-thunk frame started; NORMAL = no thunk or sync done */
+  if (wr.kind == KOS_RES_NORMAL)
+    KosDynWind_ENTERED(wind) = 1;
 
   return EVAL_NORMAL();
 }

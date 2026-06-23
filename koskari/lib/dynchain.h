@@ -1444,10 +1444,13 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
    Uses KosEvalState_CallArgs for exit. When exit returns an awaitable, suspend
    happens inside KosEvalState_CallArgs; pending state is stashed and this returns 1.
 
-   :return: 0 on success, KOS_DYN_UNWIND_SWALLOWED, KOS_DYN_UNWIND_PROTOCOL_SKIPPED,
-     -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when suspend occurred
+   EVAL_AWAIT when __exit__ returned an awaitable (payload in .val).
+   EVAL_REPROLOGUE when exception was swallowed (resume_pc updated; caller must
+     not pop the WITH node).
+   EVAL_NORMAL on success.
+   EVAL_RAISE on error.
 */
-int kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node, struct KosEvent *out_ev);
+KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node);
 
 
 /**
@@ -1480,9 +1483,10 @@ int kos_dyn_pop_top_allow_barrier(
 
 /**
   Backward-compatible alias for non-barrier policy pop.
+  Returns EVAL_REPROLOGUE when an async wind-thunk frame was started,
+  EVAL_NORMAL on sync success, EVAL_RAISE on error.
 */
-int kos_dyn_pop_top(KosEvalState *es, KosXferEvent event,
-                    struct KosEvent *out_ev);
+KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event);
 
 
 int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
@@ -1569,8 +1573,9 @@ int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
    with inlined handlers rather than an indirect function-pointer call.
 
    kos_dyn_install: run install-phase setup when a node is pushed.
-   kos_dyn_wind: run wind (enter) for extent nodes during continuation transfer;
-     out_ev for async suspend.
+   kos_dyn_wind: run wind (enter) for extent nodes during continuation transfer.
+     Returns KosOpResult: AWAIT for async WITH enter, REPROLOGUE when a WIND
+     before-thunk frame was started, NORMAL on sync success, RAISE on error.
    kos_dyn_unwind: run unwind (exit) for extent nodes; may start async.
    kos_dyn_exception_unwind: called when exception propagation reaches a
      HANDLES_EXCEPTIONS node; returns 0 to continue, 1 if swallowed,
@@ -1579,7 +1584,7 @@ int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
      the type forbids cloning.
 */
 int kos_dyn_install(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
-int kos_dyn_wind(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
+KosOpResult kos_dyn_wind(KosEvalState *es, KosDynNode *node);
 int kos_dyn_unwind(KosEvalState *es, KosDynNode *node, KosXferEvent event,
                    struct KosEvent *out_ev);
 int kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node,
