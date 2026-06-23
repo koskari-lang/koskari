@@ -116,9 +116,6 @@ typedef KosDynFrame KosFrame;
   KOS_EV_RAISE  - exception propagation
   KOS_EV_YIELD  - generator yield
   KOS_EV_AWAIT  - suspension on Python awaitable
-  KOS_EV_POST_OPCODE - eval-internal only: deferred second pass of
-                   eval_phase_post_opcode; payload is PyLong holding op_res
-                   (drained at dispatch prologue, never returned to drivers)
   KOS_EV_NONE   - out_ev cleared after an in-loop consume; not a driver-facing
                    boundary
 */
@@ -128,7 +125,6 @@ typedef enum KosEventKind {
   KOS_EV_RAISE,
   KOS_EV_YIELD,
   KOS_EV_AWAIT,
-  KOS_EV_POST_OPCODE,
 } KosEventKind;
 
 
@@ -192,65 +188,9 @@ typedef enum KosGetNextResult {
 
 
 /**
-  KosLoopOpMode is the opcode-to-loop signal: what the main eval loop should
-  do after each instruction.  Distinct from KosEvalMode (entry/revive only).
-
-  KOS_LOP_RUN — continue with the next instruction without running the
-  expensive prologue (transfer drain, pending-exception check, native
-  frame branch).
-
-  KOS_LOP_PROLOGUE — next cycle must run the full prologue before dispatch
-  (e.g. PyErr set by RAISE opcode, new transfer plan, native handler installed).
-
-  KOS_LOP_POST — run eval_phase_post_opcode with kos_op_post_tag_to_res(tag).
-
-  KOS_LOP_FAIL — hard evaluator fault: koskari_eval returns -1 immediately;
-  no post_opcode (differs from Python exception path, which uses PROLOGUE or
-  POST with ERR tag and PyErr).
-*/
-typedef enum KosLoopOpMode {
-  KOS_LOP_RUN = 0,
-  KOS_LOP_PROLOGUE,
-  KOS_LOP_POST,
-  KOS_LOP_FAIL,
-} KosLoopOpMode;
-
-
-/**
-  Post-opcode tags for KOS_LOP_POST only; passed to eval_phase_post_opcode as
-  the legacy int (1 = suspend/async, 2 = control returned, -1 = error path,
-  4 = parent return delivery after pop).
-*/
-#define KOS_OP_POST_TAG_SUSPEND 1
-#define KOS_OP_POST_TAG_CONTROL_RETURNED 2
-#define KOS_OP_POST_TAG_ERR 3
-#define KOS_OP_POST_TAG_PARENT_RETURN 4
-
-
-typedef struct KosOpOutcome {
-  KosLoopOpMode mode;
-  uint8_t post_tag;
-  PyObject *value;  /* reserved for future use; must be NULL unless documented */
-} KosOpOutcome;
-
-
-#define KOS_OP_RUN() ((KosOpOutcome){ KOS_LOP_RUN, 0, NULL })
-#define KOS_OP_PROLOGUE() ((KosOpOutcome){ KOS_LOP_PROLOGUE, 0, NULL })
-#define KOS_OP_FAIL() ((KosOpOutcome){ KOS_LOP_FAIL, 0, NULL })
-#define KOS_OP_POST_SUSPEND() \
-  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_SUSPEND, NULL })
-#define KOS_OP_POST_CONTROL() \
-  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_CONTROL_RETURNED, NULL })
-#define KOS_OP_POST_ERR() \
-  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_ERR, NULL })
-#define KOS_OP_POST_PARENT_RETURN() \
-  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_PARENT_RETURN, NULL })
-
-
-/**
-  Opcode handler return values (legacy KosEvalState_Call / helpers).  0 = normal;
-  1 = suspend or WITH async rollback; 2 = control returned to awaiting dyn node;
-  4 = parent-frame return delivery staged in eval (post-pop).
+  Return values from KosEvalState_Call and related low-level helpers.
+  0 = normal; 1 = suspend or WITH async rollback; 2 = control returned to
+  awaiting dyn node; 4 = parent-frame return delivery staged in eval (post-pop).
 */
 #define KOS_OP_RES_CONTROL_RETURNED 2
 #define KOS_OP_RES_PARENT_RETURN_DELIVER 4

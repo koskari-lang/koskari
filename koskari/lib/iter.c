@@ -496,14 +496,6 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
       /* Return the awaitable for the caller to await */
       return KosEvent_PAYLOAD(&ev);
 
-    case KOS_EV_POST_OPCODE:
-      agen->closed = 1;
-      Py_XDECREF(KosEvent_PAYLOAD(&ev));
-      KosEvent_PAYLOAD(&ev) = NULL;
-      PyErr_SetString(PyExc_RuntimeError,
-                      "unexpected KOS_EV_POST_OPCODE (eval-internal)");
-      return NULL;
-
     case KOS_EV_NONE:
       PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
       return NULL;

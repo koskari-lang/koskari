@@ -181,7 +181,7 @@ static int kos_eval_in_demand(KosEvalState *es) {
 
    Used only by YIELD_FROM sites whose pre-event state mutations (phase,
    inflight, PC flush) must not occur when denying. All other suspension
-   paths are intercepted centrally in eval_phase_post_opcode_tail.
+   paths are intercepted centrally in eval_event_await / eval_event_yield.
 */
 static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
   if (! kos_eval_in_demand(es))
@@ -324,69 +324,6 @@ static inline int op_push_or_await(
 }
 
 #undef OP_TRY_FUSE_POP1_AFTER_PUSH
-
-
-static inline KosOpOutcome kos_op_outcome_PUSH(
-    KosEvalState *es,
-    PyObject *val) {
-
-  if (unlikely(! val))
-    return KOS_OP_POST_ERR();
-
-  int r = KosEvalState_StackPUSH(es, val);
-  if (likely(r == 0))
-    return KOS_OP_RUN();
-
-  return KOS_OP_POST_ERR();
-}
-
-
-static inline KosOpOutcome kos_op_outcome_PUSH_OR_AWAIT(
-    KosEvalState *es,
-    KosEvent *out_ev,
-    PyObject *val) {
-
-  if (unlikely(! val))
-    return KOS_OP_POST_ERR();
-
-  int r = op_push_or_await(es, out_ev, val);
-  if (likely(r == 0))
-    return KOS_OP_RUN();
-
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-
-  return KOS_OP_RUN();
-}
-
-
-static inline KosOpOutcome kos_op_outcome_from_push_int(int r) {
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-  return KOS_OP_RUN();
-}
-
-
-/**
-  Map legacy opcode-helper int to KosOpOutcome (0 run, 1 suspend, 2 control,
-  -1 err).
-*/
-static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-  if (r == KOS_OP_RES_CONTROL_RETURNED)
-    return KOS_OP_POST_CONTROL();
-  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
-    return KOS_OP_POST_PARENT_RETURN();
-  return KOS_OP_RUN();
-}
 
 
 /* Map 0/-1 int result (push, binary op) to KosOpResult. */

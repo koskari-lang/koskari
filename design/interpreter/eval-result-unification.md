@@ -1057,43 +1057,39 @@ centralized AWAIT handler.
 
 ---
 
-### Step 3 — Phase 6: full deletion of legacy infrastructure
+### Step 3 — Phase 6: full deletion of legacy infrastructure ✓ DONE (branch eval_event_again, post-e2bd983)
 
-Do this only after Step 2 passes the full test suite. This step is purely
-subtractive — no behavior changes.
+All sub-tasks implemented and tested (3212 passed, 10 skipped — same baseline).
 
-Delete in order (each should leave the tree compilable):
+**What was done:**
+- `eval.c`: `kos_op_post_tag_to_res` function deleted; `kos_op_outcome_from_call_int`
+  function deleted; section-separator comment updated ("KosOpOutcome via KOS_OP_*"
+  → "KosOpResult via EVAL_*")
+- `eval.c` `eval_phase_post_opcode_tail`: inlined into its only caller
+  (`kos_eval_post_opcode_control_returned_after_hook`) and deleted. The inlined
+  version is semantically identical except the `op_res < 0 ? FATAL : STOP`
+  final branch is simplified to unconditional `STOP_EVENT` (CONTROL_RETURNED == 2
+  is always positive, so the FATAL branch was dead). Error message updated to
+  "control_returned hook: non-zero result but no event".
+- `eval_utils.c`: `kos_op_outcome_PUSH`, `kos_op_outcome_PUSH_OR_AWAIT`,
+  `kos_op_outcome_from_push_int`, `kos_op_outcome_from_int_step` deleted.
+  Stale comment referencing `eval_phase_post_opcode_tail` updated to name
+  `eval_event_await / eval_event_yield`.
+- `eval.h`: `KosLoopOpMode` enum (`KOS_LOP_*`), `KOS_OP_POST_TAG_*` defines,
+  `KosOpOutcome` struct/typedef, `KOS_OP_RUN/PROLOGUE/FAIL/POST_SUSPEND/POST_CONTROL/
+  POST_ERR/POST_PARENT_RETURN` macros all deleted. `KOS_EV_POST_OPCODE` removed
+  from `KosEventKind` enum and its comment block. `KOS_OP_RES_CONTROL_RETURNED`
+  and `KOS_OP_RES_PARENT_RETURN_DELIVER` retained (still active).
+- `iter.c`: `case KOS_EV_POST_OPCODE:` arm removed from the agen step switch.
 
-1. **`eval_phase_post_opcode` and `eval_phase_post_opcode_tail`** — Verify zero
-   callers first: `grep -n "eval_phase_post_opcode" koskari/lib/eval.c`.
-   After Phase 5 removes the `eval_dispatch_maybe_post_opcode_event` drain,
-   there should be no calls to `eval_phase_post_opcode`. Delete both functions.
-
-2. **`kos_op_post_tag_to_res`** — Already unused after Phase 4. Delete.
-
-3. **`kos_op_outcome_from_call_int`** (in `eval.c`) — Already unused. Delete.
-
-4. **`kos_op_outcome_PUSH`, `kos_op_outcome_PUSH_OR_AWAIT`,
-   `kos_op_outcome_from_push_int`, `kos_op_outcome_from_int_step`** (in
-   `eval_utils.c`) — Already unused. Delete the old helpers; keep the new
-   `kos_op_result_*` counterparts.
-
-5. **`KosOpOutcome`, `KosLoopOpMode`, `KOS_LOP_*` enum** — In `eval.h`.
-   Delete struct, enum, and all `typedef`s.
-
-6. **`KOS_OP_RUN`, `KOS_OP_POST_ERR`, `KOS_OP_PROLOGUE`, `KOS_OP_FAIL`,
-   `KOS_OP_POST_SUSPEND`, `KOS_OP_POST_PARENT_RETURN`** macros — In `eval.h`.
-   Delete.
-
-7. **`KOS_OP_RES_*` integer defines** — In `eval.h` or nearby. Delete.
-
-8. **`KOS_OP_POST_TAG_*` defines** (if any remain) — Delete.
-
-9. **`KOS_EV_POST_OPCODE` from `KosEventKind`** — Already removed in Step 2d.
-   Confirm absent.
-
-After each deletion, `tox -qe build` must pass. After all deletions, run the
-full suite.
+**Note on `KOS_OP_RES_CONTROL_RETURNED` / `KOS_OP_RES_PARENT_RETURN_DELIVER`:**
+These `#define`s (values 2 and 4) are retained. They are used by
+`kos_op_result_from_int_step`, `kos_op_result_from_call_int`, the `utils.c`
+`apply_native_handler`, and the `eval_utils.c` `op_push_or_await_common`.
+They are NOT part of the deleted `KosOpOutcome/KosLoopOpMode` surface — they
+belong to the `KosEvalState_PushOrAwait` int-return protocol, which is still
+active. The §16 Step 3 sub-task 7 ("Delete `KOS_OP_RES_*` integer defines") was
+incorrect as written; those defines remain load-bearing.
 
 ---
 

@@ -76,23 +76,6 @@
 
 /* eval.c-local static inline helpers (not KosEvalState bodies; see eval/eval_state.c). */
 
-/**
-  Map KOS_LOP_POST tag to the int historically passed to eval_phase_post_opcode.
-*/
-static inline int kos_op_post_tag_to_res(uint8_t tag) {
-
-  if (tag == KOS_OP_POST_TAG_SUSPEND)
-    return 1;
-  if (tag == KOS_OP_POST_TAG_CONTROL_RETURNED)
-    return KOS_OP_RES_CONTROL_RETURNED;
-  if (tag == KOS_OP_POST_TAG_ERR)
-    return -1;
-  if (tag == KOS_OP_POST_TAG_PARENT_RETURN)
-    return KOS_OP_RES_PARENT_RETURN_DELIVER;
-  return -1;
-}
-
-
 typedef struct {
   PyObject *left;
   PyObject *right;
@@ -153,33 +136,6 @@ static KosEvalStep kos_eval_post_opcode_control_returned_after_hook(
 static KosEvalStep eval_dispatch_op_result(
         KosEvalState *es, KosEvent *out_ev,
         KosOpResult res);
-
-
-/**
-  Map KosEvalState_Call / KosCallable_Call legacy int r to KosOpOutcome.  When
-  r==0 after install, forces PROLOGUE if a transfer plan or native handler
-  is present on the current frame.
-*/
-static inline KosOpOutcome kos_op_outcome_from_call_int(KosEvalState *es, int r) {
-
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  if (r == KOS_OP_RES_CONTROL_RETURNED)
-    return KOS_OP_POST_CONTROL();
-  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
-    return KOS_OP_POST_PARENT_RETURN();
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-  if (r == 0) {
-    if (KosEvalState_PLAN(es))
-      return KOS_OP_PROLOGUE();
-    if (KosEvalState_FRAME(es)
-        && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)))
-      return KOS_OP_PROLOGUE();
-    return KOS_OP_RUN();
-  }
-  return KOS_OP_POST_ERR();
-}
 
 
 /**
@@ -1410,7 +1366,7 @@ static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
 }
 
 
-/* === Opcode handlers (always inlined; return KosOpOutcome via KOS_OP_* macros) === */
+/* === Opcode handlers (always inlined; return KosOpResult via EVAL_* macros) === */
 
 
 // uncomment the following when we need this stub again.
@@ -2293,26 +2249,29 @@ static KosEvalStep eval_event_return(
 
 
 /**
-   Tail of post-opcode handling after CONTROL_RETURNED hook (or equivalent).
+   Run WIND/WITH control hook after a CONTROL_RETURNED delivery, then dispatch
+   whatever event (AWAIT, YIELD, RETURN boundary) the hook placed in out_ev.
 */
-static KosEvalStep eval_phase_post_opcode_tail(
-        KosEvalState *es,
-        KosEvent *out_ev,
-        int op_res) {
+static KosEvalStep kos_eval_post_opcode_control_returned_after_hook(
+    KosEvalState *es,
+    KosEvent *out_ev) {
+
+  int r;
+
+  KOS_TRACE_POST_OP_WRAP(control_returned, r = kos_dynnode_on_control_returned(
+      es, KosEvalState_CurrentNode(es), out_ev));
+  if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED)
+    return KOS_STEP_REPROLOGUE;
 
   if (PyErr_Occurred()) {
     KosEvalStep rs;
-
     KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es, out_ev));
     return rs;
   }
 
-  /* Record why we suspended so next entry can choose revive path.
-     post_opcode is only called for non-zero op_res; a handler that stops
-     or suspends must set kind. Uninitialized {0} must not masquerade here. */
   if (KosEvent_KIND(out_ev) == KOS_EV_NONE) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "eval post_opcode: KOS_EV_NONE with non-zero opcode result");
+                    "control_returned hook: non-zero result but no event");
     return KOS_STEP_FATAL_ERROR;
   }
 
@@ -2335,44 +2294,19 @@ static KosEvalStep eval_phase_post_opcode_tail(
     KosEvalStep ys;
     PyObject *yval = KosEvent_PAYLOAD(out_ev);
     KosEvent_PAYLOAD(out_ev) = NULL;
-
     KOS_TRACE_POST_OP_WRAP(event_yield, ys = eval_event_yield(es, out_ev, yval));
-
     if (ys != KOS_STEP_STOP_EVENT)
       return ys;
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN
              && kos_dyn_need_kos_agen_boundary_deliver(es)) {
     KosEvalStep bs;
-
     KOS_TRACE_POST_OP_WRAP(return_boundary,
         bs = eval_event_return_deliver_to_boundary(es, out_ev));
     return bs;
   }
 
-  /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */
-  return (op_res < 0) ? KOS_STEP_FATAL_ERROR : KOS_STEP_STOP_EVENT;
-}
-
-
-/**
-   Shared kos_dynnode_on_control_returned post-opcode path for
-   KOS_OP_RES_CONTROL_RETURNED: after stack or other delivery, run WIND/WITH
-   control hook, then continue the post-opcode tail if the hook does not
-   request a prologue restart.
-*/
-static KosEvalStep kos_eval_post_opcode_control_returned_after_hook(
-    KosEvalState *es,
-    KosEvent *out_ev) {
-
-  int r;
-
-  KOS_TRACE_POST_OP_WRAP(control_returned, r = kos_dynnode_on_control_returned(
-      es, KosEvalState_CurrentNode(es), out_ev));
-  if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED)
-    return KOS_STEP_REPROLOGUE;
-
-  return eval_phase_post_opcode_tail(es, out_ev, KOS_OP_RES_CONTROL_RETURNED);
+  return KOS_STEP_STOP_EVENT;
 }
 
 
