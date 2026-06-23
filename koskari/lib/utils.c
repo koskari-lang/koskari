@@ -216,9 +216,8 @@ static KosOpResult apply_native_handler(
 }
 
 
-static int kos_install_apply(
+static KosOpResult kos_install_apply(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
@@ -228,7 +227,7 @@ static int kos_install_apply(
   Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
   if (n < 1 || n > 3) {
     PyErr_SetString(PyExc_TypeError, "apply expects 1, 2, or 3 arguments");
-    return -1;
+    return EVAL_RAISE();
   }
 
   PyObject *fn = PyTuple_GET_ITEM(args_tuple, 0);
@@ -237,7 +236,7 @@ static int kos_install_apply(
   PyObject *seq_args = NULL;
 
   if (kos_apply_build_args_tuple(arglist, &seq_args) < 0)
-    return -1;
+    return EVAL_RAISE();
 
   if (kwds == Py_None)
     kwds = NULL;
@@ -245,14 +244,14 @@ static int kos_install_apply(
   if (kwds && ! PyDict_Check(kwds)) {
     PyErr_SetString(PyExc_TypeError, "apply kwargs must be a dict or None");
     Py_DECREF(seq_args);
-    return -1;
+    return EVAL_RAISE();
   }
 
   /* Flattening: delegate to inner callable's install */
   if (KosCallable_Check(fn)) {
     KosInstallFunc inner = KosCallableType_INSTALL(Py_TYPE(fn));
     if (inner) {
-      int r = inner(es, out_ev, fn, seq_args, kwds, tail_call);
+      KosOpResult r = inner(es, fn, seq_args, kwds, tail_call);
       Py_DECREF(seq_args);
       return r;
     }
@@ -265,15 +264,15 @@ static int kos_install_apply(
   if (KosEvalState_StackPushRef(es, fn) < 0
       || KosEvalState_StackPushRef(es, seq_args) < 0) {
     Py_DECREF(seq_args);
-    return -1;
+    return EVAL_RAISE();
   }
   PyObject *kwds_push = kwds ? kwds : Py_None;
   Py_INCREF(kwds_push);
   if (KosEvalState_StackPushRef(es, kwds_push) < 0) {
     Py_DECREF(kwds_push);
-    return -1;
+    return EVAL_RAISE();
   }
-  return 0;
+  return EVAL_NORMAL();
 }
 
 

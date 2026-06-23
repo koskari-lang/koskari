@@ -53,7 +53,19 @@ static PyObject *vcall_build_kwds_dict(
 /* === KosCallable_* : KosCallable-only (no type check, no frame prep) === */
 
 
-int KosCallable_Call(KosEvalState *es, KosEvent *out_ev,
+static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
+  if (r.kind != KOS_RES_NORMAL)
+    return r;
+  if (KosEvalState_PLAN(es))
+    return EVAL_REPROLOGUE();
+  if (KosEvalState_FRAME(es)
+      && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)))
+    return EVAL_REPROLOGUE();
+  return EVAL_NORMAL();
+}
+
+
+KosOpResult KosCallable_Call(KosEvalState *es,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call) {
@@ -61,48 +73,56 @@ int KosCallable_Call(KosEvalState *es, KosEvent *out_ev,
   PyTypeObject *typ = Py_TYPE(callable);
   KosVectorInstallFunc vfn = KosCallableType_VINSTALL(typ);
   if (vfn)
-    return vfn(es, out_ev, callable, args, nargs, kwnames, tail_call);
+    return callable_promote_normal(es, vfn(es, callable, args, nargs,
+                                           kwnames, tail_call));
 
   KosInstallFunc fn = KosCallableType_INSTALL(typ);
-  if (! fn)
-    return -1;
+  if (! fn) {
+    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
+    return EVAL_RAISE();
+  }
 
   PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
   if (nargs > 0 && ! tup)
-    return -1;
+    return EVAL_RAISE();
   PyObject *kwds = NULL;
   if (kwnames) {
     kwds = vcall_build_kwds_dict(args + nargs, kwnames);
     if (! kwds) {
       Py_XDECREF(tup);
-      return -1;
+      return EVAL_RAISE();
     }
   }
-  int r = fn(es, out_ev, callable, tup, kwds, tail_call);
+  KosOpResult r = fn(es, callable, tup, kwds, tail_call);
   Py_XDECREF(tup);
   Py_XDECREF(kwds);
-  return r;
+  return callable_promote_normal(es, r);
 }
 
 
-int KosCallable_CallArgs(KosEvalState *es, KosEvent *out_ev,
+KosOpResult KosCallable_CallArgs(KosEvalState *es,
     PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call) {
 
   KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
-  if (! fn)
-    return -1;
-  return fn(es, out_ev, callable, args_tuple, kwds_dict, tail_call);
+  if (! fn) {
+    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
+    return EVAL_RAISE();
+  }
+  return callable_promote_normal(
+      es, fn(es, callable, args_tuple, kwds_dict, tail_call));
 }
 
 
-int KosCallable_CallNoArgs(KosEvalState *es, KosEvent *out_ev,
+KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
     PyObject *callable, int tail_call) {
 
   KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
-  if (! fn)
-    return -1;
-  return fn(es, out_ev, callable, NULL, NULL, tail_call);
+  if (! fn) {
+    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
+    return EVAL_RAISE();
+  }
+  return callable_promote_normal(es, fn(es, callable, NULL, NULL, tail_call));
 }
 
 

@@ -750,9 +750,8 @@ static int demand_wants_frame(PyObject *callable) {
 }
 
 
-static int demand_kos_install(
+static KosOpResult demand_kos_install(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
@@ -763,15 +762,15 @@ static int demand_kos_install(
 
   if (! inner) {
     PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
-    return -1;
+    return EVAL_RAISE();
   }
 
   if (demand_inner_is_flattenable(inner)) {
     /* Install inner directly into the frame prepared by do_frame_prep, then
        mark that frame as the demand root so in-eval deny guards fire. */
-    int r = KosCallable_CallArgs(es, out_ev, inner, args_tuple, kwds_dict,
-                                 tail_call);
-    if (r == 0) {
+    KosOpResult r = KosCallable_CallArgs(es, inner, args_tuple, kwds_dict,
+                                        tail_call);
+    if (r.kind == KOS_RES_NORMAL) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       if (frame)
         KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
@@ -782,17 +781,17 @@ static int demand_kos_install(
   /* Fallback: Python callable, yielding function, nested Demand, or
      unsupported KosCallable.  demand_sync_ex creates its own context and
      returns a concrete result (or DemandGenerator for yielding functions).
-     Push that result on the current frame's stack and return 0 so that
+     Push that result on the current frame's stack and return NORMAL so that
      KosEvalState_Call handles tail-call conversion the same way
      kos_install_function does for yielding KosFunctions. */
   PyObject *result = NULL;
   if (demand_sync_ex(inner, args_tuple, kwds_dict, &result) < 0)
-    return -1;
+    return EVAL_RAISE();
 
   if (KosEvalState_StackPUSH(es, result) < 0)
-    return -1;  /* PUSH steals reference; already decremented on failure */
+    return EVAL_RAISE();  /* PUSH steals reference; already decremented on failure */
 
-  return 0;
+  return EVAL_NORMAL();
 }
 
 

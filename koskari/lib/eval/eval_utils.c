@@ -494,10 +494,7 @@ KosOpResult KosEvalState_Call(
   if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return EVAL_RAISE();
 
-  KosEvent _ev = {0};
-  int r = KosCallable_Call(es, &_ev, callable, args, nargs, kwnames,
-                           tail_call);
-  return kos_op_result_from_call_int(es, r, &_ev);
+  return KosCallable_Call(es, callable, args, nargs, kwnames, tail_call);
 }
 
 
@@ -545,10 +542,7 @@ KosOpResult KosEvalState_CallArgs(
   if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return EVAL_RAISE();
 
-  KosEvent _ev = {0};
-  int r = KosCallable_CallArgs(es, &_ev, callable, args_tuple, kwds_dict,
-                               tail_call);
-  return kos_op_result_from_call_int(es, r, &_ev);
+  return KosCallable_CallArgs(es, callable, args_tuple, kwds_dict, tail_call);
 }
 
 
@@ -578,9 +572,7 @@ KosOpResult KosEvalState_CallNoArgs(
   if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return EVAL_RAISE();
 
-  KosEvent _ev = {0};
-  int r = KosCallable_CallNoArgs(es, &_ev, callable, tail_call);
-  return kos_op_result_from_call_int(es, r, &_ev);
+  return KosCallable_CallNoArgs(es, callable, tail_call);
 }
 
 

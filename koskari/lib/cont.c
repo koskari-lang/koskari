@@ -95,12 +95,10 @@ static PyObject *delimited_continuation_repr(PyObject *self) {
    args is resume_val for the continuation (we INCREF it; we own that ref only).
    Plan INCREFs callable on same-evaluator path; handler releases callable and args.
 */
-static int call_call_continuation(
+static KosOpResult call_call_continuation(
     KosEvalState *es,
     PyObject *callable,
-    PyObject *args,
-    KosEvent *out_ev,
-    KosOp *insn) {
+    PyObject *args) {
 
   KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
       ? KosPyDelimitedContinuation_CAPTURED((KosPyDelimitedContinuation *) callable)
@@ -115,7 +113,7 @@ static int call_call_continuation(
     PyErr_SetString(PyExc_RuntimeError,
                     "continuation has no captured state");
     Py_DECREF(resume_val);
-    return -1;
+    return EVAL_RAISE();
   }
 
   /* Undelimited: check liveness before apply or raise. */
@@ -137,7 +135,7 @@ static int call_call_continuation(
         PyErr_SetString(PyExc_RuntimeError,
                         "continuation target context is no longer alive");
       Py_DECREF(resume_val);
-      return -1;
+      return EVAL_RAISE();
     }
   }
 
@@ -148,12 +146,10 @@ static int call_call_continuation(
       || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
     if (kos_invoke_continuation(es, k, resume_val, 0, callable) < 0) {
       Py_DECREF(resume_val);
-      return -1;
+      return EVAL_RAISE();
     }
     Py_DECREF(resume_val);
-    (void) out_ev;
-    (void) insn;
-    return 0;
+    return EVAL_NORMAL();
   }
 
   {
@@ -171,13 +167,12 @@ static int call_call_continuation(
     }
   }
   Py_DECREF(resume_val);
-  return -1;
+  return EVAL_RAISE();
 }
 
 
-static int kos_install_continuation(
+static KosOpResult kos_install_continuation(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
@@ -185,7 +180,7 @@ static int kos_install_continuation(
 
   (void) kwds_dict;
   (void) tail_call;
-  return call_call_continuation(es, callable, args_tuple, out_ev, NULL);
+  return call_call_continuation(es, callable, args_tuple);
 }
 
 

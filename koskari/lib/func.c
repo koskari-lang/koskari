@@ -167,24 +167,22 @@ static PyMemberDef expression_members[] = {
 /* === KosExpression install slots === */
 
 
-static int kos_install_expression(
+static KosOpResult kos_install_expression(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
     int tail_call) {
 
-  (void) out_ev;
   (void) tail_call;
 
   if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
-    return -1;
+    return EVAL_RAISE();
   }
   if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
-    return -1;
+    return EVAL_RAISE();
   }
 
   KosCode *code = (KosCode *) KosExpression_CODE(callable);
@@ -193,24 +191,23 @@ static int kos_install_expression(
     Py_INCREF(ns);  // NewFromCodeAndNs steals a reference
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
     if (! agen)
-      return -1;
-
-    return KosEvalState_StackPUSH(es, agen);
+      return EVAL_RAISE();
+    return KosEvalState_StackPUSH(es, agen) < 0 ? EVAL_RAISE() : EVAL_NORMAL();
   }
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
   PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
-  return KosEvalState_SetFrameCodeAndNamespace(es, frame, code, ns);
+  return KosEvalState_SetFrameCodeAndNamespace(es, frame, code, ns) < 0
+      ? EVAL_RAISE() : EVAL_NORMAL();
 }
 
 
 /* === KosFunction install slots === */
 
 
-static int kos_install_function(
+static KosOpResult kos_install_function(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
@@ -221,29 +218,26 @@ static int kos_install_function(
   PyObject *frame_ns = KosFunction_PrepareCallNamespace(
       callable, args_tuple, kwds_dict);
   if (! frame_ns)
-    return -1;
+    return EVAL_RAISE();
   if (code && KosCode_YIELDS(code)) {
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     if (! agen)
-      return -1;
+      return EVAL_RAISE();
     if (KosEvalState_StackPushRef(es, agen) < 0) {
       Py_DECREF(agen);
-      return -1;
+      return EVAL_RAISE();
     }
-    (void) out_ev;
-    return 0;
+    return EVAL_NORMAL();
   }
   KosDynFrame *frame = KosEvalState_FRAME(es);
   if (KosEvalState_SetFrameCodeAndNamespace(es, frame, code, frame_ns) < 0)
-    return -1;
-  (void) out_ev;
-  return 0;
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
 
 
-static int kos_vinstall_function(
+static KosOpResult kos_vinstall_function(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -255,23 +249,21 @@ static int kos_vinstall_function(
   PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
       callable, args, nargs, kwnames);
   if (! frame_ns)
-    return -1;
+    return EVAL_RAISE();
   if (code && KosCode_YIELDS(code)) {
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     if (! agen)
-      return -1;
+      return EVAL_RAISE();
     if (KosEvalState_StackPushRef(es, agen) < 0) {
       Py_DECREF(agen);
-      return -1;
+      return EVAL_RAISE();
     }
-    (void) out_ev;
-    return 0;
+    return EVAL_NORMAL();
   }
   KosDynFrame *frame = KosEvalState_FRAME(es);
   if (KosEvalState_SetFrameCodeAndNamespace(es, frame, code, frame_ns) < 0)
-    return -1;
-  (void) out_ev;
-  return 0;
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
 
 
@@ -1066,9 +1058,8 @@ static PyObject *boundmethod_resolve_function(PyObject *func) {
 }
 
 
-static int kos_install_boundmethod(
+static KosOpResult kos_install_boundmethod(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
@@ -1078,17 +1069,17 @@ static int kos_install_boundmethod(
   PyObject *self = KosBoundMethod_SELF(callable);
   Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
   PyObject *bound_args = NULL;
-  int r;
+  KosOpResult r;
 
   if (! KosCallable_Check(func)) {
     PyErr_SetString(PyExc_TypeError,
                     "KosBoundMethod eval requires a KosCallable func");
-    return -1;
+    return EVAL_RAISE();
   }
 
   bound_args = PyTuple_New(1 + n);
   if (! bound_args)
-    return -1;
+    return EVAL_RAISE();
 
   Py_INCREF(self);
   PyTuple_SET_ITEM(bound_args, 0, self);
@@ -1097,15 +1088,14 @@ static int kos_install_boundmethod(
     Py_INCREF(item);
     PyTuple_SET_ITEM(bound_args, 1 + i, item);
   }
-  r = KosCallable_CallArgs(es, out_ev, func, bound_args, kwds_dict, tail_call);
+  r = KosCallable_CallArgs(es, func, bound_args, kwds_dict, tail_call);
   Py_DECREF(bound_args);
   return r;
 }
 
 
-static int kos_vinstall_boundmethod(
+static KosOpResult kos_vinstall_boundmethod(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -1117,26 +1107,25 @@ static int kos_vinstall_boundmethod(
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
   Py_ssize_t total_slots = 1 + nargs + nkw;
   PyObject **new_args = NULL;
-  int r;
+  KosOpResult r;
 
   if (! KosCallable_Check(func)) {
     PyErr_SetString(PyExc_TypeError,
                     "KosBoundMethod eval requires a KosCallable func");
-    return -1;
+    return EVAL_RAISE();
   }
 
   new_args = PyMem_New(PyObject *, (size_t) total_slots);
   if (! new_args) {
     PyErr_NoMemory();
-    return -1;
+    return EVAL_RAISE();
   }
   new_args[0] = self;
   for (Py_ssize_t i = 0; i < nargs; i++)
     new_args[1 + i] = args[i];
   for (Py_ssize_t i = 0; i < nkw; i++)
     new_args[1 + nargs + i] = args[nargs + i];
-  r = KosCallable_Call(es, out_ev, func, new_args, nargs + 1, kwnames,
-                       tail_call);
+  r = KosCallable_Call(es, func, new_args, nargs + 1, kwnames, tail_call);
   PyMem_Del(new_args);
   return r;
 }
