@@ -328,45 +328,6 @@ static inline KosOpResult kos_op_result_from_push_int(int r) {
 }
 
 
-/**
-  Map legacy int-step result (0/1/-1/KOS_OP_RES_*) to KosOpResult.
-  When r==1, extract kind and payload from ev; ev is cleared on exit.
-  When r==KOS_OP_RES_PARENT_RETURN_DELIVER, extract payload from ev.
-  Used by YIELD_FROM.c drive functions.
-*/
-static inline KosOpResult kos_op_result_from_int_step(int r, KosEvent *ev) {
-  switch (r) {
-  case 0:
-    return EVAL_NORMAL();
-  case 1: {
-    KosEventKind k = ev ? KosEvent_KIND(ev) : KOS_EV_NONE;
-    PyObject *val = ev ? KosEvent_PAYLOAD(ev) : NULL;
-    if (ev) {
-      KosEvent_PAYLOAD(ev) = NULL;
-      KosEvent_KIND(ev) = KOS_EV_NONE;
-    }
-    if (k == KOS_EV_YIELD)
-      return EVAL_YIELD(val);
-    if (k == KOS_EV_AWAIT)
-      return EVAL_AWAIT(val);
-    Py_XDECREF(val);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_op_result_from_int_step: unexpected suspend event kind");
-    return EVAL_RAISE();
-  }
-  case KOS_OP_RES_CONTROL_RETURNED:
-    return EVAL_CONTROL_RETURNED();
-  case KOS_OP_RES_PARENT_RETURN_DELIVER: {
-    PyObject *val = ev ? KosEvent_PAYLOAD(ev) : NULL;
-    if (ev)
-      KosEvent_PAYLOAD(ev) = NULL;
-    return EVAL_PARENT_RETURN(val);
-  }
-  default:
-    return EVAL_FATAL();
-  }
-}
-
 
 /* Push val without auto-await (plain stack push only). */
 static inline KosOpResult kos_op_result_PUSH(
