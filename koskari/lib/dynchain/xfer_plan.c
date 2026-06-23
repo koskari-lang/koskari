@@ -844,8 +844,8 @@ KOS_OP_INLINE void xfer_plan_apply_resume_state(
    kos_dynnode_run_transfer_unwind.  Returns 0 on sync completion, -1
    on error, or KOS_DYN_UNWIND_ASYNC_STARTED when async started.
 */
-static int xfer_step_extent_action(KosEvalState *es, KosTransferAction *action,
-                                   KosEvent *out_ev) {
+static int xfer_step_extent_action(KosEvalState *es,
+                                   KosTransferAction *action) {
   KosDynNode *node = KosTransferAction_EXTENT_NODE(action);
   int phase = KosTransferAction_EXTENT_PHASE(action);
   KosOpResult kr;
@@ -855,13 +855,7 @@ static int xfer_step_extent_action(KosEvalState *es, KosTransferAction *action,
   else
     kr = kos_dynnode_run_transfer_unwind(es, node, KOS_XFER_EVENT_NONE);
   if (kr.kind == KOS_RES_AWAIT) {
-    if (out_ev) {
-      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-      KosEvent_PAYLOAD(out_ev) = kr.val;
-      KosEvent_EXC_TYPE(out_ev) = NULL;
-    } else {
-      Py_XDECREF(kr.val);
-    }
+    Py_XDECREF(kr.val);
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   }
   if (kr.kind == KOS_RES_REPROLOGUE)
@@ -888,7 +882,6 @@ static int kos_dyn_run_install_wind_span(
     KosEvalState *es,
     KosDynNode *seg,
     const KosDynNode *chain_stop,
-    KosEvent *out_ev,
     const char *xfer_fail_tag) {
 
   if (! seg)
@@ -929,13 +922,7 @@ static int kos_dyn_run_install_wind_span(
   for (size_t i = wind_count; i > 0; i--) {
     KosOpResult wr = kos_dynnode_run_wind(es, wind_nodes[i - 1]);
     if (wr.kind == KOS_RES_AWAIT) {
-      if (out_ev) {
-        KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-        KosEvent_PAYLOAD(out_ev) = wr.val;
-        KosEvent_EXC_TYPE(out_ev) = NULL;
-      } else {
-        Py_XDECREF(wr.val);
-      }
+      Py_XDECREF(wr.val);
       if (wind_nodes != stack_buf)
         PyMem_Free(wind_nodes);
       return KOS_DYN_UNWIND_ASYNC_STARTED;
@@ -1004,7 +991,6 @@ KOS_OP_INLINE int xfer_step_land_segment(
     KosDynNode *template_seg,
     KosDynNode *seg,
     KosDynNode *graft_parent,
-    KosEvent *out_ev,
     const char *xfer_tag) {
 
   KosDynNode *wind_stop;
@@ -1035,8 +1021,7 @@ KOS_OP_INLINE int xfer_step_land_segment(
     kos_chain_segment_bounds(seg, NULL, &wind_stop);
 
   {
-    int wind_r = kos_dyn_run_install_wind_span(es, seg, wind_stop, out_ev,
-                                               xfer_tag);
+    int wind_r = kos_dyn_run_install_wind_span(es, seg, wind_stop, xfer_tag);
     if (wind_r != 0)
       return wind_r;
   }
@@ -1058,8 +1043,7 @@ KOS_OP_INLINE int xfer_step_land_segment(
    handle it.  Returns 0 on success, -1 on error,
    KOS_DYN_UNWIND_ASYNC_STARTED when async wind started.
 */
-static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
-                             KosEvent *out_ev) {
+static int xfer_step_install(KosEvalState *es, KosTransferAction *action) {
   KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
   KosDynNode *stop = NULL;
@@ -1080,7 +1064,7 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
 
   {
     int land_r = xfer_step_land_segment(es, plan, template_seg, seg,
-                                        NULL, out_ev, "INSTALL");
+                                        NULL, "INSTALL");
     if (land_r != 0)
       return land_r;
   }
@@ -1109,8 +1093,7 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
    Returns 0 on success, -1 on error,
    KOS_DYN_UNWIND_ASYNC_STARTED when async wind started.
 */
-static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
-                          KosEvent *out_ev) {
+static int xfer_step_push(KosEvalState *es, KosTransferAction *action) {
   KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
   KosDynNode *stop = NULL;
@@ -1133,7 +1116,7 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
   current_top = KosEvalState_DYN_TOP(es);
   {
     int land_r = xfer_step_land_segment(es, plan, template_seg, seg,
-                                        current_top, out_ev, "PUSH");
+                                        current_top, "PUSH");
     if (land_r != 0)
       return land_r;
   }
@@ -1204,7 +1187,7 @@ static int xfer_step_inject(KosEvalState *es, KosTransferAction *action) {
    Execute a POP_ONE step: run unwind for current top, unlink and free.
    Supports async (e.g. WITH exit returning awaitable).
 */
-static int xfer_step_pop_one(KosEvalState *es, KosEvent *out_ev) {
+static int xfer_step_pop_one(KosEvalState *es) {
   KosDynNode *const top = KosEvalState_DYN_TOP(es);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError, "POP_ONE: empty chain");
@@ -1212,13 +1195,7 @@ static int xfer_step_pop_one(KosEvalState *es, KosEvent *out_ev) {
   }
   KosOpResult kr = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_NONE);
   if (kr.kind == KOS_RES_AWAIT) {
-    if (out_ev) {
-      KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-      KosEvent_PAYLOAD(out_ev) = kr.val;
-      KosEvent_EXC_TYPE(out_ev) = NULL;
-    } else {
-      Py_XDECREF(kr.val);
-    }
+    Py_XDECREF(kr.val);
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   }
   if (kr.kind == KOS_RES_REPROLOGUE)
@@ -1235,8 +1212,7 @@ static int xfer_step_pop_one(KosEvalState *es, KosEvent *out_ev) {
    If the plan has RESUME_PC set, updates the new top frame's PC.
 */
 static int xfer_step_truncate_and_inject(KosEvalState *es,
-                                          KosTransferAction *action,
-                                          KosEvent *out_ev) {
+                                          KosTransferAction *action) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *stop_node = KosTransferAction_TRUNCATE_NODE(action);
@@ -1255,13 +1231,7 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
   while (KosEvalState_DYN_TOP(es) && KosEvalState_DYN_TOP(es) != new_top) {
     KosOpResult pop_res = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE);
     if (pop_res.kind == KOS_RES_AWAIT) {
-      if (out_ev) {
-        KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-        KosEvent_PAYLOAD(out_ev) = pop_res.val;
-        KosEvent_EXC_TYPE(out_ev) = NULL;
-      } else {
-        Py_XDECREF(pop_res.val);
-      }
+      Py_XDECREF(pop_res.val);
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
     if (pop_res.kind == KOS_RES_REPROLOGUE)
@@ -1321,9 +1291,9 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
    advances the action index, dispatches to the appropriate step handler
    (EXTENT_ACTION, INSTALL, INJECT, POP_ONE, TRUNCATE_AND_INJECT), and
    returns: 0 if more steps remain, 1 if the plan is now complete, -1 on
-   error, KOS_XFER_SUSPENDED_AWAIT when async.  POP_ONE requires out_ev.
+   error, KOS_XFER_SUSPENDED_AWAIT when async.
 */
-int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
+int kos_run_transfer_step(KosEvalState *es) {
 
   if (! KosEvalState_PLAN(es))
     return 1;  /* no plan, complete */
@@ -1340,7 +1310,7 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
 
   switch (KosTransferAction_STEP(action)) {
     case KOS_XFER_EXTENT_ACTION: {
-      int res = xfer_step_extent_action(es, action, out_ev);
+      int res = xfer_step_extent_action(es, action);
       if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
         return KOS_XFER_SUSPENDED_AWAIT;
       }
@@ -1351,7 +1321,7 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
     }
 
     case KOS_XFER_INSTALL: {
-      int res = xfer_step_install(es, action, out_ev);
+      int res = xfer_step_install(es, action);
       if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
         return KOS_XFER_SUSPENDED_AWAIT;
       }
@@ -1362,7 +1332,7 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
     }
 
     case KOS_XFER_PUSH: {
-      int res = xfer_step_push(es, action, out_ev);
+      int res = xfer_step_push(es, action);
       if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
         return KOS_XFER_SUSPENDED_AWAIT;
       }
@@ -1373,7 +1343,7 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
     }
 
     case KOS_XFER_POP_ONE: {
-      int res = xfer_step_pop_one(es, out_ev);
+      int res = xfer_step_pop_one(es);
       if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
         return KOS_XFER_SUSPENDED_AWAIT;
       }
@@ -1384,7 +1354,7 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
     }
 
     case KOS_XFER_TRUNCATE_AND_INJECT: {
-      int res = xfer_step_truncate_and_inject(es, action, out_ev);
+      int res = xfer_step_truncate_and_inject(es, action);
       if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
         return KOS_XFER_SUSPENDED_AWAIT;
       }

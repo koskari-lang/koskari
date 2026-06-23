@@ -180,14 +180,13 @@ static KosOpResult apply_native_handler(
 
   /* Walk RETURN to frame (FINALLY may consume). */
   KosDynFrame *detached = NULL;
-  KosEvent _scratch_ev = {0};
   KosTransitionReq treq = {
     .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
     .target_frame = KosEvalState_FRAME(es),
     .payload = result,
   };
   KosTransitionResult tres = {0};
-  if (KosEvalState_Transition(es, &treq, &tres, &_scratch_ev) < 0) {
+  if (KosEvalState_Transition(es, &treq, &tres) < 0) {
     Py_DECREF(result);
     return EVAL_RAISE();
   }

@@ -1,8 +1,7 @@
 /* Included by dynchain.c — dyn_walk */
 /* === Dynamic chain walk and pop primitives === */
 
-static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen,
-                                          KosEvent *out_ev) {
+static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
   KosDynNode *saved_parent;
   KosDynNode *ctx_active;
   KosDynNode *node;
@@ -37,8 +36,6 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen,
     return -1;
   }
 
-  (void) out_ev;
-
   /* 1. Record GEN's parent, then remove the GEN->parent link */
   saved_parent = KosDynNode_PARENT(gen);
   KosDynNode_PARENT(gen) = NULL;
@@ -72,7 +69,7 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen,
        (void *) gen);
   return 0;
 }
-int kos_dyn_walk_handle_yield(KosEvalState *es, KosEvent *out_ev) {
+int kos_dyn_walk_handle_yield(KosEvalState *es) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
 
   SAYF("[gen] walk_handle_yield ENTER dyn_top=%p\n", (void *) node);
@@ -84,7 +81,7 @@ int kos_dyn_walk_handle_yield(KosEvalState *es, KosEvent *out_ev) {
     if (hr == KOS_HANDLE_CONSUMED) {
       if (KosDynNode_IS_GEN(node)) {
         SAYF("[gen] walk_handle_yield -> freeze at gen %p\n", (void *) node);
-        int fr = kos_dyn_gen_freeze_and_release(es, (KosDynGen *) node, out_ev);
+        int fr = kos_dyn_gen_freeze_and_release(es, (KosDynGen *) node);
         return fr;
       }
       SAY("[gen] walk_handle_yield -> consumed (non-GEN), return 0");
@@ -196,7 +193,7 @@ static KosOpResult kos_dyn_pop_one_unwind_walk(
    walks can cross delimiters. Callers: transfer helpers, targeted unwind.
 */
 int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
-                           KosXferEvent event, KosEvent *out_ev) {
+                           KosXferEvent event) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: target=%p kind=%s",
@@ -234,7 +231,7 @@ int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
    kos_dyn_transition WALK_RETURN_TO_FRAME, RETURN opcode plumbing.
 */
 int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
-                                  PyObject *val, KosEvent *out_ev) {
+                                  PyObject *val) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] walk_return_to_frame: target frame=%p", (void *) frame);
@@ -317,7 +314,7 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
    UNWIND_TO_FRAME.
 */
 int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
-                            KosXferEvent event, KosEvent *out_ev) {
+                            KosXferEvent event) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: target frame=%p", (void *) frame);
@@ -398,7 +395,7 @@ KosDynNode *kos_find_node_for_loop(KosEvalState *es) {
    set PC and stack per event. Callers: kos_dyn_transition TRANSFER_TO_LOOP.
 */
 int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
-                             PyObject *result, KosEvent *out_ev) {
+                             PyObject *result) {
 
   KosDynNode *region = kos_find_node_for_loop(es);
   if (! region) {

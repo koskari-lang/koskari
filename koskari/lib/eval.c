@@ -2005,13 +2005,10 @@ entry_mode_dispatch:
 static KosOpResult eval_phase_transfer(KosEvalState *es) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosEvent _ev = {0};
-  int xfer = run_transfer_plan_to_completion(es, &_ev);
+  int xfer = run_transfer_plan_to_completion(es);
 
   if (xfer < 0)
-    return kos_ev_to_opresult(&_ev);
-  Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-  Py_XDECREF(KosEvent_PAYLOAD(&_ev));
+    return EVAL_RAISE();
   if (xfer > 0)
     return EVAL_NORMAL();
 
@@ -2141,15 +2138,10 @@ static KosOpResult eval_event_return_deliver_to_boundary(
 static KosOpResult eval_yield_handle_walk_and_freeze(KosEvalState *es) {
   KosTransitionReq treq = { .kind = KOS_TRANS_WALK_HANDLE_YIELD };
   KosTransitionResult tres = {0};
-  KosEvent _ev = {0};
 
-  if (KosEvalState_Transition(es, &treq, &tres, &_ev) < 0) {
-    Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-    Py_XDECREF(KosEvent_PAYLOAD(&_ev));
+  if (KosEvalState_Transition(es, &treq, &tres) < 0) {
     return EVAL_FATAL();
   }
-  Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-  Py_XDECREF(KosEvent_PAYLOAD(&_ev));
   return EVAL_NORMAL();
 }
 
@@ -2218,15 +2210,10 @@ static KosOpResult eval_event_return(KosEvalState *es, PyObject *val) {
     .payload = val,
   };
   KosTransitionResult tres = {0};
-  KosEvent _ev = {0};
-  if (KosEvalState_Transition(es, &treq, &tres, &_ev) < 0) {
+  if (KosEvalState_Transition(es, &treq, &tres) < 0) {
     Py_DECREF(val);
-    Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-    Py_XDECREF(KosEvent_PAYLOAD(&_ev));
     return EVAL_FATAL();
   }
-  Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-  Py_XDECREF(KosEvent_PAYLOAD(&_ev));
   int unw = tres.raw;
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     KosEvalState_SetPendingReturn(es, val, has_parent);
@@ -2325,12 +2312,9 @@ static KosOpResult eval_step_drain_transfer_plan(KosEvalState *es) {
   if (! KosEvalState_PLAN(es))
     return EVAL_NORMAL();
   {
-    KosEvent _ev = {0};
-    int xfer = run_transfer_plan_to_completion(es, &_ev);
+    int xfer = run_transfer_plan_to_completion(es);
     if (xfer < 0)
-      return kos_ev_to_opresult(&_ev);
-    Py_XDECREF(KosEvent_EXC_TYPE(&_ev));
-    Py_XDECREF(KosEvent_PAYLOAD(&_ev));
+      return EVAL_RAISE();
     if (xfer > 0)
       return EVAL_REPROLOGUE();
   }

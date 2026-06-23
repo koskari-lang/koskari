@@ -663,38 +663,27 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es);
 int KosEvalState_Transition(
     KosEvalState *es,
     const KosTransitionReq *req,
-    KosTransitionResult *out,
-    KosEvent *out_ev);
+    KosTransitionResult *out);
 
 
 /**
   Opcode-facing wrapper for KosEvalState_Transition: internalizes the
-  KosTransitionResult and KosEvent and returns KosOpResult.  Use from
-  opcode handlers that trigger TRANSFER_TO_LOOP, UNWIND_TO_FRAME, or
-  UNWIND_TO_NODE.  AWAIT when a WITH async exit suspended; REPROLOGUE when
-  a Koskari wind-thunk subroutine started; RAISE on error; NORMAL on sync
-  completion.
+  KosTransitionResult and returns KosOpResult.  Use from opcode handlers
+  that trigger TRANSFER_TO_LOOP, UNWIND_TO_FRAME, or UNWIND_TO_NODE.
+  REPROLOGUE when async unwind (wind-thunk subroutine started); RAISE on
+  error; NORMAL on sync completion.
 */
 static inline KosOpResult KosEvalState_TransitionOp(
     KosEvalState *es,
     const KosTransitionReq *req) {
 
   KosTransitionResult tres = {0};
-  KosEvent _ev = {0};
-  if (KosEvalState_Transition(es, req, &tres, &_ev) < 0) {
-    Py_XDECREF(KosEvent_PAYLOAD(&_ev));
+  if (KosEvalState_Transition(es, req, &tres) < 0) {
     return EVAL_RAISE();
   }
   if (tres.raw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    if (KosEvent_KIND(&_ev) == KOS_EV_AWAIT) {
-      PyObject *val = KosEvent_PAYLOAD(&_ev);
-      KosEvent_PAYLOAD(&_ev) = NULL;
-      return EVAL_AWAIT(val);
-    }
-    /* Koskari subroutine started as wind/with thunk; eval loop continues. */
     return EVAL_REPROLOGUE();
   }
-  Py_XDECREF(KosEvent_PAYLOAD(&_ev));
   return EVAL_NORMAL();
 }
 

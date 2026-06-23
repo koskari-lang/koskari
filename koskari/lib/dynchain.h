@@ -614,7 +614,7 @@ struct KosTransferPlan {
    KOS_HOOK_IN_PROGRESS when it suspended on await (caller will resume later
    with send_val/throw_exc). hook_state is opaque state for the runner.
 */
-typedef int (*KosHookInvokeFn)(KosEvalState *es, struct KosEvent *out_ev, void *hook_state);
+typedef int (*KosHookInvokeFn)(KosEvalState *es, void *hook_state);
 
 
 /* === DynNode allocation and lifecycle === */
@@ -1488,7 +1488,7 @@ KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event);
 
 
 int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
-                            KosXferEvent event, struct KosEvent *out_ev);
+                            KosXferEvent event);
 
 
 /**
@@ -1504,11 +1504,11 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
      KOS_DYN_UNWIND_FINALLY_TAKING_RETURN
 */
 int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
-                                  PyObject *val, struct KosEvent *out_ev);
+                                  PyObject *val);
 
 
 int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
-                           KosXferEvent event, struct KosEvent *out_ev);
+                           KosXferEvent event);
 
 
 /**
@@ -1632,16 +1632,12 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
 /**
    Walk the dynamic chain from DYN_TOP upward, offering handle(YIELD) to
    each node. Stops when a node returns CONSUMED (generator boundary).
-   Used for YIELD transit: the value is in out_ev; GEN intercepts and
-   suspends.
-
-   :param ctx: execution context
-   :param out_ev: event with KOS_EV_YIELD and payload already set
+   Used for YIELD transit: freezes the GEN node when found.
 
    :return: 0 when GEN consumed (valid yield; caller may return),
      -1 on error or if no generator boundary found
 */
-int kos_dyn_walk_handle_yield(KosEvalState *es, struct KosEvent *out_ev);
+int kos_dyn_walk_handle_yield(KosEvalState *es);
 
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
@@ -1693,14 +1689,13 @@ KosDynNode *kos_find_node_for_loop(KosEvalState *es);
    :param ctx: execution context
    :param event: KOS_XFER_EVENT_BREAK or KOS_XFER_EVENT_CONTINUE
    :param result: loop result value (transferred; caller loses ownership)
-   :param out_ev: event output for suspend
 
    :return: 0 on success, -1 on error (break/continue outside loop,
      same-frame check failed), KOS_DYN_UNWIND_ASYNC_STARTED when async
      unwind started
 */
 int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
-                             PyObject *result, struct KosEvent *out_ev);
+                             PyObject *result);
 
 
 /**
@@ -1969,15 +1964,10 @@ int kos_build_install_only_plan(
    If the step is RUN_HOOK, begins hook execution and returns.
    If the step is INSTALL, splices the target chain.
    If the step is INJECT, pushes the resume value.
-   POP_ONE and TRUNCATE_AND_INJECT use out_ev for async suspend.
-
-   :param ctx: execution context
-   :param out_ev: event output for async suspend (required for POP_ONE)
-
    :return: 1 if plan complete, 0 if more steps remain, -1 on error,
      KOS_XFER_SUSPENDED_AWAIT when async
 */
-int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
+int kos_run_transfer_step(KosEvalState *es);
 
 
 /**
