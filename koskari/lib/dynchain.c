@@ -286,31 +286,34 @@ static PyObject *snapshot_stack_to_list(KosStackBlock *stack) {
    Dispatch post-await resume: WITH phases, WIND phases. Callers: eval after
    KosEvalState_CallArgs returns.
 */
-int kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
+KosOpResult kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node) {
+  int r = 0;
   /* Iterator-boundary yield/return uses eval dispatch_boundary_event /
      kos_dyn_deliver_* instead of this hook. */
-  (void) out_ev;
   /* When node is a frame, check if parent is WITH in pending phase. */
   if (KosDynNode_IS_FRAME(node)) {
     KosDynNode *parent = KosDynNode_PARENT(node);
     if (parent && KosDynNode_IS_WITH(parent)) {
       uint8_t phase = KosDynWith_PHASE((KosDynWith *) parent);
       if (phase == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-        return kos_dyn_with_on_control_returned(es, (KosDynWith *) parent, 1);
-      if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
-        return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) parent);
+        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) parent, 1);
+      else if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+        r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) parent);
+    }
+  } else {
+    switch (KosDynNode_KIND(node)) {
+      case KOS_DYN_WIND:
+        r = kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
+        break;
+      case KOS_DYN_WITH:
+        if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+          r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
+        break;
+      default:
+        break;
     }
   }
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      return kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
-    case KOS_DYN_WITH:
-      if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-        return kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
-      return 0;
-    default:
-      return 0;
-  }
+  return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
 }
 
 
