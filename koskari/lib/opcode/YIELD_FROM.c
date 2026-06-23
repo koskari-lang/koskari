@@ -476,9 +476,11 @@ static KosOpResult yield_from_drive_py_async(
 /**
    Drive one step of a Koskari async-generator delegate (flattened into the
    same koskari_eval).  Handles resume-from-await inject, close,
-   throw(StopAsyncIteration), and stepping.
+   throw(StopAsyncIteration), and stepping.  Returns 0 on success, -1 on
+   error (PyErr set).  Never emits YIELD or AWAIT directly; those surface
+   through the inner koskari_eval flattening path.
 */
-static KosOpResult yield_from_drive_kos_async_gen(
+static int yield_from_drive_kos_async_gen(
     KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
@@ -503,7 +505,7 @@ static KosOpResult yield_from_drive_kos_async_gen(
     if (! aw_result) {
       PyErr_SetString(PyExc_RuntimeError,
                       "yield-from resume with no await result");
-      return EVAL_RAISE();
+      return -1;
     }
     yf_send_val = aw_result;
     Py_INCREF(yf_send_val);
@@ -513,7 +515,7 @@ static KosOpResult yield_from_drive_kos_async_gen(
     agen->closed = 1;
     kos_dyn_pop_yield_from(es, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
-    return EVAL_RAISE();
+    return -1;
   }
 
   if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
@@ -526,20 +528,20 @@ static KosOpResult yield_from_drive_kos_async_gen(
       KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
       kos_dyn_pop_yield_from(es, yf);
       Py_XDECREF(final_val);
-      return EVAL_NORMAL();
+      return 0;
     }
   }
 
   if (agen->closed) {
     if (kos_dyn_pop_yield_from(es, yf) < 0)
-      return EVAL_RAISE();
-    return EVAL_NORMAL();
+      return -1;
+    return 0;
   }
 
   if (! agen->gen || ! KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
     if (kos_dyn_pop_yield_from(es, yf) < 0)
-      return EVAL_RAISE();
-    return EVAL_NORMAL();
+      return -1;
+    return 0;
   }
 
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {
@@ -582,7 +584,7 @@ static KosOpResult yield_from_drive_kos_async_gen(
     }
     agen->in_progress = 0;
     agen->closed = 1;
-    return EVAL_RAISE();
+    return -1;
   }
 
   if (yf_throw_typ) {
@@ -595,19 +597,19 @@ static KosOpResult yield_from_drive_kos_async_gen(
     PyObject *pushv;
 
     if (! popped)
-      return EVAL_RAISE();
+      return -1;
     Py_DECREF(popped);
     pushv = yf_send_val ? yf_send_val : Py_None;
     if (KosEvalState_StackPushRef(es, pushv) < 0) {
       Py_XDECREF(yf_send_val);
-      return EVAL_RAISE();
+      return -1;
     }
     Py_XDECREF(yf_send_val);
   } else {
     Py_XDECREF(yf_send_val);
   }
 
-  return EVAL_NORMAL();
+  return 0;
 }
 
 
@@ -718,8 +720,10 @@ KOS_OP_HANDLER(YIELD_FROM) {
     return yield_from_drive_sync_gen(es, yf, delegate, action, insn);
   if (kind == KOS_YF_PY_ASYNC_ITER || kind == KOS_YF_PY_ASYNC_GEN)
     return yield_from_drive_py_async(es, yf, delegate, kind, action, insn);
-  if (kind == KOS_YF_KOS_ASYNC_GEN)
-    return yield_from_drive_kos_async_gen(es, yf, delegate, action, insn);
+  if (kind == KOS_YF_KOS_ASYNC_GEN) {
+    int r = yield_from_drive_kos_async_gen(es, yf, delegate, action, insn);
+    return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+  }
 
   PyErr_SetString(PyExc_RuntimeError, "unexpected delegate kind");
   return EVAL_RAISE();

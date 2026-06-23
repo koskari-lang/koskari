@@ -18,7 +18,7 @@
    Tail call: do not push a new frame; remove or recycle the current one.
 
    Extracts args via KosStackSteal before call; KosEvalState_Call handles frame
-   behavior and dispatch. Returns KOS_OP_RES_CONTROL_RETURNED when we push and
+   behavior and dispatch. Returns EVAL_CONTROL_RETURNED() when we push and
    continue (triggers kos_dynnode_on_control_returned for wind thunks).
 */
 

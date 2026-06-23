@@ -41,15 +41,6 @@
 
 
 /**
-  Return values from KosEvalState_Call and related low-level helpers.
-  0 = normal; 1 = suspend or WITH async rollback; 2 = control returned to
-  awaiting dyn node; 4 = parent-frame return delivery staged in eval (post-pop).
-*/
-#define KOS_OP_RES_CONTROL_RETURNED 2
-#define KOS_OP_RES_PARENT_RETURN_DELIVER 4
-
-
-/**
   KosOpResultKind encodes what the opcode handler wants the eval dispatch loop
   to do after the handler returns.  NORMAL means "continue with the next
   instruction"; all other values name an event or control transfer.
@@ -160,36 +151,15 @@ typedef enum KosSuspensionEvent {
 /**
   KosEvalMode is the result of entry/revive and drives the mode-handler loop.
   NORMAL = run next insn or check completion; TRANSFER = run process_plan;
-  EXCEPTION = run process_raise; RAISE/AWAIT/YIELD/YIELD_FROM = return with event;
-  RETURN = normal completion with value.
+  EXCEPTION = run process_raise; RAISE = entry-time surface of a pending
+  raise (fill out_ev and stop).
 */
 typedef enum KosEvalMode {
   KOS_MODE_NORMAL    = 0,
   KOS_MODE_TRANSFER  = 1,
   KOS_MODE_EXCEPTION = 2,
   KOS_MODE_RAISE     = 3,
-  KOS_MODE_AWAIT     = 4,
-  KOS_MODE_YIELD     = 5,
-  KOS_MODE_YIELD_FROM = 6,
-  KOS_MODE_RETURN    = 7,
 } KosEvalMode;
-
-
-/**
-  KosEvalStep is the return type of each internal phase helper inside
-  koskari_eval.  CONTINUE means the phase completed normally and the next
-  prologue step (or prepare/dispatch) should run in order.  REPROLOGUE means
-  restart from the top of the dispatch prologue (transfer drain, pending
-  exception, native frame) before the next opcode.  STOP_EVENT means out_ev
-  has been filled and the evaluator should return to its caller.
-  FATAL_ERROR means a PyErr has been set and koskari_eval must return -1.
-*/
-typedef enum KosEvalStep {
-  KOS_STEP_CONTINUE,
-  KOS_STEP_REPROLOGUE,
-  KOS_STEP_STOP_EVENT,
-  KOS_STEP_FATAL_ERROR,
-} KosEvalStep;
 
 
 /**
@@ -210,27 +180,6 @@ typedef enum KosGetNextResult {
    describing the outcome; EVAL_REPROLOGUE() means "handled, continue normally".
 */
 typedef KosOpResult (*KosNativeHandlerFn)(KosEvalState *, PyObject *);
-
-
-/**
-  KosEvalResultKind is the driver-visible completion of koskari_eval when
-  stopping with a value boundary.  KOS_ERES_RAISE uses PyErr as authority.
-*/
-typedef enum KosEvalResultKind {
-  KOS_ERES_RETURN = 0,
-  KOS_ERES_RAISE,
-  KOS_ERES_YIELD,
-  KOS_ERES_AWAIT,
-} KosEvalResultKind;
-
-
-typedef struct KosEvalResult {
-  KosEvalResultKind kind;
-  PyObject *value;  /* strong ref; NULL for RAISE */
-} KosEvalResult;
-
-
-#define kos_eval_result_clear(r) Py_CLEAR((r)->value)
 
 
 /* === KosContext: VM execution context === */
