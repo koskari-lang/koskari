@@ -212,9 +212,9 @@ struct KosDynNode {
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
       uint32_t frame_flags;
-      /* Native frame evaluator: (es, out_ev, is_resume, val); es is live slice */
-      int (*native_handler)(struct KosEvalState *, struct KosEvent *, int,
-                            PyObject *);
+      /* Native frame evaluator: KosNativeHandlerFn (see eval.h); void * to
+         avoid the include-order constraint of naming KosOpResult here. */
+      void *native_handler;
     } frame;
     struct {
       uint32_t prompt_id;

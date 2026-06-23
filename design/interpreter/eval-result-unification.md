@@ -912,10 +912,30 @@ and `eval_dispatch_op_result` added to the forward-decl block near line 140.
 
 ---
 
-### Step 2 — Phase 5: native handler protocol migration
+### Step 2 — Phase 5: native handler protocol migration ✓ DONE (branch eval_event_again, post-05c2080)
 
-This is the highest-priority remaining structural work. It eliminates the only
-remaining consumer of `eval_phase_post_opcode_tail` and `KOS_EV_POST_OPCODE`.
+All sub-tasks implemented and tested (3212 passed, 10 skipped, 24 subtests passed — same baseline).
+
+**What was done:**
+- `dynchain.h`: `native_handler` field changed from typed function pointer to `void *` (avoids include-order constraint on `KosOpResult`)
+- `eval.h`: `KosNativeHandlerFn` typedef added after `KosOpResult` definition
+- `eval.c`: `kos_eval_call_native_handler` replaced by `kos_eval_invoke_native_handler(es, val)` returning `KosOpResult`; `val` ownership transferred to handler (NULL for iteration call)
+- `eval.c` `eval_phase_entry` resume delivery: now calls `kos_eval_invoke_native_handler` + `eval_dispatch_op_result`; REPROLOGUE → fall through to `*mode_out = mode; return KOS_STEP_CONTINUE` (proceeds to dispatch)
+- `eval.c` `eval_parent_return_deliver_impl`: steals val from out_ev (clear without decref), calls `kos_eval_invoke_native_handler(es, val)`, returns `eval_dispatch_op_result` result — no deferred path
+- `eval.c` `eval_step_native_iteration`: uses `kos_eval_invoke_native_handler(es, NULL)`, dispatches via `eval_dispatch_op_result`
+- `eval.c` `eval_emit_post_opcode_deferred`: deleted
+- `eval.c` `eval_dispatch_maybe_post_opcode_event`: deleted
+- `eval.c` `eval_phase_post_opcode`: deleted (forward decl removed too; was the only entry point for the deferred path)
+- `eval.c` prologue: `eval_dispatch_maybe_post_opcode_event` block removed
+- `utils.c` `apply_native_handler`: signature changed to `KosOpResult fn(KosEvalState *, PyObject *)`; `delivered_value != NULL` errors with EVAL_RAISE; Transition uses local `_scratch_ev`; PushOrAwait dispatched manually with `_push_ev` scratch event
+- `utils.c` `kos_install_apply`: cast changed from typed NativeHandlerFn to `(void *)`
+
+**What remains after Phase 5 (Phase 6 work):**
+- `eval_phase_post_opcode_tail` still exists and is called by `kos_eval_post_opcode_control_returned_after_hook` (for the CONTROL_RETURNED path through dynchain hooks). Phase 6 will either inline it there or refactor.
+- `KosOpOutcome`, `KOS_OP_*` macros, dead `kos_op_outcome_*` helpers: deferred to Phase 6 (Step 3).
+
+**Note on `eval_phase_post_opcode_tail` still being alive:**
+The design doc (§16 Step 2d) said "remove `eval_phase_post_opcode_tail`", but this was premature — `kos_eval_post_opcode_control_returned_after_hook` calls it for the CONTROL_RETURNED continuation. This is **not** the native-handler deferred path; it is the synchronous WIND/WITH hook completion path. `KOS_EV_POST_OPCODE` is fully gone; `eval_phase_post_opcode` is gone. `eval_phase_post_opcode_tail` survives as a helper for `kos_eval_post_opcode_control_returned_after_hook` only. Step 3 will assess whether to inline or delete.
 
 #### 2a. Locate all native handlers
 

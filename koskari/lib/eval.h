@@ -292,6 +292,15 @@ typedef struct KosOpResult {
 
 
 /**
+   Function-pointer type for native frame handlers: receives the eval state
+   and an optional delivered value (new reference; handler takes ownership;
+   NULL for the iteration call with no delivery).  Returns a KosOpResult
+   describing the outcome; EVAL_REPROLOGUE() means "handled, continue normally".
+*/
+typedef KosOpResult (*KosNativeHandlerFn)(KosEvalState *, PyObject *);
+
+
+/**
   KosEvent is the out_ev buffer passed into koskari_eval for the whole run.
 
   Handlers and post_opcode write kind, payload, and exc_type as each

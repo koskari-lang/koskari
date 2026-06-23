@@ -138,11 +138,6 @@ static int try_local_exception_handler(KosEvalState *es, KosEvent *out_ev);
 
 static KosEvalStep eval_parent_return_deliver(KosEvalState *es, KosEvent *out_ev);
 
-static KosEvalStep eval_phase_post_opcode(
-        KosEvalState *es,
-        KosEvent *out_ev,
-        int op_res);
-
 static KosEvalStep eval_event_yield(KosEvalState *es, KosEvent *out_ev,
     PyObject *val);
 
@@ -155,10 +150,9 @@ static KosEvalStep eval_event_return(KosEvalState *es, KosEvent *out_ev,
 static KosEvalStep kos_eval_post_opcode_control_returned_after_hook(
         KosEvalState *es, KosEvent *out_ev);
 
-/* Unused until Phase 5 wires native handlers through this path. */
 static KosEvalStep eval_dispatch_op_result(
         KosEvalState *es, KosEvent *out_ev,
-        KosOpResult res) __attribute__((unused));
+        KosOpResult res);
 
 
 /**
@@ -1815,24 +1809,23 @@ static int try_local_exception_handler(
 
 
 /**
-   Invoke native frame handler when the eval frame has NATIVE_HANDLER.
-   Returns handler result, or -1 if no handler (callers usually guard).
+   Invoke the native frame handler on the current eval frame.  val is a new
+   reference transferred to the handler (val may be NULL for the iteration
+   call; delivery call passes the return value).  Returns EVAL_FATAL() if no
+   handler is installed.
 */
-static int kos_eval_call_native_handler(
+static KosOpResult kos_eval_invoke_native_handler(
     KosEvalState *es,
-    KosEvent *out_ev,
-    int phase,
-    PyObject *arg) {
+    PyObject *val) {
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  if (! frame || ! KosDynFrame_NATIVE_HANDLER(frame))
-    return -1;
+  if (! frame || ! KosDynFrame_NATIVE_HANDLER(frame)) {
+    Py_XDECREF(val);
+    return EVAL_FATAL();
+  }
 
-  typedef int (*NativeHandlerFn)(KosEvalState *, KosEvent *, int, PyObject *);
-  NativeHandlerFn fn =
-      (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(frame);
-
-  return fn(es, out_ev, phase, arg);
+  KosNativeHandlerFn fn = (KosNativeHandlerFn) KosDynFrame_NATIVE_HANDLER(frame);
+  return fn(es, val);
 }
 
 
@@ -1958,11 +1951,14 @@ entry_mode_dispatch:
 
     PyObject *val = KosEvalState_StackPopRef(es);
     if (val) {
-      int res = kos_eval_call_native_handler(es, out_ev, 1, val);
-      if (res < 0)
+      /* val is a new ref; handler takes ownership */
+      KosOpResult hr = kos_eval_invoke_native_handler(es, val);
+      KosEvalStep hs = eval_dispatch_op_result(es, out_ev, hr);
+      if (hs == KOS_STEP_FATAL_ERROR)
         return KOS_STEP_FATAL_ERROR;
-      if (res == 1)
+      if (hs == KOS_STEP_STOP_EVENT)
         return KOS_STEP_STOP_EVENT;
+      /* KOS_STEP_REPROLOGUE: handler finished cleanly; proceed into dispatch */
     }
   }
 
@@ -2360,11 +2356,6 @@ static KosEvalStep eval_phase_post_opcode_tail(
 
 
 /**
-   Native parent-return path defers a second eval_phase_post_opcode pass by
-   filling out_ev with KOS_EV_POST_OPCODE and a PyLong op_res; the dispatch
-   prologue drains it before native_iteration.
-*/
-/**
    Shared kos_dynnode_on_control_returned post-opcode path for
    KOS_OP_RES_CONTROL_RETURNED: after stack or other delivery, run WIND/WITH
    control hook, then continue the post-opcode tail if the hook does not
@@ -2382,20 +2373,6 @@ static KosEvalStep kos_eval_post_opcode_control_returned_after_hook(
     return KOS_STEP_REPROLOGUE;
 
   return eval_phase_post_opcode_tail(es, out_ev, KOS_OP_RES_CONTROL_RETURNED);
-}
-
-
-static KosEvalStep eval_emit_post_opcode_deferred(KosEvent *out_ev, int pr) {
-
-  PyObject *tag = PyLong_FromLong((long) pr);
-
-  if (! tag)
-    return KOS_STEP_FATAL_ERROR;
-  Py_CLEAR(KosEvent_EXC_TYPE(out_ev));
-  Py_XDECREF(KosEvent_PAYLOAD(out_ev));
-  KosEvent_PAYLOAD(out_ev) = tag;
-  KosEvent_KIND(out_ev) = KOS_EV_POST_OPCODE;
-  return KOS_STEP_REPROLOGUE;
 }
 
 
@@ -2420,23 +2397,11 @@ static KosEvalStep eval_parent_return_deliver_impl(KosEvalState *es, KosEvent *o
   KosEvent_PAYLOAD(out_ev) = val;
 
   if (unlikely(KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) != NULL)) {
-    typedef int (*NativeHandlerFn)(KosEvalState *, KosEvent *, int, PyObject *);
-    NativeHandlerFn fn =
-        (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es));
-    int res = fn(es, out_ev, 1, val);
-
-    Py_DECREF(val);
+    /* Steal val from out_ev (clear without decref) and give ownership to handler */
     KosEvent_PAYLOAD(out_ev) = NULL;
     KosEvent_KIND(out_ev) = KOS_EV_NONE;
-    if (res < 0)
-      return eval_emit_post_opcode_deferred(out_ev, -1);
-    if (res == 0)
-      return KOS_STEP_REPROLOGUE;
-    if (res == 1)
-      return eval_emit_post_opcode_deferred(out_ev, 1);
-    if (res == KOS_OP_RES_CONTROL_RETURNED)
-      return eval_emit_post_opcode_deferred(out_ev, KOS_OP_RES_CONTROL_RETURNED);
-    return KOS_STEP_REPROLOGUE;
+    KosOpResult hr = kos_eval_invoke_native_handler(es, val);
+    return eval_dispatch_op_result(es, out_ev, hr);
   }
 
   if (KosEvalState_StackPushRef(es, val) < 0) {
@@ -2465,101 +2430,6 @@ static KosEvalStep eval_parent_return_deliver(KosEvalState *es, KosEvent *out_ev
 
 
 /**
-   Phase 6: post-opcode result handling.
-
-   Called when an opcode handler returns a non-zero op_res.  Handles the
-   exception path (via try_local_exception_handler) and suspension-event
-   tagging for AWAIT and YIELD events.
-
-   :param op_res: The non-zero return value from the opcode handler.
-
-   :return: KOS_STEP_FATAL_ERROR when op_res < 0 and no exception/event
-    (caller uses eval_ret -1); KOS_STEP_STOP_EVENT when out_ev is filled and
-    eval should return (eval_ret 0); KOS_STEP_REPROLOGUE when the dispatch
-    loop should restart the full prologue without surfacing a boundary.
-*/
-static KosEvalStep eval_phase_post_opcode(
-        KosEvalState *es,
-        KosEvent *out_ev,
-        int op_res) {
-
-  KosEvalStep ret;
-
-  KOS_TRACE_POST_OP_ENTER();
-
-  /* Clear resume kind when handling non-zero result so next iteration (if we
-     continue) has it clean. Keeps the hot path (tail-dispatch) from touching it. */
-  KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
-
-  if (op_res == KOS_OP_RES_PARENT_RETURN_DELIVER) {
-    ret = eval_parent_return_deliver(es, out_ev);
-    goto post_opcode_done;
-  }
-
-  if (op_res == KOS_OP_RES_CONTROL_RETURNED) {
-    ret = kos_eval_post_opcode_control_returned_after_hook(es, out_ev);
-    goto post_opcode_done;
-  }
-
-  ret = eval_phase_post_opcode_tail(es, out_ev, op_res);
-post_opcode_done:
-  KOS_TRACE_POST_OP_EXIT();
-  return ret;
-}
-
-
-/**
-   Drain KOS_EV_POST_OPCODE (deferred eval_phase_post_opcode from native
-   parent-return).  Runs at dispatch prologue before native_iteration.
-*/
-static KosEvalStep eval_dispatch_maybe_post_opcode_event(
-    KosEvalState *es,
-    KosEvent *out_ev,
-    int *eval_ret) {
-
-  PyObject *pl;
-  long pr_long;
-  int pr;
-  KosEvalStep ps;
-
-  if (KosEvent_KIND(out_ev) != KOS_EV_POST_OPCODE)
-    return KOS_STEP_CONTINUE;
-
-  pl = KosEvent_PAYLOAD(out_ev);
-  if (! pl || ! PyLong_Check(pl)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "eval: KOS_EV_POST_OPCODE requires PyLong payload");
-    return KOS_STEP_FATAL_ERROR;
-  }
-
-  pr_long = PyLong_AsLong(pl);
-  if (pr_long == -1 && PyErr_Occurred())
-    return KOS_STEP_FATAL_ERROR;
-
-  Py_DECREF(pl);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
-
-  pr = (int) pr_long;
-
-  ps = eval_phase_post_opcode(es, out_ev, pr);
-  if (ps == KOS_STEP_FATAL_ERROR) {
-    if (eval_ret)
-      *eval_ret = -1;
-    return ps;
-  }
-
-  if (ps == KOS_STEP_STOP_EVENT) {
-    if (eval_ret)
-      *eval_ret = 0;
-    return ps;
-  }
-
-  return ps;
-}
-
-
-/**
    Top-of-loop transfer drain.  STOP_EVENT means caller should return eval 0.
 */
 static KosEvalStep eval_step_drain_transfer_plan(
@@ -2580,7 +2450,7 @@ static KosEvalStep eval_step_drain_transfer_plan(
 
 
 /**
-   One native-frame iteration: run handler; on non-zero result, post_opcode.
+   One native-frame iteration: run handler with no delivery (val=NULL).
    Caller must only invoke when the eval frame has NATIVE_HANDLER.
    Sets *eval_ret on FATAL (-1) or STOP (0).
 */
@@ -2589,15 +2459,12 @@ static KosEvalStep eval_step_native_iteration(
     KosEvent *out_ev,
     int *eval_ret) {
 
-  int op_res;
-  KosEvalStep ps;
+  KosOpResult res = kos_eval_invoke_native_handler(es, NULL);
 
-  op_res = kos_eval_call_native_handler(es, out_ev, 0, NULL);
-
-  if (op_res == 0)
+  if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE)
     return KOS_STEP_REPROLOGUE;
 
-  ps = eval_phase_post_opcode(es, out_ev, op_res);
+  KosEvalStep ps = eval_dispatch_op_result(es, out_ev, res);
   if (ps == KOS_STEP_FATAL_ERROR)
     *eval_ret = -1;
   else if (ps == KOS_STEP_STOP_EVENT)
@@ -2746,16 +2613,6 @@ cg_prologue:
     if (xfer == KOS_STEP_STOP_EVENT)
       return 0;
     if (xfer == KOS_STEP_REPROLOGUE)
-      goto cg_prologue;
-  }
-
-  {
-    KosEvalStep pp = eval_dispatch_maybe_post_opcode_event(es, out_ev, &eval_ret);
-    if (pp == KOS_STEP_FATAL_ERROR)
-      return eval_ret;
-    if (pp == KOS_STEP_STOP_EVENT)
-      return eval_ret;
-    if (pp == KOS_STEP_REPROLOGUE)
       goto cg_prologue;
   }
 
