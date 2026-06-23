@@ -36,9 +36,6 @@
 #include <stdint.h>
 
 
-struct KosEvent;
-
-
 /* === DynNode kind enum === */
 
 

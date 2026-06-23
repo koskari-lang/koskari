@@ -144,42 +144,10 @@ typedef KosDynFrame KosFrame;
 #define KosFrame_NATIVE_HANDLER(f) KosDynFrame_NATIVE_HANDLER(f)
 
 
-/* === KosEvent: boundary events === */
-
-/**
-  KosEventKind tags what kind of boundary the current instruction reported
-  in the eval out_ev buffer.
-
-  Opcode handlers set kind and payload when an instruction must signal
-  return, yield, await, or raise.  The main loop and eval_phase_post_opcode
-  then either stop the eval and return to the koskari_eval caller
-  (KOS_STEP_STOP_EVENT), restart the full dispatch prologue
-  (KOS_STEP_REPROLOGUE), or handle the boundary inside the loop without
-  leaving (detach and deliver to a parent frame, push yielded values for
-  flattened async iteration, run unwind handlers, and similar).  Nested
-  calls and non-top frames use the same kinds; framing is not limited to
-  top-level completion.
-
-  KOS_EV_RETURN - normal completion with a value
-  KOS_EV_RAISE  - exception propagation
-  KOS_EV_YIELD  - generator yield
-  KOS_EV_AWAIT  - suspension on Python awaitable
-  KOS_EV_NONE   - out_ev cleared after an in-loop consume; not a driver-facing
-                   boundary
-*/
-typedef enum KosEventKind {
-  KOS_EV_NONE = 0,  // no event, or event cleared
-  KOS_EV_RETURN,
-  KOS_EV_RAISE,
-  KOS_EV_YIELD,
-  KOS_EV_AWAIT,
-} KosEventKind;
-
-
 /**
   KosSuspensionEvent records why the evaluator last suspended.
-  Set when koskari_eval returns with KOS_EV_AWAIT, KOS_EV_YIELD, or
-  YIELD_FROM boundary; cleared when execution starts or context is not suspended.
+  Set when koskari_eval suspends with AWAIT or YIELD; cleared when execution
+  starts or the context is not suspended.
   Used at entry to choose revive path (revive_plan, revive_await, revive_yield).
 */
 typedef enum KosSuspensionEvent {
@@ -245,43 +213,8 @@ typedef KosOpResult (*KosNativeHandlerFn)(KosEvalState *, PyObject *);
 
 
 /**
-  KosEvent is the out_ev buffer passed into koskari_eval for the whole run.
-
-  Handlers and post_opcode write kind, payload, and exc_type as each
-  instruction reports a boundary.  The same struct holds in-flight and
-  in-loop state; not every kind/payload pair becomes the final reason the
-  outer eval returns.  When evaluation stops with a boundary, the caller
-  reads the fields by kind.
-
-  payload holds the return value, yielded value, awaitable, or exception
-  value as appropriate.  For KOS_EV_RAISE, exc_type is the exception type
-  (from PyErr_Fetch).  payload and exc_type are owned references where set.
-
-  Invariant: any code that assigns payload (or exc_type for RAISE) must set
-  kind in the same boundary; do not leave a non-NULL payload with a stale or
-  unspecified kind.
-
-  Stack-local buffers: use KosEvent ev = {0}; aggregate init zeros the struct
-  (kind is KOS_EV_NONE, pointers NULL).
-*/
-
-typedef struct KosEvent {
-  KosEventKind kind;
-  PyObject *payload;       /* new reference; caller owns it */
-  PyObject *exc_type;      /* for KOS_EV_RAISE: exception type (new ref) */
-} KosEvent;
-
-
-#define KosEvent_KIND(ev)    (((KosEvent *) (ev))->kind)
-#define KosEvent_PAYLOAD(ev) (((KosEvent *) (ev))->payload)
-#define KosEvent_EXC_TYPE(ev) (((KosEvent *) (ev))->exc_type)
-
-
-/**
   KosEvalResultKind is the driver-visible completion of koskari_eval when
-  stopping with a value boundary.  KOS_ERES_RAISE uses PyErr as authority;
-  value is always NULL for RAISE (out_ev may still carry exc_type when
-  materialized from PyErr elsewhere).
+  stopping with a value boundary.  KOS_ERES_RAISE uses PyErr as authority.
 */
 typedef enum KosEvalResultKind {
   KOS_ERES_RETURN = 0,
