@@ -255,35 +255,25 @@ static KosEvalMode revive_plan(
    When throw_exc is set and py_await_iter is non-NULL, resolves a callable
    throw and forwards with single-arg throw(exc) before the VM exception path
    (align with coroutine_throw WAITING_PY). On StopIteration, completes the
-   await like a normal resume. On non-NULL throw result, fills out_ev with
-   KOS_EV_AWAIT (re-suspend). out_ev must be non-NULL whenever throw_exc is
-   non-NULL.
+   await like a normal resume. On non-NULL throw result, returns EVAL_AWAIT
+   with the next awaitable (re-suspend).
+
+   :return: EVAL_NORMAL, EVAL_AWAIT (with re-suspend value), or EVAL_RAISE
 */
-static KosEvalMode revive_await(
+static KosOpResult revive_await(
         KosEvalState *es,
         PyObject *send_val,
         PyObject *throw_typ,
-        PyObject *throw_exc,
-        KosEvent *out_ev) {
+        PyObject *throw_exc) {
 
   if (throw_exc != NULL) {
     SAYF("[await] revive_await throw typ=%p exc=%p\n",
          (void *) throw_typ, (void *) throw_exc);
-    if (! out_ev) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "revive_await: throw_exc set but out_ev is NULL");
-      return KOS_MODE_EXCEPTION;
-    }
-    Py_XDECREF(KosEvent_EXC_TYPE(out_ev));
-    KosEvent_EXC_TYPE(out_ev) = NULL;
-    Py_XDECREF(KosEvent_PAYLOAD(out_ev));
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    KosEvent_KIND(out_ev) = KOS_EV_NONE;
 
     if (! KosEvalState_PythonAwaitIter(es)) {
       PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
                       throw_exc);
-      return KOS_MODE_EXCEPTION;
+      return EVAL_RAISE();
     }
     {
       PyObject *typ = throw_typ ? throw_typ
@@ -306,10 +296,10 @@ static KosEvalMode revive_await(
           KosEvalState_PythonAwaitClearIter(es);
           PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
                           throw_exc);
-          return KOS_MODE_EXCEPTION;
+          return EVAL_RAISE();
         }
         KosEvalState_PythonAwaitClearIter(es);
-        return KOS_MODE_EXCEPTION;
+        return EVAL_RAISE();
       }
       if (! PyCallable_Check(throw_meth)) {
         PyObject *await_iter = KosEvalState_PythonAwaitIter(es);
@@ -321,7 +311,7 @@ static KosEvalMode revive_await(
         Py_DECREF(val);
         Py_XDECREF(tb);
         KosEvalState_PythonAwaitClearIter(es);
-        return KOS_MODE_EXCEPTION;
+        return EVAL_RAISE();
       }
       /* Single-arg throw(exc) avoids deprecated (typ, val, tb) on generators */
       res = PyObject_CallOneArg(throw_meth, val);
@@ -330,16 +320,14 @@ static KosEvalMode revive_await(
       Py_DECREF(val);
       Py_XDECREF(tb);
       if (res) {
-        KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-        KosEvent_PAYLOAD(out_ev) = res;
         PyErr_Clear();
-        return KOS_MODE_AWAIT;
+        return EVAL_AWAIT(res);
       }
       if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
         PyObject *await_result = NULL;
         if (PyGen_FetchStopIterationValue(&await_result) < 0) {
           KosEvalState_PythonAwaitClearIter(es);
-          return KOS_MODE_EXCEPTION;
+          return EVAL_RAISE();
         }
         if (! await_result) {
           await_result = Py_None;
@@ -352,7 +340,7 @@ static KosEvalMode revive_await(
       }
       else {
         KosEvalState_PythonAwaitClearIter(es);
-        return KOS_MODE_EXCEPTION;
+        return EVAL_RAISE();
       }
     }
   }
@@ -365,13 +353,13 @@ static KosEvalMode revive_await(
   }
   if (to_push != NULL && KosEvalState_FRAME(es)) {
     if (KosEvalState_StackPushRef(es, to_push) < 0)
-      return KOS_MODE_EXCEPTION;
+      return EVAL_RAISE();
   }
   {
     if (kos_dyn_complete_pending_exit(es, 1) < 0)
-      return KOS_MODE_EXCEPTION;
+      return EVAL_RAISE();
   }
-  return KOS_MODE_NORMAL;
+  return EVAL_NORMAL();
 }
 
 
@@ -1755,54 +1743,6 @@ static KosOpResult kos_eval_invoke_native_handler(
 }
 
 
-/**
-   Convert a filled KosEvent into a KosOpResult.  For RAISE: restores PyErr
-   from the event fields (kos_eval_emit_raise_from_pyerr cleared PyErr into
-   them).  Ownership of all event fields is consumed.
-*/
-static KosOpResult kos_ev_to_opresult(KosEvent *ev) {
-  switch (KosEvent_KIND(ev)) {
-  case KOS_EV_RAISE: {
-    PyObject *typ = KosEvent_EXC_TYPE(ev);
-    PyObject *val = KosEvent_PAYLOAD(ev);
-    KosEvent_EXC_TYPE(ev) = NULL;
-    KosEvent_PAYLOAD(ev) = NULL;
-    if (! PyErr_Occurred())
-      PyErr_Restore(typ, val, NULL);
-    else {
-      Py_XDECREF(typ);
-      Py_XDECREF(val);
-    }
-    return EVAL_RAISE();
-  }
-  case KOS_EV_YIELD: {
-    PyObject *val = KosEvent_PAYLOAD(ev);
-    KosEvent_PAYLOAD(ev) = NULL;
-    return EVAL_YIELD(val);
-  }
-  case KOS_EV_AWAIT: {
-    PyObject *val = KosEvent_PAYLOAD(ev);
-    KosEvent_PAYLOAD(ev) = NULL;
-    return EVAL_AWAIT(val);
-  }
-  case KOS_EV_RETURN: {
-    PyObject *val = KosEvent_PAYLOAD(ev);
-    KosEvent_PAYLOAD(ev) = NULL;
-    return EVAL_RETURN(val);
-  }
-  default:
-    Py_XDECREF(KosEvent_EXC_TYPE(ev));
-    Py_XDECREF(KosEvent_PAYLOAD(ev));
-    KosEvent_EXC_TYPE(ev) = NULL;
-    KosEvent_PAYLOAD(ev) = NULL;
-    if (! PyErr_Occurred())
-      PyErr_SetString(PyExc_SystemError,
-                      "kos_ev_to_opresult: unexpected event kind");
-    return EVAL_RAISE();
-  }
-}
-
-
 /* Forward declaration: defined after eval_step_native_iteration. */
 static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res);
 
@@ -1826,7 +1766,6 @@ static KosOpResult eval_phase_entry(
     KosEvalMode *mode_out) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosEvent _ev = {0};
 
   KosEvalMode mode = KOS_MODE_NORMAL;
   if (KosEvalState_PLAN(es)) {
@@ -1845,7 +1784,13 @@ static KosOpResult eval_phase_entry(
         if (KosEvalState_PythonAwaitIter(es)) {
           mode = KOS_MODE_NORMAL;
         } else {
-          mode = revive_await(es, Py_None, NULL, NULL, &_ev);
+          KosOpResult _ra = revive_await(es, Py_None, NULL, NULL);
+          if (_ra.kind == KOS_RES_AWAIT) {
+            KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+            KosEvalState_MarkSuspendedNotRunning(es);
+            return _ra;
+          }
+          mode = (_ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
         }
         break;
       case KOS_SUSP_YIELD:
@@ -1864,27 +1809,35 @@ static KosOpResult eval_phase_entry(
          (void *) send_val, (void *) throw_typ, (void *) throw_exc,
          KosEvalState_SuspensionEvent(es));
     switch (KosEvalState_SuspensionEvent(es)) {
-      case KOS_SUSP_AWAIT:
-        mode = revive_await(es, send_val, throw_typ, throw_exc, &_ev);
+      case KOS_SUSP_AWAIT: {
+        KosOpResult _ra = revive_await(es, send_val, throw_typ, throw_exc);
+        if (_ra.kind == KOS_RES_AWAIT) {
+          KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+          KosEvalState_MarkSuspendedNotRunning(es);
+          return _ra;
+        }
+        mode = (_ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
         break;
+      }
       case KOS_SUSP_YIELD:
         SAY("[eval] phase_entry -> revive_yield(send_val)");
         mode = revive_yield(es, send_val, throw_typ, throw_exc);
         break;
-      default:
-        mode = revive_await(es, send_val, throw_typ, throw_exc, &_ev);
+      default: {
+        KosOpResult _ra = revive_await(es, send_val, throw_typ, throw_exc);
+        if (_ra.kind == KOS_RES_AWAIT) {
+          KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+          KosEvalState_MarkSuspendedNotRunning(es);
+          return _ra;
+        }
+        mode = (_ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
         break;
+      }
     }
   }
   KosEvalState_ClearSuspensionEvent(es);
 
 entry_mode_dispatch:
-  if (mode == KOS_MODE_AWAIT) {
-    KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-    KosEvalState_MarkSuspendedNotRunning(es);
-    return kos_ev_to_opresult(&_ev);
-  }
-
   if (mode == KOS_MODE_EXCEPTION) {
     clear_kos_agen_boundary_on_error(ctx);
     if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
