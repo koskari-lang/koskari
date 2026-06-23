@@ -152,6 +152,14 @@ static KosEvalStep eval_event_await(KosEvalState *es, KosEvent *out_ev,
 static KosEvalStep eval_event_return(KosEvalState *es, KosEvent *out_ev,
     PyObject *val);
 
+static KosEvalStep kos_eval_post_opcode_control_returned_after_hook(
+        KosEvalState *es, KosEvent *out_ev);
+
+/* Unused until Phase 5 wires native handlers through this path. */
+static KosEvalStep eval_dispatch_op_result(
+        KosEvalState *es, KosEvent *out_ev,
+        KosOpResult res) __attribute__((unused));
+
 
 /**
   Map KosEvalState_Call / KosCallable_Call legacy int r to KosOpOutcome.  When
@@ -2171,6 +2179,66 @@ static KosEvalStep eval_event_await(
 
 
 /**
+   Function-callable dispatch for KosOpResult, for use inside eval helpers
+   (e.g. eval_event_return calling a native handler) that cannot goto
+   cg_prologue directly.  Returns a KosEvalStep for the caller to propagate.
+   Ownership of res.val is consumed exactly as in cg_handle_op_result.
+*/
+static KosEvalStep eval_dispatch_op_result(
+    KosEvalState *es, KosEvent *out_ev, KosOpResult res) {
+
+  switch (res.kind) {
+  case KOS_RES_NORMAL:
+  case KOS_RES_REPROLOGUE:
+    return KOS_STEP_REPROLOGUE;
+
+  case KOS_RES_RAISE: {
+    KosEvalStep rs;
+    KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es, out_ev));
+    return rs;
+  }
+
+  case KOS_RES_YIELD: {
+    KosEvalStep ys;
+    KOS_TRACE_POST_OP_WRAP(event_yield,
+        ys = eval_event_yield(es, out_ev, res.val));
+    return ys;
+  }
+
+  case KOS_RES_AWAIT: {
+    KosEvalStep aws;
+    KOS_TRACE_POST_OP_WRAP(event_await,
+        aws = eval_event_await(es, out_ev, res.val));
+    return aws;
+  }
+
+  case KOS_RES_RETURN: {
+    KosEvalStep rs;
+    KOS_TRACE_POST_OP_WRAP(event_return,
+        rs = eval_event_return(es, out_ev, res.val));
+    return rs;
+  }
+
+  case KOS_RES_CONTROL_RETURNED:
+    return kos_eval_post_opcode_control_returned_after_hook(es, out_ev);
+
+  case KOS_RES_PARENT_RETURN:
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = res.val;
+    return eval_parent_return_deliver(es, out_ev);
+
+  case KOS_RES_FATAL:
+    SAY("[eval] FATAL: eval_dispatch_op_result received KOS_RES_FATAL\n");
+    return KOS_STEP_FATAL_ERROR;
+
+  default:
+    SAY("[eval] FATAL: eval_dispatch_op_result: unknown KosOpResultKind\n");
+    return KOS_STEP_FATAL_ERROR;
+  }
+}
+
+
+/**
    Centralized RETURN handler (Phase 2b/2c from RETURN opcode).  Walks the
    dynchain to unwind finally blocks; either pops the frame and delivers to
    the parent (Phase 2b) or marks the root frame dead and stops (Phase 2c).
@@ -2600,6 +2668,16 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
 }
 
 
+/* Dispatch a KosEvalStep from inside the eval body (which can goto).
+   Used in cg_handle_op_result to collapse the repeated 3-line pattern. */
+#define KOS_EVAL_DISPATCH_STEP(step)              \
+  do {                                            \
+    KosEvalStep _kos_ds = (step);                 \
+    if (_kos_ds == KOS_STEP_FATAL_ERROR) return -1; \
+    if (_kos_ds == KOS_STEP_STOP_EVENT)  return 0;  \
+    goto cg_prologue;                             \
+  } while (0)
+
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
     KosCode *_kos_code = KosEvalState_CODE(es);                            \
@@ -2753,64 +2831,54 @@ cg_handle_op_result:
   KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
   switch (op_res.kind) {
   case KOS_RES_NORMAL:
-    break;
+    /* Unreachable: hot path branches away before cg_handle_op_result. */
+    return -1;
   case KOS_RES_REPROLOGUE:
     goto cg_prologue;
   case KOS_RES_FATAL:
+    SAY("[eval] FATAL: opcode returned KOS_RES_FATAL\n");
     return -1;
   case KOS_RES_RAISE: {
-    KosEvalStep rs;
-    KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es, out_ev));
-    if (rs == KOS_STEP_FATAL_ERROR) return -1;
-    if (rs == KOS_STEP_STOP_EVENT)  return 0;
-    goto cg_prologue;
+    KosEvalStep _s;
+    KOS_TRACE_POST_OP_WRAP(event_raise, _s = eval_event_raise(es, out_ev));
+    KOS_EVAL_DISPATCH_STEP(_s);
   }
   case KOS_RES_YIELD: {
-    KosEvalStep ys;
+    KosEvalStep _s;
     KOS_TRACE_POST_OP_WRAP(event_yield,
-        ys = eval_event_yield(es, out_ev, op_res.val));
-    if (ys == KOS_STEP_FATAL_ERROR) return -1;
-    if (ys == KOS_STEP_STOP_EVENT)  return 0;
-    goto cg_prologue;
+        _s = eval_event_yield(es, out_ev, op_res.val));
+    KOS_EVAL_DISPATCH_STEP(_s);
   }
   case KOS_RES_AWAIT: {
-    KosEvalStep aws;
+    KosEvalStep _s;
     KOS_TRACE_POST_OP_WRAP(event_await,
-        aws = eval_event_await(es, out_ev, op_res.val));
-    if (aws == KOS_STEP_FATAL_ERROR) return -1;
-    if (aws == KOS_STEP_STOP_EVENT)  return 0;
-    goto cg_prologue;
+        _s = eval_event_await(es, out_ev, op_res.val));
+    KOS_EVAL_DISPATCH_STEP(_s);
   }
   case KOS_RES_RETURN: {
-    KosEvalStep rs;
+    KosEvalStep _s;
     KOS_TRACE_POST_OP_WRAP(event_return,
-        rs = eval_event_return(es, out_ev, op_res.val));
-    if (rs == KOS_STEP_FATAL_ERROR) return -1;
-    if (rs == KOS_STEP_STOP_EVENT)  return 0;
-    goto cg_prologue;
+        _s = eval_event_return(es, out_ev, op_res.val));
+    KOS_EVAL_DISPATCH_STEP(_s);
   }
-  case KOS_RES_CONTROL_RETURNED: {
-    KosEvalStep cs = kos_eval_post_opcode_control_returned_after_hook(es, out_ev);
-    if (cs == KOS_STEP_FATAL_ERROR) return -1;
-    if (cs == KOS_STEP_STOP_EVENT)  return 0;
-    goto cg_prologue;
-  }
-  case KOS_RES_PARENT_RETURN: {
+  case KOS_RES_CONTROL_RETURNED:
+    KOS_EVAL_DISPATCH_STEP(
+        kos_eval_post_opcode_control_returned_after_hook(es, out_ev));
+  case KOS_RES_PARENT_RETURN:
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = op_res.val;
-    KosEvalStep ps = eval_parent_return_deliver(es, out_ev);
-    if (ps == KOS_STEP_FATAL_ERROR) return -1;
-    if (ps == KOS_STEP_STOP_EVENT)  return 0;
-    goto cg_prologue;
-  }
+    KOS_EVAL_DISPATCH_STEP(eval_parent_return_deliver(es, out_ev));
   default:
+    SAY("[eval] FATAL: cg_handle_op_result: unknown KosOpResultKind\n");
     return -1;
   }
 
-  return eval_ret;
+  /* Unreachable: every case either returns or goto cg_prologue via macro. */
+  return -1;
 }
 
 
+#undef KOS_EVAL_DISPATCH_STEP
 #undef KOS_EVAL_PREPARE_NEXT_INSN
 
 

@@ -441,7 +441,8 @@ static inline KosOpResult kos_op_result_from_int_step(int r, KosEvent *ev) {
     return EVAL_PARENT_RETURN(val);
   }
   default:
-    return EVAL_RAISE();
+    /* Unexpected int-step value; no valid PyErr or event to recover from. */
+    return EVAL_FATAL();
   }
 }
 

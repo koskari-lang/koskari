@@ -739,3 +739,460 @@ if-ladder and must be faithfully replicated in `eval_event_return`.
   proposal, eval loop dispatch, val ownership, out_ev fate, native handler
   protocol, transfer plan analysis, POST_OPCODE elimination, implementation
   phases, edge cases, honest risk assessment.
+- **2026-06-22** — Supplementary §15–§19 added: Phases 0–4 landing record,
+  deviations from plan, remaining work plan (Steps 1–4), and implementation
+  notes for Phase 5 native handler migration.
+
+---
+
+## 15. Landing record: Phases 0–4 (commit e5c37cc, branch eval_event_again)
+
+Phases 0–4 from §11 are complete as of commit `e5c37cc`. This section records
+what was implemented, deviations from the design, and bugs caught in testing.
+
+### 15.1 What was implemented
+
+**`eval.h`** — `KosOpResultKind`, `KosOpResult`, and all `EVAL_*` macros added.
+`KOS_OP_HANDLER` macro updated to new signature `KosOpResult op_##name(KosEvalState
+*es, KosOp *insn)`. Old `KosOpOutcome` infrastructure left in place (legacy,
+still used by native deferral path — see §16).
+
+**`eval_utils.c`** — Added alongside the existing `kos_op_outcome_*` helpers:
+- `kos_op_result_from_push_int(int r)` — maps 0/-1 to NORMAL/RAISE
+- `kos_op_result_PUSH(es, val)` — stack push without auto-await (val ownership
+  transfers to stack; RAISE on failure)
+- `kos_op_result_from_int_step(int r, KosEvent *ev)` — maps the legacy int-step
+  protocol to `KosOpResult`; for r==1 discriminates YIELD vs AWAIT via
+  `ev->kind`; for r==4 (`KOS_OP_RES_PARENT_RETURN_DELIVER`) extracts payload
+  and returns `EVAL_PARENT_RETURN(val)`; clears `ev->payload` on exit to prevent
+  double-free
+- `kos_op_result_PUSH_OR_AWAIT(es, val)` — uses an internal scratch `KosEvent`
+  and `op_push_or_await`; returns NORMAL on push, AWAIT(awaitable) on suspend,
+  RAISE on error
+
+**`eval.c`** — `kos_op_result_from_call_int(es, r, ev)` added (mirrors
+`kos_op_outcome_from_call_int`). `eval_event_yield` updated to take `PyObject
+*val` directly (centralises `FlushLiveRegsToFrame` + `MarkDeadAfterYield` that
+were previously scattered across YIELD.c and YIELD_FROM's emit path).
+`eval_event_await` added (demand check, `MarkSuspendedNotRunning`, fill out_ev,
+`SetSuspensionEvent`). `eval_event_return` added (owns Phase 2b/2c: Transition
+walk, async-unwind branch, pop-and-parent-deliver, agen-boundary check, and
+root-frame mark-dead). `cg_handle_op_result` label and switch added; `OP` macro
+updated to check `op_res.kind == KOS_RES_NORMAL` on the hot path. `kos_check_*`
+helpers (`kos_check_contains`, `kos_check_identity`, `kos_check_two_arg`,
+`kos_check_cmp`) had their unused `KosEvent *out_ev` parameter removed.
+
+**All 215 opcode `.c` files** converted: no opcode file now receives or
+touches `out_ev`. Every file ends with `// The end.` per house C style (many
+were missing it before).
+
+### 15.2 Deviations from the design doc
+
+**`KOS_RES_PARENT_RETURN` added** (not in original §3 enum). The CALL family
+can result in a frame already popped with a value ready to deliver to the
+parent — this is distinct from `KOS_RES_RETURN` (which enters `eval_event_return`
+and does the walk/pop itself). The new kind maps to `eval_parent_return_deliver`
+directly in `cg_handle_op_result`. `kos_op_result_from_call_int` and
+`kos_op_result_from_int_step` both produce it.
+
+**`eval_dispatch_result` not yet extracted** (proposed in §7 and §9). The
+`cg_handle_op_result` switch has three repeated lines per non-NORMAL case:
+```c
+if (rs == KOS_STEP_FATAL_ERROR) return -1;
+if (rs == KOS_STEP_STOP_EVENT)  return 0;
+goto cg_prologue;
+```
+This helper was planned but not implemented in Phase 0–4 because the Phase 5
+call site (inside `eval_event_return` calling a native handler) did not yet
+exist. It must be extracted as the first step of Phase 5 work.
+
+**`EVAL_FATAL()` is defined but never produced.** Every opcode error path
+goes through `EVAL_RAISE()` (PyErr set). `KOS_RES_FATAL` is handled in the
+switch (`return -1;`) but no opcode or helper currently emits it. Decision
+deferred; see §17.2.
+
+**Phases 1–4 merged into one atomic commit** rather than separated by batch.
+The `KOS_OP_HANDLER` macro signature change forced atomicity across all 215
+files. Tests were run after the full conversion, not after each batch.
+
+**`kos_op_result_PUSH` added** (not in original design). Needed by opcodes
+that push a value without auto-await (plain stack ops). Complement to
+`kos_op_result_PUSH_OR_AWAIT`.
+
+**`KOS_RES_NORMAL: break;` is unreachable** in `cg_handle_op_result`. The hot
+path `likely(op_res.kind == KOS_RES_NORMAL)` branches away before the switch.
+The arm was left in for completeness but should be removed or replaced with
+`__builtin_unreachable()` / an assert — see §17.1.
+
+### 15.3 Bug found during testing
+
+**`eval_event_return` Phase 2c missing boundary delivery check.** The "root
+frame / GEN parent" branch set `out_ev = KOS_EV_RETURN`, called
+`MarkDeadAfterReturn`, and returned `KOS_STEP_STOP_EVENT` without checking
+`kos_dyn_need_kos_agen_boundary_deliver`. The old code reached this check via
+`eval_phase_post_opcode_tail`'s `KOS_EV_RETURN` branch. Flattened Koskari async
+generators driven by ITER_NEXT or YIELD_FROM returned `None` instead of their
+actual values.
+
+Fix: after `MarkDeadAfterReturn`, check the boundary flag and dispatch to
+`eval_event_return_deliver_to_boundary` if set, before returning
+`KOS_STEP_STOP_EVENT`. Added one `if` before the final return in
+`eval_event_return`.
+
+Affected tests: `test_foreach_iter_next_over_koskari_async_gen`,
+`test_koskari_foreach_over_koskari_generator`, all `test_yield_from_*` tests
+involving Koskari async gen delegates, and one reproducer. All pass after fix.
+
+### 15.4 Known hybrid state (intentional, documented for Phase 5–6)
+
+The following old-protocol infrastructure remains active. **Do not add new call
+sites to any of these.** They are kept only to support the native-handler
+deferred path until Phase 5 converts it.
+
+| Symbol | Location | Why still needed |
+|---|---|---|
+| `KosOpOutcome`, `KosLoopOpMode`, `KOS_LOP_*` | `eval.h` | Returned by `kos_op_outcome_from_call_int` (dead from opcodes; still defined) |
+| `KOS_OP_RUN/POST_ERR/PROLOGUE/FAIL/POST_SUSPEND/POST_PARENT_RETURN` macros | `eval.h` | Used by `kos_op_outcome_*` helpers in eval_utils.c |
+| `kos_op_outcome_from_call_int` | `eval.c` | Dead (no callers post-conversion); delete in Phase 6 |
+| `kos_op_outcome_PUSH`, `kos_op_outcome_PUSH_OR_AWAIT`, `kos_op_outcome_from_push_int`, `kos_op_outcome_from_int_step` | `eval_utils.c` | Dead (no callers post-conversion); delete in Phase 6 |
+| `eval_phase_post_opcode`, `eval_phase_post_opcode_tail` | `eval.c` | Active: called from `eval_phase_post_opcode` which is called from `eval_dispatch_maybe_post_opcode_event` (the POST_OPCODE drain) and from `kos_eval_post_opcode_deferred_step` |
+| `eval_emit_post_opcode_deferred` | `eval.c` | Active: called by `eval_parent_return_deliver_impl` to defer a second post-opcode pass |
+| `KOS_EV_POST_OPCODE` | `KosEventKind` | Active: written by `eval_emit_post_opcode_deferred`, drained by `eval_dispatch_maybe_post_opcode_event` in the dispatch prologue |
+| Demand AWAIT denial in `eval_phase_post_opcode_tail` | `eval.c` | Active for native-path AWAIT events; parallel copy of the check in `eval_event_await` |
+
+---
+
+## 16. Remaining work: detailed plan
+
+### Step 1 — Minor housekeeping ✓ DONE (branch eval_event_again, post-e5c37cc)
+
+All three sub-tasks implemented and tested (3212 passed, 10 skipped, 24
+subtests passed — same baseline as Phase 0–4 landing).
+
+#### 1a. Remove dead `case KOS_RES_NORMAL:` from `cg_handle_op_result` ✓
+
+Done: `case KOS_RES_NORMAL:` now returns `-1` with a comment "Unreachable:
+hot path branches away before cg_handle_op_result." The trailing `return
+eval_ret;` at switch bottom also replaced with `return -1;` and an
+"Unreachable" comment.
+
+#### 1b. Wire `EVAL_FATAL()` as a distinct internal-fault path ✓
+
+Done:
+- `case KOS_RES_FATAL:` in `cg_handle_op_result` now calls `SAY(...)` before
+  `return -1`.
+- `default:` in `cg_handle_op_result` now calls `SAY(...)` before `return -1`.
+- `eval_dispatch_op_result` `case KOS_RES_FATAL:` and `default:` both call
+  `SAY(...)` before returning `KOS_STEP_FATAL_ERROR`.
+- `kos_op_result_from_int_step` `default:` branch changed from `EVAL_RAISE()`
+  to `EVAL_FATAL()` — an unexpected int-step value is a structural fault, not
+  a recoverable PyErr condition.
+
+#### 1c. Extract `eval_dispatch_result` helper ✓
+
+Done. Two forms extracted:
+
+**`KOS_EVAL_DISPATCH_STEP(step)` macro** — defined locally in `eval.c` just
+before the eval function body, `#undef`-ed at the end. Used in every
+non-trivial case of `cg_handle_op_result` to replace the repeated 3-liner.
+Each traced case now declares a local `KosEvalStep _s`, calls
+`KOS_TRACE_POST_OP_WRAP(name, _s = fn(...))`, then `KOS_EVAL_DISPATCH_STEP(_s)`.
+Untraced cases pass the call directly.
+
+**`eval_dispatch_op_result(es, out_ev, res)` static function** — defined in
+`eval.c` immediately before `eval_event_return`. Marked
+`__attribute__((unused))` until Phase 5 wires it. Mirrors the
+`cg_handle_op_result` switch but returns `KosEvalStep` instead of using
+`goto`, for use from functions that cannot `goto cg_prologue`. Treats
+`KOS_RES_NORMAL` and `KOS_RES_REPROLOGUE` identically (both return
+`KOS_STEP_REPROLOGUE` — see §17.4 for rationale).
+
+Forward declarations of both `kos_eval_post_opcode_control_returned_after_hook`
+and `eval_dispatch_op_result` added to the forward-decl block near line 140.
+
+---
+
+### Step 2 — Phase 5: native handler protocol migration
+
+This is the highest-priority remaining structural work. It eliminates the only
+remaining consumer of `eval_phase_post_opcode_tail` and `KOS_EV_POST_OPCODE`.
+
+#### 2a. Locate all native handlers
+
+Run: `grep -rn "native_handler\|KosDynFrame_NATIVE_HANDLER\|NATIVE_HANDLER" koskari/lib/`
+
+Expected hits: the WIND dynchain handler, the WITH dynchain handler, possibly
+one or two others in `dynchain/`. The count is small (fewer than 10 total
+assignments). Document every file before starting.
+
+Current typedef (in `dynchain.h` or `eval.h` — verify exact location):
+```c
+typedef int (*KosNativeHandler)(KosEvalState *, KosEvent *, int op_res, PyObject *val);
+```
+
+Target typedef:
+```c
+typedef KosOpResult (*KosNativeHandler)(KosEvalState *, PyObject *val);
+```
+
+The `KosEvent *` parameter disappears (handlers do not write to `out_ev`).
+The `int op_res` parameter disappears (it was context for which post-opcode
+path called the handler; the unified dispatch provides the same information
+via `KosOpResult.kind` that the handler itself returns).
+
+`PyObject *val` remains — it is the return value being delivered to the
+native handler (the thunk result or with-entry result).
+
+#### 2b. Update `eval_parent_return_deliver_impl`
+
+This is the sole call site of `eval_emit_post_opcode_deferred`. Find it:
+`grep -n "eval_emit_post_opcode_deferred\|eval_parent_return_deliver_impl" koskari/lib/eval.c`
+
+Current logic (approximate):
+```c
+if (KosDynFrame_NATIVE_HANDLER(frame)) {
+  int r = KosDynFrame_NATIVE_HANDLER(frame)(es, out_ev, op_res_int, val);
+  Py_DECREF(val);
+  eval_emit_post_opcode_deferred(out_ev, r);
+  return KOS_STEP_REPROLOGUE;
+}
+```
+
+The deferred path is needed because `eval_parent_return_deliver_impl` is called
+during `eval_parent_return_deliver`, which is itself called from inside a
+`KosEvalStep`-returning path that cannot directly run the post-opcode tail
+again. The `KOS_EV_POST_OPCODE` in `out_ev` causes the prologue to drain it
+before the next opcode.
+
+New logic (after Step 1c):
+```c
+if (KosDynFrame_NATIVE_HANDLER(frame)) {
+  KosOpResult hr = KosDynFrame_NATIVE_HANDLER(frame)(es, val);
+  Py_DECREF(val);
+  return eval_dispatch_op_result(es, out_ev, hr);
+}
+```
+
+`eval_dispatch_op_result` (defined in Step 1c) dispatches the native handler's
+`KosOpResult` to the appropriate `eval_event_*` helper and returns a
+`KosEvalStep`. This is returned directly up to `eval_event_return` →
+`cg_handle_op_result` → `EVAL_DISPATCH_STEP` macro. No deferral needed.
+
+#### 2c. Update each native handler implementation
+
+For each handler found in 2a, change its signature and return type. The
+translation for return values:
+
+| Old `int` return | New `KosOpResult` |
+|---|---|
+| 0 (continue; prologue re-check) | `EVAL_REPROLOGUE()` |
+| -1 with PyErr set | `EVAL_RAISE()` |
+| `KOS_OP_RES_CONTROL_RETURNED` | `EVAL_CONTROL_RETURNED()` |
+| 1 with AWAIT in `out_ev` (if any) | `EVAL_AWAIT(val)` — extract payload from local scratch ev |
+
+The `out_ev` write is replaced with a return value: if the handler suspended
+on an awaitable, it returns `EVAL_AWAIT(awaitable)` directly. The payload
+must have its ownership transferred correctly (steal from wherever it was
+allocated, put into the `KosOpResult.val` field — do not leave it also in a
+local variable or a `KosEvent` that will be dropped).
+
+If a handler previously wrote to `out_ev` to set a YIELD or AWAIT payload and
+then returned 1, it now returns `EVAL_YIELD(val)` or `EVAL_AWAIT(val)`. No
+scratch `KosEvent` needed inside the handler; the handler owns the payload
+until it returns it in the struct.
+
+#### 2d. Remove `eval_emit_post_opcode_deferred` and the prologue drain
+
+Once `eval_parent_return_deliver_impl` no longer calls
+`eval_emit_post_opcode_deferred`, and once no other site produces
+`KOS_EV_POST_OPCODE`, remove:
+
+1. `eval_emit_post_opcode_deferred` function definition
+2. The `KOS_EV_POST_OPCODE` drain block in `eval_dispatch_maybe_post_opcode_event`
+   (or the entire function if that was its only purpose)
+3. The call to `eval_dispatch_maybe_post_opcode_event` in the dispatch prologue
+4. `KOS_EV_POST_OPCODE` from the `KosEventKind` enum
+
+Verify: `grep -rn "KOS_EV_POST_OPCODE\|post_opcode_deferred\|maybe_post_opcode" koskari/lib/` returns zero hits after deletion.
+
+Also check `koskari/lib/iter.c` (or wherever the comment about `KOS_EV_POST_OPCODE`
+exists that the review mentioned): update or remove the reference.
+
+#### 2e. Remove demand-AWAIT duplication
+
+After Step 2d, `eval_phase_post_opcode_tail` is no longer reachable from any
+active path. At that point, the demand AWAIT check in `eval_phase_post_opcode_tail`
+(the block checking `KosEvent_KIND(out_ev) == KOS_EV_AWAIT` and
+`kos_eval_in_demand`) is dead. Do not modify it yet (it goes away in Step 3
+with the full deletion), but note that the authoritative demand-AWAIT check is
+the one in `eval_event_await`.
+
+Also: `MarkSuspendedNotRunning` is called in both `push_or_await_common`
+(before returning r==1) and in `eval_event_await` (which is called after
+`kos_op_result_PUSH_OR_AWAIT` returns `EVAL_AWAIT`). This double-call is
+idempotent but noisy. After Phase 5 is complete and the full call graph is
+clear, remove the redundant call from whichever site is less authoritative.
+The canonical location should be `eval_event_await` since it is the sole
+centralized AWAIT handler.
+
+---
+
+### Step 3 — Phase 6: full deletion of legacy infrastructure
+
+Do this only after Step 2 passes the full test suite. This step is purely
+subtractive — no behavior changes.
+
+Delete in order (each should leave the tree compilable):
+
+1. **`eval_phase_post_opcode` and `eval_phase_post_opcode_tail`** — Verify zero
+   callers first: `grep -n "eval_phase_post_opcode" koskari/lib/eval.c`.
+   After Phase 5 removes the `eval_dispatch_maybe_post_opcode_event` drain,
+   there should be no calls to `eval_phase_post_opcode`. Delete both functions.
+
+2. **`kos_op_post_tag_to_res`** — Already unused after Phase 4. Delete.
+
+3. **`kos_op_outcome_from_call_int`** (in `eval.c`) — Already unused. Delete.
+
+4. **`kos_op_outcome_PUSH`, `kos_op_outcome_PUSH_OR_AWAIT`,
+   `kos_op_outcome_from_push_int`, `kos_op_outcome_from_int_step`** (in
+   `eval_utils.c`) — Already unused. Delete the old helpers; keep the new
+   `kos_op_result_*` counterparts.
+
+5. **`KosOpOutcome`, `KosLoopOpMode`, `KOS_LOP_*` enum** — In `eval.h`.
+   Delete struct, enum, and all `typedef`s.
+
+6. **`KOS_OP_RUN`, `KOS_OP_POST_ERR`, `KOS_OP_PROLOGUE`, `KOS_OP_FAIL`,
+   `KOS_OP_POST_SUSPEND`, `KOS_OP_POST_PARENT_RETURN`** macros — In `eval.h`.
+   Delete.
+
+7. **`KOS_OP_RES_*` integer defines** — In `eval.h` or nearby. Delete.
+
+8. **`KOS_OP_POST_TAG_*` defines** (if any remain) — Delete.
+
+9. **`KOS_EV_POST_OPCODE` from `KosEventKind`** — Already removed in Step 2d.
+   Confirm absent.
+
+After each deletion, `tox -qe build` must pass. After all deletions, run the
+full suite.
+
+---
+
+### Step 4 — Documentation refresh
+
+Four files need updates (per the code review):
+
+**`design/interpreter/eval-result-unification.md` (this file):**
+- Change the preamble from "This is a speculative design document" to "Phases
+  0–4 are implemented (commit e5c37cc); Phases 5–6 remain."
+- After Step 3, add a note that all phases are complete and this document is
+  now a historical record.
+
+**`design/interpreter/evaluator.md`:**
+- Section describing `KosOpOutcome` / post-opcode tag flow is stale. Replace
+  with a description of `KosOpResult`, `cg_handle_op_result`, and the
+  `eval_event_*` helper contract.
+- Native handler protocol section needs updating after Step 2.
+
+**`design/api/opcode-access-and-koscontext-surface.md`:**
+- References to `KOS_OP_POST_ERR` per-opcode counts. Update or remove — opcodes
+  no longer use that macro.
+
+**`design/interpreter/demand-evalex-phase1.md`:**
+- References the `KOS_OP_POST_ERR` → demand denial chain. This is now
+  superseded: demand denial for AWAIT is handled centrally in `eval_event_await`;
+  demand denial for YIELD is handled by `kos_eval_demand_deny_suspend` guards
+  in YIELD.c / YIELD_FROM.c which return `EVAL_RAISE()`. Update accordingly.
+
+**`koskari/lib/eval.h`:**
+- Once Step 3 removes `KosLoopOpMode` / `KosOpOutcome`, their comments go with
+  them. The `KosOpResult` / `KosOpResultKind` comments should be the primary
+  narrative for the opcode protocol.
+- `KosOpResultKind` enum comment: add a note clarifying that `KOS_RES_PARENT_RETURN`
+  was added post-design-doc (it is not in the original §3 proposal) and
+  explain when it is produced (CALL family where frame is already popped on
+  return, distinct from RETURN which enters `eval_event_return` with frame
+  still live).
+
+---
+
+## 17. Implementation notes for Step 2 (Phase 5)
+
+### 17.1 Finding all native handler assignments
+
+The full surface area search:
+```bash
+grep -rn "native_handler\|KosDynFrame_SET_NATIVE_HANDLER\|NATIVE_HANDLER" \
+     koskari/lib/ --include="*.c" --include="*.h"
+```
+
+Expected results include assignment sites in PUSH_WIND, PUSH_WITH,
+PUSH_DYN_WITH (and their POP counterparts), and the typedef site. Each
+assignment installs a function pointer; each pointed-to function must be
+updated to the new signature.
+
+### 17.2 `EVAL_FATAL()` decision (from Step 1b)
+
+The review noted `KOS_RES_FATAL` / `EVAL_FATAL()` is defined but never
+produced. The decision made in §17: **wire it as a non-PyErr internal fault.**
+This is consistent with the design doc §3 description ("unrecoverable internal
+error; koskari_eval must return -1 without consulting PyErr or out_ev").
+
+Concrete sites to wire during Step 1b:
+- `kos_op_result_from_int_step` default branch (unexpected int-step value)
+- `cg_handle_op_result` default branch (unexpected `KosOpResultKind`)
+- `eval_dispatch_op_result` default branch (same)
+
+Do NOT use `EVAL_FATAL()` as a substitute for `EVAL_RAISE()` when PyErr is
+set. The diagnostic value depends on the distinction being maintained.
+
+### 17.3 Ownership invariant for native handler return
+
+When a native handler returns `EVAL_AWAIT(awaitable)`, the `awaitable` is a
+new reference that `eval_dispatch_op_result` will pass to `eval_event_await`.
+`eval_event_await` either stores it in `out_ev` (on normal suspension) or
+`Py_DECREF`s it (on demand denial). The handler must not also `Py_DECREF` it
+or store it elsewhere after constructing the `KosOpResult`.
+
+When a handler returns `EVAL_RAISE()`, it must have set `PyErr` before
+returning. The `eval_dispatch_op_result` path for RAISE does not consult
+`KosOpResult.val` (which must be NULL); it calls `eval_event_raise(es, out_ev)`
+which reads PyErr.
+
+### 17.4 `KOS_STEP_REPROLOGUE` vs `EVAL_REPROLOGUE()` in native handlers
+
+Old handlers returning 0 caused `eval_emit_post_opcode_deferred(out_ev, 0)` →
+prologue drain → `eval_phase_post_opcode(es, out_ev, 0)` → (no PyErr, no
+interesting event) → `KOS_STEP_STOP_EVENT` (which returned 0 from koskari_eval)
+or `KOS_STEP_REPROLOGUE` depending on `KosEvent_KIND(out_ev)`.
+
+**Important:** In the new protocol, a native handler returning `EVAL_REPROLOGUE()`
+will cause `eval_dispatch_op_result` to return `KOS_STEP_REPROLOGUE` to
+`eval_event_return`, which returns that to `cg_handle_op_result`, which
+`goto cg_prologue`s. This is the correct behavior for handlers that install a
+new frame or transfer plan and want the prologue to re-run its checks.
+
+A handler that simply wants to "continue normally" (no new frame, no event)
+should return `EVAL_REPROLOGUE()` — not `EVAL_NORMAL()`. `EVAL_NORMAL()` is an
+opcode-dispatch result (advances PC); it does not make sense from a handler
+called inside `eval_event_return`. `eval_dispatch_op_result` should treat
+`KOS_RES_NORMAL` as `KOS_RES_REPROLOGUE` in this context, or assert that it is
+never produced by a native handler. Document the decision in the handler typedef
+comment.
+
+### 17.5 Test targets for Step 2
+
+Run these test suites explicitly before and after Step 2 commits:
+
+```bash
+tox -qe py -- tests/lib/opcode/test_next.py
+tox -qe py -- tests/lib/opcode/test_yield.py
+tox -qe py -- tests/lib/opcode/test_yield_from.py
+tox -qe py -- tests/lib/test_run_iter_adapters.py
+tox -qe py -- tests/reproducers/
+tox -qe py -- tests/lib/test_demand_sync.py
+```
+
+These cover: ITER_NEXT / YIELD_FROM async gen boundary delivery (where Phase 4
+bug was found), demand-sync violation paths, and native-return driven
+reproducers. If any of these regress, check `eval_event_return` and
+`eval_dispatch_op_result` first.
