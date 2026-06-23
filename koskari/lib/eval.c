@@ -562,40 +562,10 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
 
 
 /**
-   Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
-   clear thread error, and mark the context dead.  Call only when PyErr is set.
-   When es is non-NULL, flushes live pc/acting_pc to the top frame before
-   building traceback metadata.
-*/
-void kos_eval_emit_raise_from_pyerr(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    KosEvalState *es) {
-
-  PyObject *typ = NULL, *val = NULL, *tb = NULL;
-
-  if (es)
-    KosEvalState_FlushLiveRegsToFrame(es);
-  PyErr_Fetch(&typ, &val, &tb);
-  inject_eval_frame_traceback(ctx, &typ, &val, &tb);
-  Py_XDECREF(tb);
-  KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-  KosEvent_EXC_TYPE(out_ev) = typ;
-  KosEvent_PAYLOAD(out_ev) = val;
-  PyErr_Clear();
-  kos_eval_mark_context_dead(ctx);
-}
-
-
-/**
    Inject traceback into the current PyErr in-place, leave PyErr set, and
    mark the context dead.  Call only when PyErr is set.  When es is non-NULL,
    flushes live pc/acting_pc onto the top frame first so traceback sees the
    current instruction.
-
-   This is the successor to kos_eval_emit_raise_from_pyerr for paths that
-   return KosOpResult: the RAISE invariant requires PyErr to be set on every
-   KOS_RES_RAISE boundary, so we inject and restore rather than clear.
 */
 void kos_eval_prepare_boundary_raise(
     KosContext *ctx,

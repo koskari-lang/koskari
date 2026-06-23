@@ -262,7 +262,7 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
 
    val is consumed (new reference).
 
-   :return: 0 continue, 1 stop (AWAIT), -1 error
+   :return: EVAL_NORMAL, EVAL_AWAIT, or EVAL_RAISE
 */
 
 #define OP_TRY_FUSE_POP1_AFTER_PUSH(es, val)                                  \
@@ -273,20 +273,19 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
     if (KosOp_OP(opfuse_nx) == KOS_OP_POP && KosOp_ARG(opfuse_nx) == 1) {     \
       Py_DECREF(val);                                                         \
       KosEvalState_SET_PC(es, opfuse_pc + 1u);                                \
-      return 0;                                                               \
+      return EVAL_NORMAL();                                                   \
     }                                                                         \
   } while (0)
 
 
-static inline int op_push_or_await(
+static inline KosOpResult op_push_or_await(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *val) {
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (KosDefer_Check(val)) {
     OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
-    return KosEvalState_StackPUSH(es, val);
+    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
 
   PyTypeObject *type = Py_TYPE(val);
@@ -294,7 +293,7 @@ static inline int op_push_or_await(
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
     OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
-    return KosEvalState_StackPUSH(es, val);
+    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
 
   int suspended = 0;
@@ -304,19 +303,17 @@ static inline int op_push_or_await(
 
   if (result) {
     OP_TRY_FUSE_POP1_AFTER_PUSH(es, result);
-    return KosEvalState_StackPUSH(es, result);
+    return (KosEvalState_StackPUSH(es, result) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
 
   if (suspended && yielded) {
     KosEvalState_MarkSuspendedNotRunning(es);
-    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
-    KosEvent_PAYLOAD(out_ev) = yielded;
     SAYF("[eval] op_push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
-    return 1;
+    return EVAL_AWAIT(yielded);
   }
 
-  return -1;
+  return EVAL_RAISE();
 }
 
 #undef OP_TRY_FUSE_POP1_AFTER_PUSH
@@ -349,18 +346,7 @@ static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  KosEvent _push_ev = {0};
-  int r = op_push_or_await(es, &_push_ev, val);
-  if (likely(r == 0))
-    return EVAL_NORMAL();
-
-  if (r == 1) {
-    PyObject *awaitable = KosEvent_PAYLOAD(&_push_ev);
-    KosEvent_PAYLOAD(&_push_ev) = NULL;
-    return EVAL_AWAIT(awaitable);
-  }
-
-  return EVAL_RAISE();
+  return op_push_or_await(es, val);
 }
 
 

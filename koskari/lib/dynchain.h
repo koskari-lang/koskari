@@ -339,7 +339,7 @@ typedef enum KosTransitionStatus {
   KOS_TRANS_STATUS_FINALLY_TAKING_RETURN,
   /** Local TRY/FINALLY handler took the exception; eval continues */
   KOS_TRANS_STATUS_HANDLER_APPLIED,
-  /** No local handler; kos_eval_emit_raise_from_pyerr filled out_ev */
+  /** No local handler; exception propagates to caller */
   KOS_TRANS_STATUS_NO_LOCAL_HANDLER,
 } KosTransitionStatus;
 

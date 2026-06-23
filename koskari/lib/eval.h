@@ -908,24 +908,9 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
 
 
 /**
-   Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
-   clear the thread error state, and mark the context dead.  Call only when
-   PyErr is set.  Used by dynchain local-exception delivery when unwinding
-   does not find a handler.  When es is non-NULL, flushes live pc/acting_pc
-   onto the top frame first so traceback and heap introspection see the
-   current instruction.
-*/
-void kos_eval_emit_raise_from_pyerr(
-    KosContext *ctx,
-    struct KosEvent *out_ev,
-    KosEvalState *es);
-
-
-/**
    Inject traceback into the current PyErr in-place, leave PyErr set, and
-   mark the context dead.  Call only when PyErr is set.  Successor to
-   kos_eval_emit_raise_from_pyerr for KosOpResult-returning paths: the RAISE
-   invariant requires PyErr to remain set on every KOS_RES_RAISE boundary.
+   mark the context dead.  Call only when PyErr is set.  The RAISE invariant
+   requires PyErr to remain set on every KOS_RES_RAISE boundary.
    When es is non-NULL, flushes live pc/acting_pc first.
 */
 void kos_eval_prepare_boundary_raise(
