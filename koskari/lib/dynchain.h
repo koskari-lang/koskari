@@ -1605,7 +1605,7 @@ KosOpResult kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node);
      KOS_HANDLE_ERROR (-1)
 */
 KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
-                               KosXferEvent event, struct KosEvent *out_ev);
+                               KosXferEvent event);
 
 
 /**

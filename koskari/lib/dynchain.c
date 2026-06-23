@@ -1149,9 +1149,7 @@ KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
    FINALLY: CONSUMED when RAISE or RETURN and finally enabled.
 */
 KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
-                               KosXferEvent event, KosEvent *out_ev) {
-
-  (void) out_ev;
+                               KosXferEvent event) {
 
   KOS_TRACE_EVENTS_INC(KOS_TE_DYN_HANDLE_ENTER);
 

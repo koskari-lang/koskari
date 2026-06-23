@@ -77,8 +77,7 @@ int kos_dyn_walk_handle_yield(KosEvalState *es, KosEvent *out_ev) {
 
   SAYF("[gen] walk_handle_yield ENTER dyn_top=%p\n", (void *) node);
   while (node) {
-    KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_YIELD,
-                                        out_ev);
+    KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_YIELD);
     SAYF("[gen] walk_handle_yield node=%p kind=%s hr=%d\n",
          (void *) node, kos_dynnode_kind_name(KosDynNode_KIND(node)),
          (int) hr);
@@ -246,8 +245,7 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
 
     /* Handle phase: offer RETURN before unwind */
     {
-      KosHandleResult hr = kos_dyn_handle(es, top, KOS_XFER_EVENT_RETURN,
-                                          out_ev);
+      KosHandleResult hr = kos_dyn_handle(es, top, KOS_XFER_EVENT_RETURN);
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_FINALLY(top)) {
           /* Deliver to finally block: clear stack, push value, set PC */
@@ -330,7 +328,7 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
 
     /* Handle phase: offer event before unwind */
     {
-      KosHandleResult hr = kos_dyn_handle(es, top, event, out_ev);
+      KosHandleResult hr = kos_dyn_handle(es, top, event);
       if (hr == KOS_HANDLE_CONSUMED) {
         /* RETURN: use kos_dyn_walk_return_to_frame. RAISE: use try_local. */
         PyErr_SetString(PyExc_RuntimeError,
@@ -593,7 +591,7 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
     /* Handle phase: offer RAISE to node before unwind.  If consumed,
        deliver to handler and return.  Otherwise pop and continue. */
     {
-      KosHandleResult hr = kos_dyn_handle(es, top, KOS_XFER_EVENT_RAISE, NULL);
+      KosHandleResult hr = kos_dyn_handle(es, top, KOS_XFER_EVENT_RAISE);
       SAYF("[try_local] kos_dyn_handle RAISE hr=%d (%s)\n",
            (int) hr,
            hr == KOS_HANDLE_CONSUMED ? "CONSUMED"
@@ -712,7 +710,7 @@ int kos_dyn_walk_handle_shift_to_prompt(KosEvalState *es,
   KosDynNode *prompt_node = (KosDynNode *) prompt;
 
   while (node && node != prompt_node) {
-    KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_SHIFT, NULL);
+    KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_SHIFT);
     if (hr == KOS_HANDLE_ERROR) {
       return -1;
     }
@@ -731,7 +729,7 @@ int kos_dyn_walk_handle_shift_to_prompt(KosEvalState *es,
 
   {
     KosHandleResult hr = kos_dyn_handle(es, prompt_node,
-                                        KOS_XFER_EVENT_SHIFT, NULL);
+                                        KOS_XFER_EVENT_SHIFT);
     if (hr != KOS_HANDLE_CONSUMED) {
       PyErr_SetString(PyExc_RuntimeError,
                       "prompt did not consume handle(SHIFT)");
