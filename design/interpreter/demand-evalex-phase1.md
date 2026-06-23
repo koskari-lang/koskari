@@ -164,12 +164,14 @@ int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg);
 narrow C API for eval, e.g. `void kos_demand_set_sync_violation(const char *msg)`
 in `demand.h`, so eval does not duplicate `PyErr_NewException` registration.
 
-**Do not** emit `KOS_EV_AWAIT` and convert in `eval_phase_post_opcode` — deny
-**before** `KosEvalState_MarkSuspendedNotRunning` and before filling `out_ev`.
+**Do not** emit `KOS_EV_AWAIT` and convert in the dispatch switch — deny
+**before** `KosEvalState_MarkSuspendedNotRunning` and before constructing
+the `KosOpResult`.
 
-**Propagation:** callers that today return `1` for suspend should check deny
-first; on deny return `-1` with `PyErr` set → `KOS_OP_POST_ERR` →
-`eval_phase_post_opcode` → `eval_event_raise` → normal unwind / `TRY`.
+**Propagation:** callers that would suspend should check deny first; on deny
+call `kos_demand_set_sync_violation`, set `PyErr`, and return `EVAL_RAISE()`.
+`cg_handle_op_result` routes `KOS_RES_RAISE` to `eval_event_raise` →
+`eval_boundary_raise_dispatch` → normal unwind / `TRY`.
 
 ---
 
@@ -187,7 +189,7 @@ Any path that sets `KOS_EV_AWAIT` or stops with yield suspension must call
 | **P1** | `YIELD_FROM` eager await | `opcode/YIELD_FROM.c` | ~line where `KOS_EV_AWAIT` is set after `EagerStepAwaitable` |
 | **P1** | `YIELD` opcode | `opcode/YIELD.c` | Generator yield — `demand_sync` inject loop handles today |
 | **P2** | `eval_event_yield` entry | `eval.c` | Belt-and-suspenders if opcode path missed |
-| **P2** | `eval_phase_post_opcode_tail` | `eval.c` | Defensive: `KOS_EV_AWAIT` while `kos_eval_in_demand` → internal error |
+| **P2** | `eval_event_await` entry | `eval.c` | Demand-AWAIT denial: `kos_eval_in_demand` check → `kos_demand_set_sync_violation` → `eval_event_raise` (was `eval_phase_post_opcode_tail`; that function was deleted in Phase 6) |
 
 Search command for agents:
 

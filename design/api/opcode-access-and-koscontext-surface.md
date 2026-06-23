@@ -9,11 +9,18 @@
 
 **Opcode source files:** 207 under `koskari/lib/opcode/*.c` (matches Part 1 file count).
 
-**Authoritative handler shape:**
+**Authoritative handler shape** (post KosOpResult migration, commit `e5c37cc`):
 
 ```c
-KosOpOutcome op_NAME(KosEvalState *es, KosEvent *out_ev, KosOp *insn);
+KosOpResult op_NAME(KosEvalState *es, KosOp *insn);
 ```
+
+Handlers return `EVAL_NORMAL()`, `EVAL_RAISE()`, `EVAL_YIELD(v)`,
+`EVAL_AWAIT(v)`, `EVAL_RETURN(v)`, `EVAL_PARENT_RETURN(v)`, or
+`EVAL_CONTROL_RETURNED()` — defined in `koskari/lib/eval.h`. The `out_ev`
+parameter is gone; payloads are carried in `KosOpResult.val`. The
+`KOS_OP_POST_ERR` use-counts in Part 1 are therefore stale — those sites now
+use `EVAL_RAISE()` instead.
 
 ---
 
@@ -5031,7 +5038,7 @@ Opcode handlers are the only scope for Part 1 (when it was current). The API bel
 | `KosContext_PendingReturn` | **`KosContext_PENDING_RETURN_*`** macros | |
 | `KosContext_InjectedException` | **`KosContext_INJECT_*`** macros | |
 | `KosContext_BoundaryFlags` | **`KosContext_FLAGS`**, **`KosContext_SUSPENSION_EVENT`** | |
-| `KosContext_OpOutcome` | **`KosOpOutcome`**, **`KOS_OP_RUN`**, **`KOS_OP_POST_*`**, **`kos_op_outcome_from_*`** | No single “builder” function; macros/helpers in `eval.h` / opcode code. |
+| `KosContext_OpOutcome` | **`KosOpResult`**, **`EVAL_NORMAL`**, **`EVAL_RAISE`**, **`EVAL_YIELD`**, **`EVAL_AWAIT`**, **`EVAL_RETURN`**, **`EVAL_PARENT_RETURN`**, **`EVAL_CONTROL_RETURNED`**, **`EVAL_FATAL`** | `KosOpOutcome` / `KOS_OP_*` macros deleted (Phase 6); opcode handlers now return `KosOpResult` via `EVAL_*` macros in `eval.h`. |
 | `KosContext_GlobalsFrame` | **`KosContext_GLOBALS_FRAME`**, **`KosContext_GLOBALS_CACHE_VERSION`** | |
 
 **Call discipline:** Mutating the dynamic chain from opcode handlers and drivers should go through APIs that take **`KosEvalState *`** (`kos_dyn_*`, `kos_dyn_transition`, `KosEvalState_SyncFromContext` after chain changes). See comments on **`KosEvalState`** in `eval.h`.
@@ -5157,8 +5164,8 @@ Opcode handlers are the only scope for Part 1 (when it was current). The API bel
 #### `KosContext_OpOutcome`
 
 - **Group:** Frame / PC
-- **Responsibility:** Build `KosOpOutcome` from `KOS_OP_*` macros and `kos_op_outcome_from_*` helpers.
-- **Wraps / replaces (conceptual):** `KOS_OP_RUN`, `KOS_OP_POST_*`, `kos_op_outcome_from_*`
+- **Responsibility:** Build `KosOpResult` via `EVAL_*` macros (`EVAL_NORMAL`, `EVAL_RAISE`, `EVAL_YIELD`, `EVAL_AWAIT`, `EVAL_RETURN`, `EVAL_PARENT_RETURN`, `EVAL_CONTROL_RETURNED`, `EVAL_FATAL`). `KosOpOutcome` / `KOS_OP_*` macros deleted in Phase 6.
+- **Wraps / replaces (conceptual):** `EVAL_*` macros in `eval.h`; dispatched by `cg_handle_op_result` → `eval_event_*`.
 - **Motivating opcodes (Part 1 heuristic):** `ATTR`, `ATTR_CLEAR`, `ATTR_REF`, `ATTR_STORE`, `AWAIT`, `BREAK`, `BUILD_ARGS`, `BUILD_CLASS`, `BUILD_FUNCTION`, `BUILD_KWDS`, `BUILD_KWDS_NAMES`, `CALL`, `CALL_ATTR`, `CALL_ATTR_NAMES`, `CALL_ATTR_STAR`, `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `CALL_NAMES`, `CALL_STAR`, `CALL_VAR`, `CALL_VAR_ATTR`, `CALL_VAR_ATTR_NAMES`, `CALL_VAR_ATTR_STAR`, `CALL_VAR_NAMES`, `CALL_VAR_STAR`, `CAPTURE_CC`, `CAR`, `CDR`, `CHECK_EQ`, `CHECK_EXCEPTION`, `CHECK_GE`, `CHECK_GT`, `CHECK_IN`, `CHECK_IS`, `CHECK_IS_INSTANCE`, `CHECK_IS_NOT`, `CHECK_IS_SUBCLASS`, `CHECK_LE`, `CHECK_LT`, `CHECK_NE`, `CHECK_NOT_IN`, `CLEAR_FINALLY`, `CLEAR_FOREACH`, `CLEAR_LOOP`, `CLEAR_TRY`, `COMBINE_ARGS`, `COMBINE_KWDS`, `CONS`, `CONST`, `CONST_ITEM`, `CONST_ITEM_CLEAR`, `CONST_ITEM_REF`, `CONST_ITEM_STORE`, `CONTINUE`, `DEREF`, `DUP`, `EXCEPTION`, `EXCEPTION_CLEAR`, `EXCEPTION_MATCH`, `FAST`, `FAST_ATTR`, `FAST_ATTR_CLEAR`, `FAST_ATTR_REF`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_CLEAR`, `FAST_OBJECT_ADD`, `FAST_OBJECT_BIT_AND`, `FAST_OBJECT_BIT_LEFT`, `FAST_OBJECT_BIT_OR`, `FAST_OBJECT_BIT_RIGHT`, `FAST_OBJECT_BIT_XOR`, `FAST_OBJECT_FLOOR_DIVIDE`, `FAST_OBJECT_MATRIX_MULTIPLY`, `FAST_OBJECT_MODULO`, `FAST_OBJECT_MULTIPLY`, `FAST_OBJECT_POWER`, `FAST_OBJECT_SUBTRACT`, `FAST_OBJECT_TRUE_DIVIDE`, `FAST_REF`, `FAST_STORE`, `GLOBALS`, `IMPORT`, `IMPORT_FROM`, `IMPORT_REL`, `ITEM`, `ITEM_CLEAR`, `ITEM_REF`, `ITEM_STORE`, `ITER_NEXT`, `JUMP`, `JUMP_AND`, `JUMP_FALSE`, `JUMP_OR`, `JUMP_TRUE`, `LABEL`, `LOCALS`, `NEXT`, `NOOP`, `OBJECT_ADD`, `OBJECT_AITER`, `OBJECT_BIT_AND`, `OBJECT_BIT_INVERT`, `OBJECT_BIT_LEFT`, `OBJECT_BIT_OR`, `OBJECT_BIT_RIGHT`, `OBJECT_BIT_XOR`, `OBJECT_DIR`, `OBJECT_DIVMOD`, `OBJECT_EQ`, `OBJECT_FLOOR_DIVIDE`, `OBJECT_FORMAT`, `OBJECT_FORMAT_CONST`, `OBJECT_GE`, `OBJECT_GT`, `OBJECT_IN`, `OBJECT_IS`, `OBJECT_IS_INSTANCE`, `OBJECT_IS_NOT`, `OBJECT_IS_SUBCLASS`, `OBJECT_ITER`, `OBJECT_LE`, `OBJECT_LEN`, `OBJECT_LT`, `OBJECT_MATRIX_MULTIPLY`, `OBJECT_MODULO`, `OBJECT_MULTIPLY`, `OBJECT_NE`, `OBJECT_NOT`, `OBJECT_NOT_IN`, `OBJECT_POWER`, `OBJECT_REPR`, `OBJECT_STR`, `OBJECT_SUBTRACT`, `OBJECT_TRUE_DIVIDE`, `OBJECT_TRUTH`, `OBJECT_TYPE`, `OBJECT_VARS`, `PAIR_SPLICE`, `PARAM`, `POP`, `POP_CC`, `POP_COLLECT`, `POP_DYN_WITH`, `POP_FINALLY`, `POP_FOREACH`, `POP_LOOP`, `POP_NS`, `POP_PARAM`, `POP_PROMPT`, `POP_SHIFT`, `POP_TRY`, `POP_WIND`, `POP_WITH`, `POSITION`, `PROPER`, `PUSH_CC`, `PUSH_COLLECT`, `PUSH_DYN_WITH`, `PUSH_FINALLY`, `PUSH_FOREACH`, `PUSH_LOOP`, `PUSH_NS`, `PUSH_PARAM`, `PUSH_PROMPT`, `PUSH_SHIFT`, `PUSH_TRY`, `PUSH_WIND`, `PUSH_WITH`, `RAISE`, `RETURN`, `TAIL_CALL`, `TAIL_CALL_NAMES`, `TAIL_CALL_STAR`, `THEEND`, `UNPACK`, `UNPACK_FAST`, `UNPACK_STAR`, `UNPACK_VAR`, `VAR`, `VAR_ATTR`, `VAR_ATTR_CLEAR`, `VAR_ATTR_REF`, `VAR_ATTR_STORE`, `VAR_BIND`, `VAR_CLEAR`, `VAR_OBJECT_ADD`, `VAR_OBJECT_BIT_AND`, `VAR_OBJECT_BIT_LEFT`, `VAR_OBJECT_BIT_OR`, `VAR_OBJECT_BIT_RIGHT`, `VAR_OBJECT_BIT_XOR`, `VAR_OBJECT_FLOOR_DIVIDE`, `VAR_OBJECT_MATRIX_MULTIPLY`, `VAR_OBJECT_MODULO`, `VAR_OBJECT_MULTIPLY`, `VAR_OBJECT_POWER`, `VAR_OBJECT_SUBTRACT`, `VAR_OBJECT_TRUE_DIVIDE`, `VAR_REF`, `VAR_STORE`, `YIELD`, `YIELD_FROM`
 
 #### `KosContext_GlobalsFrame`

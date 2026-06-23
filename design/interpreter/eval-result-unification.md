@@ -6,15 +6,16 @@ That document addressed centralising event handling inside the eval loop.
 This document addresses the layer below it: the communication channel from
 opcode handlers back to the eval loop.
 
-The goal is to replace the current **two-channel** protocol (a `KosOpOutcome`
-return value *and* a mutated `out_ev` side channel) with a single
-**`KosOpResult`** struct, and to build the eval dispatch switch around that
-struct so behavior is derivable from one table lookup rather than three
-cascading dispatch phases.
+The goal was to replace the two-channel protocol (a `KosOpOutcome` return value
+*and* a mutated `out_ev` side channel) with a single **`KosOpResult`** struct,
+and to build the eval dispatch switch around that struct so behavior is
+derivable from one table lookup rather than three cascading dispatch phases.
 
-**This is a speculative design document.** §10 contains an honest assessment
-of what is a genuine structural win versus what amounts to renaming. Read that
-section before committing to the work.
+**Implementation status: all phases complete** (branch `eval_event_again`).
+Phases 0–4 landed in commit `e5c37cc`; Phase 5 (native handler protocol) in
+`e2bd983`; Phase 6 (full legacy deletion) in `0174120`. §10 contains the
+original feasibility assessment; §15–§19 contain the landing record and
+follow-up plan executed in the same branch.
 
 Companion documents:
 [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md),
@@ -1093,41 +1094,34 @@ incorrect as written; those defines remain load-bearing.
 
 ---
 
-### Step 4 — Documentation refresh
+### Step 4 — Documentation refresh ✓ DONE (branch eval_event_again, post-0174120)
 
-Four files need updates (per the code review):
+Four design files updated; no behavior changes.
 
 **`design/interpreter/eval-result-unification.md` (this file):**
-- Change the preamble from "This is a speculative design document" to "Phases
-  0–4 are implemented (commit e5c37cc); Phases 5–6 remain."
-- After Step 3, add a note that all phases are complete and this document is
-  now a historical record.
+- Preamble updated from "speculative" to "all phases complete"; commit refs added.
 
 **`design/interpreter/evaluator.md`:**
-- Section describing `KosOpOutcome` / post-opcode tag flow is stale. Replace
-  with a description of `KosOpResult`, `cg_handle_op_result`, and the
-  `eval_event_*` helper contract.
-- Native handler protocol section needs updating after Step 2.
+- Bullet point on line 19: `KosOpOutcome post-opcode tags` → `KosOpResult and eval_event_* helpers`
+- KosEvent paragraph: stale `KosOpOutcome with KOS_LOP_POST` → `EVAL_PARENT_RETURN / cg_handle_op_result`
+- Phase table row 5/6 and "Post-opcode staging" section fully replaced with
+  "Opcode result dispatch" table documenting all `EVAL_*` macros and the
+  `cg_handle_op_result` dispatch contract.
 
 **`design/api/opcode-access-and-koscontext-surface.md`:**
-- References to `KOS_OP_POST_ERR` per-opcode counts. Update or remove — opcodes
-  no longer use that macro.
+- "Authoritative handler shape" block updated to `KosOpResult op_NAME(es, insn)`;
+  note added that Part 1 `KOS_OP_POST_ERR` counts are stale (those sites now use `EVAL_RAISE()`).
 
 **`design/interpreter/demand-evalex-phase1.md`:**
-- References the `KOS_OP_POST_ERR` → demand denial chain. This is now
-  superseded: demand denial for AWAIT is handled centrally in `eval_event_await`;
-  demand denial for YIELD is handled by `kos_eval_demand_deny_suspend` guards
-  in YIELD.c / YIELD_FROM.c which return `EVAL_RAISE()`. Update accordingly.
+- Propagation paragraph: replaced `KOS_OP_POST_ERR → eval_phase_post_opcode` chain
+  with `EVAL_RAISE() → cg_handle_op_result → eval_event_raise` description.
+- Guard sites table P2 row: replaced `eval_phase_post_opcode_tail` reference with
+  `eval_event_await` (the function that now holds the demand-AWAIT check), noting
+  the old function was deleted in Phase 6.
 
-**`koskari/lib/eval.h`:**
-- Once Step 3 removes `KosLoopOpMode` / `KosOpOutcome`, their comments go with
-  them. The `KosOpResult` / `KosOpResultKind` comments should be the primary
-  narrative for the opcode protocol.
-- `KosOpResultKind` enum comment: add a note clarifying that `KOS_RES_PARENT_RETURN`
-  was added post-design-doc (it is not in the original §3 proposal) and
-  explain when it is produced (CALL family where frame is already popped on
-  return, distinct from RETURN which enters `eval_event_return` with frame
-  still live).
+**`koskari/lib/eval.h`** (not needed as a separate change): the `KosLoopOpMode` /
+`KosOpOutcome` comment blocks were deleted along with the types themselves in Step 3.
+`KosOpResult` / `KosOpResultKind` already carry their own inline doc comments.
 
 ---
 
