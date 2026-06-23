@@ -36,9 +36,6 @@
 #include <stdint.h>
 
 
-struct KosEvent;
-
-
 /* === DynNode kind enum === */
 
 
@@ -63,7 +60,7 @@ struct KosEvent;
    KOS_DYN_SHIFT     - Shift handler block (push stack block; no frame/namespace)
    KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
                        for the foreign-token transfer path; its unwind re-raises the
-                       stored exception so the eval loop exits with KOS_EV_RAISE
+                       stored exception so the eval loop exits with KOS_RES_RAISE
    KOS_DYN_GEN       - Generator boundary; intercepts handle(YIELD/RETURN/RAISE),
                        denies handle(SHIFT)
 */
@@ -212,9 +209,9 @@ struct KosDynNode {
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
       uint32_t frame_flags;
-      /* Native frame evaluator: (es, out_ev, is_resume, val); es is live slice */
-      int (*native_handler)(struct KosEvalState *, struct KosEvent *, int,
-                            PyObject *);
+      /* Native frame evaluator: KosNativeHandlerFn (see eval.h); void * to
+         avoid the include-order constraint of naming KosOpResult here. */
+      void *native_handler;
     } frame;
     struct {
       uint32_t prompt_id;
@@ -339,7 +336,7 @@ typedef enum KosTransitionStatus {
   KOS_TRANS_STATUS_FINALLY_TAKING_RETURN,
   /** Local TRY/FINALLY handler took the exception; eval continues */
   KOS_TRANS_STATUS_HANDLER_APPLIED,
-  /** No local handler; kos_eval_emit_raise_from_pyerr filled out_ev */
+  /** No local handler; exception propagates to caller */
   KOS_TRANS_STATUS_NO_LOCAL_HANDLER,
 } KosTransitionStatus;
 
@@ -379,7 +376,7 @@ typedef struct KosTransitionResult {
    eval/eval_transition.c included from eval.c.
 */
 
-int kos_dyn_try_local_raise_body(KosEvalState *es, struct KosEvent *out_ev);
+KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es);
 
 
 typedef struct KosDynNode KosDynPrompt;
@@ -614,7 +611,7 @@ struct KosTransferPlan {
    KOS_HOOK_IN_PROGRESS when it suspended on await (caller will resume later
    with send_val/throw_exc). hook_state is opaque state for the runner.
 */
-typedef int (*KosHookInvokeFn)(KosEvalState *es, struct KosEvent *out_ev, void *hook_state);
+typedef int (*KosHookInvokeFn)(KosEvalState *es, void *hook_state);
 
 
 /* === DynNode allocation and lifecycle === */
@@ -892,11 +889,11 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es);
 
    :param event: transfer event (RETURN, RAISE, etc.); KOS_XFER_EVENT_NONE if unknown
 
-   :return: 0 on success, -1 on error or BARRIER, KOS_DYN_UNWIND_ASYNC_STARTED
-     when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error or BARRIER,
+     EVAL_AWAIT or EVAL_REPROLOGUE when async
 */
-int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                      struct KosEvent *out_ev);
+KosOpResult kos_dyn_uninstall(KosEvalState *es, KosDynNode *node,
+                               KosXferEvent event);
 #define kos_dyn_pop kos_dyn_uninstall
 
 
@@ -1210,34 +1207,35 @@ KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es);
 
 void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *node);
 
-int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev);
+int kos_dyn_next_deliver_yield(KosEvalState *es, PyObject *val);
 
-int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev);
+int kos_dyn_next_deliver_return(KosEvalState *es, PyObject *val);
 
 int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynForeach *fe, PyObject *val);
 
 int kos_dyn_foreach_deliver_return_kos_agen(
-    KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynForeach *fe, PyObject *val);
 
 int kos_dyn_need_kos_agen_boundary_deliver(KosEvalState *es);
 
 KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es);
 
 int kos_dyn_yield_from_deliver_inner_yield(
-    KosEvalState *es, KosDynYieldFrom *yf, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynYieldFrom *yf,
+    PyObject *inner_val, PyObject **out_new_yield_val);
 
 int kos_dyn_yield_from_deliver_inner_return(
-    KosEvalState *es, KosDynYieldFrom *yf, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
 
 int kos_dyn_deliver_iterator_boundary_return_event(
-    KosEvalState *es, struct KosEvent *out_ev);
+    KosEvalState *es, PyObject *val);
 
 int kos_dyn_deliver_yield_to_iter_boundary(
-    KosEvalState *es, struct KosEvent *out_ev);
+    KosEvalState *es, PyObject *val, PyObject **out_new_yield_val);
 
 int kos_dyn_try_deliver_iterator_boundary_after_pop(
-    KosEvalState *es, PyObject **p_val, struct KosEvent *out_ev);
+    KosEvalState *es, PyObject **p_val);
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 
@@ -1444,27 +1442,28 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
    Uses KosEvalState_CallArgs for exit. When exit returns an awaitable, suspend
    happens inside KosEvalState_CallArgs; pending state is stashed and this returns 1.
 
-   :return: 0 on success, KOS_DYN_UNWIND_SWALLOWED, KOS_DYN_UNWIND_PROTOCOL_SKIPPED,
-     -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when suspend occurred
+   EVAL_AWAIT when __exit__ returned an awaitable (payload in .val).
+   EVAL_REPROLOGUE when exception was swallowed (resume_pc updated; caller must
+     not pop the WITH node).
+   EVAL_NORMAL on success.
+   EVAL_RAISE on error.
 */
-int kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node, struct KosEvent *out_ev);
+KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node);
 
 
 /**
   Pop the top node of the dynamic chain with non-barrier policy.
   Namespace ownership is node-local; popping reveals next owner by chain walk.
 
-  :param ctx: execution context
-  :param out_ev: event output for suspend (required when WITH may have async exit)
+  :param es: eval state
   :param event: transfer event; KOS_XFER_EVENT_NONE if unknown
 
-  :return: 0 on success, -1 on error or if top is a barrier,
-    KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started
+  :return: EVAL_NORMAL on success, EVAL_RAISE on error or if top is a barrier,
+    EVAL_AWAIT or EVAL_REPROLOGUE when async extent action started
 */
-int kos_dyn_pop_nonbarrier_top(
+KosOpResult kos_dyn_pop_nonbarrier_top(
     KosEvalState *es,
-    KosXferEvent event,
-    struct KosEvent *out_ev);
+    KosXferEvent event);
 
 
 /**
@@ -1472,21 +1471,21 @@ int kos_dyn_pop_nonbarrier_top(
 
   Internal prompt-crossing unwind/transfer paths use this variant.
 */
-int kos_dyn_pop_top_allow_barrier(
+KosOpResult kos_dyn_pop_top_allow_barrier(
     KosEvalState *es,
-    KosXferEvent event,
-    struct KosEvent *out_ev);
+    KosXferEvent event);
 
 
 /**
-  Backward-compatible alias for non-barrier policy pop.
+  Non-barrier policy pop returning KosOpResult.
+  EVAL_REPROLOGUE when a wind-thunk frame was started (AWAIT val dropped),
+  EVAL_NORMAL on sync success, EVAL_RAISE on error.
 */
-int kos_dyn_pop_top(KosEvalState *es, KosXferEvent event,
-                    struct KosEvent *out_ev);
+KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event);
 
 
 int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
-                            KosXferEvent event, struct KosEvent *out_ev);
+                            KosXferEvent event);
 
 
 /**
@@ -1502,18 +1501,19 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
      KOS_DYN_UNWIND_FINALLY_TAKING_RETURN
 */
 int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
-                                  PyObject *val, struct KosEvent *out_ev);
+                                  PyObject *val);
 
 
 int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
-                           KosXferEvent event, struct KosEvent *out_ev);
+                           KosXferEvent event);
 
 
 /**
-   Return value from extent wind/unwind helpers when they start async
-   exit code (e.g. wind after hook, WITH __exit__ returning awaitable).
-   Caller must not pop the node yet; the evaluator runs the hook or
-   awaits the exit then resumes unwinding.
+   Internal xfer-layer status: extent wind/unwind started async work (e.g.
+   wind after hook, WITH __exit__ returning awaitable).  Caller must not
+   pop the node yet; the evaluator runs the hook or awaits the exit then
+   resumes unwinding.  Eval boundaries map this to EVAL_AWAIT(awaitable)
+   or EVAL_REPROLOGUE() via KosEvalState_TransitionOp / kos_dyn_pop_top.
 */
 #define KOS_DYN_UNWIND_ASYNC_STARTED 1
 
@@ -1549,7 +1549,7 @@ void kos_dyn_param_unwind(KosEvalState *es, KosDynParam *node);
 int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node);
 int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node);
 
-int kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
+KosOpResult kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node);
 
 KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
 int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node);
@@ -1569,21 +1569,25 @@ int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
    with inlined handlers rather than an indirect function-pointer call.
 
    kos_dyn_install: run install-phase setup when a node is pushed.
-   kos_dyn_wind: run wind (enter) for extent nodes during continuation transfer;
-     out_ev for async suspend.
+   kos_dyn_wind: run wind (enter) for extent nodes during continuation transfer.
+     Returns KosOpResult: AWAIT for async WITH enter, REPROLOGUE when a WIND
+     before-thunk frame was started, NORMAL on sync success, RAISE on error.
    kos_dyn_unwind: run unwind (exit) for extent nodes; may start async.
+     Returns KosOpResult: AWAIT when WITH __exit__ returned awaitable,
+     REPROLOGUE when WITH swallowed the exception or WIND started async,
+     NORMAL on success, RAISE on error.
    kos_dyn_exception_unwind: called when exception propagation reaches a
-     HANDLES_EXCEPTIONS node; returns 0 to continue, 1 if swallowed,
-     KOS_DYN_UNWIND_ASYNC_STARTED if async, -1 on error.
+     HANDLES_EXCEPTIONS node. Returns EVAL_NORMAL to continue unwinding,
+     EVAL_REPROLOGUE if handler applied, EVAL_AWAIT if async started,
+     EVAL_RAISE on error.
    kos_dyn_clone: allocate a copy of the node; NULL return on error or if
      the type forbids cloning.
 */
-int kos_dyn_install(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
-int kos_dyn_wind(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
-int kos_dyn_unwind(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                   struct KosEvent *out_ev);
-int kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node,
-                               struct KosEvent *out_ev);
+int kos_dyn_install(KosEvalState *es, KosDynNode *node);
+KosOpResult kos_dyn_wind(KosEvalState *es, KosDynNode *node);
+KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
+                            KosXferEvent event);
+KosOpResult kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node);
 
 /**
    Offer a control transit to a node.  Does not unlink; only decides
@@ -1599,7 +1603,7 @@ int kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node,
      KOS_HANDLE_ERROR (-1)
 */
 KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
-                               KosXferEvent event, struct KosEvent *out_ev);
+                               KosXferEvent event);
 
 
 /**
@@ -1626,16 +1630,12 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
 /**
    Walk the dynamic chain from DYN_TOP upward, offering handle(YIELD) to
    each node. Stops when a node returns CONSUMED (generator boundary).
-   Used for YIELD transit: the value is in out_ev; GEN intercepts and
-   suspends.
-
-   :param ctx: execution context
-   :param out_ev: event with KOS_EV_YIELD and payload already set
+   Used for YIELD transit: freezes the GEN node when found.
 
    :return: 0 when GEN consumed (valid yield; caller may return),
      -1 on error or if no generator boundary found
 */
-int kos_dyn_walk_handle_yield(KosEvalState *es, struct KosEvent *out_ev);
+int kos_dyn_walk_handle_yield(KosEvalState *es);
 
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
@@ -1687,14 +1687,13 @@ KosDynNode *kos_find_node_for_loop(KosEvalState *es);
    :param ctx: execution context
    :param event: KOS_XFER_EVENT_BREAK or KOS_XFER_EVENT_CONTINUE
    :param result: loop result value (transferred; caller loses ownership)
-   :param out_ev: event output for suspend
 
    :return: 0 on success, -1 on error (break/continue outside loop,
      same-frame check failed), KOS_DYN_UNWIND_ASYNC_STARTED when async
      unwind started
 */
 int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
-                             PyObject *result, struct KosEvent *out_ev);
+                             PyObject *result);
 
 
 /**
@@ -1963,15 +1962,10 @@ int kos_build_install_only_plan(
    If the step is RUN_HOOK, begins hook execution and returns.
    If the step is INSTALL, splices the target chain.
    If the step is INJECT, pushes the resume value.
-   POP_ONE and TRUNCATE_AND_INJECT use out_ev for async suspend.
-
-   :param ctx: execution context
-   :param out_ev: event output for async suspend (required for POP_ONE)
-
    :return: 1 if plan complete, 0 if more steps remain, -1 on error,
      KOS_XFER_SUSPENDED_AWAIT when async
 */
-int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
+int kos_run_transfer_step(KosEvalState *es);
 
 
 /**

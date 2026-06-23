@@ -233,83 +233,56 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
 
-  KosEvent ev = {0};
-  int res = koskari_eval(coro->ctx, &ev, send_val,
-                        throw_exc ? (PyObject *) Py_TYPE(throw_exc) : NULL,
-                        throw_exc);
+  KosOpResult res = koskari_eval(coro->ctx, send_val,
+                                  throw_exc ? (PyObject *) Py_TYPE(throw_exc)
+                                            : NULL,
+                                  throw_exc);
   Py_XDECREF(send_val);
 
   coro->in_send = 0;
 
-  SAYF("[coroutine_send] koskari_eval -> res=%d KosEvent_KIND(&ev)=%d, payload=%R\n",
-        res, KosEvent_KIND(&ev), KosEvent_PAYLOAD(&ev));
+  SAYF("[coroutine_send] koskari_eval -> kind=%d payload=%R\n",
+        (int) res.kind, res.val);
 
-  if (res < 0) {
-    coro->state = KOS_CORO_DONE;
-    return NULL;
-  }
-
-  switch (KosEvent_KIND(&ev)) {
-    case KOS_EV_RETURN:
+  switch (res.kind) {
+    case KOS_RES_RETURN: {
       coro->state = KOS_CORO_DONE;
-
-      // we do this manually to bypass the problem with tuple payloads.
-      // There is an annoying extra behavior in Python where if you set an
-      // exception with a tuple payload, it unpacks it as the args for the
-      // exception. So we'll create the exception instance ourselves to
-      // avoid that.
-      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, KosEvent_PAYLOAD(&ev));
+      /* Wrap in StopIteration manually to avoid tuple-arg unpacking. */
+      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, res.val);
       PyErr_SetObject(PyExc_StopIteration, err);
       Py_DECREF(err);
-
-      Py_XDECREF(KosEvent_PAYLOAD(&ev));
+      Py_XDECREF(res.val);
       return NULL;
+    }
 
-    case KOS_EV_RAISE:
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
       coro->state = KOS_CORO_DONE;
-      if (KosEvent_EXC_TYPE(&ev)) {
-        if (KosEvent_PAYLOAD(&ev)) {
-          PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
-          Py_DECREF(KosEvent_PAYLOAD(&ev));
-        } else {
-          PyErr_SetNone(KosEvent_EXC_TYPE(&ev));
-        }
-        Py_XDECREF(KosEvent_EXC_TYPE(&ev));
-      } else if (KosEvent_PAYLOAD(&ev)) {
-        PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
-      } else {
-        PyErr_SetNone(PyExc_StopIteration);
-      }
       return NULL;
 
-    case KOS_EV_YIELD:
+    case KOS_RES_YIELD:
       coro->state = KOS_CORO_YIELDED;
-      return KosEvent_PAYLOAD(&ev);
+      return res.val;  /* transfer ownership to caller */
 
-    case KOS_EV_AWAIT: {
-      SAYF("[eval] coroutine_send KOS_EV_AWAIT branch (payload=%d)\n",
-            KosEvent_PAYLOAD(&ev) ? 1 : 0);
-      if (! KosEvent_PAYLOAD(&ev)) {
+    case KOS_RES_AWAIT: {
+      SAYF("[eval] coroutine_send KOS_RES_AWAIT branch (payload=%d)\n",
+            res.val ? 1 : 0);
+      if (! res.val) {
         PyErr_SetString(PyExc_RuntimeError,
-                        "KOS_EV_AWAIT event has NULL payload");
+                        "KOS_RES_AWAIT with NULL payload");
         coro->state = KOS_CORO_DONE;
         return NULL;
       }
       /* Driver already stepped the awaitable in push_or_await and set
-          ctx->py_await_iter. Do not call eager_step_awaitable again (would
-          send(None) twice and corrupt state). Just suspend and return the
-          yielded value to the event loop. */
+         ctx->py_await_iter. Just suspend and return the awaitable to
+         the event loop. */
       coro->state = KOS_CORO_WAITING_PY;
-      return KosEvent_PAYLOAD(&ev);  /* transfer ownership to caller (asyncio) */
+      return res.val;  /* transfer ownership to caller (asyncio) */
     }
 
-    case KOS_EV_NONE:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
-      return NULL;
-
     default:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
+      coro->state = KOS_CORO_DONE;
       return NULL;
   }
 }
@@ -368,56 +341,37 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
 
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
-  KosEvent ev = {0};
-  int res = koskari_eval(coro->ctx, &ev, NULL, typ, exc);
+  KosOpResult res = koskari_eval(coro->ctx, NULL, typ, exc);
   Py_DECREF(exc);
   coro->in_send = 0;
 
-  if (res < 0) {
-    coro->state = KOS_CORO_DONE;
-    return NULL;
-  }
-  switch (KosEvent_KIND(&ev)) {
-    case KOS_EV_RETURN:
+  switch (res.kind) {
+    case KOS_RES_RETURN: {
       coro->state = KOS_CORO_DONE;
-      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, KosEvent_PAYLOAD(&ev));
+      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, res.val);
       PyErr_SetObject(PyExc_StopIteration, err);
       Py_DECREF(err);
-      Py_XDECREF(KosEvent_PAYLOAD(&ev));
+      Py_XDECREF(res.val);
       return NULL;
-    case KOS_EV_RAISE:
+    }
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
       coro->state = KOS_CORO_DONE;
-      if (KosEvent_EXC_TYPE(&ev)) {
-        if (KosEvent_PAYLOAD(&ev)) {
-          PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
-          Py_DECREF(KosEvent_PAYLOAD(&ev));
-        } else {
-          PyErr_SetNone(KosEvent_EXC_TYPE(&ev));
-        }
-        Py_XDECREF(KosEvent_EXC_TYPE(&ev));
-      } else if (KosEvent_PAYLOAD(&ev)) {
-        PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
-      } else {
-        PyErr_SetNone(PyExc_StopIteration);
-      }
       return NULL;
-    case KOS_EV_YIELD:
+    case KOS_RES_YIELD:
       coro->state = KOS_CORO_YIELDED;
-      return KosEvent_PAYLOAD(&ev);
-    case KOS_EV_AWAIT:
-      if (! KosEvent_PAYLOAD(&ev)) {
-        PyErr_SetString(PyExc_RuntimeError, "KOS_EV_AWAIT event has NULL payload");
+      return res.val;
+    case KOS_RES_AWAIT:
+      if (! res.val) {
+        PyErr_SetString(PyExc_RuntimeError, "KOS_RES_AWAIT with NULL payload");
         coro->state = KOS_CORO_DONE;
         return NULL;
       }
       coro->state = KOS_CORO_WAITING_PY;
-      return KosEvent_PAYLOAD(&ev);
-    case KOS_EV_NONE:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
-      return NULL;
+      return res.val;
     default:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
+      coro->state = KOS_CORO_DONE;
       return NULL;
   }
 }

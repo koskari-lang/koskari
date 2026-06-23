@@ -25,22 +25,21 @@ KOS_OP_HANDLER(UNPACK_STAR) {
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   unsigned left = row.a0;
   unsigned right = row.a1;
-  (void) out_ev;
 
   if (left + right == 0) {
     PyErr_SetString(PyExc_ValueError,
                     "UNPACK_STAR requires left + right > 0");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *raw = KosEvalState_StackPopRef(es);
   if (! raw)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen < (Py_ssize_t) (left + right)) {
@@ -48,7 +47,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
     PyErr_Format(PyExc_ValueError,
                  "UNPACK_STAR needs at least %u elements, got %zd",
                  left + right, slen);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   Py_ssize_t k;
@@ -57,7 +56,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
     if (KosEvalState_StackPushRef(es, item) < 0) {
       Py_DECREF(seq);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
@@ -65,31 +64,31 @@ KOS_OP_HANDLER(UNPACK_STAR) {
                                             slen - (Py_ssize_t) right);
   if (! mid_slice) {
     Py_DECREF(seq);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *middle = PySequence_Tuple(mid_slice);
   Py_DECREF(mid_slice);
   if (! middle) {
     Py_DECREF(seq);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (KosEvalState_StackPUSH(es, middle) < 0) {
     Py_DECREF(seq);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   for (k = (Py_ssize_t) left - 1; k >= 0; k--) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
     if (KosEvalState_StackPushRef(es, item) < 0) {
       Py_DECREF(seq);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
   Py_DECREF(seq);
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

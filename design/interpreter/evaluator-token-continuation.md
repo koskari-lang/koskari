@@ -181,7 +181,7 @@ another eval loop higher up the call stack. The correct behaviour is a
 4. When the transfer reaches the `KosDynCCRaise` sentinel at the bottom,
    its unwind callback re-raises the original `KoskariContinuationApply`
    exception unchanged
-5. The eval loop exits with `KOS_EV_RAISE`; `coro.c` propagates the
+5. The eval loop exits with `KOS_RES_RAISE`; `coro.c` propagates the
    exception back through Python's awaitable chain toward the owning eval
    loop
 

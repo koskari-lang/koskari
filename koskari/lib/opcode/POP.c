@@ -19,13 +19,15 @@
 */
 
 KOS_OP_HANDLER(POP) {
-  (void) out_ev;
 
   unsigned n = KosOp_ARG(insn);
   if (likely(n == 1)) {
-    return kos_op_outcome_from_int_step(
+    return kos_op_result_from_push_int(
         KosEvalState_StackDrop1(es));
   }
-  return kos_op_outcome_from_int_step(
+  return kos_op_result_from_push_int(
       KosEvalState_StackDrop(es, (size_t) n));
 }
+
+
+// The end.

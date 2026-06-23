@@ -24,7 +24,7 @@ KOS_OP_HANDLER(NEXT) {
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
     PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *default_val = NULL;
@@ -32,12 +32,12 @@ KOS_OP_HANDLER(NEXT) {
   if (n == 2) {
     default_val = KosEvalState_StackPopRef(es);
     if (! default_val)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
   }
   iter = KosEvalState_StackPopRef(es);
   if (! iter) {
     Py_XDECREF(default_val);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   /* If not already an iterator, get one (NEXT allows iterables). */
@@ -51,7 +51,7 @@ KOS_OP_HANDLER(NEXT) {
   //     Py_DECREF(iter);
   //     if (! it) {
   //       Py_XDECREF(default_val);
-  //       return KOS_OP_POST_ERR();
+  //       return EVAL_RAISE();
   //     }
   //     iter = it;
   //   }
@@ -65,21 +65,21 @@ KOS_OP_HANDLER(NEXT) {
                       "async generator already being iterated");
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     if (agen->closed || ! agen->ctx) {
       Py_DECREF(iter);
       if (n == 2 && default_val) {
         if (KosEvalState_StackPushRef(es, default_val) < 0) {
           Py_XDECREF(default_val);
-          return KOS_OP_POST_ERR();
+          return EVAL_RAISE();
         }
         Py_XDECREF(default_val);
-        return KOS_OP_RUN();
+        return EVAL_NORMAL();
       }
       Py_XDECREF(default_val);
       PyErr_SetNone(PyExc_StopIteration);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     agen->in_progress = 1;
     if (kos_dyn_push_next_for_kos_agen(es, (PyObject *) agen, default_val,
@@ -88,50 +88,52 @@ KOS_OP_HANDLER(NEXT) {
       agen->in_progress = 0;
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     if (op_attach_koskari_agen_frame(es, agen, iter, default_val) < 0)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     Py_DECREF(iter);
     Py_XDECREF(default_val);
-    return KOS_OP_RUN();
+    return EVAL_NORMAL();
   }
 
   PyObject *value = NULL;
-  KosGetNextResult get_res = op_get_next_from_iter(es, out_ev, iter, &value);
+  PyObject *_await = NULL;
+  KosGetNextResult get_res = op_get_next_from_iter(es, &_await, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
       if (KosEvalState_StackPushRef(es, value) < 0) {
         Py_DECREF(value);
         Py_DECREF(iter);
         Py_XDECREF(default_val);
-        return KOS_OP_POST_ERR();
+        return EVAL_RAISE();
       }
       Py_DECREF(value);
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return KOS_OP_RUN();
+      return EVAL_NORMAL();
 
     case GET_NEXT_EXHAUSTED:
       Py_DECREF(iter);
       if (default_val) {
         if (KosEvalState_StackPushRef(es, default_val) < 0) {
           Py_XDECREF(default_val);
-          return KOS_OP_POST_ERR();
+          return EVAL_RAISE();
         }
         Py_XDECREF(default_val);
-        return KOS_OP_RUN();
+        return EVAL_NORMAL();
       }
       Py_XDECREF(default_val);
       PyErr_SetNone(PyExc_StopIteration);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
 
     case GET_NEXT_SUSPEND:
       if (n == 2) {
         if (KosEvalState_StackPushRef(es, default_val) < 0) {
           Py_DECREF(default_val);
           Py_DECREF(iter);
-          return KOS_OP_POST_ERR();
+          Py_XDECREF(_await);
+          return EVAL_RAISE();
         }
       }
       if (KosEvalState_StackPushRef(es, iter) < 0) {
@@ -141,20 +143,24 @@ KOS_OP_HANDLER(NEXT) {
           Py_DECREF(default_val);
         }
         Py_DECREF(iter);
-        return KOS_OP_POST_ERR();
+        Py_XDECREF(_await);
+        return EVAL_RAISE();
       }
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return KOS_OP_POST_SUSPEND();
+      return EVAL_AWAIT(_await);
 
     case GET_NEXT_ERROR:
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
 
     default:
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
   }
 }
+
+
+// The end.

@@ -20,17 +20,19 @@
 KOS_OP_HANDLER(ITEM_CLEAR) {
   PyObject *key = KosEvalState_StackPopRef(es);
   if (! key)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj) {
     Py_DECREF(key);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   int res = PyObject_DelItem(obj, key);
   Py_DECREF(obj);
   Py_DECREF(key);
   if (res < 0)
-    return KOS_OP_POST_ERR();
-  (void) out_ev;
-  return KOS_OP_RUN();
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

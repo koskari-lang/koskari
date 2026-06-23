@@ -20,7 +20,6 @@
 */
 
 KOS_OP_HANDLER(POP_TRY) {
-  (void) out_ev;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
 
@@ -29,16 +28,16 @@ KOS_OP_HANDLER(POP_TRY) {
 
   PyObject *value = KosEvalState_StackPopRef(es);
   if (unlikely(! value))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (unlikely(kos_dyn_pop_try(es, (KosDynTry *) top) < 0)) {
     Py_DECREF(value);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (unlikely(KosEvalState_StackPUSH(es, value) < 0))
-    return KOS_OP_POST_ERR();
-  return KOS_OP_RUN();
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
 
 

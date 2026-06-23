@@ -12,7 +12,7 @@ This document describes how four related mechanisms are implemented in the Koska
 
 **Related documentation**
 
-- [EVALUATOR.md](../EVALUATOR.md) — eval loop, `KosEvent`, post-opcode yield handling, `KOS_DYN_NEXT` / `KOS_DYN_FOREACH` flattening
+- [EVALUATOR.md](../EVALUATOR.md) — eval loop, `KosOpResult`, `apply_kos_op_result`, `KOS_DYN_NEXT` / `KOS_DYN_FOREACH` flattening
 - [../EVALUATOR.md](../EVALUATOR.md) §5 — control transit and dynamic-node event model
 - [../archive/yield-from-execution-model.md](../archive/yield-from-execution-model.md) — archived YIELD_FROM delegation narrative
 - [../archive/dynnode-event-model.md](../archive/dynnode-event-model.md) — archived handle/unwind write-up
@@ -24,10 +24,10 @@ This document describes how four related mechanisms are implemented in the Koska
 
 | Mechanism        | Role                                                                                                                                                            | Iteration?               | Suspend/resume?                                              |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------ |
-| **YIELD**        | Pop value(s), emit `KOS_EV_YIELD` at generator boundary, or detach to parent frame if not a boundary yield                                                      | No                       | Yes (`revive_yield` on re-entry)                             |
-| **YIELD_FROM**   | Normalize TOS to a delegate, push `KOS_DYN_YIELD_FROM`, drive one step per dispatch until done; may emit `KOS_EV_YIELD`, `KOS_EV_AWAIT`, or complete with value | Yes (multiple protocols) | Yes (`revive_yield` / `revive_await`; node holds phase)      |
+| **YIELD**        | Pop value(s), return `EVAL_YIELD(val)` at generator boundary, or detach to parent frame if not a boundary yield                                                      | No                       | Yes (`revive_yield` on re-entry)                             |
+| **YIELD_FROM**   | Normalize TOS to a delegate, push `KOS_DYN_YIELD_FROM`, drive one step per dispatch until done; may yield `KOS_RES_YIELD`, await `KOS_RES_AWAIT`, or complete with value | Yes (multiple protocols) | Yes (`revive_yield` / `revive_await`; node holds phase)      |
 | **PUSH_FOREACH** | Pop iterable + loop result, build iterator (sync / async / Koskari async gen ref), push `KOS_DYN_FOREACH` region + stack block                                  | Yes (acquisition only)   | No by itself                                                 |
-| **ITER_NEXT**    | Load iterator from innermost `FOREACH` region; one step; branch on exhaustion; Koskari async gen uses attach path                                               | Yes (step + exhaustion)  | Can (`KOS_EV_AWAIT` for Python async iter via shared helper) |
+| **ITER_NEXT**    | Load iterator from innermost `FOREACH` region; one step; branch on exhaustion; Koskari async gen uses attach path                                               | Yes (step + exhaustion)  | Can (`KOS_RES_AWAIT` for Python async iter via shared helper) |
 
 
 ---
@@ -42,7 +42,7 @@ This document describes how four related mechanisms are implemented in the Koska
 | `PUSH_FOREACH`           | `koskari/lib/opcode/PUSH_FOREACH.c`                                                                                                                                                       |
 | `ITER_NEXT`              | `koskari/lib/opcode/ITER_NEXT.c`                                                                                                                                                          |
 | Shared “get next”        | `koskari/lib/eval.c` — `op_get_next_from_iter`, `next_from_python_async_iter`, `next_from_python_sync_iter`, `kos_attach_agen_gen_flatten`, `op_attach_koskari_agen_frame(es, …)`, `op_attach_koskari_agen_frame_for_iter_next(es, …)`, `op_attach_koskari_agen_frame_for_yield_from(es, …)` (attach helpers take live **`KosEvalState *es`**) |
-| Yield boundary + flatten | `koskari/lib/eval.c` — `eval_phase_post_opcode` (`KOS_EV_YIELD`, …); `koskari/lib/dynchain.c` — `kos_dyn_walk_handle_yield`, `kos_dyn_gen_freeze_and_release`     |
+| Yield boundary + flatten | `koskari/lib/eval.c` — `apply_kos_op_result` → `eval_event_yield`; `koskari/lib/dynchain.c` — `kos_dyn_walk_handle_yield`, `kos_dyn_gen_freeze_and_release`     |
 | Entry revive             | `koskari/lib/eval.c` — `revive_yield`, `revive_await`                                                                                                                                     |
 
 
@@ -55,8 +55,8 @@ This document describes how four related mechanisms are implemented in the Koska
 **What it does**
 
 1. Pops yielded value(s) from the current frame stack (or uses `None` for arg 0).
-2. If the frame’s dyn parent is **not** `KOS_DYN_GEN`, treats the yield as **in-loop delivery**: detaches frame, pushes value onto parent stack, returns 0 (no `out_ev` boundary).
-3. Otherwise sets `out_ev.kind = KOS_EV_YIELD`, payload, marks context dead, returns 1 → `eval_phase_post_opcode` → `kos_dyn_walk_handle_yield` (and possibly pending-agen flattening per [EVALUATOR.md](../EVALUATOR.md)).
+2. If the frame’s dyn parent is **not** `KOS_DYN_GEN`, treats the yield as **in-loop delivery**: detaches frame, pushes value onto parent stack, returns `EVAL_NORMAL()` (no driver boundary).
+3. Otherwise returns `EVAL_YIELD(val)` → `apply_kos_op_result` → `eval_event_yield` → `kos_dyn_walk_handle_yield` (and possibly pending-agen flattening per [EVALUATOR.md](../EVALUATOR.md)).
 
 **Underlying calls (boundary path)**
 
@@ -73,11 +73,11 @@ This document describes how four related mechanisms are implemented in the Koska
 
 **What it does**
 
-1. **First entry:** pop subexpression from stack, `**yield_from_normalize`** → `(delegate, kind)`; push `**KOS_DYN_YIELD_FROM**`; roll PC back to `YIELD_FROM`; return 0.
+1. **First entry:** pop subexpression from stack, `**yield_from_normalize`** → `(delegate, kind)`; push `**KOS_DYN_YIELD_FROM**`; roll PC back to `YIELD_FROM`; return `EVAL_NORMAL()`.
 2. **Subsequent entries:** consume inject (send/throw/await result) per `KosDynYieldFrom` phase; dispatch to `**yield_from_drive_sync_iter`**, `**yield_from_drive_sync_gen`**, `**yield_from_drive_py_async**`, or `**yield_from_drive_kos_async_gen**` (Koskari async gen is **flattened** into the same eval via **`op_attach_koskari_agen_frame_for_yield_from(es, …)`**, not a nested **`koskari_eval(agen->ctx, …)`**).
-3. On each yielded value: typically `**yield_from_emit_yield**` → `out_ev = KOS_EV_YIELD`, PC rollback, phase `EXPECT_SEND`.
-4. On await: `out_ev = KOS_EV_AWAIT`, `EXPECT_AWAIT` phase.
-5. On completion: pop yield-from node, push final value or return 0 per kind.
+3. On each yielded value: typically `**yield_from_emit_yield**` → `EVAL_YIELD(val)`, PC rollback, phase `EXPECT_SEND`.
+4. On await: `EVAL_AWAIT(awaitable)`, `EXPECT_AWAIT` phase.
+5. On completion: pop yield-from node, push final value or return `EVAL_NORMAL()` per kind.
 
 **Underlying calls (representative)**
 
@@ -107,7 +107,7 @@ This document describes how four related mechanisms are implemented in the Koska
 - `PyObject_GetIter`, async `am_aiter`
 - `kos_dyn_push_foreach`, `KosStackBlock_PushBlock`
 
-**Overlap note:** this three-way acquisition is **similar in spirit** to the **fallback** branch of `yield_from_normalize` (Koskari agen / async / sync), but **does not** perform yield-from’s full taxonomy (sync `PyGen`, callable, explicit `__anext_`_ classifier, coroutine rejection message).
+**Overlap note:** this three-way acquisition is **similar in spirit** to the **fallback** branch of `yield_from_normalize` (Koskari agen / async / sync), but **does not** perform yield-from’s full taxonomy (sync `PyGen`, callable, explicit `__anext__` classifier, coroutine rejection message).
 
 ---
 
@@ -117,17 +117,17 @@ This document describes how four related mechanisms are implemented in the Koska
 
 1. Finds innermost `**KOS_DYN_FOREACH`** via `kos_find_node_for_loop`.
 2. Reads `**KosDynForeach_ITER**`.
-3. **If Koskari async gen:** records else PC and step phase on the **`KOS_DYN_FOREACH`** region, **`op_attach_koskari_agen_frame_for_iter_next(es, …)`**, returns 0 (flatten into same eval loop).
+3. **If Koskari async gen:** records else PC and step phase on the **`KOS_DYN_FOREACH`** region, **`op_attach_koskari_agen_frame_for_iter_next(es, …)`**, returns `EVAL_NORMAL()` (flatten into same eval loop).
 4. **Else:** `**op_get_next_from_iter`** (same as `NEXT` for non–async-gen cases):
-  - `GET_NEXT_VALUE` → push value, return 0
+  - `GET_NEXT_VALUE` → push value, return `EVAL_NORMAL()`
   - `GET_NEXT_EXHAUSTED` → set exhausted, **`KosEvalState_SET_PC(es, else_pc)`**
-  - `GET_NEXT_SUSPEND` → return 1, `out_ev` await path
+  - `GET_NEXT_SUSPEND` → return `EVAL_AWAIT(awaitable)`
 
 **Underlying calls**
 
 - `op_get_next_from_iter` → `get_await_next` / `PyIter_Next` / etc. (see `eval.c`)
 - `op_attach_koskari_agen_frame_for_iter_next(es, …)` → `kos_attach_agen_gen_flatten` → `kos_dyn_gen_install(es, gen)`
-- Post-opcode yield/return integration with **`KOS_DYN_NEXT`** / attach paths (same family as `NEXT`) — see [EVALUATOR.md](../EVALUATOR.md) and `eval_phase_post_opcode` in `eval.c`
+- Post-opcode yield/return integration with **`KOS_DYN_NEXT`** / attach paths (same family as `NEXT`) — see [EVALUATOR.md](../EVALUATOR.md) and `apply_kos_op_result` in `eval.c`
 
 ---
 
@@ -138,7 +138,7 @@ This document describes how four related mechanisms are implemented in the Koska
 | ----------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `op_get_next_from_iter`                                                       | `NEXT`, `ITER_NEXT`                                 | Single entry for “iterator object → one value / suspend / exhausted” except Koskari async gen attach |
 | `op_attach_koskari_agen_frame(es, …)` / `op_attach_koskari_agen_frame_for_iter_next(es, …)` / `op_attach_koskari_agen_frame_for_yield_from(es, …)` | `NEXT`, `ITER_NEXT`, **YIELD_FROM** (kos async gen) | Opcode-specific attach helpers; shared **`kos_attach_agen_gen_flatten`** → **`kos_dyn_gen_install(es, gen)`** on the opcode’s live **`es`** |
-| `KOS_DYN_NEXT` / `KOS_DYN_FOREACH` attach paths + `eval_phase_post_opcode`     | `NEXT`, `ITER_NEXT`, yield paths when flattened     | Delivers inner yield/return without escaping boundary                                                |
+| `KOS_DYN_NEXT` / `KOS_DYN_FOREACH` attach paths + `eval_event_yield` / `eval_event_return` | `NEXT`, `ITER_NEXT`, yield paths when flattened     | Delivers inner yield/return without escaping boundary                                                |
 | `kos_dyn_walk_handle_yield`, `revive_yield`, `revive_await`                   | `YIELD`, `YIELD_FROM`                               | Same boundary kinds; no `KOS_SUSP_YIELD_FROM`                                                        |
 
 
@@ -184,5 +184,4 @@ This document describes how four related mechanisms are implemented in the Koska
 - **YIELD** is **pure boundary control flow**; iteration lives elsewhere.  
 - **YIELD_FROM** is a **full delegation** implementation with its own dyn node and drivers.  
 - **PUSH_FOREACH** + **ITER_NEXT** are **structured loop** + **shared `op_get_next_from_iter`** stepping.  
-- **Consolidation** should target **duplicate iterable acquisition** and **duplicate sync-step** logic, not opcode surface area. The eval loop and `**KosEvent`** handling for yields are already shared; see [EVALUATOR.md](../EVALUATOR.md).
-
+- **Consolidation** should target **duplicate iterable acquisition** and **duplicate sync-step** logic, not opcode surface area. The eval loop and **`KosOpResult`** routing for yields are already shared; see [EVALUATOR.md](../EVALUATOR.md).

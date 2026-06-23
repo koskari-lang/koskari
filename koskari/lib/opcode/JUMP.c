@@ -19,6 +19,8 @@
 
 KOS_OP_HANDLER(JUMP) {
   KosEvalState_SET_PC(es, KosOp_ARG(insn));
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

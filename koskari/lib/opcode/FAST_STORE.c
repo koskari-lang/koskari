@@ -18,28 +18,30 @@
 */
 
 KOS_OP_HANDLER(FAST_STORE) {
-  (void) out_ev;
 
   PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_STORE invoked on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_STORE invoked on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   size_t idx = (size_t) KosOp_ARG(insn);
   int res = KosNamespace_FastStore(ns, idx, val);
   Py_DECREF(val);
 
   if (res < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

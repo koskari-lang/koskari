@@ -1,5 +1,10 @@
 # Proposal: Node-owned operand stack (context-current block, all-at-once)
 
+**Status:** Implemented (archived 2026-06-22). Canonical summary:
+[interpreter/evaluator.md](../interpreter/evaluator.md) (operand stack authority).
+
+---
+
 ## 1. Motivation
 
  Operand stack state and dynamic chain state have drifted apart. Today,

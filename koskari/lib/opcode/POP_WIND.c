@@ -24,26 +24,28 @@ KOS_OP_HANDLER(POP_WIND) {
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_WIND(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WIND: top is not a wind node");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   KosDynWind *wind = (KosDynWind *) top;
   PyObject *body_result = KosEvalState_StackPopRef(es);
   if (! body_result)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   KosDynWind_BODY_RESULT(wind) = body_result;
 
-  int r = kos_dyn_pop_top(es, KOS_XFER_EVENT_RETURN, out_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    KosEvalState_SetUnwindTargetFrame(
-        es, (KosDynFrame *) KosDynNode_PARENT((KosDynNode *) wind));
-    return KOS_OP_RUN();  /* eval continues in thunk frame; RETURN will resume unwinding */
+  KosOpResult kr = kos_dyn_pop_top(es, KOS_XFER_EVENT_RETURN);
+  if (kr.kind == KOS_RES_REPROLOGUE) {
+    /* after-thunk frame started; eval continues in thunk; RETURN resumes unwind */
+    return EVAL_NORMAL();
   }
-  if (r < 0) {
+  if (kr.kind == KOS_RES_RAISE) {
     KosDynWind_BODY_RESULT(wind) = NULL;
     if (KosEvalState_StackPushRef(es, body_result) < 0)
       Py_DECREF(body_result);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
-  return kos_op_outcome_from_int_step(r);
+  return EVAL_NORMAL();
 }
+
+
+// The end.

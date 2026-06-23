@@ -30,45 +30,44 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "SWITCH_EQ_FAST_ATTR invoked on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (unlikely(! KosNamespace_SupportsFast(ns))) {
     PyErr_Format(PyExc_RuntimeError,
                  "SWITCH_EQ_FAST_ATTR invoked on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a2);
   if (unlikely(! attr_name))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *obj = KosNamespace_FastDeref(ns, (size_t) row.a1);
   if (unlikely(! obj))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *rhs = PyObject_GetAttr(obj, attr_name);
   Py_DECREF(obj);
   if (unlikely(! rhs))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *value = KosEvalState_StackPeek(es);
   if (unlikely(! value)) {
     Py_DECREF(rhs);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   int res = PyObject_RichCompareBool(value, rhs, Py_EQ);
   Py_DECREF(rhs);
   if (unlikely(res < 0))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
     KosEvalState_SET_PC(es, row.a0);
   }
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

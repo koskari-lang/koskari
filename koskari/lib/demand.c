@@ -21,9 +21,9 @@
    without suspension (callee as root).
 
    For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; any
-   attempt to suspend (KOS_EV_AWAIT or KOS_EV_YIELD) is converted into an
+   attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) is converted into an
    in-eval KoskariSyncViolation at the deny site so TRY/finally can run;
-   uncaught, the exception surfaces as KOS_EV_RAISE.
+   uncaught, the exception surfaces as KOS_RES_RAISE.
 
    Yielding KosFunctions return DemandGenerator instead of raising; the
    DemandGenerator boundary raises KoskariSyncViolation on AWAIT from the
@@ -187,7 +187,7 @@ static PyTypeObject KosDemandGeneratorType;
 
   For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; in-eval
   deny guards convert AWAIT/YIELD into KoskariSyncViolation before koskari_eval
-  returns, so KOS_EV_AWAIT and KOS_EV_YIELD are unreachable here.
+  returns, so KOS_RES_AWAIT and KOS_RES_YIELD are unreachable here.
   DemandGenerator stepping is unchanged (see demand.c).
 
   callable, args, kwargs are borrowed. Never decref them.
@@ -201,8 +201,6 @@ static int demand_sync_ex(
   PyObject *frame_ns = NULL;
   KosDynFrame *frame = NULL;
   KosContext *ctx = NULL;
-  KosEvent ev = {0};
-  int r = 0;
   PyObject *result = NULL;
 
   PyObject *call_args = NULL;
@@ -477,51 +475,34 @@ run_eval:
   if (! ctx)
     goto ret_fail;
 
-  r = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+  {
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-  KosContext_Free(ctx);
-  ctx = NULL;
+    KosContext_Free(ctx);
+    ctx = NULL;
 
-  if (r < 0)
-    goto ret_fail;
+    switch (ev.kind) {
+      case KOS_RES_RETURN:
+        result = ev.val;
+        break;
 
-  switch (KosEvent_KIND(&ev)) {
-    case KOS_EV_RETURN:
-      result = KosEvent_PAYLOAD(&ev);
-      KosEvent_PAYLOAD(&ev) = NULL;
-      break;
+      case KOS_RES_RAISE:
+      case KOS_RES_FATAL:
+        /* PyErr already set */
+        break;
 
-    case KOS_EV_RAISE:
-      if (KosEvent_EXC_TYPE(&ev)) {
-        if (KosEvent_PAYLOAD(&ev)) {
-          PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
-          Py_DECREF(KosEvent_PAYLOAD(&ev));
-        }
-        else {
-          PyErr_SetNone(KosEvent_EXC_TYPE(&ev));
-        }
-        Py_DECREF(KosEvent_EXC_TYPE(&ev));
-      }
-      else if (KosEvent_PAYLOAD(&ev)) {
-        PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)),
-                        KosEvent_PAYLOAD(&ev));
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
-      }
-      break;
+      case KOS_RES_AWAIT:
+      case KOS_RES_YIELD:
+        /* Both should be intercepted before reaching here — this is a bug. */
+        Py_XDECREF(ev.val);
+        PyErr_SetString(PyExc_RuntimeError,
+                        "demand_sync: unexpected suspension (missing deny guard)");
+        break;
 
-    case KOS_EV_AWAIT:
-    case KOS_EV_YIELD:
-      /* Both should be intercepted before reaching here — this is a bug. */
-      if (KosEvent_PAYLOAD(&ev))
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
-      PyErr_SetString(PyExc_RuntimeError,
-                      "demand_sync: unexpected suspension (missing deny guard)");
-      break;
-
-    case KOS_EV_NONE:
-    default:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
-      break;
+      default:
+        PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
+        break;
+    }
   }
   goto done;
 
@@ -769,9 +750,8 @@ static int demand_wants_frame(PyObject *callable) {
 }
 
 
-static int demand_kos_install(
+static KosOpResult demand_kos_install(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
@@ -782,15 +762,15 @@ static int demand_kos_install(
 
   if (! inner) {
     PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
-    return -1;
+    return EVAL_RAISE();
   }
 
   if (demand_inner_is_flattenable(inner)) {
     /* Install inner directly into the frame prepared by do_frame_prep, then
        mark that frame as the demand root so in-eval deny guards fire. */
-    int r = KosCallable_CallArgs(es, out_ev, inner, args_tuple, kwds_dict,
-                                 tail_call);
-    if (r == 0) {
+    KosOpResult r = KosCallable_CallArgs(es, inner, args_tuple, kwds_dict,
+                                        tail_call);
+    if (r.kind == KOS_RES_NORMAL) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       if (frame)
         KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
@@ -801,17 +781,17 @@ static int demand_kos_install(
   /* Fallback: Python callable, yielding function, nested Demand, or
      unsupported KosCallable.  demand_sync_ex creates its own context and
      returns a concrete result (or DemandGenerator for yielding functions).
-     Push that result on the current frame's stack and return 0 so that
+     Push that result on the current frame's stack and return NORMAL so that
      KosEvalState_Call handles tail-call conversion the same way
      kos_install_function does for yielding KosFunctions. */
   PyObject *result = NULL;
   if (demand_sync_ex(inner, args_tuple, kwds_dict, &result) < 0)
-    return -1;
+    return EVAL_RAISE();
 
   if (KosEvalState_StackPUSH(es, result) < 0)
-    return -1;  /* PUSH steals reference; already decremented on failure */
+    return EVAL_RAISE();  /* PUSH steals reference; already decremented on failure */
 
-  return 0;
+  return EVAL_NORMAL();
 }
 
 
@@ -844,7 +824,7 @@ KosCallableTypeObject KosDemandCallableType = {
 
 
 /* In-eval suspend violation (second koskari_eval throw) is not applied here;
-   only demand_sync_ex run_eval; see demand_gen_step KOS_EV_AWAIT. */
+   only demand_sync_ex run_eval; see demand_gen_step KOS_RES_AWAIT. */
 
 
 static void demand_gen_dealloc(PyObject *self) {
@@ -952,28 +932,18 @@ static PyObject *demand_gen_step(
     return NULL;
   }
 
-  KosEvent ev = {0};
   {
-    int res = koskari_eval(agen->ctx, &ev, send_val, throw_typ, throw_exc);
+    KosOpResult ev = koskari_eval(agen->ctx, send_val, throw_typ, throw_exc);
 
     agen->in_progress = 0;
 
-    if (res < 0) {
-      demand_gen_close_ctx(gen);
-      return NULL;
-    }
+    switch (ev.kind) {
+    case KOS_RES_YIELD:
+      return ev.val;
 
-    switch (KosEvent_KIND(&ev)) {
-    case KOS_EV_YIELD: {
-      PyObject *payload = KosEvent_PAYLOAD(&ev);
-      KosEvent_PAYLOAD(&ev) = NULL;
-      return payload;
-    }
-
-    case KOS_EV_RETURN: {
+    case KOS_RES_RETURN: {
       demand_gen_close_ctx(gen);
-      PyObject *payload = KosEvent_PAYLOAD(&ev);
-      KosEvent_PAYLOAD(&ev) = NULL;
+      PyObject *payload = ev.val;
       PyObject *err =
           PyObject_CallOneArg(PyExc_StopIteration, payload ? payload : Py_None);
       Py_XDECREF(payload);
@@ -987,47 +957,22 @@ static PyObject *demand_gen_step(
       return NULL;
     }
 
-    case KOS_EV_RAISE: {
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
       demand_gen_close_ctx(gen);
-      if (KosEvent_EXC_TYPE(&ev)) {
-        if (KosEvent_PAYLOAD(&ev)) {
-          PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
-          Py_DECREF(KosEvent_PAYLOAD(&ev));
-        }
-        else {
-          PyErr_SetNone(KosEvent_EXC_TYPE(&ev));
-        }
-        Py_DECREF(KosEvent_EXC_TYPE(&ev));
-      }
-      else if (KosEvent_PAYLOAD(&ev)) {
-        PyErr_SetObject(
-            (PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)),
-            KosEvent_PAYLOAD(&ev));
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
-      }
-      else {
-        PyErr_SetNone(PyExc_StopIteration);
-      }
+      /* PyErr already set */
       return NULL;
-    }
 
-    case KOS_EV_AWAIT: {
+    case KOS_RES_AWAIT:
       demand_gen_close_ctx(gen);
-      if (KosEvent_PAYLOAD(&ev))
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
+      Py_XDECREF(ev.val);
       PyErr_Format(KoskariSyncViolation,
                    "async suspension is not allowed in demand generator");
-      return NULL;
-    }
-
-    case KOS_EV_NONE:
-      demand_gen_close_ctx(gen);
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
       return NULL;
 
     default:
       demand_gen_close_ctx(gen);
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
       return NULL;
     }
   }

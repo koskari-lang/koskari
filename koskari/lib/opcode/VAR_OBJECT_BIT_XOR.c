@@ -20,29 +20,31 @@
 */
 
 KOS_OP_HANDLER(VAR_OBJECT_BIT_XOR) {
-  (void) out_ev;
 
   PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (unlikely(! name))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *obj = frame_ns_deref(es, name);
   if (unlikely(! obj))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *rhs = KosEvalState_StackPopRef(es);
   if (unlikely(! rhs)) {
     Py_DECREF(obj);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *result = PyNumber_InPlaceXor(obj, rhs);
   Py_DECREF(obj);
   Py_DECREF(rhs);
   if (unlikely(! result))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   int res = frame_ns_store(es, name, result);
   Py_DECREF(result);
-  return kos_op_outcome_from_int_step(res);
+  return kos_op_result_from_push_int(res);
 }
+
+
+// The end.

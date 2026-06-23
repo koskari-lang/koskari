@@ -49,7 +49,7 @@ PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwarg
 /**
    Like Koskari_DemandSync but stores result in out_result and returns int.
    0 = success, -1 = error (exception set). KosCallable run_eval converts
-   AWAIT/YIELD into an in-eval KoskariSyncViolation (KOS_EV_RAISE), so return
+   AWAIT/YIELD into an in-eval KoskariSyncViolation (KOS_RES_RAISE), so return
    value 1 is not produced for that path; callers may still treat 1 as suspend
    for forward compatibility.
 

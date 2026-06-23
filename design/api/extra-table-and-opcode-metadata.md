@@ -8,7 +8,7 @@ introducing variable-length instructions or globally widening every opcode.
 
 **Status:** Design — not yet implemented.
 
-**See also:** [bytecode-metadata-tables.md](../interpreter/bytecode-metadata-tables.md)
+**See also:** [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
 (constant pool, extents, code object layout), [bytecode-finalization.md](../interpreter/bytecode-finalization.md)
 (collect/size/allocate/emit pipeline, cpool from EXTRA CONST/VAR), [OPCODES.md](../OPCODES.md)
 (opcode reference), [call-fast-opcodes.md](../archive/call-fast-opcodes.md)

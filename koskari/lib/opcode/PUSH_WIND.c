@@ -27,34 +27,34 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (count != 1 && count != 2) {
     PyErr_Format(PyExc_ValueError,
                  "PUSH_WIND: COUNT must be 1 or 2, got %u", count);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (count == 2) {
     after = KosEvalState_StackPopRef(es);
     if (! after) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (after)");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
   before = KosEvalState_StackPopRef(es);
   if (! before) {
     Py_XDECREF(after);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (before)");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (before != Py_None && ! KosCallable_Check(before)) {
     Py_DECREF(before);
     Py_XDECREF(after);
     PyErr_SetString(PyExc_TypeError, "PUSH_WIND: before thunk must be callable or nil");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (after && after != Py_None && ! KosCallable_Check(after)) {
     Py_DECREF(before);
     Py_DECREF(after);
     PyErr_SetString(PyExc_TypeError, "PUSH_WIND: after thunk must be callable or nil");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *b = (before == Py_None) ? NULL : before;
@@ -68,21 +68,22 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (! wind) {
     Py_XDECREF(b);
     Py_XDECREF(a);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (b)
     Py_DECREF(b);
   if (a)
     Py_DECREF(a);
 
-  int r = kos_dyn_wind(es, (KosDynNode *) wind, out_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-    return KOS_OP_RUN();
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  /* No before thunk or sync before: wind phase done, mark entered */
-  KosDynWind_ENTERED(wind) = 1;
+  KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) wind);
+  if (wr.kind == KOS_RES_RAISE)
+    return EVAL_RAISE();
+  /* REPROLOGUE = before-thunk frame started; NORMAL = no thunk or sync done */
+  if (wr.kind == KOS_RES_NORMAL)
+    KosDynWind_ENTERED(wind) = 1;
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

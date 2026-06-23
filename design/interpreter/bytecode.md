@@ -78,7 +78,7 @@ struct KosCode {
 };
 ```
 
-The extent table is derived during Code construction from PUSH/POP pairs (TRY, LOOP, FINALLY, PROMPT, etc.). Each entry is a KosExtentDesc (tagged union: kind plus kind-specific targets in u.try_finally, u.loop, u.exit_only, or u.shift). It enables O(1) lookup of block membership and handler targets. See [bytecode-metadata-tables.md](bytecode-metadata-tables.md).
+The extent table is derived during Code construction from PUSH/POP pairs (TRY, LOOP, FINALLY, PROMPT, etc.). Each entry is a KosExtentDesc (tagged union: kind plus kind-specific targets in u.try_finally, u.loop, u.exit_only, or u.shift). It enables O(1) lookup of block membership and handler targets. See [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md).
 
 ### Memory Protection
 
@@ -339,7 +339,7 @@ KosCode_TOP_EXTENT_ID(code)
 
 ## Extent table and metadata
 
-Static metadata tables (location table, extent table, pc→extent lookup, JUMP locality validation) are implemented per **[bytecode-metadata-tables.md](bytecode-metadata-tables.md)**. Each extent descriptor is a tagged union (use the union member that matches `kind`); prefer `kos_try_handler_for` and `kos_shift_ic_for` for handler/IC targets. Extents are derived during Code construction; malformed bytecode (unmatched PUSH/POP or non-local control-flow jumps) is rejected.
+Static metadata tables (location table, extent table, pc→extent lookup, JUMP locality validation) are implemented per **[archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)**. Each extent descriptor is a tagged union (use the union member that matches `kind`); prefer `kos_try_handler_for` and `kos_shift_ic_for` for handler/IC targets. Extents are derived during Code construction; malformed bytecode (unmatched PUSH/POP or non-local control-flow jumps) is rejected.
 
 ## Files
 

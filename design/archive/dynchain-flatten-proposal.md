@@ -1,6 +1,9 @@
 # Dynchain Flatten and Simplify: Design Proposal
 
-**Status:** Partially implemented — see implementation notes below.
+**Status:** Core goals implemented (archived 2026-06-22). Region kinds are
+separate `KosDynKind` values with per-kind union slots; see
+[extent-wind-unwind.md](../interpreter/extent-wind-unwind.md) and
+`koskari/lib/dynchain.h`.
 **Author:** —
 **Related:** [dynamic-node-unified-api.md](dynamic-node-unified-api.md) (archived), [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md), `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`
 

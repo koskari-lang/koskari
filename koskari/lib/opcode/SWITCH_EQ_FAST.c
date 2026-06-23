@@ -29,37 +29,36 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST) {
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "SWITCH_EQ_FAST invoked on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (unlikely(! KosNamespace_SupportsFast(ns))) {
     PyErr_Format(PyExc_RuntimeError,
                  "SWITCH_EQ_FAST invoked on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   size_t idx = (size_t) row.a1;
   PyObject *rhs = KosNamespace_FastDeref(ns, idx);
   if (unlikely(! rhs))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *value = KosEvalState_StackPeek(es);
   if (unlikely(! value)) {
     Py_DECREF(rhs);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   int res = PyObject_RichCompareBool(value, rhs, Py_EQ);
   Py_DECREF(rhs);
   if (unlikely(res < 0))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
     KosEvalState_SET_PC(es, row.a0);
   }
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

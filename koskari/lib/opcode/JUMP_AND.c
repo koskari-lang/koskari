@@ -21,18 +21,18 @@
 KOS_OP_HANDLER(JUMP_AND) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   int res = PyObject_Not(val);
   if (unlikely(res < 0)) {
     Py_DECREF(val);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (res) {
     if (unlikely(KosEvalState_StackPushRef(es, val) < 0)) {
       Py_DECREF(val);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
 
     Py_DECREF(val);
@@ -42,8 +42,7 @@ KOS_OP_HANDLER(JUMP_AND) {
     Py_DECREF(val);
   }
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

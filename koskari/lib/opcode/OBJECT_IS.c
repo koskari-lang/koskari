@@ -18,5 +18,8 @@
 */
 
 KOS_OP_HANDLER(OBJECT_IS) {
-  return kos_op_outcome_from_int_step(obj_op_binary(es, out_ev, insn, binary_is_result));
+  return kos_op_result_from_push_int(obj_op_binary(es, insn, binary_is_result));
 }
+
+
+// The end.

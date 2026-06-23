@@ -107,7 +107,7 @@ static int test_kostype_is_not_koscallable(void) {
 static int test_eval_object_add_return(void) {
     /*
       Run bytecode: CONST 1, CONST 5, OBJECT_ADD 2, RETURN.
-      Expect KOS_EV_RETURN with value 6.
+      Expect KOS_RES_RETURN with value 6.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -138,17 +138,14 @@ static int test_eval_object_add_return(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 6, "result is 6");
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT(PyLong_Check(ev.val), "val is int");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 6, "result is 6");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -265,14 +262,12 @@ static int test_eval_ctx_current_outside_eval(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "eval returned RETURN");
     TEST_ASSERT(kos_ctx_current() == NULL, "no current context after eval");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -286,7 +281,7 @@ static int test_eval_ctx_current_outside_eval(void) {
 static int test_eval_try_except_catch(void) {
     /*
       Bytecode: PUSH_TRY 3, CONST (ValueError), RAISE 1, EXCEPTION, POP 1,
-      CONST 42, POP_TRY 1, RETURN. Handler at index 3. Expect KOS_EV_RETURN 42.
+      CONST 42, POP_TRY 1, RETURN. Handler at index 3. Expect KOS_RES_RETURN 42.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -326,17 +321,14 @@ static int test_eval_try_except_catch(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "result is 42");
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT(PyLong_Check(ev.val), "val is int");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "result is 42");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -351,7 +343,7 @@ static int test_eval_try_finally_rerase(void) {
     /*
       Bytecode: PUSH_FINALLY 3, CONST (ValueError), RAISE 1, (finally at 3:)
       CONST 99, POP_FINALLY, POP 1, EXCEPTION 0, RAISE 1. Re-raise after finally.
-      Expect KOS_EV_RAISE.
+      Expect KOS_RES_RAISE.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -392,16 +384,12 @@ static int test_eval_try_finally_rerase(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -428,8 +416,7 @@ static int test_eval_reset_shift_invoke(void) {
     PyObject *ns = NULL;
     KosDynFrame *frame = NULL;
     KosContext *ctx = NULL;
-    KosEvent ev = {0};
-    int res;
+    KosOpResult ev = {0};
     int result = 0;
 
     nspec = create_test_nspec();
@@ -483,44 +470,43 @@ static int test_eval_reset_shift_invoke(void) {
         goto cleanup;
     }
 
-    res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    if (res != 0) {
+    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    if (ev.kind == KOS_RES_FATAL) {
         if (PyErr_Occurred())
             PyErr_Print();
         else
-            fprintf(stderr, "  koskari_eval returned %d (no exception set)\n", res);
+            fprintf(stderr, "  koskari_eval returned FATAL (no exception set)\n");
         fflush(stderr);
         result = -1;
         goto cleanup;
     }
-    if (ev.kind != KOS_EV_RETURN) {
-        fprintf(stderr, "  ev.kind=%d (expected KOS_EV_RETURN), payload=%p\n",
-                (int) ev.kind, (void *) ev.payload);
+    if (ev.kind != KOS_RES_RETURN) {
+        fprintf(stderr, "  ev.kind=%d (expected KOS_RES_RETURN), val=%p\n",
+                (int) ev.kind, (void *) ev.val);
         fflush(stderr);
         result = -1;
         goto cleanup;
     }
-    if (! ev.payload) {
-        fprintf(stderr, "  FAIL: payload not NULL\n");
+    if (! ev.val) {
+        fprintf(stderr, "  FAIL: val not NULL\n");
         result = -1;
         goto cleanup;
     }
-    if (! PyLong_Check(ev.payload)) {
-        fprintf(stderr, "  FAIL: payload is int\n");
+    if (! PyLong_Check(ev.val)) {
+        fprintf(stderr, "  FAIL: val is int\n");
         result = -1;
         goto cleanup;
     }
-    if (PyLong_AsLong(ev.payload) != 6) {
+    if (PyLong_AsLong(ev.val) != 6) {
         fprintf(stderr, "  FAIL: result is 6\n");
         result = -1;
         goto cleanup;
     }
 
  cleanup:
-    Py_XDECREF(ev.payload);
-    ev.payload = NULL;
-    Py_XDECREF(ev.exc_type);
-    ev.exc_type = NULL;
+    Py_XDECREF(ev.val);
+    ev.val = NULL;
+    PyErr_Clear();
     if (ctx)
         KosContext_Free(ctx);
     Py_XDECREF(code_obj);
@@ -564,17 +550,14 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyObject_TypeCheck(ev.payload, KOS_CALLABLE_PYTYPE(KosPyContinuationType)),
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT(PyObject_TypeCheck(ev.val, KOS_CALLABLE_PYTYPE(KosPyContinuationType)),
                 "result is Continuation");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -622,8 +605,7 @@ static int test_eval_call_continuation_underrun(void) {
     PyObject *ns = NULL;
     KosDynFrame *frame = NULL;
     KosContext *ctx = NULL;
-    KosEvent ev = {0};
-    int res;
+    KosOpResult ev = {0};
     int result = 0;
 
     nspec = create_test_nspec();
@@ -664,33 +646,27 @@ static int test_eval_call_continuation_underrun(void) {
         goto cleanup;
     }
 
-    res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    if (res != 0) {
-        fprintf(stderr, "  FAIL: koskari_eval succeeded\n");
+    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    if (ev.kind == KOS_RES_FATAL) {
+        fprintf(stderr, "  FAIL: koskari_eval returned FATAL\n");
         result = -1;
         goto cleanup;
     }
-    if (ev.kind != KOS_EV_RAISE) {
-        fprintf(stderr, "  FAIL: event is RAISE\n");
+    if (ev.kind != KOS_RES_RAISE) {
+        fprintf(stderr, "  FAIL: event is RAISE (got %d)\n", (int) ev.kind);
         result = -1;
         goto cleanup;
     }
-    if (! ev.payload) {
-        fprintf(stderr, "  FAIL: payload not NULL\n");
-        result = -1;
-        goto cleanup;
-    }
-    if (! PyExceptionInstance_Check(ev.payload)) {
-        fprintf(stderr, "  FAIL: payload is exception\n");
+    if (! PyErr_Occurred()) {
+        fprintf(stderr, "  FAIL: exception is set\n");
         result = -1;
         goto cleanup;
     }
 
  cleanup:
-    Py_XDECREF(ev.payload);
-    ev.payload = NULL;
-    Py_XDECREF(ev.exc_type);
-    ev.exc_type = NULL;
+    Py_XDECREF(ev.val);
+    ev.val = NULL;
+    PyErr_Clear();
     if (ctx)
         KosContext_Free(ctx);
     Py_XDECREF(code_obj);
@@ -731,19 +707,13 @@ static int test_eval_call_wrong_type(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
-    TEST_ASSERT(PyErr_GivenExceptionMatches((PyObject *) Py_TYPE(ev.payload),
-                                            PyExc_TypeError),
-                "exception is TypeError");
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_TypeError), "exception is TypeError");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -756,7 +726,7 @@ static int test_eval_call_wrong_type(void) {
 
 static int test_eval_object_add_underrun(void) {
     /*
-      OBJECT_ADD 2 needs 2 values; we have only 1. Expect KOS_EV_RAISE.
+      OBJECT_ADD 2 needs 2 values; we have only 1. Expect KOS_RES_RAISE.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -783,15 +753,12 @@ static int test_eval_object_add_underrun(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -804,7 +771,7 @@ static int test_eval_object_add_underrun(void) {
 
 static int test_eval_return_underrun(void) {
     /*
-      RETURN 2 needs 2 values; we have only 1. Expect KOS_EV_RAISE.
+      RETURN 2 needs 2 values; we have only 1. Expect KOS_RES_RAISE.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -831,15 +798,12 @@ static int test_eval_return_underrun(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -852,7 +816,7 @@ static int test_eval_return_underrun(void) {
 
 static int test_eval_dup_underrun(void) {
     /*
-      DUP 1 needs 1 value; stack is empty. Expect KOS_EV_RAISE.
+      DUP 1 needs 1 value; stack is empty. Expect KOS_RES_RAISE.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -876,15 +840,12 @@ static int test_eval_dup_underrun(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -897,7 +858,7 @@ static int test_eval_dup_underrun(void) {
 
 static int test_eval_call_empty_stack(void) {
     /*
-      CALL 0 needs callable on stack; stack is empty. Expect KOS_EV_RAISE.
+      CALL 0 needs callable on stack; stack is empty. Expect KOS_RES_RAISE.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -921,15 +882,12 @@ static int test_eval_call_empty_stack(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -1034,7 +992,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     /*
       Bytecode: CONST "C", CONST (), BUILD_ARGS 2, PUSH_COLLECT nspec,
       POP_COLLECT, BUILD_CLASS, RETURN 1.
-      Expect KOS_EV_RETURN with a KosType whose __name__ is "C".
+      Expect KOS_RES_RETURN with a KosType whose __name__ is "C".
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -1068,23 +1026,20 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyType_Check(ev.payload), "result is a type");
-    TEST_ASSERT(KosType_Check(ev.payload), "result is KosType (metaclass used)");
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT(PyType_Check(ev.val), "result is a type");
+    TEST_ASSERT(KosType_Check(ev.val), "result is KosType (metaclass used)");
 
-    PyObject *cname = PyObject_GetAttrString(ev.payload, "__name__");
+    PyObject *cname = PyObject_GetAttrString(ev.val, "__name__");
     TEST_ASSERT_NOT_NULL(cname, "__name__ exists");
     TEST_ASSERT(PyUnicode_Check(cname), "__name__ is str");
     TEST_ASSERT(PyUnicode_CompareWithASCIIString(cname, "C") == 0,
                 "__name__ is C");
     Py_DECREF(cname);
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -1098,7 +1053,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
 static int test_eval_push_collect_empty_stack_raises(void) {
     /*
       PUSH_COLLECT with invalid constant (int 0, not NamespaceSpec).
-      Expect KOS_EV_RAISE.
+      Expect KOS_RES_RAISE with RuntimeError.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -1123,18 +1078,14 @@ static int test_eval_push_collect_empty_stack_raises(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyErr_GivenExceptionMatches(
-                    (PyObject *) Py_TYPE(ev.payload), PyExc_RuntimeError),
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
                 "exception is RuntimeError");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -1186,8 +1137,7 @@ static int test_eval_call_zero_args(void) {
     PyObject *ns = NULL;
     KosDynFrame *frame = NULL;
     KosContext *ctx = NULL;
-    KosEvent ev = {0};
-    int res;
+    KosOpResult ev = {0};
     int result = 0;
 
     nspec = create_test_nspec();
@@ -1232,28 +1182,27 @@ static int test_eval_call_zero_args(void) {
         goto cleanup;
     }
 
-    res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    if (res != 0) {
-        fprintf(stderr, "  FAIL: koskari_eval succeeded\n");
+    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    if (ev.kind == KOS_RES_FATAL) {
+        fprintf(stderr, "  FAIL: koskari_eval returned FATAL\n");
         result = -1;
         goto cleanup;
     }
-    if (ev.kind != KOS_EV_RETURN) {
-        fprintf(stderr, "  FAIL: event is RETURN\n");
+    if (ev.kind != KOS_RES_RETURN) {
+        fprintf(stderr, "  FAIL: event is RETURN (got %d)\n", (int) ev.kind);
         result = -1;
         goto cleanup;
     }
-    if (ev.payload == NULL || ! Py_IsNone(ev.payload)) {
+    if (ev.val == NULL || ! Py_IsNone(ev.val)) {
         fprintf(stderr, "  FAIL: result is None\n");
         result = -1;
         goto cleanup;
     }
 
  cleanup:
-    Py_XDECREF(ev.payload);
-    ev.payload = NULL;
-    Py_XDECREF(ev.exc_type);
-    ev.exc_type = NULL;
+    Py_XDECREF(ev.val);
+    ev.val = NULL;
+    PyErr_Clear();
     if (ctx)
         KosContext_Free(ctx);
     Py_XDECREF(code_obj);
@@ -1304,15 +1253,12 @@ static int test_eval_fast_on_dict_ns(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -1328,7 +1274,7 @@ static int test_eval_build_function_no_defaults(void) {
       Bytecode: CONST (FunctionSpec), BUILD_FUNCTION 0, RETURN 1.
       FunctionSpec = (name=NULL, formals_spec=empty, code=inner).
       Inner code is just RETURN 0. Frame ns must be KosNamespace so
-      KosFunction_New can use it as parent_ns. Expect KOS_EV_RETURN
+      KosFunction_New can use it as parent_ns. Expect KOS_RES_RETURN
       with a KosFunction.
     */
     PyObject *nspec = create_test_nspec();
@@ -1372,17 +1318,14 @@ static int test_eval_build_function_no_defaults(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyObject_TypeCheck(ev.payload, KOS_CALLABLE_PYTYPE(KosFunctionType)),
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT(PyObject_TypeCheck(ev.val, KOS_CALLABLE_PYTYPE(KosFunctionType)),
                 "result is Function");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -1460,9 +1403,9 @@ static int make_simple_ctx(
 static int test_eval_yield_empty_resume(void) {
     /*
       Bytecode: CONST 42, YIELD 1, CONST 99, RETURN 1.
-      First eval (NULL, NULL): KOS_EV_YIELD(42); GEN frozen.
+      First eval (NULL, NULL): KOS_RES_YIELD(42); GEN frozen.
       Second eval: kos_dyn_gen_install, then revive_yield(Py_None) replaces
-      placeholder; execution resumes at CONST 99, RETURN 1 => KOS_EV_RETURN(99).
+      placeholder; execution resumes at CONST 99, RETURN 1 => KOS_RES_RETURN(99).
     */
     PyObject *forty_two = PyLong_FromLong(42);
     PyObject *ninety_nine = PyLong_FromLong(99);
@@ -1483,27 +1426,20 @@ static int test_eval_yield_empty_resume(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
-    TEST_ASSERT_NOT_NULL(ev.payload, "first payload not NULL");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
-    Py_XDECREF(ev.payload);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
+    TEST_ASSERT_NOT_NULL(ev.val, "first val not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "yielded value is 42");
+    Py_XDECREF(ev.val);
 
     TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
-    ev.kind = KOS_EV_RETURN;
-    ev.payload = NULL;
-    ev.exc_type = NULL;
-    res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "second payload not NULL");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 99, "resumed result is 99");
+    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "second val not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 99, "resumed result is 99");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
@@ -1518,9 +1454,9 @@ static int test_eval_yield_empty_resume(void) {
 static int test_eval_yield_send_resume(void) {
     /*
       Bytecode: CONST 42, YIELD 1, RETURN 1.
-      First eval (NULL, NULL): KOS_EV_YIELD(42).
+      First eval (NULL, NULL): KOS_RES_YIELD(42).
       Second eval: install frozen gen; revive_yield pushes 7 onto stack;
-      RETURN 1 pops TOS => KOS_EV_RETURN(7).
+      RETURN 1 pops TOS => KOS_RES_RETURN(7).
     */
     PyObject *forty_two = PyLong_FromLong(42);
 
@@ -1538,28 +1474,21 @@ static int test_eval_yield_send_resume(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
-    Py_XDECREF(ev.payload);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "yielded value is 42");
+    Py_XDECREF(ev.val);
 
     TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     PyObject *send_val = PyLong_FromLong(7);
-    ev.kind = KOS_EV_RETURN;
-    ev.payload = NULL;
-    ev.exc_type = NULL;
-    res = koskari_eval(ctx, &ev, send_val, NULL, NULL);
+    ev = koskari_eval(ctx, send_val, NULL, NULL);
     Py_DECREF(send_val);
-    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "second payload not NULL");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 7, "returned sent value 7");
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "second val not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 7, "returned sent value 7");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
@@ -1627,27 +1556,20 @@ static int test_eval_await_throw_completes_iterator(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_AWAIT, "first event is AWAIT");
-    Py_XDECREF(ev.payload);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_AWAIT, "first event is AWAIT");
+    Py_XDECREF(ev.val);
 
     PyObject *throw_exc = PyObject_CallFunction(
         (PyObject *) PyExc_ValueError, "s", "into await iter");
     TEST_ASSERT_NOT_NULL(throw_exc, "throw_exc");
-    ev.kind = KOS_EV_RETURN;
-    ev.payload = NULL;
-    ev.exc_type = NULL;
-    res = koskari_eval(ctx, &ev, NULL, (PyObject *) PyExc_ValueError, throw_exc);
+    ev = koskari_eval(ctx, NULL, (PyObject *) PyExc_ValueError, throw_exc);
     Py_DECREF(throw_exc);
-    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "return payload");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 99, "await result 99");
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "return val");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 99, "await result 99");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
     Py_DECREF(pre);
@@ -1659,7 +1581,7 @@ static int test_eval_await_throw_completes_iterator(void) {
 static int test_eval_await_throw_reyield(void) {
     /*
       Iterator catches ValueError and yields 99; throw must run first so the
-      second suspend exposes payload 99 (KOS_MODE_AWAIT / KOS_EV_AWAIT).
+      second suspend exposes val 99 (KOS_MODE_AWAIT / KOS_RES_AWAIT).
     */
     PyObject *pre = PyDict_New();
     TEST_ASSERT_NOT_NULL(pre, "prelude dict");
@@ -1711,27 +1633,20 @@ static int test_eval_await_throw_reyield(void) {
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_AWAIT, "first event is AWAIT");
-    Py_XDECREF(ev.payload);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_AWAIT, "first event is AWAIT");
+    Py_XDECREF(ev.val);
 
     PyObject *throw_exc = PyObject_CallFunction(
         (PyObject *) PyExc_ValueError, "s", "first throw");
     TEST_ASSERT_NOT_NULL(throw_exc, "throw_exc");
-    ev.kind = KOS_EV_RETURN;
-    ev.payload = NULL;
-    ev.exc_type = NULL;
-    res = koskari_eval(ctx, &ev, NULL, (PyObject *) PyExc_ValueError, throw_exc);
+    ev = koskari_eval(ctx, NULL, (PyObject *) PyExc_ValueError, throw_exc);
     Py_DECREF(throw_exc);
-    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_AWAIT, "second event is AWAIT (re-yield)");
-    TEST_ASSERT_NOT_NULL(ev.payload, "second payload");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 99, "re-yielded 99");
+    TEST_ASSERT(ev.kind == KOS_RES_AWAIT, "second event is AWAIT (re-yield)");
+    TEST_ASSERT_NOT_NULL(ev.val, "second val");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 99, "re-yielded 99");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
     Py_DECREF(pre);
@@ -1743,9 +1658,9 @@ static int test_eval_await_throw_reyield(void) {
 static int test_eval_yield_throw_resume(void) {
     /*
       Bytecode: CONST 42, YIELD 1, RETURN 1.
-      First eval (NULL, NULL): KOS_EV_YIELD(42).
+      First eval (NULL, NULL): KOS_RES_YIELD(42).
       Second eval: install frozen gen; revive_yield sets PyErr =>
-      KOS_MODE_EXCEPTION; no TRY handler present => KOS_EV_RAISE.
+      KOS_MODE_EXCEPTION; no TRY handler present => KOS_RES_RAISE.
     */
     PyObject *forty_two = PyLong_FromLong(42);
 
@@ -1763,11 +1678,9 @@ static int test_eval_yield_throw_resume(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
-    Py_XDECREF(ev.payload);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
+    Py_XDECREF(ev.val);
 
     TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
@@ -1775,21 +1688,13 @@ static int test_eval_yield_throw_resume(void) {
         (PyObject *) PyExc_ValueError, "s", "thrown into yield");
     TEST_ASSERT_NOT_NULL(throw_exc, "create throw_exc");
 
-    ev.kind = KOS_EV_RETURN;
-    ev.payload = NULL;
-    ev.exc_type = NULL;
-    res = koskari_eval(ctx, &ev, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
+    ev = koskari_eval(ctx, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
     Py_DECREF(throw_exc);
-    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "second event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "raise payload not NULL");
-    TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
-    TEST_ASSERT(PyErr_GivenExceptionMatches((PyObject *) Py_TYPE(ev.payload),
-                                            PyExc_ValueError),
-                "exception is ValueError");
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "second event is RAISE");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError), "exception is ValueError");
+    PyErr_Clear();
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
     KosContext_Free(ctx);
     kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
@@ -1805,11 +1710,11 @@ static int test_eval_yield_throw_caught(void) {
     /*
       Bytecode: PUSH_TRY(6), CONST 42, DUP 1, YIELD 1, POP_TRY, RETURN 1,
                 LABEL(6), EXCEPTION, POP 1, CONST 55, POP_TRY, RETURN 1.
-      First eval (NULL, NULL): KOS_EV_YIELD(42); TRY region stays live.
+      First eval (NULL, NULL): KOS_RES_YIELD(42); TRY region stays live.
       Second eval (NULL, throw_exc): eval_phase_entry calls
       try_local_exception_handler, which finds the TRY region and redirects
       PC to the handler => EXCEPTION/POP/CONST 55/POP_TRY/RETURN =>
-      KOS_EV_RETURN(55).
+      KOS_RES_RETURN(55).
     */
     PyObject *forty_two = PyLong_FromLong(42);
     PyObject *fifty_five = PyLong_FromLong(55);
@@ -1844,12 +1749,10 @@ static int test_eval_yield_throw_caught(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
-    Py_XDECREF(ev.payload);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "yielded value is 42");
+    Py_XDECREF(ev.val);
 
     TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
@@ -1857,96 +1760,20 @@ static int test_eval_yield_throw_caught(void) {
         (PyObject *) PyExc_ValueError, "s", "thrown into yield");
     TEST_ASSERT_NOT_NULL(throw_exc, "create throw_exc");
 
-    ev.kind = KOS_EV_RETURN;
-    ev.payload = NULL;
-    ev.exc_type = NULL;
-    res = koskari_eval(ctx, &ev, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
+    ev = koskari_eval(ctx, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
     Py_DECREF(throw_exc);
-    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 55, "handler result is 55");
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT(PyLong_Check(ev.val), "val is int");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 55, "handler result is 55");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
     return 0;
 }
-
-
-/* === Test: YIELD_FROM sync iterator (reproducer for test_yield_from_single_value_sync_iterator) === */
-
-
-// static int test_eval_yield_from_single_value_sync_iterator(void) {
-//     /*
-//       Reproducer for Python test_yield_from_single_value_sync_iterator.
-//       Bytecode: CONST iter([100]), YIELD_FROM 0, RETURN 1.
-//       Drives a KosPyAsyncGen via the same path as __anext__ (send Py_None).
-//       First eval (Py_None): expect KOS_EV_YIELD(100).
-//       Second eval (Py_None): expect KOS_EV_RETURN (exhausted, final None).
-//     */
-//     PyObject *lst = PyList_New(1);
-//     TEST_ASSERT_NOT_NULL(lst, "create list");
-//     PyList_SET_ITEM(lst, 0, PyLong_FromLong(100));
-
-//     PyObject *delegate = PyObject_GetIter(lst);
-//     Py_DECREF(lst);
-//     TEST_ASSERT_NOT_NULL(delegate, "iter([100])");
-
-//     PyObject *instr = PyList_New(3);
-//     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, delegate));
-//     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD_FROM, 0));
-//     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
-
-//     Py_DECREF(delegate);
-
-//     PyObject *nspec = create_test_nspec();
-//     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
-
-//     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
-//     Py_DECREF(nspec);
-//     Py_DECREF(instr);
-//     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
-
-//     PyObject *ns = PyDict_New();
-//     TEST_ASSERT_NOT_NULL(ns, "create ns");
-
-//     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
-//     TEST_ASSERT_NOT_NULL(frame, "create frame");
-
-//     PyObject *agen_obj = KosPyAsyncGen_NewFromFrame(frame);
-//     TEST_ASSERT_NOT_NULL(agen_obj, "create KosPyAsyncGen");
-//     KosPyAsyncGen *agen = (KosPyAsyncGen *) agen_obj;
-
-//     if (! agen->ctx) {
-//         agen->ctx = KosContext_New(agen->frame);
-//         TEST_ASSERT_NOT_NULL(agen->ctx, "create context");
-//     }
-
-//     KosEvent ev = {0};
-//     int res = koskari_eval(agen->ctx, &ev, Py_None, NULL, NULL);
-//     TEST_ASSERT(res == 0, "first koskari_eval (anext) succeeded");
-//     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
-//     TEST_ASSERT_NOT_NULL(ev.payload, "first payload not NULL");
-//     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 100, "yielded value is 100");
-//     Py_XDECREF(ev.payload);
-
-//     ev.kind = KOS_EV_RETURN;
-//     ev.payload = NULL;
-//     res = koskari_eval(agen->ctx, &ev, Py_None, NULL, NULL);
-//     TEST_ASSERT(res == 0, "second koskari_eval (anext) succeeded");
-//     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN (exhausted)");
-//     Py_XDECREF(ev.payload);
-
-//     Py_DECREF(agen_obj);
-//     Py_DECREF(code_obj);
-
-//     return 0;
-// }
 
 
 /* === Test: exception from opcode (op_res != 0) caught by TRY handler === */
@@ -1962,7 +1789,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
       YIELD 1 with empty stack returns op_res=-1 with PyErr set.
       eval_phase_post_opcode detects PyErr and calls try_local_exception_handler,
       which finds the TRY region and redirects to the handler =>
-      EXCEPTION/POP/CONST 77/POP_TRY/RETURN => KOS_EV_RETURN(77).
+      EXCEPTION/POP/CONST 77/POP_TRY/RETURN => KOS_RES_RETURN(77).
       This exercises the exception path inside eval_phase_post_opcode directly.
     */
     PyObject *seventy_seven = PyLong_FromLong(77);
@@ -1993,17 +1820,14 @@ static int test_eval_opcode_error_caught_by_try(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 77, "handler result is 77");
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT(PyLong_Check(ev.val), "val is int");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 77, "handler result is 77");
 
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
+    Py_XDECREF(ev.val);
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
@@ -2050,7 +1874,6 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_yield_send_resume);
     RUN_TEST(test_eval_yield_throw_resume);
     RUN_TEST(test_eval_yield_throw_caught);
-    //RUN_TEST(test_eval_yield_from_single_value_sync_iterator);
     RUN_TEST(test_eval_opcode_error_caught_by_try);
 
     return 0;

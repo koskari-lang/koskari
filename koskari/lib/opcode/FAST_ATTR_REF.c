@@ -24,22 +24,25 @@ KOS_OP_HANDLER(FAST_ATTR_REF) {
   PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_ATTR_REF invoked on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_ATTR_REF invoked on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a1);
   if (! attr_name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   size_t idx = (size_t) row.a0;
   PyObject *obj = KosNamespace_FastDeref(ns, idx);
   if (! obj)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   PyObject *ref = KosAttributeRef_New(attr_name, obj, attr_name);
   Py_DECREF(obj);
   if (! ref)
-    return KOS_OP_POST_ERR();
-  return kos_op_outcome_PUSH(es, ref);
+    return EVAL_RAISE();
+  return kos_op_result_PUSH(es, ref);
 }
+
+
+// The end.

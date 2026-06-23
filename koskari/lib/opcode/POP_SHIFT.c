@@ -36,7 +36,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_SHIFT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   /* PC already advanced: we are post-INSN, so resume will run instruction at
@@ -49,7 +49,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   result = KosEvalState_StackPopRef(es);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   /* acting_pc is POP_SHIFT; find SHIFT extent by its pop_pc. */
@@ -60,20 +60,20 @@ KOS_OP_HANDLER(POP_SHIFT) {
   if (eid == KOS_EXTENT_NONE) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no SHIFT extent at pc");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   KosExtentDesc *const shift_extent = kos_extent_desc((PyObject *) code, eid);
   if (! shift_extent) {
     Py_DECREF(result);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   parent_id = shift_extent->parent_extent_id;
   if (parent_id == KOS_EXTENT_NONE) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: SHIFT extent has no parent");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   /* SHIFT may sit under heritage extents (e.g. WIND) between it and PROMPT. */
@@ -84,7 +84,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
       KosExtentDesc *candidate = kos_extent_desc((PyObject *) code, walk_id);
       if (! candidate) {
         Py_DECREF(result);
-        return KOS_OP_POST_ERR();
+        return EVAL_RAISE();
       }
       if (candidate->kind == KOS_EXT_PROMPT) {
         found_prompt = candidate;
@@ -98,7 +98,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_SHIFT: no enclosing PROMPT extent for SHIFT");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   prompt_pop_pc = prompt_extent->pop_pc;
@@ -107,12 +107,12 @@ KOS_OP_HANDLER(POP_SHIFT) {
   if (! prompt) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no prompt on chain");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (kos_dyn_build_pop_shift_plan(es, prompt, result, &plan) < 0) {
     Py_DECREF(result);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   Py_DECREF(result);
 
@@ -125,5 +125,8 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosEvalState_ArmTransferPlan(es, plan);
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
 
-  return KOS_OP_PROLOGUE();
+  return EVAL_REPROLOGUE();
 }
+
+
+// The end.

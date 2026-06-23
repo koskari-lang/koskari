@@ -36,6 +36,45 @@
 #include <stdint.h>
 #include <string.h>
 
+
+/* === KosOpResult — defined before dynchain.h so dynchain can use it === */
+
+
+/**
+  KosOpResultKind encodes what the opcode handler wants the eval dispatch loop
+  to do after the handler returns.  NORMAL means "continue with the next
+  instruction"; all other values name an event or control transfer.
+*/
+typedef enum KosOpResultKind {
+  KOS_RES_NORMAL = 0,      /* continue to next opcode */
+  KOS_RES_REPROLOGUE,      /* restart prologue (PyErr set, or plan armed) */
+  KOS_RES_YIELD,           /* generator yielded val */
+  KOS_RES_AWAIT,           /* suspend on awaitable val */
+  KOS_RES_RETURN,          /* return val (needs walk+pop via eval_event_return) */
+  KOS_RES_RAISE,           /* PyErr is set; run exception handler */
+  KOS_RES_CONTROL_RETURNED,/* dyn-node control-returned hook */
+  KOS_RES_PARENT_RETURN,   /* return already popped; deliver val to parent */
+  KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
+} KosOpResultKind;
+
+
+typedef struct KosOpResult {
+  KosOpResultKind kind;
+  PyObject *val;  /* strong ref where documented; NULL otherwise */
+} KosOpResult;
+
+
+#define EVAL_NORMAL()           ((KosOpResult){ KOS_RES_NORMAL, NULL })
+#define EVAL_REPROLOGUE()       ((KosOpResult){ KOS_RES_REPROLOGUE, NULL })
+#define EVAL_RAISE()            ((KosOpResult){ KOS_RES_RAISE, NULL })
+#define EVAL_YIELD(v)           ((KosOpResult){ KOS_RES_YIELD, (v) })
+#define EVAL_AWAIT(v)           ((KosOpResult){ KOS_RES_AWAIT, (v) })
+#define EVAL_RETURN(v)          ((KosOpResult){ KOS_RES_RETURN, (v) })
+#define EVAL_CONTROL_RETURNED() ((KosOpResult){ KOS_RES_CONTROL_RETURNED, NULL })
+#define EVAL_PARENT_RETURN(v)   ((KosOpResult){ KOS_RES_PARENT_RETURN, (v) })
+#define EVAL_FATAL()            ((KosOpResult){ KOS_RES_FATAL, NULL })
+
+
 #include "dynchain.h"
 #include "tracing.h"
 
@@ -96,46 +135,10 @@ typedef KosDynFrame KosFrame;
 #define KosFrame_NATIVE_HANDLER(f) KosDynFrame_NATIVE_HANDLER(f)
 
 
-/* === KosEvent: boundary events === */
-
-/**
-  KosEventKind tags what kind of boundary the current instruction reported
-  in the eval out_ev buffer.
-
-  Opcode handlers set kind and payload when an instruction must signal
-  return, yield, await, or raise.  The main loop and eval_phase_post_opcode
-  then either stop the eval and return to the koskari_eval caller
-  (KOS_STEP_STOP_EVENT), restart the full dispatch prologue
-  (KOS_STEP_REPROLOGUE), or handle the boundary inside the loop without
-  leaving (detach and deliver to a parent frame, push yielded values for
-  flattened async iteration, run unwind handlers, and similar).  Nested
-  calls and non-top frames use the same kinds; framing is not limited to
-  top-level completion.
-
-  KOS_EV_RETURN - normal completion with a value
-  KOS_EV_RAISE  - exception propagation
-  KOS_EV_YIELD  - generator yield
-  KOS_EV_AWAIT  - suspension on Python awaitable
-  KOS_EV_POST_OPCODE - eval-internal only: deferred second pass of
-                   eval_phase_post_opcode; payload is PyLong holding op_res
-                   (drained at dispatch prologue, never returned to drivers)
-  KOS_EV_NONE   - out_ev cleared after an in-loop consume; not a driver-facing
-                   boundary
-*/
-typedef enum KosEventKind {
-  KOS_EV_NONE = 0,  // no event, or event cleared
-  KOS_EV_RETURN,
-  KOS_EV_RAISE,
-  KOS_EV_YIELD,
-  KOS_EV_AWAIT,
-  KOS_EV_POST_OPCODE,
-} KosEventKind;
-
-
 /**
   KosSuspensionEvent records why the evaluator last suspended.
-  Set when koskari_eval returns with KOS_EV_AWAIT, KOS_EV_YIELD, or
-  YIELD_FROM boundary; cleared when execution starts or context is not suspended.
+  Set when koskari_eval suspends with AWAIT or YIELD; cleared when execution
+  starts or the context is not suspended.
   Used at entry to choose revive path (revive_plan, revive_await, revive_yield).
 */
 typedef enum KosSuspensionEvent {
@@ -148,36 +151,15 @@ typedef enum KosSuspensionEvent {
 /**
   KosEvalMode is the result of entry/revive and drives the mode-handler loop.
   NORMAL = run next insn or check completion; TRANSFER = run process_plan;
-  EXCEPTION = run process_raise; RAISE/AWAIT/YIELD/YIELD_FROM = return with event;
-  RETURN = normal completion with value.
+  EXCEPTION = run process_raise; RAISE = entry-time surface of a pending
+  raise (fill out_ev and stop).
 */
 typedef enum KosEvalMode {
   KOS_MODE_NORMAL    = 0,
   KOS_MODE_TRANSFER  = 1,
   KOS_MODE_EXCEPTION = 2,
   KOS_MODE_RAISE     = 3,
-  KOS_MODE_AWAIT     = 4,
-  KOS_MODE_YIELD     = 5,
-  KOS_MODE_YIELD_FROM = 6,
-  KOS_MODE_RETURN    = 7,
 } KosEvalMode;
-
-
-/**
-  KosEvalStep is the return type of each internal phase helper inside
-  koskari_eval.  CONTINUE means the phase completed normally and the next
-  prologue step (or prepare/dispatch) should run in order.  REPROLOGUE means
-  restart from the top of the dispatch prologue (transfer drain, pending
-  exception, native frame) before the next opcode.  STOP_EVENT means out_ev
-  has been filled and the evaluator should return to its caller.
-  FATAL_ERROR means a PyErr has been set and koskari_eval must return -1.
-*/
-typedef enum KosEvalStep {
-  KOS_STEP_CONTINUE,
-  KOS_STEP_REPROLOGUE,
-  KOS_STEP_STOP_EVENT,
-  KOS_STEP_FATAL_ERROR,
-} KosEvalStep;
 
 
 /**
@@ -192,124 +174,12 @@ typedef enum KosGetNextResult {
 
 
 /**
-  KosLoopOpMode is the opcode-to-loop signal: what the main eval loop should
-  do after each instruction.  Distinct from KosEvalMode (entry/revive only).
-
-  KOS_LOP_RUN — continue with the next instruction without running the
-  expensive prologue (transfer drain, pending-exception check, native
-  frame branch).
-
-  KOS_LOP_PROLOGUE — next cycle must run the full prologue before dispatch
-  (e.g. PyErr set by RAISE opcode, new transfer plan, native handler installed).
-
-  KOS_LOP_POST — run eval_phase_post_opcode with kos_op_post_tag_to_res(tag).
-
-  KOS_LOP_FAIL — hard evaluator fault: koskari_eval returns -1 immediately;
-  no post_opcode (differs from Python exception path, which uses PROLOGUE or
-  POST with ERR tag and PyErr).
+   Function-pointer type for native frame handlers: receives the eval state
+   and an optional delivered value (new reference; handler takes ownership;
+   NULL for the iteration call with no delivery).  Returns a KosOpResult
+   describing the outcome; EVAL_REPROLOGUE() means "handled, continue normally".
 */
-typedef enum KosLoopOpMode {
-  KOS_LOP_RUN = 0,
-  KOS_LOP_PROLOGUE,
-  KOS_LOP_POST,
-  KOS_LOP_FAIL,
-} KosLoopOpMode;
-
-
-/**
-  Post-opcode tags for KOS_LOP_POST only; passed to eval_phase_post_opcode as
-  the legacy int (1 = suspend/async, 2 = control returned, -1 = error path,
-  4 = parent return delivery after pop).
-*/
-#define KOS_OP_POST_TAG_SUSPEND 1
-#define KOS_OP_POST_TAG_CONTROL_RETURNED 2
-#define KOS_OP_POST_TAG_ERR 3
-#define KOS_OP_POST_TAG_PARENT_RETURN 4
-
-
-typedef struct KosOpOutcome {
-  KosLoopOpMode mode;
-  uint8_t post_tag;
-  PyObject *value;  /* reserved for future use; must be NULL unless documented */
-} KosOpOutcome;
-
-
-#define KOS_OP_RUN() ((KosOpOutcome){ KOS_LOP_RUN, 0, NULL })
-#define KOS_OP_PROLOGUE() ((KosOpOutcome){ KOS_LOP_PROLOGUE, 0, NULL })
-#define KOS_OP_FAIL() ((KosOpOutcome){ KOS_LOP_FAIL, 0, NULL })
-#define KOS_OP_POST_SUSPEND() \
-  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_SUSPEND, NULL })
-#define KOS_OP_POST_CONTROL() \
-  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_CONTROL_RETURNED, NULL })
-#define KOS_OP_POST_ERR() \
-  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_ERR, NULL })
-#define KOS_OP_POST_PARENT_RETURN() \
-  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_PARENT_RETURN, NULL })
-
-
-/**
-  Opcode handler return values (legacy KosEvalState_Call / helpers).  0 = normal;
-  1 = suspend or WITH async rollback; 2 = control returned to awaiting dyn node;
-  4 = parent-frame return delivery staged in eval (post-pop).
-*/
-#define KOS_OP_RES_CONTROL_RETURNED 2
-#define KOS_OP_RES_PARENT_RETURN_DELIVER 4
-
-
-/**
-  KosEvent is the out_ev buffer passed into koskari_eval for the whole run.
-
-  Handlers and post_opcode write kind, payload, and exc_type as each
-  instruction reports a boundary.  The same struct holds in-flight and
-  in-loop state; not every kind/payload pair becomes the final reason the
-  outer eval returns.  When evaluation stops with a boundary, the caller
-  reads the fields by kind.
-
-  payload holds the return value, yielded value, awaitable, or exception
-  value as appropriate.  For KOS_EV_RAISE, exc_type is the exception type
-  (from PyErr_Fetch).  payload and exc_type are owned references where set.
-
-  Invariant: any code that assigns payload (or exc_type for RAISE) must set
-  kind in the same boundary; do not leave a non-NULL payload with a stale or
-  unspecified kind.
-
-  Stack-local buffers: use KosEvent ev = {0}; aggregate init zeros the struct
-  (kind is KOS_EV_NONE, pointers NULL).
-*/
-
-typedef struct KosEvent {
-  KosEventKind kind;
-  PyObject *payload;       /* new reference; caller owns it */
-  PyObject *exc_type;      /* for KOS_EV_RAISE: exception type (new ref) */
-} KosEvent;
-
-
-#define KosEvent_KIND(ev)    (((KosEvent *) (ev))->kind)
-#define KosEvent_PAYLOAD(ev) (((KosEvent *) (ev))->payload)
-#define KosEvent_EXC_TYPE(ev) (((KosEvent *) (ev))->exc_type)
-
-
-/**
-  KosEvalResultKind is the driver-visible completion of koskari_eval when
-  stopping with a value boundary.  KOS_ERES_RAISE uses PyErr as authority;
-  value is always NULL for RAISE (out_ev may still carry exc_type when
-  materialized from PyErr elsewhere).
-*/
-typedef enum KosEvalResultKind {
-  KOS_ERES_RETURN = 0,
-  KOS_ERES_RAISE,
-  KOS_ERES_YIELD,
-  KOS_ERES_AWAIT,
-} KosEvalResultKind;
-
-
-typedef struct KosEvalResult {
-  KosEvalResultKind kind;
-  PyObject *value;  /* strong ref; NULL for RAISE */
-} KosEvalResult;
-
-
-#define kos_eval_result_clear(r) Py_CLEAR((r)->value)
+typedef KosOpResult (*KosNativeHandlerFn)(KosEvalState *, PyObject *);
 
 
 /* === KosContext: VM execution context === */
@@ -332,7 +202,7 @@ typedef struct KosEvalResult {
   - While RUNNING, exactly one Python wrapper (KosPyCoroutine) may own it.
 
   Suspension and resumption:
-  - When koskari_eval returns KOS_EV_AWAIT, the context is suspended.
+  - When koskari_eval returns KOS_RES_AWAIT, the context is suspended.
   - py_await_iter holds in-flight Python await machinery
     (iterator from __await__(), defer payload). Frozen GEN resume uses
     KosPyAsyncGen::gen plus kos_dyn_gen_install at the driver before
@@ -354,12 +224,10 @@ struct KosContext {
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
   PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
 
-  KosDynFrame *unwind_target_frame;
-
   /* When unwind returns ASYNC_STARTED (wind after-thunk), RETURN stashes the
      value here and resumes unwinding when the thunk returns.  If
      pending_return_to_parent is set, push onto parent and detach; else
-     set KOS_EV_RETURN. */
+     return KOS_RES_RETURN. */
   PyObject *pending_return_value;
   int pending_return_to_parent;
 
@@ -394,7 +262,6 @@ struct KosContext {
 #define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
-#define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
 #define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
@@ -655,11 +522,6 @@ void KosEvalState_SetPendingReturn(
     PyObject *val,
     int to_parent);
 
-/**
-  Target frame for resume after async dynamic-wind pop (KOS_DYN_UNWIND_ASYNC_STARTED).
-*/
-void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame);
-
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,
     KosDynFrame *frame,
@@ -675,8 +537,30 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es);
 int KosEvalState_Transition(
     KosEvalState *es,
     const KosTransitionReq *req,
-    KosTransitionResult *out,
-    KosEvent *out_ev);
+    KosTransitionResult *out);
+
+
+/**
+  Opcode-facing wrapper for KosEvalState_Transition: internalizes the
+  KosTransitionResult and returns KosOpResult.  Use from opcode handlers
+  that trigger TRANSFER_TO_LOOP, UNWIND_TO_FRAME, or UNWIND_TO_NODE.
+  REPROLOGUE when async unwind (wind-thunk subroutine started); RAISE on
+  error; NORMAL on sync completion.
+*/
+static inline KosOpResult KosEvalState_TransitionOp(
+    KosEvalState *es,
+    const KosTransitionReq *req) {
+
+  KosTransitionResult tres = {0};
+  if (KosEvalState_Transition(es, req, &tres) < 0) {
+    return EVAL_RAISE();
+  }
+  if (tres.raw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    return EVAL_REPROLOGUE();
+  }
+  return EVAL_NORMAL();
+}
+
 
 /**
   Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
@@ -750,28 +634,23 @@ void KosContext_Free(KosContext *ctx);
 
   This is the main entry point for driving execution. The function
   runs opcodes from ctx->frame_top until:
-  - RETURN: normal completion
-  - RAISE: exception propagation
-  - YIELD: generator yield
-  - AWAIT: Python awaitable encountered
+  - RETURN: normal completion (KOS_RES_RETURN, val is new ref)
+  - RAISE: exception propagation (KOS_RES_RAISE, PyErr set)
+  - YIELD: generator yield (KOS_RES_YIELD, val is new ref)
+  - AWAIT: Python awaitable encountered (KOS_RES_AWAIT, val is new ref)
 
-  On return, out_ev is populated with the event kind and payload.
-  The caller owns the reference in out_ev->payload.
+  The caller owns the reference in the returned KosOpResult.val.
 
   :param ctx: the execution context
-  :param out_ev: output event structure
   :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM; NULL on first call or when N/A
-  :param throw_exc: exception to inject when resuming with throw (e.g. coroutine.throw()); NULL when resuming with value or on first call
+  :param throw_exc: exception to inject when resuming with throw; NULL when resuming with value or on first call
 
   When non-NULL, send_val and throw_typ/throw_exc are consumed (ownership
   transferred). Caller must not use them after the call. Pass NULL to
   borrow nothing.
-
-  :return: 0 on success, -1 on internal error
 */
-int koskari_eval(
+KosOpResult koskari_eval(
     KosContext *ctx,
-    KosEvent *out_ev,
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc);
@@ -838,20 +717,16 @@ extern PyObject *KoskariContinuationError;
    Accepts any PyObject* callable. Performs KosCallable_Check; if true,
    dispatches to KosCallable_Call with the same es after applying frame
    behavior per wants_frame and tail_call. If false, invokes
-   PyObject_Vectorcall and KosEvalState_PushOrAwait.
+   PyObject_Vectorcall and pushes or auto-awaits the result.
 
    Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
    -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.
 
    Caller must ensure stack is clear before calling when tail_call is true
    (use KosStackSteal). callable, args, kwnames are borrowed.
-
-   Returns 0 continue, 1 suspend, -1 error. On tail_call success, may return
-   KOS_OP_RES_CONTROL_RETURNED to signal control returned (wind thunks).
 */
-int KosEvalState_Call(
+KosOpResult KosEvalState_Call(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -867,9 +742,8 @@ int KosEvalState_Call(
 
    callable, args_tuple, kwds_dict are borrowed.
 */
-int KosEvalState_CallArgs(
+KosOpResult KosEvalState_CallArgs(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
@@ -882,9 +756,8 @@ int KosEvalState_CallArgs(
    Same semantics as KosEvalState_Call. Uses PyObject_CallNoArgs for
    non-KosCallable path. callable is borrowed.
 */
-int KosEvalState_CallNoArgs(
+KosOpResult KosEvalState_CallNoArgs(
     KosEvalState *es,
-    KosEvent *out_ev,
     PyObject *callable,
     int tail_call);
 
@@ -894,7 +767,7 @@ int KosEvalState_CallNoArgs(
 
 /**
    Push val onto the current frame stack, or if val is awaitable run one step
-   and either push the result or suspend with KOS_EV_AWAIT.
+   and either push the result or suspend.
 
    Use from code outside opcode dispatch that must not apply the CALL* POP,1
    peephole. Implementation: koskari/lib/eval/eval_utils.c included into the
@@ -904,24 +777,18 @@ int KosEvalState_CallNoArgs(
    unit, which may elide push plus a trailing POP,1.
 
    val is consumed (ownership transferred).
-
-   :return: 0 continue, 1 stop (AWAIT), -1 error
 */
-int KosEvalState_PushOrAwait(
-    KosEvalState *es, KosEvent *out_ev, PyObject *val);
+KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
 
 
 /**
-   Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
-   clear the thread error state, and mark the context dead.  Call only when
-   PyErr is set.  Used by dynchain local-exception delivery when unwinding
-   does not find a handler.  When es is non-NULL, flushes live pc/acting_pc
-   onto the top frame first so traceback and heap introspection see the
-   current instruction.
+   Inject traceback into the current PyErr in-place, leave PyErr set, and
+   mark the context dead.  Call only when PyErr is set.  The RAISE invariant
+   requires PyErr to remain set on every KOS_RES_RAISE boundary.
+   When es is non-NULL, flushes live pc/acting_pc first.
 */
-void kos_eval_emit_raise_from_pyerr(
+void kos_eval_prepare_boundary_raise(
     KosContext *ctx,
-    struct KosEvent *out_ev,
     KosEvalState *es);
 
 

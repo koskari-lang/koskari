@@ -24,7 +24,7 @@ KOS_OP_HANDLER(EXCEPTION) {
 
   if (! typ) {
     Py_INCREF(Py_None);
-    return kos_op_outcome_PUSH(es, Py_None);
+    return kos_op_result_PUSH(es, Py_None);
   }
 
   if (! val)
@@ -33,5 +33,8 @@ KOS_OP_HANDLER(EXCEPTION) {
   Py_DECREF(typ);
   Py_XDECREF(tb);
 
-  return kos_op_outcome_PUSH(es, val);
+  return kos_op_result_PUSH(es, val);
 }
+
+
+// The end.

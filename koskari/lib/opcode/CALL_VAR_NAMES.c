@@ -29,22 +29,22 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
 
   PyObject *name = KosCode_GetConstant((PyObject *) code, name_cpool_idx);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *callable = frame_ns_deref(es, name);
   if (! callable)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
   if (! names) {
     Py_DECREF(callable);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_VAR_NAMES names must be tuple"
                  ", not %R", names);
     Py_DECREF(callable);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
@@ -54,20 +54,20 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, ntotal);
   if (! ptr) {
     Py_DECREF(callable);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
     if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0) {
       Py_DECREF(callable);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
-    int r = KosEvalState_Call(es, out_ev, callable, steal.vals,
+    KosOpResult r = KosEvalState_Call(es, callable, steal.vals,
                             npos, names, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
-    return kos_op_outcome_from_call_int(es, r);
+    return r;
   }
 
   PyObject *result = PyObject_Vectorcall(callable, ptr, (size_t) npos,
@@ -75,7 +75,7 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
   KosEvalState_StackDropNoErr(es, ntotal);
   Py_DECREF(callable);
 
-  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
+  return kos_op_result_PUSH_OR_AWAIT(es, result);
 }
 
 

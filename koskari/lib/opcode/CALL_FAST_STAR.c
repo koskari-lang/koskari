@@ -47,16 +47,16 @@ KOS_OP_HANDLER(CALL_FAST_STAR) {
   PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_STAR on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_STAR on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *callable = KosNamespace_FastDeref(ns, (size_t) slot_idx);
   if (! callable)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *pos = NULL;
   PyObject *kwd = NULL;
@@ -65,59 +65,59 @@ KOS_OP_HANDLER(CALL_FAST_STAR) {
     kwd = KosEvalState_StackPopRef(es);
     if (! kwd) {
       Py_DECREF(callable);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     pos = KosEvalState_StackPopRef(es);
     if (! pos) {
       Py_DECREF(callable);
       Py_DECREF(kwd);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     if (ensure_tuple_fast_star(&pos)) {
       Py_DECREF(callable);
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   } else if (opa & 2) {
     kwd = KosEvalState_StackPopRef(es);
     if (! kwd) {
       Py_DECREF(callable);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(callable);
       Py_DECREF(kwd);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   } else if (opa & 1) {
     pos = KosEvalState_StackPopRef(es);
     if (! pos) {
       Py_DECREF(callable);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     if (ensure_tuple_fast_star(&pos)) {
       Py_DECREF(callable);
       Py_DECREF(pos);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     kwd = NULL;
   } else {
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(callable);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     kwd = NULL;
   }
 
-  int res = KosEvalState_CallArgs(es, out_ev, callable, pos, kwd, 0);
+  KosOpResult res = KosEvalState_CallArgs(es, callable, pos, kwd, 0);
 
   Py_DECREF(callable);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return kos_op_outcome_from_call_int(es, res);
+  return res;
 }
 
 

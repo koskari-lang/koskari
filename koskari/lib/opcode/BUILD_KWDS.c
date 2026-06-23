@@ -24,14 +24,16 @@ KOS_OP_HANDLER(BUILD_KWDS) {
   PyObject *built = KosEvalState_StackPopTailDict(es, (size_t) opa);
 
   if (! built)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (KosEvalState_StackPushRef(es, built) < 0) {
     Py_DECREF(built);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   Py_DECREF(built);
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

@@ -23,8 +23,11 @@ KOS_OP_HANDLER(CONST) {
 
   PyObject *val = KosEvalState_GetConstant(es, index);
   if (! val)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   Py_INCREF(val);
 
-  return kos_op_outcome_PUSH(es, val);
+  return kos_op_result_PUSH(es, val);
 }
+
+
+// The end.

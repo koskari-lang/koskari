@@ -1,10 +1,17 @@
 # KosEvalState as the primary evaluator API
 
+**Status:** Implemented (archived 2026-06-22). Opcode handlers use
+`KosEvalState_*` only (no `KosContext_*` in `opcode/`). Live authority and
+choke-point funnel: [eval-state-live-authority.md](../interpreter/eval-state-live-authority.md);
+rollup: [EVALUATOR.md](../EVALUATOR.md) §1.
+
+---
+
 ## How to use this document
 
 | If you want to… | Read |
 |-----------------|------|
-| Centralize live `KosEvalState` updates (performance; remove scatter sync) | [interpreter/eval-state-live-authority.md](interpreter/eval-state-live-authority.md) |
+| Centralize live `KosEvalState` updates (performance; remove scatter sync) | [../interpreter/eval-state-live-authority.md](../interpreter/eval-state-live-authority.md) |
 | Understand the end-state rule (what may touch `KosContext`) | §1, §2 |
 | See what lives on `KosContext` vs `KosEvalState` today | §3, Glossary |
 | Know which opcodes still use `ctx` directly | §5 |
@@ -83,7 +90,7 @@ inject fields by name.
 |-------|--------|
 | New `KosTransferPlan` IR | This migration moves **call sites** only; plan **semantics** stay. |
 | Language semantics | Refactor-only; same observable behavior. |
-| **Incremental** pop/push retarget at every `dyn_top` publish | **Phase 1 done** for Tier 1 (`kos_dyn_retarget_*` in `dynchain.c`); see [eval-state-live-authority.md](interpreter/eval-state-live-authority.md). Tier 2 xfer / tail koscall still use full `kos_dyn_rebuild_live_from_chain`. |
+| **Incremental** pop/push retarget at every `dyn_top` publish | **Phase 1 done** for Tier 1 (`kos_dyn_retarget_*` in `dynchain.c`); see [eval-state-live-authority.md](../interpreter/eval-state-live-authority.md). Tier 2 xfer / tail koscall still use full `kos_dyn_rebuild_live_from_chain`. |
 
 ---
 
@@ -672,5 +679,5 @@ centralizes the write.
 | 2026-04-27 | Second pass: decisions, field appendix, API list, phases |
 | 2026-04-27 | Third pass: TOC, glossary, Appendix B, IN_TRANSFER vs ArmTransferPlan, naming alignment, phase ordering (**C** after **B1**), removed redundant **`LeaveTransfer`** from public §10.2 |
 | 2026-04-27 | Fourth pass: §10 **Current / New / refactor** tables; **`KReturnDelimited`** (§10.12), **`TailKoscallReplaceFrame`** (§10.13), opcode plan builders §10.14; **`DisarmTransferPlan`** ↔ **`clear_and_free_transfer_plan`**. |
-| 2026-05-26 | Cross-link: [eval-state-live-authority.md](interpreter/eval-state-live-authority.md) (choke-point funnel, parity constraints; orthogonal to opcode `ctx` macro migration). |
+| 2026-05-26 | Cross-link: [eval-state-live-authority.md](../interpreter/eval-state-live-authority.md) (choke-point funnel, parity constraints; orthogonal to opcode `ctx` macro migration). |
 | 2026-05-26 | §1.3: incremental Tier-1 retarget landed; Tier 2 rebuild deferred per live-authority Phase 2. |

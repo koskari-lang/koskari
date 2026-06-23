@@ -50,10 +50,8 @@ static int dynnode_to_dict_cc_raise(KosDynNode *node, PyObject *data) {
    Transfer EXTENT_ACTION target: set PyErr from stored exception; returns -1.
    Callers: kos_dyn_unwind for KOS_DYN_CC_RAISE.
 */
-static int cc_raise_unwind(KosContext *ctx, KosDynNode *node,
-                           KosEvent *out_ev) {
+static int cc_raise_unwind(KosContext *ctx, KosDynNode *node) {
   (void) ctx;
-  (void) out_ev;
   PyObject *exc_type = KosDynCCRaise_EXC_TYPE(node);
   PyObject *exc_val = KosDynCCRaise_EXC_VAL(node);
   if (exc_type && exc_val) {

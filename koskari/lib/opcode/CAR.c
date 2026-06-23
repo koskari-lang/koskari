@@ -24,12 +24,12 @@ KOS_OP_HANDLER(CAR) {
   if (opa <= 0) {
     PyErr_Format(PyExc_RuntimeError, "CAR invoked with invalid"
                  " argument count: %i", opa);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *cur = KosEvalState_StackPopRef(es);
   if (! cur)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   for (int i = 0; i < opa; i++) {
     if (! KosPair_Check(cur) || KosNil_Check(cur)) {
@@ -40,12 +40,15 @@ KOS_OP_HANDLER(CAR) {
       PyErr_Format(PyExc_TypeError,
                    "CAR at index %d of %d requires a non-nil pair, got %s",
                    i, opa, got);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     PyObject *next = KosPair_CAR(cur);
     Py_INCREF(next);
     Py_DECREF(cur);
     cur = next;
   }
-  return kos_op_outcome_PUSH(es, cur);
+  return kos_op_result_PUSH(es, cur);
 }
+
+
+// The end.

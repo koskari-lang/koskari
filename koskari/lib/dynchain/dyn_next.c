@@ -140,10 +140,9 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
 }
 
 
-int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev) {
+int kos_dyn_next_deliver_yield(KosEvalState *es, PyObject *val) {
 
   KosDynNext *next = kos_dyn_find_next_above_frame(es);
-  PyObject *payload;
   KosPyAsyncGen *agen;
 
   if (! next) {
@@ -151,13 +150,10 @@ int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev) {
                     "kos_dyn_next_deliver_yield: no NEXT boundary");
     return -1;
   }
-  payload = KosEvent_PAYLOAD(out_ev);
-  if (KosEvalState_StackPushRef(es, payload) < 0) {
+  if (KosEvalState_StackPushRef(es, val) < 0) {
     return -1;
   }
-  Py_DECREF(payload);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
+  Py_DECREF(val);
 
   agen = (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) next);
   agen->in_progress = 0;
@@ -167,10 +163,9 @@ int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev) {
 }
 
 
-int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
+int kos_dyn_next_deliver_return(KosEvalState *es, PyObject *val) {
 
   KosDynNext *next = kos_dyn_find_next_above_frame(es);
-  PyObject *val;
   KosPyAsyncGen *agen;
   int nn;
 
@@ -179,7 +174,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
                     "kos_dyn_next_deliver_return: no NEXT boundary");
     return -1;
   }
-  val = KosEvent_PAYLOAD(out_ev);
   nn = KosDynNext_N((KosDynNode *) next);
 
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
@@ -207,9 +201,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
   } else {
     Py_DECREF(val);
   }
-
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
 
   kos_dyn_unlink_next_node(es, next);
   return 0;

@@ -18,7 +18,9 @@
 */
 
 KOS_OP_HANDLER(LABEL) {
-  (void) out_ev;
   (void) insn;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

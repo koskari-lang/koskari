@@ -20,10 +20,10 @@
 
 #include <Python.h>
 
+#include "eval.h"
+
 
 struct KosContext;
-struct KosEvent;
-struct KosEvalState;
 
 
 /**
@@ -37,18 +37,16 @@ struct KosEvalState;
    tail_call: 1 if this is a tail call; 0 otherwise. Most implementations
    ignore this; frame behavior is handled by the caller (KosEvalState_Call*).
 */
-typedef int (*KosInstallFunc)(
-    struct KosEvalState *es,
-    struct KosEvent *out_ev,
+typedef KosOpResult (*KosInstallFunc)(
+    KosEvalState *es,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
     int tail_call);
 
 
-typedef int (*KosVectorInstallFunc)(
-    struct KosEvalState *es,
-    struct KosEvent *out_ev,
+typedef KosOpResult (*KosVectorInstallFunc)(
+    KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -98,9 +96,9 @@ extern KosCallableTypeObject KosCallableType;
    tuple+dict and uses tp_kos_install.
 
    es must match the KosEvalState_Call* caller. callable, args, kwnames are
-   borrowed. Returns 0 continue, 1 suspend, -1 error.
+   borrowed.
 */
-int KosCallable_Call(struct KosEvalState *es, struct KosEvent *out_ev,
+KosOpResult KosCallable_Call(KosEvalState *es,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call);
@@ -113,9 +111,9 @@ int KosCallable_Call(struct KosEvalState *es, struct KosEvent *out_ev,
    tp_kos_install.
 
    es must match the KosEvalState_Call* caller. callable, args_tuple, kwds_dict
-   are borrowed. Returns 0 continue, 1 suspend, -1 error.
+   are borrowed.
 */
-int KosCallable_CallArgs(struct KosEvalState *es, struct KosEvent *out_ev,
+KosOpResult KosCallable_CallArgs(KosEvalState *es,
     PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call);
 
@@ -126,10 +124,9 @@ int KosCallable_CallArgs(struct KosEvalState *es, struct KosEvent *out_ev,
    responsible for frame/stack state; this function only dispatches to
    tp_kos_install with NULL args_tuple and NULL kwds_dict.
 
-   es must match the KosEvalState_Call* caller. callable is borrowed. Returns 0
-   continue, 1 suspend, -1 error.
+   es must match the KosEvalState_Call* caller. callable is borrowed.
 */
-int KosCallable_CallNoArgs(struct KosEvalState *es, struct KosEvent *out_ev,
+KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
     PyObject *callable, int tail_call);
 
 

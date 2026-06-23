@@ -97,14 +97,18 @@ KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
    Pop prompt via barrier-crossing policy API using shared uninstall machinery.
 */
 int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
-  int r;
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) prompt) {
-    r = 0;
+  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) prompt)
+    return 0;
+  KosOpResult kr = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE);
+  if (kr.kind == KOS_RES_AWAIT) {
+    Py_XDECREF(kr.val);
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
   }
-  else {
-    r = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE, NULL);
-  }
-  return r;
+  if (kr.kind == KOS_RES_REPROLOGUE)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  if (kr.kind != KOS_RES_NORMAL)
+    return -1;
+  return 0;
 }
 
 

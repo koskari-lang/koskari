@@ -40,8 +40,8 @@
 /* === Forward declarations === */
 
 
-static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
-                                     KosXferEvent event, KosEvent *out_ev);
+static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
+                                             KosXferEvent event);
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
@@ -286,31 +286,34 @@ static PyObject *snapshot_stack_to_list(KosStackBlock *stack) {
    Dispatch post-await resume: WITH phases, WIND phases. Callers: eval after
    KosEvalState_CallArgs returns.
 */
-int kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
+KosOpResult kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node) {
+  int r = 0;
   /* Iterator-boundary yield/return uses eval dispatch_boundary_event /
      kos_dyn_deliver_* instead of this hook. */
-  (void) out_ev;
   /* When node is a frame, check if parent is WITH in pending phase. */
   if (KosDynNode_IS_FRAME(node)) {
     KosDynNode *parent = KosDynNode_PARENT(node);
     if (parent && KosDynNode_IS_WITH(parent)) {
       uint8_t phase = KosDynWith_PHASE((KosDynWith *) parent);
       if (phase == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-        return kos_dyn_with_on_control_returned(es, (KosDynWith *) parent, 1);
-      if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
-        return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) parent);
+        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) parent, 1);
+      else if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+        r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) parent);
+    }
+  } else {
+    switch (KosDynNode_KIND(node)) {
+      case KOS_DYN_WIND:
+        r = kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
+        break;
+      case KOS_DYN_WITH:
+        if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+          r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
+        break;
+      default:
+        break;
     }
   }
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      return kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
-    case KOS_DYN_WITH:
-      if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-        return kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
-      return 0;
-    default:
-      return 0;
-  }
+  return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
 }
 
 
@@ -828,7 +831,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   prev = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = node;
 
-  if (kos_dyn_install(es, node, NULL) < 0) {
+  if (kos_dyn_install(es, node) < 0) {
     KosEvalState_DYN_TOP(es) = prev;
     return -1;
   }
@@ -869,24 +872,19 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 }
 
 
-static int kos_dyn_uninstall_core(
+static KosOpResult kos_dyn_uninstall_core(
     KosEvalState *es,
     KosDynNode *node,
-    KosXferEvent event,
-    KosEvent *out_ev) {
+    KosXferEvent event) {
 
-  int r;
-
-  r = kos_dyn_uninstall_handler(es, node, event, out_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  if (r < 0)
-    return -1;
+  KosOpResult kr = kos_dyn_uninstall_handler(es, node, event);
+  if (kr.kind != KOS_RES_NORMAL)
+    return kr;
 
   kos_dyn_commit_dyn_top(es, KosDynNode_PARENT(node));
   KosDynNode_PARENT(node) = NULL;
   kos_dynnode_free(node);
-  return 0;
+  return EVAL_NORMAL();
 }
 
 
@@ -895,19 +893,19 @@ static int kos_dyn_uninstall_core(
    refresh FRAME_TOP. Must be the current top. Callers: kos_dyn_pop_top,
    xfer_step_pop_one, explicit unwinds.
 */
-int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                      KosEvent *out_ev) {
+KosOpResult kos_dyn_uninstall(KosEvalState *es, KosDynNode *node,
+                               KosXferEvent event) {
   if (! node || KosEvalState_DYN_TOP(es) != node) {
     PyErr_SetString(PyExc_RuntimeError, "kos_dyn_uninstall: node is not dyn_top");
-    return -1;
+    return EVAL_RAISE();
   }
 
   if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BARRIER)) {
     PyErr_SetString(PyExc_RuntimeError, "cannot unwind past barrier node");
-    return -1;
+    return EVAL_RAISE();
   }
 
-  return kos_dyn_uninstall_core(es, node, event, out_ev);
+  return kos_dyn_uninstall_core(es, node, event);
 }
 
 
@@ -936,11 +934,11 @@ int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node) {
 /**
    Run INSTALL-phase wind (enter) for a node with NEEDS_INSTALL_WIND.
    Used by xfer_step_install and xfer_step_push.
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_REPROLOGUE or EVAL_AWAIT when async started
 */
-static int kos_dynnode_run_wind(KosEvalState *es, KosDynNode *node,
-                                KosEvent *out_ev) {
-  return kos_dyn_wind(es, node, out_ev);
+static KosOpResult kos_dynnode_run_wind(KosEvalState *es, KosDynNode *node) {
+  return kos_dyn_wind(es, node);
 }
 
 
@@ -948,17 +946,13 @@ static int kos_dynnode_run_wind(KosEvalState *es, KosDynNode *node,
    Run transfer-plan unwind for a node with NEEDS_UNWIND_ACTION.
    Uses kos_dyn_unwind; teardown (drop block, pop) for nodes with
    NEEDS_TRANSFER_TEARDOWN. Used by kos_run_transfer_step for EXTENT_ACTION.
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_AWAIT or EVAL_REPROLOGUE when async started
 */
-static int kos_dynnode_run_transfer_unwind(KosEvalState *es, KosDynNode *node,
-                                           KosXferEvent event,
-                                           KosEvent *out_ev) {
-  int r = kos_dyn_unwind(es, node, event, out_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  if (r < 0)
-    return -1;
-  return 0;
+static KosOpResult kos_dynnode_run_transfer_unwind(KosEvalState *es,
+                                                   KosDynNode *node,
+                                                   KosXferEvent event) {
+  return kos_dyn_unwind(es, node, event);
 }
 
 
@@ -971,14 +965,13 @@ static int kos_dynnode_run_transfer_unwind(KosEvalState *es, KosDynNode *node,
 
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-int kos_dyn_install(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
+int kos_dyn_install(KosEvalState *es, KosDynNode *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   int r;
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT: {
       /* Operand stack stays on the frame below; PROMPT is a barrier only.
          SHIFT inherits the same stack via KosDynNode_STACK == NULL. */
-      (void) out_ev;
       (void) node;
       r = 0;
       break;
@@ -1015,12 +1008,13 @@ int kos_dyn_install(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
 
 /**
    Run the pop handler for a node being popped off the chain.  Types with
-   no pop action return 0 immediately via the default case.
+   no pop action return EVAL_NORMAL() immediately via the default case.
 
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_AWAIT or EVAL_REPROLOGUE when async started
 */
-static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
-                                     KosXferEvent event, KosEvent *out_ev) {
+static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
+                                              KosXferEvent event) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT: {
       if (KOS_XFER_TRACE) {
@@ -1030,41 +1024,35 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
              (void *) node, len_before);
         (void) len_before;
       }
-      return 0;
+      return EVAL_NORMAL();
     }
     case KOS_DYN_DELIM:
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_WIND:
-      return kos_dyn_unwind(es, node, event, out_ev);
+      return kos_dyn_unwind(es, node, event);
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
     case KOS_DYN_LOOP:
     case KOS_DYN_FOREACH:
-      (void) out_ev;
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_NS:
       (void) es;
-      (void) out_ev;
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_COLLECT: {
       (void) es;
-      (void) out_ev;
-      return 0;
+      return EVAL_NORMAL();
     }
     case KOS_DYN_PARAM:
-      (void) out_ev;
       kos_dyn_param_unwind(es, (KosDynParam *) node);
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_YIELD_FROM:
-      (void) out_ev;
       kos_dyn_yieldfrom_unwind(es, (KosDynYieldFrom *) node);
-      return 0;
+      return EVAL_NORMAL();
     case KOS_DYN_WITH: {
-      return kos_dyn_unwind(es, node, event, out_ev);
+      return kos_dyn_unwind(es, node, event);
     }
     default:
-      (void) out_ev;
-      return 0;
+      return EVAL_NORMAL();
   }
 }
 
@@ -1076,81 +1064,77 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
 
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-int kos_dyn_wind(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
-  int r;
+KosOpResult kos_dyn_wind(KosEvalState *es, KosDynNode *node) {
   switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PARAM:
-      r = kos_dyn_param_wind(es, (KosDynParam *) node);
-      break;
+    case KOS_DYN_PARAM: {
+      int r = kos_dyn_param_wind(es, (KosDynParam *) node);
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
     case KOS_DYN_WITH:
-      r = kos_dyn_dyn_with_wind(es, (KosDynWith *) node, out_ev);
-      break;
-    case KOS_DYN_WIND:
-      r = kos_dyn_wind_wind(es, (KosDynWind *) node);
-      break;
+      return kos_dyn_dyn_with_wind(es, (KosDynWith *) node);
+    case KOS_DYN_WIND: {
+      int r = kos_dyn_wind_wind(es, (KosDynWind *) node);
+      if (r == KOS_DYN_UNWIND_ASYNC_STARTED) return EVAL_REPROLOGUE();
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_wind: node kind %u has no wind",
                    (unsigned) KosDynNode_KIND(node));
-      r = -1;
-      break;
+      return EVAL_RAISE();
   }
-  return r;
 }
 
 
 /**
-   Run unwind (exit) for an extent node.  May start async for WITH/DYN_WITH.
+   Run unwind (exit) for an extent node.  May start async for WITH.
 
    :param event: transfer event; nodes can distinguish RETURN, RAISE, etc.
-   :param out_ev: event output; may be NULL for nodes that do not suspend
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
+     EVAL_AWAIT when WITH __exit__ returned awaitable,
+     EVAL_REPROLOGUE when WITH swallowed the exception
 */
-int kos_dyn_unwind(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                   KosEvent *out_ev) {
+KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
+                            KosXferEvent event) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  int r;
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_DELIM:
-      (void) out_ev;
-      r = 0;
-      break;
+      return EVAL_NORMAL();
     case KOS_DYN_SHIFT:
-      (void) out_ev;
-      r = 0;
-      break;
+      return EVAL_NORMAL();
     case KOS_DYN_PARAM:
-      (void) out_ev;
       kos_dyn_param_unwind(es, (KosDynParam *) node);
-      r = 0;
-      break;
-    case KOS_DYN_WIND:
-      (void) out_ev;
-      r = kos_dyn_wind_unwind(es, (KosDynWind *) node);
-      break;
-    case KOS_DYN_WITH:
-      r = kos_dyn_with_unwind(es, (KosDynWith *) node, out_ev);
-      break;
-    case KOS_DYN_CC_RAISE:
-      (void) out_ev;
-      r = cc_raise_unwind(ctx, node, NULL);
-      break;
+      return EVAL_NORMAL();
+    case KOS_DYN_WIND: {
+      int r = kos_dyn_wind_unwind(es, (KosDynWind *) node);
+      return (r < 0) ? EVAL_RAISE()
+           : (r == KOS_DYN_UNWIND_ASYNC_STARTED) ? EVAL_REPROLOGUE()
+           : EVAL_NORMAL();
+    }
+    case KOS_DYN_WITH: {
+      KosOpResult wr = kos_dyn_with_unwind(es, (KosDynWith *) node);
+      /* REPROLOGUE: exception swallowed; resume_pc set and Py_None pushed to
+         parent stack by dyn_with_unwind.  Map to NORMAL so kos_dyn_uninstall_core
+         pops the WITH node and commits the stack — then kos_dyn_try_local_raise_body's
+         top_may_swallow check returns REPROLOGUE to restart past POP_WITH. */
+      if (wr.kind == KOS_RES_REPROLOGUE)
+        return EVAL_NORMAL();
+      return wr;
+    }
+    case KOS_DYN_CC_RAISE: {
+      int r = cc_raise_unwind(ctx, node);
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
     case KOS_DYN_GEN:
-      (void) out_ev;
-      r = 0;
-      break;
+      return EVAL_NORMAL();
     case KOS_DYN_NEXT:
-      (void) out_ev;
-      r = 0;
-      break;
+      return EVAL_NORMAL();
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_unwind: node kind %u has no unwind",
                    (unsigned) KosDynNode_KIND(node));
-      r = -1;
-      break;
+      return EVAL_RAISE();
   }
-  return r;
 }
 
 
@@ -1165,9 +1149,7 @@ int kos_dyn_unwind(KosEvalState *es, KosDynNode *node, KosXferEvent event,
    FINALLY: CONSUMED when RAISE or RETURN and finally enabled.
 */
 KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
-                               KosXferEvent event, KosEvent *out_ev) {
-
-  (void) out_ev;
+                               KosXferEvent event) {
 
   KOS_TRACE_EVENTS_INC(KOS_TE_DYN_HANDLE_ENTER);
 
@@ -2191,16 +2173,15 @@ int kos_dyn_finish_delimited_pop_return(
 
 
 /**
-   Shared path for KOS_EV_RETURN delivery to KOS_DYN_NEXT or awaiting
+   Shared path for RETURN delivery to KOS_DYN_NEXT or awaiting
    KOS_DYN_FOREACH after a flattened Koskari async generator completes.
-   Expects KosEvent_KIND(out_ev) == KOS_EV_RETURN and payload set.
+   val ownership is transferred to the boundary consumer.
 
-   :return: same as kos_dyn_next_deliver_return / foreach deliver (0 success,
-      -1 error; next may leave no PyErr for REPROLOGUE)
+   :return: 0 on success, -1 on error (next may leave no PyErr for REPROLOGUE)
 */
 int kos_dyn_deliver_iterator_boundary_return_event(
     KosEvalState *es,
-    struct KosEvent *out_ev) {
+    PyObject *val) {
 
   // TODO: this is bad, it hard-coded specific node types. It should use
   // a capability-based approach.
@@ -2208,15 +2189,15 @@ int kos_dyn_deliver_iterator_boundary_return_event(
   KosDynNext *const next = kos_dyn_find_next_above_frame(es);
 
   if (next)
-    return kos_dyn_next_deliver_return(es, out_ev);
+    return kos_dyn_next_deliver_return(es, val);
 
   KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
   if (fe)
-    return kos_dyn_foreach_deliver_return_kos_agen(es, fe, out_ev);
+    return kos_dyn_foreach_deliver_return_kos_agen(es, fe, val);
 
   KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
   if (yf)
-    return kos_dyn_yield_from_deliver_inner_return(es, yf, out_ev);
+    return kos_dyn_yield_from_deliver_inner_return(es, yf, val);
 
   PyErr_SetString(PyExc_RuntimeError,
                   "iterator boundary RETURN without NEXT/FOREACH/YIELD_FROM "
@@ -2226,18 +2207,21 @@ int kos_dyn_deliver_iterator_boundary_return_event(
 
 
 /**
- Delivers KOS_EV_YIELD to the first matching iterator boundary, in the same
+ Delivers a YIELD value to the first matching iterator boundary, in the same
  order as kos_dyn_deliver_iterator_boundary_return_event: NEXT, then
  FOREACH (Koskari agen await), then YIELD_FROM.
 
+ :param val: inner yield value; ownership transferred to the boundary consumer.
+ :param out_new_yield_val: set to the new outer yield value when r==1
+        (YIELD_FROM path); caller owns the reference.
  :return: 0 if NEXT or FOREACH delivered (caller should REPROLOGUE);
-          1 if YIELD_FROM delivered (caller sets KOS_SUSP_YIELD and returns
-          STOP to the outer driver);
+          1 if YIELD_FROM delivered (*out_new_yield_val set; caller yields);
           -1 on error
 */
 int kos_dyn_deliver_yield_to_iter_boundary(
     KosEvalState *es,
-    struct KosEvent *out_ev) {
+    PyObject *val,
+    PyObject **out_new_yield_val) {
 
   // TODO: this is bad, it hard-coded specific node types. It should use
   // a capability-based approach.
@@ -2245,21 +2229,21 @@ int kos_dyn_deliver_yield_to_iter_boundary(
   KosDynNext *const next = kos_dyn_find_next_above_frame(es);
 
   if (next) {
-    if (kos_dyn_next_deliver_yield(es, out_ev) < 0)
+    if (kos_dyn_next_deliver_yield(es, val) < 0)
       return -1;
     return 0;
   }
 
   KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
   if (fe) {
-    if (kos_dyn_foreach_deliver_yield_kos_agen(es, fe, out_ev) < 0)
+    if (kos_dyn_foreach_deliver_yield_kos_agen(es, fe, val) < 0)
       return -1;
     return 0;
   }
 
   KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
   if (yf) {
-    if (kos_dyn_yield_from_deliver_inner_yield(es, yf, out_ev) < 0)
+    if (kos_dyn_yield_from_deliver_inner_yield(es, yf, val, out_new_yield_val) < 0)
       return -1;
     return 1;
   }
@@ -2274,7 +2258,7 @@ int kos_dyn_deliver_yield_to_iter_boundary(
 /**
  After kos_dyn_pop_frame from a callee: if a flattened Koskari async-gen
  consumer (NEXT or ITER_NEXT) is active, deliver the return value using the
- same logic as eval dispatch_boundary_event for KOS_EV_RETURN.
+ same logic as eval_event_return for KOS_RES_RETURN.
 
  On success or error paths that consume the value, sets *p_val to NULL.
  On return 1, *p_val is unchanged and the caller must deliver to the parent
@@ -2285,20 +2269,14 @@ int kos_dyn_deliver_yield_to_iter_boundary(
 */
 int kos_dyn_try_deliver_iterator_boundary_after_pop(
     KosEvalState *es,
-    PyObject **p_val,
-    struct KosEvent *out_ev) {
-
-  PyObject *val;
+    PyObject **p_val) {
 
   if (! kos_dyn_need_kos_agen_boundary_deliver(es)) {
     return 1;
   }
 
-  val = *p_val;
-  KosEvent_KIND(out_ev) = KOS_EV_RETURN;
-  KosEvent_PAYLOAD(out_ev) = val;
-
-  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, out_ev);
+  PyObject *val = *p_val;
+  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, val);
   if (dr < 0) {
     if (PyErr_Occurred()) {
       *p_val = NULL;

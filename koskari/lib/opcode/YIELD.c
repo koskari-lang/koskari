@@ -15,7 +15,8 @@
 
 /**
    YIELD: arg = 0 (None), 1 (single value), or N (tuple of N values).
-   Pop the value(s) from the stack and suspend with KOS_EV_YIELD.
+   Pop the value(s) from the stack and return EVAL_YIELD(val); apply_kos_op_result
+   routes to eval_event_yield for walk/freeze and boundary delivery.
    Resumption (send value) is handled by py_resume_inject at re-entry.
 */
 
@@ -31,22 +32,22 @@ KOS_OP_HANDLER(YIELD) {
     val = KosEvalState_StackPopRef(es);
     if (! val) {
       SAY("[eval] YIELD pop underrun\n");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
 
   } else {
     val = KosEvalState_StackPopTail(es, (size_t) opa);
     if (! val) {
       SAY("[eval] YIELD PopTail underrun\n");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
   }
 
   /* Frame has parent (not GEN): return into parent in same loop
      (CALL return or async gen step).  Parent is GEN => top-level yield. */
 
-  KosEvent_KIND(out_ev) = KOS_EV_YIELD;
-  KosEvent_PAYLOAD(out_ev) = val;
-  KosEvalState_MarkDeadAfterYield(es);
-  return KOS_OP_POST_SUSPEND();
+  return EVAL_YIELD(val);
 }
+
+
+// The end.

@@ -22,10 +22,12 @@ KOS_OP_HANDLER(CLEAR_FINALLY) {
   if (! region || ! KosDynNode_IS_FINALLY(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_FINALLY: top is not a FINALLY region");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   KosDynFinally_ENABLED((KosDynFinally *) region) = 0;
-  (void) out_ev;
   (void) insn;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

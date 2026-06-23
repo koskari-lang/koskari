@@ -19,11 +19,10 @@
 */
 
 KOS_OP_HANDLER(EXCEPTION_MATCH) {
-  (void) out_ev;
 
   PyObject *match = KosEvalState_StackPopRef(es);
   if (! match)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   int ret = 0;
   PyObject *res = Py_False;
@@ -42,5 +41,8 @@ KOS_OP_HANDLER(EXCEPTION_MATCH) {
     res = Py_True;
 
   Py_INCREF(res);
-  return kos_op_outcome_PUSH(es, res);
+  return kos_op_result_PUSH(es, res);
 }
+
+
+// The end.

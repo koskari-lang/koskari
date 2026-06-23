@@ -18,12 +18,15 @@
 */
 KOS_OP_HANDLER(OBJECT_TRUTH) {
     PyObject *val = KosEvalState_StackPopRef(es);
-    if (! val) return KOS_OP_POST_ERR();
+    if (! val) return EVAL_RAISE();
     int r = PyObject_IsTrue(val);
     Py_DECREF(val);
-    if (r < 0) return KOS_OP_POST_ERR();
+    if (r < 0) return EVAL_RAISE();
     PyObject *res = (r ? Py_True : Py_False);
     Py_INCREF(res);
     (void) insn;
-    return kos_op_outcome_PUSH(es, res);
+    return kos_op_result_PUSH(es, res);
 }
+
+
+// The end.

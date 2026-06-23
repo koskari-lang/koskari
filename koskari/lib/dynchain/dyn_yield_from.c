@@ -163,29 +163,27 @@ KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
 
 /**
    Inner Koskari async gen yielded: push through to delegating frame and
-   surface KOS_EV_YIELD to the outer koskari_eval caller.
+   surface KOS_RES_YIELD to the outer koskari_eval caller.
 */
 int kos_dyn_yield_from_deliver_inner_yield(
-    KosEvalState *es, KosDynYieldFrom *yf, KosEvent *out_ev) {
+    KosEvalState *es, KosDynYieldFrom *yf,
+    PyObject *inner_val, PyObject **out_new_yield_val) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
-  PyObject *payload = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *const frame = KosEvalState_FRAME(es);
   PyObject *const *tos;
 
-  if (! frame || ! payload) {
+  if (! frame || ! inner_val) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_yield_from_deliver_inner_yield: missing frame "
                     "or payload");
     return -1;
   }
 
-  if (KosEvalState_StackPushRef(es, payload) < 0) {
+  if (KosEvalState_StackPushRef(es, inner_val) < 0) {
     return -1;
   }
-  Py_DECREF(payload);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
+  Py_DECREF(inner_val);
 
   {
     KosPyAsyncGen *agen =
@@ -203,9 +201,8 @@ int kos_dyn_yield_from_deliver_inner_yield(
     return -1;
   }
 
-  KosEvent_KIND(out_ev) = KOS_EV_YIELD;
-  KosEvent_PAYLOAD(out_ev) = *tos;
-  Py_INCREF(KosEvent_PAYLOAD(out_ev));
+  *out_new_yield_val = *tos;
+  Py_INCREF(*out_new_yield_val);
 
   KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
@@ -219,17 +216,14 @@ int kos_dyn_yield_from_deliver_inner_yield(
    Advance delegating frame PC past the YIELD_FROM instruction.
 */
 int kos_dyn_yield_from_deliver_inner_return(
-    KosEvalState *es, KosDynYieldFrom *yf, KosEvent *out_ev) {
+    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val) {
 
-  PyObject *val = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *df;
   KosCode *code;
   KosPyAsyncGen *delegate_agen;
 
   if (val)
     Py_DECREF(val);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
 
   /*
    Match kos_dyn_next_deliver_return: dyn_top must be the delegate gen frame;

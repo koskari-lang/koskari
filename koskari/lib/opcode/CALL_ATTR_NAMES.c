@@ -29,16 +29,16 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
 
   PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
   if (! names)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_ATTR_NAMES names must be tuple"
                  ", not %R", names);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -48,21 +48,21 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, ntotal);
   if (! ptr)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *obj = ptr[0];
 
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
   if (send_self < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *result;
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
     if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0) {
       Py_DECREF(resolved);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     PyObject *const *args;
     Py_ssize_t nargs;
@@ -73,11 +73,11 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
       args = (total > 0) ? &steal.vals[1] : NULL;
       nargs = npos;
     }
-    int r = KosEvalState_Call(es, out_ev, resolved, args, nargs,
+    KosOpResult r = KosEvalState_Call(es, resolved, args, nargs,
                             names, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_outcome_from_call_int(es, r);
+    return r;
   }
 
   if (send_self == 0) {
@@ -89,8 +89,11 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
   }
   Py_DECREF(resolved);
   if (! result)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   KosEvalState_StackDropNoErr(es, ntotal);
-  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
+  return kos_op_result_PUSH_OR_AWAIT(es, result);
 }
+
+
+// The end.

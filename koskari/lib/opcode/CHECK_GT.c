@@ -18,5 +18,8 @@
 */
 
 KOS_OP_HANDLER(CHECK_GT) {
-  return kos_op_outcome_from_int_step(kos_check_cmp(es, out_ev, insn, Py_GT));
+  return kos_op_result_from_push_int(kos_check_cmp(es, insn, Py_GT));
 }
+
+
+// The end.

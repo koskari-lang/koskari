@@ -29,33 +29,33 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
 
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! attr_name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *obj = KosNamespace_FastDeref(ns, (size_t) slot_idx);
   if (! obj)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *const *ptr = NULL;
   if (n > 0) {
     ptr = KosEvalState_StackTailPtr(es, (size_t) n);
     if (! ptr)
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
   }
 
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, attr_name, NULL, &resolved);
   if (send_self < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
@@ -67,7 +67,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     }
     if (steal_ok < 0) {
       Py_DECREF(resolved);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     PyObject *const *args;
     Py_ssize_t nargs;
@@ -78,10 +78,10 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
       args = (n > 0) ? steal.vals : NULL;
       nargs = (Py_ssize_t) n;
     }
-    int r = KosEvalState_Call(es, out_ev, resolved, args, nargs, NULL, 0);
+    KosOpResult r = KosEvalState_Call(es, resolved, args, nargs, NULL, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_outcome_from_call_int(es, r);
+    return r;
   }
 
   PyObject *result;
@@ -89,7 +89,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     KosStackSteal steal = { 0 };
     if (KosEvalState_StackSteal_TailPrepend(es, &steal, obj, (size_t) n) < 0) {
       Py_DECREF(resolved);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     result = PyObject_Vectorcall(resolved, steal.vals, (size_t) n + 1, NULL);
     KosStackSteal_Free(&steal);
@@ -101,7 +101,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
 
   Py_DECREF(resolved);
 
-  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
+  return kos_op_result_PUSH_OR_AWAIT(es, result);
 }
 
 

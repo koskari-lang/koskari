@@ -658,9 +658,9 @@ the caller. With no argument, returns `None`.
 compiles VAL and emits `RETURN 1`. At runtime, when the frame has a parent (e.g.
 normal CALL), RETURN walks the dynamic chain with handle(RETURN), runs FINALLY
 if present, detaches the frame, and delivers the value to the parent (opcode
-returns `KOS_OP_RES_CONTROL_RETURNED` or 0). When the frame has no parent or
-its parent is the generator node (KOS_DYN_GEN), RETURN produces a boundary
-event `KOS_EV_RETURN` and the evaluator exits.
+returns `EVAL_CONTROL_RETURNED()` or `EVAL_NORMAL()`). When the frame has no parent or
+its parent is the generator node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`;
+`eval_event_return` delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
 
 **Examples:**
 
@@ -954,11 +954,11 @@ compiles VAL and emits `YIELD 1`. At runtime, when the frame has a parent that
 is **not** the generator node (e.g. a nested CALL inside a generator), YIELD
 detaches the frame, pushes the value onto the parent stack, and returns 0 so
 the loop continues in the caller. When the frame's parent is the generator node
-(KOS_DYN_GEN) or there is no parent, the opcode sets `KOS_EV_YIELD` and returns
-1; the evaluator then runs `kos_dyn_walk_handle_yield`, the generator node
-consumes the event (freezes the dynamic chain and suspends), sets
-`SUSPENSION_EVENT = YIELD`, and exits. On resume, `revive_yield` pushes
-`send_val` onto the stack.
+(KOS_DYN_GEN) or there is no parent, the opcode returns `EVAL_YIELD(val)`;
+`apply_kos_op_result` routes to `eval_event_yield`, which runs
+`kos_dyn_walk_handle_yield`, the generator node consumes the yield (freezes the
+dynamic chain and suspends), sets `SUSPENSION_EVENT = YIELD`, and `koskari_eval`
+returns `KOS_RES_YIELD`. On resume, `revive_yield` pushes `send_val` onto the stack.
 
 **Examples:**
 
@@ -1027,7 +1027,7 @@ value is `None`.
 
 **Behaviour:** With one argument, compiles `EXPR` onto the stack, then emits
 `AWAIT` with operand **1** (one stack element). The opcode pops TOS, dispatches
-the awaitable, and may suspend with `KOS_EV_AWAIT` or push the resolved value.
+the awaitable, and may return `EVAL_AWAIT(val)` or push the resolved value.
 With zero arguments, emits `AWAIT` with operand **0** then `CONST None`. See
 `design/OPCODES.md` (KOS_OP_AWAIT) and `koskari/lib/opcode/AWAIT.c`.
 

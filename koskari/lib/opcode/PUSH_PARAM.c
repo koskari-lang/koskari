@@ -23,20 +23,19 @@ KOS_OP_HANDLER(PUSH_PARAM) {
   PyObject *names = KosCode_GetConstant((PyObject *) KosEvalState_CurrentCode(es),
                                          KosOp_ARG(insn));
   if (! names) {
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *bindings = KosEvalState_StackPopTailDictFromNames(es, names);
   if (! bindings)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (! kos_dyn_push_param_dict(es, bindings)) {
     Py_DECREF(bindings);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

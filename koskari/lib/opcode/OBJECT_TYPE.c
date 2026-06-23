@@ -20,11 +20,14 @@
 KOS_OP_HANDLER(OBJECT_TYPE) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *res = (PyObject *) Py_TYPE(val);
   Py_INCREF(res);
   Py_DECREF(val);
   (void) insn;
-  return kos_op_outcome_PUSH(es, res);
+  return kos_op_result_PUSH(es, res);
 }
+
+
+// The end.

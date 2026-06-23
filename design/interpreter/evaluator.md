@@ -16,7 +16,7 @@ Koskari's evaluator implements:
 - **VM-native dynamic wind/unwind hooks** (bytecode blocks, not Python callables)
 - **Flattened async execution**
 - **Unified dynamic chain** for all control flow concerns
-- **Eval-owned boundary staging** where frame crossing (unwind/pop) is separated from parent-consumer delivery using `KosOpOutcome` post-opcode tags and helpers in `eval.c` (no extra public `KosEventKind` values); see [boundary-control-reemit.md](boundary-control-reemit.md)
+- **Eval-owned boundary staging** where frame crossing (unwind/pop) is separated from parent-consumer delivery using `KosOpResult` and `eval_event_*` helpers in `eval.c` (no `KosEvent` struct); see [boundary-control-reemit.md](boundary-control-reemit.md)
 
 ## Core VM Structures
 
@@ -87,16 +87,13 @@ struct KosContext {
   KosDynNode *dyn_top;
   KosDynFrame *frame_top;
   KosStackBlock **block;
-  KosDynFrame *globals_frame;
-  uint32_t globals_cache_version;
+  PyObject *namespace;
   KosEvaluatorToken *token;
   PyObject *domain;
-  KosDynFrame *unwind_target_frame;
   PyObject *pending_return_value;
   int pending_return_to_parent;
   KosTransferPlan *plan;
   KosTransferPlan *plan_stack;
-  uint32_t chain_version;
   PyObject *py_resume_inject;
   uint8_t py_resume_kind;
   PyObject *py_await_iter;
@@ -124,25 +121,39 @@ struct KosStackBlock {
 };
 ```
 
-### KosEvent — Boundary Event from koskari_eval
+### Operand stack authority
 
-Driver-facing stop reasons are exactly these `KosEventKind` values (plus `KOS_EV_NONE` for cleared in-loop state). Internal staging of parent delivery after a callee **RETURN** does **not** add new public kinds: it uses `KosOpOutcome` with `KOS_LOP_POST` and tag `KOS_OP_POST_TAG_PARENT_RETURN` (see **Post-opcode staging** under the drive loop).
+The active operand stack for execution is **`KosContext.block`** (during RUN,
+mirrored on **`KosEvalState`** via **`KosEvalState_Stack*`** helpers). That
+pointer tracks the innermost **`KosDynNode.stack`** extent installed on the
+dynamic chain — not a separate “frame stack” authority.
 
-```c
-typedef enum KosEventKind {
-  KOS_EV_NONE = 0,  /* cleared / in-loop consume; not a driver boundary */
-  KOS_EV_RETURN,    /* normal completion */
-  KOS_EV_RAISE,     /* exception propagation */
-  KOS_EV_YIELD,     /* generator yield */
-  KOS_EV_AWAIT,     /* suspension on Python awaitable */
-} KosEventKind;
+Rules (landed; archived proposal [node-owned-operand-stack.md](../archive/node-owned-operand-stack.md)):
 
-typedef struct KosEvent {
-  KosEventKind kind;
-  PyObject *payload;   /* new reference where set; caller owns it */
-  PyObject *exc_type;  /* for KOS_EV_RAISE: exception type (new ref) */
-} KosEvent;
-```
+1. **Single source of truth** — opcodes push/pop via **`KosEvalState_Stack*`** /
+   **`ctx->block`**; they do not infer region boundaries from
+   **`KosStackBlock.back`** on the hot path.
+2. **Symmetric lifecycle** — installing a dyn node that owns a stack extent
+   sets **`ctx->block`** to that node's **`stack`**; uninstalling restores the
+   previous extent (TRY, FINALLY, LOOP, FOREACH, WITH, COLLECT, etc.).
+3. **Node-owned snapshots** — continuation capture and transfer plans clone or
+   reinstall nodes together with their owned **`stack`** blocks so chain and
+   operand storage stay aligned across delimited transfer.
+
+Region nodes without an owned stack (**`stack == NULL`**) inherit the current
+block from an ancestor frame or enclosing extent.
+
+### koskari_eval Return Value
+
+`koskari_eval` returns a `KosOpResult {KosOpResultKind kind; PyObject *val}`.
+Driver-facing stop kinds are `KOS_RES_RETURN`, `KOS_RES_RAISE`, `KOS_RES_YIELD`,
+and `KOS_RES_AWAIT`.  `KOS_RES_RAISE` uses `PyErr` as authority (`val` is NULL).
+For the others `val` carries the boundary value (new reference; caller owns it).
+
+Internal staging of parent delivery after a callee **RETURN** does **not** add new
+public kinds: opcodes return `EVAL_PARENT_RETURN(val)` (`KOS_RES_PARENT_RETURN`)
+and `cg_handle_op_result` dispatches to `eval_parent_return_deliver`; the outer
+driver never observes that intermediate step.
 
 ## Continuation Infrastructure
 
@@ -281,13 +292,13 @@ To avoid recursive C calls and keep a single state machine:
 
 1. **CALL (Koskari callables)**: The CALL opcode invokes `kos_callable_call`, which dispatches to the callable's install slot. The install pushes a new frame (or, for TAIL_CALL, resets the current frame) and configures it for bytecode or native execution. The evaluator does **not** call Python or recurse into `koskari_eval`; it continues the dispatch loop. See [api/special-call-protocol.md](../api/special-call-protocol.md) for the install-slot design.
 
-2. **RETURN (frame has parent, normal call return)**: When the callee’s dynamic parent is not a GEN, the RETURN opcode runs `KOS_TRANS_WALK_RETURN_TO_FRAME` via `kos_dyn_transition`, then `kos_dyn_pop_frame` so the **caller** becomes `frame_top`. It does **not** push onto the parent stack in the opcode handler. Instead it fills `out_ev` with `KOS_EV_RETURN` and the return value (one ref held by `out_ev`) and returns `KOS_OP_POST_PARENT_RETURN()`. The main loop then runs **`eval_parent_return_deliver`**: optional flattened Koskari async-gen iterator delivery (`kos_dyn_try_deliver_iterator_boundary_after_pop`), else native-frame handler or `KosStackBlock_PushRef` onto the parent stack, then **`kos_dynnode_on_control_returned`** (WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the eval loop eventually stops for another reason.
+2. **RETURN (frame has parent, normal call return)**: When the callee’s dynamic parent is not a GEN, the RETURN opcode runs `KOS_TRANS_WALK_RETURN_TO_FRAME` via `kos_dyn_transition`, then `kos_dyn_pop_frame` so the **caller** becomes `frame_top`. It does **not** push onto the parent stack in the opcode handler. Instead it returns `EVAL_PARENT_RETURN(val)` (`KOS_RES_PARENT_RETURN` in `KosOpResult`). `cg_handle_op_result` dispatches to **`eval_parent_return_deliver`**: optional flattened Koskari async-gen iterator delivery (`kos_dyn_try_deliver_iterator_boundary_after_pop`), else native-frame handler or `KosStackBlock_PushRef` onto the parent stack, then **`kos_dynnode_on_control_returned`** (WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the eval loop eventually stops for another reason.
 
 3. **NEXT/ITER_NEXT (Koskari async gen)**: **`NEXT`** pushes a **`KOS_DYN_NEXT`** boundary (`kos_dyn_push_next_for_kos_agen`, …) as needed, then **attaches** the generator’s frame with **`op_attach_koskari_agen_frame(es, …)`** (live **`KosEvalState *es`** from the opcode). **`ITER_NEXT`** records state on the innermost **`KOS_DYN_FOREACH`** region and uses **`op_attach_koskari_agen_frame_for_iter_next(es, …)`**. Each performs its own validation and failure cleanup, then **`kos_attach_agen_gen_flatten(es, agen, gen)`** → **`kos_dyn_gen_install(es, gen)`** so **`KosEvalState_RefreshDynCaches`** updates the same **`es`** the dispatch loop uses. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
 
-4. **YIELD (post-opcode path)**: When a **top-level** or otherwise surfaced YIELD produces `KOS_EV_YIELD` in `out_ev` and `eval_phase_post_opcode` runs, **`eval_event_yield`** performs stage A (`eval_yield_handle_walk_and_freeze`: `KOS_TRANS_WALK_HANDLE_YIELD`) and stage B (optional NEXT/FOREACH/YIELD_FROM delivery for flattened Koskari async gens via **`eval_event_yield_deliver_to_boundary`**), or tags suspension for the outer driver. In-loop child-frame YIELD (parent non-NULL) still avoids stopping `koskari_eval` with a public boundary in the same way as before; the exact unwind/freeze steps live in `kos_dyn_transition` / dynchain helpers.
+4. **YIELD (top-level)**: When a top-level or otherwise surfaced YIELD returns `EVAL_YIELD(val)`, `cg_handle_op_result` routes to **`eval_event_yield`**, which performs stage A (`eval_yield_handle_walk_and_freeze`: `KOS_TRANS_WALK_HANDLE_YIELD`) and stage B (optional NEXT/FOREACH/YIELD_FROM delivery for flattened Koskari async gens via **`eval_event_yield_deliver_to_boundary`**), or tags suspension for the outer driver. In-loop child-frame YIELD (parent non-NULL) still avoids stopping `koskari_eval` with a public boundary; the exact unwind/freeze steps live in `kos_dyn_transition` / dynchain helpers.
 
-5. **RETURN/YIELD (root / no in-loop parent delivery)**: When RETURN completes without a normal parent (or parent is GEN), or when the opcode path sets a stop reason, `koskari_eval` can return with `out_ev->kind` set (`KOS_EV_RETURN`, `KOS_EV_YIELD`, etc.).
+5. **RETURN/YIELD (root / no in-loop parent delivery)**: When RETURN completes without a normal parent (or parent is GEN), or when the opcode path sets a stop reason, `koskari_eval` returns a `KosOpResult` with kind `KOS_RES_RETURN`, `KOS_RES_YIELD`, etc.
 
 6. **Attach/detach (dynchain)**: `kos_dyn_attach_frame(ctx, frame)` reparents an existing frame onto `ctx->dyn_top` and sets it as the new top (no allocation). `kos_dyn_detach_top_frame(ctx, &frame_out)` removes the top frame from the chain without freeing it and returns it; used when the gen yields or returns so the frame can remain stored in the async gen’s context.
 
@@ -302,7 +313,7 @@ All other opcodes push their result with **no** automatic await. That includes: 
 
 ### AWAIT resume and pending WITH exit
 
-When `koskari_eval` returns `KOS_EV_AWAIT`, the driver (e.g. KosCoroutine.send or
+When `koskari_eval` returns `KOS_RES_AWAIT`, the driver (e.g. KosCoroutine.send or
 the sync adapter) sends the await result and calls `koskari_eval` again. On
 re-entry, **revive** runs before the next opcode is dispatched. **`revive_await`**
 (in `eval.c`) pushes the await result (from `py_resume_inject` or the send value)
@@ -342,9 +353,9 @@ Representative signatures (see **`koskari/lib/dynchain.h`** for the full set):
 ```c
 /* Generic push/pop */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
-int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
-                      struct KosEvent *out_ev);  /* kos_dyn_pop */
-int kos_dyn_pop_top(KosEvalState *es, KosXferEvent event, struct KosEvent *out_ev);
+int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node,
+                      KosXferEvent event);  /* kos_dyn_pop */
+int kos_dyn_pop_top(KosEvalState *es, KosXferEvent event);
 
 /* Push/pop frames */
 KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);
@@ -371,10 +382,8 @@ int kos_complete_pending_with_exit(KosContext *ctx);
 int kos_complete_pending_with_exit_semantic(KosContext *ctx);
 
 /* Unwind to specific chain position (transfer-plan paths) */
-int kos_dyn_unwind_to_node(KosEvalState *es, KosDynNode *target,
-                           struct KosEvent *out_ev);
-int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
-                            struct KosEvent *out_ev);
+int kos_dyn_unwind_to_node(KosEvalState *es, KosDynNode *target);
+int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame);
 ```
 
 ### Continuation Capture and Invocation
@@ -412,7 +421,7 @@ int kos_build_transfer_plan(KosEvalState *es,
         uint32_t graft_point_id, KosTransferPlan **out_plan);
 
 /* Execute next step of transfer plan */
-int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
+int kos_run_transfer_step(KosEvalState *es);
 
 /* Free transfer plan */
 void kos_free_transfer_plan(KosTransferPlan *plan);
@@ -446,13 +455,15 @@ Koskari-to-Koskari calls (CALL/TAIL_CALL opcodes) invoke `kos_callable_call` or 
 ### Drive Loop
 
 ```c
-int koskari_eval(KosContext *ctx, KosEvent *out_ev,
-                 PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc);
+KosOpResult koskari_eval(KosContext *ctx,
+                         PyObject *send_val, PyObject *throw_typ,
+                         PyObject *throw_exc);
 ```
 
 Main entry point: runs opcodes until boundary (RETURN/RAISE/YIELD/AWAIT).
-Returns 0 on a normal boundary event (kind is set in `*out_ev`) or -1 on a
-fatal internal error (PyErr set, `out_ev` may be inconsistent).
+Returns a `KosOpResult`: kind is `KOS_RES_RETURN`, `KOS_RES_RAISE`,
+`KOS_RES_YIELD`, or `KOS_RES_AWAIT` on a normal boundary; `KOS_RES_FATAL` on
+a hard internal fault (PyErr also set).
 
 `send_val`, `throw_typ`, and `throw_exc` are the resume arguments (all may be
 NULL for a fresh start or a NULL resume after YIELD). On re-entry after
@@ -473,45 +484,54 @@ lives entirely inside those two dispatchers.
 | 2 | `eval_phase_transfer` | Transfer-plan drain; terminal RETURN(None) when no frame or hook remains |
 | 3 | `eval_phase_pending_exception` | `PyErr_Occurred()` → **`eval_event_raise`** (→ **`eval_boundary_raise_dispatch`**) at each loop-top iteration |
 | 4 | `KOS_EVAL_PREPARE_NEXT_INSN` | Copy insn into local `KosOp insn`, set `acting_pc`, pre-advance `pc` (assumes valid frame/PC; no checks) |
-| 5 | *(inline)* | Computed-goto / switch opcode dispatch; handlers return **`KosOpOutcome`** (`KosLoopOpMode` + optional post tag) |
-| 6 | `eval_phase_post_opcode` | When mode is `KOS_LOP_POST`, map tag via **`kos_op_post_tag_to_res`** to legacy `op_res` and run post-opcode logic (see below) |
+| 5 | *(inline)* | Computed-goto / switch opcode dispatch; handlers return **`KosOpResult`** via `EVAL_*` macros (see `eval.h`) |
+| 6 | `cg_handle_op_result` | Switch on `op_res.kind`; delegates to `eval_event_yield`, `eval_event_await`, `eval_event_return`, `eval_event_raise`, `eval_parent_return_deliver`, or `kos_eval_post_opcode_control_returned_after_hook` |
 
-Each helper returns a `KosEvalStep` value:
+Phase 4 sets a local `KosOp insn` (and frame `acting_pc` / `pc`) for phase 5;
+opcodes are called with `&insn`. Phase 6 (`cg_handle_op_result`) dispatches on
+the `KosOpResult.kind` returned by the opcode. Phase helpers signal the loop
+by returning `KosOpResult` directly — there is no separate `KosEvalStep`
+intermediary.
 
-```c
-typedef enum KosEvalStep {
-  KOS_STEP_CONTINUE,      /* phase completed; next prologue step or prepare */
-  KOS_STEP_REPROLOGUE,    /* restart full prologue (xfer, pending, native) */
-  KOS_STEP_STOP_EVENT,    /* out_ev is filled; return to caller (eval_ret = 0) */
-  KOS_STEP_FATAL_ERROR,   /* PyErr set; return to caller (eval_ret = -1) */
-} KosEvalStep;
-```
+#### Opcode result dispatch (`cg_handle_op_result`)
 
-Phase 4 sets a local `KosOp insn` (and frame `acting_pc` / `pc`) for phase 5; opcodes are called with `&insn`. Phase 6 (**`eval_phase_post_opcode`**) takes `ctx`, `out_ev`, and mapped `op_res`; it does not receive insn.
+Opcode handlers return a **`KosOpResult {KosOpResultKind kind; PyObject *val}`**
+via the `EVAL_*` macros defined in `eval.h`:
 
-#### Post-opcode staging (`eval_phase_post_opcode`)
+| Macro | Kind | Meaning |
+|-------|------|---------|
+| `EVAL_NORMAL()` | `KOS_RES_NORMAL` | Hot path: advance PC, loop without prologue |
+| `EVAL_REPROLOGUE()` | `KOS_RES_REPROLOGUE` | Re-run full prologue before next opcode |
+| `EVAL_RAISE()` | `KOS_RES_RAISE` | PyErr set; route to **`eval_event_raise`** |
+| `EVAL_YIELD(v)` | `KOS_RES_YIELD` | Generator yield; route to **`eval_event_yield`** |
+| `EVAL_AWAIT(v)` | `KOS_RES_AWAIT` | Suspend on awaitable; route to **`eval_event_await`** |
+| `EVAL_RETURN(v)` | `KOS_RES_RETURN` | Frame return; route to **`eval_event_return`** (walk/unwind/pop/deliver) |
+| `EVAL_PARENT_RETURN(v)` | `KOS_RES_PARENT_RETURN` | Post-pop parent delivery; route to **`eval_parent_return_deliver`** |
+| `EVAL_CONTROL_RETURNED()` | `KOS_RES_CONTROL_RETURNED` | WIND/WITH thunk completion; route to **`kos_eval_post_opcode_control_returned_after_hook`** |
+| `EVAL_FATAL()` | `KOS_RES_FATAL` | Non-PyErr internal fault; `koskari_eval` returns -1 immediately |
 
-Opcode handlers signal the loop with **`KosOpOutcome`**: `KOS_LOP_RUN` (tail dispatch), `KOS_LOP_PROLOGUE` (full prologue next cycle), `KOS_LOP_POST` (run post-opcode with a **post tag**), or `KOS_LOP_FAIL`. For `KOS_LOP_POST`, **`kos_op_post_tag_to_res`** maps the tag to the integer passed to **`eval_phase_post_opcode`**:
+`EVAL_NORMAL()` is handled on the hot path before `cg_handle_op_result` is
+entered; `cg_handle_op_result` only runs for the non-normal cases.
 
-| Tag / res | Meaning |
-|-----------|---------|
-| `1` | Suspend / async-style completion (`KOS_OP_POST_TAG_SUSPEND`); `out_ev` must carry the stop reason |
-| `KOS_OP_RES_CONTROL_RETURNED` (2) | Run **`kos_dynnode_on_control_returned`** (WIND/WITH thunk completion, etc.) |
-| `-1` | Error path (`KOS_OP_POST_TAG_ERR`); usually paired with `PyErr` |
-| `KOS_OP_RES_PARENT_RETURN_DELIVER` (4) | **`eval_parent_return_deliver`**: after RETURN’s `kos_dyn_pop_frame`, deliver return value to parent (iterator boundary try, native handler or stack push, then **`kos_dynnode_on_control_returned`**) |
+**`eval_event_raise`** is the common entry for all exception dispatch: called
+from `cg_handle_op_result` (opcode errors), `eval_phase_pending_exception`
+(pending at prologue), and `kos_eval_post_opcode_control_returned_after_hook`
+(hook error path). It routes through **`eval_boundary_raise_dispatch`** (wraps
+**`process_raise`**).
 
-Order inside **`eval_phase_post_opcode`**: handle **parent return** (`op_res == 4`) first, then the **control-returned** hook (`op_res == 2`), then **`eval_phase_post_opcode_tail`** (PyErr → **`eval_event_raise`** → **`eval_boundary_raise_dispatch`**, `KOS_EV_NONE` check, AWAIT/YIELD/RETURN boundary branches such as **`eval_event_yield`** / **`eval_event_return_deliver_to_boundary`**).
+**CONTROL_RETURNED path:** after a WIND/WITH unwind hook completes and
+`kos_dynnode_on_control_returned` returns non-zero, the result is dispatched
+as AWAIT, YIELD, RETURN-boundary, or PyErr by
+`kos_eval_post_opcode_control_returned_after_hook`. All paths use `KosOpResult`
+directly.
 
-**`PyErr_Occurred()`** in that tail path routes through **`eval_boundary_raise_dispatch`** (wraps **`process_raise`**), not a separate ad-hoc normalizer. **`eval_event_raise`** is the thin entry used from **`eval_phase_post_opcode`** and **`eval_phase_pending_exception`**.
-
-See [boundary-control-reemit.md](boundary-control-reemit.md) for the design intent and [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md) for handler-centric event flow.
+See [boundary-control-reemit.md](boundary-control-reemit.md) for the design intent and [../archive/kosevent-elimination.md](../archive/kosevent-elimination.md) for the archived elimination spec.
 
 #### Exception ownership note
 
 When `try_local_exception_handler` returns 0 (no handler found), it has
-already consumed the exception via `PyErr_Fetch`, stored the instance in
-`out_ev->payload`, and cleared PyErr. Callers must not call `PyErr_Fetch`
-again afterward.
+injected traceback and left `PyErr` set. The `KOS_RES_RAISE` result
+signals the unhandled raise to the caller; `PyErr` is authoritative.
 
 ### GC Helpers
 
@@ -532,7 +552,7 @@ int KosContext_Traverse(KosContext *ctx, visitproc visit, void *arg);
 2. **Chain ownership**: The dynamic chain is owned by the context. On
    continuation capture, chains are cloned for multi-shot semantics.
 
-3. **Suspension**: When `koskari_eval` returns `KOS_EV_AWAIT`, the context's
+3. **Suspension**: When `koskari_eval` returns `KOS_RES_AWAIT`, the context's
    `py_await_iter` holds the iterator. Resumption injects result onto stack.
 
 4. **Multi-shot**: Continuations clone all state on invocation, allowing
@@ -567,7 +587,7 @@ This matches Scheme's `dynamic-wind` semantics.
 ## Related Documentation
 
 - [boundary-control-reemit.md](boundary-control-reemit.md) — Staged parent delivery and eval post-opcode helpers (RETURN/YIELD/RAISE)
-- [event-driven-eval-event-handlers.md](event-driven-eval-event-handlers.md) — Event-driven eval handlers and `out_ev` contracts
+- [../archive/kosevent-elimination.md](../archive/kosevent-elimination.md) — Archived: KosEvent elimination (implemented)
 - [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)
 - [introspection-trace.md](introspection-trace.md) — Read-only introspection

@@ -38,15 +38,6 @@
 #elif PY_MINOR_VERSION == 9
 #include "compat_39.h"
 
-#elif PY_MINOR_VERSION == 8
-#include "compat_38.h"
-
-#elif PY_MINOR_VERSION == 7
-#include "compat_37.h"
-
-#elif PY_MINOR_VERSION == 6
-#include "compat_36.h"
-
 #endif
 
 

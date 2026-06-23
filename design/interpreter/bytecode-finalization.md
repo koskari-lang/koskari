@@ -8,7 +8,7 @@ multi-phase approach with precise sizing.
 
 **Status:** Design proposal — not yet implemented.
 
-**See also:** [bytecode-metadata-tables.md](bytecode-metadata-tables.md)
+**See also:** [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
 (extent table, layout), [extra-table-and-opcode-metadata.md](../api/extra-table-and-opcode-metadata.md)
 (EXTRA opcodes, schema), [OPCODES.md](../OPCODES.md) §1.7 (pre-compile vs
 post-compile).

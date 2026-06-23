@@ -24,26 +24,28 @@ KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
                                          KosOp_ARG(insn));
 
   if (! names)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_TypeError, "BUILD_KWDS_NAMES names must be tuple, not %R",
                  names);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *kwds = KosEvalState_StackPopTailDictFromNames(es,
                                                        names);
 
   if (! kwds)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (KosEvalState_StackPushRef(es, kwds) < 0) {
     Py_DECREF(kwds);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   Py_DECREF(kwds);
 
-  (void) out_ev;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

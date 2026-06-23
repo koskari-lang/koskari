@@ -23,17 +23,20 @@ KOS_OP_HANDLER(OBJECT_EQ) {
   if (count < 2) {
     PyErr_Format(PyExc_TypeError, "OBJECT_EQ requires at least 2"
                  " elements");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *const *args = KosEvalState_StackTailPtr(es, count);
   if (unlikely(! args))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *result = KosOperator_Eq(args, count);
   KosEvalState_StackDropNoErr(es, count);
   if (unlikely(! result))
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
-  return kos_op_outcome_PUSH(es, result);
+  return kos_op_result_PUSH(es, result);
 }
+
+
+// The end.

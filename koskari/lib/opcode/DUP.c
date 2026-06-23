@@ -23,11 +23,13 @@ KOS_OP_HANDLER(DUP) {
   if (opa < 0) {
     PyErr_Format(PyExc_RuntimeError, "DUP invoked with negative"
                  " argument count: %i", opa);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (KosEvalState_StackDuplicate(es, (size_t) opa) < 0)
-    return KOS_OP_POST_ERR();
-  (void) out_ev;
-  return KOS_OP_RUN();
+    return EVAL_RAISE();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

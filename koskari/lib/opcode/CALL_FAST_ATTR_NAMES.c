@@ -30,36 +30,36 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
   PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES on NULL namespace");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES on %R", ns);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   PyObject *obj = KosNamespace_FastDeref(ns, (size_t) slot_idx);
   if (! obj)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
   if (! names)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES names must be tuple"
                  ", not %R", names);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
   if (npos + nkwds > 0 &&
       KosEvalState_StackTailPtr(es, (size_t)(npos + nkwds)) == NULL)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   Py_ssize_t total = npos + nkwds;
   size_t ntotal = (size_t) total;
@@ -67,7 +67,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
   if (send_self < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
@@ -79,7 +79,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
     }
     if (steal_ok < 0) {
       Py_DECREF(resolved);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     PyObject *const *args;
     Py_ssize_t nargs;
@@ -90,10 +90,10 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
       args = (total > 0) ? steal.vals : NULL;
       nargs = npos;
     }
-    int r = KosEvalState_Call(es, out_ev, resolved, args, nargs, names, 0);
+    KosOpResult r = KosEvalState_Call(es, resolved, args, nargs, names, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_outcome_from_call_int(es, r);
+    return r;
   }
 
   KosStackSteal steal = { 0 };
@@ -105,7 +105,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
   }
   if (steal_ok < 0) {
     Py_DECREF(resolved);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
   PyObject *result;
   if (send_self == 0) {
@@ -118,6 +118,9 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
   KosStackSteal_Free(&steal);
   Py_DECREF(resolved);
   if (! result)
-    return KOS_OP_POST_ERR();
-  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
+    return EVAL_RAISE();
+  return kos_op_result_PUSH_OR_AWAIT(es, result);
 }
+
+
+// The end.

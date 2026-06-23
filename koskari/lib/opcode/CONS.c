@@ -24,21 +24,24 @@ KOS_OP_HANDLER(CONS) {
 
   if (count == 0) {
     Py_INCREF(KosNil);
-    return kos_op_outcome_PUSH(es, KosNil);
+    return kos_op_result_PUSH(es, KosNil);
   }
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
   if (! ptr)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *result = KosPair_ConsFromPtr(ptr, (int) count);
   if (! result)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (KosEvalState_StackDrop(es, count) < 0) {
     Py_DECREF(result);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
-  return kos_op_outcome_PUSH(es, result);
+  return kos_op_result_PUSH(es, result);
 }
+
+
+// The end.

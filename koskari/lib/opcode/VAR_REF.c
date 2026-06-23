@@ -20,10 +20,13 @@
 KOS_OP_HANDLER(VAR_REF) {
   PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   PyObject *ref = frame_ns_ref(es, name);
   if (! ref)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   Py_INCREF(ref);
-  return kos_op_outcome_PUSH(es, ref);
+  return kos_op_result_PUSH(es, ref);
 }
+
+
+// The end.

@@ -23,16 +23,15 @@ KOS_OP_HANDLER(CLEAR_LOOP) {
   if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_LOOP: top is not a LOOP region");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   KosDynLoop_ENABLED((KosDynLoop *) region) = 0;
   if (KosEvalState_StackClearBlock(es) < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
-  (void) out_ev;
   (void) insn;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
 
 

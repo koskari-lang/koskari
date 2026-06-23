@@ -75,8 +75,6 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
   KosDynGen *gen = (KosDynGen *) agen->gen;
   KosDynNode *active;
   PyObject *throw_exc = NULL;
-  KosEvent ev = {0};
-  int res;
 
   if (! gen || ! KosDynGen_ACTIVE(gen)) {
     /* No active chain; release and let caller free ctx */
@@ -108,57 +106,28 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
     KosEvalState_FreezeToContext(&es);
   }
 
-  res = koskari_eval(ctx, &ev, NULL, PyExc_GeneratorExit, throw_exc);
-  Py_DECREF(throw_exc);
+  {
+    KosOpResult res = koskari_eval(ctx, NULL, PyExc_GeneratorExit, throw_exc);
+    Py_DECREF(throw_exc);
 
-  if (res < 0) {
-    /* Exception path: clear GeneratorExit or StopIteration (success) */
-    if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
-        || PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      PyErr_Clear();
-      goto primary_success;
+    switch (res.kind) {
+      case KOS_RES_RAISE:
+      case KOS_RES_FATAL:
+        /* RAISE means PyErr is set; clear it (GeneratorExit/StopIteration = success) */
+        PyErr_Clear();
+        goto primary_success;
+      case KOS_RES_RETURN:
+        Py_XDECREF(res.val);
+        goto primary_success;
+      case KOS_RES_AWAIT:
+      case KOS_RES_YIELD:
+        /* Suspend attempt during close; cannot honor */
+        Py_XDECREF(res.val);
+        goto fallback;
+      default:
+        goto fallback;
     }
-    PyErr_Clear();
-    goto fallback;
   }
-
-  if (KosEvent_KIND(&ev) == KOS_EV_AWAIT || KosEvent_KIND(&ev) == KOS_EV_YIELD) {
-    /* Suspend attempt during close; cannot honor */
-    if (KosEvent_PAYLOAD(&ev))
-      Py_DECREF(KosEvent_PAYLOAD(&ev));
-    if (KosEvent_EXC_TYPE(&ev))
-      Py_DECREF(KosEvent_EXC_TYPE(&ev));
-    goto fallback;
-  }
-
-  if (KosEvent_KIND(&ev) == KOS_EV_RETURN) {
-    if (KosEvent_PAYLOAD(&ev))
-      Py_DECREF(KosEvent_PAYLOAD(&ev));
-    goto primary_success;
-  }
-
-  if (KosEvent_KIND(&ev) == KOS_EV_RAISE) {
-    if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
-        || PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      PyErr_Clear();
-
-    } else {
-      PyErr_Clear();
-    }
-
-    if (KosEvent_PAYLOAD(&ev))
-      Py_DECREF(KosEvent_PAYLOAD(&ev));
-    if (KosEvent_EXC_TYPE(&ev))
-      Py_DECREF(KosEvent_EXC_TYPE(&ev));
-    goto primary_success;
-  }
-
-  /* Unexpected event */
-  if (KosEvent_PAYLOAD(&ev))
-    Py_DECREF(KosEvent_PAYLOAD(&ev));
-  if (KosEvent_EXC_TYPE(&ev))
-    Py_DECREF(KosEvent_EXC_TYPE(&ev));
-  goto fallback;
 
 primary_success:
   {
@@ -419,11 +388,7 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   }
 
   /* Drive the context */
-  KosEvent ev = {0};
-  int res = koskari_eval(agen->ctx, &ev,
-                        send_val,
-                        throw_typ,
-                        throw_exc);
+  KosOpResult res = koskari_eval(agen->ctx, send_val, throw_typ, throw_exc);
 
   Py_XDECREF(send_val);
   Py_XDECREF(throw_typ);
@@ -431,86 +396,51 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   agen->in_progress = 0;
 
-  if (res < 0) {
-    agen->closed = 1;
-    /* Preserve eval errors (e.g. stack underrun); only synthesize completion
-       when eval failed without setting an exception. */
-    if (! PyErr_Occurred())
-      PyErr_SetNone(PyExc_StopAsyncIteration);
-    return NULL;
-  }
-
-  switch (KosEvent_KIND(&ev)) {
-    case KOS_EV_RETURN:
-      /* Generator completed; pass return value. */
+  switch (res.kind) {
+    case KOS_RES_RETURN: {
+      /* Generator completed; raise StopAsyncIteration with return value. */
       agen->closed = 1;
-      {
-        PyObject *payload = KosEvent_PAYLOAD(&ev);
-        PyObject *exc = koskari_StopAsyncIteration_FromValue(
-            payload ? payload : Py_None);
-        if (KosEvent_PAYLOAD(&ev))
-          Py_DECREF(KosEvent_PAYLOAD(&ev));
-        if (exc) {
-          PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
-          Py_DECREF(exc);
-        } else if (! PyErr_Occurred()) {
-          PyErr_SetNone(PyExc_StopAsyncIteration);
-        }
-      }
-      return NULL;
-
-    case KOS_EV_RAISE:
-      agen->closed = 1;
-      if (KosEvent_EXC_TYPE(&ev)) {
-        if (KosEvent_PAYLOAD(&ev)) {
-          PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
-          Py_DECREF(KosEvent_PAYLOAD(&ev));
-        } else {
-          PyErr_SetNone(KosEvent_EXC_TYPE(&ev));
-        }
-        Py_XDECREF(KosEvent_EXC_TYPE(&ev));
-      } else if (KosEvent_PAYLOAD(&ev)) {
-        PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
-        Py_DECREF(KosEvent_PAYLOAD(&ev));
-      } else {
+      PyObject *payload = res.val;
+      PyObject *exc = koskari_StopAsyncIteration_FromValue(
+          payload ? payload : Py_None);
+      Py_XDECREF(payload);
+      if (exc) {
+        PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
+        Py_DECREF(exc);
+      } else if (! PyErr_Occurred()) {
         PyErr_SetNone(PyExc_StopAsyncIteration);
       }
       return NULL;
+    }
 
-    case KOS_EV_YIELD: {
-      /* Yielded a value - wrap in StopIteration to signal completion
-         of this __anext__ awaitable.  Wrap in 1-tuple so PyErr_SetObject
-         does not unpack a tuple payload. */
-      PyObject *args = PyTuple_Pack(1, KosEvent_PAYLOAD(&ev));
-      Py_XDECREF(KosEvent_PAYLOAD(&ev));
-      if (! args) {
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
+      agen->closed = 1;
+      /* PyErr already set (RAISE); for FATAL synthesize if needed */
+      if (! PyErr_Occurred())
+        PyErr_SetNone(PyExc_StopAsyncIteration);
+      return NULL;
+
+    case KOS_RES_YIELD: {
+      /* Yielded a value - wrap in StopIteration so the __anext__ awaitable
+         completes. Wrap in 1-tuple so PyErr_SetObject doesn't unpack args. */
+      PyObject *args = PyTuple_Pack(1, res.val);
+      Py_XDECREF(res.val);
+      if (! args)
         return NULL;
-      }
       PyErr_SetObject(PyExc_StopIteration, args);
       Py_DECREF(args);
       return NULL;
     }
 
-    case KOS_EV_AWAIT:
-      /* Need to suspend on Python awaitable */
+    case KOS_RES_AWAIT:
       /* Return the awaitable for the caller to await */
-      return KosEvent_PAYLOAD(&ev);
+      return res.val;  /* transfer ownership to caller */
 
-    case KOS_EV_POST_OPCODE:
-      agen->closed = 1;
-      Py_XDECREF(KosEvent_PAYLOAD(&ev));
-      KosEvent_PAYLOAD(&ev) = NULL;
-      PyErr_SetString(PyExc_RuntimeError,
-                      "unexpected KOS_EV_POST_OPCODE (eval-internal)");
-      return NULL;
-
-    case KOS_EV_NONE:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+    default:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
       return NULL;
   }
-
-  PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
-  return NULL;
 }
 
 

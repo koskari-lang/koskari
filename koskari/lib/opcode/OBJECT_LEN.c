@@ -20,16 +20,19 @@
 KOS_OP_HANDLER(OBJECT_LEN) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   Py_ssize_t n = PyObject_Length(val);
   Py_DECREF(val);
   if (n < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *res = PyLong_FromSsize_t(n);
   if (! res)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   (void) insn;
-  return kos_op_outcome_PUSH(es, res);
+  return kos_op_result_PUSH(es, res);
 }
+
+
+// The end.

@@ -35,12 +35,15 @@
 KOS_OP_HANDLER(IMPORT) {
   PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *mod = PyImport_ImportModuleLevelObject(
     name, NULL, NULL, _import_fromlist, 0);
   if (! mod)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
-  return kos_op_outcome_PUSH(es, mod);
+  return kos_op_result_PUSH(es, mod);
 }
+
+
+// The end.

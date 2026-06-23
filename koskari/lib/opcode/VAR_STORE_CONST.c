@@ -19,7 +19,6 @@
 */
 
 KOS_OP_HANDLER(VAR_STORE_CONST) {
-    (void) out_ev;
 
     KosCode *code = KosEvalState_CurrentCode(es);
     KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
@@ -28,10 +27,13 @@ KOS_OP_HANDLER(VAR_STORE_CONST) {
     PyObject *val = KosEvalState_GetConstant(es, row.a1);
 
     if (unlikely(! name || ! val))
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
 
     if (unlikely(frame_ns_store(es, name, val) < 0)) {
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
-    return KOS_OP_RUN();
+    return EVAL_NORMAL();
   }
+
+
+// The end.

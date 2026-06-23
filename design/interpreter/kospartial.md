@@ -11,7 +11,7 @@ allocation, no nested `koskari_eval`.
 **Audience:** maintainers implementing or reviewing this change.
 
 **Related:**
-- [demand-evalex-phase2.md](demand-evalex-phase2.md) — `KosDemand` as
+- [archive/demand-evalex-phase2.md](../archive/demand-evalex-phase2.md) — `KosDemand` as
   KosCallable (same pattern; read this first)
 - [demand-wrapper.md](../api/demand-wrapper.md) — Demand wrapper API and status
 
@@ -124,7 +124,7 @@ install slot falls through to the Python call path (§4.2).
 ```c
 static int kospartial_kos_install(
     KosEvalState *es,
-    KosEvent *out_ev,
+    KosEvalState *es,
     PyObject *self,
     PyObject *args_tuple,
     PyObject *kwds_dict,

@@ -29,35 +29,38 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   uint32_t shift_body_pc;
 
   if (get_prompt_id_from_insn(KosEvalState_CurrentCode(es), insn, &prompt_id) < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   if (! kos_find_prompt(es, prompt_id)) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: prompt not found");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
                                KosEvalState_ACTING_PC(es));
   if (resume_pc == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   if (kos_shift_capture(es, prompt_id, resume_pc, &k) < 0)
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
 
   PyObject *wrapper = KosPyDelimitedContinuation_New(k);
   if (! wrapper) {
     kos_continuation_free(k);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
   if (kos_dyn_push_shift(es) < 0) {
     Py_DECREF(wrapper);
-    return KOS_OP_POST_ERR();
+    return EVAL_RAISE();
   }
 
   KosEvalState_SET_PC(es, shift_body_pc);
-  return kos_op_outcome_PUSH(es, wrapper);
+  return kos_op_result_PUSH(es, wrapper);
 }
+
+
+// The end.

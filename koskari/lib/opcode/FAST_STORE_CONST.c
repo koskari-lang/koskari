@@ -19,16 +19,15 @@
 */
 
 KOS_OP_HANDLER(FAST_STORE_CONST) {
-    (void) out_ev;
 
     PyObject *ns = CURRENT_NS();
     if (! ns) {
       PyErr_SetString(PyExc_RuntimeError, "FAST_STORE_CONST invoked on NULL namespace");
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
     if (! KosNamespace_SupportsFast(ns)) {
       PyErr_Format(PyExc_RuntimeError, "FAST_STORE_CONST invoked on %R", ns);
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
     }
 
     KosCode *code = KosEvalState_CurrentCode(es);
@@ -38,10 +37,13 @@ KOS_OP_HANDLER(FAST_STORE_CONST) {
     PyObject *val = KosEvalState_GetConstant(es, row.a1);
 
     if (unlikely(! val))
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
 
     if (unlikely(KosNamespace_FastStore(ns, idx, val) < 0))
-      return KOS_OP_POST_ERR();
+      return EVAL_RAISE();
 
-    return KOS_OP_RUN();
+    return EVAL_NORMAL();
   }
+
+
+// The end.

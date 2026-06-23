@@ -8,7 +8,7 @@ builtin (`defer(fn, *args, **kwds)` in Python; see [koskari.lib](../../api/koska
 
 With **no arguments**, `compile/await` emits a **bare** cooperative suspend (`AWAIT` with stack count `0`) and then **`CONST None`** so the expression’s value is `None`.
 
-**Behaviour:** With one argument, compiles `EXPR` onto the stack, then emits `AWAIT` with operand **1** (one stack element). The opcode pops TOS, dispatches the awaitable, and may suspend with `KOS_EV_AWAIT` or push the resolved value. With zero arguments, emits `AWAIT` with operand **0** then `CONST None`.
+**Behaviour:** With one argument, compiles `EXPR` onto the stack, then emits `AWAIT` with operand **1** (one stack element). The opcode pops TOS, dispatches the awaitable, and may return `EVAL_AWAIT(val)` or push the resolved value. With zero arguments, emits `AWAIT` with operand **0** then `CONST None`.
 
 **Examples:**
 

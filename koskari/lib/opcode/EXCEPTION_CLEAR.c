@@ -20,7 +20,9 @@
 KOS_OP_HANDLER(EXCEPTION_CLEAR) {
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
-  (void) out_ev;
   (void) insn;
-  return KOS_OP_RUN();
+  return EVAL_NORMAL();
 }
+
+
+// The end.

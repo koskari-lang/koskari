@@ -19,5 +19,8 @@
 */
 
 KOS_OP_HANDLER(CHECK_IS_SUBCLASS) {
-  return kos_op_outcome_from_int_step(kos_check_two_arg(es, out_ev, insn, PyObject_IsSubclass));
+  return kos_op_result_from_push_int(kos_check_two_arg(es, insn, PyObject_IsSubclass));
 }
+
+
+// The end.

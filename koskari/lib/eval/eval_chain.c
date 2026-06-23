@@ -34,8 +34,7 @@
 static inline int kos_dyn_transition_internal(
     KosEvalState *es,
     const KosTransitionReq *req,
-    KosTransitionResult *out,
-    KosEvent *out_ev) {
+    KosTransitionResult *out) {
 
   if (! es || ! req || ! out) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -55,7 +54,7 @@ static inline int kos_dyn_transition_internal(
       return -1;
     }
     int r = kos_dyn_walk_return_to_frame(es, req->target_frame,
-                                        req->payload, out_ev);
+                                        req->payload);
     out->raw = r;
     if (r == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN)
       out->status = KOS_TRANS_STATUS_FINALLY_TAKING_RETURN;
@@ -75,7 +74,7 @@ static inline int kos_dyn_transition_internal(
       return -1;
     }
     int r = kos_dyn_unwind_to_frame(es, req->target_frame,
-                                    req->xfer_event, out_ev);
+                                    req->xfer_event);
     out->raw = r;
     if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
       out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
@@ -93,7 +92,7 @@ static inline int kos_dyn_transition_internal(
       return -1;
     }
     int r = kos_dyn_unwind_to_node(es, req->target_node,
-                                  req->xfer_event, out_ev);
+                                  req->xfer_event);
     out->raw = r;
     if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
       out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
@@ -104,7 +103,7 @@ static inline int kos_dyn_transition_internal(
     return 0;
   }
   case KOS_TRANS_WALK_HANDLE_YIELD: {
-    int r = kos_dyn_walk_handle_yield(es, out_ev);
+    int r = kos_dyn_walk_handle_yield(es);
     out->raw = r;
     if (r < 0) {
       out->status = KOS_TRANS_STATUS_ERROR;
@@ -119,8 +118,7 @@ static inline int kos_dyn_transition_internal(
                       "payload");
       return -1;
     }
-    int r = kos_dyn_transfer_to_loop(es, req->xfer_event, req->payload,
-                                     out_ev);
+    int r = kos_dyn_transfer_to_loop(es, req->xfer_event, req->payload);
     out->raw = r;
     if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
       out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
@@ -131,17 +129,25 @@ static inline int kos_dyn_transition_internal(
     return 0;
   }
   case KOS_TRANS_TRY_LOCAL_RAISE: {
-    int r = kos_dyn_try_local_raise_body(es, out_ev);
-    out->raw = r;
-    if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      return -1;
-    }
-    if (r == 1)
+    KosOpResult kr = kos_dyn_try_local_raise_body(es);
+    out->raw = (int) kr.kind;
+    if (kr.kind == KOS_RES_REPROLOGUE) {
       out->status = KOS_TRANS_STATUS_HANDLER_APPLIED;
-    else
+      return 0;
+    }
+    if (kr.kind == KOS_RES_RAISE) {
+      /* No local handler; kos_eval_prepare_boundary_raise was called */
       out->status = KOS_TRANS_STATUS_NO_LOCAL_HANDLER;
-    return 0;
+      return 0;
+    }
+    if (kr.kind == KOS_RES_AWAIT) {
+      Py_XDECREF(kr.val);
+      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
+      return 0;
+    }
+    /* FATAL or unexpected */
+    out->status = KOS_TRANS_STATUS_ERROR;
+    return -1;
   }
   default:
     PyErr_Format(PyExc_RuntimeError,
@@ -156,10 +162,9 @@ static inline int kos_dyn_transition_internal(
 int KosEvalState_Transition(
     KosEvalState *es,
     const KosTransitionReq *req,
-    KosTransitionResult *out,
-    KosEvent *out_ev) {
+    KosTransitionResult *out) {
 
-  return kos_dyn_transition_internal(es, req, out, out_ev);
+  return kos_dyn_transition_internal(es, req, out);
 }
 
 
@@ -196,14 +201,6 @@ void KosEvalState_SetPendingReturn(
 
   KosContext_PENDING_RETURN_VALUE(ctx) = val;
   KosContext_PENDING_RETURN_TO_PARENT(ctx) = to_parent;
-}
-
-
-void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
 }
 
 
@@ -329,16 +326,22 @@ static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
 /**
   Abandon any transfer nest, then dispatch PyErr through local handlers.
 
-  :return: 1 if a handler was applied, -1 if unhandled raise or fatal error
+  :return: 1 if a handler was applied (or async unwind started),
+           -1 if unhandled raise or fatal error (PyErr remains set)
 */
-static int abandon_xfer_and_try_local(KosEvalState *es, KosEvent *out_ev) {
+static int abandon_xfer_and_try_local(KosEvalState *es) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   kos_abandon_transfer_nest(es);
-  int tl = try_local_exception_handler(es, out_ev);
-  if (tl > 0)
+  KosOpResult tl = try_local_exception_handler(es);
+  if (tl.kind == KOS_RES_REPROLOGUE)
     return 1;
-  if (tl < 0)
-    return -1;
+  if (tl.kind == KOS_RES_AWAIT) {
+    Py_XDECREF(tl.val);
+    return 1;
+  }
+  /* RAISE or FATAL: inject traceback and leave PyErr set for caller. */
+  kos_eval_prepare_boundary_raise(ctx, es);
   return -1;
 }
 
@@ -367,15 +370,15 @@ static int xfer_plan_step_is_cc_raise_reemit(KosEvalState *es) {
 
 
 /**
-  Foreign cc-unwind sentinel step: emit KOS_EV_RAISE upward, disarm nest.
+  Foreign cc-unwind sentinel step: inject traceback and disarm nest.
   Not a failed transfer; do not route through try_local.
 
-  :return: -1 with out_ev set to KOS_EV_RAISE
+  :return: -1 with PyErr set
 */
-static int xfer_emit_cc_unwind_signal(KosEvalState *es, KosEvent *out_ev) {
+static int xfer_emit_cc_unwind_signal(KosEvalState *es) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
+  kos_eval_prepare_boundary_raise(ctx, es);
   kos_abandon_transfer_nest(es);
   return -1;
 }
@@ -388,31 +391,29 @@ static int xfer_emit_cc_unwind_signal(KosEvalState *es, KosEvent *out_ev) {
            1 if plan abandoned and a local handler was applied,
            -1 if a step failed with no handler or on fatal error
 */
-static int run_transfer_plan_to_completion(
-    KosEvalState *es,
-    KosEvent *out_ev) {
+static int run_transfer_plan_to_completion(KosEvalState *es) {
 
   while (KosEvalState_PLAN(es)) {
     if (PyErr_Occurred()) {
       if (! (KoskariContinuationApply
              && PyErr_ExceptionMatches(KoskariContinuationApply))) {
         SAY("[eval] transfer drain with pending PyErr -> abandon + try_local\n");
-        return abandon_xfer_and_try_local(es, out_ev);
+        return abandon_xfer_and_try_local(es);
       }
     }
 
     SAYF("[eval] transfer step %zu/%zu\n",
          (size_t) KosTransferPlan_ACTION_INDEX(KosEvalState_PLAN(es)),
          (size_t) KosTransferPlan_ACTION_COUNT(KosEvalState_PLAN(es)));
-    int plan_res = kos_run_transfer_step(es, out_ev);
+    int plan_res = kos_run_transfer_step(es);
 
     if (plan_res < 0) {
       if (xfer_plan_step_is_cc_raise_reemit(es)) {
-        SAY("[eval] cc-unwind sentinel re-emit -> KOS_EV_RAISE\n");
-        return xfer_emit_cc_unwind_signal(es, out_ev);
+        SAY("[eval] cc-unwind sentinel re-emit -> raise\n");
+        return xfer_emit_cc_unwind_signal(es);
       }
       SAY("[eval] transfer step failed -> abandon + try_local\n");
-      return abandon_xfer_and_try_local(es, out_ev);
+      return abandon_xfer_and_try_local(es);
     }
 
     if (plan_res == KOS_XFER_SUSPENDED_AWAIT) {
@@ -443,7 +444,7 @@ static int run_transfer_plan_to_completion(
         PyErr_SetString(PyExc_RuntimeError,
                         "nested continuation invoke during an active"
                         " delimited transfer is not supported");
-        return abandon_xfer_and_try_local(es, out_ev);
+        return abandon_xfer_and_try_local(es);
       }
 
       size_t outer_ac = KosTransferPlan_ACTION_COUNT(outer);
@@ -472,7 +473,7 @@ static int run_transfer_plan_to_completion(
           Py_XDECREF(inject_val);
           if (rstack)
             KosStackBlock_ReleaseChain(rstack);
-          return abandon_xfer_and_try_local(es, out_ev);
+          return abandon_xfer_and_try_local(es);
         }
         bottom = target_keep;
         while (bottom && KosDynNode_PARENT(bottom))
@@ -497,7 +498,7 @@ static int run_transfer_plan_to_completion(
         if (rstack)
           KosStackBlock_ReleaseChain(rstack);
         kos_dynchain_free(target_keep, NULL);
-        return abandon_xfer_and_try_local(es, out_ev);
+        return abandon_xfer_and_try_local(es);
       }
       Py_XDECREF(inject_val);
       KosTransferPlan_RESUME_PC(new_plan) = rpc;
@@ -515,11 +516,10 @@ static int run_transfer_plan_to_completion(
    Handle delimited k(value) return: build plan, install it, run to completion.
    Caller has popped val; we consume it. Return 0 on success, -1 on error.
 */
-static inline int KosEvalState_KReturnDelimited(
+static inline KosOpResult KosEvalState_KReturnDelimited(
     KosEvalState *es,
     KosDynDelim *delim,
-    PyObject *val,
-    KosEvent *out_ev) {
+    PyObject *val) {
 
   KosDynNode *ret_chain = KosDynDelim_RETURN_CHAIN(delim);
   uint32_t ret_pc = KosDynDelim_RETURN_PC(delim);
@@ -530,7 +530,7 @@ static inline int KosEvalState_KReturnDelimited(
   if (kos_build_return_plan(es, ret_chain,
                             val, 0, &plan) < 0) {
     Py_DECREF(val);
-    return -1;
+    return EVAL_RAISE();
   }
   Py_DECREF(val);
   KosTransferPlan_RESUME_PC(plan) = ret_pc;
@@ -548,12 +548,13 @@ static inline int KosEvalState_KReturnDelimited(
   KosDynDelim_RETURN_NODE(delim) = NULL;
   if (KosEvalState_DYN_TOP(es) == (KosDynNode *) delim) {
     if (kos_dyn_pop_delim(es, delim) < 0)
-      return -1;
+      return EVAL_RAISE();
   }
   {
-    int xfer = run_transfer_plan_to_completion(es, out_ev);
+    int xfer = run_transfer_plan_to_completion(es);
     if (xfer < 0)
-      return -1;
+      return EVAL_RAISE();
   }
-  return 0;
+  return KosEvalState_HasActiveTransferPlan(es) ? EVAL_REPROLOGUE()
+                                                : EVAL_NORMAL();
 }

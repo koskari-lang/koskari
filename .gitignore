@@ -76,10 +76,11 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
-
-# The end.
 vgcore.*
 uv.lock
 *.elc
-tmp
+tmp/
 trace.json
+worktrees/
+
+# The end.
