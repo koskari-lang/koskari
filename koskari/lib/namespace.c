@@ -2112,6 +2112,10 @@ int koskari_namespace_init(PyObject *mod) {
   PyDict_SetItemString(dict, "Module",
                        (PyObject *) &KosModuleType);
 
+  if (PyModule_AddIntConstant(mod, "NAMESPACE_FAST_SLOT_MAX",
+                              KosNamespace_FAST_SLOT_MAX))
+    return -1;
+
   return 0;
 }
 

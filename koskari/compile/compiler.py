@@ -27,6 +27,7 @@ from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
 from ..lib import (Code, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
+                   NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, cons, keyword,
                    nil, symbol)
 from ..types import get_position, is_pair, is_proper, is_symbol
@@ -784,6 +785,15 @@ class Compiler:
         if mode == CompilerMode.FUNCTION:
             push_nspec(base_nspec)
 
+        def fast_slot(name):
+            # Return the fast slot index for name, or -1 if it has no fast
+            # slot (not in the pool, or pool is at capacity).
+            try:
+                idx = findex.index(name)
+            except ValueError:
+                return -1
+            return idx if idx < NAMESPACE_FAST_SLOT_MAX else -1
+
         nspec = None
         for op, arg in instr:
             if op == OpCode.KOS_OP_CONST:
@@ -804,23 +814,25 @@ class Compiler:
             elif nstack and op in VAR_TO_FAST:
                 # If opcode style is EXTRA, use op.extra as the schema tuple
                 # (opcodes.incl field kinds). Zip with the operand 4-tuple; each
-                # KOSTYLE_VAR slot is lowered to a fast index. Scalar KOSTYLE_VAR
-                # opargs use findex on the whole arg. Any failure skips lowering.
-                try:
-                    new_op = VAR_TO_FAST[op]
-                    if op.style == OpStyle.KOSTYLE_EXTRA:
-                        new_arg = tuple([
-                            findex.index(v)
-                            if fk == OpStyle.KOSTYLE_VAR
-                            else v
-                            for v, fk in zip(arg, op.extra)])
-                    else:
-                        new_arg = findex.index(arg)
-                except Exception:
-                    pass
+                # KOSTYLE_VAR slot is lowered to a fast index if one is
+                # available; otherwise that field stays as the original value
+                # and the whole opcode stays as VAR.
+                new_op = VAR_TO_FAST[op]
+                if op.style == OpStyle.KOSTYLE_EXTRA:
+                    new_arg = tuple([
+                        fast_slot(v) if fk == OpStyle.KOSTYLE_VAR else v
+                        for v, fk in zip(arg, op.extra)])
+                    if all(
+                            idx >= 0
+                            for v, fk, idx in zip(arg, op.extra, new_arg)
+                            if fk == OpStyle.KOSTYLE_VAR):
+                        arg = new_arg
+                        op = new_op
                 else:
-                    arg = new_arg
-                    op = new_op
+                    idx = fast_slot(arg)
+                    if idx >= 0:
+                        arg = idx
+                        op = new_op
 
             result.append((op, arg))
 
