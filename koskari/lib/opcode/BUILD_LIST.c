@@ -21,29 +21,18 @@
 
 KOS_OP_HANDLER(BUILD_LIST) {
   unsigned opa = KosOp_ARG(insn);
-  PyObject *built;
   size_t count = (size_t) opa;
 
-  if (count == 0) {
-    built = PyList_New(0);
-    if (unlikely(! built))
+  PyObject *built = PyList_New((Py_ssize_t) count);
+  if (unlikely(! built))
+    return EVAL_RAISE();
+
+  if (count) {
+    if (unlikely(KosEvalState_StackPopTailPtr(
+          es, count, &PyList_GET_ITEM(built, 0)) < 0)) {
+      Py_DECREF(built);
       return EVAL_RAISE();
-    return kos_op_result_PUSH(es, built);
-  }
-
-  {
-    PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
-    if (unlikely(! ptr))
-      return EVAL_RAISE();
-
-    built = PyList_New((Py_ssize_t) count);
-    if (unlikely(! built))
-      return EVAL_RAISE();
-
-    for (size_t i = 0; i < count; i++)
-      PyList_SET_ITEM(built, (Py_ssize_t) i, ptr[i]);
-
-    KosEvalState_StackDropNoErr(es, count);
+    }
   }
 
   return kos_op_result_PUSH(es, built);
