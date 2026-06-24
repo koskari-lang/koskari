@@ -201,7 +201,7 @@ define curses-main [stdscr options]:
     define event (stdscr.getch)
 
     if (equal? event ERR):
-      sleep(0.1)
+      (sleep 0.1)
 
     elif (< 0 event 256):
       (define echar (chr event))
