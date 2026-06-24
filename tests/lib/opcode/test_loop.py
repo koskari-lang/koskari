@@ -233,7 +233,6 @@ class TestLoopOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", None],
             ["CONST", []],
             ["PUSH_FOREACH", 0],
             ["CLEAR_LOOP", 0],
@@ -279,7 +278,6 @@ class TestLoopOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError) as ctx:
             build_expr([
-                ["CONST", None],
                 ["CONST", []],
                 ["PUSH_FOREACH", 0],
                 ["POP_LOOP", 0],

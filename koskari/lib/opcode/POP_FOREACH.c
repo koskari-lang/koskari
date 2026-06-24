@@ -16,6 +16,7 @@
 /**
    POP_FOREACH: arg unused. Pop FOREACH region, drop stack block, push
    KosDynForeach_RESULT to the operand stack as the loop expression result.
+   When region result is NULL, push None.
 */
 
 KOS_OP_HANDLER(POP_FOREACH) {
@@ -28,6 +29,8 @@ KOS_OP_HANDLER(POP_FOREACH) {
 
   KosDynForeach *fe = (KosDynForeach *) region;
   PyObject *result = KosDynForeach_RESULT(fe);
+  if (! result)
+    result = Py_None;
   Py_INCREF(result);
 
   if (unlikely(kos_dyn_pop_foreach(es, fe) < 0)) {

@@ -30,10 +30,10 @@ class TestForeachOpcodes(CevalTest):
     """
     Tests for PUSH_FOREACH with ITER_NEXT.
 
-    PUSH_FOREACH expects stack: [loop_result, iterable].
-    It pops both, creates an iterator from the iterable, and stores
-    loop_result and iterator in the region. ITER_NEXT reads from region.
-    POP_FOREACH pushes region->result to the stack as the loop expression value.
+    PUSH_FOREACH expects stack: [iterable].
+    It pops the iterable, creates an iterator, and stores it in the region.
+    ITER_NEXT reads from region. POP_FOREACH pushes region->result, or None
+    when no BREAK/CONTINUE set a result.
     """
 
     async def test_iter_next_outside_foreach_fails(self):
@@ -66,7 +66,6 @@ class TestForeachOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", None],  # loop_result
             ["CONST", [10, 20, 30]],  # iterable
             ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
@@ -92,7 +91,6 @@ class TestForeachOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", None],  # loop_result
             ["CONST", [1, 2, 3, 4]],  # iterable
             ["PUSH_FOREACH", 0],
             ["LABEL", "loop_head"],
@@ -123,7 +121,6 @@ class TestForeachOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", None],  # loop_result
             ["CONST", []],    # iterable
             ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
@@ -150,7 +147,6 @@ class TestForeachOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", None],  # loop_result
             ["CONST", []],    # iterable
             ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
@@ -181,7 +177,6 @@ class TestForeachOpcodes(CevalTest):
         async def run():
             aiter = async_gen()
             consumer_code, consumer_ns = build_expr([
-                ["CONST", None],
                 ["VAR", "aiter"],
                 ["PUSH_FOREACH", 0],
                 ["LABEL", "loop_head"],
@@ -210,7 +205,6 @@ class TestForeachOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 0],
             ["VAR_STORE", "total"],
-            ["CONST", None],
             ["CONST", [1, 2, 3, 4, 5]],
             ["PUSH_FOREACH", 0],
             ["LABEL", "loop_head"],
@@ -243,7 +237,6 @@ class TestForeachOpcodes(CevalTest):
         async def run():
             aiter = empty_gen()
             consumer_code, consumer_ns = build_expr([
-                ["CONST", None],
                 ["VAR", "aiter"],
                 ["PUSH_FOREACH", 0],
                 ["ITER_NEXT", "else_lbl"],
@@ -269,7 +262,6 @@ class TestForeachOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", None],
             ["CONST", 42],
             ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
@@ -300,7 +292,6 @@ class TestForeachOpcodes(CevalTest):
                 raise ValueError("iterator raised in foreach")
 
         code, ns = build_expr([
-            ["CONST", None],
             ["CONST", BadIterator()],
             ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],

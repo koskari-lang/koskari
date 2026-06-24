@@ -114,9 +114,6 @@ def special_for_each(compiler, caps, tc=False):
 
     expr = binding["expr"] if binding else using["expr"]
 
-    # default loop result is None
-    fragment.instruction(OpCode.KOS_OP_CONST, None)
-
     # the iterable expression
     fragment.merge(compiler.full_compile(expr.datum, False))
 

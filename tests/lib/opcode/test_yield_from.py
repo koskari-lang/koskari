@@ -671,7 +671,6 @@ class TestYieldFrom(CevalTest):
         consumer_code, consumer_ns = build_expr([
             ["CONST", 0],
             ["VAR_STORE", "total"],
-            ["CONST", None],
             ["VAR", "test_gen"],
             ["CALL", 0],
             ["PUSH_FOREACH", 0],
@@ -715,7 +714,6 @@ class TestYieldFrom(CevalTest):
         consumer_code, consumer_ns = build_expr([
             ["CONST", 0],
             ["VAR_STORE", "total"],
-            ["CONST", None],
             ["VAR", "test_gen"],
             ["CALL", 0],
             ["PUSH_FOREACH", 0],

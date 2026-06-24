@@ -827,7 +827,6 @@ class TestKoskariIterDemandGenerator(unittest.TestCase):
         consumer_code, consumer_ns = build_expr([
             ["CONST", 0],
             ["VAR_STORE", "total"],
-            ["CONST", None],
             ["VAR", "dsg"],
             ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],

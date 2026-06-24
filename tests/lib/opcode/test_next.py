@@ -233,7 +233,6 @@ class TestNextOpcodes(CevalTest):
         gen = make_callable(gen_code, gen_ns)()
 
         consumer_code, consumer_ns = build_expr([
-            ["CONST", None],
             ["VAR", "gen"],
             ["PUSH_FOREACH", 0],
             ["LABEL", "loop_head"],

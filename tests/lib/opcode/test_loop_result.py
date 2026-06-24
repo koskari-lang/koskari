@@ -126,13 +126,33 @@ class TestLoopResultOpcodes(CevalTest):
         self.assertIsNone(result)
 
 
+    async def test_pop_foreach_returns_none_when_no_break(self):
+        """
+        POP_FOREACH pushes None when no BREAK/CONTINUE set a result
+        """
+
+        code, ns = build_expr([
+            ["CONST", []],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_FOREACH", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_FOREACH", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIsNone(result)
+
+
     async def test_foreach_break_with_value(self):
         """
         FOREACH BREAK 1 uses the value as the loop result
         """
 
         code, ns = build_expr([
-            ["CONST", None],  # loop_result
             ["CONST", [10, 20, 30]],  # iterable
             ["PUSH_FOREACH", 0],
             ["LABEL", "loop_head"],

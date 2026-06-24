@@ -15,24 +15,18 @@
 
 /**
    PUSH_FOREACH: no arg. Break target is derived from the extent table
-   (pop_pc + 1), not from the instruction argument. Stack: [loop_result, iterable].
-   Pops iterable and loop_result, creates iterator, stores both in region,
-   pushes FOREACH region and stack block. Continue target = next insn.
+   (pop_pc + 1), not from the instruction argument. Stack: [iterable].
+   Pops iterable, creates iterator, stores it in region (result defaults
+   to NULL), pushes FOREACH region and stack block. Continue target =
+   next insn.
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
   uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
 
-  /* Pop iterable (TOS) and loop_result from stack */
   PyObject *iterable = KosEvalState_StackPopRef(es);
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
-    return EVAL_RAISE();
-  }
-  PyObject *loop_result = KosEvalState_StackPopRef(es);
-  if (! loop_result) {
-    Py_DECREF(iterable);
-    PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing loop_result");
     return EVAL_RAISE();
   }
 
@@ -41,15 +35,14 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   uint32_t pc = KosEvalState_ACTING_PC(es);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_FOREACH);
   if (eid == KOS_EXTENT_NONE) {
-    Py_DECREF(loop_result);
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError,
                     "PUSH_FOREACH: no FOREACH extent at this PC");
     return EVAL_RAISE();
   }
+
   KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
-    Py_DECREF(loop_result);
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: invalid extent");
     return EVAL_RAISE();
@@ -62,30 +55,29 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     iter = iterable;
     Py_INCREF(iter);
     Py_DECREF(iterable);
+
   } else if (Py_TYPE(iterable)->tp_as_async &&
              Py_TYPE(iterable)->tp_as_async->am_aiter) {
     iter = Py_TYPE(iterable)->tp_as_async->am_aiter(iterable);
     Py_DECREF(iterable);
+
   } else {
     iter = PyObject_GetIter(iterable);
     Py_DECREF(iterable);
   }
-  if (! iter) {
-    Py_DECREF(loop_result);
+
+  if (! iter)
     return EVAL_RAISE();
-  }
 
   /* Push region */
-  KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(es,                                              break_pc, continue_pc);
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(
+    es, break_pc, continue_pc);
   if (! region) {
     Py_DECREF(iter);
-    Py_DECREF(loop_result);
     PyErr_NoMemory();
     return EVAL_RAISE();
   }
 
-  /* Store result and iterator in region (takes ownership) */
-  KosDynForeach_RESULT((KosDynForeach *) region) = loop_result;
   KosDynForeach_ITER((KosDynForeach *) region) = iter;
   KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
 

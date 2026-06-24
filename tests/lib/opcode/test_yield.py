@@ -287,7 +287,6 @@ class TestKoskariIterKoskariGenerator(CevalTest):
         consumer_code, consumer_ns = build_expr([
             ["CONST", 0],
             ["VAR_STORE", "total"],
-            ["CONST", None],
             ["VAR", "gen"],
             ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
