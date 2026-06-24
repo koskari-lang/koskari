@@ -168,12 +168,14 @@ typedef struct {
 #define KOS_FL_NAME_CONTEXT      "context"
 #define KOS_FL_NAME_STACK_BLOCK  "stack_block"
 #define KOS_FL_NAME_PAIR         "pair"
+#define KOS_FL_NAME_NAMESPACE    "namespace"
 
 static kos_fl_counters_t fl_dyn_node     = {0, 0, 0, 0};
 static kos_fl_counters_t fl_continuation = {0, 0, 0, 0};
 static kos_fl_counters_t fl_context      = {0, 0, 0, 0};
 static kos_fl_counters_t fl_stack_block  = {0, 0, 0, 0};
 static kos_fl_counters_t fl_pair         = {0, 0, 0, 0};
+static kos_fl_counters_t fl_namespace    = {0, 0, 0, 0};
 
 
 static kos_fl_counters_t *kos_trace_fl_lookup(const char *name) {
@@ -187,6 +189,8 @@ static kos_fl_counters_t *kos_trace_fl_lookup(const char *name) {
     return &fl_stack_block;
   if (strcmp(name, KOS_FL_NAME_PAIR) == 0)
     return &fl_pair;
+  if (strcmp(name, KOS_FL_NAME_NAMESPACE) == 0)
+    return &fl_namespace;
   return NULL;
 }
 
@@ -224,6 +228,7 @@ void kos_trace_init(void) {
   memset(&fl_context, 0, sizeof(fl_context));
   memset(&fl_stack_block, 0, sizeof(fl_stack_block));
   memset(&fl_pair, 0, sizeof(fl_pair));
+  memset(&fl_namespace, 0, sizeof(fl_namespace));
 #endif
 #if KOS_TRACE_EVENTS
   memset(kos_te_counters, 0, sizeof(kos_te_counters));
@@ -279,6 +284,7 @@ static int add_fl_section(PyObject *report) {
   ADD_FL_ENTRY(KOS_FL_NAME_CONTEXT, fl_context);
   ADD_FL_ENTRY(KOS_FL_NAME_STACK_BLOCK, fl_stack_block);
   ADD_FL_ENTRY(KOS_FL_NAME_PAIR, fl_pair);
+  ADD_FL_ENTRY(KOS_FL_NAME_NAMESPACE, fl_namespace);
 
 #undef ADD_FL_ENTRY
 

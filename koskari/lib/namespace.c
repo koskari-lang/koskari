@@ -26,6 +26,7 @@
 
 #include "lib.h"
 #include "debug.h"
+#include "tracing.h"
 
 
 /* === String constants === */
@@ -40,6 +41,48 @@ static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name);
 static int ns_fast_index(PyObject *self, PyObject *key);
 static PyObject *ns_newfull_from_nspec(
     PyTypeObject *type, PyObject *parent, PyObject *nspec);
+
+
+/* === Namespace freelist === */
+
+
+static PyObject *ns_freelist[KOS_NS_FREELIST_MAX];
+static size_t    ns_freecount = 0;
+
+
+/* Allocate a KosNamespace-family object of the given type and slot count.
+   For KosNamespaceType with count <= KOS_NS_MIN_SLOTS: pops a pre-zeroed slab
+   from the freelist (hit) or allocates oversized to KOS_NS_MIN_SLOTS (miss).
+   All fast[] slots are guaranteed NULL on return; header fields are
+   uninitialised and must be set by the caller before use. */
+static PyObject *
+ns_alloc(PyTypeObject *type, size_t count) {
+  if (type != &KosNamespaceType || count > (size_t) KOS_NS_MIN_SLOTS) {
+    PyObject *p = PyObject_NewVar(PyObject, type, (Py_ssize_t) count);
+    if (! p)
+      return NULL;
+    if (count > 0)
+      memset(((KosNamespace *) p)->fast, 0, count * sizeof(PyObject *));
+    return p;
+  }
+
+  if (ns_freecount > 0) {
+    PyObject *p = ns_freelist[--ns_freecount];
+    KOS_TRACE_FL_ALLOC("namespace", 1);
+    Py_SET_REFCNT(p, 1);
+    Py_SET_TYPE(p, type);
+    Py_SET_SIZE(p, (Py_ssize_t) KOS_NS_MIN_SLOTS);
+    return p;
+  }
+
+  KOS_TRACE_FL_ALLOC("namespace", 0);
+  PyObject *p = PyObject_NewVar(PyObject, type, (Py_ssize_t) KOS_NS_MIN_SLOTS);
+  if (! p)
+    return NULL;
+  memset(((KosNamespace *) p)->fast, 0,
+         (size_t) KOS_NS_MIN_SLOTS * sizeof(PyObject *));
+  return p;
+}
 
 
 /* === NamespaceSpec === */
@@ -89,7 +132,7 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   if (! binds)
     return NULL;
 
-  PyObject *self = PyObject_NewVar(PyObject, &KosNamespaceType, count);
+  PyObject *self = ns_alloc(&KosNamespaceType, count);
   if (! self) {
     Py_DECREF(binds);
     return NULL;
@@ -599,7 +642,7 @@ static PyObject *ns_newfull_from_nspec(
   if (! binds)
     return NULL;
 
-  PyObject *self = PyObject_NewVar(PyObject, type, count);
+  PyObject *self = ns_alloc(type, count);
   if (! self) {
     Py_DECREF(binds);
     return NULL;
@@ -614,9 +657,6 @@ static PyObject *ns_newfull_from_nspec(
   KosNamespace_FAST_NAMES(self) = NULL;
   KosNamespace_FAST_RAW_LO(self) = 0;
   KosNamespace_FAST_RAW_HI(self) = 0;
-
-  for (size_t i = count; i--; )
-    KosNamespace_GET_FAST_VAL(self, i) = NULL;
 
   if (ns_init_syms_from_nspec(self, parent, nspec))
     Py_CLEAR(self);
@@ -1306,6 +1346,18 @@ static void ns_dealloc(PyObject *self) {
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; )
     Py_CLEAR(KosNamespace_GET_FAST_VAL(self, i));
   KosNamespace_FAST_COUNT(self) = 0;
+
+  if (Py_TYPE(self) == &KosNamespaceType &&
+      Py_SIZE(self) == (Py_ssize_t) KOS_NS_MIN_SLOTS) {
+    if (ns_freecount < KOS_NS_FREELIST_MAX) {
+      KosNamespace_FAST_RAW_LO(self) = 0;
+      KosNamespace_FAST_RAW_HI(self) = 0;
+      KOS_TRACE_FL_RETURN("namespace", 0);
+      ns_freelist[ns_freecount++] = self;
+      return;
+    }
+    KOS_TRACE_FL_RETURN("namespace", 1);
+  }
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -2364,6 +2416,9 @@ int koskari_namespace_init(PyObject *mod) {
 
 
 int koskari_namespace_clear(PyObject *mod) {
+
+  while (ns_freecount > 0)
+    PyObject_Free(ns_freelist[--ns_freecount]);
 
   Py_CLEAR(_namespace_str);
   Py_CLEAR(_module_str);
