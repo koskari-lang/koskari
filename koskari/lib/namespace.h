@@ -85,6 +85,16 @@ extern PyTypeObject KosNamespaceType;
    bits 0-63 and 64-127 respectively. */
 #define KosNamespace_FAST_SLOT_MAX  128
 
+/* Minimum allocation size for freelisted KosNamespace objects.  All
+   namespaces with fast_count <= this value share one pool.  Tune by
+   reading KOS_TRACE_FREELIST alloc_misses at runtime. */
+#ifndef KOS_NS_MIN_SLOTS
+#define KOS_NS_MIN_SLOTS 32
+#endif
+
+/* Maximum depth of the KosNamespace freelist. */
+#define KOS_NS_FREELIST_MAX 256
+
 
 typedef struct KosNamespace {
   PyObject_VAR_HEAD
