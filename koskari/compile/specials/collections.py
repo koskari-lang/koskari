@@ -34,18 +34,37 @@ from ..helpers import is_symbolish, unpack
 _DEFAULT_LIST_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
-_LIST_APPEND_PATTERNS = [
-    MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr")),
-    MATCH(CALLEDBY(), VALUE("list_expr"), VALUE("expr")),
-]
+@builtin("compile/#tuple")
+@special("compile/#tuple", patterns=_DEFAULT_LIST_PATTERNS)
+def special_build_tuple(compiler, source, tc=False):
+    """
+    Build a Python tuple from evaluated elements
+    """
+
+    called_by, body = source
+    frag = compiler.fragment(called_by)
+    count = 0
+
+    if body is nil:
+        frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 0)
+        return frag
+
+    for expr in unpack(body):
+        if not is_pair(expr):
+            frag.position_of(body)
+
+        frag.merge(compiler.full_compile(expr, False))
+        count += 1
+
+    frag.instruction(OpCode.KOS_OP_BUILD_ARGS, count)
+    return frag
 
 
 @builtin("compile/#list")
 @special("compile/#list", patterns=_DEFAULT_LIST_PATTERNS)
 def special_build_list(compiler, source, tc=False):
     """
-    Compile (compile/#list EXPR ...). Build a Python list from evaluated
-    elements via BUILD_LIST
+    Build a Python list from evaluated elements
     """
 
     called_by, body = source
@@ -67,11 +86,16 @@ def special_build_list(compiler, source, tc=False):
     return frag
 
 
+_LIST_APPEND_PATTERNS = [
+    MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr")),
+    MATCH(CALLEDBY(), VALUE("list_expr"), VALUE("expr")),
+]
+
+
 @builtin("compile/#list-append")
 @special("compile/#list-append", patterns=_LIST_APPEND_PATTERNS, unpack="match")
 def special_list_append(compiler, caps, tc=False):
     """
-    Compile (compile/#list-append SYM EXPR) or (compile/#list-append LIST EXPR).
     Append the value of EXPR to a list binding or list expression
     """
 

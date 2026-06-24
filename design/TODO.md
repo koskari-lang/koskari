@@ -81,6 +81,16 @@ only opcodes that already have `TAIL_CALL` analogues (`CALL`, `CALL_NAMES`,
 
 Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
 
+### Const-run squashing for `#list` and `#tuple`
+
+Partition collection literal elements into compile-time constant runs vs dynamic
+expressions; emit tuple constants from the pool plus `BUILD_LIST_EXTEND` (new
+opcode) for lists, and `CONST` / `COMBINE_ARGS` for tuples. `compile/#tuple`
+and `compile/#list` today use naive per-element compile + `BUILD_ARGS` /
+`BUILD_LIST`.
+
+Ref: [language/const-collection-squashing.md](language/const-collection-squashing.md).
+
 ### Fenced foreign literal
 
 Add a compile-time fenced foreign-literal mechanism: the reader recognizes
