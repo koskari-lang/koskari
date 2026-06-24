@@ -35,6 +35,11 @@ typedef struct KosNamespaceSpec {
   PyObject *local_syms;
   PyObject *closure_syms;
   PyObject *global_syms;
+
+  /* Cached at construction time, shared across all calls via incref. */
+  PyObject *fast_names;  // tuple of local+closure+global syms (capped at FAST_SLOT_MAX)
+  uint64_t fast_raw_lo;  // initial raw-flag bits: locals 0-63 are set
+  uint64_t fast_raw_hi;  // initial raw-flag bits: locals 64-127 are set
 } KosNamespaceSpec;
 
 
@@ -56,6 +61,15 @@ PyObject *KosNamespaceSpec_New(
 
 #define KosNamespaceSpec_GLOBAL_SYMS(nspec)     \
   (((KosNamespaceSpec *) nspec)->global_syms)
+
+#define KosNamespaceSpec_FAST_NAMES(nspec)      \
+  (((KosNamespaceSpec *) nspec)->fast_names)
+
+#define KosNamespaceSpec_FAST_RAW_LO(nspec)     \
+  (((KosNamespaceSpec *) nspec)->fast_raw_lo)
+
+#define KosNamespaceSpec_FAST_RAW_HI(nspec)     \
+  (((KosNamespaceSpec *) nspec)->fast_raw_hi)
 
 #define KosNamespaceSpec_CheckExact(obj)                \
   ((obj) && ((obj)->ob_type == &KosNamespaceSpecType))

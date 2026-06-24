@@ -38,6 +38,8 @@ static PyObject *_module_str = NULL;     // "<module>"
 // forward declarations
 static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name);
 static int ns_fast_index(PyObject *self, PyObject *key);
+static PyObject *ns_newfull_from_nspec(
+    PyTypeObject *type, PyObject *parent, PyObject *nspec);
 
 
 /* === NamespaceSpec === */
@@ -65,17 +67,7 @@ static PyMemberDef nspec_members[] = {
 
 
 PyObject *KosNamespace_FromSpec(PyObject *nspec, PyObject *parent) {
-
-  PyObject *res = KosNamespace_NewFull(KosNamespaceSpec_NAME(nspec),
-                                        parent,
-                                        KosNamespaceSpec_LOCAL_SYMS(nspec),
-                                        KosNamespaceSpec_CLOSURE_SYMS(nspec),
-                                        KosNamespaceSpec_GLOBAL_SYMS(nspec));
-
-  if (PyErr_Occurred())
-    Py_CLEAR(res);
-
-  return res;
+  return ns_newfull_from_nspec(&KosNamespaceType, parent, nspec);
 }
 
 
@@ -133,9 +125,9 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
          (unsigned long) i, ref_name, kos_ns_is_raw(template_ns, i));
 
     if (kos_ns_is_raw(template_ns, i)) {
+      // Raw local slot — no dict entry. ns_borrow_loose_ref synthesizes
+      // Py_None for these when they are queried by name.
       KosNamespace_GET_FAST_VAL(self, i) = NULL;
-      if (PyDict_SetItem(binds, ref_name, Py_None) < 0)
-        goto fail;
     } else {
       PyObject *ref = KosNamespace_GET_FAST_VAL(template_ns, i);
       if (! ref) {
@@ -217,6 +209,7 @@ static void nspec_dealloc(PyObject *self) {
   Py_CLEAR(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_CLOSURE_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_GLOBAL_SYMS(self));
+  Py_CLEAR(KosNamespaceSpec_FAST_NAMES(self));
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -227,6 +220,7 @@ static int nspec_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_VISIT(KosNamespaceSpec_CLOSURE_SYMS(self));
   Py_VISIT(KosNamespaceSpec_GLOBAL_SYMS(self));
+  Py_VISIT(KosNamespaceSpec_FAST_NAMES(self));
   return 0;
 }
 
@@ -236,6 +230,7 @@ static int nspec_clear(PyObject *self) {
   Py_CLEAR(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_CLOSURE_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_GLOBAL_SYMS(self));
+  Py_CLEAR(KosNamespaceSpec_FAST_NAMES(self));
   return 0;
 }
 
@@ -379,6 +374,60 @@ PyObject *KosNamespaceSpec_New(
   KosNamespaceSpec_LOCAL_SYMS(self) = local_syms;
   KosNamespaceSpec_CLOSURE_SYMS(self) = closure_syms;
   KosNamespaceSpec_GLOBAL_SYMS(self) = global_syms;
+  KosNamespaceSpec_FAST_NAMES(self) = NULL;
+  KosNamespaceSpec_FAST_RAW_LO(self) = 0;
+  KosNamespaceSpec_FAST_RAW_HI(self) = 0;
+
+  // Build cached fast_names tuple (local+closure+global, capped at FAST_SLOT_MAX).
+  Py_ssize_t n_loc = PyTuple_GET_SIZE(local_syms);
+  Py_ssize_t n_clo = PyTuple_GET_SIZE(closure_syms);
+  Py_ssize_t n_glo = PyTuple_GET_SIZE(global_syms);
+  Py_ssize_t total = n_loc + n_clo + n_glo;
+  Py_ssize_t fn_count = (total > (Py_ssize_t) KosNamespace_FAST_SLOT_MAX)
+                        ? (Py_ssize_t) KosNamespace_FAST_SLOT_MAX
+                        : total;
+
+  PyObject *fast_names = PyTuple_New(fn_count);
+  if (! fast_names) {
+    Py_DECREF(self);
+    return NULL;
+  }
+
+  Py_ssize_t fi = 0;
+  for (; fi < fn_count && fi < n_loc; fi++) {
+    PyObject *sym = PyTuple_GET_ITEM(local_syms, fi);
+    Py_INCREF(sym);
+    PyTuple_SET_ITEM(fast_names, fi, sym);
+  }
+  for (Py_ssize_t ci = 0; fi < fn_count && ci < n_clo; fi++, ci++) {
+    PyObject *sym = PyTuple_GET_ITEM(closure_syms, ci);
+    Py_INCREF(sym);
+    PyTuple_SET_ITEM(fast_names, fi, sym);
+  }
+  for (Py_ssize_t gi = 0; fi < fn_count && gi < n_glo; fi++, gi++) {
+    PyObject *sym = PyTuple_GET_ITEM(global_syms, gi);
+    Py_INCREF(sym);
+    PyTuple_SET_ITEM(fast_names, fi, sym);
+  }
+  KosNamespaceSpec_FAST_NAMES(self) = fast_names;
+
+  // Precompute raw-flag bitmask: locals occupy raw slots, closures/globals
+  // do not. Bits 0..(n_fast_local-1) are set.
+  Py_ssize_t n_fast_local = (n_loc < fn_count) ? n_loc : fn_count;
+  uint64_t raw_lo = 0, raw_hi = 0;
+  if (n_fast_local > 0) {
+    if (n_fast_local <= 64) {
+      raw_lo = (n_fast_local < 64)
+               ? (1ULL << (uint64_t) n_fast_local) - 1ULL
+               : ~0ULL;
+    } else {
+      raw_lo = ~0ULL;
+      uint64_t hi = (uint64_t) (n_fast_local - 64);
+      raw_hi = (hi < 64) ? (1ULL << hi) - 1ULL : ~0ULL;
+    }
+  }
+  KosNamespaceSpec_FAST_RAW_LO(self) = raw_lo;
+  KosNamespaceSpec_FAST_RAW_HI(self) = raw_hi;
 
   // SAYF("KosNamespaceSpec_New -> %R", self);
   return self;
@@ -389,7 +438,14 @@ PyObject *KosNamespaceSpec_New(
 
 
 static PyObject *ns_borrow_loose_ref(PyObject *namespace, PyObject *key) {
-  return PyDict_GetItemWithError(KosNamespace_BINDS(namespace), key);
+  PyObject *ref = PyDict_GetItemWithError(KosNamespace_BINDS(namespace), key);
+  if (ref || PyErr_Occurred())
+    return ref;
+  // Key absent from dict: synthesize Py_None sentinel for raw fast slots.
+  int index = ns_fast_index(namespace, key);
+  if (index >= 0 && kos_ns_is_raw(namespace, (size_t) index))
+    return Py_None;
+  return NULL;
 }
 
 
@@ -397,13 +453,18 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
   PyObject *binds = KosNamespace_BINDS(namespace);
   PyObject *ref = PyDict_GetItemWithError(binds, key);
 
-  if (ref == Py_None) {
-    // None is a sentinel in binds: the slot is raw (not yet wrapped in a
-    // Ref). Create a KosSymbolicRef and install it in binds first, while
-    // ref->value is still NULL, so the error path is always safe to
-    // Py_DECREF without touching the slot's raw value.
+  if (! ref) {
+    if (PyErr_Occurred())
+      return NULL;
+    // Key absent from dict: check for a raw fast slot to promote lazily.
+    int index = ns_fast_index(namespace, key);
+    if (index < 0 || ! kos_ns_is_raw(namespace, (size_t) index))
+      return NULL;
+
     SAYF("converting binding %S from raw to reference", key);
 
+    // Create ref with NULL value first so the error path never touches
+    // the slot's raw value pointer.
     ref = KosSymbolicRef_New(key, NULL);
     if (! ref)
       return NULL;
@@ -413,22 +474,13 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
       return NULL;
     }
 
-    // Dict holds one reference (from SetItem). Donate our reference (from
-    // New) to the fast slot, if there is one.
-    int index = ns_fast_index(namespace, key);
-    if (index >= 0) {
-      // Steal the raw value from the slot into ref->value (no incref:
-      // the slot's counted reference moves to ref->value).
-      KosSymbolicRef_VALUE(ref) = KosNamespace_GET_FAST_VAL(namespace,
-                                                             (size_t) index);
-      // Put ref in the slot, donating our New reference to it.
-      KosNamespace_GET_FAST_VAL(namespace, (size_t) index) = ref;
-      kos_ns_set_raw(namespace, (size_t) index, 0);
-      // ref.rc == 2: dict (from SetItem) + slot (from New). No decref.
-    } else {
-      // No fast slot (shouldn't happen for a raw binding, but be safe).
-      Py_DECREF(ref);  // release New reference; dict still holds it
-    }
+    // Dict holds one reference (SetItem). Steal raw value into ref and
+    // donate our New reference to the slot.
+    KosSymbolicRef_VALUE(ref) = KosNamespace_GET_FAST_VAL(namespace,
+                                                           (size_t) index);
+    KosNamespace_GET_FAST_VAL(namespace, (size_t) index) = ref;
+    kos_ns_set_raw(namespace, (size_t) index, 0);
+    // ref.rc == 2: dict (SetItem) + slot (New). No decref.
   }
 
   // NULL or a borrowed reference to a Ref instance
@@ -445,6 +497,131 @@ static PyObject *find_module_in_chain(PyObject *ns) {
     ns = KosNamespace_PARENT(ns);
   }
   return NULL;
+}
+
+
+/* Fast namespace init from a NamespaceSpec that has precomputed fast_names
+   and bitmasks.  Skips tuple allocation and per-slot bit manipulation for
+   locals; only does the runtime work needed for closure and global refs. */
+static int ns_init_syms_from_nspec(
+    PyObject *self, PyObject *parent, PyObject *nspec) {
+
+  PyObject *binds = KosNamespace_BINDS(self);
+
+  // Borrow cached fast_names and bitmasks from the nspec (just an incref).
+  PyObject *fn = KosNamespaceSpec_FAST_NAMES(nspec);
+  Py_XINCREF(fn);
+  KosNamespace_FAST_NAMES(self) = fn;
+  KosNamespace_FAST_RAW_LO(self) = KosNamespaceSpec_FAST_RAW_LO(nspec);
+  KosNamespace_FAST_RAW_HI(self) = KosNamespaceSpec_FAST_RAW_HI(nspec);
+
+  // Local slots are already NULL (zeroed before this call) and their raw bits
+  // are set in the bitmask above.  No dict entries for locals (sentinel-free).
+  PyObject *local_syms = KosNamespaceSpec_LOCAL_SYMS(nspec);
+  size_t count = local_syms ? (size_t) PyTuple_GET_SIZE(local_syms) : 0;
+
+  // Closures: find ref in parent chain and bind in dict + fast slot.
+  // The closure slots are already not-raw in the precomputed bitmask.
+  PyObject *closure_syms = KosNamespaceSpec_CLOSURE_SYMS(nspec);
+  if (closure_syms) {
+    size_t target = (size_t) PyTuple_GET_SIZE(closure_syms);
+    for (size_t i = 0; i < target; i++) {
+      PyObject *ref_name = PyTuple_GET_ITEM(closure_syms, i);
+      PyObject *ref = NULL;
+      if (KosNamespace_FindRef(parent, ref_name, &ref))
+        return -1;
+      if (! ref) {
+        PyErr_Format(PyExc_NameError, "No such reference: %S", ref_name);
+        return -1;
+      }
+      if (PyDict_SetItem(binds, ref_name, ref) < 0)
+        return -1;
+      Py_INCREF(ref);
+      KosNamespace_GET_FAST_VAL(self, count) = ref;
+      count++;
+    }
+  }
+
+  // Globals: find ref in module namespace and bind in dict + fast slot.
+  // The global slots are already not-raw in the precomputed bitmask.
+  PyObject *global_syms = KosNamespaceSpec_GLOBAL_SYMS(nspec);
+  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0 && parent) {
+    PyObject *module_ns = find_module_in_chain(parent);
+    if (! module_ns) {
+      PyErr_Format(PyExc_RuntimeError,
+                   "global_syms require module in parent chain");
+      return -1;
+    }
+    size_t target = (size_t) PyTuple_GET_SIZE(global_syms);
+    for (size_t i = 0; i < target; i++) {
+      PyObject *ref_name = PyTuple_GET_ITEM(global_syms, i);
+      PyObject *ref = mdl_ns_borrow_ref(module_ns, ref_name);
+      if (! ref) {
+        PyErr_Format(PyExc_NameError, "No such reference in module: %S",
+                     ref_name);
+        return -1;
+      }
+      if (PyDict_SetItem(binds, ref_name, ref) < 0)
+        return -1;
+      Py_INCREF(ref);
+      KosNamespace_GET_FAST_VAL(self, count) = ref;
+      count++;
+    }
+  }
+
+  return 0;
+}
+
+
+/* Allocate and initialize a namespace from a NamespaceSpec, using cached
+   fast_names and bitmasks to skip per-slot work.  This is the hot path
+   called on every function invocation. */
+static PyObject *ns_newfull_from_nspec(
+    PyTypeObject *type, PyObject *parent, PyObject *nspec) {
+
+  if (parent == Py_None)
+    parent = NULL;
+
+  if (parent && ! KosNamespace_Check(parent)) {
+    PyErr_Format(PyExc_TypeError,
+                 "Namespace parent must be Namespace, not %R", parent);
+    return NULL;
+  }
+
+  PyObject *fn = KosNamespaceSpec_FAST_NAMES(nspec);
+  size_t count = fn ? (size_t) PyTuple_GET_SIZE(fn) : 0;
+
+  PyObject *name = KosNamespaceSpec_NAME(nspec);
+  if (! name || name == Py_None)
+    name = _namespace_str;
+
+  PyObject *binds = PyDict_New();
+  if (! binds)
+    return NULL;
+
+  PyObject *self = PyObject_NewVar(PyObject, type, count);
+  if (! self) {
+    Py_DECREF(binds);
+    return NULL;
+  }
+
+  Py_INCREF(name);
+  KosNamespace_NAME(self) = name;
+  Py_XINCREF(parent);
+  KosNamespace_PARENT(self) = parent;
+  KosNamespace_BINDS(self) = binds;
+  KosNamespace_FAST_COUNT(self) = count;
+  KosNamespace_FAST_NAMES(self) = NULL;
+  KosNamespace_FAST_RAW_LO(self) = 0;
+  KosNamespace_FAST_RAW_HI(self) = 0;
+
+  for (size_t i = count; i--; )
+    KosNamespace_GET_FAST_VAL(self, i) = NULL;
+
+  if (ns_init_syms_from_nspec(self, parent, nspec))
+    Py_CLEAR(self);
+
+  return self;
 }
 
 
@@ -471,9 +648,7 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
     for (size_t i = 0; i < target; i++) {
       PyObject *ref_name = PySequence_Fast_GET_ITEM(local_syms, i);
 
-      if (PyDict_SetItem(binds, ref_name, Py_None) < 0)
-        return -1;
-
+      // No dict entry for locals — ns_borrow_loose_ref synthesizes Py_None.
       KosNamespace_GET_FAST_VAL(self, count) = NULL;
       kos_ns_set_raw(self, count, 1);
 
@@ -546,7 +721,9 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
 
 
 static Py_ssize_t ns_len(PyObject *self) {
-  return PyDict_Size(KosNamespace_BINDS(self));
+  // fast_count is the authoritative binding count for fast namespaces;
+  // the binds dict omits raw-slot entries (no Py_None sentinels).
+  return (Py_ssize_t) KosNamespace_FAST_COUNT(self);
 }
 
 
@@ -704,7 +881,10 @@ static PyObject *ns_m_get(PyObject *self, PyObject *args) {
     return NULL;
 
   while (self) {
-    PyObject *const bound = PyDict_GetItem(KosNamespace_BINDS(self), name);
+    // Use LOOSE_REF so raw fast slots (no dict entry) are also found.
+    PyObject *const bound = KosNamespace_LOOSE_REF(self, name);
+    if (PyErr_Occurred())
+      return NULL;
     if (bound) {
       PyObject *val = ns_deref_symbol(self, name);
       if (! val) {
@@ -825,6 +1005,48 @@ static PyObject *ns_m_items(PyObject *self) {
 }
 
 
+/* keys() for fast namespaces: returns all bound names including raw-slot
+   locals that are absent from the binds dict. */
+static PyObject *ns_m_keys_fast(PyObject *self) {
+  PyObject *names = KosNamespace_FAST_NAMES(self);
+  if (names)
+    return PySequence_List(names);
+  return PyList_New(0);
+}
+
+
+/* items() for fast namespaces: returns (name, value) pairs for all fast
+   slots, skipping any that are currently uninitialized. */
+static PyObject *ns_m_items_fast(PyObject *self) {
+  PyObject *names = KosNamespace_FAST_NAMES(self);
+  Py_ssize_t count = names ? PyTuple_GET_SIZE(names) : 0;
+  PyObject *items = PyList_New(0);
+  if (! items)
+    return NULL;
+  for (Py_ssize_t i = 0; i < count; i++) {
+    PyObject *key = PyTuple_GET_ITEM(names, i);
+    PyObject *val = ns_deref_symbol(self, key);
+    if (! val) {
+      if (PyErr_ExceptionMatches(PyExc_NameError)) {
+        PyErr_Clear();
+        continue;
+      }
+      Py_DECREF(items);
+      return NULL;
+    }
+    PyObject *pair = PyTuple_Pack(2, key, val);
+    Py_DECREF(val);
+    if (! pair || PyList_Append(items, pair) < 0) {
+      Py_XDECREF(pair);
+      Py_DECREF(items);
+      return NULL;
+    }
+    Py_DECREF(pair);
+  }
+  return items;
+}
+
+
 static PyObject *ns_m_find(PyObject *self, PyObject *key) {
   PyObject *ref = Py_None;
 
@@ -885,11 +1107,11 @@ static PyMethodDef ns_methods[] = {
     "NS.reset() => None" },
   */
 
-  { "keys", (PyCFunction) ns_m_keys, METH_NOARGS,
-    "NS.keys() => iter" },
+  { "keys", (PyCFunction) ns_m_keys_fast, METH_NOARGS,
+    "NS.keys() => list of all bound names including uninitialised locals" },
 
-  { "items", (PyCFunction) ns_m_items, METH_NOARGS,
-    "NS.items() => iter" },
+  { "items", (PyCFunction) ns_m_items_fast, METH_NOARGS,
+    "NS.items() => list of (name, value) pairs for initialised bindings" },
 
   { "__contains__", (PyCFunction) ns_m_contains, METH_O,
     "(K in NS) => bool" },
@@ -1476,26 +1698,23 @@ int KosNamespace_FastBind(
 /* === CollectorNamespace === */
 
 
-static int collector_is_declaration_key(PyObject *self, PyObject *key) {
-
-  int idx = ns_fast_index(self, key);
-
-  if (idx < 0)
-    return 1;
-
-  return kos_ns_is_raw(self, (size_t) idx) != 0;
-}
-
-
 static Py_ssize_t collector_mp_length(PyObject *self) {
-
   Py_ssize_t count = 0;
+
+  // Raw fast slots are locals treated as declarations.
+  PyObject *names = KosNamespace_FAST_NAMES(self);
+  Py_ssize_t fn_count = names ? PyTuple_GET_SIZE(names) : 0;
+  for (Py_ssize_t i = 0; i < fn_count; i++) {
+    if (kos_ns_is_raw(self, (size_t) i))
+      count++;
+  }
+
+  // Dict entries not in fast_names are dynamic declarations.
   PyObject *binds = KosNamespace_BINDS(self);
   PyObject *key = NULL;
   Py_ssize_t pos = 0;
-
   while (PyDict_Next(binds, &pos, &key, NULL)) {
-    if (collector_is_declaration_key(self, key))
+    if (ns_fast_index(self, key) < 0)
       count++;
   }
 
@@ -1509,14 +1728,25 @@ static PyObject *collector_m_keys(PyObject *self) {
   if (! keys)
     return NULL;
 
+  // Raw fast slots are locals treated as declarations.
+  PyObject *names = KosNamespace_FAST_NAMES(self);
+  Py_ssize_t fn_count = names ? PyTuple_GET_SIZE(names) : 0;
+  for (Py_ssize_t i = 0; i < fn_count; i++) {
+    if (! kos_ns_is_raw(self, (size_t) i))
+      continue;
+    if (PyList_Append(keys, PyTuple_GET_ITEM(names, i)) < 0) {
+      Py_DECREF(keys);
+      return NULL;
+    }
+  }
+
+  // Dict entries not in fast_names are dynamic declarations.
   PyObject *binds = KosNamespace_BINDS(self);
   PyObject *key = NULL;
   Py_ssize_t pos = 0;
-
   while (PyDict_Next(binds, &pos, &key, NULL)) {
-    if (! collector_is_declaration_key(self, key))
+    if (ns_fast_index(self, key) >= 0)
       continue;
-
     if (PyList_Append(keys, key) < 0) {
       Py_DECREF(keys);
       return NULL;
@@ -1533,36 +1763,51 @@ static PyObject *collector_m_items(PyObject *self) {
   if (! items)
     return NULL;
 
+  // Raw fast slots are locals treated as declarations.
+  PyObject *names = KosNamespace_FAST_NAMES(self);
+  Py_ssize_t fn_count = names ? PyTuple_GET_SIZE(names) : 0;
+  for (Py_ssize_t i = 0; i < fn_count; i++) {
+    if (! kos_ns_is_raw(self, (size_t) i))
+      continue;
+    PyObject *key = PyTuple_GET_ITEM(names, i);
+    PyObject *val = ns_deref_symbol(self, key);
+    if (! val) {
+      if (PyErr_ExceptionMatches(PyExc_NameError)) {
+        PyErr_Clear();
+        continue;
+      }
+      Py_DECREF(items);
+      return NULL;
+    }
+    PyObject *pair = PyTuple_Pack(2, key, val);
+    Py_DECREF(val);
+    if (! pair || PyList_Append(items, pair) < 0) {
+      Py_XDECREF(pair);
+      Py_DECREF(items);
+      return NULL;
+    }
+    Py_DECREF(pair);
+  }
+
+  // Dict entries not in fast_names are dynamic declarations.
   PyObject *binds = KosNamespace_BINDS(self);
   PyObject *key = NULL;
   Py_ssize_t pos = 0;
-
   while (PyDict_Next(binds, &pos, &key, NULL)) {
-    PyObject *val = NULL;
-    PyObject *pair = NULL;
-
-    if (! collector_is_declaration_key(self, key))
+    if (ns_fast_index(self, key) >= 0)
       continue;
-
-    val = ns_deref_symbol(self, key);
+    PyObject *val = ns_deref_symbol(self, key);
     if (! val) {
       Py_DECREF(items);
       return NULL;
     }
-
-    pair = PyTuple_Pack(2, key, val);
+    PyObject *pair = PyTuple_Pack(2, key, val);
     Py_DECREF(val);
-    if (! pair) {
+    if (! pair || PyList_Append(items, pair) < 0) {
+      Py_XDECREF(pair);
       Py_DECREF(items);
       return NULL;
     }
-
-    if (PyList_Append(items, pair) < 0) {
-      Py_DECREF(pair);
-      Py_DECREF(items);
-      return NULL;
-    }
-
     Py_DECREF(pair);
   }
 
@@ -1655,11 +1900,7 @@ PyObject *KosCollectorNamespace_New(
     PyObject *parent,
     PyObject *spec) {
 
-  return KosCollectorNamespace_NewFull(KosNamespaceSpec_NAME(spec),
-                                       parent,
-                                       KosNamespaceSpec_LOCAL_SYMS(spec),
-                                       KosNamespaceSpec_CLOSURE_SYMS(spec),
-                              KosNamespaceSpec_GLOBAL_SYMS(spec));
+  return ns_newfull_from_nspec(&KosCollectorNamespaceType, parent, spec);
 }
 
 
@@ -1929,6 +2170,8 @@ static PyGetSetDef mdl_getset[] = {
 
 static PyObject *mdl_m_dir(PyObject *self) {
   PyObject *ns = KosModule_NAMESPACE(self);
+  if (KosNamespace_SupportsFast(ns))
+    return ns_m_keys_fast(ns);
   return PyDict_Keys(KosNamespace_BINDS(ns));
 }
 
