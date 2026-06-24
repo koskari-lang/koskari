@@ -2233,6 +2233,109 @@ with the sum of their counts (same for **CAR**).
 (compile/cdr (compile/cons 1 (compile/cons 2 nil)))   ; → (2 . nil)
 ```
 
+## compile/#list
+
+**Symbol:** `compile/#list`
+
+**Syntax:** `(compile/#list EXPR ...)`
+
+**Surface syntax:** `(#list EXPR ...)` and reader `#[ ... ]` (see
+[SYNTAX.md](SYNTAX.md)). The compiler resolves `#list` to `compile/#list` via
+`find_compiled`.
+
+**Use-case:** Build a Python `list` from evaluated elements. Replaces the
+bootstrap `build_list` fastcall on the compile path for `#list` forms.
+
+**Behaviour:** Compile each expression in order (stack bottom = first element).
+Emit **BUILD_LIST** with arg = element count. Empty body emits **BUILD_LIST 0**.
+
+Planned **const-run squashing** (tuple constants + **BUILD_LIST_EXTEND**) is
+described in
+[language/const-collection-squashing.md](language/const-collection-squashing.md);
+not implemented yet.
+
+**Examples:**
+
+```scheme
+(#list)              ; → []
+(#list 1 2 3)        ; → [1, 2, 3]
+(#list x y)          ; → [x, y] with dynamic elements
+```
+
+**Implementation:** `koskari/compile/specials/collections.py`
+
+**Tests:** `tests/compile/specials/test_collections.py`
+
+## compile/#list-append
+
+**Symbol:** `compile/#list-append`
+
+**Syntax:**
+
+- `(compile/#list-append SYM EXPR)`
+- `(compile/#list-append LIST_EXPR EXPR)`
+
+**Surface syntax:** `(#list-append SYM EXPR)` or `(#list-append LIST EXPR)`.
+
+**Use-case:** Append the value of EXPR to a list binding or to a list value on
+the stack. Used by macros such as `list-each` (`(#list-append col item)`).
+
+**Behaviour:**
+
+- **Symbol binding:** `request_for_write` on SYM; compile EXPR; emit
+  **VAR_LIST_APPEND** (may lower to **FAST_LIST_APPEND**); push **CONST None**
+  (form value is `None`).
+- **List expression:** compile LIST_EXPR, then EXPR; emit **BUILD_LIST_APPEND**
+  (mutates the list in place; leaves the list on the stack).
+
+**Examples:**
+
+```scheme
+(begin
+  (setq col (#list))
+  (#list-append col 9)
+  col)                 ; → [9]
+
+(#list-append (#list 1) 2)   ; → [1, 2]
+```
+
+**Implementation:** `koskari/compile/specials/collections.py`
+
+**Tests:** `tests/compile/specials/test_collections.py`
+
+## compile/#tuple
+
+**Symbol:** `compile/#tuple`
+
+**Syntax:** `(compile/#tuple EXPR ...)`
+
+**Surface syntax:** `(#tuple EXPR ...)` and reader `#( ... )` (see
+[SYNTAX.md](SYNTAX.md)).
+
+**Use-case:** Build a Python `tuple` from evaluated elements on the compile
+path. Replaces the bootstrap `build_tuple` fastcall for `#tuple` forms.
+
+**Behaviour:** Compile each expression in order. Emit **BUILD_ARGS** with arg
+= element count. Empty body emits **BUILD_ARGS 0** (empty tuple).
+
+Planned **const-run squashing** (single **CONST** for all-constant bodies,
+**COMBINE_ARGS** for mixed runs) is described in
+[language/const-collection-squashing.md](language/const-collection-squashing.md);
+not implemented yet.
+
+**Examples:**
+
+```scheme
+(#tuple)             ; → ()
+(#tuple 1 2 3)       ; → (1, 2, 3)
+(#tuple x y)         ; → (x, y) with dynamic elements
+```
+
+**Implementation:** `koskari/compile/specials/collections.py`
+
+**Tests:** reader `#(` lowering in `tests/reader/test_parse.py`; compile
+special coverage to be extended in `test_collections.py`.
+
 ## compile/cons
 
 **Symbol:** `compile/cons`
