@@ -1295,7 +1295,7 @@ static PyObject *ns_newfull_type(
     return NULL;
   }
 
-  PyObject *self = PyObject_NewVar(PyObject, type, count);
+  PyObject *self = ns_alloc(type, count);
   if (! self) {
     Py_XDECREF(local_syms);
     Py_XDECREF(closure_syms);
@@ -1316,9 +1316,6 @@ static PyObject *ns_newfull_type(
   KosNamespace_FAST_NAMES(self) = NULL;
   KosNamespace_FAST_RAW_LO(self) = 0;
   KosNamespace_FAST_RAW_HI(self) = 0;
-
-  for (size_t i = count; i--; )
-    KosNamespace_GET_FAST_VAL(self, i) = NULL;
 
   if (ns_init_syms(self, parent, local_syms, closure_syms, global_syms))
     Py_CLEAR(self);
