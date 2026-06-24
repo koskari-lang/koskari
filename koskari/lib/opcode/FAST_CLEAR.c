@@ -23,10 +23,6 @@ KOS_OP_HANDLER(FAST_CLEAR) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_CLEAR invoked on NULL namespace");
     return EVAL_RAISE();
   }
-  if (! KosNamespace_SupportsFast(ns)) {
-    PyErr_Format(PyExc_RuntimeError, "FAST_CLEAR invoked on %R", ns);
-    return EVAL_RAISE();
-  }
   if (KosNamespace_FastClear(ns, (size_t) KosOp_ARG(insn)) < 0)
     return EVAL_RAISE();
   return EVAL_NORMAL();

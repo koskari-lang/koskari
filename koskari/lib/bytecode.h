@@ -126,6 +126,8 @@ typedef enum KosOpCode {
 typedef enum KosCodeFlag {
   /** code contains yield/yield_from, returns async generator */
   KOS_CODE_YIELDS = 0x01,
+  /** code contains FAST-slot opcodes at root namespace scope */
+  KOS_CODE_USES_FAST = 0x02,
 } KosCodeFlag;
 
 
@@ -397,6 +399,9 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
 
 #define KosCode_YIELDS(c)                       \
   (KosCode_FLAGS(c) & KOS_CODE_YIELDS)
+
+#define KosCode_USES_FAST(c)                    \
+  (KosCode_FLAGS(c) & KOS_CODE_USES_FAST)
 
 #define KosCode_NAME(c)                         \
   (((KosCode *) c)->name)

@@ -32,11 +32,6 @@ KOS_OP_HANDLER(UNPACK_FAST) {
     return EVAL_RAISE();
   }
 
-  if (! KosNamespace_SupportsFast(ns)) {
-    PyErr_Format(PyExc_RuntimeError, "UNPACK_FAST invoked on %R", ns);
-    return EVAL_RAISE();
-  }
-
   if (idx0 >= KosNamespace_FAST_COUNT(ns) || idx1 >= KosNamespace_FAST_COUNT(ns)) {
     PyErr_Format(PyExc_NameError,
                  "UNPACK_FAST fast index out of bounds");
@@ -61,8 +56,8 @@ KOS_OP_HANDLER(UNPACK_FAST) {
     return EVAL_RAISE();
   }
 
-  if (KosNamespace_FastStore(ns, idx0, PySequence_Fast_GET_ITEM(seq, 0)) ||
-      KosNamespace_FastStore(ns, idx1, PySequence_Fast_GET_ITEM(seq, 1))) {
+  if (kos_ns_fast_store(ns, idx0, PySequence_Fast_GET_ITEM(seq, 0)) ||
+      kos_ns_fast_store(ns, idx1, PySequence_Fast_GET_ITEM(seq, 1))) {
     Py_DECREF(seq);
     return EVAL_RAISE();
   }

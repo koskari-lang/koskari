@@ -28,7 +28,7 @@ KOS_OP_HANDLER(FAST_OBJECT_MULTIPLY) {
   }
 
   size_t idx = (size_t) KosOp_ARG(insn);
-  PyObject *obj = KosNamespace_FastDeref(ns, idx);
+  PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (unlikely(! obj))
     return EVAL_RAISE();
 
@@ -44,7 +44,7 @@ KOS_OP_HANDLER(FAST_OBJECT_MULTIPLY) {
   if (unlikely(! result))
     return EVAL_RAISE();
 
-  int res = KosNamespace_FastStore(ns, idx, result);
+  int res = kos_ns_fast_store(ns, idx, result);
   Py_DECREF(result);
   return kos_op_result_from_push_int(res);
 }

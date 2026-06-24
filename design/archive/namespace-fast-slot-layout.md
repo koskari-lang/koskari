@@ -452,6 +452,115 @@ have more complex surrounding logic; do them last to keep diffs reviewable.
 ---
 
 
+## 8. As implemented
+
+This section records where the final implementation diverged from the proposal
+above.  All phases of the proposal were completed.
+
+
+### 8.1 Two-field bitmap instead of one
+
+The proposal used a single `uint64_t fast_raw_bitmap` (64-slot limit).  The
+implementation raised the cap to **128** by splitting into two fields:
+
+```c
+uint64_t fast_raw_lo;  /* raw-flag bits for slots 0–63  */
+uint64_t fast_raw_hi;  /* raw-flag bits for slots 64–127 */
+```
+
+`KosNamespace_FAST_SLOT_MAX = 128` is exported to Python as
+`NAMESPACE_FAST_SLOT_MAX`.  The compiler caps VAR→FAST lowering at this limit
+via a `fast_slot()` helper in `Compiler.convert_fast`; locals beyond the cap
+remain as VAR opcodes with no FAST equivalent.
+
+The raw-flag helpers (`kos_ns_is_raw`, `kos_ns_set_raw`) branch on `idx < 64`
+to select the correct field.
+
+
+### 8.2 `fast_names` eager and shared via `KosNamespaceSpec`
+
+The proposal materialized `fast_names` lazily on the first `NameError`,
+per namespace instance.  The implementation goes further:
+
+- **`KosNamespaceSpec`** gains three new fields: `fast_names` (tuple),
+  `fast_raw_lo`, and `fast_raw_hi`.  All three are computed **once** at spec
+  creation time (`KosNamespaceSpec_New`).
+- `fast_names` is the tuple of local+closure+global symbols in slot order,
+  capped at `FAST_SLOT_MAX`.
+- The bitmasks encode the initial raw state: bits set for local slots (raw),
+  clear for closure/global slots (refs).
+- **`KosNamespace_FromSpec`** (every function call) now calls
+  `ns_newfull_from_nspec` → `ns_init_syms_from_nspec`, which for locals does
+  only `Py_INCREF(nspec->fast_names)` + two integer copies — no tuple
+  allocation, no per-slot loop, no dict touches.
+- **`KosCollectorNamespace_New`** uses the same `ns_newfull_from_nspec` path.
+- The slower `ns_init_syms` path (used by the `Namespace(...)` Python
+  constructor) builds `fast_names` and bitmasks from scratch as before.
+
+
+### 8.3 `Py_None` sentinels removed from `binds`
+
+Previously `ns_init_syms` inserted `{name: Py_None}` into `binds` for each
+local fast slot so that `KosNamespace_LOOSE_REF` could detect raw-mode
+bindings via a dict lookup.  This added N `PyDict_SetItem` calls per
+invocation and inflated the dict.
+
+The implementation removes all sentinel inserts (from both `ns_init_syms` and
+`KosNamespace_Copy`).  `ns_borrow_loose_ref` now synthesizes `Py_None` on
+demand when the dict returns NULL for a name that maps to a raw fast slot:
+
+```c
+static PyObject *ns_borrow_loose_ref(PyObject *namespace, PyObject *key) {
+  PyObject *ref = PyDict_GetItemWithError(KosNamespace_BINDS(namespace), key);
+  if (ref || PyErr_Occurred())
+    return ref;
+  int index = ns_fast_index(namespace, key);
+  if (index >= 0 && kos_ns_is_raw(namespace, (size_t) index))
+    return Py_None;
+  return NULL;
+}
+```
+
+`ns_borrow_ref` similarly detects a missing-dict + raw-fast-slot case and
+promotes the slot to a `KosSymbolicRef` lazily.  The `Py_None` sentinel
+contract visible to all callers of `KosNamespace_LOOSE_REF` is **unchanged**;
+only the storage mechanism differs.
+
+Follow-on changes required by sentinel removal (§7 "unaffected" claim was
+incorrect):
+
+- `ns_m_get` — changed from `PyDict_GetItem` to `KosNamespace_LOOSE_REF` so
+  that initialized raw locals are found when walking the namespace chain.
+- `ns_len` — changed from `PyDict_Size` to `KosNamespace_FAST_COUNT` so that
+  raw locals are counted.
+- `ns_m_keys` / `ns_m_items` — replaced with `ns_m_keys_fast` /
+  `ns_m_items_fast` in `ns_methods`; the new versions iterate `fast_names`
+  rather than the dict, so all slots are visible.
+- `collector_mp_length`, `collector_m_keys`, `collector_m_items` — rewritten
+  to walk raw fast slots (declarations) plus dict entries not in `fast_names`
+  (dynamic additions), replacing the old `collector_is_declaration_key` helper.
+- `mdl_m_dir` — updated to call `ns_m_keys_fast` when the wrapped namespace is
+  a fast namespace.
+
+
+### 8.4 `CO_USES_FAST` flag and eval-entry guard
+
+The proposal converted the per-opcode `KosNamespace_SupportsFast` check into
+a debug-only assertion.  The implementation takes a slightly different
+approach: it keeps **no per-opcode check at all**, but adds a
+`CO_USES_FAST = 0x02` flag to `KosCode` (set by `validate_fast_slots` at
+`depth == 0`).  `koskari_eval` checks this flag once at entry and raises
+`RuntimeError` if the namespace does not support fast slots.
+
+This preserves a clean error (rather than a crash) when FAST code is entered
+with a wrong namespace, while still eliminating the hot-path type test from
+every opcode dispatch.  The flag is exposed as a read-only Python bool:
+`code_obj.uses_fast`.
+
+
+---
+
+
 ## 8. Expected impact
 
 Based on the `KOS_TRACE_TIMING` trace (5.1 billion opcode dispatches,

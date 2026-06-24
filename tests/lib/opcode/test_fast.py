@@ -54,6 +54,19 @@ def test_fast_out_of_bounds_rejected_at_construction(code_list):
     assert "limit" in str(ctx.value)
 
 
+def test_fast_uses_fast_flag():
+    """
+    Code with a root-scope FAST opcode sets uses_fast; code without does not
+    """
+    code_with, _ = build_expr(
+        [["FAST", 0], ["RETURN", 1]],
+        local_syms=("x",))
+    assert code_with.uses_fast
+
+    code_without = build_code([["CONST", 1], ["RETURN", 1]])
+    assert not code_without.uses_fast
+
+
 class TestFastOpcodes(CevalTest):
     """
     Tests for FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
@@ -61,7 +74,8 @@ class TestFastOpcodes(CevalTest):
 
     async def test_fast_on_dict_namespace_raises_runtime_error(self):
         """
-        FAST requires KosNamespace with fast slots; dict as frame ns => RuntimeError
+        FAST-slot code entered with a non-fast namespace raises RuntimeError
+        at eval entry, not a crash in the opcode handler
         """
         code_obj, _ = build_expr(
             [["FAST", 0], ["RETURN", 1]],
@@ -69,7 +83,7 @@ class TestFastOpcodes(CevalTest):
         ns = {}
         with self.assertRaises(RuntimeError) as ctx:
             await make_callable(code_obj, ns)()
-        self.assertIn("FAST invoked", str(ctx.exception))
+        self.assertIn("fast slots", str(ctx.exception))
 
     async def test_fast_bind_binds_slot(self):
         """

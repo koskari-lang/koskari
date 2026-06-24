@@ -512,6 +512,12 @@ static PyObject *code_get_yields(PyObject *self, void *_unused) {
 }
 
 
+static PyObject *code_get_uses_fast(PyObject *self, void *_unused) {
+
+  return PyBool_FromLong(KosCode_USES_FAST(self));
+}
+
+
 static PyObject *code_get_cpool(PyObject *self, void *_unused) {
 
   uint32_t l = KosCode_CPOOL_LEN(self);
@@ -575,6 +581,10 @@ static PyGetSetDef code_getset[] = {
 
   { "yields", code_get_yields, NULL,
     "bool; whether this code will yield like a generator",
+    NULL },
+
+  { "uses_fast", code_get_uses_fast, NULL,
+    "bool; whether this code uses fast-slot opcodes at root namespace scope",
     NULL },
 
   { "constants_pool", code_get_cpool, NULL,
@@ -2208,6 +2218,8 @@ static int validate_fast_slots(
                      (unsigned) code[i].arg, (unsigned) active);
         return -1;
       }
+      if (depth == 0)
+        KosCode_FLAGS(self) |= KOS_CODE_USES_FAST;
     } else if (st == KOSTYLE_EXTRA) {
       /* Walk schema: only slots tagged FASTVAR are checked */
       uint16_t eidx = code[i].arg;
@@ -2234,6 +2246,9 @@ static int validate_fast_slots(
                        (unsigned) raw[slot], (unsigned) active);
           return -1;
         }
+
+        if (depth == 0)
+          KosCode_FLAGS(self) |= KOS_CODE_USES_FAST;
       }
     }
 

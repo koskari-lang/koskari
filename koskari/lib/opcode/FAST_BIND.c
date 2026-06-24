@@ -25,11 +25,6 @@ KOS_OP_HANDLER(FAST_BIND) {
     return EVAL_RAISE();
   }
 
-  if (unlikely(! KosNamespace_SupportsFast(ns))) {
-    PyErr_Format(PyExc_RuntimeError, "FAST_BIND invoked on %R", ns);
-    return EVAL_RAISE();
-  }
-
   size_t idx = (size_t) KosOp_ARG(insn);
   if (unlikely(idx >= KosNamespace_FAST_COUNT(ns))) {
     PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %zu",

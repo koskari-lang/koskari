@@ -1210,12 +1210,14 @@ static int test_eval_call_zero_args(void) {
 }
 
 
-/* === Test: FAST on dict ns => RuntimeError === */
+/* === Test: FAST-slot code on non-fast namespace => RuntimeError at entry === */
 
 
 static int test_eval_fast_on_dict_ns(void) {
     /*
-      FAST requires KosNamespace with fast slots; PyDict => RuntimeError.
+      Code with FAST opcodes sets KOS_CODE_USES_FAST; koskari_eval checks
+      the flag at entry and raises RuntimeError before any opcode runs when
+      the namespace is not a fast-capable KosNamespace (e.g. a plain dict).
     */
 
     PyObject *name = PyUnicode_FromString("test");
@@ -1244,6 +1246,9 @@ static int test_eval_fast_on_dict_ns(void) {
     Py_DECREF(instr);
     Py_DECREF(nspec);
 
+    /* Verify uses_fast flag was set by validate_fast_slots */
+    TEST_ASSERT(KosCode_USES_FAST(code_obj), "code has uses_fast flag");
+
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
@@ -1256,7 +1261,8 @@ static int test_eval_fast_on_dict_ns(void) {
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
-    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
+                "exception is RuntimeError");
     PyErr_Clear();
 
     KosContext_Free(ctx);

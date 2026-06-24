@@ -2450,6 +2450,19 @@ KosOpResult koskari_eval(
   if (KosEvalState_DYN_TOP(&es))
     kos_dyn_rebuild_live_from_chain(&es);
 
+  /* On fresh entry, verify that FAST-slot code runs in a capable namespace.
+     Resumes are safe: the namespace was already validated on first entry. */
+  if (KosCode_USES_FAST(KosEvalState_CODE(&es))) {
+    PyObject *ns = KosEvalState_NAMESPACE(&es);
+    if (! KosNamespace_SupportsFast(ns)) {
+      PyErr_Format(PyExc_RuntimeError,
+                   "code uses fast slots but namespace does not support"
+                   " them: %R", ns);
+      eval_ret = EVAL_RAISE();
+      goto koskari_eval_cleanup;
+    }
+  }
+
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
 
   KosEvalState_EnterDomainScope(&es);

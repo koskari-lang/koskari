@@ -31,12 +31,7 @@ KOS_OP_HANDLER(CALL_FAST) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST on NULL namespace");
     return EVAL_RAISE();
   }
-  if (! KosNamespace_SupportsFast(ns)) {
-    PyErr_Format(PyExc_RuntimeError, "CALL_FAST on %R", ns);
-    return EVAL_RAISE();
-  }
-
-  PyObject *callable = KosNamespace_FastDeref(ns, (size_t) slot_idx);
+  PyObject *callable = kos_ns_fast_deref(ns, (size_t) slot_idx);
   if (! callable)
     return EVAL_RAISE();
 
