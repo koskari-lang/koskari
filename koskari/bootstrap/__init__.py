@@ -34,7 +34,7 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    build_dict, build_list, build_set, build_tuple, car, cdr,
                    cons, defer, demand, demand_apply, demand_call, deref,
                    gensym, getattr_star, getitem_star, hasattr_star,
-                   hasitem_star, keyword, kos_repr, nil,
+                   hasitem_star, keyword, kos_repr, list_append, nil,
                    pair, parameter, setcar, setcdr, symbol, values)
 
 from ..types import (TypePredicate, is_nil, is_None, is_proper, is_recursive,
@@ -148,6 +148,7 @@ def make_bootstrap():
     # builders
     _bind('#dict', build_dict)
     _bind('#list', build_list)
+    _bind('#list-append', list_append)
     _bind('#set', build_set)
     _bind('#str', lambda *args: "".join(args))
     _bind('#tuple', build_tuple)

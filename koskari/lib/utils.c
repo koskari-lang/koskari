@@ -154,7 +154,9 @@ static KosOpResult apply_native_handler(
 
   if (unlikely(delivered_value != NULL)) {
     Py_DECREF(delivered_value);
-    PyErr_SetString(PyExc_RuntimeError, "apply native handler: unexpected resume delivery");
+    PyErr_SetString(
+      PyExc_RuntimeError,
+      "apply native handler: unexpected resume delivery");
     return EVAL_RAISE();
   }
 
@@ -829,6 +831,17 @@ PyObject *KosUtils_BuildList(PyObject *const *args, Py_ssize_t nargs) {
 }
 
 
+int KosUtils_ListAppend(PyObject *list, PyObject *item) {
+
+  if (! PyList_Check(list)) {
+    PyErr_Format(PyExc_TypeError, "list_append requires list, not %R", list);
+    return -1;
+  }
+
+  return PyList_Append(list, item);
+}
+
+
 PyObject *KosUtils_BuildSet(PyObject *const *args, Py_ssize_t nargs) {
 
   PyObject *result = PySet_New(NULL);
@@ -1219,14 +1232,6 @@ static PyObject *m_pass(const PyObject *mod,
 }
 
 
-#if PY_MINOR_VERSION < 6
-#define FASTCALL_METHOD_TYPE METH_VARARGS
-#define FASTCALL_WRAPPER(name)                                          \
-  static PyObject *m_ ## name(PyObject *mod, PyObject *args) {          \
-    return KosUtils_ ## name(PySequence_Fast_ITEMS(args),               \
-                             PySequence_Fast_GET_SIZE(args));           \
-  }
-#else
 #define FASTCALL_METHOD_TYPE METH_FASTCALL
 #define FASTCALL_WRAPPER(name)                                          \
   static PyObject *m_ ## name(PyObject *mod,                            \
@@ -1234,12 +1239,35 @@ static PyObject *m_pass(const PyObject *mod,
                               Py_ssize_t nargs) {                       \
     return KosUtils_ ## name(args, nargs);                              \
   }
-#endif
 
 
 FASTCALL_WRAPPER(BuildTuple);
 FASTCALL_WRAPPER(BuildList);
 FASTCALL_WRAPPER(BuildSet);
+
+
+static PyObject *m_ListAppend(
+    PyObject *mod,
+    PyObject *const *args,
+    Py_ssize_t nargs) {
+
+  (void) mod;
+
+  PyObject *list;
+  PyObject *item;
+
+  if (nargs != 2) {
+    PyErr_SetString(PyExc_TypeError, "list_append takes exactly 2 arguments");
+    return NULL;
+  }
+
+  list = args[0];
+  item = args[1];
+  if (KosUtils_ListAppend(list, item) < 0)
+    return NULL;
+
+  Py_RETURN_NONE;
+}
 
 
 static PyObject *m_getattr_star(PyObject *mod, PyObject *args) {
@@ -1374,6 +1402,11 @@ static PyMethodDef utils_methods[] = {
   { "build_list", (PyCFunction) m_BuildList, FASTCALL_METHOD_TYPE,
     "build_list(*args) -> list\n"
     "Build a list from arguments." },
+
+  { "list_append", (PyCFunction) m_ListAppend,
+    METH_FASTCALL,
+    "list_append(list, item) -> None\n"
+    "Append item to list; TypeError when list is not a list." },
 
   { "build_set", (PyCFunction) m_BuildSet, FASTCALL_METHOD_TYPE,
     "build_set(*args) -> set\n"

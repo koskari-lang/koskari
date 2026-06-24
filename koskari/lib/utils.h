@@ -169,6 +169,9 @@ PyObject *KosUtils_BuildTuple(PyObject *const *args, Py_ssize_t nargs);
 PyObject *KosUtils_BuildList(PyObject *const *args, Py_ssize_t nargs);
 
 
+int KosUtils_ListAppend(PyObject *list, PyObject *item);
+
+
 /**
    Build a set from variadic arguments.
 

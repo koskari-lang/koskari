@@ -1,0 +1,53 @@
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+/**
+   BUILD_LIST: arg = count of elements.
+   Stack: [..., v_0, ..., v_{n-1}] -> [..., list].
+   Pop n elements into a new list and push it.
+*/
+
+KOS_OP_HANDLER(BUILD_LIST) {
+  unsigned opa = KosOp_ARG(insn);
+  PyObject *built;
+  size_t count = (size_t) opa;
+
+  if (count == 0) {
+    built = PyList_New(0);
+    if (unlikely(! built))
+      return EVAL_RAISE();
+    return kos_op_result_PUSH(es, built);
+  }
+
+  {
+    PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
+    if (unlikely(! ptr))
+      return EVAL_RAISE();
+
+    built = PyList_New((Py_ssize_t) count);
+    if (unlikely(! built))
+      return EVAL_RAISE();
+
+    for (size_t i = 0; i < count; i++)
+      PyList_SET_ITEM(built, (Py_ssize_t) i, ptr[i]);
+
+    KosEvalState_StackDropNoErr(es, count);
+  }
+
+  return kos_op_result_PUSH(es, built);
+}
+
+
+// The end.
