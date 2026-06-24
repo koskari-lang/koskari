@@ -18,7 +18,8 @@ ENV KOSKARI_FORCE_VERSION_REGEN=1 \
     KOSKARI_DIRTY=${KOSKARI_DIRTY} \
     KOSKARI_EXACT_TAG=${KOSKARI_EXACT_TAG}
 
-RUN uv build .
+RUN mkdir .eggs && \
+    uv build .
 
 
 FROM python:3.14-alpine
