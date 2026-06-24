@@ -2057,7 +2057,10 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
    the parent (Phase 2b) or marks the root frame dead and stops (Phase 2c).
    val is a new reference; ownership is consumed by this function.
 */
-static KosOpResult eval_event_return(KosEvalState *es, PyObject *val) {
+static inline KosOpResult eval_event_return(
+    KosEvalState *es,
+    PyObject *val) {
+
   KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
   int has_parent = (parent != NULL && ! KosDynNode_IS_GEN(parent));
 
@@ -2105,6 +2108,7 @@ static KosOpResult eval_event_return(KosEvalState *es, PyObject *val) {
   KosEvalState_MarkDeadAfterReturn(es);
   if (kos_dyn_need_kos_agen_boundary_deliver(es))
     return eval_event_return_deliver_to_boundary(es, val);
+
   return EVAL_RETURN(val);
 }
 
@@ -2132,7 +2136,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
    then kos_dynnode_on_control_returned (WIND/WITH).  val is a new ref;
    ownership is consumed by this function.
 */
-static KosOpResult eval_parent_return_deliver_impl(
+static inline KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
 
   {

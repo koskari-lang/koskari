@@ -50,7 +50,8 @@ static void kos_dyn_apply_live(
     KosEvalState *es,
     KosDynFrame *ft,
     KosStackBlock **bl,
-    PyObject *ns);
+    PyObject *ns,
+    int flush);
 static void kos_dyn_walk_live_from(
     KosEvalState *es,
     KosDynNode *start,
@@ -286,7 +287,10 @@ static PyObject *snapshot_stack_to_list(KosStackBlock *stack) {
    Dispatch post-await resume: WITH phases, WIND phases. Callers: eval after
    KosEvalState_CallArgs returns.
 */
-KosOpResult kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node) {
+KosOpResult kos_dynnode_on_control_returned(
+    KosEvalState *es,
+    KosDynNode *node) {
+
   int r = 0;
   /* Iterator-boundary yield/return uses eval dispatch_boundary_event /
      kos_dyn_deliver_* instead of this hook. */
@@ -481,7 +485,10 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop) {
    the clone's innermost parent set to stop. Used for continuation capture and
    INSTALL/PUSH segments. On failure, frees partial clone.
 */
-KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
+KosDynNode *kos_clone_chain_segment(
+    KosDynNode *top,
+    KosDynNode *stop) {
+
   SAYF("[xfer] clone_segment enter top=%p stop=%p", (void *) top, (void *) stop);
   if (! top || top == stop)
     return NULL;
@@ -530,22 +537,25 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
 
    Call only from kos_dyn_retarget_after_push, kos_dyn_retarget_after_pop, or
    kos_dyn_rebuild_live_from_chain after dyn_top is already correct. When the
-   frame pointer changes, flushes live pc and acting_pc onto the outgoing frame
-   before loading code and PCs from the new frame. When only block or namespace
-   change, updates those slots without clobbering live PCs.
+   frame pointer changes and flush is non-zero, flushes live pc and acting_pc
+   onto the outgoing frame before loading code and PCs from the new frame.
+   Pass flush=0 when the outgoing frame is about to be freed (return path) so
+   the write is skipped. When only block or namespace change, updates those
+   slots without clobbering live PCs.
 */
 static void kos_dyn_apply_live(
     KosEvalState *es,
     KosDynFrame *ft,
     KosStackBlock **bl,
-    PyObject *ns) {
+    PyObject *ns,
+    int flush) {
 
   if (! es)
     return;
 
   KosDynFrame *const ef = KosEvalState_FRAME(es);
   if (ef != ft) {
-    if (ef)
+    if (ef && flush)
       KosEvalState_FlushLiveRegsToFrame(es);
     KosEvalState_FRAME(es) = ft;
     KosEvalState_BLOCK(es) = bl;
@@ -571,7 +581,9 @@ static void kos_dyn_apply_live(
    Load live frame, code, and PCs from a heap frame without flushing or
    changing block/namespace. Call when block/ns were already retargeted.
 */
-static void kos_dyn_load_live_regs_from_frame(KosEvalState *es, KosDynFrame *ft) {
+static void kos_dyn_load_live_regs_from_frame(
+    KosEvalState *es,
+    KosDynFrame *ft) {
 
   if (! es || ! ft)
     return;
@@ -639,8 +651,9 @@ static void kos_dyn_walk_live_from(
    Call from kos_dyn_push and kos_dyn_push_noinstall immediately after
    new_node is KosEvalState_DYN_TOP(es) (and kos_dyn_install has run for push).
    Frame nodes replace frame, code, block, and namespace; other nodes update
-   only the slots they carry. Frame-boundary flush runs inside kos_dyn_apply_live
-   when the frame pointer changes. Do not use after splices, gen install, or
+   only the slots they carry. Passes flush=1 to kos_dyn_apply_live so the
+   outgoing frame's PCs are saved before the new frame is loaded. Do not use
+   after splices, gen install, or
    xfer INSTALL/PUSH; use kos_dyn_rebuild_live_from_chain instead.
 */
 static void kos_dyn_retarget_after_push(
@@ -672,7 +685,7 @@ static void kos_dyn_retarget_after_push(
       bl = KosEvalState_BLOCK(es);
   }
 
-  kos_dyn_apply_live(es, ft, bl, ns);
+  kos_dyn_apply_live(es, ft, bl, ns, 1);
 
 #if KOS_DEBUG_PATCH_DYN_CACHES
   {
@@ -699,10 +712,12 @@ done:
    Live-field update after dyn_top changes to new_top and removed is unlinked.
 
    Call from kos_dyn_commit_dyn_top only. Caller must pass the previous
-   dyn_top as removed and the new head as new_top. Frame-boundary flush runs
-   in kos_dyn_apply_live when the removed node owned es->frame. When new_top
-   segment replace), delegates to kos_dyn_rebuild_live_from_chain. For a normal
-   single-head pop, updates only the live slots the removed node owned; returns
+   dyn_top as removed and the new head as new_top. Passes flush=0 to
+   kos_dyn_apply_live — the outgoing frame's PCs were already saved when it was
+   pushed, and on the return path the frame is about to be freed. When new_top
+   does not equal parent(removed) (splice/gen replace), delegates to
+   kos_dyn_rebuild_live_from_chain. For a normal single-head pop, updates only
+   the live slots the removed node owned; returns
    without work when the pop did not own frame, block, or namespace on es.
 */
 static void kos_dyn_retarget_after_pop(
@@ -742,7 +757,7 @@ static void kos_dyn_retarget_after_pop(
   if (need_block && ! need_frame && ! need_ns
       && new_top && KosDynNode_STACK(new_top)) {
     kos_dyn_apply_live(es, KosEvalState_FRAME(es), &KosDynNode_STACK(new_top),
-                       KosEvalState_NAMESPACE(es));
+                       KosEvalState_NAMESPACE(es), 0);
     return;
   }
 
@@ -755,7 +770,7 @@ static void kos_dyn_retarget_after_pop(
   if (! need_ns)
     ns = KosEvalState_NAMESPACE(es);
 
-  kos_dyn_apply_live(es, ft, bl, ns);
+  kos_dyn_apply_live(es, ft, bl, ns, 0);
 }
 
 
@@ -808,7 +823,7 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
     SAYF("[gen] rebuild_live_from_chain dyn_top=%p -> frame_top=NULL (no frame)\n",
          (void *) KosEvalState_DYN_TOP(es));
 
-  kos_dyn_apply_live(es, ft, bl, ns);
+  kos_dyn_apply_live(es, ft, bl, ns, 1);
 
 done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_rebuild_live_from_chain);
