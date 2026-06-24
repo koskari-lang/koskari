@@ -1,6 +1,6 @@
 # KosNamespace Freelist and Oversize Allocation
 
-This document proposes a freelist for `KosNamespace` objects, combined with
+This document describes the freelist for `KosNamespace` objects, combined with
 static oversize allocation to a minimum slot count, so that call-site
 namespaces fit a single pool regardless of their exact local-variable count.
 
@@ -358,6 +358,97 @@ starting point; 64 is the next candidate if needed.
 | Freelist not thread-safe | The evaluator is single-threaded per context (GIL held). The freelist is per-module and safe under the GIL. |
 | PyObject header reinit on pop | `Py_SET_REFCNT`, `Py_SET_TYPE`, `Py_SET_SIZE` are available since Python 3.9. The project already requires 3.9+. |
 | Drain order in `koskari_namespace_clear` | `PyObject_Free` bypasses `tp_free`; safe because the object's Python-level refs are already cleared and `KosNamespaceType` may be in the process of being torn down. |
+
+
+---
+
+
+## 9. As implemented
+
+This section records where the final implementation diverged from the proposal.
+All phases of the proposal were completed, plus one additional wiring.
+
+
+### 9.1 Singly-linked list via `KosNamespace_PARENT`
+
+The proposal stored cached slabs in a static array
+`ns_freelist[KOS_NS_FREELIST_MAX]`.  The implementation instead threads the
+freelist through the `parent` field of each cached `KosNamespace`, forming a
+singly-linked list:
+
+```c
+static KosNamespace *ns_freelist = NULL;   /* list head */
+static size_t        ns_freecount = 0;
+```
+
+On push (`ns_dealloc`): `KosNamespace_PARENT(self) = (PyObject *) ns_freelist`
+then `ns_freelist = (KosNamespace *) self`.
+
+On pop (`ns_alloc`): advance the head, then `KosNamespace_PARENT(ns) = NULL`
+to clear the stale link before returning.
+
+On drain (`koskari_namespace_clear`): walk the chain, null each `parent` field,
+`PyObject_Free` each slab.
+
+This matches the `dyn_node` freelist pattern in `dynchain.c` and eliminates the
+fixed-size backing array.
+
+
+### 9.2 `Py_SET_TYPE` / `Py_SET_SIZE` omitted on pop
+
+The proposal restored all three PyObject header fields on the hit path.  The
+implementation omits `Py_SET_TYPE` and `Py_SET_SIZE`:
+
+```c
+Py_SET_REFCNT(p, 1);
+/* ob_type and ob_size are already correct: the push guard ensures
+   Py_TYPE == &KosNamespaceType and Py_SIZE == KOS_NS_MIN_SLOTS. */
+```
+
+Only `ob_refcnt` needs restoring since type and size are invariant for every
+slab in the pool.
+
+
+### 9.3 `ns_newfull_type` also wired
+
+The proposal covered `KosNamespace_Copy` and `ns_newfull_from_nspec`.
+`ns_newfull_type` (the Python-constructor path, `Namespace(...)`) was also
+converted to `ns_alloc` and had its redundant slot-zeroing loop removed, for
+full coverage.
+
+
+### 9.4 Measured results
+
+Workload: computation-heavy churn benchmarks, measured as a fraction of
+equivalent CPython time.
+
+| Benchmark | Before | After |
+|---|---|---|
+| churn_tree | ~300 % | ~258 % |
+| churn_list_each | ~280 % | ~260 % |
+
+Timing trace (`KOS_TRACE_TIMING=1`, `KOS_TRACE_FREELIST=0`):
+
+| Site | Before | After | Delta |
+|---|---|---|---|
+| `CALL_FAST` avg | 123 ns | 120 ns | −3 ns |
+| `return_boundary` avg | 187 ns | 174 ns | −13 ns |
+
+The dealloc side (`return_boundary`) saved more than the alloc side
+(`CALL_FAST`): replacing `tp_free` (pymalloc free path) with a linked-list push
+is faster than replacing `PyObject_NewVar` (pymalloc alloc) with a pop.
+
+Freelist trace (`KOS_TRACE_FREELIST=1`), 76.2 million invocations:
+
+| Counter | Value |
+|---|---|
+| `alloc_hits` | 76,214,481 |
+| `alloc_misses` | 19 |
+| `return_hits` | 76,214,500 |
+| `overruns` | 0 |
+
+`KOS_NS_MIN_SLOTS=32` fits the workload with a 0.00 % miss rate.  No tuning
+required.
 
 
 ---

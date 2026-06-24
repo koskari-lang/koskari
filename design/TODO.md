@@ -46,16 +46,6 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 
 ## Evaluator performance
 
-### Namespace freelist
-
-Add a freelist for `KosNamespace` objects and statically oversize all standard
-allocations to `KOS_NS_MIN_SLOTS` (default 32).  Functions with ≤ MIN_SLOTS
-locals+closures share one pool; `CALL_FAST`'s `PyObject_NewVar` cost drops to a
-pointer-pop.  `KOS_TRACE_FREELIST` tracing hooks let the hit/miss rate guide
-constant tuning.
-
-Ref: [interpreter/namespace-freelist.md](interpreter/namespace-freelist.md).
-
 ### Fast local stack
 
 Explore a fast local stack (or stack layout) to speed up the evaluator (C-local
