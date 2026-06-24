@@ -48,7 +48,7 @@ from .exceptions import (
     special_try,
 )
 from .imports import helper_import_from_sequence, special_import, special_import_from
-from .items import special_del_item, special_item, special_set_item
+from .items import special_del_item, special_item, special_set_item, special_take_item
 from .lambda_ import special_lambda
 from .let import special_let
 from .loops import special_break, special_continue, special_for_each, special_while
@@ -106,7 +106,7 @@ from .refs import (
     special_ref_item,
     special_refq,
 )
-from .slots import special_attr, special_del_attr, special_set_attr
+from .slots import special_attr, special_del_attr, special_set_attr, special_take_attr
 from .syntax import (
     special_compile_macro_match,
     special_compile_macro_rules,
@@ -125,6 +125,7 @@ from .variables import (
     special_locals,
     special_setq,
     special_setq_values,
+    special_takeq,
 )
 
 
@@ -233,6 +234,9 @@ __all__ = (
     "special_subtract",
     "special_true_divide",
     "special_truth",
+    "special_take_attr",
+    "special_take_item",
+    "special_takeq",
     "special_try",
     "special_type",
     "special_unquote",

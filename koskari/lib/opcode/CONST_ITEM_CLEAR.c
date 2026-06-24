@@ -18,13 +18,17 @@
 */
 
 KOS_OP_HANDLER(CONST_ITEM_CLEAR) {
-  PyObject *key = KosCode_GetConstant((PyObject *) KosEvalState_CurrentCode(es),
-                                      KosOp_ARG(insn));
+  PyObject *key = KosCode_GetConstant(
+    (PyObject *) KosEvalState_CurrentCode(es),
+    KosOp_ARG(insn));
+
   if (! key)
     return EVAL_RAISE();
+
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
     return EVAL_RAISE();
+
   int res = PyObject_DelItem(obj, key);
   Py_DECREF(obj);
   if (res < 0)

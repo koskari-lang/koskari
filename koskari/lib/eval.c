@@ -1239,8 +1239,10 @@ static PyObject *get_name_from_insn(KosCode *code, KosOp *insn) {
 */
 static PyObject *frame_ns_deref(KosEvalState *es, PyObject *name) {
   PyObject *ns = KosEvalState_CurrentNamespace(es);
+
   if (KosNamespace_Check(ns))
     return KosNamespace_Deref(ns, name);
+
   PyErr_Format(PyExc_TypeError, "frame namespace must be Namespace,"
                " got %R", ns);
   return NULL;
@@ -1292,16 +1294,42 @@ static int frame_ns_clear(KosEvalState *es, PyObject *name) {
 
 
 /**
+   Deref name in the current frame namespace, clear the binding, and
+   return the value. New reference or NULL.
+*/
+static PyObject *frame_ns_take(KosEvalState *es, PyObject *name) {
+  PyObject *ns = KosEvalState_CurrentNamespace(es);
+  if (! KosNamespace_Check(ns)) {
+    PyErr_Format(PyExc_TypeError,
+                "frame namespace must be Namespace, got %R", ns);
+    return NULL;
+  }
+
+  PyObject *val = KosNamespace_Deref(ns, name);
+  if (! val)
+    return NULL;
+
+  if (KosNamespace_Clear(ns, name) < 0) {
+    Py_DECREF(val);
+    return NULL;
+  }
+  return val;
+}
+
+
+/**
    Get reference for name in the current frame namespace. Namespace only.
    Borrowed reference; caller must INCREF if keeping.
 */
 static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
   PyObject *ns = KosEvalState_CurrentNamespace(es);
+
   if (! KosNamespace_Check(ns)) {
     PyErr_Format(PyExc_TypeError,
                  "frame namespace must be Namespace for VAR_REF, got %R", ns);
     return NULL;
   }
+
   return KosNamespace_Ref(ns, name);
 }
 

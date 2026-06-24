@@ -1711,6 +1711,27 @@ None.
 (compile/delq temp)
 ```
 
+## compile/takeq
+
+**Symbol:** `compile/takeq`
+
+**Syntax:** `(compile/takeq SYM)`
+
+**Use-case:** Return the value of binding SYM and clear the slot. Unlike
+`compile/delq`, errors when the binding is empty. Used to return an accumulator
+and drop a gensym reference (e.g. `list-each` ends with `(takeq col)`).
+
+**Behaviour:** `request_var`, emit VAR_TAKE (may lower to FAST_TAKE). No CONST
+None tail; the form value is the taken value.
+
+**Examples:**
+
+```scheme
+(compile/takeq col)
+```
+
+**Tests:** `tests/compile/specials/test_take_specials.py`
+
 ## compile/attr
 
 **Symbol:** `compile/attr`
@@ -1743,6 +1764,24 @@ pushed on the stack.
 
 ```scheme
 (compile/del-attr obj x)
+```
+
+## compile/take-attr
+
+**Symbol:** `compile/take-attr`
+
+**Syntax:** `(compile/take-attr OBJ SYM)`
+
+**Use-case:** Get the attribute named SYM on OBJ, delete it, and return the
+value.
+
+**Behaviour:** Compiles OBJ, emits ATTR_TAKE or VAR_ATTR_TAKE when OBJ is a
+symbol. Pushes the removed value (no CONST None).
+
+**Examples:**
+
+```scheme
+(compile/take-attr obj x)
 ```
 
 ## compile/set-attr
@@ -1856,6 +1895,24 @@ ITEM_CLEAR, then CONST None.
 
 ```scheme
 (compile/del-item d "key")
+```
+
+## compile/take-item
+
+**Symbol:** `compile/take-item`
+
+**Syntax:** `(compile/take-item OBJ KEY)`
+
+**Use-case:** Get the item at KEY in OBJ, delete it, and return the value.
+Same constant-key optimization as compile/item.
+
+**Behaviour:** Compiles OBJ; if key is constant-only, emits CONST_ITEM_TAKE;
+otherwise merges key fragment and emits ITEM_TAKE.
+
+**Examples:**
+
+```scheme
+(compile/take-item d "key")
 ```
 
 ## compile/set-item

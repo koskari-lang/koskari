@@ -22,17 +22,21 @@ KOS_OP_HANDLER(CONST_ITEM_STORE) {
                                       KosOp_ARG(insn));
   if (! key)
     return EVAL_RAISE();
+
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return EVAL_RAISE();
+
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj) {
     Py_DECREF(val);
     return EVAL_RAISE();
   }
+
   int res = PyObject_SetItem(obj, key, val);
   Py_DECREF(obj);
   Py_DECREF(val);
+
   if (res < 0)
     return EVAL_RAISE();
   return EVAL_NORMAL();

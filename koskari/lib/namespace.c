@@ -1750,6 +1750,45 @@ int KosNamespace_FastClear(PyObject *namespace, size_t index) {
 }
 
 
+PyObject *KosNamespace_FastTake(PyObject *namespace, size_t index) {
+  if (! KosNamespace_SupportsFast(namespace)) {
+    PyErr_Format(PyExc_TypeError,
+                 "KosNamespace_FastTake requires fast namespace, not %R",
+                 namespace);
+    return NULL;
+  }
+
+  if (index >= KosNamespace_FAST_COUNT(namespace)) {
+    PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %zu",
+                 index);
+    return NULL;
+  }
+
+  if (kos_ns_is_raw(namespace, index)) {
+    PyObject *value = KosNamespace_GET_FAST_VAL(namespace, index);
+    if (! value) {
+      PyObject *names = KosNamespace_FAST_NAMES(namespace);
+      PyErr_Format(PyExc_NameError, "Empty reference: %S",
+                   PyTuple_GET_ITEM(names, (Py_ssize_t) index));
+      return NULL;
+    }
+    KosNamespace_GET_FAST_VAL(namespace, index) = NULL;
+    return value;
+
+  } else {
+    PyObject *ref = KosNamespace_GET_FAST_VAL(namespace, index);
+    PyObject *value = KosRef_Deref(ref);
+    if (! value)
+      return NULL;
+    if (KosRef_Clear(ref) < 0) {
+      Py_DECREF(value);
+      return NULL;
+    }
+    return value;
+  }
+}
+
+
 int KosNamespace_FastBind(
     PyObject *namespace,
     size_t index,

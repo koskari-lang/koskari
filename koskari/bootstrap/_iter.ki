@@ -44,7 +44,7 @@ define-syntax compile/list-each:
       define col (#list)
       for-each [binding seq]:
         #list-append col body
-      col
+      takeq col
 
 
 define-syntax compile/dict-each:

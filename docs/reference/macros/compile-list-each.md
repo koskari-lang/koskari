@@ -1,5 +1,7 @@
 # compile/list-each
 **Syntax:** **`(list-each [BINDING SEQ] BODY)`
 
-**Behaviour:** **`letrec`** with **`list`** + **`append`**; **`for-each`** body; returns the list.
+**Behaviour:** **`define col (#list)`**; **`for-each`** with **`#list-append`**;
+return **`(takeq col)`** (clears the gensym accumulator slot after building the
+list).
 

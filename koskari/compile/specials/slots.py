@@ -14,7 +14,8 @@
 """
 koskari.compile.specials.slots
 
-Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
+Special form handlers for compile/attr, compile/del-attr, compile/take-attr,
+and compile/set-attr.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -63,6 +64,34 @@ def special_attr(compiler, caps, tc=False):
 _DEL_ATTR_FORMS = [
     MATCH(CALLEDBY(), VALUE('obj'), SYMBOL('sym')),
 ]
+
+
+@builtin("compile/take-attr")
+@special("compile/take-attr", patterns=_DEL_ATTR_FORMS, unpack="match")
+def special_take_attr(compiler, caps, tc=False):
+    """
+    Compile (compile/take-attr OBJ SYM). Get attribute SYM from OBJ, delete
+    it, push the value
+    """
+
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
+
+    obj = caps["obj"].datum
+    sym = caps["sym"].datum
+
+    frag = compiler.fragment(called_by)
+    frag.position(pos)
+
+    if is_symbol(obj):
+        frag.request_var(str(obj))
+        frag.instruction(
+            OpCode.KOS_OP_VAR_ATTR_TAKE, (str(obj), str(sym), 0, 0))
+    else:
+        frag.merge(compiler.full_compile(obj))
+        frag.instruction(OpCode.KOS_OP_ATTR_TAKE, str(sym))
+
+    return frag
 
 
 @builtin("compile/del-attr")

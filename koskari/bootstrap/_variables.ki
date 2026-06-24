@@ -114,6 +114,24 @@ define-syntax compile/del!:
       (del-attr obj name)
 
 
+define-syntax compile/take!:
+  """
+  Takes a value from a binding, attribute, or item, clearing it.
+  """
+
+  syntax-rules [item compile/item attr compile/attr]:
+    case (take! name):
+      (takeq name)
+    case (take! (item obj name)):
+      (take-item obj name)
+    case (take! (compile/item obj name)):
+      (take-item obj name)
+    case (take! (attr obj name)):
+      (take-attr obj name)
+    case (take! (compile/attr obj name)):
+      (take-attr obj name)
+
+
 define-syntax compile/incr!:
   """
   Increment a variable in-place. If `value` is not provided, increment by 1.

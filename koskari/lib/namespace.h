@@ -258,6 +258,14 @@ int KosNamespace_FastClear(PyObject *ns, size_t index);
 
 
 /**
+   Deref and clear a fast slot in one step. On raw slots the value
+   pointer is stolen without an extra INCREF. Returns a new reference
+   to the taken value, or NULL with err set if the slot is empty.
+ */
+PyObject *KosNamespace_FastTake(PyObject *ns, size_t index);
+
+
+/**
    replaces reference at fast index with a new reference
 
    returns 0 for success, or -1 and sets err if index is out of bounds

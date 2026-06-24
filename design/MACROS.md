@@ -213,6 +213,16 @@ variants).
 **Behaviour:** **`delq`**, **`del-item`**, **`del-attr`**.
 
 
+### compile/take!
+
+**Symbol:** `take!`
+
+**Syntax:** **`(take! name)`**, **`(take! (item obj key))`**, **`(take! (attr obj name))`**
+(and **`compile/item`**, **`compile/attr`** literal arms).
+
+**Behaviour:** **`takeq`**, **`take-item`**, **`take-attr`**.
+
+
 ### compile/incr! and compile/decr!
 
 **Syntax:** **`(incr! NAME [VALUE])`**, **`(decr! NAME [VALUE])`** (default step `1`).
@@ -316,7 +326,7 @@ variants).
 
 **Syntax:** **`(list-each [BINDING SEQ] BODY)`
 
-**Behaviour:** **`letrec`** with **`list`** + **`append`**; **`for-each`** body; returns the list.
+**Behaviour:** **`define col (#list)`**; **`for-each`** with **`#list-append`**; return **`(takeq col)`** (clears gensym accumulator slot).
 
 
 ### compile/dict-each

@@ -198,6 +198,31 @@ def special_delq(compiler, caps, tc=False):
     return frag
 
 
+_TAKEQ_PATTERNS = [
+    MATCH(CALLEDBY(), SYMBOL("sym")),
+]
+
+
+@builtin("compile/takeq")
+@special("compile/takeq", patterns=_TAKEQ_PATTERNS, unpack="match")
+def special_takeq(compiler, caps, tc=False):
+    """
+    Compile (compile/takeq SYM). Deref SYM, clear the binding, push value
+    """
+
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
+    sym = caps["sym"].datum
+
+    frag = compiler.fragment(called_by)
+
+    frag.position(pos)
+    frag.request_for_write(str(sym), position=pos)
+    frag.instruction(OpCode.KOS_OP_VAR_TAKE, str(sym))
+
+    return frag
+
+
 _DEFINE_INLINE_PATTERNS = [
     MATCH(
         CALLEDBY(),

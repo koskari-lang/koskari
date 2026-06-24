@@ -22,9 +22,11 @@ KOS_OP_HANDLER(VAR) {
   PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
     return EVAL_RAISE();
+
   PyObject *val = frame_ns_deref(es, name);
   if (! val)
     return EVAL_RAISE();
+
   return kos_op_result_PUSH(es, val);
 }
 

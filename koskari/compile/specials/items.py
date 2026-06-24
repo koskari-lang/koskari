@@ -102,6 +102,40 @@ def special_del_item(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/take-item")
+@special("compile/take-item", patterns=_DEFAULT_PATTERNS)
+def special_take_item(compiler, source, tc=False):
+    """
+    Compile (compile/take-item OBJ KEY). Get item at KEY from OBJ, delete it,
+    push the value
+    """
+
+    called_by, body = source
+    if not is_pair(body):
+        raise SpecialError("take-item requires two arguments", source)
+    obj, (key, rest) = body
+
+    if rest is not nil:
+        raise SpecialError("take-item takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+
+    keyfrag = compiler.full_compile(key)
+    is_const, key_val = const_only_expr(keyfrag)
+
+    if is_const:
+        frag.instruction(OpCode.KOS_OP_CONST_ITEM_TAKE, key_val)
+
+    else:
+        frag.merge(keyfrag)
+        frag.instruction(OpCode.KOS_OP_ITEM_TAKE, 0)
+
+    return frag
+
+
 @builtin("compile/set-item")
 @special("compile/set-item", patterns=_DEFAULT_PATTERNS)
 def special_set_item(compiler, source, tc=False):

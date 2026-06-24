@@ -130,7 +130,7 @@ document uses **finalize** for that VM-oriented stage to avoid confusion with
 |------------------------|-------------------------|---------------------|
 | String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
 | Literal value          | Constant pool index     | CONST |
-| Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key); INVOKE_K_VAR |
+| Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key); INVOKE_K_VAR |
 | `(name, value, …)`     | Extra-table index       | VAR_STORE_CONST (§12); may lower to FAST_STORE_CONST (§13) |
 | Name → slot (optional) | Fast local index       | VAR may be lowered to FAST*; then arg is slot index |
 | (unchanged)            | (unchanged)             | NOARG, COUNT, etc. |
@@ -1459,6 +1459,26 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ---
 
+### KOS_OP_VAR_TAKE {#kos_op_var_take}
+
+- **Style**: VAR. Arg = constant pool index of name (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., value]`. Deref name, clear the binding, push the
+  value. **Errors with NameError if the binding is empty** (contrast
+  **VAR_CLEAR**, which is idempotent on an already-empty declared slot).
+- **Invariants**: Name in constant pool; binding must hold a value.
+- **Compiler form:** Pre-compile arg = name; post-compile arg = pool index.
+  Emitted by [compile/takeq](../specials/compile-takeq.md). May lower to
+  **FAST_TAKE** via fast-local lowering.
+
+**Example:** Take and clear name "tmp". Pool: 0 = "tmp".
+
+| index | opcode   | arg | arg view | comment |
+|------:|----------|-----|----------|---------|
+| 2     | VAR_TAKE | 0   | 0 ('tmp')| take "tmp"; stack: [..., value] |
+
+---
+
 ### KOS_OP_VAR_REF
 
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
@@ -1517,10 +1537,10 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ### 12.1 Attribute access on variables (VAR_ATTR_*)
 
-These opcodes perform attribute get, set, clear, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is resolved via `frame_ns_deref(var_name)`. Each uses EXTRA schema: VAR (obj name), CONST (attr name).
+These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is resolved via `frame_ns_deref(var_name)`. Each uses EXTRA schema: VAR (obj name), CONST (attr name).
 
 - **Status**: Implemented.
-- **Compiler form:** Emitted by attr/del-attr/set-attr specials when the object expression is a symbol (variable reference). May be lowered to FAST_ATTR_* when the name has a fixed slot.
+- **Compiler form:** Emitted by attr/del-attr/take-attr/set-attr specials when the object expression is a symbol (variable reference). May be lowered to FAST_ATTR_* when the name has a fixed slot.
 
 ### KOS_OP_VAR_ATTR {#kos_op_var_attr}
 
@@ -1539,6 +1559,14 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
 - **Stack**: No stack effect. Delete attribute on object from namespace. Equivalent to ATTR_CLEAR with object from namespace.
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR_CLEAR.c`
+
+### KOS_OP_VAR_ATTR_TAKE {#kos_op_var_attr_take}
+
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get attribute on object from namespace,
+  delete it, push value.
+- **Compiler form:** Emitted by [compile/take-attr](../specials/compile-take-attr.md)
+  when OBJ is a symbol. May lower to **FAST_ATTR_TAKE**.
 
 ### KOS_OP_VAR_ATTR_REF {#kos_op_var_attr_ref}
 
@@ -1600,6 +1628,24 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 ---
 
+### KOS_OP_FAST_TAKE {#kos_op_fast_take}
+
+- **Style**: FASTVAR. Arg = fast local slot index.
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., value]`. Take value from slot and clear it.
+  **Errors with NameError if slot is empty** (contrast **FAST_CLEAR**,
+  idempotent on empty declared slots).
+- **Invariants**: Slot index in range; slot must hold a value.
+- **Compiler form:** Lowered from **VAR_TAKE** when name has a fixed slot.
+
+**Example:** Take slot 1.
+
+| index | opcode    | arg | arg view | comment |
+|------:|-----------|-----|----------|---------|
+| 2     | FAST_TAKE | 1   | 1        | take slot 1; stack: [..., value] |
+
+---
+
 ### KOS_OP_FAST_REF
 
 - **Style**: FASTVAR. Arg = fast local slot index.
@@ -1655,7 +1701,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 ### 13.1 Attribute access on fast locals (FAST_ATTR_*)
 
-These opcodes perform attribute get, set, clear, or reference on an object fetched from the fast local slot. The object is not on the stack; it is resolved via `KosNamespace_FastDeref(ns, slot)`. Each uses EXTRA schema: FASTVAR (slot), CONST (attr name).
+These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the fast local slot. The object is not on the stack; it is resolved via the fast slot. Each uses EXTRA schema: FASTVAR (slot), CONST (attr name).
 
 - **Status**: Implemented.
 - **Compiler form:** Emitted when VAR_ATTR_* is lowered (name has fixed slot).
@@ -1677,6 +1723,12 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 - **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
 - **Stack**: No stack effect. Delete attribute on object in fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ATTR_CLEAR.c`
+
+### KOS_OP_FAST_ATTR_TAKE {#kos_op_fast_attr_take}
+
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get attribute on object in fast slot,
+  delete it, push value.
 
 ### KOS_OP_FAST_ATTR_REF {#kos_op_fast_attr_ref}
 
@@ -1734,6 +1786,24 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 |------:|------------|-----|-----------|---------|
 | 0     | VAR        | 0   | 0 ('obj') | stack: [..., obj] |
 | 1     | ATTR_CLEAR | 1   | 1 ('attr')| del obj.attr |
+
+---
+
+### KOS_OP_ATTR_TAKE {#kos_op_attr_take}
+
+- **Style**: CONST. Arg = constant pool index of attribute name.
+- **Status**: Implemented.
+- **Stack**: `[..., obj] → [..., value]`. Get attribute, delete it, push value.
+- **Invariants**: TOS is the object.
+- **Compiler form:** Emitted by [compile/take-attr](../specials/compile-take-attr.md)
+  when OBJ is not a symbol.
+
+**Example:** Take obj.attr. Pool: 0 = "attr".
+
+| index | opcode    | arg | arg view  | comment |
+|------:|-----------|-----|-----------|---------|
+| 0     | VAR       | 0   | 0 ('obj') | stack: [..., obj] |
+| 1     | ATTR_TAKE | 1   | 1 ('attr')| take obj.attr; stack: [..., value] |
 
 ---
 
@@ -1806,6 +1876,24 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 ---
 
+### KOS_OP_ITEM_TAKE {#kos_op_item_take}
+
+- **Style**: NOARG. Key from stack.
+- **Status**: Implemented.
+- **Stack**: `[..., obj, key] → [..., value]`. Get item, delete it, push value.
+- **Compiler form:** Emitted by [compile/take-item](../specials/compile-take-item.md)
+  when key is not constant-only.
+
+**Example:** Take d[k].
+
+| index | opcode    | arg | arg view | comment |
+|------:|-----------|-----|----------|---------|
+| 0     | VAR       | 0   | 0 ('d')  | stack: [..., d] |
+| 1     | CONST     | 1   | 1 ('k')  | stack: [..., d, 'k'] |
+| 2     | ITEM_TAKE | 0   | 0        | take d['k']; stack: [..., value] |
+
+---
+
 ### KOS_OP_ITEM_REF
 
 - **Style**: NOARG. Key from stack.
@@ -1870,6 +1958,24 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 |------:|---------------|-----|----------|---------|
 | 0     | VAR           | 0   | 0 ('obj')| stack: [..., obj] |
 | 1     | CONST_ITEM_CLEAR | 0 | 0 ('key')| del obj['key']; stack: [..., obj] |
+
+---
+
+### KOS_OP_CONST_ITEM_TAKE {#kos_op_const_item_take}
+
+- **Style**: CONST. Arg = constant pool index of key.
+- **Status**: Implemented.
+- **Stack**: `[..., obj] → [..., value]`. Get item with constant key, delete
+  it, push value.
+- **Compiler form:** Emitted by [compile/take-item](../specials/compile-take-item.md)
+  when key is constant-only.
+
+**Example:** Take obj["key"]. Pool: 0 = "key".
+
+| index | opcode           | arg | arg view | comment |
+|------:|------------------|-----|----------|---------|
+| 0     | VAR              | 0   | 0 ('obj')| stack: [..., obj] |
+| 1     | CONST_ITEM_TAKE  | 0   | 0 ('key')| take obj['key']; stack: [..., value] |
 
 ---
 

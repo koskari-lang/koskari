@@ -18,17 +18,22 @@
 */
 
 KOS_OP_HANDLER(CONST_ITEM_REF) {
-  PyObject *key = KosCode_GetConstant((PyObject *) KosEvalState_CurrentCode(es),
-                                      KosOp_ARG(insn));
+  PyObject *key = KosCode_GetConstant(
+    (PyObject *) KosEvalState_CurrentCode(es),
+    KosOp_ARG(insn));
+
   if (! key)
     return EVAL_RAISE();
+
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
     return EVAL_RAISE();
+
   PyObject *ref = KosItemRef_New(NULL, obj, key);
   Py_DECREF(obj);
   if (! ref)
     return EVAL_RAISE();
+
   return kos_op_result_PUSH(es, ref);
 }
 
