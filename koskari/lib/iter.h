@@ -54,6 +54,14 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx);
 
 
 /**
+   Release KosDynGen and KosContext owned by an async generator without
+   freeing the Python wrapper.  Safe when other references may remain alive
+*/
+
+void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen);
+
+
+/**
    Create a KosPyAsyncGen from code and namespace. Requires KosCode_YIELDS(code).
    Caller owns the returned reference.
 
