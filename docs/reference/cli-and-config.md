@@ -5,8 +5,14 @@ The `koskari` command runs scripts and the REPL.
 ## Usage
 
 ```
-koskari [options] [-c CMD | filename] [args ...]
+koskari [options] [-c CMD | filename] [args ...] [-- args ...]
 ```
+
+When running a script, use `--` before arguments that look like options
+(start with `-`). Everything after `--` is forwarded to the script's
+`sys.argv` unchanged. Positional arguments may appear before `--` as well;
+for example, `koskari app.ki 20 -- --verbose` sets `sys.argv` to
+`['app.ki', '20', '--verbose']`.
 
 ## Options
 
