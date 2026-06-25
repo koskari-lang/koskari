@@ -974,6 +974,16 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen);
 
 
 /**
+   Bootstrap install: graft GEN and src dyn_top chain onto consumer es.
+   ACTIVE must be NULL; runnable chain lives on src only.
+*/
+int kos_dyn_gen_install_bootstrap(
+    KosEvalState *es,
+    KosContext *src,
+    KosDynGen *gen);
+
+
+/**
    True when GEN should be passed to kos_dyn_gen_install before the next
    koskari_eval on eval_ctx: GEN.active holds the chain but GEN is not
    under eval_ctx->dyn_top (yield freeze, or first run while still linked).

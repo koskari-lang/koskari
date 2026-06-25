@@ -538,10 +538,21 @@ static int yield_from_drive_kos_async_gen(
     return 0;
   }
 
-  if (! agen->gen || ! KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
+  if (! agen->gen) {
     if (kos_dyn_pop_yield_from(es, yf) < 0)
       return -1;
     return 0;
+  }
+
+  {
+    KosDynGen *dgen = (KosDynGen *) agen->gen;
+
+    if (! KosDynGen_ACTIVE(dgen)
+        && (! agen->ctx || ! KosContext_DYN_TOP(agen->ctx))) {
+      if (kos_dyn_pop_yield_from(es, yf) < 0)
+        return -1;
+      return 0;
+    }
   }
 
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {

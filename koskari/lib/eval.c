@@ -945,6 +945,12 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
 void KosContext_Free(KosContext *ctx) {
 
+  /*
+   * Memory teardown only: releases dyn nodes and operand stacks via
+   * kos_dynchain_free without running extent protocol (WITH __exit__,
+   * PARAM restore, WIND hooks). Callers with a frozen async generator must
+   * run KosPyAsyncGen_Teardown first so GEN.active is disposed before ctx.
+   */
   if (! ctx)
     return;
 
@@ -1563,18 +1569,26 @@ static int kos_check_cmp(
 
 
 /**
-   Clear agen->ctx dyn/frame head and graft gen's active chain onto the
-   consumer (KosEvalState_CONTEXT(es)). gen must be non-NULL and ACTIVE;
-   es is the consumer's live interpreter KosEvalState.
+   Clear agen->ctx dyn/frame head and graft gen onto the consumer
+   (KosEvalState_CONTEXT(es)). Frozen gens use ACTIVE; bootstrap gens use
+   agen->ctx dyn_top only.
 */
 static int kos_attach_agen_gen_flatten(
     KosEvalState *es,
     KosPyAsyncGen *agen,
     KosDynGen *gen) {
 
-  KosContext_DYN_TOP(agen->ctx) = NULL;
-  KosContext_FRAME_TOP(agen->ctx) = NULL;
-  return kos_dyn_gen_install(es, gen);
+  if (KosDynGen_ACTIVE(gen)) {
+    KosContext_DYN_TOP(agen->ctx) = NULL;
+    KosContext_FRAME_TOP(agen->ctx) = NULL;
+    return kos_dyn_gen_install(es, gen);
+  }
+
+  if (agen->ctx && KosContext_DYN_TOP(agen->ctx))
+    return kos_dyn_gen_install_bootstrap(es, agen->ctx, gen);
+
+  PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
+  return -1;
 }
 
 
@@ -1594,7 +1608,7 @@ static int op_attach_koskari_agen_frame(
 
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
-  if (! gen || ! KosDynGen_ACTIVE(gen)) {
+  if (! gen) {
     kos_dyn_next_abort_after_failed_attach(es);
     Py_DECREF(iter);
     Py_XDECREF(default_val);
@@ -1629,7 +1643,7 @@ static int op_attach_koskari_agen_frame_for_iter_next(
                           : NULL;
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
-  if (! gen || ! KosDynGen_ACTIVE(gen)) {
+  if (! gen) {
     if (fe)
       KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
     agen->in_progress = 0;
@@ -1659,7 +1673,7 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
-  if (! gen || ! KosDynGen_ACTIVE(gen)) {
+  if (! gen) {
     if (kos_dyn_pop_yield_from(es, yf) < 0)
       return -1;
     agen->in_progress = 0;

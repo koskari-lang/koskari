@@ -21,14 +21,34 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
 
 
 /**
+   Free frozen chain held in ACTIVE down to (but not including) gen.
+   Only for final destruction via kos_dyngen_free.
+*/
+static void kos_dyngen_dispose_active(KosDynGen *gen) {
+
+  KosDynNode *active;
+
+  if (! gen)
+    return;
+
+  active = (KosDynNode *) KosDynGen_ACTIVE(gen);
+  if (! active)
+    return;
+
+  KosDynGen_ACTIVE(gen) = NULL;
+  kos_dynchain_free(active, (KosDynNode *) gen);
+}
+
+
+/**
    Clear owner/active; return node to freelist.
 */
 void kos_dyngen_free(KosDynGen *gen) {
   if (! gen)
     return;
 
+  kos_dyngen_dispose_active(gen);
   KosDynGen_OWNER(gen) = NULL;
-  KosDynGen_ACTIVE(gen) = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
 }
 
@@ -138,6 +158,55 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
   SAY("(end)");
+  return 0;
+}
+
+
+/**
+   First-run bootstrap: graft GEN and its ctx chain head onto consumer es.
+   Runnable state lives on src only (dyn_top -> ... -> gen); ACTIVE is NULL.
+*/
+int kos_dyn_gen_install_bootstrap(
+    KosEvalState *es,
+    KosContext *src,
+    KosDynGen *gen) {
+
+  KosDynNode *chain_head;
+  KosDynNode *n;
+
+  if (! es || ! src || ! gen) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "NULL es, src, or gen for gen_install_bootstrap");
+    return -1;
+  }
+
+  chain_head = KosContext_DYN_TOP(src);
+  if (! chain_head) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_gen_install_bootstrap: empty source chain");
+    return -1;
+  }
+
+  for (n = chain_head; n; n = KosDynNode_PARENT(n)) {
+    if (n == (KosDynNode *) gen)
+      break;
+  }
+  if (! n) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_gen_install_bootstrap: GEN not on source chain");
+    return -1;
+  }
+
+  KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
+  kos_dyngen_acquire(gen);
+  kos_dyn_commit_dyn_top(es, chain_head);
+
+  KosContext_DYN_TOP(src) = NULL;
+  KosContext_FRAME_TOP(src) = NULL;
+
+  if (KosEvalState_StackPushRef(es, Py_None) < 0)
+    return -1;
+
   return 0;
 }
 

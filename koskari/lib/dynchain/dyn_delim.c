@@ -42,7 +42,7 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(delim) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(delim);
   KosDynDelim_MODE(clone) = KosDynDelim_MODE(delim);
-  KosDynDelim_RETURN_CHAIN(clone) = KosDynDelim_RETURN_CHAIN(delim);
+  KosDynDelim_RETURN_CHAIN(clone) = NULL;
   KosDynDelim_RETURN_PC(clone) = KosDynDelim_RETURN_PC(delim);
   KosDynDelim_RETURN_FRAME_NODE(clone) = KosDynDelim_RETURN_FRAME_NODE(delim);
   KosDynDelim_RETURN_NODE(clone) = KosDynDelim_RETURN_NODE(delim);

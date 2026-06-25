@@ -1385,6 +1385,7 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
 
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
+    kos_yieldfrom_close_delegate(node);
     kos_dynyieldfrom_free(node);
   }
   SAYF("[gen] pop_yield_from done dyn_top=%p (%s)\n",

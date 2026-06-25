@@ -318,11 +318,14 @@ static int demand_sync_ex(
         Py_DECREF(ns);
         goto ret_fail;
       }
-      KosDynGen_ACTIVE(gen_node) = (struct KosDynNode *) frame;
       ctx = KosContext_New(frame);
-      frame = NULL;
-      if (! ctx)
+      if (! ctx) {
+        kos_dynframe_free(frame);
+        frame = NULL;
+        kos_dyngen_free(gen_node);
         goto ret_fail;
+      }
+      frame = NULL;
       agen_obj = KosPyAsyncGen_New(ctx);
       if (! agen_obj) {
         KosContext_Free(ctx);
@@ -399,11 +402,14 @@ static int demand_sync_ex(
         kos_dyngen_free(gen_node);
         goto ret_fail;
       }
-      KosDynGen_ACTIVE(gen_node) = (struct KosDynNode *) frame;
       ctx = KosContext_New(frame);
-      frame = NULL;
-      if (! ctx)
+      if (! ctx) {
+        kos_dynframe_free(frame);
+        frame = NULL;
+        kos_dyngen_free(gen_node);
         goto ret_fail;
+      }
+      frame = NULL;
       agen_obj = KosPyAsyncGen_New(ctx);
       if (! agen_obj) {
         KosContext_Free(ctx);
@@ -471,9 +477,12 @@ run_eval:
   KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
 
   ctx = KosContext_New(frame);
-  frame = NULL;
-  if (! ctx)
+  if (! ctx) {
+    kos_dynframe_free(frame);
+    frame = NULL;
     goto ret_fail;
+  }
+  frame = NULL;
 
   {
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -871,12 +880,11 @@ static void demand_gen_close_ctx(KosDemandGenerator *gen) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
 
-  if (agen->ctx) {
-    KosContext_Free(agen->ctx);
-    agen->ctx = NULL;
+  if (agen) {
+    KosPyAsyncGen_Teardown(agen);
+    agen->closed = 1;
   }
-  agen->gen = NULL;
-  agen->closed = 1;
+  Py_CLEAR(gen->async_agen);
 }
 
 
@@ -1075,6 +1083,7 @@ PyObject *KosDemandGenerator_FromAsyncGen(KosPyAsyncGen *agen) {
   KosDynGen *dgen;
   KosDemandGenerator *dsg;
   PyObject *code_name = NULL;
+  KosDynFrame *name_frame = NULL;
 
   if (! agen->ctx || agen->closed) {
     PyErr_SetString(PyExc_RuntimeError, "async generator is closed");
@@ -1093,17 +1102,36 @@ PyObject *KosDemandGenerator_FromAsyncGen(KosPyAsyncGen *agen) {
     return NULL;
   }
 
-  if (! KosDynGen_ACTIVE(dgen)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async generator has no active frame");
-    return NULL;
+  {
+    KosDynNode *node;
+
+    node = (KosDynNode *) KosDynGen_ACTIVE(dgen);
+    if (node) {
+      for (; node && node != (KosDynNode *) dgen;
+           node = KosDynNode_PARENT(node)) {
+        if (KosDynNode_IS_FRAME(node)) {
+          name_frame = (KosDynFrame *) node;
+          break;
+        }
+      }
+    } else {
+      name_frame = KosContext_FRAME_TOP(agen->ctx);
+      if (! name_frame) {
+        for (node = KosContext_DYN_TOP(agen->ctx); node;
+             node = KosDynNode_PARENT(node)) {
+          if (KosDynNode_IS_FRAME(node)) {
+            name_frame = (KosDynFrame *) node;
+            break;
+          }
+        }
+      }
+    }
   }
 
-  {
-    KosDynFrame *name_frame = (KosDynFrame *) KosDynGen_ACTIVE(dgen);
-    KosCode *code;
+  if (name_frame) {
+    KosCode *code = KosDynFrame_CODE(name_frame);
 
-    if (name_frame && (code = KosDynFrame_CODE(name_frame))) {
+    if (code) {
       Py_XINCREF(KosCode_NAME(code));
       code_name = KosCode_NAME(code);
     }
