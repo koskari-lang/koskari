@@ -156,7 +156,7 @@ valgrind-run: valgrind-image-build  ## Run RUN_ARGS under valgrind (e.g. make va
 	@$(CONTAINER_ENGINE) run --rm -it -v $(PWD):/work:Z $(VALGRIND_IMAGE) $(RUN_ARGS)
 
 valgrind-koslife: valgrind-image-build  ## Run the koslife demo under valgrind
-	@$(CONTAINER_ENGINE) run --rm -it $(VALGRIND_IMAGE) koslife
+	@$(CONTAINER_ENGINE) run --rm -it -v $(PWD):/work:Z $(VALGRIND_IMAGE) koslife
 
 
 ##@ Static analysis

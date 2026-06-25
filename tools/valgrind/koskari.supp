@@ -127,6 +127,25 @@
 }
 
 
+# === PyUnicode_New from interpreter internals ===
+#
+# CPython allocates str objects deep in its own machinery (code-object
+# construction, compilation, etc.) that are retained for the interpreter
+# lifetime and reported as definite leaks at exit.  Anchored so that
+# PyUnicode_New's immediate caller is libpython: koskari-initiated unicode
+# allocations have a koskari .so caller frame and will not match here, so
+# this stays call-site-specific rather than a blanket allocator match.
+
+{
+   python-unicode-new-internal-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:PyUnicode_New
+   obj:*/libpython*.so*
+   ...
+}
+
+
 # === PyRun_StringFlags ===
 #
 # koskari's bootstrap compiles .ki source by calling Python's string
