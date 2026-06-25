@@ -14,13 +14,19 @@
 # author: Christopher O'Brien <obriencj@gmail.com>
 # license: GPL v.3
 
-set -euo pipefail
+set -uo pipefail
 
-exec env PYTHONMALLOC=malloc \
+LOG=/work/valgrind.log
+
+env PYTHONMALLOC=malloc \
     valgrind \
     --leak-check=full \
     --show-leak-kinds=definite,indirect \
     --track-origins=yes \
     --num-callers=32 \
     --suppressions=/valgrind/koskari.supp \
+    --log-file="$LOG" \
     -- "$@"
+STATUS=$?
+cat "$LOG" >&2
+exit "$STATUS"
