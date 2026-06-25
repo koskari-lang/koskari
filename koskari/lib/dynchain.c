@@ -2188,42 +2188,7 @@ int kos_dyn_finish_delimited_pop_return(
 
 
 /**
-   Shared path for RETURN delivery to KOS_DYN_NEXT or awaiting
-   KOS_DYN_FOREACH after a flattened Koskari async generator completes.
-   val ownership is transferred to the boundary consumer.
-
-   :return: 0 on success, -1 on error (next may leave no PyErr for REPROLOGUE)
-*/
-int kos_dyn_deliver_iterator_boundary_return_event(
-    KosEvalState *es,
-    PyObject *val) {
-
-  // TODO: this is bad, it hard-coded specific node types. It should use
-  // a capability-based approach.
-
-  KosDynNext *const next = kos_dyn_find_next_above_frame(es);
-
-  if (next)
-    return kos_dyn_next_deliver_return(es, val);
-
-  KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
-  if (fe)
-    return kos_dyn_foreach_deliver_return_kos_agen(es, fe, val);
-
-  KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
-  if (yf)
-    return kos_dyn_yield_from_deliver_inner_return(es, yf, val);
-
-  PyErr_SetString(PyExc_RuntimeError,
-                  "iterator boundary RETURN without NEXT/FOREACH/YIELD_FROM "
-                  "Koskari agen state");
-  return -1;
-}
-
-
-/**
- Delivers a YIELD value to the first matching iterator boundary, in the same
- order as kos_dyn_deliver_iterator_boundary_return_event: NEXT, then
+ Delivers a YIELD value to the first matching iterator boundary: NEXT, then
  FOREACH (Koskari agen await), then YIELD_FROM.
 
  :param val: inner yield value; ownership transferred to the boundary consumer.
@@ -2267,42 +2232,6 @@ int kos_dyn_deliver_yield_to_iter_boundary(
                   "iterator boundary YIELD without NEXT/FOREACH/YIELD_FROM "
                   "Koskari agen state");
   return -1;
-}
-
-
-/**
- After kos_dyn_pop_frame from a callee: if a flattened Koskari async-gen
- consumer (NEXT or ITER_NEXT) is active, deliver the return value using the
- same logic as eval_event_return for KOS_RES_RETURN.
-
- On success or error paths that consume the value, sets *p_val to NULL.
- On return 1, *p_val is unchanged and the caller must deliver to the parent
- frame (native handler or stack push).
-
- :return: 0 if delivery ran (continue eval); -1 if POST_ERR; 1 if no
-    boundary consumer for this return
-*/
-int kos_dyn_try_deliver_iterator_boundary_after_pop(
-    KosEvalState *es,
-    PyObject **p_val) {
-
-  if (! kos_dyn_need_kos_agen_boundary_deliver(es)) {
-    return 1;
-  }
-
-  PyObject *val = *p_val;
-  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, val);
-  if (dr < 0) {
-    if (PyErr_Occurred()) {
-      *p_val = NULL;
-      return -1;
-    }
-    *p_val = NULL;
-    return 0;
-  }
-
-  *p_val = NULL;
-  return 0;
 }
 
 

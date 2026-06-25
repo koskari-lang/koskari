@@ -225,10 +225,8 @@ int kos_dyn_yield_from_deliver_inner_return(
   if (val)
     Py_DECREF(val);
 
-  /*
-   Match kos_dyn_next_deliver_return: dyn_top must be the delegate gen frame;
-   free it and the GEN node, restore dyn_top to the YIELD_FROM consumer.
-   */
+  /* dyn_top must be the delegate gen frame; free it and the GEN node,
+     restore dyn_top to the YIELD_FROM consumer. */
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
     return -1;
   }

@@ -163,18 +163,13 @@ int kos_dyn_next_deliver_yield(KosEvalState *es, PyObject *val) {
 }
 
 
-int kos_dyn_next_deliver_return(KosEvalState *es, PyObject *val) {
+int kos_dyn_next_deliver_return_node(
+    KosEvalState *es,
+    KosDynNext *next,
+    PyObject *val) {
 
-  KosDynNext *next = kos_dyn_find_next_above_frame(es);
   KosPyAsyncGen *agen;
-  int nn;
-
-  if (! next) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_next_deliver_return: no NEXT boundary");
-    return -1;
-  }
-  nn = KosDynNext_N((KosDynNode *) next);
+  int nn = KosDynNext_N((KosDynNode *) next);
 
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
     Py_DECREF(val);

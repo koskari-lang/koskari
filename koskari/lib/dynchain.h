@@ -1209,7 +1209,10 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *node);
 
 int kos_dyn_next_deliver_yield(KosEvalState *es, PyObject *val);
 
-int kos_dyn_next_deliver_return(KosEvalState *es, PyObject *val);
+int kos_dyn_next_deliver_return_node(
+    KosEvalState *es,
+    KosDynNext *next,
+    PyObject *val);
 
 int kos_dyn_foreach_deliver_yield_kos_agen(
     KosEvalState *es, KosDynForeach *fe, PyObject *val);
@@ -1228,14 +1231,8 @@ int kos_dyn_yield_from_deliver_inner_yield(
 int kos_dyn_yield_from_deliver_inner_return(
     KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
 
-int kos_dyn_deliver_iterator_boundary_return_event(
-    KosEvalState *es, PyObject *val);
-
 int kos_dyn_deliver_yield_to_iter_boundary(
     KosEvalState *es, PyObject *val, PyObject **out_new_yield_val);
-
-int kos_dyn_try_deliver_iterator_boundary_after_pop(
-    KosEvalState *es, PyObject **p_val);
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 

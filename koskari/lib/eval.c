@@ -124,6 +124,10 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val);
 
 static KosOpResult eval_event_return(KosEvalState *es, PyObject *val);
 
+static KosOpResult eval_event_return_at_frame(KosEvalState *es, PyObject *val);
+
+static KosOpResult eval_event_return_ng(KosEvalState *es, PyObject *val);
+
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
         KosEvalState *es);
 
@@ -1961,33 +1965,6 @@ static KosOpResult eval_event_yield_deliver_to_boundary(
 }
 
 
-/**
-   Shared step: deliver val as a RETURN event to the iterator boundary.
-   val ownership is consumed by kos_dyn_deliver_iterator_boundary_return_event.
-*/
-static KosOpResult eval_deliver_iterator_boundary_return_step(
-    KosEvalState *es, PyObject *val) {
-
-  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, val);
-
-  if (dr < 0) {
-    if (PyErr_Occurred())
-      return EVAL_FATAL();
-    return EVAL_REPROLOGUE();
-  }
-  return EVAL_REPROLOGUE();
-}
-
-
-/**
-   RETURN half: deliver val to NEXT or FOREACH consumer.
-*/
-static KosOpResult eval_event_return_deliver_to_boundary(
-    KosEvalState *es, PyObject *val) {
-
-  return eval_deliver_iterator_boundary_return_step(es, val);
-}
-
 
 /**
    Stage A of post-opcode YIELD: transition walk only (freeze is walk side).
@@ -2052,10 +2029,9 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
 
 
 /**
-   Centralized RETURN handler (Phase 2b/2c from RETURN opcode).  Walks the
-   dynchain to unwind finally blocks; either pops the frame and delivers to
-   the parent (Phase 2b) or marks the root frame dead and stops (Phase 2c).
-   val is a new reference; ownership is consumed by this function.
+   Unwind handler.  Called from eval_event_return_ng when try/with/wind nodes
+   sit above the frame (DYN_TOP != FRAME).  Runs the transition walk to clear
+   them, then delegates to eval_event_return_at_frame.  val consumed.
 */
 static inline KosOpResult eval_event_return(
     KosEvalState *es,
@@ -2064,37 +2040,142 @@ static inline KosOpResult eval_event_return(
   KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
   int has_parent = (parent != NULL && ! KosDynNode_IS_GEN(parent));
 
-  /* Fast path: dyn_top is the frame itself — no try/with/wind nodes are
-     nested inside this call, so the walk has nothing to do.  Skip the
-     transition dispatch entirely and fall through to pop + deliver. */
-  if (unlikely(KosEvalState_DYN_TOP(es)
-               != (KosDynNode *) KosEvalState_FRAME(es))) {
-    KosTransitionReq treq = {
-      .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-      .target_frame = KosEvalState_FRAME(es),
-      .payload = val,
-    };
-    KosTransitionResult tres = {0};
-    if (KosEvalState_Transition(es, &treq, &tres) < 0) {
-      Py_DECREF(val);
-      return EVAL_FATAL();
-    }
-    int unw = tres.raw;
-    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosEvalState_SetPendingReturn(es, val, has_parent);
-      return EVAL_REPROLOGUE();
-    }
-    if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
-      /* val delivered to finally block; eval resumes there */
-      return EVAL_REPROLOGUE();
-    }
-    if (unw < 0) {
-      Py_DECREF(val);
-      return EVAL_FATAL();
-    }
+  KosTransitionReq treq = {
+    .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
+    .target_frame = KosEvalState_FRAME(es),
+    .payload = val,
+  };
+  KosTransitionResult tres = {0};
+  if (KosEvalState_Transition(es, &treq, &tres) < 0) {
+    Py_DECREF(val);
+    return EVAL_FATAL();
+  }
+  int unw = tres.raw;
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosEvalState_SetPendingReturn(es, val, has_parent);
+    return EVAL_REPROLOGUE();
+  }
+  if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
+    return EVAL_REPROLOGUE();
+  }
+  if (unw < 0) {
+    Py_DECREF(val);
+    return EVAL_FATAL();
   }
 
-  if (has_parent) {
+  return eval_event_return_at_frame(es, val);
+}
+
+
+/**
+   NG fast path: plain Koskari frame-to-frame return.
+
+   Inline retarget from child (being freed) to parent.  Skips the chain
+   walk, the flush (frame is freed), and the agen boundary check (not
+   reachable from a frame whose parent is itself a frame).  val consumed.
+*/
+static KosOpResult eval_ng_plain_return(
+    KosEvalState *es,
+    KosDynNode *child,
+    KosDynNode *parent,
+    PyObject *val) {
+
+  /* Inline retarget: equivalent to commit_dyn_top + apply_live(flush=0),
+     but with no chain walk — parent is a known FRAME node, so every live
+     register is read directly from it. */
+  KosEvalState_DYN_TOP(es) = parent;
+  KosEvalState_FRAME(es) = (KosDynFrame *) parent;
+  KosEvalState_BLOCK(es) = &KosDynNode_STACK(parent);
+  KosEvalState_NAMESPACE(es) = KosDynNode_NS(parent);
+  KosEvalState_CODE(es) = KosDynFrame_CODE((KosDynFrame *) parent);
+  es->pc = KosDynFrame_PC((KosDynFrame *) parent);
+  es->acting_pc = KosDynFrame_ACTING_PC((KosDynFrame *) parent);
+  kos_dynframe_free((KosDynFrame *) child);
+
+  if (KosEvalState_StackPushRef(es, val) < 0) {
+    Py_DECREF(val);
+    return EVAL_FATAL();
+  }
+  Py_DECREF(val);
+  return kos_eval_post_opcode_control_returned_after_hook(es);
+}
+
+
+/**
+   Unified RETURN dispatch.  Called when DYN_TOP == FRAME — no try/with/wind
+   nodes above it (either naturally, or after the unwind walk completes).
+
+   Reads PARENT(FRAME) and dispatches to the correct terminus.  GEN is
+   transparent: kos_dyn_gen_unwind_exhausted pops the frame and GEN together,
+   then the consumer node above the GEN is the real terminus.  val consumed.
+*/
+static KosOpResult eval_event_return_at_frame(
+    KosEvalState *es,
+    PyObject *val) {
+
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *parent = KosDynNode_PARENT(child);
+
+  /* Case 1: plain frame-to-frame — the dominant hot path. */
+  if (likely(parent
+             && KosDynNode_IS_FRAME(parent)
+             && ! KosDynFrame_NATIVE_HANDLER((KosDynFrame *) parent))) {
+    KosOpResult r;
+    KOS_TRACE_POST_OP_WRAP(parent_return,
+        r = eval_ng_plain_return(es, child, parent, val));
+    return r;
+  }
+
+  /* Case 2: gen parent — dispatch on the consumer node above the GEN.
+     The consumer is the true terminus; GEN is unwound on the way out. */
+  if (parent && KosDynNode_IS_GEN(parent)) {
+    KosDynNode *consumer = KosDynNode_PARENT(parent);
+
+    if (! consumer) {
+      KosEvalState_MarkDeadAfterReturn(es);
+      return EVAL_RETURN(val);
+    }
+
+    if (KosDynNode_IS_NEXT(consumer)) {
+      int r = kos_dyn_next_deliver_return_node(
+          es, (KosDynNext *) consumer, val);
+      if (r < 0) {
+        if (PyErr_Occurred())
+          return EVAL_FATAL();
+        return EVAL_REPROLOGUE();
+      }
+      return EVAL_REPROLOGUE();
+    }
+
+    if (KosDynNode_IS_FOREACH(consumer)) {
+      if (kos_dyn_foreach_deliver_return_kos_agen(
+              es, (KosDynForeach *) consumer, val) < 0)
+        return EVAL_FATAL();
+      return EVAL_REPROLOGUE();
+    }
+
+    if (KosDynNode_IS_YIELD_FROM(consumer)) {
+      int r = kos_dyn_yield_from_deliver_inner_return(
+          es, (KosDynYieldFrom *) consumer, val);
+      if (r < 0) {
+        KosOpResult rs;
+        KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es));
+        return rs;
+      }
+      return EVAL_REPROLOGUE();
+    }
+
+    PyErr_Format(PyExc_RuntimeError,
+                 "eval_event_return: unexpected gen consumer kind %u",
+                 (unsigned) KosDynNode_KIND(consumer));
+    Py_DECREF(val);
+    return EVAL_FATAL();
+  }
+
+  /* Case 3: any other non-NULL, non-GEN parent (WIND, TRY, WITH, native
+     frame, etc.) — pop the callee frame and let eval_parent_return_deliver
+     handle the context transition and any control-return hooks. */
+  if (parent) {
     if (unlikely(kos_dyn_pop_frame(es) < 0)) {
       Py_DECREF(val);
       return EVAL_FATAL();
@@ -2102,14 +2183,27 @@ static inline KosOpResult eval_event_return(
     return eval_parent_return_deliver(es, val);
   }
 
-  /* Root frame / GEN parent: eval is done; but may need iterator boundary
-     delivery (e.g. RETURN from a flattened agen inside ITER_NEXT). */
-  SAY("[eval] RETURN -> boundary (root frame)");
+  /* Case 4: no parent — root frame, eval done. */
   KosEvalState_MarkDeadAfterReturn(es);
-  if (kos_dyn_need_kos_agen_boundary_deliver(es))
-    return eval_event_return_deliver_to_boundary(es, val);
-
   return EVAL_RETURN(val);
+}
+
+
+/**
+   Next-generation RETURN handler.  Guards on DYN_TOP == FRAME (no
+   try/with/wind unwind needed), then dispatches via eval_event_return_at_frame.
+   When the guard fails, the unwind walk in eval_event_return handles it and
+   converges on the same dispatch on completion.  val consumed.
+*/
+static inline KosOpResult eval_event_return_ng(
+    KosEvalState *es,
+    PyObject *val) {
+
+  if (unlikely(KosEvalState_DYN_TOP(es)
+               != (KosDynNode *) KosEvalState_FRAME(es)))
+    return eval_event_return(es, val);
+
+  return eval_event_return_at_frame(es, val);
 }
 
 
@@ -2138,16 +2232,6 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 */
 static inline KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
-
-  {
-    int bd = kos_dyn_try_deliver_iterator_boundary_after_pop(es, &val);
-    /* val is consumed via *p_val=NULL on bd==0 or bd<0 */
-    if (bd == 0)
-      return EVAL_REPROLOGUE();
-    if (bd < 0)
-      return EVAL_FATAL();
-    /* bd == 1: val unchanged; no boundary consumer */
-  }
 
   if (unlikely(KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) != NULL)) {
     KosOpResult hr = kos_eval_invoke_native_handler(es, val);
@@ -2231,19 +2315,12 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 
   case KOS_RES_RETURN: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(return_boundary, r = eval_event_return(es, res.val));
+    KOS_TRACE_POST_OP_WRAP(return_boundary, r = eval_event_return_ng(es, res.val));
     return r;
   }
 
   case KOS_RES_CONTROL_RETURNED:
     return kos_eval_post_opcode_control_returned_after_hook(es);
-
-  case KOS_RES_PARENT_RETURN: {
-    KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(parent_return,
-        r = eval_parent_return_deliver(es, res.val));
-    return r;
-  }
 
   case KOS_RES_FATAL:
   default:
