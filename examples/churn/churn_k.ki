@@ -1,3 +1,5 @@
+#! /usr/bin/env koskari
+
 (define MASK32 0xffffffff)
 
 
@@ -42,45 +44,57 @@ define churn_list_each [n x: 1]:
     (& acc MASK32)
 
 
-;; koskari's CLI rejects option-like args before they reach the script, so
-;; the loop count is a positional integer: koskari churn_k.ki [N [test...]]
-;; where test is one of: loop tree list_each  (default: all three)
+define-syntax compile/loop:
+  """
+  A wholly unnecessary loop macro.
+  """
+
+  syntax-rules []:
+    case (loop each: [binding expr] body ...):
+      (for-each [binding expr] body ...)
+    case (loop times: n body ...):
+      (for-each [_ (range n)] body ...)
+    case (loop until: test body ...):
+      (while (not test) body ...)
+    case (loop while: test body ...):
+      (while test body ...)
+    case (loop body ...):
+      (while True body ...)
+
 
 when-main:
     import sys
     import-from argparse ArgumentParser
 
     define parser (ArgumentParser
-        description: "Run koskari churn tests for valgrind analysis"
-        epilog: "usage: koskari churn_k.ki [N [loop] [tree] [list_each]]")
+      description: "Run koskari churn tests for valgrind analysis")
 
-    (parser.add_argument "loops"
-        type: int nargs: "?" default: 10 metavar: "N"
+    (parser.add_argument "-n"
+        type: int default: 10  dest: "count" metavar: "N"
         help: "repetitions per test (default: 10)")
     (parser.add_argument "tests"
         nargs: "*" metavar: "TEST"
+        default: #[]
         help: "loop tree list_each (default: all)")
 
     define options (parser.parse_args)
-    define n options.loops
-    define sel (set options.tests)
-    define run-all (? sel)
+
+    define tests #{
+      loop: { (churn_loop 10000 1) }
+      tree: { (churn_tree 12 1) }
+      list_each: { (churn_list_each 10000 1) }
+    }
+
+    define sel options.tests
+    when (or (not sel) (has? sel "all")):
+      set! sel (list (tests.keys))
+
+    define n options.count
     define result 0
-
-    when (or run-all (has? sel "loop")):
-        for-each [_ (range n)]:
-          (set! result (churn_loop 10000 1))
-        (print f"churn_loop      x{n}: {result}")
-
-    when (or run-all (has? sel "tree")):
-        for-each [_ (range n)]:
-          (set! result (churn_tree 12 1))
-        (print f"churn_tree      x{n}: {result}")
-
-    when (or run-all (has? sel "list_each")):
-        for-each [_ (range n)]:
-          (set! result (churn_list_each 10000 1))
-        (print f"churn_list_each x{n}: {result}")
+    for-each [test sel]:
+      loop times: n:
+        set! result (call (item tests test))
+      print f"""{test " <10"}: {result}"""
 
 
 ;; The end.
