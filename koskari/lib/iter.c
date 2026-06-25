@@ -155,6 +155,26 @@ fallback:
 }
 
 
+void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
+
+  if (! agen)
+    return;
+
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
+
+  } else if (agen->gen) {
+    kos_dyngen_release((KosDynGen *) agen->gen);
+    agen->gen = NULL;
+  }
+
+  if (agen->ctx) {
+    KosContext_Free(agen->ctx);
+    agen->ctx = NULL;
+  }
+}
+
+
 static void asyncgen_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
