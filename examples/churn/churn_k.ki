@@ -1,5 +1,7 @@
 #! /usr/bin/env koskari
 
+(import-from itertools product starmap)
+
 (define MASK32 0xffffffff)
 
 
@@ -44,6 +46,93 @@ define churn_list_each [n x: 1]:
     (& acc MASK32)
 
 
+;; Exercises the demand path the way koslife does: Python's itertools
+;; starmap calls a koskari method wrapped in (demand ...), and the
+;; outer get-all-groups nests a second demand+starmap inside the eval
+;; of the first.  This is the only meaningful demand churn in koslife.
+
+define-class ChurnGrid []:
+
+    define __init__ [self w h]:
+        set! self.width w
+        set! self.height h
+        set! self.wrap False
+        set! self.data #{}
+
+        define tmp 175
+
+        ;; seed live cells so dict.get hits both present and absent keys
+        for-each [[x y] (product (range 0 w) (range 0 h))]:
+            when (== 0 (% (+ x y) 3)):
+                set! (item self.data #(x y)) tmp
+                set! tmp (^ tmp (& (<< tmp 5) MASK32))
+
+
+    define coord-key [self x y]:
+        define w self.width
+        define h self.height
+        unless self.wrap:
+            unless (and (< -1 x w) (< -1 y h)):
+                return None
+        #((% x w) (% y h))
+
+
+    define get-cell [self x y]:
+        define key (self.coord-key x y)
+        if (None? key) 0 (self.data.get key 0)
+
+
+    define group-coord [self x y]:
+        (product #((- x 1) x (+ x 1)) #((- y 1) y (+ y 1)))
+
+
+    define get-group [self x y]:
+        (starmap (demand self.get-cell) (self.group-coord x y))
+
+
+    define get-all-groups [self]:
+        (starmap (demand self.get-group)
+          (product (range 0 self.width) (range 0 self.height)))
+
+
+define churn_starmap [w: 8 h: 8]:
+    define grid (ChurnGrid w h)
+    define acc 0
+    for-each [grp (grid.get-all-groups)]:
+      for-each [v grp]:
+        when v:
+          (set! acc (& (+ acc v) MASK32))
+    acc
+
+
+;; Exercises yield-from delegation, which koslife's `tracked` uses
+;; (yield-from (data.items)) and which the other churn tests never
+;; touch.  Builds a generator that delegates to an inner iterable and
+;; consumes it both fully and partially (abandoning the generator
+;; mid-delegation, which stresses the YIELD_FROM teardown path).
+
+define yield-from-items [items]:
+    yield-from items
+
+
+define churn_yieldfrom [n: 64]:
+    define data (list (range n))
+    define acc 0
+
+    ;; full consumption
+    for-each [_ (range n)]:
+        for-each [v (yield-from-items data)]:
+            (set! acc (& (+ acc v) MASK32))
+
+    ;; partial consumption: abandon each generator after one value
+    for-each [_ (range n)]:
+        define g (yield-from-items data)
+        for-each [v g]:
+            (set! acc (& (^ acc v) MASK32))
+            (break)
+    (& acc MASK32)
+
+
 define-syntax compile/loop:
   """
   A wholly unnecessary loop macro.
@@ -75,7 +164,7 @@ when-main:
     (parser.add_argument "tests"
         nargs: "*" metavar: "TEST"
         default: #[]
-        help: "loop tree list_each (default: all)")
+        help: "loop tree list_each starmap yieldfrom (default: all)")
 
     define options (parser.parse_args)
 
@@ -83,6 +172,8 @@ when-main:
       loop: { (churn_loop 10000 1) }
       tree: { (churn_tree 12 1) }
       list_each: { (churn_list_each 10000 1) }
+      starmap: { (churn_starmap 8 8) }
+      yieldfrom: { (churn_yieldfrom 64) }
     }
 
     define sel options.tests

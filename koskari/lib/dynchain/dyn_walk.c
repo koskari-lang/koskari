@@ -67,6 +67,10 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
        (void *) KosEvalState_FRAME(es),
        (void *) owner,
        (void *) gen);
+  /* GEN is frozen back into the KPAG: drop the keepalive.  Done last, as it
+     may run the owner's deallocation if no one else holds it (an abandoned
+     generator cleans up here).  No reads of gen/owner follow. */
+  kos_dyngen_keepalive_release(gen);
   return 0;
 }
 int kos_dyn_walk_handle_yield(KosEvalState *es) {

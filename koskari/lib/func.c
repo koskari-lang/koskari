@@ -223,10 +223,10 @@ static KosOpResult kos_install_function(
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     if (! agen)
       return EVAL_RAISE();
-    if (KosEvalState_StackPushRef(es, agen) < 0) {
-      Py_DECREF(agen);
+    /* Steal our owned reference onto the stack; StackPUSH consumes agen on
+       both success and failure (no separate DECREF). */
+    if (KosEvalState_StackPUSH(es, agen) < 0)
       return EVAL_RAISE();
-    }
     return EVAL_NORMAL();
   }
   KosDynFrame *frame = KosEvalState_FRAME(es);
@@ -254,10 +254,10 @@ static KosOpResult kos_vinstall_function(
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     if (! agen)
       return EVAL_RAISE();
-    if (KosEvalState_StackPushRef(es, agen) < 0) {
-      Py_DECREF(agen);
+    /* Steal our owned reference onto the stack; StackPUSH consumes agen on
+       both success and failure (no separate DECREF). */
+    if (KosEvalState_StackPUSH(es, agen) < 0)
       return EVAL_RAISE();
-    }
     return EVAL_NORMAL();
   }
   KosDynFrame *frame = KosEvalState_FRAME(es);
