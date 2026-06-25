@@ -1,0 +1,293 @@
+# Valgrind suppression file for koskari running as a full Python process
+#
+# This file is paired with tools/valgrind/run.sh, which uses:
+#
+#   --show-leak-kinds=definite,indirect
+#
+# "still reachable" and "possibly lost" are therefore not shown at all
+# and do not need suppressions.  The suppressions here handle the small
+# set of "definite" leaks that CPython itself produces and that would
+# otherwise clutter the output.
+#
+# Philosophy: suppress only by specific call-site, never by allocator
+# function alone.  koskari's C code allocates through the same
+# PyObject_New / PyMem_* paths as Python internals; blanket suppression
+# of those functions would hide the leaks we are hunting for.
+#
+# Usage:
+#   valgrind --suppressions=koskari.supp <command>
+
+
+# === Python interpreter startup ===
+#
+# Standalone Python starts through Py_RunMain.  Allocations that happen
+# here and are not freed before the process exits are expected noise.
+
+{
+   python-runmain-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:Py_RunMain
+}
+
+{
+   python-runmain-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   fun:Py_RunMain
+}
+
+
+# === Py_Initialize / Py_InitializeFromConfig ===
+#
+# Objects allocated during interpreter init that survive Py_Finalize.
+
+{
+   python-initialize-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:Py_Initialize*
+}
+
+{
+   python-initfromconfig-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:Py_InitializeFromConfig
+}
+
+
+# === Python type system ===
+#
+# PyType_Ready allocates tp_dict and related structures that persist for
+# the life of the interpreter.
+
+{
+   python-type-ready-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:PyType_Ready
+}
+
+{
+   python-type-ready-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   fun:PyType_Ready
+}
+
+
+# === Python import system ===
+#
+# Module import allocates sys.modules entries, __spec__ objects, and
+# loader state that are not always freed at Py_Finalize.
+
+{
+   python-import-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:PyImport_*
+}
+
+{
+   python-import-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   fun:PyImport_*
+}
+
+
+# === Python string interning ===
+#
+# Interned strings are held in a global dict for the interpreter lifetime
+# and appear as definite leaks at process exit.
+
+{
+   python-unicode-intern-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:PyUnicode_InternInPlace
+}
+
+{
+   python-unicode-intern-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   fun:PyUnicode_InternInPlace
+}
+
+
+# === PyRun_StringFlags ===
+#
+# koskari's bootstrap compiles .ki source by calling Python's string
+# evaluator (PyRun_StringFlags).  CPython allocates small objects during
+# _PyAST_Compile that are not freed at process exit; this is a one-time
+# fixed cost, not a growth leak.
+
+{
+   python-pyrun-stringflags-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:PyRun_StringFlags
+}
+
+{
+   python-pyrun-stringflags-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   fun:PyRun_StringFlags
+}
+
+
+# === PyDict_SetItemString unicode key ===
+#
+# CPython creates a str key via PyUnicode_FromString inside
+# PyDict_SetItemString; with some builds / interning paths valgrind
+# reports that allocation as a definite leak even though the key is
+# retained by interpreter internals.  Matched only when
+# PyDict_SetItemString is the outermost named frame below the allocation.
+
+{
+   python-dict-setitemstring-unicode-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:PyUnicode_New
+   ...
+   fun:PyDict_SetItemString
+}
+
+
+# === Python GC ===
+#
+# GC-tracked objects allocated during import / type registration that
+# are not swept before exit.
+
+{
+   python-gc-alloc-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:_PyObject_GC_New*
+}
+
+{
+   python-gc-alloc-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   fun:_PyObject_GC_New*
+}
+
+
+# === Python finalization ===
+#
+# Some memory is intentionally not freed during Py_Finalize / _Py_Finalize.
+
+{
+   python-finalize-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:Py_Finalize*
+}
+
+{
+   python-finalize-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   fun:Py_Finalize*
+}
+
+
+# === dlopen / dlsym ===
+#
+# Extension module loading (including koskari's own .so) goes through
+# dlopen; the handle and related bookkeeping are not freed at exit.
+
+{
+   dlopen-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:dlopen*
+}
+
+{
+   dlopen-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   fun:dlopen*
+}
+
+{
+   dlsym-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:dlsym*
+}
+
+
+# === glibc ===
+#
+# Standard library objects that are allocated once and deliberately
+# kept alive (locale data, thread-local storage, etc.).
+
+{
+   glibc-ld-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   obj:*/ld-*.so*
+}
+
+{
+   glibc-libc-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   obj:*/libc*.so*
+}
+
+{
+   glibc-libc-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   obj:*/libc*.so*
+}
+
+
+# === Conditional-jump / uninitialized-value from libpython ===
+#
+# CPython has a number of benign Cond / Value8 reports caused by its own
+# internal use of uninitialized padding bytes.
+
+{
+   python-cond-uninit
+   Memcheck:Cond
+   ...
+   obj:*/libpython*.so*
+}
+
+{
+   python-value-uninit
+   Memcheck:Value8
+   ...
+   obj:*/libpython*.so*
+}
