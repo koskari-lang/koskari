@@ -568,14 +568,31 @@ typedef struct {
 
 static PyObject *demand_new(
     PyTypeObject *type,
-    PyObject *args,PyObject *kwds) {
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *wrapped = NULL;
+
+  if (PyTuple_GET_SIZE(args) == 1 && (! kwds || ! PyDict_Size(kwds))) {
+    wrapped = PyTuple_GET_ITEM(args, 0);
+    if (PyObject_TypeCheck(wrapped, type)) {
+      Py_INCREF(wrapped);
+      return wrapped;
+    }
+
+  } else if (kwds && PyDict_Size(kwds) == 1 && PyTuple_GET_SIZE(args) == 0) {
+    wrapped = PyDict_GetItemString(kwds, "wrapped");
+    if (wrapped && PyObject_TypeCheck(wrapped, type)) {
+      Py_INCREF(wrapped);
+      return wrapped;
+    }
+  }
 
   KosDemandObject *self = (KosDemandObject *) type->tp_alloc(type, 0);
 
-  (void) args;
-  (void) kwds;
   if (! self)
     return NULL;
+
   self->wrapped = NULL;
   return (PyObject *) self;
 }
@@ -590,11 +607,15 @@ static int demand_init(PyObject *self, PyObject *args, PyObject *kwds) {
   if (kwds && PyDict_Size(kwds)) {
     if (! PyArg_ParseTupleAndKeywords(args, kwds, "O:Demand", kwlist, &wrapped))
       return -1;
-  }
-  else {
+
+  } else {
     if (! PyArg_ParseTuple(args, "O", &wrapped))
       return -1;
   }
+
+  if (self == wrapped)
+    return 0;
+
   Py_CLEAR(d->wrapped);
   Py_INCREF(wrapped);
   d->wrapped = wrapped;

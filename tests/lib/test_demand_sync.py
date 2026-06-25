@@ -462,6 +462,16 @@ class TestDemandWrapperAndApply(unittest.TestCase):
         )
 
 
+    def test_demand_idempotent(self):
+        """
+        demand(dfb) returns dfb when dfb is already a Demand
+        """
+        fn = lambda: 42
+        dfb = demand(fn)
+        self.assertIs(dfb, demand(dfb))
+        self.assertIs(dfb.__wrapped__, fn)
+
+
 class TestDemandInEvalDenial(unittest.TestCase):
     """
     Phase-1 in-eval denial: KOS_FRAME_DEMAND on the root frame causes
