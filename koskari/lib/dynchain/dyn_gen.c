@@ -79,6 +79,37 @@ void kos_dyngen_release(KosDynGen *gen) {
 }
 
 
+/**
+   GEN->KPAG keepalive: while a GEN's frame is live on a chain, the GEN holds
+   a counted reference on its owner (the KosPyAsyncGen) so the owner cannot be
+   deallocated mid-run.  Acquired when the GEN is installed/made active;
+   released when it freezes (yield) or dies (return/raise).  The KEEPALIVE
+   flag makes both idempotent so release fires only when an acquire happened
+   (the Python-driven first-run path may go active without an install).
+*/
+static void kos_dyngen_keepalive_acquire(KosDynGen *gen) {
+  PyObject *owner = KosDynGen_OWNER(gen);
+  /* Never resurrect an owner that is mid-deallocation (refcount 0): the
+     teardown path re-installs the frozen gen to run its GeneratorExit
+     cleanup, and a keepalive incref there would resurrect the dying object
+     and trigger a re-entrant dealloc when the cleanup unwinds. */
+  if (owner && Py_REFCNT(owner) > 0
+      && ! (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_KEEPALIVE)) {
+    Py_INCREF(owner);
+    KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_KEEPALIVE;
+  }
+}
+
+
+static void kos_dyngen_keepalive_release(KosDynGen *gen) {
+  if (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_KEEPALIVE) {
+    PyObject *owner = KosDynGen_OWNER(gen);
+    KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_KEEPALIVE;
+    Py_XDECREF(owner);
+  }
+}
+
+
 static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_obj(data, "owner", KosDynGen_OWNER(node)) < 0)
@@ -145,6 +176,8 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
    * would sever links when active is not a direct child of gen. */
   KosDynGen_ACTIVE(gen) = NULL;
   kos_dyn_commit_dyn_top(es, active);
+  /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
+  kos_dyngen_keepalive_acquire(gen);
 
   if (KosEvalState_StackPushRef(es, Py_None) < 0)
     return -1;
@@ -198,8 +231,12 @@ int kos_dyn_gen_install_bootstrap(
   }
 
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
-  kos_dyngen_acquire(gen);
+  /* The GEN's chain-membership reference transfers from src to es along with
+     the chain itself (src->dyn_top is cleared below); do NOT acquire a fresh
+     one, or src's membership ref is orphaned and the GEN node leaks. */
   kos_dyn_commit_dyn_top(es, chain_head);
+  /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
+  kos_dyngen_keepalive_acquire(gen);
 
   KosContext_DYN_TOP(src) = NULL;
   KosContext_FRAME_TOP(src) = NULL;
@@ -252,6 +289,10 @@ int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
   KosEvalState_FlushLiveRegsToFrame(es);
   kos_dynchain_free(frame, (KosDynNode *) gen);
   kos_dyn_commit_dyn_top(es, consumer);
+  /* GEN is dead: drop the keepalive on its owner (es is now consistent).
+     In the common case the consumer still holds the KPAG, so this is just a
+     decrement; if it was the last ref the owner deallocates here. */
+  kos_dyngen_keepalive_release(gen);
   kos_dyngen_release(gen);
   return 0;
 }
