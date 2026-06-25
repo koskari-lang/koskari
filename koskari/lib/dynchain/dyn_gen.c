@@ -309,7 +309,13 @@ int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
    active down to this GEN node (exclusive) via kos_dynchain_traverse.
 */
 static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
-  Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
+  /* OWNER is a borrowed back-pointer except while the keepalive holds a real
+     counted reference on it.  Reporting a borrowed pointer to the cyclic
+     collector makes it subtract a phantom reference and collect a live,
+     externally-referenced generator (held by a GC-invisible FOREACH/NEXT/
+     YIELD_FROM dynnode) as cyclic garbage.  Only visit when it is real. */
+  if (KosDynNode_FLAGS(node) & KOS_DYNF_GEN_KEEPALIVE)
+    Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
   if (KosDynGen_ACTIVE((KosDynGen *) node))
     return kos_dynchain_traverse(
         KosDynGen_ACTIVE((KosDynGen *) node),
