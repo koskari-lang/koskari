@@ -2,10 +2,12 @@
 """
 Allow only a small git command set for agent shell execution.
 
-Permitted: log, status, show, diff, and commit via heredoc (-F - <<'EOF').
+Permitted: log, status, show, diff, commit via heredoc (-F - <<'EOF'), and
+guarded worktree add/list/remove/prune under ~/.cursor/worktrees/.
 """
 
 import json
+import os
 import re
 import shlex
 import sys
@@ -19,6 +21,18 @@ ALLOWED_SUBCMDS = frozenset({
     'log',
     'show',
     'status',
+})
+
+CURSOR_WORKTREE_ROOT = os.path.expanduser('~/.cursor/worktrees')
+
+WORKTREE_ADD_FORBIDDEN_FLAGS = frozenset({
+    '-b',
+    '-B',
+    '--track',
+    '-f',
+    '--force',
+    '--checkout',
+    '--lock',
 })
 
 GLOBAL_OPTS_WITH_ARG = frozenset({
@@ -139,6 +153,102 @@ def is_allowed_commit(argv):
     return True
 
 
+def is_cursor_worktree_path(path):
+    """
+    Return True when path is a nested directory under CURSOR_WORKTREE_ROOT
+    """
+
+    try:
+        resolved = os.path.realpath(os.path.expanduser(path))
+        root = os.path.realpath(CURSOR_WORKTREE_ROOT)
+    except (OSError, TypeError, ValueError):
+        return False
+
+    prefix = root + os.sep
+    if not resolved.startswith(prefix):
+        return False
+
+    rel = os.path.relpath(resolved, root)
+    parts = [part for part in rel.split(os.sep) if part]
+    return len(parts) >= 2
+
+
+def git_worktree_list_check(tail):
+    """
+    Return True for git worktree list [--porcelain]
+    """
+
+    return tail in ([], ['--porcelain'])
+
+
+def git_worktree_add_check(tail):
+    """
+    Return True for git worktree add --detach <cursor-worktree-path> [<ref>]
+    """
+
+    if '--detach' not in tail:
+        return False
+
+    positionals = []
+    for token in tail:
+        if token == '--detach':
+            continue
+        if token in WORKTREE_ADD_FORBIDDEN_FLAGS:
+            return False
+        if token.startswith('-'):
+            return False
+        positionals.append(token)
+
+    if not positionals:
+        return False
+
+    return is_cursor_worktree_path(positionals[0])
+
+
+def git_worktree_remove_check(tail):
+    """
+    Return True for git worktree remove [-f|--force] <cursor-worktree-path>
+    """
+
+    filtered = [token for token in tail if token not in ('-f', '--force')]
+    if len(filtered) != 1:
+        return False
+
+    return is_cursor_worktree_path(filtered[0])
+
+
+def git_worktree_prune_check(tail):
+    """
+    Return True for git worktree prune with no extra arguments
+    """
+
+    return not tail
+
+
+def git_worktree_check(argv):
+    """
+    Return True only for guarded git worktree subcommands
+    """
+
+    rest = skip_git_globals(argv[1:])
+    if len(rest) < 2 or rest[0] != 'worktree':
+        return False
+
+    subcmd = rest[1]
+    tail = rest[2:]
+
+    if subcmd == 'list':
+        return git_worktree_list_check(tail)
+    if subcmd == 'add':
+        return git_worktree_add_check(tail)
+    if subcmd == 'remove':
+        return git_worktree_remove_check(tail)
+    if subcmd == 'prune':
+        return git_worktree_prune_check(tail)
+
+    return False
+
+
 def is_allowed_git(argv):
     """
     Return True when a git argv list is on the project allowlist
@@ -156,6 +266,8 @@ def is_allowed_git(argv):
         return True
     if subcmd == 'commit':
         return is_allowed_commit(argv)
+    if subcmd == 'worktree':
+        return git_worktree_check(argv)
 
     return False
 
