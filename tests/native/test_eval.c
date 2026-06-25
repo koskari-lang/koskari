@@ -1841,6 +1841,64 @@ static int test_eval_opcode_error_caught_by_try(void) {
 }
 
 
+/* === Test: frozen async gen teardown without resume install === */
+
+
+static int test_eval_frozen_gen_teardown_without_install(void) {
+
+    /*
+      Yield once to freeze GEN.active; KosPyAsyncGen_Teardown must dispose
+      the frozen chain without a second kos_dyn_gen_install / koskari_eval.
+    */
+    PyObject *nspec = create_test_nspec();
+    PyObject *val = PyLong_FromLong(42);
+    PyObject *instr = PyList_New(2);
+    PyObject *code_obj;
+    PyObject *ns;
+    PyObject *agen_obj;
+    KosPyAsyncGen *agen;
+    KosDynGen *gen;
+    KosOpResult ev;
+
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+    Py_DECREF(val);
+
+    code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    Py_DECREF(nspec);
+    Py_DECREF(instr);
+    TEST_ASSERT_NOT_NULL(code_obj, "create code");
+
+    ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code_obj, ns);
+    Py_DECREF(code_obj);
+    TEST_ASSERT_NOT_NULL(agen_obj, "create async gen");
+
+    agen = (KosPyAsyncGen *) agen_obj;
+    gen = (KosDynGen *) agen->gen;
+    TEST_ASSERT_NOT_NULL(gen, "agen owns gen");
+
+    ev = koskari_eval(agen->ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first eval yields");
+    TEST_ASSERT_NOT_NULL(ev.val, "yield value");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "yielded 42");
+    Py_DECREF(ev.val);
+
+    TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE(gen), "gen frozen with active chain");
+    TEST_ASSERT_NULL(KosContext_DYN_TOP(agen->ctx), "ctx dyn_top cleared on freeze");
+
+    KosPyAsyncGen_Teardown(agen);
+    TEST_ASSERT_NULL(agen->gen, "teardown cleared agen->gen");
+    TEST_ASSERT_NULL(agen->ctx, "teardown cleared agen->ctx");
+
+    Py_DECREF(agen_obj);
+
+    return 0;
+}
+
+
 /* === Test runner === */
 
 int run_eval_tests(void) {
@@ -1881,6 +1939,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_yield_throw_resume);
     RUN_TEST(test_eval_yield_throw_caught);
     RUN_TEST(test_eval_opcode_error_caught_by_try);
+    RUN_TEST(test_eval_frozen_gen_teardown_without_install);
 
     return 0;
 }
