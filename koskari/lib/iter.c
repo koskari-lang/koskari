@@ -141,6 +141,11 @@ primary_success:
     }
     KosEvalState_FreezeToContext(&es);
   }
+  /* unwind_exhausted released only the install reference acquired above by
+     kos_dyn_gen_install; the owner reference held by agen still remains.
+     Release it now that the gen is consumed, matching the fallback path and
+     the non-frozen branch in the callers. */
+  kos_dyngen_release(gen);
   agen->gen = NULL;
   return;
 
