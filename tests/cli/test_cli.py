@@ -163,6 +163,39 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(['arg1', 'arg2'], opts.args)
 
 
+    async def test_command_strips_leading_double_dash(self):
+        opts = self._parse('-c', '(print 1)', '--', 'arg1')
+        self.assertEqual('(print 1)', opts.command)
+        self.assertEqual(['arg1'], opts.args)
+
+
+    async def test_script_rest_after_double_dash(self):
+        opts = self._parse('script.ki', '--', '--loops', '5')
+        self.assertEqual('script.ki', opts.filename)
+        self.assertEqual(['--loops', '5'], opts.args)
+
+
+    async def test_script_rest_merges_pre_and_post(self):
+        opts = self._parse('script.ki', '20', '--', 'tree')
+        self.assertEqual('script.ki', opts.filename)
+        self.assertEqual(['20', 'tree'], opts.args)
+
+
+    async def test_script_double_dash_only(self):
+        opts = self._parse('script.ki', '--')
+        self.assertEqual('script.ki', opts.filename)
+        self.assertEqual([], opts.args)
+
+
+    async def test_misplaced_option_before_double_dash_still_errors(self):
+        parser = option_parser('koskari')
+        with self.assertRaises(SystemExit):
+            _resolve_cli_target(
+                parser,
+                parser.parse_args(
+                    ['script.ki', '--compile-kio', 'out.kio', 'x.ki', '--', 'foo']))
+
+
 class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
     async def test_hello_prints_to_stdout(self):
@@ -487,6 +520,23 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         code, argv = await loop.run_in_executor(None, run)
         self.assertEqual(0, code)
         self.assertEqual(['-c', 'extra'], argv)
+
+
+    async def test_main_script_double_dash_sets_sys_argv(self):
+        script = _script('hello.ki')
+
+        def run():
+            orig_argv = sys.argv
+            try:
+                code = main(['koskari', script, '--', '--flag'])
+                return code, list(sys.argv)
+            finally:
+                sys.argv = orig_argv
+
+        loop = asyncio.get_running_loop()
+        code, argv = await loop.run_in_executor(None, run)
+        self.assertEqual(0, code)
+        self.assertEqual([script, '--flag'], argv)
 
 
     async def test_main_exit_code_script_raises_system_exit(self):

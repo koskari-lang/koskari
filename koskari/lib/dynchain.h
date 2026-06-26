@@ -105,6 +105,7 @@ typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,  /* node was cloned for continuation capture */
   KOS_DYNF_BOUNDARY    = 0x02,  /* node marks a non-resumable boundary */
+  KOS_DYNF_GEN_KEEPALIVE = 0x04,  /* GEN: holds a counted ref on its KPAG owner while active */
   KOS_DYNF_LCA_VISITED = (int) 0x80000000u,  /* transient: set during kos_compute_lca */
 } KosDynFlags;
 
@@ -974,6 +975,16 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen);
 
 
 /**
+   Bootstrap install: graft GEN and src dyn_top chain onto consumer es.
+   ACTIVE must be NULL; runnable chain lives on src only.
+*/
+int kos_dyn_gen_install_bootstrap(
+    KosEvalState *es,
+    KosContext *src,
+    KosDynGen *gen);
+
+
+/**
    True when GEN should be passed to kos_dyn_gen_install before the next
    koskari_eval on eval_ctx: GEN.active holds the chain but GEN is not
    under eval_ctx->dyn_top (yield freeze, or first run while still linked).
@@ -1209,7 +1220,10 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *node);
 
 int kos_dyn_next_deliver_yield(KosEvalState *es, PyObject *val);
 
-int kos_dyn_next_deliver_return(KosEvalState *es, PyObject *val);
+int kos_dyn_next_deliver_return_node(
+    KosEvalState *es,
+    KosDynNext *next,
+    PyObject *val);
 
 int kos_dyn_foreach_deliver_yield_kos_agen(
     KosEvalState *es, KosDynForeach *fe, PyObject *val);
@@ -1223,19 +1237,13 @@ KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es);
 
 int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf,
-    PyObject *inner_val, PyObject **out_new_yield_val);
+    PyObject *inner_val);
 
 int kos_dyn_yield_from_deliver_inner_return(
     KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
 
-int kos_dyn_deliver_iterator_boundary_return_event(
-    KosEvalState *es, PyObject *val);
-
 int kos_dyn_deliver_yield_to_iter_boundary(
-    KosEvalState *es, PyObject *val, PyObject **out_new_yield_val);
-
-int kos_dyn_try_deliver_iterator_boundary_after_pop(
-    KosEvalState *es, PyObject **p_val);
+    KosEvalState *es, PyObject *val);
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 
@@ -2224,6 +2232,10 @@ typedef enum KosYfPhase {
   KOS_YF_PHASE_DRIVING = 0,
   KOS_YF_PHASE_EXPECT_SEND,
   KOS_YF_PHASE_EXPECT_AWAIT,
+  /* A flattened koskari-gen delegate handed us a value at the iterator
+     boundary; the next handler dispatch re-emits it as this generator's own
+     yield (see kos_dyn_yield_from_deliver_inner_yield). */
+  KOS_YF_PHASE_EMIT,
 } KosYfPhase;
 
 

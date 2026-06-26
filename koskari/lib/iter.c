@@ -141,6 +141,11 @@ primary_success:
     }
     KosEvalState_FreezeToContext(&es);
   }
+  /* unwind_exhausted released only the install reference acquired above by
+     kos_dyn_gen_install; the owner reference held by agen still remains.
+     Release it now that the gen is consumed, matching the fallback path and
+     the non-frozen branch in the callers. */
+  kos_dyngen_release(gen);
   agen->gen = NULL;
   return;
 
@@ -152,6 +157,26 @@ fallback:
     kos_dynchain_free(active, (KosDynNode *) gen);
   kos_dyngen_release(gen);
   agen->gen = NULL;
+}
+
+
+void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
+
+  if (! agen)
+    return;
+
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
+
+  } else if (agen->gen) {
+    kos_dyngen_release((KosDynGen *) agen->gen);
+    agen->gen = NULL;
+  }
+
+  if (agen->ctx) {
+    KosContext_Free(agen->ctx);
+    agen->ctx = NULL;
+  }
 }
 
 

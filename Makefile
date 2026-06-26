@@ -144,6 +144,21 @@ test-valgrind: test-container-build  ## Run Valgrind tests in container
 	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
 
 
+##@ Full-Python Valgrind
+
+VALGRIND_IMAGE := koskari-valgrind
+
+valgrind-image-build:  ## Build the koskari full-Python valgrind container
+	@echo "Building container image $(VALGRIND_IMAGE)..."
+	@$(CONTAINER_ENGINE) build -q -t $(VALGRIND_IMAGE) -f tools/valgrind/Containerfile .
+
+valgrind-run: valgrind-image-build  ## Run RUN_ARGS under valgrind (e.g. make valgrind-run RUN_ARGS="koskari /work/test.ki")
+	@$(CONTAINER_ENGINE) run --rm -it -v $(PWD):/work:Z $(VALGRIND_IMAGE) $(RUN_ARGS)
+
+valgrind-koslife: valgrind-image-build  ## Run the koslife demo under valgrind
+	@$(CONTAINER_ENGINE) run --rm -it -v $(PWD):/work:Z $(VALGRIND_IMAGE) koslife
+
+
 ##@ Static analysis
 
 CPPCHECK_IMAGE ?= ghcr.io/cnescatlab/cppcheck:latest
@@ -399,6 +414,9 @@ python:  ## Show Python executable
 	test-pyversions \
 	test-valgrind \
 	tox \
+	valgrind-image-build \
+	valgrind-koslife \
+	valgrind-run \
 	typecheck \
 	uninstall \
 	venv \

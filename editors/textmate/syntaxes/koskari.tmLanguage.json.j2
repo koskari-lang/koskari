@@ -85,11 +85,16 @@
       "match": "\\\\[\\\\'\"abfnrtv0-7]|\\\\x[0-9a-fA-F]{2}|\\\\u[0-9a-fA-F]{4}|\\\\U[0-9a-fA-F]{8}",
       "name": "constant.character.escape.koskari"
     },
+    "format-spec-quote": {
+      "match": "'[0-9A-Za-z._+#-]+",
+      "name": "constant.other.format-spec.koskari"
+    },
     "format-interpolation": {
       "begin": "\\{(?!\\{)",
       "end": "\\}(?!\\})",
       "name": "meta.interpolation.koskari",
       "patterns": [
+        { "include": "#format-spec-quote" },
         { "include": "$self" }
       ]
     },

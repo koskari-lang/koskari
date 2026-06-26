@@ -584,12 +584,40 @@ class _CompileKioSourceNameAction(Action):
 
 def _reject_option_like_rest(parser, rest):
     """
-    Error when REMAINDER captured tokens that look like misplaced options
+    Error when pre-``--`` REMAINDER tokens look like misplaced options
     """
 
     for item in rest:
         if item == '--' or item.startswith('-'):
             parser.error('unrecognized arguments: %s' % (item,))
+
+
+def _split_script_rest(parser, rest):
+    """
+    Split REMAINDER into script filename and forwarded script arguments
+
+    When ``rest`` contains ``--``, only tokens before the first ``--`` are
+    checked for misplaced koskari options; everything after is forwarded
+    verbatim to the script.
+
+    :param parser: ArgumentParser used for parse_args (for error reporting)
+    :param rest: REMAINDER tokens after koskari CLI options
+    :return: (filename, script_args) pair
+    """
+
+    if '--' not in rest:
+        _reject_option_like_rest(parser, rest)
+        return rest[0], rest[1:]
+
+    idx = rest.index('--')
+    pre = rest[:idx]
+    post = rest[idx + 1:]
+
+    if not pre:
+        parser.error('expected script filename before --')
+
+    _reject_option_like_rest(parser, pre)
+    return pre[0], pre[1:] + post
 
 
 def _resolve_cli_target(parser, options):
@@ -609,6 +637,8 @@ def _resolve_cli_target(parser, options):
 
     if options.command is not None:
         options.filename = None
+        if rest and rest[0] == '--':
+            rest = rest[1:]
         options.args = rest
         options.execute_kio = False
         return options
@@ -634,9 +664,7 @@ def _resolve_cli_target(parser, options):
         return options
 
     if rest:
-        _reject_option_like_rest(parser, rest)
-        options.filename = rest[0]
-        options.args = rest[1:]
+        options.filename, options.args = _split_script_rest(parser, rest)
     else:
         options.filename = None
         options.args = []
