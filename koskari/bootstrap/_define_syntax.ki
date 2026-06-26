@@ -103,6 +103,19 @@ define-syntax compile/extend-syntax:
       setq name (+ name (special-match name rule ...))
 
 
+define-syntax compile/let-syntax:
+  special-rules []:
+    case [c (let-syntax name (syntax-rules literals rule ...) body ...) tc]:
+      ; the each macro isn't defined yet, so we use a manual generator thunk
+      define src `(syntax-rules ,name.datum ,literals.datum
+                  ,@({(for-each [r rule] (yield r.datum))}))
+      define bdy `(begin ,@({(for-each [b body] (yield b.datum))}))
+      define frag (c.full_compile src)
+      define expr (frag.as_expression (vars c.module))
+      with [(c.macro_overlay name.datum (expr))]:
+        (c.full_compile bdy tc)
+
+
 define-syntax compile/datum:
   """
   Captures `expr` form in a datum, recording the source position
