@@ -28,8 +28,6 @@ license: GPL v.3
 
 
 from setuptools import setup
-
-
 setup()
 
 
