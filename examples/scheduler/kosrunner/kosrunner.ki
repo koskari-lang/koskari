@@ -1,0 +1,122 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Koskari asyncio job scheduler example
+
+Framework types, jobset/on-cron syntax, and a demo cron workload.
+"""
+
+
+import aiocron
+import-from datetime datetime
+
+
+;; Types
+
+
+define-class Job []:
+    """
+    Abstract job protocol; subclasses implement start and stop
+    """
+
+    define start [self]:
+        raise (NotImplementedError "Job.start")
+
+    define stop [self]:
+        raise (NotImplementedError "Job.stop")
+
+
+define-class CronJob [Job]:
+
+    define __init__ [self schedule callback]:
+        set! self.schedule schedule
+        set! self.callback callback
+        set! self._handle None
+
+    define start [self]:
+        set! self._handle (aiocron.crontab
+            self.schedule
+            func: self.callback
+            start: True)
+        (print "STARTED JOB" (repr self._handle))
+
+    define stop [self]:
+        unless (None? self._handle):
+            (self._handle.stop)
+            set! self._handle None
+
+
+define-class JobSet []:
+
+    define __init__ [self name jobs: nil]:
+        set! self.name name
+        set! self.jobs jobs
+
+    define __call__ [self]:
+        (self.start)
+        self
+
+    define start [self]:
+        for-each [job self.jobs]:
+            (job.start)
+
+    define stop [self]:
+        for-each [job self.jobs]:
+            (job.stop)
+
+
+;; Layout and syntax
+
+
+define layout/on-cron layout/block-begin
+
+
+define-syntax on-cron:
+    macro-rules [compile/begin]:
+        case (on-cron min hr dom mon dow (compile/begin body ...)):
+            `(on-cron
+                ,f"{min.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}"
+                (lambda [] ,@body))
+        case (on-cron schedule (begin body ...)):
+            `(on-cron ,schedule (lambda [] ,@body))
+        case (on-cron schedule fn):
+            `(CronJob ,schedule ,fn)
+
+
+define-syntax jobset:
+    macro-rules []:
+        case (jobset name job ...):
+            `(define ,name (JobSet ,f"{name.datum}" jobs: #[,@job]))
+
+
+;; Demo workload
+
+
+jobset workload:
+    on-cron * * * * *:
+        (print f"The time is {(datetime.now)}")
+
+
+define-coroutine main []:
+    (workload)
+    while True:
+        (sleep 30)
+
+
+when-main:
+    (main)
+
+
+;; The end.

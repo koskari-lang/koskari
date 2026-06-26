@@ -1,0 +1,28 @@
+FROM koskari:latest
+
+
+RUN mkdir -p /build
+COPY kosrunner.ki setup.cfg setup.py pyproject.toml /build/
+RUN pip install \
+        --skip-version-check --no-cache-dir --root-user-action=ignore \
+        /build/ ; \
+    rm -rf /build
+
+WORKDIR /job
+RUN rm -rf /app
+
+RUN cat <<EOF > run.ki
+import kosrunner
+
+jobset workload:
+    cron-job 1 * * * *:
+        (print "Hello, World!")
+
+(workload)
+EOF
+
+
+CMD ["run.ki"]
+
+
+# The end.
