@@ -399,10 +399,20 @@ flowchart TD
 stops depends on flattened iterator delivery:
 - If **`kos_dyn_need_kos_agen_boundary_deliver`** (a **NEXT**, **FOREACH**,
   or **YIELD_FROM** boundary is active), **`eval_event_yield_deliver_to_boundary`**
-  pushes or delivers the payload to the consumer and returns **REPROLOGUE** (eval
-  keeps running). One YIELD_FROM sub-path stops the eval loop.
-- Otherwise **`KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD)`** and
-  return `EVAL_YIELD(val)`; the driver resumes via **`revive_yield(send_val)`**.
+  hands the payload to the **nearest** boundary and returns **REPROLOGUE** (eval
+  keeps running). Every boundary kind now hands off uniformly: it notifies its
+  receiver and stops, and the eval loop resumes that receiver in normal mode.
+  A **YIELD_FROM** receiver (a flattened koskari-gen delegate boundary) takes
+  the value into **`KOS_YF_PHASE_EMIT`** via
+  **`kos_dyn_yield_from_deliver_inner_yield`**; on its next dispatch the
+  **YIELD_FROM** opcode re-emits it as the delegating generator's own yield
+  (**`yield_from_emit_yield`**). That is itself a fresh YIELD event — walk and
+  freeze the delegating **GEN**, then deliver to the next boundary. Each hop is
+  one walk plus one delivery, so nested **for-each / yield-from / generator**
+  stacks compose to arbitrary depth.
+- Otherwise (no internal boundary; an external driver consumes the generator)
+  **`KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD)`** and return
+  `EVAL_YIELD(val)`; the driver resumes via **`revive_yield(send_val)`**.
 
 **`eval_event_await`** checks `kos_eval_in_demand(es)` first (see §7.5); on
 denial, it raises a sync-violation exception. On normal suspension it calls
@@ -993,7 +1003,7 @@ Tests: **`TestDynWindContinuations`** in `tests/compile/specials/test_dyn_wind.p
 
 1. Generator is running; frame's parent is GEN. Plain `YIELD` or `YIELD_FROM` returns **`EVAL_YIELD(val)`** from the opcode.
 2. `cg_handle_op_result` routes to **`eval_event_yield`** → **`eval_yield_handle_walk_and_freeze`** → **`kos_dyn_walk_handle_yield`**. GEN receives handle(YIELD) and **consumes** it (e.g. **`kos_dyn_gen_freeze_and_release`**): dynchain is frozen.
-3. If **`kos_dyn_need_kos_agen_boundary_deliver`**: **`eval_event_yield_deliver_to_boundary`** (NEXT / FOREACH / YIELD_FROM); often `EVAL_REPROLOGUE()` without an external stop. Otherwise **`KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD)`** and return `EVAL_YIELD(val)`.
+3. If **`kos_dyn_need_kos_agen_boundary_deliver`**: **`eval_event_yield_deliver_to_boundary`** hands the value to the nearest boundary (NEXT / FOREACH / YIELD_FROM) and returns **`EVAL_REPROLOGUE()`** — all boundary kinds hand off uniformly, no external stop. A YIELD_FROM receiver re-emits the value as its own yield on its next dispatch (a fresh YIELD event that freezes the delegating GEN and delivers onward), so nested stacks compose to arbitrary depth. Otherwise (an external driver consumes the generator) **`KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD)`** and return `EVAL_YIELD(val)`.
 4. Driver (e.g. Python generator `send`) receives `KOS_RES_YIELD` and `val` in the regular boundary case; later calls `koskari_eval(ctx, send_val, NULL, NULL)`.
 5. Entry: `SUSPENSION_EVENT == YIELD`, `send_val` provided → `revive_yield(send_val, ...)`.
 6. `revive_yield` pushes `send_val` onto the stack. Mode = NORMAL. Loop continues; next instruction runs with the sent value on the stack.
