@@ -8,13 +8,14 @@ are then compiled as normal. For compiler special forms, see
 Bootstrap loads these sources in order (`koskari/bootstrap/__init__.py`,
 `_BUILTINS_SOURCES`):
 
-1. `_define_syntax.ki` — meta-macros for `define-syntax` / `extend-syntax`
+1. `_define_syntax.ki` — meta-macros for `define-syntax` / `extend-syntax` / `let-syntax`
 2. `_conditionals.ki` — `if`, `when`, `unless`, `?`, `bool`, `None?`, `nil?`
 3. `_functions.ki` — coroutine/demand defines, decorators, composition
 4. `_variables.ki` — assignment, refs, bindings, comprehensions helpers
 5. `_class.ki` — classes, dataclasses, `super`
 6. `_iter.ki` — `each`, `list-each`, `dict-each`, `has?`, slice helpers
-7. `basics.ki` — list accessors, `help`, macro expansion, compile/evaluate helpers
+7. `basics.ki` — list accessors, `help`, macro expansion, compile/evaluate helpers,
+   `inline-macro`
 
 The merged module is exposed as `koskari.builtins`. Macros are available in every
 module without import.
@@ -25,7 +26,8 @@ lowers transformer specs via **`compile/syntax-rules`**, **`compile/macro-rules`
 and related specials (see [SPECIALS.md](SPECIALS.md) § compile/define-syntax).
 
 **Design:** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md),
-[MATCHER.md](MATCHER.md), [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
+[MATCHER.md](MATCHER.md), [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md),
+[language/macro-let-and-inline-macro.md](language/macro-let-and-inline-macro.md).
 
 ### Block quasiquote and `:block:` layout expansion
 
@@ -64,6 +66,26 @@ hygiene (see [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block).
 **Behaviour:** Replaces **`NAME`** via **`setq`** with a new **`syntax-rules`** /
 **`syntax-match`** / **`macro-rules`** / **`special-rules`** / **`special-match`**
 spec (each expansion passes **`NAME`** as the first argument to the builder form).
+
+
+### compile/let-syntax
+
+**Symbol:** `compile/let-syntax` (surface: `let-syntax`)
+
+**Syntax:** **`(let-syntax NAME (syntax-rules literals rule …) body …)`**
+
+**Behaviour:** **`special-rules`** compile special (not a source rewrite macro). At
+expand time it builds the same **`(syntax-rules NAME literals rule …)`** form
+**`define-syntax`** would compile, runs **`full_compile`** on that spec and evaluates
+the resulting expression to obtain a **`Syntax`** transformer. The body is compiled
+inside **`Compiler.macro_overlay`**, which pushes the transformer onto a stack consulted
+by **`find_compiled`** before the module namespace. Nested **`let-syntax`** shadows
+outer bindings. The overlay is discarded when the body compile finishes; nothing is
+stored in the module namespace.
+
+**Note:** Current bootstrap arm is **`syntax-rules`** only (unary binding).
+
+**Tests:** `tests/importer/test_let_syntax.py`
 
 
 ### compile/datum
@@ -462,3 +484,19 @@ result is a single-expression **`begin`** / **`compile/begin`**, that wrapper is
 **Syntax:** **`(compileq form)`**, **`(compileq form ns)`**
 
 **Behaviour:** **`(call compile (quote form) (locals))`** or **`(call compile (quote form) ns)`**.
+
+
+### compile/inline-macro
+
+**Symbol:** `compile/inline-macro` (surface: `inline-macro`)
+
+**Syntax:** **`(inline-macro body …)`**
+
+**Behaviour:** **`special-rules`** compile special. At expand time the body forms are
+unwrapped from **`Datum`**, combined into **`(begin body …)`**, compiled and evaluated
+once via **`full_compile`** and **`as_expression`**. The resulting form is returned
+for the compiler to compile in place of the **`inline-macro`** site (compile-time
+source splice). No transformer is installed and nothing is bound in the module
+namespace.
+
+**Tests:** `tests/importer/test_let_syntax.py`
