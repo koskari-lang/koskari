@@ -1,0 +1,31 @@
+;; Reproducer: yield-from delegating to a koskari generator.
+;;
+;; A koskari generator used as the delegate of a yield-from must re-emit
+;; its values to the outer consumer.  This regressed so that consuming the
+;; outer generator via for-each saw none of the delegate's values, while
+;; yield-from over a plain Python iterable (e.g. range) still worked.
+
+
+define foobar [x]:
+    yield-from x
+
+
+define krange [limit]:
+    define count 0
+    while (< count limit):
+        yield count
+        incr! count
+
+
+when (equal? __name__ "__main__"):
+    define seen 0
+    define total 0
+    for-each [v (foobar (krange 5))]:
+        print "VALUE" v
+        incr! seen
+        incr! total v
+    print "SEEN" seen
+    print "SUM" total
+
+
+;; The end.
