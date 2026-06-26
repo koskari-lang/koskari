@@ -2189,50 +2189,74 @@ int kos_dyn_finish_delimited_pop_return(
 
 
 /**
- Delivers a YIELD value to the first matching iterator boundary: NEXT, then
- FOREACH (Koskari agen await), then YIELD_FROM.
+ Delivers a YIELD value to the nearest receiving iterator boundary (NEXT,
+ awaiting-FOREACH, or YIELD_FROM) and hands off control.  Every boundary kind
+ notifies its receiver and stops; the eval loop then resumes that receiver in
+ normal mode, which is what triggers any further yield/walk/deliver hop.  This
+ keeps each hop a single walk-then-delivery so nested for-each / yield-from /
+ generator stacks compose to arbitrary depth.
 
  :param val: inner yield value; ownership transferred to the boundary consumer.
- :param out_new_yield_val: set to the new outer yield value when r==1
-        (YIELD_FROM path); caller owns the reference.
- :return: 0 if NEXT or FOREACH delivered (caller should REPROLOGUE);
-          1 if YIELD_FROM delivered (*out_new_yield_val set; caller yields);
-          -1 on error
+ :return: 0 on delivery (caller should REPROLOGUE); -1 on error.
 */
 int kos_dyn_deliver_yield_to_iter_boundary(
     KosEvalState *es,
-    PyObject *val,
-    PyObject **out_new_yield_val) {
+    PyObject *val) {
 
-  // TODO: this is bad, it hard-coded specific node types. It should use
-  // a capability-based approach.
+  /* Resolve the nearest receiving iterator boundary, then dispatch by its
+     kind.  After the yield freeze (see eval_event_yield), the yielding
+     generator's GEN node has detached, so its parent -- the boundary that was
+     directly driving it -- now sits at dyn_top and is the structurally
+     nearest boundary.  Prefer it: a YIELD_FROM delegating to this generator
+     must win over an outer FOREACH that is awaiting an *enclosing* generator,
+     otherwise the inner delegate's yields are misrouted to the wrong consumer
+     and the delegate is torn down.  Only when dyn_top is not itself a
+     receiving boundary (e.g. the gen frame is still installed) do we fall
+     back to locating one by walking outward from the running frame. */
+  KosDynNode *node = NULL;
+  KosDynNode *const dt = KosEvalState_DYN_TOP(es);
 
-  KosDynNext *const next = kos_dyn_find_next_above_frame(es);
+  if (dt && KosDynNode_IS_NEXT(dt)) {
+    node = dt;
+  } else if (dt && KosDynNode_IS_FOREACH(dt)
+             && KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) dt)
+                  == KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN) {
+    node = dt;
+  } else if (dt && KosDynNode_IS_YIELD_FROM(dt)
+             && KosDynNode_HAS_CAP(dt, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
+    node = dt;
+  }
 
-  if (next) {
+  if (! node) {
+    node = (KosDynNode *) kos_dyn_find_next_above_frame(es);
+    if (! node)
+      node = (KosDynNode *) kos_dyn_find_awaiting_foreach(es);
+    if (! node)
+      node = (KosDynNode *) kos_dyn_find_yield_from_iter_boundary(es);
+  }
+
+  if (! node) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "iterator boundary YIELD without NEXT/FOREACH/YIELD_FROM "
+                    "Koskari agen state");
+    return -1;
+  }
+
+  if (KosDynNode_IS_NEXT(node)) {
     if (kos_dyn_next_deliver_yield(es, val) < 0)
       return -1;
     return 0;
   }
-
-  KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
-  if (fe) {
-    if (kos_dyn_foreach_deliver_yield_kos_agen(es, fe, val) < 0)
+  if (KosDynNode_IS_FOREACH(node)) {
+    if (kos_dyn_foreach_deliver_yield_kos_agen(es, (KosDynForeach *) node, val) < 0)
       return -1;
     return 0;
   }
-
-  KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
-  if (yf) {
-    if (kos_dyn_yield_from_deliver_inner_yield(es, yf, val, out_new_yield_val) < 0)
-      return -1;
-    return 1;
-  }
-
-  PyErr_SetString(PyExc_RuntimeError,
-                  "iterator boundary YIELD without NEXT/FOREACH/YIELD_FROM "
-                  "Koskari agen state");
-  return -1;
+  /* KOS_DYN_YIELD_FROM: hand the value to the delegating generator; it
+     re-emits as its own yield on the next handler dispatch. */
+  if (kos_dyn_yield_from_deliver_inner_yield(es, (KosDynYieldFrom *) node, val) < 0)
+    return -1;
+  return 0;
 }
 
 

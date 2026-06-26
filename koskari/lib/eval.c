@@ -1957,24 +1957,17 @@ static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
 
 /**
    YIELD half of dispatch_boundary_event. Caller already ran
-   KOS_TRANS_WALK_HANDLE_YIELD.  val is a new ref; ownership is transferred
-   to the boundary consumer (NEXT/FOREACH) or returned as a new YIELD value
-   (YIELD_FROM path, r==1).
+   KOS_TRANS_WALK_HANDLE_YIELD.  val is a new ref; ownership is transferred to
+   the boundary consumer (NEXT / FOREACH / YIELD_FROM).  Every boundary kind
+   hands off and returns control here; the eval loop resumes the receiver in
+   normal mode, which drives any further hop (a YIELD_FROM receiver re-emits the
+   value as its own yield on its next dispatch).
 */
 static KosOpResult eval_event_yield_deliver_to_boundary(
     KosEvalState *es, PyObject *val) {
 
-  PyObject *new_val = NULL;
-  int r = kos_dyn_deliver_yield_to_iter_boundary(es, val, &new_val);
-
-  if (r < 0)
+  if (kos_dyn_deliver_yield_to_iter_boundary(es, val) < 0)
     return EVAL_FATAL();
-  if (r == 1) {
-    /* YIELD_FROM: new_val is the outer yield value; inner val was consumed */
-    KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
-    return EVAL_YIELD(new_val);
-  }
-  /* r == 0: val consumed by NEXT or FOREACH boundary */
   return EVAL_REPROLOGUE();
 }
 

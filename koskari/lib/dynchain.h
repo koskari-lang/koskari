@@ -1237,13 +1237,13 @@ KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es);
 
 int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf,
-    PyObject *inner_val, PyObject **out_new_yield_val);
+    PyObject *inner_val);
 
 int kos_dyn_yield_from_deliver_inner_return(
     KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
 
 int kos_dyn_deliver_yield_to_iter_boundary(
-    KosEvalState *es, PyObject *val, PyObject **out_new_yield_val);
+    KosEvalState *es, PyObject *val);
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 
@@ -2232,6 +2232,10 @@ typedef enum KosYfPhase {
   KOS_YF_PHASE_DRIVING = 0,
   KOS_YF_PHASE_EXPECT_SEND,
   KOS_YF_PHASE_EXPECT_AWAIT,
+  /* A flattened koskari-gen delegate handed us a value at the iterator
+     boundary; the next handler dispatch re-emits it as this generator's own
+     yield (see kos_dyn_yield_from_deliver_inner_yield). */
+  KOS_YF_PHASE_EMIT,
 } KosYfPhase;
 
 

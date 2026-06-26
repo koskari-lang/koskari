@@ -674,6 +674,13 @@ KOS_OP_HANDLER(YIELD_FROM) {
   uint8_t action = KosDynYieldFrom_PENDING_ACTION(yf);
   uint8_t kind = KosDynYieldFrom_KIND(yf);
 
+  /* EMIT: a flattened koskari-gen delegate handed us a value at the iterator
+     boundary (kos_dyn_yield_from_deliver_inner_yield).  Re-emit it as this
+     generator's own yield.  yield_from_emit_yield reads TOS and leaves us in
+     EXPECT_SEND, so the next resume drives the delegate for its next value. */
+  if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EMIT)
+    return yield_from_emit_yield(es, yf);
+
   /* 2. INJECT_MODE == KOS_INJECT_THROW: consume inject, set PENDING_ACTION=THROW,
      fall through to drive. */
   {
