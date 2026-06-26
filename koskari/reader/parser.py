@@ -2807,6 +2807,105 @@ class FormatStringReader(object):
             self.normal = normal_reader
 
 
+    def _read_format_spec(self, stream):
+        """
+        Read a colon-suffix format spec until the field closing brace
+
+        Nested ``{`` / ``}`` inside the spec adjust depth.
+
+        :param stream: the source stream, positioned after the field colon
+        :return: the raw format spec string; stream ends past the closing ``}``
+        """
+
+        parts = []
+        depth = 0
+
+        while True:
+            c = stream.read(1)
+            if not c:
+                raise stream.reader_eof(stream.position())
+            if c == '{':
+                depth += 1
+                parts.append(c)
+            elif c == '}':
+                if depth == 0:
+                    break
+                depth -= 1
+                parts.append(c)
+            else:
+                parts.append(c)
+
+        return ''.join(parts)
+
+
+    def _read_format_field(self, stream):
+        """
+        Read one ``{...}`` f-string field
+
+        :param stream: the source stream, positioned after the opening ``{``
+        :return: a ``(format ...)`` form for this field
+        """
+
+        norm = self.normal
+
+        norm._skip_horizontal_whitespace(stream)
+        position = stream.position()
+        lead = stream.peek(1)
+
+        if lead in '([{':
+            event, pos, expr = norm._read(stream)
+        elif lead and (lead.isalpha() or lead == '_' or lead.isdigit()
+                       or lead == '-'):
+            first = stream.read(1)
+            terms = norm._terms
+            for c in ':}':
+                if c not in terms:
+                    terms = terms + c
+            expr = norm.process_atom(
+                norm._collect_atom_continuation(stream, first, terms))
+            pos = position
+            event = VALUE
+        else:
+            event, pos, expr = norm._read(stream)
+
+        if event is EOF:
+            raise stream.reader_eof(pos)
+        if event is not VALUE:
+            raise stream.error("invalid format field", pos)
+
+        norm._skip_horizontal_whitespace(stream)
+        peek = stream.peek(1)
+
+        if peek == ':':
+            stream.read(1)
+            spec = self._read_format_spec(stream)
+            child = cons(_symbol_format, expr, spec, nil)
+
+        elif peek == '}':
+            stream.read(1)
+            child = cons(_symbol_format, expr, nil)
+
+        else:
+            forms = [expr]
+            while stream.peek(1) != '}':
+                event, pos, val = norm._read(stream)
+                if event is EOF:
+                    raise stream.reader_eof(pos)
+                if event is not VALUE:
+                    raise stream.error("invalid format field", pos)
+                forms.append(val)
+            stream.read(1)
+            child = cons(_symbol_format, *forms, nil)
+
+        if is_pair(expr) and expr.get_position():
+            field_pos = expr.get_position()
+        else:
+            field_pos = pos
+        child.set_position(field_pos)
+
+        return child
+
+
     def split(self, stream):
         """
         Split a format string into literal and expression parts
@@ -2816,8 +2915,6 @@ class FormatStringReader(object):
         """
 
         result = []
-
-        norm = self.normal
 
         try:
             peek = stream.peek(2)
@@ -2838,10 +2935,7 @@ class FormatStringReader(object):
 
                 elif peek[0] == "{":
                     stream.read(1)
-                    event, child = norm._read_pair("}", stream, "{")
-                    new_child = cons(_symbol_format, child)
-                    new_child.set_position(child.get_position())
-                    result.append(new_child)
+                    result.append(self._read_format_field(stream))
 
                 else:
                     result.append(stream.read_until_chars("{}"))
