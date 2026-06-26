@@ -1,0 +1,84 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Reader macro demonstration: dollars literals at read time.
+
+$100 in source becomes (dollars 100) before macro expansion or compilation.
+"""
+
+
+define-syntax print-example:
+  """
+  Print the source text of an expression, the word "is", then its value
+  """
+
+  syntax-rules []:
+    case (print-example expression):
+      print 'expression "is" expression
+
+
+define-class dollars [decimal]:
+  """
+  Simple wrapper for decimal which formats the value as dollars in str.
+  Do not use floats for real currency; this is a teaching example only.
+  """
+
+  define __str__ [self]:
+    f"""${(decimal self) ".2f"}"""
+
+  define __repr__ [self]:
+    f"""(dollars {(decimal self) ".2f"})"""
+
+
+@demand
+define read-dollars [stream c]:
+  """
+  Reader macro handler for $. Reads the next atom and wraps it as dollars.
+  """
+
+  define found (__reader__.read_atom stream)
+  when (instance? found str):
+    when (or (in "." found) (found.endswith "f")):
+      (set! found
+        (if (found.endswith "f")
+          then: (item-slice found stop: -1)
+          else: found))
+    (set! found (__reader__.process_atom found))
+  `(dollars ,found)
+
+
+(__reader__.add_macro_character "$" read-dollars)
+
+
+define example []:
+  """
+  Demonstrate read-time expansion of $ literals inside this function body
+  """
+
+  define X $100
+  (print-example (type X))
+  (print-example (repr X))
+  (print-example (str X))
+
+  (print-example (type $200))
+  (print-example (repr $200))
+  (print-example (str $200))
+
+
+when-main:
+  (example)
+
+
+;; The end.
