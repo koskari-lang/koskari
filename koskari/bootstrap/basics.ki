@@ -67,7 +67,7 @@ let []:
     unless tf:
       return form
 
-    when (instance? tf #(SyntaxTransform MacroTransform)):
+    unless (instance? tf #(SyntaxTransform MacroTransform)):
       return form
 
     define expanded (tf.handle_expand compiler form mr False)
@@ -235,7 +235,7 @@ define-syntax compile/inline-macro:
 
   special-rules []:
     case [c (inline-macro body ...)]:
-      define source `(begin ,@(each [b body] b.datum))
+      define source `(let [] ,@(each [b body] b.datum))
       define frag (c.full_compile source)
       define expr (frag.as_expression (vars c.module))
       (or (expr) None)
