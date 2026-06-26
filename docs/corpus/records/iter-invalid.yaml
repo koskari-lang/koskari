@@ -1,0 +1,46 @@
+id: iter-list-each-missing-binding-vector-001
+feature: macro/compile/list-each
+source: (list-each i (range 4) (* i i))
+verify:
+  invalid: "list-each takes one binding vector [name sequence] followed by a body; do not split the binding name and sequence into positional arguments. Use (list-each [i (range 4)] (* i i))."
+references:
+  - reference/layouts/layout-for-each.md
+stability: evolving
+tags:
+  - iter
+  - list-each
+  - comprehension
+  - invalid
+  - "surface:sexpr"
+---
+id: iter-each-filter-after-body-001
+feature: macro/compile/each
+source: (each [i (range 6)] i when: (== (% i 2) 0))
+verify:
+  invalid: "each filter clauses are part of the pattern before the body: (each [i seq] when: condition body). Placing when: after the body is not a filtered comprehension."
+references:
+  - reference/layouts/layout-for-each.md
+stability: evolving
+tags:
+  - iter
+  - each
+  - comprehension
+  - filter
+  - invalid
+  - "surface:sexpr"
+---
+id: iter-dict-each-positional-pair-001
+feature: macro/compile/dict-each
+source: (dict-each [i (range 3)] (#str "k" i) (* i 10))
+verify:
+  invalid: "Use explicit key: and value: clauses for dict-each when key and value expressions are separate. The positional form has one body expression that must itself produce key/value pairs."
+references:
+  - reference/layouts/layout-for-each.md
+stability: evolving
+tags:
+  - iter
+  - dict-each
+  - comprehension
+  - dict
+  - invalid
+  - "surface:sexpr"

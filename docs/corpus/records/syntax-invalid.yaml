@@ -1,0 +1,29 @@
+id: syntax-define-and-use-same-begin-001
+feature: macro/compile/define-syntax
+source: (begin (define-syntax twice (syntax-rules [] [(twice x) (+ x x)])) (twice 21))
+verify:
+  invalid: "Do not define a transformer and invoke it in the same source expression. Install define-syntax at top level, then use the macro in a later top-level form or test the use site separately."
+references:
+  - reference/macros/compile-define-syntax.md
+  - reference/specials/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - invalid
+  - macro
+---
+id: syntax-extend-before-definition-001
+feature: macro/compile/extend-syntax
+source: (extend-syntax tacos (syntax-rules [] [(tacos) "lonely"]))
+verify:
+  invalid: "extend-syntax augments an existing transformer binding; start with define-syntax for the first rule set, then extend-syntax for later cases."
+references:
+  - reference/macros/compile-extend-syntax.md
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - extend-syntax
+  - invalid
+  - macro

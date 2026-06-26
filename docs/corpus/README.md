@@ -50,8 +50,10 @@ Schema documentation exists. Initial records live under `records/`:
 | [functions.yaml](records/functions.yaml) | lambda, function, define function shorthand, gensym-thunk, compose, decorate |
 | [functions-invalid.yaml](records/functions-invalid.yaml) | Illegal gensym-thunk forms and compile-time placeholder errors |
 | [syntax.yaml](records/syntax.yaml) | define-syntax, extend-syntax, rules/match, datum, pattern parsers |
+| [syntax-invalid.yaml](records/syntax-invalid.yaml) | Illegal macro definition/extension usage (documented with verify.invalid) |
 | [specials.yaml](records/specials.yaml) | Other compiler special forms |
-| [iter.yaml](records/iter.yaml) | Slicing, indexing, range, collection literals |
+| [iter.yaml](records/iter.yaml) | Slicing, indexing, range, collection literals, comprehensions |
+| [iter-invalid.yaml](records/iter-invalid.yaml) | Illegal comprehension shapes (documented with verify.invalid) |
 
 Records cite originating tests under `tests/compile/specials/` where
 applicable; standalone seed examples use notes to describe the syntax focus.

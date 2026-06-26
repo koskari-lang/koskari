@@ -343,3 +343,53 @@ tags:
   - dict
   - "surface:sexpr"
 notes: "keyword dict #{key: val ...} lowers to str keys; lookup via string key"
+---
+id: iter-list-each-square-001
+feature: macro/compile/list-each
+source: (list-each [i (range 4)] (* i i))
+verify:
+  eval: "list:[0,1,4,9]"
+references:
+  - reference/layouts/layout-for-each.md
+  - start/from-python/data-and-control.md
+stability: evolving
+tags:
+  - iter
+  - list-each
+  - comprehension
+  - "surface:sexpr"
+notes: "Positive example: build a list from a binding vector and sequence; body is the produced element."
+---
+id: iter-each-filter-when-001
+feature: macro/compile/each
+source: (list (each [i (range 6)] when: (== (% i 2) 0) i))
+verify:
+  eval: "list:[0,2,4]"
+references:
+  - reference/layouts/layout-for-each.md
+  - start/from-python/data-and-control.md
+stability: evolving
+tags:
+  - iter
+  - each
+  - comprehension
+  - filter
+  - "surface:sexpr"
+notes: "Positive example: put when: before the yielded body to filter generator-comprehension output."
+---
+id: iter-dict-each-key-value-001
+feature: macro/compile/dict-each
+source: (item (dict-each [i (range 3)] key: (#str "k" i) value: (* i 10)) "k2")
+verify:
+  eval: "20"
+references:
+  - reference/layouts/layout-for-each.md
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - dict-each
+  - comprehension
+  - dict
+  - "surface:sexpr"
+notes: "Positive example: dict-each uses explicit key: and value: clauses before lookup."
