@@ -1,0 +1,20 @@
+#! /usr/bin/env koskari
+
+import-from datetime datetime
+
+; this would be a great use of the use-bundle feature, if it
+; existed. Just a `use-bundle kosrunner.jobset`
+import-from kosrunner use-kosrunner
+(use-kosrunner)
+
+
+jobset workload:
+    on-cron * * * * *:
+        (print f"The time is {(datetime.now)}")
+
+
+when-main:
+    (workload heartbeat: 20 snore: True)
+
+
+; The end.

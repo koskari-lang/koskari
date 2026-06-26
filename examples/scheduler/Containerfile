@@ -1,28 +1,35 @@
-FROM koskari:latest
+FROM koskari:local as builder
 
-
-RUN mkdir -p /build
-COPY kosrunner.ki setup.cfg setup.py pyproject.toml /build/
 RUN pip install \
-        --skip-version-check --no-cache-dir --root-user-action=ignore \
-        /build/ ; \
+        --root-user-action=ignore \
+        --no-cache-dir \
+        --disable-pip-version-check \
+        uv setuptools wheel
+
+WORKDIR /build
+COPY setup.cfg pyproject.toml ./
+COPY kosrunner/ ./kosrunner/
+RUN uv build . --wheel
+
+
+FROM koskari:local
+
+ENV TZ=UTC \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+COPY --from=builder /build/dist/*.whl /build/
+RUN pip install \
+        --disable-pip-version-check \
+        --no-cache-dir \
+        --root-user-action=ignore \
+        --find-links=/build \
+        koskari-kosrunner ; \
     rm -rf /build
 
 WORKDIR /job
-RUN rm -rf /app
-
-RUN cat <<EOF > run.ki
-import kosrunner
-
-jobset workload:
-    cron-job 1 * * * *:
-        (print "Hello, World!")
-
-(workload)
-EOF
-
+COPY example.ki ./run.ki
 
 CMD ["run.ki"]
-
 
 # The end.

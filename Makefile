@@ -235,6 +235,7 @@ build-container:  ## Build koskari runtime container image
 	$(CONTAINER_ENGINE) build \
 	  --build-arg-file "$$build_args" \
 	  -t $(PROJECT):$(VERSION)-dev \
+	  -t $(PROJECT):local \
 	  -f Containerfile .; \
 	echo "Container image $(PROJECT):$(VERSION)-dev built"
 

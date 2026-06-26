@@ -21,6 +21,19 @@ Framework types, jobset/on-cron syntax, and a demo cron workload.
 
 import aiocron
 import-from datetime datetime
+import-from typing Protocol
+
+
+declare-exports [
+    JobSet
+    CronJob
+    Job
+
+    on-cron
+    jobset
+
+    layout/on-cron
+]
 
 
 ;; Types
@@ -32,10 +45,10 @@ define-class Job []:
     """
 
     define start [self]:
-        raise (NotImplementedError "Job.start")
+        (raise (NotImplementedError f"{self}.start"))
 
     define stop [self]:
-        raise (NotImplementedError "Job.stop")
+        (raise (NotImplementedError f"{self}.stop"))
 
 
 define-class CronJob [Job]:
@@ -50,7 +63,6 @@ define-class CronJob [Job]:
             self.schedule
             func: self.callback
             start: True)
-        (print "STARTED JOB" (repr self._handle))
 
     define stop [self]:
         unless (None? self._handle):
@@ -64,9 +76,11 @@ define-class JobSet []:
         set! self.name name
         set! self.jobs jobs
 
-    define __call__ [self]:
+    define __call__ [self heartbeat: 3600 snore: False]:
         (self.start)
-        self
+        while True:
+            (when snore (print "zzz"))
+            (sleep heartbeat)
 
     define start [self]:
         for-each [job self.jobs]:
@@ -85,12 +99,20 @@ define layout/on-cron layout/block-begin
 
 define-syntax on-cron:
     macro-rules [compile/begin]:
+
         case (on-cron min hr dom mon dow (compile/begin body ...)):
-            `(on-cron
-                ,f"{min.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}"
-                (lambda [] ,@body))
+            (define schedule
+                f"{min.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}")
+            `(CronJob ,schedule (lambda [] ,@body))
+
+        case (on-cron [min hr dom mon dow] body ...):
+            (define schedule
+                f"{min.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}")
+            `(CronJob ,schedule (lambda [] ,@body))
+
         case (on-cron schedule (begin body ...)):
-            `(on-cron ,schedule (lambda [] ,@body))
+            `(CronJob ,schedule (lambda [] ,@body))
+
         case (on-cron schedule fn):
             `(CronJob ,schedule ,fn)
 
@@ -98,25 +120,15 @@ define-syntax on-cron:
 define-syntax jobset:
     macro-rules []:
         case (jobset name job ...):
-            `(define ,name (JobSet ,f"{name.datum}" jobs: #[,@job]))
+            define n (str name.datum)
+            `(define ,name (JobSet ,n jobs: #[,@job]))
 
 
-;; Demo workload
-
-
-jobset workload:
-    on-cron * * * * *:
-        (print f"The time is {(datetime.now)}")
-
-
-define-coroutine main []:
-    (workload)
-    while True:
-        (sleep 30)
-
-
-when-main:
-    (main)
+define-syntax use-kosrunner:
+    macro-rules []:
+        case (use-kosrunner):
+            (define names (list-each [n __all__] (symbol n)))
+            `(import-from ,__name__ ,@names)
 
 
 ;; The end.

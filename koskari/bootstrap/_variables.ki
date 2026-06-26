@@ -351,8 +351,14 @@ define-syntax compile/declare-exports:
   """
 
   macro-rules []:
+    case (declare-exports):
+      `(define-global ,(datum '__all__) #())
+    case (declare-exports [names ...]):
+      `(define-global ,(datum '__all__)
+        #(,@(sorted (set (list-each [n names] (str n.datum))))))
     case (declare-exports names ...):
-      `(define-global __all__ #(,@(sorted (set (map str names)))))
+      `(define-global ,(datum '__all__)
+        #(,@(sorted (set (list-each [n names] (str n.datum))))))
 
 
 ;; The end.
