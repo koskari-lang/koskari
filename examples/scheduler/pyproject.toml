@@ -1,5 +1,47 @@
+# Just for the record, TOML is the quite possibly the worst
+# configuration file format that has ever existed. I loathe
+# it, I loathe those who pushed it into the Python packaging
+# limelight, and I hope I can one day completely rewrite this
+# in a Koskari DSL.
+
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "koskari-kosrunner"
+version = "0.1.0"
+description = "Asyncio cron job scheduler in Koskari"
+authors = [
+    {name = "Christopher O'Brien", email = "obriencj@gmail.com"},
+]
+license = {text = "GNU General Public License v3"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "koskari",
+    "aiocron",
+]
+
+[project.urls]
+Homepage = "https://github.com/obriencj/koskari/"
+
+
+[tool.setuptools]
+packages = ["kosrunner"]
+
+
+[tool.setuptools.package-data]
+kosrunner = ["*.ki"]
+
 
 # The end.
