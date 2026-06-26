@@ -130,6 +130,12 @@ Ref: [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 
 ## Import / loader
 
+### Wildcard import (`import-all-from` / `IMPORT_STAR`)
+
+Add `IMPORT_STAR` opcode and `import-all-from` special for Python
+`from MODULE import *` semantics. Ref:
+[language/import-all-from.md](language/import-all-from.md).
+
 ### Python AST loader (transformative parser)
 
 Load Python modules as Koskari modules at import time by using a special reader
