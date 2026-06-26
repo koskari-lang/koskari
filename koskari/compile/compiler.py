@@ -465,6 +465,38 @@ class Compiler:
             filename = r.deref()
         self.filename = filename
 
+        self._macro_overlay = []
+
+
+    @contextmanager
+    def macro_overlay(self, name, syntax):
+        if self._macro_overlay:
+            dfns = dict(self._macro_overlay[-1])
+            dfns[str(name)] = syntax
+        else:
+            dfns = {str(name): syntax}
+        self._macro_overlay.append(dfns)
+        try:
+            yield
+        finally:
+            self._macro_overlay.pop()
+
+
+    @contextmanager
+    def macro_overlays(self, **dfns):
+        """
+        Context manager that overlays the macro namespace with the given
+        definitions.
+        """
+
+        if self._macro_overlay:
+            dfns = dict(self._macro_overlay[-1], **dfns)
+        self._macro_overlay.append(dfns)
+        try:
+            yield
+        finally:
+            self._macro_overlay.pop()
+
 
     def error(self, msg, source):
         raise CompilerError(msg, source)
@@ -483,6 +515,14 @@ class Compiler:
 
 
     def _find_compiled(self, name):
+        name = str(name)
+
+        if self._macro_overlay:
+            dfns = self._macro_overlay[-1]
+            v = dfns.get(name)
+            if v and isinstance(v, Compiled):
+                return v
+
         ns = vars(self.module)
         v = ns.get(name)
         if v and isinstance(v, Compiled):
