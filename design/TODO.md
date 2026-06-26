@@ -309,6 +309,21 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 ---
 
+## Bootstrap and reader surface
+
+- **Reader macro dollars example** — bootstrap **`set-macro-character`** /
+  **`read-atom`** helpers, port **`examples/reader-macro/dollars.ki`**, reader
+  tests, user recipe. Ref:
+  [examples/reader-macro-dollars.md](examples/reader-macro-dollars.md).
+- **`labels` / `flet`** — bootstrap macros for local function binding (mutual
+  recursion vs **`lambda`** shadowing). Ref:
+  [language/labels-and-flet.md](language/labels-and-flet.md).
+- **`macro-let` / `inline-macro`** — compiler special for lexically scoped
+  compile-time macros; bootstrap sugar for **`inline-macro`**. Ref:
+  [language/macro-let-and-inline-macro.md](language/macro-let-and-inline-macro.md).
+
+---
+
 ## Reference
 
 - **Implemented specials:** [SPECIALS.md](SPECIALS.md)

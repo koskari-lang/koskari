@@ -1,0 +1,60 @@
+# Containerfile for running koskari scripts under Valgrind
+#
+# Builds and installs koskari and the koslife demo inside a Fedora
+# environment, then wraps any passed command in Valgrind for heap-leak
+# analysis.  Alpine is intentionally avoided: musl libc and the missing
+# glibc debug symbols make valgrind output much harder to interpret.
+#
+# Build (from project root):
+#   podman build -t koskari-valgrind -f tools/valgrind/Containerfile .
+#
+# Run koslife under valgrind:
+#   podman run --rm -it koskari-valgrind koslife
+#
+# Run a local .ki script under valgrind (mount the directory first):
+#   podman run --rm -v $(PWD)/mydir:/work:Z koskari-valgrind koskari /work/test.ki
+#
+# author: Christopher O'Brien <obriencj@gmail.com>
+# license: GPL v.3
+
+FROM fedora:40
+
+LABEL maintainer="obriencj@gmail.com" \
+      description="Valgrind environment for koskari memory leak analysis"
+
+RUN dnf install -y \
+    gcc \
+    python3-devel \
+    python3-pip \
+    valgrind \
+    && dnf clean all
+
+WORKDIR /build
+
+# Build and install koskari from source.  The C extension requires gcc
+# and python3-devel; a plain pip install handles both in one step.
+COPY tools/regen_version.py /build/tools/
+COPY setup.py setup.cfg pyproject.toml MANIFEST.in \
+     LICENSE README.md koskari.pth ./
+COPY koskari/ ./koskari/
+
+RUN mkdir .eggs && \
+    pip3 install --no-cache-dir .[repl]
+
+# Install the koslife demo.  Its setup.cfg predates PEP 517 build
+# isolation, so --no-build-isolation is required (same as the venv
+# target in the top-level Makefile).
+COPY examples/life/ /build/koslife/
+RUN pip3 install --no-cache-dir setuptools && \
+    pip3 install --no-cache-dir --no-build-isolation /build/koslife/
+
+COPY tools/valgrind/koskari.supp /valgrind/koskari.supp
+COPY tools/valgrind/run.sh /valgrind/run.sh
+RUN chmod +x /valgrind/run.sh
+
+# /work is the default mount point for local scripts and data files.
+WORKDIR /work
+ENTRYPOINT ["/valgrind/run.sh"]
+
+
+# The end.

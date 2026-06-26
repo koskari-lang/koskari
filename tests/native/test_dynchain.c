@@ -373,6 +373,217 @@ static int test_transfer_plan_free_with_inject_exc_type(void) {
 }
 
 
+/* === GEN cleanup tests === */
+
+
+static int test_dyngen_free_disposes_active(void) {
+
+    KosDynGen *gen = kos_dyngen_new(NULL);
+    PyObject *ns = PyDict_New();
+    KosDynFrame *frame;
+
+    TEST_ASSERT_NOT_NULL(gen, "create gen");
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
+
+    KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
+    kos_dyngen_release(gen);
+
+    return 0;
+}
+
+
+static int test_dyngen_bootstrap_no_active(void) {
+
+    KosDynGen *gen = kos_dyngen_new(NULL);
+    PyObject *ns = PyDict_New();
+    KosDynFrame *frame;
+    KosContext *ctx;
+
+    TEST_ASSERT_NOT_NULL(gen, "create gen");
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
+    TEST_ASSERT_NULL(KosDynGen_ACTIVE(gen), "ACTIVE unset at bootstrap");
+
+    ctx = KosContext_New(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosContext_Free(ctx);
+
+    return 0;
+}
+
+
+/* === YIELD_FROM / WITH / DELIM / region payload tests === */
+
+
+static int test_dynyieldfrom_pop_closes_delegate(void) {
+
+    KosContext *ctx;
+    KosEvalState es;
+    PyObject *ns;
+    KosDynFrame *frame;
+    PyObject *tuple;
+    PyObject *delegate;
+    Py_ssize_t rc_before;
+    KosDynYieldFrom *yf;
+
+    ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    frame = kos_dynframe_new(NULL, NULL, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    ctx = KosContext_New(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvalState_Init(&es, ctx);
+    KosEvalState_ThawFromContext(&es);
+
+    tuple = PyTuple_Pack(1, PyLong_FromLong(100001));
+    TEST_ASSERT_NOT_NULL(tuple, "create tuple");
+    delegate = PyObject_GetIter(tuple);
+    Py_DECREF(tuple);
+    TEST_ASSERT_NOT_NULL(delegate, "create iterator delegate");
+
+    rc_before = Py_REFCNT(delegate);
+
+    yf = kos_dyn_push_yield_from(&es, delegate, (uint8_t) 0);
+    TEST_ASSERT_NOT_NULL(yf, "push YIELD_FROM");
+
+    TEST_ASSERT(kos_dyn_pop_yield_from(&es, yf) == 0, "pop YIELD_FROM");
+    TEST_ASSERT_EQ(Py_REFCNT(delegate), rc_before, "delegate refcount restored");
+
+    KosEvalState_FreezeToContext(&es);
+    KosContext_Free(ctx);
+
+    return 0;
+}
+
+
+static int test_dynwith_free_exc_unconditional(void) {
+
+    KosContext *ctx;
+    KosEvalState es;
+    PyObject *ns;
+    KosDynFrame *frame;
+    PyObject *mgr;
+    PyObject *enter;
+    PyObject *exit;
+    KosDynWith *with_node;
+
+    ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    frame = kos_dynframe_new(NULL, NULL, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    ctx = KosContext_New(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvalState_Init(&es, ctx);
+    KosEvalState_ThawFromContext(&es);
+
+    mgr = PyLong_FromLong(200001);
+    enter = PyLong_FromLong(200002);
+    exit = PyLong_FromLong(200003);
+    TEST_ASSERT_NOT_NULL(mgr, "mgr");
+    TEST_ASSERT_NOT_NULL(enter, "enter");
+    TEST_ASSERT_NOT_NULL(exit, "exit");
+
+    with_node = kos_dyn_push_with_provisional(
+        &es, mgr, enter, exit, NULL, 0, KOS_DYN_WITH_SHOT_MULTI);
+    TEST_ASSERT_NOT_NULL(with_node, "push WITH provisional");
+
+    KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
+    KosDynWith_EXC_TYP(with_node) = PyLong_FromLong(200004);
+    KosDynWith_EXC_VAL(with_node) = PyLong_FromLong(200005);
+    KosDynWith_EXC_TB(with_node) = PyLong_FromLong(200006);
+
+    TEST_ASSERT(kos_dyn_pop_with(&es, with_node) == 0, "pop WITH");
+
+    KosEvalState_FreezeToContext(&es);
+    KosContext_Free(ctx);
+
+    return 0;
+}
+
+
+static int test_dyndelim_clone_no_chain_alias(void) {
+
+    PyObject *ns;
+    KosDynFrame *inner;
+    KosDynDelim *delim;
+    KosDynNode *clone;
+
+    ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    inner = kos_dynframe_new(NULL, NULL, ns, NULL);
+    TEST_ASSERT_NOT_NULL(inner, "create inner frame chain");
+
+    delim = kos_dyndelim_new(
+        NULL, KOS_DYN_DELIM_MODE_K_RETURN, (KosDynNode *) inner, 7, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(delim, "create DELIM with owned chain");
+
+    clone = kos_dynnode_clone((KosDynNode *) delim);
+    TEST_ASSERT_NOT_NULL(clone, "clone DELIM");
+    TEST_ASSERT_NULL(KosDynDelim_RETURN_CHAIN((KosDynDelim *) clone),
+                     "clone does not alias RETURN_CHAIN");
+
+    kos_dyndelim_free(delim);
+    kos_dyndelim_free((KosDynDelim *) clone);
+
+    return 0;
+}
+
+
+static int test_dynforeach_free_with_iter(void) {
+
+    KosDynForeach *node;
+    PyObject *result;
+    PyObject *iter;
+
+    node = kos_dynforeach_new(NULL, 10, 20);
+    TEST_ASSERT_NOT_NULL(node, "create FOREACH");
+
+    result = PyLong_FromLong(300001);
+    iter = PyLong_FromLong(300002);
+    TEST_ASSERT_NOT_NULL(result, "result");
+    TEST_ASSERT_NOT_NULL(iter, "iter");
+
+    KosDynForeach_RESULT(node) = result;
+    KosDynForeach_ITER(node) = iter;
+
+    kos_dynforeach_free(node);
+
+    return 0;
+}
+
+
+static int test_dynfinally_free_with_handling_result(void) {
+
+    KosDynFinally *node;
+    PyObject *handling_result;
+
+    node = kos_dynfinally_new(NULL, 50);
+    TEST_ASSERT_NOT_NULL(node, "create FINALLY");
+
+    handling_result = PyLong_FromLong(400001);
+    TEST_ASSERT_NOT_NULL(handling_result, "handling_result");
+
+    KosDynFinally_HANDLING_RESULT(node) = handling_result;
+
+    kos_dynfinally_free(node);
+
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -410,6 +621,15 @@ int run_dynchain_tests(void) {
     /* Transfer plan tests */
     RUN_TEST(test_transfer_plan_free_null);
     RUN_TEST(test_transfer_plan_free_with_inject_exc_type);
+
+    /* GEN and payload cleanup tests */
+    RUN_TEST(test_dyngen_free_disposes_active);
+    RUN_TEST(test_dyngen_bootstrap_no_active);
+    RUN_TEST(test_dynyieldfrom_pop_closes_delegate);
+    RUN_TEST(test_dynwith_free_exc_unconditional);
+    RUN_TEST(test_dyndelim_clone_no_chain_alias);
+    RUN_TEST(test_dynforeach_free_with_iter);
+    RUN_TEST(test_dynfinally_free_with_handling_result);
 
     return 0;
 }

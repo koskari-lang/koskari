@@ -85,11 +85,16 @@
       "match": "\\\\[\\\\'\"abfnrtv0-7]|\\\\x[0-9a-fA-F]{2}|\\\\u[0-9a-fA-F]{4}|\\\\U[0-9a-fA-F]{8}",
       "name": "constant.character.escape.koskari"
     },
+    "format-spec-quote": {
+      "match": "'[0-9A-Za-z._+#-]+",
+      "name": "constant.other.format-spec.koskari"
+    },
     "format-interpolation": {
       "begin": "\\{(?!\\{)",
       "end": "\\}(?!\\})",
       "name": "meta.interpolation.koskari",
       "patterns": [
+        { "include": "#format-spec-quote" },
         { "include": "$self" }
       ]
     },
@@ -258,13 +263,13 @@
       ]
     },
     "list-head-special": {
-      "match": "\\s*(yield-from|yield|with|while|when-main|when|unquote-splicing|unquote|unless|try|syntax-rules|syntax-match|switch|super|subclass\\?|special-rules|special-match|shift|setq-values|setq|set-item|set!|return|reset|ref-item|ref|raise|quote|quasiquote|parameterq|parameterize|or|nil\\?|macroexpand-1|macro-rules|macro-match|locals|local|list-each|letrec|let/cc|let-values|let\\*|let|lambda|item\\*|item|instance\\?|incr!|import-from|import|if|globals|global|gensym-thunk|function-compose|for-each|extend-syntax|each|dyn-with|dyn-wind|dict-each|deref|del-item|del!|define-values|define-syntax|define-parameter|define-global|define-demanding|define-dataclass|define-coroutine|define-class|define|decorate|declare-exports|continue|cons|cond|class|cdr|car|capture/cc|call/cc|call-attr|bytecode|break|bind!|begin|await|attr\\*|attr|and|None\\?)(?=(?:\\s|\\)|\\]|\\}|$))",
+      "match": "\\s*(yield-from|yield|with|while|when-main|when|unquote-splicing|unquote|unless|try|syntax-rules|syntax-match|switch|super|subclass\\?|special-rules|special-match|shift|setq-values|setq|set-item|set!|return|reset|ref-item|ref|raise|quote|quasiquote|parameterq|parameterize|or|nil\\?|macroexpand-1|macro-rules|macro-match|locals|local|list-each|letrec|let/cc|let-values|let\\*|let|lambda|item\\*|item|instance\\?|incr!|import-from|import|if|globals|global|gensym-thunk|function-compose|function|for-each|extend-syntax|each|dyn-with|dyn-wind|dict-each|deref|del-item|del!|define-values|define-syntax|define-parameter|define-global|define-demanding|define-dataclass|define-coroutine|define-class|define|decorate|declare-exports|continue|cons|cond|class|cdr|car|capture/cc|call/cc|call-attr|bytecode|break|bind!|begin|await|attr\\*|attr|and|None\\?)(?=(?:\\s|\\)|\\]|\\}|$))",
       "captures": {
         "1": { "name": "keyword.control.koskari" }
       }
     },
     "bare-line-call-head": {
-      "match": "^(\\s*)(yield-from|yield|with|while|when-main|when|unquote-splicing|unquote|unless|try|syntax-rules|syntax-match|switch|super|subclass\\?|special-rules|special-match|shift|setq-values|setq|set-item|set!|return|reset|ref-item|ref|raise|quote|quasiquote|parameterq|parameterize|or|nil\\?|macroexpand-1|macro-rules|macro-match|locals|local|list-each|letrec|let/cc|let-values|let\\*|let|lambda|item\\*|item|instance\\?|incr!|import-from|import|if|globals|global|gensym-thunk|function-compose|for-each|extend-syntax|each|dyn-with|dyn-wind|dict-each|deref|del-item|del!|define-values|define-syntax|define-parameter|define-global|define-demanding|define-dataclass|define-coroutine|define-class|define|decorate|declare-exports|continue|cons|cond|class|cdr|car|capture/cc|call/cc|call-attr|bytecode|break|bind!|begin|await|attr\\*|attr|and|None\\?)(?=(?:\\s|\\)|\\]|\\}|$))",
+      "match": "^(\\s*)(yield-from|yield|with|while|when-main|when|unquote-splicing|unquote|unless|try|syntax-rules|syntax-match|switch|super|subclass\\?|special-rules|special-match|shift|setq-values|setq|set-item|set!|return|reset|ref-item|ref|raise|quote|quasiquote|parameterq|parameterize|or|nil\\?|macroexpand-1|macro-rules|macro-match|locals|local|list-each|letrec|let/cc|let-values|let\\*|let|lambda|item\\*|item|instance\\?|incr!|import-from|import|if|globals|global|gensym-thunk|function-compose|function|for-each|extend-syntax|each|dyn-with|dyn-wind|dict-each|deref|del-item|del!|define-values|define-syntax|define-parameter|define-global|define-demanding|define-dataclass|define-coroutine|define-class|define|decorate|declare-exports|continue|cons|cond|class|cdr|car|capture/cc|call/cc|call-attr|bytecode|break|bind!|begin|await|attr\\*|attr|and|None\\?)(?=(?:\\s|\\)|\\]|\\}|$))",
       "captures": {
         "2": { "name": "keyword.control.koskari" }
       }

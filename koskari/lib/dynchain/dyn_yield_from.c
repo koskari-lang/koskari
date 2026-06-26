@@ -162,16 +162,20 @@ KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
 
 
 /**
-   Inner Koskari async gen yielded: push through to delegating frame and
-   surface KOS_RES_YIELD to the outer koskari_eval caller.
+   Flattened koskari async gen delegate yielded a value at the iterator
+   boundary.  Hand the value to the delegating generator's frame and stop:
+   control returns to the eval loop, which re-dispatches the YIELD_FROM opcode
+   in EMIT phase.  The handler then re-emits the value as this generator's own
+   yield (yield_from_emit_yield), and the normal yield walk freezes this
+   generator's GEN node and delivers onward to the next boundary.  Each hop is
+   one walk plus one delivery, so nested for-each / yield-from / generator
+   stacks compose to arbitrary depth.
 */
 int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf,
-    PyObject *inner_val, PyObject **out_new_yield_val) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+    PyObject *inner_val) {
 
   KosDynFrame *const frame = KosEvalState_FRAME(es);
-  PyObject *const *tos;
 
   if (! frame || ! inner_val) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -185,28 +189,10 @@ int kos_dyn_yield_from_deliver_inner_yield(
   }
   Py_DECREF(inner_val);
 
-  {
-    KosPyAsyncGen *agen =
-        (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
-    agen->in_progress = 0;
-  }
+  ((KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf))->in_progress = 0;
 
-  KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
+  KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EMIT);
   KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
-
-  tos = KosEvalState_StackTailPtr(es, 1);
-  if (! tos) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_yield_from_deliver_inner_yield: empty stack");
-    return -1;
-  }
-
-  *out_new_yield_val = *tos;
-  Py_INCREF(*out_new_yield_val);
-
-  KosEvalState_FlushLiveRegsToFrame(es);
-  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
   return 0;
 }
 
@@ -225,10 +211,8 @@ int kos_dyn_yield_from_deliver_inner_return(
   if (val)
     Py_DECREF(val);
 
-  /*
-   Match kos_dyn_next_deliver_return: dyn_top must be the delegate gen frame;
-   free it and the GEN node, restore dyn_top to the YIELD_FROM consumer.
-   */
+  /* dyn_top must be the delegate gen frame; free it and the GEN node,
+     restore dyn_top to the YIELD_FROM consumer. */
   if (kos_dyn_gen_unwind_exhausted(es) < 0) {
     return -1;
   }
@@ -277,6 +261,7 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
   }
   kos_dyn_rebuild_live_from_chain(es);
   KosDynNode_PARENT(node) = NULL;
+  kos_yieldfrom_close_delegate(yf);
   kos_dynyieldfrom_free(yf);
   return 0;
 }

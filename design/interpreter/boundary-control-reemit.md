@@ -164,6 +164,16 @@ consumers from active chain state.
 **Done:** `koskari/lib/opcode/RETURN.c` — pop operands, optional delimited
 `k(value)`, then `EVAL_RETURN(val)` only.
 
+**Done:** `koskari/lib/dynchain/dyn_yield_from.c` (inner-*yield*) —
+`kos_dyn_yield_from_deliver_inner_yield` no longer applies consumer semantics
+inline. It hands the delegate's yielded value to the delegating generator's
+frame (`KOS_YF_PHASE_EMIT`) and returns control; the eval loop re-dispatches the
+YIELD_FROM opcode, which re-emits the value via `yield_from_emit_yield` as a
+fresh YIELD event (walk/freeze the delegating GEN, deliver onward). This gives
+the YIELD direction NEXT/FOREACH hand-off parity (§4.4) and satisfies "one
+crossing, one delivery" (§7.1) for flattened Koskari delegates. The
+inner-*return* helper (row above) still applies consumer semantics inline.
+
 
 ## 7. Invariants
 
@@ -188,7 +198,11 @@ consumers from active chain state.
 1. ~~Introduce `KosOpResult` boundary kinds and `apply_kos_op_result` routing~~
 2. ~~Move RETURN parent-delivery logic out of opcode into `eval_event_return`~~
 3. Route NEXT/FOREACH/YIELD_FROM return consumers through generic dispatcher (§5.2)
-4. Align YIELD boundary routing to same dispatcher surface
+4. Align YIELD boundary routing to same dispatcher surface — *partially done*:
+   `eval_event_yield_deliver_to_boundary` now hands off uniformly for every
+   boundary kind (NEXT / FOREACH / YIELD_FROM all notify their receiver and
+   `EVAL_REPROLOGUE`), though still via the kind-specific helpers rather than a
+   single §5.2 generic dispatcher.
 5. Normalize RAISE routing under one ingress contract (§5.3)
 6. Remove obsolete ad-hoc delivery paths and compatibility shims
 

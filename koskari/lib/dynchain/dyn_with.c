@@ -144,14 +144,12 @@ static void kos_dynwith_free(KosDynWith *node) {
   KosDynWith_EXIT(node) = NULL;
   Py_XDECREF(KosDynWith_NAME(node));
   KosDynWith_NAME(node) = NULL;
-  if (KosDynWith_PHASE(node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
-    Py_XDECREF(KosDynWith_EXC_TYP(node));
-    KosDynWith_EXC_TYP(node) = NULL;
-    Py_XDECREF(KosDynWith_EXC_VAL(node));
-    KosDynWith_EXC_VAL(node) = NULL;
-    Py_XDECREF(KosDynWith_EXC_TB(node));
-    KosDynWith_EXC_TB(node) = NULL;
-  }
+  Py_XDECREF(KosDynWith_EXC_TYP(node));
+  KosDynWith_EXC_TYP(node) = NULL;
+  Py_XDECREF(KosDynWith_EXC_VAL(node));
+  KosDynWith_EXC_VAL(node) = NULL;
+  Py_XDECREF(KosDynWith_EXC_TB(node));
+  KosDynWith_EXC_TB(node) = NULL;
 
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }

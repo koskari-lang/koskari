@@ -111,12 +111,16 @@ grep -rn 'KosEvalState_SyncFromContext' koskari/lib
 
 | File | Line | Notes |
 |------|------|--------|
-| `dynchain.c` | 548 | `kos_dyn_apply_live` when `ef != ft` (sole retarget flush; H20b) |
-| `eval.c` | 633 | `kos_eval_emit_raise_from_pyerr` |
-| `eval.c` | 2675 | `koskari_eval_cleanup` |
-| `dyn_yield_from.c` | 210 | deliver inner yield; suspend boundary |
-| `dyn_gen.c` | 179 | gen unwind exhausted; frame at dyn_top |
-| `opcode/YIELD_FROM.c` | 181, 449 | opcode handler |
+| `dynchain.c` | 559 | `kos_dyn_apply_live` when `ef != ft` (sole retarget flush; H20b) |
+| `eval.c` | 578 | `kos_eval_prepare_boundary_raise` |
+| `eval.c` | 1997 | `eval_event_yield` (flush before yield walk/freeze) |
+| `eval.c` | 2616 | `koskari_eval` cleanup path |
+| `dyn_gen.c` | 289 | gen unwind exhausted; frame at dyn_top |
+| `opcode/YIELD_FROM.c` | 445 | `yield_from_drive_py_async` (Python async delegate await suspend) |
+
+`kos_dyn_yield_from_deliver_inner_yield` no longer flushes: it now hands the
+delegate's yielded value to the delegating generator's frame and returns
+control (KOS_YF_PHASE_EMIT), rather than finalizing the context and suspending.
 
 No flush in `kos_dyn_push` or `kos_dyn_push_noinstall`.
 
