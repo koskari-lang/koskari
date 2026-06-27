@@ -385,3 +385,51 @@ tags:
   - macro
   - define-parameter
 notes: koskari/bootstrap/_variables.ki; define + ParamRef with default; requires builtins at expand
+---
+id: variable-setq-constant-001
+feature: special/compile/setq
+source: |-
+  (compile/setq z 42)
+  
+verify:
+  read: (compile/setq z 42)
+  expand: (compile/setq z 42)
+  eval: "null"
+references:
+  - reference/specials/compile-setq.md
+stability: evolving
+tags:
+  - variable
+notes: assign constant to existing binding; form evaluates to None
+---
+id: variable-setq-expr-002
+feature: special/compile/setq
+source: |-
+  (compile/setq z (+ z 10))
+  
+verify:
+  read: (compile/setq z (+ z 10))
+  expand: (compile/setq z (+ z 10))
+  eval: "null"
+references:
+  - reference/specials/compile-setq.md
+stability: evolving
+tags:
+  - variable
+notes: assign expression result; z=1 fixture; z becomes 11 after
+---
+id: variable-setq-readback-003
+feature: special/compile/setq
+source: |-
+  (begin (compile/setq z 99) z)
+  
+verify:
+  read: (begin (compile/setq z 99) z)
+  expand: (begin (compile/setq z 99) z)
+  eval: "99"
+references:
+  - reference/specials/compile-setq.md
+stability: evolving
+tags:
+  - variable
+notes: mutation then read; z=1 fixture; begin returns z after assignment

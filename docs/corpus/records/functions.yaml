@@ -289,3 +289,107 @@ tags:
   - macro
   - define-demanding
 notes: koskari/bootstrap/_functions.ki; demand wrapper for on-demand eval path
+---
+id: function-yield-basic-001
+feature: special/compile/yield
+source: |-
+  (list (compile/call (compile/lambda [x] (compile/yield x) (compile/yield (+ x 1))) 10))
+  
+verify:
+  read: (list (compile/call (compile/lambda (x) (compile/yield x) (compile/yield (+ x 1))) 10))
+  expand: (list (compile/call (compile/lambda (x) (compile/yield x) (compile/yield (+ x 1))) 10))
+  eval: "list:[10,11]"
+references:
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - function
+  - yield
+  - generator
+notes: lambda with yield becomes a generator; list() collects all yielded values
+---
+id: function-yield-single-002
+feature: special/compile/yield
+source: |-
+  (list (compile/call (compile/lambda [x] (compile/yield x)) 42))
+  
+verify:
+  read: (list (compile/call (compile/lambda (x) (compile/yield x)) 42))
+  expand: (list (compile/call (compile/lambda (x) (compile/yield x)) 42))
+  eval: "list:[42]"
+references:
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - function
+  - yield
+  - generator
+notes: single-yield generator; list collects the one yielded value
+---
+id: function-yield-from-basic-001
+feature: special/compile/yield-from
+source: |-
+  (list (compile/call (compile/lambda [items] (compile/yield-from items)) seq))
+  
+verify:
+  read: (list (compile/call (compile/lambda (items) (compile/yield-from items)) seq))
+  expand: (list (compile/call (compile/lambda (items) (compile/yield-from items)) seq))
+  eval: "list:[1,2,3]"
+references:
+  - reference/specials/compile-yield-from.md
+stability: evolving
+tags:
+  - function
+  - yield
+  - generator
+notes: yield-from delegates to seq=(1,2,3) fixture; all elements forwarded
+---
+id: function-yield-from-range-002
+feature: special/compile/yield-from
+source: |-
+  (list (compile/call (compile/lambda [n] (compile/yield-from (range n))) 3))
+  
+verify:
+  eval: "list:[0,1,2]"
+references:
+  - reference/specials/compile-yield-from.md
+stability: evolving
+tags:
+  - function
+  - yield
+  - generator
+notes: yield-from a range; generator yields 0 1 2 which list collects
+---
+id: function-await-expr-001
+feature: special/compile/await
+source: |-
+  (compile/await (compile/call add 1 2))
+  
+verify:
+  read: (compile/await (compile/call add 1 2))
+  expand: (compile/await (compile/call add 1 2))
+references:
+  - reference/specials/compile-await.md
+stability: evolving
+tags:
+  - function
+  - await
+  - async
+notes: explicit await for a non-auto-awaited value; add fixture is sync so awaits a plain int (no-op)
+---
+id: function-await-bare-002
+feature: special/compile/await
+source: |-
+  (compile/await)
+  
+verify:
+  read: (compile/await)
+  expand: (compile/await)
+references:
+  - reference/specials/compile-await.md
+stability: evolving
+tags:
+  - function
+  - await
+  - async
+notes: zero-arg form emits cooperative suspend; form value is None

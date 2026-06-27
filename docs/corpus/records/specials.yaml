@@ -266,3 +266,188 @@ tags:
   - try
   - exception
 notes: named binding form [e TYPE]; exception message accessed via str
+---
+id: special-import-absolute-001
+feature: special/import
+source: |-
+  (import os)
+  
+verify:
+  read: (import os)
+  expand: (import os)
+  eval: "null"
+references:
+  - reference/specials/import.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: binds module 'os' in current namespace; form evaluates to None
+---
+id: special-import-alias-002
+feature: special/import
+source: |-
+  (import os as: operating_system)
+  
+verify:
+  eval: "null"
+references:
+  - reference/specials/import.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: "as: keyword renames the binding; binds 'operating_system' instead of 'os'"
+---
+id: special-import-sys-003
+feature: special/import
+source: |-
+  (import sys)
+  
+verify:
+  read: (import sys)
+  expand: (import sys)
+  eval: "null"
+references:
+  - reference/specials/import.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: second import example with a different module
+---
+id: special-import-from-single-001
+feature: special/import-from
+source: |-
+  (import-from os path)
+  
+verify:
+  read: (import-from os path)
+  expand: (import-from os path)
+  eval: "null"
+references:
+  - reference/specials/import-from.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: binds os.path as 'path' in current namespace
+---
+id: special-import-from-multi-002
+feature: special/import-from
+source: |-
+  (import-from os path sep)
+  
+verify:
+  read: (import-from os path sep)
+  expand: (import-from os path sep)
+  eval: "null"
+references:
+  - reference/specials/import-from.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: imports multiple names from one module in a single form
+---
+id: special-import-from-sys-003
+feature: special/import-from
+source: |-
+  (import-from sys argv version)
+  
+verify:
+  read: (import-from sys argv version)
+  expand: (import-from sys argv version)
+  eval: "null"
+references:
+  - reference/specials/import-from.md
+stability: evolving
+tags:
+  - special
+  - import
+---
+id: special-with-no-binding-001
+feature: special/compile/with
+source: |-
+  (compile/with [(open "/dev/null")] None)
+  
+verify:
+  read: (compile/with ((open "/dev/null")) None)
+  expand: (compile/with ((open "/dev/null")) None)
+  eval: "null"
+references:
+  - reference/specials/compile-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: no binding; context manager enter result discarded; body evaluates to None
+---
+id: special-with-binding-002
+feature: special/compile/with
+source: |-
+  (compile/with [f (open "/dev/null")] (compile/call-attr f read))
+  
+verify:
+  read: (compile/with (f (open "/dev/null")) (compile/call-attr f read))
+  expand: (compile/with (f (open "/dev/null")) (compile/call-attr f read))
+  eval: '""'
+references:
+  - reference/specials/compile-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: named binding 'f'; reads from /dev/null which is always empty
+---
+id: special-with-multi-body-003
+feature: special/compile/with
+source: |-
+  (compile/with [f (open "/dev/null")] (compile/call-attr f read) (compile/call-attr f read))
+  
+verify:
+  read: (compile/with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  expand: (compile/with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  eval: '""'
+references:
+  - reference/specials/compile-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: multiple body forms; value is last form; both reads happen within context
+---
+id: special-globals-001
+feature: special/compile/globals
+source: |-
+  (compile/globals)
+  
+verify:
+  read: (compile/globals)
+  expand: (compile/globals)
+references:
+  - reference/specials/compile-globals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: returns the module namespace; eval produces a ModuleNamespace object (not auto-encodable)
+---
+id: special-locals-001
+feature: special/compile/locals
+source: |-
+  (compile/locals)
+  
+verify:
+  read: (compile/locals)
+  expand: (compile/locals)
+references:
+  - reference/specials/compile-locals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: returns the current frame namespace; eval produces a Namespace object (not auto-encodable)
