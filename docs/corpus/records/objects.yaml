@@ -553,3 +553,359 @@ tags:
   - layout
   - "surface:block"
 notes: layout counterpart of object-define-class-expand-001
+---
+id: object-subtract-three-002
+feature: special/compile/-
+source: |-
+  (- 10 3 2)
+  
+verify:
+  read: (- 10 3 2)
+  expand: (- 10 3 2)
+  eval: "5"
+references:
+  - reference/specials/compile-subtract.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+---
+id: object-subtract-fold-003
+feature: special/compile/-
+source: |-
+  (- 5)
+  
+verify:
+  read: (- 5)
+  expand: (- 5)
+  eval: "5"
+references:
+  - reference/specials/compile-subtract.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+notes: single constant arg folds to CONST via constant-folding pass; no OBJECT_SUBTRACT emitted
+---
+id: object-multiply-three-002
+feature: special/compile/*
+source: |-
+  (* 2 3 4)
+  
+verify:
+  read: (* 2 3 4)
+  expand: (* 2 3 4)
+  eval: "24"
+references:
+  - reference/specials/compile-multiply.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+---
+id: object-multiply-two-003
+feature: special/compile/*
+source: |-
+  (* 7 8)
+  
+verify:
+  read: (* 7 8)
+  expand: (* 7 8)
+  eval: "56"
+references:
+  - reference/specials/compile-multiply.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+---
+id: object-lt-binary-002
+feature: special/compile/<
+source: |-
+  (< 1 2)
+  
+verify:
+  read: (< 1 2)
+  expand: (< 1 2)
+  eval: "true"
+references:
+  - reference/specials/compile-lt.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-lt-false-003
+feature: special/compile/<
+source: |-
+  (< 3 2)
+  
+verify:
+  read: (< 3 2)
+  expand: (< 3 2)
+  eval: "false"
+references:
+  - reference/specials/compile-lt.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-gt-chain-002
+feature: special/compile/>
+source: |-
+  (> 5 3 1)
+  
+verify:
+  read: (> 5 3 1)
+  expand: (> 5 3 1)
+  eval: "true"
+references:
+  - reference/specials/compile-gt.md
+stability: stable
+tags:
+  - object
+  - comparison
+notes: chained comparison; equivalent to (and (> 5 3) (> 3 1))
+---
+id: object-gt-false-003
+feature: special/compile/>
+source: |-
+  (> 1 5)
+  
+verify:
+  read: (> 1 5)
+  expand: (> 1 5)
+  eval: "false"
+references:
+  - reference/specials/compile-gt.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-ne-false-002
+feature: special/compile/!=
+source: |-
+  (!= 5 5)
+  
+verify:
+  read: (!= 5 5)
+  expand: (!= 5 5)
+  eval: "false"
+references:
+  - reference/specials/compile-ne.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-ne-chain-003
+feature: special/compile/!=
+source: |-
+  (!= 1 2 3)
+  
+verify:
+  read: (!= 1 2 3)
+  expand: (!= 1 2 3)
+  eval: "true"
+references:
+  - reference/specials/compile-ne.md
+stability: stable
+tags:
+  - object
+  - comparison
+notes: chained inequality; true when all adjacent pairs are unequal
+---
+id: object-not-true-002
+feature: special/compile/not
+source: |-
+  (not True)
+  
+verify:
+  read: (not True)
+  expand: (not True)
+  eval: "false"
+references:
+  - reference/specials/compile-not.md
+stability: stable
+tags:
+  - object
+  - boolean
+---
+id: object-not-none-003
+feature: special/compile/not
+source: |-
+  (not None)
+  
+verify:
+  read: (not None)
+  expand: (not None)
+  eval: "true"
+references:
+  - reference/specials/compile-not.md
+stability: stable
+tags:
+  - object
+  - boolean
+notes: None is falsy so (not None) is true
+---
+id: object-len-str-002
+feature: special/compile/len
+source: |-
+  (len "hello")
+  
+verify:
+  read: (len "hello")
+  expand: (len "hello")
+  eval: "5"
+references:
+  - reference/specials/compile-len.md
+stability: stable
+tags:
+  - object
+---
+id: object-len-seq-003
+feature: special/compile/len
+source: |-
+  (len seq)
+  
+verify:
+  read: (len seq)
+  expand: (len seq)
+  eval: "3"
+references:
+  - reference/specials/compile-len.md
+stability: stable
+tags:
+  - object
+notes: seq=(1,2,3) fixture
+---
+id: object-repr-str-002
+feature: special/compile/repr
+source: |-
+  (repr "hello")
+  
+verify:
+  read: (repr "hello")
+  expand: (repr "hello")
+  eval: '"\"hello\""'
+references:
+  - reference/specials/compile-repr.md
+stability: stable
+tags:
+  - object
+---
+id: object-repr-none-003
+feature: special/compile/repr
+source: |-
+  (repr None)
+  
+verify:
+  read: (repr None)
+  expand: (repr None)
+  eval: '"None"'
+references:
+  - reference/specials/compile-repr.md
+stability: stable
+tags:
+  - object
+---
+id: object-truth-empty-str-002
+feature: special/compile/truth
+source: |-
+  (truth "")
+  
+verify:
+  read: (truth "")
+  expand: (truth "")
+  eval: "false"
+references:
+  - reference/specials/compile-truth.md
+stability: stable
+tags:
+  - object
+  - boolean
+notes: empty string is falsy
+---
+id: object-truth-int-003
+feature: special/compile/truth
+source: |-
+  (truth 1)
+  
+verify:
+  read: (truth 1)
+  expand: (truth 1)
+  eval: "true"
+references:
+  - reference/specials/compile-truth.md
+stability: stable
+tags:
+  - object
+  - boolean
+notes: nonzero integer is truthy
+---
+id: object-incr-step-002
+feature: macro/compile/incr!
+source: |-
+  (incr! z 5)
+  
+verify:
+  expand: (compile/inplace + z 5)
+  eval: "null"
+references:
+  - reference/macros/compile-incr.md
+stability: evolving
+tags:
+  - object
+  - variable
+notes: custom step; z=1 fixture; form evaluates to None (set! semantics)
+---
+id: object-incr-effect-003
+feature: macro/compile/incr!
+source: |-
+  (begin (incr! z) z)
+  
+verify:
+  read: (begin (incr! z) z)
+  expand: (begin (incr! z) z)
+  eval: "2"
+references:
+  - reference/macros/compile-incr.md
+stability: evolving
+tags:
+  - object
+  - variable
+notes: z=1 fixture; incr! mutates z in place; reading z afterward shows 2
+---
+id: object-decr-default-002
+feature: macro/compile/decr!
+source: |-
+  (decr! z)
+  
+verify:
+  expand: (compile/inplace - z 1)
+  eval: "null"
+references:
+  - reference/macros/compile-decr.md
+stability: evolving
+tags:
+  - object
+  - variable
+notes: default step 1; z=1 fixture; form evaluates to None
+---
+id: object-decr-step-003
+feature: macro/compile/decr!
+source: |-
+  (decr! z 3)
+  
+verify:
+  expand: (compile/inplace - z 3)
+  eval: "null"
+references:
+  - reference/macros/compile-decr.md
+stability: evolving
+tags:
+  - object
+  - variable
+notes: custom step of 3; z=1 fixture; form evaluates to None

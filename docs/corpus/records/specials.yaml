@@ -149,3 +149,120 @@ tags:
   - try
   - exception
 notes: requires bad_guy raising at eval; pattern from test_try.py bare except family
+---
+id: special-begin-single-expr-002
+feature: special/compile/begin
+source: |-
+  (compile/begin (+ 1 2))
+  
+verify:
+  read: (compile/begin (+ 1 2))
+  expand: (compile/begin (+ 1 2))
+  eval: "3"
+references:
+  - reference/specials/compile-begin.md
+stability: stable
+tags:
+  - special
+  - begin
+---
+id: special-begin-empty-003
+feature: special/compile/begin
+source: |-
+  (compile/begin)
+  
+verify:
+  read: (compile/begin)
+  expand: (compile/begin)
+  eval: "null"
+references:
+  - reference/specials/compile-begin.md
+stability: stable
+tags:
+  - special
+  - begin
+notes: empty begin body yields None
+---
+id: special-cons-single-002
+feature: special/compile/cons
+source: |-
+  (cons 1 nil)
+  
+verify:
+  read: (cons 1 nil)
+  expand: (cons 1 nil)
+  eval: "proper-list:[1]"
+references:
+  - reference/specials/compile-cons.md
+stability: stable
+tags:
+  - special
+  - cons
+---
+id: special-cons-three-003
+feature: special/compile/cons
+source: |-
+  (cons 1 2 3 nil)
+  
+verify:
+  read: (cons 1 2 3 nil)
+  expand: (cons 1 2 3 nil)
+  eval: "proper-list:[1,2,3]"
+references:
+  - reference/specials/compile-cons.md
+stability: stable
+tags:
+  - special
+  - cons
+notes: variadic cons; equivalent to (cons 1 (cons 2 (cons 3 nil)))
+---
+id: special-car-of-cons-002
+feature: special/compile/car
+source: |-
+  (car (cons 1 2 nil))
+  
+verify:
+  read: (car (cons 1 2 nil))
+  expand: (car (cons 1 2 nil))
+  eval: "1"
+references:
+  - reference/specials/compile-car.md
+stability: stable
+tags:
+  - special
+  - car
+---
+id: special-car-nested-003
+feature: special/compile/car
+source: |-
+  (car (cons (cons 1 nil) nil))
+  
+verify:
+  read: (car (cons (cons 1 nil) nil))
+  expand: (car (cons (cons 1 nil) nil))
+  eval: "proper-list:[1]"
+references:
+  - reference/specials/compile-car.md
+stability: stable
+tags:
+  - special
+  - car
+notes: car of a nested pair returns the inner pair
+---
+id: special-try-named-binding-003
+feature: special/compile/try
+source: |-
+  (try (/ 1 0) ([e ZeroDivisionError] (str e)))
+  
+verify:
+  read: (try (/ 1 0) ((e ZeroDivisionError) (str e)))
+  expand: (try (/ 1 0) ((e ZeroDivisionError) (str e)))
+  eval: '"division by zero"'
+references:
+  - reference/specials/compile-try.md
+stability: evolving
+tags:
+  - special
+  - try
+  - exception
+notes: named binding form [e TYPE]; exception message accessed via str
