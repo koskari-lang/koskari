@@ -234,12 +234,12 @@ the delim case; migrate any bundled behavior off `RETURN`.
 
 Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
 
-### Destructuring formals, referencing formals, `define-values` fork
+### Referencing formals (`(ref name)`)
 
-Nested patterns in lambda formals (e.g. `(lambda [a (b c) *: d] …)`);
-`(ref …)` formals for rebind-to-Ref and write-through `set!`; if destructuring
-and refs cannot share one formals grammar, limit unpacking to `define-values` /
-`setq-values` with kwargs only (no ref binding there — refs stay on formals).
+`(ref …)` formals for rebind-to-Ref and write-through `set!`: a caller passes
+`&value` and the callee's formal is rebound to that Ref, so `(set! result …)`
+inside the callee writes through to the caller's binding. Destructuring formals
+have been rejected; ref binding stays on general lambda / `define` formals only.
 
 Ref:
 [language/destructuring-and-referencing-formals.md](language/destructuring-and-referencing-formals.md).
