@@ -3,14 +3,12 @@
 
 
 static PyObject *kos_dynyieldfrom_str_close = NULL;
-static PyObject *kos_dynyieldfrom_str_aclose = NULL;
 
 
 static int kos_dynyieldfrom_strings_init(void) {
 
   STR_CONST(kos_dynyieldfrom_str_close, "close");
-  STR_CONST(kos_dynyieldfrom_str_aclose, "aclose");
-  if (! kos_dynyieldfrom_str_close || ! kos_dynyieldfrom_str_aclose)
+  if (! kos_dynyieldfrom_str_close)
     return -1;
   return 0;
 }
@@ -19,7 +17,6 @@ static int kos_dynyieldfrom_strings_init(void) {
 static void kos_dynyieldfrom_strings_clear(void) {
 
   Py_CLEAR(kos_dynyieldfrom_str_close);
-  Py_CLEAR(kos_dynyieldfrom_str_aclose);
 }
 
 
@@ -249,8 +246,12 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
   }
 
   node = (KosDynNode *) yf;
-  if (KosEvalState_DYN_TOP(es) == node)
+  if (KosEvalState_DYN_TOP(es) == node) {
+    /* Forced teardown: the delegate may still be active, so close it
+       before popping (kos_dyn_pop_yield_from no longer closes). */
+    kos_yieldfrom_close_delegate(yf);
     return kos_dyn_pop_yield_from(es, yf);
+  }
 
   p = KosDynNode_PARENT(node);
   for (c = KosEvalState_DYN_TOP(es); c; c = KosDynNode_PARENT(c)) {
@@ -293,14 +294,18 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 
   case KOS_YF_PY_ASYNC_ITER:
   case KOS_YF_PY_ASYNC_GEN:
+    /* Structural teardown of the dyn chain: we are not inside a drivable
+       eval step here and cannot await. Do NOT call aclose() -- its
+       coroutine would never be awaited, which runs no cleanup at all and
+       only raises a RuntimeWarning. Release any in-flight awaitable and
+       drop our reference; the delegate finalizes itself (for a Python
+       async generator, the interpreter's asyncgen finalizer hook runs
+       aclose on the event loop when it is collected). An explicit close
+       of the delegating generator reaches the inner via the
+       GeneratorExit throw -> athrow path in yield_from_drive_py_async,
+       which does await and can suspend. */
     Py_XDECREF(inflight);
     KosDynYieldFrom_INFLIGHT(node) = NULL;
-    {
-      PyObject *res = PyObject_CallMethodObjArgs(
-          delegate, kos_dynyieldfrom_str_aclose, NULL);
-      Py_XDECREF(res);
-      PyErr_Clear();
-    }
     break;
 
   case KOS_YF_KOS_ASYNC_GEN:
