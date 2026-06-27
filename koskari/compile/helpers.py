@@ -1022,10 +1022,11 @@ def gather_formals(formals_group, source=None):
                 f"invalid positional frame {fr!r}",
                 source)
         name, ann_bundle, default = _gather_one_positional_frame(fr, source)
-        positional.append(name)
         _merge_formal_annotations(annotations, name, ann_bundle)
         if default is not None:
             defaults.append((keyword(str(name)), default))
+        else:
+            positional.append(name)
 
     for fr in formals_group.get('defaults', ()):
         if not isinstance(fr, dict):
