@@ -1,15 +1,27 @@
-FROM koskari:local as builder
+FROM python:3.14-alpine as builder
+
+RUN apk add --no-cache \
+    gcc musl-dev python3-dev zlib-dev
+
+WORKDIR /wheels
+
+# aiokafka binary wheel isn't available for 3.14 alpine, so
+# we build it from the sdist along with the koskrunner
+RUN pip wheel \
+    --no-cache-dir \
+    -w /wheels \
+    aiokafka
 
 RUN pip install \
-        --root-user-action=ignore \
-        --no-cache-dir \
-        --disable-pip-version-check \
-        uv setuptools wheel
+    --root-user-action=ignore \
+    --no-cache-dir \
+    --disable-pip-version-check \
+    uv setuptools
 
 WORKDIR /build
 COPY pyproject.toml ./
 COPY kosrunner/ ./kosrunner/
-RUN uv build . --wheel
+RUN uv build . --wheel -o /wheels
 
 
 FROM koskari:local
@@ -18,18 +30,19 @@ ENV TZ=UTC \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-COPY --from=builder /build/dist/*.whl /build/
+COPY --from=builder /wheels/*.whl /wheels/
 RUN pip install \
         --disable-pip-version-check \
         --no-cache-dir \
         --root-user-action=ignore \
-        --find-links=/build \
+        --find-links=/wheels \
         koskari-kosrunner ; \
-    rm -rf /build
+    rm -rf /wheels
 
 WORKDIR /job
 COPY example.ki ./run.ki
 
 CMD ["run.ki"]
+
 
 # The end.

@@ -1,0 +1,136 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+import-from aiokafka AIOKafkaConsumer
+
+import-from .job Job
+
+
+define-dataclass KafkaConfig []:
+    define [name :: str] (field)
+    define [server :: str] (field)
+    define [group_id :: str] (field)
+
+    define auto_offset_reset "latest"
+    define enable_auto_commit True
+    define client_id "kosrunner-kafka-job"
+    define value_encoding "utf-8"
+    define jobs #{}
+
+
+define-syntax kafka-config:
+    syntax-rules []:
+        case (kafka-config name args ...):
+            define name (KafkaConfig (str 'name) args ...)
+
+
+define-class KafkaJob [Job]:
+
+    define __init__ [self config topic callback]:
+        set! self.config config
+        set! self.topic topic
+        set! self.callback callback
+        set! self._consumer None
+        set! self._task None
+
+
+    define decode-value [self msg]:
+        """
+        Decode a consumer record value using the config encoding
+        """
+
+        define raw msg.value
+        unless (None? raw):
+            raw.decode self.config.value_encoding
+
+
+    define make-consumer [self]:
+        """
+        Build an aiokafka consumer for this job's topic
+        """
+
+        define cfg self.config
+        (AIOKafkaConsumer
+            self.topic
+            bootstrap_servers: cfg.server
+            group_id: cfg.group_id
+            client_id: f"{cfg.client_id}/{self.topic}"
+            auto_offset_reset: cfg.auto_offset_reset
+            enable_auto_commit: cfg.enable_auto_commit)
+
+
+    define _consume [self]:
+        """
+        Read messages until the consumer is stopped
+        """
+
+        for-each [msg self._consumer]:
+            define value (self.decode-value msg)
+            try:
+                (self.callback value)
+            except [Exception]:
+                (print f"kafka callback error on {self.topic}")
+
+
+    define start [self]:
+        """
+        Start the consumer and background read loop for this topic
+        """
+
+        when self._consumer:
+            return
+
+        define jobs self.config.jobs
+        when (has? jobs self.topic):
+            raise (RuntimeError
+                f"kafka job already registered for topic {self.topic}")
+
+        set! self._consumer (self.make-consumer)
+        (self._consumer.start)
+        set! self._task (create-task self._consume)
+        set! (item jobs self.topic) self
+
+
+    define stop [self]:
+        """
+        Stop the read loop and close the consumer for this topic
+        """
+
+        when self._consumer:
+            (self._consumer.stop)
+            set! self._consumer None
+
+        when self._task:
+            (self._task.cancel)
+            (self._task.join)
+            set! self._task None
+
+        define jobs self.config.jobs
+        when (has? jobs self.topic):
+            del! (item jobs self.topic)
+
+
+define-syntax on-kafka:
+    syntax-rules []:
+        case (on-kafka config topic callback):
+            (KafkaJob config topic callback)
+        case (on-kafka config topic [msg] body ...):
+            (KafkaJob config topic
+                (lambda [msg] body ...))
+        case (on-kafka config topic [msg topic_arg] body ...):
+            (KafkaJob config topic
+                (lambda [msg [topic_arg topic]] body ...))
+
+
+;; The end.

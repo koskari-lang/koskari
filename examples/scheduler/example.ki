@@ -1,16 +1,25 @@
 #! /usr/bin/env koskari
 
+
 import-from datetime datetime
 
 ; this would be a great use of the use-bundle feature, if it
-; existed. Just a `use-bundle kosrunner.jobset`
+; existed. Just a `use-bundle kosrunner`
 import-from kosrunner use-kosrunner
 (use-kosrunner)
+
+
+(kafka-config default-kafka
+    server: "localhost:9092"
+    group_id: "kosrunner-example")
 
 
 jobset workload:
     on-cron * * * * *:
         (print f"The time is {(datetime.now)}")
+
+    ; on-kafka default-kafka "topic.test" [msg topic]:
+    ;     (print f"Received message: {msg} on topic: {topic}")
 
 
 when-main:
