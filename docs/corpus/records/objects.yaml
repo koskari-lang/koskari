@@ -1688,11 +1688,11 @@ notes: first attribute in dir 42 is __abs__
 id: object-dir-count-003
 feature: special/compile/dir
 source: |-
-  (isinstance (dir 42) list)
+  (instance? (dir 42) list)
 
 verify:
-  read: (isinstance (dir 42) list)
-  expand: (isinstance (dir 42) list)
+  read: (instance? (dir 42) list)
+  expand: (instance? (dir 42) list)
   eval: "true"
 references:
   - reference/specials/compile-unary.md
