@@ -654,3 +654,22 @@ tags:
   - function
   - call
 notes: "*: at call site spreads a list as positional args; (f *: #[42]) equivalent to (f 42)"
+---
+id: function-let-brackets-style-001
+feature: reader/bracket
+source: |-
+  (let [[x 1] [y 2]] (+ x y))
+  
+verify:
+  read: (let ((x 1) (y 2)) (+ x y))
+  expand: (let ((x 1) (y 2)) (+ x y))
+  eval: "3"
+references:
+  - reference/grammar.md
+  - reference/specials/compile-let.md
+stability: stable
+tags:
+  - function
+  - let
+  - reader
+notes: "style convention: brackets for syntactic non-call positions; [[x 1] [y 2]] reads identically to ((x 1) (y 2))"

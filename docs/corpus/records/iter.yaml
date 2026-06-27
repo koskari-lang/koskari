@@ -912,3 +912,37 @@ tags:
   - iter
   - for-each
 notes: for-each with multi-expression body; last body expression is return value; 3*2=6
+---
+id: iter-reader-bracket-paren-equiv-001
+feature: reader/bracket
+source: |-
+  (equal? '[1 2 3] '(1 2 3))
+  
+verify:
+  read: (equal? (compile/quote (1 2 3)) (compile/quote (1 2 3)))
+  expand: (equal? (compile/quote (1 2 3)) (compile/quote (1 2 3)))
+  eval: "true"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+notes: brackets and parens produce identical cons pairs; [1 2 3] and (1 2 3) are structurally equal
+---
+id: iter-reader-bracket-let-style-002
+feature: reader/bracket
+source: |-
+  (car '[a b c])
+  
+verify:
+  read: (car (compile/quote (a b c)))
+  expand: (car (compile/quote (a b c)))
+  eval: "symbol:a"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+notes: brackets inside quote produce cons pairs identical to parens; car of '[a b c] is a
