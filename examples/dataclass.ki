@@ -21,8 +21,8 @@ define-class Point []:
             (Point x y)
 
     define move [self x: 0 y: 0]:
-        (set! self.x (+ self.x x))
-        (set! self.y (+ self.y y))
+        (incr! self.x x)
+        (incr! self.y y)
 
     @property
     define coord [self]:

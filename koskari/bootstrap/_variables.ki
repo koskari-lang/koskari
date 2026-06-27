@@ -74,6 +74,19 @@ define-syntax compile/set!:
       (setq name value)
 
 
+extend-syntax compile/inplace:
+  syntax-rules [item compile/item attr compile/attr]:
+    case (inplace op (item obj name) value):
+      (set-item obj name (op (item obj name) value))
+    case (inplace op (compile/item obj name) value):
+      (set-item obj name (op (item obj name) value))
+
+    case (inplace op (attr obj name) value):
+      (set-attr obj name (op (attr obj name) value))
+    case (inplace op (compile/attr obj name) value):
+      (set-attr obj name (op (attr obj name) value))
+
+
 define-syntax compile/unassigned?:
   """
   True if a storage location currently has no value
@@ -140,9 +153,9 @@ define-syntax compile/incr!:
 
   syntax-rules []:
     case (incr! name):
-      (compile/inplace + name 1)
+      (set! name (+ name 1))
     case (incr! name value):
-      (compile/inplace + name value)
+      (set! name (+ name value))
 
 
 define-syntax compile/decr!:
@@ -152,9 +165,9 @@ define-syntax compile/decr!:
 
   syntax-rules []:
     case (decr! name):
-      (compile/inplace - name 1)
+      (set! name ( - name 1))
     case (decr! name value):
-      (compile/inplace - name value)
+      (set! name (- name value))
 
 
 define-syntax compile/ref:
