@@ -11,117 +11,37 @@
 ; You should have received a copy of the GNU General Public License
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-
 """
 Koskari asyncio job scheduler example
 
 Framework types, jobset/on-cron syntax, and a demo cron workload.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
 """
 
-
-import aiocron
 import-from datetime datetime
 import-from typing Protocol
+
+import-from .job JobSet jobset
+import-from .cron CronJob on-cron layout/on-cron
+import-from .kafka KafkaConfig KafkaJob kafka-config on-kafka
 
 
 declare-exports [
     JobSet
-    CronJob
-    Job
-
-    on-cron
     jobset
 
+    CronJob
+    on-cron
     layout/on-cron
+
+    KafkaConfig
+    kafka-config
+
+    KafkaJob
+    on-kafka
 ]
-
-
-;; Types
-
-
-define-class Job []:
-    """
-    Abstract job protocol; subclasses implement start and stop
-    """
-
-    define start [self]:
-        (raise (NotImplementedError f"{self}.start"))
-
-    define stop [self]:
-        (raise (NotImplementedError f"{self}.stop"))
-
-
-define-class CronJob [Job]:
-
-    define __init__ [self schedule callback]:
-        set! self.schedule schedule
-        set! self.callback callback
-        set! self._handle None
-
-    define start [self]:
-        set! self._handle (aiocron.crontab
-            self.schedule
-            func: self.callback
-            start: True)
-
-    define stop [self]:
-        unless (None? self._handle):
-            (self._handle.stop)
-            set! self._handle None
-
-
-define-class JobSet []:
-
-    define __init__ [self name jobs: nil]:
-        set! self.name name
-        set! self.jobs jobs
-
-    define __call__ [self heartbeat: 3600 snore: False]:
-        (self.start)
-        while True:
-            (when snore (print "zzz"))
-            (sleep heartbeat)
-
-    define start [self]:
-        for-each [job self.jobs]:
-            (job.start)
-
-    define stop [self]:
-        for-each [job self.jobs]:
-            (job.stop)
-
-
-;; Layout and syntax
-
-
-define layout/on-cron layout/block-begin
-
-
-define-syntax on-cron:
-    macro-rules [compile/begin]:
-
-        case (on-cron min hr dom mon dow (compile/begin body ...)):
-            (define schedule
-                f"{min.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}")
-            `(CronJob ,schedule (lambda [] ,@body))
-
-        case (on-cron [min hr dom mon dow] body ...):
-            (define schedule
-                f"{min.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}")
-            `(CronJob ,schedule (lambda [] ,@body))
-
-        case (on-cron schedule (begin body ...)):
-            `(CronJob ,schedule (lambda [] ,@body))
-
-        case (on-cron schedule fn):
-            `(CronJob ,schedule ,fn)
-
-
-define-syntax jobset:
-    macro-rules []:
-        case (jobset name job ...):
-            define n (str name.datum)
-            `(define ,name (JobSet ,n jobs: #[,@job]))
 
 
 define-syntax use-kosrunner:

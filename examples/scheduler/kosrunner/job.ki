@@ -1,0 +1,67 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+define-class JobConfig []:
+
+    define __init__ [self]:
+        set! self.conf #{}
+
+    define add-config [self key value]:
+        set! (item self.conf key) value
+
+    define get-config [self key]:
+        item self.conf key
+
+
+define-class Job []:
+    """
+    Abstract job protocol; subclasses implement start and stop
+    """
+
+    define start [self]:
+        raise (NotImplementedError f"{self}.start")
+
+    define stop [self]:
+        raise (NotImplementedError f"{self}.stop")
+
+
+define-class JobSet []:
+
+    define __init__ [self name jobs: nil]:
+        set! self.name name
+        set! self.jobs jobs
+
+    define __call__ [self heartbeat: 3600 snore: False]:
+        (self.start)
+        while True:
+            when snore (print "zzz")
+            sleep heartbeat
+
+    define start [self]:
+        for-each [job self.jobs]:
+            (job.start)
+
+    define stop [self]:
+        for-each [job self.jobs]:
+            (job.stop)
+
+
+define-syntax jobset:
+    macro-rules []:
+        case (jobset name job ...):
+            define n (str name.datum)
+            `(define ,name (JobSet ,n jobs: #[,@job]))
+
+
+;; The end.
