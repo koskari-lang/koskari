@@ -639,6 +639,16 @@ PyObject *KosItemRef_New(PyObject *name, PyObject *obj, PyObject *key) {
 /* === DynamicRef === */
 
 
+static PyObject *dyn_demand_wrap(PyObject *fn) {
+  if (! fn || fn == Py_None)
+    return NULL;
+  if (KosCallable_Check(fn))
+    return KosDemand_New(fn);
+  Py_INCREF(fn);
+  return fn;
+}
+
+
 static int dyn_ref_init(
     PyObject *self,
     PyObject *name,
@@ -647,7 +657,11 @@ static int dyn_ref_init(
     PyObject *delfn,
     PyObject *emptyfn) {
 
-  KosSymbolicRef_VALUE(self) = NULL;
+  KosRef_NAME(self) = NULL;
+  KosDynamicRef_GETFN(self) = NULL;
+  KosDynamicRef_SETFN(self) = NULL;
+  KosDynamicRef_DELFN(self) = NULL;
+  KosDynamicRef_EMPTYFN(self) = NULL;
 
   if (! name || name == Py_None) {
     name = _str_dyn_ref;
@@ -659,33 +673,21 @@ static int dyn_ref_init(
   }
   KosRef_NAME(self) = name;
 
-  if (getfn == Py_None) {
-    getfn = NULL;
-  } else {
-    Py_XINCREF(getfn);
-  }
-  KosDynamicRef_GETFN(self) = getfn;
+  KosDynamicRef_GETFN(self) = dyn_demand_wrap(getfn);
+  if (! KosDynamicRef_GETFN(self) && PyErr_Occurred())
+    return -1;
 
-  if (setfn == Py_None) {
-    setfn = NULL;
-  } else {
-    Py_XINCREF(setfn);
-  }
-  KosDynamicRef_SETFN(self) = setfn;
+  KosDynamicRef_SETFN(self) = dyn_demand_wrap(setfn);
+  if (! KosDynamicRef_SETFN(self) && PyErr_Occurred())
+    return -1;
 
-  if (delfn == Py_None) {
-    delfn = NULL;
-  } else {
-    Py_XINCREF(delfn);
-  }
-  KosDynamicRef_DELFN(self) = delfn;
+  KosDynamicRef_DELFN(self) = dyn_demand_wrap(delfn);
+  if (! KosDynamicRef_DELFN(self) && PyErr_Occurred())
+    return -1;
 
-  if (emptyfn == Py_None) {
-    emptyfn = NULL;
-  } else {
-    Py_XINCREF(emptyfn);
-  }
-  KosDynamicRef_EMPTYFN(self) = emptyfn;
+  KosDynamicRef_EMPTYFN(self) = dyn_demand_wrap(emptyfn);
+  if (! KosDynamicRef_EMPTYFN(self) && PyErr_Occurred())
+    return -1;
 
   return 0;
 }
@@ -694,23 +696,12 @@ static int dyn_ref_init(
 static PyObject *dyn_ref_get_empty(PyObject *self, void *_unused) {
   PyObject *fn = KosDynamicRef_EMPTYFN(self);
   if (fn) {
-    if (PyCallable_Check(fn)) {
-      if (KosCallable_Check(fn)) {
-        PyObject *args = PyTuple_New(0);
-        if (! args)
-          return NULL;
-        PyObject *res = Koskari_DemandSync(fn, args, NULL);
-        Py_DECREF(args);
-        return res;
-      }
+    if (PyCallable_Check(fn))
       return PyObject_CallObject(fn, NULL);
-    } else {
-      Py_INCREF(fn);
-      return fn;
-    }
-  } else {
-    Py_RETURN_FALSE;
+    Py_INCREF(fn);
+    return fn;
   }
+  Py_RETURN_FALSE;
 }
 
 
@@ -725,64 +716,34 @@ static PyGetSetDef dyn_ref_getset[] = {
 
 static PyObject *dyn_ref_m_deref(PyObject *self) {
   PyObject *fn = KosDynamicRef_GETFN(self);
-  if (fn) {
-    if (KosCallable_Check(fn)) {
-      PyObject *args = PyTuple_New(0);
-      if (! args)
-        return NULL;
-      PyObject *res = Koskari_DemandSync(fn, args, NULL);
-      Py_DECREF(args);
-      return res;
-    }
+  if (fn)
     return PyObject_CallObject(fn, NULL);
-  } else {
-    PyErr_Format(PyExc_AttributeError,
-                 "Dynamic reference %S has no deref handler",
-                 KosRef_NAME(self));
-    return NULL;
-  }
+  PyErr_Format(PyExc_AttributeError,
+               "Dynamic reference %S has no deref handler",
+               KosRef_NAME(self));
+  return NULL;
 }
 
 
 static PyObject *dyn_ref_m_store(PyObject *self, PyObject *value) {
   PyObject *fn = KosDynamicRef_SETFN(self);
-  if (fn) {
-    if (KosCallable_Check(fn)) {
-      PyObject *args = PyTuple_Pack(1, value);
-      if (! args)
-        return NULL;
-      PyObject *res = Koskari_DemandSync(fn, args, NULL);
-      Py_DECREF(args);
-      return res;
-    }
+  if (fn)
     return PyObject_CallFunctionObjArgs(fn, value, NULL);
-  } else {
-    PyErr_Format(PyExc_AttributeError,
-                 "Dynamic reference %S has no store handler",
-                 KosRef_NAME(self));
-    return NULL;
-  }
+  PyErr_Format(PyExc_AttributeError,
+               "Dynamic reference %S has no store handler",
+               KosRef_NAME(self));
+  return NULL;
 }
 
 
 static PyObject *dyn_ref_m_clear(PyObject *self) {
   PyObject *fn = KosDynamicRef_DELFN(self);
-  if (fn) {
-    if (KosCallable_Check(fn)) {
-      PyObject *args = PyTuple_New(0);
-      if (! args)
-        return NULL;
-      PyObject *res = Koskari_DemandSync(fn, args, NULL);
-      Py_DECREF(args);
-      return res;
-    }
+  if (fn)
     return PyObject_CallObject(fn, NULL);
-  } else {
-    PyErr_Format(PyExc_AttributeError,
-                 "Dynamic reference %S has no clear handler",
-                 KosRef_NAME(self));
-    return NULL;
-  }
+  PyErr_Format(PyExc_AttributeError,
+               "Dynamic reference %S has no clear handler",
+               KosRef_NAME(self));
+  return NULL;
 }
 
 

@@ -430,6 +430,17 @@ class TestDynamicRef(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.deref(), 99)
 
 
+    def test_empty_with_koskari_emptyfn(self):
+        """empty calls KosCallable emptyfn via demand path"""
+        code_true, ns_true = build_expr([
+            ['CONST', True],
+            ['RETURN', 1],
+        ])
+        emptyfn = make_callable(code_true, ns_true)
+        r = DynamicRef(None, lambda: 1, None, None, emptyfn)
+        self.assertTrue(r.empty)
+
+
 class TestConstantRef(unittest.IsolatedAsyncioTestCase):
     """Tests for ConstantRef type"""
 
