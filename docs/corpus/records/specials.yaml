@@ -621,3 +621,308 @@ tags:
   - special
   - namespace
 notes: at module scope compile/locals is the module namespace; reads z=1 fixture
+---
+id: special-cdr-quoted-001
+feature: special/compile/cdr
+source: |-
+  (cdr (quote (1 2 3)))
+  
+verify:
+  read: (cdr (quote (1 2 3)))
+  expand: (cdr (quote (1 2 3)))
+  eval: "proper-list:[2,3]"
+references:
+  - reference/specials/compile-cdr.md
+stability: evolving
+tags:
+  - special
+  - pair
+notes: cdr of a 3-element list returns the tail pair
+---
+id: special-cdr-cons-002
+feature: special/compile/cdr
+source: |-
+  (cdr (cons 1 2 nil))
+  
+verify:
+  read: (cdr (cons 1 2 nil))
+  expand: (cdr (cons 1 2 nil))
+  eval: "proper-list:[2]"
+references:
+  - reference/specials/compile-cdr.md
+stability: evolving
+tags:
+  - special
+  - pair
+notes: cdr of a two-element cons pair
+---
+id: special-cdr-nested-003
+feature: special/compile/cdr
+source: |-
+  (car (cdr (quote (1 2 3))))
+  
+verify:
+  read: (car (cdr (quote (1 2 3))))
+  expand: (car (cdr (quote (1 2 3))))
+  eval: "2"
+references:
+  - reference/specials/compile-cdr.md
+stability: evolving
+tags:
+  - special
+  - pair
+notes: car of cdr accesses the second element
+---
+id: special-call-add-001
+feature: special/compile/call
+source: |-
+  (compile/call add 3 4)
+  
+verify:
+  read: (compile/call add 3 4)
+  expand: (compile/call add 3 4)
+  eval: "7"
+references:
+  - reference/specials/compile-call.md
+stability: evolving
+tags:
+  - special
+notes: compile/call invokes add fixture with 3 and 4
+---
+id: special-call-lambda-002
+feature: special/compile/call
+source: |-
+  (compile/call (compile/lambda [x] (* x x)) 5)
+  
+verify:
+  read: (compile/call (compile/lambda (x) (* x x)) 5)
+  expand: (compile/call (compile/lambda (x) (* x x)) 5)
+  eval: "25"
+references:
+  - reference/specials/compile-call.md
+stability: evolving
+tags:
+  - special
+notes: compile/call with inline lambda; 5*5=25
+---
+id: special-call-len-003
+feature: special/compile/call
+source: |-
+  (compile/call len seq)
+  
+verify:
+  read: (compile/call len seq)
+  expand: (compile/call len seq)
+  eval: "3"
+references:
+  - reference/specials/compile-call.md
+stability: evolving
+tags:
+  - special
+notes: call len on seq=(1,2,3) fixture; result is 3
+---
+id: special-reset-plain-001
+feature: special/compile/reset
+source: |-
+  (compile/reset (+ 1 2))
+  
+verify:
+  read: (compile/reset (+ 1 2))
+  expand: (compile/reset (+ 1 2))
+  eval: "3"
+references:
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: reset with no shift runs the body normally
+---
+id: special-reset-shift-abort-002
+feature: special/compile/reset
+source: |-
+  (compile/reset (+ 1 (compile/shift k 42)))
+  
+verify:
+  read: (compile/reset (+ 1 (compile/shift k 42)))
+  expand: (compile/reset (+ 1 (compile/shift k 42)))
+  eval: "42"
+references:
+  - reference/specials/compile-reset.md
+  - reference/specials/compile-shift.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: shift aborts the reset body and returns 42; k is the delimited continuation
+---
+id: special-reset-shift-call-003
+feature: special/compile/reset
+source: |-
+  (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  
+verify:
+  read: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  expand: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  eval: "10"
+references:
+  - reference/specials/compile-reset.md
+  - reference/specials/compile-shift.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: shift captures k (the rest of (* 2 …)); calling k 5 resumes with 5 giving 2*5=10
+---
+id: special-shift-abort-001
+feature: special/compile/shift
+source: |-
+  (compile/reset (+ 1 (compile/shift k 42)))
+  
+verify:
+  read: (compile/reset (+ 1 (compile/shift k 42)))
+  expand: (compile/reset (+ 1 (compile/shift k 42)))
+  eval: "42"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: shift k aborts the reset context; 42 is the result; k is unused
+---
+id: special-shift-call-002
+feature: special/compile/shift
+source: |-
+  (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  
+verify:
+  read: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  expand: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  eval: "10"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: k is a delimited continuation; (call k 5) fills in 5 for the hole; 2*5=10
+---
+id: special-shift-multi-003
+feature: special/compile/shift
+source: |-
+  (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
+  
+verify:
+  read: (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
+  expand: (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
+  eval: "1"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: multi-shot continuation; k called twice with nesting; empty body outside hole yields 1
+---
+id: special-dyn-with-no-binding-001
+feature: special/compile/dyn-with
+source: |-
+  (compile/dyn-with [(open "/dev/null")] None)
+  
+verify:
+  read: (compile/dyn-with ((open "/dev/null")) None)
+  expand: (compile/dyn-with ((open "/dev/null")) None)
+  eval: "null"
+references:
+  - reference/specials/compile-dyn-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: dynamic extent with no binding; context manager enter result discarded; async-safe variant of compile/with
+---
+id: special-dyn-with-binding-002
+feature: special/compile/dyn-with
+source: |-
+  (compile/dyn-with [f (open "/dev/null")] (compile/call-attr f read))
+  
+verify:
+  read: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read))
+  expand: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read))
+  eval: '""'
+references:
+  - reference/specials/compile-dyn-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: named binding f; reads from /dev/null (always empty string)
+---
+id: special-dyn-with-multi-003
+feature: special/compile/dyn-with
+source: |-
+  (compile/dyn-with [f (open "/dev/null")] (compile/call-attr f read) (compile/call-attr f read))
+  
+verify:
+  read: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  expand: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  eval: '""'
+references:
+  - reference/specials/compile-dyn-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: multiple body forms; last form value is returned; both happen within context
+---
+id: special-dyn-wind-call-001
+feature: special/compile/dyn-wind
+source: |-
+  (begin (let [[r (compile/dyn-wind (compile/lambda [] None) (compile/lambda [] 99) (compile/lambda [] None))]] (compile/call r)))
+  
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-dyn-wind.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: dyn-wind (before thunk after); calling the result runs before, body, after; returns body value 99
+---
+id: special-dyn-wind-events-002
+feature: special/compile/dyn-wind
+source: |-
+  (let [[events (#list)]] (compile/call (compile/dyn-wind (compile/lambda [] (compile/call-attr events append "before")) (compile/lambda [] (compile/call-attr events append "body")) (compile/lambda [] (compile/call-attr events append "after")))) events)
+  
+verify:
+  eval: "list:[\"body\"]"
+references:
+  - reference/specials/compile-dyn-wind.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: dyn-wind calls the thunk (body) directly; before/after are invoked on continuation boundary events, not during normal execution
+---
+id: special-dyn-wind-expand-003
+feature: special/compile/dyn-wind
+source: |-
+  (compile/dyn-wind before thunk after)
+  
+verify:
+  expand: (compile/dyn-wind before thunk after)
+references:
+  - reference/specials/compile-dyn-wind.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: dyn-wind takes three expressions; no macro expansion; lowers directly to WIND_WRAP opcode

@@ -815,3 +815,104 @@ tags:
   - macro
   - unassigned?
 notes: 0 is falsy but not unassigned; unassigned? only detects the sentinel unset marker
+---
+id: variable-refq-type-001
+feature: special/compile/refq
+source: |-
+  (let [[x 10]] (str (type (compile/refq x))))
+  
+verify:
+  read: (let ((x 10)) (str (type (compile/refq x))))
+  expand: (let ((x 10)) (str (type (compile/refq x))))
+  eval: '"<class ''Ref''>"'
+references:
+  - reference/specials/compile-refq.md
+stability: evolving
+tags:
+  - variable
+  - refq
+notes: refq produces a Ref object; type check confirms Ref class
+---
+id: variable-refq-deref-002
+feature: special/compile/refq
+source: |-
+  (let [[x 10]] (compile/deref (compile/refq x)))
+  
+verify:
+  read: (let ((x 10)) (compile/deref (compile/refq x)))
+  expand: (let ((x 10)) (compile/deref (compile/refq x)))
+  eval: "10"
+references:
+  - reference/specials/compile-refq.md
+stability: evolving
+tags:
+  - variable
+  - refq
+  - deref
+notes: refq gives a reference to x; deref reads back the value 10
+---
+id: variable-refq-expand-003
+feature: special/compile/refq
+source: |-
+  (refq obj)
+  
+verify:
+  expand: (refq obj)
+references:
+  - reference/specials/compile-refq.md
+stability: evolving
+tags:
+  - variable
+  - refq
+notes: refq of a name emits VAR_REF; no further expansion; result is a Ref at eval time
+---
+id: variable-parameterize-basic-001
+feature: special/compile/parameterize
+source: |-
+  (begin (define-parameter level 1) (parameterize [[level 10]] level))
+  
+verify:
+  read: (begin (define-parameter level 1) (parameterize ((level 10)) level))
+  expand: (begin (define-parameter level 1) (parameterize ((level 10)) level))
+  eval: "10"
+references:
+  - reference/specials/compile-parameterize.md
+stability: evolving
+tags:
+  - variable
+  - parameterize
+notes: parameterize overrides level to 10 inside the block
+---
+id: variable-parameterize-restore-002
+feature: special/compile/parameterize
+source: |-
+  (begin (define-parameter level 1) (parameterize [[level 10]] level) level)
+  
+verify:
+  read: (begin (define-parameter level 1) (parameterize ((level 10)) level) level)
+  expand: (begin (define-parameter level 1) (parameterize ((level 10)) level) level)
+  eval: "1"
+references:
+  - reference/specials/compile-parameterize.md
+stability: evolving
+tags:
+  - variable
+  - parameterize
+notes: after parameterize exits the block, level restores to its previous value (1)
+---
+id: variable-parameterize-nested-003
+feature: special/compile/parameterize
+source: |-
+  (begin (define-parameter timeout 30) (parameterize [[timeout 5]] (parameterize [[timeout 60]] timeout)))
+  
+verify:
+  read: (begin (define-parameter timeout 30) (parameterize ((timeout 5)) (parameterize ((timeout 60)) timeout)))
+  expand: (begin (define-parameter timeout 30) (parameterize ((timeout 5)) (parameterize ((timeout 60)) timeout)))
+  eval: "60"
+references:
+  - reference/specials/compile-parameterize.md
+stability: evolving
+tags:
+  - variable
+  - parameterize
+notes: nested parameterize; inner binding shadows outer; innermost 60 is visible

@@ -1455,3 +1455,147 @@ tags:
   - object
   - predicate
 notes: every class is a subclass of object
+---
+id: object-attr-count-001
+feature: special/compile/attr
+source: |-
+  (compile/attr obj count)
+  
+verify:
+  read: (compile/attr obj count)
+  expand: (compile/attr obj count)
+  eval: "5"
+references:
+  - reference/specials/compile-attr.md
+stability: evolving
+tags:
+  - object
+notes: access obj.count attribute; obj fixture has count=5
+---
+id: object-attr-value-002
+feature: special/compile/attr
+source: |-
+  (compile/attr obj value)
+  
+verify:
+  read: (compile/attr obj value)
+  expand: (compile/attr obj value)
+  eval: "99"
+references:
+  - reference/specials/compile-attr.md
+stability: evolving
+tags:
+  - object
+notes: access obj.value attribute; obj fixture has value=99
+---
+id: object-call-attr-upper-001
+feature: special/compile/call-attr
+source: |-
+  (compile/call-attr "hello" upper)
+  
+verify:
+  read: (compile/call-attr "hello" upper)
+  expand: (compile/call-attr "hello" upper)
+  eval: '"HELLO"'
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - object
+notes: call-attr calls a method with no extra arguments
+---
+id: object-call-attr-replace-002
+feature: special/compile/call-attr
+source: |-
+  (compile/call-attr "hello" replace "l" "r")
+  
+verify:
+  read: (compile/call-attr "hello" replace "l" "r")
+  expand: (compile/call-attr "hello" replace "l" "r")
+  eval: '"herro"'
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - object
+notes: call-attr with extra positional arguments
+---
+id: object-call-attr-append-003
+feature: special/compile/call-attr
+source: |-
+  (compile/call-attr (#list 1 2 3) append 4)
+  
+verify:
+  read: "(compile/call-attr (#list 1 2 3) append 4)"
+  expand: "(compile/call-attr (#list 1 2 3) append 4)"
+  eval: "null"
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - object
+notes: list.append returns None; side-effect visible in-place but form value is null
+---
+id: object-attr-str-method-003
+feature: special/compile/attr
+source: |-
+  (compile/call (compile/attr "hello" upper))
+  
+verify:
+  read: (compile/call (compile/attr "hello" upper))
+  expand: (compile/call (compile/attr "hello" upper))
+  eval: '"HELLO"'
+references:
+  - reference/specials/compile-attr.md
+stability: evolving
+tags:
+  - object
+notes: attr returns a bound method; calling it gives the method result
+---
+id: object-ref-attr-deref-001
+feature: special/compile/ref-attr
+source: |-
+  (compile/deref (compile/ref-attr obj count))
+  
+verify:
+  read: (compile/deref (compile/ref-attr obj count))
+  expand: (compile/deref (compile/ref-attr obj count))
+  eval: "5"
+references:
+  - reference/specials/compile-ref-attr.md
+stability: evolving
+tags:
+  - object
+notes: ref-attr creates an AttributeRef for obj.count; deref reads 5
+---
+id: object-ref-attr-type-002
+feature: special/compile/ref-attr
+source: |-
+  (str (type (compile/ref-attr obj count)))
+  
+verify:
+  read: (str (type (compile/ref-attr obj count)))
+  expand: (str (type (compile/ref-attr obj count)))
+  eval: '"<class ''AttributeRef''>"'
+references:
+  - reference/specials/compile-ref-attr.md
+stability: evolving
+tags:
+  - object
+notes: ref-attr returns an AttributeRef object; type check confirms the class
+---
+id: object-ref-attr-value-003
+feature: special/compile/ref-attr
+source: |-
+  (compile/deref (compile/ref-attr obj value))
+  
+verify:
+  read: (compile/deref (compile/ref-attr obj value))
+  expand: (compile/deref (compile/ref-attr obj value))
+  eval: "99"
+references:
+  - reference/specials/compile-ref-attr.md
+stability: evolving
+tags:
+  - object
+notes: ref-attr for obj.value attribute; deref reads 99

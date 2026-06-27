@@ -521,3 +521,102 @@ tags:
   - iter
   - build-slice
 notes: "build-slice 0 2 selects seq[0:2]; seq=(1,2,3) fixture gives (1,2)"
+---
+id: iter-for-each-sum-001
+feature: special/compile/for-each
+source: |-
+  (let [[total 0]] (for-each [x (range 4)] (setq total (+ total x))) total)
+  
+verify:
+  read: (let ((total 0)) (for-each (x (range 4)) (setq total (+ total x))) total)
+  expand: (let ((total 0)) (for-each (x (range 4)) (setq total (+ total x))) total)
+  eval: "6"
+references:
+  - reference/specials/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+notes: accumulate sum over range(4); 0+1+2+3=6
+---
+id: iter-for-each-seq-002
+feature: special/compile/for-each
+source: |-
+  (for-each [x seq] x)
+  
+verify:
+  read: (for-each (x seq) x)
+  expand: (for-each (x seq) x)
+  eval: "3"
+references:
+  - reference/specials/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+notes: iterate seq=(1,2,3); form value is last body result (3)
+---
+id: iter-for-each-build-003
+feature: special/compile/for-each
+source: |-
+  (let [[result nil]] (for-each [x (range 3)] (setq result (cons x result))) result)
+  
+verify:
+  read: (let ((result nil)) (for-each (x (range 3)) (setq result (cons x result))) result)
+  expand: (let ((result nil)) (for-each (x (range 3)) (setq result (cons x result))) result)
+  eval: "proper-list:[2,1,0]"
+references:
+  - reference/specials/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+notes: prepend each iteration to result; final list is reversed (2,1,0)
+---
+id: iter-ref-item-deref-001
+feature: special/compile/ref-item
+source: |-
+  (compile/deref (compile/ref-item seq 0))
+  
+verify:
+  read: (compile/deref (compile/ref-item seq 0))
+  expand: (compile/deref (compile/ref-item seq 0))
+  eval: "1"
+references:
+  - reference/specials/compile-ref-item.md
+stability: evolving
+tags:
+  - iter
+notes: ref-item creates an ItemRef for seq[0]; deref reads 1; seq=(1,2,3) fixture
+---
+id: iter-ref-item-type-002
+feature: special/compile/ref-item
+source: |-
+  (str (type (compile/ref-item seq 0)))
+  
+verify:
+  read: (str (type (compile/ref-item seq 0)))
+  expand: (str (type (compile/ref-item seq 0)))
+  eval: '"<class ''ItemRef''>"'
+references:
+  - reference/specials/compile-ref-item.md
+stability: evolving
+tags:
+  - iter
+notes: ref-item returns an ItemRef object; type check confirms the class
+---
+id: iter-ref-item-index-two-003
+feature: special/compile/ref-item
+source: |-
+  (compile/deref (compile/ref-item seq 2))
+  
+verify:
+  read: (compile/deref (compile/ref-item seq 2))
+  expand: (compile/deref (compile/ref-item seq 2))
+  eval: "3"
+references:
+  - reference/specials/compile-ref-item.md
+stability: evolving
+tags:
+  - iter
+notes: ref-item at index 2; seq=(1,2,3) so deref gives 3
