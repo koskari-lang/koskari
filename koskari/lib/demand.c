@@ -631,6 +631,13 @@ PyObject *KosDemand_GetWrapped(PyObject *obj) {
 }
 
 
+PyObject *KosDemand_New(PyObject *wrapped) {
+
+  return PyObject_CallOneArg(
+      (PyObject *) KOS_CALLABLE_PYTYPE(KosDemandCallableType), wrapped);
+}
+
+
 static PyObject *demand_descr_get(
     PyObject *self,
     PyObject *obj,

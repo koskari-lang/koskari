@@ -30,12 +30,12 @@ from os.path import dirname, join
 from typing import Any, Dict
 
 from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
-                   MemoizedRef, Module, ModuleNamespace, ParamRef, Ref, apply,
-                   build_dict, build_list, build_set, build_tuple, car, cdr,
-                   cons, defer, demand, demand_apply, demand_call, deref,
-                   gensym, getattr_star, getitem_star, hasattr_star,
-                   hasitem_star, keyword, kos_repr, list_append, nil,
-                   pair, parameter, setcar, setcdr, symbol, values)
+                   KosProperty, MemoizedRef, Module, ModuleNamespace,
+                   ParamRef, Ref, apply, build_dict, build_list, build_set,
+                   build_tuple, car, cdr, cons, defer, demand, demand_apply,
+                   demand_call, deref, gensym, getattr_star, getitem_star,
+                   hasattr_star, hasitem_star, keyword, kos_repr, list_append,
+                   nil, pair, parameter, setcar, setcdr, symbol, values)
 
 from ..types import (TypePredicate, is_nil, is_None, is_proper, is_recursive,
                      build_proper, unpack)
@@ -166,7 +166,7 @@ def make_bootstrap():
     _ty('int', int)
     _ty('list', list)
     _ty('object', object)
-    _ty('property', property)
+    _ty('property', KosProperty)
     _ty('range', range)
     _ty('set', set)
     _ty('staticmethod', staticmethod)

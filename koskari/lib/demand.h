@@ -38,6 +38,15 @@ extern KosCallableTypeObject KosDemandCallableType;
 PyObject *KosDemand_GetWrapped(PyObject *obj);
 
 
+/**
+   Create a new Demand wrapping the given callable. Returns a new reference.
+   Idempotent: if wrapped is already a Demand, the same object is returned.
+
+   wrapped is borrowed. Caller retains ownership.
+*/
+PyObject *KosDemand_New(PyObject *wrapped);
+
+
 int koskari_demand_init(PyObject *mod);
 int koskari_demand_clear(PyObject *mod);
 
