@@ -153,10 +153,10 @@ define-syntax compile/incr!:
   """
 
   syntax-rules []:
-    case (incr! name):
-      (set! name (+ name 1))
-    case (incr! name value):
-      (set! name (+ name value))
+    case (incr! location):
+      (compile/inplace + location 1)
+    case (incr! location value):
+      (compile/inplace + location value)
 
 
 define-syntax compile/decr!:
@@ -165,10 +165,10 @@ define-syntax compile/decr!:
   """
 
   syntax-rules []:
-    case (decr! name):
-      (set! name ( - name 1))
-    case (decr! name value):
-      (set! name (- name value))
+    case (decr! location):
+      (compile/inplace - location 1)
+    case (decr! location value):
+      (compile/inplace - location value)
 
 
 define-syntax compile/ref:

@@ -111,6 +111,10 @@ test: handlers  ## Run tests on current Python version via tox
 	@echo "Running tests..."
 	@tox -qe test
 
+test-corpus: handlers  ## Run only the corpus conformance phase (phase_corpus)
+	@$(call checkfor,tox)
+	@tox -qe py -- -m phase_corpus
+
 tox: handlers  ## Run full tox suite (tests + lint + typecheck)
 	@$(call checkfor,tox)
 	@echo "Running full tox suite..."
