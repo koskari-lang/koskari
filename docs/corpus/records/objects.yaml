@@ -1688,19 +1688,19 @@ notes: first attribute in dir 42 is __abs__
 id: object-dir-count-003
 feature: special/compile/dir
 source: |-
-  (len (dir 42))
-  
+  (isinstance (dir 42) list)
+
 verify:
-  read: (len (dir 42))
-  expand: (len (dir 42))
-  eval: "74"
+  read: (isinstance (dir 42) list)
+  expand: (isinstance (dir 42) list)
+  eval: "true"
 references:
   - reference/specials/compile-unary.md
-stability: evolving
+stability: stable
 tags:
   - object
   - unary
-notes: int has 74 attributes in the Python standard library
+notes: dir always returns a list; count varies across Python versions so type check is used
 ---
 id: object-vars-dict-001
 feature: special/compile/vars
