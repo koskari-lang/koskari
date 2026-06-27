@@ -273,6 +273,18 @@ inner callables. `isinstance(obj, functools.partial)` continues to work.
 
 Ref: [interpreter/kospartial.md](interpreter/kospartial.md).
 
+### KosProperty: KosCallable-aware `property`
+
+Implement **KosProperty** as a C-level subtype of CPython's **`property`**
+(dynamic **`tp_base`** before **`PyType_Ready`**). At every **`fget`** /
+**`fset`** / **`fdel`** registration (constructor, **`.setter`**, **`.deleter`**),
+if the callable passes **`KosCallable_Check`**, store **`Demand(callable)`**;
+**`Demand`** construction is idempotent for existing wrappers. Plain Python
+callables pass through unchanged. Replace **`_ty('property', property)`** in
+bootstrap immediately on landing.
+
+Ref: [interpreter/kosproperty.md](interpreter/kosproperty.md).
+
 ### DynamicRef accessors on demand path
 
 Make **DynamicRef** accessor handlers (`getfn`, `setfn`, `delfn`,
