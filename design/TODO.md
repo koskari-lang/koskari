@@ -316,6 +316,31 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 ---
 
+## Corpus
+
+### Corpus generation agent
+
+Grow `docs/corpus/records/` to hundreds–thousands of entries covering every
+builtin special and macro, via an autonomous Claude Code agent rather than core
+dev time. The agent runs in its own git worktree (own gitignored `.venv` from a
+one-time `make venv` plus `uv pip install jsonschema PyYAML`; commits freely;
+human opens a PR per batch), keeping the oracle drift-free and avoiding
+contention with main-tree `tox`/`make test`. Tooling
+(`tools/corpus/quick.py` — `verify` oracle, `insert` validate+append,
+`coverage`) and the generation-task `docs/corpus/CLAUDE.md` are **implemented**;
+`quick.py` is a thin wrapper over the existing `tests/corpus` runner and
+`tools/corpus/load.py` serializer, run via `uv run` (the one sanctioned non-tox
+path). Remaining work is the supervised worktree run itself. Mandate per
+special/macro: basic, variant, block/layout, and invalid+corrective entries;
+priority on patterns common in real code (`define-class`, `for-each`,
+`define-syntax`, `try/except`, `let`, async). The PR's `make test`
+(`phase_corpus`) is the authoritative backstop.
+
+Ref: [corpus-generation-agent.md](corpus-generation-agent.md);
+[corpus-schema-philosophy.md](corpus-schema-philosophy.md).
+
+---
+
 ## Reference
 
 - **Implemented specials:** [SPECIALS.md](SPECIALS.md)
