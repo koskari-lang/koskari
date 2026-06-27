@@ -726,3 +726,92 @@ tags:
   - variable
   - delq
 notes: "compile/delq: delete x from the frame; form evaluates to None"
+---
+id: variable-default-idempotent-003
+feature: macro/compile/default!
+source: |-
+  (begin (define port) (default! port 3000) (default! port 9999) port)
+  
+verify:
+  read: (begin (define port) (default! port 3000) (default! port 9999) port)
+  expand: (begin (define port) (default! port 3000) (default! port 9999) port)
+  eval: "3000"
+references:
+  - reference/macros/index.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - default!
+notes: second default! skips since first set port to truthy 3000; result stays 3000
+---
+id: variable-letstar-chain-003
+feature: macro/compile/let*
+source: |-
+  (let* [[a 2] [b (* a 3)] [c (+ b 1)]] c)
+  
+verify:
+  read: (let* ((a 2) (b (* a 3)) (c (+ b 1))) c)
+  expand: (let ((a 2)) (let* ((b (* a 3)) (c (+ b 1))) c))
+  eval: "7"
+references:
+  - reference/macros/compile-letstar.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - let*
+notes: three sequential bindings; each sees prior; a=2, b=6, c=7
+---
+id: variable-let-values-product-003
+feature: macro/compile/let-values
+source: |-
+  (let-values [[x y z] seq] (* x y z))
+  
+verify:
+  read: (let-values ((x y z) seq) (* x y z))
+  eval: "6"
+references:
+  - reference/macros/compile-let-values.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - let-values
+notes: destructure seq=(1,2,3) into x y z; multiply gives 1*2*3=6
+---
+id: variable-ref-macro-after-setq-003
+feature: macro/compile/ref
+source: |-
+  (let [[x 5]] (setq x (+ x 1)) (deref (ref x)))
+  
+verify:
+  read: (let ((x 5)) (setq x (+ x 1)) (deref (ref x)))
+  expand: (let ((x 5)) (setq x (+ x 1)) (deref (ref x)))
+  eval: "6"
+references:
+  - reference/macros/compile-ref.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - ref
+notes: ref tracks the live slot value after setq; deref returns the updated value 6
+---
+id: variable-unassigned-zero-003
+feature: macro/compile/unassigned?
+source: |-
+  (begin (define slot 0) (unassigned? slot))
+  
+verify:
+  read: (begin (define slot 0) (unassigned? slot))
+  expand: (begin (define slot 0) (unassigned? slot))
+  eval: "false"
+references:
+  - reference/macros/index.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - unassigned?
+notes: 0 is falsy but not unassigned; unassigned? only detects the sentinel unset marker

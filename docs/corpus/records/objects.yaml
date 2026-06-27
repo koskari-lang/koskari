@@ -1438,3 +1438,20 @@ tags:
   - object
   - class
 notes: class with integer class-level slot; read via compile/attr; () reads as nil in read stage
+---
+id: object-subclass-str-object-003
+feature: special/compile/subclass?
+source: |-
+  (subclass? str object)
+  
+verify:
+  read: (subclass? str object)
+  expand: (subclass? str object)
+  eval: "true"
+references:
+  - reference/specials/compile-subclass.md
+stability: evolving
+tags:
+  - object
+  - predicate
+notes: every class is a subclass of object

@@ -531,3 +531,37 @@ tags:
   - await
   - async
 notes: await on a plain value is a no-op; z=1 fixture; eval returns the value directly
+---
+id: function-decorate-lambda-two-arg-003
+feature: macro/compile/decorate
+source: |-
+  ((decorate [] (lambda [x y] (+ x y))) 3 4)
+  
+verify:
+  eval: "7"
+references:
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+notes: decorate [] with two-arg lambda; [] reads as nil in printed form; result is 3+4=7
+---
+id: function-compose-double-003
+feature: macro/compile/function-compose
+source: |-
+  (begin (define add-one [x] (+ x 1)) (define double [x] (* x 2)) ((function-compose double add-one) 3))
+  
+verify:
+  read: (begin (define add-one (x) (+ x 1)) (define double (x) (* x 2)) ((function-compose double add-one) 3))
+  expand: (begin (define add-one (x) (+ x 1)) (define double (x) (* x 2)) ((function-compose double add-one) 3))
+  eval: "8"
+references:
+  - reference/macros/compile-function-compose.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - function-compose
+notes: compose double after add-one; applied to 3 gives (3+1)*2=8
