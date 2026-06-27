@@ -1288,8 +1288,8 @@ compare the scrutinee **`s`** at TOS to an RHS from the extra row. On
 **match**, **`s`** is popped and the PC jumps to **`a0`**. On **mismatch**,
 the stack is **unchanged** and execution falls through.
 
-See [archive/switch-eq-opcodes.md](archive/switch-eq-opcodes.md) for family rationale and the
-surface `compile/switch` form. The full SWITCH_EQ family is implemented.
+See [archive/switch-eq-opcodes.md](archive/switch-eq-opcodes.md) (archived) for
+family rationale and the surface **`compile/switch`** form.
 
 ### KOS_OP_SWITCH_EQ
 

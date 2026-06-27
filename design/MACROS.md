@@ -26,8 +26,8 @@ lowers transformer specs via **`compile/syntax-rules`**, **`compile/macro-rules`
 and related specials (see [SPECIALS.md](SPECIALS.md) § compile/define-syntax).
 
 **Design:** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md),
-[MATCHER.md](MATCHER.md), [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md),
-[language/macro-let-and-inline-macro.md](language/macro-let-and-inline-macro.md).
+[MATCHER.md](MATCHER.md), [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
+Local compile-time binding: [archive/let-syntax-and-inline-macro.md](archive/let-syntax-and-inline-macro.md) (archived).
 
 ### Block quasiquote and `:block:` layout expansion
 

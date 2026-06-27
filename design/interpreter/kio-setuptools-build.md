@@ -312,7 +312,7 @@ The koskari setuptools plugin already adds `*.ki` / `*.kio` to author
 * commit `.kio` for apps that prefer not to compile at wheel time.
 
 Out of scope for koskari core v1 except documenting the pattern in
-[api/koskari-scripts-packaging.md](../api/koskari-scripts-packaging.md) once
+[archive/koskari-scripts-packaging.md](../archive/koskari-scripts-packaging.md) once
 landed.
 
 ---

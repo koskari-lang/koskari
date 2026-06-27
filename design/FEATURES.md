@@ -45,6 +45,7 @@ Highlights (not an exhaustive list):
 
 - **Reader macros** on `koskari.reader.parser` (quote, quasiquote, unquote, unquote-splicing, block quasiquote, `&` → ref, thunk `{…}`, etc.).
 - **Compile-time**: `syntax-rules`, `macro-rules`, `syntax-match`, `macro-match`, **`special-rules`**, **`special-match`**; hygiene via `koskari.syntax` / `koskari.hygiene` ([language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md), [MATCHER.md](MATCHER.md)).
+- **Local compile-time binding**: **`let-syntax`**, **`inline-macro`** ([MACROS.md](MACROS.md); archived design [archive/let-syntax-and-inline-macro.md](archive/let-syntax-and-inline-macro.md)).
 - **`macroexpand-1`** in `bootstrap/basics.ki`.
 
 ### Layout syntax (reader)
@@ -147,12 +148,8 @@ kwargs) and a lazy **`parse_config_files`** wrapper (config-file entry points).
 Both invoke the same idempotent **`configure_koskari_scripts`**.
 
 **Reference example:** **`examples/life`** (**`koslife`** command).
-**Detail:** [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md).
-User-facing recipe (no **`design/`** links from user docs):
-**`docs/patterns/recipes/packaging-installed-scripts.md`**.
-
-**Deferred:** end-to-end pip-install integration test; native **`koskari`**
-binary / koskari shebang for installed commands.
+**User-facing recipe:** **`docs/patterns/recipes/packaging-installed-scripts.md`**.
+**Archived design:** [archive/koskari-scripts-packaging.md](archive/koskari-scripts-packaging.md).
 
 ### Continuations (summary)
 
@@ -213,5 +210,5 @@ wrappers, GC hooks.
 | Layout syntax | [LAYOUTS.md](LAYOUTS.md), [docs/reference/reader-layout.md](../docs/reference/reader-layout.md) |
 | Planned language surface | [language/special-forms.md](language/special-forms.md), [language/async.md](language/async.md) |
 | Import | [api/import-system.md](api/import-system.md) |
-| Installed scripts (`koskari_scripts`) | [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md) |
+| Installed scripts (`koskari_scripts`) | [archive/koskari-scripts-packaging.md](archive/koskari-scripts-packaging.md) |
 | GIL (future domain-TLS design) | [interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) |

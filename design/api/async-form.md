@@ -212,7 +212,7 @@ non-auto-await sites (see user **`docs/reference/concepts/demand-async-and-defer
 ## Related reading
 
 * [defer-coroutine.md](defer-coroutine.md) — **`defer`** and auto-await exclusion
-* [koskari-scripts-packaging.md](koskari-scripts-packaging.md) —
+* [archive/koskari-scripts-packaging.md](../archive/koskari-scripts-packaging.md) —
   **`drive_async_loop`** host
 * [../language/async.md](../language/async.md) — coroutine surface syntax rollup
 * **`koskari/asyncio.py`** — **`create-task`**, **`sleep`**, **`coroutine-fn`**
