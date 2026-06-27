@@ -27,7 +27,7 @@ jobs:
           tox -qe sphinx
 
       - name: Store Documentation
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: build/docs
 
