@@ -190,6 +190,17 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
         self.assertIsNone(star)
         self.assertIsNone(starstar)
 
+    def test_bracket_default_not_in_positional(self):
+        spine = cons(cons(symbol("a"), 1, nil), nil)
+        grp = _match_formals_group(spine)
+        pos, defaults, kwonly, star, starstar, ann = gather_formals(grp)
+        self.assertEqual(pos, [])
+        self.assertEqual(defaults, [(keyword("a"), 1)])
+        self.assertEqual(kwonly, [])
+        self.assertIsNone(star)
+        self.assertIsNone(starstar)
+        self.assertEqual(ann, {})
+
     def test_star_then_kwonly(self):
         kstar = keyword("*")
         spine = cons(
