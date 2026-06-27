@@ -656,3 +656,140 @@ tags:
   - reader
   - literal
 notes: "full read->expand->eval pipeline for #(...) tuple literal"
+---
+id: iter-layout-for-each-basic-001
+feature: layout/for-each
+source: |-
+  for-each [x seq]:
+    x
+  
+verify:
+  read: (for-each (x seq) x)
+  expand: (for-each (x seq) x)
+  eval: "3"
+references:
+  - reference/specials/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+  - "surface:block"
+notes: simplest for-each layout; seq=(1,2,3) fixture; yields last element
+---
+id: iter-layout-for-each-body-002
+feature: layout/for-each
+source: |-
+  for-each [x seq]:
+    (* x x)
+  
+verify:
+  read: (for-each (x seq) (* x x))
+  expand: (for-each (x seq) (* x x))
+  eval: "9"
+references:
+  - reference/specials/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+  - "surface:block"
+notes: for-each with computed body; seq=(1,2,3); last evaluated is 3*3=9
+---
+id: iter-layout-for-each-when-003
+feature: layout/for-each
+source: |-
+  for-each [x seq] when: (> x 1):
+    (* x x)
+  
+verify:
+  eval: "9"
+references:
+  - reference/specials/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+  - "surface:block"
+notes: "when: condition filters; seq=(1,2,3), only x>1 pass; last is 3*3=9"
+---
+id: iter-layout-for-each-destructure-004
+feature: layout/for-each
+source: |-
+  for-each [[a b] #[#(1 2) #(3 4)]]:
+    (+ a b)
+  
+verify:
+  read: "(for-each ((a b) (#list (#tuple 1 2) (#tuple 3 4))) (+ a b))"
+  expand: "(for-each ((a b) (#list (#tuple 1 2) (#tuple 3 4))) (+ a b))"
+  eval: "7"
+references:
+  - reference/specials/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+  - "surface:block"
+notes: "tuple destructuring in for-each binding; each #(a b) tuple is unpacked; last is 3+4=7"
+---
+id: iter-layout-while-basic-001
+feature: layout/while
+source: |-
+  while (> z 0):
+    (decr! z)
+    z
+  
+verify:
+  read: (while (> z 0) (decr! z) z)
+  expand: (while (> z 0) (decr! z) z)
+  eval: "0"
+references:
+  - reference/specials/compile-while.md
+stability: stable
+tags:
+  - iter
+  - while
+  - "surface:block"
+notes: while layout; z=1 fixture; decrements z to 0 and returns it
+---
+id: iter-layout-while-else-002
+feature: layout/while
+source: |-
+  while False:
+    99
+  else:
+    42
+  
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-while.md
+stability: stable
+tags:
+  - iter
+  - while
+  - "surface:block"
+notes: "while with else: peer; condition False from the start so else branch runs"
+---
+id: iter-layout-while-accumulator-003
+feature: layout/while
+source: |-
+  begin:
+    (define n 3)
+    (define acc 0)
+    while (> n 0):
+      (incr! acc n)
+      (decr! n)
+    acc
+  
+verify:
+  read: (begin (define n 3) (define acc 0) (while (> n 0) (incr! acc n) (decr! n)) acc)
+  expand: (begin (define n 3) (define acc 0) (while (> n 0) (incr! acc n) (decr! n)) acc)
+  eval: "6"
+references:
+  - reference/specials/compile-while.md
+stability: stable
+tags:
+  - iter
+  - while
+  - "surface:block"
+notes: while as accumulator; sums 3+2+1=6; pattern from examples/fib.ki fib-loop

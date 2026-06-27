@@ -1249,3 +1249,67 @@ tags:
   - unquote
   - quasiquote
 notes: unquote splices the runtime value of a=0 into position; cadr extracts it
+---
+id: special-layout-try-bare-001
+feature: layout/try
+source: |-
+  try:
+    (/ 1 0)
+  except:
+    99
+  
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-try.md
+stability: stable
+tags:
+  - special
+  - try
+  - exception
+  - "surface:block"
+notes: bare except peer catches any exception; ZeroDivisionError caught, returns 99
+---
+id: special-layout-try-named-002
+feature: layout/try
+source: |-
+  try:
+    (/ 1 0)
+  except [e ZeroDivisionError]:
+    (str e)
+  
+verify:
+  read: (try (compile/begin (/ 1 0)) ((e ZeroDivisionError) (str e)))
+  expand: (try (compile/begin (/ 1 0)) ((e ZeroDivisionError) (str e)))
+  eval: '"division by zero"'
+references:
+  - reference/specials/compile-try.md
+stability: stable
+tags:
+  - special
+  - try
+  - exception
+  - "surface:block"
+notes: named except binding [e TYPE] in layout block form; str gives exception message
+---
+id: special-layout-try-finally-003
+feature: layout/try
+source: |-
+  try:
+    (/ 1 0)
+  except:
+    99
+  finally:
+    None
+  
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-try.md
+stability: stable
+tags:
+  - special
+  - try
+  - exception
+  - "surface:block"
+notes: finally peer always runs; exception caught, returns 99; finally form evaluates to None

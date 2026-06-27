@@ -1803,3 +1803,61 @@ tags:
   - object
   - reader
 notes: "chained dot: obj.a.b reads as nested (compile/attr (compile/attr obj a) b)"
+---
+id: object-layout-class-read-001
+feature: layout/class
+source: |-
+  class MyClass (object):
+    define method [self]:
+      42
+  
+verify:
+  read: (compile/class MyClass (object) (compile/begin (define method (self) 42)))
+references:
+  - reference/layouts/layout-class.md
+stability: stable
+tags:
+  - object
+  - class
+  - "surface:block"
+notes: class layout desugars to compile/class; body becomes compile/begin block of method definitions
+---
+id: object-layout-class-methods-002
+feature: layout/class
+source: |-
+  class Counter (object):
+    define __init__ [self n]:
+      (setattr self "_n" n)
+    define tick [self]:
+      (incr! self._n)
+  
+verify:
+  read: (compile/class Counter (object) (compile/begin (define __init__ (self n) (setattr self "_n" n)) (define tick (self) (incr! (compile/attr self _n)))))
+references:
+  - reference/layouts/layout-class.md
+stability: stable
+tags:
+  - object
+  - class
+  - "surface:block"
+notes: multi-method class layout; dot-attr self._n reads as (compile/attr self _n)
+---
+id: object-layout-class-attr-access-003
+feature: layout/class
+source: |-
+  class Adder (object):
+    define __init__ [self base]:
+      (setattr self "base" base)
+    define add [self x]:
+      (+ self.base x)
+  
+verify:
+  read: (compile/class Adder (object) (compile/begin (define __init__ (self base) (setattr self "base" base)) (define add (self x) (+ (compile/attr self base) x))))
+references:
+  - reference/layouts/layout-class.md
+stability: stable
+tags:
+  - object
+  - class
+  - "surface:block"
+notes: self.base inside method reads as (compile/attr self base)
