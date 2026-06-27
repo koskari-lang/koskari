@@ -1196,8 +1196,11 @@ None.
 pushes CONST None so the form has a value.
 
 **Note:** The `set!` macro expands symbol assignment to this form; multi-value
-assignment uses `compile/setq-values`. Other `set!` shapes use `compile/inplace`,
-item/attr/ref stores, etc. See [MACROS.md](MACROS.md).
+assignment uses `compile/setq-values`. Augmented symbol assignment uses
+`compile/inplace`. Item and attribute in-place updates use
+`compile/inplace-item` and `compile/inplace-attr` (via the `compile/inplace`
+macro extension). Plain item/attr/ref stores use the corresponding set specials.
+See [MACROS.md](MACROS.md).
 
 **Examples:**
 
@@ -1278,13 +1281,19 @@ prior `request_for_write`). The form evaluates to None.
 
 **Syntax:** `(compile/inplace OP VAR VALUE)`
 
-**Use-case:** In-place update: compute `VAR OP VALUE` and store the result back
-into VAR. Equivalent to Python augmented assignment (`x += 1`, `x &= mask`, etc.).
-OP is any numeric or bitwise operator; VAR must be a symbol.
+**Use-case:** In-place update of a **symbol** binding: compute `VAR OP VALUE` and
+store the result back into VAR. Equivalent to Python augmented assignment on a
+local/global name (`x += 1`, `x &= mask`, etc.). OP is any numeric or bitwise
+operator; VAR must be a symbol.
+
+For item or attribute places, use **`compile/inplace-item`** or
+**`compile/inplace-attr`** (normally via the **`compile/inplace`** macro
+extension — see [MACROS.md](MACROS.md)).
 
 **Behaviour:** Compiles VALUE, emits the corresponding VAR_OBJECT_* opcode (arg =
 name constant index), then CONST None. The compiler may lower VAR_OBJECT_* to
-FAST_OBJECT_* when VAR has a fixed slot.
+FAST_OBJECT_* when VAR has a fixed slot. VAR_OBJECT_* uses Python in-place
+operators (`PyNumber_InPlaceAdd`, etc.).
 
 **Supported operators:** `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `<<`, `>>`,
 `&`, `^`, `|` (and their `compile/` forms, e.g. `compile/+`, `compile/-`, etc.).
@@ -1303,6 +1312,73 @@ FAST_OBJECT_* when VAR has a fixed slot.
 ```
 
 **Implementation:** `koskari/compile/specials/object.py` — `special_inplace`
+
+## compile/inplace-item
+
+**Symbol:** `compile/inplace-item`
+
+**Syntax:** `(compile/inplace-item OP OBJ KEY VALUE)`
+
+**Use-case:** In-place update of an item slot: load `OBJ[KEY]`, compute
+`current OP VALUE`, store the result back at `KEY`. Equivalent to augmented
+assignment on a subscript (`d[k] += 1`). Normally reached via
+`(inplace OP (item OBJ KEY) VALUE)` (see [MACROS.md](MACROS.md)).
+
+**Behaviour:** Compiles OBJ once. Loads the current item (CONST_ITEM when KEY is
+constant, otherwise ITEM after KEY is evaluated). Uses **DUP** so OBJ (and KEY,
+when not constant) is not re-evaluated for the store. Compiles VALUE, applies the
+corresponding **OBJECT_*** opcode (regular operator dispatch, not
+VAR_OBJECT_* / in-place dunder), then stores via CONST_ITEM_STORE or ITEM_STORE.
+Evaluates to None.
+
+**Supported operators:** Same set as `compile/inplace`.
+
+**Examples:**
+
+```scheme
+;; Via compile/inplace macro extension
+(inplace + (item vec 0) 1)
+(inplace - (item d "count") step)
+
+;; Direct use
+(compile/inplace-item + table key delta)
+```
+
+**Implementation:** `koskari/compile/specials/object.py` — `special_inplace_item`
+
+**Tests:** `tests/compile/specials/test_inplace_specials.py`
+
+## compile/inplace-attr
+
+**Symbol:** `compile/inplace-attr`
+
+**Syntax:** `(compile/inplace-attr OP OBJ ATTR VALUE)`
+
+**Use-case:** In-place update of an attribute: load `OBJ.ATTR`, compute
+`current OP VALUE`, store the result back. Equivalent to augmented assignment on
+an attribute (`obj.x += 1`). ATTR must be a symbol. Normally reached via
+`(inplace OP (attr OBJ ATTR) VALUE)` (see [MACROS.md](MACROS.md)).
+
+**Behaviour:** When OBJ is a symbol, loads via VAR_ATTR and stores via
+VAR_ATTR_STORE (object from the namespace). Otherwise compiles OBJ once, **DUP**
+1, loads via ATTR, compiles VALUE, applies **OBJECT_***, stores via ATTR_STORE.
+Evaluates to None.
+
+**Supported operators:** Same set as `compile/inplace`.
+
+**Examples:**
+
+```scheme
+;; Via compile/inplace macro extension
+(inplace + (attr obj count) 1)
+
+;; Direct use
+(compile/inplace-attr + obj total amount)
+```
+
+**Implementation:** `koskari/compile/specials/object.py` — `special_inplace_attr`
+
+**Tests:** `tests/compile/specials/test_inplace_specials.py`
 
 ## compile/refq
 

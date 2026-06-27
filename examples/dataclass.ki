@@ -20,6 +20,20 @@ define-class Point []:
         each [[x y] (product (around self.x reach) (around self.y reach))]:
             (Point x y)
 
+    define move [self x: 0 y: 0]:
+        (incr! self.x x)
+        (incr! self.y y)
+
+    @property
+    define coord [self]:
+        #(self.x self.y)
+
+    @coord.setter
+    define coord [self value]:
+        define-values [x y] value
+        (set! self.x x)
+        (set! self.y y)
+
 
 when-main:
     print "Point class:" Point
@@ -28,6 +42,18 @@ when-main:
 
     define p (Point 3 5)
     print "p:" p
+    print "p.x:" p.x
+    print "p.y:" p.y
+
+    print "p.neighbors:"
+    for-each [n (p.neighbors)]:
+        print "  " n
+
+    print "p.coord:" p.coord
+
+    set! p.coord #(10 20)
+    print "set! p.coord #(10 20)"
+    print "p.coord:" p.coord
     print "p.x:" p.x
     print "p.y:" p.y
 

@@ -151,6 +151,10 @@ static int initialize_types(void) {
         fprintf(stderr, "Failed to initialize sync\n");
         return -1;
     }
+    if (koskari_property_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize property\n");
+        return -1;
+    }
     if (koskari_object_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize object\n");
         return -1;
@@ -265,6 +269,7 @@ int main(int argc, char *argv[]) {
     run_eval_tests();
     run_paramref_tests();
     run_matcher_tests();
+    run_property_tests();
 
     /* Future units:
     run_tco_tests();
