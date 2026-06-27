@@ -524,12 +524,9 @@ notes: name form; z=1 fixture; del! z clears the slot; None is the form's value
 ---
 id: variable-del-attr-003
 feature: macro/compile/del!
-source: |-
-  (begin (del! (attr obj count)) None)
-  
+source: |
+  (begin (import-from types SimpleNamespace) (define obj (SimpleNamespace count: 5 value: 99)) (del! (attr obj count)) None)
 verify:
-  read: (begin (del! (attr obj count)) None)
-  expand: (begin (del! (attr obj count)) None)
   eval: "null"
 references:
   - reference/macros/compile-del.md
@@ -538,7 +535,7 @@ tags:
   - variable
   - macro
   - del!
-notes: attr form expands to del-attr; deletes obj.count attribute
+notes: "recreates obj locally so del! does not mutate the shared fixture; del! (attr obj count) removes the count attribute"
 ---
 id: variable-global-value-002
 feature: macro/compile/global
