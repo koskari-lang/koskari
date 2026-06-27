@@ -91,6 +91,62 @@ instances and calls methods.
 
 ---
 
+## Property accessors
+
+> **Q:** How do I write a `@property` getter and setter?
+>
+> **A:** Use `@property` above a `define` inside the class body, then chain
+> `.setter` (or `.deleter`) the same way Python does:
+>
+> ```koskari
+> define-class Circle []:
+>   define _radius :: float 0.0
+>
+>   @property
+>   define radius [self]:
+>     self._radius
+>
+>   @radius.setter
+>   define radius [self value]:
+>     (set! self._radius (float value))
+> ```
+>
+> At the call site, attribute access and assignment work normally:
+>
+> ```koskari
+> define c (Circle)
+> (set! c.radius 3.0)
+> print c.radius   ; → 3.0
+> ```
+
+> **Q:** Do I need to add `@demand` to property accessors the way I do for
+> ordinary methods?
+>
+> **A:** No. Koskari replaces Python's built-in `property` with **`KosProperty`**
+> in the bootstrap, which automatically wraps any Koskari function accessor in
+> `Demand` at registration time — constructor, `.setter`, and `.deleter` all
+> apply the wrap. You write plain `define` inside the class body; the demand
+> path is wired up for you.
+>
+> Plain Python callables (for example a `lambda` or a Python `def`) are stored
+> unchanged, so mixing Koskari and Python accessors on the same descriptor works
+> as expected.
+
+> **Q:** What about `.deleter`?
+>
+> **A:** Same pattern — chain `.deleter` on the property name:
+>
+> ```koskari
+> @radius.deleter
+> define radius [self]:
+>   (set! self._radius 0.0)
+> ```
+
+See [Property accessors recipe](../../patterns/recipes/property-accessors.md)
+for a complete runnable example.
+
+---
+
 ## Python decorators on classes
 
 > **Q:** Can I put Python’s `@dataclass` on a Koskari class?

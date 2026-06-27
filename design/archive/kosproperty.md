@@ -5,7 +5,7 @@ This document specifies **KosProperty**, a C-level subtype of CPython's
 accessors. Authors use ordinary `@property` / `.setter` / `.deleter` syntax on
 Koskari functions without a separate `@demand` or **`define-demanding`** step.
 
-**Implementation status:** Implemented (`koskari/lib/property.c`; bootstrap swap done).
+**Implementation status:** Implemented and archived (2026-06-27). See `koskari/lib/property.c`; bootstrap swap in `koskari/bootstrap/__init__.py`; user docs at `docs/patterns/recipes/property-accessors.md`.
 
 **Audience:** maintainers implementing or reviewing this change.
 
