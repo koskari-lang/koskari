@@ -620,3 +620,39 @@ stability: evolving
 tags:
   - iter
 notes: ref-item at index 2; seq=(1,2,3) so deref gives 3
+---
+id: iter-list-literal-full-004
+feature: "reader/#list"
+source: |-
+  #[1 2 3]
+  
+verify:
+  read: "(#list 1 2 3)"
+  expand: "(#list 1 2 3)"
+  eval: "list:[1,2,3]"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+  - literal
+notes: "full read->expand->eval pipeline for #[...] list literal; shows all three stages"
+---
+id: iter-tuple-literal-full-004
+feature: "reader/#tuple"
+source: |-
+  #(1 2 3)
+  
+verify:
+  read: "(#tuple 1 2 3)"
+  expand: "(#tuple 1 2 3)"
+  eval: "tuple:(1,2,3)"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+  - literal
+notes: "full read->expand->eval pipeline for #(...) tuple literal"

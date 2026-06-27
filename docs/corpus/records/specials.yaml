@@ -977,3 +977,275 @@ tags:
   - special
   - continuation
 notes: k called with 10; code after the call (99) is never reached; form value is 10
+---
+id: special-quote-shorthand-symbol-001
+feature: reader/quote
+source: |-
+  'hello
+  
+verify:
+  read: (compile/quote hello)
+  expand: (compile/quote hello)
+  eval: "symbol:hello"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quote
+notes: "quote shorthand: ' is reader shorthand for (compile/quote …)"
+---
+id: special-quote-shorthand-list-002
+feature: reader/quote
+source: |-
+  '(1 2 3)
+  
+verify:
+  read: (compile/quote (1 2 3))
+  expand: (compile/quote (1 2 3))
+  eval: "proper-list:[1,2,3]"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quote
+notes: "the form '(1 2 3) reads as (compile/quote (1 2 3)); evaluates to a proper pair list"
+---
+id: special-quote-shorthand-number-003
+feature: reader/quote
+source: |-
+  '42
+  
+verify:
+  read: (compile/quote 42)
+  expand: (compile/quote 42)
+  eval: "42"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quote
+notes: "quoting a number: the form '42 reads as (compile/quote 42) and self-evaluates to 42"
+---
+id: special-quasiquote-shorthand-symbol-001
+feature: reader/quasiquote
+source: |-
+  `hello
+  
+verify:
+  read: (compile/quasiquote hello)
+  expand: (compile/quasiquote hello)
+  eval: "symbol:hello"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quasiquote
+notes: backtick is reader shorthand for (compile/quasiquote …); symbols evaluate to themselves
+---
+id: special-quasiquote-unquote-002
+feature: reader/quasiquote
+source: |-
+  `(1 ,z 3)
+  
+verify:
+  read: (compile/quasiquote (1 (compile/unquote z) 3))
+  expand: (compile/quasiquote (1 (compile/unquote z) 3))
+  eval: "proper-list:[1,1,3]"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quasiquote
+  - unquote
+notes: comma inside quasiquote reads as (compile/unquote …); z=1 fixture so middle element is 1
+---
+id: special-unquote-shorthand-003
+feature: reader/unquote
+source: |-
+  `(1 ,z 3)
+  
+verify:
+  read: (compile/quasiquote (1 (compile/unquote z) 3))
+  expand: (compile/quasiquote (1 (compile/unquote z) 3))
+  eval: "proper-list:[1,1,3]"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote
+  - quasiquote
+notes: comma inside quasiquote desugars to (compile/unquote …); z=1 fixture
+---
+id: special-unquote-shorthand-read-001
+feature: reader/unquote
+source: |-
+  `(first ,z last)
+  
+verify:
+  read: (compile/quasiquote (first (compile/unquote z) last))
+  expand: (compile/quasiquote (first (compile/unquote z) last))
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote
+notes: comma is reader shorthand for (compile/unquote …); only active inside quasiquote
+---
+id: special-unquote-splicing-read-001
+feature: reader/unquote-splicing
+source: |-
+  `(,@seq end)
+  
+verify:
+  read: (compile/quasiquote ((compile/unquote-splicing seq) end))
+  expand: (compile/quasiquote ((compile/unquote-splicing seq) end))
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote-splicing
+  - quasiquote
+notes: "the ,@ sigil inside quasiquote reads as (compile/unquote-splicing …); splices the seq fixture into the list"
+---
+id: special-unquote-splicing-eval-002
+feature: reader/unquote-splicing
+source: |-
+  (car `(start ,@seq end))
+  
+verify:
+  read: (car (compile/quasiquote (start (compile/unquote-splicing seq) end)))
+  expand: (car (compile/quasiquote (start (compile/unquote-splicing seq) end)))
+  eval: "symbol:start"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote-splicing
+  - quasiquote
+notes: seq=(1,2,3) fixture splices into the list; car returns the start symbol
+---
+id: special-unquote-splicing-count-003
+feature: reader/unquote-splicing
+source: |-
+  (car `(a ,@seq b))
+  
+verify:
+  read: (car (compile/quasiquote (a (compile/unquote-splicing seq) b)))
+  expand: (car (compile/quasiquote (a (compile/unquote-splicing seq) b)))
+  eval: "symbol:a"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote-splicing
+  - quasiquote
+notes: seq=(1,2,3) spliced after a; head is symbol a
+---
+id: special-thunk-add-001
+feature: reader/thunk
+source: |-
+  ({(+ %1 %2)} 3 4)
+  
+verify:
+  read: ((compile/gensym-thunk (+ %1 %2)) 3 4)
+  expand: ((compile/gensym-thunk (+ %1 %2)) 3 4)
+  eval: "7"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - thunk
+notes: curly braces read as (compile/gensym-thunk …); %1 %2 are positional arg placeholders
+---
+id: special-thunk-square-002
+feature: reader/thunk
+source: |-
+  ({(* %1 %1)} 5)
+  
+verify:
+  read: ((compile/gensym-thunk (* %1 %1)) 5)
+  expand: ((compile/gensym-thunk (* %1 %1)) 5)
+  eval: "25"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - thunk
+notes: thunk with single arg; infers one parameter from %1; called immediately with 5
+---
+id: special-thunk-read-only-003
+feature: reader/thunk
+source: |-
+  {(+ %1 1)}
+  
+verify:
+  read: (compile/gensym-thunk (+ %1 1))
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - thunk
+notes: standalone thunk form reads as (compile/gensym-thunk …) without being called
+---
+id: special-quasiquote-plain-list-003
+feature: reader/quasiquote
+source: |-
+  (car `(a b c))
+  
+verify:
+  read: (car (compile/quasiquote (a b c)))
+  expand: (car (compile/quasiquote (a b c)))
+  eval: "symbol:a"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quasiquote
+notes: quasiquote of plain list with no unquotes produces a quoted pair list; car gives first symbol
+---
+id: special-unquote-eval-value-003
+feature: reader/unquote
+source: |-
+  (car (cdr `(x ,a y)))
+  
+verify:
+  read: (car (cdr (compile/quasiquote (x (compile/unquote a) y))))
+  expand: (car (cdr (compile/quasiquote (x (compile/unquote a) y))))
+  eval: "0"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote
+  - quasiquote
+notes: unquote splices the runtime value of a=0 into position; cadr extracts it

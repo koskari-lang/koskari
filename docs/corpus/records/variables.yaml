@@ -967,3 +967,56 @@ tags:
   - variable
   - define-values
 notes: two-value destructure; 10*20=200
+---
+id: variable-amp-ref-read-001
+feature: reader/ampersand
+source: |-
+  &z
+  
+verify:
+  read: (compile/ref z)
+  expand: (compile/refq z)
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - variable
+  - reader
+  - ref
+notes: "&foo reads as (compile/ref foo); expands to (compile/refq foo); produces a Ref object at eval"
+---
+id: variable-amp-ref-deref-002
+feature: reader/ampersand
+source: |-
+  (deref &z)
+  
+verify:
+  read: (deref (compile/ref z))
+  expand: (deref (compile/ref z))
+  eval: "1"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - variable
+  - reader
+  - ref
+notes: "&z gives a VarRef to z; deref reads the value back; z=1 fixture"
+---
+id: variable-amp-dot-ref-attr-003
+feature: reader/ampersand
+source: |-
+  (deref &obj.count)
+  
+verify:
+  read: (deref (compile/ref (compile/attr obj count)))
+  expand: (deref (compile/ref (compile/attr obj count)))
+  eval: "5"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - variable
+  - reader
+  - ref
+notes: "&obj.count reads as (compile/ref (compile/attr obj count)); expands to ref-attr; deref gives 5"

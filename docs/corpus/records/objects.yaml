@@ -1752,3 +1752,54 @@ tags:
   - object
   - unary
 notes: vars returns a dict (the object's __dict__)
+---
+id: object-dot-attr-read-001
+feature: reader/dot-attr
+source: |-
+  obj.value
+  
+verify:
+  read: (compile/attr obj value)
+  expand: (compile/attr obj value)
+  eval: "99"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - object
+  - reader
+notes: "dot-attr shorthand: foo.bar reads as (compile/attr foo bar); obj.value fixture is 99"
+---
+id: object-dot-attr-count-002
+feature: reader/dot-attr
+source: |-
+  obj.count
+  
+verify:
+  read: (compile/attr obj count)
+  expand: (compile/attr obj count)
+  eval: "5"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - object
+  - reader
+notes: dot-attr shorthand for obj.count attribute; fixture value is 5
+---
+id: object-dot-attr-chain-003
+feature: reader/dot-attr
+source: |-
+  obj.value.real
+  
+verify:
+  read: (compile/attr (compile/attr obj value) real)
+  expand: (compile/attr (compile/attr obj value) real)
+  eval: "99"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - object
+  - reader
+notes: "chained dot: obj.a.b reads as nested (compile/attr (compile/attr obj a) b)"
