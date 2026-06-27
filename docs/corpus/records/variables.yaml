@@ -916,3 +916,54 @@ tags:
   - variable
   - parameterize
 notes: nested parameterize; inner binding shadows outer; innermost 60 is visible
+---
+id: variable-define-values-001
+feature: special/compile/define-values
+source: |-
+  (compile/define-values [a b c] (values 1 2 3))
+  
+verify:
+  read: (compile/define-values (a b c) (values 1 2 3))
+  expand: (compile/define-values (a b c) (values 1 2 3))
+  eval: "null"
+references:
+  - reference/specials/compile-define-values.md
+stability: evolving
+tags:
+  - variable
+  - define-values
+notes: destructure multiple values into three names; form evaluates to None
+---
+id: variable-define-values-use-002
+feature: special/compile/define-values
+source: |-
+  (begin (compile/define-values [a b c] (values 1 2 3)) (+ a b c))
+  
+verify:
+  read: (begin (compile/define-values (a b c) (values 1 2 3)) (+ a b c))
+  expand: (begin (compile/define-values (a b c) (values 1 2 3)) (+ a b c))
+  eval: "6"
+references:
+  - reference/specials/compile-define-values.md
+stability: evolving
+tags:
+  - variable
+  - define-values
+notes: destructure then use all three bindings; 1+2+3=6
+---
+id: variable-define-values-two-003
+feature: special/compile/define-values
+source: |-
+  (begin (compile/define-values [x y] (values 10 20)) (* x y))
+  
+verify:
+  read: (begin (compile/define-values (x y) (values 10 20)) (* x y))
+  expand: (begin (compile/define-values (x y) (values 10 20)) (* x y))
+  eval: "200"
+references:
+  - reference/specials/compile-define-values.md
+stability: evolving
+tags:
+  - variable
+  - define-values
+notes: two-value destructure; 10*20=200

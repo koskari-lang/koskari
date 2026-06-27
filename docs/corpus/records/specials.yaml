@@ -926,3 +926,54 @@ tags:
   - special
   - continuation
 notes: dyn-wind takes three expressions; no macro expansion; lowers directly to WIND_WRAP opcode
+---
+id: special-capture-cc-basic-001
+feature: special/compile/capture/cc
+source: |-
+  (capture/cc k 42)
+  
+verify:
+  read: (capture/cc k 42)
+  expand: (capture/cc k 42)
+  eval: "42"
+references:
+  - reference/specials/compile-capture-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: capture/cc with no use of k; body evaluates to 42 directly
+---
+id: special-capture-cc-escape-002
+feature: special/compile/capture/cc
+source: |-
+  (capture/cc k (compile/call k "early"))
+  
+verify:
+  read: (capture/cc k (compile/call k "early"))
+  expand: (capture/cc k (compile/call k "early"))
+  eval: '"early"'
+references:
+  - reference/specials/compile-capture-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: calling k exits immediately with the given value
+---
+id: special-capture-cc-abort-003
+feature: special/compile/capture/cc
+source: |-
+  (capture/cc k (begin (compile/call k 10) 99))
+  
+verify:
+  read: (capture/cc k (begin (compile/call k 10) 99))
+  expand: (capture/cc k (begin (compile/call k 10) 99))
+  eval: "10"
+references:
+  - reference/specials/compile-capture-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: k called with 10; code after the call (99) is never reached; form value is 10
