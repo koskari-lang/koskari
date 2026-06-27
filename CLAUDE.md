@@ -125,4 +125,6 @@ lst = cons(1, cons(2, cons(3, nil)))  # wrong
 
 Do not push. Do not run `git restore`, `git reset`, `git revert`, `git checkout`, `git merge`, or create/delete branches — only the user performs those operations. `git add` and `git commit` only when explicitly requested.
 
+Do not append `Claude-Session:` trailers to commit messages.
+
 # The end.
