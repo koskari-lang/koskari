@@ -565,3 +565,92 @@ tags:
   - macro
   - function-compose
 notes: compose double after add-one; applied to 3 gives (3+1)*2=8
+---
+id: function-define-keyword-arg-default-001
+feature: special/compile/define
+source: |-
+  begin:
+    define around [i reach: 1]:
+      (range (- i reach) (+ i reach 1))
+    (list (around 3))
+  
+verify:
+  eval: "list:[2,3,4]"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+  - "surface:block"
+notes: from examples/dataclass.ki; trailing-colon keyword arg with default; (around 3) uses reach=1 default
+---
+id: function-define-keyword-arg-call-002
+feature: special/compile/define
+source: |-
+  begin:
+    define around [i reach: 1]:
+      (range (- i reach) (+ i reach 1))
+    (list (around 3 reach: 2))
+  
+verify:
+  eval: "list:[1,2,3,4,5]"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+  - "surface:block"
+notes: from examples/dataclass.ki; passing keyword arg by name at call site with trailing colon
+---
+id: function-define-star-args-003
+feature: special/compile/define
+source: |-
+  (begin
+    (define f [x *: rest] (len rest))
+    (f 1 2 3 4))
+  
+verify:
+  eval: "3"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+notes: "*: rest collects extra positional args; (f 1 2 3 4) binds x=1, rest=(2,3,4)"
+---
+id: function-define-star-kwargs-004
+feature: special/compile/define
+source: |-
+  (begin
+    (define f [**: kwargs] (len kwargs))
+    (f x: 1 y: 2))
+  
+verify:
+  eval: "2"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+notes: "**: kwargs collects all keyword args into a dict; (f x: 1 y: 2) gives {x: 1, y: 2}"
+---
+id: function-call-star-spread-001
+feature: special/compile/call
+source: |-
+  (begin
+    (define f [x] x)
+    (f *: #[42]))
+  
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-call.md
+stability: evolving
+tags:
+  - function
+  - call
+notes: "*: at call site spreads a list as positional args; (f *: #[42]) equivalent to (f 42)"

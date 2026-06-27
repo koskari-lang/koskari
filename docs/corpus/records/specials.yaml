@@ -1313,3 +1313,63 @@ tags:
   - exception
   - "surface:block"
 notes: finally peer always runs; exception caught, returns 99; finally form evaluates to None
+---
+id: special-let-named-inner-loop-001
+feature: special/compile/let
+source: |-
+  let inner [[n 5] [v 0] [accu 1]]:
+    if (< n 1):
+      v
+    else:
+      inner (- n 1) accu (+ accu v)
+  
+verify:
+  eval: "5"
+references:
+  - reference/specials/compile-let.md
+stability: evolving
+tags:
+  - special
+  - let
+  - "surface:block"
+notes: from examples/fib.ki fib-tail-recur; named inner loop pattern; self-calling via let name
+---
+id: special-layout-with-binding-004
+feature: special/compile/with
+source: |-
+  with [f (open "/dev/null")]:
+    (f.read)
+  
+verify:
+  read: (with (f (open "/dev/null")) ((compile/attr f read)))
+  expand: (with (f (open "/dev/null")) ((compile/attr f read)))
+  eval: '""'
+references:
+  - reference/specials/compile-with.md
+stability: stable
+tags:
+  - special
+  - with
+  - context-manager
+  - "surface:block"
+notes: layout/with with named binding; dot-method call f.read reads as (compile/attr f read)
+---
+id: special-layout-with-no-binding-005
+feature: special/compile/with
+source: |-
+  with [(open "/dev/null")]:
+    None
+  
+verify:
+  read: (with ((open "/dev/null")) None)
+  expand: (with ((open "/dev/null")) None)
+  eval: "null"
+references:
+  - reference/specials/compile-with.md
+stability: stable
+tags:
+  - special
+  - with
+  - context-manager
+  - "surface:block"
+notes: layout/with without name binding; context manager opened and closed; body evaluates to None

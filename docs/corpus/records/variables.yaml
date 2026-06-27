@@ -1017,3 +1017,23 @@ tags:
   - reader
   - ref
 notes: "&obj.count reads as (compile/ref (compile/attr obj count)); expands to ref-attr; deref gives 5"
+---
+id: variable-ref-attr-bindq-pattern-001
+feature: special/compile/ref-attr
+source: |-
+  (begin
+    (define-class Pt [] (define __init__ [self x] (set-attr self val x)))
+    (define p (Pt 10))
+    (bindq fx (ref-attr p val))
+    (deref (ref-attr p val)))
+  
+verify:
+  eval: "10"
+references:
+  - reference/specials/compile-ref-attr.md
+stability: stable
+tags:
+  - variable
+  - ref-attr
+  - bindq
+notes: from examples/hello.ki; bindq binds fx to ref cell for p.val; deref reads the current value

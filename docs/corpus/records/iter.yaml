@@ -793,3 +793,122 @@ tags:
   - while
   - "surface:block"
 notes: while as accumulator; sums 3+2+1=6; pattern from examples/fib.ki fib-loop
+---
+id: iter-cons-improper-pair-surprising-001
+feature: special/compile/cons
+source: |-
+  (cons 1 2)
+  
+verify:
+  eval: "improper-list:(1 . 2)"
+references:
+  - reference/specials/compile-cons.md
+stability: evolving
+tags:
+  - iter
+  - cons
+  - surprising
+notes: "surprising: (cons 1 2) makes an improper pair (1 . 2), not a two-element list; corrective: (cons 1 2 nil) or (cons 1 2 nil) for a proper list"
+---
+id: iter-for-each-no-await-needed-001
+feature: macro/compile/for-each
+source: |-
+  (for-each [x seq] (* x 2))
+  
+verify:
+  read: (for-each (x seq) (* x 2))
+  expand: (for-each (x seq) (* x 2))
+  eval: "6"
+references:
+  - reference/macros/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+notes: for-each handles async iterables natively; await is never needed — (await (for-each ...)) is redundant but harmless
+---
+id: iter-layout-while-fib-loop-001
+feature: layout/while
+source: |-
+  begin:
+    define n 5
+    define v 0
+    define accu 1
+    while (> n 0):
+      decr! n
+      define tmp accu
+      set! accu (+ accu v)
+      set! v tmp
+    v
+  
+verify:
+  read: (begin (define n 5) (define v 0) (define accu 1) (while (> n 0) (decr! n) (define tmp accu) (set! accu (+ accu v)) (set! v tmp)) v)
+  expand: (begin (define n 5) (define v 0) (define accu 1) (while (> n 0) (decr! n) (define tmp accu) (set! accu (+ accu v)) (set! v tmp)) v)
+  eval: "5"
+references:
+  - reference/specials/compile-while.md
+stability: stable
+tags:
+  - iter
+  - while
+  - "surface:block"
+notes: from examples/fib.ki fib-loop; iterative Fibonacci; (fib 5)=5
+---
+id: iter-for-each-product-destructure-001
+feature: macro/compile/for-each
+source: |-
+  (begin
+    (import-from itertools product)
+    (define result #[])
+    (for-each [[x y] (product (range 2) (range 2))]
+      (result.append #[x y]))
+    (len result))
+  
+verify:
+  eval: "4"
+references:
+  - reference/macros/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+notes: from examples/dataclass.ki neighbors; destructures each pair from itertools.product into [x y]
+---
+id: iter-for-each-accumulate-002
+feature: macro/compile/for-each
+source: |-
+  (begin
+    (define total 0)
+    (for-each [x seq] (setq total (+ total x)))
+    total)
+  
+verify:
+  read: (begin (define total 0) (for-each (x seq) (setq total (+ total x))) total)
+  expand: (begin (define total 0) (for-each (x seq) (setq total (+ total x))) total)
+  eval: "6"
+references:
+  - reference/macros/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+notes: for-each with setq accumulator; seq=(1,2,3); 1+2+3=6
+---
+id: iter-for-each-multi-body-003
+feature: macro/compile/for-each
+source: |-
+  (for-each [x seq]
+    (define doubled (* x 2))
+    doubled)
+  
+verify:
+  read: (for-each (x seq) (define doubled (* x 2)) doubled)
+  expand: (for-each (x seq) (define doubled (* x 2)) doubled)
+  eval: "6"
+references:
+  - reference/macros/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+notes: for-each with multi-expression body; last body expression is return value; 3*2=6

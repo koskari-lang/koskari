@@ -1861,3 +1861,95 @@ tags:
   - class
   - "surface:block"
 notes: self.base inside method reads as (compile/attr self base)
+---
+id: object-dataclass-decorated-define-class-001
+feature: layout/define-class
+source: |-
+  begin:
+    import-from dataclasses dataclass
+    @dataclass
+    define-class Pt []:
+      define x :: int 0
+      define y :: int 0
+    define p (Pt 3 5)
+    p.x
+  
+verify:
+  eval: "3"
+references:
+  - reference/layouts/layout-define-class.md
+stability: evolving
+tags:
+  - object
+  - define-class
+  - "surface:block"
+notes: "from examples/dataclass.ki; @dataclass decorator on define-class; define x :: int 0 is typed field with default"
+---
+id: object-set-attr-method-pattern-001
+feature: special/compile/set-attr
+source: |-
+  begin:
+    define-class Point []:
+      define __init__ [self x]:
+        (self.set_x x)
+      define get_x [self]:
+        self.real_x
+      define set_x [self x]:
+        (set-attr self real_x x)
+    define p (Point 42)
+    (p.get_x)
+  
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-set-attr.md
+stability: stable
+tags:
+  - object
+  - set-attr
+  - define-class
+  - "surface:block"
+notes: from examples/hello.ki FunTimes; set-attr with keyword-style attribute name; self.set_x is a method call via dot-attr
+---
+id: object-set-attr-basic-002
+feature: special/compile/set-attr
+source: |-
+  (begin
+    (import-from types SimpleNamespace)
+    (define ns (SimpleNamespace))
+    (set-attr ns name "koskari")
+    ns.name)
+  
+verify:
+  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (compile/attr ns name))
+  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (compile/attr ns name))
+  eval: '"koskari"'
+references:
+  - reference/specials/compile-set-attr.md
+stability: stable
+tags:
+  - object
+  - set-attr
+notes: set-attr with symbol attribute name; ns.name reads as (compile/attr ns name)
+---
+id: object-set-attr-multiple-003
+feature: special/compile/set-attr
+source: |-
+  (begin
+    (import-from types SimpleNamespace)
+    (define ns (SimpleNamespace))
+    (set-attr ns x 10)
+    (set-attr ns y 20)
+    (+ ns.x ns.y))
+  
+verify:
+  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (compile/attr ns x) (compile/attr ns y)))
+  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (compile/attr ns x) (compile/attr ns y)))
+  eval: "30"
+references:
+  - reference/specials/compile-set-attr.md
+stability: stable
+tags:
+  - object
+  - set-attr
+notes: setting multiple attributes; dot-attr access reads as compile/attr for each
