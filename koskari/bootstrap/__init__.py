@@ -30,7 +30,8 @@ from os.path import dirname, join
 from typing import Any, Dict
 
 from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
-                   KosProperty, MemoizedRef, Module, ModuleNamespace,
+                   KosPartial, KosProperty, MemoizedRef, Module,
+                   ModuleNamespace,
                    ParamRef, Ref, apply, build_dict, build_list, build_set,
                    build_tuple, car, cdr, cons, defer, demand, demand_apply,
                    demand_call, deref, gensym, getattr_star, getitem_star,
@@ -124,6 +125,7 @@ def make_bootstrap():
     # types from koskari.lib
     _ty('defer', defer)
     _ty('demand', demand)
+    _ty('partial', KosPartial)
     _ty('keyword', keyword)
     _ty('pair', pair)
     _ty('symbol', symbol)

@@ -65,6 +65,7 @@ struct KosStackSteal;       typedef struct KosStackSteal       KosStackSteal;
 #include "defer.h"
 #include "async_loop.h"
 #include "property.h"
+#include "partial.h"
 
 
 /* === unit initializers === */

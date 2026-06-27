@@ -155,6 +155,10 @@ static int initialize_types(void) {
         fprintf(stderr, "Failed to initialize property\n");
         return -1;
     }
+    if (koskari_partial_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize partial\n");
+        return -1;
+    }
     if (koskari_object_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize object\n");
         return -1;
@@ -270,6 +274,7 @@ int main(int argc, char *argv[]) {
     run_paramref_tests();
     run_matcher_tests();
     run_property_tests();
+    run_partial_tests();
 
     /* Future units:
     run_tco_tests();
