@@ -427,3 +427,35 @@ tags:
   - syntax
   - parse-rule-patternq
 notes: koskari/bootstrap/_define_syntax.ki; empty literals list when second arg omitted
+---
+id: syntax-parse-match-patternq-var-002
+feature: macro/compile/parse-match-patternq
+source: |-
+  (parse-match-patternq (VAR a))
+  
+verify:
+  expand: (call parse-match-pattern (quote (VAR a)))
+references:
+  - reference/macros/index.md
+  - reference/concepts/macro-matching-and-hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - parse-match-patternq
+notes: VAR pattern; expands to call parse-match-pattern with quoted pattern
+---
+id: syntax-parse-match-patternq-literal-003
+feature: macro/compile/parse-match-patternq
+source: |-
+  (parse-match-patternq (LITERAL 42))
+  
+verify:
+  expand: (call parse-match-pattern (quote (LITERAL 42)))
+references:
+  - reference/macros/index.md
+  - reference/concepts/macro-matching-and-hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - parse-match-patternq
+notes: LITERAL pattern; expands to call parse-match-pattern with quoted LITERAL form

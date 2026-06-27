@@ -393,3 +393,141 @@ tags:
   - await
   - async
 notes: zero-arg form emits cooperative suspend; form value is None
+---
+id: function-define-coroutine-param-002
+feature: macro/compile/define-coroutine
+source: |-
+  (define-coroutine counter [n] n)
+  
+verify:
+  expand: (define counter (coroutine-fn (function counter (n) n)))
+references:
+  - reference/macros/compile-define-coroutine.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - define-coroutine
+notes: with a parameter; expands to coroutine-fn wrapping a function form with formals
+---
+id: function-define-demanding-eval-002
+feature: macro/compile/define-demanding
+source: |-
+  (begin (define-demanding sync-id [x] x) (sync-id 42))
+  
+verify:
+  read: (begin (define-demanding sync-id (x) x) (sync-id 42))
+  expand: (begin (define-demanding sync-id (x) x) (sync-id 42))
+  eval: "42"
+references:
+  - reference/macros/compile-define-demanding.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - define-demanding
+notes: demand-wrapped function; calling sync-id 42 returns 42 directly (sync-safe)
+---
+id: function-define-demanding-two-param-003
+feature: macro/compile/define-demanding
+source: |-
+  (define-demanding add [x y] (+ x y))
+  
+verify:
+  expand: (define add (demand (function add (x y) (+ x y))))
+references:
+  - reference/macros/compile-define-demanding.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - define-demanding
+notes: two-param form; expands to define with demand wrapper around function
+---
+id: function-define-coroutine-type-003
+feature: macro/compile/define-coroutine
+source: |-
+  (begin (define-coroutine gen [n] (compile/yield n)) (str (type gen)))
+  
+verify:
+  read: (begin (define-coroutine gen (n) (compile/yield n)) (str (type gen)))
+  expand: (begin (define-coroutine gen (n) (compile/yield n)) (str (type gen)))
+  eval: '"<class ''function''>"'
+references:
+  - reference/macros/compile-define-coroutine.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - define-coroutine
+notes: define-coroutine binds a function slot; type check confirms it is a Python function wrapping coroutine-fn
+---
+id: function-named-two-param-003
+feature: special/compile/function
+source: |-
+  ((function add [x y] (+ x y)) 3 4)
+  
+verify:
+  read: ((function add (x y) (+ x y)) 3 4)
+  expand: ((function add (x y) (+ x y)) 3 4)
+  eval: "7"
+references:
+  - reference/specials/compile-function.md
+stability: evolving
+tags:
+  - function
+notes: function with two params called inline; 3+4=7
+---
+id: function-yield-two-values-003
+feature: special/compile/yield
+source: |-
+  (list (compile/call (compile/lambda [n] (compile/yield n) (compile/yield (+ n 1))) 5))
+  
+verify:
+  read: (list (compile/call (compile/lambda (n) (compile/yield n) (compile/yield (+ n 1))) 5))
+  expand: (list (compile/call (compile/lambda (n) (compile/yield n) (compile/yield (+ n 1))) 5))
+  eval: "list:[5,6]"
+references:
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - function
+  - yield
+  - generator
+notes: two yield points in one lambda; list collects both yielded values
+---
+id: function-yield-from-range-param-003
+feature: special/compile/yield-from
+source: |-
+  (list (compile/call (compile/lambda [n] (compile/yield-from (range n))) 4))
+  
+verify:
+  read: (list (compile/call (compile/lambda (n) (compile/yield-from (range n))) 4))
+  expand: (list (compile/call (compile/lambda (n) (compile/yield-from (range n))) 4))
+  eval: "list:[0,1,2,3]"
+references:
+  - reference/specials/compile-yield-from.md
+stability: evolving
+tags:
+  - function
+  - yield-from
+  - generator
+notes: yield-from delegates to range(n); list collects all four values
+---
+id: function-await-plain-value-003
+feature: special/compile/await
+source: |-
+  (compile/await z)
+  
+verify:
+  read: (compile/await z)
+  expand: (compile/await z)
+  eval: "1"
+references:
+  - reference/specials/compile-await.md
+stability: evolving
+tags:
+  - function
+  - await
+  - async
+notes: await on a plain value is a no-op; z=1 fixture; eval returns the value directly

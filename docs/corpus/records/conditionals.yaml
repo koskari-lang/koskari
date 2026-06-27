@@ -925,3 +925,21 @@ tags:
   - conditional
   - while
 notes: "else: clause fires when test becomes false; z=1 fixture so loop runs once then exits naturally"
+---
+id: conditional-bool-zero-003
+feature: macro/compile/bool
+source: |-
+  (bool 0)
+  
+verify:
+  read: (bool 0)
+  expand: (compile/truth 0)
+  eval: "false"
+references:
+  - reference/macros/compile-bool.md
+stability: evolving
+tags:
+  - conditional
+  - macro
+  - bool
+notes: bool 0 is falsy; bool expands to compile/truth

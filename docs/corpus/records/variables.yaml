@@ -433,3 +433,296 @@ stability: evolving
 tags:
   - variable
 notes: mutation then read; z=1 fixture; begin returns z after assignment
+---
+id: variable-deref-refq-002
+feature: special/compile/deref
+source: |-
+  (let [[x 99]] (compile/deref (compile/refq x)))
+  
+verify:
+  read: (let ((x 99)) (compile/deref (compile/refq x)))
+  expand: (let ((x 99)) (compile/deref (compile/refq x)))
+  eval: "99"
+references:
+  - reference/specials/compile-deref.md
+  - reference/specials/compile-refq.md
+stability: evolving
+tags:
+  - variable
+  - deref
+notes: compile/refq produces a VarRef; compile/deref calls deref() to get the value
+---
+id: variable-bindq-count-002
+feature: special/compile/bindq
+source: |-
+  (begin (compile/bindq y (compile/ref-attr obj count)) y)
+  
+verify:
+  read: (begin (compile/bindq y (compile/ref-attr obj count)) y)
+  expand: (begin (compile/bindq y (compile/ref-attr obj count)) y)
+  eval: "5"
+references:
+  - reference/specials/compile-bindq.md
+stability: evolving
+tags:
+  - variable
+  - bindq
+notes: bind y to AttributeRef for obj.count; reading y auto-dereferences; obj.count=5 fixture
+---
+id: variable-bindq-varref-003
+feature: special/compile/bindq
+source: |-
+  (let [[x 77]] (begin (compile/bindq r (compile/refq x)) r))
+  
+verify:
+  read: (let ((x 77)) (begin (compile/bindq r (compile/refq x)) r))
+  expand: (let ((x 77)) (begin (compile/bindq r (compile/refq x)) r))
+  eval: "77"
+references:
+  - reference/specials/compile-bindq.md
+stability: evolving
+tags:
+  - variable
+  - bindq
+notes: bind r to VarRef for x; reading r auto-dereferences through the ref slot
+---
+id: variable-deref-attr-003
+feature: special/compile/deref
+source: |-
+  (begin (compile/deref (compile/ref-attr obj value)))
+  
+verify:
+  read: (begin (compile/deref (compile/ref-attr obj value)))
+  expand: (begin (compile/deref (compile/ref-attr obj value)))
+  eval: "99"
+references:
+  - reference/specials/compile-deref.md
+  - reference/specials/compile-ref-attr.md
+stability: evolving
+tags:
+  - variable
+  - deref
+notes: ref-attr produces an AttributeRef; deref fetches obj.value which is 99 in fixture
+---
+id: variable-del-name-002
+feature: macro/compile/del!
+source: |-
+  (begin (del! z) None)
+  
+verify:
+  read: (begin (del! z) None)
+  expand: (begin (del! z) None)
+  eval: "null"
+references:
+  - reference/macros/compile-del.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - del!
+notes: name form; z=1 fixture; del! z clears the slot; None is the form's value
+---
+id: variable-del-attr-003
+feature: macro/compile/del!
+source: |-
+  (begin (del! (attr obj count)) None)
+  
+verify:
+  read: (begin (del! (attr obj count)) None)
+  expand: (begin (del! (attr obj count)) None)
+  eval: "null"
+references:
+  - reference/macros/compile-del.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - del!
+notes: attr form expands to del-attr; deletes obj.count attribute
+---
+id: variable-global-value-002
+feature: macro/compile/global
+source: |-
+  (begin (global g) (setq g 99) g)
+  
+verify:
+  read: (begin (global g) (setq g 99) g)
+  expand: (begin (global g) (setq g 99) g)
+  eval: "99"
+references:
+  - reference/macros/compile-global-and-compile-local.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - global
+notes: declare global slot, assign via setq, then read back
+---
+id: variable-global-expand-003
+feature: macro/compile/global
+source: |-
+  (global count)
+  
+verify:
+  expand: (compile/define-global count)
+references:
+  - reference/macros/compile-global-and-compile-local.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - global
+notes: global NAME expands to compile/define-global NAME
+---
+id: variable-local-declare-002
+feature: macro/compile/local
+source: |-
+  (local x)
+  
+verify:
+  expand: (compile/define x)
+references:
+  - reference/macros/compile-global-and-compile-local.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - local
+notes: local NAME (no value) expands to compile/define NAME declaration-only
+---
+id: variable-local-expand-003
+feature: macro/compile/local
+source: |-
+  (local x 42)
+  
+verify:
+  expand: (compile/define x 42)
+references:
+  - reference/macros/compile-global-and-compile-local.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - local
+notes: local NAME VALUE expands to compile/define NAME VALUE
+---
+id: variable-bind-attr-002
+feature: macro/compile/bind!
+source: |-
+  (begin (bind! y (attr obj value)) y)
+  
+verify:
+  read: (begin (bind! y (attr obj value)) y)
+  expand: (begin (bind! y (attr obj value)) y)
+  eval: "99"
+references:
+  - reference/macros/compile-bind.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - bind!
+notes: bind! y to attr ref for obj.value; reading y auto-dereferences; obj.value=99 fixture
+---
+id: variable-bind-item-003
+feature: macro/compile/bind!
+source: |-
+  (begin (bind! r (item seq 0)) r)
+  
+verify:
+  read: (begin (bind! r (item seq 0)) r)
+  expand: (begin (bind! r (item seq 0)) r)
+  eval: "1"
+references:
+  - reference/macros/compile-bind.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - bind!
+notes: bind! r to ItemRef for seq[0]; reading r returns the tuple element; seq=(1,2,3) fixture
+---
+id: variable-parameterq-bound-002
+feature: macro/compile/parameterq
+source: |-
+  (begin (define-parameter level 5) (parameterize [[level 10]] (parameterq level 0)))
+  
+verify:
+  read: (begin (define-parameter level 5) (parameterize ((level 10)) (parameterq level 0)))
+  expand: (begin (define-parameter level 5) (parameterize ((level 10)) (parameterq level 0)))
+  eval: "10"
+references:
+  - reference/macros/compile-define-parameter-and-compile-parameterq.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - parameterq
+notes: inside parameterize, parameterq reads the current dynamic binding (10) not the default
+---
+id: variable-parameterq-expand-003
+feature: macro/compile/parameterq
+source: |-
+  (parameterq some-setting 99)
+  
+verify:
+  expand: (parameter (compile/quote some-setting) 99)
+references:
+  - reference/macros/compile-define-parameter-and-compile-parameterq.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - parameterq
+notes: parameterq expands to a parameter form with quoted key and default
+---
+id: variable-define-parameter-expand-002
+feature: macro/compile/define-parameter
+source: |-
+  (define-parameter max-retries 3)
+  
+verify:
+  expand: (compile/begin (compile/define max-retries) (compile/bindq max-retries (ParamRef (compile/quote max-retries) 3)))
+references:
+  - reference/macros/compile-define-parameter-and-compile-parameterq.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - define-parameter
+notes: define-parameter expands to define then bindq with a ParamRef cell; key is quoted
+---
+id: variable-define-parameter-readback-003
+feature: macro/compile/define-parameter
+source: |-
+  (begin (define-parameter timeout 30) timeout)
+  
+verify:
+  read: (begin (define-parameter timeout 30) timeout)
+  expand: (begin (define-parameter timeout 30) timeout)
+  eval: "30"
+references:
+  - reference/macros/compile-define-parameter-and-compile-parameterq.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - define-parameter
+notes: read timeout after define-parameter; returns the ParamRef default (30) when unset dynamically
+---
+id: variable-delq-compile-let-003
+feature: special/compile/delq
+source: |-
+  (let [[x 42]] (compile/delq x))
+  
+verify:
+  read: (let ((x 42)) (compile/delq x))
+  expand: (let ((x 42)) (compile/delq x))
+  eval: "null"
+references:
+  - reference/specials/compile-delq.md
+stability: evolving
+tags:
+  - variable
+  - delq
+notes: "compile/delq: delete x from the frame; form evaluates to None"

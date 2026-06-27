@@ -343,3 +343,181 @@ tags:
   - dict
   - "surface:sexpr"
 notes: "keyword dict #{key: val ...} lowers to str keys; lookup via string key"
+---
+id: iter-range-predicate-true-002
+feature: builtin/range?
+source: |-
+  (range? (range 5))
+  
+verify:
+  read: (range? (range 5))
+  expand: (range? (range 5))
+  eval: "true"
+references:
+  - reference/builtins/range-predicate.md
+stability: evolving
+tags:
+  - iter
+  - builtin
+  - range?
+notes: range? is true for a real range object produced by (range 5)
+---
+id: iter-range-predicate-false-003
+feature: builtin/range?
+source: |-
+  (range? "hello")
+  
+verify:
+  read: (range? "hello")
+  expand: (range? "hello")
+  eval: "false"
+references:
+  - reference/builtins/range-predicate.md
+stability: evolving
+tags:
+  - iter
+  - builtin
+  - range?
+notes: range? returns false for a non-range value
+---
+id: iter-slice-predicate-true-002
+feature: builtin/slice?
+source: |-
+  (slice? (build-slice 1 5))
+  
+verify:
+  read: (slice? (build-slice 1 5))
+  expand: (slice? (build-slice 1 5))
+  eval: "true"
+references:
+  - reference/builtins/slice-predicate.md
+stability: evolving
+tags:
+  - iter
+  - builtin
+  - slice?
+notes: slice? is true for a slice produced by build-slice
+---
+id: iter-slice-predicate-false-003
+feature: builtin/slice?
+source: |-
+  (slice? 42)
+  
+verify:
+  read: (slice? 42)
+  expand: (slice? 42)
+  eval: "false"
+references:
+  - reference/builtins/slice-predicate.md
+stability: evolving
+tags:
+  - iter
+  - builtin
+  - slice?
+notes: slice? returns false for a non-slice integer
+---
+id: iter-literal-tuple-empty-002
+feature: "reader/#tuple"
+source: |-
+  #()
+  
+verify:
+  read: "(#tuple)"
+  expand: "(#tuple)"
+  eval: "tuple:()"
+references:
+  - reference/reader/hash-tuple.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - tuple
+notes: "#() reader macro produces an empty tuple"
+---
+id: iter-literal-tuple-strings-003
+feature: "reader/#tuple"
+source: |-
+  #("a" "b")
+  
+verify:
+  read: "(#tuple \"a\" \"b\")"
+  expand: "(#tuple \"a\" \"b\")"
+  eval: "tuple:(\"a\",\"b\")"
+references:
+  - reference/reader/hash-tuple.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - tuple
+notes: "#(…) with string elements; tuple members can be any literal type"
+---
+id: iter-literal-list-empty-003
+feature: "reader/#list"
+source: |-
+  #[]
+  
+verify:
+  read: "(#list)"
+  expand: "(#list)"
+  eval: "list:[]"
+references:
+  - reference/reader/hash-list.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - list
+notes: "#[] reader macro produces an empty Python list"
+---
+id: iter-item-index-two-003
+feature: special/compile/item
+source: |-
+  (item seq 2)
+  
+verify:
+  read: (item seq 2)
+  expand: (item seq 2)
+  eval: "3"
+references:
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - item
+notes: seq=(1,2,3) fixture; index 2 returns 3
+---
+id: iter-slice-macro-indexing-003
+feature: macro/compile/slice
+source: |-
+  (item seq (slice 1 None))
+  
+verify:
+  read: (item seq (slice 1 None))
+  expand: (item seq (slice 1 None))
+  eval: "tuple:(2,3)"
+references:
+  - reference/macros/compile-slice.md
+stability: evolving
+tags:
+  - iter
+  - macro
+  - slice
+notes: "slice used as index into seq; (slice 1 None) is seq[1:]; seq=(1,2,3) fixture"
+---
+id: iter-build-slice-indexing-003
+feature: runtime/build-slice
+source: |-
+  (item seq (build-slice 0 2))
+  
+verify:
+  read: (item seq (build-slice 0 2))
+  expand: (item seq (build-slice 0 2))
+  eval: "tuple:(1,2)"
+references:
+  - reference/builtins/build-slice.md
+stability: evolving
+tags:
+  - iter
+  - build-slice
+notes: "build-slice 0 2 selects seq[0:2]; seq=(1,2,3) fixture gives (1,2)"

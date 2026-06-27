@@ -451,3 +451,173 @@ tags:
   - special
   - namespace
 notes: returns the current frame namespace; eval produces a Namespace object (not auto-encodable)
+---
+id: special-call-cc-invoke-002
+feature: special/compile/call/cc
+source: |-
+  (compile/call/cc (compile/lambda [k] (compile/call k 42)))
+  
+verify:
+  read: (compile/call/cc (compile/lambda (k) (compile/call k 42)))
+  expand: (compile/call/cc (compile/lambda (k) (compile/call k 42)))
+  eval: "42"
+references:
+  - reference/specials/compile-callcc.md
+stability: evolving
+tags:
+  - special
+  - continuation
+notes: capture continuation k; invoke immediately with 42; form value is 42
+---
+id: special-call-cc-escape-003
+feature: special/compile/call/cc
+source: |-
+  (compile/call/cc (compile/lambda [escape] (compile/begin (compile/call escape "early") "unreachable")))
+  
+verify:
+  read: (compile/call/cc (compile/lambda (escape) (compile/begin (compile/call escape "early") "unreachable")))
+  expand: (compile/call/cc (compile/lambda (escape) (compile/begin (compile/call escape "early") "unreachable")))
+  eval: '"early"'
+references:
+  - reference/specials/compile-callcc.md
+stability: evolving
+tags:
+  - special
+  - continuation
+notes: escape continuation short-circuits; code after the invoke is never reached
+---
+id: special-bytecode-const-int-002
+feature: special/compile/bytecode
+source: |-
+  (bytecode [CONST 42] [RETURN 1])
+  
+verify:
+  read: (bytecode (CONST 42) (RETURN 1))
+  expand: (bytecode (CONST 42) (RETURN 1))
+  eval: "42"
+references:
+  - reference/specials/compile-bytecode.md
+stability: evolving
+tags:
+  - special
+  - bytecode
+notes: inline bytecode with integer constant
+---
+id: special-bytecode-const-none-003
+feature: special/compile/bytecode
+source: |-
+  (bytecode [CONST None] [RETURN 1])
+  
+verify:
+  read: (bytecode (CONST None) (RETURN 1))
+  expand: (bytecode (CONST None) (RETURN 1))
+  eval: "null"
+references:
+  - reference/specials/compile-bytecode.md
+stability: evolving
+tags:
+  - special
+  - bytecode
+notes: CONST None pushed and returned; result is null
+---
+id: special-let-cc-escape-002
+feature: special/compile/let/cc
+source: |-
+  (compile/let/cc escape (begin (call escape "short") "never"))
+  
+verify:
+  read: (compile/let/cc escape (begin (call escape "short") "never"))
+  expand: (compile/let/cc escape (begin (call escape "short") "never"))
+  eval: '"short"'
+references:
+  - reference/specials/compile-let-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: escape exits the body early; code after the call is never reached
+---
+id: special-let-cc-call-003
+feature: special/compile/let/cc
+source: |-
+  (compile/let/cc k (compile/call k 99))
+  
+verify:
+  read: (compile/let/cc k (compile/call k 99))
+  expand: (compile/let/cc k (compile/call k 99))
+  eval: "99"
+references:
+  - reference/specials/compile-let-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: capture current continuation as k; call k immediately with 99
+---
+id: special-globals-item-002
+feature: special/compile/globals
+source: |-
+  (item (compile/globals) "z")
+  
+verify:
+  read: (item (compile/globals) "z")
+  expand: (item (compile/globals) "z")
+  eval: "1"
+references:
+  - reference/specials/compile-globals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: index the module namespace by string key to read a variable; z=1 fixture
+---
+id: special-globals-type-003
+feature: special/compile/globals
+source: |-
+  (str (type (compile/globals)))
+  
+verify:
+  read: (str (type (compile/globals)))
+  expand: (str (type (compile/globals)))
+  eval: '"<class ''ModuleNamespace''>"'
+references:
+  - reference/specials/compile-globals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: compile/globals returns a ModuleNamespace; type/str confirms the runtime type
+---
+id: special-locals-item-002
+feature: special/compile/locals
+source: |-
+  (let [[x 5]] (item (compile/locals) "x"))
+  
+verify:
+  read: (let ((x 5)) (item (compile/locals) "x"))
+  expand: (let ((x 5)) (item (compile/locals) "x"))
+  eval: "5"
+references:
+  - reference/specials/compile-locals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: item access on local namespace inside a let frame; reads back x=5
+---
+id: special-locals-module-scope-003
+feature: special/compile/locals
+source: |-
+  (item (compile/locals) "z")
+  
+verify:
+  read: (item (compile/locals) "z")
+  expand: (item (compile/locals) "z")
+  eval: "1"
+references:
+  - reference/specials/compile-locals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: at module scope compile/locals is the module namespace; reads z=1 fixture

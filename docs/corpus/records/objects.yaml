@@ -1274,3 +1274,167 @@ tags:
   - object
   - arithmetic
 notes: any number to the 0 power is 1
+---
+id: object-inplace-add-002
+feature: special/compile/inplace
+source: |-
+  (compile/inplace + z 5)
+  
+verify:
+  read: (compile/inplace + z 5)
+  expand: (compile/inplace + z 5)
+  eval: "null"
+references:
+  - reference/specials/compile-inplace.md
+stability: evolving
+tags:
+  - object
+  - variable
+notes: z += 5; z=1 fixture; form evaluates to None
+---
+id: object-inplace-effect-003
+feature: special/compile/inplace
+source: |-
+  (begin (compile/inplace + z 5) z)
+  
+verify:
+  read: (begin (compile/inplace + z 5) z)
+  expand: (begin (compile/inplace + z 5) z)
+  eval: "6"
+references:
+  - reference/specials/compile-inplace.md
+stability: evolving
+tags:
+  - object
+  - variable
+notes: z=1 fixture; z += 5; z is then 6
+---
+id: object-iter-collect-002
+feature: special/compile/iter
+source: |-
+  (list (compile/iter seq))
+  
+verify:
+  read: (list (compile/iter seq))
+  expand: (list (compile/iter seq))
+  eval: "list:[1,2,3]"
+references:
+  - reference/specials/compile-iter.md
+stability: evolving
+tags:
+  - object
+  - iter
+notes: seq=(1,2,3) fixture; collect iterator into list
+---
+id: object-iter-string-003
+feature: special/compile/iter
+source: |-
+  (list (compile/iter "abc"))
+  
+verify:
+  read: (list (compile/iter "abc"))
+  expand: (list (compile/iter "abc"))
+  eval: "list:[\"a\",\"b\",\"c\"]"
+references:
+  - reference/specials/compile-iter.md
+stability: evolving
+tags:
+  - object
+  - iter
+notes: iterate over characters of a string
+---
+id: object-type-int-002
+feature: special/compile/type
+source: |-
+  (== (type 42) int)
+  
+verify:
+  read: (== (type 42) int)
+  expand: (== (type 42) int)
+  eval: "true"
+references:
+  - reference/specials/compile-type.md
+stability: evolving
+tags:
+  - object
+notes: type of int literal is int; compare with == to confirm
+---
+id: object-type-str-003
+feature: special/compile/type
+source: |-
+  (== (type "hello") str)
+  
+verify:
+  read: (== (type "hello") str)
+  expand: (== (type "hello") str)
+  eval: "true"
+references:
+  - reference/specials/compile-type.md
+stability: evolving
+tags:
+  - object
+notes: type of string literal is str
+---
+id: object-set-item-002
+feature: special/compile/set-item
+source: |-
+  (let [[lst (#list 10 20 30)]] (begin (compile/set-item lst 1 99) lst))
+  
+verify:
+  read: "(let ((lst (#list 10 20 30))) (begin (compile/set-item lst 1 99) lst))"
+  expand: "(let ((lst (#list 10 20 30))) (begin (compile/set-item lst 1 99) lst))"
+  eval: "list:[10,99,30]"
+references:
+  - reference/specials/compile-set-item.md
+stability: evolving
+tags:
+  - object
+notes: mutates index 1 of lst; reading lst after shows updated value
+---
+id: object-set-item-dict-003
+feature: special/compile/set-item
+source: |-
+  (let [[d (dict)]] (begin (compile/set-item d "key" 42) d))
+  
+verify:
+  read: (let ((d (dict))) (begin (compile/set-item d "key" 42) d))
+  expand: (let ((d (dict))) (begin (compile/set-item d "key" 42) d))
+  eval: "{\"key\": 42}"
+references:
+  - reference/specials/compile-set-item.md
+stability: evolving
+tags:
+  - object
+notes: set-item on a dict; inserts a new key-value pair
+---
+id: object-instance-int-003
+feature: special/compile/instance?
+source: |-
+  (instance? 42 int)
+  
+verify:
+  read: (instance? 42 int)
+  expand: (instance? 42 int)
+  eval: "true"
+references:
+  - reference/specials/compile-instance.md
+stability: evolving
+tags:
+  - object
+  - instance?
+notes: 42 is an instance of int
+---
+id: object-class-slot-int-003
+feature: special/compile/class
+source: |-
+  (begin (define Counter (class Counter () (define count 0))) (compile/attr Counter count))
+  
+verify:
+  eval: "0"
+references:
+  - reference/specials/compile-class.md
+stability: evolving
+tags:
+  - object
+  - class
+notes: class with integer class-level slot; read via compile/attr; () reads as nil in read stage
