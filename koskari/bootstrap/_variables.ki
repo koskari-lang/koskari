@@ -102,8 +102,6 @@ define-syntax compile/del!:
   """
 
   syntax-rules [item compile/item attr compile/attr]:
-    case (del! name):
-      (delq name)
     case (del! (item obj name)):
       (del-item obj name)
     case (del! (compile/item obj name)):
@@ -113,6 +111,8 @@ define-syntax compile/del!:
     case (del! (compile/attr obj name)):
       (del-attr obj name)
 
+    case (del! name):
+      (delq name)
 
 define-syntax compile/take!:
   """
@@ -120,8 +120,6 @@ define-syntax compile/take!:
   """
 
   syntax-rules [item compile/item attr compile/attr]:
-    case (take! name):
-      (takeq name)
     case (take! (item obj name)):
       (take-item obj name)
     case (take! (compile/item obj name)):
@@ -130,6 +128,9 @@ define-syntax compile/take!:
       (take-attr obj name)
     case (take! (compile/attr obj name)):
       (take-attr obj name)
+
+    case (take! name):
+      (takeq name)
 
 
 define-syntax compile/incr!:
