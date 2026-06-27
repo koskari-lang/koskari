@@ -60,8 +60,9 @@ another form). Use **deref** when you need the contents.
 [`set!`](../macros/compile-set.md) expands to the right special:
 
 - Symbol assignment → `setq` (store)
-- Places such as items, attributes, or refs → `set-item`, `set-attr`, `set-ref`,
-  or `inplace`
+- Augmented symbol assignment **`(set! x (+ x 1))`** → [`compile/inplace`](../specials/compile-inplace.md)
+- In-place item or attribute update → [`compile/inplace-item`](../specials/compile-inplace-item.md) or [`compile/inplace-attr`](../specials/compile-inplace-attr.md) via the **`inplace`** macro
+- Plain item, attribute, or ref store → `set-item`, `set-attr`, or `set-ref`
 - **`(set! (values pattern ...) value)`** → [`compile/setq-values`](../specials/compile-setq-values.md)
 
 ## Unpack

@@ -852,4 +852,152 @@ def special_inplace(compiler, source, tc=False):
     return frag
 
 
+@builtin("compile/inplace-item")
+@special("compile/inplace-item", patterns=_DEFAULT_SPECIAL_PATTERNS)
+def special_inplace_item(compiler, source, tc=False):
+    """
+    Compile (compile/inplace-item OP OBJ KEY VALUE)
+    """
+
+    called_by, body = source
+    if body is nil or not is_pair(body):
+        raise SpecialError(
+            "inplace-item requires op, obj, key, and value", source)
+
+    op_sym, rest = body
+    if rest is nil or not is_pair(rest):
+        raise SpecialError(
+            "inplace-item requires op, obj, key, and value", source)
+
+    obj_expr, rest = rest
+    if rest is nil or not is_pair(rest):
+        raise SpecialError(
+            "inplace-item requires op, obj, key, and value", source)
+
+    key_expr, rest = rest
+    if rest is nil or not is_pair(rest):
+        raise SpecialError(
+            "inplace-item requires op, obj, key, and value", source)
+
+    value_expr, rest = rest
+    if rest is not nil:
+        raise SpecialError("inplace-item takes exactly four arguments", source)
+
+    var_opcode = _INPLACE_OP_MAP.get(op_sym)
+    if var_opcode is None:
+        raise SpecialError("unknown inplace operator", source)
+
+    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
+    if opcode in (OpCode.KOS_OP_OBJECT_BIT_LEFT,
+                  OpCode.KOS_OP_OBJECT_BIT_RIGHT):
+        opa = 0
+    else:
+        opa = 2
+
+    frag = compiler.fragment(called_by)
+
+    if not is_pair(value_expr):
+        frag.position_of(body)
+
+    frag.merge(compiler.full_compile(obj_expr))
+
+    keyfrag = compiler.full_compile(key_expr)
+    is_const, key_val = const_only_expr(keyfrag)
+
+    if is_const:
+        frag.instruction(OpCode.KOS_OP_DUP, 1)
+        frag.instruction(OpCode.KOS_OP_CONST_ITEM, key_val)
+    else:
+        frag.merge(keyfrag)
+        frag.instruction(OpCode.KOS_OP_DUP, 2)
+        frag.instruction(OpCode.KOS_OP_ITEM, 0)
+
+    frag.merge(compiler.full_compile(value_expr))
+    frag.instruction(opcode, opa)
+
+    if is_const:
+        frag.instruction(OpCode.KOS_OP_CONST_ITEM_STORE, key_val)
+    else:
+        frag.instruction(OpCode.KOS_OP_ITEM_STORE, 0)
+
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@builtin("compile/inplace-attr")
+@special("compile/inplace-attr", patterns=_DEFAULT_SPECIAL_PATTERNS)
+def special_inplace_attr(compiler, source, tc=False):
+    """
+    Compile (compile/inplace-attr OP OBJ ATTR VALUE)
+    """
+
+    called_by, body = source
+    if body is nil or not is_pair(body):
+        raise SpecialError(
+            "inplace-attr requires op, obj, attr, and value", source)
+
+    op_sym, rest = body
+    if rest is nil or not is_pair(rest):
+        raise SpecialError(
+            "inplace-attr requires op, obj, attr, and value", source)
+
+    obj_expr, rest = rest
+    if rest is nil or not is_pair(rest):
+        raise SpecialError(
+            "inplace-attr requires op, obj, attr, and value", source)
+
+    key_expr, rest = rest
+    if rest is nil or not is_pair(rest):
+        raise SpecialError(
+            "inplace-attr requires op, obj, attr, and value", source)
+
+    value_expr, rest = rest
+    if rest is not nil:
+        raise SpecialError("inplace-attr takes exactly four arguments", source)
+
+    if not is_symbol(key_expr):
+        raise SpecialError("inplace-attr attr must be a symbol", source)
+
+    var_opcode = _INPLACE_OP_MAP.get(op_sym)
+    if var_opcode is None:
+        raise SpecialError("unknown inplace operator", source)
+
+    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
+    if opcode in (OpCode.KOS_OP_OBJECT_BIT_LEFT,
+                  OpCode.KOS_OP_OBJECT_BIT_RIGHT):
+        opa = 0
+    else:
+        opa = 2
+
+    sym = str(key_expr)
+    frag = compiler.fragment(called_by)
+
+    if not is_pair(value_expr):
+        frag.position_of(body)
+
+    if is_symbol(obj_expr):
+        frag.request_var(str(obj_expr))
+        frag.instruction(
+            OpCode.KOS_OP_VAR_ATTR, (str(obj_expr), sym, 0, 0))
+    else:
+        frag.merge(compiler.full_compile(obj_expr))
+        frag.instruction(OpCode.KOS_OP_DUP, 1)
+        frag.instruction(OpCode.KOS_OP_ATTR, sym)
+
+    frag.merge(compiler.full_compile(value_expr))
+    frag.instruction(opcode, opa)
+
+    if is_symbol(obj_expr):
+        frag.request_var(str(obj_expr))
+        frag.instruction(
+            OpCode.KOS_OP_VAR_ATTR_STORE, (str(obj_expr), sym, 0, 0))
+    else:
+        frag.instruction(OpCode.KOS_OP_ATTR_STORE, sym)
+
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
 # The end.

@@ -223,7 +223,27 @@ augmented **`(set! SYM (OP SYM VAL))`**; **`(set! (item …) VAL)`**; **`(set! (
 **`(set! (deref REF) VAL)`** (and **`compile/item`**, **`compile/attr`**, **`compile/deref`**
 variants).
 
-**Behaviour:** Expands to **`setq`**, **`compile/setq-values`**, **`compile/inplace`**, **`compile/set-item`**, **`compile/set-attr`**, or **`compile/set-ref`**.
+**Behaviour:** Expands to **`setq`**, **`compile/setq-values`**, **`compile/inplace`**, **`compile/set-item`**, **`compile/set-attr`**, or **`compile/set-ref`**. Augmented assignment on a symbol **`(set! name (OP name value))`** expands to **`compile/inplace`**.
+
+
+### compile/inplace (extend-syntax)
+
+**Symbol:** `compile/inplace` (extended in `_variables.ki`)
+
+**Syntax:** **`(inplace OP (item OBJ KEY) VALUE)`**; **`(inplace OP (compile/item OBJ KEY) VALUE)`**;
+**`(inplace OP (attr OBJ NAME) VALUE)`**; **`(inplace OP (compile/attr OBJ NAME) VALUE)`**.
+
+**Behaviour:** Dispatches item and attribute places to the compiler specials
+**`compile/inplace-item`** and **`compile/inplace-attr`**. Symbol bindings are
+not handled here; those use the base **`compile/inplace`** special (via **`set!`**
+augmented forms or direct **`(compile/inplace OP VAR VALUE)`**).
+
+**Examples:**
+
+```scheme
+(inplace + (item vec i) 1)
+(inplace * (attr obj scale) 2)
+```
 
 
 ### compile/del!

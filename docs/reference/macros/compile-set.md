@@ -6,5 +6,5 @@ augmented **`(set! SYM (OP SYM VAL))`**; **`(set! (item …) VAL)`**; **`(set! (
 **`(set! (deref REF) VAL)`** (and **`compile/item`**, **`compile/attr`**, **`compile/deref`**
 variants).
 
-**Behaviour:** Expands to **`setq`**, **`compile/setq-values`**, **`compile/inplace`**, **`compile/set-item`**, **`compile/set-attr`**, or **`compile/set-ref`**.
+**Behaviour:** Expands to **`setq`**, **`compile/setq-values`**, **`compile/inplace`**, **`compile/set-item`**, **`compile/set-attr`**, or **`compile/set-ref`**. Augmented assignment on a symbol **`(set! name (OP name value))`** expands to **`compile/inplace`**. In-place updates on item or attribute places use the **`compile/inplace`** macro extension (see [`compile/inplace-item`](../specials/compile-inplace-item.md) and [`compile/inplace-attr`](../specials/compile-inplace-attr.md)).
 

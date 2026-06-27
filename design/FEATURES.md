@@ -25,13 +25,13 @@ Highlights (not an exhaustive list):
 | Control | `compile/cond`, `compile/switch`, `compile/and`, `compile/or`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, internal exception helpers |
 | Context | `compile/with`, `compile/dyn-with`, `compile/dyn-wind`, `compile/parameterize` |
 | Generators / async | `compile/yield`, `compile/yield-from`, `compile/await` |
-| Calls / attrs / items | `compile/call`, `compile/call-attr`, `compile/attr`, `compile/set-attr`, `compile/del-attr`, `compile/ref-attr`, `compile/item`, `compile/set-item`, `compile/del-item`, `compile/ref-item`, `compile/deref` |
+| Calls / attrs / items | `compile/call`, `compile/call-attr`, `compile/attr`, `compile/set-attr`, `compile/inplace-attr`, `compile/del-attr`, `compile/ref-attr`, `compile/item`, `compile/set-item`, `compile/inplace-item`, `compile/del-item`, `compile/ref-item`, `compile/deref` |
 | Values | `compile/define-values`, `compile/setq-values` |
 | Import | `import`, `import-from` |
 | Continuations | `compile/call/cc`, `compile/let/cc`, `compile/capture/cc`, `compile/reset`, `compile/shift` |
 | Macros (lowering) | `compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`, `compile/macro-match`, `compile/special-rules`, `compile/special-match` |
 | Operators | `compile/+`, `-`, `*`, `/`, `//`, `///`, `%`, `**`, `@`, `&`, `|`, `^`, `~`, `<<`, `>>`, `compile/divmod`, comparisons (`compile/==`, `!=`, `<`, `<=`, `>`, `>=` and `equal?` / `lt?` aliases), `compile/is`, `compile/is-not`, `compile/in`, `compile/not-in`, **`compile/instance?`**, **`compile/subclass?`**, `compile/not`, `compile/repr`, `compile/truth`, `compile/iter`, `compile/aiter`, `compile/str`, `compile/format`, `compile/len`, `compile/type`, `compile/dir`, `compile/vars` |
-| Other | `compile/bytecode`, `compile/inplace`, `compile/globals`, `compile/locals`, `compile/gensym-thunk` (`{…}` thunk syntax) |
+| Other | `compile/bytecode`, `compile/inplace`, `compile/inplace-item`, `compile/inplace-attr`, `compile/globals`, `compile/locals`, `compile/gensym-thunk` (`{…}` thunk syntax) |
 
 **Not compiler specials** (use macros or runtime instead): `compile/if`, `compile/when`, `compile/unless` (macros in `bootstrap/_conditionals.ki`); **`define-syntax`** / **`extend-syntax`** (macros in `bootstrap/_define_syntax.ki`); assignment sugar **`set!`**, **`ref`**, **`bind!`**, etc. ([MACROS.md](MACROS.md)).
 
