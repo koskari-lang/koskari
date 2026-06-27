@@ -1370,7 +1370,15 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
 
 /**
    Unlink YIELD_FROM from top and free it. node must be dyn_top.
-   Callers: YIELD_FROM completion and unwind paths.
+
+   This does NOT close the delegate. It is the completion path: callers
+   reach here once the delegate has finished on its own (raised
+   StopIteration / StopAsyncIteration) or has already been closed/thrown
+   explicitly. Per PEP 380, an exhausted subiterator must not be closed
+   again -- and for a Python async generator, calling aclose() here would
+   produce an un-awaited coroutine. Forced-teardown callers (the outer
+   generator being closed while the delegate is still active) must call
+   kos_yieldfrom_close_delegate themselves before popping.
 */
 int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
   SAYF("[gen] pop_yield_from node=%p dyn_top=%p\n",
@@ -1385,7 +1393,6 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
 
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
-    kos_yieldfrom_close_delegate(node);
     kos_dynyieldfrom_free(node);
   }
   SAYF("[gen] pop_yield_from done dyn_top=%p (%s)\n",
