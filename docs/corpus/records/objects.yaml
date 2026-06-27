@@ -909,3 +909,368 @@ tags:
   - object
   - variable
 notes: custom step of 3; z=1 fixture; form evaluates to None
+---
+id: object-equal-str-002
+feature: special/compile/equal?
+source: |-
+  (equal? "hello" "hello")
+  
+verify:
+  read: (equal? "hello" "hello")
+  expand: (equal? "hello" "hello")
+  eval: "true"
+references:
+  - reference/specials/compile-eq.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-equal-false-003
+feature: special/compile/equal?
+source: |-
+  (equal? 1 2)
+  
+verify:
+  read: (equal? 1 2)
+  expand: (equal? 1 2)
+  eval: "false"
+references:
+  - reference/specials/compile-eq.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-not-equal-false-002
+feature: special/compile/not-equal?
+source: |-
+  (not-equal? 1 1)
+  
+verify:
+  read: (not-equal? 1 1)
+  expand: (not-equal? 1 1)
+  eval: "false"
+references:
+  - reference/specials/compile-ne.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-not-equal-str-003
+feature: special/compile/not-equal?
+source: |-
+  (not-equal? "a" "b")
+  
+verify:
+  read: (not-equal? "a" "b")
+  expand: (not-equal? "a" "b")
+  eval: "true"
+references:
+  - reference/specials/compile-ne.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-lt-alias-false-002
+feature: special/compile/lt?
+source: |-
+  (lt? 5 3)
+  
+verify:
+  read: (lt? 5 3)
+  expand: (lt? 5 3)
+  eval: "false"
+references:
+  - reference/specials/compile-lt.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-lt-alias-chain-003
+feature: special/compile/lt?
+source: |-
+  (lt? 0 1 2)
+  
+verify:
+  read: (lt? 0 1 2)
+  expand: (lt? 0 1 2)
+  eval: "true"
+references:
+  - reference/specials/compile-lt.md
+stability: stable
+tags:
+  - object
+  - comparison
+notes: chained lt? with three args; all adjacent pairs must satisfy <
+---
+id: object-le-strict-002
+feature: special/compile/<=
+source: |-
+  (<= 1 2)
+  
+verify:
+  read: (<= 1 2)
+  expand: (<= 1 2)
+  eval: "true"
+references:
+  - reference/specials/compile-le.md
+stability: stable
+tags:
+  - object
+  - comparison
+notes: strict less-than case; 1 < 2
+---
+id: object-le-false-003
+feature: special/compile/<=
+source: |-
+  (<= 3 2)
+  
+verify:
+  read: (<= 3 2)
+  expand: (<= 3 2)
+  eval: "false"
+references:
+  - reference/specials/compile-le.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-le-alias-strict-002
+feature: special/compile/le?
+source: |-
+  (le? 1 2)
+  
+verify:
+  read: (le? 1 2)
+  expand: (le? 1 2)
+  eval: "true"
+references:
+  - reference/specials/compile-le.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-le-alias-false-003
+feature: special/compile/le?
+source: |-
+  (le? 3 2)
+  
+verify:
+  read: (le? 3 2)
+  expand: (le? 3 2)
+  eval: "false"
+references:
+  - reference/specials/compile-le.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-ge-equal-002
+feature: special/compile/>=
+source: |-
+  (>= 5 5)
+  
+verify:
+  read: (>= 5 5)
+  expand: (>= 5 5)
+  eval: "true"
+references:
+  - reference/specials/compile-ge.md
+stability: stable
+tags:
+  - object
+  - comparison
+notes: equal-to case for >=; true when values are equal
+---
+id: object-ge-false-003
+feature: special/compile/>=
+source: |-
+  (>= 1 5)
+  
+verify:
+  read: (>= 1 5)
+  expand: (>= 1 5)
+  eval: "false"
+references:
+  - reference/specials/compile-ge.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-ge-alias-true-002
+feature: special/compile/ge?
+source: |-
+  (ge? 5 3)
+  
+verify:
+  read: (ge? 5 3)
+  expand: (ge? 5 3)
+  eval: "true"
+references:
+  - reference/specials/compile-ge.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-ge-alias-false-003
+feature: special/compile/ge?
+source: |-
+  (ge? 1 2)
+  
+verify:
+  read: (ge? 1 2)
+  expand: (ge? 1 2)
+  eval: "false"
+references:
+  - reference/specials/compile-ge.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-gt-alias-false-002
+feature: special/compile/gt?
+source: |-
+  (gt? 1 5)
+  
+verify:
+  read: (gt? 1 5)
+  expand: (gt? 1 5)
+  eval: "false"
+references:
+  - reference/specials/compile-gt.md
+stability: stable
+tags:
+  - object
+  - comparison
+---
+id: object-gt-alias-chain-003
+feature: special/compile/gt?
+source: |-
+  (gt? 5 3 1)
+  
+verify:
+  read: (gt? 5 3 1)
+  expand: (gt? 5 3 1)
+  eval: "true"
+references:
+  - reference/specials/compile-gt.md
+stability: stable
+tags:
+  - object
+  - comparison
+notes: chained gt? with three args
+---
+id: object-bit-and-002
+feature: special/compile/&
+source: |-
+  (& 12 10)
+  
+verify:
+  read: (& 12 10)
+  expand: (& 12 10)
+  eval: "8"
+references:
+  - reference/specials/compile-bit-and.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+  - bitwise
+notes: 0b1100 & 0b1010 = 0b1000 = 8
+---
+id: object-bit-and-zero-003
+feature: special/compile/&
+source: |-
+  (& 0 255)
+  
+verify:
+  read: (& 0 255)
+  expand: (& 0 255)
+  eval: "0"
+references:
+  - reference/specials/compile-bit-and.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+  - bitwise
+notes: AND with zero clears all bits
+---
+id: object-bit-or-002
+feature: special/compile/|
+source: |-
+  (| 12 10)
+  
+verify:
+  read: (| 12 10)
+  expand: (| 12 10)
+  eval: "14"
+references:
+  - reference/specials/compile-bit-or.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+  - bitwise
+notes: 0b1100 | 0b1010 = 0b1110 = 14
+---
+id: object-bit-or-three-003
+feature: special/compile/|
+source: |-
+  (| 1 2 4)
+  
+verify:
+  read: (| 1 2 4)
+  expand: (| 1 2 4)
+  eval: "7"
+references:
+  - reference/specials/compile-bit-or.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+  - bitwise
+notes: three-arg OR; sets bits 0,1,2; result is 7
+---
+id: object-power-002
+feature: special/compile/**
+source: |-
+  (** 2 10)
+  
+verify:
+  read: (** 2 10)
+  expand: (** 2 10)
+  eval: "1024"
+references:
+  - reference/specials/compile-power.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+---
+id: object-power-zero-003
+feature: special/compile/**
+source: |-
+  (** 2 0)
+  
+verify:
+  read: (** 2 0)
+  expand: (** 2 0)
+  eval: "1"
+references:
+  - reference/specials/compile-power.md
+stability: stable
+tags:
+  - object
+  - arithmetic
+notes: any number to the 0 power is 1
