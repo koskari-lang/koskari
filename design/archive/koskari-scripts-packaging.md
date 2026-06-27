@@ -1,6 +1,21 @@
 # Koskari scripts packaging (`koskari_scripts`)
 
-## Status
+**Status:** Implemented (archived). v1 launcher, setuptools plugin, unit tests,
+**`examples/life`**, and user-facing packaging recipe are landed.
+
+**Canonical summary:** [FEATURES.md](../FEATURES.md) § Packaging: installed
+commands (`koskari_scripts`).
+
+**User documentation:**
+[docs/patterns/recipes/packaging-installed-scripts.md](../../docs/patterns/recipes/packaging-installed-scripts.md)
+
+**Optional follow-ups** (not tracked in [TODO.md](../TODO.md)): end-to-end
+pip-install integration test; native binary dispatch for installed commands.
+See [ideas.md](../ideas.md).
+
+---
+
+## Status (implementation ledger)
 
 **v1 implemented** (launcher + setuptools plugin + unit tests).
 

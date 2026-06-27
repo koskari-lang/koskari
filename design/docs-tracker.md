@@ -145,7 +145,7 @@ reference pages and bootstrap scripts output).
 
 | Area | Status | Doc path | Notes |
 |------|--------|----------|-------|
-| Bootstrap macros | Generated | `docs/reference/macros/` | 42 pages |
+| Bootstrap macros | Generated | `docs/reference/macros/` | 44 pages |
 
 ---
 

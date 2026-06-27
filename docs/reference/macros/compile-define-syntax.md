@@ -13,4 +13,8 @@
 
 **Layout:** default **`layout/block`** flat splice at read time.
 
+## Related
 
+- [compile/let-syntax](compile-let-syntax.md) — local compile-time macro for the body extent
+- [compile/extend-syntax](compile-extend-syntax.md)
+- [compile/inline-macro](compile-inline-macro.md)

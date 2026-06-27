@@ -75,5 +75,7 @@ Source form
 ## Related reading
 
 - [Macros](../macros/index.md) — `define-syntax`, `extend-syntax`, rule forms
+- [compile/let-syntax](../macros/compile-let-syntax.md) — local compile-time macro binding
+- [compile/inline-macro](../macros/compile-inline-macro.md) — compile-time source splice
 - [compile/datum](../macros/compile-datum.md)
 - [Glossary: macro](../glossary.md), [Glossary: form](../glossary.md)

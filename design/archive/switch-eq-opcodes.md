@@ -1,12 +1,28 @@
-# Switch / equality dispatch opcodes (proposal)
+# Switch / equality dispatch opcodes
 
-**Status:** Base opcode `SWITCH_EQ` is implemented (entry in
-`koskari/lib/opcodes.incl`, handler in `koskari/lib/opcode/SWITCH_EQ.c`,
-documented in [OPCODES.md](OPCODES.md) §9.1). Compressed forms
-(`SWITCH_EQ_CONST`, `SWITCH_EQ_VAR`, `SWITCH_EQ_FAST`, `SWITCH_EQ_VAR_ATTR`,
-`SWITCH_EQ_FAST_ATTR`) and the `compile/switch` surface form remain
-proposal-only. When implementing those, follow the usual opcode checklist in
-[OPCODES.md](OPCODES.md) §1.10.
+**Status:** Implemented (archived). The full **`SWITCH_EQ`** family and
+**`compile/switch`** lowering are shipped.
+
+**Canonical summary:** [OPCODES.md](../OPCODES.md) §9.1; [SPECIALS.md](../SPECIALS.md)
+§ compile/switch.
+
+**User documentation:** [docs/reference/specials/compile-switch.md](../../docs/reference/specials/compile-switch.md);
+[docs/reference/vm/families.md](../../docs/reference/vm/families.md) §9.1.
+
+**Tests:** `tests/lib/opcode/test_switch.py`; `tests/compile/specials/test_switch.py`
+
+---
+
+## Implementation ledger
+
+| Piece | Location |
+| ----- | -------- |
+| Opcodes | `koskari/lib/opcodes.incl` — `SWITCH_EQ`, `SWITCH_EQ_CONST`, `SWITCH_EQ_VAR`, `SWITCH_EQ_FAST`, `SWITCH_EQ_VAR_ATTR`, `SWITCH_EQ_FAST_ATTR` |
+| Handlers | `koskari/lib/opcode/SWITCH_EQ*.c` |
+| Compiler special | `koskari/compile/specials/conditionals.py` — **`compile/switch`** |
+| Peephole fusion | `koskari/compile/compiler.py` — **`_SWITCH_SQUASHES`** in **`compress`** |
+
+---
 
 ## Motivation
 
@@ -57,11 +73,11 @@ This is intentionally the **inverse pop pattern** of `CHECK_EQ`: on mismatch,
 `CHECK_EQ` has already removed both values; `SWITCH_EQ` keeps the discriminant for
 the next comparison.
 
-## Compressed opcodes (follow-on)
+## Compressed opcodes
 
-After the base opcode works, specialized forms avoid loading the key onto the
-stack when the key is statically known or a simple load. Stack is always
-`[..., s]` with **scrutinee = TOS** before the opcode.
+Specialized forms avoid loading the key onto the stack when the key is
+statically known or a simple load. Stack is always `[..., s]` with **scrutinee =
+TOS** before the opcode.
 
 | Opcode | Operand(s) | Match | Mismatch |
 |--------|------------|-------|----------|
@@ -75,25 +91,15 @@ stack when the key is statically known or a simple load. Stack is always
 entry, binding, or attribute), compares to `s` using the same equality as
 `SWITCH_EQ` / `CHECK_EQ`, then applies the pop/jump contract above.
 
-**Rationale:** Matches existing opcode families (`CONST_ITEM_*`, `VAR_*`,
-`FAST_*`, `*_ATTR`) and gives the largest size win for **literal** case keys
-(`SWITCH_EQ_CONST`) first.
+The compiler **`compress`** pass fuses **`CONST`/`VAR`/`VAR_ATTR` + `SWITCH_EQ`**
+into the compressed opcodes via **`_SWITCH_SQUASHES`**.
 
-**Alternative:** A single opcode with an `EXTRA` discriminator for RHS kind
-reduces enum size but complicates the evaluator dispatch table; separate opcodes
-fit the current `opcodes.incl` style.
-
-**Async / suspension:** If loading a var or attribute can suspend, handlers must
-use the same evaluation model as existing load opcodes — no “always synchronous”
-shortcut unless the language guarantees it.
-
-## Possible surface syntax (compiler special)
+## Surface syntax: compile/switch
 
 Mirror **compile/cond** ([SPECIALS.md](SPECIALS.md) § compile/cond): clauses in
 order, optional `else:`, no match → `None`.
 
-**Symbol (placeholder):** `compile/switch` (name bikesheddable; `compile/case`
-is another option).
+**Symbol:** `compile/switch`
 
 **Syntax:**
 
@@ -112,37 +118,22 @@ is another option).
   whole form.
 - **else:** — optional; if present, run when no `KEY` matched. If absent, the
   form yields `None` (like `compile/cond` with no else).
-- **Empty** `(compile/switch DISC)` with no clauses — could yield `None` after
-  evaluating `DISC` for effect, then discarding; exact rule should match
-  language conventions for “empty cond” (see SPECIALS.md).
-
-**Macro sugar (optional, later):** A reader-level `switch` that expands to
-`compile/switch`, analogous to `if` → `compile/cond` in [MACROS.md](MACROS.md).
 
 **Lowering notes:**
 
-- Literal `KEY` forms should emit **SWITCH_EQ_CONST** when the compiler can pool
-  the constant.
-- Simple **ref** / **fast** / **attr** case keys should use the corresponding
-  compressed opcode when safe (same visibility and evaluation-order rules as
-  normal loads).
+- Literal `KEY` forms emit **SWITCH_EQ_CONST** when the compiler can pool the
+  constant (via **`compress`** fusion).
+- Simple **ref** / **fast** / **attr** case keys use the corresponding compressed
+  opcode when safe.
 - Arbitrary `KEY` expressions use **CONST** / evaluation + **SWITCH_EQ**.
 
 **Contrast with compile/cond:** `cond` tests arbitrary truthiness per clause;
 `compile/switch` compares each key to **one** precomputed discriminant by
 equality only.
 
-## Testing
-
-- C evaluator: base `SWITCH_EQ` is covered by
-  `tests/lib/opcode/test_switch.py` (match, mismatch retains discriminant,
-  chain to else, jump over tail, equality semantics).
-- Compiler (when `compile/switch` lands): dedicated tests under
-  `tests/compile/specials/` for emitted opcode shapes and results (match
-  first arm, later arm, else, no else → None).
-
 ## References
 
-- [OPCODES.md](OPCODES.md) — CHECK_EQ, jump locality, finalize pipeline.
-- [SPECIALS.md](SPECIALS.md) — compile/cond behaviour and examples.
-- [TODO.md](TODO.md) — tracking entry for this proposal.
+- [OPCODES.md](../OPCODES.md) — CHECK_EQ, jump locality, finalize pipeline.
+- [SPECIALS.md](../SPECIALS.md) — compile/cond and compile/switch behaviour.
+
+# The end.

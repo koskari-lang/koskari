@@ -287,17 +287,6 @@ Ref: `koskari/lib/ref.c` (DynamicRef handlers); `koskari/lib/opcode/DEREF.c`;
 
 ---
 
-## Packaging / installed CLI
-
-- End-to-end pip-install test for `koskari_scripts` setuptools integration.
-- Native binary for installed commands.
-
-Ref: [api/koskari-scripts-packaging.md](api/koskari-scripts-packaging.md);
-[api/import-system.md](api/import-system.md); `koskari/cli/__init__.py`;
-`examples/life/`.
-
----
-
 ## Concurrent async (`async` form)
 
 Add bootstrap macro **`compile/async`** and small runtime helpers for
@@ -324,9 +313,6 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 - **`labels` / `flet`** — bootstrap macros for local function binding (mutual
   recursion vs **`lambda`** shadowing). Ref:
   [language/labels-and-flet.md](language/labels-and-flet.md).
-- **`macro-let` / `inline-macro`** — compiler special for lexically scoped
-  compile-time macros; bootstrap sugar for **`inline-macro`**. Ref:
-  [language/macro-let-and-inline-macro.md](language/macro-let-and-inline-macro.md).
 
 ---
 
