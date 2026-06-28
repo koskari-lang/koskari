@@ -36,7 +36,7 @@ static int test_formals_spec_create_empty(void) {
       Test that FormalsSpec can be created with no arguments.
     */
     PyObject *fspec = KosFormalsSpec_New(NULL, NULL, NULL, NULL, NULL, NULL,
-                                         NULL);
+                                         NULL, NULL);
     TEST_ASSERT_NOT_NULL(fspec, "create empty FormalsSpec");
 
     TEST_ASSERT(KosFormalsSpec_CheckExact(fspec), "FormalsSpec type check");
@@ -47,6 +47,7 @@ static int test_formals_spec_create_empty(void) {
     TEST_ASSERT_NULL(KosFormalsSpec_STAR(fspec), "star is NULL");
     TEST_ASSERT_NULL(KosFormalsSpec_STARSTAR(fspec), "starstar is NULL");
     TEST_ASSERT_NULL(KosFormalsSpec_ANNOTATIONS(fspec), "annotations is NULL");
+    TEST_ASSERT_NULL(KosFormalsSpec_BY_REFS(fspec), "by_refs is NULL");
 
     Py_DECREF(fspec);
     return 0;
@@ -61,7 +62,7 @@ static int test_formals_spec_create_with_pos(void) {
     TEST_ASSERT_NOT_NULL(pos, "create pos tuple");
 
     PyObject *fspec = KosFormalsSpec_New(pos, NULL, NULL, NULL, NULL, NULL,
-                                         NULL);
+                                         NULL, NULL);
     TEST_ASSERT_NOT_NULL(fspec, "create FormalsSpec with pos");
 
     TEST_ASSERT(KosFormalsSpec_CheckExact(fspec), "FormalsSpec type check");
@@ -85,7 +86,7 @@ static int test_formals_spec_create_with_star(void) {
     TEST_ASSERT_NOT_NULL(starstar, "create starstar string");
 
     PyObject *fspec = KosFormalsSpec_New(NULL, NULL, NULL, NULL, star, starstar,
-                                         NULL);
+                                         NULL, NULL);
     TEST_ASSERT_NOT_NULL(fspec, "create FormalsSpec with star");
 
     TEST_ASSERT(KosFormalsSpec_CheckExact(fspec), "FormalsSpec type check");
@@ -118,7 +119,7 @@ static int test_formals_spec_full(void) {
     TEST_ASSERT_NOT_NULL(starstar, "create starstar");
 
     PyObject *fspec = KosFormalsSpec_New(pos, pos_only, kwd, kwd_only,
-                                         star, starstar, NULL);
+                                         star, starstar, NULL, NULL);
     TEST_ASSERT_NOT_NULL(fspec, "create full FormalsSpec");
 
     TEST_ASSERT_EQ(PyTuple_GET_SIZE(KosFormalsSpec_POS(fspec)), 1, "pos size");
@@ -151,7 +152,7 @@ static int test_formals_spec_refcount(void) {
     Py_ssize_t initial_refcnt = Py_REFCNT(pos);
 
     PyObject *fspec = KosFormalsSpec_New(pos, NULL, NULL, NULL, NULL, NULL,
-                                         NULL);
+                                         NULL, NULL);
     TEST_ASSERT_NOT_NULL(fspec, "create FormalsSpec");
 
     /* FormalsSpec retains the tuple, so refcount should be incremented */
@@ -178,7 +179,7 @@ static int test_formals_create_from_spec(void) {
     TEST_ASSERT_NOT_NULL(pos, "create pos tuple");
 
     PyObject *fspec = KosFormalsSpec_New(pos, NULL, NULL, NULL, NULL, NULL,
-                                         NULL);
+                                         NULL, NULL);
     TEST_ASSERT_NOT_NULL(fspec, "create FormalsSpec");
 
     PyObject *formals = KosFormals_New(fspec, NULL);
@@ -220,7 +221,7 @@ static int test_formals_create_full(void) {
     Py_DECREF(default_bar);
 
     formals = KosFormals_NewFull(pos, NULL, kwd, NULL,
-                                star, NULL, defaults, NULL);
+                                star, NULL, defaults, NULL, NULL);
     if (! formals)
         goto cleanup;
 
@@ -254,7 +255,7 @@ static int test_formals_apply_simple(void) {
     TEST_ASSERT_NOT_NULL(pos, "create pos tuple");
 
     PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
-                                           NULL, NULL, NULL, NULL);
+                                           NULL, NULL, NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
     PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL, NULL);
@@ -297,7 +298,7 @@ static int test_formals_apply_with_kwargs(void) {
     TEST_ASSERT_NOT_NULL(local_syms, "create local_syms");
 
     PyObject *formals = KosFormals_NewFull(pos, NULL, kwd, NULL,
-                                           NULL, NULL, NULL, NULL);
+                                           NULL, NULL, NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
     PyObject *ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL, NULL);
@@ -351,7 +352,7 @@ static int test_formals_apply_with_star(void) {
     TEST_ASSERT_NOT_NULL(local_syms, "create local_syms");
 
     PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
-                                           star, NULL, NULL, NULL);
+                                           star, NULL, NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
     PyObject *ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL, NULL);
@@ -422,7 +423,7 @@ static int test_formals_apply_with_defaults(void) {
         goto cleanup;
 
     formals = KosFormals_NewFull(pos, NULL, kwd, NULL,
-                                NULL, NULL, defaults, NULL);
+                                NULL, NULL, defaults, NULL, NULL);
     if (! formals)
         goto cleanup;
 
@@ -499,7 +500,7 @@ static int test_formals_apply_missing_arg_error(void) {
     TEST_ASSERT_NOT_NULL(pos, "create pos");
 
     PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
-                                           NULL, NULL, NULL, NULL);
+                                           NULL, NULL, NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
     PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL, NULL);
@@ -531,7 +532,7 @@ static int test_formals_apply_too_many_args_error(void) {
     TEST_ASSERT_NOT_NULL(pos, "create pos");
 
     PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
-                                           NULL, NULL, NULL, NULL);
+                                           NULL, NULL, NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
     PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL, NULL);
@@ -568,7 +569,7 @@ static int test_formals_spec_namespace_spec(void) {
     TEST_ASSERT_NOT_NULL(kwd, "create kwd");
 
     PyObject *fspec = KosFormalsSpec_New(pos, NULL, kwd, NULL, NULL, NULL,
-                                         NULL);
+                                         NULL, NULL);
     TEST_ASSERT_NOT_NULL(fspec, "create FormalsSpec");
 
     PyObject *nspec = KosFormalsSpec_NamespaceSpec(fspec, NULL);
@@ -600,7 +601,7 @@ static int test_formals_stress_alloc(void) {
 
     for (int i = 0; i < 100; i++) {
         PyObject *fspec = KosFormalsSpec_New(pos, NULL, NULL, NULL, NULL, NULL,
-                                             NULL);
+                                             NULL, NULL);
         TEST_ASSERT_NOT_NULL(fspec, "create FormalsSpec");
 
         PyObject *formals = KosFormals_New(fspec, NULL);
