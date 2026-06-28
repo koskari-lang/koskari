@@ -190,7 +190,8 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
 
     async def test_positional_bare_value_raises(self):
         """
-        a bare value passed to a by-ref positional is a TypeError
+        a bare value passed to a by-ref positional is a TypeError naming the
+        formal (not the generic namespace-bind error)
         """
 
         src = """
@@ -199,14 +200,15 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
           (add-a 1 2))
         """
         expr, mod = self.compile_expr(src)
-        with self.assertRaises(TypeError):
+        with self.assertRaisesRegex(
+                TypeError, r"by-ref formal result requires a Ref"):
             await expr()
 
 
     async def test_kwarg_bare_value_raises(self):
         """
-        a bare value supplied to a by-ref keyword is a TypeError; a defaulted
-        (omitted) by-ref keyword is fine
+        a bare value supplied to a by-ref keyword is a TypeError naming the
+        formal; a defaulted (omitted) by-ref keyword is fine
         """
 
         src = """
@@ -215,7 +217,8 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
           (fill out: 7))
         """
         expr, mod = self.compile_expr(src)
-        with self.assertRaises(TypeError):
+        with self.assertRaisesRegex(
+                TypeError, r"by-ref formal out requires a Ref"):
             await expr()
 
 
