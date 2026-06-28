@@ -2,11 +2,20 @@
 
 ## Status
 
-**Implemented.** By-ref formals are conservative over the existing ref system:
-every form below is the call-site `Ref` we can already pass, plus an aliasing
-rebind during application. No new evaluation model — just a declared *boundary*
-that tells the binder a slot aliases the caller's storage. Tests live in
-[tests/importer/test_byref_formals.py](../../tests/importer/test_byref_formals.py).
+**Implemented and archived (2026-06-28).** By-ref formals are conservative over
+the existing ref system: every surface form below is the call-site `Ref` we can
+already pass, plus an aliasing rebind during application. No new evaluation
+model — just a declared *boundary* that tells the binder a slot aliases the
+caller's storage.
+
+Implementation: a `by_refs` tuple on `FormalsSpec` / `Formals`, parse-side
+marking in [helpers.py](../../koskari/compile/helpers.py) /
+[matcher.py](../../koskari/matcher.py), and bind-time aliasing in the four apply
+variants of [formals.c](../../koskari/lib/formals.c). Tests:
+[tests/importer/test_byref_formals.py](../../tests/importer/test_byref_formals.py)
+and [tests/lib/test_formals.py](../../tests/lib/test_formals.py). Example:
+[examples/by-ref.ki](../../examples/by-ref.ki). Shipped via the `formals-by-ref`
+branch (PR #75).
 
 (Destructuring formals — nested patterns in a formals list — were rejected
 2026-06-27 and are out of scope. Structured unpacking stays in `define-values`
@@ -162,19 +171,26 @@ else:                                          # keyword falling back to its def
     bind slot to a fresh Ref(name, defaults[name])   # private floor cell
 ```
 
-This lives in `bind_supplied_by_ref` / `bind_default_by_ref` and the binding
-loops of `apply_formals_kwargs_phase` plus the four positional loops in
-[formals.c](../../koskari/lib/formals.c). The supplied-vs-default fork in the
-keyword loop (`if (val) … else if (defaults) …`) **is** the suppliedness signal,
-so no separate bookkeeping is needed.
+This lives in the `BIND_SUPPLIED_BY_REF` macro (the strict `Ref` check plus the
+`KosNamespace_Bind` alias) and the `bind_supplied_by_ref` / `bind_default_by_ref`
+helpers (the keyword floor cases), called from `apply_formals_kwargs_phase` and
+the per-run positional loops of the four apply variants in
+[formals.c](../../koskari/lib/formals.c). Those positional loops were decomposed
+from a single counter-loop-with-expiry into one tight loop per formal run, with
+the by-ref membership test hoisted out of the inner loop so a call with no
+by-ref formals pays nothing for it. The supplied-vs-default fork in the keyword
+loop (`if (val) … else if (defaults) …`) **is** the suppliedness signal, so no
+separate bookkeeping is needed.
 
 Properties:
 
 - **Strict at the boundary.** A bare value handed to a by-ref slot fails with a
-  named `TypeError` — `by-ref formal 'out' requires a Ref, not int` — before the
-  body runs, rather than silently dropping the author's intended write-through.
-  This applies to positional by-ref and to supplied (non-defaulted) keyword
-  by-ref alike.
+  `TypeError` naming the callable and the formal —
+  `try-parse-int() by-ref formal out requires a Ref, not int` — before the body
+  runs, rather than silently dropping the author's intended write-through. This
+  applies to positional by-ref and to supplied (non-defaulted) keyword by-ref
+  alike. The function-name prefix comes from `formals_type_error`, which every
+  formals-apply error now routes through.
 - **Bind, not store-then-rebind.** A by-ref slot is bound to its `Ref` directly at
   the binding site; there is no intermediate value-store that a later pass undoes.
 - **Aliasing, not copy-in/copy-out.** No copy-back step. A `shift` / `call/cc`
@@ -235,19 +251,27 @@ define try-parse-int [s [out :: int value: None byref: True]]:
    plus the `.kio` serialization and ABI bump
    ([codex.py](../../koskari/serialize/codex.py),
    [constants.py](../../koskari/serialize/constants.py)).
-4. **Apply.** Bind-time handling via `bind_supplied_by_ref` /
-   `bind_default_by_ref` ([formals.c](../../koskari/lib/formals.c)), wired into
-   the shared `apply_formals_kwargs_phase` and the four positional loops, using
+4. **Apply.** Bind-time handling via the `BIND_SUPPLIED_BY_REF` macro and the
+   `bind_supplied_by_ref` / `bind_default_by_ref` helpers
+   ([formals.c](../../koskari/lib/formals.c)), wired into the shared
+   `apply_formals_kwargs_phase` and the per-run positional loops of all four
+   apply variants (`Apply`, `ApplyFast`, `VectorApply`, `VectorApplyFast`), using
    `KosNamespace_Bind`, `KosRef_IsEmpty` / `KosRef_Store`, and `KosSymbolicRef_New`
-   for the fresh-floor case.
-5. **Tests.** [tests/importer/test_byref_formals.py](../../tests/importer/test_byref_formals.py)
+   for the fresh-floor case. The positional phase was restructured into one tight
+   loop per formal run with the by-ref test hoisted out, keeping the no-by-ref
+   call path cost-free.
+5. **Named errors.** `formals_type_error` prefixes the function name — read from
+   the call frame namespace, which already carries it — onto every formals-apply
+   `TypeError`: by-ref mismatch, missing argument, too many positional, and
+   unexpected keyword alike.
+6. **Tests.** [tests/importer/test_byref_formals.py](../../tests/importer/test_byref_formals.py)
    — the surface shapes, the bracket form, write-through, the floor (omitted and
-   empty-cell), and the `TypeError` for a bare value to a positional or keyword
-   by-ref slot.
+   empty-cell), and the function-named `TypeError` for a bare value to a
+   positional or keyword by-ref slot; plus a frame-naming check in
+   [tests/lib/test_formals.py](../../tests/lib/test_formals.py).
 
 ## Related
 
 - [../api/types.md](../api/types.md) — `Ref` variants.
-- [seq-values-kwargs-formals-apply.md](seq-values-kwargs-formals-apply.md) —
-  kwargs application shared with other binding sites.
-- TODO: "Referencing formals" — [../TODO.md](../TODO.md).
+- [../language/seq-values-kwargs-formals-apply.md](../language/seq-values-kwargs-formals-apply.md)
+  — kwargs application shared with other binding sites.

@@ -234,18 +234,6 @@ the delim case; migrate any bundled behavior off `RETURN`.
 
 Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
 
-### By-ref formals (`&name` / `(compile/ref name)` / `(ref name)`) — DONE
-
-Implemented. Mark a formal by-ref so application installs a caller-supplied `Ref`
-as the slot's storage: a caller passes `&value` and the callee's formal aliases
-that Ref, so `(set! result …)` inside the callee writes through to the caller's
-binding. Parse-side marking + a `by_refs` tuple on `FormalsSpec` / `Formals` + bind-time
-handling in apply that aliases a supplied `Ref`, raises `TypeError` on a bare
-value, and seeds a fresh `Ref` with the floor when a keyword by-ref is omitted.
-Positional (required) and keyword (floored) formals; destructuring rejected.
-
-Ref: [language/by-ref-formals.md](language/by-ref-formals.md).
-
 ### Multi-dispatch methods (matchers on formals)
 
 Method tables dispatched by type/value/shape matchers over formals,
