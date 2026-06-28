@@ -304,6 +304,31 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
             nil)
         self.assertEqual(result, expected)
 
+    async def test_read_ref_call(self):
+        result = _parse_ng("&(item foo 12)")
+        expected = cons(
+            symbol("compile/ref"),
+            cons(symbol("item"), symbol("foo"), 12, nil),
+            nil)
+        self.assertEqual(result, expected)
+
+    async def test_read_ref_call_layout(self):
+        result = _parse_layout_ng("&(item foo 12)")
+        expected = cons(
+            symbol("compile/ref"),
+            cons(symbol("item"), symbol("foo"), 12, nil),
+            nil)
+        self.assertEqual(result, expected)
+
+    async def test_read_ref_call_space_is_bare(self):
+        # A space between & and ( does not trigger the compound macro; the
+        # bare & symbol is read, followed by the list.
+        stream = source_str("& (foo)", "<test>")
+        first = default_reader.read(stream)
+        self.assertEqual(first, symbol("&"))
+        second = default_reader.read(stream)
+        self.assertEqual(second, cons(symbol("foo"), nil))
+
     async def test_read_dotted_attr_atom(self):
         result = _parse_ng("foo.bar")
         self.assertEqual(

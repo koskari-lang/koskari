@@ -50,6 +50,26 @@ closures behave like Python’s nested functions.
 > See [lambda](../../reference/specials/compile-lambda.md) for `*`, `**`, and
 > type annotations (`::` / `type:` on formals or return types).
 
+> **Q:** Can a function write back to the caller's variable? (Python can't.)
+>
+> **A:** Yes — mark the parameter **by-ref** with a leading `&`. The parameter
+> then aliases the caller's binding instead of copying the value, so `set!`
+> writes through. Python has no equivalent (you'd return a value or mutate a
+> shared object); this is closer to C++ `&` references.
+>
+> ```koskari
+> define add-a [a &result]:
+>   (set! result (+ a 1))
+>
+> define value 100
+> (add-a value &value)    ; value is now 101
+> ```
+>
+> The `&result` in the formals marks the by-ref parameter; the `&value` at the
+> call passes a reference to bind it to. By-ref is allowed on positional and
+> keyword parameters only — not `*` / `**`. See
+> [bindings and refs](../../reference/concepts/bindings-and-refs.md).
+
 > **Q:** Multi-line body with layout?
 >
 > **A:** Indent every statement under the header — same rhythm as Python `def`:

@@ -30,11 +30,11 @@ ref-incr! &data-val
 report data-val
 
 reportn data-list
-ref-incr! (ref (item data-list 2))
+ref-incr! &(item data-list 2)
 report data-list
 
 reportn data-dict
-ref-incr! (ref (item data-dict "a"))
+ref-incr! &(item data-dict "a")
 report data-dict
 
 reportn data-obj

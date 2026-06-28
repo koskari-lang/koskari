@@ -64,6 +64,10 @@ Unknown heads fall back to **`layout/block`**. See [LAYOUTS.md](LAYOUTS.md).
   `compile/define` / `compile/define-global` function shorthand).
 - **`define-class`**, **`define-dataclass`**, **`define-coroutine`** (`coroutine-fn`), **`define-demanding`** (`demand` wrapper) — macros in bootstrap.
 - Formals: positionals, defaults, `*:`, `**:`, keyword-only (see `gather_formals`).
+- **By-ref formals**: a positional or keyword formal prefixed with `&` (e.g.
+  `[a &result]`) aliases the caller-supplied `Ref` as the slot's storage, so
+  `set!` in the callee writes through to the caller's binding. Not permitted on
+  `*` / `**`. See [archive/by-ref-formals.md](archive/by-ref-formals.md).
 
 ### Async, generators, and `defer`
 

@@ -253,6 +253,12 @@ the **FORMALS** composite in [MATCHER.md](MATCHER.md)).
 Parameter types may use `::` / `type:` on individual parameters (see formals
 helpers).
 
+A positional or keyword parameter may be marked **by-ref** with a leading `&`
+(e.g. `[a &result]`). The parser records it in the `by_refs` tuple on the
+parsed `Formals`; at application the binder installs the caller-supplied `Ref`
+as the slot's storage so `set!` in the callee writes through to the caller. Not
+permitted on `*` / `**`. See [SYNTAX.md](SYNTAX.md) (By-ref formals).
+
 **Docstring:** If the first form in `BODY` is a string literal, it is taken as
 the function docstring (`discover_docstring` in helpers). It is attached to the
 fragment, stored on `Code` as `code.extras['doc']`, and appears on the callable

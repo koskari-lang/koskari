@@ -166,6 +166,10 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
                   | "#[" <form>* "]"        ; desugars to: (#list  <form>*)
                   | "#{" <form>* "}"        ; desugars to: (#dict  <form>*)
 
+<ref-call-form>         ::= "&(" <form>* ")"  ; desugars to: (compile/ref (<form>*))
+                            ; only "&" immediately followed by "(";
+                            ; otherwise see the "&" atom pattern below
+
 <quote-form>            ::= "'" <form>      ; desugars to: (compile/quote <form>)
 <quasiquote-form>       ::= "`" <form>      ; desugars to: (compile/quasiquote <form>)
                             ; inside a quasiquote, "," and ",@" become active:
@@ -201,6 +205,17 @@ bar)`); the result is wrapped in `(compile/ref ...)`.
 | `&foo.bar`| `(compile/ref (compile/attr foo bar))` → ref-attr |
 | `&` alone | No match — parses as symbol `&`         |
 | `(& 8 1)` | List with symbol `&` as head            |
+
+**Ref (ampersand) — compound reader macro.** A separate reader macro fires
+when `&` is *immediately* followed by an opening parenthesis `(`. It wraps the
+single trailing parenthesized form in `(compile/ref ...)`. This is distinct
+from the atom pattern above and never triggers on `&[...]`, `&{...}`, a
+keyword, the bare `&`, or a space between `&` and `(`.
+
+| Input             | Expansion                          |
+|-------------------|------------------------------------|
+| `&(item xs 2)`    | `(compile/ref (item xs 2))`        |
+| `& (item xs 2)`   | Symbol `&` followed by `(item xs 2)` (space — no trigger) |
 
 **Dotted attribute — atom pattern.** An atom that is a dotted identifier (e.g.
 `foo.bar`, `obj.foo.bar`) expands to a nested `(compile/attr ...)` form,
@@ -280,6 +295,29 @@ treats it as the function’s docstring (`discover_docstring` in
 exposed on the callable as `__doc__`. If the body begins with
 `(compile/begin ...)`, the implementation may peel that wrapper **only** to look
 for a leading string; the body is still compiled in full.
+
+### By-ref formals
+
+A **formal** may be marked **by-ref** by prefixing its name with `&`. At
+application the binder installs the **caller-supplied `Ref` as the slot's
+storage** (rather than minting a fresh slot and copying the value in), so a
+`set!` inside the callee writes through to the caller's binding. The body still
+sees a plain-valued local; it just shares storage with the caller.
+
+```
+define add-a [a &result]:
+    (set! result (+ a 1))
+
+define value 100
+(add-a value &value)    ; value is now 101
+```
+
+The leading `&` here is **not** the ref reader macro — it is a marker on the
+formal name recognized by the **FORMALS** matcher composite (parsed into the
+`by_refs` tuple on `Formals`; see [MATCHER.md](MATCHER.md) and
+[SPECIALS.md](SPECIALS.md), `compile/lambda`). The call site `&value` *is* the
+ordinary ref reader form. By-ref is permitted on **positional and keyword**
+formals only — never on `*` (`*:`) or `**` (`**:`).
 
 ---
 

@@ -306,7 +306,7 @@ Legend:
 | `DECL(slot)` | Dict / `DatumFrame`: `name`, `type`, `decl_tail`, … | **Yes** — declaration name | **Yes** — `type`, keyword tail pairs | Optional `scope:` |
 | `BINDING(slot)` | Dict / `DatumFrame`: `name`, `expr` | **Yes** — `name` | **Yes** — `expr` | Optional `scope:` |
 | `BINDINGS(slot)` | `nil` or **list** of row dicts | **Yes** — each row `name` | **Yes** — each row `expr` | Optional `scope:`; `mode:` stored, **not interpreted** yet |
-| `FORMALS(slot)` | Dict / `DatumFrame`: `positionals`, `defaults`, `star`, `kwonly`, `starstar` | **Yes** — param names, `*`, `**` | **Yes** — default / attr value expressions | Optional `scope:` |
+| `FORMALS(slot)` | Dict / `DatumFrame`: `positionals`, `defaults`, `star`, `kwonly`, `starstar`, `by_refs` | **Yes** — param names, `*`, `**` | **Yes** — default / attr value expressions | Optional `scope:`; `&`-prefixed names recorded in `by_refs` |
 | `USING(slot)` | Dict / `DatumFrame`: `lhs`, `name`, `expr` (arm-dependent) | **Yes** — `name` when present | **Yes** — `expr` | Optional `scope:` |
 | `USING_UNPACK(slot)` | Dict / `DatumFrame`: `lhs`, `expr` | **Yes** — symbols from unpack `lhs` | **Yes** — `expr` | Optional `scope:` |
 
@@ -374,6 +374,9 @@ require collector guards, not matcher syntax alone.
 
 - **One** proper-list cell per `FORMALS`; improper formals are rejected.
 - Phases (all optional): positionals → defaults → `*:` → kw-only → `**:`.
+- A positional or keyword name may carry a leading `&` **by-ref** marker;
+  parsing strips it and records the name in the `by_refs` tuple on `Formals`
+  (never on `*` / `**`). See [SYNTAX.md](../SYNTAX.md) (By-ref formals).
 - **Compile:** `gather_formals` in `koskari.compile.helpers`.
 
 ### USING / USING_UNPACK

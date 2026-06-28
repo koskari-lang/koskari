@@ -61,6 +61,35 @@ be explicit when they need a variation.
 
 ---
 
+## By-ref parameters
+
+Normally a parameter receives a *copy* of the argument's value, so reassigning
+it inside the function has no effect on the caller. Mark a parameter **by-ref**
+with a leading `&` to change that: the parameter shares storage with the
+caller's binding, and a `set!` inside the function writes through to it.
+
+```koskari
+define add-a [a &result]:
+  (set! result (+ a 1))
+
+define value 100
+(add-a value &value)
+; value is now 101
+```
+
+There are two `&` here, doing different jobs:
+
+- `&result` in the **parameter list** declares the by-ref parameter.
+- `&value` at the **call** passes a *reference* to `value` (the `&name`
+  shorthand) so the parameter has something to alias. You can pass any
+  reference, e.g. `&(item xs 0)` to write back into a list slot.
+
+By-ref works on ordinary positional and keyword parameters only — not on rest
+(`*`) or keyword-rest (`**`) parameters. Use it sparingly: most code is clearer
+returning values than mutating the caller's bindings.
+
+---
+
 ## Anonymous functions
 
 Use `lambda` when a small function value does not need a top-level name:

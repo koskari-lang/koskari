@@ -20,7 +20,8 @@ subscript, a parameter, or other custom get/set logic.
 Surface forms:
 
 - **`(ref sym)`** — ref to a variable ([`compile/ref`](../macros/compile-ref.md))
-- Reader **`&expr`** — wraps an expression in `(ref expr)`
+- Reader **`&name`** / **`&obj.attr`** — an atom prefixed with `&` wraps it in `(ref ...)`
+- Reader **`&(item coll key)`** — `&` immediately followed by `(` wraps the parenthesized form in `(ref ...)`
 - **`(ref (attr obj name))`**, **`(ref (item coll key))`**, parameters, etc.
 
 Bytecode **`VAR_REF`** pushes the ref for a name; attribute and item refs use
@@ -54,6 +55,34 @@ attribute, dynamic, parameter, and others) while still using bind under the hood
 
 Use **`ref`** when you need the cell (for example passing a mutable slot to
 another form). Use **deref** when you need the contents.
+
+## By-ref formals
+
+A function parameter can be declared **by-ref** by prefixing its name with `&`
+in the formals list. Instead of receiving a copy of the argument's value, a
+by-ref parameter aliases the **ref** the caller passes in: the callee's local
+shares storage with the caller's binding, so writing through it with `set!`
+updates the caller.
+
+```koskari
+(define add-a [a &result]
+  (set! result (+ a 1)))
+
+(define value 100)
+(add-a value &value)
+; value is now 101
+```
+
+Note the two distinct uses of `&`:
+
+- `&result` in the **formals list** marks the parameter as by-ref.
+- `&value` at the **call site** is the ref reader shorthand (see the **Ref**
+  section above) — it passes the caller's ref so the alias has something to bind
+  to. You can equally pass any ref-valued expression, e.g.
+  `(add-a value &(item xs 0))`.
+
+By-ref is allowed on **positional and keyword** parameters only — never on the
+`*` (rest) or `**` (keyword-rest) parameters.
 
 ## Assignment macros
 

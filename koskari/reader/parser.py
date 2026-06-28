@@ -1186,6 +1186,7 @@ class Reader:
         sm('b', self._read_bstring, False)
 
         sm('#', self._read_collection, False)
+        sm('&', self._read_ref_call, False)
 
         sm("'", self._read_quote, True)
         sm("`", self._read_quasiquote, True)
@@ -1484,6 +1485,31 @@ class Reader:
             result = new_result
 
         return event, result
+
+
+    def _read_ref_call(self, stream, fchar):
+        """
+        Read a by-ref compound expression (&(expr ...))
+
+        Triggers only when ``&`` is immediately followed by ``(``; otherwise
+        defers so ``&rest`` atoms continue to read via the atom pattern path.
+
+        :param stream: the source stream
+        :param fchar: the '&' character
+        :return: tuple of (event, value)
+        """
+
+        if stream.peek(1) != "(":
+            return DEFER, None
+
+        event, pos, child = self._read(stream)
+
+        if event is EOF:
+            raise stream.reader_eof(pos)
+        if event is not VALUE:
+            raise stream.error(f"invalid use of {fchar}", pos)
+
+        return VALUE, cons(_symbol_ref, child, nil)
 
 
     def _read_fstring(self, stream, fchar):
@@ -1883,6 +1909,7 @@ class LayoutReader(Reader):
         sm('b', inner._read_bstring, False)
 
         sm('#', inner._read_collection, False)
+        sm('&', inner._read_ref_call, False)
 
         self.add_event_macro("'", inner._read_quote, True)
         self.add_event_macro("`", inner._read_quasiquote, True)
