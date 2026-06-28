@@ -176,7 +176,13 @@ define-syntax compile/ref:
   Obtain a reference to a storage location
   """
 
-  syntax-rules [item compile/item attr compile/attr parameter]:
+  syntax-rules [item compile/item
+                attr compile/attr
+                dynamic
+                constant
+                memoized
+                parameter]:
+
     case (ref (item obj name)):
       (compile/ref-item obj name)
     case (ref (compile/item obj name)):
@@ -187,6 +193,17 @@ define-syntax compile/ref:
     case (ref (compile/attr obj name)):
       (compile/ref-attr obj name)
 
+    case (ref (dynamic r ...)):
+      (DynamicRef '<dynamic> r ...)
+
+    case (ref (constant value)):
+      (ConstantRef '<constant> value)
+
+    case (ref (memoized getfn)):
+      (MemoizedRef '<memoized> getfn)
+
+    case (ref (parameter name default)):
+      (ParamRef 'name default)
     case (ref (parameter name)):
       (ParamRef 'name)
 
@@ -225,8 +242,10 @@ define-syntax compile/bind!:
     case (bind! name (memoized getfn)):
       (compile/bindq name (MemoizedRef 'name getfn))
 
-    case (bind! name (parameter param-name r ...)):
-      (compile/bindq name (ParamRef 'param-name r ...))
+    case (bind! name (parameter param-name default)):
+      (compile/bindq name (ParamRef 'param-name default))
+    case (bind! name (parameter param-name)):
+      (compile/bindq name (ParamRef 'param-name))
 
     case (bind! name value):
       (compile/bindq name value)

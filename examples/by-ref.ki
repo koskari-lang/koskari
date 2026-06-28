@@ -1,21 +1,50 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Example: Passing references to functions
+"""
 
 
 import-from types SimpleNamespace
 
 
 define-syntax report:
+    """
+    Print the source representation of an expression, then
+    the value of that expression.
+
+    Optional second argument acts as the line-ending string
+    """
+
     syntax-rules []:
         case (report val):
             (print 'val val)
-
-
-define-syntax reportn:
-    syntax-rules []:
-        case (reportn val):
-            (print 'val val end: " -> ")
+        case (report val end):
+            (print 'val val end: end)
 
 
 define ref-incr! [&r by: 101]:
+    """
+    Increment the value within the reference
+    """
+
+    ; r was passed by reference, and that reference is now
+    ; bound in this namespace. So we simply need to use the
+    ; normal incr! macro, which will fetch the value, add to
+    ; it, and store the result back. The namespace will
+    ; dispatch the value into the ref for us.
     incr! r by
 
 
@@ -25,21 +54,33 @@ define data-dict #{a: 5 b: 10}
 define data-obj (SimpleNamespace count: 15)
 
 
-reportn data-val
+; pass a reference to a named value
+report data-val " -> "
 ref-incr! &data-val
 report data-val
 
-reportn data-list
+; pass a reference to an item in a list
+report data-list " -> "
 ref-incr! &(item data-list 2)
 report data-list
 
-reportn data-dict
+; pass a reference to an item in a dictionary
+report data-dict " -> "
 ref-incr! &(item data-dict "a")
 report data-dict
 
-reportn data-obj
+; pass a reference to an attribute in an object
+report data-obj " -> "
 ref-incr! &data-obj.count
 report data-obj
+
+; pass a dynamic reference
+ref-incr! (ref (dynamic
+                    { ; the dynamic getter thunk
+                        (print "dynamic ref was asked for a value (567)")
+                        567 }
+                    { ; the dynamic setter thunk
+                        (print f"dynamic ref was fed a value {%1}") }))
 
 
 ; The end.
