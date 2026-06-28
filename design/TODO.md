@@ -260,19 +260,6 @@ subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
-### KosPartial: KosCallable-aware `functools.partial`
-
-Implement `KosPartial` as a C-level subtype of CPython's
-`functools.partial` (dynamic `tp_base` set at init time before `PyType_Ready`)
-with `KosCallableTypeObject` slots. `tp_kos_wants_frame_fn` delegates to the
-inner callable's wants-frame slot. `tp_kos_install` merges `partial.args` +
-call args and `partial.keywords` + call kwargs, then tail-calls through to the
-inner callable's install slot unconditionally (partial has no epilogue; one frame
-regardless of nesting depth). Falls back to `PyObject_Call` for non-KosCallable
-inner callables. `isinstance(obj, functools.partial)` continues to work.
-
-Ref: [interpreter/kospartial.md](interpreter/kospartial.md).
-
 ---
 
 ## Concurrent async (`async` form)
