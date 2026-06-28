@@ -75,7 +75,7 @@ define make_prompter [histfile: None get_namespace: None]:
 
   try:
     prompt_toolkit_prompter histfile get_namespace
-  except ImportError:
+  except [ImportError]:
     readline_prompter histfile get_namespace
 
 
@@ -85,13 +85,13 @@ define make_prompter [histfile: None get_namespace: None]:
 
 
 define REPL_INFRASTRUCTURE_MODULES (frozenset #(
-  "koskari.cli",
-  "asyncio",
-  "asyncio.base_events",
-  "asyncio.events",
-  "asyncio.runners",
-  "concurrent.futures",
-  "concurrent.futures._base",
+  "koskari.cli"
+  "asyncio"
+  "asyncio.base_events"
+  "asyncio.events"
+  "asyncio.runners"
+  "concurrent.futures"
+  "concurrent.futures._base"
 ))
 
 
