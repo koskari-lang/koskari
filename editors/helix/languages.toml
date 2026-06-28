@@ -22,5 +22,6 @@ grammar = "koskari"
 
 [[grammar]]
 name = "koskari"
-# Use absolute path; e.g. source = { path = "/path/to/sibilant-ng/editors/helix/tree-sitter-koskari" }
-source = { path = "editors/helix/tree-sitter-koskari" }
+# Use an absolute path to the shared grammar; e.g.
+#   source = { path = "/path/to/koskari/editors/tree-sitter" }
+source = { path = "editors/tree-sitter" }

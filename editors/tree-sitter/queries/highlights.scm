@@ -1,4 +1,5 @@
-; Koskari syntax highlighting for Helix
+; Koskari syntax highlighting (canonical tree-sitter queries).
+; Generated from highlights.scm.j2 — do not edit by hand.
 
 (comment) @comment
 
@@ -9,7 +10,7 @@
 (keyword) @constant.other.keyword
 
 ; Layout block heads and special forms
-((_layout_header
+((layout_header
   (symbol) @keyword.control))
 
 ; List head: treat known specials and layout heads as keyword
@@ -73,6 +74,7 @@
    "global"
    "gensym-thunk"
    "function-compose"
+   "function"
    "for-each"
    "extend-syntax"
    "each"
@@ -118,13 +120,7 @@
 ; Punctuation and operators
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket
 
-["." "," "'" "`"] @keyword.operator
-
-(unquote_splicing
-  ["," "@"] @keyword.operator)
-
-(unquote
-  [","] @keyword.operator)
+["'" "`" "," ",@" ":"] @keyword.operator
 
 ; Collection markers
 ["#(" "#[" "#{"] @punctuation.definition.collection

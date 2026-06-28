@@ -1,0 +1,11 @@
+name = "Koskari"
+grammar = "koskari"
+path_suffixes = ["ki"]
+line_comments = ["; "]
+autoclose_before = ";:.,=}])` "
+brackets = [
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+]

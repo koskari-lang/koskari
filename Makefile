@@ -54,17 +54,28 @@ editors/textmate/syntaxes/koskari.tmLanguage.json: $(EDITOR_SPEC) editors/textma
 	@echo "Re-generating koskari.tmLanguage.json..."
 	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 editors/textmate/syntaxes/koskari.tmLanguage.json
 
-editors/helix/tree-sitter-koskari/queries/highlights.scm: $(EDITOR_SPEC) editors/helix/tree-sitter-koskari/queries/highlights.scm.j2 $(EDITOR_REGEN)
+# Canonical tree-sitter highlight queries (shared by Helix and Neovim).
+editors/tree-sitter/queries/highlights.scm: $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $(EDITOR_REGEN)
 	@$(call checkfor,tox)
-	@echo "Re-generating highlights.scm..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/helix/tree-sitter-koskari/queries/highlights.scm.j2 editors/helix/tree-sitter-koskari/queries/highlights.scm
+	@echo "Re-generating tree-sitter highlights.scm..."
+	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 editors/tree-sitter/queries/highlights.scm
+
+# Zed needs the queries inside its own extension dir; same template, same output.
+editors/zed/languages/koskari/highlights.scm: $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $(EDITOR_REGEN)
+	@$(call checkfor,tox)
+	@echo "Re-generating Zed highlights.scm..."
+	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 editors/zed/languages/koskari/highlights.scm
 
 editors/emacs/koskari-mode.el: $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $(EDITOR_REGEN)
 	@$(call checkfor,tox)
 	@echo "Re-generating koskari-mode.el..."
 	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 editors/emacs/koskari-mode.el
 
-regen-editors: editors/textmate/syntaxes/koskari.tmLanguage.json editors/helix/tree-sitter-koskari/queries/highlights.scm editors/emacs/koskari-mode.el  ## Regenerate editor syntax-highlighting assets (incremental)
+editors-grammar:  ## Regenerate the tree-sitter parser (src/parser.c) from grammar.js
+	@echo "Re-generating tree-sitter parser..."
+	@cd editors/tree-sitter && npm install --silent && npx tree-sitter generate
+
+regen-editors: editors/textmate/syntaxes/koskari.tmLanguage.json editors/tree-sitter/queries/highlights.scm editors/zed/languages/koskari/highlights.scm editors/emacs/koskari-mode.el  ## Regenerate editor syntax-highlighting assets (incremental)
 
 build: handlers clean-built report-python  ## Build wheel package using uv via tox
 	@$(call checkfor,tox)
@@ -393,6 +404,7 @@ python:  ## Show Python executable
 	clean-pyc \
 	cppcheck \
 	docs \
+	editors-grammar \
 	flawfinder \
 	gdb \
 	handlers \

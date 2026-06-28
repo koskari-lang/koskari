@@ -1,0 +1,24 @@
+id = "koskari"
+name = "Koskari"
+version = "0.0.1"
+schema_version = 1
+authors = ["Christopher O'Brien <obriencj@preoccupied.net>"]
+description = "Syntax highlighting for the Koskari Lisp dialect (.ki)."
+repository = "https://github.com/obriencj/koskari"
+
+# Zed builds the grammar from a cloned git revision, so it reads the parser
+# from a COMMIT, not the working tree. The grammar lives in a subdirectory of
+# this repository (path = "editors/tree-sitter") and ships a committed
+# src/parser.c, so no tree-sitter CLI is required at install time.
+#
+# For local use, point `repository` at an absolute file:// path to your
+# checkout and set `rev` to a commit that contains editors/tree-sitter:
+#
+#   repository = "file:///absolute/path/to/koskari"
+#   rev = "<commit sha>"
+#
+# See editors/tree-sitter/README.md (the Zed section) for the full procedure.
+[grammars.koskari]
+repository = "file:///path/to/koskari"
+rev = "0000000000000000000000000000000000000000"
+path = "editors/tree-sitter"
