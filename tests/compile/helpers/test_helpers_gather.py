@@ -260,5 +260,73 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
             gather_formals(grp, source=nil)
         self.assertIn("name", str(ctx.exception).lower())
 
+    def test_byref_positional_amp_symbol(self):
+        # reader-disabled shape: a literal &foo symbol in positional position
+        spine = cons(symbol("&foo"), symbol("a"), nil)
+        grp = _match_formals_group(spine)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
+        self.assertEqual(pos, [symbol("foo"), symbol("a")])
+        self.assertEqual(by_refs, ("foo",))
+
+    def test_byref_positional_compile_ref(self):
+        # reader-on shape: &foo expands to (compile/ref foo)
+        spine = cons(cons(symbol("compile/ref"), symbol("foo"), nil),
+                     symbol("a"), nil)
+        grp = _match_formals_group(spine)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
+        self.assertEqual(pos, [symbol("foo"), symbol("a")])
+        self.assertEqual(by_refs, ("foo",))
+
+    def test_byref_positional_ref_alias(self):
+        # (ref foo) is identical to (compile/ref foo)
+        spine = cons(cons(symbol("ref"), symbol("foo"), nil), nil)
+        grp = _match_formals_group(spine)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
+        self.assertEqual(pos, [symbol("foo")])
+        self.assertEqual(by_refs, ("foo",))
+
+    def test_byref_keyword_default(self):
+        # terse keyword by-ref: &acc: dflt reads as keyword '&acc' + value
+        spine = cons(symbol("a"),
+                     cons(keyword("&acc"), symbol("dflt"), nil))
+        grp = _match_formals_group(spine)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
+        self.assertEqual(pos, [symbol("a")])
+        self.assertEqual(defaults, [(keyword("acc"), symbol("dflt"))])
+        self.assertEqual(by_refs, ("acc",))
+
+    def test_byref_kwonly_after_star(self):
+        # by-ref keyword-only formal after *: keyword '&acc' + value
+        spine = cons(
+            keyword("*"), symbol("args"),
+            keyword("&acc"), symbol("dflt"),
+            nil)
+        grp = _match_formals_group(spine)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
+        self.assertIs(star, symbol("args"))
+        self.assertEqual(kwonly, [(keyword("acc"), symbol("dflt"))])
+        self.assertEqual(by_refs, ("acc",))
+
+    def test_byref_bracket_attribute(self):
+        # explicit bracket: [out byref: True]
+        spine = cons(cons(symbol("out"), keyword("byref"), True, nil), nil)
+        grp = _match_formals_group(spine)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
+        self.assertEqual(pos, [symbol("out")])
+        self.assertEqual(by_refs, ("out",))
+
+    def test_no_byref_is_empty_tuple(self):
+        # plain formals report no by-ref names
+        spine = cons(symbol("a"), symbol("b"), nil)
+        grp = _match_formals_group(spine)
+        *_rest, by_refs = gather_formals(grp)
+        self.assertEqual(by_refs, ())
+
 
 # The end.

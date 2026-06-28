@@ -119,6 +119,45 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await expr(), 101)
 
 
+    async def test_terse_keyword_by_ref(self):
+        """
+        &acc: V is a keyword by-ref formal -- the & is dropped, name recorded
+        """
+
+        expr, mod = self.compile_expr("(lambda [a &acc: 5] acc)")
+        fn = await expr()
+        self.assertEqual(fn.formals.pos, ("a",))
+        self.assertEqual(fn.formals.kwd, ("acc",))
+        self.assertEqual(fn.formals.by_refs, ("acc",))
+
+
+    async def test_terse_kwonly_by_ref(self):
+        """
+        a by-ref keyword-only formal after * is recognized and stripped
+        """
+
+        expr, mod = self.compile_expr("(lambda [a *: rest &acc: 5] acc)")
+        fn = await expr()
+        self.assertEqual(fn.formals.kwd_only, ("acc",))
+        self.assertEqual(fn.formals.by_refs, ("acc",))
+
+
+    async def test_terse_keyword_write_through(self):
+        """
+        a terse keyword by-ref writes through to an empty caller cell
+        """
+
+        src = """
+        (begin
+          (define fill [&out: 99] out)
+          (define mine)
+          (fill out: &mine)
+          mine)
+        """
+        expr, mod = self.compile_expr(src)
+        self.assertEqual(await expr(), 99)
+
+
     async def test_floor_when_omitted(self):
         """
         a by-ref formal with a floor, omitted, uses the floor privately (case C)

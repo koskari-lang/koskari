@@ -68,27 +68,30 @@ A formal can be marked by-ref three ways. All mean the same binding:
 | `&foo` | by-ref positional (reader sugar) |
 | `(compile/ref foo)` | by-ref positional (explicit; what `&foo` expands to) |
 | `(ref foo)` | by-ref positional (treated identically to `(compile/ref foo)`) |
+| `&foo: V` | by-ref keyword with floor `V` |
 | `[foo byref: True]` | by-ref via the explicit bracket form |
 | `[foo :: int value: None byref: True]` | by-ref with type ascription + floor |
 
 `&foo`, `(compile/ref foo)`, and `(ref foo)` are all valid in formals position
 and mean the same thing. This is not redundancy: the `&`-reader macro may be
-disabled, in which case `&foo` survives as a literal symbol token. The parser
-accepts every shape — the list forms `(compile/ref <sym>)` and `(ref <sym>)`
-(matched by one extra arm of the positional formal pattern), and the leading-`&`
-symbol (stripped during gather). By-ref is a property of the *formal*, not of the
-reader; the reader sugar is only a convenience at the call site that happens to
-also read as an acceptable formal.
+disabled, in which case `&foo` survives as a literal symbol token. By-ref is a
+property of the *formal*, not of the reader; the reader sugar is only a
+convenience at the call site that happens to also read as an acceptable formal.
 
 A by-ref formal with no floor is a **required positional**; one with a floor is
 an **optional keyword** (the floor is its default), exactly as for any formal.
-The recognized shapes resolve to the same marking:
+The recognized shapes resolve to the same marking. Note the two terse families
+read differently: `&foo` (no colon) becomes `(compile/ref foo)` and lands in the
+positional run, while `&foo:` (the keyword form) reads as a keyword *named*
+`&foo` and lands in the keyword run — so the parser handles each in its own
+place:
 
 ```
-&foo                 ->  positional, by-ref            ; reader on
-&foo  (reader off)   ->  positional, by-ref            ; leading & stripped in gather
-(compile/ref foo)    ->  positional, by-ref            ; payload must be a lone symbol
-(ref foo)            ->  positional, by-ref            ; identical to (compile/ref foo)
+&foo                 ->  positional, by-ref     ; ref arm: (compile/ref foo)
+&foo  (reader off)   ->  positional, by-ref     ; leading & stripped in gather
+(compile/ref foo)    ->  positional, by-ref     ; payload must be a lone symbol
+(ref foo)            ->  positional, by-ref     ; identical to (compile/ref foo)
+&foo: V              ->  keyword, by-ref, floor V  ; keyword '&foo', & stripped
 [foo byref: True]    ->  positional, by-ref
 [foo value: V byref: True]  ->  keyword, by-ref, floor V
 ```
@@ -184,8 +187,8 @@ define invoke [a b]:
     (result-sidecar a b &result)     ; case B if sidecar had a floor; A after the set!
     result
 
-; out-parameter with a floor — the sink is elidable (keyword by-ref)
-define collect-good [items [acc byref: True value: (list)]]:
+; out-parameter with a floor — the sink is elidable (terse keyword by-ref)
+define collect-good [items &acc: (list)]:
     for x in items:
         (when (good? x) (push! acc x))
     acc
@@ -206,11 +209,16 @@ define try-parse-int [s [out :: int value: None byref: True]]:
 1. **Formals recognition.** One extra arm on the positional formal pattern
    ([matcher.py](../../koskari/matcher.py), `formal_param_pattern`) matches
    `(compile/ref <sym>)` and `(ref <sym>)`; a shared `frame_formal_name` helper
-   resolves the binding symbol and the by-ref flag (including the leading-`&`
-   strip for the reader-off case) for both gather and the hygiene introducer.
+   resolves the positional binding symbol and the by-ref flag (including the
+   leading-`&` strip for the reader-off case) for both gather and the hygiene
+   introducer. The terse keyword form `&foo:` reads as a keyword named `&foo`;
+   `gather_formals` strips the leading `&` from keyword and kwonly names
+   (`_strip_byref_kw` / `_strip_byref_sym` in
+   [helpers.py](../../koskari/compile/helpers.py)) and records them.
 2. **Bracket-form parse.** The `byref:` case in `_attrs_frames_to_ann`
    ([helpers.py](../../koskari/compile/helpers.py)); `gather_formals` collects the
-   marked names and returns them as a seventh value.
+   marked names from all of the positional, keyword, and kwonly runs and returns
+   them as a seventh value.
 3. **Spec / Formals.** A `by_refs` tuple on `KosFormalsSpec` and `KosFormals`
    ([formals.h](../../koskari/lib/formals.h), `formals.c`), copied spec→formals,
    plus the `.kio` serialization and ABI bump

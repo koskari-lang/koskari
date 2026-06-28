@@ -952,6 +952,34 @@ def _attrs_frames_to_ann(attr_frames: List[dict], source):
     return ann, default, by_ref
 
 
+def _strip_byref_kw(kw):
+    """
+    Strip a leading & from a keyword name; return (keyword, by_ref).
+
+    A keyword like ``&acc`` is the terse keyword by-ref form: ``&acc:`` reads
+    as the keyword named ``&acc``
+    """
+
+    s = str(kw)
+    if s[:1] == '&':
+        return keyword(s[1:]), True
+    return kw, False
+
+
+def _strip_byref_sym(sym):
+    """
+    Strip a leading & from a symbol name; return (symbol, by_ref).
+
+    Covers the reader-disabled by-ref form where ``&x`` survives as a literal
+    symbol rather than expanding to ``(compile/ref x)``
+    """
+
+    s = str(sym)
+    if s[:1] == '&':
+        return symbol(s[1:]), True
+    return sym, False
+
+
 def _gather_one_positional_frame(fr: dict, source):
     """
     Map one positional REPEAT frame to (name, ann_bundle, default_expr,
@@ -1052,6 +1080,9 @@ def gather_formals(formals_group, source=None):
             raise SpecialError(
                 f"defaults frame missing keyword: {fr!r}",
                 source)
+        kw, by_ref = _strip_byref_kw(kw)
+        if by_ref:
+            by_refs.append(str(kw))
         defaults.append((kw, dflt))
 
     kwonly = []
@@ -1062,11 +1093,17 @@ def gather_formals(formals_group, source=None):
                 source)
         name = None if (v := fr.get('name')) is None else v.datum
         if name is not None and (is_symbol(name) or is_lazygensym(name)):
+            name, by_ref = _strip_byref_sym(name)
+            if by_ref:
+                by_refs.append(str(name))
             kwonly.append((keyword(str(name)), nil))
             continue
         kw = None if (v := fr.get('kw')) is None else v.datum
         dflt = None if (v := fr.get('default')) is None else v.datum
         if kw is not None:
+            kw, by_ref = _strip_byref_kw(kw)
+            if by_ref:
+                by_refs.append(str(kw))
             kwonly.append((kw, dflt))
         else:
             raise SpecialError(
