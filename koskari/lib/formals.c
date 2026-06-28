@@ -809,6 +809,36 @@ static int formals_pos_star_before_kwd(PyObject *kwd, PyObject *kwd_only) {
 }
 
 
+/* === Application errors === */
+
+
+/*
+  Raise a TypeError for a formals-application failure. When the call frame
+  namespace carries a name -- the function name, for an ordinary call -- the
+  message is prefixed with "<name>() " so the error identifies the callable;
+  an anonymous frame degrades to the bare detail. fmt uses the
+  PyUnicode_FromFormat conversions (%S, %R, %U, ...). Always returns -1, so
+  call sites can `return formals_type_error(...)`.
+*/
+static int formals_type_error(PyObject *namespace, const char *fmt, ...) {
+  va_list vargs;
+  va_start(vargs, fmt);
+  PyObject *detail = PyUnicode_FromFormatV(fmt, vargs);
+  va_end(vargs);
+  if (! detail)
+    return -1;
+
+  PyObject *name = namespace? KosNamespace_NAME(namespace): NULL;
+  if (name && name != Py_None)
+    PyErr_Format(PyExc_TypeError, "%S() %U", name, detail);
+  else
+    PyErr_SetObject(PyExc_TypeError, detail);
+
+  Py_DECREF(detail);
+  return -1;
+}
+
+
 /* === By-ref binding === */
 
 
@@ -819,16 +849,13 @@ static int formals_pos_star_before_kwd(PyObject *kwd, PyObject *kwd_only) {
   failure, so it is used both inline in the positional apply loops (no floor)
   and inside bind_supplied_by_ref (keyword by-ref, which adds the floor).
 */
-#define BIND_SUPPLIED_BY_REF(ns, name, val)                     \
-  do {                                                          \
-    if (! KosRef_Check(val)) {                                  \
-      PyErr_Format(PyExc_TypeError,                             \
-                   "by-ref formal %S requires a Ref, not %R",   \
-                   (name), (val));                              \
-      return -1;                                                \
-    }                                                           \
-    if (KosNamespace_Bind((ns), (name), (val)))                 \
-      return -1;                                                \
+#define BIND_SUPPLIED_BY_REF(ns, name, val)                          \
+  do {                                                               \
+    if (! KosRef_Check(val))                                         \
+      return formals_type_error((ns),                               \
+          "by-ref formal %S requires a Ref, not %R", (name), (val)); \
+    if (KosNamespace_Bind((ns), (name), (val)))                      \
+      return -1;                                                     \
   } while (0)
 
 
@@ -908,10 +935,9 @@ static int apply_formals_kwargs_phase(
       if (val)
         PyDict_DelItem(kwargs, key);
 
-      if (! val) {
-        PyErr_Format(PyExc_TypeError, "missing positional argument %S", key);
-        return -1;
-      }
+      if (! val)
+        return formals_type_error(namespace,
+                                  "missing positional argument %S", key);
 
       if (by_ref_count) {
         br = PySequence_Contains(by_refs, key);
@@ -943,10 +969,9 @@ static int apply_formals_kwargs_phase(
         val = PyDict_GetItem(defaults, key);
       }
 
-      if (! val) {
-        PyErr_Format(PyExc_TypeError, "missing keyword argument %S", key);
-        return -1;
-      }
+      if (! val)
+        return formals_type_error(namespace,
+                                  "missing keyword argument %S", key);
 
       if (by_ref_count) {
         br = PySequence_Contains(by_refs, key);
@@ -981,11 +1006,9 @@ static int apply_formals_kwargs_phase(
         val = PyDict_GetItem(defaults, key);
       }
 
-      if (! val) {
-        PyErr_Format(PyExc_TypeError,
-                     "missing keyword-only argument %S", key);
-        return -1;
-      }
+      if (! val)
+        return formals_type_error(namespace,
+                                  "missing keyword-only argument %S", key);
 
       if (by_ref_count) {
         br = PySequence_Contains(by_refs, key);
@@ -1024,8 +1047,8 @@ static int apply_formals_kwargs_phase(
       Py_DECREF(kwargs);
 
   } else if (kwargs && PyDict_Size(kwargs)) {
-    PyErr_Format(PyExc_TypeError, "unexpected keyword arguments %R", kwargs);
-    return -1;
+    return formals_type_error(namespace,
+                              "unexpected keyword arguments %R", kwargs);
   }
 
   return 0;
@@ -1156,16 +1179,13 @@ int KosFormals_ApplyFast(
     i = l;
   }
 
-  if (i < l) {
-    PyErr_SetString(PyExc_TypeError, "too many positional arguments");
-    return -1;
-  }
+  if (i < l)
+    return formals_type_error(namespace, "too many positional arguments");
 
   if (pos_only) {
     PyObject *key = PyTuple_GET_ITEM(pos_only, ipos_only);
-    PyErr_Format(PyExc_TypeError, "missing positional-only argument: %S",
-                 key);
-    return -1;
+    return formals_type_error(namespace,
+                              "missing positional-only argument: %S", key);
   }
 
   if (star) {
@@ -1185,18 +1205,18 @@ int KosFormals_ApplyFast(
   if (! kwargs) {
     if (pos) {
       PyObject *key = PyTuple_GET_ITEM(pos, ipos);
-      PyErr_Format(PyExc_TypeError, "missing positional argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing positional argument: %S", key);
 
     } else if (kwd && ! defaults) {
       PyObject *key = PyTuple_GET_ITEM(kwd, ikwd);
-      PyErr_Format(PyExc_TypeError, "missing keyword argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing keyword argument: %S", key);
 
     } else if (kwd_only && ! defaults) {
       PyObject *key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
-      PyErr_Format(PyExc_TypeError, "missing keyword-only argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing keyword-only argument: %S", key);
     }
   }
 
@@ -1347,16 +1367,13 @@ int KosFormals_Apply(
     i = l;
   }
 
-  if (i < l) {
-    PyErr_SetString(PyExc_TypeError, "too many positional arguments");
-    return -1;
-  }
+  if (i < l)
+    return formals_type_error(namespace, "too many positional arguments");
 
   if (pos_only) {
     PyObject *key = PyTuple_GET_ITEM(pos_only, ipos_only);
-    PyErr_Format(PyExc_TypeError, "missing positional-only argument: %S",
-                 key);
-    return -1;
+    return formals_type_error(namespace,
+                              "missing positional-only argument: %S", key);
   }
 
   if (star) {
@@ -1376,18 +1393,18 @@ int KosFormals_Apply(
   if (! kwargs) {
     if (pos) {
       PyObject *key = PyTuple_GET_ITEM(pos, ipos);
-      PyErr_Format(PyExc_TypeError, "missing positional argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing positional argument: %S", key);
 
     } else if (kwd && ! defaults) {
       PyObject *key = PyTuple_GET_ITEM(kwd, ikwd);
-      PyErr_Format(PyExc_TypeError, "missing keyword argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing keyword argument: %S", key);
 
     } else if (kwd_only && ! defaults) {
       PyObject *key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
-      PyErr_Format(PyExc_TypeError, "missing keyword-only argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing keyword-only argument: %S", key);
     }
   }
 
@@ -1551,16 +1568,13 @@ int KosFormals_VectorApply(
     star = NULL;
   }
 
-  if (i < l) {
-    PyErr_SetString(PyExc_TypeError, "too many positional arguments");
-    return -1;
-  }
+  if (i < l)
+    return formals_type_error(namespace, "too many positional arguments");
 
   if (pos_only) {
     PyObject *key = PyTuple_GET_ITEM(pos_only, ipos_only);
-    PyErr_Format(PyExc_TypeError, "missing positional-only argument: %S",
-                 key);
-    return -1;
+    return formals_type_error(namespace,
+                              "missing positional-only argument: %S", key);
   }
 
   if (star) {
@@ -1584,18 +1598,18 @@ int KosFormals_VectorApply(
   if (! names) {
     if (pos) {
       PyObject *key = PyTuple_GET_ITEM(pos, ipos);
-      PyErr_Format(PyExc_TypeError, "missing positional argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing positional argument: %S", key);
 
     } else if (kwd && ! defaults) {
       PyObject *key = PyTuple_GET_ITEM(kwd, ikwd);
-      PyErr_Format(PyExc_TypeError, "missing keyword argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing keyword argument: %S", key);
 
     } else if (kwd_only && ! defaults) {
       PyObject *key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
-      PyErr_Format(PyExc_TypeError, "missing keyword-only argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing keyword-only argument: %S", key);
     }
   }
 
@@ -1772,16 +1786,13 @@ int KosFormals_VectorApplyFast(
     star = NULL;
   }
 
-  if (i < l) {
-    PyErr_SetString(PyExc_TypeError, "too many positional arguments");
-    return -1;
-  }
+  if (i < l)
+    return formals_type_error(namespace, "too many positional arguments");
 
   if (pos_only) {
     PyObject *key = PyTuple_GET_ITEM(pos_only, ipos_only);
-    PyErr_Format(PyExc_TypeError, "missing positional-only argument: %S",
-                 key);
-    return -1;
+    return formals_type_error(namespace,
+                              "missing positional-only argument: %S", key);
   }
 
   if (star) {
@@ -1805,18 +1816,18 @@ int KosFormals_VectorApplyFast(
   if (! names) {
     if (pos) {
       PyObject *key = PyTuple_GET_ITEM(pos, ipos);
-      PyErr_Format(PyExc_TypeError, "missing positional argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing positional argument: %S", key);
 
     } else if (kwd && ! defaults) {
       PyObject *key = PyTuple_GET_ITEM(kwd, ikwd);
-      PyErr_Format(PyExc_TypeError, "missing keyword argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing keyword argument: %S", key);
 
     } else if (kwd_only && ! defaults) {
       PyObject *key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
-      PyErr_Format(PyExc_TypeError, "missing keyword-only argument: %S", key);
-      return -1;
+      return formals_type_error(namespace,
+                                "missing keyword-only argument: %S", key);
     }
   }
 

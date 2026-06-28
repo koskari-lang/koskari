@@ -201,7 +201,7 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
         """
         expr, mod = self.compile_expr(src)
         with self.assertRaisesRegex(
-                TypeError, r"by-ref formal result requires a Ref"):
+                TypeError, r"add-a\(\) by-ref formal result requires a Ref"):
             await expr()
 
 
@@ -218,7 +218,7 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
         """
         expr, mod = self.compile_expr(src)
         with self.assertRaisesRegex(
-                TypeError, r"by-ref formal out requires a Ref"):
+                TypeError, r"fill\(\) by-ref formal out requires a Ref"):
             await expr()
 
 

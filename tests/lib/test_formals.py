@@ -287,6 +287,16 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TypeError):
             formals.apply(ns, (1, 2, 3))
 
+    async def test_apply_error_names_the_frame(self):
+        """apply() errors are prefixed with the frame namespace name"""
+
+        formals = Formals(("foo", "bar"), (), (), (), None, None, None, None)
+        ns = Namespace("myfunc", None, ("foo", "bar"))
+
+        with self.assertRaisesRegex(
+                TypeError, r"myfunc\(\) missing positional argument"):
+            formals.apply(ns, (1,))
+
     async def test_apply_missing_keyword_raises(self):
         """apply() raises TypeError for missing keyword argument"""
 
