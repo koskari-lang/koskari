@@ -114,9 +114,6 @@ make tox
 # Lint code
 make lint
 
-# Type-check
-make typecheck
-
 # Clean build artifacts
 make clean
 

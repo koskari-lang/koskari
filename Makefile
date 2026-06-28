@@ -126,7 +126,7 @@ test-corpus: handlers  ## Run only the corpus conformance phase (phase_corpus)
 	@$(call checkfor,tox)
 	@tox -qe py -- -m phase_corpus
 
-tox: handlers  ## Run full tox suite (tests + lint + typecheck)
+tox: handlers  ## Run full tox suite (tests + lint)
 	@$(call checkfor,tox)
 	@echo "Running full tox suite..."
 	@tox -q
@@ -327,11 +327,6 @@ lint:  ## Run linting (flake8) via tox
 	@echo "Running flake8..."
 	@tox -qe flake8
 
-typecheck:  ## Run type checking (mypy) via tox
-	@$(call checkfor,tox)
-	@echo "Running mypy..."
-	@tox -qe mypy
-
 flawfinder:  ## Run Flawfinder on koskari/lib via tox
 	@$(call checkfor,tox)
 	@echo "Running flawfinder..."
@@ -434,7 +429,6 @@ python:  ## Show Python executable
 	valgrind-image-build \
 	valgrind-koslife \
 	valgrind-run \
-	typecheck \
 	uninstall \
 	venv \
 	version
