@@ -234,16 +234,6 @@ the delim case; migrate any bundled behavior off `RETURN`.
 
 Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
 
-### Referencing formals (`(ref name)`)
-
-`(ref …)` formals for rebind-to-Ref and write-through `set!`: a caller passes
-`&value` and the callee's formal is rebound to that Ref, so `(set! result …)`
-inside the callee writes through to the caller's binding. Destructuring formals
-have been rejected; ref binding stays on general lambda / `define` formals only.
-
-Ref:
-[language/destructuring-and-referencing-formals.md](language/destructuring-and-referencing-formals.md).
-
 ### Multi-dispatch methods (matchers on formals)
 
 Method tables dispatched by type/value/shape matchers over formals,

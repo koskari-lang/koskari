@@ -1,0 +1,45 @@
+
+
+import-from types SimpleNamespace
+
+
+define-syntax report:
+    syntax-rules []:
+        case (report val):
+            (print 'val val)
+
+
+define-syntax reportn:
+    syntax-rules []:
+        case (reportn val):
+            (print 'val val end: " -> ")
+
+
+define ref-incr! [&r by: 101]:
+    incr! r by
+
+
+define data-val 123
+define data-list #[1 2 3 4]
+define data-dict #{a: 5 b: 10}
+define data-obj (SimpleNamespace count: 15)
+
+
+reportn data-val
+ref-incr! &data-val
+report data-val
+
+reportn data-list
+ref-incr! (ref (item data-list 2))
+report data-list
+
+reportn data-dict
+ref-incr! (ref (item data-dict "a"))
+report data-dict
+
+reportn data-obj
+ref-incr! &data-obj.count
+report data-obj
+
+
+; The end.

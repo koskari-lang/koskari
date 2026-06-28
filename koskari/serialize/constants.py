@@ -26,10 +26,11 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 
 # Semantic bytecode ABI for .kio (four little-endian u32 in the file header).
 # Bump when KosOpCode values or softened CODEP instruction semantics change.
+# MINOR bumped: FORMALS_SPEC pool records now carry a by_refs index.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 1
+BYTECODE_ABI_MINOR = 2
 BYTECODE_ABI_MICRO = 0
-BYTECODE_ABI_PATCH = 1
+BYTECODE_ABI_PATCH = 0
 
 
 # The end.
