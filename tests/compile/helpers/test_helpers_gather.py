@@ -172,7 +172,8 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
     def test_positional_only(self):
         spine = cons(symbol("a"), symbol("b"), nil)
         grp = _match_formals_group(spine)
-        pos, defaults, kwonly, star, starstar, ann = gather_formals(grp)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
         self.assertEqual(pos, [symbol("a"), symbol("b")])
         self.assertEqual(defaults, [])
         self.assertEqual(kwonly, [])
@@ -183,7 +184,8 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
     def test_positional_then_default_keyword(self):
         spine = cons(symbol("a"), cons(keyword("k"), symbol("dflt"), nil))
         grp = _match_formals_group(spine)
-        pos, defaults, kwonly, star, starstar, ann = gather_formals(grp)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
         self.assertEqual(pos, [symbol("a")])
         self.assertEqual(defaults, [(keyword("k"), symbol("dflt"))])
         self.assertEqual(kwonly, [])
@@ -193,7 +195,8 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
     def test_bracket_default_not_in_positional(self):
         spine = cons(cons(symbol("a"), 1, nil), nil)
         grp = _match_formals_group(spine)
-        pos, defaults, kwonly, star, starstar, ann = gather_formals(grp)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
         self.assertEqual(pos, [])
         self.assertEqual(defaults, [(keyword("a"), 1)])
         self.assertEqual(kwonly, [])
@@ -212,7 +215,8 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
             symbol("yv"),
             nil)
         grp = _match_formals_group(spine)
-        pos, defaults, kwonly, star, starstar, ann = gather_formals(grp)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
         self.assertEqual(pos, [symbol("a")])
         self.assertEqual(defaults, [])
         self.assertIs(star, symbol("args"))
@@ -226,7 +230,8 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
         kk = keyword("**")
         spine = cons(kstar, symbol("va"), kk, symbol("kk"), nil)
         grp = _match_formals_group(spine)
-        pos, defaults, kwonly, star, starstar, ann = gather_formals(grp)
+        pos, defaults, kwonly, star, starstar, ann, by_refs = \
+            gather_formals(grp)
         self.assertEqual(pos, [])
         self.assertEqual(defaults, [])
         self.assertEqual(kwonly, [])

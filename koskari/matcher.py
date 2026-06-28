@@ -2221,6 +2221,9 @@ def formal_param_pattern():
     return ONEOF(
         SYMBOL("name"),
         FORM(MATCH(SYMBOL("name"))),
+        FORM(MATCH(
+            ONEOF(LITERAL_SYM("compile/ref"), LITERAL_SYM("ref")),
+            SYMBOL("ref_name"))),
         FORM(MATCH(SYMBOL("name"), VALUE("default"))),
         FORM(MATCH(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))),
         FORM(MATCH(
@@ -2229,6 +2232,30 @@ def formal_param_pattern():
                 CAPTURE("kw", TYPE("keyword")),
                 VALUE("attr_val"))))),
     )
+
+
+def frame_formal_name(fr):
+    """
+    Resolve one positional formal frame to (name, by_ref).
+
+    The binding symbol lives under 'ref_name' for the (compile/ref x) and
+    (ref x) by-ref shapes. Otherwise it lives under 'name'; a 'name' carrying
+    a leading & is the reader-disabled by-ref fallback and is stripped. The
+    returned name is the raw symbol (Datum-unwrapped) or None
+    """
+
+    v = fr.get("ref_name")
+    if v is not None:
+        n = v.datum if isinstance(v, Datum) else v
+        return n, True
+
+    v = fr.get("name")
+    if v is None:
+        return None, False
+    n = v.datum if isinstance(v, Datum) else v
+    if is_symbol(n) and str(n)[:1] == "&":
+        return symbol(str(n)[1:]), True
+    return n, False
 
 
 def kwonly_param_pattern():
@@ -2355,14 +2382,14 @@ class FORMALS(Composite, HygieneWireSlotScopes):
         pos = grp.get("positionals", ())
         for fr in pos:
             if isinstance(fr, dict):
-                n = fr.get("name")
-                if n is not None:
-                    if _intro_suppressed(n):
-                        continue
-                    if isinstance(n, Datum):
-                        n = n.datum
-                    if is_symbol(n):
-                        yield n
+                cell = fr.get("ref_name")
+                if cell is None:
+                    cell = fr.get("name")
+                if cell is not None and _intro_suppressed(cell):
+                    continue
+                n, _byref = frame_formal_name(fr)
+                if n is not None and is_symbol(n):
+                    yield n
         star = grp.get("star")
         if star is not None and not _intro_suppressed(star):
             if isinstance(star, Datum):

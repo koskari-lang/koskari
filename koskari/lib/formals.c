@@ -68,6 +68,9 @@ static PyMemberDef formals_spec_members[] = {
   { "annotations",  T_OBJECT, offsetof(KosFormalsSpec, annotations), READONLY,
     "per-parameter annotation bundles (e.g. type hints)" },
 
+  { "by_refs",  T_OBJECT, offsetof(KosFormalsSpec, by_refs), READONLY,
+    "tuple of names of by-ref formals" },
+
   { NULL, },
 };
 
@@ -121,14 +124,15 @@ static PyObject *formals_spec_new(PyTypeObject *type,
   PyObject *star = NULL;
   PyObject *starstar = NULL;
   PyObject *annotations = NULL;
+  PyObject *by_refs = NULL;
 
-  if (! PyArg_ParseTuple(args, "|OOOOOOO:FormalsSpec",
+  if (! PyArg_ParseTuple(args, "|OOOOOOOO:FormalsSpec",
                          &pos, &pos_only, &kwd, &kwd_only,
-                         &star, &starstar, &annotations))
+                         &star, &starstar, &annotations, &by_refs))
     return NULL;
 
   return KosFormalsSpec_New(pos, pos_only, kwd, kwd_only,
-                            star, starstar, annotations);
+                            star, starstar, annotations, by_refs);
 }
 
 
@@ -140,6 +144,7 @@ static void formals_spec_dealloc(PyObject *self) {
   Py_CLEAR(KosFormalsSpec_STAR(self));
   Py_CLEAR(KosFormalsSpec_STARSTAR(self));
   Py_CLEAR(KosFormalsSpec_ANNOTATIONS(self));
+  Py_CLEAR(KosFormalsSpec_BY_REFS(self));
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -152,6 +157,7 @@ static int formals_spec_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosFormalsSpec_STAR(self));
   Py_VISIT(KosFormalsSpec_STARSTAR(self));
   Py_VISIT(KosFormalsSpec_ANNOTATIONS(self));
+  Py_VISIT(KosFormalsSpec_BY_REFS(self));
   return 0;
 }
 
@@ -164,6 +170,7 @@ static int formals_spec_clear(PyObject *self) {
   Py_CLEAR(KosFormalsSpec_STAR(self));
   Py_CLEAR(KosFormalsSpec_STARSTAR(self));
   Py_CLEAR(KosFormalsSpec_ANNOTATIONS(self));
+  Py_CLEAR(KosFormalsSpec_BY_REFS(self));
   return 0;
 }
 
@@ -193,7 +200,8 @@ PyObject *KosFormalsSpec_New(
     PyObject *kwd_only,
     PyObject *star,
     PyObject *starstar,
-    PyObject *annotations) {
+    PyObject *annotations,
+    PyObject *by_refs) {
 
   if (pos && (pos != Py_None) && (! PySequence_Check(pos))) {
     PyErr_Format(PyExc_TypeError, "pos must be a sequence,"
@@ -246,6 +254,12 @@ PyObject *KosFormalsSpec_New(
     }
   }
 
+  if (by_refs && (by_refs != Py_None) && (! PySequence_Check(by_refs))) {
+    PyErr_Format(PyExc_TypeError, "by_refs must be a sequence,"
+                 " not %R", by_refs);
+    return NULL;
+  }
+
   PyObject *self = PyObject_New(PyObject, &KosFormalsSpecType);
   if (! self)
     return NULL;
@@ -258,6 +272,7 @@ PyObject *KosFormalsSpec_New(
   KosFormalsSpec_STAR(self) = NULL;
   KosFormalsSpec_STARSTAR(self) = NULL;
   KosFormalsSpec_ANNOTATIONS(self) = NULL;
+  KosFormalsSpec_BY_REFS(self) = NULL;
 
   TUPLE_OR_NULL(pos);
   KosFormalsSpec_POS(self) = pos;
@@ -280,6 +295,9 @@ PyObject *KosFormalsSpec_New(
   if (annotations)
     annotations = PyDict_Copy(annotations);
   KosFormalsSpec_ANNOTATIONS(self) = annotations;
+
+  TUPLE_OR_NULL(by_refs);
+  KosFormalsSpec_BY_REFS(self) = by_refs;
 
   return self;
 
@@ -480,6 +498,9 @@ static PyMemberDef formals_members[] = {
   { "annotations",  T_OBJECT, offsetof(KosFormals, annotations), READONLY,
     "per-parameter annotation bundles copied from FormalsSpec" },
 
+  { "by_refs",  T_OBJECT, offsetof(KosFormals, by_refs), READONLY,
+    "tuple of names of by-ref formals copied from FormalsSpec" },
+
   { NULL, },
 };
 
@@ -531,14 +552,17 @@ static PyObject *formals_new(PyTypeObject *type,
   PyObject *starstar = NULL;
   PyObject *defaults = NULL;
   PyObject *annotations = NULL;
+  PyObject *by_refs = NULL;
 
-  if (! PyArg_ParseTuple(args, "OOOOOO|OO:Formals",
+  if (! PyArg_ParseTuple(args, "OOOOOO|OOO:Formals",
                          &pos, &pos_only, &kwd, &kwd_only,
-                         &star, &starstar, &defaults, &annotations))
+                         &star, &starstar, &defaults, &annotations,
+                         &by_refs))
     return NULL;
 
   return KosFormals_NewFull(pos, pos_only, kwd, kwd_only,
-                            star, starstar, defaults, annotations);
+                            star, starstar, defaults, annotations,
+                            by_refs);
 }
 
 
@@ -551,6 +575,7 @@ static void formals_dealloc(PyObject *self) {
   Py_CLEAR(KosFormals_STARSTAR(self));
   Py_CLEAR(KosFormals_DEFAULTS(self));
   Py_CLEAR(KosFormals_ANNOTATIONS(self));
+  Py_CLEAR(KosFormals_BY_REFS(self));
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -564,6 +589,7 @@ static int formals_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosFormals_STARSTAR(self));
   Py_VISIT(KosFormals_DEFAULTS(self));
   Py_VISIT(KosFormals_ANNOTATIONS(self));
+  Py_VISIT(KosFormals_BY_REFS(self));
   return 0;
 }
 
@@ -577,6 +603,7 @@ static int formals_clear(PyObject *self) {
   Py_CLEAR(KosFormals_STARSTAR(self));
   Py_CLEAR(KosFormals_DEFAULTS(self));
   Py_CLEAR(KosFormals_ANNOTATIONS(self));
+  Py_CLEAR(KosFormals_BY_REFS(self));
   return 0;
 }
 
@@ -615,7 +642,8 @@ PyObject *KosFormals_New(PyObject *spec, PyObject *defaults) {
     KosFormalsSpec_STAR(spec),
     KosFormalsSpec_STARSTAR(spec),
     defaults,
-    KosFormalsSpec_ANNOTATIONS(spec));
+    KosFormalsSpec_ANNOTATIONS(spec),
+    KosFormalsSpec_BY_REFS(spec));
 }
 
 
@@ -627,7 +655,8 @@ PyObject *KosFormals_NewFull(
     PyObject *star,
     PyObject *starstar,
     PyObject *defaults,
-    PyObject *annotations) {
+    PyObject *annotations,
+    PyObject *by_refs) {
 
   PyObject *self = NULL;
 
@@ -698,6 +727,12 @@ PyObject *KosFormals_NewFull(
     }
   }
 
+  if (by_refs && (by_refs != Py_None) && (! PySequence_Check(by_refs))) {
+    PyErr_Format(PyExc_TypeError, "by_refs must be a sequence,"
+                 " not %R", by_refs);
+    return NULL;
+  }
+
   self = PyObject_New(PyObject, &KosFormalsType);
   if (! self)
     return NULL;
@@ -710,6 +745,7 @@ PyObject *KosFormals_NewFull(
   KosFormals_STARSTAR(self) = NULL;
   KosFormals_DEFAULTS(self) = NULL;
   KosFormals_ANNOTATIONS(self) = NULL;
+  KosFormals_BY_REFS(self) = NULL;
 
   TUPLE_OR_NULL(pos);
   KosFormals_POS(self) = pos;
@@ -736,6 +772,9 @@ PyObject *KosFormals_NewFull(
   if (annotations)
     annotations = PyDict_Copy(annotations);
   KosFormals_ANNOTATIONS(self) = annotations;
+
+  TUPLE_OR_NULL(by_refs);
+  KosFormals_BY_REFS(self) = by_refs;
 
   return self;
 
@@ -879,6 +918,67 @@ static int apply_formals_kwargs_phase(
   } else if (kwargs && PyDict_Size(kwargs)) {
     PyErr_Format(PyExc_TypeError, "unexpected keyword arguments %R", kwargs);
     return -1;
+  }
+
+  return 0;
+}
+
+
+/*
+  Second binding pass for by-ref formals. Runs once, after the normal apply
+  has fully populated the namespace, so a failed application never aliases a
+  caller cell. For each by-ref name whose slot holds the Ref passed at the
+  call site (a `&x` / `(compile/ref x)` / `(ref x)` argument), the slot is
+  re-bound to that Ref so the local shares the caller's storage. An empty
+  cell with a default is pre-filled through the Ref. A slot holding a plain
+  value (a stored default, or a bare argument) is left untouched.
+*/
+static int apply_by_refs(PyObject *formals, PyObject *namespace) {
+  PyObject *by_refs = KosFormals_BY_REFS(formals);
+  if (! by_refs)
+    return 0;
+
+  PyObject *defaults = KosFormals_DEFAULTS(formals);
+  Py_ssize_t l = PyTuple_GET_SIZE(by_refs);
+
+  for (Py_ssize_t i = 0; i < l; i++) {
+    PyObject *name = PyTuple_GET_ITEM(by_refs, i);
+
+    PyObject *val = KosNamespace_Deref(namespace, name);
+    if (! val) {
+      // slot unbound (e.g. an omitted required formal already errored
+      // earlier); nothing to alias.
+      PyErr_Clear();
+      continue;
+    }
+
+    if (! KosRef_Check(val)) {
+      // a plain value -- a stored default or a bare argument; leave as-is.
+      Py_DECREF(val);
+      continue;
+    }
+
+    if (KosNamespace_Bind(namespace, name, val)) {
+      Py_DECREF(val);
+      return -1;
+    }
+
+    if (defaults) {
+      int empty = KosRef_IsEmpty(val);
+      if (empty < 0) {
+        Py_DECREF(val);
+        return -1;
+      }
+      if (empty) {
+        PyObject *dflt = PyDict_GetItem(defaults, name);
+        if (dflt && KosRef_Store(val, dflt)) {
+          Py_DECREF(val);
+          return -1;
+        }
+      }
+    }
+
+    Py_DECREF(val);
   }
 
   return 0;
@@ -1030,6 +1130,11 @@ int KosFormals_ApplyFast(
     return -1;
   }
 
+  if (apply_by_refs(formals, namespace)) {
+    Py_XDECREF(kwargs);
+    return -1;
+  }
+
   SAY("KosFormals_ApplyFast -> 0");
   Py_XDECREF(kwargs);
   return 0;
@@ -1177,6 +1282,11 @@ int KosFormals_Apply(
                                  starstar, defaults, kwargs,
                                  ipos, ipos_only, ikwd, ikwd_only) < 0) {
     SAY("KosFormals_Apply -> fail_kwargs (-1)");
+    Py_XDECREF(kwargs);
+    return -1;
+  }
+
+  if (apply_by_refs(formals, namespace)) {
     Py_XDECREF(kwargs);
     return -1;
   }
@@ -1367,6 +1477,11 @@ int KosFormals_VectorApply(
     return -1;
   }
 
+  if (apply_by_refs(formals, namespace)) {
+    Py_XDECREF(kwargs);
+    return -1;
+  }
+
   SAY(" -> 0");
   Py_XDECREF(kwargs);
   return 0;
@@ -1551,6 +1666,11 @@ int KosFormals_VectorApplyFast(
                                  starstar, defaults, kwargs,
                                  ipos, ipos_only, ikwd, ikwd_only) < 0) {
     SAY("KosFormals_VectorApplyFast -> -1");
+    Py_XDECREF(kwargs);
+    return -1;
+  }
+
+  if (apply_by_refs(formals, namespace)) {
     Py_XDECREF(kwargs);
     return -1;
   }

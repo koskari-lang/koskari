@@ -234,15 +234,16 @@ the delim case; migrate any bundled behavior off `RETURN`.
 
 Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
 
-### Referencing formals (`(ref name)`)
+### By-ref formals (`&name` / `(compile/ref name)` / `(ref name)`) — DONE
 
-`(ref …)` formals for rebind-to-Ref and write-through `set!`: a caller passes
-`&value` and the callee's formal is rebound to that Ref, so `(set! result …)`
-inside the callee writes through to the caller's binding. Destructuring formals
-have been rejected; ref binding stays on general lambda / `define` formals only.
+Implemented. Mark a formal by-ref so application installs a caller-supplied `Ref`
+as the slot's storage: a caller passes `&value` and the callee's formal aliases
+that Ref, so `(set! result …)` inside the callee writes through to the caller's
+binding. Parse-side marking + a `by_refs` tuple on `FormalsSpec` / `Formals` + an
+`apply_by_refs` pass that runs last and rebinds any slot holding a `Ref`.
+Positional (required) and keyword (floored) formals; destructuring rejected.
 
-Ref:
-[language/destructuring-and-referencing-formals.md](language/destructuring-and-referencing-formals.md).
+Ref: [language/by-ref-formals.md](language/by-ref-formals.md).
 
 ### Multi-dispatch methods (matchers on formals)
 

@@ -49,7 +49,7 @@ def helper_function(compiler, caps, selfref):
     return_type_mr = caps.get("return_type")
     return_type_src = return_type_mr.datum if return_type_mr else None
 
-    pos, defaults, kwonly, star, starstar, ann = gather_formals(
+    pos, defaults, kwonly, star, starstar, ann, by_refs = gather_formals(
         caps["formals"])
 
     body_src = caps["body"].datum
@@ -102,7 +102,7 @@ def helper_function(compiler, caps, selfref):
         code.extras['return'] = return_type_src
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
-        star, starstar, ann), code)
+        star, starstar, ann, by_refs), code)
     frag.instruction(OpCode.KOS_OP_CONST, fspec)
     frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(defnames))
 

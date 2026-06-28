@@ -29,7 +29,7 @@ from ..lib import (DatumFrame, Matcher, OpCode, car, cdr, cons, keyword, nil,
                    pair, symbol)
 from ..matcher import (BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
                        REST, SYMBOL, USING, USING_UNPACK, VALUE,
-                       HygienicMatchCompiler, Pattern)
+                       HygienicMatchCompiler, Pattern, frame_formal_name)
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 from .compiler import ByteCodeFragment
 
@@ -920,11 +920,13 @@ def _merge_formal_annotations(annotations, name_sym, ann_bundle):
 
 def _attrs_frames_to_ann(attr_frames: List[dict], source):
     """
-    Fold formal attribute REPEAT frames into (ann dict, default or None)
+    Fold formal attribute REPEAT frames into (ann dict, default or None,
+    by_ref bool)
     """
 
     ann = {}
     default = None
+    by_ref = False
     for afr in attr_frames:
         kw_cell = afr.get('kw')
         if kw_cell is None:
@@ -941,19 +943,22 @@ def _attrs_frames_to_ann(attr_frames: List[dict], source):
             default = val
         elif kw in (keyword('type'), keyword('')):
             ann['type'] = val
+        elif kw == keyword('byref'):
+            by_ref = bool(val)
         else:
             raise SpecialError(
                 f"unknown formal attribute {kw!r}",
                 source)
-    return ann, default
+    return ann, default, by_ref
 
 
 def _gather_one_positional_frame(fr: dict, source):
     """
-    Map one positional REPEAT frame to (name, ann_bundle, default_expr)
+    Map one positional REPEAT frame to (name, ann_bundle, default_expr,
+    by_ref)
     """
 
-    name = None if (v := fr.get('name')) is None else v.datum
+    name, by_ref = frame_formal_name(fr)
     typ = None if (v := fr.get('type')) is None else v.datum
 
     default_cell = fr.get('default')
@@ -968,7 +973,7 @@ def _gather_one_positional_frame(fr: dict, source):
 
     attrs_cell = fr.get('attrs')
     if attrs_cell:
-        ann2, default2 = _attrs_frames_to_ann(attrs_cell, source)
+        ann2, default2, byref2 = _attrs_frames_to_ann(attrs_cell, source)
         for k2, v2 in ann2.items():
             if k2 in annotations and annotations[k2] != v2:
                 raise SpecialError(
@@ -981,6 +986,8 @@ def _gather_one_positional_frame(fr: dict, source):
                     f"duplicate default for formal {name!r}",
                     source)
             default_expr = default2
+        if byref2:
+            by_ref = True
 
     if name is None:
         raise SpecialError(
@@ -992,20 +999,22 @@ def _gather_one_positional_frame(fr: dict, source):
             f" {name!r}",
             source)
 
-    return name, annotations, default_expr
+    return name, annotations, default_expr, by_ref
 
 
 def gather_formals(formals_group, source=None):
     """
-    Parse matcher FORMALS GROUP dict into six values for compile specials
+    Parse matcher FORMALS GROUP dict into seven values for compile specials
 
-    Tuple order matches historical compile formals unpacking:
-    (positional, defaults, kwonly, star, starstar, annotations)
+    Tuple order matches historical compile formals unpacking, with by_refs
+    appended:
+    (positional, defaults, kwonly, star, starstar, annotations, by_refs)
 
     :param formals_group: dict from captures[formals_slot] after match
     :param source: optional spine for error context; defaults to
         ``formals_group.source`` when omitted
-    :return: (positional, defaults, kwonly, star, starstar, annotations)
+    :return: (positional, defaults, kwonly, star, starstar, annotations,
+        by_refs)
     :raises SpecialError: on invalid structure
     """
 
@@ -1015,14 +1024,18 @@ def gather_formals(formals_group, source=None):
     annotations = {}
     positional = []
     defaults = []
+    by_refs = []
 
     for fr in formals_group.get('positionals', ()):
         if not isinstance(fr, dict):
             raise SpecialError(
                 f"invalid positional frame {fr!r}",
                 source)
-        name, ann_bundle, default = _gather_one_positional_frame(fr, source)
+        name, ann_bundle, default, by_ref = \
+            _gather_one_positional_frame(fr, source)
         _merge_formal_annotations(annotations, name, ann_bundle)
+        if by_ref:
+            by_refs.append(str(name))
         if default is not None:
             defaults.append((keyword(str(name)), default))
         else:
@@ -1076,7 +1089,8 @@ def gather_formals(formals_group, source=None):
                 f"* keyword requires symbol binding, not {star!r}",
                 source)
 
-    return (positional, defaults, kwonly, star, starstar, annotations)
+    return (positional, defaults, kwonly, star, starstar, annotations,
+            tuple(by_refs))
 
 
 # The end.
