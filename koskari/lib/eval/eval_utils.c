@@ -403,6 +403,31 @@ KosOpResult KosEvalState_Call(
     int tail_call) {
 
   if (! KosCallable_Check(callable)) {
+    if (KosInstanceCall_Check(callable)) {
+      /* Instance with a KosCallable __call__: dispatch the unbound __call__
+         with self injected as the first positional -- no bound-method,
+         transient-string, or descriptor-bind allocation. */
+      PyObject *call_fn = kos_instance_call_target(callable);
+      if (call_fn) {
+        Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+        Py_ssize_t ntotal = nargs + nkw;
+        PyObject *small[8];
+        PyObject **inj = small;
+        if (ntotal + 1 > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
+          inj = PyMem_Malloc((size_t) (ntotal + 1) * sizeof(PyObject *));
+          if (! inj)
+            return EVAL_RAISE();
+        }
+        inj[0] = callable;
+        if (ntotal)
+          memcpy(inj + 1, args, (size_t) ntotal * sizeof(PyObject *));
+        KosOpResult r = KosEvalState_Call(es, call_fn, inj, nargs + 1,
+                                          kwnames, tail_call);
+        if (inj != small)
+          PyMem_Free(inj);
+        return r;
+      }
+    }
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
@@ -440,6 +465,28 @@ KosOpResult KosEvalState_CallArgs(
     int tail_call) {
 
   if (! KosCallable_Check(callable)) {
+    if (KosInstanceCall_Check(callable)) {
+      PyObject *call_fn = kos_instance_call_target(callable);
+      if (call_fn) {
+        /* Prepend self to the positional tuple (the tuple form allocates
+           regardless). */
+        Py_ssize_t na = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
+        PyObject *inj = PyTuple_New(na + 1);
+        if (! inj)
+          return EVAL_RAISE();
+        Py_INCREF(callable);
+        PyTuple_SET_ITEM(inj, 0, callable);
+        for (Py_ssize_t i = 0; i < na; i++) {
+          PyObject *it = PyTuple_GET_ITEM(args_tuple, i);
+          Py_INCREF(it);
+          PyTuple_SET_ITEM(inj, i + 1, it);
+        }
+        KosOpResult r = KosEvalState_CallArgs(es, call_fn, inj, kwds_dict,
+                                              tail_call);
+        Py_DECREF(inj);
+        return r;
+      }
+    }
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
@@ -487,6 +534,15 @@ KosOpResult KosEvalState_CallNoArgs(
     int tail_call) {
 
   if (! KosCallable_Check(callable)) {
+    if (KosInstanceCall_Check(callable)) {
+      PyObject *call_fn = kos_instance_call_target(callable);
+      if (call_fn) {
+        /* self is the sole positional. */
+        PyObject *self_arg[1];
+        self_arg[0] = callable;
+        return KosEvalState_Call(es, call_fn, self_arg, 1, NULL, tail_call);
+      }
+    }
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);

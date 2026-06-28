@@ -28,7 +28,7 @@ KOS_OP_HANDLER(CALL) {
 
   SAYF("CALL: callable=%R", ptr[0]);
 
-  if (KosCallable_Check(ptr[0])) {
+  if (KosCallable_Check(ptr[0]) || KosInstanceCall_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
     if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)(n + 1)) < 0)
       return EVAL_RAISE();

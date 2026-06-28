@@ -36,6 +36,7 @@
 static PyObject *KoskariSyncViolation = NULL;
 static PyObject *CompositeMetaCache = NULL;
 static PyObject *str_init_name = NULL;
+static PyObject *str_call_name = NULL;
 static PyObject *object_init = NULL;
 
 static void koskari_fixup_slot_dispatchers(PyTypeObject *type);
@@ -387,6 +388,7 @@ typedef enum {
   SLOT_RICHCMP,
   SLOT_LEN,
   SLOT_ITER,
+  SLOT_CALL,
 } slot_kind_t;
 
 
@@ -409,6 +411,7 @@ static const slot_def_t slot_defs[] = {
   {"__len__", SLOT_LEN},
   {"__bool__", SLOT_UNARY},
   {"__iter__", SLOT_ITER},
+  {"__call__", SLOT_CALL},
 };
 
 
@@ -547,6 +550,45 @@ static PyObject *dunder_slot_iter_shim(PyObject *self) {
 }
 
 
+/**
+   tp_call shim installed on Koskari types whose __call__ resolves to a
+   KosCallable. It doubles as a sentinel: the evaluator recognizes it via
+   KosInstanceCall_Check and inlines the call through the install slot instead
+   of starting a fresh eval loop (see KosEvalState_Call).
+
+   Unlike the demand-wrapped dunder shims this preserves async semantics -- a
+   bound async __call__ returns a coroutine here, exactly as CPython's
+   slot_tp_call would. Self injection follows ordinary descriptor binding:
+   getattr yields a bound method for a KosFunction/Demand accessor.
+*/
+PyObject *kos_instance_call(PyObject *self, PyObject *args, PyObject *kwds) {
+
+  PyObject *call = PyObject_GetAttr(self, str_call_name);
+  if (! call)
+    return NULL;
+
+  PyObject *result = PyObject_Call(call, args, kwds);
+  Py_DECREF(call);
+  return result;
+}
+
+
+/**
+   Resolve the unbound __call__ of self's type for inline dispatch. Returns a
+   BORROWED reference to a KosCallable, or NULL if __call__ is absent or not a
+   KosCallable. Uses the type method cache (PyType_Lookup) -- no allocation, no
+   descriptor binding, no transient string. The evaluator injects self as the
+   first positional itself, so no bound method is built.
+*/
+PyObject *kos_instance_call_target(PyObject *self) {
+
+  PyObject *fn = PyType_Lookup(Py_TYPE(self), str_call_name);
+  if (fn && KosCallable_Check(fn))
+    return fn;
+  return NULL;
+}
+
+
 static PyObject *dunder_lookup_in_mro(const PyTypeObject *type,
                                       const char *dunder) {
 
@@ -590,9 +632,18 @@ static int koskari_update_one_slot(
     return 0;
 
   int is_callable = PyCallable_Check(attr);
+  int is_koscallable = KosCallable_Check(attr);
   Py_DECREF(attr);
   if (! is_callable)
     return 0;
+
+  if (kind == SLOT_CALL) {
+    /* Install the inlining sentinel only when __call__ is a KosCallable; a
+       plain Python __call__ keeps CPython's slot_tp_call. */
+    if (is_koscallable)
+      type->tp_call = kos_instance_call;
+    return 0;
+  }
 
   if (kind == SLOT_UNARY) {
     if (strcmp(dunder, "__repr__") == 0) {
@@ -712,6 +763,10 @@ int koskari_object_init(PyObject *mod) {
   if (! str_init_name)
     return -1;
 
+  str_call_name = PyUnicode_InternFromString("__call__");
+  if (! str_call_name)
+    return -1;
+
   object_init = PyObject_GetAttrString(
       (PyObject *) &PyBaseObject_Type, "__init__");
   if (! object_init)
@@ -730,6 +785,7 @@ int koskari_object_clear(PyObject *mod) {
   Py_CLEAR(KoskariSyncViolation);
   Py_CLEAR(CompositeMetaCache);
   Py_CLEAR(str_init_name);
+  Py_CLEAR(str_call_name);
   Py_CLEAR(object_init);
   (void) mod;
   return 0;

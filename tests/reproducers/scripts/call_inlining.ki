@@ -1,0 +1,66 @@
+;; Full-stack reproducer: calling an instance whose __call__ is a Koskari
+;; function inlines through the KosCallable install slot (KosInstanceCall)
+;; rather than re-entering the evaluator via tp_call.
+
+
+define-class Adder []:
+
+    define __init__ [self base]:
+        set! self.base base
+
+    define __call__ [self x]:
+        (+ self.base x)
+
+
+define verify_call_inlines []:
+    define a (Adder 10)
+    equal? (a 5) 15
+
+
+define verify_call_multiple []:
+    define a (Adder 100)
+    and:
+        equal? (a 1) 101
+        equal? (a 2) 102
+
+
+;; __call__ keyword and default-argument handling
+
+define-class Greeter []:
+
+    define __init__ [self greeting]:
+        set! self.greeting greeting
+
+    define __call__ [self name [punct "!"]]:
+        (+ self.greeting (+ name punct))
+
+
+define verify_call_keywords []:
+    define g (Greeter "hi ")
+    and:
+        equal? (g "bob") "hi bob!"
+        equal? (g "bob" punct: "?") "hi bob?"
+
+
+;; Nested instance call: __call__ invokes another callable, which itself
+;; dispatches through the evaluator.
+
+define inc [n]:
+    (+ n 1)
+
+
+define-class Twice []:
+
+    define __init__ [self fn]:
+        set! self.fn fn
+
+    define __call__ [self x]:
+        (self.fn (self.fn x))
+
+
+define verify_nested_call []:
+    define t (Twice inc)
+    equal? (t 5) 7
+
+
+;; The end.

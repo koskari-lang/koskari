@@ -58,6 +58,33 @@ PyObject *kos_build_class(
     PyObject *metaclass_or_null);
 
 
+/* === instance __call__ inlining === */
+
+
+/**
+   tp_call shim for Koskari instances whose __call__ is a KosCallable. Doubles
+   as the sentinel KosInstanceCall_Check tests for, so the evaluator can inline
+   the call through the install slot rather than re-entering koskari_eval.
+*/
+PyObject *kos_instance_call(PyObject *self, PyObject *args, PyObject *kwds);
+
+
+/**
+   Resolve the unbound __call__ KosCallable of self's type for inline dispatch.
+   Borrowed reference, or NULL. The caller injects self as the first positional.
+*/
+PyObject *kos_instance_call_target(PyObject *self);
+
+
+/**
+   True when obj is an instance whose type carries the kos_instance_call
+   sentinel, i.e. its __call__ is a KosCallable the evaluator can inline.
+   Cheap pointer compare; used to gate the (slightly costlier) target lookup.
+*/
+#define KosInstanceCall_Check(obj) \
+  ((obj) && Py_TYPE(obj)->tp_call == kos_instance_call)
+
+
 /* === Unit lifecycle === */
 
 
