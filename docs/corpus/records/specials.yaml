@@ -149,3 +149,1227 @@ tags:
   - try
   - exception
 notes: requires bad_guy raising at eval; pattern from test_try.py bare except family
+---
+id: special-begin-single-expr-002
+feature: special/compile/begin
+source: |-
+  (compile/begin (+ 1 2))
+  
+verify:
+  read: (compile/begin (+ 1 2))
+  expand: (compile/begin (+ 1 2))
+  eval: "3"
+references:
+  - reference/specials/compile-begin.md
+stability: stable
+tags:
+  - special
+  - begin
+---
+id: special-begin-empty-003
+feature: special/compile/begin
+source: |-
+  (compile/begin)
+  
+verify:
+  read: (compile/begin)
+  expand: (compile/begin)
+  eval: "null"
+references:
+  - reference/specials/compile-begin.md
+stability: stable
+tags:
+  - special
+  - begin
+notes: empty begin body yields None
+---
+id: special-cons-single-002
+feature: special/compile/cons
+source: |-
+  (cons 1 nil)
+  
+verify:
+  read: (cons 1 nil)
+  expand: (cons 1 nil)
+  eval: "proper-list:[1]"
+references:
+  - reference/specials/compile-cons.md
+stability: stable
+tags:
+  - special
+  - cons
+---
+id: special-cons-three-003
+feature: special/compile/cons
+source: |-
+  (cons 1 2 3 nil)
+  
+verify:
+  read: (cons 1 2 3 nil)
+  expand: (cons 1 2 3 nil)
+  eval: "proper-list:[1,2,3]"
+references:
+  - reference/specials/compile-cons.md
+stability: stable
+tags:
+  - special
+  - cons
+notes: variadic cons; equivalent to (cons 1 (cons 2 (cons 3 nil)))
+---
+id: special-car-of-cons-002
+feature: special/compile/car
+source: |-
+  (car (cons 1 2 nil))
+  
+verify:
+  read: (car (cons 1 2 nil))
+  expand: (car (cons 1 2 nil))
+  eval: "1"
+references:
+  - reference/specials/compile-car.md
+stability: stable
+tags:
+  - special
+  - car
+---
+id: special-car-nested-003
+feature: special/compile/car
+source: |-
+  (car (cons (cons 1 nil) nil))
+  
+verify:
+  read: (car (cons (cons 1 nil) nil))
+  expand: (car (cons (cons 1 nil) nil))
+  eval: "proper-list:[1]"
+references:
+  - reference/specials/compile-car.md
+stability: stable
+tags:
+  - special
+  - car
+notes: car of a nested pair returns the inner pair
+---
+id: special-try-named-binding-003
+feature: special/compile/try
+source: |-
+  (try (/ 1 0) ([e ZeroDivisionError] (str e)))
+  
+verify:
+  read: (try (/ 1 0) ((e ZeroDivisionError) (str e)))
+  expand: (try (/ 1 0) ((e ZeroDivisionError) (str e)))
+  eval: '"division by zero"'
+references:
+  - reference/specials/compile-try.md
+stability: evolving
+tags:
+  - special
+  - try
+  - exception
+notes: named binding form [e TYPE]; exception message accessed via str
+---
+id: special-import-absolute-001
+feature: special/import
+source: |-
+  (import os)
+  
+verify:
+  read: (import os)
+  expand: (import os)
+  eval: "null"
+references:
+  - reference/specials/import.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: binds module 'os' in current namespace; form evaluates to None
+---
+id: special-import-alias-002
+feature: special/import
+source: |-
+  (import os as: operating_system)
+  
+verify:
+  eval: "null"
+references:
+  - reference/specials/import.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: "as: keyword renames the binding; binds 'operating_system' instead of 'os'"
+---
+id: special-import-sys-003
+feature: special/import
+source: |-
+  (import sys)
+  
+verify:
+  read: (import sys)
+  expand: (import sys)
+  eval: "null"
+references:
+  - reference/specials/import.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: second import example with a different module
+---
+id: special-import-from-single-001
+feature: special/import-from
+source: |-
+  (import-from os path)
+  
+verify:
+  read: (import-from os path)
+  expand: (import-from os path)
+  eval: "null"
+references:
+  - reference/specials/import-from.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: binds os.path as 'path' in current namespace
+---
+id: special-import-from-multi-002
+feature: special/import-from
+source: |-
+  (import-from os path sep)
+  
+verify:
+  read: (import-from os path sep)
+  expand: (import-from os path sep)
+  eval: "null"
+references:
+  - reference/specials/import-from.md
+stability: evolving
+tags:
+  - special
+  - import
+notes: imports multiple names from one module in a single form
+---
+id: special-import-from-sys-003
+feature: special/import-from
+source: |-
+  (import-from sys argv version)
+  
+verify:
+  read: (import-from sys argv version)
+  expand: (import-from sys argv version)
+  eval: "null"
+references:
+  - reference/specials/import-from.md
+stability: evolving
+tags:
+  - special
+  - import
+---
+id: special-with-no-binding-001
+feature: special/compile/with
+source: |-
+  (compile/with [(open "/dev/null")] None)
+  
+verify:
+  read: (compile/with ((open "/dev/null")) None)
+  expand: (compile/with ((open "/dev/null")) None)
+  eval: "null"
+references:
+  - reference/specials/compile-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: no binding; context manager enter result discarded; body evaluates to None
+---
+id: special-with-binding-002
+feature: special/compile/with
+source: |-
+  (compile/with [f (open "/dev/null")] (compile/call-attr f read))
+  
+verify:
+  read: (compile/with (f (open "/dev/null")) (compile/call-attr f read))
+  expand: (compile/with (f (open "/dev/null")) (compile/call-attr f read))
+  eval: '""'
+references:
+  - reference/specials/compile-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: named binding 'f'; reads from /dev/null which is always empty
+---
+id: special-with-multi-body-003
+feature: special/compile/with
+source: |-
+  (compile/with [f (open "/dev/null")] (compile/call-attr f read) (compile/call-attr f read))
+  
+verify:
+  read: (compile/with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  expand: (compile/with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  eval: '""'
+references:
+  - reference/specials/compile-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: multiple body forms; value is last form; both reads happen within context
+---
+id: special-globals-001
+feature: special/compile/globals
+source: |-
+  (compile/globals)
+  
+verify:
+  read: (compile/globals)
+  expand: (compile/globals)
+references:
+  - reference/specials/compile-globals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: returns the module namespace; eval produces a ModuleNamespace object (not auto-encodable)
+---
+id: special-locals-001
+feature: special/compile/locals
+source: |-
+  (compile/locals)
+  
+verify:
+  read: (compile/locals)
+  expand: (compile/locals)
+references:
+  - reference/specials/compile-locals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: returns the current frame namespace; eval produces a Namespace object (not auto-encodable)
+---
+id: special-call-cc-invoke-002
+feature: special/compile/call/cc
+source: |-
+  (compile/call/cc (compile/lambda [k] (compile/call k 42)))
+  
+verify:
+  read: (compile/call/cc (compile/lambda (k) (compile/call k 42)))
+  expand: (compile/call/cc (compile/lambda (k) (compile/call k 42)))
+  eval: "42"
+references:
+  - reference/specials/compile-callcc.md
+stability: evolving
+tags:
+  - special
+  - continuation
+notes: capture continuation k; invoke immediately with 42; form value is 42
+---
+id: special-call-cc-escape-003
+feature: special/compile/call/cc
+source: |-
+  (compile/call/cc (compile/lambda [escape] (compile/begin (compile/call escape "early") "unreachable")))
+  
+verify:
+  read: (compile/call/cc (compile/lambda (escape) (compile/begin (compile/call escape "early") "unreachable")))
+  expand: (compile/call/cc (compile/lambda (escape) (compile/begin (compile/call escape "early") "unreachable")))
+  eval: '"early"'
+references:
+  - reference/specials/compile-callcc.md
+stability: evolving
+tags:
+  - special
+  - continuation
+notes: escape continuation short-circuits; code after the invoke is never reached
+---
+id: special-bytecode-const-int-002
+feature: special/compile/bytecode
+source: |-
+  (bytecode [CONST 42] [RETURN 1])
+  
+verify:
+  read: (bytecode (CONST 42) (RETURN 1))
+  expand: (bytecode (CONST 42) (RETURN 1))
+  eval: "42"
+references:
+  - reference/specials/compile-bytecode.md
+stability: evolving
+tags:
+  - special
+  - bytecode
+notes: inline bytecode with integer constant
+---
+id: special-bytecode-const-none-003
+feature: special/compile/bytecode
+source: |-
+  (bytecode [CONST None] [RETURN 1])
+  
+verify:
+  read: (bytecode (CONST None) (RETURN 1))
+  expand: (bytecode (CONST None) (RETURN 1))
+  eval: "null"
+references:
+  - reference/specials/compile-bytecode.md
+stability: evolving
+tags:
+  - special
+  - bytecode
+notes: CONST None pushed and returned; result is null
+---
+id: special-let-cc-escape-002
+feature: special/compile/let/cc
+source: |-
+  (compile/let/cc escape (begin (call escape "short") "never"))
+  
+verify:
+  read: (compile/let/cc escape (begin (call escape "short") "never"))
+  expand: (compile/let/cc escape (begin (call escape "short") "never"))
+  eval: '"short"'
+references:
+  - reference/specials/compile-let-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: escape exits the body early; code after the call is never reached
+---
+id: special-let-cc-call-003
+feature: special/compile/let/cc
+source: |-
+  (compile/let/cc k (compile/call k 99))
+  
+verify:
+  read: (compile/let/cc k (compile/call k 99))
+  expand: (compile/let/cc k (compile/call k 99))
+  eval: "99"
+references:
+  - reference/specials/compile-let-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: capture current continuation as k; call k immediately with 99
+---
+id: special-globals-item-002
+feature: special/compile/globals
+source: |-
+  (item (compile/globals) "z")
+  
+verify:
+  read: (item (compile/globals) "z")
+  expand: (item (compile/globals) "z")
+  eval: "1"
+references:
+  - reference/specials/compile-globals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: index the module namespace by string key to read a variable; z=1 fixture
+---
+id: special-globals-type-003
+feature: special/compile/globals
+source: |-
+  (str (type (compile/globals)))
+  
+verify:
+  read: (str (type (compile/globals)))
+  expand: (str (type (compile/globals)))
+  eval: '"<class ''ModuleNamespace''>"'
+references:
+  - reference/specials/compile-globals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: compile/globals returns a ModuleNamespace; type/str confirms the runtime type
+---
+id: special-locals-item-002
+feature: special/compile/locals
+source: |-
+  (let [[x 5]] (item (compile/locals) "x"))
+  
+verify:
+  read: (let ((x 5)) (item (compile/locals) "x"))
+  expand: (let ((x 5)) (item (compile/locals) "x"))
+  eval: "5"
+references:
+  - reference/specials/compile-locals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: item access on local namespace inside a let frame; reads back x=5
+---
+id: special-locals-module-scope-003
+feature: special/compile/locals
+source: |-
+  (item (compile/locals) "z")
+  
+verify:
+  read: (item (compile/locals) "z")
+  expand: (item (compile/locals) "z")
+  eval: "1"
+references:
+  - reference/specials/compile-locals.md
+stability: evolving
+tags:
+  - special
+  - namespace
+notes: at module scope compile/locals is the module namespace; reads z=1 fixture
+---
+id: special-cdr-quoted-001
+feature: special/compile/cdr
+source: |-
+  (cdr (quote (1 2 3)))
+  
+verify:
+  read: (cdr (quote (1 2 3)))
+  expand: (cdr (quote (1 2 3)))
+  eval: "proper-list:[2,3]"
+references:
+  - reference/specials/compile-cdr.md
+stability: evolving
+tags:
+  - special
+  - pair
+notes: cdr of a 3-element list returns the tail pair
+---
+id: special-cdr-cons-002
+feature: special/compile/cdr
+source: |-
+  (cdr (cons 1 2 nil))
+  
+verify:
+  read: (cdr (cons 1 2 nil))
+  expand: (cdr (cons 1 2 nil))
+  eval: "proper-list:[2]"
+references:
+  - reference/specials/compile-cdr.md
+stability: evolving
+tags:
+  - special
+  - pair
+notes: cdr of a two-element cons pair
+---
+id: special-cdr-nested-003
+feature: special/compile/cdr
+source: |-
+  (car (cdr (quote (1 2 3))))
+  
+verify:
+  read: (car (cdr (quote (1 2 3))))
+  expand: (car (cdr (quote (1 2 3))))
+  eval: "2"
+references:
+  - reference/specials/compile-cdr.md
+stability: evolving
+tags:
+  - special
+  - pair
+notes: car of cdr accesses the second element
+---
+id: special-call-add-001
+feature: special/compile/call
+source: |-
+  (compile/call add 3 4)
+  
+verify:
+  read: (compile/call add 3 4)
+  expand: (compile/call add 3 4)
+  eval: "7"
+references:
+  - reference/specials/compile-call.md
+stability: evolving
+tags:
+  - special
+notes: compile/call invokes add fixture with 3 and 4
+---
+id: special-call-lambda-002
+feature: special/compile/call
+source: |-
+  (compile/call (compile/lambda [x] (* x x)) 5)
+  
+verify:
+  read: (compile/call (compile/lambda (x) (* x x)) 5)
+  expand: (compile/call (compile/lambda (x) (* x x)) 5)
+  eval: "25"
+references:
+  - reference/specials/compile-call.md
+stability: evolving
+tags:
+  - special
+notes: compile/call with inline lambda; 5*5=25
+---
+id: special-call-len-003
+feature: special/compile/call
+source: |-
+  (compile/call len seq)
+  
+verify:
+  read: (compile/call len seq)
+  expand: (compile/call len seq)
+  eval: "3"
+references:
+  - reference/specials/compile-call.md
+stability: evolving
+tags:
+  - special
+notes: call len on seq=(1,2,3) fixture; result is 3
+---
+id: special-reset-plain-001
+feature: special/compile/reset
+source: |-
+  (compile/reset (+ 1 2))
+  
+verify:
+  read: (compile/reset (+ 1 2))
+  expand: (compile/reset (+ 1 2))
+  eval: "3"
+references:
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: reset with no shift runs the body normally
+---
+id: special-reset-shift-abort-002
+feature: special/compile/reset
+source: |-
+  (compile/reset (+ 1 (compile/shift k 42)))
+  
+verify:
+  read: (compile/reset (+ 1 (compile/shift k 42)))
+  expand: (compile/reset (+ 1 (compile/shift k 42)))
+  eval: "42"
+references:
+  - reference/specials/compile-reset.md
+  - reference/specials/compile-shift.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: shift aborts the reset body and returns 42; k is the delimited continuation
+---
+id: special-reset-shift-call-003
+feature: special/compile/reset
+source: |-
+  (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  
+verify:
+  read: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  expand: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  eval: "10"
+references:
+  - reference/specials/compile-reset.md
+  - reference/specials/compile-shift.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: shift captures k (the rest of (* 2 …)); calling k 5 resumes with 5 giving 2*5=10
+---
+id: special-shift-abort-001
+feature: special/compile/shift
+source: |-
+  (compile/reset (+ 1 (compile/shift k 42)))
+  
+verify:
+  read: (compile/reset (+ 1 (compile/shift k 42)))
+  expand: (compile/reset (+ 1 (compile/shift k 42)))
+  eval: "42"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: shift k aborts the reset context; 42 is the result; k is unused
+---
+id: special-shift-call-002
+feature: special/compile/shift
+source: |-
+  (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  
+verify:
+  read: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  expand: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  eval: "10"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: k is a delimited continuation; (call k 5) fills in 5 for the hole; 2*5=10
+---
+id: special-shift-multi-003
+feature: special/compile/shift
+source: |-
+  (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
+  
+verify:
+  read: (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
+  expand: (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
+  eval: "1"
+references:
+  - reference/specials/compile-shift.md
+  - reference/specials/compile-reset.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: multi-shot continuation; k called twice with nesting; empty body outside hole yields 1
+---
+id: special-dyn-with-no-binding-001
+feature: special/compile/dyn-with
+source: |-
+  (compile/dyn-with [(open "/dev/null")] None)
+  
+verify:
+  read: (compile/dyn-with ((open "/dev/null")) None)
+  expand: (compile/dyn-with ((open "/dev/null")) None)
+  eval: "null"
+references:
+  - reference/specials/compile-dyn-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: dynamic extent with no binding; context manager enter result discarded; async-safe variant of compile/with
+---
+id: special-dyn-with-binding-002
+feature: special/compile/dyn-with
+source: |-
+  (compile/dyn-with [f (open "/dev/null")] (compile/call-attr f read))
+  
+verify:
+  read: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read))
+  expand: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read))
+  eval: '""'
+references:
+  - reference/specials/compile-dyn-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: named binding f; reads from /dev/null (always empty string)
+---
+id: special-dyn-with-multi-003
+feature: special/compile/dyn-with
+source: |-
+  (compile/dyn-with [f (open "/dev/null")] (compile/call-attr f read) (compile/call-attr f read))
+  
+verify:
+  read: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  expand: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  eval: '""'
+references:
+  - reference/specials/compile-dyn-with.md
+stability: evolving
+tags:
+  - special
+  - with
+  - context-manager
+notes: multiple body forms; last form value is returned; both happen within context
+---
+id: special-dyn-wind-call-001
+feature: special/compile/dyn-wind
+source: |-
+  (begin (let [[r (compile/dyn-wind (compile/lambda [] None) (compile/lambda [] 99) (compile/lambda [] None))]] (compile/call r)))
+  
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-dyn-wind.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: dyn-wind (before thunk after); calling the result runs before, body, after; returns body value 99
+---
+id: special-dyn-wind-events-002
+feature: special/compile/dyn-wind
+source: |-
+  (let [[events (#list)]] (compile/call (compile/dyn-wind (compile/lambda [] (compile/call-attr events append "before")) (compile/lambda [] (compile/call-attr events append "body")) (compile/lambda [] (compile/call-attr events append "after")))) events)
+  
+verify:
+  eval: "list:[\"body\"]"
+references:
+  - reference/specials/compile-dyn-wind.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: dyn-wind calls the thunk (body) directly; before/after are invoked on continuation boundary events, not during normal execution
+---
+id: special-dyn-wind-expand-003
+feature: special/compile/dyn-wind
+source: |-
+  (compile/dyn-wind before thunk after)
+  
+verify:
+  expand: (compile/dyn-wind before thunk after)
+references:
+  - reference/specials/compile-dyn-wind.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: dyn-wind takes three expressions; no macro expansion; lowers directly to WIND_WRAP opcode
+---
+id: special-capture-cc-basic-001
+feature: special/compile/capture/cc
+source: |-
+  (capture/cc k 42)
+  
+verify:
+  read: (capture/cc k 42)
+  expand: (capture/cc k 42)
+  eval: "42"
+references:
+  - reference/specials/compile-capture-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: capture/cc with no use of k; body evaluates to 42 directly
+---
+id: special-capture-cc-escape-002
+feature: special/compile/capture/cc
+source: |-
+  (capture/cc k (compile/call k "early"))
+  
+verify:
+  read: (capture/cc k (compile/call k "early"))
+  expand: (capture/cc k (compile/call k "early"))
+  eval: '"early"'
+references:
+  - reference/specials/compile-capture-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: calling k exits immediately with the given value
+---
+id: special-capture-cc-abort-003
+feature: special/compile/capture/cc
+source: |-
+  (capture/cc k (begin (compile/call k 10) 99))
+  
+verify:
+  read: (capture/cc k (begin (compile/call k 10) 99))
+  expand: (capture/cc k (begin (compile/call k 10) 99))
+  eval: "10"
+references:
+  - reference/specials/compile-capture-cc.md
+stability: experimental
+tags:
+  - special
+  - continuation
+notes: k called with 10; code after the call (99) is never reached; form value is 10
+---
+id: special-quote-shorthand-symbol-001
+feature: reader/quote
+source: |-
+  'hello
+  
+verify:
+  read: (compile/quote hello)
+  expand: (compile/quote hello)
+  eval: "symbol:hello"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quote
+notes: "quote shorthand: ' is reader shorthand for (compile/quote …)"
+---
+id: special-quote-shorthand-list-002
+feature: reader/quote
+source: |-
+  '(1 2 3)
+  
+verify:
+  read: (compile/quote (1 2 3))
+  expand: (compile/quote (1 2 3))
+  eval: "proper-list:[1,2,3]"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quote
+notes: "the form '(1 2 3) reads as (compile/quote (1 2 3)); evaluates to a proper pair list"
+---
+id: special-quote-shorthand-number-003
+feature: reader/quote
+source: |-
+  '42
+  
+verify:
+  read: (compile/quote 42)
+  expand: (compile/quote 42)
+  eval: "42"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quote
+notes: "quoting a number: the form '42 reads as (compile/quote 42) and self-evaluates to 42"
+---
+id: special-quasiquote-shorthand-symbol-001
+feature: reader/quasiquote
+source: |-
+  `hello
+  
+verify:
+  read: (compile/quasiquote hello)
+  expand: (compile/quasiquote hello)
+  eval: "symbol:hello"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quasiquote
+notes: backtick is reader shorthand for (compile/quasiquote …); symbols evaluate to themselves
+---
+id: special-quasiquote-unquote-002
+feature: reader/quasiquote
+source: |-
+  `(1 ,z 3)
+  
+verify:
+  read: (compile/quasiquote (1 (compile/unquote z) 3))
+  expand: (compile/quasiquote (1 (compile/unquote z) 3))
+  eval: "proper-list:[1,1,3]"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quasiquote
+  - unquote
+notes: comma inside quasiquote reads as (compile/unquote …); z=1 fixture so middle element is 1
+---
+id: special-unquote-shorthand-003
+feature: reader/unquote
+source: |-
+  `(1 ,z 3)
+  
+verify:
+  read: (compile/quasiquote (1 (compile/unquote z) 3))
+  expand: (compile/quasiquote (1 (compile/unquote z) 3))
+  eval: "proper-list:[1,1,3]"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote
+  - quasiquote
+notes: comma inside quasiquote desugars to (compile/unquote …); z=1 fixture
+---
+id: special-unquote-shorthand-read-001
+feature: reader/unquote
+source: |-
+  `(first ,z last)
+  
+verify:
+  read: (compile/quasiquote (first (compile/unquote z) last))
+  expand: (compile/quasiquote (first (compile/unquote z) last))
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote
+notes: comma is reader shorthand for (compile/unquote …); only active inside quasiquote
+---
+id: special-unquote-splicing-read-001
+feature: reader/unquote-splicing
+source: |-
+  `(,@seq end)
+  
+verify:
+  read: (compile/quasiquote ((compile/unquote-splicing seq) end))
+  expand: (compile/quasiquote ((compile/unquote-splicing seq) end))
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote-splicing
+  - quasiquote
+notes: "the ,@ sigil inside quasiquote reads as (compile/unquote-splicing …); splices the seq fixture into the list"
+---
+id: special-unquote-splicing-eval-002
+feature: reader/unquote-splicing
+source: |-
+  (car `(start ,@seq end))
+  
+verify:
+  read: (car (compile/quasiquote (start (compile/unquote-splicing seq) end)))
+  expand: (car (compile/quasiquote (start (compile/unquote-splicing seq) end)))
+  eval: "symbol:start"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote-splicing
+  - quasiquote
+notes: seq=(1,2,3) fixture splices into the list; car returns the start symbol
+---
+id: special-unquote-splicing-count-003
+feature: reader/unquote-splicing
+source: |-
+  (car `(a ,@seq b))
+  
+verify:
+  read: (car (compile/quasiquote (a (compile/unquote-splicing seq) b)))
+  expand: (car (compile/quasiquote (a (compile/unquote-splicing seq) b)))
+  eval: "symbol:a"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote-splicing
+  - quasiquote
+notes: seq=(1,2,3) spliced after a; head is symbol a
+---
+id: special-thunk-add-001
+feature: reader/thunk
+source: |-
+  ({(+ %1 %2)} 3 4)
+  
+verify:
+  read: ((compile/gensym-thunk (+ %1 %2)) 3 4)
+  expand: ((compile/gensym-thunk (+ %1 %2)) 3 4)
+  eval: "7"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - thunk
+notes: curly braces read as (compile/gensym-thunk …); %1 %2 are positional arg placeholders
+---
+id: special-thunk-square-002
+feature: reader/thunk
+source: |-
+  ({(* %1 %1)} 5)
+  
+verify:
+  read: ((compile/gensym-thunk (* %1 %1)) 5)
+  expand: ((compile/gensym-thunk (* %1 %1)) 5)
+  eval: "25"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - thunk
+notes: thunk with single arg; infers one parameter from %1; called immediately with 5
+---
+id: special-thunk-read-only-003
+feature: reader/thunk
+source: |-
+  {(+ %1 1)}
+  
+verify:
+  read: (compile/gensym-thunk (+ %1 1))
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - thunk
+notes: standalone thunk form reads as (compile/gensym-thunk …) without being called
+---
+id: special-quasiquote-plain-list-003
+feature: reader/quasiquote
+source: |-
+  (car `(a b c))
+  
+verify:
+  read: (car (compile/quasiquote (a b c)))
+  expand: (car (compile/quasiquote (a b c)))
+  eval: "symbol:a"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - quasiquote
+notes: quasiquote of plain list with no unquotes produces a quoted pair list; car gives first symbol
+---
+id: special-unquote-eval-value-003
+feature: reader/unquote
+source: |-
+  (car (cdr `(x ,a y)))
+  
+verify:
+  read: (car (cdr (compile/quasiquote (x (compile/unquote a) y))))
+  expand: (car (cdr (compile/quasiquote (x (compile/unquote a) y))))
+  eval: "0"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - special
+  - reader
+  - unquote
+  - quasiquote
+notes: unquote splices the runtime value of a=0 into position; cadr extracts it
+---
+id: special-layout-try-bare-001
+feature: layout/try
+source: |-
+  try:
+    (/ 1 0)
+  except:
+    99
+  
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-try.md
+stability: stable
+tags:
+  - special
+  - try
+  - exception
+  - "surface:block"
+notes: bare except peer catches any exception; ZeroDivisionError caught, returns 99
+---
+id: special-layout-try-named-002
+feature: layout/try
+source: |-
+  try:
+    (/ 1 0)
+  except [e ZeroDivisionError]:
+    (str e)
+  
+verify:
+  read: (try (compile/begin (/ 1 0)) ((e ZeroDivisionError) (str e)))
+  expand: (try (compile/begin (/ 1 0)) ((e ZeroDivisionError) (str e)))
+  eval: '"division by zero"'
+references:
+  - reference/specials/compile-try.md
+stability: stable
+tags:
+  - special
+  - try
+  - exception
+  - "surface:block"
+notes: named except binding [e TYPE] in layout block form; str gives exception message
+---
+id: special-layout-try-finally-003
+feature: layout/try
+source: |-
+  try:
+    (/ 1 0)
+  except:
+    99
+  finally:
+    None
+  
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-try.md
+stability: stable
+tags:
+  - special
+  - try
+  - exception
+  - "surface:block"
+notes: finally peer always runs; exception caught, returns 99; finally form evaluates to None
+---
+id: special-let-named-inner-loop-001
+feature: special/compile/let
+source: |-
+  let inner [[n 5] [v 0] [accu 1]]:
+    if (< n 1):
+      v
+    else:
+      inner (- n 1) accu (+ accu v)
+  
+verify:
+  eval: "5"
+references:
+  - reference/specials/compile-let.md
+stability: evolving
+tags:
+  - special
+  - let
+  - "surface:block"
+notes: from examples/fib.ki fib-tail-recur; named inner loop pattern; self-calling via let name
+---
+id: special-layout-with-binding-004
+feature: special/compile/with
+source: |-
+  with [f (open "/dev/null")]:
+    (f.read)
+  
+verify:
+  read: (with (f (open "/dev/null")) ((compile/attr f read)))
+  expand: (with (f (open "/dev/null")) ((compile/attr f read)))
+  eval: '""'
+references:
+  - reference/specials/compile-with.md
+stability: stable
+tags:
+  - special
+  - with
+  - context-manager
+  - "surface:block"
+notes: layout/with with named binding; dot-method call f.read reads as (compile/attr f read)
+---
+id: special-layout-with-no-binding-005
+feature: special/compile/with
+source: |-
+  with [(open "/dev/null")]:
+    None
+  
+verify:
+  read: (with ((open "/dev/null")) None)
+  expand: (with ((open "/dev/null")) None)
+  eval: "null"
+references:
+  - reference/specials/compile-with.md
+stability: stable
+tags:
+  - special
+  - with
+  - context-manager
+  - "surface:block"
+notes: layout/with without name binding; context manager opened and closed; body evaluates to None

@@ -1,0 +1,53 @@
+id: iter-comma-bracket-list-invalid-001
+feature: reader/bracket
+source: |-
+  [1, 2, 3]
+  
+verify:
+  read: (1, 2, 3)
+  invalid: "agent mistake: commas in square brackets are not separators in Koskari — each comma is a character in the following atom name, producing symbols like 2, and 3 rather than integers 2 and 3. Use #[1 2 3] for a list literal or (cons 1 2 3 nil) for a proper pair list"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - invalid
+  - surprising
+notes: "corrective: #[1 2 3] (list literal) or (cons 1 2 3 nil)"
+---
+id: iter-comma-list-literal-invalid-002
+feature: "reader/#list"
+source: |-
+  #[1, 2, 3]
+  
+verify:
+  read: "(#list 1, 2, 3)"
+  invalid: "agent mistake: commas inside #[...] list literals are atom characters, not separators — #[1, 2, 3] reads as (#list 1, 2, 3) where 1, is the symbol with a comma, not the integer 1. Use #[1 2 3] with plain whitespace separation"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - invalid
+  - surprising
+notes: "corrective: #[1 2 3]"
+---
+id: iter-python-style-async-for-invalid-001
+feature: macro/compile/for-each
+source: |-
+  (await (for-each [x seq] x))
+  
+verify:
+  eval: "3"
+  invalid: "agent mistake: wrapping for-each in await is redundant — for-each handles async iterables automatically via the ambient async evaluator. The result 3 is correct by coincidence, not by design. Canonical form: (for-each [x seq] x) with no await wrapper"
+references:
+  - reference/macros/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+  - invalid
+  - surprising
+notes: "corrective: (for-each [x seq] x); await wrapping is unnecessary and misleading"

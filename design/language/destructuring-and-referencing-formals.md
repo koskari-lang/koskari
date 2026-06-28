@@ -2,7 +2,12 @@
 
 ## Status
 
-Proposal — not implemented.
+**Destructuring formals** — Rejected (2026-06-27). Nested patterns in lambda
+formals will not be pursued; structured unpacking remains in `define-values` /
+`setq-values` only.
+
+**Referencing formals (`(ref name)`)** — Open; still under consideration. See
+TODO entry.
 
 ## Summary
 

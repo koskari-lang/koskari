@@ -14,8 +14,8 @@
 */
 
 /**
-   DEREF: no arg. Pop one value (a ref with deref method). Call ref.deref(),
-   push result. Fails if TOS has no deref method.
+   DEREF: no arg. Pop one value (a ref). Call KosRef_Deref() for C-level
+   dispatch; push result. Fails if TOS has no deref handler.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -27,7 +27,7 @@ KOS_OP_HANDLER(DEREF) {
   if (! ref)
     return EVAL_RAISE();
 
-  PyObject *val = PyObject_CallMethod(ref, "deref", NULL);
+  PyObject *val = KosRef_Deref(ref);
   Py_DECREF(ref);
 
   return kos_op_result_PUSH(es, val);

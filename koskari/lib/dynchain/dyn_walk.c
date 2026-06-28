@@ -512,6 +512,9 @@ static int try_local_extent_on_current_frame(KosEvalState *es) {
   {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_Fetch(&typ, &val, &tb);
+#if PY_MINOR_VERSION < 12
+    PyErr_NormalizeException(&typ, &val, &tb);
+#endif
     PyErr_SetExcInfo(typ, val, tb);
     PyErr_Clear();
   }
@@ -620,6 +623,9 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
         {
           PyObject *typ = NULL, *val = NULL, *tb = NULL;
           PyErr_Fetch(&typ, &val, &tb);
+#if PY_MINOR_VERSION < 12
+          PyErr_NormalizeException(&typ, &val, &tb);
+#endif
           PyErr_SetExcInfo(typ, val, tb);
           PyErr_Clear();
         }

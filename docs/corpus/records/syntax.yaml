@@ -427,3 +427,182 @@ tags:
   - syntax
   - parse-rule-patternq
 notes: koskari/bootstrap/_define_syntax.ki; empty literals list when second arg omitted
+---
+id: syntax-parse-match-patternq-var-002
+feature: macro/compile/parse-match-patternq
+source: |-
+  (parse-match-patternq (VAR a))
+  
+verify:
+  expand: (call parse-match-pattern (quote (VAR a)))
+references:
+  - reference/macros/index.md
+  - reference/concepts/macro-matching-and-hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - parse-match-patternq
+notes: VAR pattern; expands to call parse-match-pattern with quoted pattern
+---
+id: syntax-parse-match-patternq-literal-003
+feature: macro/compile/parse-match-patternq
+source: |-
+  (parse-match-patternq (LITERAL 42))
+  
+verify:
+  expand: (call parse-match-pattern (quote (LITERAL 42)))
+references:
+  - reference/macros/index.md
+  - reference/concepts/macro-matching-and-hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - parse-match-patternq
+notes: LITERAL pattern; expands to call parse-match-pattern with quoted LITERAL form
+---
+id: syntax-macro-rules-multi-body-003
+feature: special/compile/macro-rules
+source: |-
+  (define swap! (macro-rules swap! [] [(swap! a b) (let [[t a]] (setq a b) (setq b t))]))
+  
+verify:
+  eval: "null"
+references:
+  - reference/specials/compile-macro-rules.md
+stability: evolving
+tags:
+  - syntax
+  - macro-rules
+notes: multi-form template body; define-only; [] literals round-trips as nil
+---
+id: syntax-macro-match-two-values-003
+feature: special/compile/macro-match
+source: |-
+  (define add-pair (macro-match add-pair [(add-pair (VALUE x) (VALUE y)) (+ x y)]))
+  
+verify:
+  read: (define add-pair (macro-match add-pair ((add-pair (VALUE x) (VALUE y)) (+ x y))))
+  expand: (define add-pair (macro-match add-pair ((add-pair (VALUE x) (VALUE y)) (+ x y))))
+  eval: "null"
+references:
+  - reference/specials/compile-macro-match.md
+stability: evolving
+tags:
+  - syntax
+  - macro-match
+notes: two VALUE pattern vars; define-only; macro-match matches hygienically
+---
+id: syntax-special-rules-double-003
+feature: special/compile/special-rules
+source: |-
+  (define dbl (special-rules dbl [] [(c (dbl x) t) (+ x.datum x.datum)]))
+  
+verify:
+  eval: "null"
+references:
+  - reference/specials/compile-special-rules.md
+stability: evolving
+tags:
+  - syntax
+  - special-rules
+notes: define-only; x.datum accesses the datum from the AST node; [] reads as nil in printed form
+---
+id: syntax-special-match-second-003
+feature: special/compile/special-match
+source: |-
+  (define second (special-match second [(compiler (second (VALUE x) (VALUE y)) t) y.datum]))
+  
+verify:
+  read: (define second (special-match second ((compiler (second (VALUE x) (VALUE y)) t) (compile/attr y datum))))
+  expand: (define second (special-match second ((compiler (second (VALUE x) (VALUE y)) t) (compile/attr y datum))))
+  eval: "null"
+references:
+  - reference/specials/compile-special-match.md
+stability: evolving
+tags:
+  - syntax
+  - special-match
+notes: two VALUE pattern variables; y.datum reads the second argument's compile-time datum
+---
+id: syntax-syntax-rules-cond-template-003
+feature: special/compile/syntax-rules
+source: |-
+  (define my-and (syntax-rules my-and [] [(my-and a b) (cond [a b] [else: False])]))
+  
+verify:
+  eval: "null"
+references:
+  - reference/specials/compile-syntax-rules.md
+stability: evolving
+tags:
+  - syntax
+  - syntax-rules
+notes: define-only; cond template body; [] literals round-trip as nil in printed form
+---
+id: syntax-datumq-integer-003
+feature: macro/compile/datumq
+source: |-
+  (begin (define d (datumq 42)) (attr d datum))
+  
+verify:
+  read: (begin (define d (datumq 42)) (attr d datum))
+  expand: (begin (define d (datumq 42)) (attr d datum))
+  eval: "42"
+references:
+  - reference/macros/compile-datum.md
+stability: evolving
+tags:
+  - syntax
+  - datumq
+notes: datumq wraps an integer literal; datum attribute returns the original value
+---
+id: syntax-extend-syntax-mr-003
+feature: macro/compile/extend-syntax
+source: |-
+  (begin (define-syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (macro-rules [] [(pick a b) a])))
+  
+verify:
+  eval: "null"
+references:
+  - reference/macros/compile-extend-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - extend-syntax
+  - macro-rules
+notes: extend-syntax macro-rules arm; define-syntax first then extend with a two-arg rule
+---
+id: syntax-parse-rule-patternq-two-args-003
+feature: macro/compile/parse-rule-patternq
+source: |-
+  (parse-rule-patternq (my-rule a b) [my-rule val1 val2])
+  
+verify:
+  expand: (call parse-rule-pattern (quote (my-rule a b)) (quote (my-rule val1 val2)))
+references:
+  - reference/macros/index.md
+  - reference/concepts/macro-matching-and-hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - parse-rule-patternq
+notes: two-variable rule pattern; expands to call with both arguments quoted
+---
+id: syntax-layout-define-syntax-sr-003
+feature: layout/define-syntax
+source: |-
+  define-syntax triple:
+    syntax-rules ():
+      triple x:
+        (+ x x x)
+verify:
+  eval: "null"
+references:
+  - reference/macros/compile-define-syntax.md
+  - reference/layouts/index.md
+stability: evolving
+tags:
+  - syntax
+  - layout
+  - "surface:block"
+notes: layout form with syntax-rules and a single body expression

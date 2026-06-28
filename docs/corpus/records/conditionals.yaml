@@ -876,3 +876,70 @@ tags:
   - macro
   - if
   - "surface:sexpr"
+---
+id: conditional-while-false-001
+feature: special/compile/while
+source: |-
+  (compile/while False 42)
+  
+verify:
+  read: (compile/while False 42)
+  expand: (compile/while False 42)
+  eval: "null"
+references:
+  - reference/specials/compile-while.md
+stability: evolving
+tags:
+  - conditional
+  - while
+notes: test never true; body never runs; loop evaluates to None
+---
+id: conditional-while-break-002
+feature: special/compile/while
+source: |-
+  (compile/while True (compile/break 99))
+  
+verify:
+  read: (compile/while True (compile/break 99))
+  expand: (compile/while True (compile/break 99))
+  eval: "99"
+references:
+  - reference/specials/compile-while.md
+stability: evolving
+tags:
+  - conditional
+  - while
+notes: infinite loop broken immediately; break value becomes loop result
+---
+id: conditional-while-else-003
+feature: special/compile/while
+source: |-
+  (compile/while (> z 0) (compile/setq z (- z 1)) (else: "done"))
+  
+verify:
+  eval: '"done"'
+references:
+  - reference/specials/compile-while.md
+stability: evolving
+tags:
+  - conditional
+  - while
+notes: "else: clause fires when test becomes false; z=1 fixture so loop runs once then exits naturally"
+---
+id: conditional-bool-zero-003
+feature: macro/compile/bool
+source: |-
+  (bool 0)
+  
+verify:
+  read: (bool 0)
+  expand: (compile/truth 0)
+  eval: "false"
+references:
+  - reference/macros/compile-bool.md
+stability: evolving
+tags:
+  - conditional
+  - macro
+  - bool
+notes: bool 0 is falsy; bool expands to compile/truth

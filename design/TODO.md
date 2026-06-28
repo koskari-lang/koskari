@@ -234,12 +234,12 @@ the delim case; migrate any bundled behavior off `RETURN`.
 
 Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
 
-### Destructuring formals, referencing formals, `define-values` fork
+### Referencing formals (`(ref name)`)
 
-Nested patterns in lambda formals (e.g. `(lambda [a (b c) *: d] …)`);
-`(ref …)` formals for rebind-to-Ref and write-through `set!`; if destructuring
-and refs cannot share one formals grammar, limit unpacking to `define-values` /
-`setq-values` with kwargs only (no ref binding there — refs stay on formals).
+`(ref …)` formals for rebind-to-Ref and write-through `set!`: a caller passes
+`&value` and the callee's formal is rebound to that Ref, so `(set! result …)`
+inside the callee writes through to the caller's binding. Destructuring formals
+have been rejected; ref binding stays on general lambda / `define` formals only.
 
 Ref:
 [language/destructuring-and-referencing-formals.md](language/destructuring-and-referencing-formals.md).
@@ -259,30 +259,6 @@ callees; Python and Koskari callers); triple timestamps with baseline
 subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
-
-### KosProperty: KosCallable-aware `property`
-
-Implement **KosProperty** as a C-level subtype of CPython's **`property`**
-(dynamic **`tp_base`** before **`PyType_Ready`**). At every **`fget`** /
-**`fset`** / **`fdel`** registration (constructor, **`.setter`**, **`.deleter`**),
-if the callable passes **`KosCallable_Check`**, store **`Demand(callable)`**;
-**`Demand`** construction is idempotent for existing wrappers. Plain Python
-callables pass through unchanged. Replace **`_ty('property', property)`** in
-bootstrap immediately on landing.
-
-Ref: [interpreter/kosproperty.md](interpreter/kosproperty.md).
-
-### DynamicRef accessors on demand path
-
-Make **DynamicRef** accessor handlers (`getfn`, `setfn`, `delfn`,
-`emptyfn`) run on the demand path when they are Koskari callables: use in-eval
-`demand_sync_ex` / eval-state injection where the VM is already on demand, and
-route ref opcodes (e.g. **`DEREF`**) through **`KosRef_Deref`** /
-**`KosRef_Store`** / **`KosRef_Clear`** instead of **`PyObject_CallMethod`**.
-
-Ref: `koskari/lib/ref.c` (DynamicRef handlers); `koskari/lib/opcode/DEREF.c`;
-`koskari/lib/demand.c`; [api/NAMESPACE-AND-REFS.md](api/NAMESPACE-AND-REFS.md);
-[archive/demand-sync-await-violation-at-site.md](archive/demand-sync-await-violation-at-site.md).
 
 ---
 

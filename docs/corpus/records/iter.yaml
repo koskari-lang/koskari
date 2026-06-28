@@ -343,3 +343,606 @@ tags:
   - dict
   - "surface:sexpr"
 notes: "keyword dict #{key: val ...} lowers to str keys; lookup via string key"
+---
+id: iter-range-predicate-true-002
+feature: builtin/range?
+source: |-
+  (range? (range 5))
+  
+verify:
+  read: (range? (range 5))
+  expand: (range? (range 5))
+  eval: "true"
+references:
+  - reference/builtins/range-predicate.md
+stability: evolving
+tags:
+  - iter
+  - builtin
+  - range?
+notes: range? is true for a real range object produced by (range 5)
+---
+id: iter-range-predicate-false-003
+feature: builtin/range?
+source: |-
+  (range? "hello")
+  
+verify:
+  read: (range? "hello")
+  expand: (range? "hello")
+  eval: "false"
+references:
+  - reference/builtins/range-predicate.md
+stability: evolving
+tags:
+  - iter
+  - builtin
+  - range?
+notes: range? returns false for a non-range value
+---
+id: iter-slice-predicate-true-002
+feature: builtin/slice?
+source: |-
+  (slice? (build-slice 1 5))
+  
+verify:
+  read: (slice? (build-slice 1 5))
+  expand: (slice? (build-slice 1 5))
+  eval: "true"
+references:
+  - reference/builtins/slice-predicate.md
+stability: evolving
+tags:
+  - iter
+  - builtin
+  - slice?
+notes: slice? is true for a slice produced by build-slice
+---
+id: iter-slice-predicate-false-003
+feature: builtin/slice?
+source: |-
+  (slice? 42)
+  
+verify:
+  read: (slice? 42)
+  expand: (slice? 42)
+  eval: "false"
+references:
+  - reference/builtins/slice-predicate.md
+stability: evolving
+tags:
+  - iter
+  - builtin
+  - slice?
+notes: slice? returns false for a non-slice integer
+---
+id: iter-literal-tuple-empty-002
+feature: "reader/#tuple"
+source: |-
+  #()
+  
+verify:
+  read: "(#tuple)"
+  expand: "(#tuple)"
+  eval: "tuple:()"
+references:
+  - reference/reader/hash-tuple.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - tuple
+notes: "#() reader macro produces an empty tuple"
+---
+id: iter-literal-tuple-strings-003
+feature: "reader/#tuple"
+source: |-
+  #("a" "b")
+  
+verify:
+  read: "(#tuple \"a\" \"b\")"
+  expand: "(#tuple \"a\" \"b\")"
+  eval: "tuple:(\"a\",\"b\")"
+references:
+  - reference/reader/hash-tuple.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - tuple
+notes: "#(…) with string elements; tuple members can be any literal type"
+---
+id: iter-literal-list-empty-003
+feature: "reader/#list"
+source: |-
+  #[]
+  
+verify:
+  read: "(#list)"
+  expand: "(#list)"
+  eval: "list:[]"
+references:
+  - reference/reader/hash-list.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - list
+notes: "#[] reader macro produces an empty Python list"
+---
+id: iter-item-index-two-003
+feature: special/compile/item
+source: |-
+  (item seq 2)
+  
+verify:
+  read: (item seq 2)
+  expand: (item seq 2)
+  eval: "3"
+references:
+  - reference/specials/compile-item.md
+stability: evolving
+tags:
+  - iter
+  - item
+notes: seq=(1,2,3) fixture; index 2 returns 3
+---
+id: iter-slice-macro-indexing-003
+feature: macro/compile/slice
+source: |-
+  (item seq (slice 1 None))
+  
+verify:
+  read: (item seq (slice 1 None))
+  expand: (item seq (slice 1 None))
+  eval: "tuple:(2,3)"
+references:
+  - reference/macros/compile-slice.md
+stability: evolving
+tags:
+  - iter
+  - macro
+  - slice
+notes: "slice used as index into seq; (slice 1 None) is seq[1:]; seq=(1,2,3) fixture"
+---
+id: iter-build-slice-indexing-003
+feature: runtime/build-slice
+source: |-
+  (item seq (build-slice 0 2))
+  
+verify:
+  read: (item seq (build-slice 0 2))
+  expand: (item seq (build-slice 0 2))
+  eval: "tuple:(1,2)"
+references:
+  - reference/builtins/build-slice.md
+stability: evolving
+tags:
+  - iter
+  - build-slice
+notes: "build-slice 0 2 selects seq[0:2]; seq=(1,2,3) fixture gives (1,2)"
+---
+id: iter-for-each-sum-001
+feature: special/compile/for-each
+source: |-
+  (let [[total 0]] (for-each [x (range 4)] (setq total (+ total x))) total)
+  
+verify:
+  read: (let ((total 0)) (for-each (x (range 4)) (setq total (+ total x))) total)
+  expand: (let ((total 0)) (for-each (x (range 4)) (setq total (+ total x))) total)
+  eval: "6"
+references:
+  - reference/specials/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+notes: accumulate sum over range(4); 0+1+2+3=6
+---
+id: iter-for-each-seq-002
+feature: special/compile/for-each
+source: |-
+  (for-each [x seq] x)
+  
+verify:
+  read: (for-each (x seq) x)
+  expand: (for-each (x seq) x)
+  eval: "3"
+references:
+  - reference/specials/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+notes: iterate seq=(1,2,3); form value is last body result (3)
+---
+id: iter-for-each-build-003
+feature: special/compile/for-each
+source: |-
+  (let [[result nil]] (for-each [x (range 3)] (setq result (cons x result))) result)
+  
+verify:
+  read: (let ((result nil)) (for-each (x (range 3)) (setq result (cons x result))) result)
+  expand: (let ((result nil)) (for-each (x (range 3)) (setq result (cons x result))) result)
+  eval: "proper-list:[2,1,0]"
+references:
+  - reference/specials/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+notes: prepend each iteration to result; final list is reversed (2,1,0)
+---
+id: iter-ref-item-deref-001
+feature: special/compile/ref-item
+source: |-
+  (compile/deref (compile/ref-item seq 0))
+  
+verify:
+  read: (compile/deref (compile/ref-item seq 0))
+  expand: (compile/deref (compile/ref-item seq 0))
+  eval: "1"
+references:
+  - reference/specials/compile-ref-item.md
+stability: evolving
+tags:
+  - iter
+notes: ref-item creates an ItemRef for seq[0]; deref reads 1; seq=(1,2,3) fixture
+---
+id: iter-ref-item-type-002
+feature: special/compile/ref-item
+source: |-
+  (str (type (compile/ref-item seq 0)))
+  
+verify:
+  read: (str (type (compile/ref-item seq 0)))
+  expand: (str (type (compile/ref-item seq 0)))
+  eval: '"<class ''ItemRef''>"'
+references:
+  - reference/specials/compile-ref-item.md
+stability: evolving
+tags:
+  - iter
+notes: ref-item returns an ItemRef object; type check confirms the class
+---
+id: iter-ref-item-index-two-003
+feature: special/compile/ref-item
+source: |-
+  (compile/deref (compile/ref-item seq 2))
+  
+verify:
+  read: (compile/deref (compile/ref-item seq 2))
+  expand: (compile/deref (compile/ref-item seq 2))
+  eval: "3"
+references:
+  - reference/specials/compile-ref-item.md
+stability: evolving
+tags:
+  - iter
+notes: ref-item at index 2; seq=(1,2,3) so deref gives 3
+---
+id: iter-list-literal-full-004
+feature: "reader/#list"
+source: |-
+  #[1 2 3]
+  
+verify:
+  read: "(#list 1 2 3)"
+  expand: "(#list 1 2 3)"
+  eval: "list:[1,2,3]"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+  - literal
+notes: "full read->expand->eval pipeline for #[...] list literal; shows all three stages"
+---
+id: iter-tuple-literal-full-004
+feature: "reader/#tuple"
+source: |-
+  #(1 2 3)
+  
+verify:
+  read: "(#tuple 1 2 3)"
+  expand: "(#tuple 1 2 3)"
+  eval: "tuple:(1,2,3)"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+  - literal
+notes: "full read->expand->eval pipeline for #(...) tuple literal"
+---
+id: iter-layout-for-each-basic-001
+feature: layout/for-each
+source: |-
+  for-each [x seq]:
+    x
+  
+verify:
+  read: (for-each (x seq) x)
+  expand: (for-each (x seq) x)
+  eval: "3"
+references:
+  - reference/specials/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+  - "surface:block"
+notes: simplest for-each layout; seq=(1,2,3) fixture; yields last element
+---
+id: iter-layout-for-each-body-002
+feature: layout/for-each
+source: |-
+  for-each [x seq]:
+    (* x x)
+  
+verify:
+  read: (for-each (x seq) (* x x))
+  expand: (for-each (x seq) (* x x))
+  eval: "9"
+references:
+  - reference/specials/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+  - "surface:block"
+notes: for-each with computed body; seq=(1,2,3); last evaluated is 3*3=9
+---
+id: iter-layout-for-each-when-003
+feature: layout/for-each
+source: |-
+  for-each [x seq] when: (> x 1):
+    (* x x)
+  
+verify:
+  eval: "9"
+references:
+  - reference/specials/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+  - "surface:block"
+notes: "when: condition filters; seq=(1,2,3), only x>1 pass; last is 3*3=9"
+---
+id: iter-layout-for-each-destructure-004
+feature: layout/for-each
+source: |-
+  for-each [[a b] #[#(1 2) #(3 4)]]:
+    (+ a b)
+  
+verify:
+  read: "(for-each ((a b) (#list (#tuple 1 2) (#tuple 3 4))) (+ a b))"
+  expand: "(for-each ((a b) (#list (#tuple 1 2) (#tuple 3 4))) (+ a b))"
+  eval: "7"
+references:
+  - reference/specials/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+  - "surface:block"
+notes: "tuple destructuring in for-each binding; each #(a b) tuple is unpacked; last is 3+4=7"
+---
+id: iter-layout-while-basic-001
+feature: layout/while
+source: |-
+  while (> z 0):
+    (decr! z)
+    z
+  
+verify:
+  read: (while (> z 0) (decr! z) z)
+  expand: (while (> z 0) (decr! z) z)
+  eval: "0"
+references:
+  - reference/specials/compile-while.md
+stability: stable
+tags:
+  - iter
+  - while
+  - "surface:block"
+notes: while layout; z=1 fixture; decrements z to 0 and returns it
+---
+id: iter-layout-while-else-002
+feature: layout/while
+source: |-
+  while False:
+    99
+  else:
+    42
+  
+verify:
+  eval: "42"
+references:
+  - reference/specials/compile-while.md
+stability: stable
+tags:
+  - iter
+  - while
+  - "surface:block"
+notes: "while with else: peer; condition False from the start so else branch runs"
+---
+id: iter-layout-while-accumulator-003
+feature: layout/while
+source: |-
+  begin:
+    (define n 3)
+    (define acc 0)
+    while (> n 0):
+      (incr! acc n)
+      (decr! n)
+    acc
+  
+verify:
+  read: (begin (define n 3) (define acc 0) (while (> n 0) (incr! acc n) (decr! n)) acc)
+  expand: (begin (define n 3) (define acc 0) (while (> n 0) (incr! acc n) (decr! n)) acc)
+  eval: "6"
+references:
+  - reference/specials/compile-while.md
+stability: stable
+tags:
+  - iter
+  - while
+  - "surface:block"
+notes: while as accumulator; sums 3+2+1=6; pattern from examples/fib.ki fib-loop
+---
+id: iter-cons-improper-pair-surprising-001
+feature: special/compile/cons
+source: |-
+  (cons 1 2)
+  
+verify:
+  eval: "improper-list:(1 . 2)"
+references:
+  - reference/specials/compile-cons.md
+stability: evolving
+tags:
+  - iter
+  - cons
+  - surprising
+notes: "surprising: (cons 1 2) makes an improper pair (1 . 2), not a two-element list; corrective: (cons 1 2 nil) or (cons 1 2 nil) for a proper list"
+---
+id: iter-for-each-no-await-needed-001
+feature: macro/compile/for-each
+source: |-
+  (for-each [x seq] (* x 2))
+  
+verify:
+  read: (for-each (x seq) (* x 2))
+  expand: (for-each (x seq) (* x 2))
+  eval: "6"
+references:
+  - reference/macros/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+notes: for-each handles async iterables natively; await is never needed — (await (for-each ...)) is redundant but harmless
+---
+id: iter-layout-while-fib-loop-001
+feature: layout/while
+source: |-
+  begin:
+    define n 5
+    define v 0
+    define accu 1
+    while (> n 0):
+      decr! n
+      define tmp accu
+      set! accu (+ accu v)
+      set! v tmp
+    v
+  
+verify:
+  read: (begin (define n 5) (define v 0) (define accu 1) (while (> n 0) (decr! n) (define tmp accu) (set! accu (+ accu v)) (set! v tmp)) v)
+  expand: (begin (define n 5) (define v 0) (define accu 1) (while (> n 0) (decr! n) (define tmp accu) (set! accu (+ accu v)) (set! v tmp)) v)
+  eval: "5"
+references:
+  - reference/specials/compile-while.md
+stability: stable
+tags:
+  - iter
+  - while
+  - "surface:block"
+notes: from examples/fib.ki fib-loop; iterative Fibonacci; (fib 5)=5
+---
+id: iter-for-each-product-destructure-001
+feature: macro/compile/for-each
+source: |-
+  (begin
+    (import-from itertools product)
+    (define result #[])
+    (for-each [[x y] (product (range 2) (range 2))]
+      (result.append #[x y]))
+    (len result))
+  
+verify:
+  eval: "4"
+references:
+  - reference/macros/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+notes: from examples/dataclass.ki neighbors; destructures each pair from itertools.product into [x y]
+---
+id: iter-for-each-accumulate-002
+feature: macro/compile/for-each
+source: |-
+  (begin
+    (define total 0)
+    (for-each [x seq] (setq total (+ total x)))
+    total)
+  
+verify:
+  read: (begin (define total 0) (for-each (x seq) (setq total (+ total x))) total)
+  expand: (begin (define total 0) (for-each (x seq) (setq total (+ total x))) total)
+  eval: "6"
+references:
+  - reference/macros/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+notes: for-each with setq accumulator; seq=(1,2,3); 1+2+3=6
+---
+id: iter-for-each-multi-body-003
+feature: macro/compile/for-each
+source: |-
+  (for-each [x seq]
+    (define doubled (* x 2))
+    doubled)
+  
+verify:
+  read: (for-each (x seq) (define doubled (* x 2)) doubled)
+  expand: (for-each (x seq) (define doubled (* x 2)) doubled)
+  eval: "6"
+references:
+  - reference/macros/compile-for-each.md
+stability: stable
+tags:
+  - iter
+  - for-each
+notes: for-each with multi-expression body; last body expression is return value; 3*2=6
+---
+id: iter-reader-bracket-paren-equiv-001
+feature: reader/bracket
+source: |-
+  (equal? '[1 2 3] '(1 2 3))
+  
+verify:
+  read: (equal? (compile/quote (1 2 3)) (compile/quote (1 2 3)))
+  expand: (equal? (compile/quote (1 2 3)) (compile/quote (1 2 3)))
+  eval: "true"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+notes: brackets and parens produce identical cons pairs; [1 2 3] and (1 2 3) are structurally equal
+---
+id: iter-reader-bracket-let-style-002
+feature: reader/bracket
+source: |-
+  (car '[a b c])
+  
+verify:
+  read: (car (compile/quote (a b c)))
+  expand: (car (compile/quote (a b c)))
+  eval: "symbol:a"
+references:
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+notes: brackets inside quote produce cons pairs identical to parens; car of '[a b c] is a

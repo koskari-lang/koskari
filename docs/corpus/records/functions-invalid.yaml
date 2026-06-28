@@ -26,3 +26,20 @@ tags:
   - gensym-thunk
   - invalid
 notes: "Illegal: conflates nested thunk install with invoke; see valid build in reference docs and phase_specials nested thunk test"
+---
+id: function-let-flat-binding-invalid-001
+feature: special/compile/let
+source: |-
+  (let [x 1] x)
+  
+verify:
+  read: (let (x 1) x)
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-let.md
+stability: evolving
+tags:
+  - function
+  - let
+  - invalid
+notes: "agent mistake: [x 1] is one binding pair (x . 1) not a list of pairs; corrective: (let [[x 1]] x)"
