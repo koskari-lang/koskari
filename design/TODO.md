@@ -287,6 +287,22 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
   recursion vs **`lambda`** shadowing). Ref:
   [language/labels-and-flet.md](language/labels-and-flet.md).
 
+### Ref surface bugs (found while drafting the refs guide)
+
+- **`compile/set-ref` is undefined** — the `set!` macro expands
+  `(set! (deref ref) v)` to `(compile/set-ref ref v)`
+  ([bootstrap/_variables.ki:38-41](../koskari/bootstrap/_variables.ki:38)), but
+  `compile/set-ref` is not a special, opcode, or builtin anywhere in the tree,
+  so the form fails at runtime with "Empty reference: compile/set-ref". The only
+  working write-through for a value-level ref today is the `store` method
+  (`(r.store v)`). Either implement `compile/set-ref` (restoring read/write
+  symmetry with `compile/deref`) or remove the macro case. `compile-set.md` and
+  `bindings-and-refs.md` both still list `set-ref` as a store target.
+
+(The proposed `*foo` deref reader sugar is a separate open idea, not a bug —
+see [ideas.md](ideas.md). It has been removed from user-facing docs pending a
+decision.)
+
 ---
 
 ## Corpus

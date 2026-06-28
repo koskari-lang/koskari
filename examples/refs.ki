@@ -1,0 +1,113 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Example: references as storage-location indirection.
+
+Companion to the guide page docs/guide/references-and-storage-indirection.md.
+Every snippet on that page is exercised here; the printed values match the
+REPL results shown in the prose.
+"""
+
+
+import-from types SimpleNamespace
+
+
+; --- A name labels a storage location ---------------------------------------
+
+define food 10
+set! food 11
+(print "food:" food)                       ; -> 11
+
+
+; --- Getting a ref: long form, then the & sugar -----------------------------
+
+define r1 (ref food)
+define r2 &food
+(print "r2 is a:" (type r2))               ; -> <class 'Ref'>
+
+
+; --- A ref is a value you can pass and read through --------------------------
+
+(print "deref r2:" (deref r2))             ; -> 11
+
+
+; --- Writing through a ref changes the original -----------------------------
+
+(r2.store 20)
+(print "food after r2.store 20:" food)     ; -> 20
+
+
+; --- The trap: set! on the name rebinds it, it does NOT write through --------
+
+set! r2 99
+(print "after set! r2 99 -> food:" food)   ; -> 20  (unchanged)
+(print "                     r2:" r2)      ; -> 99  (r2 now holds 99, not a ref)
+
+
+; --- Refs to places that have no name of their own --------------------------
+
+define xs #[1 2 3 4]
+define obj (SimpleNamespace count: 15)
+define cell &(item xs 2)
+(print "cell points into xs, reads:" (deref cell))  ; -> 3
+(cell.store 100)
+(print "xs after cell.store 100:" xs)      ; -> [1, 2, 100, 4]
+
+
+; --- Making the indirection invisible: bind! --------------------------------
+
+define total 5
+bind! alias &total
+(print "alias reads:" alias)               ; -> 5  (auto-derefs)
+set! alias 42
+(print "total after set! alias 42:" total) ; -> 42
+
+bind! first &(item xs 0)
+set! first 1000
+(print "xs after set! first 1000:" xs)     ; -> [1000, 2, 100, 4]
+
+bind! cnt &obj.count
+set! cnt 99
+(print "obj.count after set! cnt 99:" obj.count)  ; -> 99
+
+
+; --- Passing a ref to a function: by hand -----------------------------------
+
+define bump-manual [the-ref]:
+    bind! n the-ref
+    set! n (+ n 1)
+
+define a 7
+(bump-manual &a)
+(print "a after bump-manual:" a)           ; -> 8
+
+
+; --- ...and the by-ref formal that does the bind for you --------------------
+
+define bump [&n]:
+    set! n (+ n 1)
+
+define b 7
+(bump &b)
+(print "b after bump:" b)                  ; -> 8
+
+
+; --- The guardrail: a by-ref formal refuses a plain value -------------------
+
+; (bump 5)
+; -> TypeError: bump() by-ref formal n requires a Ref, not 5
+
+
+; The end.

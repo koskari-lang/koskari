@@ -13,3 +13,22 @@ tags:
   - bind!
   - invalid
 notes: "Illegal: use (local y 42) or (setq y 42) after declare to store a value; bind! accepts (item …), (attr …), (dynamic …), (constant …), (memoized …), (parameter …), or another Ref — not a bare literal or computed value"
+---
+id: variable-byref-value-not-ref-001
+feature: special/compile/lambda
+source: |-
+  (begin (define bump [&n] (set! n (+ n 1))) (bump 5))
+  
+verify:
+  read: (begin (define bump ((compile/ref n)) (set! n (+ n 1))) (bump 5))
+  invalid: "the form parses fine, but a by-ref formal binds the caller's Ref as the parameter's storage, so it requires a Ref argument; (bump 5) passes the plain value 5 and fails at call time with TypeError: bump() by-ref formal n requires a Ref, not 5"
+references:
+  - reference/specials/compile-lambda.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - lambda
+  - by-ref
+  - invalid
+notes: "corrective: pass a ref, e.g. (bump &v); a by-ref formal refuses a plain value"

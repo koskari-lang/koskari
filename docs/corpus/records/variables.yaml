@@ -1037,3 +1037,176 @@ tags:
   - ref-attr
   - bindq
 notes: from examples/hello.ki; bindq binds fx to ref cell for p.val; deref reads the current value
+---
+id: variable-ref-amp-reader-001
+feature: macro/compile/ref
+source: |-
+  &x
+  
+verify:
+  read: (compile/ref x)
+references:
+  - reference/macros/compile-ref.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - ref
+  - reader
+notes: "& is reader sugar for (ref …); &x reads as (compile/ref x)"
+---
+id: variable-ref-amp-deref-001
+feature: macro/compile/ref
+source: |-
+  (let [[x 7]] (deref &x))
+  
+verify:
+  eval: "7"
+references:
+  - reference/macros/compile-ref.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - ref
+  - deref
+notes: get a ref to a local with &, then read through it with deref
+---
+id: variable-ref-amp-call-reader-001
+feature: macro/compile/ref
+source: |-
+  &(item seq 0)
+  
+verify:
+  read: (compile/ref (item seq 0))
+references:
+  - reference/macros/compile-ref.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - ref
+  - reader
+notes: compound &(…) reader wraps the trailing parenthesized form in (compile/ref …)
+---
+id: variable-ref-amp-call-deref-001
+feature: macro/compile/ref
+source: |-
+  (deref &(item seq 0))
+  
+verify:
+  eval: "1"
+references:
+  - reference/macros/compile-ref.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - ref
+  - deref
+notes: requires seq fixture; ref to a list slot, then deref
+---
+id: variable-ref-amp-attr-deref-001
+feature: macro/compile/ref
+source: |-
+  (deref &obj.count)
+  
+verify:
+  eval: "5"
+references:
+  - reference/macros/compile-ref.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - ref
+  - deref
+notes: requires obj fixture (.count=5); &obj.count is a ref to the attribute slot
+---
+id: variable-bind-ref-writethrough-001
+feature: macro/compile/bind!
+source: |-
+  (begin (bind! c &obj.count) (set! c 7) c)
+
+verify:
+  eval: "7"
+references:
+  - reference/macros/compile-bind.md
+  - reference/concepts/bindings-and-refs.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - bind!
+  - ref
+notes: requires obj fixture; bind! makes c's storage the attribute ref, so plain set! writes through (also guards corpus fixture isolation)
+---
+id: variable-byref-formal-001
+feature: special/compile/lambda
+source: |-
+  (begin (define v 7) (define bump [&n] (set! n (+ n 1))) (bump &v) v)
+  
+verify:
+  read: (begin (define v 7) (define bump ((compile/ref n)) (set! n (+ n 1))) (bump (compile/ref v)) v)
+  eval: "8"
+references:
+  - reference/specials/compile-lambda.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - lambda
+  - by-ref
+notes: by-ref formal &n aliases the caller's ref; (set! n …) writes back into v
+---
+id: variable-ref-store-method-001
+feature: macro/compile/ref
+source: |-
+  (begin (define v 10) (define r &v) (r.store 20) v)
+  
+verify:
+  eval: "20"
+references:
+  - reference/macros/compile-ref.md
+  - reference/concepts/bindings-and-refs.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - ref
+  - store
+notes: "value-level write-through: the ref store method changes the original binding"
+---
+id: variable-ref-set-rebind-trap-001
+feature: macro/compile/ref
+source: |-
+  (begin (define v 10) (define r &v) (set! r 99) v)
+  
+verify:
+  eval: "10"
+references:
+  - reference/concepts/bindings-and-refs.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - ref
+  - surprising
+notes: set! on the name holding a ref REBINDS it; it does not write through. v is unchanged. Use (r.store …) or bind! to write through.
+---
+id: variable-byref-list-writeback-001
+feature: special/compile/lambda
+source: |-
+  (begin (define xs #[1 2 3 4]) (define bump [&n] (set! n (+ n 1))) (bump &(item xs 2)) xs)
+  
+verify:
+  eval: "list:[1,2,4,4]"
+references:
+  - reference/specials/compile-lambda.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - lambda
+  - by-ref
+notes: a by-ref formal accepts a ref to a list slot; &(item xs 2) lets the callee write back into xs
