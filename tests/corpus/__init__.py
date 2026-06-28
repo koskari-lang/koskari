@@ -60,16 +60,26 @@ _FORBIDDEN_MARKED_EVAL_PATTERNS = (
     r'^fold-prefix:',
 )
 
-_CORPUS_FIXTURES = {
-    'add': lambda x, y: x + y,
-    'deref': lambda r: r.deref(),
-    'obj': SimpleNamespace(count=5, value=99),
-    'seq': (1, 2, 3),
-    'z': 1,
-    'a': 0,
-    'f': lambda *args: args,
-    'bad_guy': lambda x: (_ for _ in ()).throw(RuntimeError('boom')) or None,
-}
+def _corpus_fixtures():
+    """
+    Build a fresh set of eval fixtures for one corpus record.
+
+    Returns a new dict with newly-constructed mutable objects on every call,
+    so a record that mutates a fixture (for example writing through a ref into
+    ``obj``) cannot leak into the records that run after it.
+    """
+
+    return {
+        'add': lambda x, y: x + y,
+        'deref': lambda r: r.deref(),
+        'obj': SimpleNamespace(count=5, value=99),
+        'seq': (1, 2, 3),
+        'z': 1,
+        'a': 0,
+        'f': lambda *args: args,
+        'bad_guy': lambda x: (
+            (_ for _ in ()).throw(RuntimeError('boom')) or None),
+    }
 
 
 def project_root(root=None):
@@ -628,7 +638,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         import koskari.builtins as builtins
 
         ns_dict = dict(public_vars(builtins))
-        ns_dict.update(_CORPUS_FIXTURES)
+        ns_dict.update(_corpus_fixtures())
 
         self.module = new_module('corpus.test')
         mod_ns = vars(self.module)
