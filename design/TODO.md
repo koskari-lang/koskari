@@ -193,6 +193,14 @@ Gaps per [documentation-goals.md](documentation-goals.md):
   for opcode-doc drift vs `koskari/lib/opcodes.incl`.
 - **`changelog.md`** — skeleton only (single 0.1.0 entry); needs release-driven
   updates. **`faq.md`** is thin in places (e.g. free-threading answer incomplete).
+- **Refs as storage-location indirection** — add a dedicated, Q&A-format user
+  page developing refs as "pointers, but safer" (getting refs via `&name` /
+  `&(item …)` / `(ref …)`, `deref` / `*name`, bind vs store, and by-ref
+  formals). Move the by-ref example out of the functions tutorial
+  (`guide/03-functions-deep.md`) into this page, add corpus records from the
+  example (obtain/pass refs plus a value-instead-of-ref error variation), and
+  add unit tests pinning the example cases. Design:
+  [refs-storage-indirection.md](refs-storage-indirection.md).
 
 ---
 
