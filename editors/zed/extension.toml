@@ -19,6 +19,6 @@ repository = "https://github.com/obriencj/koskari"
 #
 # See editors/tree-sitter/README.md (the Zed section) for the full procedure.
 [grammars.koskari]
-repository = "file:///path/to/koskari"
-rev = "0000000000000000000000000000000000000000"
+repository = "https://github.com/obriencj/koskari"
+rev = "master"
 path = "editors/tree-sitter"
