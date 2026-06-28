@@ -36,10 +36,10 @@ define-class dollars [decimal]:
   """
 
   define __str__ [self]:
-    f"""${(decimal self) ".2f"}"""
+    f"${(decimal self):.2f}"
 
   define __repr__ [self]:
-    f"""(dollars {(decimal self) ".2f"})"""
+    f"(dollars {(decimal self):.2f})"
 
 
 @demand
