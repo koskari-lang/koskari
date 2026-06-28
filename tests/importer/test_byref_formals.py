@@ -188,20 +188,35 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await expr(), 99)
 
 
-    async def test_not_aliased_without_amp(self):
+    async def test_positional_bare_value_raises(self):
         """
-        passing by value (no &) does not write through; caller is unchanged
+        a bare value passed to a by-ref positional is a TypeError
         """
 
         src = """
         (begin
           (define add-a [a &result] (set! result (+ a 1)))
-          (define value 100)
-          (add-a value value)
-          value)
+          (add-a 1 2))
         """
         expr, mod = self.compile_expr(src)
-        self.assertEqual(await expr(), 100)
+        with self.assertRaises(TypeError):
+            await expr()
+
+
+    async def test_kwarg_bare_value_raises(self):
+        """
+        a bare value supplied to a by-ref keyword is a TypeError; a defaulted
+        (omitted) by-ref keyword is fine
+        """
+
+        src = """
+        (begin
+          (define fill [&out: 99] out)
+          (fill out: 7))
+        """
+        expr, mod = self.compile_expr(src)
+        with self.assertRaises(TypeError):
+            await expr()
 
 
 # The end.

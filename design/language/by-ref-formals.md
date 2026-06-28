@@ -56,8 +56,8 @@ The pieces are all in the tree today; by-ref formals wire them together.
   `.empty` is the unbound test, `.store` is the write.)
 
 So the only genuinely new code is: recognize the by-ref marking while parsing
-formals, carry it on the spec, and add a second pass to apply that rebinds marked
-slots via `KosNamespace_Bind`.
+formals, carry it on the spec, and have apply bind marked slots via
+`KosNamespace_Bind` at the moment it would otherwise store the argument.
 
 ## Surface forms
 
@@ -127,53 +127,64 @@ there is no per-application floor.
 ## The floor
 
 A by-ref formal's default is the value its slot holds when the body starts —
-the *floor*. It only matters in two situations:
+the *floor*. Three cases:
 
-- **Omitted, with floor.** The formal is a keyword; the slot gets the floor as a
-  plain private local. The caller is not involved.
-- **Passed an empty cell, with floor.** The caller passed a `Ref` that is unbound
-  (`ref.empty`). After aliasing, the floor is written *through* the ref, so the
-  caller's binding is pre-filled. A `Ref` already holding a value (even `None`)
-  is full, and the floor is inert.
+- **Supplied a bound cell.** The caller passed a `Ref` that already holds a value
+  (even `None`); it is aliased as-is and the floor is inert.
+- **Supplied an empty cell, with floor.** The caller passed an unbound `Ref`;
+  after aliasing, the floor is written *through* it, so the caller's binding is
+  pre-filled.
+- **Omitted, with floor.** The slot is bound to a fresh private `Ref` seeded with
+  the floor. The caller is not involved.
 
 A by-ref formal with no floor is required: omitting it is an ordinary missing-
-argument error, not a silent unbound binding.
+argument error.
 
 ## Application
 
-The existing apply runs unchanged, then one extra pass aliases the by-ref slots.
+By-ref handling happens **at the moment each argument is bound**, not in a
+trailing pass — that is where the cleanest signal lives. The decision turns on
+two things the binding code already knows: is this name a by-ref formal, and (for
+a keyword) is the value coming *from the caller* or *from the default*.
 
-**Pass 1 is the normal apply.** It fills every slot from arguments and defaults
-with no awareness of `by_refs`. Afterward a by-ref slot holds the passed `Ref`
-(for a `&x` / `(compile/ref x)` / `(ref x)` argument), the floor value (omitted
-keyword), or has already raised missing-argument (omitted required positional).
-
-**Pass 2 (`apply_by_refs` in [formals.c](../../koskari/lib/formals.c)) runs once,
-last, after a fully successful apply** — so a failed application never aliases a
-caller cell. The rule is purely slot-state driven:
+The `store` at each binding site becomes:
 
 ```
-for name in formals.by_refs:
-    val = deref slot `name`
-    if val is not a Ref:
-        continue                       # a plain value (floor, or a bare argument); leave it
-    KosNamespace_Bind(ns, name, val)   # alias: slot now shares the caller's cell
-    if val.empty and name in defaults:
-        val.store(defaults[name])      # floor written through an empty caller cell
+if name not in formals.by_refs:
+    store value normally
+elif supplied by the caller:                 # positional arg, or a kwarg in kwargs
+    if value is not a Ref:                    # bare value to a by-ref slot
+        raise TypeError("by-ref formal ... requires a Ref")
+    bind slot to value                        # alias the caller's cell
+    if value.empty and name in defaults:
+        value.store(defaults[name])           # floor through an empty caller cell
+else:                                          # keyword falling back to its default
+    bind slot to a fresh Ref(name, defaults[name])   # private floor cell
 ```
+
+This lives in `bind_supplied_by_ref` / `bind_default_by_ref` and the binding
+loops of `apply_formals_kwargs_phase` plus the four positional loops in
+[formals.c](../../koskari/lib/formals.c). The supplied-vs-default fork in the
+keyword loop (`if (val) … else if (defaults) …`) **is** the suppliedness signal,
+so no separate bookkeeping is needed.
 
 Properties:
 
-- **No suppliedness bookkeeping.** Whether to alias is decided entirely by "does
-  the slot hold a `Ref`." A passed `&x` is a `Ref`; a stored floor or a bare
-  value is not. A bare value passed to a by-ref slot is simply left as an ordinary
-  value binding — no write-through, no error.
-- **Aliasing, not copy-in/copy-out.** Pass 2 rebinds the slot to share the
-  caller's cell; there is no copy-back step. A `shift` / `call/cc` escaping the
-  callee cannot strand a half-applied write — the shared cell simply holds
-  whatever it last held, exactly as under an exception.
-- **Last, so failures are clean.** Pass 2 runs only on the success path, so an
-  apply that raises (arity, unexpected kwargs) leaves every caller cell untouched.
+- **Strict at the boundary.** A bare value handed to a by-ref slot fails with a
+  named `TypeError` — `by-ref formal 'out' requires a Ref, not int` — before the
+  body runs, rather than silently dropping the author's intended write-through.
+  This applies to positional by-ref and to supplied (non-defaulted) keyword
+  by-ref alike.
+- **Bind, not store-then-rebind.** A by-ref slot is bound to its `Ref` directly at
+  the binding site; there is no intermediate value-store that a later pass undoes.
+- **Aliasing, not copy-in/copy-out.** No copy-back step. A `shift` / `call/cc`
+  escaping the callee cannot strand a half-applied write — the shared cell simply
+  holds whatever it last held, exactly as under an exception.
+- **Note on early floor writes.** Because the floor write-through (the empty-cell
+  case) now happens at bind time rather than after a fully successful apply, a
+  failure *after* that write — e.g. an unexpected-keyword error later in the same
+  apply — can leave the caller's cell pre-filled. Aliasing alone never mutates the
+  caller; only this floor write does, and only for a supplied empty `Ref`.
 
 ## Worked surfaces
 
@@ -224,12 +235,15 @@ define try-parse-int [s [out :: int value: None byref: True]]:
    plus the `.kio` serialization and ABI bump
    ([codex.py](../../koskari/serialize/codex.py),
    [constants.py](../../koskari/serialize/constants.py)).
-4. **Apply.** `apply_by_refs` ([formals.c](../../koskari/lib/formals.c)), called
-   last from all four apply paths, using `KosNamespace_Bind` plus `KosRef_IsEmpty`
-   / `KosRef_Store`.
+4. **Apply.** Bind-time handling via `bind_supplied_by_ref` /
+   `bind_default_by_ref` ([formals.c](../../koskari/lib/formals.c)), wired into
+   the shared `apply_formals_kwargs_phase` and the four positional loops, using
+   `KosNamespace_Bind`, `KosRef_IsEmpty` / `KosRef_Store`, and `KosSymbolicRef_New`
+   for the fresh-floor case.
 5. **Tests.** [tests/importer/test_byref_formals.py](../../tests/importer/test_byref_formals.py)
-   — the three surface shapes, the bracket form, write-through, the floor
-   (omitted and empty-cell), and the no-`&` non-aliasing case.
+   — the surface shapes, the bracket form, write-through, the floor (omitted and
+   empty-cell), and the `TypeError` for a bare value to a positional or keyword
+   by-ref slot.
 
 ## Related
 

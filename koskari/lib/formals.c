@@ -809,6 +809,56 @@ static int formals_pos_star_before_kwd(PyObject *kwd, PyObject *kwd_only) {
 }
 
 
+/* === By-ref binding === */
+
+
+/*
+  Bind a caller-supplied argument to a by-ref slot. The value must be a Ref
+  (a `&x` / `(compile/ref x)` / `(ref x)` argument); it is installed as the
+  slot's storage so the local shares the caller's cell. A non-Ref is a bare
+  value passed to a by-ref slot and raises TypeError. An empty Ref with a
+  floor default is pre-filled through.
+*/
+static int bind_supplied_by_ref(PyObject *namespace, PyObject *name,
+                                PyObject *val, PyObject *defaults) {
+  if (! KosRef_Check(val)) {
+    PyErr_Format(PyExc_TypeError,
+                 "by-ref formal %S requires a Ref, not %R", name, val);
+    return -1;
+  }
+
+  if (KosNamespace_Bind(namespace, name, val))
+    return -1;
+
+  if (defaults) {
+    int empty = KosRef_IsEmpty(val);
+    if (empty < 0)
+      return -1;
+    if (empty) {
+      PyObject *floor = PyDict_GetItem(defaults, name);
+      if (floor && KosRef_Store(val, floor))
+        return -1;
+    }
+  }
+  return 0;
+}
+
+
+/*
+  Bind an omitted by-ref keyword slot to a fresh private Ref seeded with the
+  floor (its default). The caller is not involved.
+*/
+static int bind_default_by_ref(PyObject *namespace, PyObject *name,
+                               PyObject *floor) {
+  PyObject *ref = KosSymbolicRef_New(name, floor);
+  if (! ref)
+    return -1;
+  int res = KosNamespace_Bind(namespace, name, ref);
+  Py_DECREF(ref);
+  return res;
+}
+
+
 /**
    Shared kwargs phase: fill remaining pos/kwd/kwd_only from kwargs and
    defaults, then store starstar or error on unexpected keywords.
@@ -822,6 +872,7 @@ static int apply_formals_kwargs_phase(
     PyObject *kwd_only,
     PyObject *starstar,
     PyObject *defaults,
+    PyObject *by_refs,
     PyObject *kwargs,
     ssize_t ipos,
     ssize_t ipos_only,
@@ -829,6 +880,8 @@ static int apply_formals_kwargs_phase(
     ssize_t ikwd_only) {
 
   ssize_t l;
+  int br;
+  Py_ssize_t by_ref_count = by_refs? PyTuple_GET_SIZE(by_refs): 0;
   PyObject *key = NULL;
   PyObject *val = NULL;
 
@@ -848,6 +901,17 @@ static int apply_formals_kwargs_phase(
         return -1;
       }
 
+      if (by_ref_count) {
+        br = PySequence_Contains(by_refs, key);
+        if (br < 0)
+          return -1;
+        if (br) {
+          // a by-ref positional supplied by keyword -- required, no floor
+          if (KosNamespace_Bind(namespace, key, val))
+            return -1;
+          continue;
+        }
+      }
       if (KosNamespace_Store(namespace, key, val))
         return -1;
     }
@@ -856,8 +920,10 @@ static int apply_formals_kwargs_phase(
   if (kwd) {
     l = PyTuple_GET_SIZE(kwd);
     for (; ikwd < l; ikwd++) {
+      int supplied;
       key = PyTuple_GET_ITEM(kwd, ikwd);
       val = kwargs ? PyDict_GetItem(kwargs, key) : NULL;
+      supplied = (val != NULL);
 
       if (val) {
         PyDict_DelItem(kwargs, key);
@@ -870,6 +936,20 @@ static int apply_formals_kwargs_phase(
         return -1;
       }
 
+      if (by_ref_count) {
+        br = PySequence_Contains(by_refs, key);
+        if (br < 0)
+          return -1;
+        if (br) {
+          if (supplied) {
+            if (bind_supplied_by_ref(namespace, key, val, defaults))
+              return -1;
+          } else if (bind_default_by_ref(namespace, key, val)) {
+            return -1;
+          }
+          continue;
+        }
+      }
       if (KosNamespace_Store(namespace, key, val))
         return -1;
     }
@@ -878,8 +958,10 @@ static int apply_formals_kwargs_phase(
   if (kwd_only) {
     l = PyTuple_GET_SIZE(kwd_only);
     for (; ikwd_only < l; ikwd_only++) {
+      int supplied;
       key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
       val = kwargs ? PyDict_GetItem(kwargs, key) : NULL;
+      supplied = (val != NULL);
 
       if (val) {
         PyDict_DelItem(kwargs, key);
@@ -893,6 +975,20 @@ static int apply_formals_kwargs_phase(
         return -1;
       }
 
+      if (by_ref_count) {
+        br = PySequence_Contains(by_refs, key);
+        if (br < 0)
+          return -1;
+        if (br) {
+          if (supplied) {
+            if (bind_supplied_by_ref(namespace, key, val, defaults))
+              return -1;
+          } else if (bind_default_by_ref(namespace, key, val)) {
+            return -1;
+          }
+          continue;
+        }
+      }
       if (KosNamespace_Store(namespace, key, val))
         return -1;
     }
@@ -924,67 +1020,6 @@ static int apply_formals_kwargs_phase(
 }
 
 
-/*
-  Second binding pass for by-ref formals. Runs once, after the normal apply
-  has fully populated the namespace, so a failed application never aliases a
-  caller cell. For each by-ref name whose slot holds the Ref passed at the
-  call site (a `&x` / `(compile/ref x)` / `(ref x)` argument), the slot is
-  re-bound to that Ref so the local shares the caller's storage. An empty
-  cell with a default is pre-filled through the Ref. A slot holding a plain
-  value (a stored default, or a bare argument) is left untouched.
-*/
-static int apply_by_refs(PyObject *formals, PyObject *namespace) {
-  PyObject *by_refs = KosFormals_BY_REFS(formals);
-  if (! by_refs)
-    return 0;
-
-  PyObject *defaults = KosFormals_DEFAULTS(formals);
-  Py_ssize_t l = PyTuple_GET_SIZE(by_refs);
-
-  for (Py_ssize_t i = 0; i < l; i++) {
-    PyObject *name = PyTuple_GET_ITEM(by_refs, i);
-
-    PyObject *val = KosNamespace_Deref(namespace, name);
-    if (! val) {
-      // slot unbound (e.g. an omitted required formal already errored
-      // earlier); nothing to alias.
-      PyErr_Clear();
-      continue;
-    }
-
-    if (! KosRef_Check(val)) {
-      // a plain value -- a stored default or a bare argument; leave as-is.
-      Py_DECREF(val);
-      continue;
-    }
-
-    if (KosNamespace_Bind(namespace, name, val)) {
-      Py_DECREF(val);
-      return -1;
-    }
-
-    if (defaults) {
-      int empty = KosRef_IsEmpty(val);
-      if (empty < 0) {
-        Py_DECREF(val);
-        return -1;
-      }
-      if (empty) {
-        PyObject *dflt = PyDict_GetItem(defaults, name);
-        if (dflt && KosRef_Store(val, dflt)) {
-          Py_DECREF(val);
-          return -1;
-        }
-      }
-    }
-
-    Py_DECREF(val);
-  }
-
-  return 0;
-}
-
-
 int KosFormals_ApplyFast(
     PyObject *formals,
     PyObject *namespace,
@@ -1007,6 +1042,8 @@ int KosFormals_ApplyFast(
   PyObject *star = KosFormals_STAR(formals);
   PyObject *starstar = KosFormals_STARSTAR(formals);
   PyObject *defaults = KosFormals_DEFAULTS(formals);
+  PyObject *by_refs = KosFormals_BY_REFS(formals);
+  Py_ssize_t by_ref_count = by_refs? PyTuple_GET_SIZE(by_refs): 0;
 
   SAYF("  pos      : %R", pos);
   SAYF("  pos_only : %R", pos_only);
@@ -1025,11 +1062,22 @@ int KosFormals_ApplyFast(
     SAYF("applying positional %i", i);
 
     if (pos) {
-      if (KosNamespace_FastStore(
-          namespace,
-          i,
-          PyTuple_GET_ITEM(args, i)))
+      PyObject *av = PyTuple_GET_ITEM(args, i);
+      if (by_ref_count) {
+        PyObject *nm = PyTuple_GET_ITEM(pos, ipos);
+        int br = PySequence_Contains(by_refs, nm);
+        if (br < 0)
+          return -1;
+        if (br) {
+          // positional by-ref: required, no floor; FastBind type-checks
+          if (KosNamespace_FastBind(namespace, i, av))
+            return -1;
+        } else if (KosNamespace_FastStore(namespace, i, av)) {
+          return -1;
+        }
+      } else if (KosNamespace_FastStore(namespace, i, av)) {
         return -1;
+      }
       if (++ipos >= PyTuple_GET_SIZE(pos))
         pos = NULL;
 
@@ -1053,11 +1101,21 @@ int KosFormals_ApplyFast(
       break;
 
     } else if (kwd) {
-      if (KosNamespace_FastStore(
-          namespace,
-          i,
-          PyTuple_GET_ITEM(args, i)))
+      PyObject *av = PyTuple_GET_ITEM(args, i);
+      if (by_ref_count) {
+        PyObject *nm = PyTuple_GET_ITEM(kwd, ikwd);
+        int br = PySequence_Contains(by_refs, nm);
+        if (br < 0)
+          return -1;
+        if (br) {
+          if (bind_supplied_by_ref(namespace, nm, av, defaults))
+            return -1;
+        } else if (KosNamespace_FastStore(namespace, i, av)) {
+          return -1;
+        }
+      } else if (KosNamespace_FastStore(namespace, i, av)) {
         return -1;
+      }
       if (++ikwd >= PyTuple_GET_SIZE(kwd))
         kwd = NULL;
 
@@ -1123,14 +1181,9 @@ int KosFormals_ApplyFast(
   }
 
   if (apply_formals_kwargs_phase(namespace, pos, pos_only, kwd, kwd_only,
-                                 starstar, defaults, kwargs,
+                                 starstar, defaults, by_refs, kwargs,
                                  ipos, ipos_only, ikwd, ikwd_only) < 0) {
     SAY("KosFormals_ApplyFast -> fail_kwargs (-1)");
-    Py_XDECREF(kwargs);
-    return -1;
-  }
-
-  if (apply_by_refs(formals, namespace)) {
     Py_XDECREF(kwargs);
     return -1;
   }
@@ -1163,6 +1216,8 @@ int KosFormals_Apply(
   PyObject *star = KosFormals_STAR(formals);
   PyObject *starstar = KosFormals_STARSTAR(formals);
   PyObject *defaults = KosFormals_DEFAULTS(formals);
+  PyObject *by_refs = KosFormals_BY_REFS(formals);
+  Py_ssize_t by_ref_count = by_refs? PyTuple_GET_SIZE(by_refs): 0;
 
   SAYF("  pos      : %R", pos);
   SAYF("  pos_only : %R", pos_only);
@@ -1181,11 +1236,22 @@ int KosFormals_Apply(
     SAYF("applying positional %i", i);
 
     if (pos) {
-      if (KosNamespace_Store(
-          namespace,
-          PyTuple_GET_ITEM(pos, ipos++),
-          PyTuple_GET_ITEM(args, i)))
+      PyObject *nm = PyTuple_GET_ITEM(pos, ipos++);
+      PyObject *av = PyTuple_GET_ITEM(args, i);
+      if (by_ref_count) {
+        int br = PySequence_Contains(by_refs, nm);
+        if (br < 0)
+          return -1;
+        if (br) {
+          // positional by-ref: required, no floor; Bind type-checks
+          if (KosNamespace_Bind(namespace, nm, av))
+            return -1;
+        } else if (KosNamespace_Store(namespace, nm, av)) {
+          return -1;
+        }
+      } else if (KosNamespace_Store(namespace, nm, av)) {
         return -1;
+      }
       if (ipos >= PyTuple_GET_SIZE(pos))
         pos = NULL;
 
@@ -1209,11 +1275,21 @@ int KosFormals_Apply(
       break;
 
     } else if (kwd) {
-      if (KosNamespace_Store(
-          namespace,
-          PyTuple_GET_ITEM(kwd, ikwd++),
-          PyTuple_GET_ITEM(args, i)))
+      PyObject *nm = PyTuple_GET_ITEM(kwd, ikwd++);
+      PyObject *av = PyTuple_GET_ITEM(args, i);
+      if (by_ref_count) {
+        int br = PySequence_Contains(by_refs, nm);
+        if (br < 0)
+          return -1;
+        if (br) {
+          if (bind_supplied_by_ref(namespace, nm, av, defaults))
+            return -1;
+        } else if (KosNamespace_Store(namespace, nm, av)) {
+          return -1;
+        }
+      } else if (KosNamespace_Store(namespace, nm, av)) {
         return -1;
+      }
       if (ikwd >= PyTuple_GET_SIZE(kwd))
         kwd = NULL;
 
@@ -1279,14 +1355,9 @@ int KosFormals_Apply(
   }
 
   if (apply_formals_kwargs_phase(namespace, pos, pos_only, kwd, kwd_only,
-                                 starstar, defaults, kwargs,
+                                 starstar, defaults, by_refs, kwargs,
                                  ipos, ipos_only, ikwd, ikwd_only) < 0) {
     SAY("KosFormals_Apply -> fail_kwargs (-1)");
-    Py_XDECREF(kwargs);
-    return -1;
-  }
-
-  if (apply_by_refs(formals, namespace)) {
     Py_XDECREF(kwargs);
     return -1;
   }
@@ -1320,6 +1391,8 @@ int KosFormals_VectorApply(
   PyObject *star = KosFormals_STAR(formals);
   PyObject *starstar = KosFormals_STARSTAR(formals);
   PyObject *defaults = KosFormals_DEFAULTS(formals);
+  PyObject *by_refs = KosFormals_BY_REFS(formals);
+  Py_ssize_t by_ref_count = by_refs? PyTuple_GET_SIZE(by_refs): 0;
 
   SAYF("  pos      : %R", pos);
   SAYF("  pos_only : %R", pos_only);
@@ -1338,11 +1411,22 @@ int KosFormals_VectorApply(
     SAYF("applying positional %i", i);
 
     if (pos) {
-      if (KosNamespace_Store(
-          namespace,
-          PyTuple_GET_ITEM(pos, ipos++),
-          args[i]))
+      PyObject *nm = PyTuple_GET_ITEM(pos, ipos++);
+      PyObject *av = args[i];
+      if (by_ref_count) {
+        int br = PySequence_Contains(by_refs, nm);
+        if (br < 0)
+          return -1;
+        if (br) {
+          // positional by-ref: required, no floor; Bind type-checks
+          if (KosNamespace_Bind(namespace, nm, av))
+            return -1;
+        } else if (KosNamespace_Store(namespace, nm, av)) {
+          return -1;
+        }
+      } else if (KosNamespace_Store(namespace, nm, av)) {
         return -1;
+      }
       if (ipos >= PyTuple_GET_SIZE(pos))
         pos = NULL;
 
@@ -1375,11 +1459,21 @@ int KosFormals_VectorApply(
       break;
 
     } else if (kwd) {
-      if (KosNamespace_Store(
-          namespace,
-          PyTuple_GET_ITEM(kwd, ikwd++),
-          args[i]))
+      PyObject *nm = PyTuple_GET_ITEM(kwd, ikwd++);
+      PyObject *av = args[i];
+      if (by_ref_count) {
+        int br = PySequence_Contains(by_refs, nm);
+        if (br < 0)
+          return -1;
+        if (br) {
+          if (bind_supplied_by_ref(namespace, nm, av, defaults))
+            return -1;
+        } else if (KosNamespace_Store(namespace, nm, av)) {
+          return -1;
+        }
+      } else if (KosNamespace_Store(namespace, nm, av)) {
         return -1;
+      }
       if (ikwd >= PyTuple_GET_SIZE(kwd))
         kwd = NULL;
 
@@ -1470,14 +1564,9 @@ int KosFormals_VectorApply(
   }
 
   if (apply_formals_kwargs_phase(namespace, pos, pos_only, kwd, kwd_only,
-                                 starstar, defaults, kwargs,
+                                 starstar, defaults, by_refs, kwargs,
                                  ipos, ipos_only, ikwd, ikwd_only) < 0) {
     SAY(" -> -1");
-    Py_XDECREF(kwargs);
-    return -1;
-  }
-
-  if (apply_by_refs(formals, namespace)) {
     Py_XDECREF(kwargs);
     return -1;
   }
@@ -1511,6 +1600,8 @@ int KosFormals_VectorApplyFast(
   PyObject *star = KosFormals_STAR(formals);
   PyObject *starstar = KosFormals_STARSTAR(formals);
   PyObject *defaults = KosFormals_DEFAULTS(formals);
+  PyObject *by_refs = KosFormals_BY_REFS(formals);
+  Py_ssize_t by_ref_count = by_refs? PyTuple_GET_SIZE(by_refs): 0;
 
   SAYF("  pos      : %R", pos);
   SAYF("  pos_only : %R", pos_only);
@@ -1529,11 +1620,22 @@ int KosFormals_VectorApplyFast(
     SAYF("applying positional %i", i);
 
     if (pos) {
-      if (KosNamespace_FastStore(
-          namespace,
-          i,
-          args[i]))
+      PyObject *av = args[i];
+      if (by_ref_count) {
+        PyObject *nm = PyTuple_GET_ITEM(pos, ipos);
+        int br = PySequence_Contains(by_refs, nm);
+        if (br < 0)
+          return -1;
+        if (br) {
+          // positional by-ref: required, no floor; FastBind type-checks
+          if (KosNamespace_FastBind(namespace, i, av))
+            return -1;
+        } else if (KosNamespace_FastStore(namespace, i, av)) {
+          return -1;
+        }
+      } else if (KosNamespace_FastStore(namespace, i, av)) {
         return -1;
+      }
       if (++ipos >= PyTuple_GET_SIZE(pos))
         pos = NULL;
 
@@ -1567,11 +1669,21 @@ int KosFormals_VectorApplyFast(
       break;
 
     } else if (kwd) {
-      if (KosNamespace_FastStore(
-          namespace,
-          i,
-          args[i]))
+      PyObject *av = args[i];
+      if (by_ref_count) {
+        PyObject *nm = PyTuple_GET_ITEM(kwd, ikwd);
+        int br = PySequence_Contains(by_refs, nm);
+        if (br < 0)
+          return -1;
+        if (br) {
+          if (bind_supplied_by_ref(namespace, nm, av, defaults))
+            return -1;
+        } else if (KosNamespace_FastStore(namespace, i, av)) {
+          return -1;
+        }
+      } else if (KosNamespace_FastStore(namespace, i, av)) {
         return -1;
+      }
       if (++ikwd >= PyTuple_GET_SIZE(kwd))
         kwd = NULL;
 
@@ -1663,14 +1775,9 @@ int KosFormals_VectorApplyFast(
   }
 
   if (apply_formals_kwargs_phase(namespace, pos, pos_only, kwd, kwd_only,
-                                 starstar, defaults, kwargs,
+                                 starstar, defaults, by_refs, kwargs,
                                  ipos, ipos_only, ikwd, ikwd_only) < 0) {
     SAY("KosFormals_VectorApplyFast -> -1");
-    Py_XDECREF(kwargs);
-    return -1;
-  }
-
-  if (apply_by_refs(formals, namespace)) {
     Py_XDECREF(kwargs);
     return -1;
   }

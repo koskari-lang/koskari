@@ -239,8 +239,9 @@ Ref: [interpreter/return-return-shift.md](interpreter/return-return-shift.md).
 Implemented. Mark a formal by-ref so application installs a caller-supplied `Ref`
 as the slot's storage: a caller passes `&value` and the callee's formal aliases
 that Ref, so `(set! result …)` inside the callee writes through to the caller's
-binding. Parse-side marking + a `by_refs` tuple on `FormalsSpec` / `Formals` + an
-`apply_by_refs` pass that runs last and rebinds any slot holding a `Ref`.
+binding. Parse-side marking + a `by_refs` tuple on `FormalsSpec` / `Formals` + bind-time
+handling in apply that aliases a supplied `Ref`, raises `TypeError` on a bare
+value, and seeds a fresh `Ref` with the floor when a keyword by-ref is omitted.
 Positional (required) and keyword (floored) formals; destructuring rejected.
 
 Ref: [language/by-ref-formals.md](language/by-ref-formals.md).
