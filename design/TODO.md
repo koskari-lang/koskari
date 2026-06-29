@@ -126,6 +126,19 @@ Ref: [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [interpreter/kio-format.md](interpreter/kio-format.md) (`.kio` format);
 `koskari.serialize` (incremental compile and `dump_kio`).
 
+### Bracket-pair type and call-position lint
+
+Promote the `( )` vs `[ ]` convention to a queryable property without making
+brackets required. `[ ]` reads into a new `bracket-pair` subtype of `pair`
+(same fields, repr renders `[ ]`); add a `bracket-cons` constructor and reader
+dispatch; add a compiler flag (accept / warn / error) at the single
+`compile_pair` chokepoint that optionally flags a bracket-pair reaching
+evaluated/operator position. `let`-style binding positions are immune for free
+(consumed as data by their specials, never reaching `compile_pair`). A
+symmetric advisory matcher style-hint is a later, separate phase.
+
+Ref: [bracket-pair.md](bracket-pair.md).
+
 ---
 
 ## Import / loader
