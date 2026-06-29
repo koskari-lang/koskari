@@ -38,7 +38,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Tuple, Union
 
 from koskari.exceptions import CompilerError
-from koskari.lib import Datum, cons, gensym, nil
+from koskari.lib import (Datum, bracket_cons, bracket_nil, bracket_pair, cons,
+                         gensym, nil)
 from koskari.types import (build_proper, is_keyword, is_nil, is_pair,
                            is_symbol, unpack)
 
@@ -544,6 +545,12 @@ def expand_template_with_hygiene(
                         elem, bindings, binding_symbols, introduced,
                         index=rep_i))
         i += 2
+
+    # preserve the template's delimiter style: a bracket-pair template
+    # rebuilds as a bracket list (terminated by bracket-nil), so a [ ] in a
+    # syntax-rules template survives expansion instead of flattening to ( )
+    if isinstance(template, bracket_pair):
+        return bracket_cons(*out, bracket_nil) if out else bracket_nil
 
     return build_proper(*out)
 
