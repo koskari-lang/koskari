@@ -94,6 +94,18 @@ class TestKosRepr(unittest.TestCase):
         self.assertEqual(kos_repr(s), "alpha")
 
 
+    def test_type_uses_normal_repr(self):
+        """
+        a type object reprs normally, not via its instances' __kos_repr__
+        """
+
+        # pair/symbol instances carry __kos_repr__; the type object must not
+        # try to dispatch through it.
+        self.assertEqual(kos_repr(pair), repr(pair))
+        self.assertEqual(kos_repr(symbol), repr(symbol))
+        self.assertEqual(kos_repr(type(nil)), repr(type(nil)))
+
+
     def test_keyword(self):
         """
         keyword kos form ends with colon
