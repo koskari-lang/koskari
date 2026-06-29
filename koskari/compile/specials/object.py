@@ -664,6 +664,18 @@ def special_not(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_NOT, compiler, source)
 
 
+@builtin("compile/nil?")
+@special("compile/nil?", patterns=_DEFAULT_SPECIAL_PATTERNS)
+def special_nilp(compiler, source, tc=False):
+    """
+    Compile (nil? OBJ). True if OBJ is an empty-list singleton, either
+    nil or bracket-nil. Emits NILP, which compression may lower to a
+    CHECK_NIL when followed by a conditional jump.
+    """
+
+    return _unary_op(OpCode.KOS_OP_NILP, compiler, source)
+
+
 @builtin("compile/repr")
 @special("compile/repr", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_repr(compiler, source, tc=False):

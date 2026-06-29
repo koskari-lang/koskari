@@ -28,8 +28,8 @@ from enum import IntEnum, auto
 from ..exceptions import CompilerError, UncaughtCompilerError
 from ..lib import (Code, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
                    NAMESPACE_FAST_SLOT_MAX,
-                   Namespace, NamespaceSpec, OpCode, OpStyle, cons, keyword,
-                   nil, symbol)
+                   Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
+                   cons, keyword, nil, symbol)
 from ..types import get_position, is_pair, is_proper, is_symbol
 from .pragma import KoskariPragma
 
@@ -50,7 +50,7 @@ CONST_TYPES = (
     bool, int, float, complex,
     slice,
     type(None), type(...),
-    symbol, keyword, type(nil),
+    symbol, keyword, type(nil), type(bracket_nil),
     FunctionSpec,
     NamespaceSpec,
 )
@@ -410,6 +410,7 @@ _CHECK_SQUASHES = {
     OpCode.KOS_OP_OBJECT_IS_SUBCLASS: OpCode.KOS_OP_CHECK_IS_SUBCLASS,
     OpCode.KOS_OP_OBJECT_NOT: OpCode.KOS_OP_JUMP_TRUE,
     OpCode.KOS_OP_EXCEPTION_MATCH: OpCode.KOS_OP_CHECK_EXCEPTION,
+    OpCode.KOS_OP_NILP: OpCode.KOS_OP_CHECK_NIL,
 }
 
 _SWITCH_SQUASHES = {

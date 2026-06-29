@@ -1533,6 +1533,27 @@ static int kos_check_two_arg(
 }
 
 
+/* Pop one value; branch to KosOp_ARG(insn) when it is NOT an empty-list
+   singleton (nil or bracket-nil) — the squashed form of NILP followed
+   by JUMP_FALSE. */
+static int kos_check_nil(
+    KosEvalState *es,
+    KosOp *insn) {
+
+  PyObject *val = KosEvalState_StackPopRef(es);
+  if (! val)
+    return -1;
+
+  int is_nil = KosNilP(val);
+  Py_DECREF(val);
+
+  if (! is_nil)
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+
+  return 0;
+}
+
+
 /* Helper for CHECK_EQ/GE/GT/LE/LT/NE: pop right then left, RichCompareBool;
    jump to KosOp_ARG(insn) if comparison fails (res == 0). */
 static int kos_check_cmp(
