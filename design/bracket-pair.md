@@ -141,9 +141,15 @@ fleshed out) selects one of three modes for the `compile_pair` path:
      gated by the pragma/flag, not the matcher's job. `pair_copy` traverses
      correctly but normalizes copied cells to plain pairs (bracket-style is not
      preserved through copy yet; revisit with `bracket-cons`).
-   - **Landmine: free-list allocation.** `KosPair_New` pulls from a
-     `&KosPairType` free-list. Bracket-pairs need their own allocation path (or
-     their own free-list); they cannot reuse the base free-list as-is.
+   - **Free-list allocation (resolved by sharing).** `pair` and `bracket-pair`
+     are layout-identical, so they share **one** free list. A shared
+     `pair_alloc(type, head, tail)` pops a recycled cell and stamps it with the
+     requested type via `Py_SET_TYPE` (and both `KosPair_New` /
+     `KosBracketPair_New` are thin wrappers; both types use `pair_dealloc`). The
+     type stamp is what keeps a recycled cell from ever leaking out as the wrong
+     kind, so the original "give bracket-pairs their own allocation path" landmine
+     is handled in one place rather than avoided. Free-list tracing stays unified
+     under `"pair"`.
 2. **Reader dispatch.** *Done.* `_read_pair` (`koskari/reader/parser.py`)
    dispatches on the opening char: `[` builds `bracket-pair` cells terminated by
    `bracket-nil` (empty `[]` → `bracket-nil`), `(`/`{` build plain `pair` cells

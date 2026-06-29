@@ -1532,11 +1532,19 @@ PyTypeObject KosPairType = {
 };
 
 
-PyObject *KosPair_New(PyObject *head, PyObject *tail) {
+/* Shared allocation for the pair family (pair and bracket-pair). They are
+   layout-identical, so one free list serves both; popping a recycled cell
+   stamps it with the requested type via Py_SET_TYPE, which is what keeps a
+   pair from ever leaking out as a bracket-pair or vice versa. The free-list
+   trace is intentionally unified under "pair". */
+static PyObject *pair_alloc(PyTypeObject *type,
+    PyObject *head, PyObject *tail) {
+
   KosPair *self = NULL;
 
   if (! (head && tail)) {
-    PyErr_SetString(PyExc_TypeError, "pair requires a head and a tail");
+    PyErr_Format(PyExc_TypeError, "%s requires a head and a tail",
+                 type->tp_name);
     return NULL;
   }
 
@@ -1545,11 +1553,12 @@ PyObject *KosPair_New(PyObject *head, PyObject *tail) {
     pair_free_list = (KosPair *) KosPair_CDR(self);
     pair_free_count--;
     KOS_TRACE_FL_ALLOC("pair", 1);
+    Py_SET_TYPE(self, type);
     Py_INCREF(self);
 
   } else {
     KOS_TRACE_FL_ALLOC("pair", 0);
-    self = PyObject_GC_New(KosPair, &KosPairType);
+    self = PyObject_GC_New(KosPair, type);
     if (! self)
       return NULL;
   }
@@ -1564,6 +1573,11 @@ PyObject *KosPair_New(PyObject *head, PyObject *tail) {
 
   PyObject_GC_Track((PyObject *) self);
   return (PyObject *) self;
+}
+
+
+PyObject *KosPair_New(PyObject *head, PyObject *tail) {
+  return pair_alloc(&KosPairType, head, tail);
 }
 
 
@@ -1587,22 +1601,6 @@ static PyObject *bracket_pair_new(PyTypeObject *type,
     return NULL;
 
   return KosBracketPair_New(head, tail);
-}
-
-
-/* Bracket-pairs do not share the pair free list: returning one there
-   would let KosPair_New hand it back out as a plain KosPairType. */
-static void bracket_pair_dealloc(PyObject *self) {
-  PyObject_GC_UnTrack(self);
-  CPy_TRASHCAN_BEGIN(self, bracket_pair_dealloc);
-
-  Py_CLEAR(KosPair_CAR(self));
-  Py_CLEAR(KosPair_CDR(self));
-  Py_CLEAR(KosPair_POSITION(self));
-
-  PyObject_GC_Del(self);
-
-  CPy_TRASHCAN_END(self);
 }
 
 
@@ -1642,7 +1640,7 @@ PyTypeObject KosBracketPairType = {
   .tp_base = &KosPairType,
   .tp_methods = bracket_pair_methods,
   .tp_new = bracket_pair_new,
-  .tp_dealloc = bracket_pair_dealloc,
+  .tp_dealloc = pair_dealloc,
   .tp_traverse = pair_traverse,
   .tp_clear = pair_clear,
 
@@ -1652,29 +1650,7 @@ PyTypeObject KosBracketPairType = {
 
 
 PyObject *KosBracketPair_New(PyObject *head, PyObject *tail) {
-  KosPair *self = NULL;
-
-  if (! (head && tail)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "bracket-pair requires a head and a tail");
-    return NULL;
-  }
-
-  KOS_TRACE_FL_ALLOC("bracket-pair", 0);
-  self = PyObject_GC_New(KosPair, &KosBracketPairType);
-  if (! self)
-    return NULL;
-
-  KosPair_POSITION(self) = NULL;
-
-  Py_INCREF(head);
-  self->head = head;
-
-  Py_INCREF(tail);
-  self->tail = tail;
-
-  PyObject_GC_Track((PyObject *) self);
-  return (PyObject *) self;
+  return pair_alloc(&KosBracketPairType, head, tail);
 }
 
 

@@ -218,6 +218,31 @@ class TestBracketPairTraversal(unittest.TestCase):
         self.assertEqual(bracket_pair(1, bracket_nil), cons(1, nil))
 
 
+class TestSharedFreelist(unittest.TestCase):
+    """pair and bracket-pair share one free list; reuse stamps the type"""
+
+    def test_bracket_block_reused_as_pair(self):
+        """a freed bracket-pair block is recycled into a plain pair"""
+
+        bp = bracket_pair(1, 2)
+        addr = id(bp)
+        del bp                       # -> head of the shared free list
+        p = pair(3, 4)               # pops that block, stamps KosPairType
+        self.assertEqual(id(p), addr)        # same memory (shared free list)
+        self.assertIs(type(p), pair)         # stamped as a plain pair
+        self.assertNotIsInstance(p, bracket_pair)
+
+    def test_pair_block_reused_as_bracket(self):
+        """a freed pair block is recycled into a bracket-pair"""
+
+        p = pair(1, 2)
+        addr = id(p)
+        del p
+        bp = bracket_pair(3, 4)
+        self.assertEqual(id(bp), addr)
+        self.assertIs(type(bp), bracket_pair)
+
+
 class TestBracketCons(unittest.TestCase):
     """bracket-cons: the variadic builder of bracket-pair lists"""
 
