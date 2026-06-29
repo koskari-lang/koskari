@@ -84,5 +84,21 @@ class TestBracketReader(unittest.TestCase):
 
         self.assertEqual(self.read("[1 2 3]"), self.read("(1 2 3)"))
 
+    def test_unquote_of_empty_paren(self):
+        """,() reads as an unquote of the empty list, not a splice (no crash)"""
+
+        v = self.read("`(a ,() b)")
+        self.assertEqual(
+            kos_repr(v),
+            "(compile/quasiquote (a (compile/unquote ()) b))")
+
+    def test_unquote_of_empty_bracket(self):
+        """,[] is likewise an unquote of the empty bracket list"""
+
+        v = self.read("`(a ,[] b)")
+        self.assertEqual(
+            kos_repr(v),
+            "(compile/quasiquote (a (compile/unquote []) b))")
+
 
 # The end.

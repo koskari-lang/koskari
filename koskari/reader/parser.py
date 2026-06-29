@@ -49,7 +49,7 @@ from re import compile as regex
 from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
 from ..lib import (BaseSourceStream, Module, bracket_nil, bracket_pair, cons,
                    keyword, nil, pair, setcdr, symbol)
-from ..types import is_pair
+from ..types import is_nil, is_pair
 from .layouts import apply_layout, apply_layouts, find_layout
 
 
@@ -1723,7 +1723,9 @@ class Reader:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
-        if is_pair(child) and child[0] is _symbol_splice:
+        # is_pair(nil) is True (nil subclasses pair), so guard the empties
+        # before indexing — `,()` / `,[]` are unquotes of the empty list.
+        if is_pair(child) and not is_nil(child) and child[0] is _symbol_splice:
             value = cons(_symbol_unquote_splicing, child[1])
         else:
             value = cons(_symbol_unquote, child, nil)
