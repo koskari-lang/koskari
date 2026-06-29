@@ -44,9 +44,11 @@ define r2 &food
 
 
 ; --- Writing through a ref changes the original -----------------------------
+; (set! (deref r) v) writes through; it dispatches to the ref's store method,
+; so (r2.store 20) does the same thing.
 
-(r2.store 20)
-(print "food after r2.store 20:" food)     ; -> 20
+set! (deref r2) 20
+(print "food after (set! (deref r2) 20):" food)   ; -> 20
 
 
 ; --- The trap: set! on the name rebinds it, it does NOT write through --------
@@ -62,8 +64,8 @@ define xs #[1 2 3 4]
 define obj (SimpleNamespace count: 15)
 define cell &(item xs 2)
 (print "cell points into xs, reads:" (deref cell))  ; -> 3
-(cell.store 100)
-(print "xs after cell.store 100:" xs)      ; -> [1, 2, 100, 4]
+set! (deref cell) 100
+(print "xs after (set! (deref cell) 100):" xs)      ; -> [1, 2, 100, 4]
 
 
 ; --- Making the indirection invisible: bind! --------------------------------

@@ -1210,3 +1210,20 @@ tags:
   - lambda
   - by-ref
 notes: a by-ref formal accepts a ref to a list slot; &(item xs 2) lets the callee write back into xs
+---
+id: variable-ref-set-deref-write-001
+feature: macro/compile/set!
+source: (begin (define v 10) (define r &v) (set! (deref r) 20) v)
+verify:
+  eval: "20"
+references:
+  - reference/macros/compile-set.md
+  - reference/concepts/bindings-and-refs.md
+  - guide/references-and-storage-indirection.md
+stability: evolving
+tags:
+  - variable
+  - set!
+  - ref
+  - deref
+notes: value-level write-through; (set! (deref r) v) dispatches to the ref store method. Symmetric with (deref r) read.

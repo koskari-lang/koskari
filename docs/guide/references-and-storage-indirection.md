@@ -82,26 +82,29 @@ Every snippet here is exercised in [examples/refs.ki](https://github.com/obrienc
 
 ## Writing through a ref
 
-> **Q:** A ref points at `food`'s location. Can you change `food` *without
-> naming it* — through the ref alone?
+> **Q:** You read through a ref with `(deref r)`. Symmetrically — can you
+> *write* through it, changing `food` without naming it?
 >
-> **A:** Yes. `store` writes through the ref to the location it points at:
+> **A:** Yes. Assign to the deref: `(set! (deref r) v)` stores through the ref
+> into the location it points at.
 >
 > ```koskari
-> (r.store 20)
+> (set! (deref r) 20)
 > food
 > ; -> 20
 > ```
 >
-> Look closely: the line that changed `food` never mentioned `food`. That is
-> storage indirection at work — `r` *is* the box, so writing through `r` writes
-> into `food`.
+> Note the symmetry: `(deref r)` reads the pointed-at location, `(set! (deref
+> r) …)` writes it. The line that changed `food` never mentioned `food` — `r`
+> *is* the box. (Under the hood this dispatches to the ref's `store` method, so
+> `(r.store 20)` does the same thing when you already hold the ref.)
 
-> **Q:** Then to change `food` through `r`, would you write `(set! r 20)`?
+> **Q:** Then `(set! r 20)` — same thing?
 >
-> **A:** Predict before reading on... No — and this is the one thing to get
-> straight. `set!` on a **name** changes what *that name* holds. `r` holds a
-> ref; `(set! r 20)` throws the ref away and puts `20` in `r` instead:
+> **A:** Predict before reading on... No, and this is the one thing to get
+> straight: the **target** of `set!` matters. `(set! (deref r) 20)` writes
+> *through* the ref. But `(set! r 20)` assigns to the **name** `r` — it throws
+> the ref away and puts `20` in `r`:
 >
 > ```koskari
 > (set! r 99)
@@ -111,9 +114,9 @@ Every snippet here is exercised in [examples/refs.ki](https://github.com/obrienc
 > ; -> 99    (r no longer holds a ref)
 > ```
 >
-> So: `(r.store v)` writes *through* the ref; `(set! r v)` *replaces* the ref.
-> When a ref is just a value you are holding, you reach the target with `deref`
-> and `store`, never with `set!` on the holding name.
+> So: `(set! (deref r) v)` writes *through* the ref; `(set! r v)` *replaces*
+> it. When you hold a ref as a value, reach the target via the deref —
+> `(deref r)` to read, `(set! (deref r) v)` to write.
 
 ---
 
@@ -130,7 +133,7 @@ Every snippet here is exercised in [examples/refs.ki](https://github.com/obrienc
 > (define cell &(item xs 2))
 > (deref cell)
 > ; -> 3
-> (cell.store 100)
+> (set! (deref cell) 100)
 > xs
 > ; -> [1, 2, 100, 4]
 > ```
@@ -143,7 +146,7 @@ Every snippet here is exercised in [examples/refs.ki](https://github.com/obrienc
 
 ## Making the indirection invisible: `bind!`
 
-> **Q:** Carrying a ref around and remembering to `deref` / `store` it is a
+> **Q:** Carrying a ref around and reaching through the deref every time is a
 > chore. Can a name's location simply *be* a ref, so you read and write it like
 > any other variable?
 >
