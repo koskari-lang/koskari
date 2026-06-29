@@ -184,9 +184,17 @@ fleshed out) selects one of three modes for the `compile_pair` path:
      Dedicated bracket build opcodes (`BRACKET_CONS`/`BRACKET_PROPER`/
      `BRACKET_PAIR_SPLICE`) remain a possible later optimization over these
      runtime calls.
-3. **Compiler guard flag.** Add a `Compiler`-level flag (accept / warn / error)
-   and the single bracket-pair predicate at `compile_pair` entry. Default to
-   **accept** so existing behavior is unchanged until opted in.
+3. **Compiler guard flag.** *Done.* `BracketCalls` enum
+   (`koskari/compile/pragma/bracket.py`): `IGNORE` / `WARN` / `ERROR`. The
+   `Compiler(bracket_calls=…)` flag defaults to `IGNORE`, so existing behavior is
+   unchanged until opted in. `compile_pair` calls `_check_bracket_call` right
+   after the nil guard (above the special-vs-combination split): a non-empty
+   `bracket-pair` reaching there is in operator position, so `WARN` emits a
+   `SyntaxWarning` (and still compiles) and `ERROR` raises a `CompilerError`. The
+   empty list is handled as a const before the check, and `let`-style binding
+   groups are consumed as data by their specials so they never reach
+   `compile_pair` — both immune. (A pragma DSL to set this from source is a
+   later, separate effort; for now it is a constructor flag.)
 
 ## Bracket-nil: parallel empty-list singletons
 
