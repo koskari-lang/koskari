@@ -118,12 +118,24 @@ fleshed out) selects one of three modes for the `compile_pair` path:
    in `koskari/lib/pair.c`, overriding `kos_repr` (and `tp_repr` / `tp_str` as
    needed) to render `[ ]`. Add a `bracket-cons` constructor variant whose sole
    job is to build pairs of the bracket type. Position handling inherits.
-   - **Landmine: `CheckExact` truncation.** ~39 exact-type checks
-     (`ob_type == &KosPairType`) live in `pair.c`, including the `pair_kos_repr`
-     iteration loop (`for (rest = self; KosPair_CheckExact(rest); …)`). A
-     subclass fails `CheckExact`, so these will *silently truncate* a list at
-     the first bracket cell rather than crash. Audit each site and switch the
-     ones that mean "any pair" to the subtype-aware `KosPair_Check`.
+   - **Landmine: `CheckExact` truncation (audited in `pair.c`).** Exact-type
+     checks (`KosPair_CheckExact`, `ob_type == &KosPairType`) silently truncate
+     a list at the first bracket cell because a subclass fails `CheckExact`.
+     **Done:** every `pair.c` site is migrated — spine walks and nested-list
+     recursions to `KosPair_IsCell` (`Check && ! KosNilP`, so they traverse
+     bracket cells but still stop at either empty-list terminator), and the two
+     `pair_eq` `ob_type != &KosPairType` checks to `! KosPair_Check` (so
+     comparing non-empty bracket-pairs no longer recurses infinitely). This
+     fixes repr/str/kos_repr, `follow`/`unpack`, `length`, `is-proper`,
+     `__copy__`, position walks, and equality for bracket spines. The same
+     migration is applied in `matcher.c` (the proper-list spine walk → `IsCell`;
+     the position-cell guards → `Check`) and the `PAIR_SPLICE` opcode (segment
+     guard → `Check`), so the matcher and quasiquote-splice walk either pair
+     flavor. **By design the matcher does not distinguish bracket from paren** —
+     telling them apart (the call-position lint) is a separate post-matcher pass
+     gated by the pragma/flag, not the matcher's job. `pair_copy` traverses
+     correctly but normalizes copied cells to plain pairs (bracket-style is not
+     preserved through copy yet; revisit with `bracket-cons`).
    - **Landmine: free-list allocation.** `KosPair_New` pulls from a
      `&KosPairType` free-list. Bracket-pairs need their own allocation path (or
      their own free-list); they cannot reuse the base free-list as-is.

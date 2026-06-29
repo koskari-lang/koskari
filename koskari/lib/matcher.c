@@ -2106,7 +2106,7 @@ int KosMatchSubject_FromKosPair(
   /* First pass: count length */
   Py_ssize_t n = 0;
   PyObject *cursor = pair_or_nil;
-  while (KosPair_CheckExact(cursor)) {
+  while (KosPair_IsCell(cursor)) {
     n++;
     cursor = KosPair_CDR(cursor);
   }
@@ -2231,7 +2231,7 @@ static PyObject *kos_datum_from_spine_cell(
   if (subj->kp_tails && cell_idx >= 0
       && cell_idx < subj->cached_length) {
     PyObject *cell = subj->kp_tails[cell_idx];
-    if (KosPair_CheckExact(cell)) {
+    if (KosPair_Check(cell)) {
       PyObject *p = KosPair_POSITION(cell);
       Py_DECREF(Py_None);
       pos = p ? p : Py_None;
@@ -2282,7 +2282,7 @@ static PyObject *position_from_spine_cell(
   if (subj->kp_tails && cell_idx >= 0
       && cell_idx < subj->cached_length) {
     PyObject *cell = subj->kp_tails[cell_idx];
-    if (KosPair_CheckExact(cell)) {
+    if (KosPair_Check(cell)) {
       PyObject *p = KosPair_POSITION(cell);
       pos = p ? p : Py_None;
     }

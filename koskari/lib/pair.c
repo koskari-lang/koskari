@@ -192,7 +192,7 @@ static PyObject *pfoll_iternext(PyObject *self) {
   }
 
   /* get ready for the next */
-  if (KosPair_CheckExact(current)) {
+  if (KosPair_IsCell(current)) {
     s->current = KosPair_CDR(current);
     Py_INCREF(s->current);
 
@@ -206,7 +206,7 @@ static PyObject *pfoll_iternext(PyObject *self) {
   if (s->just_items) {
     /* if we're in items mode, then we want the CAR if current is a
        pair, otherwise if current is non-nil we return it. */
-    if (KosPair_CheckExact(current)) {
+    if (KosPair_IsCell(current)) {
       result = KosPair_CAR(current);
       Py_INCREF(result);
       Py_DECREF(current);
@@ -617,21 +617,22 @@ static long pair_eq(PyObject *left, PyObject *right) {
       answer = 0;
       break;
 
-    } else if (left->ob_type != &KosPairType) {
-      /* left is not a pair, use its comparison function instead of
-         ours */
+    } else if (! KosPair_Check(left)) {
+      /* left is not a pair (nor a pair subclass), use its comparison
+         function instead of ours */
       answer = PyObject_RichCompareBool(left, right, Py_EQ);
       break;
 
-    } else if (right->ob_type != &KosPairType) {
+    } else if (! KosPair_Check(right)) {
       /* left is a pair, but right is not, and pairs can only be
          equivalent to other pairs, so nope. */
       answer = 0;
       break;
     }
 
-    /* if we reach this point, left and right are both KosPairType,
-       and they do not refer to the same memory space, so we can test
+    /* if we reach this point, left and right are both pairs (possibly
+       bracket-pair subclasses), and they do not refer to the same
+       memory space, so we can test
        their CAR equivs and their CDR equivs */
 
     left_id = PyLong_FromVoidPtr(left);
@@ -743,7 +744,7 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
   /* records of the IDs of originals to instances of the new copies */
   PyObject *seen = PyDict_New();
 
-  for (; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for (; KosPair_IsCell(self); self = KosPair_CDR(self)) {
 
     PyObject *self_id = PyLong_FromVoidPtr(self);
 
@@ -809,7 +810,7 @@ static PyObject *pair_length(PyObject *self, PyObject *_noargs) {
 
   seen = PySet_New(NULL);
 
-  for(; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for(; KosPair_IsCell(self); self = KosPair_CDR(self)) {
 
     tmp = PyLong_FromVoidPtr(self);
 
@@ -874,7 +875,7 @@ long KosPair_IsProper(PyObject *self) {
   PyObject *pair_id;
   long result = 0;
 
-  for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
     if (KosNilP(self)) {
       result = 1;
       break;
@@ -914,7 +915,7 @@ long KosPair_IsRecursive(PyObject *self) {
   PyObject *pair_id;
   long result = 0;
 
-  for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
     pair_id = PyLong_FromVoidPtr(self);
 
     if (PySet_Contains(seen, pair_id)) {
@@ -950,7 +951,7 @@ static KosPair *pair_find_last(PyObject *self, PyObject *seen,
   KosPair *last = NULL;
   PyObject *pair_id;
 
-  for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
     last = (KosPair *) self;
     pair_id = PyLong_FromVoidPtr(self);
 
@@ -1093,7 +1094,7 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
   if (! last)
     return NULL;
 
-  if (KosPair_CheckExact(obj)) {
+  if (KosPair_IsCell(obj)) {
     splice_head = pair_copy(obj, NULL);
   } else {
     splice_head = pair_iterable_to_proper_cons(obj);
@@ -1129,7 +1130,7 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
   if (! last)
     return NULL;
 
-  if (KosPair_CheckExact(obj)) {
+  if (KosPair_IsCell(obj)) {
     Py_INCREF(obj);
     splice_head = obj;
   } else {
@@ -1149,7 +1150,7 @@ static void pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
   PyObject *pair_id;
   KosPair *sp;
 
-  for (; KosPair_CheckExact(pair); pair = KosPair_CDR(pair)) {
+  for (; KosPair_IsCell(pair); pair = KosPair_CDR(pair)) {
     sp = (KosPair *) pair;
 
     pair_id = PyLong_FromVoidPtr(pair);
@@ -1165,7 +1166,7 @@ static void pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
 
     Py_ASSIGN(KosPair_POSITION(sp), pos);
 
-    if (KosPair_CheckExact(KosPair_CAR(sp))) {
+    if (KosPair_IsCell(KosPair_CAR(sp))) {
       pwalk_setpos(KosPair_CAR(sp), seen, pos);
     }
   }
@@ -1176,7 +1177,7 @@ static void pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
   PyObject *pair_id;
   KosPair *sp;
 
-  for (; KosPair_CheckExact(pair); pair = KosPair_CDR(pair)) {
+  for (; KosPair_IsCell(pair); pair = KosPair_CDR(pair)) {
     sp = (KosPair *) pair;
 
     pair_id = PyLong_FromVoidPtr(pair);
@@ -1198,7 +1199,7 @@ static void pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
       KosPair_POSITION(sp) = pos;
     }
 
-    if (KosPair_CheckExact(KosPair_CAR(sp))) {
+    if (KosPair_IsCell(KosPair_CAR(sp))) {
       pwalk_fillpos(KosPair_CAR(sp), seen, pos);
     }
   }
@@ -2108,7 +2109,7 @@ static PyObject *m_build_unpack_pair(PyObject *mod, PyObject *seqs) {
       /* skip nil */
       continue;
 
-    } else if (KosPair_CheckExact(item)) {
+    } else if (KosPair_IsCell(item)) {
       work = pair_unpack(item, NULL);
 
     } else {

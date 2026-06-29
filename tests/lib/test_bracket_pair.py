@@ -161,6 +161,63 @@ class TestBracketPairStrRepr(unittest.TestCase):
         self.assertEqual(repr(bp), "bracket-cons(1, 2, nil)")
 
 
+class TestBracketPairTraversal(unittest.TestCase):
+    """Spine-walking operations traverse bracket-pair cells correctly"""
+
+    def _blist(self):
+        # the bracket list [1 2 3]
+        return bracket_pair(1, bracket_pair(2, bracket_pair(3, nil)))
+
+    def test_length(self):
+        """length() counts the whole bracket spine, not just the head"""
+
+        self.assertEqual(self._blist().length(), 3)
+
+    def test_unpack(self):
+        """unpack() yields every element of a bracket list"""
+
+        self.assertEqual(list(self._blist().unpack()), [1, 2, 3])
+
+    def test_follow(self):
+        """follow() over a bracket list matches the equivalent paren list"""
+
+        self.assertEqual(list(self._blist().follow()),
+                         list(cons(1, 2, 3, nil).follow()))
+
+    def test_is_proper(self):
+        """a nil-terminated bracket list is proper"""
+
+        self.assertTrue(self._blist().is_proper())
+
+    def test_copy_traverses(self):
+        """__copy__ walks the full bracket spine"""
+
+        dup = self._blist().__copy__()
+        self.assertEqual(list(dup.unpack()), [1, 2, 3])
+
+    def test_kos_repr_full_spine(self):
+        """kos_repr renders the whole bracket spine"""
+
+        self.assertEqual(kos_repr(self._blist()), "[1 2 3]")
+
+    def test_equal_to_paren_list(self):
+        """bracket and paren lists of the same elements compare equal"""
+
+        self.assertEqual(bracket_pair(1, bracket_pair(2, nil)),
+                         cons(1, 2, nil))
+
+    def test_equal_two_bracket_lists(self):
+        """two structurally equal bracket lists compare equal (no recursion)"""
+
+        self.assertEqual(bracket_pair(1, bracket_pair(2, nil)),
+                         bracket_pair(1, bracket_pair(2, nil)))
+
+    def test_equal_across_terminator_flavor(self):
+        """a bracket-nil terminator equals a nil terminator at list end"""
+
+        self.assertEqual(bracket_pair(1, bracket_nil), cons(1, nil))
+
+
 class TestBracketNil(unittest.TestCase):
     """bracket-nil: the parallel empty-list singleton for bracket style"""
 
