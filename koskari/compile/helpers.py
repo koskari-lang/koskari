@@ -25,8 +25,8 @@ Compile helpers for matcher FORMALS captures (GROUP dict payload)
 from typing import List
 
 from ..exceptions import ParametersError, SpecialError
-from ..lib import (DatumFrame, Matcher, OpCode, car, cdr, cons, keyword, nil,
-                   pair, symbol)
+from ..lib import (DatumFrame, Matcher, OpCode, bracket_nil, car, cdr, cons,
+                   keyword, nil, pair, symbol)
 from ..matcher import (BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
                        REST, SYMBOL, USING, USING_UNPACK, VALUE,
                        HygienicMatchCompiler, Pattern, frame_formal_name)
@@ -145,7 +145,7 @@ _keyword_starstar = keyword("**")
 _PYCONS_DIRECT = (
     str, bytes, bool, int, float, complex,
     type(None), type(...),
-    symbol, keyword, type(nil), pair,
+    symbol, keyword, type(nil), type(bracket_nil), pair,
 )
 _PYCONS_RECONS = (tuple, list)
 

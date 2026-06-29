@@ -1537,7 +1537,7 @@ static void datum_iter_dealloc(PyObject *self) {
 static PyObject *datum_iter_iternext(PyObject *self) {
   KosDatumIter *it = (KosDatumIter *) self;
 
-  if (! it->current || KosNil_Check(it->current)) {
+  if (! it->current || KosNilP(it->current)) {
     Py_CLEAR(it->current);
     return NULL;
   }
@@ -2110,7 +2110,7 @@ int KosMatchSubject_FromKosPair(
     n++;
     cursor = KosPair_CDR(cursor);
   }
-  if (! KosNil_Check(cursor)) {
+  if (! KosNilP(cursor)) {
     PyErr_SetString(PyExc_TypeError,
                     "FromKosPair requires a proper list (nil-terminated)");
     return -1;
@@ -2165,7 +2165,7 @@ static int subject_from_any(PyObject *value, KosMatchSubject *out) {
      fail to consume the trailing nil. Peel Datum layers so KosPair lists
      use the proper-list spine adapter. */
   value = matcher_peel_datum(value);
-  if (KosPair_Check(value) || KosNil_Check(value))
+  if (KosPair_Check(value) || KosNilP(value))
     return KosMatchSubject_FromKosPair(value, out);
   return KosMatchSubject_FromPySequence(value, out);
 }

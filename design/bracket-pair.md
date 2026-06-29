@@ -53,10 +53,12 @@ compiles as before. Brackets remain recommended, never required.
   tail cells lies dormant until that sublist is taken on its own (via `cdr`) and
   printed, at which point its own head cell governs. This makes "mixed
   delimiters in one rendering" impossible.
-- **The empty list has no bracket identity.** `[]` short-circuits to the `nil`
-  singleton — an empty list has no cell to carry the flag, so `'[]` and `'()`
-  are indistinguishable. Bracket-ness is genuinely a property of *cells*, and
-  the empty list has none.
+- **The empty list has its own bracket identity (revised).** *Superseded by the
+  bracket-nil work below.* The original plan collapsed `[]` to the single `nil`
+  singleton (no cell to carry the flag). We instead introduced a distinct
+  **`bracket-nil`** singleton, so `'[]` and `'()` are now distinguishable by
+  identity (`is`), while still comparing equal by value (`==`). See
+  "Bracket-nil: parallel empty-list singletons" below.
 - **Joining is fine.** Splicing a bracket-list into a paren list (or vice versa)
   is never blocked. It is a normal, supported operation.
 
@@ -131,6 +133,61 @@ fleshed out) selects one of three modes for the `compile_pair` path:
 3. **Compiler guard flag.** Add a `Compiler`-level flag (accept / warn / error)
    and the single bracket-pair predicate at `compile_pair` entry. Default to
    **accept** so existing behavior is unchanged until opted in.
+
+## Bracket-nil: parallel empty-list singletons
+
+The empty bracket list is a distinct singleton, **`bracket-nil`**, parallel to
+`nil`. They are *not* related by inheritance — they are siblings unified only by
+a predicate:
+
+```
+pair  (KosPairType)
+├── nil          : NilType          tp_base = pair          singleton _KosNil
+└── bracket-pair : BracketPairType  tp_base = pair
+    └── bracket-nil : BracketNilType tp_base = bracket-pair  singleton _KosBracketNil
+```
+
+- **No multiple inheritance.** A static C `PyTypeObject` has a single `tp_base`.
+  Making `bracket-nil` inherit *both* `bracket-pair` and `NilType` would require
+  a runtime `tp_bases` tuple and is fragile (slot-resolution across two types
+  that each override `tp_new`/`tp_dealloc`/repr). It also buys nothing: nil-ness
+  is recognized by an **identity** test, not by `isinstance`. So they are
+  deliberately parallel siblings. `bracket-nil` is-a `bracket-pair` (and thus a
+  `pair`); it is **not** a `NilType`. `nil` is **not** a `bracket-pair`.
+
+- **`KosNilP` is the unifier.** `KosNilP(v)` (pair.h) is true when `v` is either
+  empty-list singleton: `KosNil_Check(v) || KosBracketNil_Check(v)`. This is the
+  list-terminator / empty-list test and **replaces `KosNil_Check` everywhere
+  "end of list" is meant** — the spine-walk macro `KosPair_IsCell`, the repr
+  family, `length`/`copy`/`is-proper`/`eq`, `CAR`/`CDR`/`PAIR_SPLICE` opcodes,
+  and the matcher. `KosNil_Check` (single-singleton) now survives only where
+  *specifically the canonical nil* is meant (currently: the singleton's own
+  allocation machinery). This is a second audit, parallel to the `CheckExact`
+  one. It is exposed to Python as `koskari.lib.nilp` and backs `nil?`
+  (`koskari.types.is_nil`).
+
+- **`nil?` covers both.** `nil?` is now a runtime predicate over `KosNilP`, not a
+  compile-time identity inline. The old `compile/nil?` syntax (which expanded to
+  `(is value nil)` — single singleton) was removed; re-inlining as an opcode
+  (`NILP` / `CHECK_NIL`) that checks both singletons is a possible future
+  optimization.
+
+- **Equality: empties compare equal, distinct identity.** `() == []` is true and
+  `(equal? [1 2] (1 2))` holds — bracket vs paren is style, so the two
+  terminators compare equal as list ends (`pair_eq`: both-empty → equal,
+  one-empty → unequal). But `'[] is '()` is false — they are distinct objects.
+  (nil/bracket-nil are unhashable, like all pairs, so equal-but-distinct raises
+  no hash-invariant concern.)
+
+- **Rendering, in both flavors.** Each empty renders as its own *form*:
+  `kos_repr`/`str` give `()` for `nil` and `[]` for `bracket-nil` (this changed
+  `nil` from the old `"nil"` token). The Python debug `repr()` keeps *named*
+  terminators — `nil` and `bracket-nil` — so `cons(1, 2, nil)` /
+  `bracket-cons(1, 2, bracket-nil)` stay readable.
+
+- **Const recognition.** `bracket-nil`'s type is registered alongside
+  `type(nil)` in the compiler's `CONST_TYPES` and helpers' `_PYCONS_DIRECT`, so
+  it is treated as a self-quoting literal exactly like `nil`.
 
 ## Future / later phases (out of scope for v1)
 

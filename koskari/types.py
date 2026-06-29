@@ -23,7 +23,7 @@ Koskari native types, predicates, and helper functions
 import operator
 from functools import partial
 
-from .lib import KoskariSyncViolation, cons, keyword, nil, pair, symbol
+from .lib import KoskariSyncViolation, cons, keyword, nil, nilp, pair, symbol
 
 
 __all__ = (
@@ -74,7 +74,7 @@ is_symbol = TypePredicate("symbol?", symbol)
 is_keyword = TypePredicate("keyword?", keyword)
 is_pair = TypePredicate("pair?", pair)
 
-is_nil = BuiltinPredicate("nil?", operator.is_, nil)
+is_nil = BuiltinPredicate("nil?", nilp)
 is_None = BuiltinPredicate("None?", operator.is_, None)
 
 

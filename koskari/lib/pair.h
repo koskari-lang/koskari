@@ -40,6 +40,8 @@ extern PyTypeObject KosPairType;
 extern PyTypeObject KosPairIteratorType;
 extern PyTypeObject KosPairFollowerType;
 extern PyTypeObject KosNilType;
+extern PyTypeObject KosBracketPairType;
+extern PyTypeObject KosBracketNilType;
 
 
 /* === nil singleton === */
@@ -52,6 +54,19 @@ extern KosPair _KosNil;
 #define KosNil_Check(val) (((void *) val) == (void *) &_KosNil)
 
 
+extern KosPair _KosBracketNil;
+
+#define KosBracketNil ((PyObject *) &_KosBracketNil)
+
+#define KosBracketNil_Check(val)                \
+  (((void *) val) == (void *) &_KosBracketNil)
+
+/* True if val is either empty-list singleton — the canonical nil or
+   the bracket-nil. This is the list-terminator / empty-list test; use
+   it instead of KosNil_Check wherever "the end of a list" is meant. */
+#define KosNilP(val) (KosNil_Check(val) || KosBracketNil_Check(val))
+
+
 /* === type check macros === */
 
 
@@ -60,6 +75,18 @@ extern KosPair _KosNil;
 
 #define KosPair_CheckExact(obj)                 \
   ((obj) && ((obj)->ob_type == &KosPairType))
+
+#define KosBracketPair_Check(obj)                               \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosBracketPairType))
+
+#define KosBracketPair_CheckExact(obj)                  \
+  ((obj) && ((obj)->ob_type == &KosBracketPairType))
+
+/* True for a spine cell to walk along a list: any pair (including a
+   bracket-pair subclass) that is not an empty-list terminator (nil or
+   bracket-nil). */
+#define KosPair_IsCell(obj)                     \
+  (KosPair_Check(obj) && ! KosNilP(obj))
 
 
 /* === accessor macros === */
@@ -88,6 +115,8 @@ extern KosPair _KosNil;
 
 
 PyObject *KosPair_New(PyObject *head, PyObject *tail);
+
+PyObject *KosBracketPair_New(PyObject *head, PyObject *tail);
 
 PyObject *KosPair_Cons(PyObject *sequence);
 

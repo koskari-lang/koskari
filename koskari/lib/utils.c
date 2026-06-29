@@ -1055,7 +1055,7 @@ PyObject *KosUtils_BuildDict(PyObject *args, PyObject *kwargs) {
 
       if (KosPair_Check(tail)) {
         value = KosPair_CAR(tail);
-      } else if (KosNil_Check(tail)) {
+      } else if (KosNilP(tail)) {
         PyErr_SetString(PyExc_ValueError,
                         "build_dict pair must have at least 2 elements");
         Py_DECREF(result);

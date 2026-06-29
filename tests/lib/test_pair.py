@@ -278,8 +278,8 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repr(nil), "nil")
 
     async def test_str(self):
-        """str(nil) returns 'nil'"""
-        self.assertEqual(str(nil), "nil")
+        """str(nil) returns '()' (the empty list renders as its form)"""
+        self.assertEqual(str(nil), "()")
 
     async def test_bool_false(self):
         """nil is falsy"""

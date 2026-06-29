@@ -79,10 +79,10 @@ class TestKosRepr(unittest.TestCase):
 
     def test_nil(self):
         """
-        nil prints as nil token
+        nil prints as the empty-list form ()
         """
 
-        self.assertEqual(kos_repr(nil), "nil")
+        self.assertEqual(kos_repr(nil), "()")
 
 
     def test_symbol(self):

@@ -33,7 +33,7 @@
 */
 static int
 pair_splice_extend(PyObject *coll, PyObject *item) {
-  if (KosNil_Check(item)) {
+  if (KosNilP(item)) {
     /* nil contributes nothing */
     return 0;
   }
