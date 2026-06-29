@@ -165,9 +165,11 @@ fleshed out) selects one of three modes for the `compile_pair` path:
      bracketed form (e.g. `let`'s `[[a 1] [b 2]]`) would not terminate. All pair
      *checks* were already `isinstance`-based (`is_pair`, `CONST_TYPES` /
      `_PYCONS_DIRECT`), so bracket-pair *cells* needed no change — only the
-     terminator predicate. `codex.py`'s pool-serialization `val is nil` is left
-     exact (a `bracket-nil` const raises "unsupported" rather than silently
-     serializing as `nil`; proper `.kio` support is a follow-up).
+     terminator predicate. `codex.py`'s pool-serialization keeps an exact
+     `val is nil` (it must not collapse `bracket-nil` to `nil`) and adds a
+     dedicated `PoolKind.BRACKET_NIL` so a `bracket-nil` const round-trips
+     through `.kio` as itself. (Both `nil` and `bracket-nil` are const-poolable —
+     they are in `CONST_TYPES` / `_PYCONS_DIRECT`.)
    - **quote / quasiquote reconstruction.** A non-empty quoted list is not
      const-pooled, so it is *rebuilt* at runtime — and the rebuild flattened
      bracket cells to plain pairs. Fixed via **runtime calls (MVP), no new
