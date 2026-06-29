@@ -138,9 +138,11 @@ fleshed out) selects one of three modes for the `compile_pair` path:
      guard → `Check`), so the matcher and quasiquote-splice walk either pair
      flavor. **By design the matcher does not distinguish bracket from paren** —
      telling them apart (the call-position lint) is a separate post-matcher pass
-     gated by the pragma/flag, not the matcher's job. `pair_copy` traverses
-     correctly but normalizes copied cells to plain pairs (bracket-style is not
-     preserved through copy yet; revisit with `bracket-cons`).
+     gated by the pragma/flag, not the matcher's job. `pair_copy` is
+     type-preserving: each copied cell is allocated to match its source cell's
+     style (`KosBracketPair_Check(self)` → `KosBracketPair_New`), so a bracket
+     spine copies as bracket and a mixed spine keeps each cell's flavor — which
+     is what lets a copied syntax-rules template keep its brackets.
    - **Free-list allocation (resolved by sharing).** `pair` and `bracket-pair`
      are layout-identical, so they share **one** free list. A shared
      `pair_alloc(type, head, tail)` pops a recycled cell and stamps it with the

@@ -189,11 +189,24 @@ class TestBracketPairTraversal(unittest.TestCase):
 
         self.assertTrue(self._blist().is_proper())
 
-    def test_copy_traverses(self):
-        """__copy__ walks the full bracket spine"""
+    def test_copy_preserves_bracket_type(self):
+        """__copy__ walks the full spine and keeps it bracket"""
 
         dup = self._blist().__copy__()
         self.assertEqual(list(dup.unpack()), [1, 2, 3])
+        self.assertIs(type(dup), bracket_pair)
+        self.assertIs(type(dup.cdr), bracket_pair)
+        self.assertEqual(kos_repr(dup), "[1 2 3]")
+
+    def test_copy_preserves_per_cell_style(self):
+        """__copy__ preserves each cell's style across a mixed spine"""
+
+        # a paren head cell whose tail is a bracket list
+        mixed = cons(0, bracket_pair(1, bracket_pair(2, nil)))
+        dup = mixed.__copy__()
+        self.assertEqual(list(dup.unpack()), [0, 1, 2])
+        self.assertIs(type(dup), pair)              # paren head preserved
+        self.assertIs(type(dup.cdr), bracket_pair)  # bracket tail preserved
 
     def test_kos_repr_full_spine(self):
         """kos_repr renders the whole bracket spine"""

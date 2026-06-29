@@ -758,8 +758,14 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
       break;
     }
 
-    /* make a new pair, associate it with current ID */
-    tmp = KosPair_New(KosPair_CAR(self), KosNil);
+    /* make a new cell of the same delimiter style as the source cell;
+       the KosNil tail is a placeholder, overwritten below by the link to
+       the next cell or by the terminator after the loop. */
+    if (KosBracketPair_Check(self)) {
+      tmp = KosBracketPair_New(KosPair_CAR(self), KosNil);
+    } else {
+      tmp = KosPair_New(KosPair_CAR(self), KosNil);
+    }
     if (! tmp) {
       Py_DECREF(seen);
       Py_XDECREF(result);
