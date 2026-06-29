@@ -472,6 +472,24 @@ class Compiler:
         self._macro_overlay = []
 
 
+    @property
+    def bracket_calls(self):
+        """
+        Policy for a bracket-pair in call position (a BracketCalls member).
+        Assigning accepts a BracketCalls or its string value ("ignore" /
+        "warn" / "error"); an unrecognized value raises ValueError.
+        """
+
+        return self._bracket_calls
+
+
+    @bracket_calls.setter
+    def bracket_calls(self, value):
+        # BracketCalls(member) returns the member unchanged; BracketCalls(str)
+        # maps the value; anything else raises ValueError.
+        self._bracket_calls = BracketCalls(value)
+
+
     @contextmanager
     def macro_overlay(self, name, syntax):
         if self._macro_overlay:

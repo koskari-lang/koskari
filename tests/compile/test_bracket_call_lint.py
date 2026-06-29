@@ -80,5 +80,27 @@ class TestBracketCallLint(unittest.TestCase):
         with self.assertRaises(CompilerError):
             self.compile_src("[if x a b]", BracketCalls.ERROR)
 
+    def test_string_flag_value_coerced(self):
+        """a string flag value behaves like the matching enum member"""
+
+        with self.assertRaises(CompilerError):
+            self.compile_src("[foo bar]", "error")
+
+    def test_property_coerces_and_identity_checks(self):
+        """the bracket_calls property coerces str/member and rejects garbage"""
+
+        module = Module(ModuleNamespace("test", {}))
+        c = Compiler("<unittest>", module, bracket_calls="warn")
+        self.assertIs(c.bracket_calls, BracketCalls.WARN)
+
+        c.bracket_calls = "error"
+        self.assertIs(c.bracket_calls, BracketCalls.ERROR)
+
+        c.bracket_calls = BracketCalls.IGNORE
+        self.assertIs(c.bracket_calls, BracketCalls.IGNORE)
+
+        with self.assertRaises(ValueError):
+            c.bracket_calls = "bogus"
+
 
 # The end.
