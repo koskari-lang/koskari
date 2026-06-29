@@ -22,9 +22,18 @@ define-syntax compile/set!:
   Flexible assignment syntax
   """
 
-  syntax-rules [item attr deref
-                compile/item compile/attr compile/deref
-                + - * / // % ** @ << >> & ^ |]:
+  syntax-rules []:
+    case (set! name value):
+      (setq name value)
+
+
+extend-syntax compile/set!:
+  ;; extending set! to handle item, attr, and deref places
+
+  syntax-rules [item compile/item
+                attr compile/attr
+                deref compile/deref]:
+
     case (set! (item obj name) value):
       (compile/set-item obj name value)
     case (set! (compile/item obj name) value):
@@ -36,12 +45,15 @@ define-syntax compile/set!:
       (compile/set-attr obj name value)
 
     case (set! (deref ref) value):
-      (compile/set-ref ref value)
+      (.store ref value)
     case (set! (compile/deref ref) value):
-      (compile/set-ref ref value)
+      (.store ref value)
 
-    case (set! (values pattern ...) value):
-      (compile/setq-values [pattern ...] value)
+
+extend-syntax compile/set!:
+  ;; extending set! to handle augmented assignment
+
+  syntax-rules [+ - * / // % ** @ << >> & ^ |]:
 
     case (set! name (+ name value)):
       (compile/inplace + name value)
@@ -70,8 +82,13 @@ define-syntax compile/set!:
     case (set! name (| name value)):
       (compile/inplace | name value)
 
-    case (set! name value):
-      (setq name value)
+
+extend-syntax compile/set!:
+  ;; extending set! to handle values pattern
+
+  syntax-rules [values]:
+    case (set! (values pattern ...) value):
+      (compile/setq-values [pattern ...] value)
 
 
 extend-syntax compile/inplace:

@@ -17,8 +17,9 @@ tests.importer.test_refs
 End-to-end ref surface from the guide chapter
 docs/guide/references-and-storage-indirection.md and its companion
 examples/refs.ki: getting a ref (& sugar, &(item ...) compound reader),
-reading with deref, value-level write-through with the store method, the
-set!-rebinds-the-name trap, and bind! making the indirection invisible.
+reading with deref, value-level write-through with the store method or
+(set! (deref ref) value), the set!-rebinds-the-name trap, and bind! making
+the indirection invisible.
 Runs at phase_basics because the forms use the & / ref / deref / bind! /
 set! macros from bootstrap + basics.ki.
 
@@ -97,6 +98,47 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         src = "(begin (define v 10) (define r &v) (set! r 99) v)"
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 10)
+
+
+    async def test_set_bang_deref_writes_through_to_original(self):
+        """
+        set! on a deref place writes through; unlike set! on the ref holder
+        """
+
+        src = "(begin (define v 10) (define r &v) (set! (deref r) 20) v)"
+        expr, mod = self.compile_expr(src)
+        self.assertEqual(await expr(), 20)
+
+
+    async def test_set_bang_compile_deref_writes_through(self):
+        """
+        compile/deref in the set! place expands like bare deref
+        """
+
+        src = "(begin (define v 10) (define r &v) (set! (compile/deref r) 30) v)"
+        expr, mod = self.compile_expr(src)
+        self.assertEqual(await expr(), 30)
+
+
+    async def test_set_bang_deref_amp_ref_in_let(self):
+        """
+        set! (deref &x) writes through a ref taken directly from a local
+        """
+
+        src = "(let [[x 5]] (set! (deref &x) 99) x)"
+        expr, mod = self.compile_expr(src)
+        self.assertEqual(await expr(), 99)
+
+
+    async def test_set_bang_deref_item_ref_writes_back_into_list(self):
+        """
+        set! (deref cell) on an item ref mutates the slot, not the name cell
+        """
+
+        src = ("(begin (define xs #[1 2 3]) (define cell &(item xs 1))"
+               " (set! (deref cell) 99) (item xs 1))")
+        expr, mod = self.compile_expr(src)
+        self.assertEqual(await expr(), 99)
 
 
     async def test_bind_makes_indirection_invisible(self):

@@ -17,17 +17,26 @@ Portion of koskari.builtins
 """
 
 
+define-syntax compile/cddr:
+  (syntax-rules [] [(cddr x) (cdr (cdr x))])
+
+define-syntax compile/cdddr:
+  (syntax-rules [] [(cdddr x) (cdr (cddr x))])
+
+define-syntax compile/cddddr:
+  (syntax-rules [] [(cddddr x) (cdr (cdddr x))])
+
 define-syntax compile/cadr:
   (syntax-rules [] [(cadr x) (car (cdr x))])
 
 define-syntax compile/caddr:
-  (syntax-rules [] [(caddr x) (car (cdr (cdr x)))])
+  (syntax-rules [] [(caddr x) (car (cddr x))])
 
 define-syntax compile/cadddr:
-  (syntax-rules [] [(cadddr x) (car (cdr (cdr (cdr x))))])
+  (syntax-rules [] [(cadddr x) (car (cdddr x))])
 
 define-syntax compile/caddddr:
-  (syntax-rules [] [(caddddr x) (car (cdr (cdr (cdr (cdr x)))))])
+  (syntax-rules [] [(caddddr x) (car (cddddr x))])
 
 
 define compile/first compile/car
@@ -35,6 +44,32 @@ define compile/second compile/cadr
 define compile/third compile/caddr
 define compile/fourth compile/cadddr
 define compile/fifth compile/caddddr
+
+
+extend-syntax compile/set!:
+  syntax-rules [car cdr
+                cadr caddr cadddr caddddr
+                cddr cdddr cddddr]:
+    case (set! (car p) value):
+      (set-car p value)
+    case (set! (cdr p) value):
+      (set-cdr p value)
+
+    case (set! (cadr p) value):
+      (set-car (cdr p) value)
+    case (set! (caddr p) value):
+      (set-car (cddr p) value)
+    case (set! (cadddr p) value):
+      (set-car (cdddr p) value)
+    case (set! (caddddr p) value):
+      (set-car (cddddr p) value)
+
+    case (set! (cddr p) value):
+      (set-cdr (cdr p) value)
+    case (set! (cdddr p) value):
+      (set-cdr (cddr p) value)
+    case (set! (cddddr p) value):
+      (set-cdr (cdddr p) value)
 
 
 define-syntax compile/help:
