@@ -75,12 +75,13 @@ ref-incr! &data-obj.count
 report data-obj
 
 ; pass a dynamic reference
-ref-incr! (ref (dynamic
-                    { ; the dynamic getter thunk
-                        (print "dynamic ref was asked for a value (567)")
-                        567 }
-                    { ; the dynamic setter thunk
-                        (print f"dynamic ref was fed a value {%1}") }))
+ref-incr! &(dynamic
+                { ; the dynamic getter thunk
+                    (define result 567)
+                    (print f"dynamic ref was asked for a value {result}")
+                    result }
+                { ; the dynamic setter thunk
+                    (print f"dynamic ref was fed a value {%1}") })
 
 
 ; The end.
