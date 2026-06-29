@@ -64,9 +64,8 @@ instances and calls methods.
 > module-level functions):
 >
 > ```koskari
-> define neighbors [self reach: 1]:
->   each [[x y] (product (around self.x reach) (around self.y reach))]:
->     (Point x y)
+> define get_coord [self]:
+>   #(self.x self.y)
 > ```
 >
 > The last expression in the body is the return value unless you use **`return`**
@@ -203,14 +202,14 @@ define-class Point []:
   define y :: int 0
 
   define label [self]:
-    (+ "Point(" (str self.x) "," (str self.y) ")")
+    (+ "Point at (" (str self.x) ", " (str self.y) ")")
 
 when-main:
   define p (Point 1 2)
   print (p.label)
 ```
 
-Expected: `Point(1,2)` (exact spacing depends on `str` of numbers).
+Expected: `Point at (1, 2)`
 
 A larger `Point` with `neighbors` and `@dataclass`: [Point class](../../patterns/recipes/point-class.md).
 

@@ -26,6 +26,9 @@ neighbor coordinates.
 import-from dataclasses dataclass
 import-from itertools product
 
+define around [i reach: 1]:
+  (range (- i reach) (+ i reach 1))
+
 @dataclass
 define-class Point []:
   define x :: int 0

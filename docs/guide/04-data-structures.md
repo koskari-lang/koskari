@@ -12,8 +12,6 @@ When you import or receive a Python list, use ordinary calls and loops to work
 with it:
 
 ```koskari
-(import-from builtins list range)
-
 (define numbers (list (range 5)))
 (for-each [n numbers]
   (print n))
@@ -28,9 +26,9 @@ Because Koskari runs on Python, Python containers are everyday values.
 Koskari also has pair operations:
 
 ```koskari
-(define pair (cons "first" "rest"))
-(car pair)    ;; first part
-(cdr pair)    ;; rest part
+(define pair_val (cons "first" "rest"))
+(car pair_val)    ;; first part
+(cdr pair_val)    ;; rest part
 ```
 
 Use pair operations when you are writing macros, manipulating Koskari forms, or
@@ -47,11 +45,20 @@ data instead of running it:
 (quote (red green blue))
 ```
 
-Quasiquote is the template version: most of the structure is data, but selected
-parts can be computed with unquote.
+Which can be written in shorter form using the reader macro. The single quote
+character tells the reader that the form immediately following it should be
+wrapped in the `quote` invocation.
 
 ```koskari
-(define name 'Ada')
+'(red green blue)
+```
+
+Quasiquote is the template version: most of the structure is data, but selected
+parts can be computed with unquote. Here the special character is the single
+backtick. The comma then performs un-quoting for one sub-form.
+
+```koskari
+(define name "Ada")
 `(hello ,name)
 ```
 
@@ -63,9 +70,15 @@ Use Python dictionaries, objects, attributes, and item access when that is the
 natural shape of the data:
 
 ```koskari
-(import-from builtins dict)
-(define user (dict name: "Ada" score: 10))
+(define user #{name: "Ada" score: 10})
 (print (item user "name"))
+```
+
+For complex, computed, or non-string keys, there is a pair form of the
+dictionary literal
+
+```koskari
+(define user #{("name" . (get-user-name)) ("score" . (get-score))})
 ```
 
 For public examples, choose the simplest structure that makes the program's
