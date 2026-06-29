@@ -114,10 +114,15 @@ fleshed out) selects one of three modes for the `compile_pair` path:
 
 ## Implementation steps
 
-1. **`bracket-pair` C type.** Subclass `KosPairType` into a `bracket-pair` type
-   in `koskari/lib/pair.c`, overriding `kos_repr` (and `tp_repr` / `tp_str` as
-   needed) to render `[ ]`. Add a `bracket-cons` constructor variant whose sole
-   job is to build pairs of the bracket type. Position handling inherits.
+1. **`bracket-pair` C type.** *Done.* Subclasses `KosPairType` as `bracket-pair`
+   in `koskari/lib/pair.c`, overriding `kos_repr` / `tp_repr` / `tp_str` to
+   render `[ ]`; position handling inherits. **`bracket-cons`** is implemented as
+   the variadic builder of bracket-pair cells (`KosBracketPair_Cons` /
+   `KosBracketPair_ConsFromPtr`, module `bracket_cons`, koskari `bracket-cons`):
+   identical to `cons` except cells are bracket-pairs and an empty build returns
+   `bracket-nil`. The last argument is still the explicit tail, so the terminator
+   flavor is the caller's choice (`(bracket-cons 1 2 nil)` vs
+   `(bracket-cons 1 2 bracket-nil)`).
    - **Landmine: `CheckExact` truncation (audited in `pair.c`).** Exact-type
      checks (`KosPair_CheckExact`, `ob_type == &KosPairType`) silently truncate
      a list at the first bracket cell because a subclass fails `CheckExact`.

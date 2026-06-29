@@ -26,7 +26,7 @@ square brackets. See design/bracket-pair.md.
 import unittest
 
 from koskari.lib import (
-    bracket_nil, bracket_pair, cons, kos_repr, nil, nilp, pair,
+    bracket_cons, bracket_nil, bracket_pair, cons, kos_repr, nil, nilp, pair,
 )
 
 import pytest
@@ -216,6 +216,63 @@ class TestBracketPairTraversal(unittest.TestCase):
         """a bracket-nil terminator equals a nil terminator at list end"""
 
         self.assertEqual(bracket_pair(1, bracket_nil), cons(1, nil))
+
+
+class TestBracketCons(unittest.TestCase):
+    """bracket-cons: the variadic builder of bracket-pair lists"""
+
+    def test_empty_is_bracket_nil(self):
+        """bracket-cons with no args is the empty bracket list"""
+
+        self.assertIs(bracket_cons(), bracket_nil)
+
+    def test_proper_list(self):
+        """the last arg is the tail, so a nil tail yields a proper list"""
+
+        bl = bracket_cons(1, 2, 3, nil)
+        self.assertIsInstance(bl, bracket_pair)
+        self.assertEqual(kos_repr(bl), "[1 2 3]")
+        self.assertTrue(bl.is_proper())
+        self.assertEqual(list(bl.unpack()), [1, 2, 3])
+
+    def test_all_cells_are_bracket_pairs(self):
+        """every spine cell built by bracket-cons is a bracket-pair"""
+
+        bl = bracket_cons(1, 2, 3, nil)
+        self.assertIs(type(bl), bracket_pair)
+        self.assertIs(type(bl.cdr), bracket_pair)
+        self.assertIs(type(bl.cdr.cdr), bracket_pair)
+        self.assertIs(bl.cdr.cdr.cdr, nil)
+
+    def test_single_arg_terminates_with_bracket_nil(self):
+        """a one-arg bracket-cons terminates with bracket-nil"""
+
+        bl = bracket_cons(1)
+        self.assertIsInstance(bl, bracket_pair)
+        self.assertEqual(bl.car, 1)
+        self.assertIs(bl.cdr, bracket_nil)
+        self.assertEqual(kos_repr(bl), "[1]")
+
+    def test_improper(self):
+        """a non-empty, non-nil last arg yields an improper bracket pair"""
+
+        bl = bracket_cons(1, 2)
+        self.assertEqual(bl.car, 1)
+        self.assertEqual(bl.cdr, 2)
+        self.assertEqual(kos_repr(bl), "[1 . 2]")
+
+    def test_bracket_nil_tail(self):
+        """an explicit bracket-nil tail also yields a proper list"""
+
+        bl = bracket_cons(1, 2, 3, bracket_nil)
+        self.assertTrue(bl.is_proper())
+        self.assertEqual(kos_repr(bl), "[1 2 3]")
+        self.assertIs(bl.cdr.cdr.cdr, bracket_nil)
+
+    def test_equal_to_paren_cons(self):
+        """a bracket-cons list equals the cons list of the same elements"""
+
+        self.assertEqual(bracket_cons(1, 2, 3, nil), cons(1, 2, 3, nil))
 
 
 class TestBracketNil(unittest.TestCase):

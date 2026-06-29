@@ -2010,12 +2010,87 @@ PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count) {
 }
 
 
+PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, int count) {
+  if (count <= 0) {
+    Py_INCREF(KosBracketNil);
+    return KosBracketNil;
+  }
+
+  PyObject *result = KosBracketPair_New(ptr[0], KosBracketNil);
+  if (! result)
+    return NULL;
+
+  if (count == 1)
+    return result;
+
+  PyObject *work = ptr[count - 1];
+  Py_INCREF(work);
+
+  for (int i = count - 2; i >= 1; i--) {
+    PyObject *tmp = KosBracketPair_New(ptr[i], work);
+    Py_DECREF(work);
+    if (! tmp) {
+      Py_DECREF(result);
+      return NULL;
+    }
+    work = tmp;
+  }
+
+  KosPair_SETCDR(result, work);
+  Py_DECREF(work);
+  return result;
+}
+
+
+PyObject *KosBracketPair_Cons(PyObject *members) {
+  PyObject *seq = PySequence_Fast(members,
+                                  "bracket-cons members object must be a "
+                                  "sequence");
+  if (! seq)
+    return NULL;
+
+  Py_ssize_t count = PySequence_Fast_GET_SIZE(seq);
+  if (count == 0) {
+    Py_DECREF(seq);
+    Py_INCREF(KosBracketNil);
+    return KosBracketNil;
+  }
+
+  PyObject *result;
+  if (PyList_Check(seq)) {
+    PyObject **ptr = ((PyListObject *) seq)->ob_item;
+    result = KosBracketPair_ConsFromPtr(ptr, (int) count);
+  } else {
+    PyObject **ptr = (PyObject **) PyMem_Malloc((size_t) count
+                                                * sizeof(PyObject *));
+    if (! ptr) {
+      Py_DECREF(seq);
+      return NULL;
+    }
+    for (Py_ssize_t i = 0; i < count; i++)
+      ptr[i] = PySequence_Fast_GET_ITEM(seq, i);
+    result = KosBracketPair_ConsFromPtr(ptr, (int) count);
+    PyMem_Free(ptr);
+  }
+
+  Py_DECREF(seq);
+  return result;
+}
+
+
 /* === module functions === */
 
 
 static PyObject *m_cons(PyObject *mod, PyObject *args, PyObject *kwds) {
   (void) kwds;
   return KosPair_Cons(args);
+}
+
+
+static PyObject *m_bracket_cons(PyObject *mod, PyObject *args, PyObject *kwds) {
+  (void) mod;
+  (void) kwds;
+  return KosBracketPair_Cons(args);
 }
 
 
@@ -2161,6 +2236,11 @@ static PyMethodDef pair_mod_methods[] = {
   { "cons", (PyCFunction) m_cons, METH_VARARGS,
     "cons(head, *tail) -> new pair\n"
     "Build a pair chain from the given sequence. No tail implies nil." },
+
+  { "bracket_cons", (PyCFunction) m_bracket_cons, METH_VARARGS,
+    "bracket_cons(head, *tail) -> new bracket-pair\n"
+    "Like cons, but builds bracket-pair cells. No args implies "
+    "bracket-nil." },
 
   { "make_recursive", m_make_recursive, METH_O,
     "make_recursive(pair) -> None\n"

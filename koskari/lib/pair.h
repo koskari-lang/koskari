@@ -128,6 +128,15 @@ PyObject *KosPair_Cons(PyObject *sequence);
 PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count);
 
 /**
+   Bracket-pair variants of KosPair_Cons / KosPair_ConsFromPtr: identical
+   construction but using bracket-pair cells, and an empty build (count 0)
+   returns bracket-nil rather than nil. The last element is still the tail.
+ */
+PyObject *KosBracketPair_Cons(PyObject *sequence);
+
+PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, int count);
+
+/**
    Make the pair chain circular: set the tail-most link's cdr to the head.
    Returns 0 on success, -1 if pair is nil or not a pair.
  */
