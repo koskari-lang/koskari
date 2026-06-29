@@ -1,0 +1,27 @@
+# Corpus gate: when corpus records change, run only the corpus phase.
+#
+# The main test workflows (ci-pull-request.yml / ci-push-main.yml) fire only on
+# tests/** and koskari/** changes, so a commit that only touches the corpus
+# would otherwise get no CI. This adds a fast corpus-only run for those.
+# Mixed commits that also touch tests/koskari still get the full suite (which
+# already includes phase_corpus); this just adds the standalone corpus check.
+
+name: CI corpus
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - docs/corpus/**
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - docs/corpus/**
+
+jobs:
+  corpus:
+    uses: ./.github/workflows/run_corpus.yml
