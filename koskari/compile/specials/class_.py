@@ -23,8 +23,8 @@ Special form handler for compile/class.
 
 
 from ...exceptions import ParametersError, SpecialError
-from ...lib import OpCode, nil
-from ...types import is_pair
+from ...lib import OpCode
+from ...types import is_nil, is_pair
 from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
 from ...syntax import special
@@ -68,7 +68,7 @@ def special_class(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError("compile/class requires name and supers", source)
 
     name_form, rest_tail = rest
@@ -77,7 +77,7 @@ def special_class(compiler, source, tc=False):
 
     name = str(name_form)
 
-    if rest_tail is nil or not is_pair(rest_tail):
+    if is_nil(rest_tail) or not is_pair(rest_tail):
         raise SpecialError("compile/class requires supers list and body", source)
 
     supers, body = rest_tail

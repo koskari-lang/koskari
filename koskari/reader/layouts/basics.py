@@ -21,7 +21,7 @@ Layout handlers for basic block syntax.
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, nil, symbol
 from ...bootstrap import builtin
-from ...types import get_position, is_pair, is_keyword
+from ...types import is_nil, get_position, is_pair, is_keyword
 from .helpers import layout
 
 
@@ -113,7 +113,7 @@ def layout_call(ns, source, peers):
         head, next = corr
         if is_pair(head) and is_keyword(head.car):
             tail = cdr(head)
-            if is_pair(tail) and cdr(tail) is nil:
+            if is_pair(tail) and is_nil(cdr(tail)):
                 val = car(tail)
             else:
                 val = tail
@@ -136,13 +136,13 @@ def _unbox_compile_layout(source, peers, compile_sym, label):
 
     header, body = source
 
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise LayoutError(
             '%s block requires one inner block' % (label,),
             get_position(source))
 
     inner, rest = body
-    if rest is not nil:
+    if not is_nil(rest):
         raise LayoutError(
             '%s block requires one inner block' % (label,),
             get_position(source))

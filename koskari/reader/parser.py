@@ -47,7 +47,8 @@ from re import UNICODE, VERBOSE
 from re import compile as regex
 
 from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
-from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
+from ..lib import (BaseSourceStream, Module, bracket_nil, bracket_pair, cons,
+                   keyword, nil, pair, setcdr, symbol)
 from ..types import is_pair
 from .layouts import apply_layout, apply_layouts, find_layout
 
@@ -1368,13 +1369,25 @@ class Reader:
         """
         Internal pair reading implementation
 
+        ``[`` builds bracket-pair cells terminated by bracket-nil; ``(``
+        (and ``{``) build plain pairs terminated by nil. The two flavors
+        are interchangeable to the compiler; the distinction is the
+        recorded delimiter style.
+
         :param closer: the expected closing character
         :param stream: the source stream
         :param char: the opening character
         :return: tuple of (event, value)
         """
 
-        result = nil
+        if char == "[":
+            empty = bracket_nil
+            make_cell = bracket_pair
+        else:
+            empty = nil
+            make_cell = pair
+
+        result = empty
         work = result
 
         while True:
@@ -1384,7 +1397,7 @@ class Reader:
                 break
 
             elif event is DOT:
-                if result is nil:
+                if result is empty:
                     raise stream.error("invalid dotted list", position)
 
                 dot_position = position
@@ -1405,13 +1418,13 @@ class Reader:
             elif event is EOF:
                 raise stream.reader_eof(position)
 
-            elif result is nil:
-                result = cons(value, nil)
+            elif result is empty:
+                result = make_cell(value, empty)
                 result.set_position(position)
                 work = result
 
             else:
-                new_work = cons(value, nil)
+                new_work = make_cell(value, empty)
                 new_work.set_position(position)
                 setcdr(work, new_work)
                 work = new_work

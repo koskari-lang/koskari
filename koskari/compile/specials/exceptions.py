@@ -24,7 +24,7 @@ clear-exception, load-exception, and raise.
 
 
 from ...lib import cons, keyword, nil, OpCode, symbol
-from ...types import fill_position, get_position, is_keyword, is_pair, unpack
+from ...types import is_nil, fill_position, get_position, is_keyword, is_pair, unpack
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
@@ -53,7 +53,7 @@ def _finally_body(compiler, fragment, body):
     :return: ``fragment``
     """
 
-    if body is nil:
+    if is_nil(body):
         return fragment
 
     while True:
@@ -61,7 +61,7 @@ def _finally_body(compiler, fragment, body):
         expr, body = body
         fragment.merge(compiler.full_compile(expr, False))
         fragment.instruction(OpCode.KOS_OP_POP, 1)
-        if body is nil:
+        if is_nil(body):
             break
 
     return fragment
@@ -146,7 +146,7 @@ def special_check_exception(compiler, source, tc=False):
     fragment = compiler.fragment(called_by)
     count = 0
 
-    while checks is not nil:
+    while not is_nil(checks):
         expr, checks = checks
         fragment.merge(compiler.full_compile(expr, False))
         count += 1
@@ -161,7 +161,7 @@ def special_check_exception(compiler, source, tc=False):
 def special_clear_exception(compiler, source, tc=False):
     called_by, rest = source
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise TypeError("too many arguments to clear-exception")
 
     fragment = compiler.fragment(called_by)
@@ -175,7 +175,7 @@ def special_clear_exception(compiler, source, tc=False):
 def special_load_exception(compiler, source, tc=False):
     called_by, rest = source
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise TypeError("too many arguments to %s" % called_by)
 
     fragment = compiler.fragment(called_by)
@@ -188,7 +188,7 @@ def special_load_exception(compiler, source, tc=False):
 @special("compile/try", patterns=_DEFAULT_PATTERNS)
 def special_try(compiler, source, tc=False):
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError("try requires body and clauses", source)
 
     try_expr, catches = rest
@@ -305,7 +305,7 @@ def _except(compiler, catches):
 
         pos = get_position(ca)
 
-        if key is _keyword_except and match is nil:
+        if key is _keyword_except and is_nil(match):
             has_bare = True
             act_list = list(unpack(act))
             mod.append(
@@ -356,12 +356,12 @@ def special_raise(compiler, source, tc=False):
     called_by, rest = source
 
     fragment = compiler.fragment(called_by)
-    if rest is nil:
+    if is_nil(rest):
         fragment.instruction(OpCode.KOS_OP_RAISE, 0)
         return fragment
 
     expr, rest = rest
-    if rest is not nil:
+    if not is_nil(rest):
         raise TypeError("too many arguments to raise")
 
     fragment.merge(compiler.full_compile(expr, False))

@@ -144,9 +144,21 @@ fleshed out) selects one of three modes for the `compile_pair` path:
    - **Landmine: free-list allocation.** `KosPair_New` pulls from a
      `&KosPairType` free-list. Bracket-pairs need their own allocation path (or
      their own free-list); they cannot reuse the base free-list as-is.
-2. **Reader dispatch.** Point the `[` reader macro at the `bracket-pair` /
-   `bracket-cons` constructors and leave `(` on `pair` / `cons`
-   (`koskari/reader/parser.py`). Verify `set_position` still flows through.
+2. **Reader dispatch.** *Done.* `_read_pair` (`koskari/reader/parser.py`)
+   dispatches on the opening char: `[` builds `bracket-pair` cells terminated by
+   `bracket-nil` (empty `[]` → `bracket-nil`), `(`/`{` build plain `pair` cells
+   terminated by `nil`. Position handling inherits.
+   - **Python `is nil` audit (required by this step).** Because `[ ]` is used
+     pervasively in source, terminating bracket lists with `bracket-nil` meant
+     every raw `x is nil` identity check (≈139 across `compiler`, `helpers`,
+     `hygiene`, `matcher`, `syntax`, and the specials/layouts) had to become
+     `is_nil(x)` (the `KosNilP`-backed predicate) — otherwise list-walks over a
+     bracketed form (e.g. `let`'s `[[a 1] [b 2]]`) would not terminate. All pair
+     *checks* were already `isinstance`-based (`is_pair`, `CONST_TYPES` /
+     `_PYCONS_DIRECT`), so bracket-pair *cells* needed no change — only the
+     terminator predicate. `codex.py`'s pool-serialization `val is nil` is left
+     exact (a `bracket-nil` const raises "unsupported" rather than silently
+     serializing as `nil`; proper `.kio` support is a follow-up).
 3. **Compiler guard flag.** Add a `Compiler`-level flag (accept / warn / error)
    and the single bracket-pair predicate at `compile_pair` entry. Default to
    **accept** so existing behavior is unchanged until opted in.

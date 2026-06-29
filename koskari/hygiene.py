@@ -278,9 +278,9 @@ def _walk_binder_scopes(matched, owner, find_compiled, out):
         val = matched and matched.get(scope_slot)
         if val is None:
             continue
-        if isinstance(val, Datum) and (is_pair(val.datum) or val.datum is nil):
+        if isinstance(val, Datum) and (is_pair(val.datum) or is_nil(val.datum)):
             spine = val.datum
-        elif is_pair(val) or val is nil:
+        elif is_pair(val) or is_nil(val):
             spine = val
         else:
             out |= _collect_from_region_root(val, find_compiled)
@@ -375,7 +375,7 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
             frames = val
             if isinstance(frames, Datum):
                 frames = frames.datum
-            if frames is nil:
+            if is_nil(frames):
                 continue
             if not isinstance(frames, list):
                 continue
@@ -597,7 +597,7 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
         return tail
 
     def walk_spine(nx):
-        while nx is not nil:
+        while not is_nil(nx):
             if not is_pair(nx):
                 return nx
             i = id(nx)
@@ -660,12 +660,12 @@ def collect_binding_symbols(node, find_compiled):
     if isinstance(node, Datum):
         return out
 
-    if node is nil or not is_pair(node):
+    if is_nil(node) or not is_pair(node):
         return out
 
     head, rest = node
     if not is_symbol(head):
-        if rest is nil and is_pair(head):
+        if is_nil(rest) and is_pair(head):
             return collect_binding_symbols(head, find_compiled)
         if is_keyword(head):
             for elem in rest.unpack():

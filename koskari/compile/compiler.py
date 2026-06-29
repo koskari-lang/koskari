@@ -30,7 +30,7 @@ from ..lib import (Code, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
                    NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    cons, keyword, nil, symbol)
-from ..types import get_position, is_pair, is_proper, is_symbol
+from ..types import is_nil, get_position, is_pair, is_proper, is_symbol
 from .pragma import KoskariPragma
 
 
@@ -647,8 +647,8 @@ class Compiler:
     def compile_pair(self, fragment, source_obj, tc):
         # print("compile_pair", kos_repr(source_obj))
 
-        if source_obj is nil:
-            return self.compile_const(fragment, nil, False)
+        if is_nil(source_obj):
+            return self.compile_const(fragment, source_obj, False)
 
         fragment.position_of(source_obj)
 

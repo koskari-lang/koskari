@@ -24,11 +24,11 @@ compile/dyn-with.
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, nil, pair
+from ...lib import OpCode, pair
 from ...matcher import BODY, CALLEDBY, MATCH, REST, USING
 from ...bootstrap import builtin
 from ...syntax import special
-from ...types import is_pair
+from ...types import is_nil, is_pair
 from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import gather_bindings, helper_begin
 
@@ -51,7 +51,7 @@ def special_parameterize(
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError(
             "parameterize requires bindings and body",
             source)

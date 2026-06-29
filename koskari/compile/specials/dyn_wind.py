@@ -25,7 +25,7 @@ Special form handler for compile/dyn-wind (dynamic-wind).
 from ...exceptions import SpecialError
 from ...lib import (FormalsSpec, FunctionSpec, OpCode, cons, nil, pair,
                     symbol)
-from ...types import is_pair
+from ...types import is_nil, is_pair
 from ...matcher import (
     CALLEDBY,
     LITERAL_KW,
@@ -90,7 +90,7 @@ def _find_segments(source):
             cons(symbol("compile/begin"), after.datum)
             if after else nil)
 
-    if before_src is nil and after_src is nil:
+    if is_nil(before_src) and is_nil(after_src):
         raise SpecialError(
             "dyn-wind requires at least one of before, body, and after",
             source)
@@ -152,7 +152,7 @@ def special_dyn_wind(
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError("dyn-wind requires before, body, and after", source)
 
     before_src, body_src, after_src = _find_segments(rest)

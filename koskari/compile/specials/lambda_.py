@@ -22,7 +22,8 @@ Special form handler for compile/lambda.
 """
 
 
-from ...lib import FormalsSpec, FunctionSpec, OpCode, nil
+from ...lib import FormalsSpec, FunctionSpec, OpCode
+from ...types import is_nil
 from ...matcher import BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE
 from ...bootstrap import builtin
 from ...syntax import special
@@ -69,7 +70,7 @@ def helper_function(compiler, caps, selfref):
 
     defnames = list(pre_kwd)
     for k, expr in kwonly:
-        if expr is not nil:
+        if not is_nil(expr):
             defnames.append(str(k))
             frag.merge(compiler.full_compile(expr))
 

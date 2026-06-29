@@ -20,7 +20,7 @@ Layout handler for layout/dyn-wind block syntax.
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
 from ...bootstrap import builtin
-from ...types import get_position
+from ...types import is_nil, get_position
 from .helpers import layout
 
 
@@ -70,7 +70,7 @@ def layout_dyn_wind(ns, source, peers):
         phead, ppargs = pheader
 
         if phead is _symbol_before:
-            if before_form is not nil:
+            if not is_nil(before_form):
                 raise LayoutError(
                     'before block appears twice',
                     get_position(peer))
@@ -81,7 +81,7 @@ def layout_dyn_wind(ns, source, peers):
             before_form = pbody and cons(_symbol_begin, pbody)
 
         elif phead is _symbol_after:
-            if after_form is not nil:
+            if not is_nil(after_form):
                 raise LayoutError(
                     'after block appears twice',
                     get_position(peer))

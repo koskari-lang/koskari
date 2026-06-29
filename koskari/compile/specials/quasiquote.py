@@ -83,10 +83,10 @@ def _qq_expr(compiler, frag, expr, level):
     head, tail = expr
 
     if head is _symbol_unquote:
-        if tail is nil or not is_pair(tail):
+        if is_nil(tail) or not is_pair(tail):
             raise SpecialError("unquote requires one argument", expr)
         inner, rest = tail
-        if rest is not nil:
+        if not is_nil(rest):
             raise SpecialError("unquote takes one argument", expr)
 
         if level == 0:
@@ -102,10 +102,10 @@ def _qq_expr(compiler, frag, expr, level):
         raise SpecialError("unquote-splicing not in list position", expr)
 
     if head is _symbol_quasiquote:
-        if tail is nil or not is_pair(tail):
+        if is_nil(tail) or not is_pair(tail):
             raise SpecialError("quasiquote requires one argument", expr)
         inner, rest = tail
-        if rest is not nil:
+        if not is_nil(rest):
             raise SpecialError("quasiquote takes one argument", expr)
 
         frag.instruction(OpCode.KOS_OP_CONST, _symbol_quasiquote)
@@ -240,12 +240,12 @@ def _qq_list(compiler, frag, lst, level):
 
         if _is_splice(elem, level):
             splice_inner_list = elem[1]
-            if splice_inner_list is nil or not is_pair(splice_inner_list):
+            if is_nil(splice_inner_list) or not is_pair(splice_inner_list):
                 raise SpecialError(
                     "unquote-splicing requires one argument",
                     elem)
             splice_inner, splice_rest = splice_inner_list
-            if splice_rest is not nil:
+            if not is_nil(splice_rest):
                 raise SpecialError(
                     "unquote-splicing takes one argument",
                     elem)
@@ -289,12 +289,12 @@ def _qq_list(compiler, frag, lst, level):
               and current[0] is _symbol_unquote
               and level == 0):
             unquote_body = current[1]
-            if unquote_body is nil or not is_pair(unquote_body):
+            if is_nil(unquote_body) or not is_pair(unquote_body):
                 raise SpecialError(
                     "unquote requires one argument",
                     current)
             inner, rest = unquote_body
-            if rest is not nil:
+            if not is_nil(rest):
                 raise SpecialError(
                     "unquote takes one argument",
                     current)
@@ -335,11 +335,11 @@ def special_quasiquote(compiler, source, tc=False):
 
     called_by, body = source
 
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError("quasiquote requires one argument", source)
 
     expr, rest = body
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("quasiquote takes one argument", source)
 
     frag = compiler.fragment(called_by)

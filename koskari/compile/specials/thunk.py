@@ -27,7 +27,7 @@ from ...exceptions import SpecialError
 from ...lib import cons, keyword, nil, symbol, gensym
 from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
-from ...types import is_pair, is_symbol
+from ...types import is_nil, is_pair, is_symbol
 from ...syntax import special
 from ..compiler import ByteCodeFragment, Compiler
 
@@ -46,7 +46,7 @@ def _transform(pos_map, form):
     Copy form with %N and Ellipsis rewritten; skip nested gensym-thunk forms
     """
 
-    if form is nil:
+    if is_nil(form):
         return form
 
     result = nil
@@ -56,16 +56,16 @@ def _transform(pos_map, form):
         nonlocal result
         nonlocal end
 
-        if result is nil:
+        if is_nil(result):
             result = obj
         else:
             end[1] = obj
         end = obj
 
-    while form is not nil:
+    while not is_nil(form):
         head, tail = form
 
-        if head is nil:
+        if is_nil(head):
             val = cons(nil, nil)
 
         elif is_pair(head):
@@ -145,7 +145,7 @@ def special_gensym_thunk(
     called_by, rest = source
 
     pos_map = {}
-    if rest is not nil:
+    if not is_nil(rest):
         rest = _transform(pos_map, rest)
     formals = _build_formals(pos_map, source)
 

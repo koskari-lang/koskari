@@ -23,7 +23,7 @@ compile/cons.
 """
 
 
-from ...lib import nil, OpCode, symbol, cons
+from ...lib import OpCode, symbol, cons
 from ...types import get_position, is_nil, is_pair, is_keyword
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST
@@ -40,11 +40,11 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 def special_quote(compiler, source, tc=False):
     called_by, body = source
 
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError("Too few arguments to quote", source)
 
     body, rest = body
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("Too many arguments to quote", source)
 
     if is_pair(body) and not is_nil(body):
@@ -68,11 +68,11 @@ def special_car(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError("compile/car requires one argument", source)
 
     expr, rest = body
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("compile/car takes one argument", source)
 
     frag = compiler.fragment(called_by)
@@ -93,11 +93,11 @@ def special_cdr(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError("compile/cdr requires one argument", source)
 
     expr, rest = body
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("compile/cdr takes one argument", source)
 
     frag = compiler.fragment(called_by)
@@ -119,7 +119,7 @@ def special_cons(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError(
             "compile/cons requires at least one argument",
             source)
