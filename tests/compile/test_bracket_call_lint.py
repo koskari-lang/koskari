@@ -57,10 +57,12 @@ class TestBracketCallLint(unittest.TestCase):
             self.compile_src("[foo bar]", BracketCalls.ERROR)
 
     def test_warn_warns_but_compiles(self):
-        """WARN: a [ ] call emits a SyntaxWarning and still compiles"""
+        """WARN: a [ ] call warns, attributed to the source, not compiler.py"""
 
-        with self.assertWarns(SyntaxWarning):
+        with self.assertWarns(SyntaxWarning) as cm:
             self.compile_src("[foo bar]", BracketCalls.WARN)
+        # attributed to the koskari source location, not compiler internals
+        self.assertFalse(cm.filename.endswith("compiler.py"))
 
     def test_paren_call_never_flagged(self):
         """( ) calls are never flagged, even under ERROR"""

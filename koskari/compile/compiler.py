@@ -683,9 +683,13 @@ class Compiler:
         if self.bracket_calls is BracketCalls.ERROR:
             raise CompilerError(msg, source_obj)
 
+        # WARN: attribute the diagnostic to the koskari source location, not to
+        # this compiler frame, so the output isn't compiler-internal noise
+        # (no compiler.py path, no echoed warnings.warn() line).
         pos = get_position(source_obj)
-        warnings.warn(msg if pos is None else "%s (at %r)" % (msg, pos),
-                      SyntaxWarning)
+        lineno = pos[0] if pos else 0
+        warnings.warn_explicit(msg, SyntaxWarning,
+                               self.filename or "<unknown>", lineno)
 
 
     def compile_pair(self, fragment, source_obj, tc):
