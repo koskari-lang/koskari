@@ -263,11 +263,29 @@ build-container:  ## Build koskari runtime container image
 	@uv venv -q --clear
 
 
-.venv/.koskari-built: .venv setup.py setup.cfg $(KOSKARI_NATIVE_SRC)
+# Inputs whose *content* determines whether the extension must rebuild.
+KOSKARI_BUILD_INPUTS := setup.py setup.cfg $(KOSKARI_NATIVE_SRC)
+
+# Rebuild decision is content-based, not mtime-based. The recipe runs on every
+# invocation (FORCE prereq) but reinstalls only when a hash of the build inputs
+# differs from the stored hash; otherwise it exits immediately. This survives a
+# git pull (or a tox rebuild) that lands sources with mtimes older than the
+# venv, which defeats Make's normal timestamp comparison.
+.venv/.koskari-built: FORCE | .venv
 	@$(call checkfor,uv)
-	@echo "Installing koskari..."
-	@uv pip install -qe .[repl]
-	@touch $@
+	@new=`cat $(KOSKARI_BUILD_INPUTS) | cksum`; \
+	if [ -f $@ ] && [ "$$new" = "`cat .venv/.koskari-srchash 2>/dev/null`" ]; \
+	then exit 0; fi; \
+	echo "Installing koskari..."; \
+	uv pip install -qe .[repl]; \
+	printf '%s\n' "$$new" > .venv/.koskari-srchash; \
+	touch $@
+
+
+# Empty phony target used to force a recipe to run on every invocation
+# (see the content-hash guard in .venv/.koskari-built).
+FORCE:
+.PHONY: FORCE
 
 
 .venv/bin/koskari: .venv/.koskari-built
