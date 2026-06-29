@@ -101,4 +101,29 @@ class TestBracketReader(unittest.TestCase):
             "(compile/quasiquote (a (compile/unquote []) b))")
 
 
+class TestBracketPairsDisabled(unittest.TestCase):
+    """bracket_pairs=False makes [ ] read as plain pairs"""
+
+    def read(self, src):
+        reader = Reader(bracket_pairs=False)
+        return reader.read(source_str(src, "<unittest>"))
+
+    def test_bracket_list_is_plain_pair(self):
+        """[1 2 3] reads as a plain pair list, reprs with parens"""
+
+        v = self.read("[1 2 3]")
+        self.assertIs(type(v), pair)
+        self.assertEqual(kos_repr(v), "(1 2 3)")
+
+    def test_empty_brackets_is_nil(self):
+        """[] reads as nil, not bracket-nil"""
+
+        self.assertIs(self.read("[]"), nil)
+
+    def test_paren_still_works(self):
+        """( ) is unaffected"""
+
+        self.assertEqual(kos_repr(self.read("(1 2 3)")), "(1 2 3)")
+
+
 # The end.

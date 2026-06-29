@@ -147,7 +147,10 @@ fleshed out) selects one of three modes for the `compile_pair` path:
 2. **Reader dispatch.** *Done.* `_read_pair` (`koskari/reader/parser.py`)
    dispatches on the opening char: `[` builds `bracket-pair` cells terminated by
    `bracket-nil` (empty `[]` → `bracket-nil`), `(`/`{` build plain `pair` cells
-   terminated by `nil`. Position handling inherits.
+   terminated by `nil`. Position handling inherits. A `Reader`/`LayoutReader`
+   `bracket_pairs` flag (default `True`) gates this — `bracket_pairs=False` makes
+   `[ ]` read as plain pairs/nil, identical to `( )` (the flag is forwarded to
+   `LayoutReader._inner`, which actually handles `[`).
    - **Python `is nil` audit (required by this step).** Because `[ ]` is used
      pervasively in source, terminating bracket lists with `bracket-nil` meant
      every raw `x is nil` identity check (≈139 across `compiler`, `helpers`,

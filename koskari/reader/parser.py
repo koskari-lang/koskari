@@ -733,17 +733,21 @@ class Reader:
     :meth:`_dispatch_event_macros`).
     """
 
-    def __init__(self, nodefaults=False):
+    def __init__(self, nodefaults=False, bracket_pairs=True):
         """
         Initialize a new reader
 
         :param nodefaults: if True, do not add default macros and patterns
+        :param bracket_pairs: if True (default), ``[ ]`` reads into distinct
+            bracket-pair / bracket-nil values; if False, ``[ ]`` reads as plain
+            pairs terminated by nil, identical to ``( )``
         """
 
         self.reader_macros = {}
         self.atom_patterns = []
         self.terminating = set(_BASE_TERMINATORS)
         self._terms = "".join(sorted(self.terminating))
+        self.bracket_pairs = bracket_pairs
 
         if not nodefaults:
             self._add_default_macros()
@@ -1380,7 +1384,7 @@ class Reader:
         :return: tuple of (event, value)
         """
 
-        if char == "[":
+        if char == "[" and self.bracket_pairs:
             empty = bracket_nil
             make_cell = bracket_pair
         else:
@@ -1815,7 +1819,8 @@ class LayoutReader(Reader):
             namespace,
             nodefaults=False,
             layout_enabled=True,
-            layout_implicit_calls=True):
+            layout_implicit_calls=True,
+            bracket_pairs=True):
         """
         Initialize the layout reader
 
@@ -1824,10 +1829,12 @@ class LayoutReader(Reader):
         :param layout_implicit_calls: if True, multiple values on one layout
             line fold to an implicit call; if False, more than one value is an
             error
+        :param bracket_pairs: if True (default), ``[ ]`` reads into distinct
+            bracket-pair / bracket-nil values; if False, as plain pairs
         """
 
-        super().__init__(nodefaults=True)
-        self._inner = Reader(nodefaults=True)
+        super().__init__(nodefaults=True, bracket_pairs=bracket_pairs)
+        self._inner = Reader(nodefaults=True, bracket_pairs=bracket_pairs)
 
         from ..lib import ModuleNamespace
 
