@@ -18,6 +18,16 @@ deploying either path without a code change.
 
 Add further potential concepts below as needed.
 
+### `*foo` deref reader sugar
+
+**Idea:** A `*foo` reader form meaning "deref" — i.e. `*foo` → `(deref foo)` —
+as the read-side parallel to `&foo` → `(ref foo)`. Undecided: it may not earn
+its place against the existing options (using refs as objects with `deref` /
+`store`, binding them with `bind!`, or by-ref formals that auto-bind). Until
+decided, `*foo` must **not** appear in user-facing documentation. Earlier doc
+mentions (concept page, `compile/deref` spec, DEREF opcode use-case) have been
+removed; the DEREF opcode itself is implemented and used by `(compile/deref …)`.
+
 ## koskari_scripts (optional follow-ups)
 
 v1 **`koskari_scripts`** packaging is implemented. Optional hardening work:

@@ -50,7 +50,6 @@ attribute, dynamic, parameter, and others) while still using bind under the hood
 **Deref** means read through a ref and use the value.
 
 - **`(deref expr)`** — [`compile/deref`](../specials/compile-deref.md)
-- Reader **`*name`** — for simple identifiers, `*name` reads as `(deref name)`
 - Runtime **`deref`** builtin — when you need `deref` as a first-class function
 
 Use **`ref`** when you need the cell (for example passing a mutable slot to

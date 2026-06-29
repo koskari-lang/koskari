@@ -10,6 +10,7 @@ time; later chapters assume earlier ones.
 01-forms-and-combining
 02-bindings-and-environments
 03-functions-deep
+references-and-storage-indirection
 04-data-structures
 05-control-flow
 06-modules-and-program-structure
