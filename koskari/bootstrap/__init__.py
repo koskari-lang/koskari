@@ -40,7 +40,7 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    setcdr, symbol, values)
 
 from ..types import (TypePredicate, is_nil, is_None, is_proper, is_recursive,
-                     build_proper, unpack)
+                     build_proper, bracket_splice, unpack)
 
 
 __all__ = (
@@ -194,6 +194,7 @@ def make_bootstrap():
     _bind('proper?', is_proper)
     _bind('recursive?', is_recursive)
     _bind('build-proper', build_proper)
+    _bind('bracket-splice', bracket_splice)
     _bind('unpack', unpack)
 
     # common Python builtins

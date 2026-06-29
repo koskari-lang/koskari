@@ -30,13 +30,16 @@ from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import FunctionSpec, OpCode, bracket_cons
 from koskari.reader import LayoutReader, default_reader, source_str
 from koskari.lib import Module, ModuleNamespace
+from koskari.types import bracket_splice
 
 def _register_specials(ns, specials):
     for sym, fn in specials.items():
         ns.store(str(sym), fn)
-    # quote/quasiquote of bracket forms reconstructs via a runtime
-    # bracket-cons call; a real module namespace has it bound.
+    # quote/quasiquote of bracket forms reconstructs via runtime
+    # bracket-cons / bracket-splice calls; a real module namespace has
+    # them bound.
     ns.store("bracket-cons", bracket_cons)
+    ns.store("bracket-splice", bracket_splice)
 
 
 class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):

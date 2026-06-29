@@ -23,7 +23,8 @@ Koskari native types, predicates, and helper functions
 import operator
 from functools import partial
 
-from .lib import KoskariSyncViolation, cons, keyword, nil, nilp, pair, symbol
+from .lib import (KoskariSyncViolation, bracket_nil, bracket_pair, cons,
+                  keyword, nil, nilp, pair, symbol)
 
 
 __all__ = (
@@ -34,6 +35,7 @@ __all__ = (
     "is_proper",
     "is_recursive",
     "build_proper",
+    "bracket_splice",
     "unpack",
     "is_on_demand",
 )
@@ -103,6 +105,34 @@ def build_proper(*values):
     """
 
     return cons(*values, nil) if values else nil
+
+
+def bracket_splice(*segments):
+    """
+    The bracket analogue of the PAIR_SPLICE opcode: flatten the given
+    segments (pairs, tuples, nil, or other iterables) into a single list
+    whose *leading* cell is a bracket-pair. Only the head needs to be a
+    bracket cell — repr is governed by the leading cell — so the tail
+    stays plain pairs and no full-spine copy is made. An empty result is
+    bracket-nil.
+
+    :param segments: the splice segments to concatenate
+    :return: the spliced bracket list
+    """
+
+    elems = []
+    for seg in segments:
+        if is_nil(seg):
+            continue
+        if is_pair(seg):
+            elems.extend(seg.unpack())
+        else:
+            elems.extend(seg)
+
+    if not elems:
+        return bracket_nil
+
+    return bracket_pair(elems[0], build_proper(*elems[1:]))
 
 
 def unpack(value):

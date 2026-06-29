@@ -159,6 +159,28 @@ fleshed out) selects one of three modes for the `compile_pair` path:
      terminator predicate. `codex.py`'s pool-serialization `val is nil` is left
      exact (a `bracket-nil` const raises "unsupported" rather than silently
      serializing as `nil`; proper `.kio` support is a follow-up).
+   - **quote / quasiquote reconstruction.** A non-empty quoted list is not
+     const-pooled, so it is *rebuilt* at runtime — and the rebuild flattened
+     bracket cells to plain pairs. Fixed via **runtime calls (MVP), no new
+     opcodes**, and crucially **construction is parallel, never build-then-coerce**:
+     - `quote`: `requote` (`helpers.py`) detects a bracket-pair spine and rebuilds
+       it with a `(bracket-cons …)` call (preserving the `bracket-nil` terminator),
+       recursing so each sublist's style survives.
+     - `quasiquote`: `_qq_list` (`quasiquote.py`) takes a `bracket` flag and picks
+       its constructor at each emission site — `bracket-cons` (+ `bracket-nil`
+       tail) for whole-list and dotted builds, `bracket-nil` for empty, and a
+       runtime **`bracket-splice`** (`koskari.types`) for `,@`. No plain list is
+       built and converted; the cells are built bracket from the start.
+     - **`bracket-splice` marks only the leading cell.** Since repr is governed by
+       the head cell, `bracket-splice` flattens its segments like `PAIR_SPLICE`
+       but returns `bracket-pair(head, plain-pair-tail)` — one bracket cell, no
+       full-spine copy. So a spliced `` `[a ,@xs] `` has a bracket head and a
+       plain-pair tail (reprs `[a …]`); a non-spliced `` `[a b] `` is bracket
+       throughout (via `bracket-cons`).
+
+     Dedicated bracket build opcodes (`BRACKET_CONS`/`BRACKET_PROPER`/
+     `BRACKET_PAIR_SPLICE`) remain a possible later optimization over these
+     runtime calls.
 3. **Compiler guard flag.** Add a `Compiler`-level flag (accept / warn / error)
    and the single bracket-pair predicate at `compile_pair` entry. Default to
    **accept** so existing behavior is unchanged until opted in.
