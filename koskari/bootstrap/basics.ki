@@ -72,6 +72,19 @@ extend-syntax compile/set!:
       (set-cdr (cdddr p) value)
 
 
+define-syntax compile/build-proper:
+  """
+  Compile-time optimized version of build-proper, dispatching
+  to `compile/cons` or `nil` for an empty call.
+  """
+
+  syntax-rules []:
+    case (build-proper):
+      ()
+    case (build-proper value ...):
+      (compile/cons value ... nil)
+
+
 define-syntax compile/help:
   syntax-rules []:
     case (help obj ns):
