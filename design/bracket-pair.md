@@ -281,7 +281,9 @@ pair  (KosPairType)
 - **Repr fidelity beyond leading-cell.** Any richer round-tripping of mixed
   delimiters is deferred; v1 commits only to the leading-cell rule.
 - **Pragma gating.** Replace the simple compiler flag with proper pragma
-  control once `koskari/compile/pragma/` supports it.
+  control once `koskari/compile/pragma/` supports it. The `bracket_calls` and
+  `bracket_pairs` keys are part of the v0.1 pragma scope;
+  see [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md).
 
 ## The two-sided model (summary)
 

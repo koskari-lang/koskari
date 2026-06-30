@@ -139,6 +139,28 @@ symmetric advisory matcher style-hint is a later, separate phase.
 
 Ref: [bracket-pair.md](bracket-pair.md).
 
+### Module pragma system (`compile/pragma`)
+
+Add the `(compile/pragma key: value ...)` special form that gates module-level
+reader and compiler behavior, replacing the ad-hoc constructor flags
+(`bracket_calls`, `resolution_pragma_class`, `tco_enabled`, reader layout
+switches) with a single, immutable, per-module `ModulePragma` object. The form
+validates keys at compile time (unknown key → `CompilerError`) and applies the
+new pragma at eval time, so changes are forward-only: the next top-level form
+is read by the reconfigured `__reader__` and compiled by the reconfigured
+`__compiler__`. The design is a routing registry — each key declares its target
+(`__reader__` or `__compiler__`) and kind (scalar flag vs. drop-in behavior
+object) — so new keys are one row each.
+
+v0.1 wires six live keys (`resolution_mode`, `bracket_calls`, `tco`, `layout`,
+`layout_implicit_calls`, `bracket_pairs`) and reserves two inert
+(`convert_fast`, `compress`). Backends for resolution and bracket already exist
+(`compile/pragma/`); reader knobs exist but are not all in `reload_pragma` yet.
+Serialization of the pragma snapshot into `.kio` is deferred. Supersedes the
+"pragma gating deferred" notes in the TCO and bracket-pair items above.
+
+Ref: [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md).
+
 ---
 
 ## Import / loader

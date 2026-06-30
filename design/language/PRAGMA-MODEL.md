@@ -44,14 +44,24 @@ Pragmas are updated via a normal top-level special form, not a header directive.
 ### Special Form
 
 ```
-(compile/pragma key value ...)
+(compile/pragma key: value ...)
+```
+
+Keys are keyword-style (`resolution_mode:`, `bracket_calls:`, …). Values are
+literal keywords, symbols, or booleans, read structurally and **never
+evaluated** — a pragma cannot depend on runtime state, which is what keeps the
+form "always parseable under the base grammar." Example:
+
+```
+(compile/pragma resolution_mode: scheme bracket_calls: error tco: #f)
 ```
 
 Properties:
 
 * Always parseable under the base grammar.
 * May appear multiple times.
-* Later invocations replace the previous pragma.
+* Later invocations replace the previous pragma (overrides layer onto the
+  current `module.__pragma__`, not onto the defaults).
 * Changes affect only subsequent forms.
 
 ---
@@ -70,12 +80,28 @@ When a module is created:
 
 ### Pragma Update
 
-When `(compile/pragma ...)` is encountered during load:
+The work splits across two phases of the same top-level form, which is what
+makes the update forward-only without any retroactive machinery:
 
-1. A new immutable pragma object is constructed (defaults + overrides).
-2. `module.__pragma__` is replaced.
-3. `module.__reader__.reload_pragma(module.__pragma__)` is called.
-4. `module.__compiler__.reload_pragma(module.__pragma__)` is called.
+**Compile time** (while the pragma form itself is compiled):
+
+1. Keys are validated against the registry; an unknown key raises a
+   `CompilerError` here.
+2. A new immutable pragma object is constructed (current `module.__pragma__` +
+   overrides) and stashed as a constant.
+
+**Eval time** (when the compiled pragma form executes during load):
+
+3. `module.__pragma__` is replaced.
+4. `module.__reader__.reload_pragma(module.__pragma__)` is called.
+5. `module.__compiler__.reload_pragma(module.__pragma__)` is called.
+
+Because module load is strictly read → compile → **eval** → read-next, the
+*next* top-level form is read by the reconfigured reader and compiled by the
+reconfigured compiler. Application at eval time (rather than at compile time of
+the pragma form) is deliberate: it gives identical behavior in the REPL, where
+each entry is independently read, compiled, and evaluated, and where `repl.ki`
+already rebinds `__reader__`.
 
 ### Effects
 
@@ -116,38 +142,61 @@ Error messages should include:
 
 ---
 
-## Atom Gating (Initial Focus)
+## Feature Matrix and Routing Registry
 
-The initial use case for pragma is gating syntax-level atoms.
+The pragma object holds a resolved value for every known key. The *design* is a
+single registry: each key declares its **target** (which load facet it touches,
+`__reader__` or `__compiler__`) and its **kind** —
 
-### Candidate Gated Forms
+* **flag** — a cheap scalar (bool / enum) that is set and done.
+* **drop-in** — a behavior object or table that `reload_pragma` swaps or
+  rebuilds (e.g. the resolution pragma class, the bracket-reading mode).
 
-* `->` deref-attr separator
-* `&foo` and place-aware `&foo.bar`
-* `*identifier`-style deref atoms (if controlled)
+Adding a key is one registry row plus one line in the target's `reload_pragma`.
 
-Model:
+| Key | Target | Kind | Backing knob |
+|---|---|---|---|
+| `resolution_mode` | compiler | drop-in | `resolution_pragma_class` (Koskari / Scheme / Python) |
+| `bracket_calls` | compiler | flag | `bracket_calls` (`ignore` / `warn` / `error`) |
+| `tco` | compiler | flag | `tco_enabled` |
+| `layout` | reader | flag | `layout_enabled` |
+| `layout_implicit_calls` | reader | flag | `layout_implicit_calls` |
+| `bracket_pairs` | reader | drop-in | `bracket_pairs` (also propagated to the inner reader) |
+| `convert_fast` | compiler | flag | *reserved — `convert-fast` pass, not yet built* |
+| `compress` | compiler | flag | *reserved — bytecode compression pass* |
 
-* The reader rebuilds atom recognizers and operator tables based on the current
-  pragma.
-* The compiler lowers based on flags enabled at reload time.
+`convert_fast` and `compress` are validated but inert in v0.1: the keys are
+reserved so source can name them without error before the passes exist.
+
+### Later: atom gating
+
+A second wave gates syntax-level reader atoms — `&foo` / place-aware `&foo.bar`
+(ref), `foo->bar` (deref-attr), and `*identifier` deref atoms. These need the
+reader to rebuild its atom recognizers (via `set_atom_pattern`) on reload, and
+user-defined reader macros and atoms must be stored separately so a reload does
+not silently discard them (see **User Overlays**). Deferred until the v0.1
+routing registry is in place.
 
 ---
 
 ## Minimal Implementable Subset (v0.1)
 
-1. Provide `koskari.pragma` defining an immutable `KoskarV01Pragma` schema.
-2. Implement `(compile/pragma ...)` to construct and install a new pragma.
-3. On installation, call parser and compiler reload hooks.
-4. Gate the following parser features:
-
-   * `parser_atom_ref`
-   * `parser_atom_deref_attr`
-5. Gate the following compiler feature:
-
-   * `compiler_pass_convert_fast`
-6. Store user-defined reader macros and atoms separately so they can be
-   re-applied after a pragma reload.
+1. Provide an immutable `ModulePragma` value object in `koskari.compile.pragma`
+   with a `replace(**overrides)` that layers onto the current pragma, plus the
+   key registry above.
+2. Add `Compiler.reload_pragma(pragma)` (mirrors the reader's), applying the
+   compiler-side keys and storing `module.__pragma__`. Set a default
+   `module.__pragma__` in `Compiler.__init__`.
+3. Extend `LayoutReader.reload_pragma(pragma)` (today only handles
+   `layout_implicit_calls`) to also apply `layout` and `bracket_pairs`.
+4. Add a small runtime applier (`__pragma_apply__`) that, running in the module
+   namespace, pulls the live `__reader__` / `__compiler__` and calls both
+   `reload_pragma`s.
+5. Implement the `compile/pragma` special: validate keys, build the new pragma
+   at compile time, emit the eval-time applier call.
+6. Defer serialization of the pragma snapshot into `.kio` — a compiled artifact
+   already bakes the resolution/bracket decisions into its bytecode and does no
+   reading, so the snapshot is only needed for introspection/recompile.
 
 ---
 
@@ -179,27 +228,32 @@ user-level customizations.
 
 ### Special Form
 
-`(compile/pragma key value ...)`
+`(compile/pragma key: value ...)`
 
-* Builds a new immutable pragma object.
-* Replaces `module.__pragma__`.
-* Calls reader and compiler reload methods.
+* Validates keys and builds a new immutable pragma at compile time.
+* At eval time, replaces `module.__pragma__` and calls the reader and compiler
+  reload methods.
 * Affects only future parsing and compilation.
 
-### Parser Flags (v0.1)
+### Reader Keys (v0.1)
 
-* `parser_atom_ref` — enables `&foo` and place-aware `&foo.bar`.
-* `parser_atom_deref_attr` — enables `foo->bar`.
+* `layout` — enables layout (indentation) reading.
+* `layout_implicit_calls` — multiple values on one layout line form a call.
+* `bracket_pairs` — `[ ]` reads into distinct bracket-pair / bracket-nil values
+  (vs. plain pairs).
 
-### Compiler Flags (v0.1)
-
-* `compiler_pass_convert_fast` — enables or disables the `convert-fast`
-  compression pass.
-
-### Future: resolution_mode
+### Compiler Keys (v0.1)
 
 * `resolution_mode` — selects resolution semantics: Koskari (strict), Scheme
   (unsatisfied writes promote to global), or Python (implicit local on first
   write unless explicit global). Implemented via pluggable `ResolutionPragma`.
+* `bracket_calls` — policy for a bracket-pair reaching call position
+  (`ignore` / `warn` / `error`).
+* `tco` — enables the tail-call optimization.
+
+### Reserved Compiler Keys (validated, inert in v0.1)
+
+* `convert_fast` — the `convert-fast` compression pass (not yet built).
+* `compress` — the bytecode compression pass.
 
 The pragma model is intentionally minimal, forward-only, and module-local.
