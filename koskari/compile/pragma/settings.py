@@ -1,0 +1,92 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+koskari.compile.pragma.settings
+
+Compiler-side pragma settings, registered into the koskari.pragma registry at
+import: compiler/resolution, compiler/call-brackets, compiler/tco-enable, and
+the reserved compiler/convert-fast and compiler/compress. Each setting's
+``default`` is its baseline (value when undeclared); the function's argument
+defaults are the parameter defaults (value when declared but the arg is
+omitted).
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+:ai-assistant: claude-opus-4-8 via Claude Code
+"""
+
+
+from ...pragma import pragma_setting
+from .bracket import BracketCalls
+
+
+_RESOLUTION_MODES = ("koskari", "scheme", "python")
+
+
+@pragma_setting("compiler/resolution", "koskari")
+def compiler_resolution(mode) -> str:
+    """
+    Name-resolution semantics: koskari (strict), scheme, or python. No
+    parameter default -- the mode must be stated explicitly when declared.
+    """
+
+    mode = str(mode)
+    if mode not in _RESOLUTION_MODES:
+        raise ValueError(
+            f"compiler/resolution must be one of {_RESOLUTION_MODES!r}")
+    return mode
+
+
+@pragma_setting("compiler/call-brackets", BracketCalls.IGNORE)
+def compiler_call_brackets(level=BracketCalls.WARN) -> BracketCalls:
+    """
+    Policy when a bracket-pair reaches call position. Baseline ignore; a bare
+    declaration enables it at warn.
+    """
+
+    if isinstance(level, BracketCalls):
+        return level
+    return BracketCalls(str(level))
+
+
+@pragma_setting("compiler/tco-enable", True)
+def compiler_tco_enable(enabled: bool = True) -> bool:
+    """
+    Whether tail-call optimization is enabled (baseline on)
+    """
+
+    return bool(enabled)
+
+
+@pragma_setting("compiler/convert-fast", False)
+def compiler_convert_fast(enabled: bool = False) -> bool:
+    """
+    Reserved: the convert-fast pass is not yet built. Registered so source can
+    name it without an unknown-setting error; inert until implemented.
+    """
+
+    return bool(enabled)
+
+
+@pragma_setting("compiler/compress", False)
+def compiler_compress(enabled: bool = False) -> bool:
+    """
+    Reserved: the bytecode compression pass is not yet built. Inert until
+    implemented.
+    """
+
+    return bool(enabled)
+
+
+# The end.

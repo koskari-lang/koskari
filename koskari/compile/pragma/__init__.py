@@ -25,6 +25,7 @@ from .resolution import (
     ResolutionPragma,
     SchemePragma,
 )
+from . import settings as _settings  # noqa: F401
 
 
 __all__ = (

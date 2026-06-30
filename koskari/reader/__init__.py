@@ -23,6 +23,7 @@ Koskari s-expression reader and layout block parsing.
 
 
 from ..exceptions import ReaderEOF, ReaderSyntaxError, FormatStringSyntaxError
+from . import pragma as _pragma  # noqa: F401
 from .parser import (
     DEFER,
     LINE_END,
