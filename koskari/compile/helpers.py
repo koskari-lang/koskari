@@ -25,12 +25,12 @@ Compile helpers for matcher FORMALS captures (GROUP dict payload)
 from typing import List
 
 from ..exceptions import ParametersError, SpecialError
-from ..lib import (DatumFrame, Matcher, OpCode, car, cdr, cons, keyword, nil,
-                   pair, symbol)
+from ..lib import (DatumFrame, Matcher, OpCode, bracket_nil, bracket_pair, car,
+                   cdr, cons, keyword, nil, pair, symbol)
 from ..matcher import (BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
                        REST, SYMBOL, USING, USING_UNPACK, VALUE,
                        HygienicMatchCompiler, Pattern, frame_formal_name)
-from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
+from ..types import is_nil, is_keyword, is_pair, is_proper, is_symbol, unpack
 from .compiler import ByteCodeFragment
 
 
@@ -87,7 +87,7 @@ def match_pattern_raw(source, patterns, literals=None):
     :func:`koskari.hygiene.collect_binding_symbols`.
     """
 
-    if source is not nil and not is_pair(source):
+    if not is_nil(source) and not is_pair(source):
         raise TypeError(
             f"match source must be nil or a pair, got {source!r}")
 
@@ -145,7 +145,7 @@ _keyword_starstar = keyword("**")
 _PYCONS_DIRECT = (
     str, bytes, bool, int, float, complex,
     type(None), type(...),
-    symbol, keyword, type(nil), pair,
+    symbol, keyword, type(nil), type(bracket_nil), pair,
 )
 _PYCONS_RECONS = (tuple, list)
 
@@ -267,12 +267,12 @@ def _parse_formal_tail(tail, source):
     Parse REST after formal name: keyword/value pairs or lone default
     """
 
-    if tail is nil:
+    if is_nil(tail):
         return {}, None
     head = car(tail)
     rest = cdr(tail)
     if not is_keyword(head):
-        if rest is not nil:
+        if not is_nil(rest):
             raise SpecialError(
                 "malformed formal tail after name, not %r" % tail,
                 source)
@@ -281,7 +281,7 @@ def _parse_formal_tail(tail, source):
     ann = {}
     default = None
     cur = tail
-    while cur is not nil:
+    while not is_nil(cur):
         kw = car(cur)
         cur = cdr(cur)
         if not is_keyword(kw):
@@ -289,7 +289,7 @@ def _parse_formal_tail(tail, source):
                 "expected keyword in formal attribute list, not %r"
                 % kw,
                 source)
-        if cur is nil:
+        if is_nil(cur):
             raise SpecialError(
                 "missing value for formal attribute %r" % kw,
                 source)
@@ -358,7 +358,7 @@ def _parse_decl_tail(tail, source):
     Parse REST after a declaration name: only keyword attributes, no value
     """
 
-    if tail is nil:
+    if is_nil(tail):
         return {}
     head = car(tail)
     if not is_keyword(head):
@@ -368,7 +368,7 @@ def _parse_decl_tail(tail, source):
 
     ann = {}
     cur = tail
-    while cur is not nil:
+    while not is_nil(cur):
         kw = car(cur)
         cur = cdr(cur)
         if not is_keyword(kw):
@@ -376,7 +376,7 @@ def _parse_decl_tail(tail, source):
                 "expected keyword in declaration attribute list, not %r"
                 % kw,
                 source)
-        if cur is nil:
+        if is_nil(cur):
             raise SpecialError(
                 "missing value for declaration attribute %r" % kw,
                 source)
@@ -569,11 +569,20 @@ def requote(
         cons_sym=None,
         quote_sym=None):
     """
-    Rewrite a list form so each element is wrapped in ``(quote_sym ELEMENT)``
+    Rewrite a list form so each element is wrapped in ``(quote_sym ELEMENT)``.
+
+    The reconstruction preserves the source's delimiter style: a bracket-pair
+    spine rebuilds via a runtime ``bracket-cons`` call (terminating with
+    ``bracket-nil``), a plain pair spine via the ``compile/cons`` special
+    (the ``CONS`` opcode). Nested elements are re-quoted, so each sublist's
+    own style is detected recursively.
     """
 
     if cons_sym is None:
-        cons_sym = symbol("compile/cons")
+        if isinstance(source, bracket_pair):
+            cons_sym = symbol("bracket-cons")
+        else:
+            cons_sym = symbol("compile/cons")
     if quote_sym is None:
         quote_sym = symbol("compile/quote")
 
@@ -582,8 +591,9 @@ def requote(
         element, rest = source
         col.append(cons(quote_sym, element, nil))
 
-        if rest is nil:
-            col.append(nil)
+        if is_nil(rest):
+            # preserve the terminator flavor (nil vs bracket-nil)
+            col.append(rest)
             break
         elif not is_pair(rest):
             col.append(cons(quote_sym, rest, nil))
@@ -599,23 +609,23 @@ def _strip_leading_docstring_body(body):
     Return ``(docstring, new_body)`` after removing one leading docstring
     """
 
-    while body is not nil:
+    while not is_nil(body):
         head, tail = body
         if isinstance(head, str):
             return head, tail
 
-        if head is nil or not is_pair(head):
+        if is_nil(head) or not is_pair(head):
             return None, None
 
         ihead, itail = head
         if ihead in _BEGIN_HEADS:
-            if itail is nil:
+            if is_nil(itail):
                 body = tail
                 continue
             doc, new_itail = _strip_leading_docstring_body(itail)
             if doc is None:
                 return None, None
-            if new_itail is nil:
+            if is_nil(new_itail):
                 return doc, tail
             new_head = cons(ihead, new_itail)
             return doc, cons(new_head, tail)
@@ -647,13 +657,13 @@ def helper_elsebody(source):
     collected = []
     current = source
 
-    while current is not nil:
+    while not is_nil(current):
         head, tail = current
-        if tail is nil and is_pair(head):
+        if is_nil(tail) and is_pair(head):
             e, ebody = head
             if e is _keyword_else:
                 body_list = cons(*collected, nil) if collected else nil
-                if ebody is nil:
+                if is_nil(ebody):
                     return body_list, None
                 else:
                     return body_list, ebody[0]
@@ -851,17 +861,17 @@ def discover_docstring(body):
     :return: str or None
     """
 
-    while body is not nil:
+    while not is_nil(body):
         head, tail = body
         if isinstance(head, str):
             return head
 
-        if head is nil or not is_pair(head):
+        if is_nil(head) or not is_pair(head):
             return None
 
         ihead, itail = head
         if ihead in _BEGIN_HEADS:
-            if itail is nil:
+            if is_nil(itail):
                 body = tail
             else:
                 body = itail
@@ -884,7 +894,7 @@ def helper_begin(
     :return: the compiled fragment
     """
 
-    if body is nil:
+    if is_nil(body):
         fragment.instruction(OpCode.KOS_OP_CONST, None)
         return fragment
 
@@ -894,7 +904,7 @@ def helper_begin(
         fragment.position_of(body)
 
         expr, body = body
-        if body is nil:
+        if is_nil(body):
             fragment.merge(compiler.full_compile(expr, tc))
             break
         else:
@@ -1120,7 +1130,7 @@ def gather_formals(formals_group, source=None):
             f"** keyword requires symbol binding, not {starstar!r}",
             source)
 
-    if star is not None and star is not nil:
+    if star is not None and not is_nil(star):
         if not is_symbol(star):
             raise SpecialError(
                 f"* keyword requires symbol binding, not {star!r}",

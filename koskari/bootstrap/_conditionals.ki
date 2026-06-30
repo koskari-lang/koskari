@@ -18,6 +18,11 @@ Portion of koskari.builtins
 
 
 define-syntax compile/if:
+  """
+  Evaluates the `then` body only when the `condition` is truthy.
+  Evaluates the `else` body otherwise, or `None` if not provided.
+  """
+
   syntax-rules []:
     case (if condition then: then else: else):
       (compile/cond
@@ -74,6 +79,10 @@ define-syntax compile/?:
 
 
 define-syntax compile/bool:
+  """
+  Compile-time object truthiness as a boolean.
+  """
+
   syntax-rules []:
     case (bool value):
       (compile/truth value)
@@ -100,14 +109,10 @@ define-syntax compile/None?:
       (compile/is value None)
 
 
-define-syntax compile/nil?:
-  """
-  Identity predicate for the nil singleton
-  """
-
-  syntax-rules []:
-    case (nil? value):
-      (compile/is value nil)
+;; nil? is compiled by the compile/nil? special (koskari.compile.specials.
+;; object), which emits the NILP opcode — matching either empty-list
+;; singleton (nil or bracket-nil). Compression lowers NILP + JUMP_FALSE to
+;; CHECK_NIL. The runtime koskari.lib.nilp backs first-class use of nil?.
 
 
 define on-demand? :: bool []:

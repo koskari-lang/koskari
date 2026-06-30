@@ -21,6 +21,7 @@ The koskari compiler. Converts source forms into bytecode fragments.
 """
 
 
+import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from enum import IntEnum, auto
@@ -28,10 +29,10 @@ from enum import IntEnum, auto
 from ..exceptions import CompilerError, UncaughtCompilerError
 from ..lib import (Code, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
                    NAMESPACE_FAST_SLOT_MAX,
-                   Namespace, NamespaceSpec, OpCode, OpStyle, cons, keyword,
-                   nil, symbol)
-from ..types import get_position, is_pair, is_proper, is_symbol
-from .pragma import KoskariPragma
+                   Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
+                   bracket_pair, cons, keyword, nil, symbol)
+from ..types import is_nil, get_position, is_pair, is_proper, is_symbol
+from .pragma import BracketCalls, KoskariPragma
 
 
 class Compiled(ABC):
@@ -50,7 +51,7 @@ CONST_TYPES = (
     bool, int, float, complex,
     slice,
     type(None), type(...),
-    symbol, keyword, type(nil),
+    symbol, keyword, type(nil), type(bracket_nil),
     FunctionSpec,
     NamespaceSpec,
 )
@@ -410,6 +411,7 @@ _CHECK_SQUASHES = {
     OpCode.KOS_OP_OBJECT_IS_SUBCLASS: OpCode.KOS_OP_CHECK_IS_SUBCLASS,
     OpCode.KOS_OP_OBJECT_NOT: OpCode.KOS_OP_JUMP_TRUE,
     OpCode.KOS_OP_EXCEPTION_MATCH: OpCode.KOS_OP_CHECK_EXCEPTION,
+    OpCode.KOS_OP_NILP: OpCode.KOS_OP_CHECK_NIL,
 }
 
 _SWITCH_SQUASHES = {
@@ -432,10 +434,12 @@ _COMPILER_LITERALS = {
 class Compiler:
 
     def __init__(self, name, module, filename=None, tco_enabled=True,
-                 resolution_pragma_class=None, resolution_pragma=None):
+                 resolution_pragma_class=None, resolution_pragma=None,
+                 bracket_calls=BracketCalls.IGNORE):
         self.name = name
         self.resolution_pragma_class = resolution_pragma_class or KoskariPragma
         self._current_pragma = resolution_pragma
+        self.bracket_calls = bracket_calls
 
         if module is None:
             module = Module(ModuleNamespace(name, {}))
@@ -466,6 +470,24 @@ class Compiler:
         self.filename = filename
 
         self._macro_overlay = []
+
+
+    @property
+    def bracket_calls(self):
+        """
+        Policy for a bracket-pair in call position (a BracketCalls member).
+        Assigning accepts a BracketCalls or its string value ("ignore" /
+        "warn" / "error"); an unrecognized value raises ValueError.
+        """
+
+        return self._bracket_calls
+
+
+    @bracket_calls.setter
+    def bracket_calls(self, value):
+        # BracketCalls(member) returns the member unchanged; BracketCalls(str)
+        # maps the value; anything else raises ValueError.
+        self._bracket_calls = BracketCalls(value)
 
 
     @contextmanager
@@ -643,11 +665,40 @@ class Compiler:
         return fragment
 
 
+    def _check_bracket_call(self, source_obj):
+        """
+        Diagnose a bracket-pair reaching call/operator position per the
+        bracket_calls policy. The empty list never arrives here (handled as
+        a const), so this only fires on a non-empty [ ] form being compiled
+        as a combination or special.
+        """
+
+        if (self.bracket_calls is BracketCalls.IGNORE
+                or not isinstance(source_obj, bracket_pair)):
+            return
+
+        msg = ("bracket-pair [ ] used in call position;"
+               " use ( ) for calls and syntax forms")
+
+        if self.bracket_calls is BracketCalls.ERROR:
+            raise CompilerError(msg, source_obj)
+
+        # WARN: attribute the diagnostic to the koskari source location, not to
+        # this compiler frame, so the output isn't compiler-internal noise
+        # (no compiler.py path, no echoed warnings.warn() line).
+        pos = get_position(source_obj)
+        lineno = pos[0] if pos else 0
+        warnings.warn_explicit(msg, SyntaxWarning,
+                               self.filename or "<unknown>", lineno)
+
+
     def compile_pair(self, fragment, source_obj, tc):
         # print("compile_pair", kos_repr(source_obj))
 
-        if source_obj is nil:
-            return self.compile_const(fragment, nil, False)
+        if is_nil(source_obj):
+            return self.compile_const(fragment, source_obj, False)
+
+        self._check_bracket_call(source_obj)
 
         fragment.position_of(source_obj)
 

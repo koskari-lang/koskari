@@ -25,7 +25,7 @@ import unittest
 import pytest
 
 from koskari.lib import (Code, FormalsSpec, FunctionSpec, NamespaceSpec,
-                         OpCode, demand_call)
+                         OpCode, bracket_nil, demand_call, nil)
 from koskari.serialize import compile_ki_source_to_kio, dump_kio, load_kio
 
 from .. import make_callable
@@ -52,6 +52,29 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertEqual(len(kio.codes), 1)
         expr = make_callable(kio.codes[0], ns)
         self.assertEqual(demand_call(expr), 42)
+
+
+    def _const_roundtrip(self, value):
+        code, _ns = build_expr([
+            ['CONST', value],
+            ['RETURN', 1],
+        ])
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        buf.seek(0)
+        kio = load_kio(buf)
+        for op, arg in kio.codes[0].soften():
+            if op == OpCode.KOS_OP_CONST:
+                return arg
+        self.fail("no CONST in roundtripped code")
+
+    def test_nil_const_roundtrip(self):
+        """nil survives the const-pool round-trip as the nil singleton"""
+        self.assertIs(self._const_roundtrip(nil), nil)
+
+    def test_bracket_nil_const_roundtrip(self):
+        """bracket-nil round-trips as bracket-nil, not collapsed to nil"""
+        self.assertIs(self._const_roundtrip(bracket_nil), bracket_nil)
 
 
     def test_function_spec_const_roundtrip(self):

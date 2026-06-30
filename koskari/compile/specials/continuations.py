@@ -45,7 +45,7 @@ def special_call_cc(compiler, source, tc=False):
     """
 
     called_by, args = source
-    if args is nil or not is_pair(args):
+    if is_nil(args) or not is_pair(args):
         raise SpecialError("call/cc requires a single argument", source)
     expr, rest = args
     if not is_nil(rest):
@@ -134,7 +134,7 @@ def special_reset(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError("reset requires body", source)
 
     fragment = compiler.fragment(called_by)
@@ -155,7 +155,7 @@ def special_shift(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError(
             "shift requires continuation variable and body",
             source)
@@ -188,7 +188,7 @@ def special_return(compiler, source, tc=False):
 
     called_by, rest = source
 
-    if rest is nil:
+    if is_nil(rest):
         frag = compiler.fragment(called_by)
         frag.position_of(source)
         frag.instruction(OpCode.KOS_OP_RETURN, 0)
@@ -216,7 +216,7 @@ def special_yield(compiler, source, tc=False):
 
     called_by, rest = source
 
-    if rest is nil:
+    if is_nil(rest):
         frag = compiler.fragment(called_by)
         frag.position_of(source)
         frag.instruction(OpCode.KOS_OP_YIELD, 0)
@@ -245,9 +245,9 @@ def special_await(compiler, source, tc=False):
 
     called_by, rest = source
     expr = nil
-    if rest is not nil:
+    if not is_nil(rest):
         expr, tail = rest
-        if tail is not nil:
+        if not is_nil(tail):
             raise SpecialError("await requires zero or one argument", source)
 
     frag = compiler.fragment(called_by)
@@ -269,7 +269,7 @@ def special_yield_from(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError("yield-from requires a single argument", source)
 
     expr, tail = rest

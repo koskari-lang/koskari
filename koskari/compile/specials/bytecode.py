@@ -22,7 +22,8 @@ Special form handler for compile/bytecode.
 """
 
 
-from ...lib import keyword, nil, OpCode, pair, symbol
+from ...lib import keyword, OpCode, pair, symbol
+from ...types import is_nil
 from ...matcher import CALLEDBY, MATCH, REST
 from ..compiler import ByteCodeFragment, Compiler
 from ...bootstrap import builtin
@@ -45,7 +46,7 @@ def special_bytecode(
 
     for segm in body.unpack():
         op, opa = segm
-        if opa is nil:
+        if is_nil(opa):
             opa = 0
         else:
             opa, rest = opa

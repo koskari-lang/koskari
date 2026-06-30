@@ -36,10 +36,11 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    build_tuple, car, cdr, cons, defer, demand, demand_apply,
                    demand_call, deref, gensym, getattr_star, getitem_star,
                    hasattr_star, hasitem_star, keyword, kos_repr, list_append,
-                   nil, pair, parameter, setcar, setcdr, symbol, values)
+                   bracket_cons, bracket_nil, nil, pair, parameter, setcar,
+                   setcdr, symbol, values)
 
 from ..types import (TypePredicate, is_nil, is_None, is_proper, is_recursive,
-                     build_proper, unpack)
+                     build_proper, bracket_splice, unpack)
 
 
 __all__ = (
@@ -137,11 +138,13 @@ def make_bootstrap():
     _bind('car', car)
     _bind('cdr', cdr)
     _bind('cons', cons)
+    _bind('bracket-cons', bracket_cons)
     _bind('demand-apply', demand_apply)
     _bind('demand-call', demand_call)
     _bind('deref', deref)
     _bind('gensym', gensym)
     _bind('nil', nil)
+    _bind('bracket-nil', bracket_nil)
     _bind('parameter', parameter)
     _bind('repr', kos_repr)
     _bind('set-car', setcar)
@@ -191,6 +194,7 @@ def make_bootstrap():
     _bind('proper?', is_proper)
     _bind('recursive?', is_recursive)
     _bind('build-proper', build_proper)
+    _bind('bracket-splice', bracket_splice)
     _bind('unpack', unpack)
 
     # common Python builtins

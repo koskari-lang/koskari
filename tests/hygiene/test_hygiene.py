@@ -31,7 +31,8 @@ from koskari.hygiene import (
     introduced_symbols_from_match,
     walk_hygiene_tree,
 )
-from koskari.lib import Datum, cons, nil, symbol
+from koskari.lib import (Datum, bracket_nil, bracket_pair, cons, kos_repr, nil,
+                         pair, symbol)
 from koskari.types import build_proper, is_pair, is_symbol
 
 
@@ -239,6 +240,23 @@ class TestExpandTemplate(unittest.TestCase):
         binding_symbols = set()
         out = expand_template_with_hygiene(tpl, bindings, binding_symbols)
         self.assertEqual(out, build_proper(plus, 10, 20))
+
+
+    def test_bracket_template_preserves_brackets(self):
+        """a [ ] template expands to a bracket list, not a flattened paren one"""
+
+        # template: (compile/cond [condition then]) -- the `if` macro shape
+        cond = symbol("condition")
+        then = symbol("then")
+        inner = bracket_pair(cond, bracket_pair(then, bracket_nil))
+        tpl = build_proper(symbol("compile/cond"), inner)
+        out = expand_template_with_hygiene(
+            tpl, {cond: symbol("foo"), then: 100}, set())
+
+        self.assertIs(type(out), pair)            # outer form stays paren
+        inner_out = out.cdr.car
+        self.assertIs(type(inner_out), bracket_pair)   # inner stays bracket
+        self.assertEqual(kos_repr(out), "(compile/cond [foo 100])")
 
 
     def test_template_ellipsis_list_binding_uses_repeat_count(self):

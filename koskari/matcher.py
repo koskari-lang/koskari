@@ -37,7 +37,7 @@ from typing import Protocol, runtime_checkable
 from koskari.hygiene import Hygiene, HygieneEdge, HygieneNode
 from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, keyword,
                          kos_repr, nil, pair, symbol)
-from koskari.types import is_keyword, is_pair, is_proper, is_symbol, unpack
+from koskari.types import is_nil, is_keyword, is_pair, is_proper, is_symbol, unpack
 
 
 __all__ = (
@@ -2152,7 +2152,7 @@ class BINDINGS(Composite):
             return
         if isinstance(cells, Datum):
             cells = cells.datum
-            if cells is nil:
+            if is_nil(cells):
                 return
         for fr in cells:
             if isinstance(fr, dict):
@@ -2172,7 +2172,7 @@ class BINDINGS(Composite):
             return
         if isinstance(cells, Datum):
             cells = cells.datum
-            if cells is nil:
+            if is_nil(cells):
                 return
         for fr in cells:
             if isinstance(fr, dict):
@@ -2884,7 +2884,7 @@ def parse_matcher(elem):
     :rtype: Pattern
     """
 
-    if elem is nil:
+    if is_nil(elem):
         raise ValueError(
             "nil is not a valid matcher pattern element")
     result = META_MATCHER.match(
@@ -2964,7 +2964,7 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
 
     head, tail = form
 
-    if tail is not nil and is_pair(tail):
+    if not is_nil(tail) and is_pair(tail):
         decl_bind = tail.car
         factory = lookup_matcher(str(head))
         if factory is not None and is_symbol(decl_bind):
@@ -2972,7 +2972,7 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
 
     specs = []
     cur = form
-    while cur is not nil:
+    while not is_nil(cur):
         first, cur = cur
         specs.append(parse_explicit_rule_pattern(first, source_ctx))
     return MATCH(*specs)
@@ -3358,7 +3358,7 @@ def group_named_factory(head_sym, raw_args):
     if not items:
         raise ValueError("(GROUP ...) requires at least one argument")
     first = items[0]
-    if first is nil:
+    if is_nil(first):
         return GROUP(None, *[parse_matcher(i) for i in items[1:]])
     slot = coerce_slot("GROUP", first)
     return GROUP(slot, *[parse_matcher(i) for i in items[1:]])

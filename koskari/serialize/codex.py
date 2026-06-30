@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from enum import Enum, IntEnum
 
 from ..lib import (Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode,
-                   OpStyle, keyword, nil, symbol)
+                   OpStyle, bracket_nil, keyword, nil, symbol)
 from .constants import (BYTECODE_ABI_MAJOR, BYTECODE_ABI_MICRO,
                         BYTECODE_ABI_MINOR, BYTECODE_ABI_PATCH, KIO_MAGIC)
 
@@ -129,6 +129,7 @@ class PoolKind(IntEnum):
     NAMESPACE_SPEC = 17
     FORMALS_SPEC = 18
     FUNCTION_SPEC = 19
+    BRACKET_NIL = 20
 
 
 @dataclass
@@ -842,6 +843,9 @@ def encode_pool_record_value(val, index_of, pb=None):
     if val is nil:
         return struct.pack('<B', PoolKind.NIL)
 
+    if val is bracket_nil:
+        return struct.pack('<B', PoolKind.BRACKET_NIL)
+
     if val is True:
         return struct.pack('<B', PoolKind.TRUE)
 
@@ -922,6 +926,9 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
 
     if kind == PoolKind.NIL:
         return nil, off
+
+    if kind == PoolKind.BRACKET_NIL:
+        return bracket_nil, off
 
     if kind == PoolKind.TRUE:
         return True, off

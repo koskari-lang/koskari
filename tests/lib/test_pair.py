@@ -22,7 +22,7 @@ import unittest
 
 from koskari.lib import (
     pair, nil, cons, car, cdr, setcar, setcdr, build_unpack_pair,
-    make_recursive, break_recursive,
+    make_recursive, break_recursive, bracket_pair,
 )
 
 import pytest
@@ -278,8 +278,8 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repr(nil), "nil")
 
     async def test_str(self):
-        """str(nil) returns 'nil'"""
-        self.assertEqual(str(nil), "nil")
+        """str(nil) returns '()' (the empty list renders as its form)"""
+        self.assertEqual(str(nil), "()")
 
     async def test_bool_false(self):
         """nil is falsy"""
@@ -460,6 +460,13 @@ class TestBuildUnpackPair(unittest.IsolatedAsyncioTestCase):
         """build_unpack_pair skips nil arguments"""
         p = build_unpack_pair([1, 2], nil, [3, 4])
         self.assertEqual(list(p.unpack()), [1, 2, 3, 4])
+
+    async def test_with_bracket_pairs(self):
+        """build_unpack_pair unpacks bracket-pair segments (PAIR_SPLICE twin)"""
+        b1 = bracket_pair(1, bracket_pair(2, nil))
+        b2 = bracket_pair(3, bracket_pair(4, nil))
+        result = build_unpack_pair(b1, b2)
+        self.assertEqual(list(result.unpack()), [1, 2, 3, 4])
 
     async def test_preserves_improper_tail(self):
         """build_unpack_pair preserves improper tail from last arg"""

@@ -28,7 +28,7 @@ from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
 from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH
 from ...bootstrap import builtin
-from ...types import get_position, unpack
+from ...types import is_nil, get_position, unpack
 from .helpers import block_source_from_cons, layout, match_block_source
 
 
@@ -88,7 +88,7 @@ def _rule_row(ns, rule_source, layout_body=False):
     header = matched['header'].datum
     body = matched['body'].datum
 
-    if body is nil:
+    if is_nil(body):
         raise LayoutError(
             'rule block must have pattern and template',
             get_position(rule_source))

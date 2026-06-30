@@ -33,13 +33,13 @@
 */
 static int
 pair_splice_extend(PyObject *coll, PyObject *item) {
-  if (KosNil_Check(item)) {
+  if (KosNilP(item)) {
     /* nil contributes nothing */
     return 0;
   }
 
-  if (KosPair_CheckExact(item)) {
-    /* pair: unpack into an iterator, then extend */
+  if (KosPair_Check(item)) {
+    /* pair (or bracket-pair): unpack into an iterator, then extend */
     PyObject *it = KosPair_Unpack(item);
     if (! it)
       return -1;

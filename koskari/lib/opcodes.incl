@@ -95,6 +95,7 @@ OP(CHECK_IS_NOT, LABEL)
 OP(CHECK_IS_INSTANCE, LABEL)
 OP(CHECK_IS_SUBCLASS, LABEL)
 OP(CHECK_EXCEPTION, LABEL)
+OP(CHECK_NIL, LABEL)        // squashed NILP + JUMP_FALSE: jump if not nil
 
 // switch dispatch - retain discriminant on mismatch
 OP(SWITCH_EQ, LABEL)
@@ -281,6 +282,7 @@ OP(OBJECT_IS, NOARG)
 OP(OBJECT_IS_NOT, NOARG)
 OP(OBJECT_IS_INSTANCE, COUNT)
 OP(OBJECT_IS_SUBCLASS, COUNT)
+OP(NILP, NOARG)            // pop TOS, push True if an empty-list singleton
 
 // numeric interface
 OP(OBJECT_ADD, COUNT)

@@ -26,7 +26,7 @@ Layout decorator for reader block syntax and block-form matchers.
 from ...compile.helpers import match1
 from ...lib import cons, keyword, nil
 from ...matcher import BIND, LIST, LITERAL_KW, MATCH, REST
-from ...types import is_pair, is_symbol, unpack
+from ...types import is_nil, is_pair, is_symbol, unpack
 
 
 _keyword_block = keyword(':block:')
@@ -93,7 +93,7 @@ def block_source_from_cons(form):
         return None
     header = matched['header'].datum
     body_list = matched['body_list'].datum
-    if body_list is nil:
+    if is_nil(body_list):
         return cons(header, nil)
     return cons(header, *unpack(body_list), nil)
 

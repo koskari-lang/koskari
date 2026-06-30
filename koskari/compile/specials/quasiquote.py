@@ -39,7 +39,7 @@ accepts tuples as segments natively.
 """
 
 
-from ...lib import nil, OpCode, symbol
+from ...lib import bracket_nil, bracket_pair, nil, OpCode, symbol
 from ...types import is_nil, is_pair
 from ...exceptions import SpecialError
 from ..compiler import _is_const
@@ -83,10 +83,10 @@ def _qq_expr(compiler, frag, expr, level):
     head, tail = expr
 
     if head is _symbol_unquote:
-        if tail is nil or not is_pair(tail):
+        if is_nil(tail) or not is_pair(tail):
             raise SpecialError("unquote requires one argument", expr)
         inner, rest = tail
-        if rest is not nil:
+        if not is_nil(rest):
             raise SpecialError("unquote takes one argument", expr)
 
         if level == 0:
@@ -102,10 +102,10 @@ def _qq_expr(compiler, frag, expr, level):
         raise SpecialError("unquote-splicing not in list position", expr)
 
     if head is _symbol_quasiquote:
-        if tail is nil or not is_pair(tail):
+        if is_nil(tail) or not is_pair(tail):
             raise SpecialError("quasiquote requires one argument", expr)
         inner, rest = tail
-        if rest is not nil:
+        if not is_nil(rest):
             raise SpecialError("quasiquote takes one argument", expr)
 
         frag.instruction(OpCode.KOS_OP_CONST, _symbol_quasiquote)
@@ -113,7 +113,10 @@ def _qq_expr(compiler, frag, expr, level):
         frag.instruction(OpCode.KOS_OP_PROPER, 2)
         return
 
-    _qq_list(compiler, frag, expr, level)
+    # [ ] lists build bracket cells directly during reconstruction:
+    # _qq_list picks its constructor (bracket-cons / bracket-splice) at each
+    # emission site, so construction is parallel rather than build-then-coerce.
+    _qq_list(compiler, frag, expr, level, isinstance(expr, bracket_pair))
 
 
 def _is_splice(expr, level):
@@ -129,20 +132,35 @@ def _is_splice(expr, level):
     )
 
 
-def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False):
+def _emit_call_var(frag, name, count):
+    """
+    Emit a CALL_VAR to a named runtime builtin with `count` args already on
+    the stack (used for the bracket-cons / bracket-splice runtime calls).
+    """
+
+    frag.request_var(name)
+    frag.instruction(OpCode.KOS_OP_CALL_VAR, (name, count, 0, 0))
+
+
+def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False,
+                  bracket=False):
     """
     Emit a completed proper-list segment of non-splice elements and return
     True, or return False if segment is empty.
 
     When as_tuple_for_splice is True and every element is a compile-time
-    constant, emits a single CONST tuple (which PAIR_SPLICE can consume
-    directly). Otherwise emits each element individually and closes with
-    PROPER n.
+    constant, emits a single CONST tuple (which PAIR_SPLICE consumes
+    directly). Otherwise emits each element, then closes the list: a
+    plain-pair segment with PROPER n, or — when this is a bracket list's
+    whole-list build (bracket and not a splice segment) — a bracket-cons
+    call with an explicit bracket-nil tail, so the cells are built bracket
+    directly.
 
     :param compiler: the active Compiler
     :param frag: the ByteCodeFragment to emit into
     :param segment: list of pre-compiled (frag_or_const, is_const) pairs
     :param as_tuple_for_splice: if True, allow CONST-tuple fast path
+    :param bracket: if True, the enclosing list is a bracket-pair
     :return: True if anything was emitted
     """
 
@@ -152,12 +170,19 @@ def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False):
     if as_tuple_for_splice and all(flag for _, flag in segment):
         const_tuple = tuple(v for v, _ in segment)
         frag.instruction(OpCode.KOS_OP_CONST, const_tuple)
+        return True
+
+    for sub_frag, is_c in segment:
+        if is_c:
+            frag.instruction(OpCode.KOS_OP_CONST, sub_frag)
+        else:
+            frag.merge(sub_frag)
+
+    if bracket and not as_tuple_for_splice:
+        # whole-list build for a [ ] form: bracket-cons elements + bracket-nil
+        frag.instruction(OpCode.KOS_OP_CONST, bracket_nil)
+        _emit_call_var(frag, "bracket-cons", len(segment) + 1)
     else:
-        for sub_frag, is_c in segment:
-            if is_c:
-                frag.instruction(OpCode.KOS_OP_CONST, sub_frag)
-            else:
-                frag.merge(sub_frag)
         frag.instruction(OpCode.KOS_OP_PROPER, len(segment))
 
     return True
@@ -189,7 +214,7 @@ def _compile_element(compiler, frag, expr, level):
     return (sub, False)
 
 
-def _qq_list(compiler, frag, lst, level):
+def _qq_list(compiler, frag, lst, level, bracket=False):
     """
     Emit bytecode for a quasi-quoted pair (list or dotted pair).
 
@@ -200,10 +225,16 @@ def _qq_list(compiler, frag, lst, level):
 
     Dotted-pair tails use CONS instead of PROPER so the cdr is explicit.
 
+    When `bracket` is True (the source is a bracket-pair), the constructors
+    are swapped for their bracket forms: bracket-cons for whole-list and
+    dotted builds, bracket-splice for splices, and bracket-nil for empty.
+    Construction is direct — no plain list is built and then converted.
+
     :param compiler: the active Compiler
     :param frag: the ByteCodeFragment to emit into
     :param lst: the pair (proper or improper) to walk
     :param level: nesting depth
+    :param bracket: True when lst is a bracket-pair
     """
 
     segment = []
@@ -240,12 +271,12 @@ def _qq_list(compiler, frag, lst, level):
 
         if _is_splice(elem, level):
             splice_inner_list = elem[1]
-            if splice_inner_list is nil or not is_pair(splice_inner_list):
+            if is_nil(splice_inner_list) or not is_pair(splice_inner_list):
                 raise SpecialError(
                     "unquote-splicing requires one argument",
                     elem)
             splice_inner, splice_rest = splice_inner_list
-            if splice_rest is not nil:
+            if not is_nil(splice_rest):
                 raise SpecialError(
                     "unquote-splicing takes one argument",
                     elem)
@@ -289,12 +320,12 @@ def _qq_list(compiler, frag, lst, level):
               and current[0] is _symbol_unquote
               and level == 0):
             unquote_body = current[1]
-            if unquote_body is nil or not is_pair(unquote_body):
+            if is_nil(unquote_body) or not is_pair(unquote_body):
                 raise SpecialError(
                     "unquote requires one argument",
                     current)
             inner, rest = unquote_body
-            if rest is not nil:
+            if not is_nil(rest):
                 raise SpecialError(
                     "unquote takes one argument",
                     current)
@@ -302,24 +333,33 @@ def _qq_list(compiler, frag, lst, level):
         else:
             _qq_expr(compiler, frag, current, level)
 
-        frag.instruction(OpCode.KOS_OP_CONS, len(segment) + 1)
+        # explicit-tail build: bracket-cons for [ ], CONS for ( )
+        if bracket:
+            _emit_call_var(frag, "bracket-cons", len(segment) + 1)
+        else:
+            frag.instruction(OpCode.KOS_OP_CONS, len(segment) + 1)
         return
 
     # Proper list: flush the final segment
-    if _emit_segment(compiler, frag, segment, as_tuple_for_splice=has_splice):
+    if _emit_segment(compiler, frag, segment, as_tuple_for_splice=has_splice,
+                     bracket=bracket):
         splice_count += 1
 
     if has_splice:
-        # Always emit PAIR_SPLICE when any ,@ ran. A lone ,@ leaves one segment on
-        # the stack (list/tuple/pair/iterable); skipping PAIR_SPLICE 1 left Python
+        # Always emit a splice when any ,@ ran. A lone ,@ leaves one segment on
+        # the stack (list/tuple/pair/iterable); skipping it left Python
         # list/tuple values unevaluated into Koskari proper lists (PAIR_SPLICE.c
         # flattens segments into cons cells). splice_count counts every segment:
-        # literal PROPER/tuple chunks plus each splice result.
+        # literal PROPER/tuple chunks plus each splice result. bracket-splice is
+        # the [ ] twin (only its leading cell is a bracket-pair).
         if splice_count >= 1:
-            frag.instruction(OpCode.KOS_OP_PAIR_SPLICE, splice_count)
+            if bracket:
+                _emit_call_var(frag, "bracket-splice", splice_count)
+            else:
+                frag.instruction(OpCode.KOS_OP_PAIR_SPLICE, splice_count)
     elif splice_count == 0:
-        # Empty list: `() → nil
-        frag.instruction(OpCode.KOS_OP_CONST, nil)
+        # Empty list: `() → nil, `[] → bracket-nil
+        frag.instruction(OpCode.KOS_OP_CONST, bracket_nil if bracket else nil)
 
 
 @builtin("compile/quasiquote")
@@ -335,11 +375,11 @@ def special_quasiquote(compiler, source, tc=False):
 
     called_by, body = source
 
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError("quasiquote requires one argument", source)
 
     expr, rest = body
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("quasiquote takes one argument", source)
 
     frag = compiler.fragment(called_by)

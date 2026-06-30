@@ -24,10 +24,10 @@ Special form handlers for compile/#list and compile/#list-append.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import OpCode, nil
+from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
-from ...types import is_pair
+from ...types import is_nil, is_pair
 from ..helpers import is_symbolish, unpack
 
 
@@ -45,7 +45,7 @@ def special_build_tuple(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     count = 0
 
-    if body is nil:
+    if is_nil(body):
         frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 0)
         return frag
 
@@ -71,7 +71,7 @@ def special_build_list(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     count = 0
 
-    if body is nil:
+    if is_nil(body):
         frag.instruction(OpCode.KOS_OP_BUILD_LIST, 0)
         return frag
 

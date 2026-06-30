@@ -47,8 +47,9 @@ from re import UNICODE, VERBOSE
 from re import compile as regex
 
 from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
-from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
-from ..types import is_pair
+from ..lib import (BaseSourceStream, Module, bracket_nil, bracket_pair, cons,
+                   keyword, nil, pair, setcdr, symbol)
+from ..types import is_nil, is_pair
 from .layouts import apply_layout, apply_layouts, find_layout
 
 
@@ -732,17 +733,21 @@ class Reader:
     :meth:`_dispatch_event_macros`).
     """
 
-    def __init__(self, nodefaults=False):
+    def __init__(self, nodefaults=False, bracket_pairs=True):
         """
         Initialize a new reader
 
         :param nodefaults: if True, do not add default macros and patterns
+        :param bracket_pairs: if True (default), ``[ ]`` reads into distinct
+            bracket-pair / bracket-nil values; if False, ``[ ]`` reads as plain
+            pairs terminated by nil, identical to ``( )``
         """
 
         self.reader_macros = {}
         self.atom_patterns = []
         self.terminating = set(_BASE_TERMINATORS)
         self._terms = "".join(sorted(self.terminating))
+        self.bracket_pairs = bracket_pairs
 
         if not nodefaults:
             self._add_default_macros()
@@ -1368,13 +1373,25 @@ class Reader:
         """
         Internal pair reading implementation
 
+        ``[`` builds bracket-pair cells terminated by bracket-nil; ``(``
+        (and ``{``) build plain pairs terminated by nil. The two flavors
+        are interchangeable to the compiler; the distinction is the
+        recorded delimiter style.
+
         :param closer: the expected closing character
         :param stream: the source stream
         :param char: the opening character
         :return: tuple of (event, value)
         """
 
-        result = nil
+        if char == "[" and self.bracket_pairs:
+            empty = bracket_nil
+            make_cell = bracket_pair
+        else:
+            empty = nil
+            make_cell = pair
+
+        result = empty
         work = result
 
         while True:
@@ -1384,7 +1401,7 @@ class Reader:
                 break
 
             elif event is DOT:
-                if result is nil:
+                if result is empty:
                     raise stream.error("invalid dotted list", position)
 
                 dot_position = position
@@ -1405,13 +1422,13 @@ class Reader:
             elif event is EOF:
                 raise stream.reader_eof(position)
 
-            elif result is nil:
-                result = cons(value, nil)
+            elif result is empty:
+                result = make_cell(value, empty)
                 result.set_position(position)
                 work = result
 
             else:
-                new_work = cons(value, nil)
+                new_work = make_cell(value, empty)
                 new_work.set_position(position)
                 setcdr(work, new_work)
                 work = new_work
@@ -1710,7 +1727,9 @@ class Reader:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
-        if is_pair(child) and child[0] is _symbol_splice:
+        # is_pair(nil) is True (nil subclasses pair), so guard the empties
+        # before indexing — `,()` / `,[]` are unquotes of the empty list.
+        if is_pair(child) and not is_nil(child) and child[0] is _symbol_splice:
             value = cons(_symbol_unquote_splicing, child[1])
         else:
             value = cons(_symbol_unquote, child, nil)
@@ -1800,7 +1819,8 @@ class LayoutReader(Reader):
             namespace,
             nodefaults=False,
             layout_enabled=True,
-            layout_implicit_calls=True):
+            layout_implicit_calls=True,
+            bracket_pairs=True):
         """
         Initialize the layout reader
 
@@ -1809,10 +1829,12 @@ class LayoutReader(Reader):
         :param layout_implicit_calls: if True, multiple values on one layout
             line fold to an implicit call; if False, more than one value is an
             error
+        :param bracket_pairs: if True (default), ``[ ]`` reads into distinct
+            bracket-pair / bracket-nil values; if False, as plain pairs
         """
 
-        super().__init__(nodefaults=True)
-        self._inner = Reader(nodefaults=True)
+        super().__init__(nodefaults=True, bracket_pairs=bracket_pairs)
+        self._inner = Reader(nodefaults=True, bracket_pairs=bracket_pairs)
 
         from ..lib import ModuleNamespace
 

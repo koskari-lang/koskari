@@ -30,10 +30,10 @@ preserve dunder dispatch semantics.
 
 import operator as _op
 
-from ...lib import nil, OpCode, symbol, cons
+from ...lib import OpCode, symbol, cons
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST, VALUE
-from ...types import get_position, is_pair, is_symbol, is_keyword, unpack
+from ...types import is_nil, get_position, is_pair, is_symbol, is_keyword, unpack
 from ...bootstrap import builtin
 from ...syntax import special
 from ..helpers import const_only_expr, is_symbolish, match
@@ -63,7 +63,7 @@ def _reduce_fold(py_fold, compiler, body):
     have_acc = False
 
     current = body
-    while current is not nil:
+    while not is_nil(current):
         expr, rest = current
 
         expr_frag = compiler.full_compile(expr)
@@ -127,7 +127,7 @@ def _reduce_op(op, py_fold, compiler, source):
         count += 1
 
     current = body
-    while current is not nil:
+    while not is_nil(current):
         frag.position_of(current)
         expr, current = current
         frag.merge(compiler.full_compile(expr))
@@ -138,7 +138,7 @@ def _reduce_op(op, py_fold, compiler, source):
             "%s requires at least one argument" % called_by,
             source)
 
-    if count == 1 and body is nil:
+    if count == 1 and is_nil(body):
         return frag
 
     frag.instruction(op, count)
@@ -168,7 +168,7 @@ def _binary_op(op, compiler, source, opa=0):
     count = 0
 
     current = body
-    while current is not nil:
+    while not is_nil(current):
         frag.position_of(current)
         expr, current = current
         frag.merge(compiler.full_compile(expr))
@@ -200,7 +200,7 @@ def _unary_op(op, compiler, source):
     count = 0
 
     current = body
-    while current is not nil:
+    while not is_nil(current):
         frag.position_of(current)
         expr, current = current
         frag.merge(compiler.full_compile(expr))
@@ -306,7 +306,7 @@ def _chain_compare(op, compiler, source):
 
     count = 0
     current = body
-    while current is not nil:
+    while not is_nil(current):
         frag.position_of(current)
         expr, current = current
         frag.merge(compiler.full_compile(expr))
@@ -449,7 +449,7 @@ def _type_check_op(op, compiler, source):
     called_by, body = source
 
     frag = compiler.fragment(called_by)
-    exprs = list(body.unpack()) if body is not nil else []
+    exprs = list(body.unpack()) if not is_nil(body) else []
 
     if len(exprs) < 2:
         raise SpecialError(
@@ -664,6 +664,18 @@ def special_not(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_NOT, compiler, source)
 
 
+@builtin("compile/nil?")
+@special("compile/nil?", patterns=_DEFAULT_SPECIAL_PATTERNS)
+def special_nilp(compiler, source, tc=False):
+    """
+    Compile (nil? OBJ). True if OBJ is an empty-list singleton, either
+    nil or bracket-nil. Emits NILP, which compression may lower to a
+    CHECK_NIL when followed by a conditional jump.
+    """
+
+    return _unary_op(OpCode.KOS_OP_NILP, compiler, source)
+
+
 @builtin("compile/repr")
 @special("compile/repr", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_repr(compiler, source, tc=False):
@@ -713,7 +725,7 @@ def special_str(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is nil:
+    if is_nil(body):
         frag = compiler.fragment(called_by)
         frag.instruction(OpCode.KOS_OP_CONST, "")
         return frag
@@ -815,19 +827,19 @@ def special_inplace(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError("inplace requires op, var, and value", source)
 
     op_sym, rest = body
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError("inplace requires op, var, and value", source)
 
     var_sym, rest = rest
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError("inplace requires op, var, and value", source)
 
     value_expr, rest = rest
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("inplace takes exactly three arguments", source)
 
     if not is_symbolish(var_sym):
@@ -860,27 +872,27 @@ def special_inplace_item(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError(
             "inplace-item requires op, obj, key, and value", source)
 
     op_sym, rest = body
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError(
             "inplace-item requires op, obj, key, and value", source)
 
     obj_expr, rest = rest
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError(
             "inplace-item requires op, obj, key, and value", source)
 
     key_expr, rest = rest
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError(
             "inplace-item requires op, obj, key, and value", source)
 
     value_expr, rest = rest
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("inplace-item takes exactly four arguments", source)
 
     var_opcode = _INPLACE_OP_MAP.get(op_sym)
@@ -933,27 +945,27 @@ def special_inplace_attr(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is nil or not is_pair(body):
+    if is_nil(body) or not is_pair(body):
         raise SpecialError(
             "inplace-attr requires op, obj, attr, and value", source)
 
     op_sym, rest = body
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError(
             "inplace-attr requires op, obj, attr, and value", source)
 
     obj_expr, rest = rest
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError(
             "inplace-attr requires op, obj, attr, and value", source)
 
     key_expr, rest = rest
-    if rest is nil or not is_pair(rest):
+    if is_nil(rest) or not is_pair(rest):
         raise SpecialError(
             "inplace-attr requires op, obj, attr, and value", source)
 
     value_expr, rest = rest
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("inplace-attr takes exactly four arguments", source)
 
     if not is_symbol(key_expr):

@@ -32,8 +32,8 @@ KOS_OP_HANDLER(CDR) {
     return EVAL_RAISE();
 
   for (int i = 0; i < opa; i++) {
-    if (! KosPair_Check(cur) || KosNil_Check(cur)) {
-      const char *got = KosNil_Check(cur)
+    if (! KosPair_Check(cur) || KosNilP(cur)) {
+      const char *got = KosNilP(cur)
           ? "nil"
           : Py_TYPE(cur)->tp_name;
       Py_DECREF(cur);

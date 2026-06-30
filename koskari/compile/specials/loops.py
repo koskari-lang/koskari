@@ -25,7 +25,8 @@ compile/continue.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import OpCode, nil
+from ...lib import OpCode
+from ...types import is_nil
 from ...matcher import (BINDING, BODY, CALLEDBY, MATCH, OPTIONAL, USING_UNPACK,
                         VALUE)
 from ...syntax import special
@@ -51,7 +52,7 @@ def special_while(compiler, tc, _while, test, body):
 
     body = body.datum
     body, elsebody = helper_elsebody(body)
-    has_elsebody = elsebody is not nil and elsebody is not None
+    has_elsebody = not is_nil(elsebody) and elsebody is not None
 
     fragment.instruction(OpCode.KOS_OP_PUSH_LOOP, 0)
 
@@ -105,7 +106,7 @@ def special_for_each(compiler, caps, tc=False):
 
     body = caps["body"].datum
     body, elsebody = helper_elsebody(body)
-    has_elsebody = elsebody is not nil and elsebody is not None
+    has_elsebody = not is_nil(elsebody) and elsebody is not None
 
     fragment = compiler.fragment(called_by)
     fragment.position_of(called_by)
@@ -152,14 +153,14 @@ def _special_break_continue(compiler, source, op):
 
     called_by, rest = source
 
-    if rest is nil:
+    if is_nil(rest):
         frag = compiler.fragment(called_by)
         frag.position_of(source)
         frag.instruction(op, 0)
         return frag
 
     val, tail = rest
-    if tail is not nil:
+    if not is_nil(tail):
         raise SpecialError(
             "%s takes at most one argument" % called_by,
             source)

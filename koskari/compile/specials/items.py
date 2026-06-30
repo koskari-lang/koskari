@@ -22,8 +22,8 @@ Special form handlers for compile/item, compile/del-item, and compile/set-item.
 """
 
 
-from ...lib import nil, OpCode
-from ...types import is_pair
+from ...lib import OpCode
+from ...types import is_nil, is_pair
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
@@ -46,7 +46,7 @@ def special_item(compiler, source, tc=False):
         raise SpecialError("item requires two arguments", source)
     obj, (key, rest) = body
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("item takes two arguments", source)
 
     frag = compiler.fragment(called_by)
@@ -79,7 +79,7 @@ def special_del_item(compiler, source, tc=False):
         raise SpecialError("del-item requires two arguments", source)
     obj, (key, rest) = body
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("del-item takes two arguments", source)
 
     frag = compiler.fragment(called_by)
@@ -115,7 +115,7 @@ def special_take_item(compiler, source, tc=False):
         raise SpecialError("take-item requires two arguments", source)
     obj, (key, rest) = body
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("take-item takes two arguments", source)
 
     frag = compiler.fragment(called_by)
@@ -148,7 +148,7 @@ def special_set_item(compiler, source, tc=False):
         raise SpecialError("set-item requires three arguments", source)
     obj, (key, (val, rest)) = body
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("set-item takes three arguments", source)
 
     frag = compiler.fragment(called_by)

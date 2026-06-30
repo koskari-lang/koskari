@@ -29,6 +29,7 @@ from typing import Any
 
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
+from koskari.types import is_nil
 from koskari.hygiene import (Hygiene, collect_binding_symbols,
                              expand_template_with_hygiene,
                              finalize_macro_hygiene_unbox_one_pass)
@@ -507,8 +508,8 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
         head, rest = pattern_expr
         if head == _symbol_match:
             if (not is_proper(rest)
-                    or rest.cdr is not nil
-                    or rest is nil):
+                    or not is_nil(rest.cdr)
+                    or is_nil(rest)):
                 raise ValueError(
                     f"match pattern must have exactly one form: {pattern_expr!r}"
                     f" (context {source_ctx!r})"

@@ -784,8 +784,22 @@ static PyObject *dict_kos_repr(PyObject *self, PyObject *_unused) {
 }
 
 
+/* A type object reprs via normal repr, not via the __kos_repr__ method
+   its instances carry: looking up __kos_repr__ on the class itself would
+   otherwise find the unbound instance method and try to call it. */
+static PyObject *type_kos_repr(PyObject *self, PyObject *_unused) {
+  (void) _unused;
+  return PyObject_Repr(self);
+}
+
+
 static PyMethodDef list_kos_repr_def = {
   "list_kos_repr", (PyCFunction) list_kos_repr, METH_NOARGS, NULL
+};
+
+
+static PyMethodDef type_kos_repr_def = {
+  "type_kos_repr", (PyCFunction) type_kos_repr, METH_NOARGS, NULL
 };
 
 
@@ -1055,7 +1069,7 @@ PyObject *KosUtils_BuildDict(PyObject *args, PyObject *kwargs) {
 
       if (KosPair_Check(tail)) {
         value = KosPair_CAR(tail);
-      } else if (KosNil_Check(tail)) {
+      } else if (KosNilP(tail)) {
         PyErr_SetString(PyExc_ValueError,
                         "build_dict pair must have at least 2 elements");
         Py_DECREF(result);
@@ -1539,6 +1553,23 @@ int koskari_utils_init(PyObject *mod) {
       return -1;
 
     if (KosUtils_ReprRegister((PyObject *) &PyDict_Type, handler) < 0) {
+      Py_DECREF(handler);
+      return -1;
+    }
+
+    Py_DECREF(handler);
+  }
+
+  {
+    /* registered against the type metaclass: any class object dispatches
+       here (Py_TYPE(cls) is type) and reprs normally, rather than falling
+       through to its instances' __kos_repr__ method. */
+    PyObject *handler = PyCFunction_New(&type_kos_repr_def, NULL);
+
+    if (! handler)
+      return -1;
+
+    if (KosUtils_ReprRegister((PyObject *) &PyType_Type, handler) < 0) {
       Py_DECREF(handler);
       return -1;
     }

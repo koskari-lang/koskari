@@ -25,12 +25,12 @@ compile/globals, and compile/locals.
 
 
 from ...exceptions import CompilerError, SpecialError
-from ...lib import Datum, OpCode, cons, keyword, nil, symbol
+from ...lib import Datum, OpCode, cons, keyword, symbol
 from ...matcher import (BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH,
                         PAIR, REST, SYMBOL, VALUE)
 from ...bootstrap import builtin
 from ...syntax import special
-from ...types import is_pair
+from ...types import is_nil, is_pair
 from ..helpers import (_parse_decl_tail, parse_decl, unpack_lhs_bind_symbols,
                        using_unpack_helper)
 
@@ -344,7 +344,7 @@ def special_globals(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is not nil:
+    if not is_nil(body):
         raise SpecialError("%s takes no arguments" % called_by, source)
 
     frag = compiler.fragment(called_by)
@@ -360,7 +360,7 @@ def special_locals(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if body is not nil:
+    if not is_nil(body):
         raise SpecialError("%s takes no arguments" % called_by, source)
 
     frag = compiler.fragment(called_by)

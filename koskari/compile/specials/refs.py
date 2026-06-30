@@ -23,9 +23,9 @@ compile/ref-item, compile/refq, and compile/bindq.
 """
 
 
-from ...lib import nil, OpCode
+from ...lib import OpCode
 from ...matcher import CALLEDBY, DEFINE, MATCH, REST, VALUE
-from ...types import is_pair
+from ...types import is_nil, is_pair
 from ...exceptions import SpecialError
 from ...bootstrap import builtin
 from ...syntax import special
@@ -48,7 +48,7 @@ def special_deref(compiler, source, tc=False):
         raise SpecialError("deref requires one argument", source)
 
     arg, rest = body
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("deref takes one argument", source)
 
     frag = compiler.fragment(called_by)
@@ -71,7 +71,7 @@ def special_ref_attr(compiler, source, tc=False):
         raise SpecialError("ref-attr requires two arguments", source)
     obj, (sym, rest) = body
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("ref-attr takes two arguments", source)
 
     frag = compiler.fragment(called_by)
@@ -95,7 +95,7 @@ def special_ref_item(compiler, source, tc=False):
         raise SpecialError("ref-item requires two arguments", source)
     obj, (key, rest) = body
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("ref-item takes two arguments", source)
 
     frag = compiler.fragment(called_by)
@@ -128,7 +128,7 @@ def special_refq(compiler, source, tc=False):
 
     sym = str(sym)
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("refq takes one argument", source)
 
     frag = compiler.fragment(called_by)

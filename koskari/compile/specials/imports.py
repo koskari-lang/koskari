@@ -74,11 +74,11 @@ Opcode sequences produced
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, nil
+from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
 from ...syntax import special
-from ...types import is_keyword, is_pair, is_symbol, unpack
+from ...types import is_nil, is_keyword, is_pair, is_symbol, unpack
 from ..helpers import helper_using, is_symbolish
 
 
@@ -274,17 +274,17 @@ def special_import(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil:
+    if is_nil(rest):
         raise SpecialError("import requires a module name", source)
 
     name_sym, rest = rest
 
     # Optional as: ALIAS suffix
     alias = None
-    if rest is not nil:
+    if not is_nil(rest):
         maybe_as, rest2 = rest
         if is_keyword(maybe_as) and str(maybe_as) == 'as':
-            if rest2 is nil:
+            if is_nil(rest2):
                 raise SpecialError("import as: requires an alias symbol", source)
 
             alias_sym, rest = rest2
@@ -294,7 +294,7 @@ def special_import(compiler, source, tc=False):
             alias = str(alias_sym)
         # else: rest still has content; will be caught by too-many-args check
 
-    if rest is not nil:
+    if not is_nil(rest):
         raise SpecialError("too many arguments to import", source)
 
     level, dotted = _parse_import_name(name_sym, source)
@@ -334,18 +334,18 @@ def special_import_from(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil:
+    if is_nil(rest):
         raise SpecialError("import-from requires a module name", source)
 
     name_sym, rest = rest
-    if rest is nil:
+    if is_nil(rest):
         raise SpecialError("import-from requires at least one member", source)
 
     level, dotted = _parse_import_name(name_sym, source)
 
     members = []
     current = rest
-    while current is not nil:
+    while not is_nil(current):
         elem, current = current
         members.append(_parse_member(elem, source))
 

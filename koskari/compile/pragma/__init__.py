@@ -18,6 +18,7 @@ Resolution pragma and related compile-time pragma support.
 """
 
 
+from .bracket import BracketCalls
 from .resolution import (
     KoskariPragma,
     PythonPragma,
@@ -27,6 +28,7 @@ from .resolution import (
 
 
 __all__ = (
+    'BracketCalls',
     'KoskariPragma',
     'PythonPragma',
     'ResolutionPragma',

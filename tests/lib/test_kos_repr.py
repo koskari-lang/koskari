@@ -79,10 +79,10 @@ class TestKosRepr(unittest.TestCase):
 
     def test_nil(self):
         """
-        nil prints as nil token
+        nil prints as the empty-list form ()
         """
 
-        self.assertEqual(kos_repr(nil), "nil")
+        self.assertEqual(kos_repr(nil), "()")
 
 
     def test_symbol(self):
@@ -92,6 +92,18 @@ class TestKosRepr(unittest.TestCase):
 
         s = symbol("alpha")
         self.assertEqual(kos_repr(s), "alpha")
+
+
+    def test_type_uses_normal_repr(self):
+        """
+        a type object reprs normally, not via its instances' __kos_repr__
+        """
+
+        # pair/symbol instances carry __kos_repr__; the type object must not
+        # try to dispatch through it.
+        self.assertEqual(kos_repr(pair), repr(pair))
+        self.assertEqual(kos_repr(symbol), repr(symbol))
+        self.assertEqual(kos_repr(type(nil)), repr(type(nil)))
 
 
     def test_keyword(self):

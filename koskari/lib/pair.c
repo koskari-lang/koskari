@@ -46,6 +46,12 @@ static PyObject *_str_recursive_true = NULL;
 static PyObject *_str_space = NULL;
 static PyObject *_str_quote = NULL;
 static PyObject *_str_esc_quote = NULL;
+static PyObject *_str_open_bracket = NULL;
+static PyObject *_str_close_bracket = NULL;
+static PyObject *_str_bracket_cons_paren = NULL;
+static PyObject *_str_empty_paren = NULL;
+static PyObject *_str_empty_bracket = NULL;
+static PyObject *_str_bracket_nil = NULL;
 
 
 /* === pair free list === */
@@ -186,7 +192,7 @@ static PyObject *pfoll_iternext(PyObject *self) {
   }
 
   /* get ready for the next */
-  if (KosPair_CheckExact(current)) {
+  if (KosPair_IsCell(current)) {
     s->current = KosPair_CDR(current);
     Py_INCREF(s->current);
 
@@ -200,11 +206,11 @@ static PyObject *pfoll_iternext(PyObject *self) {
   if (s->just_items) {
     /* if we're in items mode, then we want the CAR if current is a
        pair, otherwise if current is non-nil we return it. */
-    if (KosPair_CheckExact(current)) {
+    if (KosPair_IsCell(current)) {
       result = KosPair_CAR(current);
       Py_INCREF(result);
       Py_DECREF(current);
-    } else if (KosNil_Check(current)) {
+    } else if (KosNilP(current)) {
       result = NULL;
       Py_DECREF(current);
     } else {
@@ -314,7 +320,7 @@ static PyObject *pair_iter(PyObject *self) {
 }
 
 
-static PyObject *pair_repr(PyObject *self) {
+static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
   PyObject *tmp = NULL;
   PyObject *col = PyList_New(0);
   PyObject *found = PyDict_New();
@@ -323,9 +329,9 @@ static PyObject *pair_repr(PyObject *self) {
   PyObject *rest = self;
   PyObject *rest_id;
 
-  PyList_Append(col, _str_cons_paren);
+  PyList_Append(col, cons_open);
 
-  while (rest->ob_type == &KosPairType) {
+  while (KosPair_IsCell(rest)) {
     rest_id = PyLong_FromVoidPtr(rest);
 
     if (PyDict_Contains(found, rest_id)) {
@@ -334,7 +340,7 @@ static PyObject *pair_repr(PyObject *self) {
 
       if (rest != self) {
         tmp = PyDict_GetItem(found, rest_id);
-        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, _str_cons_paren);
+        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, cons_open);
         PyList_Append(col, _str_close_paren);
       }
       Py_DECREF(rest_id);
@@ -374,6 +380,11 @@ static PyObject *pair_repr(PyObject *self) {
 }
 
 
+static PyObject *pair_repr(PyObject *self) {
+  return pair_repr_inner(self, _str_cons_paren);
+}
+
+
 static PyObject *sib_quoted(PyObject *u) {
   /* quote a string for display in str() output */
 
@@ -384,7 +395,11 @@ static PyObject *sib_quoted(PyObject *u) {
 }
 
 
-static PyObject *pair_str(PyObject *self) {
+static PyObject *pair_str_inner(
+    PyObject *self,
+    PyObject *open_s,
+    PyObject *close_s) {
+
   PyObject *tmp = NULL;
   PyObject *col = PyList_New(0);
   PyObject *found = PyDict_New();
@@ -393,21 +408,28 @@ static PyObject *pair_str(PyObject *self) {
   PyObject *rest = self;
   PyObject *rest_id;
 
-  PyList_Append(col, _str_open_paren);
+  if (KosNilP(self)) {
+    /* the empty list renders as its own open/close delimiters */
+    Py_DECREF(col);
+    Py_DECREF(found);
+    return PyUnicode_Concat(open_s, close_s);
+  }
 
-  for (rest = self; KosPair_CheckExact(rest); rest = KosPair_CDR(rest)) {
+  PyList_Append(col, open_s);
+
+  for (rest = self; KosPair_IsCell(rest); rest = KosPair_CDR(rest)) {
     rest_id = PyLong_FromVoidPtr(rest);
 
     if (PyDict_Contains(found, rest_id)) {
       /* recursive pair detected */
       PyList_Append(col, _str_elipsis);
-      PyList_Append(col, _str_close_paren);
+      PyList_Append(col, close_s);
 
       if (rest != self) {
         tmp = PyDict_GetItem(found, rest_id);
-        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, _str_open_paren);
+        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, open_s);
         PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, _str_dot_space);
-        PyList_Append(col, _str_close_paren);
+        PyList_Append(col, close_s);
       }
       Py_DECREF(rest_id);
 
@@ -438,11 +460,11 @@ static PyObject *pair_str(PyObject *self) {
     }
   }
 
-  if(KosNil_Check(rest)) {
+  if(KosNilP(rest)) {
     /* end of a proper list */
 
-    Py_INCREF(_str_close_paren);
-    PyList_SetItem(col, index, _str_close_paren);
+    Py_INCREF(close_s);
+    PyList_SetItem(col, index, close_s);
 
   } else if (rest) {
     /* end of an improper list */
@@ -455,7 +477,7 @@ static PyObject *pair_str(PyObject *self) {
     }
     PyList_Append(col, _str_dot_space);
     PyList_Append(col, tmp);
-    PyList_Append(col, _str_close_paren);
+    PyList_Append(col, close_s);
     Py_DECREF(tmp);
   }
 
@@ -467,7 +489,15 @@ static PyObject *pair_str(PyObject *self) {
 }
 
 
-static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
+static PyObject *pair_str(PyObject *self) {
+  return pair_str_inner(self, _str_open_paren, _str_close_paren);
+}
+
+
+static PyObject *pair_kos_repr_inner(
+    PyObject *self,
+    PyObject *open_s,
+    PyObject *close_s) {
 
   PyObject *tmp = NULL;
   PyObject *col = PyList_New(0);
@@ -477,30 +507,28 @@ static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
   PyObject *rest = self;
   PyObject *rest_id;
 
-  (void) _unused;
-
-  if (KosNil_Check(self)) {
+  if (KosNilP(self)) {
+    /* the empty list renders as its own open/close delimiters */
     Py_DECREF(col);
     Py_DECREF(found);
-    Py_INCREF(_str_nil);
-    return _str_nil;
+    return PyUnicode_Concat(open_s, close_s);
   }
 
-  PyList_Append(col, _str_open_paren);
+  PyList_Append(col, open_s);
 
-  for (rest = self; KosPair_CheckExact(rest); rest = KosPair_CDR(rest)) {
+  for (rest = self; KosPair_IsCell(rest); rest = KosPair_CDR(rest)) {
     rest_id = PyLong_FromVoidPtr(rest);
 
     if (PyDict_Contains(found, rest_id)) {
       /* recursive pair detected */
       PyList_Append(col, _str_elipsis);
-      PyList_Append(col, _str_close_paren);
+      PyList_Append(col, close_s);
 
       if (rest != self) {
         tmp = PyDict_GetItem(found, rest_id);
-        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, _str_open_paren);
+        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, open_s);
         PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, _str_dot_space);
-        PyList_Append(col, _str_close_paren);
+        PyList_Append(col, close_s);
       }
       Py_DECREF(rest_id);
 
@@ -531,11 +559,11 @@ static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
     }
   }
 
-  if (KosNil_Check(rest)) {
+  if (KosNilP(rest)) {
     /* end of a proper list */
 
-    Py_INCREF(_str_close_paren);
-    PyList_SetItem(col, index, _str_close_paren);
+    Py_INCREF(close_s);
+    PyList_SetItem(col, index, close_s);
 
   } else if (rest) {
     /* end of an improper list */
@@ -548,7 +576,7 @@ static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
     }
     PyList_Append(col, _str_dot_space);
     PyList_Append(col, tmp);
-    PyList_Append(col, _str_close_paren);
+    PyList_Append(col, close_s);
     Py_DECREF(tmp);
   }
 
@@ -557,6 +585,12 @@ static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
   Py_DECREF(found);
 
   return tmp;
+}
+
+
+static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
+  (void) _unused;
+  return pair_kos_repr_inner(self, _str_open_paren, _str_close_paren);
 }
 
 
@@ -572,28 +606,33 @@ static long pair_eq(PyObject *left, PyObject *right) {
   seen = PyDict_New();
 
   while (left != right) {
-    if (KosNil_Check(left) || KosNil_Check(right)) {
-      /* one of our comparisons is a nil, and nil can only equal
-         itself, and left and right aren't the same object, so
-         therefore... nope */
+    if (KosNilP(left) && KosNilP(right)) {
+      /* both sides reached an empty-list terminator (either bracket
+         style); empties compare equal as list ends, so the lists
+         match here regardless of which nil flavor each used */
+      break;
+
+    } else if (KosNilP(left) || KosNilP(right)) {
+      /* exactly one side ended; the lists differ in length */
       answer = 0;
       break;
 
-    } else if (left->ob_type != &KosPairType) {
-      /* left is not a pair, use its comparison function instead of
-         ours */
+    } else if (! KosPair_Check(left)) {
+      /* left is not a pair (nor a pair subclass), use its comparison
+         function instead of ours */
       answer = PyObject_RichCompareBool(left, right, Py_EQ);
       break;
 
-    } else if (right->ob_type != &KosPairType) {
+    } else if (! KosPair_Check(right)) {
       /* left is a pair, but right is not, and pairs can only be
          equivalent to other pairs, so nope. */
       answer = 0;
       break;
     }
 
-    /* if we reach this point, left and right are both KosPairType,
-       and they do not refer to the same memory space, so we can test
+    /* if we reach this point, left and right are both pairs (possibly
+       bracket-pair subclasses), and they do not refer to the same
+       memory space, so we can test
        their CAR equivs and their CDR equivs */
 
     left_id = PyLong_FromVoidPtr(left);
@@ -697,7 +736,7 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
   PyObject *tmp = NULL;
   PyObject *last = NULL;
 
-  if (KosNil_Check(self)) {
+  if (KosNilP(self)) {
     Py_INCREF(self);
     return self;
   }
@@ -705,7 +744,7 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
   /* records of the IDs of originals to instances of the new copies */
   PyObject *seen = PyDict_New();
 
-  for (; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for (; KosPair_IsCell(self); self = KosPair_CDR(self)) {
 
     PyObject *self_id = PyLong_FromVoidPtr(self);
 
@@ -719,8 +758,14 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
       break;
     }
 
-    /* make a new pair, associate it with current ID */
-    tmp = KosPair_New(KosPair_CAR(self), KosNil);
+    /* make a new cell of the same delimiter style as the source cell;
+       the KosNil tail is a placeholder, overwritten below by the link to
+       the next cell or by the terminator after the loop. */
+    if (KosBracketPair_Check(self)) {
+      tmp = KosBracketPair_New(KosPair_CAR(self), KosNil);
+    } else {
+      tmp = KosPair_New(KosPair_CAR(self), KosNil);
+    }
     if (! tmp) {
       Py_DECREF(seen);
       Py_XDECREF(result);
@@ -765,13 +810,13 @@ static PyObject *pair_length(PyObject *self, PyObject *_noargs) {
   PyObject *tmp;
   long length = 0;
 
-  if (KosNil_Check(self)) {
+  if (KosNilP(self)) {
     return PyLong_FromLong(length);
   }
 
   seen = PySet_New(NULL);
 
-  for(; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for(; KosPair_IsCell(self); self = KosPair_CDR(self)) {
 
     tmp = PyLong_FromVoidPtr(self);
 
@@ -787,7 +832,7 @@ static PyObject *pair_length(PyObject *self, PyObject *_noargs) {
     }
   }
 
-  if (self && ! KosNil_Check(self))
+  if (self && ! KosNilP(self))
     length++;
 
   Py_DECREF(seen);
@@ -829,15 +874,15 @@ PyObject *KosPair_Unpack(PyObject *pair) {
 
 
 long KosPair_IsProper(PyObject *self) {
-  if (KosNil_Check(self))
+  if (KosNilP(self))
     return 1;
 
   PyObject *seen = PySet_New(NULL);
   PyObject *pair_id;
   long result = 0;
 
-  for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
-    if (KosNil_Check(self)) {
+  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
+    if (KosNilP(self)) {
       result = 1;
       break;
     }
@@ -859,7 +904,7 @@ long KosPair_IsProper(PyObject *self) {
   /* it's either recursive and thus proper, or the last item needs to
      have been a nil, or it's improper */
   Py_DECREF(seen);
-  return result || KosNil_Check(self);
+  return result || KosNilP(self);
 }
 
 
@@ -869,14 +914,14 @@ static PyObject *pair_is_proper(PyObject *self, PyObject *_noargs) {
 
 
 long KosPair_IsRecursive(PyObject *self) {
-  if (KosNil_Check(self))
+  if (KosNilP(self))
     return 0;
 
   PyObject *seen = PySet_New(NULL);
   PyObject *pair_id;
   long result = 0;
 
-  for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
     pair_id = PyLong_FromVoidPtr(self);
 
     if (PySet_Contains(seen, pair_id)) {
@@ -912,7 +957,7 @@ static KosPair *pair_find_last(PyObject *self, PyObject *seen,
   KosPair *last = NULL;
   PyObject *pair_id;
 
-  for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
     last = (KosPair *) self;
     pair_id = PyLong_FromVoidPtr(self);
 
@@ -988,7 +1033,7 @@ static PyObject *pair_append(PyObject *self, PyObject *obj) {
   KosPair *last;
   PyObject *new_pair;
 
-  if (KosNil_Check(self)) {
+  if (KosNilP(self)) {
     PyErr_SetString(PyExc_TypeError, "cannot append to nil");
     return NULL;
   }
@@ -1003,7 +1048,7 @@ static PyObject *pair_append(PyObject *self, PyObject *obj) {
   if (! last)
     return NULL;
 
-  if (last_cdr == KosNil) {
+  if (KosNilP(last_cdr)) {
     new_pair = KosPair_New(obj, KosNil);
   } else {
     new_pair = KosPair_New(last_cdr, obj);
@@ -1022,7 +1067,7 @@ static void pair_splice_at_last(KosPair *last, PyObject *last_cdr,
                                 PyObject *splice_head) {
   PyObject *bridge;
 
-  if (last_cdr == KosNil) {
+  if (KosNilP(last_cdr)) {
     KosPair_SETCDR(last, splice_head);
   } else {
     bridge = KosPair_New(last_cdr, splice_head);
@@ -1040,7 +1085,7 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
   KosPair *last;
   PyObject *splice_head = NULL;
 
-  if (KosNil_Check(self)) {
+  if (KosNilP(self)) {
     PyErr_SetString(PyExc_TypeError, "cannot extend nil");
     return NULL;
   }
@@ -1055,7 +1100,7 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
   if (! last)
     return NULL;
 
-  if (KosPair_CheckExact(obj)) {
+  if (KosPair_IsCell(obj)) {
     splice_head = pair_copy(obj, NULL);
   } else {
     splice_head = pair_iterable_to_proper_cons(obj);
@@ -1076,7 +1121,7 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
   KosPair *last;
   PyObject *splice_head = NULL;
 
-  if (KosNil_Check(self)) {
+  if (KosNilP(self)) {
     PyErr_SetString(PyExc_TypeError, "cannot splice nil");
     return NULL;
   }
@@ -1091,7 +1136,7 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
   if (! last)
     return NULL;
 
-  if (KosPair_CheckExact(obj)) {
+  if (KosPair_IsCell(obj)) {
     Py_INCREF(obj);
     splice_head = obj;
   } else {
@@ -1111,7 +1156,7 @@ static void pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
   PyObject *pair_id;
   KosPair *sp;
 
-  for (; KosPair_CheckExact(pair); pair = KosPair_CDR(pair)) {
+  for (; KosPair_IsCell(pair); pair = KosPair_CDR(pair)) {
     sp = (KosPair *) pair;
 
     pair_id = PyLong_FromVoidPtr(pair);
@@ -1127,7 +1172,7 @@ static void pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
 
     Py_ASSIGN(KosPair_POSITION(sp), pos);
 
-    if (KosPair_CheckExact(KosPair_CAR(sp))) {
+    if (KosPair_IsCell(KosPair_CAR(sp))) {
       pwalk_setpos(KosPair_CAR(sp), seen, pos);
     }
   }
@@ -1138,7 +1183,7 @@ static void pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
   PyObject *pair_id;
   KosPair *sp;
 
-  for (; KosPair_CheckExact(pair); pair = KosPair_CDR(pair)) {
+  for (; KosPair_IsCell(pair); pair = KosPair_CDR(pair)) {
     sp = (KosPair *) pair;
 
     pair_id = PyLong_FromVoidPtr(pair);
@@ -1160,7 +1205,7 @@ static void pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
       KosPair_POSITION(sp) = pos;
     }
 
-    if (KosPair_CheckExact(KosPair_CAR(sp))) {
+    if (KosPair_IsCell(KosPair_CAR(sp))) {
       pwalk_fillpos(KosPair_CAR(sp), seen, pos);
     }
   }
@@ -1177,7 +1222,7 @@ static PyObject *pair_clear_position(PyObject *self,
   static char *keywords[] = { "follow", NULL };
   int follow = 0;
 
-  if (KosNil_Check(self))
+  if (KosNilP(self))
     Py_RETURN_NONE;
 
   if (! PyArg_ParseTupleAndKeywords(args, kwds, "|p", keywords, &follow))
@@ -1310,7 +1355,7 @@ static PyObject *pair_read_car(PyObject *pair) {
   if (! KosPair_Check(pair)) {
     PyErr_SetString(PyExc_TypeError, "car argument must be pair");
 
-  } else if (KosNil_Check(pair)) {
+  } else if (KosNilP(pair)) {
     PyErr_SetString(PyExc_TypeError, "cannot get car of nil");
 
   } else {
@@ -1328,7 +1373,7 @@ static PyObject *pair_read_cdr(PyObject *pair) {
   if (! KosPair_Check(pair)) {
     PyErr_SetString(PyExc_TypeError, "cdr argument must be pair");
 
-  } else if (KosNil_Check(pair)) {
+  } else if (KosNilP(pair)) {
     PyErr_SetString(PyExc_TypeError, "cannot get cdr of nil");
 
   } else {
@@ -1360,7 +1405,7 @@ static PyObject *pair_read_position(PyObject *pair) {
 
 static int pair_write_car(PyObject *pair, PyObject *val) {
 
-  if (KosNil_Check(pair)) {
+  if (KosNilP(pair)) {
     PyErr_SetString(PyExc_TypeError, "cannot set car of nil");
     return -1;
   }
@@ -1372,7 +1417,7 @@ static int pair_write_car(PyObject *pair, PyObject *val) {
 
 static int pair_write_cdr(PyObject *pair, PyObject *val) {
 
-  if (KosNil_Check(pair)) {
+  if (KosNilP(pair)) {
     PyErr_SetString(PyExc_TypeError, "cannot set cdr of nil");
     return -1;
   }
@@ -1384,7 +1429,7 @@ static int pair_write_cdr(PyObject *pair, PyObject *val) {
 
 static int pair_write_position(PyObject *pair, PyObject *position) {
 
-  if (KosNil_Check(pair)) {
+  if (KosNilP(pair)) {
     return 0;
   }
 
@@ -1443,7 +1488,7 @@ static int pair_set_position_attr(
   (void) closure;
 
   if (! value) {
-    if (KosNil_Check(self))
+    if (KosNilP(self))
       return 0;
 
     Py_CLEAR(KosPair_POSITION(self));
@@ -1493,11 +1538,19 @@ PyTypeObject KosPairType = {
 };
 
 
-PyObject *KosPair_New(PyObject *head, PyObject *tail) {
+/* Shared allocation for the pair family (pair and bracket-pair). They are
+   layout-identical, so one free list serves both; popping a recycled cell
+   stamps it with the requested type via Py_SET_TYPE, which is what keeps a
+   pair from ever leaking out as a bracket-pair or vice versa. The free-list
+   trace is intentionally unified under "pair". */
+static PyObject *pair_alloc(PyTypeObject *type,
+    PyObject *head, PyObject *tail) {
+
   KosPair *self = NULL;
 
   if (! (head && tail)) {
-    PyErr_SetString(PyExc_TypeError, "pair requires a head and a tail");
+    PyErr_Format(PyExc_TypeError, "%s requires a head and a tail",
+                 type->tp_name);
     return NULL;
   }
 
@@ -1506,11 +1559,12 @@ PyObject *KosPair_New(PyObject *head, PyObject *tail) {
     pair_free_list = (KosPair *) KosPair_CDR(self);
     pair_free_count--;
     KOS_TRACE_FL_ALLOC("pair", 1);
+    Py_SET_TYPE(self, type);
     Py_INCREF(self);
 
   } else {
     KOS_TRACE_FL_ALLOC("pair", 0);
-    self = PyObject_GC_New(KosPair, &KosPairType);
+    self = PyObject_GC_New(KosPair, type);
     if (! self)
       return NULL;
   }
@@ -1525,6 +1579,84 @@ PyObject *KosPair_New(PyObject *head, PyObject *tail) {
 
   PyObject_GC_Track((PyObject *) self);
   return (PyObject *) self;
+}
+
+
+PyObject *KosPair_New(PyObject *head, PyObject *tail) {
+  return pair_alloc(&KosPairType, head, tail);
+}
+
+
+/* === BracketPairType === */
+
+
+static PyObject *bracket_pair_new(PyTypeObject *type,
+                                  PyObject *args, PyObject *kwds) {
+
+  PyObject *head = NULL;
+  PyObject *tail = NULL;
+
+  (void) type;
+
+  if (kwds && PyDict_Size(kwds)) {
+    PyErr_SetString(PyExc_TypeError, "bracket-pair takes no named arguments");
+    return NULL;
+  }
+
+  if (! PyArg_ParseTuple(args, "OO:bracket-pair", &head, &tail))
+    return NULL;
+
+  return KosBracketPair_New(head, tail);
+}
+
+
+static PyObject *bracket_pair_repr(PyObject *self) {
+  return pair_repr_inner(self, _str_bracket_cons_paren);
+}
+
+
+static PyObject *bracket_pair_str(PyObject *self) {
+  return pair_str_inner(self, _str_open_bracket, _str_close_bracket);
+}
+
+
+static PyObject *bracket_pair_kos_repr(PyObject *self, PyObject *_unused) {
+  (void) _unused;
+  return pair_kos_repr_inner(self, _str_open_bracket, _str_close_bracket);
+}
+
+
+static PyMethodDef bracket_pair_methods[] = {
+  { "__kos_repr__", (PyCFunction) bracket_pair_kos_repr, METH_NOARGS,
+    "P.__kos_repr__() -> str\n"
+    "Koskari-style bracket-list string for this pair spine." },
+
+  { NULL, NULL, 0, NULL },
+};
+
+
+PyTypeObject KosBracketPairType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  "bracket-pair",
+  sizeof(KosPair),
+  0,
+
+  .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_HAVE_GC,
+  .tp_base = &KosPairType,
+  .tp_methods = bracket_pair_methods,
+  .tp_new = bracket_pair_new,
+  .tp_dealloc = pair_dealloc,
+  .tp_traverse = pair_traverse,
+  .tp_clear = pair_clear,
+
+  .tp_repr = bracket_pair_repr,
+  .tp_str = bracket_pair_str,
+};
+
+
+PyObject *KosBracketPair_New(PyObject *head, PyObject *tail) {
+  return pair_alloc(&KosBracketPairType, head, tail);
 }
 
 
@@ -1556,9 +1688,15 @@ static PyObject *nil_repr(PyObject *self) {
 }
 
 
+static PyObject *nil_str(PyObject *self) {
+  Py_INCREF(_str_empty_paren);
+  return _str_empty_paren;
+}
+
+
 static PyObject *nil_kos_repr(PyObject *self, PyObject *Py_UNUSED(_unused)) {
-  Py_INCREF(_str_nil);
-  return _str_nil;
+  Py_INCREF(_str_empty_paren);
+  return _str_empty_paren;
 }
 
 
@@ -1635,7 +1773,7 @@ PyTypeObject KosNilType = {
   .tp_clear = NULL,
 
   .tp_repr = nil_repr,
-  .tp_str = nil_repr,
+  .tp_str = nil_str,
   .tp_methods = nil_methods,
   .tp_iter = nil_iter,
   .tp_as_number = &nil_as_number,
@@ -1645,6 +1783,98 @@ PyTypeObject KosNilType = {
 
 KosPair _KosNil = {
   PyObject_HEAD_INIT(&KosNilType)
+  .head = NULL,
+  .tail = NULL,
+  .position = NULL,
+};
+
+
+/* === BracketNilType === */
+
+
+/* bracket-nil is the parallel empty-list singleton for the bracket
+   style. It is a sibling of nil, not related by inheritance: it is-a
+   bracket-pair (and thus a pair), but it is not a NilType. The two are
+   unified only by KosNilP, the identity test against either singleton. */
+
+
+static PyObject *bracket_nil_new(PyTypeObject *type,
+                                 PyObject *args, PyObject *kwds) {
+
+  (void) type;
+
+  if (PyTuple_Size(args) || (kwds && PyDict_Size(kwds))) {
+    PyErr_SetString(PyExc_TypeError, "BracketNilType takes no arguments");
+    return NULL;
+  }
+
+  Py_INCREF(KosBracketNil);
+  return KosBracketNil;
+}
+
+
+static void bracket_nil_dealloc(const PyObject *self) {
+  (void) self;
+  ;  /* bracket-nil is statically allocated, do not free it */
+}
+
+
+static PyObject *bracket_nil_repr(PyObject *self) {
+  (void) self;
+  Py_INCREF(_str_bracket_nil);
+  return _str_bracket_nil;
+}
+
+
+static PyObject *bracket_nil_str(PyObject *self) {
+  (void) self;
+  Py_INCREF(_str_empty_bracket);
+  return _str_empty_bracket;
+}
+
+
+static PyObject *bracket_nil_kos_repr(PyObject *self,
+                                      PyObject *Py_UNUSED(_unused)) {
+  Py_INCREF(_str_empty_bracket);
+  return _str_empty_bracket;
+}
+
+
+static PyMethodDef bracket_nil_methods[] = {
+  { "__kos_repr__", (PyCFunction) bracket_nil_kos_repr, METH_NOARGS,
+    "bracket-nil.__kos_repr__() -> str\n"
+    "Koskari-style empty bracket-list token." },
+
+  { NULL, NULL, 0, NULL },
+};
+
+
+PyTypeObject KosBracketNilType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  "BracketNilType",
+  sizeof(KosPair),
+  0,
+
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_base = &KosBracketPairType,
+  .tp_new = bracket_nil_new,
+  .tp_dealloc = (destructor) bracket_nil_dealloc,
+
+  .tp_traverse = NULL,
+  .tp_clear = NULL,
+
+  .tp_repr = bracket_nil_repr,
+  .tp_str = bracket_nil_str,
+  .tp_methods = bracket_nil_methods,
+  .tp_iter = nil_iter,
+  .tp_as_number = &nil_as_number,
+  .tp_as_sequence = &nil_as_sequence,
+};
+
+
+KosPair _KosBracketNil = {
+  PyObject_HEAD_INIT(&KosBracketNilType)
   .head = NULL,
   .tail = NULL,
   .position = NULL,
@@ -1686,11 +1916,11 @@ PyObject *KosPair_Cons(PyObject *members) {
 
 
 int KosPair_MakeRecursive(PyObject *pair) {
-  if (KosNil_Check(pair) || ! KosPair_Check(pair))
+  if (KosNilP(pair) || ! KosPair_Check(pair))
     return -1;
 
   PyObject *const cdr = KosPair_CDR(pair);
-  if (cdr == KosNil || cdr == pair) {
+  if (KosNilP(cdr) || cdr == pair) {
     /* single pair: self-loop; or already recursive */
     if (cdr != pair)
       KosPair_SETCDR(pair, pair);
@@ -1700,7 +1930,7 @@ int KosPair_MakeRecursive(PyObject *pair) {
   PyObject *current = pair;
   while (1) {
     PyObject *next = KosPair_CDR(current);
-    if (next == KosNil || next == pair)
+    if (KosNilP(next) || next == pair)
       break;
     if (! KosPair_Check(next))
       return -1;
@@ -1713,7 +1943,7 @@ int KosPair_MakeRecursive(PyObject *pair) {
 
 
 int KosPair_BreakRecursive(PyObject *pair) {
-  if (KosNil_Check(pair) || ! KosPair_Check(pair))
+  if (KosNilP(pair) || ! KosPair_Check(pair))
     return -1;
 
   PyObject *current = pair;
@@ -1723,7 +1953,7 @@ int KosPair_BreakRecursive(PyObject *pair) {
       KosPair_SETCDR(current, KosNil);
       return 0;
     }
-    if (cdr == KosNil || ! KosPair_Check(cdr))
+    if (KosNilP(cdr) || ! KosPair_Check(cdr))
       return -1;
     current = cdr;
   }
@@ -1762,12 +1992,87 @@ PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count) {
 }
 
 
+PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, int count) {
+  if (count <= 0) {
+    Py_INCREF(KosBracketNil);
+    return KosBracketNil;
+  }
+
+  PyObject *result = KosBracketPair_New(ptr[0], KosBracketNil);
+  if (! result)
+    return NULL;
+
+  if (count == 1)
+    return result;
+
+  PyObject *work = ptr[count - 1];
+  Py_INCREF(work);
+
+  for (int i = count - 2; i >= 1; i--) {
+    PyObject *tmp = KosBracketPair_New(ptr[i], work);
+    Py_DECREF(work);
+    if (! tmp) {
+      Py_DECREF(result);
+      return NULL;
+    }
+    work = tmp;
+  }
+
+  KosPair_SETCDR(result, work);
+  Py_DECREF(work);
+  return result;
+}
+
+
+PyObject *KosBracketPair_Cons(PyObject *members) {
+  PyObject *seq = PySequence_Fast(members,
+                                  "bracket-cons members object must be a "
+                                  "sequence");
+  if (! seq)
+    return NULL;
+
+  Py_ssize_t count = PySequence_Fast_GET_SIZE(seq);
+  if (count == 0) {
+    Py_DECREF(seq);
+    Py_INCREF(KosBracketNil);
+    return KosBracketNil;
+  }
+
+  PyObject *result;
+  if (PyList_Check(seq)) {
+    PyObject **ptr = ((PyListObject *) seq)->ob_item;
+    result = KosBracketPair_ConsFromPtr(ptr, (int) count);
+  } else {
+    PyObject **ptr = (PyObject **) PyMem_Malloc((size_t) count
+                                                * sizeof(PyObject *));
+    if (! ptr) {
+      Py_DECREF(seq);
+      return NULL;
+    }
+    for (Py_ssize_t i = 0; i < count; i++)
+      ptr[i] = PySequence_Fast_GET_ITEM(seq, i);
+    result = KosBracketPair_ConsFromPtr(ptr, (int) count);
+    PyMem_Free(ptr);
+  }
+
+  Py_DECREF(seq);
+  return result;
+}
+
+
 /* === module functions === */
 
 
 static PyObject *m_cons(PyObject *mod, PyObject *args, PyObject *kwds) {
   (void) kwds;
   return KosPair_Cons(args);
+}
+
+
+static PyObject *m_bracket_cons(PyObject *mod, PyObject *args, PyObject *kwds) {
+  (void) mod;
+  (void) kwds;
+  return KosBracketPair_Cons(args);
 }
 
 
@@ -1780,6 +2085,12 @@ static PyObject *m_car(PyObject *mod, PyObject *pair) {
 static PyObject *m_cdr(PyObject *mod, PyObject *pair) {
   (void) mod;
   return pair_read_cdr(pair);
+}
+
+
+static PyObject *m_nilp(PyObject *mod, PyObject *value) {
+  (void) mod;
+  return PyBool_FromLong(KosNilP(value));
 }
 
 
@@ -1851,11 +2162,11 @@ static PyObject *m_build_unpack_pair(PyObject *mod, PyObject *seqs) {
     PyObject *item = PyTuple_GET_ITEM(seqs, index++);
     PyObject *work;
 
-    if (KosNil_Check(item)) {
+    if (KosNilP(item)) {
       /* skip nil */
       continue;
 
-    } else if (KosPair_CheckExact(item)) {
+    } else if (KosPair_IsCell(item)) {
       work = pair_unpack(item, NULL);
 
     } else {
@@ -1908,6 +2219,11 @@ static PyMethodDef pair_mod_methods[] = {
     "cons(head, *tail) -> new pair\n"
     "Build a pair chain from the given sequence. No tail implies nil." },
 
+  { "bracket_cons", (PyCFunction) m_bracket_cons, METH_VARARGS,
+    "bracket_cons(head, *tail) -> new bracket-pair\n"
+    "Like cons, but builds bracket-pair cells. No args implies "
+    "bracket-nil." },
+
   { "make_recursive", m_make_recursive, METH_O,
     "make_recursive(pair) -> None\n"
     "Set the tail-most link's cdr to the head, making the chain circular." },
@@ -1923,6 +2239,10 @@ static PyMethodDef pair_mod_methods[] = {
   { "cdr", m_cdr, METH_O,
     "cdr(P) -> object\n"
     "Returns the tail element of a koskari pair instance P." },
+
+  { "nilp", m_nilp, METH_O,
+    "nilp(value) -> bool\n"
+    "True if value is an empty-list singleton (nil or bracket-nil)." },
 
   { "setcar", m_setcar, METH_VARARGS,
     "setcar(P, obj) -> None\n"
@@ -1964,6 +2284,12 @@ int koskari_pair_init(PyObject *mod) {
   STR_CONST(_str_space, " ");
   STR_CONST(_str_quote, "\"");
   STR_CONST(_str_esc_quote, "\\\"");
+  STR_CONST(_str_open_bracket, "[");
+  STR_CONST(_str_close_bracket, "]");
+  STR_CONST(_str_bracket_cons_paren, "bracket-cons(");
+  STR_CONST(_str_empty_paren, "()");
+  STR_CONST(_str_empty_bracket, "[]");
+  STR_CONST(_str_bracket_nil, "bracket-nil");
 
   /* initialize types */
   if (PyType_Ready(&KosPairType))
@@ -1978,10 +2304,22 @@ int koskari_pair_init(PyObject *mod) {
   if (PyType_Ready(&KosNilType))
     return -1;
 
+  if (PyType_Ready(&KosBracketPairType))
+    return -1;
+
+  if (PyType_Ready(&KosBracketNilType))
+    return -1;
+
   if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosPairType))
     return -1;
 
   if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosNilType))
+    return -1;
+
+  if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosBracketPairType))
+    return -1;
+
+  if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosBracketNilType))
     return -1;
 
   /* add types and nil to module dict */
@@ -1989,6 +2327,13 @@ int koskari_pair_init(PyObject *mod) {
     return -1;
 
   if (PyDict_SetItemString(dict, "nil", KosNil))
+    return -1;
+
+  if (PyDict_SetItemString(dict, "bracket_pair",
+                           (PyObject *) &KosBracketPairType))
+    return -1;
+
+  if (PyDict_SetItemString(dict, "bracket_nil", KosBracketNil))
     return -1;
 
   /* add module functions */
@@ -2024,6 +2369,13 @@ int koskari_pair_clear(PyObject *mod) {
 
   Py_CLEAR(_str_quote);
   Py_CLEAR(_str_esc_quote);
+
+  Py_CLEAR(_str_open_bracket);
+  Py_CLEAR(_str_close_bracket);
+  Py_CLEAR(_str_bracket_cons_paren);
+  Py_CLEAR(_str_empty_paren);
+  Py_CLEAR(_str_empty_bracket);
+  Py_CLEAR(_str_bracket_nil);
 
   return 0;
 }
