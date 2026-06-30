@@ -40,6 +40,7 @@ Highlights (not an exhaustive list):
 - Variadic arithmetic/bitwise specials with **left-to-right constant folding** on leading constants ([SPECIALS.md](SPECIALS.md) § Object operator specials).
 - **Chained** comparisons (`a < b < c`).
 - Method calls: **`compile/call-attr`**, dot-prefix **`(compile/call .method obj …)`**, and **`(compile/call (attr obj m) …)`** expansion — no separate `method-call` special.
+- **Bracket-pair type and call convention**: `[ ]` is **not** a vector literal — it reads into a `bracket-pair` (a value-equal `pair` subtype that marks `[ ]` origin) and **compiles identically to `( )` by default** (a non-empty head-position list is a call either way). The `( )` = call / `[ ]` = data split is a convention; optional module pragmas turn it into a check — `bracket_pairs` (reader: emit the marker) and `bracket_calls` (compiler: `ignore` / `warn` / `error` when a bracket-pair reaches call position). See [SYNTAX.md](SYNTAX.md), [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md).
 
 ### Macros
 

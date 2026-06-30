@@ -126,19 +126,6 @@ Ref: [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [interpreter/kio-format.md](interpreter/kio-format.md) (`.kio` format);
 `koskari.serialize` (incremental compile and `dump_kio`).
 
-### Bracket-pair type and call-position lint
-
-Promote the `( )` vs `[ ]` convention to a queryable property without making
-brackets required. `[ ]` reads into a new `bracket-pair` subtype of `pair`
-(same fields, repr renders `[ ]`); add a `bracket-cons` constructor and reader
-dispatch; add a compiler flag (accept / warn / error) at the single
-`compile_pair` chokepoint that optionally flags a bracket-pair reaching
-evaluated/operator position. `let`-style binding positions are immune for free
-(consumed as data by their specials, never reaching `compile_pair`). A
-symmetric advisory matcher style-hint is a later, separate phase.
-
-Ref: [bracket-pair.md](bracket-pair.md).
-
 ### Module pragma system (`compile/pragma`)
 
 Add the `(compile/pragma key: value ...)` special form that gates module-level
@@ -157,7 +144,8 @@ v0.1 wires six live keys (`resolution_mode`, `bracket_calls`, `tco`, `layout`,
 (`convert_fast`, `compress`). Backends for resolution and bracket already exist
 (`compile/pragma/`); reader knobs exist but are not all in `reload_pragma` yet.
 Serialization of the pragma snapshot into `.kio` is deferred. Supersedes the
-"pragma gating deferred" notes in the TCO and bracket-pair items above.
+"pragma gating deferred" note in the TCO item above and the pragma-gating
+deferral recorded in the archived bracket-pair design doc.
 
 Ref: [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md).
 
