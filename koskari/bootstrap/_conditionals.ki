@@ -18,6 +18,11 @@ Portion of koskari.builtins
 
 
 define-syntax compile/if:
+  """
+  Evaluates the `then` body only when the `condition` is truthy.
+  Evaluates the `else` body otherwise, or `None` if not provided.
+  """
+
   syntax-rules []:
     case (if condition then: then else: else):
       (compile/cond
@@ -74,6 +79,10 @@ define-syntax compile/?:
 
 
 define-syntax compile/bool:
+  """
+  Compile-time object truthiness as a boolean.
+  """
+
   syntax-rules []:
     case (bool value):
       (compile/truth value)
