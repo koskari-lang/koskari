@@ -13,6 +13,13 @@ with examples, see [Concepts](concepts/index.md).
   mapping). Contrast **store**. See [Bindings and refs](concepts/bindings-and-refs.md)
   and [compile/bindq](specials/compile-bindq.md).
 
+**bracket-pair**
+: A `pair` subtype the reader produces from `[ ]` source forms. Value-equal to
+  and interchangeable with an ordinary pair; `[ ]` is **not** a vector literal
+  and compiles like `( )` by default. The marker records bracket origin so the
+  `( )` = call / `[ ]` = data convention can be checked via the `bracket_calls`
+  pragma. See [Brackets and the call convention](concepts/brackets-and-call-convention.md).
+
 **bytecode**
 : `KosCode` instruction sequence executed by the Koskari VM.
 
