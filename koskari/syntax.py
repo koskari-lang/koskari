@@ -193,8 +193,7 @@ class Transform(ABC):
 
         if not isinstance(pattern, Pattern):
             raise TypeError(
-                "Transform pattern must be a matcher pattern, got %r"
-                % (type(pattern).__name__,))
+                f"Transform pattern must be a matcher pattern, got {type(pattern)}")
 
         self.pattern = pattern
 
@@ -427,7 +426,7 @@ def _normalize_special_patterns(patterns):
     else:
         out = (patterns,)
     for i, p in enumerate(out):
-        check_pattern_arg(p, "special patterns[%s]" % i)
+        check_pattern_arg(p, f"special patterns[{i}]")
     return out
 
 

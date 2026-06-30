@@ -95,16 +95,16 @@ def resolve_koskari_script_value(spec, name):
         dist = metadata.distribution(dist_name)
     except metadata.PackageNotFoundError:
         raise EntryNotFoundError(
-            'no installed distribution %r for koskari_scripts command %r'
-            % (dist_name, name))
+            f"no installed distribution {dist_name!r} for "
+            f"koskari_scripts command {name!r}")
 
     if sep and _version.strip():
         dist_version = dist.version
         if dist_version != _version.strip():
             raise EntryNotFoundError(
-                'distribution %r version mismatch for koskari_scripts %r: '
-                'expected %r, found %r'
-                % (dist_name, name, _version.strip(), dist_version))
+                f"distribution {dist_name!r} version mismatch for "
+                f"koskari_scripts {name!r}: expected {_version.strip()}, "
+                f"found {dist_version}")
 
     matches = []
     for ep in _koskari_script_entry_points(dist):
@@ -113,13 +113,13 @@ def resolve_koskari_script_value(spec, name):
 
     if not matches:
         raise EntryNotFoundError(
-            'no koskari_scripts entry %r in distribution %r'
-            % (name, dist_name))
+            f"no koskari_scripts entry {name!r} in "
+            f"distribution {dist_name!r}")
 
     if len(matches) > 1:
         raise EntryNotFoundError(
-            'multiple koskari_scripts entries for command %r in %r'
-            % (name, dist_name))
+            "multiple koskari_scripts entries for "
+            f"command {name!r} in {dist_name!r}")
 
     return matches[0].value
 
