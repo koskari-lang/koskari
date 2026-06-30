@@ -2,258 +2,491 @@
 
 ## Overview
 
-The Koskari pragma model provides a clear, deterministic mechanism for controlling
-module-level reader and compiler behavior. Pragmas gate syntax and lowering
-features (such as `->`, `&foo.bar`, or specific compiler passes) without
-introducing global state or per-form runtime checks.
+The Koskari pragma model is the official home for the language's optional
+features — the flags and switches that gate reader and compiler behavior. It
+provides a deterministic, module-scoped mechanism for turning features on, off,
+or into a different mode, without global state, runtime toggles, or per-form
+checks.
 
 Pragmas are:
 
-* **Module-scoped** — each module owns its own pragma object.
-* **Immutable but replaceable** — a new pragma replaces the old one.
-* **Load-time effective** — changes apply only to subsequent parsing and
-  compilation.
-* **Serializable** — compiled artifacts store a snapshot of the active pragma.
+* **Module-scoped** — each module owns its own pragma; one module's pragma does
+  not affect another's.
+* **A value plus an envelope** — the *settings* are an immutable value that is
+  replaced (never mutated) on change; a *watcher set* rides alongside as runtime
+  plumbing and is not part of the value.
+* **Load-time effective, forward-only** — a change applies only to subsequent
+  reading and compilation; nothing already read or compiled is rewritten.
+* **Extensible** — features are *registered*, not hardcoded. The reader, the
+  compiler, and third-party tools all register their own features into one
+  catalog.
 
 Non-goals:
 
 * Runtime feature toggles after module load.
-* Header-scan or multi-phase compilation models.
-* Implicit inheritance of pragma settings across modules.
+* Header-scan or multi-phase compilation.
+* Implicit inheritance of a module's *live* pragma across modules (package-level
+  *defaults* are a separate, explicit mechanism — see **Package Meta-Pragma**).
+* Region/lexical scoping of a pragma (`push`/`pop`); the module is the unit.
+  Use a submodule for finer scope.
 
 ---
 
 ## Core Concepts
 
-* **Pragma**: An immutable object attached to a module that defines reader and
-  compiler feature flags.
-* **Feature**: A boolean or keyed setting that controls parsing or compilation
-  behavior.
-* **Reload**: The act of rebuilding parser/compiler internal tables after a
-  pragma replacement.
+* **Setting** — one namespaced, configurable feature (e.g. `compiler/call-brackets`).
+  A setting takes zero or more **parameters**, optionally keyworded.
+* **Feature registration** — declaring that a setting *exists*: its name, owner,
+  target, domain, defaults, and stability. Done at *import* time. Static.
+* **Watcher subscription** — a stateful consumer asking to be *notified* when the
+  active pragma changes. Done at *construction* time. Runtime.
+* **Baseline** — a setting's value when it is *not* declared (subject to
+  inheritance and earlier declarations in the same module).
+* **Parameter default** — the value of an *omitted argument* when a setting *is*
+  declared.
+* **Announce** — a replacement pragma notifying its watchers that it is now
+  active, so they can refresh derived state.
 
-The pragma object itself contains structured fields (v0.1 schema) and may
-include flexible extension keys for development.
-
----
-
-## Where Pragmas Live
-
-Pragmas are updated via a normal top-level special form, not a header directive.
-
-### Special Form
-
-```
-(compile/pragma key: value ...)
-```
-
-Keys are keyword-style (`resolution_mode:`, `bracket_calls:`, …). Values are
-literal keywords, symbols, or booleans, read structurally and **never
-evaluated** — a pragma cannot depend on runtime state, which is what keeps the
-form "always parseable under the base grammar." Example:
-
-```
-(compile/pragma resolution_mode: scheme bracket_calls: error tco: #f)
-```
-
-Properties:
-
-* Always parseable under the base grammar.
-* May appear multiple times.
-* Later invocations replace the previous pragma (overrides layer onto the
-  current `module.__pragma__`, not onto the defaults).
-* Changes affect only subsequent forms.
+Keep the two registrations distinct: feature registration populates the
+*catalog* ("what can be set"); watcher subscription wires up *notification*
+("tell me when the active values change"). The reader does both — it registers
+its `reader/*` features at import and subscribes itself when constructed.
 
 ---
 
-## Load-Time Evaluation Model
+## Home: `koskari.pragma`
 
-Koskari interleaves read, parse, and compile during module load. There is no
+The pragma framework lives in a **top-level leaf package**, `koskari.pragma`,
+because both the reader and the compiler must register into it — a
+`reader → compile` import to reach the registry would be backwards layering.
+
+```
+koskari.pragma          (leaf: ModulePragma, the registry, PragmaFeature, stability tiers)
+   ↑              ↑                 ↑
+koskari.reader   koskari.compile    third-party packages
+ registers        registers          register their own
+ reader/* keys    compiler/* keys    features
+```
+
+`koskari.pragma` imports nothing heavy. Reader, compiler, and outsiders all
+import *it* and register inward, so there are no cycles and core gets no special
+status in the mechanism — it is simply the first registrant.
+
+Behaviors stay with their owners: the `ResolutionPragma` implementations remain
+compiler-side (they manipulate `ByteCodeFragment` internals) and merely
+*register* `compiler/resolution`; the bracket-call check stays in `compile_pair`
+and registers `compiler/call-brackets`. The surface forms (`compile/pragma`,
+`compile/meta-pragma`) live in `compile/specials/`. Model at the bottom,
+behaviors with their owners, syntax with the compiler.
+
+---
+
+## The Registry
+
+The registry is the single source of truth and the thing every other surface
+derives from — validation, refresh dispatch, introspection, completion, and the
+generated documentation table all read from it.
+
+### Feature metadata
+
+Each registered feature declares:
+
+* **name** — the slash-namespaced key (e.g. `compiler/call-brackets`).
+* **owner** — the namespace that registered it (`reader`, `compiler`, or a
+  third-party prefix). Core owns bare prefixes; outsiders use their own
+  (`mytool/trace`).
+* **target** — what it reconfigures: the reader, the compiler, or nothing.
+* **kind** — **active** or **passive**:
+  * **active** — carries a refresh effect; when the pragma changes, the relevant
+    watcher (reader/compiler) re-derives state. Active features further split
+    into *flag* (a scalar set-and-done) and *drop-in* (a behavior object or
+    table that is rebuilt).
+  * **passive** — no refresh effect; just a registered key that sits on
+    `__pragma__` for its owner's own macros to read. A third-party tool needs no
+    privileged access: it registers a passive key and reads it in its macros.
+* **baseline** — the built-in value when the setting is undeclared.
+* **parameters** — each with a name, a value domain, and a **parameter default**.
+* **stability** — `stable`, `experimental`, or `reserved`; optionally a
+  `__future__`-style lifecycle (available-since / default-since version).
+* **summary** — one line for diagnostics and generated docs.
+
+### Registration rules
+
+* **Import-time and idempotent.** Re-registering an identical definition is a
+  no-op; a *conflicting* redefinition of the same name is an error.
+* **Namespacing.** Bare prefixes (`reader/…`, `compiler/…`) are reserved for
+  core; third parties use their own prefix. A soft rule with a warning, a hard
+  error only on actual collision.
+* **Unknown key = not registered yet.** A key is unknown exactly when its
+  registrant has not been imported before the pragma form compiles — the same
+  forward-only ordering as macros. The diagnostic should hint: "key `X` not
+  registered — is its providing package imported?"
+
+---
+
+## Keys and Surface Syntax
+
+### Surface
+
+A pragma is a series of bracketed **data** settings — each a non-call fragment,
+so a `(pragma …)` form is written entirely in brackets-as-data and passes its
+own `compiler/call-brackets` check:
+
+```
+(pragma [reader/brackets]
+        [compiler/call-brackets warn]
+        [compiler/tco-enable False])
+```
+
+* Keys are slash-namespaced, kebab-case, one token each — the key's identity as
+  a single string is what the registry, error messages, `__pragma__` lookups,
+  and completion all use. (Do **not** group by namespace into nested lists; the
+  slash *is* the grouping, at the token level.)
+* Values are bare literal **data**, read structurally and never evaluated.
+* A setting's parameters may be positional, or keyworded for clarity:
+
+```
+[compiler/optimize speed: 3 safety: 0]              ; keyword params
+[compiler/call-brackets error exempt: [let cond]]   ; positional value + keyword options
+```
+
+Three setting shapes: `[key]` (bare → parameter defaults), `[key value …]`
+(positional), and `[key value? kw: v …]` (positional value plus keyword
+options). Nesting is reserved for a single feature's own parameters (the
+`optimize` case), never for owner grouping.
+
+`pragma` and `meta-pragma` are user-facing **macro aliases** over the
+`compile/pragma` and `compile/meta-pragma` specials, exactly as `set!` aliases
+`compile/setq`.
+
+### v0.1 catalog
+
+| Key | Owner / target | Kind | Baseline | Parameters (default) |
+|---|---|---|---|---|
+| `reader/brackets` | reader | active drop-in | `True` | `enabled: bool = True` |
+| `reader/layout` | reader | active flag | `True` | `enabled: bool = True` |
+| `reader/implicit-calls` | reader | active flag | `True` | `enabled: bool = True` |
+| `compiler/resolution` | compiler | active drop-in | `koskari` | `mode: {koskari,scheme,python}` (required) |
+| `compiler/call-brackets` | compiler | active flag | `ignore` | `level: {ignore,warn,error} = warn` |
+| `compiler/tco-enable` | compiler | active flag | `True` | `enabled: bool = True` |
+| `compiler/convert-fast` | compiler | reserved | — | *pass not yet built* |
+| `compiler/compress` | compiler | reserved | — | *pass not yet built* |
+
+`compiler/convert-fast` and `compiler/compress` are validated but inert: the
+keys are reserved so source can name them before the passes exist. (These two,
+together with `compiler/tco-enable`, are a candidate to collapse into a single
+graduated `compiler/optimize` level later — see **Future**.)
+
+---
+
+## Value Model
+
+A setting behaves like a small function, and **declaring it is calling it.**
+
+* **Do not call it** (setting absent) → it keeps its **baseline**. The baseline
+  is dynamic: the built-in default, unless an inherited meta-pragma or an earlier
+  declaration in this module already moved it.
+* **Call it** (setting present) → parameters fill from the given arguments; any
+  omitted argument takes its **parameter default**.
+
+Baseline and parameter default are independent — `compiler/call-brackets` has
+baseline `ignore` but parameter default `warn`:
+
+* not mentioned → stays at baseline (`ignore` — the check is off, pure
+  convention);
+* `[compiler/call-brackets]` → `level` omitted → parameter default → `warn`;
+* `[compiler/call-brackets error]` → `level` explicit → `error`.
+
+That independence is the useful part: leaving the check unmentioned keeps it
+silent, but the moment you opt in by naming it you get a sensible active default
+(`warn`) instead of having to recall the severity vocabulary — while an explicit
+value still wins. (A purely illustrative inverse would be a feature whose
+baseline is *off* but whose bare form turns it *on*: mention-to-enable.)
+
+### Replace, not merge
+
+A declaration is a *full* call: stated arguments win, omitted arguments take
+their parameter defaults, and the result **replaces the setting's whole value**.
+For a multi-parameter setting, `[compiler/optimize speed: 3]` resets `safety` to
+its parameter default — it does not inherit `safety` from an earlier call. The
+granularity of "what persists vs. resets" is the **setting**, matching the
+replace-by-key layering: an *undeclared* setting keeps its prior value; a
+*declared* setting is recomputed fresh.
+
+A pragma declaration means "make it work like THIS," not "adjust from where it
+is." Accumulating onto current settings is deliberately outside the DSL and
+discouraged — so a setting's resulting state is always readable from the call
+plus known parameter defaults, with no need to know history.
+
+---
+
+## The Pragma Object: Registration and Refresh
+
+### Structure
+
+A pragma is an **immutable settings value** plus a reference to a **shared
+watcher cell**:
+
+```
+pragma          = (settings_value, watcher_cell)
+replace(*over)  → (settings.with(over), SAME watcher_cell)   ; intra-module
+subscribe(w)    → watcher_cell.add(w)
+announce()      → for w in watcher_cell: w(self)
+```
+
+The settings half is a pure immutable value — clean equality (over settings
+only) and clean `.kio` serialization (settings only; watchers are runtime). The
+watcher cell is shared by reference across a module's whole pragma lineage, so a
+subscription persists across every `replace` without a copy step, and
+subscribing to *any* version registers everyone (no stale-copy hazard).
+
+A **watcher** is just a callable taking the now-active pragma — `w(pragma)` — so
+the reader and compiler pass a bound method; no required base class.
+
+### Two consumption models
+
+Pull and push are not competitors; they serve different consumers, and both are
+supported:
+
+* **Pull** — read `__pragma__` on demand. For consumers that hold no derived
+  state: user macros, passive features, introspection. No subscription; just
+  read the slot at expand time. This is all a passive feature needs.
+* **Push** — subscribe and get announced. For consumers that cache derived state
+  and must rebuild: the reader (atom tables) and compiler (flags, resolution
+  instance). They cannot re-derive on every access, so they want notification.
+
+### Intra-module only
+
+Watchers propagate across **replacements within one module's load** and *never*
+across modules. When a child seeds its baseline from a parent package's
+`__meta_pragma__`, it copies the **settings** but starts a **fresh watcher
+cell** — otherwise the parent's reader would be announced about the child's
+changes, a cross-module leak. The rule is precise: **replacement shares the
+cell; meta-pragma inheritance does not.**
+
+### Teardown and granularity
+
+* **Cycles** — a pragma references its watchers; the reader/compiler should
+  retain only the state they derived, not the pragma object, and
+  `detach_module_load_facets` clears the watcher cell at end of load (or the cell
+  holds weak references).
+* **Coarse announce** — every watcher is notified on any change; each watcher
+  self-filters (diff its own keys, or rebuild idempotently). Per-key
+  subscription is a possible future optimization; pragma changes are rare
+  (load-time), so coarse is fine.
+
+---
+
+## Load-Time Lifecycle
+
+Koskari interleaves read → compile → eval per top-level form; there is no
 separate header phase.
 
-### Baseline
+### Initialization (the seam)
 
-When a module is created:
+Module and REPL init build the pragma **first**, then construct the reader and
+compiler *with* it:
 
-* `module.__pragma__` is set to a default pragma object.
-* The parser and compiler build internal tables derived from that pragma.
+```
+pragma  = <active source>                 ; default, or inherited package meta-pragma
+module.__pragma__ = pragma
+reader  = Reader(pragma)                  ; subscribes itself as a watcher
+compiler = Compiler(pragma)               ; subscribes itself as a watcher
+```
 
-### Pragma Update
+This single chokepoint is where every pragma *source* plugs in (see
+**Sources and Precedence**). It is worth establishing even while the only source
+is the built-in default, so later sources are additive rather than a retrofit.
 
-The work splits across two phases of the same top-level form, which is what
-makes the update forward-only without any retroactive machinery:
+### Update
 
-**Compile time** (while the pragma form itself is compiled):
+The `compile/pragma` special splits across two phases of its own form:
 
-1. Keys are validated against the registry; an unknown key raises a
-   `CompilerError` here.
-2. A new immutable pragma object is constructed (current `module.__pragma__` +
-   overrides) and stashed as a constant.
+**Compile time** (while the pragma form is compiled):
 
-**Eval time** (when the compiled pragma form executes during load):
+1. Keys and values are validated against the registry; an unknown key or
+   out-of-domain value raises a `CompilerError` here.
+2. The new immutable pragma is built (current `module.__pragma__` settings +
+   this declaration's overrides) and stashed as a constant.
 
-3. `module.__pragma__` is replaced.
-4. `module.__reader__.reload_pragma(module.__pragma__)` is called.
-5. `module.__compiler__.reload_pragma(module.__pragma__)` is called.
+**Eval time** (when the compiled form executes during load):
 
-Because module load is strictly read → compile → **eval** → read-next, the
-*next* top-level form is read by the reconfigured reader and compiled by the
-reconfigured compiler. Application at eval time (rather than at compile time of
-the pragma form) is deliberate: it gives identical behavior in the REPL, where
-each entry is independently read, compiled, and evaluated, and where `repl.ki`
-already rebinds `__reader__`.
+```
+new = old.replace(<overrides>)
+module.__pragma__ = new
+new.announce()        ; reader, compiler, any stateful watcher refresh themselves
+```
+
+The special does **not** name the reader or compiler — it swaps the slot and
+announces. They refresh because they *subscribed*. A stateful third-party
+watcher gets the same notification for free.
+
+Because load is strictly read → compile → **eval** → read-next, the *next*
+top-level form is read by the refreshed reader and compiled by the refreshed
+compiler. Applying at eval time (not at compile time of the pragma form) is
+deliberate: it gives identical behavior in the REPL, where each entry is
+independently read, compiled, and evaluated.
 
 ### Effects
 
 * Changes apply only to subsequent tokenization, parsing, and compilation.
-* No retroactive rewriting occurs.
-* No per-form pragma checks are performed.
-* Reload fully rebuilds pragma-derived tables.
+* No retroactive rewriting; no per-form pragma checks.
+* A refresh fully rebuilds the affected watcher's derived state.
 
 ---
 
-## Import Interaction
+## Sources and Precedence
 
-Pragmas are strictly per-module.
+The *registry* defines what keys exist; **sources** define where a key's value
+comes from before the module's own declaration speaks. Lowest to highest:
 
-* A module's pragma does not affect imported modules.
-* Imported modules use their own stored pragma snapshot.
-* Build systems may enforce defaults externally, but the module's own pragma
-  always wins.
+1. **Built-in default** — what the registry declares as each feature's baseline.
+2. **Package meta-pragma** *(future)* — a package-wide baseline (see below).
+3. **CLI / REPL session default** *(future)* — convenience for ad-hoc running and
+   the REPL.
+4. **Module declaration** — `(pragma …)` in the module; always wins; forward-only.
 
-This avoids cross-module semantic leakage and simplifies caching.
+The invariant that makes this safe to distribute: **only #4 travels with the
+code.** CLI/REPL/package defaults shape authoring and running, never the
+semantics another consumer of the module sees. Users should be encouraged to
+declare pragma explicitly in each distributed module.
+
+Two guards fall out and are worth reserving namespace for:
+
+* **Reproducibility lint** *(future)* — a module that *relies* on a non-default
+  setting it never declared is leaning on an ambient default and will behave
+  differently for an importer. A natural lint.
+* **`.kio` snapshot** *(future)* — a compiled artifact recording its *effective*
+  pragma is reproducible regardless of the ambient default.
+
+---
+
+## Package Meta-Pragma *(future)*
+
+A package may declare defaults for all modules within it — e.g. a Koskari-written
+package distributed as a wheel sets a baseline at the top of its `__init__`.
+
+### Two forms, differing only in which slots they write
+
+* `compile/pragma` → writes `__pragma__` (this module's local pragma).
+* `compile/meta-pragma` → writes **both** `__pragma__` *and* `__meta_pragma__`,
+  using the same override application.
+
+So a meta-pragma "applies to itself as well" simply because it also writes the
+local slot. The convention is **meta first, then local overrides**, and it is
+not arbitrary: because a meta-pragma *also* writes local, a meta declared *after*
+a local override on the same key would clobber it — meta-first is the only order
+where local wins.
+
+### Package-aware loading, no new phase
+
+Meta-pragma needs no header scan because Python's import system already runs a
+package's `__init__` before any of its submodules. So:
+
+* A package's `__init__` runs first; its `(compile/meta-pragma …)` is an ordinary
+  load-time side effect that stamps `package.__meta_pragma__`.
+* When the loader initializes a submodule, the init seam's "active source"
+  becomes `parent_package.__meta_pragma__` (if present) instead of the built-in
+  default. It copies the **settings** only and starts a fresh watcher cell.
+
+Each package stores its `__meta_pragma__` as *parent's resolved meta + this
+package's own meta declaration*, so a deep submodule reads only its immediate
+parent — the baseline is already accumulated.
+
+A meta-pragma is a **default**, overridable per module, not inheritance of
+another module's live pragma — which is what keeps it consistent with the
+non-goal of cross-module leakage.
+
+### Edges
+
+* A namespace package, or one with no `__init__`, has nowhere to declare a
+  meta-pragma and transparently falls through to *its* parent's resolved meta
+  (or the built-in default).
+* `meta-pragma` in a non-package module still applies locally via the shared
+  write, but its `__meta_pragma__` is never consumed (no descendants) — a
+  candidate future lint.
 
 ---
 
 ## Failure Modes and Diagnostics
 
-Recommended behavior:
-
-* Unknown key: error.
-* Conflicting settings: last wins, with a diagnostic.
-* Pragma after code that depends on a different grammar: allowed, but only
+* **Unknown key** — error at compile time (registry miss); hint whether the
+  providing package is imported.
+* **Out-of-domain value** — error at compile time against the feature's domain.
+* **Conflicting settings within a form** — last wins, with a diagnostic.
+* **Pragma after code that assumed a different grammar** — allowed, but only
   forward-effective.
 
-Error messages should include:
-
-* Module name or path.
-* Location of the pragma form.
-* A summary of active pragma settings (or digest).
+Error messages should include the module name/path, the location of the pragma
+form, and a summary (or digest) of the active settings — the same data the
+introspection surface reports.
 
 ---
 
-## Feature Matrix and Routing Registry
+## Advertising the Catalog
 
-The pragma object holds a resolved value for every known key. The *design* is a
-single registry: each key declares its **target** (which load facet it touches,
-`__reader__` or `__compiler__`) and its **kind** —
+Because the registry is authoritative, the "official" surface comes almost for
+free:
 
-* **flag** — a cheap scalar (bool / enum) that is set and done.
-* **drop-in** — a behavior object or table that `reload_pragma` swaps or
-  rebuilds (e.g. the resolution pragma class, the bracket-reading mode).
-
-Adding a key is one registry row plus one line in the target's `reload_pragma`.
-
-| Key | Target | Kind | Backing knob |
-|---|---|---|---|
-| `resolution_mode` | compiler | drop-in | `resolution_pragma_class` (Koskari / Scheme / Python) |
-| `bracket_calls` | compiler | flag | `bracket_calls` (`ignore` / `warn` / `error`) |
-| `tco` | compiler | flag | `tco_enabled` |
-| `layout` | reader | flag | `layout_enabled` |
-| `layout_implicit_calls` | reader | flag | `layout_implicit_calls` |
-| `bracket_pairs` | reader | drop-in | `bracket_pairs` (also propagated to the inner reader) |
-| `convert_fast` | compiler | flag | *reserved — `convert-fast` pass, not yet built* |
-| `compress` | compiler | flag | *reserved — bytecode compression pass* |
-
-`convert_fast` and `compress` are validated but inert in v0.1: the keys are
-reserved so source can name them without error before the passes exist.
-
-### Later: atom gating
-
-A second wave gates syntax-level reader atoms — `&foo` / place-aware `&foo.bar`
-(ref), `foo->bar` (deref-attr), and `*identifier` deref atoms. These need the
-reader to rebuild its atom recognizers (via `set_atom_pattern`) on reload, and
-user-defined reader macros and atoms must be stored separately so a reload does
-not silently discard them (see **User Overlays**). Deferred until the v0.1
-routing registry is in place.
+* **Validation** — unknown-key / out-of-domain errors from the registry.
+* **Introspection** — a no-arg `(pragma)` reports the active settings; the same
+  registry + state feed REPL/LSP completion and diagnostics.
+* **Generated docs** — the FEATURES table and reference page render from the
+  registry, so the advertised catalog cannot drift from the real keys, defaults,
+  and domains.
+* **Stability tiers** — every key is `stable` / `experimental` / `reserved`, so a
+  flag can be advertised the day it is useful without freezing its spelling; an
+  optional `__future__`-style version lifecycle records available-since /
+  default-since.
 
 ---
 
 ## Minimal Implementable Subset (v0.1)
 
-1. Provide an immutable `ModulePragma` value object in `koskari.compile.pragma`
-   with a `replace(**overrides)` that layers onto the current pragma, plus the
-   key registry above.
-2. Add `Compiler.reload_pragma(pragma)` (mirrors the reader's), applying the
-   compiler-side keys and storing `module.__pragma__`. Set a default
-   `module.__pragma__` in `Compiler.__init__`.
-3. Extend `LayoutReader.reload_pragma(pragma)` (today only handles
-   `layout_implicit_calls`) to also apply `layout` and `bracket_pairs`.
-4. Add a small runtime applier (`__pragma_apply__`) that, running in the module
-   namespace, pulls the live `__reader__` / `__compiler__` and calls both
-   `reload_pragma`s.
-5. Implement the `compile/pragma` special: validate keys, build the new pragma
-   at compile time, emit the eval-time applier call.
-6. Defer serialization of the pragma snapshot into `.kio` — a compiled artifact
-   already bakes the resolution/bracket decisions into its bytecode and does no
-   reading, so the snapshot is only needed for introspection/recompile.
+Phased-authoritative: the registry is authoritative for the new pragma path now;
+the existing `Compiler` / `Reader` constructor kwargs migrate to derive from
+registry defaults in a follow-up.
+
+1. **`koskari.pragma`** — `ModulePragma` (immutable settings value + shared
+   watcher cell, with `replace` / `subscribe` / `announce`), the registry and
+   `PragmaFeature` metadata (owner, target, kind, baseline, params + defaults,
+   stability), `register_feature`, and the stability tiers.
+2. **Reader** registers its `reader/*` features at import; subscribes itself when
+   constructed; its refresh callback re-derives the layout and bracket-reading
+   switches from the announced pragma.
+3. **Compiler** registers its `compiler/*` features at import; subscribes itself;
+   its refresh callback applies the flags and swaps the resolution class.
+4. **Init seam** — reorder module/REPL init to build the pragma first and pass it
+   into the reader and compiler.
+5. **Specials** — `compile/pragma` (and `compile/meta-pragma`) in
+   `compile/specials/`, with `pragma` / `meta-pragma` macro aliases in basics.
+   Validate against the registry at compile time; emit the eval-time
+   build → install → announce applier.
+6. **Defer** — `.kio` pragma serialization, the package meta-pragma loader
+   integration (the built-in-default branch ships; meta is additive), CLI/REPL
+   sources, profiles, and the reproducibility lint.
 
 ---
 
-## Storage Model
+## Future
 
-* `module.__pragma__` is immutable but replaceable.
-* Parser and compiler maintain internal tables derived from the current pragma.
-* Reload reconstructs these tables entirely.
-* Compiled artifacts store a serialized snapshot of the pragma.
+* **Profiles / presets** — named override bundles (`[profile strict]`) that
+  expand to a known set, each key still individually overridable via last-wins.
+  The precedence chain is already profile-ready; ship the mechanism before any
+  curated profile.
+* **Graduated optimize level** — fold `compiler/tco-enable` /
+  `compiler/convert-fast` / `compiler/compress` into one `compiler/optimize`
+  level (à la `declaim (optimize (speed 3) (safety 0))`) where booleans do not
+  compose.
+* **Atom gating** — a later wave gating reader atoms (`&foo` ref, `foo->bar`
+  deref-attr, `*ident` deref), which need the reader to rebuild atom recognizers
+  on refresh and to keep user-defined reader macros/atoms in a separate overlay
+  so a refresh does not discard them.
+* **Lifecycle versions** — `__future__`-style available-since / default-since
+  metadata per feature.
+* **`.kio` snapshot** and the **reproducibility lint** described under
+  **Sources and Precedence**.
 
----
-
-## User Overlays
-
-User-defined reader macros and atoms are stored separately from pragma-defined
-grammar.
-
-On pragma reload:
-
-1. Rebuild pragma-defined grammar and operator tables.
-2. Re-apply user-defined overlays.
-
-This ensures that resetting or replacing a pragma does not silently discard
-user-level customizations.
-
----
-
-## Minimal Summary
-
-### Special Form
-
-`(compile/pragma key: value ...)`
-
-* Validates keys and builds a new immutable pragma at compile time.
-* At eval time, replaces `module.__pragma__` and calls the reader and compiler
-  reload methods.
-* Affects only future parsing and compilation.
-
-### Reader Keys (v0.1)
-
-* `layout` — enables layout (indentation) reading.
-* `layout_implicit_calls` — multiple values on one layout line form a call.
-* `bracket_pairs` — `[ ]` reads into distinct bracket-pair / bracket-nil values
-  (vs. plain pairs).
-
-### Compiler Keys (v0.1)
-
-* `resolution_mode` — selects resolution semantics: Koskari (strict), Scheme
-  (unsatisfied writes promote to global), or Python (implicit local on first
-  write unless explicit global). Implemented via pluggable `ResolutionPragma`.
-* `bracket_calls` — policy for a bracket-pair reaching call position
-  (`ignore` / `warn` / `error`).
-* `tco` — enables the tail-call optimization.
-
-### Reserved Compiler Keys (validated, inert in v0.1)
-
-* `convert_fast` — the `convert-fast` compression pass (not yet built).
-* `compress` — the bytecode compression pass.
-
-The pragma model is intentionally minimal, forward-only, and module-local.
+The pragma model is intentionally declarative, forward-only, and module-local,
+with one registry as the catalog and a watcher announce as the only refresh
+mechanism.

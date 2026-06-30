@@ -217,15 +217,19 @@ silence, so the unannotated language stays a pure convention.
 
 #### Gating the bracket-in-call-position check
 
-Two independent knobs, both **module-scoped** and set via the pragma system
+Two independent settings, both **module-scoped** and set via the pragma system
 (see [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md)):
 
-- `bracket_pairs` (**reader**) — whether `[ ]` reads into the distinct
-  `bracket-pair` / `bracket-nil` values (default) or into plain pairs. When
+- `reader/brackets` (**reader**) — whether `[ ]` reads into the distinct
+  `bracket-pair` / `bracket-nil` values (default on) or into plain pairs. When
   off, the origin marker is never produced.
-- `bracket_calls` (**compiler**) — policy when a `bracket-pair` reaches call
-  position: `ignore` (default, pure convention), `warn` (emit a
+- `compiler/call-brackets` (**compiler**) — policy when a `bracket-pair` reaches
+  call position: `ignore` (default, pure convention), `warn` (emit a
   `SyntaxWarning`), or `error` (raise at compile time).
+
+```
+(pragma [compiler/call-brackets error])   ; make stray brackets-in-call a hard error
+```
 
 ### Thunk syntax
 

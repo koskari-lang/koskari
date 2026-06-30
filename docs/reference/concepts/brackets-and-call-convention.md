@@ -80,24 +80,24 @@ system:
 
 | Setting | Affects | Values | Meaning |
 |---|---|---|---|
-| `bracket_pairs` | reader | on / off | Whether `[ ]` reads into bracket-pairs (carrying the marker) or plain pairs. Default **on**. |
-| `bracket_calls` | compiler | `ignore` / `warn` / `error` | What happens when a bracket-pair reaches call position. Default **`ignore`** (pure convention). |
+| `reader/brackets` | reader | on / off | Whether `[ ]` reads into bracket-pairs (carrying the marker) or plain pairs. Default **on**. |
+| `compiler/call-brackets` | compiler | `ignore` / `warn` / `error` | What happens when a bracket-pair reaches call position. Default **`ignore`** (pure convention). |
 
-Planned spelling:
+Planned spelling — each setting is a bracketed data fragment:
 
 ```koskari
 ; make accidental "[ ] in call position" a hard error for this module
-(compile/pragma bracket_calls: error)
+(pragma [compiler/call-brackets error])
 
 ; or just warn
-(compile/pragma bracket_calls: warn)
+(pragma [compiler/call-brackets warn])
 ```
 
 A pragma is forward-only and scoped to the module that sets it; it does not
-affect modules you import. With `bracket_calls: ignore` (the default) the
-language is exactly the convention — brackets are documentation. Raising it to
-`warn` or `error` turns the convention into a diagnostic that catches the `ler`
-class of mistake at compile time.
+affect modules you import. With `compiler/call-brackets` at `ignore` (the
+default) the language is exactly the convention — brackets are documentation.
+Raising it to `warn` or `error` turns the convention into a diagnostic that
+catches the `ler` class of mistake at compile time.
 
 ## See also
 

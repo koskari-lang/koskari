@@ -126,25 +126,31 @@ Ref: [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [interpreter/kio-format.md](interpreter/kio-format.md) (`.kio` format);
 `koskari.serialize` (incremental compile and `dump_kio`).
 
-### Module pragma system (`compile/pragma`)
+### Module pragma system (`koskari.pragma`)
 
-Add the `(compile/pragma key: value ...)` special form that gates module-level
-reader and compiler behavior, replacing the ad-hoc constructor flags
-(`bracket_calls`, `resolution_pragma_class`, `tco_enabled`, reader layout
-switches) with a single, immutable, per-module `ModulePragma` object. The form
-validates keys at compile time (unknown key → `CompilerError`) and applies the
-new pragma at eval time, so changes are forward-only: the next top-level form
-is read by the reconfigured `__reader__` and compiled by the reconfigured
-`__compiler__`. The design is a routing registry — each key declares its target
-(`__reader__` or `__compiler__`) and kind (scalar flag vs. drop-in behavior
-object) — so new keys are one row each.
+The official home for the language's optional features. Add a top-level leaf
+package `koskari.pragma` holding an immutable `ModulePragma` (settings value +
+shared watcher cell) and a feature **registry**: the reader, compiler, and
+third-party tools register their own features (name, owner, target, kind,
+baseline, parameters + defaults, stability) at import. Add `(pragma [ns/key
+value …] …)` — a macro alias over the `compile/pragma` special — whose settings
+are bracketed data fragments with positional or keyword parameters. The special
+validates keys/values against the registry at compile time (unknown key →
+`CompilerError`) and at eval time does build → install (`module.__pragma__`) →
+`announce()`; the reader and compiler refresh because they *subscribed* as
+watchers, not because the special names them. Changes are forward-only and
+module-local. Reorder module/REPL init to build the pragma first, then build the
+reader and compiler with it (the seam every pragma source plugs into).
 
-v0.1 wires six live keys (`resolution_mode`, `bracket_calls`, `tco`, `layout`,
-`layout_implicit_calls`, `bracket_pairs`) and reserves two inert
-(`convert_fast`, `compress`). Backends for resolution and bracket already exist
-(`compile/pragma/`); reader knobs exist but are not all in `reload_pragma` yet.
-Serialization of the pragma snapshot into `.kio` is deferred. Supersedes the
-"pragma gating deferred" note in the TCO item above and the pragma-gating
+v0.1 wires six live keys (`reader/brackets`, `reader/layout`,
+`reader/implicit-calls`, `compiler/resolution`, `compiler/call-brackets`,
+`compiler/tco-enable`) and reserves two inert (`compiler/convert-fast`,
+`compiler/compress`). Phased-authoritative: registry authoritative for the new
+pragma path now; existing `Compiler` / `Reader` constructor kwargs migrate to
+derive from it in a follow-up. Deferred: `.kio` pragma snapshot, package
+meta-pragma loader integration, CLI/REPL pragma sources, profiles, the
+reproducibility lint, and the graduated `compiler/optimize` level. Supersedes
+the "pragma gating deferred" note in the TCO item above and the pragma-gating
 deferral recorded in the archived bracket-pair design doc.
 
 Ref: [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md).
