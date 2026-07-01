@@ -149,14 +149,12 @@ typedef enum KosSuspensionEvent {
 /**
   KosEvalMode is the result of entry/revive and drives the mode-handler loop.
   NORMAL = run next insn or check completion; TRANSFER = run process_plan;
-  EXCEPTION = run process_raise; RAISE = entry-time surface of a pending
-  raise (fill out_ev and stop).
+  EXCEPTION = run process_raise.
 */
 typedef enum KosEvalMode {
   KOS_MODE_NORMAL    = 0,
   KOS_MODE_TRANSFER  = 1,
   KOS_MODE_EXCEPTION = 2,
-  KOS_MODE_RAISE     = 3,
 } KosEvalMode;
 
 

@@ -116,6 +116,8 @@ static void kos_eval_mark_context_dead(KosContext *ctx);
 
 static KosOpResult try_local_exception_handler(KosEvalState *es);
 
+static KosOpResult process_raise(KosEvalState *es);
+
 static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val);
 
 static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val);
@@ -704,13 +706,43 @@ own_fail:
 
 
 /**
-   Process the current exception (in PyErr or context). Handles
-   KoskariContinuationApply (invoke continuation or unwind-and-reraise), local
-   handlers (try/except/finally, WITH exit, unwind), or returns RAISE. Call
-   only when mode is EXCEPTION.
+   Unified exception ingress (the RAISE hub).  All PyErr / KOS_RES_RAISE
+   ingress converges here: post-opcode results (apply_kos_op_result),
+   prologue and signal-poll pending PyErr (eval_phase_pending_exception),
+   revive-throw (eval_phase_entry KOS_MODE_EXCEPTION), and transfer-plan
+   step failures (run_transfer_plan_to_completion).  Two deliberate
+   non-ingress carve-outs live in run_transfer_plan_to_completion: the
+   foreign cc-unwind sentinel re-emit (signal delivery, not a failed
+   transfer; must not see try_local) and a pending KoskariContinuationApply
+   between drain steps (expected in-flight state; keep stepping).
+
+   Ordering contract:
+     1. guard        - no PyErr: SystemError + prepare_boundary_raise,
+                       EVAL_RAISE
+     2. cc test      - PyErr_ExceptionMatches(KoskariContinuationApply),
+                       exactly once
+     3. nest abandon - kos_abandon_transfer_nest when a plan or plan stack
+                       is live AND the exception is not a continuation
+                       signal
+     4. cc dispatch  - continuation signal: handle_continuation_apply
+                       (own token: invoke; foreign: cc-unwind plan);
+                       REPROLOGUE re-enters the loop with a plan armed
+     5. agen clear   - clear_kos_agen_boundary_on_error before the
+                       exception can escape an async-gen boundary step
+     6. try_local    - kos_dyn_try_local_raise_body walks TRY / FINALLY /
+                       WITH / unwind extents
+     7. outcome map  - REPROLOGUE: handler applied, restart prologue.
+                       AWAIT: async unwind started; tag KOS_SUSP_AWAIT,
+                       mark suspended, propagate awaitable (caller owns
+                       tl.val).
+                       RAISE: propagate; kos_eval_prepare_boundary_raise
+                       already ran inside try_local - never call it again
+                       (boundary-control-reemit.md invariant 7.4).
+                       FATAL: mark context dead, EVAL_FATAL.
 
    :return: EVAL_REPROLOGUE to continue, EVAL_AWAIT on async unwind,
-            EVAL_RAISE to propagate (PyErr set)
+            EVAL_RAISE to propagate (PyErr set), EVAL_FATAL on internal
+            fault
 */
 static KosOpResult process_raise(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -722,26 +754,34 @@ static KosOpResult process_raise(KosEvalState *es) {
     return EVAL_RAISE();
   }
 
-  if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es)) {
-    if (! (KoskariContinuationApply
-           && PyErr_ExceptionMatches(KoskariContinuationApply)))
-      kos_abandon_transfer_nest(es);
-  }
+  int is_cc_apply = (KoskariContinuationApply
+                     && PyErr_ExceptionMatches(KoskariContinuationApply));
 
-  if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply))
+  if (! is_cc_apply
+      && (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es)))
+    kos_abandon_transfer_nest(es);
+
+  if (is_cc_apply)
     return handle_continuation_apply(es);
+
   clear_kos_agen_boundary_on_error(ctx);
 
   {
     KosOpResult tl = try_local_exception_handler(es);
-    if (tl.kind == KOS_RES_REPROLOGUE)
+    switch (tl.kind) {
+    case KOS_RES_REPROLOGUE:
       return EVAL_REPROLOGUE();
-    if (tl.kind == KOS_RES_AWAIT) {
+    case KOS_RES_AWAIT:
       KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+      KosEvalState_MarkSuspendedNotRunning(es);
       return tl;
+    case KOS_RES_FATAL:
+      kos_eval_mark_context_dead(ctx);
+      return EVAL_FATAL();
+    default:
+      /* RAISE: PyErr set by kos_eval_prepare_boundary_raise in try_local */
+      return EVAL_RAISE();
     }
-    /* RAISE or FATAL: PyErr set by kos_eval_prepare_boundary_raise */
-    return EVAL_RAISE();
   }
 }
 
@@ -1772,8 +1812,9 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res);
    Phase 1: entry and revive normalization.
 
    Determines the initial KosEvalMode by dispatching through the current
-   suspension state and send_val/throw_exc arguments.  Handles EXCEPTION and
-   RAISE outcomes in-place.  Clears suspension event after mode selection.
+   suspension state and send_val/throw_exc arguments.  Handles the EXCEPTION
+   outcome in-place via process_raise (the unified RAISE ingress).  Clears
+   suspension event after mode selection.
 
    :param mode_out: Receives the resolved KosEvalMode on EVAL_NORMAL return.
    :return: EVAL_NORMAL when the dispatch loop should proceed;
@@ -1785,8 +1826,6 @@ static KosOpResult eval_phase_entry(
     PyObject *throw_typ,
     PyObject *throw_exc,
     KosEvalMode *mode_out) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   KosEvalMode mode = KOS_MODE_NORMAL;
   if (KosEvalState_PLAN(es)) {
@@ -1860,32 +1899,15 @@ static KosOpResult eval_phase_entry(
 
 entry_mode_dispatch:
   if (mode == KOS_MODE_EXCEPTION) {
-    clear_kos_agen_boundary_on_error(ctx);
-    if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
-      kos_abandon_transfer_nest(es);
-    KosOpResult tl = try_local_exception_handler(es);
-    SAYF("[eval] phase_entry try_local kind=%d\n", (int) tl.kind);
+    KosOpResult pr = process_raise(es);
+    SAYF("[eval] phase_entry process_raise kind=%d\n", (int) pr.kind);
 
-    if (tl.kind == KOS_RES_REPROLOGUE) {
+    if (pr.kind == KOS_RES_REPROLOGUE) {
       *mode_out = KOS_MODE_NORMAL;
       return EVAL_NORMAL();
     }
-    if (tl.kind == KOS_RES_AWAIT) {
-      /* Async unwind: surface AWAIT */
-      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-      KosEvalState_MarkSuspendedNotRunning(es);
-      return tl;
-    }
-    if (tl.kind == KOS_RES_FATAL)
-      return EVAL_FATAL();
-    /* RAISE: kos_eval_prepare_boundary_raise already called; PyErr is set */
-    kos_eval_mark_context_dead(ctx);
-    return EVAL_RAISE();
-  }
-
-  if (mode == KOS_MODE_RAISE) {
-    kos_eval_prepare_boundary_raise(ctx, es);
-    return EVAL_RAISE();
+    /* AWAIT (tagged by the hub) / RAISE / FATAL are terminal here */
+    return pr;
   }
 
   /* Resume delivery: if we revived with a value and top frame has native_handler, deliver to it */
@@ -1915,7 +1937,8 @@ entry_mode_dispatch:
 
    Drains any active transfer plan to completion.  When no frame and no
    hook remain after draining, emits a terminal RETURN(None) and marks
-   the context dead.
+   the context dead.  Abandonment outcomes from the unified RAISE ingress
+   (AWAIT / RAISE / FATAL) are terminal here.
 
    :return: EVAL_NORMAL when the dispatch loop should start;
             terminal KosOpResult when eval should stop.
@@ -1923,12 +1946,12 @@ entry_mode_dispatch:
 static KosOpResult eval_phase_transfer(KosEvalState *es) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  int xfer = run_transfer_plan_to_completion(es);
+  KosOpResult xfer = run_transfer_plan_to_completion(es);
 
-  if (xfer < 0)
-    return EVAL_RAISE();
-  if (xfer > 0)
+  if (xfer.kind == KOS_RES_REPROLOGUE)
     return EVAL_NORMAL();
+  if (xfer.kind != KOS_RES_NORMAL)
+    return xfer;  /* AWAIT / RAISE / FATAL */
 
   if (! KosEvalState_FRAME(es)) {
     kos_eval_mark_context_dead(ctx);
@@ -1941,20 +1964,11 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
 
 
 /**
-   Single PyErr / RAISE ordering contract after process_raise: propagate RAISE,
-   resuspend on AWAIT, or REPROLOGUE after local recovery.
-*/
-static KosOpResult eval_boundary_raise_dispatch(KosEvalState *es) {
-  return process_raise(es);
-}
-
-
-/**
    Post-opcode / entry normalization for active PyErr: delegates to
-   eval_boundary_raise_dispatch (process_raise and suspension tagging).
+   process_raise (the unified RAISE ingress; see its ordering contract).
 */
 static KosOpResult eval_event_raise(KosEvalState *es) {
-  return eval_boundary_raise_dispatch(es);
+  return process_raise(es);
 }
 
 
@@ -2291,11 +2305,9 @@ static KosOpResult eval_step_drain_transfer_plan(KosEvalState *es) {
   if (! KosEvalState_PLAN(es))
     return EVAL_NORMAL();
   {
-    int xfer = run_transfer_plan_to_completion(es);
-    if (xfer < 0)
-      return EVAL_RAISE();
-    if (xfer > 0)
-      return EVAL_REPROLOGUE();
+    KosOpResult xfer = run_transfer_plan_to_completion(es);
+    if (xfer.kind != KOS_RES_NORMAL)
+      return xfer;  /* REPROLOGUE / AWAIT / RAISE / FATAL */
   }
   return EVAL_NORMAL();
 }

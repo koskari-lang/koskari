@@ -221,4 +221,127 @@ class TestDynWithTransferWindReproducer(SpecialsTestCase):
             msg="log=%r" % (log,))
 
 
+class TestDynWithTransferFailures(SpecialsTestCase):
+    """
+    Failed transfer abandonment across dyn-with extents: when a transfer
+    plan wind step fails synchronously, local handler dispatch must honor
+    an async dyn-with exit on the manifested chain (suspend and complete
+    __aexit__) instead of dropping it.
+    """
+
+    async def test_async_exit_completes_when_transfer_wind_step_fails(self):
+        """
+        Nested dyn-withs inside a try: the outer manager has async
+        __aenter__/__aexit__, the inner manager's sync __enter__ raises on
+        transfer re-entry (a synchronous plan-step failure).  The abandon
+        path must run the outer manager's async __aexit__ to completion
+        before the enclosing try/except catches.
+        """
+
+        import asyncio
+
+        log = []
+        enter_count = [0]
+        aexit_count = [0]
+        saved = []
+
+        def record(s):
+            log.append(s)
+            return s
+
+        class AsyncExitMgr:
+            async def __aenter__(self):
+                record("aenter")
+                return self
+
+            async def __aexit__(self, typ, val, tb):
+                n = aexit_count[0]
+                aexit_count[0] += 1
+                record(f"aexit-start-{n}")
+                await asyncio.sleep(0)
+                record(f"aexit-done-{n}")
+                return False
+
+        class FailingEnterMgr:
+            def __enter__(self):
+                n = enter_count[0]
+                enter_count[0] += 1
+                record(f"enter-{n}")
+                if n >= 1:
+                    raise ValueError("enter-fail")
+                return self
+
+            def __exit__(self, typ, val, tb):
+                record("exit")
+                return False
+
+        def make_outer():
+            return AsyncExitMgr()
+
+        def make_inner():
+            return FailingEnterMgr()
+
+        def stash(k):
+            record("stash-py")
+            saved.append(k)
+
+        def invoke_saved():
+            record(f"invoke-saved-py saved={bool(saved)}")
+            k = saved[0]
+            saved.clear()
+            return k(99)
+
+        src_str = """
+        (compile/begin
+          (compile/define result
+            (compile/try
+              (compile/dyn-with [a (compile/call make_outer)]
+                (compile/dyn-with [b (compile/call make_inner)]
+                  (compile/capture/cc k
+                    (compile/begin
+                      (compile/call stash k)
+                      (compile/call record "capture-body")
+                      42))))
+              ([Exception] (compile/call record "caught"))))
+          (compile/call record "after-setup")
+          (compile/call record result)
+          (compile/cond [saved (invoke_saved)] [else: result]))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            make_outer=make_outer,
+            make_inner=make_inner,
+            stash=stash,
+            invoke_saved=invoke_saved,
+            record=record,
+            saved=saved,
+            Exception=Exception)
+
+        result = await expr()
+
+        self.assertEqual(result, "caught", msg=f"log={log}")
+        self.assertEqual(log, [
+            "aenter",
+            "enter-0",
+            "stash-py",
+            "capture-body",
+            "exit",
+            "aexit-start-0",
+            "aexit-done-0",
+            "after-setup",
+            42,
+            "invoke-saved-py saved=True",
+            "aenter",
+            "enter-1",
+            "exit",
+            "aexit-start-1",
+            "aexit-done-1",
+            "caught",
+            "after-setup",
+            "caught",
+        ])
+        self.assertEqual(enter_count[0], 2)
+        self.assertEqual(aexit_count[0], 2)
+
+
 # The end.

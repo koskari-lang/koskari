@@ -480,9 +480,9 @@ lives entirely inside those two dispatchers.
 
 | Phase | Helper | Responsibility |
 |-------|--------|----------------|
-| 1 | `eval_phase_entry` | Entry/revive normalization; `entry_mode_dispatch` for EXCEPTION/RAISE outcomes |
+| 1 | `eval_phase_entry` | Entry/revive normalization; `entry_mode_dispatch` for the EXCEPTION outcome |
 | 2 | `eval_phase_transfer` | Transfer-plan drain; terminal RETURN(None) when no frame or hook remains |
-| 3 | `eval_phase_pending_exception` | `PyErr_Occurred()` → **`eval_event_raise`** (→ **`eval_boundary_raise_dispatch`**) at each loop-top iteration |
+| 3 | `eval_phase_pending_exception` | `PyErr_Occurred()` → **`eval_event_raise`** (→ **`process_raise`**) at each loop-top iteration |
 | 4 | `KOS_EVAL_PREPARE_NEXT_INSN` | Copy insn into local `KosOp insn`, set `acting_pc`, pre-advance `pc` (assumes valid frame/PC; no checks) |
 | 5 | *(inline)* | Computed-goto / switch opcode dispatch; handlers return **`KosOpResult`** via `EVAL_*` macros (see `eval.h`) |
 | 6 | `cg_handle_op_result` | Switch on `op_res.kind`; delegates to `eval_event_yield`, `eval_event_await`, `eval_event_return`, `eval_event_raise`, `eval_parent_return_deliver`, or `kos_eval_post_opcode_control_returned_after_hook` |
@@ -516,8 +516,9 @@ entered; `cg_handle_op_result` only runs for the non-normal cases.
 **`eval_event_raise`** is the common entry for all exception dispatch: called
 from `cg_handle_op_result` (opcode errors), `eval_phase_pending_exception`
 (pending at prologue), and `kos_eval_post_opcode_control_returned_after_hook`
-(hook error path). It routes through **`eval_boundary_raise_dispatch`** (wraps
-**`process_raise`**).
+(hook error path). It delegates to **`process_raise`**, the unified RAISE
+ingress (see EVALUATOR.md §4.1), which entry revive-throw and transfer-plan
+step failures also converge on.
 
 **CONTROL_RETURNED path:** after a WIND/WITH unwind hook completes and
 `kos_dynnode_on_control_returned` returns non-zero, the result is dispatched

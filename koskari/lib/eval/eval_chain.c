@@ -324,29 +324,6 @@ static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
 
 
 /**
-  Abandon any transfer nest, then dispatch PyErr through local handlers.
-
-  :return: 1 if a handler was applied (or async unwind started),
-           -1 if unhandled raise or fatal error (PyErr remains set)
-*/
-static int abandon_xfer_and_try_local(KosEvalState *es) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  kos_abandon_transfer_nest(es);
-  KosOpResult tl = try_local_exception_handler(es);
-  if (tl.kind == KOS_RES_REPROLOGUE)
-    return 1;
-  if (tl.kind == KOS_RES_AWAIT) {
-    Py_XDECREF(tl.val);
-    return 1;
-  }
-  /* RAISE or FATAL: inject traceback and leave PyErr set for caller. */
-  kos_eval_prepare_boundary_raise(ctx, es);
-  return -1;
-}
-
-
-/**
   True when the current (failed) plan step is a KosDynCCRaise sentinel
   re-emit from kos_build_cc_unwind_plan (foreign apply signal delivery).
 */
@@ -371,34 +348,41 @@ static int xfer_plan_step_is_cc_raise_reemit(KosEvalState *es) {
 
 /**
   Foreign cc-unwind sentinel step: inject traceback and disarm nest.
-  Not a failed transfer; do not route through try_local.
+  Not a failed transfer; do not route through process_raise (a local
+  handler must not swallow another context's continuation signal).
 
-  :return: -1 with PyErr set
+  :return: EVAL_RAISE with PyErr set
 */
-static int xfer_emit_cc_unwind_signal(KosEvalState *es) {
+static KosOpResult xfer_emit_cc_unwind_signal(KosEvalState *es) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
   kos_eval_prepare_boundary_raise(ctx, es);
   kos_abandon_transfer_nest(es);
-  return -1;
+  return EVAL_RAISE();
 }
 
 
 /**
-  Run the current transfer plan to completion.
+  Run the current transfer plan to completion.  Step failures route
+  through process_raise (the unified RAISE ingress), except the foreign
+  cc-unwind sentinel re-emit and a pending KoskariContinuationApply
+  between drain steps (expected in-flight state; keep stepping).
 
-  :return: 0 on success (plan cleared or suspended on await),
-           1 if plan abandoned and a local handler was applied,
-           -1 if a step failed with no handler or on fatal error
+  :return: EVAL_NORMAL on success (plan cleared or suspended on await),
+           EVAL_REPROLOGUE if the plan was abandoned and a local handler
+           was applied,
+           EVAL_AWAIT if abandonment started an async unwind (suspension
+           tagged; val is the awaitable),
+           EVAL_RAISE / EVAL_FATAL if a step failed with no handler
 */
-static int run_transfer_plan_to_completion(KosEvalState *es) {
+static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
 
   while (KosEvalState_PLAN(es)) {
     if (PyErr_Occurred()) {
       if (! (KoskariContinuationApply
              && PyErr_ExceptionMatches(KoskariContinuationApply))) {
-        SAY("[eval] transfer drain with pending PyErr -> abandon + try_local\n");
-        return abandon_xfer_and_try_local(es);
+        SAY("[eval] transfer drain with pending PyErr -> process_raise\n");
+        return process_raise(es);
       }
     }
 
@@ -412,13 +396,14 @@ static int run_transfer_plan_to_completion(KosEvalState *es) {
         SAY("[eval] cc-unwind sentinel re-emit -> raise\n");
         return xfer_emit_cc_unwind_signal(es);
       }
-      SAY("[eval] transfer step failed -> abandon + try_local\n");
-      return abandon_xfer_and_try_local(es);
+      SAY("[eval] transfer step failed -> process_raise\n");
+      return process_raise(es);
     }
 
     if (plan_res == KOS_XFER_SUSPENDED_AWAIT) {
       SAY("[eval] transfer step suspended on await\n");
-      return 0;  /* do not clear plan; driver will resume and feed inject */
+      /* do not clear plan; driver will resume and feed inject */
+      return EVAL_NORMAL();
     }
 
     if (plan_res == 0)
@@ -444,7 +429,7 @@ static int run_transfer_plan_to_completion(KosEvalState *es) {
         PyErr_SetString(PyExc_RuntimeError,
                         "nested continuation invoke during an active"
                         " delimited transfer is not supported");
-        return abandon_xfer_and_try_local(es);
+        return process_raise(es);
       }
 
       size_t outer_ac = KosTransferPlan_ACTION_COUNT(outer);
@@ -473,7 +458,7 @@ static int run_transfer_plan_to_completion(KosEvalState *es) {
           Py_XDECREF(inject_val);
           if (rstack)
             KosStackBlock_ReleaseChain(rstack);
-          return abandon_xfer_and_try_local(es);
+          return process_raise(es);
         }
         bottom = target_keep;
         while (bottom && KosDynNode_PARENT(bottom))
@@ -498,7 +483,7 @@ static int run_transfer_plan_to_completion(KosEvalState *es) {
         if (rstack)
           KosStackBlock_ReleaseChain(rstack);
         kos_dynchain_free(target_keep, NULL);
-        return abandon_xfer_and_try_local(es);
+        return process_raise(es);
       }
       Py_XDECREF(inject_val);
       KosTransferPlan_RESUME_PC(new_plan) = rpc;
@@ -508,7 +493,7 @@ static int run_transfer_plan_to_completion(KosEvalState *es) {
     }
   }
 
-  return 0;
+  return EVAL_NORMAL();
 }
 
 
@@ -551,9 +536,11 @@ static inline KosOpResult KosEvalState_KReturnDelimited(
       return EVAL_RAISE();
   }
   {
-    int xfer = run_transfer_plan_to_completion(es);
-    if (xfer < 0)
-      return EVAL_RAISE();
+    KosOpResult xfer = run_transfer_plan_to_completion(es);
+    if (xfer.kind == KOS_RES_REPROLOGUE)
+      return EVAL_REPROLOGUE();
+    if (xfer.kind != KOS_RES_NORMAL)
+      return xfer;  /* AWAIT / RAISE / FATAL */
   }
   return KosEvalState_HasActiveTransferPlan(es) ? EVAL_REPROLOGUE()
                                                 : EVAL_NORMAL();
