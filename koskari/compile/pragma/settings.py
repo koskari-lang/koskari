@@ -28,7 +28,10 @@ omitted).
 
 
 from enum import Enum
+
 from ...pragma import pragma_setting
+from .resolution import (KoskariPragma, PythonPragma, ResolutionPragma,
+                         SchemePragma)
 
 
 class ResolutionMode(Enum):
@@ -41,8 +44,13 @@ class ResolutionMode(Enum):
     PYTHON = "python"
 
 
+ResolutionMode.KOSKARI.resolution_class = KoskariPragma
+ResolutionMode.SCHEME.resolution_class = SchemePragma
+ResolutionMode.PYTHON.resolution_class = PythonPragma
+
+
 @pragma_setting("compiler/resolution", ResolutionMode.KOSKARI)
-def compiler_resolution(mode) -> str:
+def compiler_resolution(mode) -> ResolutionMode:
     """
     Name-resolution semantics: koskari (strict), scheme, or python. No
     parameter default -- the mode must be stated explicitly when declared.
