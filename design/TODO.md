@@ -153,7 +153,7 @@ reproducibility lint, and the graduated `compiler/optimize` level. Supersedes
 the "pragma gating deferred" note in the TCO item above and the pragma-gating
 deferral recorded in the archived bracket-pair design doc.
 
-Ref: [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md).
+Ref: [PRAGMA.md](PRAGMA.md).
 
 ---
 

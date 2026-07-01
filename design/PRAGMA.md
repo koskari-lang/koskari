@@ -1,4 +1,9 @@
-# Koskari Pragma Model
+# Koskari Pragma
+
+Rollup for the module pragma system: how to set a pragma, the settings that
+exist today, and the model behind them. For the surface macro see
+[MACROS.md](MACROS.md) (`pragma`); for the bracket convention a pragma gates see
+[SYNTAX.md](SYNTAX.md).
 
 ## Overview
 
@@ -29,6 +34,51 @@ Non-goals:
   *defaults* are a separate, explicit mechanism — see **Package Meta-Pragma**).
 * Region/lexical scoping of a pragma (`push`/`pop`); the module is the unit.
   Use a submodule for finer scope.
+
+---
+
+## Setting a pragma
+
+Pragmas are set with the `compile/pragma` macro, usually written with its short
+form `pragma` (resolved through the compiler's `compile/` prefix, like `?` for
+`compile/?`). Each setting is a bracketed data fragment — a slash-namespaced key
+followed by positional and/or keyword values; a bare `[key]` applies the
+setting's parameter defaults:
+
+```
+(pragma [compiler/call-brackets error]
+        [reader/brackets False]
+        [compiler/resolution scheme])
+```
+
+The form is forward-only and module-scoped: it rebuilds the module's
+`__pragma__` and the change applies to everything read and compiled *after* it,
+never retroactively. `(help pragma)` reports the current settings and every
+registered setting with its default.
+
+---
+
+## Available settings
+
+Every registered setting, its target facet, its **baseline** (value when the
+setting is not declared), the value a bare `[key]` produces, and its domain:
+
+| Setting | Target | Baseline | Bare `[key]` | Domain | Effect |
+|---|---|---|---|---|---|
+| `reader/brackets` | reader | `True` | `True` | bool | `[ ]` reads into distinct bracket-pair values (vs. plain pairs) |
+| `reader/layout` | reader | `True` | `True` | bool | layout (indentation) block reading |
+| `reader/implicit-calls` | reader | `True` | `True` | bool | multiple values on one layout line form an implicit call |
+| `compiler/resolution` | compiler | `koskari` | *(required)* | `koskari` / `scheme` / `python` | name-resolution semantics for writes |
+| `compiler/call-brackets` | compiler | `ignore` | `warn` | `ignore` / `warn` / `error` | policy when a bracket-pair reaches call position |
+| `compiler/tco-enable` | compiler | `True` | `True` | bool | tail-call optimization |
+| `compiler/convert-fast` | compiler | `True` | `True` | bool | VAR→FAST local-access lowering pass |
+| `compiler/compress` | compiler | `False` | `False` | bool | bytecode compression pass — registered but inert (pass not yet built) |
+| `pragma/strict-settings` | pragma | `True` | `True` | bool | an unknown setting raises (else warns) |
+| `pragma/strict-watchers` | pragma | `True` | `True` | bool | a watcher error raises (else warns) |
+
+`reader/*` settings drive the reader, `compiler/*` the compiler, and `pragma/*`
+govern the pragma machinery itself. Third-party tools register their own
+`toolname/*` settings the same way (see **The Registry**).
 
 ---
 
@@ -76,8 +126,9 @@ Behaviors stay with their owners: the `ResolutionPragma` implementations remain
 compiler-side (they manipulate `ByteCodeFragment` internals) and merely
 *register* `compiler/resolution`; the bracket-call check stays in `compile_pair`
 and registers `compiler/call-brackets`. The surface forms (`compile/pragma`,
-`compile/meta-pragma`) live in `compile/specials/`. Model at the bottom,
-behaviors with their owners, syntax with the compiler.
+`compile/meta-pragma`) are `define-syntax` macros in
+`koskari/bootstrap/_pragma.ki`. Model at the bottom, behaviors with their
+owners, syntax in the bootstrap.
 
 ---
 
@@ -155,27 +206,18 @@ Three setting shapes: `[key]` (bare → parameter defaults), `[key value …]`
 options). Nesting is reserved for a single feature's own parameters (the
 `optimize` case), never for owner grouping.
 
-`pragma` and `meta-pragma` are user-facing **macro aliases** over the
-`compile/pragma` and `compile/meta-pragma` specials, exactly as `set!` aliases
-`compile/setq`.
+`compile/pragma` and `compile/meta-pragma` are `define-syntax` **macros**; their
+short forms `pragma` and `meta-pragma` resolve through the compiler's `compile/`
+prefix — the same surface convention MACROS.md uses (e.g. `?` for `compile/?`).
 
-### v0.1 catalog
+### Catalog
 
-| Key | Owner / target | Kind | Baseline | Parameters (default) |
-|---|---|---|---|---|
-| `reader/brackets` | reader | active drop-in | `True` | `enabled: bool = True` |
-| `reader/layout` | reader | active flag | `True` | `enabled: bool = True` |
-| `reader/implicit-calls` | reader | active flag | `True` | `enabled: bool = True` |
-| `compiler/resolution` | compiler | active drop-in | `koskari` | `mode: {koskari,scheme,python}` (required) |
-| `compiler/call-brackets` | compiler | active flag | `ignore` | `level: {ignore,warn,error} = warn` |
-| `compiler/tco-enable` | compiler | active flag | `True` | `enabled: bool = True` |
-| `compiler/convert-fast` | compiler | reserved | — | *pass not yet built* |
-| `compiler/compress` | compiler | reserved | — | *pass not yet built* |
-
-`compiler/convert-fast` and `compiler/compress` are validated but inert: the
-keys are reserved so source can name them before the passes exist. (These two,
-together with `compiler/tco-enable`, are a candidate to collapse into a single
-graduated `compiler/optimize` level later — see **Future**.)
+See **[Available settings](#available-settings)** above for the current catalog
+with baselines, bare-form values, and domains. Each is registered `active` —
+its refresh reconfigures the reader or compiler — except `compiler/compress`,
+whose pass is not yet built (registered but inert). `compiler/convert-fast`,
+`compiler/tco-enable`, and `compiler/compress` are candidates to collapse into a
+single graduated `compiler/optimize` level later (see **Future**).
 
 ---
 
@@ -300,26 +342,27 @@ is the built-in default, so later sources are additive rather than a retrofit.
 
 ### Update
 
-The `compile/pragma` special splits across two phases of its own form:
-
-**Compile time** (while the pragma form is compiled):
-
-1. Keys and values are validated against the registry; an unknown key or
-   out-of-domain value raises a `CompilerError` here.
-2. The new immutable pragma is built (current `module.__pragma__` settings +
-   this declaration's overrides) and stashed as a constant.
-
-**Eval time** (when the compiled form executes during load):
+`compile/pragma` is a `define-syntax` macro (in `koskari/bootstrap/_pragma.ki`).
+It expands each `(pragma …)` form mechanically to
 
 ```
-new = old.replace(<overrides>)
-module.__pragma__ = new
-new.announce()        ; reader, compiler, any stateful watcher refresh themselves
+(setq __pragma__ (.rebuild __pragma__ #('NS/KEY (values VALUE …)) …))
 ```
 
-The special does **not** name the reader or compiler — it swaps the slot and
-announces. They refresh because they *subscribed*. A stateful third-party
-watcher gets the same notification for free.
+one `#('NS/KEY (values …))` tuple per setting. All the work happens at **eval
+time**, when that form runs during load:
+
+1. `rebuild` starts from the current settings and, for each tuple, resolves the
+   setting against the registry and applies its function to the `values`
+   (parameter defaults fill omitted arguments). An unknown key raises — or
+   warns, per `pragma/strict-settings`; an out-of-domain value raises from the
+   setting's own function (e.g. `BracketCalls(level)`).
+2. `rebuild` announces the resulting immutable pragma to its watchers.
+3. `setq` installs it as `__pragma__`.
+
+The macro does **not** name the reader or compiler — the announce does. They
+refresh because they *subscribed*; a stateful third-party watcher gets the same
+notification for free.
 
 Because load is strictly read → compile → **eval** → read-next, the *next*
 top-level form is read by the refreshed reader and compiled by the refreshed
@@ -410,10 +453,12 @@ non-goal of cross-module leakage.
 
 ## Failure Modes and Diagnostics
 
-* **Unknown key** — error at compile time (registry miss); hint whether the
-  providing package is imported.
-* **Out-of-domain value** — error at compile time against the feature's domain.
-* **Conflicting settings within a form** — last wins, with a diagnostic.
+* **Unknown key** — at eval time `rebuild` misses the registry and raises (or
+  warns, per `pragma/strict-settings`); hint whether the providing package is
+  imported.
+* **Out-of-domain value** — the setting's own function rejects it at eval time
+  (e.g. `BracketCalls(level)` / `ResolutionMode(mode)` raise on a bad value).
+* **Conflicting settings within a form** — last wins.
 * **Pragma after code that assumed a different grammar** — allowed, but only
   forward-effective.
 
@@ -458,10 +503,11 @@ registry defaults in a follow-up.
    its refresh callback applies the flags and swaps the resolution class.
 4. **Init seam** — reorder module/REPL init to build the pragma first and pass it
    into the reader and compiler.
-5. **Specials** — `compile/pragma` (and `compile/meta-pragma`) in
-   `compile/specials/`, with `pragma` / `meta-pragma` macro aliases in basics.
-   Validate against the registry at compile time; emit the eval-time
-   build → install → announce applier.
+5. **Surface macros** — `compile/pragma` (and `compile/meta-pragma`) as
+   `define-syntax` macros in `_pragma.ki`; the short forms `pragma` /
+   `meta-pragma` resolve via the `compile/` prefix. Each expands to a
+   `(setq __pragma__ (.rebuild __pragma__ …))`; `rebuild` validates against the
+   registry and announces at eval time.
 6. **Defer** — `.kio` pragma serialization, the package meta-pragma loader
    integration (the built-in-default branch ships; meta is additive), CLI/REPL
    sources, profiles, and the reproducibility lint.

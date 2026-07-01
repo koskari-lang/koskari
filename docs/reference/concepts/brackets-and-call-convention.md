@@ -68,22 +68,15 @@ not what the author meant. The bracket marker lets the compiler notice that a
 
 ## Turning the convention into a check
 
-```{note}
-The `compile/pragma` form described here is **under development in this
-worktree**. The reader and compiler behaviors already exist as defaults; the
-source-level pragma surface that selects them per module is being built. Until
-it lands, treat the settings below as the planned spelling.
-```
-
-Two independent, **per-module** settings control this, set via the pragma
-system:
+Two independent, **per-module** settings control this, set through the
+[pragma](pragma.md):
 
 | Setting | Affects | Values | Meaning |
 |---|---|---|---|
 | `reader/brackets` | reader | on / off | Whether `[ ]` reads into bracket-pairs (carrying the marker) or plain pairs. Default **on**. |
 | `compiler/call-brackets` | compiler | `ignore` / `warn` / `error` | What happens when a bracket-pair reaches call position. Default **`ignore`** (pure convention). |
 
-Planned spelling — each setting is a bracketed data fragment:
+Each setting is a bracketed data fragment:
 
 ```koskari
 ; make accidental "[ ] in call position" a hard error for this module

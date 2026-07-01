@@ -7,7 +7,7 @@ records `[ ]` origin, and the `bracket_calls` compiler check (accept / warn /
 error) at the `compile_pair` chokepoint all exist. The symmetric advisory
 matcher style-hint remains a later, separate phase. Promotion of the compiler
 flag to source-level control is folded into the module pragma system; see
-[../language/PRAGMA-MODEL.md](../language/PRAGMA-MODEL.md). The normative
+[../PRAGMA.md](../PRAGMA.md). The normative
 rollup of the convention lives in [../SYNTAX.md](../SYNTAX.md) and
 [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md).
 
@@ -289,7 +289,7 @@ pair  (KosPairType)
 - **Pragma gating.** Replace the simple compiler flag with proper pragma
   control once `koskari/compile/pragma/` supports it. The `bracket_calls` and
   `bracket_pairs` keys are part of the v0.1 pragma scope;
-  see [../language/PRAGMA-MODEL.md](../language/PRAGMA-MODEL.md).
+  see [../PRAGMA.md](../PRAGMA.md).
 
 ## The two-sided model (summary)
 

@@ -99,6 +99,12 @@ with examples, see [Concepts](concepts/index.md).
   [`ParamRef`](macros/compile-ref.md) (for example `(ref (parameter NAME))`).
   Contrast **lambda** formals, which are ordinary lexical parameters.
 
+**pragma**
+: Module-scoped switches that tune reader and compiler behavior — bracket-call
+  checking, name resolution, layout reading, and so on. Set with the `pragma`
+  form; forward-only and never inherited by imported modules. See
+  [Pragmas and feature settings](concepts/pragma.md).
+
 **ref**
 : Mutable handle to a binding site (variable, attribute, item, parameter, etc.).
   See [Bindings and refs](concepts/bindings-and-refs.md) and [compile/ref](macros/compile-ref.md).

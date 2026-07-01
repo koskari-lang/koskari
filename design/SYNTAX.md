@@ -218,7 +218,7 @@ silence, so the unannotated language stays a pure convention.
 #### Gating the bracket-in-call-position check
 
 Two independent settings, both **module-scoped** and set via the pragma system
-(see [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md)):
+(see [PRAGMA.md](PRAGMA.md)):
 
 - `reader/brackets` (**reader**) — whether `[ ]` reads into the distinct
   `bracket-pair` / `bracket-nil` values (default on) or into plain pairs. When

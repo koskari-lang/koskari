@@ -12,6 +12,7 @@ brackets-and-call-convention
 demand-async-and-defer
 layout-and-s-expressions
 macro-matching-and-hygiene
+pragma
 ```
 
 ## Topics
@@ -23,3 +24,4 @@ macro-matching-and-hygiene
 | [Demand, async, and defer](demand-async-and-defer.md) | Ambient async model, demand path, defer, on-demand? |
 | [Layout and s-expressions](layout-and-s-expressions.md) | Layout vs s-expr surfaces, YAML/JSON mental model, three authoring forms |
 | [Macro matching and hygiene](macro-matching-and-hygiene.md) | Pattern match at expand time, datum forms and wrappers |
+| [Pragmas and feature settings](pragma.md) | Setting a pragma, the `reader/*` / `compiler/*` / `pragma/*` settings and their values |

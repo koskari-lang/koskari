@@ -14,7 +14,7 @@ pass in `Compiler.complete()` rewrites eligible call sites to the existing
    parameter from specials; gate the pass with `Compiler.tco_enabled` (default
    true).
 2. **Phase 2 (deferred):** Gate the pass via module pragma instead of
-   `tco_enabled`. See [PRAGMA-MODEL.md](PRAGMA-MODEL.md) (`compiler_pass_*`
+   `tco_enabled`. See [PRAGMA.md](../PRAGMA.md) (`compiler_pass_*`
    flags). No change to the pass algorithm itself.
 
 ---
@@ -342,7 +342,7 @@ bodies (currently missed).
 | Item | Notes |
 |------|-------|
 | `TAIL_CALL_VAR` / `TAIL_CALL_FAST` / `TAIL_CALL_ATTR` opcodes | Extend promotion to fast and attr call families |
-| Pragma gate | Replace `tco_enabled` with `compiler_pass_tail_call` per [PRAGMA-MODEL.md](PRAGMA-MODEL.md) |
+| Pragma gate | Replace `tco_enabled` with `compiler_pass_tail_call` per [PRAGMA.md](../PRAGMA.md) |
 | `call-attr` tail coverage | Automatic once attr tail opcodes or expansion rules exist |
 | Self-hosted compiler | `.ki` specials drop `tc` in parallel when bootstrap is ported |
 
@@ -352,7 +352,7 @@ bodies (currently missed).
 
 - [special-call-protocol.md](../api/special-call-protocol.md) — VM tail install
 - [vector-call.md](../interpreter/vector-call.md) — `CALL` / `TAIL_CALL` stack layout
-- [PRAGMA-MODEL.md](PRAGMA-MODEL.md) — deferred pass gating
+- [PRAGMA.md](../PRAGMA.md) — deferred pass gating
 - [bytecode-finalization.md](../interpreter/bytecode-finalization.md) — long-term finalization pipeline (orthogonal)
 - `koskari/compile/compiler.py` — `complete()`, `compress`, `convert_fast`
 - `koskari/lib/bytecode.c` — `extent_pairs`, extent derivation

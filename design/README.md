@@ -12,6 +12,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **[MACROS.md](MACROS.md)**: Reference for implemented macros (set!, ref, etc.) defined in basics.ki; format mirrors SPECIALS.md
 - **[OPCODES.md](OPCODES.md)**: Canonical reference for implemented opcodes
 - **[LAYOUTS.md](LAYOUTS.md)**: Layout handler rollup; normative layout syntax graduated to [docs/reference/reader-layout.md](../docs/reference/reader-layout.md)
+- **[PRAGMA.md](PRAGMA.md)**: Module pragma rollup — how to set a pragma, the available `reader/*`, `compiler/*`, and `pragma/*` settings, and the model (registry, watchers, meta-pragma)
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
 - **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md); [Python inspect interop for native callables](api/inspect-interop-kos-callables.md) (`KosFunction`, `KosBoundMethod`)
 - **[EVALUATOR.md](EVALUATOR.md)**: Evaluator operation—phase flow diagrams, opcode signaling, exceptions, transfer plans, tail calls, call installs, play-by-play scenarios
