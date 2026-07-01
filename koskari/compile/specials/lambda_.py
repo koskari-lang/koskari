@@ -96,7 +96,7 @@ def helper_function(compiler, caps, selfref):
 
     lamb.doc = discover_docstring(body_src)
 
-    with compiler.pragma_scope():
+    with compiler.resolution_scope():
         lamb = helper_begin(lamb, body_src, True)
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
     if return_type_src is not None:

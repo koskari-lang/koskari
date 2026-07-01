@@ -24,9 +24,10 @@ pragma produces a new immutable copy and announces it to the watchers.
 
 
 from types import MappingProxyType
-from typing import (Any, Callable, Dict, Iterator, Optional, Sequence,
-                    Tuple)
+from typing import (Any, Callable, Dict, Iterator, Optional, Protocol,
+                    Sequence, Tuple, Union)
 from warnings import warn
+from weakref import WeakSet
 
 from .lib import values
 
@@ -97,6 +98,18 @@ def _pragma_strict_watchers(strict: bool = True) -> bool:
     return strict
 
 
+class ReloadPragmaWatcher(Protocol):
+    """
+    A watcher for a pragma
+    """
+
+    def reload_pragma(self, pragma: "ModulePragma") -> None:
+        ...
+
+
+PragmaWatcher = Union[ReloadPragmaWatcher, Callable[["ModulePragma"], None]]
+
+
 class ModulePragma:
     """
     Module level Pragma settings
@@ -105,14 +118,14 @@ class ModulePragma:
     def __init__(
             self,
             settings: Optional[Dict[str, Any]] = None,
-            watchers: Optional[Sequence[Watcher]] = None):
+            watchers: Optional[Sequence[PragmaWatcher]] = None):
 
         stns = {key: val[1] for key, val in registry().items()}
         if settings:
             stns.update(settings)
 
         self._settings = MappingProxyType(stns)
-        self._watchers = set(watchers) if watchers else set()
+        self._watchers = WeakSet(watchers) if watchers else WeakSet()
 
 
     def get(self, name: str, default: Any = None) -> Any:
@@ -158,6 +171,9 @@ class ModulePragma:
 
         # copy to avoid mutating while iterating over watchers
         for watch in tuple(self._watchers):
+            if hasattr(watch, "reload_pragma"):
+                watch = watch.reload_pragma
+
             try:
                 watch(replacement)
             except Exception as e:
@@ -173,15 +189,17 @@ class ModulePragma:
         Subscribe a watcher to be announced on rebuild
         """
 
+        if hasattr(watcher, "reload_pragma"):
+            chk = watcher.reload_pragma
+        else:
+            chk = watcher
+
+        if not callable(chk):
+            raise TypeError(
+                f"Watcher {watcher} is not callable and does"
+                " not have a reload_pragma method")
+
         self._watchers.add(watcher)
-
-
-    def unwatch(self, watcher: Watcher) -> None:
-        """
-        Remove a previously subscribed watcher
-        """
-
-        self._watchers.discard(watcher)
 
 
 # The end.

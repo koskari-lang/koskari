@@ -91,20 +91,19 @@ def compiler_call_brackets(level=BracketCalls.WARN) -> BracketCalls:
 @pragma_setting("compiler/tco-enable", True)
 def compiler_tco_enable(enabled: bool = True) -> bool:
     """
-    Whether tail-call optimization is enabled (baseline on)
+    Whether tail-call optimization is enabled. Baseline enabled.
     """
 
-    return bool(enabled)
+    return enabled
 
 
-@pragma_setting("compiler/convert-fast", False)
-def compiler_convert_fast(enabled: bool = False) -> bool:
+@pragma_setting("compiler/convert-fast", True)
+def compiler_convert_fast(enabled: bool = True) -> bool:
     """
-    Reserved: the convert-fast pass is not yet built. Registered so source can
-    name it without an unknown-setting error; inert until implemented.
+    Lowers VAR-based ops to FAST-based ops where possible. Baseline enabled.
     """
 
-    return bool(enabled)
+    return enabled
 
 
 @pragma_setting("compiler/compress", False)
@@ -114,7 +113,7 @@ def compiler_compress(enabled: bool = False) -> bool:
     implemented.
     """
 
-    return bool(enabled)
+    return enabled
 
 
 # The end.

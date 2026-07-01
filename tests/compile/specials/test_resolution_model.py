@@ -169,7 +169,10 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
 
 
 def _find_lambda_codes(code):
-    """Yield (code, nested_code) for each FunctionSpec in code's constants"""
+    """
+    Yield (code, nested_code) for each FunctionSpec in code's constants
+    """
+
     for const in (code.constants_pool or ()):
         if isinstance(const, FunctionSpec) and const.code is not None:
             yield const.code
@@ -180,7 +183,10 @@ def _find_lambda_codes(code):
 class TestResolutionModelNamespaceSpec(SpecialsTestCase):
 
     async def test_nested_let_closure_lambda_has_closure_syms(self):
-        """Lambda in nested let closing over a,b has closure_syms=('a','b')"""
+        """
+        Lambda in nested let closing over a,b has closure_syms=('a','b')
+        """
+
         pragma = KoskariPragma()
         src_str = """
         (compile/let [[a 1]]
@@ -188,13 +194,16 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
             (lambda () (compile/call + a b))))
         """
         code = self.compile_to_code(
-            src_str, resolution_pragma=ResolutionMode.KOSKARI,
-            resolution_pragma_instance=pragma,
+            src_str, resolution_mode=ResolutionMode.KOSKARI,
+            resolution_instance=pragma,
             **{'+': lambda x, y: x + y})
+
         lambdas = list(_find_lambda_codes(code))
         self.assertGreaterEqual(len(lambdas), 1, 'expected at least one lambda')
+
         inner = lambdas[0]
         closure = set(inner.namespace_spec.closure_syms)
+
         self.assertIn('a', closure, 'lambda should close over a')
         self.assertIn('b', closure, 'lambda should close over b')
         self.assertEqual(
@@ -204,7 +213,10 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
 
 
     async def test_closure_setter_has_request_for_write_syms(self):
-        """Setter lambda closing over x has request_for_write_syms=('x',)"""
+        """
+        Setter lambda closing over x has request_for_write_syms=('x',)
+        """
+
         pragma = KoskariPragma()
         src_str = """
         ((lambda ()
@@ -213,13 +225,16 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
            (compile/call setter 42)))
         """
         code = self.compile_to_code(
-            src_str, resolution_pragma=ResolutionMode.KOSKARI,
-            resolution_pragma_instance=pragma)
+            src_str, resolution_mode=ResolutionMode.KOSKARI,
+            resolution_instance=pragma)
+
         lambdas = list(_find_lambda_codes(code))
         self.assertGreaterEqual(len(lambdas), 2, 'outer and setter lambda')
+
         setter = next((c for c in lambdas
                        if 'v' in c.namespace_spec.local_syms), None)
         self.assertIsNotNone(setter, 'expected setter lambda with param v')
+
         self.assertEqual(
             set(setter.namespace_spec.closure_syms),
             {'x'},

@@ -36,7 +36,7 @@ class TestKoskariPragma(SpecialsTestCase):
           x)
         """
         expr, mod = self.compile_expr(
-            src_str, resolution_pragma=ResolutionMode.KOSKARI)
+            src_str, resolution_mode=ResolutionMode.KOSKARI)
         result = await expr()
         self.assertEqual(1, result)
 
@@ -48,7 +48,7 @@ class TestKoskariPragma(SpecialsTestCase):
            (compile/setq mistyped 1)))
         """
         with self.assertRaises(CompilerError) as ctx:
-            self.compile_expr(src_str, resolution_pragma=ResolutionMode.KOSKARI)
+            self.compile_expr(src_str, resolution_mode=ResolutionMode.KOSKARI)
         self.assertIn('mistyped', str(ctx.exception))
         self.assertIn('not declared', str(ctx.exception))
 
@@ -63,7 +63,7 @@ class TestPythonPragma(SpecialsTestCase):
            x))
         """
         expr, mod = self.compile_expr(
-            src_str, resolution_pragma=ResolutionMode.PYTHON)
+            src_str, resolution_mode=ResolutionMode.PYTHON)
         result = await expr()
         self.assertEqual(1, result)
 
@@ -76,7 +76,7 @@ class TestPythonPragma(SpecialsTestCase):
            local_var))
         """
         expr, mod = self.compile_expr(
-            src_str, resolution_pragma=ResolutionMode.PYTHON)
+            src_str, resolution_mode=ResolutionMode.PYTHON)
         result = await expr()
         self.assertEqual(42, result)
         with self.assertRaises((KeyError, NameError)):
@@ -93,7 +93,7 @@ class TestSchemePragma(SpecialsTestCase):
            x))
         """
         expr, mod = self.compile_expr(
-            src_str, resolution_pragma=ResolutionMode.SCHEME)
+            src_str, resolution_mode=ResolutionMode.SCHEME)
         result = await expr()
         self.assertEqual(1, result)
 
@@ -106,7 +106,7 @@ class TestSchemePragma(SpecialsTestCase):
            scheme_global))
         """
         expr, mod = self.compile_expr(
-            src_str, resolution_pragma=ResolutionMode.SCHEME)
+            src_str, resolution_mode=ResolutionMode.SCHEME)
         result = await expr()
         self.assertEqual(42, result)
         self.assertEqual(42, vars(mod).deref('scheme_global'))
