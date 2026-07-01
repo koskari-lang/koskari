@@ -199,12 +199,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_around_shift_invoke_after_capture(self):
         """
-        KNOWN BUG: delimited invoke after capture with dyn-wind wrapping shift.
-
-        Capture completes (see test_dyn_wind_around_shift_captures_in_place) but
-        (call k N) raises RuntimeError block cannot grow over limit — unbounded
-        stack growth during delimited PUSH when the captured segment includes
-        heritage WIND nodes (segment_top = dyn_top in kos_shift_capture).
+        Remote delimited invoke with dyn-wind wrapping shift delivers the
+        injected value to the call site. Thunk lifecycle is covered by
+        test_dyn_wind_thunk_count_remote_invoke.
         """
 
         src_str = """
@@ -225,9 +222,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_around_shift_invoke_inside_shift_body(self):
         """
-        KNOWN BUG: same stack blow-up when invoke runs inside the shift body.
-
-        (reset (dyn-wind ... (shift k (call k 5)))) should return 5.
+        In-shift delimited invoke with dyn-wind wrapping shift delivers the
+        injected value to the call site. Thunk lifecycle is covered by
+        test_dyn_wind_thunk_count_invoke_inside_shift_body.
         """
 
         src_str = """
@@ -240,6 +237,70 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 5)
+
+
+    async def test_dyn_wind_thunk_count_invoke_inside_shift_body(self):
+        """
+        KNOWN BUG (intentionally red): in-shift invoke double-runs dyn-wind
+        thunks.
+
+        (reset (dyn-wind before (shift k (call k 5)) after)) returns 5, but
+        the PUSH invoke model grafts a clone of the captured segment while
+        the live WIND below is still entered, replaying before on the clone
+        and unwinding both copies: [before, before, after, after]. Correct
+        lifecycle is a single [before, after]. Fix is Path A in
+        design/interpreter/delimited-invoke-model.md (resume in place when
+        the prompt is in live ancestry; no graft, no wind replay).
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (rec "before")
+            (compile/shift k (compile/call k 5))
+            (rec "after")))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["before", "after"])
+
+
+    async def test_dyn_wind_thunk_count_remote_invoke(self):
+        """
+        Remote invoke (reset finished before call) winds the graft exactly
+        once: natural [before, after] during capture, then one [before,
+        after] replay around the invoke. Regression guard for Path B in
+        design/interpreter/delimited-invoke-model.md.
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/setq captured
+              (compile/reset
+                (compile/dyn-wind
+                  (rec "before")
+                  (compile/shift k k)
+                  (rec "after"))))
+            (compile/call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["before", "after", "before", "after"])
 
 
 # The end.
