@@ -170,7 +170,8 @@ class ModulePragma:
 
     def __kos_repr__(self):
         elms = [f"[{key} {value}]" for key, value in self._settings.items()]
-        return f"(pragma {" ".join(elms)})"
+        txt = " ".join(elms)
+        return f"(pragma {txt})"
 
 
     def __kos_help__(self, formatter) -> None:
