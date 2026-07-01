@@ -32,7 +32,7 @@ from ..lib import (Code, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, nil, symbol)
 from ..types import is_nil, get_position, is_pair, is_proper, is_symbol
-from .pragma import BracketCalls, KoskariPragma
+from .pragma import BracketCalls, KoskariPragma, ResolutionMode
 
 
 class Compiled(ABC):
@@ -433,13 +433,19 @@ _COMPILER_LITERALS = {
 
 class Compiler:
 
-    def __init__(self, name, module, filename=None, tco_enabled=True,
-                 resolution_pragma_class=None, resolution_pragma=None,
-                 bracket_calls=BracketCalls.IGNORE):
+    def __init__(
+            self, name, module, filename=None,
+            tco_enabled=True,
+            resolution_pragma=ResolutionMode.KOSKARI,
+            bracket_calls=BracketCalls.IGNORE):
 
         self.name = name
-        self.resolution_pragma_class = resolution_pragma_class or KoskariPragma
-        self._current_pragma = resolution_pragma
+
+        self._current_pragma = None
+
+        # settings, possibly from pragma
+        self.tco_enabled = tco_enabled
+        self.resolution_pragma_class = resolution_pragma.resolution_class
         self.bracket_calls = bracket_calls
 
         if module is None:
@@ -451,7 +457,6 @@ class Compiler:
 
         self.module = module
 
-        self.tco_enabled = tco_enabled
         self.gen_label = _label_generator()
 
         ns = vars(module)
@@ -471,6 +476,37 @@ class Compiler:
         self.filename = filename
 
         self._macro_overlay = []
+
+
+    @classmethod
+    def from_pragma(
+            cls, name, module, filename=None,
+            pragma = None):
+
+        """
+        Create a compiler from a pragma, or a default pragma and its settings.
+        """
+
+        if pragma is None:
+            from ..pragma import ModulePragma
+            pragma = ModulePragma()
+
+        inst = cls(name, module, filename=filename)
+        inst.reload_pragma(pragma)
+        pragma.watch(inst.reload_pragma)
+        return inst
+
+
+    def reload_pragma(self, pragma):
+        """
+        Reload the compiler from a pragma.
+        """
+
+        self.tco_enabled = pragma.get("compiler/tco-enabled")
+        self.resolution_pragma_class = pragma.get("compiler/resolution").resolution_class
+        self.bracket_calls = pragma.get("compiler/call-brackets")
+
+        self._current_pragma = pragma
 
 
     @property

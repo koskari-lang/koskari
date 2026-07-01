@@ -30,8 +30,7 @@ omitted).
 from enum import Enum
 
 from ...pragma import pragma_setting
-from .resolution import (KoskariPragma, PythonPragma, ResolutionPragma,
-                         SchemePragma)
+from .resolution import KoskariPragma, PythonPragma, SchemePragma
 
 
 class ResolutionMode(Enum):

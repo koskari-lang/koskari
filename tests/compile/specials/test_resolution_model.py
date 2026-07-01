@@ -19,7 +19,7 @@ implicit global reads, define-global, and typo detection.
 
 from . import SpecialsTestCase
 
-from koskari.compile.pragma import KoskariPragma
+from koskari.compile.pragma import KoskariPragma, ResolutionMode
 from koskari.exceptions import CompilerError
 from koskari.lib import FunctionSpec
 
@@ -188,7 +188,9 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
             (lambda () (compile/call + a b))))
         """
         code = self.compile_to_code(
-            src_str, resolution_pragma=pragma, **{'+': lambda x, y: x + y})
+            src_str, resolution_pragma=ResolutionMode.KOSKARI,
+            resolution_pragma_instance=pragma,
+            **{'+': lambda x, y: x + y})
         lambdas = list(_find_lambda_codes(code))
         self.assertGreaterEqual(len(lambdas), 1, 'expected at least one lambda')
         inner = lambdas[0]
@@ -210,7 +212,9 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
            (compile/define setter (lambda [v] (compile/setq x v)))
            (compile/call setter 42)))
         """
-        code = self.compile_to_code(src_str, resolution_pragma=pragma)
+        code = self.compile_to_code(
+            src_str, resolution_pragma=ResolutionMode.KOSKARI,
+            resolution_pragma_instance=pragma)
         lambdas = list(_find_lambda_codes(code))
         self.assertGreaterEqual(len(lambdas), 2, 'outer and setter lambda')
         setter = next((c for c in lambdas
