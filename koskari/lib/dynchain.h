@@ -220,10 +220,13 @@ struct KosDynNode {
     } prompt;
     struct {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
-      KosDynNode *chain;  /* owned when mode == K_RETURN */
+      KosDynNode *chain;  /* owned when mode == K_RETURN or INPLACE */
       uint32_t pc;
       KosDynNode *frame;
       KosDynNode *node;
+      /* INPLACE only: displaced resume-frame state (stack owned) */
+      KosStackBlock *saved_stack;
+      uint32_t saved_pc;
     } delim;
     struct {
       uint32_t resume_pc;
@@ -1111,6 +1114,25 @@ int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
       delimited_return_pc is invalid (sets PyExc_RuntimeError)
 */
 int kos_dyn_finish_delimited_pop_return(
+   KosEvalState *es,
+   KosDynDelim *delim,
+   PyObject *value);
+
+
+/**
+   Complete an in-place (Path A) delimited POP_PROMPT return. Restores the
+   resume frame's displaced stack/pc from the INPLACE delim, re-links the
+   stashed invoke span above the prompt (which stays on the chain for the
+   shift body's POP_SHIFT), frees the delim, and pushes value at the
+   restored invoke site. Expects the delim at dyn_top.
+
+   :param es: eval state
+   :param delim: INPLACE DELIM node at dyn_top
+   :param value: return value (consumes a reference on success or failure)
+
+   :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
+*/
+int kos_dyn_finish_inplace_pop_return(
    KosEvalState *es,
    KosDynDelim *delim,
    PyObject *value);
@@ -2188,6 +2210,9 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KOS_DYN_DELIM_MODE_NONE       0u
 #define KOS_DYN_DELIM_MODE_K_RETURN   1u
 #define KOS_DYN_DELIM_MODE_POP_PROMPT 2u
+/* In-place (Path A) delimited return: chain stashes the detached invoke
+   span; saved_stack/saved_pc hold the resume frame's displaced state. */
+#define KOS_DYN_DELIM_MODE_INPLACE    3u
 
 #define KosDynDelim_MODE(d)        (((KosDynNode *)(d))->u.delim.mode)
 #define KosDynDelim_RETURN_CHAIN(d) (((KosDynNode *)(d))->u.delim.chain)
@@ -2195,6 +2220,8 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynDelim_RETURN_FRAME_NODE(d) (((KosDynNode *)(d))->u.delim.frame)
 #define KosDynDelim_RETURN_FRAME(d) ((KosDynFrame *) (KosDynDelim_RETURN_FRAME_NODE(d)))
 #define KosDynDelim_RETURN_NODE(d)  (((KosDynNode *)(d))->u.delim.node)
+#define KosDynDelim_SAVED_STACK(d) (((KosDynNode *)(d))->u.delim.saved_stack)
+#define KosDynDelim_SAVED_PC(d)    (((KosDynNode *)(d))->u.delim.saved_pc)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 

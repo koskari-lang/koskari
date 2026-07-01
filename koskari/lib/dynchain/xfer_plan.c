@@ -1482,6 +1482,161 @@ int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan) {
 
 
 /**
+   In-place (Path A) invoke readiness: the capture-time live prompt and
+   shift nodes are both still on the current chain (pointer + node_id
+   match), the shift node lies above the prompt, no barrier node (foreign
+   DELIM, GEN, NEXT, PROMPT, CC_RAISE) sits between dyn_top and the shift
+   node, and no transfer plan is in flight. Returns 1 when in-place invoke
+   applies, 0 otherwise (fall back to the PUSH path).
+*/
+static int kos_delimited_inplace_ready(KosEvalState *es, KosContinuation *k) {
+
+  KosDynNode *prompt = KosContinuation_LIVE_PROMPT_NODE(k);
+  KosDynNode *shift = KosContinuation_LIVE_SHIFT_NODE(k);
+  KosDynNode *node;
+
+  if (! prompt || ! shift)
+    return 0;
+  if (KosEvalState_PLAN(es) || KosEvalState_PLAN_STACK(es))
+    return 0;
+
+  node = KosEvalState_DYN_TOP(es);
+  while (node && node != shift) {
+    switch (KosDynNode_KIND(node)) {
+      case KOS_DYN_DELIM:
+      case KOS_DYN_GEN:
+      case KOS_DYN_NEXT:
+      case KOS_DYN_PROMPT:
+      case KOS_DYN_CC_RAISE:
+        return 0;
+      default:
+        break;
+    }
+    node = KosDynNode_PARENT(node);
+  }
+  if (! node || ! KosDynNode_IS_SHIFT(node)
+      || KosDynNode_NODE_ID(node) != KosContinuation_LIVE_SHIFT_NODE_ID(k))
+    return 0;
+
+  node = KosDynNode_PARENT(node);
+  while (node && node != prompt)
+    node = KosDynNode_PARENT(node);
+  if (! node || ! KosDynNode_IS_PROMPT(node)
+      || KosDynNode_NODE_ID(node) != KosContinuation_LIVE_PROMPT_NODE_ID(k))
+    return 0;
+
+  return 1;
+}
+
+
+/**
+   In-place (Path A) delimited invoke: detach the invoke span (dyn_top down
+   through the live SHIFT node) onto an INPLACE DELIM inserted directly
+   above the live prompt, displace the resume frame's stack/pc with the
+   captured resume state, and continue on the live chain. No transfer plan,
+   no clone, no wind replay; live extents unwind exactly once as the slice
+   runs to POP_PROMPT, which restitches via
+   kos_dyn_finish_inplace_pop_return. Borrows value.
+*/
+static int kos_delimited_invoke_inplace(
+    KosEvalState *es,
+    KosContinuation *k,
+    PyObject *value) {
+
+  KosDynNode *shift = KosContinuation_LIVE_SHIFT_NODE(k);
+  KosDynNode *prompt = KosContinuation_LIVE_PROMPT_NODE(k);
+  KosDynNode *span_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *slice_top = KosDynNode_PARENT(shift);
+  KosDynFrame *resume_frame;
+  KosStackBlock *resume_stack;
+  KosDynDelim *delim;
+  KosDynFrame *return_frame;
+  uint32_t return_pc;
+
+  /* Resume frame: nearest FRAME at-or-below the prompt. */
+  {
+    KosDynNode *node = prompt;
+    while (node && ! KosDynNode_IS_FRAME(node))
+      node = KosDynNode_PARENT(node);
+    if (! node) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "in-place invoke: no frame below prompt");
+      return -1;
+    }
+    resume_frame = (KosDynFrame *) node;
+  }
+
+  resume_stack = KosContinuation_RESUME_STACK(k)
+      ? KosStackBlock_DeepCopy(KosContinuation_RESUME_STACK(k)) : NULL;
+  if (! resume_stack && KosContinuation_RESUME_STACK(k)) {
+    if (! PyErr_Occurred())
+      PyErr_NoMemory();
+    return -1;
+  }
+
+  KosEvalState_FlushLiveRegsToFrame(es);
+  return_frame = KosEvalState_FRAME(es);
+  return_pc = return_frame ? KosEvalState_PC(es) : (uint32_t) -1;
+
+  delim = kos_dyndelim_new(prompt,
+                           KOS_DYN_DELIM_MODE_INPLACE,
+                           NULL,
+                           return_pc,
+                           return_frame,
+                           NULL);
+  if (! delim) {
+    if (resume_stack)
+      KosStackBlock_ReleaseChain(resume_stack);
+    if (! PyErr_Occurred())
+      PyErr_NoMemory();
+    return -1;
+  }
+  KosDynDelim_RETURN_NODE(delim) = (KosDynNode *) delim;
+
+  #if KOS_XFER_TRACE
+    SAYF("[xfer] invoke inplace: span_top=%p shift=%p prompt=%p "
+         "resume_frame=%p return_pc=%u",
+         (void *) span_top, (void *) shift, (void *) prompt,
+         (void *) resume_frame, (unsigned) return_pc);
+  #endif
+
+  /* Detach the invoke span and stash it on the delim. */
+  KosDynNode_PARENT(shift) = NULL;
+  KosDynDelim_RETURN_CHAIN(delim) = span_top;
+
+  /* Wire the delim directly above the prompt so the slice's natural
+   * unwind leaves it at dyn_top when POP_PROMPT runs. */
+  if (slice_top == prompt) {
+    slice_top = (KosDynNode *) delim;
+  } else {
+    KosDynNode *child = slice_top;
+    while (KosDynNode_PARENT(child) != prompt)
+      child = KosDynNode_PARENT(child);
+    KosDynNode_PARENT(child) = (KosDynNode *) delim;
+  }
+
+  /* Displace the resume frame's live state with the captured resume
+   * state; the delim owns the displaced stack until restitch. */
+  KosDynDelim_SAVED_STACK(delim) = KosDynFrame_STACK(resume_frame);
+  KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
+  KosDynFrame_STACK(resume_frame) = resume_stack;
+  KosDynFrame_PC(resume_frame) = KosContinuation_RESUME_PC(k);
+
+  KosContinuation_LIVE_SLICE_CONSUMED(k) = 1;
+
+  kos_dyn_commit_dyn_top(es, slice_top);
+  kos_dyn_rebuild_live_from_chain(es);
+  /* rebuild leaves live PCs alone when the frame is unchanged (invoke
+   * frame == resume frame); load them from the displaced frame state. */
+  kos_dyn_load_live_regs_from_frame(es, resume_frame);
+
+  Py_INCREF(value);
+  /* StackPUSH consumes the value reference, on failure as well. */
+  return KosEvalState_StackPUSH(es, value);
+}
+
+
+/**
    Build and install a transfer plan to invoke k with value or throw: PUSH for
    delimited (caller chain preserved), full plan for undelimited. Sets plan
    resume fields and optional continuation_ref for GC. Callers: callable invoke,
@@ -1497,6 +1652,19 @@ int kos_invoke_continuation(
   if (! k) {
     PyErr_SetString(PyExc_RuntimeError, "NULL continuation");
     return -1;
+  }
+
+  /* In-place (Path A) invoke when the capture-time reset is still live in
+     dyn_top ancestry: resume on the live chain, no graft, no wind replay.
+     Only the first invoke can run in place (it consumes the live slice);
+     re-invokes fall through to the PUSH graft, which instantiates the
+     captured template per invoke (multi-shot, e.g. (sum (k 0) (k 1))).
+     Throw injection also stays on the PUSH path. */
+  if (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED
+      && ! is_throw
+      && ! KosContinuation_LIVE_SLICE_CONSUMED(k)
+      && kos_delimited_inplace_ready(es, k)) {
+    return kos_delimited_invoke_inplace(es, k, value);
   }
 
   /* For multi-shot, clone the continuation */

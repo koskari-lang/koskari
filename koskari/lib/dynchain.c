@@ -2223,6 +2223,105 @@ int kos_dyn_finish_delimited_pop_return(
 }
 
 
+/**
+   Complete an in-place (Path A) delimited POP_PROMPT return. See dynchain.h.
+*/
+int kos_dyn_finish_inplace_pop_return(
+    KosEvalState *es,
+    KosDynDelim *delim,
+    PyObject *value) {
+
+  KosDynNode *prompt;
+  KosDynNode *span;
+  KosDynFrame *ret_frame;
+  KosDynFrame *resume_frame;
+  uint32_t ret_pc;
+
+  if (! value) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_inplace_pop_return: value is NULL");
+    return -1;
+  }
+  if (! delim || ! KosDynNode_IS_DELIM((KosDynNode *) delim)
+      || KosDynDelim_MODE(delim) != KOS_DYN_DELIM_MODE_INPLACE) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_inplace_pop_return: not an INPLACE delim");
+    Py_DECREF(value);
+    return -1;
+  }
+  if (KosEvalState_DYN_TOP(es) != (KosDynNode *) delim) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_inplace_pop_return: delim not at dyn_top");
+    Py_DECREF(value);
+    return -1;
+  }
+
+  prompt = KosDynNode_PARENT((KosDynNode *) delim);
+  span = KosDynDelim_RETURN_CHAIN(delim);
+  ret_frame = KosDynDelim_RETURN_FRAME(delim);
+  ret_pc = KosDynDelim_RETURN_PC(delim);
+  if (! prompt || ! KosDynNode_IS_PROMPT(prompt) || ! span || ! ret_frame
+      || ret_pc == (uint32_t) -1) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_inplace_pop_return: "
+                    "inconsistent INPLACE delim state");
+    Py_DECREF(value);
+    return -1;
+  }
+
+  /* Resume frame whose state was displaced: nearest FRAME at-or-below the
+   * prompt. */
+  {
+    KosDynNode *node = prompt;
+    while (node && ! KosDynNode_IS_FRAME(node))
+      node = KosDynNode_PARENT(node);
+    if (! node) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "kos_dyn_finish_inplace_pop_return: "
+                      "no frame below prompt");
+      Py_DECREF(value);
+      return -1;
+    }
+    resume_frame = (KosDynFrame *) node;
+  }
+
+  /* Drop the spent slice stack; restore the displaced invoke-time state. */
+  {
+    KosStackBlock *spent = KosDynFrame_STACK(resume_frame);
+    KosDynFrame_STACK(resume_frame) = KosDynDelim_SAVED_STACK(delim);
+    KosDynDelim_SAVED_STACK(delim) = NULL;
+    KosDynFrame_PC(resume_frame) = KosDynDelim_SAVED_PC(delim);
+    if (spent)
+      KosStackBlock_ReleaseChain(spent);
+  }
+
+  /* Re-link the stashed invoke span above the prompt; the prompt stays on
+   * the chain for the shift body's POP_SHIFT. */
+  {
+    KosDynNode *bottom = span;
+    while (KosDynNode_PARENT(bottom))
+      bottom = KosDynNode_PARENT(bottom);
+    KosDynNode_PARENT(bottom) = prompt;
+    KosDynDelim_RETURN_CHAIN(delim) = NULL;
+  }
+
+  KosDynFrame_PC(ret_frame) = ret_pc;
+  kos_dyn_commit_dyn_top(es, span);
+
+  KosDynNode_PARENT((KosDynNode *) delim) = NULL;
+  kos_dyndelim_free(delim);
+
+  kos_dyn_rebuild_live_from_chain(es);
+  /* rebuild leaves live PCs alone when the frame is unchanged; load the
+   * invoke-site return pc explicitly. */
+  if (KosEvalState_FRAME(es) == ret_frame)
+    kos_dyn_load_live_regs_from_frame(es, ret_frame);
+
+  /* StackPUSH consumes the value reference, on failure as well. */
+  return KosEvalState_StackPUSH(es, value);
+}
+
+
 
 /**
  Delivers a YIELD value to the nearest receiving iterator boundary (NEXT,
