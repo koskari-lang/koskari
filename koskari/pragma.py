@@ -145,12 +145,32 @@ class ModulePragma:
         return self._settings.get(str(name), default)
 
 
+    def __getitem__(self, name: str) -> Any:
+        """
+        The value of a setting, or raise KeyError when it is not present
+        """
+
+        name = str(name)
+        if name not in self._settings:
+            raise KeyError(f"Unknown pragma setting {name}")
+        return self._settings[name]
+
+
     def __iter__(self) -> Iterator[Tuple[str, Any]]:
         """
         Iterate over the settings and their values
         """
 
         return iter(self._settings.items())
+
+
+    def __repr__(self):
+        return f"<ModulePragma {self._settings}>"
+
+
+    def __kos_repr__(self):
+        elms = [f"[{key} {value}]" for key, value in self._settings.items()]
+        return f"(pragma {" ".join(elms)})"
 
 
     def __kos_help__(self, formatter) -> None:

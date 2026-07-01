@@ -23,13 +23,25 @@ followed by its value(s). A bare `[key]` uses the setting's default value.
   after the form, not retroactively, and not to modules you import.
 - You may set a pragma more than once; a later setting replaces the earlier one.
 
-To see the settings in effect at any point, ask for help:
+## Reading a pragma
+
+The same `pragma` form reads the current state:
 
 ```koskari
-(help pragma)
+(pragma compiler/call-brackets)   ; the current value of one setting
+(pragma)                          ; the whole pragma object
 ```
 
-which lists the current values alongside every setting and its default.
+And `help` describes it:
+
+```koskari
+(help pragma)                        ; current values + every setting's default
+(help (pragma compiler/call-brackets))   ; one setting: its signature and doc
+```
+
+`(help pragma)` lists the current values alongside every registered setting and
+its default; `(help (pragma KEY))` shows the accepted arguments and
+documentation for a single setting.
 
 ## What each setting means
 

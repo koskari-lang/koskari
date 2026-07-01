@@ -53,8 +53,20 @@ setting's parameter defaults:
 
 The form is forward-only and module-scoped: it rebuilds the module's
 `__pragma__` and the change applies to everything read and compiled *after* it,
-never retroactively. `(help pragma)` reports the current settings and every
-registered setting with its default.
+never retroactively.
+
+The same macro also **reads** the pragma:
+
+* `(pragma NS/KEY)` — the current value of one setting (expands to
+  `(item __pragma__ "NS/KEY")`).
+* `(pragma)` — the module's live `ModulePragma` object (`__pragma__`).
+
+And `help` reaches both:
+
+* `(help pragma)` — the current settings and every registered setting with its
+  default.
+* `(help (pragma NS/KEY))` — one setting: the signature and docstring of its
+  registered function.
 
 ---
 
@@ -343,13 +355,15 @@ is the built-in default, so later sources are additive rather than a retrofit.
 ### Update
 
 `compile/pragma` is a `define-syntax` macro (in `koskari/bootstrap/_pragma.ki`).
-It expands each `(pragma …)` form mechanically to
+Its *set* form expands mechanically to
 
 ```
 (setq __pragma__ (.rebuild __pragma__ #('NS/KEY (values VALUE …)) …))
 ```
 
-one `#('NS/KEY (values …))` tuple per setting. All the work happens at **eval
+one `#('NS/KEY (values …))` tuple per setting (the read forms `(pragma NS/KEY)`
+and `(pragma)` expand to `(item __pragma__ "NS/KEY")` and `__pragma__`
+respectively, and do no work). For the set form all the work happens at **eval
 time**, when that form runs during load:
 
 1. `rebuild` starts from the current settings and, for each tuple, resolves the

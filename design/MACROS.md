@@ -425,25 +425,32 @@ arguments work. **`(slice)`** → **`(call build-slice)`**; **`(slice ARGS …)`
 
 **Symbol:** `compile/pragma` (surface: `pragma`)
 
-**Syntax:** **`(pragma [NS/KEY VALUE …] …)`** — each bracketed form is one
-setting: a slash-namespaced key followed by positional and/or keyword parameter
-values. A bare **`[NS/KEY]`** applies the setting's parameter defaults.
+**Syntax:**
+- **`(pragma [NS/KEY VALUE …] …)`** — *set*: each bracketed form is one setting,
+  a slash-namespaced key followed by positional and/or keyword values (a bare
+  **`[NS/KEY]`** applies the setting's parameter defaults).
+- **`(pragma NS/KEY)`** — *read* the current value of one setting.
+- **`(pragma)`** — the module's **`ModulePragma`** object.
 
-**Behaviour:** Lowers each setting to a **`#('NS/KEY (values VALUE …))`** tuple
-and expands to **`(setq __pragma__ (.rebuild __pragma__ TUPLE …))`** — rebuilding
-the module's immutable **`ModulePragma`** and rebinding **`__pragma__`**, which
-announces the change to the subscribed reader and compiler. Forward-only and
-module-scoped. See [PRAGMA.md](PRAGMA.md) for the available settings.
+**Behaviour:** The set form lowers each setting to a
+**`#('NS/KEY (values VALUE …))`** tuple and expands to
+**`(setq __pragma__ (.rebuild __pragma__ TUPLE …))`** — rebuilding the immutable
+**`ModulePragma`** and rebinding **`__pragma__`**, which announces the change to
+the subscribed reader and compiler (forward-only, module-scoped).
+**`(pragma NS/KEY)`** expands to **`(item __pragma__ "NS/KEY")`**; **`(pragma)`**
+expands to **`__pragma__`**. See [PRAGMA.md](PRAGMA.md) for the available
+settings.
 
 
 ### (help pragma)
 
-**Syntax:** **`(help pragma)`**
+**Syntax:** **`(help pragma)`**, **`(help (pragma NS/KEY))`**
 
-**Behaviour:** An **`extend-syntax`** case on **`compile/help`** that diverts
-**`(help pragma)`** to the module's live **`__pragma__`** binding (via
-**`#('__pragma__ 'pragma)`**), rendering **`ModulePragma.__kos_help__`** — the
-current settings plus every registered setting and its default.
+**Behaviour:** **`extend-syntax`** cases on **`compile/help`**.
+**`(help pragma)`** diverts to the module's live **`__pragma__`** and renders
+**`ModulePragma.__kos_help__`** — the current settings plus every registered
+setting and its default. **`(help (pragma NS/KEY))`** renders help for one
+setting: the signature and docstring of its registered function.
 
 
 ## koskari/bootstrap/basics.ki
