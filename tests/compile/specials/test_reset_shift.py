@@ -303,4 +303,102 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(events, ["before", "after", "before", "after"])
 
 
+    async def test_dyn_wind_thunk_count_invoke_in_deeper_frame(self):
+        """
+        KNOWN BUG (intentionally red): same double-wind as
+        test_dyn_wind_thunk_count_invoke_inside_shift_body, but the in-shift
+        invoke happens in a deeper frame (k passed to and called from a
+        lambda inside the shift body). Correct lifecycle is a single
+        [before, after]. Fix is Path A in
+        design/interpreter/delimited-invoke-model.md.
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (rec "before")
+            (compile/shift k
+              (compile/call (compile/lambda [f] (compile/call f 5)) k))
+            (rec "after")))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["before", "after"])
+
+
+    async def test_remote_invoke_slice_exception_propagates(self):
+        """
+        Characterization (KNOWN DEFECT): an exception raised by the
+        continuation slice during a remote invoke escapes the evaluator as a
+        raw Python exception instead of routing to the invoke call site.
+
+        The enclosing compile/try around (call captured 5) should catch the
+        ValueError and this test should return "caught"; today the RAISE walk
+        from the grafted segment never reaches the live handlers below the
+        DELIM bookmark. Pinned as-is; target behavior is part of the
+        delimited-invoke-model.md rework.
+        """
+
+        def boom(v):
+            raise ValueError("slice-boom")
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/setq captured
+              (compile/reset (boom (compile/shift k k))))
+            (compile/try
+              (compile/call captured 5)
+              ([ValueError] "caught"))))
+        """
+        expr, mod = self.compile_expr(src_str, boom=boom)
+        with self.assertRaises(ValueError):
+            await expr()
+
+
+    async def test_remote_invoke_with_enter_exit_count(self):
+        """
+        Characterization (KNOWN DEFECT): compile/with wrapping shift under a
+        remote invoke calls __exit__ twice on the same manager — once at
+        POP_SHIFT truncation during capture, once more when the grafted
+        clone's WITH unwinds on the invoke return path. Correct lifecycle
+        would be [enter, exit] (or a defined re-enter policy). Pinned as-is
+        so the Path B rework cannot change it silently; fix tracked
+        separately.
+        """
+
+        events = []
+
+        class Mgr:
+
+            def __enter__(self):
+                events.append("enter")
+                return self
+
+            def __exit__(self, typ, val, tb):
+                events.append("exit")
+                return False
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/setq captured
+              (compile/reset
+                (compile/with [(compile/call make_mgr)]
+                  (compile/shift k k))))
+            (compile/call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["enter", "exit", "exit"])
+
+
 # The end.
