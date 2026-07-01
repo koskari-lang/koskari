@@ -226,7 +226,8 @@ class ModulePragma:
 
             collected[str(name)] = valobj(found[0])
 
-        replacement = ModulePragma(collected, self._watchers)
+        replacement = ModulePragma(collected)
+        replacement._watchers = self._watchers
 
         # copy to avoid mutating while iterating over watchers
         for watch in tuple(self._watchers):
