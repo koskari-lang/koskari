@@ -36,6 +36,7 @@ interface is uniform and well-defined.
 :ai-assistant: Claude Sonnet 4.6 via Cursor
 """
 
+
 from codecs import decode
 from contextlib import contextmanager
 from decimal import Decimal as decimal
@@ -1996,6 +1997,23 @@ class LayoutReader(Reader):
         return self._inner.process_atom(atom)
 
 
+    @classmethod
+    def from_pragma(cls, namespace, pragma=None):
+        """
+        Build a reader from a module pragma (a default pragma when omitted),
+        apply its reader settings, and subscribe for later pragma changes.
+        """
+
+        if pragma is None:
+            from ..pragma import ModulePragma
+            pragma = ModulePragma()
+
+        inst = cls(namespace)
+        inst.reload_pragma(pragma)
+        pragma.watch(inst)
+        return inst
+
+
     def set_layout_modes(self, *, layout_enabled=None, layout_implicit_calls=None):
         """
         Update layout-mode feature switches on this reader.
@@ -2012,17 +2030,22 @@ class LayoutReader(Reader):
 
     def reload_pragma(self, pragma):
         """
-        Apply pragma-controlled reader switches when present.
-
-        This is intentionally permissive: unknown pragma objects are ignored,
-        while known attributes are mapped to the layout mode switches.
+        Apply reader settings from a module pragma: reader/layout and
+        reader/implicit-calls drive the layout switches; reader/brackets sets
+        bracket-pair reading on this reader and its inner reader.
         """
 
         if pragma is None:
             return
 
         self.set_layout_modes(
-            layout_implicit_calls=getattr(pragma, 'layout_implicit_calls', None))
+            layout_enabled=pragma.get("reader/layout"),
+            layout_implicit_calls=pragma.get("reader/implicit-calls"))
+
+        brackets = pragma.get("reader/brackets")
+        if brackets is not None:
+            self.bracket_pairs = bool(brackets)
+            self._inner.bracket_pairs = bool(brackets)
 
 
     @contextmanager

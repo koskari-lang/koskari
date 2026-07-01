@@ -14,25 +14,27 @@
 """
 koskari.compile.pragma
 
-Resolution pragma and related compile-time pragma support.
+Compiler pragma definition. The pragma defines behavioral variations
+that determine how the compiler operates on code.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
 """
 
 
-from .bracket import BracketCalls
-from .resolution import (
-    KoskariPragma,
-    PythonPragma,
-    ResolutionPragma,
-    SchemePragma,
-)
+from .resolution import (KoskariPragma, PythonPragma, ResolutionPragma,
+                         SchemePragma)
+from .settings import BracketCalls, ResolutionMode
 
 
 __all__ = (
-    'BracketCalls',
+    'ResolutionPragma',
     'KoskariPragma',
     'PythonPragma',
-    'ResolutionPragma',
     'SchemePragma',
+
+    'BracketCalls',
+    'ResolutionMode',
 )
 
 

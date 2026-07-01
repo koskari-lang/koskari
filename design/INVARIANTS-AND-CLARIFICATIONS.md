@@ -106,6 +106,8 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Pairs**: Cons cells; `nil` is the singleton empty list and is a subtype of pair. Pairs can be proper (terminated by `nil`) or improper. Recursion detection is supported. Implemented in `koskari/lib/pair.c`.
 
+- **Bracket-pairs**: `bracket-pair` (and the `bracket-nil` singleton) is a `pair` subtype the reader produces from `[ ]` source forms. It is value-equal to and structurally interchangeable with an ordinary pair — `[ ]` is **not** a vector or array literal — and exists only to record that the source used brackets. By default the compiler treats it exactly like a pair (a non-empty head-position list compiles to a call either way). The `( )` = call / `[ ]` = data split is a convention; the marker lets an opt-in compiler check act on it (see §10 and the `reader/brackets` / `compiler/call-brackets` pragmas). Implemented in `koskari/lib/pair.c`; gating in `koskari/compile/pragma/bracket.py` and the `compile_pair` chokepoint.
+
 - **Namespace**: Lexical scope container; `NamespaceSpec` describes layout. `ModuleNamespace` is module-level with builtins fallback. `CollectorNamespace` blocks closure capture. Implemented in `koskari/lib/namespace.c`.
 
 - **Refs**: Mutable reference cells. Variants: `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`. Used for shared state in closures and by-name binding. Implemented in `koskari/lib/ref.c`.
@@ -227,6 +229,8 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - **call/cc vs reset/shift**: Design supports both **undelimited** (full) call/cc and **delimited** reset/shift. Delimited capture and invocation **cannot** cross the Python boundary (chain is per-context; `DelimitedContinuation.tp_call` blocks invocation from Python); full continuations **may** cross the CPython boundary in the upwards direction only, implemented by raising a specialized BaseException. See §2 continuation semantics.
 
 - **All code is async**: By design, Koskari code is async by default. The `KOS_CODE_YIELDS` flag distinguishes “returns coroutine” vs “returns async generator,” not sync vs async.
+
+- **`[ ]` is not a vector literal**: A common mistake is to read `[ ]` as "a literal list/array" distinct from `( )`. It is not. Both delimiters read into `pair` chains and **compile the same way by default** — a non-empty list in head position is a *call*. `[a 1]` is a call to `a`, just like `(a 1)`. Brackets carry only an origin marker (`bracket-pair`), and the `( )` = call / `[ ]` = data distinction is a **convention** that is inert unless the `compiler/call-brackets` pragma is set to `warn` / `error`. So `(let [[a 1]] …)` works because `let` consumes its binding list as data, not because `[ ]` means something different to the reader or evaluator.
 
 - **Frame vs KosDynFrame**: `KosFrame` is a typedef for `KosDynFrame`; they are the same. The “frame” is the topmost FRAME node on the dynamic chain; `ctx->frame_top` caches it, and **`KosEvalState_FRAME(es)`** mirrors it while **`RefreshDynCaches`** / **`SyncFromContext`** are used correctly.
 

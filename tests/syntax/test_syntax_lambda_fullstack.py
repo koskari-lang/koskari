@@ -96,7 +96,7 @@ def special_lambda_ng(
 
     lamb.doc = discover_docstring(body_src)
 
-    with compiler.pragma_scope():
+    with compiler.resolution_scope():
         lamb = helper_begin(lamb, body_src, True)
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
     if return_type_src is not None:
@@ -112,7 +112,6 @@ def special_lambda_ng(
 
 class LambdaNgFullStackBase(SpecialsTestCase):
 
-
     def get_glbls(self, **defns):
         out = dict(defns)
         out.setdefault("compile/lambda-ng", special_lambda_ng)
@@ -120,7 +119,6 @@ class LambdaNgFullStackBase(SpecialsTestCase):
 
 
 class TestLambdaNgAnonymous(LambdaNgFullStackBase):
-
 
     async def test_ng_anonymous_lambda_identity(self):
         src = "(compile/lambda-ng [x] x)"

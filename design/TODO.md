@@ -126,18 +126,34 @@ Ref: [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [interpreter/kio-format.md](interpreter/kio-format.md) (`.kio` format);
 `koskari.serialize` (incremental compile and `dump_kio`).
 
-### Bracket-pair type and call-position lint
+### CLI pragma
 
-Promote the `( )` vs `[ ]` convention to a queryable property without making
-brackets required. `[ ]` reads into a new `bracket-pair` subtype of `pair`
-(same fields, repr renders `[ ]`); add a `bracket-cons` constructor and reader
-dispatch; add a compiler flag (accept / warn / error) at the single
-`compile_pair` chokepoint that optionally flags a bracket-pair reaching
-evaluated/operator position. `let`-style binding positions are immune for free
-(consumed as data by their specials, never reaching `compile_pair`). A
-symmetric advisory matcher style-hint is a later, separate phase.
+Let the CLI seed a module's pragma from outside the source, for the module the
+entry point loads (a script's main module, or the REPL module). Resolve a
+`ModulePragma` from command-line flags (`--pragma KEY=VALUE`, repeatable)
+and/or a settings file, and pass it as the **active source** to
+`build_module_load_facets` (which grows an optional `source_pragma`). The seed
+is a session default in the precedence chain (below the module's own
+`(pragma …)`); it applies only to the entry and REPL modules, never to imported
+modules, so nothing leaks into distributed libraries. Scope out flag spelling,
+`.ki` vs. structured settings-file format, and file discovery/precedence.
 
-Ref: [bracket-pair.md](bracket-pair.md).
+Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
+
+### Package pragma
+
+Let a package declare a default pragma its sub-packages and sub-modules inherit
+(formerly "meta-pragma"). Add a `__package_pragma__` slot (a `ModulePragma`
+template, no watchers) and a `(package-pragma [ns/key value …] …)` surface macro
+that writes both `__package_pragma__` and the local `__pragma__`. Augment the
+loader so `build_module_load_facets` resolves the parent package's
+`__package_pragma__` as the module's default `__pragma__` (fresh watcher set —
+watchers never cross modules) and stores both, so sub-sub-packages keep pulling
+the value down; a sub-package that declares its own refines the default for its
+subtree. Rides Python's parent-before-child import order — no header scan.
+Reuses `ModulePragma.rebuild` wholesale.
+
+Ref: [language/pragma-package.md](language/pragma-package.md); [PRAGMA.md](PRAGMA.md).
 
 ---
 

@@ -368,6 +368,7 @@ CLEAN_DIRS := koskari tests tools examples
 clean-built:  ## Remove build artifacts
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR) $(DIST_DIR) .eggdir/*.egg-info/
+	@if [ -f .venv/.koskari-built ]; then rm -f .venv/.koskari-built; fi
 
 clean-ext:  ## Remove compiled extensions
 	@echo "Cleaning compiled extensions..."

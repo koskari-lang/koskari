@@ -43,9 +43,11 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
         return super().compile_expr(src_str, **defns)
 
 
-    def compile_to_code(self, src_str, lineno=1, tc=False,
-                        resolution_pragma_class=None, resolution_pragma=None,
-                        **defns):
+    def compile_to_code(
+            self, src_str, lineno=1, tc=False,
+            resolution_mode=None, resolution_instance=None,
+            **defns):
+
         defns.setdefault('build-syntax', build_syntax)
         defns.setdefault('build-macro', build_macro)
         defns.setdefault('build-special', build_special)
@@ -53,8 +55,8 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
         defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_to_code(
             src_str, lineno=lineno, tc=tc,
-            resolution_pragma_class=resolution_pragma_class,
-            resolution_pragma=resolution_pragma,
+            resolution_mode=resolution_mode,
+            resolution_instance=resolution_instance,
             **defns)
 
 

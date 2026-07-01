@@ -32,7 +32,7 @@ from ..lib import (Code, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, nil, symbol)
 from ..types import is_nil, get_position, is_pair, is_proper, is_symbol
-from .pragma import BracketCalls, KoskariPragma
+from .pragma import BracketCalls, KoskariPragma, ResolutionMode
 
 
 class Compiled(ABC):
@@ -145,20 +145,20 @@ class ByteCodeFragment:
     """
 
     def __init__(self, compiler=None, name=None, filename=None, mode=None,
-                 pragma=None):
+                 resolution=None):
         """
         :param compiler: the compiler/builder used to complete this fragment
         :param name: optional fragment name (e.g. for a block or loop)
         :param filename: optional source filename
         :param mode: optional compilation mode
-        :param pragma: resolution pragma; default KoskariPragma when omitted
+        :param resolution: resolution instance; default KoskariPragma when omitted
         """
 
         self.name = name
         self.filename = filename
         self.mode = mode
         self.compiler = compiler
-        self.pragma = pragma if pragma is not None else KoskariPragma()
+        self.resolution = resolution or KoskariPragma()
         self.instructions = []
         self.requests = []
         self.requests_for_write = []
@@ -173,7 +173,7 @@ class ByteCodeFragment:
         Build a NamespaceSpec from this fragment's name and declarations.
         """
 
-        return self.pragma.build_namespace_spec(self)
+        return self.resolution.build_namespace_spec(self)
 
 
     def request_var(self, var_name):
@@ -183,7 +183,7 @@ class ByteCodeFragment:
         :param var_name: name to request from enclosing scope
         """
 
-        self.pragma.on_request_var(self, str(var_name))
+        self.resolution.on_request_var(self, str(var_name))
 
 
     def request_for_write(self, var_name, position=None):
@@ -194,7 +194,7 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
-        self.pragma.on_write(self, str(var_name), position=position)
+        self.resolution.on_write(self, str(var_name), position=position)
 
 
     def request_global(self, var_name, position=None):
@@ -205,7 +205,7 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
-        self.pragma.on_explicit_global(self, str(var_name), position=position)
+        self.resolution.on_explicit_global(self, str(var_name), position=position)
 
 
     def declare_var(self, var_name, position=None, type_expr=None):
@@ -218,7 +218,7 @@ class ByteCodeFragment:
             metadata only; not evaluated here)
         """
 
-        self.pragma.on_declare(self, str(var_name), position=position)
+        self.resolution.on_declare(self, str(var_name), position=position)
         if type_expr is not None:
             self.annotation_bindings.append((str(var_name), type_expr))
 
@@ -308,7 +308,7 @@ class ByteCodeFragment:
         """
 
         compiler = self.compiler
-        with compiler.pragma_scope():
+        with compiler.resolution_scope():
             ns_name = str(ns_name)
             child = compiler.fragment(ns_name)
 
@@ -351,7 +351,7 @@ class ByteCodeFragment:
         """
 
         compiler = self.compiler
-        with compiler.pragma_scope():
+        with compiler.resolution_scope():
             ns_name = str(ns_name)
             child = compiler.fragment(ns_name)
 
@@ -433,12 +433,19 @@ _COMPILER_LITERALS = {
 
 class Compiler:
 
-    def __init__(self, name, module, filename=None, tco_enabled=True,
-                 resolution_pragma_class=None, resolution_pragma=None,
-                 bracket_calls=BracketCalls.IGNORE):
+    def __init__(
+            self, name, module, filename=None,
+            tco_enabled=True,
+            resolution_mode=ResolutionMode.KOSKARI,
+            bracket_calls=BracketCalls.IGNORE):
+
         self.name = name
-        self.resolution_pragma_class = resolution_pragma_class or KoskariPragma
-        self._current_pragma = resolution_pragma
+
+        # settings, possibly from pragma
+        self.convert_fast_enabled = True
+        self.tco_enabled = tco_enabled
+        self.resolution_mode = resolution_mode
+        self._resolution_instance = None
         self.bracket_calls = bracket_calls
 
         if module is None:
@@ -450,7 +457,6 @@ class Compiler:
 
         self.module = module
 
-        self.tco_enabled = tco_enabled
         self.gen_label = _label_generator()
 
         ns = vars(module)
@@ -472,22 +478,62 @@ class Compiler:
         self._macro_overlay = []
 
 
-    @property
-    def bracket_calls(self):
+    @classmethod
+    def from_pragma(
+            cls, name, module, filename=None,
+            pragma=None):
+
         """
-        Policy for a bracket-pair in call position (a BracketCalls member).
-        Assigning accepts a BracketCalls or its string value ("ignore" /
-        "warn" / "error"); an unrecognized value raises ValueError.
+        Create a compiler from a pragma, or a default pragma and its settings.
         """
 
+        if pragma is None:
+            from ..pragma import ModulePragma
+            pragma = ModulePragma()
+
+        inst = cls(name, module, filename=filename)
+        inst.reload_pragma(pragma)
+        pragma.watch(inst)
+        return inst
+
+
+    def reload_pragma(self, pragma):
+        """
+        Reload the compiler from a pragma.
+        """
+
+        self.convert_fast_enabled = pragma.get("compiler/convert-fast")
+        self.tco_enabled = pragma.get("compiler/tco-enable")
+
+        self.resolution_mode = pragma.get("compiler/resolution")
+        self._resolution_instance = None
+
+        self._bracket_calls = pragma.get("compiler/call-brackets")
+
+
+    @property
+    def bracket_calls(self):
         return self._bracket_calls
 
 
     @bracket_calls.setter
     def bracket_calls(self, value):
-        # BracketCalls(member) returns the member unchanged; BracketCalls(str)
-        # maps the value; anything else raises ValueError.
-        self._bracket_calls = BracketCalls(value)
+        if not isinstance(value, BracketCalls):
+            value = BracketCalls(value)
+        self._bracket_calls = value
+
+
+    @property
+    def resolution_mode(self):
+        return self._resolution_mode
+
+
+    @resolution_mode.setter
+    def resolution_mode(self, value):
+        if not isinstance(value, ResolutionMode):
+            value = ResolutionMode(value)
+        self._resolution_mode = value
+        self._resolution_pragma_class = value.resolution_class
 
 
     @contextmanager
@@ -525,15 +571,15 @@ class Compiler:
 
 
     @contextmanager
-    def pragma_scope(self):
-        pragma = self._current_pragma
-        if pragma is not None:
-            pragma.enter_scope()
+    def resolution_scope(self):
+        reso = self._resolution_instance
+        if reso is not None:
+            reso.enter_scope()
         try:
             yield
         finally:
-            if pragma is not None:
-                pragma.exit_scope()
+            if reso is not None:
+                reso.exit_scope()
 
 
     def _find_compiled(self, name):
@@ -570,40 +616,41 @@ class Compiler:
 
 
     def fragment(self, name=None, mode=None):
-        pragma = self._current_pragma
-        if pragma is None:
-            pragma = self.resolution_pragma_class()
+        reso = self._resolution_instance
+        if reso is None:
+            reso = self._resolution_pragma_class()
         return ByteCodeFragment(
-            self, str(name), self.filename, mode=mode, pragma=pragma)
+            self, str(name), self.filename, mode=mode, resolution=reso)
 
 
     def compile(self, source_obj, tc=False):
         if isinstance(source_obj, ByteCodeFragment):
             return source_obj
 
-        allocated = self._current_pragma is None
-        if allocated:
-            self._current_pragma = self.resolution_pragma_class()
+        tmp = self._resolution_instance is None
+        if tmp:
+            self._resolution_instance = self._resolution_pragma_class()
+
         try:
             fragment = self.fragment(self.name)
             return self.compile_expr(fragment, source_obj, tc) or fragment
         finally:
-            if allocated:
-                self._current_pragma = None
+            if tmp:
+                self._resolution_instance = None
 
 
     def full_compile(self, source_obj, tc=False):
-        allocated = self._current_pragma is None
-        if allocated:
-            self._current_pragma = self.resolution_pragma_class()
+        tmp = self._resolution_instance is None
+        if tmp:
+            self._resolution_instance = self._resolution_pragma_class()
         try:
             res = source_obj
             while not isinstance(res, ByteCodeFragment):
                 res = self.compile(res, tc)
             return res
         finally:
-            if allocated:
-                self._current_pragma = None
+            if tmp:
+                self._resolution_instance = None
 
 
     def compile_expr(self, fragment, source_obj, tc):
@@ -951,7 +998,7 @@ class Compiler:
         closure_syms and request_for_write_syms into the fragment.
         """
 
-        pragma = fragment.pragma
+        reso = fragment.resolution
         for op, arg in instr:
             if op == OpCode.KOS_OP_CONST and isinstance(arg, FunctionSpec):
                 code = arg.code
@@ -960,8 +1007,8 @@ class Compiler:
                 nspec = code.namespace_spec
                 if nspec is None:
                     continue
-                request_for_write_syms = pragma.get_request_for_write_syms(code)
-                pragma.cpool_merge(fragment, nspec, request_for_write_syms)
+                request_for_write_syms = reso.get_request_for_write_syms(code)
+                reso.cpool_merge(fragment, nspec, request_for_write_syms)
 
 
     def complete(self, fragment, mode=None, _validate=True, is_root=False):
@@ -984,11 +1031,12 @@ class Compiler:
         self._cpool_scan_merge(fragment, instr)
 
         # Build NamespaceSpec from fragment buckets (local, closure, global)
-        pragma = fragment.pragma
-        base_nspec = pragma.build_namespace_spec(fragment)
+        reso = fragment.resolution
+        base_nspec = reso.build_namespace_spec(fragment)
 
         # Lower VAR/request ops to FAST where possible
-        instr = self.convert_fast(base_nspec, instr, mode=mode)
+        if self.convert_fast_enabled:
+            instr = self.convert_fast(base_nspec, instr, mode=mode)
 
         # Generators are not allowed to tail-call
         instr = self.demote_tail_calls_if_yields(instr)
@@ -1004,13 +1052,13 @@ class Compiler:
         code = Code(base_nspec, instr, fragment.name, filename)
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
-        pragma.register_code_fragment(code, fragment)
+        reso.register_code_fragment(code, fragment)
 
         # Recursively validate that all writes are satisfied.
         # Only validate from root complete(); inner complete() calls skip so
         # nested functions get validated with proper ancestor context.
         if _validate and is_root:
-            pragma.validate_tree(
+            reso.validate_tree(
                 code, (), CompilerMode.FUNCTION, is_root=True)
         return code
 

@@ -2,10 +2,16 @@
 
 ## Status
 
-Proposed. A new `bracket-pair` pair subtype that records `[ ]` origin, a
-reader that dispatches to it, and an optional compiler check that flags a
-bracket-pair reaching evaluated/operator position. A symmetric advisory
-matcher style-hint is sketched as a later, separate phase.
+**Implemented (archived).** The `bracket-pair` type, the reader dispatch that
+records `[ ]` origin, and the `bracket_calls` compiler check (accept / warn /
+error) at the `compile_pair` chokepoint all exist. The symmetric advisory
+matcher style-hint remains a later, separate phase. Promotion of the compiler
+flag to source-level control is folded into the module pragma system; see
+[../PRAGMA.md](../PRAGMA.md). The normative
+rollup of the convention lives in [../SYNTAX.md](../SYNTAX.md) and
+[../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md).
+
+This document is retained as the original design record.
 
 ## Summary
 
@@ -281,7 +287,9 @@ pair  (KosPairType)
 - **Repr fidelity beyond leading-cell.** Any richer round-tripping of mixed
   delimiters is deferred; v1 commits only to the leading-cell rule.
 - **Pragma gating.** Replace the simple compiler flag with proper pragma
-  control once `koskari/compile/pragma/` supports it.
+  control once `koskari/compile/pragma/` supports it. The `bracket_calls` and
+  `bracket_pairs` keys are part of the v0.1 pragma scope;
+  see [../PRAGMA.md](../PRAGMA.md).
 
 ## The two-sided model (summary)
 

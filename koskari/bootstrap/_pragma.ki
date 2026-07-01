@@ -1,0 +1,78 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Portion of koskari.builtins
+"""
+
+
+define-syntax compile/pragma:
+    """
+    Update the pragma in the current module with the given settings
+
+    eg.
+      (pragma [compiler/call-brackets 'warn])
+
+    To get the value of a pragma key, use eg.
+      (pragma compiler/call-brackets)
+
+    To get the pragma object, use
+      (pragma)
+    """
+
+    macro-match:
+        case (pragma (REPEAT settings (LIST (SYMBOL key) (REST values)))):
+            define fixed:
+                list-each [s settings]:
+                    define key (item s "key")
+                    setq key key.datum
+
+                    define vals (item s "values")
+                    setq vals (list-each [v vals] v.datum)
+
+                    `#(',key (values ,@vals))
+
+            `(setq __pragma__ (.rebuild __pragma__ ,@fixed))
+
+
+        case (pragma (SYMBOL key)):
+            `(item __pragma__ ,(str key.datum))
+
+
+        case (pragma):
+            '__pragma__
+
+
+define help-pragma-key [key]:
+    import-from pydoc pager
+    import-from koskari.help.tools kos_help_text_object
+    import-from koskari.pragma lookup
+
+    define handler (lookup key)
+    unless handler:
+        raise (ValueError f"Unknown pragma key: {key}")
+
+    pager (kos_help_text_object (item handler 0)
+            heading: f"Pragma key {key}")
+
+
+extend-syntax compile/help:
+    syntax-rules [pragma]:
+        case (help (pragma key)):
+            (help-pragma-key 'key)
+        case (help pragma):
+            (compile/call help #('__pragma__ 'pragma) (globals))
+
+
+; The end.

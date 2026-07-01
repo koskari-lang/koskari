@@ -140,22 +140,31 @@ class MatchCompiler:
         """
 
         self.slot_names = []
+        self.formal_slot_names = []
         self.extern_indices = {}
         self.consts = []
         self.nodes = []
         self.capture_scope_stack = [{}]
+        self._formal_scope_stack = [True]
         self.in_class_fields = False
 
 
-    def begin_nested_claims(self, **kwargs):
+    def begin_nested_claims(self, inherit_formals=False, **kwargs):
         """
         Begin a nested region where duplicate capture slot names are isolated
-        (for example ONEOF branches or GROUP children). Keyword arguments are
-        reserved for subclasses; the baseline compiler ignores them
+        (for example ONEOF branches or GROUP children). When
+        ``inherit_formals`` is false, slots interned inside the region are
+        omitted from :data:`formal_slot_names` (nested GROUP / REPEAT rows).
+        Keyword arguments beyond ``inherit_formals`` are reserved for
+        subclasses
         """
 
         _ = kwargs
         self.capture_scope_stack.append({})
+        if inherit_formals:
+            self._formal_scope_stack.append(self._formal_scope_stack[-1])
+        else:
+            self._formal_scope_stack.append(False)
 
 
     def end_nested_claims(self, **kwargs):
@@ -168,6 +177,7 @@ class MatchCompiler:
             raise RuntimeError(
                 "end_nested_claims underflow (unbalanced nested scope)")
         self.capture_scope_stack.pop()
+        self._formal_scope_stack.pop()
 
 
     def intern_slot(self, name):
@@ -179,6 +189,8 @@ class MatchCompiler:
 
         idx = len(self.slot_names)
         self.slot_names.append(name)
+        if self._formal_scope_stack[-1]:
+            self.formal_slot_names.append(name)
         return idx
 
 
@@ -319,7 +331,8 @@ class HygienicMatchCompiler(MatchCompiler):
         else:
             mode = 'merge'
         self._hygiene_nested_modes.append(mode)
-        super().begin_nested_claims(**kwargs)
+        super().begin_nested_claims(
+            inherit_formals=(mode == 'merge'), **kwargs)
         self._push_hygiene_frame(mode)
 
 
@@ -639,13 +652,16 @@ def check_str_arg(arg, what, *, allow_empty=False):
 
 def pattern_slot_names(pattern):
     """
-    Slot names for ``pattern`` in declaration order via HygienicMatchCompiler
+    Top-level macro lambda formals for ``pattern`` in declaration order
+
+    Slots nested inside anonymous GROUP / REPEAT row frames are omitted;
+    ONEOF branch captures and spine MATCH slots are included
     """
 
     check_pattern_arg(pattern, "pattern_slot_names pattern")
     hc = HygienicMatchCompiler()
     hc.lower(pattern)
-    return list(Pattern._slot_names(hc))
+    return list(hc.formal_slot_names)
 
 
 # === Primitive builders ===

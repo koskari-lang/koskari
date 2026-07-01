@@ -23,11 +23,19 @@ import pytest
 
 from koskari.lib import Datum, keyword, symbol
 from koskari.matcher import (
+    GROUP,
+    MATCH,
     Matcher,
+    ONEOF,
+    SYMBOL,
+    VALUE,
     binding_inner_pattern,
+    parse_explicit_rule_pattern,
+    pattern_slot_names,
     repeat_capture,
     thaw,
 )
+from koskari.types import build_proper
 
 
 pytestmark = pytest.mark.phase_infra
@@ -103,6 +111,63 @@ class TestRepeatFramesThawRoundTrip(unittest.TestCase):
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["name"].datum, sa)
         self.assertEqual(frames[0]["expr"].datum, 10)
+
+
+class TestPatternSlotNames(unittest.TestCase):
+
+
+    def test_repeat_capture_omits_inner_row_slots(self):
+        """
+        repeat_capture row dict slots are not macro lambda formals
+        """
+
+        pat = repeat_capture("bindings", binding_inner_pattern())
+        self.assertEqual(pattern_slot_names(pat), ["bindings"])
+
+
+    def test_repeat_list_submatchers_only_outer_slot(self):
+        """
+        REPEAT settings (LIST (SYMBOL key) (REST values)) exposes only
+        settings as a macro-match lambda formal
+        """
+
+        form = build_proper(
+            symbol("pragma"),
+            build_proper(
+                symbol("REPEAT"), symbol("settings"),
+                build_proper(
+                    symbol("LIST"),
+                    build_proper(symbol("SYMBOL"), symbol("key")),
+                    build_proper(symbol("REST"), symbol("values")))))
+        pat = parse_explicit_rule_pattern(form)
+        self.assertEqual(pattern_slot_names(pat), ["settings"])
+
+
+    def test_oneof_branch_slots_are_formals(self):
+        """
+        ONEOF merge scope keeps branch capture slots as macro formals
+        """
+
+        pat = ONEOF(SYMBOL("a"), SYMBOL("b"))
+        self.assertEqual(pattern_slot_names(pat), ["a", "b"])
+
+
+    def test_named_group_omits_inner_slots(self):
+        """
+        Named GROUP exposes only the group slot, not nested captures
+        """
+
+        pat = GROUP("g", SYMBOL("inner"))
+        self.assertEqual(pattern_slot_names(pat), ["g"])
+
+
+    def test_spine_match_slots_are_formals(self):
+        """
+        Top-level MATCH captures are macro lambda formals
+        """
+
+        pat = MATCH(VALUE("x"), VALUE("y"))
+        self.assertEqual(pattern_slot_names(pat), ["x", "y"])
 
 
 # The end.

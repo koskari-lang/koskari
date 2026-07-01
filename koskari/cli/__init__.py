@@ -40,7 +40,7 @@ from ..lexer.discovery import special_names_for_repl
 from ..lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
                                     koskari_style, load_koskari_key_bindings)
 from ..lib import Domain, ParamRef, drive_async_loop, kos_repr
-from ..module import new_module
+from ..module import build_module_load_facets, init_module, new_module
 from ..reader import READ_EOF, LayoutReader, source_str
 
 
@@ -132,7 +132,10 @@ def _make_prompter(histfile=None, get_namespace=None):
             key_bindings=load_koskari_key_bindings())
 
         def _prompt(prompt, **kwargs):
-            return session.prompt(prompt, reserve_space_for_menu=False, **kwargs)
+            return session.prompt(
+                prompt,
+                reserve_space_for_menu=False,
+                **kwargs)
 
         return _prompt
 
@@ -306,10 +309,6 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
     :param quiet: when True, suppress REPL startup version banner
     """
 
-    from koskari.compile import Compiler
-    from koskari.module import attach_module_load_facets, init_module
-    from koskari.reader import LayoutReader
-
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
@@ -319,20 +318,14 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
     # init_module registers compiler specials into the namespace.  When the
     # module already has __file__ set (e.g. after run_file_async), we preserve
     # it; otherwise use the sentinel '<stdin>' so the compiler has a filename.
-    if not getattr(mod, '__file__', None):
+    compiler = getattr(mod, '__compiler__', None)
+    if compiler is None:
         init_module(mod, '<stdin>')
+        compiler, _reader = build_module_load_facets(mod, filename="<stdin>")
 
     ns = vars(mod)
     if prompter is None:
         prompter = _make_prompter(histfile=histfile, get_namespace=lambda: ns)
-
-    compiler = Compiler(
-        getattr(mod, '__name__', '__main__'),
-        mod,
-        filename='<stdin>')
-
-    reader = LayoutReader(mod)
-    attach_module_load_facets(mod, compiler, reader)
 
     if not quiet:
         for line in startup_lines():

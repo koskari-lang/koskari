@@ -13,6 +13,13 @@ with examples, see [Concepts](concepts/index.md).
   mapping). Contrast **store**. See [Bindings and refs](concepts/bindings-and-refs.md)
   and [compile/bindq](specials/compile-bindq.md).
 
+**bracket-pair**
+: A `pair` subtype the reader produces from `[ ]` source forms. Value-equal to
+  and interchangeable with an ordinary pair; `[ ]` is **not** a vector literal
+  and compiles like `( )` by default. The marker records bracket origin so the
+  `( )` = call / `[ ]` = data convention can be checked via the
+  `compiler/call-brackets` pragma. See [Brackets and the call convention](concepts/brackets-and-call-convention.md).
+
 **bytecode**
 : `KosCode` instruction sequence executed by the Koskari VM.
 
@@ -91,6 +98,12 @@ with examples, see [Concepts](concepts/index.md).
   for a body (restored on exit). Consumers read the current value via
   [`ParamRef`](macros/compile-ref.md) (for example `(ref (parameter NAME))`).
   Contrast **lambda** formals, which are ordinary lexical parameters.
+
+**pragma**
+: Module-scoped switches that tune reader and compiler behavior — bracket-call
+  checking, name resolution, layout reading, and so on. Set with the `pragma`
+  form; forward-only and never inherited by imported modules. See
+  [Pragmas and feature settings](concepts/pragma.md).
 
 **ref**
 : Mutable handle to a binding site (variable, attribute, item, parameter, etc.).

@@ -24,6 +24,7 @@ HelpFormatter, registry dispatch, and kos-help builtins
 
 import pydoc
 
+from ..lib import symbol
 from ..bootstrap import builtin
 
 
@@ -255,7 +256,18 @@ def _namespace_get(namespace, key):
         return None
 
 
-def kos_help_text(name, namespace):
+def kos_help_text_object(obj, heading=None):
+    """
+    Collect help text for an object
+    """
+
+    doc = HelpFormatter()
+    sec = doc.section(heading or repr(obj))
+    help_into(sec, obj)
+    return doc.render()
+
+
+def kos_help_text(name, namespace=None, heading=None):
     """
     Collect help text for name and related namespace keys
 
@@ -265,15 +277,17 @@ def kos_help_text(name, namespace):
     :raises TypeError: when namespace is None
     """
 
+    doc = HelpFormatter()
+
     if namespace is None:
         raise TypeError('namespace is required')
 
-    doc = HelpFormatter()
     for key in _help_lookup_keys(name):
         val = _namespace_get(namespace, key)
         if val is None:
             continue
-        sec = doc.section(key)
+
+        sec = doc.section(heading or key)
         help_into(sec, val)
 
     if doc.is_empty():
@@ -282,12 +296,24 @@ def kos_help_text(name, namespace):
 
 
 @builtin("help")
-def kos_help(name, namespace):
+def kos_help(element, namespace=None):
     """
     Display help for name in namespace via the system pager
     """
 
-    pydoc.pager(kos_help_text(name, namespace))
+    if isinstance(element, (list, tuple)):
+        units = element
+    else:
+        units = [element]
+
+    col = []
+    for unit in units:
+        if isinstance(unit, (str, symbol)):
+            col.append(kos_help_text(unit, namespace))
+        else:
+            col.append(kos_help_text_object(unit))
+
+    pydoc.pager("\n".join(col))
 
 
 # The end.

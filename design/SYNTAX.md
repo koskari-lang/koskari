@@ -178,6 +178,59 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
 
 ```
 
+### Parentheses and brackets: the call/data convention
+
+`( )` and `[ ]` are the **same list grammar** (`<list>` above). A `[ ]` form is
+**not** a vector or array literal — it reads into a `pair` chain exactly like
+`( )`, and **by default compiles identically**. In particular, a non-empty list
+in head/operator position compiles to a *call*, regardless of which bracket
+delimited it: `[f 1 2]` compiles the same as `(f 1 2)` — a call to `f`.
+
+What differs is a marker. The reader records the bracket origin by producing a
+**`bracket-pair`** (and `bracket-nil`) — a `pair` subtype that is value-equal to
+and structurally interchangeable with an ordinary pair, but carries the fact
+that the source used `[ ]`. That marker exists so tooling and an *opt-in*
+compiler check can act on it; it does not change evaluation by itself.
+
+The **convention** — and by default it is only a convention — is:
+
+- **`( )` indicates a call/apply form**: the first element is applied to the
+  rest. Some forms evaluate every argument; others treat selected arguments as
+  data rather than expressions.
+- **`[ ]` indicates a non-call data fragment**: a binding list, a clause, a
+  pattern row — something the enclosing special consumes as structure, never as
+  a call. Nobody reading `(let [[a 1]] (+ a 100))` expects `a` to be *called*
+  with `1`; the brackets make that intent visible.
+
+Because such data positions are consumed by their specials and never reach
+`compile_pair`, they are immune for free. The payoff comes when a bracketed
+fragment accidentally lands in call position — e.g. a typo `ler` for `let`:
+
+```
+(ler [[a 1]] (+ a 100))
+```
+
+This expands to a call to the value `ler` whose first argument is
+`(call (call a 1))` — clearly not intended. With the bracket marker, the
+compiler can diagnose it. That diagnosis is gated (see below) and defaults to
+silence, so the unannotated language stays a pure convention.
+
+#### Gating the bracket-in-call-position check
+
+Two independent settings, both **module-scoped** and set via the pragma system
+(see [PRAGMA.md](PRAGMA.md)):
+
+- `reader/brackets` (**reader**) — whether `[ ]` reads into the distinct
+  `bracket-pair` / `bracket-nil` values (default on) or into plain pairs. When
+  off, the origin marker is never produced.
+- `compiler/call-brackets` (**compiler**) — policy when a `bracket-pair` reaches
+  call position: `ignore` (default, pure convention), `warn` (emit a
+  `SyntaxWarning`), or `error` (raise at compile time).
+
+```
+(pragma [compiler/call-brackets 'error])   ; make stray brackets-in-call a hard error
+```
+
 ### Thunk syntax
 
 **Thunk syntax** is the curly-brace reader macro `{` … `}` in the base

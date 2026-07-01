@@ -22,16 +22,16 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 """
 
 
-from ..compile.compiler import Compiler, CompilerMode
+from ..compile.compiler import CompilerMode
 from ..lib import demand_call
-from ..module import (attach_module_load_facets, detach_module_load_facets,
+from ..module import (build_module_load_facets, detach_module_load_facets,
                       init_module, new_module)
-from ..reader import (READ_EOF, IndentAwareStream, LayoutReader, source_open,
+from ..reader import (READ_EOF, IndentAwareStream, source_open,
                       source_str)
 from .codex import KioFile
 
 
-def _compile_top_level_to_codes(mod, compiler, source_stream):
+def _compile_top_level_to_codes(mod, compiler, reader, source_stream):
     """
     Read top-level forms from a SourceStream and return compiled Code objects
 
@@ -42,8 +42,6 @@ def _compile_top_level_to_codes(mod, compiler, source_stream):
     """
 
     ns = vars(mod)
-    reader = LayoutReader(mod)
-    attach_module_load_facets(mod, compiler, reader)
     try:
         stream = IndentAwareStream(
             source_stream.stream,
@@ -102,10 +100,10 @@ def compile_ki_file_to_kio(
 
     mod = new_module(mod_name, system=False)
     init_module(mod, ki_path, spec=None)
-    compiler = Compiler(mod_name, mod, filename=display)
+    compiler, reader = build_module_load_facets(mod, display)
 
     with source_open(ki_path) as source_stream:
-        bodies = _compile_top_level_to_codes(mod, compiler, source_stream)
+        bodies = _compile_top_level_to_codes(mod, compiler, reader, source_stream)
 
     KioFile.from_codes(bodies).write(kio_dest)
 
@@ -132,10 +130,10 @@ def compile_ki_source_to_kio(
 
     mod = new_module(mod_name, system=False)
     init_module(mod, display, spec=None)
-    compiler = Compiler(mod_name, mod, filename=display)
+    compiler, reader = build_module_load_facets(mod, display)
 
     source_stream = source_str(source_text, display)
-    bodies = _compile_top_level_to_codes(mod, compiler, source_stream)
+    bodies = _compile_top_level_to_codes(mod, compiler, reader, source_stream)
 
     KioFile.from_codes(bodies).write(kio_dest)
 
