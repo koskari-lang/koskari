@@ -303,6 +303,34 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(events, ["before", "after", "before", "after"])
 
 
+    async def test_param_in_caller_frame_uses_invoke_scope(self):
+        """
+        A parameterize established in a caller frame outside the reset's
+        owning frame is not captured by the bounded template: remote invoke
+        resolves it from the invoke-time dynamic environment (here amt=200,
+        so 7 + 200 = 207). Params between the prompt and its owning frame
+        remain captured (test_delimited_param_outside_reset_not_captured).
+        """
+
+        def add(a):
+            return a + ParamRef('amt', 0).deref()
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/parameterize [[amt 100]]
+              (compile/setq captured
+                (compile/call
+                  (compile/lambda []
+                    (compile/reset (add (compile/shift k k)))))))
+            (compile/parameterize [[amt 200]]
+              (compile/call captured 7))))
+        """
+        expr, mod = self.compile_expr(src_str, add=add)
+        result = await expr()
+        self.assertEqual(result, 207)
+
+
     async def test_dyn_wind_thunk_count_invoke_in_deeper_frame(self):
         """
         KNOWN BUG (intentionally red): same double-wind as

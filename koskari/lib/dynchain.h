@@ -398,8 +398,9 @@ typedef struct KosDynNode KosDynNext;
 /**
    KosContinuation holds a captured delimited continuation.
 
-   The captured_chain is a cloned segment of the dynamic chain
-   from the capture point up to (but not including) the prompt.
+   The captured_chain is a cloned segment of the dynamic chain from the
+   capture point down through the prompt and its owning FRAME node
+   (delimited), or from above the CC block down to root (undelimited).
 
    The resume_frame points to the frame where execution resumes.
    The resume_pc is the program counter to resume at.
@@ -419,7 +420,17 @@ struct KosContinuation {
   uint32_t prompt_id;           /* target prompt tag */
   uint32_t graft_point_id;      /* node_id of graft point for ID fallback; 0 = none */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
+  uint8_t live_slice_consumed;  /* 1 = in-place invoke consumed the live slice */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
+
+  /* Capture-time live node identities for in-place (Path A) invoke
+   * detection. Borrowed pointers: dereference only after a pointer +
+   * node_id ancestry match from dyn_top confirms the node is still live
+   * on this chain. Zero for undelimited continuations. */
+  KosDynNode *live_prompt_node;
+  uint32_t live_prompt_node_id;
+  KosDynNode *live_shift_node;
+  uint32_t live_shift_node_id;
 };
 
 
@@ -430,7 +441,17 @@ struct KosContinuation {
 #define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
 #define KosContinuation_GRAFT_POINT_ID(k)  (((KosContinuation *)(k))->graft_point_id)
 #define KosContinuation_ONE_SHOT(k)        (((KosContinuation *)(k))->one_shot)
+#define KosContinuation_LIVE_SLICE_CONSUMED(k) \
+  (((KosContinuation *)(k))->live_slice_consumed)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
+#define KosContinuation_LIVE_PROMPT_NODE(k) \
+  (((KosContinuation *)(k))->live_prompt_node)
+#define KosContinuation_LIVE_PROMPT_NODE_ID(k) \
+  (((KosContinuation *)(k))->live_prompt_node_id)
+#define KosContinuation_LIVE_SHIFT_NODE(k) \
+  (((KosContinuation *)(k))->live_shift_node)
+#define KosContinuation_LIVE_SHIFT_NODE_ID(k) \
+  (((KosContinuation *)(k))->live_shift_node_id)
 
 
 /* === KosTransferStep enum === */

@@ -1694,9 +1694,22 @@ int kos_shift_capture(
     return -1;
   }
 
-  /* Clone the chain segment restored on invoke: from dyn_top through the
-   * prompt and frames below (heritage nodes above the prompt, e.g. WIND,
-   * are included so delimited PUSH can replay their wind hooks). */
+  /* Bound the invoke template at the prompt's owning FRAME: clone from
+   * dyn_top down through heritage nodes (WIND, PARAM, ...), the PROMPT,
+   * and the nearest FRAME at-or-below it. Caller frames further down
+   * resolve from the invoke-time environment instead of being replayed. */
+  KosDynNode *stop;
+  {
+    KosDynNode *owning = (KosDynNode *) prompt;
+    while (owning && ! KosDynNode_IS_FRAME(owning))
+      owning = KosDynNode_PARENT(owning);
+    if (! owning) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "PUSH_SHIFT: no owning frame below prompt");
+      return -1;
+    }
+    stop = KosDynNode_PARENT(owning);
+  }
   #if KOS_XFER_TRACE
   {
     KosDynNode *frame_inside = KosDynNode_PARENT(prompt);
@@ -1725,7 +1738,7 @@ int kos_shift_capture(
     KosContinuation *k = kos_continuation_capture_segment(
         es,
         KosEvalState_DYN_TOP(es),
-        NULL,
+        stop,
         resume_pc,
         prompt_id,
         0,
@@ -1734,6 +1747,13 @@ int kos_shift_capture(
 
     if (! k)
       return -1;
+
+    /* Live identities for in-place (Path A) invoke detection; the SHIFT
+     * node is recorded by PUSH_SHIFT after it is pushed. */
+    KosContinuation_LIVE_PROMPT_NODE(k) = (KosDynNode *) prompt;
+    KosContinuation_LIVE_PROMPT_NODE_ID(k) =
+        KosDynNode_NODE_ID((KosDynNode *) prompt);
+
     *out_k = k;
   }
   return 0;
@@ -1862,6 +1882,15 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
     kos_dynchain_free(cloned_chain, NULL);
     return NULL;
   }
+
+  KosContinuation_LIVE_SLICE_CONSUMED(clone) =
+      KosContinuation_LIVE_SLICE_CONSUMED(k);
+  KosContinuation_LIVE_PROMPT_NODE(clone) = KosContinuation_LIVE_PROMPT_NODE(k);
+  KosContinuation_LIVE_PROMPT_NODE_ID(clone) =
+      KosContinuation_LIVE_PROMPT_NODE_ID(k);
+  KosContinuation_LIVE_SHIFT_NODE(clone) = KosContinuation_LIVE_SHIFT_NODE(k);
+  KosContinuation_LIVE_SHIFT_NODE_ID(clone) =
+      KosContinuation_LIVE_SHIFT_NODE_ID(k);
 
   return clone;
 }

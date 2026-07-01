@@ -58,6 +58,14 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     return EVAL_RAISE();
   }
 
+  /* Record the live SHIFT node identity for in-place (Path A) invoke
+   * detection; capture ran before this node existed. */
+  {
+    KosDynNode *shift_node = KosEvalState_DYN_TOP(es);
+    KosContinuation_LIVE_SHIFT_NODE(k) = shift_node;
+    KosContinuation_LIVE_SHIFT_NODE_ID(k) = KosDynNode_NODE_ID(shift_node);
+  }
+
   KosEvalState_SET_PC(es, shift_body_pc);
   return kos_op_result_PUSH(es, wrapper);
 }
