@@ -36,7 +36,7 @@ def reader_brackets(enabled: bool = True) -> bool:
     (baseline on) rather than plain pairs
     """
 
-    return bool(enabled)
+    return enabled
 
 
 @pragma_setting("reader/layout", True)
@@ -45,7 +45,7 @@ def reader_layout(enabled: bool = True) -> bool:
     Whether layout (indentation) block reading is enabled (baseline on)
     """
 
-    return bool(enabled)
+    return enabled
 
 
 @pragma_setting("reader/implicit-calls", True)
@@ -55,7 +55,7 @@ def reader_implicit_calls(enabled: bool = True) -> bool:
     (baseline on)
     """
 
-    return bool(enabled)
+    return enabled
 
 
 # The end.

@@ -27,25 +27,46 @@ omitted).
 """
 
 
+from enum import Enum
 from ...pragma import pragma_setting
-from .bracket import BracketCalls
 
 
-_RESOLUTION_MODES = ("koskari", "scheme", "python")
+class ResolutionMode(Enum):
+    """
+    Resolution modes: Koskari, Scheme, Python
+    """
+
+    KOSKARI = "koskari"
+    SCHEME = "scheme"
+    PYTHON = "python"
 
 
-@pragma_setting("compiler/resolution", "koskari")
+@pragma_setting("compiler/resolution", ResolutionMode.KOSKARI)
 def compiler_resolution(mode) -> str:
     """
     Name-resolution semantics: koskari (strict), scheme, or python. No
     parameter default -- the mode must be stated explicitly when declared.
     """
 
-    mode = str(mode)
-    if mode not in _RESOLUTION_MODES:
-        raise ValueError(
-            f"compiler/resolution must be one of {_RESOLUTION_MODES!r}")
-    return mode
+    if isinstance(mode, ResolutionMode):
+        return mode
+    return ResolutionMode(str(mode))
+
+
+class BracketCalls(Enum):
+    """
+    How the compiler treats a bracket-pair (``[ ]``) reaching call /
+    operator position — a ``[ ]`` form being compiled as a combination or
+    special, where ``( )`` is conventionally expected.
+
+    - ``IGNORE``: compile it exactly like a paren form, no diagnostic
+    - ``WARN``: compile it, but emit a SyntaxWarning
+    - ``ERROR``: raise a CompilerError
+    """
+
+    IGNORE = "ignore"
+    WARN = "warn"
+    ERROR = "error"
 
 
 @pragma_setting("compiler/call-brackets", BracketCalls.IGNORE)

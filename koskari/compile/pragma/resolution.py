@@ -22,10 +22,21 @@ Pluggable name-resolution semantics for the compiler.
 """
 
 
+from enum import Enum
 from typing import Optional, Protocol, Tuple
 
 from ...exceptions import CompilerError
 from ...lib import FunctionSpec, NamespaceSpec
+
+
+class ResolutionMode(Enum):
+    """
+    Resolution modes: Koskari, Scheme, Python
+    """
+
+    KOSKARI = "koskari"
+    SCHEME = "scheme"
+    PYTHON = "python"
 
 
 def _unique_append(lst, val):

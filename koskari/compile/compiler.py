@@ -436,6 +436,7 @@ class Compiler:
     def __init__(self, name, module, filename=None, tco_enabled=True,
                  resolution_pragma_class=None, resolution_pragma=None,
                  bracket_calls=BracketCalls.IGNORE):
+
         self.name = name
         self.resolution_pragma_class = resolution_pragma_class or KoskariPragma
         self._current_pragma = resolution_pragma
