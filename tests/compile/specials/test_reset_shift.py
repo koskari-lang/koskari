@@ -392,6 +392,47 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(events, ["before", "after", "before", "after"])
 
 
+    async def test_recursive_invoke_in_slice_path(self):
+        """
+        Recursive delimited invoke: the shift body stashes k in a module
+        global and the slice conditionally re-invokes it, so k runs in the
+        path of k. Recursion is permitted and structurally safe: in-path
+        invokes can never take Path A (the live SHIFT node sits in the
+        INPLACE delim's stash during the slice, so readiness fails) and
+        route to the bounded PUSH graft, one template instance per level.
+        Levels unwind independently: guard sees 0, 1, 2, 3 and every level
+        returns the base value 3.
+        """
+
+        events = []
+
+        def lt(a, b):
+            events.append(a)
+            return a < b
+
+        def inc(n):
+            return n + 1
+
+        src_str = """
+        (compile/begin
+          (compile/setq g nil)
+          (compile/reset
+            (compile/begin
+              (compile/setq n
+                (compile/shift k
+                  (compile/begin
+                    (compile/setq g k)
+                    (compile/call k 0))))
+              (compile/cond
+                [(lt n 3) (compile/call g (inc n))]
+                [else: n]))))
+        """
+        expr, mod = self.compile_expr(src_str, lt=lt, inc=inc)
+        result = await expr()
+        self.assertEqual(result, 3)
+        self.assertEqual(events, [0, 1, 2, 3])
+
+
     async def test_inplace_slice_exception_caught_at_invoke_site(self):
         """
         An exception raised inside an in-place (Path A) slice restitches the
