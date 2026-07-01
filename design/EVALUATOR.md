@@ -299,7 +299,7 @@ continues draining. See [archive/interrupted-transfer-plans.md](archive/interrup
 **Failed transfer (implemented):** on step failure (except foreign cc-unwind
 sentinel re-emit), the drain routes through **`process_raise`** (the unified
 RAISE ingress), which abandons the nest and runs
-**`try_local_exception_handler`** on the manifested chain.
+**`kos_dyn_try_local_raise_body`** on the manifested chain.
 **`run_transfer_plan_to_completion`** returns a **`KosOpResult`**:
 `EVAL_NORMAL` (drained or suspended on await), `EVAL_REPROLOGUE` (abandoned,
 handler applied), `EVAL_AWAIT` (abandonment started an async unwind; the
@@ -378,7 +378,7 @@ the appropriate centralized event helper:
 flowchart TD
     kind{"op_res.kind"}
     repro["REPROLOGUE<br/>→ goto cg_prologue"]
-    raise["RAISE<br/>eval_event_raise<br/>→ process_raise"]
+    raise["RAISE<br/>→ process_raise"]
     yield["YIELD(v)<br/>eval_event_yield<br/>walk/freeze → boundary or STOP"]
     await["AWAIT(v)<br/>eval_event_await<br/>demand check → suspend or STOP"]
     ret["RETURN(v)<br/>eval_event_return<br/>walk/unwind/pop/deliver"]
@@ -446,7 +446,7 @@ flowchart TD
     subgraph opcode_return[“KosOpResult kinds”]
         rn[“EVAL_NORMAL()<br/>hot path: tail-dispatch next insn”]
         rr[“EVAL_REPROLOGUE()<br/>full prologue before next insn”]
-        re[“EVAL_RAISE()<br/>PyErr set → eval_event_raise”]
+        re[“EVAL_RAISE()<br/>PyErr set → process_raise”]
         ry[“EVAL_YIELD(v)<br/>→ eval_event_yield”]
         ra[“EVAL_AWAIT(v)<br/>→ eval_event_await”]
         rret[“EVAL_RETURN(v)<br/>→ eval_event_return”]
@@ -462,7 +462,7 @@ flowchart TD
 |-------|------|---------|
 | `EVAL_NORMAL()` | `KOS_RES_NORMAL` | Continue to next instruction (no prologue). |
 | `EVAL_REPROLOGUE()` | `KOS_RES_REPROLOGUE` | Re-run full prologue before next opcode (new frame, transfer plan, etc.). |
-| `EVAL_RAISE()` | `KOS_RES_RAISE` | **`PyErr`** set; route to **`eval_event_raise`** → **`process_raise`**. |
+| `EVAL_RAISE()` | `KOS_RES_RAISE` | **`PyErr`** set; route to **`process_raise`**. |
 | `EVAL_YIELD(v)` | `KOS_RES_YIELD` | Generator yield with payload `v`; route to **`eval_event_yield`**. |
 | `EVAL_AWAIT(v)` | `KOS_RES_AWAIT` | Suspend on awaitable `v`; route to **`eval_event_await`** (demand check first). |
 | `EVAL_RETURN(v)` | `KOS_RES_RETURN` | Frame return with value `v`; route to **`eval_event_return`** (walk / unwind / pop / deliver). |
@@ -513,14 +513,14 @@ build a transfer plan.
 
 **`process_raise`** is the unified RAISE ingress: all PyErr /
 `KOS_RES_RAISE` ingress converges on it — post-opcode results
-(`apply_kos_op_result` → `eval_event_raise`), prologue and signal-poll
-pending PyErr (`eval_phase_pending_exception`), revive-throw
-(`eval_phase_entry` `KOS_MODE_EXCEPTION`), and transfer-plan step failures
+(`apply_kos_op_result`), prologue and signal-poll pending PyErr
+(`eval_phase_pending_exception`), revive-throw (`eval_phase_entry`
+`KOS_MODE_EXCEPTION`), and transfer-plan step failures
 (`run_transfer_plan_to_completion`). Its ordering contract (documented on
 the function): guard → single continuation-signal test → nest abandon
 (non-signal only) → `handle_continuation_apply` → agen-boundary clear →
-`try_local` → outcome map (REPROLOGUE / AWAIT with suspension tagging /
-RAISE / FATAL). Two deliberate non-ingress carve-outs live in
+`kos_dyn_try_local_raise_body` → outcome map (REPROLOGUE / AWAIT with
+suspension tagging / RAISE / FATAL). Two deliberate non-ingress carve-outs live in
 `run_transfer_plan_to_completion`: the foreign cc-unwind sentinel re-emit
 (signal delivery; must not see `try_local`) and a pending
 `KoskariContinuationApply` between drain steps (expected in-flight state).
@@ -534,7 +534,7 @@ flowchart TD
     own{"Own token?"}
     invoke["kos_invoke_continuation<br/>KOS_MODE_TRANSFER"]
     foreign["kos_build_cc_unwind_plan<br/>KOS_MODE_TRANSFER"]
-    try_local["try_local_exception_handler(es)"]
+    try_local["kos_dyn_try_local_raise_body(es)"]
     region{"region found<br/>TRY/FINALLY?"}
     jump["jump to handler, return 1"]
     pop["pop nodes until frame or BARRIER"]
@@ -560,20 +560,30 @@ flowchart TD
     swallowed -->|no| no_handler
 ```
 
-### 4.2 try_local_exception_handler
+### 4.2 kos_dyn_try_local_raise_body
 
-1. `kos_find_node_for_raise(es)` — topmost enabled TRY or FINALLY.
-2. If found: clear stack block, set PC to handler, stash exception in `PyErr_SetExcInfo`, clear PyErr, set `handling_raise` on FINALLY, return 1.
-3. If not found: walk chain from `dyn_top` toward frame. For each node:
-   - `kos_dyn_pop_top`; if `KOS_DYN_UNWIND_ASYNC_STARTED`, return 1.
-   - If pop fails (BARRIER): dispatch to `kos_dyn_exception_unwind` if node has HANDLES_EXCEPTIONS.
-   - If node may-swallow and PyErr cleared: set PC to catch_resume_pc, return 1.
-4. If no handler: `inject_eval_frame_traceback`, leave `PyErr` set, return 0 (caller returns `EVAL_RAISE()`).
+Single walk from `dyn_top` toward the frame (`dynchain/dyn_walk.c`); each
+node is offered `kos_dyn_handle(node, RAISE)` before any unwind:
+
+1. **CONSUMED** by a TRY or FINALLY: clear the stack block, set PC to the
+   handler, disable the region, stash the exception via `PyErr_SetExcInfo`
+   and clear PyErr, set `handling_raise` on FINALLY → `EVAL_REPROLOGUE()`.
+   **CONSUMED** by GEN (exception crossing the generator boundary):
+   `kos_eval_prepare_boundary_raise` → `EVAL_RAISE()`.
+2. **PASS**: `kos_dyn_pop_nonbarrier_top(RAISE)` unwinds and pops the node
+   (PyErr is fetched/restored around the pop for PRESERVE/BARRIER nodes):
+   - `KOS_RES_AWAIT` → async unwind started (e.g. dyn-with `__aexit__`
+     coroutine); the AWAIT propagates upward with the awaitable.
+   - pop refusal with HANDLES_EXCEPTIONS → `kos_dyn_exception_unwind`.
+   - node may-swallow (CATCH cap) and PyErr cleared → set PC to
+     `catch_resume_pc` → `EVAL_REPROLOGUE()`.
+3. No handler: `kos_eval_prepare_boundary_raise` (traceback injected,
+   context marked dead), leave PyErr set → `EVAL_RAISE()`.
 
 ### 4.3 Traceback Injection
 
-`inject_eval_frame_traceback` decorates the exception with `__koskari_dynchain__` and injects the current frame into the traceback so Python can display Koskari-native frames. Called at:
-- `try_local_exception_handler` (handle and re-raise branches)
+`inject_eval_frame_traceback` decorates the exception with `__koskari_dynchain__` and injects the current frame into the traceback so Python can display Koskari-native frames. Called via `kos_eval_prepare_boundary_raise` at:
+- `kos_dyn_try_local_raise_body` (GEN-boundary, pop-failure, and no-handler branches)
 - `xfer_emit_cc_unwind_signal` (foreign cc-unwind sentinel re-emit)
 
 ---
@@ -637,7 +647,7 @@ while node kinds specialize behavior.
 | Transit | Walk | Key functions |
 |---------|------|----------------|
 | RETURN | handle(RETURN) per node; FINALLY may overwrite value; if not consumed, unwind → pop callee frame; **parent** delivery for normal calls is **`eval_parent_return_deliver`** after pop (not inline in the opcode). Top-level / GEN-parent completion returns `EVAL_RETURN(val)`. | **`KosEvalState_Transition`** / `kos_dyn_walk_return_to_frame`; **`eval_parent_return_deliver`** |
-| RAISE | handle(RAISE); TRY/FINALLY catch; else unwind → pop | `process_raise` → `try_local_exception_handler`; `kos_dyn_handle` on unwind path |
+| RAISE | handle(RAISE); TRY/FINALLY catch; else unwind → pop | `process_raise` → `kos_dyn_try_local_raise_body`; `kos_dyn_handle` on unwind path |
 | YIELD | handle(YIELD) per node until generator boundary consumes; post-opcode **`eval_event_yield`** walks/freeze then optional **`eval_event_yield_deliver_to_boundary`** | `kos_dyn_walk_handle_yield` (via **`KosEvalState_Transition`** **`KOS_TRANS_WALK_HANDLE_YIELD`**) |
 | AWAIT | **No** chain unwind or pop; full dynchain preserved; evaluator returns `EVAL_AWAIT(val)` | AWAIT opcode, `revive_await` |
 | BREAK / CONTINUE | Find loop in-frame; walk unwind/pop to loop; handle on loop; resume at loop head or after loop | `kos_dyn_transfer_to_loop` |
@@ -893,7 +903,7 @@ result on the operand stack itself.
 is set on the current frame), `eval_event_await`:
 1. `Py_DECREF`s the awaitable payload.
 2. Restores context flags (`KOS_CTX_RUNNING`; clears `KOS_CTX_DEAD`).
-3. Calls `kos_demand_set_sync_violation` and then `eval_event_raise`.
+3. Calls `kos_demand_set_sync_violation` and then `process_raise`.
 
 This single check intercepts all async suspension, regardless of whether the
 `EVAL_AWAIT` came from an opcode, a native handler, or auto-await.
@@ -981,7 +991,7 @@ When the top frame has `native_handler != NULL`, the loop runs that handler as t
 
 1. Opcode fails, sets PyErr, returns `EVAL_RAISE()`.
 2. Post-opcode: `PyErr_Occurred()` → `process_raise`.
-3. `try_local_exception_handler` finds TRY region, sets handler_pc, clears PyErr for handler, returns 1.
+3. `kos_dyn_try_local_raise_body` finds the TRY region, sets handler_pc, clears PyErr for the handler, returns `EVAL_REPROLOGUE()`.
 4. `process_raise` returns `EVAL_REPROLOGUE()`.
 5. Loop continues; next instruction is the except block.
 
@@ -1036,7 +1046,7 @@ Tests: **`TestDynWindContinuations`** in `tests/compile/specials/test_dyn_wind.p
 
 1. Plan is draining. `kos_run_transfer_step` returns < 0 (e.g. sync failure in extent action, **`CallNoArgs`** error, or cc-unwind sentinel re-emit).
 2. **Foreign cc-unwind** (`KOS_DYN_CC_RAISE` `EXTENT_ACTION`): **`xfer_emit_cc_unwind_signal`** returns `EVAL_RAISE()` and disarms the nest — no **`try_local`** (dyn-with teardown already ran with PyErr clear).
-3. **Ordinary failure:** **`process_raise`** (unified ingress) abandons the nest and runs **`try_local_exception_handler`**. `EVAL_REPROLOGUE()` continues the loop when a handler applies; `EVAL_RAISE()` propagates when unhandled.
+3. **Ordinary failure:** **`process_raise`** (unified ingress) abandons the nest and runs **`kos_dyn_try_local_raise_body`**. `EVAL_REPROLOGUE()` continues the loop when a handler applies; `EVAL_RAISE()` propagates when unhandled.
 4. **Async unwind during abandonment:** when `try_local` pops an extent whose exit is async (e.g. a dyn-with `__aexit__` coroutine), `process_raise` tags `KOS_SUSP_AWAIT` and the `EVAL_AWAIT` propagates through `run_transfer_plan_to_completion` to the driver; the driver awaits the exit, then resumes via `revive_await` → `kos_dyn_complete_pending_exit`, and the exception walk continues.
 5. **Thunk bytecode raise** under **`KOS_XFER_SUSPENDED_AWAIT`**: prologue **`eval_phase_pending_exception`** runs **`process_raise`** (which abandons the plan) before plan drain; same **`try_local`** path.
 6. Manifested dyn chain is left wherever steps got to; no transactional rollback to the invoke site.

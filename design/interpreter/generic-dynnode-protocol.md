@@ -56,7 +56,6 @@ The dynamic chain is a linked structure of `KosDynNode` objects representing ext
 
 | Function | Purpose |
 |----------|---------|
-| `kos_find_node_for_raise(ctx)` | Find the topmost enabled TRY or FINALLY region. Used by exception dispatch. Returns `KosDynNode *`. |
 | `kos_find_node_for_loop(ctx)` | Find the innermost LOOP or FOREACH region. Used by BREAK, CONTINUE, ITER_NEXT. Returns `KosDynNode *`. |
 | `kos_dyn_find_prompt(ctx, prompt_id)` | Find the nearest PROMPT with matching id. Used by reset/shift. |
 
@@ -114,7 +113,7 @@ Opcodes that pop a specific extent use the type-specific pop when they have alre
 
 ### Exception unwind path
 
-The exception unwind loop in eval.c uses `kos_dyn_pop_top` and `kos_find_node_for_raise`. It does not call type-specific functions. When it needs to read `KosDynWith_RESUME_PC` or similar fields, it does so only after identifying the node via `KosDynNode_IS_WITH_OR_DYN_WITH` — that is a capability check for structural data (resume_pc) needed to resume, not a call into WITH-specific logic.
+The exception unwind walk (`kos_dyn_try_local_raise_body` in `dyn_walk.c`) offers `kos_dyn_handle(node, RAISE)` per node and pops via `kos_dyn_pop_nonbarrier_top`. It does not call type-specific functions. When it needs to read `KosDynWith_RESUME_PC` or similar fields, it does so only after identifying the node via `KosDynNode_IS_WITH_OR_DYN_WITH` — that is a capability check for structural data (resume_pc) needed to resume, not a call into WITH-specific logic.
 
 ---
 

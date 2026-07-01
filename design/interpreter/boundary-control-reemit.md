@@ -72,8 +72,8 @@ push, then **`kos_dynnode_on_control_returned`**). Shared iterator return delive
 mapping lives in **`eval_deliver_iterator_boundary_return_step`**. **`YIELD`**
 returns **`EVAL_YIELD(val)`**; **`eval_event_yield`** runs
 **`eval_yield_handle_walk_and_freeze`** then **`eval_event_yield_deliver_to_boundary`**.
-Active **`PyErr`** flows through **`eval_event_raise`**, which delegates to
-**`process_raise`** (the unified RAISE ingress).
+Active **`PyErr`** flows through **`process_raise`** (the unified RAISE
+ingress).
 
 
 ## 3. Boundary control event kinds

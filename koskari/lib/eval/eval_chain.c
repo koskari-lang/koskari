@@ -128,27 +128,6 @@ static inline int kos_dyn_transition_internal(
     }
     return 0;
   }
-  case KOS_TRANS_TRY_LOCAL_RAISE: {
-    KosOpResult kr = kos_dyn_try_local_raise_body(es);
-    out->raw = (int) kr.kind;
-    if (kr.kind == KOS_RES_REPROLOGUE) {
-      out->status = KOS_TRANS_STATUS_HANDLER_APPLIED;
-      return 0;
-    }
-    if (kr.kind == KOS_RES_RAISE) {
-      /* No local handler; kos_eval_prepare_boundary_raise was called */
-      out->status = KOS_TRANS_STATUS_NO_LOCAL_HANDLER;
-      return 0;
-    }
-    if (kr.kind == KOS_RES_AWAIT) {
-      Py_XDECREF(kr.val);
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-      return 0;
-    }
-    /* FATAL or unexpected */
-    out->status = KOS_TRANS_STATUS_ERROR;
-    return -1;
-  }
   default:
     PyErr_Format(PyExc_RuntimeError,
                 "kos_dyn_transition: unknown kind %d",

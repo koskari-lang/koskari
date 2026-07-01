@@ -97,6 +97,11 @@ static PyObject *str_getattr = NULL;
 static PyObject *str_name = NULL;
 static PyObject *str_package = NULL;
 
+/* KoskariContinuationApply payload attributes (see cont.c raise sites) */
+static PyObject *str_args = NULL;
+static PyObject *str_continuation = NULL;
+static PyObject *str_target = NULL;
+
 
 /*
   Sentinel fromlist for IMPORT / IMPORT_REL opcodes (handlers.incl).  Passing
@@ -113,8 +118,6 @@ static void inject_eval_frame_traceback(KosContext *ctx,
     PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
 
 static void kos_eval_mark_context_dead(KosContext *ctx);
-
-static KosOpResult try_local_exception_handler(KosEvalState *es);
 
 static KosOpResult process_raise(KosEvalState *es);
 
@@ -133,8 +136,6 @@ static KosOpResult eval_event_return_ng(KosEvalState *es, PyObject *val);
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
         KosEvalState *es);
 
-static KosOpResult eval_event_raise(KosEvalState *es);
-
 
 
 #include "eval/eval_chain.c"
@@ -147,21 +148,10 @@ static KosOpResult eval_event_raise(KosEvalState *es);
    On exception: if we are inside a Koskari async gen step (NEXT or ITER_NEXT),
    detach the gen frame, close the gen, and clear NEXT / FOREACH boundary state.
 */
-static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
+static void clear_kos_agen_boundary_on_error(KosEvalState *es) {
 
-  KosEvalState local;
-  KosEvalState *es = kos_tls_active_eval_for_ctx(ctx);
   KosDynFrame *cf;
   KosDynNode *top;
-
-  if (! es) {
-    KosEvalState_Init(&local, ctx);
-    if (KosContext_DYN_TOP(ctx)) {
-      local.dyn_top = KosContext_DYN_TOP(ctx);
-      kos_dyn_rebuild_live_from_chain(&local);
-    }
-    es = &local;
-  }
 
   cf = KosEvalState_FRAME(es);
   top = KosEvalState_DYN_TOP(es);
@@ -617,7 +607,7 @@ static KosOpResult handle_continuation_apply(KosEvalState *es) {
     return EVAL_RAISE();
   }
 
-  PyObject *exc_target = PyObject_GetAttrString(val, "target");
+  PyObject *exc_target = PyObject_GetAttr(val, str_target);
   if (! exc_target) {
     Py_DECREF(typ);
     Py_DECREF(val);
@@ -628,8 +618,8 @@ static KosOpResult handle_continuation_apply(KosEvalState *es) {
   Py_DECREF(exc_target);
 
   if (is_own) {
-    PyObject *cont_obj = PyObject_GetAttrString(val, "continuation");
-    PyObject *args_obj = PyObject_GetAttrString(val, "args");
+    PyObject *cont_obj = PyObject_GetAttr(val, str_continuation);
+    PyObject *args_obj = PyObject_GetAttr(val, str_args);
     KosContinuation *k = NULL;
     PyObject *resume_val = NULL;
 
@@ -764,10 +754,10 @@ static KosOpResult process_raise(KosEvalState *es) {
   if (is_cc_apply)
     return handle_continuation_apply(es);
 
-  clear_kos_agen_boundary_on_error(ctx);
+  clear_kos_agen_boundary_on_error(es);
 
   {
-    KosOpResult tl = try_local_exception_handler(es);
+    KosOpResult tl = kos_dyn_try_local_raise_body(es);
     switch (tl.kind) {
     case KOS_RES_REPROLOGUE:
       return EVAL_REPROLOGUE();
@@ -1768,22 +1758,6 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 
 
 /**
-   Try to handle an exception locally by finding a TRY or FINALLY region
-   and jumping to its handler.  Call when PyErr_Occurred() is set.
-
-   Delegates to kos_dyn_try_local_raise_body directly.
-
-   :return: EVAL_REPROLOGUE if a handler was applied (caller should continue),
-            EVAL_RAISE if no handler (kos_eval_prepare_boundary_raise was called),
-            EVAL_AWAIT if async unwind started,
-            EVAL_FATAL on error
-*/
-static KosOpResult try_local_exception_handler(KosEvalState *es) {
-  return kos_dyn_try_local_raise_body(es);
-}
-
-
-/**
    Invoke the native frame handler on the current eval frame.  val is a new
    reference transferred to the handler (val may be NULL for the iteration
    call; delivery call passes the return value).  Returns EVAL_FATAL() if no
@@ -1964,15 +1938,6 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
 
 
 /**
-   Post-opcode / entry normalization for active PyErr: delegates to
-   process_raise (the unified RAISE ingress; see its ordering contract).
-*/
-static KosOpResult eval_event_raise(KosEvalState *es) {
-  return process_raise(es);
-}
-
-
-/**
    Phase 3: async exception check at each loop iteration top.
 
    When PyErr_Occurred() is set on entry to the dispatch loop (e.g. from a
@@ -1986,7 +1951,7 @@ static KosOpResult eval_event_raise(KosEvalState *es) {
 static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
   if (! PyErr_Occurred())
     return EVAL_NORMAL();
-  return eval_event_raise(es);
+  return process_raise(es);
 }
 
 
@@ -2059,7 +2024,7 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
     kos_demand_set_sync_violation(
         "async suspension is not allowed in demand_sync");
     KosOpResult rs;
-    KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es));
+    KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
     return rs;
   }
 
@@ -2201,7 +2166,7 @@ static KosOpResult eval_event_return_at_frame(
           es, (KosDynYieldFrom *) consumer, val);
       if (r < 0) {
         KosOpResult rs;
-        KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es));
+        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
         return rs;
       }
       return EVAL_REPROLOGUE();
@@ -2260,7 +2225,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
       r = kos_dynnode_on_control_returned(es, KosEvalState_CurrentNode(es)));
   if (r.kind == KOS_RES_RAISE) {
     KosOpResult rs;
-    KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(es));
+    KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
     return rs;
   }
   return EVAL_REPROLOGUE();
@@ -2337,7 +2302,7 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 
   case KOS_RES_RAISE: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(event_raise, r = eval_event_raise(es));
+    KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(es));
     return r;
   }
 
@@ -2701,17 +2666,20 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_aclose, "aclose");
   STR_CONST(str_aenter, "__aenter__");
   STR_CONST(str_aexit, "__aexit__");
+  STR_CONST(str_args, "args");
   STR_CONST(str_asend, "asend");
   STR_CONST(str_athrow, "athrow");
   STR_CONST(str_await, "__await__");
   STR_CONST(str_class, "__class__");
   STR_CONST(str_close, "close");
+  STR_CONST(str_continuation, "continuation");
   STR_CONST(str_enter, "__enter__");
   STR_CONST(str_exit, "__exit__");
   STR_CONST(str_getattr, "__getattr__");
   STR_CONST(str_name, "__name__");
   STR_CONST(str_package, "__package__");
   STR_CONST(str_send, "send");
+  STR_CONST(str_target, "target");
   STR_CONST(str_throw, "throw");
   // STR_CONST(str_getattribute, "__getattribute__");
 
@@ -2761,17 +2729,20 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_aclose);
   Py_CLEAR(str_aenter);
   Py_CLEAR(str_aexit);
+  Py_CLEAR(str_args);
   Py_CLEAR(str_asend);
   Py_CLEAR(str_athrow);
   Py_CLEAR(str_await);
   Py_CLEAR(str_class);
   Py_CLEAR(str_close);
+  Py_CLEAR(str_continuation);
   Py_CLEAR(str_enter);
   Py_CLEAR(str_exit);
   Py_CLEAR(str_getattr);
   Py_CLEAR(str_name);
   Py_CLEAR(str_package);
   Py_CLEAR(str_send);
+  Py_CLEAR(str_target);
   Py_CLEAR(str_throw);
 
   /* Null out exception type pointers (module dict owns the refs) */
