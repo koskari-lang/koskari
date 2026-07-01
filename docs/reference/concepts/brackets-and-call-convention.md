@@ -66,31 +66,44 @@ whose first argument is `[[a 1]]` — i.e. `(call (call a 1))`. That is clearly
 not what the author meant. The bracket marker lets the compiler notice that a
 `[ ]` fragment reached call position and tell you.
 
-## Turning the convention into a check
+## Changing the behavior (via pragma)
 
-Two independent, **per-module** settings control this, set through the
-[pragma](pragma.md):
+The reader and compiler ship these two settings at their defaults, and the
+**only** way to change them is a [`pragma`](pragma.md) form near the top of your
+module. There is no global switch and no per-form syntax — the behavior is
+module-scoped and set explicitly:
 
-| Setting | Affects | Values | Meaning |
-|---|---|---|---|
-| `reader/brackets` | reader | on / off | Whether `[ ]` reads into bracket-pairs (carrying the marker) or plain pairs. Default **on**. |
-| `compiler/call-brackets` | compiler | `ignore` / `warn` / `error` | What happens when a bracket-pair reaches call position. Default **`ignore`** (pure convention). |
+| Setting | Affects | Values | Default | Meaning |
+|---|---|---|---|---|
+| `reader/brackets` | reader | on / off | on | Whether `[ ]` reads into a bracket-pair (carrying the origin marker) or a plain pair. |
+| `compiler/call-brackets` | compiler | `ignore` / `warn` / `error` | `ignore` | What happens when a bracket-pair reaches call position. |
 
-Each setting is a bracketed data fragment:
+Enforce the convention as a warning, or a hard error:
 
 ```koskari
-; make accidental "[ ] in call position" a hard error for this module
-(pragma [compiler/call-brackets error])
-
-; or just warn
+; warn when a [ ] fragment lands in call position
 (pragma [compiler/call-brackets warn])
+
+; or make it a compile error
+(pragma [compiler/call-brackets error])
 ```
 
-A pragma is forward-only and scoped to the module that sets it; it does not
-affect modules you import. With `compiler/call-brackets` at `ignore` (the
-default) the language is exactly the convention — brackets are documentation.
-Raising it to `warn` or `error` turns the convention into a diagnostic that
-catches the `ler` class of mistake at compile time.
+With `error` set, the `ler` typo from above is caught at compile time instead of
+silently compiling to `(call (call a 1))`.
+
+Or drop the distinction entirely — make `[ ]` and `( )` completely
+indistinguishable, so no marker is produced and no check can fire:
+
+```koskari
+(pragma [reader/brackets False])
+```
+
+A pragma is forward-only and scoped to the module that sets it: it affects only
+the code that follows it, and never the modules you import. With
+`compiler/call-brackets` at its `ignore` default, the language is exactly the
+convention — brackets are documentation. See
+[Pragmas and feature settings](pragma.md) for how pragma forms work and the full
+list of settings.
 
 ## See also
 

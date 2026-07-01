@@ -398,9 +398,10 @@ The *registry* defines what keys exist; **sources** define where a key's value
 comes from before the module's own declaration speaks. Lowest to highest:
 
 1. **Built-in default** — what the registry declares as each feature's baseline.
-2. **Package meta-pragma** *(future)* — a package-wide baseline (see below).
-3. **CLI / REPL session default** *(future)* — convenience for ad-hoc running and
-   the REPL.
+2. **Package pragma** *(future)* — a package-wide baseline inherited by
+   sub-packages and sub-modules. See [pragma-package.md](pragma-package.md).
+3. **CLI / REPL session default** *(future)* — a pragma seeded for the entry or
+   REPL module from flags or a settings file. See [pragma-cli.md](pragma-cli.md).
 4. **Module declaration** — `(pragma …)` in the module; always wins; forward-only.
 
 The invariant that makes this safe to distribute: **only #4 travels with the
@@ -418,7 +419,13 @@ Two guards fall out and are worth reserving namespace for:
 
 ---
 
-## Package Meta-Pragma *(future)*
+## Package Pragma *(future)*
+
+> Now a dedicated design doc: **[pragma-package.md](pragma-package.md)** (and the
+> CLI seed in [pragma-cli.md](pragma-cli.md)). This mechanism was formerly called
+> "meta-pragma"; the current names are `package-pragma` /
+> `__package_pragma__`. The sketch below predates that rename — read the design
+> doc for the authoritative naming.
 
 A package may declare defaults for all modules within it — e.g. a Koskari-written
 package distributed as a wheel sets a baseline at the top of its `__init__`.

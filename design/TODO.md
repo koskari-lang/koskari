@@ -126,34 +126,34 @@ Ref: [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [interpreter/kio-format.md](interpreter/kio-format.md) (`.kio` format);
 `koskari.serialize` (incremental compile and `dump_kio`).
 
-### Module pragma system (`koskari.pragma`)
+### CLI pragma
 
-The official home for the language's optional features. Add a top-level leaf
-package `koskari.pragma` holding an immutable `ModulePragma` (settings value +
-shared watcher cell) and a feature **registry**: the reader, compiler, and
-third-party tools register their own features (name, owner, target, kind,
-baseline, parameters + defaults, stability) at import. Add `(pragma [ns/key
-value …] …)` — a macro alias over the `compile/pragma` special — whose settings
-are bracketed data fragments with positional or keyword parameters. The special
-validates keys/values against the registry at compile time (unknown key →
-`CompilerError`) and at eval time does build → install (`module.__pragma__`) →
-`announce()`; the reader and compiler refresh because they *subscribed* as
-watchers, not because the special names them. Changes are forward-only and
-module-local. Reorder module/REPL init to build the pragma first, then build the
-reader and compiler with it (the seam every pragma source plugs into).
+Let the CLI seed a module's pragma from outside the source, for the module the
+entry point loads (a script's main module, or the REPL module). Resolve a
+`ModulePragma` from command-line flags (`--pragma KEY=VALUE`, repeatable)
+and/or a settings file, and pass it as the **active source** to
+`build_module_load_facets` (which grows an optional `source_pragma`). The seed
+is a session default in the precedence chain (below the module's own
+`(pragma …)`); it applies only to the entry and REPL modules, never to imported
+modules, so nothing leaks into distributed libraries. Scope out flag spelling,
+`.ki` vs. structured settings-file format, and file discovery/precedence.
 
-v0.1 wires six live keys (`reader/brackets`, `reader/layout`,
-`reader/implicit-calls`, `compiler/resolution`, `compiler/call-brackets`,
-`compiler/tco-enable`) and reserves two inert (`compiler/convert-fast`,
-`compiler/compress`). Phased-authoritative: registry authoritative for the new
-pragma path now; existing `Compiler` / `Reader` constructor kwargs migrate to
-derive from it in a follow-up. Deferred: `.kio` pragma snapshot, package
-meta-pragma loader integration, CLI/REPL pragma sources, profiles, the
-reproducibility lint, and the graduated `compiler/optimize` level. Supersedes
-the "pragma gating deferred" note in the TCO item above and the pragma-gating
-deferral recorded in the archived bracket-pair design doc.
+Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
 
-Ref: [PRAGMA.md](PRAGMA.md).
+### Package pragma
+
+Let a package declare a default pragma its sub-packages and sub-modules inherit
+(formerly "meta-pragma"). Add a `__package_pragma__` slot (a `ModulePragma`
+template, no watchers) and a `(package-pragma [ns/key value …] …)` surface macro
+that writes both `__package_pragma__` and the local `__pragma__`. Augment the
+loader so `build_module_load_facets` resolves the parent package's
+`__package_pragma__` as the module's default `__pragma__` (fresh watcher set —
+watchers never cross modules) and stores both, so sub-sub-packages keep pulling
+the value down; a sub-package that declares its own refines the default for its
+subtree. Rides Python's parent-before-child import order — no header scan.
+Reuses `ModulePragma.rebuild` wholesale.
+
+Ref: [language/pragma-package.md](language/pragma-package.md); [PRAGMA.md](PRAGMA.md).
 
 ---
 
