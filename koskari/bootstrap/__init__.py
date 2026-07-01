@@ -76,6 +76,9 @@ _BUILTINS_SOURCES = (
     # classes
     '_class.ki',
 
+    # pragmas
+    '_pragma.ki',
+
     # final stub
     'basics.ki',
 )

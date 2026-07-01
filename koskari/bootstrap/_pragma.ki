@@ -1,0 +1,10 @@
+
+
+define-syntax pragma:
+    macro-match:
+        case (pragma (REPEAT settings (LIST (SYMBOL key) (REST values)))):
+            print (repr settings.datum)
+            '(begin)
+
+
+; The end.

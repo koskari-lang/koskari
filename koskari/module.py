@@ -39,14 +39,18 @@ from os.path import split
 
 from .compile import Compiler
 from .lib import Module, ModuleNamespace, demand_call
+from .pragma import ModulePragma
 from .reader import (READ_EOF, IndentAwareStream, LayoutReader, source_open,
                      source_str)
 
 
 __all__ = (
     'MODULE_LOAD_FACET_NAMES',
+
+    'build_module_load_facets',
     'attach_module_load_facets',
     'detach_module_load_facets',
+
     'new_module',
     'init_module',
     'load_module_async',
@@ -58,6 +62,7 @@ __all__ = (
 
 
 MODULE_LOAD_FACET_NAMES = (
+    '__pragma__',
     '__compiler__',
     '__reader__',
 )
@@ -156,13 +161,7 @@ async def load_module_async(module, *, interactive=False):
 
     with source_open(filename) as source_stream:
 
-        compiler = Compiler(
-            getattr(module, '__name__', '<module>'),
-            module,
-            filename=filename)
-
-        reader = LayoutReader(module)
-        attach_module_load_facets(module, compiler, reader)
+        compiler, reader = build_module_load_facets(module, filename)
         try:
             stream = IndentAwareStream(
                 source_stream.stream,
@@ -215,13 +214,7 @@ def load_module_demand(module, *, interactive=False):
 
     with source_open(filename) as source_stream:
 
-        compiler = Compiler(
-            getattr(module, '__name__', '<module>'),
-            module,
-            filename=filename)
-
-        reader = LayoutReader(module)
-        attach_module_load_facets(module, compiler, reader)
+        compiler, reader = build_module_load_facets(module, filename)
         try:
             stream = IndentAwareStream(
                 source_stream.stream,
@@ -272,13 +265,7 @@ async def load_module_source_async(module, source, *, interactive=False):
 
     source_stream = source_str(source, filename, auto_skip_exec=False)
 
-    compiler = Compiler(
-        getattr(module, '__name__', '<module>'),
-        module,
-        filename=filename)
-
-    reader = LayoutReader(module)
-    attach_module_load_facets(module, compiler, reader)
+    compiler, reader = build_module_load_facets(module, filename)
     try:
         stream = IndentAwareStream(
             source_stream.stream,
@@ -354,16 +341,45 @@ def load_module_kio_demand(module):
 # ---------------------------------------------------------------------------
 
 
-def attach_module_load_facets(module, compiler, reader):
+def build_module_load_facets(module, filename=None):
     """
-    Bind ``__compiler__`` and ``__reader__`` on ``module`` for load time.
+    Produce the load-time pragma, compiler, and reader for ``module``.
 
+    A default :class:`ModulePragma` is built and bound as ``__pragma__``
+    first; the compiler and reader are then chained off it via ``from_pragma``
+    (each subscribing for later pragma changes) and bound as load facets.
+    This is the single chokepoint where the pragma source is resolved.
+
+    :param module: koskari Module (or object whose ``vars()`` is the ns)
+    :param filename: optional source filename
+    :return: the (compiler, reader) pair
+    """
+
+    name = getattr(module, '__name__', '<module>')
+
+    pragma = ModulePragma()
+
+    compiler = Compiler.from_pragma(name, module, filename=filename,
+                                    pragma=pragma)
+    reader = LayoutReader.from_pragma(module, pragma=pragma)
+
+    attach_module_load_facets(module, pragma, compiler, reader)
+    return compiler, reader
+
+
+def attach_module_load_facets(module, pragma, compiler, reader):
+    """
+    Bind ``__pragma__``, ``__compiler__``, and ``__reader__`` on
+    ``module`` for load time.
+
+    :param pragma: ModulePragma instance for this load
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     :param compiler: Compiler instance for this load
     :param reader: LayoutReader instance for this load
     """
 
     ns = vars(module)
+    ns['__pragma__'] = pragma
     ns['__compiler__'] = compiler
     ns['__reader__'] = reader
 
@@ -380,7 +396,10 @@ def detach_module_load_facets(module):
 
     ns = vars(module)
     for name in MODULE_LOAD_FACET_NAMES:
-        del ns[name]
+        try:
+            del ns[name]
+        except KeyError:
+            pass
 
 
 # The end.
