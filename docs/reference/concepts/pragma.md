@@ -12,13 +12,15 @@ Use the `pragma` form. Each setting is a bracketed list: a slash-namespaced key
 followed by its value(s). A bare `[key]` uses the setting's default value.
 
 ```koskari
-(pragma [compiler/call-brackets error]
-        [compiler/resolution scheme]
+(pragma [compiler/call-brackets 'error]
+        [compiler/resolution 'scheme]
         [reader/brackets False])
 ```
 
-- Values are plain data — symbols like `error` or `scheme`, or `True` / `False`.
-  Nothing in a setting is evaluated.
+- Values are ordinary expressions, so a **literal symbol must be quoted** —
+  `'error`, `'scheme`, `'warn`. Booleans (`True` / `False`), numbers, and
+  strings are self-carrying and need no quote, and a computed value (a variable
+  or call) works too.
 - The change is **forward-only**: it applies to everything read and compiled
   after the form, not retroactively, and not to modules you import.
 - You may set a pragma more than once; a later setting replaces the earlier one.

@@ -82,10 +82,10 @@ Enforce the convention as a warning, or a hard error:
 
 ```koskari
 ; warn when a [ ] fragment lands in call position
-(pragma [compiler/call-brackets warn])
+(pragma [compiler/call-brackets 'warn])
 
 ; or make it a compile error
-(pragma [compiler/call-brackets error])
+(pragma [compiler/call-brackets 'error])
 ```
 
 With `error` set, the `ler` typo from above is caught at compile time instead of

@@ -228,7 +228,7 @@ Two independent settings, both **module-scoped** and set via the pragma system
   `SyntaxWarning`), or `error` (raise at compile time).
 
 ```
-(pragma [compiler/call-brackets error])   ; make stray brackets-in-call a hard error
+(pragma [compiler/call-brackets 'error])   ; make stray brackets-in-call a hard error
 ```
 
 ### Thunk syntax

@@ -436,7 +436,9 @@ arguments work. **`(slice)`** → **`(call build-slice)`**; **`(slice ARGS …)`
 **`#('NS/KEY (values VALUE …))`** tuple and expands to
 **`(setq __pragma__ (.rebuild __pragma__ TUPLE …))`** — rebuilding the immutable
 **`ModulePragma`** and rebinding **`__pragma__`**, which announces the change to
-the subscribed reader and compiler (forward-only, module-scoped).
+the subscribed reader and compiler (forward-only, module-scoped). Because each
+`VALUE` lands in a `values` call it is evaluated, so a literal symbol must be
+quoted (**`'error`**) while booleans/numbers/strings are bare.
 **`(pragma NS/KEY)`** expands to **`(item __pragma__ "NS/KEY")`**; **`(pragma)`**
 expands to **`__pragma__`**. See [PRAGMA.md](PRAGMA.md) for the available
 settings.

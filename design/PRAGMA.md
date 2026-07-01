@@ -46,9 +46,9 @@ followed by positional and/or keyword values; a bare `[key]` applies the
 setting's parameter defaults:
 
 ```
-(pragma [compiler/call-brackets error]
+(pragma [compiler/call-brackets 'error]
         [reader/brackets False]
-        [compiler/resolution scheme])
+        [compiler/resolution 'scheme])
 ```
 
 The form is forward-only and module-scoped: it rebuilds the module's
@@ -197,7 +197,7 @@ own `compiler/call-brackets` check:
 
 ```
 (pragma [reader/brackets]
-        [compiler/call-brackets warn]
+        [compiler/call-brackets 'warn]
         [compiler/tco-enable False])
 ```
 
@@ -205,12 +205,15 @@ own `compiler/call-brackets` check:
   a single string is what the registry, error messages, `__pragma__` lookups,
   and completion all use. (Do **not** group by namespace into nested lists; the
   slash *is* the grouping, at the token level.)
-* Values are bare literal **data**, read structurally and never evaluated.
+* Values are ordinary **expressions** — the macro lowers each into a `values`
+  call, so they are evaluated when the setting is applied. A literal symbol must
+  therefore be quoted (`'error`, `'scheme`); booleans, numbers, and strings are
+  self-carrying, and a computed value (a variable, a call) works too.
 * A setting's parameters may be positional, or keyworded for clarity:
 
 ```
 [compiler/optimize speed: 3 safety: 0]              ; keyword params
-[compiler/call-brackets error exempt: [let cond]]   ; positional value + keyword options
+[compiler/call-brackets 'error exempt: [let cond]]   ; positional value + keyword options
 ```
 
 Three setting shapes: `[key]` (bare → parameter defaults), `[key value …]`
@@ -249,7 +252,7 @@ baseline `ignore` but parameter default `warn`:
 * not mentioned → stays at baseline (`ignore` — the check is off, pure
   convention);
 * `[compiler/call-brackets]` → `level` omitted → parameter default → `warn`;
-* `[compiler/call-brackets error]` → `level` explicit → `error`.
+* `[compiler/call-brackets 'error]` → `level` explicit → `error`.
 
 That independence is the useful part: leaving the check unmentioned keeps it
 silent, but the moment you opt in by naming it you get a sensible active default
