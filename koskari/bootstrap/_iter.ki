@@ -26,12 +26,23 @@ define-syntax compile/each:
     case (each [binding seq] when: condition body):
       ((lambda each [] (for-each [binding seq]
          (when condition (yield body)))))
+
+    case (each [binding seq] when: condition body ...):
+      (each [binding seq] when: condition (begin body ...))
+
     case (each [binding seq] unless: condition body):
       ((lambda each [] (for-each [binding seq]
          (unless condition (yield body)))))
+
+    case (each [binding seq] unless: condition body ...):
+      (each [binding seq] unless: condition (begin body ...))
+
     case (each [binding seq] body):
       ((lambda each [] (for-each [binding seq]
          (yield body))))
+
+    case (each [binding seq] body ...):
+      (each [binding seq] (begin body ...))
 
 
 define-syntax compile/list-each:
@@ -45,6 +56,9 @@ define-syntax compile/list-each:
       for-each [binding seq]:
         #list-append col body
       takeq col
+
+    case (list-each [binding seq] body ...):
+      (list-each [binding seq] (begin body ...))
 
 
 define-syntax compile/dict-each:
@@ -62,6 +76,9 @@ define-syntax compile/dict-each:
 
     case (dict-each [binding seq] body):
       (dict (each [binding seq] body))
+
+    case (dict-each [binding seq] body ...):
+      (dict (each [binding seq] (begin body ...)))
 
 
 define-syntax compile/has?:

@@ -36,6 +36,7 @@ __all__ = (
     "ModulePragma",
     "Watcher",
 
+    "lookup",
     "register",
     "registry",
     "pragma_setting"
@@ -58,6 +59,14 @@ def register(
     """
 
     _REGISTRY[str(name)] = (settingfn, default)
+
+
+def lookup(name: str) -> Tuple[Callable[..., Any], Any]:
+    """
+    Lookup a setting by name
+    """
+
+    return _REGISTRY.get(str(name))
 
 
 def pragma_setting(name: str, default: Any = None) -> Callable[..., Any]:
@@ -142,6 +151,35 @@ class ModulePragma:
         """
 
         return iter(self._settings.items())
+
+
+    def __kos_help__(self, formatter) -> None:
+        """
+        Describe this pragma's current settings alongside every registered
+        setting and its default.
+        """
+
+        reg = registry()
+
+        formatter.paragraph(
+            "Module-scoped reader and compiler feature settings.")
+
+        current = formatter.section("Settings")
+        for name in sorted(self._settings):
+            value = self._settings[name]
+            entry = reg.get(name)
+            if entry is None:
+                current.item(f"{name} = {value!r}  (unregistered)")
+            elif value == entry[1]:
+                current.item(f"{name} = {value!r}")
+            else:
+                current.item(f"{name} = {value!r}  (default {entry[1]!r})")
+
+        unset = [name for name in sorted(reg) if name not in self._settings]
+        if unset:
+            missing = formatter.section("Registered (not set)")
+            for name in unset:
+                missing.item(f"{name}  (default {reg[name][1]!r})")
 
 
     def rebuild(

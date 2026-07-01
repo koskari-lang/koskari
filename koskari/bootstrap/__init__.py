@@ -62,12 +62,22 @@ _BUILTINS_SOURCES = (
     # baseline define-syntax meta-macros
     '_define_syntax.ki',
 
-    # comprehensions
+    # conditional expressions
+    '_conditionals.ki',
+
+    # loops, comprehensions
     '_iter.ki',
 
-    # additional features
-    '_conditionals.ki',
+    # assignment, refs, bindings
+    # requires: _iter.ki
     '_variables.ki',
+
+    # help
+    '_help.ki',
+
+    # pairs
+    # requires: _variables.ki
+    '_pairs.ki',
 
     # function composition, decorators
     # requires: _iter.ki
@@ -77,6 +87,7 @@ _BUILTINS_SOURCES = (
     '_class.ki',
 
     # pragmas
+    # requires: _iter.ki, _help.ki
     '_pragma.ki',
 
     # final stub
