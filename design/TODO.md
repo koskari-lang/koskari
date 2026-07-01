@@ -17,11 +17,15 @@ design docs for detail.
 
 ## Continuations / transfer plans
 
-- **Delimited invoke two-path model** — resume-in-place when the prompt is in
-  live ancestry; PUSH graft when not. Addresses in-shift double wind/unwind on
-  remote vs in-tree invoke. Design:
+- ~~**Delimited invoke two-path model**~~ — **done.** Resume-in-place (Path A)
+  when the capture-time prompt node is live in ancestry; bounded PUSH graft
+  (Path B) when not. Fixes the in-shift double wind/unwind and bounds capture
+  at the prompt's owning frame. Design:
   [interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md).
-  Regression spec: `test_reset_shift.py` (capture + invoke cases).
+  Regression spec: `test_reset_shift.py` (wind-count + invoke cases).
+  Remaining known defects tracked separately: Path B slice exceptions escape
+  the evaluator; dyn-wind after thunks skipped on exception unwind
+  (engine-wide baseline); WITH double-exit under remote invoke.
 - **Async nested await during transfer** — when a wind/unwind thunk under an
   active or suspended transfer returns `KOS_XFER_SUSPENDED_AWAIT`, `plan_stack`
   must remain coherent across `KOS_RES_AWAIT` freeze/thaw, including when

@@ -1640,10 +1640,11 @@ static int kos_delimited_invoke_inplace(
 
 
 /**
-   Build and install a transfer plan to invoke k with value or throw: PUSH for
-   delimited (caller chain preserved), full plan for undelimited. Sets plan
-   resume fields and optional continuation_ref for GC. Callers: callable invoke,
-   apply paths.
+   Invoke k with value or throw. Delimited with the capture-time reset live
+   in ancestry: in-place resume (no plan). Otherwise builds and installs a
+   transfer plan: PUSH for delimited (caller chain preserved), full plan for
+   undelimited. Sets plan resume fields and optional continuation_ref for
+   GC. Callers: callable invoke, apply paths.
 */
 int kos_invoke_continuation(
     KosEvalState *es,

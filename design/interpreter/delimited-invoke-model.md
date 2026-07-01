@@ -1,13 +1,30 @@
-# Delimited continuation invoke — target model
+# Delimited continuation invoke — two-path model
 
 ## Status
 
-**Design target — not implemented.** Documents how delimited `k(value)` invoke
-should behave and how it differs from the current PUSH-only path in
-`kos_invoke_continuation`. Intended to guide a future refactor of
-`kos_shift_capture`, delimited invoke, and `POP_PROMPT` return routing.
+**Implemented.** `kos_invoke_continuation` branches on whether the
+capture-time live prompt is still in dyn_top ancestry: Path A resumes in
+place on the live chain (no graft, no wind replay); Path B keeps the PUSH
+graft, fed a prompt-bounded template. Capture (`kos_shift_capture`) stops
+the template clone at the parent of the prompt's owning FRAME.
 
-**Last updated:** 2026-06-10
+Deviations from the original target, decided during implementation:
+
+- **Path A selector** is a pointer + node_id ancestry match on the recorded
+  live PROMPT and SHIFT nodes, not `prompt_id` lookup — `prompt_id` is a
+  compile-time constant per reset site, so recursion aliases it.
+- **Re-invoke** of a continuation whose live slice was consumed by a Path A
+  entry falls back to the PUSH graft rather than erroring: existing
+  reproducers (`test_reset_shift_nested.py` multicall series) pin multi-shot
+  in-shift invoke as supported. Each invoke gets exactly one wind pair.
+- **Slice exceptions** restitch at the INPLACE delim and continue the raise
+  from the invoke site (`kos_dyn_inplace_restitch`, hooked into
+  `kos_dyn_try_local_raise_body`).
+
+Regression spec: `tests/compile/specials/test_reset_shift.py` (wind-count,
+multi-shot, exception, and param-heritage cases).
+
+**Last updated:** 2026-07-01
 
 ## Audience
 
@@ -26,9 +43,10 @@ and transfer-plan policy.
 
 ---
 
-## Current implementation (summary)
+## Previous implementation (PUSH-only, for reference)
 
-Delimited invoke today (`kos_invoke_continuation`, delimited branch):
+Delimited invoke before the two-path rework (`kos_invoke_continuation`,
+delimited branch):
 
 1. **Token check** — `token_ref` must match current evaluator (in-context gate).
 2. **`kos_dyn_push_delim`** — cheap return bookmark: invoke-site `RETURN_FRAME`,
@@ -261,30 +279,46 @@ tox -qe py -- tests/compile/specials/test_reset_shift.py -v
 
 ---
 
-## Open questions
+## Open questions (resolved)
 
-1. **Path A detection** — is prompt-in-ancestry sufficient, or do we also need
-   to verify invoke site lies inside the captured segment (node_id / frame
-   walk)?
-2. **PROMPT return slot vs DELIM** — relocate bookmark to prompt node or keep
-   DELIM chain marker?
-3. **`resume_pc`** — align `kos_shift_ic_for` (SHIFT `pop_pc+1`) with
-   `POP_SHIFT` PROMPT-ancestor walk when heritage sits between SHIFT and PROMPT.
-4. **Path B template bound** — exact `stop` node for `kos_clone_chain_segment`
-   at capture time.
+1. **Path A detection** — prompt-in-ancestry by id is NOT sufficient
+   (`prompt_id` is static per reset site; recursion aliases it). Resolved:
+   record the live PROMPT node at capture and the live SHIFT node at
+   `PUSH_SHIFT`, match both by pointer + node_id from dyn_top, and require
+   no barrier node (foreign DELIM, GEN, NEXT, PROMPT, CC_RAISE) between
+   dyn_top and the SHIFT node.
+2. **PROMPT return slot vs DELIM** — kept DELIM, new
+   `KOS_DYN_DELIM_MODE_INPLACE`, inserted directly above the live prompt so
+   the slice's natural unwind leaves it at dyn_top for `POP_PROMPT`. It
+   stashes the detached invoke span in `RETURN_CHAIN` and the resume
+   frame's displaced stack/pc (+ invoke-site acting pc for extent lookups
+   after restitch).
+3. **`resume_pc`** — `kos_shift_ic_for` (SHIFT `pop_pc+1`) is correct for
+   Path A: the resumed slice skips its own `POP_SHIFT`; the stashed live
+   SHIFT node is re-linked at return for the shift body's eventual
+   `POP_SHIFT`, whose unwind then finds no consumed heritage to re-fire.
+4. **Path B template bound** — `stop` = parent of the nearest FRAME
+   at-or-below the PROMPT. The owning frame must be included (the common
+   inline case has no FRAME between SHIFT and PROMPT, and capture requires
+   a resume frame); its cloned stack carries harmless outside-the-reset
+   operands that die with the graft. PARAM nodes between the PROMPT and the
+   owning frame stay captured; params in caller frames below the bound
+   resolve from the invoke-time environment (decided; pinned by
+   `test_param_in_caller_frame_uses_invoke_scope`).
 
 ---
 
 ## Summary
 
-| Layer | Today | Target |
-|-------|-------|--------|
+| Layer | Before | Now |
+|-------|--------|-----|
 | In-context | Token | Token (unchanged) |
-| Return | DELIM bookmark | DELIM or PROMPT slot (still not `KosContinuation`) |
-| In-shift invoke | PUSH graft → double wind | Inject + resume on live chain |
-| Remote invoke | PUSH graft | PUSH graft (bounded template, single wind) |
-| Capture | `dyn_top → root` | Prompt-bounded + heritage |
-| Completion | POP_PROMPT → DELIM unwind | Natural unwind → bookmark |
+| Return | DELIM bookmark | DELIM (POP_PROMPT mode for graft, INPLACE mode for in-place; still not `KosContinuation`) |
+| In-shift invoke | PUSH graft → double wind | Inject + resume on live chain (first invoke); PUSH graft (re-invokes) |
+| Remote invoke | PUSH graft (full-root template) | PUSH graft (bounded template, single wind) |
+| Capture | `dyn_top → root` | Bounded at the prompt's owning frame |
+| Completion | POP_PROMPT → DELIM unwind | Natural unwind → INPLACE restitch (Path A) or graft unwind → bookmark (Path B) |
+| Slice exception | Escapes evaluator | Path A: restitch + raise at invoke site. Path B: still escapes (pinned known defect) |
 
-The organizing axis is **prompt in current lineage**: same reset → no graft; no
-reset in ancestry → PUSH.
+The organizing axis is **capture-time prompt node live in current lineage**:
+same reset activation → no graft; otherwise → PUSH.
