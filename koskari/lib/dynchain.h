@@ -224,9 +224,11 @@ struct KosDynNode {
       uint32_t pc;
       KosDynNode *frame;
       KosDynNode *node;
-      /* INPLACE only: displaced resume-frame state (stack owned) */
+      /* INPLACE only: displaced resume-frame state (stack owned) and
+         the invoke-site acting pc for extent lookups after restitch */
       KosStackBlock *saved_stack;
       uint32_t saved_pc;
+      uint32_t saved_acting_pc;
     } delim;
     struct {
       uint32_t resume_pc;
@@ -1136,6 +1138,19 @@ int kos_dyn_finish_inplace_pop_return(
    KosEvalState *es,
    KosDynDelim *delim,
    PyObject *value);
+
+
+/**
+   Restitch an in-place (Path A) delimited invoke at its INPLACE delim
+   without delivering a value: restore the resume frame's displaced
+   stack/pc, re-link the stashed invoke span above the prompt, free the
+   delim, and restore invoke-site live registers. Used by the POP_PROMPT
+   value return and by exception propagation out of the slice. Expects
+   the delim at dyn_top.
+
+   :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
+*/
+int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim);
 
 
 /**
@@ -2222,6 +2237,8 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynDelim_RETURN_NODE(d)  (((KosDynNode *)(d))->u.delim.node)
 #define KosDynDelim_SAVED_STACK(d) (((KosDynNode *)(d))->u.delim.saved_stack)
 #define KosDynDelim_SAVED_PC(d)    (((KosDynNode *)(d))->u.delim.saved_pc)
+#define KosDynDelim_SAVED_ACTING_PC(d) \
+  (((KosDynNode *)(d))->u.delim.saved_acting_pc)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 

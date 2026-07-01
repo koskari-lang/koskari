@@ -2224,12 +2224,14 @@ int kos_dyn_finish_delimited_pop_return(
 
 
 /**
-   Complete an in-place (Path A) delimited POP_PROMPT return. See dynchain.h.
+   Restitch an in-place (Path A) delimited invoke at its INPLACE delim:
+   restore the resume frame's displaced stack/pc, re-link the stashed
+   invoke span above the prompt (which stays on the chain for the shift
+   body's POP_SHIFT), free the delim, and restore the invoke-site live
+   registers. Shared by value return (POP_PROMPT) and exception
+   propagation out of the slice. Expects the delim at dyn_top.
 */
-int kos_dyn_finish_inplace_pop_return(
-    KosEvalState *es,
-    KosDynDelim *delim,
-    PyObject *value) {
+int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
 
   KosDynNode *prompt;
   KosDynNode *span;
@@ -2237,22 +2239,15 @@ int kos_dyn_finish_inplace_pop_return(
   KosDynFrame *resume_frame;
   uint32_t ret_pc;
 
-  if (! value) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_finish_inplace_pop_return: value is NULL");
-    return -1;
-  }
   if (! delim || ! KosDynNode_IS_DELIM((KosDynNode *) delim)
       || KosDynDelim_MODE(delim) != KOS_DYN_DELIM_MODE_INPLACE) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_finish_inplace_pop_return: not an INPLACE delim");
-    Py_DECREF(value);
+                    "kos_dyn_inplace_restitch: not an INPLACE delim");
     return -1;
   }
   if (KosEvalState_DYN_TOP(es) != (KosDynNode *) delim) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_finish_inplace_pop_return: delim not at dyn_top");
-    Py_DECREF(value);
+                    "kos_dyn_inplace_restitch: delim not at dyn_top");
     return -1;
   }
 
@@ -2263,9 +2258,8 @@ int kos_dyn_finish_inplace_pop_return(
   if (! prompt || ! KosDynNode_IS_PROMPT(prompt) || ! span || ! ret_frame
       || ret_pc == (uint32_t) -1) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_finish_inplace_pop_return: "
+                    "kos_dyn_inplace_restitch: "
                     "inconsistent INPLACE delim state");
-    Py_DECREF(value);
     return -1;
   }
 
@@ -2277,9 +2271,7 @@ int kos_dyn_finish_inplace_pop_return(
       node = KosDynNode_PARENT(node);
     if (! node) {
       PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_finish_inplace_pop_return: "
-                      "no frame below prompt");
-      Py_DECREF(value);
+                      "kos_dyn_inplace_restitch: no frame below prompt");
       return -1;
     }
     resume_frame = (KosDynFrame *) node;
@@ -2306,6 +2298,7 @@ int kos_dyn_finish_inplace_pop_return(
   }
 
   KosDynFrame_PC(ret_frame) = ret_pc;
+  KosDynFrame_ACTING_PC(ret_frame) = KosDynDelim_SAVED_ACTING_PC(delim);
   kos_dyn_commit_dyn_top(es, span);
 
   KosDynNode_PARENT((KosDynNode *) delim) = NULL;
@@ -2316,6 +2309,29 @@ int kos_dyn_finish_inplace_pop_return(
    * invoke-site return pc explicitly. */
   if (KosEvalState_FRAME(es) == ret_frame)
     kos_dyn_load_live_regs_from_frame(es, ret_frame);
+
+  return 0;
+}
+
+
+/**
+   Complete an in-place (Path A) delimited POP_PROMPT return. See dynchain.h.
+*/
+int kos_dyn_finish_inplace_pop_return(
+    KosEvalState *es,
+    KosDynDelim *delim,
+    PyObject *value) {
+
+  if (! value) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_inplace_pop_return: value is NULL");
+    return -1;
+  }
+
+  if (kos_dyn_inplace_restitch(es, delim) < 0) {
+    Py_DECREF(value);
+    return -1;
+  }
 
   /* StackPUSH consumes the value reference, on failure as well. */
   return KosEvalState_StackPUSH(es, value);

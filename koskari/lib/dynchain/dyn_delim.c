@@ -25,6 +25,7 @@ KosDynDelim *kos_dyndelim_new(
   KosDynDelim_RETURN_NODE(delim) = node;
   KosDynDelim_SAVED_STACK(delim) = NULL;
   KosDynDelim_SAVED_PC(delim) = 0;
+  KosDynDelim_SAVED_ACTING_PC(delim) = 0;
   return delim;
 }
 
@@ -50,6 +51,7 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
   KosDynDelim_RETURN_NODE(clone) = KosDynDelim_RETURN_NODE(delim);
   KosDynDelim_SAVED_STACK(clone) = NULL;
   KosDynDelim_SAVED_PC(clone) = KosDynDelim_SAVED_PC(delim);
+  KosDynDelim_SAVED_ACTING_PC(clone) = KosDynDelim_SAVED_ACTING_PC(delim);
   return clone;
 }
 

@@ -1616,9 +1616,12 @@ static int kos_delimited_invoke_inplace(
   }
 
   /* Displace the resume frame's live state with the captured resume
-   * state; the delim owns the displaced stack until restitch. */
+   * state; the delim owns the displaced stack until restitch. The
+   * invoke-site acting pc is saved for extent lookups after restitch
+   * (slice execution overwrites the frame's acting pc). */
   KosDynDelim_SAVED_STACK(delim) = KosDynFrame_STACK(resume_frame);
   KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
+  KosDynDelim_SAVED_ACTING_PC(delim) = KosEvalState_ACTING_PC(es);
   KosDynFrame_STACK(resume_frame) = resume_stack;
   KosDynFrame_PC(resume_frame) = KosContinuation_RESUME_PC(k);
 

@@ -568,6 +568,23 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
          (void *) top,
          kos_dynnode_kind_name(KosDynNode_KIND(top)));
 
+    /* In-place delimited return bookmark: the slice raised. Restitch the
+       invoke span and continue the raise from the invoke site. */
+    if (KosDynNode_IS_DELIM(top)
+        && KosDynDelim_MODE((KosDynDelim *) top)
+            == KOS_DYN_DELIM_MODE_INPLACE) {
+      PyObject *typ = NULL, *val = NULL, *tb = NULL;
+      PyErr_Fetch(&typ, &val, &tb);
+      if (kos_dyn_inplace_restitch(es, (KosDynDelim *) top) < 0) {
+        Py_XDECREF(typ);
+        Py_XDECREF(val);
+        Py_XDECREF(tb);
+        return EVAL_FATAL();
+      }
+      PyErr_Restore(typ, val, tb);
+      continue;
+    }
+
     /* Handle phase: offer RAISE to node before unwind.  If consumed,
        deliver to handler and return.  Otherwise pop and continue. */
     {

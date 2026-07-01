@@ -361,6 +361,76 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(events, ["before", "after"])
 
 
+    async def test_dyn_wind_thunk_count_multishot_in_shift(self):
+        """
+        Multi-shot in-shift invoke: the first call runs in place on the live
+        slice (Path A); each re-invoke instantiates the captured template
+        via the PUSH graft (Path B fallback). Every invoke gets exactly one
+        before/after pair, and add(3, 4) = 7 flows out of the reset.
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        def add(a, b):
+            return a + b
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (rec "before")
+            (compile/shift k
+              (add (compile/call k 3) (compile/call k 4)))
+            (rec "after")))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec, add=add)
+        result = await expr()
+        self.assertEqual(result, 7)
+        self.assertEqual(events, ["before", "after", "before", "after"])
+
+
+    async def test_inplace_slice_exception_caught_at_invoke_site(self):
+        """
+        An exception raised inside an in-place (Path A) slice restitches the
+        invoke span and propagates to the invoke call site, where the
+        enclosing compile/try in the shift body catches it.
+
+        The after thunk does not fire during the raise unwind; that matches
+        the engine-wide baseline (dyn-wind after thunks are skipped on
+        exception unwind even without continuations) and is pinned here
+        until that is fixed globally.
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        def boom(v):
+            raise ValueError("slice-boom")
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (rec "before")
+            (boom
+              (compile/shift k
+                (compile/try
+                  (compile/call k 5)
+                  ([ValueError] "caught"))))
+            (rec "after")))
+        """
+        expr, mod = self.compile_expr(
+            src_str, rec=rec, boom=boom, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+        self.assertEqual(events, ["before"])
+
+
     async def test_remote_invoke_slice_exception_propagates(self):
         """
         Characterization (KNOWN DEFECT): an exception raised by the
@@ -386,7 +456,8 @@ class TestResetShiftSpecials(SpecialsTestCase):
               (compile/call captured 5)
               ([ValueError] "caught"))))
         """
-        expr, mod = self.compile_expr(src_str, boom=boom)
+        expr, mod = self.compile_expr(
+            src_str, boom=boom, ValueError=ValueError)
         with self.assertRaises(ValueError):
             await expr()
 
