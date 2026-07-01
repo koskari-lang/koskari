@@ -438,11 +438,33 @@ class TestResetShiftSpecials(SpecialsTestCase):
         An exception raised inside an in-place (Path A) slice restitches the
         invoke span and propagates to the invoke call site, where the
         enclosing compile/try in the shift body catches it.
+        """
 
-        The after thunk does not fire during the raise unwind; that matches
-        the engine-wide baseline (dyn-wind after thunks are skipped on
-        exception unwind even without continuations) and is pinned here
-        until that is fixed globally.
+        def boom(v):
+            raise ValueError("slice-boom")
+
+        src_str = """
+        (compile/reset
+          (boom
+            (compile/shift k
+              (compile/try
+                (compile/call k 5)
+                ([ValueError] "caught")))))
+        """
+        expr, mod = self.compile_expr(
+            src_str, boom=boom, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+
+
+    async def test_inplace_slice_raise_runs_after_thunk(self):
+        """
+        KNOWN DEFECT (intentionally red): when an in-place (Path A) slice
+        raises, the dyn-wind after thunk wrapping the slice must run exactly
+        once during the raise unwind before the exception reaches the
+        invoke-site handler. Today it is skipped - the engine-wide dyn-wind
+        after-thunk-on-raise defect (also red in test_dyn_wind.py's
+        continuation-free reproducer).
         """
 
         events = []
@@ -469,20 +491,17 @@ class TestResetShiftSpecials(SpecialsTestCase):
             src_str, rec=rec, boom=boom, ValueError=ValueError)
         result = await expr()
         self.assertEqual(result, "caught")
-        self.assertEqual(events, ["before"])
+        self.assertEqual(events, ["before", "after"])
 
 
     async def test_remote_invoke_slice_exception_propagates(self):
         """
-        Characterization (KNOWN DEFECT): an exception raised by the
-        continuation slice during a remote invoke escapes the evaluator as a
-        raw Python exception instead of routing to the invoke call site.
-
-        The enclosing compile/try around (call captured 5) should catch the
-        ValueError and this test should return "caught"; today the RAISE walk
-        from the grafted segment never reaches the live handlers below the
-        DELIM bookmark. Pinned as-is; target behavior is part of the
-        delimited-invoke-model.md rework.
+        KNOWN DEFECT (intentionally red): an exception raised by the
+        continuation slice during a remote invoke must route to the invoke
+        call site, where the enclosing compile/try catches it and this test
+        returns "caught". Today it escapes the evaluator as a raw Python
+        exception - the RAISE walk from the grafted segment never reaches
+        the live handlers below the DELIM bookmark.
         """
 
         def boom(v):
@@ -499,19 +518,17 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(
             src_str, boom=boom, ValueError=ValueError)
-        with self.assertRaises(ValueError):
-            await expr()
+        result = await expr()
+        self.assertEqual(result, "caught")
 
 
     async def test_remote_invoke_with_enter_exit_count(self):
         """
-        Characterization (KNOWN DEFECT): compile/with wrapping shift under a
-        remote invoke calls __exit__ twice on the same manager — once at
-        POP_SHIFT truncation during capture, once more when the grafted
-        clone's WITH unwinds on the invoke return path. Correct lifecycle
-        would be [enter, exit] (or a defined re-enter policy). Pinned as-is
-        so the Path B rework cannot change it silently; fix tracked
-        separately.
+        KNOWN DEFECT (intentionally red): compile/with wrapping shift under
+        a remote invoke must see a single [enter, exit] lifecycle on the
+        manager. Today __exit__ runs twice - once at POP_SHIFT truncation
+        during capture, once more when the grafted clone's WITH unwinds on
+        the invoke return path.
         """
 
         events = []
@@ -538,7 +555,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
         result = await expr()
         self.assertEqual(result, 5)
-        self.assertEqual(events, ["enter", "exit", "exit"])
+        self.assertEqual(events, ["enter", "exit"])
 
 
 # The end.
