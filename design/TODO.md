@@ -12,13 +12,13 @@ design docs for detail.
   consumers route through one capacity-driven dispatcher instead of scattered
   calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
   Ref: [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
-- **Exception patch-up** — single arc covering the agreed exception model:
-  cap fast check before `kos_dyn_handle` dispatch; context-owned LIFO
-  exception stash stack (propagation state) with node-owned handler state;
-  failed-pop taxonomy (internal FATAL vs user unwind failure chained via
-  `__context__`, never abending the loop); per-frame traceback collection
-  on crossing; exc_info scoped to the bytecode contract (+ suspension-gap
-  reproducer); TRY node-vs-extent-table source-of-truth decision. Design:
+- ~~**Exception patch-up**~~ — **done.** Cap-gated raise dispatch
+  (`KOS_DYN_CAP_INTERCEPTS_RAISE`); context-owned LIFO exception stash
+  with node-owned handler state; failed-pop taxonomy (FATAL / barrier
+  refusal / user teardown failure chained via `__context__`); per-frame
+  traceback collection on crossing; per-context exc_info swap at
+  koskari_eval entry/exit; node-authoritative TRY (runtime extent
+  consults retired). Design + stage log:
   [interpreter/exception-patchup.md](interpreter/exception-patchup.md).
 
 ---
