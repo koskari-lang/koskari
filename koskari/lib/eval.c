@@ -1006,6 +1006,11 @@ void KosContext_Free(KosContext *ctx) {
   Py_XDECREF(KosContext_INJECT_VALUE(ctx));
   Py_XDECREF(KosContext_PENDING_RETURN_VALUE(ctx));
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
+  if (KosContext_EXC_STASH(ctx)) {
+    SAYF("[eval] context teardown dropping %zd parked exception(s)\n",
+         PyList_GET_SIZE(KosContext_EXC_STASH(ctx)));
+    Py_CLEAR(KosContext_EXC_STASH(ctx));
+  }
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
 
@@ -1041,6 +1046,7 @@ int KosContext_Traverse(
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
+  Py_VISIT(KosContext_EXC_STASH(ctx));
 
   dyn_top = KosContext_DYN_TOP(ctx);
   plan = KosContext_PLAN(ctx);

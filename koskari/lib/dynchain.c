@@ -263,6 +263,207 @@ static PyObject *snapshot_stack_to_list(KosStackBlock *stack) {
 }
 
 
+/* === Context exception stash (parked propagation state) === */
+
+
+/**
+   Chain a superseded exception triple as __context__ of the superseding
+   one (Python raise-during-handling semantics). Normalizes both triples;
+   consumes the old triple's references. The new triple is left owned by
+   the caller (normalized in place). An existing __context__ on the new
+   value is preserved.
+*/
+static void kos_exc_supersede_chain(
+    PyObject **new_typ, PyObject **new_val, PyObject **new_tb,
+    PyObject *old_typ, PyObject *old_val, PyObject *old_tb) {
+
+  PyErr_NormalizeException(new_typ, new_val, new_tb);
+  PyErr_NormalizeException(&old_typ, &old_val, &old_tb);
+
+  if (old_val && old_tb)
+    PyException_SetTraceback(old_val, old_tb);
+
+  if (*new_val && old_val) {
+    PyObject *existing = PyException_GetContext(*new_val);
+    if (existing) {
+      Py_DECREF(existing);
+      Py_DECREF(old_val);
+    } else {
+      /* steals the old_val reference */
+      PyException_SetContext(*new_val, old_val);
+    }
+  } else {
+    Py_XDECREF(old_val);
+  }
+
+  Py_XDECREF(old_typ);
+  Py_XDECREF(old_tb);
+}
+
+
+/**
+   Pop the top stash entry. Returns the owned entry tuple (exc, node_id)
+   with *out_id set, or NULL when the stash is empty.
+*/
+static PyObject *exc_stash_pop_entry(KosContext *ctx, uint32_t *out_id) {
+
+  PyObject *stash = KosContext_EXC_STASH(ctx);
+  Py_ssize_t n = stash ? PyList_GET_SIZE(stash) : 0;
+  PyObject *entry;
+
+  if (! n)
+    return NULL;
+
+  entry = PyList_GET_ITEM(stash, n - 1);
+  Py_INCREF(entry);
+  if (PyList_SetSlice(stash, n - 1, n, NULL) < 0) {
+    Py_DECREF(entry);
+    return NULL;
+  }
+  *out_id = (uint32_t) PyLong_AsUnsignedLong(PyTuple_GET_ITEM(entry, 1));
+  return entry;
+}
+
+
+/**
+   Park an exception triple on the context stash, tagged with the parking
+   node's id. Normalizes the triple and attaches the traceback to the
+   instance; consumes all three references. See dynchain.h.
+*/
+int kos_ctx_exc_stash_push(
+    KosEvalState *es,
+    uint32_t node_id,
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  PyObject *entry = NULL;
+  PyObject *id_obj = NULL;
+
+  PyErr_NormalizeException(&typ, &val, &tb);
+  if (! val) {
+    Py_XDECREF(typ);
+    Py_XDECREF(tb);
+    PyErr_SetString(PyExc_SystemError,
+                    "exc_stash_push: no exception value");
+    return -1;
+  }
+  if (tb)
+    PyException_SetTraceback(val, tb);
+  Py_XDECREF(typ);
+  Py_XDECREF(tb);
+
+  if (! KosContext_EXC_STASH(ctx)) {
+    KosContext_EXC_STASH(ctx) = PyList_New(0);
+    if (! KosContext_EXC_STASH(ctx)) {
+      Py_DECREF(val);
+      return -1;
+    }
+  }
+
+  id_obj = PyLong_FromUnsignedLong((unsigned long) node_id);
+  if (id_obj)
+    entry = PyTuple_Pack(2, val, id_obj);
+  Py_XDECREF(id_obj);
+  Py_DECREF(val);
+  if (! entry)
+    return -1;
+
+  {
+    int r = PyList_Append(KosContext_EXC_STASH(ctx), entry);
+    Py_DECREF(entry);
+    return r;
+  }
+}
+
+
+/**
+   True when the stash top entry was parked by node_id.
+*/
+int kos_ctx_exc_stash_top_is(KosEvalState *es, uint32_t node_id) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  PyObject *stash = KosContext_EXC_STASH(ctx);
+  Py_ssize_t n = stash ? PyList_GET_SIZE(stash) : 0;
+
+  if (! n)
+    return 0;
+  {
+    PyObject *entry = PyList_GET_ITEM(stash, n - 1);
+    return (uint32_t) PyLong_AsUnsignedLong(PyTuple_GET_ITEM(entry, 1))
+        == node_id;
+  }
+}
+
+
+/**
+   Pop the top parked exception and restore it into PyErr to continue
+   propagation. A node_id mismatch is loudly traced but still pops (the
+   alternative leaks the entry). See dynchain.h.
+*/
+int kos_ctx_exc_stash_reraise(KosEvalState *es, uint32_t node_id) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  uint32_t got_id = 0;
+  PyObject *entry = exc_stash_pop_entry(ctx, &got_id);
+
+  if (! entry) {
+    PyErr_SetString(PyExc_SystemError,
+                    "exc_stash_reraise: stash is empty");
+    return -1;
+  }
+  if (got_id != node_id)
+    SAYF("[eval] exc_stash_reraise: node_id mismatch (parked=%u, "
+         "resumer=%u)\n", (unsigned) got_id, (unsigned) node_id);
+
+  {
+    PyObject *exc = PyTuple_GET_ITEM(entry, 0);
+    PyObject *tb = PyException_GetTraceback(exc);
+    Py_INCREF(exc);
+    PyErr_Restore(Py_NewRef((PyObject *) Py_TYPE(exc)), exc, tb);
+  }
+  Py_DECREF(entry);
+  return 0;
+}
+
+
+/**
+   Pop the top parked exception and chain it as __context__ of the
+   superseding triple (caller-owned, normalized in place). Used when a
+   teardown's own exception replaces the one it was parked for. No-op on
+   an empty stash.
+*/
+int kos_ctx_exc_stash_chain_top(
+    KosEvalState *es,
+    uint32_t node_id,
+    PyObject **typ,
+    PyObject **val,
+    PyObject **tb) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  uint32_t got_id = 0;
+  PyObject *entry = exc_stash_pop_entry(ctx, &got_id);
+
+  if (! entry)
+    return 0;
+  if (got_id != node_id)
+    SAYF("[eval] exc_stash_chain_top: node_id mismatch (parked=%u, "
+         "superseder=%u)\n", (unsigned) got_id, (unsigned) node_id);
+
+  {
+    PyObject *exc = PyTuple_GET_ITEM(entry, 0);
+    Py_INCREF(exc);
+    kos_exc_supersede_chain(typ, val, tb,
+                            Py_NewRef((PyObject *) Py_TYPE(exc)),
+                            exc,
+                            PyException_GetTraceback(exc));
+  }
+  Py_DECREF(entry);
+  return 0;
+}
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_delim.c"

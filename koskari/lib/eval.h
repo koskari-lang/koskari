@@ -241,6 +241,11 @@ struct KosContext {
   PyObject *inject_type;   /* exception type when inject_mode==KOS_INJECT_THROW */
   PyObject *inject_value;  /* exception object when inject_mode==1 */
 
+  /* --- Exception stash: LIFO of exceptions parked while a teardown or
+     handler works (propagation state; survives chain surgery). PyList of
+     (exception instance, parking node_id) tuples, or NULL when empty. --- */
+  PyObject *exc_stash;
+
   /* Last eval boundary reason for revive */
   uint8_t suspension_event;  /* KosSuspensionEvent */
 
@@ -272,6 +277,7 @@ struct KosContext {
 #define KosContext_INJECT_MODE(c)            (((KosContext *)(c))->inject_mode)
 #define KosContext_INJECT_TYPE(c)            (((KosContext *)(c))->inject_type)
 #define KosContext_INJECT_VALUE(c)           (((KosContext *)(c))->inject_value)
+#define KosContext_EXC_STASH(c)              (((KosContext *)(c))->exc_stash)
 
 #define KOS_INJECT_NONE   0
 #define KOS_INJECT_THROW  1
