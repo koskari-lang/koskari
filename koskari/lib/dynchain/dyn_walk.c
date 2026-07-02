@@ -645,13 +645,27 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
     {
       int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
       uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
+      int top_is_wind = (top && KosDynNode_IS_WIND(top));
       int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
-          || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
+          || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER))
+          || top_is_wind;
       if (needs_preserve && PyErr_Occurred())
         PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
       KosOpResult pop_res = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_RAISE);
       if (saved_exc_typ != NULL) {
-        PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
+        if (top_is_wind
+            && (pop_res.kind == KOS_RES_REPROLOGUE
+                || pop_res.kind == KOS_RES_AWAIT)) {
+          /* After-thunk started: park the exception on the wind node so
+             the thunk runs with no pending error; on_control_returned
+             re-raises it once the thunk completes. */
+          KosDynWind *wind = (KosDynWind *) top;
+          KosDynWind_PENDING_EXC_TYPE(wind) = saved_exc_typ;
+          KosDynWind_PENDING_EXC_VALUE(wind) = saved_exc_val;
+          KosDynWind_PENDING_EXC_TB(wind) = saved_exc_tb;
+        } else {
+          PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
+        }
         saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
       }
       if (pop_res.kind == KOS_RES_AWAIT) {

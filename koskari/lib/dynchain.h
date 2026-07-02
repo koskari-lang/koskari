@@ -237,6 +237,12 @@ struct KosDynNode {
       PyObject *before_thunk;  /* callable (owned) or NULL */
       PyObject *after_thunk;   /* callable (owned) or NULL */
       PyObject *body_result;   /* TOS at POP_WIND (owned) or NULL; error/bypass path */
+      /* RAISE parked across an async after-thunk (owned): the raise walk
+         stashes PyErr here so the thunk runs with no pending error;
+         on_control_returned re-raises it to continue propagation */
+      PyObject *pending_exc_type;
+      PyObject *pending_exc_value;
+      PyObject *pending_exc_tb;
       uint8_t entered;
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
@@ -2247,6 +2253,12 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynWind_BODY_RESULT(w)  (((KosDynNode *)(w))->u.wind.body_result)
 #define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
 #define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
+#define KosDynWind_PENDING_EXC_TYPE(w) \
+  (((KosDynNode *)(w))->u.wind.pending_exc_type)
+#define KosDynWind_PENDING_EXC_VALUE(w) \
+  (((KosDynNode *)(w))->u.wind.pending_exc_value)
+#define KosDynWind_PENDING_EXC_TB(w) \
+  (((KosDynNode *)(w))->u.wind.pending_exc_tb)
 
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)
