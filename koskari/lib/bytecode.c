@@ -2894,7 +2894,7 @@ int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
     return -1;
   }
 
-  const KosExtentDesc *const e = kos_extent_desc(code, eid);
+  const KosExtentDesc *e = kos_extent_desc(code, eid);
   if (! e) {
     SAYF("[extent] kos_try_handler_for pc=%u eid=%u desc NULL\n",
          (unsigned) pc, (unsigned) eid);
@@ -2904,16 +2904,46 @@ int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
   SAYF("[extent] kos_try_handler_for pc=%u eid_try=%u eid=%u kind=%d\n",
        (unsigned) pc, (unsigned) eid_try, (unsigned) eid, (int) e->kind);
 
+  /* A pc at or past the handler label lies inside the handler (or finally)
+     block, which its own extent does not protect: an exception raised
+     there propagates outward. Walk to the nearest enclosing TRY/FINALLY
+     extent whose protected body still covers pc. */
+  while (e) {
+    if (e->push_pc >= KosCode_CODE_LEN(code)) {
+      out->extent_id = eid;
+      out->exit_pc = KOS_EXTENT_NONE;
+      out->except_pc = KOS_EXTENT_NONE;
+      out->finally_pc = KOS_EXTENT_NONE;
+      SAYF("[extent] kos_try_handler_for pc=%u push_pc out of range\n",
+           (unsigned) pc);
+      return 0;
+    }
+    if (pc < (uint32_t) KosCode_CODE(code)[e->push_pc].arg)
+      break;
+
+    uint32_t peid = e->parent_extent_id;
+    e = NULL;
+    while (peid != KOS_EXTENT_NONE) {
+      const KosExtentDesc *pe = kos_extent_desc(code, peid);
+      if (! pe)
+        return -1;
+      if (pe->kind == KOS_EXT_TRY || pe->kind == KOS_EXT_FINALLY) {
+        e = pe;
+        eid = peid;
+        break;
+      }
+      peid = pe->parent_extent_id;
+    }
+  }
+
+  if (! e) {
+    SAYF("[extent] kos_try_handler_for pc=%u in handler range, "
+         "no enclosing extent\n", (unsigned) pc);
+    return -1;
+  }
+
   out->extent_id = eid;
   out->exit_pc = KOS_EXTENT_NONE;
-
-  if (e->push_pc >= KosCode_CODE_LEN(code)) {
-    out->except_pc = KOS_EXTENT_NONE;
-    out->finally_pc = KOS_EXTENT_NONE;
-    SAYF("[extent] kos_try_handler_for pc=%u push_pc out of range\n",
-         (unsigned) pc);
-    return 0;
-  }
 
   uint32_t handler_pc = (uint32_t) KosCode_CODE(code)[e->push_pc].arg;
   if (e->kind == KOS_EXT_TRY) {

@@ -540,26 +540,31 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
   PyObject *saved_exc_val = NULL;
   PyObject *saved_exc_tb = NULL;
 
-  if (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL
-      && KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)
-      && PyErr_Occurred()) {
-    int extent = try_local_extent_on_current_frame(es);
-    if (extent > 0)
-      return EVAL_REPROLOGUE();
-    if (extent < 0)
-      return EVAL_FATAL();
+  while (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL) {
 
-    {
-      KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
-      if (parent && ! KosDynNode_IS_GEN(parent)) {
+    /* Frame boundary: check this frame's try extents, then cross into the
+       caller section and keep walking. The raise only leaves the loop at
+       the chain root (NULL parent) or a generator boundary. */
+    if (KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)) {
+      if (! PyErr_Occurred())
+        break;
+
+      int extent = try_local_extent_on_current_frame(es);
+      if (extent > 0)
+        return EVAL_REPROLOGUE();
+      if (extent < 0)
+        return EVAL_FATAL();
+
+      {
+        KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
+        if (! parent || KosDynNode_IS_GEN(parent))
+          break;
         if (kos_dyn_pop_frame(es) < 0)
           return EVAL_FATAL();
       }
+      continue;
     }
-  }
 
-  while (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL
-         && KosEvalState_DYN_TOP(es) != (KosDynNode *) KosEvalState_FRAME(es)) {
     KosDynNode *top = KosEvalState_DYN_TOP(es);
 
     KOS_TRACE_EVENTS_INC(KOS_TE_RAISE_LOCAL_WALK_ITER);

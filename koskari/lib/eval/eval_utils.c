@@ -387,7 +387,8 @@ static inline int do_frame_prep(
     return 0;
   }
 
-  if (! wants && tail_call && parent)
+  if (! wants && tail_call && parent
+      && KosEvalState_DYN_TOP(es) == (KosDynNode *) frame)
     return kos_dyn_pop_frame(es);
 
   return 0;
@@ -428,11 +429,21 @@ KosOpResult KosEvalState_Call(
         return r;
       }
     }
+    int tail_defer_return = 0;
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent && kos_dyn_pop_frame(es) < 0)
-        return EVAL_RAISE();
+      if (parent) {
+        if (KosEvalState_DYN_TOP(es) == (KosDynNode *) frame) {
+          if (kos_dyn_pop_frame(es) < 0)
+            return EVAL_RAISE();
+        } else {
+          /* Extent nodes are still open above the frame; skip the tail
+             pop and deliver the result through a normal RETURN so they
+             unwind properly. */
+          tail_defer_return = 1;
+        }
+      }
     }
     /* nargs matches KosCallable_Call: positional count only. PEP 590:
        keyword values follow args[nargs .. nargs + nkw - 1]. */
@@ -443,8 +454,15 @@ KosOpResult KosEvalState_Call(
       return EVAL_RAISE();
     {
       KosOpResult por = push_or_await_common(es, result, 0);
-      if (por.kind == KOS_RES_NORMAL && tail_call)
+      if (por.kind == KOS_RES_NORMAL && tail_call) {
+        if (tail_defer_return) {
+          PyObject *rv = KosEvalState_StackPopRef(es);
+          if (! rv)
+            return EVAL_RAISE();
+          return EVAL_RETURN(rv);
+        }
         return EVAL_CONTROL_RETURNED();
+      }
       return por;
     }
   }
@@ -487,11 +505,21 @@ KosOpResult KosEvalState_CallArgs(
         return r;
       }
     }
+    int tail_defer_return = 0;
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent && kos_dyn_pop_frame(es) < 0)
-        return EVAL_RAISE();
+      if (parent) {
+        if (KosEvalState_DYN_TOP(es) == (KosDynNode *) frame) {
+          if (kos_dyn_pop_frame(es) < 0)
+            return EVAL_RAISE();
+        } else {
+          /* Extent nodes are still open above the frame; skip the tail
+             pop and deliver the result through a normal RETURN so they
+             unwind properly. */
+          tail_defer_return = 1;
+        }
+      }
     }
     PyObject *result = NULL;
 
@@ -514,8 +542,15 @@ KosOpResult KosEvalState_CallArgs(
 
     {
       KosOpResult por = push_or_await_common(es, result, 0);
-      if (por.kind == KOS_RES_NORMAL && tail_call)
+      if (por.kind == KOS_RES_NORMAL && tail_call) {
+        if (tail_defer_return) {
+          PyObject *rv = KosEvalState_StackPopRef(es);
+          if (! rv)
+            return EVAL_RAISE();
+          return EVAL_RETURN(rv);
+        }
         return EVAL_CONTROL_RETURNED();
+      }
       return por;
     }
   }
@@ -543,19 +578,36 @@ KosOpResult KosEvalState_CallNoArgs(
         return KosEvalState_Call(es, call_fn, self_arg, 1, NULL, tail_call);
       }
     }
+    int tail_defer_return = 0;
     if (tail_call) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent && kos_dyn_pop_frame(es) < 0)
-        return EVAL_RAISE();
+      if (parent) {
+        if (KosEvalState_DYN_TOP(es) == (KosDynNode *) frame) {
+          if (kos_dyn_pop_frame(es) < 0)
+            return EVAL_RAISE();
+        } else {
+          /* Extent nodes are still open above the frame; skip the tail
+             pop and deliver the result through a normal RETURN so they
+             unwind properly. */
+          tail_defer_return = 1;
+        }
+      }
     }
     PyObject *result = PyObject_CallNoArgs(callable);
     if (! result)
       return EVAL_RAISE();
     {
       KosOpResult por = push_or_await_common(es, result, 0);
-      if (por.kind == KOS_RES_NORMAL && tail_call)
+      if (por.kind == KOS_RES_NORMAL && tail_call) {
+        if (tail_defer_return) {
+          PyObject *rv = KosEvalState_StackPopRef(es);
+          if (! rv)
+            return EVAL_RAISE();
+          return EVAL_RETURN(rv);
+        }
         return EVAL_CONTROL_RETURNED();
+      }
       return por;
     }
   }
