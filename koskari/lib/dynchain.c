@@ -1372,6 +1372,8 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_TRY:
       if (event == KOS_XFER_EVENT_RAISE) {
+        /* Node-authoritative: a live (enabled) TRY consumes; its
+           handler pc was fixed from the extent table at push time. */
         int en = KosDynTry_ENABLED((KosDynTry *) node);
         int py = PyErr_Occurred() ? 1 : 0;
         KosDynFrame *frame = KosEvalState_FRAME(es);
@@ -1380,26 +1382,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
                en, py, (void *) frame);
           return KOS_HANDLE_PASS;
         }
-        {
-          KosTryHandler th;
-          int kh = kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
-                                       KosEvalState_ACTING_PC(es), &th);
-          #if VERBOSE_DEBUG
-          unsigned exc_pc_u = (unsigned) KOS_EXTENT_NONE;
-          if (kh == 0)
-            exc_pc_u = (unsigned) th.except_pc;
-          SAYF("[xfer] kos_dyn_handle TRY kos_try_handler_for code=%p "
-               "acting_pc=%u ret=%d except_pc=%u\n",
-               (void *) KosDynFrame_CODE(frame),
-               (unsigned) KosEvalState_ACTING_PC(es),
-               kh,
-               exc_pc_u);
-          #endif
-
-          if (kh == 0 && th.except_pc != KOS_EXTENT_NONE)
-            return KOS_HANDLE_CONSUMED;
-        }
-        SAY("[xfer] kos_dyn_handle TRY -> PASS (not consumed)\n");
+        return KOS_HANDLE_CONSUMED;
       }
       return KOS_HANDLE_PASS;
     case KOS_DYN_FINALLY:
@@ -1442,25 +1425,12 @@ uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
     KosEvalState *es,
     KosDynNode *region) {
 
-  uint32_t handler_pc;
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-
+  /* Node-authoritative: the handler pc was fixed from the extent table
+     at push time; no runtime extent lookup. */
+  (void) es;
   if (KosDynNode_IS_TRY(region))
-    handler_pc = KosDynTry_HANDLER_PC((KosDynTry *) region);
-  else
-    handler_pc = KosDynFinally_HANDLER_PC((KosDynFinally *) region);
-
-  if (frame) {
-    KosTryHandler th;
-    if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
-                            KosEvalState_ACTING_PC(es), &th) == 0) {
-      if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE)
-        handler_pc = th.finally_pc;
-      else if (th.except_pc != KOS_EXTENT_NONE)
-        handler_pc = th.except_pc;
-    }
-  }
-  return handler_pc;
+    return KosDynTry_HANDLER_PC((KosDynTry *) region);
+  return KosDynFinally_HANDLER_PC((KosDynFinally *) region);
 }
 
 

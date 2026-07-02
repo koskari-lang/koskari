@@ -469,45 +469,6 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
 
 
 /**
-   When dyn_top is the current frame, consult the extent table for except_pc
-   before walking the chain.
-
-   :return: 1 if a handler was applied, 0 if none, -1 on error
-*/
-static int try_local_extent_on_current_frame(KosEvalState *es) {
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  if (! frame || ! PyErr_Occurred())
-    return 0;
-
-  KosTryHandler th;
-  if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
-                          KosEvalState_ACTING_PC(es), &th) != 0
-      || th.except_pc == KOS_EXTENT_NONE)
-    return 0;
-
-  if (KosEvalState_StackClearBlock(es) < 0)
-    return -1;
-
-  SAYF("[try_local] extent handler pc=%u on current frame\n",
-       (unsigned) th.except_pc);
-  KosEvalState_SET_PC(es, th.except_pc);
-
-  {
-    PyObject *typ = NULL, *val = NULL, *tb = NULL;
-    PyErr_Fetch(&typ, &val, &tb);
-#if PY_MINOR_VERSION < 12
-    PyErr_NormalizeException(&typ, &val, &tb);
-#endif
-    PyErr_SetExcInfo(typ, val, tb);
-    PyErr_Clear();
-  }
-
-  return 1;
-}
-
-
-/**
    Walk dyn_top down toward frame_top, handle(RAISE) then pop until a TRY or
    FINALLY consumes (jump to handler) or no handler remains.
    Returns EVAL_REPROLOGUE if a handler was applied, EVAL_RAISE if no handler
@@ -542,18 +503,14 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
 
   while (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL) {
 
-    /* Frame boundary: check this frame's try extents, then cross into the
-       caller section and keep walking. The raise only leaves the loop at
+    /* Frame boundary: cross into the caller section and keep walking.
+       Handler discovery is node-authoritative - a live TRY/FINALLY node
+       consumes via handle(); the extent table only supplies jump
+       positions at node push time. The raise leaves the loop only at
        the chain root (NULL parent) or a generator boundary. */
     if (KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)) {
       if (! PyErr_Occurred())
         break;
-
-      int extent = try_local_extent_on_current_frame(es);
-      if (extent > 0)
-        return EVAL_REPROLOGUE();
-      if (extent < 0)
-        return EVAL_FATAL();
 
       {
         KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
