@@ -508,6 +508,41 @@ static int try_local_extent_on_current_frame(KosEvalState *es) {
 
 
 /**
+   Chain a superseded exception triple as __context__ of the superseding
+   one (Python raise-during-handling semantics). Normalizes both triples;
+   consumes the old triple's references. The new triple is left owned by
+   the caller (normalized in place). An existing __context__ on the new
+   value is preserved.
+*/
+static void kos_exc_supersede_chain(
+    PyObject **new_typ, PyObject **new_val, PyObject **new_tb,
+    PyObject *old_typ, PyObject *old_val, PyObject *old_tb) {
+
+  PyErr_NormalizeException(new_typ, new_val, new_tb);
+  PyErr_NormalizeException(&old_typ, &old_val, &old_tb);
+
+  if (old_val && old_tb)
+    PyException_SetTraceback(old_val, old_tb);
+
+  if (*new_val && old_val) {
+    PyObject *existing = PyException_GetContext(*new_val);
+    if (existing) {
+      Py_DECREF(existing);
+      Py_DECREF(old_val);
+    } else {
+      /* steals the old_val reference */
+      PyException_SetContext(*new_val, old_val);
+    }
+  } else {
+    Py_XDECREF(old_val);
+  }
+
+  Py_XDECREF(old_typ);
+  Py_XDECREF(old_tb);
+}
+
+
+/**
    Walk dyn_top down toward frame_top, handle(RAISE) then pop until a TRY or
    FINALLY consumes (jump to handler) or no handler remains.
    Returns EVAL_REPROLOGUE if a handler was applied, EVAL_RAISE if no handler
@@ -656,6 +691,26 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
           || top_is_wind;
       if (needs_preserve && PyErr_Occurred())
         PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
+
+      /* A wind still holding a parked exception is being superseded by
+         the in-flight one (its thunk raised, or it never resumed): chain
+         the parked original as __context__ before the pop discards the
+         node and its park. */
+      if (top_is_wind && saved_exc_typ != NULL) {
+        KosDynWind *wind = (KosDynWind *) top;
+        if (KosDynWind_PENDING_EXC_TYPE(wind) != NULL
+            || KosDynWind_PENDING_EXC_VALUE(wind) != NULL) {
+          kos_exc_supersede_chain(
+              &saved_exc_typ, &saved_exc_val, &saved_exc_tb,
+              KosDynWind_PENDING_EXC_TYPE(wind),
+              KosDynWind_PENDING_EXC_VALUE(wind),
+              KosDynWind_PENDING_EXC_TB(wind));
+          KosDynWind_PENDING_EXC_TYPE(wind) = NULL;
+          KosDynWind_PENDING_EXC_VALUE(wind) = NULL;
+          KosDynWind_PENDING_EXC_TB(wind) = NULL;
+        }
+      }
+
       KosOpResult pop_res = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_RAISE);
       if (saved_exc_typ != NULL) {
         if (top_is_wind
@@ -668,6 +723,19 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
           KosDynWind_PENDING_EXC_TYPE(wind) = saved_exc_typ;
           KosDynWind_PENDING_EXC_VALUE(wind) = saved_exc_val;
           KosDynWind_PENDING_EXC_TB(wind) = saved_exc_tb;
+        } else if (PyErr_Occurred()
+                   && ! KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER)) {
+          /* The pop ran user teardown and it raised; the new exception
+             supersedes the one in flight, which chains in as __context__
+             (never clobbered). Barrier refusals are machinery noise, not
+             user failures: for those the original is restored below and
+             the recovery branch crosses the barrier properly. */
+          PyObject *ntyp = NULL, *nval = NULL, *ntb = NULL;
+          PyErr_Fetch(&ntyp, &nval, &ntb);
+          kos_exc_supersede_chain(&ntyp, &nval, &ntb,
+                                  saved_exc_typ, saved_exc_val,
+                                  saved_exc_tb);
+          PyErr_Restore(ntyp, nval, ntb);
         } else {
           PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
         }
@@ -680,6 +748,10 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
         return EVAL_REPROLOGUE();
       }
       if (pop_res.kind != KOS_RES_NORMAL) {
+        if (pop_res.kind == KOS_RES_FATAL) {
+          /* Evaluator-internal fault: allowed to abend the loop. */
+          return EVAL_FATAL();
+        }
         if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
           KosOpResult exc_res = kos_dyn_exception_unwind(es, top);
           if (exc_res.kind == KOS_RES_AWAIT) {
@@ -691,9 +763,23 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
           if (exc_res.kind == KOS_RES_NORMAL)
             continue;
         }
-        SAY("[try_local] pop/unwind path -> RAISE\n");
-        kos_eval_prepare_boundary_raise(ctx, es);
-        return EVAL_RAISE();
+        if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER)) {
+          /* Barrier with no working recovery: a legitimate walk exit. */
+          SAY("[try_local] barrier without recovery -> RAISE\n");
+          kos_eval_prepare_boundary_raise(ctx, es);
+          return EVAL_RAISE();
+        }
+        /* User teardown raised: the superseding exception (original
+           chained above) keeps walking. If the failing pop left the node
+           in place, discard it without re-running its teardown - it had
+           its chance - so the walk always makes progress. */
+        if (KosEvalState_DYN_TOP(es) == top) {
+          KosDynNode *parent = KosDynNode_PARENT(top);
+          kos_dyn_commit_dyn_top(es, parent);
+          KosDynNode_PARENT(top) = NULL;
+          kos_dynnode_free(top);
+        }
+        continue;
       }
       if (top_may_swallow && ! PyErr_Occurred()) {
         if (catch_resume_pc != (uint32_t) -1 && KosEvalState_FRAME(es)) {
