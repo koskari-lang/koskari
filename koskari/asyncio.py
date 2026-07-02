@@ -27,7 +27,7 @@ from functools import wraps
 from types import CoroutineType as PythonCoroutine
 
 from koskari.bootstrap import add_builtin, builtin
-from koskari.lib import Coroutine, defer
+from koskari.lib import defer
 
 
 async def as_coroutine(awaitable):
