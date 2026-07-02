@@ -24,6 +24,7 @@ asyncio loops which specifically check for the Python coroutine type.
 
 import asyncio
 from functools import wraps
+from types import CoroutineType as PythonCoroutine
 
 from koskari.bootstrap import add_builtin, builtin
 from koskari.lib import Coroutine, defer
@@ -61,7 +62,7 @@ def create_task(coro):
     Task will be wrapped in a defer object to prevent implicit auto-await.
     """
 
-    if isinstance(coro, (defer, Coroutine)):
+    if not isinstance(coro, PythonCoroutine):
         coro = as_coroutine(coro)
     return defer(asyncio.create_task, coro)
 
@@ -74,7 +75,7 @@ def run_until_complete(coro):
     coroutine completes and returns the result or raises an exception.
     """
 
-    if isinstance(coro, (defer, Coroutine)):
+    if not isinstance(coro, PythonCoroutine):
         coro = as_coroutine(coro)
     return asyncio.run_until_complete(coro)
 
