@@ -17,7 +17,9 @@ KosDynDelim *kos_dyndelim_new(
   if (! delim)
     return NULL;
 
-  kos_dynnode_init(delim, KOS_DYN_DELIM, parent, 0);
+  kos_dynnode_init(delim, KOS_DYN_DELIM, parent,
+                   mode == KOS_DYN_DELIM_MODE_INPLACE
+                       ? KOS_DYN_CAP_INTERCEPTS_RAISE : 0);
   KosDynDelim_MODE(delim) = mode;
   KosDynDelim_RETURN_CHAIN(delim) = chain;
   KosDynDelim_RETURN_PC(delim) = pc;

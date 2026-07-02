@@ -1347,10 +1347,17 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         }
         /* LABEL: cannot resolve until pass 1 labels are complete; defer */
         if (fk == KOSTYLE_LABEL) {
-          PyObject *pending = PyTuple_Pack(3,
-              PyLong_FromLong(extra_idx),
-              PyLong_FromLong(slot),
-              elem);
+          PyObject *idx_obj = PyLong_FromLong(extra_idx);
+          PyObject *slot_obj = PyLong_FromLong(slot);
+          if (! idx_obj || ! slot_obj) {
+            Py_XDECREF(idx_obj);
+            Py_XDECREF(slot_obj);
+            goto failure;
+          }
+          /* PyTuple_Pack increfs each element; release our own refs after */
+          PyObject *pending = PyTuple_Pack(3, idx_obj, slot_obj, elem);
+          Py_DECREF(idx_obj);
+          Py_DECREF(slot_obj);
           if (! pending || PyList_Append(coll->pending_labels, pending) < 0) {
             Py_XDECREF(pending);
             goto failure;
@@ -2872,99 +2879,6 @@ KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id) {
   }
 
   return &KosCode_EXTENTS(code)[extent_id];
-}
-
-
-int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
-
-  if (! code || ! KosCode_Check(code) || ! out) {
-    SAY("[extent] kos_try_handler_for bad args\n");
-    return -1;
-  }
-
-  uint32_t eid_try = kos_extent_find(code, pc, KOS_EXT_TRY);
-  uint32_t eid = eid_try;
-  if (eid == KOS_EXTENT_NONE) {
-    eid = kos_extent_find(code, pc, KOS_EXT_FINALLY);
-  }
-
-  if (eid == KOS_EXTENT_NONE) {
-    SAYF("[extent] kos_try_handler_for pc=%u eid_try=%u no extent\n",
-         (unsigned) pc, (unsigned) eid_try);
-    return -1;
-  }
-
-  const KosExtentDesc *e = kos_extent_desc(code, eid);
-  if (! e) {
-    SAYF("[extent] kos_try_handler_for pc=%u eid=%u desc NULL\n",
-         (unsigned) pc, (unsigned) eid);
-    return -1;
-  }
-
-  SAYF("[extent] kos_try_handler_for pc=%u eid_try=%u eid=%u kind=%d\n",
-       (unsigned) pc, (unsigned) eid_try, (unsigned) eid, (int) e->kind);
-
-  /* A pc at or past the handler label lies inside the handler (or finally)
-     block, which its own extent does not protect: an exception raised
-     there propagates outward. Walk to the nearest enclosing TRY/FINALLY
-     extent whose protected body still covers pc. */
-  while (e) {
-    if (e->push_pc >= KosCode_CODE_LEN(code)) {
-      out->extent_id = eid;
-      out->exit_pc = KOS_EXTENT_NONE;
-      out->except_pc = KOS_EXTENT_NONE;
-      out->finally_pc = KOS_EXTENT_NONE;
-      SAYF("[extent] kos_try_handler_for pc=%u push_pc out of range\n",
-           (unsigned) pc);
-      return 0;
-    }
-    if (pc < (uint32_t) KosCode_CODE(code)[e->push_pc].arg)
-      break;
-
-    uint32_t peid = e->parent_extent_id;
-    e = NULL;
-    while (peid != KOS_EXTENT_NONE) {
-      const KosExtentDesc *pe = kos_extent_desc(code, peid);
-      if (! pe)
-        return -1;
-      if (pe->kind == KOS_EXT_TRY || pe->kind == KOS_EXT_FINALLY) {
-        e = pe;
-        eid = peid;
-        break;
-      }
-      peid = pe->parent_extent_id;
-    }
-  }
-
-  if (! e) {
-    SAYF("[extent] kos_try_handler_for pc=%u in handler range, "
-         "no enclosing extent\n", (unsigned) pc);
-    return -1;
-  }
-
-  out->extent_id = eid;
-  out->exit_pc = KOS_EXTENT_NONE;
-
-  uint32_t handler_pc = (uint32_t) KosCode_CODE(code)[e->push_pc].arg;
-  if (e->kind == KOS_EXT_TRY) {
-    out->except_pc = handler_pc;
-    out->finally_pc = KOS_EXTENT_NONE;
-  }
-  else if (e->kind == KOS_EXT_FINALLY) {
-    out->except_pc = KOS_EXTENT_NONE;
-    out->finally_pc = handler_pc;
-  }
-  else {
-    out->except_pc = KOS_EXTENT_NONE;
-    out->finally_pc = KOS_EXTENT_NONE;
-  }
-
-  SAYF("[extent] kos_try_handler_for pc=%u except_pc=%u finally_pc=%u\n",
-       (unsigned) pc,
-       (unsigned) out->except_pc,
-       (unsigned) out->finally_pc);
-
-  return 0;
 }
 
 

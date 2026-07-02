@@ -152,6 +152,15 @@
    fun:PyDict_SetItemString
 }
 
+{
+   python-dict-setitemstring-unicode-possible
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   ...
+   fun:PyDict_SetItemString
+}
+
 
 # === Python GC ===
 #

@@ -1457,6 +1457,14 @@ void kos_abandon_transfer_nest(KosEvalState *es) {
   KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
   kos_free_transfer_plan(p);
   kos_free_transfer_plan_stack(es);
+
+  /* Parked exceptions are not dropped here (they may belong to an
+     unrelated in-flight raise); surface any survivors loudly so a stale
+     entry can never fail silently. */
+  if (KosContext_EXC_STASH(ctx)
+      && PyList_GET_SIZE(KosContext_EXC_STASH(ctx)))
+    SAYF("[xfer] abandon_transfer_nest: %zd parked exception(s) remain\n",
+         PyList_GET_SIZE(KosContext_EXC_STASH(ctx)));
 }
 
 

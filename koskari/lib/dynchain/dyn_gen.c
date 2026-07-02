@@ -11,7 +11,8 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
   if (! gen)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL, 0);
+  kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL,
+                   KOS_DYN_CAP_INTERCEPTS_RAISE);
   KosDynNode_FLAGS(gen) = KOS_DYNF_BOUNDARY;
   KosDynGen_OWNER(gen) = owner;  /* borrowed */
   KosDynGen_ACTIVE(gen) = NULL;

@@ -100,4 +100,37 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
         self.assertEqual(result, "caught")
 
 
+    async def test_crossed_frames_recorded_in_dynchain_meta(self):
+        """
+        KNOWN DEFECT (intentionally red): frames crossed during a raise
+        walk are recorded into the exception's __koskari_dynchain__
+        metadata before being popped (marked "crossed"); today only the
+        frames still live at escape time appear, so crossed callee frames
+        vanish from the trace.
+        """
+
+        def boom(v):
+            raise ValueError("boom")
+
+        src_str = """
+        (compile/call
+          (compile/lambda []
+            (compile/let [[x 1]]
+              (boom x))))
+        """
+        expr, mod = self.compile_expr(src_str, boom=boom)
+        try:
+            await expr()
+        except ValueError as exc:
+            chain = getattr(exc, "__koskari_dynchain__", None)
+            self.assertIsNotNone(chain)
+            crossed = [m for m in chain if m.get("crossed")]
+            self.assertGreaterEqual(len(crossed), 1)
+            for meta in chain:
+                self.assertIn("name", meta)
+                self.assertIn("pc", meta)
+        else:
+            self.fail("ValueError did not propagate")
+
+
 # The end.

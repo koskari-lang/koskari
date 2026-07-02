@@ -326,24 +326,6 @@ KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
 
 
 /**
-   TRY handler targets for a pc inside a TRY or FINALLY extent.
-*/
-typedef struct KosTryHandler {
-  uint32_t extent_id;
-  uint32_t except_pc;
-  uint32_t finally_pc;
-  uint32_t exit_pc;
-} KosTryHandler;
-
-
-/**
-   Get innermost TRY/FINALLY handler for pc. Returns 0 if found and filled,
-   -1 if no code or no extent table.
-*/
-int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out);
-
-
-/**
    Get ic_pc for innermost SHIFT_BODY extent at pc. Returns KOS_EXTENT_NONE
    if none.
 */

@@ -626,11 +626,9 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
 
     async def test_after_thunk_runs_on_exception_unwind(self):
         """
-        KNOWN DEFECT (intentionally red): an exception unwinding through a
-        dyn-wind extent must run the after thunk exactly once before the
-        enclosing handler catches it. Today the thunk starts with PyErr
-        pending and aborts immediately, so cleanup never runs. No
-        continuations involved - this is the engine-wide baseline.
+        An exception unwinding through a dyn-wind extent runs the after
+        thunk exactly once (parked on the wind while the thunk runs)
+        before the enclosing handler catches it.
         """
 
         events = []
@@ -655,6 +653,71 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
         result = await expr()
         self.assertEqual(result, "caught")
         self.assertEqual(events, ["before", "after"])
+
+
+    async def test_after_thunk_failure_supersedes_chained(self):
+        """
+        KNOWN DEFECT (intentionally red): when the after thunk itself
+        raises during an exception unwind, the thunk's exception
+        supersedes the original and propagates with the original chained
+        as __context__. Today the parked original is dropped unchained.
+        """
+
+        def boom(v):
+            raise ValueError("original")
+
+        def boom2(v):
+            raise RuntimeError("teardown")
+
+        src_str = """
+        (compile/dyn-wind
+          (compile/begin)
+          (boom 1)
+          (boom2 1))
+        """
+        expr, mod = self.compile_expr(src_str, boom=boom, boom2=boom2)
+        try:
+            await expr()
+        except RuntimeError as exc:
+            self.assertEqual(str(exc), "teardown")
+            self.assertIsInstance(exc.__context__, ValueError)
+            self.assertEqual(str(exc.__context__), "original")
+        else:
+            self.fail("RuntimeError did not propagate")
+
+
+    async def test_after_thunk_failure_caught_with_context(self):
+        """
+        KNOWN DEFECT (intentionally red): the superseding teardown
+        exception is catchable by an enclosing handler, and the handler
+        sees the original as __context__.
+        """
+
+        def boom(v):
+            raise ValueError("original")
+
+        def boom2(v):
+            raise RuntimeError("teardown")
+
+        def probe():
+            import sys
+            exc = sys.exc_info()[1]
+            ctx = exc.__context__ if exc is not None else None
+            return type(ctx).__name__ if ctx is not None else "none"
+
+        src_str = """
+        (compile/try
+          (compile/dyn-wind
+            (compile/begin)
+            (boom 1)
+            (boom2 1))
+          ([RuntimeError] (probe)))
+        """
+        expr, mod = self.compile_expr(
+            src_str, boom=boom, boom2=boom2, probe=probe,
+            RuntimeError=RuntimeError)
+        result = await expr()
+        self.assertEqual(result, "ValueError")
 
 
 # The end.

@@ -124,6 +124,10 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
 /** Iterator yield/return boundary (KOS_DYN_NEXT, extended FOREACH stepping) */
 #define KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY     (1u << 9)
+/** Node participates in raise-walk dispatch (handle/restitch); the fast
+   first check before kos_dyn_handle. Distinct from HANDLES_EXCEPTIONS,
+   which marks failed-pop recovery (kos_dyn_exception_unwind). */
+#define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
 /* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
@@ -237,12 +241,6 @@ struct KosDynNode {
       PyObject *before_thunk;  /* callable (owned) or NULL */
       PyObject *after_thunk;   /* callable (owned) or NULL */
       PyObject *body_result;   /* TOS at POP_WIND (owned) or NULL; error/bypass path */
-      /* RAISE parked across an async after-thunk (owned): the raise walk
-         stashes PyErr here so the thunk runs with no pending error;
-         on_control_returned re-raises it to continue propagation */
-      PyObject *pending_exc_type;
-      PyObject *pending_exc_value;
-      PyObject *pending_exc_tb;
       uint8_t entered;
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
@@ -1828,6 +1826,54 @@ KosDynPrompt *kos_find_nearest_prompt(KosEvalState *es);
 KosDynDelim *kos_find_nearest_delim(KosEvalState *es, uint8_t mode);
 
 
+/* === Context exception stash === */
+
+
+/**
+   Park an exception triple on the context's LIFO exception stash, tagged
+   with the parking node's id. Normalizes and attaches the traceback to
+   the instance; consumes the triple.
+
+   :return: 0 on success, -1 on error
+*/
+int kos_ctx_exc_stash_push(
+   KosEvalState *es,
+   uint32_t node_id,
+   PyObject *typ,
+   PyObject *val,
+   PyObject *tb);
+
+
+/**
+   True when the stash top entry was parked by node_id.
+*/
+int kos_ctx_exc_stash_top_is(KosEvalState *es, uint32_t node_id);
+
+
+/**
+   Pop the top parked exception and restore it into PyErr to continue
+   propagation.
+
+   :return: 0 on success, -1 when the stash is empty
+*/
+int kos_ctx_exc_stash_reraise(KosEvalState *es, uint32_t node_id);
+
+
+/**
+   Pop the top parked exception and chain it as __context__ of the
+   superseding triple (caller-owned, normalized in place). No-op on an
+   empty stash.
+
+   :return: 0 on success
+*/
+int kos_ctx_exc_stash_chain_top(
+   KosEvalState *es,
+   uint32_t node_id,
+   PyObject **typ,
+   PyObject **val,
+   PyObject **tb);
+
+
 /**
    Find the topmost CC (call/cc) block on the dynamic chain.
 
@@ -2256,12 +2302,6 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynWind_BODY_RESULT(w)  (((KosDynNode *)(w))->u.wind.body_result)
 #define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
 #define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
-#define KosDynWind_PENDING_EXC_TYPE(w) \
-  (((KosDynNode *)(w))->u.wind.pending_exc_type)
-#define KosDynWind_PENDING_EXC_VALUE(w) \
-  (((KosDynNode *)(w))->u.wind.pending_exc_value)
-#define KosDynWind_PENDING_EXC_TB(w) \
-  (((KosDynNode *)(w))->u.wind.pending_exc_tb)
 
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)

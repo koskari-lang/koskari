@@ -2,11 +2,42 @@
 
 ## Status
 
-**Design target — not implemented.** The tree is green (all defect
-reproducers pass, no pins), but the exception machinery reached that state
-through localized fixes that drifted from the intended node model. This
-document records the agreed end state so the work can proceed as a single
-focused arc after the delimited-invoke branch merges.
+**Stages 1-4 implemented; two decisions remain.**
+
+- **Stage 1 (§3)** — failed-pop taxonomy landed: FATAL passthrough,
+  barrier refusals classed as machinery noise (restore + recovery), user
+  teardown failures supersede with `__context__` chaining and the walk
+  continues (discard-on-stuck guarantees progress).
+- **Stage 2 (§2)** — context-owned LIFO exception stash
+  (`KosContext.exc_stash`, single normalized instances tagged with the
+  parking node_id) with the helper family in dynchain.c; WIND's
+  `pending_exc_*` fields deleted.
+- **Stage 3 (§1)** — `KOS_DYN_CAP_INTERCEPTS_RAISE` gates the raise walk
+  dispatch (TRY, FINALLY, GEN, INPLACE DELIM); kept distinct from
+  `HANDLES_EXCEPTIONS` (failed-pop recovery; PROMPT proves the sets
+  differ).
+- **Stage 4 (§4)** — crossed frames recorded into
+  `__koskari_dynchain__` (marked `"crossed"`) before the pop;
+  escape-time decoration carries them forward without duplication.
+- **Stage 5 (§5)** — the suspension gap was real (two contexts suspended
+  inside handlers on one thread corrupted each other's exc_info).
+  **Decided and implemented**: handler-visible exception state is
+  context-owned; `koskari_eval` swaps the thread's exc_info with the
+  context's saved triple at entry and reverses at cleanup (all-empty
+  fast path skips the swap). Contexts are isolated — a fresh context
+  starts with empty handler state, no fall-through to the host's
+  (upgradeable to CPython-style linked exc_state items via the compat
+  headers if fall-through is ever wanted).
+  `test_exc_info_isolation.py` guards both the single-task and the
+  interleaved cases.
+- **Stage 6 (§6)** — **decided and implemented: node-authoritative.**
+  The extent table's job ends at push time (it supplies the jump
+  positions stored on the node); no runtime extent consult remains on
+  the raise path. Removed: the frame-boundary extent check
+  (`try_local_extent_on_current_frame`), the handler-pc merge in
+  `kos_dynnode_raise_handler_pc_for_try_finally`, the extent lookup in
+  `kos_dyn_handle`'s TRY case, and the now-dead `kos_try_handler_for` /
+  `KosTryHandler`. Evidence: full suite green without any of them.
 
 **Last updated:** 2026-07-02
 
@@ -20,9 +51,9 @@ Maintainers working on the raise paths: `eval.c` (`process_raise`),
 
 | Document | Relationship |
 |----------|----------------|
-| [callcc.md](callcc.md) | Delimited continuation machinery the raise paths must respect |
+| [callcc.md](../interpreter/callcc.md) | Delimited continuation machinery the raise paths must respect |
 | [delimited-invoke-model.md](delimited-invoke-model.md) | Two-path invoke; the INPLACE DELIM restitch is folded into this design |
-| [boundary-control-reemit.md](boundary-control-reemit.md) | Capacity-driven dispatch precedent (§5.2) |
+| [boundary-control-reemit.md](../interpreter/boundary-control-reemit.md) | Capacity-driven dispatch precedent (§5.2) |
 | [../TODO.md](../TODO.md) | Single rollup entry pointing here |
 | `tests/compile/specials/test_raise_across_frames.py` | Frame-crossing propagation regressions |
 | `tests/compile/specials/test_reset_shift.py` | Slice exception routing regressions |

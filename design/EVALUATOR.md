@@ -25,6 +25,13 @@ The evaluator runs until it hits a **boundary event** (return, raise, yield, awa
 
 `koskari_eval` builds a stack **`KosEvalState`** (`KosEvalState_Init(&es, ctx)`), marks the context running, and pushes the per-thread **domain scope** via **`KosEvalState_EnterDomainScope(&es)`** (token stack and live depth in `domain.c` TLS). On exit (including error paths through **`koskari_eval_cleanup`**), it flushes registers, calls **`KosEvalState_LeaveDomainScope(&es)`**, and returns. All loop phases and opcode handlers use **`&es`**; hot-path mirrors (`frame`, `code`, `pc`, operand stack) stay in sync via **`kos_dyn_retarget_after_push`**, **`kos_dyn_commit_dyn_top`** (incremental pop retarget), and **`kos_dyn_rebuild_live_from_chain`** when the chain shape requires a full walk.
 
+Entry and cleanup also **swap the thread's handler-visible exception state
+(`sys.exc_info`) with the context's saved triple** (`KosContext.exc_info_*`),
+so contexts interleaved on one thread never see each other's handled
+exception across suspensions. The all-empty common case skips the swap.
+Contexts are isolated: a fresh context starts with empty handler state (no
+fall-through to the host's in-flight exception). See §4.4.
+
 ### 1.2 Main Loop Phases
 
 ```mermaid
@@ -535,12 +542,14 @@ flowchart TD
     invoke["kos_invoke_continuation<br/>KOS_MODE_TRANSFER"]
     foreign["kos_build_cc_unwind_plan<br/>KOS_MODE_TRANSFER"]
     try_local["kos_dyn_try_local_raise_body(es)"]
-    region{"region found<br/>TRY/FINALLY?"}
-    jump["jump to handler, return 1"]
-    pop["pop nodes until frame or BARRIER"]
-    barrier{"BARRIER +<br/>HANDLES_EXCEPTIONS?"}
-    unwind["kos_dyn_exception_unwind"]
-    swallowed{"pop swallowed?"}
+    gate{"INTERCEPTS_RAISE cap?"}
+    dispatch["handle(RAISE) / INPLACE restitch"]
+    consumed{"CONSUMED?"}
+    jump["jump to handler (node HANDLER_PC)"]
+    pop["unwind/pop node"]
+    frame_edge{"dyn_top == frame?"}
+    cross["note frame in trace,<br/>pop frame, continue"]
+    exit_edge{"NULL parent or<br/>GEN parent?"}
     no_handler["EVAL_RAISE()<br/>(PyErr set, traceback injected)"]
 
     exc --> process
@@ -550,41 +559,102 @@ flowchart TD
     own -->|yes| invoke
     own -->|no| foreign
     cc_check -->|no| try_local
-    try_local --> region
-    region -->|yes| jump
-    region -->|no| pop
-    pop --> barrier
-    barrier -->|yes| unwind
-    barrier -->|no| swallowed
-    swallowed -->|yes| loop_cont2["continue loop"]
-    swallowed -->|no| no_handler
+    try_local --> frame_edge
+    frame_edge -->|yes| exit_edge
+    exit_edge -->|yes| no_handler
+    exit_edge -->|no| cross
+    cross --> try_local
+    frame_edge -->|no| gate
+    gate -->|yes| dispatch
+    dispatch --> consumed
+    consumed -->|yes| jump
+    consumed -->|no| pop
+    gate -->|no| pop
+    pop --> try_local
 ```
 
 ### 4.2 kos_dyn_try_local_raise_body
 
-Single walk from `dyn_top` toward the frame (`dynchain/dyn_walk.c`); each
-node is offered `kos_dyn_handle(node, RAISE)` before any unwind:
+Walk from `dyn_top` toward the chain root (`dynchain/dyn_walk.c`). The
+walk **crosses frame boundaries** — a raise leaves the evaluator loop only
+at the chain root (NULL parent) or a generator boundary. Per iteration:
 
-1. **CONSUMED** by a TRY or FINALLY: clear the stack block, set PC to the
-   handler, disable the region, stash the exception via `PyErr_SetExcInfo`
-   and clear PyErr, set `handling_raise` on FINALLY → `EVAL_REPROLOGUE()`.
-   **CONSUMED** by GEN (exception crossing the generator boundary):
-   `kos_eval_prepare_boundary_raise` → `EVAL_RAISE()`.
-2. **PASS**: `kos_dyn_pop_nonbarrier_top(RAISE)` unwinds and pops the node
-   (PyErr is fetched/restored around the pop for PRESERVE/BARRIER nodes):
-   - `KOS_RES_AWAIT` → async unwind started (e.g. dyn-with `__aexit__`
-     coroutine); the AWAIT propagates upward with the awaitable.
-   - pop refusal with HANDLES_EXCEPTIONS → `kos_dyn_exception_unwind`.
+1. **Frame boundary** (`dyn_top == frame`): if the frame's parent is NULL
+   or a GEN, exit the walk (boundary raise); otherwise record the frame
+   into the exception's trace (`kos_eval_note_crossed_frame`), pop it, and
+   continue in the caller's section.
+2. **Cap fast check**: only nodes with `KOS_DYN_CAP_INTERCEPTS_RAISE`
+   (TRY, FINALLY, GEN, INPLACE-mode DELIM) are dispatched; everything
+   else goes straight to unwind/pop. Dispatch outcomes:
+   - **INPLACE DELIM** (in-place delimited invoke bookmark): restitch the
+     stashed invoke span (`kos_dyn_inplace_restitch`) and continue the
+     raise from the invoke site.
+   - **CONSUMED** by TRY or FINALLY (**node-authoritative**: a live,
+     enabled node consumes on its own state; its `HANDLER_PC` was fixed
+     from the extent table at push time — there is no runtime extent
+     lookup): clear the stack block, set PC to the node's handler, disable
+     the region, stash the exception via `PyErr_SetExcInfo` and clear
+     PyErr, set `handling_raise` on FINALLY → `EVAL_REPROLOGUE()`.
+     **CONSUMED** by GEN: `kos_eval_prepare_boundary_raise` →
+     `EVAL_RAISE()`.
+3. **Unwind/pop**: `kos_dyn_pop_nonbarrier_top(RAISE)` (PyErr is fetched
+   around the pop for PRESERVE/BARRIER/WIND nodes):
+   - `KOS_RES_AWAIT` / `KOS_RES_REPROLOGUE` → async teardown started
+     (dyn-wind after-thunk, dyn-with `__aexit__`): the in-flight
+     exception is **parked on the context exception stash** (§4.4),
+     tagged with the parking node's id; `on_control_returned` re-raises
+     it when the teardown completes.
    - node may-swallow (CATCH cap) and PyErr cleared → set PC to
      `catch_resume_pc` → `EVAL_REPROLOGUE()`.
-3. No handler: `kos_eval_prepare_boundary_raise` (traceback injected,
-   context marked dead), leave PyErr set → `EVAL_RAISE()`.
+   - **Failed-pop taxonomy** (three classes):
+     - `KOS_RES_FATAL` — evaluator-internal fault; abends the loop.
+     - **Barrier refusal** (BARRIER cap, e.g. PROMPT) — machinery noise:
+       the original exception is restored unchanged and
+       `kos_dyn_exception_unwind` (HANDLES_EXCEPTIONS cap) crosses the
+       barrier; a barrier with no working recovery is a legitimate walk
+       exit.
+     - **User teardown failure** — the teardown's exception supersedes
+       the one in flight, which chains in as `__context__`
+       (`kos_exc_supersede_chain`); the failing node is discarded without
+       re-running its teardown and the walk continues. Never abends.
+4. No handler at the chain root: `kos_eval_prepare_boundary_raise`
+   (traceback injected, context marked dead), leave PyErr set →
+   `EVAL_RAISE()`.
 
 ### 4.3 Traceback Injection
 
 `inject_eval_frame_traceback` decorates the exception with `__koskari_dynchain__` and injects the current frame into the traceback so Python can display Koskari-native frames. Called via `kos_eval_prepare_boundary_raise` at:
-- `kos_dyn_try_local_raise_body` (GEN-boundary, pop-failure, and no-handler branches)
+- `kos_dyn_try_local_raise_body` (GEN-boundary, barrier-without-recovery, and no-handler branches)
 - `xfer_emit_cc_unwind_signal` (foreign cc-unwind sentinel re-emit)
+
+Frames **crossed** by the raise walk are recorded incrementally by
+`kos_eval_note_crossed_frame` before each frame pop, as meta dicts marked
+`"crossed": True`; the escape-time decoration carries crossed entries
+forward and rebuilds the live-chain portion, so re-escapes cannot
+duplicate frames.
+
+### 4.4 Exception state carriers
+
+Four distinct carriers, each with one job:
+
+- **PyErr** (thread state) — the exception **in flight** during a raise
+  walk. Never survives a suspension.
+- **`KosContext.exc_stash`** — LIFO of exceptions **parked** while a
+  teardown or handler works asynchronously. Entries are single normalized
+  exception instances (traceback attached via `__traceback__`) tagged with
+  the parking node's `node_id`. Helpers: `kos_ctx_exc_stash_push` /
+  `top_is` / `reraise` / `chain_top` (dynchain.c). Parks nest strictly
+  LIFO. Survives chain surgery (INSTALL, graft teardown); context teardown
+  drops survivors loudly.
+- **`KosContext.exc_info_*`** — the context's **handler-visible** state
+  (`sys.exc_info`), swapped with the thread slot at `koskari_eval`
+  entry/exit (§1.1). exc_info itself is the bytecode contract only
+  (`EXCEPTION` / `CHECK_EXCEPTION` read it; TRY/FINALLY consumption
+  writes it) — never a cross-suspension or cross-context stash.
+- **Node handler state** — what a node needs to do its own job stays in
+  the node payload: WITH's exc triple for `__exit__` arguments and
+  `normal_exit`, FINALLY's `handling_raise`, DELIM's `saved_stack` /
+  `saved_pc` resume fields.
 
 ---
 
@@ -638,6 +708,14 @@ while node kinds specialize behavior.
 - **CONSUME** — handle the event (e.g. TRY catches RAISE, FINALLY consumes RETURN)
 - **DENY** — reject (e.g. generator boundary denies SHIFT)
 
+The caps bitfield is the **fast first check** before dispatch: the RAISE
+walk consults `KOS_DYN_CAP_INTERCEPTS_RAISE` and only dispatches
+cap-positive nodes (TRY, FINALLY, GEN, INPLACE DELIM); cap-negative nodes
+skip the kind-switch entirely and go straight to unwind/pop. Distinct
+from `KOS_DYN_CAP_HANDLES_EXCEPTIONS`, which marks failed-pop *recovery*
+(`kos_dyn_exception_unwind`; PROMPT has recovery but passes on
+handle(RAISE), so the two sets genuinely differ).
+
 ### 5.5 unwind(node, event)
 
 `kos_dyn_unwind` takes a `KosXferEvent` (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT) so nodes know *why* they are being torn down. Transfer-aware nodes (e.g. `dynamic-wind`) use this for after-thunks.
@@ -647,7 +725,7 @@ while node kinds specialize behavior.
 | Transit | Walk | Key functions |
 |---------|------|----------------|
 | RETURN | handle(RETURN) per node; FINALLY may overwrite value; if not consumed, unwind → pop callee frame; **parent** delivery for normal calls is **`eval_parent_return_deliver`** after pop (not inline in the opcode). Top-level / GEN-parent completion returns `EVAL_RETURN(val)`. | **`KosEvalState_Transition`** / `kos_dyn_walk_return_to_frame`; **`eval_parent_return_deliver`** |
-| RAISE | handle(RAISE); TRY/FINALLY catch; else unwind → pop | `process_raise` → `kos_dyn_try_local_raise_body`; `kos_dyn_handle` on unwind path |
+| RAISE | cap-gated handle(RAISE); TRY/FINALLY catch (node-authoritative); else unwind → pop, **crossing frames** (recorded into the trace) until chain root or GEN; async teardowns park the exception on the context stash; teardown failures supersede with `__context__` | `process_raise` → `kos_dyn_try_local_raise_body`; `kos_dyn_handle` behind the INTERCEPTS_RAISE gate (§4.2, §4.4) |
 | YIELD | handle(YIELD) per node until generator boundary consumes; post-opcode **`eval_event_yield`** walks/freeze then optional **`eval_event_yield_deliver_to_boundary`** | `kos_dyn_walk_handle_yield` (via **`KosEvalState_Transition`** **`KOS_TRANS_WALK_HANDLE_YIELD`**) |
 | AWAIT | **No** chain unwind or pop; full dynchain preserved; evaluator returns `EVAL_AWAIT(val)` | AWAIT opcode, `revive_await` |
 | BREAK / CONTINUE | Find loop in-frame; walk unwind/pop to loop; handle on loop; resume at loop head or after loop | `kos_dyn_transfer_to_loop` |
@@ -849,6 +927,15 @@ For `kos_callable_tail_call`:
 - If not: push `kos_dyn_push_frame_empty`, then call `tp_kos_install` (no TCO).
 
 TAIL_CALL opcodes return `EVAL_CONTROL_RETURNED()` when they install a new frame; `cg_handle_op_result` routes this to `kos_eval_post_opcode_control_returned_after_hook`, which invokes `kos_dynnode_on_control_returned` for wind thunks.
+
+**Foreign (non-KosCallable) tail calls** pop the caller frame before the
+Python call **only when the frame is bare** (`dyn_top == frame`). With
+extent nodes still open above the frame (a `let` NS, etc.), the pop is
+skipped and the result is delivered through a normal `EVAL_RETURN`
+instead of `EVAL_CONTROL_RETURNED`, so the open extents unwind through
+the regular RETURN walk (`KosEvalState_Call` / `CallArgs` / `CallNoArgs`
+in `eval/eval_utils.c`; `do_frame_prep` applies the same bare-frame guard
+for frameless KosCallables).
 
 ### 7.4 Transfer Plan Integration
 

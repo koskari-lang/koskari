@@ -4,7 +4,7 @@ This document describes the delimited continuation implementation in Koskari,
 as realized in `eval.c`/`eval.h`, `eval/eval_chain.c`, `dynchain.c`/`dynchain.h`,
 and the included units `dynchain/dyn_walk.c` and `dynchain/xfer_plan.c`.
 
-**Invoke model:** two-path per [delimited-invoke-model.md](delimited-invoke-model.md) — resume-in-place (Path A) when the capture-time prompt is live in dyn_top ancestry; PUSH graft (Path B) otherwise. Capture is bounded at the prompt's owning frame. Both are implemented; the sections below reflect the current behavior.
+**Invoke model:** two-path per [delimited-invoke-model.md](../archive/delimited-invoke-model.md) — resume-in-place (Path A) when the capture-time prompt is live in dyn_top ancestry; PUSH graft (Path B) otherwise. Capture is bounded at the prompt's owning frame. Both are implemented; the sections below reflect the current behavior.
 
 ## Design Decisions (Implemented)
 

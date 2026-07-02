@@ -396,6 +396,44 @@ static KosEvalMode revive_yield(
 }
 
 
+/**
+   Build the trace metadata dict for one frame. crossed marks entries
+   recorded while the raise walk crossed (and popped) the frame, as
+   opposed to frames still live at escape time.
+*/
+static PyObject *dynchain_frame_meta(KosDynFrame *frame, int crossed) {
+
+  PyObject *meta = PyDict_New();
+  if (! meta)
+    return NULL;
+
+  KosCode *code = KosDynFrame_CODE(frame);
+  uint16_t line = 0, col = 0;
+  uint32_t pc = KosDynFrame_ACTING_PC(frame);
+  if (code)
+    kos_loc_lookup((PyObject *) code, pc, &line, &col);
+
+  PyObject *name = code ? KosCode_NAME(code) : Py_None;
+  PyObject *filename = code ? KosCode_FILENAME(code) : Py_None;
+
+  PyDict_SetItemString(meta, "name", name ? name : Py_None);
+  PyDict_SetItemString(meta, "filename", filename ? filename : Py_None);
+  PyObject *line_o = PyLong_FromUnsignedLong((unsigned long) line);
+  PyObject *col_o = PyLong_FromUnsignedLong((unsigned long) col);
+  PyObject *pc_o = PyLong_FromUnsignedLong((unsigned long) pc);
+  if (line_o && col_o && pc_o) {
+    PyDict_SetItemString(meta, "line", line_o);
+    PyDict_SetItemString(meta, "col", col_o);
+    PyDict_SetItemString(meta, "pc", pc_o);
+  }
+  Py_XDECREF(line_o);
+  Py_XDECREF(col_o);
+  Py_XDECREF(pc_o);
+  PyDict_SetItemString(meta, "crossed", crossed ? Py_True : Py_False);
+  return meta;
+}
+
+
 static void decorate_exception_with_dynchain(
     KosContext *ctx,
     PyObject *exc_val) {
@@ -410,6 +448,27 @@ static void decorate_exception_with_dynchain(
     return;
   }
 
+  /* Carry forward frames recorded while the raise walk crossed them;
+     they are no longer on the live chain below. */
+  {
+    PyObject *prior = PyObject_GetAttrString(exc_val,
+                                             "__koskari_dynchain__");
+    if (! prior) {
+      PyErr_Clear();
+    } else {
+      if (PyList_Check(prior)) {
+        for (Py_ssize_t i = 0; i < PyList_GET_SIZE(prior); i++) {
+          PyObject *meta = PyList_GET_ITEM(prior, i);
+          PyObject *crossed = PyDict_Check(meta)
+              ? PyDict_GetItemString(meta, "crossed") : NULL;
+          if (crossed && PyObject_IsTrue(crossed))
+            PyList_Append(frames, meta);
+        }
+      }
+      Py_DECREF(prior);
+    }
+  }
+
   {
     KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
     KosDynNode *chain_top = active_es
@@ -417,40 +476,16 @@ static void decorate_exception_with_dynchain(
         : KosContext_DYN_TOP(ctx);
 
     for (KosDynNode *node = chain_top; node; node = KosDynNode_PARENT(node)) {
-    if (! KosDynNode_IS_FRAME(node)) {
-      continue;
-    }
-    KosDynFrame *frame = (KosDynFrame *) node;
-    PyObject *meta = PyDict_New();
-    if (! meta) {
-      PyErr_Clear();
-      continue;
-    }
-
-    KosCode *code = KosDynFrame_CODE(frame);
-    uint16_t line = 0, col = 0;
-    uint32_t pc = KosDynFrame_ACTING_PC(frame);
-    if (code)
-      kos_loc_lookup((PyObject *) code, pc, &line, &col);
-
-    PyObject *name = code ? KosCode_NAME(code) : Py_None;
-    PyObject *filename = code ? KosCode_FILENAME(code) : Py_None;
-
-    PyDict_SetItemString(meta, "name", name ? name : Py_None);
-    PyDict_SetItemString(meta, "filename", filename ? filename : Py_None);
-    PyObject *line_o = PyLong_FromUnsignedLong((unsigned long) line);
-    PyObject *col_o = PyLong_FromUnsignedLong((unsigned long) col);
-    PyObject *pc_o = PyLong_FromUnsignedLong((unsigned long) pc);
-    if (line_o && col_o && pc_o) {
-      PyDict_SetItemString(meta, "line", line_o);
-      PyDict_SetItemString(meta, "col", col_o);
-      PyDict_SetItemString(meta, "pc", pc_o);
-    }
-    Py_XDECREF(line_o);
-    Py_XDECREF(col_o);
-    Py_XDECREF(pc_o);
-    PyList_Append(frames, meta);
-    Py_DECREF(meta);
+      if (! KosDynNode_IS_FRAME(node)) {
+        continue;
+      }
+      PyObject *meta = dynchain_frame_meta((KosDynFrame *) node, 0);
+      if (! meta) {
+        PyErr_Clear();
+        continue;
+      }
+      PyList_Append(frames, meta);
+      Py_DECREF(meta);
     }
   }
 
@@ -459,6 +494,52 @@ static void decorate_exception_with_dynchain(
   }
 
   Py_DECREF(frames);
+}
+
+
+/**
+   Record the current frame into the in-flight exception's
+   __koskari_dynchain__ metadata before the raise walk pops it. PyErr is
+   preserved across the call; failures are swallowed (trace decoration is
+   best-effort). See eval.h.
+*/
+void kos_eval_note_crossed_frame(KosEvalState *es) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
+  if (! es || ! KosEvalState_FRAME(es) || ! PyErr_Occurred())
+    return;
+
+  KosEvalState_FlushLiveRegsToFrame(es);
+  PyErr_Fetch(&typ, &val, &tb);
+  PyErr_NormalizeException(&typ, &val, &tb);
+
+  if (val && PyExceptionInstance_Check(val)) {
+    PyObject *frames = PyObject_GetAttrString(val, "__koskari_dynchain__");
+    if (! frames) {
+      PyErr_Clear();
+      frames = PyList_New(0);
+    } else if (! PyList_Check(frames)) {
+      Py_DECREF(frames);
+      frames = PyList_New(0);
+    }
+    if (frames) {
+      PyObject *meta = dynchain_frame_meta(KosEvalState_FRAME(es), 1);
+      if (meta) {
+        PyList_Append(frames, meta);
+        Py_DECREF(meta);
+        if (PyObject_SetAttrString(val, "__koskari_dynchain__", frames) < 0)
+          PyErr_Clear();
+      } else {
+        PyErr_Clear();
+      }
+      Py_DECREF(frames);
+    } else {
+      PyErr_Clear();
+    }
+  }
+
+  PyErr_Restore(typ, val, tb);
 }
 
 
@@ -1006,6 +1087,17 @@ void KosContext_Free(KosContext *ctx) {
   Py_XDECREF(KosContext_INJECT_VALUE(ctx));
   Py_XDECREF(KosContext_PENDING_RETURN_VALUE(ctx));
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
+  if (KosContext_EXC_STASH(ctx)) {
+    SAYF("[eval] context teardown dropping %zd parked exception(s)\n",
+         PyList_GET_SIZE(KosContext_EXC_STASH(ctx)));
+    Py_CLEAR(KosContext_EXC_STASH(ctx));
+  }
+  Py_XDECREF(KosContext_EXC_INFO_TYPE(ctx));
+  KosContext_EXC_INFO_TYPE(ctx) = NULL;
+  Py_XDECREF(KosContext_EXC_INFO_VALUE(ctx));
+  KosContext_EXC_INFO_VALUE(ctx) = NULL;
+  Py_XDECREF(KosContext_EXC_INFO_TB(ctx));
+  KosContext_EXC_INFO_TB(ctx) = NULL;
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
 
@@ -1041,6 +1133,10 @@ int KosContext_Traverse(
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
+  Py_VISIT(KosContext_EXC_STASH(ctx));
+  Py_VISIT(KosContext_EXC_INFO_TYPE(ctx));
+  Py_VISIT(KosContext_EXC_INFO_VALUE(ctx));
+  Py_VISIT(KosContext_EXC_INFO_TB(ctx));
 
   dyn_top = KosContext_DYN_TOP(ctx);
   plan = KosContext_PLAN(ctx);
@@ -2552,10 +2648,24 @@ KosOpResult koskari_eval(
     PyObject *throw_exc) {
 
   KosOpResult eval_ret = EVAL_RAISE();
+  PyObject *host_exc_t = NULL, *host_exc_v = NULL, *host_exc_tb = NULL;
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koskari_eval");
     return EVAL_RAISE();
+  }
+
+  /* Swap in this context's handler-visible exception state (sys.exc_info),
+     saving the host's. Contexts interleaved on one thread must not see
+     each other's handled exception; the reverse swap runs at cleanup. */
+  PyErr_GetExcInfo(&host_exc_t, &host_exc_v, &host_exc_tb);
+  if (host_exc_v || KosContext_EXC_INFO_VALUE(ctx)) {
+    PyErr_SetExcInfo(KosContext_EXC_INFO_TYPE(ctx),
+                     KosContext_EXC_INFO_VALUE(ctx),
+                     KosContext_EXC_INFO_TB(ctx));
+    KosContext_EXC_INFO_TYPE(ctx) = NULL;
+    KosContext_EXC_INFO_VALUE(ctx) = NULL;
+    KosContext_EXC_INFO_TB(ctx) = NULL;
   }
 
   KosEvalState es;
@@ -2615,6 +2725,26 @@ koskari_eval_cleanup:
   KosEvalState_FreezeToContext(&es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosEvalState_LeaveDomainScope(&es);
+
+  /* Save this context's handler-visible exception state and restore the
+     host's (the reverse of the entry swap). */
+  {
+    PyObject *ct = NULL, *cv = NULL, *ctb = NULL;
+    PyErr_GetExcInfo(&ct, &cv, &ctb);
+    if (cv || host_exc_v) {
+      KosContext_EXC_INFO_TYPE(ctx) = ct;
+      KosContext_EXC_INFO_VALUE(ctx) = cv;
+      KosContext_EXC_INFO_TB(ctx) = ctb;
+      PyErr_SetExcInfo(host_exc_t, host_exc_v, host_exc_tb);
+    } else {
+      Py_XDECREF(ct);
+      Py_XDECREF(cv);
+      Py_XDECREF(ctb);
+      Py_XDECREF(host_exc_t);
+      Py_XDECREF(host_exc_v);
+      Py_XDECREF(host_exc_tb);
+    }
+  }
   return eval_ret;
 }
 
