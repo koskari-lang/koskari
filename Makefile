@@ -367,7 +367,7 @@ CLEAN_DIRS := koskari tests tools examples
 
 clean-built:  ## Remove build artifacts
 	@echo "Cleaning build artifacts..."
-	@rm -rf $(BUILD_DIR) $(DIST_DIR) .eggdir/*.egg-info/
+	@rm -rf $(BUILD_DIR) $(DIST_DIR) .eggs/*.egg-info/
 	@if [ -f .venv/.koskari-built ]; then rm -f .venv/.koskari-built; fi
 
 clean-ext:  ## Remove compiled extensions
@@ -389,8 +389,8 @@ clean-native:  ## Remove native test build artifacts
 clean: clean-built clean-ext clean-pyc clean-native  ## Remove all build artifacts and caches
 	@echo "Clean complete"
 
-purge: clean  ## Deep clean (includes .tox, .eggs, etc.)
-	@rm -rf .eggs .tox .venv .mypy_cache .pytest_cache
+purge: clean  ## Deep clean (includes .tox, .venv, etc.)
+	@rm -rf .tox .venv .mypy_cache .pytest_cache
 	@rm -rf .coverage htmlcov/
 	@echo "Purge complete"
 
