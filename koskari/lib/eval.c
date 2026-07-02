@@ -1092,6 +1092,12 @@ void KosContext_Free(KosContext *ctx) {
          PyList_GET_SIZE(KosContext_EXC_STASH(ctx)));
     Py_CLEAR(KosContext_EXC_STASH(ctx));
   }
+  Py_XDECREF(KosContext_EXC_INFO_TYPE(ctx));
+  KosContext_EXC_INFO_TYPE(ctx) = NULL;
+  Py_XDECREF(KosContext_EXC_INFO_VALUE(ctx));
+  KosContext_EXC_INFO_VALUE(ctx) = NULL;
+  Py_XDECREF(KosContext_EXC_INFO_TB(ctx));
+  KosContext_EXC_INFO_TB(ctx) = NULL;
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
 
@@ -1128,6 +1134,9 @@ int KosContext_Traverse(
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_EXC_STASH(ctx));
+  Py_VISIT(KosContext_EXC_INFO_TYPE(ctx));
+  Py_VISIT(KosContext_EXC_INFO_VALUE(ctx));
+  Py_VISIT(KosContext_EXC_INFO_TB(ctx));
 
   dyn_top = KosContext_DYN_TOP(ctx);
   plan = KosContext_PLAN(ctx);
@@ -2639,10 +2648,24 @@ KosOpResult koskari_eval(
     PyObject *throw_exc) {
 
   KosOpResult eval_ret = EVAL_RAISE();
+  PyObject *host_exc_t = NULL, *host_exc_v = NULL, *host_exc_tb = NULL;
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koskari_eval");
     return EVAL_RAISE();
+  }
+
+  /* Swap in this context's handler-visible exception state (sys.exc_info),
+     saving the host's. Contexts interleaved on one thread must not see
+     each other's handled exception; the reverse swap runs at cleanup. */
+  PyErr_GetExcInfo(&host_exc_t, &host_exc_v, &host_exc_tb);
+  if (host_exc_v || KosContext_EXC_INFO_VALUE(ctx)) {
+    PyErr_SetExcInfo(KosContext_EXC_INFO_TYPE(ctx),
+                     KosContext_EXC_INFO_VALUE(ctx),
+                     KosContext_EXC_INFO_TB(ctx));
+    KosContext_EXC_INFO_TYPE(ctx) = NULL;
+    KosContext_EXC_INFO_VALUE(ctx) = NULL;
+    KosContext_EXC_INFO_TB(ctx) = NULL;
   }
 
   KosEvalState es;
@@ -2702,6 +2725,26 @@ koskari_eval_cleanup:
   KosEvalState_FreezeToContext(&es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosEvalState_LeaveDomainScope(&es);
+
+  /* Save this context's handler-visible exception state and restore the
+     host's (the reverse of the entry swap). */
+  {
+    PyObject *ct = NULL, *cv = NULL, *ctb = NULL;
+    PyErr_GetExcInfo(&ct, &cv, &ctb);
+    if (cv || host_exc_v) {
+      KosContext_EXC_INFO_TYPE(ctx) = ct;
+      KosContext_EXC_INFO_VALUE(ctx) = cv;
+      KosContext_EXC_INFO_TB(ctx) = ctb;
+      PyErr_SetExcInfo(host_exc_t, host_exc_v, host_exc_tb);
+    } else {
+      Py_XDECREF(ct);
+      Py_XDECREF(cv);
+      Py_XDECREF(ctb);
+      Py_XDECREF(host_exc_t);
+      Py_XDECREF(host_exc_v);
+      Py_XDECREF(host_exc_tb);
+    }
+  }
   return eval_ret;
 }
 
