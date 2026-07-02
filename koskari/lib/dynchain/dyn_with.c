@@ -47,18 +47,51 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_SHOT(node) = shot;
+  KosDynWith_EXIT_DONE(node) = NULL;
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
   KosDynWith_EXC_TYP(node) = NULL;
   KosDynWith_EXC_VAL(node) = NULL;
   KosDynWith_EXC_TB(node) = NULL;
+
+  /* Single-shot: the exit-done bit lives in a KosRef cell shared across
+     continuation clones (non-empty once __exit__ has run) so a captured
+     twin cannot re-run a discharged manager. */
+  if (shot == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE) {
+    KosDynWith_EXIT_DONE(node) = KosRef_New(NULL, NULL);
+    if (! KosDynWith_EXIT_DONE(node)) {
+      KosStackBlock_ReleaseChain(stack);
+      KosDynNode_STACK((KosDynNode *) node) = NULL;
+      kos_dynnode_return_to_freelist((KosDynNode *) node);
+      return NULL;
+    }
+  }
   return node;
 }
 
 
 static void kos_dyn_with_shot_after_exit_done(KosDynWith *node) {
-  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE)
+  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE) {
     KosDynWith_SHOT(node) = KOS_DYN_WITH_SHOT_SINGLE_DONE;
+    if (KosDynWith_EXIT_DONE(node))
+      KosRef_Store(KosDynWith_EXIT_DONE(node), Py_True);
+  }
+}
+
+
+/**
+   True when this node's single-shot __exit__ has already run, on this
+   node or on any clone sharing its exit-done cell. Multi-shot is never
+   done.
+*/
+static int kos_dyn_with_single_exit_done(KosDynWith *node) {
+  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_MULTI)
+    return 0;
+  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE)
+    return 1;
+  if (KosDynWith_EXIT_DONE(node))
+    return KosRef_IsEmpty(KosDynWith_EXIT_DONE(node)) == 0;
+  return 0;
 }
 
 
@@ -110,6 +143,10 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_SHOT(node) = KosDynWith_SHOT(src);
+  /* Share (not copy) the single-shot exit-done cell: the live twin's exit
+     must be visible to every clone of this extent. */
+  KosDynWith_EXIT_DONE(node) = KosDynWith_EXIT_DONE(src);
+  Py_XINCREF(KosDynWith_EXIT_DONE(node));
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
   if (KosDynWith_NAME(node))
     Py_INCREF(KosDynWith_NAME(node));
@@ -150,6 +187,8 @@ static void kos_dynwith_free(KosDynWith *node) {
   KosDynWith_EXC_VAL(node) = NULL;
   Py_XDECREF(KosDynWith_EXC_TB(node));
   KosDynWith_EXC_TB(node) = NULL;
+  Py_XDECREF(KosDynWith_EXIT_DONE(node));
+  KosDynWith_EXIT_DONE(node) = NULL;
 
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
@@ -171,6 +210,9 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
   if (snapshot_set_int(data, "phase", (int) KosDynWith_PHASE(with_node)) < 0)
     return -1;
   if (snapshot_set_int(data, "shot", (int) KosDynWith_SHOT(with_node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "exit_done",
+      kos_dyn_with_single_exit_done(with_node)) < 0)
     return -1;
   if (snapshot_set_uint(data, "resume_pc", KosDynWith_RESUME_PC(with_node)) < 0)
     return -1;
@@ -414,7 +456,7 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
    INSTALL wind: sync __enter__ during transfer. Callers: kos_dyn_wind.
 */
 static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
-  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE) {
+  if (kos_dyn_with_single_exit_done(node)) {
     return EVAL_NORMAL();
   }
 
@@ -460,7 +502,15 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
 */
 KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
 
-  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE) {
+  if (kos_dyn_with_single_exit_done(node)) {
+    /* __exit__ already ran, possibly on a twin sharing the exit-done
+       cell; complete the extent without re-firing it. */
+    if (! PyErr_Occurred()) {
+      if (KosEvalState_FRAME(es))
+        KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
+      if (kos_dyn_with_post_unwind_deliver(es, node) < 0)
+        return EVAL_RAISE();
+    }
     return EVAL_NORMAL();
   }
 
@@ -602,6 +652,7 @@ static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynWith_MGR(with_node));
   Py_VISIT(KosDynWith_ENTER(with_node));
   Py_VISIT(KosDynWith_EXIT(with_node));
+  Py_VISIT(KosDynWith_EXIT_DONE(with_node));
   Py_VISIT(KosDynWith_NAME(with_node));
   if (KosDynWith_PHASE(with_node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
     Py_VISIT(KosDynWith_EXC_TYP(with_node));

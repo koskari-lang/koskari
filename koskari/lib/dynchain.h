@@ -285,6 +285,9 @@ struct KosDynNode {
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_IDLE, PENDING_EXIT_AWAIT, or PENDING_ENTER_AWAIT */
       uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
+      PyObject *exit_done; /* KosRef shared across clones (owned); non-empty
+                              once the single-shot __exit__ has run. NULL for
+                              multi-shot */
       PyObject *name;      /* binding name or NULL (owned) */
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
       PyObject *exc_typ;   /* owned; only when phase == PENDING_EXIT_AWAIT */
@@ -2353,6 +2356,7 @@ enum {
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
 #define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
 #define KosDynWith_SHOT(n)         (((KosDynNode *)(n))->u.with.shot)
+#define KosDynWith_EXIT_DONE(n)    (((KosDynNode *)(n))->u.with.exit_done)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_EXC_TYP(n)      (((KosDynNode *)(n))->u.with.exc_typ)
