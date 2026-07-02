@@ -12,6 +12,23 @@ design docs for detail.
   consumers route through one capacity-driven dispatcher instead of scattered
   calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
   Ref: [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
+- **Cap-gated exception dispatch** — the caps bitfield is meant to be the
+  earliest (and fastest) indicator of whether a node participates in
+  exception handling or can just be cleanly unwound/popped. The raise walk
+  (`kos_dyn_try_local_raise_body`) should consult a handling cap first and
+  only then call `kos_dyn_handle` (the type-specific dispatch); today it
+  calls the kind-switch unconditionally, and `KOS_DYN_CAP_HANDLES_EXCEPTIONS`
+  is consulted only on the failed-pop recovery branch. Wiring this up also
+  means setting the cap on every kind that handles RAISE (TRY, FINALLY, GEN;
+  the INPLACE DELIM restitch and WITH swallow are currently kind-special-
+  cased in the walk and should ride the same gate). Related cleanup: the
+  walk, not the node, should own the pending exception across suspended
+  handler/unwind work — subsuming the three bespoke parking protocols
+  (FINALLY exc_info + HANDLING_RAISE, WITH exc triple fields, WIND
+  pending_exc fields). Invariant to preserve: unwind/pop of non-handling
+  nodes may suspend via await, but never exits the evaluator loop with the
+  exception condition; a raise leaves only at the chain root or a GEN
+  boundary.
 
 ---
 
