@@ -23,11 +23,10 @@ design docs for detail.
   at the prompt's owning frame. Design:
   [interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md).
   Regression spec: `test_reset_shift.py` (wind-count + invoke cases).
-  Remaining known defect tracked separately: Path B slice exceptions escape
-  the evaluator (red: `test_remote_invoke_slice_exception_propagates`).
-  Fixed since: dyn-wind after thunks on exception unwind (parked-exception
-  cell); WITH double-exit under remote invoke (shared KosRef exit-done
-  cell).
+  All three follow-up defects fixed since: dyn-wind after thunks on
+  exception unwind (parked-exception cell); WITH double-exit under remote
+  invoke (shared KosRef exit-done cell); Path B slice exception escape
+  (generic cross-frame raise propagation, `test_raise_across_frames.py`).
 - **Async nested await during transfer** — when a wind/unwind thunk under an
   active or suspended transfer returns `KOS_XFER_SUSPENDED_AWAIT`, `plan_stack`
   must remain coherent across `KOS_RES_AWAIT` freeze/thaw, including when
