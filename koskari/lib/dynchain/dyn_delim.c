@@ -23,6 +23,9 @@ KosDynDelim *kos_dyndelim_new(
   KosDynDelim_RETURN_PC(delim) = pc;
   KosDynDelim_RETURN_FRAME_NODE(delim) = (KosDynNode *) frame;
   KosDynDelim_RETURN_NODE(delim) = node;
+  KosDynDelim_SAVED_STACK(delim) = NULL;
+  KosDynDelim_SAVED_PC(delim) = 0;
+  KosDynDelim_SAVED_ACTING_PC(delim) = 0;
   return delim;
 }
 
@@ -46,6 +49,9 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
   KosDynDelim_RETURN_PC(clone) = KosDynDelim_RETURN_PC(delim);
   KosDynDelim_RETURN_FRAME_NODE(clone) = KosDynDelim_RETURN_FRAME_NODE(delim);
   KosDynDelim_RETURN_NODE(clone) = KosDynDelim_RETURN_NODE(delim);
+  KosDynDelim_SAVED_STACK(clone) = NULL;
+  KosDynDelim_SAVED_PC(clone) = KosDynDelim_SAVED_PC(delim);
+  KosDynDelim_SAVED_ACTING_PC(clone) = KosDynDelim_SAVED_ACTING_PC(delim);
   return clone;
 }
 
@@ -60,6 +66,11 @@ void kos_dyndelim_free(KosDynDelim *delim) {
   if (KosDynDelim_RETURN_CHAIN(delim)) {
     kos_dynchain_free(KosDynDelim_RETURN_CHAIN(delim), NULL);
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
+  }
+
+  if (KosDynDelim_SAVED_STACK(delim)) {
+    KosStackBlock_ReleaseChain(KosDynDelim_SAVED_STACK(delim));
+    KosDynDelim_SAVED_STACK(delim) = NULL;
   }
 
   kos_dynnode_return_to_freelist(delim);
@@ -82,6 +93,11 @@ static int dynnode_to_dict_delim(KosDynNode *node, PyObject *data) {
       KosDynDelim_RETURN_NODE(delim)
           ? KosDynNode_NODE_ID(KosDynDelim_RETURN_NODE(delim))
           : 0) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "saved_pc", KosDynDelim_SAVED_PC(delim)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "has_saved_stack",
+      KosDynDelim_SAVED_STACK(delim) ? 1 : 0) < 0)
     return -1;
   return 0;
 }
@@ -157,10 +173,18 @@ KosDynDelim *kos_find_nearest_delim(KosEvalState *es, uint8_t mode) {
 
 
 /**
-   GC traverse a KOS_DYN_DELIM: visit owned return chain payload if present.
+   GC traverse a KOS_DYN_DELIM: visit owned return chain and displaced
+   stack payloads if present.
 */
 static int dynnode_traverse_delim(KosDynNode *node, visitproc visit, void *arg) {
   KosDynNode *chain = KosDynDelim_RETURN_CHAIN((KosDynDelim *) node);
+  KosStackBlock *saved = KosDynDelim_SAVED_STACK((KosDynDelim *) node);
+
+  if (saved) {
+    int tr = KosStackBlock_Traverse(saved, visit, arg);
+    if (tr != 0)
+      return tr;
+  }
   if (! chain)
     return 0;
   return kos_dynchain_traverse(chain, NULL, visit, arg);

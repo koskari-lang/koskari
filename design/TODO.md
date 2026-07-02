@@ -12,16 +12,29 @@ design docs for detail.
   consumers route through one capacity-driven dispatcher instead of scattered
   calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
   Ref: [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
+- **Exception patch-up** — single arc covering the agreed exception model:
+  cap fast check before `kos_dyn_handle` dispatch; context-owned LIFO
+  exception stash stack (propagation state) with node-owned handler state;
+  failed-pop taxonomy (internal FATAL vs user unwind failure chained via
+  `__context__`, never abending the loop); per-frame traceback collection
+  on crossing; exc_info scoped to the bytecode contract (+ suspension-gap
+  reproducer); TRY node-vs-extent-table source-of-truth decision. Design:
+  [interpreter/exception-patchup.md](interpreter/exception-patchup.md).
 
 ---
 
 ## Continuations / transfer plans
 
-- **Delimited invoke two-path model** — resume-in-place when the prompt is in
-  live ancestry; PUSH graft when not. Addresses in-shift double wind/unwind on
-  remote vs in-tree invoke. Design:
+- ~~**Delimited invoke two-path model**~~ — **done.** Resume-in-place (Path A)
+  when the capture-time prompt node is live in ancestry; bounded PUSH graft
+  (Path B) when not. Fixes the in-shift double wind/unwind and bounds capture
+  at the prompt's owning frame. Design:
   [interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md).
-  Regression spec: `test_reset_shift.py` (capture + invoke cases).
+  Regression spec: `test_reset_shift.py` (wind-count + invoke cases).
+  All three follow-up defects fixed since: dyn-wind after thunks on
+  exception unwind (parked-exception cell); WITH double-exit under remote
+  invoke (shared KosRef exit-done cell); Path B slice exception escape
+  (generic cross-frame raise propagation, `test_raise_across_frames.py`).
 - **Async nested await during transfer** — when a wind/unwind thunk under an
   active or suspended transfer returns `KOS_XFER_SUSPENDED_AWAIT`, `plan_stack`
   must remain coherent across `KOS_RES_AWAIT` freeze/thaw, including when

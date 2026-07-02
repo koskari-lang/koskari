@@ -199,12 +199,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_around_shift_invoke_after_capture(self):
         """
-        KNOWN BUG: delimited invoke after capture with dyn-wind wrapping shift.
-
-        Capture completes (see test_dyn_wind_around_shift_captures_in_place) but
-        (call k N) raises RuntimeError block cannot grow over limit — unbounded
-        stack growth during delimited PUSH when the captured segment includes
-        heritage WIND nodes (segment_top = dyn_top in kos_shift_capture).
+        Remote delimited invoke with dyn-wind wrapping shift delivers the
+        injected value to the call site. Thunk lifecycle is covered by
+        test_dyn_wind_thunk_count_remote_invoke.
         """
 
         src_str = """
@@ -225,9 +222,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_around_shift_invoke_inside_shift_body(self):
         """
-        KNOWN BUG: same stack blow-up when invoke runs inside the shift body.
-
-        (reset (dyn-wind ... (shift k (call k 5)))) should return 5.
+        In-shift delimited invoke with dyn-wind wrapping shift delivers the
+        injected value to the call site. Thunk lifecycle is covered by
+        test_dyn_wind_thunk_count_invoke_inside_shift_body.
         """
 
         src_str = """
@@ -240,6 +237,325 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 5)
+
+
+    async def test_dyn_wind_thunk_count_invoke_inside_shift_body(self):
+        """
+        KNOWN BUG (intentionally red): in-shift invoke double-runs dyn-wind
+        thunks.
+
+        (reset (dyn-wind before (shift k (call k 5)) after)) returns 5, but
+        the PUSH invoke model grafts a clone of the captured segment while
+        the live WIND below is still entered, replaying before on the clone
+        and unwinding both copies: [before, before, after, after]. Correct
+        lifecycle is a single [before, after]. Fix is Path A in
+        design/interpreter/delimited-invoke-model.md (resume in place when
+        the prompt is in live ancestry; no graft, no wind replay).
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (rec "before")
+            (compile/shift k (compile/call k 5))
+            (rec "after")))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["before", "after"])
+
+
+    async def test_dyn_wind_thunk_count_remote_invoke(self):
+        """
+        Remote invoke (reset finished before call) winds the graft exactly
+        once: natural [before, after] during capture, then one [before,
+        after] replay around the invoke. Regression guard for Path B in
+        design/interpreter/delimited-invoke-model.md.
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/setq captured
+              (compile/reset
+                (compile/dyn-wind
+                  (rec "before")
+                  (compile/shift k k)
+                  (rec "after"))))
+            (compile/call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["before", "after", "before", "after"])
+
+
+    async def test_param_in_caller_frame_uses_invoke_scope(self):
+        """
+        A parameterize established in a caller frame outside the reset's
+        owning frame is not captured by the bounded template: remote invoke
+        resolves it from the invoke-time dynamic environment (here amt=200,
+        so 7 + 200 = 207). Params between the prompt and its owning frame
+        remain captured (test_delimited_param_outside_reset_not_captured).
+        """
+
+        def add(a):
+            return a + ParamRef('amt', 0).deref()
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/parameterize [[amt 100]]
+              (compile/setq captured
+                (compile/call
+                  (compile/lambda []
+                    (compile/reset (add (compile/shift k k)))))))
+            (compile/parameterize [[amt 200]]
+              (compile/call captured 7))))
+        """
+        expr, mod = self.compile_expr(src_str, add=add)
+        result = await expr()
+        self.assertEqual(result, 207)
+
+
+    async def test_dyn_wind_thunk_count_invoke_in_deeper_frame(self):
+        """
+        KNOWN BUG (intentionally red): same double-wind as
+        test_dyn_wind_thunk_count_invoke_inside_shift_body, but the in-shift
+        invoke happens in a deeper frame (k passed to and called from a
+        lambda inside the shift body). Correct lifecycle is a single
+        [before, after]. Fix is Path A in
+        design/interpreter/delimited-invoke-model.md.
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (rec "before")
+            (compile/shift k
+              (compile/call (compile/lambda [f] (compile/call f 5)) k))
+            (rec "after")))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["before", "after"])
+
+
+    async def test_dyn_wind_thunk_count_multishot_in_shift(self):
+        """
+        Multi-shot in-shift invoke: the first call runs in place on the live
+        slice (Path A); each re-invoke instantiates the captured template
+        via the PUSH graft (Path B fallback). Every invoke gets exactly one
+        before/after pair, and add(3, 4) = 7 flows out of the reset.
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        def add(a, b):
+            return a + b
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (rec "before")
+            (compile/shift k
+              (add (compile/call k 3) (compile/call k 4)))
+            (rec "after")))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec, add=add)
+        result = await expr()
+        self.assertEqual(result, 7)
+        self.assertEqual(events, ["before", "after", "before", "after"])
+
+
+    async def test_recursive_invoke_in_slice_path(self):
+        """
+        Recursive delimited invoke: the shift body stashes k in a module
+        global and the slice conditionally re-invokes it, so k runs in the
+        path of k. Recursion is permitted and structurally safe: in-path
+        invokes can never take Path A (the live SHIFT node sits in the
+        INPLACE delim's stash during the slice, so readiness fails) and
+        route to the bounded PUSH graft, one template instance per level.
+        Levels unwind independently: guard sees 0, 1, 2, 3 and every level
+        returns the base value 3.
+        """
+
+        events = []
+
+        def lt(a, b):
+            events.append(a)
+            return a < b
+
+        def inc(n):
+            return n + 1
+
+        src_str = """
+        (compile/begin
+          (compile/setq g nil)
+          (compile/reset
+            (compile/begin
+              (compile/setq n
+                (compile/shift k
+                  (compile/begin
+                    (compile/setq g k)
+                    (compile/call k 0))))
+              (compile/cond
+                [(lt n 3) (compile/call g (inc n))]
+                [else: n]))))
+        """
+        expr, mod = self.compile_expr(src_str, lt=lt, inc=inc)
+        result = await expr()
+        self.assertEqual(result, 3)
+        self.assertEqual(events, [0, 1, 2, 3])
+
+
+    async def test_inplace_slice_exception_caught_at_invoke_site(self):
+        """
+        An exception raised inside an in-place (Path A) slice restitches the
+        invoke span and propagates to the invoke call site, where the
+        enclosing compile/try in the shift body catches it.
+        """
+
+        def boom(v):
+            raise ValueError("slice-boom")
+
+        src_str = """
+        (compile/reset
+          (boom
+            (compile/shift k
+              (compile/try
+                (compile/call k 5)
+                ([ValueError] "caught")))))
+        """
+        expr, mod = self.compile_expr(
+            src_str, boom=boom, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+
+
+    async def test_inplace_slice_raise_runs_after_thunk(self):
+        """
+        KNOWN DEFECT (intentionally red): when an in-place (Path A) slice
+        raises, the dyn-wind after thunk wrapping the slice must run exactly
+        once during the raise unwind before the exception reaches the
+        invoke-site handler. Today it is skipped - the engine-wide dyn-wind
+        after-thunk-on-raise defect (also red in test_dyn_wind.py's
+        continuation-free reproducer).
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        def boom(v):
+            raise ValueError("slice-boom")
+
+        src_str = """
+        (compile/reset
+          (compile/dyn-wind
+            (rec "before")
+            (boom
+              (compile/shift k
+                (compile/try
+                  (compile/call k 5)
+                  ([ValueError] "caught"))))
+            (rec "after")))
+        """
+        expr, mod = self.compile_expr(
+            src_str, rec=rec, boom=boom, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+        self.assertEqual(events, ["before", "after"])
+
+
+    async def test_remote_invoke_slice_exception_propagates(self):
+        """
+        KNOWN DEFECT (intentionally red): an exception raised by the
+        continuation slice during a remote invoke must route to the invoke
+        call site, where the enclosing compile/try catches it and this test
+        returns "caught". Today it escapes the evaluator as a raw Python
+        exception - the RAISE walk from the grafted segment never reaches
+        the live handlers below the DELIM bookmark.
+        """
+
+        def boom(v):
+            raise ValueError("slice-boom")
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/setq captured
+              (compile/reset (boom (compile/shift k k))))
+            (compile/try
+              (compile/call captured 5)
+              ([ValueError] "caught"))))
+        """
+        expr, mod = self.compile_expr(
+            src_str, boom=boom, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+
+
+    async def test_remote_invoke_with_enter_exit_count(self):
+        """
+        KNOWN DEFECT (intentionally red): compile/with wrapping shift under
+        a remote invoke must see a single [enter, exit] lifecycle on the
+        manager. Today __exit__ runs twice - once at POP_SHIFT truncation
+        during capture, once more when the grafted clone's WITH unwinds on
+        the invoke return path.
+        """
+
+        events = []
+
+        class Mgr:
+
+            def __enter__(self):
+                events.append("enter")
+                return self
+
+            def __exit__(self, typ, val, tb):
+                events.append("exit")
+                return False
+
+        src_str = """
+        (compile/let [[captured nil]]
+          (compile/begin
+            (compile/setq captured
+              (compile/reset
+                (compile/with [(compile/call make_mgr)]
+                  (compile/shift k k))))
+            (compile/call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["enter", "exit"])
 
 
 # The end.

@@ -4,7 +4,7 @@ This document describes the delimited continuation implementation in Koskari,
 as realized in `eval.c`/`eval.h`, `eval/eval_chain.c`, `dynchain.c`/`dynchain.h`,
 and the included units `dynchain/dyn_walk.c` and `dynchain/xfer_plan.c`.
 
-**Target invoke model (not yet implemented):** [delimited-invoke-model.md](delimited-invoke-model.md) — two-path invoke (resume-in-place when the prompt is in live ancestry; PUSH graft when not); bookmarked return via DELIM; prompt-bounded capture. The sections below document **current** behavior (PUSH-only delimited invoke).
+**Invoke model:** two-path per [delimited-invoke-model.md](delimited-invoke-model.md) — resume-in-place (Path A) when the capture-time prompt is live in dyn_top ancestry; PUSH graft (Path B) otherwise. Capture is bounded at the prompt's owning frame. Both are implemented; the sections below reflect the current behavior.
 
 ## Design Decisions (Implemented)
 
@@ -122,12 +122,19 @@ int kos_shift_capture(KosContext *ctx, uint32_t prompt_id,
    int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
    ```
 
-3. **Clone chain segment**: Copy nodes from current to prompt (exclusive)
+3. **Clone chain segment**: Copy nodes from dyn_top down through the prompt
+   and its owning FRAME (stop = the owning frame's parent, exclusive).
+   Heritage nodes between dyn_top and the frame (WIND, PARAM) are captured;
+   caller frames below the bound are not, so their params resolve from the
+   invoke-time environment.
    ```c
    KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop);
    ```
 
-4. **Create continuation**: Allocate `KosContinuation` with cloned state
+4. **Create continuation**: Allocate `KosContinuation` with cloned state.
+   Record the live prompt node identity (pointer + node_id) for in-place
+   invoke detection; `PUSH_SHIFT` records the live SHIFT node right after
+   pushing it (capture runs before the node exists).
 
 5. **Abort to prompt**: The caller unwinds to the prompt and runs the handler
 
@@ -142,15 +149,30 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
 
 **Algorithm**:
 
+0. **Delimited in-place (Path A)**: when the capture-time live prompt and
+   SHIFT nodes are still on the chain (pointer + node_id ancestry match from
+   dyn_top), no barrier (foreign DELIM/GEN/NEXT/PROMPT/CC_RAISE) sits above
+   the SHIFT node, no transfer plan is in flight, the invoke is not a throw,
+   and the live slice has not already been consumed:
+   `kos_delimited_invoke_inplace` detaches the invoke span (dyn_top through
+   the SHIFT node) onto a **`KOS_DYN_DELIM_MODE_INPLACE`** delim inserted
+   directly above the live prompt, displaces the resume frame's stack/pc
+   with the captured resume state, and continues on the live chain — no
+   plan, no clone, no wind replay. Only the first invoke runs in place;
+   re-invokes fall through to the PUSH graft (multi-shot). Exceptions raised
+   in the slice restitch at the delim and continue the raise from the
+   invoke site (`kos_dyn_inplace_restitch`).
+
 1. **Clone if multi-shot**: For multi-shot continuations, clone before use
 
 2. **Build transfer plan**:
-   - **Delimited (push model)**: Use `kos_build_delimited_push_plan()`. The
-     prompt need not be in the current chain; invoke grafts the continuation
-     segment onto the current chain and installs a **`KOS_DYN_DELIM`** marker
-     (`KOS_DYN_DELIM_MODE_POP_PROMPT`) holding return frame/PC/chain metadata so
-     that when the continuation hits `POP_PROMPT`, control unwinds to the call
-     site and resumes with the value.
+   - **Delimited (push model, Path B)**: Use `kos_build_delimited_push_plan()`.
+     The prompt need not be in the current chain; invoke grafts the bounded
+     continuation segment onto the current chain and installs a
+     **`KOS_DYN_DELIM`** marker (`KOS_DYN_DELIM_MODE_POP_PROMPT`) holding
+     return frame/PC/chain metadata so that when the continuation hits
+     `POP_PROMPT`, control unwinds to the call site and resumes with the
+     value.
    - **Undelimited**: Use `kos_build_transfer_plan()` with INSTALL:
      ```c
      int kos_build_transfer_plan(KosEvalState *es, KosDynNode *target,
@@ -210,14 +232,16 @@ struct KosTransferPlan {
 3. `EXTENT_ACTION` (wind) for WIND before hooks from LCA to target (outer-to-inner)
 4. `INJECT` action to push resume value
 
-**Plan structure** (delimited / PUSH):
-1. `EXTENT_ACTION` (wind) for PARAM nodes in the continuation segment, if any
-2. `PUSH` action to graft the continuation frames onto the current chain
-   (caller stays below; no INSTALL)
+**Plan structure** (delimited / PUSH, Path B only — Path A builds no plan):
+1. `EXTENT_ACTION` (wind) for WIND/PARAM nodes in the continuation segment,
+   if any
+2. `PUSH` action to graft the bounded continuation segment onto the current
+   chain (caller stays below; no INSTALL)
 3. `INJECT` action to push resume value
 4. When the continuation runs and hits `POP_PROMPT`, use the nearest
-   **`KOS_DYN_DELIM`** (`kos_find_nearest_delim`) to unwind to the invocation
-   site, push the value, set PC from the delim node, and continue the eval loop
+   POP_PROMPT- or INPLACE-mode **`KOS_DYN_DELIM`** to unwind to the
+   invocation site, push the value, set PC from the delim node, and continue
+   the eval loop (INPLACE delims restitch the stashed invoke span instead)
 
 ### LCA Computation
 
@@ -343,7 +367,7 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 
 ### Continuation Invocation
 - **Undelimited**: Invoke via `CALL` 0 or 1 (continuation and optional arg on stack; stack order [callable, arg_0, ...]).
-- `INVOKE_K` / `INVOKE_K_VAR` — Invoke delimited continuation; push model (graft frames onto current chain; return to call site when POP_PROMPT runs). Prompt need not be in chain.
+- `INVOKE_K` / `INVOKE_K_VAR` — Invoke delimited continuation; two-path (resume in place when the capture-time prompt is live in ancestry, PUSH graft otherwise; return to call site when POP_PROMPT runs). Prompt need not be in chain for the graft path.
 
 ## Related Documentation
 

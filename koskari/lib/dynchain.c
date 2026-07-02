@@ -1694,9 +1694,22 @@ int kos_shift_capture(
     return -1;
   }
 
-  /* Clone the chain segment restored on invoke: from dyn_top through the
-   * prompt and frames below (heritage nodes above the prompt, e.g. WIND,
-   * are included so delimited PUSH can replay their wind hooks). */
+  /* Bound the invoke template at the prompt's owning FRAME: clone from
+   * dyn_top down through heritage nodes (WIND, PARAM, ...), the PROMPT,
+   * and the nearest FRAME at-or-below it. Caller frames further down
+   * resolve from the invoke-time environment instead of being replayed. */
+  KosDynNode *stop;
+  {
+    KosDynNode *owning = (KosDynNode *) prompt;
+    while (owning && ! KosDynNode_IS_FRAME(owning))
+      owning = KosDynNode_PARENT(owning);
+    if (! owning) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "PUSH_SHIFT: no owning frame below prompt");
+      return -1;
+    }
+    stop = KosDynNode_PARENT(owning);
+  }
   #if KOS_XFER_TRACE
   {
     KosDynNode *frame_inside = KosDynNode_PARENT(prompt);
@@ -1725,7 +1738,7 @@ int kos_shift_capture(
     KosContinuation *k = kos_continuation_capture_segment(
         es,
         KosEvalState_DYN_TOP(es),
-        NULL,
+        stop,
         resume_pc,
         prompt_id,
         0,
@@ -1734,6 +1747,13 @@ int kos_shift_capture(
 
     if (! k)
       return -1;
+
+    /* Live identities for in-place (Path A) invoke detection; the SHIFT
+     * node is recorded by PUSH_SHIFT after it is pushed. */
+    KosContinuation_LIVE_PROMPT_NODE(k) = (KosDynNode *) prompt;
+    KosContinuation_LIVE_PROMPT_NODE_ID(k) =
+        KosDynNode_NODE_ID((KosDynNode *) prompt);
+
     *out_k = k;
   }
   return 0;
@@ -1862,6 +1882,15 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
     kos_dynchain_free(cloned_chain, NULL);
     return NULL;
   }
+
+  KosContinuation_LIVE_SLICE_CONSUMED(clone) =
+      KosContinuation_LIVE_SLICE_CONSUMED(k);
+  KosContinuation_LIVE_PROMPT_NODE(clone) = KosContinuation_LIVE_PROMPT_NODE(k);
+  KosContinuation_LIVE_PROMPT_NODE_ID(clone) =
+      KosContinuation_LIVE_PROMPT_NODE_ID(k);
+  KosContinuation_LIVE_SHIFT_NODE(clone) = KosContinuation_LIVE_SHIFT_NODE(k);
+  KosContinuation_LIVE_SHIFT_NODE_ID(clone) =
+      KosContinuation_LIVE_SHIFT_NODE_ID(k);
 
   return clone;
 }
@@ -2191,6 +2220,121 @@ int kos_dyn_finish_delimited_pop_return(
     kos_dyn_rebuild_live_from_chain(es);
   }
   return 0;
+}
+
+
+/**
+   Restitch an in-place (Path A) delimited invoke at its INPLACE delim:
+   restore the resume frame's displaced stack/pc, re-link the stashed
+   invoke span above the prompt (which stays on the chain for the shift
+   body's POP_SHIFT), free the delim, and restore the invoke-site live
+   registers. Shared by value return (POP_PROMPT) and exception
+   propagation out of the slice. Expects the delim at dyn_top.
+*/
+int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
+
+  KosDynNode *prompt;
+  KosDynNode *span;
+  KosDynFrame *ret_frame;
+  KosDynFrame *resume_frame;
+  uint32_t ret_pc;
+
+  if (! delim || ! KosDynNode_IS_DELIM((KosDynNode *) delim)
+      || KosDynDelim_MODE(delim) != KOS_DYN_DELIM_MODE_INPLACE) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_inplace_restitch: not an INPLACE delim");
+    return -1;
+  }
+  if (KosEvalState_DYN_TOP(es) != (KosDynNode *) delim) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_inplace_restitch: delim not at dyn_top");
+    return -1;
+  }
+
+  prompt = KosDynNode_PARENT((KosDynNode *) delim);
+  span = KosDynDelim_RETURN_CHAIN(delim);
+  ret_frame = KosDynDelim_RETURN_FRAME(delim);
+  ret_pc = KosDynDelim_RETURN_PC(delim);
+  if (! prompt || ! KosDynNode_IS_PROMPT(prompt) || ! span || ! ret_frame
+      || ret_pc == (uint32_t) -1) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_inplace_restitch: "
+                    "inconsistent INPLACE delim state");
+    return -1;
+  }
+
+  /* Resume frame whose state was displaced: nearest FRAME at-or-below the
+   * prompt. */
+  {
+    KosDynNode *node = prompt;
+    while (node && ! KosDynNode_IS_FRAME(node))
+      node = KosDynNode_PARENT(node);
+    if (! node) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "kos_dyn_inplace_restitch: no frame below prompt");
+      return -1;
+    }
+    resume_frame = (KosDynFrame *) node;
+  }
+
+  /* Drop the spent slice stack; restore the displaced invoke-time state. */
+  {
+    KosStackBlock *spent = KosDynFrame_STACK(resume_frame);
+    KosDynFrame_STACK(resume_frame) = KosDynDelim_SAVED_STACK(delim);
+    KosDynDelim_SAVED_STACK(delim) = NULL;
+    KosDynFrame_PC(resume_frame) = KosDynDelim_SAVED_PC(delim);
+    if (spent)
+      KosStackBlock_ReleaseChain(spent);
+  }
+
+  /* Re-link the stashed invoke span above the prompt; the prompt stays on
+   * the chain for the shift body's POP_SHIFT. */
+  {
+    KosDynNode *bottom = span;
+    while (KosDynNode_PARENT(bottom))
+      bottom = KosDynNode_PARENT(bottom);
+    KosDynNode_PARENT(bottom) = prompt;
+    KosDynDelim_RETURN_CHAIN(delim) = NULL;
+  }
+
+  KosDynFrame_PC(ret_frame) = ret_pc;
+  KosDynFrame_ACTING_PC(ret_frame) = KosDynDelim_SAVED_ACTING_PC(delim);
+  kos_dyn_commit_dyn_top(es, span);
+
+  KosDynNode_PARENT((KosDynNode *) delim) = NULL;
+  kos_dyndelim_free(delim);
+
+  kos_dyn_rebuild_live_from_chain(es);
+  /* rebuild leaves live PCs alone when the frame is unchanged; load the
+   * invoke-site return pc explicitly. */
+  if (KosEvalState_FRAME(es) == ret_frame)
+    kos_dyn_load_live_regs_from_frame(es, ret_frame);
+
+  return 0;
+}
+
+
+/**
+   Complete an in-place (Path A) delimited POP_PROMPT return. See dynchain.h.
+*/
+int kos_dyn_finish_inplace_pop_return(
+    KosEvalState *es,
+    KosDynDelim *delim,
+    PyObject *value) {
+
+  if (! value) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_inplace_pop_return: value is NULL");
+    return -1;
+  }
+
+  if (kos_dyn_inplace_restitch(es, delim) < 0) {
+    Py_DECREF(value);
+    return -1;
+  }
+
+  /* StackPUSH consumes the value reference, on failure as well. */
+  return KosEvalState_StackPUSH(es, value);
 }
 
 

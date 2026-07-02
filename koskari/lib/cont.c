@@ -146,8 +146,9 @@ static KosOpResult call_call_continuation(
     }
   }
 
-  /* Delimited: prompt need not be in chain; push model grafts onto current
-   * chain and returns to call site on POP_PROMPT. */
+  /* Delimited: two-path invoke. In-place resume when the capture-time
+   * prompt is live in ancestry; otherwise the push model grafts onto the
+   * current chain. Both return to the call site on POP_PROMPT. */
 
   if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosEvalState_Token(es)
       || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {

@@ -540,26 +540,31 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
   PyObject *saved_exc_val = NULL;
   PyObject *saved_exc_tb = NULL;
 
-  if (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL
-      && KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)
-      && PyErr_Occurred()) {
-    int extent = try_local_extent_on_current_frame(es);
-    if (extent > 0)
-      return EVAL_REPROLOGUE();
-    if (extent < 0)
-      return EVAL_FATAL();
+  while (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL) {
 
-    {
-      KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
-      if (parent && ! KosDynNode_IS_GEN(parent)) {
+    /* Frame boundary: check this frame's try extents, then cross into the
+       caller section and keep walking. The raise only leaves the loop at
+       the chain root (NULL parent) or a generator boundary. */
+    if (KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)) {
+      if (! PyErr_Occurred())
+        break;
+
+      int extent = try_local_extent_on_current_frame(es);
+      if (extent > 0)
+        return EVAL_REPROLOGUE();
+      if (extent < 0)
+        return EVAL_FATAL();
+
+      {
+        KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
+        if (! parent || KosDynNode_IS_GEN(parent))
+          break;
         if (kos_dyn_pop_frame(es) < 0)
           return EVAL_FATAL();
       }
+      continue;
     }
-  }
 
-  while (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL
-         && KosEvalState_DYN_TOP(es) != (KosDynNode *) KosEvalState_FRAME(es)) {
     KosDynNode *top = KosEvalState_DYN_TOP(es);
 
     KOS_TRACE_EVENTS_INC(KOS_TE_RAISE_LOCAL_WALK_ITER);
@@ -567,6 +572,23 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
     SAYF("[try_local] walk top=%p kind=%s\n",
          (void *) top,
          kos_dynnode_kind_name(KosDynNode_KIND(top)));
+
+    /* In-place delimited return bookmark: the slice raised. Restitch the
+       invoke span and continue the raise from the invoke site. */
+    if (KosDynNode_IS_DELIM(top)
+        && KosDynDelim_MODE((KosDynDelim *) top)
+            == KOS_DYN_DELIM_MODE_INPLACE) {
+      PyObject *typ = NULL, *val = NULL, *tb = NULL;
+      PyErr_Fetch(&typ, &val, &tb);
+      if (kos_dyn_inplace_restitch(es, (KosDynDelim *) top) < 0) {
+        Py_XDECREF(typ);
+        Py_XDECREF(val);
+        Py_XDECREF(tb);
+        return EVAL_FATAL();
+      }
+      PyErr_Restore(typ, val, tb);
+      continue;
+    }
 
     /* Handle phase: offer RAISE to node before unwind.  If consumed,
        deliver to handler and return.  Otherwise pop and continue. */
@@ -628,13 +650,27 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
     {
       int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
       uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
+      int top_is_wind = (top && KosDynNode_IS_WIND(top));
       int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
-          || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
+          || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER))
+          || top_is_wind;
       if (needs_preserve && PyErr_Occurred())
         PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
       KosOpResult pop_res = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_RAISE);
       if (saved_exc_typ != NULL) {
-        PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
+        if (top_is_wind
+            && (pop_res.kind == KOS_RES_REPROLOGUE
+                || pop_res.kind == KOS_RES_AWAIT)) {
+          /* After-thunk started: park the exception on the wind node so
+             the thunk runs with no pending error; on_control_returned
+             re-raises it once the thunk completes. */
+          KosDynWind *wind = (KosDynWind *) top;
+          KosDynWind_PENDING_EXC_TYPE(wind) = saved_exc_typ;
+          KosDynWind_PENDING_EXC_VALUE(wind) = saved_exc_val;
+          KosDynWind_PENDING_EXC_TB(wind) = saved_exc_tb;
+        } else {
+          PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
+        }
         saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
       }
       if (pop_res.kind == KOS_RES_AWAIT) {

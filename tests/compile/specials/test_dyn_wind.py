@@ -622,4 +622,39 @@ class TestDynWindTransferFailures(SpecialsTestCase):
         self.assertEqual(wind_pass[0], 2)
 
 
+class TestDynWindRaiseUnwind(SpecialsTestCase):
+
+    async def test_after_thunk_runs_on_exception_unwind(self):
+        """
+        KNOWN DEFECT (intentionally red): an exception unwinding through a
+        dyn-wind extent must run the after thunk exactly once before the
+        enclosing handler catches it. Today the thunk starts with PyErr
+        pending and aborts immediately, so cleanup never runs. No
+        continuations involved - this is the engine-wide baseline.
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        def boom(v):
+            raise ValueError("boom")
+
+        src_str = """
+        (compile/try
+          (compile/dyn-wind
+            (rec "before")
+            (boom 1)
+            (rec "after"))
+          ([ValueError] "caught"))
+        """
+        expr, mod = self.compile_expr(
+            src_str, rec=rec, boom=boom, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+        self.assertEqual(events, ["before", "after"])
+
+
 # The end.

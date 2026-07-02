@@ -22,7 +22,23 @@
 KOS_OP_HANDLER(POP_PROMPT) {
   (void) insn;
 
-  KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_POP_PROMPT);
+  /* Nearest return bookmark: PUSH-graft (POP_PROMPT) or in-place
+   * (INPLACE) delimited invoke. */
+  KosDynDelim *ret_delim = NULL;
+  {
+    KosDynNode *node;
+    for (node = KosEvalState_CurrentNode(es); node;
+         node = KosDynNode_PARENT(node)) {
+      if (! KosDynNode_IS_DELIM(node))
+        continue;
+      uint8_t mode = KosDynDelim_MODE((KosDynDelim *) node);
+      if (mode == KOS_DYN_DELIM_MODE_POP_PROMPT
+          || mode == KOS_DYN_DELIM_MODE_INPLACE) {
+        ret_delim = (KosDynDelim *) node;
+        break;
+      }
+    }
+  }
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
        (void *) ret_delim, (void *) KosEvalState_CurrentNode(es),
@@ -75,8 +91,12 @@ KOS_OP_HANDLER(POP_PROMPT) {
       SAYF("[eval] POP_PROMPT after unwind: dyn_top=%p kind=%s",
            (void *) KosEvalState_CurrentNode(es),
            KosEvalState_CurrentNode(es) ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_CurrentNode(es))) : "NULL");
-      if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0)
+      if (KosDynDelim_MODE(ret_delim) == KOS_DYN_DELIM_MODE_INPLACE) {
+        if (kos_dyn_finish_inplace_pop_return(es, ret_delim, val) < 0)
+          return EVAL_RAISE();
+      } else if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0) {
         return EVAL_RAISE();
+      }
       return EVAL_NORMAL();
     }
 

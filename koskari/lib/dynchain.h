@@ -220,10 +220,15 @@ struct KosDynNode {
     } prompt;
     struct {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
-      KosDynNode *chain;  /* owned when mode == K_RETURN */
+      KosDynNode *chain;  /* owned when mode == K_RETURN or INPLACE */
       uint32_t pc;
       KosDynNode *frame;
       KosDynNode *node;
+      /* INPLACE only: displaced resume-frame state (stack owned) and
+         the invoke-site acting pc for extent lookups after restitch */
+      KosStackBlock *saved_stack;
+      uint32_t saved_pc;
+      uint32_t saved_acting_pc;
     } delim;
     struct {
       uint32_t resume_pc;
@@ -232,6 +237,12 @@ struct KosDynNode {
       PyObject *before_thunk;  /* callable (owned) or NULL */
       PyObject *after_thunk;   /* callable (owned) or NULL */
       PyObject *body_result;   /* TOS at POP_WIND (owned) or NULL; error/bypass path */
+      /* RAISE parked across an async after-thunk (owned): the raise walk
+         stashes PyErr here so the thunk runs with no pending error;
+         on_control_returned re-raises it to continue propagation */
+      PyObject *pending_exc_type;
+      PyObject *pending_exc_value;
+      PyObject *pending_exc_tb;
       uint8_t entered;
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
@@ -274,6 +285,9 @@ struct KosDynNode {
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_IDLE, PENDING_EXIT_AWAIT, or PENDING_ENTER_AWAIT */
       uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
+      PyObject *exit_done; /* KosRef shared across clones (owned); non-empty
+                              once the single-shot __exit__ has run. NULL for
+                              multi-shot */
       PyObject *name;      /* binding name or NULL (owned) */
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
       PyObject *exc_typ;   /* owned; only when phase == PENDING_EXIT_AWAIT */
@@ -398,8 +412,9 @@ typedef struct KosDynNode KosDynNext;
 /**
    KosContinuation holds a captured delimited continuation.
 
-   The captured_chain is a cloned segment of the dynamic chain
-   from the capture point up to (but not including) the prompt.
+   The captured_chain is a cloned segment of the dynamic chain from the
+   capture point down through the prompt and its owning FRAME node
+   (delimited), or from above the CC block down to root (undelimited).
 
    The resume_frame points to the frame where execution resumes.
    The resume_pc is the program counter to resume at.
@@ -419,7 +434,17 @@ struct KosContinuation {
   uint32_t prompt_id;           /* target prompt tag */
   uint32_t graft_point_id;      /* node_id of graft point for ID fallback; 0 = none */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
+  uint8_t live_slice_consumed;  /* 1 = in-place invoke consumed the live slice */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
+
+  /* Capture-time live node identities for in-place (Path A) invoke
+   * detection. Borrowed pointers: dereference only after a pointer +
+   * node_id ancestry match from dyn_top confirms the node is still live
+   * on this chain. Zero for undelimited continuations. */
+  KosDynNode *live_prompt_node;
+  uint32_t live_prompt_node_id;
+  KosDynNode *live_shift_node;
+  uint32_t live_shift_node_id;
 };
 
 
@@ -430,7 +455,17 @@ struct KosContinuation {
 #define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
 #define KosContinuation_GRAFT_POINT_ID(k)  (((KosContinuation *)(k))->graft_point_id)
 #define KosContinuation_ONE_SHOT(k)        (((KosContinuation *)(k))->one_shot)
+#define KosContinuation_LIVE_SLICE_CONSUMED(k) \
+  (((KosContinuation *)(k))->live_slice_consumed)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
+#define KosContinuation_LIVE_PROMPT_NODE(k) \
+  (((KosContinuation *)(k))->live_prompt_node)
+#define KosContinuation_LIVE_PROMPT_NODE_ID(k) \
+  (((KosContinuation *)(k))->live_prompt_node_id)
+#define KosContinuation_LIVE_SHIFT_NODE(k) \
+  (((KosContinuation *)(k))->live_shift_node)
+#define KosContinuation_LIVE_SHIFT_NODE_ID(k) \
+  (((KosContinuation *)(k))->live_shift_node_id)
 
 
 /* === KosTransferStep enum === */
@@ -1093,6 +1128,38 @@ int kos_dyn_finish_delimited_pop_return(
    KosEvalState *es,
    KosDynDelim *delim,
    PyObject *value);
+
+
+/**
+   Complete an in-place (Path A) delimited POP_PROMPT return. Restores the
+   resume frame's displaced stack/pc from the INPLACE delim, re-links the
+   stashed invoke span above the prompt (which stays on the chain for the
+   shift body's POP_SHIFT), frees the delim, and pushes value at the
+   restored invoke site. Expects the delim at dyn_top.
+
+   :param es: eval state
+   :param delim: INPLACE DELIM node at dyn_top
+   :param value: return value (consumes a reference on success or failure)
+
+   :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
+*/
+int kos_dyn_finish_inplace_pop_return(
+   KosEvalState *es,
+   KosDynDelim *delim,
+   PyObject *value);
+
+
+/**
+   Restitch an in-place (Path A) delimited invoke at its INPLACE delim
+   without delivering a value: restore the resume frame's displaced
+   stack/pc, re-link the stashed invoke span above the prompt, free the
+   delim, and restore invoke-site live registers. Used by the POP_PROMPT
+   value return and by exception propagation out of the slice. Expects
+   the delim at dyn_top.
+
+   :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
+*/
+int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim);
 
 
 /**
@@ -2167,6 +2234,9 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KOS_DYN_DELIM_MODE_NONE       0u
 #define KOS_DYN_DELIM_MODE_K_RETURN   1u
 #define KOS_DYN_DELIM_MODE_POP_PROMPT 2u
+/* In-place (Path A) delimited return: chain stashes the detached invoke
+   span; saved_stack/saved_pc hold the resume frame's displaced state. */
+#define KOS_DYN_DELIM_MODE_INPLACE    3u
 
 #define KosDynDelim_MODE(d)        (((KosDynNode *)(d))->u.delim.mode)
 #define KosDynDelim_RETURN_CHAIN(d) (((KosDynNode *)(d))->u.delim.chain)
@@ -2174,6 +2244,10 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynDelim_RETURN_FRAME_NODE(d) (((KosDynNode *)(d))->u.delim.frame)
 #define KosDynDelim_RETURN_FRAME(d) ((KosDynFrame *) (KosDynDelim_RETURN_FRAME_NODE(d)))
 #define KosDynDelim_RETURN_NODE(d)  (((KosDynNode *)(d))->u.delim.node)
+#define KosDynDelim_SAVED_STACK(d) (((KosDynNode *)(d))->u.delim.saved_stack)
+#define KosDynDelim_SAVED_PC(d)    (((KosDynNode *)(d))->u.delim.saved_pc)
+#define KosDynDelim_SAVED_ACTING_PC(d) \
+  (((KosDynNode *)(d))->u.delim.saved_acting_pc)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 
@@ -2182,6 +2256,12 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynWind_BODY_RESULT(w)  (((KosDynNode *)(w))->u.wind.body_result)
 #define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
 #define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
+#define KosDynWind_PENDING_EXC_TYPE(w) \
+  (((KosDynNode *)(w))->u.wind.pending_exc_type)
+#define KosDynWind_PENDING_EXC_VALUE(w) \
+  (((KosDynNode *)(w))->u.wind.pending_exc_value)
+#define KosDynWind_PENDING_EXC_TB(w) \
+  (((KosDynNode *)(w))->u.wind.pending_exc_tb)
 
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)
@@ -2276,6 +2356,7 @@ enum {
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
 #define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
 #define KosDynWith_SHOT(n)         (((KosDynNode *)(n))->u.with.shot)
+#define KosDynWith_EXIT_DONE(n)    (((KosDynNode *)(n))->u.with.exit_done)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_EXC_TYP(n)      (((KosDynNode *)(n))->u.with.exc_typ)

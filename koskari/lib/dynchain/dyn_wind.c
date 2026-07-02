@@ -31,6 +31,9 @@ KosDynWind *kos_dynwind_new(
     Py_INCREF(after_thunk);
   KosDynWind_ENTERED(wind) = 0;
   KosDynWind_PHASE(wind) = KOS_WIND_PHASE_IDLE;
+  KosDynWind_PENDING_EXC_TYPE(wind) = NULL;
+  KosDynWind_PENDING_EXC_VALUE(wind) = NULL;
+  KosDynWind_PENDING_EXC_TB(wind) = NULL;
   return wind;
 }
 
@@ -58,6 +61,9 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   KosDynWind_BODY_RESULT(clone) = NULL;
   KosDynWind_ENTERED(clone) = 0;
   KosDynWind_PHASE(clone) = KOS_WIND_PHASE_IDLE;
+  KosDynWind_PENDING_EXC_TYPE(clone) = NULL;
+  KosDynWind_PENDING_EXC_VALUE(clone) = NULL;
+  KosDynWind_PENDING_EXC_TB(clone) = NULL;
   return clone;
 }
 
@@ -75,6 +81,12 @@ void kos_dynwind_free(KosDynWind *wind) {
   KosDynWind_AFTER_THUNK(wind) = NULL;
   Py_XDECREF(KosDynWind_BODY_RESULT(wind));
   KosDynWind_BODY_RESULT(wind) = NULL;
+  Py_XDECREF(KosDynWind_PENDING_EXC_TYPE(wind));
+  KosDynWind_PENDING_EXC_TYPE(wind) = NULL;
+  Py_XDECREF(KosDynWind_PENDING_EXC_VALUE(wind));
+  KosDynWind_PENDING_EXC_VALUE(wind) = NULL;
+  Py_XDECREF(KosDynWind_PENDING_EXC_TB(wind));
+  KosDynWind_PENDING_EXC_TB(wind) = NULL;
   kos_dynnode_return_to_freelist(wind);
 }
 
@@ -263,6 +275,15 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     PyObject *body_result = KosDynWind_BODY_RESULT(wind);
     KosDynWind_BODY_RESULT(wind) = NULL;
 
+    /* Take any parked RAISE out of the node before it is freed; re-raised
+       below once cleanup completes so propagation continues. */
+    PyObject *pexc_type = KosDynWind_PENDING_EXC_TYPE(wind);
+    PyObject *pexc_value = KosDynWind_PENDING_EXC_VALUE(wind);
+    PyObject *pexc_tb = KosDynWind_PENDING_EXC_TB(wind);
+    KosDynWind_PENDING_EXC_TYPE(wind) = NULL;
+    KosDynWind_PENDING_EXC_VALUE(wind) = NULL;
+    KosDynWind_PENDING_EXC_TB(wind) = NULL;
+
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_AFTER;
     {
       KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) wind);
@@ -285,6 +306,14 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
             && KosTransferAction_EXTENT_PHASE(a) == KOS_XFER_EXTENT_PHASE_UNWIND)
           KosTransferPlan_ACTION_INDEX(plan)++;
       }
+    }
+
+    if (pexc_type || pexc_value) {
+      /* Raise unwind: drop any body result and continue propagating the
+         parked exception now that the after-thunk has run. */
+      Py_XDECREF(body_result);
+      PyErr_Restore(pexc_type, pexc_value, pexc_tb);
+      return -1;
     }
 
     if (body_result) {
@@ -355,6 +384,9 @@ static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynWind_BEFORE_THUNK(wind));
   Py_VISIT(KosDynWind_AFTER_THUNK(wind));
   Py_VISIT(KosDynWind_BODY_RESULT(wind));
+  Py_VISIT(KosDynWind_PENDING_EXC_TYPE(wind));
+  Py_VISIT(KosDynWind_PENDING_EXC_VALUE(wind));
+  Py_VISIT(KosDynWind_PENDING_EXC_TB(wind));
   return 0;
 }
 
