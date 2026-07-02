@@ -21,11 +21,13 @@ design docs for detail.
   is consulted only on the failed-pop recovery branch. Wiring this up also
   means setting the cap on every kind that handles RAISE (TRY, FINALLY, GEN;
   the INPLACE DELIM restitch and WITH swallow are currently kind-special-
-  cased in the walk and should ride the same gate). Related cleanup: the
-  walk, not the node, should own the pending exception across suspended
-  handler/unwind work — subsuming the three bespoke parking protocols
-  (FINALLY exc_info + HANDLING_RAISE, WITH exc triple fields, WIND
-  pending_exc fields). Invariant to preserve: unwind/pop of non-handling
+  cased in the walk and should ride the same gate). Stash ownership is
+  per-node BY DESIGN: a handling node (and an unwind that runs due to an
+  exception) stashes what it needs to resume — FINALLY exc_info +
+  HANDLING_RAISE, WITH exc triple fields, WIND pending_exc fields are all
+  instances of that. Any cleanup is about sharing the stash/restore idiom,
+  not moving ownership to the walk. Invariant to preserve: unwind/pop of
+  non-handling
   nodes may suspend via await, but never exits the evaluator loop with the
   exception condition; a raise leaves only at the chain root or a GEN
   boundary.
