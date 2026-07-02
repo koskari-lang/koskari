@@ -794,6 +794,14 @@ void kos_eval_prepare_boundary_raise(
     KosEvalState *es);
 
 
+/**
+   Record the current frame into the in-flight exception's
+   __koskari_dynchain__ metadata (marked "crossed") before the raise walk
+   pops it. PyErr is preserved; decoration is best-effort.
+*/
+void kos_eval_note_crossed_frame(KosEvalState *es);
+
+
 int koskari_eval_init(PyObject *mod);
 int koskari_eval_clear(PyObject *mod);
 

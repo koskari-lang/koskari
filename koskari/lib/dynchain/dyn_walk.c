@@ -559,6 +559,8 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
         KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
         if (! parent || KosDynNode_IS_GEN(parent))
           break;
+        /* Record the frame into the exception's trace before it goes. */
+        kos_eval_note_crossed_frame(es);
         if (kos_dyn_pop_frame(es) < 0)
           return EVAL_FATAL();
       }

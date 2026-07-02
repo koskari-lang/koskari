@@ -396,6 +396,44 @@ static KosEvalMode revive_yield(
 }
 
 
+/**
+   Build the trace metadata dict for one frame. crossed marks entries
+   recorded while the raise walk crossed (and popped) the frame, as
+   opposed to frames still live at escape time.
+*/
+static PyObject *dynchain_frame_meta(KosDynFrame *frame, int crossed) {
+
+  PyObject *meta = PyDict_New();
+  if (! meta)
+    return NULL;
+
+  KosCode *code = KosDynFrame_CODE(frame);
+  uint16_t line = 0, col = 0;
+  uint32_t pc = KosDynFrame_ACTING_PC(frame);
+  if (code)
+    kos_loc_lookup((PyObject *) code, pc, &line, &col);
+
+  PyObject *name = code ? KosCode_NAME(code) : Py_None;
+  PyObject *filename = code ? KosCode_FILENAME(code) : Py_None;
+
+  PyDict_SetItemString(meta, "name", name ? name : Py_None);
+  PyDict_SetItemString(meta, "filename", filename ? filename : Py_None);
+  PyObject *line_o = PyLong_FromUnsignedLong((unsigned long) line);
+  PyObject *col_o = PyLong_FromUnsignedLong((unsigned long) col);
+  PyObject *pc_o = PyLong_FromUnsignedLong((unsigned long) pc);
+  if (line_o && col_o && pc_o) {
+    PyDict_SetItemString(meta, "line", line_o);
+    PyDict_SetItemString(meta, "col", col_o);
+    PyDict_SetItemString(meta, "pc", pc_o);
+  }
+  Py_XDECREF(line_o);
+  Py_XDECREF(col_o);
+  Py_XDECREF(pc_o);
+  PyDict_SetItemString(meta, "crossed", crossed ? Py_True : Py_False);
+  return meta;
+}
+
+
 static void decorate_exception_with_dynchain(
     KosContext *ctx,
     PyObject *exc_val) {
@@ -410,6 +448,27 @@ static void decorate_exception_with_dynchain(
     return;
   }
 
+  /* Carry forward frames recorded while the raise walk crossed them;
+     they are no longer on the live chain below. */
+  {
+    PyObject *prior = PyObject_GetAttrString(exc_val,
+                                             "__koskari_dynchain__");
+    if (! prior) {
+      PyErr_Clear();
+    } else {
+      if (PyList_Check(prior)) {
+        for (Py_ssize_t i = 0; i < PyList_GET_SIZE(prior); i++) {
+          PyObject *meta = PyList_GET_ITEM(prior, i);
+          PyObject *crossed = PyDict_Check(meta)
+              ? PyDict_GetItemString(meta, "crossed") : NULL;
+          if (crossed && PyObject_IsTrue(crossed))
+            PyList_Append(frames, meta);
+        }
+      }
+      Py_DECREF(prior);
+    }
+  }
+
   {
     KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
     KosDynNode *chain_top = active_es
@@ -417,40 +476,16 @@ static void decorate_exception_with_dynchain(
         : KosContext_DYN_TOP(ctx);
 
     for (KosDynNode *node = chain_top; node; node = KosDynNode_PARENT(node)) {
-    if (! KosDynNode_IS_FRAME(node)) {
-      continue;
-    }
-    KosDynFrame *frame = (KosDynFrame *) node;
-    PyObject *meta = PyDict_New();
-    if (! meta) {
-      PyErr_Clear();
-      continue;
-    }
-
-    KosCode *code = KosDynFrame_CODE(frame);
-    uint16_t line = 0, col = 0;
-    uint32_t pc = KosDynFrame_ACTING_PC(frame);
-    if (code)
-      kos_loc_lookup((PyObject *) code, pc, &line, &col);
-
-    PyObject *name = code ? KosCode_NAME(code) : Py_None;
-    PyObject *filename = code ? KosCode_FILENAME(code) : Py_None;
-
-    PyDict_SetItemString(meta, "name", name ? name : Py_None);
-    PyDict_SetItemString(meta, "filename", filename ? filename : Py_None);
-    PyObject *line_o = PyLong_FromUnsignedLong((unsigned long) line);
-    PyObject *col_o = PyLong_FromUnsignedLong((unsigned long) col);
-    PyObject *pc_o = PyLong_FromUnsignedLong((unsigned long) pc);
-    if (line_o && col_o && pc_o) {
-      PyDict_SetItemString(meta, "line", line_o);
-      PyDict_SetItemString(meta, "col", col_o);
-      PyDict_SetItemString(meta, "pc", pc_o);
-    }
-    Py_XDECREF(line_o);
-    Py_XDECREF(col_o);
-    Py_XDECREF(pc_o);
-    PyList_Append(frames, meta);
-    Py_DECREF(meta);
+      if (! KosDynNode_IS_FRAME(node)) {
+        continue;
+      }
+      PyObject *meta = dynchain_frame_meta((KosDynFrame *) node, 0);
+      if (! meta) {
+        PyErr_Clear();
+        continue;
+      }
+      PyList_Append(frames, meta);
+      Py_DECREF(meta);
     }
   }
 
@@ -459,6 +494,52 @@ static void decorate_exception_with_dynchain(
   }
 
   Py_DECREF(frames);
+}
+
+
+/**
+   Record the current frame into the in-flight exception's
+   __koskari_dynchain__ metadata before the raise walk pops it. PyErr is
+   preserved across the call; failures are swallowed (trace decoration is
+   best-effort). See eval.h.
+*/
+void kos_eval_note_crossed_frame(KosEvalState *es) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
+  if (! es || ! KosEvalState_FRAME(es) || ! PyErr_Occurred())
+    return;
+
+  KosEvalState_FlushLiveRegsToFrame(es);
+  PyErr_Fetch(&typ, &val, &tb);
+  PyErr_NormalizeException(&typ, &val, &tb);
+
+  if (val && PyExceptionInstance_Check(val)) {
+    PyObject *frames = PyObject_GetAttrString(val, "__koskari_dynchain__");
+    if (! frames) {
+      PyErr_Clear();
+      frames = PyList_New(0);
+    } else if (! PyList_Check(frames)) {
+      Py_DECREF(frames);
+      frames = PyList_New(0);
+    }
+    if (frames) {
+      PyObject *meta = dynchain_frame_meta(KosEvalState_FRAME(es), 1);
+      if (meta) {
+        PyList_Append(frames, meta);
+        Py_DECREF(meta);
+        if (PyObject_SetAttrString(val, "__koskari_dynchain__", frames) < 0)
+          PyErr_Clear();
+      } else {
+        PyErr_Clear();
+      }
+      Py_DECREF(frames);
+    } else {
+      PyErr_Clear();
+    }
+  }
+
+  PyErr_Restore(typ, val, tb);
 }
 
 
