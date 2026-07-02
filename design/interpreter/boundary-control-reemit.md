@@ -72,8 +72,8 @@ push, then **`kos_dynnode_on_control_returned`**). Shared iterator return delive
 mapping lives in **`eval_deliver_iterator_boundary_return_step`**. **`YIELD`**
 returns **`EVAL_YIELD(val)`**; **`eval_event_yield`** runs
 **`eval_yield_handle_walk_and_freeze`** then **`eval_event_yield_deliver_to_boundary`**.
-Active **`PyErr`** flows through **`eval_boundary_raise_dispatch`** (wraps
-**`process_raise`**).
+Active **`PyErr`** flows through **`process_raise`** (the unified RAISE
+ingress).
 
 
 ## 3. Boundary control event kinds
@@ -159,7 +159,6 @@ consumers from active chain state.
 | `koskari/lib/dynchain/dyn_next.c` | Return delivery helpers cross GEN/frame boundary and immediately apply NEXT/FOREACH consumer semantics instead of a generic boundary dispatcher |
 | `koskari/lib/dynchain/dyn_yield_from.c` | Inner-return helper crosses boundary and immediately performs YIELD_FROM consumer semantics |
 | `eval.c` (`eval_parent_return_deliver`) | Calls `kos_dyn_try_deliver_iterator_boundary_after_pop` and `kos_dynnode_on_control_returned` directly; should converge on §5.2 dispatcher |
-| `eval.c` (exception paths) | `process_raise`, `eval_phase_entry`, `run_transfer_plan_to_completion`, and `KOS_MODE_RAISE` embed parallel RAISE policy (§5.3) |
 
 **Done:** `koskari/lib/opcode/RETURN.c` — pop operands, optional delimited
 `k(value)`, then `EVAL_RETURN(val)` only.
@@ -173,6 +172,19 @@ fresh YIELD event (walk/freeze the delegating GEN, deliver onward). This gives
 the YIELD direction NEXT/FOREACH hand-off parity (§4.4) and satisfies "one
 crossing, one delivery" (§7.1) for flattened Koskari delegates. The
 inner-*return* helper (row above) still applies consumer semantics inline.
+
+**Done:** `eval.c` exception paths (§5.3) — all PyErr / RAISE ingress
+converges on `process_raise` (the unified RAISE ingress): post-opcode
+results, prologue/signal-poll pending PyErr, revive-throw
+(`eval_phase_entry` `KOS_MODE_EXCEPTION`), and transfer-plan step failures
+(`run_transfer_plan_to_completion`, which now returns `KosOpResult` so an
+async unwind started during abandonment propagates as `EVAL_AWAIT`). The
+dead `KOS_MODE_RAISE` entry branch was removed. Two named non-ingress
+carve-outs remain in `run_transfer_plan_to_completion`: the foreign
+cc-unwind sentinel re-emit (signal delivery; must not see try_local) and a
+pending `KoskariContinuationApply` between drain steps (expected in-flight
+state). See the ordering-contract comment on `process_raise` in
+`koskari/lib/eval.c`.
 
 
 ## 7. Invariants
@@ -203,7 +215,7 @@ inner-*return* helper (row above) still applies consumer semantics inline.
    boundary kind (NEXT / FOREACH / YIELD_FROM all notify their receiver and
    `EVAL_REPROLOGUE`), though still via the kind-specific helpers rather than a
    single §5.2 generic dispatcher.
-5. Normalize RAISE routing under one ingress contract (§5.3)
+5. ~~Normalize RAISE routing under one ingress contract (§5.3)~~
 6. Remove obsolete ad-hoc delivery paths and compatibility shims
 
 

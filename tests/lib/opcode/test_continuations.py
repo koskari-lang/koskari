@@ -402,6 +402,77 @@ class TestUndelimitedContinuations(CevalTest):
         self.assertTrue(issubclass(lib.KoskariContinuationDead, Exception))
 
 
+    async def test_foreign_continuation_apply_thrown_into_gen_unwinds(self):
+        """
+        A KoskariContinuationApply delivered into a suspended generator via
+        asend.throw() reaches the unified RAISE ingress on the revive-throw
+        path and is dispatched as a continuation signal: the generator's
+        local extents unwind through the cc-unwind plan (dyn-with __exit__
+        runs with no exception info) and the apply re-raises unchanged so it
+        can travel onward to its owner.
+        """
+
+        import koskari.lib as lib
+
+        class Tracker:
+            def __init__(self):
+                self.exited = False
+                self.exc_info = (None, None, None)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, typ, val, tb):
+                self.exited = True
+                self.exc_info = (typ, val, tb)
+                return False
+
+        tracker = Tracker()
+        caught = []
+
+        def steal(k):
+            try:
+                k(42)
+            except lib.KoskariContinuationApply as e:
+                caught.append(e)
+            return "stolen"
+
+        owner_code, owner_ns = build_expr([
+            ["VAR", "steal"],
+            ["PUSH_CC", 0],
+            ["CAPTURE_CC", 0],
+            ["CALL", 1],
+            ["POP_CC", 0],
+            ["RETURN", 1],
+        ], values={"steal": steal})
+        owner_result = await make_callable(owner_code, owner_ns)()
+        self.assertEqual(owner_result, "stolen")
+        self.assertEqual(len(caught), 1)
+
+        other_code, other_ns = build_expr([
+            ["CONST", tracker],
+            ["PUSH_DYN_WITH", None],
+            ["CONST", "other-ready"],
+            ["YIELD", 1],
+            ["POP_DYN_WITH", 0],
+            ["RETURN", 0],
+        ])
+        other = make_callable(other_code, other_ns)()
+        ready = await other.__anext__()
+        self.assertEqual(ready, "other-ready")
+
+        asend = other.__anext__()
+        with self.assertRaises(lib.KoskariContinuationApply):
+            await asend.throw(lib.KoskariContinuationApply, caught[0])
+
+        self.assertTrue(
+            tracker.exited,
+            "dyn-with __exit__ must run during foreign-apply unwind")
+        self.assertIsNone(
+            tracker.exc_info[0],
+            "dyn-with __exit__ must see no exception info")
+
+
 class TestEvaluatorToken(CevalTest):
     """
     Tests for KosEvaluatorToken and exception types from evaluator-token model

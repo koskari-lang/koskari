@@ -53,7 +53,7 @@ Consumers use `kos_extent_run_wind(ctx, node)` and `kos_extent_run_unwind(ctx, n
 When `kos_dyn_unwind_to_frame` is used (e.g. by RETURN or by exception propagation) and a WIND with an after-hook is encountered, the unwind helper returns `KOS_DYN_UNWIND_ASYNC_STARTED`. Then:
 
 - `kos_dyn_unwind_to_frame` sets `KosContext_UNWIND_TARGET_FRAME(ctx)` to the target frame and returns `KOS_DYN_UNWIND_ASYNC_STARTED`.
-- The caller (RETURN or `try_local_exception_handler`) stashes any return value or restores the exception and returns so the eval loop continues.
+- The caller (RETURN or `kos_dyn_try_local_raise_body`) stashes any return value or restores the exception and returns so the eval loop continues.
 - The evaluator runs the thunk as a normal frame (thunk was pushed by `kos_callable_call`).
 - When the thunk returns, tail calls may return `EVAL_CONTROL_RETURNED()`. `apply_kos_op_result` invokes `kos_dynnode_on_control_returned`, which detaches the thunk frame and resumes unwinding (or advances the transfer plan). Any stashed return value is delivered when unwinding completes.
 

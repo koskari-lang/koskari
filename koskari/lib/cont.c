@@ -28,6 +28,13 @@
 #include "lib.h"
 
 
+/* KoskariContinuationApply payload attributes (read in eval.c
+   handle_continuation_apply) */
+static PyObject *str_args = NULL;
+static PyObject *str_continuation = NULL;
+static PyObject *str_target = NULL;
+
+
 /* === KosPyDelimitedContinuation type === */
 
 
@@ -155,11 +162,11 @@ static KosOpResult call_call_continuation(
   {
     PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
     if (exc) {
-      PyObject_SetAttrString(exc, "target", KosContinuation_TOKEN_REF(k));
-      PyObject_SetAttrString(exc, "continuation", callable);
+      PyObject_SetAttr(exc, str_target, KosContinuation_TOKEN_REF(k));
+      PyObject_SetAttr(exc, str_continuation, callable);
       PyObject *args_tup = PyTuple_Pack(1, resume_val);
       if (args_tup) {
-        PyObject_SetAttrString(exc, "args", args_tup);
+        PyObject_SetAttr(exc, str_args, args_tup);
         Py_DECREF(args_tup);
       }
       PyErr_SetObject(KoskariContinuationApply, exc);
@@ -319,14 +326,14 @@ static PyObject *continuation_call(
     Py_DECREF(resume_val);
     return NULL;
   }
-  if (PyObject_SetAttrString(
-      exc, "target",
+  if (PyObject_SetAttr(
+      exc, str_target,
       KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont))) < 0) {
     Py_DECREF(exc);
     Py_DECREF(resume_val);
     return NULL;
   }
-  if (PyObject_SetAttrString(exc, "continuation", self) < 0) {
+  if (PyObject_SetAttr(exc, str_continuation, self) < 0) {
     Py_DECREF(exc);
     Py_DECREF(resume_val);
     return NULL;
@@ -337,7 +344,7 @@ static PyObject *continuation_call(
     Py_DECREF(exc);
     return NULL;
   }
-  if (PyObject_SetAttrString(exc, "args", args_tup) < 0) {
+  if (PyObject_SetAttr(exc, str_args, args_tup) < 0) {
     Py_DECREF(args_tup);
     Py_DECREF(exc);
     return NULL;
@@ -409,6 +416,11 @@ int koskari_cont_init(PyObject *mod) {
   if (! dict)
     return -1;
 
+  /* Initialize string constants (cleared in koskari_cont_clear). */
+  STR_CONST(str_args, "args");
+  STR_CONST(str_continuation, "continuation");
+  STR_CONST(str_target, "target");
+
   if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosPyDelimitedContinuationType)) ||
       PyType_Ready(KOS_CALLABLE_PYTYPE(KosPyContinuationType)))
     return -1;
@@ -428,6 +440,10 @@ int koskari_cont_init(PyObject *mod) {
 int koskari_cont_clear(PyObject *mod) {
 
   (void) mod;
+
+  Py_CLEAR(str_args);
+  Py_CLEAR(str_continuation);
+  Py_CLEAR(str_target);
   return 0;
 }
 

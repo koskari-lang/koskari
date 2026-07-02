@@ -322,7 +322,7 @@ as opcodes. Fixed handler keys from `kos_tp_names` in `tracing.c`:
 | **rollup** | Wall time inside `eval_phase_post_opcode` (`KOS_TRACE_POST_OP_ENTER` / `EXIT`). A deferred post-op pass can produce a second rollup sample on the next dispatch prologue. |
 | **parent_return** | `eval_parent_return_deliver` (impl body), wrapped at the wrapper. |
 | **control_returned** | Each `kos_dynnode_on_control_returned` in `eval_phase_post_opcode` and `eval_parent_return_deliver_impl`. |
-| **event_raise** | `eval_event_raise` from `eval_phase_post_opcode_tail` only (not loop prologue pending-exception path). |
+| **event_raise** | `process_raise` from `eval_phase_post_opcode_tail` only (not loop prologue pending-exception path). |
 | **event_await** | `KOS_EV_AWAIT` branch in `eval_phase_post_opcode_tail`. |
 | **event_yield** | `eval_event_yield` from the tail. |
 | **return_boundary** | `eval_event_return_deliver_to_boundary` from the tail. |

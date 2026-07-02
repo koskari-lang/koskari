@@ -321,8 +321,6 @@ typedef enum KosTransitionKind {
   KOS_TRANS_UNWIND_TO_NODE,
   KOS_TRANS_WALK_HANDLE_YIELD,
   KOS_TRANS_TRANSFER_TO_LOOP,
-  /** Walk TRY/FINALLY on dyn_top; deliver or emit raise (no extra req fields) */
-  KOS_TRANS_TRY_LOCAL_RAISE,
 } KosTransitionKind;
 
 
@@ -335,10 +333,6 @@ typedef enum KosTransitionStatus {
   KOS_TRANS_STATUS_ERROR,
   KOS_TRANS_STATUS_ASYNC_UNWIND,
   KOS_TRANS_STATUS_FINALLY_TAKING_RETURN,
-  /** Local TRY/FINALLY handler took the exception; eval continues */
-  KOS_TRANS_STATUS_HANDLER_APPLIED,
-  /** No local handler; exception propagates to caller */
-  KOS_TRANS_STATUS_NO_LOCAL_HANDLER,
 } KosTransitionStatus;
 
 
@@ -372,9 +366,8 @@ typedef struct KosTransitionResult {
 
 
 /**
-   TRY/FINALLY handler walk used by KosEvalState_Transition
-   KOS_TRANS_TRY_LOCAL_RAISE. Implemented in dynchain.c; exposed for linking with
-   eval/eval_transition.c included from eval.c.
+   TRY/FINALLY handler walk used by process_raise (the unified RAISE
+   ingress in eval.c). Implemented in dynchain.c.
 */
 
 KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es);
@@ -1660,19 +1653,6 @@ void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
    :param node: YIELD_FROM node, or NULL (no-op)
 */
 void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
-
-
-/**
-   Find the first TRY or FINALLY region on the dynamic chain that is
-   enabled, walking from dyn_top toward root. Used for exception
-   handling: when an exception occurs, this returns the region whose
-   handler (a_label) should receive control.
-
-   :param es: eval state
-
-   :return: the topmost enabled TRY or FINALLY region, or NULL
-*/
-KosDynNode *kos_find_node_for_raise(KosEvalState *es);
 
 
 /**

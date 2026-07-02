@@ -359,22 +359,6 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
 
 
 /**
-   Nearest enabled TRY or FINALLY from dyn_top for local exception dispatch.
-   Callers: kos_dyn_try_local_raise_body, opcode RAISE routing.
-*/
-KosDynNode *kos_find_node_for_raise(KosEvalState *es) {
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
-  while (node) {
-    if ((KosDynNode_IS_TRY(node) && KosDynTry_ENABLED((KosDynTry *) node)) ||
-        (KosDynNode_IS_FINALLY(node) && KosDynFinally_ENABLED((KosDynFinally *) node)))
-      return node;
-    node = KosDynNode_PARENT(node);
-  }
-  return NULL;
-}
-
-
-/**
    Nearest LOOP or FOREACH from dyn_top. Callers: BREAK, CONTINUE opcodes.
 */
 KosDynNode *kos_find_node_for_loop(KosEvalState *es) {
@@ -528,7 +512,7 @@ static int try_local_extent_on_current_frame(KosEvalState *es) {
    FINALLY consumes (jump to handler) or no handler remains.
    Returns EVAL_REPROLOGUE if a handler was applied, EVAL_RAISE if no handler
    (PyErr set and boundary raise prepared), EVAL_AWAIT if async unwind started.
-   Callers: eval transition KOS_TRANS_TRY_LOCAL_RAISE.
+   Callers: process_raise (the unified RAISE ingress in eval.c).
 */
 KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);

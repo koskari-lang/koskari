@@ -7,13 +7,6 @@ design docs for detail.
 
 ## Evaluator architecture
 
-- **RAISE ingress unification** — `process_raise` is the central hub, but
-  `eval_phase_entry` (`KOS_MODE_EXCEPTION`), `run_transfer_plan_to_completion`,
-  and `KOS_MODE_RAISE` still embed parallel exception policy. Migrate toward a
-  single “exception received” path: all PyErr / `KOS_RES_RAISE` ingress (normal
-  eval, call results, transfer-plan step outcomes, revive throw) should
-  converge on one handler that consults sub-states (normal vs mid-transfer vs
-  continuation signal).
 - **Generic boundary dynnode dispatch** — evolve `kos_dynnode_on_control_returned`
   or add `kos_dynnode_on_boundary_event` so NEXT / FOREACH / YIELD_FROM
   consumers route through one capacity-driven dispatcher instead of scattered
