@@ -109,6 +109,19 @@ class TestDeferType(unittest.TestCase):
         self.assertIn("oops", str(ctx.exception))
 
 
+    def test_defer_on_defer_is_idempotent(self):
+        """
+        defer(d) where d is already a defer returns the same instance
+        """
+
+        def fn():
+            return 42
+
+        d = lib.defer(fn)
+        d2 = lib.defer(d)
+        self.assertIs(d2, d)
+
+
 class TestDeferNoAutoAwait(unittest.IsolatedAsyncioTestCase):
     """
     Defer returned from a call is not auto-awaited; it is pushed as a value

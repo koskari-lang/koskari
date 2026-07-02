@@ -125,6 +125,17 @@ static PyObject *defer_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
     PyErr_SetString(PyExc_TypeError, "defer requires at least one argument (fn)");
     return NULL;
   }
+
+  /* Idempotent: defer(d) where d is already a defer returns d directly,
+     mirroring demand(demand(x)) -> demand(x). */
+  if (PyTuple_GET_SIZE(args) == 1 && (! kwds || ! PyDict_Size(kwds))) {
+    PyObject *only = PyTuple_GET_ITEM(args, 0);
+    if (KosDefer_CheckExact(only)) {
+      Py_INCREF(only);
+      return only;
+    }
+  }
+
   PyObject *fn = PyTuple_GET_ITEM(args, 0);
   Py_INCREF(fn);
 
