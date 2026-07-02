@@ -30,6 +30,17 @@ design docs for detail.
   exception condition; a raise leaves only at the chain root or a GEN
   boundary.
 
+  Failed-pop taxonomy (intended): two distinct classes. (1) Evaluator
+  logic itself broke — internal fault, EVAL_FATAL, allowed to abend the
+  loop; a Koskari bug, not a user-code condition. (2) The user's unwind
+  broke (after-thunk, __exit__, restore raised) — never abends; it becomes
+  a new exception chained from the original via Python __context__, and
+  the walk continues with the new exception from the current chain
+  position. Today both classes funnel indistinctly into boundary raise or
+  FATAL, and the sync-teardown-failure path drops the teardown's own
+  exception by restoring the parked original over it; the async path
+  drops the parked original without chaining.
+
 ---
 
 ## Continuations / transfer plans
