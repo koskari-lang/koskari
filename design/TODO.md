@@ -12,36 +12,14 @@ design docs for detail.
   consumers route through one capacity-driven dispatcher instead of scattered
   calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
   Ref: [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
-- **Cap-gated exception dispatch** — the caps bitfield is meant to be the
-  earliest (and fastest) indicator of whether a node participates in
-  exception handling or can just be cleanly unwound/popped. The raise walk
-  (`kos_dyn_try_local_raise_body`) should consult a handling cap first and
-  only then call `kos_dyn_handle` (the type-specific dispatch); today it
-  calls the kind-switch unconditionally, and `KOS_DYN_CAP_HANDLES_EXCEPTIONS`
-  is consulted only on the failed-pop recovery branch. Wiring this up also
-  means setting the cap on every kind that handles RAISE (TRY, FINALLY, GEN;
-  the INPLACE DELIM restitch and WITH swallow are currently kind-special-
-  cased in the walk and should ride the same gate). Stash ownership is
-  per-node BY DESIGN: a handling node (and an unwind that runs due to an
-  exception) stashes what it needs to resume — FINALLY exc_info +
-  HANDLING_RAISE, WITH exc triple fields, WIND pending_exc fields are all
-  instances of that. Any cleanup is about sharing the stash/restore idiom,
-  not moving ownership to the walk. Invariant to preserve: unwind/pop of
-  non-handling
-  nodes may suspend via await, but never exits the evaluator loop with the
-  exception condition; a raise leaves only at the chain root or a GEN
-  boundary.
-
-  Failed-pop taxonomy (intended): two distinct classes. (1) Evaluator
-  logic itself broke — internal fault, EVAL_FATAL, allowed to abend the
-  loop; a Koskari bug, not a user-code condition. (2) The user's unwind
-  broke (after-thunk, __exit__, restore raised) — never abends; it becomes
-  a new exception chained from the original via Python __context__, and
-  the walk continues with the new exception from the current chain
-  position. Today both classes funnel indistinctly into boundary raise or
-  FATAL, and the sync-teardown-failure path drops the teardown's own
-  exception by restoring the parked original over it; the async path
-  drops the parked original without chaining.
+- **Exception patch-up** — single arc covering the agreed exception model:
+  cap fast check before `kos_dyn_handle` dispatch; context-owned LIFO
+  exception stash stack (propagation state) with node-owned handler state;
+  failed-pop taxonomy (internal FATAL vs user unwind failure chained via
+  `__context__`, never abending the loop); per-frame traceback collection
+  on crossing; exc_info scoped to the bytecode contract (+ suspension-gap
+  reproducer); TRY node-vs-extent-table source-of-truth decision. Design:
+  [interpreter/exception-patchup.md](interpreter/exception-patchup.md).
 
 ---
 
