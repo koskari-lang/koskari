@@ -16,7 +16,7 @@ tests.reader.test_layout_ng
 Pass 1: strict layout_ng header semantics TDD.
 """
 
-from unittest import IsolatedAsyncioTestCase
+from unittest import IsolatedAsyncioTestCase, TestCase
 
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
@@ -26,7 +26,7 @@ from koskari.reader import LINE_END
 from koskari.reader import source_str
 from koskari.reader import LayoutReader
 from koskari.bootstrap import _BUILTIN_REGISTRY
-from koskari.lib import cons, keyword, nil, symbol
+from koskari.lib import cons, keyword, nil, symbol, kos_repr
 
 import pytest
 
@@ -439,16 +439,109 @@ class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
-class TestLayoutCompatibilityModes(IsolatedAsyncioTestCase):
+class TestLayoutCompatibilityModes(TestCase):
 
-    async def test_disable_implicit_calls_preserves_bare_symbol(self):
+    def test_disable_implicit_calls_preserves_bare_symbol(self):
         result = parse_layout_ng_mode('begin', layout_implicit_calls=False)
         self.assertEqual(result, symbol('begin'))
 
 
-    async def test_disable_layout_mode_bypasses_layout_block_parsing(self):
+    def test_disable_layout_mode_bypasses_layout_block_parsing(self):
         result = parse_layout_ng_mode('foo x:\n  y\n', layout_enabled=False)
         self.assertEqual(result, symbol('foo'))
+
+
+class TestLayoutReaderWhitespace(TestCase):
+
+    def test_sexpr_crazy_whitespace(self):
+        src = """
+        (SomeWords
+
+            foo
+        bar  baz:        quux
+            squids
+
+            wibble:
+        100
+    )
+        """
+
+        result = parse_layout_ng_mode(src, layout_enabled=True)
+        self.assertEqual(result, pycons(
+            (symbol('SomeWords'),
+             symbol('foo'),
+             symbol('bar'),
+             keyword('baz'),
+             symbol('quux'),
+             symbol('squids'),
+             keyword('wibble'),
+             100,
+            )))
+
+
+    def test_sexpr_with_header_inline(self):
+        src = """
+        SomeWords (vals
+
+            foo
+        bar  baz:        quux
+            squids
+
+            wibble:
+        100
+    )
+        """
+
+        result = parse_layout_ng_mode(src, layout_enabled=True)
+        expected = pycons(
+            (symbol('SomeWords'),
+             (symbol('vals'),
+                symbol('foo'),
+                symbol('bar'),
+                keyword('baz'),
+                symbol('quux'),
+                symbol('squids'),
+                keyword('wibble'),
+                100,
+            )))
+
+        print("expected:", kos_repr(expected))
+        print("result  :", kos_repr(result))
+
+        self.assertEqual(result, expected)
+
+
+    def test_sexpr_with_header_newline(self):
+        src = """
+        SomeWords:
+            (vals
+
+            foo
+        bar  baz:        quux
+            squids
+
+            wibble:
+        100
+    )
+        """
+
+        result = parse_layout_ng_mode(src, layout_enabled=True)
+        expected = pycons(
+            (symbol('SomeWords'),
+             (symbol('vals'),
+                symbol('foo'),
+                symbol('bar'),
+                keyword('baz'),
+                symbol('quux'),
+                symbol('squids'),
+                keyword('wibble'),
+                100,
+            )))
+
+        print("expected:", kos_repr(expected))
+        print("result  :", kos_repr(result))
+
+        self.assertEqual(result, expected)
 
 
 # The end.

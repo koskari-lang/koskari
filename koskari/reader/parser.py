@@ -519,6 +519,18 @@ class SourceStream(BaseSourceStream):
             self.readline()
 
 
+    @contextmanager
+    def suspend_indent(self):
+        """
+        No-op indent suspension for streams without indent tracking
+
+        Streams that do not bound whitespace skipping by indentation have
+        nothing to suspend, so this simply yields.
+        """
+
+        yield
+
+
 class IndentAwareStream(SourceStream):
     """
     Source stream with indent-bounded skip_whitespace
@@ -640,6 +652,27 @@ class IndentAwareStream(SourceStream):
                     if consume > 0:
                         self.read(consume)
                     return ''
+
+
+    @contextmanager
+    def suspend_indent(self):
+        """
+        Temporarily disable indent-bounded whitespace skipping
+
+        Indentation has no meaning inside a balanced delimited form, so a
+        pair read suspends the indent guard for the duration of its body.
+        While suspended, max_indent is None and skip_whitespace consumes
+        vertical whitespace freely (native behavior), letting a form span
+        dedented lines up to its closing delimiter. The previous max_indent
+        is restored on exit.
+        """
+
+        old = self._max_indent
+        self._max_indent = None
+        try:
+            yield
+        finally:
+            self._max_indent = old
 
 
 # ===========================================================================
@@ -1395,44 +1428,45 @@ class Reader:
         result = empty
         work = result
 
-        while True:
-            event, position, value = self._read(stream)
-
-            if event is CLOSE_PAIR:
-                break
-
-            elif event is DOT:
-                if result is empty:
-                    raise stream.error("invalid dotted list", position)
-
-                dot_position = position
-
+        with stream.suspend_indent():
+            while True:
                 event, position, value = self._read(stream)
-                if event is not VALUE:
-                    raise stream.error("invalid list syntax", position)
-                else:
-                    setcdr(work, value)
 
-                event, position, value = self._read(stream)
-                if event is not CLOSE_PAIR:
-                    raise stream.error("invalid use of dot in list",
-                                       dot_position)
-                else:
+                if event is CLOSE_PAIR:
                     break
 
-            elif event is EOF:
-                raise stream.reader_eof(position)
+                elif event is DOT:
+                    if result is empty:
+                        raise stream.error("invalid dotted list", position)
 
-            elif result is empty:
-                result = make_cell(value, empty)
-                result.set_position(position)
-                work = result
+                    dot_position = position
 
-            else:
-                new_work = make_cell(value, empty)
-                new_work.set_position(position)
-                setcdr(work, new_work)
-                work = new_work
+                    event, position, value = self._read(stream)
+                    if event is not VALUE:
+                        raise stream.error("invalid list syntax", position)
+                    else:
+                        setcdr(work, value)
+
+                    event, position, value = self._read(stream)
+                    if event is not CLOSE_PAIR:
+                        raise stream.error("invalid use of dot in list",
+                                           dot_position)
+                    else:
+                        break
+
+                elif event is EOF:
+                    raise stream.reader_eof(position)
+
+                elif result is empty:
+                    result = make_cell(value, empty)
+                    result.set_position(position)
+                    work = result
+
+                else:
+                    new_work = make_cell(value, empty)
+                    new_work.set_position(position)
+                    setcdr(work, new_work)
+                    work = new_work
 
         if closer and value != closer:
             raise stream.error("mismatched open and close characters",
