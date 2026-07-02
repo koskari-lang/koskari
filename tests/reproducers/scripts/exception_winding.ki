@@ -8,9 +8,9 @@
 
 
 define check [tag expect got]:
-    when (not (equal? expect got)):
-        (print "FAIL" tag "expected:" expect "got:" got)
-        (compile/raise (AssertionError tag))
+    unless (equal? expect got):
+        print "FAIL" tag "expected:" expect "got:" got
+        raise (AssertionError tag)
 
 
 ;; 1. A raise crosses a frame with open extents (let NS) into the
@@ -18,8 +18,9 @@ define check [tag expect got]:
 
 define scenario-frame-cross []:
     define blow [x]:
-        (compile/let [[y x]]
-          (compile/raise (ValueError "boom")))
+        let [[y x]]:
+          raise (ValueError "boom")
+
     (check "frame-cross" "caught"
            (try (blow 1) ([e ValueError] "caught")))
 
@@ -28,47 +29,52 @@ define scenario-frame-cross []:
 ;;    before the enclosing handler catches.
 
 define scenario-wind-raise []:
-    define events (list)
+    define events #[]
     define result:
-        (try
-          (compile/dyn-wind
+        try:
+          (dyn-wind
             (events.append "before")
-            (compile/raise (ValueError "boom"))
+            (raise (ValueError "boom"))
             (events.append "after"))
-          ([e ValueError] "caught"))
-    (check "wind-raise result" "caught" result)
-    (check "wind-raise events" #["before" "after"] events)
+        except [e ValueError]:
+            "caught"
+
+    check "wind-raise result" "caught" result
+    check "wind-raise events" #["before" "after"] events
 
 
 ;; 3. A failing after thunk supersedes the original exception, which
 ;;    chains in as __context__.
 
 define scenario-teardown-supersede []:
-    define events (list)
+    define events #[]
     define result:
-        (try
-          (compile/dyn-wind
-            (events.append "before")
-            (compile/raise (ValueError "original"))
-            (compile/raise (RuntimeError "teardown")))
-          ([e RuntimeError] e))
-    (check "supersede caught" "teardown" (str result))
-    (check "supersede context" "original" (str result.__context__))
+        try:
+            (dyn-wind
+              (events.append "before")
+              (raise (ValueError "original"))
+              (raise (RuntimeError "teardown")))
+        except [e RuntimeError]:
+            e
+
+    check "supersede caught" "teardown" (str result)
+    check "supersede context" "original" (str result.__context__)
 
 
 ;; 4. In-shift delimited invoke resumes in place: a single before/after
 ;;    pair, value delivered to the call site.
 
 define scenario-inshift []:
-    define events (list)
+    define events #[]
     define result:
-        (compile/reset
-          (compile/dyn-wind
+        reset:
+          (dyn-wind
             (events.append "before")
-            (compile/shift k (compile/call k 5))
-            (events.append "after")))
-    (check "inshift result" 5 result)
-    (check "inshift events" #["before" "after"] events)
+            (shift k (k 5))
+            (events.append "after"))
+
+    check "inshift result" 5 result
+    check "inshift events" #["before" "after"] events
 
 
 ;; 5. Remote invoke instantiates the captured template: one before/after
@@ -77,46 +83,50 @@ define scenario-inshift []:
 define scenario-remote []:
     define events (list)
     define captured:
-        (compile/reset
-          (compile/dyn-wind
+        reset:
+          (dyn-wind
             (events.append "before")
-            (compile/shift k k)
-            (events.append "after")))
-    (check "remote result" 5 (compile/call captured 5))
-    (check "remote events" #["before" "after" "before" "after"] events)
+            (shift k k)
+            (events.append "after"))
+
+    check "remote result" 5 (captured 5)
+    check "remote events" #["before" "after" "before" "after"] events
 
 
 ;; 6. Multi-shot in-shift invoke: the first call runs in place, the
 ;;    re-invoke grafts a fresh template instance; one wind pair each.
 
 define scenario-multishot []:
-    define events (list)
+    define events #[]
     define result:
-        (compile/reset
-          (compile/dyn-wind
+        reset:
+          (dyn-wind
             (events.append "before")
-            (compile/shift k (+ (compile/call k 3) (compile/call k 4)))
-            (events.append "after")))
-    (check "multishot result" 7 result)
-    (check "multishot events" #["before" "after" "before" "after"] events)
+            (shift k (+ (k 3) (k 4)))
+            (events.append "after"))
+
+    check "multishot result" 7 result
+    check "multishot events" #["before" "after" "before" "after"] events
 
 
 ;; 7. Recursive invoke: k called in the path of k via a stashed alias.
 
 define scenario-recursive []:
     define cell #[None None]
+
     define bump [n]:
-        (cell.__setitem__ 1 n)
-        (if (< n 3) (compile/call (item cell 0) (+ n 1)) n)
+        set! (item cell 1) n
+        if (< n 3) ((item cell 0) (+ n 1)) n
+
     define result:
-        (compile/reset
-          (bump
-            (compile/shift k
-              (compile/begin
-                (cell.__setitem__ 0 k)
-                (compile/call k 0)))))
-    (check "recursive result" 3 result)
-    (check "recursive last" 3 (item cell 1))
+        reset:
+          bump:
+            shift k:
+              set! (item cell 0) k
+              k 0
+
+    check "recursive result" 3 result
+    check "recursive last" 3 (item cell 1)
 
 
 ;; 8. An exception raised by a remotely-invoked slice reaches the
@@ -124,13 +134,17 @@ define scenario-recursive []:
 
 define scenario-remote-exc []:
     define bad [v]:
-        (compile/raise (ValueError "slice"))
-    define captured (compile/reset (bad (compile/shift k k)))
+        raise (ValueError "slice")
+
+    define captured:
+      reset:
+        (bad (shift k k))
+
     (check "remote-exc" "caught"
            (try (compile/call captured 5) ([e ValueError] "caught")))
 
 
-when (equal? __name__ "__main__"):
+when-main:
     (scenario-frame-cross)
     (scenario-wind-raise)
     (scenario-teardown-supersede)
