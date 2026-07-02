@@ -124,6 +124,10 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
 /** Iterator yield/return boundary (KOS_DYN_NEXT, extended FOREACH stepping) */
 #define KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY     (1u << 9)
+/** Node participates in raise-walk dispatch (handle/restitch); the fast
+   first check before kos_dyn_handle. Distinct from HANDLES_EXCEPTIONS,
+   which marks failed-pop recovery (kos_dyn_exception_unwind). */
+#define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
 /* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION

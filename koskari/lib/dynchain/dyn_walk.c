@@ -573,11 +573,13 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
          (void *) top,
          kos_dynnode_kind_name(KosDynNode_KIND(top)));
 
+    /* Cap fast check: only nodes that intercept RAISE are dispatched to
+       the handle phase; everything else goes straight to unwind/pop. */
+    if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)) {
+
     /* In-place delimited return bookmark: the slice raised. Restitch the
        invoke span and continue the raise from the invoke site. */
-    if (KosDynNode_IS_DELIM(top)
-        && KosDynDelim_MODE((KosDynDelim *) top)
-            == KOS_DYN_DELIM_MODE_INPLACE) {
+    if (KosDynNode_IS_DELIM(top)) {
       PyObject *typ = NULL, *val = NULL, *tb = NULL;
       PyErr_Fetch(&typ, &val, &tb);
       if (kos_dyn_inplace_restitch(es, (KosDynDelim *) top) < 0) {
@@ -645,6 +647,8 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
         return EVAL_FATAL();
       }
     }
+
+    }  /* KOS_DYN_CAP_INTERCEPTS_RAISE */
 
     /* PASS: unwind and pop */
     {

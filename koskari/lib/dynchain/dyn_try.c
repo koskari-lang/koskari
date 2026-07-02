@@ -17,7 +17,9 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
     return NULL;
   }
 
-  kos_dynnode_init(node, KOS_DYN_TRY, parent, KOS_DYN_CAP_HANDLES_EXCEPTIONS);
+  kos_dynnode_init(node, KOS_DYN_TRY, parent,
+                   KOS_DYN_CAP_HANDLES_EXCEPTIONS
+                   | KOS_DYN_CAP_INTERCEPTS_RAISE);
   KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
   KosDynNode_STACK((KosDynNode *) node) = stack;
