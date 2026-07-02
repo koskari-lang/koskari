@@ -26,7 +26,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **demand-evalex-phase1.md** / **demand-evalex-phase2.md** (archived under [archive/](../archive/)): demand in-eval denial and call flattening — see [EVALUATOR.md](../EVALUATOR.md) §7 and [api/demand-wrapper.md](../api/demand-wrapper.md)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView; proposed CAPTURE_FRAME opcode is design-only, see that doc §5)
 - **callcc.md**: Call/cc implementation design (current PUSH delimited invoke)
-- **delimited-invoke-model.md**: Target delimited invoke — lineage fork, bookmarked return, double-wind fix (not implemented)
+- **[archive/delimited-invoke-model.md](../archive/delimited-invoke-model.md)**: two-path delimited invoke (in-place Path A / bounded PUSH Path B) — implemented and archived; see also [archive/exception-patchup.md](../archive/exception-patchup.md) for the raise-path model
 - **[archive/kospartial.md](../archive/kospartial.md)**: partial application — implemented as the standalone native `KosPartial` (duck-typed, not an `isinstance` match); archived
 - **[archive/kosproperty.md](../archive/kosproperty.md)**: KosCallable-aware **`property`** — auto **`Demand`** wrap on accessors; implemented and archived
 - **generic-dynnode-protocol.md**: Generic DynNode interface design, API reference, and type-specific bypass cases (when opcodes use type-named APIs)

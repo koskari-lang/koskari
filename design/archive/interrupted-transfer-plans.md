@@ -20,12 +20,12 @@ continuation + dyn-wind integration.
 |----------|----------------|
 | [../TODO.md](../TODO.md) | Status rollup; follow-up items |
 | [callcc.md](../interpreter/callcc.md) | Re-entrant transfers, plan structure, `original_target` |
-| [delimited-invoke-model.md](../interpreter/delimited-invoke-model.md) | Target delimited invoke (lineage fork, double-wind fix) |
+| [delimited-invoke-model.md](delimited-invoke-model.md) | Target delimited invoke (lineage fork, double-wind fix) |
 | [../EVALUATOR.md](../EVALUATOR.md) | Eval loop, `revive_plan`, transfer draining |
 | [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md) | `plan` / `plan_stack`, transfer atomicity |
 | [kos_eval_state_api_migration.md](kos_eval_state_api_migration.md) | `SuspendActivePlan` / `ResumeSuspendedPlan` |
 | [../api/dynchain_ng/DYNCHAIN_USAGE_INVENTORY.md](../api/dynchain_ng/DYNCHAIN_USAGE_INVENTORY.md) | Symbol inventory |
-| [extent-wind-unwind.md](extent-wind-unwind.md) | Wind/unwind thunk execution model |
+| [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md) | Wind/unwind thunk execution model |
 
 ---
 

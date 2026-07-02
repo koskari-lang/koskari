@@ -12,29 +12,11 @@ design docs for detail.
   consumers route through one capacity-driven dispatcher instead of scattered
   calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
   Ref: [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
-- ~~**Exception patch-up**~~ — **done.** Cap-gated raise dispatch
-  (`KOS_DYN_CAP_INTERCEPTS_RAISE`); context-owned LIFO exception stash
-  with node-owned handler state; failed-pop taxonomy (FATAL / barrier
-  refusal / user teardown failure chained via `__context__`); per-frame
-  traceback collection on crossing; per-context exc_info swap at
-  koskari_eval entry/exit; node-authoritative TRY (runtime extent
-  consults retired). Design + stage log:
-  [interpreter/exception-patchup.md](interpreter/exception-patchup.md).
 
 ---
 
 ## Continuations / transfer plans
 
-- ~~**Delimited invoke two-path model**~~ — **done.** Resume-in-place (Path A)
-  when the capture-time prompt node is live in ancestry; bounded PUSH graft
-  (Path B) when not. Fixes the in-shift double wind/unwind and bounds capture
-  at the prompt's owning frame. Design:
-  [interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md).
-  Regression spec: `test_reset_shift.py` (wind-count + invoke cases).
-  All three follow-up defects fixed since: dyn-wind after thunks on
-  exception unwind (parked-exception cell); WITH double-exit under remote
-  invoke (shared KosRef exit-done cell); Path B slice exception escape
-  (generic cross-frame raise propagation, `test_raise_across_frames.py`).
 - **Async nested await during transfer** — when a wind/unwind thunk under an
   active or suspended transfer returns `KOS_XFER_SUSPENDED_AWAIT`, `plan_stack`
   must remain coherent across `KOS_RES_AWAIT` freeze/thaw, including when
@@ -45,7 +27,8 @@ design docs for detail.
 - **Full delimited PUSH replan** — deferred; §6.6 forbid remains until then.
 
 Ref: [interpreter/callcc.md](interpreter/callcc.md),
-[interpreter/delimited-invoke-model.md](interpreter/delimited-invoke-model.md),
+[archive/delimited-invoke-model.md](archive/delimited-invoke-model.md),
+[archive/exception-patchup.md](archive/exception-patchup.md),
 [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md).
 
 ---
