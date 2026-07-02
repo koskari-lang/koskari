@@ -1347,10 +1347,17 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         }
         /* LABEL: cannot resolve until pass 1 labels are complete; defer */
         if (fk == KOSTYLE_LABEL) {
-          PyObject *pending = PyTuple_Pack(3,
-              PyLong_FromLong(extra_idx),
-              PyLong_FromLong(slot),
-              elem);
+          PyObject *idx_obj = PyLong_FromLong(extra_idx);
+          PyObject *slot_obj = PyLong_FromLong(slot);
+          if (! idx_obj || ! slot_obj) {
+            Py_XDECREF(idx_obj);
+            Py_XDECREF(slot_obj);
+            goto failure;
+          }
+          /* PyTuple_Pack increfs each element; release our own refs after */
+          PyObject *pending = PyTuple_Pack(3, idx_obj, slot_obj, elem);
+          Py_DECREF(idx_obj);
+          Py_DECREF(slot_obj);
           if (! pending || PyList_Append(coll->pending_labels, pending) < 0) {
             Py_XDECREF(pending);
             goto failure;
