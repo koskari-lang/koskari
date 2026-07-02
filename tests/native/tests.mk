@@ -3,6 +3,12 @@
 # Build and run the C test harness that verifies memory management
 # in Koskari's native types. Intended for use inside the container
 # or directly; invoke with make -f tests.mk <target>.
+#
+# Invoke from the top level using:
+#   make test-native
+#   make test-asan
+#   make test-valgrind
+
 
 # Python configuration
 PYTHON ?= python3
@@ -74,7 +80,7 @@ ASAN_OPTIONS := detect_leaks=0:print_stats=1
 # and internal structures cause many false positive leak reports.
 VALGRIND := valgrind
 VALGRIND_OPTS := --leak-check=full \
-                 --show-leak-kinds=definite,indirect \
+                 --show-leak-kinds=definite,indirect,possible \
                  --errors-for-leak-kinds=none \
                  --track-origins=yes \
                  --error-exitcode=1 \
