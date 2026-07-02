@@ -2,11 +2,36 @@
 
 ## Status
 
-**Design target — not implemented.** The tree is green (all defect
-reproducers pass, no pins), but the exception machinery reached that state
-through localized fixes that drifted from the intended node model. This
-document records the agreed end state so the work can proceed as a single
-focused arc after the delimited-invoke branch merges.
+**Stages 1-4 implemented; two decisions remain.**
+
+- **Stage 1 (§3)** — failed-pop taxonomy landed: FATAL passthrough,
+  barrier refusals classed as machinery noise (restore + recovery), user
+  teardown failures supersede with `__context__` chaining and the walk
+  continues (discard-on-stuck guarantees progress).
+- **Stage 2 (§2)** — context-owned LIFO exception stash
+  (`KosContext.exc_stash`, single normalized instances tagged with the
+  parking node_id) with the helper family in dynchain.c; WIND's
+  `pending_exc_*` fields deleted.
+- **Stage 3 (§1)** — `KOS_DYN_CAP_INTERCEPTS_RAISE` gates the raise walk
+  dispatch (TRY, FINALLY, GEN, INPLACE DELIM); kept distinct from
+  `HANDLES_EXCEPTIONS` (failed-pop recovery; PROMPT proves the sets
+  differ).
+- **Stage 4 (§4)** — crossed frames recorded into
+  `__koskari_dynchain__` (marked `"crossed"`) before the pop;
+  escape-time decoration carries them forward without duplication.
+- **Stage 5 (§5)** — the suspension gap is REAL and reproduced:
+  `test_exc_info_isolation.py::test_exc_info_across_interleaved_tasks`
+  (intentionally red) shows two contexts suspended inside handlers on one
+  thread corrupting each other's exc_info (one sees the other's
+  exception, the other sees none). Single-task suspension survives.
+  **Decision pending**: per-context exc_info swap at freeze/thaw
+  (CPython `gi_exc_state` analogue) vs documented restriction.
+- **Stage 6 (§6)** — evidence gathered: with
+  `try_local_extent_on_current_frame` disabled the full suite passes
+  (only the intentional red fails) — the extent-table path is not
+  load-bearing; every legitimate catch goes through a live TRY node.
+  **Decision pending**: retire the extent check (node-authoritative) or
+  keep it as a defensive fallback.
 
 **Last updated:** 2026-07-02
 
