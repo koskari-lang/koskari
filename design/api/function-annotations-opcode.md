@@ -1,7 +1,11 @@
 # Opcode-based function annotations
 
-Status: proposal (internal design). Supersedes the code/formals-based
-annotation paths described under "Current state" below. May link into
+Status: implemented (branch `build-function-ng`). Supersedes the
+code/formals-based annotation paths described under "Current state" below,
+which are now removed — including the `FormalsSpec` / `Formals` annotations
+field itself (no consumer remained). "Current state" describes the design as
+it stood before this work. Authoritative opcode reference:
+[../OPCODES.md §16](../OPCODES.md#kos_op_build_function). May link into
 `docs/` once a stable user-facing surface exists.
 
 ## Summary
@@ -408,13 +412,17 @@ Implications:
 
 ## Open questions
 
-- Whether the changed `BUILD_FUNCTION` shape warrants its own doc page
-  update under `docs/reference/vm/opcodes/` (no new opcode name is needed —
-  `BUILD_FUNCTION` is extended in place).
-- Whether any current consumer needs `FormalsSpec.annotations` `type`
-  bundles beyond `__annotations__` (contracts/demand), which determines how
-  much of the old plumbing can be deleted.
+Resolved during implementation:
+
+- No consumer needed the `FormalsSpec.annotations` `type` bundles beyond
+  `__annotations__`, so the field was removed from `FormalsSpec` and
+  `Formals` entirely (constructor arities shrank; the codex `FORMALS_SPEC`
+  record dropped its annotations index; `BYTECODE_ABI_MINOR` bumped).
+- First-segment resolution starts at the **template's parent** (the defining
+  namespace) and additionally **skips declared-but-unbound slots**,
+  continuing up the chain; a module namespace consults binds then builtins.
+
+Still open:
+
 - Whether class `__annotations__` should later share the same string
   forward-reference resolution helper for parity.
-- Namespace target for first-segment resolution (template vs. its parent) and
-  the exact unbound-local-slot skip rule.

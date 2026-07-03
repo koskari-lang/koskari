@@ -240,11 +240,14 @@ used as a variable).
 | Anonymous, no return         | `(compile/lambda FORMALS BODY ...)`                |
 
 
-`RET` is a single expression (not a formal parameter). It is recorded as compiler
-metadata on the resulting `Code` (`code.extras['return']`) and exposed on the
-callable as `__annotations__['return']` (via `kos_typehint_to_dunder_annotation`
-in the runtime — same string rules as parameter annotations, e.g. simple
-symbols become their name strings).
+`RET` is a single expression (not a formal parameter). Like parameter
+annotations, it is compiled and evaluated in the **defining scope** at
+function-creation time and becomes `__annotations__['return']` as a real
+object (e.g. `:: int` yields the `int` type). A string literal is the
+forward-reference escape hatch: it stays a string, resolved lazily (dotted
+lookup against the defining namespace) on first `__annotations__` /
+`__signature__` access; failures stay strings and are never retried. See
+[api/function-annotations-opcode.md](api/function-annotations-opcode.md).
 
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
@@ -277,11 +280,13 @@ function object being created (e.g. named `compile/let`).
 
 **Behaviour:** Matches one of the shapes above, parses formals with
 `gather_formals`, builds a fragment that declares the parameter names, compiles
-the body with `helper_begin`, and completes it as a function. If a return type
-was present, sets `code.extras['return']` from the `RET` form after `complete`.
-Pushes a `FunctionSpec` constant and emits `BUILD_FUNCTION`. Default values for
-keyword parameters are compiled in the enclosing scope and passed in via the
-constant tuple for defaulted keywords.
+the body with `helper_begin`, and completes it as a function. Annotation
+expressions (parameter types and `RET`) are compiled in the enclosing scope
+and their values pushed first (string literals stay `CONST` forward
+references), followed by keyword-default values, also compiled in the
+enclosing scope. Pushes a `FunctionSpec` constant and emits `BUILD_FUNCTION`
+with the defaults and annotation name tuples in its extra row (see
+[OPCODES.md §16](OPCODES.md#kos_op_build_function)).
 
 **Examples:**
 
@@ -326,9 +331,9 @@ constant tuple for defaulted keywords.
 There is no anonymous `compile/function` form; use `compile/lambda` for that.
 
 **Formals, return type, and docstring:** Same rules as `compile/lambda` (see
-that section). `RET` is recorded on `Code` as `code.extras['return']` and
-exposed as `__annotations__['return']`. A leading string in `BODY` becomes
-`__doc__`.
+that section). `RET` is evaluated in the defining scope at function-creation
+time and exposed as `__annotations__['return']`. A leading string in `BODY`
+becomes `__doc__`.
 
 **Use-case:** Create a **named** function value whose body must **not** receive
 a closure self-binding for `NAME` at `BUILD_FUNCTION` time. The name in the
