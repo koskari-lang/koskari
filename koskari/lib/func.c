@@ -992,6 +992,7 @@ static PyGetSetDef function_getsets[] = {
   { "__name__", (getter) function_get_name_dunder, NULL, NULL, NULL },
   { "__qualname__", (getter) function_get_qualname_dunder, NULL, NULL, NULL },
   { "__module__", (getter) function_get_module_dunder, NULL, NULL, NULL },
+  { "__dict__", PyObject_GenericGetDict, PyObject_GenericSetDict, NULL, NULL },
   { NULL, }
 };
 
@@ -1340,6 +1341,7 @@ function_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosFunction_FORMALS(self));
   Py_VISIT(KosFunction_DOC(self));
   Py_VISIT(((KosFunction *) self)->inspect_signature);
+  Py_VISIT(KosFunction_DICT(self));
   return 0;
 }
 
@@ -1349,6 +1351,7 @@ function_clear(PyObject *self) {
 
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
+  Py_CLEAR(KosFunction_DICT(self));
   return 0;
 }
 
@@ -1362,6 +1365,7 @@ static void function_dealloc(PyObject *self) {
   Py_CLEAR(KosFunction_FORMALS(self));
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
+  Py_CLEAR(KosFunction_DICT(self));
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -1618,6 +1622,7 @@ KosCallableTypeObject KosFunctionType = {
   .tp_call = function_call,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL | Py_TPFLAGS_HAVE_GC,
   .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
+  .tp_dictoffset = offsetof(KosFunction, dict),
   .tp_doc = "Callable(Code, base_namespace, FormalsSpec). Calling with "
              "(*args, **kwargs) binds formals and returns a Coroutine.",
   .tp_traverse = function_traverse,

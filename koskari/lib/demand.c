@@ -692,6 +692,8 @@ static PyGetSetDef demand_getset[] = {
    (void *) "__module__"},
   {"__annotations__", (getter) demand_get_wrapped_attr, NULL, NULL,
    (void *) "__annotations__"},
+  {"__isabstractmethod__", (getter) demand_get_wrapped_attr, NULL, NULL,
+   (void *) "__isabstractmethod__"},
   {NULL},
 };
 
