@@ -12,10 +12,10 @@
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 
-import logging
+import-from logging getLogger
 
 
-define logger (logging.getLogger "kosrunner")
+define logger (getLogger "kosrunner")
 
 
 define-class JobConfig []:
@@ -51,8 +51,9 @@ define-class JobSet []:
     define __call__ [self heartbeat: 3600 snore: False]:
         (self.start)
         while True:
-            when snore (print "zzz")
             sleep heartbeat
+            (logger.debug "Heartbeat")
+            when snore (print "zzz")
 
     define start [self]:
         (logger.info "Starting jobset: %s" self.name)

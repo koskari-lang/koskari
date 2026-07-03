@@ -3,14 +3,19 @@
 
 import-from datetime datetime
 
+
 ; this would be a great use of the use-bundle feature, if it
 ; existed. Just a `use-bundle kosrunner`
 import-from kosrunner use-kosrunner
 (use-kosrunner)
 
 
+logging-config:
+    level: "DEBUG"
+
+
 kafka-config default-kafka:
-    server: "localhost:9092"
+    servers: "localhost:9092"
     security_protocol: "PLAINTEXT"
 
 

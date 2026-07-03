@@ -21,17 +21,26 @@ Framework types, jobset/on-cron syntax, and a demo cron workload.
 """
 
 import-from datetime datetime
+import-from logging getLogger basicConfig
 import-from typing Protocol
 
 import-from .job JobSet jobset
-import-from .cron CronJob on-cron layout/on-cron
-import-from .kafka KafkaConfig KafkaJob kafka-config on-kafka
-import-from .webhook WebhookServer WebhookJob webhook-config on-webhook
+import-from .cron:
+    CronJob on-cron layout/on-cron
+import-from .kafka:
+    KafkaConfig KafkaJob kafka-config on-kafka
+    layout/kafka-config
+import-from .webhook:
+    WebhookServer WebhookJob webhook-config on-webhook
+    layout/webhook-config
 
 
 declare-exports [
     JobSet
     jobset
+
+    logging-config
+    layout/logging-config
 
     CronJob
     on-cron
@@ -39,13 +48,16 @@ declare-exports [
 
     KafkaConfig
     kafka-config
+    layout/kafka-config
 
     KafkaJob
     on-kafka
 
     WebhookServer
-    WebhookJob
     webhook-config
+    layout/webhook-config
+
+    WebhookJob
     on-webhook
 ]
 
@@ -55,6 +67,13 @@ define-syntax use-kosrunner:
         case (use-kosrunner):
             (define names (list-each [n __all__] (symbol n)))
             `(import-from ,__name__ ,@names)
+
+
+define logging-config [level: "WARN" **: kwargs]:
+    basicConfig level: level **: kwargs
+
+
+define layout/logging-config layout/inline-block
 
 
 ;; The end.

@@ -37,28 +37,42 @@ define-class WebhookServer [Job]:
 
     define add-route [self name handler]:
         define path f"{self.prefix}/{name}"
-        (logger.info "Registering webhook %s at %s" name path)
-        define inner [request :: Request]:
-            (logger.info "Webhook triggered: %s" name)
-            define payload (request.json)
+        logger.info "Registering webhook %s at %s" name path
+
+        define app self.app
+
+        @(app.post path)
+        @coroutine-fn
+        define inner [[request :: Request]]:
+            logger.info "Webhook triggered: %s" name
             try:
+                define payload (request.json)
                 define result (handler payload)
-                (logger.info "Webhook completed: %s" name)
+                logger.info "Webhook completed: %s" name
                 result
             except [Exception]:
-                (logger.error "Webhook failed: %s" name exc_info: True)
-        (self.app.add_api_route path (coroutine-fn inner) methods: #["POST"])
+                logger.error "Webhook failed: %s" name exc_info: True
+
+        import inspect
+        print "inspecting inner" name
+        print "  " (inspect.signature inner)
+        print "  " inner.__annotations__
+        print "  " inner.__signature__
 
 
     define serve [self]:
-        (logger.info "Starting webhook server %s on %s:%i" self.name self.host self.port)
+        (logger.info
+            "Starting webhook server %s on %s:%i"
+            self.name self.host self.port)
+
         define config (uvicorn.Config
             self.app
             host: self.host
             port: self.port
             log_level: "info")
         set! self._server (uvicorn.Server config)
-        (self._server.serve)
+
+        create-task (defer self._server.serve)
 
 
     define start [self]:
@@ -82,10 +96,10 @@ define-class WebhookJob [Job]:
         (server.add-route name callback)
 
     define start [self]:
-        None
+        (self.server.start)
 
     define stop [self]:
-        None
+        (self.server.stop)
 
 
 define-syntax webhook-config:
@@ -94,14 +108,18 @@ define-syntax webhook-config:
             define name (WebhookServer (str 'name) args ...)
 
 
+; the inline block handler allows us to put key: val for the config
+; on individual lines
+define layout/webhook-config layout/inline-block
+
+
 define-syntax on-webhook:
     syntax-rules []:
-
         case (on-webhook server name [payload] body ...):
-            `(WebhookJob ,server ,(str 'name) (lambda [payload] ,@body))
+            (WebhookJob server (str 'name) (lambda [payload] body ...))
 
         case (on-webhook server name callback):
-            `(WebhookJob ,server ,(str 'name) ,callback)
+            (WebhookJob server (str 'name) callback)
 
 
 ;; The end.

@@ -13,6 +13,7 @@
 
 
 import logging
+import-from typing Any
 
 import-from aiokafka AIOKafkaConsumer
 import-from aiokafka.helpers create_ssl_context
@@ -50,6 +51,11 @@ define-syntax kafka-config:
     syntax-rules []:
         case (kafka-config name args ...):
             define name (KafkaConfig (str 'name) args ...)
+
+
+; the inline block handler allows us to put key: val for the config
+; on individual lines
+define layout/kafka-config layout/inline-block
 
 
 define-class KafkaJob [Job]:

@@ -72,4 +72,7 @@ define-syntax on-cron:
             `(CronJob ,schedule ,fn)
 
 
+define layout/on-cron layout/block-begin
+
+
 ;; The end.
