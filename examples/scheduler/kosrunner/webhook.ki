@@ -53,12 +53,6 @@ define-class WebhookServer [Job]:
             except [Exception]:
                 logger.error "Webhook failed: %s" name exc_info: True
 
-        import inspect
-        print "inspecting inner" name
-        print "  " (inspect.signature inner)
-        print "  " inner.__annotations__
-        print "  " inner.__signature__
-
 
     define serve [self]:
         (logger.info
