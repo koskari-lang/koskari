@@ -19,8 +19,8 @@ Layout handlers for basic block syntax.
 
 
 from ...exceptions import LayoutError
-from ...lib import car, cdr, cons, nil, symbol
-from ...bootstrap import builtin
+from ...lib import cons, nil, symbol, kos_repr
+from ...bootstrap import builtin, add_builtin
 from ...types import is_nil, get_position, is_pair, is_keyword
 from .helpers import layout
 
@@ -40,12 +40,13 @@ def layout_block(ns, source, peers):
     (foo x bar)
     """
 
+    header, body = source
+
     if peers:
         raise LayoutError(
-            'block does not take peers',
+            f"{header.car} layout does not take peers",
             get_position(source))
 
-    header, body = source
     header.extend(body)
     return header
 
@@ -64,64 +65,113 @@ def layout_block_begin(ns, source, peers):
     (foo x (compile/begin bar))
     """
 
+    header, body = source
+
     if peers:
         raise LayoutError(
-            'block-begin does not take peers',
+            f"{header.car} layout does not take peers",
             get_position(source))
 
-    header, body = source
     header.append(cons(symbol('compile/begin'), body))
     return header
 
 
-@builtin('layout/call')
-@layout(symbol('layout/call'))
-def layout_call(ns, source, peers):
+@builtin('layout/keyword-block')
+@layout(symbol('layout/keyword-block'))
+def layout_keyword_block(ns, source, peers):
     """
-    a breakout of a call as a block
-
-    eg.
-    layout/call foo:
-      bar
-      (baz)
-      alpha: beta
-
-    becomes
-    (foo bar (baz) alpha: beta)
+    keyword block layout handler which splices indented body onto the header as
+    to produce a single list. Lines starting with keywords are inlined directly
+    rather than being implicit calls.
     """
+
+    header, body = source
+    called_by = header.car
 
     if peers:
         raise LayoutError(
-            'call does not take peers',
+            f"{called_by} layout does not take peers",
             get_position(source))
 
-    header, body = source
-    try:
-        called_by, (fn, rest) = header
-    except ValueError:
-        raise LayoutError(
-            'call block requires a function name',
-            get_position(source))
-
-    if rest:
-        raise LayoutError(
-            'call block header does not accept arguments',
-            get_position(source))
-
-    corr = body
+    corr = body = body.copy()
     while corr:
         head, next = corr
         if is_pair(head) and is_keyword(head.car):
-            tail = cdr(head)
-            if is_pair(tail) and is_nil(cdr(tail)):
-                val = car(tail)
+            tail = head.cdr
+            if is_pair(tail) and is_nil(tail.cdr):
+                val = tail.car
             else:
                 val = tail
-            corr.car = car(head)
+            corr.car = head.car
             corr.cdr = cons(val, next)
         corr = next
 
-    return cons(symbol('compile/call'), fn, body)
+    ret = header.copy()
+    ret.splice(body)
+
+    return ret
+
+
+layout_call = layout_keyword_block
+add_builtin('layout/call', layout_call)
+
+
+@builtin('layout/inline-block')
+@layout(symbol('layout/inline-block'))
+def layout_inline_block(ns, source, peers):
+    """
+    inlining layout handler which splices indented body onto the header as
+    to produce a single list, without applying implicit calls to the
+    individual lines. Used in cases where layout blocks are only meant
+    to break up long lines, rather than to express sub-expressions.
+
+    eg.
+    X foo:
+      bar (baz)
+      qux
+      alpha: beta
+
+    becomes
+    (X foo bar (baz) qux alpha: beta)
+    """
+
+    header, body = source
+    called_by = header.car
+
+    if peers:
+        raise LayoutError(
+            f"{called_by} layout does not take peers",
+            get_position(source))
+
+    ret = header.copy()
+
+    elem, rest = body
+    while elem:
+        if is_pair(elem):
+            ret.splice(elem)
+        else:
+            ret.append(elem)
+        if is_nil(rest):
+            break
+        elem, rest = rest
+
+    return ret
+
+
+@builtin('layout/import-from')
+@layout(symbol('layout/import-from'))
+def layout_import_from(ns, source, peers):
+    """
+    Inlining layout handler for long import lists.
+
+    eg.
+    import-from itertools:
+      count cycle permutations product repeat chain
+      combinations combinations_with_replacement
+      groupby tee
+    """
+
+    return layout_inline_block.read(ns, source, peers)
 
 
 _symbol_compile_quote = symbol('compile/quote')
@@ -131,20 +181,20 @@ _symbol_compile_quasiquote = symbol('compile/quasiquote')
 def _unbox_compile_layout(source, peers, compile_sym, label):
     if peers:
         raise LayoutError(
-            '%s block does not take peers' % (label,),
+            f"{label} layout does not take peers",
             get_position(source))
 
-    header, body = source
+    _header, body = source
 
     if is_nil(body) or not is_pair(body):
         raise LayoutError(
-            '%s block requires one inner block' % (label,),
+            f"{label} layout requires one inner block",
             get_position(source))
 
     inner, rest = body
     if not is_nil(rest):
         raise LayoutError(
-            '%s block requires one inner block' % (label,),
+            f"{label} layout requires one inner block",
             get_position(source))
 
     return cons(compile_sym, inner, nil)

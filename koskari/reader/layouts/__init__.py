@@ -28,7 +28,8 @@ from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
 from ...types import get_position, is_pair, is_symbol
 from .basics import (layout_block, layout_block_begin, layout_call,
-                     layout_quasiquote, layout_quote)
+                     layout_inline_block,
+                     layout_keyword_block, layout_quasiquote, layout_quote)
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_switch
 from .define_syntax import (layout_macro_match, layout_macro_rules,
@@ -46,6 +47,8 @@ __all__ = (
 
     "layout_block",
     "layout_block_begin",
+    "layout_inline_block",
+    "layout_keyword_block",
 
     "layout_call",
     "layout_quote",
@@ -54,6 +57,7 @@ __all__ = (
     "layout_define_class",
     "layout_dyn_wind",
     "layout_if",
+    "layout_import_from",
     "layout_macro_match",
     "layout_macro_rules",
     "layout_special_match",

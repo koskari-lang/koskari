@@ -20,7 +20,7 @@ interleaved in the block body.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.lib import keyword, symbol
+from koskari.lib import keyword, symbol, kos_repr
 from koskari.compile.helpers import pycons
 
 from .. import parse_layout
@@ -28,8 +28,6 @@ from .. import parse_layout
 import pytest
 
 pytestmark = pytest.mark.phase_infra
-
-_sym_call = symbol('compile/call')
 
 
 class TestLayoutCallReproducer(IsolatedAsyncioTestCase):
@@ -56,15 +54,13 @@ class TestLayoutCallReproducer(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-            (_sym_call,
+            (symbol('call'),
              symbol('values'),
              1,
              2,
              3,
              keyword('*:'),
-             pycons(
-                 (symbol('range'), 10, 15, 3)
-             ),
+             (symbol('range'), 10, 15, 3),
              keyword('a:'),
              'Hello',
              keyword('b:'),
@@ -72,6 +68,9 @@ class TestLayoutCallReproducer(IsolatedAsyncioTestCase):
         )
 
         result = parse_layout(src)
+        print("expected: ", kos_repr(expected))
+        print("result:   ", kos_repr(result))
+
         self.assertEqual(result, expected)
 
 
