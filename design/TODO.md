@@ -337,6 +337,36 @@ priority on patterns common in real code (`define-class`, `for-each`,
 Ref: [corpus-generation-agent.md](corpus-generation-agent.md);
 [corpus-schema-philosophy.md](corpus-schema-philosophy.md).
 
+### Hugging Face dataset publication (Track A)
+
+Publish corpus views to parquet and push to
+[obriencj/koskari](https://huggingface.co/datasets/obriencj/koskari) via manual
+`workflow_dispatch` (`.github/workflows/publish_corpus_dataset.yml`). Two Hub
+configs: `corpus` (all records, all verify stages) and `eval` (eval-only
+subset). Authentication uses Hugging Face Trusted Publishers (OIDC); no
+`HF_TOKEN` secret. Export: `make corpus-parquet-all` or
+`tox -qe regen-corpus -- --all-views`.
+
+**Status: implemented.**
+
+Ref: [corpus-mcp-server.md](corpus-mcp-server.md) § Track A;
+[docs/corpus/datasets.md](../docs/corpus/datasets.md).
+
+### Corpus MCP server (Track B)
+
+Koskari stdio MCP server in a container (`tools/mcp/`), built on
+`koskari:local` (`make build-mcp` after `make build-container`). Forwards tool
+calls to the Hugging Face Dataset Viewer API over `obriencj/koskari` config
+`corpus` — no local dataset cache or parquet pull in v1. Planned tools:
+`search_examples`, `get_example`, `list_features`. Client launch:
+`podman run -i --rm` (no `-t`). Implementation in `mcp.ki`; deps `mcp` +
+`httpx`.
+
+**Status: designed, not implemented.**
+
+Ref: [corpus-mcp-server.md](corpus-mcp-server.md) § Track B and implementation
+checklist.
+
 ---
 
 ## Reference
