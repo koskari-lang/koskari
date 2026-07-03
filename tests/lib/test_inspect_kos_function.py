@@ -135,6 +135,56 @@ class TestInspectKosFunction(unittest.TestCase):
         self.assertIs(fn.__annotations__['a'], int)
         self.assertEqual(creation, {'a': 'MyType'})
 
+    def test_signature_reports_keyword_default(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('x',), None, ('y',))
+        fn = code.function(fspec({'y': 42}), base_ns)
+        sig = inspect.signature(fn)
+        self.assertIs(sig.parameters['x'].default, inspect.Parameter.empty)
+        self.assertEqual(sig.parameters['y'].default, 42)
+
+    def test_signature_parameter_kinds(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(
+            ('a',), None, ('b',), ('k',), 'args', 'kwargs')
+        fn = code.function(fspec(), base_ns)
+        sig = inspect.signature(fn)
+        self.assertEqual(
+            list(sig.parameters.keys()), ['a', 'b', 'args', 'k', 'kwargs'])
+        self.assertIs(sig.parameters['a'].kind,
+                      inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        self.assertIs(sig.parameters['b'].kind,
+                      inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        self.assertIs(sig.parameters['args'].kind,
+                      inspect.Parameter.VAR_POSITIONAL)
+        self.assertIs(sig.parameters['k'].kind,
+                      inspect.Parameter.KEYWORD_ONLY)
+        self.assertIs(sig.parameters['kwargs'].kind,
+                      inspect.Parameter.VAR_KEYWORD)
+
+    def test_signature_pos_only_fallback_rebuild(self):
+        # pos-only names sort after the POSITIONAL_OR_KEYWORD group in
+        # the first build attempt, which inspect.Signature rejects; the
+        # builder retries with pos-only emitted as POSITIONAL_OR_KEYWORD
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('a',), ('p',), ())
+        fn = code.function(fspec(), base_ns)
+        sig = inspect.signature(fn)
+        self.assertEqual(list(sig.parameters.keys()), ['a', 'p'])
+        self.assertIs(sig.parameters['p'].kind,
+                      inspect.Parameter.POSITIONAL_OR_KEYWORD)
+
+    def test_signature_annotated_var_params(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('a',), None, (), (), 'args', 'kwargs')
+        fn = Function(code, base_ns, fspec,
+                      {'args': int, 'kwargs': str})
+        sig = inspect.signature(fn)
+        self.assertIs(sig.parameters['args'].annotation, int)
+        self.assertIs(sig.parameters['kwargs'].annotation, str)
+        self.assertIs(sig.parameters['a'].annotation,
+                      inspect.Parameter.empty)
+
     def test_dunder_name_from_code(self):
         code, base_ns = build_expr(
             [["CONST", 42], ["RETURN", 1]], name="myfn")

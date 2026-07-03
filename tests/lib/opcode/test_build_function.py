@@ -18,6 +18,8 @@ Tests for BUILD_FUNCTION opcode.
 :license: GNU General Public License v3
 """
 
+import inspect
+
 from koskari.lib import FormalsSpec, Function
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
@@ -131,6 +133,31 @@ class TestBuildFunction(CevalTest):
         self.assertIsInstance(fn, Function)
         self.assertEqual(fn.formals.defaults, {"a": 7})
         self.assertEqual(fn.__annotations__, {"a": int})
+
+
+    async def test_build_function_signature_reflects_both_dicts(self):
+        """
+        inspect.signature over the built function reports the keyword
+        default and the annotation together
+        """
+
+        inner_code = build_code([["RETURN", 0]], name="inner",
+                                local_syms=("a",))
+        fspec = inner_code.function_spec(FormalsSpec((), (), ("a",)))
+        code_obj, ns = build_expr([
+            ["CONST", int],
+            ["CONST", int],
+            ["CONST", 7],
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", (("a",), ("a", "return"), 0, 0)],
+            ["RETURN", 1],
+        ])
+        fn = await make_callable(code_obj, ns)()
+        sig = inspect.signature(fn)
+        param = sig.parameters["a"]
+        self.assertIs(param.annotation, int)
+        self.assertEqual(param.default, 7)
+        self.assertIs(sig.return_annotation, int)
 
 
     async def test_build_function_stack_underrun_raises(self):
