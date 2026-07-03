@@ -1373,3 +1373,80 @@ tags:
   - context-manager
   - "surface:block"
 notes: layout/with without name binding; context manager opened and closed; body evaluates to None
+---
+id: special-raise-new-caught-001
+feature: special/compile/raise
+source: (try (raise (ValueError "bad value")) [[e ValueError] (str e)])
+verify:
+  read: (try (raise (ValueError "bad value")) [[e ValueError] (str e)])
+  expand: (try (raise (ValueError "bad value")) [[e ValueError] (str e)])
+  eval: '"bad value"'
+references:
+  - reference/specials/compile-raise.md
+  - reference/specials/compile-try.md
+stability: evolving
+tags:
+  - special
+  - raise
+  - exception
+notes: raising a new exception and catching it by type; (str e) reads the message
+---
+id: special-raise-reraise-001
+feature: special/compile/raise
+source: (try (try (raise (ValueError "boom")) [[e ValueError] (raise)]) [[e ValueError] "recaught"])
+verify:
+  read: (try (try (raise (ValueError "boom")) [[e ValueError] (raise)]) [[e ValueError] "recaught"])
+  expand: (try (try (raise (ValueError "boom")) [[e ValueError] (raise)]) [[e ValueError] "recaught"])
+  eval: '"recaught"'
+references:
+  - reference/specials/compile-raise.md
+  - reference/specials/compile-try.md
+stability: evolving
+tags:
+  - special
+  - raise
+  - reraise
+  - exception
+notes: 0-arity (raise) inside a handler re-raises the active exception; an outer try recatches it
+---
+id: special-raise-custom-exception-001
+feature: special/compile/raise
+source: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+verify:
+  read: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+  expand: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+  eval: '"boom"'
+references:
+  - reference/specials/compile-raise.md
+  - reference/macros/compile-define-class.md
+  - reference/macros/compile-super.md
+stability: evolving
+tags:
+  - special
+  - raise
+  - exception
+  - define-class
+notes: raise a user-defined Exception subclass; __init__ chains to super with the message
+---
+id: special-layout-raise-guard-001
+feature: layout/try
+source: |-
+  try:
+    when (< -1 0):
+      raise (ValueError "neg")
+  except [e ValueError]:
+    (str e)
+verify:
+  read: (try (compile/begin (when (< -1 0) (raise (ValueError "neg")))) ([e ValueError] (str e)))
+  eval: '"neg"'
+references:
+  - reference/specials/compile-raise.md
+  - reference/specials/compile-try.md
+  - reference/layouts/layout-try.md
+stability: evolving
+tags:
+  - special
+  - raise
+  - exception
+  - "surface:block"
+notes: "guard-clause idiom in block layout; a when: guard raises inside a try:, an except peer catches it"

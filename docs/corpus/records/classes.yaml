@@ -422,3 +422,85 @@ tags:
   - dunder
   - pattern-matching
 notes: Includes a Python class metadata dunder used by structural pattern matching.
+---
+id: class-define-dataclass-field-001
+feature: macro/compile/define-dataclass
+source: "(begin (define-dataclass Point [] (define x :: int 0) (define y :: int 0)) (define p (Point 3 5)) p.x)"
+verify:
+  eval: "3"
+references:
+  - reference/macros/compile-define-dataclass.md
+  - reference/macros/compile-define-class.md
+stability: evolving
+tags:
+  - class
+  - define-dataclass
+  - dataclass
+notes: "define-dataclass NAME SUPERS members...; empty [] supers, typed fields via ::; positional construction sets x and y. koskari/bootstrap/_class.ki. read/expand omitted: :: annotation does not round-trip through the corpus renderer"
+---
+id: class-define-dataclass-predicate-true-001
+feature: macro/compile/define-dataclass
+source: "(begin (define-dataclass Point [] (define x :: int 0) (define y :: int 0)) (Point? (Point 1 2)))"
+verify:
+  eval: "true"
+references:
+  - reference/macros/compile-define-dataclass.md
+stability: evolving
+tags:
+  - class
+  - define-dataclass
+  - dataclass
+  - predicate
+notes: define-dataclass also defines NAME? via create-instance-check; a Point instance satisfies Point?. koskari/bootstrap/_class.ki
+---
+id: class-define-dataclass-predicate-false-001
+feature: macro/compile/define-dataclass
+source: "(begin (define-dataclass Point [] (define x :: int 0) (define y :: int 0)) (Point? 42))"
+verify:
+  eval: "false"
+references:
+  - reference/macros/compile-define-dataclass.md
+stability: evolving
+tags:
+  - class
+  - define-dataclass
+  - dataclass
+  - predicate
+notes: the generated Point? predicate returns false for a non-instance (a plain int). koskari/bootstrap/_class.ki
+---
+id: class-property-getter-eval-001
+feature: special/compile/decorate
+source: (begin (define-class Rectangle [] (define __init__ [self w h] (set-attr self w w) (set-attr self h h)) (compile/decorate (property) (define area [self] (* self.w self.h)))) (define r (Rectangle 3 4)) r.area)
+verify:
+  read: (begin (define-class Rectangle [] (define __init__ [self w h] (set-attr self w w) (set-attr self h h)) (compile/decorate (property) (define area [self] (* (compile/attr self w) (compile/attr self h))))) (define r (Rectangle 3 4)) (compile/attr r area))
+  expand: (begin (define-class Rectangle [] (define __init__ [self w h] (set-attr self w w) (set-attr self h h)) (compile/decorate (property) (define area [self] (* (compile/attr self w) (compile/attr self h))))) (define r (Rectangle 3 4)) (compile/attr r area))
+  eval: "12"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/macros/compile-define-class.md
+stability: evolving
+tags:
+  - class
+  - property
+  - decorator
+  - define-class
+notes: "@property getter as a computed attribute; r.area reads the method result 3*4 without call syntax"
+---
+id: class-property-setter-roundtrip-001
+feature: special/compile/decorate
+source: (begin (define-class Celsius [] (define __init__ [self t] (set-attr self _t t)) (compile/decorate (property) (define temp [self] self._t)) (compile/decorate ((compile/attr temp setter)) (define temp [self value] (set-attr self _t value)))) (define c (Celsius 20)) (set! c.temp 30) c.temp)
+verify:
+  read: (begin (define-class Celsius [] (define __init__ [self t] (set-attr self _t t)) (compile/decorate (property) (define temp [self] (compile/attr self _t))) (compile/decorate ((compile/attr temp setter)) (define temp [self value] (set-attr self _t value)))) (define c (Celsius 20)) (set! (compile/attr c temp) 30) (compile/attr c temp))
+  expand: (begin (define-class Celsius [] (define __init__ [self t] (set-attr self _t t)) (compile/decorate (property) (define temp [self] (compile/attr self _t))) (compile/decorate ((compile/attr temp setter)) (define temp [self value] (set-attr self _t value)))) (define c (Celsius 20)) (set! (compile/attr c temp) 30) (compile/attr c temp))
+  eval: "30"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/macros/compile-define-class.md
+stability: evolving
+tags:
+  - class
+  - property
+  - decorator
+  - setter
+  - define-class
+notes: "@name.setter round-trip (from examples/dataclass.ki coord.setter); set! through the property writes _t, then reading temp returns 30"

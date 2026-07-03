@@ -1953,3 +1953,39 @@ tags:
   - object
   - set-attr
 notes: setting multiple attributes; dot-attr access reads as compile/attr for each
+---
+id: object-define-class-eq-behavior-001
+feature: macro/compile/define-class
+source: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== self.x other.x) (== self.y other.y)))) (== (V2 1 2) (V2 1 2)))
+verify:
+  read: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (compile/attr self x) (compile/attr other x)) (== (compile/attr self y) (compile/attr other y))))) (== (V2 1 2) (V2 1 2)))
+  expand: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (compile/attr self x) (compile/attr other x)) (== (compile/attr self y) (compile/attr other y))))) (== (V2 1 2) (V2 1 2)))
+  eval: "true"
+references:
+  - reference/macros/compile-define-class.md
+  - reference/specials/compile-class.md
+stability: evolving
+tags:
+  - object
+  - define-class
+  - dunder
+  - method
+notes: "behavior (not just shape) of a user __eq__: two distinct instances with equal fields compare equal via =="
+---
+id: object-define-class-call-behavior-001
+feature: macro/compile/define-class
+source: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* self.f v))) (define dbl (Mult 2)) (dbl 21))
+verify:
+  read: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (compile/attr self f) v))) (define dbl (Mult 2)) (dbl 21))
+  expand: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (compile/attr self f) v))) (define dbl (Mult 2)) (dbl 21))
+  eval: "42"
+references:
+  - reference/macros/compile-define-class.md
+  - reference/specials/compile-call.md
+stability: evolving
+tags:
+  - object
+  - define-class
+  - dunder
+  - callable
+notes: "behavior of a user __call__: the instance dbl is invoked like a function, dbl(21) -> 2*21 = 42"
