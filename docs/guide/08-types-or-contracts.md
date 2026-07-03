@@ -23,9 +23,13 @@ code will call Koskari code or tools will inspect it.
 
 ## Runtime reality
 
-Koskari interoperates with Python, so values are Python objects at runtime. The
-current compiler records some annotations as metadata, while ordinary binding
-annotations are mainly parseable documentation for tooling.
+Koskari interoperates with Python, so values are Python objects at runtime.
+Function and class annotations evaluate in the defining scope and land on
+`__annotations__` as real objects — `[n :: int]` gives the function
+`{'n': int}`, with `inspect.signature` reporting the same — and a string
+annotation like `:: "Request"` stays a lazily resolved forward reference.
+Annotations are still metadata, though: nothing checks argument values
+against them at call time.
 
 That means examples should still validate their assumptions with clear code:
 

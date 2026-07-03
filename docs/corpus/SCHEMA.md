@@ -118,8 +118,7 @@ with `@`. The harness strips `@` and runs a registered complex check.
 | Form | Meaning |
 |------|---------|
 | `@kostype:NAME` | Eval result is a KosType named NAME |
-| `@annotations:return:TYPE` | Eval result is callable with `__annotations__['return'] == TYPE` |
-| `@code.extras:return:SYM` | Eval result is callable with `code.extras['return']` symbol SYM |
+| `@annotations:return:TYPE` | Eval result is callable whose `__annotations__['return']` **is** the builtin named TYPE (e.g. `@annotations:return:int` asserts the `int` type object, not the string `"int"`) |
 
 **Forbidden in marked encodings:** opcodes, bytecode shape, disassembly,
 tail-call opcode choice, constant-folding internals, or any other VM

@@ -384,15 +384,6 @@ def _check_marked_annotations_return(case, got, type_name):
     case.assertIs(got.__annotations__.get('return'), expected)
 
 
-def _check_marked_code_extras_return(case, got, sym_name):
-    """
-    Assert eval result callable has code.extras return symbol
-    """
-
-    case.assertTrue(callable(got))
-    case.assertEqual(got.code.extras.get('return'), symbol(sym_name))
-
-
 def run_marked_eval_check(case, got, payload):
     """
     Run a marked complex verify.eval check
@@ -417,11 +408,6 @@ def run_marked_eval_check(case, got, payload):
     if payload.startswith('annotations:return:'):
         type_name = payload.split(':', 2)[2]
         _check_marked_annotations_return(case, got, type_name)
-        return
-
-    if payload.startswith('code.extras:return:'):
-        sym_name = payload.split(':', 2)[2]
-        _check_marked_code_extras_return(case, got, sym_name)
         return
 
     kind = payload.split(':', 1)[0]
