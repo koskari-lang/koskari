@@ -104,10 +104,11 @@ static PyObject *str_target = NULL;
 
 
 /*
-  Sentinel fromlist for IMPORT / IMPORT_REL opcodes (handlers.incl).  Passing
-  ("*",) as fromlist to PyImport_ImportModuleLevelObject causes it to return
-  the deepest (leaf) submodule rather than the topmost package, matching
-  importlib.import_module semantics.  Initialized in koskari_eval_init.
+  Sentinel fromlist for the import opcodes (see kos_import_module).
+  Passing ("*",) as fromlist to PyImport_ImportModuleLevelObject causes it
+  to return the deepest (leaf) submodule rather than the topmost package,
+  matching importlib.import_module semantics.  Initialized in
+  koskari_eval_init.
 */
 static PyObject *_import_fromlist = NULL;
 
@@ -1470,6 +1471,75 @@ static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
 }
 
 
+/**
+   Resolve a module for the IMPORT / IMPORT_FROM / IMPORT_STAR opcodes.
+
+   For a relative import (level > 0) the frame's globals namespace
+   supplies __name__ and __package__; a temporary dict holding those keys
+   is passed to PyImport_ImportModuleLevelObject (which requires dict or
+   NULL, not KosNamespace) so Python can resolve the anchor package.
+
+   The leaf flag selects the fromlist: the ("*",) sentinel returns the
+   deepest (leaf) submodule, matching importlib.import_module; a NULL
+   fromlist returns the root package while still importing the full
+   dotted chain, matching a plain Python "import foo.bar".
+
+   :param es: eval state (supplies frame globals for relative anchors)
+   :param name: module name str, or Py_None for a bare relative import
+   :param level: number of leading dots; 0 = absolute
+   :param leaf: non-zero to return the leaf module; zero for the root
+   :return: new module reference, or NULL with error set
+*/
+static PyObject *kos_import_module(
+    KosEvalState *es,
+    PyObject *name,
+    long level,
+    int leaf) {
+
+  PyObject *fromlist = leaf ? _import_fromlist : NULL;
+  PyObject *globals_dict = NULL;
+
+  if (name == Py_None)
+    name = NULL;
+
+  if (level > 0) {
+    PyObject *globals_ns = KosEvalState_GlobalsNamespace(es);
+
+    PyObject *name_val = KosNamespace_Deref(globals_ns, str_name);
+    if (! name_val)
+      return NULL;
+
+    PyObject *package_val = KosNamespace_Deref(globals_ns, str_package);
+    if (! package_val) {
+      Py_DECREF(name_val);
+      return NULL;
+    }
+
+    globals_dict = PyDict_New();
+    if (! globals_dict) {
+      Py_DECREF(name_val);
+      Py_DECREF(package_val);
+      return NULL;
+    }
+
+    if (PyDict_SetItem(globals_dict, str_name, name_val) ||
+        PyDict_SetItem(globals_dict, str_package, package_val)) {
+      Py_DECREF(name_val);
+      Py_DECREF(package_val);
+      Py_DECREF(globals_dict);
+      return NULL;
+    }
+    Py_DECREF(name_val);
+    Py_DECREF(package_val);
+  }
+
+  PyObject *mod = PyImport_ImportModuleLevelObject(
+    name, globals_dict, NULL, fromlist, (int) level);
+  Py_XDECREF(globals_dict);
+  return mod;
+}
+
+
 /* === Opcode handlers (always inlined; return KosOpResult via EVAL_* macros) === */
 
 
@@ -2781,7 +2851,7 @@ int koskari_eval_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  /* Initialize the import fromlist sentinel used by IMPORT / IMPORT_REL. */
+  /* Initialize the import fromlist sentinel used by kos_import_module. */
   if (! _import_fromlist) {
     PyObject *star = PyUnicode_FromString("*");
     if (! star)

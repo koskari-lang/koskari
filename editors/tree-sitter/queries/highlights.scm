@@ -68,6 +68,7 @@
    "instance?"
    "incr!"
    "import-from"
+   "import-all-from"
    "import"
    "if"
    "globals"

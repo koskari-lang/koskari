@@ -47,7 +47,8 @@ from .exceptions import (
     special_raise,
     special_try,
 )
-from .imports import helper_import_from_sequence, special_import, special_import_from
+from .imports import (special_import, special_import_all_from,
+                      special_import_from)
 from .items import special_del_item, special_item, special_set_item, special_take_item
 from .lambda_ import special_lambda
 from .let import special_let
@@ -145,8 +146,8 @@ __all__ = (
     "special_bit_right",
     "special_bit_xor",
     "special_build_list",
-    "helper_import_from_sequence",
     "special_import",
+    "special_import_all_from",
     "special_import_from",
     "special_bindq",
     "special_break",

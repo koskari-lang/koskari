@@ -35,9 +35,17 @@ Koskari imports mirror Python imports:
 
 ```koskari
 (import math)
+(import os.path)                                ;; binds root 'os'
+(import [os.path as: p])                        ;; binds leaf as 'p'
 (import-from pathlib Path)
 (import-from functools [lru_cache as: memoize])
+(import-all-from mypackage)                     ;; from mypackage import *
 ```
+
+Like Python, a plain dotted `(import os.path)` binds the **root** package
+(`os`), with `os.path` reachable as an attribute; use the bracketed
+`[MODULE as: BIND]` form to bind the leaf module directly. `import-all-from`
+binds a module's public names and is only allowed at module top level.
 
 Import modules at the top of the file when possible. Use aliases when the alias
 makes later code clearer, not just shorter.

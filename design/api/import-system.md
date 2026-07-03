@@ -12,8 +12,9 @@ files transparently via Python's standard `import` machinery.
   `.ki` files. The synchronous `exec_module` entry point uses `exec_module_demand`
   (demand path). An async `exec_module_async` path exists for callers that run an
   event loop.
-- **Compiler specials**: The `import` and `import-from` special forms emit
-  `IMPORT`, `IMPORT_REL`, and `IMPORT_FROM` opcodes; see [SPECIALS.md](../SPECIALS.md).
+- **Compiler specials**: The `import`, `import-from`, and `import-all-from`
+  special forms emit the self-contained `IMPORT`, `IMPORT_FROM`, and
+  `IMPORT_STAR` opcodes; see [SPECIALS.md](../SPECIALS.md).
 
 ## Installation
 

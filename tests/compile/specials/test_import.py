@@ -12,15 +12,19 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/import and compile/import-from special forms.
+Tests for the compile/import, compile/import-from, and
+compile/import-all-from special forms.
 
-These tests inspect the generated opcode sequences without executing them at
-the koskari VM level.  Execution of IMPORT / IMPORT_REL opcodes requires a
-fully-built C extension, which is exercised by the importer integration tests
-in tests/importer/.
+These tests inspect the generated opcode sequences without executing them
+at the koskari VM level; runtime behavior is exercised by the importer
+integration tests in tests/importer/ and tests/lib/opcode/.
+
+Each import special emits one self-contained EXTRA opcode carrying
+(name, level, ...) plus the CONST None statement value. The softened
+instruction stream resolves EXTRA rows to their 4-tuples, which is what
+these tests assert against.
 """
 
-from koskari.dis import dis
 from koskari.lib import OpCode
 from koskari.exceptions import SpecialError
 
@@ -31,56 +35,29 @@ import pytest
 pytestmark = pytest.mark.phase_specials
 
 
+_IMPORT_ROOT = 0
+_IMPORT_LEAF = 1
+
+
 class _OpcodeHelper:
     """
-    Mixin: extract all instructions from a Code object as (OpCode, resolved_arg)
-    tuples, filtering out POSITION and NOOP housekeeping opcodes.
-
-    For CONST-style opcodes the arg is the constant pool index (integer) as
-    returned by Code.oparg.  Callers that need the actual constant value should
-    call _resolve_arg(code, op, raw_arg) or use resolved_instructions().
+    Mixin: extract (OpCode, arg) pairs from a Code object's softened
+    instruction stream, filtering housekeeping opcodes. EXTRA opcode args
+    appear as resolved 4-tuples of values.
     """
-
-    # Opcodes whose arg is a constant-pool index (styles CONST=6, VAR=7)
-    _CPOOL_INDEXED_OPS = (
-        OpCode.KOS_OP_IMPORT,
-        OpCode.KOS_OP_IMPORT_REL,
-        OpCode.KOS_OP_IMPORT_FROM,
-        OpCode.KOS_OP_CONST,
-        OpCode.KOS_OP_VAR,
-        OpCode.KOS_OP_VAR_BIND,
-        OpCode.KOS_OP_VAR_CLEAR,
-        OpCode.KOS_OP_VAR_REF,
-        OpCode.KOS_OP_VAR_STORE,
-    )
-
-    def _resolve_arg(self, code, op, raw_arg):
-        """
-        For opcodes whose arg is a constant-pool index, look up the actual
-        value.  For other opcodes (e.g. COUNT-style POP) return raw_arg.
-        """
-
-        if op in self._CPOOL_INDEXED_OPS:
-            return code.constant(raw_arg)
-        return raw_arg
 
     _FILTER_OPS = (
         OpCode.KOS_OP_NOOP,
         OpCode.KOS_OP_POSITION,
+        OpCode.KOS_OP_LABEL,
         OpCode.KOS_OP_RETURN,
     )
 
     def instructions(self, code):
-        """
-        Return list of (op, resolved_arg) for all non-housekeeping instructions.
-        Filters out NOOP, POSITION, and RETURN which are infrastructure.
-        """
-
         return [
-            (op, self._resolve_arg(code, op, arg))
-            for i in range(code.length())
-            for op, arg in [code.oparg(i)]
-            if op not in self._FILTER_OPS
+            (OpCode(op), arg)
+            for op, arg in code.soften()
+            if OpCode(op) not in self._FILTER_OPS
         ]
 
     def op_sequence(self, code):
@@ -92,211 +69,169 @@ class _OpcodeHelper:
                 return arg
         return None
 
-    def ops_with(self, code, opcode):
-        return [arg for op, arg in self.instructions(code) if op == opcode]
-
 
 class TestSpecialImportAbsolute(_OpcodeHelper, SpecialsTestCase):
 
-    async def test_simple_import_has_import_op(self):
-        code = self.compile_to_code('(import os)')
-        ops = self.op_sequence(code)
-        self.assertIn(OpCode.KOS_OP_IMPORT, ops)
-
-
-    async def test_simple_import_no_import_rel(self):
-        code = self.compile_to_code('(import os)')
-        ops = self.op_sequence(code)
-        self.assertNotIn(OpCode.KOS_OP_IMPORT_REL, ops)
-
-
-    async def test_simple_import_name_arg(self):
+    async def test_simple_import_row(self):
         code = self.compile_to_code('(import os)')
         arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
-        self.assertEqual('os', arg)
+        self.assertEqual(('os', 0, _IMPORT_ROOT, 'os'), arg)
 
 
-    async def test_simple_import_var_store(self):
+    async def test_simple_import_is_self_contained(self):
         code = self.compile_to_code('(import os)')
         ops = self.op_sequence(code)
-        self.assertIn(OpCode.KOS_OP_VAR_STORE, ops)
-
-
-    async def test_simple_import_binds_leaf_name(self):
-        code = self.compile_to_code('(import os)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
-        self.assertEqual('os', arg)
+        self.assertNotIn(OpCode.KOS_OP_VAR_STORE, ops)
+        self.assertNotIn(OpCode.KOS_OP_POP, ops)
+        self.assertNotIn(OpCode.KOS_OP_IMPORT_FROM, ops)
 
 
     async def test_simple_import_ends_with_const_none(self):
-        # CONST(None),RETURN(1) is squished into RETURN(0) so we need to fake
-        # a CALL(1) to verify the CONST(None) is present
+        # CONST(None),RETURN(1) is squished into RETURN(0) so we need to
+        # fake a CALL(1) to verify the CONST(None) is present
 
         code = self.compile_to_code('(foo (import os))')
         instrs = self.instructions(code)
-        dis(code)
         self.assertEqual(OpCode.KOS_OP_CONST, instrs[-2][0])
         self.assertEqual(None, instrs[-2][1])
 
 
-    async def test_dotted_import_uses_full_name(self):
+    async def test_dotted_import_binds_root(self):
         code = self.compile_to_code('(import os.path)')
         arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
-        self.assertEqual('os.path', arg)
+        self.assertEqual(('os.path', 0, _IMPORT_ROOT, 'os'), arg)
 
 
-    async def test_dotted_import_var_store(self):
-        code = self.compile_to_code('(import os.path)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
-        self.assertEqual('path', arg)
+    async def test_member_import_binds_leaf_alias(self):
+        code = self.compile_to_code('(import [os.path as: p])')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        self.assertEqual(('os.path', 0, _IMPORT_LEAF, 'p'), arg)
 
 
-    async def test_import_with_alias(self):
-        code = self.compile_to_code('(import os.path as: p)')
-        import_arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
-        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
-        self.assertEqual('os.path', import_arg)
-        self.assertEqual('p', bind_arg)
-
-
-    async def test_import_no_import_from(self):
-        code = self.compile_to_code('(import os)')
-        ops = self.op_sequence(code)
-        self.assertNotIn(OpCode.KOS_OP_IMPORT_FROM, ops)
-
-
-    async def test_import_no_trailing_pop(self):
-        code = self.compile_to_code('(import os)')
-        ops = self.op_sequence(code)
-        self.assertNotIn(OpCode.KOS_OP_POP, ops)
+    async def test_member_import_undotted(self):
+        code = self.compile_to_code('(import [os as: operating-system])')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        self.assertEqual(('os', 0, _IMPORT_LEAF, 'operating-system'), arg)
 
 
 class TestSpecialImportRelative(_OpcodeHelper, SpecialsTestCase):
 
-    async def test_single_dot_uses_import_rel(self):
+    async def test_single_dot_level_one_leaf(self):
         code = self.compile_to_code('(import .foo)')
-        ops = self.op_sequence(code)
-        self.assertIn(OpCode.KOS_OP_IMPORT_REL, ops)
-
-
-    async def test_single_dot_no_abs_import(self):
-        code = self.compile_to_code('(import .foo)')
-        ops = self.op_sequence(code)
-        self.assertNotIn(OpCode.KOS_OP_IMPORT, ops)
-
-
-    async def test_single_dot_level_one(self):
-        code = self.compile_to_code('(import .foo)')
-        level, name = self.first_op_with(code, OpCode.KOS_OP_IMPORT_REL)
-        self.assertEqual(1, level)
-        self.assertEqual('foo', name)
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        self.assertEqual(('foo', 1, _IMPORT_LEAF, 'foo'), arg)
 
 
     async def test_double_dot_level_two(self):
         code = self.compile_to_code('(import ..bar)')
-        level, name = self.first_op_with(code, OpCode.KOS_OP_IMPORT_REL)
-        self.assertEqual(2, level)
-        self.assertEqual('bar', name)
-
-
-    async def test_relative_binds_leaf_name(self):
-        code = self.compile_to_code('(import .foo)')
-        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
-        self.assertEqual('foo', bind_arg)
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        self.assertEqual(('bar', 2, _IMPORT_LEAF, 'bar'), arg)
 
 
     async def test_relative_dotted_binds_leaf(self):
         code = self.compile_to_code('(import .foo.bar)')
-        level, name = self.first_op_with(code, OpCode.KOS_OP_IMPORT_REL)
-        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
-        self.assertEqual(1, level)
-        self.assertEqual('foo.bar', name)
-        self.assertEqual('bar', bind_arg)
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        self.assertEqual(('foo.bar', 1, _IMPORT_LEAF, 'bar'), arg)
+
+
+    async def test_relative_member_alias(self):
+        code = self.compile_to_code('(import [.foo as: f])')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        self.assertEqual(('foo', 1, _IMPORT_LEAF, 'f'), arg)
+
+
+    async def test_bare_relative_member_alias(self):
+        # a lone dot is the reader's dotted-pair marker, so bare
+        # relative imports start at two dots
+        code = self.compile_to_code('(import [.. as: pkg])')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        self.assertEqual((None, 2, _IMPORT_LEAF, 'pkg'), arg)
 
 
 class TestSpecialImportFrom(_OpcodeHelper, SpecialsTestCase):
 
-    async def test_import_from_has_import_op(self):
-        code = self.compile_to_code('(import-from os path)')
-        ops = self.op_sequence(code)
-        self.assertIn(OpCode.KOS_OP_IMPORT, ops)
-
-
-    async def test_import_from_has_import_from_op(self):
-        code = self.compile_to_code('(import-from os path)')
-        ops = self.op_sequence(code)
-        self.assertIn(OpCode.KOS_OP_IMPORT_FROM, ops)
-
-
-    async def test_import_from_single_member_attr(self):
+    async def test_import_from_single_member(self):
         code = self.compile_to_code('(import-from os path)')
         arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
-        self.assertEqual('path', arg)
+        self.assertEqual(('os', 0, ('path',), ('path',)), arg)
 
 
-    async def test_import_from_single_member_bind(self):
+    async def test_import_from_is_self_contained(self):
         code = self.compile_to_code('(import-from os path)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
-        self.assertEqual('path', arg)
+        ops = self.op_sequence(code)
+        self.assertNotIn(OpCode.KOS_OP_IMPORT, ops)
+        self.assertNotIn(OpCode.KOS_OP_VAR_STORE, ops)
+        self.assertNotIn(OpCode.KOS_OP_POP, ops)
 
 
     async def test_import_from_multiple_members(self):
         code = self.compile_to_code('(import-from os path sep)')
-        from_args = self.ops_with(code, OpCode.KOS_OP_IMPORT_FROM)
-        bind_args = self.ops_with(code, OpCode.KOS_OP_VAR_STORE)
-        self.assertEqual(['path', 'sep'], from_args)
-        self.assertEqual(['path', 'sep'], bind_args)
-
-
-    async def test_import_from_has_pop_one(self):
-        code = self.compile_to_code('(import-from os path)')
-        pop_args = self.ops_with(code, OpCode.KOS_OP_POP)
-        self.assertIn(1, pop_args)
-
-
-    async def test_import_from_ends_with_const_none(self):
-        # CONST(None),RETURN(1) is squished into RETURN(0) so we need to fake
-        # a CALL(1) to verify the CONST(None) is present
-
-        code = self.compile_to_code('(foo (import-from os path))')
-        instrs = self.instructions(code)
-        dis(code)
-        self.assertEqual(OpCode.KOS_OP_CONST, instrs[-2][0])
-        self.assertEqual(None, instrs[-2][1])
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        self.assertEqual(('os', 0, ('path', 'sep'), ('path', 'sep')), arg)
 
 
     async def test_import_from_with_alias(self):
         code = self.compile_to_code('(import-from os [getcwd as: cwd])')
-        from_args = self.ops_with(code, OpCode.KOS_OP_IMPORT_FROM)
-        bind_args = self.ops_with(code, OpCode.KOS_OP_VAR_STORE)
-        self.assertEqual(['getcwd'], from_args)
-        self.assertEqual(['cwd'], bind_args)
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        self.assertEqual(('os', 0, ('getcwd',), ('cwd',)), arg)
 
 
-    async def test_import_from_order_import_then_from_then_pop(self):
-        code = self.compile_to_code('(import-from os path)')
-        ops = self.op_sequence(code)
-        import_idx = ops.index(OpCode.KOS_OP_IMPORT)
-        from_idx = ops.index(OpCode.KOS_OP_IMPORT_FROM)
-        pop_idx = ops.index(OpCode.KOS_OP_POP)
-        self.assertLess(import_idx, from_idx)
-        self.assertLess(from_idx, pop_idx)
+    async def test_import_from_mixed_members(self):
+        code = self.compile_to_code(
+            '(import-from os.path join [basename as: bn])')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        self.assertEqual(
+            ('os.path', 0, ('join', 'basename'), ('join', 'bn')), arg)
 
 
     async def test_import_from_relative(self):
         code = self.compile_to_code('(import-from .foo bar)')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        self.assertEqual(('foo', 1, ('bar',), ('bar',)), arg)
+
+
+    async def test_import_from_bare_relative(self):
+        # a lone dot is the reader's dotted-pair marker, so bare
+        # relative imports start at two dots
+        code = self.compile_to_code('(import-from .. util)')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        self.assertEqual((None, 2, ('util',), ('util',)), arg)
+
+
+    async def test_import_from_ends_with_const_none(self):
+        code = self.compile_to_code('(foo (import-from os path))')
+        instrs = self.instructions(code)
+        self.assertEqual(OpCode.KOS_OP_CONST, instrs[-2][0])
+        self.assertEqual(None, instrs[-2][1])
+
+
+class TestSpecialImportAllFrom(_OpcodeHelper, SpecialsTestCase):
+
+    async def test_import_all_from_row(self):
+        code = self.compile_to_code('(import-all-from os)')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_STAR)
+        self.assertEqual(('os', 0, 0, 0), arg)
+
+
+    async def test_import_all_from_dotted(self):
+        code = self.compile_to_code('(import-all-from os.path)')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_STAR)
+        self.assertEqual(('os.path', 0, 0, 0), arg)
+
+
+    async def test_import_all_from_relative(self):
+        code = self.compile_to_code('(import-all-from .util)')
+        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_STAR)
+        self.assertEqual(('util', 1, 0, 0), arg)
+
+
+    async def test_import_all_from_is_self_contained(self):
+        code = self.compile_to_code('(import-all-from os)')
         ops = self.op_sequence(code)
-        self.assertIn(OpCode.KOS_OP_IMPORT_REL, ops)
         self.assertNotIn(OpCode.KOS_OP_IMPORT, ops)
-        level, name = self.first_op_with(code, OpCode.KOS_OP_IMPORT_REL)
-        self.assertEqual(1, level)
-        self.assertEqual('foo', name)
-
-
-    async def test_import_from_module_name_arg(self):
-        code = self.compile_to_code('(import-from os path)')
-        import_arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
-        self.assertEqual('os', import_arg)
+        self.assertNotIn(OpCode.KOS_OP_IMPORT_FROM, ops)
+        self.assertNotIn(OpCode.KOS_OP_VAR_STORE, ops)
+        self.assertNotIn(OpCode.KOS_OP_POP, ops)
 
 
 class TestSpecialImportErrors(_OpcodeHelper, SpecialsTestCase):
@@ -304,6 +239,26 @@ class TestSpecialImportErrors(_OpcodeHelper, SpecialsTestCase):
     async def test_import_no_args_raises(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code('(import)')
+
+
+    async def test_import_inline_as_raises(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code('(import os.path as: p)')
+
+
+    async def test_import_too_many_args_raises(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code('(import os path)')
+
+
+    async def test_import_non_symbol_raises(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code('(import 42)')
+
+
+    async def test_import_bare_relative_plain_raises(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code('(import ..)')
 
 
     async def test_import_from_no_args_raises(self):
@@ -316,14 +271,25 @@ class TestSpecialImportErrors(_OpcodeHelper, SpecialsTestCase):
             self.compile_to_code('(import-from os)')
 
 
-    async def test_import_too_many_args_raises(self):
+    async def test_import_all_from_no_args_raises(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code('(import os path)')
+            self.compile_to_code('(import-all-from)')
 
 
-    async def test_import_non_symbol_raises(self):
+    async def test_import_all_from_extra_args_raises(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code('(import 42)')
+            self.compile_to_code('(import-all-from os extra)')
+
+
+    async def test_import_all_from_in_lambda_raises(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code('(lambda [x] (import-all-from os))')
+
+
+    async def test_import_all_from_in_let_raises(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code(
+                '(compile/let [[x 1]] (import-all-from os))')
 
 
 # The end.

@@ -3,53 +3,51 @@
 
 **Syntax:**
 
-- Absolute: `(import MODULE)` or `(import MODULE as: ALIAS)`
-- Relative: `(import .MODULE)` or `(import ..MODULE)` (leading dots, optional alias)
-- Dotted: `(import foo.bar.baz)` or `(import foo.bar.baz as: baz)`
+- Plain: `(import MODULE)` — bind the root package
+- Member: `(import [MODULE as: BIND])` — bind BIND to the leaf module
+- Relative: `(import .MODULE)`, `(import ..MODULE)` (leading dots)
 
-`MODULE` is an unquoted symbol whose printed name is used as the module name.
-Leading dots on the symbol indicate a relative import (`level = number of dots`).
+`MODULE` is an unquoted symbol whose printed name is the module name. Leading
+dots indicate a relative import (`level = number of dots`).
 
-**Use-case:** Import a module and bind it in the current namespace. Mirrors
-Python's `import` statement. The bound name is the leaf component of the dotted
-name (e.g. `baz` for `foo.bar.baz`) unless overridden with `as:`.
+**Use-case:** Import a module and bind it in the current namespace, mirroring
+Python's `import` statement.
 
-**Behaviour:**
+- **Plain dotted import binds the root**, Python-style: `(import foo.bar)`
+  binds `foo`, with `foo.bar` reachable as an attribute (`foo.bar`). The whole
+  dotted chain is imported.
+- **The bracketed member form binds the leaf**: `(import [foo.bar as: fbar])`
+  binds `fbar` to the `foo.bar` submodule. The member uses the same
+  `[TARGET as: BIND]` grammar as `import-from`.
+- **Relative imports are always leaf-style**: `(import .foo)` binds the leaf
+  `foo`. A bare relative import (dots only, no name) requires the member form
+  and starts at two dots — a single lone dot is the reader's dotted-pair
+  marker and cannot be written in list syntax. To bind from the immediate
+  parent package, name the module: `(import .x)`.
 
-- Absolute import (no leading dot): emits `IMPORT cpool["dotted.name"]`, then
-`VAR_BIND cpool["leaf"]` (or the alias name), then `CONST None` (statement
-result).
-- Relative import (one or more leading dots): emits `IMPORT_REL cpool[(level, name)]`, then `VAR_BIND cpool["leaf_or_alias"]`, then `CONST None`.
-- Bare relative import (only dots, no module name, e.g. `(import .)`): name
-portion is `None` in the pool tuple; binds the package under the leaf of the
-dots (or an explicit alias).
-- `as:` keyword overrides the binding name.
+Inline `as:` (`(import foo as: bar)`) is **not** supported; use the bracketed
+member form.
 
-**Opcodes emitted:** `IMPORT` (absolute) or `IMPORT_REL` (relative), followed
-by `VAR_BIND` and `CONST None`.
-
-**Implementation:** `koskari/compile/specials/imports.py` — `special_import`
+**Statement value:** `None`.
 
 **Examples:**
 
 ```koskari
-;; Absolute import — binds 'os' in current namespace
+;; Plain dotted import — binds 'foo' (root); foo.bar reachable as attribute
+(import foo.bar)
+
+;; Simple import — binds 'os'
 (import os)
 
-;; Dotted absolute import — binds 'path' (leaf of os.path)
-(import os.path)
+;; Member form — binds 'osp' to the leaf os.path
+(import [os.path as: osp])
 
-;; Absolute import with alias
-(import os.path as: osp)
-
-;; Relative import (one dot)
+;; Relative import (one dot) — binds leaf 'sibling'
 (import .sibling)
 
-;; Relative import with alias
-(import .sibling as: s)
-
-;; Two-dot relative import
+;; Two-dot relative import — binds leaf 'parent'
 (import ..parent)
+
+;; Bare relative (dots only) — needs the member form
+(import [.. as: parent-pkg])
 ```
-
-

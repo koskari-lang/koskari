@@ -109,10 +109,11 @@ OP(SWITCH_EQ_FAST_ATTR, EXTRA, LABEL, FASTVAR, CONST, NOARG)
 OP(GLOBALS, NOARG)
 OP(LOCALS, NOARG)
 
-// module import
-OP(IMPORT,      CONST)  // arg = cpool str; absolute dotted import; pushes leaf module
-OP(IMPORT_REL,  CONST)  // arg = cpool (level:int, name:str|None); relative import; pushes leaf module
-OP(IMPORT_FROM, CONST)  // arg = cpool str; PEEK-NOT-POP module at TOS, push named attr — MUST be followed by POP 1
+// module import — self-contained: each opcode imports its own module and
+// stores its own bindings; no stack effect from any of them
+OP(IMPORT,      EXTRA, CONST, COUNT, COUNT, CONST)  // name, level, leaf flag, bind name
+OP(IMPORT_FROM, EXTRA, CONST, COUNT, CONST, CONST)  // name, level, attr names tuple, bind names tuple
+OP(IMPORT_STAR, EXTRA, CONST, COUNT, NOARG, NOARG)  // name, level; binds the module's public names
 
 // exception handling
 OP(EXCEPTION, NOARG)

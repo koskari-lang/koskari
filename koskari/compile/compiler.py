@@ -448,6 +448,11 @@ class Compiler:
         self._resolution_instance = None
         self.bracket_calls = bracket_calls
 
+        # nested scope depth (function, let, class bodies); 0 = module
+        # top level. Maintained by resolution_scope; consulted by
+        # specials restricted to module level (e.g. import-all-from)
+        self.scope_depth = 0
+
         if module is None:
             module = Module(ModuleNamespace(name, {}))
         elif isinstance(module, dict):
@@ -575,9 +580,11 @@ class Compiler:
         reso = self._resolution_instance
         if reso is not None:
             reso.enter_scope()
+        self.scope_depth += 1
         try:
             yield
         finally:
+            self.scope_depth -= 1
             if reso is not None:
                 reso.exit_scope()
 

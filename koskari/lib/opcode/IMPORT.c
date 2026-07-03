@@ -14,35 +14,44 @@
 */
 
 /**
-   IMPORT: arg = constant index (str).  Perform an absolute module import
-   and push the leaf module onto the stack.
+   IMPORT: arg = extra index. Schema CONST (module name str, or None for
+   a bare relative import), COUNT (level: leading dots, 0 = absolute),
+   COUNT (leaf flag: 0 = bind root, 1 = bind leaf), CONST (binding name
+   str).
 
-   The constant at arg must be a str naming the module, e.g. "foo" or
-   "foo.bar".  For dotted names, the leaf module is pushed (foo.bar is
-   pushed, not foo).  This matches importlib.import_module semantics and
-   differs from bare __import__() which returns the topmost package.
+   Self-contained: imports the module via kos_import_module and stores
+   it into the current frame namespace under the binding name. No stack
+   effect.
 
-   The leaf behaviour is achieved by passing the module-level sentinel
-   _import_fromlist ("*",) as fromlist to PyImport_ImportModuleLevelObject,
-   which causes Python to return the deepest component rather than the root.
-   _import_fromlist is initialised once in koskari_eval_init.
-
-   Equivalent Python:
-       import importlib
-       importlib.import_module("foo.bar")   # returns foo.bar, not foo
+   With the leaf flag clear the root package is bound while the full
+   dotted chain is still imported (plain Python "import foo.bar"
+   semantics); with it set the deepest submodule is bound (the
+   "(import [foo.bar as: fbar])" member form).
 */
 
 KOS_OP_HANDLER(IMPORT) {
-  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+
+  PyObject *name = KosCode_GetConstant((PyObject *) code, row.a0);
   if (! name)
     return EVAL_RAISE();
 
-  PyObject *mod = PyImport_ImportModuleLevelObject(
-    name, NULL, NULL, _import_fromlist, 0);
+  PyObject *bind = KosCode_GetConstant((PyObject *) code, row.a3);
+  if (! bind)
+    return EVAL_RAISE();
+
+  PyObject *mod = kos_import_module(es, name, (long) row.a1, row.a2);
   if (! mod)
     return EVAL_RAISE();
 
-  return kos_op_result_PUSH(es, mod);
+  if (frame_ns_store(es, bind, mod) < 0) {
+    Py_DECREF(mod);
+    return EVAL_RAISE();
+  }
+  Py_DECREF(mod);
+
+  return EVAL_NORMAL();
 }
 
 

@@ -1244,114 +1244,108 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 
 ### 10.1 Module import
 
-The three import opcodes together implement Python's `import` statement at the
-bytecode level. IMPORT and IMPORT_REL load a module and push it; IMPORT_FROM
-extracts named attributes from the module. See `koskari/compile/specials/imports.py`
-(`helper_import_from_sequence`, `special_import`, `special_import_from`) for
-the compiler special forms that emit these opcodes.
+The three import opcodes each implement one Koskari import surface form. They
+are **self-contained and stack-neutral**: each carries the module name and
+relative-import level in its EXTRA row, imports its own module, and stores its
+own bindings into the current frame namespace. None of them touch the operand
+stack, chain a module between instructions, or need a compensating POP. See
+`koskari/compile/specials/imports.py` (`special_import`, `special_import_from`,
+`special_import_all_from`) for the compiler forms.
+
+For a relative import (`level > 0`), the resolver builds a temporary globals
+dict holding `__name__` / `__package__` from the frame's globals namespace so
+`PyImport_ImportModuleLevelObject` can resolve the anchor package. A leaf
+import passes the sentinel `_import_fromlist = ("*",)` to return the deepest
+submodule; a root import passes a NULL fromlist to return the root package
+while still importing the full dotted chain (matching a plain Python
+`import foo.bar`).
 
 ### KOS_OP_IMPORT {#kos_op_import}
 
-- **Style**: CONST. Arg = constant pool index of module name string (post-compile).
+- **Style**: EXTRA (`CONST`, `COUNT`, `COUNT`, `CONST`). Row: `a0` = cpool
+  module name str (or None for a bare relative import), `a1` = level (leading
+  dots; 0 = absolute), `a2` = leaf flag (0 = bind root, 1 = bind leaf), `a3` =
+  cpool binding name str.
 - **Status**: Implemented.
-- **Stack**: `[...] → [..., module]`. Perform an absolute module import and push
-  the **leaf** module. For dotted names (e.g. `"os.path"`), the leaf component
-  (`os.path`) is pushed, not the root (`os`). This matches `importlib.import_module`
-  semantics and differs from bare `__import__()`.
-- **Invariants**: `cpool[arg]` must be a str.
-- **Leaf behaviour**: Achieved by passing the module-level sentinel
-  `_import_fromlist = ("*",)` as `fromlist` to `PyImport_ImportModuleLevelObject`.
-  `_import_fromlist` is initialised once in `koskari_eval_init` and cleared in
-  `koskari_eval_clear`.
-- **Compiler form:** Pre-compile arg = module name string (e.g. `"os"` or
-  `"os.path"`); post-compile arg = constant pool index.
+- **Stack**: no effect.
+- **Semantics**: Import the module (root or leaf per the flag) and store it
+  into the current frame namespace under the binding name. With the leaf flag
+  clear the root package is bound while the full dotted chain is still imported
+  — plain `(import foo.bar)` binds `foo`; with it set the deepest submodule is
+  bound — the `(import [foo.bar as: fbar])` member form. Relative imports are
+  always leaf-style.
+- **Invariants**: `a0` is a str or None; `a3` is a str.
 - **Implementation**: `koskari/lib/opcode/IMPORT.c`
 
-**Example:** `(import os.path)` — load `os.path` and bind as `path`.
-Pool: 0 = `"os.path"`, 1 = `"path"`, 2 = None.
+**Example:** `(import os.path)` — import the `os.path` chain, bind the root
+`os`. Extra row: `("os.path", 0, 0, "os")`.
 
-| index | opcode   | arg | arg view       | comment |
-|------:|----------|-----|----------------|---------|
-| 0     | IMPORT   | 0   | 0 ("os.path")  | stack: [..., os.path] |
-| 1     | VAR_BIND | 1   | 1 ("path")     | bind "path" = module; stack: [...] |
-| 2     | CONST    | 2   | 2 (None)       | statement value; stack: [..., None] |
-| 3     | RETURN   | 1   | 1              | |
+| index | opcode | arg | arg view                  | comment |
+|------:|--------|-----|---------------------------|---------|
+| 0     | IMPORT | 0   | 0 ("os.path", 0, 0, "os") | bind "os"; stack: [...] |
+| 1     | CONST  | 1   | 1 (None)                  | statement value; stack: [..., None] |
+| 2     | RETURN | 1   | 1                         | |
 
----
-
-### KOS_OP_IMPORT_REL {#kos_op_import_rel}
-
-- **Style**: CONST. Arg = constant pool index of a `(level:int, name:str|None)` tuple
-  (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[...] → [..., module]`. Perform a relative module import and push
-  the leaf module. Semantics otherwise identical to IMPORT.
-- **Invariants**: `cpool[arg]` must be a 2-tuple `(int, str|None)`.
-- **`level`**: Number of leading dots in the import expression (e.g. 1 for
-  `(import .foo)`, 2 for `(import ..foo)`).
-- **`name`**: Module name after the dots, or `None` for a bare relative import
-  (e.g. `(import .)` which imports the enclosing package itself).
-- **Anchor resolution**: The module globals namespace (outermost parent of the
-  current frame's namespace) is passed as the `globals` argument to
-  `PyImport_ImportModuleLevelObject` so Python can read
-  `__name__` and `__package__` to resolve the anchor package. This is identical to
-  what Python's own relative import mechanism does.
-- **Compiler form:** Pre-compile arg = `(level, name)` Python tuple; post-compile
-  arg = constant pool index.
-- **Implementation**: `koskari/lib/opcode/IMPORT_REL.c`
-
-**Example:** `(import .foo)` inside package `mypkg` — load `mypkg.foo` and bind as `foo`.
-Pool: 0 = `(1, "foo")`, 1 = `"foo"`, 2 = None.
-
-| index | opcode     | arg | arg view       | comment |
-|------:|------------|-----|----------------|---------|
-| 0     | IMPORT_REL | 0   | 0 ((1, "foo")) | stack: [..., mypkg.foo] |
-| 1     | VAR_BIND   | 1   | 1 ("foo")      | bind "foo" = module; stack: [...] |
-| 2     | CONST      | 2   | 2 (None)       | statement value |
-| 3     | RETURN     | 1   | 1              | |
+Member form `(import [os.path as: p])` uses row `("os.path", 0, 1, "p")` to
+bind the leaf; relative `(import .foo)` uses `("foo", 1, 1, "foo")`.
 
 ---
 
 ### KOS_OP_IMPORT_FROM {#kos_op_import_from}
 
-- **Style**: CONST. Arg = constant pool index of attribute name string
-  (post-compile).
+- **Style**: EXTRA (`CONST`, `COUNT`, `CONST`, `CONST`). Row: `a0` = cpool
+  module name str (or None), `a1` = level, `a2` = cpool tuple of attribute
+  names, `a3` = cpool tuple of binding names (parallel to the attribute names;
+  the same tuple object when there are no renames).
 - **Status**: Implemented.
-- **Stack**: `[..., module] → [..., module, value]`. Read named attribute from
-  TOS **without consuming TOS**. The module remains on the stack.
-
-> **PEEK-NOT-POP WARNING** — This is the **only** opcode in the Koskari
-> instruction set that reads TOS without removing it. This behaviour allows
-> multiple successive IMPORT_FROM instructions to extract different attributes
-> from the same module. Every sequence of one or more IMPORT_FROM instructions
-> **must** be followed by `POP 1` to remove the module from the stack.
-> Omitting the POP leaves a dangling module reference that corrupts the stack.
->
-> This invariant is **structurally enforced**: IMPORT_FROM is only ever emitted
-> by `helper_import_from_sequence()` in `koskari/compile/specials/imports.py`,
-> which always emits the compensating `POP 1` as its final instruction.
-> Do not emit IMPORT_FROM anywhere else.
-
-- **Invariants**: TOS must be a module or object with the named attribute.
-  `cpool[arg]` must be a str. The module is **not popped**; the caller (always
-  `helper_import_from_sequence`) is responsible for the compensating `POP 1`.
-- **Compiler form:** Pre-compile arg = attribute name string; post-compile arg =
-  constant pool index.
+- **Stack**: no effect.
+- **Semantics**: Import the leaf module, then for each attribute name `getattr`
+  it and store the value into the current frame namespace under the
+  corresponding binding name.
+- **Submodule fallback**: when the `getattr` raises `AttributeError`, import
+  `"{module.__name__}.{attr}"` and retry — matching CPython's
+  `from pkg import sub` behavior for submodules the package `__init__` does not
+  import. Other exceptions propagate.
+- **Invariants**: `a2` and `a3` are equal-length tuples of str.
 - **Implementation**: `koskari/lib/opcode/IMPORT_FROM.c`
 
-**Example:** `(import-from os path sep)` — import `os`, extract `path` and `sep`.
-Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
+**Example:** `(import-from os path [sep as: s])` — import `os`, bind `path` and
+bind `sep` as `s`. Extra row: `("os", 0, ("path", "sep"), ("path", "s"))`.
 
-| index | opcode      | arg | arg view    | comment |
-|------:|-------------|-----|-------------|---------|
-| 0     | IMPORT      | 0   | 0 ("os")    | stack: [..., os] |
-| 1     | IMPORT_FROM | 1   | 1 ("path")  | PEEK TOS; stack: [..., os, os.path] |
-| 2     | VAR_BIND    | 1   | 1 ("path")  | bind "path"; stack: [..., os] |
-| 3     | IMPORT_FROM | 2   | 2 ("sep")   | PEEK TOS; stack: [..., os, os.sep] |
-| 4     | VAR_BIND    | 2   | 2 ("sep")   | bind "sep"; stack: [..., os] |
-| 5     | POP         | 1   | 1           | remove module; stack: [...] |
-| 6     | CONST       | 3   | 3 (None)    | statement value |
-| 7     | RETURN      | 1   | 1           | |
+| index | opcode      | arg | arg view                       | comment |
+|------:|-------------|-----|--------------------------------|---------|
+| 0     | IMPORT_FROM | 0   | 0 ("os", 0, ("path","sep"), …) | bind "path", "s"; stack: [...] |
+| 1     | CONST       | 1   | 1 (None)                       | statement value |
+| 2     | RETURN      | 1   | 1                              | |
+
+---
+
+### KOS_OP_IMPORT_STAR {#kos_op_import_star}
+
+- **Style**: EXTRA (`CONST`, `COUNT`, `NOARG`, `NOARG`). Row: `a0` = cpool
+  module name str (or None), `a1` = level.
+- **Status**: Implemented.
+- **Stack**: no effect.
+- **Semantics**: Import the leaf module and bind its public names into the
+  current frame namespace, matching Python's `from MODULE import *`. Name
+  selection follows CPython's `import_all_from`: when the module defines
+  `__all__` (a sequence of str; a non-str entry is a `TypeError`) exactly those
+  names are bound; otherwise every `dir(module)` name that does not start with
+  an underscore. Existing bindings are overwritten.
+- **Compiler restriction**: the `import-all-from` special emits this opcode
+  only at module top level; it is a compile error inside a function, lambda,
+  `let`, or class body.
+- **Invariants**: `a0` is a str or None.
+- **Implementation**: `koskari/lib/opcode/IMPORT_STAR.c`
+
+**Example:** `(import-all-from os.path)` — bind `os.path`'s public names. Extra
+row: `("os.path", 0, 0, 0)`.
+
+| index | opcode      | arg | arg view            | comment |
+|------:|-------------|-----|---------------------|---------|
+| 0     | IMPORT_STAR | 0   | 0 ("os.path", 0, …) | bind public names; stack: [...] |
+| 1     | CONST       | 1   | 1 (None)            | statement value |
+| 2     | RETURN      | 1   | 1                   | |
 
 ---
 
