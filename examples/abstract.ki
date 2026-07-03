@@ -1,0 +1,113 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Example: Abstract base classes
+
+A Koskari define-class can inherit from abc.ABC and decorate its
+methods with @abstractmethod, just like a Python class.  The metaclass
+is combined automatically, abstract members are collected into
+__abstractmethods__, and attempting to instantiate a class that still
+has an abstract member raises TypeError.
+"""
+
+
+import-from abc ABC abstractmethod
+
+
+; Abstract root: every Shape promises an `area`, but refuses to say how.
+; Because `area` is left abstract, Shape itself cannot be instantiated.
+
+define-class Shape [ABC]:
+    """ Anything that encloses (or fails to enclose) some area """
+
+    @property
+    @abstractmethod
+    define area [self]:
+        None
+
+    ; A concrete method may lean on the abstract one; subclasses fill
+    ; in `area` and inherit `describe` for free.
+    define describe [self]:
+        f"a {self.__class__.__name__} enclosing {self.area}"
+
+
+; A concrete coordinate.  A point is a degenerate shape: it encloses
+; no area, so it can satisfy the contract and be instantiated.
+
+define-class Point2D [Shape]:
+    """ A single point in the plane """
+
+    define __init__ [self x y]:
+        (set! self.x x)
+        (set! self.y y)
+
+    @property
+    define area [self]:
+        0
+
+
+; An abstract 2D shape anchored at a coordinate.  It supplies a
+; constructor but leaves `area` abstract, so it also cannot be
+; instantiated directly.
+
+define-class Shape2D [Shape]:
+    """ A positioned 2D shape; still abstract until `area` is provided """
+
+    define __init__ [self origin]:
+        (set! self.origin origin)
+
+
+; A concrete rectangle: a coordinate plus a height and width.  It
+; chains through (super) to store the origin and finally implements
+; `area`, becoming instantiable.
+
+define-class Rectangle [Shape2D]:
+    """ An axis-aligned rectangle anchored at its origin """
+
+    define __init__ [self coordinate height width]:
+        (.__init__ (super) coordinate)
+        (set! self.height height)
+        (set! self.width width)
+
+    @property
+    define area [self]:
+        (* self.width self.height)
+
+
+when-main:
+    define origin (Point2D 1 2)
+    define rect (Rectangle origin 5 4)
+
+    print "origin:" (origin.describe)
+    print "rect:  " (rect.describe)
+    print "rect.area:" rect.area
+    print "rect.origin:" #(rect.origin.x rect.origin.y)
+
+    print "Shape.__abstractmethods__:" Shape.__abstractmethods__
+    print "Rectangle.__abstractmethods__:" Rectangle.__abstractmethods__
+
+    print "instance? rect Shape2D:" (instance? rect Shape2D)
+    print "instance? rect Shape:" (instance? rect Shape)
+
+    ; The abstract classes refuse construction.
+    for-each [cls #[Shape Shape2D]]:
+        try:
+            (cls)
+            (print "instantiated" cls.__name__ "-- unexpected!")
+        except [e TypeError]:
+            (print "cannot instantiate" f"{cls.__name__}:" (str e))
+
+
+; The end.
