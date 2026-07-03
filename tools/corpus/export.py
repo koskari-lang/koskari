@@ -193,6 +193,35 @@ def export_corpus(
     return write_parquet(rows, output_dir)
 
 
+def export_all_views(
+        records_dir,
+        schema_path,
+        output_base,
+        root=None):
+    """
+    Export every registered corpus view to parquet
+
+    :param records_dir: directory containing YAML shards
+    :param schema_path: path to SCHEMA.json
+    :param output_base: parent directory for per-view subdirectories
+    :param root: repository root for git provenance
+    :return: list of paths to written parquet files
+    """
+
+    views = load_views()
+    paths = []
+    for view_name in sorted(views.VIEWS):
+        output_dir = Path(output_base) / view_name
+        path = export_corpus(
+            view_name,
+            records_dir,
+            schema_path,
+            output_dir,
+            root=root)
+        paths.append(path)
+    return paths
+
+
 def main(argv=None):
     """
     Export corpus views from the command line
@@ -206,10 +235,15 @@ def main(argv=None):
     default_schema = root / 'docs' / 'corpus' / 'SCHEMA.json'
     default_view = 'koskari-eval'
     default_output = root / 'build' / 'corpus' / 'datasets' / default_view
+    default_output_base = root / 'build' / 'corpus' / 'datasets'
 
     parser = argparse.ArgumentParser(
         prog='corpus-export',
         description='Export corpus YAML records to parquet dataset views')
+    parser.add_argument(
+        '--all-views',
+        action='store_true',
+        help='export every registered view under the output base directory')
     parser.add_argument(
         '--view',
         default=default_view,
@@ -226,15 +260,31 @@ def main(argv=None):
         '--output-dir',
         default=str(default_output),
         help='output directory for train.parquet (default: %(default)s)')
+    parser.add_argument(
+        '--output-base',
+        default=str(default_output_base),
+        help='parent directory for --all-views (default: %(default)s)')
     args = parser.parse_args(argv)
 
     views = load_views()
-    if args.view not in views.VIEWS:
-        names = ', '.join(sorted(views.VIEWS))
-        sys.stderr.write('unknown view %r; available: %s\n' % (args.view, names))
-        return 2
 
     try:
+        if args.all_views:
+            paths = export_all_views(
+                args.records_dir,
+                args.schema,
+                args.output_base,
+                root=root)
+            for path in paths:
+                sys.stdout.write('%s\n' % path)
+            return 0
+
+        if args.view not in views.VIEWS:
+            names = ', '.join(sorted(views.VIEWS))
+            sys.stderr.write(
+                'unknown view %r; available: %s\n' % (args.view, names))
+            return 2
+
         path = export_corpus(
             args.view,
             args.records_dir,

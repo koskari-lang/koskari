@@ -28,7 +28,7 @@ COPY docs/corpus/SCHEMA.json /work/docs/corpus/SCHEMA.json
 COPY docs/corpus/records/ /work/docs/corpus/records/
 
 ENTRYPOINT ["python", "-B", "tools/corpus/export.py"]
-CMD ["--view", "koskari-eval", "--output-dir", "/out/koskari-eval"]
+CMD ["--all-views", "--output-base", "/out"]
 
 
 # The end.

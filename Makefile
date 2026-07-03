@@ -327,6 +327,11 @@ corpus-parquet:  ## Export koskari-eval parquet from corpus YAML via tox
 	@echo "Exporting corpus view koskari-eval..."
 	@tox -qe regen-corpus -- --view koskari-eval
 
+corpus-parquet-all:  ## Export all corpus views to build/corpus/datasets/
+	@$(call checkfor,tox)
+	@echo "Exporting all corpus views..."
+	@tox -qe regen-corpus -- --all-views
+
 corpus-parquet-container-build:  ## Build corpus parquet export container image
 	@echo "Building corpus export container image $(CORPUS_IMAGE)..."
 	@$(CONTAINER_ENGINE) build -q -t $(CORPUS_IMAGE) -f tools/corpus/Containerfile .
@@ -410,6 +415,7 @@ python:  ## Show Python executable
 	build \
 	clean \
 	corpus-parquet \
+	corpus-parquet-all \
 	corpus-parquet-container \
 	corpus-parquet-container-build \
 	clean-built \

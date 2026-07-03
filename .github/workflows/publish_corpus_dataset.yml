@@ -1,16 +1,20 @@
-# Export corpus dataset views to parquet and (future) publish to Hugging Face.
+# Export corpus dataset views to parquet and publish to Hugging Face.
 # Manual trigger only; not wired into main CI.
+#
+# Publish authenticates via Hugging Face Trusted Publishers (OIDC). Configure
+# the publisher on obriencj/koskari dataset settings with repository
+# obriencj/koskari and workflow publish_corpus_dataset.yml.
 
 name: Publish corpus dataset
 
 on:
   workflow_dispatch:
     inputs:
-      view:
-        description: Corpus dataset view name
+      dry_run:
+        description: Export only; skip Hugging Face upload
         required: false
-        default: koskari-eval
-        type: string
+        default: false
+        type: boolean
 
 jobs:
   export:
@@ -27,24 +31,50 @@ jobs:
       - name: Install tox
         run: pip install tox
 
-      - name: Export corpus view to parquet
-        run: tox -qe regen-corpus -- --view "${{ inputs.view }}"
+      - name: Export all corpus views to parquet
+        run: tox -qe regen-corpus -- --all-views
 
       - name: Upload parquet artifact
         uses: actions/upload-artifact@v7
         with:
-          name: corpus-dataset-${{ inputs.view }}
+          name: corpus-datasets
           path: build/corpus/datasets/
 
   publish:
     runs-on: ubuntu-latest
     needs: export
-    if: false
+    if: ${{ !inputs.dry_run }}
+
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
-      # Future: download artifact, install huggingface_hub, upload parquet
-      # to a Hub dataset repo using secrets.HF_TOKEN and a configured repo id.
-      - name: Publish to Hugging Face Hub
-        run: echo "publish stub; enable job when HF_TOKEN and repo are configured"
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download parquet artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: corpus-datasets
+          path: build/corpus/datasets/
+
+      - name: Install Hugging Face CLI
+        run: pip install "huggingface_hub[cli]>=1.19.0"
+
+      - name: Publish parquet to Hugging Face Hub
+        env:
+          HF_OIDC_RESOURCE: datasets/obriencj/koskari
+        run: |
+          hf upload obriencj/koskari build/corpus/datasets . \
+            --repo-type dataset
+
+      - name: Publish dataset card
+        env:
+          HF_OIDC_RESOURCE: datasets/obriencj/koskari
+        run: |
+          hf upload obriencj/koskari tools/corpus/dataset_card.md README.md \
+            --repo-type dataset
 
 
   # The end.

@@ -47,9 +47,11 @@ def _load_view_module(filename):
 
 
 _eval = _load_view_module('eval.py')
+_full = _load_view_module('full.py')
 
 VIEWS = {
     _eval.VIEW_NAME: _eval.transform,
+    _full.VIEW_NAME: _full.transform,
 }
 
 
