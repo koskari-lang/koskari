@@ -23,6 +23,7 @@ Corpus record loading, expected-value parsing, verify handlers, and test base.
 """
 
 
+import builtins
 import importlib.util
 import json
 import re
@@ -374,11 +375,13 @@ def _check_marked_kostype(case, got, name):
 
 def _check_marked_annotations_return(case, got, type_name):
     """
-    Assert eval result is callable with return annotation
+    Assert eval result is callable with the named builtin as its return
+    annotation
     """
 
     case.assertTrue(callable(got))
-    case.assertEqual(got.__annotations__.get('return'), type_name)
+    expected = getattr(builtins, type_name)
+    case.assertIs(got.__annotations__.get('return'), expected)
 
 
 def _check_marked_code_extras_return(case, got, sym_name):

@@ -23,8 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import symbol
-from koskari.lib import FormalsSpec
+from koskari.lib import FormalsSpec, Function
 
 from tests.lib.test_expression_function import build_expr
 
@@ -64,23 +63,77 @@ class TestInspectKosFunction(unittest.TestCase):
         fn = code.function(fspec(), base_ns)
         self.assertEqual(fn.__annotations__, {})
 
-    def test_annotations_from_formals_type_bundles(self):
+    def test_annotations_real_objects(self):
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
-        meta = {'a': {'type': symbol('int')}, 'b': {'type': symbol('str')}}
-        fspec = FormalsSpec(
-            ('a',), None, ('b',), None, None, None, meta)
-        fn = code.function(fspec(), base_ns)
-        self.assertEqual(
-            fn.__annotations__,
-            {'a': 'int', 'b': 'str'})
+        fspec = FormalsSpec(('a',), None, ('b',))
+        fn = Function(code, base_ns, fspec, {'a': int, 'b': str})
+        self.assertEqual(fn.__annotations__, {'a': int, 'b': str})
+        self.assertIs(fn.__annotations__['a'], int)
 
-    def test_annotations_merge_return_from_code_extras(self):
+    def test_annotations_reflected_in_signature(self):
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
-        code.extras['return'] = symbol('int')
+        fspec = FormalsSpec(('a',), None, ('b',))
+        fn = Function(code, base_ns, fspec, {'a': int, 'return': str})
+        sig = inspect.signature(fn)
+        self.assertIs(sig.parameters['a'].annotation, int)
+        self.assertIs(sig.parameters['b'].annotation,
+                      inspect.Parameter.empty)
+        self.assertIs(sig.return_annotation, str)
+
+    def test_annotations_return_only(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fspec = FormalsSpec(('x',), None, ())
-        fn = code.function(fspec(), base_ns)
-        self.assertEqual(fn.__annotations__, {'return': 'int'})
-        self.assertEqual(fn.__annotations__['return'], 'int')
+        fn = Function(code, base_ns, fspec, {'return': int})
+        self.assertEqual(fn.__annotations__, {'return': int})
+        self.assertIs(inspect.signature(fn).return_annotation, int)
+
+    def test_annotations_str_forward_ref_resolves(self):
+        code, base_ns = build_expr(
+            [["CONST", 42], ["RETURN", 1]], values={'MyType': int})
+        fspec = FormalsSpec(('a',), None, ())
+        fn = Function(code, base_ns, fspec, {'a': 'MyType'})
+        self.assertIs(fn.__annotations__['a'], int)
+        self.assertIs(inspect.signature(fn).parameters['a'].annotation, int)
+
+    def test_annotations_str_forward_ref_dotted(self):
+        code, base_ns = build_expr(
+            [["CONST", 42], ["RETURN", 1]], values={'MyType': int})
+        fspec = FormalsSpec(('a',), None, ())
+        fn = Function(code, base_ns, fspec, {'a': 'MyType.__name__'})
+        self.assertEqual(fn.__annotations__['a'], 'int')
+
+    def test_annotations_str_unresolved_stays_string(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('a',), None, ())
+        fn = Function(code, base_ns, fspec, {'a': 'NoSuchThing'})
+        self.assertEqual(fn.__annotations__, {'a': 'NoSuchThing'})
+
+    def test_annotations_str_unresolved_never_retried(self):
+        # Late is declared but unbound at first access; the resolver
+        # skips the empty slot, the annotation stays a string, and a
+        # later binding does not upgrade the cached result
+        code, base_ns = build_expr(
+            [["CONST", 42], ["RETURN", 1]], local_syms=('Late',))
+        fspec = FormalsSpec(('a',), None, ())
+        fn = Function(code, base_ns, fspec, {'a': 'Late'})
+        self.assertEqual(fn.__annotations__, {'a': 'Late'})
+        base_ns.store('Late', str)
+        self.assertEqual(fn.__annotations__, {'a': 'Late'})
+
+    def test_annotations_cache_is_stable(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('a',), None, ())
+        fn = Function(code, base_ns, fspec, {'a': int})
+        self.assertIs(fn.__annotations__, fn.__annotations__)
+
+    def test_annotations_creation_dict_not_mutated(self):
+        code, base_ns = build_expr(
+            [["CONST", 42], ["RETURN", 1]], values={'MyType': int})
+        fspec = FormalsSpec(('a',), None, ())
+        creation = {'a': 'MyType'}
+        fn = Function(code, base_ns, fspec, creation)
+        self.assertIs(fn.__annotations__['a'], int)
+        self.assertEqual(creation, {'a': 'MyType'})
 
     def test_dunder_name_from_code(self):
         code, base_ns = build_expr(
@@ -122,11 +175,20 @@ class TestInspectBoundMethod(unittest.TestCase):
 
     def test_bound_method_annotations_match_function(self):
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
-        meta = {'x': {'type': symbol('int')}}
-        fspec = FormalsSpec(('self',), None, ('x',), None, None, None, meta)
-        fn = code.function(fspec(), base_ns)
+        fspec = FormalsSpec(('self',), None, ('x',))
+        fn = Function(code, base_ns, fspec, {'x': int})
         bm = fn.__get__(object(), type(None))
-        self.assertEqual(bm.__annotations__, {'x': 'int'})
+        self.assertEqual(bm.__annotations__, {'x': int})
+
+    def test_bound_method_signature_keeps_return_annotation(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('self',), None, ('x',))
+        fn = Function(code, base_ns, fspec, {'x': int, 'return': str})
+        bm = fn.__get__(object(), type(None))
+        sig = inspect.signature(bm)
+        self.assertEqual(list(sig.parameters.keys()), ['x'])
+        self.assertIs(sig.parameters['x'].annotation, int)
+        self.assertIs(sig.return_annotation, str)
 
 
 # The end.

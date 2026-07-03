@@ -25,7 +25,7 @@ from koskari.compile.helpers import (discover_docstring, gather_formals,
                                         helper_begin)
 from koskari.compile.specials.lambda_ import _LAMBDA_PATTERNS
 from koskari.exceptions import SyntaxMatchError
-from koskari.lib import FormalsSpec, FunctionSpec, OpCode, nil, symbol
+from koskari.lib import FormalsSpec, FunctionSpec, OpCode, nil
 from koskari.syntax import special
 from tests.compile.specials import SpecialsTestCase
 
@@ -69,7 +69,21 @@ def special_lambda_ng(
     star = str(star) if star else None
     starstar = str(starstar) if starstar else None
 
+    ann_exprs = [(name, bundle['type'])
+                 for name, bundle in ann.items() if 'type' in bundle]
+    if return_type_src is not None:
+        ann_exprs.append(('return', return_type_src))
+
     frag = compiler.fragment(called_by)
+
+    ann_names = []
+    for name, expr in ann_exprs:
+        ann_names.append(name)
+        if isinstance(expr, str):
+            frag.instruction(OpCode.KOS_OP_CONST, expr)
+        else:
+            frag.merge(compiler.full_compile(expr))
+
     for k, expr in defaults:
         pre_kwd.append(str(k))
         frag.merge(compiler.full_compile(expr))
@@ -79,9 +93,6 @@ def special_lambda_ng(
         if expr is not nil:
             defnames.append(str(k))
             frag.merge(compiler.full_compile(expr))
-
-    if defnames:
-        frag.instruction(OpCode.KOS_OP_CONST, tuple(defnames))
 
     lamb = compiler.fragment(fragment_name)
     lamb.declare_vars(pos)
@@ -99,13 +110,13 @@ def special_lambda_ng(
     with compiler.resolution_scope():
         lamb = helper_begin(lamb, body_src, True)
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
-    if return_type_src is not None:
-        code.extras['return'] = return_type_src
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
-        star, starstar, ann, by_refs), code)
+        star, starstar, None, by_refs), code)
     frag.instruction(OpCode.KOS_OP_CONST, fspec)
-    frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(defnames))
+    frag.instruction(
+        OpCode.KOS_OP_BUILD_FUNCTION,
+        (tuple(defnames), tuple(ann_names), 0, 0))
 
     return frag
 
@@ -163,13 +174,12 @@ class TestLambdaNgNamed(LambdaNgFullStackBase):
         self.assertEqual(fn.code.extras.get('doc'), 'module doc line')
 
 
-    async def test_ng_lambda_formals_carry_type_annotations(self):
+    async def test_ng_lambda_param_annotation_real_object(self):
         src = "(compile/lambda-ng [(a :: int)] a)"
-        expr, mod = self.compile_expr(src)
+        expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
-        self.assertIsNotNone(fn.formals.annotations)
-        self.assertEqual(fn.formals.annotations["a"]["type"], symbol("int"))
-        self.assertEqual(fn.__annotations__, {"a": "int"})
+        self.assertIsNone(fn.formals.annotations)
+        self.assertEqual(fn.__annotations__, {"a": int})
 
 
 class TestLambdaNgReturnType(LambdaNgFullStackBase):
@@ -177,32 +187,32 @@ class TestLambdaNgReturnType(LambdaNgFullStackBase):
 
     async def test_ng_named_lambda_double_colon_return(self):
         src = "(compile/lambda-ng f :: int [x] x)"
-        expr, mod = self.compile_expr(src)
+        expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
-        self.assertEqual(fn.__annotations__['return'], 'int')
+        self.assertIs(fn.__annotations__['return'], int)
         self.assertEqual(await fn(7), 7)
 
 
     async def test_ng_named_lambda_type_kw_return(self):
         src = "(compile/lambda-ng f type: int [x] x)"
-        expr, mod = self.compile_expr(src)
+        expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
-        self.assertEqual(fn.__annotations__['return'], 'int')
+        self.assertIs(fn.__annotations__['return'], int)
 
 
     async def test_ng_anonymous_lambda_double_colon_return(self):
         src = "(compile/lambda-ng :: int [x] x)"
-        expr, mod = self.compile_expr(src)
+        expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
-        self.assertEqual(fn.__annotations__['return'], 'int')
+        self.assertIs(fn.__annotations__['return'], int)
         self.assertEqual(await fn(3), 3)
 
 
     async def test_ng_anonymous_lambda_type_kw_return(self):
         src = "(compile/lambda-ng type: int [x] x)"
-        expr, mod = self.compile_expr(src)
+        expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
-        self.assertEqual(fn.__annotations__['return'], 'int')
+        self.assertIs(fn.__annotations__['return'], int)
 
 
     async def test_ng_untyped_lambda_still_works(self):

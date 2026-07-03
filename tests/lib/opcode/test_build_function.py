@@ -29,19 +29,21 @@ pytestmark = pytest.mark.phase_lib
 
 class TestBuildFunction(CevalTest):
     """
-    Tests for BUILD_FUNCTION: CONST (FunctionSpec), BUILD_FUNCTION N, RETURN 1.
+    Tests for BUILD_FUNCTION: CONST (FunctionSpec), BUILD_FUNCTION
+    (defnames, annnames, 0, 0), RETURN 1.
     """
 
     async def test_build_function_no_defaults_returns_function(self):
         """
-        CONST fspec, BUILD_FUNCTION 0, RETURN 1 yields a Function
+        CONST fspec, BUILD_FUNCTION ((), (), 0, 0), RETURN 1 yields a
+        Function
         """
 
         inner_code = build_code([["RETURN", 0]], name="inner")
         fspec = inner_code.function_spec(FormalsSpec())
         code_obj, ns = build_expr([
             ["CONST", fspec],
-            ["BUILD_FUNCTION", 0],
+            ["BUILD_FUNCTION", ((), (), 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code_obj, ns)()
@@ -60,12 +62,75 @@ class TestBuildFunction(CevalTest):
         fspec = inner_code.function_spec(FormalsSpec())
         code_obj, ns = build_expr([
             ["CONST", fspec],
-            ["BUILD_FUNCTION", 0],
+            ["BUILD_FUNCTION", ((), (), 0, 0)],
             ["RETURN", 1],
         ])
         fn = await make_callable(code_obj, ns)()
         self.assertIsInstance(fn, Function)
         self.assertEqual(await fn(), 99)
+
+
+    async def test_build_function_defaults_from_names_tuple(self):
+        """
+        A non-empty defaults names tuple pops that many stack values into
+        the keyword defaults dict
+        """
+
+        inner_code = build_code([["RETURN", 0]], name="inner",
+                                local_syms=("a",))
+        fspec = inner_code.function_spec(FormalsSpec((), (), ("a",)))
+        code_obj, ns = build_expr([
+            ["CONST", 7],
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", (("a",), (), 0, 0)],
+            ["RETURN", 1],
+        ])
+        fn = await make_callable(code_obj, ns)()
+        self.assertIsInstance(fn, Function)
+        self.assertEqual(fn.formals.defaults, {"a": 7})
+
+
+    async def test_build_function_annotations_from_names_tuple(self):
+        """
+        A non-empty annotation names tuple pops that many stack values
+        into the creation-time annotations dict
+        """
+
+        inner_code = build_code([["RETURN", 0]], name="inner",
+                                local_syms=("a",))
+        fspec = inner_code.function_spec(FormalsSpec(("a",)))
+        code_obj, ns = build_expr([
+            ["CONST", int],
+            ["CONST", int],
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", ((), ("a", "return"), 0, 0)],
+            ["RETURN", 1],
+        ])
+        fn = await make_callable(code_obj, ns)()
+        self.assertIsInstance(fn, Function)
+        self.assertEqual(fn.__annotations__, {"a": int, "return": int})
+
+
+    async def test_build_function_defaults_and_annotations(self):
+        """
+        Annotation values sit below default values on the stack; both
+        dicts are built from their respective names tuples
+        """
+
+        inner_code = build_code([["RETURN", 0]], name="inner",
+                                local_syms=("a",))
+        fspec = inner_code.function_spec(FormalsSpec((), (), ("a",)))
+        code_obj, ns = build_expr([
+            ["CONST", int],
+            ["CONST", 7],
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", (("a",), ("a",), 0, 0)],
+            ["RETURN", 1],
+        ])
+        fn = await make_callable(code_obj, ns)()
+        self.assertIsInstance(fn, Function)
+        self.assertEqual(fn.formals.defaults, {"a": 7})
+        self.assertEqual(fn.__annotations__, {"a": int})
 
 
     async def test_build_function_stack_underrun_raises(self):
@@ -74,7 +139,26 @@ class TestBuildFunction(CevalTest):
         """
 
         code_obj, ns = build_expr([
-            ["BUILD_FUNCTION", 0],
+            ["BUILD_FUNCTION", ((), (), 0, 0)],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(RuntimeError):
+            await expr()
+
+
+    async def test_build_function_annotation_underrun_raises(self):
+        """
+        BUILD_FUNCTION with an annotation names tuple but too few stack
+        values raises (stack underrun)
+        """
+
+        inner_code = build_code([["RETURN", 0]], name="inner",
+                                local_syms=("a",))
+        fspec = inner_code.function_spec(FormalsSpec(("a",)))
+        code_obj, ns = build_expr([
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", ((), ("a",), 0, 0)],
             ["RETURN", 1],
         ])
         expr = make_callable(code_obj, ns)

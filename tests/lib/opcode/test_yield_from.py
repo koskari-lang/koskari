@@ -663,7 +663,7 @@ class TestYieldFrom(CevalTest):
         fspec = inner.function_spec(FormalsSpec())
         factory_code, factory_ns = build_expr([
             ["CONST", fspec],
-            ["BUILD_FUNCTION", 0],
+            ["BUILD_FUNCTION", ((), (), 0, 0)],
             ["RETURN", 1],
         ], name="make_test_gen")
         test_gen = await make_callable(factory_code, factory_ns)()
@@ -706,7 +706,7 @@ class TestYieldFrom(CevalTest):
         fspec = inner.function_spec(FormalsSpec())
         factory_code, factory_ns = build_expr([
             ["CONST", fspec],
-            ["BUILD_FUNCTION", 0],
+            ["BUILD_FUNCTION", ((), (), 0, 0)],
             ["RETURN", 1],
         ], name="make_test_gen")
         test_gen = await make_callable(factory_code, factory_ns)()

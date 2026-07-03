@@ -44,14 +44,15 @@ from ..helpers import match
 def _compile_thunk(compiler, body_src, fragment):
     """
     Compile a zero-argument thunk (lambda [] body) and append to fragment.
-    Returns the fragment with CONST (FunctionSpec) and BUILD_FUNCTION 0 on stack.
+    Returns the fragment with CONST (FunctionSpec) and BUILD_FUNCTION on
+    stack.
     """
     thunk = compiler.fragment("<dyn-wind-thunk>")
     thunk.merge(compiler.full_compile(body_src, True))
     code = compiler.complete(thunk, CompilerMode.FUNCTION)
     fspec = FunctionSpec(None, FormalsSpec((), (), (), (), None, None), code)
     fragment.instruction(OpCode.KOS_OP_CONST, fspec)
-    fragment.instruction(OpCode.KOS_OP_BUILD_FUNCTION, 0)
+    fragment.instruction(OpCode.KOS_OP_BUILD_FUNCTION, ((), (), 0, 0))
     return fragment
 
 
