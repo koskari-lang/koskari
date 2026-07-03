@@ -399,6 +399,97 @@ done:
 }
 
 
+/**
+   __kos_repr__: the Koskari s-expression form,
+
+     (partial <func> <arg>... <kwd>: <val> ...)
+
+   func and each positional render via KosUtils_Repr (their own kos form);
+   keywords render as a name-plus-colon token followed by the value's kos
+   form. Registered into the kos_repr registry by koskari_partial_init.
+*/
+static PyObject *kospartial_kos_repr(
+    PyObject *self,
+    PyObject *Py_UNUSED(ignored)) {
+
+  KosPartialObject *p = (KosPartialObject *) self;
+
+  int status = Py_ReprEnter(self);
+  if (status != 0)
+    return (status < 0) ? NULL : PyUnicode_FromString("...");
+
+  PyObject *result = NULL;
+  PyObject *parts = PyList_New(0);
+  if (! parts)
+    goto done;
+
+  {
+    PyObject *head = PyUnicode_FromString("partial");
+    if (! head || PyList_Append(parts, head) < 0) {
+      Py_XDECREF(head);
+      goto done;
+    }
+    Py_DECREF(head);
+  }
+
+  {
+    PyObject *fr = KosUtils_Repr(p->func);
+    if (! fr || PyList_Append(parts, fr) < 0) {
+      Py_XDECREF(fr);
+      goto done;
+    }
+    Py_DECREF(fr);
+  }
+
+  Py_ssize_t na = PyTuple_GET_SIZE(p->args);
+  for (Py_ssize_t i = 0; i < na; i++) {
+    PyObject *ar = KosUtils_Repr(PyTuple_GET_ITEM(p->args, i));
+    if (! ar || PyList_Append(parts, ar) < 0) {
+      Py_XDECREF(ar);
+      goto done;
+    }
+    Py_DECREF(ar);
+  }
+
+  {
+    PyObject *k, *v;
+    Py_ssize_t pos = 0;
+    while (PyDict_Next(p->keywords, &pos, &k, &v)) {
+      PyObject *kwd = PyUnicode_FromFormat("%U:", k);
+      if (! kwd || PyList_Append(parts, kwd) < 0) {
+        Py_XDECREF(kwd);
+        goto done;
+      }
+      Py_DECREF(kwd);
+
+      PyObject *vr = KosUtils_Repr(v);
+      if (! vr || PyList_Append(parts, vr) < 0) {
+        Py_XDECREF(vr);
+        goto done;
+      }
+      Py_DECREF(vr);
+    }
+  }
+
+  {
+    PyObject *sep = PyUnicode_FromString(" ");
+    if (! sep)
+      goto done;
+    PyObject *joined = PyUnicode_Join(sep, parts);
+    Py_DECREF(sep);
+    if (! joined)
+      goto done;
+    result = PyUnicode_FromFormat("(%U)", joined);
+    Py_DECREF(joined);
+  }
+
+done:
+  Py_XDECREF(parts);
+  Py_ReprLeave(self);
+  return result;
+}
+
+
 /* === pickle === */
 
 
@@ -524,6 +615,9 @@ static PyGetSetDef kospartial_getset[] = {
 static PyMethodDef kospartial_methods[] = {
   {"__reduce__", kospartial_reduce, METH_NOARGS, NULL},
   {"__setstate__", kospartial_setstate, METH_O, NULL},
+  {"__kos_repr__", kospartial_kos_repr, METH_NOARGS,
+   "P.__kos_repr__() -> str\n"
+   "Koskari-style (partial func args... kwd: val ...) form."},
   {NULL},
 };
 
@@ -566,6 +660,10 @@ KosCallableTypeObject KosPartialCallableType = {
 int koskari_partial_init(PyObject *mod) {
 
   if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosPartialCallableType)) < 0)
+    return -1;
+
+  if (KosUtils_ReprRegisterBuiltin(
+          (PyObject *) KOS_CALLABLE_PYTYPE(KosPartialCallableType)) < 0)
     return -1;
 
   PyObject *dict = PyModule_GetDict(mod);

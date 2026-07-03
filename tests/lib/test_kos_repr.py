@@ -22,9 +22,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import (cons, keyword, kos_repr, kos_repr_register,
-                         kos_repr_registry_clear, kos_repr_registry_snapshot,
-                         kos_repr_unregister, nil, pair, setcdr, symbol)
+from koskari.lib import (KosPartial, cons, keyword, kos_repr,
+                         kos_repr_register, kos_repr_registry_clear,
+                         kos_repr_registry_snapshot, kos_repr_unregister, nil,
+                         pair, setcdr, symbol)
 
 
 pytestmark = pytest.mark.phase_lib
@@ -274,6 +275,70 @@ class TestKosRepr(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             kos_repr(Weird())
+
+
+class TestKosPartialKosRepr(unittest.TestCase):
+    """
+    Tests for KosPartial's Koskari s-expression kos form
+    """
+
+    def test_func_only(self):
+        """
+        a bare partial reprs as (partial <func>)
+        """
+
+        kp = KosPartial(print)
+        self.assertEqual(kos_repr(kp), "(partial <built-in function print>)")
+
+
+    def test_positionals_in_order(self):
+        """
+        positionals follow the func in order, each in kos form
+        """
+
+        kp = KosPartial(print, 1, 2)
+        self.assertEqual(kos_repr(kp),
+                         "(partial <built-in function print> 1 2)")
+
+
+    def test_positional_uses_kos_form(self):
+        """
+        a positional symbol renders bare, not via Python repr
+        """
+
+        kp = KosPartial(print, symbol("y"))
+        self.assertEqual(kos_repr(kp),
+                         "(partial <built-in function print> y)")
+
+
+    def test_keywords_as_kwd_tokens(self):
+        """
+        keywords render as name-colon token plus value in kos form
+        """
+
+        kp = KosPartial(print, sep="-")
+        self.assertEqual(kos_repr(kp),
+                         '(partial <built-in function print> sep: "-")')
+
+
+    def test_mixed_positional_and_keyword(self):
+        """
+        positionals precede keywords, matching the spec example shape
+        """
+
+        kp = KosPartial(print, "x", sep="-")
+        self.assertEqual(kos_repr(kp),
+                         '(partial <built-in function print> "x" sep: "-")')
+
+
+    def test_kos_repr_differs_from_python_repr(self):
+        """
+        the kos form is distinct from the functools-style Python repr
+        """
+
+        kp = KosPartial(print, 1)
+        self.assertNotEqual(kos_repr(kp), repr(kp))
+        self.assertIn("KosPartial", repr(kp))
 
 
 class TestKosReprRegistry(unittest.TestCase):
