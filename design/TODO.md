@@ -70,6 +70,24 @@ only opcodes that already have `TAIL_CALL` analogues (`CALL`, `CALL_NAMES`,
 
 Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
 
+### Opcode-based function annotations
+
+Move function annotations off compile-time source-form storage
+(`FormalsSpec.annotations` and `KosCode.extras['return']`) onto a runtime
+annotations dict built at function-creation time by a distinct opcode
+(working name `BUILD_FUNCTION_ANNOTATED`). The `lambda`/`function` special
+lowers annotation expressions in the defining scope and folds them with
+`BUILD_KWDS_NAMES` (mirroring the class body). A new C-API builds the
+function and attaches the dict in one call. String annotations remain
+forward references, re-resolved (dotted lookup against `base_ns`) and cached
+lazily on first `__annotations__` / `__signature__` access, separate from the
+creation-time dict; failures stay strings and are never retried. Supersedes
+and removes the code/formals-based annotation paths, which also closes the
+codex serialization gap.
+
+Ref: [api/function-annotations-opcode.md](api/function-annotations-opcode.md);
+[api/inspect-interop-kos-callables.md](api/inspect-interop-kos-callables.md).
+
 ### Const-run squashing for `#list` and `#tuple`
 
 Partition collection literal elements into compile-time constant runs vs dynamic
