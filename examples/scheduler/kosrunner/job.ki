@@ -12,6 +12,12 @@
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 
+import logging
+
+
+define logger (logging.getLogger "kosrunner")
+
+
 define-class JobConfig []:
 
     define __init__ [self]:
@@ -49,10 +55,13 @@ define-class JobSet []:
             sleep heartbeat
 
     define start [self]:
+        (logger.info "Starting jobset: %s" self.name)
         for-each [job self.jobs]:
             (job.start)
+        (logger.info "Started %i jobs" (len self.jobs))
 
     define stop [self]:
+        (logger.info "Stopping jobset: %s" self.name)
         for-each [job self.jobs]:
             (job.stop)
 

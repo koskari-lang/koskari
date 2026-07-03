@@ -1,0 +1,107 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+import logging
+
+import fastapi
+import uvicorn
+import-from fastapi Request
+
+import-from .job Job
+
+
+define logger (logging.getLogger "kosrunner.webhook")
+
+
+define-class WebhookServer [Job]:
+
+    define __init__ [self name host: "0.0.0.0" port: 8080 prefix: ""]:
+        set! self.name name
+        set! self.host host
+        set! self.port port
+        set! self.prefix prefix
+        set! self.app (fastapi.FastAPI title: name)
+        set! self._server None
+
+
+    define add-route [self name handler]:
+        define path f"{self.prefix}/{name}"
+        (logger.info "Registering webhook %s at %s" name path)
+        define inner [request :: Request]:
+            (logger.info "Webhook triggered: %s" name)
+            define payload (request.json)
+            try:
+                define result (handler payload)
+                (logger.info "Webhook completed: %s" name)
+                result
+            except [Exception]:
+                (logger.error "Webhook failed: %s" name exc_info: True)
+        (self.app.add_api_route path (coroutine-fn inner) methods: #["POST"])
+
+
+    define serve [self]:
+        (logger.info "Starting webhook server %s on %s:%i" self.name self.host self.port)
+        define config (uvicorn.Config
+            self.app
+            host: self.host
+            port: self.port
+            log_level: "info")
+        set! self._server (uvicorn.Server config)
+        (self._server.serve)
+
+
+    define start [self]:
+        unless self._server:
+            (self.serve)
+
+
+    define stop [self]:
+        (logger.info "Stopping webhook server: %s" self.name)
+        when self._server:
+            (self._server.shutdown)
+            set! self._server None
+
+
+define-class WebhookJob [Job]:
+
+    define __init__ [self server name callback]:
+        set! self.server server
+        set! self.name name
+        set! self.callback callback
+        (server.add-route name callback)
+
+    define start [self]:
+        None
+
+    define stop [self]:
+        None
+
+
+define-syntax webhook-config:
+    syntax-rules []:
+        case (webhook-config name args ...):
+            define name (WebhookServer (str 'name) args ...)
+
+
+define-syntax on-webhook:
+    syntax-rules []:
+
+        case (on-webhook server name [payload] body ...):
+            `(WebhookJob ,server ,(str 'name) (lambda [payload] ,@body))
+
+        case (on-webhook server name callback):
+            `(WebhookJob ,server ,(str 'name) ,callback)
+
+
+;; The end.

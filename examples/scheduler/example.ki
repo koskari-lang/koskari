@@ -9,9 +9,14 @@ import-from kosrunner use-kosrunner
 (use-kosrunner)
 
 
-(kafka-config default-kafka
+kafka-config default-kafka:
     server: "localhost:9092"
-    group_id: "kosrunner-example")
+    security_protocol: "PLAINTEXT"
+
+
+webhook-config app:
+    port: 8080
+    prefix: "/webhook"
 
 
 jobset workload:
@@ -20,6 +25,14 @@ jobset workload:
 
     ; on-kafka default-kafka "topic.test" [msg topic]:
     ;     (print f"Received message: {msg} on topic: {topic}")
+
+    on-webhook app ping [payload]:
+        (print f"Webhook received: {payload}")
+        #{ok: True msg: "pong"}
+
+    on-webhook app echo [payload]:
+        (print f"Webhook received: {payload}")
+        #{ok: True payload: payload}
 
 
 when-main:

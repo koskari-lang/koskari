@@ -12,18 +12,35 @@
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 
+import logging
+
 import-from aiokafka AIOKafkaConsumer
+import-from aiokafka.helpers create_ssl_context
 
 import-from .job Job
 
 
+define logger (logging.getLogger "kosrunner.kafka")
+
+
 define-dataclass KafkaConfig []:
     define [name :: str] (field)
-    define [server :: str] (field)
-    define [group_id :: str] (field)
+
+    define [servers :: "list[str]"] (field)
+
+    define [group_id :: str] None
+
+    define [ssl_context :: Any] None
+    define [ssl_cafile :: str] None
+    define [security_protocol :: str] "PLAINTEXT"
+
+    define [sasl_mechanism :: str] None
+    define [sasl_plain_username :: str] None
+    define [sasl_plain_password :: str] None
 
     define auto_offset_reset "latest"
     define enable_auto_commit True
+
     define client_id "kosrunner-kafka-job"
     define value_encoding "utf-8"
     define jobs #{}
@@ -61,11 +78,27 @@ define-class KafkaJob [Job]:
         """
 
         define cfg self.config
+
+        define security_protocol cfg.security_protocol
+        define ssl_context cfg.ssl_context
+        unless ssl_context:
+            when (or cfg.ssl_cafile
+                    (? security_protocol (has? security_protocol "SSL"))):
+                set! ssl_context (create_ssl_context cafile: cfg.ssl_cafile)
+
         (AIOKafkaConsumer
             self.topic
-            bootstrap_servers: cfg.server
+
+            bootstrap_servers: cfg.servers
             group_id: cfg.group_id
-            client_id: f"{cfg.client_id}/{self.topic}"
+
+            security_protocol: security_protocol
+            ssl_context: ssl_context
+
+            sasl_mechanism: cfg.sasl_mechanism
+            sasl_plain_username: cfg.sasl_plain_username
+            sasl_plain_password: cfg.sasl_plain_password
+
             auto_offset_reset: cfg.auto_offset_reset
             enable_auto_commit: cfg.enable_auto_commit)
 
@@ -75,12 +108,15 @@ define-class KafkaJob [Job]:
         Read messages until the consumer is stopped
         """
 
+        (logger.info "Consumer loop started: %s" self.topic)
         for-each [msg self._consumer]:
             define value (self.decode-value msg)
+            (logger.debug "Message received: %s" self.topic)
             try:
                 (self.callback value)
             except [Exception]:
-                (print f"kafka callback error on {self.topic}")
+                (logger.error "Callback error on %s" self.topic exc_info: True)
+        (logger.info "Consumer loop ended: %s" self.topic)
 
 
     define start [self]:
@@ -96,9 +132,13 @@ define-class KafkaJob [Job]:
             raise (RuntimeError
                 f"kafka job already registered for topic {self.topic}")
 
+        (logger.info "Starting kafka consumer: %s" self.topic)
         set! self._consumer (self.make-consumer)
         (self._consumer.start)
-        set! self._task (create-task self._consume)
+
+        ; Wrap the consume method in a defer to prevent implicit auto-await
+        ; so we can pass the awaitable to create-task.
+        set! self._task (create-task (defer self._consume))
         set! (item jobs self.topic) self
 
 
@@ -107,6 +147,7 @@ define-class KafkaJob [Job]:
         Stop the read loop and close the consumer for this topic
         """
 
+        (logger.info "Stopping kafka consumer: %s" self.topic)
         when self._consumer:
             (self._consumer.stop)
             set! self._consumer None
