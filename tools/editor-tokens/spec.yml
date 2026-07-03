@@ -28,6 +28,7 @@ layout_heads:
   - special-match
   - define-coroutine
   - switch
+  - import-from
 
 # Peer block heads for layouts that declare peers. These are not necessarily
 # special forms, but they do appear as `NAME:` block headers.
@@ -77,25 +78,77 @@ constants:
 # regenerate koskari-mode.el after edits.
 # Keep entries aligned when adding or renaming.
 list_head_specials:
+  - abs
+  - aiter
+  - all?
   - and
+  - any?
+  - apply
+  - apply-layout
+  - apply-layouts
   - attr
   - attr*
   - await
   - begin
   - bind!
+  - bindq
+  - block
+  - block-begin
+  - bool
+  - bool?
+  - bracket-cons
+  - bracket-nil
+  - bracket-splice
   - break
+  - build-macro
+  - build-proper
+  - build-slice
+  - build-special
+  - build-syntax
   - bytecode
+  - bytes
+  - bytes?
+  - caddddr
+  - cadddr
+  - caddr
+  - cadr
+  - call
   - call-attr
   - call/cc
+  - callable?
   - capture/cc
   - car
+  - cddddr
+  - cdddr
+  - cddr
   - cdr
+  - check-exception
+  - chr
   - class
+  - classmethod
+  - classmethod?
+  - clear-exception
+  - compile
+  - compileq
+  - complex
+  - complex?
   - cond
   - cons
   - continue
+  - coroutine-fn
+  - create-instance-check
+  - create-task
+  - datum
+  - datum?
+  - datumq
+  - decimal
+  - decimal?
   - declare-exports
   - decorate
+  - decr!
+  - default!
+  - defer
+  - defer?
   - define
   - define-class
   - define-coroutine
@@ -106,73 +159,208 @@ list_head_specials:
   - define-syntax
   - define-values
   - del!
+  - del-attr
   - del-item
+  - delq
+  - demand
+  - demand-apply
+  - demand-call
+  - demand?
   - deref
+  - dict
   - dict-each
+  - dict?
+  - dir
+  - divmod
   - dyn-wind
   - dyn-with
   - each
+  - enumerate
+  - equal?
+  - evaluate
   - extend-syntax
+  - fifth
+  - filter
+  - first
+  - float
+  - float?
   - for-each
+  - format
+  - fourth
+  - fraction
+  - fraction?
+  - frozenset
+  - frozenset?
   - function
   - function-compose
+  - ge?
+  - gensym
   - gensym-thunk
+  - getattr
+  - getattr*
+  - getitem*
   - global
   - globals
+  - gt?
+  - has?
+  - hasattr*
+  - hasattr?
+  - hash
+  - hasitem*
+  - help
+  - help-pragma-key
+  - id
   - if
   - import
   - import-all-from
   - import-from
+  - in
   - incr!
+  - inline-block
+  - inline-macro
+  - inplace
+  - inplace-attr
+  - inplace-item
+  - input
   - instance?
+  - int
+  - int?
+  - is
+  - is-not
   - item
   - item*
+  - item-slice
+  - iter
+  - keyword
+  - keyword-block
+  - keyword?
   - lambda
+  - le?
+  - len
   - let
   - let*
+  - let-syntax
   - let-values
   - let/cc
   - letrec
+  - list
   - list-each
+  - list?
+  - load-exception
   - local
   - locals
+  - lt?
   - macro-match
   - macro-rules
+  - macroexpand
   - macroexpand-1
+  - macroexpandq
+  - macroexpandq-1
+  - map
+  - max
+  - min
+  - next
+  - nil
   - nil?
-  - None?
+  - not
+  - not-equal?
+  - not-in
+  - object
+  - object?
+  - on-demand?
+  - open
   - or
+  - ord
+  - pair
+  - pair?
+  - parameter
   - parameterize
   - parameterq
+  - parse-match-pattern
+  - parse-match-patternq
+  - parse-rule-pattern
+  - parse-rule-patternq
+  - partial
+  - partial?
+  - pragma
+  - print
+  - proper?
+  - property
+  - property?
+  - py-help
+  - py-repr
   - quasiquote
   - quote
   - raise
+  - range
+  - range?
+  - recursive?
   - ref
+  - ref-attr
   - ref-item
+  - ref?
+  - refq
+  - repr
   - reset
   - return
+  - reversed
+  - run-until-complete
+  - second
+  - set
   - set!
+  - set-attr
+  - set-car
+  - set-cdr
   - set-item
+  - set?
+  - setattr
   - setq
   - setq-values
   - shift
-  - subclass?
-  - super
-  - switch
-  - syntax-match
-  - syntax-rules
+  - sleep
+  - slice
+  - slice?
+  - sorted
   - special-match
   - special-rules
+  - staticmethod
+  - staticmethod?
+  - str
+  - str?
+  - subclass?
+  - sum
+  - super
+  - switch
+  - symbol
+  - symbol?
+  - syntax-match
+  - syntax-rules
+  - take!
+  - take-attr
+  - take-item
+  - takeq
+  - third
+  - truth
   - try
+  - tuple
+  - tuple?
+  - type
+  - type?
+  - unassigned?
   - unless
+  - unpack
   - unquote
   - unquote-splicing
+  - values
+  - values?
+  - vars
   - when
   - when-main
   - while
   - with
   - yield
   - yield-from
+  - zip
 
 
 # The end.
