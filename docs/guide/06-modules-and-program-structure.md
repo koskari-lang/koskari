@@ -36,7 +36,7 @@ Koskari imports mirror Python imports:
 ```koskari
 (import math)
 (import-from pathlib Path)
-(import-from functools (lru_cache as: memoize))
+(import-from functools [lru_cache as: memoize])
 ```
 
 Import modules at the top of the file when possible. Use aliases when the alias

@@ -23,8 +23,8 @@ At the REPL, expression results are shown for exploration. In scripts, use
 Use `with` for resources that need cleanup:
 
 ```koskari
-(with [f (open path)]
-  (print (read f)))
+with [f (open path)]:
+  (print (read f))
 ```
 
 The context manager's enter result is bound to the optional name (`f` above),
