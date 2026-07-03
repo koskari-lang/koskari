@@ -287,8 +287,8 @@ notes: binds module 'os' in current namespace; form evaluates to None
 id: special-import-alias-002
 feature: special/import
 source: |-
-  (import os as: operating_system)
-  
+  (import [os as: operating_system])
+
 verify:
   eval: "null"
 references:
@@ -297,7 +297,8 @@ stability: evolving
 tags:
   - special
   - import
-notes: "as: keyword renames the binding; binds 'operating_system' instead of 'os'"
+notes: "[MODULE as: BIND] member renames the binding; binds\
+  \ 'operating_system' instead of 'os'"
 ---
 id: special-import-sys-003
 feature: special/import

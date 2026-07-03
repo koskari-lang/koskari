@@ -14,62 +14,37 @@
 """
 koskari.compile.specials.imports
 
-Special form handlers for compile/import and compile/import-from.
+Special form handlers for compile/import, compile/import-from, and
+compile/import-all-from.
 
-These specials translate Koskari import forms into sequences of the IMPORT,
-IMPORT_REL, and IMPORT_FROM opcodes, with compensating POP instructions.
-
-IMPORT_FROM PEEK-NOT-POP CONTRACT
-==================================
-IMPORT_FROM is the only opcode in the koskari set that does not consume TOS.
-The module pushed by IMPORT or IMPORT_REL remains on the stack after every
-IMPORT_FROM instruction.  A balancing POP 1 MUST follow every sequence of
-IMPORT_FROM instructions.
-
-This invariant is structurally enforced: IMPORT_FROM instructions are only
-emitted by helper_import_from_sequence(), which is the sole call site in
-the entire codebase.  helper_import_from_sequence() always emits POP 1 as
-its final instruction.  Do not emit IMPORT_FROM anywhere else.
+Each import special compiles to a single self-contained opcode plus the
+CONST None statement value. The opcodes carry the module name and
+relative-import level in their EXTRA rows, import the module themselves,
+and store their own bindings; nothing touches the operand stack.
 
 Opcode sequences produced
 ==========================
 (import foo)
-    IMPORT "foo" / VAR_STORE "foo" / CONST None
+    IMPORT ("foo", 0, root, "foo") / CONST None
 
 (import foo.bar)
-    IMPORT "foo.bar" / VAR_STORE "bar" / CONST None       (leaf binding)
+    IMPORT ("foo.bar", 0, root, "foo") / CONST None      (root binding)
 
-(import foo.bar as: baz)
-    IMPORT "foo.bar" / VAR_STORE "baz" / CONST None
+(import [foo.bar as: fbar])
+    IMPORT ("foo.bar", 0, leaf, "fbar") / CONST None     (leaf binding)
 
 (import .foo)
-    IMPORT_REL (1, "foo") / VAR_STORE "foo" / CONST None
+    IMPORT ("foo", 1, leaf, "foo") / CONST None
 
-(import ..foo.bar)
-    IMPORT_REL (2, "foo.bar") / VAR_STORE "bar" / CONST None
+(import-from foo bar [baz as: bz])
+    IMPORT_FROM ("foo", 0, ("bar", "baz"), ("bar", "bz")) / CONST None
 
-(import-from foo bar baz)
-    IMPORT "foo"
-    IMPORT_FROM "bar" / VAR_STORE "bar"
-    IMPORT_FROM "baz" / VAR_STORE "baz"
-    POP 1
-    CONST None
-
-(import-from foo [bar as: b])
-    IMPORT "foo"
-    IMPORT_FROM "bar" / VAR_STORE "b"
-    POP 1
-    CONST None
-
-(import-from .foo bar)
-    IMPORT_REL (1, "foo")
-    IMPORT_FROM "bar" / VAR_STORE "bar"
-    POP 1
-    CONST None
+(import-all-from foo)
+    IMPORT_STAR ("foo", 0, 0, 0) / CONST None
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
+:ai-assistant: Claude via Claude Code
 """
 
 
@@ -83,10 +58,14 @@ from ..helpers import helper_using, is_symbolish
 
 
 __all__ = (
-    'helper_import_from_sequence',
     'special_import',
+    'special_import_all_from',
     'special_import_from',
 )
+
+
+_IMPORT_ROOT = 0
+_IMPORT_LEAF = 1
 
 
 _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
@@ -179,87 +158,59 @@ def _leaf_name(dotted):
     return dotted.rsplit('.', 1)[-1]
 
 
-def helper_import_from_sequence(frag, import_frag, members):
+def _root_name(dotted):
     """
-    Emit a full import-from sequence with compensating POP 1.
+    Return the first component of a dotted module name, or the name itself.
 
-    This is THE ONLY function that emits IMPORT_FROM opcodes.  It always
-    terminates the sequence with POP 1 to remove the module pushed by
-    import_frag, preserving stack balance.
-
-    Each entry in members is a (bind_name:str, attr_name:str) pair.
-
-    Stack evolution after this helper returns:
-        before: [...]
-        after:  [..., None]       (CONST None is the statement value)
-
-    :param frag: ByteCodeFragment to emit into
-    :param import_frag: fragment that pushes the module (IMPORT or IMPORT_REL)
-    :param members: list of (bind_name, attr_name) pairs
+    :param dotted: str such as "foo.bar.baz" or "foo"
+    :return: str "foo"
     """
 
-    # Push the module
-    frag.merge(import_frag)
-
-    # For each member: PEEK TOS, get attr, bind
-    for bind_name, attr_name in members:
-        frag.declare_var(bind_name)
-        frag.instruction(OpCode.KOS_OP_IMPORT_FROM, attr_name)
-        frag.instruction(OpCode.KOS_OP_VAR_STORE, bind_name)
-
-    # Compensate for the PEEK-NOT-POP behaviour: remove the module
-    frag.instruction(OpCode.KOS_OP_POP, 1)
-
-    # Statement value
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    return dotted.split('.', 1)[0]
 
 
-def _parse_member(elem, source):
+def _parse_member(elem, source, what):
     """
-    Parse one element from an (import-from ...) member list.
+    Parse one bracketed or plain member element.
 
     Accepted forms:
-        SYM               -> bind as SYM, read attr SYM
-        [ATTR as: BIND]   -> bind as BIND, read attr ATTR
+        SYM               -> no explicit binding, target SYM
+        [TARGET as: BIND] -> bind as BIND, target TARGET
 
-    :param elem: one element from the member list
+    The target is returned as the raw form (symbol or attr form) so
+    callers can apply their own name rules to it.
+
+    :param elem: one member element
     :param source: source form for error context
-    :return: (bind_name:str, attr_name:str)
+    :param what: form name for error messages
+    :return: (bind_name:str or None, target_form)
     :raises SpecialError: on invalid member form
     """
 
     if is_symbolish(elem):
-        name = str(elem)
-        return (name, name)
+        return (None, elem)
 
     if is_pair(elem):
         try:
             name, value = helper_using(elem)
         except SpecialError:
             raise SpecialError(
-                "import-from member must be a symbol or [ATTR as: BIND], not %r"
-                % (elem,),
+                f"{what} member must be a symbol or [TARGET as: BIND],"
+                f" not {elem!r}",
                 source) from None
 
         if name is None:
-            if not is_symbolish(value):
-                raise SpecialError(
-                    "import-from member must be a symbol or [ATTR as: BIND],"
-                    " not %r" % (elem,),
-                    source)
-            s = str(value)
-            return (s, s)
+            return (None, value)
 
-        if not is_symbolish(name) or not is_symbolish(value):
+        if not is_symbolish(name):
             raise SpecialError(
-                "import-from member [ATTR as: BIND] requires symbols, not %r"
-                % (elem,),
+                f"{what} member binding must be a symbol, not {name!r}",
                 source)
-        return (str(name), str(value))
+        return (str(name), value)
 
     raise SpecialError(
-        "import-from member must be a symbol or [ATTR as: BIND], not %r"
-        % (elem,),
+        f"{what} member must be a symbol or [TARGET as: BIND], not"
+        f" {elem!r}",
         source)
 
 
@@ -267,56 +218,57 @@ def _parse_member(elem, source):
 @special("compile/import", patterns=_DEFAULT_PATTERNS)
 def special_import(compiler, source, tc=False):
     """
-    Compile (import NAME) and (import NAME as: ALIAS).
+    Compile (import MODULE) and (import [MODULE as: BIND]).
 
-    NAME is a symbol; leading dots indicate relative imports.  For dotted
-    names the leaf component is bound unless as: ALIAS is given.
+    Plain dotted import binds the root package, Python-style:
+    (import foo.bar) binds foo, with foo.bar reachable as an attribute.
+    The bracketed member form binds BIND to the leaf module. Relative
+    imports (leading dots) are always leaf-style.
     """
 
     called_by, rest = source
     if is_nil(rest):
         raise SpecialError("import requires a module name", source)
 
-    name_sym, rest = rest
+    arg, rest = rest
 
-    # Optional as: ALIAS suffix
-    alias = None
     if not is_nil(rest):
-        maybe_as, rest2 = rest
+        maybe_as, _ = rest
         if is_keyword(maybe_as) and str(maybe_as) == 'as':
-            if is_nil(rest2):
-                raise SpecialError("import as: requires an alias symbol", source)
-
-            alias_sym, rest = rest2
-            if not is_symbolish(alias_sym):
-                raise SpecialError("import alias must be a symbol", source)
-
-            alias = str(alias_sym)
-        # else: rest still has content; will be caught by too-many-args check
-
-    if not is_nil(rest):
+            raise SpecialError(
+                "inline as: is not supported; use"
+                " (import [MODULE as: BIND])",
+                source)
         raise SpecialError("too many arguments to import", source)
 
-    level, dotted = _parse_import_name(name_sym, source)
+    bind = None
+    name_form = arg
+    if is_pair(arg) and str(arg[0]) != 'compile/attr':
+        bind, name_form = _parse_member(arg, source, "import")
+
+    level, dotted = _parse_import_name(name_form, source)
+
+    if bind is not None:
+        leaf = _IMPORT_LEAF
+    elif level > 0:
+        # relative imports are always leaf-style
+        if dotted is None:
+            raise SpecialError(
+                "bare relative import requires the [MODULE as: BIND]"
+                " member form",
+                source)
+        leaf = _IMPORT_LEAF
+        bind = _leaf_name(dotted)
+    else:
+        if dotted is None:
+            raise SpecialError("import requires a module name", source)
+        leaf = _IMPORT_ROOT
+        bind = _root_name(dotted)
 
     frag = compiler.fragment(called_by)
-
-    if level == 0:
-        # Absolute import
-        frag.instruction(OpCode.KOS_OP_IMPORT, dotted)
-    else:
-        frag.instruction(OpCode.KOS_OP_IMPORT_REL, (level, dotted))
-
-    bind_name = alias if alias else (
-        _leaf_name(dotted) if dotted else None
-    )
-    if bind_name is None:
-        raise SpecialError(
-            "bare relative import (without name) requires as: ALIAS",
-            source)
-
-    frag.declare_var(bind_name)
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, bind_name)
+    frag.declare_var(bind)
+    frag.instruction(
+        OpCode.KOS_OP_IMPORT, (dotted, level, leaf, bind))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
@@ -330,7 +282,8 @@ def special_import_from(compiler, source, tc=False):
     plain symbol or a [ATTR as: BIND] rename form.
 
     NAME is a symbol; leading dots indicate relative imports.  At least
-    one member is required.
+    one member is required.  Emits a single IMPORT_FROM instruction
+    carrying the module name, level, and parallel attr/bind name tuples.
     """
 
     called_by, rest = source
@@ -343,20 +296,67 @@ def special_import_from(compiler, source, tc=False):
 
     level, dotted = _parse_import_name(name_sym, source)
 
-    members = []
+    attrs = []
+    binds = []
     current = rest
     while not is_nil(current):
         elem, current = current
-        members.append(_parse_member(elem, source))
-
-    import_frag = compiler.fragment(called_by)
-    if level == 0:
-        import_frag.instruction(OpCode.KOS_OP_IMPORT, dotted)
-    else:
-        import_frag.instruction(OpCode.KOS_OP_IMPORT_REL, (level, dotted))
+        bind, target = _parse_member(elem, source, "import-from")
+        if not is_symbolish(target):
+            raise SpecialError(
+                f"import-from member must name an attribute, not"
+                f" {target!r}",
+                source)
+        attr = str(target)
+        attrs.append(attr)
+        binds.append(bind if bind is not None else attr)
 
     frag = compiler.fragment(called_by)
-    helper_import_from_sequence(frag, import_frag, members)
+    for bind in binds:
+        frag.declare_var(bind)
+
+    attrs = tuple(attrs)
+    binds = tuple(binds)
+    if attrs == binds:
+        # share one tuple constant when there are no renames
+        binds = attrs
+
+    frag.instruction(
+        OpCode.KOS_OP_IMPORT_FROM, (dotted, level, attrs, binds))
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@builtin("compile/import-all-from")
+@special("compile/import-all-from", patterns=_DEFAULT_PATTERNS)
+def special_import_all_from(compiler, source, tc=False):
+    """
+    Compile (import-all-from MODULE): Python's `from MODULE import *`.
+
+    Binds the module's public names (__all__ when defined, otherwise the
+    non-underscore dir() names) into the module namespace.  Only allowed
+    at module top level, matching Python.
+    """
+
+    called_by, rest = source
+    if is_nil(rest):
+        raise SpecialError("import-all-from requires a module name", source)
+
+    name_sym, rest = rest
+    if not is_nil(rest):
+        raise SpecialError("too many arguments to import-all-from", source)
+
+    if compiler.scope_depth > 0:
+        raise SpecialError(
+            "import-all-from is only allowed at module level", source)
+
+    level, dotted = _parse_import_name(name_sym, source)
+
+    frag = compiler.fragment(called_by)
+    frag.instruction(
+        OpCode.KOS_OP_IMPORT_STAR, (dotted, level, 0, 0))
+    frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
 

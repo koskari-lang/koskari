@@ -14,52 +14,108 @@
 */
 
 /**
-   IMPORT_FROM: arg = constant index (attr name str).
+   IMPORT_FROM: arg = extra index. Schema CONST (module name str, or
+   None for a bare relative import), COUNT (level: leading dots, 0 =
+   absolute), CONST (tuple of attribute names), CONST (tuple of binding
+   names, parallel to the attribute names).
 
-   PEEK-NOT-POP WARNING
-   ====================
-   This is the ONLY opcode in the koskari instruction set that reads TOS
-   without consuming it.  The module object placed on the stack by a
-   preceding IMPORT or IMPORT_REL instruction remains there after
-   IMPORT_FROM executes, allowing multiple successive IMPORT_FROM
-   instructions to extract different names from the same module.
+   Self-contained: imports the leaf module via kos_import_module, then
+   for each attribute name gets the attribute and stores it into the
+   current frame namespace under the corresponding binding name. No
+   stack effect.
 
-   EVERY sequence of one or more IMPORT_FROM instructions MUST be
-   followed by a POP 1 to remove the module from the stack.  Omitting
-   the POP leaves a dangling reference that will corrupt the stack.
-
-   The compiler enforces this invariant structurally: IMPORT_FROM is
-   only emitted by helper_import_from_sequence() in
-   koskari/compile/specials/imports.py, which always emits the
-   compensating POP 1 as its final act.  Do not emit IMPORT_FROM
-   anywhere else.
-
-   Semantics
-   =========
-   Equivalent Python:
-       val = getattr(TOS, name)
-       PUSH(val)
-       # TOS (module) is NOT removed
-
-   Stack before:  [..., module]
-   Stack after:   [..., module, val]
+   Submodule fallback: when getattr raises AttributeError and the
+   member is actually a not-yet-imported submodule, import
+   "{module.__name__}.{attr}" and retry the getattr — matching
+   CPython's "from pkg import sub" behavior for submodules the package
+   __init__ does not import. Other exceptions propagate.
 */
 
+
+/**
+   Fetch one from-import member from the module, importing
+   "{mod.__name__}.{attr}" and retrying on AttributeError. New
+   reference or NULL with error set.
+*/
+static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
+
+  PyObject *val = PyObject_GetAttr(mod, attr);
+  if (val || ! PyErr_ExceptionMatches(PyExc_AttributeError))
+    return val;
+
+  PyErr_Clear();
+
+  PyObject *mod_name = PyObject_GetAttrString(mod, "__name__");
+  if (! mod_name)
+    return NULL;
+  if (! PyUnicode_Check(mod_name)) {
+    Py_DECREF(mod_name);
+    PyErr_Format(PyExc_ImportError, "cannot import %R", attr);
+    return NULL;
+  }
+
+  PyObject *full = PyUnicode_FromFormat("%U.%U", mod_name, attr);
+  Py_DECREF(mod_name);
+  if (! full)
+    return NULL;
+
+  PyObject *sub = PyImport_ImportModuleLevelObject(
+    full, NULL, NULL, _import_fromlist, 0);
+  Py_DECREF(full);
+  if (! sub)
+    return NULL;
+
+  /* the import wires the submodule up as an attribute of the parent,
+     but the imported leaf is exactly the value we want */
+  return sub;
+}
+
+
 KOS_OP_HANDLER(IMPORT_FROM) {
-  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+
+  PyObject *name = KosCode_GetConstant((PyObject *) code, row.a0);
   if (! name)
     return EVAL_RAISE();
 
-  /* Borrow TOS without popping — module stays on the stack */
-  PyObject *mod = KosEvalState_StackPeek(es);
+  PyObject *attrs = KosCode_GetConstant((PyObject *) code, row.a2);
+  if (! attrs)
+    return EVAL_RAISE();
+
+  PyObject *binds = KosCode_GetConstant((PyObject *) code, row.a3);
+  if (! binds)
+    return EVAL_RAISE();
+
+  if (! PyTuple_CheckExact(attrs) || ! PyTuple_CheckExact(binds) ||
+      PyTuple_GET_SIZE(attrs) != PyTuple_GET_SIZE(binds)) {
+    PyErr_SetString(PyExc_TypeError, "IMPORT_FROM names must be parallel"
+                    " tuples");
+    return EVAL_RAISE();
+  }
+
+  PyObject *mod = kos_import_module(es, name, (long) row.a1, 1);
   if (! mod)
     return EVAL_RAISE();
 
-  PyObject *val = PyObject_GetAttr(mod, name);
-  if (! val)
-    return EVAL_RAISE();
+  Py_ssize_t n = PyTuple_GET_SIZE(attrs);
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *val = kos_import_from_member(mod, PyTuple_GET_ITEM(attrs, i));
+    if (! val) {
+      Py_DECREF(mod);
+      return EVAL_RAISE();
+    }
 
-  return kos_op_result_PUSH(es, val);
+    if (frame_ns_store(es, PyTuple_GET_ITEM(binds, i), val) < 0) {
+      Py_DECREF(val);
+      Py_DECREF(mod);
+      return EVAL_RAISE();
+    }
+    Py_DECREF(val);
+  }
+  Py_DECREF(mod);
+
+  return EVAL_NORMAL();
 }
 
 

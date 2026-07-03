@@ -159,8 +159,12 @@ source form. So:
 
 - `(import .foo)` binds `foo` (the leaf), as today.
 - `(import [.foo.bar as: fb])` binds `fb` to the leaf.
-- Bare relative `(import .)` continues to require the binding form, since
-  there is no name to bind.
+- Bare relative imports (dots only, no name) require the binding form,
+  since there is no name to bind: `(import [.. as: parent])`. Note that a
+  **single** lone dot is the reader's dotted-pair marker and cannot be
+  written in list syntax at all, so bare relative forms start at two
+  dots; `from . import x` is spelled `(import .x)` or
+  `(import-from .. x)` from one package up.
 
 ### `import-from`
 
