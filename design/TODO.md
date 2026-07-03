@@ -74,16 +74,22 @@ Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
 
 Move function annotations off compile-time source-form storage
 (`FormalsSpec.annotations` and `KosCode.extras['return']`) onto a runtime
-annotations dict built at function-creation time by a distinct opcode
-(working name `BUILD_FUNCTION_ANNOTATED`). The `lambda`/`function` special
-lowers annotation expressions in the defining scope and folds them with
-`BUILD_KWDS_NAMES` (mirroring the class body). A new C-API builds the
-function and attaches the dict in one call. String annotations remain
+annotations dict built at function-creation time by `BUILD_FUNCTION` itself:
+its `COUNT` argument becomes an `EXTRA` operand carrying two `CONST`
+name-tuple references (keyword-defaults names, annotation names), either of
+which may be the empty tuple. The `lambda`/`function` special lowers
+annotation expressions in the defining scope and pushes their values before
+the default values; the opcode builds both dicts inline via the same
+stack-pop-dict-from-names primitive that backs `BUILD_KWDS_NAMES` (mirroring
+the class body, which still uses that opcode explicitly). A new C-API builds
+the function and attaches the dict in one call. String annotations remain
 forward references, re-resolved (dotted lookup against `base_ns`) and cached
 lazily on first `__annotations__` / `__signature__` access, separate from the
 creation-time dict; failures stay strings and are never retried. Supersedes
 and removes the code/formals-based annotation paths, which also closes the
-codex serialization gap.
+codex serialization gap. Since the project is greenfield, `BUILD_FUNCTION` is
+changed in place rather than adding a sibling opcode — no `.kio`
+compatibility path to preserve.
 
 Ref: [api/function-annotations-opcode.md](api/function-annotations-opcode.md);
 [api/inspect-interop-kos-callables.md](api/inspect-interop-kos-callables.md).
