@@ -2775,52 +2775,53 @@ Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
 
 **Syntax:**
 
-- Absolute: `(import MODULE)` or `(import MODULE as: ALIAS)`
-- Relative: `(import .MODULE)` or `(import ..MODULE)` (leading dots, optional alias)
-- Dotted: `(import foo.bar.baz)` or `(import foo.bar.baz as: baz)`
+- Plain: `(import MODULE)` — bind the root package
+- Member: `(import [MODULE as: BIND])` — bind BIND to the leaf module
+- Relative: `(import .MODULE)`, `(import ..MODULE)` (leading dots)
 
-`MODULE` is an unquoted symbol whose printed name is used as the module name.
-Leading dots on the symbol indicate a relative import (`level = number of dots`).
+`MODULE` is an unquoted symbol whose printed name is the module name; leading
+dots indicate a relative import (`level = number of dots`).
 
-**Use-case:** Import a module and bind it in the current namespace. Mirrors
-Python's `import` statement. The bound name is the leaf component of the dotted
-name (e.g. `baz` for `foo.bar.baz`) unless overridden with `as:`.
+**Use-case:** Import a module and bind it in the current namespace, mirroring
+Python's `import` statement.
 
-**Behaviour:**
+- **Plain dotted import binds the root**, Python-style: `(import foo.bar)`
+  binds `foo`, with `foo.bar` reachable as an attribute. The whole dotted
+  chain is imported.
+- **The bracketed member form binds the leaf**: `(import [foo.bar as: fbar])`
+  binds `fbar` to the `foo.bar` submodule. The member uses the same
+  `[TARGET as: BIND]` grammar as `import-from`.
+- **Relative imports are always leaf-style.** `(import .foo)` binds the leaf
+  `foo`. A bare relative import (dots only, no name) requires the member form
+  and starts at two dots — a single lone dot is the reader's dotted-pair
+  marker and is not expressible in list syntax; `from . import x` is spelled
+  `(import .x)`.
 
-- Absolute import (no leading dot): emits `IMPORT cpool["dotted.name"]`, then
-`VAR_BIND cpool["leaf"]` (or the alias name), then `CONST None` (statement
-result).
-- Relative import (one or more leading dots): emits `IMPORT_REL cpool[(level, name)]`, then `VAR_BIND cpool["leaf_or_alias"]`, then `CONST None`.
-- Bare relative import (only dots, no module name, e.g. `(import .)`): name
-portion is `None` in the pool tuple; binds the package under the leaf of the
-dots (or an explicit alias).
-- `as:` keyword overrides the binding name.
+Inline `as:` (`(import foo as: bar)`) is **not** supported; use the bracketed
+member form.
 
-**Opcodes emitted:** `IMPORT` (absolute) or `IMPORT_REL` (relative), followed
-by `VAR_BIND` and `CONST None`.
+**Opcodes emitted:** a single `IMPORT` (row `(name, level, leaf_flag,
+bind_name)`) then `CONST None` (statement result). The opcode imports the
+module and stores its own binding; there is no separate `VAR_BIND`.
 
 **Implementation:** `koskari/compile/specials/imports.py` — `special_import`
 
 **Examples:**
 
 ```scheme
-;; Absolute import — binds 'os' in current namespace
+;; Plain dotted import — binds 'foo' (root); foo.bar reachable
+(import foo.bar)
+
+;; Simple import — binds 'os'
 (import os)
 
-;; Dotted absolute import — binds 'path' (leaf of os.path)
-(import os.path)
+;; Member form — binds 'osp' to the leaf os.path
+(import [os.path as: osp])
 
-;; Absolute import with alias
-(import os.path as: osp)
-
-;; Relative import (one dot)
+;; Relative import (one dot) — binds leaf 'sibling'
 (import .sibling)
 
-;; Relative import with alias
-(import .sibling as: s)
-
-;; Two-dot relative import
+;; Two-dot relative import — binds leaf 'parent'
 (import ..parent)
 ```
 
@@ -2833,37 +2834,25 @@ by `VAR_BIND` and `CONST None`.
 **Syntax:**
 
 - `(import-from MODULE NAME ...)` — import named attributes from MODULE
-- `(import-from MODULE (NAME as: ALIAS) ...)` — with per-name aliases
+- `(import-from MODULE [NAME as: BIND] ...)` — with per-name renames
 - `(import-from .MODULE NAME ...)` — relative module, named attributes
-- Mix of plain names and `(NAME as: ALIAS)` forms is allowed.
+- Mix of plain symbols and `[NAME as: BIND]` forms is allowed.
 
 `MODULE` is an unquoted symbol (same leading-dot convention as `import`).
-Each `NAME` is a symbol whose string value is used as both the attribute name
-and the binding name unless `as: ALIAS` overrides the binding.
+Each `NAME` is a symbol used as both the attribute name and the binding name
+unless a `[NAME as: BIND]` member overrides the binding.
 
 **Use-case:** Import specific names from a module into the current namespace.
-Mirrors Python's `from MODULE import NAME [as ALIAS], ...`.
+Mirrors Python's `from MODULE import NAME [as BIND], ...`.
 
-**Behaviour:**
+**Behaviour:** Emit a single `IMPORT_FROM` (row `(name, level, attr_names,
+bind_names)` with the two parallel tuples) then `CONST None`. The opcode
+imports the leaf module and binds every member itself; there is no module on
+the stack and no compensating POP. A member that is a not-yet-imported
+submodule is imported on demand (CPython's `from pkg import sub` fallback).
 
-1. Emit `IMPORT cpool["name"]` (absolute) or `IMPORT_REL cpool[(level, name)]`
-  (relative) to push the module onto the stack.
-2. For each `(attr, binding)` pair, emit `IMPORT_FROM cpool["attr"]` (PEEK TOS;
-  push attribute value), then `VAR_BIND cpool["binding"]` (bind and pop).
-3. Emit `POP 1` to discard the module (compensating for IMPORT_FROM's
-  peek-not-pop behaviour).
-4. Emit `CONST None` (statement result).
-
-The `POP 1` at step 3 is **always** emitted by `helper_import_from_sequence()`
-regardless of how many names are imported. This is the structural guarantee
-that keeps IMPORT_FROM's stack invariant sound.
-
-**Opcodes emitted:** `IMPORT` or `IMPORT_REL`, then for each name: `IMPORT_FROM`
-
-- `VAR_BIND`, then `POP 1`, then `CONST None`.
-
-**Implementation:** `koskari/compile/specials/imports.py` — `special_import_from`,
-`helper_import_from_sequence`
+**Implementation:** `koskari/compile/specials/imports.py` —
+`special_import_from`
 
 **Examples:**
 
@@ -2874,17 +2863,55 @@ that keeps IMPORT_FROM's stack invariant sound.
 ;; Multiple names
 (import-from os path sep getcwd)
 
-;; With aliases
-(import-from os (path as: osp) sep)
+;; With a rename
+(import-from os [path as: osp] sep)
 
 ;; From relative module
 (import-from .util helper format)
 
-;; Relative with alias
-(import-from .util (helper as: h))
+;; Relative with rename
+(import-from .util [helper as: h])
 ```
 
 **Tests:** `tests/compile/specials/test_import.py`
+
+## import-all-from
+
+**Symbol:** `import-all-from`
+
+**Syntax:** `(import-all-from MODULE)`
+
+`MODULE` follows the same dotted-name and relative-import rules as `import`.
+No member list, no rename, no mixing with named imports.
+
+**Use-case:** Bulk-bind a module's public names, mirroring Python's
+`from MODULE import *`. Name selection follows CPython: the module's `__all__`
+when defined (a sequence of strings; a non-string entry is a `TypeError`),
+otherwise every `dir(MODULE)` name that does not start with an underscore.
+Existing bindings are overwritten.
+
+**Restriction:** module top level only. Inside a function, lambda, `let`, or
+class body the compiler raises `SpecialError` ("import-all-from is only
+allowed at module level"), matching Python 3.
+
+**Opcodes emitted:** a single `IMPORT_STAR` (row `(name, level, 0, 0)`) then
+`CONST None`.
+
+**Implementation:** `koskari/compile/specials/imports.py` —
+`special_import_all_from`
+
+**Examples:**
+
+```scheme
+;; Bind all public names of os.path
+(import-all-from os.path)
+
+;; From a relative package
+(import-all-from .util)
+```
+
+**Tests:** `tests/compile/specials/test_import.py`,
+`tests/lib/opcode/test_import_ops.py`
 
 ## Other implemented specials
 

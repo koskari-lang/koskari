@@ -27,7 +27,7 @@ Highlights (not an exhaustive list):
 | Generators / async | `compile/yield`, `compile/yield-from`, `compile/await` |
 | Calls / attrs / items | `compile/call`, `compile/call-attr`, `compile/attr`, `compile/set-attr`, `compile/inplace-attr`, `compile/del-attr`, `compile/ref-attr`, `compile/item`, `compile/set-item`, `compile/inplace-item`, `compile/del-item`, `compile/ref-item`, `compile/deref` |
 | Values | `compile/define-values`, `compile/setq-values` |
-| Import | `import`, `import-from` |
+| Import | `import`, `import-from`, `import-all-from` |
 | Continuations | `compile/call/cc`, `compile/let/cc`, `compile/capture/cc`, `compile/reset`, `compile/shift` |
 | Macros (lowering) | `compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`, `compile/macro-match`, `compile/special-rules`, `compile/special-match` |
 | Operators | `compile/+`, `-`, `*`, `/`, `//`, `///`, `%`, `**`, `@`, `&`, `|`, `^`, `~`, `<<`, `>>`, `compile/divmod`, comparisons (`compile/==`, `!=`, `<`, `<=`, `>`, `>=` and `equal?` / `lt?` aliases), `compile/is`, `compile/is-not`, `compile/in`, `compile/not-in`, **`compile/instance?`**, **`compile/subclass?`**, `compile/not`, `compile/repr`, `compile/truth`, `compile/iter`, `compile/aiter`, `compile/str`, `compile/format`, `compile/len`, `compile/type`, `compile/dir`, `compile/vars` |
@@ -126,7 +126,7 @@ Loaded via **`koskari.bootstrap.make_builtins()`** / **`make_builtins_demand()`*
 
 - **`koskari.module`**: `new_module`, `load_module_async`, `load_module_demand`, …
 - **`koskari.importer`**: `.ki` / `.kio` on `sys.meta_path`; **`exec_module`** defaults to demand path; **`KOSKARI_NOIMPORTER`** to disable auto-install.
-- Compiler **`import`** / **`import-from`** → **IMPORT** / **IMPORT_REL** / **IMPORT_FROM** opcodes.
+- Compiler **`import`** / **`import-from`** / **`import-all-from`** → self-contained **IMPORT** / **IMPORT_FROM** / **IMPORT_STAR** opcodes.
 
 ### Packaging: installed commands (`koskari_scripts`)
 

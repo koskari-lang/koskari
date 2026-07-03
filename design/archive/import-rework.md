@@ -11,7 +11,11 @@ root/leaf semantics for dotted names, and **wildcard import**
 [api/import-system.md](../api/import-system.md) (module loader),
 [MACROS.md](../MACROS.md) (`declare-exports` / `__all__`).
 
-**Status:** Design — not implemented. Supersedes and absorbs
+**Status:** Implemented and archived. This note captures the original
+design; the shipped reference lives in
+[../OPCODES.md §10.1](../OPCODES.md#101-module-import) (opcodes) and
+[../SPECIALS.md](../SPECIALS.md) (surface forms), which are authoritative if
+they diverge from this note. Superseded and absorbed the earlier
 `language/import-all-from.md` (wildcard import), which described only the
 star form against the pre-EXTRA opcode shapes.
 

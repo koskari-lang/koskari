@@ -148,26 +148,6 @@ Ref: [language/pragma-package.md](language/pragma-package.md); [PRAGMA.md](PRAGM
 
 ## Import / loader
 
-### Import path rework (self-contained opcodes, binding forms, wildcard)
-
-Rework the import family in one coordinated pass. The opcodes predate the
-EXTRA table: replace `IMPORT` / `IMPORT_REL` / peek-not-pop `IMPORT_FROM`
-with three self-contained, stack-neutral EXTRA opcodes that each carry
-(name, level), import their own module, and store their own bindings —
-no stack chaining, no compensating `POP`, no trailing `VAR_STORE`.
-`IMPORT` carries its binding name and a root/leaf flag; `IMPORT_FROM`
-binds its whole member list from parallel attr/bind name tuples in one
-instruction (adding CPython's submodule fallback while there). Every
-import statement becomes exactly two instructions. Fix plain dotted `(import foo.bar)` to bind the **root** `foo`
-Python-style, with a bracketed `(import [foo.bar as: fbar])` member form
-for explicit leaf binding (relatives stay leaf-style). Add
-`import-all-from` / `IMPORT_STAR` for `from MODULE import *` semantics
-(`__all__` else underscore-filtered `dir()`, module top level only). One
-`BYTECODE_ABI_MINOR` bump; audit existing `(import x.y)` call sites for
-leaf-binding assumptions.
-
-Ref: [language/import-rework.md](language/import-rework.md).
-
 ### Python AST loader (transformative parser)
 
 Load Python modules as Koskari modules at import time by using a special reader

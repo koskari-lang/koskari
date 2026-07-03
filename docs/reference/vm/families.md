@@ -8,7 +8,7 @@
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_REL, IMPORT_FROM
+- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*
 - [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*
@@ -74,9 +74,9 @@
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast_attr) |
 | GLOBALS | NOARG | Push globals dict | [§10](#kos_op_globals) |
 | LOCALS | NOARG | Push locals dict | [§10](#kos_op_locals) |
-| IMPORT | CONST | Absolute import; push leaf module | [§10.1](#kos_op_import) |
-| IMPORT_REL | CONST | Relative import; push leaf module | [§10.1](#kos_op_import_rel) |
-| IMPORT_FROM | CONST | **PEEK-NOT-POP** module at TOS; push named attr | [§10.1](#kos_op_import_from) |
+| IMPORT | EXTRA | Import module; bind root or leaf (self-contained) | [§10.1](#kos_op_import) |
+| IMPORT_FROM | EXTRA | Import module; bind named attrs (self-contained) | [§10.1](#kos_op_import_from) |
+| IMPORT_STAR | EXTRA | Import module; bind its public names | [§10.1](#kos_op_import_star) |
 | EXCEPTION | NOARG | Push current exception | [§11](#kos_op_exception) |
 | EXCEPTION_CLEAR | NOARG | Clear exception state | [§11](#kos_op_exception_clear) |
 | EXCEPTION_MATCH | NOARG | Pop type(s), push match result | [§11](#kos_op_exception_match) |

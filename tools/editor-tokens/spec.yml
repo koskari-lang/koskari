@@ -121,6 +121,7 @@ list_head_specials:
   - globals
   - if
   - import
+  - import-all-from
   - import-from
   - incr!
   - instance?

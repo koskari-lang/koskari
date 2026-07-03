@@ -99,13 +99,14 @@
                  "parameterq\\|parameterize\\|or\\|nil\\?\\|macroexpand-1\\|macro-rules\\|"
                  "macro-match\\|locals\\|local\\|list-each\\|letrec\\|let/cc\\|let-values\\|"
                  "let\\*\\|let\\|lambda\\|item\\*\\|item\\|instance\\?\\|incr!\\|import-from\\|"
-                 "import\\|if\\|globals\\|global\\|gensym-thunk\\|function-compose\\|function\\|"
-                 "for-each\\|extend-syntax\\|each\\|dyn-with\\|dyn-wind\\|dict-each\\|deref\\|"
-                 "del-item\\|del!\\|define-values\\|define-syntax\\|define-parameter\\|"
-                 "define-global\\|define-demanding\\|define-dataclass\\|define-coroutine\\|"
-                 "define-class\\|define\\|decorate\\|declare-exports\\|continue\\|cons\\|cond\\|"
-                 "class\\|cdr\\|car\\|capture/cc\\|call/cc\\|call-attr\\|bytecode\\|break\\|"
-                 "bind!\\|begin\\|await\\|attr\\*\\|attr\\|and\\|None\\?"
+                 "import-all-from\\|import\\|if\\|globals\\|global\\|gensym-thunk\\|"
+                 "function-compose\\|function\\|for-each\\|extend-syntax\\|each\\|dyn-with\\|"
+                 "dyn-wind\\|dict-each\\|deref\\|del-item\\|del!\\|define-values\\|"
+                 "define-syntax\\|define-parameter\\|define-global\\|define-demanding\\|"
+                 "define-dataclass\\|define-coroutine\\|define-class\\|define\\|decorate\\|"
+                 "declare-exports\\|continue\\|cons\\|cond\\|class\\|cdr\\|car\\|capture/cc\\|"
+                 "call/cc\\|call-attr\\|bytecode\\|break\\|bind!\\|begin\\|await\\|attr\\*\\|attr\\|"
+                 "and\\|None\\?"
 
                  "\\)\\>")
          2 font-lock-keyword-face)
@@ -118,13 +119,14 @@
                  "parameterq\\|parameterize\\|or\\|nil\\?\\|macroexpand-1\\|macro-rules\\|"
                  "macro-match\\|locals\\|local\\|list-each\\|letrec\\|let/cc\\|let-values\\|"
                  "let\\*\\|let\\|lambda\\|item\\*\\|item\\|instance\\?\\|incr!\\|import-from\\|"
-                 "import\\|if\\|globals\\|global\\|gensym-thunk\\|function-compose\\|function\\|"
-                 "for-each\\|extend-syntax\\|each\\|dyn-with\\|dyn-wind\\|dict-each\\|deref\\|"
-                 "del-item\\|del!\\|define-values\\|define-syntax\\|define-parameter\\|"
-                 "define-global\\|define-demanding\\|define-dataclass\\|define-coroutine\\|"
-                 "define-class\\|define\\|decorate\\|declare-exports\\|continue\\|cons\\|cond\\|"
-                 "class\\|cdr\\|car\\|capture/cc\\|call/cc\\|call-attr\\|bytecode\\|break\\|"
-                 "bind!\\|begin\\|await\\|attr\\*\\|attr\\|and\\|None\\?"
+                 "import-all-from\\|import\\|if\\|globals\\|global\\|gensym-thunk\\|"
+                 "function-compose\\|function\\|for-each\\|extend-syntax\\|each\\|dyn-with\\|"
+                 "dyn-wind\\|dict-each\\|deref\\|del-item\\|del!\\|define-values\\|"
+                 "define-syntax\\|define-parameter\\|define-global\\|define-demanding\\|"
+                 "define-dataclass\\|define-coroutine\\|define-class\\|define\\|decorate\\|"
+                 "declare-exports\\|continue\\|cons\\|cond\\|class\\|cdr\\|car\\|capture/cc\\|"
+                 "call/cc\\|call-attr\\|bytecode\\|break\\|bind!\\|begin\\|await\\|attr\\*\\|attr\\|"
+                 "and\\|None\\?"
 
                  "\\)\\>")
          1 font-lock-keyword-face)
