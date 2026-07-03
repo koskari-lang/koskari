@@ -1302,6 +1302,9 @@ static PyMethodDef pair_methods[] = {
   { "__copy__", (PyCFunction) pair_copy, METH_NOARGS,
     "P.__copy__()" },
 
+  { "copy", (PyCFunction) pair_copy, METH_NOARGS,
+    "P.copy()" },
+
   { "__kos_repr__", (PyCFunction) pair_kos_repr, METH_NOARGS,
     "P.__kos_repr__() -> str\n"
     "Koskari-style list string for this pair spine." },

@@ -185,6 +185,13 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p, p2)
         self.assertIsNot(p, p2)
 
+    async def test_copy_method(self):
+        """copy() creates a shallow copy"""
+        p = cons(1, 2, 3, nil)
+        p2 = p.copy()
+        self.assertEqual(p, p2)
+        self.assertIsNot(p, p2)
+
     async def test_is_proper_true(self):
         """is_proper() returns True for nil-terminated list"""
         p = cons(1, 2, 3, nil)
