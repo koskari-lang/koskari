@@ -14,8 +14,9 @@
 There is no anonymous `function` form; use [lambda](compile-lambda.md) for that.
 
 **Formals, return type, and docstring:** Same rules as [compile/lambda](compile-lambda.md).
-`RET` is recorded on `Code` as `code.extras['return']` and exposed as
-`__annotations__['return']`. A leading string in `BODY` becomes `__doc__`.
+`RET` is evaluated in the defining scope at function creation and exposed as
+`__annotations__['return']` (a real object; a string literal stays a lazily
+resolved forward reference). A leading string in `BODY` becomes `__doc__`.
 
 **Use-case:** Create a **named** function value whose body must **not** receive
 a closure self-binding for `NAME` at `BUILD_FUNCTION` time. The name in the

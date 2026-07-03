@@ -169,7 +169,7 @@ class TestNamespaceAndCall(CevalTest):
         fspec = inner_code.function_spec(FormalsSpec())
         code_obj, ns = build_expr([
             ["CONST", fspec],
-            ["BUILD_FUNCTION", 0],
+            ["BUILD_FUNCTION", ((), (), 0, 0)],
             ["TAIL_CALL", 0],
         ])
         result = await make_callable(code_obj, ns)()
@@ -211,7 +211,7 @@ class TestNamespaceAndCall(CevalTest):
         fspec = inner_code.function_spec(FormalsSpec())
         fn_code, fn_ns = build_expr([
             ["CONST", fspec],
-            ["BUILD_FUNCTION", 0],
+            ["BUILD_FUNCTION", ((), (), 0, 0)],
             ["RETURN", 1],
         ], name="make_fn")
         fn = await make_callable(fn_code, fn_ns)()
@@ -273,7 +273,7 @@ class TestNamespaceAndCall(CevalTest):
             FormalsSpec(('self',), None, ('y',)))
         fn_code, fn_ns = build_expr([
             ["CONST", fspec],
-            ["BUILD_FUNCTION", 0],
+            ["BUILD_FUNCTION", ((), (), 0, 0)],
             ["RETURN", 1],
         ], name="make_fn")
         fn = await make_callable(fn_code, fn_ns)()

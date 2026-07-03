@@ -50,8 +50,9 @@ instances and calls methods.
 > define y :: int 0
 > ```
 >
-> That mirrors annotated attributes in Python 3 (`x: int = 0`). Annotations are
-> available for tooling; at runtime instances behave like normal Python objects.
+> That mirrors annotated attributes in Python 3 (`x: int = 0`). The annotations
+> land on the class `__annotations__` as real objects (`{'x': int, 'y': int}`);
+> at runtime instances behave like normal Python objects.
 
 ---
 

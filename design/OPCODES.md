@@ -368,7 +368,7 @@ When adding or changing an opcode:
 | CONST_ITEM | CONST | Get item (constant key) | [§15](#kos_op_const_item) |
 | CONST_ITEM_TAKE | CONST | Get item (constant key), delete, push value | [§15](#kos_op_const_item_take) |
 | DEREF | NOARG | Pop Ref, call ref.deref(), push result | [§15.1](#kos_op_deref) |
-| BUILD_FUNCTION | COUNT | Build function from spec | [§16](#kos_op_build_function) |
+| BUILD_FUNCTION | EXTRA | Build function from spec, with keyword defaults and annotations from names tuples | [§16](#kos_op_build_function) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
 | CALL_NAMES | COUNT | Call with keyword names on stack | [§17](#kos_op_call_names) |
 | CALL_STAR | STAR | Call with *args and/or **kwargs | [§17](#kos_op_call_star) |
@@ -2229,18 +2229,53 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### KOS_OP_BUILD_FUNCTION
 
-- **Style**: COUNT. Arg = number of keyword default values (0 when no keyword defaults).
-- **Status**: Implemented.
-- **Stack**: For arg = 0: `[..., fspec] → [..., function]`. For arg > 0: `[..., val_1, ..., val_N, names_tuple, fspec] → [..., function]`. The VM pops fspec, then (when arg > 0) pops the names tuple and N values via PopTailDictNames (TOS = names, below it the N default values in order); builds a defaults dict and creates the function from the spec. Build function from function spec (e.g. from constant pool).
-- **Invariants**: TOS (after positionals) is function spec; when arg > 0, names_tuple must be a tuple of N names and the stack must have N values below it.
+- **Style**: EXTRA (`CONST`, `CONST`, `NOARG`, `NOARG`). Instruction arg =
+  index into the code object's **extra** table; that row has `a0` = constant
+  pool index of the **keyword-defaults names tuple** and `a1` = constant pool
+  index of the **annotation names tuple**. Either or both tuples may be the
+  empty tuple, meaning "no values of that kind on the stack".
+- **Status**: Implemented. (`koskari/lib/opcode/BUILD_FUNCTION.c`)
+- **Semantics**: Pop `fspec` (TOS). If the defaults names tuple is non-empty
+  (length N), pop N values into a defaults dict keyed by it
+  (`KosEvalState_StackPopTailDictFromNames`, same discipline as
+  BUILD_KWDS_NAMES). Then, if the annotation names tuple is non-empty
+  (length M), pop M more values into an annotations dict the same way.
+  Build the function against the current frame namespace via
+  `KosFunction_New(fspec, defaults, frame_ns)`, or
+  `KosFunction_NewWithAnnotations(fspec, defaults, frame_ns, annotations)`
+  when an annotations dict was built, and push the result. The annotations
+  dict is the function's **creation-time** annotations: values are real
+  objects, except str values, which remain forward references resolved
+  lazily on first `__annotations__` / `__signature__` access.
+- **Stack**: `[..., ann_1, ..., ann_M, def_1, ..., def_N, fspec] →
+  [..., function]` with M = len(annotation names), N = len(defaults names);
+  either may be 0. Annotation values sit **below** the default values.
+- **Invariants**: Both extra-row fields must be constant-pool tuples; the
+  stack must hold M + N values below fspec. The compiler pushes annotation
+  values first, then default values, matching pop order (defaults popped
+  first, annotations second).
+- **Compiler form:** Pre-compile extra operand is a 4-tuple
+  `(defnames_tuple, annotation_names_tuple, 0, 0)`; `NOARG` slots are
+  ignored by the assembler. Emitted by `helper_function`
+  (`koskari/compile/specials/lambda_.py`); the annotation names tuple is
+  annotated parameter names in order, followed by `"return"` when a return
+  annotation is present.
+- **Covered by**: `tests/lib/opcode/test_build_function.py`
 
-**Example:** Build function from spec in constant pool. Pool: 0 = function_spec. Covered by `tests/lib/test_ceval.py`: `test_build_function_returns_function`, `test_build_function_returned_function_is_callable`.
+**Example:** Build annotated function with one keyword default:
+`(lambda [(a :: int value: 9)] a)`. Pool: 0 = int (via VAR in practice;
+CONST here for brevity), 1 = 9, 2 = fspec; extra row: `(("a",), ("a",), 0, 0)`.
 
-| index | opcode       | arg | arg view | comment |
-|------:|--------------|-----|----------|---------|
-| 0     | CONST        | 0   | 0 (fspec)| stack: [..., fspec] |
-| 1     | BUILD_FUNCTION | 0 | 0        | stack: [..., function] |
-| 2     | RETURN       | 1   | 1        | |
+| index | opcode         | arg | arg view              | comment |
+|------:|----------------|-----|-----------------------|---------|
+| 0     | CONST          | 0   | 0 (int)               | annotation value; stack: [..., int] |
+| 1     | CONST          | 1   | 1 (9)                 | default value; stack: [..., int, 9] |
+| 2     | CONST          | 2   | 2 (fspec)             | stack: [..., int, 9, fspec] |
+| 3     | BUILD_FUNCTION | 0   | 0 (("a",), ("a",), …) | stack: [..., function] |
+| 4     | RETURN         | 1   | 1                     | |
+
+Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is
+popped.
 
 ---
 

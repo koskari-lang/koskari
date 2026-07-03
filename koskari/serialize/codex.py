@@ -533,7 +533,6 @@ def intern_for_pool(pb, obj):
         intern_for_pool(pb, obj.kwd_only)
         intern_for_pool(pb, obj.star)
         intern_for_pool(pb, obj.starstar)
-        intern_for_pool(pb, obj.annotations)
         intern_for_pool(pb, obj.by_refs)
         return pb.add(obj)
 
@@ -806,10 +805,9 @@ def encode_pool_record_value(val, index_of, pb=None):
             index_of(val.kwd_only),
             index_of(val.star),
             index_of(val.starstar),
-            index_of(val.annotations),
             index_of(val.by_refs),
         )
-        return struct.pack('<BIIIIIIII', PoolKind.FORMALS_SPEC, *idxs)
+        return struct.pack('<BIIIIIII', PoolKind.FORMALS_SPEC, *idxs)
 
     if isinstance(val, FunctionSpec):
         if pb is None:
@@ -990,8 +988,8 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
         return NamespaceSpec(prior[ni], prior[li], prior[ci], prior[gi]), off
 
     if kind == PoolKind.FORMALS_SPEC:
-        idxs = struct.unpack_from('<IIIIIIII', buf, off)
-        off += 32
+        idxs = struct.unpack_from('<IIIIIII', buf, off)
+        off += 28
         return FormalsSpec(*[prior[j] for j in idxs]), off
 
     if kind == PoolKind.FUNCTION_SPEC:

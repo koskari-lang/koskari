@@ -94,7 +94,7 @@
 | ITEM_STORE | NOARG | Set item | [§15](#kos_op_item_store) |
 | CONST_ITEM | CONST | Get item (constant key) | [§15](#kos_op_const_item) |
 | DEREF | NOARG | Pop Ref, call ref.deref(), push result | [§15.1](#kos_op_deref) |
-| BUILD_FUNCTION | COUNT | Build function from spec | [§16](#kos_op_build_function) |
+| BUILD_FUNCTION | EXTRA | Build function from spec, with keyword defaults and annotations from names tuples | [§16](#kos_op_build_function) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
 | CALL_NAMES | COUNT | Call with keyword names on stack | [§17](#kos_op_call_names) |
 | CALL_STAR | STAR | Call with *args and/or **kwargs | [§17](#kos_op_call_star) |

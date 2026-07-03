@@ -14,11 +14,18 @@
 | Anonymous, no return         | `(lambda FORMALS BODY ...)`                |
 
 
-`RET` is a single expression (not a formal parameter). It is recorded as compiler
-metadata on the resulting `Code` (`code.extras['return']`) and exposed on the
-callable as `__annotations__['return']` (via `kos_typehint_to_dunder_annotation`
-in the runtime — same string rules as parameter annotations, e.g. simple
-symbols become their name strings).
+`RET` is a single expression (not a formal parameter). Like parameter
+annotations, it is evaluated in the **defining scope** when the function is
+created, and appears on the callable as `__annotations__['return']` as a real
+object — `:: int` yields the `int` type itself, and
+`inspect.signature(fn).return_annotation` matches. An unbound name raises
+`NameError` at function creation, just like an unbound keyword default.
+
+A **string literal** annotation (`:: "Request"`, `:: "pkg.Request"`) is the
+forward-reference escape hatch: it is kept as a string and resolved lazily
+(dotted lookup against the defining namespace) the first time
+`__annotations__` or `__signature__` is read. A name that fails to resolve
+stays a string and is not retried.
 
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
@@ -43,11 +50,12 @@ shorthand and decorator macros.
 
 **Behaviour:** Matches one of the shapes above, parses formals with
 `gather_formals`, builds a fragment that declares the parameter names, compiles
-the body with `helper_begin`, and completes it as a function. If a return type
-was present, sets `code.extras['return']` from the `RET` form after `complete`.
-Pushes a `FunctionSpec` constant and emits `BUILD_FUNCTION`. Default values for
-keyword parameters are compiled in the enclosing scope and passed in via the
-constant tuple for defaulted keywords.
+the body with `helper_begin`, and completes it as a function. Annotation
+expressions (parameter types and `RET`) and keyword-default values are
+compiled in the enclosing scope; their values are consumed at function
+creation by `BUILD_FUNCTION`, which builds the keyword-defaults dict and the
+`__annotations__` dict from name tuples carried on the instruction (see
+[KOS_OP_BUILD_FUNCTION](../vm/opcodes/kos-op-build-function.md)).
 
 **Examples:**
 

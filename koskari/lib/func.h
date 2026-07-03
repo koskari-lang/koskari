@@ -129,6 +129,29 @@ PyObject *KosFunction_New(
       PyObject *parent_namespace);
 
 
+/**
+   Create a Function and attach a creation-time annotations dict in one
+   call. Used by BUILD_FUNCTION when its annotation names tuple is
+   non-empty; also the entry point for non-opcode callers building
+   annotated functions.
+
+   The annotations dict may mix real objects with str forward
+   references; str values are resolved lazily against the defining
+   namespace on first __annotations__ / __signature__ access.
+
+   :param func_spec: KosFunctionSpec instance
+   :param kw_defaults: PyDict of name -> default value, or NULL
+   :param parent_namespace: KosNamespace (current frame NS)
+   :param annotations: PyDict of name -> annotation value, or NULL
+   :return: new KosFunction, or NULL on error
+*/
+PyObject *KosFunction_NewWithAnnotations(
+      PyObject *func_spec,
+      PyObject *kw_defaults,
+      PyObject *parent_namespace,
+      PyObject *annotations);
+
+
 /* === Function === */
 
 
@@ -145,6 +168,9 @@ typedef struct {
   PyObject *inspect_signature; /* lazily built inspect.Signature, or NULL */
   PyObject *doc;            /* __doc__ from Code.extras["doc"] if unicode; NULL */
   PyObject *dict;           /* instance __dict__ for arbitrary attributes; NULL */
+  PyObject *creation_annotations; /* raw dict from BUILD_FUNCTION, or NULL */
+  PyObject *annotations_cache; /* realized __annotations__ dict, or NULL */
+  int annotations_need_resolve; /* creation dict holds str forward refs */
 } KosFunction;
 
 
@@ -160,6 +186,9 @@ typedef struct {
 #define KosFunction_DOC(func) (((KosFunction *) (func))->doc)
 
 #define KosFunction_DICT(func) (((KosFunction *) (func))->dict)
+
+#define KosFunction_CREATION_ANNOTATIONS(func)          \
+  (((KosFunction *) (func))->creation_annotations)
 
 #define KosFunction_VECTORCALL_OFFSET offsetof(KosFunction, vectorcall)
 

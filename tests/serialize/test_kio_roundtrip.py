@@ -102,7 +102,25 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertEqual(demand_call(inner_expr), 7)
 
 
-class TestSourceFilenameIndirection(unittest.TestCase):
+    def test_annotated_build_function_roundtrip(self):
+        inner_code, _ = build_expr([
+            ['CONST', 7],
+            ['RETURN', 1],
+        ], name='inner')
+        fspec = FunctionSpec('inner', FormalsSpec(('a',)), inner_code)
+        code, ns = build_expr([
+            ['CONST', 'int'],
+            ['CONST', fspec],
+            ['BUILD_FUNCTION', ((), ('a',), 0, 0)],
+            ['RETURN', 1],
+        ], name='outer')
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        buf.seek(0)
+        kio = load_kio(buf)
+        self.assertEqual(len(kio.codes), 1)
+        fn = demand_call(make_callable(kio.codes[0], ns))
+        self.assertEqual(fn.__annotations__, {'a': 'int'})
     """
     Embedded body filename can differ from the compile-time path
     """

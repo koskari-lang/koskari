@@ -63,7 +63,24 @@ def helper_function(compiler, caps, selfref):
     star = str(star) if star else None
     starstar = str(starstar) if starstar else None
 
+    # annotation expressions evaluate in the defining scope, before the
+    # keyword defaults. A str literal is the forward-reference form and
+    # stays a constant; anything else compiles as an expression.
+    ann_exprs = [(name, bundle['type'])
+                 for name, bundle in ann.items() if 'type' in bundle]
+    if return_type_src is not None:
+        ann_exprs.append(('return', return_type_src))
+
     frag = compiler.fragment(called_by)
+
+    ann_names = []
+    for name, expr in ann_exprs:
+        ann_names.append(name)
+        if isinstance(expr, str):
+            frag.instruction(OpCode.KOS_OP_CONST, expr)
+        else:
+            frag.merge(compiler.full_compile(expr))
+
     for k, expr in defaults:
         pre_kwd.append(str(k))
         frag.merge(compiler.full_compile(expr))
@@ -73,9 +90,6 @@ def helper_function(compiler, caps, selfref):
         if not is_nil(expr):
             defnames.append(str(k))
             frag.merge(compiler.full_compile(expr))
-
-    if defnames:
-        frag.instruction(OpCode.KOS_OP_CONST, tuple(defnames))
 
     lamb = compiler.fragment(fragment_name)
     lamb.declare_vars(pos)
@@ -99,13 +113,13 @@ def helper_function(compiler, caps, selfref):
     with compiler.resolution_scope():
         lamb = helper_begin(lamb, body_src, True)
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
-    if return_type_src is not None:
-        code.extras['return'] = return_type_src
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
-        star, starstar, ann, by_refs), code)
+        star, starstar, by_refs), code)
     frag.instruction(OpCode.KOS_OP_CONST, fspec)
-    frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(defnames))
+    frag.instruction(
+        OpCode.KOS_OP_BUILD_FUNCTION,
+        (tuple(defnames), tuple(ann_names), 0, 0))
 
     return frag
 

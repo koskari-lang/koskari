@@ -447,6 +447,7 @@ static PyObject *kos_inspect_module = NULL;
 static PyObject *kos_inspect_Parameter = NULL;
 static PyObject *kos_inspect_Signature = NULL;
 static PyObject *kos_inspect_Parameter_empty = NULL;
+static PyObject *kos_str_return = NULL;
 
 
 static int
@@ -454,6 +455,10 @@ kos_inspect_load(void) {
 
   if (kos_inspect_Signature)
     return 0;
+
+  kos_str_return = PyUnicode_InternFromString("return");
+  if (! kos_str_return)
+    return -1;
 
   kos_inspect_module = PyImport_ImportModule("inspect");
   if (! kos_inspect_module)
@@ -518,12 +523,38 @@ kos_formals_default_for(PyObject *defaults, PyObject *name_sym,
 }
 
 
+/**
+   Look up the realized annotation for a parameter name. Returns a new
+   reference to the annotation value, or to param_empty when the name is
+   not annotated. NULL on error.
+*/
+static PyObject *
+kos_annotation_value_for(PyObject *annotations, PyObject *name_str,
+                         PyObject *param_empty) {
+
+  PyObject *val = NULL;
+
+  if (annotations) {
+    val = PyDict_GetItemWithError(annotations, name_str);
+    if (! val && PyErr_Occurred())
+      return NULL;
+  }
+
+  if (! val)
+    val = param_empty;
+
+  Py_INCREF(val);
+  return val;
+}
+
+
 static int
 kos_append_inspect_parameter(
     PyObject *param_list,
     PyObject *name_obj,
     int kind,
     PyObject *defaults,
+    PyObject *annotations,
     PyObject *param_empty) {
 
   PyObject *name_str = kos_formal_name_str(name_obj);
@@ -537,8 +568,17 @@ kos_append_inspect_parameter(
     return -1;
   }
 
+  PyObject *ann = kos_annotation_value_for(annotations, name_str,
+                                           param_empty);
+  if (! ann) {
+    Py_DECREF(def);
+    Py_DECREF(name_str);
+    return -1;
+  }
+
   PyObject *kind_obj = PyLong_FromLong(kind);
   if (! kind_obj) {
+    Py_DECREF(ann);
     Py_DECREF(def);
     Py_DECREF(name_str);
     return -1;
@@ -548,12 +588,14 @@ kos_append_inspect_parameter(
   Py_DECREF(kind_obj);
   Py_DECREF(name_str);
   if (! args) {
+    Py_DECREF(ann);
     Py_DECREF(def);
     return -1;
   }
 
   PyObject *kwargs = Py_BuildValue("{sO,sO}", "default", def, "annotation",
-                                   param_empty);
+                                   ann);
+  Py_DECREF(ann);
   Py_DECREF(def);
   if (! kwargs) {
     Py_DECREF(args);
@@ -581,6 +623,7 @@ kos_append_tuple_params(
     PyObject *tuple,
     int kind,
     PyObject *defaults,
+    PyObject *annotations,
     PyObject *param_empty) {
 
   Py_ssize_t i;
@@ -593,7 +636,7 @@ kos_append_tuple_params(
   for (i = 0; i < n; i++) {
     PyObject *name = PyTuple_GET_ITEM(tuple, i);
     if (kos_append_inspect_parameter(param_list, name, kind, defaults,
-                                    param_empty) < 0)
+                                    annotations, param_empty) < 0)
       return -1;
   }
   return 0;
@@ -605,8 +648,10 @@ kos_append_var_param(
     PyObject *param_list,
     PyObject *name_unicode,
     int kind,
+    PyObject *annotations,
     PyObject *param_empty) {
 
+  PyObject *ann;
   PyObject *kind_obj;
   PyObject *args;
   PyObject *kwargs;
@@ -615,22 +660,30 @@ kos_append_var_param(
   if (! name_unicode)
     return 0;
 
+  ann = kos_annotation_value_for(annotations, name_unicode, param_empty);
+  if (! ann)
+    return -1;
+
   Py_INCREF(name_unicode);
 
   kind_obj = PyLong_FromLong(kind);
   if (! kind_obj) {
     Py_DECREF(name_unicode);
+    Py_DECREF(ann);
     return -1;
   }
 
   args = PyTuple_Pack(2, name_unicode, kind_obj);
   Py_DECREF(kind_obj);
   Py_DECREF(name_unicode);
-  if (! args)
+  if (! args) {
+    Py_DECREF(ann);
     return -1;
+  }
 
   kwargs = Py_BuildValue("{sO,sO}", "default", param_empty, "annotation",
-                         param_empty);
+                         ann);
+  Py_DECREF(ann);
   if (! kwargs) {
     Py_DECREF(args);
     return -1;
@@ -661,7 +714,10 @@ enum {
 
 
 static PyObject *
-kos_formals_build_param_list(PyObject *formals, int pos_only_as_pok) {
+kos_formals_build_param_list(
+    PyObject *formals,
+    int pos_only_as_pok,
+    PyObject *annotations) {
 
   PyObject *param_list = NULL;
   PyObject *defaults = NULL;
@@ -683,31 +739,33 @@ kos_formals_build_param_list(PyObject *formals, int pos_only_as_pok) {
   po_kind = pos_only_as_pok ? KOS_PARAM_POK : KOS_PARAM_PO;
 
   if (kos_append_tuple_params(param_list, KosFormals_POS(formals),
-                              KOS_PARAM_POK, defaults,
+                              KOS_PARAM_POK, defaults, annotations,
                               kos_inspect_Parameter_empty) < 0)
     goto fail;
 
   if (kos_append_tuple_params(param_list, KosFormals_POS_ONLY(formals),
-                              po_kind, defaults,
+                              po_kind, defaults, annotations,
                               kos_inspect_Parameter_empty) < 0)
     goto fail;
 
   if (kos_append_tuple_params(param_list, KosFormals_KWD(formals),
-                              KOS_PARAM_POK, defaults,
+                              KOS_PARAM_POK, defaults, annotations,
                               kos_inspect_Parameter_empty) < 0)
     goto fail;
 
   if (kos_append_var_param(param_list, KosFormals_STAR(formals),
-                           KOS_PARAM_VAR_POS, kos_inspect_Parameter_empty) < 0)
+                           KOS_PARAM_VAR_POS, annotations,
+                           kos_inspect_Parameter_empty) < 0)
     goto fail;
 
   if (kos_append_tuple_params(param_list, KosFormals_KWD_ONLY(formals),
-                              KOS_PARAM_KO, defaults,
+                              KOS_PARAM_KO, defaults, annotations,
                               kos_inspect_Parameter_empty) < 0)
     goto fail;
 
   if (kos_append_var_param(param_list, KosFormals_STARSTAR(formals),
-                           KOS_PARAM_VAR_KW, kos_inspect_Parameter_empty) < 0)
+                           KOS_PARAM_VAR_KW, annotations,
+                           kos_inspect_Parameter_empty) < 0)
     goto fail;
 
   return param_list;
@@ -718,24 +776,61 @@ kos_formals_build_param_list(PyObject *formals, int pos_only_as_pok) {
 }
 
 
+/**
+   Call inspect.Signature(param_list), with return_annotation when one
+   is supplied. New reference or NULL on error.
+*/
 static PyObject *
-kos_formals_to_signature(PyObject *formals) {
+kos_call_signature(PyObject *param_list, PyObject *return_annotation) {
+
+  PyObject *args = PyTuple_Pack(1, param_list);
+  if (! args)
+    return NULL;
+
+  PyObject *kwargs = NULL;
+  if (return_annotation) {
+    kwargs = Py_BuildValue("{sO}", "return_annotation", return_annotation);
+    if (! kwargs) {
+      Py_DECREF(args);
+      return NULL;
+    }
+  }
+
+  PyObject *sig = PyObject_Call(kos_inspect_Signature, args, kwargs);
+  Py_DECREF(args);
+  Py_XDECREF(kwargs);
+  return sig;
+}
+
+
+static PyObject *
+kos_formals_to_signature(PyObject *formals, PyObject *annotations) {
 
   PyObject *param_list = NULL;
   PyObject *sig = NULL;
+  PyObject *ret_ann = NULL;
 
-  param_list = kos_formals_build_param_list(formals, 0);
+  if (kos_inspect_load() < 0)
+    return NULL;
+
+  if (annotations) {
+    ret_ann = PyDict_GetItemWithError(annotations, kos_str_return);
+    if (! ret_ann && PyErr_Occurred())
+      return NULL;
+  }
+
+  param_list = kos_formals_build_param_list(formals, 0, annotations);
   if (! param_list)
     return NULL;
 
-  sig = PyObject_CallOneArg(kos_inspect_Signature, param_list);
+  sig = kos_call_signature(param_list, ret_ann);
   Py_DECREF(param_list);
   if (! sig && PyErr_ExceptionMatches(PyExc_ValueError)) {
     PyErr_Clear();
-    param_list = kos_formals_build_param_list(formals, 1);
+    param_list = kos_formals_build_param_list(formals, 1, annotations);
     if (! param_list)
       return NULL;
-    sig = PyObject_CallOneArg(kos_inspect_Signature, param_list);
+    sig = kos_call_signature(param_list, ret_ann);
     Py_DECREF(param_list);
   }
 
@@ -773,29 +868,207 @@ kos_signature_drop_first(PyObject *sig) {
     return NULL;
 
   n = PyList_GET_SIZE(lst);
-  if (n <= 1) {
-    Py_DECREF(lst);
-    {
-      PyObject *empty = PyTuple_New(0);
-      if (! empty)
-        return NULL;
-      sig2 = PyObject_CallOneArg(kos_inspect_Signature, empty);
-      Py_DECREF(empty);
-    }
-    return sig2;
-  }
 
+  /* rebuild via sig.replace(parameters=rest) so return_annotation
+     carries across */
   {
-    PyObject *rest = PyList_GetSlice(lst, 1, n);
+    PyObject *rest = PyList_GetSlice(lst, (n > 0) ? 1 : 0, n);
     Py_DECREF(lst);
     lst = NULL;
     if (! rest)
       return NULL;
-    sig2 = PyObject_CallOneArg(kos_inspect_Signature, rest);
+
+    PyObject *meth = PyObject_GetAttrString(sig, "replace");
+    if (! meth) {
+      Py_DECREF(rest);
+      return NULL;
+    }
+    PyObject *args = PyTuple_New(0);
+    PyObject *kwargs = Py_BuildValue("{sO}", "parameters", rest);
     Py_DECREF(rest);
+    if (! args || ! kwargs) {
+      Py_XDECREF(args);
+      Py_XDECREF(kwargs);
+      Py_DECREF(meth);
+      return NULL;
+    }
+    sig2 = PyObject_Call(meth, args, kwargs);
+    Py_DECREF(args);
+    Py_DECREF(kwargs);
+    Py_DECREF(meth);
   }
 
   return sig2;
+}
+
+
+/* === Annotations realization === */
+
+
+/**
+   Walk the namespace chain for the first segment of an annotation
+   forward reference. Declared-but-unbound slots (formals and locals in
+   a template namespace) are skipped so lookup continues up the chain;
+   a module namespace consults its binds, then its builtins dict.
+
+   New reference, or NULL. On a plain miss no error is set; a set error
+   indicates a genuine failure.
+*/
+static PyObject *
+kos_annotation_ns_lookup(PyObject *ns, PyObject *name) {
+
+  while (ns) {
+    if (KosModuleNamespace_CheckExact(ns)) {
+      PyObject *bound = PyDict_GetItemWithError(KosNamespace_BINDS(ns),
+                                                name);
+      if (! bound && PyErr_Occurred())
+        return NULL;
+      if (bound) {
+        PyObject *val = KosNamespace_Deref(ns, name);
+        if (val)
+          return val;
+        PyErr_Clear();
+      }
+
+      PyObject *blt = KosModuleNamespace_BUILTINS(ns);
+      if (blt) {
+        PyObject *val = PyDict_GetItemWithError(blt, name);
+        if (! val && PyErr_Occurred())
+          return NULL;
+        if (val) {
+          Py_INCREF(val);
+          return val;
+        }
+      }
+
+    } else {
+      PyObject *bound = KosNamespace_LOOSE_REF(ns, name);
+      if (! bound && PyErr_Occurred())
+        return NULL;
+      if (bound) {
+        PyObject *val = KosNamespace_Deref(ns, name);
+        if (val)
+          return val;
+        PyErr_Clear();
+      }
+    }
+
+    ns = KosNamespace_PARENT(ns);
+  }
+
+  return NULL;
+}
+
+
+/**
+   Resolve one str annotation value as a dotted forward reference
+   against the namespace chain starting at ns. The first segment is a
+   namespace lookup; remaining segments are getattr chained.
+
+   New reference, or NULL. On resolution failure (lookup miss,
+   AttributeError) no error is set and the caller keeps the string; a
+   set error indicates a genuine failure.
+*/
+static PyObject *
+kos_annotation_resolve_str(PyObject *ns, PyObject *sval) {
+
+  PyObject *sep = PyUnicode_FromString(".");
+  if (! sep)
+    return NULL;
+
+  PyObject *parts = PyUnicode_Split(sval, sep, -1);
+  Py_DECREF(sep);
+  if (! parts)
+    return NULL;
+
+  PyObject *val = kos_annotation_ns_lookup(ns, PyList_GET_ITEM(parts, 0));
+  if (! val) {
+    Py_DECREF(parts);
+    return NULL;
+  }
+
+  Py_ssize_t n = PyList_GET_SIZE(parts);
+  for (Py_ssize_t i = 1; i < n; i++) {
+    PyObject *next = PyObject_GetAttr(val, PyList_GET_ITEM(parts, i));
+    Py_DECREF(val);
+    if (! next) {
+      if (PyErr_ExceptionMatches(PyExc_AttributeError))
+        PyErr_Clear();
+      Py_DECREF(parts);
+      return NULL;
+    }
+    val = next;
+  }
+
+  Py_DECREF(parts);
+  return val;
+}
+
+
+/**
+   Realize the function's __annotations__ dict from its creation-time
+   annotations, resolving str forward references against the defining
+   namespace. The result is cached on first access; a str that fails to
+   resolve stays a string and is never retried.
+
+   Borrowed reference to the cache, or NULL on error.
+*/
+static PyObject *
+kos_function_realize_annotations(KosFunction *fn) {
+
+  if (fn->annotations_cache)
+    return fn->annotations_cache;
+
+  PyObject *creation = fn->creation_annotations;
+  PyObject *out;
+
+  if (! creation) {
+    out = PyDict_New();
+    if (! out)
+      return NULL;
+    fn->annotations_cache = out;
+    return out;
+  }
+
+  out = PyDict_Copy(creation);
+  if (! out)
+    return NULL;
+
+  if (fn->annotations_need_resolve) {
+    PyObject *ns = KosFunction_BASE_NS((PyObject *) fn);
+
+    /* base_ns is the template and carries declared-but-unbound slots
+       for the formals and code locals; annotation names live in the
+       defining scope, which is the template's parent */
+    if (ns && KosNamespace_PARENT(ns))
+      ns = KosNamespace_PARENT(ns);
+
+    PyObject *key = NULL;
+    PyObject *val = NULL;
+    Py_ssize_t pos = 0;
+    while (PyDict_Next(out, &pos, &key, &val)) {
+      if (! PyUnicode_Check(val))
+        continue;
+      PyObject *resolved = kos_annotation_resolve_str(ns, val);
+      if (! resolved) {
+        if (PyErr_Occurred()) {
+          Py_DECREF(out);
+          return NULL;
+        }
+        continue;
+      }
+      /* replacing the value of an existing key is safe mid-iteration */
+      if (PyDict_SetItem(out, key, resolved) < 0) {
+        Py_DECREF(resolved);
+        Py_DECREF(out);
+        return NULL;
+      }
+      Py_DECREF(resolved);
+    }
+  }
+
+  fn->annotations_cache = out;
+  return out;
 }
 
 
@@ -804,10 +1077,15 @@ kos_function_compute_signature(PyObject *self) {
 
   PyObject *formals = KosFunction_FORMALS(self);
 
+  PyObject *annotations = kos_function_realize_annotations(
+    (KosFunction *) self);
+  if (! annotations)
+    return NULL;
+
   if (kos_inspect_load() < 0)
     return NULL;
 
-  return kos_formals_to_signature(formals);
+  return kos_formals_to_signature(formals, annotations);
 }
 
 
@@ -830,96 +1108,17 @@ function_get_signature(PyObject *self, void *closure) {
 }
 
 
-/* Map a type form to __annotations__ values: symbol/keyword -> name str. */
-static PyObject *
-kos_typehint_to_dunder_annotation(PyObject *typehint) {
-
-  if (typehint == NULL)
-    return NULL;
-
-  if (PyUnicode_Check(typehint)) {
-    Py_INCREF(typehint);
-    return typehint;
-  }
-
-  if (KosSymbol_Check(typehint) || KosKeyword_Check(typehint)) {
-    PyObject *name = KosInternedAtom_NAME(typehint);
-    Py_INCREF(name);
-    return name;
-  }
-
-  return PyObject_Str(typehint);
-}
-
-
 static PyObject *
 function_get_annotations(PyObject *self, void *closure) {
 
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *formals = KosFunction_FORMALS((PyObject *) fn);
-  PyObject *raw = NULL;
-  PyObject *out = NULL;
-  PyObject *key = NULL;
-  PyObject *bundle = NULL;
-  PyObject *typehint = NULL;
-  PyObject *ann_val = NULL;
-  Py_ssize_t pos = 0;
-  PyObject *code = NULL;
-  PyObject *extras = NULL;
-  PyObject *ret_hint = NULL;
-
   (void) closure;
 
-  out = PyDict_New();
-  if (! out)
+  PyObject *ann = kos_function_realize_annotations((KosFunction *) self);
+  if (! ann)
     return NULL;
 
-  if (formals && KosFormals_Check(formals)) {
-    raw = KosFormals_ANNOTATIONS(formals);
-    if (raw) {
-      while (PyDict_Next(raw, &pos, &key, &bundle)) {
-        if (! PyDict_Check(bundle))
-          continue;
-        typehint = PyDict_GetItemString(bundle, "type");
-        if (typehint == NULL)
-          continue;
-        ann_val = kos_typehint_to_dunder_annotation(typehint);
-        if (ann_val == NULL) {
-          Py_DECREF(out);
-          return NULL;
-        }
-        if (PyDict_SetItem(out, key, ann_val) < 0) {
-          Py_DECREF(ann_val);
-          Py_DECREF(out);
-          return NULL;
-        }
-        Py_DECREF(ann_val);
-      }
-    }
-  }
-
-  code = KosFunction_CODE(fn);
-  if (code && KosCode_Check(code)) {
-    extras = KosCode_EXTRAS(code);
-    if (extras && PyDict_Check(extras)) {
-      ret_hint = PyDict_GetItemString(extras, "return");
-      if (ret_hint != NULL) {
-        ann_val = kos_typehint_to_dunder_annotation(ret_hint);
-        if (ann_val == NULL) {
-          Py_DECREF(out);
-          return NULL;
-        }
-        if (PyDict_SetItemString(out, "return", ann_val) < 0) {
-          Py_DECREF(ann_val);
-          Py_DECREF(out);
-          return NULL;
-        }
-        Py_DECREF(ann_val);
-      }
-    }
-  }
-
-  return out;
+  Py_INCREF(ann);
+  return ann;
 }
 
 
@@ -1278,6 +1477,40 @@ doc_from_code(PyObject *code) {
 }
 
 
+/**
+   Attach a creation-time annotations dict to a function, computing the
+   forward-reference resolution flag. A NULL or None annotations value
+   is a no-op. Increfs the dict; the caller keeps its own reference.
+*/
+static int
+kos_function_attach_annotations(KosFunction *fn, PyObject *annotations) {
+
+  if (! annotations || annotations == Py_None)
+    return 0;
+
+  if (! PyDict_Check(annotations)) {
+    PyErr_Format(PyExc_TypeError, "Function annotations must be dict,"
+                 " not %R", annotations);
+    return -1;
+  }
+
+  Py_INCREF(annotations);
+  Py_XSETREF(fn->creation_annotations, annotations);
+
+  PyObject *key = NULL;
+  PyObject *val = NULL;
+  Py_ssize_t pos = 0;
+  while (PyDict_Next(annotations, &pos, &key, &val)) {
+    if (PyUnicode_Check(val)) {
+      fn->annotations_need_resolve = 1;
+      break;
+    }
+  }
+
+  return 0;
+}
+
+
 static int function_init(
     KosFunction *self,
     PyObject *args,
@@ -1287,9 +1520,11 @@ static int function_init(
   PyObject *base_ns = NULL;
   PyObject *formals_spec = NULL;
   PyObject *formals = NULL;
+  PyObject *annotations = NULL;
 
   (void) kwargs;
-  if (! PyArg_ParseTuple(args, "OOO:Function", &code, &base_ns, &formals_spec))
+  if (! PyArg_ParseTuple(args, "OOO|O:Function", &code, &base_ns,
+                         &formals_spec, &annotations))
     return -1;
 
   if (! KosCode_Check(code)) {
@@ -1325,6 +1560,12 @@ static int function_init(
 
   self->vectorcall = kos_function_vectorcall;
   self->inspect_signature = NULL;
+  self->creation_annotations = NULL;
+  self->annotations_cache = NULL;
+  self->annotations_need_resolve = 0;
+
+  if (kos_function_attach_annotations(self, annotations) < 0)
+    return -1;
 
   KosFunction_DOC(self) = doc_from_code(code);
 
@@ -1342,6 +1583,8 @@ function_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosFunction_DOC(self));
   Py_VISIT(((KosFunction *) self)->inspect_signature);
   Py_VISIT(KosFunction_DICT(self));
+  Py_VISIT(((KosFunction *) self)->creation_annotations);
+  Py_VISIT(((KosFunction *) self)->annotations_cache);
   return 0;
 }
 
@@ -1352,6 +1595,8 @@ function_clear(PyObject *self) {
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
   Py_CLEAR(KosFunction_DICT(self));
+  Py_CLEAR(((KosFunction *) self)->creation_annotations);
+  Py_CLEAR(((KosFunction *) self)->annotations_cache);
   return 0;
 }
 
@@ -1366,6 +1611,8 @@ static void function_dealloc(PyObject *self) {
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
   Py_CLEAR(KosFunction_DICT(self));
+  Py_CLEAR(((KosFunction *) self)->creation_annotations);
+  Py_CLEAR(((KosFunction *) self)->annotations_cache);
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -1714,6 +1961,9 @@ PyObject *KosFunction_NewFromFormals(
   KosFunction_NAME(self) = NULL;
   ((KosFunction *) self)->vectorcall = kos_function_vectorcall;
   ((KosFunction *) self)->inspect_signature = NULL;
+  ((KosFunction *) self)->creation_annotations = NULL;
+  ((KosFunction *) self)->annotations_cache = NULL;
+  ((KosFunction *) self)->annotations_need_resolve = 0;
 
   KosFunction_DOC(self) = doc_from_code(code);
 
@@ -1748,6 +1998,25 @@ PyObject *KosFunction_New(
       Py_INCREF(spec_name);
     }
   }
+  return fn;
+}
+
+
+PyObject *KosFunction_NewWithAnnotations(
+    PyObject *func_spec,
+    PyObject *kw_defaults,
+    PyObject *parent_namespace,
+    PyObject *annotations) {
+
+  PyObject *fn = KosFunction_New(func_spec, kw_defaults, parent_namespace);
+  if (! fn)
+    return NULL;
+
+  if (kos_function_attach_annotations((KosFunction *) fn, annotations) < 0) {
+    Py_DECREF(fn);
+    return NULL;
+  }
+
   return fn;
 }
 

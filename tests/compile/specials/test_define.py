@@ -96,9 +96,10 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
           (define f :: int [x] (mul x 2))
           f)
         """
-        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
         f = await expr()
-        self.assertEqual(f.__annotations__['return'], 'int')
+        self.assertIs(f.__annotations__['return'], int)
         self.assertEqual(await f(5), 10)
 
 
@@ -108,9 +109,10 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
           (define [f :: int] [x] (mul x 2))
           f)
         """
-        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
         f = await expr()
-        self.assertEqual(f.__annotations__['return'], 'int')
+        self.assertIs(f.__annotations__['return'], int)
         self.assertEqual(await f(5), 10)
 
 
@@ -120,9 +122,10 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
           (define g type: int [x] (mul x 2))
           g)
         """
-        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
         g = await expr()
-        self.assertEqual(g.__annotations__['return'], 'int')
+        self.assertIs(g.__annotations__['return'], int)
         self.assertEqual(await g(5), 10)
 
 

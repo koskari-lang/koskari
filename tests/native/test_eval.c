@@ -1277,11 +1277,11 @@ static int test_eval_fast_on_dict_ns(void) {
 
 static int test_eval_build_function_no_defaults(void) {
     /*
-      Bytecode: CONST (FunctionSpec), BUILD_FUNCTION 0, RETURN 1.
-      FunctionSpec = (name=NULL, formals_spec=empty, code=inner).
-      Inner code is just RETURN 0. Frame ns must be KosNamespace so
-      KosFunction_New can use it as parent_ns. Expect KOS_RES_RETURN
-      with a KosFunction.
+      Bytecode: CONST (FunctionSpec), BUILD_FUNCTION ((), (), 0, 0),
+      RETURN 1. FunctionSpec = (name=NULL, formals_spec=empty,
+      code=inner). Inner code is just RETURN 0. Frame ns must be
+      KosNamespace so KosFunction_New can use it as parent_ns. Expect
+      KOS_RES_RETURN with a KosFunction.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -1295,7 +1295,7 @@ static int test_eval_build_function_no_defaults(void) {
     Py_DECREF(inner_instr);
 
     PyObject *formals_spec = KosFormalsSpec_New(
-        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals_spec, "formals_spec");
 
     PyObject *fspec = KosFunctionSpec_New(NULL, formals_spec, inner_code);
@@ -1303,11 +1303,15 @@ static int test_eval_build_function_no_defaults(void) {
     Py_DECREF(formals_spec);
     Py_DECREF(inner_code);
 
+    PyObject *bf_arg = Py_BuildValue("(()()ii)", 0, 0);
+    TEST_ASSERT_NOT_NULL(bf_arg, "BUILD_FUNCTION extra tuple");
+
     PyObject *instr = PyList_New(3);
     TEST_ASSERT_NOT_NULL(instr, "instr list");
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, fspec));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_BUILD_FUNCTION, 0));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_BUILD_FUNCTION, bf_arg));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+    Py_DECREF(bf_arg);
     Py_DECREF(fspec);
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);

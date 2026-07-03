@@ -14,31 +14,71 @@
 */
 
 /**
-   BUILD_FUNCTION: arg = N (number of keyword default values).
-   Stack: ... fspec [, val_1 ... val_N, names_tuple ]. Pop fspec, then if
-   N > 0 pop N values and names tuple into a defaults dict. Build function
-   via KosFunction_New(fspec, defaults, frame_ns) and push result.
+   BUILD_FUNCTION: arg = extra index. Schema CONST (keyword-defaults
+   names tuple), CONST (annotation names tuple); either may be the
+   empty tuple.
+
+   Stack: ... [ ann_1 ... ann_M, ] [ def_1 ... def_N, ] fspec. Pop
+   fspec, then if the defaults names tuple is non-empty pop N values
+   into a defaults dict keyed by it, then if the annotation names tuple
+   is non-empty pop M more values into an annotations dict keyed by it.
+   Build the function via KosFunction_New, or
+   KosFunction_NewWithAnnotations when annotations are present, and
+   push the result.
 */
 
 KOS_OP_HANDLER(BUILD_FUNCTION) {
-  unsigned opa = KosOp_ARG(insn);
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+
+  PyObject *defnames = KosCode_GetConstant((PyObject *) code, row.a0);
+  if (! defnames)
+    return EVAL_RAISE();
+
+  PyObject *annnames = KosCode_GetConstant((PyObject *) code, row.a1);
+  if (! annnames)
+    return EVAL_RAISE();
+
+  if (! PyTuple_CheckExact(defnames) || ! PyTuple_CheckExact(annnames)) {
+    PyErr_Format(PyExc_TypeError, "BUILD_FUNCTION names must be tuples,"
+                 " not %R and %R", defnames, annnames);
+    return EVAL_RAISE();
+  }
+
   PyObject *fspec = KosEvalState_StackPopRef(es);
   if (! fspec)
     return EVAL_RAISE();
 
   PyObject *defaults = NULL;
-  if (opa > 0) {
-    defaults = KosEvalState_StackPopTailDictNames(es, (size_t) opa);
+  if (PyTuple_GET_SIZE(defnames) > 0) {
+    defaults = KosEvalState_StackPopTailDictFromNames(es, defnames);
     if (! defaults) {
       Py_DECREF(fspec);
       return EVAL_RAISE();
     }
   }
 
+  PyObject *annotations = NULL;
+  if (PyTuple_GET_SIZE(annnames) > 0) {
+    annotations = KosEvalState_StackPopTailDictFromNames(es, annnames);
+    if (! annotations) {
+      Py_DECREF(fspec);
+      Py_XDECREF(defaults);
+      return EVAL_RAISE();
+    }
+  }
+
   PyObject *parent_ns = CURRENT_NS();
-  PyObject *fn = KosFunction_New(fspec, defaults, parent_ns);
+  PyObject *fn;
+  if (annotations) {
+    fn = KosFunction_NewWithAnnotations(fspec, defaults, parent_ns,
+                                        annotations);
+  } else {
+    fn = KosFunction_New(fspec, defaults, parent_ns);
+  }
   Py_DECREF(fspec);
   Py_XDECREF(defaults);
+  Py_XDECREF(annotations);
   if (! fn)
     return EVAL_RAISE();
 

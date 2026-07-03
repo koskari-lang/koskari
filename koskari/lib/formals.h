@@ -36,7 +36,6 @@ typedef struct KosFormalsSpec {
   PyObject *kwd_only;
   PyObject *star;
   PyObject *starstar;
-  PyObject *annotations;
   PyObject *by_refs;
 
 } KosFormalsSpec;
@@ -49,7 +48,6 @@ PyObject *KosFormalsSpec_New(
     PyObject *kwd_only,
     PyObject *star,
     PyObject *starstar,
-    PyObject *annotations,
     PyObject *by_refs);
 
 
@@ -76,9 +74,6 @@ PyObject *KosFormalsSpec_NamespaceSpec(
 #define KosFormalsSpec_STARSTAR(fmls)           \
   (((KosFormalsSpec *) fmls)->starstar)
 
-#define KosFormalsSpec_ANNOTATIONS(fmls)        \
-  (((KosFormalsSpec *) fmls)->annotations)
-
 #define KosFormalsSpec_BY_REFS(fmls)            \
   (((KosFormalsSpec *) fmls)->by_refs)
 
@@ -102,7 +97,6 @@ typedef struct KosFormals {
   PyObject *star;
   PyObject *starstar;
   PyObject *defaults;
-  PyObject *annotations;
   PyObject *by_refs;
 
 } KosFormals;
@@ -119,7 +113,6 @@ PyObject *KosFormals_NewFull(
     PyObject *star,
     PyObject *starstar,
     PyObject *defaults,
-    PyObject *annotations,
     PyObject *by_refs);
 
 
@@ -188,9 +181,6 @@ PyObject *KosFormals_NamespaceSpec(
 
 #define KosFormals_DEFAULTS(fmls)           \
   (((KosFormals *) fmls)->defaults)
-
-#define KosFormals_ANNOTATIONS(fmls)        \
-  (((KosFormals *) fmls)->annotations)
 
 #define KosFormals_BY_REFS(fmls)            \
   (((KosFormals *) fmls)->by_refs)
