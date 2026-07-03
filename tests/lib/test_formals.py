@@ -46,7 +46,6 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(fspec.kwd_only)
         self.assertIsNone(fspec.star)
         self.assertIsNone(fspec.starstar)
-        self.assertIsNone(fspec.annotations)
 
     async def test_create_with_pos(self):
         """FormalsSpec accepts positional symbols"""
@@ -83,14 +82,6 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fspec.star, "args")
         self.assertEqual(fspec.starstar, "kwargs")
 
-    async def test_create_with_annotations(self):
-        """FormalsSpec stores per-parameter annotation bundles"""
-
-        ann = {'a': {'type': 'int'}}
-        fspec = FormalsSpec(
-            ("a",), None, None, None, None, None, ann)
-        self.assertEqual(fspec.annotations, ann)
-
     async def test_call_creates_formals(self):
         """Calling FormalsSpec creates a Formals instance"""
 
@@ -99,7 +90,6 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(formals, Formals)
         self.assertEqual(formals.pos, ("a", "b"))
         self.assertIsNone(formals.defaults)
-        self.assertIsNone(formals.annotations)
 
     async def test_call_with_defaults(self):
         """Calling FormalsSpec with defaults creates Formals with defaults"""
@@ -109,15 +99,6 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         formals = fspec(defaults)
         self.assertIsInstance(formals, Formals)
         self.assertEqual(formals.defaults, {'b': 42})
-        self.assertIsNone(formals.annotations)
-
-    async def test_spec_annotations_copied_to_formals(self):
-        """KosFormals_New copies FormalsSpec.annotations onto Formals"""
-
-        ann = {'x': {'type': 1}}
-        fspec = FormalsSpec(("x",), None, None, None, None, None, ann)
-        formals = fspec()
-        self.assertEqual(formals.annotations, ann)
 
     async def test_namespace_spec_empty(self):
         """FormalsSpec.namespace_spec() with empty spec"""
@@ -172,7 +153,7 @@ class TestFormals(unittest.IsolatedAsyncioTestCase):
     async def test_create_direct(self):
         """Formals can be created directly with all arguments"""
 
-        formals = Formals(("a",), (), ("b",), (), None, None, None, None)
+        formals = Formals(("a",), (), ("b",), (), None, None, None)
         self.assertEqual(formals.pos, ("a",))
         self.assertIsNone(formals.pos_only)
         self.assertEqual(formals.kwd, ("b",))
@@ -180,14 +161,12 @@ class TestFormals(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(formals.star)
         self.assertIsNone(formals.starstar)
         self.assertIsNone(formals.defaults)
-        self.assertIsNone(formals.annotations)
 
     async def test_fields(self):
         """Formals stores all field types correctly"""
 
         formals = Formals(
             ("a",), ("b",), ("c",), ("d",), "args", "kwargs", {'c': 99},
-            None,
         )
         self.assertEqual(formals.pos, ("a",))
         self.assertEqual(formals.pos_only, ("b",))
@@ -196,7 +175,6 @@ class TestFormals(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(formals.star, "args")
         self.assertEqual(formals.starstar, "kwargs")
         self.assertEqual(formals.defaults, {'c': 99})
-        self.assertIsNone(formals.annotations)
 
 
 class TestFormalsApply(unittest.IsolatedAsyncioTestCase):

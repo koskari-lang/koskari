@@ -1295,7 +1295,7 @@ static int test_eval_build_function_no_defaults(void) {
     Py_DECREF(inner_instr);
 
     PyObject *formals_spec = KosFormalsSpec_New(
-        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals_spec, "formals_spec");
 
     PyObject *fspec = KosFunctionSpec_New(NULL, formals_spec, inner_code);

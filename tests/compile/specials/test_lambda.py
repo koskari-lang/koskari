@@ -72,7 +72,6 @@ class TestLambdaNamed(SpecialsTestCase):
         src = "(lambda [(a :: int)] a)"
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
-        self.assertIsNone(fn.formals.annotations)
         self.assertEqual(fn.__annotations__, {"a": int})
         self.assertIs(fn.__annotations__["a"], int)
 

@@ -115,7 +115,7 @@ def helper_function(compiler, caps, selfref):
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
-        star, starstar, None, by_refs), code)
+        star, starstar, by_refs), code)
     frag.instruction(OpCode.KOS_OP_CONST, fspec)
     frag.instruction(
         OpCode.KOS_OP_BUILD_FUNCTION,
