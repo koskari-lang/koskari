@@ -673,3 +673,34 @@ tags:
   - let
   - reader
 notes: "style convention: brackets for syntactic non-call positions; [[x 1] [y 2]] reads identically to ((x 1) (y 2))"
+---
+id: function-partial-apply-001
+feature: builtin/partial
+source: ((partial + 10) 5)
+verify:
+  read: ((partial + 10) 5)
+  expand: ((partial + 10) 5)
+  eval: "15"
+references:
+  - reference/builtins/partial.md
+stability: evolving
+tags:
+  - function
+  - partial
+notes: functools.partial is bound by default (KosPartial); (partial + 10) fixes the first argument, then calling with 5 yields 15. koskari/bootstrap/__init__.py
+---
+id: function-partial-import-multi-001
+feature: builtin/partial
+source: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
+verify:
+  read: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
+  expand: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
+  eval: "7"
+references:
+  - reference/builtins/partial.md
+stability: evolving
+tags:
+  - function
+  - partial
+  - import
+notes: explicit import-from functools partial (as in examples/life); partial can fix several leading arguments at once. 1 + 2 + 4 = 7

@@ -1,0 +1,32 @@
+id: special-raise-too-many-args-invalid-001
+feature: special/compile/raise
+source: (raise ValueError "a" "b")
+verify:
+  read: (raise ValueError "a" "b")
+  error: too many arguments to raise
+references:
+  - reference/specials/compile-raise.md
+stability: evolving
+tags:
+  - special
+  - raise
+  - error
+  - invalid
+notes: "raise takes at most one argument. corrective: (raise (ValueError \"a b\")) — construct the exception, then raise the single value"
+---
+id: special-raise-bare-no-context-invalid-001
+feature: special/compile/raise
+source: (raise)
+verify:
+  read: (raise)
+  invalid: "0-arity (raise) re-raises the currently-active exception. Outside any handler there is nothing to re-raise, so it compiles cleanly but fails at runtime with RuntimeError: No active exception to reraise. Only use (raise) inside a try handler; to raise a fresh exception, write (raise (SomeError \"msg\"))."
+references:
+  - reference/specials/compile-raise.md
+  - reference/specials/compile-try.md
+stability: evolving
+tags:
+  - special
+  - raise
+  - reraise
+  - invalid
+notes: "runtime failure (not a compile error); read succeeds. corrective: put (raise) inside a try handler, or raise a new exception value"

@@ -43,7 +43,7 @@ define-syntax compile/define-dataclass:
 
   eg.::
 
-  (define-dataclass Point [x y]
+  (define-dataclass Point []
     (define x :: int 0)
     (define y :: int 0)
   )
