@@ -103,6 +103,7 @@ _symbol_refq = symbol("compile/refq")
 _symbol_splice = symbol("compile/splice")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
+_symbol_pass_none = symbol("reader/pass-none")
 _keyword_block = keyword(":block:")
 
 IN_PROGRESS = keyword("work-in-progress")
@@ -140,6 +141,7 @@ _dotted_attr_atom_re = regex(
 _ref_atom_re = regex(r"^&\S+$").match
 _ellipsis_atom_re = regex(r"^\.\.\.$").match
 _py_singleton_atom_re = regex(r"^(None|True|False)$").match
+_pass_atom_re = regex(r"^pass$").match
 
 
 _as_integer = int
@@ -166,6 +168,14 @@ def _as_py_singleton(s):
     if s == "True":
         return True
     return False
+
+
+def _as_pass_none(_s):
+    """
+    Reader symbol macro converting the ``pass`` symbol into the None literal
+    """
+
+    return None
 
 
 def _as_float(s):
@@ -1277,6 +1287,21 @@ class Reader:
                 break
 
 
+    def set_pass_none(self, enabled):
+        """
+        Install or remove the reader symbol macro that reads the ``pass``
+        symbol as the None literal
+
+        :param enabled: True to install the macro, False to remove it
+        """
+
+        if enabled:
+            self.set_atom_pattern(
+                _symbol_pass_none, _pass_atom_re, _as_pass_none)
+        else:
+            self.clear_atom_pattern(_symbol_pass_none)
+
+
     def set_atom_regex(self, namesym, regexstr, conversion_fn):
         """
         Add an atom pattern using a regex string
@@ -2066,7 +2091,8 @@ class LayoutReader(Reader):
         """
         Apply reader settings from a module pragma: reader/layout and
         reader/implicit-calls drive the layout switches; reader/brackets sets
-        bracket-pair reading on this reader and its inner reader.
+        bracket-pair reading on this reader and its inner reader;
+        reader/pass-none toggles the ``pass`` symbol macro.
         """
 
         if pragma is None:
@@ -2080,6 +2106,10 @@ class LayoutReader(Reader):
         if brackets is not None:
             self.bracket_pairs = bool(brackets)
             self._inner.bracket_pairs = bool(brackets)
+
+        pass_none = pragma.get("reader/pass-none")
+        if pass_none is not None:
+            self._inner.set_pass_none(bool(pass_none))
 
 
     @contextmanager

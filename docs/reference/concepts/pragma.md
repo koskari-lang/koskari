@@ -61,6 +61,12 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
 - **`reader/implicit-calls`** *(default on)* — whether several values on one
   layout line form an implicit call. Off makes more than one value on a line an
   error.
+- **`reader/pass-none`** *(default off)* — whether the bare symbol `pass` reads
+  as the `None` literal. Off — the baseline — `pass` is an ordinary symbol with
+  no special meaning. On, it is quietly rewritten to `None`, a concession for
+  arrivals from Python who cannot yet stop typing `pass` as a branch's
+  do-nothing; a bare `[reader/pass-none]` turns it on. The habit it accommodates
+  is one to grow out of, not into — write `None`.
 
 ### Compiler
 
