@@ -324,6 +324,28 @@ define feature-search [feature_path cap]:
     (viewer-search-rows "/filter" #{where: where} cap)
 
 
+define demote-invalid [rows]:
+    """
+    Sink wrong-usage records below canonical ones without dropping them
+
+    A corpus record tagged ``invalid`` demonstrates a mistake to avoid.
+    It stays in the results — searching for it directly is useful — but
+    must never outrank a valid example, so a bare form-name query returns
+    the canonical usage first rather than a copy-paste footgun. Relative
+    order within each group is the search engine's own ranking, preserved.
+    """
+
+    define valid #[]
+    define wrong #[]
+    for-each [row rows]:
+        if (in "invalid" (or (row.get "tags") #[])):
+            (wrong.append row)
+        else:
+            (valid.append row)
+    (valid.extend wrong)
+    valid
+
+
 @(mcp.tool)
 @coroutine-fn
 define search_examples [search_text
@@ -357,7 +379,7 @@ define search_examples [search_text
     else:
         return "Provide search_text and/or feature_path."
 
-    set! rows (item-slice rows 0 cap)
+    set! rows (item-slice (demote-invalid rows) 0 cap)
     unless rows:
         return "No matching corpus examples."
 
