@@ -1338,9 +1338,9 @@ assignment on a subscript (`d[k] += 1`). Normally reached via
 **Behaviour:** Compiles OBJ once. Loads the current item (CONST_ITEM when KEY is
 constant, otherwise ITEM after KEY is evaluated). Uses **DUP** so OBJ (and KEY,
 when not constant) is not re-evaluated for the store. Compiles VALUE, applies the
-corresponding **OBJECT_*** opcode (regular operator dispatch, not
-VAR_OBJECT_INPLACE_* / in-place dunder), then stores via CONST_ITEM_STORE or ITEM_STORE.
-Evaluates to None.
+corresponding **OBJECT_INPLACE_*** opcode (the `PyNumber_InPlace*` API, so
+mutable values are updated in place), then stores via CONST_ITEM_STORE or
+ITEM_STORE. Evaluates to None.
 
 **Supported operators:** Same set as `compile/inplace`.
 
@@ -1372,8 +1372,9 @@ an attribute (`obj.x += 1`). ATTR must be a symbol. Normally reached via
 
 **Behaviour:** When OBJ is a symbol, loads via VAR_ATTR and stores via
 VAR_ATTR_STORE (object from the namespace). Otherwise compiles OBJ once, **DUP**
-1, loads via ATTR, compiles VALUE, applies **OBJECT_***, stores via ATTR_STORE.
-Evaluates to None.
+1, loads via ATTR, compiles VALUE, applies **OBJECT_INPLACE_*** (the
+`PyNumber_InPlace*` API, so mutable values are updated in place), stores via
+ATTR_STORE. Evaluates to None.
 
 **Supported operators:** Same set as `compile/inplace`.
 

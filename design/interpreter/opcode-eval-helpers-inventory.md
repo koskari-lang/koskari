@@ -50,7 +50,7 @@ the helper** (by `KOS_OP_HANDLER` basename).
 | `resolve_context_enter_exit` | `KosWith_ResolveContextEnterExit` | PUSH_DYN_WITH, PUSH_WITH |
 | `kos_await_dispatch` | `KosEval_AwaitDispatch` (public wrapper may already be desirable; `kos_push_or_await` exists) | AWAIT |
 | `obj_op_reducing` | `KosEval_ObjectOpReducing` | OBJECT_ADD, OBJECT_BIT_AND, OBJECT_BIT_OR, OBJECT_BIT_XOR, OBJECT_FLOOR_DIVIDE, OBJECT_MATRIX_MULTIPLY, OBJECT_MULTIPLY, OBJECT_STR, OBJECT_SUBTRACT, OBJECT_TRUE_DIVIDE |
-| `obj_op_binary` | `KosEval_ObjectOpBinary` | OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT, OBJECT_IN, OBJECT_IS, OBJECT_IS_NOT, OBJECT_NOT_IN |
+| `obj_op_binary` | `KosEval_ObjectOpBinary` | OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT, OBJECT_IN, OBJECT_IS, OBJECT_IS_NOT, OBJECT_NOT_IN, OBJECT_INPLACE_* |
 | `op_OBJECT_EQ_impl` | `KosEval_ObjectCompare` | OBJECT_EQ, OBJECT_GE, OBJECT_GT, OBJECT_LE, OBJECT_LT, OBJECT_NE |
 | `kos_check_cmp` | `KosEval_CheckCompare` | CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE |
 | `kos_check_contains` | `KosEval_CheckContains` | CHECK_IN, CHECK_NOT_IN |

@@ -903,15 +903,7 @@ def special_inplace_item(compiler, source, tc=False):
     if var_opcode is None:
         raise SpecialError("unknown inplace operator", source)
 
-    # no stack-based OBJECT_INPLACE_* opcodes exist yet, so lower to the
-    # plain binary OBJECT_* op
-    opcode = getattr(
-        OpCode, var_opcode.name.replace('VAR_OBJECT_INPLACE', 'OBJECT'))
-    if opcode in (OpCode.KOS_OP_OBJECT_BIT_LEFT,
-                  OpCode.KOS_OP_OBJECT_BIT_RIGHT):
-        opa = 0
-    else:
-        opa = 2
+    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
 
     frag = compiler.fragment(called_by)
 
@@ -932,7 +924,7 @@ def special_inplace_item(compiler, source, tc=False):
         frag.instruction(OpCode.KOS_OP_ITEM, 0)
 
     frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, opa)
+    frag.instruction(opcode, 0)
 
     if is_const:
         frag.instruction(OpCode.KOS_OP_CONST_ITEM_STORE, key_val)
@@ -982,15 +974,7 @@ def special_inplace_attr(compiler, source, tc=False):
     if var_opcode is None:
         raise SpecialError("unknown inplace operator", source)
 
-    # no stack-based OBJECT_INPLACE_* opcodes exist yet, so lower to the
-    # plain binary OBJECT_* op
-    opcode = getattr(
-        OpCode, var_opcode.name.replace('VAR_OBJECT_INPLACE', 'OBJECT'))
-    if opcode in (OpCode.KOS_OP_OBJECT_BIT_LEFT,
-                  OpCode.KOS_OP_OBJECT_BIT_RIGHT):
-        opa = 0
-    else:
-        opa = 2
+    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
 
     sym = str(key_expr)
     frag = compiler.fragment(called_by)
@@ -1008,7 +992,7 @@ def special_inplace_attr(compiler, source, tc=False):
         frag.instruction(OpCode.KOS_OP_ATTR, sym)
 
     frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, opa)
+    frag.instruction(opcode, 0)
 
     if is_symbol(obj_expr):
         frag.request_var(str(obj_expr))

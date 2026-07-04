@@ -2866,6 +2866,7 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 - **Comparisons**: OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE, OBJECT_GT, OBJECT_GE (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`.
 - **Predicates**: OBJECT_IN, OBJECT_NOT_IN, OBJECT_IS, OBJECT_IS_NOT; OBJECT_IS_INSTANCE (COUNT), OBJECT_IS_SUBCLASS (COUNT).
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
+- **Numeric, in-place**: OBJECT_INPLACE_* (NOARG) — stack `[..., lhs, rhs] → [..., result]` via the `PyNumber_InPlace*` API; used by the inplace-item and inplace-attr special forms.
 - **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
@@ -3051,6 +3052,97 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_TRUE_DIVIDE.c`
+
+### KOS_OP_OBJECT_INPLACE_ADD {#kos_op_object_inplace_add}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceAdd(lhs, rhs)` result or await it. The in-place `+` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_ADD.c`
+
+### KOS_OP_OBJECT_INPLACE_BIT_AND {#kos_op_object_inplace_bit_and}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceAnd(lhs, rhs)` result or await it. The in-place `&` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_AND.c`
+
+### KOS_OP_OBJECT_INPLACE_BIT_LEFT {#kos_op_object_inplace_bit_left}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceLshift(lhs, rhs)` result or await it. The in-place `<<` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_LEFT.c`
+
+### KOS_OP_OBJECT_INPLACE_BIT_OR {#kos_op_object_inplace_bit_or}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceOr(lhs, rhs)` result or await it. The in-place `|` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_OR.c`
+
+### KOS_OP_OBJECT_INPLACE_BIT_RIGHT {#kos_op_object_inplace_bit_right}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceRshift(lhs, rhs)` result or await it. The in-place `>>` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_RIGHT.c`
+
+### KOS_OP_OBJECT_INPLACE_BIT_XOR {#kos_op_object_inplace_bit_xor}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceXor(lhs, rhs)` result or await it. The in-place `^` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_XOR.c`
+
+### KOS_OP_OBJECT_INPLACE_FLOOR_DIVIDE {#kos_op_object_inplace_floor_divide}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceFloorDivide(lhs, rhs)` result or await it. The in-place `//` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_FLOOR_DIVIDE.c`
+
+### KOS_OP_OBJECT_INPLACE_MATRIX_MULTIPLY {#kos_op_object_inplace_matrix_multiply}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceMatrixMultiply(lhs, rhs)` result or await it. The in-place `@` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MATRIX_MULTIPLY.c`
+
+### KOS_OP_OBJECT_INPLACE_MODULO {#kos_op_object_inplace_modulo}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceRemainder(lhs, rhs)` result or await it. The in-place `%` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MODULO.c`
+
+### KOS_OP_OBJECT_INPLACE_MULTIPLY {#kos_op_object_inplace_multiply}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceMultiply(lhs, rhs)` result or await it. The in-place `*` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MULTIPLY.c`
+
+### KOS_OP_OBJECT_INPLACE_POWER {#kos_op_object_inplace_power}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlacePower(lhs, rhs, Py_None)` result or await it. The in-place `**` used by the inplace-item and inplace-attr special forms; the ternary pow(base, exp, mod) has no in-place form.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_POWER.c`
+
+### KOS_OP_OBJECT_INPLACE_SUBTRACT {#kos_op_object_inplace_subtract}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceSubtract(lhs, rhs)` result or await it. The in-place `-` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_SUBTRACT.c`
+
+### KOS_OP_OBJECT_INPLACE_TRUE_DIVIDE {#kos_op_object_inplace_true_divide}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceTrueDivide(lhs, rhs)` result or await it. The in-place `/` used by the inplace-item and inplace-attr special forms.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_TRUE_DIVIDE.c`
 
 ### KOS_OP_OBJECT_AITER {#kos_op_object_aiter}
 
