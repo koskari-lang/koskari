@@ -1,6 +1,6 @@
 # Koskari
 
-Koskari is a LISP dialect for Python — indent-based layout syntax, macros, and a
+Koskari is a LISP dialect for Python -- indent-based layout syntax, macros, and a
 custom bytecode evaluator that runs on CPython.
 
 ```koskari
@@ -20,11 +20,11 @@ koskari hello.ki
 ## Overview
 
 Koskari is the fourth iteration of the Sibilant idea, learning from the experiences of:
-- **spexy**: String-to-string transformer; parsed s-expression text and emitted Python expression strings. The earliest groundwork — reader and s-expression representation — carries through to this day.
+- **spexy**: String-to-string transformer; parsed s-expression text and emitted Python expression strings. The earliest groundwork -- reader and s-expression representation -- carries through to this day.
 - **python-sibilant**: CPython bytecode target (abandoned due to version churn)
 - **sibilant-ceval**: Custom bytecode evaluator (blocked on call/cc implementation)
 
-This version aims to be a perfect playground - a language with all the useful features of Python but significantly fewer restrictions, designed to make writing code a joyous expression of will upon the computer.
+This version aims to be a perfect playground -- a language with all the useful features of Python but significantly fewer restrictions, designed to make writing code a joyous expression of will upon the computer.
 
 
 ## Quick Start
@@ -60,6 +60,37 @@ koskari hello.ki   # run a script
 See [docs/start/install-run.md](docs/start/install-run.md) for the full first-session walkthrough.
 
 
+## Documentation
+
+User documentation lives in [docs/](docs/) and builds into a Sphinx site with
+`make docs`:
+
+- **[Getting started](docs/start/overview.md)** -- install, first program, and
+  two on-ramps: a [beginner track](docs/start/beginner/index.md) for readers new
+  to programming and a [from-Python track](docs/start/from-python/index.md) for
+  Python developers.
+- **[Guide](docs/guide/index.md)** -- the shared concept spine. Each chapter is a
+  quick orientation that points to the authoritative
+  [concepts](docs/reference/concepts/index.md) pages for the full rules.
+- **[Reference](docs/reference/index.md)** -- special forms, macros, layouts, the
+  runtime library, and VM opcodes.
+- **[Patterns](docs/patterns/index.md)** -- task-oriented recipes.
+
+
+## Corpus and MCP server
+
+Koskari maintains a verified example corpus under
+[docs/corpus/](docs/corpus/): records carry `read` / `expand` / `eval`
+verification phases, so they double as regression tests and as canonical
+teaching material. The corpus is published as a Hugging Face dataset,
+[obriencj/koskari](https://huggingface.co/datasets/obriencj/koskari).
+
+A container-based **MCP server** exposes the corpus and the documentation to AI
+coding assistants (Cursor, Claude Desktop, VS Code, and similar) so they can
+search and author idiomatic Koskari. See
+[tools/mcp/README.md](tools/mcp/README.md) for build and client setup.
+
+
 ## Implementation Status
 
 **Core Types:**
@@ -86,7 +117,7 @@ See [docs/start/install-run.md](docs/start/install-run.md) for the full first-se
 **Evaluator:**
 - Custom bytecode evaluator (`koskari_eval`): coroutines, async generators, continuations, dynamic wind/unwind, parameterize, with/dyn-with
 - Stackless (where possible), tail-call optimizing
-- Ambiently async: awaitable results are automatically awaited when they do not have an immediate result. The evaluator context suspends at once and resume in-place.
+- Ambiently async: awaitable results are automatically awaited when they do not have an immediate result. The evaluator context suspends immediately and resumes in-place.
 - Bounded and unbounded continuations.
 - CLI with REPL
 
@@ -139,7 +170,7 @@ The repository root is the Koskari project. Import symbols from the submodule th
 ├── koskari_importer.py      # Import hooks for .ki and .kio modules
 ├── koskari.pth              # Enables import hooks when installed
 ├── tests/                   # Test suite (mirrors package layout)
-├── tools/                   # Opcode/editor regeneration and container helpers
+├── tools/                   # Opcode/editor regen, corpus tooling, and the MCP server
 ├── setup.py, setup.cfg      # Package build and tox configuration
 ├── Makefile                 # Build, test, and lint targets
 └── Containerfile            # Runtime container image

@@ -1,15 +1,16 @@
 # Koskari corpus MCP server
 
-Maintainer tooling that exposes verified Koskari corpus examples to MCP
-clients (Cursor, Claude Desktop, VS Code, and similar) via a stdio server
-implemented in Koskari (`mcp_server.ki`).
+Maintainer tooling that exposes verified Koskari corpus examples and
+documentation to MCP clients (Cursor, Claude Desktop, VS Code, and similar)
+via a stdio server implemented in Koskari (`mcp_server.ki`).
 
 The server forwards tool calls to the Hugging Face
 [Dataset Viewer API](https://huggingface.co/docs/dataset-viewer/index) for the
 published dataset [obriencj/koskari](https://huggingface.co/datasets/obriencj/koskari)
-config `corpus`. It does not download or cache the dataset locally.
+(configs `corpus`, `docs`, and `programs`). It does not download or cache the
+dataset locally.
 
-Design record: [design/corpus-mcp-server.md](../../design/corpus-mcp-server.md).
+Design record: [design/corpus-mcp-server.md](../../design/archive/corpus-mcp-server.md).
 
 ## Prerequisites
 
@@ -60,8 +61,10 @@ needed):
 
 | Tool | Description |
 |------|-------------|
-| `search_examples` | Search by text (`search_text`) with optional `feature_path` filter and `limit` (default 10, max 100) |
-| `get_example` | Fetch one row by `corpus_id` |
+| `search_docs` | Search documentation pages and example programs by text; optional `kind` (`doc`/`example`) and `limit` |
+| `get_reference` | Fetch one documentation page or example program by its path |
+| `search_examples` | Search verified corpus examples by text (`search_text`) with optional `feature_path` filter and `limit` (default 10, max 100); invalid/wrong-usage records are demoted below valid ones |
+| `get_example` | Fetch one corpus record by `corpus_id` |
 | `list_features` | List distinct `feature` paths with counts |
 
 Tool results are JSON text including `corpus_id`, `feature`, `source`, verify

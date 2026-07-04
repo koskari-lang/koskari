@@ -205,14 +205,6 @@ Gaps per [documentation-goals.md](documentation-goals.md):
   for opcode-doc drift vs `koskari/lib/opcodes.incl`.
 - **`changelog.md`** — skeleton only (single 0.1.0 entry); needs release-driven
   updates. **`faq.md`** is thin in places (e.g. free-threading answer incomplete).
-- **Refs as storage-location indirection** — add a dedicated, Q&A-format user
-  page developing refs as "pointers, but safer" (getting refs via `&name` /
-  `&(item …)` / `(ref …)`, `deref` / `*name`, bind vs store, and by-ref
-  formals). Move the by-ref example out of the functions tutorial
-  (`guide/functions-deep.md`) into this page, add corpus records from the
-  example (obtain/pass refs plus a value-instead-of-ref error variation), and
-  add unit tests pinning the example cases. Design:
-  [refs-storage-indirection.md](refs-storage-indirection.md).
 
 ---
 
@@ -336,36 +328,6 @@ priority on patterns common in real code (`define-class`, `for-each`,
 
 Ref: [corpus-generation-agent.md](corpus-generation-agent.md);
 [corpus-schema-philosophy.md](corpus-schema-philosophy.md).
-
-### Hugging Face dataset publication (Track A)
-
-Publish corpus views to parquet and push to
-[obriencj/koskari](https://huggingface.co/datasets/obriencj/koskari) via manual
-`workflow_dispatch` (`.github/workflows/publish_corpus_dataset.yml`). Two Hub
-configs: `corpus` (all records, all verify stages) and `eval` (eval-only
-subset). Authentication uses Hugging Face Trusted Publishers (OIDC); no
-`HF_TOKEN` secret. Export: `make corpus-parquet-all` or
-`tox -qe regen-corpus -- --all-views`.
-
-**Status: implemented.**
-
-Ref: [corpus-mcp-server.md](corpus-mcp-server.md) § Track A;
-[docs/corpus/datasets.md](../docs/corpus/datasets.md).
-
-### Corpus MCP server (Track B)
-
-Koskari stdio MCP server in a container (`tools/mcp/`), built on
-`koskari:local` (`make build-mcp` after `make build-container`). Forwards tool
-calls to the Hugging Face Dataset Viewer API over `obriencj/koskari` config
-`corpus` — no local dataset cache or parquet pull in v1. Tools:
-`search_examples`, `get_example`, `list_features`. Client launch:
-`podman run -i --rm` (no `-t`). Implementation in `mcp_server.ki`; deps `mcp` +
-`httpx`.
-
-**Status: implemented.**
-
-Ref: [corpus-mcp-server.md](corpus-mcp-server.md) § Track B;
-[tools/mcp/README.md](../tools/mcp/README.md).
 
 ---
 
