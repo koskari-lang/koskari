@@ -1,0 +1,297 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Koskari MCP server for the published language corpus
+
+Forwards search and lookup tools to the Hugging Face Dataset Viewer API
+for obriencj/koskari config corpus.
+"""
+
+
+import json
+import logging
+import sys
+
+import httpx
+import-from mcp.server.fastmcp FastMCP
+
+
+define logger (logging.getLogger "koskari.mcp")
+
+(logging.basicConfig
+    stream: sys.stderr
+    level: logging.WARNING)
+
+
+define DATASET "obriencj/koskari"
+define CONFIG "corpus"
+define SPLIT "train"
+define BASE_URL "https://datasets-server.huggingface.co"
+
+define _VERIFY_KEYS #("read" "expand" "eval" "error" "invalid")
+define _META_KEYS #("corpus_id" "feature" "source" "references" "stability"
+                     "tags" "schema_version" "git_ref")
+
+
+define mcp (FastMCP "koskari-corpus")
+define http (httpx.AsyncClient timeout: 30.0)
+
+
+define escape-sql-string [text]:
+    """
+    Escape a string for single-quoted SQL filter literals
+    """
+
+    (text.replace "'" "''")
+
+
+define viewer-base-params []:
+    """
+    Shared query parameters for every Dataset Viewer request
+    """
+
+    #{dataset: DATASET
+      config: CONFIG
+      split: SPLIT}
+
+
+define viewer-get [path extra: #{}]:
+    """
+    Issue a GET to the Dataset Viewer API and return parsed JSON
+    """
+
+    define params (dict (viewer-base-params))
+    (params.update extra)
+    define url f"{BASE_URL}{path}"
+    define response (http.get url params: params)
+    (response.raise_for_status)
+    define data (response.json)
+    when (dict.get data "error"):
+        define msg (dict.get data "error" "unknown viewer error")
+        (logger.error "viewer API error on %s: %s" path msg)
+        raise (RuntimeError msg)
+    data
+
+
+define viewer-rows [data]:
+    """
+    Extract row dicts from a /rows, /search, or /filter response
+    """
+
+    define rows (dict.get data "rows" ())
+    define out #[]
+    for-each [entry rows]:
+        define row (item entry "row")
+        (out.append row)
+    out
+
+
+define compact-example [row]:
+    """
+    Build a compact dict with corpus fields useful to agents
+    """
+
+    define out #{}
+
+    for-each [key _META_KEYS]:
+        define value (row.get key)
+        unless (None? value):
+            set! (item out key) value
+
+    for-each [key _VERIFY_KEYS]:
+        define value (row.get key)
+        unless (None? value):
+            set! (item out key) value
+
+    out
+
+
+define format-example [row]:
+    """
+    Serialize one corpus row for MCP tool output
+    """
+
+    (json.dumps (compact-example row))
+
+
+define format-examples [rows]:
+    """
+    Serialize multiple corpus rows for MCP tool output
+    """
+
+    define items (list-each [row rows] (compact-example row))
+    (json.dumps items)
+
+
+define feature-matches? [row feature]:
+    """
+    Return True when row feature equals or starts with the filter
+    """
+
+    define value (row.get "feature" "")
+    if (feature.endswith "/"):
+        (value.startswith feature)
+    else:
+        (== value feature)
+
+
+define feature-where-clause [feature]:
+    """
+    Build a Dataset Viewer filter predicate for feature
+    """
+
+    if (feature.endswith "/"):
+        define escaped (escape-sql-string feature)
+        f"\"feature\" LIKE '{escaped}%'"
+    else:
+        define escaped (escape-sql-string feature)
+        f"\"feature\"='{escaped}'"
+
+
+define filter-rows-by-feature [rows feature]:
+    """
+    Keep rows whose feature column matches the filter
+    """
+
+    define out #[]
+    for-each [row rows]:
+        when (feature-matches? row feature):
+            (out.append row)
+    out
+
+
+define take-rows [rows limit]:
+    """
+    Return at most limit rows from a list
+    """
+
+    (item-slice rows 0 limit)
+
+
+@(mcp.tool)
+@coroutine-fn
+define search_examples [search_text feature_path: None limit: 10]:
+    """
+    Search verified Koskari corpus examples by text and optional feature
+    """
+
+    define cap (min limit 100)
+    define rows #[]
+
+    if (and search_text feature_path):
+        define extra #{}
+        set! (item extra "query") search_text
+        set! (item extra "offset") 0
+        set! (item extra "length") cap
+        define data (viewer-get "/search" extra)
+        set! rows (filter-rows-by-feature (viewer-rows data) feature_path)
+    elif search_text:
+        define extra #{}
+        set! (item extra "query") search_text
+        set! (item extra "offset") 0
+        set! (item extra "length") cap
+        define data (viewer-get "/search" extra)
+        set! rows (viewer-rows data)
+    elif feature_path:
+        define extra #{}
+        set! (item extra "where") (feature-where-clause feature_path)
+        set! (item extra "offset") 0
+        set! (item extra "length") cap
+        define data (viewer-get "/filter" extra)
+        set! rows (viewer-rows data)
+    else:
+        return "Provide search_text and/or feature_path."
+
+    set! rows (take-rows rows cap)
+    if (not rows):
+        return "No matching corpus examples."
+    (format-examples rows)
+
+
+@(mcp.tool)
+@coroutine-fn
+define get_example [corpus_id]:
+    """
+    Fetch one corpus record by corpus_id
+    """
+
+    define escaped (escape-sql-string corpus_id)
+    define where f"\"corpus_id\"='{escaped}'"
+    define extra #{}
+    set! (item extra "where") where
+    set! (item extra "offset") 0
+    set! (item extra "length") 1
+    define data (viewer-get "/filter" extra)
+    define rows (viewer-rows data)
+    if (not rows):
+        return f"No corpus example with corpus_id={(repr corpus_id)}."
+    (format-example (item rows 0))
+
+
+@(mcp.tool)
+@coroutine-fn
+define list_features []:
+    """
+    List feature paths present in the corpus with occurrence counts
+    """
+
+    define seen #{}
+    define offset 0
+    while True:
+        define extra #{}
+        set! (item extra "offset") offset
+        set! (item extra "length") 100
+
+        define page (viewer-get "/rows" extra)
+        define rows (viewer-rows page)
+        unless rows:
+            (break)
+
+        for-each [row rows]:
+            define feature (row.get "feature" "")
+            when feature:
+                define count (dict.get seen feature 0)
+                set! (item seen feature) (+ count 1)
+
+        incr! offset (len rows)
+
+        when (item page "partial"):
+            (break)
+
+        when (< (len rows) 100):
+            (break)
+
+    if (not seen):
+        return "No features found."
+
+    define lines:
+        list-each [pair (sorted (seen.items))]:
+            f"{(item pair 0)}\t{(item pair 1)}"
+    (.join "\n" lines)
+
+
+define main []:
+    """
+    Run the MCP server on stdio transport
+    """
+
+    (mcp.run_stdio_async)
+
+
+when-main:
+    (main)
+
+
+;; The end.

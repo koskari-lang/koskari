@@ -357,15 +357,15 @@ Ref: [corpus-mcp-server.md](corpus-mcp-server.md) § Track A;
 Koskari stdio MCP server in a container (`tools/mcp/`), built on
 `koskari:local` (`make build-mcp` after `make build-container`). Forwards tool
 calls to the Hugging Face Dataset Viewer API over `obriencj/koskari` config
-`corpus` — no local dataset cache or parquet pull in v1. Planned tools:
+`corpus` — no local dataset cache or parquet pull in v1. Tools:
 `search_examples`, `get_example`, `list_features`. Client launch:
-`podman run -i --rm` (no `-t`). Implementation in `mcp.ki`; deps `mcp` +
+`podman run -i --rm` (no `-t`). Implementation in `mcp_server.ki`; deps `mcp` +
 `httpx`.
 
-**Status: designed, not implemented.**
+**Status: implemented.**
 
-Ref: [corpus-mcp-server.md](corpus-mcp-server.md) § Track B and implementation
-checklist.
+Ref: [corpus-mcp-server.md](corpus-mcp-server.md) § Track B;
+[tools/mcp/README.md](../tools/mcp/README.md).
 
 ---
 
