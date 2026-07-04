@@ -1,8 +1,4 @@
-<p align="center">
-  <img src="docs/_static/koskari-icon.svg" width="128" alt="Koskari logo">
-</p>
-
-# Koskari
+# <img src="docs/_static/koskari-icon.svg" height="36" align="middle" alt=""> Koskari
 
 Koskari is a LISP dialect for Python -- indent-based layout syntax, macros, and a
 custom bytecode evaluator that runs on CPython.
