@@ -21,12 +21,14 @@ design/cli-repl-rework.md.
 
 
 import io
+import sys
 import unittest
 
 import pytest
 
-from koskari.cli import startup_lines
+from koskari.cli import main, startup_lines
 from koskari.importer import install
+from koskari.lib import drive_async_loop
 from koskari.module import new_module
 
 
@@ -84,15 +86,6 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
     async def test_module_imports(self):
         self.assertTrue(hasattr(_repl(), 'repl_async'))
-        self.assertTrue(hasattr(_repl(), 'make_prompter'))
-
-
-    async def test_make_prompter_returns_callable(self):
-        # Exercises the real backend-selection path (prompt_toolkit or the
-        # readline/input fallback); both branches return an input()-style
-        # callable.
-        prompter = await _repl().make_prompter(get_namespace=lambda: {})
-        self.assertTrue(callable(prompter))
 
 
     async def test_simple_expression_prints_result(self):
@@ -161,6 +154,78 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('_await_user_form', err)
         self.assertNotIn('_eval_expression_async', err)
         self.assertNotIn('koskari/cli', err)
+
+
+class TestReplKiDriver(unittest.TestCase):
+    """
+    Exercise the Koskari REPL under the real production async driver
+    (drive_async_loop, a fresh asyncio loop), rather than
+    IsolatedAsyncioTestCase, and through the main() entry point.
+    """
+
+    def _scripted_prompter(self, lines):
+        line_iter = iter(lines)
+
+        def prompter(prompt, **kwargs):
+            try:
+                return next(line_iter)
+            except StopIteration:
+                raise EOFError
+
+        return prompter
+
+
+    def test_repl_runs_under_drive_async_loop(self):
+        # main() awaits the REPL inside a Python coroutine driven by
+        # drive_async_loop; mirror that so loop.run_in_executor and
+        # get_running_loop resolve against the production loop.
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        prompter = self._scripted_prompter(['(+ 20 22)'])
+        mod = new_module('__main__')
+        repl_async = _repl().repl_async
+
+        async def _driver():
+            await repl_async(
+                mod,
+                prompter=prompter,
+                stdout=stdout,
+                stderr=stderr,
+                quiet=True)
+
+        drive_async_loop(_driver())
+        self.assertIn('42', stdout.getvalue())
+
+
+    def test_main_enters_koskari_repl(self):
+        # Full stack: main() -> drive_async_loop -> cli_async -> the Koskari
+        # repl_async.  Force the input() backend (no tty available) and feed
+        # source on a patched stdin so no prompter is injected.
+        install()
+        import koskari.cli.repl  # ensure repl.ki is compiled/loaded
+
+        saved_stdin = sys.stdin
+        saved_stdout = sys.stdout
+        saved_stderr = sys.stderr
+        saved_pt = sys.modules.get('prompt_toolkit', False)
+        try:
+            sys.modules['prompt_toolkit'] = None  # force ImportError fallback
+            sys.stdin = io.StringIO('(+ 20 22)\n')
+            sys.stdout = io.StringIO()
+            sys.stderr = io.StringIO()
+            rc = main(['koskari', '-q', '--no-tweak-path'])
+            out = sys.stdout.getvalue()
+        finally:
+            sys.stdin = saved_stdin
+            sys.stdout = saved_stdout
+            sys.stderr = saved_stderr
+            if saved_pt is False:
+                sys.modules.pop('prompt_toolkit', None)
+            else:
+                sys.modules['prompt_toolkit'] = saved_pt
+
+        self.assertEqual(0, rc)
+        self.assertIn('42', out)
 
 
 # The end.

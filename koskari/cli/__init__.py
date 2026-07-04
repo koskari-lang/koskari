@@ -47,7 +47,11 @@ from ..reader import READ_EOF, LayoutReader, source_str
 __all__ = (
     'CodeBoundary',
     'REPLCodeBoundary',
+    '_READ_EOF',
+    '_READ_INTERRUPT',
     '_await_user_form',
+    '_make_repl_prompter',
+    '_read_line',
     'cli_async',
     'format_code_boundary_exception',
     'format_exception_with_koskari_trace',
@@ -164,6 +168,23 @@ def _make_prompter(histfile=None, get_namespace=None):
     return _input_prompt
 
 
+def _make_repl_prompter(histfile, ns):
+    """
+    Build an input()-style prompter for the Koskari REPL.
+
+    Returns a plain Python callable (with a plain Python get_namespace
+    closure) so it can be handed to loop.run_in_executor and invoked in a
+    worker thread.  prompt_toolkit runs its own event loop via
+    asyncio.run, which must not happen on the driver's loop thread.
+
+    :param histfile: history file path, or None
+    :param ns: REPL module namespace, for completion
+    :return: a callable with the same signature as input(prompt)
+    """
+
+    return _make_prompter(histfile=histfile, get_namespace=lambda: ns)
+
+
 # ---------------------------------------------------------------------------
 # REPL code boundary
 # ---------------------------------------------------------------------------
@@ -200,6 +221,39 @@ class REPLReaderError(ReaderError):
 
 
 _INCOMPLETE = object()
+
+
+_READ_EOF = object()
+_READ_INTERRUPT = object()
+
+
+async def _read_line(prompter, prompt, default):
+    """
+    Read one input line via the prompter, off the event-loop thread.
+
+    The prompter is invoked through run_in_executor on a worker thread:
+    prompt_toolkit runs its own event loop via asyncio.run, which must not
+    happen on the driver's loop thread.  EOFError and KeyboardInterrupt are
+    returned as the _READ_EOF / _READ_INTERRUPT sentinels rather than
+    raised, so the Koskari loop can dispatch on them directly (exceptions
+    surfacing from an awaited executor future do not reach the Koskari
+    loop's except handlers).
+
+    :param prompter: input(prompt)-style callable
+    :param prompt: prompt string
+    :param default: prefill string for the input line
+    :return: the line entered, or a _READ_EOF / _READ_INTERRUPT sentinel
+    """
+
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(
+            None,
+            lambda: prompter(prompt, default=default))
+    except EOFError:
+        return _READ_EOF
+    except KeyboardInterrupt:
+        return _READ_INTERRUPT
 
 
 async def _await_user_form(expr):
@@ -581,7 +635,12 @@ async def cli_async(options):
             if not options.interactive:
                 return
 
-        await repl_async(
+        # The interactive loop is the Koskari-native REPL in repl.ki;
+        # imported lazily so the compile cost is only paid when a session
+        # actually drops into the REPL.  See design/cli-repl-rework.md.
+        from . import repl as _repl_ki
+
+        await _repl_ki.repl_async(
             mod,
             histfile=options.histfile,
             full_trace=options.repl_full_trace,

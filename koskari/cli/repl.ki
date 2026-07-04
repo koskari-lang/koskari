@@ -27,87 +27,21 @@ rendering reuses the Python formatters in koskari.exceptions.
 
 
 import sys
-import asyncio
 
-import-from koskari.cli _await_user_form REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES startup_lines
+import-from koskari.cli _await_user_form _make_repl_prompter _read_line _READ_EOF _READ_INTERRUPT REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES startup_lines
 import-from koskari.exceptions format_code_boundary_exception format_exception_with_koskari_trace apply_sys_last_exc CompilerError UncaughtCompilerError ReaderEOF ReaderSyntaxError
 import-from koskari.reader LayoutReader source_str READ_EOF
 import-from koskari.module init_module build_module_load_facets
 import-from koskari.lib kos_repr
-import-from koskari.lexer.discovery special_names_for_repl
-import-from koskari.lexer.prompt_toolkit KoskariCompleter KoskariLexer koskari_style load_koskari_key_bindings
 
 
-(declare-exports repl_async make_prompter)
+(declare-exports repl_async)
 
 
-; === Prompt backend selection ===
-
-
-define prompt_toolkit_prompter [histfile: None get_namespace: None]:
-  """
-  Return an input()-style callable backed by prompt_toolkit.
-
-  Raises ImportError when prompt_toolkit is unavailable, letting
-  make_prompter fall through to the readline backend.
-  """
-
-  import-from prompt_toolkit PromptSession
-  import-from prompt_toolkit.auto_suggest AutoSuggestFromHistory
-  import-from prompt_toolkit.history FileHistory
-
-  define repl_special_names (special_names_for_repl)
-  define history (when histfile (FileHistory histfile))
-
-  define completer (KoskariCompleter
-    get_namespace: get_namespace
-    special_names: repl_special_names)
-
-  define session (PromptSession
-    history: history
-    lexer: (KoskariLexer special_names: repl_special_names)
-    completer: completer
-    style: koskari_style
-    auto_suggest: (AutoSuggestFromHistory)
-    key_bindings: (load_koskari_key_bindings))
-
-  lambda promptfn [prompt **: kwargs]:
-    session.prompt prompt reserve_space_for_menu: False **: kwargs
-
-
-define readline_prompter [histfile: None get_namespace: None]:
-  """
-  Return an input()-style callable backed by the built-in input(), wiring
-  readline history to histfile when readline is available.
-  """
-
-  when histfile:
-    try:
-      import readline
-      import atexit
-      readline.read_history_file histfile
-      atexit.register readline.write_history_file histfile
-    except [ImportError]:
-      None
-    except [OSError]:
-      None
-
-  lambda promptfn [prompt **: kwargs]:
-    input prompt
-
-
-define make_prompter [histfile: None get_namespace: None]:
-  """
-  Return a callable with the same signature as input(prompt).
-
-  Tries prompt_toolkit first, then falls back to the readline/input
-  backend when prompt_toolkit is unavailable.
-  """
-
-  try:
-    prompt_toolkit_prompter histfile: histfile get_namespace: get_namespace
-  except [ImportError]:
-    readline_prompter histfile: histfile get_namespace: get_namespace
+; The prompt backend (_make_repl_prompter) stays in Python: prompt_toolkit
+; drives its own asyncio loop via asyncio.run, so the prompter must be a
+; plain Python callable that loop.run_in_executor can invoke on a worker
+; thread without colliding with the driver's running loop.
 
 
 ; === Continuation heuristics ===
@@ -242,8 +176,6 @@ define repl_async [
   set! stdout (or stdout sys.stdout)
   set! stderr (or stderr sys.stderr)
 
-  define loop (asyncio.get_running_loop)
-
   define compiler (getattr mod "__compiler__" None)
   when (None? compiler):
     init_module mod "<stdin>"
@@ -252,7 +184,7 @@ define repl_async [
 
   define ns (vars mod)
   when (None? prompter):
-    set! prompter (make_prompter histfile: histfile get_namespace: (lambda [] ns))
+    set! prompter (_make_repl_prompter histfile ns)
 
   unless quiet:
     for-each [line (startup_lines)]:
@@ -263,11 +195,15 @@ define repl_async [
   define prompt ">>> "
 
   while True:
-    try:
-      define indent (if (equal? prompt "... ") (continuation_indent buffer) "")
-      define line (await (loop.run_in_executor None (lambda [] (prompter prompt default: indent))))
+    define indent (if (equal? prompt "... ") (continuation_indent buffer) "")
+    define line (await (_read_line prompter prompt indent))
 
-    except [KeyboardInterrupt]:
+    when (is line _READ_EOF):
+      print "" file: stderr
+      (stderr.flush)
+      (break)
+
+    when (is line _READ_INTERRUPT):
       print "" file: stderr
       (stderr.flush)
       if (buffer.strip):
@@ -276,11 +212,6 @@ define repl_async [
         (continue)
       else:
         (break)
-
-    except [EOFError]:
-      print "" file: stderr
-      (stderr.flush)
-      (break)
 
     incr! buffer (if buffer (+ "\n" line) line)
 
