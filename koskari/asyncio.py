@@ -67,17 +67,25 @@ def create_task(coro):
     return defer(asyncio.create_task, coro)
 
 
-@builtin("run-until-complete")
-def run_until_complete(coro):
+def run_until_complete(loop, coro):
     """
     Run a coroutine until completion. Will automatically convert a defer or
     Koskari Coroutine into a Python coroutine object. Blocks until the
     coroutine completes and returns the result or raises an exception.
+
+    :param loop: The event loop to use. If None, the default event loop
+       will be used.
+    :param coro: The coroutine to run.
+    :returns: The result of the coroutine.
     """
 
     if not isinstance(coro, PythonCoroutine):
         coro = as_coroutine(coro)
-    return asyncio.run_until_complete(coro)
+
+    if loop is None:
+        loop = asyncio.get_event_loop()
+
+    return loop.run_until_complete(coro)
 
 
 add_builtin("sleep", asyncio.sleep)

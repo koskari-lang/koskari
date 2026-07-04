@@ -74,7 +74,6 @@
    "set!"
    "set"
    "second"
-   "run-until-complete"
    "reversed"
    "return"
    "reset"
