@@ -50,3 +50,8 @@ once an example has a story.
 
 Quality starts with runnable examples. Keep functions small, name the intent,
 and test the paths a new reader is most likely to try.
+
+---
+
+**Go deeper:** [Build and test](../project/build-test.md) — running the suite,
+the tox environments, and how CI interprets them.

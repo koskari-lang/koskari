@@ -64,7 +64,7 @@ creation by `BUILD_FUNCTION`, which builds the keyword-defaults dict and the
 (lambda [x] x)
 
 ;; Anonymous two-argument function
-(lambda [a b] (add a b))
+(lambda [a b] (+ a b))
 
 ;; Named lambda for recursion
 (lambda fact [n]

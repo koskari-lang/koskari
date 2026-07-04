@@ -87,6 +87,10 @@ myst_fence_as_directive = [
     'mermaid',
 ]
 
+# Generate anchor slugs for headings h1-h4 so intra- and cross-page
+# `[text](path#slug)` links resolve (used heavily by the VM reference).
+myst_heading_anchors = 4
+
 mermaid_version = '10.9.1'
 
 autosummary_generate = True

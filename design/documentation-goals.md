@@ -70,6 +70,14 @@ reference pages**. Two narratives must not contradict each other. Shared
 material lives under a neutral `guide/` (or equivalent) hierarchy after the
 fork.
 
+The realized structure adds an explicit **depth gradient** (see
+[docs-reorg.md](docs-reorg.md)): each `guide/` chapter is a **quick-orientation
+glance** — enough to decide whether a concept matters for your use case now —
+that **diverts to an authoritative `reference/concepts/` page** for the full
+rules. Guide chapters are ordered by their `index.md` toctree (no integer
+filename prefixes) and split into a **Core** sequence and an **Internals
+(optional)** group.
+
 ---
 
 ## 3. Pedagogical approach
@@ -135,17 +143,17 @@ a site URL. Each subsection has a **two-line summary** of intended contents.
 
 | Section | Summary |
 |--------|---------|
-| `guide/00-model-of-evaluation.md` | Short accurate story: what is read, what is evaluated, what is data. Ends with prediction-friendly micro-examples. |
-| `guide/01-forms-and-combining.md` | How programs compose; nesting and grouping; connects surface syntax to executable structure without dumping the full grammar. |
-| `guide/02-bindings-and-environments.md` | Names, definitions, shadowing, persistence across calls; optional step-by-step traces. |
-| `guide/03-functions-deep.md` | Recursion, higher-order functions, idiomatic functional patterns; convergence point for both on-ramps. |
-| `guide/04-data-structures.md` | First-class structures and traversal; sidebar for common wrong mental models from Python or Lisp if useful. |
-| `guide/05-control-flow.md` | Real conditionals and iteration style; avoids cataloguing features outside the recommended teaching path. |
-| `guide/06-modules-and-program-structure.md` | Files, imports, project layout aligned with how the implementation and tests expect code to be organized. |
-| `guide/07-macros-or-syntax-extension.md` | If applicable: what macros solve, safety/hygiene at a user level, minimal examples. Omit or replace if not user-facing yet. |
-| `guide/08-types-or-contracts.md` | If applicable: types, predicates, contracts beyond dynamic defaults. Otherwise “not yet” and optional link to design notes. |
-| `guide/09-io-and-effects.md` | Printing, files, time, environment—supported stdlib surface; separates pure core from effects. |
-| `guide/10-testing-and-quality.md` | How tests are written and run in this ecosystem (e.g. tox, project conventions). |
+| `guide/model-of-evaluation.md` | Short accurate story: what is read, what is evaluated, what is data. Ends with prediction-friendly micro-examples. |
+| `guide/forms-and-combining.md` | How programs compose; nesting and grouping; connects surface syntax to executable structure without dumping the full grammar. |
+| `guide/bindings-and-environments.md` | Names, definitions, shadowing, persistence across calls; optional step-by-step traces. |
+| `guide/functions-deep.md` | Recursion, higher-order functions, idiomatic functional patterns; convergence point for both on-ramps. |
+| `guide/data-structures.md` | First-class structures and traversal; sidebar for common wrong mental models from Python or Lisp if useful. |
+| `guide/control-flow.md` | Real conditionals and iteration style; avoids cataloguing features outside the recommended teaching path. |
+| `guide/modules-and-program-structure.md` | Files, imports, project layout aligned with how the implementation and tests expect code to be organized. |
+| `guide/macros-or-syntax-extension.md` | If applicable: what macros solve, safety/hygiene at a user level, minimal examples. Omit or replace if not user-facing yet. |
+| `guide/types-or-contracts.md` | If applicable: types, predicates, contracts beyond dynamic defaults. Otherwise “not yet” and optional link to design notes. |
+| `guide/io-and-effects.md` | Printing, files, time, environment—supported stdlib surface; separates pure core from effects. |
+| `guide/testing-and-quality.md` | How tests are written and run in this ecosystem (e.g. tox, project conventions). |
 
 #### 4.4.1 Optional guide material (bytecode curiosity)
 
@@ -156,6 +164,25 @@ only.
 |--------|---------|
 | `guide/bytecode-mental-model.md` | Why bytecode exists; stack-machine intuition; when ordinary use needs this vs debugging vs contributing. |
 | `guide/from-source-to-stack.md` | Trace one or two tiny programs from syntax to a short opcode sequence; trains prediction without full compiler detail. |
+
+#### 4.4.2 `reference/concepts/` — Authoritative concept pages
+
+Lives under `reference/` but is tightly coupled to the guide: the **deep-dive
+counterpart** to the `guide/` glance chapters (§ 2.3). Where a
+guide chapter orients, its concepts page is the **final word**: exhaustive, may
+be more than a reader wanted. Cross-cutting topics that span many forms live
+here, and guide chapters divert into them.
+
+| Section | Summary |
+|--------|---------|
+| `reference/concepts/bindings-and-refs.md` | Namespace, bind vs store, ref, deref, unpack. |
+| `reference/concepts/references-and-storage-indirection.md` | Refs as location handles, `&` sugar, `set!` target trap, `bind!`, by-ref params, vs Python. |
+| `reference/concepts/brackets-and-call-convention.md` | `( )` = call, `[ ]` = data, bracket-pair type, `compiler/call-brackets`. |
+| `reference/concepts/demand-async-and-defer.md` | Ambient async model, demand path, defer, on-demand?. |
+| `reference/concepts/choosing-an-async-construct.md` | Decision aid: `demand` / `define-demanding` vs `defer` vs `coroutine-fn` vs the asyncio bridges. |
+| `reference/concepts/layout-and-s-expressions.md` | Layout vs s-expr surfaces, the three authoring forms. |
+| `reference/concepts/macro-matching-and-hygiene.md` | Pattern match at expand time, datum forms and wrappers. |
+| `reference/concepts/pragma.md` | Setting a pragma; the `reader/*` / `compiler/*` / `pragma/*` settings. |
 
 ### 4.5 `reference/` — Neutral lookup
 

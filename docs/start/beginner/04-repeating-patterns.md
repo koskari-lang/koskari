@@ -95,7 +95,7 @@ variations so the pattern sticks.
 >
 > **A:** Yes — layout blocks, macros, many more forms. **Not yet.** This track
 > stops with nested calls and small scripts. The [shared
-> guide](../../guide/00-model-of-evaluation.md) picks up the evaluation story
+> guide](../../guide/model-of-evaluation.md) picks up the evaluation story
 > both on-ramps converge on.
 
 ---

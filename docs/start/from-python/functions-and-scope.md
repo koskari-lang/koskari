@@ -16,7 +16,12 @@ closures behave like Python’s nested functions.
 
 ## Defining functions
 
-> **Q:** `def double(x): return x * 2`?
+> **Q:** A simple function?
+>
+> ```python
+> def double(x):
+>   return x * 2
+> ```
 >
 > **A:**
 >
@@ -28,15 +33,17 @@ closures behave like Python’s nested functions.
 > Square brackets hold **formals**. The last expression in the body is the
 > return value unless you use **`return`**.
 
-> **Q:** `lambda x: x + 1`?
+> **Q:** An anonymous function?
+>
+> ```python
+> lambda x: x + 1
+> ```
 >
 > **A:**
 >
 > ```koskari
 > (lambda [x] (+ x 1))
 > ```
->
-> Anonymous functions stay compact in parentheses.
 
 > **Q:** Default and keyword parameters?
 >
@@ -81,7 +88,7 @@ closures behave like Python’s nested functions.
 >   while (> n 0):
 >     decr! n
 >     set! v accu
->     set! accu (+ accu v)
+>     incr! accu v
 >   v
 > ```
 
@@ -137,7 +144,7 @@ closures behave like Python’s nested functions.
 >
 > ```koskari
 > let loop [[n 10]]:
->   when (gt n 0):
+>   when (> n 0):
 >     (print n)
 >     (loop (- n 1))
 > ```

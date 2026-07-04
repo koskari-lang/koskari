@@ -153,11 +153,11 @@ notes: requires bad_guy raising at eval; pattern from test_try.py bare except fa
 id: special-begin-single-expr-002
 feature: special/compile/begin
 source: |-
-  (compile/begin (+ 1 2))
+  (begin (+ 1 2))
   
 verify:
-  read: (compile/begin (+ 1 2))
-  expand: (compile/begin (+ 1 2))
+  read: (begin (+ 1 2))
+  expand: (begin (+ 1 2))
   eval: "3"
 references:
   - reference/specials/compile-begin.md
@@ -169,11 +169,11 @@ tags:
 id: special-begin-empty-003
 feature: special/compile/begin
 source: |-
-  (compile/begin)
+  (begin)
   
 verify:
-  read: (compile/begin)
-  expand: (compile/begin)
+  read: (begin)
+  expand: (begin)
   eval: "null"
 references:
   - reference/specials/compile-begin.md
@@ -370,11 +370,11 @@ tags:
 id: special-with-no-binding-001
 feature: special/compile/with
 source: |-
-  (compile/with [(open "/dev/null")] None)
+  (with [(open "/dev/null")] None)
   
 verify:
-  read: (compile/with ((open "/dev/null")) None)
-  expand: (compile/with ((open "/dev/null")) None)
+  read: (with ((open "/dev/null")) None)
+  expand: (with ((open "/dev/null")) None)
   eval: "null"
 references:
   - reference/specials/with.md
@@ -388,11 +388,11 @@ notes: no binding; context manager enter result discarded; body evaluates to Non
 id: special-with-binding-002
 feature: special/compile/with
 source: |-
-  (compile/with [f (open "/dev/null")] (compile/call-attr f read))
+  (with [f (open "/dev/null")] (call-attr f read))
   
 verify:
-  read: (compile/with (f (open "/dev/null")) (compile/call-attr f read))
-  expand: (compile/with (f (open "/dev/null")) (compile/call-attr f read))
+  read: (with (f (open "/dev/null")) (call-attr f read))
+  expand: (with (f (open "/dev/null")) (call-attr f read))
   eval: '""'
 references:
   - reference/specials/with.md
@@ -406,11 +406,11 @@ notes: named binding 'f'; reads from /dev/null which is always empty
 id: special-with-multi-body-003
 feature: special/compile/with
 source: |-
-  (compile/with [f (open "/dev/null")] (compile/call-attr f read) (compile/call-attr f read))
+  (with [f (open "/dev/null")] (call-attr f read) (call-attr f read))
   
 verify:
-  read: (compile/with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
-  expand: (compile/with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  read: (with (f (open "/dev/null")) (call-attr f read) (call-attr f read))
+  expand: (with (f (open "/dev/null")) (call-attr f read) (call-attr f read))
   eval: '""'
 references:
   - reference/specials/with.md
@@ -424,11 +424,11 @@ notes: multiple body forms; value is last form; both reads happen within context
 id: special-globals-001
 feature: special/compile/globals
 source: |-
-  (compile/globals)
+  (globals)
   
 verify:
-  read: (compile/globals)
-  expand: (compile/globals)
+  read: (globals)
+  expand: (globals)
 references:
   - reference/specials/compile-globals.md
 stability: evolving
@@ -440,11 +440,11 @@ notes: returns the module namespace; eval produces a ModuleNamespace object (not
 id: special-locals-001
 feature: special/compile/locals
 source: |-
-  (compile/locals)
+  (locals)
   
 verify:
-  read: (compile/locals)
-  expand: (compile/locals)
+  read: (locals)
+  expand: (locals)
 references:
   - reference/specials/compile-locals.md
 stability: evolving
@@ -456,11 +456,11 @@ notes: returns the current frame namespace; eval produces a Namespace object (no
 id: special-call-cc-invoke-002
 feature: special/compile/call/cc
 source: |-
-  (compile/call/cc (compile/lambda [k] (compile/call k 42)))
+  (call/cc (lambda [k] (call k 42)))
   
 verify:
-  read: (compile/call/cc (compile/lambda (k) (compile/call k 42)))
-  expand: (compile/call/cc (compile/lambda (k) (compile/call k 42)))
+  read: (call/cc (lambda (k) (call k 42)))
+  expand: (call/cc (lambda (k) (call k 42)))
   eval: "42"
 references:
   - reference/specials/compile-call-cc.md
@@ -473,11 +473,11 @@ notes: capture continuation k; invoke immediately with 42; form value is 42
 id: special-call-cc-escape-003
 feature: special/compile/call/cc
 source: |-
-  (compile/call/cc (compile/lambda [escape] (compile/begin (compile/call escape "early") "unreachable")))
+  (call/cc (lambda [escape] (begin (call escape "early") "unreachable")))
   
 verify:
-  read: (compile/call/cc (compile/lambda (escape) (compile/begin (compile/call escape "early") "unreachable")))
-  expand: (compile/call/cc (compile/lambda (escape) (compile/begin (compile/call escape "early") "unreachable")))
+  read: (call/cc (lambda (escape) (begin (call escape "early") "unreachable")))
+  expand: (call/cc (lambda (escape) (begin (call escape "early") "unreachable")))
   eval: '"early"'
 references:
   - reference/specials/compile-call-cc.md
@@ -524,11 +524,11 @@ notes: CONST None pushed and returned; result is null
 id: special-let-cc-escape-002
 feature: special/compile/let/cc
 source: |-
-  (compile/let/cc escape (begin (call escape "short") "never"))
+  (let/cc escape (begin (call escape "short") "never"))
   
 verify:
-  read: (compile/let/cc escape (begin (call escape "short") "never"))
-  expand: (compile/let/cc escape (begin (call escape "short") "never"))
+  read: (let/cc escape (begin (call escape "short") "never"))
+  expand: (let/cc escape (begin (call escape "short") "never"))
   eval: '"short"'
 references:
   - reference/specials/compile-let-cc.md
@@ -541,11 +541,11 @@ notes: escape exits the body early; code after the call is never reached
 id: special-let-cc-call-003
 feature: special/compile/let/cc
 source: |-
-  (compile/let/cc k (compile/call k 99))
+  (let/cc k (call k 99))
   
 verify:
-  read: (compile/let/cc k (compile/call k 99))
-  expand: (compile/let/cc k (compile/call k 99))
+  read: (let/cc k (call k 99))
+  expand: (let/cc k (call k 99))
   eval: "99"
 references:
   - reference/specials/compile-let-cc.md
@@ -558,11 +558,11 @@ notes: capture current continuation as k; call k immediately with 99
 id: special-globals-item-002
 feature: special/compile/globals
 source: |-
-  (item (compile/globals) "z")
+  (item (globals) "z")
   
 verify:
-  read: (item (compile/globals) "z")
-  expand: (item (compile/globals) "z")
+  read: (item (globals) "z")
+  expand: (item (globals) "z")
   eval: "1"
 references:
   - reference/specials/compile-globals.md
@@ -575,11 +575,11 @@ notes: index the module namespace by string key to read a variable; z=1 fixture
 id: special-globals-type-003
 feature: special/compile/globals
 source: |-
-  (str (type (compile/globals)))
+  (str (type (globals)))
   
 verify:
-  read: (str (type (compile/globals)))
-  expand: (str (type (compile/globals)))
+  read: (str (type (globals)))
+  expand: (str (type (globals)))
   eval: '"<class ''ModuleNamespace''>"'
 references:
   - reference/specials/compile-globals.md
@@ -592,11 +592,11 @@ notes: compile/globals returns a ModuleNamespace; type/str confirms the runtime 
 id: special-locals-item-002
 feature: special/compile/locals
 source: |-
-  (let [[x 5]] (item (compile/locals) "x"))
+  (let [[x 5]] (item (locals) "x"))
   
 verify:
-  read: (let ((x 5)) (item (compile/locals) "x"))
-  expand: (let ((x 5)) (item (compile/locals) "x"))
+  read: (let ((x 5)) (item (locals) "x"))
+  expand: (let ((x 5)) (item (locals) "x"))
   eval: "5"
 references:
   - reference/specials/compile-locals.md
@@ -609,11 +609,11 @@ notes: item access on local namespace inside a let frame; reads back x=5
 id: special-locals-module-scope-003
 feature: special/compile/locals
 source: |-
-  (item (compile/locals) "z")
+  (item (locals) "z")
   
 verify:
-  read: (item (compile/locals) "z")
-  expand: (item (compile/locals) "z")
+  read: (item (locals) "z")
+  expand: (item (locals) "z")
   eval: "1"
 references:
   - reference/specials/compile-locals.md
@@ -677,11 +677,11 @@ notes: car of cdr accesses the second element
 id: special-call-add-001
 feature: special/compile/call
 source: |-
-  (compile/call add 3 4)
+  (call + 3 4)
   
 verify:
-  read: (compile/call add 3 4)
-  expand: (compile/call add 3 4)
+  read: (call + 3 4)
+  expand: (call + 3 4)
   eval: "7"
 references:
   - reference/specials/compile-call.md
@@ -693,11 +693,11 @@ notes: compile/call invokes add fixture with 3 and 4
 id: special-call-lambda-002
 feature: special/compile/call
 source: |-
-  (compile/call (compile/lambda [x] (* x x)) 5)
+  (call (lambda [x] (* x x)) 5)
   
 verify:
-  read: (compile/call (compile/lambda (x) (* x x)) 5)
-  expand: (compile/call (compile/lambda (x) (* x x)) 5)
+  read: (call (lambda (x) (* x x)) 5)
+  expand: (call (lambda (x) (* x x)) 5)
   eval: "25"
 references:
   - reference/specials/compile-call.md
@@ -709,11 +709,11 @@ notes: compile/call with inline lambda; 5*5=25
 id: special-call-len-003
 feature: special/compile/call
 source: |-
-  (compile/call len seq)
+  (call len seq)
   
 verify:
-  read: (compile/call len seq)
-  expand: (compile/call len seq)
+  read: (call len seq)
+  expand: (call len seq)
   eval: "3"
 references:
   - reference/specials/compile-call.md
@@ -725,11 +725,11 @@ notes: call len on seq=(1,2,3) fixture; result is 3
 id: special-reset-plain-001
 feature: special/compile/reset
 source: |-
-  (compile/reset (+ 1 2))
+  (reset (+ 1 2))
   
 verify:
-  read: (compile/reset (+ 1 2))
-  expand: (compile/reset (+ 1 2))
+  read: (reset (+ 1 2))
+  expand: (reset (+ 1 2))
   eval: "3"
 references:
   - reference/specials/compile-reset.md
@@ -742,11 +742,11 @@ notes: reset with no shift runs the body normally
 id: special-reset-shift-abort-002
 feature: special/compile/reset
 source: |-
-  (compile/reset (+ 1 (compile/shift k 42)))
+  (reset (+ 1 (shift k 42)))
   
 verify:
-  read: (compile/reset (+ 1 (compile/shift k 42)))
-  expand: (compile/reset (+ 1 (compile/shift k 42)))
+  read: (reset (+ 1 (shift k 42)))
+  expand: (reset (+ 1 (shift k 42)))
   eval: "42"
 references:
   - reference/specials/compile-reset.md
@@ -760,11 +760,11 @@ notes: shift aborts the reset body and returns 42; k is the delimited continuati
 id: special-reset-shift-call-003
 feature: special/compile/reset
 source: |-
-  (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  (reset (* 2 (shift k (call k 5))))
   
 verify:
-  read: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
-  expand: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  read: (reset (* 2 (shift k (call k 5))))
+  expand: (reset (* 2 (shift k (call k 5))))
   eval: "10"
 references:
   - reference/specials/compile-reset.md
@@ -778,11 +778,11 @@ notes: shift captures k (the rest of (* 2 …)); calling k 5 resumes with 5 givi
 id: special-shift-abort-001
 feature: special/compile/shift
 source: |-
-  (compile/reset (+ 1 (compile/shift k 42)))
+  (reset (+ 1 (shift k 42)))
   
 verify:
-  read: (compile/reset (+ 1 (compile/shift k 42)))
-  expand: (compile/reset (+ 1 (compile/shift k 42)))
+  read: (reset (+ 1 (shift k 42)))
+  expand: (reset (+ 1 (shift k 42)))
   eval: "42"
 references:
   - reference/specials/compile-shift.md
@@ -796,11 +796,11 @@ notes: shift k aborts the reset context; 42 is the result; k is unused
 id: special-shift-call-002
 feature: special/compile/shift
 source: |-
-  (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  (reset (* 2 (shift k (call k 5))))
   
 verify:
-  read: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
-  expand: (compile/reset (* 2 (compile/shift k (compile/call k 5))))
+  read: (reset (* 2 (shift k (call k 5))))
+  expand: (reset (* 2 (shift k (call k 5))))
   eval: "10"
 references:
   - reference/specials/compile-shift.md
@@ -814,11 +814,11 @@ notes: k is a delimited continuation; (call k 5) fills in 5 for the hole; 2*5=10
 id: special-shift-multi-003
 feature: special/compile/shift
 source: |-
-  (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
+  (reset (shift k (call k (call k 1))))
   
 verify:
-  read: (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
-  expand: (compile/reset (compile/shift k (compile/call k (compile/call k 1))))
+  read: (reset (shift k (call k (call k 1))))
+  expand: (reset (shift k (call k (call k 1))))
   eval: "1"
 references:
   - reference/specials/compile-shift.md
@@ -832,11 +832,11 @@ notes: multi-shot continuation; k called twice with nesting; empty body outside 
 id: special-dyn-with-no-binding-001
 feature: special/compile/dyn-with
 source: |-
-  (compile/dyn-with [(open "/dev/null")] None)
+  (dyn-with [(open "/dev/null")] None)
   
 verify:
-  read: (compile/dyn-with ((open "/dev/null")) None)
-  expand: (compile/dyn-with ((open "/dev/null")) None)
+  read: (dyn-with ((open "/dev/null")) None)
+  expand: (dyn-with ((open "/dev/null")) None)
   eval: "null"
 references:
   - reference/specials/dyn-with.md
@@ -850,11 +850,11 @@ notes: dynamic extent with no binding; context manager enter result discarded; a
 id: special-dyn-with-binding-002
 feature: special/compile/dyn-with
 source: |-
-  (compile/dyn-with [f (open "/dev/null")] (compile/call-attr f read))
+  (dyn-with [f (open "/dev/null")] (call-attr f read))
   
 verify:
-  read: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read))
-  expand: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read))
+  read: (dyn-with (f (open "/dev/null")) (call-attr f read))
+  expand: (dyn-with (f (open "/dev/null")) (call-attr f read))
   eval: '""'
 references:
   - reference/specials/dyn-with.md
@@ -868,11 +868,11 @@ notes: named binding f; reads from /dev/null (always empty string)
 id: special-dyn-with-multi-003
 feature: special/compile/dyn-with
 source: |-
-  (compile/dyn-with [f (open "/dev/null")] (compile/call-attr f read) (compile/call-attr f read))
+  (dyn-with [f (open "/dev/null")] (call-attr f read) (call-attr f read))
   
 verify:
-  read: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
-  expand: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
+  read: (dyn-with (f (open "/dev/null")) (call-attr f read) (call-attr f read))
+  expand: (dyn-with (f (open "/dev/null")) (call-attr f read) (call-attr f read))
   eval: '""'
 references:
   - reference/specials/dyn-with.md
@@ -886,7 +886,7 @@ notes: multiple body forms; last form value is returned; both happen within cont
 id: special-dyn-wind-call-001
 feature: special/compile/dyn-wind
 source: |-
-  (begin (let [[r (compile/dyn-wind (compile/lambda [] None) (compile/lambda [] 99) (compile/lambda [] None))]] (compile/call r)))
+  (begin (let [[r (dyn-wind (lambda [] None) (lambda [] 99) (lambda [] None))]] (call r)))
   
 verify:
   eval: "99"
@@ -901,7 +901,7 @@ notes: dyn-wind (before thunk after); calling the result runs before, body, afte
 id: special-dyn-wind-events-002
 feature: special/compile/dyn-wind
 source: |-
-  (let [[events (#list)]] (compile/call (compile/dyn-wind (compile/lambda [] (compile/call-attr events append "before")) (compile/lambda [] (compile/call-attr events append "body")) (compile/lambda [] (compile/call-attr events append "after")))) events)
+  (let [[events (#list)]] (call (dyn-wind (lambda [] (call-attr events append "before")) (lambda [] (call-attr events append "body")) (lambda [] (call-attr events append "after")))) events)
   
 verify:
   eval: "list:[\"body\"]"
@@ -916,10 +916,10 @@ notes: dyn-wind calls the thunk (body) directly; before/after are invoked on con
 id: special-dyn-wind-expand-003
 feature: special/compile/dyn-wind
 source: |-
-  (compile/dyn-wind before thunk after)
+  (dyn-wind before thunk after)
   
 verify:
-  expand: (compile/dyn-wind before thunk after)
+  expand: (dyn-wind before thunk after)
 references:
   - reference/specials/compile-dyn-wind.md
 stability: experimental
@@ -948,11 +948,11 @@ notes: capture/cc with no use of k; body evaluates to 42 directly
 id: special-capture-cc-escape-002
 feature: special/compile/capture/cc
 source: |-
-  (capture/cc k (compile/call k "early"))
+  (capture/cc k (call k "early"))
   
 verify:
-  read: (capture/cc k (compile/call k "early"))
-  expand: (capture/cc k (compile/call k "early"))
+  read: (capture/cc k (call k "early"))
+  expand: (capture/cc k (call k "early"))
   eval: '"early"'
 references:
   - reference/specials/compile-capture-cc.md
@@ -965,11 +965,11 @@ notes: calling k exits immediately with the given value
 id: special-capture-cc-abort-003
 feature: special/compile/capture/cc
 source: |-
-  (capture/cc k (begin (compile/call k 10) 99))
+  (capture/cc k (begin (call k 10) 99))
   
 verify:
-  read: (capture/cc k (begin (compile/call k 10) 99))
-  expand: (capture/cc k (begin (compile/call k 10) 99))
+  read: (capture/cc k (begin (call k 10) 99))
+  expand: (capture/cc k (begin (call k 10) 99))
   eval: "10"
 references:
   - reference/specials/compile-capture-cc.md

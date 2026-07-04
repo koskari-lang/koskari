@@ -132,4 +132,9 @@ Reading turns text into forms. Evaluation turns forms into values (and
 effects). Nested calls evaluate inner forms first. When in doubt, predict the
 value, then check at the REPL.
 
-Next in the guide (when written): [Forms and combining](01-forms-and-combining.md).
+**Go deeper:** [Layout and s-expressions](../reference/concepts/layout-and-s-expressions.md)
+— how source text becomes forms across the three surfaces.
+[Demand, async, and defer](../reference/concepts/demand-async-and-defer.md) —
+what "evaluate" means on Koskari's async-native substrate.
+
+Next in the guide: [Forms and combining](forms-and-combining.md).

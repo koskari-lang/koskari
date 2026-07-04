@@ -568,11 +568,11 @@ notes: prepend each iteration to result; final list is reversed (2,1,0)
 id: iter-ref-item-deref-001
 feature: special/compile/ref-item
 source: |-
-  (compile/deref (compile/ref-item seq 0))
+  (deref (ref-item seq 0))
   
 verify:
-  read: (compile/deref (compile/ref-item seq 0))
-  expand: (compile/deref (compile/ref-item seq 0))
+  read: (deref (ref-item seq 0))
+  expand: (deref (ref-item seq 0))
   eval: "1"
 references:
   - reference/specials/compile-ref-item.md
@@ -584,11 +584,11 @@ notes: ref-item creates an ItemRef for seq[0]; deref reads 1; seq=(1,2,3) fixtur
 id: iter-ref-item-type-002
 feature: special/compile/ref-item
 source: |-
-  (str (type (compile/ref-item seq 0)))
+  (str (type (ref-item seq 0)))
   
 verify:
-  read: (str (type (compile/ref-item seq 0)))
-  expand: (str (type (compile/ref-item seq 0)))
+  read: (str (type (ref-item seq 0)))
+  expand: (str (type (ref-item seq 0)))
   eval: '"<class ''ItemRef''>"'
 references:
   - reference/specials/compile-ref-item.md
@@ -600,11 +600,11 @@ notes: ref-item returns an ItemRef object; type check confirms the class
 id: iter-ref-item-index-two-003
 feature: special/compile/ref-item
 source: |-
-  (compile/deref (compile/ref-item seq 2))
+  (deref (ref-item seq 2))
   
 verify:
-  read: (compile/deref (compile/ref-item seq 2))
-  expand: (compile/deref (compile/ref-item seq 2))
+  read: (deref (ref-item seq 2))
+  expand: (deref (ref-item seq 2))
   eval: "3"
 references:
   - reference/specials/compile-ref-item.md

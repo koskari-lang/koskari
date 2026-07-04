@@ -55,7 +55,7 @@ by the compiler.
 
 ```koskari
 ;; Positional
-(add 1 2)
+(+ 1 2)
 (my-func a b c)
 
 ;; Keyword (KEY: VAL)
