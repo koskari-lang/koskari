@@ -32,16 +32,14 @@ import sys
 from argparse import REMAINDER, Action, ArgumentParser
 from os.path import basename
 
-from ..exceptions import (CodeBoundary, CompilerError, ReaderEOF, ReaderError,
-                          ReaderSyntaxError, UncaughtCompilerError,
-                          apply_sys_last_exc, format_code_boundary_exception,
+from ..exceptions import (CodeBoundary, CompilerError, UncaughtCompilerError,
+                          format_code_boundary_exception,
                           format_exception_with_koskari_trace)
 from ..lexer.discovery import special_names_for_repl
 from ..lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
                                     koskari_style, load_koskari_key_bindings)
-from ..lib import Domain, ParamRef, drive_async_loop, kos_repr
-from ..module import build_module_load_facets, init_module, new_module
-from ..reader import READ_EOF, LayoutReader, source_str
+from ..lib import Domain, ParamRef, drive_async_loop
+from ..module import new_module
 
 
 __all__ = (
@@ -214,15 +212,6 @@ class REPLCodeBoundary(CodeBoundary):
 # ---------------------------------------------------------------------------
 
 
-class REPLReaderError(ReaderError):
-    """
-    Reader error in the REPL
-    """
-
-
-_INCOMPLETE = object()
-
-
 _READ_EOF = object()
 _READ_INTERRUPT = object()
 
@@ -284,107 +273,20 @@ async def _await_user_form(expr):
         raise REPLCodeBoundary() from e
 
 
-async def _eval_expression_async(compiler, source, ns):
-    """
-    Run one REPL expression.
-
-    :param compiler: Compiler instance
-    :param source: source string (may span multiple lines)
-    :param ns: module namespace
-    :return: eval result or _INCOMPLETE if parse returned None
-    """
-
-    reader = ns.get("__reader__")
-    if reader is None:
-        reader = LayoutReader(ns)
-        ns["__reader__"] = reader
-
-    stream = source_str(source, '<stdin>')
-    try:
-        source_expr = reader.read(stream)
-
-    except ReaderEOF:
-        return _INCOMPLETE
-
-    except ReaderSyntaxError as e:
-        raise REPLReaderError(e.message) from e
-
-    if source_expr is READ_EOF:
-        return _INCOMPLETE
-
-    try:
-        fragment = compiler.full_compile(source_expr)
-        expr = fragment.as_expression(ns)
-        return await expr()
-    except (UncaughtCompilerError, CompilerError):
-        raise
-    except Exception as e:
-        raise REPLCodeBoundary() from e
-
-
-def _in_block_body(buffer):
-    """
-    True if buffer appears to be inside a layout block body (user may add more).
-
-    We have a block header (some line ends with :) and the last non-empty
-    line has leading whitespace.  A blank line will terminate the block.
-    """
-
-    if not buffer or ':' not in buffer:
-        return False
-    lines = buffer.splitlines()
-    has_header = any(ln.rstrip().endswith(':') for ln in lines)
-    if not has_header:
-        return False
-    for i in range(len(lines) - 1, -1, -1):
-        ln = lines[i]
-        if ln.strip():
-            return ln and ln[0] in ' \t'
-    return False
-
-
-def _continuation_indent(buffer):
-    """
-    Return leading whitespace for the next continuation line.
-
-    When buffer ends with a block header (colon), return indent of that
-    line plus 4 spaces.  When in block body, return indent of last
-    non-empty line (same level).  Otherwise return empty string.
-    """
-
-    if not buffer:
-        return ''
-    lines = buffer.splitlines()
-    if not lines:
-        return ''
-    rstripped = buffer.rstrip()
-    if rstripped.endswith(':'):
-        last = lines[-1]
-        indent_len = len(last) - len(last.lstrip())
-        return ' ' * (indent_len + 4)
-    if _in_block_body(buffer):
-        for i in range(len(lines) - 1, -1, -1):
-            ln = lines[i]
-            if ln.strip():
-                indent_len = len(ln) - len(ln.lstrip())
-                return ' ' * indent_len
-    return ''
-
-
 async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
                      stderr=None, full_trace=False, quiet=False):
     """
-    Run an interactive read-eval-print loop for a koskari module.
+    Run the interactive read-eval-print loop for a koskari module.
 
-    Each form entered by the user is compiled and executed.  Multi-line
-    input is supported via continuation prompt.  Non-None results are
-    printed to stdout.  The last result is stored as '_' in the namespace.
+    Thin wrapper delegating to the Koskari-native REPL in repl.ki, imported
+    lazily so the compile cost is only paid when a session starts.  Retained
+    as the public entry point (``koskari.cli.repl_async``); the loop, read
+    step, and error dispatch now live in Koskari.
 
     :param mod: koskari Module to use as the execution context
-    :param prompter: callable with the same signature as input(); when
-        None, _make_prompter(histfile, get_namespace) is called
-    :param histfile: path to history file for _make_prompter when
-        prompter is None
+    :param prompter: callable with the same signature as input(); built via
+        _make_repl_prompter when None
+    :param histfile: history file path used when prompter is None
     :param stdin: input stream, defaults to sys.stdin
     :param stdout: output stream, defaults to sys.stdout
     :param stderr: error stream, defaults to sys.stderr
@@ -392,139 +294,17 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
     :param quiet: when True, suppress REPL startup version banner
     """
 
-    stdin = stdin or sys.stdin
-    stdout = stdout or sys.stdout
-    stderr = stderr or sys.stderr
+    from . import repl as _repl_ki
 
-    loop = asyncio.get_running_loop()
-
-    # init_module registers compiler specials into the namespace.  When the
-    # module already has __file__ set (e.g. after run_file_async), we preserve
-    # it; otherwise use the sentinel '<stdin>' so the compiler has a filename.
-    compiler = getattr(mod, '__compiler__', None)
-    if compiler is None:
-        init_module(mod, '<stdin>')
-        compiler, _reader = build_module_load_facets(mod, filename="<stdin>")
-
-    ns = vars(mod)
-    if prompter is None:
-        prompter = _make_prompter(histfile=histfile, get_namespace=lambda: ns)
-
-    if not quiet:
-        for line in startup_lines():
-            print(line, file=stdout)
-        print('', file=stdout)
-
-    buffer = ''
-    prompt = '>>> '
-
-    while True:
-        try:
-            indent = _continuation_indent(buffer) if prompt == '... ' else ''
-            line = await loop.run_in_executor(
-                None,
-                lambda p=prompt, d=indent: prompter(p, default=d))
-
-        except KeyboardInterrupt:
-            print('', file=stderr)
-            stderr.flush()
-            if buffer.strip():
-                buffer = ''
-                prompt = '>>> '
-                continue
-            break
-
-        except EOFError:
-            print('', file=stderr)
-            stderr.flush()
-            break
-
-        buffer = buffer + ('\n' + line if buffer else line)
-
-        if not buffer.strip():
-            buffer = ''
-            continue
-
-        line_is_blank = not line.strip()
-        if not line_is_blank:
-            if buffer.rstrip().endswith(':'):
-                prompt = '... '
-                continue
-            if _in_block_body(buffer):
-                prompt = '... '
-                continue
-
-        try:
-            result = await _eval_expression_async(compiler, buffer, ns)
-
-            if result is _INCOMPLETE:
-                prompt = '... '
-                continue
-
-            buffer = ''
-            prompt = '>>> '
-
-            ns['_'] = result
-            if result is not None:
-                print(kos_repr(result), file=stdout)
-
-        except KeyboardInterrupt:
-            print("", file=stderr)
-            stderr.flush()
-            buffer = ''
-            prompt = '>>> '
-
-        except EOFError:
-            print('', file=stderr)
-            stderr.flush()
-            break
-
-        except REPLReaderError as e:
-            orig = e.__cause__ or e
-            print(f"{type(orig).__name__}: {orig.message}", file=stderr)
-            stderr.flush()
-            buffer = ''
-            prompt = '>>> '
-
-        except REPLCodeBoundary as boundary:
-            lines, last_type, last_val, last_tb = format_code_boundary_exception(
-                boundary,
-                nofold=full_trace,
-                infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
-            apply_sys_last_exc(last_type, last_val, last_tb)
-            print(''.join(lines), end='', file=stderr)
-            stderr.flush()
-            buffer = ''
-            prompt = '>>> '
-
-        except UncaughtCompilerError as exc:
-            lines = format_exception_with_koskari_trace(
-                type(exc), exc, exc.__traceback__)
-            apply_sys_last_exc(type(exc), exc, exc.__traceback__)
-            print(''.join(lines), end='', file=stderr)
-            stderr.flush()
-            buffer = ''
-            prompt = '>>> '
-
-        except CompilerError as exc:
-            apply_sys_last_exc(type(exc), exc, None)
-            print(exc.explain(), end='', file=stderr)
-            stderr.flush()
-            buffer = ''
-            prompt = '>>> '
-
-        except Exception:
-            exc_type, exc_val, tb = sys.exc_info()
-            lines = format_exception_with_koskari_trace(exc_type, exc_val, tb)
-            apply_sys_last_exc(exc_type, exc_val, tb)
-            print(''.join(lines), end='', file=stderr)
-            stderr.flush()
-            buffer = ''
-            prompt = '>>> '
-
-        stdout.flush()
-
-    print('', file=stdout)
+    return await _repl_ki.repl_async(
+        mod,
+        prompter=prompter,
+        histfile=histfile,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+        full_trace=full_trace,
+        quiet=quiet)
 
 
 # ---------------------------------------------------------------------------
@@ -635,12 +415,7 @@ async def cli_async(options):
             if not options.interactive:
                 return
 
-        # The interactive loop is the Koskari-native REPL in repl.ki;
-        # imported lazily so the compile cost is only paid when a session
-        # actually drops into the REPL.  See design/cli-repl-rework.md.
-        from . import repl as _repl_ki
-
-        await _repl_ki.repl_async(
+        await repl_async(
             mod,
             histfile=options.histfile,
             full_trace=options.repl_full_trace,
