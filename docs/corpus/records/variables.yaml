@@ -1047,7 +1047,7 @@ verify:
   read: (compile/ref x)
 references:
   - reference/macros/compile-ref.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1064,7 +1064,7 @@ verify:
   eval: "7"
 references:
   - reference/macros/compile-ref.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1081,7 +1081,7 @@ verify:
   read: (compile/ref (item seq 0))
 references:
   - reference/macros/compile-ref.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1098,7 +1098,7 @@ verify:
   eval: "1"
 references:
   - reference/macros/compile-ref.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1115,7 +1115,7 @@ verify:
   eval: "5"
 references:
   - reference/macros/compile-ref.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1133,7 +1133,7 @@ verify:
 references:
   - reference/macros/compile-bind.md
   - reference/concepts/bindings-and-refs.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1151,7 +1151,7 @@ verify:
   eval: "8"
 references:
   - reference/specials/compile-lambda.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1169,7 +1169,7 @@ verify:
 references:
   - reference/macros/compile-ref.md
   - reference/concepts/bindings-and-refs.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1186,7 +1186,7 @@ verify:
   eval: "10"
 references:
   - reference/concepts/bindings-and-refs.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1203,7 +1203,7 @@ verify:
   eval: "list:[1,2,4,4]"
 references:
   - reference/specials/compile-lambda.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
@@ -1219,7 +1219,7 @@ verify:
 references:
   - reference/macros/compile-set.md
   - reference/concepts/bindings-and-refs.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable

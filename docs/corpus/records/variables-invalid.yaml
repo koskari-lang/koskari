@@ -24,7 +24,7 @@ verify:
   invalid: "the form parses fine, but a by-ref formal binds the caller's Ref as the parameter's storage, so it requires a Ref argument; (bump 5) passes the plain value 5 and fails at call time with TypeError: bump() by-ref formal n requires a Ref, not 5"
 references:
   - reference/specials/compile-lambda.md
-  - guide/references-and-storage-indirection.md
+  - reference/concepts/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable
