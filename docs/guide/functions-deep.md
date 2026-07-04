@@ -106,3 +106,9 @@ the problem naturally has “one item plus the rest.”
 
 Functions are values with inputs and a body. The last body form is the normal
 result. Defaults make calls friendlier. Recursion needs a clear stopping case.
+
+---
+
+**Go deeper:** [Demand, async, and defer](../reference/concepts/demand-async-and-defer.md)
+— how `coroutine-fn`, `defer`, and the ambient async evaluator decide when a
+function body actually runs.

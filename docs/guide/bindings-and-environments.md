@@ -78,3 +78,10 @@ used casually.
 Names live in environments. `define` introduces names, `let` creates local
 bindings, and `set!` updates an existing binding. Use small scopes and clear
 names to keep programs friendly.
+
+---
+
+**Go deeper:** [Bindings and refs](../reference/concepts/bindings-and-refs.md)
+— the precise namespace / bind-vs-store / deref vocabulary.
+[References and storage indirection](../reference/concepts/references-and-storage-indirection.md)
+— getting a handle to a storage location and writing through it.

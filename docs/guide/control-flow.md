@@ -82,3 +82,8 @@ function.
 Use `if` / `elif` / `else` for choices, `while` for condition-driven repetition,
 and `for-each` for collections. Put the clearest stopping rule where readers can
 see it.
+
+---
+
+**Go deeper:** [Demand, async, and defer](../reference/concepts/demand-async-and-defer.md)
+— iteration and control flow on Koskari's async-native evaluator.

@@ -83,3 +83,10 @@ has more than one idea.
 Forms are the pieces Koskari evaluates. Calls combine forms. Files and blocks
 run forms in order, and the last form in an expression-oriented body is the
 value you usually keep.
+
+---
+
+**Go deeper:** [Layout and s-expressions](../reference/concepts/layout-and-s-expressions.md)
+— the three authoring surfaces and how each reads into the same forms.
+[Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md)
+— why `( )` calls and `[ ]` is data.
