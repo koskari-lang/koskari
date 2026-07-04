@@ -1,6 +1,22 @@
 # Foreign-awaitable exceptions dropped on await-resume
 
-**Status:** open defect, reproduced and root-caused; fix proposed, not applied.
+**Archived.** The defect described here is **fixed**; the body below is the
+original diagnosis, kept for the record.
+
+**Status:** fixed. Permanent reproducer at
+`tests/importer/test_await_foreign_exception.py` (phase 6). The
+`coroutine_send`/`coroutine_throw` `WAITING_PY` branches now route inner
+exceptions through a shared `coroutine_raise_at_await` helper that re-enters
+`koskari_eval` as a throw (delivered at the await point via `revive_await`'s
+no-iterator raise ingress), and the duplicated result switches were
+consolidated into `coroutine_result`. The cancellation test (§8 item 4)
+surfaced a second, pre-existing defect: `POP_FINALLY` unconditionally popped
+the promoted slot while `HANDLING_RAISE`, but the raise-consume path in
+`dyn_walk.c` clears the region stack and pushes nothing, so any uncaught
+raise through a `finally`-only try died with "stack pop underrun" replacing
+the in-flight exception. `POP_FINALLY` now skips the promote-pop when
+handling a raise; coverage in `tests/compile/specials/test_try.py`
+(`test_try_nocatch_finally`, `test_try_exc_miss_finally`).
 
 When a Koskari coroutine `await`s a *foreign* (Python/asyncio) awaitable that
 **suspends to the real event loop and then raises**, the exception is not
@@ -19,7 +35,7 @@ raise-after-suspension path is broken.
 that asyncio drives).
 
 **Related:**
-- Evaluator model: [evaluator.md](evaluator.md); [boundary-control-reemit.md](boundary-control-reemit.md).
+- Evaluator model: [evaluator.md](../interpreter/evaluator.md); [boundary-control-reemit.md](../interpreter/boundary-control-reemit.md).
 - Surfaced by: `design/cli-repl-rework.md` (the REPL prompt read had to route
   EOF/interrupt through Python sentinels because of this bug).
 - Raise-path unification that fixed the *sibling* path but not this one: PR #79
