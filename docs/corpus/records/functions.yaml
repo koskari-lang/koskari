@@ -293,11 +293,11 @@ notes: koskari/bootstrap/_functions.ki; demand wrapper for on-demand eval path
 id: function-yield-basic-001
 feature: special/compile/yield
 source: |-
-  (list (compile/call (compile/lambda [x] (compile/yield x) (compile/yield (+ x 1))) 10))
+  (list (call (lambda [x] (yield x) (yield (+ x 1))) 10))
   
 verify:
-  read: (list (compile/call (compile/lambda (x) (compile/yield x) (compile/yield (+ x 1))) 10))
-  expand: (list (compile/call (compile/lambda (x) (compile/yield x) (compile/yield (+ x 1))) 10))
+  read: (list (call (lambda (x) (yield x) (yield (+ x 1))) 10))
+  expand: (list (call (lambda (x) (yield x) (yield (+ x 1))) 10))
   eval: "list:[10,11]"
 references:
   - reference/specials/compile-yield.md
@@ -311,11 +311,11 @@ notes: lambda with yield becomes a generator; list() collects all yielded values
 id: function-yield-single-002
 feature: special/compile/yield
 source: |-
-  (list (compile/call (compile/lambda [x] (compile/yield x)) 42))
+  (list (call (lambda [x] (yield x)) 42))
   
 verify:
-  read: (list (compile/call (compile/lambda (x) (compile/yield x)) 42))
-  expand: (list (compile/call (compile/lambda (x) (compile/yield x)) 42))
+  read: (list (call (lambda (x) (yield x)) 42))
+  expand: (list (call (lambda (x) (yield x)) 42))
   eval: "list:[42]"
 references:
   - reference/specials/compile-yield.md
@@ -329,11 +329,11 @@ notes: single-yield generator; list collects the one yielded value
 id: function-yield-from-basic-001
 feature: special/compile/yield-from
 source: |-
-  (list (compile/call (compile/lambda [items] (compile/yield-from items)) seq))
+  (list (call (lambda [items] (yield-from items)) seq))
   
 verify:
-  read: (list (compile/call (compile/lambda (items) (compile/yield-from items)) seq))
-  expand: (list (compile/call (compile/lambda (items) (compile/yield-from items)) seq))
+  read: (list (call (lambda (items) (yield-from items)) seq))
+  expand: (list (call (lambda (items) (yield-from items)) seq))
   eval: "list:[1,2,3]"
 references:
   - reference/specials/compile-yield-from.md
@@ -347,7 +347,7 @@ notes: yield-from delegates to seq=(1,2,3) fixture; all elements forwarded
 id: function-yield-from-range-002
 feature: special/compile/yield-from
 source: |-
-  (list (compile/call (compile/lambda [n] (compile/yield-from (range n))) 3))
+  (list (call (lambda [n] (yield-from (range n))) 3))
   
 verify:
   eval: "list:[0,1,2]"
@@ -363,11 +363,11 @@ notes: yield-from a range; generator yields 0 1 2 which list collects
 id: function-await-expr-001
 feature: special/compile/await
 source: |-
-  (compile/await (compile/call + 1 2))
+  (await (call + 1 2))
   
 verify:
-  read: (compile/await (compile/call + 1 2))
-  expand: (compile/await (compile/call + 1 2))
+  read: (await (call + 1 2))
+  expand: (await (call + 1 2))
 references:
   - reference/specials/compile-await.md
 stability: evolving
@@ -380,11 +380,11 @@ notes: explicit await for a non-auto-awaited value; add fixture is sync so await
 id: function-await-bare-002
 feature: special/compile/await
 source: |-
-  (compile/await)
+  (await)
   
 verify:
-  read: (compile/await)
-  expand: (compile/await)
+  read: (await)
+  expand: (await)
 references:
   - reference/specials/compile-await.md
 stability: evolving
@@ -447,11 +447,11 @@ notes: two-param form; expands to define with demand wrapper around function
 id: function-define-coroutine-type-003
 feature: macro/compile/define-coroutine
 source: |-
-  (begin (define-coroutine gen [n] (compile/yield n)) (str (type gen)))
+  (begin (define-coroutine gen [n] (yield n)) (str (type gen)))
   
 verify:
-  read: (begin (define-coroutine gen (n) (compile/yield n)) (str (type gen)))
-  expand: (begin (define-coroutine gen (n) (compile/yield n)) (str (type gen)))
+  read: (begin (define-coroutine gen (n) (yield n)) (str (type gen)))
+  expand: (begin (define-coroutine gen (n) (yield n)) (str (type gen)))
   eval: '"<class ''function''>"'
 references:
   - reference/macros/compile-define-coroutine.md
@@ -481,11 +481,11 @@ notes: function with two params called inline; 3+4=7
 id: function-yield-two-values-003
 feature: special/compile/yield
 source: |-
-  (list (compile/call (compile/lambda [n] (compile/yield n) (compile/yield (+ n 1))) 5))
+  (list (call (lambda [n] (yield n) (yield (+ n 1))) 5))
   
 verify:
-  read: (list (compile/call (compile/lambda (n) (compile/yield n) (compile/yield (+ n 1))) 5))
-  expand: (list (compile/call (compile/lambda (n) (compile/yield n) (compile/yield (+ n 1))) 5))
+  read: (list (call (lambda (n) (yield n) (yield (+ n 1))) 5))
+  expand: (list (call (lambda (n) (yield n) (yield (+ n 1))) 5))
   eval: "list:[5,6]"
 references:
   - reference/specials/compile-yield.md
@@ -499,11 +499,11 @@ notes: two yield points in one lambda; list collects both yielded values
 id: function-yield-from-range-param-003
 feature: special/compile/yield-from
 source: |-
-  (list (compile/call (compile/lambda [n] (compile/yield-from (range n))) 4))
+  (list (call (lambda [n] (yield-from (range n))) 4))
   
 verify:
-  read: (list (compile/call (compile/lambda (n) (compile/yield-from (range n))) 4))
-  expand: (list (compile/call (compile/lambda (n) (compile/yield-from (range n))) 4))
+  read: (list (call (lambda (n) (yield-from (range n))) 4))
+  expand: (list (call (lambda (n) (yield-from (range n))) 4))
   eval: "list:[0,1,2,3]"
 references:
   - reference/specials/compile-yield-from.md
@@ -517,11 +517,11 @@ notes: yield-from delegates to range(n); list collects all four values
 id: function-await-plain-value-003
 feature: special/compile/await
 source: |-
-  (compile/await z)
+  (await z)
   
 verify:
-  read: (compile/await z)
-  expand: (compile/await z)
+  read: (await z)
+  expand: (await z)
   eval: "1"
 references:
   - reference/specials/compile-await.md
