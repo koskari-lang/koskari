@@ -47,6 +47,7 @@ from ..reader import READ_EOF, LayoutReader, source_str
 __all__ = (
     'CodeBoundary',
     'REPLCodeBoundary',
+    '_await_user_form',
     'cli_async',
     'format_code_boundary_exception',
     'format_exception_with_koskari_trace',
@@ -199,6 +200,34 @@ class REPLReaderError(ReaderError):
 
 
 _INCOMPLETE = object()
+
+
+async def _await_user_form(expr):
+    """
+    Boundary shim that awaits a compiled user form.
+
+    This is the single Python frame that awaits a compiled REPL form and
+    is entered by a Python call from the (Koskari) REPL loop so that the
+    ``await`` allocates a fresh coroutine context rooted at the user form.
+    Keeping the eval step behind this Python boundary is what keeps REPL
+    infrastructure frames off the user form's native dynchain; see
+    ``design/cli-repl-rework.md`` section 3.
+
+    Compiler errors are re-raised so the Koskari loop can render them via
+    ``.explain()``; any other error is wrapped in ``REPLCodeBoundary`` so
+    its cause carries the user-scoped traceback and dynchain.
+
+    :param expr: zero-argument awaitable produced by
+        ``fragment.as_expression(ns)``
+    :return: the awaited result of the user form
+    """
+
+    try:
+        return await expr()
+    except (UncaughtCompilerError, CompilerError):
+        raise
+    except Exception as e:
+        raise REPLCodeBoundary() from e
 
 
 async def _eval_expression_async(compiler, source, ns):
