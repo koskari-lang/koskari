@@ -90,3 +90,6 @@ value you usually keep.
 — the three authoring surfaces and how each reads into the same forms.
 [Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md)
 — why `( )` calls and `[ ]` is data.
+[Name resolution](../reference/concepts/name-resolution-and-prefixes.md) — how
+`(foo …)` picks a compile-time form or a runtime call, and what the `compile/`
+prefix means.
