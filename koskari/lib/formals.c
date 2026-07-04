@@ -300,21 +300,22 @@ PyObject *KosFormalsSpec_New(
   } while (0)
 
 
-static void list_unique_append(PyObject *dst, PyObject *val) {
-  for (size_t i = SAFE_SIZE(dst); i--; ) {
-    PyObject *obj = PyList_GET_ITEM(dst, i);
-    if (Py_EQUALS(val, obj))
-      return;
-  }
-  PyList_Append(dst, val);
-}
-
-
 static void list_unique_extend(PyObject *dst, PyObject *seq) {
   size_t l = SAFE_SIZE(seq);
   for (size_t i = 0; i < l; i++) {
-    PyObject *obj = PySequence_Fast_GET_ITEM(seq, i);
-    list_unique_append(dst, obj);
+    PyObject *val = PySequence_Fast_GET_ITEM(seq, i);
+    int exists = 0;
+
+    for (size_t j = SAFE_SIZE(dst); j--; ) {
+      PyObject *obj = PyList_GET_ITEM(dst, j);
+      if (Py_EQUALS(val, obj)) {
+        exists = 1;
+        break;
+      }
+    }
+
+    if (! exists)
+      PyList_Append(dst, val);
   }
 }
 

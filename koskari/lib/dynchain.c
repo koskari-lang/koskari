@@ -216,12 +216,6 @@ static int snapshot_set_int(PyObject *dict, const char *key, int value) {
 }
 
 
-static int snapshot_set_size(PyObject *dict, const char *key, size_t value) {
-
-  return snapshot_set_item(dict, key, PyLong_FromSize_t(value));
-}
-
-
 static int snapshot_set_obj(PyObject *dict, const char *key, PyObject *obj) {
 
   if (! obj) {

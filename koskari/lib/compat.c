@@ -132,15 +132,30 @@ PyObject *koskari_List_ExtendRet(PyObject *list, PyObject *iterable) {
 #endif
 
 
+int koskari_FetchStopIterationValue(PyObject **ptr) {
 #if PY_MINOR_VERSION >= 13
-/**
-   Fetch value from StopIteration/StopAsyncIteration.  Used on 3.13+ when
-   PyGen_FetchStopIterationValue is not exported.  Implementation uses
-   PyErr_Fetch and extracts value from exception args or .value.
-*/
-static int fetch_stop_iteration_value(PyObject **ptr, PyObject *exc) {
+  PyObject *type = NULL;
+  PyObject *value = NULL;
+  PyObject *tb = NULL;
+  PyObject *exc = NULL;
   PyObject *val = NULL;
-  PyObject *args = PyException_GetArgs(exc);
+  PyObject *args = NULL;
+
+  PyErr_Fetch(&type, &value, &tb);
+  Py_XDECREF(tb);
+  if (! type) {
+    *ptr = NULL;
+    return -1;
+  }
+  if (! (PyErr_GivenExceptionMatches(type, PyExc_StopIteration) ||
+         PyErr_GivenExceptionMatches(type, PyExc_StopAsyncIteration))) {
+    PyErr_Restore(type, value, NULL);
+    *ptr = NULL;
+    return -1;
+  }
+
+  exc = value ? value : type;
+  args = PyException_GetArgs(exc);
   if (args && PyTuple_Check(args) && PyTuple_GET_SIZE(args) > 0) {
     val = PyTuple_GET_ITEM(args, 0);
     Py_INCREF(val);
@@ -155,34 +170,11 @@ static int fetch_stop_iteration_value(PyObject **ptr, PyObject *exc) {
       val = Py_None;
     }
   }
-  *ptr = val;
-  return 0;
-}
-#endif
 
-int koskari_FetchStopIterationValue(PyObject **ptr) {
-#if PY_MINOR_VERSION >= 13
-  PyObject *type = NULL;
-  PyObject *value = NULL;
-  PyObject *tb = NULL;
-  PyErr_Fetch(&type, &value, &tb);
-  Py_XDECREF(tb);
-  if (! type) {
-    *ptr = NULL;
-    return -1;
-  }
-  int ok = 0;
-  if (PyErr_GivenExceptionMatches(type, PyExc_StopIteration) ||
-      PyErr_GivenExceptionMatches(type, PyExc_StopAsyncIteration))
-    ok = fetch_stop_iteration_value(ptr, value ? value : type);
-  else {
-    PyErr_Restore(type, value, NULL);
-    *ptr = NULL;
-    return -1;
-  }
+  *ptr = val;
   Py_DECREF(type);
   Py_XDECREF(value);
-  return ok;
+  return 0;
 #else
   return _PyGen_FetchStopIterationValue(ptr);
 #endif

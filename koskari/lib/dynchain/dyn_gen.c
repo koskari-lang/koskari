@@ -118,7 +118,8 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
   if (snapshot_set_uint(data, "active_node_id",
       KosDynGen_ACTIVE(node) ? KosDynNode_NODE_ID(KosDynGen_ACTIVE(node)) : 0) < 0)
     return -1;
-  if (snapshot_set_size(data, "refcount", (size_t) KosDynGen_REFCOUNT(node)) < 0)
+  if (snapshot_set_item(data, "refcount",
+                        PyLong_FromSize_t((size_t) KosDynGen_REFCOUNT(node))) < 0)
     return -1;
   return 0;
 }
