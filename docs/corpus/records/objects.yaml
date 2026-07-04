@@ -1989,3 +1989,71 @@ tags:
   - dunder
   - callable
 notes: "behavior of a user __call__: the instance dbl is invoked like a function, dbl(21) -> 2*21 = 42"
+---
+id: object-call-attr-dot-surface-004
+feature: special/compile/call-attr
+source: |-
+  (.upper "hello")
+  
+verify:
+  read: (.upper "hello")
+  expand: (.upper "hello")
+  eval: '"HELLO"'
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - object
+  - call-attr
+notes: "leading-dot surface for a method call: (.METHOD receiver args...) is the idiomatic spelling and reads as call-attr. Equivalent to (call-attr \"hello\" upper)."
+---
+id: object-call-attr-dot-join-005
+feature: special/compile/call-attr
+source: |-
+  (.join ", " #["a" "b" "c"])
+  
+verify:
+  read: "(.join \", \" (#list \"a\" \"b\" \"c\"))"
+  expand: "(.join \", \" (#list \"a\" \"b\" \"c\"))"
+  eval: '"a, b, c"'
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - object
+  - call-attr
+notes: "leading-dot call with arguments; the receiver is the separator string and the bracket-list is the argument: \", \".join([\"a\", \"b\", \"c\"])."
+---
+id: object-call-attr-dot-chain-006
+feature: special/compile/call-attr
+source: |-
+  (.lower (.upper "Hello"))
+  
+verify:
+  read: (.lower (.upper "Hello"))
+  expand: (.lower (.upper "Hello"))
+  eval: '"hello"'
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - object
+  - call-attr
+notes: "chaining leading-dot method calls: the receiver of the outer call is the result of the inner call."
+---
+id: object-attr-dot-symbol-004
+feature: special/compile/attr
+source: |-
+  (seq.index 2)
+  
+verify:
+  read: ((compile/attr seq index) 2)
+  expand: ((compile/attr seq index) 2)
+  eval: "1"
+references:
+  - reference/specials/compile-attr.md
+stability: evolving
+tags:
+  - object
+  - attr
+notes: "dotted-symbol method call on a BOUND name: obj.method lowers to (compile/attr obj method), which is then called. seq=(1,2,3) fixture; .index(2) is 1. Only works when the receiver is a symbol; for literals/expressions use the leading-dot form."

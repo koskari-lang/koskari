@@ -938,3 +938,123 @@ tags:
   - iter
   - reader
 notes: brackets inside quote produce cons pairs identical to parens; car of '[a b c] is a
+---
+id: iter-membership-in-basic-001
+feature: special/compile/in
+source: |-
+  (in 3 seq)
+  
+verify:
+  read: (in 3 seq)
+  expand: (in 3 seq)
+  eval: "true"
+references:
+  - reference/macros/compile-has.md
+stability: evolving
+tags:
+  - iter
+  - membership
+  - in
+notes: membership test; (in ELEMENT COLLECTION) is true when COLLECTION contains ELEMENT; seq=(1,2,3) fixture. Contrast has? which takes (COLLECTION ELEMENT).
+---
+id: iter-membership-in-not-found-002
+feature: special/compile/in
+source: |-
+  (in 9 seq)
+  
+verify:
+  read: (in 9 seq)
+  expand: (in 9 seq)
+  eval: "false"
+references:
+  - reference/macros/compile-has.md
+stability: evolving
+tags:
+  - iter
+  - membership
+  - in
+notes: (in ELEMENT COLLECTION) is false when COLLECTION does not contain ELEMENT; seq=(1,2,3) fixture.
+---
+id: iter-membership-has-basic-001
+feature: macro/compile/has?
+source: |-
+  (has? seq 3)
+  
+verify:
+  read: (has? seq 3)
+  expand: (compile/in 3 seq)
+  eval: "true"
+references:
+  - reference/macros/compile-has.md
+stability: evolving
+tags:
+  - iter
+  - membership
+  - has?
+notes: "has? is the collection-first spelling of membership: (has? COLLECTION ELEMENT) expands to (compile/in ELEMENT COLLECTION). Same test as (in 3 seq), reversed argument order. seq=(1,2,3) fixture."
+---
+id: iter-membership-has-not-found-002
+feature: macro/compile/has?
+source: |-
+  (has? seq 9)
+  
+verify:
+  read: (has? seq 9)
+  expand: (compile/in 9 seq)
+  eval: "false"
+references:
+  - reference/macros/compile-has.md
+stability: evolving
+tags:
+  - iter
+  - membership
+  - has?
+notes: (has? COLLECTION ELEMENT) is false when COLLECTION does not contain ELEMENT; expands to (compile/in ELEMENT COLLECTION). seq=(1,2,3) fixture.
+---
+id: iter-layout-for-each-else-001
+feature: layout/for-each
+source: |-
+  for-each [x seq]:
+    x
+  else:
+    100
+  
+verify:
+  read: "(for-each [x seq] x (else: 100))"
+  expand: "(for-each [x seq] x (else: 100))"
+  eval: "100"
+references:
+  - reference/layouts/layout-for-each.md
+  - reference/specials/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+  - else
+  - "surface:block"
+notes: "for-each supports a trailing else block (Python for/else): the else body runs when the loop completes without break, and its value becomes the result. seq=(1,2,3) fixture."
+---
+id: iter-layout-for-each-else-break-002
+feature: layout/for-each
+source: |-
+  for-each [x seq]:
+    when (== x 2):
+      (break)
+  else:
+    100
+  
+verify:
+  read: "(for-each [x seq] (when (== x 2) (break)) (else: 100))"
+  expand: "(for-each [x seq] (when (== x 2) (break)) (else: 100))"
+  eval: "null"
+references:
+  - reference/layouts/layout-for-each.md
+  - reference/specials/compile-for-each.md
+stability: evolving
+tags:
+  - iter
+  - for-each
+  - else
+  - break
+  - "surface:block"
+notes: the for-each else body is skipped when the loop exits via break; here break fires at x==2, so else does not run and the form yields None. seq=(1,2,3) fixture.
