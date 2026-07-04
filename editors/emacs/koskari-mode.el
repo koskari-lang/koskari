@@ -1,6 +1,13 @@
 ;;; koskari-mode.el --- Major mode for Koskari (.ki) source files  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2024  Sibilant Contributors
+;; Copyright (C) 2026  Christopher O'Brien
+
+;; Author: Christopher O'Brien <obriencj@gmail.com>
+;; Maintainer: Christopher O'Brien <obriencj@gmail.com>
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "24.3"))
+;; Keywords: languages, lisp
+;; URL: https://github.com/obriencj/koskari
 
 ;; This library is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -226,7 +233,7 @@
                 (eq (char-before) ?:))))))
 
 (defun koskari--line-is-peer-block-p ()
-  "Return non-nil if current line starts a peer block."
+  "Return non-nil if the current line is the start of a peer block."
   (looking-at-p
    (concat "^\\([ \t]*\\)"
            "\\(elif\\|else\\|except\\|finally\\)"
