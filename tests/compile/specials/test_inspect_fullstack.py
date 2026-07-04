@@ -59,6 +59,21 @@ class TestInspectCompiledLambda(SpecialsTestCase):
         self.assertIs(sig.parameters['b'].default,
                       inspect.Parameter.empty)
 
+    async def test_signature_annotation_default_none(self):
+        # value: None must register an optional default of None, not be
+        # dropped as though no default were given (which made the parameter
+        # required). None had doubled as the "no default" sentinel.
+        src = "(lambda [(a :: int value: None) b] a)"
+        expr, mod = self.compile_expr(src, int=int)
+        fn = await expr()
+        sig = inspect.signature(fn)
+        param = sig.parameters['a']
+        self.assertIs(param.annotation, int)
+        self.assertIsNone(param.default)
+        self.assertIsNot(param.default, inspect.Parameter.empty)
+        self.assertIs(sig.parameters['b'].default,
+                      inspect.Parameter.empty)
+
     async def test_signature_string_forward_ref_resolved(self):
         src = '(lambda [(a :: "int")] a)'
         expr, mod = self.compile_expr(src, int=int)

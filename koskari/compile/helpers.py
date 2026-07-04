@@ -928,14 +928,17 @@ def _merge_formal_annotations(annotations, name_sym, ann_bundle):
         annotations[key] = dict(ann_bundle)
 
 
+_NO_DEFAULT = object()
+
+
 def _attrs_frames_to_ann(attr_frames: List[dict], source):
     """
-    Fold formal attribute REPEAT frames into (ann dict, default or None,
-    by_ref bool)
+    Fold formal attribute REPEAT frames into (ann dict, default or
+    _NO_DEFAULT, by_ref bool)
     """
 
     ann = {}
-    default = None
+    default = _NO_DEFAULT
     by_ref = False
     for afr in attr_frames:
         kw_cell = afr.get('kw')
@@ -999,11 +1002,10 @@ def _gather_one_positional_frame(fr: dict, source):
     name, by_ref = frame_formal_name(fr)
     typ = None if (v := fr.get('type')) is None else v.datum
 
-    default_cell = fr.get('default')
-    if default_cell is None:
-        default_expr = None
+    if "default" in fr:
+        default_expr = fr['default'].datum
     else:
-        default_expr = default_cell.datum
+        default_expr = _NO_DEFAULT
 
     annotations = {}
     if typ is not None:
@@ -1018,8 +1020,8 @@ def _gather_one_positional_frame(fr: dict, source):
                     f"conflicting formal annotations for {name!r}",
                     source)
             annotations[k2] = v2
-        if default2 is not None:
-            if default_expr is not None:
+        if default2 is not _NO_DEFAULT:
+            if default_expr is not _NO_DEFAULT:
                 raise SpecialError(
                     f"duplicate default for formal {name!r}",
                     source)
@@ -1074,7 +1076,7 @@ def gather_formals(formals_group, source=None):
         _merge_formal_annotations(annotations, name, ann_bundle)
         if by_ref:
             by_refs.append(str(name))
-        if default is not None:
+        if default is not _NO_DEFAULT:
             defaults.append((keyword(str(name)), default))
         else:
             positional.append(name)
