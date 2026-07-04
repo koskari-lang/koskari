@@ -34,6 +34,13 @@ KOS_OP_HANDLER(POP_FINALLY) {
     PyErr_Restore(typ, val, tb);
     PyErr_SetExcInfo(NULL, NULL, NULL);
     KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 0;
+
+    /* Raise delivery cleared the region stack (dyn_walk consume), so
+       there is no promoted value; pop the region and let the restored
+       exception continue through the prologue. */
+    if (unlikely(kos_dyn_pop_finally(es, (KosDynFinally *) region) < 0))
+      return EVAL_RAISE();
+    return EVAL_REPROLOGUE();
   }
 
   if (KosDynFinally_HANDLING_RETURN((KosDynFinally *) region))

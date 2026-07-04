@@ -169,6 +169,85 @@ static PyObject *coroutine_iternext(PyObject *self) {
 }
 
 
+/**
+   Translate a KosOpResult from driving the evaluator into the Python
+   coroutine protocol: StopIteration on return, NULL on raise, or the
+   yielded/awaited value with the coroutine state updated to match.
+*/
+static PyObject *coroutine_result(KosCoroutine *coro, KosOpResult res) {
+
+  switch (res.kind) {
+    case KOS_RES_RETURN: {
+      coro->state = KOS_CORO_DONE;
+      /* Wrap in StopIteration manually to avoid tuple-arg unpacking. */
+      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, res.val);
+      PyErr_SetObject(PyExc_StopIteration, err);
+      Py_DECREF(err);
+      Py_XDECREF(res.val);
+      return NULL;
+    }
+
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
+      coro->state = KOS_CORO_DONE;
+      return NULL;
+
+    case KOS_RES_YIELD:
+      coro->state = KOS_CORO_YIELDED;
+      return res.val;  /* transfer ownership to caller */
+
+    case KOS_RES_AWAIT:
+      if (! res.val) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "KOS_RES_AWAIT with NULL payload");
+        coro->state = KOS_CORO_DONE;
+        return NULL;
+      }
+      /* Driver already stepped the awaitable in push_or_await and set
+         ctx->py_await_iter. Just suspend and return the awaitable to
+         the event loop. */
+      coro->state = KOS_CORO_WAITING_PY;
+      return res.val;  /* transfer ownership to caller (asyncio) */
+
+    default:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
+      coro->state = KOS_CORO_DONE;
+      return NULL;
+  }
+}
+
+
+/**
+   The inner Python awaitable raised: clear the await iterator and
+   re-enter the evaluator with the pending exception as a throw, so it
+   is delivered at the await point and the frame's handler chain runs
+   (mirror revive_await's EVAL_RAISE ingress).
+*/
+static PyObject *coroutine_raise_at_await(
+    KosCoroutine *coro,
+    KosEvalState *coro_es) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  PyErr_Fetch(&typ, &val, &tb);
+  PyErr_NormalizeException(&typ, &val, &tb);
+  if (val && tb)
+    PyException_SetTraceback(val, tb);
+
+  KosEvalState_PythonAwaitClearIter(coro_es);
+
+  coro->in_send = 1;
+  coro->state = KOS_CORO_RUNNING;
+  KosOpResult res = koskari_eval(coro->ctx, NULL, typ, val ? val : typ);
+  coro->in_send = 0;
+
+  Py_XDECREF(typ);
+  Py_XDECREF(val);
+  Py_XDECREF(tb);
+
+  return coroutine_result(coro, res);
+}
+
+
 static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
@@ -222,9 +301,7 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
         /* fall through to drive and handle ev */
       } else {
         /* Exception from Python awaitable */
-        KosEvalState_PythonAwaitClearIter(&coro_es);
-        coro->state = KOS_CORO_DONE;
-        return NULL;
+        return coroutine_raise_at_await(coro, &coro_es);
       }
     }
   }
@@ -243,47 +320,7 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   SAYF("[coroutine_send] koskari_eval -> kind=%d payload=%R\n",
         (int) res.kind, res.val);
 
-  switch (res.kind) {
-    case KOS_RES_RETURN: {
-      coro->state = KOS_CORO_DONE;
-      /* Wrap in StopIteration manually to avoid tuple-arg unpacking. */
-      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, res.val);
-      PyErr_SetObject(PyExc_StopIteration, err);
-      Py_DECREF(err);
-      Py_XDECREF(res.val);
-      return NULL;
-    }
-
-    case KOS_RES_RAISE:
-    case KOS_RES_FATAL:
-      coro->state = KOS_CORO_DONE;
-      return NULL;
-
-    case KOS_RES_YIELD:
-      coro->state = KOS_CORO_YIELDED;
-      return res.val;  /* transfer ownership to caller */
-
-    case KOS_RES_AWAIT: {
-      SAYF("[eval] coroutine_send KOS_RES_AWAIT branch (payload=%d)\n",
-            res.val ? 1 : 0);
-      if (! res.val) {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "KOS_RES_AWAIT with NULL payload");
-        coro->state = KOS_CORO_DONE;
-        return NULL;
-      }
-      /* Driver already stepped the awaitable in push_or_await and set
-         ctx->py_await_iter. Just suspend and return the awaitable to
-         the event loop. */
-      coro->state = KOS_CORO_WAITING_PY;
-      return res.val;  /* transfer ownership to caller (asyncio) */
-    }
-
-    default:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
-      coro->state = KOS_CORO_DONE;
-      return NULL;
-  }
+  return coroutine_result(coro, res);
 }
 
 
@@ -324,9 +361,7 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
         KosEvalState_PythonResumeSet(&coro_es, await_result, KOS_RESUME_AWAIT);
         return coroutine_send(self, Py_None);
       } else {
-        KosEvalState_PythonAwaitClearIter(&coro_es);
-        coro->state = KOS_CORO_DONE;
-        return NULL;
+        return coroutine_raise_at_await(coro, &coro_es);
       }
     }
   }
@@ -344,35 +379,7 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
   Py_DECREF(exc);
   coro->in_send = 0;
 
-  switch (res.kind) {
-    case KOS_RES_RETURN: {
-      coro->state = KOS_CORO_DONE;
-      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, res.val);
-      PyErr_SetObject(PyExc_StopIteration, err);
-      Py_DECREF(err);
-      Py_XDECREF(res.val);
-      return NULL;
-    }
-    case KOS_RES_RAISE:
-    case KOS_RES_FATAL:
-      coro->state = KOS_CORO_DONE;
-      return NULL;
-    case KOS_RES_YIELD:
-      coro->state = KOS_CORO_YIELDED;
-      return res.val;
-    case KOS_RES_AWAIT:
-      if (! res.val) {
-        PyErr_SetString(PyExc_RuntimeError, "KOS_RES_AWAIT with NULL payload");
-        coro->state = KOS_CORO_DONE;
-        return NULL;
-      }
-      coro->state = KOS_CORO_WAITING_PY;
-      return res.val;
-    default:
-      PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
-      coro->state = KOS_CORO_DONE;
-      return NULL;
-  }
+  return coroutine_result(coro, res);
 }
 
 
