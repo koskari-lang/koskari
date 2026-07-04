@@ -374,10 +374,20 @@ docs:  ## Build user documentation via tox
 	@echo "Building documentation..."
 	@tox -qe sphinx
 
-docs-preview: docs  ## Build docs and serve build/docs for local preview
+docs-preview: docs  ## Build docs and serve build/site/docs for local preview
 	@$(call checkfor,$(PYTHON))
 	@echo "Serving documentation at http://127.0.0.1:8000/ (Ctrl+C to stop)"
-	@cd $(BUILD_DIR)/docs && $(PYTHON) -m http.server 8000
+	@cd $(BUILD_DIR)/site/docs && $(PYTHON) -m http.server 8000
+
+site:  ## Build the full published site (landing page + docs) via tox
+	@$(call checkfor,tox)
+	@echo "Building full site..."
+	@tox -qe site
+
+site-preview: site  ## Build the full site and serve build/site for local preview
+	@$(call checkfor,$(PYTHON))
+	@echo "Serving site at http://127.0.0.1:8000/ (Ctrl+C to stop)"
+	@cd $(BUILD_DIR)/site && $(PYTHON) -m http.server 8000
 
 
 ##@ Cleanup
@@ -455,6 +465,8 @@ python:  ## Show Python executable
 	python \
 	regen-editors \
 	report-python \
+	site \
+	site-preview \
 	test \
 	test-asan \
 	test-container-build \

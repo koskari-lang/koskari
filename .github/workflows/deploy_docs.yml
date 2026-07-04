@@ -22,14 +22,14 @@ jobs:
         run: |
           pip install tox
 
-      - name: Generate Documentation
+      - name: Generate Site
         run: |
-          tox -qe sphinx
+          tox -qe site
 
-      - name: Store Documentation
+      - name: Store Site
         uses: actions/upload-pages-artifact@v5
         with:
-          path: build/docs
+          path: build/site
 
   deploy-documentation:
     runs-on: ubuntu-latest

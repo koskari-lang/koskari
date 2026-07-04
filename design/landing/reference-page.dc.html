@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin:0; background:#F7F3EA; }
+    .ko-link { transition:color .15s ease, opacity .15s ease; }
+    .ko-link:hover { color:#A9761A; }
+    .ko-btn { transition:transform .12s ease, box-shadow .18s ease, background .18s ease; }
+    .ko-btn:hover { transform:translateY(-1px); }
+    .ko-card { transition:transform .16s ease, box-shadow .2s ease, border-color .2s ease; }
+    .ko-card:hover { transform:translateY(-3px); box-shadow:0 14px 34px rgba(60,44,16,.12); border-color:#E1C77E; }
+    .ko-doc:hover { background:#FBF7EC; border-color:#E1C77E; }
+    .ko-doc:hover .ko-arrow { transform:translateX(4px); color:#A9761A; }
+    .ko-arrow { transition:transform .16s ease, color .16s ease; }
+  </style>
+</helmet>
+
+<div data-screen-label="Koskari landing" style="max-width:1200px; margin:0 auto; background:#F7F3EA; overflow:hidden; font-family:'Hanken Grotesk',sans-serif; color:#211C16;">
+
+  <!-- nav -->
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:22px 56px; border-bottom:1px solid #E9E0CF;">
+    <div style="display:flex; align-items:center; gap:11px;">
+      <dc-import name="AppleMark" hint-size="34px,34px" style="width:34px; height:34px;"></dc-import>
+      <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:21px; letter-spacing:-.01em;">Koskari</span>
+      <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#9C8F79; background:#EFE7D6; padding:3px 8px; border-radius:99px; margin-left:4px;">v0.1.0</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:30px; font-size:15px; font-weight:500;">
+      <a class="ko-link" href="https://docs.koskari.org/" style="color:#534b40; text-decoration:none;">Docs</a>
+      <a class="ko-link" href="#examples" style="color:#534b40; text-decoration:none;">Examples</a>
+      <a class="ko-link" href="#download" style="color:#534b40; text-decoration:none;">Download</a>
+      <a class="ko-link" href="https://github.com/koskari/koskari" style="color:#534b40; text-decoration:none;">GitHub</a>
+    </div>
+  </div>
+
+  <!-- hero -->
+  <div style="display:grid; grid-template-columns:1.18fr .82fr; gap:40px; align-items:center; padding:72px 56px 60px;">
+    <div>
+      <div style="display:inline-flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.04em; color:#A9761A; background:#F2E8CF; border:1px solid #E7D6A6; padding:6px 12px; border-radius:99px; margin-bottom:24px;">a lisp that runs alongside python</div>
+      <h1 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:62px; line-height:1.02; letter-spacing:-.025em; margin:0 0 22px;">Lisp, the fun parts.<br><span style="color:#A9761A;">Python, all of it.</span></h1>
+      <p style="font-size:18.5px; line-height:1.6; color:#5C544A; max-width:30em; margin:0 0 32px;">Koskari is a stackless Lisp that lives next to Python &mdash; real continuations, ambient async, and an indentation mode that frees you from the parenthesis curse. Come have fun with programming again.</p>
+      <div style="display:flex; align-items:center; gap:14px; margin-bottom:30px;">
+        <a class="ko-btn" href="https://docs.koskari.org/getting-started/" style="display:inline-flex; align-items:center; gap:8px; background:linear-gradient(#ecc356,#d4a32c); color:#2c2206; font-weight:700; font-size:15.5px; padding:14px 24px; border-radius:8px; text-decoration:none; box-shadow:0 6px 16px rgba(190,150,40,.28);">Get started <span style="font-family:'JetBrains Mono',monospace;">&rarr;</span></a>
+        <a class="ko-btn" href="https://docs.koskari.org/" style="display:inline-flex; align-items:center; gap:8px; background:#fff; color:#3b342b; font-weight:600; font-size:15.5px; padding:13px 22px; border-radius:8px; text-decoration:none; border:1px solid #E2D8C5;">Browse the docs</a>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; background:#1c1812; border-radius:9px; padding:13px 18px; max-width:30em;">
+        <span style="font-family:'JetBrains Mono',monospace; font-size:14px; color:#E7DFD0;"><span style="color:#7C8B40">$</span> pip install koskari</span>
+        <span style="margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#8A8070; letter-spacing:.05em;">0.9.0 BETA &middot; SOON</span>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
+      <div style="position:relative; width:262px; height:262px; display:flex; align-items:center; justify-content:center; background:radial-gradient(circle at 50% 42%, #F4ECD6 0%, #F7F3EA 70%); border-radius:50%; box-shadow:inset 0 0 0 1px #EBE0C9;">
+        <dc-import name="AppleMark" flutter="true" hint-size="190px,190px" style="width:190px; height:190px;"></dc-import>
+      </div>
+      <div style="text-align:center; margin-top:18px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#9C8F79; letter-spacing:.03em;">&kappa;&#945;&lambda;&lambda;&iota;&sigma;&tau;&iota; &mdash; <span style="color:#A9761A;">to the prettiest</span></div>
+    </div>
+  </div>
+
+  <!-- features -->
+  <div style="padding:18px 56px 64px;">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#A9761A; margin-bottom:22px;">Why it's fun</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
+      <div class="ko-card" style="background:#fff; border:1px solid #ECE3D2; border-radius:13px; padding:26px;">
+        <div style="display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#F4EAD0; color:#A9761A; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; margin-bottom:16px;">&#8646;</div>
+        <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:20px; margin:0 0 8px; letter-spacing:-.01em;">Lives with Python</h3>
+        <p style="font-size:15px; line-height:1.55; color:#5f5747; margin:0;">Import any module, pass objects both ways. Not a transpiler &mdash; a real stackless interpreter running side by side with CPython.</p>
+      </div>
+      <div class="ko-card" style="background:#fff; border:1px solid #ECE3D2; border-radius:13px; padding:26px;">
+        <div style="display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#F4EAD0; color:#A9761A; font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; margin-bottom:16px;">(&nbsp;)</div>
+        <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:20px; margin:0 0 8px; letter-spacing:-.01em;">Beyond the parens</h3>
+        <p style="font-size:15px; line-height:1.55; color:#5f5747; margin:0;">A novel indentation layout lets you write Lisp's power without drowning in brackets. Drop back into S-expressions whenever you like.</p>
+      </div>
+      <div class="ko-card" style="background:#fff; border:1px solid #ECE3D2; border-radius:13px; padding:26px;">
+        <div style="display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#F4EAD0; color:#A9761A; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; margin-bottom:16px;">&#8635;</div>
+        <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:20px; margin:0 0 8px; letter-spacing:-.01em;">Continuations, really</h3>
+        <p style="font-size:15px; line-height:1.55; color:#5f5747; margin:0;">Stackless to the core: first-class continuations, coroutines, and control flow you can pick up and hold in your hand.</p>
+      </div>
+      <div class="ko-card" style="background:#fff; border:1px solid #ECE3D2; border-radius:13px; padding:26px;">
+        <div style="display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#F4EAD0; color:#A9761A; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; margin-bottom:16px;">&#8767;</div>
+        <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:20px; margin:0 0 8px; letter-spacing:-.01em;">Ambiently async</h3>
+        <p style="font-size:15px; line-height:1.55; color:#5f5747; margin:0;">Concurrency without the colored functions. Everything can await, nothing has to. The runtime just gets out of your way.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- example -->
+  <div id="examples" style="padding:0 56px 66px;">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#A9761A; margin-bottom:8px;">See it for yourself</div>
+    <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:34px; letter-spacing:-.02em; margin:0 0 6px;">A point, and its neighbors</h2>
+    <p style="font-size:16px; line-height:1.55; color:#5f5747; max-width:40em; margin:0 0 22px;">That <span style="font-family:'JetBrains Mono',monospace; color:#B5683C; font-size:14px;">@dataclass</span> comes straight from Python's standard library &mdash; Koskari just uses it. Notice the layout: no wall of closing parens in sight.</p>
+    <div style="background:#FBF8F1; border:1px solid #ECE3D2; border-radius:13px; overflow:hidden; box-shadow:0 10px 30px rgba(60,44,16,.07);">
+      <div style="display:flex; align-items:center; gap:8px; padding:12px 18px; border-bottom:1px solid #EFE7D6; background:#F5EFE2;">
+        <span style="width:11px; height:11px; border-radius:50%; background:#E0865A;"></span>
+        <span style="width:11px; height:11px; border-radius:50%; background:#E6B84C;"></span>
+        <span style="width:11px; height:11px; border-radius:50%; background:#9FB36A;"></span>
+        <span style="font-family:'JetBrains Mono',monospace; font-size:12.5px; color:#9C8F79; margin-left:8px;">point.ko</span>
+      </div>
+      <div style="padding:22px 24px;">
+        <dc-import name="KoskariCode" theme="light" hint-size="100%,520px" style="width:100%;"></dc-import>
+      </div>
+    </div>
+  </div>
+
+  <!-- docs levels -->
+  <div style="padding:0 56px 66px;">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#A9761A; margin-bottom:8px;">Documentation</div>
+    <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:34px; letter-spacing:-.02em; margin:0 0 22px;">Find your level</h2>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <a class="ko-doc" href="https://docs.koskari.org/getting-started/" style="display:flex; align-items:center; gap:20px; padding:20px 24px; background:#fff; border:1px solid #ECE3D2; border-radius:12px; text-decoration:none; color:#211C16; transition:background .16s ease, border-color .16s ease;">
+        <span style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#C0A050; font-weight:700; width:28px;">01</span>
+        <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:19px; width:230px;">Getting Started</span>
+        <span style="font-size:15px; color:#6a6354; flex:1;">Install, open the REPL, evaluate your first form. Five minutes, tops.</span>
+        <span class="ko-arrow" style="font-family:'JetBrains Mono',monospace; color:#B8AD98;">&rarr;</span>
+      </a>
+      <a class="ko-doc" href="https://docs.koskari.org/tutorial/" style="display:flex; align-items:center; gap:20px; padding:20px 24px; background:#fff; border:1px solid #ECE3D2; border-radius:12px; text-decoration:none; color:#211C16; transition:background .16s ease, border-color .16s ease;">
+        <span style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#C0A050; font-weight:700; width:28px;">02</span>
+        <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:19px; width:230px;">Tutorial</span>
+        <span style="font-size:15px; color:#6a6354; flex:1;">Build something real, one step at a time &mdash; with Python in the mix.</span>
+        <span class="ko-arrow" style="font-family:'JetBrains Mono',monospace; color:#B8AD98;">&rarr;</span>
+      </a>
+      <a class="ko-doc" href="https://docs.koskari.org/reference/" style="display:flex; align-items:center; gap:20px; padding:20px 24px; background:#fff; border:1px solid #ECE3D2; border-radius:12px; text-decoration:none; color:#211C16; transition:background .16s ease, border-color .16s ease;">
+        <span style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#C0A050; font-weight:700; width:28px;">03</span>
+        <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:19px; width:230px;">Language Reference</span>
+        <span style="font-size:15px; color:#6a6354; flex:1;">Every special form and layout rule, spelled out precisely.</span>
+        <span class="ko-arrow" style="font-family:'JetBrains Mono',monospace; color:#B8AD98;">&rarr;</span>
+      </a>
+      <a class="ko-doc" href="https://docs.koskari.org/api/" style="display:flex; align-items:center; gap:20px; padding:20px 24px; background:#fff; border:1px solid #ECE3D2; border-radius:12px; text-decoration:none; color:#211C16; transition:background .16s ease, border-color .16s ease;">
+        <span style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#C0A050; font-weight:700; width:28px;">04</span>
+        <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:19px; width:230px;">API</span>
+        <span style="font-size:15px; color:#6a6354; flex:1;">The runtime, embedding, and the full Python interop surface.</span>
+        <span class="ko-arrow" style="font-family:'JetBrains Mono',monospace; color:#B8AD98;">&rarr;</span>
+      </a>
+      <a class="ko-doc" href="https://docs.koskari.org/stdlib/" style="display:flex; align-items:center; gap:20px; padding:20px 24px; background:#fff; border:1px solid #ECE3D2; border-radius:12px; text-decoration:none; color:#211C16; transition:background .16s ease, border-color .16s ease;">
+        <span style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#C0A050; font-weight:700; width:28px;">05</span>
+        <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:19px; width:230px;">Standard Library</span>
+        <span style="font-size:15px; color:#6a6354; flex:1;">Batteries included &mdash; and Python's batteries too, for free.</span>
+        <span class="ko-arrow" style="font-family:'JetBrains Mono',monospace; color:#B8AD98;">&rarr;</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- download band -->
+  <div id="download" style="margin:0 56px 64px; background:#1c1812; border-radius:16px; padding:44px 48px; color:#EDE6D7;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:36px; align-items:center;">
+      <div>
+        <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:32px; letter-spacing:-.02em; margin:0 0 14px; color:#fff;">Get Koskari</h2>
+        <p style="font-size:15.5px; line-height:1.6; color:#B9B0A0; margin:0 0 18px;">Today it's <strong style="color:#E8B84A; font-weight:600;">v0.1.0</strong>, built from source. Next up is <strong style="color:#E8B84A; font-weight:600;">v0.9.0</strong> &mdash; the first public beta, landing on PyPI. Cross-platform: anywhere CPython runs.</p>
+        <div style="display:flex; gap:10px; font-family:'JetBrains Mono',monospace; font-size:11px;">
+          <span style="color:#8A8070; border:1px solid #3a342a; border-radius:99px; padding:4px 11px;">macOS</span>
+          <span style="color:#8A8070; border:1px solid #3a342a; border-radius:99px; padding:4px 11px;">Linux</span>
+          <span style="color:#8A8070; border:1px solid #3a342a; border-radius:99px; padding:4px 11px;">Windows</span>
+          <span style="color:#8A8070; border:1px solid #3a342a; border-radius:99px; padding:4px 11px;">CPython 3.11+</span>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div style="background:#100d09; border:1px solid #2e2a21; border-radius:10px; padding:16px 18px;">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#8A8070; letter-spacing:.08em; margin-bottom:8px;">FROM SOURCE &middot; TODAY</div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:13.5px; color:#E7DFD0;"><span style="color:#6F6657;">$</span> git clone github.com/koskari/koskari</div>
+        </div>
+        <div style="background:#100d09; border:1px solid #2e2a21; border-radius:10px; padding:16px 18px;">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#8A8070; letter-spacing:.08em; margin-bottom:8px;">PYPI &middot; FROM v0.9.0</div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:13.5px; color:#E7DFD0;"><span style="color:#6F6657;">$</span> pip install koskari</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- footer -->
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:26px 56px; border-top:1px solid #E9E0CF;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <dc-import name="AppleMark" hint-size="26px,26px" style="width:26px; height:26px;"></dc-import>
+      <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:16px;">Koskari</span>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:#9C8F79;">MIT licensed &middot; made with parentheses &middot; <span style="color:#C7BBA3;">fnord</span></div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

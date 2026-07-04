@@ -55,7 +55,7 @@ extensions = [
 ]
 
 templates_path = ['_templates']
-exclude_patterns = ['build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['build', 'site', 'Thumbs.db', '.DS_Store']
 
 root_doc = 'index'
 
@@ -67,6 +67,10 @@ html_theme_options = {
     'includehidden': True,
 }
 html_static_path = ['_static']
+
+# The docs are published under the /docs/ subpath of koskari.org; the
+# landing page occupies the site root. This drives canonical URLs.
+html_baseurl = 'https://koskari.org/docs/'
 
 source_suffix = {
     '.rst': 'restructuredtext',
