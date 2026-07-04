@@ -49,6 +49,10 @@ jobs:
       id-token: write
       contents: read
 
+    environment:
+      name: huggingface
+      url: https://huggingface.co/datasets/obriencj/koskari
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
