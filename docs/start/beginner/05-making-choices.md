@@ -24,7 +24,7 @@ then run the matching branch.
 > **Q:** What does `>` do?
 >
 > **A:** It compares numbers. `(< 3 10)` is true, `(> 3 10)` is false, and
-> `(eq 3 3)` is true. Comparison calls are still calls: the first word says
+> `(equal? 3 3)` is true. Comparison calls are still calls: the first word says
 > what to do, and the rest are inputs.
 
 ---
