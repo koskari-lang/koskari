@@ -119,6 +119,7 @@ def generate(root, provenance):
         if path.suffix == '.ki':
             title, summary = material.ki_title_summary(text, path.stem)
         else:
+            text = material.rewrite_markdown_links(text, rel_path)
             title, summary = material.markdown_title_summary(text)
             title = title or path.stem
 

@@ -102,8 +102,9 @@ def generate(root, provenance):
         if not base.is_dir():
             continue
         for path in base.rglob('*.md'):
-            text = path.read_text(encoding='utf-8')
             rel_path = path.relative_to(docs_dir).as_posix()
+            text = material.rewrite_markdown_links(
+                path.read_text(encoding='utf-8'), rel_path)
             title, summary = material.markdown_title_summary(text)
             rows.append({
                 'path': rel_path,

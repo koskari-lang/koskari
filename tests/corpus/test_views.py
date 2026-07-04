@@ -165,8 +165,8 @@ def test_eval_view_columns():
 
 def test_docs_view_row_per_markdown_page():
     """
-    koskari-docs emits one row per Markdown page under docs/reference
-    and docs/start
+    koskari-docs emits one row per Markdown page under each published
+    docs subtree
     """
 
     docs = _load_view_module('docs.py')
@@ -174,7 +174,7 @@ def test_docs_view_row_per_markdown_page():
 
     root = project_root()
     expected = 0
-    for subdir in ('reference', 'start'):
+    for subdir in docs._DOC_SUBDIRS:
         expected += len(list((root / 'docs' / subdir).rglob('*.md')))
 
     assert rows
@@ -206,11 +206,11 @@ def test_docs_view_resolves_all_record_references():
     doc_paths = {row['path'] for row in _generate_source_view(docs)}
 
     records = load_records(default_records_dir())
+    published = tuple(sub + '/' for sub in docs._DOC_SUBDIRS)
     cited = set()
     for record in records:
         for ref in record.get('references') or []:
-            if ref.endswith('.md') and (
-                    ref.startswith('reference/') or ref.startswith('start/')):
+            if ref.endswith('.md') and ref.startswith(published):
                 cited.add(ref)
 
     assert cited
@@ -259,6 +259,59 @@ def test_programs_view_extracts_summaries():
     dataclass = rows.get('examples/dataclass.ki')
     assert dataclass is not None
     assert dataclass['summary'] and 'dataclass' in dataclass['summary']
+
+
+def test_rewrite_markdown_links_roots_relative_targets():
+    """
+    Relative Markdown links resolve to root-relative content paths that
+    match the row ``path`` scheme, so get_reference can follow them
+    """
+
+    material = _load_view_module('_material.py')
+    rewrite = material.rewrite_markdown_links
+    page = 'start/from-python/map.md'
+
+    assert rewrite('[a](layout-and-calls.md)', page) == (
+        '[a](start/from-python/layout-and-calls.md)')
+    assert rewrite('[a](../../reference/specials/index.md)', page) == (
+        '[a](reference/specials/index.md)')
+    # a link that climbs out of docs/ into the sibling examples/ tree
+    # normalizes to the repo-relative scheme the programs view publishes
+    assert rewrite('[a](../../examples/hello.ki)', page) == (
+        '[a](examples/hello.ki)')
+
+
+def test_rewrite_markdown_links_preserves_anchor_and_leaves_externals():
+    """
+    Fragments ride along; external, mail, absolute, and pure-anchor
+    links are left untouched
+    """
+
+    material = _load_view_module('_material.py')
+    rewrite = material.rewrite_markdown_links
+    page = 'reference/layouts/layout-if.md'
+
+    assert rewrite('[a](../reader-layout.md#peers)', page) == (
+        '[a](reference/reader-layout.md#peers)')
+    for untouched in (
+            '[a](https://example.com/x.md)',
+            '[a](mailto:x@example.com)',
+            '[a](#local-anchor)',
+            '[a](/site/absolute.md)'):
+        assert rewrite(untouched, page) == untouched
+
+
+def test_rewrite_markdown_links_skips_fenced_code():
+    """
+    Link-like text inside fenced code blocks is left verbatim
+    """
+
+    material = _load_view_module('_material.py')
+    text = '```\n[a](../other.md)\n```\n[b](../other.md)\n'
+    result = material.rewrite_markdown_links(text, 'start/from-python/map.md')
+
+    assert '[a](../other.md)' in result
+    assert '[b](start/other.md)' in result
 
 
 # The end.

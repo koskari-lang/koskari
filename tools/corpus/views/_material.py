@@ -15,10 +15,13 @@
 """
 tools.corpus.views._material
 
-Title and summary extraction for the reference-material views (docs,
-programs). These are best-effort heuristics used only to populate the
-``title`` and ``summary`` columns; the authoritative ``content`` column
-always carries the raw file text.
+Text helpers for the reference-material views (docs, programs).
+
+Title and summary extraction are best-effort heuristics used only to
+populate the ``title`` and ``summary`` columns. Link rewriting
+(:func:`rewrite_markdown_links`) normalizes relative Markdown links in
+the ``content`` column so an agent reading a stored page can resolve a
+link straight through the MCP ``get_reference`` tool.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -26,6 +29,7 @@ always carries the raw file text.
 """
 
 
+import posixpath
 import re
 
 
@@ -106,6 +110,93 @@ def markdown_title_summary(text):
         summary = _clean_inline(' '.join(paragraph))
 
     return title, summary
+
+
+_MD_LINK_RE = re.compile(r'(!?\[[^\]]*\]\()([^)]+)(\))')
+_SCHEME_RE = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:')
+_TITLE_RE = re.compile(r'(\S+)(\s+["\'].*)\Z')
+
+
+def _normalize_link_target(dest, base_dir):
+    """
+    Resolve one Markdown link destination to a root-relative path
+
+    Rewrites a repo-internal relative link (possibly containing ``../``)
+    into a path rooted at the view's content tree, matching the scheme
+    used by the row ``path`` column. External links, ``mailto:``, pure
+    ``#anchor`` fragments, site-absolute paths, and links that escape the
+    tree are left unchanged.
+
+    :param dest: raw destination text from inside the link parentheses
+    :param base_dir: directory of the linking file, as a root-relative
+        posix path
+    :return: the rewritten destination, or None to leave it unchanged
+    """
+
+    stripped = dest.strip()
+    if not stripped:
+        return None
+
+    title = ''
+    match = _TITLE_RE.match(stripped)
+    if match:
+        target, title = match.group(1), match.group(2)
+    else:
+        target = stripped
+
+    if target.startswith('<') and target.endswith('>'):
+        target = target[1:-1]
+
+    if _SCHEME_RE.match(target) or target[:1] in ('#', '/'):
+        return None
+
+    fragment = ''
+    hash_index = target.find('#')
+    if hash_index >= 0:
+        target, fragment = target[:hash_index], target[hash_index:]
+    if not target:
+        return None
+
+    resolved = posixpath.normpath(posixpath.join(base_dir, target))
+    if resolved.startswith('..'):
+        return None
+
+    return resolved + fragment + title
+
+
+def rewrite_markdown_links(text, rel_path):
+    """
+    Rewrite relative Markdown links to root-relative content paths
+
+    Applies :func:`_normalize_link_target` to every inline ``[text](dest)``
+    link outside fenced code blocks, so an agent reading the stored
+    ``content`` can resolve a link straight through ``get_reference``.
+
+    :param text: raw Markdown document text
+    :param rel_path: the document's own root-relative posix path
+    :return: text with intra-repo relative links rewritten
+    """
+
+    base_dir = posixpath.dirname(rel_path)
+
+    def _sub(match):
+        replaced = _normalize_link_target(match.group(2), base_dir)
+        if replaced is None:
+            return match.group(0)
+        return match.group(1) + replaced + match.group(3)
+
+    out = []
+    in_fence = False
+    for line in text.splitlines(keepends=True):
+        marker = line.lstrip()
+        if marker.startswith('```') or marker.startswith('~~~'):
+            in_fence = not in_fence
+            out.append(line)
+        elif in_fence:
+            out.append(line)
+        else:
+            out.append(_MD_LINK_RE.sub(_sub, line))
+    return ''.join(out)
 
 
 def _extract_module_docstring(lines, start):
