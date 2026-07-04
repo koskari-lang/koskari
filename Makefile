@@ -347,9 +347,11 @@ corpus-parquet-container: corpus-parquet-container-build  ## Run corpus export c
 
 MCP_IMAGE := koskari-mcp
 
-build-mcp: build-container  ## Build koskari MCP server container (requires koskari:local)
+build-mcp:  ## Build koskari MCP server container (requires koskari:local)
 	@echo "Building MCP server container image $(MCP_IMAGE)..."
 	@$(CONTAINER_ENGINE) build -q -t $(MCP_IMAGE):local -f tools/mcp/Containerfile tools/mcp/
+
+build-mcp-container: build-container build-mcp  ## Build koskari:local then the MCP server container
 
 run-mcp:  ## Run MCP server on stdio (manual smoke test; use -i, no -t)
 	@$(CONTAINER_ENGINE) run -i --rm $(MCP_IMAGE):local
@@ -442,6 +444,7 @@ python:  ## Show Python executable
 	handlers \
 	help \
 	build-mcp \
+	build-mcp-container \
 	run-mcp \
 	install \
 	install-dev \

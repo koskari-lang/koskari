@@ -172,51 +172,93 @@ define filter-rows-by-feature [rows feature]:
     out
 
 
-define take-rows [rows limit]:
+define _SEARCH_COLUMNS #("source" "feature" "corpus_id")
+
+
+define search-like-clause [text]:
     """
-    Return at most limit rows from a list
+    Build an OR of LIKE predicates matching text as a substring across the
+    searchable text columns
     """
 
-    (item-slice rows 0 limit)
+    define escaped (escape-sql-string text)
+    define needle f"'%{escaped}%'"
+    define clauses:
+        list-each [column _SEARCH_COLUMNS] f"\"{column}\" LIKE {needle}"
+    define joined (.join " OR " clauses)
+    f"({joined})"
+
+
+define viewer-search-rows [path extra cap]:
+    """
+    Issue a Dataset Viewer query with paging bounds and return its rows
+    """
+
+    set! (item extra "offset") 0
+    set! (item extra "length") cap
+    (viewer-rows (viewer-get path extra))
+
+
+define fts-search [search_text cap]:
+    """
+    Full-text search rows via the Dataset Viewer /search endpoint
+    """
+
+    (viewer-search-rows "/search" #{query: search_text} cap)
+
+
+define like-search [search_text feature_path cap]:
+    """
+    Substring search rows via /filter, covering language keywords the
+    full-text index drops as stop words (while, for, each, if, and, or, not)
+    """
+
+    define clause (search-like-clause search_text)
+    when feature_path:
+        set! clause f"{clause} AND {(feature-where-clause feature_path)}"
+    (viewer-search-rows "/filter" #{where: clause} cap)
+
+
+define feature-search [feature_path cap]:
+    """
+    Fetch rows for a feature filter via the /filter endpoint
+    """
+
+    define where (feature-where-clause feature_path)
+    (viewer-search-rows "/filter" #{where: where} cap)
 
 
 @(mcp.tool)
 @coroutine-fn
-define search_examples [search_text feature_path: None limit: 10]:
+define search_examples [search_text
+                        [feature_path :: str value: None]
+                        [limit :: int value: 10]]:
     """
     Search verified Koskari corpus examples by text and optional feature
+
+    Text search ranks content words through the full-text index, then
+    falls back to substring matching so language keywords the index treats
+    as stop words (while, for-each, if, and, or, not) still resolve.
     """
 
-    define cap (min limit 100)
+    define cap (min (int limit) 100)
     define rows #[]
 
-    if (and search_text feature_path):
-        define extra #{}
-        set! (item extra "query") search_text
-        set! (item extra "offset") 0
-        set! (item extra "length") cap
-        define data (viewer-get "/search" extra)
-        set! rows (filter-rows-by-feature (viewer-rows data) feature_path)
-    elif search_text:
-        define extra #{}
-        set! (item extra "query") search_text
-        set! (item extra "offset") 0
-        set! (item extra "length") cap
-        define data (viewer-get "/search" extra)
-        set! rows (viewer-rows data)
+    if search_text:
+        set! rows (fts-search search_text cap)
+        when feature_path:
+            set! rows (filter-rows-by-feature rows feature_path)
+        unless rows:
+            set! rows (like-search search_text feature_path cap)
     elif feature_path:
-        define extra #{}
-        set! (item extra "where") (feature-where-clause feature_path)
-        set! (item extra "offset") 0
-        set! (item extra "length") cap
-        define data (viewer-get "/filter" extra)
-        set! rows (viewer-rows data)
+        set! rows (feature-search feature_path cap)
     else:
         return "Provide search_text and/or feature_path."
 
-    set! rows (take-rows rows cap)
-    if (not rows):
+    set! rows (item-slice rows 0 cap)
+    unless rows:
         return "No matching corpus examples."
+
     (format-examples rows)
 
 
@@ -229,13 +271,14 @@ define get_example [corpus_id]:
 
     define escaped (escape-sql-string corpus_id)
     define where f"\"corpus_id\"='{escaped}'"
-    define extra #{}
-    set! (item extra "where") where
-    set! (item extra "offset") 0
-    set! (item extra "length") 1
+    define extra #{
+        where: where
+        offset: 0
+        length: 1
+    }
     define data (viewer-get "/filter" extra)
     define rows (viewer-rows data)
-    if (not rows):
+    unless rows:
         return f"No corpus example with corpus_id={(repr corpus_id)}."
     (format-example (item rows 0))
 
@@ -250,9 +293,10 @@ define list_features []:
     define seen #{}
     define offset 0
     while True:
-        define extra #{}
-        set! (item extra "offset") offset
-        set! (item extra "length") 100
+        define extra #{
+            offset: offset
+            length: 100
+        }
 
         define page (viewer-get "/rows" extra)
         define rows (viewer-rows page)
@@ -273,7 +317,7 @@ define list_features []:
         when (< (len rows) 100):
             (break)
 
-    if (not seen):
+    unless seen:
         return "No features found."
 
     define lines:

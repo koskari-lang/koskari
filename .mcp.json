@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "koskari-corpus": {
+      "command": "podman",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "koskari-mcp:local"
+      ]
+    }
+  }
+}
