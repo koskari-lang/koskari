@@ -677,11 +677,11 @@ notes: car of cdr accesses the second element
 id: special-call-add-001
 feature: special/compile/call
 source: |-
-  (compile/call add 3 4)
+  (compile/call + 3 4)
   
 verify:
-  read: (compile/call add 3 4)
-  expand: (compile/call add 3 4)
+  read: (compile/call + 3 4)
+  expand: (compile/call + 3 4)
   eval: "7"
 references:
   - reference/specials/compile-call.md

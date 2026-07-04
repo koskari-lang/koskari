@@ -37,7 +37,7 @@ with optional inner self-reference for named `lambda`.
 
 ```koskari
 ;; Named function (no inner self-ref for double)
-(function double [x] (mul x 2))
+(function double [x] (* x 2))
 
 ;; Return type
 (function f :: int [x] x)

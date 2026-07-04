@@ -24,7 +24,7 @@ break target with its value and does not run the else clause.
 ;; Simple loop
 (while x
   (append c x)
-  (setq x (sub x 1)))
+  (setq x (- x 1)))
 
 ;; With break
 (while True
@@ -33,7 +33,7 @@ break target with its value and does not run the else clause.
 
 ;; Else runs when TEST becomes false
 (while x
-  (setq x (sub x 1))
+  (setq x (- x 1))
   [else: "done"])
 ```
 

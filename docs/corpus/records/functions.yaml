@@ -363,11 +363,11 @@ notes: yield-from a range; generator yields 0 1 2 which list collects
 id: function-await-expr-001
 feature: special/compile/await
 source: |-
-  (compile/await (compile/call add 1 2))
+  (compile/await (compile/call + 1 2))
   
 verify:
-  read: (compile/await (compile/call add 1 2))
-  expand: (compile/await (compile/call add 1 2))
+  read: (compile/await (compile/call + 1 2))
+  expand: (compile/await (compile/call + 1 2))
 references:
   - reference/specials/compile-await.md
 stability: evolving

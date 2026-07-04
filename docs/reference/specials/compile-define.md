@@ -69,8 +69,8 @@ compiles it, then emits `VAR_STORE`.
 (define f :: int [x] 5)
 (define [f :: int] [x] 5)
 (define fact [n]
-  (cond [(eq n 0) 1]
-                [else: (* n (fact (sub n 1)))]))
+  (cond [(== n 0) 1]
+                [else: (* n (fact (- n 1)))]))
 ```
 
 

@@ -30,4 +30,4 @@ surrounding module compiles as the result of the **`inline-macro`** form.
 
 - [compile/let-syntax](compile-let-syntax.md)
 - [compile/define-syntax](compile-define-syntax.md)
-- [Macro matching and hygiene](../../concepts/macro-matching-and-hygiene.md)
+- [Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md)

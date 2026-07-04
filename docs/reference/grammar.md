@@ -12,7 +12,7 @@ special forms.
 <!-- content TBD: base s-expression grammar; see tutorial examples in guide and start tracks -->
 
 Parenthesized calls, literals, and collection syntax work inside delimiters and
-at the top level. See [Forms and combining](../../guide/forms-and-combining.md)
+at the top level. See [Forms and combining](../guide/forms-and-combining.md)
 for everyday shapes.
 
 ---

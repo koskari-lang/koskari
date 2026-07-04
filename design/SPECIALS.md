@@ -162,7 +162,7 @@ by the compiler.
 
 ```scheme
 ;; Positional
-(compile/call add 1 2)
+(compile/call + 1 2)
 (compile/call my-func a b c)
 
 ;; Keyword (KEY: VAL)
@@ -295,7 +295,7 @@ with the defaults and annotation name tuples in its extra row (see
 (compile/lambda [x] x)
 
 ;; Anonymous two-argument function
-(compile/lambda [a b] (compile/call add a b))
+(compile/lambda [a b] (compile/call + a b))
 
 ;; Named lambda for recursion
 (compile/lambda fact [n]
@@ -350,7 +350,7 @@ function fragment (contrast named `compile/lambda`).
 
 ```scheme
 ;; Named function (no inner self-ref for double)
-(compile/function double [x] (compile/call mul x 2))
+(compile/function double [x] (compile/call * x 2))
 
 ;; Return type
 (compile/function f :: int [x] x)
@@ -743,7 +743,7 @@ break target with its value and does not run the else clause.
 ;; Simple loop
 (compile/while x
   (compile/call append c x)
-  (compile/setq x (compile/call sub x 1)))
+  (compile/setq x (compile/call - x 1)))
 
 ;; With break
 (compile/while True
@@ -752,7 +752,7 @@ break target with its value and does not run the else clause.
 
 ;; Else runs when TEST becomes false
 (compile/while x
-  (compile/setq x (compile/call sub x 1))
+  (compile/setq x (compile/call - x 1))
   [else: "done"])
 ```
 
@@ -798,7 +798,7 @@ parent stack.
 ;; Else fires when iterator exhausts without a break
 (compile/for-each [i items]
   (compile/cond
-    [(compile/call gt i 4) (compile/break)]
+    [(compile/call > i 4) (compile/break)]
     [else: (compile/call append result i)])
   [else: "finished"])
 
@@ -1499,8 +1499,8 @@ compiles it, then emits `VAR_STORE`.
 (compile/define f :: int [x] 5)
 (compile/define [f :: int] [x] 5)
 (compile/define fact [n]
-  (compile/cond [(eq n 0) 1]
-                [else: (* n (fact (sub n 1)))]))
+  (compile/cond [(== n 0) 1]
+                [else: (* n (fact (- n 1)))]))
 ```
 
 **Tests:** `tests/compile/specials/test_define.py`

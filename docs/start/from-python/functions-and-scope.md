@@ -137,7 +137,7 @@ closures behave like Python’s nested functions.
 >
 > ```koskari
 > let loop [[n 10]]:
->   when (gt n 0):
+>   when (> n 0):
 >     (print n)
 >     (loop (- n 1))
 > ```

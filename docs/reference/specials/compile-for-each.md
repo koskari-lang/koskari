@@ -38,14 +38,14 @@ parent stack.
 ;; Else fires when iterator exhausts without a break
 (for-each [i items]
   (cond
-    [(gt i 4) (break)]
+    [(> i 4) (break)]
     [else: (append result i)])
   [else: "finished"])
 
 ;; Break with a value
 (for-each [i items]
   (cond
-    [(eq i target) (break "found")]
+    [(== i target) (break "found")]
     [else: None]))
 ```
 
