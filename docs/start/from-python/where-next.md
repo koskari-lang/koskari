@@ -55,9 +55,10 @@ Copy a pattern into a `.ki` file, run it, and change one line at a time.
 
 > **Q:** Building a long-lived host for Koskari?
 >
-> **A:** Finish [Interop](interop.md), then
-> [Python API reference](../../api/index.md) (`koskari-importer`,
-> `koskari-module`, `koskari-asyncio`).
+> **A:** Finish [Interop](interop.md), then follow
+> [Hosting Koskari in a Python app](../../patterns/recipes/embedding-host.md) —
+> the import hook, running a file into a namespace, the REPL wrappers, and
+> awaiting Koskari functions from Python.
 
 ---
 

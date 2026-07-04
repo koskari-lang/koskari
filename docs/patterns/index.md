@@ -11,6 +11,7 @@ recipes/hello
 recipes/countdown
 recipes/script-main
 recipes/packaging-installed-scripts
+recipes/embedding-host
 recipes/point-class
 recipes/property-accessors
 recipes/fibonacci
