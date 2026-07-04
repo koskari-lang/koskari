@@ -43,7 +43,7 @@ verify:
   eval: "3"
   invalid: "agent mistake: wrapping for-each in await is redundant — for-each handles async iterables automatically via the ambient async evaluator. The result 3 is correct by coincidence, not by design. Canonical form: (for-each [x seq] x) with no await wrapper"
 references:
-  - reference/macros/compile-for-each.md
+  - reference/specials/compile-for-each.md
 stability: evolving
 tags:
   - iter

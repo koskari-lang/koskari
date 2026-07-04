@@ -249,7 +249,7 @@ source: (+ 1 2)
 verify:
   eval: "3"
 references:
-  - reference/specials/compile-plus.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -261,7 +261,7 @@ source: (+ 1 2 a)
 verify:
   eval: "3"
 references:
-  - reference/specials/compile-plus.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -274,7 +274,7 @@ source: (+ 1 2 3)
 verify:
   eval: "6"
 references:
-  - reference/specials/compile-plus.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -564,7 +564,7 @@ verify:
   expand: (- 10 3 2)
   eval: "5"
 references:
-  - reference/specials/compile-subtract.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -580,7 +580,7 @@ verify:
   expand: (- 5)
   eval: "5"
 references:
-  - reference/specials/compile-subtract.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -597,7 +597,7 @@ verify:
   expand: (* 2 3 4)
   eval: "24"
 references:
-  - reference/specials/compile-multiply.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -613,7 +613,7 @@ verify:
   expand: (* 7 8)
   eval: "56"
 references:
-  - reference/specials/compile-multiply.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -694,7 +694,7 @@ verify:
   expand: (!= 5 5)
   eval: "false"
 references:
-  - reference/specials/compile-ne.md
+  - reference/specials/compile-not-equal.md
 stability: stable
 tags:
   - object
@@ -710,7 +710,7 @@ verify:
   expand: (!= 1 2 3)
   eval: "true"
 references:
-  - reference/specials/compile-ne.md
+  - reference/specials/compile-not-equal.md
 stability: stable
 tags:
   - object
@@ -727,7 +727,7 @@ verify:
   expand: (not True)
   eval: "false"
 references:
-  - reference/specials/compile-not.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -743,7 +743,7 @@ verify:
   expand: (not None)
   eval: "true"
 references:
-  - reference/specials/compile-not.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -760,7 +760,7 @@ verify:
   expand: (len "hello")
   eval: "5"
 references:
-  - reference/specials/compile-len.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -775,7 +775,7 @@ verify:
   expand: (len seq)
   eval: "3"
 references:
-  - reference/specials/compile-len.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -791,7 +791,7 @@ verify:
   expand: (repr "hello")
   eval: '"\"hello\""'
 references:
-  - reference/specials/compile-repr.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -806,7 +806,7 @@ verify:
   expand: (repr None)
   eval: '"None"'
 references:
-  - reference/specials/compile-repr.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -821,7 +821,7 @@ verify:
   expand: (truth "")
   eval: "false"
 references:
-  - reference/specials/compile-truth.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -838,7 +838,7 @@ verify:
   expand: (truth 1)
   eval: "true"
 references:
-  - reference/specials/compile-truth.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -854,7 +854,7 @@ verify:
   expand: (compile/inplace + z 5)
   eval: "null"
 references:
-  - reference/macros/compile-incr.md
+  - reference/macros/compile-incr-and-compile-decr.md
 stability: evolving
 tags:
   - object
@@ -871,7 +871,7 @@ verify:
   expand: (begin (incr! z) z)
   eval: "2"
 references:
-  - reference/macros/compile-incr.md
+  - reference/macros/compile-incr-and-compile-decr.md
 stability: evolving
 tags:
   - object
@@ -887,7 +887,7 @@ verify:
   expand: (compile/inplace - z 1)
   eval: "null"
 references:
-  - reference/macros/compile-decr.md
+  - reference/macros/compile-incr-and-compile-decr.md
 stability: evolving
 tags:
   - object
@@ -903,7 +903,7 @@ verify:
   expand: (compile/inplace - z 3)
   eval: "null"
 references:
-  - reference/macros/compile-decr.md
+  - reference/macros/compile-incr-and-compile-decr.md
 stability: evolving
 tags:
   - object
@@ -952,7 +952,7 @@ verify:
   expand: (not-equal? 1 1)
   eval: "false"
 references:
-  - reference/specials/compile-ne.md
+  - reference/specials/compile-not-equal.md
 stability: stable
 tags:
   - object
@@ -968,7 +968,7 @@ verify:
   expand: (not-equal? "a" "b")
   eval: "true"
 references:
-  - reference/specials/compile-ne.md
+  - reference/specials/compile-not-equal.md
 stability: stable
 tags:
   - object
@@ -1180,7 +1180,7 @@ verify:
   expand: (& 12 10)
   eval: "8"
 references:
-  - reference/specials/compile-bit-and.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -1198,7 +1198,7 @@ verify:
   expand: (& 0 255)
   eval: "0"
 references:
-  - reference/specials/compile-bit-and.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -1216,7 +1216,7 @@ verify:
   expand: (| 12 10)
   eval: "14"
 references:
-  - reference/specials/compile-bit-or.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -1234,7 +1234,7 @@ verify:
   expand: (| 1 2 4)
   eval: "7"
 references:
-  - reference/specials/compile-bit-or.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -1252,7 +1252,7 @@ verify:
   expand: (** 2 10)
   eval: "1024"
 references:
-  - reference/specials/compile-power.md
+  - reference/specials/compile-starstar.md
 stability: stable
 tags:
   - object
@@ -1268,7 +1268,7 @@ verify:
   expand: (** 2 0)
   eval: "1"
 references:
-  - reference/specials/compile-power.md
+  - reference/specials/compile-starstar.md
 stability: stable
 tags:
   - object
@@ -1319,7 +1319,7 @@ verify:
   expand: (list (compile/iter seq))
   eval: "list:[1,2,3]"
 references:
-  - reference/specials/compile-iter.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1336,7 +1336,7 @@ verify:
   expand: (list (compile/iter "abc"))
   eval: "list:[\"a\",\"b\",\"c\"]"
 references:
-  - reference/specials/compile-iter.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1353,7 +1353,7 @@ verify:
   expand: (== (type 42) int)
   eval: "true"
 references:
-  - reference/specials/compile-type.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1369,7 +1369,7 @@ verify:
   expand: (== (type "hello") str)
   eval: "true"
 references:
-  - reference/specials/compile-type.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1610,7 +1610,7 @@ verify:
   expand: (str 42)
   eval: '"42"'
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1627,7 +1627,7 @@ verify:
   expand: (str True)
   eval: '"True"'
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1644,7 +1644,7 @@ verify:
   expand: (str None)
   eval: '"None"'
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1661,7 +1661,7 @@ verify:
   expand: (instance? (dir 42) list)
   eval: "true"
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1678,7 +1678,7 @@ verify:
   expand: (item (dir 42) 0)
   eval: '"__abs__"'
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1695,7 +1695,7 @@ verify:
   expand: (instance? (dir 42) list)
   eval: "true"
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
@@ -1712,7 +1712,7 @@ verify:
   expand: (vars obj)
   eval: "{\"count\": 5, \"value\": 99}"
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1729,7 +1729,7 @@ verify:
   expand: (item (vars obj) "count")
   eval: "5"
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object
@@ -1746,7 +1746,7 @@ verify:
   expand: (instance? (vars obj) dict)
   eval: "true"
 references:
-  - reference/specials/compile-unary.md
+  - reference/specials/object-operators/index.md
 stability: evolving
 tags:
   - object

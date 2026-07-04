@@ -172,4 +172,54 @@ class TestCorpusExport(unittest.TestCase):
         self.assertIn('bad.yaml', str(ctx.exception))
 
 
+class TestSourceViews(unittest.TestCase):
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.root = Path(self.tempdir.name)
+        self.schema_path = self.root / 'SCHEMA.json'
+        self.schema_path.write_text(json.dumps(SCHEMA_FIXTURE))
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def test_export_source_view_docs(self):
+        output_dir = self.root / 'out' / 'koskari-docs'
+        path = export.export_source_view(
+            'koskari-docs',
+            self.schema_path,
+            output_dir,
+            root=ROOT)
+        self.assertTrue(path.exists())
+        table = pq.read_table(path)
+        self.assertGreater(table.num_rows, 0)
+        row = table.to_pylist()[0]
+        self.assertEqual(row['kind'], 'doc')
+        self.assertIn('content', row)
+        self.assertEqual(row['schema_version'], SCHEMA_FIXTURE['$id'])
+
+    def test_export_all_views_includes_source_views(self):
+        records_dir = self.root / 'records'
+        records_dir.mkdir()
+        corpus_load.write_shard(
+            records_dir / 'fixture.yaml', FIXTURE_RECORDS)
+        output_base = self.root / 'datasets'
+
+        paths = export.export_all_views(
+            records_dir,
+            self.schema_path,
+            output_base,
+            root=ROOT)
+
+        names = {path.parent.name for path in paths}
+        self.assertEqual(
+            names,
+            {'koskari-eval', 'koskari-corpus',
+             'koskari-docs', 'koskari-programs'})
+        self.assertTrue(
+            (output_base / 'koskari-docs' / 'train.parquet').exists())
+        self.assertTrue(
+            (output_base / 'koskari-programs' / 'train.parquet').exists())
+
+
 # The end.

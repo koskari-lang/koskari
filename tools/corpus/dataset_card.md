@@ -10,6 +10,14 @@ configs:
     data_files:
       - split: train
         path: koskari-eval/train.parquet
+  - config_name: docs
+    data_files:
+      - split: train
+        path: koskari-docs/train.parquet
+  - config_name: programs
+    data_files:
+      - split: train
+        path: koskari-programs/train.parquet
 ---
 
 # Koskari language corpus
@@ -54,6 +62,52 @@ source-to-eval rows for completion-style use.
 | `feature` | Feature path |
 | `source` | Koskari source text |
 | `eval` | Expected eval result |
+| `schema_version` | Corpus schema identifier at export time |
+| `git_ref` | Short git commit at export time |
+
+### docs
+
+User documentation pages (Markdown) from the source repository's
+`docs/reference/` and `docs/start/` trees. One row per page. The `path`
+column matches the strings in the `corpus` config's `references` column
+verbatim, so a record's references resolve directly to their documentation
+content.
+
+| Column | Description |
+|--------|-------------|
+| `path` | Docs-relative page path (e.g. `reference/specials/compile-define.md`) |
+| `title` | Page title (first Markdown heading) |
+| `summary` | First paragraph, plain text |
+| `content` | Full raw Markdown of the page |
+| `section` | Parent directory (e.g. `reference/specials`) |
+| `kind` | Always `doc` |
+| `schema_version` | Corpus schema identifier at export time |
+| `git_ref` | Short git commit at export time |
+
+**Whole-file cells:** each page is one `content` cell. The Hugging Face
+Dataset Viewer caps cell size in API responses, so a very large page would
+be truncated. Pages are small today (a few KiB); chunk-by-heading is a
+deferred mitigation should pages grow. See `tools/corpus/views/docs.py`.
+
+### programs
+
+Example Koskari programs (whole `.ki` files and their READMEs) from the
+source repository's `examples/` tree, excluding build artifacts. These give
+composition-level context — full programs rather than single-construct
+snippets.
+
+**These rows are illustrative and NOT verified.** Unlike the `corpus`
+config, they carry no machine-checked read/expand/eval expectations; they
+are working example source, not conformance assertions.
+
+| Column | Description |
+|--------|-------------|
+| `path` | Repo-relative file path (e.g. `examples/life/koslife/life.ki`) |
+| `title` | File stem, or README heading |
+| `summary` | Module docstring or leading comment, plain text |
+| `content` | Full raw source of the file |
+| `section` | Top-level example group (e.g. `examples/life`) |
+| `kind` | Always `example` |
 | `schema_version` | Corpus schema identifier at export time |
 | `git_ref` | Short git commit at export time |
 

@@ -681,8 +681,6 @@ verify:
   read: ((partial + 10) 5)
   expand: ((partial + 10) 5)
   eval: "15"
-references:
-  - reference/builtins/partial.md
 stability: evolving
 tags:
   - function
@@ -696,8 +694,6 @@ verify:
   read: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
   expand: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
   eval: "7"
-references:
-  - reference/builtins/partial.md
 stability: evolving
 tags:
   - function

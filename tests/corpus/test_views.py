@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.corpus import default_records_dir, load_records
+from tests.corpus import default_records_dir, load_records, project_root
 
 
 pytestmark = pytest.mark.phase_corpus
@@ -52,6 +52,17 @@ _EVAL_COLUMNS = frozenset({
     'feature',
     'source',
     'eval',
+    'schema_version',
+    'git_ref',
+})
+
+_MATERIAL_COLUMNS = frozenset({
+    'path',
+    'title',
+    'summary',
+    'content',
+    'section',
+    'kind',
     'schema_version',
     'git_ref',
 })
@@ -86,6 +97,18 @@ def _apply_view(transform, records):
         if row is not None:
             rows.append(row)
     return rows
+
+
+def _generate_source_view(mod):
+    """
+    Run a source-generated view over the repository root
+    """
+
+    provenance = {
+        'schema_version': 'https://koskari.dev/corpus/schema.json',
+        'git_ref': '',
+    }
+    return mod.generate(project_root(), provenance)
 
 
 def test_full_view_includes_every_record():
@@ -138,6 +161,104 @@ def test_eval_view_columns():
     assert rows
     for row in rows:
         assert set(row.keys()) == _EVAL_COLUMNS
+
+
+def test_docs_view_row_per_markdown_page():
+    """
+    koskari-docs emits one row per Markdown page under docs/reference
+    and docs/start
+    """
+
+    docs = _load_view_module('docs.py')
+    rows = _generate_source_view(docs)
+
+    root = project_root()
+    expected = 0
+    for subdir in ('reference', 'start'):
+        expected += len(list((root / 'docs' / subdir).rglob('*.md')))
+
+    assert rows
+    assert len(rows) == expected
+
+
+def test_docs_view_columns():
+    """
+    koskari-docs rows expose the material column set and doc kind
+    """
+
+    docs = _load_view_module('docs.py')
+    rows = _generate_source_view(docs)
+    assert rows
+    for row in rows:
+        assert set(row.keys()) == _MATERIAL_COLUMNS
+        assert row['kind'] == 'doc'
+        assert row['content']
+
+
+def test_docs_view_resolves_all_record_references():
+    """
+    Every documentation reference cited by a corpus record resolves to a
+    koskari-docs row, so the MCP can turn a record's references into
+    documentation content. Guards against reintroducing dangling references.
+    """
+
+    docs = _load_view_module('docs.py')
+    doc_paths = {row['path'] for row in _generate_source_view(docs)}
+
+    records = load_records(default_records_dir())
+    cited = set()
+    for record in records:
+        for ref in record.get('references') or []:
+            if ref.endswith('.md') and (
+                    ref.startswith('reference/') or ref.startswith('start/')):
+                cited.add(ref)
+
+    assert cited
+    missing = cited - doc_paths
+    assert not missing, 'dangling doc references: %s' % sorted(missing)
+
+
+def test_programs_view_columns():
+    """
+    koskari-programs rows expose the material column set and example kind
+    """
+
+    programs = _load_view_module('programs.py')
+    rows = _generate_source_view(programs)
+    assert rows
+    for row in rows:
+        assert set(row.keys()) == _MATERIAL_COLUMNS
+        assert row['kind'] == 'example'
+        assert row['path'].startswith('examples/')
+
+
+def test_programs_view_excludes_build_artifacts():
+    """
+    koskari-programs skips generated build/ trees under examples/
+    """
+
+    programs = _load_view_module('programs.py')
+    rows = _generate_source_view(programs)
+    assert rows
+    for row in rows:
+        assert '/build/' not in row['path']
+
+
+def test_programs_view_extracts_summaries():
+    """
+    koskari-programs derives summaries from docstrings and comment banners
+    """
+
+    programs = _load_view_module('programs.py')
+    rows = {row['path']: row for row in _generate_source_view(programs)}
+
+    life = rows.get('examples/life/koslife/life.ki')
+    assert life is not None
+    assert life['summary'] and 'Life' in life['summary']
+
+    dataclass = rows.get('examples/dataclass.ki')
+    assert dataclass is not None
+    assert dataclass['summary'] and 'dataclass' in dataclass['summary']
 
 
 # The end.

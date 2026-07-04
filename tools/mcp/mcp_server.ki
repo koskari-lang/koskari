@@ -37,6 +37,8 @@ define logger (logging.getLogger "koskari.mcp")
 
 define DATASET "obriencj/koskari"
 define CONFIG "corpus"
+define DOCS_CONFIG "docs"
+define PROGRAMS_CONFIG "programs"
 define SPLIT "train"
 define BASE_URL "https://datasets-server.huggingface.co"
 
@@ -57,22 +59,22 @@ define escape-sql-string [text]:
     (text.replace "'" "''")
 
 
-define viewer-base-params []:
+define viewer-base-params [config: CONFIG]:
     """
     Shared query parameters for every Dataset Viewer request
     """
 
     #{dataset: DATASET
-      config: CONFIG
+      config: config
       split: SPLIT}
 
 
-define viewer-get [path extra: #{}]:
+define viewer-get [path extra: #{} config: CONFIG]:
     """
     Issue a GET to the Dataset Viewer API and return parsed JSON
     """
 
-    define params (dict (viewer-base-params))
+    define params (dict (viewer-base-params config: config))
     (params.update extra)
     define url f"{BASE_URL}{path}"
     define response (http.get url params: params)
@@ -135,6 +137,100 @@ define format-examples [rows]:
     (json.dumps items)
 
 
+;; === Reference material (docs and programs) ===
+
+
+define _REFERENCE_FULL_KEYS #("path" "title" "section" "kind" "content")
+define _REFERENCE_HIT_KEYS #("path" "title" "summary" "kind")
+define _DOC_SEARCH_COLUMNS #("path" "title" "content")
+
+
+define pick-fields [row keys]:
+    """
+    Build a dict from the named row keys, skipping missing values
+    """
+
+    define out #{}
+    for-each [key keys]:
+        define value (row.get key)
+        unless (None? value):
+            set! (item out key) value
+    out
+
+
+define reference-config-for [path]:
+    """
+    Route a reference path to its Dataset Viewer config
+
+    examples/ paths resolve against the programs config; every other path
+    is a documentation page in the docs config.
+    """
+
+    if (path.startswith "examples/"):
+        PROGRAMS_CONFIG
+    else:
+        DOCS_CONFIG
+
+
+define resolve-references [refs]:
+    """
+    Resolve corpus reference paths to their doc title and summary
+    """
+
+    unless refs:
+        return #[]
+    define clauses:
+        list-each [ref refs] f"\"path\"='{(escape-sql-string ref)}'"
+    define joined (.join " OR " clauses)
+    define where f"({joined})"
+    define extra #{where: where offset: 0 length: (len refs)}
+    define rows (viewer-rows (viewer-get "/filter" extra config: DOCS_CONFIG))
+    (list-each [row rows] (pick-fields row _REFERENCE_HIT_KEYS))
+
+
+define doc-like-clause [text]:
+    """
+    Build an OR of LIKE predicates over documentation text columns
+    """
+
+    define escaped (escape-sql-string text)
+    define needle f"'%{escaped}%'"
+    define clauses:
+        list-each [column _DOC_SEARCH_COLUMNS] f"\"{column}\" LIKE {needle}"
+    define joined (.join " OR " clauses)
+    f"({joined})"
+
+
+define doc-configs-for [kind]:
+    """
+    Return the Dataset Viewer configs a doc search should cover
+    """
+
+    if (== kind "doc"):
+        #[DOCS_CONFIG]
+    elif (== kind "example"):
+        #[PROGRAMS_CONFIG]
+    else:
+        #[DOCS_CONFIG PROGRAMS_CONFIG]
+
+
+define search-docs-config [search_text cap config]:
+    """
+    Search one docs config: full-text first, substring fallback
+
+    Mirrors search_examples: the full-text index drops language stop words,
+    so an empty result falls back to substring matching.
+    """
+
+    define rows:
+        viewer-search-rows "/search" #{query: search_text} cap config: config
+    unless rows:
+        define clause (doc-like-clause search_text)
+        set! rows (viewer-search-rows "/filter" #{where: clause} cap
+                       config: config)
+    rows
+
+
 define feature-matches? [row feature]:
     """
     Return True when row feature equals or starts with the filter
@@ -189,14 +285,14 @@ define search-like-clause [text]:
     f"({joined})"
 
 
-define viewer-search-rows [path extra cap]:
+define viewer-search-rows [path extra cap config: CONFIG]:
     """
     Issue a Dataset Viewer query with paging bounds and return its rows
     """
 
     set! (item extra "offset") 0
     set! (item extra "length") cap
-    (viewer-rows (viewer-get path extra))
+    (viewer-rows (viewer-get path extra config: config))
 
 
 define fts-search [search_text cap]:
@@ -280,7 +376,64 @@ define get_example [corpus_id]:
     define rows (viewer-rows data)
     unless rows:
         return f"No corpus example with corpus_id={(repr corpus_id)}."
-    (format-example (item rows 0))
+
+    define example (compact-example (item rows 0))
+    define refs (dict.get example "references")
+    when refs:
+        set! (item example "references_resolved") (resolve-references refs)
+    (json.dumps example)
+
+
+@(mcp.tool)
+@coroutine-fn
+define get_reference [path]:
+    """
+    Fetch one documentation page or example program by its path
+
+    Paths come from a corpus record's references field (documentation
+    pages) or are repository-relative example paths beginning with
+    examples/. Returns the full raw content.
+    """
+
+    define config (reference-config-for path)
+    define escaped (escape-sql-string path)
+    define where f"\"path\"='{escaped}'"
+    define extra #{
+        where: where
+        offset: 0
+        length: 1
+    }
+    define data (viewer-get "/filter" extra config: config)
+    define rows (viewer-rows data)
+    unless rows:
+        return f"No reference material with path={(repr path)}."
+    (json.dumps (pick-fields (item rows 0) _REFERENCE_FULL_KEYS))
+
+
+@(mcp.tool)
+@coroutine-fn
+define search_docs [search_text
+                    [kind :: str value: None]
+                    [limit :: int value: 10]]:
+    """
+    Search Koskari documentation and example programs by text
+
+    kind restricts results: "doc" for documentation pages, "example" for
+    programs; omit it to search both. Returns path, title, and summary for
+    each hit; call get_reference with a path for full content.
+    """
+
+    define cap (min (int limit) 100)
+    define hits #[]
+    for-each [config (doc-configs-for kind)]:
+        define rows (search-docs-config search_text cap config)
+        for-each [row rows]:
+            (hits.append (pick-fields row _REFERENCE_HIT_KEYS))
+
+    define limited (item-slice hits 0 cap)
+    unless limited:
+        return "No matching reference material."
+    (json.dumps limited)
 
 
 @(mcp.tool)
@@ -320,9 +473,24 @@ define list_features []:
     unless seen:
         return "No features found."
 
-    define lines:
-        list-each [pair (sorted (seen.items))]:
-            f"{(item pair 0)}\t{(item pair 1)}"
+    define groups #{}
+    for-each [pair (sorted (seen.items))]:
+        define top (item (.split (item pair 0) "/") 0)
+        define bucket (groups.get top)
+        when (None? bucket):
+            set! bucket #[]
+            set! (item groups top) bucket
+        (bucket.append pair)
+
+    define lines #[]
+    for-each [top (sorted (groups.keys))]:
+        define bucket (item groups top)
+        define subtotal 0
+        for-each [pair bucket]:
+            incr! subtotal (item pair 1)
+        (lines.append f"{top}/  ({subtotal})")
+        for-each [pair bucket]:
+            (lines.append f"  {(item pair 0)}\t{(item pair 1)}")
     (.join "\n" lines)
 
 

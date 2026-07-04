@@ -377,7 +377,7 @@ verify:
   expand: (compile/with ((open "/dev/null")) None)
   eval: "null"
 references:
-  - reference/specials/compile-with.md
+  - reference/specials/with.md
 stability: evolving
 tags:
   - special
@@ -395,7 +395,7 @@ verify:
   expand: (compile/with (f (open "/dev/null")) (compile/call-attr f read))
   eval: '""'
 references:
-  - reference/specials/compile-with.md
+  - reference/specials/with.md
 stability: evolving
 tags:
   - special
@@ -413,7 +413,7 @@ verify:
   expand: (compile/with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
   eval: '""'
 references:
-  - reference/specials/compile-with.md
+  - reference/specials/with.md
 stability: evolving
 tags:
   - special
@@ -463,7 +463,7 @@ verify:
   expand: (compile/call/cc (compile/lambda (k) (compile/call k 42)))
   eval: "42"
 references:
-  - reference/specials/compile-callcc.md
+  - reference/specials/compile-call-cc.md
 stability: evolving
 tags:
   - special
@@ -480,7 +480,7 @@ verify:
   expand: (compile/call/cc (compile/lambda (escape) (compile/begin (compile/call escape "early") "unreachable")))
   eval: '"early"'
 references:
-  - reference/specials/compile-callcc.md
+  - reference/specials/compile-call-cc.md
 stability: evolving
 tags:
   - special
@@ -839,7 +839,7 @@ verify:
   expand: (compile/dyn-with ((open "/dev/null")) None)
   eval: "null"
 references:
-  - reference/specials/compile-dyn-with.md
+  - reference/specials/dyn-with.md
 stability: evolving
 tags:
   - special
@@ -857,7 +857,7 @@ verify:
   expand: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read))
   eval: '""'
 references:
-  - reference/specials/compile-dyn-with.md
+  - reference/specials/dyn-with.md
 stability: evolving
 tags:
   - special
@@ -875,7 +875,7 @@ verify:
   expand: (compile/dyn-with (f (open "/dev/null")) (compile/call-attr f read) (compile/call-attr f read))
   eval: '""'
 references:
-  - reference/specials/compile-dyn-with.md
+  - reference/specials/dyn-with.md
 stability: evolving
 tags:
   - special
@@ -1346,7 +1346,7 @@ verify:
   expand: (with (f (open "/dev/null")) ((compile/attr f read)))
   eval: '""'
 references:
-  - reference/specials/compile-with.md
+  - reference/specials/with.md
 stability: stable
 tags:
   - special
@@ -1366,7 +1366,7 @@ verify:
   expand: (with ((open "/dev/null")) None)
   eval: "null"
 references:
-  - reference/specials/compile-with.md
+  - reference/specials/with.md
 stability: stable
 tags:
   - special

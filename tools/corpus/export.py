@@ -193,13 +193,46 @@ def export_corpus(
     return write_parquet(rows, output_dir)
 
 
+def export_source_view(
+        view,
+        schema_path,
+        output_dir,
+        root=None):
+    """
+    Export one source-generated view to parquet
+
+    Source views build rows from repository files (docs, example programs)
+    rather than from corpus records, so they receive the repository root and
+    provenance instead of the loaded record list.
+
+    :param view: view name registered in views.SOURCE_VIEWS
+    :param schema_path: path to SCHEMA.json
+    :param output_dir: directory for train.parquet
+    :param root: repository root for git provenance
+    :return: path to written parquet file
+    :raises KeyError: when view is unknown
+    """
+
+    views = load_views()
+    generate = views.SOURCE_VIEWS[view]
+    root = project_root(root)
+
+    provenance = {
+        'schema_version': read_schema_version(schema_path),
+        'git_ref': git_ref(root),
+    }
+
+    rows = generate(root, provenance)
+    return write_parquet(rows, output_dir)
+
+
 def export_all_views(
         records_dir,
         schema_path,
         output_base,
         root=None):
     """
-    Export every registered corpus view to parquet
+    Export every registered corpus and source view to parquet
 
     :param records_dir: directory containing YAML shards
     :param schema_path: path to SCHEMA.json
@@ -215,6 +248,14 @@ def export_all_views(
         path = export_corpus(
             view_name,
             records_dir,
+            schema_path,
+            output_dir,
+            root=root)
+        paths.append(path)
+    for view_name in sorted(views.SOURCE_VIEWS):
+        output_dir = Path(output_base) / view_name
+        path = export_source_view(
+            view_name,
             schema_path,
             output_dir,
             root=root)
@@ -279,8 +320,18 @@ def main(argv=None):
                 sys.stdout.write('%s\n' % path)
             return 0
 
+        if args.view in views.SOURCE_VIEWS:
+            path = export_source_view(
+                args.view,
+                args.schema,
+                args.output_dir,
+                root=root)
+            sys.stdout.write('%s\n' % path)
+            return 0
+
         if args.view not in views.VIEWS:
-            names = ', '.join(sorted(views.VIEWS))
+            names = ', '.join(sorted(
+                set(views.VIEWS) | set(views.SOURCE_VIEWS)))
             sys.stderr.write(
                 'unknown view %r; available: %s\n' % (args.view, names))
             return 2
