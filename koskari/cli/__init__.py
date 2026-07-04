@@ -29,8 +29,6 @@ pluggable input backend that supports both readline and prompt_toolkit.
 import asyncio
 import platform
 import sys
-from argparse import REMAINDER, Action, ArgumentParser
-from os.path import basename
 
 from ..exceptions import (CodeBoundary, CompilerError, UncaughtCompilerError,
                           format_code_boundary_exception,
@@ -38,8 +36,6 @@ from ..exceptions import (CodeBoundary, CompilerError, UncaughtCompilerError,
 from ..lexer.discovery import special_names_for_repl
 from ..lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
                                     koskari_style, load_koskari_key_bindings)
-from ..lib import Domain, ParamRef, drive_async_loop
-from ..module import new_module
 
 
 __all__ = (
@@ -47,12 +43,9 @@ __all__ = (
     'REPLCodeBoundary',
     '_await_user_form',
     '_make_repl_prompter',
-    'cli_async',
     'format_code_boundary_exception',
     'format_exception_with_koskari_trace',
     'main',
-    'option_parser',
-    'prepare_cli_async',
     'repl_async',
     'run_command_async',
     'run_file_async',
@@ -309,324 +302,45 @@ async def run_command_async(mod, command, *, interactive=False):
 
 
 # ---------------------------------------------------------------------------
-# CLI orchestration
-# ---------------------------------------------------------------------------
-
-
-async def cli_async(options):
-    """
-    Execute the koskari command-line session described by options.
-
-    Installs the import hook, optionally tweaks sys.path, runs any
-    specified file, then drops into the REPL when --interactive is given
-    or no filename was provided.
-
-    :param options: namespace returned by option_parser().parse_args()
-    """
-
-    filename = options.filename
-    command = options.command
-
-    if options.compile_kio:
-        from koskari.serialize.incremental import compile_ki_file_to_kio
-        compile_ki_file_to_kio(
-            filename,
-            options.compile_kio,
-            source_filename=options.compile_kio_source_name)
-        return
-
-    if command is not None:
-        sys.argv = ['-c'] + list(options.args)
-    elif filename:
-        sys.argv = [filename] + list(options.args)
-    else:
-        sys.argv = list(options.args)
-
-    if options.tweakpath:
-        sys.path.insert(0, '.')
-
-    with Domain():
-        mod = new_module('__main__')
-        p = ParamRef("*interactive*")
-        p.store(options.interactive)
-
-        if command is not None:
-            await run_command_async(
-                mod,
-                command,
-                interactive=options.interactive)
-
-            if not options.interactive:
-                return
-
-        elif filename:
-            await run_file_async(
-                mod,
-                filename,
-                execute_kio=options.execute_kio,
-                interactive=options.interactive)
-
-            if not options.interactive:
-                return
-
-        await repl_async(
-            mod,
-            histfile=options.histfile,
-            full_trace=options.repl_full_trace,
-            quiet=options.quiet)
-
-
-# ---------------------------------------------------------------------------
-# Argument parser
-# ---------------------------------------------------------------------------
-
-
-class _CompileKioSourceNameAction(Action):
-    """
-    Reject --compile-kio-source-name unless --compile-kio is also present
-    """
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        if namespace.compile_kio is None:
-            parser.error('--compile-kio-source-name requires --compile-kio')
-        setattr(namespace, self.dest, values)
-
-
-def _reject_option_like_rest(parser, rest):
-    """
-    Error when pre-``--`` REMAINDER tokens look like misplaced options
-    """
-
-    for item in rest:
-        if item == '--' or item.startswith('-'):
-            parser.error('unrecognized arguments: %s' % (item,))
-
-
-def _split_script_rest(parser, rest):
-    """
-    Split REMAINDER into script filename and forwarded script arguments
-
-    When ``rest`` contains ``--``, only tokens before the first ``--`` are
-    checked for misplaced koskari options; everything after is forwarded
-    verbatim to the script.
-
-    :param parser: ArgumentParser used for parse_args (for error reporting)
-    :param rest: REMAINDER tokens after koskari CLI options
-    :return: (filename, script_args) pair
-    """
-
-    if '--' not in rest:
-        _reject_option_like_rest(parser, rest)
-        return rest[0], rest[1:]
-
-    idx = rest.index('--')
-    pre = rest[:idx]
-    post = rest[idx + 1:]
-
-    if not pre:
-        parser.error('expected script filename before --')
-
-    _reject_option_like_rest(parser, pre)
-    return pre[0], pre[1:] + post
-
-
-def _resolve_cli_target(parser, options):
-    """
-    Flatten the exclusive run-target group into legacy option fields
-
-    Script paths and forwarded arguments live in ``rest`` (REMAINDER) so
-    ``-c`` can accept arguments without competing with an optional filename
-    positional.
-
-    :param parser: ArgumentParser used for parse_args (for error reporting)
-    :param options: namespace returned by parse_args
-    :return: the same namespace, with compile_kio, filename, and execute_kio set
-    """
-
-    rest = list(options.rest)
-
-    if options.command is not None:
-        options.filename = None
-        if rest and rest[0] == '--':
-            rest = rest[1:]
-        options.args = rest
-        options.execute_kio = False
-        return options
-
-    if options.compile_kio is not None:
-        if rest:
-            parser.error(
-                'unexpected extra arguments: %s' % (' '.join(rest),))
-        out, src = options.compile_kio
-        options.compile_kio = out
-        options.filename = src
-        options.args = []
-        options.execute_kio = False
-        return options
-
-    if options.execute_kio_file is not None:
-        if rest:
-            parser.error(
-                'unexpected extra arguments: %s' % (' '.join(rest),))
-        options.execute_kio = True
-        options.filename = options.execute_kio_file[0]
-        options.args = []
-        return options
-
-    if rest:
-        options.filename, options.args = _split_script_rest(parser, rest)
-    else:
-        options.filename = None
-        options.args = []
-
-    options.execute_kio = False
-    return options
-
-
-def option_parser(name):
-    """
-    Build and return the ArgumentParser for the koskari CLI.
-
-    :param name: the program name (typically argv[0])
-    :return: configured ArgumentParser instance
-    """
-
-    parser = ArgumentParser(prog=basename(name))
-
-    parser.add_argument(
-        '--version',
-        dest='show_version',
-        action='store_true',
-        default=False,
-        help='Print Koskari and Python version information, then exit')
-
-    parser.add_argument(
-        '-q', '--quiet',
-        dest='quiet',
-        action='store_true',
-        default=False,
-        help='Suppress REPL startup version banner')
-
-    parser.add_argument(
-        '--no-tweak-path',
-        dest='tweakpath',
-        action='store_false',
-        default=True,
-        help="Do not add the current directory to sys.path")
-
-    parser.add_argument(
-        '--histfile',
-        dest='histfile',
-        action='store',
-        default=None,
-        help="REPL history file path")
-
-    parser.add_argument(
-        '--repl-full-trace',
-        dest='repl_full_trace',
-        action='store_true',
-        default=False,
-        help='Show REPL infrastructure frames in runtime error tracebacks')
-
-    parser.add_argument(
-        '-i', '--interactive',
-        dest='interactive',
-        action='store_true',
-        default=False,
-        help="Enter interactive mode after executing the given script")
-
-    target = parser.add_mutually_exclusive_group()
-
-    target.add_argument(
-        '-c', '--command',
-        dest='command',
-        metavar='CMD',
-        default=None,
-        help='Program passed in as a string, then exit')
-
-    target.add_argument(
-        '--compile-kio',
-        dest='compile_kio',
-        nargs=2,
-        metavar=('OUT', 'SRC'),
-        default=None,
-        help='Compile SRC .ki to OUT as .kio, then exit')
-
-    target.add_argument(
-        '--execute-kio',
-        dest='execute_kio_file',
-        metavar='SRC',
-        nargs=1,
-        default=None,
-        help='Run SRC as a precompiled .kio')
-
-    parser.add_argument(
-        '--compile-kio-source-name',
-        dest='compile_kio_source_name',
-        metavar='PATH',
-        default=None,
-        action=_CompileKioSourceNameAction,
-        help='Logical .ki path stored in the .kio for tracebacks (default: input path)')
-
-    parser.add_argument(
-        'rest',
-        nargs=REMAINDER,
-        default=[],
-        help="Script path and arguments forwarded to the script or REPL session")
-
-    return parser
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-
-
-def prepare_cli_async(argv=None):
-    """
-    Parse CLI arguments and return either a sync exit code or async coroutine
-
-    :param argv: argument list; defaults to sys.argv when None
-    :return: (exit_code, coroutine) pair; exactly one of exit_code or
-        coroutine is non-None
-    """
-
-    if argv is None:
-        argv = sys.argv
-
-    name, *args = argv
-    parser = option_parser(name)
-    options = _resolve_cli_target(parser, parser.parse_args(args))
-
-    if options.show_version:
-        print(version_line())
-        print('')
-        print('Python %s' % (sys.version,))
-        return 0, None
-
-    return None, cli_async(options)
 
 
 def main(argv=None):
     """
     Entry point for the koskari command-line interface.
 
+    Boots the Koskari launchpad (``koskari.cli.main:cli``) through the
+    launcher, the same path a packaged koskari_scripts command uses: the
+    target is loaded and run under Domain and the async host.  Option
+    parsing and orchestration live in Koskari (``main.ki``); this stub only
+    dispatches and maps a top-level Ctrl-C to exit code 130.
+
     :param argv: argument list; defaults to sys.argv when None
     :return: integer exit code
     """
 
-    try:
-        exit_code, coro = prepare_cli_async(argv)
-        if exit_code is not None:
-            return exit_code
+    from koskari.importer import install
+    from koskari.launcher import run_target
 
-        drive_async_loop(coro)
+    # The launchpad and REPL live in .ki modules; ensure the import hook is
+    # present before the launcher loads koskari.cli.main.
+    install()
+
+    if argv is None:
+        argv = sys.argv
+
+    try:
+        code = run_target(
+            "koskari.cli.main:cli",
+            argv=list(argv[1:]),
+            script_name=argv[0])
 
     except KeyboardInterrupt:
         print('', file=sys.stderr)
         return 130
 
-    return 0
+    return 0 if code is None else code
 
 
 # The end.

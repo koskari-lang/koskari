@@ -1,0 +1,258 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+koskari.cli.main
+
+Koskari-native CLI launchpad: option parsing (driving argparse), target
+resolution, and run orchestration.  Booted through the launcher
+(koskari.launcher.run_target) the same way a packaged koskari_scripts
+command runs.  See design/cli-launchpad-koskari.md.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import sys
+
+import-from argparse ArgumentParser REMAINDER
+import-from os.path basename
+import-from koskari.cli version_line run_file_async run_command_async repl_async
+import-from koskari.lib ParamRef
+import-from koskari.module new_module
+
+
+(declare-exports cli option_parser resolve_cli_target)
+
+
+; === Argument parsing ===
+
+
+define reject_option_like_rest [parser rest]:
+  """
+  Error when pre-`--` REMAINDER tokens look like misplaced koskari options.
+  """
+
+  for-each [it rest]:
+    when (or (equal? it "--") (it.startswith "-")):
+      parser.error f"unrecognized arguments: {it}"
+
+
+define split_script_rest [parser rest]:
+  """
+  Split REMAINDER into (filename, script-args).
+
+  When rest contains `--`, only tokens before the first `--` are checked
+  for misplaced koskari options; everything after is forwarded verbatim.
+  """
+
+  unless (in "--" rest):
+    reject_option_like_rest parser rest
+    return #((item rest 0) (item rest (slice 1 None)))
+
+  define idx (rest.index "--")
+  define pre (item rest (slice None idx))
+  define post (item rest (slice (+ idx 1) None))
+
+  unless pre:
+    parser.error "expected script filename before --"
+
+  reject_option_like_rest parser pre
+  return #((item pre 0) (+ (item pre (slice 1 None)) post))
+
+
+define resolve_cli_target [parser options]:
+  """
+  Flatten the exclusive run-target group into filename / args / execute_kio.
+
+  Script paths and forwarded arguments live in `rest` (REMAINDER) so `-c`
+  can accept arguments without competing with an optional filename
+  positional.
+  """
+
+  when (and (is-not options.compile_kio_source_name None)
+            (None? options.compile_kio)):
+    parser.error "--compile-kio-source-name requires --compile-kio"
+
+  define rest (list options.rest)
+
+  if (is-not options.command None):
+    (set-attr options filename None)
+    when (and rest (equal? (item rest 0) "--")):
+      set! rest (item rest (slice 1 None))
+    (set-attr options args rest)
+    (set-attr options execute_kio False)
+    return options
+
+  if (is-not options.compile_kio None):
+    when rest:
+      define joined (.join " " rest)
+      parser.error f"unexpected extra arguments: {joined}"
+    define out_src options.compile_kio
+    (set-attr options compile_kio (item out_src 0))
+    (set-attr options filename (item out_src 1))
+    (set-attr options args #[])
+    (set-attr options execute_kio False)
+    return options
+
+  if (is-not options.execute_kio_file None):
+    when rest:
+      define joined (.join " " rest)
+      parser.error f"unexpected extra arguments: {joined}"
+    (set-attr options execute_kio True)
+    (set-attr options filename (item options.execute_kio_file 0))
+    (set-attr options args #[])
+    return options
+
+  if rest:
+    define pair (split_script_rest parser rest)
+    (set-attr options filename (item pair 0))
+    (set-attr options args (item pair 1))
+  else:
+    (set-attr options filename None)
+    (set-attr options args #[])
+
+  (set-attr options execute_kio False)
+  return options
+
+
+define option_parser [name]:
+  """
+  Build and return the ArgumentParser for the koskari CLI.
+  """
+
+  define parser (ArgumentParser prog: (basename name))
+
+  (parser.add_argument "--version"
+    dest: "show_version" action: "store_true" default: False
+    help: "Print Koskari and Python version information, then exit")
+
+  (parser.add_argument "-q" "--quiet"
+    dest: "quiet" action: "store_true" default: False
+    help: "Suppress REPL startup version banner")
+
+  (parser.add_argument "--no-tweak-path"
+    dest: "tweakpath" action: "store_false" default: True
+    help: "Do not add the current directory to sys.path")
+
+  (parser.add_argument "--histfile"
+    dest: "histfile" action: "store" default: None
+    help: "REPL history file path")
+
+  (parser.add_argument "--repl-full-trace"
+    dest: "repl_full_trace" action: "store_true" default: False
+    help: "Show REPL infrastructure frames in runtime error tracebacks")
+
+  (parser.add_argument "-i" "--interactive"
+    dest: "interactive" action: "store_true" default: False
+    help: "Enter interactive mode after executing the given script")
+
+  define target (parser.add_mutually_exclusive_group)
+
+  (target.add_argument "-c" "--command"
+    dest: "command" metavar: "CMD" default: None
+    help: "Program passed in as a string, then exit")
+
+  (target.add_argument "--compile-kio"
+    dest: "compile_kio" nargs: 2 metavar: #("OUT" "SRC") default: None
+    help: "Compile SRC .ki to OUT as .kio, then exit")
+
+  (target.add_argument "--execute-kio"
+    dest: "execute_kio_file" metavar: "SRC" nargs: 1 default: None
+    help: "Run SRC as a precompiled .kio")
+
+  (parser.add_argument "--compile-kio-source-name"
+    dest: "compile_kio_source_name" metavar: "PATH" default: None
+    action: "store"
+    help: "Logical .ki path stored in the .kio for tracebacks (default: input path)")
+
+  (parser.add_argument "rest"
+    nargs: REMAINDER default: #[]
+    help: "Script path and arguments forwarded to the script or REPL session")
+
+  return parser
+
+
+; === Orchestration ===
+
+
+define cli []:
+  """
+  Parse sys.argv and execute the requested koskari session.
+
+  Reads sys.argv (set by the launcher's hosted_run), installs the run
+  target into sys.argv for the executed program, and dispatches to a
+  command, a file, or the REPL.  Runs inside the Domain opened by
+  hosted_run, so it does not open its own.
+
+  :return: integer exit code
+  """
+
+  define name (item sys.argv 0)
+  define args (item sys.argv (slice 1 None))
+  define parser (option_parser name)
+  define options (resolve_cli_target parser (parser.parse_args args))
+
+  when options.show_version:
+    print (version_line)
+    print ""
+    print f"Python {sys.version}"
+    return 0
+
+  define filename options.filename
+  define command options.command
+
+  when options.compile_kio:
+    import-from koskari.serialize.incremental compile_ki_file_to_kio
+    compile_ki_file_to_kio filename options.compile_kio
+      source_filename: options.compile_kio_source_name
+    return 0
+
+  ; Present the run target to the executed program as sys.argv.
+  if (is-not command None):
+    (set-attr sys argv (+ #["-c"] (list options.args)))
+  else:
+    if filename:
+      (set-attr sys argv (+ #[filename] (list options.args)))
+    else:
+      (set-attr sys argv (list options.args))
+
+  when options.tweakpath:
+    sys.path.insert 0 "."
+
+  define mod (new_module "__main__")
+  define interactive_param (ParamRef "*interactive*")
+  interactive_param.store options.interactive
+
+  if (is-not command None):
+    await (run_command_async mod command interactive: options.interactive)
+    unless options.interactive:
+      return 0
+  else:
+    when filename:
+      await (run_file_async mod filename
+        execute_kio: options.execute_kio
+        interactive: options.interactive)
+      unless options.interactive:
+        return 0
+
+  await (repl_async mod
+    histfile: options.histfile
+    full_trace: options.repl_full_trace
+    quiet: options.quiet)
+  return 0
+
+
+; The end.
