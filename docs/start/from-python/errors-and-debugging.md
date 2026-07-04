@@ -44,7 +44,7 @@ when available.
 > ```koskari
 > try:
 >   (risky-call)
-> except [ValueError]:
+> except [ValueError as: e]:
 >   (handle e)
 > else:
 >   (on-success)
@@ -71,7 +71,7 @@ when available.
 >
 > ```koskari
 > (try (risky-call)
->   [[ValueError] (handle e)]
+>   [[e ValueError] (handle e)]
 >   [else: (on-success)]
 >   [finally: (cleanup)])
 > ```
@@ -140,9 +140,10 @@ At the REPL, trigger a handled error:
 
 ```koskari
 koskari> try:
-  ....   (/ 1 0)
-  .... except [ZeroDivisionError]:
-  ....   "caught"
+     ...     (/ 1 0)
+     ... except [ZeroDivisionError]:
+     ...     "caught"
+     ...
 ```
 
 You should see `"caught"` instead of an uncaught traceback.

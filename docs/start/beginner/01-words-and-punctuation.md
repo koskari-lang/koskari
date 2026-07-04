@@ -90,7 +90,7 @@ pieces you will see in almost every Koskari program.
 
 ## Spacing
 
-> **Q:** Does `(+ 1 2)` mean something different from `(+1 2)`?
+> **Q:** Does `(+ 1 2)` mean something different from `(+  1   2)`?
 >
 > **A:** Koskari allows flexible spacing inside a group. These are the same
 > idea:
@@ -102,6 +102,12 @@ pieces you will see in almost every Koskari program.
 >
 > Good style uses spaces so human readers can see the pieces. Koskari is strict
 > about parentheses and quotes, not about how many spaces you use.
+
+> **Q:** What about `(+1 2)`?
+>
+> **A:** This means something different. Here the first name is now `+1`
+>
+> Individual names must be separated by whitespace.
 
 ---
 
