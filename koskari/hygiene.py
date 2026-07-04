@@ -604,6 +604,12 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
         return tail
 
     def walk_spine(nx):
+        # A car wrapped in a Datum is material spliced in from a pattern
+        # capture: a BODY/VALUE region, wrapped once and never nested. We peel
+        # the wrapper for compilation but must not descend into it -- its
+        # insides are the user's captured code, not template structure, so
+        # nothing there may be gensymmed. Only template-built (bare) pairs are
+        # walked; the Datum wrapper is the sentinel that keeps us out.
         while not is_nil(nx):
             if not is_pair(nx):
                 return nx
@@ -619,7 +625,7 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
             if is_symbol(c):
                 if c in binding_symbols and not car_was_datum:
                     nx.car = gensym_binding(c)
-            elif is_pair(c):
+            elif is_pair(c) and not car_was_datum:
                 walk_spine(c)
 
             cdr_was_datum = isinstance(nx.cdr, Datum)

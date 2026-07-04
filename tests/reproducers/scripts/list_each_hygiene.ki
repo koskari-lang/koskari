@@ -1,0 +1,29 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+; Reproducer: list-each hygiene leak.
+;
+; list-each expands with an accumulator the macro names `col`. When the
+; user's loop variable is also `col`, references to `col` nested inside
+; the body form used to resolve to the (gensym-renamed) accumulator
+; instead of the loop value, corrupting the result. A bare-symbol body
+; escaped the leak; any nesting (a call, an f-string) triggered it.
+
+define nested (list-each [col #[1 2 3]] (+ col 10))
+define fstr (list-each [col #["a" "b" "c"]] f"<{col}>")
+
+print nested
+print fstr
+
+; The end.
