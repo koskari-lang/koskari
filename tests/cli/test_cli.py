@@ -30,6 +30,7 @@ from koskari.cli import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary, main,
                          run_file_async, startup_lines,
                          _resolve_cli_target)
 from koskari.exceptions import (CodeBoundary, _filter_infrastructure_tb,
+                                format_code_boundary_exception,
                                 format_exception_with_koskari_trace)
 from koskari.module import new_module
 
@@ -462,6 +463,72 @@ class TestFilterInfrastructureTb(unittest.IsolatedAsyncioTestCase):
         formatted = ''.join(traceback.format_exception(exc_type, exc_val, result))
         self.assertIn('ValueError', formatted)
         self.assertIn('test', formatted)
+
+
+    async def test_returns_none_when_all_frames_infrastructure(self):
+        g = {'__name__': 'koskari.cli'}
+        try:
+            exec('raise ValueError("boom")', g)
+        except ValueError:
+            tb = sys.exc_info()[2]
+        else:
+            self.fail('expected ValueError')
+        # drop the test-method frame; the surviving <string> frame reports
+        # module __name__ 'koskari.cli', which is infrastructure
+        tb = tb.tb_next
+        result = _filter_infrastructure_tb(tb, REPL_INFRASTRUCTURE_MODULES)
+        self.assertIsNone(result)
+
+
+class TestFormatCodeBoundaryException(unittest.IsolatedAsyncioTestCase):
+
+    def _make_boundary_with_infra_cause_and_dynchain(self):
+        g = {'__name__': 'koskari.cli'}
+        try:
+            exec('raise ValueError("boom")', g)
+        except ValueError as e:
+            cause = e
+        # drop the test-method frame so every surviving cause frame is
+        # infrastructure, mirroring an error raised behind the REPL await
+        cause.__traceback__ = cause.__traceback__.tb_next
+        cause.__koskari_dynchain__ = [
+            {
+                'name': '__main__',
+                'filename': '<stdin>',
+                'line': 0,
+                'col': 0,
+                'pc': 2,
+            },
+        ]
+        try:
+            raise REPLCodeBoundary() from cause
+        except REPLCodeBoundary as b:
+            return b
+
+
+    async def test_snips_fully_infrastructure_traceback(self):
+        boundary = self._make_boundary_with_infra_cause_and_dynchain()
+        lines, _t, _v, tb = format_code_boundary_exception(
+            boundary,
+            infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
+        rendered = ''.join(lines)
+        self.assertNotIn('File "<string>"', rendered)
+        self.assertNotIn('koskari/cli', rendered)
+        self.assertIn('Koskari dynchain (native eval):', rendered)
+        self.assertIn('at __main__ (<stdin>:0:0) [pc=2]', rendered)
+        self.assertIn('ValueError', rendered)
+        self.assertIsNone(tb)
+
+
+    async def test_nofold_retains_boundary_frames(self):
+        boundary = self._make_boundary_with_infra_cause_and_dynchain()
+        lines, _t, _v, _tb = format_code_boundary_exception(
+            boundary,
+            nofold=True,
+            infrastructure_modules=REPL_INFRASTRUCTURE_MODULES)
+        rendered = ''.join(lines)
+        self.assertIn('ValueError', rendered)
+        self.assertIn('Koskari dynchain (native eval):', rendered)
 
 
 class TestMain(unittest.IsolatedAsyncioTestCase):

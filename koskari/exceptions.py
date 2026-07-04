@@ -491,9 +491,14 @@ def _filter_infrastructure_tb(tb, infrastructure_modules):
     Mutates the traceback chain in place by rewriting tb_next on existing
     traceback objects.
 
+    Returns None when the input traceback is None and, distinctly, when every
+    frame was infrastructure.  The caller is responsible for deciding how to
+    render a fully-filtered chain (for example, falling back to native dynchain
+    metadata) rather than silently restoring the unfiltered traceback.
+
     :param tb: traceback object (root of chain)
     :param infrastructure_modules: frozenset of __name__ values to drop
-    :return: filtered traceback, or original if all frames would be removed
+    :return: filtered traceback, or None when nothing survives filtering
     """
 
     if tb is None:
@@ -618,6 +623,13 @@ def format_code_boundary_exception(
         if tb_filtered is not None:
             tb_for_format = tb_filtered
             tb_for_last = tb_filtered
+        elif _find_dynchain_in_chain(boundary) is not None:
+            # Every surviving frame was infrastructure but native dynchain
+            # metadata remains: drop the traceback entirely so only the
+            # user-visible dynchain and exception line are shown.  Restoring
+            # the unfiltered traceback here would leak the eval boundary frame.
+            tb_for_format = None
+            tb_for_last = None
 
     lines = format_exception_with_koskari_trace(
         exc_type, exc_val, tb_for_format, chain_root=boundary)
