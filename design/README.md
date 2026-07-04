@@ -20,7 +20,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
   evaluation model, continuation application (including evaluator-token model),
   and [Koskari Domain](interpreter/domain.md) (ambient dynamic context, design proposal)
-- **Proposals**: [fenced-foreign-literal.md](fenced-foreign-literal.md) — triple-backtick fenced foreign literals (JSON, etc.) lowered at compile time via `compile/apply-fence`; [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md) — bundles as namespace facets for cohesive feature delivery with export facades and compile-time activation
+- **Proposals**: [fenced-foreign-literal.md](fenced-foreign-literal.md) — triple-backtick fenced foreign literals (JSON, etc.) lowered at compile time via `compile/apply-fence`; [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md) — bundles as namespace facets for cohesive feature delivery with export facades and compile-time activation; [koskari-lint.md](koskari-lint.md) — advisory `koskari.lint` validator (a `koskari-extras` reader + non-evaluating validate pass, reusing the real reader and compile-time matcher builders)
 - **Archived**: [archive/koskari-scripts-packaging.md](archive/koskari-scripts-packaging.md) — v1 **`koskari_scripts`** entry points, **`koskari.extras.setuptools`**, and **`koskari.launcher`** for installed CLI applications
 - **Layout defaults**: [language/flat-layout-default.md](language/flat-layout-default.md) — default **`layout/block`** flat splice and **`layout/block-begin`** opt-in wrap
 - **[documentation-goals.md](documentation-goals.md)**: Meta-spec for future user-facing `docs/` tree (audiences, IA, maintenance)

@@ -331,6 +331,33 @@ Ref: [corpus-generation-agent.md](corpus-generation-agent.md);
 
 ---
 
+## Tooling
+
+### `koskari.lint` advisory validator ("flake8 for Koskari")
+
+New `koskari-extras` `koskari.lint` module plus a `koskari-lint` CLI: a
+parallel-to-flake8 tool (not reusing flake8) that never runs user code. A reader
++ validator pair mirrors the reader + compile pair, replacing compile-and-eval
+with a non-evaluating validate pass (`source -> reader -> validate -> structured
+findings`). **Mandate:** the analysis is a pure data-driven reporter -- engines
+emit flat structured findings (code, span, message), and the CLI alone reads
+config to select/suppress and format. Two engines share the frontend: a form /
+semantic engine (form tree + real resolution + compile-time matcher builders,
+reused not reimplemented; validates call sites against the exact matcher for
+known transformer heads) and a lexical / layout engine (lexer/layout stream for
+indentation, spacing, docstrings). Undeclared/higher-order heads report as
+unchecked (no arity guess); reader-macro or computed-macro regions mark opaque.
+Config is pragma-independent but pragma-aware (observe, never share; strength
+lives in config defaults, not in the analysis). Example checks: recommend/warn
+on bracketing, keyword-in-call from layout misuse, `(when (not …))` -> `unless`,
+docstrings, shadowing, unused bindings. Open: whether `@special` registration
+should require a `validate` sibling of `compile` to prevent silent coverage
+drift.
+
+Ref: [koskari-lint.md](koskari-lint.md).
+
+---
+
 ## Reference
 
 - **Implemented specials:** [SPECIALS.md](SPECIALS.md)
