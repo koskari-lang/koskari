@@ -115,6 +115,8 @@ def markdown_title_summary(text):
 _MD_LINK_RE = re.compile(r'(!?\[[^\]]*\]\()([^)]+)(\))')
 _SCHEME_RE = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*:')
 _TITLE_RE = re.compile(r'(\S+)(\s+["\'].*)\Z')
+_TOCTREE_TITLE_RE = re.compile(r'(.*<)([^>]+)(>)\Z')
+_GLOB_CHARS = frozenset('*?[]')
 
 
 def _normalize_link_target(dest, base_dir):
@@ -164,17 +166,77 @@ def _normalize_link_target(dest, base_dir):
     return resolved + fragment + title
 
 
+def _normalize_toctree_entry(entry, base_dir):
+    """
+    Resolve one ``{toctree}`` child entry to a root-relative page path
+
+    Sphinx toctree entries name a page by its extension-less docname
+    (``map``, ``concepts/index``) or as ``Title <docname>``. Rewrites the
+    docname to the root-relative ``.md`` path matching the row ``path``
+    column. Glob patterns, ``self``, external, and absolute entries are
+    left unchanged.
+
+    :param entry: the stripped toctree line text
+    :param base_dir: directory of the index file, as a root-relative
+        posix path
+    :return: the rewritten entry, or None to leave it unchanged
+    """
+
+    match = _TOCTREE_TITLE_RE.match(entry)
+    if match:
+        prefix, target, suffix = match.group(1), match.group(2).strip(), \
+            match.group(3)
+    else:
+        prefix, target, suffix = '', entry, ''
+
+    if not target or _GLOB_CHARS.intersection(target):
+        return None
+    if _SCHEME_RE.match(target) or target[:1] in ('#', '/') or target == 'self':
+        return None
+
+    resolved = posixpath.normpath(posixpath.join(base_dir, target))
+    if resolved.startswith('..'):
+        return None
+    if not resolved.endswith('.md'):
+        resolved += '.md'
+    return prefix + resolved + suffix
+
+
+def _rewrite_toctree_line(line, base_dir):
+    """
+    Rewrite a single non-glob ``{toctree}`` body line, preserving layout
+
+    :param line: raw line including leading indent and line ending
+    :param base_dir: directory of the index file, root-relative posix
+    :return: the line with its entry rewritten, or unchanged
+    """
+
+    body = line.rstrip('\r\n')
+    ending = line[len(body):]
+    stripped = body.strip()
+    if not stripped or stripped.startswith(':'):
+        return line
+    rewritten = _normalize_toctree_entry(stripped, base_dir)
+    if rewritten is None:
+        return line
+    leading = body[:len(body) - len(body.lstrip())]
+    return leading + rewritten + ending
+
+
 def rewrite_markdown_links(text, rel_path):
     """
     Rewrite relative Markdown links to root-relative content paths
 
     Applies :func:`_normalize_link_target` to every inline ``[text](dest)``
-    link outside fenced code blocks, so an agent reading the stored
-    ``content`` can resolve a link straight through ``get_reference``.
+    link outside fenced code blocks, and :func:`_normalize_toctree_entry`
+    to the child entries of non-glob ``{toctree}`` directives, so an agent
+    reading the stored ``content`` can resolve a link or a navigation entry
+    straight through ``get_reference``.
 
     :param text: raw Markdown document text
     :param rel_path: the document's own root-relative posix path
-    :return: text with intra-repo relative links rewritten
+    :return: text with intra-repo relative links and toctree entries
+        rewritten
     """
 
     base_dir = posixpath.dirname(rel_path)
@@ -186,16 +248,31 @@ def rewrite_markdown_links(text, rel_path):
         return match.group(1) + replaced + match.group(3)
 
     out = []
-    in_fence = False
+    fence = None
+    toctree_glob = False
     for line in text.splitlines(keepends=True):
         marker = line.lstrip()
-        if marker.startswith('```') or marker.startswith('~~~'):
-            in_fence = not in_fence
+        if fence is None:
+            if marker.startswith('```') or marker.startswith('~~~'):
+                if marker.startswith('```') and 'toctree' in marker:
+                    fence, toctree_glob = 'toctree', False
+                else:
+                    fence = 'code'
+            else:
+                line = _MD_LINK_RE.sub(_sub, line)
             out.append(line)
-        elif in_fence:
+        elif marker.startswith('```') or marker.startswith('~~~'):
+            fence = None
+            out.append(line)
+        elif fence != 'toctree':
+            out.append(line)
+        elif marker.strip() == ':glob:':
+            toctree_glob = True
+            out.append(line)
+        elif toctree_glob:
             out.append(line)
         else:
-            out.append(_MD_LINK_RE.sub(_sub, line))
+            out.append(_rewrite_toctree_line(line, base_dir))
     return ''.join(out)
 
 

@@ -314,4 +314,87 @@ def test_rewrite_markdown_links_skips_fenced_code():
     assert '[b](start/other.md)' in result
 
 
+def test_rewrite_toctree_normalizes_non_glob_entries():
+    """
+    Non-glob {toctree} child entries become root-relative .md paths, and
+    directive option lines are left untouched
+    """
+
+    material = _load_view_module('_material.py')
+    text = (
+        '# Reference\n\n'
+        '```{toctree}\n'
+        ':hidden:\n'
+        ':maxdepth: 1\n'
+        ':caption: Overview\n'
+        '\n'
+        'glossary\n'
+        'concepts/index\n'
+        'specials/index\n'
+        '```\n')
+    result = material.rewrite_markdown_links(text, 'reference/index.md')
+
+    assert 'reference/glossary.md' in result
+    assert 'reference/concepts/index.md' in result
+    assert 'reference/specials/index.md' in result
+    assert ':caption: Overview' in result
+    assert ':maxdepth: 1' in result
+
+
+def test_rewrite_toctree_leaves_glob_blocks_unchanged():
+    """
+    A {toctree} carrying :glob: names patterns, not pages, so its body is
+    left verbatim
+    """
+
+    material = _load_view_module('_material.py')
+    text = (
+        '# Specials\n\n'
+        '```{toctree}\n'
+        ':maxdepth: 1\n'
+        ':glob:\n'
+        '\n'
+        '*\n'
+        '   compile-*\n'
+        '```\n')
+    result = material.rewrite_markdown_links(
+        text, 'reference/specials/index.md')
+
+    assert result == text
+
+
+def test_rewrite_toctree_handles_titled_entry():
+    """
+    The ``Title <docname>`` toctree form rewrites only the docname
+    """
+
+    material = _load_view_module('_material.py')
+    text = '```{toctree}\nThe Map <map>\n```\n'
+    result = material.rewrite_markdown_links(text, 'start/from-python/index.md')
+
+    assert 'The Map <start/from-python/map.md>' in result
+
+
+def test_docs_view_normalizes_toctree_navigation():
+    """
+    Real index pages expose their toctree children as fetchable
+    root-relative paths, while glob indexes keep their patterns
+    """
+
+    docs = _load_view_module('docs.py')
+    rows = {row['path']: row for row in _generate_source_view(docs)}
+
+    from_python = rows['start/from-python/index.md']['content']
+    assert 'start/from-python/map.md' in from_python
+    assert 'start/from-python/layout-and-calls.md' in from_python
+
+    reference = rows['reference/index.md']['content']
+    assert 'reference/concepts/index.md' in reference
+    assert 'reference/specials/index.md' in reference
+
+    specials = rows['reference/specials/index.md']['content']
+    assert 'compile-*' in specials
+    assert 'compile-*.md' not in specials
+
+
 # The end.
