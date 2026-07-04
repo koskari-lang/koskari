@@ -28,7 +28,7 @@ rendering reuses the Python formatters in koskari.exceptions.
 
 import sys
 
-import-from koskari.cli _await_user_form _make_repl_prompter _read_line _READ_EOF _READ_INTERRUPT REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES startup_lines
+import-from koskari.cli _await_user_form _make_repl_prompter REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES startup_lines
 import-from koskari.exceptions format_code_boundary_exception format_exception_with_koskari_trace apply_sys_last_exc CompilerError UncaughtCompilerError ReaderEOF ReaderSyntaxError
 import-from koskari.reader LayoutReader source_str READ_EOF
 import-from koskari.module init_module build_module_load_facets
@@ -38,10 +38,10 @@ import-from koskari.lib kos_repr
 (declare-exports repl_async)
 
 
-; The prompt backend (_make_repl_prompter) stays in Python: prompt_toolkit
-; drives its own asyncio loop via asyncio.run, so the prompter must be a
-; plain Python callable that loop.run_in_executor can invoke on a worker
-; thread without colliding with the driver's running loop.
+; The prompt backend (_make_repl_prompter) is built in Python but returns an
+; async callable: the prompt_toolkit path runs cooperatively on our event
+; loop via prompt_async (no worker thread), and its EOFError / KeyboardInterrupt
+; are delivered back here at the await point, where the loop below catches them.
 
 
 ; === Continuation heuristics ===
@@ -195,15 +195,16 @@ define repl_async [
   define prompt ">>> "
 
   while True:
-    define indent (if (equal? prompt "... ") (continuation_indent buffer) "")
-    define line (await (_read_line prompter prompt indent))
+    try:
+      define indent (if (equal? prompt "... ") (continuation_indent buffer) "")
+      define line (await (prompter prompt default: indent))
 
-    when (is line _READ_EOF):
+    except [EOFError]:
       print "" file: stderr
       (stderr.flush)
       (break)
 
-    when (is line _READ_INTERRUPT):
+    except [KeyboardInterrupt]:
       print "" file: stderr
       (stderr.flush)
       if (buffer.strip):

@@ -12,7 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.cli: run_file_async, repl_async, option_parser, main.
+Tests for koskari.cli: run_file_async, run_command_async, option_parser, main.
+
+REPL behavior is covered in tests/cli/test_repl_ki.py.
 """
 
 
@@ -26,9 +28,8 @@ import unittest
 import pytest
 
 from koskari.cli import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary, main,
-                         option_parser, repl_async, run_command_async,
-                         run_file_async, startup_lines,
-                         _resolve_cli_target)
+                         option_parser, run_command_async,
+                         run_file_async, _resolve_cli_target)
 from koskari.exceptions import (CodeBoundary, _filter_infrastructure_tb,
                                 format_code_boundary_exception,
                                 format_exception_with_koskari_trace)
@@ -258,129 +259,6 @@ class TestRunCommand(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SystemExit) as ctx:
             await run_command_async(mod, '(raise (SystemExit 42))')
         self.assertEqual(42, ctx.exception.code)
-
-
-class TestRepl(unittest.IsolatedAsyncioTestCase):
-
-    async def _run_repl(self, lines, full_trace=False, quiet=False):
-        """
-        Drive the REPL with a sequence of input lines.
-
-        Returns (stdout_text, stderr_text).
-        """
-
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        line_iter = iter(lines)
-
-        def prompter(prompt, **kwargs):
-            try:
-                return next(line_iter)
-            except StopIteration:
-                raise EOFError
-
-        mod = new_module('__main__')
-        await repl_async(
-            mod,
-            prompter=prompter,
-            stdout=stdout,
-            stderr=stderr,
-            full_trace=full_trace,
-            quiet=quiet)
-        return stdout.getvalue(), stderr.getvalue()
-
-
-    async def test_simple_expression_prints_result(self):
-        out, _ = await self._run_repl(['(+ 1 2)'])
-        self.assertIn('3', out)
-
-
-    async def test_repl_startup_banner(self):
-        out, _ = await self._run_repl([])
-        for line in startup_lines():
-            self.assertIn(line, out)
-
-
-    async def test_repl_quiet_suppresses_startup_banner(self):
-        out, _ = await self._run_repl([], quiet=True)
-        for line in startup_lines():
-            self.assertNotIn(line, out)
-
-
-    async def test_none_result_not_printed(self):
-        out, _ = await self._run_repl(['(define x 99)'], quiet=True)
-        self.assertNotIn('99', out)
-
-
-    async def test_underscore_stores_last_result(self):
-        out, _ = await self._run_repl(['(+ 3 4)', '_'], quiet=True)
-        lines = [ln for ln in out.splitlines() if ln.strip()]
-        self.assertIn('7', lines[0])
-        self.assertIn('7', lines[1])
-
-
-    async def test_empty_lines_ignored(self):
-        out, _ = await self._run_repl(['', '   ', '(+ 1 1)'], quiet=True)
-        self.assertIn('2', out)
-
-
-    async def test_incomplete_s_expr_continues_on_next_line(self):
-        out, _ = await self._run_repl(['(+ 1', '2)'], quiet=True)
-        self.assertIn('3', out)
-
-
-    async def test_syntax_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['( 1 2 ]'], quiet=True)
-        self.assertIn('mismatched', err.lower())
-
-
-    async def test_runtime_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
-        self.assertTrue(len(err) > 0)
-
-
-    async def test_eof_exits_cleanly(self):
-        out, err = await self._run_repl([], quiet=True)
-        self.assertEqual(0, len(err.strip()))
-
-
-    async def test_multiple_expressions_accumulate_state(self):
-        out, _ = await self._run_repl(['(define n 10)', '(* n n)'], quiet=True)
-        self.assertIn('100', out)
-
-
-    async def test_repl_exception_traceback_trimmed(self):
-        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
-        self.assertIn('ZeroDivisionError', err)
-        self.assertNotIn(' in repl\n', err)
-        self.assertNotIn(' in repl ', err)
-
-
-    async def test_repl_koskari_exception_shows_native_traceback(self):
-        """
-        Koskari exceptions via REPL show dynchain, not wrapper traceback.
-        """
-        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
-
-        self.assertIn('ZeroDivisionError', err)
-        self.assertIn('Koskari dynchain', err)
-
-
-    async def test_repl_compiler_error_uses_explain_only(self):
-        """
-        Compile-phase errors show explain() without a Python traceback.
-        """
-        form = '((lambda () (compile/setq _repl_typo_undeclared 1)))'
-        _, err = await self._run_repl([form], quiet=True)
-        self.assertTrue(len(err.strip()) > 0)
-        self.assertNotIn('Traceback (most recent call last)', err)
-        self.assertIn('not declared', err)
-
-
-    async def test_repl_full_trace_shows_boundary_frames(self):
-        _, err = await self._run_repl(['(/ 1 0)'], full_trace=True, quiet=True)
-        self.assertIn('ZeroDivisionError', err)
-        self.assertIn('koskari.cli', err)
 
 
 class TestREPLCodeBoundary(unittest.IsolatedAsyncioTestCase):

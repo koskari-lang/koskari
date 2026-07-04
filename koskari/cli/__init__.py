@@ -45,11 +45,8 @@ from ..module import new_module
 __all__ = (
     'CodeBoundary',
     'REPLCodeBoundary',
-    '_READ_EOF',
-    '_READ_INTERRUPT',
     '_await_user_form',
     '_make_repl_prompter',
-    '_read_line',
     'cli_async',
     'format_code_boundary_exception',
     'format_exception_with_koskari_trace',
@@ -101,19 +98,20 @@ def startup_lines():
 # ---------------------------------------------------------------------------
 
 
-def _make_prompter(histfile=None, get_namespace=None):
+def _make_repl_prompter(histfile, ns):
     """
-    Return a callable suitable for prompting the user in the REPL.
+    Build an async prompter coroutine for the Koskari REPL.
 
-    Tries prompt_toolkit first (with lexer, completer, style), then
-    readline, then falls back to the built-in input().  When histfile
-    is provided and readline is used, the history file is loaded on
-    startup and saved on exit.
+    Returns an async callable ``await prompter(prompt, default='')``.  The
+    prompt_toolkit backend uses ``prompt_async``, so it runs cooperatively
+    on the REPL's own event loop -- no worker thread and no nested
+    ``asyncio.run``.  The plain ``input()`` fallback is blocking, so it is
+    offloaded to a worker thread.  EOFError / KeyboardInterrupt propagate to
+    the caller; the Koskari REPL loop catches them at the await point.
 
-    :param histfile: path to the readline history file, or None
-    :param get_namespace: callable() -> namespace or None; for REPL
-        symbol completion when using prompt_toolkit
-    :return: a callable with the same signature as input(prompt)
+    :param histfile: history file path, or None
+    :param ns: REPL module namespace, for completion
+    :return: an async callable shaped like input(prompt)
     """
 
     try:
@@ -124,7 +122,7 @@ def _make_prompter(histfile=None, get_namespace=None):
         repl_special_names = special_names_for_repl()
         history = FileHistory(histfile) if histfile else None
         completer = KoskariCompleter(
-            get_namespace=get_namespace,
+            get_namespace=lambda: ns,
             special_names=repl_special_names)
         session = PromptSession(
             history=history,
@@ -134,11 +132,11 @@ def _make_prompter(histfile=None, get_namespace=None):
             auto_suggest=AutoSuggestFromHistory(),
             key_bindings=load_koskari_key_bindings())
 
-        def _prompt(prompt, **kwargs):
-            return session.prompt(
+        async def _prompt(prompt, default=''):
+            return await session.prompt_async(
                 prompt,
-                reserve_space_for_menu=False,
-                **kwargs)
+                default=default,
+                reserve_space_for_menu=False)
 
         return _prompt
 
@@ -160,27 +158,11 @@ def _make_prompter(histfile=None, get_namespace=None):
     except ImportError:
         pass
 
-    def _input_prompt(prompt, **kwargs):
-        return input(prompt)
+    async def _input_prompt(prompt, default=''):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: input(prompt))
 
     return _input_prompt
-
-
-def _make_repl_prompter(histfile, ns):
-    """
-    Build an input()-style prompter for the Koskari REPL.
-
-    Returns a plain Python callable (with a plain Python get_namespace
-    closure) so it can be handed to loop.run_in_executor and invoked in a
-    worker thread.  prompt_toolkit runs its own event loop via
-    asyncio.run, which must not happen on the driver's loop thread.
-
-    :param histfile: history file path, or None
-    :param ns: REPL module namespace, for completion
-    :return: a callable with the same signature as input(prompt)
-    """
-
-    return _make_prompter(histfile=histfile, get_namespace=lambda: ns)
 
 
 # ---------------------------------------------------------------------------
@@ -210,39 +192,6 @@ class REPLCodeBoundary(CodeBoundary):
 # ---------------------------------------------------------------------------
 # REPL
 # ---------------------------------------------------------------------------
-
-
-_READ_EOF = object()
-_READ_INTERRUPT = object()
-
-
-async def _read_line(prompter, prompt, default):
-    """
-    Read one input line via the prompter, off the event-loop thread.
-
-    The prompter is invoked through run_in_executor on a worker thread:
-    prompt_toolkit runs its own event loop via asyncio.run, which must not
-    happen on the driver's loop thread.  EOFError and KeyboardInterrupt are
-    returned as the _READ_EOF / _READ_INTERRUPT sentinels rather than
-    raised, so the Koskari loop can dispatch on them directly (exceptions
-    surfacing from an awaited executor future do not reach the Koskari
-    loop's except handlers).
-
-    :param prompter: input(prompt)-style callable
-    :param prompt: prompt string
-    :param default: prefill string for the input line
-    :return: the line entered, or a _READ_EOF / _READ_INTERRUPT sentinel
-    """
-
-    loop = asyncio.get_running_loop()
-    try:
-        return await loop.run_in_executor(
-            None,
-            lambda: prompter(prompt, default=default))
-    except EOFError:
-        return _READ_EOF
-    except KeyboardInterrupt:
-        return _READ_INTERRUPT
 
 
 async def _await_user_form(expr):
@@ -293,6 +242,11 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
     :param full_trace: when True, show REPL boundary wrapper frames in errors
     :param quiet: when True, suppress REPL startup version banner
     """
+
+    # The REPL lives in repl.ki, so loading it needs the koskari import hook
+    # on sys.meta_path.  Ensure it is present (idempotent) before importing.
+    from ..importer import install
+    install()
 
     from . import repl as _repl_ki
 

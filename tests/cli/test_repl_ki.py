@@ -20,6 +20,7 @@ design/cli-repl-rework.md.
 """
 
 
+import asyncio
 import io
 import sys
 import unittest
@@ -152,8 +153,32 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         _, err = await self._run_repl(['(/ 1 0)'])
         self.assertIn('ZeroDivisionError', err)
         self.assertNotIn('_await_user_form', err)
-        self.assertNotIn('_eval_expression_async', err)
         self.assertNotIn('koskari/cli', err)
+
+
+    async def test_koskari_exception_shows_native_dynchain(self):
+        # A runtime error surfaces the native dynchain, not just the Python
+        # exception line.
+        _, err = await self._run_repl(['(/ 1 0)'])
+        self.assertIn('ZeroDivisionError', err)
+        self.assertIn('Koskari dynchain', err)
+
+
+    async def test_compiler_error_uses_explain_only(self):
+        # Compile-phase errors render via .explain() with no Python traceback.
+        form = '((lambda () (compile/setq _repl_typo_undeclared 1)))'
+        _, err = await self._run_repl([form])
+        self.assertTrue(err.strip())
+        self.assertNotIn('Traceback (most recent call last)', err)
+        self.assertIn('not declared', err)
+
+
+    async def test_full_trace_shows_boundary_frames(self):
+        # --repl-full-trace (nofold) keeps the REPL boundary/infrastructure
+        # frames in the rendered traceback.
+        _, err = await self._run_repl(['(/ 1 0)'], full_trace=True)
+        self.assertIn('ZeroDivisionError', err)
+        self.assertIn('koskari.cli', err)
 
 
 class TestReplKiDriver(unittest.TestCase):
@@ -226,6 +251,40 @@ class TestReplKiDriver(unittest.TestCase):
 
         self.assertEqual(0, rc)
         self.assertIn('42', out)
+
+
+    def test_prompt_toolkit_cooperative_on_our_loop(self):
+        # The real prompt_toolkit backend, driven cooperatively on our own
+        # event loop via prompt_async (no worker thread, no nested
+        # asyncio.run).  A prompt_toolkit pipe input feeds one form and then
+        # Ctrl-D (EOF); the EOF is delivered back to the Koskari loop's
+        # except handler at the await point.
+        try:
+            from prompt_toolkit.application import create_app_session
+            from prompt_toolkit.input.defaults import create_pipe_input
+            from prompt_toolkit.output import DummyOutput
+        except ImportError:
+            self.skipTest('prompt_toolkit not installed')
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        mod = new_module('__main__')
+        repl_async = _repl().repl_async
+
+        async def run_repl():
+            # prompter=None -> repl builds the real prompt_async backend
+            await repl_async(mod, stdout=stdout, stderr=stderr, quiet=True)
+
+        async def _driver():
+            # safety net so a stuck prompt fails the test instead of hanging
+            await asyncio.wait_for(run_repl(), timeout=10)
+
+        with create_pipe_input() as pipe:
+            pipe.send_text('(+ 40 2)\n\x04')  # one form, then Ctrl-D (EOF)
+            with create_app_session(input=pipe, output=DummyOutput()):
+                drive_async_loop(_driver())
+
+        self.assertIn('42', stdout.getvalue())
 
 
 # The end.
