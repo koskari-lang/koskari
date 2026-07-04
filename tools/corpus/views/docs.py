@@ -17,7 +17,8 @@ tools.corpus.views.docs
 
 koskari-docs dataset view: user documentation pages served to agents.
 
-One row per Markdown page under docs/reference/ and docs/start/. The row
+One row per Markdown page under the user-facing docs subtrees named in
+``_DOC_SUBDIRS`` (reference, start, guide, patterns). The row
 ``path`` is the docs-relative path, which matches the strings stored in
 corpus records' ``references`` field verbatim, so the MCP can resolve a
 record's references to their documentation content.
@@ -54,7 +55,7 @@ from pathlib import Path
 
 VIEW_NAME = 'koskari-docs'
 
-_DOC_SUBDIRS = ('reference', 'start')
+_DOC_SUBDIRS = ('reference', 'start', 'guide', 'patterns')
 
 
 def _load_material():

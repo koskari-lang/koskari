@@ -346,6 +346,12 @@ define search_examples [search_text
             set! rows (filter-rows-by-feature rows feature_path)
         unless rows:
             set! rows (like-search search_text feature_path cap)
+        ;; A named feature is a valid selector on its own: descriptive
+        ;; search_text only matches code columns, so a text miss must not
+        ;; suppress the feature's examples.
+        unless rows:
+            when feature_path:
+                set! rows (feature-search feature_path cap)
     elif feature_path:
         set! rows (feature-search feature_path cap)
     else:
