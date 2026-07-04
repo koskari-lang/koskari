@@ -11,6 +11,28 @@ reference pages and bootstrap scripts output).
 
 ---
 
+## Documentation reorganization (2026-07)
+
+The reorg in [docs-reorg.md](docs-reorg.md) has landed (branch `docs-reorg`):
+
+| Change | Status |
+|--------|--------|
+| C1 — drop guide integer prefixes; order via toctree | Done |
+| C2 — re-layer guide toctree into Core + Internals (optional) | Done |
+| C3 — move references-and-storage-indirection deep-dive into `reference/concepts/`, leave a guide glance | Done |
+| C4 — wire guide glance → concepts diverts | Done |
+| C5 — add `reference/concepts/choosing-an-async-construct.md` decision aid | Done |
+| C6 — add `patterns/recipes/embedding-host.md`; repoint from-python/where-next | Done |
+| C7 — reconcile this tracker + sanction the concepts tier in documentation-goals.md | Done |
+
+`reference/concepts/` is now a **sanctioned IA tier** (guide = glance, concepts
+= authoritative deep-dive; see documentation-goals.md § 2.3 and § 4.4.2). The
+per-page status cells below still predate the tracks being written and are
+**pending a full re-audit** — treat "Stub" as stale for start/ and guide/ pages
+that now carry real content.
+
+---
+
 ## Legend
 
 | Status | Meaning |
@@ -57,21 +79,41 @@ reference pages and bootstrap scripts output).
 
 ### 4.4 guide/
 
+Unnumbered; ordered by `guide/index.md` toctree (Core, then Internals). Each
+Core chapter is a glance that diverts to a `reference/concepts/` page (§ 4.4.2).
+
+| Page | Group | Status | Doc path | Notes |
+|------|-------|--------|----------|-------|
+| model-of-evaluation | Core | Done | `docs/guide/model-of-evaluation.md` | diverts → layout-and-s-expressions, demand-async-and-defer |
+| forms-and-combining | Core | Done | `docs/guide/forms-and-combining.md` | diverts → layout-and-s-expressions, brackets-and-call-convention |
+| bindings-and-environments | Core | Done | `docs/guide/bindings-and-environments.md` | diverts → bindings-and-refs, references-and-storage-indirection |
+| references-and-storage-indirection | Core | Done | `docs/guide/references-and-storage-indirection.md` | glance; deep-dive moved to concepts (C3) |
+| functions-deep | Core | Done | `docs/guide/functions-deep.md` | diverts → demand-async-and-defer, choosing-an-async-construct |
+| data-structures | Core | Done | `docs/guide/data-structures.md` | no concepts counterpart (intentional) |
+| control-flow | Core | Done | `docs/guide/control-flow.md` | diverts → demand-async-and-defer |
+| modules-and-program-structure | Core | Done | `docs/guide/modules-and-program-structure.md` | no concepts counterpart (intentional) |
+| macros-or-syntax-extension | Core | Done | `docs/guide/macros-or-syntax-extension.md` | diverts → macro-matching-and-hygiene |
+| types-or-contracts | Core | Done | `docs/guide/types-or-contracts.md` | thin; keep/merge decided per-chapter later |
+| io-and-effects | Core | Done | `docs/guide/io-and-effects.md` | thin; keep/merge decided per-chapter later |
+| testing-and-quality | Core | Done | `docs/guide/testing-and-quality.md` | diverts → project/build-test; overlap flagged |
+| bytecode-mental-model | Internals | Done | `docs/guide/bytecode-mental-model.md` | optional |
+| from-source-to-stack | Internals | Done | `docs/guide/from-source-to-stack.md` | optional |
+
+### 4.4.2 reference/concepts/ (authoritative deep-dives)
+
+Sanctioned tier (documentation-goals.md § 4.4.2); the deep-dive backing for the
+guide glance chapters.
+
 | Page | Status | Doc path | Notes |
 |------|--------|----------|-------|
-| 00-model-of-evaluation | Stub | `docs/guide/00-model-of-evaluation.md` | |
-| 01-forms-and-combining | Stub | `docs/guide/01-forms-and-combining.md` | |
-| 02-bindings-and-environments | Stub | `docs/guide/02-bindings-and-environments.md` | |
-| 03-functions-deep | Stub | `docs/guide/03-functions-deep.md` | |
-| 04-data-structures | Stub | `docs/guide/04-data-structures.md` | |
-| 05-control-flow | Stub | `docs/guide/05-control-flow.md` | |
-| 06-modules-and-program-structure | Stub | `docs/guide/06-modules-and-program-structure.md` | |
-| 07-macros-or-syntax-extension | Stub | `docs/guide/07-macros-or-syntax-extension.md` | |
-| 08-types-or-contracts | Stub | `docs/guide/08-types-or-contracts.md` | |
-| 09-io-and-effects | Stub | `docs/guide/09-io-and-effects.md` | |
-| 10-testing-and-quality | Stub | `docs/guide/10-testing-and-quality.md` | Partial overlap with project/build-test |
-| bytecode-mental-model | Stub | `docs/guide/bytecode-mental-model.md` | |
-| from-source-to-stack | Stub | `docs/guide/from-source-to-stack.md` | |
+| bindings-and-refs | Done | `docs/reference/concepts/bindings-and-refs.md` | |
+| references-and-storage-indirection | Done | `docs/reference/concepts/references-and-storage-indirection.md` | moved from guide (C3) |
+| brackets-and-call-convention | Done | `docs/reference/concepts/brackets-and-call-convention.md` | |
+| demand-async-and-defer | Done | `docs/reference/concepts/demand-async-and-defer.md` | |
+| choosing-an-async-construct | Done | `docs/reference/concepts/choosing-an-async-construct.md` | decision aid (C5) |
+| layout-and-s-expressions | Done | `docs/reference/concepts/layout-and-s-expressions.md` | |
+| macro-matching-and-hygiene | Done | `docs/reference/concepts/macro-matching-and-hygiene.md` | |
+| pragma | Done | `docs/reference/concepts/pragma.md` | |
 
 ### 4.5 reference/
 
@@ -104,7 +146,7 @@ reference pages and bootstrap scripts output).
 | Page | Status | Doc path | Notes |
 |------|--------|----------|-------|
 | index | Done | `docs/patterns/index.md` | |
-| recipes/* | Partial | `docs/patterns/recipes/hello.md` | One recipe; target 3-5 for v1 |
+| recipes/* | Done | `docs/patterns/recipes/` | 8 recipes: hello, countdown, script-main, packaging-installed-scripts, embedding-host (C6), point-class, property-accessors, fibonacci |
 
 ### 4.8 project/
 
@@ -159,7 +201,7 @@ reference pages and bootstrap scripts output).
 | reference/special-forms.md | **Generated** (per-form pages) |
 | reference/cli-and-config.md | **Done** |
 | reference/vm/overview + opcode detail | **Generated** |
-| patterns/ 3-5 recipes | **Partial** (1 recipe) |
+| patterns/ 3-5 recipes | **Done** (8 recipes) |
 
 ---
 

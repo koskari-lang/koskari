@@ -209,7 +209,7 @@ Gaps per [documentation-goals.md](documentation-goals.md):
   page developing refs as "pointers, but safer" (getting refs via `&name` /
   `&(item …)` / `(ref …)`, `deref` / `*name`, bind vs store, and by-ref
   formals). Move the by-ref example out of the functions tutorial
-  (`guide/03-functions-deep.md`) into this page, add corpus records from the
+  (`guide/functions-deep.md`) into this page, add corpus records from the
   example (obtain/pass refs plus a value-instead-of-ref error variation), and
   add unit tests pinning the example cases. Design:
   [refs-storage-indirection.md](refs-storage-indirection.md).

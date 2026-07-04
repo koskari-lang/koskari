@@ -28,7 +28,7 @@ capability over exactly one slot.
 - The concept is foundational but currently scattered: the reference page
   [docs/reference/concepts/bindings-and-refs.md](../docs/reference/concepts/bindings-and-refs.md)
   is a vocabulary summary, and the by-ref example lives inside the functions
-  tutorial ([docs/guide/03-functions-deep.md](../docs/guide/03-functions-deep.md)),
+  tutorial ([docs/guide/functions-deep.md](../docs/guide/functions-deep.md)),
   where it competes for attention with defaults, recursion, and closures.
 - Programmers arriving from Python (no by-ref params) or C/C++ (raw pointers)
   both need a bridge. A single page that develops "storage indirection" answers
@@ -51,7 +51,7 @@ capability over exactly one slot.
    - The "pointers, but safer" framing: no arithmetic, no dangling, one slot.
    - Pitfall: passing a *value* where a ref is required (error case).
 2. **Relocate by-ref examples** — remove the "By-ref parameters" section from
-   [03-functions-deep.md](../docs/guide/03-functions-deep.md) and leave a short
+   [functions-deep.md](../docs/guide/functions-deep.md) and leave a short
    pointer/cross-link to the new refs page. Keep the functions tutorial focused
    on functions. The reference concept page stays as the terse vocabulary
    summary and links to the new page for depth.
