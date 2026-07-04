@@ -9,7 +9,7 @@ from nested calls, `define`, conditionals, and tiny functions.
 
 > **Q:** What should I read next?
 >
-> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) in the
+> **A:** [Model of evaluation](../../guide/model-of-evaluation.md) in the
 > shared guide. It names what “read,” “evaluate,” and “data” mean — the story
 > both tutorial tracks build on.
 

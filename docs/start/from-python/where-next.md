@@ -25,7 +25,7 @@ Copy a pattern into a `.ki` file, run it, and change one line at a time.
 
 > **Q:** What should I read next in the guide?
 >
-> **A:** [Model of evaluation](../../guide/00-model-of-evaluation.md) is the
+> **A:** [Model of evaluation](../../guide/model-of-evaluation.md) is the
 > first shared chapter. Continue through forms, bindings, functions, data,
 > control flow, modules, macros, types, effects, and testing as needed.
 
@@ -45,7 +45,7 @@ Copy a pattern into a `.ki` file, run it, and change one line at a time.
 > **Q:** When do I learn `define-syntax`?
 >
 > **A:** When you repeat a code pattern that cannot be a function. Start with
-> [Macros or syntax extension](../../guide/07-macros-or-syntax-extension.md),
+> [Macros or syntax extension](../../guide/macros-or-syntax-extension.md),
 > then use the [macro reference](../../reference/macros/index.md) for exact
 > syntax.
 
@@ -66,7 +66,7 @@ Copy a pattern into a `.ki` file, run it, and change one line at a time.
 > **Q:** I never learned Python — is there another track?
 >
 > **A:** [Beginner track](../beginner/index.md) teaches the same language from
-> first principles. Both paths share [Model of evaluation](../../guide/00-model-of-evaluation.md).
+> first principles. Both paths share [Model of evaluation](../../guide/model-of-evaluation.md).
 
 ---
 

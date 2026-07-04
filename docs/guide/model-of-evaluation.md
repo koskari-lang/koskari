@@ -132,4 +132,4 @@ Reading turns text into forms. Evaluation turns forms into values (and
 effects). Nested calls evaluate inner forms first. When in doubt, predict the
 value, then check at the REPL.
 
-Next in the guide (when written): [Forms and combining](01-forms-and-combining.md).
+Next in the guide (when written): [Forms and combining](forms-and-combining.md).

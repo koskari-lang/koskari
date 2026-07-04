@@ -27,7 +27,7 @@ part of programming — not a separate skill for “later.”
 >
 > **A:** `print` sends `"hi"` to the screen as its main effect. Focus on the
 > text that appears. (Side effects and “return values” get a fuller story in
-> the [guide](../../guide/00-model-of-evaluation.md).)
+> the [guide](../../guide/model-of-evaluation.md).)
 
 ---
 
