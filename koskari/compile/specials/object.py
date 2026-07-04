@@ -792,32 +792,32 @@ def special_aiter(compiler, source, tc=False):
 
 
 _INPLACE_OP_MAP = {
-    symbol('+'): OpCode.KOS_OP_VAR_OBJECT_ADD,
-    symbol('-'): OpCode.KOS_OP_VAR_OBJECT_SUBTRACT,
-    symbol('*'): OpCode.KOS_OP_VAR_OBJECT_MULTIPLY,
-    symbol('**'): OpCode.KOS_OP_VAR_OBJECT_POWER,
-    symbol('/'): OpCode.KOS_OP_VAR_OBJECT_TRUE_DIVIDE,
-    symbol('//'): OpCode.KOS_OP_VAR_OBJECT_FLOOR_DIVIDE,
-    symbol('%'): OpCode.KOS_OP_VAR_OBJECT_MODULO,
-    symbol('@'): OpCode.KOS_OP_VAR_OBJECT_MATRIX_MULTIPLY,
-    symbol('<<'): OpCode.KOS_OP_VAR_OBJECT_BIT_LEFT,
-    symbol('>>'): OpCode.KOS_OP_VAR_OBJECT_BIT_RIGHT,
-    symbol('&'): OpCode.KOS_OP_VAR_OBJECT_BIT_AND,
-    symbol('^'): OpCode.KOS_OP_VAR_OBJECT_BIT_XOR,
-    symbol('|'): OpCode.KOS_OP_VAR_OBJECT_BIT_OR,
-    symbol('compile/+'): OpCode.KOS_OP_VAR_OBJECT_ADD,
-    symbol('compile/-'): OpCode.KOS_OP_VAR_OBJECT_SUBTRACT,
-    symbol('compile/*'): OpCode.KOS_OP_VAR_OBJECT_MULTIPLY,
-    symbol('compile/**'): OpCode.KOS_OP_VAR_OBJECT_POWER,
-    symbol('compile//'): OpCode.KOS_OP_VAR_OBJECT_TRUE_DIVIDE,
-    symbol('compile///'): OpCode.KOS_OP_VAR_OBJECT_FLOOR_DIVIDE,
-    symbol('compile/%'): OpCode.KOS_OP_VAR_OBJECT_MODULO,
-    symbol('compile/@'): OpCode.KOS_OP_VAR_OBJECT_MATRIX_MULTIPLY,
-    symbol('compile/<<'): OpCode.KOS_OP_VAR_OBJECT_BIT_LEFT,
-    symbol('compile/>>'): OpCode.KOS_OP_VAR_OBJECT_BIT_RIGHT,
-    symbol('compile/&'): OpCode.KOS_OP_VAR_OBJECT_BIT_AND,
-    symbol('compile/^'): OpCode.KOS_OP_VAR_OBJECT_BIT_XOR,
-    symbol('compile/|'): OpCode.KOS_OP_VAR_OBJECT_BIT_OR,
+    symbol('+'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_ADD,
+    symbol('-'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_SUBTRACT,
+    symbol('*'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MULTIPLY,
+    symbol('**'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_POWER,
+    symbol('/'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_TRUE_DIVIDE,
+    symbol('//'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_FLOOR_DIVIDE,
+    symbol('%'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MODULO,
+    symbol('@'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MATRIX_MULTIPLY,
+    symbol('<<'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_LEFT,
+    symbol('>>'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_RIGHT,
+    symbol('&'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_AND,
+    symbol('^'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_XOR,
+    symbol('|'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_OR,
+    symbol('compile/+'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_ADD,
+    symbol('compile/-'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_SUBTRACT,
+    symbol('compile/*'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MULTIPLY,
+    symbol('compile/**'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_POWER,
+    symbol('compile//'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_TRUE_DIVIDE,
+    symbol('compile///'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_FLOOR_DIVIDE,
+    symbol('compile/%'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MODULO,
+    symbol('compile/@'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MATRIX_MULTIPLY,
+    symbol('compile/<<'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_LEFT,
+    symbol('compile/>>'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_RIGHT,
+    symbol('compile/&'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_AND,
+    symbol('compile/^'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_XOR,
+    symbol('compile/|'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_OR,
 }
 
 
@@ -903,7 +903,10 @@ def special_inplace_item(compiler, source, tc=False):
     if var_opcode is None:
         raise SpecialError("unknown inplace operator", source)
 
-    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
+    # no stack-based OBJECT_INPLACE_* opcodes exist yet, so lower to the
+    # plain binary OBJECT_* op
+    opcode = getattr(
+        OpCode, var_opcode.name.replace('VAR_OBJECT_INPLACE', 'OBJECT'))
     if opcode in (OpCode.KOS_OP_OBJECT_BIT_LEFT,
                   OpCode.KOS_OP_OBJECT_BIT_RIGHT):
         opa = 0
@@ -979,7 +982,10 @@ def special_inplace_attr(compiler, source, tc=False):
     if var_opcode is None:
         raise SpecialError("unknown inplace operator", source)
 
-    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
+    # no stack-based OBJECT_INPLACE_* opcodes exist yet, so lower to the
+    # plain binary OBJECT_* op
+    opcode = getattr(
+        OpCode, var_opcode.name.replace('VAR_OBJECT_INPLACE', 'OBJECT'))
     if opcode in (OpCode.KOS_OP_OBJECT_BIT_LEFT,
                   OpCode.KOS_OP_OBJECT_BIT_RIGHT):
         opa = 0

@@ -1301,9 +1301,9 @@ For item or attribute places, use **`compile/inplace-item`** or
 **`compile/inplace-attr`** (normally via the **`compile/inplace`** macro
 extension — see [MACROS.md](MACROS.md)).
 
-**Behaviour:** Compiles VALUE, emits the corresponding VAR_OBJECT_* opcode (arg =
-name constant index), then CONST None. The compiler may lower VAR_OBJECT_* to
-FAST_OBJECT_* when VAR has a fixed slot. VAR_OBJECT_* uses Python in-place
+**Behaviour:** Compiles VALUE, emits the corresponding VAR_OBJECT_INPLACE_* opcode (arg =
+name constant index), then CONST None. The compiler may lower VAR_OBJECT_INPLACE_* to
+FAST_OBJECT_INPLACE_* when VAR has a fixed slot. VAR_OBJECT_INPLACE_* uses Python in-place
 operators (`PyNumber_InPlaceAdd`, etc.).
 
 **Supported operators:** `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `<<`, `>>`,
@@ -1339,7 +1339,7 @@ assignment on a subscript (`d[k] += 1`). Normally reached via
 constant, otherwise ITEM after KEY is evaluated). Uses **DUP** so OBJ (and KEY,
 when not constant) is not re-evaluated for the store. Compiles VALUE, applies the
 corresponding **OBJECT_*** opcode (regular operator dispatch, not
-VAR_OBJECT_* / in-place dunder), then stores via CONST_ITEM_STORE or ITEM_STORE.
+VAR_OBJECT_INPLACE_* / in-place dunder), then stores via CONST_ITEM_STORE or ITEM_STORE.
 Evaluates to None.
 
 **Supported operators:** Same set as `compile/inplace`.
