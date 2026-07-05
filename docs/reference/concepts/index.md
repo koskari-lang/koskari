@@ -16,6 +16,7 @@ choosing-an-async-construct
 layout-and-s-expressions
 macro-matching-and-hygiene
 pragma
+idiomatic-koskari
 ```
 
 ## Topics
@@ -31,3 +32,4 @@ pragma
 | [Layout and s-expressions](layout-and-s-expressions.md) | Layout vs s-expr surfaces, YAML/JSON mental model, three authoring forms |
 | [Macro matching and hygiene](macro-matching-and-hygiene.md) | Pattern match at expand time, datum forms and wrappers |
 | [Pragmas and feature settings](pragma.md) | Setting a pragma, the `reader/*` / `compiler/*` / `pragma/*` settings and their values |
+| [Idiomatic Koskari](idiomatic-koskari.md) | Prefer the direct form: `item-slice`, dotted `set!`, `define-values`, `None?`, `unless`/`when` over Python-shaped assemblies |
