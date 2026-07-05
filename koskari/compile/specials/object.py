@@ -36,7 +36,7 @@ from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...types import is_nil, get_position, is_pair, is_symbol, is_keyword, unpack
 from ...bootstrap import builtin
 from ...syntax import special
-from ..helpers import const_only_expr, is_symbolish, match
+from ..helpers import const_only_expr, is_symbolish, match, splat_call_form
 
 
 _DEFAULT_SPECIAL_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
@@ -297,12 +297,12 @@ def _chain_compare(op, compiler, source):
 
     called_by, body = source
 
+    call_form = splat_call_form(called_by, body)
+    if call_form is not None:
+        return call_form
+
     frag = compiler.fragment(called_by)
     frag.position_of(source)
-
-    for fm in unpack(body):
-        if is_keyword(fm):
-            return cons(symbol("compile/call"), called_by, body)
 
     count = 0
     current = body
@@ -385,7 +385,7 @@ def special_ge(compiler, source, tc=False):
 # Predicate interface (NOARG binary / COUNT variadic)
 # ---------------------------------------------------------------------------
 
-@builtin("compile/in")
+@builtin("compile/in", "compile/in?")
 @special("compile/in", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_in(compiler, source, tc=False):
     """
@@ -395,7 +395,7 @@ def special_in(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_IN, compiler, source)
 
 
-@builtin("compile/not-in")
+@builtin("compile/not-in", "compile/not-in?")
 @special("compile/not-in", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_not_in(compiler, source, tc=False):
     """
@@ -405,7 +405,7 @@ def special_not_in(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_NOT_IN, compiler, source)
 
 
-@builtin("compile/is")
+@builtin("compile/is", "compile/is?")
 @special("compile/is", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_is(compiler, source, tc=False):
     """
@@ -415,7 +415,7 @@ def special_is(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_IS, compiler, source)
 
 
-@builtin("compile/is-not")
+@builtin("compile/is-not", "compile/is-not?")
 @special("compile/is-not", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_is_not(compiler, source, tc=False):
     """
@@ -729,6 +729,10 @@ def special_str(compiler, source, tc=False):
         frag = compiler.fragment(called_by)
         frag.instruction(OpCode.KOS_OP_CONST, "")
         return frag
+
+    call_form = splat_call_form(called_by, body)
+    if call_form is not None:
+        return call_form
 
     return _reduce_op(
         OpCode.KOS_OP_OBJECT_STR,

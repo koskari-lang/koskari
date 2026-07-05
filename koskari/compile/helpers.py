@@ -58,6 +58,7 @@ __all__ = (
     "parse_decl",
     "pycons",
     "requote",
+    "splat_call_form",
     "strip_leading_docstring",
     "unpack_lhs_bind_symbols",
     "using_unpack_helper",
@@ -71,6 +72,38 @@ def is_lazygensym(x):
     """
 
     return False
+
+
+_SYM_COMPILE_CALL = symbol("compile/call")
+
+
+def splat_call_form(called_by, body):
+    """
+    Lower a variadic special to its call form when a keyword argument is
+    present.
+
+    Variadic builders such as ``#list``, ``#tuple``, and ``#str`` cannot
+    emit a ``*:`` / ``**:`` splat directly. When BODY contains any keyword
+    argument, rewrite the source into ``(compile/call CALLED_BY . BODY)`` so
+    the ``call`` special merges the splatted arguments; the operator symbol
+    resolves to its runtime builtin as the callee.
+
+    This is the non-reducing counterpart to the fold-then-reroute performed
+    by the reducing operators: the check happens before any argument is
+    consumed, so it must not be used where constant folding of leading
+    arguments is desired.
+
+    :param called_by: the operator symbol heading the source form
+    :param body: the argument list pair (may be nil)
+    :return: a ``(compile/call ...)`` source pair when a keyword is present,
+        otherwise None
+    """
+
+    for fm in unpack(body):
+        if is_keyword(fm):
+            return cons(_SYM_COMPILE_CALL, called_by, body)
+
+    return None
 
 
 _SYM_BEGIN = symbol('begin')

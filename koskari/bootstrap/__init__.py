@@ -169,7 +169,7 @@ def make_bootstrap():
     _bind('#list', build_list)
     _bind('#list-append', list_append)
     _bind('#set', build_set)
-    _bind('#str', lambda *args: "".join(args))
+    _bind('#str', lambda *args: "".join(map(str, args)))
     _bind('#tuple', build_tuple)
 
     # Python standard types available by default
@@ -252,14 +252,15 @@ def make_bootstrap():
     _bind('zip', zip)
 
     import koskari.lib as kl
-    for name in ('*', '+', '-', '/', '//', '&', '|', '^',
-                 'in', 'not-in'):
+    for name in ('*', '+', '-', '/', '//', '&', '|', '^'):
         _bind(name, getattr(kl, name))
     for (name, alias) in (('==', 'equal?'), ('!=', 'not-equal?'),
                           ('<', 'lt?'), ('<=', 'le?'),
-                          ('>', 'gt?'), ('>=', 'ge?')):
-        _bind(name, getattr(kl, name))
-        _bind(alias, getattr(kl, name))
+                          ('>', 'gt?'), ('>=', 'ge?'),
+                          ('in', 'in?'), ('not-in', 'not-in?')):
+        val = getattr(kl, name)
+        _bind(name, val)
+        _bind(alias, val)
 
     _bind('**', _op.pow)
     _bind('@', _op.matmul)
@@ -270,11 +271,11 @@ def make_bootstrap():
         _bind(sym, fn)
 
     # Python's builtins, exceptions (all subclasses of BaseException)
-    import builtins as _builtins
-    for _name in dir(_builtins):
-        _val = getattr(_builtins, _name)
-        if isinstance(_val, type) and issubclass(_val, BaseException):
-            _bind(_name, _val)
+    import builtins as py_builtins
+    for name in dir(py_builtins):
+        val = getattr(py_builtins, name)
+        if isinstance(val, type) and issubclass(val, BaseException):
+            _bind(name, val)
 
     return bltns
 

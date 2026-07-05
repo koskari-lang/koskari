@@ -28,7 +28,7 @@ from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_nil, is_pair
-from ..helpers import is_symbolish, unpack
+from ..helpers import is_symbolish, splat_call_form, unpack
 
 
 _DEFAULT_LIST_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
@@ -42,6 +42,11 @@ def special_build_tuple(compiler, source, tc=False):
     """
 
     called_by, body = source
+
+    call_form = splat_call_form(called_by, body)
+    if call_form is not None:
+        return call_form
+
     frag = compiler.fragment(called_by)
     count = 0
 
@@ -68,6 +73,11 @@ def special_build_list(compiler, source, tc=False):
     """
 
     called_by, body = source
+
+    call_form = splat_call_form(called_by, body)
+    if call_form is not None:
+        return call_form
+
     frag = compiler.fragment(called_by)
     count = 0
 
