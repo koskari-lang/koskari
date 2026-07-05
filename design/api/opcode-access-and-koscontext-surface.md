@@ -1778,8 +1778,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyErr_Format`
   - `PyErr_SetString`
 
-### OP_FAST_OBJECT_ADD
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_ADD.c`](koskari/lib/opcode/FAST_OBJECT_ADD.c)
+### OP_FAST_OBJECT_INPLACE_ADD
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_ADD.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_ADD.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -1804,8 +1804,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceAdd`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_BIT_AND
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_BIT_AND.c`](koskari/lib/opcode/FAST_OBJECT_BIT_AND.c)
+### OP_FAST_OBJECT_INPLACE_BIT_AND
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_AND.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_AND.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -1830,8 +1830,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceAnd`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_BIT_LEFT
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_BIT_LEFT.c`](koskari/lib/opcode/FAST_OBJECT_BIT_LEFT.c)
+### OP_FAST_OBJECT_INPLACE_BIT_LEFT
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_LEFT.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_LEFT.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -1856,8 +1856,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceLshift`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_BIT_OR
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_BIT_OR.c`](koskari/lib/opcode/FAST_OBJECT_BIT_OR.c)
+### OP_FAST_OBJECT_INPLACE_BIT_OR
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_OR.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_OR.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -1882,8 +1882,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceOr`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_BIT_RIGHT
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_BIT_RIGHT.c`](koskari/lib/opcode/FAST_OBJECT_BIT_RIGHT.c)
+### OP_FAST_OBJECT_INPLACE_BIT_RIGHT
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_RIGHT.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_RIGHT.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -1908,8 +1908,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceRshift`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_BIT_XOR
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_BIT_XOR.c`](koskari/lib/opcode/FAST_OBJECT_BIT_XOR.c)
+### OP_FAST_OBJECT_INPLACE_BIT_XOR
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_XOR.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_XOR.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -1934,8 +1934,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceXor`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_FLOOR_DIVIDE
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_FLOOR_DIVIDE.c`](koskari/lib/opcode/FAST_OBJECT_FLOOR_DIVIDE.c)
+### OP_FAST_OBJECT_INPLACE_FLOOR_DIVIDE
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_FLOOR_DIVIDE.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_FLOOR_DIVIDE.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -1960,8 +1960,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceFloorDivide`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_MATRIX_MULTIPLY
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_MATRIX_MULTIPLY.c`](koskari/lib/opcode/FAST_OBJECT_MATRIX_MULTIPLY.c)
+### OP_FAST_OBJECT_INPLACE_MATRIX_MULTIPLY
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_MATRIX_MULTIPLY.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_MATRIX_MULTIPLY.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -1986,8 +1986,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceMatrixMultiply`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_MODULO
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_MODULO.c`](koskari/lib/opcode/FAST_OBJECT_MODULO.c)
+### OP_FAST_OBJECT_INPLACE_MODULO
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_MODULO.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_MODULO.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -2012,8 +2012,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceRemainder`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_MULTIPLY
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_MULTIPLY.c`](koskari/lib/opcode/FAST_OBJECT_MULTIPLY.c)
+### OP_FAST_OBJECT_INPLACE_MULTIPLY
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_MULTIPLY.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_MULTIPLY.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -2038,8 +2038,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceMultiply`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_POWER
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_POWER.c`](koskari/lib/opcode/FAST_OBJECT_POWER.c)
+### OP_FAST_OBJECT_INPLACE_POWER
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_POWER.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_POWER.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -2064,8 +2064,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlacePower`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_SUBTRACT
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_SUBTRACT.c`](koskari/lib/opcode/FAST_OBJECT_SUBTRACT.c)
+### OP_FAST_OBJECT_INPLACE_SUBTRACT
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_SUBTRACT.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_SUBTRACT.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -2090,8 +2090,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `PyNumber_InPlaceSubtract`
   - `kos_op_outcome_from_int_step`
 
-### OP_FAST_OBJECT_TRUE_DIVIDE
-**Source:** [`koskari/lib/opcode/FAST_OBJECT_TRUE_DIVIDE.c`](koskari/lib/opcode/FAST_OBJECT_TRUE_DIVIDE.c)
+### OP_FAST_OBJECT_INPLACE_TRUE_DIVIDE
+**Source:** [`koskari/lib/opcode/FAST_OBJECT_INPLACE_TRUE_DIVIDE.c`](koskari/lib/opcode/FAST_OBJECT_INPLACE_TRUE_DIVIDE.c)
 
 - **Insn / operand**
   - `KosOp_ARG`
@@ -4565,8 +4565,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `frame_ns_clear`
   - `get_name_from_insn`
 
-### OP_VAR_OBJECT_ADD
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_ADD.c`](koskari/lib/opcode/VAR_OBJECT_ADD.c)
+### OP_VAR_OBJECT_INPLACE_ADD
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_ADD.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_ADD.c)
 
 - **Insn / operand**
   - `insn`
@@ -4590,8 +4590,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_BIT_AND
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_BIT_AND.c`](koskari/lib/opcode/VAR_OBJECT_BIT_AND.c)
+### OP_VAR_OBJECT_INPLACE_BIT_AND
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_AND.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_AND.c)
 
 - **Insn / operand**
   - `insn`
@@ -4615,8 +4615,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_BIT_LEFT
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_BIT_LEFT.c`](koskari/lib/opcode/VAR_OBJECT_BIT_LEFT.c)
+### OP_VAR_OBJECT_INPLACE_BIT_LEFT
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_LEFT.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_LEFT.c)
 
 - **Insn / operand**
   - `insn`
@@ -4640,8 +4640,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_BIT_OR
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_BIT_OR.c`](koskari/lib/opcode/VAR_OBJECT_BIT_OR.c)
+### OP_VAR_OBJECT_INPLACE_BIT_OR
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_OR.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_OR.c)
 
 - **Insn / operand**
   - `insn`
@@ -4665,8 +4665,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_BIT_RIGHT
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_BIT_RIGHT.c`](koskari/lib/opcode/VAR_OBJECT_BIT_RIGHT.c)
+### OP_VAR_OBJECT_INPLACE_BIT_RIGHT
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_RIGHT.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_RIGHT.c)
 
 - **Insn / operand**
   - `insn`
@@ -4690,8 +4690,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_BIT_XOR
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_BIT_XOR.c`](koskari/lib/opcode/VAR_OBJECT_BIT_XOR.c)
+### OP_VAR_OBJECT_INPLACE_BIT_XOR
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_XOR.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_XOR.c)
 
 - **Insn / operand**
   - `insn`
@@ -4715,8 +4715,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_FLOOR_DIVIDE
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_FLOOR_DIVIDE.c`](koskari/lib/opcode/VAR_OBJECT_FLOOR_DIVIDE.c)
+### OP_VAR_OBJECT_INPLACE_FLOOR_DIVIDE
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_FLOOR_DIVIDE.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_FLOOR_DIVIDE.c)
 
 - **Insn / operand**
   - `insn`
@@ -4740,8 +4740,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_MATRIX_MULTIPLY
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_MATRIX_MULTIPLY.c`](koskari/lib/opcode/VAR_OBJECT_MATRIX_MULTIPLY.c)
+### OP_VAR_OBJECT_INPLACE_MATRIX_MULTIPLY
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_MATRIX_MULTIPLY.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_MATRIX_MULTIPLY.c)
 
 - **Insn / operand**
   - `insn`
@@ -4765,8 +4765,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_MODULO
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_MODULO.c`](koskari/lib/opcode/VAR_OBJECT_MODULO.c)
+### OP_VAR_OBJECT_INPLACE_MODULO
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_MODULO.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_MODULO.c)
 
 - **Insn / operand**
   - `insn`
@@ -4790,8 +4790,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_MULTIPLY
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_MULTIPLY.c`](koskari/lib/opcode/VAR_OBJECT_MULTIPLY.c)
+### OP_VAR_OBJECT_INPLACE_MULTIPLY
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_MULTIPLY.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_MULTIPLY.c)
 
 - **Insn / operand**
   - `insn`
@@ -4815,8 +4815,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_POWER
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_POWER.c`](koskari/lib/opcode/VAR_OBJECT_POWER.c)
+### OP_VAR_OBJECT_INPLACE_POWER
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_POWER.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_POWER.c)
 
 - **Insn / operand**
   - `insn`
@@ -4840,8 +4840,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_SUBTRACT
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_SUBTRACT.c`](koskari/lib/opcode/VAR_OBJECT_SUBTRACT.c)
+### OP_VAR_OBJECT_INPLACE_SUBTRACT
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_SUBTRACT.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_SUBTRACT.c)
 
 - **Insn / operand**
   - `insn`
@@ -4865,8 +4865,8 @@ Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosC
   - `get_name_from_insn`
   - `kos_op_outcome_from_int_step`
 
-### OP_VAR_OBJECT_TRUE_DIVIDE
-**Source:** [`koskari/lib/opcode/VAR_OBJECT_TRUE_DIVIDE.c`](koskari/lib/opcode/VAR_OBJECT_TRUE_DIVIDE.c)
+### OP_VAR_OBJECT_INPLACE_TRUE_DIVIDE
+**Source:** [`koskari/lib/opcode/VAR_OBJECT_INPLACE_TRUE_DIVIDE.c`](koskari/lib/opcode/VAR_OBJECT_INPLACE_TRUE_DIVIDE.c)
 
 - **Insn / operand**
   - `insn`
@@ -5059,14 +5059,14 @@ Opcode handlers are the only scope for Part 1 (when it was current). The API bel
 - **Group:** Variables (dynamic and fast)
 - **Responsibility:** Resolve and optionally push a dynamic variable by name from the current namespace.
 - **Wraps / replaces (conceptual):** `VAR`, `VAR_REF`, `VAR_ATTR`, `get_name_from_insn`, `KosNamespace_*` deref patterns
-- **Motivating opcodes (Part 1 heuristic):** `ATTR`, `ATTR_CLEAR`, `ATTR_REF`, `ATTR_STORE`, `IMPORT`, `IMPORT_FROM`, `IMPORT_REL`, `PUSH_DYN_WITH`, `PUSH_WITH`, `VAR`, `VAR_ATTR`, `VAR_ATTR_CLEAR`, `VAR_ATTR_REF`, `VAR_ATTR_STORE`, `VAR_BIND`, `VAR_CLEAR`, `VAR_OBJECT_ADD`, `VAR_OBJECT_BIT_AND`, `VAR_OBJECT_BIT_LEFT`, `VAR_OBJECT_BIT_OR`, `VAR_OBJECT_BIT_RIGHT`, `VAR_OBJECT_BIT_XOR`, `VAR_OBJECT_FLOOR_DIVIDE`, `VAR_OBJECT_MATRIX_MULTIPLY`, `VAR_OBJECT_MODULO`, `VAR_OBJECT_MULTIPLY`, `VAR_OBJECT_POWER`, `VAR_OBJECT_SUBTRACT`, `VAR_OBJECT_TRUE_DIVIDE`, `VAR_REF`, `VAR_STORE`
+- **Motivating opcodes (Part 1 heuristic):** `ATTR`, `ATTR_CLEAR`, `ATTR_REF`, `ATTR_STORE`, `IMPORT`, `IMPORT_FROM`, `IMPORT_REL`, `PUSH_DYN_WITH`, `PUSH_WITH`, `VAR`, `VAR_ATTR`, `VAR_ATTR_CLEAR`, `VAR_ATTR_REF`, `VAR_ATTR_STORE`, `VAR_BIND`, `VAR_CLEAR`, `VAR_OBJECT_INPLACE_ADD`, `VAR_OBJECT_INPLACE_BIT_AND`, `VAR_OBJECT_INPLACE_BIT_LEFT`, `VAR_OBJECT_INPLACE_BIT_OR`, `VAR_OBJECT_INPLACE_BIT_RIGHT`, `VAR_OBJECT_INPLACE_BIT_XOR`, `VAR_OBJECT_INPLACE_FLOOR_DIVIDE`, `VAR_OBJECT_INPLACE_MATRIX_MULTIPLY`, `VAR_OBJECT_INPLACE_MODULO`, `VAR_OBJECT_INPLACE_MULTIPLY`, `VAR_OBJECT_INPLACE_POWER`, `VAR_OBJECT_INPLACE_SUBTRACT`, `VAR_OBJECT_INPLACE_TRUE_DIVIDE`, `VAR_REF`, `VAR_STORE`
 
 #### `KosContext_GetFast`
 
 - **Group:** Variables (dynamic and fast)
 - **Responsibility:** Read a fast local slot on the current namespace.
 - **Wraps / replaces (conceptual):** `FAST`, `FAST_REF`, `KosNamespace_FastDeref`
-- **Motivating opcodes (Part 1 heuristic):** `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `FAST`, `FAST_ATTR`, `FAST_ATTR_CLEAR`, `FAST_ATTR_REF`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_CLEAR`, `FAST_OBJECT_ADD`, `FAST_OBJECT_BIT_AND`, `FAST_OBJECT_BIT_LEFT`, `FAST_OBJECT_BIT_OR`, `FAST_OBJECT_BIT_RIGHT`, `FAST_OBJECT_BIT_XOR`, `FAST_OBJECT_FLOOR_DIVIDE`, `FAST_OBJECT_MATRIX_MULTIPLY`, `FAST_OBJECT_MODULO`, `FAST_OBJECT_MULTIPLY`, `FAST_OBJECT_POWER`, `FAST_OBJECT_SUBTRACT`, `FAST_OBJECT_TRUE_DIVIDE`, `FAST_REF`, `FAST_STORE`
+- **Motivating opcodes (Part 1 heuristic):** `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `FAST`, `FAST_ATTR`, `FAST_ATTR_CLEAR`, `FAST_ATTR_REF`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_CLEAR`, `FAST_OBJECT_INPLACE_ADD`, `FAST_OBJECT_INPLACE_BIT_AND`, `FAST_OBJECT_INPLACE_BIT_LEFT`, `FAST_OBJECT_INPLACE_BIT_OR`, `FAST_OBJECT_INPLACE_BIT_RIGHT`, `FAST_OBJECT_INPLACE_BIT_XOR`, `FAST_OBJECT_INPLACE_FLOOR_DIVIDE`, `FAST_OBJECT_INPLACE_MATRIX_MULTIPLY`, `FAST_OBJECT_INPLACE_MODULO`, `FAST_OBJECT_INPLACE_MULTIPLY`, `FAST_OBJECT_INPLACE_POWER`, `FAST_OBJECT_INPLACE_SUBTRACT`, `FAST_OBJECT_INPLACE_TRUE_DIVIDE`, `FAST_REF`, `FAST_STORE`
 
 #### `KosContext_SetFast`
 
@@ -5087,7 +5087,7 @@ Opcode handlers are the only scope for Part 1 (when it was current). The API bel
 - **Group:** Stack
 - **Responsibility:** Pop one or more operands; return borrowed or owned refs per existing stack API.
 - **Wraps / replaces (conceptual):** `KosStackBlock_PopRef`, `PopTail`, `Drop`, `TailPtr`, `Peek`
-- **Motivating opcodes (Part 1 heuristic):** `ATTR`, `ATTR_CLEAR`, `ATTR_REF`, `ATTR_STORE`, `AWAIT`, `BREAK`, `BUILD_ARGS`, `BUILD_CLASS`, `BUILD_FUNCTION`, `BUILD_KWDS`, `BUILD_KWDS_NAMES`, `CALL`, `CALL_ATTR`, `CALL_ATTR_NAMES`, `CALL_ATTR_STAR`, `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `CALL_NAMES`, `CALL_STAR`, `CALL_VAR`, `CALL_VAR_ATTR`, `CALL_VAR_ATTR_NAMES`, `CALL_VAR_ATTR_STAR`, `CALL_VAR_NAMES`, `CALL_VAR_STAR`, `CAR`, `CDR`, `CHECK_EXCEPTION`, `COMBINE_ARGS`, `COMBINE_KWDS`, `CONS`, `CONST_ITEM`, `CONST_ITEM_CLEAR`, `CONST_ITEM_REF`, `CONST_ITEM_STORE`, `CONTINUE`, `DEREF`, `EXCEPTION_MATCH`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_OBJECT_ADD`, `FAST_OBJECT_BIT_AND`, `FAST_OBJECT_BIT_LEFT`, `FAST_OBJECT_BIT_OR`, `FAST_OBJECT_BIT_RIGHT`, `FAST_OBJECT_BIT_XOR`, `FAST_OBJECT_FLOOR_DIVIDE`, `FAST_OBJECT_MATRIX_MULTIPLY`, `FAST_OBJECT_MODULO`, `FAST_OBJECT_MULTIPLY`, `FAST_OBJECT_POWER`, `FAST_OBJECT_SUBTRACT`, `FAST_OBJECT_TRUE_DIVIDE`, `FAST_STORE`, `IMPORT_FROM`, `ITEM`, `ITEM_CLEAR`, `ITEM_REF`, `JUMP_AND`, `JUMP_FALSE`, `JUMP_OR`, `JUMP_TRUE`, `NEXT`, `OBJECT_AITER`, `OBJECT_BIT_INVERT`, `OBJECT_DIR`, `OBJECT_DIVMOD`, `OBJECT_EQ`, `OBJECT_FORMAT`, `OBJECT_FORMAT_CONST`, `OBJECT_GE`, `OBJECT_GT`, `OBJECT_IS_INSTANCE`, `OBJECT_IS_SUBCLASS`, `OBJECT_ITER`, `OBJECT_LE`, `OBJECT_LEN`, `OBJECT_LT`, `OBJECT_MODULO`, `OBJECT_NE`, `OBJECT_NOT`, `OBJECT_POWER`, `OBJECT_REPR`, `OBJECT_TRUTH`, `OBJECT_TYPE`, `OBJECT_VARS`, `PAIR_SPLICE`, `POP`, `POP_COLLECT`, `POP_DYN_WITH`, `POP_FOREACH`, `POP_LOOP`, `POP_PROMPT`, `POP_SHIFT`, `POP_WIND`, `POP_WITH`, `PROPER`, `PUSH_DYN_WITH`, `PUSH_FOREACH`, `PUSH_NS`, `PUSH_PARAM`, `PUSH_WIND`, `PUSH_WITH`, `RAISE`, `RETURN`, `TAIL_CALL_NAMES`, `TAIL_CALL_STAR`, `UNPACK`, `UNPACK_FAST`, `UNPACK_STAR`, `UNPACK_VAR`, `VAR_ATTR_STORE`, `VAR_BIND`, `VAR_OBJECT_ADD`, `VAR_OBJECT_BIT_AND`, `VAR_OBJECT_BIT_LEFT`, `VAR_OBJECT_BIT_OR`, `VAR_OBJECT_BIT_RIGHT`, `VAR_OBJECT_BIT_XOR`, `VAR_OBJECT_FLOOR_DIVIDE`, `VAR_OBJECT_MATRIX_MULTIPLY`, `VAR_OBJECT_MODULO`, `VAR_OBJECT_MULTIPLY`, `VAR_OBJECT_POWER`, `VAR_OBJECT_SUBTRACT`, `VAR_OBJECT_TRUE_DIVIDE`, `VAR_STORE`, `YIELD`, `YIELD_FROM`
+- **Motivating opcodes (Part 1 heuristic):** `ATTR`, `ATTR_CLEAR`, `ATTR_REF`, `ATTR_STORE`, `AWAIT`, `BREAK`, `BUILD_ARGS`, `BUILD_CLASS`, `BUILD_FUNCTION`, `BUILD_KWDS`, `BUILD_KWDS_NAMES`, `CALL`, `CALL_ATTR`, `CALL_ATTR_NAMES`, `CALL_ATTR_STAR`, `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `CALL_NAMES`, `CALL_STAR`, `CALL_VAR`, `CALL_VAR_ATTR`, `CALL_VAR_ATTR_NAMES`, `CALL_VAR_ATTR_STAR`, `CALL_VAR_NAMES`, `CALL_VAR_STAR`, `CAR`, `CDR`, `CHECK_EXCEPTION`, `COMBINE_ARGS`, `COMBINE_KWDS`, `CONS`, `CONST_ITEM`, `CONST_ITEM_CLEAR`, `CONST_ITEM_REF`, `CONST_ITEM_STORE`, `CONTINUE`, `DEREF`, `EXCEPTION_MATCH`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_OBJECT_INPLACE_ADD`, `FAST_OBJECT_INPLACE_BIT_AND`, `FAST_OBJECT_INPLACE_BIT_LEFT`, `FAST_OBJECT_INPLACE_BIT_OR`, `FAST_OBJECT_INPLACE_BIT_RIGHT`, `FAST_OBJECT_INPLACE_BIT_XOR`, `FAST_OBJECT_INPLACE_FLOOR_DIVIDE`, `FAST_OBJECT_INPLACE_MATRIX_MULTIPLY`, `FAST_OBJECT_INPLACE_MODULO`, `FAST_OBJECT_INPLACE_MULTIPLY`, `FAST_OBJECT_INPLACE_POWER`, `FAST_OBJECT_INPLACE_SUBTRACT`, `FAST_OBJECT_INPLACE_TRUE_DIVIDE`, `FAST_STORE`, `IMPORT_FROM`, `ITEM`, `ITEM_CLEAR`, `ITEM_REF`, `JUMP_AND`, `JUMP_FALSE`, `JUMP_OR`, `JUMP_TRUE`, `NEXT`, `OBJECT_AITER`, `OBJECT_BIT_INVERT`, `OBJECT_DIR`, `OBJECT_DIVMOD`, `OBJECT_EQ`, `OBJECT_FORMAT`, `OBJECT_FORMAT_CONST`, `OBJECT_GE`, `OBJECT_GT`, `OBJECT_IS_INSTANCE`, `OBJECT_IS_SUBCLASS`, `OBJECT_ITER`, `OBJECT_LE`, `OBJECT_LEN`, `OBJECT_LT`, `OBJECT_MODULO`, `OBJECT_NE`, `OBJECT_NOT`, `OBJECT_POWER`, `OBJECT_REPR`, `OBJECT_TRUTH`, `OBJECT_TYPE`, `OBJECT_VARS`, `PAIR_SPLICE`, `POP`, `POP_COLLECT`, `POP_DYN_WITH`, `POP_FOREACH`, `POP_LOOP`, `POP_PROMPT`, `POP_SHIFT`, `POP_WIND`, `POP_WITH`, `PROPER`, `PUSH_DYN_WITH`, `PUSH_FOREACH`, `PUSH_NS`, `PUSH_PARAM`, `PUSH_WIND`, `PUSH_WITH`, `RAISE`, `RETURN`, `TAIL_CALL_NAMES`, `TAIL_CALL_STAR`, `UNPACK`, `UNPACK_FAST`, `UNPACK_STAR`, `UNPACK_VAR`, `VAR_ATTR_STORE`, `VAR_BIND`, `VAR_OBJECT_INPLACE_ADD`, `VAR_OBJECT_INPLACE_BIT_AND`, `VAR_OBJECT_INPLACE_BIT_LEFT`, `VAR_OBJECT_INPLACE_BIT_OR`, `VAR_OBJECT_INPLACE_BIT_RIGHT`, `VAR_OBJECT_INPLACE_BIT_XOR`, `VAR_OBJECT_INPLACE_FLOOR_DIVIDE`, `VAR_OBJECT_INPLACE_MATRIX_MULTIPLY`, `VAR_OBJECT_INPLACE_MODULO`, `VAR_OBJECT_INPLACE_MULTIPLY`, `VAR_OBJECT_INPLACE_POWER`, `VAR_OBJECT_INPLACE_SUBTRACT`, `VAR_OBJECT_INPLACE_TRUE_DIVIDE`, `VAR_STORE`, `YIELD`, `YIELD_FROM`
 
 #### `KosContext_StackPushBlock`
 
@@ -5117,7 +5117,7 @@ Opcode handlers are the only scope for Part 1 (when it was current). The API bel
 - **Group:** Namespaces
 - **Responsibility:** Return the active `KosNamespace` for the current frame (`CURRENT_NS`).
 - **Wraps / replaces (conceptual):** `CURRENT_NS`, `GLOBALS`, `LOCALS`
-- **Motivating opcodes (Part 1 heuristic):** `BUILD_FUNCTION`, `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `FAST`, `FAST_ATTR`, `FAST_ATTR_CLEAR`, `FAST_ATTR_REF`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_CLEAR`, `FAST_OBJECT_ADD`, `FAST_OBJECT_BIT_AND`, `FAST_OBJECT_BIT_LEFT`, `FAST_OBJECT_BIT_OR`, `FAST_OBJECT_BIT_RIGHT`, `FAST_OBJECT_BIT_XOR`, `FAST_OBJECT_FLOOR_DIVIDE`, `FAST_OBJECT_MATRIX_MULTIPLY`, `FAST_OBJECT_MODULO`, `FAST_OBJECT_MULTIPLY`, `FAST_OBJECT_POWER`, `FAST_OBJECT_SUBTRACT`, `FAST_OBJECT_TRUE_DIVIDE`, `FAST_REF`, `FAST_STORE`, `LOCALS`, `POP_COLLECT`, `POP_NS`, `PUSH_COLLECT`, `PUSH_NS`, `UNPACK_FAST`
+- **Motivating opcodes (Part 1 heuristic):** `BUILD_FUNCTION`, `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `FAST`, `FAST_ATTR`, `FAST_ATTR_CLEAR`, `FAST_ATTR_REF`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_CLEAR`, `FAST_OBJECT_INPLACE_ADD`, `FAST_OBJECT_INPLACE_BIT_AND`, `FAST_OBJECT_INPLACE_BIT_LEFT`, `FAST_OBJECT_INPLACE_BIT_OR`, `FAST_OBJECT_INPLACE_BIT_RIGHT`, `FAST_OBJECT_INPLACE_BIT_XOR`, `FAST_OBJECT_INPLACE_FLOOR_DIVIDE`, `FAST_OBJECT_INPLACE_MATRIX_MULTIPLY`, `FAST_OBJECT_INPLACE_MODULO`, `FAST_OBJECT_INPLACE_MULTIPLY`, `FAST_OBJECT_INPLACE_POWER`, `FAST_OBJECT_INPLACE_SUBTRACT`, `FAST_OBJECT_INPLACE_TRUE_DIVIDE`, `FAST_REF`, `FAST_STORE`, `LOCALS`, `POP_COLLECT`, `POP_NS`, `PUSH_COLLECT`, `PUSH_NS`, `UNPACK_FAST`
 
 #### `KosContext_CallableCall`
 
@@ -5166,7 +5166,7 @@ Opcode handlers are the only scope for Part 1 (when it was current). The API bel
 - **Group:** Frame / PC
 - **Responsibility:** Build `KosOpResult` via `EVAL_*` macros (`EVAL_NORMAL`, `EVAL_RAISE`, `EVAL_YIELD`, `EVAL_AWAIT`, `EVAL_RETURN`, `EVAL_PARENT_RETURN`, `EVAL_CONTROL_RETURNED`, `EVAL_FATAL`). `KosOpOutcome` / `KOS_OP_*` macros deleted in Phase 6.
 - **Wraps / replaces (conceptual):** `EVAL_*` macros in `eval.h`; dispatched by `cg_handle_op_result` → `eval_event_*`.
-- **Motivating opcodes (Part 1 heuristic):** `ATTR`, `ATTR_CLEAR`, `ATTR_REF`, `ATTR_STORE`, `AWAIT`, `BREAK`, `BUILD_ARGS`, `BUILD_CLASS`, `BUILD_FUNCTION`, `BUILD_KWDS`, `BUILD_KWDS_NAMES`, `CALL`, `CALL_ATTR`, `CALL_ATTR_NAMES`, `CALL_ATTR_STAR`, `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `CALL_NAMES`, `CALL_STAR`, `CALL_VAR`, `CALL_VAR_ATTR`, `CALL_VAR_ATTR_NAMES`, `CALL_VAR_ATTR_STAR`, `CALL_VAR_NAMES`, `CALL_VAR_STAR`, `CAPTURE_CC`, `CAR`, `CDR`, `CHECK_EQ`, `CHECK_EXCEPTION`, `CHECK_GE`, `CHECK_GT`, `CHECK_IN`, `CHECK_IS`, `CHECK_IS_INSTANCE`, `CHECK_IS_NOT`, `CHECK_IS_SUBCLASS`, `CHECK_LE`, `CHECK_LT`, `CHECK_NE`, `CHECK_NOT_IN`, `CLEAR_FINALLY`, `CLEAR_FOREACH`, `CLEAR_LOOP`, `CLEAR_TRY`, `COMBINE_ARGS`, `COMBINE_KWDS`, `CONS`, `CONST`, `CONST_ITEM`, `CONST_ITEM_CLEAR`, `CONST_ITEM_REF`, `CONST_ITEM_STORE`, `CONTINUE`, `DEREF`, `DUP`, `EXCEPTION`, `EXCEPTION_CLEAR`, `EXCEPTION_MATCH`, `FAST`, `FAST_ATTR`, `FAST_ATTR_CLEAR`, `FAST_ATTR_REF`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_CLEAR`, `FAST_OBJECT_ADD`, `FAST_OBJECT_BIT_AND`, `FAST_OBJECT_BIT_LEFT`, `FAST_OBJECT_BIT_OR`, `FAST_OBJECT_BIT_RIGHT`, `FAST_OBJECT_BIT_XOR`, `FAST_OBJECT_FLOOR_DIVIDE`, `FAST_OBJECT_MATRIX_MULTIPLY`, `FAST_OBJECT_MODULO`, `FAST_OBJECT_MULTIPLY`, `FAST_OBJECT_POWER`, `FAST_OBJECT_SUBTRACT`, `FAST_OBJECT_TRUE_DIVIDE`, `FAST_REF`, `FAST_STORE`, `GLOBALS`, `IMPORT`, `IMPORT_FROM`, `IMPORT_REL`, `ITEM`, `ITEM_CLEAR`, `ITEM_REF`, `ITEM_STORE`, `ITER_NEXT`, `JUMP`, `JUMP_AND`, `JUMP_FALSE`, `JUMP_OR`, `JUMP_TRUE`, `LABEL`, `LOCALS`, `NEXT`, `NOOP`, `OBJECT_ADD`, `OBJECT_AITER`, `OBJECT_BIT_AND`, `OBJECT_BIT_INVERT`, `OBJECT_BIT_LEFT`, `OBJECT_BIT_OR`, `OBJECT_BIT_RIGHT`, `OBJECT_BIT_XOR`, `OBJECT_DIR`, `OBJECT_DIVMOD`, `OBJECT_EQ`, `OBJECT_FLOOR_DIVIDE`, `OBJECT_FORMAT`, `OBJECT_FORMAT_CONST`, `OBJECT_GE`, `OBJECT_GT`, `OBJECT_IN`, `OBJECT_IS`, `OBJECT_IS_INSTANCE`, `OBJECT_IS_NOT`, `OBJECT_IS_SUBCLASS`, `OBJECT_ITER`, `OBJECT_LE`, `OBJECT_LEN`, `OBJECT_LT`, `OBJECT_MATRIX_MULTIPLY`, `OBJECT_MODULO`, `OBJECT_MULTIPLY`, `OBJECT_NE`, `OBJECT_NOT`, `OBJECT_NOT_IN`, `OBJECT_POWER`, `OBJECT_REPR`, `OBJECT_STR`, `OBJECT_SUBTRACT`, `OBJECT_TRUE_DIVIDE`, `OBJECT_TRUTH`, `OBJECT_TYPE`, `OBJECT_VARS`, `PAIR_SPLICE`, `PARAM`, `POP`, `POP_CC`, `POP_COLLECT`, `POP_DYN_WITH`, `POP_FINALLY`, `POP_FOREACH`, `POP_LOOP`, `POP_NS`, `POP_PARAM`, `POP_PROMPT`, `POP_SHIFT`, `POP_TRY`, `POP_WIND`, `POP_WITH`, `POSITION`, `PROPER`, `PUSH_CC`, `PUSH_COLLECT`, `PUSH_DYN_WITH`, `PUSH_FINALLY`, `PUSH_FOREACH`, `PUSH_LOOP`, `PUSH_NS`, `PUSH_PARAM`, `PUSH_PROMPT`, `PUSH_SHIFT`, `PUSH_TRY`, `PUSH_WIND`, `PUSH_WITH`, `RAISE`, `RETURN`, `TAIL_CALL`, `TAIL_CALL_NAMES`, `TAIL_CALL_STAR`, `THEEND`, `UNPACK`, `UNPACK_FAST`, `UNPACK_STAR`, `UNPACK_VAR`, `VAR`, `VAR_ATTR`, `VAR_ATTR_CLEAR`, `VAR_ATTR_REF`, `VAR_ATTR_STORE`, `VAR_BIND`, `VAR_CLEAR`, `VAR_OBJECT_ADD`, `VAR_OBJECT_BIT_AND`, `VAR_OBJECT_BIT_LEFT`, `VAR_OBJECT_BIT_OR`, `VAR_OBJECT_BIT_RIGHT`, `VAR_OBJECT_BIT_XOR`, `VAR_OBJECT_FLOOR_DIVIDE`, `VAR_OBJECT_MATRIX_MULTIPLY`, `VAR_OBJECT_MODULO`, `VAR_OBJECT_MULTIPLY`, `VAR_OBJECT_POWER`, `VAR_OBJECT_SUBTRACT`, `VAR_OBJECT_TRUE_DIVIDE`, `VAR_REF`, `VAR_STORE`, `YIELD`, `YIELD_FROM`
+- **Motivating opcodes (Part 1 heuristic):** `ATTR`, `ATTR_CLEAR`, `ATTR_REF`, `ATTR_STORE`, `AWAIT`, `BREAK`, `BUILD_ARGS`, `BUILD_CLASS`, `BUILD_FUNCTION`, `BUILD_KWDS`, `BUILD_KWDS_NAMES`, `CALL`, `CALL_ATTR`, `CALL_ATTR_NAMES`, `CALL_ATTR_STAR`, `CALL_FAST`, `CALL_FAST_ATTR`, `CALL_FAST_ATTR_NAMES`, `CALL_FAST_ATTR_STAR`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`, `CALL_NAMES`, `CALL_STAR`, `CALL_VAR`, `CALL_VAR_ATTR`, `CALL_VAR_ATTR_NAMES`, `CALL_VAR_ATTR_STAR`, `CALL_VAR_NAMES`, `CALL_VAR_STAR`, `CAPTURE_CC`, `CAR`, `CDR`, `CHECK_EQ`, `CHECK_EXCEPTION`, `CHECK_GE`, `CHECK_GT`, `CHECK_IN`, `CHECK_IS`, `CHECK_IS_INSTANCE`, `CHECK_IS_NOT`, `CHECK_IS_SUBCLASS`, `CHECK_LE`, `CHECK_LT`, `CHECK_NE`, `CHECK_NOT_IN`, `CLEAR_FINALLY`, `CLEAR_FOREACH`, `CLEAR_LOOP`, `CLEAR_TRY`, `COMBINE_ARGS`, `COMBINE_KWDS`, `CONS`, `CONST`, `CONST_ITEM`, `CONST_ITEM_CLEAR`, `CONST_ITEM_REF`, `CONST_ITEM_STORE`, `CONTINUE`, `DEREF`, `DUP`, `EXCEPTION`, `EXCEPTION_CLEAR`, `EXCEPTION_MATCH`, `FAST`, `FAST_ATTR`, `FAST_ATTR_CLEAR`, `FAST_ATTR_REF`, `FAST_ATTR_STORE`, `FAST_BIND`, `FAST_CLEAR`, `FAST_OBJECT_INPLACE_ADD`, `FAST_OBJECT_INPLACE_BIT_AND`, `FAST_OBJECT_INPLACE_BIT_LEFT`, `FAST_OBJECT_INPLACE_BIT_OR`, `FAST_OBJECT_INPLACE_BIT_RIGHT`, `FAST_OBJECT_INPLACE_BIT_XOR`, `FAST_OBJECT_INPLACE_FLOOR_DIVIDE`, `FAST_OBJECT_INPLACE_MATRIX_MULTIPLY`, `FAST_OBJECT_INPLACE_MODULO`, `FAST_OBJECT_INPLACE_MULTIPLY`, `FAST_OBJECT_INPLACE_POWER`, `FAST_OBJECT_INPLACE_SUBTRACT`, `FAST_OBJECT_INPLACE_TRUE_DIVIDE`, `FAST_REF`, `FAST_STORE`, `GLOBALS`, `IMPORT`, `IMPORT_FROM`, `IMPORT_REL`, `ITEM`, `ITEM_CLEAR`, `ITEM_REF`, `ITEM_STORE`, `ITER_NEXT`, `JUMP`, `JUMP_AND`, `JUMP_FALSE`, `JUMP_OR`, `JUMP_TRUE`, `LABEL`, `LOCALS`, `NEXT`, `NOOP`, `OBJECT_ADD`, `OBJECT_AITER`, `OBJECT_BIT_AND`, `OBJECT_BIT_INVERT`, `OBJECT_BIT_LEFT`, `OBJECT_BIT_OR`, `OBJECT_BIT_RIGHT`, `OBJECT_BIT_XOR`, `OBJECT_DIR`, `OBJECT_DIVMOD`, `OBJECT_EQ`, `OBJECT_FLOOR_DIVIDE`, `OBJECT_FORMAT`, `OBJECT_FORMAT_CONST`, `OBJECT_GE`, `OBJECT_GT`, `OBJECT_IN`, `OBJECT_IS`, `OBJECT_IS_INSTANCE`, `OBJECT_IS_NOT`, `OBJECT_IS_SUBCLASS`, `OBJECT_ITER`, `OBJECT_LE`, `OBJECT_LEN`, `OBJECT_LT`, `OBJECT_MATRIX_MULTIPLY`, `OBJECT_MODULO`, `OBJECT_MULTIPLY`, `OBJECT_NE`, `OBJECT_NOT`, `OBJECT_NOT_IN`, `OBJECT_POWER`, `OBJECT_REPR`, `OBJECT_STR`, `OBJECT_SUBTRACT`, `OBJECT_TRUE_DIVIDE`, `OBJECT_TRUTH`, `OBJECT_TYPE`, `OBJECT_VARS`, `PAIR_SPLICE`, `PARAM`, `POP`, `POP_CC`, `POP_COLLECT`, `POP_DYN_WITH`, `POP_FINALLY`, `POP_FOREACH`, `POP_LOOP`, `POP_NS`, `POP_PARAM`, `POP_PROMPT`, `POP_SHIFT`, `POP_TRY`, `POP_WIND`, `POP_WITH`, `POSITION`, `PROPER`, `PUSH_CC`, `PUSH_COLLECT`, `PUSH_DYN_WITH`, `PUSH_FINALLY`, `PUSH_FOREACH`, `PUSH_LOOP`, `PUSH_NS`, `PUSH_PARAM`, `PUSH_PROMPT`, `PUSH_SHIFT`, `PUSH_TRY`, `PUSH_WIND`, `PUSH_WITH`, `RAISE`, `RETURN`, `TAIL_CALL`, `TAIL_CALL_NAMES`, `TAIL_CALL_STAR`, `THEEND`, `UNPACK`, `UNPACK_FAST`, `UNPACK_STAR`, `UNPACK_VAR`, `VAR`, `VAR_ATTR`, `VAR_ATTR_CLEAR`, `VAR_ATTR_REF`, `VAR_ATTR_STORE`, `VAR_BIND`, `VAR_CLEAR`, `VAR_OBJECT_INPLACE_ADD`, `VAR_OBJECT_INPLACE_BIT_AND`, `VAR_OBJECT_INPLACE_BIT_LEFT`, `VAR_OBJECT_INPLACE_BIT_OR`, `VAR_OBJECT_INPLACE_BIT_RIGHT`, `VAR_OBJECT_INPLACE_BIT_XOR`, `VAR_OBJECT_INPLACE_FLOOR_DIVIDE`, `VAR_OBJECT_INPLACE_MATRIX_MULTIPLY`, `VAR_OBJECT_INPLACE_MODULO`, `VAR_OBJECT_INPLACE_MULTIPLY`, `VAR_OBJECT_INPLACE_POWER`, `VAR_OBJECT_INPLACE_SUBTRACT`, `VAR_OBJECT_INPLACE_TRUE_DIVIDE`, `VAR_REF`, `VAR_STORE`, `YIELD`, `YIELD_FROM`
 
 #### `KosContext_GlobalsFrame`
 

@@ -40,16 +40,16 @@ the helper** (by `KOS_OP_HANDLER` basename).
 | `get_await_next` | `KosEval_GetAwaitNext` | YIELD_FROM (async path; `NEXT` mentions it in comments only) |
 | `eager_step_awaitable` | `KosEval_EagerStepAwaitable` | YIELD_FROM |
 | `kos_return_delimited` | `KosEval_ReturnDelimited` | RETURN |
-| `get_name_from_insn` | `KosCode_NameFromInsn` | IMPORT, IMPORT_FROM, IMPORT_REL, PUSH_DYN_WITH, PUSH_WITH, VAR_BIND, VAR_OBJECT_*, VAR_REF, VAR_STORE |
+| `get_name_from_insn` | `KosCode_NameFromInsn` | IMPORT, IMPORT_FROM, IMPORT_REL, PUSH_DYN_WITH, PUSH_WITH, VAR_BIND, VAR_OBJECT_INPLACE_*, VAR_REF, VAR_STORE |
 | `get_prompt_id_from_insn` | `KosCode_PromptIdFromInsn` | PUSH_SHIFT |
-| `frame_ns_deref` | `KosFrame_NSDeref` | CALL_VAR, CALL_VAR_ATTR, CALL_VAR_ATTR_NAMES, CALL_VAR_ATTR_STAR, CALL_VAR_NAMES, CALL_VAR_STAR, VAR_ATTR, VAR_ATTR_CLEAR, VAR_ATTR_REF, VAR_ATTR_STORE, VAR_OBJECT_* |
-| `frame_ns_store` | `KosFrame_NSStore` | UNPACK_VAR, VAR_OBJECT_*, VAR_STORE |
+| `frame_ns_deref` | `KosFrame_NSDeref` | CALL_VAR, CALL_VAR_ATTR, CALL_VAR_ATTR_NAMES, CALL_VAR_ATTR_STAR, CALL_VAR_NAMES, CALL_VAR_STAR, VAR_ATTR, VAR_ATTR_CLEAR, VAR_ATTR_REF, VAR_ATTR_STORE, VAR_OBJECT_INPLACE_* |
+| `frame_ns_store` | `KosFrame_NSStore` | UNPACK_VAR, VAR_OBJECT_INPLACE_*, VAR_STORE |
 | `frame_ns_bind` | `KosFrame_NSBind` | VAR_BIND |
 | `frame_ns_ref` | `KosFrame_NSRef` | VAR_REF |
 | `kos_resolve_named_attr` | `KosEval_ResolveNamedAttr` | CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR, CALL_FAST_ATTR, CALL_FAST_ATTR_NAMES, CALL_FAST_ATTR_STAR, CALL_VAR_ATTR, CALL_VAR_ATTR_NAMES, CALL_VAR_ATTR_STAR |
 | `resolve_context_enter_exit` | `KosWith_ResolveContextEnterExit` | PUSH_DYN_WITH, PUSH_WITH |
 | `kos_await_dispatch` | `KosEval_AwaitDispatch` (public wrapper may already be desirable; `kos_push_or_await` exists) | AWAIT |
-| `obj_op_reducing` | `KosEval_ObjectOpReducing` | OBJECT_ADD, OBJECT_BIT_AND, OBJECT_BIT_OR, OBJECT_BIT_XOR, OBJECT_FLOOR_DIVIDE, OBJECT_MATRIX_MULTIPLY, OBJECT_MULTIPLY, OBJECT_STR, OBJECT_SUBTRACT, OBJECT_TRUE_DIVIDE |
+| `obj_op_reducing` | `KosEval_ObjectOpReducing` | OBJECT_ADD, OBJECT_BIT_AND, OBJECT_BIT_OR, OBJECT_BIT_XOR, OBJECT_FLOOR_DIVIDE, OBJECT_MATRIX_MULTIPLY, OBJECT_MULTIPLY, OBJECT_STR, OBJECT_SUBTRACT, OBJECT_TRUE_DIVIDE, OBJECT_INPLACE_* |
 | `obj_op_binary` | `KosEval_ObjectOpBinary` | OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT, OBJECT_IN, OBJECT_IS, OBJECT_IS_NOT, OBJECT_NOT_IN |
 | `op_OBJECT_EQ_impl` | `KosEval_ObjectCompare` | OBJECT_EQ, OBJECT_GE, OBJECT_GT, OBJECT_LE, OBJECT_LT, OBJECT_NE |
 | `kos_check_cmp` | `KosEval_CheckCompare` | CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE |
@@ -124,7 +124,7 @@ with `PySequence_Tuple`” pattern. **Suggested public**: one
 Many opcodes use only **stack**, **namespace**, **Python C API**, and/or **already
 public** koskari APIs (`KosContext_Call`, `kos_dyn_*`, `kos_extent_*`,
 `KosStackBlock_*`, `KosNamespace_*`, …) with **no** extra `static` helper from
-`eval.c`. Examples: most `FAST_OBJECT_*`, `NOOP`, `JUMP*`, `BUILD_*`, `POP*`
+`eval.c`. Examples: most `FAST_OBJECT_INPLACE_*`, `NOOP`, `JUMP*`, `BUILD_*`, `POP*`
 (except where listed above), `KOS_OP_HANDLER` stubs that delegate to
 `KosContext_Call`, etc.
 

@@ -125,12 +125,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         self.assertEqual(1, _count_op(code, OpCode.KOS_OP_DUP))
         self.assertIn(OpCode.KOS_OP_CONST_ITEM, _opcodes(code))
         self.assertIn(OpCode.KOS_OP_CONST_ITEM_STORE, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_OBJECT_ADD, _opcodes(code))
-        arg = None
-        for op, oparg in _ops(code):
-            if op == OpCode.KOS_OP_OBJECT_ADD:
-                arg = oparg
-        self.assertEqual(2, arg)
+        self.assertIn(OpCode.KOS_OP_OBJECT_INPLACE_ADD, _opcodes(code))
 
 
     async def test_inplace_item_var_key_emits_dup_and_item_store(self):
@@ -139,6 +134,47 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         self.assertIn(OpCode.KOS_OP_ITEM, _opcodes(code))
         self.assertIn(OpCode.KOS_OP_ITEM_STORE, _opcodes(code))
         self.assertNotIn(OpCode.KOS_OP_CONST_ITEM, _opcodes(code))
+
+
+    async def test_inplace_item_mutates_in_place(self):
+        """
+        inplace-item on a list-valued slot extends the stored list
+        rather than replacing it with a copy
+        """
+
+        inner = [1, 2]
+        d = {"k": inner}
+        src_str = '(compile/inplace-item + d "k" ext)'
+        expr, mod = self.compile_expr(src_str, d=d, ext=[3])
+        await expr()
+        self.assertIs(inner, d["k"])
+        self.assertEqual([1, 2, 3], inner)
+
+
+    async def test_inplace_item_multiple_values(self):
+        """
+        extra values reduce left-to-right through a single
+        OBJECT_INPLACE_* instruction
+        """
+
+        d = {"k": 10}
+        src_str = '(compile/inplace-item + d "k" 1 2 3)'
+        expr, mod = self.compile_expr(src_str, d=d)
+        await expr()
+        self.assertEqual(16, d["k"])
+
+        code = self.compile_to_code('(compile/inplace-item + d "k" 1 2 3)',
+                                    d={})
+        arg = None
+        for op, oparg in _ops(code):
+            if op == OpCode.KOS_OP_OBJECT_INPLACE_ADD:
+                arg = oparg
+        self.assertEqual(4, arg)
+
+
+    async def test_inplace_item_power_takes_one_value(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code('(compile/inplace-item ** d "k" 2 3)', d={})
 
 
     async def test_inplace_item_unknown_operator(self):
@@ -220,6 +256,36 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
         self.assertIn(OpCode.KOS_OP_ATTR, _opcodes(code))
         self.assertIn(OpCode.KOS_OP_ATTR_STORE, _opcodes(code))
         self.assertNotIn(OpCode.KOS_OP_VAR_ATTR, _opcodes(code))
+
+
+    async def test_inplace_attr_mutates_in_place(self):
+        """
+        inplace-attr on a set-valued attribute updates the stored set
+        rather than replacing it with a copy
+        """
+
+        inner = {1, 2}
+        obj = SimpleNamespace(x=inner)
+        src_str = "(compile/inplace-attr | obj x ext)"
+        expr, mod = self.compile_expr(src_str, obj=obj, ext={3})
+        await expr()
+        self.assertIs(inner, obj.x)
+        self.assertEqual({1, 2, 3}, inner)
+
+
+    async def test_inplace_attr_multiple_values(self):
+        obj = SimpleNamespace(x=10)
+        src_str = "(compile/inplace-attr + obj x 1 2 3)"
+        expr, mod = self.compile_expr(src_str, obj=obj)
+        await expr()
+        self.assertEqual(16, obj.x)
+
+
+    async def test_inplace_attr_power_takes_one_value(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code(
+                "(compile/inplace-attr ** obj x 2 3)",
+                obj=SimpleNamespace(x=2))
 
 
     async def test_inplace_attr_attr_must_be_symbol(self):

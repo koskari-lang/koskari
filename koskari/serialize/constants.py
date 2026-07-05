@@ -26,10 +26,10 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 
 # Semantic bytecode ABI for .kio (four little-endian u32 in the file header).
 # Bump when KosOpCode values or softened CODEP instruction semantics change.
-# MINOR bumped: the import family is now three self-contained EXTRA opcodes
-# (IMPORT, IMPORT_FROM, IMPORT_STAR); IMPORT_REL is removed.
+# MINOR bumped: the stack-based OBJECT_INPLACE_* family is inserted in the
+# numeric interface section, shifting the opcode values that follow it.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 4
+BYTECODE_ABI_MINOR = 5
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

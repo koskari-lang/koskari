@@ -204,6 +204,101 @@ PyObject *KosOperator_TrueDivide(PyObject *const *values, size_t count) {
 }
 
 
+/* === in-place reducing operators === */
+
+PyObject *KosOperator_InplaceAdd(PyObject *const *values, size_t count) {
+
+  return reduce_method("+=", PyNumber_InPlaceAdd, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplaceBitwiseAnd(
+    PyObject *const *values, size_t count) {
+
+  return reduce_method("&=", PyNumber_InPlaceAnd, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplaceBitwiseOr(PyObject *const *values, size_t count) {
+
+  return reduce_method("|=", PyNumber_InPlaceOr, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplaceBitwiseXor(
+    PyObject *const *values, size_t count) {
+
+  return reduce_method("^=", PyNumber_InPlaceXor, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplaceFloorDivide(
+    PyObject *const *values, size_t count) {
+
+  return reduce_method("//=", PyNumber_InPlaceFloorDivide, NULL,
+                       values, count);
+}
+
+
+PyObject *KosOperator_InplaceLshift(PyObject *const *values, size_t count) {
+
+  return reduce_method("<<=", PyNumber_InPlaceLshift, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplaceMatrixMultiply(
+    PyObject *const *values, size_t count) {
+
+  return reduce_method("@=", PyNumber_InPlaceMatrixMultiply, NULL,
+                       values, count);
+}
+
+
+PyObject *KosOperator_InplaceMultiply(PyObject *const *values, size_t count) {
+
+  return reduce_method("*=", PyNumber_InPlaceMultiply, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplacePower(PyObject *const *values, size_t count) {
+
+  // strictly binary, no reduce; PyNumber_InPlacePower is ternary but
+  // the augmented form has no modulus
+  if (count != 2) {
+    PyErr_SetString(PyExc_TypeError, "**= requires exactly 2"
+                    " positional arguments");
+    return NULL;
+  }
+
+  return PyNumber_InPlacePower(values[0], values[1], Py_None);
+}
+
+
+PyObject *KosOperator_InplaceRemainder(PyObject *const *values, size_t count) {
+
+  return reduce_method("%=", PyNumber_InPlaceRemainder, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplaceRshift(PyObject *const *values, size_t count) {
+
+  return reduce_method(">>=", PyNumber_InPlaceRshift, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplaceSubtract(PyObject *const *values, size_t count) {
+
+  return reduce_method("-=", PyNumber_InPlaceSubtract, NULL, values, count);
+}
+
+
+PyObject *KosOperator_InplaceTrueDivide(
+    PyObject *const *values, size_t count) {
+
+  return reduce_method("/=", PyNumber_InPlaceTrueDivide, NULL, values, count);
+}
+
+
 PyObject *KosOperator_In(PyObject *const *values, size_t count) {
 
   if (count != 2) {
