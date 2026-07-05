@@ -51,6 +51,26 @@ define-syntax compile/list-each:
   """
 
   syntax-rules []:
+    case (list-each [binding seq] when: condition body):
+      define col (#list)
+      for-each [binding seq]:
+        when condition:
+          #list-append col body
+      takeq col
+
+    case (list-each [binding seq] when: condition body ...):
+      (list-each [binding seq] when: condition (begin body ...))
+
+    case (list-each [binding seq] unless: condition body):
+      define col (#list)
+      for-each [binding seq]:
+        unless condition:
+          #list-append col body
+      takeq col
+
+    case (list-each [binding seq] unless: condition body ...):
+      (list-each [binding seq] unless: condition (begin body ...))
+
     case (list-each [binding seq] body):
       define col (#list)
       for-each [binding seq]:
