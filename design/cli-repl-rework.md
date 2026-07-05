@@ -206,15 +206,33 @@ For the eval step, prefer **`await`**, not `demand`.
   frame. (The Python `await` in the shim exists for the context-boundary
   reason in Section 3, not because Koskari needs it.)
 - `demand` forces a synchronous result by driving the async machinery to
-  completion. It suits a REPL running *outside* an event loop. The current loop
-  deliberately keeps an event loop alive: the prompt runs via
-  `loop.run_in_executor` (`koskari/cli/__init__.py:341-343`) so it does not
-  block. Using `demand` inside a running loop risks a nested drive fighting the
-  outer loop and would block awaitables the user's own code creates.
+  completion. It suits a REPL running *outside* an event loop. The loop
+  deliberately keeps an event loop alive. Using `demand` inside a running loop
+  risks a nested drive fighting the outer loop and would block awaitables the
+  user's own code creates.
 
-Guidance: keep an outer async driver (`drive_async_loop`), keep the prompt on
-an executor, let the evaluator auto-await user forms. Reserve `demand` for a
-possible future synchronous (non-async) REPL variant.
+Guidance: keep an outer async driver (`drive_async_loop`), let the evaluator
+auto-await user forms. Reserve `demand` for a possible future synchronous
+(non-async) REPL variant.
+
+### 5.1 Prompt reads (implemented): cooperative `prompt_async`
+
+The prompt read runs **cooperatively on the REPL's own event loop**, not on a
+worker thread. `_make_repl_prompter` returns an *async* prompter; the
+prompt_toolkit backend awaits `session.prompt_async(...)` (which runs the prompt
+application on the current loop via `add_reader`), and `repl.ki` reads a line
+with `(await (prompter prompt default: indent))` inside a Koskari
+`try/except [EOFError] / [KeyboardInterrupt]`. The only thread offload left is
+the blocking `input()` fallback, which has no async form.
+
+This depended on two things landing first:
+- `prompt_async` avoids the nested `asyncio.run` that `session.prompt()` runs
+  (that collision was why an earlier draft pushed the prompt onto
+  `run_in_executor`).
+- Foreign-awaitable exceptions are now delivered at the Koskari `await` point, so
+  EOF / interrupt from `prompt_async` reach the loop's `except` handlers with no
+  Python sentinel shim (`fe8ab63a`, PR #86; regression test
+  `tests/importer/test_await_foreign_exception.py`).
 
 ---
 

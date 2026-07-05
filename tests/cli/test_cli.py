@@ -12,7 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.cli: run_file_async, repl_async, option_parser, main.
+Tests for koskari.cli: run_file_async, run_command_async, option_parser, main.
+
+REPL behavior is covered in tests/cli/test_repl_ki.py.
 """
 
 
@@ -26,12 +28,11 @@ import unittest
 import pytest
 
 from koskari.cli import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary, main,
-                         option_parser, repl_async, run_command_async,
-                         run_file_async, startup_lines,
-                         _resolve_cli_target)
+                         run_command_async, run_file_async)
 from koskari.exceptions import (CodeBoundary, _filter_infrastructure_tb,
                                 format_code_boundary_exception,
                                 format_exception_with_koskari_trace)
+from koskari.importer import install
 from koskari.module import new_module
 
 
@@ -46,15 +47,39 @@ def _script(name):
     return os.path.join(_SCRIPTS, name)
 
 
+_main_mod = None
+
+
+def _main():
+    """
+    Return the koskari.cli.main submodule, importing on first use.
+
+    Uses importlib.import_module so the result is the .ki submodule from
+    sys.modules, not the ``main`` function attribute of the koskari.cli
+    package (they share the name).  Option parsing and target resolution
+    live there as Koskari functions, so callers await them.
+    """
+
+    import importlib
+
+    install()
+    global _main_mod
+    if _main_mod is None:
+        _main_mod = importlib.import_module('koskari.cli.main')
+    return _main_mod
+
+
 class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
-    def _parse(self, *args):
-        parser = option_parser('koskari')
-        return _resolve_cli_target(parser, parser.parse_args(list(args)))
+    async def _parse(self, *args):
+        m = _main()
+        parser = await m.option_parser('koskari')
+        ns = parser.parse_args(list(args))
+        return await m.resolve_cli_target(parser, ns)
 
 
     async def test_defaults(self):
-        opts = self._parse()
+        opts = await self._parse()
         self.assertIsNone(opts.filename)
         self.assertEqual([], opts.args)
         self.assertTrue(opts.tweakpath)
@@ -65,43 +90,43 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_repl_full_trace_flag(self):
-        opts = self._parse('--repl-full-trace')
+        opts = await self._parse('--repl-full-trace')
         self.assertTrue(opts.repl_full_trace)
 
 
     async def test_filename_positional(self):
-        opts = self._parse('hello.ki')
+        opts = await self._parse('hello.ki')
         self.assertEqual('hello.ki', opts.filename)
 
 
     async def test_no_tweak_path(self):
-        opts = self._parse('--no-tweak-path')
+        opts = await self._parse('--no-tweak-path')
         self.assertFalse(opts.tweakpath)
 
 
     async def test_interactive_short(self):
-        opts = self._parse('-i')
+        opts = await self._parse('-i')
         self.assertTrue(opts.interactive)
 
 
     async def test_interactive_long(self):
-        opts = self._parse('--interactive')
+        opts = await self._parse('--interactive')
         self.assertTrue(opts.interactive)
 
 
     async def test_histfile(self):
-        opts = self._parse('--histfile', '/tmp/koskari_hist')
+        opts = await self._parse('--histfile', '/tmp/koskari_hist')
         self.assertEqual('/tmp/koskari_hist', opts.histfile)
 
 
     async def test_args_remainder(self):
-        opts = self._parse('script.ki', 'arg1', 'arg2')
+        opts = await self._parse('script.ki', 'arg1', 'arg2')
         self.assertEqual('script.ki', opts.filename)
         self.assertEqual(['arg1', 'arg2'], opts.args)
 
 
     async def test_compile_kio_source_name(self):
-        opts = self._parse(
+        opts = await self._parse(
             '--compile-kio',
             'out.kio',
             'x.ki',
@@ -113,88 +138,87 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_command_conflicts_with_compile_kio(self):
-        parser = option_parser('koskari')
+        parser = await _main().option_parser('koskari')
         with self.assertRaises(SystemExit):
-            parser.parse_args(['-c', '(print 1)', '--compile-kio', 'out.kio', 'x.ki'])
+            parser.parse_args(
+                ['-c', '(print 1)', '--compile-kio', 'out.kio', 'x.ki'])
 
 
     async def test_command_conflicts_with_execute_kio(self):
-        parser = option_parser('koskari')
+        parser = await _main().option_parser('koskari')
         with self.assertRaises(SystemExit):
             parser.parse_args(['-c', '(print 1)', '--execute-kio', 'x.kio'])
 
 
     async def test_filename_conflicts_with_compile_kio(self):
-        parser = option_parser('koskari')
+        m = _main()
+        parser = await m.option_parser('koskari')
+        ns = parser.parse_args(['--compile-kio', 'out.kio', 'x.ki', 'hello.ki'])
         with self.assertRaises(SystemExit):
-            _resolve_cli_target(
-                parser,
-                parser.parse_args(
-                    ['--compile-kio', 'out.kio', 'x.ki', 'hello.ki']))
+            await m.resolve_cli_target(parser, ns)
 
 
     async def test_misplaced_option_in_rest_errors(self):
-        parser = option_parser('koskari')
+        m = _main()
+        parser = await m.option_parser('koskari')
+        ns = parser.parse_args(['hello.ki', '--compile-kio', 'out.kio', 'x.ki'])
         with self.assertRaises(SystemExit):
-            _resolve_cli_target(
-                parser,
-                parser.parse_args(
-                    ['hello.ki', '--compile-kio', 'out.kio', 'x.ki']))
+            await m.resolve_cli_target(parser, ns)
 
 
     async def test_quiet_flag(self):
-        opts = self._parse('-q')
+        opts = await self._parse('-q')
         self.assertTrue(opts.quiet)
 
 
     async def test_command_short(self):
-        opts = self._parse('-c', '(print 1)')
+        opts = await self._parse('-c', '(print 1)')
         self.assertEqual('(print 1)', opts.command)
         self.assertIsNone(opts.filename)
 
 
     async def test_command_long(self):
-        opts = self._parse('--command', '(+ 1 2)')
+        opts = await self._parse('--command', '(+ 1 2)')
         self.assertEqual('(+ 1 2)', opts.command)
 
 
     async def test_command_forwards_args(self):
-        opts = self._parse('-c', '(print 1)', 'arg1', 'arg2')
+        opts = await self._parse('-c', '(print 1)', 'arg1', 'arg2')
         self.assertEqual('(print 1)', opts.command)
         self.assertEqual(['arg1', 'arg2'], opts.args)
 
 
     async def test_command_strips_leading_double_dash(self):
-        opts = self._parse('-c', '(print 1)', '--', 'arg1')
+        opts = await self._parse('-c', '(print 1)', '--', 'arg1')
         self.assertEqual('(print 1)', opts.command)
         self.assertEqual(['arg1'], opts.args)
 
 
     async def test_script_rest_after_double_dash(self):
-        opts = self._parse('script.ki', '--', '--loops', '5')
+        opts = await self._parse('script.ki', '--', '--loops', '5')
         self.assertEqual('script.ki', opts.filename)
         self.assertEqual(['--loops', '5'], opts.args)
 
 
     async def test_script_rest_merges_pre_and_post(self):
-        opts = self._parse('script.ki', '20', '--', 'tree')
+        opts = await self._parse('script.ki', '20', '--', 'tree')
         self.assertEqual('script.ki', opts.filename)
         self.assertEqual(['20', 'tree'], opts.args)
 
 
     async def test_script_double_dash_only(self):
-        opts = self._parse('script.ki', '--')
+        opts = await self._parse('script.ki', '--')
         self.assertEqual('script.ki', opts.filename)
         self.assertEqual([], opts.args)
 
 
     async def test_misplaced_option_before_double_dash_still_errors(self):
-        parser = option_parser('koskari')
+        m = _main()
+        parser = await m.option_parser('koskari')
+        ns = parser.parse_args(
+            ['script.ki', '--compile-kio', 'out.kio', 'x.ki', '--', 'foo'])
         with self.assertRaises(SystemExit):
-            _resolve_cli_target(
-                parser,
-                parser.parse_args(
-                    ['script.ki', '--compile-kio', 'out.kio', 'x.ki', '--', 'foo']))
+            await m.resolve_cli_target(parser, ns)
 
 
 class TestRunFile(unittest.IsolatedAsyncioTestCase):
@@ -258,129 +282,6 @@ class TestRunCommand(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SystemExit) as ctx:
             await run_command_async(mod, '(raise (SystemExit 42))')
         self.assertEqual(42, ctx.exception.code)
-
-
-class TestRepl(unittest.IsolatedAsyncioTestCase):
-
-    async def _run_repl(self, lines, full_trace=False, quiet=False):
-        """
-        Drive the REPL with a sequence of input lines.
-
-        Returns (stdout_text, stderr_text).
-        """
-
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        line_iter = iter(lines)
-
-        def prompter(prompt, **kwargs):
-            try:
-                return next(line_iter)
-            except StopIteration:
-                raise EOFError
-
-        mod = new_module('__main__')
-        await repl_async(
-            mod,
-            prompter=prompter,
-            stdout=stdout,
-            stderr=stderr,
-            full_trace=full_trace,
-            quiet=quiet)
-        return stdout.getvalue(), stderr.getvalue()
-
-
-    async def test_simple_expression_prints_result(self):
-        out, _ = await self._run_repl(['(+ 1 2)'])
-        self.assertIn('3', out)
-
-
-    async def test_repl_startup_banner(self):
-        out, _ = await self._run_repl([])
-        for line in startup_lines():
-            self.assertIn(line, out)
-
-
-    async def test_repl_quiet_suppresses_startup_banner(self):
-        out, _ = await self._run_repl([], quiet=True)
-        for line in startup_lines():
-            self.assertNotIn(line, out)
-
-
-    async def test_none_result_not_printed(self):
-        out, _ = await self._run_repl(['(define x 99)'], quiet=True)
-        self.assertNotIn('99', out)
-
-
-    async def test_underscore_stores_last_result(self):
-        out, _ = await self._run_repl(['(+ 3 4)', '_'], quiet=True)
-        lines = [ln for ln in out.splitlines() if ln.strip()]
-        self.assertIn('7', lines[0])
-        self.assertIn('7', lines[1])
-
-
-    async def test_empty_lines_ignored(self):
-        out, _ = await self._run_repl(['', '   ', '(+ 1 1)'], quiet=True)
-        self.assertIn('2', out)
-
-
-    async def test_incomplete_s_expr_continues_on_next_line(self):
-        out, _ = await self._run_repl(['(+ 1', '2)'], quiet=True)
-        self.assertIn('3', out)
-
-
-    async def test_syntax_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['( 1 2 ]'], quiet=True)
-        self.assertIn('mismatched', err.lower())
-
-
-    async def test_runtime_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
-        self.assertTrue(len(err) > 0)
-
-
-    async def test_eof_exits_cleanly(self):
-        out, err = await self._run_repl([], quiet=True)
-        self.assertEqual(0, len(err.strip()))
-
-
-    async def test_multiple_expressions_accumulate_state(self):
-        out, _ = await self._run_repl(['(define n 10)', '(* n n)'], quiet=True)
-        self.assertIn('100', out)
-
-
-    async def test_repl_exception_traceback_trimmed(self):
-        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
-        self.assertIn('ZeroDivisionError', err)
-        self.assertNotIn(' in repl\n', err)
-        self.assertNotIn(' in repl ', err)
-
-
-    async def test_repl_koskari_exception_shows_native_traceback(self):
-        """
-        Koskari exceptions via REPL show dynchain, not wrapper traceback.
-        """
-        _, err = await self._run_repl(['(/ 1 0)'], quiet=True)
-
-        self.assertIn('ZeroDivisionError', err)
-        self.assertIn('Koskari dynchain', err)
-
-
-    async def test_repl_compiler_error_uses_explain_only(self):
-        """
-        Compile-phase errors show explain() without a Python traceback.
-        """
-        form = '((lambda () (compile/setq _repl_typo_undeclared 1)))'
-        _, err = await self._run_repl([form], quiet=True)
-        self.assertTrue(len(err.strip()) > 0)
-        self.assertNotIn('Traceback (most recent call last)', err)
-        self.assertIn('not declared', err)
-
-
-    async def test_repl_full_trace_shows_boundary_frames(self):
-        _, err = await self._run_repl(['(/ 1 0)'], full_trace=True, quiet=True)
-        self.assertIn('ZeroDivisionError', err)
-        self.assertIn('koskari.cli', err)
 
 
 class TestREPLCodeBoundary(unittest.IsolatedAsyncioTestCase):

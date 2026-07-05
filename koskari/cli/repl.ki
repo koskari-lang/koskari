@@ -13,271 +13,93 @@
 
 
 """
-koskari.cli.repl - read-eval-print loop for koskari
+koskari.cli.repl
+
+Koskari-native read-eval-print loop.  Read and compile happen here; the
+eval step crosses the Python boundary shim ``_await_user_form`` so the
+user form runs in a fresh coroutine context and REPL infrastructure stays
+off its native dynchain (see design/cli-repl-rework.md section 3).  Error
+rendering reuses the Python formatters in koskari.exceptions.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-define prompt_toolkit_prompter [histfile: None get_namespace: None]:
+import sys
+
+import-from koskari.cli _await_user_form _make_repl_prompter REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES startup_lines
+import-from koskari.exceptions format_code_boundary_exception format_exception_with_koskari_trace apply_sys_last_exc CompilerError UncaughtCompilerError ReaderEOF ReaderSyntaxError
+import-from koskari.reader LayoutReader source_str READ_EOF
+import-from koskari.module init_module build_module_load_facets
+import-from koskari.lib kos_repr
+
+
+(declare-exports repl_async)
+
+
+; The prompt backend (_make_repl_prompter) is built in Python but returns an
+; async callable: the prompt_toolkit path runs cooperatively on our event
+; loop via prompt_async (no worker thread), and its EOFError / KeyboardInterrupt
+; are delivered back here at the await point, where the loop below catches them.
+
+
+; === Continuation heuristics ===
+
+
+define block_body? [buffer]:
   """
-  Return a callable suitable for prompting the user in the REPL
-  """
-
-  import-from prompt_toolkit import PromptSession
-  import-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-  import-from prompt_toolkit.history import FileHistory
-
-  define repl_special_names (special_names_for_repl)
-  define history (when histfile (FileHistory histfile))
-
-  define completer (KoskariCompleter
-    get_namespace: get_namespace
-    special_names: repl_special_names)
-
-  define session (PromptSession
-    history: history
-    lexer: (KoskariLexer special_names: repl_special_names)
-    completer: completer
-    style: koskari_style
-    auto_suggest: (AutoSuggestFromHistory)
-    key_bindings: (load_koskari_key_bindings))
-
-  lambda promptfn [prompt **: kwargs]:
-    session.prompt prompt reserve_space_for_menu: False **: kwargs
-
-
-define readline_prompter [histfile: None get_namespace: None]:
-  """
-  Return a callable suitable for prompting the user in the REPL
+  True if buffer appears to be inside a layout block body (user may add
+  more).  A block header (some line ends with a colon) is present and the
+  last non-empty line is indented; a blank line will terminate the block.
   """
 
-  when histfile:
-    try:
-      import-from readline read_history_file write_history_file
-      import-from atexit register
+  unless (and buffer (in ":" buffer)):
+    return False
 
-      readline.read_history_file histfile
-      register readline.write_history_file histfile
+  define lines (buffer.splitlines)
+  unless (any (each [ln lines] (.endswith (ln.rstrip) ":"))):
+    return False
 
-    except ImportError:
-      None
+  define nonempty (list (filter (lambda [ln] (ln.strip)) lines))
+  unless nonempty:
+    return False
 
-  lambda promptfn [prompt **: kwargs]:
-    input prompt
+  define last (item nonempty -1)
+  (in (item last 0) " \t")
 
 
-define make_prompter [histfile: None get_namespace: None]:
+define continuation_indent [buffer]:
   """
-  Return a callable suitable for prompting the user in the REPL.
-  """
+  Return the leading whitespace for the next continuation line.
 
-  try:
-    prompt_toolkit_prompter histfile get_namespace
-  except [ImportError]:
-    readline_prompter histfile get_namespace
-
-
-; ---------------------------------------------------------------------------
-; REPL code boundary
-; ---------------------------------------------------------------------------
-
-
-define REPL_INFRASTRUCTURE_MODULES (frozenset #(
-  "koskari.cli"
-  "asyncio"
-  "asyncio.base_events"
-  "asyncio.events"
-  "asyncio.runners"
-  "concurrent.futures"
-  "concurrent.futures._base"
-))
-
-
-define render_koskari_dynchain [trace_data]:
-  """
-  Render dynchain metadata attached to synthetic koskari native frames.
+  When buffer ends with a block header (colon), indent one level (4
+  spaces) past that line.  When inside a block body, match the indent of
+  the last non-empty line.  Otherwise return the empty string.
   """
 
-  unless (and trace_data (isinstance trace_data #(list tuple))):
-    return []
+  unless buffer:
+    return ""
 
-  define frames (list (reversed trace_data))
-  define lines #["  Koskari dynchain (native eval):\n"]
+  define lines (buffer.splitlines)
+  unless lines:
+    return ""
 
-  for-each [frame frames]:
-    unless (isinstance frame dict):
-      continue
+  when (.endswith (buffer.rstrip) ":"):
+    define last (item lines -1)
+    define indent_len (- (len last) (len (last.lstrip)))
+    return (* " " (+ indent_len 4))
 
-    define name (frame.get "name" "<anonymous>")
-    define filename (frame.get "filename" "<unknown>")
-    define line (frame.get "line" 0)
-    define col (frame.get "col" 0)
-    define pc (frame.get "pc" 0)
-    lines.append f"    at {name} ({filename}:{line}:{col}) [pc={pc}]\n"
+  when (block_body? buffer):
+    define nonempty (list (filter (lambda [ln] (ln.strip)) lines))
+    when nonempty:
+      define ln (item nonempty -1)
+      return (* " " (- (len ln) (len (ln.lstrip))))
 
-  lines
-
-
-define find_dynchain_in_chain [exc_val]:
-  """
-  Walk the exception chain (exc_val, __cause__, __context__) and return
-  __koskari_dynchain__ from the first exception that has it.
-  """
-
-  define seen (set)
-  define to_visit #[exc_val]
-
-  while to_visit:
-    define current (to_visit.pop)
-
-    if (or (None? current) (seen.contains (id current))):
-      (continue)
-
-    seen.add (id current)
-    if (hasattr current "__koskari_dynchain__"):
-      define trace_data (getattr current "__koskari_dynchain__")
-      unless (None? trace_data):
-        return trace_data
-
-    for-each [a #("__cause__" "__context__")]:
-      define link (getattr current a)
-      unless (None? link):
-        to_visit.append link
-
-  None
+  return ""
 
 
-define format_exception_with_koskari_trace [
-    exc_type
-    exc_val
-    tb
-    chain_root: None]:
-
-  """
-  Format an exception traceback, interleaving koskari native dynchain data
-  after synthetic native frames that carry ``__koskari_trace__`` in globals.
-  Falls back to exc_val.__koskari_dynchain__ when no such frame exists.
-  When chain_root is given, searches that exception chain for dynchain.
-
-  Falls back to normal traceback formatting when no traceback is present.
-
-  :param chain_root: optional exception to walk (__cause__/__context__) for dynchain
-  :return: list[str], matching traceback.format_exception style
-  """
-
-  define trace_data:
-      _find_dynchain_in_chain (or chain_root exc_val)
-
-  if (None? tb):
-    define fallback:
-      unless (None? trace_data):
-        render_koskari_dynchain trace_data
-
-    if fallback:
-      define out #["Traceback (most recent call last):\n"]
-      out.extend fallback
-      out.extend (format_exception_only exc_type exc_val)
-      return out
-
-    return (list (format_exception_only exc_type exc_val))
-
-  define found_dynchain:
-    for-each [[frame _lineno] (traceback.walk_tb tb)]:
-      if (frame.f_globals.get "__koskari_trace__"):
-        (break True)
-    else:
-      False
-
-  define fallback_dynchain:
-    unless (or found_dynchain (not trace_data)):
-      render_koskari_dynchain trace_data
-
-  unless (or found_dynchain fallback_dynchain):
-    return (traceback.format_exception exc_type exc_val tb)
-
-  define out #["Traceback (most recent call last):\n"]
-  define extracted (traceback.extract_tb tb)
-  define walked (list (traceback.walk_tb tb))
-
-  for-each [[summary [frame _lineno]] (zip extracted walked)]:
-    out.extend (traceback.format_list [summary])
-    set! trace_data (frame.f_globals.get "__koskari_trace__")
-    out.extend (render_koskari_dynchain trace_data)
-
-  if fallback_dynchain:
-    out.extend fallback_dynchain
-
-  out.extend (format_exception_only exc_type exc_val)
-  out
-
-
-define filter_infrastructure_tb [tb]:
-  """
-  Remove infrastructure frames from a traceback.
-
-  Walks the chain, drops frames whose __name__ is in
-  REPL_INFRASTRUCTURE_MODULES, and relinks.  Returns the filtered head.
-
-  Mutates the traceback chain in place by rewriting tb_next on existing
-  traceback objects.  Code that holds references to the same traceback
-  (e.g. debuggers, logging) will see the modified chain.  Python does not
-  provide a straightforward way to build new traceback chains without
-  mutation.
-
-  :param tb: traceback object (root of chain)
-  :return: filtered traceback, or original if all frames would be removed
-  """
-
-  if (None? tb):
-    return
-
-  define filtered #[]
-  define current tb
-
-  while current:
-    define frame current.tb_frame
-    define mod (frame.f_globals.get "__name__" "")
-
-    unless (in REPL_INFRASTRUCTURE_MODULES mod):
-      filtered.append current
-
-    set! current current.tb_next
-
-  if (not filtered):
-    return
-
-  for-each [i (range (len filtered) - 1)]:
-    set-attr (item filtered i) tb_next (item filtered i + 1)
-  set-attr (item filtered -1) tb_next None
-
-  return (item filtered 0)
-
-
-define-class REPLCodeBoundary [Exception]:
-  """
-  Internal marker for the boundary between REPL infrastructure and user
-  expression evaluation.  Never shown to the user.
-  """
-
-
-define boundary_call [fn *: args **: kwargs]:
-  """
-  Await fn with the given arguments.  If an exception is raised, re-raise
-  REPLCodeBoundary from it so the cause's traceback can be used for display
-  (omitting REPL infrastructure frames).
-  """
-
-  try:
-    return (fn *: args **: kwargs)
-  except Exception:
-    raise (REPLCodeBoundary)
-
-
-; ---------------------------------------------------------------------------
-; REPL
-; ---------------------------------------------------------------------------
+; === Read step ===
 
 
 define _INCOMPLETE (object)
@@ -291,73 +113,34 @@ define-syntax incomplete?:
 
 define eval_expression [compiler source ns]:
   """
-  Run one REPL expression.
+  Read and compile one REPL form from source.
+
+  Returns _INCOMPLETE when the reader needs more input, otherwise a
+  zero-argument compiled expression to be awaited via the boundary shim.
+  Reader- and compile-phase errors propagate to the caller.
   """
 
   define reader (ns.get "__reader__")
-  if (None? reader):
+  when (None? reader):
     set! reader (LayoutReader ns)
-    set! (item ns "__reader__") reader
+    (set-item ns "__reader__" reader)
 
   define stream (source_str source "<stdin>")
-  try:
-    define source_expr (reader.read stream)
-  except [ReaderEOF]:
-    return _INCOMPLETE
-  if (is source_expr READ_EOF):
+
+  define source_expr:
+    try:
+      reader.read stream
+    except [ReaderEOF]:
+      return _INCOMPLETE
+
+  when (is source_expr READ_EOF):
     return _INCOMPLETE
 
   define fragment (compiler.full_compile source_expr)
-  fragment.as_expression ns
-  return (expr)
+  (fragment.as_expression ns)
 
 
-define block_body? [buffer]:
-  """
-  True if buffer appears to be inside a layout block body (user may add more).
-  """
-
-  unless (and buffer (in buffer ":")):
-    return False
-
-  define lines (buffer.splitlines)
-  unless (any (each [ln lines] ln.rstrip.endswith ":")):
-    return False
-
-  return:
-    for-each [i (range (- (len lines) 1) -1 -1)]:
-      define ln (item lines i)
-      if (ln.strip):
-        break (in (item ln 0) " \t")
-    else:
-      False
-
-
-define continuation_indent [buffer]:
-  """
-  Return leading whitespace for the next continuation line.
-  """
-
-  unless buffer:
-    return ""
-
-  define lines (buffer.splitlines)
-  unless lines:
-    return ""
-
-  define rstripped (buffer.rstrip)
-  if (rstripped.endswith ":"):
-    define last (item lines -1)
-    define indent_len (- (len last) (len (last.lstrip)))
-    return (* " " (+ indent_len 4))
-
-  if (block_body? buffer):
-    for-each [i (range (- (len lines) 1) -1 -1)]:
-      define ln (item lines i)
-      if (ln.strip):
-        return (* " " (- (len ln) (len (ln.lstrip))))
-
-  return ""
+; === REPL loop ===
 
 
 define repl_async [
@@ -366,96 +149,152 @@ define repl_async [
     histfile: None
     stdin: None
     stdout: None
-    stderr: None]:
+    stderr: None
+    full_trace: False
+    quiet: False]:
 
   """
   Run an interactive read-eval-print loop for a koskari module.
 
-  Each form entered by the user is compiled and executed.  Multi-line
-  input is supported via continuation prompt.  Non-None results are
-  printed to stdout.  The last result is stored as '_' in the namespace.
+  Each form entered by the user is read, compiled, and evaluated across
+  the Python boundary shim.  Multi-line input is supported via a
+  continuation prompt.  Non-None results are printed to stdout and the
+  last result is stored as '_' in the namespace.
 
   :param mod: koskari Module to use as the execution context
-  :param prompter: callable with the same signature as input()
+  :param prompter: input(prompt)-style callable; built via make_prompter
+      when None
+  :param histfile: history file path passed to make_prompter
+  :param stdin: input stream, defaults to sys.stdin
+  :param stdout: output stream, defaults to sys.stdout
+  :param stderr: error stream, defaults to sys.stderr
+  :param full_trace: when True, keep REPL boundary frames in tracebacks
+  :param quiet: when True, suppress the startup version banner
   """
 
   set! stdin (or stdin sys.stdin)
   set! stdout (or stdout sys.stdout)
   set! stderr (or stderr sys.stderr)
 
-  define loop (asyncio.get_running_loop)
-
-  unless (getattr mod "__file__" None):
+  define compiler (getattr mod "__compiler__" None)
+  when (None? compiler):
     init_module mod "<stdin>"
+    define facets (build_module_load_facets mod filename: "<stdin>")
+    set! compiler (item facets 0)
 
   define ns (vars mod)
-  if (None? prompter):
-    set! prompter (make_prompter histfile {ns})
+  when (None? prompter):
+    set! prompter (_make_repl_prompter histfile ns)
 
-  define compiler (Compiler
-    getattr(mod, "__name__", "__main__")
-    mod
-    filename="<stdin>")
-
-  define reader (LayoutReader mod)
-  attach_module_load_facets mod compiler reader
+  unless quiet:
+    for-each [line (startup_lines)]:
+      print line file: stdout
+    print "" file: stdout
 
   define buffer ""
   define prompt ">>> "
 
   while True:
     try:
-      define indent:
-        if (eq? prompt "..."):
-          continuation_indent buffer
-        else:
-          ""
-      define line:
-        loop.run_in_executor None {(prompter prompt default: indent)}
+      define indent (if (equal? prompt "... ") (continuation_indent buffer) "")
+      define line (await (prompter prompt default: indent))
 
-    except [#(KeyboardInterrupt EOFError)]:
+    except [EOFError]:
       print "" file: stderr
       (stderr.flush)
       (break)
 
-    incr! buffer (if buffer f"\n{line}" line)
+    except [KeyboardInterrupt]:
+      print "" file: stderr
+      (stderr.flush)
+      if (buffer.strip):
+        set! buffer ""
+        set! prompt ">>> "
+        (continue)
+      else:
+        (break)
+
+    incr! buffer (if buffer (+ "\n" line) line)
+
     unless (buffer.strip):
       set! buffer ""
       (continue)
 
-    unless (line.strip):
-      if (or (.endswith (buffer.stip) ":")
-             (block_body? buffer)):
-        set! prompt "..."
+    when (line.strip):
+      when (.endswith (buffer.rstrip) ":"):
+        set! prompt "... "
+        (continue)
+      when (block_body? buffer):
+        set! prompt "... "
         (continue)
 
     try:
-      define result:
-        boundary_call eval_expression compiler buffer ns
+      define expr (eval_expression compiler buffer ns)
 
-      if (incomplete? result):
-        set! prompt "..."
+      if (incomplete? expr):
+        set! prompt "... "
         (continue)
+
+      define result (await (_await_user_form expr))
 
       set! buffer ""
       set! prompt ">>> "
 
-      set! (item ns "_") result
+      (set-item ns "_" result)
       unless (None? result):
         print (kos_repr result) file: stdout
 
-    except [#(KeyboardInterrupt EOFError)]:
+    except [KeyboardInterrupt]:
+      print "" file: stderr
+      (stderr.flush)
+      set! buffer ""
+      set! prompt ">>> "
+
+    except [EOFError]:
       print "" file: stderr
       (stderr.flush)
       (break)
 
-    except REPLCodeBoundary:
-      ; an exception we're hiding the trace of
-      ...
+    except [ReaderSyntaxError as: e]:
+      define ename (attr (type e) __name__)
+      define emsg e.message
+      print f"{ename}: {emsg}" file: stderr
+      (stderr.flush)
+      set! buffer ""
+      set! prompt ">>> "
 
-    except Exception:
-      ; an exception we're showing the trace of
-      ...
+    except [REPLCodeBoundary as: boundary]:
+      define res (format_code_boundary_exception boundary nofold: full_trace infrastructure_modules: REPL_INFRASTRUCTURE_MODULES)
+      apply_sys_last_exc (item res 1) (item res 2) (item res 3)
+      print (.join "" (item res 0)) end: "" file: stderr
+      (stderr.flush)
+      set! buffer ""
+      set! prompt ">>> "
+
+    except [UncaughtCompilerError as: exc]:
+      define tb (attr exc __traceback__)
+      define elines (format_exception_with_koskari_trace (type exc) exc tb)
+      apply_sys_last_exc (type exc) exc tb
+      print (.join "" elines) end: "" file: stderr
+      (stderr.flush)
+      set! buffer ""
+      set! prompt ">>> "
+
+    except [CompilerError as: exc]:
+      apply_sys_last_exc (type exc) exc None
+      print (exc.explain) end: "" file: stderr
+      (stderr.flush)
+      set! buffer ""
+      set! prompt ">>> "
+
+    except [Exception]:
+      define info (sys.exc_info)
+      define elines (format_exception_with_koskari_trace (item info 0) (item info 1) (item info 2))
+      apply_sys_last_exc (item info 0) (item info 1) (item info 2)
+      print (.join "" elines) end: "" file: stderr
+      (stderr.flush)
+      set! buffer ""
+      set! prompt ">>> "
 
     (stdout.flush)
 
