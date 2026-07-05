@@ -2622,7 +2622,7 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 - **Comparisons**: OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE, OBJECT_GT, OBJECT_GE (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`.
 - **Predicates**: OBJECT_IN, OBJECT_NOT_IN, OBJECT_IS, OBJECT_IS_NOT; OBJECT_IS_INSTANCE (COUNT), OBJECT_IS_SUBCLASS (COUNT).
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
-- **Numeric, in-place**: OBJECT_INPLACE_* (NOARG) — stack `[..., lhs, rhs] → [..., result]` via the `PyNumber_InPlace*` API; used by the inplace-item and inplace-attr special forms.
+- **Numeric, in-place**: OBJECT_INPLACE_* (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
 - **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
@@ -2811,93 +2811,93 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ### KOS_OP_OBJECT_INPLACE_ADD {#kos_op_object_inplace_add}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceAdd(lhs, rhs)` result or await it. The in-place `+` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceAdd`, push the result or await it. The in-place `+` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_ADD.c`
 
 ### KOS_OP_OBJECT_INPLACE_BIT_AND {#kos_op_object_inplace_bit_and}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceAnd(lhs, rhs)` result or await it. The in-place `&` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceAnd`, push the result or await it. The in-place `&` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_AND.c`
 
 ### KOS_OP_OBJECT_INPLACE_BIT_LEFT {#kos_op_object_inplace_bit_left}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceLshift(lhs, rhs)` result or await it. The in-place `<<` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceLshift`, push the result or await it. The in-place `<<` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_LEFT.c`
 
 ### KOS_OP_OBJECT_INPLACE_BIT_OR {#kos_op_object_inplace_bit_or}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceOr(lhs, rhs)` result or await it. The in-place `|` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceOr`, push the result or await it. The in-place `|` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_OR.c`
 
 ### KOS_OP_OBJECT_INPLACE_BIT_RIGHT {#kos_op_object_inplace_bit_right}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceRshift(lhs, rhs)` result or await it. The in-place `>>` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceRshift`, push the result or await it. The in-place `>>` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_RIGHT.c`
 
 ### KOS_OP_OBJECT_INPLACE_BIT_XOR {#kos_op_object_inplace_bit_xor}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceXor(lhs, rhs)` result or await it. The in-place `^` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceXor`, push the result or await it. The in-place `^` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_XOR.c`
 
 ### KOS_OP_OBJECT_INPLACE_FLOOR_DIVIDE {#kos_op_object_inplace_floor_divide}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceFloorDivide(lhs, rhs)` result or await it. The in-place `//` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceFloorDivide`, push the result or await it. The in-place `//` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_FLOOR_DIVIDE.c`
 
 ### KOS_OP_OBJECT_INPLACE_MATRIX_MULTIPLY {#kos_op_object_inplace_matrix_multiply}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceMatrixMultiply(lhs, rhs)` result or await it. The in-place `@` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceMatrixMultiply`, push the result or await it. The in-place `@` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MATRIX_MULTIPLY.c`
 
 ### KOS_OP_OBJECT_INPLACE_MODULO {#kos_op_object_inplace_modulo}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceRemainder(lhs, rhs)` result or await it. The in-place `%` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceRemainder`, push the result or await it. The in-place `%` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MODULO.c`
 
 ### KOS_OP_OBJECT_INPLACE_MULTIPLY {#kos_op_object_inplace_multiply}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceMultiply(lhs, rhs)` result or await it. The in-place `*` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceMultiply`, push the result or await it. The in-place `*` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MULTIPLY.c`
 
 ### KOS_OP_OBJECT_INPLACE_POWER {#kos_op_object_inplace_power}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlacePower(lhs, rhs, Py_None)` result or await it. The in-place `**` used by the inplace-item and inplace-attr special forms; the ternary pow(base, exp, mod) has no in-place form.
+- **Semantics**: Arg = 2, strictly binary (no reduce). Pop exp then base, push `PyNumber_InPlacePower(base, exp, Py_None)` result or await it. The in-place `**` used by the inplace-item and inplace-attr special forms; the ternary pow(base, exp, mod) has no in-place form.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_POWER.c`
 
 ### KOS_OP_OBJECT_INPLACE_SUBTRACT {#kos_op_object_inplace_subtract}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceSubtract(lhs, rhs)` result or await it. The in-place `-` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceSubtract`, push the result or await it. The in-place `-` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_SUBTRACT.c`
 
 ### KOS_OP_OBJECT_INPLACE_TRUE_DIVIDE {#kos_op_object_inplace_true_divide}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: Pop rhs then lhs, push `PyNumber_InPlaceTrueDivide(lhs, rhs)` result or await it. The in-place `/` used by the inplace-item and inplace-attr special forms.
+- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceTrueDivide`, push the result or await it. The in-place `/` used by the inplace-item and inplace-attr special forms.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_TRUE_DIVIDE.c`
 
 ### KOS_OP_OBJECT_AITER {#kos_op_object_aiter}

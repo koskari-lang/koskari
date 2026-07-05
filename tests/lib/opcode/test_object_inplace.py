@@ -41,7 +41,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 32],
-            ["OBJECT_INPLACE_ADD", 0],
+            ["OBJECT_INPLACE_ADD", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 42)
@@ -51,7 +51,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 50],
             ["CONST", 8],
-            ["OBJECT_INPLACE_SUBTRACT", 0],
+            ["OBJECT_INPLACE_SUBTRACT", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 42)
@@ -61,7 +61,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 6],
             ["CONST", 7],
-            ["OBJECT_INPLACE_MULTIPLY", 0],
+            ["OBJECT_INPLACE_MULTIPLY", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 42)
@@ -71,7 +71,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 5],
-            ["OBJECT_INPLACE_POWER", 0],
+            ["OBJECT_INPLACE_POWER", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 32)
@@ -81,7 +81,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 85],
             ["CONST", 2],
-            ["OBJECT_INPLACE_FLOOR_DIVIDE", 0],
+            ["OBJECT_INPLACE_FLOOR_DIVIDE", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 42)
@@ -91,7 +91,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 84],
             ["CONST", 2],
-            ["OBJECT_INPLACE_TRUE_DIVIDE", 0],
+            ["OBJECT_INPLACE_TRUE_DIVIDE", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 42.0)
@@ -101,7 +101,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 17],
             ["CONST", 5],
-            ["OBJECT_INPLACE_MODULO", 0],
+            ["OBJECT_INPLACE_MODULO", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 2)
@@ -114,7 +114,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", IMatMul()],
             ["CONST", None],
-            ["OBJECT_INPLACE_MATRIX_MULTIPLY", 0],
+            ["OBJECT_INPLACE_MATRIX_MULTIPLY", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 42)
@@ -124,7 +124,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 5],
-            ["OBJECT_INPLACE_BIT_LEFT", 0],
+            ["OBJECT_INPLACE_BIT_LEFT", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 32)
@@ -134,7 +134,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 64],
             ["CONST", 1],
-            ["OBJECT_INPLACE_BIT_RIGHT", 0],
+            ["OBJECT_INPLACE_BIT_RIGHT", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 32)
@@ -144,7 +144,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 0xFF],
             ["CONST", 0x0F],
-            ["OBJECT_INPLACE_BIT_AND", 0],
+            ["OBJECT_INPLACE_BIT_AND", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 15)
@@ -154,7 +154,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 32],
             ["CONST", 10],
-            ["OBJECT_INPLACE_BIT_OR", 0],
+            ["OBJECT_INPLACE_BIT_OR", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 42)
@@ -164,7 +164,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 63],
             ["CONST", 21],
-            ["OBJECT_INPLACE_BIT_XOR", 0],
+            ["OBJECT_INPLACE_BIT_XOR", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 42)
@@ -180,7 +180,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", lst],
             ["CONST", [3]],
-            ["OBJECT_INPLACE_ADD", 0],
+            ["OBJECT_INPLACE_ADD", 2],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -193,7 +193,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", lst],
             ["CONST", 2],
-            ["OBJECT_INPLACE_MULTIPLY", 0],
+            ["OBJECT_INPLACE_MULTIPLY", 2],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -206,7 +206,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", s],
             ["CONST", {3}],
-            ["OBJECT_INPLACE_BIT_OR", 0],
+            ["OBJECT_INPLACE_BIT_OR", 2],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -219,7 +219,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", s],
             ["CONST", {2}],
-            ["OBJECT_INPLACE_SUBTRACT", 0],
+            ["OBJECT_INPLACE_SUBTRACT", 2],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -240,7 +240,7 @@ class TestObjectInplaceOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", obj],
             ["CONST", 7],
-            ["OBJECT_INPLACE_ADD", 0],
+            ["OBJECT_INPLACE_ADD", 2],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -248,11 +248,71 @@ class TestObjectInplaceOpcodes(CevalTest):
         self.assertEqual(obj.calls, [7])
 
 
+    async def test_inplace_add_three_values(self):
+        """
+        OBJECT_INPLACE_ADD 3 reduces left-to-right: 10 += 30 += 2 => 42
+        """
+
+        code, ns = build_expr([
+            ["CONST", 10],
+            ["CONST", 30],
+            ["CONST", 2],
+            ["OBJECT_INPLACE_ADD", 3],
+            ["RETURN", 1],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), 42)
+
+
+    async def test_inplace_add_three_values_mutates_list(self):
+        """
+        the reduce applies each rhs to the same accumulator, so a list
+        lhs is extended once per operand
+        """
+
+        lst = [1]
+        code, ns = build_expr([
+            ["CONST", lst],
+            ["CONST", [2]],
+            ["CONST", [3]],
+            ["OBJECT_INPLACE_ADD", 3],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, lst)
+        self.assertEqual(lst, [1, 2, 3])
+
+
+    async def test_inplace_power_not_reducing(self):
+        """
+        OBJECT_INPLACE_POWER is strictly binary; arg 3 raises TypeError
+        """
+
+        code, ns = build_expr([
+            ["CONST", 2],
+            ["CONST", 3],
+            ["CONST", 2],
+            ["OBJECT_INPLACE_POWER", 3],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError):
+            await make_callable(code, ns)()
+
+
+    async def test_inplace_add_requires_two_values(self):
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["OBJECT_INPLACE_ADD", 1],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError):
+            await make_callable(code, ns)()
+
+
     async def test_inplace_add_type_error(self):
         code, ns = build_expr([
             ["CONST", "a"],
             ["CONST", 1],
-            ["OBJECT_INPLACE_ADD", 0],
+            ["OBJECT_INPLACE_ADD", 2],
             ["RETURN", 1],
         ])
         with self.assertRaises(TypeError):

@@ -14,14 +14,15 @@
 */
 
 /**
-   OBJECT_INPLACE_MULTIPLY: arg unused. Pop rhs then lhs, push
-   PyNumber_InPlaceMultiply(lhs, rhs) result or await it. The in-place *
-   used by the inplace-item and inplace-attr special forms.
+   OBJECT_INPLACE_MULTIPLY: arg = number of operands (N >= 2). Pop N
+   values, reduce left-to-right with KosOperator_InplaceMultiply, push the
+   result or await it. The in-place * used by the inplace-item and
+   inplace-attr special forms.
 */
 
 KOS_OP_HANDLER(OBJECT_INPLACE_MULTIPLY) {
   return kos_op_result_from_push_int(
-    obj_op_binary(es, insn, PyNumber_InPlaceMultiply));
+    obj_op_reducing(es, insn, KosOperator_InplaceMultiply));
 }
 
 

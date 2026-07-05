@@ -1,7 +1,7 @@
 # compile/inplace-attr
 **Symbol:** `compile/inplace-attr`
 
-**Syntax:** `(inplace-attr OP OBJ ATTR VALUE)`
+**Syntax:** `(inplace-attr OP OBJ ATTR VALUE...)`
 
 **Use-case:** In-place update of an attribute: load the current value of ATTR on
 OBJ, compute `current OP VALUE`, and store the result back. Equivalent to
@@ -14,7 +14,8 @@ Normally written as **`(inplace OP (attr OBJ ATTR) VALUE)`** — the
 VAR_ATTR_STORE. Otherwise evaluates OBJ once, uses DUP for the load/store
 sequence, loads via ATTR, applies the corresponding OBJECT_INPLACE_* operator
 (the `PyNumber_InPlace*` API, so mutable values such as lists and sets are
-updated in place), and stores via ATTR_STORE. The form evaluates to None.
+updated in place; multiple values (except for `**`, which takes exactly one) reduce left-to-right through the single
+instruction), and stores via ATTR_STORE. The form evaluates to None.
 
 **Supported operators:** Same set as [`compile/inplace`](compile-inplace.md).
 

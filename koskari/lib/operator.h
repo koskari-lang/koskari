@@ -53,6 +53,46 @@ PyObject *KosOperator_Subtract(PyObject *const *values, size_t count);
 PyObject *KosOperator_TrueDivide(PyObject *const *values, size_t count);
 
 
+/*
+   In-place reducing operators: same left-to-right reduction, but
+   through the PyNumber_InPlace* protocol functions. All require at
+   least 2 values; there is no unary form. InplacePower is strictly
+   binary and does not reduce.
+*/
+
+
+PyObject *KosOperator_InplaceAdd(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceBitwiseAnd(
+    PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceBitwiseOr(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceBitwiseXor(
+    PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceFloorDivide(
+    PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceLshift(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceMatrixMultiply(
+    PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceMultiply(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplacePower(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceRemainder(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceRshift(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceSubtract(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_InplaceTrueDivide(
+    PyObject *const *values, size_t count);
+
+
 PyObject *KosOperator_In(PyObject *const *values, size_t count);
 
 PyObject *KosOperator_NotIn(PyObject *const *value, size_t count);

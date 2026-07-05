@@ -1328,7 +1328,7 @@ operators (`PyNumber_InPlaceAdd`, etc.).
 
 **Symbol:** `compile/inplace-item`
 
-**Syntax:** `(compile/inplace-item OP OBJ KEY VALUE)`
+**Syntax:** `(compile/inplace-item OP OBJ KEY VALUE...)`
 
 **Use-case:** In-place update of an item slot: load `OBJ[KEY]`, compute
 `current OP VALUE`, store the result back at `KEY`. Equivalent to augmented
@@ -1337,10 +1337,11 @@ assignment on a subscript (`d[k] += 1`). Normally reached via
 
 **Behaviour:** Compiles OBJ once. Loads the current item (CONST_ITEM when KEY is
 constant, otherwise ITEM after KEY is evaluated). Uses **DUP** so OBJ (and KEY,
-when not constant) is not re-evaluated for the store. Compiles VALUE, applies the
-corresponding **OBJECT_INPLACE_*** opcode (the `PyNumber_InPlace*` API, so
-mutable values are updated in place), then stores via CONST_ITEM_STORE or
-ITEM_STORE. Evaluates to None.
+when not constant) is not re-evaluated for the store. Compiles the VALUEs,
+applies the corresponding **OBJECT_INPLACE_*** opcode (the `PyNumber_InPlace*`
+API, so mutable values are updated in place; multiple values (except for `**`, which takes exactly one) reduce
+left-to-right through the single instruction), then stores via CONST_ITEM_STORE
+or ITEM_STORE. Evaluates to None.
 
 **Supported operators:** Same set as `compile/inplace`.
 
@@ -1363,7 +1364,7 @@ ITEM_STORE. Evaluates to None.
 
 **Symbol:** `compile/inplace-attr`
 
-**Syntax:** `(compile/inplace-attr OP OBJ ATTR VALUE)`
+**Syntax:** `(compile/inplace-attr OP OBJ ATTR VALUE...)`
 
 **Use-case:** In-place update of an attribute: load `OBJ.ATTR`, compute
 `current OP VALUE`, store the result back. Equivalent to augmented assignment on
@@ -1372,8 +1373,9 @@ an attribute (`obj.x += 1`). ATTR must be a symbol. Normally reached via
 
 **Behaviour:** When OBJ is a symbol, loads via VAR_ATTR and stores via
 VAR_ATTR_STORE (object from the namespace). Otherwise compiles OBJ once, **DUP**
-1, loads via ATTR, compiles VALUE, applies **OBJECT_INPLACE_*** (the
-`PyNumber_InPlace*` API, so mutable values are updated in place), stores via
+1, loads via ATTR, compiles the VALUEs, applies **OBJECT_INPLACE_*** (the
+`PyNumber_InPlace*` API, so mutable values are updated in place; multiple
+values reduce left-to-right through the single instruction), stores via
 ATTR_STORE. Evaluates to None.
 
 **Supported operators:** Same set as `compile/inplace`.

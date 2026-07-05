@@ -14,14 +14,15 @@
 */
 
 /**
-   OBJECT_INPLACE_BIT_LEFT: arg unused. Pop rhs then lhs, push
-   PyNumber_InPlaceLshift(lhs, rhs) result or await it. The in-place <<
-   used by the inplace-item and inplace-attr special forms.
+   OBJECT_INPLACE_BIT_LEFT: arg = number of operands (N >= 2). Pop N
+   values, reduce left-to-right with KosOperator_InplaceLshift, push the
+   result or await it. The in-place << used by the inplace-item and
+   inplace-attr special forms.
 */
 
 KOS_OP_HANDLER(OBJECT_INPLACE_BIT_LEFT) {
   return kos_op_result_from_push_int(
-    obj_op_binary(es, insn, PyNumber_InPlaceLshift));
+    obj_op_reducing(es, insn, KosOperator_InplaceLshift));
 }
 
 

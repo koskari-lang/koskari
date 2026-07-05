@@ -14,20 +14,15 @@
 */
 
 /**
-   OBJECT_INPLACE_POWER: arg unused. Pop rhs then lhs, push
-   PyNumber_InPlacePower(lhs, rhs, Py_None) result or await it. The
-   in-place ** used by the inplace-item and inplace-attr special
-   forms; the ternary pow(base, exp, mod) has no in-place form.
+   OBJECT_INPLACE_POWER: arg = 2, strictly binary (no reduce). Pop exp
+   then base, push PyNumber_InPlacePower(base, exp, Py_None) result or
+   await it. The in-place ** used by the inplace-item and inplace-attr
+   special forms; the ternary pow(base, exp, mod) has no in-place form.
 */
-
-static PyObject *binary_inplace_power(PyObject *lhs, PyObject *rhs) {
-  return PyNumber_InPlacePower(lhs, rhs, Py_None);
-}
-
 
 KOS_OP_HANDLER(OBJECT_INPLACE_POWER) {
   return kos_op_result_from_push_int(
-    obj_op_binary(es, insn, binary_inplace_power));
+    obj_op_reducing(es, insn, KosOperator_InplacePower));
 }
 
 

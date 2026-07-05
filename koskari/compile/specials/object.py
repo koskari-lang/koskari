@@ -872,7 +872,8 @@ def special_inplace(compiler, source, tc=False):
 @special("compile/inplace-item", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_inplace_item(compiler, source, tc=False):
     """
-    Compile (compile/inplace-item OP OBJ KEY VALUE)
+    Compile (compile/inplace-item OP OBJ KEY VALUE...). Multiple values
+    reduce left-to-right through the single OBJECT_INPLACE_* instruction.
     """
 
     called_by, body = source
@@ -895,9 +896,7 @@ def special_inplace_item(compiler, source, tc=False):
         raise SpecialError(
             "inplace-item requires op, obj, key, and value", source)
 
-    value_expr, rest = rest
-    if not is_nil(rest):
-        raise SpecialError("inplace-item takes exactly four arguments", source)
+    value_exprs = list(unpack(rest))
 
     var_opcode = _INPLACE_OP_MAP.get(op_sym)
     if var_opcode is None:
@@ -905,9 +904,13 @@ def special_inplace_item(compiler, source, tc=False):
 
     opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
 
+    if (opcode is OpCode.KOS_OP_OBJECT_INPLACE_POWER
+            and len(value_exprs) != 1):
+        raise SpecialError("inplace ** takes exactly one value", source)
+
     frag = compiler.fragment(called_by)
 
-    if not is_pair(value_expr):
+    if not is_pair(value_exprs[0]):
         frag.position_of(body)
 
     frag.merge(compiler.full_compile(obj_expr))
@@ -923,8 +926,9 @@ def special_inplace_item(compiler, source, tc=False):
         frag.instruction(OpCode.KOS_OP_DUP, 2)
         frag.instruction(OpCode.KOS_OP_ITEM, 0)
 
-    frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, 0)
+    for value_expr in value_exprs:
+        frag.merge(compiler.full_compile(value_expr))
+    frag.instruction(opcode, 1 + len(value_exprs))
 
     if is_const:
         frag.instruction(OpCode.KOS_OP_CONST_ITEM_STORE, key_val)
@@ -940,7 +944,8 @@ def special_inplace_item(compiler, source, tc=False):
 @special("compile/inplace-attr", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_inplace_attr(compiler, source, tc=False):
     """
-    Compile (compile/inplace-attr OP OBJ ATTR VALUE)
+    Compile (compile/inplace-attr OP OBJ ATTR VALUE...). Multiple values
+    reduce left-to-right through the single OBJECT_INPLACE_* instruction.
     """
 
     called_by, body = source
@@ -963,9 +968,7 @@ def special_inplace_attr(compiler, source, tc=False):
         raise SpecialError(
             "inplace-attr requires op, obj, attr, and value", source)
 
-    value_expr, rest = rest
-    if not is_nil(rest):
-        raise SpecialError("inplace-attr takes exactly four arguments", source)
+    value_exprs = list(unpack(rest))
 
     if not is_symbol(key_expr):
         raise SpecialError("inplace-attr attr must be a symbol", source)
@@ -976,10 +979,14 @@ def special_inplace_attr(compiler, source, tc=False):
 
     opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
 
+    if (opcode is OpCode.KOS_OP_OBJECT_INPLACE_POWER
+            and len(value_exprs) != 1):
+        raise SpecialError("inplace ** takes exactly one value", source)
+
     sym = str(key_expr)
     frag = compiler.fragment(called_by)
 
-    if not is_pair(value_expr):
+    if not is_pair(value_exprs[0]):
         frag.position_of(body)
 
     if is_symbol(obj_expr):
@@ -991,8 +998,9 @@ def special_inplace_attr(compiler, source, tc=False):
         frag.instruction(OpCode.KOS_OP_DUP, 1)
         frag.instruction(OpCode.KOS_OP_ATTR, sym)
 
-    frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, 0)
+    for value_expr in value_exprs:
+        frag.merge(compiler.full_compile(value_expr))
+    frag.instruction(opcode, 1 + len(value_exprs))
 
     if is_symbol(obj_expr):
         frag.request_var(str(obj_expr))
