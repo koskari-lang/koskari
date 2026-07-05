@@ -316,3 +316,21 @@ tags:
   - "surface:block"
   - invalid
 notes: switch body may only contain case or else clauses; a bare expression raises LayoutError
+---
+id: conditionals-block-colon-in-sexpr-invalid-001
+feature: reader/layout
+source: "(unless (None? x): (handle x))"
+verify:
+  read: "(unless (None? x) : (handle x))"
+  invalid: "agent mistake: the block-opening colon is layout-only and must be followed by a newline. Inside parentheses it is read as a bare symbol `:`, which here takes unless's then-slot and shoves (handle x) into the else position. In s-expr, drop the colon. Correct form: (unless (None? x) (handle x)). Use the colon only in layout form, on the header line, with the body indented below."
+references:
+  - reference/grammar.md
+  - reference/concepts/layout-and-s-expressions.md
+stability: evolving
+tags:
+  - conditionals
+  - reader
+  - layout
+  - colon
+  - invalid
+  - surprising

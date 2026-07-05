@@ -63,3 +63,25 @@ tags:
   - invalid
   - surprising
 notes: "agent mistake: Python pass as a no-op function body; corrective: (define foo [] None) or a bare (begin) / begin: body. pass is an unbound name, not a statement."
+---
+id: functions-bare-multiline-call-kwarg-invalid-001
+feature: reader/layout
+source: |-
+  define run []:
+    compile_file src dest
+      source_filename: name
+    return 0
+verify:
+  read: "(define run [] (compile_file src dest) (source_filename: name) (return 0))"
+  invalid: "agent mistake: a bare (unparenthesized) call does not continue onto a more-indented next line. Here `source_filename: name` is read as its own statement headed by the keyword, not as an argument to compile_file, so the keyword argument is silently dropped. When a call spans lines, wrap it in parentheses. Correct form: (compile_file src dest source_filename: name)"
+references:
+  - reference/grammar.md
+  - reference/concepts/layout-and-s-expressions.md
+stability: evolving
+tags:
+  - functions
+  - reader
+  - layout
+  - invalid
+  - surprising
+  - "surface:block"
