@@ -11,12 +11,14 @@
 ; You should have received a copy of the GNU General Public License
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-
 """
 Koskari MCP server for the published language corpus
 
 Forwards search and lookup tools to the Hugging Face Dataset Viewer API
 for obriencj/koskari config corpus.
+
+:author: Christopher O'Brien  <obriencj@gmail.com>
+:license: GNU General Public License v3
 """
 
 
@@ -24,15 +26,21 @@ import json
 import logging
 import sys
 
+import-from argparse ArgumentParser
+import-from os getenv
+import-from os.path basename
+
 import httpx
+
 import-from mcp.server.fastmcp FastMCP
+import-from mcp.server.transport_security TransportSecuritySettings
 
 
 define logger (logging.getLogger "koskari.mcp")
 
 (logging.basicConfig
     stream: sys.stderr
-    level: logging.WARNING)
+    level: (getenv "LOGLEVEL" "WARNING"))
 
 
 define DATASET "obriencj/koskari"
@@ -42,12 +50,45 @@ define PROGRAMS_CONFIG "programs"
 define SPLIT "train"
 define BASE_URL "https://datasets-server.huggingface.co"
 
-define _VERIFY_KEYS #("read" "expand" "eval" "error" "invalid")
-define _META_KEYS #("corpus_id" "feature" "source" "references" "stability"
-                     "tags" "schema_version" "git_ref")
+define VERIFY_KEYS #(
+    "read" "expand" "eval" "error" "invalid")
+
+define META_KEYS #(
+    "corpus_id" "feature" "source" "references" "stability"
+    "tags" "schema_version" "git_ref")
 
 
-define mcp (FastMCP "koskari-corpus")
+define INSTRUCTIONS """
+This server is the authoritative and fastest source of truth for the
+Koskari language: its documentation, its reference for special forms,
+macros, layouts, and reader behavior, and a corpus of verified example
+programs with expected results at the read, expand, compile, and eval
+phases.
+
+Reach for these tools FIRST -- before reading or grepping repository
+source -- whenever a question is about what Koskari is or how it
+behaves. This includes "what is X", "how does X work", "how do I write
+X", "is this form valid", and "show me an example of X" questions about
+any language construct.
+
+Tools:
+- search_docs: full-text search across documentation pages and example
+  programs. Start here for open-ended questions; each hit returns a path
+  to fetch.
+- search_examples: search only verified example programs, optionally
+  scoped to a feature path. Use to find working (and known-invalid) code.
+- get_reference: fetch the full content of one page or example by the
+  path returned from a search.
+- list_features: enumerate the feature paths present in the corpus.
+
+Typical flow: search_docs or search_examples to locate a path, then
+get_reference for the full content. Treat corpus results as ground
+truth; fall back to reading source only when the corpus does not cover
+the question.
+"""
+
+
+define mcp (FastMCP "koskari-corpus" instructions: INSTRUCTIONS)
 define http (httpx.AsyncClient timeout: 30.0)
 
 
@@ -107,12 +148,12 @@ define compact-example [row]:
 
     define out #{}
 
-    for-each [key _META_KEYS]:
+    for-each [key META_KEYS]:
         define value (row.get key)
         unless (None? value):
             set! (item out key) value
 
-    for-each [key _VERIFY_KEYS]:
+    for-each [key VERIFY_KEYS]:
         define value (row.get key)
         unless (None? value):
             set! (item out key) value
@@ -140,9 +181,9 @@ define format-examples [rows]:
 ;; === Reference material (docs and programs) ===
 
 
-define _REFERENCE_FULL_KEYS #("path" "title" "section" "kind" "content")
-define _REFERENCE_HIT_KEYS #("path" "title" "summary" "kind")
-define _DOC_SEARCH_COLUMNS #("path" "title" "content")
+define REFERENCE_FULL_KEYS #("path" "title" "section" "kind" "content")
+define REFERENCE_HIT_KEYS #("path" "title" "summary" "kind")
+define DOC_SEARCH_COLUMNS #("path" "title" "content")
 
 
 define pick-fields [row keys]:
@@ -179,13 +220,17 @@ define resolve-references [refs]:
 
     unless refs:
         return #[]
+
     define clauses:
         list-each [ref refs] f"\"path\"='{(escape-sql-string ref)}'"
+
     define joined (.join " OR " clauses)
     define where f"({joined})"
     define extra #{where: where offset: 0 length: (len refs)}
     define rows (viewer-rows (viewer-get "/filter" extra config: DOCS_CONFIG))
-    (list-each [row rows] (pick-fields row _REFERENCE_HIT_KEYS))
+
+    list-each [row rows]:
+        pick-fields row REFERENCE_HIT_KEYS
 
 
 define doc-like-clause [text]:
@@ -196,7 +241,9 @@ define doc-like-clause [text]:
     define escaped (escape-sql-string text)
     define needle f"'%{escaped}%'"
     define clauses:
-        list-each [column _DOC_SEARCH_COLUMNS] f"\"{column}\" LIKE {needle}"
+        list-each [column DOC_SEARCH_COLUMNS]:
+            f"\"{column}\" LIKE {needle}"
+
     define joined (.join " OR " clauses)
     f"({joined})"
 
@@ -208,8 +255,10 @@ define doc-configs-for [kind]:
 
     if (== kind "doc"):
         #[DOCS_CONFIG]
+
     elif (== kind "example"):
         #[PROGRAMS_CONFIG]
+
     else:
         #[DOCS_CONFIG PROGRAMS_CONFIG]
 
@@ -223,11 +272,18 @@ define search-docs-config [search_text cap config]:
     """
 
     define rows:
-        viewer-search-rows "/search" #{query: search_text} cap config: config
+        (viewer-search-rows "/search"
+            #{query: search_text}
+            cap
+            config: config)
+
     unless rows:
         define clause (doc-like-clause search_text)
-        set! rows (viewer-search-rows "/filter" #{where: clause} cap
-                       config: config)
+        set! rows (viewer-search-rows "/filter"
+            #{where: clause}
+            cap
+            config: config)
+
     rows
 
 
@@ -248,11 +304,10 @@ define feature-where-clause [feature]:
     Build a Dataset Viewer filter predicate for feature
     """
 
+    define escaped (escape-sql-string feature)
     if (feature.endswith "/"):
-        define escaped (escape-sql-string feature)
         f"\"feature\" LIKE '{escaped}%'"
     else:
-        define escaped (escape-sql-string feature)
         f"\"feature\"='{escaped}'"
 
 
@@ -261,14 +316,12 @@ define filter-rows-by-feature [rows feature]:
     Keep rows whose feature column matches the filter
     """
 
-    define out #[]
-    for-each [row rows]:
-        when (feature-matches? row feature):
-            (out.append row)
-    out
+    (list-each [row rows]
+        when: (feature-matches? row feature)
+        row)
 
 
-define _SEARCH_COLUMNS #("source" "feature" "corpus_id")
+define SEARCH_COLUMNS #("source" "feature" "corpus_id")
 
 
 define search-like-clause [text]:
@@ -280,7 +333,8 @@ define search-like-clause [text]:
     define escaped (escape-sql-string text)
     define needle f"'%{escaped}%'"
     define clauses:
-        list-each [column _SEARCH_COLUMNS] f"\"{column}\" LIKE {needle}"
+        list-each [column SEARCH_COLUMNS]:
+            f"\"{column}\" LIKE {needle}"
     define joined (.join " OR " clauses)
     f"({joined})"
 
@@ -348,9 +402,10 @@ define demote-invalid [rows]:
 
 @(mcp.tool)
 @coroutine-fn
-define search_examples [search_text
-                        [feature_path :: str value: None]
-                        [limit :: int value: 10]]:
+define search_examples [
+        search_text
+        [feature_path :: str value: None]
+        [limit :: int value: 10]]:
     """
     Search verified Koskari corpus examples by text and optional feature
 
@@ -368,14 +423,17 @@ define search_examples [search_text
             set! rows (filter-rows-by-feature rows feature_path)
         unless rows:
             set! rows (like-search search_text feature_path cap)
+
         ;; A named feature is a valid selector on its own: descriptive
         ;; search_text only matches code columns, so a text miss must not
         ;; suppress the feature's examples.
         unless rows:
             when feature_path:
                 set! rows (feature-search feature_path cap)
+
     elif feature_path:
         set! rows (feature-search feature_path cap)
+
     else:
         return "Provide search_text and/or feature_path."
 
@@ -409,6 +467,7 @@ define get_example [corpus_id]:
     define refs (dict.get example "references")
     when refs:
         set! (item example "references_resolved") (resolve-references refs)
+
     (json.dumps example)
 
 
@@ -435,7 +494,8 @@ define get_reference [path]:
     define rows (viewer-rows data)
     unless rows:
         return f"No reference material with path={(repr path)}."
-    (json.dumps (pick-fields (item rows 0) _REFERENCE_FULL_KEYS))
+
+    (json.dumps (pick-fields (item rows 0) REFERENCE_FULL_KEYS))
 
 
 @(mcp.tool)
@@ -456,11 +516,12 @@ define search_docs [search_text
     for-each [config (doc-configs-for kind)]:
         define rows (search-docs-config search_text cap config)
         for-each [row rows]:
-            (hits.append (pick-fields row _REFERENCE_HIT_KEYS))
+            (hits.append (pick-fields row REFERENCE_HIT_KEYS))
 
     define limited (item-slice hits 0 cap)
     unless limited:
         return "No matching reference material."
+
     (json.dumps limited)
 
 
@@ -502,36 +563,86 @@ define list_features []:
         return "No features found."
 
     define groups #{}
-    for-each [pair (sorted (seen.items))]:
-        define top (item (.split (item pair 0) "/") 0)
+    for-each [p (sorted (seen.items))]:
+        define top (item (.split (item p 0) "/") 0)
         define bucket (groups.get top)
         when (None? bucket):
             set! bucket #[]
             set! (item groups top) bucket
-        (bucket.append pair)
+        (bucket.append p)
 
     define lines #[]
     for-each [top (sorted (groups.keys))]:
         define bucket (item groups top)
         define subtotal 0
-        for-each [pair bucket]:
-            incr! subtotal (item pair 1)
+        for-each [p bucket]:
+            incr! subtotal (item p 1)
         (lines.append f"{top}/  ({subtotal})")
-        for-each [pair bucket]:
-            (lines.append f"  {(item pair 0)}\t{(item pair 1)}")
+        for-each [p bucket]:
+            (lines.append f"  {(item p 0)}\t{(item p 1)}")
+
     (.join "\n" lines)
 
 
-define main []:
+define main [argv: None]:
     """
-    Run the MCP server on stdio transport
+    Run the MCP server.
+
+    With no arguments, relay over stdio -- the default, suited to a
+    per-session client subprocess. With ``--serve``, serve over
+    streamable HTTP bound to all interfaces, for running as a
+    shared, long-lived service behind a reverse proxy.
     """
 
-    (mcp.run_stdio_async)
+    when (None? argv):
+        set! argv sys.argv
+
+    define-values [name *: args] argv
+
+    define parser (ArgumentParser (basename name))
+    (parser.add_argument "--serve"
+        action: "store_true" default: False
+        help: "serve over streamable HTTP (default: stdio only)")
+    (parser.add_argument "--host"
+        type: str default: "0.0.0.0"
+        help: "host when using --serve (default: 0.0.0.0)")
+    (parser.add_argument "--port"
+        type: int default: 8000
+        help: "port when using --serve (default: 8000)")
+    (parser.add_argument "--allowed-hosts"
+        action: "append" default: #[]
+        help: "hostname protection for --serve (default: localhost only)")
+    define options (parser.parse_args args)
+
+    ; stdio mode, MCP running in an agent-managed subprocess
+    unless options.serve:
+        return (mcp.run_stdio_async)
+
+    ; resplit, strip, and filter out empty strings
+    define allowed (.split (.join "," options.allowed_hosts) ",")
+    set! allowed (list-each [h (map str.strip allowed)] when: h h)
+
+    ; mcp by default filters by requested hostname, allowing only
+    ; "localhost" and "127.0.0.1" by default. This needs to be overridden
+    ; for the MCP to be accessible from other hosts (eg. proxied and made
+    ; publicly accessible).
+    when allowed:
+        set! mcp.settings.transport_security:
+            (TransportSecuritySettings
+                allowed_hosts: allowed
+                allowed_origins: (list-each [h allowed] f"https://{h}"))
+
+    set! mcp.settings.host options.host
+    set! mcp.settings.port options.port
+
+    (logger.info "serving koskari-corpus over http on %s:%i"
+        options.host options.port)
+
+    (mcp.run_streamable_http_async)
 
 
 when-main:
     (main)
 
 
-;; The end.
+; The end.

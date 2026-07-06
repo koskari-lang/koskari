@@ -85,6 +85,8 @@ Native memory tests (C-level) require a container: `make test-native`, `make tes
 
 Language behavior test cases stored as multi-document YAML shards. Each record has `id`, `feature`, `source`, and `verify` fields (with expected results at `read`, `expand`, `compile`, and/or `eval` phases). Export to Parquet: `make corpus-parquet`.
 
+For questions about Koskari language behavior, syntax, special forms, macros, layouts, or documented/verified examples, query the `koskari-corpus` MCP server (`search_docs`, `search_examples`, `get_reference`) before grepping source — it is the fastest authoritative path.
+
 ### Documentation Boundaries
 
 - `docs/` — user-facing Sphinx site. Never link or copy from `design/` here.

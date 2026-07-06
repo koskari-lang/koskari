@@ -16,7 +16,7 @@ LABEL maintainer="obriencj@gmail.com" \
 
 RUN pip install --no-cache-dir --disable-pip-version-check \
     --root-user-action=ignore \
-    mcp httpx
+    argparse httpx mcp
 
 WORKDIR /srv
 COPY mcp_server.ki ./mcp_server.ki
