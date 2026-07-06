@@ -262,6 +262,8 @@ def make_bootstrap():
         _bind(name, val)
         _bind(alias, val)
 
+    _bind("is?", _op.is_)
+    _bind("is-not?", _op.is_not)
     _bind('**', _op.pow)
     _bind('@', _op.matmul)
     _bind('<<', _op.lshift)

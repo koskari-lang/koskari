@@ -70,7 +70,7 @@ define _write_function_instance_section [file fn]:
   file.write "  formals:\n"
 
   define formals fn.formals
-  if (is-not formals None):
+  if (is-not? formals None):
     for-each [attr_name #("pos" "pos_only" "kwd" "kwd_only" "star" "starstar" "defaults")]:
       define val (getattr formals attr_name None)
       file.write f"    {attr_name}: {(repr val)}\n"
@@ -79,7 +79,7 @@ define _write_function_instance_section [file fn]:
 
   define base_ns fn.base_ns
   file.write "  base_ns (closures):\n"
-  if (is-not base_ns None):
+  if (is-not? base_ns None):
     try:
       define items (base_ns.items)
     except [Exception]:
@@ -223,7 +223,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
   """
 
   if (equal? op_style OpStyle.KOSTYLE_EXTRA):
-    if (is-not extra_schema None):
+    if (is-not? extra_schema None):
       define schema extra_schema
       if schema:
         try:
@@ -304,7 +304,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
   if (or (equal? op_style OpStyle.KOSTYLE_COUNT)
          (equal? op_style OpStyle.KOSTYLE_PAIR_COUNT)
          (equal? op_style OpStyle.KOSTYLE_STAR)):
-    if (is-not ns_label None):
+    if (is-not? ns_label None):
       return f"{arg} ({ns_label})"
     return (str arg)
 
@@ -317,7 +317,7 @@ define _local_and_closure_syms [code]:
   Closure syms include both closure_syms and global_syms (all captured refs).
   """
   define nspec code.namespace_spec
-  if (is nspec None):
+  if (is? nspec None):
     values #() #()
   else:
     define locals_seq nspec.local_syms
@@ -363,7 +363,7 @@ define dis [x file: None]:
     _write_function_instance_section out x
   else:
     set! code (_get_code x)
-    when (is code None):
+    when (is? code None):
       (raise (TypeError f"expected Code or Function, got {(attr (type x) __name__)}"))
 
   set! out (_resolve_file out)

@@ -107,7 +107,7 @@ define _INCOMPLETE (object)
 define-syntax incomplete?:
   syntax-rules []:
     case (incomplete? result):
-      (is result _INCOMPLETE)
+      (is? result _INCOMPLETE)
 
 
 define eval_expression [compiler source ns]:
@@ -132,7 +132,7 @@ define eval_expression [compiler source ns]:
     except [ReaderEOF]:
       return _INCOMPLETE
 
-  when (is source_expr READ_EOF):
+  when (is? source_expr READ_EOF):
     return _INCOMPLETE
 
   define fragment (compiler.full_compile source_expr)
