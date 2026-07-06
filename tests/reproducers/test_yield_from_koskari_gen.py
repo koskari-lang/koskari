@@ -20,7 +20,6 @@ generator via for-each saw none of the delegate's values.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude via Claude Code
 """
 
 

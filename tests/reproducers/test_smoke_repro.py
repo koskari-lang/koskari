@@ -19,7 +19,6 @@ runtime). They run in the final pytest phase after unit and integration tests.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude via Cursor
 """
 
 

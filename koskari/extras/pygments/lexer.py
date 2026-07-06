@@ -18,7 +18,6 @@ Pygments Lexer implementation for Koskari source.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.6 via Cursor
 """
 
 

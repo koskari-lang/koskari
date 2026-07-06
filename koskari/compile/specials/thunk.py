@@ -18,7 +18,6 @@ Special form compile/gensym-thunk: placeholder-driven thunk lambda sugar.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.5 via Cursor
 """
 
 

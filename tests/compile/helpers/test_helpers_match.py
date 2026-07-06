@@ -18,7 +18,6 @@ Contract tests for match_pattern_raw, match, and match1
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: GPT-5.2 via Cursor
 """
 
 

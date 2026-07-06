@@ -24,7 +24,6 @@ Source under test:
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-sonnet-4-6
 """
 
 

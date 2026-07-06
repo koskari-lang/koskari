@@ -22,7 +22,6 @@ pluggable input backend that supports both readline and prompt_toolkit.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
 __all__ = (

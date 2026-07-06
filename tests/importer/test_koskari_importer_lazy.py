@@ -16,7 +16,6 @@ Ensure import koskari does not eagerly load the compiler or native lib.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Auto via Cursor
 """
 
 

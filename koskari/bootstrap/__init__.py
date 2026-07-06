@@ -19,7 +19,6 @@ Registration hooks for names merged into the Koskari builtins dict.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Composer via Cursor
 """
 
 

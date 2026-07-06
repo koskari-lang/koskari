@@ -42,6 +42,7 @@ api/index
 
 project/build-test
 project/architecture-map
+project/provenance
 corpus/index
 changelog
 ```

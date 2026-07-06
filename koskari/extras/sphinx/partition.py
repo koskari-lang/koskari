@@ -19,7 +19,6 @@ Partition koskari.builtins members for structured API documentation
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Composer via Cursor
 """
 
 

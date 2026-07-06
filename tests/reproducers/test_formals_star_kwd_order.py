@@ -19,7 +19,6 @@ Reproducer: Formals.apply mis-binds when kwd (defaults) and *star coexist.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Composer via Cursor
 
 Equivalent Python::
 

@@ -17,7 +17,6 @@ Tests that KosPair spine-cell positions propagate into Datum captures
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Composer via Cursor
 """
 
 

@@ -18,7 +18,6 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Auto via Cursor
 """
 
 

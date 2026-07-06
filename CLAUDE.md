@@ -107,7 +107,7 @@ lst = cons(1, cons(2, cons(3, nil)))  # wrong
 
 ## Python Style
 
-- New `.py` files begin with the GPLv3 short-form comment block, then a blank line, then a module docstring with `:author:`, `:license:`, and `:ai-assistant:` fields.
+- New `.py` files begin with the GPLv3 short-form comment block, then a blank line, then a module docstring with `:author:` and `:license:` fields. Do not add per-file `:ai-assistant:` (or similar) attribution fields; AI-assisted development is disclosed once at the project level (see [docs/project/provenance.md](docs/project/provenance.md)).
 - End every module with `# The end.` followed by a single newline.
 - Two blank lines between all top-level definitions and between methods.
 - Multi-line function signatures: double-indent continuation parameters (8 spaces); close paren on the last parameter line.

@@ -22,7 +22,6 @@ assert that the resulting callables expose that exact surface.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude via Claude Code
 """
 
 

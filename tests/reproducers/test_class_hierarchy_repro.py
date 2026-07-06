@@ -18,7 +18,6 @@ Full-stack reproducers for KosType construction across inheritance shapes.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-medium-thinking via Cursor
 """
 
 import os

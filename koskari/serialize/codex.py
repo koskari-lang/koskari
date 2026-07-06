@@ -18,7 +18,6 @@ Canonical value and record codecs for .kio serialization
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: $Model $Version via Cursor
 """
 
 

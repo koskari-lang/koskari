@@ -19,7 +19,6 @@ convert_bindings, and unpack_lhs_bind_symbols
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: GPT-5.2 via Cursor
 """
 
 

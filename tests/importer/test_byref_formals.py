@@ -22,7 +22,6 @@ because the call site uses the & / set! macros from bootstrap + basics.ki.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-opus-4-8
 """
 
 

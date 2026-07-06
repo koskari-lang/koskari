@@ -20,7 +20,6 @@ trigger GC traversal of a frozen generator chain while the VM is mid-drive.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: GPT-5.2 via Cursor
 """
 
 

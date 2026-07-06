@@ -40,11 +40,10 @@ def skip_bootstrap(app, what, name, obj, skip, options):
     return skip
 
 
-# Module docstrings carry a GPL header with `:author:`, `:license:`,
-# and sometimes `:ai-assistant:` fields. These are per-file bookkeeping,
-# not documentation, and the assistant field varies too much between
-# tools to be worth surfacing on every rendered module page.
-_HEADER_FIELDS = (':author:', ':license:', ':ai-assistant:')
+# Module docstrings carry a GPL header with `:author:` and `:license:`
+# fields. These are per-file bookkeeping, not documentation, so they are
+# dropped from every rendered module page.
+_HEADER_FIELDS = (':author:', ':license:')
 
 
 def strip_header_fields(app, what, name, obj, options, lines):

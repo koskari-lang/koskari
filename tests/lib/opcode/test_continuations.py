@@ -20,7 +20,6 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
 from koskari.lib import Code, FormalsSpec, NamespaceSpec

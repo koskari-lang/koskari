@@ -21,7 +21,6 @@ valgrind) without pytest.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-fable-5 via Claude Code
 """
 
 

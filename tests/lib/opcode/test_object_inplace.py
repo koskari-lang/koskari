@@ -16,7 +16,6 @@ Tests for the stack-based OBJECT_INPLACE_* opcodes.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Fable 5 via Claude Code
 """
 
 from tests import make_callable

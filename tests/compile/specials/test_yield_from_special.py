@@ -21,7 +21,6 @@ lambda Function, then call it so the body runs with fast-local frames.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Auto via Cursor
 """
 
 from koskari.exceptions import SpecialError

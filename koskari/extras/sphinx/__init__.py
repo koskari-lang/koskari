@@ -22,7 +22,6 @@ extension is loaded. Importing this package does not require Sphinx.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Composer via Cursor
 """
 
 

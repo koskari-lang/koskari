@@ -18,7 +18,6 @@ Small Python types injected into full-stack class-hierarchy reproducers.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-medium-thinking via Cursor
 """
 
 

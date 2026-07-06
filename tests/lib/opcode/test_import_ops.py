@@ -16,7 +16,6 @@ Runtime tests for the IMPORT, IMPORT_FROM, and IMPORT_STAR opcodes.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude via Claude Code
 """
 
 import sys

@@ -24,7 +24,6 @@
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
-   :ai-assistant: claude-4.6-sonnet-high via Cursor
 */
 
 

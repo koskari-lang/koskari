@@ -26,7 +26,6 @@ the evaluator with it.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-sonnet-5 via Claude Code
 """
 
 

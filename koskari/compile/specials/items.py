@@ -18,7 +18,6 @@ Special form handlers for compile/item, compile/del-item, and compile/set-item.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
 

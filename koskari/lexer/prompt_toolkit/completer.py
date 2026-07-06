@@ -18,7 +18,6 @@ Tab completion for Koskari REPL.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.5 via Cursor
 """
 
 # This file was entirely generated via prompt, as the basis for the

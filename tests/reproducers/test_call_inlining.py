@@ -21,7 +21,6 @@ the evaluator via tp_call.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.8
 """
 
 import os

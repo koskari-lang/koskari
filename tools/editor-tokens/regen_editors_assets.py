@@ -20,7 +20,6 @@ string escaping, and Emacs ``concat`` line wrapping.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Cursor Agent via Cursor.
 """
 
 import argparse

@@ -28,7 +28,6 @@ summary count. Exit status 1 when any matching leak record is found.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-fable-5 via Claude Code
 """
 
 

@@ -19,7 +19,6 @@ Regenerate koskari/_version.py from setup.cfg metadata and git state.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Composer via Cursor
 """
 
 

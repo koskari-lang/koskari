@@ -16,7 +16,6 @@ Tests for SWITCH_EQ opcode (peek-discriminant equality dispatch)
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.7 via Cursor
 """
 
 

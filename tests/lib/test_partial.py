@@ -21,7 +21,6 @@ through the install slot and merges bound + call-site args.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.8
 """
 
 

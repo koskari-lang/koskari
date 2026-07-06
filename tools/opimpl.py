@@ -20,7 +20,6 @@ Reads koskari/lib/opcodes.incl and emits koskari/lib/handlers.incl with one
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.5 via Cursor
 """
 
 import re

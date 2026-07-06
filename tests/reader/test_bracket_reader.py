@@ -17,7 +17,6 @@ The reader builds bracket-pair cells from ``[ ]`` and plain pairs from
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
-:ai-assistant: claude-opus-4-8 via Claude Code
 """
 
 import unittest

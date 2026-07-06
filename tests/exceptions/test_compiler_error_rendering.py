@@ -16,7 +16,6 @@ Tests for rich CompilerError rendering.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: gpt-5.3-codex-low via Cursor
 """
 
 import unittest

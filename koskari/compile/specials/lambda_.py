@@ -18,7 +18,6 @@ Special form handler for compile/lambda.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude via Cursor
 """
 
 

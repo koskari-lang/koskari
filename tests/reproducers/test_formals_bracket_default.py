@@ -20,7 +20,6 @@ pos and kwd lists.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude via Cursor
 
 Equivalent to (define foo [a: 1] a) but written as (define foo [[a 1]] a).
 Bracket (name default) is syntactic sugar for keyword default name: default.

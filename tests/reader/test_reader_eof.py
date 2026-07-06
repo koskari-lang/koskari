@@ -18,7 +18,6 @@ ReaderEOF vs READ_EOF and ReaderSyntaxError during parse.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.7 via Cursor
 """
 
 

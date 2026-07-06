@@ -18,7 +18,6 @@ Tests for reader macro optional predicates (atom boundaries and early defer)
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Composer via Cursor
 """
 
 from unittest import IsolatedAsyncioTestCase

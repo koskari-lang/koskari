@@ -17,7 +17,6 @@ accessors in Demand at registration time.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
-:ai-assistant: Claude Sonnet 4.6
 """
 
 

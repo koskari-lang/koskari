@@ -21,7 +21,6 @@ through (super) __init__.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-opus-4-8 via Claude Code
 """
 
 

@@ -23,7 +23,6 @@ the same stack as CALL_ATTR_STAR minus obj.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus 4.5 via Cursor
 """
 
 from koskari.lib import FormalsSpec, NamespaceSpec

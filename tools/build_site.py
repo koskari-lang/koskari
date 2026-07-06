@@ -22,7 +22,6 @@ marketing page and its static assets.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Claude Opus via Claude Code
 """
 
 
