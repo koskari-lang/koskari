@@ -29,33 +29,32 @@ This version aims to be a perfect playground -- a language with all the useful f
 
 ## Quick Start
 
-### Building
+**Prerequisites:** Python 3.9+, a C compiler, and [uv](https://docs.astral.sh/uv/) for
+the virtual-environment workflow below.
+
+### Virtual environment
+
+From a repository checkout:
 
 ```bash
-make build
+make venv          # creates .venv and installs koskari (editable, with repl extra)
+make venv-koslife  # optional: adds the koslife demo
+uv run koskari     # interactive REPL
+uv run koskari hello.ki
 ```
 
-### Installing
+### Install
+
+To install into your active Python environment instead:
 
 ```bash
-make install
-```
-
-Or for development:
-
-```bash
-pip install -e ".[repl]"
+pip install ".[repl]"
+koskari            # interactive REPL
+koskari hello.ki   # run a script
 ```
 
 The `repl` extra enables syntax-highlighted REPL input via `prompt_toolkit`. Other
 optional extras: `lsp`, `pygments`, `sphinx`.
-
-### Running
-
-```bash
-koskari            # interactive REPL
-koskari hello.ki   # run a script
-```
 
 See [docs/start/install-run.md](docs/start/install-run.md) for the full first-session walkthrough.
 
@@ -91,59 +90,39 @@ search and author idiomatic Koskari. See
 [tools/mcp/README.md](tools/mcp/README.md) for build and client setup.
 
 
-## Implementation Status
+## Project status
 
-**Core Types:**
-- `symbol`, `keyword`: Interned atom types
-- `pair`, `nil`: Cons cells and empty list
-- `values`: Multi-value return objects
-- `defer`: Coroutine deferral
+Koskari is past early bootstrap. Layout syntax and macros compile to bytecode,
+the native evaluator runs programs, `.ki` modules import like Python packages,
+and the CLI provides a REPL and script runner. The test suite and
+[verified corpus](docs/corpus/) exercise behavior across read, expand, compile,
+and eval phases.
 
-**Runtime Infrastructure:**
-- `Namespace`, `ModuleNamespace`, `CollectorNamespace`: Lexical scopes
-- `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`: Reference cells
-- `Formals`, `FormalsSpec`: Function parameter handling
+| Area | Status |
+|------|--------|
+| **Language** | Layout blocks, hygienic macros, and a broad special-form surface are implemented — see the [language reference](docs/reference/index.md) |
+| **Runtime** | Stackless bytecode VM: coroutines, ambient async, continuations, dynamic wind, tail-call optimization |
+| **Tooling** | REPL (`repl` extra), disassembler, optional LSP, Pygments, and Sphinx integrations |
+| **Self-hosting** | Core builtins and much of the library live in bootstrap `.ki` sources; CLI port and self-hosted compiler work continue |
 
-**Parser:**
-- `BaseSourceStream`: Native C base for efficient character I/O with Unicode position tracking
-- `SourceStream`: Python stream wrapper with error handling
-- `Reader`, `LayoutReader`: Extensible s-expression reader with layout block syntax and reader macros
-- `lexer`: Token stream for REPL and LSP
-
-**Compiler:**
-- many special forms implemented; see [design/SPECIALS.md](design/SPECIALS.md) for the current list
-- squishing and compounding passes to convert into super-ops
-
-**Evaluator:**
-- Custom bytecode evaluator (`koskari_eval`): coroutines, async generators, continuations, dynamic wind/unwind, parameterize, with/dyn-with
-- Stackless (where possible), tail-call optimizing
-- Ambiently async: awaitable results are automatically awaited when they do not have an immediate result. The evaluator context suspends immediately and resumes in-place.
-- Bounded and unbounded continuations.
-- CLI with REPL
-
-
-## TODO
-
-Many ideas are under evaluation, see [design/TODO.md](design/TODO.md) for what's on the table.
+The language and APIs are still **evolving** — treat the reference as authoritative,
+not frozen. Compiler and opcode inventories for maintainers live in
+[design/SPECIALS.md](design/SPECIALS.md) and [design/OPCODES.md](design/OPCODES.md).
+Open work is tracked in [design/TODO.md](design/TODO.md); architecture notes are
+in [design/](design/).
 
 
 ## Development
 
 ```bash
-# build wheel
-make build
+# Lint code
+make lint
 
-# Run tests
+# Run unit tests
 make test
 
 # Run tests across Python versions (containerized)
 make test-pyversions
-
-# Full tox suite (tests, flake8, ...)
-make tox
-
-# Lint code
-make lint
 
 # Clean build artifacts
 make clean
