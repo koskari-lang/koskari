@@ -36,7 +36,7 @@ that asyncio drives).
 
 **Related:**
 - Evaluator model: [evaluator.md](../interpreter/evaluator.md); [boundary-control-reemit.md](../interpreter/boundary-control-reemit.md).
-- Surfaced by: `design/cli-repl-rework.md` (the REPL prompt read had to route
+- Surfaced by: `design/archive/cli-repl-rework.md` (the REPL prompt read had to route
   EOF/interrupt through Python sentinels because of this bug).
 - Raise-path unification that fixed the *sibling* path but not this one: PR #79
   (`f2ccbb58` unify RAISE ingress on `process_raise`; `e2d8b81d` migrate
@@ -220,7 +220,7 @@ Path (2) drops it.
   is silently ineffective across that boundary.
 - **REPL:** the whole reason the prompt read lives in a Python `_read_line`
   shim that converts EOF/interrupt/cancel to sentinels
-  (`design/cli-repl-rework.md`). Fixing this bug removes the need for that shim
+  (`design/archive/cli-repl-rework.md`). Fixing this bug removes the need for that shim
   and unblocks driving `prompt_toolkit`'s `prompt_async` directly from Koskari
   on the shared loop (cooperative, single-threaded, no worker thread).
 - **Cancellation:** `asyncio.CancelledError` delivered to a suspended Koskari
@@ -318,7 +318,7 @@ xfail/skip). Add coverage for:
 5. Value path still works (guard against over-correction):
    foreign coroutine returns after suspension → value delivered.
 
-Once green, revisit `design/cli-repl-rework.md`: `_read_line` can drop the
+Once green, revisit `design/archive/cli-repl-rework.md`: `_read_line` can drop the
 sentinel dance and `repl.ki` can `(await (session.prompt_async …))` inside a
 normal `try/except`, on the shared loop, with no worker thread.
 

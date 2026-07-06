@@ -1,5 +1,11 @@
 # CLI + REPL Rework — Incremental Port to Koskari
 
+**Implemented (archived 2026-07-06).** The REPL now lives in Koskari:
+`koskari/cli/repl.ki` holds the working loop, prompt handling, and banner, with
+`koskari/cli/__init__.py` reduced to the thin Python host. The traceback-hiding
+boundary contract this doc settles is in force. The body below is the original
+plan, kept as historical record.
+
 This document records the plan for retiring the broken, unused
 `koskari/cli/repl.ki` and incrementally moving the REPL/CLI machinery out of
 `koskari/cli/__init__.py` (Python) into Koskari source (`.ki`), while

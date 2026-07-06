@@ -1,5 +1,11 @@
 # CLI launchpad in Koskari
 
+**Implemented (archived 2026-07-06).** The launchpad now lives in Koskari:
+`koskari/cli/main.ki` owns `option_parser`, `resolve_cli_target`, and `cli`
+(driving `argparse`), and `koskari/cli/__init__.py` is reduced to the thin
+Python host whose `main()` boots `main.ki` through `run_target`. The body below
+is the original design, kept as historical record.
+
 This document plans moving the Koskari command-line launchpad -- option
 parsing, target resolution, and run orchestration -- out of Python
 (`koskari/cli/__init__.py`) into a Koskari module (`koskari/cli/main.ki`), and
@@ -23,7 +29,7 @@ interactive loop, is Koskari with a minimal Python host.
 - Argument parsing moves fully into `main.ki`, driving Python's `argparse`.
 - The `koskari` command boots `main.ki` through the launcher (`run_target`).
 
-**Status:** phases 1 and 2 implemented (`make test` green). `koskari/cli/main.ki`
+**Status:** complete (`make test` green). `koskari/cli/main.ki`
 holds `option_parser`, `resolve_cli_target`, and `cli`; `koskari/cli/__init__.py`
 is reduced to the thin host (`main` stub, `_await_user_form`,
 `_make_repl_prompter`, `version_line`/`startup_lines`, boundary constants, and

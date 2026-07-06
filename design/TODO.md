@@ -129,17 +129,6 @@ modules, so nothing leaks into distributed libraries. Scope out flag spelling,
 
 Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
 
-### CLI launchpad in Koskari
-
-Move the CLI launchpad (option parsing via `argparse`, target resolution, run
-orchestration) out of `koskari/cli/__init__.py` into `koskari/cli/main.ki`, and
-boot it through the launcher (`run_target("koskari.cli.main:cli", …)`) the same
-way a packaged `koskari_scripts` command runs. The REPL loop already lives in
-`repl.ki`; this leaves only a thin Python host (console stub, `_await_user_form`
-boundary shim, prompt_toolkit backend, exception formatters).
-
-Ref: [cli-launchpad-koskari.md](cli-launchpad-koskari.md); [cli-repl-rework.md](cli-repl-rework.md).
-
 ### Package pragma
 
 Let a package declare a default pragma its sub-packages and sub-modules inherit

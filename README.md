@@ -167,7 +167,10 @@ koskari/
 ├── hygiene.py               # Macro hygiene
 ├── matcher.py               # Pattern matching for special forms (Python layer)
 ├── builtins.py              # Builtins module placeholder (filled by bootstrap)
-├── cli.py                   # koskari REPL CLI
+├── cli/                     # koskari console entry: thin Python host + Koskari launchpad
+│   ├── __init__.py          # Thin host; main() boots main.ki via run_target
+│   ├── main.ki              # CLI launchpad: option parsing, target resolution
+│   └── repl.ki              # Interactive REPL loop
 ├── module.py                # Module lifecycle for .ki source files
 ├── importer.py              # Re-exports koskari_importer hooks
 ├── dis.py                   # Disassembler for Code objects
