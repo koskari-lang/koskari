@@ -27,8 +27,9 @@ import unittest
 
 import pytest
 
-from koskari.cli import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary, main,
-                         run_command_async, run_file_async)
+from koskari.cli import main
+from koskari.cli.host import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary,
+                              run_command_async, run_file_async)
 from koskari.exceptions import (CodeBoundary, _filter_infrastructure_tb,
                                 format_code_boundary_exception,
                                 format_exception_with_koskari_trace)
@@ -47,32 +48,20 @@ def _script(name):
     return os.path.join(_SCRIPTS, name)
 
 
-_main_mod = None
-
-
-def _main():
+def _launch():
     """
-    Return the koskari.cli.main submodule, importing on first use.
-
-    Uses importlib.import_module so the result is the .ki submodule from
-    sys.modules, not the ``main`` function attribute of the koskari.cli
-    package (they share the name).  Option parsing and target resolution
-    live there as Koskari functions, so callers await them.
+    Return the koskari.cli.launch submodule, importing on first use.
     """
-
-    import importlib
 
     install()
-    global _main_mod
-    if _main_mod is None:
-        _main_mod = importlib.import_module('koskari.cli.main')
-    return _main_mod
+    import koskari.cli.launch as launch
+    return launch
 
 
 class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
     async def _parse(self, *args):
-        m = _main()
+        m = _launch()
         parser = await m.option_parser('koskari')
         ns = parser.parse_args(list(args))
         return await m.resolve_cli_target(parser, ns)
@@ -138,20 +127,20 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_command_conflicts_with_compile_kio(self):
-        parser = await _main().option_parser('koskari')
+        parser = await _launch().option_parser('koskari')
         with self.assertRaises(SystemExit):
             parser.parse_args(
                 ['-c', '(print 1)', '--compile-kio', 'out.kio', 'x.ki'])
 
 
     async def test_command_conflicts_with_execute_kio(self):
-        parser = await _main().option_parser('koskari')
+        parser = await _launch().option_parser('koskari')
         with self.assertRaises(SystemExit):
             parser.parse_args(['-c', '(print 1)', '--execute-kio', 'x.kio'])
 
 
     async def test_filename_conflicts_with_compile_kio(self):
-        m = _main()
+        m = _launch()
         parser = await m.option_parser('koskari')
         ns = parser.parse_args(['--compile-kio', 'out.kio', 'x.ki', 'hello.ki'])
         with self.assertRaises(SystemExit):
@@ -159,7 +148,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_misplaced_option_in_rest_errors(self):
-        m = _main()
+        m = _launch()
         parser = await m.option_parser('koskari')
         ns = parser.parse_args(['hello.ki', '--compile-kio', 'out.kio', 'x.ki'])
         with self.assertRaises(SystemExit):
@@ -213,7 +202,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_misplaced_option_before_double_dash_still_errors(self):
-        m = _main()
+        m = _launch()
         parser = await m.option_parser('koskari')
         ns = parser.parse_args(
             ['script.ki', '--compile-kio', 'out.kio', 'x.ki', '--', 'foo'])

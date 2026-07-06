@@ -28,20 +28,19 @@ rendering reuses the Python formatters in koskari.exceptions.
 
 import sys
 
-import-from koskari.cli _await_user_form _make_repl_prompter REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES startup_lines
-import-from koskari.exceptions format_code_boundary_exception format_exception_with_koskari_trace apply_sys_last_exc CompilerError UncaughtCompilerError ReaderEOF ReaderSyntaxError
-import-from koskari.reader LayoutReader source_str READ_EOF
-import-from koskari.module init_module build_module_load_facets
-import-from koskari.lib kos_repr
+import-from .host:
+  _await_user_form _make_repl_prompter
+  REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES startup_lines
+import-from ..exceptions:
+  format_code_boundary_exception format_exception_with_koskari_trace
+  apply_sys_last_exc CompilerError UncaughtCompilerError
+  ReaderEOF ReaderSyntaxError
+import-from ..reader LayoutReader source_str READ_EOF
+import-from ..module init_module build_module_load_facets
+import-from ..lib kos_repr
 
 
-(declare-exports repl_async)
-
-
-; The prompt backend (_make_repl_prompter) is built in Python but returns an
-; async callable: the prompt_toolkit path runs cooperatively on our event
-; loop via prompt_async (no worker thread), and its EOFError / KeyboardInterrupt
-; are delivered back here at the await point, where the loop below catches them.
+(declare-exports repl)
 
 
 ; === Continuation heuristics ===
@@ -142,7 +141,7 @@ define eval_expression [compiler source ns]:
 ; === REPL loop ===
 
 
-define repl_async [
+define repl [
     mod
     prompter: None
     histfile: None

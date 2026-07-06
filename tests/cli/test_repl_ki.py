@@ -27,7 +27,8 @@ import unittest
 
 import pytest
 
-from koskari.cli import main, startup_lines
+from koskari.cli import main
+from koskari.cli.host import startup_lines
 from koskari.importer import install
 from koskari.lib import drive_async_loop
 from koskari.module import new_module
@@ -75,7 +76,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
                 raise EOFError
 
         mod = new_module('__main__')
-        await _repl().repl_async(
+        await _repl().repl(
             mod,
             prompter=prompter,
             stdout=stdout,
@@ -86,7 +87,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_module_imports(self):
-        self.assertTrue(hasattr(_repl(), 'repl_async'))
+        self.assertTrue(hasattr(_repl(), 'repl'))
 
 
     async def test_simple_expression_prints_result(self):
@@ -208,7 +209,7 @@ class TestReplKiDriver(unittest.TestCase):
         stderr = io.StringIO()
         prompter = self._scripted_prompter(['(+ 20 22)'])
         mod = new_module('__main__')
-        repl_async = _repl().repl_async
+        repl_async = _repl().repl
 
         async def _driver():
             await repl_async(
@@ -269,7 +270,7 @@ class TestReplKiDriver(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         mod = new_module('__main__')
-        repl_async = _repl().repl_async
+        repl_async = _repl().repl
 
         async def run_repl():
             # prompter=None -> repl builds the real prompt_async backend

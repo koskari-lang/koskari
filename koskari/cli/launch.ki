@@ -13,12 +13,12 @@
 
 
 """
-koskari.cli.main
+koskari.cli.launch
 
 Koskari-native CLI launchpad: option parsing (driving argparse), target
-resolution, and run orchestration.  Booted through the launcher
+resolution, and run orchestration. Booted through the launcher
 (koskari.launcher.run_target) the same way a packaged koskari_scripts
-command runs.  See design/cli-launchpad-koskari.md.
+command runs.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -29,12 +29,64 @@ import sys
 
 import-from argparse ArgumentParser REMAINDER
 import-from os.path basename
-import-from koskari.cli version_line run_file_async run_command_async repl_async
-import-from koskari.lib ParamRef
-import-from koskari.module new_module
+
+import-from .host version_line
+import-from .repl repl
+import-from ..lib ParamRef
+import-from ..module:
+  new_module init_module
+  load_module_async load_module_kio_async load_module_source_async
 
 
-(declare-exports cli option_parser resolve_cli_target)
+(declare-exports run option_parser resolve_cli_target)
+
+
+; === File execution ===
+
+
+define run_file [
+    mod
+    filename
+    execute_kio: False
+    interactive: False]:
+  """
+  Load and execute a koskari source file into mod.
+
+  Calls init_module to attach file metadata and compiler specials, then
+  awaits load_module_async (or load_module_kio_async when execute_kio).
+
+  :param mod: koskari Module to execute into
+  :param filename: path to the .ki source file or .kio when execute_kio
+  :param execute_kio: when True, load precompiled .kio bodies
+  :param interactive: passed to load_module_async; retain load facets when True
+  """
+
+  init_module mod filename
+
+  if execute_kio:
+    load_module_kio_async mod
+  else:
+    load_module_async mod interactive: interactive
+
+
+define run_command [
+    mod
+    command
+    interactive: False]:
+  """
+  Load and execute koskari source from a command-line string into mod.
+
+  Sets ``__file__`` to ``'<string>'`` and runs each top-level expression
+  in order, matching file execution semantics.
+
+  :param mod: koskari Module to execute into
+  :param command: koskari source text from ``-c`` / ``--command``
+  :param interactive: passed to load_module_source_async; retain load
+      facets when True
+  """
+
+  init_module mod "<string>"
+  load_module_source_async mod command interactive: interactive
 
 
 ; === Argument parsing ===
@@ -187,7 +239,7 @@ define option_parser [name]:
 ; === Orchestration ===
 
 
-define cli []:
+define run []:
   """
   Parse sys.argv and execute the requested koskari session.
 
@@ -239,23 +291,22 @@ define cli []:
   interactive_param.store options.interactive
 
   if command:
-    await (run_command_async mod command
+    (run_command mod command
       interactive: options.interactive)
     unless options.interactive:
       return 0
 
   elif filename:
-    await (run_file_async mod filename
+    (run_file mod filename
       execute_kio: options.execute_kio
       interactive: options.interactive)
     unless options.interactive:
       return 0
 
-  await (repl_async mod
+  (repl mod
     histfile: options.histfile
     full_trace: options.repl_full_trace
     quiet: options.quiet)
-  return 0
 
 
 ; The end.

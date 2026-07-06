@@ -22,12 +22,11 @@ Entry point for python -m koskari
 """
 
 
-import sys
+if __name__ == "__main__":
+    import sys
+    from koskari.cli import main
 
-from koskari.cli import main
-
-
-sys.exit(main())
+    sys.exit(main())
 
 
 # The end.

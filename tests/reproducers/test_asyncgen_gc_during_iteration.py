@@ -31,7 +31,7 @@ import os
 import sys
 import unittest
 
-from koskari.cli import run_file_async
+from koskari.cli.host import run_file_async
 from koskari.module import new_module
 
 import pytest
