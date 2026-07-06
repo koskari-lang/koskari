@@ -44,7 +44,7 @@ let []:
 
     if (and (pair? expanded)
             (equal? (.length expanded) 2)
-            (in (car expanded) #('begin 'compile/begin))):
+            (in? (car expanded) #('begin 'compile/begin))):
       ;; many of the macros written in layout form have an additional
       ;; `begin` wrapper, so we strip it if it's present and not needed
       ;; to combine multiple expressions.
@@ -79,7 +79,7 @@ let []:
 
       if (and (pair? expanded)
               (equal? (.length expanded) 2)
-              (in (car expanded) #('begin 'compile/begin))):
+              (in? (car expanded) #('begin 'compile/begin))):
         ;; many of the macros written in layout form have an additional
         ;; `begin` wrapper, so we strip it if it's present and not needed
         ;; to combine multiple expressions.

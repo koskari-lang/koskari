@@ -58,7 +58,7 @@ define split_script_rest [parser rest]:
   for misplaced koskari options; everything after is forwarded verbatim.
   """
 
-  unless (in "--" rest):
+  unless (in? "--" rest):
     reject_option_like_rest parser rest
     return #((item rest 0) (item-slice rest 1))
 

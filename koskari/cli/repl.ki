@@ -54,7 +54,7 @@ define block_body? [buffer]:
   last non-empty line is indented; a blank line will terminate the block.
   """
 
-  unless (and buffer (in ":" buffer)):
+  unless (and buffer (in? ":" buffer)):
     return False
 
   define lines (buffer.splitlines)
@@ -65,7 +65,7 @@ define block_body? [buffer]:
   unless nonempty:
     return False
 
-  (in (item* nonempty -1 0) " \t")
+  (in? (item* nonempty -1 0) " \t")
 
 
 define continuation_indent [buffer]:
