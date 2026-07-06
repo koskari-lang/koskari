@@ -40,8 +40,25 @@ def skip_bootstrap(app, what, name, obj, skip, options):
     return skip
 
 
+# Module docstrings carry a GPL header with `:author:`, `:license:`,
+# and sometimes `:ai-assistant:` fields. These are per-file bookkeeping,
+# not documentation, and the assistant field varies too much between
+# tools to be worth surfacing on every rendered module page.
+_HEADER_FIELDS = (':author:', ':license:', ':ai-assistant:')
+
+
+def strip_header_fields(app, what, name, obj, options, lines):
+    if what != 'module':
+        return
+    lines[:] = [
+        line for line in lines
+        if not line.strip().startswith(_HEADER_FIELDS)
+    ]
+
+
 def setup(app):
     app.connect('autodoc-skip-member', skip_bootstrap)
+    app.connect('autodoc-process-docstring', strip_header_fields)
 
 
 extensions = [
@@ -67,6 +84,8 @@ html_theme_options = {
     'includehidden': True,
 }
 html_static_path = ['_static']
+html_favicon = '_static/koskari-icon.svg'
+html_logo = '_static/koskari-icon.svg'
 
 # The docs are published under the /docs/ subpath of koskari.org; the
 # landing page occupies the site root. This drives canonical URLs.
