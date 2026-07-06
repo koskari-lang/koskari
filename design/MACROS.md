@@ -274,15 +274,18 @@ augmented forms or direct **`(compile/inplace OP VAR VALUE)`**).
 
 ### compile/ref
 
-**Syntax:** **`(ref SYM)`**; **`(ref (item …))`**; **`(ref (attr …))`**; **`(ref (parameter NAME))`**.
+**Syntax:** **`(ref SYM)`**; **`(ref (item …))`**; **`(ref (attr …))`**; **`(ref (parameter NAME))`**;
+**`(ref (environ KEY [DEFAULT]))`**.
 
-**Behaviour:** **`compile/refq`**, **`compile/ref-item`**, **`compile/ref-attr`**, **`(ParamRef 'NAME)`**.
+**Behaviour:** **`compile/refq`**, **`compile/ref-item`**, **`compile/ref-attr`**, **`(ParamRef 'NAME)`**,
+**`(environ-ref 'KEY [DEFAULT])`**.
 
 
 ### compile/bind!
 
 **Syntax:** Value binding; **`(bind! name (item …))`** / **`(attr …)`**; **`(dynamic r …)`**;
-**`(constant value)`**; **`(memoized getfn)`**; **`(parameter param-name r …)`**.
+**`(constant value)`**; **`(memoized getfn)`**; **`(parameter param-name r …)`**;
+**`(environ key [default])`**.
 
 **Behaviour:** **`compile/bindq`** with **`Ref`** types as appropriate.
 
@@ -298,6 +301,28 @@ augmented forms or direct **`(compile/inplace OP VAR VALUE)`**).
 **Syntax:** **`(define-parameter NAME [DEFAULT])`**, **`(parameterq NAME [DEFAULT])`**.
 
 **Behaviour:** **`compile/define`** + **`ParamRef`** binding; **`parameterq`** → **`parameter`**.
+
+
+### compile/define-environ
+
+**Syntax:** **`(define-environ NAME [DEFAULT])`**.
+
+**Behaviour:** **`compile/define`** + **`environ-ref`** binding — declares **`NAME`** as a
+local bound to the process environment variable named **`NAME`**. Without a
+**`DEFAULT`** the ref reads/writes **`os.environ[NAME]`** directly (a missing
+variable raises on deref); with a **`DEFAULT`** the ref returns it when the
+variable is unset. See **`environ-ref`**.
+
+
+### environ-ref
+
+**Syntax:** **`(environ-ref KEY [DEFAULT])`**.
+
+**Behaviour:** Builds a **`Ref`** into **`os.environ`** for string key **`KEY`**.
+Without **`DEFAULT`** returns an **`ItemRef`** into **`os.environ`**; with a
+**`DEFAULT`** returns a **`DynamicRef`** whose deref falls back to **`DEFAULT`**
+via **`environ.get`**, whose store sets **`os.environ[KEY]`**, and whose clear
+deletes it. An empty **`KEY`** raises **`ValueError`**.
 
 
 ### compile/let-values

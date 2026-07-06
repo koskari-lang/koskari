@@ -43,7 +43,10 @@ You must **bind** before you can **store** into a new local. Reassignment of an
 existing variable is **store**, not a new bind.
 
 The [`bind!`](../macros/compile-bind.md) macro can install typed refs (item,
-attribute, dynamic, parameter, and others) while still using bind under the hood.
+attribute, dynamic, parameter, environ, and others) while still using bind under
+the hood. The **environ** ref reads and writes a process environment variable
+through `os.environ`; see
+[`compile/define-environ`](../macros/compile-define-environ.md).
 
 ## Deref
 

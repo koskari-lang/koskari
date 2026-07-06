@@ -198,7 +198,8 @@ define-syntax compile/ref:
                 dynamic
                 constant
                 memoized
-                parameter]:
+                parameter
+                environ]:
 
     case (ref (item obj name)):
       (compile/ref-item obj name)
@@ -224,6 +225,11 @@ define-syntax compile/ref:
     case (ref (parameter name)):
       (ParamRef 'name)
 
+    case (ref (environ key default)):
+      (environ-ref 'key default)
+    case (ref (environ key)):
+      (environ-ref 'key)
+
     case (ref name):
       (compile/refq name)
 
@@ -238,7 +244,8 @@ define-syntax compile/bind!:
                 dynamic
                 constant
                 memoized
-                parameter]:
+                parameter
+                environ]:
 
     case (bind! name (item obj key)):
       (compile/bindq name (ref-item obj key))
@@ -264,8 +271,30 @@ define-syntax compile/bind!:
     case (bind! name (parameter param-name)):
       (compile/bindq name (ParamRef 'param-name))
 
+    case (bind! name (environ key default)):
+      (compile/bindq name (environ-ref 'key default))
+    case (bind! name (environ key)):
+      (compile/bindq name (environ-ref 'key))
+
     case (bind! name value):
       (compile/bindq name value)
+
+
+define environ-ref [key: None default: None]:
+  unless key:
+    raise (ValueError "environ-ref requires a non-empty key")
+
+  set! key (str key)
+
+  import-from os environ
+  if (None? default):
+    (ItemRef key environ key)
+
+  else:
+    (DynamicRef key
+      { (environ.get key default) }
+      { (set! (item environ key) %1) }
+      { (del! (item environ key)) })
 
 
 define-syntax compile/global:
@@ -295,6 +324,10 @@ define-syntax compile/local:
 
 
 define-syntax compile/define-parameter:
+  """
+  Declare a name as a parameter in a scope, with an optional default value.
+  """
+
   syntax-rules []:
     case (define-parameter name):
       (compile/define name)
@@ -310,6 +343,21 @@ define-syntax compile/parameterq:
       (parameter 'name)
     case (parameterq name default):
       (parameter 'name default)
+
+
+define-syntax compile/define-environ:
+  """
+  Declare a name as an environment variable in a scope, with an optional
+  default value if the environment variable is not set.
+  """
+
+  syntax-rules []:
+    case (define-environ name default):
+      (compile/define name)
+      (compile/bindq name (environ-ref 'name default))
+    case (define-environ name):
+      (compile/define name)
+      (compile/bindq name (environ-ref 'name))
 
 
 define-syntax compile/let-values:
