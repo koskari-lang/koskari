@@ -64,6 +64,26 @@ define-syntax compile/function-compose:
       `(lambda [*: args **: kwds] ,@acc)
 
 
+define-syntax compile/flet:
+  """
+  Binds local functions for the extent of a body, eg.::
+
+  (flet [[double [x] (* x 2)]
+         [inc [x] (+ x 1)]]
+    (double (inc 20)))
+
+  Each binding is an anonymous function; the initializers are evaluated in
+  the enclosing scope, so a binding shadows an outer function of the same
+  name but does not see its siblings in the same `flet` (no mutual
+  recursion). Use `labels` when the functions must call one another.
+  """
+
+  syntax-rules []:
+    case (flet [[name formals fbody ...] ...] body ...):
+      (let [[name (lambda formals fbody ...)] ...]
+        body ...)
+
+
 define-syntax compile/decorate:
   """
   Handler for the decorator layout syntax, can also be used to apply

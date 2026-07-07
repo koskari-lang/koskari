@@ -302,6 +302,69 @@ class TestExpandTemplate(unittest.TestCase):
         self.assertEqual(out, want)
 
 
+    def test_nested_ellipsis_identity(self):
+        """
+        A rank-2 variable under two template ellipses peels one dimension per
+        level: ``(result (a b ...) ...)`` reconstructs the grouped shape
+        """
+
+        result = symbol("result")
+        a = symbol("a")
+        b = symbol("b")
+        inner = cons(a, b, ..., nil)
+        tpl = cons(result, inner, ..., nil)
+        bindings = {
+            a: [1, 4],
+            b: [[2, 3], [5]],
+        }
+        out = expand_template_with_hygiene(tpl, bindings, set())
+        want = cons(
+            result,
+            cons(1, 2, 3, nil),
+            cons(4, 5, nil),
+            nil,
+        )
+        self.assertEqual(out, want)
+
+
+    def test_nested_ellipsis_inner_only(self):
+        """
+        A rank-2 variable whose outer group carries no rank-1 sibling still
+        iterates both dimensions from its own nesting
+        """
+
+        result = symbol("result")
+        b = symbol("b")
+        inner = cons(b, ..., nil)
+        tpl = cons(result, inner, ..., nil)
+        bindings = {b: [[1, 2], [], [3]]}
+        out = expand_template_with_hygiene(tpl, bindings, set())
+        want = cons(
+            result,
+            cons(1, 2, nil),
+            nil,
+            cons(3, nil),
+            nil,
+        )
+        self.assertEqual(out, want)
+
+
+    def test_nested_ellipsis_insufficient_depth_errors(self):
+        """
+        Referencing a rank-2 variable under a single ellipsis leaves an
+        unconsumed list dimension; that is a compile-time error, not a
+        silent mis-splice
+        """
+
+        result = symbol("result")
+        b = symbol("b")
+        tpl = cons(result, b, ..., nil)
+        bindings = {b: [[1, 2], [3]]}
+        with self.assertRaises(CompilerError) as ctx:
+            expand_template_with_hygiene(tpl, bindings, set())
+        self.assertIn("ellipsis", str(ctx.exception).lower())
+
+
 class TestCollectAndApply(unittest.TestCase):
 
 

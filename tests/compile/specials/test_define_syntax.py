@@ -121,6 +121,40 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         self.assertEqual([3, 7, 300, 4], list(result))
 
 
+    async def test_compile_syntax_rules_nested_ellipsis_to_list(self):
+        """
+        ``(grouped (a b ...) ...)`` / ``(#list (#list a b ...) ...)`` carries a
+        rank-2 variable ``b`` under two ellipses; the use-site
+        ``(grouped (1 2 3) (4 5))`` reconstructs the grouping as nested
+        ``#list`` values.
+        """
+
+        src_str = """
+        (compile/define grouped
+          (compile/syntax-rules grouped [#list]
+            [(grouped (a b ...) ...)
+             (#list (#list a b ...) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        await expr()
+        defn = {
+            'compile/grouped': vars(mod)['grouped'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (grouped (1 2 3) (4 5))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual(
+            [[1, 2, 3], [4, 5]], [list(g) for g in result])
+
+
     async def test_compile_syntax_rules_no_matching_rule_raises(self):
         src_str = """
         (compile/define only-one

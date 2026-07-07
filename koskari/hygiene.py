@@ -450,16 +450,49 @@ def _binding_value_for_expand(val):
     return val.datum if isinstance(val, Datum) else val
 
 
-def _repeat_count(template, bindings):
+def _repeat_seq(val):
+    """
+    Return the ellipsis-dimension sequence a binding still carries, or None.
+
+    Repeat captures are promoted to bare Python ``list``/``tuple`` columns (one
+    entry per iteration of the enclosing ``...``); a rank-N variable nests N
+    such sequences deep, with leaves that are ``Datum`` wrappers or plain
+    captured atoms. A Koskari pair, a ``Datum``, or an atom is a *leaf*, not a
+    dimension, so only a bare ``list``/``tuple`` (after peeling one ``Datum``)
+    counts as an unconsumed ellipsis level
+    """
+
+    peeled = _binding_value_for_expand(val)
+    if isinstance(peeled, (list, tuple)):
+        return peeled
+    return None
+
+
+def _controlling_seqs(template, bindings):
+    """
+    Map each symbol in ``template`` that still carries an ellipsis dimension to
+    its current-level sequence. These variables drive one ``...`` iteration and
+    are peeled one dimension per level via :func:`_slice_bindings`
+    """
+
     syms = set()
     _collect_symbols(template, syms)
-    counts = {
-        len(v)
-        for s in syms
-        if s in bindings
-        and isinstance(
-            (v := _binding_value_for_expand(bindings[s])), (list, tuple))
-    }
+    out = {}
+    for s in syms:
+        if s in bindings:
+            seq = _repeat_seq(bindings[s])
+            if seq is not None:
+                out[s] = seq
+    return out
+
+
+def _ellipsis_count(controlling, template):
+    """
+    Common iteration length across all controlling sequences at one ``...``
+    level, or 0 when none are present. Divergent lengths are an error
+    """
+
+    counts = {len(seq) for seq in controlling.values()}
     if not counts:
         return 0
     if len(counts) != 1:
@@ -468,15 +501,33 @@ def _repeat_count(template, bindings):
     return next(iter(counts))
 
 
+def _slice_bindings(bindings, controlling, index):
+    """
+    Narrow ``bindings`` for one iteration of a ``...`` level: each controlling
+    variable is replaced by its ``index``-th element (peeling one ellipsis
+    dimension), while every other binding passes through unchanged
+    """
+
+    sub = dict(bindings)
+    for sym, seq in controlling.items():
+        sub[sym] = seq[index]
+    return sub
+
+
 def expand_template_with_hygiene(
         template,
         bindings,
         binding_symbols,
-        introduced=None,
-        index=None):
+        introduced=None):
     """
     Substitute pattern bindings and assign fresh gensyms for introduced
     template identifiers.
+
+    Ellipsis repetition is depth-aware: a variable captured under N pattern
+    ellipses carries N nested repeat sequences, and each template ``...`` peels
+    exactly one dimension (see :func:`_slice_bindings`). A variable referenced
+    under fewer ellipses than its rank still carries an unconsumed sequence at
+    use site and raises, rather than splicing a raw column into the output
 
     :param template: template form (pairs, symbols, or Syntax-like opaque)
     :param bindings: dict from pattern variable symbol to capture value
@@ -485,7 +536,6 @@ def expand_template_with_hygiene(
         an unexpanded binding reference unchanged
     :param binding_symbols: set of symbols needing gensym when not bound
     :param introduced: optional map mutated from symbol to gensym
-    :param index: ellipsis repetition slice index when repeating
     """
 
     if introduced is None:
@@ -494,13 +544,10 @@ def expand_template_with_hygiene(
     if is_symbol(template):
         if template in bindings:
             val = bindings[template]
-            peeled = _binding_value_for_expand(val)
-            if isinstance(peeled, (list, tuple)):
-                if index is None:
-                    raise CompilerError(
-                        'ellipsis variable outside repeated template',
-                        template)
-                return peeled[index]
+            if _repeat_seq(val) is not None:
+                raise CompilerError(
+                    'ellipsis variable used at insufficient ellipsis depth',
+                    template)
             return val
 
         if template is Ellipsis:
@@ -526,23 +573,26 @@ def expand_template_with_hygiene(
         if not rep:
             out.append(
                 expand_template_with_hygiene(
-                    elem, bindings, binding_symbols, introduced,
-                    index=index))
+                    elem, bindings, binding_symbols, introduced))
             i += 1
             continue
 
-        spliced = None
-        if is_symbol(elem) and elem in bindings:
+        # a lone pattern variable bound to a non-repeat value (a pair spine
+        # from a REST capture) splices like quasiquote ,@ rather than iterating
+        if is_symbol(elem) and elem in bindings and _repeat_seq(bindings[elem]) is None:
             spliced = _binding_value_for_expand(bindings[elem])
-        if spliced is not None and not isinstance(spliced, list):
-            out.extend(unpack(spliced))
-        else:
-            count = _repeat_count(elem, bindings)
-            for rep_i in range(count):
-                out.append(
-                    expand_template_with_hygiene(
-                        elem, bindings, binding_symbols, introduced,
-                        index=rep_i))
+            if spliced is not None:
+                out.extend(unpack(spliced))
+            i += 2
+            continue
+
+        controlling = _controlling_seqs(elem, bindings)
+        count = _ellipsis_count(controlling, elem)
+        for rep_i in range(count):
+            sub = _slice_bindings(bindings, controlling, rep_i)
+            out.append(
+                expand_template_with_hygiene(
+                    elem, sub, binding_symbols, introduced))
         i += 2
 
     # preserve the template's delimiter style: a bracket-pair template
