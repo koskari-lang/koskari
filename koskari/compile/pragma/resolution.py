@@ -33,6 +33,8 @@ def _unique_append(lst, val):
     Append val to lst only if not already present
     """
 
+    # We don't worry about the 0/False/1/True overlap in this case,
+    # because we're just using it for ordered name collecting
     if val not in lst:
         lst.append(val)
 
@@ -267,9 +269,9 @@ class KoskariPragma:
                     source_frag = self._code_to_fragment.get(id(code))
                     pos = self.get_write_position(source_frag, name)
                     raise CompilerError(
-                        'Cannot write to %r: not declared in this scope or'
-                        ' any enclosing scope. Use define for a local or'
-                        ' define-global for a global.' % (name,),
+                        f"Cannot write to {name!r}: not declared in this scope"
+                        " or any enclosing scope. Use define for a local or"
+                        " define-global for a global.",
                         name,
                         position=pos)
 
