@@ -33,7 +33,8 @@ from sphinx.ext.autodoc.directive import (
 from sphinx.util.docutils import SphinxDirective
 
 from .autodoc import bind_builtin_member, pick_documenter
-from .partition import collect_builtins_members, partition_builtins
+from .partition import (collect_builtins_members, member_display_name,
+                        partition_builtins)
 
 
 _BUILTINS_MODULE = 'koskari.builtins'
@@ -73,6 +74,12 @@ class KosBuiltinsDirective(SphinxDirective):
 
         parent = ModuleDocumenter(bridge, _BUILTINS_MODULE)
 
+        # A binding is documented under its Koskari name, so aliases that share
+        # one object (e.g. first .. fifth reuse the car / cadr .. caddddr
+        # functions) resolve to the same display name. Document each name once;
+        # skipping the repeat avoids duplicate object-description warnings.
+        seen_names = set()
+
         out = []
         for title, payload in sections:
             section = nodes.section()
@@ -88,7 +95,8 @@ class KosBuiltinsDirective(SphinxDirective):
                             member_pairs,
                             bridge,
                             parent,
-                            builtins_module):
+                            builtins_module,
+                            seen_names):
                         section += child
             else:
                 if not payload:
@@ -97,7 +105,8 @@ class KosBuiltinsDirective(SphinxDirective):
                         payload,
                         bridge,
                         parent,
-                        builtins_module):
+                        builtins_module,
+                        seen_names):
                     section += child
 
             if len(section) > 1:
@@ -106,7 +115,8 @@ class KosBuiltinsDirective(SphinxDirective):
         return out
 
 
-    def _member_nodes(self, member_pairs, bridge, parent, builtins_module):
+    def _member_nodes(
+            self, member_pairs, bridge, parent, builtins_module, seen_names):
         """
         Document each (name, value) pair via legacy autodoc documenters
 
@@ -117,11 +127,18 @@ class KosBuiltinsDirective(SphinxDirective):
         :param bridge: shared DocumenterBridge template for options
         :param parent: ModuleDocumenter for koskari.builtins
         :param builtins_module: loaded koskari.builtins module
+        :param seen_names: run-scoped set of already-documented display names;
+            aliases resolving to a repeat display name are skipped
         :return: list of docutils nodes
         """
 
         nodes_out = []
         for name, value in member_pairs:
+            display_name = member_display_name(name, value)
+            if display_name in seen_names:
+                continue
+            seen_names.add(display_name)
+
             doccls = pick_documenter(
                 value, name, False, parent, self.env._registry)
             if doccls is None:
