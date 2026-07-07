@@ -42,7 +42,6 @@ from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from functools import partial
 from io import StringIO
-from os.path import exists
 from re import UNICODE, VERBOSE
 from re import compile as regex
 
@@ -319,6 +318,38 @@ class SourceStream(BaseSourceStream):
             self.skip_exec()
 
 
+    def _source_line(self, line_no):
+        """
+        Return the text of 1-based ``line_no`` from the underlying stream
+
+        Reads from the stream rather than re-opening the file, so the snippet
+        matches what is being parsed (including string sources) and stays
+        correct if the file has changed on disk. The underlying stream
+        position is restored.
+
+        :param line_no: 1-based line number
+        :return: the line text (with newline) or None if unavailable
+        """
+
+        underlying = self.stream
+        try:
+            saved = underlying.tell()
+        except (OSError, ValueError, AttributeError):
+            return None
+
+        try:
+            underlying.seek(0)
+            text = None
+            for _ in range(line_no):
+                line = underlying.readline()
+                if not line:
+                    break
+                text = line
+            return text
+        finally:
+            underlying.seek(saved)
+
+
     def error(self, message, position=None):
         """
         Create a ReaderSyntaxError for the given or current position
@@ -328,15 +359,10 @@ class SourceStream(BaseSourceStream):
         :return: a ReaderSyntaxError instance
         """
 
-        text = None
-
         if position is None:
             position = self.lin, self.col
 
-        if exists(self.filename):
-            with open(self.filename, "rt") as fin:
-                for text, _lineno in zip(fin, range(0, position[0])):
-                    pass
+        text = self._source_line(position[0])
 
         return ReaderSyntaxError(message, position,
                                  text=text, filename=self.filename)
