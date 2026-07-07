@@ -310,6 +310,9 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
         self.assertIn('ZeroDivisionError', rendered)
 
 
+    @unittest.skipUnless(
+        sys.version_info >= (3, 11),
+        'PEP 657 caret columns require Python 3.11+')
     async def test_renders_source_line_and_caret_from_end_columns(self):
         import linecache
         import os
@@ -353,6 +356,9 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
         self.assertIn('^^^', rendered)
 
 
+    @unittest.skipUnless(
+        sys.version_info >= (3, 11),
+        'PEP 657 caret columns require Python 3.11+')
     async def test_single_column_caret_when_no_end_columns(self):
         import linecache
         import os

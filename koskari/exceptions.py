@@ -425,6 +425,11 @@ class CodeBoundary(Exception):
     pass
 
 
+# traceback.FrameSummary gained the PEP 657 column parameters (colno,
+# end_colno, end_lineno) in Python 3.11
+_FRAME_SUMMARY_HAS_COLUMNS = sys.version_info >= (3, 11)
+
+
 def _render_koskari_dynchain(trace_data):
     """
     Render dynchain metadata attached to synthetic koskari native frames
@@ -434,8 +439,10 @@ def _render_koskari_dynchain(trace_data):
     Each frame is rendered through traceback.FrameSummary and
     StackSummary.format(), which reads the source line via linecache and
     draws the PEP 657 caret whenever the frame carries end-column data
-    (end_line / end_col).  Non-dict entries in trace_data are silently
-    skipped.
+    (end_line / end_col).  Column data is only passed on Python 3.11+
+    (see _FRAME_SUMMARY_HAS_COLUMNS); earlier versions still render the
+    source line, without the caret.  Non-dict entries in trace_data are
+    silently skipped.
 
     :param trace_data: iterable of dict-like frame metadata
     :return: list[str] of traceback-formatted lines
@@ -453,29 +460,36 @@ def _render_koskari_dynchain(trace_data):
             continue
 
         line = frame.get('line') or None
-        col = frame.get('col') if line is not None else None
-        end_line = frame.get('end_line')
-        end_col = frame.get('end_col')
 
-        # Koskari positions are start-oriented: a form records where it
-        # opens, not where it closes.  Without a recorded end, point a
-        # single-column caret at the start.  end_lineno must accompany
-        # end_colno or traceback renders the caret one column too wide.
-        if col is not None:
-            if end_col is None:
-                end_col = col + 1
-            if end_line is None:
-                end_line = line
+        if _FRAME_SUMMARY_HAS_COLUMNS:
+            col = frame.get('col') if line is not None else None
+            end_line = frame.get('end_line')
+            end_col = frame.get('end_col')
+
+            # Koskari positions are start-oriented: a form records where it
+            # opens, not where it closes.  Without a recorded end, point a
+            # single-column caret at the start.  end_lineno must accompany
+            # end_colno or traceback renders the caret one column too wide.
+            if col is not None:
+                if end_col is None:
+                    end_col = col + 1
+                if end_line is None:
+                    end_line = line
+            else:
+                end_line = end_col = None
+
+            summaries.append(traceback.FrameSummary(
+                frame.get('filename') or '<unknown>',
+                line,
+                frame.get('name') or '<anonymous>',
+                colno=col,
+                end_lineno=end_line,
+                end_colno=end_col))
         else:
-            end_line = end_col = None
-
-        summaries.append(traceback.FrameSummary(
-            frame.get('filename') or '<unknown>',
-            line,
-            frame.get('name') or '<anonymous>',
-            colno=col,
-            end_lineno=end_line,
-            end_colno=end_col))
+            summaries.append(traceback.FrameSummary(
+                frame.get('filename') or '<unknown>',
+                line or 0,
+                frame.get('name') or '<anonymous>'))
 
     if not summaries:
         return []
