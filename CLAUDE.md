@@ -20,17 +20,8 @@ tox -qe gdb -- tests/<path>
 # Lint (flake8)
 make lint
 
-# Type check (mypy)
-make typecheck
-
 # Build docs (Sphinx)
 make docs
-
-# Run the full tox suite (flake8 + tests)
-make tox
-
-# Regenerate opcode handler dispatch table (needed after editing opcodes.incl)
-make handlers
 
 # Static analysis on koskari/lib (no compile step)
 make cppcheck        # cppcheck via pre-built container; writes build/cppcheck.sarif
