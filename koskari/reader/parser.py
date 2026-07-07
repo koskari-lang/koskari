@@ -19,7 +19,7 @@ Koskari's s-expression parser with a clean three-layer stream architecture.
 Layers:
 
 1. BaseSourceStream (C native) -- hot-path I/O with Unicode position tracking
-2. SourceStream(BaseSourceStream) -- error reporting, pushback buffer
+2. SourceStream(BaseSourceStream) -- error reporting helpers
 3. IndentAwareStream(SourceStream) -- indent-bounded skip_whitespace, dedented flag
 
 The Reader reads any SourceStream. LayoutReader subclasses Reader as a
@@ -42,7 +42,6 @@ from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from functools import partial
 from io import StringIO
-from os.path import exists
 from re import UNICODE, VERBOSE
 from re import compile as regex
 
@@ -50,6 +49,7 @@ from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
 from ..lib import (BaseSourceStream, Module, bracket_nil, bracket_pair, cons,
                    keyword, nil, pair, setcdr, symbol)
 from ..types import is_nil, is_pair
+from . import patterns as _patterns
 from .layouts import apply_layout, apply_layouts, find_layout
 
 
@@ -105,7 +105,6 @@ _symbol_unquote_splicing = symbol("compile/unquote-splicing")
 _symbol_pass_none = symbol("reader/pass-none")
 _keyword_block = keyword(":block:")
 
-IN_PROGRESS = keyword("work-in-progress")
 VALUE = keyword("value")
 BLOCK = keyword("block")
 BLOCKS = keyword("blocks")
@@ -117,24 +116,18 @@ EOF = keyword("eof")
 COLON = keyword("colon")
 LINE_END = keyword("line-end")
 DEFER = keyword("defer")
-ATOM_RESUME = keyword("atom-resume")
-DEDENT = keyword("dedent")
 
 _BASE_TERMINATORS = frozenset("\n\r\t ")
 
-_integer_re = regex(r"^-?\d+$").match
-_bin_re = regex(r"^0b[01]+$").match
-_oct_re = regex(r"^0o[0-7]+$").match
-_hex_re = regex(r"^0x[\da-f]+$").match
-_float_re = regex(r"^-?("
-                  r"(\d*\.\d+|\d+\.\d*)(e-?\d+)?f?"
-                  r"|(\d+e-?\d+)f?"
-                  r"|\d+f"
-                  ")$").match
-_decimal_re = regex(r"^-?((\d*\.\d+)|(\d+\.\d*)|\d+)d$").match
-_fraction_re = regex(r"-?\d+/\d+").match
-_complex_re = regex(r"^-?\d*\.?\d+\+\d*\.?\d*[ij]$").match
-_keyword_re = regex(r"^(:.+|.+:)$").match
+_integer_re = _patterns.INTEGER_RE.match
+_bin_re = _patterns.BIN_RE.match
+_oct_re = _patterns.OCT_RE.match
+_hex_re = _patterns.HEX_RE.match
+_float_re = _patterns.FLOAT_RE.match
+_decimal_re = _patterns.DECIMAL_RE.match
+_fraction_re = _patterns.FRACTION_RE.match
+_complex_re = _patterns.COMPLEX_RE.match
+_keyword_re = _patterns.KEYWORD_RE.match
 _dotted_attr_atom_re = regex(
     r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z_][a-zA-Z0-9/_-]*)+$").match
 _ref_atom_re = regex(r"^&\S+$").match
@@ -258,6 +251,11 @@ ESCAPE_SEQUENCE_RE = regex(r'''
 | \\[\\'"abfnrtv]
 )''', UNICODE | VERBOSE)
 
+# Escape sequences are bounded in length; the longest is ``\N{NAME}`` whose
+# Unicode names top out well under this window. Used to match a single escape
+# from a peeked window in the format-string splitter.
+_FSTRING_ESCAPE_PEEK = 128
+
 
 def _decode_sub(match):
     """
@@ -286,16 +284,11 @@ def _as_unicode(s, pattern=ESCAPE_SEQUENCE_RE):
 
 class SourceStream(BaseSourceStream):
     """
-    Source stream with error reporting and a pushback buffer
+    Source stream with error reporting helpers
 
     Inherits from the native BaseSourceStream for efficient character-level
-    I/O with position tracking. Adds error reporting, a pushback buffer for
-    speculative reads, and helper methods used by the reader.
-
-    The pushback buffer allows the reader to consume characters speculatively
-    then restore them via pushback(text, position) if the speculation fails.
-    The buffer is drained before any read reaches the underlying stream, so
-    position() reflects the buffer start while characters are buffered.
+    I/O with position tracking. Adds error reporting and the helper methods
+    used by the reader (skip_exec, suspend_indent).
     """
 
     def __init__(
@@ -321,120 +314,40 @@ class SourceStream(BaseSourceStream):
 
         super().__init__(stream, filename, line=line_no, col=col_no)
 
-        self._buffer = []
-        self._buffer_start_pos = None
-
         if auto_skip_exec:
             self.skip_exec()
 
 
-    def read(self, n=1):
+    def _source_line(self, line_no):
         """
-        Read n characters, draining the pushback buffer first
+        Return the text of 1-based ``line_no`` from the underlying stream
 
-        :param n: number of characters to read
-        :return: a string of at most n characters
-        """
+        Reads from the stream rather than re-opening the file, so the snippet
+        matches what is being parsed (including string sources) and stays
+        correct if the file has changed on disk. The underlying stream
+        position is restored.
 
-        if self._buffer:
-            result = []
-            while len(result) < n and self._buffer:
-                result.append(self._buffer.pop(0))
-            if not self._buffer:
-                self._buffer_start_pos = None
-            rest = n - len(result)
-            if rest > 0:
-                data = super().read(rest)
-                if data:
-                    result.append(data)
-            return ''.join(result)
-        return super().read(n)
-
-
-    def peek(self, n=1):
-        """
-        Peek at n characters without consuming them
-
-        Composes from the pushback buffer and the underlying stream's peek.
-
-        :param n: number of characters to peek at
-        :return: a string of at most n characters
+        :param line_no: 1-based line number
+        :return: the line text (with newline) or None if unavailable
         """
 
-        if self._buffer:
-            from_buf = min(n, len(self._buffer))
-            buf_part = ''.join(self._buffer[:from_buf])
-            if from_buf >= n:
-                return buf_part
-            return buf_part + (super().peek(n - from_buf) or '')
-        return super().peek(n)
+        underlying = self.stream
+        try:
+            saved = underlying.tell()
+        except (OSError, ValueError, AttributeError):
+            return None
 
-
-    def position(self):
-        """
-        Return the current stream position as (line, col)
-
-        When characters are buffered, returns the position at which
-        the buffered text begins rather than the underlying stream's
-        position (which has advanced past the buffered characters).
-
-        :return: (line, col) tuple
-        """
-
-        if self._buffer and self._buffer_start_pos is not None:
-            return self._buffer_start_pos
-        return super().position()
-
-
-    def read_until_chars(self, terminators):
-        """
-        Read characters until a terminating character is found
-
-        The terminating character is not consumed. When the pushback buffer
-        is empty, delegates to the C-native implementation which leaves the
-        terminator unconsumed without any pushback. When the buffer is
-        non-empty, drains non-terminating characters manually then delegates
-        to C for the remainder.
-
-        :param terminators: string of terminating characters
-        :return: text read up to (not including) the terminator
-        """
-
-        if not self._buffer:
-            return super().read_until_chars(terminators)
-
-        result = []
-        while self._buffer:
-            c = self._buffer[0]
-            if c in terminators:
-                return ''.join(result)
-            result.append(self._buffer.pop(0))
-        if not self._buffer:
-            self._buffer_start_pos = None
-
-        rest = super().read_until_chars(terminators)
-        if rest:
-            result.append(rest)
-        return ''.join(result)
-
-
-    def pushback(self, text, position):
-        """
-        Push text back into the stream at the given position
-
-        The pushed-back text will be returned by subsequent reads before
-        any characters from the underlying stream. The position argument
-        is recorded and returned by position() until the buffer drains.
-
-        :param text: the text to push back
-        :param position: the stream position corresponding to the start of text
-        """
-
-        if not text:
-            return
-        chars = list(text)
-        self._buffer = chars + self._buffer
-        self._buffer_start_pos = position
+        try:
+            underlying.seek(0)
+            text = None
+            for _ in range(line_no):
+                line = underlying.readline()
+                if not line:
+                    break
+                text = line
+            return text
+        finally:
+            underlying.seek(saved)
 
 
     def error(self, message, position=None):
@@ -446,15 +359,10 @@ class SourceStream(BaseSourceStream):
         :return: a ReaderSyntaxError instance
         """
 
-        text = None
-
         if position is None:
             position = self.lin, self.col
 
-        if exists(self.filename):
-            with open(self.filename, "rt") as fin:
-                for text, _lineno in zip(fin, range(0, position[0])):
-                    pass
+        text = self._source_line(position[0])
 
         return ReaderSyntaxError(message, position,
                                  text=text, filename=self.filename)
@@ -492,31 +400,37 @@ class SourceStream(BaseSourceStream):
         return iter(partial(self.read, 1), '')
 
 
-    def skip_whitespace(self):
+    @contextmanager
+    def speculate(self):
         """
-        Skip whitespace characters, draining the pushback buffer first
+        Mark the stream on entry and rewind to that mark on exit
 
-        When the buffer is empty, delegates to the C-native implementation
-        for maximum speed. When the buffer is non-empty, drains whitespace
-        from the buffer manually (since the C implementation cannot see the
-        Python-level buffer), then delegates to C for the remainder.
-
-        :return: the whitespace string consumed
+        For pure lookahead: read freely inside the block to inspect upcoming
+        input; the stream (position and line/col) is restored to its
+        pre-block state on exit, whether the block returns or raises. Unlike
+        a fixed-size peek, a speculative scan sees the whole remaining input.
         """
 
-        if not self._buffer:
-            return super().skip_whitespace()
+        checkpoint = self.mark()
+        try:
+            yield
+        finally:
+            self.rewind(checkpoint)
 
-        consumed = []
-        while self._buffer and self._buffer[0] in ' \t\n\r':
-            consumed.append(self._buffer.pop(0))
-        if not self._buffer:
-            self._buffer_start_pos = None
 
-        rest = super().skip_whitespace()
-        if rest:
-            consumed.append(rest)
-        return ''.join(consumed)
+    def peek_line(self):
+        """
+        Peek the rest of the current physical line without consuming it
+
+        Returns the text from the current position up to (not including) the
+        next newline or carriage return, or to end of stream. Unbounded: the
+        result is the whole line regardless of length.
+
+        :return: the remaining text on the current physical line
+        """
+
+        with self.speculate():
+            return self.read_until_chars("\r\n")
 
 
     def skip_exec(self):
@@ -585,19 +499,23 @@ class IndentAwareStream(SourceStream):
 
         When max_indent is None, delegates to the native C skip_whitespace.
 
-        Otherwise, peeks ahead with a single large-window read to obtain
-        the lookahead string, then scans it as a plain Python string. Blank
-        lines are skipped over. When the first non-blank, non-empty line is
-        found, its indent is measured:
+        Otherwise, speculatively scans the upcoming whitespace and blank
+        lines to find the next content character. Blank lines are skipped.
+        The first non-blank content line is measured:
 
-        - If indent <= max_indent: sets self.dedented = True and returns
-          without consuming anything.
+        - If the content is on the current line (no newline was crossed),
+          the leading horizontal whitespace is consumed and the stream is
+          left at the content.
 
-        - If indent > max_indent: consumes exactly the whitespace prefix
-          scanned (the newline and indent spaces) via a single read(n),
-          leaving the stream at the content character.
+        - If a newline was crossed and the content line's indent is
+          <= max_indent, sets self.dedented = True and consumes nothing,
+          leaving the stream at the boundary.
 
-        The underlying stream is seekable so a single large peek is cheap.
+        - If a newline was crossed and the indent is > max_indent, consumes
+          the newline(s) and indent, leaving the stream at the content.
+
+        The scan is speculative (mark/rewind) so its lookahead is unbounded
+        regardless of how many blank lines separate the content.
         """
 
         if self._max_indent is None:
@@ -605,62 +523,45 @@ class IndentAwareStream(SourceStream):
             return super().skip_whitespace()
 
         self.dedented = False
+        max_indent = self._max_indent
 
-        # When the C-level column is 0 and _buffer is empty, the stream is
-        # at the start of a new line (a preceding \n was consumed without
-        # going through the peek-ahead path below). Synthesise a virtual \n
-        # by prepending one to the lookahead so the main scan's newline
-        # branch fires immediately and measures the indent of the first
-        # real content line. Track the synthetic offset so that the consume
-        # count is adjusted to exclude it.
-        if self.col == 0 and not self._buffer:
-            ahead = '\n' + (self.peek(512) or '')
-            synthetic = 1
-        else:
-            ahead = self.peek(512) or ''
-            synthetic = 0
+        # Being at the start of a line (col 0) means the current line's own
+        # indent is the dedent candidate, exactly as if a newline had just
+        # been crossed.
+        saw_newline = (self.col == 0)
+        indent = 0
+        consume = 0
 
-        i = 0
-
-        while True:
-            if i >= len(ahead):
-                self.dedented = True
-                return ''
-            c = ahead[i]
-
-            if c in ' \t':
-                i += 1
-                continue
-
-            if c != '\n':
-                consume = i - synthetic
-                if consume > 0:
-                    self.read(consume)
-                return ''
-
-            newline_start = i
-            i += 1
-            next_indent = 0
-
+        with self.speculate():
             while True:
-                if i >= len(ahead):
-                    self.dedented = True
-                    return ''
-                nc = ahead[i]
-                if nc in ' \t':
-                    next_indent += 1
-                    i += 1
-                elif nc == '\n':
-                    i += 1
-                    next_indent = 0
+                c = self.read(1)
+                if not c:
+                    # EOF within whitespace: dedent, consume nothing.
+                    consume = None
+                    break
+                if c == '\n':
+                    saw_newline = True
+                    indent = 0
+                    consume += 1
+                elif c in ' \t':
+                    indent += 1
+                    consume += 1
+                elif not saw_newline:
+                    # Content on the current line: keep the horizontal
+                    # whitespace already scanned.
+                    break
+                elif indent <= max_indent:
+                    consume = None
+                    break
                 else:
-                    if next_indent <= self._max_indent:
-                        self.dedented = True
-                        return ''
-                    consume = newline_start + 1 + next_indent - synthetic
-                    if consume > 0:
-                        self.read(consume)
-                    return ''
+                    break
+
+        if consume is None:
+            self.dedented = True
+            return ''
+        if consume:
+            self.read(consume)
+        return ''
 
 
     @contextmanager
@@ -678,6 +579,26 @@ class IndentAwareStream(SourceStream):
 
         old = self._max_indent
         self._max_indent = None
+        try:
+            yield
+        finally:
+            self._max_indent = old
+
+
+    @contextmanager
+    def indent_limit(self, max_indent):
+        """
+        Bound skip_whitespace by ``max_indent`` for the duration
+
+        While active, skip_whitespace sets :attr:`dedented` and stops without
+        consuming when the next content line is at or below ``max_indent``.
+        The previous limit is restored on exit.
+
+        :param max_indent: column that ends a block body on dedent
+        """
+
+        old = self._max_indent
+        self._max_indent = max_indent
         try:
             yield
         finally:
@@ -709,6 +630,9 @@ def source_str(src, filename, auto_skip_exec=True, line_no=1, col_no=0):
     """
     Create a SourceStream from a string
 
+    Newlines are normalized to ``\\n`` so string sources behave like files
+    opened in text mode; the reader then never sees a carriage return.
+
     :param src: the source string
     :param filename: the filename to report in errors
     :param auto_skip_exec: if True, skip any #! line at the start
@@ -716,6 +640,8 @@ def source_str(src, filename, auto_skip_exec=True, line_no=1, col_no=0):
     :param col_no: starting column number
     :return: a SourceStream
     """
+
+    src = src.replace("\r\n", "\n").replace("\r", "\n")
 
     return SourceStream(
         StringIO(src),
@@ -771,9 +697,7 @@ class Reader:
     gate macro dispatch (early DEFER) and soft atom boundaries for
     terminating registrations. Event macros may return DEFER so the next
     handler in ``_event_macro_chain_for`` runs; the leading-character chain
-    ends with ``_read_default``. Use ``terminating_only=True`` dispatch where a
-    terminator boundary consumes the character first (see
-    :meth:`_dispatch_event_macros`).
+    ends with ``_read_default``.
     """
 
     def __init__(self, nodefaults=False, bracket_pairs=True):
@@ -926,29 +850,22 @@ class Reader:
             prefix = atom + c
 
 
-    def _event_macro_chain_for(self, c, terminating_only=False):
+    def _event_macro_chain_for(self, c):
         """
         Handlers tried in order until one does not return DEFER.
 
+        Yields all stacked macros for ``c`` (newest first), then the
+        ``_read_default`` fallback that folds ``c`` into an atom.
+
         :param c: the single character that was just read from the stream
-        :param terminating_only: if True, only macros registered with
-            terminating=True for ``c``, then :meth:`_terminating_boundary_fallback`;
-            if False, all stacked macros for ``c``, then :meth:`_read_default`.
         :yields: ``(handler, predicate_fn)`` where handler is
             ``(stream, c) -> (event, value)`` and optional ``predicate_fn`` is
             ``(stream, c, atom_prefix) -> bool`` or None for fallbacks
         """
 
-        pairs = self.reader_macros.get(c, ())
-        if terminating_only:
-            for macro_fn, term, predicate_fn in pairs:
-                if term:
-                    yield macro_fn, predicate_fn
-            yield self._terminating_boundary_fallback, None
-        else:
-            for macro_fn, _term, predicate_fn in pairs:
-                yield macro_fn, predicate_fn
-            yield self._read_default, None
+        for macro_fn, _term, predicate_fn in self.reader_macros.get(c, ()):
+            yield macro_fn, predicate_fn
+        yield self._read_default, None
 
 
     def _event_macro_predicate_allows(self, stream, c, predicate_fn):
@@ -966,21 +883,7 @@ class Reader:
         return bool(predicate_fn(stream, c, None))
 
 
-    def _terminating_boundary_fallback(self, stream, c):
-        """
-        Last resort when every terminating macro DEFERs at an atom boundary.
-
-        Fold ``c`` into the atom and continue scanning.
-
-        :param stream: the source stream
-        :param c: the terminator character (already consumed before dispatch)
-        :return: tuple of (ATOM_RESUME, fragment to append)
-        """
-
-        return ATOM_RESUME, c
-
-
-    def _dispatch_event_macros(self, stream, c, terminating_only=False):
+    def _dispatch_event_macros(self, stream, c):
         """
         Run :meth:`_event_macro_chain_for` until a non-DEFER result.
 
@@ -989,12 +892,9 @@ class Reader:
 
         If a handler returns (DEFER, repl) with repl not None, ``repl``
         replaces ``c`` for subsequent handlers in the chain.
-
-        :param terminating_only: forwarded to :meth:`_event_macro_chain_for`
         """
 
-        for handler, predicate_fn in self._event_macro_chain_for(
-                c, terminating_only):
+        for handler, predicate_fn in self._event_macro_chain_for(c):
             if not self._event_macro_predicate_allows(
                     stream, c, predicate_fn):
                 continue
@@ -1049,8 +949,7 @@ class Reader:
                 return EOF, position, None
 
             try:
-                event, value = self._dispatch_event_macros(
-                    stream, c, terminating_only=False)
+                event, value = self._dispatch_event_macros(stream, c)
                 if not raw and event is ATOM:
                     event = VALUE
                     value = self.process_atom(value)
@@ -1347,9 +1246,6 @@ class Reader:
         Soft boundaries use :meth:`_atom_boundary_split` for terminating
         registrations that supply a predicate.
 
-        Call :meth:`_dispatch_event_macros` with ``terminating_only=True`` only
-        from specialized scanners that consume a boundary character first.
-
         :param stream: the source stream
         :param first_c: first character of the atom (already read)
         :return: completed atom string
@@ -1541,7 +1437,7 @@ class Reader:
         """
 
         peek = stream.peek(1)
-        if peek not in "({[<":
+        if peek not in "({[":
             return DEFER, None
 
         peek = stream.read(1)
@@ -1607,7 +1503,12 @@ class Reader:
         if stream.peek(3) == '"""':
             col += 2
 
-        _evnt, data = self._read_string(stream, char)
+        # Read the body raw (escapes undecoded) so the field/literal split
+        # sees source characters: an escape that decodes to a brace must not
+        # act as a field delimiter, and embedded expression positions must
+        # track the source rather than the post-escape text. Escapes are
+        # decoded per literal chunk and per field interior in the splitter.
+        _evnt, data = self._read_string(stream, char, with_escapes=False)
 
         substream = source_str(data, stream.filename,
                                line_no=lin, col_no=col)
@@ -1905,7 +1806,6 @@ class LayoutReader(Reader):
             self._ns = namespace
 
         self._block_mode = False
-        self._reading_block_body = False
         self._layout_macros = {}
 
         self.layout_enabled = layout_enabled
@@ -2018,9 +1918,10 @@ class LayoutReader(Reader):
         """
         Context manager to temporarily apply a character event macro
 
-        Prepends one ``(macro_fn, terminating, predicate)`` triplet shared
-        across ``char``. On exit, removes **only** that triplet from the head
-        of each affected list when it still matches by identity.
+        Applies the triplet to both the layout coordinator (via the base
+        implementation) and the inner s-expr reader for the duration, so
+        delimited reads inside the block see it too. Each side removes only
+        its own triplet on exit.
 
         :param char: the character(s) to trigger on
         :param macro_fn: function(stream, char) -> (event, value); may return
@@ -2030,21 +1931,11 @@ class LayoutReader(Reader):
         :yields: self
         """
 
-        triplet = (macro_fn, terminating, predicate)
-        for c in char:
-            self.reader_macros.setdefault(c, []).insert(0, triplet)
-        self._sync_terms_from_macros()
-
-        with self.inner.temporary_event_macro(char, macro_fn, terminating, predicate):
+        with super().temporary_event_macro(
+                char, macro_fn, terminating, predicate), \
+                self._inner.temporary_event_macro(
+                    char, macro_fn, terminating, predicate):
             yield self
-
-        for c in char:
-            lst = self.reader_macros.get(c)
-            if lst and lst[0] is triplet:
-                lst.pop(0)
-                if not lst:
-                    del self.reader_macros[c]
-        self._sync_terms_from_macros()
 
 
     def set_atom_pattern(self, namesym, match_fn, conversion_fn):
@@ -2204,17 +2095,21 @@ class LayoutReader(Reader):
         return BLOCK, self._read_quasiquote_block(stream, outer_indent)
 
 
-    def _is_structural_colon_in_ahead(self, ahead, colon_index):
+    @staticmethod
+    def _rest_after_colon_is_structural(rest):
         """
-        Apply the structural rule to a ':' inside `ahead`.
+        Apply the structural-colon rule to the text following a ``:``.
+
+        A ``:`` is a structural header terminator when the remainder of its
+        physical line, after horizontal whitespace, is empty (end of line) or
+        the start of a comment.
+
+        :param rest: line text after the ``:`` (no newline)
+        :return: True if the colon is structural
         """
-        j = colon_index + 1
-        while j < len(ahead) and ahead[j] in ' \t':
-            j += 1
-        if j >= len(ahead):
-            return True
-        ch = ahead[j]
-        return ch == ';' or ch in '\n\r'
+
+        rest = rest.lstrip(' \t')
+        return rest == '' or rest[0] == ';'
 
 
     def _is_structural_colon_after_consumed(self, stream):
@@ -2224,24 +2119,8 @@ class LayoutReader(Reader):
         Assumes the `:` has already been consumed and the stream is positioned
         right after it.
         """
-        hot = stream.peek(2) or ''
-        i = 0
-        while i < len(hot) and hot[i] in ' \t':
-            i += 1
 
-        if i < len(hot):
-            ch = hot[i]
-            return ch == ';' or ch in '\n\r'
-
-        # Undecidable from the hot peek window; fall back to a larger peek.
-        ahead = stream.peek(2048) or ''
-        j = 0
-        while j < len(ahead) and ahead[j] in ' \t':
-            j += 1
-        if j >= len(ahead):
-            return True
-        ch = ahead[j]
-        return ch == ';' or ch in '\n\r'
+        return self._rest_after_colon_is_structural(stream.peek_line())
 
 
     def _is_structural_colon_at_next(self, stream):
@@ -2250,28 +2129,11 @@ class LayoutReader(Reader):
 
         Assumes the current stream position begins with `:`.
         """
-        hot = stream.peek(2) or ''
-        if not hot or hot[0] != ':':
-            return False
 
-        i = 1
-        while i < len(hot) and hot[i] in ' \t':
-            i += 1
-        if i < len(hot):
-            ch = hot[i]
-            return ch == ';' or ch in '\n\r'
-
-        # Undecidable from the hot peek window; fall back.
-        ahead = stream.peek(2048) or ''
-        if not ahead or ahead[0] != ':':
+        line = stream.peek_line()
+        if not line or line[0] != ':':
             return False
-        j = 1
-        while j < len(ahead) and ahead[j] in ' \t':
-            j += 1
-        if j >= len(ahead):
-            return True
-        ch = ahead[j]
-        return ch == ';' or ch in '\n\r'
+        return self._rest_after_colon_is_structural(line[1:])
 
 
     def find_layout(self, name):
@@ -2282,26 +2144,31 @@ class LayoutReader(Reader):
         """
         True if the current layout line contains a structural header colon.
 
-        Scans from the stream position only until end of line (or comment
-        start at delimiter depth 0), tracking delimiter depth.
+        Speculatively scans from the stream position until a structural
+        header ``:`` is found or the logical line ends (a newline or comment
+        at delimiter depth 0), tracking delimiter depth. Newlines enclosed in
+        brackets do not end the scan. The stream is left unchanged.
 
         :param stream: the source stream
         :return: whether a structural ``:`` exists on this line
         """
 
-        ahead = stream.peek(8192) or ''
-        depth = 0
-        for i, ch in enumerate(ahead):
-            if depth == 0 and ch in '\n\r;':
-                return False
-            if ch in '([{':
-                depth += 1
-            elif ch in ')]}':
-                depth -= 1
-            elif ch == ':' and depth == 0:
-                if self._is_structural_colon_in_ahead(ahead, i):
-                    return True
-        return False
+        with stream.speculate():
+            depth = 0
+            while True:
+                stream.read_until_chars("([{)]}:;\r\n")
+                ch = stream.read(1)
+                if not ch:
+                    return False
+                if depth == 0 and ch in ';\r\n':
+                    return False
+                if ch in '([{':
+                    depth += 1
+                elif ch in ')]}':
+                    depth -= 1
+                elif ch == ':' and depth == 0:
+                    if self._rest_after_colon_is_structural(stream.peek_line()):
+                        return True
 
 
     def _read_header_form(self, stream):
@@ -2410,113 +2277,48 @@ class LayoutReader(Reader):
         :return: list of parsed body forms
         """
 
-        old_indent = stream._max_indent
-        stream._max_indent = outer_indent
         body = []
-        prev_body = self._reading_block_body
-        self._reading_block_body = True
 
         try:
-            while True:
-                stream.skip_whitespace()
-                if stream.dedented:
-                    break
-                if not stream.peek(1):
-                    break
-                event, pos, form = self.read_form(stream)
-                if event is EOF:
-                    break
-                elif event is BLOCKS:
-                    body.extend(form.unpack())
-                else:
-                    body.append(form)
+            with stream.indent_limit(outer_indent):
+                while True:
+                    stream.skip_whitespace()
+                    if stream.dedented:
+                        break
+                    if not stream.peek(1):
+                        break
+                    event, pos, form = self.read_form(stream)
+                    if event is EOF:
+                        break
+                    elif event is BLOCKS:
+                        body.extend(form.unpack())
+                    else:
+                        body.append(form)
         finally:
-            self._reading_block_body = prev_body
-            stream._max_indent = old_indent
             stream.dedented = False
 
         return body
 
 
-    def _peek_peer_block_head(self, stream, outer_indent):
+    def _peek_peer_head_symbol(self, stream):
         """
-        Non-consumingly check whether the next line starts a declared peer
+        Speculatively read the leading header token of the current line
 
-        Temporarily installs outer_indent as the stream's max_indent so that
-        skip_whitespace correctly detects the dedent at the peer line's column.
-        If a dedent is detected, peeks far enough ahead to read the next
-        line's leading token, skipping empty and whitespace-only lines and
-        full-line comments in the peek window.
+        Reads one header-mode form and rewinds, so the stream is left
+        unchanged. Used to test a candidate line against a layout's declared
+        peer heads before committing to read it as a block. Reusing the real
+        header read means peer heads are recognised exactly as ``read_block_header``
+        would recognise them.
 
-        :param stream: IndentAwareStream positioned at end of current block
-        :param outer_indent: column of the enclosing block head
-        :return: symbol or None
+        :param stream: IndentAwareStream positioned at the candidate peer line
+        :return: the head form (a symbol for declared peers), or None
         """
 
-        old_indent = stream._max_indent
-        stream._max_indent = outer_indent
-        try:
-            stream.skip_whitespace()
-            if not stream.dedented:
-                return None
-        finally:
-            stream._max_indent = old_indent
+        with stream.speculate():
+            with self._header_mode():
+                event, _pos, head = super()._read(stream)
 
-        ahead = stream.peek(outer_indent + 257) or ''
-        if not ahead or ahead[0] != '\n':
-            return None
-
-        i = 1
-        while i < len(ahead):
-            indent = 0
-            while i < len(ahead) and ahead[i] in ' \t':
-                indent += 1
-                i += 1
-            if i >= len(ahead):
-                return None
-            if ahead[i] == '\n':
-                i += 1
-                continue
-            if ahead[i] == '\r':
-                i += 1
-                if i < len(ahead) and ahead[i] == '\n':
-                    i += 1
-                continue
-            if ahead[i] == ';':
-                while i < len(ahead) and ahead[i] not in '\n\r':
-                    i += 1
-                if i < len(ahead) and ahead[i] == '\r':
-                    i += 1
-                if i < len(ahead) and ahead[i] == '\n':
-                    i += 1
-                continue
-            if indent != outer_indent:
-                return None
-
-            text = ahead[i:]
-            break
-        else:
-            return None
-
-        token = []
-        for ch in text:
-            if ch in ' \t\r\n':
-                break
-            if ch in '()[]{}':
-                break
-            token.append(ch)
-
-        if not token:
-            return None
-
-        head = ''.join(token)
-        if head.endswith(':'):
-            head = head[:-1]
-
-        if not head:
-            return None
-
-        return symbol(head)
+        return head if event is VALUE else None
 
 
     def _consume_through_blank_lines_to_peer_column(self, stream, outer_indent):
@@ -2537,18 +2339,13 @@ class LayoutReader(Reader):
 
         while True:
             indent = 0
-            while stream.peek(1) in ' \t':
+            while stream.peek(1) in (' ', '\t'):
                 stream.read(1)
                 indent += 1
 
             pk = stream.peek(1)
             if pk == '\n':
                 stream.read(1)
-                continue
-            if pk == '\r':
-                stream.read(1)
-                if stream.peek(1) == '\n':
-                    stream.read(1)
                 continue
             if pk == ';':
                 stream.read(1)
@@ -2582,12 +2379,16 @@ class LayoutReader(Reader):
         peers = []
 
         while True:
-            head = self._peek_peer_block_head(stream, outer_indent)
-            if head is None or str(head) not in declared_set:
-                break
+            checkpoint = stream.mark()
 
             if not self._consume_through_blank_lines_to_peer_column(
                     stream, outer_indent):
+                stream.rewind(checkpoint)
+                break
+
+            head = self._peek_peer_head_symbol(stream)
+            if head is None or str(head) not in declared_set:
+                stream.rewind(checkpoint)
                 break
 
             phead, pargs, _opener = self.read_block_header(stream)
@@ -2719,6 +2520,28 @@ class LayoutReader(Reader):
         return cons(forms[0], *forms[1:], nil)
 
 
+    def _finish_header_line(self, stream, values, first_value_pos, pos):
+        """
+        Fold the values collected on one layout line into a VALUE result
+
+        A single value is returned as-is; several values fold to an implicit
+        call, or raise when :attr:`layout_implicit_calls` is disabled.
+
+        :param stream: the source stream (for error reporting)
+        :param values: non-empty list of values collected on the line
+        :param first_value_pos: position of the first value
+        :param pos: position of the line terminator (for error reporting)
+        :return: (VALUE, first_value_pos, folded value)
+        """
+
+        if len(values) == 1:
+            return VALUE, first_value_pos, values[0]
+        if self.layout_implicit_calls:
+            return (VALUE, first_value_pos,
+                    self._combine_implicit_line_tail_forms(values))
+        raise stream.error('multiple forms on one layout line', pos)
+
+
     def _read_layout_decorate(self, stream, outer_indent):
         """
         Layout-macro handler for the @ prefix (leading decorator lines)
@@ -2808,10 +2631,6 @@ class LayoutReader(Reader):
                     stream.read(1)
                 continue
 
-            if c == '\r':
-                stream.read(1)
-                continue
-
             outer_indent = position[1]
 
             if c in self._layout_macros:
@@ -2837,12 +2656,8 @@ class LayoutReader(Reader):
                 if event is LINE_END:
                     if not values:
                         break
-                    if len(values) == 1:
-                        return VALUE, first_value_pos, values[0]
-                    if self.layout_implicit_calls:
-                        return VALUE, first_value_pos, cons(
-                            values[0], *values[1:], nil)
-                    raise stream.error('multiple forms on one layout line', pos)
+                    return self._finish_header_line(
+                        stream, values, first_value_pos, pos)
 
                 if event is COLON:
                     if not values:
@@ -2863,12 +2678,8 @@ class LayoutReader(Reader):
                 if event is EOF:
                     if not values:
                         return EOF, pos, None
-                    if len(values) == 1:
-                        return VALUE, first_value_pos, values[0]
-                    if self.layout_implicit_calls:
-                        return VALUE, first_value_pos, cons(
-                            values[0], *values[1:], nil)
-                    raise stream.error('multiple forms on one layout line', pos)
+                    return self._finish_header_line(
+                        stream, values, first_value_pos, pos)
 
                 if event is DOT:
                     raise stream.error('invalid syntax', pos)
@@ -3041,41 +2852,137 @@ class FormatStringReader(object):
         return child
 
 
+    def _read_literal_escape(self, stream):
+        """
+        Read one backslash escape sequence from literal text and decode it
+
+        :param stream: the source stream, positioned at the backslash
+        :return: the decoded escape (a lone backslash if no sequence matches)
+        """
+
+        window = stream.peek(_FSTRING_ESCAPE_PEEK)
+        match = ESCAPE_SEQUENCE_RE.match(window)
+        if match:
+            text = match.group(0)
+            stream.read(len(text))
+            return _as_unicode(text)
+        return stream.read(1)
+
+
+    def _read_raw_field(self, stream):
+        """
+        Read one field's raw text up to and consuming the matching ``}``
+
+        Tracks brace depth (for nested spec fields) and inner strings, where
+        a ``\\"`` opens or closes a string so that braces inside it are not
+        treated as delimiters. Escapes are left undecoded; the caller decodes
+        the returned text before parsing it.
+
+        :param stream: the source stream, positioned after the opening ``{``
+        :return: the raw field text without the closing ``}``
+        """
+
+        parts = []
+        depth = 0
+        in_string = False
+
+        while True:
+            c = stream.read(1)
+            if not c:
+                raise stream.reader_eof(stream.position())
+            if c == '\\':
+                nxt = stream.read(1)
+                if not nxt:
+                    raise stream.reader_eof(stream.position())
+                parts.append(c)
+                parts.append(nxt)
+                if nxt == '"':
+                    in_string = not in_string
+                continue
+            if in_string:
+                parts.append(c)
+                continue
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                if depth == 0:
+                    return ''.join(parts)
+                depth -= 1
+            parts.append(c)
+
+
+    def _read_field(self, stream):
+        """
+        Read one ``{...}`` field: extract its raw text, decode, and parse
+
+        :param stream: the source stream, positioned after the opening ``{``
+        :return: a ``(format ...)`` form for this field
+        """
+
+        pos = stream.position()
+        raw = self._read_raw_field(stream)
+        substream = source_str(_as_unicode(raw) + '}', stream.filename,
+                               line_no=pos[0], col_no=pos[1])
+        return self._read_format_field(substream)
+
+
     def split(self, stream):
         """
-        Split a format string into literal and expression parts
+        Split a raw format string into literal and expression parts
 
-        :param stream: the source stream containing the format string
+        The stream holds the undecoded f-string body. Literal runs are
+        accumulated (with escapes decoded individually) and flushed as one
+        string at each field or escaped-brace boundary, so ``{{`` / ``}}``
+        remain their own literal parts. Fields are read by :meth:`_read_field`.
+
+        :param stream: the source stream containing the raw format string
         :return: list of string literals and expression forms
         """
 
         result = []
+        literal = []
+
+        def flush():
+            if literal:
+                result.append(''.join(literal))
+                literal.clear()
 
         try:
-            peek = stream.peek(2)
-            while peek:
-                if peek == "{{":
-                    stream.read(2)
-                    result.append("{")
+            while True:
+                chunk = stream.read_until_chars("{}\\")
+                if chunk:
+                    literal.append(chunk)
 
-                elif peek == "}}":
-                    stream.read(2)
-                    result.append("}")
+                c = stream.peek(1)
+                if not c:
+                    break
 
-                elif peek == "}":
-                    raise FormatStringSyntaxError(
-                        "mis-matched closing } in f-string",
-                        stream.position(),
-                        filename=stream.filename)
+                if c == '\\':
+                    literal.append(self._read_literal_escape(stream))
+                    continue
 
-                elif peek[0] == "{":
+                if c == '{':
                     stream.read(1)
-                    result.append(self._read_format_field(stream))
+                    if stream.peek(1) == '{':
+                        stream.read(1)
+                        flush()
+                        result.append('{')
+                        continue
+                    flush()
+                    result.append(self._read_field(stream))
+                    continue
 
-                else:
-                    result.append(stream.read_until_chars("{}"))
-
-                peek = stream.peek(2)
+                # c == '}'
+                stream.read(1)
+                if stream.peek(1) == '}':
+                    stream.read(1)
+                    flush()
+                    result.append('}')
+                    continue
+                raise FormatStringSyntaxError(
+                    "mis-matched closing } in f-string",
+                    stream.position(),
+                    filename=stream.filename)
 
         except ReaderEOF:
             raise
@@ -3084,6 +2991,7 @@ class FormatStringReader(object):
                                           filename=rex.filename,
                                           text=rex.text)
 
+        flush()
         return result
 
 

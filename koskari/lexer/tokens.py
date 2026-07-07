@@ -29,8 +29,19 @@ without compilation.
 
 
 from collections import namedtuple
-from re import compile as regex
-from re import UNICODE
+
+from ..reader.patterns import (
+    BIN_RE,
+    COMPLEX_RE,
+    DECIMAL_RE,
+    FLOAT_RE,
+    FRACTION_RE,
+    HEX_RE,
+    INTEGER_RE,
+    KEYWORD_RE,
+    OCT_RE,
+    STRING_PREFIXES,
+)
 
 
 __all__ = (
@@ -101,29 +112,16 @@ _BRACKET_TOKENS = {
     '}': 'brace_close',
 }
 
-_integer_re = regex(r"^-?\d+$").match
-_bin_re = regex(r"^0b[01]+$").match
-_oct_re = regex(r"^0o[0-7]+$").match
-_hex_re = regex(r"^0x[\da-fA-F]+$").match
-_float_re = regex(
-    r"^-?("
-    r"(\d*\.\d+|\d+\.\d*)(e-?\d+)?f?"
-    r"|(\d+e-?\d+)f?"
-    r"|\d+f"
-    ")$").match
-_decimal_re = regex(r"^-?((\d*\.\d+)|(\d+\.\d*)|\d+)d$").match
-_fraction_re = regex(r"-?\d+/\d+").match
-_complex_re = regex(r"^-?\d*\.?\d+\+\d*\.?\d*[ij]$").match
-_keyword_re = regex(r"^(:.+|.+:)$", UNICODE).match
+_keyword_re = KEYWORD_RE.match
 _NUMBER_MATCHERS = (
-    _integer_re,
-    _bin_re,
-    _oct_re,
-    _hex_re,
-    _float_re,
-    _decimal_re,
-    _fraction_re,
-    _complex_re,
+    INTEGER_RE.match,
+    BIN_RE.match,
+    OCT_RE.match,
+    HEX_RE.match,
+    FLOAT_RE.match,
+    DECIMAL_RE.match,
+    FRACTION_RE.match,
+    COMPLEX_RE.match,
 )
 
 
@@ -179,6 +177,43 @@ def _scan_atom_end(source, start, n):
     while i < n and source[i] not in _ATOM_TERMINATOR_SET:
         i += 1
     return i
+
+
+def _scan_string_end(source, quote, n):
+    """
+    Return index one-past the end of a string literal opening at ``quote``.
+
+    Handles triple-quoted strings and backslash escapes. An unterminated
+    literal ends at end of source (tokenize yields what it has and stops).
+
+    :param source: the full source string
+    :param quote: index of the opening double-quote
+    :param n: length of source
+    :return: index one past the closing quote (or n if unterminated)
+    """
+
+    if source[quote:quote + 3] == '"""':
+        i = quote + 3
+        while i < n:
+            c = source[i]
+            if c == '\\':
+                i += 2
+            elif c == '"' and source[i:i + 3] == '"""':
+                return i + 3
+            else:
+                i += 1
+        return n
+
+    i = quote + 1
+    while i < n:
+        c = source[i]
+        if c == '\\':
+            i += 2
+        elif c == '"':
+            return i + 1
+        else:
+            i += 1
+    return n
 
 
 def _try_layout_block_split(text, start_line, start_col, sn):
@@ -287,55 +322,17 @@ def tokenize(source, filename='<string>', special_names=None):
             continue
 
         if ch == '"':
-            text = ch
-            triple = i + 2 <= n and sl[i:i + 2] == '""'
-            if triple:
-                text += sl[i:i + 2]
-                i += 2
-            while i < n:
-                c = sl[i]
-                i += 1
-                text += c
-                if c == '\\' and i < n:
-                    text += sl[i]
-                    i += 1
-                elif c == '"':
-                    if triple and i + 1 < n and sl[i:i + 2] == '""':
-                        text += sl[i:i + 2]
-                        i += 2
-                        break
-                    elif not triple:
-                        break
+            end = _scan_string_end(sl, i - 1, n)
+            text = sl[i - 1:end]
+            i = end
             line, col = _advance_pos(line, col, text[1:])
             yield Token('string', text, start_line, start_col, line, col)
             continue
 
-        if ch in 'fFrR' and i < n and sl[i] == '"':
-            text = ch + sl[i]
-            i += 1
-            if i + 2 <= n and sl[i:i + 2] == '""':
-                text += sl[i:i + 2]
-                i += 2
-                while i + 2 <= n and sl[i:i + 3] != '"""':
-                    c = sl[i]
-                    i += 1
-                    text += c
-                    if c == '\\' and i < n:
-                        text += sl[i]
-                        i += 1
-                if i + 2 <= n:
-                    text += sl[i:i + 3]
-                    i += 3
-            else:
-                while i < n:
-                    c = sl[i]
-                    i += 1
-                    text += c
-                    if c == '\\' and i < n:
-                        text += sl[i]
-                        i += 1
-                    elif c == '"':
-                        break
+        if ch in STRING_PREFIXES and i < n and sl[i] == '"':
+            end = _scan_string_end(sl, i, n)
+            text = sl[i - 1:end]
+            i = end
             line, col = _advance_pos(line, col, text[1:])
             yield Token('string', text, start_line, start_col, line, col)
             continue

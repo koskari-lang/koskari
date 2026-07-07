@@ -14,7 +14,7 @@
 """
 tests.reader.test_multi_macro_dispatch
 
-Tests for stacked reader macros and terminating-only dispatch
+Tests for stacked reader macros
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -24,7 +24,7 @@ from unittest import IsolatedAsyncioTestCase
 
 from koskari.lib import symbol
 from koskari.reader import DEFER, Reader, source_str
-from koskari.reader.parser import ATOM_RESUME, VALUE
+from koskari.reader.parser import VALUE
 
 import pytest
 
@@ -70,23 +70,6 @@ class TestStackedMacros(IsolatedAsyncioTestCase):
         self.assertEqual(v2, symbol('perm'))
         self.assertEqual(len(reader.get_event_macros('z')), 1)
         self.assertEqual(len(reader.get_event_macros('z')[0]), 3)
-
-
-class TestTerminatingOnlyDispatch(IsolatedAsyncioTestCase):
-
-    async def test_terminating_chain_fallback_atom_resume(self):
-        reader = Reader()
-
-        def term_macro(stream, c):
-            return DEFER, None
-
-        reader.add_event_macro(':', term_macro, True)
-        stream = source_str('a:b', '<t>')
-        stream.read(1)
-        event, value = reader._dispatch_event_macros(
-            stream, ':', terminating_only=True)
-        self.assertIs(event, ATOM_RESUME)
-        self.assertEqual(value, ':')
 
 
 # The end.

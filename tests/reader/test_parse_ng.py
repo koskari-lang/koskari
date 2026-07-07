@@ -17,7 +17,6 @@ tests.reader.test_parse_ng
 Unit tests for koskari.reader.parser_ng stream layer and reader.
 
 Tests focus on the new interface contracts introduced in parser_ng:
-- SourceStream.pushback(text, position)
 - IndentAwareStream.dedented
 - IndentAwareStream as a proper SourceStream subclass (not a wrapper)
 - Reader and LayoutReader behaviour through the new streams
@@ -98,78 +97,54 @@ class TestSourceStreamIsBaseSubclass(IsolatedAsyncioTestCase):
 
 
 # ===========================================================================
-# SourceStream.pushback
+# SourceStream.mark / rewind
 # ===========================================================================
 
 
-class TestSourceStreamPushback(IsolatedAsyncioTestCase):
+class TestSourceStreamMarkRewind(IsolatedAsyncioTestCase):
 
-    async def test_pushback_restores_text(self):
+    async def test_rewind_restores_text(self):
         s = _stream("hello")
-        s.read(3)
-        s.pushback("hel", (1, 0))
+        m = s.mark()
         self.assertEqual(s.read(3), "hel")
+        s.rewind(m)
+        self.assertEqual(s.read(5), "hello")
 
-    async def test_pushback_restores_position(self):
-        s = _stream("hello")
-        s.read(3)
-        s.pushback("hel", (1, 0))
-        self.assertEqual(s.position(), (1, 0))
+    async def test_rewind_restores_position(self):
+        s = _stream("a\nbc\nd")
+        s.read(2)  # 'a\n'
+        m = s.mark()
+        self.assertEqual(s.position(), (2, 0))
+        s.read(4)  # 'bc\nd'
+        self.assertEqual(s.position(), (3, 1))
+        s.rewind(m)
+        self.assertEqual(s.position(), (2, 0))
 
-    async def test_pushback_empty_string_is_noop(self):
-        s = _stream("hello")
-        s.read(2)
-        pos_before = s.position()
-        s.pushback("", pos_before)
-        self.assertEqual(s.position(), pos_before)
-        self.assertEqual(s.read(3), "llo")
-
-    async def test_pushback_then_peek(self):
-        s = _stream("hello")
-        s.read(3)
-        s.pushback("hel", (1, 0))
-        self.assertEqual(s.peek(3), "hel")
-        self.assertEqual(s.position(), (1, 0))
-
-    async def test_pushback_drain_then_continues_from_stream(self):
-        s = _stream("hello")
-        s.read(2)
-        s.pushback("he", (1, 0))
-        self.assertEqual(s.read(2), "he")
-        self.assertEqual(s.read(3), "llo")
-
-    async def test_pushback_position_restored_after_drain(self):
-        s = _stream("hello")
-        s.read(5)
-        s.pushback("hello", (1, 0))
-        s.read(5)
-        # Buffer is now empty; position comes from the underlying stream
-        self.assertEqual(s.position(), (1, 5))
-
-    async def test_pushback_multiple_calls_prepend(self):
-        s = _stream("xyz")
-        s.read(3)
-        s.pushback("z", (1, 2))
-        s.pushback("xy", (1, 0))
-        self.assertEqual(s.read(3), "xyz")
-
-    async def test_pushback_interacts_with_read_until_chars(self):
+    async def test_speculate_rewinds_on_exit(self):
         s = _stream("hello world")
-        s.read(5)
-        s.pushback("hello", (1, 0))
-        result = s.read_until_chars(" ")
-        self.assertEqual(result, "hello")
-        # The space should now be next
-        self.assertEqual(s.read(1), " ")
+        with s.speculate():
+            self.assertEqual(s.read(5), "hello")
+        self.assertEqual(s.read(5), "hello")
 
-    async def test_pushback_peek_extends_into_underlying_stream(self):
-        s = _stream("world")
-        s.pushback("hel", (1, 0))
-        # peek(6) should see "helwor"
-        peeked = s.peek(6)
-        self.assertEqual(peeked, "helwor")
-        # position still at pushback start
-        self.assertEqual(s.position(), (1, 0))
+    async def test_speculate_rewinds_on_exception(self):
+        s = _stream("hello")
+        with self.assertRaises(ValueError):
+            with s.speculate():
+                s.read(3)
+                raise ValueError("boom")
+        self.assertEqual(s.read(5), "hello")
+
+    async def test_peek_line_unbounded(self):
+        s = _stream(("x" * 5000) + "\nrest")
+        line = s.peek_line()
+        self.assertEqual(line, "x" * 5000)
+        # peek_line does not consume
+        self.assertEqual(s.read(3), "xxx")
+
+    async def test_peek_line_at_eof_without_newline(self):
+        s = _stream("tail")
+        self.assertEqual(s.peek_line(), "tail")
+        self.assertEqual(s.read(4), "tail")
 
 
 # ===========================================================================
@@ -467,27 +442,13 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
 
 
 # ===========================================================================
-# SourceStream.read_until_chars with pushback buffer
+# SourceStream.read_until_chars
 # ===========================================================================
 
 
-class TestSourceStreamReadUntilCharsWithBuffer(IsolatedAsyncioTestCase):
+class TestSourceStreamReadUntilChars(IsolatedAsyncioTestCase):
 
-    async def test_read_until_chars_from_buffer(self):
-        s = _stream("xyz")
-        s.read(3)
-        s.pushback("hello world", (1, 0))
-        result = s.read_until_chars(" ")
-        self.assertEqual(result, "hello")
-        self.assertEqual(s.read(1), " ")
-
-    async def test_read_until_chars_spanning_buffer_and_stream(self):
-        s = _stream(" world")
-        s.pushback("hello", (1, 0))
-        result = s.read_until_chars(" ")
-        self.assertEqual(result, "hello")
-
-    async def test_terminator_pushed_back_after_read_until(self):
+    async def test_terminator_left_unconsumed_after_read_until(self):
         s = _stream("hello world")
         s.read_until_chars(" ")
         # Terminator (space) must be next readable character

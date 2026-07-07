@@ -34,7 +34,13 @@ from lsprotocol.types import (
 )
 
 from koskari.exceptions import ReaderError
-from koskari.lexer import LAYOUT_BLOCK_NAMES, SPECIAL_NAMES, parse_all, tokenize
+from koskari.lexer import (
+    LAYOUT_BLOCK_NAMES,
+    SPECIAL_NAMES,
+    make_layout_reader,
+    parse_all,
+    tokenize,
+)
 from koskari.extras.lsp.utils import get_word_at_position, koskari_to_lsp_range
 
 
@@ -49,8 +55,13 @@ def collect_diagnostics(source, uri):
 
     diagnostics = []
 
+    # Build a fresh reader per call: reads mutate per-read reader state, and
+    # the language server may process requests that overlap, so it must not
+    # share the process-wide cached reader.
+    reader = make_layout_reader()
+
     try:
-        for _ in parse_all(source, uri):
+        for _ in parse_all(source, uri, reader=reader):
             pass
     except ReaderError as exc:
         location = getattr(exc, 'location', None)
@@ -74,8 +85,8 @@ def collect_diagnostics(source, uri):
     return diagnostics
 
 
-def handle_did_open(ls, params):
-    """Handle textDocument/didOpen: parse and publish diagnostics."""
+def _publish_diagnostics(ls, params):
+    """Parse the referenced document and publish its diagnostics."""
 
     doc = ls.workspace.get_text_document(_get_uri(params.text_document))
     if doc is None:
@@ -87,21 +98,18 @@ def handle_did_open(ls, params):
             uri=doc.uri,
             version=doc.version,
             diagnostics=diagnostics))
+
+
+def handle_did_open(ls, params):
+    """Handle textDocument/didOpen: parse and publish diagnostics."""
+
+    _publish_diagnostics(ls, params)
 
 
 def handle_did_change(ls, params):
     """Handle textDocument/didChange: parse and publish diagnostics."""
 
-    doc = ls.workspace.get_text_document(_get_uri(params.text_document))
-    if doc is None:
-        return
-    diagnostics = collect_diagnostics(doc.source, doc.uri)
-    ls.diagnostics[doc.uri] = (doc.version, diagnostics)
-    ls.text_document_publish_diagnostics(
-        PublishDiagnosticsParams(
-            uri=doc.uri,
-            version=doc.version,
-            diagnostics=diagnostics))
+    _publish_diagnostics(ls, params)
 
 
 def _get_uri(text_document):
@@ -137,15 +145,15 @@ def _token_at_position(source, line_1, col_1):
     """
     Find the token at 1-based (line, col) using tokenize.
 
-    :return: (Token, None) or (None, None) if no token
+    :return: the Token at the position, or None if no token covers it
     """
 
     for tok in tokenize(source, '<doc>'):
         if (tok.start_line, tok.start_col) <= (line_1, col_1) < (tok.end_line, tok.end_col):
-            return (tok, None)
+            return tok
         if tok.start_line > line_1:
             break
-    return (None, None)
+    return None
 
 
 def _hover_for_symbol(name):
@@ -168,7 +176,7 @@ def handle_hover(ls, params):
     line_1 = pos.line + 1
     col_1 = pos.character + 1
 
-    tok, _ = _token_at_position(doc.source, line_1, col_1)
+    tok = _token_at_position(doc.source, line_1, col_1)
     if tok is None or tok.type not in ('symbol', 'special', 'layout'):
         return None
 

@@ -615,6 +615,48 @@ static PyObject *m_bss_readline(
 }
 
 
+/* === checkpoint === */
+
+
+static PyObject *m_bss_mark(PyObject *self, PyObject *_noargs) {
+  /**
+     Capture a checkpoint of the current stream state.
+
+     Returns an opaque (tell, line, col) tuple that rewind() restores.
+     Speculative reads may consume freely and then rewind to this mark.
+  */
+
+  KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+
+  Py_ssize_t pos = stream_tell(s->stream);
+  if (pos < 0)
+    return NULL;
+
+  return Py_BuildValue("(nnn)", pos, s->line, s->col);
+}
+
+
+static PyObject *m_bss_rewind(PyObject *self, PyObject *mark) {
+  /**
+     Restore the stream state captured by a prior mark().
+  */
+
+  KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+
+  Py_ssize_t pos, line, col;
+  if (! PyArg_ParseTuple(mark, "nnn", &pos, &line, &col))
+    return NULL;
+
+  if (stream_seek(s->stream, pos) < 0)
+    return NULL;
+
+  s->line = line;
+  s->col = col;
+
+  Py_RETURN_NONE;
+}
+
+
 /* === getters === */
 
 
@@ -692,6 +734,14 @@ static PyMethodDef bss_methods[] = {
   { "readline", (PyCFunction) m_bss_readline, METH_NOARGS,
     "readline() -> str\n"
     "Read a line from the stream including the newline." },
+
+  { "mark", (PyCFunction) m_bss_mark, METH_NOARGS,
+    "mark() -> checkpoint\n"
+    "Capture an opaque checkpoint of the current stream state." },
+
+  { "rewind", (PyCFunction) m_bss_rewind, METH_O,
+    "rewind(checkpoint) -> None\n"
+    "Restore the stream state captured by a prior mark()." },
 
   { NULL, NULL, 0, NULL },
 };
