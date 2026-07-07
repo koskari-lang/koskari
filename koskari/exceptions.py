@@ -431,7 +431,11 @@ def _render_koskari_dynchain(trace_data):
 
     trace_data is built innermost-first by the C runtime; it is reversed
     before rendering so output matches Python's root-first traceback order.
-    Non-dict entries in trace_data are silently skipped.
+    Each frame is rendered through traceback.FrameSummary and
+    StackSummary.format(), which reads the source line via linecache and
+    draws the PEP 657 caret whenever the frame carries end-column data
+    (end_line / end_col).  Non-dict entries in trace_data are silently
+    skipped.
 
     :param trace_data: iterable of dict-like frame metadata
     :return: list[str] of traceback-formatted lines
@@ -442,18 +446,42 @@ def _render_koskari_dynchain(trace_data):
 
     frames = list(trace_data)
     frames.reverse()
-    lines = ["  Koskari dynchain (native eval):\n"]
+
+    summaries = []
     for frame in frames:
         if not isinstance(frame, dict):
             continue
 
-        name = frame.get('name', '<anonymous>')
-        filename = frame.get('filename', '<unknown>')
-        line = frame.get('line', 0)
-        col = frame.get('col', 0)
-        pc = frame.get('pc', 0)
-        lines.append(f'    at {name} ({filename}:{line}:{col}) [pc={pc}]\n')
+        line = frame.get('line') or None
+        col = frame.get('col') if line is not None else None
+        end_line = frame.get('end_line')
+        end_col = frame.get('end_col')
 
+        # Koskari positions are start-oriented: a form records where it
+        # opens, not where it closes.  Without a recorded end, point a
+        # single-column caret at the start.  end_lineno must accompany
+        # end_colno or traceback renders the caret one column too wide.
+        if col is not None:
+            if end_col is None:
+                end_col = col + 1
+            if end_line is None:
+                end_line = line
+        else:
+            end_line = end_col = None
+
+        summaries.append(traceback.FrameSummary(
+            frame.get('filename') or '<unknown>',
+            line,
+            frame.get('name') or '<anonymous>',
+            colno=col,
+            end_lineno=end_line,
+            end_colno=end_col))
+
+    if not summaries:
+        return []
+
+    lines = ["  Koskari dynchain (native eval):\n"]
+    lines.extend(traceback.StackSummary.from_list(summaries).format())
     return lines
 
 

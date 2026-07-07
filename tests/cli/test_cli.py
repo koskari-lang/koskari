@@ -306,8 +306,96 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
         rendered = ''.join(format_exception_with_koskari_trace(exc_type, exc_val, tb))
         self.assertIn('Traceback (most recent call last):', rendered)
         self.assertIn('Koskari dynchain (native eval):', rendered)
-        self.assertIn('at inner-fn (example.ki:12:3) [pc=42]', rendered)
+        self.assertIn('File "example.ki", line 12, in inner-fn', rendered)
         self.assertIn('ZeroDivisionError', rendered)
+
+
+    async def test_renders_source_line_and_caret_from_end_columns(self):
+        import linecache
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(
+                'w', suffix='.ki', delete=False) as fh:
+            fh.write('define foo [x]:\n    (+ 1 (bar x))\n')
+            path = fh.name
+        self.addCleanup(os.unlink, path)
+        self.addCleanup(linecache.clearcache)
+
+        g = {
+            '__name__': 'koskari.native',
+            '__koskari_trace__': [
+                {
+                    'name': 'foo',
+                    'filename': path,
+                    'line': 2,
+                    'col': 9,
+                    'end_line': 2,
+                    'end_col': 16,
+                    'pc': 2,
+                },
+            ],
+        }
+
+        try:
+            exec('def boom():\n    1/0\nboom()\n', g, g)
+        except Exception:
+            exc_type, exc_val, tb = sys.exc_info()
+        else:
+            self.fail('expected an exception from synthetic frame test')
+
+        rendered = ''.join(
+            format_exception_with_koskari_trace(exc_type, exc_val, tb))
+        self.assertIn('line 2, in foo', rendered)
+        # source line pulled from the file by linecache
+        self.assertIn('(+ 1 (bar x))', rendered)
+        # PEP 657 caret drawn from the end-column span
+        self.assertIn('^^^', rendered)
+
+
+    async def test_single_column_caret_when_no_end_columns(self):
+        import linecache
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(
+                'w', suffix='.ki', delete=False) as fh:
+            fh.write('define foo [x]:\n    (+ 1 (bar x))\n')
+            path = fh.name
+        self.addCleanup(os.unlink, path)
+        self.addCleanup(linecache.clearcache)
+
+        # start-oriented frame: col but no end_col / end_line
+        g = {
+            '__name__': 'koskari.native',
+            '__koskari_trace__': [
+                {
+                    'name': 'foo',
+                    'filename': path,
+                    'line': 2,
+                    'col': 9,
+                    'pc': 2,
+                },
+            ],
+        }
+
+        try:
+            exec('def boom():\n    1/0\nboom()\n', g, g)
+        except Exception:
+            exc_type, exc_val, tb = sys.exc_info()
+        else:
+            self.fail('expected an exception from synthetic frame test')
+
+        rendered = ''.join(
+            format_exception_with_koskari_trace(exc_type, exc_val, tb))
+        self.assertIn('(+ 1 (bar x))', rendered)
+        # a single-column caret is synthesized from col + 1 pointing at the
+        # start of the (bar x) form; one '^', not a multi-column span
+        caret_lines = [ln for ln in rendered.splitlines()
+                       if ln.strip() and set(ln.strip()) == {'^'}]
+        self.assertTrue(caret_lines)
+        for caret in caret_lines:
+            self.assertEqual(caret.count('^'), 1)
 
 
     async def test_falls_back_to_standard_format_without_special_frame(self):
@@ -405,7 +493,8 @@ class TestFormatCodeBoundaryException(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('File "<string>"', rendered)
         self.assertNotIn('koskari/cli', rendered)
         self.assertIn('Koskari dynchain (native eval):', rendered)
-        self.assertIn('at __main__ (<stdin>:0:0) [pc=2]', rendered)
+        self.assertIn('File "<stdin>"', rendered)
+        self.assertIn('in __main__', rendered)
         self.assertIn('ValueError', rendered)
         self.assertIsNone(tb)
 
