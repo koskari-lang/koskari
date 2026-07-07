@@ -15,6 +15,28 @@ design docs for detail.
 
 ---
 
+## Native object API
+
+### `values` as a KosCallable install target
+
+Promote `KosValuesType` to a `KosCallableTypeObject` so a `values` invoked from
+Koskari bytecode is flattened into the evaluator instead of trampolining through
+`tp_call` -- the inverse of `KosPartial` (captures the arguments, defers the
+callable). The install slot merges stored args/kwds with the invocation's, takes
+the target from the first positional, and dispatches: a frame-wanting KosCallable
+target flattens through the bare `KosCallable_CallArgs`; a plain-Python or
+no-frame target goes through the full `KosEvalState_CallArgs`. Because the target
+binds late (first call positional, invisible to `wants_frame_fn`), the frame-prep
+negotiation moves into the install slot: fix `tp_kos_wants_frame = 1` and
+reconcile against the target's effective `wants_frame` there, preserving TCO in
+tail position. Provide both `tp_kos_install` and `tp_kos_vinstall`; keep `tp_call`
+for the pure-Python entry.
+
+Ref: [api/values-koscallable-install.md](api/values-koscallable-install.md);
+[api/special-call-protocol.md](api/special-call-protocol.md).
+
+---
+
 ## Continuations / transfer plans
 
 - **Async nested await during transfer** — when a wind/unwind thunk under an
