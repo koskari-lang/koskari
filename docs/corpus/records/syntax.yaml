@@ -606,3 +606,21 @@ tags:
   - layout
   - "surface:block"
 notes: layout form with syntax-rules and a single body expression
+---
+id: macro-precedence-over-local-binding-001
+feature: macro/compile/caddr
+source: |-
+  (let [] (define caddr (lambda [n] 999)) (caddr (cons 1 2 3 4 nil)))
+  
+verify:
+  eval: "3"
+references:
+  - reference/concepts/macro-matching-and-hygiene.md
+  - reference/macros/compile-cadr-caddr-cadddr-caddddr.md
+stability: evolving
+tags:
+  - macro
+  - resolution
+  - shadowing
+  - surprising
+notes: macros expand at compile time before name resolution, so a macro always wins over a same-named value binding in call position. caddr is a macro, so the local (define caddr ...) is never consulted for (caddr ...) — it evaluates via the accessor to 3, not 999. Names bound to runtime functions (e.g. first) shadow normally; see the concepts page.

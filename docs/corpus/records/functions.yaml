@@ -809,3 +809,23 @@ tags:
   - macro
   - "surface:block"
 notes: layout surface — declaration list in the header, body indented beneath
+---
+id: macro-flet-multi-form-body-001
+feature: macro/compile/flet
+source: |-
+  (flet [[f [x] (+ x 1) (* x 3)]] (f 4))
+  
+verify:
+  read: (flet [[f [x] (+ x 1) (* x 3)]] (f 4))
+  expand: (let [[f (lambda [x] (+ x 1) (* x 3))]] (f 4))
+  eval: "12"
+references:
+  - reference/macros/compile-flet.md
+  - reference/specials/compile-syntax-rules.md
+stability: evolving
+tags:
+  - function
+  - flet
+  - macro
+  - nested-ellipsis
+notes: "a binding with a multi-form body exercises depth-aware nested ellipsis: the per-binding body (body ...) is captured inside the per-binding declaration list, so both (+ x 1) and (* x 3) survive expansion into the lambda. First form is evaluated for effect; the last is the value, so (f 4) is 12."

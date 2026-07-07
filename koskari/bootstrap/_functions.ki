@@ -68,9 +68,9 @@ define-syntax compile/flet:
   """
   Binds local functions for the extent of a body, eg.::
 
-  (flet [[double [x] (* x 2)]
-         [inc [x] (+ x 1)]]
-    (double (inc 20)))
+    (flet [[double [x] (* x 2)]
+           [inc [x] (+ x 1)]]
+      (double (inc 20)))
 
   Each binding is an anonymous function; the initializers are evaluated in
   the enclosing scope, so a binding shadows an outer function of the same
@@ -89,9 +89,9 @@ define-syntax compile/labels:
   Binds local functions for the extent of a body, with the names visible to
   one another so the functions can be mutually recursive, eg.::
 
-  (labels [[even? [n] (if (== n 0) True (odd? (- n 1)))]
-           [odd? [n] (if (== n 0) False (even? (- n 1)))]]
-    (even? 10))
+    (labels [[even? [n] (if (== n 0) True (odd? (- n 1)))]
+             [odd? [n] (if (== n 0) False (even? (- n 1)))]]
+      (even? 10))
 
   Each function is `define`d inside a shared scope, so a binding's body sees
   every sibling in the same `labels` (unlike `flet`, whose initializers are

@@ -32,6 +32,44 @@ This is **not** the same as:
 When the [Glossary](../glossary.md) says **match**, it means macro/special
 pattern matching unless context says otherwise.
 
+## Resolution order: macros expand before names resolve
+
+Macros and special forms are resolved at **compile time**, before ordinary name
+lookup happens. When the compiler sees a form in call position, it first checks
+whether the head is a macro or special; if so it expands, and only the expanded
+result is subject to name resolution. **A macro always wins over a same-named
+value binding in call position** — a local `let` / `define` / `labels` / `flet`
+binding, a module binding, or an import cannot displace it.
+
+```koskari
+(let []
+  (define caddr (lambda [n] 999))
+  (caddr (cons 1 2 3 4 nil)))
+;; ⇒ 3, not 999
+```
+
+`caddr` is a macro (it expands to nested `car` / `cdr`), so `(caddr …)` expands
+at compile time and the local `define` is simply never consulted in that call
+position. Names bound to plain **functions** have no such precedence and shadow
+normally:
+
+```koskari
+(let []
+  (define first (lambda [n] (* n 100)))
+  (first 3))
+;; ⇒ 300 — first is a runtime function, so the local binding wins
+```
+
+Practical consequences:
+
+- Choosing a helper name (in `labels`, `flet`, `let`, or a parameter) that
+  collides with a macro or special form (`if`, `when`, a `cad*r` accessor, …)
+  will not rebind it in call position — the macro still expands. Rename the
+  helper if you need it callable.
+- The colliding name is still usable as a **value** (passed as an argument,
+  stored in a variable); only the call-position head goes through macro
+  expansion.
+
 ## Datum (macro form)
 
 Inside macro bodies, **`(datum expr)`** or **`(datum expr pos)`** captures an
