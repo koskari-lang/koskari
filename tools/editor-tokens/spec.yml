@@ -215,6 +215,7 @@ list_head_specials:
   - import-all-from
   - import-from
   - in
+  - in?
   - incr!
   - inline-block
   - inline-macro
@@ -227,6 +228,8 @@ list_head_specials:
   - int?
   - is
   - is-not
+  - is?
+  - is-not?
   - item
   - item*
   - item-slice
@@ -265,6 +268,7 @@ list_head_specials:
   - not
   - not-equal?
   - not-in
+  - not-in?
   - object
   - object?
   - on-demand?

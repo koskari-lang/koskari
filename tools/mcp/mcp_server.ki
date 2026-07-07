@@ -116,16 +116,21 @@ define viewer-get [path extra: #{} config: CONFIG]:
     """
 
     define params (dict (viewer-base-params config: config))
-    (params.update extra)
+    when extra:
+        (params.update extra)
+
     define url f"{BASE_URL}{path}"
     define response (http.get url params: params)
     (response.raise_for_status)
+
     define data (response.json)
-    when (dict.get data "error"):
-        define msg (dict.get data "error" "unknown viewer error")
-        (logger.error "viewer API error on %s: %s" path msg)
-        raise (RuntimeError msg)
-    data
+    define error (data.get "error")
+
+    unless error:
+        return data
+
+    (logger.error "viewer API error on %s: %s" path error)
+    raise (RuntimeError error)
 
 
 define viewer-rows [data]:
@@ -133,12 +138,8 @@ define viewer-rows [data]:
     Extract row dicts from a /rows, /search, or /filter response
     """
 
-    define rows (dict.get data "rows" ())
-    define out #[]
-    for-each [entry rows]:
-        define row (item entry "row")
-        (out.append row)
-    out
+    define rows (data.get "rows" #())
+    list-each [entry rows] (item entry "row")
 
 
 define compact-example [row]:

@@ -23,5 +23,4 @@ COPY mcp_server.ki ./mcp_server.ki
 
 CMD ["mcp_server.ki"]
 
-
 # The end.
