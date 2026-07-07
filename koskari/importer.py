@@ -288,6 +288,18 @@ async def import_module_async(fullname):
     else:
         loader.exec_module(module)
 
+    # mirror importlib._bootstrap._find_and_load_unlocked: bind the freshly
+    # loaded submodule as an attribute on its parent package, so that later
+    # dotted access (and cache-hit re-imports) resolve it.
+    parent, _, child = fullname.rpartition('.')
+    if parent:
+        parent_module = sys.modules.get(parent)
+        if parent_module is not None:
+            try:
+                setattr(parent_module, child, module)
+            except AttributeError:
+                pass
+
     return module
 
 
