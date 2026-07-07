@@ -630,6 +630,9 @@ def source_str(src, filename, auto_skip_exec=True, line_no=1, col_no=0):
     """
     Create a SourceStream from a string
 
+    Newlines are normalized to ``\\n`` so string sources behave like files
+    opened in text mode; the reader then never sees a carriage return.
+
     :param src: the source string
     :param filename: the filename to report in errors
     :param auto_skip_exec: if True, skip any #! line at the start
@@ -637,6 +640,8 @@ def source_str(src, filename, auto_skip_exec=True, line_no=1, col_no=0):
     :param col_no: starting column number
     :return: a SourceStream
     """
+
+    src = src.replace("\r\n", "\n").replace("\r", "\n")
 
     return SourceStream(
         StringIO(src),
@@ -2342,11 +2347,6 @@ class LayoutReader(Reader):
             if pk == '\n':
                 stream.read(1)
                 continue
-            if pk == '\r':
-                stream.read(1)
-                if stream.peek(1) == '\n':
-                    stream.read(1)
-                continue
             if pk == ';':
                 stream.read(1)
                 stream.read_until_chars('\n')
@@ -2629,10 +2629,6 @@ class LayoutReader(Reader):
                 stream.read_until_chars('\n')
                 if stream.peek(1) == '\n':
                     stream.read(1)
-                continue
-
-            if c == '\r':
-                stream.read(1)
                 continue
 
             outer_indent = position[1]
