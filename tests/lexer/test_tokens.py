@@ -77,6 +77,21 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(t.end_col, 8)
 
 
+    async def test_hex_case_matches_reader(self):
+        # The reader only reads lowercase 0x hex; the tokenizer must agree,
+        # so 0xFF is a symbol while 0xff is a number.
+        self.assertEqual([t.type for t in tokenize('0xff')], ['number'])
+        self.assertEqual([t.type for t in tokenize('0xFF')], ['symbol'])
+
+
+    async def test_string_prefixes_match_reader(self):
+        # f/r/b (lowercase) are string prefixes; uppercase are not.
+        self.assertEqual([t.type for t in tokenize('b"y"')], ['string'])
+        self.assertEqual([t.type for t in tokenize('r"z"')], ['string'])
+        self.assertEqual(
+            [t.type for t in tokenize('F"x"')], ['symbol', 'string'])
+
+
     async def test_tokenize_number(self):
         toks = list(tokenize('42'))
         self.assertEqual(len(toks), 1)

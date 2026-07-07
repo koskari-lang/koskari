@@ -50,6 +50,7 @@ from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
 from ..lib import (BaseSourceStream, Module, bracket_nil, bracket_pair, cons,
                    keyword, nil, pair, setcdr, symbol)
 from ..types import is_nil, is_pair
+from . import patterns as _patterns
 from .layouts import apply_layout, apply_layouts, find_layout
 
 
@@ -119,19 +120,15 @@ DEFER = keyword("defer")
 
 _BASE_TERMINATORS = frozenset("\n\r\t ")
 
-_integer_re = regex(r"^-?\d+$").match
-_bin_re = regex(r"^0b[01]+$").match
-_oct_re = regex(r"^0o[0-7]+$").match
-_hex_re = regex(r"^0x[\da-f]+$").match
-_float_re = regex(r"^-?("
-                  r"(\d*\.\d+|\d+\.\d*)(e-?\d+)?f?"
-                  r"|(\d+e-?\d+)f?"
-                  r"|\d+f"
-                  ")$").match
-_decimal_re = regex(r"^-?((\d*\.\d+)|(\d+\.\d*)|\d+)d$").match
-_fraction_re = regex(r"-?\d+/\d+").match
-_complex_re = regex(r"^-?\d*\.?\d+\+\d*\.?\d*[ij]$").match
-_keyword_re = regex(r"^(:.+|.+:)$").match
+_integer_re = _patterns.INTEGER_RE.match
+_bin_re = _patterns.BIN_RE.match
+_oct_re = _patterns.OCT_RE.match
+_hex_re = _patterns.HEX_RE.match
+_float_re = _patterns.FLOAT_RE.match
+_decimal_re = _patterns.DECIMAL_RE.match
+_fraction_re = _patterns.FRACTION_RE.match
+_complex_re = _patterns.COMPLEX_RE.match
+_keyword_re = _patterns.KEYWORD_RE.match
 _dotted_attr_atom_re = regex(
     r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z_][a-zA-Z0-9/_-]*)+$").match
 _ref_atom_re = regex(r"^&\S+$").match
