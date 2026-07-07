@@ -85,3 +85,23 @@ tags:
   - invalid
   - surprising
   - "surface:block"
+---
+id: macro-flet-sibling-reference-invalid-001
+feature: macro/compile/flet
+source: |-
+  (flet [[a [x] (b x)] [b [x] (* x 2)]] (a 3))
+  
+verify:
+  read: (flet [[a [x] (b x)] [b [x] (* x 2)]] (a 3))
+  expand: (let [[a (lambda [x] (b x))] [b (lambda [x] (* x 2))]] (a 3))
+  invalid: "flet initializers evaluate in the enclosing scope, so a's body cannot see the sibling b. The form reads and expands cleanly, but a's lambda closes over an unbound b, so calling a raises NameError: Empty reference: b at eval. Use labels when siblings must call one another."
+references:
+  - reference/macros/compile-flet.md
+  - reference/macros/compile-labels.md
+stability: evolving
+tags:
+  - function
+  - flet
+  - macro
+  - invalid
+notes: "flet initializers evaluate in the enclosing scope, so a's body cannot see the sibling b; the lambda closes over an unbound b and calling a raises NameError. corrective: use labels — (labels [[a [x] (b x)] [b [x] (* x 2)]] (a 3))"

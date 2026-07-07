@@ -245,11 +245,11 @@ class TestCarCdrMacros(unittest.IsolatedAsyncioTestCase):
         src_str = """
         (let [[lst (compile/cons 10 20 30 40 50 nil)]]
           (compile/cons
-            (compile/first lst)
-            (compile/second lst)
-            (compile/third lst)
-            (compile/fourth lst)
-            (compile/fifth lst)
+            (first lst)
+            (second lst)
+            (third lst)
+            (fourth lst)
+            (fifth lst)
             nil))
         """
 

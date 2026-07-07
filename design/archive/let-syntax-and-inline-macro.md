@@ -83,7 +83,7 @@ namespace. A dedicated **`compile/macro-let`** special was planned in
 ## Related
 
 - [../SPECIALS.md](../SPECIALS.md) — compile/syntax-rules, compile/macro-match
-- [labels-and-flet.md](../language/labels-and-flet.md) — independent bootstrap
-  macros (still open)
+- [labels-and-flet.md](labels-and-flet.md) — independent bootstrap
+  macros (implemented)
 
 # The end.

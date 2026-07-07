@@ -199,6 +199,63 @@ Composition is syntactic: argument expressions are not evaluated until the compo
 function is invoked.
 
 
+### compile/flet
+
+**Symbol:** `flet`
+
+**Syntax:** `(flet [[NAME FORMALS BODY ...] ...] FORM ...)`
+
+**Behaviour:** Binds local functions for the extent of a body. Each declaration
+expands to a **`let`** binding whose value is an anonymous **`lambda`**:
+
+```text
+(flet [[double [x] (* x 2)]
+       [inc [x] (+ x 1)]]
+  (double (inc 20)))
+  ⇒ (let [[double (lambda [x] (* x 2))]
+          [inc (lambda [x] (+ x 1))]]
+       (double (inc 20)))
+```
+
+Because **`let`** initializers are evaluated in the enclosing scope, a binding
+shadows an outer function of the same name but does **not** see its siblings in
+the same **`flet`** (no mutual recursion). Use **`labels`** when the functions
+must call one another.
+
+
+### compile/labels
+
+**Symbol:** `labels`
+
+**Syntax:** `(labels [[NAME FORMALS BODY ...] ...] FORM ...)`
+
+**Behaviour:** Like **`flet`**, but the bound names are visible to one another so
+the functions can be mutually recursive. Each declaration is **`define`**d inside
+a shared (empty) **`let`** scope, so sibling references resolve there before the
+body runs:
+
+```text
+(labels [[even? [n] (if (== n 0) True (odd? (- n 1)))]
+         [odd? [n] (if (== n 0) False (even? (- n 1)))]]
+  (even? 10))
+  ⇒ (let []
+       (define even? (function even? [n] (if (== n 0) True (odd? (- n 1)))))
+       (define odd? (function odd? [n] (if (== n 0) False (even? (- n 1)))))
+       (even? 10))
+```
+
+Both **`flet`** and **`labels`** capture each declaration's body under two
+ellipsis levels (**`BODY ...`** nested inside the declaration-list **`...`**), so
+they rely on depth-aware nested-ellipsis expansion in **`syntax-rules`**
+templates (see [archive/labels-and-flet.md](archive/labels-and-flet.md)).
+
+As with any local binding, a **`labels`** binding whose name is also a **macro**
+(a special form, or a **`cad*r`** accessor) does not take effect in call position:
+macros expand before names resolve, so they always win. Runtime function and
+module bindings are shadowed normally — this is general to all bindings, not
+specific to **`labels`**.
+
+
 ### compile/decorate
 
 **Syntax:**
@@ -482,18 +539,18 @@ setting: the signature and docstring of its registered function.
 
 ## koskari/bootstrap/basics.ki
 
-### compile/cadr, caddr, cadddr, caddddr
+### compile/cadr, caddr, cadddr, caddddr (and cddr, cdddr, cddddr)
 
 **Syntax:** **`(cadr pair)`**, etc.
 
 **Behaviour:** Expand to nested **`car`** / **`cdr`** (not **`compile/`**-prefixed heads in
-the **`syntax-rules`** patterns).
+the **`syntax-rules`** patterns). Each accessor also has a runtime **function** of the
+same name, so the names work both in call position (macro-expanded) and as
+first-class values.
 
-
-### first … fifth
-
-**Not macros:** **`define`** aliases — **`compile/first`** = **`compile/car`**;
-**`compile/second`** … **`compile/fifth`** = **`compile/cadr`** … **`compile/caddddr`**.
+**`first`** … **`fifth`** are runtime function aliases only (**`first`** = **`car`**,
+**`second`** = **`cadr`**, … **`fifth`** = **`caddddr`**) — no longer macros, so they can
+be shadowed by a local binding where the macro accessors cannot.
 
 
 ### compile/help

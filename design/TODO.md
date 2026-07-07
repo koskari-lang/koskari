@@ -326,9 +326,6 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
   **`read-atom`** helpers, port **`examples/reader-macro/dollars.ki`**, reader
   tests, user recipe. Ref:
   [examples/reader-macro-dollars.md](examples/reader-macro-dollars.md).
-- **`labels` / `flet`** — bootstrap macros for local function binding (mutual
-  recursion vs **`lambda`** shadowing). Ref:
-  [language/labels-and-flet.md](language/labels-and-flet.md).
 
 ### Ref surface (notes from the refs guide)
 

@@ -700,3 +700,112 @@ tags:
   - partial
   - import
 notes: explicit import-from functools partial (as in examples/life); partial can fix several leading arguments at once. 1 + 2 + 4 = 7
+---
+id: macro-flet-basic-001
+feature: macro/compile/flet
+source: |-
+  (flet [[double [x] (* x 2)]] (double 21))
+  
+verify:
+  read: (flet [[double [x] (* x 2)]] (double 21))
+  expand: (let [[double (lambda [x] (* x 2))]] (double 21))
+  eval: "42"
+references:
+  - reference/macros/compile-flet.md
+stability: evolving
+tags:
+  - function
+  - flet
+  - macro
+notes: one local function bound to an anonymous lambda and invoked
+---
+id: macro-flet-multiple-001
+feature: macro/compile/flet
+source: |-
+  (flet [[double [x] (* x 2)] [inc [x] (+ x 1)]] (double (inc 20)))
+  
+verify:
+  read: (flet [[double [x] (* x 2)] [inc [x] (+ x 1)]] (double (inc 20)))
+  expand: (let [[double (lambda [x] (* x 2))] [inc (lambda [x] (+ x 1))]] (double (inc 20)))
+  eval: "42"
+references:
+  - reference/macros/compile-flet.md
+stability: evolving
+tags:
+  - function
+  - flet
+  - macro
+notes: several local functions coexist and compose over the body
+---
+id: macro-flet-block-001
+feature: macro/compile/flet
+source: |-
+  flet [[double [x] (* x 2)]]:
+    (double 21)
+  
+verify:
+  read: (flet [[double [x] (* x 2)]] (double 21))
+  eval: "42"
+references:
+  - reference/macros/compile-flet.md
+stability: evolving
+tags:
+  - function
+  - flet
+  - macro
+  - "surface:block"
+notes: layout surface — declaration list in the header, body indented beneath
+---
+id: macro-labels-self-recursion-001
+feature: macro/compile/labels
+source: |-
+  (labels [[fact [n] (if (== n 0) 1 (* n (fact (- n 1))))]] (fact 5))
+  
+verify:
+  read: (labels [[fact [n] (if (== n 0) 1 (* n (fact (- n 1))))]] (fact 5))
+  expand: (let [] (define fact (function fact [n] (if (== n 0) 1 (* n (fact (- n 1)))))) (fact 5))
+  eval: "120"
+references:
+  - reference/macros/compile-labels.md
+stability: evolving
+tags:
+  - function
+  - labels
+  - macro
+notes: a labels binding may call itself; each is defined in a shared scope
+---
+id: macro-labels-mutual-recursion-001
+feature: macro/compile/labels
+source: |-
+  (labels [[even? [n] (if (== n 0) True (odd? (- n 1)))] [odd? [n] (if (== n 0) False (even? (- n 1)))]] (even? 10))
+  
+verify:
+  read: (labels [[even? [n] (if (== n 0) True (odd? (- n 1)))] [odd? [n] (if (== n 0) False (even? (- n 1)))]] (even? 10))
+  eval: "true"
+references:
+  - reference/macros/compile-labels.md
+stability: evolving
+tags:
+  - function
+  - labels
+  - macro
+notes: sibling bindings see one another — even?/odd? are mutually recursive
+---
+id: macro-labels-block-001
+feature: macro/compile/labels
+source: |-
+  labels [[fact [n] (if (== n 0) 1 (* n (fact (- n 1))))]]:
+    (fact 5)
+  
+verify:
+  read: (labels [[fact [n] (if (== n 0) 1 (* n (fact (- n 1))))]] (fact 5))
+  eval: "120"
+references:
+  - reference/macros/compile-labels.md
+stability: evolving
+tags:
+  - function
+  - labels
+  - macro
+  - "surface:block"
+notes: layout surface — declaration list in the header, body indented beneath

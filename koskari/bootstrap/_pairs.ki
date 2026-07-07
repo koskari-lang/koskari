@@ -38,12 +38,19 @@ define-syntax compile/cadddr:
 define-syntax compile/caddddr:
   (syntax-rules [] [(caddddr x) (car (cddddr x))])
 
+define cddr [p] (compile/cddr p)
+define cdddr [p] (compile/cdddr p)
+define cddddr [p] (compile/cddddr p)
+define cadr [p] (compile/cadr p)
+define caddr [p] (compile/caddr p)
+define cadddr [p] (compile/cadddr p)
+define caddddr [p] (compile/caddddr p)
 
-define compile/first compile/car
-define compile/second compile/cadr
-define compile/third compile/caddr
-define compile/fourth compile/cadddr
-define compile/fifth compile/caddddr
+define first car
+define second cadr
+define third caddr
+define fourth cadddr
+define fifth caddddr
 
 
 extend-syntax compile/set!:
