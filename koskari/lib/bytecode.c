@@ -1231,20 +1231,33 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       coll->col = col;
       /* Emit position entry only when line/col changes (delta encoding) */
       if (line != coll->last_line || col != coll->last_col) {
-        if (coll->pos_count >= coll->pos_cap) {
-          KosPosition *n = PyMem_Resize(coll->pos_entries, KosPosition,
-                                        coll->pos_cap * 2);
-          if (! n) {
-            PyErr_NoMemory();
-            goto failure;
+        /* Coalesce consecutive POSITION ops that map to the same output
+           instruction index: only the last one before the instruction
+           takes effect, so overwrite the pending entry rather than append
+           an orphan.  code_emit places at most one entry per instruction
+           index, so an appended same-index entry would be dropped, and the
+           zero-filled slot it leaves in the table corrupts the binary
+           search in KosCode_GetPosition. */
+        if (coll->pos_count > 0
+            && coll->pos_entries[coll->pos_count - 1].index == (uint16_t) di) {
+          coll->pos_entries[coll->pos_count - 1].line = line;
+          coll->pos_entries[coll->pos_count - 1].col = col;
+        } else {
+          if (coll->pos_count >= coll->pos_cap) {
+            KosPosition *n = PyMem_Resize(coll->pos_entries, KosPosition,
+                                          coll->pos_cap * 2);
+            if (! n) {
+              PyErr_NoMemory();
+              goto failure;
+            }
+            coll->pos_entries = n;
+            coll->pos_cap *= 2;
           }
-          coll->pos_entries = n;
-          coll->pos_cap *= 2;
+          coll->pos_entries[coll->pos_count].index = (uint16_t) di;
+          coll->pos_entries[coll->pos_count].line = line;
+          coll->pos_entries[coll->pos_count].col = col;
+          coll->pos_count++;
         }
-        coll->pos_entries[coll->pos_count].index = (uint16_t) di;
-        coll->pos_entries[coll->pos_count].line = line;
-        coll->pos_entries[coll->pos_count].col = col;
-        coll->pos_count++;
         coll->last_line = line;
         coll->last_col = col;
       }

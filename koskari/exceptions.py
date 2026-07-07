@@ -41,8 +41,10 @@ __all__ = (
     "FormatStringSyntaxError",
     "LayoutError",
     "CodeBoundary",
+    "RUN_INFRASTRUCTURE_MODULES",
     "format_exception_with_koskari_trace",
     "format_code_boundary_exception",
+    "format_run_exception",
     "apply_sys_last_exc",
 )
 
@@ -634,6 +636,66 @@ def format_code_boundary_exception(
     lines = format_exception_with_koskari_trace(
         exc_type, exc_val, tb_for_format, chain_root=boundary)
     return lines, exc_type, exc_val, tb_for_last
+
+
+RUN_INFRASTRUCTURE_MODULES = frozenset((
+    'koskari.cli',
+    'koskari.launcher',
+    'koskari.module',
+    'asyncio',
+    'asyncio.base_events',
+    'asyncio.events',
+    'asyncio.runners',
+    'concurrent.futures',
+    'concurrent.futures._base',
+))
+
+
+def format_run_exception(
+        exc_val,
+        *,
+        full_trace=False,
+        infrastructure_modules=RUN_INFRASTRUCTURE_MODULES):
+    """
+    Format an uncaught exception from a non-interactive CLI run.
+
+    Mirrors the boundary cleaning the REPL applies per form, but for a
+    single top-level run (a file, ``-c`` command, or ``.kio``).  Reader and
+    compile errors render their own source-annotated explanation; runtime
+    errors have infrastructure frames stripped (per infrastructure_modules)
+    and the koskari native dynchain interleaved.
+
+    When full_trace is True the raw traceback is kept and no filtering is
+    applied, for debugging the runtime itself.
+
+    :param exc_val: the uncaught exception instance
+    :param full_trace: when True, keep infrastructure frames
+    :param infrastructure_modules: module __name__ values to strip
+    :return: (lines, tb) where lines is list[str] of traceback text and tb
+        is the traceback to record via apply_sys_last_exc
+    """
+
+    tb = exc_val.__traceback__
+
+    # Reader and compile errors carry a source-annotated explanation and
+    # arise before any eval dynchain exists; render that directly.
+    if isinstance(exc_val, (CompilerError, KoskariSyntaxError)) \
+            and not isinstance(exc_val, UncaughtCompilerError):
+        return [exc_val.explain()], None
+
+    if not full_trace:
+        filtered = _filter_infrastructure_tb(tb, infrastructure_modules)
+        if filtered is not None:
+            tb = filtered
+        elif _find_dynchain_in_chain(exc_val) is not None:
+            # Every surviving frame was infrastructure but native dynchain
+            # metadata remains: drop the traceback so only the user-visible
+            # dynchain and exception line are shown.
+            tb = None
+
+    lines = format_exception_with_koskari_trace(
+        type(exc_val), exc_val, tb, chain_root=exc_val)
+    return lines, tb
 
 
 def apply_sys_last_exc(exc_type, exc_val, tb=None):

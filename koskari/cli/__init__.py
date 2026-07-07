@@ -46,6 +46,7 @@ def main(argv=None):
     import sys
     from koskari.importer import install
     from koskari.launcher import drive_async_loop, hosted_run
+    from koskari.exceptions import apply_sys_last_exc, format_run_exception
 
     install()
 
@@ -63,6 +64,16 @@ def main(argv=None):
     except KeyboardInterrupt:
         print('', file=sys.stderr)
         return 130
+
+    except Exception as e:
+        # Boundary cleaning for a top-level run: strip koskari machinery
+        # frames and interleave the native dynchain, the same way the REPL
+        # renders a failed form.  SystemExit and other BaseExceptions
+        # propagate so scripts control their own exit code.
+        lines, tb = format_run_exception(e)
+        apply_sys_last_exc(type(e), e, tb)
+        sys.stderr.write(''.join(lines))
+        return 1
 
     return res or 0
 
