@@ -105,7 +105,6 @@ _symbol_unquote_splicing = symbol("compile/unquote-splicing")
 _symbol_pass_none = symbol("reader/pass-none")
 _keyword_block = keyword(":block:")
 
-IN_PROGRESS = keyword("work-in-progress")
 VALUE = keyword("value")
 BLOCK = keyword("block")
 BLOCKS = keyword("blocks")
@@ -117,8 +116,6 @@ EOF = keyword("eof")
 COLON = keyword("colon")
 LINE_END = keyword("line-end")
 DEFER = keyword("defer")
-ATOM_RESUME = keyword("atom-resume")
-DEDENT = keyword("dedent")
 
 _BASE_TERMINATORS = frozenset("\n\r\t ")
 
@@ -627,9 +624,7 @@ class Reader:
     gate macro dispatch (early DEFER) and soft atom boundaries for
     terminating registrations. Event macros may return DEFER so the next
     handler in ``_event_macro_chain_for`` runs; the leading-character chain
-    ends with ``_read_default``. Use ``terminating_only=True`` dispatch where a
-    terminator boundary consumes the character first (see
-    :meth:`_dispatch_event_macros`).
+    ends with ``_read_default``.
     """
 
     def __init__(self, nodefaults=False, bracket_pairs=True):
@@ -782,29 +777,22 @@ class Reader:
             prefix = atom + c
 
 
-    def _event_macro_chain_for(self, c, terminating_only=False):
+    def _event_macro_chain_for(self, c):
         """
         Handlers tried in order until one does not return DEFER.
 
+        Yields all stacked macros for ``c`` (newest first), then the
+        ``_read_default`` fallback that folds ``c`` into an atom.
+
         :param c: the single character that was just read from the stream
-        :param terminating_only: if True, only macros registered with
-            terminating=True for ``c``, then :meth:`_terminating_boundary_fallback`;
-            if False, all stacked macros for ``c``, then :meth:`_read_default`.
         :yields: ``(handler, predicate_fn)`` where handler is
             ``(stream, c) -> (event, value)`` and optional ``predicate_fn`` is
             ``(stream, c, atom_prefix) -> bool`` or None for fallbacks
         """
 
-        pairs = self.reader_macros.get(c, ())
-        if terminating_only:
-            for macro_fn, term, predicate_fn in pairs:
-                if term:
-                    yield macro_fn, predicate_fn
-            yield self._terminating_boundary_fallback, None
-        else:
-            for macro_fn, _term, predicate_fn in pairs:
-                yield macro_fn, predicate_fn
-            yield self._read_default, None
+        for macro_fn, _term, predicate_fn in self.reader_macros.get(c, ()):
+            yield macro_fn, predicate_fn
+        yield self._read_default, None
 
 
     def _event_macro_predicate_allows(self, stream, c, predicate_fn):
@@ -822,21 +810,7 @@ class Reader:
         return bool(predicate_fn(stream, c, None))
 
 
-    def _terminating_boundary_fallback(self, stream, c):
-        """
-        Last resort when every terminating macro DEFERs at an atom boundary.
-
-        Fold ``c`` into the atom and continue scanning.
-
-        :param stream: the source stream
-        :param c: the terminator character (already consumed before dispatch)
-        :return: tuple of (ATOM_RESUME, fragment to append)
-        """
-
-        return ATOM_RESUME, c
-
-
-    def _dispatch_event_macros(self, stream, c, terminating_only=False):
+    def _dispatch_event_macros(self, stream, c):
         """
         Run :meth:`_event_macro_chain_for` until a non-DEFER result.
 
@@ -845,12 +819,9 @@ class Reader:
 
         If a handler returns (DEFER, repl) with repl not None, ``repl``
         replaces ``c`` for subsequent handlers in the chain.
-
-        :param terminating_only: forwarded to :meth:`_event_macro_chain_for`
         """
 
-        for handler, predicate_fn in self._event_macro_chain_for(
-                c, terminating_only):
+        for handler, predicate_fn in self._event_macro_chain_for(c):
             if not self._event_macro_predicate_allows(
                     stream, c, predicate_fn):
                 continue
@@ -905,8 +876,7 @@ class Reader:
                 return EOF, position, None
 
             try:
-                event, value = self._dispatch_event_macros(
-                    stream, c, terminating_only=False)
+                event, value = self._dispatch_event_macros(stream, c)
                 if not raw and event is ATOM:
                     event = VALUE
                     value = self.process_atom(value)
@@ -1202,9 +1172,6 @@ class Reader:
 
         Soft boundaries use :meth:`_atom_boundary_split` for terminating
         registrations that supply a predicate.
-
-        Call :meth:`_dispatch_event_macros` with ``terminating_only=True`` only
-        from specialized scanners that consume a boundary character first.
 
         :param stream: the source stream
         :param first_c: first character of the atom (already read)
@@ -1761,7 +1728,6 @@ class LayoutReader(Reader):
             self._ns = namespace
 
         self._block_mode = False
-        self._reading_block_body = False
         self._layout_macros = {}
 
         self.layout_enabled = layout_enabled
@@ -2269,8 +2235,6 @@ class LayoutReader(Reader):
         old_indent = stream._max_indent
         stream._max_indent = outer_indent
         body = []
-        prev_body = self._reading_block_body
-        self._reading_block_body = True
 
         try:
             while True:
@@ -2287,7 +2251,6 @@ class LayoutReader(Reader):
                 else:
                     body.append(form)
         finally:
-            self._reading_block_body = prev_body
             stream._max_indent = old_indent
             stream.dedented = False
 
