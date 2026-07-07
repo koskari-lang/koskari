@@ -89,6 +89,22 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   variable access to its fast form. Off disables that optimization.
 - **`compiler/compress`** *(default off)* — reserved for a future bytecode
   compression pass; currently inert.
+- **`compiler/protect-code`** *(default off)* — whether each compiled code
+  object's bytecode storage is sealed read-only at the OS level the moment it
+  is built. On, a stray or hostile write to live bytecode faults instead of
+  corrupting the interpreter, at the cost of a full memory page per code
+  object. A bare `[compiler/protect-code]` turns it on.
+- **`compiler/pack-module`** *(default on)* — whether the module's surviving
+  code objects are compacted into shared read-only storage when the module
+  finishes loading. On — the baseline — a loaded module's functions share one
+  sealed allocation instead of each holding its own page. Options tune the
+  packing: `max-count:` caps how many code objects share one allocation, and
+  `max-bytes:` is a soft size cap; `0` (the default for both) means unbounded.
+
+  ```
+  (pragma [compiler/pack-module True max-count: 32])
+  (pragma [compiler/pack-module False])
+  ```
 
 ### Pragma machinery
 

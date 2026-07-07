@@ -7,7 +7,9 @@ against tamper-resistance without changing any source. For the pragma surface
 and model see [PRAGMA.md](PRAGMA.md); for the KosCode block layout see
 [interpreter/](interpreter/) and `koskari/lib/bytecode.c`.
 
-Status: proposal.
+Status: implemented (see
+[code-object-arena-packing-plan.md](code-object-arena-packing-plan.md) for the
+implementation plan; the `.kio` and REPL-repack open questions remain).
 
 
 ## Motivation
@@ -132,6 +134,29 @@ Two invariants fall out of the table:
 * **Module loads** default to **off / on** when the pragma is otherwise
   unspecified. This is the compact, at-rest-protected sweet spot and is the right
   default for the builtins and the initial REPL module.
+* **Module completion is two explicit loader flags.** The loaders take
+  `seal=True` (on successful completion, `compiler.seal()` packs the module's
+  durable code per the pragma) and `detach=True` (the load facets --
+  `__pragma__`, `__compiler__`, `__reader__` -- are removed afterward,
+  raise or not). When facets are already bound on a module, a load reuses
+  them instead of rebuilding, refreshing the compiler's filename so
+  backtraces attribute positions to the current source file. The
+  interesting combinations:
+  * **Interactive** (`detach=False`): the loaded file's durables seal as the
+    off/on default intends, and the retained compiler keeps registering the
+    session's definitions -- a later `__compiler__.seal()` is the
+    "compact accumulated definitions" repack.
+  * **The bootstrap builtins loop** (`seal=False, detach=False` per file):
+    the ten sources load as one module in installments through one shared
+    pragma, compiler, and reader; at the end the assembly seals once via the
+    compiler facet and detaches. The whole builtins set shares a single
+    arena, and a definition displaced by a later bootstrap file dies by
+    refcount and is never pinned. No `gc.collect()` before the seal, per
+    the no-cyclic-precision default above: a displaced definition caught
+    in a reference cycle would be swept in, wasting only its bytes inside
+    an arena the live builtins pin forever anyway.
+  * `seal=False, detach=True` closes a module without ever packing it,
+    regardless of pragma -- a per-call escape hatch.
 * **REPL lines**, after the initial module is sealed, default to **off / off**.
   Interactive definitions are cheap plain-heap allocations. A CLI switch may
   demand more (raising REPL lines to on/off for per-line protection, or invoking
@@ -149,15 +174,15 @@ Written as a bracketed pragma fragment:
 ```
 (pragma [compiler/pack-module])                       ; on, default sizing
 (pragma [compiler/pack-module False])                 ; off
-(pragma [compiler/pack-module True :max-count 32])    ; on, cap 32 objects/arena
-(pragma [compiler/pack-module True :max-bytes 65536]) ; on, ~64 KB payload/arena
+(pragma [compiler/pack-module True max-count: 32])    ; on, cap 32 objects/arena
+(pragma [compiler/pack-module True max-bytes: 65536]) ; on, ~64 KB payload/arena
 ```
 
 | Option | Meaning | Default |
 |---|---|---|
 | (positional bool) | on/off master switch | `True` |
-| `max-count` | maximum number of code objects placed in one arena | `0` (unbounded: one arena per module) |
-| `max-bytes` | soft cap on an arena's payload size before starting a new arena | `0` (unbounded) |
+| `max-count:` | maximum number of code objects placed in one arena | `0` (unbounded: one arena per module) |
+| `max-bytes:` | soft cap on an arena's payload size before starting a new arena | `0` (unbounded) |
 
 Semantics:
 
@@ -211,18 +236,21 @@ relocated. The `KosCode` PyObject itself, and its separately allocated satellite
 Two additions to `struct KosCode` (`koskari/lib/bytecode.h:211`):
 
 * `PyObject *arena` -- strong reference to the owning `KosArenaAlloc`, or `NULL`
-  for an unpacked object. Dealloc and clear branch on it:
+  for an unpacked object. Dealloc branches on it:
   * arena set -> `Py_DECREF(arena)` and do nothing to the block (the arena owns
     the memory).
-  * arena `NULL` -> the existing `mprotect(PROT_WRITE); free(base)` path
-    (`bytecode.c:2557`).
-  `arena` is a non-GC leaf and is not visited by `tp_traverse`.
-* Weakref support -- KosCode is not currently weakref-able. Add a
-  `PyObject *weakreflist` slot, set `tp_weaklistoffset`, and call
-  `PyObject_ClearWeakRefs` at the top of dealloc. Use the explicit slot rather
-  than `Py_TPFLAGS_MANAGED_WEAKREF` for portability to Python 3.9 (see
+  * arena `NULL` -> the existing unseal-and-free path (conditional on the
+    `KOS_CODE_PROTECTED` flag, since an unprotected block was never sealed).
+  `arena` is a non-GC leaf.
+* Weakref support -- a `PyObject *weakreflist` slot with `tp_weaklistoffset`
+  set, and `PyObject_ClearWeakRefs` at the top of dealloc. The explicit slot
+  rather than `Py_TPFLAGS_MANAGED_WEAKREF`, for portability to Python 3.9 (see
   `koskari/lib/compat_39.h`). This is a prerequisite for the collection step
   below.
+* KosCode dropped `Py_TPFLAGS_HAVE_GC` entirely (with `tp_traverse` and
+  `tp_clear` deleted): everything a Code reaches was created before it and is
+  immutable from Python, so a reference cycle cannot route through it. Cycles
+  form through KosFunction, which stays GC-tracked.
 
 ### Collection: the compiler as registry
 
@@ -305,13 +333,18 @@ differing only in arena membership: an arena of one versus an arena of N.
   module's whole arena resident. This is the reason `max-count` / `max-bytes`
   exist. It is an accepted tradeoff, documented so nobody is surprised.
 
-* **No cyclic-garbage precision by default.** A self-referential ephemeral
-  expression (function <-> code <-> cpool cycle) stays weak-live until cyclic GC
-  runs, so it could be swept into an arena at seal. This is harmless -- the arena
-  holds no back-reference, so the object remains collectable afterward and the
-  arena frees once its last real member dies. Forcing a `gc.collect()` before
-  seal would make the live set exact, but paying a full collection on every module
-  load is the worse trade; leave it off by default.
+* **No cyclic-garbage precision by default.** An ephemeral expression whose
+  function is caught in a reference cycle (function <-> namespace; the Code
+  hangs off the cycle and dies by refcount when it clears) stays weak-live
+  until the cycle is collected, so it could be swept into an arena at seal.
+  This is harmless -- the arena holds no back-reference, so the object remains
+  collectable afterward and the arena frees once its last real member dies.
+  Forcing a `gc.collect()` before seal would make the live set exact, but
+  paying a full collection on every module load is the worse trade; leave it
+  off by default. (Note: the namespace types do not currently participate in
+  cyclic GC at all -- their `tp_traverse` functions exist but `HAVE_GC` is
+  never set -- so such cycles presently never collect. That is a pre-existing
+  defect independent of packing.)
 
 
 ## Non-goals
@@ -328,8 +361,10 @@ differing only in arena membership: an arena of one versus an arena of N.
 
 ## Open questions
 
-* Confirm `KosDynFrame_CODE` retains a strong reference to the KosCode (the
-  suspended-frame safety argument depends on it).
+* ~~Confirm `KosDynFrame_CODE` retains a strong reference to the KosCode (the
+  suspended-frame safety argument depends on it).~~ **Resolved: it does.** The
+  frame's code slot is owned at assignment (`dynchain/dyn_frame.c:33`), cloned
+  with `Py_XINCREF`, released with `Py_XDECREF`, and visited by traverse.
 * Whether the `.kio` deserializer should build directly into an arena at load
   time (it already sees the whole module's code set and sizes before constructing
   anything), skipping the build-then-relocate step for the compact case. This may
