@@ -39,6 +39,7 @@ struct KosEvalState;        typedef struct KosEvalState        KosEvalState;
 struct KosStackSteal;       typedef struct KosStackSteal       KosStackSteal;
 
 
+#include "arena.h"
 #include "atom.h"
 #include "bytecode.h"
 #include "callable.h"

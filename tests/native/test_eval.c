@@ -120,7 +120,7 @@ static int test_eval_object_add_return(void) {
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_OBJECT_ADD, 2));
     PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(one);
@@ -164,7 +164,7 @@ static int test_domain_non_null(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -199,7 +199,7 @@ static int test_domain_fresh_when_no_tls(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -246,7 +246,7 @@ static int test_eval_ctx_current_outside_eval(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -305,7 +305,7 @@ static int test_eval_try_except_catch(void) {
     PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP_TRY, 0));
     PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -368,7 +368,7 @@ static int test_eval_try_finally_rerase(void) {
     PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RAISE, 1));
     PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_NOOP, 0));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -444,7 +444,7 @@ static int test_eval_reset_shift_invoke(void) {
     PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP_PROMPT, 0));
     PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RETURN, 1));
 
-    code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     Py_DECREF(zero);
     Py_DECREF(one);
     Py_DECREF(five);
@@ -534,7 +534,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
     Py_XDECREF(resume_str);
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -579,7 +579,7 @@ static int test_eval_pop_prompt_without_prompt(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
     PyErr_Clear();
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NULL(code_obj, "Code creation fails for malformed bytecode");
     TEST_ASSERT(PyErr_Occurred(), "error is set");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
@@ -622,7 +622,7 @@ static int test_eval_call_continuation_underrun(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_CALL, 1));
 
-    code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     Py_DECREF(one);
     Py_DECREF(instr);
     Py_DECREF(nspec);
@@ -689,7 +689,7 @@ static int test_eval_call_wrong_type(void) {
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CALL, 1));
     PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 0));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(five);
@@ -736,7 +736,7 @@ static int test_eval_object_add_underrun(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_OBJECT_ADD, 2));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 0));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(one);
@@ -781,7 +781,7 @@ static int test_eval_return_underrun(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 2));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_NOOP, 0));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(one);
@@ -824,7 +824,7 @@ static int test_eval_dup_underrun(void) {
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_DUP, 1));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -866,7 +866,7 @@ static int test_eval_call_empty_stack(void) {
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_CALL, 0));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -910,7 +910,7 @@ static int test_eval_pop_try_without_push_try(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
     PyErr_Clear();
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NULL(code_obj, "Code creation fails for malformed bytecode");
     TEST_ASSERT(PyErr_Occurred(), "error is set");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
@@ -940,7 +940,7 @@ static int test_eval_pop_finally_without_push(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
     PyErr_Clear();
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NULL(code_obj, "Code creation fails for malformed bytecode");
     TEST_ASSERT(PyErr_Occurred(), "error is set");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
@@ -970,7 +970,7 @@ static int test_eval_pop_cc_without_push_cc(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
     PyErr_Clear();
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NULL(code_obj, "Code creation fails for malformed bytecode");
     TEST_ASSERT(PyErr_Occurred(), "error is set");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
@@ -1010,7 +1010,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_BUILD_CLASS, 0));
     PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -1062,7 +1062,7 @@ static int test_eval_push_collect_empty_stack_raises(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_POP_COLLECT, 0));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -1108,7 +1108,7 @@ static int test_eval_pop_collect_without_push_collect(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
     PyErr_Clear();
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NULL(code_obj, "Code creation fails for malformed bytecode");
     TEST_ASSERT(PyErr_Occurred(), "error is set");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
@@ -1159,7 +1159,7 @@ static int test_eval_call_zero_args(void) {
         Py_XDECREF(resume_str);
     }
 
-    code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     Py_DECREF(instr);
     Py_DECREF(nspec);
     if (! code_obj)
@@ -1239,7 +1239,7 @@ static int test_eval_fast_on_dict_ns(void) {
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_FAST, 0));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
@@ -1289,7 +1289,7 @@ static int test_eval_build_function_no_defaults(void) {
     TEST_ASSERT_NOT_NULL(inner_instr, "inner instr list");
     PyList_SET_ITEM(inner_instr, 0, make_instr_int(KOS_OP_RETURN, 0));
 
-    PyObject *inner_code = KosCode_New(nspec, inner_instr, NULL, NULL);
+    PyObject *inner_code = KosCode_New(nspec, inner_instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(inner_code, "inner Code");
     Py_DECREF(inner_instr);
 
@@ -1313,7 +1313,7 @@ static int test_eval_build_function_no_defaults(void) {
     Py_DECREF(bf_arg);
     Py_DECREF(fspec);
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
     Py_DECREF(instr);
 
@@ -1364,7 +1364,7 @@ static int make_simple_ctx(
     PyObject *nspec = create_test_nspec();
     if (! nspec) return -1;
 
-    *code_obj_out = KosCode_New(nspec, instr, NULL, NULL);
+    *code_obj_out = KosCode_New(nspec, instr, NULL, NULL, 1);
     Py_DECREF(nspec);
     if (! *code_obj_out) return -1;
 
@@ -1550,7 +1550,7 @@ static int test_eval_await_throw_completes_iterator(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_AWAIT, 1));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     Py_DECREF(instr);
     TEST_ASSERT_NOT_NULL(code_obj, "code");
 
@@ -1627,7 +1627,7 @@ static int test_eval_await_throw_reyield(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_AWAIT, 1));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     Py_DECREF(instr);
     TEST_ASSERT_NOT_NULL(code_obj, "code");
 
@@ -1867,7 +1867,7 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
     Py_DECREF(val);
 
-    code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    code_obj = KosCode_New(nspec, instr, NULL, NULL, 1);
     Py_DECREF(nspec);
     Py_DECREF(instr);
     TEST_ASSERT_NOT_NULL(code_obj, "create code");
