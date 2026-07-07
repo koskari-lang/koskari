@@ -34,7 +34,13 @@ from lsprotocol.types import (
 )
 
 from koskari.exceptions import ReaderError
-from koskari.lexer import LAYOUT_BLOCK_NAMES, SPECIAL_NAMES, parse_all, tokenize
+from koskari.lexer import (
+    LAYOUT_BLOCK_NAMES,
+    SPECIAL_NAMES,
+    make_layout_reader,
+    parse_all,
+    tokenize,
+)
 from koskari.extras.lsp.utils import get_word_at_position, koskari_to_lsp_range
 
 
@@ -49,8 +55,13 @@ def collect_diagnostics(source, uri):
 
     diagnostics = []
 
+    # Build a fresh reader per call: reads mutate per-read reader state, and
+    # the language server may process requests that overlap, so it must not
+    # share the process-wide cached reader.
+    reader = make_layout_reader()
+
     try:
-        for _ in parse_all(source, uri):
+        for _ in parse_all(source, uri, reader=reader):
             pass
     except ReaderError as exc:
         location = getattr(exc, 'location', None)

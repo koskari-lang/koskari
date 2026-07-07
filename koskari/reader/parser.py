@@ -559,6 +559,26 @@ class IndentAwareStream(SourceStream):
             self._max_indent = old
 
 
+    @contextmanager
+    def indent_limit(self, max_indent):
+        """
+        Bound skip_whitespace by ``max_indent`` for the duration
+
+        While active, skip_whitespace sets :attr:`dedented` and stops without
+        consuming when the next content line is at or below ``max_indent``.
+        The previous limit is restored on exit.
+
+        :param max_indent: column that ends a block body on dedent
+        """
+
+        old = self._max_indent
+        self._max_indent = max_indent
+        try:
+            yield
+        finally:
+            self._max_indent = old
+
+
 # ===========================================================================
 # Stream factory helpers
 # ===========================================================================
@@ -2226,26 +2246,24 @@ class LayoutReader(Reader):
         :return: list of parsed body forms
         """
 
-        old_indent = stream._max_indent
-        stream._max_indent = outer_indent
         body = []
 
         try:
-            while True:
-                stream.skip_whitespace()
-                if stream.dedented:
-                    break
-                if not stream.peek(1):
-                    break
-                event, pos, form = self.read_form(stream)
-                if event is EOF:
-                    break
-                elif event is BLOCKS:
-                    body.extend(form.unpack())
-                else:
-                    body.append(form)
+            with stream.indent_limit(outer_indent):
+                while True:
+                    stream.skip_whitespace()
+                    if stream.dedented:
+                        break
+                    if not stream.peek(1):
+                        break
+                    event, pos, form = self.read_form(stream)
+                    if event is EOF:
+                        break
+                    elif event is BLOCKS:
+                        body.extend(form.unpack())
+                    else:
+                        body.append(form)
         finally:
-            stream._max_indent = old_indent
             stream.dedented = False
 
         return body

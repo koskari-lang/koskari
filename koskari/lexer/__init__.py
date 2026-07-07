@@ -31,7 +31,13 @@ from .discovery import (
     collect_special_like_names_from_builtins,
     special_names_for_repl,
 )
-from .parser import READ_EOF, default_layout_reader, parse, parse_all
+from .parser import (
+    READ_EOF,
+    default_layout_reader,
+    make_layout_reader,
+    parse,
+    parse_all,
+)
 from .tokens import (
     Token,
     tokenize,
@@ -47,6 +53,7 @@ __all__ = (
     'collect_special_like_names_from_builtins',
     'READ_EOF',
     'default_layout_reader',
+    'make_layout_reader',
     'parse',
     'parse_all',
     'special_names_for_repl',
