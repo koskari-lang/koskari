@@ -111,6 +111,19 @@ class TestFormatStringReader(IsolatedAsyncioTestCase):
         parts = fstring_parts(form)
         self.assertEqual(parts, ['{', 'literal', '}'])
 
+    async def test_escape_producing_brace_is_literal(self):
+        # \x7b / \x7d decode to { and } but must not act as field
+        # delimiters; the whole thing is a literal "{x}" string.
+        form = read_fstring(r'f"\x7bx\x7d"')
+        parts = fstring_parts(form)
+        self.assertEqual(parts, ['{x}'])
+
+    async def test_escape_before_field_decodes_in_literal(self):
+        form = read_fstring(r'f"a\nb{x}"')
+        parts = fstring_parts(form)
+        self.assertEqual(parts[0], 'a\nb')
+        self.assertEqual(format_field_args(parts[1]), [symbol('x')])
+
     async def test_colon_spec_with_nested_braces(self):
         form = read_fstring('f"{x:{w}}"')
         parts = fstring_parts(form)

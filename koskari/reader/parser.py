@@ -255,6 +255,11 @@ ESCAPE_SEQUENCE_RE = regex(r'''
 | \\[\\'"abfnrtv]
 )''', UNICODE | VERBOSE)
 
+# Escape sequences are bounded in length; the longest is ``\N{NAME}`` whose
+# Unicode names top out well under this window. Used to match a single escape
+# from a peeked window in the format-string splitter.
+_FSTRING_ESCAPE_PEEK = 128
+
 
 def _decode_sub(match):
     """
@@ -1450,7 +1455,12 @@ class Reader:
         if stream.peek(3) == '"""':
             col += 2
 
-        _evnt, data = self._read_string(stream, char)
+        # Read the body raw (escapes undecoded) so the field/literal split
+        # sees source characters: an escape that decodes to a brace must not
+        # act as a field delimiter, and embedded expression positions must
+        # track the source rather than the post-escape text. Escapes are
+        # decoded per literal chunk and per field interior in the splitter.
+        _evnt, data = self._read_string(stream, char, with_escapes=False)
 
         substream = source_str(data, stream.filename,
                                line_no=lin, col_no=col)
@@ -2805,41 +2815,137 @@ class FormatStringReader(object):
         return child
 
 
+    def _read_literal_escape(self, stream):
+        """
+        Read one backslash escape sequence from literal text and decode it
+
+        :param stream: the source stream, positioned at the backslash
+        :return: the decoded escape (a lone backslash if no sequence matches)
+        """
+
+        window = stream.peek(_FSTRING_ESCAPE_PEEK)
+        match = ESCAPE_SEQUENCE_RE.match(window)
+        if match:
+            text = match.group(0)
+            stream.read(len(text))
+            return _as_unicode(text)
+        return stream.read(1)
+
+
+    def _read_raw_field(self, stream):
+        """
+        Read one field's raw text up to and consuming the matching ``}``
+
+        Tracks brace depth (for nested spec fields) and inner strings, where
+        a ``\\"`` opens or closes a string so that braces inside it are not
+        treated as delimiters. Escapes are left undecoded; the caller decodes
+        the returned text before parsing it.
+
+        :param stream: the source stream, positioned after the opening ``{``
+        :return: the raw field text without the closing ``}``
+        """
+
+        parts = []
+        depth = 0
+        in_string = False
+
+        while True:
+            c = stream.read(1)
+            if not c:
+                raise stream.reader_eof(stream.position())
+            if c == '\\':
+                nxt = stream.read(1)
+                if not nxt:
+                    raise stream.reader_eof(stream.position())
+                parts.append(c)
+                parts.append(nxt)
+                if nxt == '"':
+                    in_string = not in_string
+                continue
+            if in_string:
+                parts.append(c)
+                continue
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                if depth == 0:
+                    return ''.join(parts)
+                depth -= 1
+            parts.append(c)
+
+
+    def _read_field(self, stream):
+        """
+        Read one ``{...}`` field: extract its raw text, decode, and parse
+
+        :param stream: the source stream, positioned after the opening ``{``
+        :return: a ``(format ...)`` form for this field
+        """
+
+        pos = stream.position()
+        raw = self._read_raw_field(stream)
+        substream = source_str(_as_unicode(raw) + '}', stream.filename,
+                               line_no=pos[0], col_no=pos[1])
+        return self._read_format_field(substream)
+
+
     def split(self, stream):
         """
-        Split a format string into literal and expression parts
+        Split a raw format string into literal and expression parts
 
-        :param stream: the source stream containing the format string
+        The stream holds the undecoded f-string body. Literal runs are
+        accumulated (with escapes decoded individually) and flushed as one
+        string at each field or escaped-brace boundary, so ``{{`` / ``}}``
+        remain their own literal parts. Fields are read by :meth:`_read_field`.
+
+        :param stream: the source stream containing the raw format string
         :return: list of string literals and expression forms
         """
 
         result = []
+        literal = []
+
+        def flush():
+            if literal:
+                result.append(''.join(literal))
+                literal.clear()
 
         try:
-            peek = stream.peek(2)
-            while peek:
-                if peek == "{{":
-                    stream.read(2)
-                    result.append("{")
+            while True:
+                chunk = stream.read_until_chars("{}\\")
+                if chunk:
+                    literal.append(chunk)
 
-                elif peek == "}}":
-                    stream.read(2)
-                    result.append("}")
+                c = stream.peek(1)
+                if not c:
+                    break
 
-                elif peek == "}":
-                    raise FormatStringSyntaxError(
-                        "mis-matched closing } in f-string",
-                        stream.position(),
-                        filename=stream.filename)
+                if c == '\\':
+                    literal.append(self._read_literal_escape(stream))
+                    continue
 
-                elif peek[0] == "{":
+                if c == '{':
                     stream.read(1)
-                    result.append(self._read_format_field(stream))
+                    if stream.peek(1) == '{':
+                        stream.read(1)
+                        flush()
+                        result.append('{')
+                        continue
+                    flush()
+                    result.append(self._read_field(stream))
+                    continue
 
-                else:
-                    result.append(stream.read_until_chars("{}"))
-
-                peek = stream.peek(2)
+                # c == '}'
+                stream.read(1)
+                if stream.peek(1) == '}':
+                    stream.read(1)
+                    flush()
+                    result.append('}')
+                    continue
+                raise FormatStringSyntaxError(
+                    "mis-matched closing } in f-string",
+                    stream.position(),
+                    filename=stream.filename)
 
         except ReaderEOF:
             raise
@@ -2848,6 +2954,7 @@ class FormatStringReader(object):
                                           filename=rex.filename,
                                           text=rex.text)
 
+        flush()
         return result
 
 
