@@ -84,6 +84,28 @@ define-syntax compile/flet:
         body ...)
 
 
+define-syntax compile/labels:
+  """
+  Binds local functions for the extent of a body, with the names visible to
+  one another so the functions can be mutually recursive, eg.::
+
+  (labels [[even? [n] (if (== n 0) True (odd? (- n 1)))]
+           [odd? [n] (if (== n 0) False (even? (- n 1)))]]
+    (even? 10))
+
+  Each function is `define`d inside a shared scope, so a binding's body sees
+  every sibling in the same `labels` (unlike `flet`, whose initializers are
+  evaluated in the enclosing scope and cannot see siblings).
+  """
+
+  syntax-rules []:
+    case (labels [[name formals fbody ...] ...] body ...):
+      (let []
+        (define name (function name formals fbody ...))
+        ...
+        body ...)
+
+
 define-syntax compile/decorate:
   """
   Handler for the decorator layout syntax, can also be used to apply
