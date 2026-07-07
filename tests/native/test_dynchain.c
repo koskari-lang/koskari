@@ -529,7 +529,7 @@ static int test_dyndelim_clone_no_chain_alias(void) {
         NULL, KOS_DYN_DELIM_MODE_K_RETURN, (KosDynNode *) inner, 7, NULL, NULL);
     TEST_ASSERT_NOT_NULL(delim, "create DELIM with owned chain");
 
-    clone = kos_dynnode_clone((KosDynNode *) delim);
+    clone = kos_dyn_clone((KosDynNode *) delim);
     TEST_ASSERT_NOT_NULL(clone, "clone DELIM");
     TEST_ASSERT_NULL(KosDynDelim_RETURN_CHAIN((KosDynDelim *) clone),
                      "clone does not alias RETURN_CHAIN");

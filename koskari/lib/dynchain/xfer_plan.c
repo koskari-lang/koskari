@@ -725,16 +725,7 @@ static void xfer_plan_release_invoke_clone(KosTransferPlan *plan) {
     KosContinuation_CAPTURED_CHAIN(clone) = NULL;
   }
   Py_XDECREF(KosContinuation_TOKEN_REF(clone));
-  if (cont_freecount < CONT_MAX_FREE) {
-    KOS_TRACE_FL_RETURN("continuation", 0);
-    memset(clone, 0, sizeof(KosContinuation));
-    KosContinuation_CAPTURED_CHAIN(clone) = (KosDynNode *) cont_freelist;
-    cont_freelist = clone;
-    cont_freecount++;
-  } else {
-    KOS_TRACE_FL_RETURN("continuation", 1);
-    PyMem_Free(clone);
-  }
+  kos_continuation_release_struct(clone);
 }
 
 
@@ -840,9 +831,9 @@ KOS_OP_INLINE void xfer_plan_apply_resume_state(
 
 /**
    Execute an EXTENT_ACTION step: run extent wind (enter) or unwind
-   (exit) for the stored node.  Dispatches via kos_dyn_wind or
-   kos_dynnode_run_transfer_unwind.  Returns 0 on sync completion, -1
-   on error, or KOS_DYN_UNWIND_ASYNC_STARTED when async started.
+   (exit) for the stored node via kos_dyn_wind or kos_dyn_unwind.
+   Returns 0 on sync completion, -1 on error, or
+   KOS_DYN_UNWIND_ASYNC_STARTED when async started.
 */
 static int xfer_step_extent_action(KosEvalState *es,
                                    KosTransferAction *action) {
@@ -851,18 +842,10 @@ static int xfer_step_extent_action(KosEvalState *es,
   KosOpResult kr;
 
   if (phase == KOS_XFER_EXTENT_PHASE_WIND)
-    kr = kos_dynnode_run_wind(es, node);
+    kr = kos_dyn_wind(es, node);
   else
-    kr = kos_dynnode_run_transfer_unwind(es, node, KOS_XFER_EVENT_NONE);
-  if (kr.kind == KOS_RES_AWAIT) {
-    Py_XDECREF(kr.val);
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  }
-  if (kr.kind == KOS_RES_REPROLOGUE)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  if (kr.kind != KOS_RES_NORMAL)
-    return -1;
-  return 0;
+    kr = kos_dyn_unwind(es, node, KOS_XFER_EVENT_NONE);
+  return kos_map_pop_result(kr);
 }
 
 
@@ -920,24 +903,13 @@ static int kos_dyn_run_install_wind_span(
 
   /* Run wind in reverse order (outer nodes first) */
   for (size_t i = wind_count; i > 0; i--) {
-    KosOpResult wr = kos_dynnode_run_wind(es, wind_nodes[i - 1]);
-    if (wr.kind == KOS_RES_AWAIT) {
-      Py_XDECREF(wr.val);
-      if (wind_nodes != stack_buf)
-        PyMem_Free(wind_nodes);
-      return KOS_DYN_UNWIND_ASYNC_STARTED;
-    }
-    if (wr.kind == KOS_RES_REPROLOGUE) {
-      if (wind_nodes != stack_buf)
-        PyMem_Free(wind_nodes);
-      return KOS_DYN_UNWIND_ASYNC_STARTED;
-    }
-    if (wr.kind != KOS_RES_NORMAL) {
-      if (wind_nodes != stack_buf)
-        PyMem_Free(wind_nodes);
-      if (KOS_XFER_TRACE)
+    int m = kos_map_pop_result(kos_dyn_wind(es, wind_nodes[i - 1]));
+    if (m) {
+      if (m < 0 && KOS_XFER_TRACE)
         SAYF("[xfer] %s wind failed", xfer_fail_tag);
-      return -1;
+      if (wind_nodes != stack_buf)
+        PyMem_Free(wind_nodes);
+      return m;
     }
   }
   if (wind_nodes != stack_buf)
@@ -1129,6 +1101,27 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action) {
 
 
 /**
+   Arm the context's throw-injection slots with val/exc_type (the
+   evaluator raises on its next entry).  Borrows both references.
+   Shared by xfer_step_inject and xfer_step_truncate_and_inject.
+*/
+static void xfer_inject_throw(
+    KosContext *ctx,
+    PyObject *val,
+    PyObject *exc_type) {
+
+  KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
+  Py_XINCREF(val);
+  Py_XDECREF(KosContext_INJECT_VALUE(ctx));
+  KosContext_INJECT_VALUE(ctx) = val;
+  Py_XDECREF(KosContext_INJECT_TYPE(ctx));
+  KosContext_INJECT_TYPE(ctx) = exc_type;
+  if (exc_type)
+    Py_INCREF(exc_type);
+}
+
+
+/**
    Execute an INJECT step: deliver the continuation's result to the
    resumed context.  If is_throw, set inject mode and store the value for
    the evaluator to raise; otherwise push the value onto the current
@@ -1151,14 +1144,7 @@ static int xfer_step_inject(KosEvalState *es, KosTransferAction *action) {
   #endif
 
   if (is_throw) {
-    KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
-    Py_XINCREF(val);
-    Py_XDECREF(KosContext_INJECT_VALUE(ctx));
-    KosContext_INJECT_VALUE(ctx) = val;
-    Py_XDECREF(KosContext_INJECT_TYPE(ctx));
-    KosContext_INJECT_TYPE(ctx) = exc_type;
-    if (exc_type)
-      Py_INCREF(exc_type);
+    xfer_inject_throw(ctx, val, exc_type);
     Py_DECREF(val);
   } else {
     if (! KosEvalState_FRAME(es)) {
@@ -1193,16 +1179,7 @@ static int xfer_step_pop_one(KosEvalState *es) {
     PyErr_SetString(PyExc_RuntimeError, "POP_ONE: empty chain");
     return -1;
   }
-  KosOpResult kr = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_NONE);
-  if (kr.kind == KOS_RES_AWAIT) {
-    Py_XDECREF(kr.val);
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  }
-  if (kr.kind == KOS_RES_REPROLOGUE)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  if (kr.kind != KOS_RES_NORMAL)
-    return -1;
-  return 0;
+  return kos_map_pop_result(kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_NONE));
 }
 
 
@@ -1229,15 +1206,10 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
          (void *) current, (void *) stop_node, (void *) new_top);
 
   while (KosEvalState_DYN_TOP(es) && KosEvalState_DYN_TOP(es) != new_top) {
-    KosOpResult pop_res = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE);
-    if (pop_res.kind == KOS_RES_AWAIT) {
-      Py_XDECREF(pop_res.val);
-      return KOS_DYN_UNWIND_ASYNC_STARTED;
-    }
-    if (pop_res.kind == KOS_RES_REPROLOGUE)
-      return KOS_DYN_UNWIND_ASYNC_STARTED;
-    if (pop_res.kind != KOS_RES_NORMAL)
-      return -1;
+    int m = kos_map_pop_result(
+        kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE));
+    if (m)
+      return m;
   }
   if (KosEvalState_DYN_TOP(es) != new_top) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -1261,21 +1233,18 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
     int is_throw = KosTransferAction_TRUNCATE_IS_THROW(action);
 
     if (is_throw) {
-      PyObject *exc_type = KosTransferAction_TRUNCATE_TYPE(action);
-      KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
-      Py_XINCREF(val);
-      Py_XDECREF(KosContext_INJECT_VALUE(ctx));
-      KosContext_INJECT_VALUE(ctx) = val;
-      Py_XDECREF(KosContext_INJECT_TYPE(ctx));
-      KosContext_INJECT_TYPE(ctx) = exc_type;
-      if (exc_type)
-        Py_INCREF(exc_type);
+      xfer_inject_throw(ctx, val, KosTransferAction_TRUNCATE_TYPE(action));
+      Py_XDECREF(val);
     } else if (KosEvalState_FRAME(es)) {
       if (KosEvalState_StackPushRef(es, val) < 0) {
         Py_DECREF(val);
+        KosTransferAction_TRUNCATE_VALUE(action) = NULL;
         return -1;
       }
       Py_DECREF(val);
+    } else {
+      /* No frame to receive the value; release the plan's reference. */
+      Py_XDECREF(val);
     }
   }
   KosTransferAction_TRUNCATE_VALUE(action) = NULL;
@@ -1308,69 +1277,32 @@ int kos_run_transfer_step(KosEvalState *es) {
          (void *) KosEvalState_PLAN(es), (void *) KosTransferPlan_ACTIONS(KosEvalState_PLAN(es)),
          (int) KosTransferAction_STEP(action), (int) KOS_XFER_INSTALL);
 
-  switch (KosTransferAction_STEP(action)) {
-    case KOS_XFER_EXTENT_ACTION: {
-      int res = xfer_step_extent_action(es, action);
-      if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        return KOS_XFER_SUSPENDED_AWAIT;
-      }
-      if (res < 0) {
-        return -1;
-      }
-      break;
+  {
+    int res = 0;
+    switch (KosTransferAction_STEP(action)) {
+      case KOS_XFER_EXTENT_ACTION:
+        res = xfer_step_extent_action(es, action);
+        break;
+      case KOS_XFER_INSTALL:
+        res = xfer_step_install(es, action);
+        break;
+      case KOS_XFER_PUSH:
+        res = xfer_step_push(es, action);
+        break;
+      case KOS_XFER_POP_ONE:
+        res = xfer_step_pop_one(es);
+        break;
+      case KOS_XFER_TRUNCATE_AND_INJECT:
+        res = xfer_step_truncate_and_inject(es, action);
+        break;
+      case KOS_XFER_INJECT:
+        res = xfer_step_inject(es, action);
+        break;
     }
-
-    case KOS_XFER_INSTALL: {
-      int res = xfer_step_install(es, action);
-      if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        return KOS_XFER_SUSPENDED_AWAIT;
-      }
-      if (res < 0) {
-        return -1;
-      }
-      break;
-    }
-
-    case KOS_XFER_PUSH: {
-      int res = xfer_step_push(es, action);
-      if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        return KOS_XFER_SUSPENDED_AWAIT;
-      }
-      if (res < 0) {
-        return -1;
-      }
-      break;
-    }
-
-    case KOS_XFER_POP_ONE: {
-      int res = xfer_step_pop_one(es);
-      if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        return KOS_XFER_SUSPENDED_AWAIT;
-      }
-      if (res < 0) {
-        return -1;
-      }
-      break;
-    }
-
-    case KOS_XFER_TRUNCATE_AND_INJECT: {
-      int res = xfer_step_truncate_and_inject(es, action);
-      if (res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        return KOS_XFER_SUSPENDED_AWAIT;
-      }
-      if (res < 0) {
-        return -1;
-      }
-      break;
-    }
-
-    case KOS_XFER_INJECT: {
-      int res = xfer_step_inject(es, action);
-      if (res < 0) {
-        return -1;
-      }
-      break;
-    }
+    if (res == KOS_DYN_UNWIND_ASYNC_STARTED)
+      return KOS_XFER_SUSPENDED_AWAIT;
+    if (res < 0)
+      return -1;
   }
 
   /* Advance only when step completed normally (no early return -1 or
@@ -1408,21 +1340,17 @@ void kos_suspend_transfer_plan(KosEvalState *es) {
 
 /**
    Resume a suspended transfer plan after a nested transfer completes.  Pops
-   from plan_stack and restores it as KosEvalState_PLAN(es).  Pairs with
-   kos_suspend_transfer_plan.
-
-   Returns 0 on success (or when nothing to resume).
+   from plan_stack and restores it as KosEvalState_PLAN(es) (no-op when
+   nothing is suspended).  Pairs with kos_suspend_transfer_plan.
 */
-int kos_resume_transfer_plan(KosEvalState *es) {
+void kos_resume_transfer_plan(KosEvalState *es) {
 
   if (! KosEvalState_PLAN_STACK(es))
-    return 0;  /* nothing to resume */
+    return;  /* nothing to resume */
 
   KosEvalState_PLAN(es) = KosEvalState_PLAN_STACK(es);
   KosEvalState_PLAN_STACK(es) = KosEvalState_PLAN(es)->suspended;
   KosEvalState_PLAN(es)->suspended = NULL;
-
-  return 0;
 }
 
 

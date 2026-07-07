@@ -72,12 +72,6 @@ static PyObject *eager_step_awaitable(
       return NULL;
   }
 
-  if (! await_iter) {
-    PyErr_SetString(PyExc_TypeError,
-                    "eager_step_awaitable: __await__() returned NULL");
-    return NULL;
-  }
-
   SAYF("[eval] eager_step_awaitable before send(None) (await_iter=%d)\n",
        await_iter ? 1 : 0);
 
@@ -198,7 +192,7 @@ static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
    opcode (explicitly awaiting TOS). All other paths must use KosEvalState_StackPUSH
    so we do not auto-await values that are merely loaded or computed.
 
-   CALL* bytecode uses op_push_or_await instead: same logic plus an optional
+   CALL* bytecode uses push_or_await_fused instead: same logic plus an optional
    POP,1 peephole so KosEvalState_PushOrAwait and this function stay free of that
    cost on every non-opcode caller (e.g. defer_drive, KosEvalState_Call).
 
@@ -206,7 +200,7 @@ static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
 
    :return: EVAL_NORMAL, EVAL_AWAIT, or EVAL_RAISE
 */
-static KosOpResult push_or_await_common(
+static KosOpResult push_or_await_plain(
     KosEvalState *es,
     PyObject *val,
     int await_defer) {
@@ -247,7 +241,7 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  return push_or_await_common(es, val, 0);
+  return push_or_await_plain(es, val, 0);
 }
 
 
@@ -278,7 +272,7 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
   } while (0)
 
 
-static inline KosOpResult op_push_or_await(
+static inline KosOpResult push_or_await_fused(
     KosEvalState *es,
     PyObject *val) {
 
@@ -289,7 +283,7 @@ static inline KosOpResult op_push_or_await(
   }
 
   PyTypeObject *type = Py_TYPE(val);
-  SAYF("[eval] op_push_or_await entry is_awaitable=%d\n",
+  SAYF("[eval] push_or_await_fused entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
     OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
@@ -308,7 +302,7 @@ static inline KosOpResult op_push_or_await(
 
   if (suspended && yielded) {
     KosEvalState_MarkSuspendedNotRunning(es);
-    SAYF("[eval] op_push_or_await set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
+    SAYF("[eval] push_or_await_fused set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
     return EVAL_AWAIT(yielded);
   }
@@ -346,7 +340,7 @@ static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  return op_push_or_await(es, val);
+  return push_or_await_fused(es, val);
 }
 
 
@@ -395,6 +389,63 @@ static inline int do_frame_prep(
 }
 
 
+/**
+   Tail-call preamble for a plain-Python callable: pop the frame when it
+   is dyn_top, or defer delivery to a normal RETURN when extent nodes are
+   still open above it.  Sets *tail_defer_return accordingly.
+
+   :return: 0 on success, -1 on error
+*/
+static int tail_prep_py_call(
+    KosEvalState *es,
+    int tail_call,
+    int *tail_defer_return) {
+
+  *tail_defer_return = 0;
+  if (! tail_call)
+    return 0;
+
+  {
+    KosDynFrame *frame = KosEvalState_FRAME(es);
+    KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
+    if (! parent)
+      return 0;
+
+    if (KosEvalState_DYN_TOP(es) == (KosDynNode *) frame)
+      return kos_dyn_pop_frame(es);
+  }
+
+  /* Extent nodes are still open above the frame; skip the tail pop and
+     deliver the result through a normal RETURN so they unwind properly. */
+  *tail_defer_return = 1;
+  return 0;
+}
+
+
+/**
+   Deliver a plain-Python call result: push-or-await, then map tail-call
+   completion to RETURN (deferred) or CONTROL_RETURNED.  result consumed.
+*/
+static KosOpResult deliver_py_call_result(
+    KosEvalState *es,
+    PyObject *result,
+    int tail_call,
+    int tail_defer_return) {
+
+  KosOpResult por = push_or_await_plain(es, result, 0);
+  if (por.kind == KOS_RES_NORMAL && tail_call) {
+    if (tail_defer_return) {
+      PyObject *rv = KosEvalState_StackPopRef(es);
+      if (! rv)
+        return EVAL_RAISE();
+      return EVAL_RETURN(rv);
+    }
+    return EVAL_CONTROL_RETURNED();
+  }
+  return por;
+}
+
+
 KosOpResult KosEvalState_Call(
     KosEvalState *es,
     PyObject *callable,
@@ -430,21 +481,8 @@ KosOpResult KosEvalState_Call(
       }
     }
     int tail_defer_return = 0;
-    if (tail_call) {
-      KosDynFrame *frame = KosEvalState_FRAME(es);
-      KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent) {
-        if (KosEvalState_DYN_TOP(es) == (KosDynNode *) frame) {
-          if (kos_dyn_pop_frame(es) < 0)
-            return EVAL_RAISE();
-        } else {
-          /* Extent nodes are still open above the frame; skip the tail
-             pop and deliver the result through a normal RETURN so they
-             unwind properly. */
-          tail_defer_return = 1;
-        }
-      }
-    }
+    if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
+      return EVAL_RAISE();
     /* nargs matches KosCallable_Call: positional count only. PEP 590:
        keyword values follow args[nargs .. nargs + nkw - 1]. */
     PyObject *result = (nargs == 0 && ! kwnames)
@@ -452,19 +490,7 @@ KosOpResult KosEvalState_Call(
         : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
     if (! result)
       return EVAL_RAISE();
-    {
-      KosOpResult por = push_or_await_common(es, result, 0);
-      if (por.kind == KOS_RES_NORMAL && tail_call) {
-        if (tail_defer_return) {
-          PyObject *rv = KosEvalState_StackPopRef(es);
-          if (! rv)
-            return EVAL_RAISE();
-          return EVAL_RETURN(rv);
-        }
-        return EVAL_CONTROL_RETURNED();
-      }
-      return por;
-    }
+    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
@@ -506,21 +532,9 @@ KosOpResult KosEvalState_CallArgs(
       }
     }
     int tail_defer_return = 0;
-    if (tail_call) {
-      KosDynFrame *frame = KosEvalState_FRAME(es);
-      KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent) {
-        if (KosEvalState_DYN_TOP(es) == (KosDynNode *) frame) {
-          if (kos_dyn_pop_frame(es) < 0)
-            return EVAL_RAISE();
-        } else {
-          /* Extent nodes are still open above the frame; skip the tail
-             pop and deliver the result through a normal RETURN so they
-             unwind properly. */
-          tail_defer_return = 1;
-        }
-      }
-    }
+    if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
+      return EVAL_RAISE();
+
     PyObject *result = NULL;
 
     if (args_tuple) {
@@ -540,19 +554,7 @@ KosOpResult KosEvalState_CallArgs(
     if (! result)
       return EVAL_RAISE();
 
-    {
-      KosOpResult por = push_or_await_common(es, result, 0);
-      if (por.kind == KOS_RES_NORMAL && tail_call) {
-        if (tail_defer_return) {
-          PyObject *rv = KosEvalState_StackPopRef(es);
-          if (! rv)
-            return EVAL_RAISE();
-          return EVAL_RETURN(rv);
-        }
-        return EVAL_CONTROL_RETURNED();
-      }
-      return por;
-    }
+    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
@@ -579,37 +581,13 @@ KosOpResult KosEvalState_CallNoArgs(
       }
     }
     int tail_defer_return = 0;
-    if (tail_call) {
-      KosDynFrame *frame = KosEvalState_FRAME(es);
-      KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent) {
-        if (KosEvalState_DYN_TOP(es) == (KosDynNode *) frame) {
-          if (kos_dyn_pop_frame(es) < 0)
-            return EVAL_RAISE();
-        } else {
-          /* Extent nodes are still open above the frame; skip the tail
-             pop and deliver the result through a normal RETURN so they
-             unwind properly. */
-          tail_defer_return = 1;
-        }
-      }
-    }
+    if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
+      return EVAL_RAISE();
+
     PyObject *result = PyObject_CallNoArgs(callable);
     if (! result)
       return EVAL_RAISE();
-    {
-      KosOpResult por = push_or_await_common(es, result, 0);
-      if (por.kind == KOS_RES_NORMAL && tail_call) {
-        if (tail_defer_return) {
-          PyObject *rv = KosEvalState_StackPopRef(es);
-          if (! rv)
-            return EVAL_RAISE();
-          return EVAL_RETURN(rv);
-        }
-        return EVAL_CONTROL_RETURNED();
-      }
-      return por;
-    }
+    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
   PyTypeObject *typ = Py_TYPE(callable);

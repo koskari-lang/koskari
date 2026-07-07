@@ -155,19 +155,12 @@ int KosEvalState_Transition(
   before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
   triggering Python dealloc/__del__) does not see the plan while it is freed.
 */
-static void clear_and_free_transfer_plan(KosEvalState *es) {
+static void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosTransferPlan *p = KosEvalState_PLAN(es);
   KosEvalState_PLAN(es) = NULL;
   KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
   kos_free_transfer_plan(p);
-}
-
-
-static inline void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
-  if (unlikely(! es))
-    return;
-  clear_and_free_transfer_plan(es);
 }
 
 
@@ -183,6 +176,12 @@ void KosEvalState_SetPendingReturn(
 }
 
 
+/**
+  Consume a pending KOS_INJECT_THROW: ownership of both refs transfers
+  to the caller (slots are nulled without decref).
+
+  :return: 1 when a throw was taken, 0 when none pending
+*/
 static inline int KosEvalState_TakeInjectThrow(
     KosEvalState *es,
     PyObject **type_out,

@@ -653,14 +653,6 @@ void kos_dynnode_free(KosDynNode *node) {
 
 
 /**
-   Thin wrapper around kos_dyn_clone for symmetry with kos_dynnode_free.
-*/
-KosDynNode *kos_dynnode_clone(KosDynNode *node) {
-  return kos_dyn_clone(node);
-}
-
-
-/**
    Free nodes from node toward the root, stopping before stop (stop is not
    freed). Used to tear down a suffix of chain or a cloned template.
 */
@@ -696,9 +688,9 @@ KosDynNode *kos_clone_chain_segment(
     if (KOS_XFER_TRACE)
       SAYF("[xfer] clone_segment cloning node %p kind=%u",
            (void *) node, (unsigned) KosDynNode_KIND(node));
-    KosDynNode *cloned = kos_dynnode_clone(node);
+    KosDynNode *cloned = kos_dyn_clone(node);
     if (! cloned) {
-      SAYF("[xfer] clone_segment kos_dynnode_clone failed node=%p kind=%u pyerr=%d",
+      SAYF("[xfer] clone_segment kos_dyn_clone failed node=%p kind=%u pyerr=%d",
            (void *) node, (unsigned) KosDynNode_KIND(node), PyErr_Occurred() ? 1 : 0);
       /* Clone failed, free what we've built so far */
       kos_dynchain_free(cloned_top, NULL);
@@ -1098,6 +1090,22 @@ static KosOpResult kos_dyn_uninstall_core(
 
 
 /**
+   Map a pop/wind KosOpResult to the int unwind protocol: 0 on normal,
+   KOS_DYN_UNWIND_ASYNC_STARTED on AWAIT (releases r.val) or REPROLOGUE,
+   -1 on anything else (RAISE, FATAL).
+*/
+static inline int kos_map_pop_result(KosOpResult r) {
+  if (r.kind == KOS_RES_AWAIT) {
+    Py_XDECREF(r.val);
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  }
+  if (r.kind == KOS_RES_REPROLOGUE)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  return (r.kind == KOS_RES_NORMAL) ? 0 : -1;
+}
+
+
+/**
    Pop dyn_top: run uninstall handler (teardown, winds), unlink, free node,
    refresh FRAME_TOP. Must be the current top. Callers: kos_dyn_pop_top,
    xfer_step_pop_one, explicit unwinds.
@@ -1137,81 +1145,22 @@ int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node) {
 }
 
 
-/* === Transfer path wind/unwind helpers === */
-
-
-/**
-   Run INSTALL-phase wind (enter) for a node with NEEDS_INSTALL_WIND.
-   Used by xfer_step_install and xfer_step_push.
-   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
-     EVAL_REPROLOGUE or EVAL_AWAIT when async started
-*/
-static KosOpResult kos_dynnode_run_wind(KosEvalState *es, KosDynNode *node) {
-  return kos_dyn_wind(es, node);
-}
-
-
-/**
-   Run transfer-plan unwind for a node with NEEDS_UNWIND_ACTION.
-   Uses kos_dyn_unwind; teardown (drop block, pop) for nodes with
-   NEEDS_TRANSFER_TEARDOWN. Used by kos_run_transfer_step for EXTENT_ACTION.
-   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
-     EVAL_AWAIT or EVAL_REPROLOGUE when async started
-*/
-static KosOpResult kos_dynnode_run_transfer_unwind(KosEvalState *es,
-                                                   KosDynNode *node,
-                                                   KosXferEvent event) {
-  return kos_dyn_unwind(es, node, event);
-}
-
-
 /* === Generic dispatch: switch-based per-kind handlers === */
 
 
 /**
-   Run install-phase setup for a node that was just pushed.  Types with
-   no install action return 0 immediately via the default case.
+   Run install-phase setup for a node that was just pushed.  Only PARAM has
+   an install action.  WITH wind (enter) is invoked explicitly by opcodes or
+   the transfer plan after push, never here; PROMPT is a barrier only (the
+   operand stack stays on the frame below, and SHIFT inherits it via
+   KosDynNode_STACK == NULL).
 
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
 int kos_dyn_install(KosEvalState *es, KosDynNode *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  int r;
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PROMPT: {
-      /* Operand stack stays on the frame below; PROMPT is a barrier only.
-         SHIFT inherits the same stack via KosDynNode_STACK == NULL. */
-      (void) node;
-      r = 0;
-      break;
-    }
-    case KOS_DYN_DELIM:
-      r = 0;
-      break;
-    case KOS_DYN_PARAM:
-      r = kos_dynparam_enter(ctx, (KosDynParam *) node);
-      break;
-    case KOS_DYN_WITH:
-      /* Push = link + local setup only.  Wind (enter) is invoked explicitly
-         by opcodes or transfer plan after push, never in install. */
-      r = 0;
-      break;
-    case KOS_DYN_COLLECT:
-      /* PUSH_COLLECT handler installs collector as frame ns before pushing
-         the node; no install action needed. */
-      r = 0;
-      break;
-    case KOS_DYN_GEN:
-      r = 0;
-      break;
-    case KOS_DYN_NEXT:
-      r = 0;
-      break;
-    default:
-      r = 0;
-      break;
-  }
-  return r;
+  if (KosDynNode_KIND(node) == KOS_DYN_PARAM)
+    return kos_dynparam_enter(KosEvalState_CONTEXT(es), (KosDynParam *) node);
+  return 0;
 }
 
 
@@ -1225,41 +1174,15 @@ int kos_dyn_install(KosEvalState *es, KosDynNode *node) {
 static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
                                               KosXferEvent event) {
   switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PROMPT: {
-      if (KOS_XFER_TRACE) {
-        size_t len_before = KosDynNode_STACK(node)
-            ? KosStackBlock_LEN(KosDynNode_STACK(node)) : 0;
-        SAYF("[xfer] prompt_pop node=%p: prompt stack len=%zu",
-             (void *) node, len_before);
-        (void) len_before;
-      }
-      return EVAL_NORMAL();
-    }
-    case KOS_DYN_DELIM:
-      return EVAL_NORMAL();
     case KOS_DYN_WIND:
+    case KOS_DYN_WITH:
       return kos_dyn_unwind(es, node, event);
-    case KOS_DYN_TRY:
-    case KOS_DYN_FINALLY:
-    case KOS_DYN_LOOP:
-    case KOS_DYN_FOREACH:
-      return EVAL_NORMAL();
-    case KOS_DYN_NS:
-      (void) es;
-      return EVAL_NORMAL();
-    case KOS_DYN_COLLECT: {
-      (void) es;
-      return EVAL_NORMAL();
-    }
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(es, (KosDynParam *) node);
       return EVAL_NORMAL();
     case KOS_DYN_YIELD_FROM:
       kos_dyn_yieldfrom_unwind(es, (KosDynYieldFrom *) node);
       return EVAL_NORMAL();
-    case KOS_DYN_WITH: {
-      return kos_dyn_unwind(es, node, event);
-    }
     default:
       return EVAL_NORMAL();
   }
@@ -1387,11 +1310,9 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
         return KOS_HANDLE_CONSUMED;
       return KOS_HANDLE_PASS;
     case KOS_DYN_GEN:
-      if (event == KOS_XFER_EVENT_YIELD)
-        return KOS_HANDLE_CONSUMED;
-      if (event == KOS_XFER_EVENT_RETURN)
-        return KOS_HANDLE_CONSUMED;
-      if (event == KOS_XFER_EVENT_RAISE)
+      if (event == KOS_XFER_EVENT_YIELD
+          || event == KOS_XFER_EVENT_RETURN
+          || event == KOS_XFER_EVENT_RAISE)
         return KOS_HANDLE_CONSUMED;
       if (event == KOS_XFER_EVENT_SHIFT) {
         PyErr_SetString(PyExc_RuntimeError,
@@ -1609,21 +1530,34 @@ KosDynPrompt *kos_find_nearest_prompt(KosEvalState *es) {
 
 
 /**
-   Ensure prompt lies on the chain from dyn_top (shift capture precondition).
+   Ensure target lies on the chain from dyn_top; errmsg names the miss.
 */
-int kos_validate_capture(KosEvalState *es, KosDynPrompt *prompt) {
+static int kos_chain_contains(
+    KosEvalState *es,
+    const KosDynNode *target,
+    const char *errmsg) {
+
   KosDynNode *node = KosEvalState_DYN_TOP(es);
 
-  while (node && node != (KosDynNode *) prompt) {
+  while (node && node != target) {
     node = KosDynNode_PARENT(node);
   }
 
   if (! node) {
-    PyErr_SetString(PyExc_RuntimeError, "prompt not found in chain");
+    PyErr_SetString(PyExc_RuntimeError, errmsg);
     return -1;
   }
 
   return 0;
+}
+
+
+/**
+   Ensure prompt lies on the chain from dyn_top (shift capture precondition).
+*/
+int kos_validate_capture(KosEvalState *es, KosDynPrompt *prompt) {
+  return kos_chain_contains(es, (KosDynNode *) prompt,
+                            "prompt not found in chain");
 }
 
 
@@ -1649,18 +1583,8 @@ KosDynCC *kos_find_cc(KosEvalState *es) {
    Ensure cc lies on the chain from dyn_top (call/cc capture precondition).
 */
 static int kos_validate_capture_cc(KosEvalState *es, KosDynCC *cc) {
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
-
-  while (node && node != (KosDynNode *) cc) {
-    node = KosDynNode_PARENT(node);
-  }
-
-  if (! node) {
-    PyErr_SetString(PyExc_RuntimeError, "CC block not found in chain");
-    return -1;
-  }
-
-  return 0;
+  return kos_chain_contains(es, (KosDynNode *) cc,
+                            "CC block not found in chain");
 }
 
 
@@ -1968,6 +1892,24 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
 
 
 /**
+   Return a KosContinuation struct to the freelist or free it.  Struct
+   teardown only; callers must have released all owned resources.
+*/
+static void kos_continuation_release_struct(KosContinuation *k) {
+  if (cont_freecount < CONT_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("continuation", 0);
+    memset(k, 0, sizeof(KosContinuation));
+    KosContinuation_CAPTURED_CHAIN(k) = (KosDynNode *) cont_freelist;
+    cont_freelist = k;
+    cont_freecount++;
+  } else {
+    KOS_TRACE_FL_RETURN("continuation", 1);
+    PyMem_Free(k);
+  }
+}
+
+
+/**
    Free continuation and captured chain. Callers: error paths, wrapper dealloc.
 */
 void kos_continuation_free(KosContinuation *k) {
@@ -1984,16 +1926,7 @@ void kos_continuation_free(KosContinuation *k) {
 
   kos_dynchain_free(KosContinuation_CAPTURED_CHAIN(k), NULL);
 
-  if (cont_freecount < CONT_MAX_FREE) {
-    KOS_TRACE_FL_RETURN("continuation", 0);
-    memset(k, 0, sizeof(KosContinuation));
-    KosContinuation_CAPTURED_CHAIN(k) = (KosDynNode *) cont_freelist;
-    cont_freelist = k;
-    cont_freecount++;
-  } else {
-    KOS_TRACE_FL_RETURN("continuation", 1);
-    PyMem_Free(k);
-  }
+  kos_continuation_release_struct(k);
 }
 
 

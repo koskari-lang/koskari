@@ -817,19 +817,6 @@ void kos_dynnode_free(KosDynNode *node);
 
 
 /**
-   Clone a single DynNode of any kind.
-
-   Dispatches to the appropriate type-specific clone function.
-   Does NOT clone the parent chain.
-
-   :param node: node to clone
-
-   :return: cloned node, or NULL on error
-*/
-KosDynNode *kos_dynnode_clone(KosDynNode *node);
-
-
-/**
    Free an entire chain of DynNodes from node down to (but not
    including) stop.
 
@@ -2097,12 +2084,10 @@ void kos_suspend_transfer_plan(KosEvalState *es);
 
 /**
    Resume a suspended transfer plan after the nested transfer completes.
-   Pops from plan_stack and restores it as the active plan.  Pairs with
-   kos_suspend_transfer_plan.
-
-   :return: 0 on success, 0 when nothing to resume
+   Pops from plan_stack and restores it as the active plan (no-op when
+   nothing is suspended).  Pairs with kos_suspend_transfer_plan.
 */
-int kos_resume_transfer_plan(KosEvalState *es);
+void kos_resume_transfer_plan(KosEvalState *es);
 
 
 /**

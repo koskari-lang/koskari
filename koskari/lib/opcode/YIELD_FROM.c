@@ -688,13 +688,11 @@ KOS_OP_HANDLER(YIELD_FROM) {
     PyObject *exc_type = NULL;
 
     if (KosEvalState_TakeInjectThrow(es, &exc_type, &exc)) {
+      /* TakeInjectThrow transfers ownership of both refs; store as-is. */
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
       KosDynYieldFrom_PENDING_ARG(yf) = exc;
-      Py_INCREF(exc);
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
       KosDynYieldFrom_PENDING_ARG_TYPE(yf) = exc_type;
-      if (exc_type)
-        Py_INCREF(exc_type);
       action = KOS_YF_THROW;
       KosDynYieldFrom_PENDING_ACTION(yf) = action;
       KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_DRIVING);

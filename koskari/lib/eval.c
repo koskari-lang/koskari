@@ -260,17 +260,18 @@ static KosOpResult revive_await(
         PyObject *throw_exc) {
 
   if (throw_exc != NULL) {
+    PyObject *typ_eff = throw_typ ? throw_typ
+        : (PyObject *) Py_TYPE(throw_exc);
+
     SAYF("[await] revive_await throw typ=%p exc=%p\n",
          (void *) throw_typ, (void *) throw_exc);
 
     if (! KosEvalState_PythonAwaitIter(es)) {
-      PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
-                      throw_exc);
+      PyErr_SetObject(typ_eff, throw_exc);
       return EVAL_RAISE();
     }
     {
-      PyObject *typ = throw_typ ? throw_typ
-          : (PyObject *) Py_TYPE(throw_exc);
+      PyObject *typ = typ_eff;
       PyObject *val = throw_exc;
       PyObject *tb = Py_None;
       PyObject *res;
@@ -280,26 +281,16 @@ static KosOpResult revive_await(
       Py_INCREF(tb);
       PyErr_NormalizeException(&typ, &val, &tb);
       throw_meth = PyObject_GetAttr(KosEvalState_PythonAwaitIter(es), str_throw);
-      if (! throw_meth) {
-        Py_DECREF(typ);
-        Py_DECREF(val);
-        Py_XDECREF(tb);
-        if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+      if (! throw_meth || ! PyCallable_Check(throw_meth)) {
+        if (! throw_meth && PyErr_ExceptionMatches(PyExc_AttributeError)) {
           PyErr_Clear();
-          KosEvalState_PythonAwaitClearIter(es);
-          PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
-                          throw_exc);
-          return EVAL_RAISE();
+          PyErr_SetObject(typ_eff, throw_exc);
+        } else if (throw_meth) {
+          PyErr_Format(PyExc_TypeError,
+                       "%R object attribute throw is not callable",
+                       KosEvalState_PythonAwaitIter(es));
         }
-        KosEvalState_PythonAwaitClearIter(es);
-        return EVAL_RAISE();
-      }
-      if (! PyCallable_Check(throw_meth)) {
-        PyObject *await_iter = KosEvalState_PythonAwaitIter(es);
-        PyErr_Format(PyExc_TypeError,
-                     "%R object attribute throw is not callable",
-                     await_iter);
-        Py_DECREF(throw_meth);
+        Py_XDECREF(throw_meth);
         Py_DECREF(typ);
         Py_DECREF(val);
         Py_XDECREF(tb);
@@ -955,6 +946,24 @@ static size_t context_freecount = 0;
 static KosContext *context_freelist = NULL;
 
 
+/**
+   Return a KosContext struct to the freelist or free it.  Struct
+   teardown only; callers must have released all owned references.
+*/
+static void context_release(KosContext *ctx) {
+  if (context_freecount < CONTEXT_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("context", 0);
+    memset(ctx, 0, sizeof(KosContext));
+    KosContext_FREELIST_NEXT(ctx) = context_freelist;
+    context_freelist = ctx;
+    context_freecount++;
+  } else {
+    KOS_TRACE_FL_RETURN("context", 1);
+    PyMem_Free(ctx);
+  }
+}
+
+
 KosContext *KosContext_New(KosDynFrame *top) {
 
   KosContext *ctx = context_freelist;
@@ -975,16 +984,7 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
   KosContext_TOKEN(ctx) = evaluator_token_new();
   if (! KosContext_TOKEN(ctx)) {
-    if (context_freecount < CONTEXT_MAX_FREE) {
-      KOS_TRACE_FL_RETURN("context", 0);
-      memset(ctx, 0, sizeof(KosContext));
-      KosContext_FREELIST_NEXT(ctx) = context_freelist;
-      context_freelist = ctx;
-      context_freecount++;
-    } else {
-      KOS_TRACE_FL_RETURN("context", 1);
-      PyMem_Free(ctx);
-    }
+    context_release(ctx);
     return NULL;
   }
 
@@ -1004,16 +1004,7 @@ KosContext *KosContext_New(KosDynFrame *top) {
       if (! ctx->domain) {
         Py_DECREF(KosContext_TOKEN(ctx));
         KosContext_TOKEN(ctx) = NULL;
-        if (context_freecount < CONTEXT_MAX_FREE) {
-          KOS_TRACE_FL_RETURN("context", 0);
-          memset(ctx, 0, sizeof(KosContext));
-          KosContext_FREELIST_NEXT(ctx) = context_freelist;
-          context_freelist = ctx;
-          context_freecount++;
-        } else {
-          KOS_TRACE_FL_RETURN("context", 1);
-          PyMem_Free(ctx);
-        }
+        context_release(ctx);
         return NULL;
       }
     }
@@ -1101,16 +1092,7 @@ void KosContext_Free(KosContext *ctx) {
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
 
-  if (context_freecount < CONTEXT_MAX_FREE) {
-    KOS_TRACE_FL_RETURN("context", 0);
-    memset(ctx, 0, sizeof(KosContext));
-    KosContext_FREELIST_NEXT(ctx) = context_freelist;
-    context_freelist = ctx;
-    context_freecount++;
-  } else {
-    KOS_TRACE_FL_RETURN("context", 1);
-    PyMem_Free(ctx);
-  }
+  context_release(ctx);
 }
 
 
@@ -1559,7 +1541,7 @@ static PyObject *kos_import_module(
 
 
 static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
-  return push_or_await_common(es, value, 1);
+  return push_or_await_plain(es, value, 1);
 }
 
 
@@ -1629,9 +1611,7 @@ static PyObject *binary_in_result(PyObject *left, PyObject *right) {
   int r = PySequence_Contains(right, left);
   if (r < 0)
     return NULL;
-  PyObject *res = (r ? Py_True : Py_False);
-  Py_INCREF(res);
-  return res;
+  return PyBool_FromLong(r);
 }
 
 
@@ -1639,23 +1619,17 @@ static PyObject *binary_not_in_result(PyObject *left, PyObject *right) {
   int r = PySequence_Contains(right, left);
   if (r < 0)
     return NULL;
-  PyObject *res = (r ? Py_False : Py_True);
-  Py_INCREF(res);
-  return res;
+  return PyBool_FromLong(! r);
 }
 
 
 static PyObject *binary_is_result(PyObject *left, PyObject *right) {
-  PyObject *res = (left == right ? Py_True : Py_False);
-  Py_INCREF(res);
-  return res;
+  return PyBool_FromLong(left == right);
 }
 
 
 static PyObject *binary_is_not_result(PyObject *left, PyObject *right) {
-  PyObject *res = (left != right ? Py_True : Py_False);
-  Py_INCREF(res);
-  return res;
+  return PyBool_FromLong(left != right);
 }
 
 
@@ -1809,6 +1783,29 @@ static int kos_attach_agen_gen_flatten(
 
 
 /**
+   Resolve the agen's GEN node and flatten it onto the consumer ctx.
+   Sets RuntimeError when the agen has no GEN.  Shared core of the
+   NEXT / ITER_NEXT / YIELD_FROM attach variants below; each caller
+   runs its own undo on failure.
+
+   :return: 0 on success, -1 on error (PyErr set)
+*/
+static int attach_agen_gen_checked(
+    KosEvalState *es,
+    KosPyAsyncGen *agen) {
+
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+
+  if (! gen) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator has no active frame");
+    return -1;
+  }
+  return kos_attach_agen_gen_flatten(es, agen, gen);
+}
+
+
+/**
    Install GEN onto consumer ctx (Koskari flatten). Clears agen->ctx chain
    so state lives only in GEN. kos_dyn_gen_install pushes Py_None.
    Caller must have already: checked in_progress, handled closed/ctx.
@@ -1822,18 +1819,7 @@ static int op_attach_koskari_agen_frame(
     PyObject *iter,
     PyObject *default_val) {
 
-  KosDynGen *gen = (KosDynGen *) agen->gen;
-
-  if (! gen) {
-    kos_dyn_next_abort_after_failed_attach(es);
-    Py_DECREF(iter);
-    Py_XDECREF(default_val);
-    agen->in_progress = 0;
-    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
-    return -1;
-  }
-
-  if (kos_attach_agen_gen_flatten(es, agen, gen) < 0) {
+  if (attach_agen_gen_checked(es, agen) < 0) {
     kos_dyn_next_abort_after_failed_attach(es);
     Py_DECREF(iter);
     Py_XDECREF(default_val);
@@ -1854,22 +1840,10 @@ static int op_attach_koskari_agen_frame_for_iter_next(
     KosPyAsyncGen *agen,
     KosDynNode *region) {
 
-  KosDynForeach *fe = (KosDynNode_IS_FOREACH(region))
-                          ? (KosDynForeach *) region
-                          : NULL;
-  KosDynGen *gen = (KosDynGen *) agen->gen;
-
-  if (! gen) {
-    if (fe)
-      KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
-    agen->in_progress = 0;
-    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
-    return -1;
-  }
-
-  if (kos_attach_agen_gen_flatten(es, agen, gen) < 0) {
-    if (fe)
-      KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
+  if (attach_agen_gen_checked(es, agen) < 0) {
+    if (KosDynNode_IS_FOREACH(region))
+      KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) region) =
+          KOS_FOREACH_ITER_STEP_IDLE;
     agen->in_progress = 0;
     return -1;
   }
@@ -1887,17 +1861,7 @@ static int op_attach_koskari_agen_frame_for_yield_from(
     KosPyAsyncGen *agen,
     KosDynYieldFrom *yf) {
 
-  KosDynGen *gen = (KosDynGen *) agen->gen;
-
-  if (! gen) {
-    if (kos_dyn_pop_yield_from(es, yf) < 0)
-      return -1;
-    agen->in_progress = 0;
-    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
-    return -1;
-  }
-
-  if (kos_attach_agen_gen_flatten(es, agen, gen) < 0) {
+  if (attach_agen_gen_checked(es, agen) < 0) {
     if (kos_dyn_pop_yield_from(es, yf) < 0)
       return -1;
     agen->in_progress = 0;
@@ -1948,6 +1912,31 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res);
 
 
 /**
+   Run revive_await and normalize its outcome for eval_phase_entry: on
+   KOS_RES_AWAIT tag the suspension and return the terminal result;
+   otherwise set *mode (EXCEPTION on RAISE, NORMAL otherwise) and return
+   EVAL_NORMAL.
+*/
+static KosOpResult entry_revive_await(
+    KosEvalState *es,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    KosEvalMode *mode) {
+
+  KosOpResult ra = revive_await(es, send_val, throw_typ, throw_exc);
+
+  if (ra.kind == KOS_RES_AWAIT) {
+    KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+    KosEvalState_MarkSuspendedNotRunning(es);
+    return ra;
+  }
+  *mode = (ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
+  return EVAL_NORMAL();
+}
+
+
+/**
    Phase 1: entry and revive normalization.
 
    Determines the initial KosEvalMode by dispatching through the current
@@ -1983,13 +1972,10 @@ static KosOpResult eval_phase_entry(
         if (KosEvalState_PythonAwaitIter(es)) {
           mode = KOS_MODE_NORMAL;
         } else {
-          KosOpResult _ra = revive_await(es, Py_None, NULL, NULL);
-          if (_ra.kind == KOS_RES_AWAIT) {
-            KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-            KosEvalState_MarkSuspendedNotRunning(es);
+          KosOpResult _ra = entry_revive_await(es, Py_None, NULL, NULL,
+                                               &mode);
+          if (_ra.kind == KOS_RES_AWAIT)
             return _ra;
-          }
-          mode = (_ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
         }
         break;
       case KOS_SUSP_YIELD:
@@ -2008,28 +1994,16 @@ static KosOpResult eval_phase_entry(
          (void *) send_val, (void *) throw_typ, (void *) throw_exc,
          KosEvalState_SuspensionEvent(es));
     switch (KosEvalState_SuspensionEvent(es)) {
-      case KOS_SUSP_AWAIT: {
-        KosOpResult _ra = revive_await(es, send_val, throw_typ, throw_exc);
-        if (_ra.kind == KOS_RES_AWAIT) {
-          KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-          KosEvalState_MarkSuspendedNotRunning(es);
-          return _ra;
-        }
-        mode = (_ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
-        break;
-      }
       case KOS_SUSP_YIELD:
         SAY("[eval] phase_entry -> revive_yield(send_val)");
         mode = revive_yield(es, send_val, throw_typ, throw_exc);
         break;
+      case KOS_SUSP_AWAIT:
       default: {
-        KosOpResult _ra = revive_await(es, send_val, throw_typ, throw_exc);
-        if (_ra.kind == KOS_RES_AWAIT) {
-          KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-          KosEvalState_MarkSuspendedNotRunning(es);
+        KosOpResult _ra = entry_revive_await(es, send_val, throw_typ,
+                                             throw_exc, &mode);
+        if (_ra.kind == KOS_RES_AWAIT)
           return _ra;
-        }
-        mode = (_ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
         break;
       }
     }
@@ -2595,7 +2569,7 @@ static inline KosOpResult koskari_eval_dispatch_computed_goto(KosEvalState *es) 
   KosOp insn;
   KosOpResult op_res;
   uint32_t gil_poll_ops = 0;
-  uint64_t gil_poll_last_ns = 0;
+  uint64_t gil_poll_last_ns = kos_eval_gil_poll_now_ns();
 
   goto cg_prologue;
 
@@ -2659,10 +2633,8 @@ cg_poll:
         Py_END_ALLOW_THREADS
       }
     }
-    goto cg_check_signals;
   }
 
-cg_check_signals:
   PyErr_CheckSignals();
   if (unlikely(PyErr_Occurred())) {
     KosOpResult pend = eval_phase_pending_exception(es);
@@ -2671,9 +2643,7 @@ cg_check_signals:
       return pend;
     }
   }
-  goto cg_normal_dispatch;
 
-cg_normal_dispatch:
   KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
   goto *optable[insn.op];
 
