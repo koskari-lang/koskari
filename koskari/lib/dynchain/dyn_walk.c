@@ -318,7 +318,8 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
 
 
 /**
-   Nearest LOOP or FOREACH from dyn_top. Callers: BREAK, CONTINUE opcodes.
+   Nearest LOOP or FOREACH from dyn_top. Callers: ITER_NEXT opcode and the
+   transfer-to-loop walk serving BREAK/CONTINUE transitions.
 */
 KosDynNode *kos_find_node_for_loop(KosEvalState *es) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);

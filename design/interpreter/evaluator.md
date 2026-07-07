@@ -353,9 +353,8 @@ Representative signatures (see **`koskari/lib/dynchain.h`** for the full set):
 ```c
 /* Generic push/pop */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
-int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node,
-                      KosXferEvent event);  /* kos_dyn_pop */
-int kos_dyn_pop_top(KosEvalState *es, KosXferEvent event);
+KosOpResult kos_dyn_pop_nonbarrier_top(KosEvalState *es, KosXferEvent event);
+KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event);
 
 /* Push/pop frames */
 KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);

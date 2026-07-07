@@ -201,7 +201,7 @@ All live-field updates for chain shape changes must funnel through these tiers. 
 | `kos_dyn_push` | `dynchain.c` | ~859–879 | Push + `kos_dyn_install` → `kos_dyn_retarget_after_push` |
 | `kos_dyn_push_noinstall` | `dynchain.c` | ~904–920 | Region nodes (TRY, LOOP, …) → retarget after push |
 | `kos_dyn_commit_dyn_top` | `dynchain.c` | ~892–901 | Pop, splice head, uninstall commit → `kos_dyn_retarget_after_pop`; no pre-flush (H20b) |
-| `kos_dyn_uninstall` / `kos_dyn_uninstall_core` | `dynchain.c` | ~924+ | Handler then commit; frame flush only in `apply_live` via retarget (H20b) |
+| `kos_dyn_uninstall_core` (via `kos_dyn_pop_*` entry points) | `dynchain.c` | ~1070+ | Handler then commit; frame flush only in `apply_live` via retarget (H20b) |
 
 **Retarget implementation:** `static` helpers in `koskari/lib/dynchain.c` (§6). **`kos_dyn_rebuild_live_from_chain`** is the only exported rebuild API (`dynchain.h`).
 

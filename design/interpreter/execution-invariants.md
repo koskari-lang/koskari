@@ -240,8 +240,8 @@ the boundary constraint.
   **single unified dynamic chain**.
 * The chain is a linked list of `KosDynNode` structures with typed payloads.
 * Walking the chain provides complete dynamic extent information.
-* All mutations to the chain go through `kos_dyn_push`, `kos_dyn_pop`, or
-  transfer plan execution. No direct chain manipulation is permitted.
+* All mutations to the chain go through `kos_dyn_push`, the `kos_dyn_pop_*`
+  entry points, or transfer plan execution. No direct chain manipulation is permitted.
 
 **Node types**:
 * `KOS_DYN_FRAME` — function activation record

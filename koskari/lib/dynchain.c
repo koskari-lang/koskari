@@ -582,7 +582,7 @@ int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node) {
 /**
    Release kind-specific payload and PyObject refs, then return the struct to
    the freelist or PyMem_Free. Does not walk parent links. Callers:
-   kos_dyn_uninstall, kos_dynchain_free, error paths after failed push.
+   kos_dyn_uninstall_core, kos_dynchain_free, error paths after failed push.
 */
 void kos_dynnode_free(KosDynNode *node) {
   if (! node)
@@ -1046,7 +1046,8 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
 
    Central commit for pops and any dyn_top publish that is not a push. Captures
    the old dyn_top as removed and calls kos_dyn_retarget_after_pop. Use for
-   kos_dyn_uninstall, fast kos_dyn_pop_* paths, gen install, and manual splices.
+   kos_dyn_uninstall_core, fast kos_dyn_pop_* paths, gen install, and manual
+   splices.
    Do not use for kos_dyn_push; use kos_dyn_retarget_after_push via push instead.
 */
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
@@ -1102,27 +1103,6 @@ static inline int kos_map_pop_result(KosOpResult r) {
   if (r.kind == KOS_RES_REPROLOGUE)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   return (r.kind == KOS_RES_NORMAL) ? 0 : -1;
-}
-
-
-/**
-   Pop dyn_top: run uninstall handler (teardown, winds), unlink, free node,
-   refresh FRAME_TOP. Must be the current top. Callers: kos_dyn_pop_top,
-   xfer_step_pop_one, explicit unwinds.
-*/
-KosOpResult kos_dyn_uninstall(KosEvalState *es, KosDynNode *node,
-                               KosXferEvent event) {
-  if (! node || KosEvalState_DYN_TOP(es) != node) {
-    PyErr_SetString(PyExc_RuntimeError, "kos_dyn_uninstall: node is not dyn_top");
-    return EVAL_RAISE();
-  }
-
-  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BARRIER)) {
-    PyErr_SetString(PyExc_RuntimeError, "cannot unwind past barrier node");
-    return EVAL_RAISE();
-  }
-
-  return kos_dyn_uninstall_core(es, node, event);
 }
 
 

@@ -891,26 +891,6 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es);
 
 
 /**
-   Pop a node from the context's dynamic chain.  Node must be dyn_top.
-   For BARRIER nodes (PROMPT) returns -1.  Otherwise runs the
-   type's pop handler (if any) then unlinks and frees.  Returns
-   KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started.
-
-   :param ctx: execution context
-   :param node: node to pop (must be dyn_top)
-   :param out_ev: event output for async suspend
-
-   :param event: transfer event (RETURN, RAISE, etc.); KOS_XFER_EVENT_NONE if unknown
-
-   :return: EVAL_NORMAL on success, EVAL_RAISE on error or BARRIER,
-     EVAL_AWAIT or EVAL_REPROLOGUE when async
-*/
-KosOpResult kos_dyn_uninstall(KosEvalState *es, KosDynNode *node,
-                               KosXferEvent event);
-#define kos_dyn_pop kos_dyn_uninstall
-
-
-/**
    Clone a node and push onto the chain.  Fails for types that cannot
    clone (e.g. returns error for types that must not cross capture).
 
@@ -1605,13 +1585,6 @@ KosOpResult kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node);
 
 KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
 int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node);
-
-/**
-   result: ownership is transferred. Caller must not use result after
-   the call.
-*/
-int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
-                                   KosDynWith *with_node);
 
 
 /**

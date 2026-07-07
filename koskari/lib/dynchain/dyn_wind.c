@@ -337,7 +337,7 @@ KosDynWind *kos_dyn_push_wind(
 
 /**
    Unlink wind without running full uninstall (legacy fast pop). Prefer
-   kos_dyn_uninstall for extent teardown when thunks must run.
+   kos_dyn_pop_top for extent teardown when thunks must run.
 */
 int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) wind) {

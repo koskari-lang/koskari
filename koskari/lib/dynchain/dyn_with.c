@@ -615,27 +615,6 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
 }
 
 
-/**
-   Complete provisional WITH after __enter__ result is ready (non-await path).
-*/
-int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
-                                    KosDynWith *with_node) {
-
-  PyObject *name = KosDynWith_NAME(with_node);
-  if (name && name != Py_None) {
-    if (frame_ns_store(es, name, result) < 0) {
-      Py_DECREF(result);
-      return -1;
-    }
-  }
-  Py_DECREF(result);
-
-  KosDynWith_ENTERED(with_node) = 1;
-  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-  return 0;
-}
-
-
 /* === GC traversal === */
 
 
