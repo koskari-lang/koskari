@@ -8,9 +8,7 @@ Run `make help` for the full list. Common targets:
 |--------|---------|
 | `make build` | Build wheel (native ext + uv) |
 | `make test` | Run tox test suite (phased pytest) |
-| `make tox` | Full tox envlist |
 | `make lint` | flake8 on `koskari/` |
-| `make typecheck` | mypy on `koskari/` |
 | `make docs` | Build this documentation site |
 | `make clean` | Remove build artifacts |
 
