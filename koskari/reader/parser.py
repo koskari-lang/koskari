@@ -1860,9 +1860,10 @@ class LayoutReader(Reader):
         """
         Context manager to temporarily apply a character event macro
 
-        Prepends one ``(macro_fn, terminating, predicate)`` triplet shared
-        across ``char``. On exit, removes **only** that triplet from the head
-        of each affected list when it still matches by identity.
+        Applies the triplet to both the layout coordinator (via the base
+        implementation) and the inner s-expr reader for the duration, so
+        delimited reads inside the block see it too. Each side removes only
+        its own triplet on exit.
 
         :param char: the character(s) to trigger on
         :param macro_fn: function(stream, char) -> (event, value); may return
@@ -1872,21 +1873,11 @@ class LayoutReader(Reader):
         :yields: self
         """
 
-        triplet = (macro_fn, terminating, predicate)
-        for c in char:
-            self.reader_macros.setdefault(c, []).insert(0, triplet)
-        self._sync_terms_from_macros()
-
-        with self.inner.temporary_event_macro(char, macro_fn, terminating, predicate):
+        with super().temporary_event_macro(
+                char, macro_fn, terminating, predicate), \
+                self._inner.temporary_event_macro(
+                    char, macro_fn, terminating, predicate):
             yield self
-
-        for c in char:
-            lst = self.reader_macros.get(c)
-            if lst and lst[0] is triplet:
-                lst.pop(0)
-                if not lst:
-                    del self.reader_macros[c]
-        self._sync_terms_from_macros()
 
 
     def set_atom_pattern(self, namesym, match_fn, conversion_fn):
@@ -2478,6 +2469,28 @@ class LayoutReader(Reader):
         return cons(forms[0], *forms[1:], nil)
 
 
+    def _finish_header_line(self, stream, values, first_value_pos, pos):
+        """
+        Fold the values collected on one layout line into a VALUE result
+
+        A single value is returned as-is; several values fold to an implicit
+        call, or raise when :attr:`layout_implicit_calls` is disabled.
+
+        :param stream: the source stream (for error reporting)
+        :param values: non-empty list of values collected on the line
+        :param first_value_pos: position of the first value
+        :param pos: position of the line terminator (for error reporting)
+        :return: (VALUE, first_value_pos, folded value)
+        """
+
+        if len(values) == 1:
+            return VALUE, first_value_pos, values[0]
+        if self.layout_implicit_calls:
+            return (VALUE, first_value_pos,
+                    self._combine_implicit_line_tail_forms(values))
+        raise stream.error('multiple forms on one layout line', pos)
+
+
     def _read_layout_decorate(self, stream, outer_indent):
         """
         Layout-macro handler for the @ prefix (leading decorator lines)
@@ -2596,12 +2609,8 @@ class LayoutReader(Reader):
                 if event is LINE_END:
                     if not values:
                         break
-                    if len(values) == 1:
-                        return VALUE, first_value_pos, values[0]
-                    if self.layout_implicit_calls:
-                        return VALUE, first_value_pos, cons(
-                            values[0], *values[1:], nil)
-                    raise stream.error('multiple forms on one layout line', pos)
+                    return self._finish_header_line(
+                        stream, values, first_value_pos, pos)
 
                 if event is COLON:
                     if not values:
@@ -2622,12 +2631,8 @@ class LayoutReader(Reader):
                 if event is EOF:
                     if not values:
                         return EOF, pos, None
-                    if len(values) == 1:
-                        return VALUE, first_value_pos, values[0]
-                    if self.layout_implicit_calls:
-                        return VALUE, first_value_pos, cons(
-                            values[0], *values[1:], nil)
-                    raise stream.error('multiple forms on one layout line', pos)
+                    return self._finish_header_line(
+                        stream, values, first_value_pos, pos)
 
                 if event is DOT:
                     raise stream.error('invalid syntax', pos)
