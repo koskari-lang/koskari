@@ -19,7 +19,7 @@ Koskari's s-expression parser with a clean three-layer stream architecture.
 Layers:
 
 1. BaseSourceStream (C native) -- hot-path I/O with Unicode position tracking
-2. SourceStream(BaseSourceStream) -- error reporting, pushback buffer
+2. SourceStream(BaseSourceStream) -- error reporting helpers
 3. IndentAwareStream(SourceStream) -- indent-bounded skip_whitespace, dedented flag
 
 The Reader reads any SourceStream. LayoutReader subclasses Reader as a
@@ -286,16 +286,11 @@ def _as_unicode(s, pattern=ESCAPE_SEQUENCE_RE):
 
 class SourceStream(BaseSourceStream):
     """
-    Source stream with error reporting and a pushback buffer
+    Source stream with error reporting helpers
 
     Inherits from the native BaseSourceStream for efficient character-level
-    I/O with position tracking. Adds error reporting, a pushback buffer for
-    speculative reads, and helper methods used by the reader.
-
-    The pushback buffer allows the reader to consume characters speculatively
-    then restore them via pushback(text, position) if the speculation fails.
-    The buffer is drained before any read reaches the underlying stream, so
-    position() reflects the buffer start while characters are buffered.
+    I/O with position tracking. Adds error reporting and the helper methods
+    used by the reader (skip_exec, suspend_indent).
     """
 
     def __init__(
@@ -321,120 +316,8 @@ class SourceStream(BaseSourceStream):
 
         super().__init__(stream, filename, line=line_no, col=col_no)
 
-        self._buffer = []
-        self._buffer_start_pos = None
-
         if auto_skip_exec:
             self.skip_exec()
-
-
-    def read(self, n=1):
-        """
-        Read n characters, draining the pushback buffer first
-
-        :param n: number of characters to read
-        :return: a string of at most n characters
-        """
-
-        if self._buffer:
-            result = []
-            while len(result) < n and self._buffer:
-                result.append(self._buffer.pop(0))
-            if not self._buffer:
-                self._buffer_start_pos = None
-            rest = n - len(result)
-            if rest > 0:
-                data = super().read(rest)
-                if data:
-                    result.append(data)
-            return ''.join(result)
-        return super().read(n)
-
-
-    def peek(self, n=1):
-        """
-        Peek at n characters without consuming them
-
-        Composes from the pushback buffer and the underlying stream's peek.
-
-        :param n: number of characters to peek at
-        :return: a string of at most n characters
-        """
-
-        if self._buffer:
-            from_buf = min(n, len(self._buffer))
-            buf_part = ''.join(self._buffer[:from_buf])
-            if from_buf >= n:
-                return buf_part
-            return buf_part + (super().peek(n - from_buf) or '')
-        return super().peek(n)
-
-
-    def position(self):
-        """
-        Return the current stream position as (line, col)
-
-        When characters are buffered, returns the position at which
-        the buffered text begins rather than the underlying stream's
-        position (which has advanced past the buffered characters).
-
-        :return: (line, col) tuple
-        """
-
-        if self._buffer and self._buffer_start_pos is not None:
-            return self._buffer_start_pos
-        return super().position()
-
-
-    def read_until_chars(self, terminators):
-        """
-        Read characters until a terminating character is found
-
-        The terminating character is not consumed. When the pushback buffer
-        is empty, delegates to the C-native implementation which leaves the
-        terminator unconsumed without any pushback. When the buffer is
-        non-empty, drains non-terminating characters manually then delegates
-        to C for the remainder.
-
-        :param terminators: string of terminating characters
-        :return: text read up to (not including) the terminator
-        """
-
-        if not self._buffer:
-            return super().read_until_chars(terminators)
-
-        result = []
-        while self._buffer:
-            c = self._buffer[0]
-            if c in terminators:
-                return ''.join(result)
-            result.append(self._buffer.pop(0))
-        if not self._buffer:
-            self._buffer_start_pos = None
-
-        rest = super().read_until_chars(terminators)
-        if rest:
-            result.append(rest)
-        return ''.join(result)
-
-
-    def pushback(self, text, position):
-        """
-        Push text back into the stream at the given position
-
-        The pushed-back text will be returned by subsequent reads before
-        any characters from the underlying stream. The position argument
-        is recorded and returned by position() until the buffer drains.
-
-        :param text: the text to push back
-        :param position: the stream position corresponding to the start of text
-        """
-
-        if not text:
-            return
-        chars = list(text)
-        self._buffer = chars + self._buffer
-        self._buffer_start_pos = position
 
 
     def error(self, message, position=None):
@@ -490,33 +373,6 @@ class SourceStream(BaseSourceStream):
         """
 
         return iter(partial(self.read, 1), '')
-
-
-    def skip_whitespace(self):
-        """
-        Skip whitespace characters, draining the pushback buffer first
-
-        When the buffer is empty, delegates to the C-native implementation
-        for maximum speed. When the buffer is non-empty, drains whitespace
-        from the buffer manually (since the C implementation cannot see the
-        Python-level buffer), then delegates to C for the remainder.
-
-        :return: the whitespace string consumed
-        """
-
-        if not self._buffer:
-            return super().skip_whitespace()
-
-        consumed = []
-        while self._buffer and self._buffer[0] in ' \t\n\r':
-            consumed.append(self._buffer.pop(0))
-        if not self._buffer:
-            self._buffer_start_pos = None
-
-        rest = super().skip_whitespace()
-        if rest:
-            consumed.append(rest)
-        return ''.join(consumed)
 
 
     def skip_exec(self):
@@ -606,14 +462,14 @@ class IndentAwareStream(SourceStream):
 
         self.dedented = False
 
-        # When the C-level column is 0 and _buffer is empty, the stream is
-        # at the start of a new line (a preceding \n was consumed without
-        # going through the peek-ahead path below). Synthesise a virtual \n
-        # by prepending one to the lookahead so the main scan's newline
-        # branch fires immediately and measures the indent of the first
-        # real content line. Track the synthetic offset so that the consume
-        # count is adjusted to exclude it.
-        if self.col == 0 and not self._buffer:
+        # When the C-level column is 0 the stream is at the start of a new
+        # line (a preceding \n was consumed without going through the
+        # peek-ahead path below). Synthesise a virtual \n by prepending one
+        # to the lookahead so the main scan's newline branch fires
+        # immediately and measures the indent of the first real content
+        # line. Track the synthetic offset so that the consume count is
+        # adjusted to exclude it.
+        if self.col == 0:
             ahead = '\n' + (self.peek(512) or '')
             synthetic = 1
         else:
