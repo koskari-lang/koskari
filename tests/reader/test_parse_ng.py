@@ -97,6 +97,57 @@ class TestSourceStreamIsBaseSubclass(IsolatedAsyncioTestCase):
 
 
 # ===========================================================================
+# SourceStream.mark / rewind
+# ===========================================================================
+
+
+class TestSourceStreamMarkRewind(IsolatedAsyncioTestCase):
+
+    async def test_rewind_restores_text(self):
+        s = _stream("hello")
+        m = s.mark()
+        self.assertEqual(s.read(3), "hel")
+        s.rewind(m)
+        self.assertEqual(s.read(5), "hello")
+
+    async def test_rewind_restores_position(self):
+        s = _stream("a\nbc\nd")
+        s.read(2)  # 'a\n'
+        m = s.mark()
+        self.assertEqual(s.position(), (2, 0))
+        s.read(4)  # 'bc\nd'
+        self.assertEqual(s.position(), (3, 1))
+        s.rewind(m)
+        self.assertEqual(s.position(), (2, 0))
+
+    async def test_speculate_rewinds_on_exit(self):
+        s = _stream("hello world")
+        with s.speculate():
+            self.assertEqual(s.read(5), "hello")
+        self.assertEqual(s.read(5), "hello")
+
+    async def test_speculate_rewinds_on_exception(self):
+        s = _stream("hello")
+        with self.assertRaises(ValueError):
+            with s.speculate():
+                s.read(3)
+                raise ValueError("boom")
+        self.assertEqual(s.read(5), "hello")
+
+    async def test_peek_line_unbounded(self):
+        s = _stream(("x" * 5000) + "\nrest")
+        line = s.peek_line()
+        self.assertEqual(line, "x" * 5000)
+        # peek_line does not consume
+        self.assertEqual(s.read(3), "xxx")
+
+    async def test_peek_line_at_eof_without_newline(self):
+        s = _stream("tail")
+        self.assertEqual(s.peek_line(), "tail")
+        self.assertEqual(s.read(4), "tail")
+
+
+# ===========================================================================
 # IndentAwareStream.dedented
 # ===========================================================================
 

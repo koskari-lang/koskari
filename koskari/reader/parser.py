@@ -372,6 +372,39 @@ class SourceStream(BaseSourceStream):
         return iter(partial(self.read, 1), '')
 
 
+    @contextmanager
+    def speculate(self):
+        """
+        Mark the stream on entry and rewind to that mark on exit
+
+        For pure lookahead: read freely inside the block to inspect upcoming
+        input; the stream (position and line/col) is restored to its
+        pre-block state on exit, whether the block returns or raises. Unlike
+        a fixed-size peek, a speculative scan sees the whole remaining input.
+        """
+
+        checkpoint = self.mark()
+        try:
+            yield
+        finally:
+            self.rewind(checkpoint)
+
+
+    def peek_line(self):
+        """
+        Peek the rest of the current physical line without consuming it
+
+        Returns the text from the current position up to (not including) the
+        next newline or carriage return, or to end of stream. Unbounded: the
+        result is the whole line regardless of length.
+
+        :return: the remaining text on the current physical line
+        """
+
+        with self.speculate():
+            return self.read_until_chars("\r\n")
+
+
     def skip_exec(self):
         """
         Skip a #! line at the start of the stream
@@ -438,19 +471,23 @@ class IndentAwareStream(SourceStream):
 
         When max_indent is None, delegates to the native C skip_whitespace.
 
-        Otherwise, peeks ahead with a single large-window read to obtain
-        the lookahead string, then scans it as a plain Python string. Blank
-        lines are skipped over. When the first non-blank, non-empty line is
-        found, its indent is measured:
+        Otherwise, speculatively scans the upcoming whitespace and blank
+        lines to find the next content character. Blank lines are skipped.
+        The first non-blank content line is measured:
 
-        - If indent <= max_indent: sets self.dedented = True and returns
-          without consuming anything.
+        - If the content is on the current line (no newline was crossed),
+          the leading horizontal whitespace is consumed and the stream is
+          left at the content.
 
-        - If indent > max_indent: consumes exactly the whitespace prefix
-          scanned (the newline and indent spaces) via a single read(n),
-          leaving the stream at the content character.
+        - If a newline was crossed and the content line's indent is
+          <= max_indent, sets self.dedented = True and consumes nothing,
+          leaving the stream at the boundary.
 
-        The underlying stream is seekable so a single large peek is cheap.
+        - If a newline was crossed and the indent is > max_indent, consumes
+          the newline(s) and indent, leaving the stream at the content.
+
+        The scan is speculative (mark/rewind) so its lookahead is unbounded
+        regardless of how many blank lines separate the content.
         """
 
         if self._max_indent is None:
@@ -458,62 +495,45 @@ class IndentAwareStream(SourceStream):
             return super().skip_whitespace()
 
         self.dedented = False
+        max_indent = self._max_indent
 
-        # When the C-level column is 0 the stream is at the start of a new
-        # line (a preceding \n was consumed without going through the
-        # peek-ahead path below). Synthesise a virtual \n by prepending one
-        # to the lookahead so the main scan's newline branch fires
-        # immediately and measures the indent of the first real content
-        # line. Track the synthetic offset so that the consume count is
-        # adjusted to exclude it.
-        if self.col == 0:
-            ahead = '\n' + (self.peek(512) or '')
-            synthetic = 1
-        else:
-            ahead = self.peek(512) or ''
-            synthetic = 0
+        # Being at the start of a line (col 0) means the current line's own
+        # indent is the dedent candidate, exactly as if a newline had just
+        # been crossed.
+        saw_newline = (self.col == 0)
+        indent = 0
+        consume = 0
 
-        i = 0
-
-        while True:
-            if i >= len(ahead):
-                self.dedented = True
-                return ''
-            c = ahead[i]
-
-            if c in ' \t':
-                i += 1
-                continue
-
-            if c != '\n':
-                consume = i - synthetic
-                if consume > 0:
-                    self.read(consume)
-                return ''
-
-            newline_start = i
-            i += 1
-            next_indent = 0
-
+        with self.speculate():
             while True:
-                if i >= len(ahead):
-                    self.dedented = True
-                    return ''
-                nc = ahead[i]
-                if nc in ' \t':
-                    next_indent += 1
-                    i += 1
-                elif nc == '\n':
-                    i += 1
-                    next_indent = 0
+                c = self.read(1)
+                if not c:
+                    # EOF within whitespace: dedent, consume nothing.
+                    consume = None
+                    break
+                if c == '\n':
+                    saw_newline = True
+                    indent = 0
+                    consume += 1
+                elif c in ' \t':
+                    indent += 1
+                    consume += 1
+                elif not saw_newline:
+                    # Content on the current line: keep the horizontal
+                    # whitespace already scanned.
+                    break
+                elif indent <= max_indent:
+                    consume = None
+                    break
                 else:
-                    if next_indent <= self._max_indent:
-                        self.dedented = True
-                        return ''
-                    consume = newline_start + 1 + next_indent - synthetic
-                    if consume > 0:
-                        self.read(consume)
-                    return ''
+                    break
+
+        if consume is None:
+            self.dedented = True
+            return ''
+        if consume:
+            self.read(consume)
+        return ''
 
 
     @contextmanager
@@ -2026,17 +2046,21 @@ class LayoutReader(Reader):
         return BLOCK, self._read_quasiquote_block(stream, outer_indent)
 
 
-    def _is_structural_colon_in_ahead(self, ahead, colon_index):
+    @staticmethod
+    def _rest_after_colon_is_structural(rest):
         """
-        Apply the structural rule to a ':' inside `ahead`.
+        Apply the structural-colon rule to the text following a ``:``.
+
+        A ``:`` is a structural header terminator when the remainder of its
+        physical line, after horizontal whitespace, is empty (end of line) or
+        the start of a comment.
+
+        :param rest: line text after the ``:`` (no newline)
+        :return: True if the colon is structural
         """
-        j = colon_index + 1
-        while j < len(ahead) and ahead[j] in ' \t':
-            j += 1
-        if j >= len(ahead):
-            return True
-        ch = ahead[j]
-        return ch == ';' or ch in '\n\r'
+
+        rest = rest.lstrip(' \t')
+        return rest == '' or rest[0] == ';'
 
 
     def _is_structural_colon_after_consumed(self, stream):
@@ -2046,24 +2070,8 @@ class LayoutReader(Reader):
         Assumes the `:` has already been consumed and the stream is positioned
         right after it.
         """
-        hot = stream.peek(2) or ''
-        i = 0
-        while i < len(hot) and hot[i] in ' \t':
-            i += 1
 
-        if i < len(hot):
-            ch = hot[i]
-            return ch == ';' or ch in '\n\r'
-
-        # Undecidable from the hot peek window; fall back to a larger peek.
-        ahead = stream.peek(2048) or ''
-        j = 0
-        while j < len(ahead) and ahead[j] in ' \t':
-            j += 1
-        if j >= len(ahead):
-            return True
-        ch = ahead[j]
-        return ch == ';' or ch in '\n\r'
+        return self._rest_after_colon_is_structural(stream.peek_line())
 
 
     def _is_structural_colon_at_next(self, stream):
@@ -2072,28 +2080,11 @@ class LayoutReader(Reader):
 
         Assumes the current stream position begins with `:`.
         """
-        hot = stream.peek(2) or ''
-        if not hot or hot[0] != ':':
-            return False
 
-        i = 1
-        while i < len(hot) and hot[i] in ' \t':
-            i += 1
-        if i < len(hot):
-            ch = hot[i]
-            return ch == ';' or ch in '\n\r'
-
-        # Undecidable from the hot peek window; fall back.
-        ahead = stream.peek(2048) or ''
-        if not ahead or ahead[0] != ':':
+        line = stream.peek_line()
+        if not line or line[0] != ':':
             return False
-        j = 1
-        while j < len(ahead) and ahead[j] in ' \t':
-            j += 1
-        if j >= len(ahead):
-            return True
-        ch = ahead[j]
-        return ch == ';' or ch in '\n\r'
+        return self._rest_after_colon_is_structural(line[1:])
 
 
     def find_layout(self, name):
@@ -2104,26 +2095,31 @@ class LayoutReader(Reader):
         """
         True if the current layout line contains a structural header colon.
 
-        Scans from the stream position only until end of line (or comment
-        start at delimiter depth 0), tracking delimiter depth.
+        Speculatively scans from the stream position until a structural
+        header ``:`` is found or the logical line ends (a newline or comment
+        at delimiter depth 0), tracking delimiter depth. Newlines enclosed in
+        brackets do not end the scan. The stream is left unchanged.
 
         :param stream: the source stream
         :return: whether a structural ``:`` exists on this line
         """
 
-        ahead = stream.peek(8192) or ''
-        depth = 0
-        for i, ch in enumerate(ahead):
-            if depth == 0 and ch in '\n\r;':
-                return False
-            if ch in '([{':
-                depth += 1
-            elif ch in ')]}':
-                depth -= 1
-            elif ch == ':' and depth == 0:
-                if self._is_structural_colon_in_ahead(ahead, i):
-                    return True
-        return False
+        with stream.speculate():
+            depth = 0
+            while True:
+                stream.read_until_chars("([{)]}:;\r\n")
+                ch = stream.read(1)
+                if not ch:
+                    return False
+                if depth == 0 and ch in ';\r\n':
+                    return False
+                if ch in '([{':
+                    depth += 1
+                elif ch in ')]}':
+                    depth -= 1
+                elif ch == ':' and depth == 0:
+                    if self._rest_after_colon_is_structural(stream.peek_line()):
+                        return True
 
 
     def _read_header_form(self, stream):
@@ -2257,85 +2253,25 @@ class LayoutReader(Reader):
         return body
 
 
-    def _peek_peer_block_head(self, stream, outer_indent):
+    def _peek_peer_head_symbol(self, stream):
         """
-        Non-consumingly check whether the next line starts a declared peer
+        Speculatively read the leading header token of the current line
 
-        Temporarily installs outer_indent as the stream's max_indent so that
-        skip_whitespace correctly detects the dedent at the peer line's column.
-        If a dedent is detected, peeks far enough ahead to read the next
-        line's leading token, skipping empty and whitespace-only lines and
-        full-line comments in the peek window.
+        Reads one header-mode form and rewinds, so the stream is left
+        unchanged. Used to test a candidate line against a layout's declared
+        peer heads before committing to read it as a block. Reusing the real
+        header read means peer heads are recognised exactly as ``read_block_header``
+        would recognise them.
 
-        :param stream: IndentAwareStream positioned at end of current block
-        :param outer_indent: column of the enclosing block head
-        :return: symbol or None
+        :param stream: IndentAwareStream positioned at the candidate peer line
+        :return: the head form (a symbol for declared peers), or None
         """
 
-        old_indent = stream._max_indent
-        stream._max_indent = outer_indent
-        try:
-            stream.skip_whitespace()
-            if not stream.dedented:
-                return None
-        finally:
-            stream._max_indent = old_indent
+        with stream.speculate():
+            with self._header_mode():
+                event, _pos, head = super()._read(stream)
 
-        ahead = stream.peek(outer_indent + 257) or ''
-        if not ahead or ahead[0] != '\n':
-            return None
-
-        i = 1
-        while i < len(ahead):
-            indent = 0
-            while i < len(ahead) and ahead[i] in ' \t':
-                indent += 1
-                i += 1
-            if i >= len(ahead):
-                return None
-            if ahead[i] == '\n':
-                i += 1
-                continue
-            if ahead[i] == '\r':
-                i += 1
-                if i < len(ahead) and ahead[i] == '\n':
-                    i += 1
-                continue
-            if ahead[i] == ';':
-                while i < len(ahead) and ahead[i] not in '\n\r':
-                    i += 1
-                if i < len(ahead) and ahead[i] == '\r':
-                    i += 1
-                if i < len(ahead) and ahead[i] == '\n':
-                    i += 1
-                continue
-            if indent != outer_indent:
-                return None
-
-            text = ahead[i:]
-            break
-        else:
-            return None
-
-        token = []
-        for ch in text:
-            if ch in ' \t\r\n':
-                break
-            if ch in '()[]{}':
-                break
-            token.append(ch)
-
-        if not token:
-            return None
-
-        head = ''.join(token)
-        if head.endswith(':'):
-            head = head[:-1]
-
-        if not head:
-            return None
-
-        return symbol(head)
+        return head if event is VALUE else None
 
 
     def _consume_through_blank_lines_to_peer_column(self, stream, outer_indent):
@@ -2356,7 +2292,7 @@ class LayoutReader(Reader):
 
         while True:
             indent = 0
-            while stream.peek(1) in ' \t':
+            while stream.peek(1) in (' ', '\t'):
                 stream.read(1)
                 indent += 1
 
@@ -2401,12 +2337,16 @@ class LayoutReader(Reader):
         peers = []
 
         while True:
-            head = self._peek_peer_block_head(stream, outer_indent)
-            if head is None or str(head) not in declared_set:
-                break
+            checkpoint = stream.mark()
 
             if not self._consume_through_blank_lines_to_peer_column(
                     stream, outer_indent):
+                stream.rewind(checkpoint)
+                break
+
+            head = self._peek_peer_head_symbol(stream)
+            if head is None or str(head) not in declared_set:
+                stream.rewind(checkpoint)
                 break
 
             phead, pargs, _opener = self.read_block_header(stream)
