@@ -22,7 +22,7 @@ Pygments Lexer implementation for Koskari source.
 
 
 from koskari.lexer.discovery import special_names_for_repl
-from koskari.lexer.highlight import pygments_token_type, token_start_index
+from koskari.lexer.highlight import pygments_token_type
 from koskari.lexer.tokens import tokenize
 
 
@@ -61,10 +61,14 @@ def build_koskari_lexer_class():
             :yield: Pygments token triples covering the full text
             """
 
+            # Tokens are in source order and tokenize only skips whitespace
+            # between them, so the next token's text is the first occurrence
+            # at or after pos. This tracks the absolute offset in one pass
+            # rather than recomputing it from (line, col) for every token.
             pos = 0
             for tok in tokenize(
                     text, '<pygments>', special_names=self._special_names):
-                start = token_start_index(text, tok)
+                start = text.index(tok.text, pos)
                 if start > pos:
                     yield pos, Text, text[pos:start]
                 yield start, pygments_token_type(tok.type), tok.text
