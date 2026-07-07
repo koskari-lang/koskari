@@ -43,10 +43,10 @@ flowchart TD
         loop_start["dispatch loop (computed goto: cg_prologue)"]
 
         subgraph loop["Loop body (prologue reunion)"]
-            Xfer["eval_step_drain_transfer_plan"]
             P3["eval_phase_pending_exception<br/>PyErr_Occurred? → process_raise"]
+            Xfer["eval_step_drain_transfer_plan"]
             Native{"Frame has native_handler?"}
-            Poll["cg_poll: optional GIL yield<br/>cg_check_signals<br/>see §1.6"]
+            Poll["cg_poll: optional GIL yield<br/>then signal check<br/>see §1.6"]
             P4["Phase 4: KOS_EVAL_PREPARE_NEXT_INSN<br>fetch insn; acting_pc; pre-advance pc"]
             P5["Phase 5: opcode dispatch<br/>computed goto → op_xxx(es, insn)"]
             P6["Phase 6: cg_handle_op_result<br>non-NORMAL KosOpResult dispatch"]
@@ -58,7 +58,7 @@ flowchart TD
         mode_check -->|"EXCEPTION"| process_raise_1["process_raise → return or REPROLOGUE"]
         mode_check -->|"else"| P2
         P2 --> loop_start
-        loop_start --> Xfer --> P3 --> Native
+        loop_start --> P3 --> Xfer --> Native
         Native -->|yes| run_native["eval_step_native_iteration"]
         Native -->|no| Poll
         run_native --> next
@@ -160,10 +160,10 @@ included from **`eval.c`**). It is not stored on **`KosContext`** or
 | --------- | ---- |
 | **`koskari_gil_drop_requested()`** | Static inline in **`eval_gil.c`**. Returns **1** when another thread has set CPython’s per-thread or per-interpreter **gil drop request** (see below); **0** on free-threaded builds (**`Py_GIL_DISABLED`**). On unsupported CPython minor versions (outside the 3.9–3.13+ probes), returns **1** so time-gated release can still run. |
 | **`gil_poll_ops`** (stack local) | Reset to **0** at **`cg_poll`**. Incremented on each **RUN** tail-dispatch; when **`++gil_poll_ops > KOS_EVAL_GIL_POLL`** (**1024**), control jumps to **`cg_poll`**. |
-| **`gil_poll_last_ns`** (stack local) | Monotonic timestamp of the last paired GIL release (`clock_gettime(CLOCK_MONOTONIC)`). |
-| **`KOS_EVAL_GIL_POLL_INTERVAL_NS`** | Minimum **5 ms** between paired GIL yields (when the clock read succeeds and **`gil_poll_last_ns`** is already set). |
+| **`gil_poll_last_ns`** (stack local) | Monotonic timestamp gate for paired GIL release (`kos_eval_gil_poll_now_ns` → `clock_gettime(CLOCK_MONOTONIC)`). **Seeded at dispatch entry** and refreshed on each paired release; a **0** value means the clock read failed and disables the timed release. (Previously initialized to 0, which left the release path unreachable — long loops never yielded the GIL; fixed in the eval simplification pass.) |
+| **`KOS_EVAL_GIL_POLL_INTERVAL_NS`** | Minimum **5 ms** between paired GIL yields (enforced when both timestamps are nonzero; a failed clock read on either side skips the release). |
 | **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** | Brief paired release at **`cg_poll`** only when **drop requested** and the interval gate passes (same C block). |
-| **`PyErr_CheckSignals()`** | Runs at **`cg_check_signals`** after **`cg_poll`** on every visit to the poll site. |
+| **`PyErr_CheckSignals()`** | Runs immediately after the **`cg_poll`** GIL block (fall-through, no separate label) on every visit to the poll site. |
 
 **`koskari_gil_drop_requested` and CPython layout**
 
@@ -179,14 +179,15 @@ differs by version:
 
 **Where polling runs**
 
-1. **Prologue reunion** — After transfer drain, pending-exception check,
-   post-opcode event handling, and optional native-frame iteration, **`goto
-   cg_poll`** before **`KOS_EVAL_PREPARE_NEXT_INSN`**.
+1. **Prologue reunion** — After the pending-exception check, transfer drain,
+   and optional native-frame iteration, **`goto cg_poll`** before
+   **`KOS_EVAL_PREPARE_NEXT_INSN`**.
 2. **NORMAL tail-dispatch** — After an opcode returns **`EVAL_NORMAL()`**
    (hot path), when **`gil_poll_ops`** exceeds **`KOS_EVAL_GIL_POLL`**, branch
    to **`cg_poll`** instead of fetching the next instruction immediately.
 
-**Poll-site sequence** (computed-goto labels in **`eval.c`**):
+**Poll-site sequence** (straight-line from the **`cg_poll`** label in **`eval.c`**;
+the signal-check and dispatch steps fall through without their own labels):
 
 ```mermaid
 flowchart TD
@@ -194,10 +195,10 @@ flowchart TD
     drop{"koskari_gil_drop_requested()?"}
     time{"gil_poll_last_ns set and<br/>≥ 5 ms since last release?"}
     gil["Py_BEGIN_ALLOW_THREADS<br/>Py_END_ALLOW_THREADS<br/>gil_poll_last_ns = now"]
-    sig["cg_check_signals:<br/>PyErr_CheckSignals()"]
+    sig["PyErr_CheckSignals()"]
     pyerr{"PyErr_Occurred()?"}
     pend["eval_phase_pending_exception"]
-    dispatch["cg_normal_dispatch"]
+    dispatch["KOS_EVAL_PREPARE_NEXT_INSN<br/>→ opcode dispatch"]
 
     poll --> drop
     drop -->|yes| time
@@ -213,15 +214,18 @@ flowchart TD
     pend -->|CONTINUE| dispatch
 ```
 
-Signal checking is unconditional at **`cg_check_signals`**. GIL release is
-conditional: no **`Py_BEGIN_ALLOW_THREADS`** unless CPython (or the unsupported-
-minor fallback) reports a drop request **and** at least **5 ms** have passed
-since the timestamp recorded at the previous release.
+Signal checking is unconditional: **`PyErr_CheckSignals()`** runs on every
+poll-site visit. GIL release is conditional: no **`Py_BEGIN_ALLOW_THREADS`**
+unless CPython (or the unsupported-minor fallback) reports a drop request
+**and** at least **5 ms** have passed since the timestamp recorded at the
+previous release (or, on the first visit, since the dispatch-entry seed).
 
 **Relationship to Phase 3:** **`eval_phase_pending_exception`** still runs at the
-start of each prologue (before **`cg_poll`**). **`PyErr_CheckSignals()`** at
-**`cg_check_signals`** may set **`PyErr`** again; **`eval_phase_pending_exception`**
-then runs so interrupts are not deferred until the next full prologue cycle.
+start of each prologue. **`PyErr_CheckSignals()`** at the poll site may set
+**`PyErr`**, and the poll site runs **`eval_phase_pending_exception`** inline
+(the code region formerly labeled **`cg_check_signals`** / **`cg_normal_dispatch`**
+is now straight-line fall-through from **`cg_poll`**) so interrupts are not
+deferred until the next full prologue cycle.
 
 **Future work:** Domain-scoped **`maybe_cooperate()`** / **`ensure_gil()`** and
 cooperation inside dynchain walks are described in
@@ -350,7 +354,7 @@ PC is rolled back for WITH enter/exit suspend so the same instruction is retried
 
 #### 2.4.1 Flattened Koskari async generator attach (NEXT / ITER_NEXT / YIELD_FROM)
 
-When a **KosPyAsyncGen** is stepped **inside** the same **`koskari_eval`** invocation (not from Python **`__anext__`** alone), **`koskari/lib/eval.c`** installs its active dyn chain onto the **consumer** context. **`op_attach_koskari_agen_frame`** (**NEXT**), **`op_attach_koskari_agen_frame_for_iter_next`** (**ITER_NEXT**), and **`op_attach_koskari_agen_frame_for_yield_from`** (**YIELD_FROM** kos-async-gen driver) each validate **`gen`** / **`KosDynGen_ACTIVE`**, run **opcode-specific** failure cleanup (NEXT abort + decrefs; ITER_NEXT may reset **`KOS_DYN_FOREACH`** step phase; YIELD_FROM pops **`KOS_DYN_YIELD_FROM`**), then call **`kos_attach_agen_gen_flatten(es, agen, gen)`** (static). That small helper clears **`agen->ctx`**’s **`dyn_top`** / **`frame_top`** and calls **`kos_dyn_gen_install(es, gen)`**. **`kos_dyn_gen_install`** publishes the restored **`dyn_top`** via **`kos_dyn_commit_dyn_top(es, active)`**, which runs **`KosEvalState_RefreshDynCaches`** (full chain walk, then **`KosEvalState_ApplyDynCaches`**) — **not** **`PatchDynCaches`**, because install grafts a frozen **segment** rather than appending a single new head. Earlier draft text in this section sometimes paired that path with **`KosEvalState_SyncFromContext`**; **`RefreshDynCaches`** already applies eval mirrors via **`ApplyDynCaches`**, so that was redundant.
+When a **KosPyAsyncGen** is stepped **inside** the same **`koskari_eval`** invocation (not from Python **`__anext__`** alone), **`koskari/lib/eval.c`** installs its active dyn chain onto the **consumer** context. **`op_attach_koskari_agen_frame`** (**NEXT**), **`op_attach_koskari_agen_frame_for_iter_next`** (**ITER_NEXT**), and **`op_attach_koskari_agen_frame_for_yield_from`** (**YIELD_FROM** kos-async-gen driver) are thin wrappers over the shared **`attach_agen_gen_checked(es, agen)`** core, which resolves the agen’s **`gen`** node (RuntimeError when absent) and calls **`kos_attach_agen_gen_flatten(es, agen, gen)`** (static). Each wrapper runs its own **opcode-specific** failure cleanup when the core returns **-1** (NEXT abort + decrefs; ITER_NEXT may reset **`KOS_DYN_FOREACH`** step phase; YIELD_FROM pops **`KOS_DYN_YIELD_FROM`**). **`kos_attach_agen_gen_flatten`** clears **`agen->ctx`**’s **`dyn_top`** / **`frame_top`** and calls **`kos_dyn_gen_install(es, gen)`** for a frozen (**`KosDynGen_ACTIVE`**) gen, or **`kos_dyn_gen_install_bootstrap`** when only a bootstrap chain is present. **`kos_dyn_gen_install`** publishes the restored **`dyn_top`** via **`kos_dyn_commit_dyn_top(es, active)`**, which runs **`KosEvalState_RefreshDynCaches`** (full chain walk, then **`KosEvalState_ApplyDynCaches`**) — **not** **`PatchDynCaches`**, because install grafts a frozen **segment** rather than appending a single new head. Earlier draft text in this section sometimes paired that path with **`KosEvalState_SyncFromContext`**; **`RefreshDynCaches`** already applies eval mirrors via **`ApplyDynCaches`**, so that was redundant.
 
 The **same** live **`es`** passed into the opcode must be forwarded to the attach path. All three helpers take **`KosEvalState *es`** first so **`kos_dyn_gen_install`** refreshes the interpreter’s eval-state mirrors—not a temporary **`KosEvalState`** built only for install.
 
@@ -870,7 +874,10 @@ prologue PyErr — see §4.1 and
 ### 6.5 Call Sites for run_transfer_plan_to_completion
 
 1. **eval_phase_transfer** — at loop start when plan is active.
-2. **Inside dispatch loop** — at each iteration top before phase 3.
+2. **Inside dispatch loop** — near each prologue top, immediately **after** the
+   Phase 3 pending-exception check (so a PyErr left by a suspended transfer
+   thunk runs abandon + `try_local` before the plan is drained) and before the
+   native-handler and poll steps.
 3. **eval_phase_entry** — when re-entering with an active plan (e.g. after yield-from or boundary return).
 
 ### 6.6 Implementation layout
@@ -1144,7 +1151,8 @@ See [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.m
 
 1. User runs a long Koskari loop (for example the CLI REPL evaluating many forms).
 2. Every **1024** **RUN** tail-dispatches (and on each prologue reunion), the loop
-   reaches **`cg_poll`** then **`cg_check_signals`**.
+   reaches **`cg_poll`** and the **`PyErr_CheckSignals()`** step that falls
+   through from it.
 3. **`PyErr_CheckSignals()`** converts the pending **SIGINT** into **`PyErr`** (typically **KeyboardInterrupt**).
 4. **`eval_phase_pending_exception`** runs **`process_raise`**; if no handler catches it, `EVAL_RAISE()` is returned and the driver exits.
 5. Between signal checks, a paired **`Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS`** may run only when **`koskari_gil_drop_requested()`** is true and at least **5 ms** have passed since the last recorded release (see §1.6).
