@@ -1,13 +1,6 @@
 ;;; koskari-mode.el --- Major mode for Koskari (.ki) source files  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2026  Christopher O'Brien
-
-;; Author: Christopher O'Brien <obriencj@gmail.com>
-;; Maintainer: Christopher O'Brien <obriencj@gmail.com>
-;; Version: 0.1.0
-;; Package-Requires: ((emacs "24.3"))
-;; Keywords: languages, lisp
-;; URL: https://github.com/obriencj/koskari
+;; Copyright (C) 2024  Sibilant Contributors
 
 ;; This library is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -112,20 +105,21 @@
                  "print\\|pragma\\|partial\\?\\|partial\\|parse-rule-patternq\\|"
                  "parse-rule-pattern\\|parse-match-patternq\\|parse-match-pattern\\|"
                  "parameterq\\|parameterize\\|parameter\\|pair\\?\\|pair\\|ord\\|or\\|open\\|"
-                 "on-demand\\?\\|object\\?\\|object\\|not-in\\|not-equal\\?\\|not\\|nil\\?\\|nil\\|"
-                 "next\\|min\\|max\\|map\\|macroexpandq-1\\|macroexpandq\\|macroexpand-1\\|"
-                 "macroexpand\\|macro-rules\\|macro-match\\|lt\\?\\|locals\\|local\\|"
-                 "load-exception\\|list\\?\\|list-each\\|list\\|letrec\\|let/cc\\|let-values\\|"
-                 "let-syntax\\|let\\*\\|let\\|len\\|le\\?\\|lambda\\|keyword\\?\\|keyword-block\\|"
-                 "keyword\\|iter\\|item-slice\\|item\\*\\|item\\|is-not\\|is\\|int\\?\\|int\\|"
-                 "instance\\?\\|input\\|inplace-item\\|inplace-attr\\|inplace\\|inline-macro\\|"
-                 "inline-block\\|incr!\\|in\\|import-from\\|import-all-from\\|import\\|if\\|id\\|"
+                 "on-demand\\?\\|object\\?\\|object\\|not-in\\?\\|not-in\\|not-equal\\?\\|not\\|"
+                 "nil\\?\\|nil\\|next\\|min\\|max\\|map\\|macroexpandq-1\\|macroexpandq\\|"
+                 "macroexpand-1\\|macroexpand\\|macro-rules\\|macro-match\\|lt\\?\\|locals\\|"
+                 "local\\|load-exception\\|list\\?\\|list-each\\|list\\|letrec\\|let/cc\\|"
+                 "let-values\\|let-syntax\\|let\\*\\|let\\|len\\|le\\?\\|lambda\\|labels\\|"
+                 "keyword\\?\\|keyword-block\\|keyword\\|iter\\|item-slice\\|item\\*\\|item\\|"
+                 "is\\?\\|is-not\\?\\|is-not\\|is\\|int\\?\\|int\\|instance\\?\\|input\\|"
+                 "inplace-item\\|inplace-attr\\|inplace\\|inline-macro\\|inline-block\\|incr!\\|"
+                 "in\\?\\|in\\|import-from\\|import-all-from\\|import\\|if\\|id\\|"
                  "help-pragma-key\\|help\\|hasitem\\*\\|hash\\|hasattr\\?\\|hasattr\\*\\|has\\?\\|"
                  "gt\\?\\|globals\\|global\\|getitem\\*\\|getattr\\*\\|getattr\\|gensym-thunk\\|"
                  "gensym\\|ge\\?\\|function-compose\\|function\\|frozenset\\?\\|frozenset\\|"
-                 "fraction\\?\\|fraction\\|fourth\\|format\\|for-each\\|float\\?\\|float\\|first\\|"
-                 "filter\\|fifth\\|extend-syntax\\|evaluate\\|equal\\?\\|enumerate\\|each\\|"
-                 "dyn-with\\|dyn-wind\\|divmod\\|dir\\|dict\\?\\|dict-each\\|dict\\|deref\\|"
+                 "fraction\\?\\|fraction\\|fourth\\|format\\|for-each\\|float\\?\\|float\\|flet\\|"
+                 "first\\|filter\\|fifth\\|extend-syntax\\|evaluate\\|equal\\?\\|enumerate\\|"
+                 "each\\|dyn-with\\|dyn-wind\\|divmod\\|dir\\|dict\\?\\|dict-each\\|dict\\|deref\\|"
                  "demand\\?\\|demand-call\\|demand-apply\\|demand\\|delq\\|del-item\\|del-attr\\|"
                  "del!\\|define-values\\|define-syntax\\|define-parameter\\|define-global\\|"
                  "define-demanding\\|define-dataclass\\|define-coroutine\\|define-class\\|"
@@ -158,20 +152,21 @@
                  "print\\|pragma\\|partial\\?\\|partial\\|parse-rule-patternq\\|"
                  "parse-rule-pattern\\|parse-match-patternq\\|parse-match-pattern\\|"
                  "parameterq\\|parameterize\\|parameter\\|pair\\?\\|pair\\|ord\\|or\\|open\\|"
-                 "on-demand\\?\\|object\\?\\|object\\|not-in\\|not-equal\\?\\|not\\|nil\\?\\|nil\\|"
-                 "next\\|min\\|max\\|map\\|macroexpandq-1\\|macroexpandq\\|macroexpand-1\\|"
-                 "macroexpand\\|macro-rules\\|macro-match\\|lt\\?\\|locals\\|local\\|"
-                 "load-exception\\|list\\?\\|list-each\\|list\\|letrec\\|let/cc\\|let-values\\|"
-                 "let-syntax\\|let\\*\\|let\\|len\\|le\\?\\|lambda\\|keyword\\?\\|keyword-block\\|"
-                 "keyword\\|iter\\|item-slice\\|item\\*\\|item\\|is-not\\|is\\|int\\?\\|int\\|"
-                 "instance\\?\\|input\\|inplace-item\\|inplace-attr\\|inplace\\|inline-macro\\|"
-                 "inline-block\\|incr!\\|in\\|import-from\\|import-all-from\\|import\\|if\\|id\\|"
+                 "on-demand\\?\\|object\\?\\|object\\|not-in\\?\\|not-in\\|not-equal\\?\\|not\\|"
+                 "nil\\?\\|nil\\|next\\|min\\|max\\|map\\|macroexpandq-1\\|macroexpandq\\|"
+                 "macroexpand-1\\|macroexpand\\|macro-rules\\|macro-match\\|lt\\?\\|locals\\|"
+                 "local\\|load-exception\\|list\\?\\|list-each\\|list\\|letrec\\|let/cc\\|"
+                 "let-values\\|let-syntax\\|let\\*\\|let\\|len\\|le\\?\\|lambda\\|labels\\|"
+                 "keyword\\?\\|keyword-block\\|keyword\\|iter\\|item-slice\\|item\\*\\|item\\|"
+                 "is\\?\\|is-not\\?\\|is-not\\|is\\|int\\?\\|int\\|instance\\?\\|input\\|"
+                 "inplace-item\\|inplace-attr\\|inplace\\|inline-macro\\|inline-block\\|incr!\\|"
+                 "in\\?\\|in\\|import-from\\|import-all-from\\|import\\|if\\|id\\|"
                  "help-pragma-key\\|help\\|hasitem\\*\\|hash\\|hasattr\\?\\|hasattr\\*\\|has\\?\\|"
                  "gt\\?\\|globals\\|global\\|getitem\\*\\|getattr\\*\\|getattr\\|gensym-thunk\\|"
                  "gensym\\|ge\\?\\|function-compose\\|function\\|frozenset\\?\\|frozenset\\|"
-                 "fraction\\?\\|fraction\\|fourth\\|format\\|for-each\\|float\\?\\|float\\|first\\|"
-                 "filter\\|fifth\\|extend-syntax\\|evaluate\\|equal\\?\\|enumerate\\|each\\|"
-                 "dyn-with\\|dyn-wind\\|divmod\\|dir\\|dict\\?\\|dict-each\\|dict\\|deref\\|"
+                 "fraction\\?\\|fraction\\|fourth\\|format\\|for-each\\|float\\?\\|float\\|flet\\|"
+                 "first\\|filter\\|fifth\\|extend-syntax\\|evaluate\\|equal\\?\\|enumerate\\|"
+                 "each\\|dyn-with\\|dyn-wind\\|divmod\\|dir\\|dict\\?\\|dict-each\\|dict\\|deref\\|"
                  "demand\\?\\|demand-call\\|demand-apply\\|demand\\|delq\\|del-item\\|del-attr\\|"
                  "del!\\|define-values\\|define-syntax\\|define-parameter\\|define-global\\|"
                  "define-demanding\\|define-dataclass\\|define-coroutine\\|define-class\\|"
@@ -233,7 +228,7 @@
                 (eq (char-before) ?:))))))
 
 (defun koskari--line-is-peer-block-p ()
-  "Return non-nil if the current line is the start of a peer block."
+  "Return non-nil if current line starts a peer block."
   (looking-at-p
    (concat "^\\([ \t]*\\)"
            "\\(elif\\|else\\|except\\|finally\\)"
