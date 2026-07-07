@@ -21,18 +21,20 @@ The koskari compiler. Converts source forms into bytecode fragments.
 """
 
 
+import struct
 import warnings
+import weakref
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Code, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
-                   NAMESPACE_FAST_SLOT_MAX,
+from ..lib import (Arena, Code, FormalsSpec, FunctionSpec, Module,
+                   ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, nil, symbol)
 from ..types import is_nil, get_position, is_pair, is_proper, is_symbol
-from .pragma import BracketCalls, KoskariPragma, ResolutionMode
+from .pragma import BracketCalls, KoskariPragma, PackModule, ResolutionMode
 
 
 class Compiled(ABC):
@@ -136,6 +138,22 @@ def unique_append(lst, val):
 
     if val not in lst:
         lst.append(val)
+
+
+_PTR_SIZE = struct.calcsize("P")
+
+
+def _arena_member_size(code):
+    """
+    The bytes a code object's unified block occupies inside an arena:
+    the unrounded block total, aligned up to pointer size to match the
+    arena's reservation alignment.
+
+    :param code: a Code object
+    """
+
+    size = code.payload_bytes + code.padding_bytes
+    return ((size + _PTR_SIZE - 1) // _PTR_SIZE) * _PTR_SIZE
 
 
 class ByteCodeFragment:
@@ -447,6 +465,13 @@ class Compiler:
         self.resolution_mode = resolution_mode
         self._resolution_instance = None
         self.bracket_calls = bracket_calls
+        self.protect_code = False
+        self.pack_module = PackModule(True, 0, 0)
+
+        # weakrefs to every Code minted through complete(), in
+        # definition order; the live remainder at seal() time is the
+        # module's durable code set
+        self._minted = []
 
         # nested scope depth (function, let, class bodies); 0 = module
         # top level. Maintained by resolution_scope; consulted by
@@ -514,6 +539,10 @@ class Compiler:
         self._resolution_instance = None
 
         self._bracket_calls = pragma.get("compiler/call-brackets")
+
+        self.protect_code = pragma.get("compiler/protect-code", False)
+        self.pack_module = pragma.get(
+            "compiler/pack-module", PackModule(True, 0, 0))
 
 
     @property
@@ -1056,7 +1085,8 @@ class Compiler:
         filename = (fragment.filename or path or self.filename or None)
 
         # Build Code and register with pragma for position lookup on errors
-        code = Code(base_nspec, instr, fragment.name, filename)
+        code = Code(base_nspec, instr, fragment.name, filename,
+                    protect=self.protect_code)
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
         reso.register_code_fragment(code, fragment)
@@ -1067,7 +1097,76 @@ class Compiler:
         if _validate and is_root:
             reso.validate_tree(
                 code, (), CompilerMode.FUNCTION, is_root=True)
+
+        # finally, register the code with the minted registry so that it
+        # can potentially be sealed later.
+        self._minted.append(weakref.ref(code))
+
         return code
+
+
+    def seal(self):
+        """
+        Pack this module's surviving code objects into sealed arenas.
+
+        Drains the minted registry, keeping the code objects that are
+        still alive and not already packed -- reachability from the
+        module namespace is what makes a code object durable. Survivors
+        are partitioned in definition order per the compiler/pack-module
+        caps, each segment is relocated into a shared Arena, and each
+        arena is sealed read-only with a single mprotect.
+
+        Idempotent: a second call finds an empty registry, so a
+        long-lived compiler (an interactive session's, or the bootstrap
+        loop's) may seal repeatedly, packing only what accumulated since
+        the previous seal. Must run at a quiescent point (module body
+        evaluation complete, no frame of the target code mid-dispatch);
+        the end of a module load satisfies this.
+
+        :return: tuple of the Arena objects produced; empty when packing
+            is disabled or nothing survived
+        """
+
+        refs, self._minted = self._minted, []
+
+        pack = self.pack_module
+        if not (pack and pack.enabled):
+            return ()
+
+        survivors = [c for c in (r() for r in refs)
+                     if c is not None and c.arena is None]
+        if not survivors:
+            return ()
+
+        # Partition in definition order. Either cap starting a new
+        # segment; a single oversize member still lands alone rather
+        # than failing to place.
+        segments = []
+        current = []
+        current_bytes = 0
+        for code in survivors:
+            size = _arena_member_size(code)
+            if current and (
+                    (pack.max_count
+                     and len(current) >= pack.max_count)
+                    or (pack.max_bytes
+                        and current_bytes + size > pack.max_bytes)):
+                segments.append((current, current_bytes))
+                current = []
+                current_bytes = 0
+            current.append(code)
+            current_bytes += size
+        segments.append((current, current_bytes))
+
+        arenas = []
+        for codes, total in segments:
+            arena = Arena(total)
+            for code in codes:
+                code.pack_into(arena)
+            arena.seal()
+            arenas.append(arena)
+
+        return tuple(arenas)
 
 
 # The end.
