@@ -1406,7 +1406,7 @@ class Reader:
         """
 
         peek = stream.peek(1)
-        if peek not in "({[<":
+        if peek not in "({[":
             return DEFER, None
 
         peek = stream.read(1)
