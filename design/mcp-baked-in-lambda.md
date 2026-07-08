@@ -150,45 +150,43 @@ health response so a running deployment is identifiable.
 
 ---
 
-## Part 2 — Add a Lambda launch mode to the script
+## Part 2 — Add a Lambda serving mode to the script
 
-The script already has three HTTP knobs under `--serve` (host, port,
-allowed-hosts) driving `mcp.run_streamable_http_async`. Lambda needs two
-additions.
+The script has three launch modes, and `--serve` and `--lambda` are **mutually
+exclusive**:
 
-### `--stateless`
+| Mode          | Transport                        | Use                                    |
+|---------------|----------------------------------|----------------------------------------|
+| (no flag)     | stdio                            | local MCP clients as a subprocess      |
+| `--serve`     | streamable HTTP (stateful, SSE)  | self-hosted VM/service behind a proxy  |
+| `--lambda`    | streamable HTTP (stateless JSON) | behind the AWS Lambda Web Adapter      |
+
+`--serve` is unchanged: normal streamable HTTP with its existing host, port, and
+allowed-hosts knobs, driving `mcp.run_streamable_http_async`. `--lambda` is a
+distinct mode, not a preset of `--serve`; passing both is an argument error.
+
+### `--lambda`
 
 FastMCP's default streamable-HTTP transport keeps per-client session state in
 process memory, keyed by `Mcp-Session-Id`. Under Lambda, consecutive requests
 from one client can land on different execution environments, so session state
-must not live in the process. Add a `--stateless` flag that sets, before
-serving:
+must not live in the process. Lambda mode therefore serves **stateless**, with
+plain JSON responses rather than an SSE stream, before serving:
 
 ```text
 mcp.settings.stateless_http = True
 mcp.settings.json_response  = True
+mcp.settings.host           = "127.0.0.1"
+mcp.settings.port           = int(getenv("PORT", "8080"))
 ```
 
-This makes every request self-contained (each tool call is independent, which
-is already true of this server's tools) and returns plain JSON rather than an
-SSE stream. It is valid outside Lambda too and can be the default for any
-horizontally scaled HTTP deployment.
+It binds the loopback port the Lambda Web Adapter proxies to. No allowed-hosts
+override is needed: the adapter forwards from API Gateway on localhost, and host
+protection is enforced at the API Gateway custom domain. Each request is
+self-contained, which is already true of this server's tools.
 
-### `--lambda`
-
-Convenience mode that implies `--serve --stateless` bound to the loopback port
-the Lambda Web Adapter proxies to:
-
-```text
---lambda  ≡  --serve --stateless --host 127.0.0.1 --port ${PORT:-8080}
-```
-
-No allowed-hosts override is needed: the adapter forwards from API Gateway on
-localhost, and host protection is enforced at the API Gateway custom domain.
-
-Everything else -- the stdio default (no flag) and the existing public-HTTP
-`--serve` path for a self-hosted VM behind traefik -- is untouched. The same
-`.ki` file serves all three deployment shapes.
+The stdio default and the `--serve` public-HTTP path are untouched. The same
+`.ki` file serves all three deployment shapes through mutually exclusive modes.
 
 ---
 
