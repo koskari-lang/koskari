@@ -6,20 +6,25 @@
 # Run (stdio MCP; use -i, never -t):
 #   podman run -i --rm koskari-mcp:local
 #
+# The corpus/docs/programs parquet views are baked into the image under
+# /srv/data, so the server serves entirely from memory with no network.
+# make build-mcp stages them into tools/mcp/data/ before the build.
+#
 # author: Christopher O'Brien <obriencj@gmail.com>
 # license: GPL v.3
 
 FROM koskari:local
 
 LABEL maintainer="obriencj@gmail.com" \
-      description="Koskari MCP server for obriencj/koskari corpus retrieval"
+      description="Koskari MCP server for the baked-in koskari corpus"
 
 RUN pip install --no-cache-dir --disable-pip-version-check \
     --root-user-action=ignore \
-    argparse httpx mcp
+    mcp pyarrow
 
 WORKDIR /srv
 COPY mcp_server.ki ./mcp_server.ki
+COPY data/ ./data/
 
 CMD ["mcp_server.ki"]
 

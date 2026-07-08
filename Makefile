@@ -355,8 +355,15 @@ corpus-parquet-container:  ## Run corpus export in the tools container; writes t
 ##@ MCP
 
 MCP_IMAGE := koskari-mcp
+MCP_DATA := tools/mcp/data
 
-build-mcp:  ## Build koskari MCP server container (requires koskari:local)
+mcp-data: corpus-parquet-all  ## Stage baked corpus parquet into the MCP build context
+	@echo "Staging corpus parquet into $(MCP_DATA)..."
+	@rm -rf $(MCP_DATA)
+	@mkdir -p $(MCP_DATA)
+	@cp -R $(BUILD_DIR)/corpus/datasets/. $(MCP_DATA)/
+
+build-mcp: mcp-data  ## Build koskari MCP server container (requires koskari:local)
 	@echo "Building MCP server container image $(MCP_IMAGE)..."
 	@$(CONTAINER_ENGINE) build -q -t $(MCP_IMAGE):local -f tools/mcp/Containerfile tools/mcp/
 
@@ -522,6 +529,7 @@ python:  ## Show Python executable
 	handlers \
 	help \
 	icons \
+	mcp-data \
 	build-mcp \
 	build-mcp-container \
 	run-mcp \
