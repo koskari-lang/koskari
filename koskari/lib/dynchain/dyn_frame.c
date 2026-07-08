@@ -67,8 +67,9 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
   KosDynFrame_ACTING_PC(clone) = KosDynFrame_ACTING_PC(frame);
 
-  KosDynFrame_NS(clone) = KosDynFrame_NS(frame);
-  Py_XINCREF(KosDynFrame_NS(clone));
+  /* a captured continuation can be stored back into scope; reveal the
+     frame's namespace chain to the cyclic collector */
+  KosDynFrame_NS(clone) = KosNamespace_Reveal(KosDynFrame_NS(frame));
 
   KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame);
   KosDynFrame_NATIVE_HANDLER(clone) = KosDynFrame_NATIVE_HANDLER(frame);

@@ -307,6 +307,30 @@ int KosNamespace_FastBind(
   ((obj) && ((obj)->ob_type == &KosNamespaceType))
 
 
+/**
+   Reveal a namespace to the cyclic collector: GC-track it and every
+   untracked ancestor.
+
+   Namespaces are GC-allocated but born untracked, keeping the call
+   fast path invisible to the collector. Any operation that lets a
+   namespace reference escape into storage (LOCALS, function creation
+   capturing a parent, continuation capture, Python exposure) must
+   reveal it first, since a stored reference is what makes a reference
+   cycle through the namespace possible.
+
+   Invariant: a tracked namespace's parent chain is tracked, so the
+   walk stops at the first tracked ancestor. Idempotent; safe on NULL.
+*/
+void KosNamespace_TrackChain(PyObject *ns);
+
+
+/**
+   KosNamespace_TrackChain plus a new reference to ns, ready for
+   storage. Safe on NULL (returns NULL).
+*/
+PyObject *KosNamespace_Reveal(PyObject *ns);
+
+
 /* === CollectorNamespace === */
 
 

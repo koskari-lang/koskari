@@ -22,8 +22,8 @@ KOS_OP_HANDLER(POP_COLLECT) {
   (void) insn;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
-  PyObject *collector = KosDynNode_NS(top);
-  Py_INCREF(collector);
+  /* the collected namespace lands on the value stack: reveal it */
+  PyObject *collector = KosNamespace_Reveal(KosDynNode_NS(top));
 
   if (unlikely(kos_dyn_pop_collect(es, (KosDynCollect *) top) < 0)) {
     Py_DECREF(collector);

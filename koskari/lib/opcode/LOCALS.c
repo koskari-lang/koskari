@@ -15,12 +15,12 @@
 
 /**
    LOCALS: arg unused. Push the current frame's namespace (locals) onto
-   the stack.
+   the stack. Reifying the namespace makes it storable, so it is
+   revealed to the cyclic collector here.
 */
 
 KOS_OP_HANDLER(LOCALS) {
-  PyObject *ns = CURRENT_NS();
-  Py_INCREF(ns);
+  PyObject *ns = KosEvalState_RevealNamespace(es);
   return kos_op_result_PUSH(es, ns);
 }
 

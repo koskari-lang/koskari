@@ -341,10 +341,12 @@ differing only in arena membership: an arena of one versus an arena of N.
   collectable afterward and the arena frees once its last real member dies.
   Forcing a `gc.collect()` before seal would make the live set exact, but
   paying a full collection on every module load is the worse trade; leave it
-  off by default. (Note: the namespace types do not currently participate in
-  cyclic GC at all -- their `tp_traverse` functions exist but `HAVE_GC` is
-  never set -- so such cycles presently never collect. That is a pre-existing
-  defect independent of packing.)
+  off by default. (Namespaces participate in cyclic GC lazily: GC-allocated
+  but born untracked, revealed to the collector -- along with their parent
+  chain -- when a reference can escape into storage: LOCALS, function
+  creation capturing a scope, continuation capture, POP_COLLECT, module
+  namespaces at birth, and Python exposure. Ref cells are tracked always.
+  The call fast path stays invisible to the collector.)
 
 
 ## Non-goals
