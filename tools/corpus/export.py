@@ -273,7 +273,7 @@ def main(argv=None):
     root = project_root()
     default_records = root / 'docs' / 'corpus' / 'records'
     default_schema = root / 'docs' / 'corpus' / 'SCHEMA.json'
-    default_view = 'koskari-eval'
+    default_view = 'koskari-corpus'
     default_output = root / 'build' / 'corpus' / 'datasets' / default_view
     default_output_base = root / 'build' / 'corpus' / 'datasets'
 

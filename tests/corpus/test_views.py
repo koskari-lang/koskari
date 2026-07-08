@@ -46,15 +46,6 @@ _FULL_COLUMNS = frozenset({
     'git_ref',
 })
 
-_EVAL_COLUMNS = frozenset({
-    'corpus_id',
-    'feature',
-    'source',
-    'eval',
-    'schema_version',
-    'git_ref',
-})
-
 _MATERIAL_COLUMNS = frozenset({
     'path',
     'title',
@@ -132,34 +123,6 @@ def test_full_view_columns():
     assert rows
     for row in rows:
         assert set(row.keys()) == _FULL_COLUMNS
-
-
-def test_eval_view_omits_records_without_eval():
-    """
-    koskari-eval drops records lacking verify.eval
-    """
-
-    eval_mod = _load_view_module('eval.py')
-    records = load_records(default_records_dir())
-    rows = _apply_view(eval_mod.transform, records)
-    eval_count = sum(
-        1 for record in records
-        if (record.get('verify') or {}).get('eval') is not None)
-    assert len(rows) == eval_count
-    assert len(rows) < len(records)
-
-
-def test_eval_view_columns():
-    """
-    koskari-eval rows expose only eval-stage columns
-    """
-
-    eval_mod = _load_view_module('eval.py')
-    records = load_records(default_records_dir())
-    rows = _apply_view(eval_mod.transform, records)
-    assert rows
-    for row in rows:
-        assert set(row.keys()) == _EVAL_COLUMNS
 
 
 def test_docs_view_row_per_markdown_page():

@@ -322,10 +322,10 @@ venv-koslife: .venv/bin/koslife ## Install koslife example
 
 CORPUS_IMAGE := koskari-corpus-export
 
-corpus-parquet:  ## Export koskari-eval parquet from corpus YAML via tox
+corpus-parquet:  ## Export koskari-corpus parquet from corpus YAML via tox
 	@$(call checkfor,tox)
-	@echo "Exporting corpus view koskari-eval..."
-	@tox -qe regen-corpus -- --view koskari-eval
+	@echo "Exporting corpus view koskari-corpus..."
+	@tox -qe regen-corpus -- --view koskari-corpus
 
 corpus-parquet-all:  ## Export all corpus views to build/corpus/datasets/
 	@$(call checkfor,tox)

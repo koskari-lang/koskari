@@ -6,10 +6,6 @@ configs:
     data_files:
       - split: train
         path: koskari-corpus/train.parquet
-  - config_name: eval
-    data_files:
-      - split: train
-        path: koskari-eval/train.parquet
   - config_name: docs
     data_files:
       - split: train
@@ -48,20 +44,6 @@ are present. Missing stages are null.
 | `references` | Links to user documentation pages under `docs/` |
 | `stability` | Record stability label (`stable`, `evolving`, `experimental`) |
 | `tags` | Maintainer tags (not copied from training-only metadata) |
-| `schema_version` | Corpus schema identifier at export time |
-| `git_ref` | Short git commit at export time |
-
-### eval
-
-Subset of records that include a verified `verify.eval` expectation. Flat
-source-to-eval rows for completion-style use.
-
-| Column | Description |
-|--------|-------------|
-| `corpus_id` | Unique corpus record identifier |
-| `feature` | Feature path |
-| `source` | Koskari source text |
-| `eval` | Expected eval result |
 | `schema_version` | Corpus schema identifier at export time |
 | `git_ref` | Short git commit at export time |
 

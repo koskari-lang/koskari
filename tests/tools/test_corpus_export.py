@@ -49,7 +49,6 @@ def load_module(name, path):
 
 export = load_module('corpus_export', ROOT / 'tools' / 'corpus' / 'export.py')
 corpus_load = load_module('corpus_load', ROOT / 'tools' / 'corpus' / 'load.py')
-eval_view = load_module('corpus_view_eval', ROOT / 'tools' / 'corpus' / 'views' / 'eval.py')
 
 
 FIXTURE_RECORDS = [
@@ -81,28 +80,6 @@ SCHEMA_FIXTURE = {
 }
 
 
-class TestEvalView(unittest.TestCase):
-
-    def test_transform_includes_eval_records(self):
-        provenance = {
-            'schema_version': 'https://example.test/corpus/schema.json',
-            'git_ref': 'abc1234',
-        }
-        row = eval_view.transform(FIXTURE_RECORDS[0], provenance)
-        self.assertEqual(row['corpus_id'], 'fixture-eval-001')
-        self.assertEqual(row['eval'], '42')
-        self.assertEqual(row['schema_version'], provenance['schema_version'])
-        self.assertEqual(row['git_ref'], 'abc1234')
-
-    def test_transform_skips_non_eval_records(self):
-        provenance = {
-            'schema_version': 'https://example.test/corpus/schema.json',
-            'git_ref': '',
-        }
-        self.assertIsNone(eval_view.transform(FIXTURE_RECORDS[1], provenance))
-        self.assertIsNone(eval_view.transform(FIXTURE_RECORDS[2], provenance))
-
-
 class TestCorpusExport(unittest.TestCase):
 
     def setUp(self):
@@ -112,7 +89,7 @@ class TestCorpusExport(unittest.TestCase):
         self.records_dir.mkdir()
         self.schema_path = self.root / 'SCHEMA.json'
         self.schema_path.write_text(json.dumps(SCHEMA_FIXTURE))
-        self.output_dir = self.root / 'out' / 'koskari-eval'
+        self.output_dir = self.root / 'out' / 'koskari-corpus'
 
         shard = self.records_dir / 'fixture.yaml'
         corpus_load.write_shard(shard, FIXTURE_RECORDS)
@@ -136,20 +113,20 @@ class TestCorpusExport(unittest.TestCase):
         self.assertIn('x', ids)
         self.assertEqual(ids.count('x'), 1)
 
-    def test_export_koskari_eval_row_count(self):
+    def test_export_koskari_corpus_row_count(self):
         path = export.export_corpus(
-            'koskari-eval',
+            'koskari-corpus',
             self.records_dir,
             self.schema_path,
             self.output_dir,
             root=ROOT)
         self.assertTrue(path.exists())
         table = pq.read_table(path)
-        self.assertEqual(table.num_rows, 1)
+        self.assertEqual(table.num_rows, len(FIXTURE_RECORDS))
 
-    def test_export_koskari_eval_columns(self):
+    def test_export_koskari_corpus_columns(self):
         path = export.export_corpus(
-            'koskari-eval',
+            'koskari-corpus',
             self.records_dir,
             self.schema_path,
             self.output_dir,
@@ -213,7 +190,7 @@ class TestSourceViews(unittest.TestCase):
         names = {path.parent.name for path in paths}
         self.assertEqual(
             names,
-            {'koskari-eval', 'koskari-corpus',
+            {'koskari-corpus',
              'koskari-docs', 'koskari-programs'})
         self.assertTrue(
             (output_base / 'koskari-docs' / 'train.parquet').exists())

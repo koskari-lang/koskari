@@ -45,7 +45,6 @@ def _load_view_module(filename):
     return mod
 
 
-_eval = _load_view_module('eval.py')
 _full = _load_view_module('full.py')
 _docs = _load_view_module('docs.py')
 _programs = _load_view_module('programs.py')
@@ -53,7 +52,6 @@ _programs = _load_view_module('programs.py')
 # Record-mapped views: each value is a transform(record, provenance) callable
 # applied once per corpus record.
 VIEWS = {
-    _eval.VIEW_NAME: _eval.transform,
     _full.VIEW_NAME: _full.transform,
 }
 

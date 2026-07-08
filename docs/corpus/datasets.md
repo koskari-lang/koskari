@@ -41,9 +41,9 @@ trusted publisher with:
 
 ## Configurations
 
-The Hub dataset exposes two configurations. The dataset card lives at
-`tools/corpus/dataset_card.md` in the repository and is uploaded as the Hub
-`README.md`.
+The Hub dataset exposes several configurations, enumerated authoritatively in
+the dataset card. The card lives at `tools/corpus/dataset_card.md` in the
+repository and is uploaded as the Hub `README.md`.
 
 ### corpus (default)
 
@@ -68,22 +68,6 @@ that may be present.
 
 Output file: `build/corpus/datasets/koskari-corpus/train.parquet`
 
-### eval
-
-Flat rows for corpus records that include `verify.eval`. Records verified
-only at other phases (for example `read` or `expand`) are omitted.
-
-| Column | Description |
-|--------|-------------|
-| `corpus_id` | Corpus record `id` |
-| `feature` | Feature path (e.g. `special/compile/cond`) |
-| `source` | Koskari source text |
-| `eval` | Expected eval result from `verify.eval` |
-| `schema_version` | Corpus schema `$id` from [SCHEMA.json](SCHEMA.json) |
-| `git_ref` | Short git commit at export time (empty outside a git checkout) |
-
-Output file: `build/corpus/datasets/koskari-eval/train.parquet`
-
 ## Export commands
 
 Export all views (recommended before publish):
@@ -95,7 +79,6 @@ tox -qe regen-corpus -- --all-views
 Export a single view:
 
 ```bash
-tox -qe regen-corpus -- --view koskari-eval
 tox -qe regen-corpus -- --view koskari-corpus
 ```
 
