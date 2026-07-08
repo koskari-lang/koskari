@@ -25,6 +25,8 @@ tags:
   - function
   - gensym-thunk
   - invalid
+  - metaprogramming
+  - pitfall
 notes: "Illegal: conflates nested thunk install with invoke; see valid build in reference docs and phase_specials nested thunk test"
 ---
 id: function-let-flat-binding-invalid-001
@@ -42,6 +44,8 @@ tags:
   - function
   - let
   - invalid
+  - local-binding
+  - pitfall
 notes: "agent mistake: [x 1] is one binding pair (x . 1) not a list of pairs; corrective: (let [[x 1]] x)"
 ---
 id: function-define-pass-body-invalid-001
@@ -62,6 +66,7 @@ tags:
   - "surface:block"
   - invalid
   - surprising
+  - pitfall
 notes: "agent mistake: Python pass as a no-op function body; corrective: (define foo [] None) or a bare (begin) / begin: body. pass is an unbound name, not a statement."
 ---
 id: functions-bare-multiline-call-kwarg-invalid-001
@@ -85,6 +90,7 @@ tags:
   - invalid
   - surprising
   - "surface:block"
+  - pitfall
 ---
 id: macro-flet-sibling-reference-invalid-001
 feature: macro/compile/flet
@@ -104,4 +110,6 @@ tags:
   - flet
   - macro
   - invalid
+  - local-binding
+  - pitfall
 notes: "flet initializers evaluate in the enclosing scope, so a's body cannot see the sibling b; the lambda closes over an unbound b and calling a raises NameError. corrective: use labels — (labels [[a [x] (b x)] [b [x] (* x 2)]] (a 3))"

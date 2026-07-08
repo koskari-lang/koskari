@@ -165,6 +165,8 @@ stability: evolving
 tags:
   - function
   - define-global
+  - module-global
+  - mutate
 notes: define-global function shorthand mirrors define; koskari/compile/specials/variables.py
 ---
 id: function-gensym-thunk-unary-001
@@ -178,6 +180,7 @@ stability: evolving
 tags:
   - function
   - gensym-thunk
+  - metaprogramming
 notes: reader thunk syntax { (+ %1 1) }
 ---
 id: function-gensym-thunk-binary-001
@@ -191,6 +194,7 @@ stability: evolving
 tags:
   - function
   - gensym-thunk
+  - metaprogramming
 ---
 id: function-gensym-thunk-zeroary-001
 feature: special/compile/gensym-thunk
@@ -203,6 +207,7 @@ stability: evolving
 tags:
   - function
   - gensym-thunk
+  - metaprogramming
 notes: zero placeholders
 ---
 id: function-compose-identity-001
@@ -217,6 +222,8 @@ tags:
   - function
   - macro
   - function-compose
+  - compose
+  - higher-order
 notes: koskari/bootstrap/_functions.ki; requires builtins at expand
 ---
 id: function-compose-chain-001
@@ -231,6 +238,8 @@ tags:
   - function
   - macro
   - function-compose
+  - compose
+  - higher-order
 notes: koskari/bootstrap/_functions.ki; composes right-to-left around call
 ---
 id: function-decorate-empty-lambda-001
@@ -274,6 +283,8 @@ tags:
   - function
   - macro
   - define-coroutine
+  - await
+  - concurrency
 notes: koskari/bootstrap/_functions.ki; eval yields coroutine via coroutine-fn; requires builtins at expand
 ---
 id: function-define-demanding-001
@@ -288,6 +299,8 @@ tags:
   - function
   - macro
   - define-demanding
+  - await
+  - concurrency
 notes: koskari/bootstrap/_functions.ki; demand wrapper for on-demand eval path
 ---
 id: function-yield-basic-001
@@ -306,6 +319,7 @@ tags:
   - function
   - yield
   - generator
+  - iterate
 notes: lambda with yield becomes a generator; list() collects all yielded values
 ---
 id: function-yield-single-002
@@ -324,6 +338,7 @@ tags:
   - function
   - yield
   - generator
+  - iterate
 notes: single-yield generator; list collects the one yielded value
 ---
 id: function-yield-from-basic-001
@@ -342,6 +357,7 @@ tags:
   - function
   - yield
   - generator
+  - iterate
 notes: yield-from delegates to seq=(1,2,3) fixture; all elements forwarded
 ---
 id: function-yield-from-range-002
@@ -358,6 +374,7 @@ tags:
   - function
   - yield
   - generator
+  - iterate
 notes: yield-from a range; generator yields 0 1 2 which list collects
 ---
 id: function-await-expr-001
@@ -375,6 +392,7 @@ tags:
   - function
   - await
   - async
+  - concurrency
 notes: explicit await for a non-auto-awaited value; add fixture is sync so awaits a plain int (no-op)
 ---
 id: function-await-bare-002
@@ -392,6 +410,7 @@ tags:
   - function
   - await
   - async
+  - concurrency
 notes: zero-arg form emits cooperative suspend; form value is None
 ---
 id: function-define-coroutine-param-002
@@ -408,6 +427,8 @@ tags:
   - function
   - macro
   - define-coroutine
+  - await
+  - concurrency
 notes: with a parameter; expands to coroutine-fn wrapping a function form with formals
 ---
 id: function-define-demanding-eval-002
@@ -426,6 +447,8 @@ tags:
   - function
   - macro
   - define-demanding
+  - await
+  - concurrency
 notes: demand-wrapped function; calling sync-id 42 returns 42 directly (sync-safe)
 ---
 id: function-define-demanding-two-param-003
@@ -442,6 +465,8 @@ tags:
   - function
   - macro
   - define-demanding
+  - await
+  - concurrency
 notes: two-param form; expands to define with demand wrapper around function
 ---
 id: function-define-coroutine-type-003
@@ -460,6 +485,8 @@ tags:
   - function
   - macro
   - define-coroutine
+  - await
+  - concurrency
 notes: define-coroutine binds a function slot; type check confirms it is a Python function wrapping coroutine-fn
 ---
 id: function-named-two-param-003
@@ -494,6 +521,7 @@ tags:
   - function
   - yield
   - generator
+  - iterate
 notes: two yield points in one lambda; list collects both yielded values
 ---
 id: function-yield-from-range-param-003
@@ -512,6 +540,7 @@ tags:
   - function
   - yield-from
   - generator
+  - iterate
 notes: yield-from delegates to range(n); list collects all four values
 ---
 id: function-await-plain-value-003
@@ -530,6 +559,7 @@ tags:
   - function
   - await
   - async
+  - concurrency
 notes: await on a plain value is a no-op; z=1 fixture; eval returns the value directly
 ---
 id: function-decorate-lambda-two-arg-003
@@ -564,6 +594,8 @@ tags:
   - function
   - macro
   - function-compose
+  - compose
+  - higher-order
 notes: compose double after add-one; applied to 3 gives (3+1)*2=8
 ---
 id: function-define-keyword-arg-default-001
@@ -619,6 +651,7 @@ stability: evolving
 tags:
   - function
   - define
+  - variadic
 notes: "*: rest collects extra positional args; (f 1 2 3 4) binds x=1, rest=(2,3,4)"
 ---
 id: function-define-star-kwargs-004
@@ -636,6 +669,8 @@ stability: evolving
 tags:
   - function
   - define
+  - keyword-argument
+  - variadic
 notes: "**: kwargs collects all keyword args into a dict; (f x: 1 y: 2) gives {x: 1, y: 2}"
 ---
 id: function-call-star-spread-001
@@ -653,6 +688,7 @@ stability: evolving
 tags:
   - function
   - call
+  - variadic
 notes: "*: at call site spreads a list as positional args; (f *: #[42]) equivalent to (f 42)"
 ---
 id: function-let-brackets-style-001
@@ -685,6 +721,7 @@ stability: evolving
 tags:
   - function
   - partial
+  - higher-order
 notes: functools.partial is bound by default (KosPartial); (partial + 10) fixes the first argument, then calling with 5 yields 15. koskari/bootstrap/__init__.py
 ---
 id: function-partial-import-multi-001
@@ -699,6 +736,7 @@ tags:
   - function
   - partial
   - import
+  - higher-order
 notes: explicit import-from functools partial (as in examples/life); partial can fix several leading arguments at once. 1 + 2 + 4 = 7
 ---
 id: macro-flet-basic-001
@@ -717,6 +755,7 @@ tags:
   - function
   - flet
   - macro
+  - local-binding
 notes: one local function bound to an anonymous lambda and invoked
 ---
 id: macro-flet-multiple-001
@@ -735,6 +774,7 @@ tags:
   - function
   - flet
   - macro
+  - local-binding
 notes: several local functions coexist and compose over the body
 ---
 id: macro-flet-block-001
@@ -754,6 +794,7 @@ tags:
   - flet
   - macro
   - "surface:block"
+  - local-binding
 notes: layout surface — declaration list in the header, body indented beneath
 ---
 id: macro-labels-self-recursion-001
@@ -772,6 +813,7 @@ tags:
   - function
   - labels
   - macro
+  - local-binding
 notes: a labels binding may call itself; each is defined in a shared scope
 ---
 id: macro-labels-mutual-recursion-001
@@ -789,6 +831,7 @@ tags:
   - function
   - labels
   - macro
+  - local-binding
 notes: sibling bindings see one another — even?/odd? are mutually recursive
 ---
 id: macro-labels-block-001
@@ -808,6 +851,7 @@ tags:
   - labels
   - macro
   - "surface:block"
+  - local-binding
 notes: layout surface — declaration list in the header, body indented beneath
 ---
 id: macro-flet-multi-form-body-001
@@ -828,4 +872,5 @@ tags:
   - flet
   - macro
   - nested-ellipsis
+  - local-binding
 notes: "a binding with a multi-form body exercises depth-aware nested ellipsis: the per-binding body (body ...) is captured inside the per-binding declaration list, so both (+ x 1) and (* x 3) survive expansion into the lambda. First form is evaluated for effect; the last is the value, so (f 4) is 12."

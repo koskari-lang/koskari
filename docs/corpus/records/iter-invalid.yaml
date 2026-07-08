@@ -32,6 +32,7 @@ tags:
   - reader
   - invalid
   - surprising
+  - pitfall
 notes: "corrective: #[1 2 3]"
 ---
 id: iter-python-style-async-for-invalid-001
@@ -50,4 +51,7 @@ tags:
   - for-each
   - invalid
   - surprising
+  - iterate
+  - loop
+  - pitfall
 notes: "corrective: (for-each [x seq] x); await wrapping is unnecessary and misleading"

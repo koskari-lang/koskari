@@ -44,9 +44,44 @@ references:
 : `stable`, `evolving`, or `experimental`.
 
 **tags**, **notes** (optional)
-: Maintainer metadata; not copied verbatim into training exports.
+: Maintainer metadata. `tags` ship to the retrieval (`corpus`) export and are
+  full-text indexed, so they are a search channel, not just labels; the
+  training (`eval`) projection drops them. See **Intent tags** below.
 
 See [SCHEMA.json](SCHEMA.json) for machine validation.
+
+## Tags: structural and intent
+
+Two facets share the one `tags` list, and both are full-text searchable:
+
+- **Structural tags** answer *what form is this* — the category
+  (`object`, `special`, `macro`, `variable`, `iter`, …), the form name
+  (`try`, `for-each`, `cond`), the surface (`surface:block`,
+  `surface:sexpr`, `surface:line`), and polarity (`invalid`, `surprising`).
+- **Intent tags** answer *what am I trying to do* — the goal words a
+  newcomer types before they know the form's name. Add them so a search
+  for `cleanup` or `catch` finds `try`/`finally` even though neither word
+  appears in the source.
+
+Keep intent tags to this closed vocabulary (extend it deliberately, not
+per-record):
+
+| Domain | Intent tags |
+|---|---|
+| Error handling | `error-handling`, `catch`, `cleanup`, `re-raise`, `guard` |
+| Looping | `loop`, `iterate`, `accumulate`, `early-exit`, `filter`, `destructure` |
+| Binding & scope | `mutate`, `swap`, `module-global`, `local-binding`, `name-resolution`, `recursion`, `default-value` |
+| Control flow | `branch`, `multi-way`, `short-circuit` |
+| Functions | `higher-order`, `closure`, `variadic`, `compose`, `decorate`, `keyword-argument` |
+| Data | `construct`, `index`, `membership` |
+| Async | `await`, `concurrency`, `suspend` |
+| Classes | `define-type`, `inheritance`, `predicate` |
+| Metaprogramming | `metaprogramming`, `hygiene` |
+| Pedagogy | `idiom`, `pitfall` |
+
+`metaprogramming` marks records that teach *writing* macros (define-syntax,
+syntax-rules, quasiquote/unquote, gensym, special-match) — not every builtin
+that happens to live under a `macro/compile/…` feature path.
 
 ## Source conventions
 

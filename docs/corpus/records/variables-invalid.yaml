@@ -31,4 +31,5 @@ tags:
   - lambda
   - by-ref
   - invalid
+  - pitfall
 notes: "corrective: pass a ref, e.g. (bump &v); a by-ref formal refuses a plain value"

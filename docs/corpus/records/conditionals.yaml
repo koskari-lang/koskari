@@ -22,6 +22,8 @@ stability: evolving
 tags:
   - conditional
   - cond
+  - branch
+  - multi-way
 ---
 id: conditional-cond-else-only-001
 feature: special/compile/cond
@@ -34,6 +36,8 @@ stability: evolving
 tags:
   - conditional
   - cond
+  - branch
+  - multi-way
 notes: "else: keyword clause"
 ---
 id: conditional-cond-first-match-001
@@ -47,6 +51,8 @@ stability: evolving
 tags:
   - conditional
   - cond
+  - branch
+  - multi-way
 ---
 id: conditional-cond-else-fallthrough-001
 feature: special/compile/cond
@@ -59,6 +65,8 @@ stability: evolving
 tags:
   - conditional
   - cond
+  - branch
+  - multi-way
 ---
 id: conditional-cond-falsy-clause-001
 feature: special/compile/cond
@@ -71,6 +79,8 @@ stability: evolving
 tags:
   - conditional
   - cond
+  - branch
+  - multi-way
 notes: requires add binding at eval
 ---
 id: conditional-cond-nested-001
@@ -84,6 +94,8 @@ stability: evolving
 tags:
   - conditional
   - cond
+  - branch
+  - multi-way
 ---
 id: conditional-switch-no-clauses-001
 feature: special/compile/switch
@@ -96,6 +108,8 @@ stability: evolving
 tags:
   - conditional
   - switch
+  - branch
+  - multi-way
 ---
 id: conditional-switch-else-only-001
 feature: special/compile/switch
@@ -108,6 +122,8 @@ stability: evolving
 tags:
   - conditional
   - switch
+  - branch
+  - multi-way
 ---
 id: conditional-switch-first-match-001
 feature: special/compile/switch
@@ -120,6 +136,8 @@ stability: evolving
 tags:
   - conditional
   - switch
+  - branch
+  - multi-way
 notes: key list matches scrutinee
 ---
 id: conditional-switch-else-fallthrough-001
@@ -133,6 +151,8 @@ stability: evolving
 tags:
   - conditional
   - switch
+  - branch
+  - multi-way
 ---
 id: conditional-switch-no-match-001
 feature: special/compile/switch
@@ -145,6 +165,8 @@ stability: evolving
 tags:
   - conditional
   - switch
+  - branch
+  - multi-way
 ---
 id: conditional-and-no-args-001
 feature: special/compile/and
@@ -158,6 +180,7 @@ tags:
   - conditional
   - and
   - control-flow
+  - short-circuit
 notes: empty and is true
 ---
 id: conditional-and-single-truthy-001
@@ -171,6 +194,7 @@ stability: evolving
 tags:
   - conditional
   - and
+  - short-circuit
 ---
 id: conditional-and-single-falsy-001
 feature: special/compile/and
@@ -183,6 +207,7 @@ stability: evolving
 tags:
   - conditional
   - and
+  - short-circuit
 ---
 id: conditional-and-all-truthy-001
 feature: special/compile/and
@@ -195,6 +220,7 @@ stability: evolving
 tags:
   - conditional
   - and
+  - short-circuit
 ---
 id: conditional-and-short-circuit-001
 feature: special/compile/and
@@ -207,6 +233,7 @@ stability: evolving
 tags:
   - conditional
   - and
+  - short-circuit
 ---
 id: conditional-and-first-falsy-001
 feature: special/compile/and
@@ -219,6 +246,7 @@ stability: evolving
 tags:
   - conditional
   - and
+  - short-circuit
 ---
 id: conditional-or-no-args-001
 feature: special/compile/or
@@ -232,6 +260,7 @@ tags:
   - conditional
   - or
   - control-flow
+  - short-circuit
 notes: empty or is false
 ---
 id: conditional-or-first-truthy-001
@@ -245,6 +274,7 @@ stability: evolving
 tags:
   - conditional
   - or
+  - short-circuit
 ---
 id: conditional-or-single-falsy-001
 feature: special/compile/or
@@ -257,6 +287,7 @@ stability: evolving
 tags:
   - conditional
   - or
+  - short-circuit
 ---
 id: conditional-or-all-falsy-001
 feature: special/compile/or
@@ -269,6 +300,7 @@ stability: evolving
 tags:
   - conditional
   - or
+  - short-circuit
 ---
 id: conditional-or-first-truthy-value-001
 feature: special/compile/or
@@ -281,6 +313,7 @@ stability: evolving
 tags:
   - conditional
   - or
+  - short-circuit
 ---
 id: conditional-when-true-001
 feature: macro/compile/when
@@ -296,6 +329,7 @@ tags:
   - macro
   - when
   - "surface:sexpr"
+  - branch
 notes: expands to compile/cond
 ---
 id: conditional-when-false-001
@@ -312,6 +346,7 @@ tags:
   - macro
   - when
   - "surface:sexpr"
+  - branch
 notes: false branch yields None
 ---
 id: conditional-unless-false-001
@@ -328,6 +363,7 @@ tags:
   - macro
   - unless
   - "surface:sexpr"
+  - branch
 notes: expands to compile/cond with inverted arms
 ---
 id: conditional-unless-true-001
@@ -344,6 +380,7 @@ tags:
   - macro
   - unless
   - "surface:sexpr"
+  - branch
 notes: true condition skips body
 ---
 id: conditional-q-ternary-true-001
@@ -358,6 +395,7 @@ tags:
   - conditional
   - macro
   - "?"
+  - predicate
 notes: koskari/bootstrap/_conditionals.ki; expands to compile/cond
 ---
 id: conditional-q-ternary-false-001
@@ -372,6 +410,7 @@ tags:
   - conditional
   - macro
   - "?"
+  - predicate
 notes: koskari/bootstrap/_conditionals.ki; else arm when condition falsy
 ---
 id: conditional-q-binary-false-001
@@ -386,6 +425,7 @@ tags:
   - conditional
   - macro
   - "?"
+  - predicate
 notes: koskari/bootstrap/_conditionals.ki; two-arg form defaults else to False
 ---
 id: conditional-q-unary-truth-001
@@ -401,6 +441,7 @@ tags:
   - conditional
   - macro
   - "?"
+  - predicate
 notes: koskari/bootstrap/_conditionals.ki; unary form expands to compile/truth
 ---
 id: conditional-bool-truthy-001
@@ -449,6 +490,7 @@ tags:
   - conditional
   - if
   - "surface:block"
+  - branch
 ---
 id: conditional-layout-if-only-false-001
 feature: layout/if
@@ -468,6 +510,7 @@ tags:
   - conditional
   - if
   - "surface:block"
+  - branch
 notes: layout if without else; no matching clause yields None
 ---
 id: conditional-layout-if-else-true-001
@@ -490,6 +533,7 @@ tags:
   - conditional
   - if
   - "surface:block"
+  - branch
 ---
 id: conditional-layout-if-else-false-001
 feature: layout/if
@@ -511,6 +555,7 @@ tags:
   - conditional
   - if
   - "surface:block"
+  - branch
 notes: else branch taken
 ---
 id: conditional-layout-if-elif-first-001
@@ -534,6 +579,7 @@ tags:
   - if
   - elif
   - "surface:block"
+  - branch
 notes: layout if/elif without else; elif clause matches
 ---
 id: conditional-layout-if-elif-fallthrough-001
@@ -557,6 +603,7 @@ tags:
   - if
   - elif
   - "surface:block"
+  - branch
 notes: layout if/elif without else; no clause matches
 ---
 id: conditional-layout-if-elif-first-branch-001
@@ -580,6 +627,7 @@ tags:
   - if
   - elif
   - "surface:block"
+  - branch
 notes: first clause wins when if condition is true; elif present but not reached
 ---
 id: conditional-layout-if-elif-else-first-001
@@ -605,6 +653,7 @@ tags:
   - if
   - elif
   - "surface:block"
+  - branch
 notes: first clause matches
 ---
 id: conditional-layout-if-elif-else-elif-001
@@ -630,6 +679,7 @@ tags:
   - if
   - elif
   - "surface:block"
+  - branch
 notes: elif clause matches
 ---
 id: conditional-layout-if-elif-else-else-001
@@ -655,6 +705,7 @@ tags:
   - if
   - elif
   - "surface:block"
+  - branch
 notes: else branch taken
 ---
 id: conditional-layout-when-true-001
@@ -675,6 +726,7 @@ tags:
   - macro
   - when
   - "surface:block"
+  - branch
 notes: layout block when; default layout/block read shape
 ---
 id: conditional-layout-when-false-001
@@ -695,6 +747,7 @@ tags:
   - macro
   - when
   - "surface:block"
+  - branch
 notes: layout block when; false branch yields None
 ---
 id: conditional-layout-unless-false-001
@@ -715,6 +768,7 @@ tags:
   - macro
   - unless
   - "surface:block"
+  - branch
 notes: layout block unless; default layout/block read shape
 ---
 id: conditional-layout-unless-true-001
@@ -735,6 +789,7 @@ tags:
   - macro
   - unless
   - "surface:block"
+  - branch
 notes: layout block unless; true condition skips body
 ---
 id: conditional-line-if-true-001
@@ -753,6 +808,7 @@ tags:
   - macro
   - if
   - "surface:line"
+  - branch
 notes: layout line implicit call
 ---
 id: conditional-line-if-false-001
@@ -771,6 +827,7 @@ tags:
   - macro
   - if
   - "surface:line"
+  - branch
 notes: layout line implicit call
 ---
 id: conditional-line-when-true-001
@@ -789,6 +846,7 @@ tags:
   - macro
   - when
   - "surface:line"
+  - branch
 notes: layout line implicit call
 ---
 id: conditional-line-when-false-001
@@ -807,6 +865,7 @@ tags:
   - macro
   - when
   - "surface:line"
+  - branch
 notes: layout line implicit call
 ---
 id: conditional-line-unless-false-001
@@ -825,6 +884,7 @@ tags:
   - macro
   - unless
   - "surface:line"
+  - branch
 notes: layout line implicit call
 ---
 id: conditional-line-unless-true-001
@@ -843,6 +903,7 @@ tags:
   - macro
   - unless
   - "surface:line"
+  - branch
 notes: layout line implicit call
 ---
 id: conditional-sexpr-if-true-001
@@ -860,6 +921,7 @@ tags:
   - macro
   - if
   - "surface:sexpr"
+  - branch
 ---
 id: conditional-sexpr-if-false-001
 feature: macro/compile/if
@@ -876,6 +938,7 @@ tags:
   - macro
   - if
   - "surface:sexpr"
+  - branch
 ---
 id: conditional-while-false-001
 feature: special/compile/while
@@ -892,6 +955,7 @@ stability: evolving
 tags:
   - conditional
   - while
+  - loop
 notes: test never true; body never runs; loop evaluates to None
 ---
 id: conditional-while-break-002
@@ -909,6 +973,8 @@ stability: evolving
 tags:
   - conditional
   - while
+  - early-exit
+  - loop
 notes: infinite loop broken immediately; break value becomes loop result
 ---
 id: conditional-while-else-003
@@ -924,6 +990,7 @@ stability: evolving
 tags:
   - conditional
   - while
+  - loop
 notes: "else: clause fires when test becomes false; z=1 fixture so loop runs once then exits naturally"
 ---
 id: conditional-bool-zero-003

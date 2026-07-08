@@ -34,6 +34,8 @@ stability: evolving
 tags:
   - variable
   - define-global
+  - module-global
+  - mutate
 ---
 id: variable-define-global-value-001
 feature: special/compile/define-global
@@ -46,6 +48,8 @@ stability: evolving
 tags:
   - variable
   - define-global
+  - module-global
+  - mutate
 notes: module-level global slot; pattern from test_resolution_model nested counter tests
 ---
 id: variable-global-declare-001
@@ -60,6 +64,8 @@ tags:
   - variable
   - macro
   - global
+  - module-global
+  - mutate
 notes: expands to define-global; requires koskari.builtins at expand
 ---
 id: variable-local-value-001
@@ -74,6 +80,7 @@ tags:
   - variable
   - macro
   - local
+  - local-binding
 notes: expands to define with initial value
 ---
 id: variable-let-single-001
@@ -88,6 +95,7 @@ tags:
   - variable
   - let
   - binding
+  - local-binding
 ---
 id: variable-let-multiple-001
 feature: special/compile/let
@@ -100,6 +108,7 @@ stability: evolving
 tags:
   - variable
   - let
+  - local-binding
 ---
 id: variable-let-named-001
 feature: special/compile/let
@@ -112,6 +121,7 @@ stability: evolving
 tags:
   - variable
   - let
+  - local-binding
 ---
 id: variable-letrec-prior-binding-001
 feature: special/compile/letrec
@@ -125,6 +135,7 @@ stability: evolving
 tags:
   - variable
   - letrec
+  - local-binding
 ---
 id: variable-letrec-lambda-001
 feature: special/compile/letrec
@@ -138,6 +149,7 @@ stability: evolving
 tags:
   - variable
   - letrec
+  - local-binding
 ---
 id: variable-letrec-factorial-001
 feature: special/compile/letrec
@@ -151,6 +163,7 @@ stability: evolving
 tags:
   - variable
   - letrec
+  - local-binding
 ---
 id: variable-letstar-single-001
 feature: macro/compile/let*
@@ -164,6 +177,7 @@ tags:
   - variable
   - macro
   - let*
+  - local-binding
 ---
 id: variable-letstar-sequential-001
 feature: macro/compile/let*
@@ -177,6 +191,7 @@ tags:
   - variable
   - macro
   - let*
+  - local-binding
 notes: later binding sees earlier
 ---
 id: variable-let-values-pair-001
@@ -192,6 +207,8 @@ tags:
   - variable
   - macro
   - let-values
+  - destructure
+  - local-binding
 notes: requires pair at eval
 ---
 id: variable-let-values-three-001
@@ -206,6 +223,8 @@ tags:
   - variable
   - macro
   - let-values
+  - destructure
+  - local-binding
 notes: requires seq=(1,2,3) at eval
 ---
 id: variable-refq-deref-001
@@ -274,6 +293,7 @@ stability: evolving
 tags:
   - variable
   - delq
+  - mutate
 ---
 id: variable-delq-module-001
 feature: special/compile/delq
@@ -286,6 +306,7 @@ stability: evolving
 tags:
   - variable
   - delq
+  - mutate
 notes: requires z=1 in module namespace at eval
 ---
 id: variable-del-macro-001
@@ -300,6 +321,7 @@ tags:
   - variable
   - macro
   - del!
+  - mutate
 notes: koskari/bootstrap/_variables.ki; name form expands to delq; final None not bare null symbol
 ---
 id: variable-unassigned-declare-001
@@ -314,6 +336,7 @@ tags:
   - variable
   - macro
   - unassigned?
+  - predicate
 notes: koskari/bootstrap/_variables.ki; empty declaration
 ---
 id: variable-unassigned-bound-001
@@ -328,6 +351,7 @@ tags:
   - variable
   - macro
   - unassigned?
+  - predicate
 notes: koskari/bootstrap/_variables.ki; assigned slot
 ---
 id: variable-default-empty-001
@@ -342,6 +366,7 @@ tags:
   - variable
   - macro
   - default!
+  - default-value
 notes: koskari/bootstrap/_variables.ki; fills empty or falsy binding
 ---
 id: variable-default-keeps-truthy-001
@@ -356,6 +381,7 @@ tags:
   - variable
   - macro
   - default!
+  - default-value
 notes: koskari/bootstrap/_variables.ki; skips when location already truthy
 ---
 id: variable-parameterq-default-001
@@ -400,6 +426,7 @@ references:
 stability: evolving
 tags:
   - variable
+  - mutate
 notes: assign constant to existing binding; form evaluates to None
 ---
 id: variable-setq-expr-002
@@ -416,6 +443,7 @@ references:
 stability: evolving
 tags:
   - variable
+  - mutate
 notes: assign expression result; z=1 fixture; z becomes 11 after
 ---
 id: variable-setq-readback-003
@@ -432,6 +460,7 @@ references:
 stability: evolving
 tags:
   - variable
+  - mutate
 notes: mutation then read; z=1 fixture; begin returns z after assignment
 ---
 id: variable-deref-refq-002
@@ -520,6 +549,7 @@ tags:
   - variable
   - macro
   - del!
+  - mutate
 notes: name form; z=1 fixture; del! z clears the slot; None is the form's value
 ---
 id: variable-del-attr-003
@@ -535,6 +565,7 @@ tags:
   - variable
   - macro
   - del!
+  - mutate
 notes: "recreates obj locally so del! does not mutate the shared fixture; del! (attr obj count) removes the count attribute"
 ---
 id: variable-global-value-002
@@ -553,6 +584,8 @@ tags:
   - variable
   - macro
   - global
+  - module-global
+  - mutate
 notes: declare global slot, assign via setq, then read back
 ---
 id: variable-global-expand-003
@@ -569,6 +602,8 @@ tags:
   - variable
   - macro
   - global
+  - module-global
+  - mutate
 notes: global NAME expands to compile/define-global NAME
 ---
 id: variable-local-declare-002
@@ -585,6 +620,7 @@ tags:
   - variable
   - macro
   - local
+  - local-binding
 notes: local NAME (no value) expands to compile/define NAME declaration-only
 ---
 id: variable-local-expand-003
@@ -601,6 +637,7 @@ tags:
   - variable
   - macro
   - local
+  - local-binding
 notes: local NAME VALUE expands to compile/define NAME VALUE
 ---
 id: variable-bind-attr-002
@@ -722,6 +759,7 @@ stability: evolving
 tags:
   - variable
   - delq
+  - mutate
 notes: "compile/delq: delete x from the frame; form evaluates to None"
 ---
 id: variable-default-idempotent-003
@@ -740,6 +778,7 @@ tags:
   - variable
   - macro
   - default!
+  - default-value
 notes: second default! skips since first set port to truthy 3000; result stays 3000
 ---
 id: variable-letstar-chain-003
@@ -758,6 +797,7 @@ tags:
   - variable
   - macro
   - let*
+  - local-binding
 notes: three sequential bindings; each sees prior; a=2, b=6, c=7
 ---
 id: variable-let-values-product-003
@@ -775,6 +815,8 @@ tags:
   - variable
   - macro
   - let-values
+  - destructure
+  - local-binding
 notes: destructure seq=(1,2,3) into x y z; multiply gives 1*2*3=6
 ---
 id: variable-ref-macro-after-setq-003
@@ -811,6 +853,7 @@ tags:
   - variable
   - macro
   - unassigned?
+  - predicate
 notes: 0 is falsy but not unassigned; unassigned? only detects the sentinel unset marker
 ---
 id: variable-refq-type-001
@@ -929,6 +972,7 @@ stability: evolving
 tags:
   - variable
   - define-values
+  - destructure
 notes: destructure multiple values into three names; form evaluates to None
 ---
 id: variable-define-values-use-002
@@ -946,6 +990,7 @@ stability: evolving
 tags:
   - variable
   - define-values
+  - destructure
 notes: destructure then use all three bindings; 1+2+3=6
 ---
 id: variable-define-values-two-003
@@ -963,6 +1008,7 @@ stability: evolving
 tags:
   - variable
   - define-values
+  - destructure
 notes: two-value destructure; 10*20=200
 ---
 id: variable-amp-ref-read-001
@@ -1192,6 +1238,7 @@ tags:
   - variable
   - ref
   - surprising
+  - pitfall
 notes: set! on the name holding a ref REBINDS it; it does not write through. v is unchanged. Use (r.store …) or bind! to write through.
 ---
 id: variable-byref-list-writeback-001
@@ -1226,4 +1273,5 @@ tags:
   - set!
   - ref
   - deref
+  - mutate
 notes: value-level write-through; (set! (deref r) v) dispatches to the ref store method. Symmetric with (deref r) read.

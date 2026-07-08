@@ -51,6 +51,7 @@ tags:
   - layout
   - dunder
   - protocol
+  - define-type
 notes: Shows a user-defined type using truthiness and hashing hooks.
 ---
 id: class-layout-len-iter-contains-001
@@ -79,6 +80,7 @@ tags:
   - layout
   - dunder
   - collection
+  - define-type
 notes: Illustrates Python collection protocol method names in Koskari method definitions.
 ---
 id: class-layout-getitem-setitem-001
@@ -104,6 +106,7 @@ tags:
   - layout
   - dunder
   - indexing
+  - define-type
 notes: Focuses on Python item access method names in class body layout.
 ---
 id: class-layout-callable-001
@@ -128,6 +131,7 @@ tags:
   - layout
   - dunder
   - callable
+  - define-type
 notes: Demonstrates making instances callable with a Python dunder.
 ---
 id: class-layout-context-manager-001
@@ -156,6 +160,8 @@ tags:
   - layout
   - dunder
   - context-manager
+  - cleanup
+  - define-type
 notes: Shows Python context manager hooks in a Koskari class body.
 ---
 id: class-layout-ordering-001
@@ -182,6 +188,7 @@ tags:
   - layout
   - dunder
   - comparison
+  - define-type
 notes: Covers user-defined ordering methods.
 ---
 id: class-layout-string-conversion-001
@@ -208,6 +215,7 @@ tags:
   - layout
   - dunder
   - string
+  - define-type
 notes: Contrasts display and repr protocol names in method layout.
 ---
 id: class-layout-dataclass-decorator-001
@@ -235,6 +243,7 @@ tags:
   - layout
   - decorator
   - dataclass
+  - decorate
 notes: Uses a Python dataclass decorator with typed class attributes and a dunder method.
 ---
 id: class-layout-dataclass-options-001
@@ -261,6 +270,7 @@ tags:
   - layout
   - decorator
   - dataclass
+  - decorate
 notes: Shows a decorator call with keyword options before a class block.
 ---
 id: class-layout-staticmethod-001
@@ -286,6 +296,7 @@ tags:
   - layout
   - decorator
   - staticmethod
+  - decorate
 notes: Demonstrates Python staticmethod decoration on class-body functions.
 ---
 id: class-layout-classmethod-001
@@ -313,6 +324,7 @@ tags:
   - layout
   - decorator
   - classmethod
+  - decorate
 notes: Shows classmethod factory layout with explicit cls first parameter.
 ---
 id: class-layout-property-decorator-001
@@ -338,6 +350,7 @@ tags:
   - layout
   - decorator
   - property
+  - decorate
 notes: Adds a Python property-style method decorator to the class corpus.
 ---
 id: class-layout-multiple-method-decorators-001
@@ -366,6 +379,7 @@ tags:
   - decorator
   - classmethod
   - staticmethod
+  - decorate
 notes: Shows stacked decorators on methods without tying the record to a concrete example program.
 ---
 id: class-layout-inheritance-super-001
@@ -396,6 +410,7 @@ tags:
   - inheritance
   - dunder
   - super
+  - define-type
 notes: Covers superclass list syntax and Python-style initializer chaining.
 ---
 id: class-layout-match-args-001
@@ -421,6 +436,7 @@ tags:
   - layout
   - dunder
   - pattern-matching
+  - define-type
 notes: Includes a Python class metadata dunder used by structural pattern matching.
 ---
 id: class-define-dataclass-field-001
@@ -436,6 +452,7 @@ tags:
   - class
   - define-dataclass
   - dataclass
+  - define-type
 notes: "define-dataclass NAME SUPERS members...; empty [] supers, typed fields via ::; positional construction sets x and y. koskari/bootstrap/_class.ki. read/expand omitted: :: annotation does not round-trip through the corpus renderer"
 ---
 id: class-define-dataclass-predicate-true-001
@@ -451,6 +468,7 @@ tags:
   - define-dataclass
   - dataclass
   - predicate
+  - define-type
 notes: define-dataclass also defines NAME? via create-instance-check; a Point instance satisfies Point?. koskari/bootstrap/_class.ki
 ---
 id: class-define-dataclass-predicate-false-001
@@ -466,6 +484,7 @@ tags:
   - define-dataclass
   - dataclass
   - predicate
+  - define-type
 notes: the generated Point? predicate returns false for a non-instance (a plain int). koskari/bootstrap/_class.ki
 ---
 id: class-property-getter-eval-001
@@ -484,6 +503,7 @@ tags:
   - property
   - decorator
   - define-class
+  - decorate
 notes: "@property getter as a computed attribute; r.area reads the method result 3*4 without call syntax"
 ---
 id: class-property-setter-roundtrip-001
@@ -503,4 +523,5 @@ tags:
   - decorator
   - setter
   - define-class
+  - decorate
 notes: "@name.setter round-trip (from examples/dataclass.ki coord.setter); set! through the property writes _t, then reading temp returns 30"

@@ -41,6 +41,8 @@ tags:
   - "surface:block"
   - invalid
   - surprising
+  - branch
+  - pitfall
 notes: "Same trap as mixed inline else; elif is only special as declared peer after block if:"
 ---
 id: conditional-layout-if-no-condition-001
@@ -58,6 +60,8 @@ tags:
   - if
   - "surface:block"
   - invalid
+  - branch
+  - pitfall
 notes: if block requires exactly one condition; header with no args raises LayoutError
 ---
 id: conditional-layout-if-multiple-conditions-001
@@ -75,6 +79,8 @@ tags:
   - if
   - "surface:block"
   - invalid
+  - branch
+  - pitfall
 notes: if block requires exactly one condition; two args in header raises LayoutError
 ---
 id: conditional-layout-if-elif-after-else-001
@@ -97,6 +103,8 @@ tags:
   - elif
   - "surface:block"
   - invalid
+  - branch
+  - pitfall
 notes: elif cannot follow else; raises LayoutError with message 'elif cannot follow else'
 ---
 id: conditional-layout-if-elif-no-condition-001
@@ -117,6 +125,8 @@ tags:
   - elif
   - "surface:block"
   - invalid
+  - branch
+  - pitfall
 notes: elif block requires exactly one condition; no args in elif header raises LayoutError
 ---
 id: conditional-layout-if-elif-multiple-conditions-001
@@ -137,6 +147,8 @@ tags:
   - elif
   - "surface:block"
   - invalid
+  - branch
+  - pitfall
 notes: elif block requires exactly one condition; two args in elif header raises LayoutError
 ---
 id: conditional-layout-if-multiple-else-001
@@ -158,6 +170,8 @@ tags:
   - if
   - "surface:block"
   - invalid
+  - branch
+  - pitfall
 notes: multiple else peers are not allowed; second else raises LayoutError
 ---
 id: conditional-layout-if-else-with-args-001
@@ -177,6 +191,8 @@ tags:
   - if
   - "surface:block"
   - invalid
+  - branch
+  - pitfall
 notes: "else block does not take arguments; 'else x:' raises LayoutError"
 ---
 id: conditional-layout-if-invalid-peer-001
@@ -199,6 +215,8 @@ tags:
   - "surface:block"
   - invalid
   - surprising
+  - branch
+  - pitfall
 notes: "then: after if block is not attached as peer; ordinary call block like (then 2)"
 ---
 id: conditional-layout-switch-with-peers-001
@@ -222,6 +240,9 @@ tags:
   - "surface:block"
   - invalid
   - surprising
+  - branch
+  - multi-way
+  - pitfall
 notes: Looks like switch/else; actually switch plus standalone else call block
 ---
 id: conditional-layout-switch-no-value-001
@@ -240,6 +261,9 @@ tags:
   - switch
   - "surface:block"
   - invalid
+  - branch
+  - multi-way
+  - pitfall
 notes: switch block requires exactly one value expression; empty header raises LayoutError
 ---
 id: conditional-layout-switch-multiple-values-001
@@ -258,6 +282,9 @@ tags:
   - switch
   - "surface:block"
   - invalid
+  - branch
+  - multi-way
+  - pitfall
 notes: switch block requires exactly one value expression; two args in header raises LayoutError
 ---
 id: conditional-layout-switch-case-after-else-001
@@ -278,6 +305,9 @@ tags:
   - switch
   - "surface:block"
   - invalid
+  - branch
+  - multi-way
+  - pitfall
 notes: case cannot follow else inside a switch body; raises LayoutError
 ---
 id: conditional-layout-switch-multiple-else-001
@@ -298,6 +328,9 @@ tags:
   - switch
   - "surface:block"
   - invalid
+  - branch
+  - multi-way
+  - pitfall
 notes: multiple else clauses are not allowed in a switch body; raises LayoutError
 ---
 id: conditional-layout-switch-invalid-body-001
@@ -315,6 +348,9 @@ tags:
   - switch
   - "surface:block"
   - invalid
+  - branch
+  - multi-way
+  - pitfall
 notes: switch body may only contain case or else clauses; a bare expression raises LayoutError
 ---
 id: conditionals-block-colon-in-sexpr-invalid-001
@@ -334,3 +370,4 @@ tags:
   - colon
   - invalid
   - surprising
+  - pitfall

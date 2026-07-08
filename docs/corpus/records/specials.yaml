@@ -71,6 +71,7 @@ stability: evolving
 tags:
   - special
   - pair
+  - construct
 notes: compile/cons examples
 ---
 id: special-car-001
@@ -121,6 +122,7 @@ stability: experimental
 tags:
   - special
   - continuation
+  - local-binding
 ---
 id: special-try-else-001
 feature: special/compile/try
@@ -135,6 +137,8 @@ tags:
   - special
   - try
   - exception
+  - catch
+  - error-handling
 ---
 id: special-try-bare-except-001
 feature: special/compile/try
@@ -148,6 +152,8 @@ tags:
   - special
   - try
   - exception
+  - catch
+  - error-handling
 notes: requires bad_guy raising at eval; pattern from test_try.py bare except family
 ---
 id: special-begin-single-expr-002
@@ -198,6 +204,7 @@ stability: stable
 tags:
   - special
   - cons
+  - construct
 ---
 id: special-cons-three-003
 feature: special/compile/cons
@@ -214,6 +221,7 @@ stability: stable
 tags:
   - special
   - cons
+  - construct
 notes: variadic cons; equivalent to (cons 1 (cons 2 (cons 3 nil)))
 ---
 id: special-car-of-cons-002
@@ -265,6 +273,8 @@ tags:
   - special
   - try
   - exception
+  - catch
+  - error-handling
 notes: named binding form [e TYPE]; exception message accessed via str
 ---
 id: special-import-absolute-001
@@ -383,6 +393,7 @@ tags:
   - special
   - with
   - context-manager
+  - cleanup
 notes: no binding; context manager enter result discarded; body evaluates to None
 ---
 id: special-with-binding-002
@@ -401,6 +412,7 @@ tags:
   - special
   - with
   - context-manager
+  - cleanup
 notes: named binding 'f'; reads from /dev/null which is always empty
 ---
 id: special-with-multi-body-003
@@ -419,6 +431,7 @@ tags:
   - special
   - with
   - context-manager
+  - cleanup
 notes: multiple body forms; value is last form; both reads happen within context
 ---
 id: special-globals-001
@@ -536,6 +549,7 @@ stability: experimental
 tags:
   - special
   - continuation
+  - local-binding
 notes: escape exits the body early; code after the call is never reached
 ---
 id: special-let-cc-call-003
@@ -553,6 +567,7 @@ stability: experimental
 tags:
   - special
   - continuation
+  - local-binding
 notes: capture current continuation as k; call k immediately with 99
 ---
 id: special-globals-item-002
@@ -845,6 +860,7 @@ tags:
   - special
   - with
   - context-manager
+  - cleanup
 notes: dynamic extent with no binding; context manager enter result discarded; async-safe variant of compile/with
 ---
 id: special-dyn-with-binding-002
@@ -863,6 +879,7 @@ tags:
   - special
   - with
   - context-manager
+  - cleanup
 notes: named binding f; reads from /dev/null (always empty string)
 ---
 id: special-dyn-with-multi-003
@@ -881,6 +898,7 @@ tags:
   - special
   - with
   - context-manager
+  - cleanup
 notes: multiple body forms; last form value is returned; both happen within context
 ---
 id: special-dyn-wind-call-001
@@ -1049,6 +1067,7 @@ tags:
   - special
   - reader
   - quasiquote
+  - metaprogramming
 notes: backtick is reader shorthand for (compile/quasiquote …); symbols evaluate to themselves
 ---
 id: special-quasiquote-unquote-002
@@ -1068,6 +1087,7 @@ tags:
   - reader
   - quasiquote
   - unquote
+  - metaprogramming
 notes: comma inside quasiquote reads as (compile/unquote …); z=1 fixture so middle element is 1
 ---
 id: special-unquote-shorthand-003
@@ -1087,6 +1107,7 @@ tags:
   - reader
   - unquote
   - quasiquote
+  - metaprogramming
 notes: comma inside quasiquote desugars to (compile/unquote …); z=1 fixture
 ---
 id: special-unquote-shorthand-read-001
@@ -1104,6 +1125,7 @@ tags:
   - special
   - reader
   - unquote
+  - metaprogramming
 notes: comma is reader shorthand for (compile/unquote …); only active inside quasiquote
 ---
 id: special-unquote-splicing-read-001
@@ -1122,6 +1144,7 @@ tags:
   - reader
   - unquote-splicing
   - quasiquote
+  - metaprogramming
 notes: "the ,@ sigil inside quasiquote reads as (compile/unquote-splicing …); splices the seq fixture into the list"
 ---
 id: special-unquote-splicing-eval-002
@@ -1141,6 +1164,7 @@ tags:
   - reader
   - unquote-splicing
   - quasiquote
+  - metaprogramming
 notes: seq=(1,2,3) fixture splices into the list; car returns the start symbol
 ---
 id: special-unquote-splicing-count-003
@@ -1160,6 +1184,7 @@ tags:
   - reader
   - unquote-splicing
   - quasiquote
+  - metaprogramming
 notes: seq=(1,2,3) spliced after a; head is symbol a
 ---
 id: special-thunk-add-001
@@ -1230,6 +1255,7 @@ tags:
   - special
   - reader
   - quasiquote
+  - metaprogramming
 notes: quasiquote of plain list with no unquotes produces a quoted pair list; car gives first symbol
 ---
 id: special-unquote-eval-value-003
@@ -1249,6 +1275,7 @@ tags:
   - reader
   - unquote
   - quasiquote
+  - metaprogramming
 notes: unquote splices the runtime value of a=0 into position; cadr extracts it
 ---
 id: special-layout-try-bare-001
@@ -1269,6 +1296,8 @@ tags:
   - try
   - exception
   - "surface:block"
+  - catch
+  - error-handling
 notes: bare except peer catches any exception; ZeroDivisionError caught, returns 99
 ---
 id: special-layout-try-named-002
@@ -1291,6 +1320,8 @@ tags:
   - try
   - exception
   - "surface:block"
+  - catch
+  - error-handling
 notes: named except binding [e TYPE] in layout block form; str gives exception message
 ---
 id: special-layout-try-finally-003
@@ -1313,6 +1344,9 @@ tags:
   - try
   - exception
   - "surface:block"
+  - catch
+  - cleanup
+  - error-handling
 notes: finally peer always runs; exception caught, returns 99; finally form evaluates to None
 ---
 id: special-let-named-inner-loop-001
@@ -1333,6 +1367,7 @@ tags:
   - special
   - let
   - "surface:block"
+  - local-binding
 notes: from examples/fib.ki fib-tail-recur; named inner loop pattern; self-calling via let name
 ---
 id: special-layout-with-binding-004
@@ -1353,6 +1388,7 @@ tags:
   - with
   - context-manager
   - "surface:block"
+  - cleanup
 notes: layout/with with named binding; dot-method call f.read reads as (compile/attr f read)
 ---
 id: special-layout-with-no-binding-005
@@ -1373,6 +1409,7 @@ tags:
   - with
   - context-manager
   - "surface:block"
+  - cleanup
 notes: layout/with without name binding; context manager opened and closed; body evaluates to None
 ---
 id: special-raise-new-caught-001
@@ -1390,6 +1427,7 @@ tags:
   - special
   - raise
   - exception
+  - error-handling
 notes: raising a new exception and catching it by type; (str e) reads the message
 ---
 id: special-raise-reraise-001
@@ -1408,6 +1446,8 @@ tags:
   - raise
   - reraise
   - exception
+  - error-handling
+  - re-raise
 notes: 0-arity (raise) inside a handler re-raises the active exception; an outer try recatches it
 ---
 id: special-raise-custom-exception-001
@@ -1427,6 +1467,7 @@ tags:
   - raise
   - exception
   - define-class
+  - error-handling
 notes: raise a user-defined Exception subclass; __init__ chains to super with the message
 ---
 id: special-layout-raise-guard-001
@@ -1450,4 +1491,7 @@ tags:
   - raise
   - exception
   - "surface:block"
+  - catch
+  - error-handling
+  - guard
 notes: "guard-clause idiom in block layout; a when: guard raises inside a try:, an except peer catches it"

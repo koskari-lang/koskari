@@ -30,6 +30,7 @@ tags:
   - macro
   - expand
   - "surface:sexpr"
+  - index
 notes: koskari/bootstrap/_iter.ki keyword slice bounds via build-slice
 ---
 id: iter-item-slice-macro-empty-001
@@ -46,6 +47,7 @@ tags:
   - macro
   - expand
   - "surface:sexpr"
+  - index
 notes: koskari/bootstrap/_iter.ki; full slice via build-slice
 ---
 id: iter-item-slice-macro-keywords-001
@@ -62,6 +64,7 @@ tags:
   - macro
   - expand
   - "surface:sexpr"
+  - index
 notes: koskari/bootstrap/_iter.ki; routes slice args through build-slice
 ---
 id: iter-build-slice-predicate-001
@@ -76,6 +79,7 @@ tags:
   - iter
   - build-slice
   - predicate
+  - index
 notes: slice? from _ty('slice', slice) in koskari/bootstrap/__init__.py
 ---
 id: iter-build-slice-not-range-001
@@ -90,6 +94,7 @@ tags:
   - iter
   - build-slice
   - predicate
+  - index
 notes: range? from _ty('range', range) in bootstrap
 ---
 id: iter-item-constant-key-001
@@ -105,6 +110,7 @@ tags:
   - item
   - indexing
   - "surface:sexpr"
+  - index
 ---
 id: iter-item-variable-key-001
 feature: special/compile/item
@@ -119,6 +125,7 @@ tags:
   - item
   - indexing
   - "surface:sexpr"
+  - index
 ---
 id: iter-set-item-store-001
 feature: special/compile/set-item
@@ -133,6 +140,7 @@ tags:
   - set-item
   - indexing
   - "surface:sexpr"
+  - mutate
 ---
 id: iter-item-slice-list-stop-001
 feature: macro/compile/item-slice
@@ -148,6 +156,7 @@ tags:
   - item-slice
   - slice
   - "surface:sexpr"
+  - index
 notes: "item-slice on list with stop: keyword; requires koskari.builtins at eval"
 ---
 id: iter-item-slice-tuple-step-001
@@ -164,6 +173,7 @@ tags:
   - item-slice
   - slice
   - "surface:sexpr"
+  - index
 notes: "tuple slice with start: and step:; first element checked via item"
 ---
 id: iter-range-stop-001
@@ -178,6 +188,7 @@ tags:
   - iter
   - range
   - "surface:sexpr"
+  - iterate
 notes: range type from bootstrap; single stop argument
 ---
 id: iter-range-start-stop-001
@@ -192,6 +203,7 @@ tags:
   - iter
   - range
   - "surface:sexpr"
+  - iterate
 notes: two-argument range start and stop
 ---
 id: iter-range-step-001
@@ -206,6 +218,7 @@ tags:
   - iter
   - range
   - "surface:sexpr"
+  - iterate
 notes: three-argument range with step
 ---
 id: iter-range-predicate-001
@@ -220,6 +233,7 @@ tags:
   - iter
   - range
   - predicate
+  - iterate
 notes: range? from _ty('range', range) in bootstrap
 ---
 id: iter-slice-predicate-range-negative-001
@@ -234,6 +248,7 @@ tags:
   - iter
   - slice
   - predicate
+  - index
 notes: slice? rejects range instances
 ---
 id: iter-literal-tuple-read-001
@@ -358,6 +373,8 @@ tags:
   - iter
   - builtin
   - range?
+  - iterate
+  - predicate
 notes: range? is true for a real range object produced by (range 5)
 ---
 id: iter-range-predicate-false-003
@@ -374,6 +391,8 @@ tags:
   - iter
   - builtin
   - range?
+  - iterate
+  - predicate
 notes: range? returns false for a non-range value
 ---
 id: iter-slice-predicate-true-002
@@ -390,6 +409,8 @@ tags:
   - iter
   - builtin
   - slice?
+  - index
+  - predicate
 notes: slice? is true for a slice produced by build-slice
 ---
 id: iter-slice-predicate-false-003
@@ -406,6 +427,8 @@ tags:
   - iter
   - builtin
   - slice?
+  - index
+  - predicate
 notes: slice? returns false for a non-slice integer
 ---
 id: iter-literal-tuple-empty-002
@@ -477,6 +500,7 @@ stability: evolving
 tags:
   - iter
   - item
+  - index
 notes: seq=(1,2,3) fixture; index 2 returns 3
 ---
 id: iter-slice-macro-indexing-003
@@ -495,6 +519,7 @@ tags:
   - iter
   - macro
   - slice
+  - index
 notes: "slice used as index into seq; (slice 1 None) is seq[1:]; seq=(1,2,3) fixture"
 ---
 id: iter-build-slice-indexing-003
@@ -512,6 +537,7 @@ stability: evolving
 tags:
   - iter
   - build-slice
+  - index
 notes: "build-slice 0 2 selects seq[0:2]; seq=(1,2,3) fixture gives (1,2)"
 ---
 id: iter-for-each-sum-001
@@ -529,6 +555,8 @@ stability: evolving
 tags:
   - iter
   - for-each
+  - iterate
+  - loop
 notes: accumulate sum over range(4); 0+1+2+3=6
 ---
 id: iter-for-each-seq-002
@@ -546,6 +574,8 @@ stability: evolving
 tags:
   - iter
   - for-each
+  - iterate
+  - loop
 notes: iterate seq=(1,2,3); form value is last body result (3)
 ---
 id: iter-for-each-build-003
@@ -563,6 +593,8 @@ stability: evolving
 tags:
   - iter
   - for-each
+  - iterate
+  - loop
 notes: prepend each iteration to result; final list is reversed (2,1,0)
 ---
 id: iter-ref-item-deref-001
@@ -666,6 +698,8 @@ tags:
   - iter
   - for-each
   - "surface:block"
+  - iterate
+  - loop
 notes: simplest for-each layout; seq=(1,2,3) fixture; yields last element
 ---
 id: iter-layout-for-each-body-002
@@ -685,6 +719,8 @@ tags:
   - iter
   - for-each
   - "surface:block"
+  - iterate
+  - loop
 notes: for-each with computed body; seq=(1,2,3); last evaluated is 3*3=9
 ---
 id: iter-layout-for-each-when-003
@@ -702,6 +738,9 @@ tags:
   - iter
   - for-each
   - "surface:block"
+  - filter
+  - iterate
+  - loop
 notes: "when: condition filters; seq=(1,2,3), only x>1 pass; last is 3*3=9"
 ---
 id: iter-layout-for-each-destructure-004
@@ -721,6 +760,9 @@ tags:
   - iter
   - for-each
   - "surface:block"
+  - destructure
+  - iterate
+  - loop
 notes: "tuple destructuring in for-each binding; each #(a b) tuple is unpacked; last is 3+4=7"
 ---
 id: iter-layout-while-basic-001
@@ -741,6 +783,7 @@ tags:
   - iter
   - while
   - "surface:block"
+  - loop
 notes: while layout; z=1 fixture; decrements z to 0 and returns it
 ---
 id: iter-layout-while-else-002
@@ -760,6 +803,7 @@ tags:
   - iter
   - while
   - "surface:block"
+  - loop
 notes: "while with else: peer; condition False from the start so else branch runs"
 ---
 id: iter-layout-while-accumulator-003
@@ -784,6 +828,8 @@ tags:
   - iter
   - while
   - "surface:block"
+  - accumulate
+  - loop
 notes: while as accumulator; sums 3+2+1=6; pattern from examples/fib.ki fib-loop
 ---
 id: iter-cons-improper-pair-surprising-001
@@ -800,6 +846,8 @@ tags:
   - iter
   - cons
   - surprising
+  - construct
+  - pitfall
 notes: "surprising: (cons 1 2) makes an improper pair (1 . 2), not a two-element list; corrective: (cons 1 2 nil) or (cons 1 2 nil) for a proper list"
 ---
 id: iter-for-each-no-await-needed-001
@@ -817,6 +865,8 @@ stability: stable
 tags:
   - iter
   - for-each
+  - iterate
+  - loop
 notes: for-each handles async iterables natively; await is never needed — (await (for-each ...)) is redundant but harmless
 ---
 id: iter-layout-while-fib-loop-001
@@ -844,6 +894,7 @@ tags:
   - iter
   - while
   - "surface:block"
+  - loop
 notes: from examples/fib.ki fib-loop; iterative Fibonacci; (fib 5)=5
 ---
 id: iter-for-each-product-destructure-001
@@ -864,6 +915,9 @@ stability: stable
 tags:
   - iter
   - for-each
+  - destructure
+  - iterate
+  - loop
 notes: from examples/dataclass.ki neighbors; destructures each pair from itertools.product into [x y]
 ---
 id: iter-for-each-accumulate-002
@@ -884,6 +938,9 @@ stability: stable
 tags:
   - iter
   - for-each
+  - accumulate
+  - iterate
+  - loop
 notes: for-each with setq accumulator; seq=(1,2,3); 1+2+3=6
 ---
 id: iter-for-each-multi-body-003
@@ -903,6 +960,8 @@ stability: stable
 tags:
   - iter
   - for-each
+  - iterate
+  - loop
 notes: for-each with multi-expression body; last body expression is return value; 3*2=6
 ---
 id: iter-reader-bracket-paren-equiv-001
@@ -991,6 +1050,7 @@ tags:
   - iter
   - membership
   - has?
+  - predicate
 notes: "has? is the collection-first spelling of membership: (has? COLLECTION ELEMENT) expands to (compile/in ELEMENT COLLECTION). Same test as (in 3 seq), reversed argument order. seq=(1,2,3) fixture."
 ---
 id: iter-membership-has-not-found-002
@@ -1009,6 +1069,7 @@ tags:
   - iter
   - membership
   - has?
+  - predicate
 notes: (has? COLLECTION ELEMENT) is false when COLLECTION does not contain ELEMENT; expands to (compile/in ELEMENT COLLECTION). seq=(1,2,3) fixture.
 ---
 id: iter-layout-for-each-else-001
@@ -1032,6 +1093,8 @@ tags:
   - for-each
   - else
   - "surface:block"
+  - iterate
+  - loop
 notes: "for-each supports a trailing else block (Python for/else): the else body runs when the loop completes without break, and its value becomes the result. seq=(1,2,3) fixture."
 ---
 id: iter-layout-for-each-else-break-002
@@ -1057,4 +1120,7 @@ tags:
   - else
   - break
   - "surface:block"
+  - early-exit
+  - iterate
+  - loop
 notes: the for-each else body is skipped when the loop exits via break; here break fires at x==2, so else does not run and the form yields None. seq=(1,2,3) fixture.

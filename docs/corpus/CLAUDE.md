@@ -191,6 +191,9 @@ tags:
   - <category>
   - <feature-slug>
   - surface:block                  # if testing layout syntax
+  - <intent>                       # goal word(s) from the closed intent
+                                   # vocabulary in SCHEMA.md, e.g. cleanup,
+                                   # catch, loop, mutate, branch, define-type
 notes: <optional — source file, fixture deps, corrective fix>
 ```
 

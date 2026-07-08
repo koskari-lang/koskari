@@ -29,6 +29,9 @@ tags:
   - raise
   - reraise
   - invalid
+  - error-handling
+  - pitfall
+  - re-raise
 notes: "runtime failure (not a compile error); read succeeds. corrective: put (raise) inside a try handler, or raise a new exception value"
 ---
 id: special-call-attr-literal-dot-invalid-001
@@ -47,4 +50,5 @@ tags:
   - call-attr
   - invalid
   - surprising
+  - pitfall
 notes: "corrective: (.upper \"hello\")"

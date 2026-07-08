@@ -25,6 +25,7 @@ tags:
   - syntax
   - define-syntax
   - syntax-match
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki syntax-match arm
 ---
 id: syntax-define-syntax-mr-expand-001
@@ -39,6 +40,7 @@ tags:
   - syntax
   - define-syntax
   - macro-rules
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki macro-rules arm
 ---
 id: syntax-define-syntax-mm-expand-001
@@ -53,6 +55,7 @@ tags:
   - syntax
   - define-syntax
   - macro-match
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki macro-match arm
 ---
 id: syntax-define-syntax-spr-expand-001
@@ -67,6 +70,7 @@ tags:
   - syntax
   - define-syntax
   - special-rules
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki special-rules arm
 ---
 id: syntax-define-syntax-spm-expand-001
@@ -81,6 +85,7 @@ tags:
   - syntax
   - define-syntax
   - special-match
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki special-match arm
 ---
 id: syntax-extend-syntax-sr-expand-001
@@ -95,6 +100,7 @@ tags:
   - syntax
   - extend-syntax
   - syntax-rules
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki; newer rules take precedence via Syntax.__add__
 ---
 id: syntax-syntax-rules-unless-001
@@ -108,6 +114,7 @@ stability: evolving
 tags:
   - syntax
   - syntax-rules
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-syntax-rules-ellipsis-001
@@ -122,6 +129,7 @@ tags:
   - syntax
   - syntax-rules
   - ellipsis
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-macro-rules-identity-001
@@ -135,6 +143,7 @@ stability: evolving
 tags:
   - syntax
   - macro-rules
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-macro-rules-ellipsis-001
@@ -149,6 +158,7 @@ tags:
   - syntax
   - macro-rules
   - ellipsis
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-syntax-match-double-001
@@ -162,6 +172,7 @@ stability: evolving
 tags:
   - syntax
   - syntax-match
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-syntax-match-repeat-empty-001
@@ -175,6 +186,7 @@ stability: evolving
 tags:
   - syntax
   - syntax-match
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-syntax-match-repeat-literal-001
@@ -188,6 +200,7 @@ stability: evolving
 tags:
   - syntax
   - syntax-match
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-macro-match-identity-001
@@ -201,6 +214,7 @@ stability: evolving
 tags:
   - syntax
   - macro-match
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-macro-match-repeat-literal-001
@@ -214,6 +228,7 @@ stability: evolving
 tags:
   - syntax
   - macro-match
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-special-rules-identity-001
@@ -227,6 +242,7 @@ stability: evolving
 tags:
   - syntax
   - special-rules
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-special-rules-bare-form-001
@@ -240,6 +256,7 @@ stability: evolving
 tags:
   - syntax
   - special-rules
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-special-match-identity-001
@@ -253,6 +270,7 @@ stability: evolving
 tags:
   - syntax
   - special-match
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-special-match-bare-form-001
@@ -266,6 +284,7 @@ stability: evolving
 tags:
   - syntax
   - special-match
+  - metaprogramming
 notes: define-only
 ---
 id: syntax-layout-define-syntax-sr-001
@@ -285,6 +304,7 @@ tags:
   - syntax
   - layout
   - syntax-rules
+  - metaprogramming
 notes: informal read shape
 ---
 id: syntax-layout-macro-rules-001
@@ -303,6 +323,7 @@ tags:
   - syntax
   - layout
   - macro-rules
+  - metaprogramming
 ---
 id: syntax-extend-syntax-precedence-001
 feature: macro/compile/extend-syntax
@@ -315,6 +336,7 @@ stability: evolving
 tags:
   - syntax
   - extend-syntax
+  - metaprogramming
 notes: install only; no pick use in same form
 ---
 id: syntax-datum-expand-default-pos-001
@@ -330,6 +352,7 @@ tags:
   - syntax
   - datum
   - hygiene
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki; position from expr when omitted
 ---
 id: syntax-datum-expand-explicit-pos-001
@@ -344,6 +367,7 @@ tags:
   - syntax
   - datum
   - hygiene
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki two-argument form
 ---
 id: syntax-datumq-expand-001
@@ -359,6 +383,7 @@ tags:
   - syntax
   - datumq
   - hygiene
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki; quotes expr before wrapping
 ---
 id: syntax-datum-unwrap-001
@@ -399,6 +424,7 @@ stability: evolving
 tags:
   - syntax
   - parse-match-patternq
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki; koskari.syntax.parse_match_pattern
 ---
 id: syntax-parse-rule-patternq-literals-expand-001
@@ -413,6 +439,7 @@ stability: evolving
 tags:
   - syntax
   - parse-rule-patternq
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki; koskari.syntax.parse_rule_pattern
 ---
 id: syntax-parse-rule-patternq-empty-literals-expand-001
@@ -426,6 +453,7 @@ stability: evolving
 tags:
   - syntax
   - parse-rule-patternq
+  - metaprogramming
 notes: koskari/bootstrap/_define_syntax.ki; empty literals list when second arg omitted
 ---
 id: syntax-parse-match-patternq-var-002
@@ -442,6 +470,7 @@ stability: evolving
 tags:
   - syntax
   - parse-match-patternq
+  - metaprogramming
 notes: VAR pattern; expands to call parse-match-pattern with quoted pattern
 ---
 id: syntax-parse-match-patternq-literal-003
@@ -458,6 +487,7 @@ stability: evolving
 tags:
   - syntax
   - parse-match-patternq
+  - metaprogramming
 notes: LITERAL pattern; expands to call parse-match-pattern with quoted LITERAL form
 ---
 id: syntax-macro-rules-multi-body-003
@@ -473,6 +503,7 @@ stability: evolving
 tags:
   - syntax
   - macro-rules
+  - metaprogramming
 notes: multi-form template body; define-only; [] literals round-trips as nil
 ---
 id: syntax-macro-match-two-values-003
@@ -490,6 +521,7 @@ stability: evolving
 tags:
   - syntax
   - macro-match
+  - metaprogramming
 notes: two VALUE pattern vars; define-only; macro-match matches hygienically
 ---
 id: syntax-special-rules-double-003
@@ -505,6 +537,7 @@ stability: evolving
 tags:
   - syntax
   - special-rules
+  - metaprogramming
 notes: define-only; x.datum accesses the datum from the AST node; [] reads as nil in printed form
 ---
 id: syntax-special-match-second-003
@@ -522,6 +555,7 @@ stability: evolving
 tags:
   - syntax
   - special-match
+  - metaprogramming
 notes: two VALUE pattern variables; y.datum reads the second argument's compile-time datum
 ---
 id: syntax-syntax-rules-cond-template-003
@@ -537,6 +571,7 @@ stability: evolving
 tags:
   - syntax
   - syntax-rules
+  - metaprogramming
 notes: define-only; cond template body; [] literals round-trip as nil in printed form
 ---
 id: syntax-datumq-integer-003
@@ -570,6 +605,7 @@ tags:
   - syntax
   - extend-syntax
   - macro-rules
+  - metaprogramming
 notes: extend-syntax macro-rules arm; define-syntax first then extend with a two-arg rule
 ---
 id: syntax-parse-rule-patternq-two-args-003
@@ -586,6 +622,7 @@ stability: evolving
 tags:
   - syntax
   - parse-rule-patternq
+  - metaprogramming
 notes: two-variable rule pattern; expands to call with both arguments quoted
 ---
 id: syntax-layout-define-syntax-sr-003
@@ -605,6 +642,7 @@ tags:
   - syntax
   - layout
   - "surface:block"
+  - metaprogramming
 notes: layout form with syntax-rules and a single body expression
 ---
 id: macro-precedence-over-local-binding-001
@@ -623,4 +661,6 @@ tags:
   - resolution
   - shadowing
   - surprising
+  - name-resolution
+  - pitfall
 notes: macros expand at compile time before name resolution, so a macro always wins over a same-named value binding in call position. caddr is a macro, so the local (define caddr ...) is never consulted for (caddr ...) — it evaluates via the accessor to 3, not 999. Names bound to runtime functions (e.g. first) shadow normally; see the concepts page.

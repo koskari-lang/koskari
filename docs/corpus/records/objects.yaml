@@ -61,6 +61,7 @@ tags:
   - object
   - comparison
   - alias
+  - predicate
 notes: bootstrap alias for ==; koskari/bootstrap/__init__.py
 ---
 id: object-ne-true-001
@@ -87,6 +88,7 @@ tags:
   - object
   - comparison
   - alias
+  - predicate
 notes: bootstrap alias for !=
 ---
 id: object-lt-chain-001
@@ -113,6 +115,7 @@ tags:
   - object
   - comparison
   - alias
+  - predicate
 notes: bootstrap alias for <
 ---
 id: object-le-equal-001
@@ -139,6 +142,7 @@ tags:
   - object
   - comparison
   - alias
+  - predicate
 notes: bootstrap alias for <=
 ---
 id: object-gt-true-001
@@ -165,6 +169,7 @@ tags:
   - object
   - comparison
   - alias
+  - predicate
 notes: bootstrap alias for >
 ---
 id: object-ge-equal-001
@@ -191,6 +196,7 @@ tags:
   - object
   - comparison
   - alias
+  - predicate
 notes: bootstrap alias for >=
 ---
 id: object-instance-true-001
@@ -351,6 +357,7 @@ stability: evolving
 tags:
   - object
   - inplace
+  - mutate
 notes: koskari/compile/specials/object.py special_inplace
 ---
 id: object-incr-macro-001
@@ -366,6 +373,7 @@ tags:
   - object
   - macro
   - incr!
+  - mutate
 notes: koskari/bootstrap/_variables.ki; expands to inplace +; requires builtins at expand
 ---
 id: object-decr-macro-001
@@ -380,6 +388,7 @@ tags:
   - object
   - macro
   - decr!
+  - mutate
 notes: koskari/bootstrap/_variables.ki; expands to inplace -
 ---
 id: object-not-false-001
@@ -495,6 +504,7 @@ tags:
   - object
   - macro
   - define-class
+  - define-type
 notes: top-level macro form for expand stage; koskari/bootstrap/_class.ki
 ---
 id: object-define-class-eval-001
@@ -515,6 +525,7 @@ tags:
   - object
   - macro
   - define-class
+  - define-type
 notes: instance slot mutation via define-class and set-attr
 ---
 id: object-define-class-type-001
@@ -530,6 +541,7 @@ tags:
   - object
   - macro
   - define-class
+  - define-type
 notes: koskari/bootstrap/_class.ki; also defines Counter? predicate at expand
 ---
 id: object-define-class-layout-001
@@ -552,6 +564,7 @@ tags:
   - define-class
   - layout
   - "surface:block"
+  - define-type
 notes: layout counterpart of object-define-class-expand-001
 ---
 id: object-subtract-three-002
@@ -859,6 +872,7 @@ stability: evolving
 tags:
   - object
   - variable
+  - mutate
 notes: custom step; z=1 fixture; form evaluates to None (set! semantics)
 ---
 id: object-incr-effect-003
@@ -876,6 +890,7 @@ stability: evolving
 tags:
   - object
   - variable
+  - mutate
 notes: z=1 fixture; incr! mutates z in place; reading z afterward shows 2
 ---
 id: object-decr-default-002
@@ -892,6 +907,7 @@ stability: evolving
 tags:
   - object
   - variable
+  - mutate
 notes: default step 1; z=1 fixture; form evaluates to None
 ---
 id: object-decr-step-003
@@ -908,6 +924,7 @@ stability: evolving
 tags:
   - object
   - variable
+  - mutate
 notes: custom step of 3; z=1 fixture; form evaluates to None
 ---
 id: object-equal-str-002
@@ -925,6 +942,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-equal-false-003
 feature: special/compile/equal?
@@ -941,6 +959,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-not-equal-false-002
 feature: special/compile/not-equal?
@@ -957,6 +976,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-not-equal-str-003
 feature: special/compile/not-equal?
@@ -973,6 +993,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-lt-alias-false-002
 feature: special/compile/lt?
@@ -989,6 +1010,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-lt-alias-chain-003
 feature: special/compile/lt?
@@ -1005,6 +1027,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 notes: chained lt? with three args; all adjacent pairs must satisfy <
 ---
 id: object-le-strict-002
@@ -1055,6 +1078,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-le-alias-false-003
 feature: special/compile/le?
@@ -1071,6 +1095,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-ge-equal-002
 feature: special/compile/>=
@@ -1120,6 +1145,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-ge-alias-false-003
 feature: special/compile/ge?
@@ -1136,6 +1162,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-gt-alias-false-002
 feature: special/compile/gt?
@@ -1152,6 +1179,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 ---
 id: object-gt-alias-chain-003
 feature: special/compile/gt?
@@ -1168,6 +1196,7 @@ stability: stable
 tags:
   - object
   - comparison
+  - predicate
 notes: chained gt? with three args
 ---
 id: object-bit-and-002
@@ -1290,6 +1319,7 @@ stability: evolving
 tags:
   - object
   - variable
+  - mutate
 notes: z += 5; z=1 fixture; form evaluates to None
 ---
 id: object-inplace-effect-003
@@ -1307,6 +1337,7 @@ stability: evolving
 tags:
   - object
   - variable
+  - mutate
 notes: z=1 fixture; z += 5; z is then 6
 ---
 id: object-iter-collect-002
@@ -1389,6 +1420,7 @@ references:
 stability: evolving
 tags:
   - object
+  - mutate
 notes: mutates index 1 of lst; reading lst after shows updated value
 ---
 id: object-set-item-dict-003
@@ -1405,6 +1437,7 @@ references:
 stability: evolving
 tags:
   - object
+  - mutate
 notes: set-item on a dict; inserts a new key-value pair
 ---
 id: object-instance-int-003
@@ -1422,6 +1455,7 @@ stability: evolving
 tags:
   - object
   - instance?
+  - predicate
 notes: 42 is an instance of int
 ---
 id: object-class-slot-int-003
@@ -1883,6 +1917,7 @@ tags:
   - object
   - define-class
   - "surface:block"
+  - define-type
 notes: "from examples/dataclass.ki; @dataclass decorator on define-class; define x :: int 0 is typed field with default"
 ---
 id: object-set-attr-method-pattern-001
@@ -1909,6 +1944,7 @@ tags:
   - set-attr
   - define-class
   - "surface:block"
+  - mutate
 notes: from examples/hello.ki FunTimes; set-attr with keyword-style attribute name; self.set_x is a method call via dot-attr
 ---
 id: object-set-attr-basic-002
@@ -1930,6 +1966,7 @@ stability: stable
 tags:
   - object
   - set-attr
+  - mutate
 notes: set-attr with symbol attribute name; ns.name reads as (compile/attr ns name)
 ---
 id: object-set-attr-multiple-003
@@ -1952,6 +1989,7 @@ stability: stable
 tags:
   - object
   - set-attr
+  - mutate
 notes: setting multiple attributes; dot-attr access reads as compile/attr for each
 ---
 id: object-define-class-eq-behavior-001
@@ -1970,6 +2008,7 @@ tags:
   - define-class
   - dunder
   - method
+  - define-type
 notes: "behavior (not just shape) of a user __eq__: two distinct instances with equal fields compare equal via =="
 ---
 id: object-define-class-call-behavior-001
@@ -1988,6 +2027,7 @@ tags:
   - define-class
   - dunder
   - callable
+  - define-type
 notes: "behavior of a user __call__: the instance dbl is invoked like a function, dbl(21) -> 2*21 = 42"
 ---
 id: object-call-attr-dot-surface-004
