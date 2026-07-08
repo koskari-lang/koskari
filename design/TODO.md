@@ -375,6 +375,26 @@ drift.
 
 Ref: [koskari-lint.md](koskari-lint.md).
 
+### Baked-in corpus MCP on AWS Lambda
+
+Migrate the corpus MCP server off live Hugging Face Dataset Viewer queries onto
+a dataset **baked into the image**, and run it as a public service on **AWS
+Lambda** at `mcp.koskari.org`. Replace the `viewer-*` fetch layer and SQL-clause
+helpers in `tools/mcp/mcp_server.ki` with in-memory filtering over the three
+exported parquet tables (`koskari-corpus`, `koskari-docs`, `koskari-programs`);
+the row-shaping, ranking-demotion, and polarity logic are backend-agnostic and
+stay. Add a `--stateless` flag (`stateless_http` + `json_response`) and a
+`--lambda` launch mode, keeping the stdio default and `--serve` VM path intact.
+Package via the Lambda Web Adapter (reuses `--serve` verbatim, no handler
+plumbing), front with an API Gateway HTTP API + custom domain, and deploy
+through a GitHub OIDC workflow mirroring the HF publish pattern. Order: backend
+swap + parity tests, launch modes + Lambda image, one-time AWS bring-up, then
+SAM/Terraform IaC parameterized for future MCP servers. Supersedes Track B of
+the archived corpus-mcp-server record.
+
+Ref: [mcp-baked-in-lambda.md](mcp-baked-in-lambda.md);
+[archive/corpus-mcp-server.md](archive/corpus-mcp-server.md).
+
 ---
 
 ## Reference
