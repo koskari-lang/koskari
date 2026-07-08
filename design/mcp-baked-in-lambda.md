@@ -3,7 +3,7 @@
 Design record for migrating the Koskari corpus MCP server off live Hugging
 Face Dataset Viewer queries and onto a **dataset baked into the image**, then
 running that image as a public, persistent service on **AWS Lambda** at
-`mcp.koskari.org`.
+`corpus.koskari.org`.
 
 This supersedes Track B ("thin shim over the Dataset Viewer API") of
 [archive/corpus-mcp-server.md](archive/corpus-mcp-server.md). The stdio
@@ -61,7 +61,7 @@ image: koskari runtime + mcp deps + /srv/data/*.parquet + Lambda adapter
         └── --lambda: stateless HTTP :8080  → AWS Lambda Web Adapter
                                                  │
                                                  ▼
-                              API Gateway HTTP API  ──  mcp.koskari.org
+                              API Gateway HTTP API  ──  corpus.koskari.org
                                                  │
                                                  ▼
                                         remote MCP clients
@@ -250,11 +250,11 @@ Notes:
 
 ## Part 4 — Standing it up on AWS (first-time walkthrough)
 
-Target: an HTTPS endpoint at `https://mcp.koskari.org/mcp` backed by the Lambda
+Target: an HTTPS endpoint at `https://corpus.koskari.org/mcp` backed by the Lambda
 image, with basic throttling. Recommended shape:
 
 ```text
-ECR (image)  →  Lambda (container, arm64)  →  API Gateway HTTP API  →  mcp.koskari.org
+ECR (image)  →  Lambda (container, arm64)  →  API Gateway HTTP API  →  corpus.koskari.org
 ```
 
 API Gateway HTTP API is chosen over a raw Function URL because it gives a
@@ -279,17 +279,17 @@ front. (Trade-off: per-IP rate limiting is not native to HTTP APIs -- see
    (`ANY /{proxy+}`) integrated to the Lambda (payload format 2.0). Enable a
    default stage with auto-deploy. Note the invoke URL and smoke-test
    `POST /mcp` with an MCP `initialize` request.
-6. **Custom domain `mcp.koskari.org`.**
-   - Request an **ACM certificate** for `mcp.koskari.org` in the API's region.
+6. **Custom domain `corpus.koskari.org`.**
+   - Request an **ACM certificate** for `corpus.koskari.org` in the API's region.
      Validate by adding the ACM-provided CNAME to koskari.org DNS (any DNS
      provider works; Route 53 is not required).
-   - Create an API Gateway **custom domain name** `mcp.koskari.org` using that
+   - Create an API Gateway **custom domain name** `corpus.koskari.org` using that
      cert; map it to the HTTP API's stage.
-   - At the DNS provider, add a **CNAME** `mcp.koskari.org` → the API Gateway
+   - At the DNS provider, add a **CNAME** `corpus.koskari.org` → the API Gateway
      regional domain target. (If koskari.org is in Route 53, an alias A record
      instead.)
-7. **Verify** end-to-end against `https://mcp.koskari.org/mcp`, then register it
-   in an MCP client (`"type": "http", "url": "https://mcp.koskari.org/mcp"`).
+7. **Verify** end-to-end against `https://corpus.koskari.org/mcp`, then register it
+   in an MCP client (`"type": "http", "url": "https://corpus.koskari.org/mcp"`).
 
 ### Cold start and warmth
 
@@ -358,7 +358,7 @@ The stated intent is more than one MCP server over time. Make the AWS side
   `(name, image, subdomain)`. SAM is the gentler on-ramp for a first Lambda
   project and expresses function + HTTP API + domain in one template.
 - A **single API Gateway** with per-server base-path mappings
-  (`mcp.koskari.org/koskari-corpus`, `/next-server`, ...) keeps one throttling
+  (`corpus.koskari.org/koskari-corpus`, `/next-server`, ...) keeps one throttling
   and TLS surface for every server, or give each its own subdomain -- both are
   a parameter, not a rewrite.
 - The GitHub workflow becomes a reusable job keyed on server name, so adding a
@@ -375,7 +375,7 @@ The stated intent is more than one MCP server over time. Make the AWS side
   set of representative queries.
 - **Stdio smoke:** `make run-mcp` (default CMD unchanged) still serves stdio.
 - **Lambda-local smoke:** run the Lambda image locally with the adapter's local
-  runtime (or just `--serve --stateless`) and drive it with an MCP client over
+  runtime (or just `--lambda`) and drive it with an MCP client over
   HTTP before the first cloud deploy.
 - Per project rules, defect-style tests assert correct behavior and stay red
   until fixed -- no pinning of any known-wrong HF-era output.
@@ -386,10 +386,10 @@ The stated intent is more than one MCP server over time. Make the AWS side
 
 1. Land Part 1 (baked in-memory backend) behind the existing stdio and
    `--serve` modes; the local container UX is unchanged, just offline.
-2. Land Part 2 (`--stateless`, `--lambda`) and Part 3 (Lambda image +
+2. Land Part 2 (`--lambda`) and Part 3 (Lambda image +
    Containerfile), verified locally.
 3. Do the one-time AWS bring-up (Part 4) by hand to understand the moving
-   parts, endpoint live at `mcp.koskari.org`.
+   parts, endpoint live at `corpus.koskari.org`.
 4. Codify it: SAM/Terraform + the GitHub deploy workflow (Part 5), then tear
    down and re-create from IaC to prove reproducibility.
 5. Retire the HF Viewer relay from the server and update
