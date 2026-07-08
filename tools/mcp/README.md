@@ -63,9 +63,10 @@ needed):
 |------|-------------|
 | `search_docs` | Search documentation pages and example programs by text; optional `kind` (`doc`/`example`) and `limit` |
 | `get_reference` | Fetch one documentation page or example program by its path |
-| `search_examples` | Search verified corpus examples by text (`search_text`) with optional `feature_path` filter and `limit` (default 10, max 100); invalid/wrong-usage records are demoted below valid ones |
+| `search_examples` | Search verified corpus examples by text (`search_text`) with optional `feature_path` filter, `polarity` (`valid`/`invalid`) narrowing, and `limit` (default 10, max 100); invalid/wrong-usage records are demoted below valid ones |
 | `get_example` | Fetch one corpus record by `corpus_id` |
 | `list_features` | List distinct `feature` paths with counts |
+| `list_tags` | List searchable tags with counts, grouped into the intent (goal-based) vocabulary and structural tags |
 
 Tool results are JSON text including `corpus_id`, `feature`, `source`, verify
 stage columns when present, and `references`.

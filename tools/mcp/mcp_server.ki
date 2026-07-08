@@ -58,6 +58,19 @@ define META_KEYS #(
     "tags" "schema_version" "git_ref")
 
 
+;; Closed intent-tag vocabulary; source of truth is docs/corpus/SCHEMA.md.
+;; Used only to group list_tags output into goal-based vs structural facets.
+define INTENT_TAGS #(
+    "error-handling" "catch" "cleanup" "re-raise" "guard"
+    "loop" "iterate" "accumulate" "early-exit" "filter" "destructure"
+    "mutate" "swap" "module-global" "local-binding" "name-resolution"
+    "recursion" "default-value" "branch" "multi-way" "short-circuit"
+    "higher-order" "closure" "variadic" "compose" "decorate"
+    "keyword-argument" "construct" "index" "membership" "await"
+    "concurrency" "suspend" "define-type" "inheritance" "predicate"
+    "metaprogramming" "hygiene" "idiom" "pitfall")
+
+
 define INSTRUCTIONS """
 This server is the authoritative and fastest source of truth for the
 Koskari language: its documentation, its reference for special forms,
@@ -76,10 +89,13 @@ Tools:
   programs. Start here for open-ended questions; each hit returns a path
   to fetch.
 - search_examples: search only verified example programs, optionally
-  scoped to a feature path. Use to find working (and known-invalid) code.
+  scoped to a feature path and narrowed by polarity (valid vs
+  wrong-usage). Use to find working (and known-invalid) code.
 - get_reference: fetch the full content of one page or example by the
   path returned from a search.
 - list_features: enumerate the feature paths present in the corpus.
+- list_tags: enumerate searchable tags -- the goal-based intent
+  vocabulary and structural tags -- with counts.
 
 Typical flow: search_docs or search_examples to locate a path, then
 get_reference for the full content. Treat corpus results as ground
@@ -379,6 +395,14 @@ define feature-search [feature_path cap]:
     (viewer-search-rows "/filter" #{where: where} cap)
 
 
+define row-invalid? [row]:
+    """
+    True when the record is tagged as wrong-usage (``invalid``)
+    """
+
+    (in? "invalid" (or (row.get "tags") #[]))
+
+
 define demote-invalid [rows]:
     """
     Sink wrong-usage records below canonical ones without dropping them
@@ -393,7 +417,7 @@ define demote-invalid [rows]:
     define valid #[]
     define wrong #[]
     for-each [row rows]:
-        if (in "invalid" (or (row.get "tags") #[])):
+        if (row-invalid? row):
             (wrong.append row)
         else:
             (valid.append row)
@@ -401,11 +425,32 @@ define demote-invalid [rows]:
     valid
 
 
+define filter-by-polarity [rows polarity]:
+    """
+    Restrict rows by validity when polarity asks for it
+
+    ``valid`` keeps canonical usage (drops wrong-usage records);
+    ``invalid`` keeps only wrong-usage records, for how-not-to queries.
+    Any other value (including None) leaves the set untouched. Applied as
+    a refinement of an existing text/feature result, so it narrows within
+    the fetched window rather than scanning the whole corpus.
+    """
+
+    switch polarity:
+        case ["valid"]:
+            (list-each [row rows] unless: (row-invalid? row) row)
+        case ["invalid"]:
+            (list-each [row rows] when: (row-invalid? row) row)
+        else:
+            rows
+
+
 @(mcp.tool)
 @coroutine-fn
 define search_examples [
         search_text
         [feature_path :: str value: None]
+        [polarity :: str value: None]
         [limit :: int value: 10]]:
     """
     Search verified Koskari corpus examples by text and optional feature
@@ -413,6 +458,11 @@ define search_examples [
     Text search ranks content words through the full-text index, then
     falls back to substring matching so language keywords the index treats
     as stop words (while, for-each, if, and, or, not) still resolve.
+
+    polarity narrows by validity: "valid" returns only canonical usage,
+    "invalid" returns only wrong-usage (how-not-to) records; omit it for
+    both. It refines the text/feature result, so it filters within the
+    fetched window.
     """
 
     define cap (min (int limit) 100)
@@ -438,6 +488,7 @@ define search_examples [
     else:
         return "Provide search_text and/or feature_path."
 
+    set! rows (filter-by-polarity rows polarity)
     set! rows (item-slice (demote-invalid rows) 0 cap)
     unless rows:
         return "No matching corpus examples."
@@ -581,6 +632,69 @@ define list_features []:
         (lines.append f"{top}/  ({subtotal})")
         for-each [p bucket]:
             (lines.append f"  {(item p 0)}\t{(item p 1)}")
+
+    (.join "\n" lines)
+
+
+@(mcp.tool)
+@coroutine-fn
+define list_tags []:
+    """
+    List corpus tags with occurrence counts, grouped by facet
+
+    Tags are full-text searchable, so these are the words search_examples
+    matches and the goal vocabulary to pair with polarity. Output splits
+    the closed intent (goal-based) vocabulary from structural tags (form
+    names, categories, surface markers); each group is sorted by count.
+    """
+
+    define seen #{}
+    define offset 0
+    while True:
+        define extra #{
+            offset: offset
+            length: 100
+        }
+
+        define page (viewer-get "/rows" extra)
+        define rows (viewer-rows page)
+        unless rows:
+            (break)
+
+        for-each [row rows]:
+            for-each [tag (or (row.get "tags") #())]:
+                define count (seen.get tag 0)
+                set! (item seen tag) (+ count 1)
+
+        incr! offset (len rows)
+
+        when (item page "partial"):
+            (break)
+
+        when (< (len rows) 100):
+            (break)
+
+    unless seen:
+        return "No tags found."
+
+    define ranked:
+        (sorted (seen.items)
+            key: (demand { #((- (item %1 1)) (item %1 0)) }))
+
+    define intent #[]
+    define structural #[]
+    for-each [[tag rank] ranked]:
+        define line f"  {tag}\t{rank}"
+        if (in? tag INTENT_TAGS):
+            (intent.append line)
+        else:
+            (structural.append line)
+
+    define lines #[]
+    (lines.append f"intent ({(len intent)}):")
+    (lines.extend intent)
+    (lines.append f"structural ({(len structural)}):")
+    (lines.extend structural)
 
     (.join "\n" lines)
 
