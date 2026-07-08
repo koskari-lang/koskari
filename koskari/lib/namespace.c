@@ -26,6 +26,7 @@
 
 #include "lib.h"
 #include "debug.h"
+#include "hints.h"
 #include "tracing.h"
 
 
@@ -55,11 +56,16 @@ static size_t ns_freecount = 0;
    For KosNamespaceType with count <= KOS_NS_MIN_SLOTS: pops a pre-zeroed slab
    from the freelist (hit) or allocates oversized to KOS_NS_MIN_SLOTS (miss).
    All fast[] slots are guaranteed NULL on return; all header fields except
-   parent are NULL/zero. The caller must initialise all header fields. */
+   parent are NULL/zero. The caller must initialise all header fields.
+
+   Allocation is GC-capable but the object is born untracked; see
+   KosNamespace_TrackChain for when a namespace is revealed to the
+   collector. Freelist slabs are always untracked (dealloc untracks
+   before recycling). */
 static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
 
   if (type != &KosNamespaceType || count > (size_t) KOS_NS_MIN_SLOTS) {
-    PyObject *p = PyObject_NewVar(PyObject, type, (Py_ssize_t) count);
+    PyObject *p = PyObject_GC_NewVar(PyObject, type, (Py_ssize_t) count);
     if (! p)
       return NULL;
 
@@ -85,13 +91,31 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
   }
 
   KOS_TRACE_FL_ALLOC("namespace", 0);
-  PyObject *p = PyObject_NewVar(PyObject, type, (Py_ssize_t) KOS_NS_MIN_SLOTS);
+  PyObject *p = PyObject_GC_NewVar(PyObject, type,
+                                   (Py_ssize_t) KOS_NS_MIN_SLOTS);
   if (! p)
     return NULL;
 
   memset(((KosNamespace *) p)->fast, 0,
          (size_t) KOS_NS_MIN_SLOTS * sizeof(PyObject *));
   return p;
+}
+
+
+void KosNamespace_TrackChain(PyObject *ns) {
+  while (likely(KosNamespace_Check(ns)) && ! PyObject_GC_IsTracked(ns)) {
+    PyObject_GC_Track(ns);
+    ns = (PyObject *) KosNamespace_PARENT(ns);
+  }
+}
+
+
+PyObject *KosNamespace_Reveal(PyObject *ns) {
+  if (likely(ns)) {
+    KosNamespace_TrackChain(ns);
+    Py_INCREF(ns);
+  }
+  return ns;
 }
 
 
@@ -213,7 +237,9 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
 
 static PyObject *nspec_m_namespace(PyObject *self, PyObject *parent) {
 
-  return KosNamespace_FromSpec(self, parent);
+  PyObject *ns = KosNamespace_FromSpec(self, parent);
+  KosNamespace_TrackChain(ns);
+  return ns;
 }
 
 
@@ -1140,7 +1166,11 @@ static PyObject *ns_m_find(PyObject *self, PyObject *key) {
 
 
 static PyObject *ns_m_copy(PyObject *self) {
-  return KosNamespace_Copy(self);
+  PyObject *ns = KosNamespace_Copy(self);
+  // KosNamespace_TrackChain(ns);
+  PyObject_GC_Track(ns);
+  Py_INCREF(ns);
+  return ns;
 }
 
 
@@ -1364,13 +1394,24 @@ static PyObject *ns_new(PyTypeObject *type,
     return NULL;
   }
 
-  return ns_newfull_type(type, name, parent, local_syms, closure_syms,
-                         global_syms);
+  PyObject *ns = ns_newfull_type(type, name, parent, local_syms,
+                                 closure_syms, global_syms);
+
+  /* Note that we've received an incoming NS, so parent is already tracked,
+     and we don't want a new ref to ns. So just track ns. */
+  // KosNamespace_TrackChain(ns);
+
+  PyObject_GC_Track(ns);
+  return ns;
 }
 
 
 static void ns_dealloc(PyObject *self) {
   // SAYF("ns_dealloc(%R)", self);
+
+  /* idempotent; a revealed namespace must leave the collector before
+     its fields are cleared or it is recycled to the freelist */
+  PyObject_GC_UnTrack(self);
 
   Py_CLEAR(KosNamespace_NAME(self));
   Py_CLEAR(KosNamespace_PARENT(self));
@@ -1436,7 +1477,8 @@ PyTypeObject KosNamespaceType = {
   sizeof(KosNamespace),
   sizeof(PyObject *),
 
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_free = PyObject_GC_Del,
   .tp_methods = ns_methods,
   .tp_members = ns_members,
   .tp_new = ns_new,
@@ -2017,7 +2059,9 @@ PyTypeObject KosCollectorNamespaceType = {
   sizeof(PyObject *),
 
   .tp_base = &KosNamespaceType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_traverse = ns_traverse,
+  .tp_clear = ns_clear,
   .tp_methods = collector_methods,
   .tp_as_mapping = &collector_as_mapping,
   .tp_as_sequence = &ns_seq,
@@ -2095,6 +2139,7 @@ static PyObject *mdl_ns_new(
 
 static void mdl_ns_dealloc(PyObject *self) {
   // SAYF("mdl_ns_dealloc(%R)", self);
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosModuleNamespace_BUILTINS(self));
   ns_dealloc(self);
 }
@@ -2214,7 +2259,7 @@ PyTypeObject KosModuleNamespaceType = {
   0,
 
   .tp_base = &KosNamespaceType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_methods = mdl_ns_methods,
   .tp_new = mdl_ns_new,
   .tp_dealloc = mdl_ns_dealloc,
@@ -2246,7 +2291,11 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
   if (! binds)
     return NULL;
 
-  PyObject *self = PyObject_New(PyObject, &KosModuleNamespaceType);
+  PyObject *self = PyObject_GC_NewVar(PyObject, &KosModuleNamespaceType, 0);
+  if (! self) {
+    Py_DECREF(binds);
+    return NULL;
+  }
 
   Py_INCREF(name);
   KosNamespace_NAME(self) = name;
@@ -2260,6 +2309,10 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
 
   Py_INCREF(builtins);
   KosModuleNamespace_BUILTINS(self) = builtins;
+
+  /* module namespaces are few, long-lived, and perpetually exposed;
+     track them from birth rather than lazily */
+  PyObject_GC_Track(self);
 
   // SAYF("KosModuleNamespace_New -> %R", self);
   return self;
@@ -2500,7 +2553,7 @@ int koskari_namespace_clear(PyObject *mod) {
     ns_freelist = (KosNamespace *) KosNamespace_PARENT(ns);
 
     // KosNamespace_PARENT(ns) = NULL;
-    PyObject_Free(ns);
+    PyObject_GC_Del(ns);
   }
   ns_freecount = 0;
 

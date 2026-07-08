@@ -1557,6 +1557,10 @@ static int function_init(
     return -1;
   KosFunction_BASE_NS(self) = template;
 
+  /* the function captures its defining namespace chain; reveal it so a
+     closure stored back into scope forms a collectable cycle */
+  KosNamespace_TrackChain(template);
+
   self->vectorcall = kos_function_vectorcall;
   self->inspect_signature = NULL;
   self->creation_annotations = NULL;
@@ -1572,8 +1576,10 @@ static int function_init(
 }
 
 
-static int
-function_traverse(PyObject *self, visitproc visit, void *arg) {
+static int function_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
 
   Py_VISIT(KosFunction_NAME(self));
   Py_VISIT(KosFunction_CODE(self));
@@ -1588,8 +1594,7 @@ function_traverse(PyObject *self, visitproc visit, void *arg) {
 }
 
 
-static int
-function_clear(PyObject *self) {
+static int function_clear(PyObject *self) {
 
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
@@ -1956,6 +1961,7 @@ PyObject *KosFunction_NewFromFormals(
     return NULL;
   }
   KosFunction_BASE_NS(self) = template;
+  KosNamespace_TrackChain(template);
 
   KosFunction_NAME(self) = NULL;
   ((KosFunction *) self)->vectorcall = kos_function_vectorcall;

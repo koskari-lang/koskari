@@ -58,7 +58,8 @@ define run_file [
   :param mod: koskari Module to execute into
   :param filename: path to the .ki source file or .kio when execute_kio
   :param execute_kio: when True, load precompiled .kio bodies
-  :param interactive: passed to load_module_async; retain load facets when True
+  :param interactive: when True, retain load facets for the ongoing
+      session (the module still seals on completion)
   """
 
   init_module mod filename
@@ -66,7 +67,7 @@ define run_file [
   if execute_kio:
     load_module_kio_async mod
   else:
-    load_module_async mod interactive: interactive
+    load_module_async mod detach: (not interactive)
 
 
 define run_command [
@@ -81,12 +82,12 @@ define run_command [
 
   :param mod: koskari Module to execute into
   :param command: koskari source text from ``-c`` / ``--command``
-  :param interactive: passed to load_module_source_async; retain load
-      facets when True
+  :param interactive: when True, retain load facets for the ongoing
+      session (the module still seals on completion)
   """
 
   init_module mod "<string>"
-  load_module_source_async mod command interactive: interactive
+  load_module_source_async mod command detach: (not interactive)
 
 
 ; === Argument parsing ===

@@ -1630,15 +1630,26 @@ static KosContinuation *kos_continuation_create(
 
 
 /**
-   Clear parent link at the bottom of a cloned template chain.
+   Clear the parent link at the bottom of a cloned template chain.
+
+   kos_clone_chain_segment leaves the clone's innermost parent pointing
+   at stop -- a node on the live chain -- so the seam must be severed
+   here or the template stays attached to storage it does not own:
+   freeing or traversing the captured chain would then run past the
+   seam into the live context (or into already-freed nodes once the
+   live chain unwinds). Walk only within the clone: stop at the first
+   parent link that leaves the segment.
 */
-static inline void kos_chain_detach_template(KosDynNode *chain) {
+static inline void kos_chain_detach_template(
+    KosDynNode *chain,
+    const KosDynNode *stop) {
 
   KosDynNode *bottom = chain;
 
   if (! bottom)
     return;
-  while (KosDynNode_PARENT(bottom))
+  while (KosDynNode_PARENT(bottom)
+         && KosDynNode_PARENT(bottom) != stop)
     bottom = KosDynNode_PARENT(bottom);
   KosDynNode_PARENT(bottom) = NULL;
 }
@@ -1705,7 +1716,7 @@ static KosContinuation *kos_continuation_capture_segment(
   if (! captured_chain && segment_top != stop)
     return NULL;
   if (captured_chain)
-    kos_chain_detach_template(captured_chain);
+    kos_chain_detach_template(captured_chain, stop);
 
   resume_frame = kos_chain_first_frame(captured_chain);
   if (! resume_frame) {

@@ -188,6 +188,7 @@ static int sym_ref_clear(PyObject *self) {
 
 
 static void sym_ref_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosSymbolicRef_VALUE(self));
   Py_TYPE(self)->tp_free(self);
@@ -206,7 +207,9 @@ PyTypeObject KosRefType = {
   sizeof(KosRef),
   0,
 
-  .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
+  .tp_flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE
+               | Py_TPFLAGS_HAVE_GC),
+  .tp_free = PyObject_GC_Del,
   .tp_getset = sym_ref_getset,
   .tp_methods = sym_ref_methods,
   .tp_as_number = &ref_as_number,
@@ -219,13 +222,15 @@ PyTypeObject KosRefType = {
 
 
 PyObject *KosSymbolicRef_New(PyObject *name, PyObject *value) {
-  PyObject *self = PyObject_New(PyObject, &KosRefType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosRefType);
   if (! self)
     return NULL;
 
   if(sym_ref_init(self, name, value))
     Py_CLEAR(self);
 
+  if (self)
+    PyObject_GC_Track(self);
   return self;
 }
 
@@ -390,6 +395,7 @@ static int attr_ref_clear(PyObject *self) {
 
 
 static void attr_ref_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosAttributeRef_OBJ(self));
   Py_CLEAR(KosAttributeRef_ATTR(self));
@@ -405,7 +411,7 @@ PyTypeObject KosAttributeRefType = {
   0,
 
   .tp_base = &KosRefType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_getset = attr_ref_getset,
   .tp_methods = attr_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -419,13 +425,15 @@ PyTypeObject KosAttributeRefType = {
 PyObject *KosAttributeRef_New(PyObject *name,
                               PyObject *obj, PyObject *attr) {
 
-  PyObject *self = PyObject_New(PyObject, &KosAttributeRefType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosAttributeRefType);
   if (! self)
     return NULL;
 
   if(attr_ref_init(self, name, obj, attr))
     Py_CLEAR(self);
 
+  if (self)
+    PyObject_GC_Track(self);
   return self;
 }
 
@@ -598,6 +606,7 @@ static int item_ref_clear(PyObject *self) {
 
 
 static void item_ref_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosItemRef_OBJ(self));
   Py_CLEAR(KosItemRef_KEY(self));
@@ -613,7 +622,7 @@ PyTypeObject KosItemRefType = {
   0,
 
   .tp_base = &KosRefType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_getset = item_ref_getset,
   .tp_methods = item_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -625,13 +634,15 @@ PyTypeObject KosItemRefType = {
 
 
 PyObject *KosItemRef_New(PyObject *name, PyObject *obj, PyObject *key) {
-  PyObject *self = PyObject_New(PyObject, &KosItemRefType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosItemRefType);
   if (! self)
     return NULL;
 
   if(item_ref_init(self, name, obj, key))
     Py_CLEAR(self);
 
+  if (self)
+    PyObject_GC_Track(self);
   return self;
 }
 
@@ -803,6 +814,7 @@ static int dyn_ref_clear(PyObject *self) {
 
 
 static void dyn_ref_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosDynamicRef_GETFN(self));
   Py_CLEAR(KosDynamicRef_SETFN(self));
@@ -820,7 +832,7 @@ PyTypeObject KosDynamicRefType = {
   0,
 
   .tp_base = &KosRefType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_getset = dyn_ref_getset,
   .tp_methods = dyn_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -838,13 +850,15 @@ PyObject *KosDynamicRef_New(
     PyObject *delfn,
     PyObject *emptyfn) {
 
-  PyObject *self = PyObject_New(PyObject, &KosDynamicRefType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosDynamicRefType);
   if (! self)
     return NULL;
 
   if (dyn_ref_init(self, name, getfn, setfn, delfn, emptyfn))
     Py_CLEAR(self);
 
+  if (self)
+    PyObject_GC_Track(self);
   return self;
 }
 
@@ -930,7 +944,7 @@ PyTypeObject KosConstantRefType = {
   0,
 
   .tp_base = &KosRefType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_getset = sym_ref_getset,
   .tp_methods = const_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -942,13 +956,15 @@ PyTypeObject KosConstantRefType = {
 
 
 PyObject *KosConstantRef_New(PyObject *name, PyObject *value) {
-  PyObject *self = PyObject_New(PyObject, &KosConstantRefType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosConstantRefType);
   if (! self)
     return NULL;
 
   if (const_ref_init(self, name, value))
     Py_CLEAR(self);
 
+  if (self)
+    PyObject_GC_Track(self);
   return self;
 }
 
@@ -1050,6 +1066,7 @@ static int memo_ref_clear(PyObject *self) {
 
 
 static void memo_ref_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosSymbolicRef_VALUE(self));
   Py_CLEAR(KosMemoizedRef_GETFN(self));
@@ -1065,7 +1082,7 @@ PyTypeObject KosMemoizedRefType = {
   0,
 
   .tp_base = &KosRefType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_getset = sym_ref_getset,
   .tp_methods = memo_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -1077,13 +1094,15 @@ PyTypeObject KosMemoizedRefType = {
 
 
 PyObject *KosMemoizedRef_New(PyObject *name, PyObject *getfn) {
-  PyObject *self = PyObject_New(PyObject, &KosMemoizedRefType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosMemoizedRefType);
   if (! self)
     return NULL;
 
   if (memo_ref_init(self, name, getfn))
     Py_CLEAR(self);
 
+  if (self)
+    PyObject_GC_Track(self);
   return self;
 }
 
@@ -1253,7 +1272,7 @@ PyTypeObject KosWeakRefType = {
   0,
 
   .tp_base = &KosRefType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_getset = weak_ref_getset,
   .tp_methods = weak_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -1266,7 +1285,7 @@ PyTypeObject KosWeakRefType = {
 
 PyObject *KosWeakRef_New(PyObject *name, PyObject *value) {
 
-  PyObject *self = PyObject_New(PyObject, &KosWeakRefType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosWeakRefType);
   if (! self)
     return NULL;
 
@@ -1432,6 +1451,7 @@ static int param_ref_clear(PyObject *self) {
 
 
 static void param_ref_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosParamRef_DEFAULT(self));
   Py_TYPE(self)->tp_free(self);
@@ -1446,7 +1466,7 @@ PyTypeObject KosParamRefType = {
   0,
 
   .tp_base = &KosRefType,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_getset = param_ref_getset,
   .tp_methods = param_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -1458,7 +1478,7 @@ PyTypeObject KosParamRefType = {
 
 
 PyObject *KosParamRef_New(PyObject *key, PyObject *default_value) {
-  PyObject *self = PyObject_New(PyObject, &KosParamRefType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosParamRefType);
   if (! self)
     return NULL;
 
@@ -1467,6 +1487,7 @@ PyObject *KosParamRef_New(PyObject *key, PyObject *default_value) {
     return NULL;
   }
 
+  PyObject_GC_Track(self);
   return self;
 }
 

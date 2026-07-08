@@ -15,11 +15,11 @@
 koskari.compile.pragma.settings
 
 Compiler-side pragma settings, registered into the koskari.pragma registry at
-import: compiler/resolution, compiler/call-brackets, compiler/tco-enable, and
-the reserved compiler/convert-fast and compiler/compress. Each setting's
-``default`` is its baseline (value when undeclared); the function's argument
-defaults are the parameter defaults (value when declared but the arg is
-omitted).
+import: compiler/resolution, compiler/call-brackets, compiler/tco-enable,
+compiler/protect-code, compiler/pack-module, and the reserved
+compiler/convert-fast and compiler/compress. Each setting's ``default`` is its
+baseline (value when undeclared); the function's argument defaults are the
+parameter defaults (value when declared but the arg is omitted).
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -27,6 +27,7 @@ omitted).
 
 
 from enum import Enum
+from typing import NamedTuple
 
 from ...pragma import pragma_setting
 from .resolution import KoskariPragma, PythonPragma, SchemePragma
@@ -113,6 +114,64 @@ def compiler_compress(enabled: bool = False) -> bool:
     """
 
     return enabled
+
+
+@pragma_setting("compiler/protect-code", False)
+def compiler_protect_code(enabled: bool = True) -> bool:
+    """
+    Whether each Code object's bytecode block is page-aligned and
+    mprotect-sealed read-only at construction. Baseline disabled; a bare
+    declaration enables it (mention-to-enable).
+    """
+
+    return enabled
+
+
+class PackModule(NamedTuple):
+    """
+    Resolved compiler/pack-module setting: the on/off master switch and
+    the arena sizing caps. A cap of 0 means unbounded.
+    """
+
+    enabled: bool
+    max_count: int
+    max_bytes: int
+
+
+def _pack_module_cap(name, value):
+    cap = int(value)
+    if cap < 0:
+        raise ValueError(
+            f"pack-module option {name} must be >= 0, not {cap}")
+    return cap
+
+
+@pragma_setting("compiler/pack-module", PackModule(True, 0, 0))
+def compiler_pack_module(enabled=True, **options) -> PackModule:
+    """
+    Whether the module's durable code objects are relocated into shared,
+    singly-sealed arenas when the module seals. Baseline enabled with
+    unbounded arenas (one arena per module).
+
+    Options (0 means unbounded): ``max-count`` caps the number of code
+    objects per arena; ``max-bytes`` is a soft cap on an arena's payload
+    size -- a single larger code object still lands in its own singleton
+    arena.
+    """
+
+    max_count = 0
+    max_bytes = 0
+
+    for key, value in options.items():
+        norm = str(key).replace("_", "-")
+        if norm == "max-count":
+            max_count = _pack_module_cap(norm, value)
+        elif norm == "max-bytes":
+            max_bytes = _pack_module_cap(norm, value)
+        else:
+            raise ValueError(f"Unknown pack-module option {key}")
+
+    return PackModule(bool(enabled), max_count, max_bytes)
 
 
 # The end.

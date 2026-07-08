@@ -309,14 +309,26 @@ async def make_builtins():
     :return: koskari Module with bootstrap and basics.ki bindings in its namespace
     """
 
-    from ..module import load_module_async
+    from ..module import detach_module_load_facets, load_module_async
 
     ns = _init_ns()
     module = Module(ns)
 
+    # the builtins are one module loaded in installments: each file
+    # runs with seal and detach deferred, so every load reuses the same
+    # pragma, compiler, and reader facets
     for src in _BUILTINS_SOURCES:
         ns['__file__'] = join(dirname(__file__), src)
-        await load_module_async(module)
+        await load_module_async(module, seal=False, detach=False)
+
+    # one seal for the whole assembly: the shared compiler's registry
+    # spans every file, so everything packs into a single arena and
+    # code a later file displaced is dropped rather than pinned. No
+    # gc.collect() here: a displaced definition caught in a reference
+    # cycle would be swept in, wasting only its bytes in an arena that
+    # is permanently resident anyway (measured: currently none are)
+    ns['__compiler__'].seal()
+    detach_module_load_facets(module)
 
     return module
 
@@ -332,14 +344,19 @@ def make_builtins_demand():
     :return: koskari Module with bootstrap and basics.ki bindings in its namespace
     """
 
-    from ..module import load_module_demand
+    from ..module import detach_module_load_facets, load_module_demand
 
     ns = _init_ns()
     module = Module(ns)
 
+    # one module loaded in installments through shared facets, sealed
+    # once at the end; see make_builtins
     for src in _BUILTINS_SOURCES:
         ns['__file__'] = join(dirname(__file__), src)
-        load_module_demand(module)
+        load_module_demand(module, seal=False, detach=False)
+
+    ns['__compiler__'].seal()
+    detach_module_load_facets(module)
 
     return module
 

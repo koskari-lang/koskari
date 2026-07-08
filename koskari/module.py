@@ -135,7 +135,7 @@ def init_module(module, filename, spec=None):
             ns['__path__'] = list(spec.submodule_search_locations)
 
 
-async def load_module_async(module, *, interactive=False):
+async def load_module_async(module, *, seal=True, detach=True):
     """
     Execute a koskari module by reading, compiling, and running each
     top-level expression in order.
@@ -145,12 +145,20 @@ async def load_module_async(module, *, interactive=False):
     expression are visible to all subsequent expressions, supporting
     define, defsyntax, and reader macro registration at module load time.
 
-    While loading, ``__compiler__`` and ``__reader__`` are bound on the
-    module.  Unless ``interactive`` is True, they are removed when loading
-    finishes (retain them for ongoing ``__main__``, e.g. CLI ``-i``).
+    While loading, ``__pragma__``, ``__compiler__``, and ``__reader__``
+    are bound on the module; facets already present (a prior load with
+    ``detach=False``) are reused, so consecutive loads share one pragma,
+    compiler, and reader.
 
     :param module: koskari Module instance with ``__file__`` set
-    :param interactive: when False, detach load facets after the load loop
+    :param seal: when True, seal the module on successful completion:
+        the compiler packs its surviving code objects per the
+        compiler/pack-module pragma
+    :param detach: when True, detach the load facets afterward (always,
+        even when the load raises).  Callers passing False own the
+        completion steps: an interactive session seals but retains
+        facets; the bootstrap builtins loop defers both across its
+        source files and performs them once at the end
     """
 
     filename = getattr(module, '__file__', '<unknown>')
@@ -186,12 +194,18 @@ async def load_module_async(module, *, interactive=False):
                 fragment = compiler.full_compile(source_expr)
                 expr = fragment.as_expression(ns)
                 await expr()
+
+            if seal:
+                # drop the loop's trailing references so the final
+                # ephemeral expression is not swept into an arena
+                fragment = expr = None
+                compiler.seal()
         finally:
-            if not interactive:
+            if detach:
                 detach_module_load_facets(module)
 
 
-def load_module_demand(module, *, interactive=False):
+def load_module_demand(module, *, seal=True, detach=True):
     """
     Execute a koskari module by reading, compiling, and running each
     top-level expression in order via demand_call.
@@ -203,7 +217,14 @@ def load_module_demand(module, *, interactive=False):
     Load facet teardown matches :func:`load_module_async`.
 
     :param module: koskari Module instance with __file__ set
-    :param interactive: when False, detach load facets after the load loop
+    :param seal: when True, seal the module on successful completion:
+        the compiler packs its surviving code objects per the
+        compiler/pack-module pragma
+    :param detach: when True, detach the load facets afterward (always,
+        even when the load raises).  Callers passing False own the
+        completion steps: an interactive session seals but retains
+        facets; the bootstrap builtins loop defers both across its
+        source files and performs them once at the end
     """
 
     filename = getattr(module, '__file__', '<unknown>')
@@ -240,12 +261,22 @@ def load_module_demand(module, *, interactive=False):
                 fragment = compiler.full_compile(source_expr)
                 expr = fragment.as_expression(ns)
                 demand_call(expr)
+
+            if seal:
+                # drop the loop's trailing references so the final
+                # ephemeral expression is not swept into an arena
+                fragment = expr = None
+                compiler.seal()
         finally:
-            if not interactive:
+            if detach:
                 detach_module_load_facets(module)
 
 
-async def load_module_source_async(module, source, *, interactive=False):
+async def load_module_source_async(
+        module,
+        source, *,
+        seal=True,
+        detach=True):
     """
     Execute koskari source passed as a string.
 
@@ -254,7 +285,14 @@ async def load_module_source_async(module, source, *, interactive=False):
 
     :param module: koskari Module instance with ``__file__`` set
     :param source: koskari source text to execute
-    :param interactive: when False, detach load facets after the load loop
+    :param seal: when True, seal the module on successful completion:
+        the compiler packs its surviving code objects per the
+        compiler/pack-module pragma
+    :param detach: when True, detach the load facets afterward (always,
+        even when the load raises).  Callers passing False own the
+        completion steps: an interactive session seals but retains
+        facets; the bootstrap builtins loop defers both across its
+        source files and performs them once at the end
     """
 
     filename = getattr(module, '__file__', '<string>')
@@ -290,8 +328,14 @@ async def load_module_source_async(module, source, *, interactive=False):
             fragment = compiler.full_compile(source_expr)
             expr = fragment.as_expression(ns)
             await expr()
+
+        if seal:
+            # drop the loop's trailing references so the final
+            # ephemeral expression is not swept into an arena
+            fragment = expr = None
+            compiler.seal()
     finally:
-        if not interactive:
+        if detach:
             detach_module_load_facets(module)
 
 
@@ -344,15 +388,33 @@ def build_module_load_facets(module, filename=None):
     """
     Produce the load-time pragma, compiler, and reader for ``module``.
 
-    A default :class:`ModulePragma` is built and bound as ``__pragma__``
-    first; the compiler and reader are then chained off it via ``from_pragma``
-    (each subscribing for later pragma changes) and bound as load facets.
-    This is the single chokepoint where the pragma source is resolved.
+    When all three facets are already bound on the module (a prior load
+    ran with ``detach=False``), they are reused as-is rather than
+    rebuilt, so consecutive loads share one pragma lineage, one compiler
+    (and its minted-code registry), and one reader.  The compiler's
+    filename is refreshed so code minted by this load attributes
+    backtrace positions to the current source file.
+
+    Otherwise a default :class:`ModulePragma` is built and bound as
+    ``__pragma__`` first; the compiler and reader are then chained off
+    it via ``from_pragma`` (each subscribing for later pragma changes)
+    and bound as load facets.  This is the single chokepoint where the
+    pragma source is resolved.
 
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     :param filename: optional source filename
     :return: the (compiler, reader) pair
     """
+
+    ns = vars(module)
+
+    compiler = ns.get('__compiler__')
+    reader = ns.get('__reader__')
+    if compiler is not None and reader is not None \
+            and ns.get('__pragma__') is not None:
+        if filename is not None:
+            compiler.filename = filename
+        return compiler, reader
 
     name = getattr(module, '__name__', '<module>')
 

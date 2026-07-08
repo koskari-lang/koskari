@@ -67,7 +67,7 @@ static PyObject *create_minimal_code(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
     Py_DECREF(instr);
     Py_DECREF(nspec);
     return code;

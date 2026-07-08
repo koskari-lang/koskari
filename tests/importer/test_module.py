@@ -141,7 +141,7 @@ class TestLoadModuleDemand(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-    def test_load_module_demand_retains_facets_when_interactive(self):
+    def test_load_module_demand_retains_facets_when_not_detaching(self):
         tmpdir = tempfile.mkdtemp(prefix='koskari_test_')
         try:
             path = os.path.join(tmpdir, 'facet_interactive.ki')
@@ -149,7 +149,7 @@ class TestLoadModuleDemand(unittest.TestCase):
                 fh.write('(define x 1)\n')
             mod = new_module('facet_interactive')
             init_module(mod, path)
-            load_module_demand(mod, interactive=True)
+            load_module_demand(mod, detach=False)
             ns = vars(mod)
             self.assertFalse(ns.ref('__compiler__').empty)
             self.assertFalse(ns.ref('__reader__').empty)

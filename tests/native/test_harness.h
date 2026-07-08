@@ -155,6 +155,7 @@ extern TestContext test_ctx;
   3. Call the function from test_harness.c
 */
 
+int run_arena_tests(void);
 int run_atom_tests(void);
 int run_pair_tests(void);
 int run_namespace_tests(void);

@@ -366,6 +366,11 @@ struct KosEvalState {
 
 #define KosEvalState_CurrentNamespace(es) KosEvalState_NAMESPACE(es)
 
+/* The current namespace, GC-revealed (tracked along its parent chain)
+   and INCREF'd, ready for storage. See KosNamespace_Reveal. */
+#define KosEvalState_RevealNamespace(es) \
+  KosNamespace_Reveal(KosEvalState_NAMESPACE(es))
+
 #define KosEvalState_StackPushRef(es, val) \
   KosStackBlock_PushRef(KosEvalState_BLOCK(es), (val))
 

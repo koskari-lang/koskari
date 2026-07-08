@@ -15,21 +15,25 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
            : "NULL",
        (void *) KosDynNode_PARENT(gen));
+
   if (KosEvalState_DYN_TOP(es)) {
     SAY("[gen] freeze chain from dyn_top: ");
     for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
       SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
     SAY("(end)");
   }
+
   if (! KosEvalState_DYN_TOP(es)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_gen_freeze: no dyn_top");
     return -1;
   }
+
   for (node = KosEvalState_DYN_TOP(es); node; node = KosDynNode_PARENT(node)) {
     if (node == (KosDynNode *) gen)
       break;
   }
+
   if (! node) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_gen_freeze: gen not in chain from dyn_top");
@@ -43,6 +47,7 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
   /* 2. Remove ctx's active node and store it in GEN */
   ctx_active = KosEvalState_DYN_TOP(es);
   KosDynGen_ACTIVE(gen) = ctx_active;
+
   SAY("[gen] freeze storing in gen->active: chain ");
   for (n = ctx_active; n; n = KosDynNode_PARENT(n))
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
@@ -59,6 +64,7 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
   /* Release only when owner holds the gen; standalone gen is kept for resume */
   if (owner)
     kos_dyngen_release(gen);
+
   SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p owner=%p gen=%p\n",
        (void *) KosEvalState_DYN_TOP(es),
        KosEvalState_DYN_TOP(es)
@@ -67,12 +73,15 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
        (void *) KosEvalState_FRAME(es),
        (void *) owner,
        (void *) gen);
+
   /* GEN is frozen back into the KPAG: drop the keepalive.  Done last, as it
      may run the owner's deallocation if no one else holds it (an abandoned
      generator cleans up here).  No reads of gen/owner follow. */
   kos_dyngen_keepalive_release(gen);
   return 0;
 }
+
+
 int kos_dyn_walk_handle_yield(KosEvalState *es) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
 
@@ -82,6 +91,7 @@ int kos_dyn_walk_handle_yield(KosEvalState *es) {
     SAYF("[gen] walk_handle_yield node=%p kind=%s hr=%d\n",
          (void *) node, kos_dynnode_kind_name(KosDynNode_KIND(node)),
          (int) hr);
+
     if (hr == KOS_HANDLE_CONSUMED) {
       if (KosDynNode_IS_GEN(node)) {
         SAYF("[gen] walk_handle_yield -> freeze at gen %p\n", (void *) node);
@@ -91,15 +101,20 @@ int kos_dyn_walk_handle_yield(KosEvalState *es) {
       SAY("[gen] walk_handle_yield -> consumed (non-GEN), return 0");
       return 0;
     }
+
     if (hr == KOS_HANDLE_ERROR) {
       return -1;
     }
+
     node = KosDynNode_PARENT(node);
   }
+
   PyErr_SetString(PyExc_RuntimeError,
                   "yield outside generator: no generator boundary on chain");
   return -1;
 }
+
+
 KosOpResult kos_dyn_exception_unwind(
     KosEvalState *es,
     KosDynNode *node) {
@@ -124,6 +139,8 @@ KosOpResult kos_dyn_exception_unwind(
       return EVAL_NORMAL();
   }
 }
+
+
 KosOpResult kos_dyn_pop_nonbarrier_top(
     KosEvalState *es,
     KosXferEvent event) {

@@ -187,7 +187,8 @@ async def run_file_async(
     :param mod: koskari Module to execute into
     :param filename: path to the .ki source file or .kio when execute_kio
     :param execute_kio: when True, load precompiled .kio bodies
-    :param interactive: passed to load_module_async; retain load facets when True
+    :param interactive: when True, retain load facets for the ongoing
+        session (the module still seals on completion)
     """
 
     from .launch import run_file
@@ -206,8 +207,8 @@ async def run_command_async(mod, command, interactive=False):
 
     :param mod: koskari Module to execute into
     :param command: koskari source text from ``-c`` / ``--command``
-    :param interactive: passed to load_module_source_async; retain load
-        facets when True
+    :param interactive: when True, retain load facets for the ongoing
+        session (the module still seals on completion)
     """
 
     from .launch import run_command

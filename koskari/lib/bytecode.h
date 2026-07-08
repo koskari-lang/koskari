@@ -19,8 +19,10 @@
 
    Bytecode storage object for Koskari. The KosCode type holds
    immutable bytecode instructions, a constants pool, and a
-   delta-encoded positions table. After initialization, the code
-   and constant pool memory is marked read-only via mprotect.
+   delta-encoded positions table in a single unified block. When
+   constructed with protect, the block is page-aligned and marked
+   read-only via mprotect; the block may later be relocated into a
+   shared, singly-sealed KosArena (see arena.h) via pack_into.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -127,6 +129,9 @@ typedef enum KosCodeFlag {
   KOS_CODE_YIELDS = 0x01,
   /** code contains FAST-slot opcodes at root namespace scope */
   KOS_CODE_USES_FAST = 0x02,
+  /** unified block is page-aligned and mprotect(PROT_READ)-sealed;
+      teardown must unseal before freeing */
+  KOS_CODE_PROTECTED = 0x04,
 } KosCodeFlag;
 
 
@@ -236,6 +241,14 @@ struct KosCode {
 
   PyCodeObject *faux;   /* faux code object for tracebacks */
   PyObject *extras;     /* extra metadata (PyDict) */
+
+  /* strong reference to the owning KosArena when the unified block has
+     been relocated into a shared arena; NULL for an unpacked object.
+     When set, the arena owns the block memory and teardown must not
+     free it. Non-GC leaf, never part of a cycle. */
+  PyObject *arena;
+
+  PyObject *weakreflist;  /* weak reference support */
 };
 
 
@@ -249,6 +262,8 @@ struct KosCode {
    :param instr: sequence of (opcode, argument) pairs
    :param name: function/expression name (PyUnicode or NULL)
    :param filename: source filename (PyUnicode or NULL)
+   :param protect: nonzero to page-align the unified block and seal it
+     read-only with mprotect; zero for a plain writable malloc block
 
    :return: new KosCode reference, or NULL on error
 */
@@ -256,7 +271,8 @@ PyObject *KosCode_New(
     PyObject *nspec,
     PyObject *instr,
     PyObject *name,
-    PyObject *filename);
+    PyObject *filename,
+    int protect);
 
 
 /* === Accessors === */
@@ -384,6 +400,9 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
 #define KosCode_USES_FAST(c)                    \
   (KosCode_FLAGS(c) & KOS_CODE_USES_FAST)
 
+#define KosCode_PROTECTED(c)                    \
+  (KosCode_FLAGS(c) & KOS_CODE_PROTECTED)
+
 #define KosCode_NAME(c)                         \
   (((KosCode *) c)->name)
 
@@ -443,6 +462,9 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
 
 #define KosCode_FAUX(c)                         \
   (((KosCode *) c)->faux)
+
+#define KosCode_ARENA(c)                        \
+  (((KosCode *) c)->arena)
 
 #define KosCode_EXTRAS(c)                       \
   (((KosCode *) c)->extras)

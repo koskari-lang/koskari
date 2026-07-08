@@ -88,6 +88,12 @@ static int initialize_types(void) {
         return -1;
     }
 
+    /* Initialize the arena type */
+    if (koskari_arena_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize arena type\n");
+        return -1;
+    }
+
     /* Initialize pair types (pair, nil) */
     if (koskari_pair_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize pair types\n");
@@ -262,6 +268,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Run all test suites */
+    run_arena_tests();
     run_atom_tests();
     run_pair_tests();
     run_namespace_tests();
