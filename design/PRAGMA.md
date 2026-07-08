@@ -87,7 +87,7 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `compiler/convert-fast` | compiler | `True` | `True` | bool | VAR→FAST local-access lowering pass |
 | `compiler/compress` | compiler | `False` | `False` | bool | bytecode compression pass — registered but inert (pass not yet built) |
 | `compiler/protect-code` | compiler | `False` | `True` | bool | each Code block page-aligned and mprotect-sealed read-only at construction (mention-to-enable) |
-| `compiler/pack-module` | compiler | on, unbounded | on, unbounded | bool + `max-count:` / `max-bytes:` | durable code relocated into shared, singly-sealed arenas when the module seals — see [code-object-arena-packing.md](code-object-arena-packing.md) |
+| `compiler/pack-module` | compiler | on, unbounded | on, unbounded | bool + `max-count:` / `max-bytes:` | durable code relocated into shared, singly-sealed arenas when the module seals — see [archive/code-object-arena-packing.md](archive/code-object-arena-packing.md) |
 | `pragma/strict-settings` | pragma | `True` | `True` | bool | an unknown setting raises (else warns) |
 | `pragma/strict-watchers` | pragma | `True` | `True` | bool | a watcher error raises (else warns) |
 

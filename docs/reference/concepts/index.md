@@ -16,6 +16,7 @@ choosing-an-async-construct
 layout-and-s-expressions
 macro-matching-and-hygiene
 pragma
+code-sealing
 idiomatic-koskari
 ```
 
@@ -32,4 +33,5 @@ idiomatic-koskari
 | [Layout and s-expressions](layout-and-s-expressions.md) | Layout vs s-expr surfaces, YAML/JSON mental model, three authoring forms |
 | [Macro matching and hygiene](macro-matching-and-hygiene.md) | Pattern match at expand time, datum forms and wrappers |
 | [Pragmas and feature settings](pragma.md) | Setting a pragma, the `reader/*` / `compiler/*` / `pragma/*` settings and their values |
+| [Code sealing and arena packing](code-sealing.md) | Read-only bytecode, the `compiler/protect-code` / `compiler/pack-module` pragmas, arena pinning, per-expression sealing costs |
 | [Idiomatic Koskari](idiomatic-koskari.md) | Prefer the direct form: `item-slice`, dotted `set!`, `define-values`, `None?`, `unless`/`when` over Python-shaped assemblies |

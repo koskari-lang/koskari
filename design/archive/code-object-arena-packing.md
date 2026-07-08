@@ -1,15 +1,18 @@
 # Code Object Memory: Sealing and Arena Packing
 
+**Status:** Implemented (archived 2026-07-07; PR #90). Canonical summary:
+[PRAGMA.md](../PRAGMA.md) settings table and the user-facing
+[code sealing concepts page](../../docs/reference/concepts/code-sealing.md).
+Implementation plan and deviations log:
+[code-object-arena-packing-plan.md](code-object-arena-packing-plan.md).
+The `.kio` and REPL-repack open questions remain open follow-ups.
+
 Design for how KosCode bytecode blocks are allocated, protected, and packed.
 Introduces two module pragmas -- `compiler/protect-code` and
 `compiler/pack-module` -- that together let a deployment trade memory footprint
 against tamper-resistance without changing any source. For the pragma surface
-and model see [PRAGMA.md](PRAGMA.md); for the KosCode block layout see
-[interpreter/](interpreter/) and `koskari/lib/bytecode.c`.
-
-Status: implemented (see
-[code-object-arena-packing-plan.md](code-object-arena-packing-plan.md) for the
-implementation plan; the `.kio` and REPL-repack open questions remain).
+and model see [PRAGMA.md](../PRAGMA.md); for the KosCode block layout see
+[interpreter/](../interpreter/) and `koskari/lib/bytecode.c`.
 
 
 ## Motivation
@@ -358,7 +361,7 @@ differing only in arena membership: an arena of one versus an arena of N.
 * A global arena registry or back-references from arenas to code objects.
   Introspection is per-arena size only.
 * Region/`push`/`pop` scoping of either pragma; the module is the unit (use a
-  submodule for finer scope), consistent with [PRAGMA.md](PRAGMA.md).
+  submodule for finer scope), consistent with [PRAGMA.md](../PRAGMA.md).
 
 
 ## Open questions

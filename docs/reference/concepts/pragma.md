@@ -93,7 +93,8 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   object's bytecode storage is sealed read-only at the OS level the moment it
   is built. On, a stray or hostile write to live bytecode faults instead of
   corrupting the interpreter, at the cost of a full memory page per code
-  object. A bare `[compiler/protect-code]` turns it on.
+  object. A bare `[compiler/protect-code]` turns it on. See
+  [Code sealing and arena packing](code-sealing.md).
 - **`compiler/pack-module`** *(default on)* — whether the module's surviving
   code objects are compacted into shared read-only storage when the module
   finishes loading. On — the baseline — a loaded module's functions share one
@@ -105,6 +106,9 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   (pragma [compiler/pack-module True max-count: 32])
   (pragma [compiler/pack-module False])
   ```
+
+  See [Code sealing and arena packing](code-sealing.md) for the model
+  and its tradeoffs.
 
 ### Pragma machinery
 

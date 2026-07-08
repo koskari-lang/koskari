@@ -103,7 +103,7 @@ These appear in [language/special-forms.md](language/special-forms.md) or older 
 
 ### Types (`koskari.lib`)
 
-`symbol`, `keyword`, `pair` / `nil`, `gensym`, namespaces (`Namespace`, `ModuleNamespace`, `CollectorNamespace`, …), `Ref` variants (`AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`, `ParamRef`), `Formals`, `values`, `Code`, `Function`, `Expression`, `Coroutine`, `AsyncGenerator`, continuations, **`defer`**, `Domain`, operand `Stack`, etc. See [api/types.md](api/types.md).
+`symbol`, `keyword`, `pair` / `nil`, `gensym`, namespaces (`Namespace`, `ModuleNamespace`, `CollectorNamespace`, …), `Ref` variants (`AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`, `ParamRef`), `Formals`, `values`, `Code`, `Arena`, `Function`, `Expression`, `Coroutine`, `AsyncGenerator`, continuations, **`defer`**, `Domain`, operand `Stack`, etc. See [api/types.md](api/types.md).
 
 ### Builtins (bootstrap + `koskari.lib`)
 
@@ -111,7 +111,8 @@ Loaded via **`koskari.bootstrap.make_builtins()`** / **`make_builtins_demand()`*
 
 ### Bytecode and compiler
 
-- **4-byte** instructions; constant pool; delta **position** table; **extent** table; **`mprotect`** read-only code after init.
+- **4-byte** instructions; constant pool; delta **position** table; **extent** table — all in one unified block per `Code`.
+- **Sealing and arena packing** ([PRAGMA.md](PRAGMA.md); archived design: [archive/code-object-arena-packing.md](archive/code-object-arena-packing.md)): `compiler/protect-code` (baseline off) seals each block page-aligned **`mprotect(PROT_READ)`** at construction; `compiler/pack-module` (baseline on) relocates a module's durable code into a shared, singly-sealed **`Arena`** at module seal (`Compiler.seal()`, weakref registry over `Compiler.complete`). Default loads run off/on: compact, read-only at rest. Loaders take `seal=` / `detach=` completion flags; the bootstrap builtins seal into a single arena.
 - Pipeline: parse (reader) → expand macros → compile specials → **`Compiler.complete`** (including **`compress`** peephole, VAR→FAST). “Optimize” as a separate phase is not a distinct pass beyond this.
 - Components: `koskari.compile` (`Compiler`, `Code`, fragments).
 

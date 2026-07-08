@@ -1,5 +1,7 @@
 # Code Object Arena Packing: Implementation Plan
 
+**Status:** Implemented (archived 2026-07-07; PR #90).
+
 Companion to [code-object-arena-packing.md](code-object-arena-packing.md).
 Steps are ordered by build dependency: shared C groundwork first, then the
 new arena type and KosCode changes, then the pragma surface, the compiler
@@ -300,7 +302,7 @@ they hold the object plus an integer pc and re-derive the buffer on resume.
 
 Following the register-a-function pattern of the existing settings
 (`settings.py:50-115`) and the baseline/bare-key distinction from
-[PRAGMA.md](PRAGMA.md):
+[PRAGMA.md](../PRAGMA.md):
 
 ```python
 @pragma_setting("compiler/protect-code", False)
@@ -507,7 +509,7 @@ reproducer asserting the correct behavior, never a characterization pin.
 
 ## Step 10: documentation and corpus
 
-* [PRAGMA.md](PRAGMA.md): two new rows in the settings table
+* [PRAGMA.md](../PRAGMA.md): two new rows in the settings table
   (`compiler/protect-code`, baseline `False`, bare-key `True`;
   `compiler/pack-module`, baseline on/unbounded, options `max-count` /
   `max-bytes`).

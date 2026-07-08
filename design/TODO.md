@@ -166,23 +166,6 @@ Reuses `ModulePragma.rebuild` wholesale.
 
 Ref: [language/pragma-package.md](language/pragma-package.md); [PRAGMA.md](PRAGMA.md).
 
-### Code object sealing and arena packing
-
-Make KosCode page-sealing optional and, when wanted, cheap. Two module pragmas:
-`compiler/protect-code` (boolean) gates whether each KosCode block is
-page-aligned and `mprotect(PROT_READ)`-sealed at construction (today's behavior);
-`compiler/pack-module` (boolean + `max-count` / `max-bytes` options) relocates a
-module's durable code objects into shared, singly-sealed `KosArenaAlloc` segments
-at module seal. Default module loads run **off/on** (compact, protected at rest);
-REPL lines drop to **off/off**. Collection uses the per-module compiler as a
-weakref registry over `Compiler.complete` (imports excluded structurally,
-ephemeral code drops off, nested code captured flat). Prerequisites: a weakref
-slot and an `arena` strong-ref field on `KosCode`. Verify `KosDynFrame_CODE`
-holds a strong KosCode ref (suspended-frame relocation safety depends on it).
-Open: whether the `.kio` deserializer should build straight into an arena.
-
-Ref: [code-object-arena-packing.md](code-object-arena-packing.md); [PRAGMA.md](PRAGMA.md).
-
 ---
 
 ## Import / loader
