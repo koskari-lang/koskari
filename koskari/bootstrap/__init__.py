@@ -267,6 +267,8 @@ def make_bootstrap():
     _bind('@', _op.matmul)
     _bind('<<', _op.lshift)
     _bind('>>', _op.rshift)
+    _bind('itemgetter', _op.itemgetter)
+    _bind('attrgetter', _op.attrgetter)
 
     for sym, fn in _BUILTIN_REGISTRY.items():
         _bind(sym, fn)

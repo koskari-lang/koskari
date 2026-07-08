@@ -679,7 +679,7 @@ define list_tags []:
 
     define ranked:
         (sorted (seen.items)
-            key: (demand { #((- (item %1 1)) (item %1 0)) }))
+            key: { #((- (item %1 1)) (item %1 0)) })
 
     define intent #[]
     define structural #[]

@@ -152,4 +152,29 @@ define-syntax compile/item-slice:
       (item sequence (call build-slice args ...))
 
 
+let [[py-sorted sorted]]:
+  import-from .lib Function
+
+  define-global sorted [iterable key: None reverse: False]:
+    """
+    Koskari wrapper for Python's sorted function. Automatically
+    wraps the key argument as a demand.
+
+    Returns a new sorted list.
+
+    Example::
+
+      (sorted iterable key: (itemgetter 1 0))
+
+    Example using a thunk::
+
+      (sorted iterable key: { #((item %1 1) (item %1 0)) })
+    """
+
+    (py-sorted
+      iterable
+      key: (and key (demand key))
+      reverse: reverse)
+
+
 ;; The end.

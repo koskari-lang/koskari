@@ -21,6 +21,8 @@ define-syntax compile/help:
   syntax-rules [pragma]:
     case (help obj ns):
       (compile/call help obj ns)
+    case (help (compile/attr obj ...)):
+      (compile/call help (attr obj ...) (globals))
     case (help obj):
       (compile/call help 'obj (globals))
     case (help):
