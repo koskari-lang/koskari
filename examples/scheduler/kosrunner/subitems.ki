@@ -92,8 +92,8 @@ define layout/config layout/inline-block
 
 define-syntax handler:
     syntax-rules []:
-        case (handler (tp name) [formals] body ...):
-            (.handler name (lambda [formals] body ...))
+        case (handler (tp name) [formals ...] body ...):
+            (.handler name (lambda [formals ...] body ...))
         case (handler (tp name) [] body ...):
             (.handler name (lambda [] body ...))
 
@@ -103,8 +103,8 @@ define-syntax handler:
 ;; the method; others simply never receive the sub-item.
 define-syntax on-error:
     syntax-rules []:
-        case (on-error (tp name) [formals] body ...):
-            (.on-error name (lambda [formals] body ...))
+        case (on-error (tp name) [formals ...] body ...):
+            (.on-error name (lambda [formals ...] body ...))
         case (on-error (tp name) [] body ...):
             (.on-error name (lambda [] body ...))
 

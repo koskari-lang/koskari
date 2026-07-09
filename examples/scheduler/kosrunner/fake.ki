@@ -20,8 +20,14 @@ import-from .job Config Job
 define logger (logging.getLogger "kosrunner.fake")
 
 
-define-class FakeConfig [Config]:
-    """A settings bag standing in for a real broker config."""
+define-dataclass FakeConfig [Config]:
+    """
+    A small dataclass config standing in for a real broker config -- the
+    smallest example of a variety declaring its shape and defaults.
+    """
+
+    define [note :: str] ""
+    define [delay :: int] 0
 
 
 define-class FakeJob [Job]:

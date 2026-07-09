@@ -16,7 +16,7 @@ import-from .job Config Job JobSet
 import-from .subitems:
     jobset job config handler on-error with-subitems layout/config
     config/logging configure-logging
-import-from .server HttpServer get-server
+import-from .server HttpServer get-server ServerConfig
 import-from .fake FakeConfig FakeJob config/fake job/fake
 import-from .cron CronConfig CronJob config/cron job/cron
 import-from .kafka KafkaConfig KafkaJob config/kafka job/kafka
@@ -31,7 +31,7 @@ declare-exports [
     layout/config
     config/logging configure-logging
 
-    HttpServer get-server
+    HttpServer get-server ServerConfig
 
     FakeConfig FakeJob config/fake job/fake
     CronConfig CronJob config/cron job/cron

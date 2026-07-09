@@ -14,24 +14,22 @@
 
 import logging
 
+import-from dataclasses replace
+
 
 define logger (logging.getLogger "kosrunner")
 
 
 define-class Config []:
     """
-    A named settings bag. `merge` produces effective settings for a job:
-    this config's settings overlaid with per-job overrides.
+    Base config. Subclasses are dataclasses that declare their fields,
+    valid shape, and sensible defaults. This base supplies the dataclass
+    -style `merge`: a NEW config instance combining a base's fields with
+    per-job overrides (unknown fields raise).
     """
 
-    define __init__ [self **: settings]:
-        set! self.settings settings
-
-
     define merge [self **: overrides]:
-        define out (dict self.settings)
-        (out.update overrides)
-        out
+        (replace self **: overrides)
 
 
 define-class Job []:
@@ -42,7 +40,7 @@ define-class Job []:
     """
 
     define __init__ [self]:
-        set! self.config #{}
+        set! self.config None
         set! self.callback None
         set! self.enabled True
         set! self.running False
@@ -53,12 +51,17 @@ define-class Job []:
 
     define configure [self via: None **: overrides]:
         """
-        The `config:` sub-item. `via` is the resolved base Config (the
-        type default or a named one); overrides refine it. The effective
-        settings land on self.config.
+        The `config:` sub-item. `via` selects a base Config (the type
+        default or a named one); with no `via` the job's current config is
+        refined instead. Overrides are layered on by dataclass merge, and
+        the resulting config INSTANCE is stored on the job.
         """
 
-        set! self.config (if via (via.merge **: overrides) (dict overrides))
+        define base (if via via self.config)
+        when (None? base):
+            raise (ValueError
+                "config override has no base config to merge onto")
+        set! self.config (base.merge **: overrides)
         self
 
 

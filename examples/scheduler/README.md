@@ -76,9 +76,16 @@ config <type> [name]:
     ...
 ```
 
-The block is data. The **first** config of a type (whether named or not)
-becomes that type's **default**; further configs of the same type must be
-named and are used only when a job asks for one by name.
+The block is data. Each config type is a **dataclass** that declares its
+valid fields, their types, and sensible defaults, so the `key: value` lines
+are checked against that shape: unknown keys and missing required fields are
+caught when the config is built, not silently at read time. Fields you omit
+take the dataclass default (e.g. a kafka config gets `security_protocol
+"PLAINTEXT"`, `auto_offset_reset "latest"` for free).
+
+The **first** config of a type (whether named or not) becomes that type's
+**default**; further configs of the same type must be named and are used only
+when a job asks for one by name.
 
 ```koskari
 config kafka:                 ; unnamed -> the default kafka config
@@ -87,6 +94,10 @@ config kafka:                 ; unnamed -> the default kafka config
 config kafka audit-cluster:   ; named -> addressable, does not steal default
     servers: "audit-1:9092"
 ```
+
+A job's `config:` sub-item **merges** onto the base it selects: the result is
+a new config instance with the base's fields plus the job's overrides, every
+other field still carrying its default.
 
 ### Jobs
 
@@ -233,7 +244,7 @@ by name.
 |---|---|
 | [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/enabled, `jobset` back-ref), `JobSet` (tracking + control plane) |
 | [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
-| [kosrunner/server.ki](kosrunner/server.ki) | `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action helpers |
+| [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action helpers |
 | [kosrunner/cron.ki](kosrunner/cron.ki) | `CronJob` + `config/cron` / `job/cron` (aiocron) |
 | [kosrunner/kafka.ki](kosrunner/kafka.ki) | `KafkaJob` + `on-error` + `config/kafka` / `job/kafka` (aiokafka) |
 | [kosrunner/webhook.ki](kosrunner/webhook.ki) | `WebhookJob` + `config/webhook` / `job/webhook` (mounts routes on a shared `HttpServer`) |
@@ -246,15 +257,19 @@ by name.
 A variety is a `Job` subclass plus two syntaxes. Nothing in the core
 enumerates types, so this is the whole recipe:
 
-1. Subclass `Job`; implement `start`/`stop`, and store the trigger key in
-   `__init__`. Read effective settings from `self.config`, call `self.callback`
-   as the handler. Add variety sub-item methods (like kafka's `on-error`) as
-   needed.
-2. Define `config/<type>` (build the config object, bind the name, run the
+1. Declare `<Type>Config` as a `define-dataclass` subclass of `Config` (or of
+   `ServerConfig` if it needs a shared HTTP server) -- its fields, types, and
+   defaults are the config's contract. The base `Config` supplies dataclass
+   `merge` for free.
+2. Subclass `Job`; implement `start`/`stop`, and store the trigger key in
+   `__init__`. Read effective config from `self.config` by attribute
+   (`self.config.servers`), call `self.callback` as the handler. Add variety
+   sub-item methods (like kafka's `on-error`) as needed.
+3. Define `config/<type>` (construct the dataclass, bind the name, run the
    `&default/<type>` guard) with the `()`-sentinel unnamed case.
-3. Define `job/<type>` (parse the header, construct the job, wire the default
+4. Define `job/<type>` (parse the header, construct the job, wire the default
    config, tag-inject sub-items).
-4. Export all of it. Remember: a macro's free names resolve at the **use
+5. Export all of it. Remember: a macro's free names resolve at the **use
    site**, so everything a `job/<type>` or `config/<type>` expansion names
    (its class, helpers) must be exported for `import-all-from kosrunner`.
 

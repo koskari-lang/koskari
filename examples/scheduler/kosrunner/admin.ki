@@ -14,15 +14,17 @@
 
 import logging
 
-import-from .job Config Job
-import-from .server get-server
+import-from .job Job
+import-from .server get-server ServerConfig
 
 
 define logger (logging.getLogger "kosrunner.admin")
 
 
-define-class AdminConfig [Config]:
-    """Settings bag for the control-plane server (host, port, prefix)."""
+define-dataclass AdminConfig [ServerConfig]:
+    """Config for the control-plane server; prefix defaults to /admin."""
+
+    define [prefix :: str] "/admin"
 
 
 define-class AdminJob [Job]:
@@ -37,7 +39,7 @@ define-class AdminJob [Job]:
     define start [self]:
         set! self.running True
         define server (get-server self.config)
-        define prefix (self.config.get "prefix" "/admin")
+        define prefix self.config.prefix
         define js self.jobset
 
         (server.add-listing prefix "jobs"

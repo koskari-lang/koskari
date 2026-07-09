@@ -21,8 +21,10 @@ import-from .subitems with-subitems
 define logger (logging.getLogger "kosrunner.cron")
 
 
-define-class CronConfig [Config]:
-    """Settings bag for cron (e.g. timezone); usually left default."""
+define-dataclass CronConfig [Config]:
+    """Cron config; usually left default (cron jobs carry no config)."""
+
+    define [timezone :: str] None
 
 
 define-class CronJob [Job]:

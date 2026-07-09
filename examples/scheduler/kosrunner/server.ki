@@ -20,6 +20,18 @@ import-from .job Config
 define logger (logging.getLogger "kosrunner.server")
 
 
+define-dataclass ServerConfig [Config]:
+    """
+    Shared shape for HTTP-server-backed configs (webhook, admin). The
+    server is interned by host:port, so two of these sharing a port share
+    one server; each mounts under its own prefix.
+    """
+
+    define [host :: str] "0.0.0.0"
+    define [port :: int] 8080
+    define [prefix :: str] ""
+
+
 define-class HttpServer []:
     """
     A shared FastAPI/uvicorn server. It is interned by host:port (see
@@ -98,11 +110,9 @@ define _servers #{}
 
 
 define get-server [config]:
-    define host (config.get "host" "0.0.0.0")
-    define port (config.get "port" 8080)
-    define key f"{host}:{port}"
+    define key f"{config.host}:{config.port}"
     unless (_servers.get key):
-        (set! (item _servers key) (HttpServer host port))
+        (set! (item _servers key) (HttpServer config.host config.port))
     (item _servers key)
 
 

@@ -14,18 +14,43 @@
 
 import logging
 
+import-from dataclasses field
+import-from typing Any
+
+import-from aiokafka AIOKafkaConsumer
+import-from aiokafka.helpers create_ssl_context
+
 import-from .job Config Job
 
 
 define logger (logging.getLogger "kosrunner.kafka")
 
 
-define-class KafkaConfig [Config]:
-    """Settings bag for a kafka broker connection (servers, protocol...)."""
+define-dataclass KafkaConfig [Config]:
+    """
+    A kafka broker connection: the full consumer surface, with sensible
+    defaults, declared in one place.
+    """
+
+    define [servers :: str] (field)                    ; required
+    define [group_id :: str] None
+
+    define [security_protocol :: str] "PLAINTEXT"
+    define [ssl_context :: Any] None
+    define [ssl_cafile :: str] None
+
+    define [sasl_mechanism :: str] None
+    define [sasl_plain_username :: str] None
+    define [sasl_plain_password :: str] None
+
+    define [auto_offset_reset :: str] "latest"
+    define [enable_auto_commit :: bool] True
 
 
 define-class KafkaJob [Job]:
-    """Consumes one topic; dispatches each message to the handler."""
+    """
+    Consumes one topic; dispatches each message to the handler
+    """
 
     define __init__ [self topic]:
         (Job.__init__ self)
@@ -42,15 +67,29 @@ define-class KafkaJob [Job]:
 
 
     define make-consumer [self]:
-        import-from aiokafka AIOKafkaConsumer
+
         define c self.config
+
+        define ssl_context c.ssl_context
+        unless ssl_context:
+            when (or c.ssl_cafile (has? c.security_protocol "SSL")):
+                set! ssl_context (create_ssl_context cafile: c.ssl_cafile)
+
         (AIOKafkaConsumer
             self.topic
-            bootstrap_servers: (c.get "servers")
-            group_id: (c.get "group_id")
-            security_protocol: (c.get "security_protocol" "PLAINTEXT")
-            auto_offset_reset: (c.get "auto_offset_reset" "latest")
-            enable_auto_commit: (c.get "enable_auto_commit" True))
+
+            bootstrap_servers: c.servers
+            group_id: c.group_id
+
+            security_protocol: c.security_protocol
+            ssl_context: ssl_context
+
+            sasl_mechanism: c.sasl_mechanism
+            sasl_plain_username: c.sasl_plain_username
+            sasl_plain_password: c.sasl_plain_password
+
+            auto_offset_reset: c.auto_offset_reset
+            enable_auto_commit: c.enable_auto_commit)
 
 
     define _consume [self]:
