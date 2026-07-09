@@ -50,6 +50,8 @@ define-class AdminJob [Job]:
             (lambda [name] (js.enable name) #{enabled: name}))
         (server.add-action prefix "disable"
             (lambda [name] (js.disable name) #{disabled: name}))
+        (server.add-route prefix "shutdown"
+            (lambda [req] (js.shutdown) #{ok: True}))
 
         (server.start)
         (logger.info "admin control plane mounted at %s" prefix)

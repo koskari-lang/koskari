@@ -116,7 +116,8 @@ define-class HttpServer []:
 
     define stop [self]:
         when self._server:
-            (self._server.shutdown)
+            set! self._server.should_exit True   ; makes uvicorn's serve() return
+            (self._server.shutdown)              ; graceful: drain in-flight requests
             set! self._server None
 
 
@@ -133,6 +134,20 @@ define get-server [config]:
         (set! (item _servers key) server)
 
     server
+
+
+define stop-all-servers []:
+    """
+    Stop every interned server. Called at jobset teardown so the shared
+    uvicorn serve() tasks return and the loop can drain and exit.
+    """
+
+    for-each [server (_servers.values)]:
+        try:
+            (server.stop)
+        except [Exception]:
+            (logger.error "server stop failed" exc_info: True)
+    (_servers.clear)
 
 
 ;; The end.

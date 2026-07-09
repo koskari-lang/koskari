@@ -12,7 +12,9 @@
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 
+import asyncio
 import logging
+import signal
 
 import-from dataclasses replace
 
@@ -94,6 +96,7 @@ define-class JobSet []:
     define __init__ [self name]:
         set! self.name name
         set! self.jobs #{}
+        set! self._stopping None          ; asyncio.Event, live only while running
 
 
     define register [self name job]:
@@ -139,22 +142,74 @@ define-class JobSet []:
         for-each [[name job] (self.jobs.items)]:
             when job.running:
                 (logger.info "  stop: %s" name)
-                (job.stop)
+                try:
+                    (job.stop)
+                except [Exception]:
+                    (logger.error "stop failed: %s" name exc_info: True)
+
+
+    define shutdown [self]:
+        """
+        Signal the run loop to tear down. Safe to call from a request
+        handler or a signal handler -- it only trips the event; the actual
+        teardown happens once, in __call__'s finally.
+        """
+
+        (logger.info "shutdown requested: %s" self.name)
+        when self._stopping:
+            (self._stopping.set)
+
+
+    define _install-signals [self]:
+        define loop (asyncio.get_running_loop)
+        for-each [sig #[signal.SIGINT signal.SIGTERM]]:
+            try:
+                (loop.add_signal_handler sig (demand self.shutdown))
+            except [NotImplementedError]:
+                (logger.warning "signals unsupported on this loop: %s" sig)
+
+
+    define _remove-signals [self]:
+        define loop (asyncio.get_running_loop)
+        for-each [sig #[signal.SIGINT signal.SIGTERM]]:
+            try:
+                (loop.remove_signal_handler sig)
+            except [Exception]:
+                None
+
+
+    define _teardown [self]:
+        (self._remove-signals)
+        (self.stop)
+        ;; local import dodges the job<->server load-time cycle
+        import-from .server stop-all-servers
+        (stop-all-servers)
 
 
     define __call__ [self heartbeat: 3600 snore: False]:
         """
         Start enabled jobs and keep the process alive. Job start methods
-        schedule their work on the ambient event loop; the heartbeat loop
-        holds it open.
+        schedule their work on the ambient event loop; the run loop holds
+        it open until a shutdown is signalled (admin route or SIGINT/
+        SIGTERM), then tears everything down on the way out.
         """
 
+        set! self._stopping (asyncio.Event)
+        (self._install-signals)
         (self.start)
-        while True:
-            sleep heartbeat
-            (logger.debug "heartbeat")
-            when snore:
-                (print "zzz")
+        try:
+            while (not (self._stopping.is_set)):
+                try:
+                    ;; defer holds the coroutine so wait_for gets a real
+                    ;; awaitable, not an auto-awaited value -- same reason
+                    ;; the kafka job defers its consume loop.
+                    (asyncio.wait_for (defer self._stopping.wait) heartbeat)
+                except [asyncio.TimeoutError]:
+                    (logger.debug "heartbeat")
+                    when snore:
+                        (print "zzz")
+        finally:
+            (self._teardown)
 
 
 ;; The end.
