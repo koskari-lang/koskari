@@ -415,13 +415,6 @@ class CompilerMode(IntEnum):
 
 
 _CHECK_SQUASHES = {
-    OpCode.KOS_OP_OBJECT_GE: OpCode.KOS_OP_CHECK_GE,
-    OpCode.KOS_OP_OBJECT_LE: OpCode.KOS_OP_CHECK_LE,
-    OpCode.KOS_OP_OBJECT_LT: OpCode.KOS_OP_CHECK_LT,
-    OpCode.KOS_OP_OBJECT_GT: OpCode.KOS_OP_CHECK_GT,
-    OpCode.KOS_OP_OBJECT_EQ: OpCode.KOS_OP_CHECK_EQ,
-    OpCode.KOS_OP_OBJECT_NE: OpCode.KOS_OP_CHECK_NE,
-    OpCode.KOS_OP_OBJECT_IN: OpCode.KOS_OP_CHECK_IN,
     OpCode.KOS_OP_OBJECT_NOT_IN: OpCode.KOS_OP_CHECK_NOT_IN,
     OpCode.KOS_OP_OBJECT_IS: OpCode.KOS_OP_CHECK_IS,
     OpCode.KOS_OP_OBJECT_IS_NOT: OpCode.KOS_OP_CHECK_IS_NOT,
@@ -431,6 +424,18 @@ _CHECK_SQUASHES = {
     OpCode.KOS_OP_EXCEPTION_MATCH: OpCode.KOS_OP_CHECK_EXCEPTION,
     OpCode.KOS_OP_NILP: OpCode.KOS_OP_CHECK_NIL,
 }
+
+
+_CHECK_VAR_SQUASHES = {
+    OpCode.KOS_OP_OBJECT_GE: OpCode.KOS_OP_CHECK_GE,
+    OpCode.KOS_OP_OBJECT_LE: OpCode.KOS_OP_CHECK_LE,
+    OpCode.KOS_OP_OBJECT_LT: OpCode.KOS_OP_CHECK_LT,
+    OpCode.KOS_OP_OBJECT_GT: OpCode.KOS_OP_CHECK_GT,
+    OpCode.KOS_OP_OBJECT_EQ: OpCode.KOS_OP_CHECK_EQ,
+    OpCode.KOS_OP_OBJECT_NE: OpCode.KOS_OP_CHECK_NE,
+    OpCode.KOS_OP_OBJECT_IN: OpCode.KOS_OP_CHECK_IN,
+}
+
 
 _SWITCH_SQUASHES = {
     OpCode.KOS_OP_CONST: OpCode.KOS_OP_SWITCH_EQ_CONST,
@@ -848,7 +853,8 @@ class Compiler:
                     continue
 
             elif (op == OpCode.KOS_OP_JUMP_FALSE):
-                prior = squished[-1][0]
+                prior, prior_arg = squished[-1]
+
                 if prior == OpCode.KOS_OP_CONST:
                     # jumping based on a constant value
                     truthy = not squished[-1][1]
@@ -863,6 +869,17 @@ class Compiler:
                     # into a single check jump
                     del squished[-1]
                     op = _CHECK_SQUASHES[prior]
+
+                elif prior in _CHECK_VAR_SQUASHES and prior_arg == 2:
+                    # here we're combining a var operand with a jump
+                    # into a single check jump. The CHECK variation only
+                    # takes two operands, so we need to pop the second one.
+
+                    # TODO: update the CHECK variations to be extra and
+                    # accept both the count and the jump target.
+
+                    del squished[-1]
+                    op = _CHECK_VAR_SQUASHES[prior]
 
             elif op == OpCode.KOS_OP_SWITCH_EQ:
                 prior = squished[-1]
