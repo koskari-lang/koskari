@@ -79,7 +79,8 @@ define-class HttpServer []:
     define start [self]:
         import uvicorn
         when self._server:
-            return
+            (return)
+
         (logger.info "starting server on %s:%i" self.host self.port)
         define config (uvicorn.Config
             self.app host: self.host port: self.port log_level: "info")
