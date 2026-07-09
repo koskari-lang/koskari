@@ -11,7 +11,6 @@
 (import-from random random seed)
 
 
-
 define-class LifeBoard []:
 
     define __init__ [self width height wrap: False]:
@@ -80,11 +79,6 @@ define-class LifeBoard []:
         #((% x w) (% y h))
 
 
-    define get-cell [self x y]:
-        define key (self.coord-key x y)
-        if (None? key) 0 (self.data.get key 0)
-
-
     define set-cell [self x y value]:
         define key (self.coord-key x y)
         unless (None? key):
@@ -92,34 +86,50 @@ define-class LifeBoard []:
 
 
     define group-coords [self x y]:
-        (product #((- x 1) x (+ x 1)) #((- y 1) y (+ y 1)))
-
-
-    define get-group [self x y]:
-        list-each [cell (self.group-coords x y)]:
-            self.get-cell *: cell
+        product #((- x 1) x (+ x 1)) #((- y 1) y (+ y 1))
 
 
     define age [self]:
-        define dat (dict)
-        define followup (set)
-        define key None
-        define x 0
-        define y 0
+        """
+        Advance one generation.
 
-        for-each [[key value] (self.tracked cleanup: False)]:
-            (set! (values x y) key)
-            (set! (item dat key) (life-rule (self.get-group x y)))
-            (followup.update (self.group-coords x y))
+        Scatter each live cell into a neighbour-count map, then decide
+        every candidate's fate from its count. Cells drawn last frame
+        that die are retained as 0 for one frame so the renderer can
+        blank them.
+        """
 
-        (followup.difference_update (self.data.keys))
+        define data self.data
+        define counts (dict)
 
-        for-each [[x y] followup]:
-            (set! key (self.coord-key x y))
-            unless (None? key):
-                (set! (item dat key) (life-rule (self.get-group x y)))
+        ;; Scatter: each live cell adds 1 to each of its eight neighbours.
+        for-each [[coord value] (data.items)]:
+          when value:
+            (define-values [x y] coord)
+            for-each [[cx cy] (self.group-coords x y)]:
+              unless (and (== cx x) (== cy y)):
+                (define key (self.coord-key cx cy))
+                unless (None? key):
+                  (set! (item counts key) (+ 1 (counts.get key 0)))
 
-        (set! self.data dat)
+        define new (dict)
+
+        ;; Survival ages the cell up; birth needs exactly three neighbours.
+        for-each [[key n] (counts.items)]:
+          define prev (data.get key 0)
+          define survives (<= 2 n 3)
+          if prev:
+            (set! (item new key) (if survives (+ prev 1) 0))
+          elif (== n 3):
+            (set! (item new key) 1)
+
+        ;; A cell drawn last frame but not resolved above just died; keep
+        ;; it (and any older marker) as 0 until a redraw clears it.
+        for-each [[coord value] (data.items)]:
+          unless (in coord new):
+            (set! (item new coord) 0)
+
+        (set! self.data new)
         self
 
 
@@ -129,23 +139,5 @@ define-class LifeBoard []:
         (clone.age)
 
 
-define life-rule [group]:
-    """
-    Next state for center cell from nine cells (3x3), Conway rules
-    """
-
-    set! group (tuple group)
-    define center (item group 4)
-    define living 0
-
-    for-each [val group]:
-        when val:
-            (set! living (+ living 1))
-
-    if center:
-        if (and (<= 3 living) (< living 5)) (+ center 1) 0
-    else:
-        if (== living 3) 1 0
-
-
 ;; The end.
+
