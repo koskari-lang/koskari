@@ -184,7 +184,21 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `VAR_STORE` fusion | Prior **`KOS_OP_CONST`** `value` immediately followed by **`KOS_OP_VAR_STORE`** `name` → **`KOS_OP_VAR_STORE_CONST`** with arg **`(name, value, None, None)`** (drop the **`CONST`**). Only the **immediate** prior instruction counts. |
 | Epilogue | If the stream does not end with **`KOS_OP_RETURN`**: if the last op is **`KOS_OP_CONST`** **`None`**, replace it with **`KOS_OP_RETURN`** **0**; otherwise append **`KOS_OP_RETURN`** **1**. |
 
-**`_CHECK_SQUASHES`** (prior opcode → opcode replacing the **`JUMP_FALSE`** pair):
+**`_CHECK_SQUASHES`** (prior opcode → **LABEL** opcode replacing the **`JUMP_FALSE`** pair; the fused opcode inherits the jump's label). These priors carry no operand count, so the fused check is a single-arg LABEL op:
+
+| Prior | Replaced with |
+|-------|----------------|
+| `KOS_OP_OBJECT_IN` | `KOS_OP_CHECK_IN` |
+| `KOS_OP_OBJECT_NOT_IN` | `KOS_OP_CHECK_NOT_IN` |
+| `KOS_OP_OBJECT_IS` | `KOS_OP_CHECK_IS` |
+| `KOS_OP_OBJECT_IS_NOT` | `KOS_OP_CHECK_IS_NOT` |
+| `KOS_OP_OBJECT_IS_INSTANCE` | `KOS_OP_CHECK_IS_INSTANCE` |
+| `KOS_OP_OBJECT_IS_SUBCLASS` | `KOS_OP_CHECK_IS_SUBCLASS` |
+| `KOS_OP_OBJECT_NOT` | `KOS_OP_JUMP_TRUE` |
+| `KOS_OP_EXCEPTION_MATCH` | `KOS_OP_CHECK_EXCEPTION` |
+| `KOS_OP_NILP` | `KOS_OP_CHECK_NIL` |
+
+**`_CHECK_VAR_SQUASHES`** (variadic comparison prior → **EXTRA** `(COUNT, LABEL)` check). The prior `OBJECT_*` carries its operand count; the fusion preserves it, emitting arg `(count, label, None, None)` so the chained comparison survives (`a < b < c` fuses just like `a < b`):
 
 | Prior | Replaced with |
 |-------|----------------|
@@ -194,14 +208,6 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `KOS_OP_OBJECT_GT` | `KOS_OP_CHECK_GT` |
 | `KOS_OP_OBJECT_EQ` | `KOS_OP_CHECK_EQ` |
 | `KOS_OP_OBJECT_NE` | `KOS_OP_CHECK_NE` |
-| `KOS_OP_OBJECT_IN` | `KOS_OP_CHECK_IN` |
-| `KOS_OP_OBJECT_NOT_IN` | `KOS_OP_CHECK_NOT_IN` |
-| `KOS_OP_OBJECT_IS` | `KOS_OP_CHECK_IS` |
-| `KOS_OP_OBJECT_IS_NOT` | `KOS_OP_CHECK_IS_NOT` |
-| `KOS_OP_OBJECT_IS_INSTANCE` | `KOS_OP_CHECK_IS_INSTANCE` |
-| `KOS_OP_OBJECT_IS_SUBCLASS` | `KOS_OP_CHECK_IS_SUBCLASS` |
-| `KOS_OP_OBJECT_NOT` | `KOS_OP_JUMP_TRUE` |
-| `KOS_OP_EXCEPTION_MATCH` | `KOS_OP_CHECK_EXCEPTION` |
 
 **`_SWITCH_SQUASHES`** (prior opcode → fused switch opcode):
 
@@ -211,7 +217,9 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `KOS_OP_VAR` | `KOS_OP_SWITCH_EQ_VAR` |
 | `KOS_OP_VAR_ATTR` | `KOS_OP_SWITCH_EQ_VAR_ATTR` |
 
-**Example.** `KOS_OP_OBJECT_EQ`, **`KOS_OP_JUMP_FALSE`** `L` → one **`KOS_OP_CHECK_EQ`** `L` (same label argument as the jump).
+**Examples.**
+- `KOS_OP_OBJECT_IS`, **`KOS_OP_JUMP_FALSE`** `L` → one **`KOS_OP_CHECK_IS`** `L` (same label argument as the jump).
+- `KOS_OP_OBJECT_EQ` `count`, **`KOS_OP_JUMP_FALSE`** `L` → one **`KOS_OP_CHECK_EQ`** `(count, L, None, None)` (count carried from the comparison, label from the jump).
 
 ### 1.9 BIND vs STORE: critical distinction
 
@@ -879,23 +887,23 @@ done:
 
 ## 9. Check jumps
 
-Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; jump locality applies.
+Check jumps: if the predicate does **not** hold, jump to the target label. Jump locality applies to every target. The six comparison checks (CHECK_EQ / NE / LT / LE / GT / GE) are **EXTRA** with a `(COUNT, LABEL)` row: `a0` is the operand count (≥ 2), `a1` is the target pc. They are variadic — the top `COUNT` operands are chain-compared left-to-right (e.g. `a < b < c`), and the jump is taken when the chain fails. The remaining checks (membership, identity, isinstance/issubclass, exception) take a single **LABEL** arg.
 
 ### KOS_OP_CHECK_EQ
 
-- **Style**: LABEL. Arg = target pc (post-compile).
+- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if left != right, jump to `arg`; else fall through. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label (fail/mismatch target); post-compile arg = pc.
+- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `==`; if the chain fails (any pair unequal), jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
+- **Invariants**: Jump locality for target. Uses `PyObject_RichCompareBool` (identity fast-path), matching the pre-fusion CHECK behavior.
+- **Compiler form:** Pre-compile arg = `(count, string label, None, None)` (label = fail/mismatch target); post-compile `a1` = pc.
 
-**Example:** Pattern match or guard: jump if not equal. Pool: 0 = 1, 1 = 2, 2 = 99, 3 = 0. Covered by `tests/lib/test_ceval.py`: `test_check_eq_jumps_on_mismatch`, `test_check_eq_continues_on_match`.
+**Example:** Pattern match or guard: jump if not equal. Pool: 0 = 1, 1 = 2, 2 = 99, 3 = 0. Covered by `tests/lib/opcode/test_checks.py`: `test_check_eq_jumps_on_mismatch`, `test_check_eq_continues_on_match`.
 
 | index | opcode  | arg | arg view | comment |
 |------:|---------|-----|----------|---------|
-| 0     | CONST   | 0   | 0 (1)    | stack: [..., left] |
-| 1     | CONST   | 1   | 1 (2)    | stack: [..., left, right] |
-| 2     | CHECK_EQ| 5   | 5 (-> 5) | if left != right → pc=5; else stack: [...] |
+| 0     | CONST   | 0   | 0 (1)    | stack: [..., v0] |
+| 1     | CONST   | 1   | 1 (2)    | stack: [..., v0, v1] |
+| 2     | CHECK_EQ| (2, "fail") | (n=2, -> 5) | if v0 != v1 → pc=5; else stack: [...] |
 | 3     | CONST   | 2   | 2 (99)   | stack: [..., 99] |
 | 4     | RETURN  | 1   | 1        | |
 | 5     | LABEL   | —   | —        | fail |
@@ -906,19 +914,19 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ### KOS_OP_CHECK_NE
 
-- **Style**: LABEL. Arg = target pc (post-compile).
+- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if left == right (check fails), jump to `arg`; else fall through. Stack after: `[...]`.
+- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `!=`; if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
 - **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
 
-**Example:** Jump when left == right (e.g. "not equal" guard). Pool: 0 = 1, 1 = 1, 2 = 0.
+**Example:** Jump when the chain fails (e.g. "not equal" guard). Pool: 0 = 1, 1 = 1, 2 = 0.
 
 | index | opcode   | arg | arg view | comment |
 |------:|----------|-----|----------|---------|
-| 0     | CONST    | 0   | 0 (1)    | stack: [..., left] |
-| 1     | CONST    | 1   | 1 (1)    | stack: [..., left, right] |
-| 2     | CHECK_NE | 5   | 5 (-> 5) | if left == right → pc=5; else stack: [...] |
+| 0     | CONST    | 0   | 0 (1)    | stack: [..., v0] |
+| 1     | CONST    | 1   | 1 (1)    | stack: [..., v0, v1] |
+| 2     | CHECK_NE | (2, "fail") | (n=2, -> 5) | if v0 == v1 → pc=5; else stack: [...] |
 | 3     | RETURN   | 1   | 1        | |
 | 5     | LABEL    | —   | —        | fail |
 
@@ -926,41 +934,41 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ### KOS_OP_CHECK_LT {#kos_op_check_lt}
 
-- **Style**: LABEL. Arg = target pc (post-compile).
+- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if **not** `left < right`, jump to `arg`; else fall through. Stack after: `[...]`.
+- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `<` (e.g. `v0 < v1 < v2`); if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
 - **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
 
 ---
 
 ### KOS_OP_CHECK_LE {#kos_op_check_le}
 
-- **Style**: LABEL. Arg = target pc (post-compile).
+- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if **not** `left <= right`, jump to `arg`; else fall through. Stack after: `[...]`.
+- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `<=`; if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
 - **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
 
 ---
 
 ### KOS_OP_CHECK_GT {#kos_op_check_gt}
 
-- **Style**: LABEL. Arg = target pc (post-compile).
+- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if **not** `left > right`, jump to `arg`; else fall through. Stack after: `[...]`.
+- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `>`; if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
 - **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
 
 ---
 
 ### KOS_OP_CHECK_GE {#kos_op_check_ge}
 
-- **Style**: LABEL. Arg = target pc (post-compile).
+- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if **not** `left >= right`, jump to `arg`; else fall through. Stack after: `[...]`.
+- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `>=`; if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
 - **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
 
 ---
 

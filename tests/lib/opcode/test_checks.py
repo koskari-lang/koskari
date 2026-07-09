@@ -41,7 +41,7 @@ class TestCheckOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
-            ["CHECK_EQ", "fail"],
+            ["CHECK_EQ", (2, "fail", 0, 0)],
             ["CONST", 99],
             ["RETURN", 1],
             ["LABEL", "fail"],
@@ -60,7 +60,7 @@ class TestCheckOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 10],
-            ["CHECK_EQ", "fail"],
+            ["CHECK_EQ", (2, "fail", 0, 0)],
             ["CONST", 42],
             ["RETURN", 1],
             ["LABEL", "fail"],
@@ -69,6 +69,46 @@ class TestCheckOpcodes(CevalTest):
         ])
         result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
+
+
+    async def test_check_eq_variadic_continues_when_all_equal(self):
+        """
+        CHECK_EQ chains over COUNT operands: no jump when every arm is equal
+        """
+
+        code, ns = build_expr([
+            ["CONST", 7],
+            ["CONST", 7],
+            ["CONST", 7],
+            ["CHECK_EQ", (3, "fail", 0, 0)],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 42)
+
+
+    async def test_check_eq_variadic_jumps_when_one_differs(self):
+        """
+        CHECK_EQ chains over COUNT operands: jump when any arm differs
+        """
+
+        code, ns = build_expr([
+            ["CONST", 7],
+            ["CONST", 7],
+            ["CONST", 8],
+            ["CHECK_EQ", (3, "fail", 0, 0)],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 0)
 
 
     async def test_check_in_jumps_when_not_contained(self):

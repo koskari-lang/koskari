@@ -870,16 +870,14 @@ class Compiler:
                     del squished[-1]
                     op = _CHECK_SQUASHES[prior]
 
-                elif prior in _CHECK_VAR_SQUASHES and prior_arg == 2:
+                elif prior in _CHECK_VAR_SQUASHES:
                     # here we're combining a var operand with a jump
                     # into a single check jump. The CHECK variation only
                     # takes two operands, so we need to pop the second one.
 
-                    # TODO: update the CHECK variations to be extra and
-                    # accept both the count and the jump target.
-
                     del squished[-1]
                     op = _CHECK_VAR_SQUASHES[prior]
+                    arg = (prior_arg, arg, None, None)
 
             elif op == OpCode.KOS_OP_SWITCH_EQ:
                 prior = squished[-1]

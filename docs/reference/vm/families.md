@@ -59,8 +59,12 @@
 | JUMP_TRUE | LABEL | Jump if TOS true | [§8](#kos_op_jump_true) |
 | JUMP_AND | LABEL | Short-circuit AND | [§8](#kos_op_jump_and) |
 | JUMP_OR | LABEL | Short-circuit OR | [§8](#kos_op_jump_or) |
-| CHECK_EQ | LABEL | Jump if left ≠ right | [§9](#kos_op_check_eq) |
-| CHECK_NE | LABEL | Jump if left == right | [§9](#kos_op_check_ne) |
+| CHECK_EQ | EXTRA | Chain-compare N operands with `==`; jump if chain fails | [§9](#kos_op_check_eq) |
+| CHECK_NE | EXTRA | Chain-compare N operands with `!=`; jump if chain fails | [§9](#kos_op_check_ne) |
+| CHECK_LT | EXTRA | Chain-compare N operands with `<`; jump if chain fails | [§9](#kos_op_check_lt) |
+| CHECK_LE | EXTRA | Chain-compare N operands with `<=`; jump if chain fails | [§9](#kos_op_check_le) |
+| CHECK_GT | EXTRA | Chain-compare N operands with `>`; jump if chain fails | [§9](#kos_op_check_gt) |
+| CHECK_GE | EXTRA | Chain-compare N operands with `>=`; jump if chain fails | [§9](#kos_op_check_ge) |
 | CHECK_IN | LABEL | Jump if value not in container | [§9](#kos_op_check_in) |
 | CHECK_NOT_IN | LABEL | Jump if value in container | [§9](#kos_op_check_not_in) |
 | CHECK_IS | LABEL | Jump if left is not right | [§9](#kos_op_check_is) |

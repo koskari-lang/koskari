@@ -14,7 +14,8 @@
 */
 
 /**
-   CHECK_GT: arg = target PC. Branch if comparison fails (>).
+   CHECK_GT: EXTRA row = (COUNT, LABEL). Chain-compare COUNT operands;
+   branch to LABEL if the chain fails (>).
 */
 
 KOS_OP_HANDLER(CHECK_GT) {

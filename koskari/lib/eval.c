@@ -1723,26 +1723,37 @@ static int kos_check_nil(
 }
 
 
-/* Helper for CHECK_EQ/GE/GT/LE/LT/NE: pop right then left, RichCompareBool;
-   jump to KosOp_ARG(insn) if comparison fails (res == 0). */
+/* Helper for CHECK_EQ/GE/GT/LE/LT/NE: EXTRA row is (COUNT, LABEL). Peek the
+   top COUNT operands and chain-compare them left-to-right with RichCompareBool;
+   jump to the LABEL target if the chain fails (any adjacent pair compares
+   false). The operands are dropped either way. */
 static int kos_check_cmp(
     KosEvalState *es,
     KosOp *insn,
     int cmp_op) {
 
-  KosEvalStackLR lr = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, lr))
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  size_t count = (size_t) row.a0;
+
+  PyObject *const *args = KosEvalState_StackTailPtr(es, count);
+  if (unlikely(! args))
     return -1;
 
-  int res = PyObject_RichCompareBool(lr.left, lr.right, cmp_op);
-  Py_DECREF(lr.left);
-  Py_DECREF(lr.right);
+  int res = 1;
+  for (size_t i = 1; i < count; i++) {
+    res = PyObject_RichCompareBool(args[i - 1], args[i], cmp_op);
+    if (res <= 0)
+      break;
+  }
+
+  KosEvalState_StackDropNoErr(es, count);
 
   if (res < 0)
     return -1;
 
   if (res == 0)
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+    KosEvalState_SET_PC(es, row.a1);
 
   return 0;
 }

@@ -80,13 +80,15 @@ OP(JUMP_TRUE, LABEL)
 OP(JUMP_AND, LABEL)
 OP(JUMP_OR, LABEL)
 
-// check jumps - jump to label if predicate does not match
-OP(CHECK_EQ, LABEL)
-OP(CHECK_GE, LABEL)
-OP(CHECK_GT, LABEL)
-OP(CHECK_LE, LABEL)
-OP(CHECK_LT, LABEL)
-OP(CHECK_NE, LABEL)
+// check jumps - jump to label if predicate does not match. The
+// comparison checks are variadic: the EXTRA row carries (COUNT, LABEL)
+// so a chained compare over COUNT operands can fuse with its jump.
+OP(CHECK_EQ, EXTRA, COUNT, LABEL, NOARG, NOARG)
+OP(CHECK_GE, EXTRA, COUNT, LABEL, NOARG, NOARG)
+OP(CHECK_GT, EXTRA, COUNT, LABEL, NOARG, NOARG)
+OP(CHECK_LE, EXTRA, COUNT, LABEL, NOARG, NOARG)
+OP(CHECK_LT, EXTRA, COUNT, LABEL, NOARG, NOARG)
+OP(CHECK_NE, EXTRA, COUNT, LABEL, NOARG, NOARG)
 
 OP(CHECK_IN, LABEL)
 OP(CHECK_NOT_IN, LABEL)
