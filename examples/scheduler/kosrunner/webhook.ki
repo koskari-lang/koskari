@@ -22,21 +22,27 @@ define logger (logging.getLogger "kosrunner.webhook")
 
 
 define-dataclass WebhookConfig [ServerConfig]:
-    """Config for a webhook route's shared server (host, port, prefix)."""
+    """
+    Config for a webhook route's shared server (host, port, prefix)
+    """
 
 
 define-class WebhookJob [Job]:
-    """An inbound HTTP route; its name is the route path segment."""
+    """
+    An inbound HTTP route; its name is the route path segment
+    """
 
     define __init__ [self route]:
         (Job.__init__ self)
         set! self.route route
+
 
     define start [self]:
         set! self.running True
         define server (get-server self.config)
         (server.add-route self.config.prefix self.route self.callback)
         (server.start)
+
 
     define stop [self]:
         set! self.running False

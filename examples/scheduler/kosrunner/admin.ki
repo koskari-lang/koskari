@@ -22,7 +22,9 @@ define logger (logging.getLogger "kosrunner.admin")
 
 
 define-dataclass AdminConfig [ServerConfig]:
-    """Config for the control-plane server; prefix defaults to /admin."""
+    """
+    Config for the control-plane server; prefix defaults to /admin
+    """
 
     define [prefix :: str] "/admin"
 
@@ -51,6 +53,7 @@ define-class AdminJob [Job]:
 
         (server.start)
         (logger.info "admin control plane mounted at %s" prefix)
+
 
     define stop [self]:
         set! self.running False

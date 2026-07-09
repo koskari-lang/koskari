@@ -22,32 +22,44 @@ define logger (logging.getLogger "kosrunner.cron")
 
 
 define-dataclass CronConfig [Config]:
-    """Cron config; usually left default (cron jobs carry no config)."""
+    """
+    Cron config; usually left default (cron jobs carry no config)
+    """
 
     define [timezone :: str] None
 
 
 define-class CronJob [Job]:
-    """A schedule-driven job; fires its handler on the crontab schedule."""
+    """
+    A schedule-driven job; fires its handler on the crontab schedule
+    """
 
     define __init__ [self schedule]:
         (Job.__init__ self)
         set! self.schedule schedule
         set! self._handle None
 
+
     define start [self]:
         import aiocron
+
         set! self.running True
         (logger.info "scheduling cron job: %s" self.schedule)
         define cb self.callback
         define sched self.schedule
+
         define fire []:
             (logger.info "firing cron job: %s" sched)
             try:
                 (cb)
             except [Exception]:
                 (logger.error "cron job failed: %s" sched exc_info: True)
-        set! self._handle (aiocron.crontab self.schedule func: fire start: True)
+
+        set! self._handle (aiocron.crontab
+            self.schedule
+            func: fire
+            start: True)
+
 
     define stop [self]:
         set! self.running False

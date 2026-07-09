@@ -47,8 +47,11 @@ define-class HttpServer []:
         set! self.app (fastapi.FastAPI)
         set! self._server None
 
+
     define add-route [self prefix name handler]:
-        """POST {prefix}/{name}; the JSON body is passed to handler."""
+        """
+        POST {prefix}/{name}; the JSON body is passed to handler
+        """
 
         import-from fastapi Request
         define path f"{prefix}/{name}"
@@ -64,8 +67,11 @@ define-class HttpServer []:
             except [Exception]:
                 (logger.error "route failed: %s" path exc_info: True)
 
+
     define add-listing [self prefix name handler]:
-        """GET {prefix}/{name}; handler takes no args and returns data."""
+        """
+        GET {prefix}/{name}; handler takes no args and returns data
+        """
 
         define path f"{prefix}/{name}"
         (logger.info "route GET %s" path)
@@ -76,8 +82,11 @@ define-class HttpServer []:
         define inner []:
             (handler)
 
+
     define add-action [self prefix name handler]:
-        """POST {prefix}/{name}/{item}; the path item is passed to handler."""
+        """
+        POST {prefix}/{name}/{item}; the path item is passed to handler
+        """
 
         define path f"{prefix}/{name}/{{item}}"
         (logger.info "route POST %s" path)
@@ -88,16 +97,22 @@ define-class HttpServer []:
         define inner [item]:
             (handler item)
 
+
     define start [self]:
-        import uvicorn
         when self._server:
             (return)
 
         (logger.info "starting server on %s:%i" self.host self.port)
-        define config (uvicorn.Config
-            self.app host: self.host port: self.port log_level: "info")
-        set! self._server (uvicorn.Server config)
+
+        import-from uvicorn Config Server
+
+        define config (Config self.app
+            host: self.host
+            port: self.port)
+
+        set! self._server (Server config)
         (create-task (defer self._server.serve))
+
 
     define stop [self]:
         when self._server:
@@ -111,9 +126,13 @@ define _servers #{}
 
 define get-server [config]:
     define key f"{config.host}:{config.port}"
-    unless (_servers.get key):
-        (set! (item _servers key) (HttpServer config.host config.port))
-    (item _servers key)
+
+    define server (_servers.get key)
+    unless server:
+        set! server (HttpServer config.host config.port)
+        (set! (item _servers key) server)
+
+    server
 
 
 ;; The end.

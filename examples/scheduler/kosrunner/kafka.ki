@@ -32,7 +32,7 @@ define-dataclass KafkaConfig [Config]:
     defaults, declared in one place.
     """
 
-    define [servers :: str] (field)                    ; required
+    define [servers :: str] (field)  ; required
     define [group_id :: str] None
 
     define [security_protocol :: str] "PLAINTEXT"
