@@ -10,7 +10,7 @@
 (import-from curses
   ERR KEY_UP KEY_DOWN KEY_LEFT KEY_RIGHT A_BOLD
   COLOR_RED COLOR_YELLOW COLOR_GREEN COLOR_CYAN COLOR_BLUE COLOR_BLACK
-  init_pair color_pair)
+  init_pair color_pair doupdate)
 (import-from itertools product)
 (import-from asyncio sleep)
 (import-from .life LifeBoard)
@@ -103,7 +103,7 @@ define-class LifeScreen []:
         (set! self.toggle self.board.toggle)
 
 
-    define display [self]:
+    define paint [self]:
         define board self.board
         define render self.renderer
         define screen self.screen
@@ -117,7 +117,10 @@ define-class LifeScreen []:
             except [Exception]:
               raise (Exception f"x: {(repr x)}, y: {(repr y)}, cell: {(repr cell)}")
 
-        (screen.refresh)
+
+    define display [self]:
+        (self.paint)
+        (self.screen.refresh)
 
 
 define erase-menu [stdscr menu-y]:
@@ -138,11 +141,14 @@ define display-menu [stdscr menu-y]:
 
 define step [stdscr board]:
   (stdscr.addstr 0 0 "/")
-  (stdscr.refresh)
+  (stdscr.noutrefresh)
+  (doupdate)
   (board.age)
-  (board.display)
+  (board.paint)
+  (board.screen.noutrefresh)
   (stdscr.addstr 0 0 "\\")
-  (stdscr.refresh)
+  (stdscr.noutrefresh)
+  (doupdate)
   None
 
 
