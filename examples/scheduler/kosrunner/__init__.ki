@@ -11,69 +11,34 @@
 ; You should have received a copy of the GNU General Public License
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-"""
-Koskari asyncio job scheduler example
 
-Framework types, jobset/on-cron syntax, and a demo cron workload.
-
-:author: Christopher O'Brien <obriencj@preoccupied.net>
-:license: GNU General Public License v3
-"""
-
-import-from datetime datetime
-import-from logging getLogger basicConfig
-import-from typing Protocol
-
-import-from .job JobSet jobset
-import-from .cron:
-    CronJob on-cron layout/on-cron
-import-from .kafka:
-    KafkaConfig KafkaJob kafka-config on-kafka
-    layout/kafka-config
-import-from .webhook:
-    WebhookServer WebhookJob webhook-config on-webhook
-    layout/webhook-config
+import-from .job Config Job JobSet
+import-from .subitems:
+    jobset job config handler on-error with-subitems layout/config
+    config/logging configure-logging
+import-from .server HttpServer get-server
+import-from .fake FakeConfig FakeJob config/fake job/fake
+import-from .cron CronConfig CronJob config/cron job/cron
+import-from .kafka KafkaConfig KafkaJob config/kafka job/kafka
+import-from .webhook WebhookConfig WebhookJob config/webhook job/webhook
+import-from .admin AdminConfig AdminJob config/admin job/admin
 
 
 declare-exports [
-    JobSet
-    jobset
+    Config Job JobSet
 
-    logging-config
-    layout/logging-config
+    jobset job config handler on-error with-subitems
+    layout/config
+    config/logging configure-logging
 
-    CronJob
-    on-cron
-    layout/on-cron
+    HttpServer get-server
 
-    KafkaConfig
-    kafka-config
-    layout/kafka-config
-
-    KafkaJob
-    on-kafka
-
-    WebhookServer
-    webhook-config
-    layout/webhook-config
-
-    WebhookJob
-    on-webhook
+    FakeConfig FakeJob config/fake job/fake
+    CronConfig CronJob config/cron job/cron
+    KafkaConfig KafkaJob config/kafka job/kafka
+    WebhookConfig WebhookJob config/webhook job/webhook
+    AdminConfig AdminJob config/admin job/admin
 ]
-
-
-define-syntax use-kosrunner:
-    macro-rules []:
-        case (use-kosrunner):
-            (define names (list-each [n __all__] (symbol n)))
-            `(import-from ,__name__ ,@names)
-
-
-define logging-config [level: "WARN" **: kwargs]:
-    basicConfig level: level **: kwargs
-
-
-define layout/logging-config layout/inline-block
 
 
 ;; The end.

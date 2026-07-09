@@ -12,66 +12,146 @@
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 
-import-from logging getLogger
+import logging
 
 
-define logger (getLogger "kosrunner")
+define logger (logging.getLogger "kosrunner")
 
 
-define-class JobConfig []:
+define-class Config []:
+    """
+    A named settings bag. `merge` produces effective settings for a job:
+    this config's settings overlaid with per-job overrides.
+    """
 
-    define __init__ [self]:
-        set! self.conf #{}
+    define __init__ [self **: settings]:
+        set! self.settings settings
 
-    define add-config [self key value]:
-        set! (item self.conf key) value
 
-    define get-config [self key]:
-        item self.conf key
+    define merge [self **: overrides]:
+        define out (dict self.settings)
+        (out.update overrides)
+        out
 
 
 define-class Job []:
     """
-    Abstract job protocol; subclasses implement start and stop
+    Base job: a unit of work with enable/disable state and the inherited
+    sub-item vocabulary (configure/handler). Varieties override start/stop
+    and may add their own sub-item setters.
     """
+
+    define __init__ [self]:
+        set! self.config #{}
+        set! self.callback None
+        set! self.enabled True
+        set! self.running False
+        set! self.jobset None
+
+
+    ; --- inherited sub-item setters ---
+
+    define configure [self via: None **: overrides]:
+        """
+        The `config:` sub-item. `via` is the resolved base Config (the
+        type default or a named one); overrides refine it. The effective
+        settings land on self.config.
+        """
+
+        set! self.config (if via (via.merge **: overrides) (dict overrides))
+        self
+
+
+    define handler [self fn]:
+        """
+        The `handler [..]:` sub-item -- the code run when the job fires.
+        """
+
+        set! self.callback fn
+        self
+
+
+    ; --- lifecycle (varieties implement) ---
 
     define start [self]:
         raise (NotImplementedError f"{self}.start")
+
 
     define stop [self]:
         raise (NotImplementedError f"{self}.stop")
 
 
 define-class JobSet []:
+    """
+    Tracks jobs by name and offers the control-plane surface (list /
+    enable / disable) that the REST layer will call. Starting runs only
+    enabled jobs; disabled ones stay registered but dormant.
+    """
 
-    define __init__ [self name jobs: nil]:
+    define __init__ [self name]:
         set! self.name name
-        set! self.jobs jobs
+        set! self.jobs #{}
+
+
+    define register [self name job]:
+        set! (item self.jobs name) job
+        set! job.jobset self
+        (logger.info "registered job: %s" name)
+        job
+
+
+    define list-jobs [self]:
+        list-each [[name job] (self.jobs.items)]:
+            #{name: name
+              enabled: job.enabled
+              running: job.running}
+
+
+    define enable [self name]:
+        define job (item self.jobs name)
+        set! job.enabled True
+        unless job.running:
+            (job.start)
+        job
+
+
+    define disable [self name]:
+        define job (item self.jobs name)
+        set! job.enabled False
+        when job.running:
+            (job.stop)
+        job
+
+
+    define start [self]:
+        (logger.info "starting jobset: %s" self.name)
+        for-each [[name job] (self.jobs.items)]:
+            when job.enabled:
+                (logger.info "  start: %s" name)
+                (job.start)
+
+
+    define stop [self]:
+        (logger.info "stopping jobset: %s" self.name)
+        for-each [[name job] (self.jobs.items)]:
+            when job.running:
+                (logger.info "  stop: %s" name)
+                (job.stop)
+
 
     define __call__ [self heartbeat: 3600 snore: False]:
+        """
+        Start enabled jobs and keep the process alive. Job start methods
+        schedule their work on the ambient event loop; the heartbeat loop
+        holds it open.
+        """
+
         (self.start)
         while True:
             sleep heartbeat
-            (logger.debug "Heartbeat")
-            when snore (print "zzz")
-
-    define start [self]:
-        (logger.info "Starting jobset: %s" self.name)
-        for-each [job self.jobs]:
-            (job.start)
-        (logger.info "Started %i jobs" (len self.jobs))
-
-    define stop [self]:
-        (logger.info "Stopping jobset: %s" self.name)
-        for-each [job self.jobs]:
-            (job.stop)
-
-
-define-syntax jobset:
-    macro-rules []:
-        case (jobset name job ...):
-            define n (str name.datum)
-            `(define ,name (JobSet ,n jobs: #[,@job]))
+            (logger.debug "heartbeat")
+            when snore:
+                (print "zzz")
 
 
 ;; The end.

@@ -1,0 +1,91 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+import logging
+
+import-from .job Config Job
+import-from .server get-server
+
+
+define logger (logging.getLogger "kosrunner.admin")
+
+
+define-class AdminConfig [Config]:
+    """Settings bag for the control-plane server (host, port, prefix)."""
+
+
+define-class AdminJob [Job]:
+    """
+    The jobset's control plane as HTTP routes. It reaches its parent
+    JobSet through the `jobset` back-reference the JobSet sets at register
+    time, and mounts list/enable/disable under its config's prefix. Its
+    config is a plain server config, so if it shares a host:port with a
+    webhook it shares that webhook's FastAPI server (see server.get-server).
+    """
+
+    define start [self]:
+        set! self.running True
+        define server (get-server self.config)
+        define prefix (self.config.get "prefix" "/admin")
+        define js self.jobset
+
+        (server.add-listing prefix "jobs"
+            (lambda [] (js.list-jobs)))
+        (server.add-action prefix "enable"
+            (lambda [name] (js.enable name) #{enabled: name}))
+        (server.add-action prefix "disable"
+            (lambda [name] (js.disable name) #{disabled: name}))
+
+        (server.start)
+        (logger.info "admin control plane mounted at %s" prefix)
+
+    define stop [self]:
+        set! self.running False
+
+
+define-syntax config/admin:
+    syntax-rules []:
+        case (config/admin () setting ...):
+            (begin
+                (define default/admin)
+                (unless &default/admin
+                    (set! default/admin (AdminConfig setting ...))))
+        case (config/admin nm setting ...):
+            (begin
+                (define nm (AdminConfig setting ...))
+                (define default/admin)
+                (unless &default/admin (set! default/admin nm)))
+
+
+;; `job admin <name> [disabled]:` -- no trigger key and usually no
+;; sub-items; it serves the control plane from its config alone.
+define-syntax job/admin:
+    syntax-rules [disabled]:
+        case (job/admin name disabled (subhead subrest ...) ...):
+            (begin
+                (define name (AdminJob))
+                (set! name.enabled False)
+                (define default/admin)
+                (when &default/admin (.configure name via: default/admin))
+                (subhead (admin name) subrest ...) ...)
+
+        case (job/admin name (subhead subrest ...) ...):
+            (begin
+                (define name (AdminJob))
+                (define default/admin)
+                (when &default/admin (.configure name via: default/admin))
+                (subhead (admin name) subrest ...) ...)
+
+
+;; The end.

@@ -1,0 +1,108 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+import logging
+
+import-from .job Config
+
+
+define logger (logging.getLogger "kosrunner.server")
+
+
+define-class HttpServer []:
+    """
+    A shared FastAPI/uvicorn server. It is interned by host:port (see
+    get-server), so any jobs that resolve to the same host:port -- webhook
+    routes and the admin control plane, say -- mount on ONE server, each
+    under its own prefix. The prefix lives on the route, not the server.
+    """
+
+    define __init__ [self host port]:
+        import fastapi
+        set! self.host host
+        set! self.port port
+        set! self.app (fastapi.FastAPI)
+        set! self._server None
+
+    define add-route [self prefix name handler]:
+        """POST {prefix}/{name}; the JSON body is passed to handler."""
+
+        import-from fastapi Request
+        define path f"{prefix}/{name}"
+        (logger.info "route POST %s" path)
+        define app self.app
+
+        @(app.post path)
+        @coroutine-fn
+        define inner [[request :: Request]]:
+            try:
+                define payload (request.json)
+                (handler payload)
+            except [Exception]:
+                (logger.error "route failed: %s" path exc_info: True)
+
+    define add-listing [self prefix name handler]:
+        """GET {prefix}/{name}; handler takes no args and returns data."""
+
+        define path f"{prefix}/{name}"
+        (logger.info "route GET %s" path)
+        define app self.app
+
+        @(app.get path)
+        @coroutine-fn
+        define inner []:
+            (handler)
+
+    define add-action [self prefix name handler]:
+        """POST {prefix}/{name}/{item}; the path item is passed to handler."""
+
+        define path f"{prefix}/{name}/{{item}}"
+        (logger.info "route POST %s" path)
+        define app self.app
+
+        @(app.post path)
+        @coroutine-fn
+        define inner [item]:
+            (handler item)
+
+    define start [self]:
+        import uvicorn
+        when self._server:
+            return
+        (logger.info "starting server on %s:%i" self.host self.port)
+        define config (uvicorn.Config
+            self.app host: self.host port: self.port log_level: "info")
+        set! self._server (uvicorn.Server config)
+        (create-task (defer self._server.serve))
+
+    define stop [self]:
+        when self._server:
+            (self._server.shutdown)
+            set! self._server None
+
+
+;; one server per host:port, shared across every job that resolves there
+define _servers #{}
+
+
+define get-server [config]:
+    define host (config.get "host" "0.0.0.0")
+    define port (config.get "port" 8080)
+    define key f"{host}:{port}"
+    unless (_servers.get key):
+        (set! (item _servers key) (HttpServer host port))
+    (item _servers key)
+
+
+;; The end.

@@ -1,43 +1,101 @@
 #! /usr/bin/env koskari
 
+;; example.ki -- a Koskari asyncio job scheduler.
+;;
+;; The definition reads like YAML, but each block is either DATA (a
+;; config) or CODE (a job handler). See README.md for the surface, how
+;; it lowers to a live JobSet, and how to add a job variety.
 
 import-from datetime datetime
 
 import-all-from kosrunner
 
 
-logging-config:
-    level: "DEBUG"
-
-
-kafka-config default-kafka:
-    servers: "localhost:9092"
-    security_protocol: "PLAINTEXT"
-
-
-webhook-config app:
-    port: 8080
-    prefix: "/webhook"
-
-
 jobset workload:
-    on-cron * * * * *:
-        (print f"The time is {(datetime.now)}")
 
-    ; on-kafka default-kafka "topic.test" [msg topic]:
-    ;     (print f"Received message: {msg} on topic: {topic}")
+    ;; --- CONFIGS: `config <type> [name]:` (data blocks) --------------
+    ;; The first config of a type is its default; named ones are opt-in.
 
-    on-webhook app ping [payload]:
-        (print f"Webhook received: {payload}")
-        #{ok: True msg: "pong"}
+    config logging:
+        level: "DEBUG"
 
-    on-webhook app echo [payload]:
-        (print f"Webhook received: {payload}")
-        #{ok: True payload: payload}
+    ;; First kafka config: unnamed, so it is the default kafka config.
+    config kafka:
+        servers: "localhost:9092"
+        security_protocol: "PLAINTEXT"
+
+    ;; A second kafka config MUST be named; jobs opt into it by name.
+    config kafka audit-cluster:
+        servers: "audit-1:9092,audit-2:9092"
+        security_protocol: "SSL"
+
+    ;; Default webhook config -- also backs inbound job triggers.
+    config webhook:
+        port: 8080
+        prefix: "/webhook"
+
+    ;; Control-plane server config. Same host:port as the webhook above,
+    ;; so admin SHARES that FastAPI server (interned by host:port); only
+    ;; the prefix differs. Give it a different port for a standalone server.
+    config admin:
+        port: 8080
+        prefix: "/admin"
+
+
+    ;; --- JOBS: `job <type> <name> <trigger...> [disabled]:` ----------
+    ;; The header is the constructor; each sub-item is a method call on
+    ;; the job (handler/config inherited; on-error is a kafka setter).
+
+    ;; cron trigger-key is the 5 classic fields; the handler takes no
+    ;; args, so its formals are the empty bracket `[]`.
+    job cron heartbeat * * * * *:
+        handler []:
+            (print f"The time is {(datetime.now)}")
+
+    ;; A disabled job: present, listed, but not started until enabled
+    ;; via the control plane (constraint 6 + 7).
+    job cron nightly-report 0 0 * * * disabled:
+        handler []:
+            (print "running the nightly report")
+
+    ;; webhook job on the default webhook config; handler returns the
+    ;; response payload.
+    job webhook ping:
+        handler [payload]:
+            (print f"Webhook received: {payload}")
+            #{ok: True msg: "pong"}
+
+    job webhook echo:
+        handler [payload]:
+            #{ok: True payload: payload}
+
+    ;; The control plane, as a job. No sub-items: it serves from its
+    ;; config alone, sharing the webhook's server (same port) and mounting
+    ;; GET /admin/jobs, POST /admin/enable/<name>, POST /admin/disable/<name>.
+    job admin control
+
+    ;; kafka job on the DEFAULT kafka config (unnamed one above).
+    job kafka orders "topic.orders" disabled:
+        handler [msg]:
+            (print f"order: {msg}")
+
+    ;; kafka job showing all three sub-item flavours: the inherited
+    ;; `config` (data setter) selecting a named base + overriding a key,
+    ;; a kafka-VARIETY `on-error` (code setter), and the inherited
+    ;; `handler` (code setter). Order is irrelevant -- they are just
+    ;; method calls on the constructed KafkaJob.
+    job kafka audit "topic.audit" disabled:
+        config:
+            via: audit-cluster
+            group_id: "audit-consumers"
+        on-error [err msg]:
+            (print f"audit dropped {msg}: {err}")
+        handler [msg topic]:
+            (print f"audit {topic}: {msg}")
 
 
 when-main:
     (workload heartbeat: 20 snore: True)
 
 
-; The end.
+;; The end.

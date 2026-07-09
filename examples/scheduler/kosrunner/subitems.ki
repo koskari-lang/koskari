@@ -1,0 +1,136 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+import-from logging basicConfig
+
+import-from .job JobSet
+
+
+;; Base sub-item vocabulary. The job macro rewrites each of a job's
+;; sub-item lines into a TYPE-TAGGED form -- `(head (<type> <name>) ...)`
+;; -- and these generic fall-throughs route them to the inherited setter
+;; on the named job instance. `tp` is an ordinary (ignored) pattern
+;; variable, so ANY type works with no per-type syntax. A variety
+;; overrides only when it needs to, via `extend-syntax` with its type as
+;; a literal (newer rules take precedence), e.g.
+;;
+;;     extend-syntax config:
+;;         syntax-rules [kafka]:
+;;             case (config (kafka name) params ...): ...
+;;
+;; exactly like `(help (pragma key))`.
+
+
+;; The generic `job` entry point is a thin DISPATCHER: it builds the
+;; per-type syntax name `job/<type>` and delegates the whole tail to it.
+;; A variety self-registers simply by defining its `job/<type>` syntax,
+;; which owns that type's header grammar and tag-injects the sub-items.
+
+define-syntax job:
+    macro-rules []:
+        case (job tp rest ...):
+            `(,(datum (symbol f"job/{tp.datum}")) ,@rest)
+
+
+;; The `jobset` macro is a partition-and-splice over its entries. It never
+;; enumerates types: config entries are rewritten to `(config/<type> ...)`
+;; and emitted FIRST (so `default/<type>` slots and named configs exist
+;; before any job wires to them); job entries stay `(job <type> ...)` (they
+;; self-dispatch) and each resulting binding is registered by name. An
+;; unnamed config (settings start with a keyword) is rewritten with a `()`
+;; name sentinel; a named one keeps its symbol.
+define-syntax jobset:
+    macro-rules []:
+        case (jobset jsname entry ...):
+            define configs #[]
+            define jobforms #[]
+            define regs #[]
+
+            for-each [e entry]:
+                define-values [head [tp rest]] e.datum
+                if (== (str head) "config"):
+                    define newhead (datum (symbol f"config/{tp}"))
+                    if (keyword? (car rest)):
+                        (configs.append (cons newhead nil rest))
+                    else:
+                        (configs.append (cons newhead rest))
+                else:
+                    (jobforms.append e.datum)
+                    define jname (car rest)
+                    (regs.append `(.register ,jsname ,(str jname) ,jname))
+
+            `(begin
+                ,@configs
+                ,@jobforms
+                (define ,jsname (JobSet ,(str jsname.datum)))
+                ,@regs)
+
+
+define-syntax config:
+    syntax-rules []:
+        case (config (tp name) params ...):
+            (.configure name params ...)
+
+
+;; `config` is the ONE head that needs a non-default layout: its block is
+;; DATA (key: value lines), which inline-block splices flat into the form.
+;; Everything else (jobset, job, handler) uses the default layout/block --
+;; children stay as forms, and lambda is happy with a rest-like handler body.
+define layout/config layout/inline-block
+
+
+define-syntax handler:
+    syntax-rules []:
+        case (handler (tp name) formals body ...):
+            (.handler name (lambda formals body ...))
+
+
+;; A second inherited CODE sub-item: `on-error [err msg]:` routes to the
+;; job's `on-error` setter. Varieties that support it (e.g. kafka) define
+;; the method; others simply never receive the sub-item.
+define-syntax on-error:
+    syntax-rules []:
+        case (on-error (tp name) formals body ...):
+            (.on-error name (lambda formals body ...))
+
+
+;; `with-subitems` factors the tag injection so a procedural (macro-rules)
+;; variety -- one that must compute its header, like cron's schedule --
+;; can still splice sub-items uniformly: it emits
+;; `(with-subitems (cron name) subitem ...)` and this maps the tag into
+;; each. Syntax-rules varieties can inline the same `(subhead (t n) ...)
+;; ...` pattern directly instead.
+define-syntax with-subitems:
+    syntax-rules []:
+        case (with-subitems tag (subhead subrest ...) ...):
+            (begin (subhead tag subrest ...) ...)
+
+
+;; --- service configs (config-only types, no jobs) ------------------
+
+;; `config logging:` -> configure the stdlib logger. The expansion calls
+;; an EXPORTED helper (not basicConfig directly), because a macro's free
+;; names resolve at the USE site -- and the user module imports the
+;; kosrunner exports, not logging.basicConfig.
+define configure-logging [**: kw]:
+    (basicConfig **: kw)
+
+
+define-syntax config/logging:
+    syntax-rules []:
+        case (config/logging () setting ...):
+            (configure-logging setting ...)
+
+
+;; The end.

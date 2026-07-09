@@ -1,0 +1,78 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+import logging
+
+import-from .job Config Job
+
+
+define logger (logging.getLogger "kosrunner.fake")
+
+
+define-class FakeConfig [Config]:
+    """A settings bag standing in for a real broker config."""
+
+
+define-class FakeJob [Job]:
+    """A trivial job variety: start/stop just flip `running` and log."""
+
+    define __init__ [self label]:
+        (Job.__init__ self)
+        set! self.label label
+
+    define start [self]:
+        set! self.running True
+        (logger.info "FakeJob started: %s (config=%r)" self.label self.config)
+
+    define stop [self]:
+        set! self.running False
+        (logger.info "FakeJob stopped: %s" self.label)
+
+
+;; The `config fake [name]:` variety entry syntax. The jobset macro
+;; rewrites a config entry into `(config/fake () ...)` (unnamed) or
+;; `(config/fake <name> ...)` (named). Both bind the shared `default/fake`
+;; slot with the first-wins `&`-guard; a named one also binds its name.
+define-syntax config/fake:
+    syntax-rules []:
+        case (config/fake () setting ...):
+            (begin
+                (define default/fake)
+                (unless &default/fake
+                    (set! default/fake (FakeConfig setting ...))))
+        case (config/fake nm setting ...):
+            (begin
+                (define nm (FakeConfig setting ...))
+                (define default/fake)
+                (unless &default/fake (set! default/fake nm)))
+
+
+;; The `job fake <name> [disabled]:` variety syntax. Fake has no
+;; trigger-key, so the header is just the name plus an optional trailing
+;; `disabled`; the sub-items are tag-injected with `(fake name)` so the
+;; base `config`/`handler` dispatch routes them.
+define-syntax job/fake:
+    syntax-rules [disabled]:
+        case (job/fake name disabled (subhead subrest ...) ...):
+            (begin
+                (define name (FakeJob 'name))
+                (set! name.enabled False)
+                (subhead (fake name) subrest ...) ...)
+        case (job/fake name (subhead subrest ...) ...):
+            (begin
+                (define name (FakeJob 'name))
+                (subhead (fake name) subrest ...) ...)
+
+
+;; The end.

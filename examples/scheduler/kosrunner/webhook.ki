@@ -14,106 +14,67 @@
 
 import logging
 
-import fastapi
-import uvicorn
-import-from fastapi Request
-
-import-from .job Job
+import-from .job Config Job
+import-from .server get-server
 
 
 define logger (logging.getLogger "kosrunner.webhook")
 
 
-define-class WebhookServer [Job]:
-
-    define __init__ [self name host: "0.0.0.0" port: 8080 prefix: ""]:
-        set! self.name name
-        set! self.host host
-        set! self.port port
-        set! self.prefix prefix
-        set! self.app (fastapi.FastAPI title: name)
-        set! self._server None
-
-
-    define add-route [self name handler]:
-        define path f"{self.prefix}/{name}"
-        logger.info "Registering webhook %s at %s" name path
-
-        define app self.app
-
-        @(app.post path)
-        @coroutine-fn
-        define inner [[request :: Request]]:
-            logger.info "Webhook triggered: %s" name
-            try:
-                define payload (request.json)
-                define result (handler payload)
-                logger.info "Webhook completed: %s" name
-                result
-            except [Exception]:
-                logger.error "Webhook failed: %s" name exc_info: True
-
-
-    define serve [self]:
-        (logger.info
-            "Starting webhook server %s on %s:%i"
-            self.name self.host self.port)
-
-        define config (uvicorn.Config
-            self.app
-            host: self.host
-            port: self.port
-            log_level: "info")
-        set! self._server (uvicorn.Server config)
-
-        create-task (defer self._server.serve)
-
-
-    define start [self]:
-        unless self._server:
-            (self.serve)
-
-
-    define stop [self]:
-        (logger.info "Stopping webhook server: %s" self.name)
-        when self._server:
-            (self._server.shutdown)
-            set! self._server None
+define-class WebhookConfig [Config]:
+    """
+    Settings bag for the shared webhook server (host, port, prefix)
+    """
 
 
 define-class WebhookJob [Job]:
+    """An inbound HTTP route; its name is the route path segment."""
 
-    define __init__ [self server name callback]:
-        set! self.server server
-        set! self.name name
-        set! self.callback callback
-        (server.add-route name callback)
+    define __init__ [self route]:
+        (Job.__init__ self)
+        set! self.route route
 
     define start [self]:
-        (self.server.start)
+        set! self.running True
+        define server (get-server self.config)
+        (server.add-route (self.config.get "prefix" "") self.route self.callback)
+        (server.start)
 
     define stop [self]:
-        (self.server.stop)
+        set! self.running False
 
 
-define-syntax webhook-config:
+define-syntax config/webhook:
     syntax-rules []:
-        case (webhook-config name args ...):
-            define name (WebhookServer (str 'name) args ...)
+        case (config/webhook () setting ...):
+            (begin
+                (define default/webhook)
+                (unless &default/webhook
+                    (set! default/webhook (WebhookConfig setting ...))))
+        case (config/webhook nm setting ...):
+            (begin
+                (define nm (WebhookConfig setting ...))
+                (define default/webhook)
+                (unless &default/webhook (set! default/webhook nm)))
 
 
-; the inline block handler allows us to put key: val for the config
-; on individual lines
-define layout/webhook-config layout/inline-block
+;; `job webhook <name> [disabled]:` -- no trigger key; the name is the route.
+define-syntax job/webhook:
+    syntax-rules [disabled]:
+        case (job/webhook name disabled (subhead subrest ...) ...):
+            (begin
+                (define name (WebhookJob 'name))
+                (set! name.enabled False)
+                (define default/webhook)
+                (when &default/webhook (.configure name via: default/webhook))
+                (subhead (webhook name) subrest ...) ...)
 
-
-define-syntax on-webhook:
-    syntax-rules []:
-        case (on-webhook server name [payload] body ...):
-            (WebhookJob server (str 'name) (lambda [payload] body ...))
-
-        case (on-webhook server name callback):
-            (WebhookJob server (str 'name) callback)
+        case (job/webhook name (subhead subrest ...) ...):
+            (begin
+                (define name (WebhookJob 'name))
+                (define default/webhook)
+                (when &default/webhook (.configure name via: default/webhook))
+                (subhead (webhook name) subrest ...) ...)
 
 
 ;; The end.
