@@ -35,6 +35,15 @@ for the pure-Python entry.
 Ref: [api/values-koscallable-install.md](api/values-koscallable-install.md);
 [api/special-call-protocol.md](api/special-call-protocol.md).
 
+### `kos_repr` for the Ellipsis type
+
+Register a `kos_repr` handler for the Ellipsis type (`type(Ellipsis)`) so it
+reprs as `...` instead of falling through to `PyObject_Repr`, which yields
+`Ellipsis`. The type is an immutable builtin, so it takes a registry handler
+(`KosUtils_ReprRegister` / `kos_repr_register`) rather than a `__kos_repr__`
+method -- alongside the `KosPartial` builtin registration in `partial.c`
+(`koskari/lib/utils.c` § repr registry dispatch).
+
 ---
 
 ## Continuations / transfer plans
