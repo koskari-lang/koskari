@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Koskari corpus MCP server: a container-image Lambda behind an API Gateway
+  HTTP API with a custom domain and stage throttling. Parameterized by name,
+  image, and domain so the same stack instantiates future MCP servers.
+  Codifies design/mcp-baked-in-lambda.md Part 4; see deploy/README.md.
+
+Parameters:
+  ServerName:
+    Type: String
+    Default: koskari-mcp
+    Description: Function name and stack identity.
+  ImageUri:
+    Type: String
+    Description: >
+      ECR image URI for the Lambda image, ideally pinned by digest
+      (repo@sha256:...). Built from tools/mcp/Containerfile.lambda.
+  DomainName:
+    Type: String
+    Default: corpus.koskari.org
+    Description: Custom domain the API is served under.
+  CertificateArn:
+    Type: String
+    Description: >
+      ACM certificate ARN for DomainName, issued in THIS region (a regional
+      HTTP API custom domain requires a same-region cert).
+  MemorySize:
+    Type: Number
+    Default: 512
+    Description: More memory buys faster cold-start CPU; the data is tiny.
+  ThrottleRateLimit:
+    Type: Number
+    Default: 20
+    Description: Steady-state requests/second at the stage (cost/abuse cap).
+  ThrottleBurstLimit:
+    Type: Number
+    Default: 40
+    Description: Burst request budget at the stage.
+  ReservedConcurrency:
+    Type: Number
+    Default: 10
+    Description: Caps blast radius independently of the gateway throttle.
+
+Resources:
+
+  McpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      # A single default stage with auto-deploy; throttle it globally.
+      StageName: $default
+      DefaultRouteSettings:
+        ThrottlingRateLimit: !Ref ThrottleRateLimit
+        ThrottlingBurstLimit: !Ref ThrottleBurstLimit
+
+  McpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref ServerName
+      PackageType: Image
+      ImageUri: !Ref ImageUri
+      Architectures:
+        - arm64
+      MemorySize: !Ref MemorySize
+      Timeout: 30
+      ReservedConcurrentExecutions: !Ref ReservedConcurrency
+      Environment:
+        Variables:
+          AWS_LWA_INVOKE_MODE: buffered
+      Events:
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref McpApi
+            Method: ANY
+            Path: /{proxy+}
+        Root:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref McpApi
+            Method: ANY
+            Path: /
+
+  # Custom domain defined explicitly (rather than via the HttpApi Domain
+  # property) so its regional target is a clean stack output for the DNS
+  # CNAME step. Validate the ACM cert before deploying.
+  McpDomainName:
+    Type: AWS::ApiGatewayV2::DomainName
+    Properties:
+      DomainName: !Ref DomainName
+      DomainNameConfigurations:
+        - CertificateArn: !Ref CertificateArn
+          EndpointType: REGIONAL
+
+  McpApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Properties:
+      ApiId: !Ref McpApi
+      DomainName: !Ref McpDomainName
+      Stage: $default
+
+Outputs:
+  ApiInvokeUrl:
+    Description: Default execute-api endpoint (smoke-test POST /mcp here first).
+    Value: !Sub 'https://${McpApi}.execute-api.${AWS::Region}.amazonaws.com'
+  CustomDomainTarget:
+    Description: >
+      Point a CNAME for DomainName at this regional target at your DNS
+      provider (or an alias A record if the zone is in Route 53).
+    Value: !GetAtt McpDomainName.RegionalDomainName
+  McpEndpoint:
+    Description: The public MCP endpoint once DNS resolves.
+    Value: !Sub 'https://${DomainName}/mcp'
+  FunctionArn:
+    Value: !GetAtt McpFunction.Arn
+
+# The end.

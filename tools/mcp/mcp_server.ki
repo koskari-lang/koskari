@@ -718,11 +718,13 @@ define main [argv: None]:
     """
     Run the MCP server.
 
-    Loads the baked dataset into memory, then serves. With no arguments,
-    relay over stdio -- the default, suited to a per-session client
-    subprocess. With ``--serve``, serve over streamable HTTP bound to all
-    interfaces, for running as a shared, long-lived service behind a
-    reverse proxy.
+    Loads the baked dataset into memory, then serves in one of three
+    mutually exclusive modes. With no flag, relay over stdio -- the
+    default, suited to a per-session client subprocess. With ``--serve``,
+    serve over streamable HTTP bound to all interfaces, for a shared,
+    long-lived service behind a reverse proxy. With ``--lambda``, serve
+    stateless streamable HTTP on the loopback port the AWS Lambda Web
+    Adapter proxies to. ``--serve`` and ``--lambda`` cannot be combined.
     """
 
     when (None? argv):
@@ -731,9 +733,13 @@ define main [argv: None]:
     define-values [name *: args] argv
 
     define parser (ArgumentParser (basename name))
-    (parser.add_argument "--serve"
+    define mode (parser.add_mutually_exclusive_group)
+    (mode.add_argument "--serve"
         action: "store_true" default: False
         help: "serve over streamable HTTP (default: stdio only)")
+    (mode.add_argument "--lambda"
+        dest: "lambda_mode" action: "store_true" default: False
+        help: "serve stateless streamable HTTP behind the AWS Lambda Web Adapter")
     (parser.add_argument "--host"
         type: str default: "0.0.0.0"
         help: "host when using --serve (default: 0.0.0.0)")
@@ -746,6 +752,19 @@ define main [argv: None]:
     define options (parser.parse_args args)
 
     (load-tables!)
+
+    ; Lambda mode: stateless JSON on the loopback port the Lambda Web
+    ; Adapter proxies to. Session state must not live in-process, since
+    ; consecutive requests from one client can land on different Lambda
+    ; execution environments; host protection is enforced at the gateway.
+    when options.lambda_mode:
+        set! mcp.settings.stateless_http True
+        set! mcp.settings.json_response True
+        set! mcp.settings.host "127.0.0.1"
+        set! mcp.settings.port (int (getenv "PORT" "8080"))
+        (logger.info "serving koskari-corpus for lambda on 127.0.0.1:%i"
+            mcp.settings.port)
+        return (mcp.run_streamable_http_async)
 
     ; stdio mode, MCP running in an agent-managed subprocess
     unless options.serve:

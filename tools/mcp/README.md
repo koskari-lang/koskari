@@ -46,6 +46,24 @@ make run-mcp
 **Important:** use `-i` so stdin stays open for MCP JSON-RPC. Do **not** pass
 `-t`; a TTY corrupts the protocol stream.
 
+## Serving modes
+
+The same `mcp_server.ki` serves three mutually exclusive transports:
+
+| Mode | Invocation | Use |
+|------|------------|-----|
+| stdio (default) | `mcp_server.ki` | local MCP clients as a subprocess |
+| `--serve` | `mcp_server.ki -- --serve` | self-hosted HTTP behind a reverse proxy |
+| `--lambda` | `mcp_server.ki -- --lambda` | stateless HTTP behind the AWS Lambda Web Adapter |
+
+`--lambda` serves stateless JSON on the loopback `PORT` (default 8080) the
+adapter proxies to; `--serve` and `--lambda` cannot be combined. The `--`
+separates koskari launcher options from script arguments.
+
+For AWS, `make build-mcp-lambda` builds the Lambda image
+(`Containerfile.lambda`, with the Lambda Web Adapter baked in); deploy it with
+the SAM stack and workflow under [deploy/](deploy/README.md).
+
 ## MCP client configuration
 
 Example Cursor / Claude Desktop entry (use `docker` instead of `podman` if
@@ -94,8 +112,10 @@ report that as a CLI/bootstrap issue.
 | File | Role |
 |------|------|
 | `mcp_server.ki` | Koskari MCP server (FastMCP over the baked, in-memory dataset) |
-| `Containerfile` | Child image on `koskari:local` with `mcp` and `pyarrow`, baking `data/` |
+| `Containerfile` | stdio image on `koskari:local` with `mcp` and `pyarrow`, baking `data/` |
+| `Containerfile.lambda` | Lambda image: same, plus the AWS Lambda Web Adapter |
 | `data/` | Corpus parquet views staged by `make mcp-data`; build output, gitignored |
+| `deploy/` | AWS SAM stack and notes for serving on Lambda |
 
 The server source must not be named `mcp.ki`: Koskari derives the module
 name from the filename, which would shadow Python's `mcp` package on import.

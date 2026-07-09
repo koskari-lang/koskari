@@ -1,0 +1,46 @@
+# Containerfile for the Koskari corpus MCP server on AWS Lambda.
+#
+# A parallel image to Containerfile: same baked-in dataset and koskari
+# runtime, plus the AWS Lambda Web Adapter so the server runs behind
+# API Gateway without any Lambda handler plumbing. It serves the stateless
+# streamable-HTTP mode (mcp_server.ki --lambda) on the loopback port the
+# adapter proxies to.
+#
+# Build (stages data first; build for the Lambda function's architecture):
+#   make build-mcp-lambda
+#   make build-mcp-lambda MCP_ARCH=arm64
+#
+# See design/mcp-baked-in-lambda.md, Part 3.
+#
+# author: Christopher O'Brien <obriencj@gmail.com>
+# license: GPL v.3
+
+FROM koskari:local
+
+LABEL maintainer="obriencj@gmail.com" \
+      description="Koskari corpus MCP server for AWS Lambda (baked-in corpus)"
+
+# AWS Lambda Web Adapter, installed as a Lambda extension: a static binary
+# that translates API Gateway events into ordinary HTTP on a local port.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 \
+     /lambda-adapter /opt/extensions/lambda-adapter
+
+RUN pip install --no-cache-dir --disable-pip-version-check \
+    --root-user-action=ignore \
+    mcp pyarrow
+
+WORKDIR /srv
+COPY mcp_server.ki ./mcp_server.ki
+COPY data/ ./data/
+
+# buffered suits the small, sub-second stateless JSON responses; switch to
+# response_stream only if streaming is added later (needs a Function URL).
+ENV PORT=8080 \
+    AWS_LWA_INVOKE_MODE=buffered \
+    KOSKARI_CORPUS_DATA=/srv/data
+
+# The koskari launcher forwards script args verbatim only after a ``--``
+# separator; without it, --lambda is parsed as a launcher option.
+CMD ["mcp_server.ki", "--", "--lambda"]
+
+# The end.

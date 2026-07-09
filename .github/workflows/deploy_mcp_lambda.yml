@@ -1,0 +1,118 @@
+# Build the baked-in corpus MCP Lambda image and redeploy it.
+#
+# Because the dataset is baked into the image, a corpus change and a server
+# change take the identical path -- both are just a new image. Authenticates
+# to AWS via GitHub OIDC (no long-lived keys), mirroring the Hugging Face
+# Trusted-Publishers pattern in publish_corpus_dataset.yml.
+#
+# Prerequisites (one-time, see tools/mcp/deploy/README.md and
+# design/mcp-baked-in-lambda.md Part 4): ECR repo, the Lambda function and
+# HTTP API stood up (the SAM template), and an IAM role trusting this repo's
+# OIDC subject with ECR push + lambda:UpdateFunctionCode. Provide the role
+# ARN as the AWS_MCP_DEPLOY_ROLE repository variable/secret.
+
+name: Deploy MCP Lambda
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/corpus/records/**'
+      - 'tools/mcp/**'
+      - 'tools/corpus/**'
+      - 'Containerfile'
+      - '.github/workflows/deploy_mcp_lambda.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: koskari-mcp
+  FUNCTION_NAME: koskari-mcp
+  PLATFORM: linux/arm64
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: aws-mcp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: 3.14
+
+      - name: Install tox
+        run: pip install tox
+
+      - name: Export all corpus views to parquet
+        run: tox -qe regen-corpus -- --all-views
+
+      - name: Stage parquet into the MCP build context
+        run: |
+          rm -rf tools/mcp/data
+          mkdir -p tools/mcp/data
+          cp -R build/corpus/datasets/. tools/mcp/data/
+
+      - name: Resolve version metadata
+        id: version
+        run: |
+          eval "$(python3 -B tools/regen_version.py --report)"
+          echo "commit=$KOSKARI_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "dirty=$KOSKARI_DIRTY" >> "$GITHUB_OUTPUT"
+          echo "exact_tag=$KOSKARI_EXACT_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$KOSKARI_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_MCP_DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build koskari runtime base (arm64)
+        run: |
+          docker build --platform "$PLATFORM" \
+            -t koskari:local -f Containerfile \
+            --build-arg KOSKARI_COMMIT=${{ steps.version.outputs.commit }} \
+            --build-arg KOSKARI_DIRTY=${{ steps.version.outputs.dirty }} \
+            --build-arg KOSKARI_EXACT_TAG=${{ steps.version.outputs.exact_tag }} \
+            --build-arg KOSKARI_VERSION=${{ steps.version.outputs.version }} \
+            .
+
+      - name: Build and push Lambda image (arm64)
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          tag="${{ steps.version.outputs.commit }}"
+          repo="$REGISTRY/$ECR_REPOSITORY"
+          docker build --platform "$PLATFORM" \
+            -t "$repo:$tag" -t "$repo:latest" \
+            -f tools/mcp/Containerfile.lambda tools/mcp/
+          docker push "$repo:$tag"
+          docker push "$repo:latest"
+          digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$repo:$tag")"
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Update the Lambda function
+        run: |
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --image-uri "${{ steps.build.outputs.image }}"
+          aws lambda wait function-updated \
+            --function-name "$FUNCTION_NAME"
+
+# The end.
