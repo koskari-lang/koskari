@@ -1,0 +1,21 @@
+id: layout-syntax-rules-inline-case-invalid-001
+feature: layout/define-syntax
+source: |-
+  define-syntax dbl:
+      syntax-rules []:
+          case (dbl x): (+ x x)
+verify:
+  error: "LayoutError: rule must be a block"
+references:
+  - reference/macros/compile-define-syntax.md
+  - reference/layouts/index.md
+stability: evolving
+tags:
+  - layout
+  - define-syntax
+  - syntax-rules
+  - "surface:block"
+  - invalid
+  - pitfall
+  - metaprogramming
+notes: "a case body must be an indented block, not inline after the colon. corrective: put the template on the next indented line -- case (dbl x): then (+ x x) indented under it."

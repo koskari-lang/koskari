@@ -117,6 +117,24 @@ compile-time slot (as the core forms do), or `define-syntax foo:` to fill the
 bare slot (compile *and* runtime at once). Core Koskari conventionally prefixes
 its special forms with `compile/` so their bare names stay free.
 
+## Names a macro emits resolve at the use site
+
+A macro template names other identifiers -- a class it constructs, a helper it
+calls. Those names resolve where the macro is **used**, not where it is defined.
+A macro that expands to `(basicConfig …)` compiles fine at its definition, then
+fails with `Empty reference: basicConfig` at every call site that has not
+imported `basicConfig`.
+
+So a macro that ships in a library must only emit names the caller can reach.
+The reliable way is to route through the library's own **exported** helpers:
+have the expansion call an exported `(configure-logging …)` rather than
+`basicConfig` directly, so `import-all-from your-lib` brings both the macro and
+every name its expansion needs into the caller's module together.
+
+This is the single rule behind a working macro library: **export everything a
+macro expands into.** A quick audit is to read the expansion and confirm each
+free identifier in it is exported.
+
 ## In practice
 
 - **Write surface forms.** `(+ 1 2)`, `(if …)`, `(while …)`, `(await x)`. The

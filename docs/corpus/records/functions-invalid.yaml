@@ -113,3 +113,23 @@ tags:
   - local-binding
   - pitfall
 notes: "flet initializers evaluate in the enclosing scope, so a's body cannot see the sibling b; the lambda closes over an unbound b and calling a raises NameError. corrective: use labels — (labels [[a [x] (b x)] [b [x] (* x 2)]] (a 3))"
+---
+id: layout-bare-multiline-define-invalid-001
+feature: reader/layout
+source: |-
+  define x
+      (+ 1 2)
+verify:
+  read: (compile/begin (define x) (+ 1 2))
+references:
+  - reference/grammar.md
+  - reference/concepts/layout-and-s-expressions.md
+stability: evolving
+tags:
+  - reader
+  - layout
+  - "surface:block"
+  - invalid
+  - surprising
+  - pitfall
+notes: "a bare (unparenthesized) define or set! does NOT continue onto a more-indented next line: `define x` binds nothing and `(+ 1 2)` reads as a separate statement. corrective: parenthesize the whole form -- (define x (+ 1 2))."

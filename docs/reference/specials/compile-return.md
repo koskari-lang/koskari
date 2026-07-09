@@ -3,6 +3,11 @@
 
 **Syntax:** `(return)` or `(return VAL)`
 
+**Note:** `return` is only valid as a **call**. A bare `return` symbol (as in
+`unless ok: return`) is not a value binding; it reads and compiles cleanly but
+raises `NameError: Empty reference: return` the moment that branch runs. Always
+write `(return)` (or `(return value)`).
+
 **Use-case:** Return a value from the current function and transfer control back to
 the caller. With no argument, returns `None`.
 

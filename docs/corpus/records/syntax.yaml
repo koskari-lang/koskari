@@ -664,3 +664,105 @@ tags:
   - name-resolution
   - pitfall
 notes: macros expand at compile time before name resolution, so a macro always wins over a same-named value binding in call position. caddr is a macro, so the local (define caddr ...) is never consulted for (caddr ...) — it evaluates via the accessor to 3, not 999. Names bound to runtime functions (e.g. first) shadow normally; see the concepts page.
+---
+id: syntax-macro-rules-introspect-001
+feature: special/compile/macro-rules
+source: |-
+  (define-syntax tag-head
+    (macro-rules []
+      [(tag-head TAG form)
+       (begin
+         (define-values [head rest] form.datum)
+         `(,head ,TAG ,@rest))]))
+  
+verify:
+  read: (define-syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (define-values [head rest] (compile/attr form datum)) (compile/quasiquote ((compile/unquote head) (compile/unquote TAG) (compile/unquote-splicing rest))))]))
+  expand: (compile/define tag-head (macro-rules tag-head [] [(tag-head TAG form) (begin (define-values [head rest] (compile/attr form datum)) (compile/quasiquote ((compile/unquote head) (compile/unquote TAG) (compile/unquote-splicing rest))))]))
+references:
+  - reference/specials/compile-macro-rules.md
+stability: evolving
+tags:
+  - macro
+  - macro-rules
+  - metaprogramming
+notes: |-
+  Procedural macro that introspects its matched form: form.datum unwraps the
+  matched pair, define-values [head rest] destructures it, and quasiquote with
+  unquote-splicing rebuilds a form with TAG injected after the head. Used:
+  (tag-head 0 (+ 1 2)) -> (+ 0 1 2). A macro and its use must be in separate
+  compilation units, so this record verifies the definition, not a call.
+  
+---
+id: syntax-rules-nested-ellipsis-inject-001
+feature: special/compile/syntax-rules
+source: |-
+  (define-syntax with-subitems
+    (syntax-rules []
+      [(with-subitems tag (subhead subrest ...) ...)
+       (begin (subhead tag subrest ...) ...)]))
+verify:
+  read: (define-syntax with-subitems (syntax-rules [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
+  expand: (compile/define with-subitems (syntax-rules with-subitems [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
+references:
+  - reference/specials/compile-syntax-rules.md
+stability: evolving
+tags:
+  - special
+  - syntax-rules
+  - ellipsis
+  - metaprogramming
+notes: "nested ellipsis: match each sub-item as (head rest ...) under an outer ..., re-emit each with a tag injected after the head. Rewrites a block of sub-forms uniformly."
+---
+id: syntax-extend-syntax-nested-literal-dispatch-001
+feature: macro/compile/extend-syntax
+source: |-
+  (extend-syntax config
+    (syntax-rules [kafka]
+      [(config (kafka name) params ...) (kafka-configure name params ...)]))
+verify:
+  read: (extend-syntax config (syntax-rules [kafka] [(config (kafka name) params ...) (kafka-configure name params ...)]))
+  expand: (setq config (+ config (syntax-rules config [kafka] [(config (kafka name) params ...) (kafka-configure name params ...)])))
+references:
+  - reference/macros/compile-extend-syntax.md
+stability: evolving
+tags:
+  - macro
+  - extend-syntax
+  - syntax-rules
+  - metaprogramming
+notes: "Open dispatch on a tagged sub-form: kafka in the literal list matches the HEAD of the second element (kafka name), so a base config with a generic (config (tp name) ...) fall-through can be specialized per type. Same shape as (help (pragma key)); newer extend-syntax rules win."
+---
+id: syntax-macro-rules-synth-head-001
+feature: special/compile/macro-rules
+source: |-
+  (define-syntax job
+    (macro-rules []
+      [(job tp rest ...) `(,(datum (symbol f"job/{tp.datum}")) ,@rest)]))
+verify:
+  read: "(define-syntax job (macro-rules [] [(job tp rest ...) (compile/quasiquote ((compile/unquote (datum (symbol (compile/#str \"job/\" (format (compile/attr tp datum)))))) (compile/unquote-splicing rest)))]))"
+  expand: "(compile/define job (macro-rules job [] [(job tp rest ...) (compile/quasiquote ((compile/unquote (datum (symbol (compile/#str \"job/\" (format (compile/attr tp datum)))))) (compile/unquote-splicing rest)))]))"
+references:
+  - reference/specials/compile-macro-rules.md
+stability: evolving
+tags:
+  - macro
+  - macro-rules
+  - metaprogramming
+notes: "Dispatch by synthesized head: build the per-type name job/<type> from the matched datum with (datum (symbol f\"...\")) and emit it as the head, so the compiler re-expands into job/kafka etc. Parallels the layout/ and compile/ prefix conventions."
+---
+id: reader-unquote-dotted-attr-001
+feature: reader/unquote
+source: "`(fire ,job.enabled)"
+verify:
+  read: (compile/quasiquote (fire (compile/unquote (compile/attr job enabled))))
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - unquote
+  - quasiquote
+  - metaprogramming
+  - pitfall
+  - surprising
+notes: "unquoting a dotted name takes the WHOLE expression: ,job.enabled reads as (compile/unquote (compile/attr job enabled)), evaluating job.enabled. In a macro that is taken at expand time; to unquote only the symbol write (attr ,job enabled)."

@@ -32,6 +32,16 @@ This is **not** the same as:
 When the [Glossary](../glossary.md) says **match**, it means macro/special
 pattern matching unless context says otherwise.
 
+### Brackets and parens match the same shape
+
+A `[…]` and a `(…)` read to the same pair structure (see [Brackets and the call
+convention](brackets-and-call-convention.md)), so a pattern cannot tell one from
+the other. `[formals]` matches any one-element form, including a plain `(f x)`
+call — so you cannot write two arms that branch on "is this a bracket or a
+call." A form that must carry a literal bracket, such as lambda formals, has to
+require it in every arm (spell out an explicit `[]` for the empty case) rather
+than treat it as optional.
+
 ## Resolution order: macros expand before names resolve
 
 Macros and special forms are resolved at **compile time**, before ordinary name
