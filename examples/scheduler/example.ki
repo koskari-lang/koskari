@@ -48,13 +48,13 @@ jobset workload:
 
     ;; cron trigger-key is the 5 classic fields; the handler takes no
     ;; args, so its formals are the empty bracket `[]`.
-    job cron heartbeat * * * * *:
+    job cron heartbeat [* * * * *]:
         handler []:
             (print f"The time is {(datetime.now)}")
 
     ;; A disabled job: present, listed, but not started until enabled
     ;; via the control plane (constraint 6 + 7).
-    job cron nightly-report 0 0 * * * disabled:
+    job cron nightly-report [0 0 * * *] disabled:
         handler []:
             (print "running the nightly report")
 

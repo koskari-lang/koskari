@@ -12,7 +12,7 @@ jobset workload:
         port: 8080
         prefix: "/webhook"
 
-    job cron heartbeat * * * * *:
+    job cron heartbeat [* * * * *]:
         handler []:
             (print f"The time is {(datetime.now)}")
 

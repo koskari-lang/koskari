@@ -46,6 +46,15 @@ define-dataclass KafkaConfig [Config]:
     define [auto_offset_reset :: str] "latest"
     define [enable_auto_commit :: bool] True
 
+    ;; politeness knobs -- how hard we lean on the broker. A larger
+    ;; fetch_max_wait_ms lets each fetch long-poll longer on an idle
+    ;; topic, so we make fewer empty round-trips; retry_backoff_ms
+    ;; spaces out reconnect/refetch attempts. Both default politer than
+    ;; aiokafka's own defaults (500ms / 100ms).
+    define [fetch_max_wait_ms :: int] 1000
+    define [fetch_min_bytes :: int] 1
+    define [retry_backoff_ms :: int] 500
+
 
 define-class KafkaJob [Job]:
     """
@@ -89,7 +98,11 @@ define-class KafkaJob [Job]:
             sasl_plain_password: c.sasl_plain_password
 
             auto_offset_reset: c.auto_offset_reset
-            enable_auto_commit: c.enable_auto_commit)
+            enable_auto_commit: c.enable_auto_commit
+
+            fetch_max_wait_ms: c.fetch_max_wait_ms
+            fetch_min_bytes: c.fetch_min_bytes
+            retry_backoff_ms: c.retry_backoff_ms)
 
 
     define _consume [self]:

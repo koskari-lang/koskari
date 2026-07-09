@@ -83,14 +83,16 @@ define-syntax config/cron:
                 (unless &default/cron (set! default/cron nm)))
 
 
-;; `job cron <name> <m> <h> <dom> <mon> <dow> [disabled]:` -- the trigger
-;; key is the 5 crontab fields, joined into a schedule string at expand
-;; time (the fields include `*`, which cannot be passed as a runtime
-;; value). macro-rules is needed for that; sub-items go through
+;; `(job cron <name> [<m> <h> <dom> <mon> <dow>] disabled ...)`
+;; `(job cron <name> [<m> <h> <dom> <mon> <dow>] ...)`
+;;
+;; -- the trigger key is the 5 crontab fields, joined into a schedule
+;; string at expand time (the fields include `*`, which cannot be passed
+;; as a runtime value). macro-rules is needed for that; sub-items go through
 ;; `with-subitems`.
 define-syntax job/cron:
     macro-rules [disabled]:
-        case (job/cron name mi hr dom mon dow disabled sub ...):
+        case (job/cron name [mi hr dom mon dow] disabled sub ...):
             define sched f"{mi.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}"
             `(begin
                 (define ,name (CronJob ,sched))
@@ -99,8 +101,23 @@ define-syntax job/cron:
                 (when &default/cron (.configure ,name via: default/cron))
                 (with-subitems (cron ,name) ,@sub))
 
-        case (job/cron name mi hr dom mon dow sub ...):
+        case (job/cron name [mi hr dom mon dow] sub ...):
             define sched f"{mi.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}"
+            `(begin
+                (define ,name (CronJob ,sched))
+                (define default/cron)
+                (when &default/cron (.configure ,name via: default/cron))
+                (with-subitems (cron ,name) ,@sub))
+
+        case (job/cron name sched disabled sub ...):
+            `(begin
+                (define ,name (CronJob ,sched))
+                (set! (attr ,name enabled) False)
+                (define default/cron)
+                (when &default/cron (.configure ,name via: default/cron))
+                (with-subitems (cron ,name) ,@sub))
+
+        case (job/cron name sched sub ...):
             `(begin
                 (define ,name (CronJob ,sched))
                 (define default/cron)
