@@ -15,7 +15,7 @@
 import-from .job Config Job JobSet
 import-from .subitems:
     jobset job config handler on-error with-subitems layout/config
-    config/logging configure-logging
+    config/logging configure-logging reqenv
 import-from .server HttpServer get-server ServerConfig stop-all-servers
 import-from .fake FakeConfig FakeJob config/fake job/fake
 import-from .cron CronConfig CronJob config/cron job/cron
@@ -29,7 +29,7 @@ declare-exports [
 
     jobset job config handler on-error with-subitems
     layout/config
-    config/logging configure-logging
+    config/logging configure-logging reqenv
 
     HttpServer get-server ServerConfig stop-all-servers
 
