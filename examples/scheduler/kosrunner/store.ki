@@ -320,6 +320,46 @@ define-class RunStore []:
             (self.runs-dir.joinpath (item row "job_dir") runid "output.log"))
 
 
+    define _read-text-at [self base name]:
+        define path (base.joinpath name)
+        (if (path.exists) (asyncio.to_thread path.read_text) None)
+
+
+    define _read-json-at [self base name]:
+        define text (self._read-text-at base name)
+        (if (None? text) None (json.loads text))
+
+
+    define get-trigger [self runid]:
+        """
+        The persisted trigger record (job/type/cause/parent/args) for a
+        run, read from its trigger.json. Re-trigger replays `args`.
+        """
+
+        define row (self.get-run runid)
+        if (None? row):
+            None
+        else:
+            define base (self.runs-dir.joinpath (item row "job_dir") runid)
+            (self._read-json-at base "trigger.json")
+
+
+    define run-detail [self runid]:
+        """
+        A run's row enriched with its on-disk artifacts: the captured
+        `output` log, the `result`, and the `trigger`. None if unknown.
+        """
+
+        define row (self.get-run runid)
+        when (None? row):
+            (return None)
+        define base (self.runs-dir.joinpath (item row "job_dir") runid)
+        (set! (item row "output")  (self._read-text-at base "output.log"))
+        (set! (item row "result")  (self._read-json-at base "result.json"))
+        (set! (item row "trigger") (self._read-json-at base "trigger.json"))
+        row
+
+
     define prune [self]:
         ;; retention (keep_runs / keep_days) is not wired yet; the method
         ;; exists so callers can start invoking it once the policy lands.

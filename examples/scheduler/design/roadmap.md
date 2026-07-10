@@ -256,13 +256,31 @@ failure + on-error), and a live `example.ki` run recording `heartbeat` (cron),
 `ping`/`echo` (webhook) end to end with correct type/cause/status. This is the
 load-bearing change; everything downstream reads what it writes.
 
-### Phase 2 -- admin JSON API growth
+### Phase 2 -- admin JSON API growth -- DONE (2026-07-09)
 
-Reusing the existing `add-listing` / `add-action` / `add-route` helpers in
-[admin.ki](../kosrunner/admin.ki), add: `GET /runs` (filter by job / status /
-time), `GET /runs/{id}`, `GET /runs/{id}/log` (stream the file), `POST
-/runs/{id}/retrigger`. Retrigger looks the run up, finds the job by name on the
-jobset, and replays via `Job.run`.
+[admin.ki](../kosrunner/admin.ki) mounts three run routes: `GET {prefix}/runs`
+(recent runs via `store.list-runs`), `GET {prefix}/runs/{id}` (a new
+`server.add-detail` GET-with-path-param helper -> `store.run-detail`, the row
+plus its `output`/`result`/`trigger` artifacts read from disk), and `POST
+{prefix}/retrigger/{id}` (`add-action` -> `js.retrigger`).
+
+`JobSet.retrigger [self runid]` ([job.ki](../kosrunner/job.ki)) reads the run's
+`store.get-trigger` (its `trigger.json`), finds the job by name, and replays via
+`(job.run *: args cause: "manual" parent: runid)` -- a new run linked to the
+original, working even on a disabled job. Runs inline for now (the request
+awaits the replay); non-blocking scheduling is a possible refinement.
+
+Deviations from the original sketch: the log is returned inline in the detail
+JSON rather than a separate `/runs/{id}/log` stream, and retrigger is
+`/retrigger/{id}` (the `add-action` shape) rather than `/runs/{id}/retrigger`;
+query-param filtering on `/runs` is not wired (the method takes filters, the
+route passes none yet).
+
+Verified: a 14-assert direct check (get-trigger / run-detail / retrigger /
+parent linkage / unknown-run error) and a live e2e -- seed a webhook run, then
+`GET /admin/runs`, `GET /admin/runs/{id}` (detail carried `trigger.args` +
+result), `POST /admin/retrigger/{id}` produced a new `manual` run linked to the
+parent.
 
 ### Phase 3 -- `ui` sibling variety
 

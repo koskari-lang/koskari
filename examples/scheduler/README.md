@@ -50,7 +50,16 @@ The control plane shares that same server under `/admin`:
 ```bash
 curl localhost:8080/admin/jobs                    # list jobs + state
 curl -X POST localhost:8080/admin/enable/orders   # enable a dormant job
+curl localhost:8080/admin/runs                    # recent runs
+curl localhost:8080/admin/runs/<run-id>           # one run + its output/result/trigger
+curl -X POST localhost:8080/admin/retrigger/<run-id>   # replay a run (e.g. a failed one)
 ```
+
+Every fire is recorded to the storage root (`config storage:`, or
+`$KOSRUNNER_STORAGE_ROOT`, or `./.kosrunner`): a row in `index.db` plus a
+`runs/<job>/<run-id>/` directory holding the trigger args, captured log, and
+result. Re-trigger replays a run's stored args as a new run linked to the
+original, so a failed job can be re-run without re-sending its input.
 
 The **kafka** jobs in the example are marked `disabled` because they need a
 running broker. To enable them, point `config kafka:` at your broker and drop
@@ -156,9 +165,11 @@ config admin:
 job admin control       ; no sub-items; serves from its config alone
 ```
 
-The admin job mounts `GET {prefix}/jobs`, `POST {prefix}/enable/<name>`, and
-`POST {prefix}/disable/<name>`. It reaches its `JobSet` through a back-reference
-the JobSet sets when it registers each job (`job.jobset`).
+The admin job mounts `GET {prefix}/jobs`, `POST {prefix}/enable/<name>`,
+`POST {prefix}/disable/<name>`, plus the run-history surface: `GET {prefix}/runs`,
+`GET {prefix}/runs/<id>`, and `POST {prefix}/retrigger/<id>`. It reaches its
+`JobSet` through a back-reference the JobSet sets when it registers each job
+(`job.jobset`), and the run store hangs off that same JobSet (`job.jobset.store`).
 
 Because HTTP servers are **interned by host:port** (not by config), giving the
 admin config the same port as a webhook makes them share one FastAPI server,

@@ -53,6 +53,14 @@ define-class AdminJob [Job]:
         (server.add-route prefix "shutdown"
             (lambda [req] (js.shutdown) #{ok: True}))
 
+        ;; run history + replay
+        (server.add-listing prefix "runs"
+            (lambda [] (js.store.list-runs)))
+        (server.add-detail prefix "runs"
+            (lambda [runid] (js.store.run-detail runid)))
+        (server.add-action prefix "retrigger"
+            (lambda [runid] (js.retrigger runid)))
+
         (server.start)
         (logger.info "admin control plane mounted at %s" prefix)
 

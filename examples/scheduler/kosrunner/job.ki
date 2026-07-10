@@ -208,6 +208,28 @@ define-class JobSet []:
         job
 
 
+    define retrigger [self runid]:
+        """
+        Replay a past run by id: read its stored trigger args and fire the
+        same job again as a new `manual` run linked to the original via
+        `parent`. Works on a disabled job -- exactly what failure replay
+        needs. Returns a small status dict for the control plane.
+        """
+
+        define trig (self.store.get-trigger runid)
+        if (None? trig):
+            #{error: "no such run" run_id: runid}
+        else:
+            define jobname (item trig "job")
+            define job (self.jobs.get jobname)
+            if (None? job):
+                #{error: "unknown job" job: jobname}
+            else:
+                define args (or (item trig "args") #[])
+                (job.run *: args cause: "manual" parent: runid)
+                #{ok: True retriggered: runid job: jobname}
+
+
     define start [self]:
         (logger.info "starting jobset: %s" self.name)
         for-each [[name job] (self.jobs.items)]:

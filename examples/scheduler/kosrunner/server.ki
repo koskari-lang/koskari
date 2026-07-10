@@ -98,6 +98,22 @@ define-class HttpServer []:
             (handler item)
 
 
+    define add-detail [self prefix name handler]:
+        """
+        GET {prefix}/{name}/{item}; the path item is passed to handler,
+        which returns the item's data (or None -> null for a miss)
+        """
+
+        define path f"{prefix}/{name}/{{item}}"
+        (logger.info "route GET %s" path)
+        define app self.app
+
+        @(app.get path)
+        @coroutine-fn
+        define inner [item]:
+            (handler item)
+
+
     define start [self]:
         when self._server:
             (return)
