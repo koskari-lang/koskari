@@ -258,9 +258,10 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
     return NULL;
   }
 
-  /* Check state */
+  /* Check state: a completed coroutine is single-shot, like CPython's */
   if (coro->state == KOS_CORO_DONE) {
-    PyErr_SetNone(PyExc_StopIteration);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot reuse already awaited coroutine");
     return NULL;
   }
 
@@ -332,7 +333,8 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
     return NULL;
 
   if (coro->state == KOS_CORO_DONE) {
-    PyErr_SetNone(PyExc_StopIteration);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot reuse already awaited coroutine");
     return NULL;
   }
 

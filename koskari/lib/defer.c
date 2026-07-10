@@ -18,7 +18,9 @@
    koskari.lib defer
 
    Single-shot await-handle (DeferCoroutine). Invokes its target at
-   construction; excluded from implicit auto-await; driven by explicit AWAIT.
+   construction; excluded from implicit auto-await; driven by explicit
+   AWAIT. The first await consumes the handle (SPENT); reuse raises
+   RuntimeError like a finished coroutine.
 
    author: Christopher O'Brien <obriencj@preoccupied.net>
    license: GPL v.3
@@ -53,15 +55,13 @@ static void defer_adopt(KosDefer *self, KosDefer *donor) {
       self->u.value = donor->u.value;
       donor->u.value = NULL;
       break;
-    case KOS_DEFER_FAILED:
-      self->state = KOS_DEFER_FAILED;
-      self->u.failed.exc_type = donor->u.failed.exc_type;
-      self->u.failed.exc = donor->u.failed.exc;
-      donor->u.failed.exc_type = NULL;
-      donor->u.failed.exc = NULL;
+    case KOS_DEFER_SPENT:
+      /* nothing to adopt; adoptee is as dead as the donor */
+      self->state = KOS_DEFER_SPENT;
       break;
     case KOS_DEFER_MOVED_FROM:
       /* nothing to adopt */
+      self->state = KOS_DEFER_MOVED_FROM;
       break;
   }
   donor->state = KOS_DEFER_MOVED_FROM;
@@ -94,24 +94,22 @@ static int defer_normalize_from_call(
   if (! result)
     return -1;
 
-  for (;;) {
-    if (KosDefer_CheckExact(result)) {
-      KosDefer *other = (KosDefer *) result;
-      defer_adopt(self, other);
-      Py_DECREF(result);
-      return 0;
-    }
-
-    if (is_awaitable(result)) {
-      self->state = KOS_DEFER_DELEGATING;
-      self->u.inner = result;
-      return 0;
-    }
-
-    self->state = KOS_DEFER_DONE;
-    self->u.value = result;
+  if (KosDefer_CheckExact(result)) {
+    KosDefer *other = (KosDefer *) result;
+    defer_adopt(self, other);
+    Py_DECREF(result);
     return 0;
   }
+
+  if (is_awaitable(result)) {
+    self->state = KOS_DEFER_DELEGATING;
+    self->u.inner = result;
+    return 0;
+  }
+
+  self->state = KOS_DEFER_DONE;
+  self->u.value = result;
+  return 0;
 }
 
 
@@ -167,10 +165,7 @@ static void defer_dealloc(PyObject *self) {
     case KOS_DEFER_DONE:
       Py_CLEAR(d->u.value);
       break;
-    case KOS_DEFER_FAILED:
-      Py_CLEAR(d->u.failed.exc_type);
-      Py_CLEAR(d->u.failed.exc);
-      break;
+    case KOS_DEFER_SPENT:
     case KOS_DEFER_MOVED_FROM:
       break;
   }
@@ -187,10 +182,7 @@ static int defer_traverse(PyObject *self, visitproc visit, void *arg) {
     case KOS_DEFER_DONE:
       Py_VISIT(d->u.value);
       break;
-    case KOS_DEFER_FAILED:
-      Py_VISIT(d->u.failed.exc_type);
-      Py_VISIT(d->u.failed.exc);
-      break;
+    case KOS_DEFER_SPENT:
     case KOS_DEFER_MOVED_FROM:
       break;
   }
@@ -207,10 +199,7 @@ static int defer_clear(PyObject *self) {
     case KOS_DEFER_DONE:
       Py_CLEAR(d->u.value);
       break;
-    case KOS_DEFER_FAILED:
-      Py_CLEAR(d->u.failed.exc_type);
-      Py_CLEAR(d->u.failed.exc);
-      break;
+    case KOS_DEFER_SPENT:
     case KOS_DEFER_MOVED_FROM:
       break;
   }
@@ -225,8 +214,8 @@ static PyObject *defer_repr(PyObject *self) {
       return PyUnicode_FromFormat("<defer delegating inner=%R>", d->u.inner);
     case KOS_DEFER_DONE:
       return PyUnicode_FromString("<defer done>");
-    case KOS_DEFER_FAILED:
-      return PyUnicode_FromFormat("<defer failed exc=%R>", d->u.failed.exc);
+    case KOS_DEFER_SPENT:
+      return PyUnicode_FromString("<defer spent>");
     case KOS_DEFER_MOVED_FROM:
       return PyUnicode_FromString("<defer moved_from>");
     default:
@@ -244,6 +233,12 @@ PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds) {
     return NULL;
   PyObject_Init((PyObject *) self, &KosDeferType);
 
+  /* Safe defaults: normalize overwrites on success, and dealloc after a
+     normalize failure (or a payload-less adopt) must not switch on a
+     garbage state. */
+  self->state = KOS_DEFER_SPENT;
+  self->u.inner = NULL;
+
   if (defer_normalize_from_call(self, fn, args, kwds) < 0) {
     Py_DECREF(self);
     return NULL;
@@ -251,70 +246,6 @@ PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds) {
 
   PyObject_GC_Track((PyObject *) self);
   return (PyObject *) self;
-}
-
-
-/* === KosDefer_Start === */
-
-
-PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded) {
-  *suspended = 0;
-  *yielded = NULL;
-
-  if (self->state == KOS_DEFER_MOVED_FROM) {
-    PyErr_SetString(PyExc_RuntimeError, "cannot await defer after move (moved_from)");
-    return NULL;
-  }
-
-  if (self->state == KOS_DEFER_FAILED) {
-    PyErr_SetObject(self->u.failed.exc_type, self->u.failed.exc);
-    return NULL;
-  }
-
-  if (self->state == KOS_DEFER_DONE) {
-    Py_INCREF(self->u.value);
-    return self->u.value;
-  }
-
-  if (self->state == KOS_DEFER_DELEGATING) {
-    *suspended = 1;
-    *yielded = self->u.inner;
-    Py_INCREF(*yielded);
-    return NULL;
-  }
-
-  PyErr_SetString(PyExc_RuntimeError, "defer in unexpected state");
-  return NULL;
-}
-
-
-/* === KosDefer_FeedResult === */
-
-
-void KosDefer_FeedResult(KosDefer *self, PyObject *result) {
-  if (self->state != KOS_DEFER_DELEGATING) {
-    PyErr_SetString(PyExc_RuntimeError, "FeedResult only valid when delegating");
-    return;
-  }
-  Py_CLEAR(self->u.inner);
-  self->state = KOS_DEFER_DONE;
-  self->u.value = result;
-  Py_XINCREF(result);
-}
-
-
-void KosDefer_FeedException(KosDefer *self, PyObject *exc_type, PyObject *exc_val) {
-  if (self->state != KOS_DEFER_DELEGATING) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "FeedException only valid when delegating");
-    return;
-  }
-  Py_CLEAR(self->u.inner);
-  self->state = KOS_DEFER_FAILED;
-  self->u.failed.exc_type = exc_type;
-  Py_XINCREF(exc_type);
-  self->u.failed.exc = exc_val ? exc_val : exc_type;
-  Py_INCREF(self->u.failed.exc);
 }
 
 
@@ -400,40 +331,56 @@ static PyTypeObject KosDeferValueIteratorType = {
 
 
 /**
-   defer.__await__(): resolve defer at await time. If already DONE,
-   return a trivial iterator that StopIterations with the value. If
-   DELEGATING, return inner's __await__() directly.
+   defer.__await__(): resolve the defer at await time, consuming it.
+   DONE hands the value to a trivial iterator; DELEGATING hands out the
+   inner's __await__() and drops the inner. Either way the defer
+   transitions to SPENT; a later await raises RuntimeError like a
+   finished coroutine.
 */
 static PyObject *defer_await(PyObject *self) {
   KosDefer *defer = (KosDefer *) self;
-  int suspended = 0;
-  PyObject *yielded = NULL;
-  PyObject *result = KosDefer_Start(defer, &suspended, &yielded);
 
-  if (result) {
-    KosDeferValueIterator *it = PyObject_GC_New(KosDeferValueIterator,
-                                                &KosDeferValueIteratorType);
-    if (! it) {
-      Py_DECREF(result);
-      return NULL;
+  switch (defer->state) {
+    case KOS_DEFER_DONE: {
+      KosDeferValueIterator *it = PyObject_GC_New(KosDeferValueIterator,
+                                                  &KosDeferValueIteratorType);
+      if (! it)
+        return NULL;
+      PyObject_Init((PyObject *) it, &KosDeferValueIteratorType);
+
+      /* transfer the value; the handle is consumed */
+      it->value = defer->u.value;
+      defer->u.value = NULL;
+      defer->state = KOS_DEFER_SPENT;
+
+      PyObject_GC_Track((PyObject *) it);
+      return (PyObject *) it;
     }
-    PyObject_Init((PyObject *) it, &KosDeferValueIteratorType);
-    it->value = result;
-    PyObject_GC_Track((PyObject *) it);
-    return (PyObject *) it;
+
+    case KOS_DEFER_DELEGATING: {
+      /* obtain the iterator before consuming: if inner's __await__
+         raises, the defer stays DELEGATING and the error propagates */
+      PyObject *inner_iter = PyObject_GetAwaitable(defer->u.inner);
+      if (! inner_iter)
+        return NULL;
+
+      Py_CLEAR(defer->u.inner);
+      defer->state = KOS_DEFER_SPENT;
+      return inner_iter;
+    }
+
+    case KOS_DEFER_SPENT:
+      PyErr_SetString(PyExc_RuntimeError,
+                      "cannot reuse already awaited defer");
+      return NULL;
+
+    case KOS_DEFER_MOVED_FROM:
+      PyErr_SetString(PyExc_RuntimeError,
+                      "cannot await defer after move (moved_from)");
+      return NULL;
   }
 
-  if (PyErr_Occurred())
-    return NULL;
-
-  if (suspended && yielded) {
-    PyObject *inner_iter = PyObject_GetAwaitable(yielded);
-    Py_DECREF(yielded);
-    return inner_iter;
-  }
-
-  PyErr_SetString(PyExc_RuntimeError,
-                  "defer Start returned without value or suspend");
+  PyErr_SetString(PyExc_RuntimeError, "defer in unexpected state");
   return NULL;
 }
 

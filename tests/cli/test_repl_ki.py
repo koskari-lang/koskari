@@ -120,6 +120,36 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertIn('25', out)
 
 
+    async def test_defer_result_stays_a_handle(self):
+        out, _ = await self._run_repl(
+            ['(define log (list))',
+             '(define f (lambda [] (log.append 1) 42))',
+             '(define d (defer f))',
+             '(len log)',
+             '(await d)',
+             '(len log)'])
+        results = [line for line in out.splitlines() if line.strip()]
+        self.assertEqual(results, ['0', '42', '1'])
+
+
+    async def test_defer_handle_printed_and_stored(self):
+        out, _ = await self._run_repl(
+            ['(defer (lambda [] 42))',
+             '(await _)'])
+        self.assertIn('<defer delegating', out)
+        self.assertIn('42', out)
+
+
+    async def test_spent_defer_await_raises(self):
+        out, err = await self._run_repl(
+            ['(define d (defer (lambda [] 42)))',
+             '(await d)',
+             '(await d)'])
+        self.assertIn('42', out)
+        self.assertIn('RuntimeError', err)
+        self.assertIn('cannot reuse already awaited defer', err)
+
+
     async def test_runtime_error_goes_to_stderr(self):
         out, err = await self._run_repl(['(/ 1 0)'])
         self.assertIn('ZeroDivisionError', err)

@@ -268,4 +268,108 @@ class TestDeferOfDefer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 99)
 
 
+class TestDeferSingleShot(unittest.IsolatedAsyncioTestCase):
+    """
+    The first await consumes a defer; reuse raises RuntimeError
+    """
+
+    async def test_double_python_await_raises(self):
+        """
+        Second Python await of a delegating defer raises RuntimeError
+        """
+
+        async def work():
+            return 7
+
+        d = lib.defer(work)
+        self.assertEqual(await d, 7)
+        self.assertIn("spent", repr(d))
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited defer"):
+            await d
+
+
+    async def test_double_koskari_await_raises(self):
+        """
+        Second koskari AWAIT of the same defer raises RuntimeError
+        """
+
+        async def work():
+            return 7
+
+        code, ns = build_expr([
+            ["VAR", "defer"],
+            ["VAR", "work"],
+            ["CALL", 1],
+            ["DUP", 1],
+            ["AWAIT", 1],
+            ["POP", 1],
+            ["AWAIT", 1],
+            ["RETURN", 1],
+        ], values={"defer": lib.defer, "work": work})
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited defer"):
+            await make_callable(code, ns)()
+
+
+    async def test_born_done_defer_single_shot(self):
+        """
+        A defer born DONE yields its value once, then raises on reuse
+        """
+
+        d = lib.defer(lambda: 42)
+        self.assertIn("done", repr(d))
+        self.assertEqual(await d, 42)
+        self.assertIn("spent", repr(d))
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited defer"):
+            await d
+
+
+    async def test_defer_of_spent_defer_is_identity(self):
+        """
+        defer(spent) returns the same spent handle; await raises
+        """
+
+        d = lib.defer(lambda: 1)
+        await d
+        d2 = lib.defer(d)
+        self.assertIs(d2, d)
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited defer"):
+            await d2
+
+
+    async def test_adopt_of_spent_donor(self):
+        """
+        A deferred call returning a spent defer adopts the spent state
+        """
+
+        d1 = lib.defer(lambda: 1)
+        await d1
+        d2 = lib.defer(lambda: d1)
+        self.assertIn("spent", repr(d2))
+        self.assertIn("moved_from", repr(d1))
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited defer"):
+            await d2
+
+
+    async def test_adopt_of_moved_from_donor(self):
+        """
+        Adopting a moved-from donor leaves a defined moved-from handle
+        """
+
+        d1 = lib.defer(lambda: 5)
+        d2 = lib.defer(lambda: d1)    # moves d1's payload into d2
+        self.assertIn("moved_from", repr(d1))
+
+        d3 = lib.defer(lambda: d1)    # donor has nothing left to give
+        self.assertIn("moved_from", repr(d3))
+        with self.assertRaisesRegex(RuntimeError, "after move"):
+            await d3
+
+        self.assertEqual(await d2, 5)
+
+
 # The end.
