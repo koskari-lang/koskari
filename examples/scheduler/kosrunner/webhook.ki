@@ -40,7 +40,10 @@ define-class WebhookJob [Job]:
     define start [self]:
         set! self.running True
         define server (get-server self.config)
-        (server.add-route self.config.prefix self.route self.callback)
+        ;; route through Job.run so each request is a tracked run; the
+        ;; handler's return value still flows back as the HTTP response
+        (server.add-route self.config.prefix self.route
+            (lambda [payload] (self.run payload cause: "webhook")))
         (server.start)
 
 

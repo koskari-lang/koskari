@@ -42,8 +42,10 @@ define-class Job []:
     """
 
     define __init__ [self]:
+        set! self.name None            ; set by JobSet.register
         set! self.config None
         set! self.callback None
+        set! self.on_error_cb None
         set! self.enabled True
         set! self.running False
         set! self.jobset None
@@ -74,6 +76,65 @@ define-class Job []:
 
         set! self.callback fn
         self
+
+
+    ; --- tracked execution ---
+
+    define _job-kind [self]:
+        define cls (type self)
+        (.lower (.removesuffix cls.__name__ "Job"))
+
+
+    define _invoke [self args]:
+        (if (None? self.callback)
+            None
+            (self.callback *: args))
+
+
+    define run [self *: args cause: "manual" parent: None]:
+        """
+        Fire the handler once as a TRACKED run: record it in the jobset's
+        store, capture its log output, invoke the callback with `args`,
+        and record the outcome (with the kafka-style `on-error` hook on
+        failure). Returns the callback result -- webhook needs it back.
+        Every variety funnels its trigger through here, and re-trigger is
+        just a `run` with `cause: "manual"` and the stored args. Degrades
+        to a plain invoke when there is no store (e.g. an unregistered
+        job).
+        """
+
+        ;; local import dodges the job<->store load-time cycle. The capture
+        ;; contextvar must be set HERE -- in the same context as the callback
+        ;; -- so the run's log output is routed to this run's buffer.
+        import-from .store _current-run
+
+        define store (if self.jobset self.jobset.store None)
+        when (None? store):
+            (return (self._invoke args))
+
+        define runid (store.record-start self.name (self._job-kind) cause args: args parent: parent)
+        define buf #[]
+        define token (_current-run.set buf)
+        define status "success"
+        define result None
+        define err None
+        try:
+            set! result (self._invoke args)
+        except [Exception as: exc]:
+            set! status "failed"
+            set! err exc
+            if self.on_error_cb:
+                try:
+                    (self.on_error_cb exc *: args)
+                except [Exception]:
+                    (logger.error "on-error handler failed: %s" self.name exc_info: True)
+            else:
+                (logger.error "job failed: %s" self.name exc_info: True)
+        finally:
+            (_current-run.reset token)
+            define log (if buf (.join "\n" buf) None)
+            (store.record-finish runid status: status result: result error: err log: log)
+        result
 
 
     ; --- lifecycle (varieties implement) ---
@@ -119,6 +180,7 @@ define-class JobSet []:
     define register [self name job]:
         set! (item self.jobs name) job
         set! job.jobset self
+        set! job.name name
         (logger.info "registered job: %s" name)
         job
 

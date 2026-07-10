@@ -224,21 +224,37 @@ check: record start+finish, assert the row + files exist, reopen to prove
 the nasty cases (`a/b`, `..`, unicode). `assert` is not a Koskari form -- use a
 `check` helper; run via `PYTHONPATH=examples/scheduler uv run koskari …`.
 
-### Phase 1 -- the `Job.run` keystone
+### Phase 1 -- the `Job.run` keystone -- DONE (2026-07-09)
 
-- Base `Job.run(self, *args, cause, parent: None)`: record-start via
-  `self.jobset.store`, open per-run log capture (a contextvar-keyed logging
-  handler writing to that run's `output.log`), invoke `self.callback`, capture
-  return/exception to `result.json`, record-finish, and return the handler
-  result (webhook needs it back).
-- Refactor each variety to funnel through it: cron's `fire` ->
-  `(self.run cause: 'schedule')`, kafka's `_consume` ->
-  `(self.run value cause: 'kafka')`, the webhook route -> returns
-  `(self.run payload cause: 'webhook')`.
-- Nudge handlers from `print` to `logger` so capture is clean (print-capture
-  stays a stretch).
+- Base `Job.run [self *: args cause: "manual" parent: None]` ([job.ki](../kosrunner/job.ki)):
+  record-start via `self.jobset.store`, set the log-capture contextvar,
+  `_invoke` the callback with the args, record the outcome (status + result +
+  captured log), and return the handler result (webhook needs it back). On a
+  callback exception it records `failed` and dispatches to the job's
+  `on_error_cb` (the kafka `on-error` hook, now generalized onto the base) or
+  logs. `_job-kind` derives the `type` column from the class name
+  (`CronJob` -> `cron`); degrades to a plain invoke when there is no store.
+  `JobSet.register` now stamps `job.name`.
+- Every variety funnels through it: cron's `fire` -> `(self.run cause: "schedule")`,
+  kafka's `_consume` -> `(self.run value cause: "kafka")`, the webhook route
+  mounts `(lambda [payload] (self.run payload cause: "webhook"))`.
+- **Log capture** ([store.ki](../kosrunner/store.ki)): a `_RunLogHandler`
+  (subclass of `logging.Handler`, `emit` **@demand**-decorated because Python
+  calls it synchronously) is attached to the `kosrunner` logger by
+  `install-run-logging` (run once from `RunStore.open`). `Job.run` sets the
+  `_current-run` contextvar to a fresh buffer around the invoke -- **in
+  `Job.run`'s own context**, not a separate awaited store method, or the buffer
+  isn't visible in `emit`. `record-finish` flushes the buffer to `output.log`.
+  Caveat: capture only sees records on a `kosrunner.*` logger at/above the
+  configured level (a jobset sets `config logging:`); handlers that `print`
+  are NOT captured -- stdout capture is a later item, and nudging the example
+  handlers onto a `kosrunner.*` logger is an easy follow-up to make capture
+  visible in the demo.
 
-This is the load-bearing change; everything downstream reads what it writes.
+Verified: an 11-assert direct-run check (success + result + captured log +
+failure + on-error), and a live `example.ki` run recording `heartbeat` (cron),
+`ping`/`echo` (webhook) end to end with correct type/cause/status. This is the
+load-bearing change; everything downstream reads what it writes.
 
 ### Phase 2 -- admin JSON API growth
 

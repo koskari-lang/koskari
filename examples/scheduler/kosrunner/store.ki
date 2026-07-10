@@ -22,6 +22,7 @@ import logging
 
 import aiosqlite
 
+import-from contextvars ContextVar
 import-from datetime datetime timezone
 import-from pathlib Path
 
@@ -57,13 +58,14 @@ define resolve-storage-root [config]:
     cwd-default case; an explicit config or env root is never suffixed.
     """
 
-    define explicit (if config config.root None)
+    define explicit (when config config.root)
     define fromenv (os.getenv STORAGE-ENV)
-    (if explicit
+    if explicit:
         (Path explicit)
-        (if fromenv
-            (Path fromenv)
-            (.joinpath (Path (os.getcwd)) ".kosrunner")))
+    elif fromenv:
+        (Path fromenv)
+    else:
+        (.joinpath (Path (os.getcwd)) ".kosrunner")
 
 
 define safe-segment [name]:
@@ -109,6 +111,46 @@ define _SCHEMA #[
 ]
 
 
+;; --- per-run log capture ------------------------------------------
+
+;; A run's log output is routed to a per-run buffer selected by this
+;; contextvar, so concurrent runs (overlapping webhook/kafka handlers)
+;; each capture only their own lines.
+define _current-run (ContextVar "kosrunner_run" default: None)
+define _log-installed #[False]
+
+
+define-class _RunLogHandler [logging.Handler]:
+    """
+    Appends each `kosrunner.*` log record to the active run's buffer. The
+    `emit` override is @demand-decorated because Python's logging calls it
+    synchronously -- without demand it would return an un-awaited
+    coroutine and drop the record.
+    """
+
+    @demand
+    define emit [self record]:
+        define buf (_current-run.get)
+        when (not (None? buf)):
+            (buf.append (self.format record))
+
+
+define install-run-logging []:
+    """
+    Attach the capture handler to the `kosrunner` logger once, so every
+    variety's log output during a run lands in that run's output.log.
+    """
+
+    unless (item _log-installed 0):
+        define lg (logging.getLogger "kosrunner")
+        define handler (_RunLogHandler)
+        (handler.setFormatter
+            (logging.Formatter "%(asctime)s %(levelname)s %(name)s %(message)s"))
+        (lg.addHandler handler)
+        (set! (item _log-installed 0) True)
+    None
+
+
 define-class RunStore []:
     """
     Run history over a single aiosqlite connection, with per-run
@@ -136,6 +178,7 @@ define-class RunStore []:
         when self.db:
             (return self)
 
+        (install-run-logging)
         (self.root.mkdir parents: True exist_ok: True)
         (self.runs-dir.mkdir parents: True exist_ok: True)
 
@@ -191,6 +234,10 @@ define-class RunStore []:
         (asyncio.to_thread path.write_text data)
 
 
+    define _write-text [self path text]:
+        (asyncio.to_thread path.write_text text)
+
+
     ; --- recording ---
 
     define record-start [self job type cause args: None parent: None]:
@@ -217,10 +264,11 @@ define-class RunStore []:
         runid
 
 
-    define record-finish [self runid status result: None error: None]:
+    define record-finish [self runid status result: None error: None log: None]:
         """
-        Close a run: write its result artifact and stamp the row with the
-        final status, finish time, and a short error summary.
+        Close a run: write its result (and captured log) artifacts and
+        stamp the row with the final status, finish time, and a short
+        error summary.
         """
 
         define row (self.get-run runid)
@@ -229,6 +277,8 @@ define-class RunStore []:
             (return)
 
         define rundir (self.runs-dir.joinpath (item row "job_dir") runid)
+        when (not (None? log)):
+            (self._write-text (rundir.joinpath "output.log") log)
         (self._write-json (rundir.joinpath "result.json")
             #{status: status result: result error: error})
         (self._exec
