@@ -43,8 +43,8 @@ fixes launch semantics but is too easy to forget and too noisy to repeat.
 
 | Primitive | Role |
 | --------- | ---- |
-| **`defer`** | Invoke at construction; hold awaitable without auto-await at the use site |
-| **`create-task`** | Schedule on the current asyncio loop (`koskari.asyncio`) |
+| **`defer`** | Invoke at construction; hold awaitable without auto-await at the use site (single-shot) |
+| **`create-task`** | Schedule on the current asyncio loop (`koskari.asyncio`); returns the real **`Task`** handle |
 | **`gather`** | Join many tasks (proposed `@builtin` beside **`create-task`**) |
 | **`async`** | User-facing macro; hides defer/task/gather wiring |
 
@@ -68,9 +68,14 @@ detected at expand time via **`syntax-rules`** literals and/or **`macro-match`**
   (fetch-one client u2))
 ```
 
-Expands to a **`gather`** of **`(create-task (defer …))`** forms — one per job.
-No explicit **`await`** at the use site; **`gather`** is auto-awaited like other
-Python asyncio calls.
+Expands to an explicit **`(await (asyncio.gather …))`** over
+**`(create-task (defer …))`** forms — one per job.
+
+> **Revised 2026-07-10**: asyncio futures (including `gather`'s
+> `GatheringFuture` and the Tasks `create-task` now returns) are excluded
+> from implicit auto-await — futures are handles. The macro expansion must
+> therefore emit the explicit `await` itself; the earlier assumption that
+> `gather` would be auto-awaited no longer holds.
 
 ### Bounded in-flight (`limit:`)
 

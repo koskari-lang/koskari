@@ -46,6 +46,7 @@ define-class HttpServer []:
         set! self.port port
         set! self.app (fastapi.FastAPI)
         set! self._server None
+        set! self._serve_task None
 
 
     define add-route [self prefix name handler]:
@@ -111,7 +112,8 @@ define-class HttpServer []:
             port: self.port)
 
         set! self._server (Server config)
-        (create-task (defer self._server.serve))
+        ;; keep the Task: the loop holds only a weak reference
+        set! self._serve_task (create-task (defer self._server.serve))
 
 
     define stop [self]:
@@ -119,6 +121,7 @@ define-class HttpServer []:
             set! self._server.should_exit True   ; makes uvicorn's serve() return
             (self._server.shutdown)              ; graceful: drain in-flight requests
             set! self._server None
+            set! self._serve_task None
 
 
 ;; one server per host:port, shared across every job that resolves there

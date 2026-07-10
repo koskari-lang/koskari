@@ -78,7 +78,8 @@ define main []:
     define-parameter *interactive* False
 
     if *interactive*:
-        create-task (defer start)
+        ;; global keeps the Task alive; the loop holds only a weak ref
+        define-global server-task (create-task (defer start))
         (create-client)
         (await)
 
