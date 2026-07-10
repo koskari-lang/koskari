@@ -79,7 +79,9 @@ define safe-segment [name]:
 
     define raw (str name)
     define cleaned (_SAFE-RE.sub "_" raw)
-    define guarded (if (or (== cleaned "") (== cleaned ".") (== cleaned "..")) "_" cleaned)
+
+    define guarded (if (in? cleaned #("" "." "..")) "_" cleaned)
+
     define capped (item-slice guarded stop: 100)
     if (== capped raw):
         capped
