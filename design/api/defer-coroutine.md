@@ -1,6 +1,6 @@
 # DeferCoroutine (`defer`) — single-shot await-handle
 
-**Implementation status**: Implemented in `koskari/lib/defer.c` and `koskari/lib/defer.h`; wired into the evaluator (push_or_await skips defer, AWAIT opcode drives via `KosDefer_Start`). Tests in `tests/lib/test_defer.py`.
+**Implementation status**: Implemented in `koskari/lib/defer.c` and `koskari/lib/defer.h`; wired into the evaluator (push_or_await skips defer; AWAIT and Python await both drive through `__await__`, which consumes the handle). Tests in `tests/lib/test_defer.py`.
 
 ## Purpose
 
@@ -10,7 +10,7 @@ Koskari's default async model performs **implicit greedy await** in selected eva
 
 * It **invokes** its target function at **construction** time (eager call).
 * If that invocation yields an awaitable, the defer **delegates** to it until explicit await completes.
-* If that invocation yields a plain value or raises, the defer is **terminal** immediately (DONE or FAILED).
+* If that invocation yields a plain value, the defer is born **DONE**; if it raises, construction fails with that exception.
 * It is **excluded from implicit auto-await**, so it can be passed around as a handle even when the underlying call already ran.
 
 This preserves Koskari's flattened/greedy default for ordinary calls while still allowing deferred **await** of async results.
@@ -26,7 +26,7 @@ This preserves Koskari's flattened/greedy default for ordinary calls while still
 (defer f a b key: val other: 2)
 ```
 
-`defer` accepts all argument types: positional and keyword. It produces a `DeferCoroutine` that stores no pending call — `fn(*args, **kwds)` runs **during** `defer(...)` construction via a path that does not trigger implicit auto-await on the return value. The object is born in **DELEGATING**, **DONE**, or **FAILED** (or **MOVED_FROM** after adoption).
+`defer` accepts all argument types: positional and keyword. It produces a `DeferCoroutine` that stores no pending call — `fn(*args, **kwds)` runs **during** `defer(...)` construction via a path that does not trigger implicit auto-await on the return value. The object is born in **DELEGATING** or **DONE** (or adopts its donor's state, see defer-of-defer collapse).
 
 ### Intended usage patterns
 
@@ -62,7 +62,7 @@ This preserves Koskari's flattened/greedy default for ordinary calls while still
 
 ### Explicit await
 
-`DeferCoroutine` is **awaitable**. The explicit `await` special/opcode must drive it via `KosDefer_Start` (and `KosDefer_FeedResult` / `KosDefer_FeedException` when delegating).
+`DeferCoroutine` is **awaitable**. Explicit await — koskari's AWAIT opcode and Python's `await` alike — drives it through `__await__`, which consumes the handle (see the lifecycle model below).
 
 ### Implicit greedy await
 
@@ -91,18 +91,31 @@ A `DeferCoroutine` has no **PENDING** state. Construction runs the call and norm
 
 * **DONE(value)**
 
-  * Completed successfully at construction (sync result) or after await finished delegation.
-  * `value` is cached.
+  * Completed successfully at construction (sync result).
+  * `value` is held until the first drive consumes it.
 
-* **FAILED(exc)**
+* **ITERATING(iter)**
 
-  * Completed exceptionally at construction or after delegated await raised.
-  * `exc` is cached.
+  * The handle has been armed (`__await__` or a first `send`/`throw` on
+    a DELEGATING defer) and holds the iterator obtained from
+    `inner.__await__()`. Drives forward to it with yield-from rules.
+
+* **SPENT**
+
+  * The handle has been driven to completion (or closed) and is
+    consumed. No payload.
+  * Any further await/send/throw raises `RuntimeError("cannot reuse
+    already awaited defer")`, matching finished-coroutine semantics.
+    `close` on a SPENT handle stays a quiet no-op.
 
 * **MOVED_FROM** (internal state)
 
   * Donor object after adoption (see "defer-of-defer collapse").
-  * Any await attempts should deterministically raise.
+  * Any await attempts deterministically raise (`"cannot await defer
+    after move"`).
+
+Construction failure raises from `defer(...)` directly; there is no
+FAILED state and no cached exception.
 
 ### Transitions at construction
 
@@ -116,29 +129,57 @@ On **`defer(fn, *args, **kwds)`** (via `KosDefer_New`):
    * Else: transition to **DONE(value)**.
 3. If invocation raises: construction fails with that exception (no defer object).
 
-### Transitions on explicit await
+### The coroutine protocol (drivable handle)
 
-While in **DELEGATING(inner)**:
+`DeferCoroutine` carries the full coroutine protocol, so it passes the
+structural `collections.abc.Coroutine` subclass hook and
+`asyncio.iscoroutine` (note `inspect.iscoroutine`, which checks the
+concrete type, stays False). asyncio's strict surfaces
+(`asyncio.create_task`, `asyncio.run`, `run_coroutine_threadsafe`)
+accept a defer directly, and `Task.get_coro()` is the defer itself.
 
-* `KosDefer_Start` suspends with `inner` as the yielded awaitable.
-* If `inner` completes with `value`: **FeedResult** → **DONE(value)**.
-* If `inner` raises: **FeedException** → **FAILED(exc)**.
+* `__await__`: arms a DELEGATING handle (DELEGATING -> ITERATING; on
+  failure it stays DELEGATING and the error propagates) and returns
+  **self**. DONE and ITERATING also return self. SPENT/MOVED_FROM raise
+  RuntimeError. `tp_iternext` exists (send(None) semantics) so
+  CPython's GET_AWAITABLE iterator check passes; there is deliberately
+  NO `tp_iter`, so `iter(d)` and koskari iteration constructs reject
+  the handle instead of silently driving it. `yield-from` explicitly
+  rejects defers alongside coroutines (YIELD_FROM.c).
+* `send(v)`: DONE consumes -- v must be None (else the just-started
+  TypeError), raises `StopIteration(value)` built as a real instance,
+  transitions SPENT. DELEGATING arms lazily, then forwards like
+  ITERATING: use the delegate's `send` when present; a None send falls
+  back to `tp_iternext`; a non-None send without a send method is a
+  TypeError (state unchanged). Completion (StopIteration) or any raise
+  from the delegate consumes the handle (SPENT) and propagates.
+* `throw(typ[, val[, tb]])`: DONE drops the value, goes SPENT, and
+  raises. DELEGATING arms lazily, then forwards to the delegate's
+  `throw` (single-arg calls forward single-arg). A throw-less delegate
+  follows yield-from rules: on GeneratorExit its `close` is called
+  first; either way the handle goes SPENT and the exception raises at
+  the defer. SPENT/MOVED_FROM raise the reuse RuntimeError.
+* `close()`: quiet no-op on SPENT/MOVED_FROM; consumes DONE. For
+  DELEGATING/ITERATING it delegates to the payload's `close` when
+  present (an unstarted inner coroutine closes without the
+  never-awaited warning) and PROPAGATES errors from it -- that is what
+  surfaces "coroutine ignored GeneratorExit". The handle is consumed
+  either way.
 
-While in **DONE** or **FAILED**:
+Method lookups on the delegate distinguish lookup-AttributeError from an
+AttributeError raised inside the delegated body (lookup-then-call), so a
+real error is never mistaken for a missing method.
 
-* `KosDefer_Start` returns the cached value or re-raises immediately.
+### Multiple drives
 
-Terminal states (**DONE**, **FAILED**) are immutable after delegation completes.
-
-### Multiple awaits
-
-The object is **single-shot in invocation** (at construction), not single-consumption of result:
+The object is single-shot in both directions:
 
 * `fn(*args, **kwds)` is invoked at most once (always at construction).
-* Subsequent awaits do **not** re-invoke `fn`.
-* Subsequent awaits return cached **DONE(value)** or re-raise cached **FAILED(exc)**.
+* The result is consumed by at most one drive to completion; further
+  use raises `RuntimeError`, the same behavior as a finished coroutine.
 
-This yields deterministic "joinable handle" behavior after resolution.
+A joinable, multi-await handle is a **Task** (`create-task`) or Future,
+not a defer. See [defer-task-future-matrix.md](../defer-task-future-matrix.md).
 
 ---
 
@@ -154,7 +195,7 @@ When normalizing the result of the construction-time invocation:
 
   * Move `r`'s state into `self` (O(1) pointer/state transfer).
   * Transition `r` to **MOVED_FROM**.
-  * Continue normalization on `self` (may be DELEGATING/DONE/FAILED).
+  * Continue normalization on `self` (may be DELEGATING/DONE/SPENT/MOVED_FROM).
 
 ### Adoption behavior by donor state
 
@@ -162,7 +203,10 @@ If donor `r` is:
 
 * **DELEGATING(inner)**: `self` becomes DELEGATING(inner).
 * **DONE(value)**: `self` becomes DONE(value).
-* **FAILED(exc)**: `self` becomes FAILED(exc).
+* **ITERATING(iter)**: `self` becomes ITERATING(iter) and resumes the
+  drive where the donor left off.
+* **SPENT**: `self` becomes SPENT (as dead as the donor).
+* **MOVED_FROM**: `self` becomes MOVED_FROM (nothing to adopt).
 
 ### Rationale
 
@@ -172,33 +216,13 @@ If donor `r` is:
 
 ---
 
-## Integration with `AWAIT` opcode (flattened Koskari-native fast path)
+## Integration with `AWAIT` opcode
 
-The `AWAIT` opcode/special should be able to **flatten** Koskari-native coroutines in-context (no generic bridging overhead).
-
-### Conceptual algorithm
-
-When executing `AWAIT` on operand `x`:
-
-1. If `x` is `DeferCoroutine`:
-
-   * Call `KosDefer_Start` (no construction-time call — already done).
-   * If DONE/FAILED: return/raise immediately.
-   * If DELEGATING(inner): set `x = inner` and proceed.
-
-2. Now `x` is the concrete await target:
-
-   * If `x` is a Koskari-native coroutine/frame:
-
-     * enter flattened VM evaluation until it yields/suspends or completes.
-   * Else:
-
-     * use the generic await bridge (Python awaitable protocol or equivalent).
-
-3. On completion (when the original operand was a delegating defer):
-
-   * **FeedResult** or **FeedException** on the defer wrapper.
-   * Return value or raise exception.
+The AWAIT opcode treats a defer as a generic awaitable: it calls
+`PyObject_GetAwaitable`, which lands in `__await__`, arms the handle,
+and returns the defer itself as the drive target. The eval's ordinary
+eager-step machinery then drives it via `send`, which forwards into the
+held iterator. No defer-specific opcode support exists or is needed.
 
 ### Important constraint
 
@@ -215,10 +239,12 @@ The construction-time invocation must not pass through a path that performs impl
 
 * Only retain:
 
-  * `inner` while delegating, or
-  * cached terminal `value` / `exc`.
+  * `inner` while delegating,
+  * `iter` while iterating, or
+  * `value` while DONE (until the first drive consumes it).
 
-This prevents pinning argument graphs after the eager call completes.
+SPENT and MOVED_FROM hold nothing. This prevents pinning argument graphs
+after the eager call completes, and releases the payload at completion.
 
 ---
 
@@ -232,21 +258,16 @@ If `fn(*args, **kwds)` raises during construction:
 
 ### Awaited exceptions
 
-If delegating to an inner awaitable that raises:
+If the delegated-to inner awaitable raises, the exception flows to the
+awaiter directly; the defer is already SPENT and records nothing.
 
-* transition to FAILED(exc)
-* raise exc on await
+### Cancellation / close / throw
 
-### Cancellation / close / throw (if supported)
-
-If the await protocol supports cancellation or throwing into awaits:
-
-* While DELEGATING(inner):
-
-  * forward cancellation/throw/close to `inner`.
-  * cache the resulting terminal state on the defer wrapper.
-
-(The precise cancellation object/type is runtime-defined.)
+The defer itself is the drive target: `Task.cancel()` arrives as a
+`throw(CancelledError)` on the defer and forwards into the held
+iterator; `close()` likewise delegates. An un-awaited DELEGATING defer
+that is garbage-collected drops its inner (closing an unstarted
+coroutine).
 
 ---
 
@@ -258,13 +279,9 @@ Minimal helpful behaviors:
 
   * `<defer delegating inner=...>`
   * `<defer done>`
-  * `<defer failed exc=...>`
+  * `<defer iterating>`
+  * `<defer spent>`
   * `<defer moved_from>`
-
-Optional:
-
-* `done?`
-* `result()` / `exception()` for already-terminal objects
 
 ---
 
@@ -272,10 +289,12 @@ Optional:
 
 1. **Single invocation**: `fn(*args, **kwds)` is invoked at most once, at construction.
 2. **No implicit wake-up**: implicit/greedy await sites do not auto-await `DeferCoroutine`.
-3. **Explicit await drives**: explicit `await` drives delegation or returns cached terminal state.
-4. **Terminal immutability**: DONE/FAILED are immutable and cached after delegation completes.
+3. **Driving consumes**: completion, failure, or close transitions to SPENT.
+4. **Single consumption**: reuse raises `RuntimeError`, like a finished coroutine.
 5. **Adoption is O(1)**: defer-of-defer collapse performs state transfer without allocation.
 6. **No call retention**: `fn`, `args`, and `kwds` are never stored on the defer object.
+7. **Coroutine-shaped**: passes `asyncio.iscoroutine` structurally; not
+   iterable (`iter(d)` and `yield-from` reject it).
 
 ---
 
@@ -285,33 +304,41 @@ Optional:
 
   * fields:
 
-    * state tag (DELEGATING | DONE | FAILED | MOVED_FROM)
+    * state tag (DELEGATING | DONE | ITERATING | SPENT | MOVED_FROM)
     * union payload:
 
       * delegating: inner
       * done: value
-      * failed: exc_type, exc
+      * iterating: iter
+      * spent / moved_from: (empty)
 
 * Helpers:
 
   * `KosDefer_Check` / `KosDefer_CheckExact`
   * `defer_adopt(self, other)` (in defer.c)
   * `KosDefer_New(fn, args, kwds)` — invoke once, normalize
-  * `KosDefer_Start` — await entry
-  * `KosDefer_FeedResult` / `KosDefer_FeedException`
+  * `defer_await` (`__await__` slot) — arm and return self
+  * `defer_do_send` / `defer_forward_send` / `defer_forward_throw` —
+    the drive core with yield-from delegation rules
 
 * Implicit call auto-await path:
 
-  * `if is_awaitable(r) && !is_defer(r) => auto-await`
+  * `if is_awaitable(r) && !is_defer(r) && !isfuture(r) => auto-await`
+    (see [defer-task-future-matrix.md](../defer-task-future-matrix.md)
+    for the future exclusion)
 
 * `AWAIT` opcode:
 
-  * recognize and drive `DeferCoroutine` via `KosDefer_Start`
-  * feed terminal state back into defer when inner completes
+  * generic awaitable handling; `PyObject_GetAwaitable` reaches
+    `__await__`, no defer-specific support; `yield-from` rejects
+    defers explicitly (YIELD_FROM.c yield_from_check_coro)
 
 ---
 
 ## Open questions (explicitly deferred)
 
-* Whether `MOVED_FROM` donors raise or mirror terminal state (recommended: raise to catch misuse).
 * Whether there is a separate surface form for capturing call-site dynamic context (default: await-site context).
+
+(Resolved 2026-07-10: `MOVED_FROM` donors raise on await; the DONE-caching
+multi-await design was dropped in favor of single-shot delegate-and-die,
+with Tasks/Futures as the multi-await handles.)

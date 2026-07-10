@@ -84,6 +84,12 @@ holds the result rather than a bare coroutine. See
 [compile/await](../specials/compile-await.md) and the
 [VM opcode reference](../vm/index.md) for opcode-level detail.
 
+Two kinds of values are excluded and arrive as plain values: a
+[defer](#defer) handle, and any asyncio **future** (anything passing
+`asyncio.isfuture`, including `Task`). Futures are handles to work owned by
+the event loop; hold them, cancel them, or resolve them with an explicit
+`(await fut)` when the value is wanted.
+
 ## Suspension in sequential code
 
 ```koskari
@@ -111,8 +117,12 @@ define task (defer fetch-user)
 (await task)
 ```
 
-That mirrors holding a coroutine or task in Python, but defer is explicit —
-immediate resolution remains the default for ordinary calls.
+That mirrors holding a coroutine in Python, and like a coroutine the
+handle is consumed by its first await — awaiting it again raises
+`RuntimeError`. When you need a handle that can be awaited more than
+once, cancelled, or given callbacks, schedule it as a Task with
+`create-task`. Defer is explicit — immediate resolution remains the
+default for ordinary calls.
 
 Use explicit [`(await expr)`](../specials/compile-await.md) when `expr` is a defer
 or any other awaitable you must suspend on at that program point. See

@@ -279,6 +279,37 @@ class TestYieldFrom(CevalTest):
         await run()
 
 
+    async def test_yield_from_defer_rejected(self):
+        """
+        YIELD_FROM on a defer is a type error: like coroutines, defers
+        are awaitable handles, not iterables (tp_iternext exists only
+        for the await protocol).
+        """
+
+        from koskari.lib import defer
+
+        async def work():
+            return 99
+
+        handle = defer(work)
+        code_obj, ns = build_expr([
+            ["CONST", handle],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            with self.assertRaises(TypeError) as ctx:
+                await anext(agen)
+            self.assertIn("iterable", str(ctx.exception))
+
+        await run()
+        handle.close()
+
+
     async def test_yield_from_koskari_async_gen_with_await(self):
         """
         YIELD_FROM on a Koskari async gen that AWAITs between yields

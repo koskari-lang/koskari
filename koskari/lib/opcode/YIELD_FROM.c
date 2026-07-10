@@ -15,7 +15,7 @@
 
 
 #define yield_from_check_coro(obj) \
-  (KosCoroutine_Check(obj) || PyCoro_CheckExact(obj))
+  (KosCoroutine_Check(obj) || PyCoro_CheckExact(obj) || KosDefer_Check(obj))
 
 
 /**

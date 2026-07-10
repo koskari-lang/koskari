@@ -27,7 +27,8 @@
 typedef enum {
   KOS_DEFER_DELEGATING = 0,
   KOS_DEFER_DONE,
-  KOS_DEFER_FAILED,
+  KOS_DEFER_ITERATING,
+  KOS_DEFER_SPENT,
   KOS_DEFER_MOVED_FROM,
 } KosDeferState;
 
@@ -41,10 +42,7 @@ typedef struct KosDefer {
   union {
     PyObject *inner;
     PyObject *value;
-    struct {
-      PyObject *exc_type;
-      PyObject *exc;
-    } failed;
+    PyObject *iter;
   } u;
 } KosDefer;
 
@@ -73,27 +71,15 @@ extern PyTypeObject KosDeferType;
   (including defer-of-defer adopt). On call failure, return NULL with
   active exception. args and kwds may be NULL (treated as empty).
   Returns new reference.
+
+  The handle is single-shot: driving it to completion (await, send,
+  throw, or close) transitions to KOS_DEFER_SPENT; later use raises
+  RuntimeError like a finished coroutine. The type carries the full
+  coroutine protocol (__await__ returning self, send, throw, close,
+  __next__), so it passes collections.abc.Coroutine's structural hook
+  and asyncio.iscoroutine.
 */
 PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds);
-
-/**
-  Resolve at await time. If DONE return value (new ref). If DELEGATING
-  set *suspended=1 and *yielded=inner, return NULL. If FAILED/MOVED_FROM
-  set exception, return NULL.
-*/
-PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded);
-
-/**
-  Transition DELEGATING to DONE(result). Only valid when state is
-  KOS_DEFER_DELEGATING. Call on AWAIT resume when inner completed.
-*/
-void KosDefer_FeedResult(KosDefer *self, PyObject *result);
-
-/**
-  Transition DELEGATING to FAILED(exc). Only valid when state is
-  KOS_DEFER_DELEGATING. Call when inner awaitable raised.
-*/
-void KosDefer_FeedException(KosDefer *self, PyObject *exc_type, PyObject *exc_val);
 
 
 /* === unit lifecycle === */

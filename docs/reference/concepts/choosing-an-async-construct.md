@@ -81,13 +81,21 @@ first — that auto-awaits to the value (see the caveat above).
 ## Scheduling and gathering — `create-task`, `defer` + `gather`
 
 To run held async work on the loop, schedule a `defer` (or coroutine) with
-**`create-task`**, then await the returned task:
+**`create-task`**. It returns the real `asyncio.Task` — a handle. Tasks
+(like all asyncio futures) are excluded from implicit auto-await, so the
+handle can be stored, cancelled, or given done-callbacks, and is resolved
+by explicit await:
 
 ```koskari
 define t (create-task (defer fetch-user))
 ;; ... other work runs meanwhile ...
+;; (t.cancel) would stop it; (await t) resolves it
 (await t)
 ```
+
+Keep a reference to the task while it runs — the event loop holds only a
+weak one. Passing a `defer` to `create-task` consumes it (a defer is
+single-shot); the Task owns the work from then on.
 
 For concurrency, hold each call as a `defer` and await them together — defers
 are awaitable, so `asyncio.gather` accepts them directly:
@@ -99,10 +107,11 @@ define b (defer (function fetch [] (fetch-user 2)))
 (await (asyncio.gather a b))          ; both run concurrently
 ```
 
-The lower-level `as-coroutine` helper (in `koskari.asyncio`, reached by import)
-awaits an awaitable into a Python coroutine; `create-task` uses it internally.
-You rarely call it from Koskari, because auto-await would resolve it before it
-reaches asyncio — prefer `defer` and `create-task`.
+A defer satisfies `asyncio.iscoroutine` (it carries the full coroutine
+protocol), so the strict surfaces — `asyncio.create_task`, `asyncio.run`,
+`run_coroutine_threadsafe` — accept it directly. The lower-level
+`as-coroutine` helper (in `koskari.asyncio`, reached by import) remains
+for the rare non-coroutine awaitable that needs to satisfy those checks.
 
 ## See also
 

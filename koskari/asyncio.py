@@ -24,10 +24,8 @@ asyncio loops which specifically check for the Python coroutine type.
 
 import asyncio
 from functools import wraps
-from types import CoroutineType as PythonCoroutine
 
 from koskari.bootstrap import add_builtin, builtin
-from koskari.lib import defer
 
 
 __all__ = (
@@ -65,14 +63,20 @@ def coroutine_fn(fn):
 @builtin("create-task")
 def create_task(coro):
     """
-    Create and schedule a Task from an awaitable. Will automatically convert a
-    defer or Koskari Coroutine into a Python coroutine object. The resulting
-    Task will be wrapped in a defer object to prevent implicit auto-await.
+    Create and schedule a Task from an awaitable, returning the Task
+    itself. Tasks are handles: they are excluded from implicit auto-await,
+    support cancellation and done-callbacks, and resolve under explicit
+    await.
+
+    Python coroutines, Koskari Coroutines, and defers all pass
+    asyncio.iscoroutine and schedule directly; exotic non-coroutine
+    awaitables are adapted through as_coroutine first. Note that passing
+    a defer consumes it -- the Task owns its single shot.
     """
 
-    if not isinstance(coro, PythonCoroutine):
+    if not asyncio.iscoroutine(coro):
         coro = as_coroutine(coro)
-    return defer(asyncio.create_task, coro)
+    return asyncio.create_task(coro)
 
 
 def run_until_complete(loop, coro):
@@ -87,7 +91,7 @@ def run_until_complete(loop, coro):
     :returns: The result of the coroutine.
     """
 
-    if not isinstance(coro, PythonCoroutine):
+    if not asyncio.iscoroutine(coro):
         coro = as_coroutine(coro)
 
     if loop is None:

@@ -31,7 +31,8 @@ with examples, see [Concepts](concepts/index.md).
 
 **defer**
 : Single-shot await handle; not auto-awaited at use sites—use explicit
-  [compile/await](specials/compile-await.md). See
+  [compile/await](specials/compile-await.md), which consumes it (reuse
+  raises `RuntimeError`). See
   [Demand, async, and defer](concepts/demand-async-and-defer.md) and
   [koskari.lib](../api/koskari-lib.md).
 
