@@ -50,6 +50,31 @@ delegation rules; see `design/api/defer-coroutine.md`. The `as_coroutine`
 adapter remains only for exotic non-coroutine awaitables; `coroutine-fn`
 remains the shim for coroutine-function-checking frameworks.
 
+### Stability of the structural-iscoroutine surface
+
+`inspect.iscoroutine` and `asyncio.iscoroutine` disagree on defer (and
+on KosCoroutine) by design, and that divergence is stable:
+
+- `inspect.iscoroutine` is introspective ("a native coroutine object
+  with cr_frame/cr_code") and type-exact on purpose; it stays False for
+  defer forever.
+- `asyncio.iscoroutine` is protocol-level ("can the loop drive it") and
+  deliberately accepts `collections.abc.Coroutine`; the flagship user
+  of that arm is Cython, whose compiled `async def` coroutines are not
+  `types.CoroutineType` either. Narrowing it would break the Cython
+  ecosystem.
+- Verified on 3.14.3: the implementation is unchanged, undeprecated,
+  and every asyncio consumer (Task, ensure_future, Runner.run,
+  run_coroutine_threadsafe, wait/gather guards) gates on the
+  permissive `coroutines.iscoroutine`. The 3.14 deprecation hits only
+  `asyncio.iscoroutinefunction`, whose replacement
+  (`inspect.iscoroutinefunction` + `markcoroutinefunction`) moves
+  further toward protocol acceptance, not away.
+- Sentinel coverage: the test suite asserts `asyncio.iscoroutine(defer)`
+  and `create_task(defer)` directly, so a future CPython narrowing
+  would fail the version matrix immediately; `as_coroutine` remains
+  the fallback adapter if that ever happens.
+
 ## Usage matrix
 
 | Intent | Construct | Consume | Why not the others |
