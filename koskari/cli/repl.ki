@@ -233,7 +233,10 @@ define repl [
         set! prompt "... "
         (continue)
 
-      define result (await (_await_user_form expr))
+      ;; No explicit await here: the call boundary already auto-awaits
+      ;; the shim coroutine, and an explicit await would collapse a
+      ;; defer handle returned by the user form.
+      define result (_await_user_form expr)
 
       set! buffer ""
       set! prompt ">>> "
