@@ -41,4 +41,43 @@ def churn_list_each(n: int, x: int = 1) -> int:
     return acc & MASK32
 
 
+# Exercises attribute resolution and bound-method calls: one method
+# call per iteration, mutating instance state through self.
+
+class ChurnCounter:
+
+    def __init__(self):
+        self.total = 0
+
+    def bump(self, v):
+        self.total = (self.total + v) & MASK32
+        return self.total
+
+
+def churn_method(n: int, x: int = 1) -> int:
+    c = ChurnCounter()
+    for i in range(n):
+        x = c.bump(x ^ i)
+    return c.total
+
+
+# Exercises branch density: a four-arm if/elif/else per iteration with
+# deliberately light arithmetic so jump/compare dispatch dominates.
+
+def churn_branch(n: int, x: int = 1) -> int:
+    acc = 0
+    v = x & MASK32
+    for i in range(n):
+        v = (v + i) & MASK32
+        if v % 3 == 0:
+            acc = (acc + (v >> 2)) & MASK32
+        elif v % 5 == 0:
+            acc = (acc ^ ((v << 1) & MASK32)) & MASK32
+        elif v & 1:
+            acc = (acc + v * 3 + 1) & MASK32
+        else:
+            acc = (acc + (v >> 1)) & MASK32
+    return acc & MASK32
+
+
 # The end.

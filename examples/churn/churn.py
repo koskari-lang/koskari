@@ -6,11 +6,15 @@ import time
 
 import koskari
 
+from churn_k import churn_branch as churn_branch_k
 from churn_k import churn_list_each as churn_list_each_k
 from churn_k import churn_loop as churn_loop_k
+from churn_k import churn_method as churn_method_k
 from churn_k import churn_tree as churn_tree_k
+from churn_p import churn_branch as churn_branch_p
 from churn_p import churn_list_each as churn_list_each_p
 from churn_p import churn_loop as churn_loop_p
+from churn_p import churn_method as churn_method_p
 from churn_p import churn_tree as churn_tree_p
 
 from koskari.lib import clear_trace_counters, demand, get_trace_report
@@ -20,6 +24,8 @@ LABELS = {
     'loop': 'churn_loop',
     'tree': 'churn_tree',
     'list_each': 'churn_list_each',
+    'method': 'churn_method',
+    'branch': 'churn_branch',
 }
 
 
@@ -42,6 +48,18 @@ BENCHMARKS = {
         'py': churn_list_each_p,
         'ki': churn_list_each_k,
     },
+    'method': {
+        'runs': 50,
+        'args': (1_000_000, 1),
+        'py': churn_method_p,
+        'ki': churn_method_k,
+    },
+    'branch': {
+        'runs': 50,
+        'args': (1_000_000, 1),
+        'py': churn_branch_p,
+        'ki': churn_branch_k,
+    },
 }
 
 
@@ -54,7 +72,7 @@ def bench_async(runs, fn, *args):
     t1 = time.perf_counter()
 
     print(answer)
-    return t1 - t0
+    return t1 - t0, answer
 
 
 def bench_sync(runs, fn, *args):
@@ -64,7 +82,7 @@ def bench_sync(runs, fn, *args):
     t1 = time.perf_counter()
 
     print(answer)
-    return t1 - t0
+    return t1 - t0, answer
 
 
 def announce(name, total, avg):
@@ -78,6 +96,7 @@ def parse_args_usage():
         '  churn.py --loop\n'
         '  churn.py --tree\n'
         '  churn.py --list-each\n'
+        '  churn.py --method --branch\n'
         '  churn.py --loop --list-each')
 
 
@@ -104,6 +123,14 @@ def parse_args(argv=None):
         action='store_true',
         dest='list_each',
         help='Run churn_list_each (list comp vs list-each)')
+    parser.add_argument(
+        '--method',
+        action='store_true',
+        help='Run churn_method (attribute resolution + bound-method calls)')
+    parser.add_argument(
+        '--branch',
+        action='store_true',
+        help='Run churn_branch (if/elif/else density)')
 
     args = parser.parse_args(argv)
 
@@ -114,6 +141,10 @@ def parse_args(argv=None):
         selected.append('tree')
     if args.list_each:
         selected.append('list_each')
+    if args.method:
+        selected.append('method')
+    if args.branch:
+        selected.append('branch')
     if not selected:
         selected = list(BENCHMARKS.keys())
 
@@ -126,11 +157,15 @@ def run_pair(name):
     args = bench['args']
     label = LABELS[name]
 
-    tp = bench_sync(runs, bench['py'], *args)
+    tp, answer_p = bench_sync(runs, bench['py'], *args)
     announce('python %s' % label, tp, tp / runs)
 
-    tk = bench_async(runs, bench['ki'], *args)
+    tk, answer_k = bench_async(runs, bench['ki'], *args)
     announce('koskari %s' % label, tk, tk / runs)
+
+    if answer_p != answer_k:
+        raise AssertionError(
+            f"{label}: python={answer_p!r} koskari={answer_k!r}")
 
     ratio = tp / tk
     print('%s = %s (%.2f%%)' % (label, ratio, 100 / ratio))

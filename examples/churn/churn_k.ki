@@ -46,6 +46,45 @@ define churn_list_each [n x: 1]:
     (& acc MASK32)
 
 
+;; Exercises attribute resolution and bound-method calls: one method
+;; call per iteration, mutating instance state through self.
+
+define-class ChurnCounter []:
+
+    define __init__ [self]:
+        set! self.total 0
+
+    define bump [self v]:
+        set! self.total (& (+ self.total v) MASK32)
+        self.total
+
+
+define churn_method [n x: 1]:
+    define c (ChurnCounter)
+    for-each [i (range n)]:
+        set! x (c.bump (^ x i))
+    c.total
+
+
+;; Exercises branch density: a four-arm if/elif/else per iteration with
+;; deliberately light arithmetic so jump/compare dispatch dominates.
+
+define churn_branch [n x: 1]:
+    define acc 0
+    define v (& x MASK32)
+    for-each [i (range n)]:
+        set! v (& (+ v i) MASK32)
+        if (== 0 (% v 3)):
+            set! acc (& (+ acc (>> v 2)) MASK32)
+        elif (== 0 (% v 5)):
+            set! acc (& (^ acc (& (<< v 1) MASK32)) MASK32)
+        elif (& v 1):
+            set! acc (& (+ acc (* v 3) 1) MASK32)
+        else:
+            set! acc (& (+ acc (>> v 1)) MASK32)
+    acc
+
+
 ;; Exercises the demand path the way koslife does: Python's itertools
 ;; starmap calls a koskari method wrapped in (demand ...), and the
 ;; outer get-all-groups nests a second demand+starmap inside the eval
@@ -164,7 +203,7 @@ when-main:
     (parser.add_argument "tests"
         nargs: "*" metavar: "TEST"
         default: #[]
-        help: "loop tree list_each starmap yieldfrom (default: all)")
+        help: "loop tree list_each method branch starmap yieldfrom (default: all)")
 
     define options (parser.parse_args)
 
@@ -172,6 +211,8 @@ when-main:
       loop: { (churn_loop 10000 1) }
       tree: { (churn_tree 12 1) }
       list_each: { (churn_list_each 10000 1) }
+      method: { (churn_method 10000 1) }
+      branch: { (churn_branch 10000 1) }
       starmap: { (churn_starmap 8 8) }
       yieldfrom: { (churn_yieldfrom 64) }
     }
