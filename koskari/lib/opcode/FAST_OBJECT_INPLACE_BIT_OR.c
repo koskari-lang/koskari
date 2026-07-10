@@ -38,7 +38,9 @@ KOS_OP_HANDLER(FAST_OBJECT_INPLACE_BIT_OR) {
     return EVAL_RAISE();
   }
 
-  PyObject *result = PyNumber_InPlaceOr(obj, rhs);
+  PyObject *result = NULL;
+  if (kos_long_binop_fast(KOS_LBOP_BIT_OR, obj, rhs, &result) == 0)
+    result = PyNumber_InPlaceOr(obj, rhs);
   Py_DECREF(obj);
   Py_DECREF(rhs);
   if (unlikely(! result))

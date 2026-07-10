@@ -18,7 +18,8 @@
 */
 
 KOS_OP_HANDLER(OBJECT_BIT_LEFT) {
-  return kos_op_result_from_push_int(obj_op_binary(es, insn, PyNumber_Lshift));
+  return kos_op_result_from_push_int(
+      obj_op_binary_long(es, insn, PyNumber_Lshift, KOS_LBOP_BIT_LEFT));
 }
 
 

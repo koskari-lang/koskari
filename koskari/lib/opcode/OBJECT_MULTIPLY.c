@@ -19,7 +19,8 @@
 */
 
 KOS_OP_HANDLER(OBJECT_MULTIPLY) {
-  return kos_op_result_from_push_int(obj_op_reducing(es, insn, KosOperator_Multiply));
+  return kos_op_result_from_push_int(
+      obj_op_reducing_long(es, insn, KosOperator_Multiply, KOS_LBOP_MULTIPLY));
 }
 
 

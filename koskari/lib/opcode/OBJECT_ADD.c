@@ -19,7 +19,8 @@
 */
 
 KOS_OP_HANDLER(OBJECT_ADD) {
-  return kos_op_result_from_push_int(obj_op_reducing(es, insn, KosOperator_Add));
+  return kos_op_result_from_push_int(
+      obj_op_reducing_long(es, insn, KosOperator_Add, KOS_LBOP_ADD));
 }
 
 

@@ -19,7 +19,9 @@
 */
 
 KOS_OP_HANDLER(OBJECT_BIT_AND) {
-  return kos_op_result_from_push_int(obj_op_reducing(es, insn, KosOperator_BitwiseAnd));
+  return kos_op_result_from_push_int(
+      obj_op_reducing_long(
+          es, insn, KosOperator_BitwiseAnd, KOS_LBOP_BIT_AND));
 }
 
 

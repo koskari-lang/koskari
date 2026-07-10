@@ -63,6 +63,7 @@
 #include "lib.h"
 #include "hints.h"
 #include "debug.h"
+#include "longops.h"
 #include "tracing.h"
 
 #include <stdint.h>
@@ -1590,6 +1591,37 @@ static int obj_op_reducing(
 }
 
 
+/**
+   Reducing operator with a two-operand PyLong fast path.  When the top
+   two stack values qualify for kos_long_binop_fast, compute directly
+   and skip the generic reduce dispatch; any other operand count, type,
+   or overflow falls through to obj_op_reducing with fn.
+*/
+static int obj_op_reducing_long(
+    KosEvalState *es,
+    KosOp *insn,
+    KosOperatorReducing *fn,
+    KosLongBinop lop) {
+
+  if (likely(KosOp_ARG(insn) == 2)) {
+    PyObject *const *args = KosEvalState_StackTailPtr(es, 2);
+    if (unlikely(! args))
+      return -1;
+
+    PyObject *res = NULL;
+    int handled = kos_long_binop_fast(lop, args[0], args[1], &res);
+    if (unlikely(handled < 0))
+      return -1;
+    if (likely(handled)) {
+      KosEvalState_StackDropNoErr(es, 2);
+      return KosEvalState_StackPUSH(es, res);
+    }
+  }
+
+  return obj_op_reducing(es, insn, fn);
+}
+
+
 static int obj_op_binary(
     KosEvalState *es,
     KosOp *insn,
@@ -1599,6 +1631,33 @@ static int obj_op_binary(
   if (KOS_EVALSTATE_POP_ARGS(es, op))
     return -1;
   PyObject *res = fn(op.left, op.right);
+  Py_DECREF(op.left);
+  Py_DECREF(op.right);
+  if (! res)
+    return -1;
+  (void) insn;
+  return KosEvalState_StackPUSH(es, res);
+}
+
+
+/**
+   Binary operator with a PyLong fast path.  Same contract as
+   obj_op_binary; qualifying int operands skip fn entirely.
+*/
+static int obj_op_binary_long(
+    KosEvalState *es,
+    KosOp *insn,
+    PyObject *(*fn)(PyObject *left, PyObject *right),
+    KosLongBinop lop) {
+
+  KosEvalStackLR op = {0};
+  if (KOS_EVALSTATE_POP_ARGS(es, op))
+    return -1;
+
+  PyObject *res = NULL;
+  int handled = kos_long_binop_fast(lop, op.left, op.right, &res);
+  if (handled == 0)
+    res = fn(op.left, op.right);
   Py_DECREF(op.left);
   Py_DECREF(op.right);
   if (! res)
@@ -2367,9 +2426,21 @@ static inline KosOpResult eval_event_return_ng(
 
 /**
    Run WIND/WITH control hook after a CONTROL_RETURNED delivery.
+
+   Inline early exit: a FRAME node only has hook work when its parent is a
+   WITH in a pending await phase.  Any other frame-topped chain — the
+   dominant plain-return case — skips the dispatch (and its trace wrap)
+   entirely.  Mirrors the first branch of kos_dynnode_on_control_returned.
 */
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     KosEvalState *es) {
+
+  KosDynNode *node = KosEvalState_CurrentNode(es);
+  if (likely(node && KosDynNode_IS_FRAME(node))) {
+    KosDynNode *parent = KosDynNode_PARENT(node);
+    if (likely(! parent || ! KosDynNode_IS_WITH(parent)))
+      return EVAL_REPROLOGUE();
+  }
 
   KosOpResult r;
   KOS_TRACE_POST_OP_WRAP(control_returned,
