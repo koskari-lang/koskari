@@ -191,10 +191,13 @@ class TestPackInto(unittest.TestCase):
         self.assertIsNone(c.arena)
 
     def test_capacity_exceeded_rejected(self):
-        # a one-page arena, and a code whose block exceeds it
+        # a one-page arena, and a code whose block exceeds it. 1024
+        # CONST/POP pairs overflow a 4 KiB page but fit under a 16 KiB
+        # page (Apple Silicon), so scale the body with the host page size.
         arena = Arena(8)
         nspec = NamespaceSpec("big", (), ())
-        instr = [[OpCode.KOS_OP_CONST, None], [OpCode.KOS_OP_POP, 1]] * 1024
+        pairs = max(1024, PAGE // 4)
+        instr = [[OpCode.KOS_OP_CONST, None], [OpCode.KOS_OP_POP, 1]] * pairs
         instr.append([OpCode.KOS_OP_RETURN, 0])
         big = Code(nspec, instr, "big", "<test-arena>")
 
