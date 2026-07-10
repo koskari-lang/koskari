@@ -265,12 +265,16 @@ class TestAdapters(SpecialsTestCase):
         coroutine_fn wraps a koskari callable into a coroutine function
         """
 
+        import inspect
+
         src = """
         "wrapped"
         """
         expr, _mod = self.compile_expr(src)
         wrapped = coroutine_fn(expr)
-        self.assertTrue(asyncio.iscoroutinefunction(wrapped))
+        # inspect variant: asyncio.iscoroutinefunction is deprecated for
+        # removal in 3.16 and defers to this one
+        self.assertTrue(inspect.iscoroutinefunction(wrapped))
         self.assertEqual(await wrapped(), "wrapped")
 
 
