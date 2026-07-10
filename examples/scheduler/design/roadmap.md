@@ -69,17 +69,19 @@ rides in on `import-all-from kosrunner` with no per-file `import os`.
   ever contends with a write: a second read-only WAL connection.
 - The store's async surface stays tiny: `record-start`, `record-finish`,
   `list-runs`, `get-run`, `prune`, plus artifact-path helpers.
-- **Bulk stays out of the DB.** Layout under the PVC root:
+- **Bulk stays out of the DB.** Runs are unified under one directory, then
+  bucketed by job name, then by run id:
 
   ```
   <root>/index.db
-  <root>/runs/<run_id>/trigger.json    ; the args, so re-trigger can replay
-  <root>/runs/<run_id>/output.log      ; captured handler logs
-  <root>/runs/<run_id>/result.json     ; return value / exception
+  <root>/runs/<safe-job>/<runid>/trigger.json   ; the args, so re-trigger can replay
+  <root>/runs/<safe-job>/<runid>/output.log     ; captured handler logs
+  <root>/runs/<safe-job>/<runid>/result.json    ; return value / exception
   ```
 
   The DB holds queryable metadata plus the artifact path; the UI streams log
-  files straight from disk.
+  files straight from disk. Root resolution and the job-name sanitizer are
+  detailed in Phase 0.
 - **The store hangs off the `JobSet`** (`js.store`), constructed once at the
   configured root. `Job.run` writes via `self.jobset.store`; the admin and UI
   varieties read via the same register-time back-reference they already hold.
@@ -119,13 +121,108 @@ Sequenced so each phase lands something runnable; the keystone first.
 
 ### Phase 0 -- store foundation (no behavior change yet)
 
-- New `kosrunner/store.ki`: the `RunStore` over an aiosqlite connection, schema
-  + WAL on open, and a **reconciliation pass** that marks any row still
-  `running` from a dead pod as `interrupted`.
-- `config storage:` service config (a `StorageConfig` dataclass + `config/
-  storage` syntax, mirroring `config/logging`): the PVC root and retention
-  knobs, root resolved via `reqenv`/env so it is a mount path, not baked.
-- Hang the store off `JobSet` (`self.store`), constructed at start.
+Phase 0 stands up the store and wires it to the `JobSet`, but does **not**
+funnel jobs through it yet (that is the Phase 1 keystone). Doing storage first
+makes it independently demonstrable by hand before any job depends on it.
+
+**Root resolution -- `config -> env -> cwd`:**
+
+1. `config storage:` `root:` field, if set -- used verbatim.
+2. else env `KOSRUNNER_STORAGE_ROOT`, if set -- used verbatim.
+3. else `<cwd>/.kosrunner` -- the `.kosrunner` holder is applied **only** in
+   this default case, to keep the working dir tidy for a manual run. An
+   explicit config or env root is never suffixed.
+
+The env layer is a convenience: an author can already write
+`root: (reqenv "KOSRUNNER_STORAGE_ROOT")` in the config, but baking the
+precedence in means the common env-driven deployment needs no boilerplate while
+an explicit `root:` still wins.
+
+**Job-name -> directory segment (`safe-segment`):**
+
+- Allowlist `[A-Za-z0-9._-]`; replace anything else with `_`; neutralize `..`
+  and leading dots; cap length.
+- **If the sanitized form equals the original, use it verbatim** (no suffix).
+  Only when sanitization actually changed the name (munging or truncation)
+  append `-<h>`, where `h` is the first 8 hex of a deterministic
+  `hashlib.sha256` of the *original* name -- NOT the builtin `hash`, which is
+  per-process randomized; the same job must map to the same dir every run so
+  history accumulates in one place.
+- Docs note (the `foo-bar` / `foo_bar` / `foo/bar` case): all three coexist in
+  distinct dirs -- `foo-bar` and `foo_bar` are clean and used verbatim, while
+  `foo/bar` munges to `foo_bar-<hash>` and so cannot collide with the clean
+  `foo_bar`. Different originals hash to different suffixes, so munged names do
+  not collide with each other either. The only residual is a clean job named
+  literally `foo_bar-<that exact hash>` -- self-inflicted and negligible.
+
+**Run id:** sortable `YYYYMMDDThhmmssZ` (UTC) + a 6-hex random suffix for
+same-second uniqueness, so `ls runs/<job>/` is chronological and the id is
+self-describing. The DB still carries real timestamp columns for querying.
+
+**New module `kosrunner/store.ki`:**
+
+- `StorageConfig` dataclass: `root :: str` (None), `keep_runs :: int` (0 =
+  unlimited, per-job cap), `keep_days :: int` (0 = unlimited).
+- `config/storage` syntax -- the `()` unnamed case binding `default/storage`
+  with the first-wins `&`-guard, same shape as other `config/<type>`. Storage
+  is singular per jobset, so only the unnamed case is supported (documented, no
+  named variant).
+- Exported pure helpers `resolve-storage-root [config]` and
+  `safe-segment [name]`, kept in the baseline so their free names never hit the
+  use-site resolution trap.
+- `RunStore`:
+  - `__init__ [self root config: None]` -- records root + config, opens nothing
+    (import stays side-effect-free).
+  - `open [self]` -- create `<root>` + `<root>/runs`, connect one aiosqlite
+    connection, `PRAGMA journal_mode=WAL`, create schema if absent, run
+    `reconcile`. Idempotent; must run inside a live loop.
+  - `close`, `reconcile` (`running -> interrupted` for orphans),
+    `record-start [self job type cause args: None parent: None] -> runid`,
+    `record-finish [self runid status result: None error: None]`,
+    `list-runs [self job: None status: None limit: 50]`, `get-run [self runid]`,
+    `run-log-path [self runid]`, `prune [self]` (retention method defined,
+    wiring deferred).
+  - Small JSON artifact writes go through `asyncio.to_thread` so the loop never
+    stalls; the sqlite calls are async via aiosqlite.
+
+**Schema (`runs` table):** `run_id` PK, `job`, `job_dir`, `type`, `cause`,
+`parent`, `status`, `started_at`, `finished_at`, `error`; indexes on
+`(job, started_at)` and `(status)`. `job_dir` is stored so artifacts are
+locatable without re-sanitizing.
+
+**`JobSet` wiring ([job.ki](../kosrunner/job.ki)):** `__init__` gains
+`self.store None`; a new `bind-store [self config]` resolves the root and
+constructs the `RunStore` (no open); `__call__` runs `(self.store.open)` before
+`(self.start)` and `_teardown` adds `(self.store.close)` -- opening at
+`__call__` rather than import because aiosqlite needs a running loop.
+
+**`jobset` macro tail ([subitems.ki](../kosrunner/subitems.ki)):** one
+type-agnostic addition after JobSet construction --
+
+```
+(define default/storage)
+(.bind-store <jsname> &default/storage)
+```
+
+Configs are emitted first, so `default/storage` is set (or declared-falsey)
+before the JobSet is built; `bind-store` falls through to env/cwd when it is
+unset. No per-type knowledge is added to the macro.
+
+**Exports & deps:** export `StorageConfig`, `RunStore`, `config/storage`,
+`resolve-storage-root`, `safe-segment` from
+[__init__.ki](../kosrunner/__init__.ki); add `aiosqlite` to `pyproject.toml`;
+add the CWD store dir (`.kosrunner/`) to the example `.gitignore`.
+
+**Manual demonstration (the payoff of storage-first):** because the store hangs
+off `workload` and everything is a real binding, it is validated by hand before
+any job writes to it. From a REPL against the example, `(workload.store.open)`
+then `(workload.store.record-start "demo" "fake" "manual" args: #{x: 1})`, then
+inspect `./.kosrunner/runs/demo/<runid>/trigger.json`. A scratch script using
+the `fake` variety with `config storage:` on a temp dir is the pre-fork green
+check: record start+finish, assert the row + files exist, reopen to prove
+`reconcile` flips a leftover `running` to `interrupted`, and feed `safe-segment`
+the nasty cases (`a/b`, `..`, unicode). `assert` is not a Koskari form -- use a
+`check` helper; run via `PYTHONPATH=examples/scheduler uv run koskari …`.
 
 ### Phase 1 -- the `Job.run` keystone
 
