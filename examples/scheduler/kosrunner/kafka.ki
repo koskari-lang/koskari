@@ -121,7 +121,7 @@ define-class KafkaJob [Job]:
 
     define start [self]:
         when self._consumer:
-            return
+            (return)
         set! self.running True
         (logger.info "starting kafka consumer: %s" self.topic)
         set! self._consumer (self.make-consumer)

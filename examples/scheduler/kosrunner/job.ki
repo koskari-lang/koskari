@@ -96,7 +96,24 @@ define-class JobSet []:
     define __init__ [self name]:
         set! self.name name
         set! self.jobs #{}
+        set! self.store None              ; RunStore, wired by the jobset macro
         set! self._stopping None          ; asyncio.Event, live only while running
+
+
+    define bind-store [self config]:
+        """
+        Construct the run store from an optional StorageConfig (the jobset
+        macro passes `&default/storage`, which is falsey when the
+        definition carried no `config storage:`). Resolution falls through
+        config.root -> env -> <cwd>/.kosrunner. Does not open the
+        connection -- that happens at run time in `__call__`.
+        """
+
+        ;; local import dodges the job<->store load-time cycle
+        import-from .store RunStore resolve-storage-root
+        define root (resolve-storage-root config)
+        set! self.store (RunStore (str root) config: config)
+        self.store
 
 
     define register [self name job]:
@@ -184,6 +201,8 @@ define-class JobSet []:
         ;; local import dodges the job<->server load-time cycle
         import-from .server stop-all-servers
         (stop-all-servers)
+        when self.store:
+            (self.store.close)
 
 
     define __call__ [self heartbeat: 3600 snore: False]:
@@ -196,6 +215,8 @@ define-class JobSet []:
 
         set! self._stopping (asyncio.Event)
         (self._install-signals)
+        when self.store:
+            (self.store.open)
         (self.start)
         try:
             while (not (self._stopping.is_set)):

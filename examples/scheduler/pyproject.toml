@@ -31,6 +31,7 @@ dependencies = [
     "koskari",
     "aiocron",
     "aiokafka",
+    "aiosqlite",
     "fastapi",
     "uvicorn",
 ]

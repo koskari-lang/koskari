@@ -76,6 +76,10 @@ define-syntax jobset:
                 ,@configs
                 ,@jobforms
                 (define ,jsname (JobSet ,(str jsname.datum)))
+                (define default/storage)
+                (if &default/storage
+                    (.bind-store ,jsname default/storage)
+                    (.bind-store ,jsname None))
                 ,@regs)
 
 
