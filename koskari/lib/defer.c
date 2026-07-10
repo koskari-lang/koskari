@@ -19,8 +19,11 @@
 
    Single-shot await-handle (DeferCoroutine). Invokes its target at
    construction; excluded from implicit auto-await; driven by explicit
-   AWAIT. The first await consumes the handle (SPENT); reuse raises
-   RuntimeError like a finished coroutine.
+   AWAIT or the coroutine protocol (send/throw/close, __await__
+   returning self), which makes it pass collections.abc.Coroutine's
+   structural hook and asyncio.iscoroutine. Driving to completion
+   consumes the handle (SPENT); reuse raises RuntimeError like a
+   finished coroutine.
 
    author: Christopher O'Brien <obriencj@preoccupied.net>
    license: GPL v.3
@@ -28,6 +31,12 @@
 
 
 #include "lib.h"
+
+
+/* Method-name constants for delegation; init/cleared in unit lifecycle */
+static PyObject *str_send = NULL;
+static PyObject *str_throw = NULL;
+static PyObject *str_close = NULL;
 
 
 /* === helpers === */
@@ -54,6 +63,11 @@ static void defer_adopt(KosDefer *self, KosDefer *donor) {
       self->state = KOS_DEFER_DONE;
       self->u.value = donor->u.value;
       donor->u.value = NULL;
+      break;
+    case KOS_DEFER_ITERATING:
+      self->state = KOS_DEFER_ITERATING;
+      self->u.iter = donor->u.iter;
+      donor->u.iter = NULL;
       break;
     case KOS_DEFER_SPENT:
       /* nothing to adopt; adoptee is as dead as the donor */
@@ -165,6 +179,9 @@ static void defer_dealloc(PyObject *self) {
     case KOS_DEFER_DONE:
       Py_CLEAR(d->u.value);
       break;
+    case KOS_DEFER_ITERATING:
+      Py_CLEAR(d->u.iter);
+      break;
     case KOS_DEFER_SPENT:
     case KOS_DEFER_MOVED_FROM:
       break;
@@ -181,6 +198,9 @@ static int defer_traverse(PyObject *self, visitproc visit, void *arg) {
       break;
     case KOS_DEFER_DONE:
       Py_VISIT(d->u.value);
+      break;
+    case KOS_DEFER_ITERATING:
+      Py_VISIT(d->u.iter);
       break;
     case KOS_DEFER_SPENT:
     case KOS_DEFER_MOVED_FROM:
@@ -199,6 +219,9 @@ static int defer_clear(PyObject *self) {
     case KOS_DEFER_DONE:
       Py_CLEAR(d->u.value);
       break;
+    case KOS_DEFER_ITERATING:
+      Py_CLEAR(d->u.iter);
+      break;
     case KOS_DEFER_SPENT:
     case KOS_DEFER_MOVED_FROM:
       break;
@@ -214,6 +237,8 @@ static PyObject *defer_repr(PyObject *self) {
       return PyUnicode_FromFormat("<defer delegating inner=%R>", d->u.inner);
     case KOS_DEFER_DONE:
       return PyUnicode_FromString("<defer done>");
+    case KOS_DEFER_ITERATING:
+      return PyUnicode_FromString("<defer iterating>");
     case KOS_DEFER_SPENT:
       return PyUnicode_FromString("<defer spent>");
     case KOS_DEFER_MOVED_FROM:
@@ -249,140 +274,400 @@ PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds) {
 }
 
 
-/* === KosDeferValueIterator ===
+/* === Coroutine protocol ===
 
-   Trivial iterator for the non-awaitable (DONE) case: first __next__
-   raises StopIteration(value). Created when defer.__await__() is called
-   on a defer already in DONE state.
+   defer carries the full coroutine protocol (__await__ returning self,
+   __next__, send, throw, close), so it passes the structural
+   collections.abc.Coroutine subclass hook and asyncio.iscoroutine, and
+   asyncio.Task drives it directly. Driving transitions DELEGATING ->
+   ITERATING (holding the iterator from inner.__await__()) and forwards
+   with yield-from delegation rules; completion, failure, or close
+   consumes the handle (SPENT). There is deliberately no tp_iter:
+   iter(d) stays a TypeError so iteration constructs cannot silently
+   drive a defer.
 */
 
 
-typedef struct KosDeferValueIterator {
-  PyObject_HEAD
-  PyObject *value;
-} KosDeferValueIterator;
-
-
-static PyTypeObject KosDeferValueIteratorType;
-
-
-static void defer_valiter_dealloc(PyObject *self) {
-  PyObject_GC_UnTrack(self);
-  KosDeferValueIterator *it = (KosDeferValueIterator *) self;
-  Py_CLEAR(it->value);
-  PyObject_GC_Del(self);
+/**
+   Set the reuse error appropriate to a dead handle.
+*/
+static void defer_set_dead_error(KosDefer *self) {
+  if (self->state == KOS_DEFER_MOVED_FROM) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot await defer after move (moved_from)");
+  } else {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot reuse already awaited defer");
+  }
 }
 
 
-static int defer_valiter_traverse(PyObject *self, visitproc visit, void *arg) {
-  KosDeferValueIterator *it = (KosDeferValueIterator *) self;
-  Py_VISIT(it->value);
+/**
+   DELEGATING -> ITERATING: obtain inner.__await__() and hold it. On
+   failure the defer stays DELEGATING (payload not consumed) and the
+   error propagates.
+*/
+static int defer_start_iterating(KosDefer *self) {
+  PyObject *it = PyObject_GetAwaitable(self->u.inner);
+  if (! it)
+    return -1;
+  Py_CLEAR(self->u.inner);
+  self->u.iter = it;
+  self->state = KOS_DEFER_ITERATING;
   return 0;
 }
 
 
-static int defer_valiter_clear(PyObject *self) {
-  KosDeferValueIterator *it = (KosDeferValueIterator *) self;
-  Py_CLEAR(it->value);
-  return 0;
+/**
+   Consume the payload (whatever the state holds) and transition SPENT.
+*/
+static void defer_spend(KosDefer *self) {
+  switch (self->state) {
+    case KOS_DEFER_DELEGATING:
+      Py_CLEAR(self->u.inner);
+      break;
+    case KOS_DEFER_DONE:
+      Py_CLEAR(self->u.value);
+      break;
+    case KOS_DEFER_ITERATING:
+      Py_CLEAR(self->u.iter);
+      break;
+    default:
+      break;
+  }
+  self->state = KOS_DEFER_SPENT;
 }
 
 
-static PyObject *defer_valiter_iternext(PyObject *self) {
-  KosDeferValueIterator *it = (KosDeferValueIterator *) self;
-  PyObject *value = it->value;
-  it->value = NULL;
-  if (! value)
-    Py_RETURN_NONE;
-  PyErr_SetObject(PyExc_StopIteration, value);
+/**
+   Method lookup distinguishing lookup-AttributeError (NULL, *err=0,
+   error cleared) from a raising descriptor (NULL, *err=1, error left
+   set), so an AttributeError raised inside a delegated body is never
+   mistaken for a missing method.
+*/
+static PyObject *defer_lookup(PyObject *obj, PyObject *name, int *err) {
+  *err = 0;
+  PyObject *meth = PyObject_GetAttr(obj, name);
+  if (! meth) {
+    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+      PyErr_Clear();
+    } else {
+      *err = 1;
+    }
+  }
+  return meth;
+}
+
+
+/**
+   DONE: consume the value by raising StopIteration(value) as a real
+   instance. A bare PyErr_SetObject(PyExc_StopIteration, value) would
+   tuple-splat the value during normalization.
+*/
+static PyObject *defer_finish_done(KosDefer *self) {
+  PyObject *value = self->u.value;
+  self->u.value = NULL;
+  self->state = KOS_DEFER_SPENT;
+
+  PyObject *stop = PyObject_CallOneArg(PyExc_StopIteration, value);
   Py_DECREF(value);
+  if (! stop)
+    return NULL;
+  PyErr_SetObject(PyExc_StopIteration, stop);
+  Py_DECREF(stop);
   return NULL;
 }
 
 
-static PyObject *defer_valiter_send(PyObject *self, const PyObject *arg) {
-  if (arg != Py_None) {
-    PyErr_SetString(PyExc_TypeError, "can't send non-None value to a just-started coroutine");
-    return NULL;
+/**
+   Raise the throw arguments at this point. Handles class-or-instance
+   typ and NULL/None val and tb, per generator throw() semantics.
+*/
+static void defer_raise_thrown(PyObject *typ, PyObject *val, PyObject *tb) {
+  if (tb == Py_None) {
+    tb = NULL;
+  } else if (tb && ! PyTraceBack_Check(tb)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "throw() third argument must be a traceback object");
+    return;
   }
-  return defer_valiter_iternext(self);
+
+  if (PyExceptionInstance_Check(typ)) {
+    if (val && val != Py_None) {
+      PyErr_SetString(PyExc_TypeError,
+                      "instance exception may not have a separate value");
+      return;
+    }
+    val = typ;
+    typ = PyExceptionInstance_Class(typ);
+  }
+
+  Py_XINCREF(typ);
+  Py_XINCREF(val);
+  Py_XINCREF(tb);
+  PyErr_NormalizeException(&typ, &val, &tb);
+  PyErr_Restore(typ, val, tb);
 }
 
 
-static PyMethodDef defer_valiter_methods[] = {
-  {"send", (PyCFunction) defer_valiter_send, METH_O, NULL},
-  {NULL, NULL, 0, NULL},
-};
+/**
+   Forward a send into the ITERATING iterator with yield-from rules:
+   use the delegate's send when present; a None send falls back to
+   tp_iternext; a non-None send without a send method is a TypeError.
+   Returns the yielded value (stay ITERATING), or NULL with the handle
+   SPENT and StopIteration (carrying the return value) or the raised
+   error set. The caller-mistake TypeError leaves the state unchanged.
+*/
+static PyObject *defer_forward_send(KosDefer *self, PyObject *value) {
+  PyObject *iter = self->u.iter;
+  int err = 0;
+  PyObject *result;
 
+  PyObject *meth = defer_lookup(iter, str_send, &err);
+  if (meth) {
+    result = PyObject_CallOneArg(meth, value ? value : Py_None);
+    Py_DECREF(meth);
+  } else if (err) {
+    return NULL;
+  } else if (value && value != Py_None) {
+    PyErr_SetString(PyExc_TypeError,
+                    "can't send non-None value to a plain iterator");
+    return NULL;
+  } else if (! Py_TYPE(iter)->tp_iternext) {
+    PyErr_Format(PyExc_TypeError,
+                 "defer cannot drive non-iterator %s",
+                 Py_TYPE(iter)->tp_name);
+    return NULL;
+  } else {
+    result = Py_TYPE(iter)->tp_iternext(iter);
+    if (! result && ! PyErr_Occurred()) {
+      /* plain-iterator exhaustion: completion with None */
+      PyErr_SetNone(PyExc_StopIteration);
+    }
+  }
 
-static PyTypeObject KosDeferValueIteratorType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-  "defer_value_iterator",
-  sizeof(KosDeferValueIterator),
-  0,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_dealloc = defer_valiter_dealloc,
-  .tp_traverse = defer_valiter_traverse,
-  .tp_clear = defer_valiter_clear,
-  .tp_iter = PyObject_SelfIter,
-  .tp_methods = defer_valiter_methods,
-  .tp_iternext = defer_valiter_iternext,
-};
+  if (result)
+    return result;
+
+  /* completion (StopIteration) or failure consumes the handle */
+  defer_spend(self);
+  return NULL;
+}
 
 
 /**
-   defer.__await__(): resolve the defer at await time, consuming it.
-   DONE hands the value to a trivial iterator; DELEGATING hands out the
-   inner's __await__() and drops the inner. Either way the defer
-   transitions to SPENT; a later await raises RuntimeError like a
-   finished coroutine.
+   Forward a throw into the ITERATING iterator with yield-from rules.
+   val and tb may be NULL. Returns a yielded value (stay ITERATING), or
+   NULL with the handle SPENT and an exception set.
 */
-static PyObject *defer_await(PyObject *self) {
-  KosDefer *defer = (KosDefer *) self;
+static PyObject *defer_forward_throw(
+    KosDefer *self,
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb) {
 
-  switch (defer->state) {
-    case KOS_DEFER_DONE: {
-      KosDeferValueIterator *it = PyObject_GC_New(KosDeferValueIterator,
-                                                  &KosDeferValueIteratorType);
-      if (! it)
+  PyObject *iter = self->u.iter;
+  int err = 0;
+
+  PyObject *meth = defer_lookup(iter, str_throw, &err);
+  if (meth) {
+    /* CallFunctionObjArgs truncates at the first NULL, so a single-arg
+       throw forwards single-arg (avoids 3.12's three-arg deprecation) */
+    PyObject *result = PyObject_CallFunctionObjArgs(meth, typ, val, tb, NULL);
+    Py_DECREF(meth);
+    if (result)
+      return result;
+    defer_spend(self);
+    return NULL;
+  }
+
+  if (err)
+    return NULL;
+
+  /* No throw on the delegate: close it if the exception is
+     GeneratorExit, then raise the exception here (yield-from rules). */
+  if (PyErr_GivenExceptionMatches(typ, PyExc_GeneratorExit)) {
+    PyObject *close_meth = defer_lookup(iter, str_close, &err);
+    if (err)
+      return NULL;
+    if (close_meth) {
+      PyObject *res = PyObject_CallNoArgs(close_meth);
+      Py_DECREF(close_meth);
+      if (! res) {
+        defer_spend(self);
         return NULL;
-      PyObject_Init((PyObject *) it, &KosDeferValueIteratorType);
-
-      /* transfer the value; the handle is consumed */
-      it->value = defer->u.value;
-      defer->u.value = NULL;
-      defer->state = KOS_DEFER_SPENT;
-
-      PyObject_GC_Track((PyObject *) it);
-      return (PyObject *) it;
+      }
+      Py_DECREF(res);
     }
+  }
 
-    case KOS_DEFER_DELEGATING: {
-      /* obtain the iterator before consuming: if inner's __await__
-         raises, the defer stays DELEGATING and the error propagates */
-      PyObject *inner_iter = PyObject_GetAwaitable(defer->u.inner);
-      if (! inner_iter)
+  defer_spend(self);
+  defer_raise_thrown(typ, val, tb);
+  return NULL;
+}
+
+
+/**
+   Core drive shared by send and __next__.
+*/
+static PyObject *defer_do_send(KosDefer *self, PyObject *value) {
+  switch (self->state) {
+    case KOS_DEFER_DONE:
+      if (value && value != Py_None) {
+        PyErr_SetString(PyExc_TypeError,
+                        "can't send non-None value to a"
+                        " just-started coroutine");
         return NULL;
+      }
+      return defer_finish_done(self);
 
-      Py_CLEAR(defer->u.inner);
-      defer->state = KOS_DEFER_SPENT;
-      return inner_iter;
-    }
+    case KOS_DEFER_DELEGATING:
+      if (defer_start_iterating(self) < 0)
+        return NULL;
+      return defer_forward_send(self, value);
+
+    case KOS_DEFER_ITERATING:
+      return defer_forward_send(self, value);
 
     case KOS_DEFER_SPENT:
-      PyErr_SetString(PyExc_RuntimeError,
-                      "cannot reuse already awaited defer");
-      return NULL;
-
     case KOS_DEFER_MOVED_FROM:
-      PyErr_SetString(PyExc_RuntimeError,
-                      "cannot await defer after move (moved_from)");
+      defer_set_dead_error(self);
       return NULL;
   }
 
   PyErr_SetString(PyExc_RuntimeError, "defer in unexpected state");
   return NULL;
 }
+
+
+static PyObject *defer_send(PyObject *self, PyObject *value) {
+  return defer_do_send((KosDefer *) self, value);
+}
+
+
+static PyObject *defer_iternext(PyObject *self) {
+  return defer_do_send((KosDefer *) self, Py_None);
+}
+
+
+static PyObject *defer_throw(PyObject *self, PyObject *args) {
+  KosDefer *d = (KosDefer *) self;
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  if (! PyArg_ParseTuple(args, "O|OO:throw", &typ, &val, &tb))
+    return NULL;
+
+  switch (d->state) {
+    case KOS_DEFER_DONE:
+      defer_spend(d);
+      defer_raise_thrown(typ, val, tb);
+      return NULL;
+
+    case KOS_DEFER_DELEGATING:
+      if (defer_start_iterating(d) < 0)
+        return NULL;
+      return defer_forward_throw(d, typ, val, tb);
+
+    case KOS_DEFER_ITERATING:
+      return defer_forward_throw(d, typ, val, tb);
+
+    case KOS_DEFER_SPENT:
+    case KOS_DEFER_MOVED_FROM:
+      defer_set_dead_error(d);
+      return NULL;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError, "defer in unexpected state");
+  return NULL;
+}
+
+
+static PyObject *defer_close(PyObject *self, PyObject *ignored) {
+  (void) ignored;
+  KosDefer *d = (KosDefer *) self;
+
+  PyObject *target = NULL;
+  switch (d->state) {
+    case KOS_DEFER_SPENT:
+    case KOS_DEFER_MOVED_FROM:
+      Py_RETURN_NONE;
+
+    case KOS_DEFER_DONE:
+      defer_spend(d);
+      Py_RETURN_NONE;
+
+    case KOS_DEFER_DELEGATING:
+      target = d->u.inner;
+      break;
+
+    case KOS_DEFER_ITERATING:
+      target = d->u.iter;
+      break;
+  }
+
+  if (! target) {
+    PyErr_SetString(PyExc_RuntimeError, "defer in unexpected state");
+    return NULL;
+  }
+
+  /* Delegate close when the payload supports it; the delegate raises
+     the "ignored GeneratorExit" RuntimeError itself, and errors from
+     it propagate. The handle is consumed either way. */
+  int err = 0;
+  PyObject *meth = defer_lookup(target, str_close, &err);
+  if (! meth) {
+    defer_spend(d);
+    if (err)
+      return NULL;
+    Py_RETURN_NONE;
+  }
+
+  PyObject *res = PyObject_CallNoArgs(meth);
+  Py_DECREF(meth);
+  defer_spend(d);
+  if (! res)
+    return NULL;
+  Py_DECREF(res);
+  Py_RETURN_NONE;
+}
+
+
+/**
+   defer.__await__(): return self as the drivable iterator, arming the
+   delegation (DELEGATING -> ITERATING) if needed. Reuse raises.
+*/
+static PyObject *defer_await(PyObject *self) {
+  KosDefer *d = (KosDefer *) self;
+
+  switch (d->state) {
+    case KOS_DEFER_DELEGATING:
+      if (defer_start_iterating(d) < 0)
+        return NULL;
+      Py_INCREF(self);
+      return self;
+
+    case KOS_DEFER_DONE:
+    case KOS_DEFER_ITERATING:
+      Py_INCREF(self);
+      return self;
+
+    case KOS_DEFER_SPENT:
+    case KOS_DEFER_MOVED_FROM:
+      defer_set_dead_error(d);
+      return NULL;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError, "defer in unexpected state");
+  return NULL;
+}
+
+
+static PyMethodDef defer_methods[] = {
+  {"send", (PyCFunction) defer_send, METH_O, NULL},
+  {"throw", (PyCFunction) defer_throw, METH_VARARGS, NULL},
+  {"close", (PyCFunction) defer_close, METH_NOARGS, NULL},
+  {NULL, NULL, 0, NULL},
+};
 
 
 static PyAsyncMethods defer_async_methods = {
@@ -405,6 +690,10 @@ PyTypeObject KosDeferType = {
   .tp_clear = defer_clear,
   .tp_repr = defer_repr,
   .tp_as_async = &defer_async_methods,
+  .tp_methods = defer_methods,
+  /* tp_iternext without tp_iter: satisfies GET_AWAITABLE's iterator
+     check while keeping iter(d) a TypeError */
+  .tp_iternext = defer_iternext,
 };
 
 
@@ -423,8 +712,9 @@ int koskari_defer_init(PyObject *mod) {
   if (PyType_Ready(&KosDeferType) < 0)
     return -1;
 
-  if (PyType_Ready(&KosDeferValueIteratorType) < 0)
-    return -1;
+  STR_CONST(str_send, "send");
+  STR_CONST(str_throw, "throw");
+  STR_CONST(str_close, "close");
 
   if (PyDict_SetItemString(dict, "defer", (PyObject *) &KosDeferType) < 0)
     return -1;
@@ -435,6 +725,11 @@ int koskari_defer_init(PyObject *mod) {
 
 int koskari_defer_clear(PyObject *mod) {
   (void) mod;
+
+  Py_CLEAR(str_send);
+  Py_CLEAR(str_throw);
+  Py_CLEAR(str_close);
+
   return 0;
 }
 

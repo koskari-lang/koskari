@@ -107,10 +107,11 @@ define b (defer (function fetch [] (fetch-user 2)))
 (await (asyncio.gather a b))          ; both run concurrently
 ```
 
-The lower-level `as-coroutine` helper (in `koskari.asyncio`, reached by import)
-awaits an awaitable into a Python coroutine; `create-task` uses it internally.
-You rarely call it from Koskari, because auto-await would resolve it before it
-reaches asyncio — prefer `defer` and `create-task`.
+A defer satisfies `asyncio.iscoroutine` (it carries the full coroutine
+protocol), so the strict surfaces — `asyncio.create_task`, `asyncio.run`,
+`run_coroutine_threadsafe` — accept it directly. The lower-level
+`as-coroutine` helper (in `koskari.asyncio`, reached by import) remains
+for the rare non-coroutine awaitable that needs to satisfy those checks.
 
 ## See also
 

@@ -34,21 +34,21 @@ anything that needs a lifetime gets a real Task or Future.**
 
 | asyncio surface | KosCoroutine | defer | notes |
 | --- | --- | --- | --- |
-| `asyncio.iscoroutine` | **True** | False | KosCoroutine passes `collections.abc.Coroutine` structurally (send/throw/close/`__await__` subclass hook; no explicit registration) |
+| `asyncio.iscoroutine` | **True** | **True** | both pass `collections.abc.Coroutine` structurally (send/throw/close/`__await__` subclass hook; no explicit registration). `inspect.iscoroutine` stays False for both |
 | `inspect.isawaitable` | True | True | |
 | `await x` in a coroutine | yes | yes | |
-| `ensure_future(x)` | yes | yes | generic-awaitable wrap path |
-| `asyncio.create_task(x)` | **yes, natively** | no (`TypeError`) | defers need `as_coroutine` first |
-| `gather`, `wait_for`, `as_completed`, `shield` | yes | yes | ensure_future underneath |
+| `ensure_future(x)` | yes | yes | |
+| `asyncio.create_task(x)` | **yes, natively** | **yes, natively** | `Task.get_coro()` is the defer itself |
+| `gather`, `wait_for`, `as_completed`, `shield` | yes | yes | |
 | `asyncio.wait({...})` | via Task | no (`AttributeError: add_done_callback`) | wants Tasks/Futures only |
-| `asyncio.run`, `run_coroutine_threadsafe` | yes (iscoroutine passes) | no | wrap defers with `as_coroutine` |
+| `asyncio.run`, `run_coroutine_threadsafe` | yes | yes | |
 | `iscoroutinefunction(f)` | False for koskari callables | -- | use `coroutine-fn` for frameworks that check (FastAPI, aiohttp) |
 
-The `as_coroutine` and `coroutine-fn` adapters in `koskari.asyncio` remain
-the type-hiding shims for the strict-`iscoroutine` and
-coroutine-function-checking surfaces. `create-task` does not need
-`as_coroutine` for KosCoroutine inputs, only for defer and other generic
-awaitables.
+defer carries the full coroutine protocol (`__await__` returning self,
+`send`, `throw`, `close`, `__next__`), driving its inner with yield-from
+delegation rules; see `design/api/defer-coroutine.md`. The `as_coroutine`
+adapter remains only for exotic non-coroutine awaitables; `coroutine-fn`
+remains the shim for coroutine-function-checking frameworks.
 
 ## Usage matrix
 
@@ -59,7 +59,7 @@ awaitables.
 | capture work as a value, run later, exactly once | `(defer f x)` | one explicit `(await d)` | plain call runs immediately; Task starts running when scheduled |
 | adapt a maybe-async callable to a uniform value | `(await (defer f x))` | immediate | -- |
 | hand one unit of work to a Python API that awaits it once (`wait_for`, `gather`, `ensure_future`) | `(defer f x)` | the API awaits it | bare call result would be auto-awaited before the API sees it |
-| hand work to a strict-coroutine API (`asyncio.run`, `create_task`, `run_coroutine_threadsafe`) | `(as-coroutine (defer f x))`, or pass the koskari callable to Python and let Python call it | the API drives it | defer alone fails `iscoroutine` |
+| hand work to a strict-coroutine API (`asyncio.run`, `create_task`, `run_coroutine_threadsafe`) | `(defer f x)` directly | the API drives it | defer passes `iscoroutine`; `as-coroutine` needed only for exotic non-coroutine awaitables |
 | register a handler with a framework that checks `iscoroutinefunction` | `(coroutine-fn f)` | framework calls it | koskari callables fail the check |
 | schedule concurrent work and keep a control handle (cancel, join, callbacks, re-await, `asyncio.wait`) | `create-task` returning a **real Task** | `.cancel`, `.add_done_callback`, `(await t)` any number of times | defer(Task) hides all of that -- the current kafka.ki bug |
 | fire-and-forget background work | `create-task`, keep a strong reference | let it run; optionally done-callback for error logging | the loop holds only a weak ref to tasks |
@@ -67,11 +67,17 @@ awaitables.
 
 ## Decisions
 
-1. **defer is single-shot and dies loudly.** First await consumes it;
-   any later await raises `RuntimeError` in the style of "cannot reuse
-   already awaited coroutine". The DONE-caching lifecycle and the
-   `KosDefer_FeedResult` / `KosDefer_FeedException` API (never wired) are
-   removed. States collapse to DELEGATING / DONE / SPENT / MOVED_FROM.
+1. **defer is single-shot and dies loudly.** Driving to completion
+   consumes it; any later use raises `RuntimeError` in the style of
+   "cannot reuse already awaited coroutine". The DONE-caching lifecycle
+   and the `KosDefer_FeedResult` / `KosDefer_FeedException` API (never
+   wired) are removed. States: DELEGATING / DONE / ITERATING / SPENT /
+   MOVED_FROM.
+
+   Amendment 2026-07-10: defer additionally carries the full coroutine
+   protocol (send/throw/close/`__next__`, `__await__` returning self),
+   so it passes `asyncio.iscoroutine` structurally and Tasks drive it
+   directly; `as_coroutine` is no longer needed for defers.
 
 2. **`create-task` returns the Task itself.** The defer wrap existed only
    to protect the Task from ambient auto-await at the call boundary. The
@@ -103,11 +109,11 @@ awaitables.
   works; `server.ki`/`fastapi.ki` keep strong task references.
 - Done: `design/api/defer-coroutine.md` rewritten to delegate-and-die
   (Feed API removed).
-- Open: reproducer for `Task.cancel()` on a task wrapping a KosCoroutine --
-  `CancelledError` must propagate through koskari frames and run dynamic
-  wind/unwind correctly (partially covered by
-  `tests/importer/test_asyncio_builtins.py` cancel test, which cancels a
-  started as_coroutine-wrapped defer).
+- Done: `tests/importer/test_asyncio_builtins.py` cancels a
+  directly-scheduled defer over a KosCoroutine mid-flight
+  (CancelledError forwards through the defer's throw into koskari eval).
+  A deeper wind/unwind reproducer (finally/dyn-wind blocks across the
+  cancellation) remains worthwhile.
 - Open: corpus records for the matrix rows.
 
 // The end.

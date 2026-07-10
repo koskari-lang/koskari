@@ -372,4 +372,339 @@ class TestDeferSingleShot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await d2, 5)
 
 
+class Suspend:
+    """
+    Awaitable that yields once (generator-based, has send/throw/close)
+    """
+
+    def __await__(self):
+        yield "suspended"
+
+
+class SendlessAwaitable:
+    """
+    Awaitable whose __await__ returns a plain send-less iterator
+    """
+
+    def __init__(self, items):
+        self.items = items
+
+
+    def __await__(self):
+        return iter(self.items)
+
+
+class ThrowlessIter:
+    """
+    Iterator with send but no throw; close records invocation
+    """
+
+    def __init__(self):
+        self.closed = False
+
+
+    def send(self, value):
+        return "yielded"
+
+
+    def close(self):
+        self.closed = True
+
+
+class ThrowlessAwaitable:
+    """
+    Awaitable whose __await__ iterator lacks throw
+    """
+
+    def __init__(self):
+        self.iter = ThrowlessIter()
+
+
+    def __await__(self):
+        return self.iter
+
+
+class TestDeferCoroutineProtocol(unittest.IsolatedAsyncioTestCase):
+    """
+    defer carries the full coroutine protocol
+    """
+
+    def test_passes_abc_coroutine_hook(self):
+        """
+        defer passes the structural collections.abc.Coroutine check
+        """
+
+        import asyncio
+        import collections.abc
+
+        async def work():
+            return 1
+
+        d = lib.defer(work)
+        self.assertTrue(asyncio.iscoroutine(d))
+        self.assertTrue(isinstance(d, collections.abc.Coroutine))
+        d.close()
+
+
+    def test_iter_raises_next_drives(self):
+        """
+        iter(d) is a TypeError (no tp_iter); next(d) drives the handle
+        """
+
+        d = lib.defer(lambda: 42)
+        with self.assertRaises(TypeError):
+            iter(d)
+        with self.assertRaises(StopIteration) as caught:
+            next(d)
+        self.assertEqual(caught.exception.value, 42)
+        self.assertIn("spent", repr(d))
+
+
+    async def test_stopiteration_payload_tuple(self):
+        """
+        A tuple value survives await intact (StopIteration instance fix)
+        """
+
+        self.assertEqual(await lib.defer(lambda: (1, 2)), (1, 2))
+
+
+    async def test_stopiteration_payload_exception_instance(self):
+        """
+        A StopIteration instance value survives await intact
+        """
+
+        payload = StopIteration("x")
+        result = await lib.defer(lambda: payload)
+        self.assertIs(result, payload)
+
+
+    def test_send_matrix(self):
+        """
+        send: DONE consumes; non-None to DONE is a TypeError; dead raises
+        """
+
+        d = lib.defer(lambda: 7)
+        with self.assertRaisesRegex(TypeError, "just-started"):
+            d.send(1)
+        with self.assertRaises(StopIteration) as caught:
+            d.send(None)
+        self.assertEqual(caught.exception.value, 7)
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited defer"):
+            d.send(None)
+
+
+    def test_send_lazily_starts_delegation(self):
+        """
+        send on a DELEGATING defer arms the iterator and forwards
+        """
+
+        async def work():
+            return 9
+
+        d = lib.defer(work)
+        self.assertIn("delegating", repr(d))
+        with self.assertRaises(StopIteration) as caught:
+            d.send(None)
+        self.assertEqual(caught.exception.value, 9)
+        self.assertIn("spent", repr(d))
+
+
+    def test_send_non_none_to_sendless_iterator(self):
+        """
+        Non-None send to a send-less __await__ iterator is a TypeError
+        """
+
+        d = lib.defer(lambda: SendlessAwaitable(["a"]))
+        self.assertEqual(d.send(None), "a")
+        self.assertIn("iterating", repr(d))
+        with self.assertRaisesRegex(TypeError, "plain iterator"):
+            d.send("x")
+        # the caller mistake does not consume the handle
+        self.assertIn("iterating", repr(d))
+        with self.assertRaises(StopIteration):
+            d.send(None)
+        self.assertIn("spent", repr(d))
+
+
+    def test_throw_matrix(self):
+        """
+        throw: DONE drops value and raises; dead raises reuse error
+        """
+
+        d = lib.defer(lambda: 7)
+        with self.assertRaisesRegex(ValueError, "boom"):
+            d.throw(ValueError("boom"))
+        self.assertIn("spent", repr(d))
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited defer"):
+            d.throw(ValueError)
+
+
+    def test_throw_into_delegating_coroutine(self):
+        """
+        throw on a DELEGATING defer forwards into the inner coroutine
+        """
+
+        async def work():
+            return 1
+
+        d = lib.defer(work)
+        with self.assertRaises(ValueError):
+            d.throw(ValueError)
+        self.assertIn("spent", repr(d))
+
+
+    def test_throw_caught_by_inner(self):
+        """
+        An inner that catches the thrown error completes normally
+        """
+
+        async def work():
+            try:
+                await Suspend()
+            except ValueError:
+                return "caught"
+
+        d = lib.defer(work)
+        d.send(None)    # run to the suspension point
+        with self.assertRaises(StopIteration) as caught:
+            d.throw(ValueError)
+        self.assertEqual(caught.exception.value, "caught")
+
+
+    def test_throwless_iterator_raises_at_defer(self):
+        """
+        A throw-less delegate raises the exception at the defer, SPENT
+        """
+
+        inner = ThrowlessAwaitable()
+        d = lib.defer(lambda: inner)
+        self.assertEqual(d.send(None), "yielded")
+        with self.assertRaises(ValueError):
+            d.throw(ValueError)
+        self.assertIn("spent", repr(d))
+        self.assertFalse(inner.iter.closed)
+
+
+    def test_generatorexit_closes_throwless_iterator(self):
+        """
+        GeneratorExit into a throw-less delegate calls its close first
+        """
+
+        inner = ThrowlessAwaitable()
+        d = lib.defer(lambda: inner)
+        self.assertEqual(d.send(None), "yielded")
+        with self.assertRaises(GeneratorExit):
+            d.throw(GeneratorExit)
+        self.assertTrue(inner.iter.closed)
+        self.assertIn("spent", repr(d))
+
+
+    def test_close_matrix(self):
+        """
+        close: DONE and dead states are quiet no-ops that consume
+        """
+
+        d = lib.defer(lambda: 7)
+        self.assertIsNone(d.close())
+        self.assertIn("spent", repr(d))
+        self.assertIsNone(d.close())
+
+        d2 = lib.defer(lambda: d)     # adopt moves d into MOVED_FROM
+        self.assertIn("moved_from", repr(d))
+        self.assertIsNone(d.close())
+        self.assertIsNone(d2.close())
+
+
+    def test_close_unstarted_coroutine_no_warning(self):
+        """
+        close on a DELEGATING defer closes the held coroutine quietly
+        """
+
+        import gc
+        import warnings
+
+        async def work():
+            return 1
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            d = lib.defer(work)
+            self.assertIsNone(d.close())
+            del d
+            gc.collect()
+        messages = [str(w.message) for w in caught]
+        self.assertFalse(
+            [m for m in messages if "never awaited" in m], messages)
+
+
+    def test_close_closeless_inner(self):
+        """
+        close on a DELEGATING defer over a close-less inner is a no-op
+        """
+
+        d = lib.defer(lambda: SendlessAwaitable([]))
+        self.assertIsNone(d.close())
+        self.assertIn("spent", repr(d))
+
+
+    def test_close_runs_inner_finally(self):
+        """
+        close on an ITERATING defer runs the inner's finally block
+        """
+
+        ran = []
+
+        async def work():
+            try:
+                await Suspend()
+            finally:
+                ran.append("finally")
+
+        d = lib.defer(work)
+        d.send(None)
+        self.assertIsNone(d.close())
+        self.assertEqual(ran, ["finally"])
+
+
+    def test_close_ignored_generatorexit_propagates(self):
+        """
+        An inner swallowing GeneratorExit surfaces the RuntimeError
+        """
+
+        async def stubborn():
+            try:
+                await Suspend()
+            except GeneratorExit:
+                pass
+            # still alive after swallowing the close: triggers the
+            # RuntimeError; a later GC close then succeeds normally
+            await Suspend()
+
+        d = lib.defer(stubborn)
+        d.send(None)
+        with self.assertRaisesRegex(RuntimeError, "ignored GeneratorExit"):
+            d.close()
+        self.assertIn("spent", repr(d))
+
+
+    async def test_adopt_of_iterating_donor(self):
+        """
+        Adopting an ITERATING donor resumes it to completion
+        """
+
+        async def work():
+            return 11
+
+        d1 = lib.defer(work)
+        self.assertIs(d1.__await__(), d1)
+        self.assertIn("iterating", repr(d1))
+
+        d2 = lib.defer(lambda: d1)
+        self.assertIn("moved_from", repr(d1))
+        self.assertIn("iterating", repr(d2))
+        self.assertEqual(await d2, 11)
+
+
 # The end.

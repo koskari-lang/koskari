@@ -27,6 +27,7 @@
 typedef enum {
   KOS_DEFER_DELEGATING = 0,
   KOS_DEFER_DONE,
+  KOS_DEFER_ITERATING,
   KOS_DEFER_SPENT,
   KOS_DEFER_MOVED_FROM,
 } KosDeferState;
@@ -41,6 +42,7 @@ typedef struct KosDefer {
   union {
     PyObject *inner;
     PyObject *value;
+    PyObject *iter;
   } u;
 } KosDefer;
 
@@ -70,9 +72,12 @@ extern PyTypeObject KosDeferType;
   active exception. args and kwds may be NULL (treated as empty).
   Returns new reference.
 
-  The handle is single-shot: the first await consumes it (transition to
-  KOS_DEFER_SPENT); a later await raises RuntimeError like a finished
-  coroutine.
+  The handle is single-shot: driving it to completion (await, send,
+  throw, or close) transitions to KOS_DEFER_SPENT; later use raises
+  RuntimeError like a finished coroutine. The type carries the full
+  coroutine protocol (__await__ returning self, send, throw, close,
+  __next__), so it passes collections.abc.Coroutine's structural hook
+  and asyncio.iscoroutine.
 */
 PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds);
 

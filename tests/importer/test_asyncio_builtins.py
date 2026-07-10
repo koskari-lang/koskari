@@ -128,15 +128,86 @@ class TestCreateTask(SpecialsTestCase):
         self.assertEqual(await task, "kos-result")
 
 
-    async def test_defer_input_wraps(self):
+    async def test_defer_input_schedules_directly(self):
         """
-        A defer input is adapted through as_coroutine and still resolves
+        A defer passes iscoroutine and is scheduled as the Task's coro
         """
 
         d = defer(_work)
         task = create_task(d)
-        self.assertIsNot(task.get_coro(), d)
+        self.assertIs(task.get_coro(), d)
         self.assertEqual(await task, "ok")
+
+
+    async def test_task_cancel_defer_direct(self):
+        """
+        Cancelling a directly-scheduled defer mid-flight cancels cleanly
+        """
+
+        async def hang():
+            await asyncio.sleep(30)
+
+        d = defer(hang)
+        task = create_task(d)
+        await asyncio.sleep(0)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(task.cancelled())
+
+
+    async def test_defer_with_kos_coroutine_inner_cancel(self):
+        """
+        CancelledError forwards through the defer into koskari eval
+        """
+
+        src = """
+        (await (sleep 30))
+        """
+        expr, _mod = self.compile_expr(src, sleep=asyncio.sleep)
+        d = defer(expr)
+        task = create_task(d)
+        await asyncio.sleep(0)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(task.cancelled())
+
+
+    async def test_task_cancel_before_start_no_warning(self):
+        """
+        Cancel-before-start closes the held coroutine without a
+        never-awaited RuntimeWarning
+        """
+
+        import warnings
+
+        d = defer(_work)
+        task = create_task(d)
+        task.cancel()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            del d, task
+            import gc
+            gc.collect()
+        messages = [str(w.message) for w in caught]
+        self.assertFalse(
+            [m for m in messages if "never awaited" in m], messages)
+
+
+    async def test_task_on_spent_defer(self):
+        """
+        Scheduling a spent defer completes the Task with the reuse error
+        """
+
+        d = defer(_work)
+        self.assertEqual(await d, "ok")
+        task = create_task(d)
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited defer"):
+            await task
 
 
 class TestAdapters(SpecialsTestCase):
@@ -154,6 +225,19 @@ class TestAdapters(SpecialsTestCase):
         self.assertEqual(await coro, "ok")
 
 
+    async def test_defer_passes_iscoroutine(self):
+        """
+        defer passes iscoroutine via the structural abc hook
+        """
+
+        import collections.abc
+
+        d = defer(_work)
+        self.assertTrue(asyncio.iscoroutine(d))
+        self.assertTrue(isinstance(d, collections.abc.Coroutine))
+        self.assertEqual(await d, "ok")
+
+
     async def test_kos_coroutine_passes_iscoroutine(self):
         """
         KosCoroutine passes asyncio.iscoroutine via the abc hook
@@ -166,6 +250,14 @@ class TestAdapters(SpecialsTestCase):
         coro = expr()
         self.assertTrue(asyncio.iscoroutine(coro))
         self.assertEqual(await coro, 42)
+
+
+    def test_asyncio_run_accepts_defer(self):
+        """
+        asyncio.run drives a defer end-to-end (strict iscoroutine gate)
+        """
+
+        self.assertEqual(asyncio.run(defer(_work)), "ok")
 
 
     async def test_coroutine_fn_passes_iscoroutinefunction(self):

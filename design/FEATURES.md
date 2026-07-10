@@ -73,7 +73,7 @@ Unknown heads fall back to **`layout/block`**. See [LAYOUTS.md](LAYOUTS.md).
 ### Async, generators, and `defer`
 
 - **`compile/await`**: explicit await; ordinary Python awaitables are also **auto-awaited** at CALL boundaries unless the value is a **`defer`** handle or passes asyncio's **isfuture** duck check (`_asyncio_future_blocking`) -- futures and Tasks are handles, resolved only by explicit await.
-- **`defer`**: invokes the wrapped call at **construction**, excludes the handle from auto-await; the first explicit await consumes it, and reuse raises `RuntimeError` like a finished coroutine ([api/defer-coroutine.md](api/defer-coroutine.md)).
+- **`defer`**: invokes the wrapped call at **construction**, excludes the handle from auto-await; carries the full coroutine protocol (passes `asyncio.iscoroutine`, drivable by Tasks), and driving to completion consumes it -- reuse raises `RuntimeError` like a finished coroutine ([api/defer-coroutine.md](api/defer-coroutine.md)).
 - **`compile/yield`**, **`compile/yield-from`**; Koskari and Python async generators supported in the VM.
 - **`with` / `dyn-with`**: sync and async context managers (VM auto-awaits enter/exit when needed).
 

@@ -92,13 +92,21 @@ A `DeferCoroutine` has no **PENDING** state. Construction runs the call and norm
 * **DONE(value)**
 
   * Completed successfully at construction (sync result).
-  * `value` is held until the first await consumes it.
+  * `value` is held until the first drive consumes it.
+
+* **ITERATING(iter)**
+
+  * The handle has been armed (`__await__` or a first `send`/`throw` on
+    a DELEGATING defer) and holds the iterator obtained from
+    `inner.__await__()`. Drives forward to it with yield-from rules.
 
 * **SPENT**
 
-  * The handle has been awaited once and is consumed. No payload.
-  * Any further await raises `RuntimeError("cannot reuse already awaited
-    defer")`, matching finished-coroutine semantics.
+  * The handle has been driven to completion (or closed) and is
+    consumed. No payload.
+  * Any further await/send/throw raises `RuntimeError("cannot reuse
+    already awaited defer")`, matching finished-coroutine semantics.
+    `close` on a SPENT handle stays a quiet no-op.
 
 * **MOVED_FROM** (internal state)
 
@@ -121,36 +129,54 @@ On **`defer(fn, *args, **kwds)`** (via `KosDefer_New`):
    * Else: transition to **DONE(value)**.
 3. If invocation raises: construction fails with that exception (no defer object).
 
-### Transitions on await (delegate-and-die)
+### The coroutine protocol (drivable handle)
 
-Await always arrives through the single `__await__` slot (`defer_await`),
-whether from Python or from koskari's AWAIT opcode
-(`PyObject_GetAwaitable`).
+`DeferCoroutine` carries the full coroutine protocol, so it passes the
+structural `collections.abc.Coroutine` subclass hook and
+`asyncio.iscoroutine` (note `inspect.iscoroutine`, which checks the
+concrete type, stays False). asyncio's strict surfaces
+(`asyncio.create_task`, `asyncio.run`, `run_coroutine_threadsafe`)
+accept a defer directly, and `Task.get_coro()` is the defer itself.
 
-While in **DELEGATING(inner)**:
+* `__await__`: arms a DELEGATING handle (DELEGATING -> ITERATING; on
+  failure it stays DELEGATING and the error propagates) and returns
+  **self**. DONE and ITERATING also return self. SPENT/MOVED_FROM raise
+  RuntimeError. `tp_iternext` exists (send(None) semantics) so
+  CPython's GET_AWAITABLE iterator check passes; there is deliberately
+  NO `tp_iter`, so `iter(d)` and koskari iteration constructs reject
+  the handle instead of silently driving it. `yield-from` explicitly
+  rejects defers alongside coroutines (YIELD_FROM.c).
+* `send(v)`: DONE consumes -- v must be None (else the just-started
+  TypeError), raises `StopIteration(value)` built as a real instance,
+  transitions SPENT. DELEGATING arms lazily, then forwards like
+  ITERATING: use the delegate's `send` when present; a None send falls
+  back to `tp_iternext`; a non-None send without a send method is a
+  TypeError (state unchanged). Completion (StopIteration) or any raise
+  from the delegate consumes the handle (SPENT) and propagates.
+* `throw(typ[, val[, tb]])`: DONE drops the value, goes SPENT, and
+  raises. DELEGATING arms lazily, then forwards to the delegate's
+  `throw` (single-arg calls forward single-arg). A throw-less delegate
+  follows yield-from rules: on GeneratorExit its `close` is called
+  first; either way the handle goes SPENT and the exception raises at
+  the defer. SPENT/MOVED_FROM raise the reuse RuntimeError.
+* `close()`: quiet no-op on SPENT/MOVED_FROM; consumes DONE. For
+  DELEGATING/ITERATING it delegates to the payload's `close` when
+  present (an unstarted inner coroutine closes without the
+  never-awaited warning) and PROPAGATES errors from it -- that is what
+  surfaces "coroutine ignored GeneratorExit". The handle is consumed
+  either way.
 
-* `__await__` obtains `inner.__await__()` (on failure the defer stays
-  DELEGATING and the error propagates), drops `inner`, transitions to
-  **SPENT**, and hands the iterator to the awaiting machinery. The defer
-  plays no further part; results and exceptions flow from `inner` to the
-  awaiter directly.
+Method lookups on the delegate distinguish lookup-AttributeError from an
+AttributeError raised inside the delegated body (lookup-then-call), so a
+real error is never mistaken for a missing method.
 
-While in **DONE(value)**:
-
-* `__await__` transfers `value` into a trivial one-shot iterator
-  (StopIteration(value)) and transitions to **SPENT**.
-
-While in **SPENT** or **MOVED_FROM**:
-
-* `__await__` raises `RuntimeError` immediately.
-
-### Multiple awaits
+### Multiple drives
 
 The object is single-shot in both directions:
 
 * `fn(*args, **kwds)` is invoked at most once (always at construction).
-* The result is consumed by at most one await; a second await raises
-  `RuntimeError`, the same behavior as a finished coroutine.
+* The result is consumed by at most one drive to completion; further
+  use raises `RuntimeError`, the same behavior as a finished coroutine.
 
 A joinable, multi-await handle is a **Task** (`create-task`) or Future,
 not a defer. See [defer-task-future-matrix.md](../defer-task-future-matrix.md).
@@ -177,6 +203,8 @@ If donor `r` is:
 
 * **DELEGATING(inner)**: `self` becomes DELEGATING(inner).
 * **DONE(value)**: `self` becomes DONE(value).
+* **ITERATING(iter)**: `self` becomes ITERATING(iter) and resumes the
+  drive where the donor left off.
 * **SPENT**: `self` becomes SPENT (as dead as the donor).
 * **MOVED_FROM**: `self` becomes MOVED_FROM (nothing to adopt).
 
@@ -191,10 +219,10 @@ If donor `r` is:
 ## Integration with `AWAIT` opcode
 
 The AWAIT opcode treats a defer as a generic awaitable: it calls
-`PyObject_GetAwaitable`, which lands in `__await__` and consumes the
-handle. From that point the eval's ordinary eager-step machinery drives
-the obtained iterator; the defer itself is out of the picture. No
-defer-specific opcode support exists or is needed.
+`PyObject_GetAwaitable`, which lands in `__await__`, arms the handle,
+and returns the defer itself as the drive target. The eval's ordinary
+eager-step machinery then drives it via `send`, which forwards into the
+held iterator. No defer-specific opcode support exists or is needed.
 
 ### Important constraint
 
@@ -211,11 +239,12 @@ The construction-time invocation must not pass through a path that performs impl
 
 * Only retain:
 
-  * `inner` while delegating, or
-  * `value` while DONE (until the first await transfers it out).
+  * `inner` while delegating,
+  * `iter` while iterating, or
+  * `value` while DONE (until the first drive consumes it).
 
 SPENT and MOVED_FROM hold nothing. This prevents pinning argument graphs
-after the eager call completes, and releases the payload at first await.
+after the eager call completes, and releases the payload at completion.
 
 ---
 
@@ -234,10 +263,11 @@ awaiter directly; the defer is already SPENT and records nothing.
 
 ### Cancellation / close / throw
 
-Once awaited, the awaiter holds the inner's iterator and cancellation,
-throw, and close follow the ordinary awaitable protocol against it. An
-un-awaited DELEGATING defer that is garbage-collected drops its inner
-(closing an unstarted coroutine).
+The defer itself is the drive target: `Task.cancel()` arrives as a
+`throw(CancelledError)` on the defer and forwards into the held
+iterator; `close()` likewise delegates. An un-awaited DELEGATING defer
+that is garbage-collected drops its inner (closing an unstarted
+coroutine).
 
 ---
 
@@ -249,6 +279,7 @@ Minimal helpful behaviors:
 
   * `<defer delegating inner=...>`
   * `<defer done>`
+  * `<defer iterating>`
   * `<defer spent>`
   * `<defer moved_from>`
 
@@ -258,10 +289,12 @@ Minimal helpful behaviors:
 
 1. **Single invocation**: `fn(*args, **kwds)` is invoked at most once, at construction.
 2. **No implicit wake-up**: implicit/greedy await sites do not auto-await `DeferCoroutine`.
-3. **Explicit await consumes**: the first await hands off the payload and transitions to SPENT.
-4. **Single consumption**: a second await raises `RuntimeError`, like a finished coroutine.
+3. **Driving consumes**: completion, failure, or close transitions to SPENT.
+4. **Single consumption**: reuse raises `RuntimeError`, like a finished coroutine.
 5. **Adoption is O(1)**: defer-of-defer collapse performs state transfer without allocation.
 6. **No call retention**: `fn`, `args`, and `kwds` are never stored on the defer object.
+7. **Coroutine-shaped**: passes `asyncio.iscoroutine` structurally; not
+   iterable (`iter(d)` and `yield-from` reject it).
 
 ---
 
@@ -271,11 +304,12 @@ Minimal helpful behaviors:
 
   * fields:
 
-    * state tag (DELEGATING | DONE | SPENT | MOVED_FROM)
+    * state tag (DELEGATING | DONE | ITERATING | SPENT | MOVED_FROM)
     * union payload:
 
       * delegating: inner
       * done: value
+      * iterating: iter
       * spent / moved_from: (empty)
 
 * Helpers:
@@ -283,7 +317,9 @@ Minimal helpful behaviors:
   * `KosDefer_Check` / `KosDefer_CheckExact`
   * `defer_adopt(self, other)` (in defer.c)
   * `KosDefer_New(fn, args, kwds)` — invoke once, normalize
-  * `defer_await` (`__await__` slot) — the single await entry; consumes
+  * `defer_await` (`__await__` slot) — arm and return self
+  * `defer_do_send` / `defer_forward_send` / `defer_forward_throw` —
+    the drive core with yield-from delegation rules
 
 * Implicit call auto-await path:
 
@@ -294,7 +330,8 @@ Minimal helpful behaviors:
 * `AWAIT` opcode:
 
   * generic awaitable handling; `PyObject_GetAwaitable` reaches
-    `__await__`, no defer-specific support
+    `__await__`, no defer-specific support; `yield-from` rejects
+    defers explicitly (YIELD_FROM.c yield_from_check_coro)
 
 ---
 

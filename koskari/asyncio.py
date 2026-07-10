@@ -68,10 +68,10 @@ def create_task(coro):
     support cancellation and done-callbacks, and resolve under explicit
     await.
 
-    Python coroutines and Koskari Coroutines schedule directly; any other
-    awaitable (such as a defer) is adapted through as_coroutine first.
-    Note that passing a defer consumes it -- the Task owns its single
-    shot.
+    Python coroutines, Koskari Coroutines, and defers all pass
+    asyncio.iscoroutine and schedule directly; exotic non-coroutine
+    awaitables are adapted through as_coroutine first. Note that passing
+    a defer consumes it -- the Task owns its single shot.
     """
 
     if not asyncio.iscoroutine(coro):
