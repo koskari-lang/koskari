@@ -258,7 +258,11 @@ def special_call_attr(
     attr = matched["attr"].datum
     args_src = matched["args"].datum if "args" in matched else nil
 
-    use_var_path = is_symbol(obj) and not tc
+    # No TAIL_CALL_ATTR exists: attr calls never tail-call and the frame
+    # is not reset before the call, so the var path stays valid even in
+    # tail position. Reinstate an `and not tc` guard here if a tail form
+    # transition for CALL_ATTR is ever implemented.
+    use_var_path = is_symbol(obj)
 
     fragment.position_of(body)
     if use_var_path:
