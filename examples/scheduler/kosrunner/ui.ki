@@ -1,0 +1,141 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+import os
+import logging
+
+import jinja2
+
+import-from importlib.util find_spec
+import-from fastapi.responses HTMLResponse RedirectResponse
+
+import-from .job Job
+import-from .server get-server ServerConfig
+
+
+define logger (logging.getLogger "kosrunner.ui")
+
+
+define-dataclass UiConfig [ServerConfig]:
+    """
+    Config for the human-facing web UI's shared server; prefix defaults
+    to /ui. Same host:port as a webhook/admin config -> one FastAPI
+    server, each mounting under its own prefix.
+    """
+
+    define [prefix :: str] "/ui"
+
+
+;; Templates ship as package data. Koskari modules have no __file__, so
+;; the package directory is located via its import spec.
+define _build-env []:
+    define spec (find_spec "kosrunner")
+    define pkgdir (item (list spec.submodule_search_locations) 0)
+    define tdir (os.path.join pkgdir "templates")
+    (jinja2.Environment
+        loader: (jinja2.FileSystemLoader tdir)
+        autoescape: True)
+
+
+define _render [env name ctx]:
+    define template (env.get_template name)
+    (HTMLResponse (template.render ctx))
+
+
+define _redirect [target]:
+    ;; 303 so the browser re-GETs after a form POST
+    (RedirectResponse target status_code: 303)
+
+
+define-class UiJob [Job]:
+    """
+    The human-facing control plane: Jinja2-rendered HTML mounted on the
+    shared server. Reads the live JobSet and its run store in-process
+    (`self.jobset` / `self.jobset.store`) -- no HTTP hop to the admin
+    API. Its form actions POST to its own prefix and redirect back.
+    """
+
+    define start [self]:
+        set! self.running True
+        define server (get-server self.config)
+        define prefix self.config.prefix
+        define js self.jobset
+        define env (_build-env)
+
+        ;; dashboard: jobs + recent runs
+        (server.add-page prefix
+            (lambda []
+                (_render env "dashboard.html"
+                    #{prefix: prefix
+                      jobs: (js.list-jobs)
+                      runs: (js.store.list-runs)})))
+
+        ;; one run's detail (metadata + captured output + result)
+        (server.add-page-item f"{prefix}/runs"
+            (lambda [runid]
+                (define detail (js.store.run-detail runid))
+                (if (None? detail)
+                    (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
+                    (_render env "run.html" #{prefix: prefix run: detail}))))
+
+        ;; form actions -> act, then redirect back to the dashboard
+        (server.add-action prefix "enable"
+            (lambda [name] (js.enable name) (_redirect prefix)))
+        (server.add-action prefix "disable"
+            (lambda [name] (js.disable name) (_redirect prefix)))
+        (server.add-action prefix "retrigger"
+            (lambda [runid] (js.retrigger runid) (_redirect prefix)))
+
+        (server.start)
+        (logger.info "web ui mounted at %s" prefix)
+
+
+    define stop [self]:
+        set! self.running False
+
+
+define-syntax config/ui:
+    syntax-rules []:
+        case (config/ui () setting ...):
+            (begin
+                (define default/ui)
+                (unless &default/ui
+                    (set! default/ui (UiConfig setting ...))))
+        case (config/ui nm setting ...):
+            (begin
+                (define nm (UiConfig setting ...))
+                (define default/ui)
+                (unless &default/ui (set! default/ui nm)))
+
+
+;; `job ui <name> [disabled]:` -- no trigger key; serves from its config.
+define-syntax job/ui:
+    syntax-rules [disabled]:
+        case (job/ui name disabled (subhead subrest ...) ...):
+            (begin
+                (define name (UiJob))
+                (set! name.enabled False)
+                (define default/ui)
+                (when &default/ui (.configure name via: default/ui))
+                (subhead (ui name) subrest ...) ...)
+
+        case (job/ui name (subhead subrest ...) ...):
+            (begin
+                (define name (UiJob))
+                (define default/ui)
+                (when &default/ui (.configure name via: default/ui))
+                (subhead (ui name) subrest ...) ...)
+
+
+;; The end.

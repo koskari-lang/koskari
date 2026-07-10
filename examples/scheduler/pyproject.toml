@@ -33,6 +33,7 @@ dependencies = [
     "aiokafka",
     "aiosqlite",
     "fastapi",
+    "jinja2",
     "uvicorn",
 ]
 
@@ -45,7 +46,7 @@ packages = ["kosrunner"]
 
 
 [tool.setuptools.package-data]
-kosrunner = ["*.ki"]
+kosrunner = ["*.ki", "templates/*.html"]
 
 
 # The end.

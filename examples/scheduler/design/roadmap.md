@@ -282,16 +282,31 @@ parent linkage / unknown-run error) and a live e2e -- seed a webhook run, then
 result), `POST /admin/retrigger/{id}` produced a new `manual` run linked to the
 parent.
 
-### Phase 3 -- `ui` sibling variety
+### Phase 3 -- `ui` sibling variety -- DONE (2026-07-10)
 
-- New `kosrunner/ui.ki`: `UiConfig` (a `ServerConfig` subclass, prefix `/ui`) +
-  `UiJob` mounting Jinja2 HTML routes on the shared `HttpServer`, reading `js`
-  and `js.store` in-process. `config/ui` + `job/ui` syntax, exported from
-  [__init__.ki](../kosrunner/__init__.ki).
-- Pages: job list with enable/disable buttons (POST to admin), run-history
-  table, run detail with log view, retrigger button.
-- Deps/packaging: add `jinja2` to `pyproject.toml`, ship `templates/` as
-  package-data.
+- New [ui.ki](../kosrunner/ui.ki): `UiConfig` (`ServerConfig` subclass, prefix
+  `/ui`) + `UiJob` mounting Jinja2 HTML on the shared `HttpServer`, reading the
+  live JobSet and `js.store` **in-process** (no HTTP hop to admin). `config/ui`
+  + `job/ui` exported from [__init__.ki](../kosrunner/__init__.ki).
+- Routes: `GET /ui` (dashboard: jobs + recent runs), `GET /ui/runs/{id}` (detail
+  + captured output + result), and form actions `POST /ui/{enable,disable}/{name}`
+  / `POST /ui/retrigger/{id}` that act and `303`-redirect back to `/ui`. The UI
+  handles its own actions (self-contained) rather than pointing forms at the
+  admin JSON API. Two new server helpers: `add-page` (GET -> HTML) and
+  `add-page-item` (GET path-param -> HTML).
+- **Templates** ship as package data (`templates/*.html`, a `base.html` the two
+  pages extend). Loaded via `jinja2.FileSystemLoader` over the package dir,
+  which is located with `find_spec("kosrunner").submodule_search_locations`
+  because koskari modules have no `__file__`. `autoescape` on. Env is built in
+  `UiJob.start` (runtime, when a loop and the package are fully present).
+- Deps: `jinja2` in `pyproject.toml`; `package-data` extended to
+  `templates/*.html`. `example.ki` gains `config ui:` + `job ui web` on `:8080`
+  (shares the webhook/admin server).
+
+Verified: `example.ki` builds 8 jobs incl. the UI; a live e2e drove `GET /ui`
+(dashboard lists jobs + runs), `GET /ui/runs/{id}` (detail), `POST /ui/retrigger`
+and `POST /ui/disable` (both `303` -> `/ui`, retrigger produced a linked `manual`
+run). Templates also rendered to static previews with sample data.
 
 ### Phase 4 -- deployment shape
 

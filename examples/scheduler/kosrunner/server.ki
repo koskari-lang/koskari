@@ -114,6 +114,37 @@ define-class HttpServer []:
             (handler item)
 
 
+    define add-page [self path handler]:
+        """
+        GET {path}; handler takes no args and returns a Response (HTML).
+        Used by the UI variety to serve rendered pages.
+        """
+
+        (logger.info "route GET %s (html)" path)
+        define app self.app
+
+        @(app.get path)
+        @coroutine-fn
+        define inner []:
+            (handler)
+
+
+    define add-page-item [self path handler]:
+        """
+        GET {path}/{item}; the path item is passed to handler, which
+        returns a Response (HTML).
+        """
+
+        define full f"{path}/{{item}}"
+        (logger.info "route GET %s (html)" full)
+        define app self.app
+
+        @(app.get full)
+        @coroutine-fn
+        define inner [item]:
+            (handler item)
+
+
     define start [self]:
         when self._server:
             (return)

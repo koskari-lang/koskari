@@ -61,6 +61,13 @@ Every fire is recorded to the storage root (`config storage:`, or
 result. Re-trigger replays a run's stored args as a new run linked to the
 original, so a failed job can be re-run without re-sending its input.
 
+A human-facing **web UI** shares that same server under `/ui` -- point a browser
+at `http://localhost:8080/ui`. It renders a jobs + recent-runs dashboard with
+enable/disable and one-click retrigger, and a per-run detail page
+(`/ui/runs/<run-id>`) showing the captured output and result. It reads the live
+`JobSet` and run store in-process; its form actions post to `/ui` and redirect
+back, so `/admin` stays a clean JSON API for scripting.
+
 The **kafka** jobs in the example are marked `disabled` because they need a
 running broker. To enable them, point `config kafka:` at your broker and drop
 the `disabled` keyword from the job headers.
@@ -253,13 +260,15 @@ by name.
 
 | File | Contents |
 |---|---|
-| [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/enabled, `jobset` back-ref), `JobSet` (tracking + control plane) |
+| [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`) |
 | [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
-| [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action helpers |
+| [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture) + `config/storage` |
+| [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action/page helpers |
 | [kosrunner/cron.ki](kosrunner/cron.ki) | `CronJob` + `config/cron` / `job/cron` (aiocron) |
 | [kosrunner/kafka.ki](kosrunner/kafka.ki) | `KafkaJob` + `on-error` + `config/kafka` / `job/kafka` (aiokafka) |
 | [kosrunner/webhook.ki](kosrunner/webhook.ki) | `WebhookJob` + `config/webhook` / `job/webhook` (mounts routes on a shared `HttpServer`) |
-| [kosrunner/admin.ki](kosrunner/admin.ki) | `AdminJob` + `config/admin` / `job/admin` -- the control plane over HTTP |
+| [kosrunner/admin.ki](kosrunner/admin.ki) | `AdminJob` + `config/admin` / `job/admin` -- the JSON control plane over HTTP |
+| [kosrunner/ui.ki](kosrunner/ui.ki) | `UiJob` + `config/ui` / `job/ui` -- the Jinja2 web UI (jobs/runs dashboard, retrigger), in-process on the shared server |
 | [kosrunner/fake.ki](kosrunner/fake.ki) | `FakeJob` -- a broker-free variety for tests |
 
 

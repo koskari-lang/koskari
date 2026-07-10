@@ -24,6 +24,7 @@ import-from .cron CronConfig CronJob config/cron job/cron
 import-from .kafka KafkaConfig KafkaJob config/kafka job/kafka
 import-from .webhook WebhookConfig WebhookJob config/webhook job/webhook
 import-from .admin AdminConfig AdminJob config/admin job/admin
+import-from .ui UiConfig UiJob config/ui job/ui
 
 
 declare-exports [
@@ -42,6 +43,7 @@ declare-exports [
     KafkaConfig KafkaJob config/kafka job/kafka
     WebhookConfig WebhookJob config/webhook job/webhook
     AdminConfig AdminJob config/admin job/admin
+    UiConfig UiJob config/ui job/ui
 ]
 
 

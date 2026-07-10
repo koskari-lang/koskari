@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}kosrunner{% endblock %}</title>
+<style>
+  body { font: 14px/1.5 system-ui, -apple-system, sans-serif; margin: 2rem auto; max-width: 900px; color: #222; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; margin-top: 1.5rem; } h2 { font-size: 1.05rem; margin-top: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1.5rem; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
+  th { color: #666; font-weight: 600; }
+  form { display: inline; margin: 0; }
+  button { cursor: pointer; font: inherit; padding: 2px 10px; }
+  a { color: #06c; text-decoration: none; } a:hover { text-decoration: underline; }
+  pre { background: #f6f6f6; padding: 10px; overflow-x: auto; border-radius: 4px; white-space: pre-wrap; }
+  code, pre { font-family: ui-monospace, monospace; }
+  .status-success { color: #197a3a; } .status-failed { color: #c1362f; }
+  .status-running { color: #9a6a00; } .status-interrupted { color: #888; }
+  .muted { color: #999; }
+</style>
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>
