@@ -79,6 +79,47 @@ podman build -t kosrunner -f Containerfile .
 ```
 
 
+## Deploying: the compose stack
+
+[compose.yml](compose.yml) stands up the real deployment shape -- the scheduler
+behind an **nginx basic-auth frontend**, with run history on a named volume:
+
+```bash
+podman compose up --build
+```
+
+- **nginx** is the only host-facing service (`:8080`). `/webhook/*` is proxied
+  **open** (that's the inbound-trigger surface); the web UI (`/ui`) and the
+  admin JSON API (`/admin`) sit behind **basic auth**.
+- **kosrunner** runs the definition, not published to the host -- only nginx
+  reaches it. Its run history lives on the `runs:` volume
+  (`KOSRUNNER_STORAGE_ROOT`), so it survives `compose down`/`up`, the way a pod's
+  state survives on a PVC.
+
+```bash
+curl -X POST localhost:8080/webhook/ping -d '{}'      # open
+curl localhost:8080/ui                                # 401
+curl -u ADMIN:ADMIN localhost:8080/ui                 # 200
+open  http://localhost:8080/ui                        # browser prompts for auth
+```
+
+> **Credentials are `ADMIN` / `ADMIN` by default -- an obvious demo placeholder,
+> not a real secret.** They come from `KOSRUNNER_USER` / `KOSRUNNER_PASS`
+> (see [.env.example](.env.example)); nginx hashes them at startup, so no
+> password hash is ever committed. Override them for anything that leaves your
+> laptop:
+>
+> ```bash
+> KOSRUNNER_USER=you KOSRUNNER_PASS=$(openssl rand -hex 16) podman compose up
+> ```
+
+The compose stack requires the `koskari:local` base image the Containerfile
+builds `FROM` (see the repo Makefile). For a production gitops flow you would
+instead publish a versioned baseline image and layer each job definition on top
+(`FROM kosrunner:<ver>` + one `COPY`); that split is out of scope for this
+example.
+
+
 ## The surface language
 
 A `jobset` is a flat, ordered collection of two kinds of entry: **configs**

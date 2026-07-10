@@ -310,13 +310,30 @@ run). Templates also rendered to static previews with sample data.
 
 ### Phase 4 -- deployment shape
 
-- Split the [Containerfile](../Containerfile) into the baseline (build wheel,
-  install, bake `example.ki` as default `run.ki`) and a documented ~3-line job
-  layer.
-- Document the nginx pattern (auth on `/ui` + `/admin`, `/webhook` open) and
-  the storage PVC mount + `STORAGE_ROOT` env.
+Decided against splitting the Containerfile into a baseline + thin job layer.
+That split only pays off in a multi-definition gitops/CI world (a registry
+baseline that each job repo builds `FROM`, so a definition edit rebuilds seconds
+of layer, not the whole image) -- which is the *work* deployment, not what the
+example needs to teach. For the example, a **compose stack** shows the actual
+topology, which is the more instructive artifact. The two-tier split stays a
+documented "for production gitops" note, not built here.
+
+- **[compose.yml](../compose.yml)**: `kosrunner` (built from the single
+  [Containerfile](../Containerfile), run history on a named `runs:` volume via
+  `KOSRUNNER_STORAGE_ROOT`, not published) + `nginx` (the only host-facing
+  service). `podman compose up --build` stands up the whole shape; state
+  survives `down`/`up` on the volume (the PVC stand-in).
+- **[nginx](../nginx/nginx.conf)** frontend: `/webhook/*` proxied **open**
+  (inbound triggers); everything else (`/ui`, `/admin`) behind **basic auth**.
+  View-vs-control splitting (read-only UI open, mutations gated) is a noted
+  future refinement; for now the whole control surface is gated as one.
+- **Credentials** come from `KOSRUNNER_USER` / `KOSRUNNER_PASS` env with demo
+  defaults `ADMIN` / `ADMIN`. The htpasswd is generated at nginx start
+  ([nginx/10-htpasswd.sh](../nginx/10-htpasswd.sh) via `openssl passwd`), so no
+  hash is committed -- the repo holds only the literal `ADMIN` placeholder, which
+  reads as a demo default, not a leaked secret. `.env.example` documents it.
 - Parked for later: per-webhook trigger UUID as a bearer-ish token in the job
-  description, as minimal auth for open webhooks.
+  description, as minimal auth for the open webhook surface.
 
 ## Open decisions
 
