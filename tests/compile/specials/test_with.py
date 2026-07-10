@@ -93,6 +93,26 @@ class AsyncSwallowMgr(AsyncMgr):
         return True
 
 
+class FutureEnterMgr:
+    """
+    Context manager whose __aenter__/__aexit__ return asyncio Futures.
+    Futures are auto-await-exempt handles, so the with binding receives
+    the Future itself rather than its result.
+    """
+
+    def __init__(self, enter_fut, exit_fut):
+        self.enter_fut = enter_fut
+        self.exit_fut = exit_fut
+
+
+    def __aenter__(self):
+        return self.enter_fut
+
+
+    def __aexit__(self, typ, val, tb):
+        return self.exit_fut
+
+
 class TestWithSpecial(SpecialsTestCase):
 
     async def test_normal_enter_exit_expression_returns_none(self):
@@ -233,6 +253,34 @@ class TestWithSpecial(SpecialsTestCase):
         self.assertEqual(state.get("got"), 200)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
+
+
+    async def test_future_returning_aenter_binds_handle(self):
+        """
+        __aenter__ returning a Future binds the Future handle, not its
+        result: futures are excluded from implicit auto-await.
+        """
+        import asyncio
+
+        state = {}
+        loop = asyncio.get_running_loop()
+        enter_fut = loop.create_future()
+        enter_fut.set_result(200)
+        exit_fut = loop.create_future()
+        exit_fut.set_result(False)
+        mgr = FutureEnterMgr(enter_fut, exit_fut)
+
+        def check(x):
+            state["got"] = x
+
+        src = """
+        (compile/with [x (compile/call make_mgr)]
+          (compile/call check x))
+        """
+        expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, check=check)
+        result = await expr()
+        self.assertIsNone(result)
+        self.assertIs(state.get("got"), enter_fut)
 
 
     async def test_async_exit_swallow(self):

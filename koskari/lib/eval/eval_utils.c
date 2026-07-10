@@ -186,6 +186,38 @@ static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
 
 
 /**
+   Duck-typed mirror of asyncio.isfuture: the type provides
+   _asyncio_future_blocking and the instance value is not None. Futures
+   and Tasks are handles by convention, so implicit auto-await sites
+   push them as plain values; only explicit AWAIT drives them.
+
+   The class-level PyType_Lookup pre-filter keeps the common miss (every
+   coroutine-returning call) free of exception churn and never consults
+   an instance __getattr__ on non-future types.
+
+   :return: 1 (future), 0 (not a future), -1 (error from a raising
+       descriptor; PyErr set)
+*/
+static int kos_isfuture(PyObject *val) {
+  if (! PyType_Lookup(Py_TYPE(val), str_asyncio_future_blocking))
+    return 0;
+
+  PyObject *blocking = PyObject_GetAttr(val, str_asyncio_future_blocking);
+  if (! blocking) {
+    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+      PyErr_Clear();
+      return 0;
+    }
+    return -1;
+  }
+
+  int r = (blocking != Py_None);
+  Py_DECREF(blocking);
+  return r;
+}
+
+
+/**
    Push val, or if val is awaitable run eager_step and either push the
    result or suspend (KOS_RES_AWAIT). Use only for (1) the result of a
    call (CALL opcode: callable returned a coroutine) and (2) the AWAIT
@@ -215,6 +247,18 @@ static KosOpResult push_or_await_plain(
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
     return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+  }
+
+  /* asyncio futures are handles; implicit sites push them plain. */
+  if (! await_defer) {
+    int isfut = kos_isfuture(val);
+    if (isfut < 0) {
+      Py_DECREF(val);
+      return EVAL_RAISE();
+    }
+    if (isfut) {
+      return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
   }
 
   int suspended = 0;
@@ -286,6 +330,17 @@ static inline KosOpResult push_or_await_fused(
   SAYF("[eval] push_or_await_fused entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
+    OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
+    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+  }
+
+  /* asyncio futures are handles; implicit sites push them plain. */
+  int isfut = kos_isfuture(val);
+  if (isfut < 0) {
+    Py_DECREF(val);
+    return EVAL_RAISE();
+  }
+  if (isfut) {
     OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
     return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }

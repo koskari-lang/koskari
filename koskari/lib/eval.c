@@ -95,6 +95,7 @@ static PyObject *str_class = NULL;
 static PyObject *str_getattr = NULL;
 static PyObject *str_name = NULL;
 static PyObject *str_package = NULL;
+static PyObject *str_asyncio_future_blocking = NULL;
 
 /* KoskariContinuationApply payload attributes (see cont.c raise sites) */
 static PyObject *str_args = NULL;
@@ -2848,6 +2849,7 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_aexit, "__aexit__");
   STR_CONST(str_args, "args");
   STR_CONST(str_asend, "asend");
+  STR_CONST(str_asyncio_future_blocking, "_asyncio_future_blocking");
   STR_CONST(str_athrow, "athrow");
   STR_CONST(str_await, "__await__");
   STR_CONST(str_class, "__class__");
@@ -2911,6 +2913,7 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_aexit);
   Py_CLEAR(str_args);
   Py_CLEAR(str_asend);
+  Py_CLEAR(str_asyncio_future_blocking);
   Py_CLEAR(str_athrow);
   Py_CLEAR(str_await);
   Py_CLEAR(str_class);
