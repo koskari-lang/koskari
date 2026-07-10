@@ -261,7 +261,9 @@ def special_call_attr(
     use_var_path = is_symbol(obj) and not tc
 
     fragment.position_of(body)
-    if not use_var_path:
+    if use_var_path:
+        fragment.request_var(str(obj))
+    else:
         fragment.merge(compiler.full_compile(obj))
 
     args_seq, kwds_seq = gather_parameters(args_src, source=args_src)

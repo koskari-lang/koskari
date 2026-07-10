@@ -805,16 +805,12 @@ class Compiler:
             if head is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
-            expr = cons(_symbol_call, head, tail)
-            return expr
-
-        else:
-            head = self.compile(head)
-
-        if isinstance(head, ByteCodeFragment):
-            return cons(_symbol_call, head, tail)
-        else:
-            return cons(head, tail)
+        # Re-emit as an explicit call form with the head left as raw
+        # source. Compiling the head here would destroy forms that
+        # compile/call's patterns need to see (eg. a (compile/attr obj
+        # name) head routing to compile/call-attr); the special compiles
+        # the callable itself when no pattern claims it.
+        return cons(_symbol_call, head, tail)
 
 
     def compile_special(self, fragment, comp, source_obj, tc):

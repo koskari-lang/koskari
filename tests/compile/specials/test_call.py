@@ -314,19 +314,22 @@ class TestCallVarPath(SpecialsTestCase):
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
 
 
-    async def test_complex_callable_emits_call_not_call_var(self):
+    async def test_complex_callable_emits_call_attr_not_call_var(self):
         """
-        (attr obj meth)(args) -> CALL_ATTR or CALL, not CALL_VAR
+        (attr obj meth)(args) -> a fused attr-call opcode, not CALL_VAR
+        or a generic CALL over a pre-resolved attribute
         """
         code = self.compile_to_code(
             "(lambda [] ((compile/attr obj upper) \"hi\"))", tc=False)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertNotIn(
+        self.assertIn(
             ops[0][1],
-            (OpCode.KOS_OP_CALL_VAR, OpCode.KOS_OP_CALL_FAST),
-            "complex callable should not use CALL_VAR or CALL_FAST")
+            (OpCode.KOS_OP_CALL_ATTR,
+             OpCode.KOS_OP_CALL_VAR_ATTR,
+             OpCode.KOS_OP_CALL_FAST_ATTR),
+            "complex attr callable should use a fused attr-call opcode")
 
 
 class TestCallEvaluationOrder(SpecialsTestCase):

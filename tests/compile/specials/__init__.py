@@ -125,6 +125,15 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         OpCode.KOS_OP_CALL_FAST,
         OpCode.KOS_OP_CALL_FAST_NAMES,
         OpCode.KOS_OP_CALL_FAST_STAR,
+        OpCode.KOS_OP_CALL_ATTR,
+        OpCode.KOS_OP_CALL_ATTR_NAMES,
+        OpCode.KOS_OP_CALL_ATTR_STAR,
+        OpCode.KOS_OP_CALL_VAR_ATTR,
+        OpCode.KOS_OP_CALL_VAR_ATTR_NAMES,
+        OpCode.KOS_OP_CALL_VAR_ATTR_STAR,
+        OpCode.KOS_OP_CALL_FAST_ATTR,
+        OpCode.KOS_OP_CALL_FAST_ATTR_NAMES,
+        OpCode.KOS_OP_CALL_FAST_ATTR_STAR,
     )
 
 
