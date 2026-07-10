@@ -50,7 +50,23 @@ The control plane shares that same server under `/admin`:
 ```bash
 curl localhost:8080/admin/jobs                    # list jobs + state
 curl -X POST localhost:8080/admin/enable/orders   # enable a dormant job
+curl localhost:8080/admin/runs                    # recent runs
+curl localhost:8080/admin/runs/<run-id>           # one run + its output/result/trigger
+curl -X POST localhost:8080/admin/retrigger/<run-id>   # replay a run (e.g. a failed one)
 ```
+
+Every fire is recorded to the storage root (`config storage:`, or
+`$KOSRUNNER_STORAGE_ROOT`, or `./.kosrunner`): a row in `index.db` plus a
+`runs/<job>/<run-id>/` directory holding the trigger args, captured log, and
+result. Re-trigger replays a run's stored args as a new run linked to the
+original, so a failed job can be re-run without re-sending its input.
+
+A human-facing **web UI** shares that same server under `/ui` -- point a browser
+at `http://localhost:8080/ui`. It renders a jobs + recent-runs dashboard with
+enable/disable and one-click retrigger, and a per-run detail page
+(`/ui/runs/<run-id>`) showing the captured output and result. It reads the live
+`JobSet` and run store in-process; its form actions post to `/ui` and redirect
+back, so `/admin` stays a clean JSON API for scripting.
 
 The **kafka** jobs in the example are marked `disabled` because they need a
 running broker. To enable them, point `config kafka:` at your broker and drop
@@ -61,6 +77,47 @@ A container build is also provided:
 ```bash
 podman build -t kosrunner -f Containerfile .
 ```
+
+
+## Deploying: the compose stack
+
+[compose.yml](compose.yml) stands up the real deployment shape -- the scheduler
+behind an **nginx basic-auth frontend**, with run history on a named volume:
+
+```bash
+podman compose up --build
+```
+
+- **nginx** is the only host-facing service (`:8080`). `/webhook/*` is proxied
+  **open** (that's the inbound-trigger surface); the web UI (`/ui`) and the
+  admin JSON API (`/admin`) sit behind **basic auth**.
+- **kosrunner** runs the definition, not published to the host -- only nginx
+  reaches it. Its run history lives on the `runs:` volume
+  (`KOSRUNNER_STORAGE_ROOT`), so it survives `compose down`/`up`, the way a pod's
+  state survives on a PVC.
+
+```bash
+curl -X POST localhost:8080/webhook/ping -d '{}'      # open
+curl localhost:8080/ui                                # 401
+curl -u ADMIN:ADMIN localhost:8080/ui                 # 200
+open  http://localhost:8080/ui                        # browser prompts for auth
+```
+
+> **Credentials are `ADMIN` / `ADMIN` by default -- an obvious demo placeholder,
+> not a real secret.** They come from `KOSRUNNER_USER` / `KOSRUNNER_PASS`
+> (see [.env.example](.env.example)); nginx hashes them at startup, so no
+> password hash is ever committed. Override them for anything that leaves your
+> laptop:
+>
+> ```bash
+> KOSRUNNER_USER=you KOSRUNNER_PASS=$(openssl rand -hex 16) podman compose up
+> ```
+
+The compose stack requires the `koskari:local` base image the Containerfile
+builds `FROM` (see the repo Makefile). For a production gitops flow you would
+instead publish a versioned baseline image and layer each job definition on top
+(`FROM kosrunner:<ver>` + one `COPY`); that split is out of scope for this
+example.
 
 
 ## The surface language
@@ -156,9 +213,11 @@ config admin:
 job admin control       ; no sub-items; serves from its config alone
 ```
 
-The admin job mounts `GET {prefix}/jobs`, `POST {prefix}/enable/<name>`, and
-`POST {prefix}/disable/<name>`. It reaches its `JobSet` through a back-reference
-the JobSet sets when it registers each job (`job.jobset`).
+The admin job mounts `GET {prefix}/jobs`, `POST {prefix}/enable/<name>`,
+`POST {prefix}/disable/<name>`, plus the run-history surface: `GET {prefix}/runs`,
+`GET {prefix}/runs/<id>`, and `POST {prefix}/retrigger/<id>`. It reaches its
+`JobSet` through a back-reference the JobSet sets when it registers each job
+(`job.jobset`), and the run store hangs off that same JobSet (`job.jobset.store`).
 
 Because HTTP servers are **interned by host:port** (not by config), giving the
 admin config the same port as a webhook makes them share one FastAPI server,
@@ -242,13 +301,15 @@ by name.
 
 | File | Contents |
 |---|---|
-| [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/enabled, `jobset` back-ref), `JobSet` (tracking + control plane) |
+| [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`) |
 | [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
-| [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action helpers |
+| [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture) + `config/storage` |
+| [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action/page helpers |
 | [kosrunner/cron.ki](kosrunner/cron.ki) | `CronJob` + `config/cron` / `job/cron` (aiocron) |
 | [kosrunner/kafka.ki](kosrunner/kafka.ki) | `KafkaJob` + `on-error` + `config/kafka` / `job/kafka` (aiokafka) |
 | [kosrunner/webhook.ki](kosrunner/webhook.ki) | `WebhookJob` + `config/webhook` / `job/webhook` (mounts routes on a shared `HttpServer`) |
-| [kosrunner/admin.ki](kosrunner/admin.ki) | `AdminJob` + `config/admin` / `job/admin` -- the control plane over HTTP |
+| [kosrunner/admin.ki](kosrunner/admin.ki) | `AdminJob` + `config/admin` / `job/admin` -- the JSON control plane over HTTP |
+| [kosrunner/ui.ki](kosrunner/ui.ki) | `UiJob` + `config/ui` / `job/ui` -- the Jinja2 web UI (jobs/runs dashboard, retrigger), in-process on the shared server |
 | [kosrunner/fake.ki](kosrunner/fake.ki) | `FakeJob` -- a broker-free variety for tests |
 
 

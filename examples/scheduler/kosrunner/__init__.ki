@@ -15,13 +15,16 @@
 import-from .job Config Job JobSet
 import-from .subitems:
     jobset job config handler on-error with-subitems layout/config
-    config/logging configure-logging
+    config/logging configure-logging reqenv
 import-from .server HttpServer get-server ServerConfig stop-all-servers
+import-from .store:
+    StorageConfig RunStore config/storage resolve-storage-root safe-segment
 import-from .fake FakeConfig FakeJob config/fake job/fake
 import-from .cron CronConfig CronJob config/cron job/cron
 import-from .kafka KafkaConfig KafkaJob config/kafka job/kafka
 import-from .webhook WebhookConfig WebhookJob config/webhook job/webhook
 import-from .admin AdminConfig AdminJob config/admin job/admin
+import-from .ui UiConfig UiJob config/ui job/ui
 
 
 declare-exports [
@@ -29,15 +32,18 @@ declare-exports [
 
     jobset job config handler on-error with-subitems
     layout/config
-    config/logging configure-logging
+    config/logging configure-logging reqenv
 
     HttpServer get-server ServerConfig stop-all-servers
+
+    StorageConfig RunStore config/storage resolve-storage-root safe-segment
 
     FakeConfig FakeJob config/fake job/fake
     CronConfig CronJob config/cron job/cron
     KafkaConfig KafkaJob config/kafka job/kafka
     WebhookConfig WebhookJob config/webhook job/webhook
     AdminConfig AdminJob config/admin job/admin
+    UiConfig UiJob config/ui job/ui
 ]
 
 

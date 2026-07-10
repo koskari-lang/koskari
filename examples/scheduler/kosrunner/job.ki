@@ -42,8 +42,10 @@ define-class Job []:
     """
 
     define __init__ [self]:
+        set! self.name None            ; set by JobSet.register
         set! self.config None
         set! self.callback None
+        set! self.on_error_cb None
         set! self.enabled True
         set! self.running False
         set! self.jobset None
@@ -76,6 +78,65 @@ define-class Job []:
         self
 
 
+    ; --- tracked execution ---
+
+    define _job-kind [self]:
+        define cls (type self)
+        (.lower (.removesuffix cls.__name__ "Job"))
+
+
+    define _invoke [self args]:
+        (if (None? self.callback)
+            None
+            (self.callback *: args))
+
+
+    define run [self *: args cause: "manual" parent: None]:
+        """
+        Fire the handler once as a TRACKED run: record it in the jobset's
+        store, capture its log output, invoke the callback with `args`,
+        and record the outcome (with the kafka-style `on-error` hook on
+        failure). Returns the callback result -- webhook needs it back.
+        Every variety funnels its trigger through here, and re-trigger is
+        just a `run` with `cause: "manual"` and the stored args. Degrades
+        to a plain invoke when there is no store (e.g. an unregistered
+        job).
+        """
+
+        ;; local import dodges the job<->store load-time cycle. The capture
+        ;; contextvar must be set HERE -- in the same context as the callback
+        ;; -- so the run's log output is routed to this run's buffer.
+        import-from .store _current-run
+
+        define store (if self.jobset self.jobset.store None)
+        when (None? store):
+            (return (self._invoke args))
+
+        define runid (store.record-start self.name (self._job-kind) cause args: args parent: parent)
+        define buf #[]
+        define token (_current-run.set buf)
+        define status "success"
+        define result None
+        define err None
+        try:
+            set! result (self._invoke args)
+        except [Exception as: exc]:
+            set! status "failed"
+            set! err exc
+            if self.on_error_cb:
+                try:
+                    (self.on_error_cb exc *: args)
+                except [Exception]:
+                    (logger.error "on-error handler failed: %s" self.name exc_info: True)
+            else:
+                (logger.error "job failed: %s" self.name exc_info: True)
+        finally:
+            (_current-run.reset token)
+            define log (if buf (.join "\n" buf) None)
+            (store.record-finish runid status: status result: result error: err log: log)
+        result
+
+
     ; --- lifecycle (varieties implement) ---
 
     define start [self]:
@@ -96,12 +157,30 @@ define-class JobSet []:
     define __init__ [self name]:
         set! self.name name
         set! self.jobs #{}
+        set! self.store None              ; RunStore, wired by the jobset macro
         set! self._stopping None          ; asyncio.Event, live only while running
+
+
+    define bind-store [self config]:
+        """
+        Construct the run store from an optional StorageConfig (the jobset
+        macro passes `&default/storage`, which is falsey when the
+        definition carried no `config storage:`). Resolution falls through
+        config.root -> env -> <cwd>/.kosrunner. Does not open the
+        connection -- that happens at run time in `__call__`.
+        """
+
+        ;; local import dodges the job<->store load-time cycle
+        import-from .store RunStore resolve-storage-root
+        define root (resolve-storage-root config)
+        set! self.store (RunStore (str root) config: config)
+        self.store
 
 
     define register [self name job]:
         set! (item self.jobs name) job
         set! job.jobset self
+        set! job.name name
         (logger.info "registered job: %s" name)
         job
 
@@ -127,6 +206,28 @@ define-class JobSet []:
         when job.running:
             (job.stop)
         job
+
+
+    define retrigger [self runid]:
+        """
+        Replay a past run by id: read its stored trigger args and fire the
+        same job again as a new `manual` run linked to the original via
+        `parent`. Works on a disabled job -- exactly what failure replay
+        needs. Returns a small status dict for the control plane.
+        """
+
+        define trig (self.store.get-trigger runid)
+        if (None? trig):
+            #{error: "no such run" run_id: runid}
+        else:
+            define jobname (item trig "job")
+            define job (self.jobs.get jobname)
+            if (None? job):
+                #{error: "unknown job" job: jobname}
+            else:
+                define args (or (item trig "args") #[])
+                (job.run *: args cause: "manual" parent: runid)
+                #{ok: True retriggered: runid job: jobname}
 
 
     define start [self]:
@@ -184,6 +285,8 @@ define-class JobSet []:
         ;; local import dodges the job<->server load-time cycle
         import-from .server stop-all-servers
         (stop-all-servers)
+        when self.store:
+            (self.store.close)
 
 
     define __call__ [self heartbeat: 3600 snore: False]:
@@ -196,6 +299,8 @@ define-class JobSet []:
 
         set! self._stopping (asyncio.Event)
         (self._install-signals)
+        when self.store:
+            (self.store.open)
         (self.start)
         try:
             while (not (self._stopping.is_set)):

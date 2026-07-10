@@ -41,6 +41,12 @@ jobset workload:
         port: 8080
         prefix: "/admin"
 
+    ;; Web UI config -- same host:port again, so it shares that one FastAPI
+    ;; server too, mounting human-facing HTML under /ui.
+    config ui:
+        port: 8080
+        prefix: "/ui"
+
 
     ;; --- JOBS: `job <type> <name> <trigger...> [disabled]:` ----------
     ;; The header is the constructor; each sub-item is a method call on
@@ -73,6 +79,10 @@ jobset workload:
     ;; config alone, sharing the webhook's server (same port) and mounting
     ;; GET /admin/jobs, POST /admin/enable/<name>, POST /admin/disable/<name>.
     job admin control
+
+    ;; The web UI, as a job. Reads the JobSet + run store in-process and
+    ;; renders a jobs/runs dashboard (with enable/disable/retrigger) at /ui.
+    job ui web
 
     ;; kafka job on the DEFAULT kafka config (unnamed one above).
     job kafka orders "topic.orders" disabled:

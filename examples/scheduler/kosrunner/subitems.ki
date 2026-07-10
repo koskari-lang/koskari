@@ -12,6 +12,8 @@
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 
+import os
+
 import-from logging basicConfig
 
 import-from .job JobSet
@@ -74,6 +76,10 @@ define-syntax jobset:
                 ,@configs
                 ,@jobforms
                 (define ,jsname (JobSet ,(str jsname.datum)))
+                (define default/storage)
+                (if &default/storage
+                    (.bind-store ,jsname default/storage)
+                    (.bind-store ,jsname None))
                 ,@regs)
 
 
@@ -119,6 +125,23 @@ define-syntax with-subitems:
     syntax-rules []:
         case (with-subitems tag (subhead subrest ...) ...):
             (begin (subhead tag subrest ...) ...)
+
+
+;; --- config-value helpers ------------------------------------------
+
+;; A required-env reader for use inside config blocks. It resolves an
+;; environment variable at load time and raises when unset, so a
+;; misconfigured pod dies at startup rather than at first connect.
+;; Exported into the baseline so a jobset definition can name it
+;; directly in a config value:
+;;
+;;     config kafka:
+;;         sasl_plain_password: (reqenv "SECRET_KAFKA_PASS")
+define reqenv [name]:
+    define val (os.getenv name)
+    when (None? val):
+        raise (KeyError f"required environment variable unset: {name}")
+    val
 
 
 ;; --- service configs (config-only types, no jobs) ------------------

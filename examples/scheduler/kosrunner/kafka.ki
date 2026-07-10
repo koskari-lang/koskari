@@ -64,7 +64,6 @@ define-class KafkaJob [Job]:
     define __init__ [self topic]:
         (Job.__init__ self)
         set! self.topic topic
-        set! self.on_error_cb None
         set! self._consumer None
         set! self._task None
 
@@ -110,18 +109,13 @@ define-class KafkaJob [Job]:
         for-each [msg self._consumer]:
             define raw msg.value
             define value (if (None? raw) None (raw.decode "utf-8"))
-            try:
-                (self.callback value)
-            except [Exception as: err]:
-                if self.on_error_cb:
-                    (self.on_error_cb err value)
-                else:
-                    (logger.error "callback error on %s" self.topic exc_info: True)
+            ;; Job.run records the run and dispatches to on-error on failure
+            (self.run value cause: "kafka")
 
 
     define start [self]:
         when self._consumer:
-            return
+            (return)
         set! self.running True
         (logger.info "starting kafka consumer: %s" self.topic)
         set! self._consumer (self.make-consumer)

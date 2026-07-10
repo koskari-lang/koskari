@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}run {{ run.run_id }}{% endblock %}
+{% block body %}
+<p><a href="{{ prefix }}">&larr; all runs</a></p>
+<h1>{{ run.job }} &middot; <span class="status-{{ run.status }}">{{ run.status }}</span></h1>
+<table>
+  <tr><th>run id</th><td>{{ run.run_id }}</td></tr>
+  <tr><th>type</th><td>{{ run.type }}</td></tr>
+  <tr><th>cause</th><td>{{ run.cause }}</td></tr>
+  <tr><th>parent</th><td>
+    {% if run.parent %}<a href="{{ prefix }}/runs/{{ run.parent }}">{{ run.parent }}</a>{% else %}<span class="muted">&mdash;</span>{% endif %}
+  </td></tr>
+  <tr><th>started</th><td>{{ run.started_at }}</td></tr>
+  <tr><th>finished</th><td>{{ run.finished_at or "&mdash;" }}</td></tr>
+  {% if run.error %}<tr><th>error</th><td class="status-failed">{{ run.error }}</td></tr>{% endif %}
+</table>
+
+<form method="post" action="{{ prefix }}/retrigger/{{ run.run_id }}"><button>retrigger this run</button></form>
+
+<h2>output</h2>
+<pre>{{ run.output or "(no captured output)" }}</pre>
+
+<h2>result</h2>
+<pre>{{ run.result }}</pre>
+{% endblock %}

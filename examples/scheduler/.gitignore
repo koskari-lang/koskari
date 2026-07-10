@@ -1,3 +1,5 @@
 .venv
 build
 *.egg-info
+.kosrunner
+.env
