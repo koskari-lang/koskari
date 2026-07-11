@@ -138,18 +138,30 @@ typedef enum KosCodeFlag {
 /* === KosOp: single instruction === */
 
 
+/** Cache-index value meaning "no slot reserved for this instruction".
+    Every instruction defaults to this; the assembler overwrites it only for
+    cache-consuming opcodes when caching is enabled for the code object.
+    See design/interpreter/attr-lookup-cache.md. */
+#define KOS_CACHE_UNSET 0xFFFF
+
+
 /**
-   A single bytecode instruction: 4 bytes total.
-   Opcode and argument are both 16-bit unsigned integers.
+   A single bytecode instruction: 6 bytes total.
+   Opcode, argument, and per-site cache index are all 16-bit unsigned
+   integers. ``cache`` is the index of this site's reserved cache slot on the
+   owning KosCode, or KOS_CACHE_UNSET when the site has no slot. The index is
+   assigned at assembly and never serialized; soften emits only (op, arg).
 */
 typedef struct KosOp {
   uint16_t op;    /* KosOpCode */
   uint16_t arg;   /* argument value */
+  uint16_t cache; /* per-site cache slot index, or KOS_CACHE_UNSET */
 } KosOp;
 
 
-#define KosOp_OP(insn)   (((KosOp *) (insn))->op)
-#define KosOp_ARG(insn) (((KosOp *) (insn))->arg)
+#define KosOp_OP(insn)    (((KosOp *) (insn))->op)
+#define KosOp_ARG(insn)   (((KosOp *) (insn))->arg)
+#define KosOp_CACHE(insn) (((KosOp *) (insn))->cache)
 
 
 /* === KosPosition: position change entry === */
@@ -386,6 +398,20 @@ const char *kos_opcode_name(KosOpCode op);
      non-EXTRA opcodes
 */
 KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
+
+
+/**
+   Get the count of per-site cache slots an opcode requests. Zero means the
+   opcode is not a cache consumer. The initial framework landing returns 0
+   for every opcode; individual opcodes opt in over time. Currently 0 or 1
+   in practice, but a small count is supported so a single opcode may reserve
+   a contiguous run of slots (see design/interpreter/attr-lookup-cache.md).
+
+   :param op: opcode enum value
+
+   :return: number of cache slots the opcode wants (0 for non-consumers)
+*/
+uint8_t kos_opcode_cache_count(KosOpCode op);
 
 
 /* === Accessor macros === */

@@ -53,6 +53,7 @@ static PyObject *_str_anon = NULL;
 
 typedef struct {
   KosOpStyle style;
+  uint8_t cache;          /* count of per-site cache slots this opcode wants */
   KosExtraSchema extra;
 } OpStyleEntry;
 
@@ -62,10 +63,10 @@ typedef struct {
 #define OP_INNER(N, ...)  OP_CONCAT(OP_, N)(__VA_ARGS__)
 #define OP(...)  OP_INNER(OP_NARGS(__VA_ARGS__, 7, 6, 5, 4, 3, 2, 1), __VA_ARGS__)
 
-#define OP_2(name, style)  { KOSTYLE_##style, { \
+#define OP_3(name, cache, style)  { KOSTYLE_##style, (cache), { \
     KOSTYLE_NOARG, KOSTYLE_NOARG, \
     KOSTYLE_NOARG, KOSTYLE_NOARG } },
-#define OP_6(name, EXTRA, f0, f1, f2, f3)  { KOSTYLE_EXTRA, { \
+#define OP_7(name, cache, EXTRA, f0, f1, f2, f3)  { KOSTYLE_EXTRA, (cache), { \
     KOSTYLE_##f0, KOSTYLE_##f1, \
     KOSTYLE_##f2, KOSTYLE_##f3 } },
 
@@ -74,8 +75,8 @@ static const OpStyleEntry opcode_styles[] = {
 };
 
 #undef OP
-#undef OP_2
-#undef OP_6
+#undef OP_3
+#undef OP_7
 #undef OP_INNER
 #undef OP_CONCAT
 #undef OP_NARGS
@@ -128,6 +129,15 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op) {
   }
   return (KosExtraSchema){ KOSTYLE_NOARG, KOSTYLE_NOARG,
       KOSTYLE_NOARG, KOSTYLE_NOARG };
+}
+
+
+uint8_t kos_opcode_cache_count(KosOpCode op) {
+
+  if (op <= KOS_OP_THEEND) {
+    return opcode_styles[op].cache;
+  }
+  return 0;
 }
 
 
@@ -1768,6 +1778,7 @@ static int code_emit(
 
     code[di].op = (uint16_t) op;
     code[di].arg = 0;
+    code[di].cache = KOS_CACHE_UNSET;
 
     /* Resolve arg from collect-phase data: cpool index, label pc, or raw */
     if (style == KOSTYLE_CONST) {
