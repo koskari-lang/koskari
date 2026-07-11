@@ -99,6 +99,12 @@ Gate with `Compiler.tco_enabled` for now; pragma gating deferred. v1 promotes
 only opcodes that already have `TAIL_CALL` analogues (`CALL`, `CALL_NAMES`,
 `CALL_STAR`).
 
+Promotion is only valid for non-yielding functions, and yield-ness is fully
+known before the pass runs: scan for `YIELD` / `YIELD_FROM` first and skip
+promotion entirely for yielding streams — never convert then un-convert.
+`demote_tail_calls_if_yields` stays in the pipeline as a safety net only,
+for raw `TAIL_CALL*` embedded via bytecode specialty syntax in a generator.
+
 Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
 
 ### Const-run squashing for `#list` and `#tuple`

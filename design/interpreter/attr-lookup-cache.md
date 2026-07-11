@@ -5,6 +5,20 @@ used by CALL_ATTR, CALL_ATTR_NAMES, and CALL_ATTR_STAR. It separates
 **resolution** (finding the attribute) from **invocation** (calling it), and
 defines a per-call-site cache to accelerate repeated lookups.
 
+**Status (2026-07-11):** Phases 1 and 2 are implemented — the resolver lives
+in `eval.c` and the CALL_ATTR* family calls it with `cache = NULL`. Phase 3
+(the cache itself) is the open work; the *Per-Site Cache Table* section
+below records the agreed structure and allocation design, which supersedes
+the older opcode-metadata sketch. Since compiler commits `58f21bd3` and
+`27381299`, implicit dotted calls `(c.bump args)` route through the fused
+`CALL_FAST_ATTR*` opcodes, so this cache now sits on the hot path of every
+idiomatic method call.
+
+The attribute-*read* opcodes (`FAST_ATTR`, `VAR_ATTR`) are also intended
+consumers: they currently use bare `PyObject_GetAttr` and would share the
+resolver, the table, and the entry form. The INSTANCE_DICT mode below exists
+primarily for them (`self.x` reads).
+
 **See also:** [OPCODES.md](../OPCODES.md) (CALL_ATTR* opcodes),
 [vector-call.md](vector-call.md) (call conventions).
 
@@ -101,7 +115,8 @@ The result of full resolution is classified into one of three cacheable modes:
 |------|---------|--------------|--------------------|
 | **DATA_DESCRIPTOR** | Data descriptor in class; instance dict irrelevant | Descriptor (owned ref) | Call `descriptor.__get__(obj, type)` |
 | **DIRECT_OBJECT_GUARDED** | Non-data descriptor or class attribute; instance may shadow. Caches: (a) plain instance methods (KosFunction, PyFunction) as unbound descriptor; (b) method descriptors (slot wrappers) for MRO shortcut. | Class-side descriptor/object (owned ref) | After instance shadow check: if plain method, return cached; if method descriptor, call `__get__` and return |
-| **GENERIC_LOOKUP** | Must use full attribute semantics; no shortcut | None | Perform full resolution (same logic as slow path) |
+| **INSTANCE_DICT** | Negative fact: no data descriptor (and no class-side hit worth caching) for this name on this type version; the value lives in the instance `__dict__`. This is the `self.x` read case. | None | Skip the MRO walk entirely; one instance-dict lookup. Miss in the dict → slow path (the attribute may have been deleted or the name may now resolve on the class). |
+| **GENERIC_LOOKUP** | Must use full attribute semantics; no shortcut (custom `tp_getattro`, `__getattr__` fallback, etc.) | None | Perform full resolution (same logic as slow path). Caching this verdict still pays: it prevents a failed populate attempt on every access. |
 
 **UNCACHED** — No cache entry yet. Treated as cache miss.
 
@@ -147,11 +162,14 @@ return a sentinel (e.g. 0) that never matches.
    - DATA_DESCRIPTOR       → resolve via descriptor.__get__(obj, type)
    - DIRECT_OBJECT_GUARDED → if plain method (KosFunction, PyFunction), return
      cached (Py_INCREF); if method descriptor, call __get__ and return
+   - INSTANCE_DICT         → single instance __dict__ lookup; hit → return
+     value; miss → fall through to slow path
    - GENERIC_LOOKUP        → fall through to full resolution
 
 5. Slow path: full resolution
    - Follow data descriptor → instance dict → non-data descriptor order.
-   - Classify result into DATA_DESCRIPTOR, DIRECT_OBJECT_GUARDED, or GENERIC_LOOKUP.
+   - Classify result into DATA_DESCRIPTOR, DIRECT_OBJECT_GUARDED,
+     INSTANCE_DICT, or GENERIC_LOOKUP.
    - Populate cache: type, type_version, mode, resolved object/descriptor (owned).
 ```
 
@@ -160,19 +178,28 @@ return a sentinel (e.g. 0) that never matches.
 
 ```c
 typedef enum {
-  KOS_ATTR_CACHE_UNCACHED,
+  KOS_ATTR_CACHE_UNCACHED,        /* zero: a freshly-allocated slot is valid */
   KOS_ATTR_CACHE_DATA_DESCRIPTOR,
   KOS_ATTR_CACHE_DIRECT_OBJECT_GUARDED,
+  KOS_ATTR_CACHE_INSTANCE_DICT,
   KOS_ATTR_CACHE_GENERIC_LOOKUP,
 } KosAttrCacheMode;
 
 typedef struct {
-  PyTypeObject *type;        /* Cache key; NULL = uncached */
-  uint64_t type_version;     /* Must match type's current version */
-  KosAttrCacheMode mode;
+  PyTypeObject *type;        /* Guard: receiver type; NULL = uncached */
+  uint64_t type_version;     /* Guard: must match type's current version */
+  KosAttrCacheMode mode;     /* Tag; family-local (see table section) */
   PyObject *resolved;        /* Descriptor or class object; owned ref when set */
 } KosAttrCacheEntry;
 ```
+
+This is the **attr-family variant of a tagged union**. The per-site table
+(next section) stores fixed-size slots; the mode/tag byte discriminates, and
+each consuming opcode family owns its own tag namespace and payload
+interpretation. A future family with a different guard (e.g. a namespace
+version for global-load caching) reuses the same slot shape — "a guard
+pointer, a guard version, a tag, a payload" — with its own semantics. Slots
+never migrate between families because indexes are assigned at assembly.
 
 - **DATA_DESCRIPTOR:** `resolved` is the descriptor. On use, call
   `Py_TYPE(resolved)->tp_descr_get(resolved, obj, type)`.
@@ -232,57 +259,101 @@ The resolver does not distinguish Kos vs Python or bound vs unbound for
 invocation; it only returns the attribute. Invocation logic is in the opcode.
 
 
-## Cache Allocation and Location
+## Per-Site Cache Table (agreed design, 2026-07-11)
 
-### Per-call-site storage
+This section supersedes the earlier opcode-metadata sketch. Decisions from
+design discussion; recorded so they survive until implementation.
 
-Each CALL_ATTR* instruction has a dedicated cache entry. The association is
-via a **cache index** stored in the opcode metadata:
+### Where the index lives: spare EXTRA row fields, not instruction bytes
 
-- Opcode layout: `(opcode, meta, arg)` where `meta` is a cache index (or
-  reused for other flags on non-caching opcodes).
-- Code object holds a pre-allocated array of `KosAttrCacheEntry` at creation.
-- At execution: `cache = &code->attr_cache[insn->meta]`.
+Every current cache consumer is an EXTRA-style opcode with a spare schema
+field — `CALL_FAST_ATTR` is `(FASTVAR, CONST, COUNT, NOARG)` with a3 free,
+`FAST_ATTR` is `(FASTVAR, CONST, -, -)` with two spares. The cache index is
+stored in a spare field of the instruction's extra row:
 
+- Zero added instruction bytes; the handler already fetched the row.
+- A caching opcode's extra row is made **unique** (never deduped with an
+  identical row elsewhere) so each site gets its own slot; the assembler
+  assigns the next slot index at the same time it numbers extras.
+- Non-caching opcodes are untouched.
+
+A uint16 cache-index field on *every* instruction was considered and
+deferred: instruction streams are small so the 2 bytes/op would be
+affordable, but it buys nothing until an opcode *outside* the EXTRA family
+wants a cache — and the cheaper response then is to promote that opcode to
+EXTRA (the same move the call family already made for multi-field args).
+
+### Table structure: fixed-size tagged-union slots
+
+- One flat array of fixed-size slots on **KosCode** (KosCode is a normal
+  heap object; the arena seals code *data*, not the KosCode struct, so a
+  writable table on KosCode does not conflict with sealing).
+- Slot form: guard pointer + guard version + tag byte + payload pointer
+  (see `KosAttrCacheEntry` above). Tags are family-local; the table itself
+  has no cross-family semantics.
+- Slot count is known at assembly and stamped on KosCode.
 
 ### Lifecycle
 
-- **Allocation:** When the code object is created, allocate
-  `attr_cache[0..num_call_attr_sites]`. Initialize all entries to UNCACHED
-  (e.g. `type = NULL`).
-- **Teardown:** When the code object is deallocated, `Py_XDECREF` each
-  non-NULL `resolved` in the cache array.
+- **Allocation:** lazy — first eval of the code object allocates
+  `count × sizeof(slot)`, zeroed. Zero = UNCACHED, so no init pass is
+  needed. A `.kio` load therefore starts cold by construction.
+- **Serialization:** the codex format ignores the table entirely; it is
+  per-process runtime state.
+- **GC:** cached `resolved` payloads are **strong refs**; KosCode's
+  `tp_traverse` / `tp_clear` must cover the table or types and functions
+  leak across reloads. (Borrowed-ref schemes were rejected: cheaper-looking,
+  quietly wrong.)
+- **Eviction / teardown:** `Py_XDECREF(entry->resolved)` on overwrite and on
+  code deallocation, as before.
+
+### Tracing
+
+Wire per-family hit/miss counters into the `KOS_TRACE_*` framework from day
+one, reported under a `cache` section of `get_trace_report()`. The
+`churn_method` / `churn_starmap` benchmark pairs then give an immediate
+hit-rate readout, and a bad guard shows up as a miss-rate anomaly instead of
+a silent perf mystery.
+
+### Expected magnitude (from 2026-07-10 churn_method traces)
+
+Resolve is roughly 30ns of `CALL_FAST_ATTR`'s 171ns; `FAST_ATTR` reads
+(`self.x`) are ~25ns each through full `PyObject_GetAttr` and appear twice
+per benchmark iteration. Cache hits on all three sites are worth ~15% on the
+method pair. The remaining method-call gap vs CPython is frame + namespace
+allocation per call, which this cache does not address.
 
 
 ## Implementation Phases
 
-### Phase 1: Resolver only (no cache)
+### Phase 1: Resolver only (no cache) — DONE
 
-- Implement `kos_resolve_named_attr(obj, name, NULL, out)`.
-- Full resolution path only; no cache parameter used.
-- Add compat helper `koskari_type_dict_version(PyTypeObject *)` (can return 0
-  initially).
-- Place in new module (e.g. `attr.c` / `attr.h`) or existing lib.
-- No opcode changes yet.
+Implemented in `eval.c`: `kos_resolve_named_attr(obj, name, NULL, out)` with
+static helpers `is_plain_instance_method`, `descr_is_data`,
+`instance_dict_get`. The cache parameter is accepted and ignored; the cache
+insertion point is marked with a comment referencing this document.
 
 
-### Phase 2: Opcodes use resolver
+### Phase 2: Opcodes use resolver — DONE
 
-- Implement CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR.
-- Each calls `kos_resolve_named_attr(obj, name, NULL, &resolved)`.
-- Add invocation logic: KosCallable vs plain Python; bound vs unbound handling.
-- Stack layout and argument extraction per OPCODES.md.
-- Cache parameter remains NULL.
+CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR and their VAR/FAST variants call
+the resolver with `cache = NULL` and carry the send-self invocation logic.
 
 
-### Phase 3: Cache integration
+### Phase 3: Cache integration — OPEN
 
-- Extend KosCode with `attr_cache` array and cache index in opcode metadata.
-- Pass `&code->attr_cache[insn->meta]` into `kos_resolve_named_attr`.
-- Implement cache hit/miss logic, type version check, instance shadow check.
-- Implement cache lifecycle (init on code creation, DECREF on eviction/teardown).
-- Ensure `koskari_type_dict_version` uses a real implementation where
-  available.
+Per the *Per-Site Cache Table* section above:
+
+- Assembler: unique extra rows for caching opcodes; assign slot index into
+  the spare row field; stamp slot count on KosCode.
+- KosCode: table pointer slot; lazy zeroed allocation at first eval;
+  `tp_traverse` / `tp_clear` coverage; serializer ignores.
+- Resolver: cache hit/miss logic per the linear algorithm — type + version
+  guards, instance shadow check, INSTANCE_DICT negative-fact mode.
+- Extend the consumers beyond CALL_ATTR*: `FAST_ATTR` / `VAR_ATTR` reads.
+- Real `koskari_type_dict_version` where available (version-gated shim,
+  3.9+ support; unstable API is 3.12+).
+- Trace hit/miss counters under a `cache` section of `get_trace_report()`.
 
 
 ## CPython Source Research

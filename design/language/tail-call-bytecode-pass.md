@@ -55,7 +55,19 @@ Non-tail symbol calls use `CALL_VAR` (callable not on stack). Tail symbol calls
 load the callable with `VAR` and use `TAIL_CALL` (callable on stack).
 
 `compile/call-attr` accepts `tc` but **never** emits tail opcodes — method
-calls in lambda tail position are not tail-optimized today.
+calls in lambda tail position are not tail-optimized today. (Since
+`27381299` it no longer consults `tc` for its var path either:
+`use_var_path = is_symbol(obj)` unconditionally, because no `TAIL_CALL_ATTR`
+exists and the frame survives to the call. The commit leaves a comment
+marking the guard for reinstatement if an attr tail form ever lands — this
+pass is where that decision would move.)
+
+Related context: since `58f21bd3` (`compile_pair` re-emits raw pair heads
+through `compile/call`), implicit dotted calls `(c.bump args)` reach
+`compile/call-attr` and the fused `CALL_VAR_ATTR*` / `CALL_FAST_ATTR*`
+opcodes. The attr call family is therefore hotter than when this document
+was first written, which raises the value of the later-phase attr tail
+coverage (§8).
 
 ### 1.3 Existing `complete()` pipeline
 
@@ -98,22 +110,32 @@ before `convert_fast`:
 ```
 compress(instr)
 → promote_tail_calls(instr)     # new; skipped when not tco_enabled
+                                # or when the stream contains YIELD*
 → convert_fast(instr, ...)
-→ demote_tail_calls_if_yields(instr)
+→ demote_tail_calls_if_yields(instr)   # retained as a safety net
 ```
 
-`demote_tail_calls_if_yields` remains mandatory — generators must not use
-frame-reuse tail calls.
+**Yield gating happens up front, inside promotion.** Promotion is only valid
+for non-yielding functions, and the stream's yield-ness is fully known at
+this point — so the pass scans for `YIELD` / `YIELD_FROM` first and returns
+the stream untouched when either is present. Never convert and then
+un-convert.
+
+`demote_tail_calls_if_yields` stays in the pipeline anyway, as a safety net:
+the promotion pass will never introduce `TAIL_CALL*` into a yielding stream,
+but raw `TAIL_CALL*` opcodes can still arrive via specialty syntax that
+embeds bytecode directly, and those must be demoted in a generator.
 
 ### 2.3 Enable switch (phase 1)
 
 ```python
-if self.tco_enabled:
+if self.tco_enabled and not stream_yields(instr):
     instr = self.promote_tail_calls(instr)
 ```
 
-`Compiler.tco_enabled` stays on `__init__` until pragma wiring lands. Tests
-that need non-tail behavior keep passing `tco_enabled=False`.
+(or equivalently, the yield scan is the first step of `promote_tail_calls`
+itself). `Compiler.tco_enabled` stays on `__init__` until pragma wiring
+lands. Tests that need non-tail behavior keep passing `tco_enabled=False`.
 
 ---
 
@@ -294,8 +316,10 @@ style; there is no `TAIL_CALL_FAST*`. Fast lowering applies to `VAR` loads and
 
 ### 5.3 `demote_tail_calls_if_yields`
 
-Runs **after** promotion. Unchanged: any `YIELD` in the stream forces
-`TAIL_CALL*` back to `CALL*`.
+Runs **after** promotion, but is no longer the mechanism that keeps
+generators tail-call-free — promotion already refuses yielding streams
+(§2.2). It remains solely as a safety net against `TAIL_CALL*` embedded via
+raw-bytecode specialty syntax inside a yielding function.
 
 ---
 
@@ -313,7 +337,10 @@ Update only if the test inspects intermediate non-tail form before
 - **Pass unit tests** — hand-built `(op, arg)` lists: promote / do-not-promote
   cases from §4.2
 - **`tco_enabled=False`** — stream stays `CALL*`
-- **Generator** — promotion then demote leaves `CALL*`
+- **Generator** — promotion skips the yielding stream entirely (assert the
+  pass returns it untouched, not promote-then-demote)
+- **Raw-bytecode safety net** — hand-built yielding stream containing a
+  pre-existing `TAIL_CALL*`: demote pass still converts it to `CALL*`
 - **Cond / begin** — branch tail calls still promoted
 
 ### 6.3 Optional improvement (not required for v1)
