@@ -50,6 +50,25 @@ typedef enum KosTraceEventId {
 
 
 /**
+   Per-site opcode-cache counter ids (KOS_TRACE_OPCACHE). These are distinct
+   from the eval-loop event counters: they measure cache behavior (hit rate,
+   churn) per cache family, and grow as new caches land. Add new ids only at
+   the end. See design/interpreter/attr-lookup-cache.md.
+
+   Method cache: hit = guarded slot served without a full resolve; miss = slot
+   present but re-resolved (cold, guard miss, value moved); bypass =
+   megamorphic site skipped caching; uncached = no slot (gated off).
+*/
+typedef enum KosTraceOpCacheId {
+  KOS_OC_METHOD_HIT = 0,
+  KOS_OC_METHOD_MISS,
+  KOS_OC_METHOD_BYPASS,
+  KOS_OC_METHOD_UNCACHED,
+  KOS_OC__COUNT
+} KosTraceOpCacheId;
+
+
+/**
    Post-opcode eval handler timing ids (KOS_TRACE_TIMING). Add new ids only at
    end. Names must match KOS_TRACE_POST_OP_WRAP(name, ...) token pasting
    (KOS_TP_##name).
@@ -74,6 +93,10 @@ typedef enum KosTracePostOpId {
 
 #ifndef KOS_TRACE_EVENTS
 #define KOS_TRACE_EVENTS 0
+#endif
+
+#ifndef KOS_TRACE_OPCACHE
+#define KOS_TRACE_OPCACHE 0
 #endif
 
 #ifndef KOS_TRACE_TIMING
@@ -111,6 +134,11 @@ PyObject *kos_trace_report(void);
 
 #if KOS_TRACE_EVENTS
 void kos_trace_events_inc(KosTraceEventId id);
+#endif
+
+
+#if KOS_TRACE_OPCACHE
+void kos_trace_opcache_inc(KosTraceOpCacheId id);
 #endif
 
 
@@ -156,6 +184,15 @@ void kos_trace_fl_return(const char *name, int overrun);
 #define KOS_TRACE_EVENTS_INC(id) kos_trace_events_inc(id)
 #else
 #define KOS_TRACE_EVENTS_INC(id) ((void)0)
+#endif
+
+
+/* === opcode-cache tracing macros === */
+
+#if KOS_TRACE_OPCACHE
+#define KOS_TRACE_OPCACHE_INC(id) kos_trace_opcache_inc(id)
+#else
+#define KOS_TRACE_OPCACHE_INC(id) ((void)0)
 #endif
 
 

@@ -334,6 +334,18 @@ KOS_NOINLINE static int kos_resolve_named_attr_cold(
     PyObject **out) {
 
   PyTypeObject *tp = Py_TYPE(obj);
+
+  /* Classify the non-hit outcome for tracing. Gated so non-trace builds pay
+     nothing; every path here already failed the wrapper's fast hit. */
+#if KOS_TRACE_OPCACHE
+  if (! slot)
+    KOS_TRACE_OPCACHE_INC(KOS_OC_METHOD_UNCACHED);
+  else if (slot->kind == KOS_CACHE_METHOD
+           && slot->u.method.mode == KOS_METHOD_MEGAMORPHIC)
+    KOS_TRACE_OPCACHE_INC(KOS_OC_METHOD_BYPASS);
+  else
+    KOS_TRACE_OPCACHE_INC(KOS_OC_METHOD_MISS);
+#endif
   int bypass = 0;
   int occupied_miss = 0;
 
@@ -423,8 +435,10 @@ KOS_OP_INLINE int kos_resolve_named_attr(
     if (method_guard_ok(tp, slot)) {
       int r = method_slot_hit(slot, obj, tp, name, out);
       if (r != KOS_CACHE_HIT_FALL) {
-        if (r >= 0)
+        if (r >= 0) {
           slot->u.method.misses = 0;
+          KOS_TRACE_OPCACHE_INC(KOS_OC_METHOD_HIT);
+        }
         return r;
       }
     }
