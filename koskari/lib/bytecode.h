@@ -219,23 +219,68 @@ typedef struct KosExtentDesc {
 } KosExtentDesc;
 
 
-/* === Per-site cache slot === */
+/* === Per-site cache slots === */
 
 
 /**
-   One per-site cache slot: a fixed-size tagged-union cell. A guard pointer,
-   a guard version, a family-local tag, and an owned payload pointer. A
-   zeroed slot (from zeroed allocation) is UNCACHED. Slots live in a trailing
-   array on the owning KosCode; each cache-consuming instruction addresses
-   its slot(s) through KosOp.cache. Semantics are family-local: each
-   consuming opcode family owns the tag namespace and the interpretation of
-   guard and payload. See design/interpreter/attr-lookup-cache.md.
+   The kind of a per-site cache slot: the top-level discriminant of the
+   KosCacheSlot tagged union. KOS_CACHE_EMPTY (zero) is an unused slot -- the
+   state of every freshly zeroed slot -- and owns nothing. Each other kind
+   names one specialized layout for one caching use case. Kinds never
+   sub-branch: two different uses do not share or fork a layout, they get
+   distinct kinds. Cleanup and GC traversal switch on this value.
+   See design/interpreter/attr-lookup-cache.md.
+*/
+typedef enum KosCacheKind {
+  KOS_CACHE_EMPTY = 0,   /* zeroed slot: no layout, no owned refs, no cleanup */
+  KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
+} KosCacheKind;
+
+
+/**
+   Internal resolution mode of the KOS_CACHE_METHOD layout. These are not
+   separate slot kinds: they share the one method layout and only select its
+   fast-path behavior. See the resolver design.
+*/
+typedef enum KosMethodMode {
+  KOS_METHOD_DATA_DESCRIPTOR = 0,     /* call resolved->__get__ on each hit */
+  KOS_METHOD_DIRECT_OBJECT_GUARDED,   /* class-side object, instance-shadow checked */
+  KOS_METHOD_INSTANCE_DICT,           /* negative fact: value lives in instance dict */
+  KOS_METHOD_GENERIC_LOOKUP,          /* no shortcut; full resolution */
+} KosMethodMode;
+
+
+/**
+   One per-site cache slot: a fixed-size tagged union, like KosDynNode. The
+   ``kind`` discriminant selects the active union member -- the specialized
+   layout for that kind. A zeroed slot is KOS_CACHE_EMPTY. All slots share
+   one size (the largest layout), so the trailing array on a KosCode is a
+   flat, index-addressable array. Never read a union member without first
+   checking ``kind``; owned references live inside the per-kind layouts, and
+   cleanup and GC traversal dispatch on ``kind``.
+
+   Layouts are specialized per use case and discriminated only here, at the
+   top. A future field-accessor, jump-target, or exception-type cache adds
+   its own kind and its own union member; it never reshapes an existing one.
+   See design/interpreter/attr-lookup-cache.md.
 */
 typedef struct KosCacheSlot {
-  void *guard;             /* guard pointer (e.g. receiver type); NULL = empty */
-  uint64_t guard_version;  /* guard version to validate before a hit */
-  uint16_t tag;            /* family-local discriminant; 0 = UNCACHED */
-  PyObject *payload;       /* owned strong ref when set; NULL = empty */
+  KosCacheKind kind;         /* discriminant; KOS_CACHE_EMPTY (0) = unused */
+
+  union {
+    /* KOS_CACHE_METHOD: attribute/method resolution. ``type`` and
+       ``resolved`` are owned strong refs; owning the guard type keeps the
+       identity check sound even where a dict-version is unavailable.
+       ``type_version`` guards against class-dict mutation; ``mode`` selects
+       the resolver fast path. ``resolved`` is NULL for modes that cache only
+       a negative fact (INSTANCE_DICT, GENERIC_LOOKUP). */
+    struct {
+      PyTypeObject *type;      /* guard receiver type; owned */
+      uint64_t type_version;   /* guard: type dict version at populate */
+      KosMethodMode mode;      /* which resolution behavior */
+      PyObject *resolved;      /* cached descriptor/object; owned, may be NULL */
+    } method;
+  } u;
 } KosCacheSlot;
 
 

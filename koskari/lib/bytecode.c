@@ -2719,6 +2719,25 @@ static PyObject *code_new(
 */
 
 
+/**
+   Release the owned references held by one cache slot, dispatching on its
+   kind. An empty slot (KOS_CACHE_EMPTY -- the framework state) owns nothing.
+   This same per-kind dispatch will drive tp_traverse / tp_clear once KosCode
+   becomes GC-tracked at method-cache activation.
+*/
+static void cache_slot_release(KosCacheSlot *slot) {
+
+  switch (slot->kind) {
+  case KOS_CACHE_EMPTY:
+    break;
+  case KOS_CACHE_METHOD:
+    Py_XDECREF(slot->u.method.type);
+    Py_XDECREF(slot->u.method.resolved);
+    break;
+  }
+}
+
+
 static void code_dealloc(PyObject *self) {
 
   if (((KosCode *) self)->weakreflist) {
@@ -2760,13 +2779,13 @@ static void code_dealloc(PyObject *self) {
   KosCode_EXTENTS(self) = NULL;
   KosCode_TOP_EXTENT_ID(self) = NULL;
 
-  /* Drop owned cache-slot payloads. The slots themselves are part of the
-     object allocation and are released by tp_free; only the strong payload
-     refs need dropping. Framework slots are empty (payload NULL), so this is
-     a no-op until a consumer populates them. A family that stores additional
-     owned refs (e.g. in guard) must extend this. */
+  /* Drop owned references held by cache slots, per-kind. The slots
+     themselves are part of the object allocation and are released by
+     tp_free; only the owned refs inside a live layout need dropping.
+     Framework slots are all KOS_CACHE_EMPTY, so this is a no-op until a
+     consumer populates them. */
   for (uint16_t i = KosCode_CACHE_LEN(self); i--; ) {
-    Py_XDECREF(KosCode_CACHE(self)[i].payload);
+    cache_slot_release(&KosCode_CACHE(self)[i]);
   }
 
   Py_TYPE(self)->tp_free(self);
