@@ -28,6 +28,24 @@ KOS_OP_HANDLER(VAR_ATTR) {
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)
     return EVAL_RAISE();
+
+  /* Per-site storage-location cache: a SLOT hit reads the __slots__ member
+     directly; GENERIC (and unset slots) fall through to PyObject_GetAttr. */
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  if (cache_ix != KOS_CACHE_UNSET) {
+    KosCacheSlot *slot = &KosCode_CACHE(code)[cache_ix];
+    uint32_t off;
+    if (kos_resolve_attr_location(obj, attr_name, slot, &off) == KOS_FIELD_SLOT) {
+      PyObject *hit = field_slot_load(obj, off);
+      if (hit) {
+        Py_INCREF(hit);
+        Py_DECREF(obj);
+        return kos_op_result_PUSH(es, hit);
+      }
+      /* unset slot: fall through (AttributeError or __getattr__). */
+    }
+  }
+
   PyObject *val = PyObject_GetAttr(obj, attr_name);
   Py_DECREF(obj);
   if (! val)

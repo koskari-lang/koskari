@@ -33,6 +33,21 @@ KOS_OP_HANDLER(VAR_ATTR_STORE) {
     Py_DECREF(val);
     return EVAL_RAISE();
   }
+
+  /* Per-site storage-location cache: a SLOT hit writes the __slots__ member
+     directly; GENERIC falls through to PyObject_SetAttr. */
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  if (cache_ix != KOS_CACHE_UNSET) {
+    KosCacheSlot *slot = &KosCode_CACHE(code)[cache_ix];
+    uint32_t off;
+    if (kos_resolve_attr_location(obj, attr_name, slot, &off) == KOS_FIELD_SLOT) {
+      field_slot_store(obj, off, val);
+      Py_DECREF(obj);
+      Py_DECREF(val);
+      return EVAL_NORMAL();
+    }
+  }
+
   int res = PyObject_SetAttr(obj, attr_name, val);
   Py_DECREF(obj);
   Py_DECREF(val);
