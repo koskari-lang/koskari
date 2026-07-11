@@ -87,6 +87,32 @@ def churn_field(n: int, x: int = 1) -> int:
     return (box.a ^ box.b) & MASK32
 
 
+# Identical to churn_field but on a __slots__ class: exercises the SLOT
+# storage mode (a fixed member offset) rather than the dict path.
+
+class SlotBox:
+
+    __slots__ = ('i', 'a', 'b')
+
+    def __init__(self):
+        self.i = 0
+        self.a = 0
+        self.b = 0
+
+
+def churn_field_slots(n: int, x: int = 1) -> int:
+    box = SlotBox()
+    box.i = 0
+    box.a = x & MASK32
+    box.b = 1
+    while box.i < n:
+        box.a += box.b
+        box.a &= MASK32
+        box.b ^= box.a
+        box.i += 1
+    return (box.a ^ box.b) & MASK32
+
+
 # Exercises branch density: a four-arm if/elif/else per iteration with
 # deliberately light arithmetic so jump/compare dispatch dominates.
 
