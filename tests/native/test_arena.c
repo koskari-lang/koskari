@@ -62,7 +62,7 @@ static PyObject *make_small_code(const char *name, int protect) {
         return NULL;
     }
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, protect);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, protect, 1);
     Py_DECREF(nspec);
     Py_DECREF(instr);
     return code;

@@ -99,7 +99,7 @@ static int test_code_create_empty_rejected(void) {
     PyObject *filename = PyUnicode_FromString("test.ki");
 
     PyErr_Clear();
-    PyObject *code = KosCode_New(nspec, instr, name, filename, 1);
+    PyObject *code = KosCode_New(nspec, instr, name, filename, 1, 1);
     TEST_ASSERT_NULL(code, "empty Code is rejected");
     TEST_ASSERT(PyErr_Occurred(), "exception set");
     PyErr_Clear();
@@ -136,7 +136,7 @@ static int test_code_create_minimal_return_none(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, Py_None));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     if (! code)
         goto cleanup;
     if (! KosCode_CheckExact(code)) {
@@ -187,7 +187,7 @@ static int test_code_with_const(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, const_val));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     /* Verify code length */
@@ -226,7 +226,7 @@ static int test_code_const_dedup(void) {
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, const_val));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     /* Both CONST instructions should reference same pool index */
@@ -298,7 +298,7 @@ static int test_code_position_delta(void) {
     PyList_SET_ITEM(const_list, 5, make_instr(KOS_OP_CONST, const_val));
     PyList_SET_ITEM(const_list, 6, make_instr_int(KOS_OP_RETURN, 1));
 
-    code = KosCode_New(nspec, const_list, NULL, NULL, 1);
+    code = KosCode_New(nspec, const_list, NULL, NULL, 1, 1);
     if (! code)
         goto cleanup;
 
@@ -352,7 +352,7 @@ static int test_code_yields_flag(void) {
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_YIELD, 1));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     TEST_ASSERT(KosCode_YIELDS(code), "yields flag is set");
@@ -374,7 +374,7 @@ static int test_code_no_yields_flag(void) {
     PyObject *instr = PyList_New(1);
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_RETURN, 0));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     TEST_ASSERT(!KosCode_YIELDS(code), "yields flag is not set");
@@ -408,7 +408,7 @@ static int test_code_label_resolution(void) {
     PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_LABEL, label_name));
     PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 0));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     /* LABEL doesn't occupy a slot, so we have 3 instructions */
@@ -443,7 +443,7 @@ static int test_code_var_in_cpool(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_VAR, var_name));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     /* Variable name should be in constant pool */
@@ -490,7 +490,7 @@ static int test_code_instruction_method(void) {
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_POP, 3));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     PyObject *tup = KosCode_GetInstruction(code, 0);
@@ -527,7 +527,7 @@ static int test_code_extent_derivation(void) {
     PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
     PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_h));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code with TRY");
 
     TEST_ASSERT_EQ(KosCode_EXTENT_LEN(code), 1, "one extent");
@@ -575,7 +575,7 @@ static int test_code_extent_find(void) {
     PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
     PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_h));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     uint32_t eid = kos_extent_find(code, 2, KOS_EXT_TRY);
@@ -605,7 +605,7 @@ static int test_code_loc_lookup(void) {
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_CONST, 0));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     uint16_t line = 0, col = 0;
@@ -633,7 +633,7 @@ static int test_code_no_extent(void) {
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_CONST, 0));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1);
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
     TEST_ASSERT_EQ(KosCode_EXTENT_LEN(code), 0, "no extents");
