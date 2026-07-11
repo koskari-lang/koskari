@@ -321,16 +321,13 @@ static int method_slot_hit(
 
 
 /**
-   Resolve name on obj, using the per-call-site slot when provided. The slot
-   is an internal detail: this function keeps the -1/0/1 return contract.
-
-   :param obj: object to resolve on (borrowed)
-   :param name: attribute name (borrowed, PyUnicode)
-   :param slot: per-site cache slot, or NULL to resolve without caching
-   :param out: resolved attribute (new ref on success)
-   :return: -1 on error; 0 = send self; 1 = omit self
+   Cold path for kos_resolve_named_attr: cache miss, populate, churn bypass,
+   and full resolution. Outlined (KOS_NOINLINE) so its bulk never inlines
+   into the caller -- the hot dispatch loop keeps only the guarded fast path
+   (the wrapper below). It re-checks the guard so a caller that reached here
+   after a fall-through is classified correctly. Same -1/0/1 contract.
 */
-static int kos_resolve_named_attr(
+KOS_NOINLINE static int kos_resolve_named_attr_cold(
     PyObject *obj,
     PyObject *name,
     KosCacheSlot *slot,
@@ -397,6 +394,42 @@ static int kos_resolve_named_attr(
   }
 
   return sv;
+}
+
+
+/**
+   Resolve name on obj, using the per-site slot when provided. Fast path only:
+   a guarded cache hit returns inline with no call. Every other case (no slot,
+   cold slot, guard miss, value moved, bypass) tail-calls the outlined cold
+   path, so the miss/populate/slow bulk stays out of the caller and the hot
+   dispatch loop. The slot is an internal detail; the -1/0/1 contract holds.
+
+   :param obj: object to resolve on (borrowed)
+   :param name: attribute name (borrowed, PyUnicode)
+   :param slot: per-site cache slot, or NULL to resolve without caching
+   :param out: resolved attribute (new ref on success)
+   :return: -1 on error; 0 = send self; 1 = omit self
+*/
+KOS_OP_INLINE int kos_resolve_named_attr(
+    PyObject *obj,
+    PyObject *name,
+    KosCacheSlot *slot,
+    PyObject **out) {
+
+  if (slot != NULL
+      && slot->kind == KOS_CACHE_METHOD
+      && slot->u.method.mode != KOS_METHOD_MEGAMORPHIC) {
+    PyTypeObject *tp = Py_TYPE(obj);
+    if (method_guard_ok(tp, slot)) {
+      int r = method_slot_hit(slot, obj, tp, name, out);
+      if (r != KOS_CACHE_HIT_FALL) {
+        if (r >= 0)
+          slot->u.method.misses = 0;
+        return r;
+      }
+    }
+  }
+  return kos_resolve_named_attr_cold(obj, name, slot, out);
 }
 
 

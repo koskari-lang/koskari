@@ -53,7 +53,10 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
   PyObject *obj = ptr[0];
 
   PyObject *resolved;
-  int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
+      ? NULL : &KosCode_CACHE(code)[cache_ix];
+  int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
   if (send_self < 0)
     return EVAL_RAISE();
 

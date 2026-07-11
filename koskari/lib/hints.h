@@ -31,10 +31,12 @@
 /* Opcode handlers are always inlined so the eval loop stays fast. */
 #if defined(__GNUC__) || defined(__clang__)
 # define KOS_OP_INLINE static inline __attribute__((always_inline))
+# define KOS_NOINLINE __attribute__((noinline))
 # define likely(x)   __builtin_expect(!!(x), 1)
 # define unlikely(x) __builtin_expect(!!(x), 0)
 #else
 # define KOS_OP_INLINE static inline
+# define KOS_NOINLINE
 # define likely(x)   (x)
 # define unlikely(x) (x)
 #endif

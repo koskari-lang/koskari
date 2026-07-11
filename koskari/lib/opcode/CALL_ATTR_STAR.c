@@ -117,7 +117,10 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
   }
 
   PyObject *resolved;
-  int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
+      ? NULL : &KosCode_CACHE(code)[cache_ix];
+  int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);
     Py_DECREF(pos);
