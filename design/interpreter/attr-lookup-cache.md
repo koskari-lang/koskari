@@ -283,6 +283,12 @@ flag is a static per-opcode capability ("this opcode wants a slot"), exposed
 through a `kos_opcode_supports_cache(op)` accessor parallel to
 `kos_opcode_style` / `kos_opcode_extra_schema`.
 
+The flag lives on the **opcode enumeration**, never on the serialized
+instruction. Slot assignment is therefore **mandatorily rebuildable**: it is
+recomputed from the opcode flags of the reading build every time a code
+object is assembled or a `.kio` is re-hardened, and nothing about slots
+crosses the wire.
+
 The `OP` macro is already variadic (`OP_NARGS` dispatch); inserting the flag
 shifts the destructured arities from 2/6 to 3/7. Consumers that spell the
 macro `OP(name, ...)` are unaffected.
@@ -315,6 +321,42 @@ below), the count short-circuits to zero: no instruction is assigned an
 index, and every cache-index field is left at the unset value. The gate and
 the slot count move together — there is no state where the gate is off yet
 some instruction still holds a live index.
+
+Counting, numbering, and sizing follow the **same discipline as the extras
+table**, in a separate segment of memory (the trailing array below rather
+than the sealed block). The one rule that does **not** carry over is
+dedup: extras rows may be merged when structurally identical, but cache
+slots are **per-site and never merged**. Two identical instructions still
+receive independent slots, because the entire purpose is a site-local fact.
+Do not borrow the extras dedup pass for cache assignment.
+
+### Monomorphic by law; the counter as growth path
+
+Each slot answers **one most-expensive question** for its cache family, under
+a single guard. Polymorphism is an explicit **non-goal**: a slot never holds
+a chain, and a megamorphic site degrades to the uncached path rather than
+growing a multi-way cache. This keeps every fast path to a single guard check
+with no chain walk, and keeps the slot fixed-size. Do not grow a chain into a
+slot; if a site is polymorphic, it takes the miss.
+
+The sanctioned growth path, should a *single opcode* ever need to cache more
+than one distinct fact (not polymorphism — several different questions at one
+site), is to widen the flag from a boolean into a small **count**:
+
+- The flag becomes `0..k`; it is still a static per-opcode constant on the
+  enumeration, so the assembler knows the run length from the opcode alone.
+- The opcode receives the index of its **first** slot; slots
+  `first .. first + N - 1` are its by a contiguity invariant, indexed against
+  its compile-time-known `N`. No per-site width is stored.
+- Assignment is **all-or-nothing**: if the compiler cannot grant the full run
+  (gated off, or would not fit under the sentinel), the opcode receives the
+  unset value `0xFFFF` and takes the uncached path. A shortfall reuses the
+  exact branch a non-consumer already has; it adds no new runtime state.
+- The only new bound: a run of `N` must fit under the sentinel, so the last
+  legal first-index is `0xFFFE - (N - 1)`.
+
+This is recorded as future-sanctioned, not current. The landing flag is
+`0`/`1`; the counter is the pre-agreed shape if the need arises.
 
 ### Table storage: trailing array on the KosCode object
 
