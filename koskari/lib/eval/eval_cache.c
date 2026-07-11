@@ -77,17 +77,42 @@ static PyObject *instance_dict_get(PyObject *obj) {
 
 
 /**
-   The receiver type's version, used as the cache guard -- the same tag
-   CPython's own attribute specializer guards on. It is valid only while
-   Py_TPFLAGS_VALID_VERSION_TAG is set: PyType_Lookup assigns it,
-   PyType_Modified clears it. Return 0 when unavailable so the caller
-   declines to cache; a cached entry therefore always carries a non-zero
-   version, and a cleared tag (current version 0) never matches it.
+   The receiver type's version, read for the guard (hot path). Zero means no
+   valid version, so a cached entry always carries a non-zero version and a
+   cleared/absent tag never matches it.
+
+   The validity mechanism drifted: through 3.11 the tag is meaningful only
+   while Py_TPFLAGS_VALID_VERSION_TAG is set; from 3.12 the flag is
+   deprecated (and 3.14 stops setting it entirely) and `tp_version_tag != 0`
+   is itself the validity signal -- PyType_Modified zeroes it on change.
 */
 static uint64_t kos_type_version(PyTypeObject *tp) {
+#if PY_VERSION_HEX >= 0x030C0000
+  return (uint64_t) tp->tp_version_tag;
+#else
   if (! (tp->tp_flags & Py_TPFLAGS_VALID_VERSION_TAG))
     return 0;
   return (uint64_t) tp->tp_version_tag;
+#endif
+}
+
+
+/**
+   Ensure the type has a version tag, for the populate (cold) path, and
+   return it (0 if the type cannot be versioned). From 3.12, PyType_Lookup
+   only assigns a tag conditionally, so we force it through the public
+   PyUnstable_Type_AssignVersionTag -- otherwise the guard could never match
+   and the cache would never engage (as it does not, on 3.14, without this).
+   Through 3.11 the lookup during resolution already assigns and flags it.
+*/
+static uint64_t kos_type_version_assign(PyTypeObject *tp) {
+#if PY_VERSION_HEX >= 0x030C0000
+  if (! PyUnstable_Type_AssignVersionTag(tp))
+    return 0;
+  return (uint64_t) tp->tp_version_tag;
+#else
+  return kos_type_version(tp);
+#endif
 }
 
 
@@ -376,7 +401,7 @@ KOS_NOINLINE static int kos_resolve_named_attr_cold(
 
   /* Update the slot. */
   if (slot && ! bypass) {
-    uint64_t ver = kos_type_version(tp);
+    uint64_t ver = kos_type_version_assign(tp);
     int cacheable = (ver != 0) && (mode != KOS_METHOD_GENERIC_LOOKUP);
 
     if (! cacheable) {
