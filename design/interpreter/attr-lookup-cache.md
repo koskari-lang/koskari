@@ -6,10 +6,11 @@ used by CALL_ATTR, CALL_ATTR_NAMES, and CALL_ATTR_STAR. It separates
 defines a per-call-site cache to accelerate repeated lookups.
 
 **Status (2026-07-11):** Phases 1 and 2 are implemented — the resolver lives
-in `eval.c` and the CALL_ATTR* family calls it with `cache = NULL`. Phase 3
-(the cache itself) is the open work; the *Per-Site Cache Table* section
-below records the agreed structure and allocation design, which supersedes
-the older opcode-metadata sketch. Since compiler commits `58f21bd3` and
+in `eval.c` and the CALL_ATTR* family calls it with `cache = NULL`. The
+cache itself is the open work, split into a framework phase (the mechanism
+that reserves a zeroed slot for any opcode that requests one) and a
+per-consumer activation phase. The *Per-Site Cache Table* section below is
+authoritative for that mechanism. Since compiler commits `58f21bd3` and
 `27381299`, implicit dotted calls `(c.bump args)` route through the fused
 `CALL_FAST_ATTR*` opcodes, so this cache now sits on the hot path of every
 idiomatic method call.
@@ -261,51 +262,133 @@ invocation; it only returns the attribute. Invocation logic is in the opcode.
 
 ## Per-Site Cache Table (agreed design, 2026-07-11)
 
-This section supersedes the earlier opcode-metadata sketch. Decisions from
-design discussion; recorded so they survive until implementation.
+This section is authoritative. It supersedes every earlier sketch, including
+the spare-EXTRA-field and lazy-allocation notes that previously appeared
+here.
 
-### Where the index lives: spare EXTRA row fields, not instruction bytes
+### Opcode cache flag: opcodes.incl, immediately after the name
 
-Every current cache consumer is an EXTRA-style opcode with a spare schema
-field — `CALL_FAST_ATTR` is `(FASTVAR, CONST, COUNT, NOARG)` with a3 free,
-`FAST_ATTR` is `(FASTVAR, CONST, -, -)` with two spares. The cache index is
-stored in a spare field of the instruction's extra row:
+`opcodes.incl` gains a cache flag as the argument **immediately after the
+opcode name**, before the style:
 
-- Zero added instruction bytes; the handler already fetched the row.
-- A caching opcode's extra row is made **unique** (never deduped with an
-  identical row elsewhere) so each site gets its own slot; the assembler
-  assigns the next slot index at the same time it numbers extras.
-- Non-caching opcodes are untouched.
+```
+OP(name, cache, style)                    // cache is 0 or 1
+OP(name, cache, EXTRA, f0, f1, f2, f3)
+```
 
-A uint16 cache-index field on *every* instruction was considered and
-deferred: instruction streams are small so the 2 bytes/op would be
-affordable, but it buys nothing until an opcode *outside* the EXTRA family
-wants a cache — and the cheaper response then is to promote that opcode to
-EXTRA (the same move the call family already made for multi-field args).
+`cache` is `0` or `1`; `1` marks the opcode as a cache consumer. The initial
+landing sets **every** opcode to `0` — the framework ships first, then
+individual opcode implementations are switched to `1` one at a time. The
+flag is a static per-opcode capability ("this opcode wants a slot"), exposed
+through a `kos_opcode_supports_cache(op)` accessor parallel to
+`kos_opcode_style` / `kos_opcode_extra_schema`.
 
-### Table structure: fixed-size tagged-union slots
+The `OP` macro is already variadic (`OP_NARGS` dispatch); inserting the flag
+shifts the destructured arities from 2/6 to 3/7. Consumers that spell the
+macro `OP(name, ...)` are unaffected.
 
-- One flat array of fixed-size slots on **KosCode** (KosCode is a normal
-  heap object; the arena seals code *data*, not the KosCode struct, so a
-  writable table on KosCode does not conflict with sealing).
-- Slot form: guard pointer + guard version + tag byte + payload pointer
+### Per-instruction cache index: a widened KosOp
+
+`KosOp` widens to carry the cache index. The instruction word gains a 16-bit
+cache-index field alongside `op` and `arg`. The unset value is all-high bits
+(`0xFFFF`) — an instruction with no reserved slot. A cache-consuming
+instruction carries the index of the slot reserved exclusively for it.
+
+The index is a per-instruction (per-call-site) fact, distinct from the
+static opcode flag: the flag says the opcode *can* cache; the index says
+*which* slot this particular site owns. The code array lives in the sealed
+mmap block, and the index is written at assembly before sealing, so it is
+read-only at runtime.
+
+The index lives on every instruction uniformly, so any opcode — EXTRA-family
+or not — can cache without opcode promotion or bespoke extra-row handling.
+
+### Slot assignment: counted at compile time
+
+During assembly, count the instructions whose opcode has the cache flag set.
+Each such instruction is assigned the next slot index, stamped into its
+widened cache-index field. That running count is the number of slots the
+code object needs, and it is known before the KosCode object is finalized.
+
+When the cache is gated off for this code object (see *Gating the cache*
+below), the count short-circuits to zero: no instruction is assigned an
+index, and every cache-index field is left at the unset value. The gate and
+the slot count move together — there is no state where the gate is off yet
+some instruction still holds a live index.
+
+### Table storage: trailing array on the KosCode object
+
+The cache slots hang off the **end of the KosCode object**. KosCode is a
+normal heap object; the slot array is part of the object's own allocation, a
+trailing array sized by the slot count. Because it lives in the KosCode
+object (writable), not in the sealed mmap code block, it is unaffected by
+arena sealing — sealing protects the code *data*, never the KosCode object.
+
+- **Allocation:** the object is sized to include the trailing cache array at
+  construction, and the array is **mandatorily zeroed at allocation**. Zero
+  is UNCACHED, so no separate init pass is needed. A `.kio` load re-hardens
+  from softened instructions through the same path, so slot assignment and
+  the zeroed table are reconstructed deterministically on load.
+- **Slot form:** guard pointer + guard version + tag byte + payload pointer
   (see `KosAttrCacheEntry` above). Tags are family-local; the table itself
   has no cross-family semantics.
-- Slot count is known at assembly and stamped on KosCode.
-
-### Lifecycle
-
-- **Allocation:** lazy — first eval of the code object allocates
-  `count × sizeof(slot)`, zeroed. Zero = UNCACHED, so no init pass is
-  needed. A `.kio` load therefore starts cold by construction.
-- **Serialization:** the codex format ignores the table entirely; it is
-  per-process runtime state.
+- **Serialization:** the codex format ignores the table entirely; it
+  round-trips through softened `(opcode, arg)` instructions and never stores
+  raw KosOp bytes or slot state. The cache index is recomputed at assembly
+  on load, not serialized.
 - **GC:** cached `resolved` payloads are **strong refs**; KosCode's
-  `tp_traverse` / `tp_clear` must cover the table or types and functions
-  leak across reloads. (Borrowed-ref schemes were rejected: cheaper-looking,
-  quietly wrong.)
+  `tp_traverse` / `tp_clear` must cover the trailing table or types and
+  functions leak across reloads. (Borrowed-ref schemes were rejected:
+  cheaper-looking, quietly wrong.)
 - **Eviction / teardown:** `Py_XDECREF(entry->resolved)` on overwrite and on
-  code deallocation, as before.
+  code deallocation.
+
+### Gating the cache (pragma-controlled)
+
+Caching is a compile-time choice per code object, not an unconditional
+feature. A code object known to be evaluated at most once gains nothing from
+a cache, and the slots would be pure overhead. Such an object is compiled
+with the cache gated off:
+
+- The trailing cache array has length **zero** — no slots on the object.
+- Every instruction, **including** cache-supporting opcodes, carries the
+  unset value (`0xFFFF`) in its cache-index field. No slot is assigned to
+  anyone.
+
+This collapses into the same runtime condition an opcode already has to
+tolerate. A cache-supporting opcode must never assume its slot exists; it
+reads its cache-index field and treats `0xFFFF` as "no slot — run
+uncached," identical to today's `cache = NULL` path (full resolution, no
+populate). The two ways an index can be unset are indistinguishable at
+runtime and handled by the same guard:
+
+- **Gated off** — the whole code object has a zero-length array; every index
+  is `0xFFFF`.
+- **Non-consumer opcode** — an opcode whose flag is `0` never had an index
+  assigned, so it is also `0xFFFF`.
+
+Either way: `index == 0xFFFF` → uncached path.
+
+#### The gate is two pragmas
+
+The gate is driven by compiler pragmas, split by compile context because the
+two contexts have opposite cost/benefit profiles:
+
+| Pragma | Governs | Compile context | Baseline |
+|--------|---------|-----------------|----------|
+| `compiler/cache-expression` | Expression code objects | Top level of a module load or a REPL loading step | **off** |
+| `compiler/cache-function` | Function/lambda code objects | Bodies of `lambda` and function forms nested inside a module or REPL compile | **on** |
+
+The defaults follow evaluation frequency. Top-level expressions typically
+run once as the module or REPL line loads, so their default is **off** — a
+cache would never amortize. Function and lambda bodies are the reused code
+that idiomatic method calls flow through, so their default is **on**.
+
+Each is a `pragma_setting` in `koskari/compile/pragma/settings.py`
+(`compiler/cache-expression` baseline `False`, `compiler/cache-function`
+baseline `True`), resolved at compile time and consulted when the code
+object is finalized to decide whether the count pass runs or short-circuits
+to zero.
 
 ### Tracing
 
@@ -340,17 +423,37 @@ CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR and their VAR/FAST variants call
 the resolver with `cache = NULL` and carry the send-self invocation logic.
 
 
-### Phase 3: Cache integration — OPEN
+### Phase 3: Cache framework — OPEN
 
-Per the *Per-Site Cache Table* section above:
+Stand up the mechanism that guarantees a zeroed cache slot for any opcode
+that asks for one. No opcode is switched on yet; every flag is `0`.
 
-- Assembler: unique extra rows for caching opcodes; assign slot index into
-  the spare row field; stamp slot count on KosCode.
-- KosCode: table pointer slot; lazy zeroed allocation at first eval;
-  `tp_traverse` / `tp_clear` coverage; serializer ignores.
+- `opcodes.incl`: add the `0`/`1` cache flag after each opcode name; set all
+  to `0`. Add `kos_opcode_supports_cache(op)` and the `OP_3` / `OP_7` macro
+  arities.
+- `KosOp`: widen to carry the 16-bit cache-index field; unset = `0xFFFF`.
+  Add a `KosOp_CACHE` accessor and update block sizing, disassembly, and
+  soften for the wider instruction word.
+- Assembly: count cache-flagged instructions; assign each its reserved slot
+  index into the widened field; carry the slot count to KosCode.
+- Gate: add `compiler/cache-expression` (baseline off) and
+  `compiler/cache-function` (baseline on) pragmas; when the governing pragma
+  is off, short-circuit the count to zero so every index stays `0xFFFF`.
+- KosCode: trailing cache-slot array sized by the count, **mandatorily
+  zeroed at allocation**; `tp_traverse` / `tp_clear` coverage; serializer
+  ignores.
+
+### Phase 4: Activate consumers — OPEN
+
+With the framework in place, switch opcodes to `1` one at a time and give
+each a runtime implementation that reads its reserved index and uses the
+slot. Every such implementation must first check `index == 0xFFFF` and fall
+back to the uncached path (`cache = NULL`); the slot may be absent because
+the code object was gated off or because the opcode is not enabled here.
+
 - Resolver: cache hit/miss logic per the linear algorithm — type + version
   guards, instance shadow check, INSTANCE_DICT negative-fact mode.
-- Extend the consumers beyond CALL_ATTR*: `FAST_ATTR` / `VAR_ATTR` reads.
+- CALL_ATTR* family first, then `FAST_ATTR` / `VAR_ATTR` reads.
 - Real `koskari_type_dict_version` where available (version-gated shim,
   3.9+ support; unstable API is 3.12+).
 - Trace hit/miss counters under a `cache` section of `get_trace_report()`.
@@ -431,6 +534,6 @@ Findings from CPython 3.12 `Objects/object.c` and `Objects/typeobject.c`:
 | `kos_resolve_named_attr` | Attribute lookup; cache management; returns resolved object |
 | CALL_ATTR* opcodes | Stack layout; call `kos_resolve_named_attr`; invoke result |
 | Cache entry | type, type_version, mode, resolved (owned ref) |
-| Modes | DATA_DESCRIPTOR, DIRECT_OBJECT_GUARDED, GENERIC_LOOKUP, UNCACHED |
+| Modes | DATA_DESCRIPTOR, DIRECT_OBJECT_GUARDED, INSTANCE_DICT, GENERIC_LOOKUP, UNCACHED |
 
 The end.
