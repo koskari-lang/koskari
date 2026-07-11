@@ -612,6 +612,18 @@ static PyObject *code_get_cpool(PyObject *self, void *_unused) {
 }
 
 
+static PyObject *code_get_caches(PyObject *self, void *_unused) {
+
+  return PyBool_FromLong(KosCode_CACHES(self) != 0);
+}
+
+
+static PyObject *code_get_cache_slots(PyObject *self, void *_unused) {
+
+  return PyLong_FromUnsignedLong(KosCode_CACHE_LEN(self));
+}
+
+
 static PyGetSetDef code_getset[] = {
 
   { "arena", code_get_arena, NULL,
@@ -663,6 +675,14 @@ static PyGetSetDef code_getset[] = {
 
   { "uses_fast", code_get_uses_fast, NULL,
     "bool; whether this code uses fast-slot opcodes at root namespace scope",
+    NULL },
+
+  { "caches", code_get_caches, NULL,
+    "bool; whether per-site opcode caches are enabled for this code (gate)",
+    NULL },
+
+  { "cache_slots", code_get_cache_slots, NULL,
+    "int; number of per-site cache slots allocated on this code",
     NULL },
 
   { "constants_pool", code_get_cpool, NULL,
@@ -1755,6 +1775,7 @@ static int code_emit(
   uint32_t extra_idx = 0;
   uint16_t last_line = 0, last_col = 0;
   uint16_t next_slot = 0;
+  int cache_on = (KosCode_FLAGS(self) & KOS_CODE_CACHE) != 0;
 
   /* Walk input; di = output instruction index, pi = position entry index */
   for (Py_ssize_t i = 0; i < instr_l; i++) {
@@ -1782,9 +1803,9 @@ static int code_emit(
 
     /* Reserve this site's cache slot run. A cache-consuming opcode gets the
        next free index; the count_cache_slots pre-pass sized the trailing
-       array to match. All opcodes request 0 today, so every site stays
-       UNSET. */
-    uint8_t ncache = kos_opcode_cache_count(op);
+       array to match. When the cache is gated off (cache_on == 0) no site
+       gets a slot. All opcodes request 0 today, so every site stays UNSET. */
+    uint8_t ncache = cache_on ? kos_opcode_cache_count(op) : 0;
     if (ncache) {
       code[di].cache = next_slot;
       next_slot += ncache;
@@ -2688,18 +2709,19 @@ static PyObject *code_new(
   PyObject *name = NULL;
   PyObject *filename = NULL;
   int protect = 1;
+  int cache = 1;
 
   static char *keywords[] = {
-    "nspec", "instr", "name", "filename", "protect", NULL,
+    "nspec", "instr", "name", "filename", "protect", "cache", NULL,
   };
 
-  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OO|OO$p:Code", keywords,
+  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OO|OO$pp:Code", keywords,
                                     &nspec, &instr, &name, &filename,
-                                    &protect)) {
+                                    &protect, &cache)) {
     return NULL;
   }
 
-  return KosCode_New(nspec, instr, name, filename, protect);
+  return KosCode_New(nspec, instr, name, filename, protect, cache);
 }
 
 
@@ -2863,7 +2885,8 @@ PyObject *KosCode_New(
     PyObject *instr,
     PyObject *name,
     PyObject *filename,
-    int protect) {
+    int protect,
+    int cache) {
 
   if (! filename || filename == Py_None) {
     filename = _str_anon;
@@ -2896,8 +2919,11 @@ PyObject *KosCode_New(
     return NULL;
   }
 
+  /* Pragma gate: when caching is off for this code object, allocate no slots
+     and leave every instruction's index unset. Otherwise size the trailing
+     array to the summed per-opcode counts. */
   uint16_t cache_slots = 0;
-  if (count_cache_slots(instr, &cache_slots)) {
+  if (cache && count_cache_slots(instr, &cache_slots)) {
     Py_DECREF(instr);
     return NULL;
   }
@@ -2914,7 +2940,8 @@ PyObject *KosCode_New(
   ((KosCode *) self)->weakreflist = NULL;
   KosCode_ARENA(self) = NULL;
 
-  KosCode_FLAGS(self) = 0;
+  /* Record the cache gate so code_emit assigns slots only when enabled. */
+  KosCode_FLAGS(self) = cache ? KOS_CODE_CACHE : 0;
 
   Py_INCREF(name);
   KosCode_NAME(self) = name;

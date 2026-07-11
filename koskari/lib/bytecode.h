@@ -132,6 +132,9 @@ typedef enum KosCodeFlag {
   /** unified block is page-aligned and mprotect(PROT_READ)-sealed;
       teardown must unseal before freeing */
   KOS_CODE_PROTECTED = 0x04,
+  /** per-site opcode caches are enabled for this code object (pragma gate);
+      when unset, no cache slots are allocated and every index stays unset */
+  KOS_CODE_CACHE = 0x08,
 } KosCodeFlag;
 
 
@@ -341,6 +344,9 @@ struct KosCode {
    :param filename: source filename (PyUnicode or NULL)
    :param protect: nonzero to page-align the unified block and seal it
      read-only with mprotect; zero for a plain writable malloc block
+   :param cache: nonzero to enable per-site opcode caches (allocate the
+     trailing cache-slot array and assign slot indices); zero gates them off,
+     so no slots are allocated and every instruction's index stays unset
 
    :return: new KosCode reference, or NULL on error
 */
@@ -349,7 +355,8 @@ PyObject *KosCode_New(
     PyObject *instr,
     PyObject *name,
     PyObject *filename,
-    int protect);
+    int protect,
+    int cache);
 
 
 /* === Accessors === */
@@ -493,6 +500,9 @@ uint8_t kos_opcode_cache_count(KosOpCode op);
 
 #define KosCode_PROTECTED(c)                    \
   (KosCode_FLAGS(c) & KOS_CODE_PROTECTED)
+
+#define KosCode_CACHES(c)                       \
+  (KosCode_FLAGS(c) & KOS_CODE_CACHE)
 
 #define KosCode_NAME(c)                         \
   (((KosCode *) c)->name)

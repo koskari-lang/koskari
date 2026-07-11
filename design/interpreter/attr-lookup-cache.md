@@ -512,10 +512,12 @@ CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR and their VAR/FAST variants call
 the resolver with `cache = NULL` and carry the send-self invocation logic.
 
 
-### Phase 3: Cache framework — IN PROGRESS
+### Phase 3: Cache framework — DONE
 
 Stand up the mechanism that guarantees a zeroed cache slot for any opcode
-that asks for one. No opcode is switched on yet; every count is `0`.
+that asks for one. No opcode is switched on yet; every count is `0`, so the
+framework is inert -- but the plumbing (flag, widened KosOp, slot
+allocation, tagged-union slot, pragma gate) is fully in place.
 
 - **DONE** `opcodes.incl`: a per-opcode cache-slot **count** after each name
   (a count from the start, not a bool, so an opcode may reserve a contiguous
@@ -533,10 +535,18 @@ that asks for one. No opcode is switched on yet; every count is `0`.
   `code_dealloc` runs `cache_slot_release` (per-`kind` dispatch) over the
   slots. The `KosCacheSlot` tagged union and the bootstrap `KOS_CACHE_METHOD`
   layout are defined; no opcode populates them yet.
-- **TODO** Gate: add `compiler/cache-expression` (baseline off) and
-  `compiler/cache-function` (baseline on) pragmas; when the governing pragma
-  is off, short-circuit `count_cache_slots` to zero so every index stays
-  `0xFFFF`.
+- **DONE** Gate: `compiler/cache-expression` (baseline off) and
+  `compiler/cache-function` (baseline on) pragmas. The compiler branches on
+  compile mode -- `CompilerMode.FUNCTION` follows cache-function, everything
+  else (module/REPL top-level expressions) follows cache-expression -- and
+  passes `cache=` to `Code(...)`. `KosCode_New` records it as the
+  `KOS_CODE_CACHE` flag; when off, `count_cache_slots` is skipped (zero
+  slots) and `code_emit` assigns none, so every index stays `0xFFFF`. The
+  flag is introspectable as `code.caches`, and the allocated slot count as
+  `code.cache_slots`. Like `protect`, the gate is **not serialized**: a
+  `.kio` reload reconstructs `Code(...)` at the `cache=1` default, so
+  functions keep caching and expressions regain it on reload (a footprint
+  choice, never a correctness one).
 
 GC-tracking is deliberately **not** part of the framework: while every slot
 is `KOS_CACHE_EMPTY` the table holds no references, so KosCode keeps its
