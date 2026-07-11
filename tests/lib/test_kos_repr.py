@@ -221,6 +221,16 @@ class TestKosRepr(unittest.TestCase):
         self.assertEqual(kos_repr({"foo": 4}), '#{("foo" . 4)}')
 
 
+    def test_ellipsis(self):
+        """
+        Ellipsis kos form is ..., not Python's Ellipsis
+        """
+
+        self.assertEqual(kos_repr(...), "...")
+        self.assertEqual(kos_repr(Ellipsis), "...")
+        self.assertNotEqual(kos_repr(...), repr(...))
+
+
     def test_nested_list_in_pair(self):
         """
         python list nested in pair uses hash-bracket form

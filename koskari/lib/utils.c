@@ -793,6 +793,15 @@ static PyObject *type_kos_repr(PyObject *self, PyObject *_unused) {
 }
 
 
+/* Ellipsis is an immutable builtin singleton; PyObject_Repr yields
+   "Ellipsis", but Koskari source writes it as "...". */
+static PyObject *ellipsis_kos_repr(PyObject *self, PyObject *_unused) {
+  (void) self;
+  (void) _unused;
+  return PyUnicode_FromString("...");
+}
+
+
 static PyMethodDef list_kos_repr_def = {
   "list_kos_repr", (PyCFunction) list_kos_repr, METH_NOARGS, NULL
 };
@@ -800,6 +809,11 @@ static PyMethodDef list_kos_repr_def = {
 
 static PyMethodDef type_kos_repr_def = {
   "type_kos_repr", (PyCFunction) type_kos_repr, METH_NOARGS, NULL
+};
+
+
+static PyMethodDef ellipsis_kos_repr_def = {
+  "ellipsis_kos_repr", (PyCFunction) ellipsis_kos_repr, METH_NOARGS, NULL
 };
 
 
@@ -1570,6 +1584,20 @@ int koskari_utils_init(PyObject *mod) {
       return -1;
 
     if (KosUtils_ReprRegister((PyObject *) &PyType_Type, handler) < 0) {
+      Py_DECREF(handler);
+      return -1;
+    }
+
+    Py_DECREF(handler);
+  }
+
+  {
+    PyObject *handler = PyCFunction_New(&ellipsis_kos_repr_def, NULL);
+
+    if (! handler)
+      return -1;
+
+    if (KosUtils_ReprRegister((PyObject *) &PyEllipsis_Type, handler) < 0) {
       Py_DECREF(handler);
       return -1;
     }
