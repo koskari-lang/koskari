@@ -64,6 +64,12 @@ typedef enum KosTraceOpCacheId {
   KOS_OC_METHOD_MISS,
   KOS_OC_METHOD_BYPASS,
   KOS_OC_METHOD_UNCACHED,
+  /* field (attribute-storage location) cache: hit = guarded location-mode
+     served (e.g. SLOT); generic = guard-free GENERIC verdict (fell to the
+     generic path); miss = cold classification (cold slot, guard miss). */
+  KOS_OC_FIELD_HIT,
+  KOS_OC_FIELD_GENERIC,
+  KOS_OC_FIELD_MISS,
   KOS_OC__COUNT
 } KosTraceOpCacheId;
 

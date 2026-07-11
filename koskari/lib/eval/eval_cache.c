@@ -39,6 +39,16 @@
 */
 
 
+/* __slots__ object-member type tag; the constant moved from structmember.h
+   (<=3.11) to descrobject.h as Py_T_OBJECT_EX (3.12+). Same value (16). */
+#if PY_MINOR_VERSION >= 12
+# define KOS_T_OBJECT_EX Py_T_OBJECT_EX
+#else
+# include <structmember.h>
+# define KOS_T_OBJECT_EX T_OBJECT_EX
+#endif
+
+
 /* === Attribute resolution helpers === */
 
 
@@ -510,16 +520,49 @@ static KosFieldMode resolve_attr_location_slow(
       || tp->tp_setattro != PyObject_GenericSetAttr)
     return KOS_FIELD_GENERIC;
 
-  /* A data descriptor intercepts the access. __slots__ members are data
-     descriptors with a fixed offset (a future SLOT mode); every other data
-     descriptor (property, ...) computes per access and stays GENERIC. */
+  /* A data descriptor intercepts the access. A __slots__ object member is a
+     data descriptor with a fixed byte offset (SLOT); it takes precedence over
+     any instance dict, so the offset is authoritative for load and store.
+     Every other data descriptor (property, ...) computes per access and stays
+     GENERIC. */
   PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
-  if (descr && descr_is_data(descr))
+  if (descr && descr_is_data(descr)) {
+    if (Py_IS_TYPE(descr, &PyMemberDescr_Type)) {
+      PyMemberDef *m = ((PyMemberDescrObject *) descr)->d_member;
+      if (m->type == KOS_T_OBJECT_EX && m->offset > 0
+          && m->offset <= (Py_ssize_t) UINT32_MAX) {
+        *index = (uint32_t) m->offset;
+        return KOS_FIELD_SLOT;
+      }
+    }
     return KOS_FIELD_GENERIC;
+  }
 
   /* No data descriptor: the value lives in the instance. The value index /
      dict hint is per-version instance-layout state -- deferred to compat. */
   return KOS_FIELD_GENERIC;
+}
+
+
+/**
+   Read a __slots__ object member (KOS_FIELD_SLOT) at byte offset. Returns a
+   borrowed reference, or NULL when the slot is unset (the caller falls back to
+   the generic path, which raises AttributeError or runs __getattr__).
+*/
+static PyObject *field_slot_load(PyObject *obj, uint32_t offset) {
+  return *(PyObject **) ((char *) obj + offset);
+}
+
+
+/**
+   Store into a __slots__ object member at byte offset: take a reference to val
+   (the caller keeps its own) and drop the previous occupant. Equivalent to the
+   member descriptor's __set__ for a T_OBJECT_EX slot, minus the dispatch.
+*/
+static void field_slot_store(PyObject *obj, uint32_t offset, PyObject *val) {
+  PyObject **addr = (PyObject **) ((char *) obj + offset);
+  Py_INCREF(val);
+  Py_XSETREF(*addr, val);
 }
 
 
@@ -568,28 +611,41 @@ KOS_NOINLINE static KosFieldMode kos_resolve_attr_location_cold(
     uint32_t *index) {
 
   PyTypeObject *tp = Py_TYPE(obj);
-  int occupied_miss = (slot && slot->kind == KOS_CACHE_FIELD
+  int is_field = (slot && slot->kind == KOS_CACHE_FIELD);
+  int bypass = (is_field && slot->u.field.mode == KOS_FIELD_MEGAMORPHIC);
+  int occupied_miss = (is_field
                        && slot->u.field.mode != KOS_FIELD_MEGAMORPHIC
+                       && slot->u.field.mode != KOS_FIELD_GENERIC
                        && ! field_guard_ok(tp, slot));
 
-  KosFieldMode mode = resolve_attr_location_slow(obj, name, index);
+  KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_MISS);
 
-  if (slot) {
-    uint64_t ver = kos_type_version_assign(tp);
-    if (ver == 0) {
-      if (slot->kind == KOS_CACHE_FIELD)     /* cannot guard: leave cold */
-        slot->kind = KOS_CACHE_EMPTY;
-    } else if (occupied_miss
-               && (uint8_t) (slot->u.field.misses + 1) >= KOS_METHOD_MISS_LIMIT) {
-      slot->u.field.type = NULL;             /* churn: stop caching this site */
-      slot->u.field.type_version = 0;
-      slot->u.field.mode = KOS_FIELD_MEGAMORPHIC;
-      slot->u.field.misses = 0;
-      slot->kind = KOS_CACHE_FIELD;
-    } else {
-      uint8_t n = occupied_miss ? (uint8_t) (slot->u.field.misses + 1) : 0;
-      field_slot_populate(slot, tp, ver, mode, *index, n);
-    }
+  KosFieldMode mode = resolve_attr_location_slow(obj, name, index);
+  if (! slot || bypass)
+    return mode;                    /* churned site: re-resolve, do not cache */
+
+  if (mode == KOS_FIELD_GENERIC) {
+    /* An uncacheable location, correct for any type. Cache it guard-free so
+       the site stays cheap; GENERIC doubles as the field give-up state. */
+    field_slot_populate(slot, NULL, 0, KOS_FIELD_GENERIC, 0, 0);
+    return mode;
+  }
+
+  /* A location mode (SLOT): needs a guardable type version. */
+  uint64_t ver = kos_type_version_assign(tp);
+  if (ver == 0) {
+    if (is_field)                          /* cannot guard: leave cold */
+      slot->kind = KOS_CACHE_EMPTY;
+  } else if (occupied_miss
+             && (uint8_t) (slot->u.field.misses + 1) >= KOS_METHOD_MISS_LIMIT) {
+    slot->u.field.type = NULL;             /* churn: stop caching this site */
+    slot->u.field.type_version = 0;
+    slot->u.field.mode = KOS_FIELD_MEGAMORPHIC;
+    slot->u.field.misses = 0;
+    slot->kind = KOS_CACHE_FIELD;
+  } else {
+    uint8_t n = occupied_miss ? (uint8_t) (slot->u.field.misses + 1) : 0;
+    field_slot_populate(slot, tp, ver, mode, *index, n);
   }
   return mode;
 }
@@ -611,13 +667,22 @@ KOS_OP_INLINE KosFieldMode kos_resolve_attr_location(
     KosCacheSlot *slot,
     uint32_t *index) {
 
-  if (slot && slot->kind == KOS_CACHE_FIELD
-      && slot->u.field.mode != KOS_FIELD_MEGAMORPHIC) {
-    PyTypeObject *tp = Py_TYPE(obj);
-    if (field_guard_ok(tp, slot)) {
-      slot->u.field.misses = 0;
-      *index = slot->u.field.index;
-      return slot->u.field.mode;
+  if (slot && slot->kind == KOS_CACHE_FIELD) {
+    KosFieldMode m = slot->u.field.mode;
+    /* GENERIC is correct for any receiver type: no guard, just report it so
+       the caller takes the generic path. Keeps uncacheable sites cheap. */
+    if (m == KOS_FIELD_GENERIC) {
+      KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_GENERIC);
+      return KOS_FIELD_GENERIC;
+    }
+    if (m != KOS_FIELD_MEGAMORPHIC) {
+      PyTypeObject *tp = Py_TYPE(obj);
+      if (field_guard_ok(tp, slot)) {
+        slot->u.field.misses = 0;
+        *index = slot->u.field.index;
+        KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_HIT);
+        return m;
+      }
     }
   }
   return kos_resolve_attr_location_cold(obj, name, slot, index);

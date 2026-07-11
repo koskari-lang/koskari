@@ -66,6 +66,9 @@ static const char *const kos_oc_names[KOS_OC__COUNT] = {
   "method_miss",
   "method_bypass",
   "method_uncached",
+  "field_hit",
+  "field_generic",
+  "field_miss",
 };
 
 
