@@ -94,6 +94,37 @@ static int test_values_create_keywords(void) {
 }
 
 
+static int test_values_is_koscallable(void) {
+    /*
+      values is a native KosCallable and an exact-type instance.
+    */
+    PyObject *args = PyTuple_New(0);
+    TEST_ASSERT_NOT_NULL(args, "create empty args");
+
+    PyObject *v = KosValues_New(args, NULL);
+    TEST_ASSERT_NOT_NULL(v, "create values");
+    TEST_ASSERT(KosCallable_Check(v), "values passes KosCallable_Check");
+    TEST_ASSERT(KosValues_CheckExact(v), "KosValues_CheckExact");
+
+    Py_DECREF(v);
+    Py_DECREF(args);
+    return 0;
+}
+
+
+static int test_values_type_is_koscallable_subtype(void) {
+    /*
+      KosValuesType must be a subtype of _KosCallable so bytecode dispatch
+      routes through the install slot.
+    */
+    TEST_ASSERT(
+        PyType_IsSubtype(KOS_CALLABLE_PYTYPE(KosValuesType),
+                         KOS_CALLABLE_PYTYPE(KosCallableType)),
+        "values is subtype of _KosCallable");
+    return 0;
+}
+
+
 static int test_values_create_both(void) {
     /*
       Test that values can be created with both positionals and keywords.
@@ -746,6 +777,8 @@ int run_values_tests(void) {
     RUN_TEST(test_values_create_positionals);
     RUN_TEST(test_values_create_keywords);
     RUN_TEST(test_values_create_both);
+    RUN_TEST(test_values_is_koscallable);
+    RUN_TEST(test_values_type_is_koscallable_subtype);
     RUN_TEST(test_values_null_args_error);
 
     /* Refcount tests */

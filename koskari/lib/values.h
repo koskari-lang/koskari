@@ -20,6 +20,8 @@
 
 #include <Python.h>
 
+#include "callable.h"
+
 
 /* === values structure === */
 
@@ -41,17 +43,18 @@ typedef struct KosValues {
 /* === type objects === */
 
 
-extern PyTypeObject KosValuesType;
+extern KosCallableTypeObject KosValuesType;
 
 
 /* === type check macros === */
 
 
-#define KosValues_Check(obj)                                    \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosValuesType))
+#define KosValues_Check(obj)                                            \
+  ((obj) && PyType_IsSubtype((obj)->ob_type,                            \
+                             KOS_CALLABLE_PYTYPE(KosValuesType)))
 
-#define KosValues_CheckExact(obj)               \
-  ((obj) && ((obj)->ob_type == &KosValuesType))
+#define KosValues_CheckExact(obj)                                       \
+  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosValuesType)))
 
 
 /* === public API === */

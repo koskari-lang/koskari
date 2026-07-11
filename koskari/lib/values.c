@@ -140,79 +140,283 @@ static PyObject *values_kwds_getitem(
 }
 
 
+/**
+   Merge stored args/kwds with an invocation.
+
+   inv_args is the full call-site positional tuple whose first element is the
+   target callable. On success *out_target is borrowed, *out_args is a new
+   reference, and *out_kw is a new reference or NULL. Returns 0 on success, -1
+   with PyErr set on failure.
+*/
+static int values_merge(
+    KosValues *s,
+    PyObject *inv_args,
+    PyObject *inv_kwds,
+    PyObject **out_target,
+    PyObject **out_args,
+    PyObject **out_kw) {
+
+  PyObject *call_args = NULL;
+  PyObject *call_kwds = NULL;
+  PyObject *tmp = NULL;
+  Py_ssize_t inv_n;
+
+  if (! inv_args || ! PyTuple_GET_SIZE(inv_args)) {
+    PyErr_SetString(PyExc_TypeError, "values objects must be called with"
+                    " at least one argument, the function to apply");
+    return -1;
+  }
+
+  *out_target = PyTuple_GET_ITEM(inv_args, 0);
+  inv_n = PyTuple_GET_SIZE(inv_args);
+
+  if (inv_n > 1) {
+    tmp = PySequence_GetSlice(inv_args, 1, inv_n);
+    if (! tmp)
+      return -1;
+
+    if (PyTuple_GET_SIZE(KosValues_ARGS(s))) {
+      call_args = PySequence_Concat(KosValues_ARGS(s), tmp);
+      Py_DECREF(tmp);
+      if (! call_args)
+        return -1;
+    } else {
+      call_args = tmp;
+    }
+  } else {
+    call_args = KosValues_ARGS(s);
+    Py_INCREF(call_args);
+  }
+
+  if (inv_kwds && PyDict_Size(inv_kwds)) {
+    if (KosValues_KWDS(s) && PyDict_Size(KosValues_KWDS(s))) {
+      call_kwds = PyDict_Copy(KosValues_KWDS(s));
+      if (! call_kwds) {
+        Py_DECREF(call_args);
+        return -1;
+      }
+      if (PyDict_Update(call_kwds, inv_kwds) < 0) {
+        Py_DECREF(call_args);
+        Py_DECREF(call_kwds);
+        return -1;
+      }
+    } else {
+      call_kwds = inv_kwds;
+      Py_INCREF(call_kwds);
+    }
+  } else {
+    call_kwds = KosValues_KWDS(s);
+    Py_XINCREF(call_kwds);
+  }
+
+  *out_args = call_args;
+  *out_kw = call_kwds;
+  return 0;
+}
+
+
 static PyObject *values_call(
     PyObject *self,
     PyObject *args,
     PyObject *kwds) {
 
-    KosValues *s = (KosValues *) self;
-    PyObject *call_args, *call_kwds;
-    PyObject *work = NULL, *tmp = NULL;
+  KosValues *s = (KosValues *) self;
+  PyObject *target = NULL;
+  PyObject *call_args = NULL;
+  PyObject *call_kwds = NULL;
+  PyObject *result = NULL;
 
-    if (! PyTuple_GET_SIZE(args)) {
-        PyErr_SetString(PyExc_TypeError, "values objects must be called with"
-                        " at least one argument, the function to apply");
-        return NULL;
-    }
+  if (values_merge(s, args, kwds, &target, &call_args, &call_kwds) < 0)
+    return NULL;
 
-    work = PyTuple_GET_ITEM(args, 0);
+  result = PyObject_Call(target, call_args, call_kwds);
+  Py_DECREF(call_args);
+  Py_XDECREF(call_kwds);
+  return result;
+}
 
-    if (PyTuple_GET_SIZE(args) > 1) {
-        /* if we have more positionals beyond just the callable work item,
-           we'll need to add those the invocation of work */
 
-        tmp = PySequence_GetSlice(args, 1, PyTuple_GET_SIZE(args));
+/* === KosCallable install === */
 
-        if (PyTuple_GET_SIZE(KosValues_ARGS(s))) {
-            /* merge the existing positionals with the invocation ones */
-            call_args = PySequence_Concat(KosValues_ARGS(s), tmp);
-            Py_DECREF(tmp);
 
-        } else {
-            /* there were no positionals in the values, so just use the
-               invocation ones */
-            call_args = tmp;
+/**
+   Return 1 if target is a KosCallable that wants a frame (flattenable into the
+   frame do_frame_prep prepared for values), 0 otherwise.
+*/
+static int values_target_is_flattenable(PyObject *target) {
+
+  if (! target)
+    return 0;
+
+  if (! KosCallable_Check(target))
+    return 0;
+
+  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) Py_TYPE(target);
+
+  if (ctyp->tp_kos_wants_frame_fn)
+    return ctyp->tp_kos_wants_frame_fn(target);
+
+  return ctyp->tp_kos_wants_frame;
+}
+
+
+/**
+   After merge: Case A flattens through bare KosCallable_CallArgs; Case B
+   reconciles the W=1 surplus frame then uses full KosEvalState_CallArgs.
+   merged_args / merged_kw are borrowed for the duration of the call.
+*/
+static KosOpResult values_dispatch(
+    KosEvalState *es,
+    PyObject *target,
+    PyObject *merged_args,
+    PyObject *merged_kw,
+    int tail_call) {
+
+  if (values_target_is_flattenable(target))
+    return KosCallable_CallArgs(es, target, merged_args, merged_kw,
+                                tail_call);
+
+  if (! tail_call) {
+    if (kos_dyn_pop_frame(es) < 0)
+      return EVAL_RAISE();
+    return KosEvalState_CallArgs(es, target, merged_args, merged_kw, 0);
+  }
+
+  /* Case B, tail. do_frame_prep already reset the values frame. When that
+     frame has a parent, KosEvalState_CallArgs(tail=1) pops it via
+     tail_prep_py_call. When it is the root, the reset cleared bytecode that
+     CONTROL_RETURNED would still walk -- deliver the result with RETURN. */
+  {
+    KosDynFrame *frame = KosEvalState_FRAME(es);
+    KosDynNode *parent = frame
+        ? KosDynNode_PARENT((KosDynNode *) frame) : NULL;
+
+    if (! parent) {
+      if (KosCallable_Check(target)) {
+        KosOpResult r = KosEvalState_CallArgs(
+            es, target, merged_args, merged_kw, 0);
+        if (r.kind != KOS_RES_NORMAL)
+          return r;
+        {
+          PyObject *rv = KosEvalState_StackPopRef(es);
+          if (! rv)
+            return EVAL_RAISE();
+          return EVAL_RETURN(rv);
         }
+      }
 
-    } else {
-        /* no additional positionals given at invocation, so we'll just be
-           using our existing ones. */
-        call_args = KosValues_ARGS(s);
-        Py_INCREF(call_args);
-    }
-
-    if (kwds && PyDict_Size(kwds)) {
-        /* if keyword arguments were supplied, we'll need to add those to
-           the work invocation. */
-
-        if (KosValues_KWDS(s) && PyDict_Size(KosValues_KWDS(s))) {
-            /* if the values already had keywords, we'll need to create a
-               new dict and merge these two sets of keyword arguments
-               together */
-
-            call_kwds = PyDict_Copy(KosValues_KWDS(s));
-            PyDict_Update(call_kwds, kwds);
-
+      {
+        PyObject *result = NULL;
+        if (merged_args)
+          result = PyObject_Call(target, merged_args, merged_kw);
+        else if (merged_kw) {
+          PyObject *empty = PyTuple_New(0);
+          if (! empty)
+            return EVAL_RAISE();
+          result = PyObject_Call(target, empty, merged_kw);
+          Py_DECREF(empty);
         } else {
-            /* the values had no keywords, so let's just use the ones
-               supplied by the invocation */
-
-            call_kwds = kwds;
-            Py_INCREF(call_kwds);
+          result = PyObject_CallNoArgs(target);
         }
-
-    } else {
-        /* no extra keyword arguments were supplied, so we only need to
-           use the ones from the values */
-        call_kwds = KosValues_KWDS(s);
-        Py_XINCREF(call_kwds);
+        if (! result)
+          return EVAL_RAISE();
+        return EVAL_RETURN(result);
+      }
     }
+  }
 
-    tmp = PyObject_Call(work, call_args, call_kwds);
-    Py_DECREF(call_args);
-    Py_XDECREF(call_kwds);
+  return KosEvalState_CallArgs(es, target, merged_args, merged_kw, 1);
+}
 
-    return tmp;
+
+static KosOpResult values_kos_install(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call) {
+
+  KosValues *s = (KosValues *) callable;
+  PyObject *target = NULL;
+  PyObject *merged_args = NULL;
+  PyObject *merged_kw = NULL;
+  KosOpResult r;
+
+  if (values_merge(s, args_tuple, kwds_dict, &target, &merged_args,
+                   &merged_kw) < 0)
+    return EVAL_RAISE();
+
+  r = values_dispatch(es, target, merged_args, merged_kw, tail_call);
+  Py_DECREF(merged_args);
+  Py_XDECREF(merged_kw);
+  return r;
+}
+
+
+static KosOpResult values_kos_vinstall(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  KosValues *s = (KosValues *) callable;
+  PyObject *inv_args = NULL;
+  PyObject *inv_kwds = NULL;
+  PyObject *target = NULL;
+  PyObject *merged_args = NULL;
+  PyObject *merged_kw = NULL;
+  KosOpResult r;
+  Py_ssize_t i;
+  Py_ssize_t nkw;
+
+  if (nargs < 1) {
+    PyErr_SetString(PyExc_TypeError, "values objects must be called with"
+                    " at least one argument, the function to apply");
+    return EVAL_RAISE();
+  }
+
+  inv_args = PyTuple_New(nargs);
+  if (! inv_args)
+    return EVAL_RAISE();
+
+  for (i = 0; i < nargs; i++) {
+    Py_INCREF(args[i]);
+    PyTuple_SET_ITEM(inv_args, i, args[i]);
+  }
+
+  if (kwnames) {
+    nkw = PyTuple_GET_SIZE(kwnames);
+    inv_kwds = PyDict_New();
+    if (! inv_kwds) {
+      Py_DECREF(inv_args);
+      return EVAL_RAISE();
+    }
+    for (i = 0; i < nkw; i++) {
+      if (PyDict_SetItem(inv_kwds, PyTuple_GET_ITEM(kwnames, i),
+                         args[nargs + i]) < 0) {
+        Py_DECREF(inv_args);
+        Py_DECREF(inv_kwds);
+        return EVAL_RAISE();
+      }
+    }
+  }
+
+  if (values_merge(s, inv_args, inv_kwds, &target, &merged_args,
+                   &merged_kw) < 0) {
+    Py_DECREF(inv_args);
+    Py_XDECREF(inv_kwds);
+    return EVAL_RAISE();
+  }
+
+  Py_DECREF(inv_args);
+  Py_XDECREF(inv_kwds);
+
+  r = values_dispatch(es, target, merged_args, merged_kw, tail_call);
+  Py_DECREF(merged_args);
+  Py_XDECREF(merged_kw);
+  return r;
 }
 
 
@@ -532,12 +736,13 @@ static PyMappingMethods values_as_mapping = {
 };
 
 
-PyTypeObject KosValuesType = {
+KosCallableTypeObject KosValuesType = {
+  .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
-    "values",
-    sizeof(KosValues),
-    0,
+    .tp_name = "values",
+    .tp_basicsize = sizeof(KosValues),
+    .tp_itemsize = 0,
 
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_methods = values_methods,
@@ -555,6 +760,12 @@ PyTypeObject KosValuesType = {
     .tp_call = values_call,
     .tp_repr = values_repr,
     .tp_richcompare = values_richcomp,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_install = values_kos_install,
+  .tp_kos_vinstall = values_kos_vinstall,
+  .tp_kos_wants_frame = 1,
+  .tp_kos_wants_frame_fn = NULL,
 };
 
 
@@ -566,7 +777,7 @@ PyObject *KosValues_New(PyObject *args, PyObject *kwds) {
         return NULL;
     }
 
-    self = PyObject_GC_New(KosValues, &KosValuesType);
+    self = PyObject_GC_New(KosValues, KOS_CALLABLE_PYTYPE(KosValuesType));
     if (! self)
         return NULL;
 
@@ -604,11 +815,12 @@ int koskari_values_init(PyObject *mod) {
     STR_CONST(_str_equals, "=");
     STR_CONST(_str_empty, "");
 
-    if (PyType_Ready(&KosValuesType))
+    if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosValuesType)))
         return -1;
 
     PyObject *dict = PyModule_GetDict(mod);
-    PyDict_SetItemString(dict, "values", (PyObject *) &KosValuesType);
+    PyDict_SetItemString(dict, "values",
+                         (PyObject *) KOS_CALLABLE_PYTYPE(KosValuesType));
 
     return 0;
 }
