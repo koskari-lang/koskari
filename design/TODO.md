@@ -56,6 +56,36 @@ Ref: [api/tracing.md](api/tracing.md).
 
 ---
 
+## Native build optimization
+
+### Profile-guided optimization (PGO) build
+
+Evaluate the PGO procedure and stand it up for release wheels. The computed-goto
+interpreter is a near-ideal PGO target, and a profile should dissolve the
+CALL_*_ATTR dispatch-layout tax the per-site cache currently pays (handlers
+grow, the shared dispatch function bloats, `-O2` mis-lays-out the hot blocks).
+Design: [interpreter/pgo-build.md](interpreter/pgo-build.md).
+
+Two pieces of work:
+
+- **Evaluate the procedure.** Prototype `make build-pgo` (three-pass:
+  instrument → run harness → optimize with `-DKOS_PGO` un-forcing
+  `always_inline`) and measure the delta vs `-O2 + always_inline` on
+  `churn --all`, machine-normalized. Confirm PGO recovers (ideally erases) the
+  all-sites cache tax and that un-forcing inline under a profile beats forcing
+  it. Then wire the per-cell three-pass build into cibuildwheel (GCC/gcov on
+  Linux, Clang/llvm-profdata on macOS), profile regenerated per
+  `os × Python-version` cell.
+
+- **Synthesize the profiling run set.** Author the harness as a representative
+  mix, weighted toward the universal hot machinery (dispatch, `CALL_*`, loop,
+  branch, namespace access): a subset of the phased test suite for coverage,
+  `churn --all` repeated for hot-path weight, and a set of example Koskari
+  programs for realistic distributions. The harness is the durable,
+  version-controlled asset; the profile data is a per-target build intermediate.
+
+---
+
 ## Compiler
 
 ### Tail-call promotion bytecode pass
