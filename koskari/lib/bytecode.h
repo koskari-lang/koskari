@@ -250,6 +250,7 @@ typedef enum KosMethodMode {
   KOS_METHOD_DIRECT_OBJECT_GUARDED,   /* class-side object, instance-shadow checked */
   KOS_METHOD_INSTANCE_DICT,           /* negative fact: value lives in instance dict */
   KOS_METHOD_GENERIC_LOOKUP,          /* no shortcut; full resolution */
+  KOS_METHOD_MEGAMORPHIC,             /* churn bypass: skip guard, never populate */
 } KosMethodMode;
 
 
@@ -281,6 +282,7 @@ typedef struct KosCacheSlot {
       PyTypeObject *type;      /* guard receiver type; owned */
       uint64_t type_version;   /* guard: type dict version at populate */
       KosMethodMode mode;      /* which resolution behavior */
+      uint8_t misses;          /* consecutive guard misses; drives the bypass */
       PyObject *resolved;      /* cached descriptor/object; owned, may be NULL */
     } method;
   } u;
