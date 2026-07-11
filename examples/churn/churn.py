@@ -7,11 +7,13 @@ import time
 import koskari
 
 from churn_k import churn_branch as churn_branch_k
+from churn_k import churn_field as churn_field_k
 from churn_k import churn_list_each as churn_list_each_k
 from churn_k import churn_loop as churn_loop_k
 from churn_k import churn_method as churn_method_k
 from churn_k import churn_tree as churn_tree_k
 from churn_p import churn_branch as churn_branch_p
+from churn_p import churn_field as churn_field_p
 from churn_p import churn_list_each as churn_list_each_p
 from churn_p import churn_loop as churn_loop_p
 from churn_p import churn_method as churn_method_p
@@ -25,6 +27,7 @@ LABELS = {
     'tree': 'churn_tree',
     'list_each': 'churn_list_each',
     'method': 'churn_method',
+    'field': 'churn_field',
     'branch': 'churn_branch',
 }
 
@@ -53,6 +56,12 @@ BENCHMARKS = {
         'args': (1_000_000, 1),
         'py': churn_method_p,
         'ki': churn_method_k,
+    },
+    'field': {
+        'runs': 50,
+        'args': (1_000_000, 1),
+        'py': churn_field_p,
+        'ki': churn_field_k,
     },
     'branch': {
         'runs': 50,
@@ -128,6 +137,10 @@ def parse_args(argv=None):
         action='store_true',
         help='Run churn_method (attribute resolution + bound-method calls)')
     parser.add_argument(
+        '--field',
+        action='store_true',
+        help='Run churn_field (instance attribute read/write/read-modify-write)')
+    parser.add_argument(
         '--branch',
         action='store_true',
         help='Run churn_branch (if/elif/else density)')
@@ -143,6 +156,8 @@ def parse_args(argv=None):
         selected.append('list_each')
     if args.method:
         selected.append('method')
+    if args.field:
+        selected.append('field')
     if args.branch:
         selected.append('branch')
     if not selected:
