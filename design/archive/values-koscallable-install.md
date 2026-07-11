@@ -1,5 +1,10 @@
 # `values` as a KosCallable install target
 
+**Status:** Implemented (archived 2026-07-11). As-built:
+`koskari/lib/values.c` (`values_kos_install` / `values_kos_vinstall`).
+
+---
+
 Promote `KosValuesType` from a plain `PyTypeObject` to a
 `KosCallableTypeObject` so a `values` object invoked from Koskari bytecode is
 spliced directly into the evaluator (a *flattened* call) instead of trampolining
@@ -174,7 +179,7 @@ same invocation-wins rule.
 
 [partial.c](../../koskari/lib/partial.c) (mirror pattern),
 [callable.h](../../koskari/lib/callable.h) (interface),
-[special-call-protocol.md](special-call-protocol.md),
-[OBJECT-MODEL.md](OBJECT-MODEL.md),
+[special-call-protocol.md](../api/special-call-protocol.md),
+[OBJECT-MODEL.md](../api/OBJECT-MODEL.md),
 [../interpreter/eval-state-live-authority.md](../interpreter/eval-state-live-authority.md),
 [../interpreter/evaluator.md](../interpreter/evaluator.md).
