@@ -472,4 +472,156 @@ KOS_OP_INLINE int kos_resolve_named_attr(
 }
 
 
+/* === Attribute-storage location cache (baseline) === */
+
+/*
+   Where the method cache resolves a *handle* (a class-side callable), this
+   resolves a *location*: where an instance attribute lives, so load, store,
+   and delete at any site for the same type+name can share one resolved
+   (mode, index). The payload is a plain integer -- no owned refs -- so the
+   FIELD slot is ref-free (see the layout in bytecode.h). Baseline only: no
+   opcode consumes it yet, and the direct modes are stubbed to GENERIC.
+*/
+
+
+/**
+   Classify the storage location of name on obj: the access mode, and *index
+   (a value slot / byte offset / dict-key hint, per the mode). The result is a
+   location for the caller to load/store/delete through, not a value.
+
+   Public today: a custom get/setattro or any data descriptor falls to
+   GENERIC, correct via PyObject_GetAttr/SetAttr. The direct modes need
+   per-version instance-layout access and land behind compat*.h; until then
+   this reports GENERIC, so a consumer is correct but unaccelerated.
+   TODO(field-offset): SLOT via member-descriptor offset (public);
+   INSTANCE_VALUE / DICT_HINT via compat*.h.
+*/
+static KosFieldMode resolve_attr_location_slow(
+    PyObject *obj,
+    PyObject *name,
+    uint32_t *index) {
+
+  PyTypeObject *tp = Py_TYPE(obj);
+  *index = 0;
+
+  /* Cache a location only when both load and store go through the generic
+     paths; a custom tp_getattro or tp_setattro can intercept either. */
+  if (tp->tp_getattro != PyObject_GenericGetAttr
+      || tp->tp_setattro != PyObject_GenericSetAttr)
+    return KOS_FIELD_GENERIC;
+
+  /* A data descriptor intercepts the access. __slots__ members are data
+     descriptors with a fixed offset (a future SLOT mode); every other data
+     descriptor (property, ...) computes per access and stays GENERIC. */
+  PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
+  if (descr && descr_is_data(descr))
+    return KOS_FIELD_GENERIC;
+
+  /* No data descriptor: the value lives in the instance. The value index /
+     dict hint is per-version instance-layout state -- deferred to compat. */
+  return KOS_FIELD_GENERIC;
+}
+
+
+/**
+   Guard a live field slot against obj's type: identity plus version. The
+   guard type is borrowed (see the field layout). For the direct modes the
+   consumer additionally confirms this instance still has the expected layout
+   (values vs materialized dict) before using the location.
+*/
+static int field_guard_ok(PyTypeObject *tp, KosCacheSlot *slot) {
+  return tp == slot->u.field.type
+      && kos_type_version(tp) == slot->u.field.type_version;
+}
+
+
+/**
+   Fill a field slot. Ref-free -- a borrowed guard type and an integer index --
+   so no release-before-overwrite and a no-op teardown. kind set last.
+*/
+static void field_slot_populate(
+    KosCacheSlot *slot,
+    PyTypeObject *tp,
+    uint64_t ver,
+    KosFieldMode mode,
+    uint32_t index,
+    uint8_t misses) {
+
+  slot->u.field.type = tp;            /* borrowed */
+  slot->u.field.type_version = ver;
+  slot->u.field.mode = mode;
+  slot->u.field.index = index;
+  slot->u.field.misses = misses;
+  slot->kind = KOS_CACHE_FIELD;
+}
+
+
+/**
+   Cold path: classify the location and update the slot -- populate, or degrade
+   to a megamorphic bypass after repeated guard misses. Outlined, in the vein
+   of kos_resolve_named_attr_cold.
+*/
+KOS_NOINLINE static KosFieldMode kos_resolve_attr_location_cold(
+    PyObject *obj,
+    PyObject *name,
+    KosCacheSlot *slot,
+    uint32_t *index) {
+
+  PyTypeObject *tp = Py_TYPE(obj);
+  int occupied_miss = (slot && slot->kind == KOS_CACHE_FIELD
+                       && slot->u.field.mode != KOS_FIELD_MEGAMORPHIC
+                       && ! field_guard_ok(tp, slot));
+
+  KosFieldMode mode = resolve_attr_location_slow(obj, name, index);
+
+  if (slot) {
+    uint64_t ver = kos_type_version_assign(tp);
+    if (ver == 0) {
+      if (slot->kind == KOS_CACHE_FIELD)     /* cannot guard: leave cold */
+        slot->kind = KOS_CACHE_EMPTY;
+    } else if (occupied_miss
+               && (uint8_t) (slot->u.field.misses + 1) >= KOS_METHOD_MISS_LIMIT) {
+      slot->u.field.type = NULL;             /* churn: stop caching this site */
+      slot->u.field.type_version = 0;
+      slot->u.field.mode = KOS_FIELD_MEGAMORPHIC;
+      slot->u.field.misses = 0;
+      slot->kind = KOS_CACHE_FIELD;
+    } else {
+      uint8_t n = occupied_miss ? (uint8_t) (slot->u.field.misses + 1) : 0;
+      field_slot_populate(slot, tp, ver, mode, *index, n);
+    }
+  }
+  return mode;
+}
+
+
+/**
+   Resolve the storage location of name on obj, using the per-site slot when
+   provided. Returns the access mode and sets *index; GENERIC means no
+   cacheable location (the caller falls back to PyObject_GetAttr/SetAttr). Fast
+   path only -- a guarded hit returns inline, everything else tail-calls the
+   outlined cold path. In the same vein as kos_resolve_named_attr.
+
+   Baseline: no opcode consumes this yet. Load/store/delete handlers will call
+   it and branch on the returned mode.
+*/
+KOS_OP_INLINE KosFieldMode kos_resolve_attr_location(
+    PyObject *obj,
+    PyObject *name,
+    KosCacheSlot *slot,
+    uint32_t *index) {
+
+  if (slot && slot->kind == KOS_CACHE_FIELD
+      && slot->u.field.mode != KOS_FIELD_MEGAMORPHIC) {
+    PyTypeObject *tp = Py_TYPE(obj);
+    if (field_guard_ok(tp, slot)) {
+      slot->u.field.misses = 0;
+      *index = slot->u.field.index;
+      return slot->u.field.mode;
+    }
+  }
+  return kos_resolve_attr_location_cold(obj, name, slot, index);
+}
+
+
 // The end.

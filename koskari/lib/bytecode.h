@@ -237,6 +237,7 @@ typedef struct KosExtentDesc {
 typedef enum KosCacheKind {
   KOS_CACHE_EMPTY = 0,   /* zeroed slot: no layout, no owned refs, no cleanup */
   KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
+  KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
 } KosCacheKind;
 
 
@@ -252,6 +253,21 @@ typedef enum KosMethodMode {
   KOS_METHOD_GENERIC_LOOKUP,          /* no shortcut; full resolution */
   KOS_METHOD_MEGAMORPHIC,             /* churn bypass: skip guard, never populate */
 } KosMethodMode;
+
+
+/**
+   Access mechanism of the KOS_CACHE_FIELD layout. Like the method modes,
+   these are not separate slot kinds -- they share the one field layout and
+   select how ``index`` is interpreted for load / store / delete. The same
+   (mode, index) serves all three operations at any site for this type+name.
+*/
+typedef enum KosFieldMode {
+  KOS_FIELD_GENERIC = 0,      /* no cacheable location; PyObject_GetAttr/SetAttr */
+  KOS_FIELD_INSTANCE_VALUE,   /* inline managed-dict values; index = value slot */
+  KOS_FIELD_SLOT,             /* __slots__ member; index = byte offset from obj */
+  KOS_FIELD_DICT_HINT,        /* materialized instance __dict__; index = keys hint */
+  KOS_FIELD_MEGAMORPHIC,      /* churn bypass: skip guard, never populate */
+} KosFieldMode;
 
 
 /**
@@ -285,6 +301,22 @@ typedef struct KosCacheSlot {
       uint8_t misses;          /* consecutive guard misses; drives the bypass */
       PyObject *resolved;      /* cached descriptor/object; owned, may be NULL */
     } method;
+
+    /* KOS_CACHE_FIELD: instance-attribute storage location. The payload is a
+       plain ``index`` (values slot / byte offset / dict-key hint) whose
+       meaning is set by ``mode``; there are NO owned references, so the
+       teardown arm for this kind is a no-op. ``type`` is a BORROWED guard --
+       the version tag is a monotonic counter (a reused type address gets a
+       fresh, non-matching version) and obj keeps its type alive during the
+       access, so borrowing is sound and keeps the slot ref-free. The same
+       (mode, index) serves load, store, and delete. */
+    struct {
+      PyTypeObject *type;      /* guard receiver type; borrowed */
+      uint64_t type_version;   /* guard: type dict version at populate */
+      KosFieldMode mode;       /* which storage mechanism */
+      uint8_t misses;          /* consecutive guard misses; drives the bypass */
+      uint32_t index;          /* value slot / byte offset / dict-key hint */
+    } field;
   } u;
 } KosCacheSlot;
 
