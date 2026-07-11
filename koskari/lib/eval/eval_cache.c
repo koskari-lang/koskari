@@ -87,7 +87,7 @@ static PyObject *instance_dict_get(PyObject *obj) {
    is itself the validity signal -- PyType_Modified zeroes it on change.
 */
 static uint64_t kos_type_version(PyTypeObject *tp) {
-#if PY_VERSION_HEX >= 0x030C0000
+#if PY_MINOR_VERSION >= 12
   return (uint64_t) tp->tp_version_tag;
 #else
   if (! (tp->tp_flags & Py_TPFLAGS_VALID_VERSION_TAG))
@@ -106,7 +106,7 @@ static uint64_t kos_type_version(PyTypeObject *tp) {
    Through 3.11 the lookup during resolution already assigns and flags it.
 */
 static uint64_t kos_type_version_assign(PyTypeObject *tp) {
-#if PY_VERSION_HEX >= 0x030C0000
+#if PY_MINOR_VERSION >= 12
   if (! PyUnstable_Type_AssignVersionTag(tp))
     return 0;
   return (uint64_t) tp->tp_version_tag;
