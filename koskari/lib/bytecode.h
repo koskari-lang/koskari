@@ -219,6 +219,26 @@ typedef struct KosExtentDesc {
 } KosExtentDesc;
 
 
+/* === Per-site cache slot === */
+
+
+/**
+   One per-site cache slot: a fixed-size tagged-union cell. A guard pointer,
+   a guard version, a family-local tag, and an owned payload pointer. A
+   zeroed slot (from zeroed allocation) is UNCACHED. Slots live in a trailing
+   array on the owning KosCode; each cache-consuming instruction addresses
+   its slot(s) through KosOp.cache. Semantics are family-local: each
+   consuming opcode family owns the tag namespace and the interpretation of
+   guard and payload. See design/interpreter/attr-lookup-cache.md.
+*/
+typedef struct KosCacheSlot {
+  void *guard;             /* guard pointer (e.g. receiver type); NULL = empty */
+  uint64_t guard_version;  /* guard version to validate before a hit */
+  uint16_t tag;            /* family-local discriminant; 0 = UNCACHED */
+  PyObject *payload;       /* owned strong ref when set; NULL = empty */
+} KosCacheSlot;
+
+
 /* === KosCode: bytecode object === */
 
 
@@ -226,7 +246,7 @@ extern PyTypeObject KosCodeType;
 
 
 struct KosCode {
-  PyObject_HEAD
+  PyObject_VAR_HEAD     /* ob_size = count of trailing KosCacheSlot entries */
 
   PyObject *name;       /* function/expression name (PyUnicode) */
   PyObject *filename;   /* source filename (PyUnicode) */
@@ -494,6 +514,18 @@ uint8_t kos_opcode_cache_count(KosOpCode op);
 
 #define KosCode_EXTRAS(c)                       \
   (((KosCode *) c)->extras)
+
+/* Per-site cache slots: a zeroed trailing array on the KosCode allocation.
+   The count is Py_SIZE (set at construction from the summed per-opcode cache
+   counts); the slots begin immediately after the struct. */
+#define KosCode_CACHE_LEN(c)                    \
+  ((uint16_t) Py_SIZE((PyObject *) (c)))
+
+#define KosCode_CACHE(c)                        \
+  ((KosCacheSlot *) (((KosCode *) (c)) + 1))
+
+#define KosCode_GET_SLOT(c, i)                  \
+  (KosCode_CACHE(c)[i])
 
 #define KosCode_CheckExact(obj)                         \
   ((obj) && ((obj)->ob_type == &KosCodeType))
