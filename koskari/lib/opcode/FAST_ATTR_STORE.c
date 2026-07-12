@@ -54,7 +54,7 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
       Py_DECREF(val);
       return EVAL_NORMAL();
     }
-#if PY_MINOR_VERSION >= 12
+#if PY_MINOR_VERSION >= 11
     if (m == KOS_FIELD_INSTANCE_VALUE
         && field_instance_value_store(obj, off, val)) {
       Py_DECREF(obj);

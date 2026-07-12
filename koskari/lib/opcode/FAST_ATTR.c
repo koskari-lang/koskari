@@ -45,7 +45,7 @@ KOS_OP_HANDLER(FAST_ATTR) {
     PyObject *hit = NULL;
     if (m == KOS_FIELD_SLOT)
       hit = field_slot_load(obj, off);
-#if PY_MINOR_VERSION >= 12
+#if PY_MINOR_VERSION >= 11
     else if (m == KOS_FIELD_INSTANCE_VALUE)
       hit = field_instance_value_load(obj, off);
 #endif

@@ -40,4 +40,48 @@ struct _frame {
 };
 
 
+/* === Inline-values instance attributes (3.11) === */
+
+
+/*
+   Value access for the instance-value field cache (KOS_FIELD_INSTANCE_VALUE).
+   3.11 introduced the managed dict: an object's inline values hang off a
+   pre-header slot at obj[-4] (the dict slot at obj[-3]), and that values
+   pointer is NULL once the instance materializes its dict. The shared name ->
+   index scan and the field-cache logic live in compat.h and eval/eval_cache.c;
+   here we only expose the two hooks the resolver calls. CPython keeps these
+   accessors internal and unexported, so we replicate the layout under our own
+   name (no internal header, no unexported symbol).
+*/
+
+
+/* struct _dictvalues: the inline values trail an insertion-order prefix. */
+typedef struct {
+  PyObject *values[1];
+} KosDictValues311;
+
+
+/* Does tp store instance attributes as addressable inline values? */
+static inline int kos_type_has_inline_values(PyTypeObject *tp) {
+  return (tp->tp_flags & Py_TPFLAGS_MANAGED_DICT) != 0;
+}
+
+
+/*
+   The inline value slots for obj and whether they are live (not materialized
+   to a dict). When inactive the returned pointer must not be dereferenced.
+   Mirrors _PyObject_ValuesPointer: the values pointer sits four slots ahead of
+   the object and is NULL once the dict is materialized.
+*/
+static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
+  KosDictValues311 *v = *(((KosDictValues311 **) obj) - 4);
+  if (! v) {
+    *active = 0;
+    return NULL;
+  }
+  *active = 1;
+  return v->values;
+}
+
+
 // The end.

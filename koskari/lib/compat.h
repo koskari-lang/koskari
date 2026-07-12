@@ -50,16 +50,17 @@
 
 /* === Inline-values instance attributes: shared name -> index scan === */
 
-#if PY_MINOR_VERSION >= 12
+#if PY_MINOR_VERSION >= 11
 /*
    The instance-value field cache addresses an object's inline attribute
    values by their index in the type's shared keys. CPython keeps the keys
    accessors internal and unexported, so we replicate just the prefix of
    struct _dictkeysobject we read; the per-version value access lives in the
    matching compat_3xx.h behind kos_type_has_inline_values /
-   kos_inline_value_slots. This layout holds for 3.12 through 3.14; the
-   free-threaded mutex only appears under Py_GIL_DISABLED. See
-   eval/eval_cache.c (KOS_FIELD_INSTANCE_VALUE).
+   kos_inline_value_slots. This layout holds for 3.11 (managed dict introduced)
+   through 3.14; the free-threaded mutex only appears under Py_GIL_DISABLED.
+   3.9 / 3.10 predate the managed dict (split dicts, opaque keys) and stay on
+   the generic path. See eval/eval_cache.c (KOS_FIELD_INSTANCE_VALUE).
 */
 
 

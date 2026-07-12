@@ -543,7 +543,7 @@ static KosFieldMode resolve_attr_location_slow(
      index (INSTANCE_VALUE). A non-data descriptor of the same name does not
      defeat this -- the instance value shadows it on read, and an unset slot
      falls back to the generic path, which then finds the class attribute. */
-#if PY_MINOR_VERSION >= 12
+#if PY_MINOR_VERSION >= 11
   if ((tp->tp_flags & Py_TPFLAGS_HEAPTYPE) && kos_type_has_inline_values(tp)
       && kos_type_value_index(tp, name, index))
     return KOS_FIELD_INSTANCE_VALUE;
@@ -574,7 +574,7 @@ static void field_slot_store(PyObject *obj, uint32_t offset, PyObject *val) {
 }
 
 
-#if PY_MINOR_VERSION >= 12
+#if PY_MINOR_VERSION >= 11
 /**
    Read an inline instance value (KOS_FIELD_INSTANCE_VALUE) at its index.
    Returns a borrowed reference, or NULL to signal the caller must fall back:
