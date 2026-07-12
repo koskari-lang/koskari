@@ -162,15 +162,9 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   SAYF("[KosNamespace_Copy] template=%R count=%zu parent=%R",
        template_ns, (unsigned long) count, parent);
 
-  PyObject *binds = PyDict_New();
-  if (! binds)
-    return NULL;
-
   PyObject *self = ns_alloc(&KosNamespaceType, count);
-  if (! self) {
-    Py_DECREF(binds);
+  if (! self)
     return NULL;
-  }
 
   Py_INCREF(KosNamespace_NAME(template_ns));
   KosNamespace_NAME(self) = KosNamespace_NAME(template_ns);
@@ -178,7 +172,10 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   Py_XINCREF(parent);
   KosNamespace_PARENT(self) = parent;
 
-  KosNamespace_BINDS(self) = binds;
+  // Function namespaces carry every ref in fast[]; name lookups resolve
+  // against fast_names, so no binds dict is allocated.  Raw-slot promotion
+  // stays in the fast slot; only a dynamic non-slot bind lazily creates one.
+  KosNamespace_BINDS(self) = NULL;
   KosNamespace_FAST_COUNT(self) = count;
 
   // Share the immutable names tuple from the template (just an incref).
@@ -190,39 +187,25 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   KosNamespace_FAST_RAW_LO(self) = KosNamespace_FAST_RAW_LO(template_ns);
   KosNamespace_FAST_RAW_HI(self) = KosNamespace_FAST_RAW_HI(template_ns);
 
+  // Only non-raw (closure/global) slots carry a Ref to copy; raw local slots
+  // are already NULL from ns_alloc, so skip them.  The Ref lives in the fast
+  // slot and name lookups resolve against fast_names via ns_fast_index, so no
+  // per-call binds entry is built.
   for (size_t i = 0; i < count; i++) {
-    PyObject *ref_name = fast_names? PyTuple_GET_ITEM(fast_names, (Py_ssize_t) i): NULL;
+    if (kos_ns_is_raw(template_ns, i))
+      continue;
 
-    if (! ref_name) {
-      SAYF("[KosNamespace_Copy] slot %zu: ref_name is NULL", (unsigned long) i);
+    PyObject *ref = KosNamespace_GET_FAST_VAL(template_ns, i);
+    if (! ref) {
+      SAYF("[KosNamespace_Copy] slot %zu: closure ref is NULL",
+           (unsigned long) i);
       goto fail;
     }
 
-    SAYF("[KosNamespace_Copy] slot %zu: name=%S raw=%d",
-         (unsigned long) i, ref_name, kos_ns_is_raw(template_ns, i));
+    Py_INCREF(ref);
+    KosNamespace_GET_FAST_VAL(self, i) = ref;
 
-    if (kos_ns_is_raw(template_ns, i)) {
-      // Raw local slot — no dict entry. ns_borrow_loose_ref synthesizes
-      // Py_None for these when they are queried by name.
-      KosNamespace_GET_FAST_VAL(self, i) = NULL;
-
-    } else {
-      PyObject *ref = KosNamespace_GET_FAST_VAL(template_ns, i);
-      if (! ref) {
-        SAYF("[KosNamespace_Copy] slot %zu: closure ref is NULL",
-             (unsigned long) i);
-        goto fail;
-      }
-
-      Py_INCREF(ref);
-      KosNamespace_GET_FAST_VAL(self, i) = ref;
-      if (PyDict_SetItem(binds, ref_name, ref) < 0) {
-        Py_DECREF(ref);
-        goto fail;
-      }
-
-      SAYF("[KosNamespace_Copy] slot %zu: ref=%R", (unsigned long) i, ref);
-    }
+    SAYF("[KosNamespace_Copy] slot %zu: ref=%R", (unsigned long) i, ref);
   }
 
   SAYF("[KosNamespace_Copy] done self=%R", self);
@@ -532,54 +515,69 @@ PyObject *KosNamespaceSpec_New(
 
 
 static PyObject *ns_borrow_loose_ref(PyObject *namespace, PyObject *key) {
-  PyObject *ref = PyDict_GetItemWithError(KosNamespace_BINDS(namespace), key);
-  if (ref || PyErr_Occurred())
-    return ref;
+  PyObject *binds = KosNamespace_BINDS(namespace);
+  if (binds) {
+    PyObject *ref = PyDict_GetItemWithError(binds, key);
+    if (ref || PyErr_Occurred())
+      return ref;
+  }
 
-  // Key absent from dict: synthesize Py_None sentinel for raw fast slots.
+  // Not held in the dict (or dict-less): resolve against the fast slot. A
+  // raw slot synthesizes the Py_None sentinel; a non-raw slot already
+  // carries its Ref in fast[], so hand that back (borrowed).
   int index = ns_fast_index(namespace, key);
-  if (index >= 0 && kos_ns_is_raw(namespace, (size_t) index))
+  if (index < 0)
+    return NULL;
+  if (kos_ns_is_raw(namespace, (size_t) index))
     return Py_None;
-  return NULL;
+  return KosNamespace_GET_FAST_VAL(namespace, (size_t) index);
 }
 
 
 static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
   PyObject *binds = KosNamespace_BINDS(namespace);
-  PyObject *ref = PyDict_GetItemWithError(binds, key);
 
-  if (! ref) {
+  if (binds) {
+    PyObject *ref = PyDict_GetItemWithError(binds, key);
+    if (ref)
+      return ref;  // borrowed reference to a Ref instance
     if (PyErr_Occurred())
       return NULL;
-
-    // Key absent from dict: check for a raw fast slot to promote lazily.
-    int index = ns_fast_index(namespace, key);
-    if (index < 0 || ! kos_ns_is_raw(namespace, (size_t) index))
-      return NULL;
-
-    SAYF("converting binding %S from raw to reference", key);
-
-    // Create ref with NULL value first so the error path never touches
-    // the slot's raw value pointer.
-    ref = KosSymbolicRef_New(key, NULL);
-    if (! ref)
-      return NULL;
-
-    if (PyDict_SetItem(binds, key, ref)) {
-      Py_DECREF(ref);  // safe: ref->value is NULL
-      return NULL;
-    }
-
-    // Dict holds one reference (SetItem). Steal raw value into ref and
-    // donate our New reference to the slot.
-    KosSymbolicRef_VALUE(ref) = KosNamespace_GET_FAST_VAL(namespace,
-                                                           (size_t) index);
-    KosNamespace_GET_FAST_VAL(namespace, (size_t) index) = ref;
-    kos_ns_set_raw(namespace, (size_t) index, 0);
-    // ref.rc == 2: dict (SetItem) + slot (New). No decref.
   }
 
-  // NULL or a borrowed reference to a Ref instance
+  // Not held in the dict (or dict-less): resolve against the fast slot.
+  int index = ns_fast_index(namespace, key);
+  if (index < 0)
+    return NULL;
+
+  // A non-raw slot already carries its Ref in fast[]; hand it back borrowed.
+  if (! kos_ns_is_raw(namespace, (size_t) index))
+    return KosNamespace_GET_FAST_VAL(namespace, (size_t) index);
+
+  // Raw slot: promote it to a Ref in place.  A namespace that keeps a dict
+  // (collector/module) also records the promotion there; a dict-less
+  // function namespace carries the Ref solely in its fast slot.
+  SAYF("converting binding %S from raw to reference", key);
+
+  // Create ref with NULL value first so the error path never touches
+  // the slot's raw value pointer.
+  PyObject *ref = KosSymbolicRef_New(key, NULL);
+  if (! ref)
+    return NULL;
+
+  if (binds && PyDict_SetItem(binds, key, ref)) {
+    Py_DECREF(ref);  // safe: ref->value is NULL
+    return NULL;
+  }
+
+  // Steal the raw value into the ref and donate our New reference to the
+  // slot.  rc == 2 (dict + slot) with a dict, else rc == 1 (slot only);
+  // either way the caller borrows.
+  KosSymbolicRef_VALUE(ref) = KosNamespace_GET_FAST_VAL(namespace,
+                                                         (size_t) index);
+  KosNamespace_GET_FAST_VAL(namespace, (size_t) index) = ref;
+  kos_ns_set_raw(namespace, (size_t) index, 0);
+
   return ref;
 }
 
@@ -603,8 +601,6 @@ static int ns_init_syms_from_nspec(
     PyObject *self,
     PyObject *parent,
     PyObject *nspec) {
-
-  PyObject *binds = KosNamespace_BINDS(self);
 
   // Borrow cached fast_names and bitmasks from the nspec (just an incref).
   PyObject *fn = KosNamespaceSpec_FAST_NAMES(nspec);
@@ -635,16 +631,15 @@ static int ns_init_syms_from_nspec(
         return -1;
       }
 
-      if (PyDict_SetItem(binds, ref_name, ref) < 0)
-        return -1;
-
+      // The Ref lives in the fast slot; name lookups resolve against
+      // fast_names, so the template carries no per-name binds entry.
       Py_INCREF(ref);
       KosNamespace_GET_FAST_VAL(self, count) = ref;
       count++;
     }
   }
 
-  // Globals: find ref in module namespace and bind in dict + fast slot.
+  // Globals: find ref in module namespace and bind into the fast slot.
   // The global slots are already not-raw in the precomputed bitmask.
   PyObject *global_syms = KosNamespaceSpec_GLOBAL_SYMS(nspec);
   if (global_syms && PyTuple_GET_SIZE(global_syms) > 0 && parent) {
@@ -665,9 +660,6 @@ static int ns_init_syms_from_nspec(
                      ref_name);
         return -1;
       }
-
-      if (PyDict_SetItem(binds, ref_name, ref) < 0)
-        return -1;
 
       Py_INCREF(ref);
       KosNamespace_GET_FAST_VAL(self, count) = ref;
@@ -701,13 +693,18 @@ static PyObject *ns_newfull_from_nspec(
   if (! name || name == Py_None)
     name = _namespace_str;
 
-  PyObject *binds = PyDict_New();
-  if (! binds)
-    return NULL;
+  // Plain (function) namespaces resolve names against fast_names and keep no
+  // binds dict; the collector type needs one for dynamic, slot-less names.
+  PyObject *binds = NULL;
+  if (type != &KosNamespaceType) {
+    binds = PyDict_New();
+    if (! binds)
+      return NULL;
+  }
 
   PyObject *self = ns_alloc(type, count);
   if (! self) {
-    Py_DECREF(binds);
+    Py_XDECREF(binds);
     return NULL;
   }
 
@@ -932,9 +929,22 @@ static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
     kos_ns_set_raw(self, (size_t) fast, 0);
   }
 
-  fast = PyDict_SetItem(KosNamespace_BINDS(self), key, ref);
-  SAYF("ns_bind_ref -> %i", fast);
-  return fast;
+  PyObject *binds = KosNamespace_BINDS(self);
+  if (! binds) {
+    // A dict-less function namespace already carries a slot-backed ref in
+    // fast[]; only a slot-less (dynamic) name still needs a dict, created
+    // lazily here.
+    if (fast >= 0)
+      return 0;
+    binds = PyDict_New();
+    if (! binds)
+      return -1;
+    KosNamespace_BINDS(self) = binds;
+  }
+
+  int res = PyDict_SetItem(binds, key, ref);
+  SAYF("ns_bind_ref -> %i", res);
+  return res;
 }
 
 
@@ -1664,9 +1674,12 @@ static int ns_convert_to_ref(PyObject *namespace, size_t index) {
   if (! ref)
     return -1;
 
-  // Insert into binds first.  On failure, Py_DECREF(ref) is safe because
-  // ref->value is still NULL — no slot reference has been touched.
-  if (PyDict_SetItem(KosNamespace_BINDS(namespace), name, ref)) {
+  // Record the promotion in binds when the namespace keeps one.  On failure,
+  // Py_DECREF(ref) is safe because ref->value is still NULL — no slot
+  // reference has been touched.  A dict-less function namespace carries the
+  // Ref in its fast slot alone.
+  PyObject *binds = KosNamespace_BINDS(namespace);
+  if (binds && PyDict_SetItem(binds, name, ref)) {
     Py_DECREF(ref);
     return -1;
   }
@@ -1675,8 +1688,8 @@ static int ns_convert_to_ref(PyObject *namespace, size_t index) {
   // slot's contribution to the raw value's refcount moves to ref->value).
   KosSymbolicRef_VALUE(ref) = KosNamespace_GET_FAST_VAL(namespace, index);
 
-  // Install ref in the slot, donating our New reference to it.
-  // ref.rc == 2: dict (from SetItem) + slot (from New).
+  // Install ref in the slot, donating our New reference to it.  ref.rc == 2
+  // (dict + slot) with a dict, else rc == 1 (slot only).
   KosNamespace_GET_FAST_VAL(namespace, index) = ref;
   kos_ns_set_raw(namespace, index, 0);
 
@@ -1863,7 +1876,11 @@ int KosNamespace_FastBind(
   KosNamespace_GET_FAST_VAL(namespace, index) = ref;
   kos_ns_set_raw(namespace, index, 0);
 
-  return PyDict_SetItem(KosNamespace_BINDS(namespace), name, ref);
+  // The Ref lives in the fast slot; mirror it into binds only when present.
+  PyObject *binds = KosNamespace_BINDS(namespace);
+  if (binds)
+    return PyDict_SetItem(binds, name, ref);
+  return 0;
 }
 
 
