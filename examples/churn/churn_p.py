@@ -56,8 +56,10 @@ class ChurnCounter:
 
 def churn_method(n: int, x: int = 1) -> int:
     c = ChurnCounter()
-    for i in range(n):
+    i = 0
+    while i < n:
         x = c.bump(x ^ i)
+        i += 1
     return c.total
 
 

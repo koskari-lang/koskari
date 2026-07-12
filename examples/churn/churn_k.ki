@@ -61,8 +61,10 @@ define-class ChurnCounter []:
 
 define churn_method [n x: 1]:
     define c (ChurnCounter)
-    for-each [i (range n)]:
+    define i 0
+    while (< i n):
         set! x (c.bump (^ x i))
+        set! i (+ i 1)
     c.total
 
 
