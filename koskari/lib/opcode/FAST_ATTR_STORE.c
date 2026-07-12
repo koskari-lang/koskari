@@ -39,18 +39,29 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
     return EVAL_RAISE();
   }
 
-  /* Per-site storage-location cache: a SLOT hit writes the __slots__ member
-     directly; GENERIC falls through to PyObject_SetAttr. */
+  /* Per-site storage-location cache: a SLOT hit writes the __slots__ member,
+     an INSTANCE_VALUE hit overwrites the inline attribute value, both
+     directly; GENERIC (and a first/materialized store) fall through to
+     PyObject_SetAttr. */
   uint16_t cache_ix = KosOp_CACHE(insn);
   if (cache_ix != KOS_CACHE_UNSET) {
     KosCacheSlot *slot = &KosCode_CACHE(code)[cache_ix];
     uint32_t off;
-    if (kos_resolve_attr_location(obj, attr_name, slot, &off) == KOS_FIELD_SLOT) {
+    KosFieldMode m = kos_resolve_attr_location(obj, attr_name, slot, &off);
+    if (m == KOS_FIELD_SLOT) {
       field_slot_store(obj, off, val);
       Py_DECREF(obj);
       Py_DECREF(val);
       return EVAL_NORMAL();
     }
+#if PY_MINOR_VERSION == 12
+    if (m == KOS_FIELD_INSTANCE_VALUE
+        && field_instance_value_store(obj, off, val)) {
+      Py_DECREF(obj);
+      Py_DECREF(val);
+      return EVAL_NORMAL();
+    }
+#endif
   }
 
   int res = PyObject_SetAttr(obj, attr_name, val);

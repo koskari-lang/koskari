@@ -538,8 +538,35 @@ static KosFieldMode resolve_attr_location_slow(
     return KOS_FIELD_GENERIC;
   }
 
-  /* No data descriptor: the value lives in the instance. The value index /
-     dict hint is per-version instance-layout state -- deferred to compat. */
+  /* No data descriptor: the value lives in the instance. A managed-dict type
+     with shared keys stores it inline at a fixed index; find and cache that
+     index (INSTANCE_VALUE). A non-data descriptor of the same name does not
+     defeat this -- the instance value shadows it on read, and an unset slot
+     falls back to the generic path, which then finds the class attribute. */
+#if PY_MINOR_VERSION == 12
+  if ((tp->tp_flags & Py_TPFLAGS_HEAPTYPE)
+      && (tp->tp_flags & Py_TPFLAGS_MANAGED_DICT)) {
+    KosDictKeys312 *keys =
+      (KosDictKeys312 *) ((PyHeapTypeObject *) tp)->ht_cached_keys;
+    if (keys && keys->dk_kind != 0) {          /* shared unicode keys */
+      KosDictUnicodeEntry312 *ents = kos_dk_unicode_entries312(keys);
+      Py_ssize_t n = keys->dk_nentries;
+      for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *k = ents[i].me_key;
+        if (! k)
+          continue;
+        if (k == name
+            || (PyUnicode_CheckExact(k) && PyUnicode_CheckExact(name)
+                && PyUnicode_Compare(k, name) == 0)) {
+          if (i > (Py_ssize_t) UINT32_MAX)
+            break;
+          *index = (uint32_t) i;
+          return KOS_FIELD_INSTANCE_VALUE;
+        }
+      }
+    }
+  }
+#endif
   return KOS_FIELD_GENERIC;
 }
 
@@ -564,6 +591,44 @@ static void field_slot_store(PyObject *obj, uint32_t offset, PyObject *val) {
   Py_INCREF(val);
   Py_XSETREF(*addr, val);
 }
+
+
+#if PY_MINOR_VERSION == 12
+/**
+   Read an inline instance value (KOS_FIELD_INSTANCE_VALUE) at its index.
+   Returns a borrowed reference, or NULL to signal the caller must fall back:
+   the instance materialized its dict, or the slot is unset (AttributeError /
+   __getattr__ / a shadowed class attribute). The type-version guard has
+   already matched, so the index is in bounds for a values-mode instance.
+*/
+static PyObject *field_instance_value_load(PyObject *obj, uint32_t index) {
+  KosDictOrValues312 dov = *kos_dict_or_values312(obj);
+  if (! kos_dov_is_values312(dov))
+    return NULL;
+  return kos_dov_get_values312(dov)->values[index];
+}
+
+
+/**
+   Overwrite an inline instance value at its index. Returns 1 on success, 0 to
+   signal fallback: the instance materialized its dict, or the slot is unset --
+   a first assignment must bump the values' used count and insertion order,
+   bookkeeping we do not replicate, so PyObject_SetAttr handles it. The common
+   in-place update (slot already set) takes the fast path.
+*/
+static int field_instance_value_store(PyObject *obj, uint32_t index,
+    PyObject *val) {
+  KosDictOrValues312 dov = *kos_dict_or_values312(obj);
+  if (! kos_dov_is_values312(dov))
+    return 0;
+  PyObject **addr = &kos_dov_get_values312(dov)->values[index];
+  if (! *addr)
+    return 0;
+  Py_INCREF(val);
+  Py_SETREF(*addr, val);
+  return 1;
+}
+#endif
 
 
 /**
