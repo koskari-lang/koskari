@@ -187,37 +187,25 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   KosNamespace_FAST_RAW_LO(self) = KosNamespace_FAST_RAW_LO(template_ns);
   KosNamespace_FAST_RAW_HI(self) = KosNamespace_FAST_RAW_HI(template_ns);
 
+  // Only non-raw (closure/global) slots carry a Ref to copy; raw local slots
+  // are already NULL from ns_alloc, so skip them.  The Ref lives in the fast
+  // slot and name lookups resolve against fast_names via ns_fast_index, so no
+  // per-call binds entry is built.
   for (size_t i = 0; i < count; i++) {
-    PyObject *ref_name = fast_names? PyTuple_GET_ITEM(fast_names, (Py_ssize_t) i): NULL;
+    if (kos_ns_is_raw(template_ns, i))
+      continue;
 
-    if (! ref_name) {
-      SAYF("[KosNamespace_Copy] slot %zu: ref_name is NULL", (unsigned long) i);
+    PyObject *ref = KosNamespace_GET_FAST_VAL(template_ns, i);
+    if (! ref) {
+      SAYF("[KosNamespace_Copy] slot %zu: closure ref is NULL",
+           (unsigned long) i);
       goto fail;
     }
 
-    SAYF("[KosNamespace_Copy] slot %zu: name=%S raw=%d",
-         (unsigned long) i, ref_name, kos_ns_is_raw(template_ns, i));
+    Py_INCREF(ref);
+    KosNamespace_GET_FAST_VAL(self, i) = ref;
 
-    if (kos_ns_is_raw(template_ns, i)) {
-      // Raw local slot — no dict entry. ns_borrow_loose_ref synthesizes
-      // Py_None for these when they are queried by name.
-      KosNamespace_GET_FAST_VAL(self, i) = NULL;
-
-    } else {
-      PyObject *ref = KosNamespace_GET_FAST_VAL(template_ns, i);
-      if (! ref) {
-        SAYF("[KosNamespace_Copy] slot %zu: closure ref is NULL",
-             (unsigned long) i);
-        goto fail;
-      }
-
-      // The Ref lives in the fast slot; name lookups resolve against
-      // fast_names via ns_fast_index, so no per-call binds entry is built.
-      Py_INCREF(ref);
-      KosNamespace_GET_FAST_VAL(self, i) = ref;
-
-      SAYF("[KosNamespace_Copy] slot %zu: ref=%R", (unsigned long) i, ref);
-    }
+    SAYF("[KosNamespace_Copy] slot %zu: ref=%R", (unsigned long) i, ref);
   }
 
   SAYF("[KosNamespace_Copy] done self=%R", self);
