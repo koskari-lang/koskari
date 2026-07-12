@@ -20,7 +20,7 @@
   prefix (left-1 .. 0) so first prefix is TOS.
 */
 
-KOS_OP_HANDLER(UNPACK_STAR) {
+KOS_OP_HANDLER_COLD(UNPACK_STAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   unsigned left = row.a0;

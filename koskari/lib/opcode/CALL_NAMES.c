@@ -19,7 +19,7 @@
   with names at TOS. KosCallable: steal then KosEvalState_Call. Plain Python:
   TailPtr + PyObject_Vectorcall + DropNoErr.
 */
-KOS_OP_HANDLER(CALL_NAMES) {
+KOS_OP_HANDLER_COLD(CALL_NAMES) {
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *names = KosEvalState_StackPeek(es);

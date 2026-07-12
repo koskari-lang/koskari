@@ -1759,6 +1759,13 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #define KOS_OP_HANDLER(name) \
   KOS_OP_INLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
+
+/* Cold variant of KOS_OP_HANDLER: same signature, but kept OUT of the inlined
+   dispatch function (the dispatch label calls it instead).  For large,
+   rarely-executed opcodes whose body would only bloat the hot loop. */
+#define KOS_OP_HANDLER_COLD(name) \
+  static KOS_NOINLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
+
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
 
 /* Namespace-presence guard for opcode handlers.  es->namespace is a live
@@ -1781,6 +1788,7 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS
+#undef KOS_OP_HANDLER_COLD
 #undef KOS_OP_HANDLER
 
 

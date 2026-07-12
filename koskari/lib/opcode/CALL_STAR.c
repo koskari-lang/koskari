@@ -38,7 +38,7 @@ static int ensure_tuple(PyObject **val) {
 }
 
 
-KOS_OP_HANDLER(CALL_STAR) {
+KOS_OP_HANDLER_COLD(CALL_STAR) {
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *fun = NULL;

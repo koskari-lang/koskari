@@ -21,7 +21,7 @@
   PyObject_Vectorcall + DropNoErr.
 */
 
-KOS_OP_HANDLER(CALL_FAST_NAMES) {
+KOS_OP_HANDLER_COLD(CALL_FAST_NAMES) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;

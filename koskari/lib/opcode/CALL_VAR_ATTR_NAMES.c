@@ -20,7 +20,7 @@
    obj.name, call.
 */
 
-KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
+KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;

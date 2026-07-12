@@ -73,7 +73,7 @@ static PyObject *kos_import_star_names(PyObject *mod) {
 }
 
 
-KOS_OP_HANDLER(IMPORT_STAR) {
+KOS_OP_HANDLER_COLD(IMPORT_STAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 

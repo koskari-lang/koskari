@@ -20,7 +20,7 @@
    Non-tuple values are converted with PySequence_Tuple when m == 1.
 */
 
-KOS_OP_HANDLER(COMBINE_ARGS) {
+KOS_OP_HANDLER_COLD(COMBINE_ARGS) {
   unsigned opa = KosOp_ARG(insn);
 
   if (opa == 0) {

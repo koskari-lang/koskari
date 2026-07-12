@@ -19,7 +19,7 @@
    kwd_val_0, ..., kwd_val_{M-1}]. Obj from fast slot; resolve obj.name, call.
 */
 
-KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
+KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
