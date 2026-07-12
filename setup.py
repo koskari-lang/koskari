@@ -37,6 +37,7 @@ passenvs = (
     "KOS_TRACE_OPCACHE",
     "KOS_TRACE_TIMING",
     "KOS_TRACE_EVAL_SYNC",
+    "KOS_EVAL_SAFETYNET",
     "VERBOSE_DEBUG",
 )
 

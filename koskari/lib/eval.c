@@ -2427,19 +2427,36 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
 
 
 
+/* Internal-invariant safety net. Distinct from user-input validation, which is
+   always on and scrubbed up front: these guards catch koskari's own
+   state-machine bugs, in code the implementation alone mutates. They are off by
+   default -- past assembly the evaluator trusts its own state. Build with
+   -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an internal
+   misfire into a clean diagnostic while tracking down the cause. */
+#ifndef KOS_EVAL_SAFETYNET
+#define KOS_EVAL_SAFETYNET 0
+#endif
+
+#if KOS_EVAL_SAFETYNET
+/* es->code can be transiently NULL only through an internal bug (e.g. a tail
+   reset that failed to retarget it); guard the fetch against dereferencing it. */
+# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)                         \
+    do { if (unlikely(! (code))) goto on_bad; } while (0)
+#else
+# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)  ((void) 0)
+#endif
+
 /* No per-opcode PC bounds check: every code object ends in a THEEND barrier
    (appended in KosCode_New), and jump targets are validated in-bounds, so
    straight-line dispatch always hits a terminal RETURN or THEEND before pc
    could reach code_len -- arr[pc] is provably valid. THEEND faults exactly as
-   an off-the-end fetch would. The null check stays: es->code can be transiently
-   NULL (e.g. a tail reset before es->code is retargeted). */
+   an off-the-end fetch would. The es->code null check is an internal-invariant
+   guard, gated behind KOS_EVAL_SAFETYNET (off by default). */
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
     KosCode *_kos_code = KosEvalState_CODE(es);                            \
     uint32_t _kos_pc = KosEvalState_PC(es);                                \
-    if (unlikely(! _kos_code)) {                                           \
-      goto on_bad;                                                         \
-    }                                                                      \
+    KOS_EVAL_SAFETYNET_NULLCODE(_kos_code, on_bad);                        \
     KosOp _kos_insn = KosCode_CODE(_kos_code)[_kos_pc];                    \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
          (unsigned) _kos_pc, kos_opcode_name(_kos_insn.op),                \
@@ -2558,9 +2575,11 @@ cg_poll:
   #include "opcodes.incl"
   #undef OP
 
+#if KOS_EVAL_SAFETYNET
 cg_pc_bounds_error:
   kos_eval_report_pc_bounds_error(es);
   return EVAL_FATAL();
+#endif
 
 cg_handle_op_result: {
   KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
