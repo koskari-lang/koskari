@@ -17,6 +17,7 @@ layout-and-s-expressions
 macro-matching-and-hygiene
 pragma
 code-sealing
+opcode-caching
 idiomatic-koskari
 ```
 
@@ -34,4 +35,5 @@ idiomatic-koskari
 | [Macro matching and hygiene](macro-matching-and-hygiene.md) | Pattern match at expand time, datum forms and wrappers |
 | [Pragmas and feature settings](pragma.md) | Setting a pragma, the `reader/*` / `compiler/*` / `pragma/*` settings and their values |
 | [Code sealing and arena packing](code-sealing.md) | Read-only bytecode, the `compiler/protect-code` / `compiler/pack-module` pragmas, arena pinning, per-expression sealing costs |
+| [Attribute and method caching](opcode-caching.md) | Per-site monomorphic cache, the `compiler/cache-function` / `compiler/cache-expression` pragmas, what it accelerates, the 3.11+ dict-attribute floor |
 | [Idiomatic Koskari](idiomatic-koskari.md) | Prefer the direct form: `item-slice`, dotted `set!`, `define-values`, `None?`, `unless`/`when` over Python-shaped assemblies |

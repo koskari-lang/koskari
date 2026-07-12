@@ -89,6 +89,16 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   variable access to its fast form. Off disables that optimization.
 - **`compiler/compress`** *(default off)* — reserved for a future bytecode
   compression pass; currently inert.
+- **`compiler/cache-function`** *(default on)* — whether function and lambda
+  bodies attach a per-site cache to attribute and method-call instructions,
+  so a repeated access with the same receiver type skips the resolution walk.
+  On is the baseline; the reused code that loops flow through is where it
+  pays. See [Attribute and method caching](opcode-caching.md).
+- **`compiler/cache-expression`** *(default off)* — the same caching for
+  top-level module and REPL expressions. Off by default because top-level
+  code usually runs once as it loads, so a cache would not amortize. A bare
+  `[compiler/cache-expression]` turns it on. See
+  [Attribute and method caching](opcode-caching.md).
 - **`compiler/protect-code`** *(default off)* — whether each compiled code
   object's bytecode storage is sealed read-only at the OS level the moment it
   is built. On, a stray or hostile write to live bytecode faults instead of

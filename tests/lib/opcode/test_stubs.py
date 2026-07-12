@@ -12,16 +12,17 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for opcodes with no runtime implementation.
+Tests for the THEEND end-of-code barrier.
 
-THEEND is an end-of-code sentinel; execution reaching it raises a fixed
-RuntimeError. This module documents that expected behavior.
+THEEND is not a user instruction: it is the barrier appended to every code
+object during assembly, so a program counter that walks off the end faults at
+it instead of overrunning the code array. This module documents that it cannot
+be supplied as an instruction.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
-from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
 import pytest
@@ -29,34 +30,23 @@ import pytest
 pytestmark = pytest.mark.phase_lib
 
 
-class TestStubOpcodes(CevalTest):
+class TestTheEndBarrier(CevalTest):
     """
-    Tests for opcodes that have no runtime implementation.
-    Each test runs code that hits such an opcode and expects RuntimeError.
+    THEEND is the reserved end-of-code barrier; users cannot emit it.
     """
 
-    async def _run_stub_opcode(self, opname, arg=0):
+    async def test_theend_rejected_as_input(self):
         """
-        Build and run bytecode that hits the given stub opcode
-        """
-
-        code_obj, ns = build_expr([
-            [opname, arg],
-            ["RETURN", 1],
-        ])
-        expr = make_callable(code_obj, ns)
-        return await expr()
-
-
-    async def test_theend_raises_unimpl(self):
-        """
-        THEEND has no runtime implementation; raises RuntimeError with fixed message
+        Supplying THEEND as an instruction is rejected at construction, since
+        it is the barrier the assembler appends itself.
         """
 
         with self.assertRaises(RuntimeError) as ctx:
-            await self._run_stub_opcode("THEEND", 0)
+            build_expr([
+                ["THEEND", 0],
+                ["RETURN", 1],
+            ])
         self.assertIn("THEEND", str(ctx.exception))
-        self.assertIn("no runtime implementation", str(ctx.exception))
 
 
 # The end.

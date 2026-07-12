@@ -57,6 +57,29 @@ void kos_trace_events_inc(KosTraceEventId id) {
 #endif
 
 
+#if KOS_TRACE_OPCACHE
+
+static uint64_t kos_oc_counters[KOS_OC__COUNT];
+
+static const char *const kos_oc_names[KOS_OC__COUNT] = {
+  "method_hit",
+  "method_miss",
+  "method_bypass",
+  "method_uncached",
+  "field_hit",
+  "field_generic",
+  "field_miss",
+};
+
+
+void kos_trace_opcache_inc(KosTraceOpCacheId id) {
+  if ((unsigned) id < (unsigned) KOS_OC__COUNT)
+    kos_oc_counters[id]++;
+}
+
+#endif
+
+
 /* === per-opcode timing (eval handlers) === */
 
 #if KOS_TRACE_TIMING
@@ -362,6 +385,37 @@ static int add_events_section(PyObject *report) {
     return -1;
   }
   Py_DECREF(events);
+#endif
+  return 0;
+}
+
+
+static int add_opcache_section(PyObject *report) {
+#if KOS_TRACE_OPCACHE
+  PyObject *opcache = PyDict_New();
+  if (! opcache)
+    return -1;
+
+  Py_ssize_t i;
+  for (i = 0; i < (Py_ssize_t) KOS_OC__COUNT; i++) {
+    PyObject *n = PyLong_FromUnsignedLongLong(kos_oc_counters[i]);
+    if (! n) {
+      Py_DECREF(opcache);
+      return -1;
+    }
+    if (PyDict_SetItemString(opcache, kos_oc_names[i], n) < 0) {
+      Py_DECREF(n);
+      Py_DECREF(opcache);
+      return -1;
+    }
+    Py_DECREF(n);
+  }
+
+  if (PyDict_SetItemString(report, "opcache", opcache) < 0) {
+    Py_DECREF(opcache);
+    return -1;
+  }
+  Py_DECREF(opcache);
 #endif
   return 0;
 }
@@ -1008,6 +1062,8 @@ PyObject *kos_trace_report(void) {
           KOS_TRACE_FREELIST ? Py_True : Py_False) < 0 ||
       PyDict_SetItemString(flags, "events",
           KOS_TRACE_EVENTS ? Py_True : Py_False) < 0 ||
+      PyDict_SetItemString(flags, "opcache",
+          KOS_TRACE_OPCACHE ? Py_True : Py_False) < 0 ||
       PyDict_SetItemString(flags, "timing",
           KOS_TRACE_TIMING ? Py_True : Py_False) < 0 ||
       PyDict_SetItemString(flags, "eval_state_sync",
@@ -1030,6 +1086,11 @@ PyObject *kos_trace_report(void) {
   }
 
   if (add_events_section(report) < 0) {
+    Py_DECREF(report);
+    return NULL;
+  }
+
+  if (add_opcache_section(report) < 0) {
     Py_DECREF(report);
     return NULL;
   }

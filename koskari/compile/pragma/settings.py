@@ -16,10 +16,11 @@ koskari.compile.pragma.settings
 
 Compiler-side pragma settings, registered into the koskari.pragma registry at
 import: compiler/resolution, compiler/call-brackets, compiler/tco-enable,
-compiler/protect-code, compiler/pack-module, and the reserved
-compiler/convert-fast and compiler/compress. Each setting's ``default`` is its
-baseline (value when undeclared); the function's argument defaults are the
-parameter defaults (value when declared but the arg is omitted).
+compiler/cache-expression, compiler/cache-function, compiler/protect-code,
+compiler/pack-module, and the reserved compiler/convert-fast and
+compiler/compress. Each setting's ``default`` is its baseline (value when
+undeclared); the function's argument defaults are the parameter defaults
+(value when declared but the arg is omitted).
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -111,6 +112,30 @@ def compiler_compress(enabled: bool = False) -> bool:
     """
     Reserved: the bytecode compression pass is not yet built. Inert until
     implemented.
+    """
+
+    return enabled
+
+
+@pragma_setting("compiler/cache-expression", False)
+def compiler_cache_expression(enabled: bool = True) -> bool:
+    """
+    Whether expression code objects (compiled at the top level of a module
+    load or a REPL step) get per-site opcode caches. Baseline disabled: a
+    top-level expression typically runs once, so a cache never amortizes. A
+    bare declaration enables it (mention-to-enable).
+    """
+
+    return enabled
+
+
+@pragma_setting("compiler/cache-function", True)
+def compiler_cache_function(enabled: bool = True) -> bool:
+    """
+    Whether function and lambda code objects (compiled inside a module or
+    REPL) get per-site opcode caches. Baseline enabled: function bodies are
+    the reused code that idiomatic method calls flow through, so caching
+    pays off.
     """
 
     return enabled

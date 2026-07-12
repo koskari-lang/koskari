@@ -56,9 +56,63 @@ class ChurnCounter:
 
 def churn_method(n: int, x: int = 1) -> int:
     c = ChurnCounter()
-    for i in range(n):
+    i = 0
+    while i < n:
         x = c.bump(x ^ i)
+        i += 1
     return c.total
+
+
+# Exercises attribute storage directly: every write is an in-place update
+# of an instance attribute (read, op, write-back to the same attribute), and
+# the loop counter is itself an attribute, so attribute access -- not range
+# iteration or method calls -- dominates.
+
+class ChurnBox:
+
+    def __init__(self):
+        self.i = 0
+        self.a = 0
+        self.b = 0
+
+
+def churn_field(n: int, x: int = 1) -> int:
+    box = ChurnBox()
+    box.i = 0
+    box.a = x & MASK32
+    box.b = 1
+    while box.i < n:
+        box.a += box.b
+        box.a &= MASK32
+        box.b ^= box.a
+        box.i += 1
+    return (box.a ^ box.b) & MASK32
+
+
+# Identical to churn_field but on a __slots__ class: exercises the SLOT
+# storage mode (a fixed member offset) rather than the dict path.
+
+class SlotBox:
+
+    __slots__ = ('i', 'a', 'b')
+
+    def __init__(self):
+        self.i = 0
+        self.a = 0
+        self.b = 0
+
+
+def churn_field_slots(n: int, x: int = 1) -> int:
+    box = SlotBox()
+    box.i = 0
+    box.a = x & MASK32
+    box.b = 1
+    while box.i < n:
+        box.a += box.b
+        box.a &= MASK32
+        box.b ^= box.a
+        box.i += 1
+    return (box.a ^ box.b) & MASK32
 
 
 # Exercises branch density: a four-arm if/elif/else per iteration with

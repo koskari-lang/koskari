@@ -472,6 +472,8 @@ class Compiler:
         self.bracket_calls = bracket_calls
         self.protect_code = False
         self.pack_module = PackModule(True, 0, 0)
+        self.cache_expression = False
+        self.cache_function = True
 
         # weakrefs to every Code minted through complete(), in
         # definition order; the live remainder at seal() time is the
@@ -548,6 +550,9 @@ class Compiler:
         self.protect_code = pragma.get("compiler/protect-code", False)
         self.pack_module = pragma.get(
             "compiler/pack-module", PackModule(True, 0, 0))
+
+        self.cache_expression = pragma.get("compiler/cache-expression", False)
+        self.cache_function = pragma.get("compiler/cache-function", True)
 
 
     @property
@@ -1095,9 +1100,18 @@ class Compiler:
             path = None
         filename = (fragment.filename or path or self.filename or None)
 
+        # Gate per-site opcode caches by compile context: function/lambda
+        # bodies follow compiler/cache-function (baseline on), everything else
+        # (module/REPL top-level expressions) follows compiler/cache-expression
+        # (baseline off). When off, the code object allocates no cache slots.
+        if mode == CompilerMode.FUNCTION:
+            cache = self.cache_function
+        else:
+            cache = self.cache_expression
+
         # Build Code and register with pragma for position lookup on errors
         code = Code(base_nspec, instr, fragment.name, filename,
-                    protect=self.protect_code)
+                    protect=self.protect_code, cache=cache)
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
         reso.register_code_fragment(code, fragment)

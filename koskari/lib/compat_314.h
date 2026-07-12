@@ -29,4 +29,55 @@ PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type);
 #define _PyDictView_New(dict, type) koskari_DictView_New((dict), (type))
 
 
+/* === Inline-values instance attributes (3.14) === */
+
+
+/*
+   Value access for the instance-value field cache (KOS_FIELD_INSTANCE_VALUE).
+   Same header-plus-array layout as 3.13, but 3.14 places the inline values at
+   tp_basicsize (types with extra C fields may now carry them), so the offset
+   is per-type rather than sizeof(PyObject). The `valid` byte falls to 0 on
+   materialization. The shared name -> index scan and the field-cache logic
+   live in compat.h and eval/eval_cache.c; here we only expose the two hooks
+   the resolver calls. Replicated under our own name (no internal header, no
+   unexported symbol).
+*/
+
+
+/* struct _dictvalues: a header then the inline value array. */
+typedef struct {
+  uint8_t capacity;
+  uint8_t size;
+  uint8_t embedded;
+  uint8_t valid;
+  PyObject *values[1];
+} KosDictValues314;
+
+
+/* Does tp store instance attributes as addressable inline values? The fast
+   path is GIL-only; under free-threading the generic path stays correct. */
+static inline int kos_type_has_inline_values(PyTypeObject *tp) {
+#ifdef Py_GIL_DISABLED
+  (void) tp;
+  return 0;
+#else
+  return (tp->tp_flags & Py_TPFLAGS_INLINE_VALUES) != 0;
+#endif
+}
+
+
+/*
+   The inline value slots for obj and whether they are live (valid, i.e. not
+   materialized to a dict). When inactive the returned pointer must not be
+   dereferenced. Mirrors _PyObject_InlineValues for 3.14 (values at
+   tp_basicsize).
+*/
+static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
+  KosDictValues314 *v =
+    (KosDictValues314 *) ((char *) obj + Py_TYPE(obj)->tp_basicsize);
+  *active = v->valid;
+  return v->values;
+}
+
+
 // The end.

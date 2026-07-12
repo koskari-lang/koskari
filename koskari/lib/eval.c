@@ -144,6 +144,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 #include "eval/eval_state.c"
 #include "eval/eval_utils.c"
 #include "eval/eval_gil.c"
+#include "eval/eval_cache.c"
 
 
 /**
@@ -1147,202 +1148,6 @@ int KosContext_Traverse(
 }
 
 
-/* === Attribute resolution for CALL_ATTR* === */
-
-
-/**
-   True if descr is a plain instance-method descriptor (KosFunction or
-   PyFunction) that we can return without calling __get__.
-*/
-static int is_plain_instance_method(PyObject *descr) {
-  return KosFunction_CheckExact(descr) || PyFunction_Check(descr);
-}
-
-
-/**
-   True if descr has __set__ or __delete__ (data descriptor).
-*/
-static int descr_is_data(PyObject *descr) {
-  PyTypeObject *tp = Py_TYPE(descr);
-  return tp->tp_descr_set != NULL;
-}
-
-
-/**
-   Get instance dict from obj. Returns NULL if no instance dict.
-   Uses _PyObject_GetDictPtr (Python C API) for correct layout handling
-   across versions (e.g. Py_TPFLAGS_MANAGED_DICT, inline values).
-*/
-static PyObject *instance_dict_get(PyObject *obj) {
-  PyObject **dictptr = _PyObject_GetDictPtr(obj);
-  if (! dictptr)
-    return NULL;
-  return *dictptr;
-}
-
-
-/**
-   Resolve attribute by name on an object. Uses cache when provided and
-   valid. When cache is NULL, performs full resolution only.
-
-   :param obj: Object to resolve attribute on (borrowed).
-   :param name: Attribute name (borrowed, PyUnicode).
-   :param cache: Optional per-call-site cache (NULL = always full lookup).
-   :param out: Output: resolved attribute (new ref on success).
-   :return: -1 on error (exception set); 0 = send self (unbound class method);
-     1 = omit self (bound, instance dict, etc.).
-*/
-static int kos_resolve_named_attr(
-    PyObject *obj,
-    PyObject *name,
-    void *cache,
-    PyObject **out) {
-
-  (void) cache;
-
-  PyTypeObject *tp = Py_TYPE(obj);
-
-  /*
-     Mode: CUSTOM_GETATTRIBUTE (fallback)
-     The type overrides __getattribute__ (tp_getattro != PyObject_GenericGetAttr).
-     We cannot safely replicate the type's custom lookup; delegate to
-     PyObject_GetAttr which invokes the type's tp_getattro slot.
-  */
-  if (tp->tp_getattro != PyObject_GenericGetAttr) {
-    *out = PyObject_GetAttr(obj, name);
-    if (! *out)
-      return -1;
-    // return is_plain_instance_method(*out) ? 0 : 1;
-    /*
-      PyObject_GetAttr already performed the type's lookup/binding semantics.
-      Even if the result is a plain function object, it is now just the resolved
-      attribute value and must be called as-is (no implicit self injection).
-    */
-    return 1;
-  }
-
-  /*
-     CACHE CHECK AND INVALIDATION (design/interpreter/attr-lookup-cache.md)
-     Insert here, before resolution below. When cache != NULL:
-     1. Check cache presence — UNCACHED → fall through.
-     2. Check cache validity — type match and type_version match; else fall through.
-     3. Instance shadow check — if instance __dict__ contains name, fall through
-        (instance overrules cached class result). Applies to DIRECT_OBJECT_GUARDED.
-     4. Use cached result if guards pass; else fall through.
-     On fall-through, resolution below runs (data descriptor → instance dict →
-     non-data descriptor → __getattr__). On successful return from resolution,
-     populate cache. On eviction: Py_XDECREF(entry->resolved).
-  */
-
-  PyObject *descr = PyType_Lookup(tp, name);
-
-  /*
-     Mode: DATA_DESCRIPTOR (type lookup)
-     Data descriptors (have __set__ or __delete__) override instance dict.
-     Must call __get__(obj, type) — the value is computed per access (e.g.
-     property). PyType_Lookup already applies MRO precedence.
-  */
-  if (descr && descr_is_data(descr)) {
-    PyObject *res = Py_TYPE(descr)->tp_descr_get(
-        descr, obj, (PyObject *) tp);
-    if (res) {
-      *out = res;
-      return 1;
-    }
-    return -1;
-  }
-
-  /*
-     Mode: INSTANCE_DICT
-     No data descriptor in MRO; check instance __dict__. If the name is present,
-     return it. No descriptor protocol — the value is stored directly. Instance
-     dict shadows class attributes (non-data descriptors) by Python semantics.
-  */
-  {
-    PyObject *dict = instance_dict_get(obj);
-    if (dict) {
-      PyObject *val = PyDict_GetItem(dict, name);
-      if (val) {
-        Py_INCREF(val);
-        *out = val;
-        return 1;
-      }
-    }
-  }
-
-  /*
-     Mode: NON_DATA_DESCRIPTOR / CLASS_ATTRIBUTE (type lookup)
-     Not in instance dict; use class-side attribute. Three cases:
-     (a) Plain instance method (KosFunction, PyFunction): return descriptor
-         without calling __get__. Caller invokes fn(obj, *args) — avoids
-         allocating KosBoundMethod or types.MethodType.
-     (b) Descriptor with tp_descr_get (slot wrapper, staticmethod, classmethod):
-         must call __get__(obj, type); behaviour depends on descriptor.
-     (c) Plain attribute (no __get__): return as-is, INCREF.
-  */
-  if (descr) {
-    if (is_plain_instance_method(descr)) {
-      Py_INCREF(descr);
-      *out = descr;
-      return 0;
-    }
-    if (Py_TYPE(descr)->tp_descr_get != NULL) {
-      PyObject *res = Py_TYPE(descr)->tp_descr_get(
-          descr, obj, (PyObject *) tp);
-      if (res) {
-        *out = res;
-        return 1;
-      }
-      return -1;
-    }
-    Py_INCREF(descr);
-    *out = descr;
-    return 1;
-  }
-
-  /*
-     Mode: __getattr__ (fallback)
-     Attribute not found by standard lookup. If the type defines __getattr__,
-     call it with (name); it is invoked only when normal lookup fails. Raises
-     AttributeError if no __getattr__ or if it does not provide the attribute.
-  */
-  {
-    PyObject *getattr_descr = PyType_Lookup(tp, str_getattr);
-    if (getattr_descr) {
-      PyObject *bound;
-      PyObject *res;
-
-      if (Py_TYPE(getattr_descr)->tp_descr_get != NULL) {
-        bound = Py_TYPE(getattr_descr)->tp_descr_get(
-            getattr_descr, obj, (PyObject *) tp);
-      } else {
-        bound = getattr_descr;
-        Py_INCREF(bound);
-      }
-      if (! bound)
-        return -1;
-      res = PyObject_CallFunctionObjArgs(bound, name, NULL);
-      Py_DECREF(bound);
-      if (res) {
-        *out = res;
-        // return is_plain_instance_method(res) ? 0 : 1;
-        /* __getattr__ returns the final attribute value; call it as-is. */
-        return 1;
-      }
-      return -1;
-    }
-  }
-
-  /*
-     Not found in any mode. Raise AttributeError per Python semantics.
-  */
-  PyErr_Format(PyExc_AttributeError,
-      "'%.100s' object has no attribute '%R'",
-      tp->tp_name, name);
-  return -1;
-}
-
-
 /* === Frame namespace helpers (for VAR_* opcodes) === */
 
 
@@ -1949,6 +1754,9 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 /*
   Includes the implementation of all opcodes from the opcode/ directory.
 */
+/* The THEEND barrier handler reports the same fault as an off-the-end fetch;
+   the reporter is defined below (with the dispatch loop). */
+static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #define KOS_OP_HANDLER(name) \
   KOS_OP_INLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
@@ -2619,13 +2427,36 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
 
 
 
+/* Internal-invariant safety net. Distinct from user-input validation, which is
+   always on and scrubbed up front: these guards catch koskari's own
+   state-machine bugs, in code the implementation alone mutates. They are off by
+   default -- past assembly the evaluator trusts its own state. Build with
+   -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an internal
+   misfire into a clean diagnostic while tracking down the cause. */
+#ifndef KOS_EVAL_SAFETYNET
+#define KOS_EVAL_SAFETYNET 0
+#endif
+
+#if KOS_EVAL_SAFETYNET
+/* es->code can be transiently NULL only through an internal bug (e.g. a tail
+   reset that failed to retarget it); guard the fetch against dereferencing it. */
+# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)                         \
+    do { if (unlikely(! (code))) goto on_bad; } while (0)
+#else
+# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)  ((void) 0)
+#endif
+
+/* No per-opcode PC bounds check: every code object ends in a THEEND barrier
+   (appended in KosCode_New), and jump targets are validated in-bounds, so
+   straight-line dispatch always hits a terminal RETURN or THEEND before pc
+   could reach code_len -- arr[pc] is provably valid. THEEND faults exactly as
+   an off-the-end fetch would. The es->code null check is an internal-invariant
+   guard, gated behind KOS_EVAL_SAFETYNET (off by default). */
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
     KosCode *_kos_code = KosEvalState_CODE(es);                            \
     uint32_t _kos_pc = KosEvalState_PC(es);                                \
-    if (unlikely(! _kos_code || _kos_pc >= KosCode_CODE_LEN(_kos_code))) { \
-      goto on_bad;                                                         \
-    }                                                                      \
+    KOS_EVAL_SAFETYNET_NULLCODE(_kos_code, on_bad);                        \
     KosOp _kos_insn = KosCode_CODE(_kos_code)[_kos_pc];                    \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
          (unsigned) _kos_pc, kos_opcode_name(_kos_insn.op),                \
@@ -2744,9 +2575,11 @@ cg_poll:
   #include "opcodes.incl"
   #undef OP
 
+#if KOS_EVAL_SAFETYNET
 cg_pc_bounds_error:
   kos_eval_report_pc_bounds_error(es);
   return EVAL_FATAL();
+#endif
 
 cg_handle_op_result: {
   KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);

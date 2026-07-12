@@ -53,6 +53,7 @@ static PyObject *_str_anon = NULL;
 
 typedef struct {
   KosOpStyle style;
+  uint8_t cache;          /* count of per-site cache slots this opcode wants */
   KosExtraSchema extra;
 } OpStyleEntry;
 
@@ -62,10 +63,10 @@ typedef struct {
 #define OP_INNER(N, ...)  OP_CONCAT(OP_, N)(__VA_ARGS__)
 #define OP(...)  OP_INNER(OP_NARGS(__VA_ARGS__, 7, 6, 5, 4, 3, 2, 1), __VA_ARGS__)
 
-#define OP_2(name, style)  { KOSTYLE_##style, { \
+#define OP_3(name, cache, style)  { KOSTYLE_##style, (cache), { \
     KOSTYLE_NOARG, KOSTYLE_NOARG, \
     KOSTYLE_NOARG, KOSTYLE_NOARG } },
-#define OP_6(name, EXTRA, f0, f1, f2, f3)  { KOSTYLE_EXTRA, { \
+#define OP_7(name, cache, EXTRA, f0, f1, f2, f3)  { KOSTYLE_EXTRA, (cache), { \
     KOSTYLE_##f0, KOSTYLE_##f1, \
     KOSTYLE_##f2, KOSTYLE_##f3 } },
 
@@ -74,8 +75,8 @@ static const OpStyleEntry opcode_styles[] = {
 };
 
 #undef OP
-#undef OP_2
-#undef OP_6
+#undef OP_3
+#undef OP_7
 #undef OP_INNER
 #undef OP_CONCAT
 #undef OP_NARGS
@@ -128,6 +129,15 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op) {
   }
   return (KosExtraSchema){ KOSTYLE_NOARG, KOSTYLE_NOARG,
       KOSTYLE_NOARG, KOSTYLE_NOARG };
+}
+
+
+uint8_t kos_opcode_cache_count(KosOpCode op) {
+
+  if (op <= KOS_OP_THEEND) {
+    return opcode_styles[op].cache;
+  }
+  return 0;
 }
 
 
@@ -602,6 +612,18 @@ static PyObject *code_get_cpool(PyObject *self, void *_unused) {
 }
 
 
+static PyObject *code_get_caches(PyObject *self, void *_unused) {
+
+  return PyBool_FromLong(KosCode_CACHES(self) != 0);
+}
+
+
+static PyObject *code_get_cache_slots(PyObject *self, void *_unused) {
+
+  return PyLong_FromUnsignedLong(KosCode_CACHE_LEN(self));
+}
+
+
 static PyGetSetDef code_getset[] = {
 
   { "arena", code_get_arena, NULL,
@@ -653,6 +675,14 @@ static PyGetSetDef code_getset[] = {
 
   { "uses_fast", code_get_uses_fast, NULL,
     "bool; whether this code uses fast-slot opcodes at root namespace scope",
+    NULL },
+
+  { "caches", code_get_caches, NULL,
+    "bool; whether per-site opcode caches are enabled for this code (gate)",
+    NULL },
+
+  { "cache_slots", code_get_cache_slots, NULL,
+    "int; number of per-site cache slots allocated on this code",
     NULL },
 
   { "constants_pool", code_get_cpool, NULL,
@@ -712,6 +742,19 @@ static PyObject *code_m_constant(PyObject *self, PyObject *index) {
 }
 
 
+/* The Python-visible instruction count: the real length, hiding the appended
+   THEEND end-of-code barrier. Every Python-facing accessor (length, oparg,
+   position) bounds against this so the barrier is invisible; internal callers
+   use the KosCode_CODE_LEN macro (full length, barrier included). */
+static uint32_t code_visible_len(PyObject *self) {
+  uint32_t len = KosCode_CODE_LEN(self);
+  if (len && KosCode_GET_OP(self, len - 1) == KOS_OP_THEEND) {
+    len--;
+  }
+  return len;
+}
+
+
 static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
 
   if (! PyLong_Check(index)) {
@@ -721,7 +764,7 @@ static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
   }
 
   long i = PyLong_AsLong(index);
-  uint32_t l = KosCode_CODE_LEN(self);
+  uint32_t l = code_visible_len(self);
 
   if (i < 0 || (uint32_t) i >= l) {
     PyErr_Format(PyExc_IndexError, "Code oparg index out of"
@@ -745,7 +788,7 @@ static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
 
 static PyObject *code_m_length(PyObject *self) {
 
-  return PyLong_FromLong(KosCode_CODE_LEN(self));
+  return PyLong_FromLong(code_visible_len(self));
 }
 
 
@@ -758,7 +801,7 @@ static PyObject *code_m_position(PyObject *self, PyObject *index) {
   }
 
   long i = PyLong_AsLong(index);
-  uint32_t l = KosCode_CODE_LEN(self);
+  uint32_t l = code_visible_len(self);
 
   if (i < 0 || (uint32_t) i >= l) {
     PyErr_Format(PyExc_IndexError, "Code position index out of"
@@ -878,7 +921,17 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
   (void) unused;
 
   uint32_t code_len = KosCode_CODE_LEN(self);
-  PyObject *label_map = collect_label_map(self, code_len);
+
+  /* Strip the trailing THEEND barrier: it is appended fresh at assembly, so it
+     must not appear in the softened stream (KosCode_New re-adds it, and it is
+     rejected as user input by code_collect). collect_label_map also rejects
+     THEEND, so bound its scan to the body too. */
+  uint32_t body_len = code_len;
+  if (body_len && KosCode_GET_OP(self, body_len - 1) == KOS_OP_THEEND) {
+    body_len--;
+  }
+
+  PyObject *label_map = collect_label_map(self, body_len);
 
   if (! label_map) {
     return NULL;
@@ -894,7 +947,7 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
   uint16_t prev_line = 0;
   uint16_t prev_col = 0;
 
-  for (uint32_t i = 0; i < code_len; i++) {
+  for (uint32_t i = 0; i < body_len; i++) {
     /* If this instruction index is a jump target, emit a label pseudo-op */
     {
       PyObject *key_i = PyLong_FromUnsignedLong((unsigned long) i);
@@ -1353,7 +1406,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
     }
 
     long lop = PyLong_AsLong(a);
-    if (lop < (long) KOS_OP_NOOP || lop > (long) KOS_OP_THEEND) {
+    if (lop < (long) KOS_OP_NOOP || lop >= (long) KOS_OP_THEEND) {
+      /* THEEND is the end-of-code barrier we append ourselves; it is not a
+         valid user-supplied instruction. */
       PyErr_Format(PyExc_RuntimeError, "Code instruction undefined %R:%R",
                    a, b);
       goto failure;
@@ -1419,7 +1474,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
     di++;
   }
 
-  coll->code_len = di;
+  /* Reserve one extra slot for the THEEND end-of-code barrier, appended by
+     code_emit. Every code object carries it as its final instruction. */
+  coll->code_len = di + 1;
 
   /* Pass 2: Intern constants (identity-based dedup) and build extra rows.
      Walk input again; for each surviving instruction, process CONST/VAR/EXTRA
@@ -1744,6 +1801,8 @@ static int code_emit(
   uint32_t pi = 0;
   uint32_t extra_idx = 0;
   uint16_t last_line = 0, last_col = 0;
+  uint16_t next_slot = 0;
+  int cache_on = (KosCode_FLAGS(self) & KOS_CODE_CACHE) != 0;
 
   /* Walk input; di = output instruction index, pi = position entry index */
   for (Py_ssize_t i = 0; i < instr_l; i++) {
@@ -1768,6 +1827,18 @@ static int code_emit(
 
     code[di].op = (uint16_t) op;
     code[di].arg = 0;
+
+    /* Reserve this site's cache slot run. A cache-consuming opcode gets the
+       next free index; the count_cache_slots pre-pass sized the trailing
+       array to match. When the cache is gated off (cache_on == 0) no site
+       gets a slot. All opcodes request 0 today, so every site stays UNSET. */
+    uint8_t ncache = cache_on ? kos_opcode_cache_count(op) : 0;
+    if (ncache) {
+      code[di].cache = next_slot;
+      next_slot += ncache;
+    } else {
+      code[di].cache = KOS_CACHE_UNSET;
+    }
 
     /* Resolve arg from collect-phase data: cpool index, label pc, or raw */
     if (style == KOSTYLE_CONST) {
@@ -1824,6 +1895,26 @@ static int code_emit(
     }
 
     di++;
+  }
+
+  /* Append the THEEND end-of-code barrier into the slot code_collect reserved
+     (code_len = di + 1). Every code object ends here, so a program counter that
+     walks off the end faults at THEEND instead of overrunning the array. It is
+     ours alone: users cannot supply THEEND (rejected in code_collect), soften
+     strips it, and it requests no cache slot. */
+  code[di].op = (uint16_t) KOS_OP_THEEND;
+  code[di].arg = 0;
+  code[di].cache = KOS_CACHE_UNSET;
+  di++;
+
+  /* The assigned slot run must exactly fill the trailing array that
+     count_cache_slots sized at allocation. A mismatch is an assembler bug
+     that would let a consumer index out of bounds. */
+  if (next_slot != KosCode_CACHE_LEN(self)) {
+    PyErr_Format(PyExc_RuntimeError, "cache slot mismatch: assigned %u,"
+                 " allocated %u", (unsigned) next_slot,
+                 (unsigned) KosCode_CACHE_LEN(self));
+    return -1;
   }
 
   /* Transfer cpool: INCREF each item, store in pre-allocated array */
@@ -2655,18 +2746,19 @@ static PyObject *code_new(
   PyObject *name = NULL;
   PyObject *filename = NULL;
   int protect = 1;
+  int cache = 1;
 
   static char *keywords[] = {
-    "nspec", "instr", "name", "filename", "protect", NULL,
+    "nspec", "instr", "name", "filename", "protect", "cache", NULL,
   };
 
-  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OO|OO$p:Code", keywords,
+  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OO|OO$pp:Code", keywords,
                                     &nspec, &instr, &name, &filename,
-                                    &protect)) {
+                                    &protect, &cache)) {
     return NULL;
   }
 
-  return KosCode_New(nspec, instr, name, filename, protect);
+  return KosCode_New(nspec, instr, name, filename, protect, cache);
 }
 
 
@@ -2676,7 +2768,36 @@ static PyObject *code_new(
    FunctionSpecs, READONLY nspec name tuples, the synthesized faux),
    so a reference cycle cannot route through it. Cycles form through
    KosFunction, which stays GC-tracked.
+
+   The trailing per-site cache slots do not change this while empty (the
+   framework state): they hold no references. Once a consumer stores owned
+   payloads (e.g. a cached KosFunction), a cycle could route KosCode -> slot
+   -> KosFunction -> code -> KosCode, and this invariant must be revisited --
+   either GC-track KosCode with a tp_traverse/tp_clear that covers the slot
+   array, or restrict cached payloads to objects that cannot close a cycle.
 */
+
+
+/**
+   Release the owned references held by one cache slot, dispatching on its
+   kind. An empty slot (KOS_CACHE_EMPTY -- the framework state) owns nothing.
+   This same per-kind dispatch will drive tp_traverse / tp_clear once KosCode
+   becomes GC-tracked at method-cache activation.
+*/
+static void cache_slot_release(KosCacheSlot *slot) {
+
+  switch (slot->kind) {
+  case KOS_CACHE_EMPTY:
+    break;
+  case KOS_CACHE_METHOD:
+    Py_XDECREF(slot->u.method.type);
+    Py_XDECREF(slot->u.method.resolved);
+    break;
+  case KOS_CACHE_FIELD:
+    /* ref-free: a borrowed guard type and an integer index. */
+    break;
+  }
+}
 
 
 static void code_dealloc(PyObject *self) {
@@ -2720,6 +2841,15 @@ static void code_dealloc(PyObject *self) {
   KosCode_EXTENTS(self) = NULL;
   KosCode_TOP_EXTENT_ID(self) = NULL;
 
+  /* Drop owned references held by cache slots, per-kind. The slots
+     themselves are part of the object allocation and are released by
+     tp_free; only the owned refs inside a live layout need dropping.
+     Framework slots are all KOS_CACHE_EMPTY, so this is a no-op until a
+     consumer populates them. */
+  for (uint16_t i = KosCode_CACHE_LEN(self); i--; ) {
+    cache_slot_release(&KosCode_CACHE(self)[i]);
+  }
+
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -2739,7 +2869,7 @@ PyTypeObject KosCodeType = {
 
   "koskari.lib.Code",
   sizeof(KosCode),
-  0,
+  sizeof(KosCacheSlot),   /* tp_itemsize: trailing per-site cache slots */
 
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_repr = code_repr,
@@ -2755,12 +2885,48 @@ PyTypeObject KosCodeType = {
 /* === Constructor === */
 
 
+/**
+   Sum the per-site cache slots requested across a softened instruction
+   sequence. Each instruction's opcode declares how many slots it wants via
+   kos_opcode_cache_count; the total sizes the KosCode's trailing slot array.
+   Pseudo-ops (LABEL/POSITION) request zero, so counting the whole sequence
+   matches the assignment pass in code_emit. All opcodes request 0 today.
+
+   :param instr: fast-sequence of (op, arg) pairs
+   :param out: receives the slot total on success
+   :return: 0 on success; -1 (with exception) if the total would exceed the
+     index range (KOS_CACHE_UNSET is reserved as the unset sentinel)
+*/
+static int count_cache_slots(PyObject *instr, uint16_t *out) {
+
+  Py_ssize_t n = PySequence_Fast_GET_SIZE(instr);
+  size_t total = 0;
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *pair = PySequence_Fast_GET_ITEM(instr, i);
+    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
+    KosOpCode op = (KosOpCode) PyLong_AsLong(a);
+    total += kos_opcode_cache_count(op);
+  }
+
+  if (total >= KOS_CACHE_UNSET) {
+    PyErr_Format(PyExc_OverflowError, "code requests %zu cache slots, over"
+                 " the per-object limit of %u", total, KOS_CACHE_UNSET - 1);
+    return -1;
+  }
+
+  *out = (uint16_t) total;
+  return 0;
+}
+
+
 PyObject *KosCode_New(
     PyObject *nspec,
     PyObject *instr,
     PyObject *name,
     PyObject *filename,
-    int protect) {
+    int protect,
+    int cache) {
 
   if (! filename || filename == Py_None) {
     filename = _str_anon;
@@ -2793,7 +2959,19 @@ PyObject *KosCode_New(
     return NULL;
   }
 
-  PyObject *self = PyObject_New(PyObject, &KosCodeType);
+  /* Pragma gate: when caching is off for this code object, allocate no slots
+     and leave every instruction's index unset. Otherwise size the trailing
+     array to the summed per-opcode counts. */
+  uint16_t cache_slots = 0;
+  if (cache && count_cache_slots(instr, &cache_slots)) {
+    Py_DECREF(instr);
+    return NULL;
+  }
+
+  /* Var-length: the object allocation includes cache_slots trailing
+     KosCacheSlot entries, zeroed by tp_alloc. Zero = UNCACHED, so the table
+     needs no init pass. ob_size holds the count (KosCode_CACHE_LEN). */
+  PyObject *self = PyType_GenericAlloc(&KosCodeType, (Py_ssize_t) cache_slots);
   if (! self) {
     Py_DECREF(instr);
     return NULL;
@@ -2802,7 +2980,8 @@ PyObject *KosCode_New(
   ((KosCode *) self)->weakreflist = NULL;
   KosCode_ARENA(self) = NULL;
 
-  KosCode_FLAGS(self) = 0;
+  /* Record the cache gate so code_emit assigns slots only when enabled. */
+  KosCode_FLAGS(self) = cache ? KOS_CODE_CACHE : 0;
 
   Py_INCREF(name);
   KosCode_NAME(self) = name;

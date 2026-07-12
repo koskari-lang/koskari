@@ -132,24 +132,39 @@ typedef enum KosCodeFlag {
   /** unified block is page-aligned and mprotect(PROT_READ)-sealed;
       teardown must unseal before freeing */
   KOS_CODE_PROTECTED = 0x04,
+  /** per-site opcode caches are enabled for this code object (pragma gate);
+      when unset, no cache slots are allocated and every index stays unset */
+  KOS_CODE_CACHE = 0x08,
 } KosCodeFlag;
 
 
 /* === KosOp: single instruction === */
 
 
+/** Cache-index value meaning "no slot reserved for this instruction".
+    Every instruction defaults to this; the assembler overwrites it only for
+    cache-consuming opcodes when caching is enabled for the code object.
+    See design/interpreter/attr-lookup-cache.md. */
+#define KOS_CACHE_UNSET 0xFFFF
+
+
 /**
-   A single bytecode instruction: 4 bytes total.
-   Opcode and argument are both 16-bit unsigned integers.
+   A single bytecode instruction: 6 bytes total.
+   Opcode, argument, and per-site cache index are all 16-bit unsigned
+   integers. ``cache`` is the index of this site's reserved cache slot on the
+   owning KosCode, or KOS_CACHE_UNSET when the site has no slot. The index is
+   assigned at assembly and never serialized; soften emits only (op, arg).
 */
 typedef struct KosOp {
   uint16_t op;    /* KosOpCode */
   uint16_t arg;   /* argument value */
+  uint16_t cache; /* per-site cache slot index, or KOS_CACHE_UNSET */
 } KosOp;
 
 
-#define KosOp_OP(insn)   (((KosOp *) (insn))->op)
-#define KosOp_ARG(insn) (((KosOp *) (insn))->arg)
+#define KosOp_OP(insn)    (((KosOp *) (insn))->op)
+#define KosOp_ARG(insn)   (((KosOp *) (insn))->arg)
+#define KosOp_CACHE(insn) (((KosOp *) (insn))->cache)
 
 
 /* === KosPosition: position change entry === */
@@ -207,6 +222,105 @@ typedef struct KosExtentDesc {
 } KosExtentDesc;
 
 
+/* === Per-site cache slots === */
+
+
+/**
+   The kind of a per-site cache slot: the top-level discriminant of the
+   KosCacheSlot tagged union. KOS_CACHE_EMPTY (zero) is an unused slot -- the
+   state of every freshly zeroed slot -- and owns nothing. Each other kind
+   names one specialized layout for one caching use case. Kinds never
+   sub-branch: two different uses do not share or fork a layout, they get
+   distinct kinds. Cleanup and GC traversal switch on this value.
+   See design/interpreter/attr-lookup-cache.md.
+*/
+typedef enum KosCacheKind {
+  KOS_CACHE_EMPTY = 0,   /* zeroed slot: no layout, no owned refs, no cleanup */
+  KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
+  KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
+} KosCacheKind;
+
+
+/**
+   Internal resolution mode of the KOS_CACHE_METHOD layout. These are not
+   separate slot kinds: they share the one method layout and only select its
+   fast-path behavior. See the resolver design.
+*/
+typedef enum KosMethodMode {
+  KOS_METHOD_DATA_DESCRIPTOR = 0,     /* call resolved->__get__ on each hit */
+  KOS_METHOD_DIRECT_OBJECT_GUARDED,   /* class-side object, instance-shadow checked */
+  KOS_METHOD_INSTANCE_DICT,           /* negative fact: value lives in instance dict */
+  KOS_METHOD_GENERIC_LOOKUP,          /* no shortcut; full resolution */
+  KOS_METHOD_MEGAMORPHIC,             /* churn bypass: skip guard, never populate */
+} KosMethodMode;
+
+
+/**
+   Access mechanism of the KOS_CACHE_FIELD layout. Like the method modes,
+   these are not separate slot kinds -- they share the one field layout and
+   select how ``index`` is interpreted for load / store / delete. The same
+   (mode, index) serves all three operations at any site for this type+name.
+*/
+typedef enum KosFieldMode {
+  KOS_FIELD_GENERIC = 0,      /* no cacheable location; PyObject_GetAttr/SetAttr */
+  KOS_FIELD_INSTANCE_VALUE,   /* inline managed-dict values; index = value slot */
+  KOS_FIELD_SLOT,             /* __slots__ member; index = byte offset from obj */
+  KOS_FIELD_DICT_HINT,        /* materialized instance __dict__; index = keys hint */
+  KOS_FIELD_MEGAMORPHIC,      /* churn bypass: skip guard, never populate */
+} KosFieldMode;
+
+
+/**
+   One per-site cache slot: a fixed-size tagged union, like KosDynNode. The
+   ``kind`` discriminant selects the active union member -- the specialized
+   layout for that kind. A zeroed slot is KOS_CACHE_EMPTY. All slots share
+   one size (the largest layout), so the trailing array on a KosCode is a
+   flat, index-addressable array. Never read a union member without first
+   checking ``kind``; owned references live inside the per-kind layouts, and
+   cleanup and GC traversal dispatch on ``kind``.
+
+   Layouts are specialized per use case and discriminated only here, at the
+   top. A future field-accessor, jump-target, or exception-type cache adds
+   its own kind and its own union member; it never reshapes an existing one.
+   See design/interpreter/attr-lookup-cache.md.
+*/
+typedef struct KosCacheSlot {
+  KosCacheKind kind;         /* discriminant; KOS_CACHE_EMPTY (0) = unused */
+
+  union {
+    /* KOS_CACHE_METHOD: attribute/method resolution. ``type`` and
+       ``resolved`` are owned strong refs; owning the guard type keeps the
+       identity check sound even where a dict-version is unavailable.
+       ``type_version`` guards against class-dict mutation; ``mode`` selects
+       the resolver fast path. ``resolved`` is NULL for modes that cache only
+       a negative fact (INSTANCE_DICT, GENERIC_LOOKUP). */
+    struct {
+      PyTypeObject *type;      /* guard receiver type; owned */
+      uint64_t type_version;   /* guard: type dict version at populate */
+      KosMethodMode mode;      /* which resolution behavior */
+      uint8_t misses;          /* consecutive guard misses; drives the bypass */
+      PyObject *resolved;      /* cached descriptor/object; owned, may be NULL */
+    } method;
+
+    /* KOS_CACHE_FIELD: instance-attribute storage location. The payload is a
+       plain ``index`` (values slot / byte offset / dict-key hint) whose
+       meaning is set by ``mode``; there are NO owned references, so the
+       teardown arm for this kind is a no-op. ``type`` is a BORROWED guard --
+       the version tag is a monotonic counter (a reused type address gets a
+       fresh, non-matching version) and obj keeps its type alive during the
+       access, so borrowing is sound and keeps the slot ref-free. The same
+       (mode, index) serves load, store, and delete. */
+    struct {
+      PyTypeObject *type;      /* guard receiver type; borrowed */
+      uint64_t type_version;   /* guard: type dict version at populate */
+      KosFieldMode mode;       /* which storage mechanism */
+      uint8_t misses;          /* consecutive guard misses; drives the bypass */
+      uint32_t index;          /* value slot / byte offset / dict-key hint */
+    } field;
+  } u;
+} KosCacheSlot;
+
+
 /* === KosCode: bytecode object === */
 
 
@@ -214,7 +328,7 @@ extern PyTypeObject KosCodeType;
 
 
 struct KosCode {
-  PyObject_HEAD
+  PyObject_VAR_HEAD     /* ob_size = count of trailing KosCacheSlot entries */
 
   PyObject *name;       /* function/expression name (PyUnicode) */
   PyObject *filename;   /* source filename (PyUnicode) */
@@ -264,6 +378,9 @@ struct KosCode {
    :param filename: source filename (PyUnicode or NULL)
    :param protect: nonzero to page-align the unified block and seal it
      read-only with mprotect; zero for a plain writable malloc block
+   :param cache: nonzero to enable per-site opcode caches (allocate the
+     trailing cache-slot array and assign slot indices); zero gates them off,
+     so no slots are allocated and every instruction's index stays unset
 
    :return: new KosCode reference, or NULL on error
 */
@@ -272,7 +389,8 @@ PyObject *KosCode_New(
     PyObject *instr,
     PyObject *name,
     PyObject *filename,
-    int protect);
+    int protect,
+    int cache);
 
 
 /* === Accessors === */
@@ -388,6 +506,20 @@ const char *kos_opcode_name(KosOpCode op);
 KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
 
 
+/**
+   Get the count of per-site cache slots an opcode requests. Zero means the
+   opcode is not a cache consumer. The initial framework landing returns 0
+   for every opcode; individual opcodes opt in over time. Currently 0 or 1
+   in practice, but a small count is supported so a single opcode may reserve
+   a contiguous run of slots (see design/interpreter/attr-lookup-cache.md).
+
+   :param op: opcode enum value
+
+   :return: number of cache slots the opcode wants (0 for non-consumers)
+*/
+uint8_t kos_opcode_cache_count(KosOpCode op);
+
+
 /* === Accessor macros === */
 
 
@@ -402,6 +534,9 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
 
 #define KosCode_PROTECTED(c)                    \
   (KosCode_FLAGS(c) & KOS_CODE_PROTECTED)
+
+#define KosCode_CACHES(c)                       \
+  (KosCode_FLAGS(c) & KOS_CODE_CACHE)
 
 #define KosCode_NAME(c)                         \
   (((KosCode *) c)->name)
@@ -468,6 +603,18 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
 
 #define KosCode_EXTRAS(c)                       \
   (((KosCode *) c)->extras)
+
+/* Per-site cache slots: a zeroed trailing array on the KosCode allocation.
+   The count is Py_SIZE (set at construction from the summed per-opcode cache
+   counts); the slots begin immediately after the struct. */
+#define KosCode_CACHE_LEN(c)                    \
+  ((uint16_t) Py_SIZE((PyObject *) (c)))
+
+#define KosCode_CACHE(c)                        \
+  ((KosCacheSlot *) (((KosCode *) (c)) + 1))
+
+#define KosCode_GET_SLOT(c, i)                  \
+  (KosCode_CACHE(c)[i])
 
 #define KosCode_CheckExact(obj)                         \
   ((obj) && ((obj)->ob_type == &KosCodeType))

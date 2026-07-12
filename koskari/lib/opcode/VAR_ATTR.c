@@ -28,6 +28,31 @@ KOS_OP_HANDLER(VAR_ATTR) {
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)
     return EVAL_RAISE();
+
+  /* Per-site storage-location cache: a SLOT hit reads the __slots__ member,
+     an INSTANCE_VALUE hit the inline attribute value, both directly; GENERIC,
+     unset, and materialized instances fall through to PyObject_GetAttr. */
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  if (cache_ix != KOS_CACHE_UNSET) {
+    KosCacheSlot *slot = &KosCode_CACHE(code)[cache_ix];
+    uint32_t off;
+    KosFieldMode m = kos_resolve_attr_location(obj, attr_name, slot, &off);
+    PyObject *hit = NULL;
+    if (m == KOS_FIELD_SLOT)
+      hit = field_slot_load(obj, off);
+#if PY_MINOR_VERSION >= 11
+    else if (m == KOS_FIELD_INSTANCE_VALUE)
+      hit = field_instance_value_load(obj, off);
+#endif
+    if (hit) {
+      Py_INCREF(hit);
+      Py_DECREF(obj);
+      return kos_op_result_PUSH(es, hit);
+    }
+    /* unset/materialized: fall through (AttributeError, __getattr__,
+       materialized dict, or a shadowed class attribute). */
+  }
+
   PyObject *val = PyObject_GetAttr(obj, attr_name);
   Py_DECREF(obj);
   if (! val)

@@ -47,8 +47,15 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
       return EVAL_RAISE();
   }
 
+  /* Per-site cache: this opcode requests one slot (opcodes.incl). The index
+     is unset when the site got no slot (cache gated off for the code object).
+     The resolver treats a NULL slot as an uncached lookup. */
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
+      ? NULL : &KosCode_CACHE(code)[cache_ix];
+
   PyObject *resolved;
-  int send_self = kos_resolve_named_attr(obj, attr_name, NULL, &resolved);
+  int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
   if (send_self < 0)
     return EVAL_RAISE();
 

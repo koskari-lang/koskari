@@ -14,14 +14,19 @@
 */
 
 /**
-   THEEND: arg unused. End-of-code sentinel; has no runtime implementation.
-   If execution reaches THEEND, raise a hardcoded unimplemented error.
+   THEEND: arg unused. The end-of-code barrier appended to every code object
+   during assembly (KosCode_New). Reaching it means the program counter walked
+   off the end -- code that failed to hit a terminal RETURN -- so it faults
+   exactly as a real off-the-end fetch does: a SystemError and a hard
+   KOS_RES_FATAL. Its presence is what lets the dispatch loop omit a per-opcode
+   PC bounds check. Users cannot supply THEEND (rejected in code_collect); we
+   are its only source.
 */
 
 KOS_OP_HANDLER(THEEND) {
   (void) insn;
-  PyErr_SetString(PyExc_RuntimeError, "THEEND has no runtime implementation");
-  return EVAL_RAISE();
+  kos_eval_report_pc_bounds_error(es);
+  return EVAL_FATAL();
 }
 
 

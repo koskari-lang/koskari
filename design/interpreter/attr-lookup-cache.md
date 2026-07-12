@@ -5,22 +5,29 @@ used by CALL_ATTR, CALL_ATTR_NAMES, and CALL_ATTR_STAR. It separates
 **resolution** (finding the attribute) from **invocation** (calling it), and
 defines a per-call-site cache to accelerate repeated lookups.
 
-**Status (2026-07-11):** Phases 1 and 2 are implemented — the resolver lives
-in `eval.c` and the CALL_ATTR* family calls it with `cache = NULL`. Phase 3
-(the cache itself) is the open work; the *Per-Site Cache Table* section
-below records the agreed structure and allocation design, which supersedes
-the older opcode-metadata sketch. Since compiler commits `58f21bd3` and
-`27381299`, implicit dotted calls `(c.bump args)` route through the fused
-`CALL_FAST_ATTR*` opcodes, so this cache now sits on the hot path of every
-idiomatic method call.
+**Status (2026-07-12):** Implemented and active. The per-site cache framework
+(`KosCacheSlot` tagged union, widened `KosOp`, trailing slot array on
+`KosCode`, the two pragmas) is in place, and two cache families consume it:
 
-The attribute-*read* opcodes (`FAST_ATTR`, `VAR_ATTR`) are also intended
-consumers: they currently use bare `PyObject_GetAttr` and would share the
-resolver, the table, and the entry form. The INSTANCE_DICT mode below exists
-primarily for them (`self.x` reads).
+- **Method cache** (`KOS_CACHE_METHOD`) — the CALL_ATTR* family resolves the
+  callable through the cache. Modes per the *Cached Modes* section, plus a
+  `KOS_METHOD_MEGAMORPHIC` churn bypass. Since compiler commits `58f21bd3`
+  and `27381299`, implicit dotted calls `(c.bump args)` route through the
+  fused `CALL_FAST_ATTR*` opcodes, so this cache sits on the hot path of
+  every idiomatic method call.
+- **Field cache** (`KOS_CACHE_FIELD`) — the attribute read/write opcodes
+  (`FAST_ATTR`, `FAST_ATTR_STORE`, `VAR_ATTR`, `VAR_ATTR_STORE`) resolve the
+  *storage location* through the cache: a `__slots__` member offset (SLOT,
+  all versions) or an inline managed-dict value index (INSTANCE_VALUE,
+  3.11+). See *Attribute-storage (field) cache* below.
+
+The *Per-Site Cache Table* section is authoritative for the shared mechanism;
+the two family sections describe what each stores and how it guards.
 
 **See also:** [OPCODES.md](../OPCODES.md) (CALL_ATTR* opcodes),
-[vector-call.md](vector-call.md) (call conventions).
+[vector-call.md](vector-call.md) (call conventions),
+[concepts/opcode-caching.md](../../docs/reference/concepts/opcode-caching.md)
+is the user-facing summary (behavior and pragmas, no internals).
 
 
 ## Goals
@@ -174,32 +181,81 @@ return a sentinel (e.g. 0) that never matches.
 ```
 
 
-## Cache Entry Structure
+## Cache Slot Structure
+
+A cache slot is a **tagged union**, in the same shape as `KosDynNode`: one
+`kind` discriminant selects the active union member, which is a layout
+**specialized to one caching use case**. All slots share a single size (the
+largest layout), so the trailing array on a KosCode is flat and
+index-addressable. `KOS_CACHE_EMPTY` (zero) is an unused slot -- the state of
+every freshly zeroed slot -- and owns nothing.
 
 ```c
-typedef enum {
-  KOS_ATTR_CACHE_UNCACHED,        /* zero: a freshly-allocated slot is valid */
-  KOS_ATTR_CACHE_DATA_DESCRIPTOR,
-  KOS_ATTR_CACHE_DIRECT_OBJECT_GUARDED,
-  KOS_ATTR_CACHE_INSTANCE_DICT,
-  KOS_ATTR_CACHE_GENERIC_LOOKUP,
-} KosAttrCacheMode;
+typedef enum KosCacheKind {
+  KOS_CACHE_EMPTY = 0,   /* zeroed slot: no layout, no owned refs, no cleanup */
+  KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
+  KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
+  /* future: KOS_CACHE_JUMP, KOS_CACHE_EXCEPTION, ... */
+} KosCacheKind;
 
-typedef struct {
-  PyTypeObject *type;        /* Guard: receiver type; NULL = uncached */
-  uint64_t type_version;     /* Guard: must match type's current version */
-  KosAttrCacheMode mode;     /* Tag; family-local (see table section) */
-  PyObject *resolved;        /* Descriptor or class object; owned ref when set */
-} KosAttrCacheEntry;
+typedef enum KosMethodMode {
+  KOS_METHOD_DATA_DESCRIPTOR = 0,     /* call resolved->__get__ on each hit */
+  KOS_METHOD_DIRECT_OBJECT_GUARDED,   /* class-side object, instance-shadow checked */
+  KOS_METHOD_INSTANCE_DICT,           /* negative fact: value in instance dict */
+  KOS_METHOD_GENERIC_LOOKUP,          /* no shortcut; full resolution */
+  KOS_METHOD_MEGAMORPHIC,             /* churn bypass: skip guard, never populate */
+} KosMethodMode;
+
+typedef enum KosFieldMode {
+  KOS_FIELD_GENERIC = 0,      /* no cacheable location; PyObject_GetAttr/SetAttr */
+  KOS_FIELD_INSTANCE_VALUE,   /* inline managed-dict values; index = value slot */
+  KOS_FIELD_SLOT,             /* __slots__ member; index = byte offset from obj */
+  KOS_FIELD_DICT_HINT,        /* materialized instance __dict__; index = keys hint */
+  KOS_FIELD_MEGAMORPHIC,      /* churn bypass: skip guard, never populate */
+} KosFieldMode;
+
+typedef struct KosCacheSlot {
+  KosCacheKind kind;           /* discriminant; KOS_CACHE_EMPTY (0) = unused */
+  union {
+    struct {                   /* KOS_CACHE_METHOD */
+      PyTypeObject *type;      /* guard receiver type; owned */
+      uint64_t type_version;   /* guard: type dict version at populate */
+      KosMethodMode mode;      /* which resolution behavior */
+      PyObject *resolved;      /* cached descriptor/object; owned, may be NULL */
+    } method;
+    struct {                   /* KOS_CACHE_FIELD -- ref-free */
+      PyTypeObject *type;      /* guard receiver type; borrowed */
+      uint64_t type_version;   /* guard: type dict version at populate */
+      KosFieldMode mode;       /* which storage mechanism */
+      uint8_t misses;          /* consecutive guard misses; drives the bypass */
+      uint32_t index;          /* value slot / byte offset / dict-key hint */
+    } field;
+  } u;
+} KosCacheSlot;
 ```
 
-This is the **attr-family variant of a tagged union**. The per-site table
-(next section) stores fixed-size slots; the mode/tag byte discriminates, and
-each consuming opcode family owns its own tag namespace and payload
-interpretation. A future family with a different guard (e.g. a namespace
-version for global-load caching) reuses the same slot shape — "a guard
-pointer, a guard version, a tag, a payload" — with its own semantics. Slots
-never migrate between families because indexes are assigned at assembly.
+The two layouts differ in a way that matters for GC. The method layout owns
+strong refs (`type`, `resolved`), so a populated method slot makes `KosCode`
+GC-tracked. The field layout is **ref-free**: it guards on a *borrowed* type
+plus a version, and its payload is an integer, so it needs no
+release-before-overwrite and a no-op teardown. `DICT_HINT` is reserved (the
+materialized-dict case currently resolves to `GENERIC`); it is the parked
+growth slot for a keys-hint fast path.
+
+### Specialized layouts, discriminated only at the top
+
+The union member is chosen by `kind` alone. Layouts are **specialized per use
+case and never sub-branched**: two different uses do not share or fork a
+layout, they get distinct kinds. A later field-accessor cache, a jump-target
+cache, or an exception-type cache each adds its own kind and its own union
+member; none reshapes an existing one. There is no universal slot shape and
+no attempt to wedge every use into one -- a layout may resemble another, but
+resemblance never justifies merging them. Method resolution is the only kind
+being built now; `KOS_CACHE_METHOD` is the bootstrap non-empty kind.
+
+The four attribute-resolution behaviors are an **internal `mode` field of the
+one method layout**, not top-level kinds -- they share the method layout's
+fields and only select its fast-path behavior:
 
 - **DATA_DESCRIPTOR:** `resolved` is the descriptor. On use, call
   `Py_TYPE(resolved)->tp_descr_get(resolved, obj, type)`.
@@ -210,9 +266,23 @@ never migrate between families because indexes are assigned at assembly.
   `descriptor.__get__(obj, type)` and return the result; caller invokes as-is.
   Detect via `KosFunction_CheckExact`, `PyFunction_Check`, `PyMethodDescr_Check`,
   or equivalent. Caller Py_INCREFs on returned value.
-- **GENERIC_LOOKUP:** `resolved` is NULL. No shortcut; perform full resolution.
+- **INSTANCE_DICT / GENERIC_LOOKUP:** `resolved` is NULL (a cached negative
+  fact); take the slow path per the mode.
 
-On cache eviction (miss, overwrite, or teardown): `Py_XDECREF(entry->resolved)`.
+### Populate, cleanup, and GC all dispatch on `kind`
+
+- **First use (populate).** An opcode reads its slot's `kind`. `KOS_CACHE_EMPTY`
+  means cold: it fills its layout's fields, then sets `kind` to its own value.
+  Every later hit reads `kind` to select the union member; a member is never
+  read without first checking `kind`.
+- **Cleanup / eviction.** `switch (kind)` and drop only that layout's owned
+  refs (`KOS_CACHE_METHOD` drops `type` and `resolved`); `KOS_CACHE_EMPTY`
+  does nothing. This is `cache_slot_release` in `bytecode.c`.
+- **GC.** The same `switch (kind)` drives `tp_traverse` (visit the layout's
+  owned refs) and `tp_clear`. Owning the guard `type` (not just `resolved`)
+  keeps the identity guard sound even where a dict-version is unavailable, at
+  the cost of pinning the type for the code object's life. See *Table storage*
+  and *Lifecycle* for when KosCode becomes GC-tracked.
 
 
 ## Resolver API
@@ -233,7 +303,8 @@ On cache eviction (miss, overwrite, or teardown): `Py_XDECREF(entry->resolved)`.
 int kos_resolve_named_attr(
     PyObject *obj,
     PyObject *name,
-    KosAttrCacheEntry *cache,
+    KosCacheSlot *cache,       /* NULL, or a slot the resolver reads/populates
+                                  as KOS_CACHE_METHOD */
     PyObject **out);
 ```
 
@@ -259,53 +330,282 @@ The resolver does not distinguish Kos vs Python or bound vs unbound for
 invocation; it only returns the attribute. Invocation logic is in the opcode.
 
 
+## Attribute-storage (field) cache
+
+Where the method cache resolves a *handle* (a class-side callable), the field
+cache resolves a *location*: where an instance attribute lives, so a load, a
+store, and a delete at any site for the same type+name share one resolved
+`(mode, index)`. The four consumers are `FAST_ATTR` / `VAR_ATTR` (read) and
+`FAST_ATTR_STORE` / `VAR_ATTR_STORE` (write). Lives in `eval/eval_cache.c`
+(`kos_resolve_attr_location` and helpers).
+
+### The location result
+
+The resolved location is a discriminated `(mode, index)` pair, uniform across
+load/store/delete and branching only on the storage *mechanism*:
+
+| Mode | `index` is | Load / store |
+|------|-----------|--------------|
+| **SLOT** | byte offset of a `__slots__` member from `obj` | direct `*(PyObject **)((char *)obj + index)` |
+| **INSTANCE_VALUE** | value slot in the instance's inline managed-dict values | direct read/write of `values[index]` |
+| **DICT_HINT** *(reserved)* | keys-index hint into a materialized `__dict__` | parked; resolves to GENERIC today |
+| **GENERIC** | — | `PyObject_GetAttr` / `PyObject_SetAttr` (full semantics) |
+| **MEGAMORPHIC** | — | churn bypass: re-resolve every time, never cache |
+
+### Classifier
+
+`resolve_attr_location_slow` classifies once, on the cold path:
+
+1. Custom `tp_getattro`/`tp_setattro` (not the generic ones) → **GENERIC**;
+   either could intercept, so no direct location is safe.
+2. A **data descriptor** for the name: if it is a `__slots__` member
+   descriptor (`PyMemberDescr`, `T_OBJECT_EX`, valid offset) → **SLOT** (the
+   offset is authoritative for both load and store, and takes precedence over
+   any instance dict). Any other data descriptor (property, ...) → **GENERIC**.
+3. No data descriptor, and the type stores attributes as addressable inline
+   values → **INSTANCE_VALUE**, with `index` found by scanning the type's
+   shared keys. A non-data descriptor of the same name does not defeat this:
+   the instance value shadows it on read, and an unset slot falls back to
+   GENERIC, which then finds the class attribute.
+4. Otherwise → **GENERIC**.
+
+GENERIC is cached guard-free (it is correct for any receiver type) and doubles
+as the give-up state. SLOT and INSTANCE_VALUE carry a type-identity +
+`tp_version_tag` guard; on repeated guard misses the site degrades to
+MEGAMORPHIC and stops caching.
+
+### Guards and safety
+
+The cached `(mode, index)` is guarded by type identity + version, exactly as
+the method cache. On top of that, the direct modes re-check the instance's
+own state on each access, because the cache is a *type* fact and materialization
+is a *per-instance* event:
+
+- **SLOT** load: an unset member reads NULL → fall through to the generic path
+  (AttributeError / `__getattr__`).
+- **INSTANCE_VALUE** load: if the instance has materialized its dict, or the
+  slot is unset, the accessor reports inactive/NULL → fall through (which then
+  reads the materialized dict, or raises). Guards match CPython's own
+  `LOAD_ATTR_INSTANCE_VALUE` (type version + values-mode + non-NULL slot).
+- **INSTANCE_VALUE** store is **overwrite-only**: a first assignment (slot was
+  unset) or a materialized instance falls back to `PyObject_SetAttr`, which
+  keeps the values' used-count and insertion-order bookkeeping correct. The
+  common in-place update (slot already set) takes the fast path.
+
+### Version coverage and the compat layering
+
+The inline-value layout is CPython-internal and unexported, so the field cache
+replicates just the layout it reads, under koskari's own names -- no
+`Py_BUILD_CORE`, no internal headers at build time, no unexported symbol
+linked. The design splits along what is shared vs what drifts:
+
+- **Shared** (`compat.h`, `PY_MINOR_VERSION >= 11`): the name→index scan,
+  `kos_type_value_index`, over the type's `ht_cached_keys` (a public
+  `PyHeapTypeObject` field). The shared-keys layout is identical across
+  3.11-3.14 for GIL builds. Replaces the unexported `_PyDictKeys_StringLookup`
+  with a cold-time entry scan (`me_key == name`, rich-compare fallback).
+- **Per-version** (`compat_3xx.h`): two hooks, `kos_type_has_inline_values`
+  and `kos_inline_value_slots`, isolate where the values live and how "still
+  inline" is tested:
+
+  | Version | Values at | "inline?" test |
+  |---------|-----------|----------------|
+  | 3.11 | pre-header slot `obj[-4]` | pointer non-NULL |
+  | 3.12 | tagged union `obj[-3]` | low tag bit set |
+  | 3.13 | `obj + sizeof(PyObject)` | `values->valid` |
+  | 3.14 | `obj + tp_basicsize` | `values->valid` |
+
+`eval_cache.c` and the four handlers are version-agnostic over those hooks
+(`PY_MINOR_VERSION >= 11`). **3.9 / 3.10** predate the managed dict (PEP 412
+split dicts, and an opaque `PyDictKeysObject` in their shipped headers); they
+have no INSTANCE_VALUE and stay on SLOT + GENERIC -- correct, unaccelerated
+for dict attributes. The floor sits at 3.11 deliberately: the older split-dict
+layout would mean blind-replicating an opaque keys struct for two EOL /
+near-EOL versions with the smallest payoff, so they keep the correct generic
+path instead. The fast path is also **GIL-only**: under free-threading
+`kos_type_has_inline_values` returns 0, so those builds stay correct on the
+generic path.
+
+
 ## Per-Site Cache Table (agreed design, 2026-07-11)
 
-This section supersedes the earlier opcode-metadata sketch. Decisions from
-design discussion; recorded so they survive until implementation.
+This section is authoritative. It supersedes every earlier sketch, including
+the spare-EXTRA-field and lazy-allocation notes that previously appeared
+here.
 
-### Where the index lives: spare EXTRA row fields, not instruction bytes
+### Opcode cache count: opcodes.incl, immediately after the name
 
-Every current cache consumer is an EXTRA-style opcode with a spare schema
-field — `CALL_FAST_ATTR` is `(FASTVAR, CONST, COUNT, NOARG)` with a3 free,
-`FAST_ATTR` is `(FASTVAR, CONST, -, -)` with two spares. The cache index is
-stored in a spare field of the instruction's extra row:
+`opcodes.incl` gains a cache-slot **count** as the argument **immediately
+after the opcode name**, before the style:
 
-- Zero added instruction bytes; the handler already fetched the row.
-- A caching opcode's extra row is made **unique** (never deduped with an
-  identical row elsewhere) so each site gets its own slot; the assembler
-  assigns the next slot index at the same time it numbers extras.
-- Non-caching opcodes are untouched.
+```
+OP(name, cache, style)                    // cache = number of slots wanted
+OP(name, cache, EXTRA, f0, f1, f2, f3)
+```
 
-A uint16 cache-index field on *every* instruction was considered and
-deferred: instruction streams are small so the 2 bytes/op would be
-affordable, but it buys nothing until an opcode *outside* the EXTRA family
-wants a cache — and the cheaper response then is to promote that opcode to
-EXTRA (the same move the call family already made for multi-field args).
+`cache` is the number of cache slots the opcode reserves per site; `0` means
+non-consumer. It is a count from the start, not a bool: the allocator treats
+`0`, `1`, and `N` uniformly, so a single opcode can later reserve a
+contiguous run (see *Monomorphic by law; the counter as growth path*). The
+initial landing sets **every** opcode to `0` — the framework ships first,
+then individual opcode implementations are switched on one at a time. The
+count is a static per-opcode fact, exposed through a
+`kos_opcode_cache_count(op)` accessor parallel to `kos_opcode_style` /
+`kos_opcode_extra_schema`.
 
-### Table structure: fixed-size tagged-union slots
+The flag lives on the **opcode enumeration**, never on the serialized
+instruction. Slot assignment is therefore **mandatorily rebuildable**: it is
+recomputed from the opcode flags of the reading build every time a code
+object is assembled or a `.kio` is re-hardened, and nothing about slots
+crosses the wire.
 
-- One flat array of fixed-size slots on **KosCode** (KosCode is a normal
-  heap object; the arena seals code *data*, not the KosCode struct, so a
-  writable table on KosCode does not conflict with sealing).
-- Slot form: guard pointer + guard version + tag byte + payload pointer
-  (see `KosAttrCacheEntry` above). Tags are family-local; the table itself
-  has no cross-family semantics.
-- Slot count is known at assembly and stamped on KosCode.
+The `OP` macro is already variadic (`OP_NARGS` dispatch); inserting the flag
+shifts the destructured arities from 2/6 to 3/7. Consumers that spell the
+macro `OP(name, ...)` are unaffected.
 
-### Lifecycle
+### Per-instruction cache index: a widened KosOp
 
-- **Allocation:** lazy — first eval of the code object allocates
-  `count × sizeof(slot)`, zeroed. Zero = UNCACHED, so no init pass is
-  needed. A `.kio` load therefore starts cold by construction.
-- **Serialization:** the codex format ignores the table entirely; it is
-  per-process runtime state.
-- **GC:** cached `resolved` payloads are **strong refs**; KosCode's
-  `tp_traverse` / `tp_clear` must cover the table or types and functions
-  leak across reloads. (Borrowed-ref schemes were rejected: cheaper-looking,
-  quietly wrong.)
-- **Eviction / teardown:** `Py_XDECREF(entry->resolved)` on overwrite and on
-  code deallocation, as before.
+`KosOp` widens to carry the cache index. The instruction word gains a 16-bit
+cache-index field alongside `op` and `arg`. The unset value is all-high bits
+(`0xFFFF`) — an instruction with no reserved slot. A cache-consuming
+instruction carries the index of the slot reserved exclusively for it.
+
+The index is a per-instruction (per-call-site) fact, distinct from the
+static opcode flag: the flag says the opcode *can* cache; the index says
+*which* slot this particular site owns. The code array lives in the sealed
+mmap block, and the index is written at assembly before sealing, so it is
+read-only at runtime.
+
+The index lives on every instruction uniformly, so any opcode — EXTRA-family
+or not — can cache without opcode promotion or bespoke extra-row handling.
+
+### Slot assignment: counted at compile time
+
+During assembly, count the instructions whose opcode has the cache flag set.
+Each such instruction is assigned the next slot index, stamped into its
+widened cache-index field. That running count is the number of slots the
+code object needs, and it is known before the KosCode object is finalized.
+
+When the cache is gated off for this code object (see *Gating the cache*
+below), the count short-circuits to zero: no instruction is assigned an
+index, and every cache-index field is left at the unset value. The gate and
+the slot count move together — there is no state where the gate is off yet
+some instruction still holds a live index.
+
+Counting, numbering, and sizing follow the **same discipline as the extras
+table**, in a separate segment of memory (the trailing array below rather
+than the sealed block). The one rule that does **not** carry over is
+dedup: extras rows may be merged when structurally identical, but cache
+slots are **per-site and never merged**. Two identical instructions still
+receive independent slots, because the entire purpose is a site-local fact.
+Do not borrow the extras dedup pass for cache assignment.
+
+### Monomorphic by law; the counter as growth path
+
+Each slot answers **one most-expensive question** for its cache family, under
+a single guard. Polymorphism is an explicit **non-goal**: a slot never holds
+a chain, and a megamorphic site degrades to the uncached path rather than
+growing a multi-way cache. This keeps every fast path to a single guard check
+with no chain walk, and keeps the slot fixed-size. Do not grow a chain into a
+slot; if a site is polymorphic, it takes the miss.
+
+The sanctioned growth path, should a *single opcode* ever need to cache more
+than one distinct fact (not polymorphism — several different questions at one
+site), is to widen the flag from a boolean into a small **count**:
+
+- The flag becomes `0..k`; it is still a static per-opcode constant on the
+  enumeration, so the assembler knows the run length from the opcode alone.
+- The opcode receives the index of its **first** slot; slots
+  `first .. first + N - 1` are its by a contiguity invariant, indexed against
+  its compile-time-known `N`. No per-site width is stored.
+- Assignment is **all-or-nothing**: if the compiler cannot grant the full run
+  (gated off, or would not fit under the sentinel), the opcode receives the
+  unset value `0xFFFF` and takes the uncached path. A shortfall reuses the
+  exact branch a non-consumer already has; it adds no new runtime state.
+- The only new bound: a run of `N` must fit under the sentinel, so the last
+  legal first-index is `0xFFFE - (N - 1)`.
+
+This is recorded as future-sanctioned, not current. The landing flag is
+`0`/`1`; the counter is the pre-agreed shape if the need arises.
+
+### Table storage: trailing array on the KosCode object
+
+The cache slots hang off the **end of the KosCode object**. KosCode is a
+normal heap object; the slot array is part of the object's own allocation, a
+trailing array sized by the slot count. Because it lives in the KosCode
+object (writable), not in the sealed mmap code block, it is unaffected by
+arena sealing — sealing protects the code *data*, never the KosCode object.
+
+- **Allocation:** the object is sized to include the trailing cache array at
+  construction, and the array is **mandatorily zeroed at allocation**. Zero
+  is `KOS_CACHE_EMPTY`, so no separate init pass is needed. A `.kio` load
+  re-hardens from softened instructions through the same path, so slot
+  assignment and the zeroed table are reconstructed deterministically on load.
+- **Slot form:** the tagged union of *Cache Slot Structure* above -- a `kind`
+  discriminant plus a per-kind specialized layout. The table stores fixed-size
+  slots; interpretation is entirely per-kind. There is no cross-slot or
+  cross-family shared shape.
+- **Serialization:** the codex format ignores the table entirely; it
+  round-trips through softened `(opcode, arg)` instructions and never stores
+  raw KosOp bytes or slot state. The cache index is recomputed at assembly
+  on load, not serialized.
+- **GC:** a live layout's owned refs (for `KOS_CACHE_METHOD`, the guard `type`
+  and `resolved`) are **strong refs**. While every slot is `KOS_CACHE_EMPTY`
+  the table holds nothing and KosCode stays non-GC (its standing invariant).
+  Once a consumer populates ref-holding slots, KosCode must become GC-tracked
+  with a `tp_traverse` / `tp_clear` that `switch (kind)` over the slots, or
+  types and functions leak across reloads. (Borrowed-ref schemes were
+  rejected: cheaper-looking, quietly wrong.)
+- **Eviction / teardown:** `cache_slot_release` drops the live layout's owned
+  refs, dispatching on `kind`, on overwrite and on code deallocation.
+  `KOS_CACHE_EMPTY` releases nothing.
+
+### Gating the cache (pragma-controlled)
+
+Caching is a compile-time choice per code object, not an unconditional
+feature. A code object known to be evaluated at most once gains nothing from
+a cache, and the slots would be pure overhead. Such an object is compiled
+with the cache gated off:
+
+- The trailing cache array has length **zero** — no slots on the object.
+- Every instruction, **including** cache-supporting opcodes, carries the
+  unset value (`0xFFFF`) in its cache-index field. No slot is assigned to
+  anyone.
+
+This collapses into the same runtime condition an opcode already has to
+tolerate. A cache-supporting opcode must never assume its slot exists; it
+reads its cache-index field and treats `0xFFFF` as "no slot — run
+uncached," identical to today's `cache = NULL` path (full resolution, no
+populate). The two ways an index can be unset are indistinguishable at
+runtime and handled by the same guard:
+
+- **Gated off** — the whole code object has a zero-length array; every index
+  is `0xFFFF`.
+- **Non-consumer opcode** — an opcode whose flag is `0` never had an index
+  assigned, so it is also `0xFFFF`.
+
+Either way: `index == 0xFFFF` → uncached path.
+
+#### The gate is two pragmas
+
+The gate is driven by compiler pragmas, split by compile context because the
+two contexts have opposite cost/benefit profiles:
+
+| Pragma | Governs | Compile context | Baseline |
+|--------|---------|-----------------|----------|
+| `compiler/cache-expression` | Expression code objects | Top level of a module load or a REPL loading step | **off** |
+| `compiler/cache-function` | Function/lambda code objects | Bodies of `lambda` and function forms nested inside a module or REPL compile | **on** |
+
+The defaults follow evaluation frequency. Top-level expressions typically
+run once as the module or REPL line loads, so their default is **off** — a
+cache would never amortize. Function and lambda bodies are the reused code
+that idiomatic method calls flow through, so their default is **on**.
+
+Each is a `pragma_setting` in `koskari/compile/pragma/settings.py`
+(`compiler/cache-expression` baseline `False`, `compiler/cache-function`
+baseline `True`), resolved at compile time and consulted when the code
+object is finalized to decide whether the count pass runs or short-circuits
+to zero.
 
 ### Tracing
 
@@ -340,20 +640,83 @@ CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR and their VAR/FAST variants call
 the resolver with `cache = NULL` and carry the send-self invocation logic.
 
 
-### Phase 3: Cache integration — OPEN
+### Phase 3: Cache framework — DONE
 
-Per the *Per-Site Cache Table* section above:
+Stand up the mechanism that guarantees a zeroed cache slot for any opcode
+that asks for one. No opcode is switched on yet; every count is `0`, so the
+framework is inert -- but the plumbing (flag, widened KosOp, slot
+allocation, tagged-union slot, pragma gate) is fully in place.
 
-- Assembler: unique extra rows for caching opcodes; assign slot index into
-  the spare row field; stamp slot count on KosCode.
-- KosCode: table pointer slot; lazy zeroed allocation at first eval;
-  `tp_traverse` / `tp_clear` coverage; serializer ignores.
-- Resolver: cache hit/miss logic per the linear algorithm — type + version
-  guards, instance shadow check, INSTANCE_DICT negative-fact mode.
-- Extend the consumers beyond CALL_ATTR*: `FAST_ATTR` / `VAR_ATTR` reads.
-- Real `koskari_type_dict_version` where available (version-gated shim,
-  3.9+ support; unstable API is 3.12+).
-- Trace hit/miss counters under a `cache` section of `get_trace_report()`.
+- **DONE** `opcodes.incl`: a per-opcode cache-slot **count** after each name
+  (a count from the start, not a bool, so an opcode may reserve a contiguous
+  run), all `0`. `kos_opcode_cache_count(op)` accessor; `OP_3` / `OP_7` macro
+  arities.
+- **DONE** `KosOp`: widened to carry the 16-bit cache-index field; unset =
+  `KOS_CACHE_UNSET` (`0xFFFF`). `KosOp_CACHE` accessor; sizing via
+  `sizeof(KosOp)`, arena relocation via memcpy, soften still emits `(op, arg)`.
+- **DONE** Assembly: `count_cache_slots` sums the per-opcode counts to size
+  the object; `code_emit` assigns each cache-consuming site its slot run into
+  `KosOp.cache` and verifies the total matches the allocation.
+- **DONE** KosCode: variable-length object (`PyObject_VAR_HEAD`, `tp_itemsize`
+  = `sizeof(KosCacheSlot)`), trailing slot array sized by the count and
+  **zeroed at allocation** (`KOS_CACHE_EMPTY`); serializer ignores it;
+  `code_dealloc` runs `cache_slot_release` (per-`kind` dispatch) over the
+  slots. The `KosCacheSlot` tagged union and the bootstrap `KOS_CACHE_METHOD`
+  layout are defined; no opcode populates them yet.
+- **DONE** Gate: `compiler/cache-expression` (baseline off) and
+  `compiler/cache-function` (baseline on) pragmas. The compiler branches on
+  compile mode -- `CompilerMode.FUNCTION` follows cache-function, everything
+  else (module/REPL top-level expressions) follows cache-expression -- and
+  passes `cache=` to `Code(...)`. `KosCode_New` records it as the
+  `KOS_CODE_CACHE` flag; when off, `count_cache_slots` is skipped (zero
+  slots) and `code_emit` assigns none, so every index stays `0xFFFF`. The
+  flag is introspectable as `code.caches`, and the allocated slot count as
+  `code.cache_slots`. Like `protect`, the gate is **not serialized**: a
+  `.kio` reload reconstructs `Code(...)` at the `cache=1` default, so
+  functions keep caching and expressions regain it on reload (a footprint
+  choice, never a correctness one).
+
+GC-tracking is deliberately **not** part of the framework: while every slot
+is `KOS_CACHE_EMPTY` the table holds no references, so KosCode keeps its
+standing non-GC invariant. It moves to Phase 4, landing with the first
+ref-holding layout.
+
+### Phase 4: Activate consumers — DONE
+
+Both cache families are active. Every consumer first checks `index == 0xFFFF`
+and falls back to the uncached path (gated off, or opcode not enabled here);
+on first use it checks `kind == KOS_CACHE_EMPTY`, populates its layout, then
+sets `kind`.
+
+- **Method cache** (`KOS_CACHE_METHOD`): the CALL_ATTR* family. Type + version
+  guards, instance shadow check, the four modes plus a `MEGAMORPHIC` churn
+  bypass after repeated misses.
+- **Field cache** (`KOS_CACHE_FIELD`): `FAST_ATTR` / `VAR_ATTR` reads and
+  `FAST_ATTR_STORE` / `VAR_ATTR_STORE` writes, per *Attribute-storage (field)
+  cache* above. SLOT on all versions; INSTANCE_VALUE on 3.11-3.14 behind the
+  compat hooks; ref-free, so it does not add to KosCode's GC surface.
+- **GC-tracking of KosCode** landed with the method layout (the first
+  ref-holding layout): KosCode is a GC type with `tp_traverse` / `tp_clear`
+  that `switch (kind)` over the slots, matching `cache_slot_release`.
+- **Version guard**: `kos_type_version` / `kos_type_version_assign`
+  (version-gated) — `tp_version_tag` on 3.12+ (forced via
+  `PyUnstable_Type_AssignVersionTag`, since PyType_Lookup only assigns it
+  conditionally and 3.14 stops setting the old flag); the
+  `Py_TPFLAGS_VALID_VERSION_TAG` flag through 3.11.
+- **Tracing**: hit/miss/bypass counters under an `opcache` section of
+  `get_trace_report()`, gated by `KOS_TRACE_OPCACHE`. `churn_method` and
+  `churn_field` read hit rates directly; a bad guard shows up as a miss-rate
+  anomaly rather than a silent perf mystery.
+
+
+### Phase 5: Further cache families — OPEN (investigative)
+
+The mechanism generalizes: a new family is a new `kind` plus a specialized
+layout and a consumer. Candidates to evaluate (each its own investigation,
+not committed): a global/builtin name cache (`LOAD_GLOBAL`-class opcodes), the
+reserved `DICT_HINT` field mode (materialized-`__dict__` keys hint), and jump
+or exception-type caches. See [TODO.md](../TODO.md) (*Opcode caching: further
+families*).
 
 
 ## CPython Source Research
@@ -428,9 +791,15 @@ Findings from CPython 3.12 `Objects/object.c` and `Objects/typeobject.c`:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `kos_resolve_named_attr` | Attribute lookup; cache management; returns resolved object |
+| `kos_resolve_named_attr` | Method/callable lookup; cache management; returns resolved object (eval.c) |
+| `kos_resolve_attr_location` | Attribute *location* lookup; returns `(mode, index)` (eval/eval_cache.c) |
 | CALL_ATTR* opcodes | Stack layout; call `kos_resolve_named_attr`; invoke result |
-| Cache entry | type, type_version, mode, resolved (owned ref) |
-| Modes | DATA_DESCRIPTOR, DIRECT_OBJECT_GUARDED, GENERIC_LOOKUP, UNCACHED |
+| FAST/VAR_ATTR(_STORE) opcodes | Call `kos_resolve_attr_location`; direct read/write on SLOT / INSTANCE_VALUE, else generic |
+| Cache slot | Tagged union: `kind` discriminant + per-kind specialized layout; `KOS_CACHE_EMPTY` (0) = unused |
+| Method layout | `KOS_CACHE_METHOD`: type + type_version + mode + resolved (type and resolved owned) |
+| Method modes | DATA_DESCRIPTOR, DIRECT_OBJECT_GUARDED, INSTANCE_DICT, GENERIC_LOOKUP, MEGAMORPHIC |
+| Field layout | `KOS_CACHE_FIELD`: type (borrowed) + type_version + mode + misses + index; **ref-free** |
+| Field modes | GENERIC, INSTANCE_VALUE (3.11+), SLOT (all versions), DICT_HINT (reserved), MEGAMORPHIC |
+| Compat hooks | `kos_type_value_index` (shared scan, compat.h); `kos_type_has_inline_values` / `kos_inline_value_slots` (per-version, compat_3xx.h) |
 
 The end.
