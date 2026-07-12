@@ -21,11 +21,7 @@
 KOS_OP_HANDLER(FAST_OBJECT_INPLACE_BIT_RIGHT) {
 
   PyObject *ns = CURRENT_NS();
-  if (unlikely(! ns)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "FAST_OBJECT_INPLACE_BIT_RIGHT invoked on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
 
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *obj = kos_ns_fast_deref(ns, idx);

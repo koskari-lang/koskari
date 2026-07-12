@@ -27,11 +27,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
   PyObject *ns = CURRENT_NS();
-  if (unlikely(! ns)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "SWITCH_EQ_FAST_ATTR invoked on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosEvalState_CONST(es, row.a2);
   if (unlikely(! attr_name))
     return EVAL_RAISE();

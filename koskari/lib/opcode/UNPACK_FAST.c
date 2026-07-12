@@ -26,11 +26,7 @@ KOS_OP_HANDLER(UNPACK_FAST) {
   size_t idx1 = (size_t) row.a1;
 
   PyObject *ns = CURRENT_NS();
-  if (! ns) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "UNPACK_FAST invoked on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
 
   if (idx0 >= KosNamespace_FAST_COUNT(ns) || idx1 >= KosNamespace_FAST_COUNT(ns)) {
     PyErr_Format(PyExc_NameError,

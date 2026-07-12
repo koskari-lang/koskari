@@ -26,11 +26,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST) {
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
   PyObject *ns = CURRENT_NS();
-  if (unlikely(! ns)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "SWITCH_EQ_FAST invoked on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
   size_t idx = (size_t) row.a1;
   PyObject *rhs = kos_ns_fast_deref(ns, idx);
   if (unlikely(! rhs))

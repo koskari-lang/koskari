@@ -22,11 +22,7 @@
 KOS_OP_HANDLER(FAST_LIST_APPEND) {
 
   PyObject *ns = CURRENT_NS();
-  if (unlikely(! ns)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "FAST_LIST_APPEND invoked on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
 
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *list = kos_ns_fast_deref(ns, idx);

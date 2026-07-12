@@ -1697,6 +1697,17 @@ static int ns_convert_to_ref(PyObject *namespace, size_t index) {
 }
 
 
+PyObject *kos_ns_deref_empty_raw(PyObject *ns, size_t idx) {
+  PyObject *names = KosNamespace_FAST_NAMES(ns);
+  if (names && idx < (size_t) PyTuple_GET_SIZE(names))
+    PyErr_Format(PyExc_NameError, "Empty reference: %S",
+                 PyTuple_GET_ITEM(names, (Py_ssize_t) idx));
+  else
+    PyErr_Format(PyExc_NameError, "Empty reference at slot %zu", idx);
+  return NULL;
+}
+
+
 PyObject *KosNamespace_FastDeref(PyObject *namespace, size_t index) {
   if (! KosNamespace_SupportsFast(namespace)) {
     PyErr_Format(PyExc_TypeError,

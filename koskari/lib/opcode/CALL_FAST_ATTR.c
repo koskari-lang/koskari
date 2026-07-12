@@ -32,10 +32,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     return EVAL_RAISE();
 
   PyObject *ns = CURRENT_NS();
-  if (! ns) {
-    PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
   PyObject *obj = kos_ns_fast_deref(ns, (size_t) slot_idx);
   if (! obj)
     return EVAL_RAISE();

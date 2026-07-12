@@ -19,13 +19,7 @@
 
 KOS_OP_HANDLER(FAST_TAKE) {
   PyObject *ns = CURRENT_NS();
-  if (! ns) {
-    PyErr_SetString(
-      PyExc_RuntimeError,
-      "FAST_TAKE invoked on NULL namespace");
-
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
 
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *val = KosNamespace_FastTake(ns, idx);

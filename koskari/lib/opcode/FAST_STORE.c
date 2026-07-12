@@ -20,10 +20,7 @@
 KOS_OP_HANDLER(FAST_STORE) {
 
   PyObject *ns = CURRENT_NS();
-  if (! ns) {
-    PyErr_SetString(PyExc_RuntimeError, "FAST_STORE invoked on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return EVAL_RAISE();

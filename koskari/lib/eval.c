@@ -1760,8 +1760,27 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #define KOS_OP_HANDLER(name) \
   KOS_OP_INLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
+
+/* Namespace-presence guard for opcode handlers.  es->namespace is a live
+   register, always set during valid execution, so this catches only an
+   internal state-machine bug — compiled out unless KOS_EVAL_SAFETYNET.
+   Keeping it a macro keeps the 35+ (and growing) ns-touching handlers slim
+   in the single inlined dispatch function. */
+#if KOS_EVAL_SAFETYNET
+#define KOS_OP_REQUIRE_NS(ns)                                           \
+  do {                                                                  \
+    if (unlikely(! (ns))) {                                             \
+      PyErr_SetString(PyExc_RuntimeError, "opcode on NULL namespace");  \
+      return EVAL_RAISE();                                              \
+    }                                                                   \
+  } while (0)
+#else
+#define KOS_OP_REQUIRE_NS(ns)  ((void) 0)
+#endif
+
 #include "handlers.incl"
 #undef CURRENT_NS
+#undef KOS_OP_REQUIRE_NS
 #undef KOS_OP_HANDLER
 
 

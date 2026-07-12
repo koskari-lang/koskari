@@ -21,10 +21,7 @@
 KOS_OP_HANDLER(FAST_STORE_CONST) {
 
     PyObject *ns = CURRENT_NS();
-    if (! ns) {
-      PyErr_SetString(PyExc_RuntimeError, "FAST_STORE_CONST invoked on NULL namespace");
-      return EVAL_RAISE();
-    }
+    KOS_OP_REQUIRE_NS(ns);
     KosCode *code = KosEvalState_CurrentCode(es);
     KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
