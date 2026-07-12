@@ -144,8 +144,8 @@ static int test_code_create_minimal_return_none(void) {
         result = -1;
         goto cleanup;
     }
-    if (KosCode_CODE_LEN(code) != 2) {
-        fprintf(stderr, "  FAIL: two instructions (expected 2, got %u)\n",
+    if (KosCode_CODE_LEN(code) != 3) {   /* input + appended THEEND barrier */
+        fprintf(stderr, "  FAIL: three instructions (expected 3, got %u)\n",
                 (unsigned) KosCode_CODE_LEN(code));
         result = -1;
         goto cleanup;
@@ -190,8 +190,8 @@ static int test_code_with_const(void) {
     PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
-    /* Verify code length */
-    TEST_ASSERT_EQ(KosCode_CODE_LEN(code), 2, "two instructions");
+    /* Verify code length (input + appended THEEND barrier) */
+    TEST_ASSERT_EQ(KosCode_CODE_LEN(code), 3, "two instructions + THEEND");
 
     /* Verify constant pool */
     TEST_ASSERT_EQ(KosCode_CPOOL_LEN(code), 1, "one constant");
@@ -411,8 +411,8 @@ static int test_code_label_resolution(void) {
     PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");
 
-    /* LABEL doesn't occupy a slot, so we have 3 instructions */
-    TEST_ASSERT_EQ(KosCode_CODE_LEN(code), 3, "three instructions");
+    /* LABEL doesn't occupy a slot: 3 real instructions + appended THEEND */
+    TEST_ASSERT_EQ(KosCode_CODE_LEN(code), 4, "three instructions + THEEND");
 
     /* JUMP should point to index 2 (where RETURN is, after LABEL) */
     TEST_ASSERT_EQ(KosCode_GET_OP(code, 0), KOS_OP_JUMP, "first op is JUMP");

@@ -742,6 +742,19 @@ static PyObject *code_m_constant(PyObject *self, PyObject *index) {
 }
 
 
+/* The Python-visible instruction count: the real length, hiding the appended
+   THEEND end-of-code barrier. Every Python-facing accessor (length, oparg,
+   position) bounds against this so the barrier is invisible; internal callers
+   use the KosCode_CODE_LEN macro (full length, barrier included). */
+static uint32_t code_visible_len(PyObject *self) {
+  uint32_t len = KosCode_CODE_LEN(self);
+  if (len && KosCode_GET_OP(self, len - 1) == KOS_OP_THEEND) {
+    len--;
+  }
+  return len;
+}
+
+
 static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
 
   if (! PyLong_Check(index)) {
@@ -751,7 +764,7 @@ static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
   }
 
   long i = PyLong_AsLong(index);
-  uint32_t l = KosCode_CODE_LEN(self);
+  uint32_t l = code_visible_len(self);
 
   if (i < 0 || (uint32_t) i >= l) {
     PyErr_Format(PyExc_IndexError, "Code oparg index out of"
@@ -775,7 +788,7 @@ static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
 
 static PyObject *code_m_length(PyObject *self) {
 
-  return PyLong_FromLong(KosCode_CODE_LEN(self));
+  return PyLong_FromLong(code_visible_len(self));
 }
 
 
@@ -788,7 +801,7 @@ static PyObject *code_m_position(PyObject *self, PyObject *index) {
   }
 
   long i = PyLong_AsLong(index);
-  uint32_t l = KosCode_CODE_LEN(self);
+  uint32_t l = code_visible_len(self);
 
   if (i < 0 || (uint32_t) i >= l) {
     PyErr_Format(PyExc_IndexError, "Code position index out of"
@@ -908,7 +921,17 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
   (void) unused;
 
   uint32_t code_len = KosCode_CODE_LEN(self);
-  PyObject *label_map = collect_label_map(self, code_len);
+
+  /* Strip the trailing THEEND barrier: it is appended fresh at assembly, so it
+     must not appear in the softened stream (KosCode_New re-adds it, and it is
+     rejected as user input by code_collect). collect_label_map also rejects
+     THEEND, so bound its scan to the body too. */
+  uint32_t body_len = code_len;
+  if (body_len && KosCode_GET_OP(self, body_len - 1) == KOS_OP_THEEND) {
+    body_len--;
+  }
+
+  PyObject *label_map = collect_label_map(self, body_len);
 
   if (! label_map) {
     return NULL;
@@ -924,7 +947,7 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
   uint16_t prev_line = 0;
   uint16_t prev_col = 0;
 
-  for (uint32_t i = 0; i < code_len; i++) {
+  for (uint32_t i = 0; i < body_len; i++) {
     /* If this instruction index is a jump target, emit a label pseudo-op */
     {
       PyObject *key_i = PyLong_FromUnsignedLong((unsigned long) i);
@@ -1383,7 +1406,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
     }
 
     long lop = PyLong_AsLong(a);
-    if (lop < (long) KOS_OP_NOOP || lop > (long) KOS_OP_THEEND) {
+    if (lop < (long) KOS_OP_NOOP || lop >= (long) KOS_OP_THEEND) {
+      /* THEEND is the end-of-code barrier we append ourselves; it is not a
+         valid user-supplied instruction. */
       PyErr_Format(PyExc_RuntimeError, "Code instruction undefined %R:%R",
                    a, b);
       goto failure;
@@ -1449,7 +1474,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
     di++;
   }
 
-  coll->code_len = di;
+  /* Reserve one extra slot for the THEEND end-of-code barrier, appended by
+     code_emit. Every code object carries it as its final instruction. */
+  coll->code_len = di + 1;
 
   /* Pass 2: Intern constants (identity-based dedup) and build extra rows.
      Walk input again; for each surviving instruction, process CONST/VAR/EXTRA
@@ -1869,6 +1896,16 @@ static int code_emit(
 
     di++;
   }
+
+  /* Append the THEEND end-of-code barrier into the slot code_collect reserved
+     (code_len = di + 1). Every code object ends here, so a program counter that
+     walks off the end faults at THEEND instead of overrunning the array. It is
+     ours alone: users cannot supply THEEND (rejected in code_collect), soften
+     strips it, and it requests no cache slot. */
+  code[di].op = (uint16_t) KOS_OP_THEEND;
+  code[di].arg = 0;
+  code[di].cache = KOS_CACHE_UNSET;
+  di++;
 
   /* The assigned slot run must exactly fill the trailing array that
      count_cache_slots sized at allocation. A mismatch is an assembler bug

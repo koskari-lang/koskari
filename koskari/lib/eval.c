@@ -1754,6 +1754,9 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 /*
   Includes the implementation of all opcodes from the opcode/ directory.
 */
+/* The THEEND barrier handler reports the same fault as an off-the-end fetch;
+   the reporter is defined below (with the dispatch loop). */
+static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #define KOS_OP_HANDLER(name) \
   KOS_OP_INLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
@@ -2424,11 +2427,17 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
 
 
 
+/* No per-opcode PC bounds check: every code object ends in a THEEND barrier
+   (appended in KosCode_New), and jump targets are validated in-bounds, so
+   straight-line dispatch always hits a terminal RETURN or THEEND before pc
+   could reach code_len -- arr[pc] is provably valid. THEEND faults exactly as
+   an off-the-end fetch would. The null check stays: es->code can be transiently
+   NULL (e.g. a tail reset before es->code is retargeted). */
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
     KosCode *_kos_code = KosEvalState_CODE(es);                            \
     uint32_t _kos_pc = KosEvalState_PC(es);                                \
-    if (unlikely(! _kos_code || _kos_pc >= KosCode_CODE_LEN(_kos_code))) { \
+    if (unlikely(! _kos_code)) {                                           \
       goto on_bad;                                                         \
     }                                                                      \
     KosOp _kos_insn = KosCode_CODE(_kos_code)[_kos_pc];                    \
