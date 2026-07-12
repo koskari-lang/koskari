@@ -44,7 +44,7 @@ KOS_OP_HANDLER(CALL_VAR_STAR) {
   uint32_t name_cpool_idx = row.a0;
   unsigned opa = row.a1;
 
-  PyObject *name = KosCode_GetConstant((PyObject *) code, name_cpool_idx);
+  PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
   if (! name)
     return EVAL_RAISE();
 

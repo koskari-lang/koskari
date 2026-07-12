@@ -19,8 +19,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
-  PyObject *rules = KosCode_GetConstant((PyObject *) KosEvalState_CurrentCode(es),
-                                        KosOp_ARG(insn));
+  PyObject *rules = KosEvalState_CONST(es, KosOp_ARG(insn));
   PyObject *obj;
   PyObject *res;
 

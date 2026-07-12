@@ -852,15 +852,15 @@ static KosOpResult process_raise(KosEvalState *es) {
 
 
 /**
-   Resolve KosOp_ARG(insn) as a prompt_id constant from code.  Returns -1 on
-   error, 0 on success with *out_prompt_id set.
+   Resolve KosOp_ARG(insn) as a prompt_id constant from the current code.
+   Returns -1 on error, 0 on success with *out_prompt_id set.
 */
 static int get_prompt_id_from_insn(
-    KosCode *code,
+    KosEvalState *es,
     KosOp *insn,
     uint32_t *out_prompt_id) {
 
-  PyObject *cid = KosCode_GetConstant((PyObject *) code, KosOp_ARG(insn));
+  PyObject *cid = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (! cid)
     return -1;
 
@@ -1154,8 +1154,8 @@ int KosContext_Traverse(
 /**
    Get the name constant for a VAR_* opcode. Borrowed reference.
 */
-static PyObject *get_name_from_insn(KosCode *code, KosOp *insn) {
-  return KosCode_GetConstant((PyObject *) code, KosOp_ARG(insn));
+static PyObject *get_name_from_insn(KosEvalState *es, KosOp *insn) {
+  return KosEvalState_CONST(es, KosOp_ARG(insn));
 }
 
 
@@ -2427,16 +2427,9 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
 
 
 
-/* Internal-invariant safety net. Distinct from user-input validation, which is
-   always on and scrubbed up front: these guards catch koskari's own
-   state-machine bugs, in code the implementation alone mutates. They are off by
-   default -- past assembly the evaluator trusts its own state. Build with
-   -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an internal
-   misfire into a clean diagnostic while tracking down the cause. */
-#ifndef KOS_EVAL_SAFETYNET
-#define KOS_EVAL_SAFETYNET 0
-#endif
-
+/* Internal-invariant safety net. See KOS_EVAL_SAFETYNET in hints.h.
+   Build with -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an
+   internal misfire into a clean diagnostic while tracking down the cause. */
 #if KOS_EVAL_SAFETYNET
 /* es->code can be transiently NULL only through an internal bug (e.g. a tail
    reset that failed to retarget it); guard the fetch against dereferencing it. */

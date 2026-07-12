@@ -55,6 +55,15 @@
 #endif
 
 
+/* Internal-invariant safety net. Distinct from user-input validation: these
+   guards catch koskari's own state-machine bugs. Off by default -- past
+   assembly the evaluator trusts its own state. Build with
+   -DKOS_EVAL_SAFETYNET=1 for clean diagnostics instead of a segfault. */
+#ifndef KOS_EVAL_SAFETYNET
+# define KOS_EVAL_SAFETYNET 0
+#endif
+
+
 #endif
 
 

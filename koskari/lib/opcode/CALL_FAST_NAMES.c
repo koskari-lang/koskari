@@ -37,7 +37,7 @@ KOS_OP_HANDLER(CALL_FAST_NAMES) {
   if (! callable)
     return EVAL_RAISE();
 
-  PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
+  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
   if (! names) {
     Py_DECREF(callable);
     return EVAL_RAISE();

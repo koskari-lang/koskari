@@ -77,7 +77,7 @@ KOS_OP_HANDLER(IMPORT_STAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
-  PyObject *name = KosCode_GetConstant((PyObject *) code, row.a0);
+  PyObject *name = KosEvalState_CONST(es, row.a0);
   if (! name)
     return EVAL_RAISE();
 

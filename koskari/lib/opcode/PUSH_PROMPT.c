@@ -20,7 +20,7 @@
 
 KOS_OP_HANDLER(PUSH_PROMPT) {
   uint32_t prompt_id;
-  if (get_prompt_id_from_insn(KosEvalState_CurrentCode(es), insn, &prompt_id) < 0)
+  if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
     return EVAL_RAISE();
   if (! kos_dyn_push_prompt(es, prompt_id))
     return EVAL_RAISE();

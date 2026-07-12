@@ -31,11 +31,11 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
-  PyObject *defnames = KosCode_GetConstant((PyObject *) code, row.a0);
+  PyObject *defnames = KosEvalState_CONST(es, row.a0);
   if (! defnames)
     return EVAL_RAISE();
 
-  PyObject *annnames = KosCode_GetConstant((PyObject *) code, row.a1);
+  PyObject *annnames = KosEvalState_CONST(es, row.a1);
   if (! annnames)
     return EVAL_RAISE();
 

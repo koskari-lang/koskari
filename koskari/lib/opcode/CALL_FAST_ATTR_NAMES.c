@@ -36,11 +36,11 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
   if (! obj)
     return EVAL_RAISE();
 
-  PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
+  PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! name)
     return EVAL_RAISE();
 
-  PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
+  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
   if (! names)
     return EVAL_RAISE();
 

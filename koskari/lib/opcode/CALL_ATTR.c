@@ -26,7 +26,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
   unsigned n = row.a1;
   unsigned count = n + 1;
 
-  PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
+  PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! name)
     return EVAL_RAISE();
 

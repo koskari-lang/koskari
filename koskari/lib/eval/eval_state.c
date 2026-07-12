@@ -134,8 +134,49 @@ KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
 }
 
 
-#define KosEvalState_GetConstant(es, index) \
-  KosCode_GET_CONST(KosEvalState_CODE(es), index)
+/**
+   Borrowed constant from the current code object's pool.
+
+   Under KOS_EVAL_SAFETYNET, validates code/index and rejects a NULL slot
+   (sets an error, returns NULL). Without the net the pool is trusted as
+   finalized at compile time.
+*/
+static inline PyObject *KosEvalState_GetConstant(
+    KosEvalState *es,
+    uint32_t index) {
+
+  KosCode *code = KosEvalState_CODE(es);
+
+#if KOS_EVAL_SAFETYNET
+  if (unlikely(! code || index >= KosCode_CPOOL_LEN(code))) {
+    PyErr_Format(PyExc_IndexError, "constant index out of bounds, %u",
+                 index);
+    return NULL;
+  }
+#endif
+
+  PyObject *val = KosCode_GET_CONST(code, index);
+
+#if KOS_EVAL_SAFETYNET
+  if (unlikely(! val)) {
+    PyErr_SetString(PyExc_RuntimeError, "NULL constant in pool");
+    return NULL;
+  }
+#endif
+
+  return val;
+}
+
+
+/* Hot-path constant load: direct pool index when the safety net is off;
+   guarded GetConstant when it is on. */
+#if KOS_EVAL_SAFETYNET
+# define KosEvalState_CONST(es, index) \
+    KosEvalState_GetConstant((es), (index))
+#else
+# define KosEvalState_CONST(es, index) \
+    KosCode_GET_CONST(KosEvalState_CODE(es), (index))
+#endif
 
 
 static KosStackBlock **kos_evalstate_parent_stack_slot(

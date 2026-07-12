@@ -27,7 +27,7 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
   uint32_t names_cpool_idx = row.a1;
   Py_ssize_t npos = (Py_ssize_t) row.a2;
 
-  PyObject *name = KosCode_GetConstant((PyObject *) code, name_cpool_idx);
+  PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
   if (! name)
     return EVAL_RAISE();
 
@@ -35,7 +35,7 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
   if (! callable)
     return EVAL_RAISE();
 
-  PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
+  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
   if (! names) {
     Py_DECREF(callable);
     return EVAL_RAISE();

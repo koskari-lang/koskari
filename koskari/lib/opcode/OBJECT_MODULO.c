@@ -14,22 +14,12 @@
 */
 
 /**
-   OBJECT_MODULO: pop right, left; call PyNumber_Remainder; push result.
+   OBJECT_MODULO: arg unused. Pop right then left, push left % right.
 */
+
 KOS_OP_HANDLER(OBJECT_MODULO) {
-    if (KosOp_ARG(insn) != 2) {
-      PyErr_SetString(PyExc_RuntimeError, "OBJECT_MODULO: only arg 2 supported");
-      return EVAL_RAISE();
-    }
-    PyObject *right = KosEvalState_StackPopRef(es);
-    if (! right) return EVAL_RAISE();
-    PyObject *left = KosEvalState_StackPopRef(es);
-    if (! left) { Py_DECREF(right); return EVAL_RAISE(); }
-    PyObject *res = PyNumber_Remainder(left, right);
-    Py_DECREF(left);
-    Py_DECREF(right);
-    if (! res) return EVAL_RAISE();
-    return kos_op_result_PUSH(es, res);
+  return kos_op_result_from_push_int(
+      obj_op_binary_long(es, insn, PyNumber_Remainder, KOS_LBOP_MODULO));
 }
 
 

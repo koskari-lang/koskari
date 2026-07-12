@@ -52,7 +52,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
   }
   uint32_t resume_pc = ext->pop_pc + 1u;
 
-  PyObject *name_obj = get_name_from_insn(code, insn);
+  PyObject *name_obj = get_name_from_insn(es, insn);
   Py_XINCREF(name_obj);
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(

@@ -21,7 +21,7 @@
 
 KOS_OP_HANDLER(VAR_OBJECT_INPLACE_BIT_XOR) {
 
-  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
+  PyObject *name = get_name_from_insn(es, insn);
   if (unlikely(! name))
     return EVAL_RAISE();
 

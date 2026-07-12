@@ -32,7 +32,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
                     "SWITCH_EQ_FAST_ATTR invoked on NULL namespace");
     return EVAL_RAISE();
   }
-  PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a2);
+  PyObject *attr_name = KosEvalState_CONST(es, row.a2);
   if (unlikely(! attr_name))
     return EVAL_RAISE();
 

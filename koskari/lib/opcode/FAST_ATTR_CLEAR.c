@@ -26,7 +26,7 @@ KOS_OP_HANDLER(FAST_ATTR_CLEAR) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_ATTR_CLEAR invoked on NULL namespace");
     return EVAL_RAISE();
   }
-  PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a1);
+  PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! attr_name)
     return EVAL_RAISE();
   size_t idx = (size_t) row.a0;

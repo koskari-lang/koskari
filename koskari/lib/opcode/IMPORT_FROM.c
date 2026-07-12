@@ -75,15 +75,15 @@ KOS_OP_HANDLER(IMPORT_FROM) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
-  PyObject *name = KosCode_GetConstant((PyObject *) code, row.a0);
+  PyObject *name = KosEvalState_CONST(es, row.a0);
   if (! name)
     return EVAL_RAISE();
 
-  PyObject *attrs = KosCode_GetConstant((PyObject *) code, row.a2);
+  PyObject *attrs = KosEvalState_CONST(es, row.a2);
   if (! attrs)
     return EVAL_RAISE();
 
-  PyObject *binds = KosCode_GetConstant((PyObject *) code, row.a3);
+  PyObject *binds = KosEvalState_CONST(es, row.a3);
   if (! binds)
     return EVAL_RAISE();
 

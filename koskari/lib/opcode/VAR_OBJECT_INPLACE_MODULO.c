@@ -21,7 +21,7 @@
 
 KOS_OP_HANDLER(VAR_OBJECT_INPLACE_MODULO) {
 
-  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
+  PyObject *name = get_name_from_insn(es, insn);
   if (unlikely(! name))
     return EVAL_RAISE();
 
@@ -35,7 +35,9 @@ KOS_OP_HANDLER(VAR_OBJECT_INPLACE_MODULO) {
     return EVAL_RAISE();
   }
 
-  PyObject *result = PyNumber_InPlaceRemainder(obj, rhs);
+  PyObject *result = NULL;
+  if (kos_long_binop_fast(KOS_LBOP_MODULO, obj, rhs, &result) == 0)
+    result = PyNumber_InPlaceRemainder(obj, rhs);
   Py_DECREF(obj);
   Py_DECREF(rhs);
   if (unlikely(! result))

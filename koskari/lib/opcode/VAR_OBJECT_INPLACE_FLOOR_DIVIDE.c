@@ -21,7 +21,7 @@
 
 KOS_OP_HANDLER(VAR_OBJECT_INPLACE_FLOOR_DIVIDE) {
 
-  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
+  PyObject *name = get_name_from_insn(es, insn);
   if (unlikely(! name))
     return EVAL_RAISE();
 

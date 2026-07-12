@@ -25,7 +25,7 @@ KOS_OP_HANDLER(SWITCH_EQ_VAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
-  PyObject *var_name = KosCode_GetConstant((PyObject *) code, row.a1);
+  PyObject *var_name = KosEvalState_CONST(es, row.a1);
   if (unlikely(! var_name))
     return EVAL_RAISE();
 

@@ -43,24 +43,13 @@ KOS_OP_HANDLER(PUSH_NS) {
     uint32_t i0 = row.a0;
     uint32_t i1 = row.a1;
 
-    if (unlikely(i0 >= KosCode_CPOOL_LEN(code))) {
-      PyErr_Format(PyExc_IndexError, "PUSH_NS nspec constant index out of"
-                   " bounds: %u", (unsigned) i0);
-      return EVAL_RAISE();
-    }
-    if (unlikely(i1 >= KosCode_CPOOL_LEN(code))) {
-      PyErr_Format(PyExc_IndexError, "PUSH_NS names constant index out of"
-                   " bounds: %u", (unsigned) i1);
-      return EVAL_RAISE();
-    }
-
-    nspec = KosCode_GetConstant((PyObject *) code, i0);
+    nspec = KosEvalState_CONST(es, i0);
     if (unlikely(! nspec)) {
       return EVAL_RAISE();
     }
     Py_INCREF(nspec);
 
-    names = KosCode_GetConstant((PyObject *) code, i1);
+    names = KosEvalState_CONST(es, i1);
     if (unlikely(! names)) {
       Py_DECREF(nspec);
       return EVAL_RAISE();

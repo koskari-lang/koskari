@@ -29,7 +29,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   unsigned opa = row.a3;
 
   // borrow reference
-  PyObject *name = KosCode_GetConstant((PyObject *) code, name_cpool_idx);
+  PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
   if (! name)
     return EVAL_RAISE();
 
@@ -39,12 +39,12 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
     return EVAL_RAISE();
 
   // borrowed reference
-  PyObject *attr_name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
+  PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! attr_name)
     return EVAL_RAISE();
 
   // borrowed reference
-  PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
+  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
   if (! names) {
     Py_DECREF(obj);
     return EVAL_RAISE();

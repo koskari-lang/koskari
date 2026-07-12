@@ -21,8 +21,8 @@
 KOS_OP_HANDLER(VAR_ATTR_REF) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  PyObject *var_name = KosCode_GetConstant((PyObject *) code, row.a0);
-  PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a1);
+  PyObject *var_name = KosEvalState_CONST(es, row.a0);
+  PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! var_name || ! attr_name)
     return EVAL_RAISE();
   PyObject *obj = frame_ns_deref(es, var_name);

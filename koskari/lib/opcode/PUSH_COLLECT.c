@@ -21,19 +21,12 @@
 */
 
 KOS_OP_HANDLER(PUSH_COLLECT) {
-  KosCode *code = KosEvalState_CurrentCode(es);
   uint32_t cidx = KosOp_ARG(insn);
   PyObject *nspec = NULL;
   PyObject *parent = CURRENT_NS();
   PyObject *new_ns = NULL;
 
-  if (cidx >= KosCode_CPOOL_LEN(code)) {
-    PyErr_Format(PyExc_IndexError, "PUSH_COLLECT constant index out of"
-                 " bounds: %u", cidx);
-    return EVAL_RAISE();
-  }
-
-  nspec = KosCode_GetConstant((PyObject *) code, cidx);
+  nspec = KosEvalState_CONST(es, cidx);
   if (! nspec) {
     return EVAL_RAISE();
   }

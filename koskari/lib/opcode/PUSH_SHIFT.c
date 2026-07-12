@@ -28,7 +28,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   uint32_t resume_pc;
   uint32_t shift_body_pc;
 
-  if (get_prompt_id_from_insn(KosEvalState_CurrentCode(es), insn, &prompt_id) < 0)
+  if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
     return EVAL_RAISE();
 
   if (! kos_find_prompt(es, prompt_id)) {

@@ -43,6 +43,7 @@ typedef enum KosLongBinop {
   KOS_LBOP_ADD,
   KOS_LBOP_SUBTRACT,
   KOS_LBOP_MULTIPLY,
+  KOS_LBOP_MODULO,
   KOS_LBOP_BIT_AND,
   KOS_LBOP_BIT_OR,
   KOS_LBOP_BIT_XOR,
@@ -63,6 +64,9 @@ typedef enum KosLongBinop {
    included.  Shifts are restricted to non-negative operands: C >> on a
    negative left operand is implementation-defined, and a negative shift
    count must raise ValueError, so both cases defer to the generic path.
+   Modulo is restricted to a non-negative dividend and a positive
+   divisor so C % matches Python remainder; zero or negative operands
+   fall back (ZeroDivisionError and sign-of-divisor remainder).
    Overflow on +, -, *, and << falls back rather than widening.
 */
 static inline int kos_long_binop_fast(
@@ -99,6 +103,12 @@ static inline int kos_long_binop_fast(
   case KOS_LBOP_MULTIPLY:
     if (unlikely(__builtin_mul_overflow(a, b, &res)))
       return 0;
+    break;
+
+  case KOS_LBOP_MODULO:
+    if (unlikely(a < 0 || b <= 0))
+      return 0;
+    res = a % b;
     break;
 
   case KOS_LBOP_BIT_AND:

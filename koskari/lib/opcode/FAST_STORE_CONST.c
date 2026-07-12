@@ -29,7 +29,7 @@ KOS_OP_HANDLER(FAST_STORE_CONST) {
     KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
     size_t idx = (size_t) row.a0;
-    PyObject *val = KosEvalState_GetConstant(es, row.a1);
+    PyObject *val = KosEvalState_CONST(es, row.a1);
 
     if (unlikely(! val))
       return EVAL_RAISE();

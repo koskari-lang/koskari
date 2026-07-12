@@ -27,7 +27,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   uint32_t attr_cpool_idx = row.a1;
   unsigned n = row.a2;
 
-  PyObject *attr_name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
+  PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! attr_name)
     return EVAL_RAISE();
 

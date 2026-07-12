@@ -18,7 +18,7 @@
 */
 
 KOS_OP_HANDLER(CONST_ITEM) {
-  PyObject *key = KosEvalState_GetConstant(es, KosOp_ARG(insn));
+  PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (! key)
     return EVAL_RAISE();
 

@@ -16,16 +16,15 @@
 /**
    CONST: arg = constant index. Push the code object constant at that index
    onto the stack.
+
+   Pool trust follows KosEvalState_CONST / KOS_EVAL_SAFETYNET.
 */
 
 KOS_OP_HANDLER(CONST) {
-  uint32_t index = KosOp_ARG(insn);
-
-  PyObject *val = KosEvalState_GetConstant(es, index);
+  PyObject *val = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (! val)
     return EVAL_RAISE();
   Py_INCREF(val);
-
   return kos_op_result_PUSH(es, val);
 }
 

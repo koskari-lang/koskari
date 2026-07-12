@@ -20,7 +20,7 @@
 
 KOS_OP_HANDLER(VAR_BIND) {
 
-  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
+  PyObject *name = get_name_from_insn(es, insn);
   if (! name)
     return EVAL_RAISE();
 

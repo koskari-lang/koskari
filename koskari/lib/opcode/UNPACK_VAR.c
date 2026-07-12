@@ -25,11 +25,11 @@ KOS_OP_HANDLER(UNPACK_VAR) {
   uint32_t name0_idx = row.a0;
   uint32_t name1_idx = row.a1;
 
-  PyObject *name0 = KosCode_GetConstant((PyObject *) code, name0_idx);
+  PyObject *name0 = KosEvalState_CONST(es, name0_idx);
   if (! name0)
     return EVAL_RAISE();
 
-  PyObject *name1 = KosCode_GetConstant((PyObject *) code, name1_idx);
+  PyObject *name1 = KosEvalState_CONST(es, name1_idx);
   if (! name1)
     return EVAL_RAISE();
 

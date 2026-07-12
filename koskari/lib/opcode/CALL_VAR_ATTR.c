@@ -27,11 +27,11 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
   uint32_t attr_cpool_idx = row.a1;
   unsigned n = row.a2;
 
-  PyObject *var_name = KosCode_GetConstant((PyObject *) code, name_cpool_idx);
+  PyObject *var_name = KosEvalState_CONST(es, name_cpool_idx);
   if (! var_name)
     return EVAL_RAISE();
 
-  PyObject *attr_name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
+  PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! attr_name)
     return EVAL_RAISE();
 

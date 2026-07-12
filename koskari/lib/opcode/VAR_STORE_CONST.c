@@ -23,8 +23,8 @@ KOS_OP_HANDLER(VAR_STORE_CONST) {
     KosCode *code = KosEvalState_CurrentCode(es);
     KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
-    PyObject *name = KosEvalState_GetConstant(es, row.a0);
-    PyObject *val = KosEvalState_GetConstant(es, row.a1);
+    PyObject *name = KosEvalState_CONST(es, row.a0);
+    PyObject *val = KosEvalState_CONST(es, row.a1);
 
     if (unlikely(! name || ! val))
       return EVAL_RAISE();

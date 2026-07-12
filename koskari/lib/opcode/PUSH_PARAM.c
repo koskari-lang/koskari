@@ -20,8 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_PARAM) {
-  PyObject *names = KosCode_GetConstant((PyObject *) KosEvalState_CurrentCode(es),
-                                         KosOp_ARG(insn));
+  PyObject *names = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (! names) {
     return EVAL_RAISE();
   }
