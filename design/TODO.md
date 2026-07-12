@@ -64,6 +64,67 @@ instead of two, one resolution shared by construction.
 Ref: [interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md);
 `examples/churn/` (`--field`).
 
+### Opcode caching: further families (investigative)
+
+The per-site cache is **built and active**: the framework (tagged-union slots,
+widened `KosOp`, trailing slot array, the two pragmas) plus two families --
+the method cache (`KOS_CACHE_METHOD`, CALL_ATTR*) and the attribute-storage
+field cache (`KOS_CACHE_FIELD`, FAST/VAR_ATTR(_STORE); SLOT on all versions,
+INSTANCE_VALUE on 3.11-3.14). What remains is not building caching but adding
+new **kinds** on the same framework. Each is its own investigation, gated by a
+real workload that shows the win:
+
+- **Global / builtin name cache** — a `LOAD_GLOBAL`-class family caching the
+  resolved cell + module-dict version, the classic second-biggest interpreter
+  win after attributes.
+- **`DICT_HINT` field mode** — the reserved field mode: a keys-index hint for
+  attributes on a *materialized* instance `__dict__` (today they resolve to
+  GENERIC).
+- **Jump / exception-type caches** — speculative; evaluate only if a workload
+  demands them.
+
+Ref: [interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md)
+(§Phase 5).
+
+### Dispatch hot-path microopt (investigated 2026-07-12 -- both blocked)
+
+The computed-goto dispatch loop (`eval.c`, `koskari_eval_dispatch_computed_goto`)
+already does per-handler tail-dispatch, and the coroutine / continuation /
+async checks are already off the NORMAL path (they ride non-NORMAL
+`KosOpResult` kinds through `cg_prologue` / `cg_poll`). Three per-opcode
+round-trips were examined; **all three are load-bearing, not redundant** -- the
+stackless call-flattening design makes the "obvious" caches unsound. Recorded
+so this is not re-attempted blind:
+
+- **Hoisting the code array base / length across NORMAL steps -- UNSOUND.**
+  The premise "`es->code` is invariant across NORMAL steps" is false *by
+  design*: a plain Koskari-to-Koskari call is flattened -- `callable_promote_normal`
+  (`callable.c:56`) returns `EVAL_NORMAL()` after entering the callee's frame
+  (new `es->code`, new `es->pc`), so dispatch continues into the callee without
+  re-entering `cg_prologue`. The per-opcode `es->code` reload in
+  `KOS_EVAL_PREPARE_NEXT_INSN` exists precisely to pick up that new frame.
+  Caching the base across NORMAL steps SIGSEGVs on the first flattened call.
+  A correct version needs a distinct frame-entry result kind threaded through
+  the `KosEvalState_Call*` ABI (many consumers: `demand.c`, `object.c`,
+  `values.c`, `dynchain.c`) -- a call-ABI change, not a microopt.
+- **Dropping the per-opcode PC bounds check -- UNSAFE.** Non-terminal code
+  objects genuinely exist and run: the opcode-unit-test harness
+  (`tests/lib/opcode` `build_code`) constructs single-op snippets with no
+  terminal `RETURN` to exercise one opcode in isolation. The check is what
+  stops dispatch from running off the end there, so it cannot be removed (and
+  enforcing terminal-RETURN at `KosCode_New` rejects those tests at
+  construction).
+- **Register-caching `es->pc` (the `next_instr` win) -- blocked** by the
+  stackless design: suspension (AWAIT / YIELD / CAPTURE_CC / shift) freezes
+  `es->pc` / `es->acting_pc` to the heap frame, and JUMP-family handlers rewrite
+  `es->pc` while returning NORMAL, so pc must stay memory-authoritative.
+
+Net: the dispatch loop's per-opcode state reloads are all required by the
+flattening / suspension model. A real win here means reworking how frame-entry
+is signaled (a typed `ENTER_FRAME` result that refreshes cached loop state
+without the full `cg_prologue` drain), which is a design project. PGO (below)
+is the lower-risk lever on dispatch-layout cost.
+
 ---
 
 ## Profiling / instrumentation
