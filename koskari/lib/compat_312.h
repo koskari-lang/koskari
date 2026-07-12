@@ -24,13 +24,13 @@
 
 
 /*
-   The instance-value field cache (KOS_FIELD_INSTANCE_VALUE) reads and
-   overwrites an object's inline attribute values directly. CPython keeps the
-   accessors it would need (_PyDictKeys_StringLookup, the managed-dict helpers)
-   internal and unexported, so we replicate just the layout we touch. These
-   structs mirror Include/internal/pycore_{object,dict}.h for 3.12 ONLY; they
-   are our own names (no internal header, no unexported symbol), read under a
-   type-version guard at the call site. See eval/eval_cache.c.
+   Value access for the instance-value field cache (KOS_FIELD_INSTANCE_VALUE).
+   On 3.12 the managed slot at obj[-3] is a tagged union: inline values or a
+   materialized dict. The shared name -> index scan and the field-cache logic
+   live in compat.h and eval/eval_cache.c; here we only expose the two hooks
+   the resolver calls, so the version differences stay isolated. CPython keeps
+   these accessors internal and unexported, so we replicate the layout under
+   our own names (no internal header, no unexported symbol).
 */
 
 
@@ -40,42 +40,11 @@ typedef struct {
 } KosDictValues312;
 
 
-/* The prefix of struct _dictkeysobject we read: the shared/cached keys. */
-typedef struct {
-  Py_ssize_t dk_refcnt;
-  uint8_t dk_log2_size;
-  uint8_t dk_log2_index_bytes;
-  uint8_t dk_kind;
-  uint32_t dk_version;
-  Py_ssize_t dk_usable;
-  Py_ssize_t dk_nentries;
-  char dk_indices[];
-} KosDictKeys312;
-
-
-/* A unicode key entry (split/unicode tables store these). */
-typedef struct {
-  PyObject *me_key;
-  PyObject *me_value;
-} KosDictUnicodeEntry312;
-
-
 /* union { PyObject *dict; char *values; } at obj[-3] for a managed dict. */
 typedef union {
   PyObject *dict;
   char *values;
 } KosDictOrValues312;
-
-
-/*
-   The entries follow the hash table (dk_indices), whose size in bytes is
-   (1 << dk_log2_index_bytes). Mirrors _DK_ENTRIES for the unicode case.
-*/
-static inline KosDictUnicodeEntry312 *
-kos_dk_unicode_entries312(KosDictKeys312 *dk) {
-  size_t ix = (size_t) 1 << dk->dk_log2_index_bytes;
-  return (KosDictUnicodeEntry312 *) (dk->dk_indices + ix);
-}
 
 
 /* The managed dict-or-values slot: three pointers ahead of the object. */
@@ -84,16 +53,26 @@ static inline KosDictOrValues312 *kos_dict_or_values312(PyObject *obj) {
 }
 
 
-/* Is the managed slot holding inline values (tag bit) or a real dict? */
-static inline int kos_dov_is_values312(KosDictOrValues312 dov) {
-  return ((uintptr_t) dov.values) & 1;
+/* Does tp store instance attributes as addressable inline values? */
+static inline int kos_type_has_inline_values(PyTypeObject *tp) {
+  return (tp->tp_flags & Py_TPFLAGS_MANAGED_DICT) != 0;
 }
 
 
-/* The inline values array. The tag is set by storing (real - 1), so the
-   array is recovered as (stored + 1); mirrors _PyDictOrValues_GetValues. */
-static inline KosDictValues312 *kos_dov_get_values312(KosDictOrValues312 dov) {
-  return (KosDictValues312 *) (dov.values + 1);
+/*
+   The inline value slots for obj and whether they are live (not materialized
+   to a dict). When inactive the returned pointer must not be dereferenced.
+   The values tag is set by storing (real - 1), so the array is recovered as
+   (stored + 1); mirrors _PyDictOrValues_GetValues.
+*/
+static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
+  KosDictOrValues312 dov = *kos_dict_or_values312(obj);
+  if (! (((uintptr_t) dov.values) & 1)) {
+    *active = 0;
+    return NULL;
+  }
+  *active = 1;
+  return ((KosDictValues312 *) (dov.values + 1))->values;
 }
 
 

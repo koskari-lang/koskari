@@ -47,6 +47,88 @@
 #define PyMapping_HasKeyWithError(o, k)  PyMapping_HasKey((o), (k))
 #endif
 
+
+/* === Inline-values instance attributes: shared name -> index scan === */
+
+#if PY_MINOR_VERSION >= 12
+/*
+   The instance-value field cache addresses an object's inline attribute
+   values by their index in the type's shared keys. CPython keeps the keys
+   accessors internal and unexported, so we replicate just the prefix of
+   struct _dictkeysobject we read; the per-version value access lives in the
+   matching compat_3xx.h behind kos_type_has_inline_values /
+   kos_inline_value_slots. This layout holds for 3.12 through 3.14; the
+   free-threaded mutex only appears under Py_GIL_DISABLED. See
+   eval/eval_cache.c (KOS_FIELD_INSTANCE_VALUE).
+*/
+
+
+/* The prefix of struct _dictkeysobject: a type's shared/cached keys. */
+typedef struct {
+  Py_ssize_t dk_refcnt;
+  uint8_t dk_log2_size;
+  uint8_t dk_log2_index_bytes;
+  uint8_t dk_kind;
+#ifdef Py_GIL_DISABLED
+  PyMutex dk_mutex;
+#endif
+  uint32_t dk_version;
+  Py_ssize_t dk_usable;
+  Py_ssize_t dk_nentries;
+  char dk_indices[];
+} KosSharedKeys;
+
+
+/* A unicode key entry (split/unicode tables store these). */
+typedef struct {
+  PyObject *me_key;
+  PyObject *me_value;
+} KosSharedKeyEntry;
+
+
+/*
+   The entries follow the hash table (dk_indices), whose size in bytes is
+   (1 << dk_log2_index_bytes). Mirrors _DK_ENTRIES for the unicode case.
+*/
+static inline KosSharedKeyEntry *kos_shared_key_entries(KosSharedKeys *dk) {
+  size_t ix = (size_t) 1 << dk->dk_log2_index_bytes;
+  return (KosSharedKeyEntry *) (dk->dk_indices + ix);
+}
+
+
+/*
+   Find the inline-values index of name among tp's shared keys. Returns 1 and
+   sets *index on a match, 0 otherwise (no cached keys, general keys, or name
+   absent). The entry index is the value index: inline values are ordered by
+   the shared keys. Called only on the cold path, so the linear scan and the
+   rich-compare fallback are amortized to nothing.
+*/
+static inline int kos_type_value_index(
+    PyTypeObject *tp, PyObject *name, uint32_t *index) {
+
+  KosSharedKeys *keys = (KosSharedKeys *) ((PyHeapTypeObject *) tp)->ht_cached_keys;
+  if (! keys || keys->dk_kind == 0)          /* need shared unicode keys */
+    return 0;
+
+  KosSharedKeyEntry *ents = kos_shared_key_entries(keys);
+  Py_ssize_t n = keys->dk_nentries;
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *k = ents[i].me_key;
+    if (! k)
+      continue;
+    if (k == name
+        || (PyUnicode_CheckExact(k) && PyUnicode_CheckExact(name)
+            && PyUnicode_Compare(k, name) == 0)) {
+      if (i > (Py_ssize_t) UINT32_MAX)
+        return 0;
+      *index = (uint32_t) i;
+      return 1;
+    }
+  }
+  return 0;
+}
+#endif
+
 /**
    Return the value associated with a StopAsyncIteration instance (new ref).
    On 3.13+ uses .value; on earlier versions uses exc.args[0].  Returns
