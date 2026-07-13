@@ -21,7 +21,7 @@
 
 KOS_OP_HANDLER(FAST_OBJECT_INPLACE_TRUE_DIVIDE) {
   return kos_op_result_from_push_int(
-      kos_fast_inplace_binop(es, insn, KOS_BINOP_TRUE_DIVIDE));
+      kos_fast_inplace_binop(es, KOS_BINOP_TRUE_DIVIDE, (size_t) KosOp_ARG(insn)));
 }
 
 

@@ -20,7 +20,7 @@
 
 KOS_OP_HANDLER(FAST_OBJECT_INPLACE_BIT_LEFT) {
   return kos_op_result_from_push_int(
-      kos_fast_inplace_binop(es, insn, KOS_BINOP_BIT_LEFT));
+      kos_fast_inplace_binop(es, KOS_BINOP_BIT_LEFT, (size_t) KosOp_ARG(insn)));
 }
 
 

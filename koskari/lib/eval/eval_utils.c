@@ -383,10 +383,9 @@ static inline KosOpResult kos_op_result_from_push_int(int r) {
    Returns 0/-1 for kos_op_result_from_push_int.  Operator set is
    KOS_BINOP_LIST (binops.h). */
 static KOS_NOINLINE int kos_fast_inplace_binop(
-    KosEvalState *es, KosOp *insn, KosBinop op) {
+    KosEvalState *es, KosBinop op, size_t idx) {
 
   PyObject *ns = KosEvalState_NAMESPACE(es);
-  size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (unlikely(! obj))
     return -1;

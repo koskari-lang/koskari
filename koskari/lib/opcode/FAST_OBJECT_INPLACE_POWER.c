@@ -21,7 +21,7 @@
 
 KOS_OP_HANDLER(FAST_OBJECT_INPLACE_POWER) {
   return kos_op_result_from_push_int(
-      kos_fast_inplace_binop(es, insn, KOS_BINOP_POWER));
+      kos_fast_inplace_binop(es, KOS_BINOP_POWER, (size_t) KosOp_ARG(insn)));
 }
 
 

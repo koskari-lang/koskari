@@ -21,7 +21,7 @@
 
 KOS_OP_HANDLER(FAST_OBJECT_INPLACE_MATRIX_MULTIPLY) {
   return kos_op_result_from_push_int(
-      kos_fast_inplace_binop(es, insn, KOS_BINOP_MATRIX_MULTIPLY));
+      kos_fast_inplace_binop(es, KOS_BINOP_MATRIX_MULTIPLY, (size_t) KosOp_ARG(insn)));
 }
 
 
