@@ -29,7 +29,7 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Arena, Code, FormalsSpec, FunctionSpec, Module,
+from ..lib import (Arena, Binop, Code, FormalsSpec, FunctionSpec, Module,
                    ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, nil, symbol)
@@ -84,6 +84,46 @@ def _build_var_to_fast():
 
 
 VAR_TO_FAST = _build_var_to_fast()
+
+
+_BINOP_COUNT = len(Binop)
+
+
+def merge_opcount(value):
+    """
+    Normalize a KOSTYLE_OPCOUNT operand to its merged uint16 (operator selector
+    in the high byte, reduce count in the low byte).
+
+    Accepts either idiom, so specials may emit whichever reads cleanly:
+      - a ``(op_type, count)`` pair, which is merged, or
+      - a pre-merged int, which is validated to have been correctly packed.
+
+    Both are range- and op-type-checked, so no soften-side reversal is needed.
+
+    :param value: (op_type, count) pair, or a pre-merged int
+    :return: merged uint16 int
+    :raises ValueError: on a bad shape, out-of-range byte, or unknown op-type
+    """
+
+    if isinstance(value, tuple):
+        if len(value) != 2:
+            raise ValueError("opcount operand must be (op_type, count), "
+                             "got %r" % (value,))
+        op_type, count = value
+        op_type = int(getattr(op_type, 'value', op_type))
+        count = int(count)
+    else:
+        merged = int(value)
+        if not 0 <= merged <= 0xffff:
+            raise ValueError("opcount int out of uint16 range: %r" % (value,))
+        op_type, count = merged >> 8, merged & 0xff
+
+    if not 0 <= op_type < _BINOP_COUNT:
+        raise ValueError("opcount op-type is not a known Binop: %r" % (op_type,))
+    if not 0 <= count <= 0xff:
+        raise ValueError("opcount count out of byte range: %r" % (count,))
+
+    return (op_type << 8) | count
 
 
 _TAIL_CALL_TO_CALL = {
@@ -1023,6 +1063,17 @@ class Compiler:
                     if idx >= 0:
                         arg = idx
                         op = new_op
+
+            # Normalize any KOSTYLE_OPCOUNT operand: specials may emit an
+            # (op_type, count) pair or a pre-merged int; merge_opcount accepts
+            # and validates both, so nothing has to be reversed at soften time.
+            if op.style == OpStyle.KOSTYLE_OPCOUNT:
+                arg = merge_opcount(arg)
+            elif (op.style == OpStyle.KOSTYLE_EXTRA
+                  and OpStyle.KOSTYLE_OPCOUNT in op.extra):
+                arg = tuple(
+                    merge_opcount(v) if fk == OpStyle.KOSTYLE_OPCOUNT else v
+                    for v, fk in zip(arg, op.extra))
 
             result.append((op, arg))
 
