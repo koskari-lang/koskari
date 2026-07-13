@@ -843,11 +843,6 @@ for _sym_text, _binop in _OPERAND_BY_SYM.items():
     _INPLACE_OPERAND_MAP[symbol('compile/' + _sym_text)] = _binop
 
 
-def _object_inplace_opcode(binop):
-    """OBJECT_INPLACE_<op> opcode for a Operand op-type (stack in-place family)."""
-    return OpCode['KOS_OP_OBJECT_INPLACE_' + binop.name[len('KOS_OPERAND_'):]]
-
-
 @builtin("compile/inplace")
 @special("compile/inplace", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_inplace(compiler, source, tc=False):
@@ -903,7 +898,7 @@ def special_inplace(compiler, source, tc=False):
 def special_inplace_item(compiler, source, tc=False):
     """
     Compile (compile/inplace-item OP OBJ KEY VALUE...). Multiple values
-    reduce left-to-right through the single OBJECT_INPLACE_* instruction.
+    reduce left-to-right through the single OBJECT_INPLACE instruction.
     """
 
     called_by, body = source
@@ -932,9 +927,7 @@ def special_inplace_item(compiler, source, tc=False):
     if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
-    opcode = _object_inplace_opcode(binop)
-
-    if (opcode is OpCode.KOS_OP_OBJECT_INPLACE_POWER
+    if (binop is Operand.KOS_OPERAND_POWER
             and len(value_exprs) != 1):
         raise SpecialError("inplace ** takes exactly one value", source)
 
@@ -958,7 +951,8 @@ def special_inplace_item(compiler, source, tc=False):
 
     for value_expr in value_exprs:
         frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, 1 + len(value_exprs))
+    frag.instruction(OpCode.KOS_OP_OBJECT_INPLACE,
+                     (binop, 1 + len(value_exprs)))
 
     if is_const:
         frag.instruction(OpCode.KOS_OP_CONST_ITEM_STORE, key_val)
@@ -975,7 +969,7 @@ def special_inplace_item(compiler, source, tc=False):
 def special_inplace_attr(compiler, source, tc=False):
     """
     Compile (compile/inplace-attr OP OBJ ATTR VALUE...). Multiple values
-    reduce left-to-right through the single OBJECT_INPLACE_* instruction.
+    reduce left-to-right through the single OBJECT_INPLACE instruction.
     """
 
     called_by, body = source
@@ -1007,9 +1001,7 @@ def special_inplace_attr(compiler, source, tc=False):
     if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
-    opcode = _object_inplace_opcode(binop)
-
-    if (opcode is OpCode.KOS_OP_OBJECT_INPLACE_POWER
+    if (binop is Operand.KOS_OPERAND_POWER
             and len(value_exprs) != 1):
         raise SpecialError("inplace ** takes exactly one value", source)
 
@@ -1030,7 +1022,8 @@ def special_inplace_attr(compiler, source, tc=False):
 
     for value_expr in value_exprs:
         frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, 1 + len(value_exprs))
+    frag.instruction(OpCode.KOS_OP_OBJECT_INPLACE,
+                     (binop, 1 + len(value_exprs)))
 
     if is_symbol(obj_expr):
         frag.request_var(str(obj_expr))

@@ -1627,6 +1627,56 @@ static KOS_NOINLINE int kos_object_operand(
 }
 
 
+/**
+   Shared out-of-line body for the stack-based OBJECT_INPLACE family.  Reduces
+   `count` operands from the stack left-to-right through the operator's
+   PyNumber_InPlace* reducer (KosOperator_Inplace*) and pushes the result --
+   the accumulator form used by the inplace-item / inplace-attr special forms.
+   Modulo keeps the two-operand int-fast path; power is strictly binary
+   (KosOperator_InplacePower rejects count != 2).  Each case passes a constant
+   fn.  Forced noinline: the switch stays out of the inlined dispatch loop.
+   Returns 0/-1 for kos_op_result_from_push_int. */
+static KOS_NOINLINE int kos_object_inplace(
+    KosEvalState *es,
+    KosOperand op,
+    int count) {
+
+  switch (op) {
+    case KOS_OPERAND_ADD:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceAdd);
+    case KOS_OPERAND_SUBTRACT:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceSubtract);
+    case KOS_OPERAND_MULTIPLY:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceMultiply);
+    case KOS_OPERAND_MODULO:
+      return obj_op_reduce_n_long(es, count, KosOperator_InplaceRemainder,
+                                  KOS_LBOP_MODULO);
+    case KOS_OPERAND_BIT_AND:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceBitwiseAnd);
+    case KOS_OPERAND_BIT_OR:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceBitwiseOr);
+    case KOS_OPERAND_BIT_XOR:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceBitwiseXor);
+    case KOS_OPERAND_BIT_LEFT:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceLshift);
+    case KOS_OPERAND_BIT_RIGHT:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceRshift);
+    case KOS_OPERAND_TRUE_DIVIDE:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceTrueDivide);
+    case KOS_OPERAND_FLOOR_DIVIDE:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceFloorDivide);
+    case KOS_OPERAND_MATRIX_MULTIPLY:
+      return obj_op_reduce_n(es, count, KosOperator_InplaceMatrixMultiply);
+    case KOS_OPERAND_POWER:
+      return obj_op_reduce_n(es, count, KosOperator_InplacePower);
+    default:
+      PyErr_Format(PyExc_SystemError,
+                   "bad inplace operand op-type: %i", (int) op);
+      return -1;
+  }
+}
+
+
 static PyObject *binary_in_result(PyObject *left, PyObject *right) {
   int r = PySequence_Contains(right, left);
   if (r < 0)

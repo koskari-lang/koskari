@@ -52,14 +52,22 @@ width in their own EXTRA slots.
 ## Status -- DONE (committed on eval_fast_deref)
 
 Dispatch fn `koskari_eval_dispatch_computed_goto`: **124,261 B at effort start
--> 71,057 B (in-place families) -> 68,634 B (reducing family, step 1)**.
+-> 71,057 B (var/fast in-place) -> 68,634 B (reducing, step 1) -> 66,749 B
+(stack in-place, step 2)**.
 
-The **reducing family is now migrated** (step 1 below, green but not yet
-committed as of this line): the 13 arithmetic `OBJECT_<op>` opcodes collapsed
-into one `OBJECT_OPERAND` (standalone OPCOUNT). `OBJECT_BIT_INVERT` (unary `~`)
-and `OBJECT_STR` (f-string build, no operand) stay standalone. See "Reducing
-migration -- landed" below for the specifics that differed from the original
-plan.
+**Both remaining families are now migrated** (steps 1 and 2 below, green;
+step 1 committed as `aa7836eb`, step 2 green and pending commit):
+- The 13 reducing/binary arithmetic `OBJECT_<op>` opcodes collapsed into one
+  `OBJECT_OPERAND` (standalone OPCOUNT).
+- The 13 stack in-place `OBJECT_INPLACE_<op>` opcodes collapsed into one
+  `OBJECT_INPLACE` (standalone OPCOUNT).
+`OBJECT_BIT_INVERT` (unary `~`) and `OBJECT_STR` (f-string build, no operand)
+stay standalone. Together with the earlier `FAST_OBJECT_INPLACE` /
+`VAR_OBJECT_INPLACE` consolidation, the whole arithmetic-opcode surface is now
+four parameterized opcodes instead of 52 per-operator ones.
+
+The `.kio` bytecode ABI (`serialize/constants.py`) was bumped MINOR 5 -> 6:
+removing 13 + 13 opcode rows shifts the enum values that follow.
 
 Commit trail (oldest -> newest):
 - `f58796f7` slim ns-touching handlers (pre-work; 124,261 -> 120,944)
@@ -202,13 +210,31 @@ Native `tests/native/test_eval.c` uses `KosOpCount_MAKE(KOS_OPERAND_ADD, 2)`.
 Verification: full suite **4581 passed, 10 skipped**; flake8 OK; churn answers
 match (py==ki); ASan **293 passed, 0 failed**; dispatch fn 71,057 -> 68,634 B.
 
-### 2. Stack in-place -> `OBJECT_INPLACE`
+## Stack in-place migration -- landed (step 2, green; commit pending)
 
-`OBJECT_INPLACE_<op>` (used by `special_inplace_item`, already reducing over
-`count` values). Add `OP(OBJECT_INPLACE, 0, OPCOUNT)` + cold handler (same
-switch shape, TOS accumulator epilogue). Update `special_inplace_item` to emit
-`(operand, count)`; drop `_object_inplace_opcode`. Remove the 13
-`OBJECT_INPLACE_<op>` rows.
+`OBJECT_INPLACE_<op>` (13 opcodes, used by `special_inplace_item` /
+`special_inplace_attr`, reducing over `count` values) collapsed into one
+`OBJECT_INPLACE` (standalone OPCOUNT). This family is uniform -- every operator
+maps to its `KosOperator_Inplace*` reducing fn -- so the shared cold
+`kos_object_inplace(es, op, count)` switch is 13 `obj_op_reduce_n` calls, with
+MODULO keeping its two-operand int-fast path (`obj_op_reduce_n_long`, the only
+in-place op that had one) and POWER strictly binary
+(`KosOperator_InplacePower` rejects `count != 2`).
+
+Compiler (`specials/object.py`): both `special_inplace_item` and
+`special_inplace_attr` emit `OBJECT_INPLACE (operand, 1 + len(values))`;
+`_object_inplace_opcode` deleted; the power arity guard now tests `binop is
+Operand.KOS_OPERAND_POWER`. `special_inplace` (the var/slot form) still emits
+`VAR_OBJECT_INPLACE` -> resolves to `FAST_OBJECT_INPLACE` unchanged.
+
+Tests: the `build_code` lowering table (`_OPERAND_LOWER`) now also maps
+`OBJECT_INPLACE_<op>` names -> `OBJECT_INPLACE`, keyed off a shared
+`_OPERAND_BY_NAME` dict; `tests/compile/specials/test_inplace_specials.py` got
+an honest `_find_inplace(code, Operand.X)` helper for its two opcode
+assertions.
+
+Verification: full suite **4581 passed, 10 skipped**; flake8 OK; churn answers
+match (py==ki); ASan **293 passed, 0 failed**; dispatch fn 68,634 -> 66,749 B.
 
 ### 3. Reducing generalization of the in-place families (optional here)
 
