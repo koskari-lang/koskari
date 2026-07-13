@@ -18,7 +18,13 @@
    CONST (attr name). The object sits on the stack below the count reduction
    values: [obj, v0, ..., v_{count-1}]. Reduce obj.attr in place with the
    operator and store it back; pushes nothing (the special appends CONST None).
-   Cold: the op-type switch lives in the shared kos_attr_inplace_reduce.
+   Cold: the op-type switch lives in the shared kos_inplace_reduce.
+
+   Carries one per-site field cache (cache arity 1), like the FAST / VAR attr
+   in-place variants: a single resolved storage location serves both the read
+   of obj.attr and the write-back. obj comes off the stack rather than a named
+   local, so this site may be polymorphic; the field cache degrades to its
+   megamorphic bypass when it is.
 */
 
 KOS_OP_HANDLER_COLD(ATTR_INPLACE) {
@@ -34,7 +40,11 @@ KOS_OP_HANDLER_COLD(ATTR_INPLACE) {
   if (! tail)
     return EVAL_RAISE();
 
-  int res = kos_attr_inplace_reduce(tail[0], attr, op, &tail[1], count);
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  KosCacheSlot *slot =
+      (cache_ix != KOS_CACHE_UNSET) ? &KosCode_CACHE(code)[cache_ix] : NULL;
+
+  int res = kos_attr_inplace_cached(slot, tail[0], attr, op, &tail[1], count);
   KosEvalState_StackDropNoErr(es, (size_t) (count + 1));
   return kos_op_result_from_push_int(res);
 }

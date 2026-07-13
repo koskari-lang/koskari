@@ -735,4 +735,82 @@ KOS_OP_INLINE KosFieldMode kos_resolve_attr_location(
 }
 
 
+/**
+   Cache-aware augmented attribute assignment (obj.attr OP= args...), used by
+   FAST_ATTR_INPLACE. On a direct field-cache hit the accumulator is read from
+   -- and the folded result written straight back to -- the resolved storage
+   location (a __slots__ member or an inline instance value), skipping the
+   PyObject_GetAttr / PyObject_SetAttr protocol on both ends of the
+   read-modify-write.
+
+   The location is resolved once, serving both the read and the write. The fold
+   between them runs arbitrary user code (an __iadd__ may reassign obj's type or
+   materialize its managed dict), so the direct store is gated by re-checking
+   the slot's guard against obj's current type: a hit reuses the resolved offset
+   (the guard's type+version invariant means it is still valid), a miss -- like
+   an unset field or a generic/megamorphic location -- falls back to the generic
+   getattr/setattr. This re-guard, not a second resolve, is what keeps the raw
+   field_slot_store from writing to a stale offset. slot may be NULL when caches
+   are disabled. Neither pops args nor touches obj's ref -- the caller owns
+   both. Returns 0/-1.
+*/
+static int kos_attr_inplace_cached(
+    KosCacheSlot *slot,
+    PyObject *obj,
+    PyObject *attr,
+    KosOperand op,
+    PyObject *const *args,
+    int count) {
+
+  if (! slot)
+    return kos_attr_inplace_reduce(obj, attr, op, args, count);
+
+  /* Load: resolve the field location once and read the accumulator directly. */
+  uint32_t off;
+  KosFieldMode m = kos_resolve_attr_location(obj, attr, slot, &off);
+
+  PyObject *acc = NULL;
+  if (m == KOS_FIELD_SLOT)
+    acc = field_slot_load(obj, off);
+#if PY_MINOR_VERSION >= 11
+  else if (m == KOS_FIELD_INSTANCE_VALUE)
+    acc = field_instance_value_load(obj, off);
+#endif
+
+  if (! acc)
+    /* Unset field, generic/megamorphic location, or a materialized dict: the
+       generic getattr raises AttributeError / runs __getattr__ as needed. */
+    return kos_attr_inplace_reduce(obj, attr, op, args, count);
+
+  Py_INCREF(acc);
+  acc = attr_inplace_fold(acc, op, args, count);
+  if (! acc)
+    return -1;
+
+  /* Store: reuse the resolved offset only if the guard still holds -- the fold
+     may have retyped obj out from under it. On a miss, fall back to setattr. */
+  int res;
+  if (field_guard_ok(Py_TYPE(obj), slot)) {
+    if (m == KOS_FIELD_SLOT) {
+      field_slot_store(obj, off, acc);
+      res = 0;
+    }
+#if PY_MINOR_VERSION >= 11
+    else if (m == KOS_FIELD_INSTANCE_VALUE
+             && field_instance_value_store(obj, off, acc)) {
+      res = 0;
+    }
+#endif
+    else {
+      res = PyObject_SetAttr(obj, attr, acc);
+    }
+  } else {
+    res = PyObject_SetAttr(obj, attr, acc);
+  }
+
+  Py_DECREF(acc);
+  return res;
+}
+
+
 // The end.

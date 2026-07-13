@@ -20,7 +20,12 @@
    place with the operator and store it back; pushes nothing (the special
    appends CONST None). Resolution lowers this to FAST_ATTR_INPLACE when the
    name resolves to a fast slot. Cold: the op-type switch lives in the shared
-   kos_attr_inplace_reduce.
+   kos_inplace_reduce.
+
+   Carries one per-site field cache (cache arity 1), like FAST_ATTR_INPLACE: a
+   single resolved storage location serves both the read of obj.attr and the
+   write-back. The receiver name is resolved through the frame namespace; the
+   field cache is on obj.attr, independent of how obj itself is looked up.
 */
 
 KOS_OP_HANDLER_COLD(VAR_ATTR_INPLACE) {
@@ -44,7 +49,11 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_INPLACE) {
     return EVAL_RAISE();
   }
 
-  int res = kos_attr_inplace_reduce(obj, attr, op, args, count);
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  KosCacheSlot *slot =
+      (cache_ix != KOS_CACHE_UNSET) ? &KosCode_CACHE(code)[cache_ix] : NULL;
+
+  int res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
   KosEvalState_StackDropNoErr(es, (size_t) count);
   Py_DECREF(obj);
   return kos_op_result_from_push_int(res);

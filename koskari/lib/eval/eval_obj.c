@@ -222,18 +222,41 @@ static KOS_NOINLINE int kos_var_inplace_operand(
 }
 
 
+/* Fold acc in place over the count reduction values: acc = acc OP= args[i],
+   left to right.  Consumes the (owned) acc reference and returns the owned
+   result, or NULL on error (acc already dropped).  Each step routes through the
+   in-place reducing operator, so this matches a single reduction seeded with
+   acc.  Shared by the getattr/setattr generic path and the field-cache fast
+   path (eval_cache.c), which differ only in how acc is loaded and stored. */
+static PyObject *attr_inplace_fold(
+    PyObject *acc,
+    KosOperand op,
+    PyObject *const *args,
+    int count) {
+
+  for (int i = 0; i < count; i++) {
+    PyObject *pair[2] = { acc, args[i] };
+    PyObject *n = kos_inplace_reduce(op, pair, 2);
+    Py_DECREF(acc);
+    acc = n;
+    if (! acc)
+      return NULL;
+  }
+
+  return acc;
+}
+
+
 /* Shared core for the augmented attribute-assignment family (ATTR_INPLACE and
    the FAST / VAR slot variants).  Reduces obj.attr in place:
 
      acc = getattr(obj, attr)
-     for each of the count values in args: acc = acc OP= args[i]
+     acc = fold(acc) over the count values in args
      setattr(obj, attr, acc)
 
-   Each fold step routes through the in-place reducing operator (a two-operand
-   in-place reduce), so left-to-right over count values matches a single
-   reduction seeded with acc.  args points at the count reduction values
-   (typically a stack tail); this function neither pops them nor touches obj's
-   ref -- the caller owns both and drops the stack afterwards.  Returns 0/-1. */
+   args points at the count reduction values (typically a stack tail); this
+   function neither pops them nor touches obj's ref -- the caller owns both and
+   drops the stack afterwards.  Returns 0/-1. */
 static int kos_attr_inplace_reduce(
     PyObject *obj,
     PyObject *attr,
@@ -245,14 +268,9 @@ static int kos_attr_inplace_reduce(
   if (! acc)
     return -1;
 
-  for (int i = 0; i < count; i++) {
-    PyObject *pair[2] = { acc, args[i] };
-    PyObject *n = kos_inplace_reduce(op, pair, 2);
-    Py_DECREF(acc);
-    acc = n;
-    if (! acc)
-      return -1;
-  }
+  acc = attr_inplace_fold(acc, op, args, count);
+  if (! acc)
+    return -1;
 
   int res = PyObject_SetAttr(obj, attr, acc);
   Py_DECREF(acc);

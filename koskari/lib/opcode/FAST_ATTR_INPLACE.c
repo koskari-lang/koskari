@@ -19,7 +19,12 @@
    count reduction values [v0, ..., v_{count-1}]. Reduce obj.attr in place with
    the operator and store it back; pushes nothing (the special appends CONST
    None). The lowered form of VAR_ATTR_INPLACE. Cold: the op-type switch lives
-   in the shared kos_attr_inplace_reduce.
+   in the shared kos_inplace_reduce.
+
+   Carries one per-site field cache (cache arity 1): a single resolved storage
+   location serves both the read of obj.attr and the write-back, so a hit skips
+   the getattr/setattr protocol on both ends. kos_attr_inplace_cached does the
+   read-modify-write; the op-type and count travel in the OPCOUNT slot.
 */
 
 KOS_OP_HANDLER_COLD(FAST_ATTR_INPLACE) {
@@ -45,7 +50,11 @@ KOS_OP_HANDLER_COLD(FAST_ATTR_INPLACE) {
     return EVAL_RAISE();
   }
 
-  int res = kos_attr_inplace_reduce(obj, attr, op, args, count);
+  uint16_t cache_ix = KosOp_CACHE(insn);
+  KosCacheSlot *slot =
+      (cache_ix != KOS_CACHE_UNSET) ? &KosCode_CACHE(code)[cache_ix] : NULL;
+
+  int res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
   KosEvalState_StackDropNoErr(es, (size_t) count);
   Py_DECREF(obj);
   return kos_op_result_from_push_int(res);
