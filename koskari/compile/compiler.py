@@ -29,7 +29,7 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Arena, Binop, Code, FormalsSpec, FunctionSpec, Module,
+from ..lib import (Arena, Operand, Code, FormalsSpec, FunctionSpec, Module,
                    ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, nil, symbol)
@@ -86,7 +86,7 @@ def _build_var_to_fast():
 VAR_TO_FAST = _build_var_to_fast()
 
 
-_BINOP_COUNT = len(Binop)
+_OPERAND_COUNT = len(Operand)
 
 
 def merge_opcount(value):
@@ -118,8 +118,8 @@ def merge_opcount(value):
             raise ValueError("opcount int out of uint16 range: %r" % (value,))
         op_type, count = merged >> 8, merged & 0xff
 
-    if not 0 <= op_type < _BINOP_COUNT:
-        raise ValueError("opcount op-type is not a known Binop: %r" % (op_type,))
+    if not 0 <= op_type < _OPERAND_COUNT:
+        raise ValueError("opcount op-type is not a known Operand: %r" % (op_type,))
     if not 0 <= count <= 0xff:
         raise ValueError("opcount count out of byte range: %r" % (count,))
 

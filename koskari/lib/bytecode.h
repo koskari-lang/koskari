@@ -41,7 +41,7 @@
 
 
 extern PyObject *KosOpStyleEnum;
-extern PyObject *KosBinopEnum;
+extern PyObject *KosOperandEnum;
 
 
 typedef enum KosOpStyle {
@@ -73,7 +73,7 @@ typedef enum KosOpStyle {
   /** opcode argument is a fast variable index */
   KOSTYLE_FASTVAR,
 
-  /** opcode argument fuses an operator selector (high byte, KosBinop) with a
+  /** opcode argument fuses an operator selector (high byte, KosOperand) with a
       reducing count (low byte). Used directly where op-type+count is all that
       travels, or as one field of an EXTRA row otherwise. */
   KOSTYLE_OPCOUNT,

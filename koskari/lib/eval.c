@@ -64,7 +64,7 @@
 #include "hints.h"
 #include "debug.h"
 #include "longops.h"
-#include "binops.h"
+#include "operands.h"
 #include "tracing.h"
 
 #include <stdint.h>
@@ -1192,11 +1192,11 @@ static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
 
 
 /* Shared out-of-line body for the var-name in-place family (mirror of
-   kos_fast_inplace_binop for names resolved through the frame namespace).
+   kos_fast_inplace_operand for names resolved through the frame namespace).
    Forced noinline so the op-type switch stays a real runtime branch out of
    the dispatch loop.  Binary (count 1) for now.  Returns 0/-1. */
-static KOS_NOINLINE int kos_var_inplace_binop(
-    KosEvalState *es, KosBinop op, PyObject *name) {
+static KOS_NOINLINE int kos_var_inplace_operand(
+    KosEvalState *es, KosOperand op, PyObject *name) {
 
   PyObject *obj = frame_ns_deref(es, name);
   if (unlikely(! obj))
@@ -1210,15 +1210,15 @@ static KOS_NOINLINE int kos_var_inplace_binop(
 
   PyObject *result = NULL;
   switch (op) {
-#define KOS_BINOP_INPLACE_CASE(NAME, LOP, RFN, IFN)                    \
-    case KOS_BINOP_##NAME:                                            \
+#define KOS_OPERAND_INPLACE_CASE(NAME, LOP, RFN, IFN)                    \
+    case KOS_OPERAND_##NAME:                                            \
       if (kos_long_binop_fast(LOP, obj, rhs, &result) == 0)          \
         result = IFN(obj, rhs);                                       \
       break;
-    KOS_BINOP_LIST(KOS_BINOP_INPLACE_CASE)
-#undef KOS_BINOP_INPLACE_CASE
+    KOS_OPERAND_LIST(KOS_OPERAND_INPLACE_CASE)
+#undef KOS_OPERAND_INPLACE_CASE
     default:
-      PyErr_SetString(PyExc_SystemError, "bad binop op-type");
+      PyErr_SetString(PyExc_SystemError, "bad operand op-type");
   }
 
   Py_DECREF(obj);

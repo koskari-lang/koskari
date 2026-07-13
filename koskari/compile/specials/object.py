@@ -29,7 +29,7 @@ preserve dunder dispatch semantics.
 
 import operator as _op
 
-from ...lib import Binop, OpCode, symbol, cons
+from ...lib import Operand, OpCode, symbol, cons
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...types import is_nil, get_position, is_pair, is_symbol, is_keyword, unpack
@@ -790,33 +790,33 @@ def special_aiter(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_AITER, compiler, source)
 
 
-# operator symbol -> Binop op-type. Both the plain and compile/ symbol forms
+# operator symbol -> Operand op-type. Both the plain and compile/ symbol forms
 # of each operator map to the same op-type.
-_BINOP_BY_SYM = {
-    '+': Binop.KOS_BINOP_ADD,
-    '-': Binop.KOS_BINOP_SUBTRACT,
-    '*': Binop.KOS_BINOP_MULTIPLY,
-    '**': Binop.KOS_BINOP_POWER,
-    '/': Binop.KOS_BINOP_TRUE_DIVIDE,
-    '//': Binop.KOS_BINOP_FLOOR_DIVIDE,
-    '%': Binop.KOS_BINOP_MODULO,
-    '@': Binop.KOS_BINOP_MATRIX_MULTIPLY,
-    '<<': Binop.KOS_BINOP_BIT_LEFT,
-    '>>': Binop.KOS_BINOP_BIT_RIGHT,
-    '&': Binop.KOS_BINOP_BIT_AND,
-    '^': Binop.KOS_BINOP_BIT_XOR,
-    '|': Binop.KOS_BINOP_BIT_OR,
+_OPERAND_BY_SYM = {
+    '+': Operand.KOS_OPERAND_ADD,
+    '-': Operand.KOS_OPERAND_SUBTRACT,
+    '*': Operand.KOS_OPERAND_MULTIPLY,
+    '**': Operand.KOS_OPERAND_POWER,
+    '/': Operand.KOS_OPERAND_TRUE_DIVIDE,
+    '//': Operand.KOS_OPERAND_FLOOR_DIVIDE,
+    '%': Operand.KOS_OPERAND_MODULO,
+    '@': Operand.KOS_OPERAND_MATRIX_MULTIPLY,
+    '<<': Operand.KOS_OPERAND_BIT_LEFT,
+    '>>': Operand.KOS_OPERAND_BIT_RIGHT,
+    '&': Operand.KOS_OPERAND_BIT_AND,
+    '^': Operand.KOS_OPERAND_BIT_XOR,
+    '|': Operand.KOS_OPERAND_BIT_OR,
 }
 
-_INPLACE_BINOP_MAP = {}
-for _sym_text, _binop in _BINOP_BY_SYM.items():
-    _INPLACE_BINOP_MAP[symbol(_sym_text)] = _binop
-    _INPLACE_BINOP_MAP[symbol('compile/' + _sym_text)] = _binop
+_INPLACE_OPERAND_MAP = {}
+for _sym_text, _binop in _OPERAND_BY_SYM.items():
+    _INPLACE_OPERAND_MAP[symbol(_sym_text)] = _binop
+    _INPLACE_OPERAND_MAP[symbol('compile/' + _sym_text)] = _binop
 
 
 def _object_inplace_opcode(binop):
-    """OBJECT_INPLACE_<op> opcode for a Binop op-type (stack in-place family)."""
-    return OpCode['KOS_OP_OBJECT_INPLACE_' + binop.name[len('KOS_BINOP_'):]]
+    """OBJECT_INPLACE_<op> opcode for a Operand op-type (stack in-place family)."""
+    return OpCode['KOS_OP_OBJECT_INPLACE_' + binop.name[len('KOS_OPERAND_'):]]
 
 
 @builtin("compile/inplace")
@@ -847,7 +847,7 @@ def special_inplace(compiler, source, tc=False):
     if not is_symbolish(var_sym):
         raise SpecialError("inplace var must be a symbol", source)
 
-    binop = _INPLACE_BINOP_MAP.get(op_sym)
+    binop = _INPLACE_OPERAND_MAP.get(op_sym)
     if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
@@ -861,8 +861,8 @@ def special_inplace(compiler, source, tc=False):
     frag.request_for_write(name, position=pos)
     frag.merge(compiler.full_compile(value_expr))
     # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
-    # name to a fast slot (-> FAST_OBJECT_INPLACE_BINOP) when possible.
-    frag.instruction(OpCode.KOS_OP_VAR_OBJECT_INPLACE_BINOP,
+    # name to a fast slot (-> FAST_OBJECT_INPLACE) when possible.
+    frag.instruction(OpCode.KOS_OP_VAR_OBJECT_INPLACE,
                      ((binop, 1), name, 0, 0))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
@@ -899,7 +899,7 @@ def special_inplace_item(compiler, source, tc=False):
 
     value_exprs = list(unpack(rest))
 
-    binop = _INPLACE_BINOP_MAP.get(op_sym)
+    binop = _INPLACE_OPERAND_MAP.get(op_sym)
     if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
@@ -974,7 +974,7 @@ def special_inplace_attr(compiler, source, tc=False):
     if not is_symbol(key_expr):
         raise SpecialError("inplace-attr attr must be a symbol", source)
 
-    binop = _INPLACE_BINOP_MAP.get(op_sym)
+    binop = _INPLACE_OPERAND_MAP.get(op_sym)
     if binop is None:
         raise SpecialError("unknown inplace operator", source)
 

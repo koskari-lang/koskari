@@ -35,7 +35,7 @@
 #include <unistd.h>
 
 #include "lib.h"
-#include "binops.h"
+#include "operands.h"
 #include "debug.h"
 
 
@@ -3354,22 +3354,22 @@ static PyObject *create_opcode_enum(void) {
 }
 
 
-PyObject *KosBinopEnum = NULL;
+PyObject *KosOperandEnum = NULL;
 
 
-/* IntEnum of the parameterized arithmetic operators (KOS_BINOP_*), generated
-   from KOS_BINOP_LIST so C and the Python compiler share one op-type table. */
-static PyObject *create_binop_enum(void) {
+/* IntEnum of the parameterized arithmetic operators (KOS_OPERAND_*), generated
+   from KOS_OPERAND_LIST so C and the Python compiler share one op-type table. */
+static PyObject *create_operand_enum(void) {
 
   PyObject *enum_dict = PyDict_New();
   if (! enum_dict)
     return NULL;
 
-#define KOS_BINOP_INTENUM(NAME, LOP, RFN, IFN) int_enum(enum_dict, KOS_BINOP_##NAME);
-  KOS_BINOP_LIST(KOS_BINOP_INTENUM)
-#undef KOS_BINOP_INTENUM
+#define KOS_OPERAND_INTENUM(NAME, LOP, RFN, IFN) int_enum(enum_dict, KOS_OPERAND_##NAME);
+  KOS_OPERAND_LIST(KOS_OPERAND_INTENUM)
+#undef KOS_OPERAND_INTENUM
 
-  return create_int_enum("Binop", enum_dict);
+  return create_int_enum("Operand", enum_dict);
 }
 
 
@@ -3413,15 +3413,15 @@ int koskari_bytecode_init(PyObject *mod) {
   }
   KosOpStyleEnum = stuff;
 
-  stuff = create_binop_enum();
+  stuff = create_operand_enum();
   if (! stuff) {
     return -1;
   }
-  if (PyDict_SetItemString(dict, "Binop", stuff)) {
+  if (PyDict_SetItemString(dict, "Operand", stuff)) {
     Py_DECREF(stuff);
     return -1;
   }
-  KosBinopEnum = stuff;
+  KosOperandEnum = stuff;
 
   STR_CONST(_str_anon, "<anon>");
 
@@ -3433,7 +3433,7 @@ int koskari_bytecode_clear(PyObject *mod) {
 
   Py_CLEAR(KosOpCodeEnum);
   Py_CLEAR(KosOpStyleEnum);
-  Py_CLEAR(KosBinopEnum);
+  Py_CLEAR(KosOperandEnum);
   Py_CLEAR(_str_anon);
 
   return 0;

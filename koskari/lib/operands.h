@@ -15,21 +15,21 @@
 
 
 /**
-   koskari/lib/binops.h
+   koskari/lib/operands.h
 
-   Single source of truth for the parameterized arithmetic operator set
-   used by the *_OBJECT_*_BINOP opcode families. KOS_BINOP_LIST(X) expands
-   each operator as X(NAME, int-fast-op, reduce-fn, in-place-fn); the enum
-   and the per-family switch bodies are generated from it so adding an
-   operator is one row.
+   Single source of truth for the parameterized arithmetic operator set used
+   by the OBJECT_OPERAND / *_OBJECT_INPLACE opcode families. KOS_OPERAND_LIST(X)
+   expands each operator as X(NAME, int-fast-op, reduce-fn, in-place-fn); the
+   KosOperand enum and the per-family switch bodies are generated from it so
+   adding an operator is one row.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GPL v.3
 */
 
 
-#ifndef KOSKARI_BINOPS_H
-#define KOSKARI_BINOPS_H
+#ifndef KOSKARI_OPERANDS_H
+#define KOSKARI_OPERANDS_H
 
 
 #include <Python.h>
@@ -38,17 +38,17 @@
 
 
 /* Ternary power needs binary shims to fit the uniform binaryfunc columns. */
-static inline PyObject *kos_binop_power(PyObject *o, PyObject *r) {
+static inline PyObject *kos_operand_power(PyObject *o, PyObject *r) {
   return PyNumber_Power(o, r, Py_None);
 }
 
-static inline PyObject *kos_binop_inplace_power(PyObject *o, PyObject *r) {
+static inline PyObject *kos_operand_inplace_power(PyObject *o, PyObject *r) {
   return PyNumber_InPlacePower(o, r, Py_None);
 }
 
 
 /* X(NAME, int-fast KosLongBinop (or KOS_LBOP_NONE), reduce fn, in-place fn) */
-#define KOS_BINOP_LIST(X)                                                   \
+#define KOS_OPERAND_LIST(X)                                                   \
   X(ADD,             KOS_LBOP_ADD,       PyNumber_Add,       PyNumber_InPlaceAdd)      \
   X(SUBTRACT,        KOS_LBOP_SUBTRACT,  PyNumber_Subtract,  PyNumber_InPlaceSubtract) \
   X(MULTIPLY,        KOS_LBOP_MULTIPLY,  PyNumber_Multiply,  PyNumber_InPlaceMultiply) \
@@ -61,15 +61,15 @@ static inline PyObject *kos_binop_inplace_power(PyObject *o, PyObject *r) {
   X(TRUE_DIVIDE,     KOS_LBOP_NONE,      PyNumber_TrueDivide,  PyNumber_InPlaceTrueDivide)  \
   X(FLOOR_DIVIDE,    KOS_LBOP_NONE,      PyNumber_FloorDivide, PyNumber_InPlaceFloorDivide) \
   X(MATRIX_MULTIPLY, KOS_LBOP_NONE,      PyNumber_MatrixMultiply, PyNumber_InPlaceMatrixMultiply) \
-  X(POWER,           KOS_LBOP_NONE,      kos_binop_power,    kos_binop_inplace_power)
+  X(POWER,           KOS_LBOP_NONE,      kos_operand_power,    kos_operand_inplace_power)
 
 
-typedef enum KosBinop {
-#define KOS_BINOP_ENUM(NAME, LOP, RFN, IFN) KOS_BINOP_##NAME,
-  KOS_BINOP_LIST(KOS_BINOP_ENUM)
-#undef KOS_BINOP_ENUM
-  KOS_BINOP_COUNT   /* number of operators; also the invalid sentinel */
-} KosBinop;
+typedef enum KosOperand {
+#define KOS_OPERAND_ENUM(NAME, LOP, RFN, IFN) KOS_OPERAND_##NAME,
+  KOS_OPERAND_LIST(KOS_OPERAND_ENUM)
+#undef KOS_OPERAND_ENUM
+  KOS_OPERAND_COUNT   /* number of operators; also the invalid sentinel */
+} KosOperand;
 
 
 #endif

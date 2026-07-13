@@ -14,22 +14,24 @@
 */
 
 /**
-   FAST_OBJECT_INPLACE_BINOP: arg = EXTRA row index. Row a0 = OPCOUNT
-   (op-type high byte, reduce count low byte), a1 = fast slot. Reduce the
-   count operands from the stack into the slot with the operator. Cold: the
-   op-type switch lives in the shared kos_fast_inplace_binop, out of the
-   inlined dispatch loop.
+   VAR_OBJECT_INPLACE: arg = EXTRA row index. Row a0 = OPCOUNT
+   (op-type high byte, reduce count low byte), a1 = constant-pool index of the
+   variable name. Reduce the count operands from the stack into the frame
+   namespace binding with the operator. Cold: the op-type switch lives in the
+   shared kos_var_inplace_operand, out of the inlined dispatch loop.
 */
 
-KOS_OP_HANDLER_COLD(FAST_OBJECT_INPLACE_BINOP) {
+KOS_OP_HANDLER_COLD(VAR_OBJECT_INPLACE) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
-  KosBinop op = (KosBinop) KosOpCount_TYPE(row.a0);
-  size_t idx = (size_t) row.a1;
+  KosOperand op = (KosOperand) KosOpCount_TYPE(row.a0);
+  PyObject *name = KosEvalState_CONST(es, row.a1);
+  if (unlikely(! name))
+    return EVAL_RAISE();
 
   return kos_op_result_from_push_int(
-      kos_fast_inplace_binop(es, op, idx));
+      kos_var_inplace_operand(es, op, name));
 }
 
 
