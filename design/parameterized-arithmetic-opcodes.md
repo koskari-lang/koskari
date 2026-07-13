@@ -242,12 +242,16 @@ Make `FAST_OBJECT_INPLACE` / `VAR_OBJECT_INPLACE` fold `count>1` (currently
 binary). Requires the compiler fusion to emit count>1 and the shared cores to
 loop. This is the "in-place is properly reducing" correctness improvement.
 
-### 4. Delete the unused `.c` files
+### 4. Delete the unused `.c` files -- DONE (step 4, commit pending)
 
-After 1-2, the per-operator handler files left on disk are all dead:
-`koskari/lib/opcode/{FAST,VAR}_OBJECT_INPLACE_<op>.c` (26, already dead) and
-`OBJECT_<op>.c` / `OBJECT_INPLACE_<op>.c` (after their migration). Delete them.
-`handlers.incl` already excludes them (only lists opcodes in `opcodes.incl`).
+All 52 dead per-operator handler files removed: 13 `OBJECT_<op>.c`, 13
+`OBJECT_INPLACE_<op>.c`, 13 `FAST_OBJECT_INPLACE_<op>.c`, 13
+`VAR_OBJECT_INPLACE_<op>.c`. They were `#include`d only via `handlers.incl`
+(which lists live opcodes from `opcodes.incl`), and `setup.py` globs
+`opcode/*.c` as *depends* only (not as compiled sources -- eval.c is the sole
+translation unit and pulls them via `handlers.incl`), so the glob adjusts
+automatically. Rebuild + full suite green after removal. `opcode/` now holds
+193 files, matching the 193 live opcodes.
 
 ### 5. Follow-ups
 
