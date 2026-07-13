@@ -264,6 +264,77 @@ automatically. Rebuild + full suite green after removal. `opcode/` now holds
   per-operator visibility (the data this effort steers by). Optional.
 - Future: `OBJECT_COMPARE` consolidation of the comparison opcodes.
 
+## Runtime/dispatch layering -- FINALIZED (commit pending)
+
+The consolidation above got the per-operator handler bodies out of the inlined
+dispatch loop (120,944 -> ~67k). This pass settles *how the surviving cold math
+is written*, so it branches once and runs straight-line. It is size-neutral on
+the loop by design (all of it lives in `operator.c`, out of
+`koskari_eval_dispatch_computed_goto`); the win is internal quality of the cold
+path and the runtime exports.
+
+**The problem it fixes.** Before, the opcode path branched three times: the
+computed-goto dispatch, the `switch(op)` in the cold handler, then *again*
+inside `kos_long_binop_fast`'s own `switch(op)` -- plus a function-pointer call
+through the `KosOperator_*`/`func`/`solofunc` indirection. All of it traced to
+one shape: a single shared `reduce_method(op, func, solofunc, ...)` taking the
+operator and slots as *runtime arguments*, which kept the inner int-fast switch
+live and forced the pointer calls, at both the opcode and runtime origins.
+
+**The fix: monomorphize per operator.** Everything below the single `switch(op)`
+now sees the operator and its slot as compile-time constants.
+
+- `operator.c` is the single home of all arithmetic. Layer stack:
+  - `kos_as_ll2(l, r, &a, &b)` -- shared *mechanical* extraction of two exact
+    ints into `long long` (no operator knowledge, so it never re-branches on
+    op).
+  - `long_fast_<op>` -- nine hand-split two-operand PyLong fast paths (add,
+    subtract, multiply, modulo, bit_and/or/xor, bit_left, bit_right), written
+    out explicitly per the "no compiler switch-folding trust; split per op"
+    decision. Each returns 1 (handled, `*out` new ref) / 0 (declined) / -1
+    (alloc error). Address-taken so the cold tail can call them by pointer.
+  - `reduce_slow(name, longfast, func, solofunc, args, count)` -- the cold tail
+    (`KOS_NOINLINE`): arity edges 0/1 and the true `count > 2` fold. `longfast`
+    is the operator's fast path as a *pointer* (NULL for divide/matmul/power),
+    so the fold keeps the int-fast per step. Pointers appear *only here*, in
+    cold code.
+  - Per-op cores `op_<op>` (13 reducing) and `op_inplace_<op>` (13 in-place),
+    all `KOS_OP_INLINE`. Each is self-contained: the `count == 2` hot path
+    names its concrete `long_fast_<op>` and its concrete `PyNumber_*` /
+    `PyNumber_InPlace*` slot directly -- no switch, no pointer -- and tails to
+    `reduce_slow` for every other arity. The in-place cores share the reducing
+    `long_fast_<op>` (int OP= int is value-identical to int OP int; only the
+    fallback slot differs). Power stays special (2/3-arg; in-place strictly 2).
+  - The two dispatchers, `kos_operand_reduce(op, values, count)` and
+    `kos_inplace_reduce(op, values, count)` (renamed from `kos_operand_inplace`;
+    "inplace" is shorthand for inplace-operand, both reducing). Each is one
+    `switch(op)` whose cases *inline* their cores -- "beefy-ish" but the only
+    copy of the switch in the binary, and once entered it runs straight-line
+    with no per-op call. Declared in `operator.h`, so the eval TU calls across
+    the boundary.
+  - Runtime exports: the 9 module-exposed `KosOperator_*` (`+ - * & | ^ // / @`)
+    are thin wrappers over their cores, so first-class operator values stay
+    zero-switch. The dispatch-only operators (`% << >> **` and every in-place)
+    shed their `KosOperator_*` exports -- they are reached only through the
+    dispatchers -- and their 17 declarations left `operator.h`.
+- `eval/eval_obj.c` keeps the hot addressing helpers (`kos_object_operand`,
+  `kos_object_inplace`, `kos_fast_inplace_operand`, `kos_var_inplace_operand`,
+  `kos_attr_inplace_reduce`): resolve origin/destination, call one dispatcher,
+  store. The dispatchers themselves moved to `operator.c`.
+
+**Branch accounting after.** Opcode path: dispatch-goto + one `switch(op)` +
+straight-line arithmetic. Runtime path (`KosOperator_Add` from `map`, etc.):
+zero switches. The `kos_long_binop_fast` re-switch and all hot-path function
+pointers are gone.
+
+**Storage families covered** (all funnel into the two dispatchers): reducing
+`OBJECT_OPERAND`; in-place `OBJECT_INPLACE`, `FAST_OBJECT_INPLACE`,
+`VAR_OBJECT_INPLACE`, `FAST_ATTR_INPLACE`, `VAR_ATTR_INPLACE`.
+
+Verification: full suite **4581 passed, 10 skipped**; churn answers match
+(py==ki); ASan **293 passed, 0 failed**; clean `-Werror` build; dispatch fn
+67,274 B (loop unaffected, as expected).
+
 ## Verification per step
 
 Rebuild (`tox -qe churn` reinstalls + builds; direct `.tox/churn/bin/python`

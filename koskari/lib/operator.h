@@ -20,6 +20,8 @@
 
 #include <Python.h>
 
+#include "bytecode.h"
+
 
 /**
    Reducing or otherwise special-case operators
@@ -53,61 +55,23 @@ PyObject *KosOperator_Subtract(PyObject *const *values, size_t count);
 PyObject *KosOperator_TrueDivide(PyObject *const *values, size_t count);
 
 
-/*
-   Binary-only arithmetic operators used by the OBJECT_OPERAND dispatch (not
-   registered as operator-module functions). Modulo/Lshift/Rshift reduce in
-   shape but the compiler only emits them with two operands; Power is 2-arg
-   (base, exp) or 3-arg (base, exp, mod) and does not reduce.
+/**
+   Operator dispatch
+
+   Select a reducing / in-place-reducing core by operator selector and apply it
+   to values[0..count-1] (values[0] is the accumulator seed). Used by the
+   OBJECT_OPERAND / *_INPLACE opcode handlers. The whole arithmetic surface --
+   every per-operator core, the two-operand PyLong fast paths, and both of these
+   switches -- lives in operator.c; the reducing (%, <<, >>, **) and all
+   in-place cores have no runtime export and are reached only through these.
 */
 
 
-PyObject *KosOperator_Modulo(PyObject *const *values, size_t count);
+PyObject *kos_operand_reduce(
+    KosOperand op, PyObject *const *values, size_t count);
 
-PyObject *KosOperator_Lshift(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_Rshift(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_Power(PyObject *const *values, size_t count);
-
-
-/*
-   In-place reducing operators: same left-to-right reduction, but
-   through the PyNumber_InPlace* protocol functions. All require at
-   least 2 values; there is no unary form. InplacePower is strictly
-   binary and does not reduce.
-*/
-
-
-PyObject *KosOperator_InplaceAdd(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceBitwiseAnd(
-    PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceBitwiseOr(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceBitwiseXor(
-    PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceFloorDivide(
-    PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceLshift(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceMatrixMultiply(
-    PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceMultiply(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplacePower(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceRemainder(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceRshift(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceSubtract(PyObject *const *values, size_t count);
-
-PyObject *KosOperator_InplaceTrueDivide(
-    PyObject *const *values, size_t count);
+PyObject *kos_inplace_reduce(
+    KosOperand op, PyObject *const *values, size_t count);
 
 
 PyObject *KosOperator_In(PyObject *const *values, size_t count);
