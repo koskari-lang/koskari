@@ -988,6 +988,28 @@ class Compiler:
         return squished
 
 
+    def normalize_opcount(self, instr):
+        """
+        Merge every KOSTYLE_OPCOUNT operand to its packed uint16. Specials may
+        emit an (op_type, count) pair or a pre-merged int; merge_opcount
+        accepts and validates both. Runs unconditionally, independent of the
+        optional convert_fast lowering (which only relabels VAR->FAST and
+        leaves non-VAR fields, including a merged OPCOUNT, untouched).
+        """
+
+        result = []
+        for op, arg in instr:
+            if op.style == OpStyle.KOSTYLE_OPCOUNT:
+                arg = merge_opcount(arg)
+            elif (op.style == OpStyle.KOSTYLE_EXTRA
+                  and OpStyle.KOSTYLE_OPCOUNT in op.extra):
+                arg = tuple(
+                    merge_opcount(v) if fk == OpStyle.KOSTYLE_OPCOUNT else v
+                    for v, fk in zip(arg, op.extra))
+            result.append((op, arg))
+        return result
+
+
     def convert_fast(self, base_nspec, instr, mode=None):
         if mode is None:
             mode = self.mode
@@ -1064,17 +1086,6 @@ class Compiler:
                         arg = idx
                         op = new_op
 
-            # Normalize any KOSTYLE_OPCOUNT operand: specials may emit an
-            # (op_type, count) pair or a pre-merged int; merge_opcount accepts
-            # and validates both, so nothing has to be reversed at soften time.
-            if op.style == OpStyle.KOSTYLE_OPCOUNT:
-                arg = merge_opcount(arg)
-            elif (op.style == OpStyle.KOSTYLE_EXTRA
-                  and OpStyle.KOSTYLE_OPCOUNT in op.extra):
-                arg = tuple(
-                    merge_opcount(v) if fk == OpStyle.KOSTYLE_OPCOUNT else v
-                    for v, fk in zip(arg, op.extra))
-
             result.append((op, arg))
 
         return result
@@ -1131,6 +1142,9 @@ class Compiler:
         # Flatten position/label instructions and merge closure/write syms
         # from inner FunctionSpecs into the fragment
         instr = self.compress(fragment.instructions)
+        # Pack OPCOUNT operands before anything downstream reads the arg;
+        # unconditional, unlike the optional convert_fast lowering below.
+        instr = self.normalize_opcount(instr)
         self._cpool_scan_merge(fragment, instr)
 
         # Build NamespaceSpec from fragment buckets (local, closure, global)

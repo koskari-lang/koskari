@@ -73,6 +73,7 @@
 #include "opcode/VAR_OBJECT_INPLACE_POWER.c"
 #include "opcode/VAR_OBJECT_INPLACE_SUBTRACT.c"
 #include "opcode/VAR_OBJECT_INPLACE_TRUE_DIVIDE.c"
+#include "opcode/VAR_OBJECT_INPLACE_BINOP.c"
 #include "opcode/VAR_ATTR.c"
 #include "opcode/VAR_ATTR_CLEAR.c"
 #include "opcode/VAR_ATTR_TAKE.c"

@@ -1582,8 +1582,10 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
-        /* FASTVAR, COUNT, STAR: store raw integer (slot, argc, bitflags) */
-        if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR || fk == KOSTYLE_STAR) {
+        /* FASTVAR, COUNT, STAR, OPCOUNT: store raw integer (slot, argc,
+           bitflags, packed op-type+count) */
+        if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR
+            || fk == KOSTYLE_STAR || fk == KOSTYLE_OPCOUNT) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
                          "EXTRA field expects int, got %R", elem);

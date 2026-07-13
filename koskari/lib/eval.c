@@ -1191,6 +1191,47 @@ static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
 }
 
 
+/* Shared out-of-line body for the var-name in-place family (mirror of
+   kos_fast_inplace_binop for names resolved through the frame namespace).
+   Forced noinline so the op-type switch stays a real runtime branch out of
+   the dispatch loop.  Binary (count 1) for now.  Returns 0/-1. */
+static KOS_NOINLINE int kos_var_inplace_binop(
+    KosEvalState *es, KosBinop op, PyObject *name) {
+
+  PyObject *obj = frame_ns_deref(es, name);
+  if (unlikely(! obj))
+    return -1;
+
+  PyObject *rhs = KosEvalState_StackPopRef(es);
+  if (unlikely(! rhs)) {
+    Py_DECREF(obj);
+    return -1;
+  }
+
+  PyObject *result = NULL;
+  switch (op) {
+#define KOS_BINOP_INPLACE_CASE(NAME, LOP, RFN, IFN)                    \
+    case KOS_BINOP_##NAME:                                            \
+      if (kos_long_binop_fast(LOP, obj, rhs, &result) == 0)          \
+        result = IFN(obj, rhs);                                       \
+      break;
+    KOS_BINOP_LIST(KOS_BINOP_INPLACE_CASE)
+#undef KOS_BINOP_INPLACE_CASE
+    default:
+      PyErr_SetString(PyExc_SystemError, "bad binop op-type");
+  }
+
+  Py_DECREF(obj);
+  Py_DECREF(rhs);
+  if (unlikely(! result))
+    return -1;
+
+  int res = frame_ns_store(es, name, result);
+  Py_DECREF(result);
+  return res;
+}
+
+
 /**
    Bind name to reference in the current frame namespace.
 */

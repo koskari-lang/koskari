@@ -29,7 +29,7 @@ preserve dunder dispatch semantics.
 
 import operator as _op
 
-from ...lib import OpCode, symbol, cons
+from ...lib import Binop, OpCode, symbol, cons
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...types import is_nil, get_position, is_pair, is_symbol, is_keyword, unpack
@@ -820,6 +820,15 @@ _INPLACE_OP_MAP = {
 }
 
 
+# operator symbol -> Binop op-type, derived from the per-operator opcode
+# suffix so the two tables cannot drift.
+_INPLACE_BINOP_MAP = {
+    sym: Binop['KOS_BINOP_'
+               + opcode.name.replace('KOS_OP_VAR_OBJECT_INPLACE_', '')]
+    for sym, opcode in _INPLACE_OP_MAP.items()
+}
+
+
 @builtin("compile/inplace")
 @special("compile/inplace", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_inplace(compiler, source, tc=False):
@@ -848,8 +857,8 @@ def special_inplace(compiler, source, tc=False):
     if not is_symbolish(var_sym):
         raise SpecialError("inplace var must be a symbol", source)
 
-    opcode = _INPLACE_OP_MAP.get(op_sym)
-    if opcode is None:
+    binop = _INPLACE_BINOP_MAP.get(op_sym)
+    if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
     name = str(var_sym)
@@ -861,7 +870,10 @@ def special_inplace(compiler, source, tc=False):
     pos = get_position(body)
     frag.request_for_write(name, position=pos)
     frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, name)
+    # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
+    # name to a fast slot (-> FAST_OBJECT_INPLACE_BINOP) when possible.
+    frag.instruction(OpCode.KOS_OP_VAR_OBJECT_INPLACE_BINOP,
+                     ((binop, 1), name, 0, 0))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
