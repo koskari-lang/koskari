@@ -130,13 +130,13 @@ OP(VAR_TAKE, 0, VAR)
 OP(VAR_REF, 0, VAR)
 OP(VAR_STORE, 0, VAR)
 OP(VAR_STORE_CONST, 0, EXTRA, VAR, CONST, NOARG, NOARG)
-// parameterized: EXTRA row [OPCOUNT(op-type, count), VAR(name)]
 OP(VAR_OBJECT_INPLACE, 0, EXTRA, OPCOUNT, VAR, NOARG, NOARG)
 OP(VAR_ATTR, 1, EXTRA, VAR, CONST, NOARG, NOARG)
 OP(VAR_ATTR_CLEAR, 0, EXTRA, VAR, CONST, NOARG, NOARG)
 OP(VAR_ATTR_TAKE, 0, EXTRA, VAR, CONST, NOARG, NOARG)
 OP(VAR_ATTR_REF, 0, EXTRA, VAR, CONST, NOARG, NOARG)
 OP(VAR_ATTR_STORE, 1, EXTRA, VAR, CONST, NOARG, NOARG)
+OP(VAR_ATTR_INPLACE, 0, EXTRA, OPCOUNT, VAR, CONST, NOARG)
 
 // variables by index reference (fast locals)
 OP(FAST, 0, FASTVAR)
@@ -146,13 +146,13 @@ OP(FAST_TAKE, 0, FASTVAR)
 OP(FAST_REF, 0, FASTVAR)
 OP(FAST_STORE, 0, FASTVAR)
 OP(FAST_STORE_CONST, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
-// parameterized: EXTRA row [OPCOUNT(op-type, count), FASTVAR(slot)]
 OP(FAST_OBJECT_INPLACE, 0, EXTRA, OPCOUNT, FASTVAR, NOARG, NOARG)
 OP(FAST_ATTR, 1, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_CLEAR, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_TAKE, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_REF, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_STORE, 1, EXTRA, FASTVAR, CONST, NOARG, NOARG)
+OP(FAST_ATTR_INPLACE, 0, EXTRA, OPCOUNT, FASTVAR, CONST, NOARG)
 
 // object attribute access
 OP(ATTR, 0, CONST)
@@ -160,6 +160,7 @@ OP(ATTR_CLEAR, 0, CONST)
 OP(ATTR_TAKE, 0, CONST)
 OP(ATTR_REF, 0, CONST)
 OP(ATTR_STORE, 0, CONST)
+OP(ATTR_INPLACE, 0, EXTRA, OPCOUNT, CONST, NOARG, NOARG)
 
 // object item indexing (computed key)
 OP(ITEM, 0, NOARG)
@@ -265,20 +266,12 @@ OP(OBJECT_IS_INSTANCE, 0, COUNT)
 OP(OBJECT_IS_SUBCLASS, 0, COUNT)
 OP(NILP, 0, NOARG)            // pop TOS, push True if an empty-list singleton
 
-// numeric interface - arg = OPCOUNT (operator selector high byte, operand
-// count low byte); the shared cold handler applies the operator's exact
-// semantics (reduce, strict-binary, or 2-or-3-arg power). See operands.h.
 OP(OBJECT_OPERAND, 0, OPCOUNT)
-OP(OBJECT_BIT_INVERT, 0, NOARG)   // unary ~; not an operand, stays standalone
-
-// numeric interface, in-place variant - arg = OPCOUNT (operator selector high
-// byte, operand count low byte, N >= 2); pop N values, reduce left-to-right
-// via the PyNumber_InPlace* API, push the result. POWER is strictly binary
-// (count = 2, no reduce). See operands.h.
 OP(OBJECT_INPLACE, 0, OPCOUNT)
 
 // general object interface
 OP(OBJECT_AITER, 0, NOARG)
+OP(OBJECT_BIT_INVERT, 0, NOARG)
 OP(OBJECT_DIR, 0, NOARG)
 OP(OBJECT_DIVMOD, 0, NOARG)
 OP(OBJECT_ITER, 0, NOARG)

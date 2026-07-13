@@ -46,8 +46,9 @@ def opcount(operand, count):
 
 
 # The per-operator arithmetic opcodes were consolidated into two parameterized
-# opcodes (see operands.h): the reducing/binary family into OBJECT_OPERAND and
-# the stack in-place family into OBJECT_INPLACE. build_code accepts the
+# opcodes: the reducing/binary family into OBJECT_OPERAND and the stack in-place
+# family into OBJECT_INPLACE (dispatched to the KosOperator_* functions).
+# build_code accepts the
 # readable per-operator names as sugar and lowers them -- the same lowering the
 # compiler performs -- so bytecode-level tests keep expressing the operation
 # directly while exercising the real opcode. Each maps its per-operator name to

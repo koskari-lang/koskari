@@ -54,6 +54,23 @@ PyObject *KosOperator_TrueDivide(PyObject *const *values, size_t count);
 
 
 /*
+   Binary-only arithmetic operators used by the OBJECT_OPERAND dispatch (not
+   registered as operator-module functions). Modulo/Lshift/Rshift reduce in
+   shape but the compiler only emits them with two operands; Power is 2-arg
+   (base, exp) or 3-arg (base, exp, mod) and does not reduce.
+*/
+
+
+PyObject *KosOperator_Modulo(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_Lshift(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_Rshift(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_Power(PyObject *const *values, size_t count);
+
+
+/*
    In-place reducing operators: same left-to-right reduction, but
    through the PyNumber_InPlace* protocol functions. All require at
    least 2 values; there is no unary form. InplacePower is strictly

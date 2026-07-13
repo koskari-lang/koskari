@@ -248,25 +248,32 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
         self.assertEqual(1, calls["n"])
 
 
-    async def test_inplace_attr_symbol_obj_emits_var_attr_store(self):
+    async def test_inplace_attr_symbol_obj_emits_var_attr_inplace(self):
         code = self.compile_to_code(
             "(compile/inplace-attr + obj x 1)",
             obj=SimpleNamespace(x=0))
-        self.assertIn(OpCode.KOS_OP_VAR_ATTR, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_VAR_ATTR_STORE, _opcodes(code))
-        self.assertNotIn(OpCode.KOS_OP_DUP, _opcodes(code))
-        self.assertNotIn(OpCode.KOS_OP_ATTR, _opcodes(code))
+        ops = _opcodes(code)
+        # a single fused op replaces load + OBJECT_INPLACE + store
+        self.assertIn(OpCode.KOS_OP_VAR_ATTR_INPLACE, ops)
+        self.assertNotIn(OpCode.KOS_OP_VAR_ATTR, ops)
+        self.assertNotIn(OpCode.KOS_OP_VAR_ATTR_STORE, ops)
+        self.assertNotIn(OpCode.KOS_OP_OBJECT_INPLACE, ops)
+        self.assertNotIn(OpCode.KOS_OP_DUP, ops)
 
 
-    async def test_inplace_attr_expression_obj_emits_dup_and_attr_store(self):
+    async def test_inplace_attr_expression_obj_emits_attr_inplace(self):
         code = self.compile_to_code(
             "(compile/inplace-attr + (identity obj) x 1)",
             obj=SimpleNamespace(x=0),
             identity=lambda o: o)
-        self.assertEqual(1, _count_op(code, OpCode.KOS_OP_DUP))
-        self.assertIn(OpCode.KOS_OP_ATTR, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_ATTR_STORE, _opcodes(code))
-        self.assertNotIn(OpCode.KOS_OP_VAR_ATTR, _opcodes(code))
+        ops = _opcodes(code)
+        # obj rides the stack; the single fused op replaces DUP + ATTR +
+        # OBJECT_INPLACE + ATTR_STORE
+        self.assertIn(OpCode.KOS_OP_ATTR_INPLACE, ops)
+        self.assertNotIn(OpCode.KOS_OP_ATTR, ops)
+        self.assertNotIn(OpCode.KOS_OP_ATTR_STORE, ops)
+        self.assertNotIn(OpCode.KOS_OP_OBJECT_INPLACE, ops)
+        self.assertNotIn(OpCode.KOS_OP_DUP, ops)
 
 
     async def test_inplace_attr_mutates_in_place(self):

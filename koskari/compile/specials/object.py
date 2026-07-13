@@ -969,7 +969,9 @@ def special_inplace_item(compiler, source, tc=False):
 def special_inplace_attr(compiler, source, tc=False):
     """
     Compile (compile/inplace-attr OP OBJ ATTR VALUE...). Multiple values
-    reduce left-to-right through the single OBJECT_INPLACE instruction.
+    reduce left-to-right into OBJ.ATTR through a single fused instruction:
+    VAR_ATTR_INPLACE when OBJ is a variable (resolution lowers it to
+    FAST_ATTR_INPLACE), otherwise ATTR_INPLACE with OBJ on the stack.
     """
 
     called_by, body = source
@@ -1006,31 +1008,30 @@ def special_inplace_attr(compiler, source, tc=False):
         raise SpecialError("inplace ** takes exactly one value", source)
 
     sym = str(key_expr)
+    count = len(value_exprs)
     frag = compiler.fragment(called_by)
 
     if not is_pair(value_exprs[0]):
         frag.position_of(body)
 
     if is_symbol(obj_expr):
-        frag.request_var(str(obj_expr))
-        frag.instruction(
-            OpCode.KOS_OP_VAR_ATTR, (str(obj_expr), sym, 0, 0))
+        # obj is a variable: fused VAR_ATTR_INPLACE, derefing the name and
+        # get/op/set-ing the attribute in one op. Only the values ride the
+        # stack. Resolution lowers this to FAST_ATTR_INPLACE where possible.
+        name = str(obj_expr)
+        frag.request_var(name)
+        for value_expr in value_exprs:
+            frag.merge(compiler.full_compile(value_expr))
+        frag.instruction(OpCode.KOS_OP_VAR_ATTR_INPLACE,
+                         ((binop, count), name, sym, 0))
     else:
+        # obj is an expression: fused ATTR_INPLACE, obj left on the stack
+        # below the values -> [obj, v0 .. v_{count-1}].
         frag.merge(compiler.full_compile(obj_expr))
-        frag.instruction(OpCode.KOS_OP_DUP, 1)
-        frag.instruction(OpCode.KOS_OP_ATTR, sym)
-
-    for value_expr in value_exprs:
-        frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(OpCode.KOS_OP_OBJECT_INPLACE,
-                     (binop, 1 + len(value_exprs)))
-
-    if is_symbol(obj_expr):
-        frag.request_var(str(obj_expr))
-        frag.instruction(
-            OpCode.KOS_OP_VAR_ATTR_STORE, (str(obj_expr), sym, 0, 0))
-    else:
-        frag.instruction(OpCode.KOS_OP_ATTR_STORE, sym)
+        for value_expr in value_exprs:
+            frag.merge(compiler.full_compile(value_expr))
+        frag.instruction(OpCode.KOS_OP_ATTR_INPLACE,
+                         ((binop, count), sym, 0, 0))
 
     frag.instruction(OpCode.KOS_OP_CONST, None)
 

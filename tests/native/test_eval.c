@@ -27,7 +27,6 @@
 
 #include "test_harness.h"
 #include "../../koskari/lib/lib.h"
-#include "../../koskari/lib/operands.h"
 
 
 /* === Helpers === */

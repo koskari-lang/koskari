@@ -16,6 +16,7 @@
 
 #include "lib.h"
 #include "hints.h"
+#include "longops.h"
 
 
 static PyObject *_str__empty = NULL;
@@ -104,6 +105,7 @@ PyObject *KosOperator_Ge(PyObject *const *values, size_t count) {
 
 static inline PyObject *reduce_method(
     const char *name,
+    KosLongBinop lop,
     binaryfunc func,
     unaryfunc solofunc,
     PyObject *const *args,
@@ -136,7 +138,12 @@ static inline PyObject *reduce_method(
   Py_INCREF(value);
 
   for (size_t i = 1; i < (size_t) count; i++) {
-    PyObject *n = func(value, args[i]);
+    // two-PyLong fast path folded in per step; kos_long_binop_fast returns 0
+    // (declining, incl. KOS_LBOP_NONE) to fall through to the protocol fn, or
+    // < 0 having set an error (n stays NULL -> loop breaks).
+    PyObject *n = NULL;
+    if (kos_long_binop_fast(lop, value, args[i], &n) == 0)
+      n = func(value, args[i]);
     Py_DECREF(value);
 
     value = n;
@@ -150,57 +157,104 @@ static inline PyObject *reduce_method(
 
 PyObject *KosOperator_Add(PyObject *const *values, size_t count) {
 
-  return reduce_method("+", PyNumber_Add, PyNumber_Positive,
+  return reduce_method("+", KOS_LBOP_ADD, PyNumber_Add, PyNumber_Positive,
                        values, count);
 }
 
 
 PyObject *KosOperator_BitwiseAnd(PyObject *const *values, size_t count) {
 
-  return reduce_method("&", PyNumber_And, NULL, values, count);
+  return reduce_method("&", KOS_LBOP_BIT_AND, PyNumber_And, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_BitwiseOr(PyObject *const *values, size_t count) {
 
-  return reduce_method("|", PyNumber_Or, NULL, values, count);
+  return reduce_method("|", KOS_LBOP_BIT_OR, PyNumber_Or, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_BitwiseXor(PyObject *const *values, size_t count) {
 
-  return reduce_method("^", PyNumber_Xor, NULL, values, count);
+  return reduce_method("^", KOS_LBOP_BIT_XOR, PyNumber_Xor, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_FloorDivide(PyObject *const *values, size_t count) {
 
-  return reduce_method("//", PyNumber_FloorDivide, NULL, values, count);
+  return reduce_method("//", KOS_LBOP_NONE, PyNumber_FloorDivide, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_MatrixMultiply(PyObject *const *values, size_t count) {
 
-  return reduce_method("@", PyNumber_MatrixMultiply, NULL, values, count);
+  return reduce_method("@", KOS_LBOP_NONE, PyNumber_MatrixMultiply, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_Multiply(PyObject *const *values, size_t count) {
 
-  return reduce_method("*", PyNumber_Multiply, NULL, values, count);
+  return reduce_method("*", KOS_LBOP_MULTIPLY, PyNumber_Multiply, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_Subtract(PyObject *const *values, size_t count) {
 
-  return reduce_method("-", PyNumber_Subtract, PyNumber_Negative,
-                       values, count);
+  return reduce_method("-", KOS_LBOP_SUBTRACT, PyNumber_Subtract,
+                       PyNumber_Negative, values, count);
 }
 
 
 PyObject *KosOperator_TrueDivide(PyObject *const *values, size_t count) {
 
-  return reduce_method("/", PyNumber_TrueDivide, NULL, values, count);
+  return reduce_method("/", KOS_LBOP_NONE, PyNumber_TrueDivide, NULL,
+                       values, count);
+}
+
+
+/* Binary-only arithmetic operators (%, <<, >>): reducing in shape but the
+   compiler only ever emits them with two operands. Not exposed as operator-
+   module functions; used by the OBJECT_OPERAND dispatch. */
+
+PyObject *KosOperator_Modulo(PyObject *const *values, size_t count) {
+
+  return reduce_method("%", KOS_LBOP_MODULO, PyNumber_Remainder, NULL,
+                       values, count);
+}
+
+
+PyObject *KosOperator_Lshift(PyObject *const *values, size_t count) {
+
+  return reduce_method("<<", KOS_LBOP_BIT_LEFT, PyNumber_Lshift, NULL,
+                       values, count);
+}
+
+
+PyObject *KosOperator_Rshift(PyObject *const *values, size_t count) {
+
+  return reduce_method(">>", KOS_LBOP_BIT_RIGHT, PyNumber_Rshift, NULL,
+                       values, count);
+}
+
+
+/* Power is 2-arg (base, exp) or 3-arg (base, exp, mod); not a reduce. */
+
+PyObject *KosOperator_Power(PyObject *const *values, size_t count) {
+
+  if (count == 2)
+    return PyNumber_Power(values[0], values[1], Py_None);
+  if (count == 3)
+    return PyNumber_Power(values[0], values[1], values[2]);
+
+  PyErr_SetString(PyExc_TypeError,
+                  "** requires 2 or 3 positional arguments");
+  return NULL;
 }
 
 
@@ -208,55 +262,61 @@ PyObject *KosOperator_TrueDivide(PyObject *const *values, size_t count) {
 
 PyObject *KosOperator_InplaceAdd(PyObject *const *values, size_t count) {
 
-  return reduce_method("+=", PyNumber_InPlaceAdd, NULL, values, count);
+  return reduce_method("+=", KOS_LBOP_ADD, PyNumber_InPlaceAdd, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_InplaceBitwiseAnd(
     PyObject *const *values, size_t count) {
 
-  return reduce_method("&=", PyNumber_InPlaceAnd, NULL, values, count);
+  return reduce_method("&=", KOS_LBOP_BIT_AND, PyNumber_InPlaceAnd, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_InplaceBitwiseOr(PyObject *const *values, size_t count) {
 
-  return reduce_method("|=", PyNumber_InPlaceOr, NULL, values, count);
+  return reduce_method("|=", KOS_LBOP_BIT_OR, PyNumber_InPlaceOr, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_InplaceBitwiseXor(
     PyObject *const *values, size_t count) {
 
-  return reduce_method("^=", PyNumber_InPlaceXor, NULL, values, count);
+  return reduce_method("^=", KOS_LBOP_BIT_XOR, PyNumber_InPlaceXor, NULL,
+                       values, count);
 }
 
 
 PyObject *KosOperator_InplaceFloorDivide(
     PyObject *const *values, size_t count) {
 
-  return reduce_method("//=", PyNumber_InPlaceFloorDivide, NULL,
-                       values, count);
+  return reduce_method("//=", KOS_LBOP_NONE, PyNumber_InPlaceFloorDivide,
+                       NULL, values, count);
 }
 
 
 PyObject *KosOperator_InplaceLshift(PyObject *const *values, size_t count) {
 
-  return reduce_method("<<=", PyNumber_InPlaceLshift, NULL, values, count);
+  return reduce_method("<<=", KOS_LBOP_BIT_LEFT, PyNumber_InPlaceLshift,
+                       NULL, values, count);
 }
 
 
 PyObject *KosOperator_InplaceMatrixMultiply(
     PyObject *const *values, size_t count) {
 
-  return reduce_method("@=", PyNumber_InPlaceMatrixMultiply, NULL,
-                       values, count);
+  return reduce_method("@=", KOS_LBOP_NONE, PyNumber_InPlaceMatrixMultiply,
+                       NULL, values, count);
 }
 
 
 PyObject *KosOperator_InplaceMultiply(PyObject *const *values, size_t count) {
 
-  return reduce_method("*=", PyNumber_InPlaceMultiply, NULL, values, count);
+  return reduce_method("*=", KOS_LBOP_MULTIPLY, PyNumber_InPlaceMultiply,
+                       NULL, values, count);
 }
 
 
@@ -276,26 +336,30 @@ PyObject *KosOperator_InplacePower(PyObject *const *values, size_t count) {
 
 PyObject *KosOperator_InplaceRemainder(PyObject *const *values, size_t count) {
 
-  return reduce_method("%=", PyNumber_InPlaceRemainder, NULL, values, count);
+  return reduce_method("%=", KOS_LBOP_MODULO, PyNumber_InPlaceRemainder,
+                       NULL, values, count);
 }
 
 
 PyObject *KosOperator_InplaceRshift(PyObject *const *values, size_t count) {
 
-  return reduce_method(">>=", PyNumber_InPlaceRshift, NULL, values, count);
+  return reduce_method(">>=", KOS_LBOP_BIT_RIGHT, PyNumber_InPlaceRshift,
+                       NULL, values, count);
 }
 
 
 PyObject *KosOperator_InplaceSubtract(PyObject *const *values, size_t count) {
 
-  return reduce_method("-=", PyNumber_InPlaceSubtract, NULL, values, count);
+  return reduce_method("-=", KOS_LBOP_SUBTRACT, PyNumber_InPlaceSubtract,
+                       NULL, values, count);
 }
 
 
 PyObject *KosOperator_InplaceTrueDivide(
     PyObject *const *values, size_t count) {
 
-  return reduce_method("/=", PyNumber_InPlaceTrueDivide, NULL, values, count);
+  return reduce_method("/=", KOS_LBOP_NONE, PyNumber_InPlaceTrueDivide,
+                       NULL, values, count);
 }
 
 

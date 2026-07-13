@@ -35,7 +35,6 @@
 #include <unistd.h>
 
 #include "lib.h"
-#include "operands.h"
 #include "debug.h"
 
 
@@ -3357,17 +3356,29 @@ static PyObject *create_opcode_enum(void) {
 PyObject *KosOperandEnum = NULL;
 
 
-/* IntEnum of the parameterized arithmetic operators (KOS_OPERAND_*), generated
-   from KOS_OPERAND_LIST so C and the Python compiler share one op-type table. */
+/* IntEnum of the parameterized arithmetic operators (KosOperand, bytecode.h),
+   exposed as koskari.lib.Operand so the Python compiler and the C dispatch
+   share one op-type ordinal set. Written directly; keep in step with the
+   KosOperand enum. */
 static PyObject *create_operand_enum(void) {
 
   PyObject *enum_dict = PyDict_New();
   if (! enum_dict)
     return NULL;
 
-#define KOS_OPERAND_INTENUM(NAME, LOP, RFN, IFN) int_enum(enum_dict, KOS_OPERAND_##NAME);
-  KOS_OPERAND_LIST(KOS_OPERAND_INTENUM)
-#undef KOS_OPERAND_INTENUM
+  int_enum(enum_dict, KOS_OPERAND_ADD);
+  int_enum(enum_dict, KOS_OPERAND_SUBTRACT);
+  int_enum(enum_dict, KOS_OPERAND_MULTIPLY);
+  int_enum(enum_dict, KOS_OPERAND_MODULO);
+  int_enum(enum_dict, KOS_OPERAND_BIT_AND);
+  int_enum(enum_dict, KOS_OPERAND_BIT_OR);
+  int_enum(enum_dict, KOS_OPERAND_BIT_XOR);
+  int_enum(enum_dict, KOS_OPERAND_BIT_LEFT);
+  int_enum(enum_dict, KOS_OPERAND_BIT_RIGHT);
+  int_enum(enum_dict, KOS_OPERAND_TRUE_DIVIDE);
+  int_enum(enum_dict, KOS_OPERAND_FLOOR_DIVIDE);
+  int_enum(enum_dict, KOS_OPERAND_MATRIX_MULTIPLY);
+  int_enum(enum_dict, KOS_OPERAND_POWER);
 
   return create_int_enum("Operand", enum_dict);
 }

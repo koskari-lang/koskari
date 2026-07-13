@@ -86,38 +86,6 @@ static int obj_op_reducing(
 }
 
 
-/**
-   Reducing operator with a two-operand PyLong fast path.  When count == 2 and
-   the top two stack values qualify for kos_long_binop_fast, compute directly
-   and skip the generic reduce dispatch; any other count, type, or overflow
-   falls through to obj_op_reduce_n with fn.  lop may be KOS_LBOP_NONE for
-   operators with no int-fast path (the fast check then always declines).
-*/
-static int obj_op_reduce_n_long(
-    KosEvalState *es,
-    int count,
-    KosOperatorReducing *fn,
-    KosLongBinop lop) {
-
-  if (likely(count == 2)) {
-    PyObject *const *args = KosEvalState_StackTailPtr(es, 2);
-    if (unlikely(! args))
-      return -1;
-
-    PyObject *res = NULL;
-    int handled = kos_long_binop_fast(lop, args[0], args[1], &res);
-    if (unlikely(handled < 0))
-      return -1;
-    if (likely(handled)) {
-      KosEvalState_StackDropNoErr(es, 2);
-      return KosEvalState_StackPUSH(es, res);
-    }
-  }
-
-  return obj_op_reduce_n(es, count, fn);
-}
-
-
 static int obj_op_binary(
     KosEvalState *es,
     KosOp *insn,
@@ -136,190 +104,121 @@ static int obj_op_binary(
 }
 
 
-/**
-   Binary operator with a PyLong fast path.  Pops exactly two values;
-   qualifying int operands skip fn entirely.  lop may be KOS_LBOP_NONE.
-*/
-static int obj_op_binary_n(
+/* Dispatch the operator selector to the reducing operator function, applied to
+   values[0..count-1] (values[0] is the accumulator seed). The fast PyLong path
+   is folded into each KosOperator_* function, so this is a direct call. Returns
+   a new reference or NULL. */
+static PyObject *kos_operand_reduce(
+    KosOperand op,
+    PyObject *const *values,
+    size_t count) {
+
+  switch (op) {
+    case KOS_OPERAND_ADD:             return KosOperator_Add(values, count);
+    case KOS_OPERAND_SUBTRACT:        return KosOperator_Subtract(values, count);
+    case KOS_OPERAND_MULTIPLY:        return KosOperator_Multiply(values, count);
+    case KOS_OPERAND_MODULO:          return KosOperator_Modulo(values, count);
+    case KOS_OPERAND_BIT_AND:         return KosOperator_BitwiseAnd(values, count);
+    case KOS_OPERAND_BIT_OR:          return KosOperator_BitwiseOr(values, count);
+    case KOS_OPERAND_BIT_XOR:         return KosOperator_BitwiseXor(values, count);
+    case KOS_OPERAND_BIT_LEFT:        return KosOperator_Lshift(values, count);
+    case KOS_OPERAND_BIT_RIGHT:       return KosOperator_Rshift(values, count);
+    case KOS_OPERAND_TRUE_DIVIDE:     return KosOperator_TrueDivide(values, count);
+    case KOS_OPERAND_FLOOR_DIVIDE:    return KosOperator_FloorDivide(values, count);
+    case KOS_OPERAND_MATRIX_MULTIPLY: return KosOperator_MatrixMultiply(values, count);
+    case KOS_OPERAND_POWER:           return KosOperator_Power(values, count);
+    default:
+      PyErr_Format(PyExc_SystemError, "bad operand op-type: %i", (int) op);
+      return NULL;
+  }
+}
+
+
+/* In-place counterpart of kos_operand_reduce: dispatch to the KosOperator_-
+   Inplace* reducing function over values[0..count-1] (values[0] is the
+   accumulator seed). Fast PyLong path folded into each function. Returns a new
+   reference or NULL. */
+static PyObject *kos_operand_inplace(
+    KosOperand op,
+    PyObject *const *values,
+    size_t count) {
+
+  switch (op) {
+    case KOS_OPERAND_ADD:             return KosOperator_InplaceAdd(values, count);
+    case KOS_OPERAND_SUBTRACT:        return KosOperator_InplaceSubtract(values, count);
+    case KOS_OPERAND_MULTIPLY:        return KosOperator_InplaceMultiply(values, count);
+    case KOS_OPERAND_MODULO:          return KosOperator_InplaceRemainder(values, count);
+    case KOS_OPERAND_BIT_AND:         return KosOperator_InplaceBitwiseAnd(values, count);
+    case KOS_OPERAND_BIT_OR:          return KosOperator_InplaceBitwiseOr(values, count);
+    case KOS_OPERAND_BIT_XOR:         return KosOperator_InplaceBitwiseXor(values, count);
+    case KOS_OPERAND_BIT_LEFT:        return KosOperator_InplaceLshift(values, count);
+    case KOS_OPERAND_BIT_RIGHT:       return KosOperator_InplaceRshift(values, count);
+    case KOS_OPERAND_TRUE_DIVIDE:     return KosOperator_InplaceTrueDivide(values, count);
+    case KOS_OPERAND_FLOOR_DIVIDE:    return KosOperator_InplaceFloorDivide(values, count);
+    case KOS_OPERAND_MATRIX_MULTIPLY: return KosOperator_InplaceMatrixMultiply(values, count);
+    case KOS_OPERAND_POWER:           return KosOperator_InplacePower(values, count);
+    default:
+      PyErr_Format(PyExc_SystemError, "bad inplace operand op-type: %i", (int) op);
+      return NULL;
+  }
+}
+
+
+/* Reduce `count` stack values through op and push the result. Peeks the count
+   values (obj_operand: seed is values[0]), applies the reducing operator, drops
+   them, pushes. Forced noinline: the switch stays out of the dispatch loop. */
+static KOS_NOINLINE int kos_object_operand(
     KosEvalState *es,
-    PyObject *(*fn)(PyObject *left, PyObject *right),
-    KosLongBinop lop) {
+    KosOperand op,
+    int count) {
 
-  KosEvalStackLR op = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, op))
-    return -1;
+  PyObject *const *args = NULL;
+  if (count > 0) {
+    args = KosEvalState_StackTailPtr(es, (size_t) count);
+    if (! args)
+      return -1;
+  }
 
-  PyObject *res = NULL;
-  int handled = kos_long_binop_fast(lop, op.left, op.right, &res);
-  if (handled == 0)
-    res = fn(op.left, op.right);
-  Py_DECREF(op.left);
-  Py_DECREF(op.right);
+  PyObject *res = kos_operand_reduce(op, args, (size_t) count);
+
+  if (count > 0)
+    KosEvalState_StackDropNoErr(es, (size_t) count);
   if (! res)
     return -1;
   return KosEvalState_StackPUSH(es, res);
 }
 
 
-/**
-   Power operator: count == 2 -> pow(base, exp); count == 3 -> pow(base, exp,
-   mod).  Any other count is an error.  Pops the operands newest-first (mod,
-   exp, base), pushes the result.
-*/
-static int obj_op_power_n(KosEvalState *es, int count) {
-
-  if (count < 2 || count > 3) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "power requires 2 or 3 arguments, got %i", count);
-    return -1;
-  }
-
-  PyObject *mod = Py_None;
-  if (count == 3) {
-    mod = KosEvalState_StackPopRef(es);
-    if (! mod)
-      return -1;
-  }
-
-  PyObject *exp = KosEvalState_StackPopRef(es);
-  if (! exp) {
-    if (count == 3)
-      Py_DECREF(mod);
-    return -1;
-  }
-
-  PyObject *base = KosEvalState_StackPopRef(es);
-  if (! base) {
-    Py_DECREF(exp);
-    if (count == 3)
-      Py_DECREF(mod);
-    return -1;
-  }
-
-  PyObject *val = PyNumber_Power(base, exp, mod);
-  Py_DECREF(base);
-  Py_DECREF(exp);
-  if (count == 3)
-    Py_DECREF(mod);
-  if (! val)
-    return -1;
-  return KosEvalState_StackPUSH(es, val);
-}
-
-
-/**
-   Shared out-of-line body for the OBJECT_OPERAND family.  Dispatches the
-   op-type selector (KosOperand) to the operator's exact semantics: the nine
-   truly-reducing operators fold `count` operands (six with an int-fast path);
-   modulo and the two bit-shifts are strictly binary; power is 2-or-3-arg.
-   Each case passes a *constant* KosOperator fn and KOS_LBOP_*, so the int-fast
-   path stays specialized per operator.  Forced noinline: the switch is a
-   genuine runtime branch, kept out of the inlined dispatch loop.  Returns
-   0/-1 for kos_op_result_from_push_int. */
-static KOS_NOINLINE int kos_object_operand(
-    KosEvalState *es,
-    KosOperand op,
-    int count) {
-
-  switch (op) {
-    case KOS_OPERAND_ADD:
-      return obj_op_reduce_n_long(es, count, KosOperator_Add, KOS_LBOP_ADD);
-    case KOS_OPERAND_SUBTRACT:
-      return obj_op_reduce_n_long(es, count, KosOperator_Subtract,
-                                  KOS_LBOP_SUBTRACT);
-    case KOS_OPERAND_MULTIPLY:
-      return obj_op_reduce_n_long(es, count, KosOperator_Multiply,
-                                  KOS_LBOP_MULTIPLY);
-    case KOS_OPERAND_BIT_AND:
-      return obj_op_reduce_n_long(es, count, KosOperator_BitwiseAnd,
-                                  KOS_LBOP_BIT_AND);
-    case KOS_OPERAND_BIT_OR:
-      return obj_op_reduce_n_long(es, count, KosOperator_BitwiseOr,
-                                  KOS_LBOP_BIT_OR);
-    case KOS_OPERAND_BIT_XOR:
-      return obj_op_reduce_n_long(es, count, KosOperator_BitwiseXor,
-                                  KOS_LBOP_BIT_XOR);
-    case KOS_OPERAND_FLOOR_DIVIDE:
-      return obj_op_reduce_n(es, count, KosOperator_FloorDivide);
-    case KOS_OPERAND_MATRIX_MULTIPLY:
-      return obj_op_reduce_n(es, count, KosOperator_MatrixMultiply);
-    case KOS_OPERAND_TRUE_DIVIDE:
-      return obj_op_reduce_n(es, count, KosOperator_TrueDivide);
-    case KOS_OPERAND_MODULO:
-      return obj_op_binary_n(es, PyNumber_Remainder, KOS_LBOP_MODULO);
-    case KOS_OPERAND_BIT_LEFT:
-      return obj_op_binary_n(es, PyNumber_Lshift, KOS_LBOP_BIT_LEFT);
-    case KOS_OPERAND_BIT_RIGHT:
-      return obj_op_binary_n(es, PyNumber_Rshift, KOS_LBOP_BIT_RIGHT);
-    case KOS_OPERAND_POWER:
-      return obj_op_power_n(es, count);
-    default:
-      PyErr_Format(PyExc_SystemError,
-                   "bad operand op-type: %i", (int) op);
-      return -1;
-  }
-}
-
-
-/**
-   Shared out-of-line body for the stack-based OBJECT_INPLACE family.  Reduces
-   `count` operands from the stack left-to-right through the operator's
-   PyNumber_InPlace* reducer (KosOperator_Inplace*) and pushes the result --
-   the accumulator form used by the inplace-item / inplace-attr special forms.
-   Modulo keeps the two-operand int-fast path; power is strictly binary
-   (KosOperator_InplacePower rejects count != 2).  Each case passes a constant
-   fn.  Forced noinline: the switch stays out of the inlined dispatch loop.
-   Returns 0/-1 for kos_op_result_from_push_int. */
+/* Stack-based OBJECT_INPLACE: reduce `count` stack values through the in-place
+   operator and push the result -- the accumulator form used by inplace-item. */
 static KOS_NOINLINE int kos_object_inplace(
     KosEvalState *es,
     KosOperand op,
     int count) {
 
-  switch (op) {
-    case KOS_OPERAND_ADD:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceAdd);
-    case KOS_OPERAND_SUBTRACT:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceSubtract);
-    case KOS_OPERAND_MULTIPLY:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceMultiply);
-    case KOS_OPERAND_MODULO:
-      return obj_op_reduce_n_long(es, count, KosOperator_InplaceRemainder,
-                                  KOS_LBOP_MODULO);
-    case KOS_OPERAND_BIT_AND:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceBitwiseAnd);
-    case KOS_OPERAND_BIT_OR:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceBitwiseOr);
-    case KOS_OPERAND_BIT_XOR:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceBitwiseXor);
-    case KOS_OPERAND_BIT_LEFT:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceLshift);
-    case KOS_OPERAND_BIT_RIGHT:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceRshift);
-    case KOS_OPERAND_TRUE_DIVIDE:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceTrueDivide);
-    case KOS_OPERAND_FLOOR_DIVIDE:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceFloorDivide);
-    case KOS_OPERAND_MATRIX_MULTIPLY:
-      return obj_op_reduce_n(es, count, KosOperator_InplaceMatrixMultiply);
-    case KOS_OPERAND_POWER:
-      return obj_op_reduce_n(es, count, KosOperator_InplacePower);
-    default:
-      PyErr_Format(PyExc_SystemError,
-                   "bad inplace operand op-type: %i", (int) op);
+  PyObject *const *args = NULL;
+  if (count > 0) {
+    args = KosEvalState_StackTailPtr(es, (size_t) count);
+    if (! args)
       return -1;
   }
+
+  PyObject *res = kos_operand_inplace(op, args, (size_t) count);
+
+  if (count > 0)
+    KosEvalState_StackDropNoErr(es, (size_t) count);
+  if (! res)
+    return -1;
+  return KosEvalState_StackPUSH(es, res);
 }
 
 
 /* === In-place slot and name cores === */
 
 
-/* Shared out-of-line body for the fast-slot in-place family.  Forced
-   noinline so the op-type switch is a genuine runtime (polymorphic) branch,
-   matching the eventual FAST_OBJECT_INPLACE handler reading op from its
-   operand.  Binary (count 1) for the gate; reducing generalization is later.
-   Returns 0/-1 for kos_op_result_from_push_int.  Operator set is
-   KOS_OPERAND_LIST (operands.h). */
+/* Augmented assignment to a fast-slot binding: obj = deref(slot); obj OP= rhs;
+   store back. Binary (the accumulator is the slot value, one rhs off the
+   stack). Routes through the in-place reducing operator. Returns 0/-1. */
 static KOS_NOINLINE int kos_fast_inplace_operand(
     KosEvalState *es, KosOperand op, size_t idx) {
 
@@ -334,18 +233,8 @@ static KOS_NOINLINE int kos_fast_inplace_operand(
     return -1;
   }
 
-  PyObject *result = NULL;
-  switch (op) {
-#define KOS_OPERAND_INPLACE_CASE(NAME, LOP, RFN, IFN)                    \
-    case KOS_OPERAND_##NAME:                                            \
-      if (kos_long_binop_fast(LOP, obj, rhs, &result) == 0)          \
-        result = IFN(obj, rhs);                                       \
-      break;
-    KOS_OPERAND_LIST(KOS_OPERAND_INPLACE_CASE)
-#undef KOS_OPERAND_INPLACE_CASE
-    default:
-      PyErr_SetString(PyExc_SystemError, "bad operand op-type");
-  }
+  PyObject *pair[2] = { obj, rhs };
+  PyObject *result = kos_operand_inplace(op, pair, 2);
 
   Py_DECREF(obj);
   Py_DECREF(rhs);
@@ -358,10 +247,9 @@ static KOS_NOINLINE int kos_fast_inplace_operand(
 }
 
 
-/* Shared out-of-line body for the var-name in-place family (mirror of
-   kos_fast_inplace_operand for names resolved through the frame namespace).
-   Forced noinline so the op-type switch stays a real runtime branch out of
-   the dispatch loop.  Binary (count 1) for now.  Returns 0/-1. */
+/* Augmented assignment to a frame-namespace binding: mirror of
+   kos_fast_inplace_operand for names resolved through the frame namespace.
+   Returns 0/-1. */
 static KOS_NOINLINE int kos_var_inplace_operand(
     KosEvalState *es, KosOperand op, PyObject *name) {
 
@@ -375,18 +263,8 @@ static KOS_NOINLINE int kos_var_inplace_operand(
     return -1;
   }
 
-  PyObject *result = NULL;
-  switch (op) {
-#define KOS_OPERAND_INPLACE_CASE(NAME, LOP, RFN, IFN)                    \
-    case KOS_OPERAND_##NAME:                                            \
-      if (kos_long_binop_fast(LOP, obj, rhs, &result) == 0)          \
-        result = IFN(obj, rhs);                                       \
-      break;
-    KOS_OPERAND_LIST(KOS_OPERAND_INPLACE_CASE)
-#undef KOS_OPERAND_INPLACE_CASE
-    default:
-      PyErr_SetString(PyExc_SystemError, "bad operand op-type");
-  }
+  PyObject *pair[2] = { obj, rhs };
+  PyObject *result = kos_operand_inplace(op, pair, 2);
 
   Py_DECREF(obj);
   Py_DECREF(rhs);
@@ -395,6 +273,44 @@ static KOS_NOINLINE int kos_var_inplace_operand(
 
   int res = frame_ns_store(es, name, result);
   Py_DECREF(result);
+  return res;
+}
+
+
+/* Shared core for the augmented attribute-assignment family (ATTR_INPLACE and
+   the FAST / VAR slot variants).  Reduces obj.attr in place:
+
+     acc = getattr(obj, attr)
+     for each of the count values in args: acc = acc OP= args[i]
+     setattr(obj, attr, acc)
+
+   Each fold step routes through the in-place reducing operator (a two-operand
+   in-place reduce), so left-to-right over count values matches a single
+   reduction seeded with acc.  args points at the count reduction values
+   (typically a stack tail); this function neither pops them nor touches obj's
+   ref -- the caller owns both and drops the stack afterwards.  Returns 0/-1. */
+static int kos_attr_inplace_reduce(
+    PyObject *obj,
+    PyObject *attr,
+    KosOperand op,
+    PyObject *const *args,
+    int count) {
+
+  PyObject *acc = PyObject_GetAttr(obj, attr);
+  if (! acc)
+    return -1;
+
+  for (int i = 0; i < count; i++) {
+    PyObject *pair[2] = { acc, args[i] };
+    PyObject *n = kos_operand_inplace(op, pair, 2);
+    Py_DECREF(acc);
+    acc = n;
+    if (! acc)
+      return -1;
+  }
+
+  int res = PyObject_SetAttr(obj, attr, acc);
+  Py_DECREF(acc);
   return res;
 }
 
