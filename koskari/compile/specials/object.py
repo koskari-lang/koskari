@@ -790,43 +790,33 @@ def special_aiter(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_AITER, compiler, source)
 
 
-_INPLACE_OP_MAP = {
-    symbol('+'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_ADD,
-    symbol('-'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_SUBTRACT,
-    symbol('*'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MULTIPLY,
-    symbol('**'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_POWER,
-    symbol('/'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_TRUE_DIVIDE,
-    symbol('//'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_FLOOR_DIVIDE,
-    symbol('%'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MODULO,
-    symbol('@'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MATRIX_MULTIPLY,
-    symbol('<<'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_LEFT,
-    symbol('>>'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_RIGHT,
-    symbol('&'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_AND,
-    symbol('^'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_XOR,
-    symbol('|'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_OR,
-    symbol('compile/+'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_ADD,
-    symbol('compile/-'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_SUBTRACT,
-    symbol('compile/*'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MULTIPLY,
-    symbol('compile/**'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_POWER,
-    symbol('compile//'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_TRUE_DIVIDE,
-    symbol('compile///'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_FLOOR_DIVIDE,
-    symbol('compile/%'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MODULO,
-    symbol('compile/@'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MATRIX_MULTIPLY,
-    symbol('compile/<<'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_LEFT,
-    symbol('compile/>>'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_RIGHT,
-    symbol('compile/&'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_AND,
-    symbol('compile/^'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_XOR,
-    symbol('compile/|'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_OR,
+# operator symbol -> Binop op-type. Both the plain and compile/ symbol forms
+# of each operator map to the same op-type.
+_BINOP_BY_SYM = {
+    '+': Binop.KOS_BINOP_ADD,
+    '-': Binop.KOS_BINOP_SUBTRACT,
+    '*': Binop.KOS_BINOP_MULTIPLY,
+    '**': Binop.KOS_BINOP_POWER,
+    '/': Binop.KOS_BINOP_TRUE_DIVIDE,
+    '//': Binop.KOS_BINOP_FLOOR_DIVIDE,
+    '%': Binop.KOS_BINOP_MODULO,
+    '@': Binop.KOS_BINOP_MATRIX_MULTIPLY,
+    '<<': Binop.KOS_BINOP_BIT_LEFT,
+    '>>': Binop.KOS_BINOP_BIT_RIGHT,
+    '&': Binop.KOS_BINOP_BIT_AND,
+    '^': Binop.KOS_BINOP_BIT_XOR,
+    '|': Binop.KOS_BINOP_BIT_OR,
 }
 
+_INPLACE_BINOP_MAP = {}
+for _sym_text, _binop in _BINOP_BY_SYM.items():
+    _INPLACE_BINOP_MAP[symbol(_sym_text)] = _binop
+    _INPLACE_BINOP_MAP[symbol('compile/' + _sym_text)] = _binop
 
-# operator symbol -> Binop op-type, derived from the per-operator opcode
-# suffix so the two tables cannot drift.
-_INPLACE_BINOP_MAP = {
-    sym: Binop['KOS_BINOP_'
-               + opcode.name.replace('KOS_OP_VAR_OBJECT_INPLACE_', '')]
-    for sym, opcode in _INPLACE_OP_MAP.items()
-}
+
+def _object_inplace_opcode(binop):
+    """OBJECT_INPLACE_<op> opcode for a Binop op-type (stack in-place family)."""
+    return OpCode['KOS_OP_OBJECT_INPLACE_' + binop.name[len('KOS_BINOP_'):]]
 
 
 @builtin("compile/inplace")
@@ -909,11 +899,11 @@ def special_inplace_item(compiler, source, tc=False):
 
     value_exprs = list(unpack(rest))
 
-    var_opcode = _INPLACE_OP_MAP.get(op_sym)
-    if var_opcode is None:
+    binop = _INPLACE_BINOP_MAP.get(op_sym)
+    if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
-    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
+    opcode = _object_inplace_opcode(binop)
 
     if (opcode is OpCode.KOS_OP_OBJECT_INPLACE_POWER
             and len(value_exprs) != 1):
@@ -984,11 +974,11 @@ def special_inplace_attr(compiler, source, tc=False):
     if not is_symbol(key_expr):
         raise SpecialError("inplace-attr attr must be a symbol", source)
 
-    var_opcode = _INPLACE_OP_MAP.get(op_sym)
-    if var_opcode is None:
+    binop = _INPLACE_BINOP_MAP.get(op_sym)
+    if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
-    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
+    opcode = _object_inplace_opcode(binop)
 
     if (opcode is OpCode.KOS_OP_OBJECT_INPLACE_POWER
             and len(value_exprs) != 1):
