@@ -790,7 +790,7 @@ static int kos_attr_inplace_cached(
   /* Store: reuse the resolved offset only if the guard still holds -- the fold
      may have retyped obj out from under it. On a miss, fall back to setattr. */
   int res;
-  if (field_guard_ok(Py_TYPE(obj), slot)) {
+  if (slot->kind == KOS_CACHE_FIELD && field_guard_ok(Py_TYPE(obj), slot)) {
     if (m == KOS_FIELD_SLOT) {
       field_slot_store(obj, off, acc);
       res = 0;

@@ -664,19 +664,32 @@ PyObject *kos_operand_reduce(
     size_t count) {
 
   switch (op) {
-    case KOS_OPERAND_ADD:             return op_add(values, count);
-    case KOS_OPERAND_SUBTRACT:        return op_subtract(values, count);
-    case KOS_OPERAND_MULTIPLY:        return op_multiply(values, count);
-    case KOS_OPERAND_MODULO:          return op_modulo(values, count);
-    case KOS_OPERAND_BIT_AND:         return op_bit_and(values, count);
-    case KOS_OPERAND_BIT_OR:          return op_bit_or(values, count);
-    case KOS_OPERAND_BIT_XOR:         return op_bit_xor(values, count);
-    case KOS_OPERAND_BIT_LEFT:        return op_bit_left(values, count);
-    case KOS_OPERAND_BIT_RIGHT:       return op_bit_right(values, count);
-    case KOS_OPERAND_TRUE_DIVIDE:     return op_true_divide(values, count);
-    case KOS_OPERAND_FLOOR_DIVIDE:    return op_floor_divide(values, count);
-    case KOS_OPERAND_MATRIX_MULTIPLY: return op_matrix_multiply(values, count);
-    case KOS_OPERAND_POWER:           return op_power(values, count);
+    case KOS_OPERAND_ADD:
+      return op_add(values, count);
+    case KOS_OPERAND_SUBTRACT:
+      return op_subtract(values, count);
+    case KOS_OPERAND_MULTIPLY:
+      return op_multiply(values, count);
+    case KOS_OPERAND_MODULO:
+      return op_modulo(values, count);
+    case KOS_OPERAND_BIT_AND:
+      return op_bit_and(values, count);
+    case KOS_OPERAND_BIT_OR:
+      return op_bit_or(values, count);
+    case KOS_OPERAND_BIT_XOR:
+      return op_bit_xor(values, count);
+    case KOS_OPERAND_BIT_LEFT:
+      return op_bit_left(values, count);
+    case KOS_OPERAND_BIT_RIGHT:
+      return op_bit_right(values, count);
+    case KOS_OPERAND_TRUE_DIVIDE:
+      return op_true_divide(values, count);
+    case KOS_OPERAND_FLOOR_DIVIDE:
+      return op_floor_divide(values, count);
+    case KOS_OPERAND_MATRIX_MULTIPLY:
+      return op_matrix_multiply(values, count);
+    case KOS_OPERAND_POWER:
+      return op_power(values, count);
     default:
       PyErr_Format(PyExc_SystemError, "bad operand op-type: %i", (int) op);
       return NULL;
@@ -693,19 +706,32 @@ PyObject *kos_inplace_reduce(
     size_t count) {
 
   switch (op) {
-    case KOS_OPERAND_ADD:             return op_inplace_add(values, count);
-    case KOS_OPERAND_SUBTRACT:        return op_inplace_subtract(values, count);
-    case KOS_OPERAND_MULTIPLY:        return op_inplace_multiply(values, count);
-    case KOS_OPERAND_MODULO:          return op_inplace_modulo(values, count);
-    case KOS_OPERAND_BIT_AND:         return op_inplace_bit_and(values, count);
-    case KOS_OPERAND_BIT_OR:          return op_inplace_bit_or(values, count);
-    case KOS_OPERAND_BIT_XOR:         return op_inplace_bit_xor(values, count);
-    case KOS_OPERAND_BIT_LEFT:        return op_inplace_bit_left(values, count);
-    case KOS_OPERAND_BIT_RIGHT:       return op_inplace_bit_right(values, count);
-    case KOS_OPERAND_TRUE_DIVIDE:     return op_inplace_true_divide(values, count);
-    case KOS_OPERAND_FLOOR_DIVIDE:    return op_inplace_floor_divide(values, count);
-    case KOS_OPERAND_MATRIX_MULTIPLY: return op_inplace_matrix_multiply(values, count);
-    case KOS_OPERAND_POWER:           return op_inplace_power(values, count);
+    case KOS_OPERAND_ADD:
+      return op_inplace_add(values, count);
+    case KOS_OPERAND_SUBTRACT:
+      return op_inplace_subtract(values, count);
+    case KOS_OPERAND_MULTIPLY:
+      return op_inplace_multiply(values, count);
+    case KOS_OPERAND_MODULO:
+      return op_inplace_modulo(values, count);
+    case KOS_OPERAND_BIT_AND:
+      return op_inplace_bit_and(values, count);
+    case KOS_OPERAND_BIT_OR:
+      return op_inplace_bit_or(values, count);
+    case KOS_OPERAND_BIT_XOR:
+      return op_inplace_bit_xor(values, count);
+    case KOS_OPERAND_BIT_LEFT:
+      return op_inplace_bit_left(values, count);
+    case KOS_OPERAND_BIT_RIGHT:
+      return op_inplace_bit_right(values, count);
+    case KOS_OPERAND_TRUE_DIVIDE:
+      return op_inplace_true_divide(values, count);
+    case KOS_OPERAND_FLOOR_DIVIDE:
+      return op_inplace_floor_divide(values, count);
+    case KOS_OPERAND_MATRIX_MULTIPLY:
+      return op_inplace_matrix_multiply(values, count);
+    case KOS_OPERAND_POWER:
+      return op_inplace_power(values, count);
     default:
       PyErr_Format(PyExc_SystemError,
                    "bad inplace operand op-type: %i", (int) op);
