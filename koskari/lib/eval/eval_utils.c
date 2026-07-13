@@ -374,6 +374,53 @@ static inline KosOpResult kos_op_result_from_push_int(int r) {
 }
 
 
+/* === Parameterized binop core === */
+
+/* Shared out-of-line body for the fast-slot in-place family.  Forced
+   noinline so the op-type switch is a genuine runtime (polymorphic) branch,
+   matching the eventual FAST_OBJECT_INPLACE_BINOP handler reading op from its
+   operand.  Binary (count 1) for the gate; reducing generalization is later.
+   Returns 0/-1 for kos_op_result_from_push_int.  Operator set is
+   KOS_BINOP_LIST (binops.h). */
+static KOS_NOINLINE int kos_fast_inplace_binop(
+    KosEvalState *es, KosOp *insn, KosBinop op) {
+
+  PyObject *ns = KosEvalState_NAMESPACE(es);
+  size_t idx = (size_t) KosOp_ARG(insn);
+  PyObject *obj = kos_ns_fast_deref(ns, idx);
+  if (unlikely(! obj))
+    return -1;
+
+  PyObject *rhs = KosEvalState_StackPopRef(es);
+  if (unlikely(! rhs)) {
+    Py_DECREF(obj);
+    return -1;
+  }
+
+  PyObject *result = NULL;
+  switch (op) {
+#define KOS_BINOP_INPLACE_CASE(NAME, LOP, RFN, IFN)                    \
+    case KOS_BINOP_##NAME:                                            \
+      if (kos_long_binop_fast(LOP, obj, rhs, &result) == 0)          \
+        result = IFN(obj, rhs);                                       \
+      break;
+    KOS_BINOP_LIST(KOS_BINOP_INPLACE_CASE)
+#undef KOS_BINOP_INPLACE_CASE
+    default:
+      PyErr_SetString(PyExc_SystemError, "bad binop op-type");
+  }
+
+  Py_DECREF(obj);
+  Py_DECREF(rhs);
+  if (unlikely(! result))
+    return -1;
+
+  int res = kos_ns_fast_store(ns, idx, result);
+  Py_DECREF(result);
+  return res;
+}
+
+
 
 /* Push val without auto-await (plain stack push only). */
 static inline KosOpResult kos_op_result_PUSH(

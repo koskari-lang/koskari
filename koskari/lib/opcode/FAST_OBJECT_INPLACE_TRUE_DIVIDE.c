@@ -20,30 +20,8 @@
 */
 
 KOS_OP_HANDLER(FAST_OBJECT_INPLACE_TRUE_DIVIDE) {
-
-  PyObject *ns = CURRENT_NS();
-  KOS_OP_REQUIRE_NS(ns);
-
-  size_t idx = (size_t) KosOp_ARG(insn);
-  PyObject *obj = kos_ns_fast_deref(ns, idx);
-  if (unlikely(! obj))
-    return EVAL_RAISE();
-
-  PyObject *rhs = KosEvalState_StackPopRef(es);
-  if (unlikely(! rhs)) {
-    Py_DECREF(obj);
-    return EVAL_RAISE();
-  }
-
-  PyObject *result = PyNumber_InPlaceTrueDivide(obj, rhs);
-  Py_DECREF(obj);
-  Py_DECREF(rhs);
-  if (unlikely(! result))
-    return EVAL_RAISE();
-
-  int res = kos_ns_fast_store(ns, idx, result);
-  Py_DECREF(result);
-  return kos_op_result_from_push_int(res);
+  return kos_op_result_from_push_int(
+      kos_fast_inplace_binop(es, insn, KOS_BINOP_TRUE_DIVIDE));
 }
 
 

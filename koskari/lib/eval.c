@@ -64,6 +64,7 @@
 #include "hints.h"
 #include "debug.h"
 #include "longops.h"
+#include "binops.h"
 #include "tracing.h"
 
 #include <stdint.h>

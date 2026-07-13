@@ -49,6 +49,7 @@ typedef enum KosLongBinop {
   KOS_LBOP_BIT_XOR,
   KOS_LBOP_BIT_LEFT,
   KOS_LBOP_BIT_RIGHT,
+  KOS_LBOP_NONE,   /* operators with no int-fast path; hits the switch default */
 } KosLongBinop;
 
 
