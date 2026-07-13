@@ -41,6 +41,7 @@
 
 
 extern PyObject *KosOpStyleEnum;
+extern PyObject *KosOperandEnum;
 
 
 typedef enum KosOpStyle {
@@ -72,10 +73,44 @@ typedef enum KosOpStyle {
   /** opcode argument is a fast variable index */
   KOSTYLE_FASTVAR,
 
+  /** opcode argument fuses an operator selector (high byte, KosOperand) with a
+      reducing count (low byte). Used directly where op-type+count is all that
+      travels, or as one field of an EXTRA row otherwise. */
+  KOSTYLE_OPCOUNT,
+
   /** opcode argument is an index into the extra table */
   KOSTYLE_EXTRA,
 
 } KosOpStyle;
+
+
+/** Compose/decode a KOSTYLE_OPCOUNT value: operator selector + reduce count. */
+#define KosOpCount_MAKE(op_type, count)  \
+  ((uint16_t)(((uint16_t)(op_type) << 8) | ((uint16_t)(count) & 0xff)))
+#define KosOpCount_TYPE(v)   ((uint16_t)((v) >> 8))
+#define KosOpCount_COUNT(v)  ((uint16_t)((v) & 0xff))
+
+
+/** Operator selector carried in the OPCOUNT high byte and dispatched by the
+    OBJECT_OPERAND / *_INPLACE handlers to the KosOperator_* functions. The
+    ordinals are part of the bytecode ABI (encoded in OPCOUNT and mirrored by
+    the Python Operand IntEnum); keep this order stable. */
+typedef enum KosOperand {
+  KOS_OPERAND_ADD,
+  KOS_OPERAND_SUBTRACT,
+  KOS_OPERAND_MULTIPLY,
+  KOS_OPERAND_MODULO,
+  KOS_OPERAND_BIT_AND,
+  KOS_OPERAND_BIT_OR,
+  KOS_OPERAND_BIT_XOR,
+  KOS_OPERAND_BIT_LEFT,
+  KOS_OPERAND_BIT_RIGHT,
+  KOS_OPERAND_TRUE_DIVIDE,
+  KOS_OPERAND_FLOOR_DIVIDE,
+  KOS_OPERAND_MATRIX_MULTIPLY,
+  KOS_OPERAND_POWER,
+  KOS_OPERAND_COUNT   /* number of operators; also the invalid sentinel */
+} KosOperand;
 
 
 /* === Extra operand table === */

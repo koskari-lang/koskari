@@ -20,10 +20,7 @@
 KOS_OP_HANDLER(FAST_BIND) {
 
   PyObject *ns = CURRENT_NS();
-  if (unlikely(! ns)) {
-    PyErr_SetString(PyExc_RuntimeError, "FAST_BIND invoked on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
 
   size_t idx = (size_t) KosOp_ARG(insn);
   if (unlikely(idx >= KosNamespace_FAST_COUNT(ns))) {

@@ -1498,9 +1498,16 @@ PyObject *KosParamRef_New(PyObject *key, PyObject *default_value) {
 PyObject *KosRef_Deref(PyObject *self) {
   PyTypeObject *const tp = self->ob_type;
 
-  if (tp == &KosRefType ||
-      tp == &KosConstantRefType) {
-    return sym_ref_m_deref(self);
+  if (likely(tp == &KosRefType ||
+             tp == &KosConstantRefType)) {
+    // Inline of sym_ref_m_deref: both kinds read their value from KosRef.obj.
+    PyObject *value = KosSymbolicRef_VALUE(self);
+    if (likely(value)) {
+      Py_INCREF(value);
+      return value;
+    }
+    PyErr_Format(PyExc_NameError, "Empty reference: %S", KosRef_NAME(self));
+    return NULL;
 
   } else if (tp == &KosMemoizedRefType) {
     return memo_ref_m_deref(self);
@@ -1530,10 +1537,16 @@ int KosRef_Store(PyObject *self, PyObject *value) {
   PyObject *res = NULL;
   PyTypeObject *const tp = self->ob_type;
 
-  if (tp == &KosRefType) {
-    res = sym_ref_m_store(self, value);
+  // Fast path: symbolic (mutable) cell — store in place, skipping the
+  // Py_None materialization the PyObject-returning method convention needs.
+  if (likely(tp == &KosRefType)) {
+    Py_XINCREF(value);
+    Py_XDECREF(KosSymbolicRef_VALUE(self));
+    KosSymbolicRef_VALUE(self) = value;
+    return 0;
+  }
 
-  } else if (tp == &KosConstantRefType ||
+  if (tp == &KosConstantRefType ||
              tp == &KosMemoizedRefType) {
     res = const_ref_m_store(self, value);
 

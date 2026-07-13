@@ -23,7 +23,7 @@
    behavior and dispatch.
 */
 
-KOS_OP_HANDLER(TAIL_CALL_NAMES) {
+KOS_OP_HANDLER_COLD(TAIL_CALL_NAMES) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *names = KosEvalState_StackPeek(es);
   if (! names)

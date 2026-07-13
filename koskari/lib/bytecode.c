@@ -1581,8 +1581,10 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
-        /* FASTVAR, COUNT, STAR: store raw integer (slot, argc, bitflags) */
-        if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR || fk == KOSTYLE_STAR) {
+        /* FASTVAR, COUNT, STAR, OPCOUNT: store raw integer (slot, argc,
+           bitflags, packed op-type+count) */
+        if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR
+            || fk == KOSTYLE_STAR || fk == KOSTYLE_OPCOUNT) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
                          "EXTRA field expects int, got %R", elem);
@@ -3299,6 +3301,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_CONST);
   int_enum(enum_dict, KOSTYLE_VAR);
   int_enum(enum_dict, KOSTYLE_FASTVAR);
+  int_enum(enum_dict, KOSTYLE_OPCOUNT);
   int_enum(enum_dict, KOSTYLE_EXTRA);
 
   return create_int_enum("OpStyle", enum_dict);
@@ -3350,6 +3353,37 @@ static PyObject *create_opcode_enum(void) {
 }
 
 
+PyObject *KosOperandEnum = NULL;
+
+
+/* IntEnum of the parameterized arithmetic operators (KosOperand, bytecode.h),
+   exposed as koskari.lib.Operand so the Python compiler and the C dispatch
+   share one op-type ordinal set. Written directly; keep in step with the
+   KosOperand enum. */
+static PyObject *create_operand_enum(void) {
+
+  PyObject *enum_dict = PyDict_New();
+  if (! enum_dict)
+    return NULL;
+
+  int_enum(enum_dict, KOS_OPERAND_ADD);
+  int_enum(enum_dict, KOS_OPERAND_SUBTRACT);
+  int_enum(enum_dict, KOS_OPERAND_MULTIPLY);
+  int_enum(enum_dict, KOS_OPERAND_MODULO);
+  int_enum(enum_dict, KOS_OPERAND_BIT_AND);
+  int_enum(enum_dict, KOS_OPERAND_BIT_OR);
+  int_enum(enum_dict, KOS_OPERAND_BIT_XOR);
+  int_enum(enum_dict, KOS_OPERAND_BIT_LEFT);
+  int_enum(enum_dict, KOS_OPERAND_BIT_RIGHT);
+  int_enum(enum_dict, KOS_OPERAND_TRUE_DIVIDE);
+  int_enum(enum_dict, KOS_OPERAND_FLOOR_DIVIDE);
+  int_enum(enum_dict, KOS_OPERAND_MATRIX_MULTIPLY);
+  int_enum(enum_dict, KOS_OPERAND_POWER);
+
+  return create_int_enum("Operand", enum_dict);
+}
+
+
 /* === Module lifecycle === */
 
 
@@ -3390,6 +3424,16 @@ int koskari_bytecode_init(PyObject *mod) {
   }
   KosOpStyleEnum = stuff;
 
+  stuff = create_operand_enum();
+  if (! stuff) {
+    return -1;
+  }
+  if (PyDict_SetItemString(dict, "Operand", stuff)) {
+    Py_DECREF(stuff);
+    return -1;
+  }
+  KosOperandEnum = stuff;
+
   STR_CONST(_str_anon, "<anon>");
 
   return 0;
@@ -3400,6 +3444,7 @@ int koskari_bytecode_clear(PyObject *mod) {
 
   Py_CLEAR(KosOpCodeEnum);
   Py_CLEAR(KosOpStyleEnum);
+  Py_CLEAR(KosOperandEnum);
   Py_CLEAR(_str_anon);
 
   return 0;

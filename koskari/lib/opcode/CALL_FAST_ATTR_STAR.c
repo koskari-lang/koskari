@@ -39,7 +39,7 @@ static int ensure_tuple_fast_attr_star(PyObject **val) {
 }
 
 
-KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
+KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
@@ -51,10 +51,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
     return EVAL_RAISE();
 
   PyObject *ns = CURRENT_NS();
-  if (! ns) {
-    PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR_STAR on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
   PyObject *obj = kos_ns_fast_deref(ns, (size_t) slot_idx);
   if (! obj)
     return EVAL_RAISE();

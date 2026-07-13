@@ -14,15 +14,22 @@
 */
 
 /**
-   OBJECT_INPLACE_BIT_AND: arg = number of operands (N >= 2). Pop N
-   values, reduce left-to-right with KosOperator_InplaceBitwiseAnd, push the
-   result or await it. The in-place & used by the inplace-item and
-   inplace-attr special forms.
+   FAST_OBJECT_INPLACE: arg = EXTRA row index. Row a0 = OPCOUNT
+   (op-type high byte, reduce count low byte), a1 = fast slot. Reduce the
+   count operands from the stack into the slot with the operator. Cold: the
+   op-type switch lives in the shared kos_fast_inplace_operand, out of the
+   inlined dispatch loop.
 */
 
-KOS_OP_HANDLER(OBJECT_INPLACE_BIT_AND) {
+KOS_OP_HANDLER_COLD(FAST_OBJECT_INPLACE) {
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+
+  KosOperand op = (KosOperand) KosOpCount_TYPE(row.a0);
+  size_t idx = (size_t) row.a1;
+
   return kos_op_result_from_push_int(
-    obj_op_reducing(es, insn, KosOperator_InplaceBitwiseAnd));
+      kos_fast_inplace_operand(es, op, idx));
 }
 
 

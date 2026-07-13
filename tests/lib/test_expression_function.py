@@ -30,6 +30,7 @@ import unittest
 from koskari.lib import BoundMethod, Code, Expression, Function
 from koskari.lib import FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
+from tests.lib.opcode import _lower_instr
 
 import pytest
 
@@ -60,7 +61,7 @@ def build_code(code, local_syms=None, name="expr"):
         local_syms = (local_syms,)
 
     nspec = NamespaceSpec(None, tuple(local_syms), ())
-    instr = tuple([_op(op), arg] for op, arg in code)
+    instr = tuple(_lower_instr(op, arg) for op, arg in code)
     return Code(nspec, instr, name)
 
 

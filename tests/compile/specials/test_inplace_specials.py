@@ -20,7 +20,7 @@ special forms.
 from types import SimpleNamespace
 
 from koskari.exceptions import SpecialError
-from koskari.lib import OpCode
+from koskari.lib import OpCode, Operand
 
 from . import SpecialsTestCase
 
@@ -39,6 +39,20 @@ def _opcodes(code):
 
 def _count_op(code, opcode):
     return sum(1 for op, _ in _ops(code) if op == opcode)
+
+
+def _find_inplace(code, operand):
+    """
+    Return the operand count of the first OBJECT_INPLACE instruction whose
+    op-type is `operand`, or None. The stack in-place operators were
+    consolidated into OBJECT_INPLACE, whose arg packs the operator selector in
+    the high byte and the count in the low byte.
+    """
+
+    for op, arg in _ops(code):
+        if op == OpCode.KOS_OP_OBJECT_INPLACE and (arg >> 8) == int(operand):
+            return arg & 0xff
+    return None
 
 
 class TestInplaceItemSpecial(SpecialsTestCase):
@@ -125,7 +139,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         self.assertEqual(1, _count_op(code, OpCode.KOS_OP_DUP))
         self.assertIn(OpCode.KOS_OP_CONST_ITEM, _opcodes(code))
         self.assertIn(OpCode.KOS_OP_CONST_ITEM_STORE, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_OBJECT_INPLACE_ADD, _opcodes(code))
+        self.assertIsNotNone(_find_inplace(code, Operand.KOS_OPERAND_ADD))
 
 
     async def test_inplace_item_var_key_emits_dup_and_item_store(self):
@@ -165,10 +179,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
         code = self.compile_to_code('(compile/inplace-item + d "k" 1 2 3)',
                                     d={})
-        arg = None
-        for op, oparg in _ops(code):
-            if op == OpCode.KOS_OP_OBJECT_INPLACE_ADD:
-                arg = oparg
+        arg = _find_inplace(code, Operand.KOS_OPERAND_ADD)
         self.assertEqual(4, arg)
 
 
@@ -237,25 +248,32 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
         self.assertEqual(1, calls["n"])
 
 
-    async def test_inplace_attr_symbol_obj_emits_var_attr_store(self):
+    async def test_inplace_attr_symbol_obj_emits_var_attr_inplace(self):
         code = self.compile_to_code(
             "(compile/inplace-attr + obj x 1)",
             obj=SimpleNamespace(x=0))
-        self.assertIn(OpCode.KOS_OP_VAR_ATTR, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_VAR_ATTR_STORE, _opcodes(code))
-        self.assertNotIn(OpCode.KOS_OP_DUP, _opcodes(code))
-        self.assertNotIn(OpCode.KOS_OP_ATTR, _opcodes(code))
+        ops = _opcodes(code)
+        # a single fused op replaces load + OBJECT_INPLACE + store
+        self.assertIn(OpCode.KOS_OP_VAR_ATTR_INPLACE, ops)
+        self.assertNotIn(OpCode.KOS_OP_VAR_ATTR, ops)
+        self.assertNotIn(OpCode.KOS_OP_VAR_ATTR_STORE, ops)
+        self.assertNotIn(OpCode.KOS_OP_OBJECT_INPLACE, ops)
+        self.assertNotIn(OpCode.KOS_OP_DUP, ops)
 
 
-    async def test_inplace_attr_expression_obj_emits_dup_and_attr_store(self):
+    async def test_inplace_attr_expression_obj_emits_attr_inplace(self):
         code = self.compile_to_code(
             "(compile/inplace-attr + (identity obj) x 1)",
             obj=SimpleNamespace(x=0),
             identity=lambda o: o)
-        self.assertEqual(1, _count_op(code, OpCode.KOS_OP_DUP))
-        self.assertIn(OpCode.KOS_OP_ATTR, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_ATTR_STORE, _opcodes(code))
-        self.assertNotIn(OpCode.KOS_OP_VAR_ATTR, _opcodes(code))
+        ops = _opcodes(code)
+        # obj rides the stack; the single fused op replaces DUP + ATTR +
+        # OBJECT_INPLACE + ATTR_STORE
+        self.assertIn(OpCode.KOS_OP_ATTR_INPLACE, ops)
+        self.assertNotIn(OpCode.KOS_OP_ATTR, ops)
+        self.assertNotIn(OpCode.KOS_OP_ATTR_STORE, ops)
+        self.assertNotIn(OpCode.KOS_OP_OBJECT_INPLACE, ops)
+        self.assertNotIn(OpCode.KOS_OP_DUP, ops)
 
 
     async def test_inplace_attr_mutates_in_place(self):

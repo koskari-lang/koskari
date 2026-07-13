@@ -20,7 +20,7 @@
    Stack [obj, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}].
    Resolve obj.name, then call like CALL_NAMES.
 */
-KOS_OP_HANDLER(CALL_ATTR_NAMES) {
+KOS_OP_HANDLER_COLD(CALL_ATTR_NAMES) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;

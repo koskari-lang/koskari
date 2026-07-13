@@ -374,7 +374,6 @@ static inline KosOpResult kos_op_result_from_push_int(int r) {
 }
 
 
-
 /* Push val without auto-await (plain stack push only). */
 static inline KosOpResult kos_op_result_PUSH(
     KosEvalState *es,

@@ -636,7 +636,7 @@ static int yield_from_drive_kos_async_gen(
    according to delegate kind.
 */
 
-KOS_OP_HANDLER(YIELD_FROM) {
+KOS_OP_HANDLER_COLD(YIELD_FROM) {
   KosDynNode *dyn_top = KosEvalState_CurrentNode(es);
 
   if (! KosDynNode_IS_YIELD_FROM(dyn_top)) {

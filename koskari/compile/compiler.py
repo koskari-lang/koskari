@@ -29,7 +29,7 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Arena, Code, FormalsSpec, FunctionSpec, Module,
+from ..lib import (Arena, Operand, Code, FormalsSpec, FunctionSpec, Module,
                    ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, nil, symbol)
@@ -84,6 +84,46 @@ def _build_var_to_fast():
 
 
 VAR_TO_FAST = _build_var_to_fast()
+
+
+_OPERAND_COUNT = len(Operand)
+
+
+def merge_opcount(value):
+    """
+    Normalize a KOSTYLE_OPCOUNT operand to its merged uint16 (operator selector
+    in the high byte, reduce count in the low byte).
+
+    Accepts either idiom, so specials may emit whichever reads cleanly:
+      - a ``(op_type, count)`` pair, which is merged, or
+      - a pre-merged int, which is validated to have been correctly packed.
+
+    Both are range- and op-type-checked, so no soften-side reversal is needed.
+
+    :param value: (op_type, count) pair, or a pre-merged int
+    :return: merged uint16 int
+    :raises ValueError: on a bad shape, out-of-range byte, or unknown op-type
+    """
+
+    if isinstance(value, tuple):
+        if len(value) != 2:
+            raise ValueError("opcount operand must be (op_type, count), "
+                             "got %r" % (value,))
+        op_type, count = value
+        op_type = int(getattr(op_type, 'value', op_type))
+        count = int(count)
+    else:
+        merged = int(value)
+        if not 0 <= merged <= 0xffff:
+            raise ValueError("opcount int out of uint16 range: %r" % (value,))
+        op_type, count = merged >> 8, merged & 0xff
+
+    if not 0 <= op_type < _OPERAND_COUNT:
+        raise ValueError("opcount op-type is not a known Operand: %r" % (op_type,))
+    if not 0 <= count <= 0xff:
+        raise ValueError("opcount count out of byte range: %r" % (count,))
+
+    return (op_type << 8) | count
 
 
 _TAIL_CALL_TO_CALL = {
@@ -948,6 +988,28 @@ class Compiler:
         return squished
 
 
+    def normalize_opcount(self, instr):
+        """
+        Merge every KOSTYLE_OPCOUNT operand to its packed uint16. Specials may
+        emit an (op_type, count) pair or a pre-merged int; merge_opcount
+        accepts and validates both. Runs unconditionally, independent of the
+        optional convert_fast lowering (which only relabels VAR->FAST and
+        leaves non-VAR fields, including a merged OPCOUNT, untouched).
+        """
+
+        result = []
+        for op, arg in instr:
+            if op.style == OpStyle.KOSTYLE_OPCOUNT:
+                arg = merge_opcount(arg)
+            elif (op.style == OpStyle.KOSTYLE_EXTRA
+                  and OpStyle.KOSTYLE_OPCOUNT in op.extra):
+                arg = tuple(
+                    merge_opcount(v) if fk == OpStyle.KOSTYLE_OPCOUNT else v
+                    for v, fk in zip(arg, op.extra))
+            result.append((op, arg))
+        return result
+
+
     def convert_fast(self, base_nspec, instr, mode=None):
         if mode is None:
             mode = self.mode
@@ -1080,6 +1142,9 @@ class Compiler:
         # Flatten position/label instructions and merge closure/write syms
         # from inner FunctionSpecs into the fragment
         instr = self.compress(fragment.instructions)
+        # Pack OPCOUNT operands before anything downstream reads the arg;
+        # unconditional, unlike the optional convert_fast lowering below.
+        instr = self.normalize_opcount(instr)
         self._cpool_scan_merge(fragment, instr)
 
         # Build NamespaceSpec from fragment buckets (local, closure, global)

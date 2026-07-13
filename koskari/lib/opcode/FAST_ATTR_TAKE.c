@@ -23,11 +23,7 @@ KOS_OP_HANDLER(FAST_ATTR_TAKE) {
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
   PyObject *ns = CURRENT_NS();
-  if (! ns) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "FAST_ATTR_TAKE invoked on NULL namespace");
-    return EVAL_RAISE();
-  }
+  KOS_OP_REQUIRE_NS(ns);
 
   PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! attr_name)

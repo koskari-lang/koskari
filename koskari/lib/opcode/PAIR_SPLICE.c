@@ -74,7 +74,7 @@ pair_splice_extend(PyObject *coll, PyObject *item) {
 }
 
 
-KOS_OP_HANDLER(PAIR_SPLICE) {
+KOS_OP_HANDLER_COLD(PAIR_SPLICE) {
   size_t count = (size_t) KosOp_ARG(insn);
 
   if (count == 0) {

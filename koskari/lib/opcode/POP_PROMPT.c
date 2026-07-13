@@ -19,7 +19,7 @@
    dynamic chain.
 */
 
-KOS_OP_HANDLER(POP_PROMPT) {
+KOS_OP_HANDLER_COLD(POP_PROMPT) {
   (void) insn;
 
   /* Nearest return bookmark: PUSH-graft (POP_PROMPT) or in-place

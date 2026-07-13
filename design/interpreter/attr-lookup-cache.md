@@ -691,10 +691,28 @@ sets `kind`.
 - **Method cache** (`KOS_CACHE_METHOD`): the CALL_ATTR* family. Type + version
   guards, instance shadow check, the four modes plus a `MEGAMORPHIC` churn
   bypass after repeated misses.
-- **Field cache** (`KOS_CACHE_FIELD`): `FAST_ATTR` / `VAR_ATTR` reads and
-  `FAST_ATTR_STORE` / `VAR_ATTR_STORE` writes, per *Attribute-storage (field)
-  cache* above. SLOT on all versions; INSTANCE_VALUE on 3.11-3.14 behind the
-  compat hooks; ref-free, so it does not add to KosCode's GC surface.
+- **Field cache** (`KOS_CACHE_FIELD`): `FAST_ATTR` / `VAR_ATTR` reads,
+  `FAST_ATTR_STORE` / `VAR_ATTR_STORE` writes, and the augmented in-place family
+  `ATTR_INPLACE` / `FAST_ATTR_INPLACE` / `VAR_ATTR_INPLACE`, per
+  *Attribute-storage (field) cache* above. SLOT on all versions; INSTANCE_VALUE
+  on 3.11-3.14 behind the compat hooks; ref-free, so it does not add to
+  KosCode's GC surface.
+- **Read-modify-write on one slot** (the in-place family, cache arity 1):
+  `obj.attr OP= vals` resolves the field location *once* and uses it for both
+  the accumulator load and the write-back, so a single cache slot serves the
+  whole augmented assignment (the point of collapsing these into one opcode).
+  The three variants differ only in how `obj` is obtained -- a fast slot
+  (`FAST_`), a frame-namespace name (`VAR_`), or the stack (`ATTR_INPLACE`,
+  which may be polymorphic and lean on the megamorphic bypass) -- and all route
+  through the shared `kos_attr_inplace_cached` (eval_cache.c). The fold between
+  load and store runs arbitrary user code (an `__iadd__` may retype `obj` or
+  materialize its dict), so the direct store is gated by re-checking the slot's
+  `field_guard_ok` against `obj`'s current type rather than re-resolving: a hit
+  reuses the resolved offset (the guard's type+version invariant makes it
+  valid), a miss falls back to `PyObject_SetAttr`. That re-guard -- not a second
+  resolve -- is what keeps the raw `field_slot_store` off a stale offset. On a
+  cache miss or when caches are gated off, the whole thing degrades to the
+  generic `kos_attr_inplace_reduce` (getattr / fold / setattr).
 - **GC-tracking of KosCode** landed with the method layout (the first
   ref-holding layout): KosCode is a GC type with `tp_traverse` / `tp_clear`
   that `switch (kind)` over the slots, matching `cache_slot_release`.

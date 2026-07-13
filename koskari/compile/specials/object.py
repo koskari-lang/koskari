@@ -29,7 +29,7 @@ preserve dunder dispatch semantics.
 
 import operator as _op
 
-from ...lib import OpCode, symbol, cons
+from ...lib import Operand, OpCode, symbol, cons
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...types import is_nil, get_position, is_pair, is_symbol, is_keyword, unpack
@@ -87,7 +87,7 @@ def _reduce_fold(py_fold, compiler, body):
     return (current, have_acc, acc)
 
 
-def _reduce_op(op, py_fold, compiler, source):
+def _reduce_op(op, py_fold, compiler, source, operand=None):
     """
     Compile a variadic reducing operator (COUNT opcode style).
 
@@ -96,10 +96,15 @@ def _reduce_op(op, py_fold, compiler, source):
     remainder normally. When py_fold is None, all arguments are compiled
     without folding.
 
-    :param op: OpCode for the OBJECT_* instruction
+    When operand is given, the reduction is emitted as the parameterized
+    OBJECT_OPERAND instruction carrying (operand, count); otherwise the
+    supplied op opcode is emitted with a plain count arg (e.g. OBJECT_STR).
+
+    :param op: OpCode for the OBJECT_* instruction, or None when operand is set
     :param py_fold: binary Python callable for constant folding, or None
     :param compiler: active Compiler
     :param source: raw source pair (called_by . body)
+    :param operand: Operand op-type for OBJECT_OPERAND, or None
     :return: ByteCodeFragment
     :raises SpecialError: when zero arguments are supplied
     """
@@ -140,23 +145,31 @@ def _reduce_op(op, py_fold, compiler, source):
     if count == 1 and is_nil(body):
         return frag
 
-    frag.instruction(op, count)
+    if operand is not None:
+        frag.instruction(OpCode.KOS_OP_OBJECT_OPERAND, (operand, count))
+    else:
+        frag.instruction(op, count)
     return frag
 
 
-def _binary_op(op, compiler, source, opa=0):
+def _binary_op(op, compiler, source, opa=0, operand=None):
     """
     Compile a strictly binary operator (always pops 2 values off the stack).
 
     Most binary OBJECT_* opcodes are NOARG (arg ignored by the C handler) so
     opa defaults to 0. A few implementations check the arg value at runtime
-    (e.g. OBJECT_MODULO and OBJECT_DIVMOD require opa==2); callers can
-    override opa for those cases.
+    (e.g. OBJECT_DIVMOD requires opa==2); callers can override opa for those
+    cases.
 
-    :param op: OpCode for the OBJECT_* instruction
+    When operand is given, the (strictly binary) operation is emitted as the
+    parameterized OBJECT_OPERAND instruction carrying (operand, 2); otherwise
+    the supplied op opcode is emitted with opa.
+
+    :param op: OpCode for the OBJECT_* instruction, or None when operand is set
     :param compiler: active Compiler
     :param source: raw source pair (called_by . body)
     :param opa: argument value encoded into the instruction (default 0)
+    :param operand: Operand op-type for OBJECT_OPERAND, or None
     :return: ByteCodeFragment
     :raises SpecialError: when argument count is not exactly 2
     """
@@ -178,7 +191,10 @@ def _binary_op(op, compiler, source, opa=0):
             "%s requires exactly 2 arguments, got %d" % (called_by, count),
             source)
 
-    frag.instruction(op, opa)
+    if operand is not None:
+        frag.instruction(OpCode.KOS_OP_OBJECT_OPERAND, (operand, 2))
+    else:
+        frag.instruction(op, opa)
     return frag
 
 
@@ -503,7 +519,8 @@ def special_add(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_ADD, _op.add, compiler, source)
+        None, _op.add, compiler, source,
+        operand=Operand.KOS_OPERAND_ADD)
 
 
 @builtin("compile/-")
@@ -514,7 +531,8 @@ def special_subtract(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_SUBTRACT, _op.sub, compiler, source)
+        None, _op.sub, compiler, source,
+        operand=Operand.KOS_OPERAND_SUBTRACT)
 
 
 @builtin("compile/*")
@@ -525,7 +543,8 @@ def special_multiply(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_MULTIPLY, _op.mul, compiler, source)
+        None, _op.mul, compiler, source,
+        operand=Operand.KOS_OPERAND_MULTIPLY)
 
 
 @builtin("compile/**")
@@ -536,7 +555,8 @@ def special_power(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_POWER, None, compiler, source)
+        None, None, compiler, source,
+        operand=Operand.KOS_OPERAND_POWER)
 
 
 @builtin("compile/&")
@@ -547,7 +567,8 @@ def special_bit_and(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_BIT_AND, _op.and_, compiler, source)
+        None, _op.and_, compiler, source,
+        operand=Operand.KOS_OPERAND_BIT_AND)
 
 
 @builtin("compile/|")
@@ -558,7 +579,8 @@ def special_bit_or(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_BIT_OR, _op.or_, compiler, source)
+        None, _op.or_, compiler, source,
+        operand=Operand.KOS_OPERAND_BIT_OR)
 
 
 @builtin("compile/^")
@@ -569,7 +591,8 @@ def special_bit_xor(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_BIT_XOR, _op.xor, compiler, source)
+        None, _op.xor, compiler, source,
+        operand=Operand.KOS_OPERAND_BIT_XOR)
 
 
 @builtin("compile///")
@@ -580,7 +603,8 @@ def special_floor_divide(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_FLOOR_DIVIDE, _op.floordiv, compiler, source)
+        None, _op.floordiv, compiler, source,
+        operand=Operand.KOS_OPERAND_FLOOR_DIVIDE)
 
 
 @builtin("compile/@")
@@ -591,7 +615,8 @@ def special_matrix_multiply(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_MATRIX_MULTIPLY, _op.matmul, compiler, source)
+        None, _op.matmul, compiler, source,
+        operand=Operand.KOS_OPERAND_MATRIX_MULTIPLY)
 
 
 # ---------------------------------------------------------------------------
@@ -606,7 +631,8 @@ def special_true_divide(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_TRUE_DIVIDE, _op.truediv, compiler, source)
+        None, _op.truediv, compiler, source,
+        operand=Operand.KOS_OPERAND_TRUE_DIVIDE)
 
 
 @builtin("compile/%")
@@ -616,7 +642,8 @@ def special_modulo(compiler, source, tc=False):
     Compile (compile/% A B). Modulo via __mod__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_MODULO, compiler, source, opa=2)
+    return _binary_op(
+        None, compiler, source, operand=Operand.KOS_OPERAND_MODULO)
 
 
 @builtin("compile/<<")
@@ -626,7 +653,8 @@ def special_bit_left(compiler, source, tc=False):
     Compile (compile/<< A B). Left bit-shift via __lshift__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_BIT_LEFT, compiler, source)
+    return _binary_op(
+        None, compiler, source, operand=Operand.KOS_OPERAND_BIT_LEFT)
 
 
 @builtin("compile/>>")
@@ -636,7 +664,8 @@ def special_bit_right(compiler, source, tc=False):
     Compile (compile/>> A B). Right bit-shift via __rshift__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_BIT_RIGHT, compiler, source)
+    return _binary_op(
+        None, compiler, source, operand=Operand.KOS_OPERAND_BIT_RIGHT)
 
 
 @builtin("compile/divmod")
@@ -790,34 +819,28 @@ def special_aiter(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_AITER, compiler, source)
 
 
-_INPLACE_OP_MAP = {
-    symbol('+'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_ADD,
-    symbol('-'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_SUBTRACT,
-    symbol('*'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MULTIPLY,
-    symbol('**'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_POWER,
-    symbol('/'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_TRUE_DIVIDE,
-    symbol('//'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_FLOOR_DIVIDE,
-    symbol('%'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MODULO,
-    symbol('@'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MATRIX_MULTIPLY,
-    symbol('<<'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_LEFT,
-    symbol('>>'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_RIGHT,
-    symbol('&'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_AND,
-    symbol('^'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_XOR,
-    symbol('|'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_OR,
-    symbol('compile/+'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_ADD,
-    symbol('compile/-'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_SUBTRACT,
-    symbol('compile/*'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MULTIPLY,
-    symbol('compile/**'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_POWER,
-    symbol('compile//'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_TRUE_DIVIDE,
-    symbol('compile///'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_FLOOR_DIVIDE,
-    symbol('compile/%'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MODULO,
-    symbol('compile/@'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_MATRIX_MULTIPLY,
-    symbol('compile/<<'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_LEFT,
-    symbol('compile/>>'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_RIGHT,
-    symbol('compile/&'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_AND,
-    symbol('compile/^'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_XOR,
-    symbol('compile/|'): OpCode.KOS_OP_VAR_OBJECT_INPLACE_BIT_OR,
+# operator symbol -> Operand op-type. Both the plain and compile/ symbol forms
+# of each operator map to the same op-type.
+_OPERAND_BY_SYM = {
+    '+': Operand.KOS_OPERAND_ADD,
+    '-': Operand.KOS_OPERAND_SUBTRACT,
+    '*': Operand.KOS_OPERAND_MULTIPLY,
+    '**': Operand.KOS_OPERAND_POWER,
+    '/': Operand.KOS_OPERAND_TRUE_DIVIDE,
+    '//': Operand.KOS_OPERAND_FLOOR_DIVIDE,
+    '%': Operand.KOS_OPERAND_MODULO,
+    '@': Operand.KOS_OPERAND_MATRIX_MULTIPLY,
+    '<<': Operand.KOS_OPERAND_BIT_LEFT,
+    '>>': Operand.KOS_OPERAND_BIT_RIGHT,
+    '&': Operand.KOS_OPERAND_BIT_AND,
+    '^': Operand.KOS_OPERAND_BIT_XOR,
+    '|': Operand.KOS_OPERAND_BIT_OR,
 }
+
+_INPLACE_OPERAND_MAP = {}
+for _sym_text, _binop in _OPERAND_BY_SYM.items():
+    _INPLACE_OPERAND_MAP[symbol(_sym_text)] = _binop
+    _INPLACE_OPERAND_MAP[symbol('compile/' + _sym_text)] = _binop
 
 
 @builtin("compile/inplace")
@@ -848,8 +871,8 @@ def special_inplace(compiler, source, tc=False):
     if not is_symbolish(var_sym):
         raise SpecialError("inplace var must be a symbol", source)
 
-    opcode = _INPLACE_OP_MAP.get(op_sym)
-    if opcode is None:
+    binop = _INPLACE_OPERAND_MAP.get(op_sym)
+    if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
     name = str(var_sym)
@@ -861,7 +884,10 @@ def special_inplace(compiler, source, tc=False):
     pos = get_position(body)
     frag.request_for_write(name, position=pos)
     frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, name)
+    # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
+    # name to a fast slot (-> FAST_OBJECT_INPLACE) when possible.
+    frag.instruction(OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+                     ((binop, 1), name, 0, 0))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
@@ -872,7 +898,7 @@ def special_inplace(compiler, source, tc=False):
 def special_inplace_item(compiler, source, tc=False):
     """
     Compile (compile/inplace-item OP OBJ KEY VALUE...). Multiple values
-    reduce left-to-right through the single OBJECT_INPLACE_* instruction.
+    reduce left-to-right through the single OBJECT_INPLACE instruction.
     """
 
     called_by, body = source
@@ -897,13 +923,11 @@ def special_inplace_item(compiler, source, tc=False):
 
     value_exprs = list(unpack(rest))
 
-    var_opcode = _INPLACE_OP_MAP.get(op_sym)
-    if var_opcode is None:
+    binop = _INPLACE_OPERAND_MAP.get(op_sym)
+    if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
-    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
-
-    if (opcode is OpCode.KOS_OP_OBJECT_INPLACE_POWER
+    if (binop is Operand.KOS_OPERAND_POWER
             and len(value_exprs) != 1):
         raise SpecialError("inplace ** takes exactly one value", source)
 
@@ -927,7 +951,8 @@ def special_inplace_item(compiler, source, tc=False):
 
     for value_expr in value_exprs:
         frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, 1 + len(value_exprs))
+    frag.instruction(OpCode.KOS_OP_OBJECT_INPLACE,
+                     (binop, 1 + len(value_exprs)))
 
     if is_const:
         frag.instruction(OpCode.KOS_OP_CONST_ITEM_STORE, key_val)
@@ -944,7 +969,9 @@ def special_inplace_item(compiler, source, tc=False):
 def special_inplace_attr(compiler, source, tc=False):
     """
     Compile (compile/inplace-attr OP OBJ ATTR VALUE...). Multiple values
-    reduce left-to-right through the single OBJECT_INPLACE_* instruction.
+    reduce left-to-right into OBJ.ATTR through a single fused instruction:
+    VAR_ATTR_INPLACE when OBJ is a variable (resolution lowers it to
+    FAST_ATTR_INPLACE), otherwise ATTR_INPLACE with OBJ on the stack.
     """
 
     called_by, body = source
@@ -972,41 +999,39 @@ def special_inplace_attr(compiler, source, tc=False):
     if not is_symbol(key_expr):
         raise SpecialError("inplace-attr attr must be a symbol", source)
 
-    var_opcode = _INPLACE_OP_MAP.get(op_sym)
-    if var_opcode is None:
+    binop = _INPLACE_OPERAND_MAP.get(op_sym)
+    if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
-    opcode = getattr(OpCode, var_opcode.name.replace('VAR_OBJECT', 'OBJECT'))
-
-    if (opcode is OpCode.KOS_OP_OBJECT_INPLACE_POWER
+    if (binop is Operand.KOS_OPERAND_POWER
             and len(value_exprs) != 1):
         raise SpecialError("inplace ** takes exactly one value", source)
 
     sym = str(key_expr)
+    count = len(value_exprs)
     frag = compiler.fragment(called_by)
 
     if not is_pair(value_exprs[0]):
         frag.position_of(body)
 
     if is_symbol(obj_expr):
-        frag.request_var(str(obj_expr))
-        frag.instruction(
-            OpCode.KOS_OP_VAR_ATTR, (str(obj_expr), sym, 0, 0))
+        # obj is a variable: fused VAR_ATTR_INPLACE, derefing the name and
+        # get/op/set-ing the attribute in one op. Only the values ride the
+        # stack. Resolution lowers this to FAST_ATTR_INPLACE where possible.
+        name = str(obj_expr)
+        frag.request_var(name)
+        for value_expr in value_exprs:
+            frag.merge(compiler.full_compile(value_expr))
+        frag.instruction(OpCode.KOS_OP_VAR_ATTR_INPLACE,
+                         ((binop, count), name, sym, 0))
     else:
+        # obj is an expression: fused ATTR_INPLACE, obj left on the stack
+        # below the values -> [obj, v0 .. v_{count-1}].
         frag.merge(compiler.full_compile(obj_expr))
-        frag.instruction(OpCode.KOS_OP_DUP, 1)
-        frag.instruction(OpCode.KOS_OP_ATTR, sym)
-
-    for value_expr in value_exprs:
-        frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(opcode, 1 + len(value_exprs))
-
-    if is_symbol(obj_expr):
-        frag.request_var(str(obj_expr))
-        frag.instruction(
-            OpCode.KOS_OP_VAR_ATTR_STORE, (str(obj_expr), sym, 0, 0))
-    else:
-        frag.instruction(OpCode.KOS_OP_ATTR_STORE, sym)
+        for value_expr in value_exprs:
+            frag.merge(compiler.full_compile(value_expr))
+        frag.instruction(OpCode.KOS_OP_ATTR_INPLACE,
+                         ((binop, count), sym, 0, 0))
 
     frag.instruction(OpCode.KOS_OP_CONST, None)
 

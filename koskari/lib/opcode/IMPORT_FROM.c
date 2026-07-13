@@ -71,7 +71,7 @@ static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
 }
 
 
-KOS_OP_HANDLER(IMPORT_FROM) {
+KOS_OP_HANDLER_COLD(IMPORT_FROM) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 

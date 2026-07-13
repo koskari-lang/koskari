@@ -412,25 +412,25 @@ static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
 */
 
 #include "ref.h"
+#include "hints.h"
+
+
+/* Out-of-line cold path for kos_ns_fast_deref: raise NameError for an empty
+   raw slot.  Always returns NULL.  Kept out of line so the error string and
+   formatting do not bloat every FAST-family handler in the dispatch loop. */
+PyObject *kos_ns_deref_empty_raw(PyObject *ns, size_t idx);
 
 
 static inline PyObject *kos_ns_fast_deref(PyObject *ns, size_t idx) {
+  PyObject *slot = KosNamespace_GET_FAST_VAL(ns, idx);
   if (kos_ns_is_raw(ns, idx)) {
-    PyObject *val = KosNamespace_GET_FAST_VAL(ns, idx);
-    if (! val) {
-      PyObject *names = KosNamespace_FAST_NAMES(ns);
-      if (names && idx < (size_t) PyTuple_GET_SIZE(names))
-        PyErr_Format(PyExc_NameError, "Empty reference: %S",
-                     PyTuple_GET_ITEM(names, (Py_ssize_t) idx));
-      else
-        PyErr_Format(PyExc_NameError, "Empty reference at slot %zu", idx);
-      return NULL;
+    if (likely(slot != NULL)) {
+      Py_INCREF(slot);
+      return slot;
     }
-    Py_INCREF(val);
-    return val;
-  } else {
-    return KosRef_Deref(KosNamespace_GET_FAST_VAL(ns, idx));
+    return kos_ns_deref_empty_raw(ns, idx);
   }
+  return KosRef_Deref(slot);
 }
 
 

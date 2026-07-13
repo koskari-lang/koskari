@@ -14,15 +14,21 @@
 */
 
 /**
-   OBJECT_INPLACE_ADD: arg = number of operands (N >= 2). Pop N
-   values, reduce left-to-right with KosOperator_InplaceAdd, push the
-   result or await it. The in-place + used by the inplace-item and
-   inplace-attr special forms.
+   OBJECT_INPLACE: arg = OPCOUNT (operator selector in the high byte, operand
+   count in the low byte). Reduce the count operands from the stack
+   left-to-right through the operator's PyNumber_InPlace* protocol and push the
+   result. The stack in-place op used by the inplace-item / inplace-attr
+   special forms. Cold: the op-type switch lives in the shared
+   kos_object_inplace, out of the inlined dispatch loop.
 */
 
-KOS_OP_HANDLER(OBJECT_INPLACE_ADD) {
+KOS_OP_HANDLER_COLD(OBJECT_INPLACE) {
+  uint16_t arg = KosOp_ARG(insn);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
+  int count = (int) KosOpCount_COUNT(arg);
+
   return kos_op_result_from_push_int(
-    obj_op_reducing(es, insn, KosOperator_InplaceAdd));
+      kos_object_inplace(es, op, count));
 }
 
 

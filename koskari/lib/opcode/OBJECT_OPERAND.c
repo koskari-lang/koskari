@@ -14,15 +14,19 @@
 */
 
 /**
-   OBJECT_INPLACE_TRUE_DIVIDE: arg = number of operands (N >= 2). Pop N
-   values, reduce left-to-right with KosOperator_InplaceTrueDivide, push the
-   result or await it. The in-place / used by the inplace-item and
-   inplace-attr special forms.
+   OBJECT_OPERAND: arg = OPCOUNT (operator selector in the high byte, operand
+   count in the low byte). Pop the count operands and apply the operator,
+   pushing the result. Cold: the op-type switch lives in the shared
+   kos_object_operand, out of the inlined dispatch loop.
 */
 
-KOS_OP_HANDLER(OBJECT_INPLACE_TRUE_DIVIDE) {
+KOS_OP_HANDLER_COLD(OBJECT_OPERAND) {
+  uint16_t arg = KosOp_ARG(insn);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
+  int count = (int) KosOpCount_COUNT(arg);
+
   return kos_op_result_from_push_int(
-    obj_op_reducing(es, insn, KosOperator_InplaceTrueDivide));
+      kos_object_operand(es, op, count));
 }
 
 

@@ -24,7 +24,7 @@
    PROMPT extent for resume PC.
 */
 
-KOS_OP_HANDLER(POP_SHIFT) {
+KOS_OP_HANDLER_COLD(POP_SHIFT) {
   PyObject *result;
   uint32_t eid;
   uint32_t parent_id;

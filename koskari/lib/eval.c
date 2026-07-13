@@ -63,7 +63,7 @@
 #include "lib.h"
 #include "hints.h"
 #include "debug.h"
-#include "longops.h"
+#include "operator.h"
 #include "tracing.h"
 
 #include <stdint.h>
@@ -143,6 +143,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 #include "eval/eval_chain.c"
 #include "eval/eval_state.c"
 #include "eval/eval_utils.c"
+#include "eval/eval_obj.c"
 #include "eval/eval_gil.c"
 #include "eval/eval_cache.c"
 
@@ -1362,142 +1363,6 @@ static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
 */
 
 
-/**
-   Reducing operator: pop opa values (or use TailPtr for opa > 0), call fn,
-   drop opa, push result. Faithful to ceval _obj_op.
- */
-static int obj_op_reducing(
-    KosEvalState *es,
-    KosOp *insn,
-    KosOperatorReducing *fn) {
-
-  int opa = (int) KosOp_ARG(insn);
-  PyObject *res;
-
-  if (opa < 0) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "Negative count argument to reducing operator: %i", opa);
-    return -1;
-  }
-
-  if (opa == 0) {
-    res = fn(NULL, 0);
-  } else {
-    PyObject *const *args = KosEvalState_StackTailPtr(es, (size_t) opa);
-    if (! args)
-      return -1;
-    res = fn(args, (size_t) opa);
-    KosEvalState_StackDropNoErr(es, (size_t) opa);
-  }
-
-  if (! res)
-    return -1;
-  return KosEvalState_StackPUSH(es, res);
-}
-
-
-/**
-   Reducing operator with a two-operand PyLong fast path.  When the top
-   two stack values qualify for kos_long_binop_fast, compute directly
-   and skip the generic reduce dispatch; any other operand count, type,
-   or overflow falls through to obj_op_reducing with fn.
-*/
-static int obj_op_reducing_long(
-    KosEvalState *es,
-    KosOp *insn,
-    KosOperatorReducing *fn,
-    KosLongBinop lop) {
-
-  if (likely(KosOp_ARG(insn) == 2)) {
-    PyObject *const *args = KosEvalState_StackTailPtr(es, 2);
-    if (unlikely(! args))
-      return -1;
-
-    PyObject *res = NULL;
-    int handled = kos_long_binop_fast(lop, args[0], args[1], &res);
-    if (unlikely(handled < 0))
-      return -1;
-    if (likely(handled)) {
-      KosEvalState_StackDropNoErr(es, 2);
-      return KosEvalState_StackPUSH(es, res);
-    }
-  }
-
-  return obj_op_reducing(es, insn, fn);
-}
-
-
-static int obj_op_binary(
-    KosEvalState *es,
-    KosOp *insn,
-    PyObject *(*fn)(PyObject *left, PyObject *right)) {
-
-  KosEvalStackLR op = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, op))
-    return -1;
-  PyObject *res = fn(op.left, op.right);
-  Py_DECREF(op.left);
-  Py_DECREF(op.right);
-  if (! res)
-    return -1;
-  (void) insn;
-  return KosEvalState_StackPUSH(es, res);
-}
-
-
-/**
-   Binary operator with a PyLong fast path.  Same contract as
-   obj_op_binary; qualifying int operands skip fn entirely.
-*/
-static int obj_op_binary_long(
-    KosEvalState *es,
-    KosOp *insn,
-    PyObject *(*fn)(PyObject *left, PyObject *right),
-    KosLongBinop lop) {
-
-  KosEvalStackLR op = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, op))
-    return -1;
-
-  PyObject *res = NULL;
-  int handled = kos_long_binop_fast(lop, op.left, op.right, &res);
-  if (handled == 0)
-    res = fn(op.left, op.right);
-  Py_DECREF(op.left);
-  Py_DECREF(op.right);
-  if (! res)
-    return -1;
-  (void) insn;
-  return KosEvalState_StackPUSH(es, res);
-}
-
-
-static PyObject *binary_in_result(PyObject *left, PyObject *right) {
-  int r = PySequence_Contains(right, left);
-  if (r < 0)
-    return NULL;
-  return PyBool_FromLong(r);
-}
-
-
-static PyObject *binary_not_in_result(PyObject *left, PyObject *right) {
-  int r = PySequence_Contains(right, left);
-  if (r < 0)
-    return NULL;
-  return PyBool_FromLong(! r);
-}
-
-
-static PyObject *binary_is_result(PyObject *left, PyObject *right) {
-  return PyBool_FromLong(left == right);
-}
-
-
-static PyObject *binary_is_not_result(PyObject *left, PyObject *right) {
-  return PyBool_FromLong(left != right);
-}
-
-
 /* Pop right (container) then left (item); PySequence_Contains(right, left).
    Branch to KosOp_ARG(insn) when cmp == branch_when (CHECK_IN: 0,
    CHECK_NOT_IN: 1). */
@@ -1759,9 +1624,36 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #define KOS_OP_HANDLER(name) \
   KOS_OP_INLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
+
+/* Cold variant of KOS_OP_HANDLER: same signature, but kept OUT of the inlined
+   dispatch function (the dispatch label calls it instead).  For large,
+   rarely-executed opcodes whose body would only bloat the hot loop. */
+#define KOS_OP_HANDLER_COLD(name) \
+  static KOS_NOINLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
+
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
+
+/* Namespace-presence guard for opcode handlers.  es->namespace is a live
+   register, always set during valid execution, so this catches only an
+   internal state-machine bug — compiled out unless KOS_EVAL_SAFETYNET.
+   Keeping it a macro keeps the 35+ (and growing) ns-touching handlers slim
+   in the single inlined dispatch function. */
+#if KOS_EVAL_SAFETYNET
+#define KOS_OP_REQUIRE_NS(ns)                                           \
+  do {                                                                  \
+    if (unlikely(! (ns))) {                                             \
+      PyErr_SetString(PyExc_RuntimeError, "opcode on NULL namespace");  \
+      return EVAL_RAISE();                                              \
+    }                                                                   \
+  } while (0)
+#else
+#define KOS_OP_REQUIRE_NS(ns)  ((void) 0)
+#endif
+
 #include "handlers.incl"
 #undef CURRENT_NS
+#undef KOS_OP_REQUIRE_NS
+#undef KOS_OP_HANDLER_COLD
 #undef KOS_OP_HANDLER
 
 

@@ -161,7 +161,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 5],
-            ["OBJECT_BIT_LEFT", 0],
+            ["OBJECT_BIT_LEFT", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 32)
@@ -171,7 +171,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 64],
             ["CONST", 1],
-            ["OBJECT_BIT_RIGHT", 0],
+            ["OBJECT_BIT_RIGHT", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), 32)
