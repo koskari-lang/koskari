@@ -1,245 +1,222 @@
-# Parameterized cold arithmetic opcodes (double-branch)
+# Parameterized cold arithmetic opcodes (OPERAND)
 
-Status: proposal. Branch context: `eval_fast_deref` (dispatch-size effort).
+Status: in progress on branch `eval_fast_deref`. This doc is the resume point
+-- read it top to bottom to pick the work back up.
 
-## Motivation
+## Goal
 
-Every opcode handler is `always_inline`d into the single computed-goto
-`koskari_eval_dispatch_computed_goto`, so each handler's body is additive
-I-cache cost in one hot function, and each opcode is fixed dispatch glue
-(~120 B/op of the 30,929 B floor). The arithmetic families are the worst
-offenders: ~52 near-identical handlers across four families, ~26% of the
-handler-body budget, and they multiply the opcode count. With ~39 more
-opcodes queued, the *count* is the structural problem, not just the bytes.
+Collapse the arithmetic opcode families (per-operator opcodes) into a few
+parameterized **cold** opcodes carrying an operator selector, dispatched once
+by the computed goto and then switching on the operator *inside* a cold,
+out-of-line handler (warm inside, cold outside). This shrinks the single
+`always_inline` dispatch function `koskari_eval_dispatch_computed_goto` (both
+its body and the per-opcode floor) and, more importantly, stops opcode
+proliferation as ~39 more opcodes arrive. Cachegrind established un-inlining
+big handlers is ~cycle-neutral (I-cache offsets the call), and the op-type
+switch is a *win* on `churn_loop` under a pessimistic branch model (fewer
+total mispredicts + better locality; see the gate result below).
 
-Cachegrind established the enabling fact: un-inlining a big handler is
-~cycle-neutral -- the ~617K L1i misses it saves (tighter dispatch loop)
-offset the ~5M added instructions (the call). So moving arithmetic out of
-line costs ~nothing in cycles. The remaining question is whether we also
-collapse the *opcodes*: fold each family's per-operator opcodes into one
-parameterized opcode carrying an op-type, dispatched cold, with the
-per-operator work inlined *inside* that cold handler.
+## Naming convention (settled)
 
-This is a deliberate, scoped exception to Koskari's early-fork idiom (one
-distinct opcode per variation, selection resolved by the computed goto). We
-keep early-fork for hot standalone opcodes; we accept a second branch (an
-op-type `switch`) for large uniform families, because it lives in a cold
-handler that is warm on the inside, and it stops opcode proliferation at the
-root. A new arithmetic-like operator becomes a `switch` case, not an opcode.
+- **OPERAND** -- the parameterized reducing operator family. `OBJECT_ADD` ->
+  `OBJECT_OPERAND (op, count)`.
+- **INPLACE** -- stands in for the long `INPLACE_OPERAND`. `OBJECT_INPLACE_ADD`
+  -> `OBJECT_INPLACE (op, count)`; likewise `FAST_OBJECT_INPLACE`,
+  `VAR_OBJECT_INPLACE`.
+- **COMPARE** -- reserved for a future consolidation of the comparison
+  opcodes (`OBJECT_EQ`/`LT`/... -> `OBJECT_COMPARE`), same pattern.
+- The C op-type enum is `KosOperand` / `KOS_OPERAND_*` (Python `Operand`),
+  generated from `KOS_OPERAND_LIST` in `koskari/lib/operands.h`.
+- The pre-existing long-integer int-fast path is a *separate* concept and
+  keeps its own names: `KosLongBinop` / `kos_long_binop_fast` / `KOS_LBOP_*`.
+- `KOSTYLE_OPCOUNT` keeps its name -- it packs op-type + count regardless.
 
-## Exactly one new argument type: `OPCOUNT`
+## The one new argument type: `KOSTYLE_OPCOUNT`
 
-The **only** new argument type is `OPCOUNT` -- a fusion of an operator selector
-with a reducing **count**, both small, in one 16-bit `arg`:
+`KosOp` is `uint16 op + uint16 arg`. `OPCOUNT` fuses an operator selector and a
+reduce count into one 16-bit `arg`:
 
 ```
-arg = (op_type << 8) | count
-      op_type : high byte, KosBinop (0..12)
-      count   : low byte, reduction arity (operands folded from the stack)
+arg = (op_type << 8) | count      op_type high byte (KosOperand 0..12)
+                                  count   low byte  (reduce arity)
 ```
 
-Accessors in `bytecode.h`:
+`bytecode.h`: `KosOpCount_MAKE(op,count)`, `KosOpCount_TYPE(v)`,
+`KosOpCount_COUNT(v)`. Used **directly** as the whole arg where op-type+count
+is all that travels (reducing `OBJECT_OPERAND` / `OBJECT_INPLACE`), or as one
+field of an **EXTRA** row when a fast-slot or var-name also travels
+(`FAST_OBJECT_INPLACE` = `EXTRA[OPCOUNT, FASTVAR]`, `VAR_OBJECT_INPLACE` =
+`EXTRA[OPCOUNT, VAR]`). Indices are never byte-packed; VAR/FASTVAR keep full
+width in their own EXTRA slots.
 
-```c
-#define KosOp_OPCOUNT_TYPE(insn)   ((KosBinop)(KosOp_ARG(insn) >> 8))
-#define KosOp_OPCOUNT_COUNT(insn)  (KosOp_ARG(insn) & 0xff)
-```
+## Status -- DONE (committed on eval_fast_deref)
 
-Nothing else is ever fused. `FASTVAR` and `VAR` keep their own full-width
-slots. A family that needs more than op-type+count -- i.e. it also carries a
-fast-slot or a var-name -- moves to an **`EXTRA`** row (the existing
-multi-operand mechanism) whose fields are `OPCOUNT` plus a normal `FASTVAR` or
-`VAR`. `OPCOUNT` is used directly as the main arg where op-type+count is all
-that travels, and as one `EXTRA` field otherwise. One new style; everything
-else reuses existing patterns.
+Dispatch fn `koskari_eval_dispatch_computed_goto`: **124,261 B at effort start
+-> 71,057 B now (-43%)**.
 
-## In-place is a reducing op (correctness fix)
+Commit trail (oldest -> newest):
+- `f58796f7` slim ns-touching handlers (pre-work; 124,261 -> 120,944)
+- `e3752e41` design: sizing baseline (`design/dispatch-sizing.md`)
+- `13835872` un-inline cold-giant handlers (Phase A; 120,944 -> 94,511)
+- `9c62b4cc`,`80a7ea12` design: this plan (+ single-OPCOUNT correction)
+- `97b2f9f7` **gate**: shared reduce handler + `operands.h` (`KOS_OPERAND_LIST`,
+  `KosOperand`); 13 `FAST_OBJECT_INPLACE_<op>` became stubs. Gate result below.
+- `ee427be1` `KOSTYLE_OPCOUNT` + `KosOpCount_*` + `Operand` enum exposed to
+  Python; `FAST_OBJECT_INPLACE` opcode (EXTRA) + cold handler (dead at first)
+- `f15cc87b` `merge_opcount` compile helper
+- `825476fe` **collapse live**: `special_inplace` emits `VAR_OBJECT_INPLACE`
+  `EXTRA[(op,1), name]`; resolution lowers to `FAST_OBJECT_INPLACE`; both cold
+  handlers via shared cores; C EXTRA-row raw-OPCOUNT fix; `normalize_opcount`
+  pass
+- `f70d53bc` removed the 26 per-operator `FAST/VAR_OBJECT_INPLACE_<op>` opcode
+  rows (`.c` files left on disk); `object.py` tables become direct symbol->
+  `Operand`; 79,162 -> 71,057
+- `d055246d` rename BINOP -> OPERAND
 
-Today the in-place handlers pop a single rhs -- they are binary. But
-`(set! x (+ x a b c))` should fold *every* operand into `x`; the current
-opcodes only express `x = x <op> rhs`, forcing the compiler to chain or
-pre-reduce. Carrying a `count` makes the in-place variants **proper reducing
-ops**: fold `count` operands off the stack into the target with the operator.
-This unifies them with `OBJECT_<op>` reducing and removes the binary-only
-limitation. All four families become "reduce `count` operands with `op_type`,
-result to <target>", differing only in where the accumulator/result lives.
+Every commit: full suite green (4581 passed, 10 skipped) + churn answers match.
 
-## Scope and encoding per family
+**Gate result** (cachegrind `churn_loop`, cache+branch sim, shared-switch vs
+plain `_COLD` un-inline): switch build ~0.7% *faster* -- total mispredicts
+140.2M vs 143.1M, I1 misses 43.5M vs 51.3M (one shared hot handler beats 13
+scattered), under cachegrind's pessimistic branch model. The op-type switch is
+not a cost.
 
-Arithmetic operator set (`KosBinop`, 13 values, 4 bits): `ADD, SUBTRACT,
-MULTIPLY, TRUE_DIVIDE, FLOOR_DIVIDE, MODULO, POWER, MATRIX_MULTIPLY, BIT_AND,
-BIT_OR, BIT_XOR, BIT_LEFT, BIT_RIGHT`. Nine have an int-fast path
-(`KosLongBinop`); the other four go straight to the `PyNumber` call. This is
-only the arithmetic operators -- comparisons, predicates, `FORMAT`, etc. stay
-as-is (comparisons already use `EXTRA`).
+So the **in-place families are fully migrated and live**: `FAST_OBJECT_INPLACE`
+and `VAR_OBJECT_INPLACE` are the only in-place opcodes; 26 -> 2.
 
-| family | operands | result to | encoding |
-|---|---|---|---|
-| reducing `OBJECT_<op>` | op-type + count | stack | **`OPCOUNT`** main arg -> `OBJECT_BINOP` |
-| stack in-place `OBJECT_INPLACE_<op>` | op-type + count | stack (TOS accumulator) | `OPCOUNT` main arg -> `OBJECT_INPLACE_BINOP` |
-| fast-slot `FAST_OBJECT_INPLACE_<op>` | op-type + count + **slot** | fast slot | **`EXTRA`** `[OPCOUNT, FASTVAR]` -> `FAST_OBJECT_INPLACE_BINOP` |
-| var `VAR_OBJECT_INPLACE_<op>` | op-type + count + **name** | frame ns by name | **`EXTRA`** `[OPCOUNT, VAR]` -> `VAR_OBJECT_INPLACE_BINOP` |
+## Hot/cold architecture + the X-macro (implemented, reused for reducing)
 
-Net: ~52 opcodes -> ~4. Removes ~48 opcodes (floor ~ -5.8 KB) and moves the
-~52 handler bodies out of the dispatch function (~ -14 KB body), leaving four
-tiny cold stubs. No index is ever byte-packed; VAR keeps full width in its
-`EXTRA` slot (the earlier "VAR caveat" is gone).
+- Handlers are `KOS_OP_HANDLER_COLD` (`static KOS_NOINLINE`) -- one tiny call
+  stub per opcode in the dispatch loop; the switch + operators live out of
+  line.
+- The operator set is one source of truth: `KOS_OPERAND_LIST(X)` in
+  `operands.h`, `X(NAME, int-fast KosLongBinop or KOS_LBOP_NONE, reduce-fn,
+  in-place-fn)`. It generates the `KosOperand` enum and every family's switch.
+  `KOS_LBOP_NONE` (added to `longops.h`) marks operators with no int-fast path;
+  `kos_long_binop_fast` already returns 0 (its `default`) for it. Power's
+  ternary is wrapped by `kos_operand_power` / `kos_operand_inplace_power`
+  shims in `operands.h`.
+- Shared cores today (both `KOS_NOINLINE`, runtime op-type switch = real
+  polymorphic branch): `kos_fast_inplace_operand(es, op, idx)` in
+  `eval/eval_utils.c`; `kos_var_inplace_operand(es, op, name)` in `eval.c`
+  (after `frame_ns_deref`/`frame_ns_store`, which it needs). Both binary
+  (count 1) for now -- reducing generalization (count>1) is a later fold.
+- No re-branch/helper-chain: each switch case passes a *constant* `KOS_LBOP_*`,
+  so the int-fast path stays specialized per case.
 
-## Hot / cold architecture (explicit)
+## Implementation notes & gotchas (hard-won -- read before touching)
 
-- **Cold: the opcode handler.** `OBJECT_BINOP`, `FAST_OBJECT_INPLACE_BINOP`,
-  etc. are `KOS_OP_HANDLER_COLD` (`static KOS_NOINLINE`). The dispatch function
-  keeps only a one-line call per family (4 stubs vs 52 inlined bodies).
-- **Hot / inlined: everything *inside* the cold handler.** The op-type `switch`
-  and every case are fully inlined -- no per-op function, no function-pointer
-  indirection. Each case is specialized: `kos_long_binop_fast(KOS_LBOP_<op>,
-  ...)` with a *constant* (its internal switch collapses) then the `PyNumber_*`
-  fallback, applied pairwise across the `count` fold. Warm inside, cold outside.
-- **The dispatch loop** pays one computed-goto (unchanged) + one in-handler
-  `switch` (the "second branch"). `EXTRA` families additionally read the row's
-  `FASTVAR`/`VAR` field -- inline operand words, not a second dispatch.
+- **`convert_fast` is VAR->FAST-only and OPTIONAL.** Never munge arg types in
+  it. Operand normalization must run unconditionally *earlier*:
+  `Compiler.normalize_opcount(instr)` runs in `complete()` right after
+  `compress`, before the optional `convert_fast`. It merges any
+  `KOSTYLE_OPCOUNT` operand (standalone) or OPCOUNT field of an EXTRA row via
+  `merge_opcount`.
+- **`merge_opcount(value)`** (`compiler.py`) accepts a `(op_type, count)` pair
+  (merged) or a pre-merged int (validated); range-checks both bytes and
+  requires a known `Operand`. Specials emit the readable `(op, count)` pair;
+  no soften-side reversal.
+- **EXTRA arg tuples are 4-tuples** matching the schema, unused fields `0`,
+  e.g. `((op, 1), name, 0, 0)`. Field order: schema field i -> row `a{i}`
+  (confirmed via `FAST_ATTR`: `a0`=field0). Handlers read `row.a0`=OPCOUNT,
+  `row.a1`=slot/name; name via `KosEvalState_CONST(es, row.a1)`.
+- **The resolution pass is already EXTRA-aware** (`compiler.py` ~1044-1065):
+  it zips arg with `op.extra` and lowers each `KOSTYLE_VAR` field to a fast
+  slot, swapping VAR->FAST opcode when all resolve; non-VAR fields (incl. a
+  merged OPCOUNT) pass through. `VAR_TO_FAST` is rebuilt from FAST_* opcode
+  names, so `FAST_OBJECT_INPLACE` <-> `VAR_OBJECT_INPLACE` maps automatically.
+- **C harden of OPCOUNT** (two paths):
+  - EXTRA field: `bytecode.c` ~1586 -- `KOSTYLE_OPCOUNT` added to the raw-int
+    branch (`COUNT || FASTVAR || STAR || OPCOUNT`). This was a real bug: without
+    it the op-type was silently zeroed (`a0`=0), giving wrong results.
+  - Standalone: `bytecode.c` ~1883 catch-all `else { COUNT, NOARG, etc: raw }`
+    already covers OPCOUNT (arg is a PyLong after `normalize_opcount`).
+    **Confirmed sufficient for `OBJECT_OPERAND`.**
+- **`Operand` enum** is generated in `bytecode.c` `create_operand_enum()` from
+  `KOS_OPERAND_LIST`, registered as module attr `"Operand"`, member names
+  `KOS_OPERAND_ADD` etc. (`int_enum` stringifies). `object.py` maps operator
+  symbol -> `Operand` directly (`_OPERAND_BY_SYM` + plain/`compile/` forms ->
+  `_INPLACE_OPERAND_MAP`); `_object_inplace_opcode(operand)` -> the
+  `OBJECT_INPLACE_<op>` opcode (used by `special_inplace_item` today).
+- **`dis` cosmetic**: OPCOUNT fields render as their raw int / `0`; the decoder
+  doesn't unpack `(op, count)` yet. Runtime is correct. Follow-up.
+- Adding/removing opcodes shifts enum values and requires `tox -qe handlers`
+  to regenerate `handlers.incl`. Bootstrap recompiles, so no stale bytecode.
 
-### No helper-call layers: share cases by X-macro, not by call
+## Remaining work
 
-The four families differ only in *prologue* (where the accumulator starts:
-stack / fast slot / var name) and *epilogue* (where the result lands); the
-operator `switch` over the `count` fold is identical. Share it at the *source*
-level with an X-macro list, expanded inline into each handler -- zero call
-layers:
+### 1. Reducing migration -> `OBJECT_OPERAND` (correctness-sensitive)
 
-```c
-/* single source of truth for the operator set */
-#define KOS_BINOP_LIST(X)                                                     \
-  X(ADD,       KOS_LBOP_ADD,      PyNumber_Add,      PyNumber_InPlaceAdd)      \
-  X(SUBTRACT,  KOS_LBOP_SUBTRACT, PyNumber_Subtract, PyNumber_InPlaceSubtract) \
-  /* ... 9 more ... */                                                        \
-  X(TRUE_DIVIDE, KOS_LBOP_NONE,   PyNumber_TrueDivide, PyNumber_InPlaceTrueDivide)
+The reducing `OBJECT_<op>` family is heterogeneous -- preserve semantics
+exactly:
+- 9 ops `ADD, SUBTRACT, MULTIPLY, MODULO, BIT_AND/OR/XOR/LEFT/RIGHT`:
+  `OP(..., 0, COUNT)`, handler `obj_op_reducing_long(es, insn, KosOperator_X,
+  KOS_LBOP_X)` (int-fast when `ARG==2`, else `obj_op_reducing`).
+- 3 ops `FLOOR_DIVIDE, MATRIX_MULTIPLY, POWER`: `COUNT`, handler
+  `obj_op_reducing(es, insn, KosOperator_X)` (no int-fast).
+- `TRUE_DIVIDE`: `NOARG` style, emitted binary via `_binary_op` (`opa`), handler
+  `obj_op_reducing(...)`. (Check the exact emit arg.)
+- All fold through hardened `KosOperator_*` (`KosOperatorReducing *`) with
+  identity (`count==0` -> `fn(NULL,0)`) and single-arg semantics in
+  `obj_op_reducing` (eval.c). `obj_op_reducing` reads `count = KosOp_ARG(insn)`.
 
-/* one inlined fold+switch, generated once, expanded per family */
-#define KOS_BINOP_REDUCE(optype, acc, pop_next, count, INPLACE)  ...
-```
+Plan:
+- Add `OP(OBJECT_OPERAND, 0, OPCOUNT)` + cold handler: `op =
+  KosOpCount_TYPE(arg)`, `count = KosOpCount_COUNT(arg)`, call a shared
+  `kos_object_operand(es, op, count)` that `switch`es on op and, per case,
+  reduces `count` operands with a *constant* `lop` + the op's `KosOperator_*`
+  fn. Retires `obj_op_reducing_long`'s runtime `lop` switch.
+- Refactor `obj_op_reducing` to a `kos_object_reduce_n(es, count, fn)` taking
+  count explicitly (the current one reads `insn->ARG`); the fast-int `count==2`
+  shortcut per case uses the constant `lop`. Preserve identity/single-arg
+  behavior verbatim.
+- Compiler: `_reduce_op` (and the binary `_binary_op` path for `/`, `%`, `**`,
+  etc.) in `koskari/compile/specials/object.py` emit
+  `OBJECT_OPERAND (operand, count)` instead of the per-op opcodes.
+  `normalize_opcount` already merges standalone OPCOUNT.
+- Remove the 13 `OBJECT_<op>` rows from `opcodes.incl`.
 
-Each family handler expands the reduce/switch once, wrapped by its own
-prologue/epilogue. The operator logic lives once (the list); the code is
-inlined per family (no runtime sharing, no call chain). Adding an operator =
-one row.
+### 2. Stack in-place -> `OBJECT_INPLACE`
 
-The reducing family's existing int-fast shortcut (`obj_op_reducing_long`,
-which today runtime-switches on a `lop` -- the very anti-pattern) is
-**retired**: each `switch` case passes a *constant* `KOS_LBOP_*`, so the
-int-fast path is specialized per case with no runtime `lop` re-branch.
+`OBJECT_INPLACE_<op>` (used by `special_inplace_item`, already reducing over
+`count` values). Add `OP(OBJECT_INPLACE, 0, OPCOUNT)` + cold handler (same
+switch shape, TOS accumulator epilogue). Update `special_inplace_item` to emit
+`(operand, count)`; drop `_object_inplace_opcode`. Remove the 13
+`OBJECT_INPLACE_<op>` rows.
 
-## Compile-time validation (the new arg type)
+### 3. Reducing generalization of the in-place families (optional here)
 
-`OPCOUNT` carries structured bits, so it needs validation the plain styles do
-not:
+Make `FAST_OBJECT_INPLACE` / `VAR_OBJECT_INPLACE` fold `count>1` (currently
+binary). Requires the compiler fusion to emit count>1 and the shared cores to
+loop. This is the "in-place is properly reducing" correctness improvement.
 
-- **op-type range**: high byte must be a defined `KosBinop` (0..12). Reject at
-  emission and at code-load/soften (a bad value hits the `switch` `default`, a
-  safe error, but we reject earlier).
-- **count range**: low byte is the reduction arity; must fit a byte and match
-  the operands actually on the stack. Emission refuses count > 255.
-- **round-trip**: `serialize` -> `soften` preserves both bytes; add a
-  validation assert in the soften path alongside the existing `EXTRA`-index
-  bounds check.
+### 4. Delete the unused `.c` files
 
-The emitter (`ByteCodeFragment`) gains `instruction_opcount(op, op_type,
-count)` (and an `EXTRA`-row variant for the fast/var families) that composes
-and range-checks rather than passing a raw `arg`.
+After 1-2, the per-operator handler files left on disk are all dead:
+`koskari/lib/opcode/{FAST,VAR}_OBJECT_INPLACE_<op>.c` (26, already dead) and
+`OBJECT_<op>.c` / `OBJECT_INPLACE_<op>.c` (after their migration). Delete them.
+`handlers.incl` already excludes them (only lists opcodes in `opcodes.incl`).
 
-## Touch-point inventory
+### 5. Follow-ups
 
-**Encoding / VM core (C)**
-- `bytecode.h` -- add `KOSTYLE_OPCOUNT` to `KosOpStyle`; add `KosBinop` enum +
-  `KosOp_OPCOUNT_*` accessors; extend the Python-exposed `KosOpStyleEnum`.
-- `bytecode.c` -- `opcode_styles[]` picks it up via the `OP_3`/`OP_7` macros;
-  audit every `switch(style)` / `st == KOSTYLE_*` site (`collect_label_map`,
-  soften, arg-kind scans) so `KOSTYLE_OPCOUNT` is handled (no labels, no pool
-  refs -> raw arg) and `EXTRA` rows with an `OPCOUNT` field validate. Add the
-  round-trip assert.
-- `opcodes.incl` -- delete the ~52 arithmetic `OP()` rows; add
-  `OP(OBJECT_BINOP, 0, OPCOUNT)`, `OP(OBJECT_INPLACE_BINOP, 0, OPCOUNT)`,
-  `OP(FAST_OBJECT_INPLACE_BINOP, 0, EXTRA, OPCOUNT, FASTVAR, NOARG, NOARG)`,
-  `OP(VAR_OBJECT_INPLACE_BINOP, 0, EXTRA, OPCOUNT, VAR, NOARG, NOARG)`.
-- `longops.h` -- add `KOS_LBOP_NONE` sentinel for the four non-int-fast ops.
+- `dis.py` / `dis_ng.ki`: decode+render `OPCOUNT` as `<OP> xN`.
+- `serialize/codex.py`: confirm OPCOUNT round-trips (plain uint16, like COUNT;
+  EXTRA rows already covered) -- add explicit handling if the `arg_kind` wire
+  path needs it.
+- Tracing (`tracing.c`): per-op timing now buckets a whole family under one
+  opcode; sub-bucket by op-type for `*_OPERAND`/`*_INPLACE` to keep
+  per-operator visibility (the data this effort steers by). Optional.
+- Future: `OBJECT_COMPARE` consolidation of the comparison opcodes.
 
-**Eval (C)**
-- `koskari/lib/opcode/` -- add the four `*_BINOP.c` cold handlers
-  (`KOS_OP_HANDLER_COLD`) with the inlined reduce/switch; delete the ~52 old
-  per-operator handler files.
-- `handlers.incl` -- regenerated by `tox -e handlers` (`tools/opimpl.py`);
-  fewer includes.
-- `eval/eval_utils.c` -- `KOS_BINOP_LIST` / reduce macros + a
-  `kos_binop_bad_optype` cold error helper; retire `obj_op_reducing_long`'s
-  `lop` switch.
+## Verification per step
 
-**Compiler (Python)**
-- `compile/specials/object.py` -- `_reduce_op`, `_binary_op`, `_unary_op` emit
-  the `*_BINOP` opcode with an op-type + count; the in-place op-symbol tables
-  (`VAR_OBJECT_INPLACE_*`, `FAST_OBJECT_INPLACE_*`) map operator symbol ->
-  `KosBinop`, and emit reducing count (the binary-only special-casing goes
-  away).
-- `compile/compiler.py` -- `ByteCodeFragment.instruction_opcount` + `EXTRA`-row
-  emit; range-check the packed value.
-- fast/var in-place fusion (`compiler.py` / `specials/object.py` /
-  `pragma/resolution.py`) -- emit `FAST_OBJECT_INPLACE_BINOP` /
-  `VAR_OBJECT_INPLACE_BINOP` `EXTRA` rows with `[OPCOUNT, FASTVAR|VAR]`.
-- op-type constant table: single source shared C<->Python (expose `KosBinop`).
-
-**Tooling (Python)**
-- `dis.py` -- `_format_arg`: `KOSTYLE_OPCOUNT` case rendering `"<OP> xN"` (e.g.
-  `OBJECT_BINOP BIT_XOR x2`), and `OPCOUNT` inside an `EXTRA` row. Keeps
-  human-readable per-operator disassembly.
-- `dis_ng.ki` -- mirror.
-- `serialize/codex.py` -- `intern_instruction_args` / `encode`/`decode`:
-  `KOSTYLE_OPCOUNT` is a plain `uint16`, no pool interning (like `COUNT`), but
-  handled explicitly in the `arg_kind` wire path; `EXTRA` rows already covered.
-
-**Observability / tracing**
-- `tracing.c` + opcode-timing -- collapsing merges a family's per-operator
-  buckets. Sub-bucket by `op_type` for the `*_BINOP` families so per-operator
-  timing (the data this effort steers by) survives. Recommended.
-
-**Tests / corpus**
-- Compile-phase expectations in `docs/corpus/records/` and tests asserting
-  arithmetic opcodes / dis output change; update alongside. The in-place
-  reducing fix may also *add* newly-correct behavior to cover.
-
-## Risks & open questions
-
-1. **The op-type switch misprediction (the gate).** The `switch` is at one
-   address but polymorphic across call sites; monomorphic in a single-op loop,
-   alternating in mixed arithmetic (`churn_loop`). Modern TAGE may learn a
-   repeating loop pattern. **Must measure**: prototype
-   `FAST_OBJECT_INPLACE_BINOP` (and `VAR_` to prove the `EXTRA` path) and
-   cachegrind `churn_loop` (mixed ops = worst case) vs plain `_COLD`. Gate the
-   plan on this.
-2. **Reducing semantics for in-place** -- fold order and stack layout must
-   match the old chained behavior exactly; cover with corpus/reproducers.
-3. **Tracing granularity** -- take the op-type sub-bucketing so per-operator
-   visibility survives.
-4. **Compile-time validation** must be airtight -- a silent count/op-type
-   truncation would be a correctness bug; the emitter range-check is
-   load-bearing.
-5. **Cross-language op-type drift** -- `KosBinop` values must match C and the
-   Python emitter; single source.
-
-## Phased rollout
-
-- **Phase 0 (gate)** -- prototype `FAST_OBJECT_INPLACE_BINOP` +
-  `VAR_OBJECT_INPLACE_BINOP` (both via `EXTRA[OPCOUNT, FASTVAR|VAR]`) end to
-  end (style, `KosBinop`, accessors, validation, two cold handlers, compiler
-  emit, dis render), and cachegrind `churn_loop` vs plain `_COLD`. Go/no-go on
-  the switch cost.
-- **Phase 1** -- land `KOSTYLE_OPCOUNT`, `KosBinop`, `KOS_BINOP_LIST`, the
-  fast/var in-place families as reducing ops; full suite + ASan + dispatch-size
-  + cachegrind.
-- **Phase 2** -- migrate the stack cases (`OBJECT_<op>` reducing,
-  `OBJECT_INPLACE_<op>`) to `OBJECT_BINOP` / `OBJECT_INPLACE_BINOP`; remove the
-  operand-specific opcodes; retire `obj_op_reducing_long`'s `lop` switch.
-- **Phase 3** -- tracing sub-buckets; corpus/test updates.
-
-Remeasure dispatch-fn size, floor, suite, ASan, cachegrind after each phase.
-Record deltas against `design/dispatch-sizing.md`.
+Rebuild (`tox -qe churn` reinstalls + builds; direct `.tox/churn/bin/python`
+uses the *installed* copy, which can be stale for `.py` edits -- run through
+`tox` after Python changes). Gate each step on: churn answers match (the
+harness asserts py==ki), full suite (`tox -qe test`, expect 4581), dispatch fn
+size via `nm --print-size` on the `.so` (symbol
+`koskari_eval_dispatch_computed_goto.lto_priv.0`), and cachegrind
+(`--cache-sim=yes --branch-sim=yes`) on `churn_loop` for the reducing switch.
+Native memory: `make test-asan` (container) for refcount-touching changes.
 
 <!-- Companion: design/dispatch-sizing.md (sizing baseline + un-inline-by-size rule). -->
