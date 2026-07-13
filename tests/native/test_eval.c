@@ -27,6 +27,7 @@
 
 #include "test_harness.h"
 #include "../../koskari/lib/lib.h"
+#include "../../koskari/lib/operands.h"
 
 
 /* === Helpers === */
@@ -117,7 +118,8 @@ static int test_eval_object_add_return(void) {
     PyObject *instr = PyList_New(4);
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, five));
-    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_OBJECT_ADD, 2));
+    PyList_SET_ITEM(instr, 2, make_instr_int(
+        KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
     PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
@@ -440,7 +442,8 @@ static int test_eval_reset_shift_invoke(void) {
     PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_CONST, five));
     PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_CALL, 1));
     PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP_SHIFT, 0));
-    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_OBJECT_ADD, 2));
+    PyList_SET_ITEM(instr, 6, make_instr_int(
+        KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
     PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP_PROMPT, 0));
     PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RETURN, 1));
 
@@ -733,7 +736,8 @@ static int test_eval_object_add_underrun(void) {
     PyObject *one = PyLong_FromLong(1);
     PyObject *instr = PyList_New(3);
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_OBJECT_ADD, 2));
+    PyList_SET_ITEM(instr, 1, make_instr_int(
+        KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 0));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);

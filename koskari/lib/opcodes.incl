@@ -265,21 +265,11 @@ OP(OBJECT_IS_INSTANCE, 0, COUNT)
 OP(OBJECT_IS_SUBCLASS, 0, COUNT)
 OP(NILP, 0, NOARG)            // pop TOS, push True if an empty-list singleton
 
-// numeric interface
-OP(OBJECT_ADD, 0, COUNT)
-OP(OBJECT_BIT_AND, 0, COUNT)
-OP(OBJECT_BIT_INVERT, 0, NOARG)
-OP(OBJECT_BIT_LEFT, 0, NOARG)
-OP(OBJECT_BIT_OR, 0, COUNT)
-OP(OBJECT_BIT_RIGHT, 0, NOARG)
-OP(OBJECT_BIT_XOR, 0, COUNT)
-OP(OBJECT_FLOOR_DIVIDE, 0, COUNT)
-OP(OBJECT_MATRIX_MULTIPLY, 0, COUNT)
-OP(OBJECT_MODULO, 0, NOARG)
-OP(OBJECT_MULTIPLY, 0, COUNT)
-OP(OBJECT_POWER, 0, COUNT)
-OP(OBJECT_SUBTRACT, 0, COUNT)
-OP(OBJECT_TRUE_DIVIDE, 0, NOARG)
+// numeric interface - arg = OPCOUNT (operator selector high byte, operand
+// count low byte); the shared cold handler applies the operator's exact
+// semantics (reduce, strict-binary, or 2-or-3-arg power). See operands.h.
+OP(OBJECT_OPERAND, 0, OPCOUNT)
+OP(OBJECT_BIT_INVERT, 0, NOARG)   // unary ~; not an operand, stays standalone
 
 // numeric interface, in-place variant - arg = N operands (N >= 2); pop
 // N values, reduce left-to-right via the PyNumber_InPlace* API, push

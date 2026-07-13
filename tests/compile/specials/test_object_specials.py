@@ -27,7 +27,7 @@ compile/aiter.
 
 
 from koskari.exceptions import SpecialError, SyntaxMatchError
-from koskari.lib import OpCode, OpStyle
+from koskari.lib import OpCode, OpStyle, Operand
 from koskari.dis import dis
 
 from . import SpecialsTestCase
@@ -49,6 +49,20 @@ def _find_op(code, opcode):
     for op, arg in _ops(code):
         if op == opcode:
             return arg
+    return None
+
+
+def _find_operand(code, operand):
+    """
+    Return the operand count of the first OBJECT_OPERAND instruction whose
+    op-type is `operand`, or None if none is present. The arithmetic
+    operators were consolidated into OBJECT_OPERAND, whose arg packs the
+    operator selector in the high byte and the count in the low byte.
+    """
+
+    for op, arg in _ops(code):
+        if op == OpCode.KOS_OP_OBJECT_OPERAND and (arg >> 8) == int(operand):
+            return arg & 0xff
     return None
 
 
@@ -471,7 +485,7 @@ class TestObjectAdd(SpecialsTestCase):
 
     async def test_add_emits_count_opcode(self):
         code = self.compile_to_code("(compile/+ a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_ADD)
+        arg = _find_operand(code, Operand.KOS_OPERAND_ADD)
         self.assertIsNotNone(arg)
         self.assertEqual(3, arg)
 
@@ -489,7 +503,7 @@ class TestObjectAdd(SpecialsTestCase):
     async def test_add_const_fold_two_literals(self):
         # (+ 1 2) folds to a single CONST 3; no op needed
         code = self.compile_to_code("(compile/+ 1 2)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_ADD)
+        arg = _find_operand(code, Operand.KOS_OPERAND_ADD)
 
         dis(code)
 
@@ -506,7 +520,7 @@ class TestObjectAdd(SpecialsTestCase):
     async def test_add_const_fold_prefix_only(self):
         # (+ 1 2 a) → CONST 3, VAR a, OBJECT_ADD 2  (folded prefix, not trailing var)
         code = self.compile_to_code("(compile/+ 1 2 a)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_ADD)
+        arg = _find_operand(code, Operand.KOS_OPERAND_ADD)
 
         dis(code)
 
@@ -523,25 +537,25 @@ class TestObjectAdd(SpecialsTestCase):
     async def test_add_no_fold_after_var(self):
         # (+ a 1 2) must NOT fold 1 and 2 — emit all three args
         code = self.compile_to_code("(compile/+ a 1 2)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_ADD)
+        arg = _find_operand(code, Operand.KOS_OPERAND_ADD)
         self.assertIsNotNone(arg)
         self.assertEqual(3, arg)
 
 
     async def test_add_star_arg_rewrites_to_call_not_object_add(self):
         """
-        *: in the argument list cannot lower to OBJECT_ADD; specials fall back
-        to compile/call (call opcodes, not KOS_OP_OBJECT_ADD).
+        *: in the argument list cannot lower to OBJECT_OPERAND; specials fall
+        back to compile/call (call opcodes, not an ADD operand).
         """
 
         code = self.compile_to_code("(compile/+ 1 *: xs)")
-        self.assertIsNone(_find_op(code, OpCode.KOS_OP_OBJECT_ADD))
+        self.assertIsNone(_find_operand(code, Operand.KOS_OPERAND_ADD))
         self.assertTrue(self.call_ops(code))
 
 
     async def test_add_const_fold_star_arg(self):
         code = self.compile_to_code("(compile/+ 1 11 *: xs)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_ADD)
+        arg = _find_operand(code, Operand.KOS_OPERAND_ADD)
         self.assertIsNone(arg)
         consts = [
             code.constant(arg)
@@ -560,14 +574,14 @@ class TestObjectSubtract(SpecialsTestCase):
 
     async def test_subtract_emits_count_opcode(self):
         code = self.compile_to_code("(compile/- a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_SUBTRACT)
+        arg = _find_operand(code, Operand.KOS_OPERAND_SUBTRACT)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
 
     async def test_subtract_const_fold(self):
         code = self.compile_to_code("(compile/- 10 3)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_SUBTRACT)
+        arg = _find_operand(code, Operand.KOS_OPERAND_SUBTRACT)
         self.assertIsNone(arg)
         consts = [
             code.constant(arg)
@@ -591,14 +605,14 @@ class TestObjectMultiply(SpecialsTestCase):
 
     async def test_multiply_emits_count_opcode(self):
         code = self.compile_to_code("(compile/* a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_MULTIPLY)
+        arg = _find_operand(code, Operand.KOS_OPERAND_MULTIPLY)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
 
     async def test_multiply_const_fold(self):
         code = self.compile_to_code("(compile/* 3 4)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_MULTIPLY)
+        arg = _find_operand(code, Operand.KOS_OPERAND_MULTIPLY)
         self.assertIsNone(arg)
         consts = [
             code.constant(arg)
@@ -617,7 +631,7 @@ class TestObjectPower(SpecialsTestCase):
 
     async def test_power_emits_count_opcode(self):
         code = self.compile_to_code("(compile/** a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_POWER)
+        arg = _find_operand(code, Operand.KOS_OPERAND_POWER)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
@@ -625,7 +639,7 @@ class TestObjectPower(SpecialsTestCase):
     async def test_power_no_const_fold(self):
         # ** has py_fold=None; constants are never folded
         code = self.compile_to_code("(compile/** 2 10)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_POWER, _opcodes(code))
+        self.assertIsNotNone(_find_operand(code, Operand.KOS_OPERAND_POWER))
 
 
 class TestObjectBitAnd(SpecialsTestCase):
@@ -637,14 +651,14 @@ class TestObjectBitAnd(SpecialsTestCase):
 
     async def test_bit_and_emits_count_opcode(self):
         code = self.compile_to_code("(compile/& a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_AND)
+        arg = _find_operand(code, Operand.KOS_OPERAND_BIT_AND)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
 
     async def test_bit_and_const_fold(self):
         code = self.compile_to_code("(compile/& 12 10)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_AND)
+        arg = _find_operand(code, Operand.KOS_OPERAND_BIT_AND)
         self.assertIsNone(arg)
         consts = [
             code.constant(arg)
@@ -663,14 +677,14 @@ class TestObjectBitOr(SpecialsTestCase):
 
     async def test_bit_or_emits_count_opcode(self):
         code = self.compile_to_code("(compile/| a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_OR)
+        arg = _find_operand(code, Operand.KOS_OPERAND_BIT_OR)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
 
     async def test_bit_or_const_fold(self):
         code = self.compile_to_code("(compile/| 12 3)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_OR)
+        arg = _find_operand(code, Operand.KOS_OPERAND_BIT_OR)
         self.assertIsNone(arg)
         consts = [
             code.constant(arg)
@@ -689,14 +703,14 @@ class TestObjectBitXor(SpecialsTestCase):
 
     async def test_bit_xor_emits_count_opcode(self):
         code = self.compile_to_code("(compile/^ a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_XOR)
+        arg = _find_operand(code, Operand.KOS_OPERAND_BIT_XOR)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
 
     async def test_bit_xor_const_fold(self):
         code = self.compile_to_code("(compile/^ 12 10)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_XOR)
+        arg = _find_operand(code, Operand.KOS_OPERAND_BIT_XOR)
         self.assertIsNone(arg)
         consts = [
             code.constant(arg)
@@ -715,14 +729,14 @@ class TestObjectFloorDivide(SpecialsTestCase):
 
     async def test_floor_divide_emits_count_opcode(self):
         code = self.compile_to_code("(compile/// a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_FLOOR_DIVIDE)
+        arg = _find_operand(code, Operand.KOS_OPERAND_FLOOR_DIVIDE)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
 
     async def test_floor_divide_const_fold(self):
         code = self.compile_to_code("(compile/// 7 2)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_FLOOR_DIVIDE)
+        arg = _find_operand(code, Operand.KOS_OPERAND_FLOOR_DIVIDE)
         self.assertIsNone(arg)
         consts = [
             code.constant(arg)
@@ -736,7 +750,7 @@ class TestObjectMatrixMultiply(SpecialsTestCase):
 
     async def test_matrix_multiply_emits_count_opcode(self):
         code = self.compile_to_code("(compile/@ a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_MATRIX_MULTIPLY)
+        arg = _find_operand(code, Operand.KOS_OPERAND_MATRIX_MULTIPLY)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
@@ -754,7 +768,7 @@ class TestObjectTrueDivide(SpecialsTestCase):
 
     async def test_true_divide_emits_count_opcode(self):
         code = self.compile_to_code("(compile// a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_TRUE_DIVIDE)
+        arg = _find_operand(code, Operand.KOS_OPERAND_TRUE_DIVIDE)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
@@ -766,7 +780,7 @@ class TestObjectTrueDivide(SpecialsTestCase):
 
     async def test_true_divide_const_fold(self):
         code = self.compile_to_code("(compile// 7.0 2.0)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_TRUE_DIVIDE)
+        arg = _find_operand(code, Operand.KOS_OPERAND_TRUE_DIVIDE)
         self.assertIsNone(arg)
         consts = [
             code.constant(arg)
@@ -786,7 +800,7 @@ class TestObjectModulo(SpecialsTestCase):
     async def test_modulo_emits_opcode_with_arg_two(self):
         # C handler requires opa==2
         code = self.compile_to_code("(compile/% a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_MODULO)
+        arg = _find_operand(code, Operand.KOS_OPERAND_MODULO)
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
 
@@ -805,7 +819,7 @@ class TestObjectBitLeft(SpecialsTestCase):
 
     async def test_bit_left_emits_opcode(self):
         code = self.compile_to_code("(compile/<< a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_BIT_LEFT, _opcodes(code))
+        self.assertIsNotNone(_find_operand(code, Operand.KOS_OPERAND_BIT_LEFT))
 
 
     async def test_bit_left_requires_two_args(self):
@@ -822,7 +836,7 @@ class TestObjectBitRight(SpecialsTestCase):
 
     async def test_bit_right_emits_opcode(self):
         code = self.compile_to_code("(compile/>> a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_BIT_RIGHT, _opcodes(code))
+        self.assertIsNotNone(_find_operand(code, Operand.KOS_OPERAND_BIT_RIGHT))
 
 
     async def test_bit_right_requires_two_args(self):

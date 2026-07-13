@@ -87,7 +87,7 @@ def _reduce_fold(py_fold, compiler, body):
     return (current, have_acc, acc)
 
 
-def _reduce_op(op, py_fold, compiler, source):
+def _reduce_op(op, py_fold, compiler, source, operand=None):
     """
     Compile a variadic reducing operator (COUNT opcode style).
 
@@ -96,10 +96,15 @@ def _reduce_op(op, py_fold, compiler, source):
     remainder normally. When py_fold is None, all arguments are compiled
     without folding.
 
-    :param op: OpCode for the OBJECT_* instruction
+    When operand is given, the reduction is emitted as the parameterized
+    OBJECT_OPERAND instruction carrying (operand, count); otherwise the
+    supplied op opcode is emitted with a plain count arg (e.g. OBJECT_STR).
+
+    :param op: OpCode for the OBJECT_* instruction, or None when operand is set
     :param py_fold: binary Python callable for constant folding, or None
     :param compiler: active Compiler
     :param source: raw source pair (called_by . body)
+    :param operand: Operand op-type for OBJECT_OPERAND, or None
     :return: ByteCodeFragment
     :raises SpecialError: when zero arguments are supplied
     """
@@ -140,23 +145,31 @@ def _reduce_op(op, py_fold, compiler, source):
     if count == 1 and is_nil(body):
         return frag
 
-    frag.instruction(op, count)
+    if operand is not None:
+        frag.instruction(OpCode.KOS_OP_OBJECT_OPERAND, (operand, count))
+    else:
+        frag.instruction(op, count)
     return frag
 
 
-def _binary_op(op, compiler, source, opa=0):
+def _binary_op(op, compiler, source, opa=0, operand=None):
     """
     Compile a strictly binary operator (always pops 2 values off the stack).
 
     Most binary OBJECT_* opcodes are NOARG (arg ignored by the C handler) so
     opa defaults to 0. A few implementations check the arg value at runtime
-    (e.g. OBJECT_MODULO and OBJECT_DIVMOD require opa==2); callers can
-    override opa for those cases.
+    (e.g. OBJECT_DIVMOD requires opa==2); callers can override opa for those
+    cases.
 
-    :param op: OpCode for the OBJECT_* instruction
+    When operand is given, the (strictly binary) operation is emitted as the
+    parameterized OBJECT_OPERAND instruction carrying (operand, 2); otherwise
+    the supplied op opcode is emitted with opa.
+
+    :param op: OpCode for the OBJECT_* instruction, or None when operand is set
     :param compiler: active Compiler
     :param source: raw source pair (called_by . body)
     :param opa: argument value encoded into the instruction (default 0)
+    :param operand: Operand op-type for OBJECT_OPERAND, or None
     :return: ByteCodeFragment
     :raises SpecialError: when argument count is not exactly 2
     """
@@ -178,7 +191,10 @@ def _binary_op(op, compiler, source, opa=0):
             "%s requires exactly 2 arguments, got %d" % (called_by, count),
             source)
 
-    frag.instruction(op, opa)
+    if operand is not None:
+        frag.instruction(OpCode.KOS_OP_OBJECT_OPERAND, (operand, 2))
+    else:
+        frag.instruction(op, opa)
     return frag
 
 
@@ -503,7 +519,8 @@ def special_add(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_ADD, _op.add, compiler, source)
+        None, _op.add, compiler, source,
+        operand=Operand.KOS_OPERAND_ADD)
 
 
 @builtin("compile/-")
@@ -514,7 +531,8 @@ def special_subtract(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_SUBTRACT, _op.sub, compiler, source)
+        None, _op.sub, compiler, source,
+        operand=Operand.KOS_OPERAND_SUBTRACT)
 
 
 @builtin("compile/*")
@@ -525,7 +543,8 @@ def special_multiply(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_MULTIPLY, _op.mul, compiler, source)
+        None, _op.mul, compiler, source,
+        operand=Operand.KOS_OPERAND_MULTIPLY)
 
 
 @builtin("compile/**")
@@ -536,7 +555,8 @@ def special_power(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_POWER, None, compiler, source)
+        None, None, compiler, source,
+        operand=Operand.KOS_OPERAND_POWER)
 
 
 @builtin("compile/&")
@@ -547,7 +567,8 @@ def special_bit_and(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_BIT_AND, _op.and_, compiler, source)
+        None, _op.and_, compiler, source,
+        operand=Operand.KOS_OPERAND_BIT_AND)
 
 
 @builtin("compile/|")
@@ -558,7 +579,8 @@ def special_bit_or(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_BIT_OR, _op.or_, compiler, source)
+        None, _op.or_, compiler, source,
+        operand=Operand.KOS_OPERAND_BIT_OR)
 
 
 @builtin("compile/^")
@@ -569,7 +591,8 @@ def special_bit_xor(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_BIT_XOR, _op.xor, compiler, source)
+        None, _op.xor, compiler, source,
+        operand=Operand.KOS_OPERAND_BIT_XOR)
 
 
 @builtin("compile///")
@@ -580,7 +603,8 @@ def special_floor_divide(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_FLOOR_DIVIDE, _op.floordiv, compiler, source)
+        None, _op.floordiv, compiler, source,
+        operand=Operand.KOS_OPERAND_FLOOR_DIVIDE)
 
 
 @builtin("compile/@")
@@ -591,7 +615,8 @@ def special_matrix_multiply(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_MATRIX_MULTIPLY, _op.matmul, compiler, source)
+        None, _op.matmul, compiler, source,
+        operand=Operand.KOS_OPERAND_MATRIX_MULTIPLY)
 
 
 # ---------------------------------------------------------------------------
@@ -606,7 +631,8 @@ def special_true_divide(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_TRUE_DIVIDE, _op.truediv, compiler, source)
+        None, _op.truediv, compiler, source,
+        operand=Operand.KOS_OPERAND_TRUE_DIVIDE)
 
 
 @builtin("compile/%")
@@ -616,7 +642,8 @@ def special_modulo(compiler, source, tc=False):
     Compile (compile/% A B). Modulo via __mod__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_MODULO, compiler, source, opa=2)
+    return _binary_op(
+        None, compiler, source, operand=Operand.KOS_OPERAND_MODULO)
 
 
 @builtin("compile/<<")
@@ -626,7 +653,8 @@ def special_bit_left(compiler, source, tc=False):
     Compile (compile/<< A B). Left bit-shift via __lshift__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_BIT_LEFT, compiler, source)
+    return _binary_op(
+        None, compiler, source, operand=Operand.KOS_OPERAND_BIT_LEFT)
 
 
 @builtin("compile/>>")
@@ -636,7 +664,8 @@ def special_bit_right(compiler, source, tc=False):
     Compile (compile/>> A B). Right bit-shift via __rshift__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_BIT_RIGHT, compiler, source)
+    return _binary_op(
+        None, compiler, source, operand=Operand.KOS_OPERAND_BIT_RIGHT)
 
 
 @builtin("compile/divmod")

@@ -22,8 +22,9 @@
 
 KOS_OP_HANDLER(OBJECT_INPLACE_MODULO) {
   return kos_op_result_from_push_int(
-      obj_op_reducing_long(
-          es, insn, KosOperator_InplaceRemainder, KOS_LBOP_MODULO));
+      obj_op_reduce_n_long(
+          es, (int) KosOp_ARG(insn), KosOperator_InplaceRemainder,
+          KOS_LBOP_MODULO));
 }
 
 

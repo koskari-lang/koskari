@@ -52,7 +52,14 @@ width in their own EXTRA slots.
 ## Status -- DONE (committed on eval_fast_deref)
 
 Dispatch fn `koskari_eval_dispatch_computed_goto`: **124,261 B at effort start
--> 71,057 B now (-43%)**.
+-> 71,057 B (in-place families) -> 68,634 B (reducing family, step 1)**.
+
+The **reducing family is now migrated** (step 1 below, green but not yet
+committed as of this line): the 13 arithmetic `OBJECT_<op>` opcodes collapsed
+into one `OBJECT_OPERAND` (standalone OPCOUNT). `OBJECT_BIT_INVERT` (unary `~`)
+and `OBJECT_STR` (f-string build, no operand) stay standalone. See "Reducing
+migration -- landed" below for the specifics that differed from the original
+plan.
 
 Commit trail (oldest -> newest):
 - `f58796f7` slim ns-touching handlers (pre-work; 124,261 -> 120,944)
@@ -143,38 +150,57 @@ and `VAR_OBJECT_INPLACE` are the only in-place opcodes; 26 -> 2.
 - Adding/removing opcodes shifts enum values and requires `tox -qe handlers`
   to regenerate `handlers.incl`. Bootstrap recompiles, so no stale bytecode.
 
-## Remaining work
+## Reducing migration -- landed (step 1, green; commit pending)
 
-### 1. Reducing migration -> `OBJECT_OPERAND` (correctness-sensitive)
+The actual `OBJECT_<op>` family was more heterogeneous than the first-pass
+notes said. Real breakdown (13 operators) and how each is preserved inside the
+shared cold `kos_object_operand(es, op, count)` switch in `eval.c`:
+- **6 int-fast reducing** `ADD, SUBTRACT, MULTIPLY, BIT_AND, BIT_OR, BIT_XOR`:
+  `obj_op_reduce_n_long(es, count, KosOperator_X, KOS_LBOP_X)` (fast path fires
+  at `count==2`, else generic reduce).
+- **3 non-fast reducing** `FLOOR_DIVIDE, MATRIX_MULTIPLY, TRUE_DIVIDE`:
+  `obj_op_reduce_n(es, count, KosOperator_X)` (no `KosLongBinop`, no int-fast).
+- **3 strictly-binary** `MODULO, BIT_LEFT, BIT_RIGHT`: `obj_op_binary_n(es,
+  PyNumber_X, KOS_LBOP_X)` -- pops exactly 2; count is ignored. (These were
+  `NOARG`/`_binary_op` before, never reducing; kept binary.)
+- **POWER** `obj_op_power_n(es, count)`: `count==2` -> `pow(b,e)`, `count==3` ->
+  `pow(b,e,mod)`. Genuinely not a reduce; the 3-arg modulus form is why POWER
+  can't join the reduce cases.
 
-The reducing `OBJECT_<op>` family is heterogeneous -- preserve semantics
-exactly:
-- 9 ops `ADD, SUBTRACT, MULTIPLY, MODULO, BIT_AND/OR/XOR/LEFT/RIGHT`:
-  `OP(..., 0, COUNT)`, handler `obj_op_reducing_long(es, insn, KosOperator_X,
-  KOS_LBOP_X)` (int-fast when `ARG==2`, else `obj_op_reducing`).
-- 3 ops `FLOOR_DIVIDE, MATRIX_MULTIPLY, POWER`: `COUNT`, handler
-  `obj_op_reducing(es, insn, KosOperator_X)` (no int-fast).
-- `TRUE_DIVIDE`: `NOARG` style, emitted binary via `_binary_op` (`opa`), handler
-  `obj_op_reducing(...)`. (Check the exact emit arg.)
-- All fold through hardened `KosOperator_*` (`KosOperatorReducing *`) with
-  identity (`count==0` -> `fn(NULL,0)`) and single-arg semantics in
-  `obj_op_reducing` (eval.c). `obj_op_reducing` reads `count = KosOp_ARG(insn)`.
+Helper refactor (`eval.c`): the insn-based `obj_op_reducing`/`_reducing_long`/
+`_binary_long` became count-explicit cores `obj_op_reduce_n(es,count,fn)`,
+`obj_op_reduce_n_long(es,count,fn,lop)`, `obj_op_binary_n(es,fn,lop)`.
+`obj_op_reducing(es,insn,fn)` remains as a thin wrapper -- **still used by
+OBJECT_STR** (`KosOperator_BuildStr`, not an operand). `obj_op_binary`
+(non-long, insn) stays for IN/IS/IS_NOT/NOT_IN. `eval.c` now includes
+`operator.h`. `KosOperator_*` reduce fns keep identity (`count==0`) and unary
+(`count==1`: `+`->Positive, `-`->Negative) semantics via `reduce_method`.
 
-Plan:
-- Add `OP(OBJECT_OPERAND, 0, OPCOUNT)` + cold handler: `op =
-  KosOpCount_TYPE(arg)`, `count = KosOpCount_COUNT(arg)`, call a shared
-  `kos_object_operand(es, op, count)` that `switch`es on op and, per case,
-  reduces `count` operands with a *constant* `lop` + the op's `KosOperator_*`
-  fn. Retires `obj_op_reducing_long`'s runtime `lop` switch.
-- Refactor `obj_op_reducing` to a `kos_object_reduce_n(es, count, fn)` taking
-  count explicitly (the current one reads `insn->ARG`); the fast-int `count==2`
-  shortcut per case uses the constant `lop`. Preserve identity/single-arg
-  behavior verbatim.
-- Compiler: `_reduce_op` (and the binary `_binary_op` path for `/`, `%`, `**`,
-  etc.) in `koskari/compile/specials/object.py` emit
-  `OBJECT_OPERAND (operand, count)` instead of the per-op opcodes.
-  `normalize_opcount` already merges standalone OPCOUNT.
-- Remove the 13 `OBJECT_<op>` rows from `opcodes.incl`.
+Compiler (`specials/object.py`): `_reduce_op`/`_binary_op` gained an
+`operand=` param; when set they emit `OBJECT_OPERAND (operand, count)` instead
+of the per-op opcode. The 10 reducing specials + POWER pass `operand=` (POWER
+via `_reduce_op(None, None, ..., operand=POWER)`, count 2 or 3); MODULO/
+BIT_LEFT/BIT_RIGHT via `_binary_op(None, ..., operand=X)` (strictly 2).
+`normalize_opcount` merges the standalone OPCOUNT unchanged.
+
+**255-count cap (known, accepted):** OPCOUNT's count is one byte, so a reduce
+with >255 operands (e.g. a macro-generated `(+ a0 ... a255)`) now raises at
+compile time in `merge_opcount` where the old uint16 `COUNT` allowed up to
+65535. Deemed acceptable (pathological); revisit only if a real corpus hits it.
+
+Tests: `OBJECT_<op>` opcodes are gone, so bytecode-level tests were updated.
+`tests/lib/opcode/__init__.py` `build_code` now **lowers** the readable
+per-operator names (`_OPERAND_LOWER` table + `opcount()` helper) to
+`OBJECT_OPERAND` -- the same lowering the compiler does -- so the ~100
+`["OBJECT_ADD", n]`-style call sites keep expressing the op directly while
+exercising the real opcode (no per-test churn). The compile-contract test
+`tests/compile/specials/test_object_specials.py` was updated honestly: a
+`_find_operand(code, Operand.X)` helper decodes the OPCOUNT count.
+`test_expression_function.py` (its own `build_code`) reuses `_lower_instr`.
+Native `tests/native/test_eval.c` uses `KosOpCount_MAKE(KOS_OPERAND_ADD, 2)`.
+
+Verification: full suite **4581 passed, 10 skipped**; flake8 OK; churn answers
+match (py==ki); ASan **293 passed, 0 failed**; dispatch fn 71,057 -> 68,634 B.
 
 ### 2. Stack in-place -> `OBJECT_INPLACE`
 
