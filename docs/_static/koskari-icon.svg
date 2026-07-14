@@ -31,14 +31,15 @@
   </defs>
 
   <g filter="url(#ko-shadow)">
+
     <!-- stem (behind the body, leaning right) -->
     <rect x="47" y="-3" width="7" height="24" rx="3" ry="3"
-        fill="url(#ko-stem)" transform="rotate(13 50.5 21)"/>
+        fill="url(#ko-stem)" transform="rotate(10 50.5 15)"/>
 
     <!-- leaf (upper-right, pointed along the TL-BR diagonal) -->
-    <path id="ko-leaf" d="M56 1 Q88 1 88 20 Q56 20 56 1 Z"
-        fill="url(#ko-leaf)" stroke="#b78d28" stroke-width="0.6"
-        stroke-opacity="0.7" transform="rotate(-20 56.64 19.62)"/>
+    <path id="ko-leaf" d="M44 1 Q12 1 12 20 Q44 20 44 1 Z"
+      fill="url(#ko-leaf)" stroke="#b78d28" stroke-width="0.6"
+      stroke-opacity="0.7" transform="rotate(20 43.36 19.62)"/>
 
     <!-- apple body: true apple silhouette, not an ellipse -->
     <path d="M48.16 9 L51.84 9
