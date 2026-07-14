@@ -45,25 +45,6 @@ VM remains open.
 
 Ref: [interpreter/freeze-thaw-context-segments.md](interpreter/freeze-thaw-context-segments.md).
 
-### Fused attribute in-place opcodes
-
-Add `FAST_ATTR_INPLACE_*` and `VAR_ATTR_INPLACE_*` opcodes: a fused
-load/op/store where a fast-slot or var attribute is both the source and the
-destination of an `OBJECT_INPLACE_*` operation, mirroring the existing
-`FAST_OBJECT_INPLACE_*` / `VAR_OBJECT_INPLACE_*` forms for locals. The
-compiler recognizes `set! obj.attr (OP obj.attr X)` (the attribute as the
-op's first operand) and emits the fused op in place of
-`FAST_ATTR` + `OBJECT_INPLACE_*` + `FAST_ATTR_STORE`.
-
-Motivation: `churn_field` shows each in-place attribute update runs three
-opcodes and resolves the attribute location **twice** (read then write-back),
-with `FAST_ATTR` + `FAST_ATTR_STORE` at ~55% of that workload. A fused op
-resolves once. Complementary to the attribute-storage cache -- one cache site
-instead of two, one resolution shared by construction.
-
-Ref: [interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md);
-`examples/churn/` (`--field`).
-
 ### Opcode caching: further families (investigative)
 
 The per-site cache is **built and active**: the framework (tagged-union slots,
@@ -74,9 +55,6 @@ INSTANCE_VALUE on 3.11-3.14). What remains is not building caching but adding
 new **kinds** on the same framework. Each is its own investigation, gated by a
 real workload that shows the win:
 
-- **Global / builtin name cache** — a `LOAD_GLOBAL`-class family caching the
-  resolved cell + module-dict version, the classic second-biggest interpreter
-  win after attributes.
 - **`DICT_HINT` field mode** — the reserved field mode: a keys-index hint for
   attributes on a *materialized* instance `__dict__` (today they resolve to
   GENERIC).
