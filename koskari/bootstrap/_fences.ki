@@ -1,0 +1,30 @@
+
+
+define-syntax compile/define-fence:
+    syntax-rules []:
+        case (define-fence name [source-str options] body ...):
+            define name:
+                let []:
+                    import-from koskari.fences FenceHandler
+                    (FenceHandler (str 'name)
+                        (demand (function name [source-str options]
+                            body ...)))
+
+
+define-fence fence/bash [raw meta]:
+    define options (or (meta.get "options") #{})
+    define filter_opt (options.pop "filter" None)
+
+    when options:
+        define names (.join " " (sorted options))
+        raise (FenceError f"fence/bash got unknown options: {names}")
+
+    when filter_opt:
+        set! filter_opt (str filter_opt)
+
+    `(compile/let []
+        (import-from koskari.fences.bash bash_script)
+        (bash_script ,raw filter: ,filter_opt))
+
+
+;; The end.

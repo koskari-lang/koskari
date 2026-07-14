@@ -156,4 +156,28 @@ class TestPragmaSetForm(PragmaSyntaxHelpers):
             await expr()
 
 
+class TestPragmaReaderEffects(PragmaSyntaxHelpers):
+    """
+    Pragma set forms propagate to the module's __reader__ facet
+    """
+
+    async def test_reader_fences_off_restores_quasiquote(self):
+        from koskari.lib import symbol
+
+        module, compiler = self.make_module()
+        reader = vars(module)["__reader__"]
+
+        result = reader.read(source_str("```json\n{}\n```\n", __file__))
+        head, _tail = result
+        self.assertIs(head, symbol("compile/apply-fence"))
+
+        expr = self.compile_expr(
+            module, compiler, "(pragma [reader/fences False])")
+        await expr()
+
+        result = reader.read(source_str("```foo\n", __file__))
+        head, _tail = result
+        self.assertIs(head, symbol("compile/quasiquote"))
+
+
 # The end.

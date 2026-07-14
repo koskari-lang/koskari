@@ -67,6 +67,10 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   arrivals from Python who cannot yet stop typing `pass` as a branch's
   do-nothing; a bare `[reader/pass-none]` turns it on. The habit it accommodates
   is one to grow out of, not into — write `None`.
+- **`reader/fences`** *(default on)* — whether triple-backtick fences read into
+  `compile/apply-fence` forms. Off, backtick keeps only its quote and
+  quasiquote readings. See
+  [compile/apply-fence](../specials/compile-apply-fence.md).
 
 ### Compiler
 

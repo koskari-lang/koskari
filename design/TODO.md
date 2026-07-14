@@ -214,12 +214,11 @@ Ref: [language/assert.md](language/assert.md); [PRAGMA.md](PRAGMA.md);
 
 ### Fenced foreign literal
 
-Add a compile-time fenced foreign-literal mechanism: the reader recognizes
-triple-backtick fence syntax and lowers it to `compile/apply-fence`; that
-special resolves a handler (e.g. `fence/json`) which transliterates raw fenced
-source into Koskari source. V1 scope is reader support, the special, metadata
-plumbing, and one built-in JSON fence with narrow extensions (bare identifiers
-in value position only).
+**Done.** The reader recognizes triple-backtick fence syntax and lowers it to
+`compile/apply-fence`; that special resolves a handler (e.g. `fence/json`)
+which transliterates raw fenced source into Koskari source. Shipped with
+reader support, the special, metadata plumbing, the built-in extended-JSON
+fence, and a `fence/bash` fence producing async script callables.
 
 Ref: [fenced-foreign-literal.md](fenced-foreign-literal.md).
 

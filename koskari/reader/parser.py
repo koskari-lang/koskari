@@ -48,7 +48,7 @@ from re import compile as regex
 from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
 from ..lib import (BaseSourceStream, Module, bracket_nil, bracket_pair, cons,
                    keyword, nil, pair, setcdr, symbol)
-from ..types import is_nil, is_pair
+from ..types import fill_position, is_keyword, is_nil, is_pair
 from . import patterns as _patterns
 from .layouts import apply_layout, apply_layouts, find_layout
 
@@ -103,7 +103,12 @@ _symbol_splice = symbol("compile/splice")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
 _symbol_pass_none = symbol("reader/pass-none")
+_symbol_apply_fence = symbol("compile/apply-fence")
 _keyword_block = keyword(":block:")
+_keyword_fence_filename = keyword("filename")
+_keyword_fence_line = keyword("line")
+_keyword_fence_col = keyword("col")
+_keyword_fence_options = keyword("options")
 
 VALUE = keyword("value")
 BLOCK = keyword("block")
@@ -140,6 +145,25 @@ _as_integer = int
 _as_bin = partial(int, base=2)
 _as_oct = partial(int, base=8)
 _as_hex = partial(int, base=16)
+
+
+def _dedent_fence_line(line, base):
+    """
+    Strip up to ``base`` leading whitespace characters from a fence body line
+
+    Lines indented less than ``base`` lose only the whitespace they have,
+    so under-indented content is preserved rather than truncated.
+
+    :param line: one raw fence body line (with its newline)
+    :param base: the closing fence line's indentation width
+    :return: the dedented line
+    """
+
+    i = 0
+    limit = min(base, len(line))
+    while i < limit and line[i] in " \t":
+        i += 1
+    return line[i:]
 
 
 def _as_ellipsis(_s):
@@ -715,6 +739,7 @@ class Reader:
         self.terminating = set(_BASE_TERMINATORS)
         self._terms = "".join(sorted(self.terminating))
         self.bracket_pairs = bracket_pairs
+        self.fences_enabled = True
 
         if not nodefaults:
             self._add_default_macros()
@@ -1137,6 +1162,9 @@ class Reader:
 
         sm("'", self._read_quote, True)
         sm("`", self._read_quasiquote, True)
+
+        # registered after quasiquote so the triple-backtick check wins
+        sm("`", self._read_fence, True, predicate=self._fence_predicate)
 
 
     def set_atom_pattern(self, namesym, match_fn, conversion_fn):
@@ -1669,6 +1697,145 @@ class Reader:
         return VALUE, cons(_symbol_quasiquote, child, nil)
 
 
+    def _fence_predicate(self, stream, c, atom_prefix):
+        """
+        Allow the fence macro only for a triple-backtick opener
+
+        At atom boundaries this returns True so backtick keeps its
+        terminating behavior; the lookahead check applies at dispatch
+        only, deferring single backticks to the quasiquote macros. The
+        :attr:`fences_enabled` switch (the reader/fences pragma) defers
+        all dispatch to the quasiquote macros when off.
+
+        :param stream: source stream positioned after the first backtick
+        :param c: the backtick character
+        :param atom_prefix: atom boundary context; None at dispatch
+        """
+
+        if atom_prefix is not None:
+            return True
+        if not self.fences_enabled:
+            return False
+        return stream.peek(2) == "``"
+
+
+    def _read_fence(self, stream, char):
+        """
+        Read a triple-backtick fence into a compile/apply-fence form
+
+        The opener line names the fence format immediately after the
+        backticks (whitespace optional), optionally followed by
+        keyword/value option pairs. The body is captured as raw text
+        until a line containing only three backticks closes the fence;
+        body lines are dedented by the closing line's indentation.
+        Lowers to::
+
+            (compile/apply-fence NAME RAW-SRC META)
+
+        where META is a keyword plist carrying ``filename:``, ``line:``
+        and ``col:`` (the payload origin and dedent base), and
+        ``options:`` (the opener-line pairs).
+
+        :param stream: the source stream, positioned after the first
+            backtick
+        :param char: the backtick character
+        :return: tuple of (VALUE, (compile/apply-fence NAME RAW META))
+        """
+
+        lin, col = stream.position()
+        fence_pos = (lin, col - 1)
+
+        stream.read(2)
+        self._skip_horizontal_whitespace(stream)
+
+        name = stream.read_until_chars(" \t\r\n")
+        if not name:
+            raise stream.error("fence requires a format name", fence_pos)
+
+        options = self._read_fence_options(stream)
+
+        c = stream.read(1)
+        if not c:
+            raise stream.reader_eof(fence_pos, context="fence")
+        if c == "\r" and stream.peek(1) == "\n":
+            stream.read(1)
+
+        payload_line = stream.position()[0]
+
+        raw_lines = []
+        while True:
+            if not stream.peek(1):
+                raise stream.reader_eof(fence_pos, context="fence")
+            line = stream.peek_line()
+            if line.strip(" \t") == "```":
+                base = len(line) - len(line.lstrip(" \t"))
+                stream.read_until_chars("\r\n")
+                break
+            raw_lines.append(stream.readline())
+
+        raw = "".join(_dedent_fence_line(ln, base) for ln in raw_lines)
+
+        opts = nil
+        for key, value in reversed(options):
+            opts = cons(key, value, opts)
+
+        meta_items = []
+        if stream.filename:
+            meta_items.extend((_keyword_fence_filename, stream.filename))
+        meta_items.extend((_keyword_fence_line, payload_line))
+        meta_items.extend((_keyword_fence_col, base))
+        meta_items.extend((_keyword_fence_options, opts))
+        meta = cons(*meta_items, nil)
+
+        form = cons(_symbol_apply_fence, symbol(name), raw, meta, nil)
+        fill_position(form, fence_pos)
+        return VALUE, form
+
+
+    def _read_fence_options(self, stream):
+        """
+        Read keyword/value option pairs from a fence opener line
+
+        Stops before the line terminator, which is left unconsumed. Each
+        option is a keyword atom followed by a value form on the same
+        physical line.
+
+        :param stream: the source stream, positioned after the fence name
+        :return: list of (keyword, value) pairs
+        """
+
+        options = []
+        while True:
+            self._skip_horizontal_whitespace(stream)
+            nxt = stream.peek(1)
+            if not nxt or nxt in "\r\n":
+                return options
+            if nxt == ";":
+                stream.read_until_chars("\r\n")
+                return options
+
+            event, pos, key = self._read(stream, vertical_ws=False)
+            if event is not VALUE or not is_keyword(key):
+                raise stream.error(
+                    "fence option must be a keyword: value pair", pos)
+
+            self._skip_horizontal_whitespace(stream)
+            nxt = stream.peek(1)
+            if not nxt or nxt in "\r\n;":
+                raise stream.error(
+                    f"fence option {key} requires a value", pos)
+
+            event, vpos, value = self._read(stream, vertical_ws=False)
+            if event is not VALUE:
+                raise stream.error(
+                    f"fence option {key} requires a value", vpos)
+            if stream.position()[0] != pos[0]:
+                raise stream.error(
+                    "fence option value must not span lines", vpos)
+
+            options.append((key, value))
+
+
     def _read_unquote(self, stream, char):
         """
         Read an unquoted expression (,expr)
@@ -1906,6 +2073,15 @@ class LayoutReader(Reader):
             True,
             predicate=self._layout_block_quote_predicate)
 
+        # registered after both backtick macros so the triple-backtick
+        # check wins on the coordinator and inner stacks alike; bound to
+        # the inner reader so opener-line options read with s-expr rules
+        self.add_event_macro(
+            "`",
+            inner._read_fence,
+            True,
+            predicate=inner._fence_predicate)
+
         # self.add_layout_event_macro("@", self._read_layout_decorate, False)
         self._layout_macros.update({
             "@": self._read_layout_decorate,
@@ -1982,7 +2158,8 @@ class LayoutReader(Reader):
         Apply reader settings from a module pragma: reader/layout and
         reader/implicit-calls drive the layout switches; reader/brackets sets
         bracket-pair reading on this reader and its inner reader;
-        reader/pass-none toggles the ``pass`` symbol macro.
+        reader/pass-none toggles the ``pass`` symbol macro; reader/fences
+        toggles triple-backtick fence reading.
         """
 
         if pragma is None:
@@ -2000,6 +2177,11 @@ class LayoutReader(Reader):
         pass_none = pragma.get("reader/pass-none")
         if pass_none is not None:
             self._inner.set_pass_none(bool(pass_none))
+
+        fences = pragma.get("reader/fences")
+        if fences is not None:
+            self.fences_enabled = bool(fences)
+            self._inner.fences_enabled = bool(fences)
 
 
     @contextmanager

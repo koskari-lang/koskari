@@ -2,7 +2,43 @@
 
 ## Status
 
-Proposed design.
+Implemented.
+
+Settled decisions from the implementation:
+
+* Surface syntax: the fence name is the first word after the opening
+  backticks (whitespace optional, so ` ```bash ` and ` ``` bash ` are
+  equivalent); the rest of the opener line is read as keyword/value
+  option pairs (`filter: json`), each requiring a value on the same
+  line. A fence reads as a single value and may appear in expression
+  position.
+* `json` means Koskari's extended JSON (bare identifiers in value
+  position lower to name references); a strict mode can be added later
+  via fence options.
+* META is a keyword plist: `(filename: F line: L col: C options: (...))`
+  where `line:` is the payload's first source line and `col:` is the
+  dedent base. Handlers receive it converted to a plain dict with
+  `name`, `filename`, `line`, `col`, and `options` entries.
+* Body dedent strips up to the closing fence line's indentation from
+  each body line.
+* Handler resolution (`find_fence` in `koskari.fences`): a bare-name
+  binding resolves only when it is a `FenceHandler`; a `fence/`-prefixed
+  binding resolves when it is a `FenceHandler` or any callable, so user
+  code can define fences as plain functions. Koskari handlers are
+  invoked via `demand_call` and must not suspend.
+* Fence expansions are self-contained: runtime support is imported by
+  the generated source itself inside a let scope (e.g.
+  `(compile/let () (compile/import-from "koskari.fences.bash"
+  bash_script) ...)`), never required as a pre-existing binding in the
+  compiling module's namespace.
+* Built-in v1 fences: `fence/json`, plus `fence/bash` which produces an
+  async callable that runs the script in a subprocess and returns its
+  stdout (`filter: json` decodes stdout as JSON). The bash runtime
+  (`bash_script`) is itself written in koskari: `koskari/fences/bash.ki`
+  is a lazily-imported `.ki` module.
+
+See `docs/reference/specials/compile-apply-fence.md` for the user-facing
+reference.
 
 ## Summary
 
