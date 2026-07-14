@@ -53,6 +53,10 @@ typedef enum KosOpResultKind {
   KOS_RES_RETURN,          /* return val (needs walk+pop via eval_event_return) */
   KOS_RES_RAISE,           /* PyErr is set; run exception handler */
   KOS_RES_CONTROL_RETURNED,/* dyn-node control-returned hook */
+  KOS_RES_DISPATCH,        /* resume instruction dispatch directly: live regs
+                              valid, no PyErr, no plan, no native handler.
+                              Loop-internal only; must never escape
+                              koskari_eval (post-op consumers normalize it) */
   KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
 } KosOpResultKind;
 
@@ -70,6 +74,7 @@ typedef struct KosOpResult {
 #define EVAL_AWAIT(v)           ((KosOpResult){ KOS_RES_AWAIT, (v) })
 #define EVAL_RETURN(v)          ((KosOpResult){ KOS_RES_RETURN, (v) })
 #define EVAL_CONTROL_RETURNED() ((KosOpResult){ KOS_RES_CONTROL_RETURNED, NULL })
+#define EVAL_DISPATCH()         ((KosOpResult){ KOS_RES_DISPATCH, NULL })
 #define EVAL_FATAL()            ((KosOpResult){ KOS_RES_FATAL, NULL })
 
 

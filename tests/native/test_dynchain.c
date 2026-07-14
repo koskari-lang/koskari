@@ -526,7 +526,7 @@ static int test_dyndelim_clone_no_chain_alias(void) {
     TEST_ASSERT_NOT_NULL(inner, "create inner frame chain");
 
     delim = kos_dyndelim_new(
-        NULL, KOS_DYN_DELIM_MODE_K_RETURN, (KosDynNode *) inner, 7, NULL, NULL);
+        NULL, KOS_DYN_DELIM_MODE_INPLACE, (KosDynNode *) inner, 7, NULL, NULL);
     TEST_ASSERT_NOT_NULL(delim, "create DELIM with owned chain");
 
     clone = kos_dyn_clone((KosDynNode *) delim);

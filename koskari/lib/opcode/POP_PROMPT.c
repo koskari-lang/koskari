@@ -58,46 +58,7 @@ KOS_OP_HANDLER_COLD(POP_PROMPT) {
 
     if (KosDynDelim_RETURN_FRAME(ret_delim) != NULL
         && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1) {
-      SAYF("[eval] POP_PROMPT unwinding to return frame=%p node=%p",
-           (void *) KosDynDelim_RETURN_FRAME(ret_delim),
-           (void *) KosDynDelim_RETURN_NODE(ret_delim));
-      KosTransitionReq treq;
-      if (KosDynDelim_RETURN_NODE(ret_delim) != NULL) {
-        treq = (KosTransitionReq) {
-          .kind = KOS_TRANS_UNWIND_TO_NODE,
-          .xfer_event = KOS_XFER_EVENT_SHIFT,
-          .target_node = KosDynDelim_RETURN_NODE(ret_delim),
-        };
-      } else {
-        treq = (KosTransitionReq) {
-          .kind = KOS_TRANS_UNWIND_TO_FRAME,
-          .xfer_event = KOS_XFER_EVENT_SHIFT,
-          .target_frame = KosDynDelim_RETURN_FRAME(ret_delim),
-        };
-      }
-      {
-        KosOpResult _kr = KosEvalState_TransitionOp(es, &treq);
-        if (_kr.kind == KOS_RES_RAISE) {
-          Py_DECREF(val);
-          return EVAL_RAISE();
-        }
-        if (_kr.kind != KOS_RES_NORMAL) {
-          /* REPROLOGUE or AWAIT: async unwind started; stage pending return */
-          Py_XDECREF(_kr.val);
-          KosEvalState_SetPendingReturn(es, val, 0);
-          return EVAL_NORMAL();
-        }
-      }
-      SAYF("[eval] POP_PROMPT after unwind: dyn_top=%p kind=%s",
-           (void *) KosEvalState_CurrentNode(es),
-           KosEvalState_CurrentNode(es) ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_CurrentNode(es))) : "NULL");
-      if (KosDynDelim_MODE(ret_delim) == KOS_DYN_DELIM_MODE_INPLACE) {
-        if (kos_dyn_finish_inplace_pop_return(es, ret_delim, val) < 0)
-          return EVAL_RAISE();
-      } else if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0) {
-        return EVAL_RAISE();
-      }
-      return EVAL_NORMAL();
+      return kos_eval_route_delim_return(es, ret_delim, val);
     }
 
     if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim) {

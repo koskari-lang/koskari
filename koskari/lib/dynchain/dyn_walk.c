@@ -233,6 +233,18 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
          && KosEvalState_DYN_TOP(es) != (KosDynNode *) frame) {
     KosDynNode *top = KosEvalState_DYN_TOP(es);
 
+    /* Stopping node: a live delimited-invoke bookmark.  The return has
+       reached the reset boundary; leave the DELIM at dyn_top and let the
+       caller route val to the k-invocation site.  val is NOT consumed. */
+    if (KosDynNode_IS_DELIM(top)
+        && KosDynDelim_RETURN_FRAME((KosDynDelim *) top) != NULL
+        && KosDynDelim_RETURN_PC((KosDynDelim *) top) != (uint32_t) -1) {
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] walk_return: stopped at DELIM bookmark node=%p",
+             (void *) top);
+      return KOS_DYN_UNWIND_DELIM_TAKING_RETURN;
+    }
+
     /* Handle phase: offer RETURN before unwind */
     {
       KosHandleResult hr = kos_dyn_handle(es, top, KOS_XFER_EVENT_RETURN);

@@ -200,6 +200,16 @@ static KosOpResult apply_native_handler(
     KosEvalState_SetPendingReturn(es, result, 1);
     return EVAL_REPROLOGUE();
   }
+  if (unw == KOS_DYN_UNWIND_DELIM_TAKING_RETURN) {
+    /* Unreachable: the native apply frame runs no bytecode, so no
+       delimited-invoke bookmark can sit above it.  Fail loudly rather
+       than mis-deliver the result. */
+    Py_DECREF(result);
+    PyErr_SetString(PyExc_SystemError,
+                    "apply: return walk stopped at a delimited-invoke"
+                    " bookmark");
+    return EVAL_RAISE();
+  }
   if (unw < 0) {
     Py_DECREF(result);
     return EVAL_RAISE();

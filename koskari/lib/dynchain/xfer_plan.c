@@ -494,36 +494,6 @@ int kos_build_transfer_plan(
 
 
 /**
-   Build a minimal plan with only INSTALL and INJECT (no wind, no LCA).
-   Use for the delimited k(value) return path when the invocation-site
-   chain is disjoint from the current chain.  Caller must set RESUME_PC.
-   Returns 0 on success, -1 on error.
-*/
-int kos_build_return_plan(
-    KosEvalState *es,
-    KosDynNode *segment,
-    PyObject *value,
-    int is_throw,
-    KosTransferPlan **out_plan) {
-
-  KosXferPlanOptions options;
-
-  (void) es;
-  options.target = segment;
-  options.unwind_from_current = 0;
-  options.unwind_stop = NULL;
-  options.segment_op = KOS_XFER_INSTALL;
-  options.with_wind = 0;
-  options.wind_lca = NULL;
-  options.inject_kind = KOS_XFER_PLAN_INJECT;
-  options.truncate_node = NULL;
-  options.graft_point_id = 0;
-
-  return kos_build_xfer_plan(es, &options, value, is_throw, out_plan);
-}
-
-
-/**
    Build a PUSH plan for delimited continuation invoke.  Segment is the
    continuation's frames (first child of prompt in captured_chain).
 */
