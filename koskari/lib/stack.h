@@ -20,6 +20,8 @@
 
 #include <Python.h>
 
+#include "hints.h"
+
 
 /* === StackBlock structure === */
 
@@ -416,6 +418,140 @@ PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count);
 int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest);
 
 
+/* === Opcode-loop fast paths (API bypass) === */
+
+
+/*
+   Inline fast paths for the hot stack operations in the opcode
+   dispatch loop.  The common case -- a block with spare capacity for a
+   push, or enough occupied slots for a pop/peek/drop -- is a couple of
+   loads and one store, with no function call.  Every slow or failing
+   case (grow, empty-block allocation, underrun reporting) delegates to
+   the out-of-line implementations in stack.c, so the block-management
+   logic and the error strings live in exactly one place.
+
+   Semantics are bit-identical to the out-of-line functions, including
+   the count == 0 quirks (TailPtr returns NULL with no error; DropNoErr
+   and PopTailPtr return 0).
+
+   Under KOS_STACK_TRACE builds these collapse to the out-of-line
+   calls so the stack chatter stays complete.
+*/
+
+#if KOS_STACK_TRACE
+
+#define kos_stack_push_ref_fast     KosStackBlock_PushRef
+#define kos_stack_push_steal_fast   KosStackBlock_PUSH
+#define kos_stack_pop_ref_fast      KosStackBlock_PopRef
+#define kos_stack_drop1_fast        KosStackBlock_Drop1
+#define kos_stack_drop_noerr_fast   KosStackBlock_DropNoErr
+#define kos_stack_peek_fast         KosStackBlock_Peek
+#define kos_stack_tail_ptr_fast     KosStackBlock_TailPtr
+#define kos_stack_pop_tail_ptr_fast KosStackBlock_PopTailPtr
+
+#else  /* ! KOS_STACK_TRACE */
+
+static inline int kos_stack_push_ref_fast(
+        KosStackBlock **block,
+        PyObject *val) {
+
+  KosStackBlock *s = *block;
+  if (likely(s && s->len < s->max)) {
+    Py_INCREF(val);
+    s->objs[s->len++] = val;
+    return 0;
+  }
+  return KosStackBlock_PushRef(block, val);
+}
+
+
+static inline int kos_stack_push_steal_fast(
+        KosStackBlock **block,
+        PyObject *val) {
+
+  KosStackBlock *s = *block;
+  if (likely(s && s->len < s->max)) {
+    s->objs[s->len++] = val;
+    return 0;
+  }
+  return KosStackBlock_PUSH(block, val);
+}
+
+
+static inline PyObject *kos_stack_pop_ref_fast(KosStackBlock **block) {
+
+  KosStackBlock *s = *block;
+  if (likely(s && s->len))
+    return s->objs[--s->len];
+  return KosStackBlock_PopRef(block);
+}
+
+
+static inline int kos_stack_drop1_fast(KosStackBlock **block) {
+
+  KosStackBlock *s = *block;
+  if (likely(s && s->len)) {
+    Py_DECREF(s->objs[--s->len]);
+    return 0;
+  }
+  return KosStackBlock_Drop1(block);
+}
+
+
+static inline int kos_stack_drop_noerr_fast(
+        KosStackBlock **block,
+        size_t count) {
+
+  KosStackBlock *s = *block;
+  if (likely(s && count <= s->len)) {
+    size_t len = s->len;
+    while (count--)
+      Py_DECREF(s->objs[--len]);
+    s->len = len;
+    return 0;
+  }
+  return KosStackBlock_DropNoErr(block, count);
+}
+
+
+/* No NULL guard, mirroring KosStackBlock_Peek exactly. */
+static inline PyObject *kos_stack_peek_fast(KosStackBlock *s) {
+
+  if (likely(s->len))
+    return s->objs[s->len - 1];
+  return KosStackBlock_Peek(s);
+}
+
+
+static inline PyObject *const *kos_stack_tail_ptr_fast(
+        KosStackBlock *s,
+        size_t count) {
+
+  if (likely(s && count && count <= s->len))
+    return &s->objs[s->len - count];
+  return KosStackBlock_TailPtr(s, count);
+}
+
+
+static inline int kos_stack_pop_tail_ptr_fast(
+        KosStackBlock **block,
+        size_t count,
+        PyObject **dest) {
+
+  KosStackBlock *s = *block;
+  if (likely(s && count && count <= s->len)) {
+    size_t len = s->len;
+    while (count--)
+      dest[count] = s->objs[--len];
+    s->len = len;
+    return 0;
+  }
+  return KosStackBlock_PopTailPtr(block, count, dest);
+}
+
+#endif  /* KOS_STACK_TRACE */
+
+
 /**
    Pop tail slots into an aggregate of PyObject * fields only. Count is
    sizeof(agg) / sizeof(PyObject *). Field order must be deepest stack slot
@@ -423,7 +559,7 @@ int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest
    -1 on underrun.
  */
 #define KOS_STACK_BLOCK_POP_ARGS(block_pp, agg) \
-  KosStackBlock_PopTailPtr( \
+  kos_stack_pop_tail_ptr_fast( \
       (block_pp), \
       sizeof(agg) / sizeof(PyObject *), \
       (PyObject **)(void *)&(agg))

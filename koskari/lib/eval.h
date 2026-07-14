@@ -377,13 +377,13 @@ struct KosEvalState {
   KosNamespace_Reveal(KosEvalState_NAMESPACE(es))
 
 #define KosEvalState_StackPushRef(es, val) \
-  KosStackBlock_PushRef(KosEvalState_BLOCK(es), (val))
+  kos_stack_push_ref_fast(KosEvalState_BLOCK(es), (val))
 
 #define KosEvalState_StackPUSH(es, val) \
-  KosStackBlock_PUSH(KosEvalState_BLOCK(es), (val))
+  kos_stack_push_steal_fast(KosEvalState_BLOCK(es), (val))
 
 #define KosEvalState_StackPopRef(es) \
-  KosStackBlock_PopRef(KosEvalState_BLOCK(es))
+  kos_stack_pop_ref_fast(KosEvalState_BLOCK(es))
 
 #define KosEvalState_GetFast(es, index) \
   KosNamespace_FastDeref(KosEvalState_CurrentNamespace(es), (index))
@@ -404,7 +404,7 @@ struct KosEvalState {
   KosStackBlock_PopTail(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackTailPtr(es, count) \
-  KosStackBlock_TailPtr(*KosEvalState_BLOCK(es), (count))
+  kos_stack_tail_ptr_fast(*KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackLen(es) \
   KosStackBlock_LEN(*KosEvalState_BLOCK(es))
@@ -413,10 +413,10 @@ struct KosEvalState {
   KosStackBlock_Drop(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackDrop1(es) \
-  KosStackBlock_Drop1(KosEvalState_BLOCK(es))
+  kos_stack_drop1_fast(KosEvalState_BLOCK(es))
 
 #define KosEvalState_StackDropNoErr(es, count) \
-  KosStackBlock_DropNoErr(KosEvalState_BLOCK(es), (count))
+  kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackClearBlock(es) \
   KosStackBlock_ClearBlock(KosEvalState_BLOCK(es))
@@ -434,13 +434,13 @@ struct KosEvalState {
   KosStackBlock_PopTailDictFromNames(KosEvalState_BLOCK(es), (names))
 
 #define KosEvalState_StackPeek(es) \
-  KosStackBlock_Peek(*KosEvalState_BLOCK(es))
+  kos_stack_peek_fast(*KosEvalState_BLOCK(es))
 
 #define KosEvalState_StackPeekAt(es, index) \
   KosStackBlock_PeekAt(*KosEvalState_BLOCK(es), (index))
 
 #define KosEvalState_StackPopTailPtr(es, count, dest) \
-  KosStackBlock_PopTailPtr(KosEvalState_BLOCK(es), (count), (dest))
+  kos_stack_pop_tail_ptr_fast(KosEvalState_BLOCK(es), (count), (dest))
 
 #define KosEvalState_SetSuspensionEvent(es, ev) \
   ((void)(KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(es)) = (ev)))
@@ -605,7 +605,7 @@ int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val);
   Same layout contract as KOS_STACK_BLOCK_POP_ARGS in stack.h.
 */
 #define KOS_EVALSTATE_POP_ARGS(es, agg) \
-  KosStackBlock_PopTailPtr( \
+  kos_stack_pop_tail_ptr_fast( \
       KosEvalState_BLOCK(es), \
       sizeof(agg) / sizeof(PyObject *), \
       (PyObject **)(void *)&(agg))
