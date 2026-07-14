@@ -46,6 +46,7 @@ from .exceptions import (
     special_raise,
     special_try,
 )
+from .fence import special_apply_fence
 from .imports import (special_import, special_import_all_from,
                       special_import_from)
 from .items import special_del_item, special_item, special_set_item, special_take_item
@@ -133,6 +134,7 @@ __all__ = (
     "special",
     "special_add",
     "special_and",
+    "special_apply_fence",
     "special_apply_layout",
     "special_aiter",
     "special_await",

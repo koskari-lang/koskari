@@ -81,6 +81,7 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `reader/layout` | reader | `True` | `True` | bool | layout (indentation) block reading |
 | `reader/implicit-calls` | reader | `True` | `True` | bool | multiple values on one layout line form an implicit call |
 | `reader/pass-none` | reader | `False` | `True` | bool | the `pass` symbol reads as the `None` literal (mention-to-enable) |
+| `reader/fences` | reader | `True` | `True` | bool | triple-backtick fences read into `compile/apply-fence` forms |
 | `compiler/resolution` | compiler | `koskari` | *(required)* | `koskari` / `scheme` / `python` | name-resolution semantics for writes |
 | `compiler/call-brackets` | compiler | `ignore` | `warn` | `ignore` / `warn` / `error` | policy when a bracket-pair reaches call position |
 | `compiler/tco-enable` | compiler | `True` | `True` | bool | tail-call optimization |

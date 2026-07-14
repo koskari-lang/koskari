@@ -1,0 +1,38 @@
+
+
+define-syntax compile/define-fence:
+    syntax-rules []:
+        case (define-fence name [source-str options] body ...):
+            define name:
+                let []:
+                    import-from koskari.fences FenceHandler
+                    (FenceHandler (str 'name)
+                        (demand (function name [source-str options]
+                            body ...)))
+
+
+define-fence fence/bash [raw meta]:
+    define options (meta.get "options")
+    define exec_now (options.pop "immediate" False)
+
+    when options:
+        define names (.join " " (sorted options))
+        raise (FenceError f"fence/bash got unknown options: {names}")
+
+    ;; meta and options are source forms, so we look for an explicit
+    ;; literal True value -- any other symbol would still be truthy, which
+    ;; is not what we want.
+    switch exec_now:
+        case [True]:
+            `(run-process "bash" "-c" ,raw)
+
+        case [False]:
+            `function <fence/bash> [*: args]:
+                set! args (map str args)
+                run-process "bash" "-c" ,raw "bash-fence" *: args
+
+        else:
+            raise (FenceError f"fence/bash got unknown exec_now: {exec_now}")
+
+
+;; The end.

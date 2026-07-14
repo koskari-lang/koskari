@@ -318,6 +318,15 @@ class SpecialError(CompilerError):
     pass
 
 
+@builtin("FenceError")
+class FenceError(CompilerError):
+    """
+    Fence expansion and foreign-source parse errors
+    """
+
+    pass
+
+
 def format_accept_pattern(pattern, source=None):
     """
     Render one accepted-arm pattern for help text and SyntaxMatchError

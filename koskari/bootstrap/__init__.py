@@ -89,6 +89,10 @@ _BUILTINS_SOURCES = (
     # requires: _iter.ki, _help.ki
     '_pragma.ki',
 
+    # fences
+    # requires: _define_syntax.ki, _conditionals.ki
+    '_fences.ki',
+
     # final stub
     'basics.ki',
 )
@@ -114,6 +118,7 @@ def make_bootstrap():
     from .. import exceptions as _koskari_exceptions  # noqa: F401
     from .. import help as _koskari_help  # noqa: F401
     from .. import syntax as _koskari_syntax  # noqa: F401
+    from .. import fences as _koskari_fences  # noqa: F401
     from ..compile import specials as _koskari_compile_specials  # noqa: F401
     from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 

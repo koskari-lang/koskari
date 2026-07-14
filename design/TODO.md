@@ -212,17 +212,6 @@ message form.
 Ref: [language/assert.md](language/assert.md); [PRAGMA.md](PRAGMA.md);
 [language/pragma-cli.md](language/pragma-cli.md).
 
-### Fenced foreign literal
-
-Add a compile-time fenced foreign-literal mechanism: the reader recognizes
-triple-backtick fence syntax and lowers it to `compile/apply-fence`; that
-special resolves a handler (e.g. `fence/json`) which transliterates raw fenced
-source into Koskari source. V1 scope is reader support, the special, metadata
-plumbing, and one built-in JSON fence with narrow extensions (bare identifiers
-in value position only).
-
-Ref: [fenced-foreign-literal.md](fenced-foreign-literal.md).
-
 ### Bundles and namespace facets
 
 Introduce **bundles** as first-class namespace facet objects: a namespace of

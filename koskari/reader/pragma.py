@@ -16,7 +16,7 @@ koskari.reader.pragma
 
 Reader-side pragma settings, registered into the koskari.pragma registry at
 import: reader/brackets, reader/layout, reader/implicit-calls,
-reader/pass-none. Each setting's
+reader/pass-none, reader/fences. Each setting's
 ``default`` is its baseline (value when undeclared); the function's argument
 defaults are the parameter defaults (value when declared but the arg is
 omitted).
@@ -63,6 +63,16 @@ def reader_pass_none(enabled: bool = True) -> bool:
     """
     Whether the ``pass`` symbol reads as the None literal (baseline off), for
     Python users who write ``pass`` as a branch no-op
+    """
+
+    return enabled
+
+
+@pragma_setting("reader/fences", True)
+def reader_fences(enabled: bool = True) -> bool:
+    """
+    Whether triple-backtick fences read into compile/apply-fence forms
+    (baseline on); off, backtick keeps only its quasiquote readings
     """
 
     return enabled
