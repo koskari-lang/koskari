@@ -26,7 +26,10 @@ satisfy asyncio's strict type checks.
 
 import asyncio
 
-from koskari.asyncio import as_coroutine, coroutine_fn, create_task
+from subprocess import CalledProcessError
+
+from koskari.asyncio import (ProcessResult, as_coroutine, coroutine_fn,
+                             create_task, run_process)
 from koskari.lib import defer
 from tests.compile.specials import SpecialsTestCase
 
@@ -276,6 +279,68 @@ class TestAdapters(SpecialsTestCase):
         # removal in 3.16 and defers to this one
         self.assertTrue(inspect.iscoroutinefunction(wrapped))
         self.assertEqual(await wrapped(), "wrapped")
+
+
+class TestRunProcess(SpecialsTestCase):
+    """
+    The run-process builtin and the ProcessResult it returns
+    """
+
+    async def test_run_process_from_koskari(self):
+        src = '(run-process "echo" "hello")'
+        expr, _mod = self.compile_expr(src)
+        result = await expr()
+        self.assertIsInstance(result, ProcessResult)
+        self.assertEqual(result.args, ("echo", "hello"))
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"hello\n")
+        self.assertEqual(result.text, "hello\n")
+
+
+    async def test_raise_for_status_returns_self(self):
+        result = await run_process("true")
+        self.assertIs(result.raise_for_status(), result)
+
+
+    async def test_raise_for_status_raises(self):
+        result = await run_process("false")
+        self.assertEqual(result.returncode, 1)
+
+        with self.assertRaises(CalledProcessError) as cm:
+            result.raise_for_status()
+        self.assertEqual(cm.exception.returncode, 1)
+        self.assertEqual(cm.exception.cmd, ("false",))
+
+
+    def test_json_and_jsonl(self):
+        result = ProcessResult(("x",), 0, b'{"a": 1}', b"")
+        self.assertEqual(result.json(), {"a": 1})
+
+        result = ProcessResult(
+            ("x",), 0, b'{"a": 1}\n\n{"b": 2}\n', b"")
+        self.assertEqual(result.jsonl(), [{"a": 1}, {"b": 2}])
+
+
+    def test_stderr_text(self):
+        result = ProcessResult(("x",), 1, b"", b"oops\n")
+        self.assertEqual(result.stderr_text, "oops\n")
+
+
+    def test_yaml(self):
+        from importlib.util import find_spec
+
+        result = ProcessResult(("x",), 0, b"a: 1\nb: [2, 3]\n", b"")
+        if find_spec("yaml"):
+            self.assertEqual(result.yaml(), {"a": 1, "b": [2, 3]})
+        else:
+            with self.assertRaises(ImportError):
+                result.yaml()
+
+
+    def test_repr(self):
+        result = ProcessResult(("echo", "hi"), 3, b"", b"")
+        self.assertIn("'echo'", repr(result))
+        self.assertIn("returncode=3", repr(result))
 
 
 # The end.

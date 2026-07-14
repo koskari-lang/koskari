@@ -9,7 +9,7 @@ Settled decisions from the implementation:
 * Surface syntax: the fence name is the first word after the opening
   backticks (whitespace optional, so ` ```bash ` and ` ``` bash ` are
   equivalent); the rest of the opener line is read as keyword/value
-  option pairs (`filter: json`), each requiring a value on the same
+  option pairs (`immediate: True`), each requiring a value on the same
   line. A fence reads as a single value and may appear in expression
   position.
 * `json` means Koskari's extended JSON (bare identifiers in value
@@ -26,16 +26,19 @@ Settled decisions from the implementation:
   binding resolves when it is a `FenceHandler` or any callable, so user
   code can define fences as plain functions. Koskari handlers are
   invoked via `demand_call` and must not suspend.
-* Fence expansions are self-contained: runtime support is imported by
-  the generated source itself inside a let scope (e.g.
-  `(compile/let () (compile/import-from "koskari.fences.bash"
-  bash_script) ...)`), never required as a pre-existing binding in the
-  compiling module's namespace.
-* Built-in v1 fences: `fence/json`, plus `fence/bash` which produces an
-  async callable that runs the script in a subprocess and returns its
-  stdout (`filter: json` decodes stdout as JSON). The bash runtime
-  (`bash_script`) is itself written in koskari: `koskari/fences/bash.ki`
-  is a lazily-imported `.ki` module.
+* Fence expansions are self-contained: they reference only universal
+  builtins (`fence/json` lowers to the `#dict` / `#list` builders,
+  `fence/bash` to `run-process`), never pre-existing helper bindings in
+  the compiling module's namespace.
+* Built-in v1 fences: `fence/json`, plus `fence/bash`, which is itself
+  defined in koskari (`koskari/bootstrap/_fences.ki`, via its
+  `define-fence` syntax). By default a bash fence produces an async
+  callable whose positional arguments become the script's `$1`, `$2`,
+  ...; with `immediate: True` the fence expands to the `run-process`
+  call in place. Runs yield a `ProcessResult` (`koskari.asyncio`) —
+  returncode plus captured stdout/stderr with json/jsonl/yaml parsers —
+  and a nonzero exit is reported on the result, raised only via
+  `raise_for_status`.
 
 See `docs/reference/specials/compile-apply-fence.md` for the user-facing
 reference.

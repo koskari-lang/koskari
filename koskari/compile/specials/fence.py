@@ -32,6 +32,7 @@ from ...lib import demand_call, nil
 from ...matcher import CALLEDBY, CAPTURE, MATCH, PAIR, SYMBOL, TYPE
 from ...syntax import special
 from ...types import fill_position, is_keyword, is_pair, is_symbol
+from ...reader.layouts import apply_layout
 
 
 _APPLY_FENCE_PATTERNS = [
@@ -90,7 +91,8 @@ def special_apply_fence(compiler, caps, tc=False):
             ve.args[0], position=pos,
             filename=compiler.filename) from None
 
-    handler = find_fence(vars(compiler.module), name)
+    cvars = vars(compiler.module)
+    handler = find_fence(cvars, name)
     if handler is None:
         raise SpecialError(
             f"unknown fence: fence/{name}", position=pos,
@@ -108,7 +110,7 @@ def special_apply_fence(compiler, caps, tc=False):
 
     fill_position(result, pos)
 
-    return result
+    return apply_layout(result, cvars)
 
 
 # The end.

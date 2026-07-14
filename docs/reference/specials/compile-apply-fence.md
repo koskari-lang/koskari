@@ -31,7 +31,7 @@ readings for the module.
 A fence reads as a single value, so it may appear in expression position:
 
 ````text
-define script ```bash filter: json
+define script ```bash
 cd foo/bar/baz
 curl -s https://example.org/api/data/
 ```
@@ -72,19 +72,30 @@ fence options.
   literals. No expressions, interpolation, or dotted member access. Accepts
   no options.
 
-- `fence/bash` — bash script capture. Lowers to a let scope that imports
-  `bash_script` from `koskari.fences.bash` (a koskari-defined runtime
-  module) and applies it to the script, producing an async callable;
-  invoking the callable runs the script via `bash -c`, captures stdout
-  and stderr, and returns the decoded stdout text. A nonzero exit status
-  raises `subprocess.CalledProcessError`. The `filter: json` option
-  decodes the captured stdout as JSON instead of returning the text.
+- `fence/bash` — bash script capture, built on the `run-process`
+  builtin. By default the fence evaluates to an async **callable**:
+  invoking it runs the script via `bash -c`, and any positional
+  arguments passed to the callable are forwarded as the script's
+  positional parameters — `(script "alpha" "beta")` makes `$1` be
+  `alpha` and `$2` be `beta`, with `$@` behaving accordingly. With the
+  `immediate: True` option there is no callable at all: the fence
+  expands to the `run-process` call in place, so the fence expression
+  itself evaluates to the finished result.
 
-Fence expansions are self-contained: runtime support is imported by the
-generated source itself, inside its own let scope, so a fence works
-without any pre-existing helper bindings in the surrounding module's
-namespace (`fence/json` lowers to the universal `#dict` / `#list`
-builders and needs no import at all).
+  Either way a run produces a `ProcessResult`, the subprocess analogue
+  of an HTTP client's Response: it carries `args`, `returncode`, and
+  the raw `stdout` / `stderr` bytes, with `text` / `stderr_text` for
+  decoded output and `(.json result)`, `(.jsonl result)`, and
+  `(.yaml result)` (requires PyYAML) for parsed stdout. A nonzero exit
+  status is **reported, never raised** — call `(.raise_for_status
+  result)` to raise `subprocess.CalledProcessError` instead; it returns
+  the result on success, so strict-and-parsed chains as
+  `(.json (.raise_for_status (script)))`.
+
+Fence expansions are self-contained: they reference only universal
+builtins — `fence/json` lowers to the `#dict` / `#list` builders,
+`fence/bash` to `run-process` — so a fence works without any
+pre-existing helper bindings in the surrounding module's namespace.
 
 **Trust model:** fence handlers are compile-time plugins; compiling a
 module that uses a custom fence executes that fence's handler, exactly as
@@ -98,8 +109,24 @@ define config ```json
 { "host": server-host, "port": 8080, "tls": true }
 ```
 
-;; a runnable script value; (report) launches the subprocess
-define report ```bash filter: json
+;; a runnable script value; each (report) launches the subprocess and
+;; yields a ProcessResult
+define report ```bash
 curl -s https://example.org/api/summary/
 ```
+define summary (.json (.raise_for_status (report)))
+
+;; positional arguments become $1, $2, ...
+define greet ```bash
+echo "hello, $1"
+```
+define greeting (greet "world")
+greeting.text                   ; "hello, world\n"
+
+;; immediate: True runs the script where the fence sits; the fence
+;; expression evaluates directly to the ProcessResult
+define lookup ```bash immediate: True
+hostname -f
+```
+define hostname lookup.text
 ````

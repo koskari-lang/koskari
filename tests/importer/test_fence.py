@@ -28,6 +28,7 @@ the Python-registered ones.
 
 from subprocess import CalledProcessError
 
+from koskari.asyncio import ProcessResult
 from koskari.compile import Compiler
 from koskari.exceptions import FenceError, SpecialError
 from koskari.lib import Module, ModuleNamespace
@@ -242,39 +243,84 @@ class TestJsonFence(FenceTestCase):
 
 class TestBashFence(FenceTestCase):
     """
-    The built-in fence/bash handler and the koskari.fences.bash runtime
+    The built-in fence/bash handler and the run-process runtime
     """
-
-    async def test_echo(self):
-        src = "(```bash\necho hello\n```\n)"
-        expr, _mod = self.compile_expr(src)
-        self.assertEqual(await expr(), "hello\n")
-
 
     async def test_script_is_callable(self):
         src = "```bash\necho hello\n```\n"
         expr, _mod = self.compile_expr(src)
         script = await expr()
         self.assertTrue(callable(script))
-        self.assertEqual(await script(), "hello\n")
+
+        result = await script()
+        self.assertIsInstance(result, ProcessResult)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"hello\n")
+        self.assertEqual(result.text, "hello\n")
 
 
-    async def test_filter_json(self):
-        src = "(```bash filter: json\necho '{\"a\": 1}'\n```\n)"
+    async def test_invoked_in_expression(self):
+        src = "(```bash\necho hello\n```\n)"
+        expr, _mod = self.compile_expr(src)
+        result = await expr()
+        self.assertIsInstance(result, ProcessResult)
+        self.assertEqual(result.text, "hello\n")
+
+
+    async def test_args_forwarded(self):
+        src = "```bash\necho \"$1:$2\"\n```\n"
+        expr, _mod = self.compile_expr(src)
+        script = await expr()
+
+        result = await script("alpha", "beta")
+        self.assertEqual(result.text, "alpha:beta\n")
+
+
+    async def test_nonzero_exit_reported_not_raised(self):
+        src = "(```bash\necho oops >&2\nexit 3\n```\n)"
+        expr, _mod = self.compile_expr(src)
+        result = await expr()
+        self.assertIsInstance(result, ProcessResult)
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.stderr_text, "oops\n")
+
+        with self.assertRaises(CalledProcessError) as cm:
+            result.raise_for_status()
+        self.assertEqual(cm.exception.returncode, 3)
+
+
+    async def test_raise_for_status_chains(self):
+        src = ("(.json (.raise_for_status"
+               " (```bash\necho '{\"a\": 1}'\n```\n)))")
         expr, _mod = self.compile_expr(src)
         self.assertEqual(await expr(), {"a": 1})
 
 
-    async def test_nonzero_exit(self):
-        src = "(```bash\nexit 3\n```\n)"
+    async def test_json_helper(self):
+        src = "(```bash\necho '{\"a\": [1, 2]}'\n```\n)"
         expr, _mod = self.compile_expr(src)
-        with self.assertRaises(CalledProcessError) as cm:
-            await expr()
-        self.assertEqual(cm.exception.returncode, 3)
+        result = await expr()
+        self.assertEqual(result.json(), {"a": [1, 2]})
+
+
+    async def test_immediate_option(self):
+        src = "```bash immediate: True\necho hello\n```\n"
+        expr, _mod = self.compile_expr(src)
+        result = await expr()
+        self.assertIsInstance(result, ProcessResult)
+        self.assertEqual(result.text, "hello\n")
 
 
     async def test_unknown_option_rejected(self):
         src = '```bash cwd: "/tmp"\necho hi\n```\n'
+        with self.assertRaises(FenceError):
+            self.compile_expr(src)
+
+
+    async def test_filter_option_removed(self):
+        # interpretation belongs to ProcessResult now; filter: is just
+        # an unknown option
+        src = "```bash filter: json\necho hi\n```\n"
         with self.assertRaises(FenceError):
             self.compile_expr(src)
 

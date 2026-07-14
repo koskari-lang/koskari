@@ -23,11 +23,10 @@ namespace and calls the handler with the raw text and a metadata dict;
 the handler returns ordinary Koskari source, which is compiled in place
 of the fence.
 
-Fence expansions are self-contained: any runtime support a fence needs
-is imported by the generated source itself (inside a let scope), not
-required as a pre-existing binding in the compiling module's namespace.
-See koskari/fences/bash.ki, a koskari-defined runtime module, for the
-pattern.
+Fence expansions are self-contained: they reference only universal
+builtins (fence/json lowers to the #dict / #list builders, fence/bash
+to run-process), never pre-existing helper bindings in the compiling
+module's namespace.
 
 Handlers register via ``koskari.bootstrap.builtin``.
 

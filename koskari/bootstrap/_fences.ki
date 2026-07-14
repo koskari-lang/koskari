@@ -12,19 +12,18 @@ define-syntax compile/define-fence:
 
 
 define-fence fence/bash [raw meta]:
-    define options (or (meta.get "options") #{})
-    define filter_opt (options.pop "filter" None)
+    define options (meta.get "options")
+    define exec_now (options.pop "immediate" False)
 
     when options:
         define names (.join " " (sorted options))
         raise (FenceError f"fence/bash got unknown options: {names}")
 
-    when filter_opt:
-        set! filter_opt (str filter_opt)
-
-    `(compile/let []
-        (import-from koskari.fences.bash bash_script)
-        (bash_script ,raw filter: ,filter_opt))
+    if (is? exec_now True):
+        `(run-process "bash" "-c" ,raw)
+    else:
+        `function <fence/bash> [*: args]:
+            run-process "bash" "-c" ,raw "bash-fence" *: args
 
 
 ;; The end.
