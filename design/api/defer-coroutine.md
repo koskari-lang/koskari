@@ -179,7 +179,7 @@ The object is single-shot in both directions:
   use raises `RuntimeError`, the same behavior as a finished coroutine.
 
 A joinable, multi-await handle is a **Task** (`create-task`) or Future,
-not a defer. See [defer-task-future-matrix.md](../defer-task-future-matrix.md).
+not a defer. See [defer-task-future-matrix.md](../archive/defer-task-future-matrix.md).
 
 ---
 
@@ -324,7 +324,7 @@ Minimal helpful behaviors:
 * Implicit call auto-await path:
 
   * `if is_awaitable(r) && !is_defer(r) && !isfuture(r) => auto-await`
-    (see [defer-task-future-matrix.md](../defer-task-future-matrix.md)
+    (see [defer-task-future-matrix.md](../archive/defer-task-future-matrix.md)
     for the future exclusion)
 
 * `AWAIT` opcode:

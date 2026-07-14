@@ -247,7 +247,7 @@ object (e.g. `:: int` yields the `int` type). A string literal is the
 forward-reference escape hatch: it stays a string, resolved lazily (dotted
 lookup against the defining namespace) on first `__annotations__` /
 `__signature__` access; failures stay strings and are never retried. See
-[api/function-annotations-opcode.md](api/function-annotations-opcode.md).
+[archive/function-annotations-opcode.md](archive/function-annotations-opcode.md).
 
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol

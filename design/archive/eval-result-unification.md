@@ -1114,7 +1114,7 @@ Four design files updated; no behavior changes.
   "Opcode result dispatch" table documenting all `EVAL_*` macros and the
   `cg_handle_op_result` dispatch contract.
 
-**`design/api/opcode-access-and-koscontext-surface.md`:**
+**`design/archive/opcode-access-and-koscontext-surface.md`:**
 - "Authoritative handler shape" block updated to `KosOpResult op_NAME(es, insn)`;
   note added that Part 1 `KOS_OP_POST_ERR` counts are stale (those sites now use `EVAL_RAISE()`).
 

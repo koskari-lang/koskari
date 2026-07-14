@@ -6,7 +6,8 @@ which are now removed — including the `FormalsSpec` / `Formals` annotations
 field itself (no consumer remained). "Current state" describes the design as
 it stood before this work. Authoritative opcode reference:
 [../OPCODES.md §16](../OPCODES.md#kos_op_build_function). May link into
-`docs/` once a stable user-facing surface exists.
+`docs/` once a stable user-facing surface exists. Inspect interop:
+[inspect-interop-kos-callables.md](inspect-interop-kos-callables.md).
 
 ## Summary
 
@@ -91,7 +92,7 @@ turned into values, as strings, when `__annotations__` is read.
 
 - Making `KosFunction` pass `inspect.isfunction` or exposing `__code__` as a
   `types.CodeType`. Unchanged from
-  `inspect-interop-kos-callables.md`.
+  [inspect-interop-kos-callables.md](inspect-interop-kos-callables.md).
 - A `__globals__`-as-dict bridge for `typing.get_type_hints`. With real
   objects cached on the function this path is no longer required for the
   common case; string forward-refs are resolved internally instead.
@@ -266,8 +267,9 @@ creation-time dict and from each other, and are realized on first access:
 
 Because both members draw from the same realized annotations mapping, they
 stay consistent. The design doc requirement in
-`inspect-interop-kos-callables.md` ("`__annotations__` and `__signature__`
-stay consistent once both exist") is satisfied structurally.
+[inspect-interop-kos-callables.md](inspect-interop-kos-callables.md)
+("`__annotations__` and `__signature__` stay consistent once both exist") is
+satisfied structurally.
 
 Caching is a first-access snapshot: a name unresolved at first access and
 degraded to a string will not upgrade later even if it becomes bound. This is

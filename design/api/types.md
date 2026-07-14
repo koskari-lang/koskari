@@ -126,7 +126,7 @@ Types are defined in the native extension `koskari.lib`; the Python module `kosk
 - Contains bytecode and namespace spec
 - Supports calling conventions
 - Can be async/generator
-- For Python `inspect` / typing ecosystem interop (`__signature__`, bound methods, annotations), see [inspect-interop-kos-callables.md](inspect-interop-kos-callables.md)
+- For Python `inspect` / typing ecosystem interop (`__signature__`, bound methods, annotations), see [inspect-interop-kos-callables.md](../archive/inspect-interop-kos-callables.md)
 
 ### Module
 

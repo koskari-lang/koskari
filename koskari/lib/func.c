@@ -434,7 +434,7 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
 
 
 /* === inspect.Signature interop (KosFunction / KosBoundMethod) ===
-   See design/api/inspect-interop-kos-callables.md. KosFormals_ApplyFast
+   See design/archive/inspect-interop-kos-callables.md. KosFormals_ApplyFast
    consumes positionals in order pos, pos_only, kwd, *star, then kwargs
    phase for kwd_only and **starstar. If that ordering is invalid for
    inspect.Signature (e.g. POSITIONAL_ONLY after POSITIONAL_OR_KEYWORD),

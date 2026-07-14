@@ -14,7 +14,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **[LAYOUTS.md](LAYOUTS.md)**: Layout handler rollup; normative layout syntax graduated to [docs/reference/reader-layout.md](../docs/reference/reader-layout.md)
 - **[PRAGMA.md](PRAGMA.md)**: Module pragma rollup — how to set a pragma, the available `reader/*`, `compiler/*`, and `pragma/*` settings, and the model (registry, watchers, meta-pragma)
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
-- **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md); [Python inspect interop for native callables](api/inspect-interop-kos-callables.md) (`KosFunction`, `KosBoundMethod`)
+- **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md)
 - **[EVALUATOR.md](EVALUATOR.md)**: Evaluator operation—phase flow diagrams, opcode signaling, exceptions, transfer plans, tail calls, call installs, play-by-play scenarios
 - **[interpreter/eval-state-live-authority.md](interpreter/eval-state-live-authority.md)**: `KosEvalState` live authority during RUN (Phase 1 landed); Tier-2 xfer incremental retarget; see [archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md) (archived opcode migration ledger)
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
@@ -26,7 +26,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **[documentation-goals.md](documentation-goals.md)**: Meta-spec for future user-facing `docs/` tree (audiences, IA, maintenance)
 - **[corpus-schema-philosophy.md](corpus-schema-philosophy.md)**: Language conformance corpus schema, verification model, and Hugging Face dataset views derived from corpus records
 - **Archived**: [archive/corpus-mcp-server.md](archive/corpus-mcp-server.md) — HF dataset publication (Track A) and Koskari MCP container server over the Dataset Viewer API (Track B); both implemented (server: [tools/mcp/README.md](../tools/mcp/README.md))
-- **archive/**: Completed implementation specs and superseded proposals (e.g. demand-evalex phase 1–2, eval-result unification, kos_eval_state migration, interrupted-transfer-plans, bytecode-metadata-tables, node-owned-operand-stack, let-syntax-and-inline-macro, koskari-scripts-packaging, switch-eq-opcodes, bracket-pair)
+- **archive/**: Completed implementation specs and superseded proposals (e.g. demand-evalex phase 1–2, eval-result unification, kos_eval_state migration, interrupted-transfer-plans, bytecode-metadata-tables, node-owned-operand-stack, let-syntax-and-inline-macro, koskari-scripts-packaging, switch-eq-opcodes, bracket-pair, EXTRA table / CALL_FAST\*, parameterized arithmetic, function annotations opcode, inspect interop, defer/Task/Future matrix, opcode-access inventory)
 - **[docs-tracker.md](docs-tracker.md)**: User documentation site status (correlates documentation-goals and corpus plans with `docs/` progress)
 - **[ideas.md](ideas.md)**: Potential concepts and options (e.g. feature flag for demand vs run_sync imports) — not committed plans, just notes to revisit
 

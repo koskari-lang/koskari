@@ -12,7 +12,7 @@ Many Python libraries discover call shape and types through:
 - Optional combination with `__annotations__` and `typing.get_type_hints` — static-style types at runtime
 - `functools.wraps` and `inspect.unwrap` — decorator stacks that preserve or forward metadata
 
-Koskari defines its own callable types (`KosFunction`, `KosBoundMethod`) in [`koskari/lib/func.c`](../../koskari/lib/func.c). They are not CPython `types.FunctionType` instances, so **duck typing via attributes** (`__signature__`, etc.) is the practical path to interoperability.
+Koskari defines its own callable types (`KosFunction`, `KosBoundMethod`) in [`koskari/lib/func.c`](../../../koskari/lib/func.c). They are not CPython `types.FunctionType` instances, so **duck typing via attributes** (`__signature__`, etc.) is the practical path to interoperability.
 
 ### In scope
 
@@ -22,7 +22,7 @@ Koskari defines its own callable types (`KosFunction`, `KosBoundMethod`) in [`ko
 ### Out of scope for the recommended v1 feature set
 
 - Making `KosFunction` pass **`inspect.isfunction`** (would imply being or mimicking `types.FunctionType` in ways that are brittle or wrong).
-- Full **`inspect.getsource`** / line-accurate tracebacks **unless** a deliberate bridge exists from `KosCode` to something `inspect` understands (see [Non-goals and limitations](#explicit-non-goals-and-limitations); [`KosCode`](../../koskari/lib/bytecode.h) already carries `KosCode_FILENAME` / `KosCode_NAME` and a `KosCode_Faux` path to a `PyCodeObject`, but wiring that to user-facing “source” is separate work).
+- Full **`inspect.getsource`** / line-accurate tracebacks **unless** a deliberate bridge exists from `KosCode` to something `inspect` understands (see [Non-goals and limitations](#explicit-non-goals-and-limitations); [`KosCode`](../../../koskari/lib/bytecode.h) already carries `KosCode_FILENAME` / `KosCode_NAME` and a `KosCode_Faux` path to a `PyCodeObject`, but wiring that to user-facing “source” is separate work).
 
 ---
 
@@ -30,19 +30,19 @@ Koskari defines its own callable types (`KosFunction`, `KosBoundMethod`) in [`ko
 
 ### `KosFunction`
 
-The native struct holds: `code` (`KosCode`), `base_ns` (template namespace), `formals` (`KosFormals`), optional `name`, plus a vectorcall slot ([`koskari/lib/func.h`](../../koskari/lib/func.h)).
+The native struct holds: `code` (`KosCode`), `base_ns` (template namespace), `formals` (`KosFormals`), optional `name`, plus a vectorcall slot ([`koskari/lib/func.h`](../../../koskari/lib/func.h)).
 
-Exposed to Python as **members** `code`, `base_ns`, `formals`, `name` ([`koskari/lib/func.c`](../../koskari/lib/func.c) `function_members`). There is **no** `__name__`, `__qualname__`, `__module__`, `__doc__`, `__code__`, or `__signature__` on the type today.
+Exposed to Python as **members** `code`, `base_ns`, `formals`, `name` ([`koskari/lib/func.c`](../../../koskari/lib/func.c) `function_members`). There is **no** `__name__`, `__qualname__`, `__module__`, `__doc__`, `__code__`, or `__signature__` on the type today.
 
-`KosFunction` implements the **descriptor protocol**: `tp_descr_get` returns the bare function when `obj is None` (class access) and a **`KosBoundMethod`** when `obj` is the instance ([`koskari/lib/func.c`](../../koskari/lib/func.c) `function_descr_get`).
+`KosFunction` implements the **descriptor protocol**: `tp_descr_get` returns the bare function when `obj is None` (class access) and a **`KosBoundMethod`** when `obj` is the instance ([`koskari/lib/func.c`](../../../koskari/lib/func.c) `function_descr_get`).
 
 ### `KosBoundMethod`
 
-Wraps `(func, self)` where `func` is a `KosFunction`. Python-visible attributes **`__func__`** and **`__self__`** match the usual method layout ([`koskari/lib/func.c`](../../koskari/lib/func.c) `boundmethod_members`). Calling prepends `self` to the argument tuple (`boundmethod_call`, and the evaluator paths `kos_install_boundmethod` / `kos_vinstall_boundmethod`).
+Wraps `(func, self)` where `func` is a `KosFunction`. Python-visible attributes **`__func__`** and **`__self__`** match the usual method layout ([`koskari/lib/func.c`](../../../koskari/lib/func.c) `boundmethod_members`). Calling prepends `self` to the argument tuple (`boundmethod_call`, and the evaluator paths `kos_install_boundmethod` / `kos_vinstall_boundmethod`).
 
 ### `KosFormals`
 
-Formal parameters are represented in [`koskari/lib/formals.h`](../../koskari/lib/formals.h) as:
+Formal parameters are represented in [`koskari/lib/formals.h`](../../../koskari/lib/formals.h) as:
 
 - `pos`, `pos_only`, `kwd`, `kwd_only`, `star`, `starstar`, `defaults`
 
@@ -64,7 +64,7 @@ flowchart LR
   end
 ```
 
-Behavior is exercised from Python in [`tests/lib/test_expression_function.py`](../../tests/lib/test_expression_function.py) (descriptor `__get__`, bound method, `apply` flattening).
+Behavior is exercised from Python in [`tests/lib/test_expression_function.py`](../../../tests/lib/test_expression_function.py) (descriptor `__get__`, bound method, `apply` flattening).
 
 ### Gaps relative to `inspect` today
 
@@ -103,7 +103,7 @@ Behavior is exercised from Python in [`tests/lib/test_expression_function.py`](.
 
 **Requirement:** Match **`types.MethodType`** semantics for **`inspect.signature`**: for a **bound** method, the signature seen at the **call site** should **not** include a separate first argument for the already-bound receiver (CPython drops the `self` parameter for bound methods in the public signature).
 
-**Relationship:** `KosBoundMethod.__func__` is the underlying `KosFunction` ([`koskari/lib/func.c`](../../koskari/lib/func.c)). Two consistent options:
+**Relationship:** `KosBoundMethod.__func__` is the underlying `KosFunction` ([`koskari/lib/func.c`](../../../koskari/lib/func.c)). Two consistent options:
 
 1. **`__signature__` only on `KosBoundMethod`:** When present, return a signature with the **first** positional parameter of the unbound signature removed, **if** that parameter is the implicit receiver (same rule as CPython for instance methods). **`__signature__` on unbound `KosFunction`** remains the full parameter list including `self`/`cls` when applicable.
 2. **`__signature__` only on `KosFunction`:** Implementors of consumers call `inspect.signature` on `__func__` and apply the same “bound method” adjustment — **less** convenient and easier to get wrong; not recommended for ecosystem compatibility.
@@ -154,7 +154,7 @@ Many tools use:
 | Area | Rationale |
 |------|-----------|
 | **`inspect.isfunction` / `inspect.ismethod`** | Koskari callables are native extension types; tests should not require these to be true. Consumers should rely on **`inspect.signature`** and attribute protocols. |
-| **`inspect.getfile` / `inspect.getsourcelines`** | Typically need a **`types.CodeType`** or equivalent; `KosFunction` does not expose `__code__`. `KosCode` has filename/name hooks ([`bytecode.h`](../../koskari/lib/bytecode.h)); bridging to `inspect` is **future** optional work. |
+| **`inspect.getfile` / `inspect.getsourcelines`** | Typically need a **`types.CodeType`** or equivalent; `KosFunction` does not expose `__code__`. `KosCode` has filename/name hooks ([`bytecode.h`](../../../koskari/lib/bytecode.h)); bridging to `inspect` is **future** optional work. |
 | **`inspect.getclosurevars`** | Requires a closure representation compatible with CPython’s expectations; Koskari’s closure model may not map 1:1 until explicitly designed. |
 
 ---
@@ -173,19 +173,19 @@ Many tools use:
 
 ## Related design links
 
-- [types.md](types.md) — core type catalog (Function section can gain a pointer here when this is implemented).
+- [types.md](../api/types.md) — core type catalog (Function section can gain a pointer here when this is implemented).
 - [../language/functions.md](../language/functions.md) — surface syntax for formals (pos-only, defaults, `*`, `**`).
-- [special-call-protocol.md](special-call-protocol.md) — kos install / vectorcall entry points for `KosFunction` and `KosBoundMethod` (orthogonal to `inspect`, but useful for understanding call vs introspection).
+- [special-call-protocol.md](../api/special-call-protocol.md) — kos install / vectorcall entry points for `KosFunction` and `KosBoundMethod` (orthogonal to `inspect`, but useful for understanding call vs introspection).
 
 ---
 
 ## Implementation status (native)
 
-Implemented in [`koskari/lib/func.c`](../../koskari/lib/func.c) and [`koskari/lib/func.h`](../../koskari/lib/func.h):
+Implemented in [`koskari/lib/func.c`](../../../koskari/lib/func.c) and [`koskari/lib/func.h`](../../../koskari/lib/func.h):
 
 - **`KosFunction`**: `__signature__` (lazy cache on the instance), `__annotations__` (fresh empty `dict` per access), `__name__` / `__qualname__` (from `name` or `KosCode` name or `"<lambda>"`), `__module__` (`None`). `KosFormals` is mapped to `inspect.Parameter` in runtime positional order (`pos`, `pos_only`, `kwd`, `*`, `kwd_only`, `**`); if `inspect.Signature` rejects the kind order (e.g. `POSITIONAL_ONLY` after `POSITIONAL_OR_KEYWORD`), the build is retried with positional-only names emitted as `POSITIONAL_OR_KEYWORD` (introspection may over-report keyword acceptance for those names).
 - **`KosBoundMethod`**: `__signature__` by taking the unbound function’s signature and dropping the first parameter (receiver), matching bound method call semantics.
-- **Tests**: [`tests/lib/test_inspect_kos_function.py`](../../tests/lib/test_inspect_kos_function.py).
+- **Tests**: [`tests/lib/test_inspect_kos_function.py`](../../../tests/lib/test_inspect_kos_function.py).
 
 ---
 

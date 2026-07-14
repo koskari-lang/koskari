@@ -1,7 +1,8 @@
 # Parameterized cold arithmetic opcodes (OPERAND)
 
-Status: in progress on branch `eval_fast_deref`. This doc is the resume point
--- read it top to bottom to pick the work back up.
+Status: Implemented — archived. Consolidation of per-operator arithmetic
+opcodes into parameterized cold `OBJECT_OPERAND` / inplace handlers is
+complete.
 
 ## Goal
 

@@ -6,12 +6,12 @@ style system with a new **EXTRA** style. This enables selected opcodes to store
 up to four structured operands rather than a single inline `arg`, without
 introducing variable-length instructions or globally widening every opcode.
 
-**Status:** Design — not yet implemented.
+**Status:** Implemented — archived.
 
-**See also:** [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
+**See also:** [bytecode-metadata-tables.md](bytecode-metadata-tables.md)
 (constant pool, extents, code object layout), [bytecode-finalization.md](../interpreter/bytecode-finalization.md)
 (collect/size/allocate/emit pipeline, cpool from EXTRA CONST/VAR), [OPCODES.md](../OPCODES.md)
-(opcode reference), [call-fast-opcodes.md](../archive/call-fast-opcodes.md)
+(opcode reference), [call-fast-opcodes.md](call-fast-opcodes.md)
 (archived: superseded by EXTRA-based CALL_VAR\* / CALL_FAST\* opcodes).
 
 ---

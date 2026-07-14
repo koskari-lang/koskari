@@ -57,7 +57,7 @@ type delegating to C) can:
 - Expose `__call__(self, /, *args, **kwargs)` → `demand_call(self.__wrapped__, args, kwargs)` (or equivalent internal call).
 - Hold **`__wrapped__`** as a native member (read-only) pointing at the Koskari (or plain Python) callable.
 - Expose **`__annotations__`**, **`__doc__`**, **`__name__`**, **`__qualname__`**, **`__module__`** via getters that read through to `__wrapped__` (no copy at construction).
-- Optionally implement **`__signature__`** or rely on `inspect.signature` via `__wrapped__` for the inner callable (see [inspect-interop-kos-callables.md](inspect-interop-kos-callables.md)).
+- Optionally implement **`__signature__`** or rely on `inspect.signature` via `__wrapped__` for the inner callable (see [inspect-interop-kos-callables.md](../archive/inspect-interop-kos-callables.md)).
 
 **demanding** then becomes: wrap `fn` in `Demand(fn)` with
 no `partial`.
