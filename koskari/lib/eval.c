@@ -1616,6 +1616,72 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 /* === NEXT, ITER_NEXT === */
 
 
+/**
+   Route a return value to a live delimited-invoke bookmark: a DELIM
+   carrying RETURN_FRAME + RETURN_PC (POP_PROMPT-mode push-graft or
+   INPLACE-mode in-place invoke).  Shared by the POP_PROMPT opcode (the
+   reset body completed normally) and the RETURN unwind walk (a return
+   crossed the reset boundary); both deliver val to the k-invocation
+   site.  val is a new reference, consumed on every path.
+
+   :return: EVAL_NORMAL when routed (execution resumes at the invoke
+            site) or when an async unwind started (pending return
+            staged); EVAL_RAISE on error
+*/
+static KosOpResult kos_eval_route_delim_return(
+    KosEvalState *es,
+    KosDynDelim *ret_delim,
+    PyObject *val) {
+
+  SAYF("[eval] route_delim_return: unwinding to return frame=%p node=%p",
+       (void *) KosDynDelim_RETURN_FRAME(ret_delim),
+       (void *) KosDynDelim_RETURN_NODE(ret_delim));
+
+  KosTransitionReq treq;
+  if (KosDynDelim_RETURN_NODE(ret_delim) != NULL) {
+    treq = (KosTransitionReq) {
+      .kind = KOS_TRANS_UNWIND_TO_NODE,
+      .xfer_event = KOS_XFER_EVENT_SHIFT,
+      .target_node = KosDynDelim_RETURN_NODE(ret_delim),
+    };
+  } else {
+    treq = (KosTransitionReq) {
+      .kind = KOS_TRANS_UNWIND_TO_FRAME,
+      .xfer_event = KOS_XFER_EVENT_SHIFT,
+      .target_frame = KosDynDelim_RETURN_FRAME(ret_delim),
+    };
+  }
+  {
+    KosOpResult _kr = KosEvalState_TransitionOp(es, &treq);
+    if (_kr.kind == KOS_RES_RAISE) {
+      Py_DECREF(val);
+      return EVAL_RAISE();
+    }
+    if (_kr.kind != KOS_RES_NORMAL) {
+      /* REPROLOGUE or AWAIT: async unwind started; stage pending return */
+      Py_XDECREF(_kr.val);
+      KosEvalState_SetPendingReturn(es, val, 0);
+      return EVAL_NORMAL();
+    }
+  }
+
+  SAYF("[eval] route_delim_return after unwind: dyn_top=%p kind=%s",
+       (void *) KosEvalState_CurrentNode(es),
+       KosEvalState_CurrentNode(es)
+           ? kos_dynnode_kind_name(
+                 KosDynNode_KIND(KosEvalState_CurrentNode(es)))
+           : "NULL");
+
+  if (KosDynDelim_MODE(ret_delim) == KOS_DYN_DELIM_MODE_INPLACE) {
+    if (kos_dyn_finish_inplace_pop_return(es, ret_delim, val) < 0)
+      return EVAL_RAISE();
+  } else if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0) {
+    return EVAL_RAISE();
+  }
+  return EVAL_NORMAL();
+}
+
+
 /*
   Includes the implementation of all opcodes from the opcode/ directory.
 */
@@ -1805,9 +1871,12 @@ entry_mode_dispatch:
       /* val is a new ref; handler takes ownership */
       KosOpResult hr = kos_eval_invoke_native_handler(es, val);
       KosOpResult hs = apply_kos_op_result(es, hr);
-      if (hs.kind != KOS_RES_NORMAL && hs.kind != KOS_RES_REPROLOGUE)
+      if (hs.kind != KOS_RES_NORMAL
+          && hs.kind != KOS_RES_REPROLOGUE
+          && hs.kind != KOS_RES_DISPATCH)
         return hs;
-      /* NORMAL or REPROLOGUE: handler finished cleanly; proceed into dispatch */
+      /* NORMAL / REPROLOGUE / DISPATCH: handler finished cleanly; proceed
+         into dispatch (DISPATCH is loop-internal and must not escape) */
     }
   }
 
@@ -1975,6 +2044,16 @@ static inline KosOpResult eval_event_return(
   if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
     return EVAL_REPROLOGUE();
   }
+  if (unw == KOS_DYN_UNWIND_DELIM_TAKING_RETURN) {
+    /* The return crossed a reset boundary: the walk stopped at a DELIM
+       with a live invoke bookmark (at dyn_top).  Deliver val to the
+       k-invocation site instead of the frame's parent. */
+    KosOpResult rr = kos_eval_route_delim_return(
+        es, (KosDynDelim *) KosEvalState_DYN_TOP(es), val);
+    if (rr.kind == KOS_RES_NORMAL)
+      return EVAL_REPROLOGUE();
+    return rr;
+  }
   if (unw < 0) {
     Py_DECREF(val);
     return EVAL_FATAL();
@@ -2014,6 +2093,17 @@ static KosOpResult eval_ng_plain_return(
     return EVAL_FATAL();
   }
   Py_DECREF(val);
+
+  /* Control-returned hook fast-exit, inlined: parent (now dyn_top) is a
+     FRAME; only a WITH directly beneath it can demand the hook.  On this
+     path no PyErr is set, no plan is armed, and parent has no native
+     handler (checked by the case-1 guard), so the dispatch loop can
+     resume fetching directly — no prologue re-entry. */
+  {
+    KosDynNode *pp = KosDynNode_PARENT(parent);
+    if (likely(! pp || ! KosDynNode_IS_WITH(pp)))
+      return EVAL_DISPATCH();
+  }
   return kos_eval_post_opcode_control_returned_after_hook(es);
 }
 
@@ -2208,7 +2298,14 @@ static KosOpResult eval_step_native_iteration(KosEvalState *es) {
   KosOpResult res = kos_eval_invoke_native_handler(es, NULL);
   if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE)
     return EVAL_REPROLOGUE();
-  return apply_kos_op_result(es, res);
+  {
+    KosOpResult ar = apply_kos_op_result(es, res);
+    /* DISPATCH is loop-internal; this path returns into the prologue, so
+       normalize it (the prologue re-checks are harmless here). */
+    if (ar.kind == KOS_RES_DISPATCH)
+      return EVAL_REPROLOGUE();
+    return ar;
+  }
 }
 
 
@@ -2469,6 +2566,16 @@ cg_pc_bounds_error:
 cg_handle_op_result: {
   KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
   KosOpResult r = apply_kos_op_result(es, op_res);
+  if (r.kind == KOS_RES_DISPATCH) {
+    /* Plain frame-to-frame return: live regs already retargeted, no
+       pending PyErr / plan / native handler.  Skip the prologue and go
+       straight back to instruction fetch; the poll counter still bounds
+       signal-check latency via cg_poll. */
+    if (unlikely(++gil_poll_ops > KOS_EVAL_GIL_POLL))
+      goto cg_poll;
+    KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
+    goto *optable[insn.op];
+  }
   if (r.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
   return r;
 }

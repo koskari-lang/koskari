@@ -54,17 +54,11 @@ KOS_OP_HANDLER(RETURN) {
     }
   }
 
-  /* === Phase 2a: Delimited continuation return (k(value)) ===
-     When inside a reset/prompt, k(value) returns the value to the call site
-     of the continuation. This bypasses the normal parent chain. Rare path. */
-  KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_K_RETURN);
-  if (unlikely(ret_delim
-               && KosDynDelim_RETURN_CHAIN(ret_delim) != NULL
-               && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1)) {
-    return KosEvalState_KReturnDelimited(es, ret_delim, val);
-  }
-
-  /* === Phase 2b/2c: centralized in eval_event_return === */
+  /* === Phase 2: centralized in eval_event_return ===
+     RETURN only signals; the unwind walk runs incrementally from
+     dyn_top and stops at the frame or at a live delimited-invoke
+     bookmark (KOS_DYN_UNWIND_DELIM_TAKING_RETURN), which routes the
+     value to the k-invocation site.  No pre-walk. */
   return EVAL_RETURN(val);
 }
 

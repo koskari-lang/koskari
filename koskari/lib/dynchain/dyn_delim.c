@@ -156,21 +156,6 @@ int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
 }
 
 
-/**
-   Find nearest DELIM from dyn_top toward root; optional mode filter.
-*/
-KosDynDelim *kos_find_nearest_delim(KosEvalState *es, uint8_t mode) {
-  KosDynNode *node;
-  for (node = KosEvalState_DYN_TOP(es); node; node = KosDynNode_PARENT(node)) {
-    if (! KosDynNode_IS_DELIM(node))
-      continue;
-    if (! mode || KosDynDelim_MODE((KosDynDelim *) node) == mode)
-      return (KosDynDelim *) node;
-  }
-  return NULL;
-}
-
-
 /* === GC traversal === */
 
 

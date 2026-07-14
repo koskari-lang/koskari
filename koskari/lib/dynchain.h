@@ -223,7 +223,7 @@ struct KosDynNode {
     } prompt;
     struct {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
-      KosDynNode *chain;  /* owned when mode == K_RETURN or INPLACE */
+      KosDynNode *chain;  /* owned when mode == INPLACE */
       uint32_t pc;
       KosDynNode *frame;
       KosDynNode *node;
@@ -708,7 +708,7 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
 
    :param parent: parent node in dynamic chain
    :param mode: KOS_DYN_DELIM_MODE_*
-   :param chain: optional owned chain payload for K_RETURN mode
+   :param chain: optional owned chain payload for INPLACE mode
    :param pc: resume program counter
    :param frame: resume frame payload
    :param node: resume node payload
@@ -1528,9 +1528,16 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
    inner RETURN completes; when finally falls through, POP_FINALLY promotes
    value and bytecode continues (typically RETURN pops it).
 
+   When the walk's top is a DELIM carrying a live invoke bookmark
+   (RETURN_FRAME + RETURN_PC), the return has reached a reset boundary:
+   the walk stops with the DELIM at dyn_top and returns
+   KOS_DYN_UNWIND_DELIM_TAKING_RETURN; the caller routes val to the
+   k-invocation site.
+
    :param val: return value; ownership transferred when FINALLY_TAKING
-   :return: 0 (walk done), KOS_DYN_UNWIND_ASYNC_STARTED, -1, or
-     KOS_DYN_UNWIND_FINALLY_TAKING_RETURN
+   :return: 0 (walk done), KOS_DYN_UNWIND_ASYNC_STARTED, -1,
+     KOS_DYN_UNWIND_FINALLY_TAKING_RETURN, or
+     KOS_DYN_UNWIND_DELIM_TAKING_RETURN
 */
 int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
                                   PyObject *val);
@@ -1559,6 +1566,11 @@ int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
 
 /** WITH skipped __exit__ (single-shot already consumed); not an error */
 #define KOS_DYN_UNWIND_PROTOCOL_SKIPPED 4
+
+/** When the return walk stopped at a DELIM with a live invoke bookmark
+    (left at dyn_top).  Caller routes the return value to the
+    k-invocation site; the value payload is NOT consumed by the walk. */
+#define KOS_DYN_UNWIND_DELIM_TAKING_RETURN 5
 
 
 /**
@@ -1774,17 +1786,6 @@ KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id);
 KosDynPrompt *kos_find_nearest_prompt(KosEvalState *es);
 
 
-/**
-   Find the nearest DELIM node from dyn_top toward root.
-
-   :param es: eval state
-   :param mode: KOS_DYN_DELIM_MODE_* to match, or 0 for any DELIM
-
-   :return: nearest matching DELIM node, or NULL if none
-*/
-KosDynDelim *kos_find_nearest_delim(KosEvalState *es, uint8_t mode);
-
-
 /* === Context exception stash === */
 
 
@@ -1983,19 +1984,6 @@ int kos_build_direct_install_plan(
    set RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
 */
 int kos_build_delimited_push_plan(
-   KosEvalState *es,
-   KosDynNode *segment,
-   PyObject *value,
-   int is_throw,
-   KosTransferPlan **out_plan);
-
-
-/**
-   Build a minimal plan with only INSTALL and INJECT (no wind, no LCA).
-   Use for delimited k(value) return path when invocation-site chain is
-   disjoint from current.  Caller must set RESUME_PC.
-*/
-int kos_build_return_plan(
    KosEvalState *es,
    KosDynNode *segment,
    PyObject *value,
@@ -2235,7 +2223,8 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
 
 #define KOS_DYN_DELIM_MODE_NONE       0u
-#define KOS_DYN_DELIM_MODE_K_RETURN   1u
+/* 1u retired: K_RETURN (pre-walk delim scan in the RETURN opcode).  The
+   return walk now stops naturally at any DELIM with a live bookmark. */
 #define KOS_DYN_DELIM_MODE_POP_PROMPT 2u
 /* In-place (Path A) delimited return: chain stashes the detached invoke
    span; saved_stack/saved_pc hold the resume frame's displaced state. */

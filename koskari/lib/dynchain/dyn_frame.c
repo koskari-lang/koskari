@@ -133,10 +133,21 @@ KosDynFrame *kos_dyn_push_frame(
   if (cur)
     KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
 
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) frame) < 0) {
-    kos_dynframe_free(frame);
-    return NULL;
-  }
+  /* Inline retarget, specialized from kos_dyn_retarget_after_push for a
+     fresh FRAME node: flush the outgoing frame's live PCs, then load
+     every live register directly from the new frame (PC/ACTING are 0
+     from kos_dynframe_new).  Mirror of the return-side inline retarget
+     in eval_ng_plain_return. */
+  if (cur)
+    KosEvalState_FlushLiveRegsToFrame(es);
+  KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
+  KosEvalState_FRAME(es) = frame;
+  KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
+  KosEvalState_NAMESPACE(es) = KosDynNode_NS((KosDynNode *) frame);
+  KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
+  es->pc = KosDynFrame_PC(frame);
+  es->acting_pc = KosDynFrame_ACTING_PC(frame);
+
   return frame;
 }
 
