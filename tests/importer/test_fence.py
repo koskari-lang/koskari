@@ -15,7 +15,7 @@
 tests.importer.test_fence
 
 Unit tests for the compile/apply-fence special and the built-in
-fence/json and fence/bash handlers.
+fence/bash handler.
 
 Runs against the full koskari builtins (import koskari.builtins), so the
 bootstrap-defined fence handlers from _fences.ki are present alongside
@@ -72,9 +72,11 @@ class TestApplyFence(FenceTestCase):
     """
 
     async def test_handwritten_apply_fence(self):
-        src = '(compile/apply-fence json "{\\"a\\": 1}")'
-        expr, _mod = self.compile_expr(src)
-        self.assertEqual(await expr(), {"a": 1})
+        # the special stands alone, independent of the reader fence syntax
+        defns = {"fence/echo": lambda raw, meta: raw}
+        src = '(compile/apply-fence echo "hello")'
+        expr, _mod = self.compile_expr(src, **defns)
+        self.assertEqual(await expr(), "hello")
 
 
     async def test_unknown_fence(self):
@@ -89,13 +91,13 @@ class TestApplyFence(FenceTestCase):
             self.compile_expr("(compile/apply-fence)")
 
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/apply-fence json)")
+            self.compile_expr("(compile/apply-fence bash)")
 
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/apply-fence json 5)")
+            self.compile_expr("(compile/apply-fence bash 5)")
 
         with self.assertRaises(SpecialError):
-            self.compile_expr('(compile/apply-fence "json" "raw")')
+            self.compile_expr('(compile/apply-fence "bash" "raw")')
 
 
     async def test_python_callable_fence(self):
@@ -142,103 +144,6 @@ class TestApplyFence(FenceTestCase):
         defns = {"fence/bad": lambda raw, meta: None}
         with self.assertRaises(SpecialError):
             self.compile_expr(src, **defns)
-
-
-class TestJsonFence(FenceTestCase):
-    """
-    The built-in fence/json handler
-    """
-
-    async def test_object(self):
-        src = '```json\n{"a": 1, "b": "x", "c": true}\n```\n'
-        expr, _mod = self.compile_expr(src)
-        self.assertEqual(await expr(), {"a": 1, "b": "x", "c": True})
-
-
-    async def test_nested(self):
-        src = '```json\n{"a": {"b": [1, {"c": 2}], "d": null}}\n```\n'
-        expr, _mod = self.compile_expr(src)
-        self.assertEqual(
-            await expr(), {"a": {"b": [1, {"c": 2}], "d": None}})
-
-
-    async def test_array(self):
-        src = "```json\n[1, 2.5, -3e2, true, false, null, \"x\"]\n```\n"
-        expr, _mod = self.compile_expr(src)
-        self.assertEqual(
-            await expr(), [1, 2.5, -300.0, True, False, None, "x"])
-
-
-    async def test_empty_collections(self):
-        src = "```json\n{}\n```\n"
-        expr, _mod = self.compile_expr(src)
-        self.assertEqual(await expr(), {})
-
-        src = "```json\n[]\n```\n"
-        expr, _mod = self.compile_expr(src)
-        self.assertEqual(await expr(), [])
-
-
-    async def test_bare_identifier_value(self):
-        src = '```json\n{"host": server-host, "port": port}\n```\n'
-        defns = {"server-host": "example.org", "port": 8080}
-        expr, _mod = self.compile_expr(src, **defns)
-        self.assertEqual(
-            await expr(), {"host": "example.org", "port": 8080})
-
-
-    async def test_bare_key_rejected(self):
-        src = '```json\n{ foo: 1 }\n```\n'
-        with self.assertRaises(FenceError) as cm:
-            self.compile_expr(src)
-        self.assertEqual(cm.exception.line, 2)
-
-
-    async def test_expression_value_rejected(self):
-        src = '```json\n{"a": (+ 1 2)}\n```\n'
-        with self.assertRaises(FenceError):
-            self.compile_expr(src)
-
-
-    async def test_dotted_identifier_rejected(self):
-        src = '```json\n{"a": config.user}\n```\n'
-        with self.assertRaises(FenceError):
-            self.compile_expr(src)
-
-
-    async def test_trailing_comma_rejected(self):
-        src = '```json\n{"a": 1,}\n```\n'
-        with self.assertRaises(FenceError):
-            self.compile_expr(src)
-
-        src = "```json\n[1, 2,]\n```\n"
-        with self.assertRaises(FenceError):
-            self.compile_expr(src)
-
-
-    async def test_unterminated_rejected(self):
-        src = '```json\n{"a": 1\n```\n'
-        with self.assertRaises(FenceError):
-            self.compile_expr(src)
-
-
-    async def test_trailing_content_rejected(self):
-        src = '```json\n{"a": 1} extra\n```\n'
-        with self.assertRaises(FenceError):
-            self.compile_expr(src)
-
-
-    async def test_error_position_remapped(self):
-        src = '```json\n{"a": 1,\n "b": (bad)}\n```\n'
-        with self.assertRaises(FenceError) as cm:
-            self.compile_expr(src)
-        self.assertEqual(cm.exception.line, 3)
-
-
-    async def test_options_rejected(self):
-        src = "```json strict: True\n{}\n```\n"
-        with self.assertRaises(FenceError):
-            self.compile_expr(src)
 
 
 class TestBashFence(FenceTestCase):

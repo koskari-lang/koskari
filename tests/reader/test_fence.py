@@ -77,18 +77,18 @@ class TestFenceRead(IsolatedAsyncioTestCase):
     """
 
     async def test_simple_fence(self):
-        src = '```json\n{"a": 1}\n```\n'
+        src = '```bash\necho hi\n```\n'
         result = parse_source(src)
-        expected = pycons(fence_form("json", '{"a": 1}\n', line=2))
+        expected = pycons(fence_form("bash", "echo hi\n", line=2))
         self.assertEqual(result, expected)
 
     async def test_fence_name_spaced(self):
-        attached = parse_source('```json\n{"a": 1}\n```\n')
-        spaced = parse_source('``` json\n{"a": 1}\n```\n')
+        attached = parse_source('```bash\necho hi\n```\n')
+        spaced = parse_source('``` bash\necho hi\n```\n')
         self.assertEqual(attached, spaced)
 
     async def test_fence_position(self):
-        result = parse_source('```json\n{}\n```\n')
+        result = parse_source('```bash\necho hi\n```\n')
         self.assertEqual(get_position(result), (1, 0))
 
     async def test_fence_multiline_body(self):
@@ -107,11 +107,11 @@ class TestFenceRead(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
     async def test_fence_options(self):
-        src = '```bash filter: json retries: 3\necho hi\n```\n'
+        src = '```bash env: prod retries: 3\necho hi\n```\n'
         result = parse_source(src)
         expected = pycons(fence_form(
             "bash", "echo hi\n", line=2,
-            options=(keyword("filter"), symbol("json"),
+            options=(keyword("env"), symbol("prod"),
                      keyword("retries"), 3)))
         self.assertEqual(result, expected)
 
@@ -156,15 +156,15 @@ class TestFenceRead(IsolatedAsyncioTestCase):
 
     async def test_fence_unterminated(self):
         with self.assertRaises(ReaderEOF):
-            parse_source('```json\n{"a": 1}\n')
+            parse_source('```bash\necho hi\n')
 
     async def test_fence_eof_after_name(self):
         with self.assertRaises(ReaderEOF):
-            parse_source("```json")
+            parse_source("```bash")
 
     async def test_fence_option_missing_value(self):
         with self.assertRaises(ReaderSyntaxError):
-            parse_source("```bash filter:\necho hi\n```\n")
+            parse_source("```bash env:\necho hi\n```\n")
 
     async def test_fence_option_not_keyword(self):
         with self.assertRaises(ReaderSyntaxError):
@@ -172,7 +172,7 @@ class TestFenceRead(IsolatedAsyncioTestCase):
 
     async def test_fence_option_multiline_value(self):
         with self.assertRaises(ReaderSyntaxError):
-            parse_source("```bash filter: (a\nb)\necho hi\n```\n")
+            parse_source("```bash env: (a\nb)\necho hi\n```\n")
 
     async def test_quasiquote_unaffected(self):
         result = parse_source("`foo")
@@ -198,7 +198,7 @@ class TestFenceLayoutRead(IsolatedAsyncioTestCase):
 
     async def test_define_script_example(self):
         src = (
-            "define script ```bash filter: json\n"
+            "define script ```bash\n"
             "cd foo/bar/baz\n"
             "curl -s https://example.org/\n"
             "```\n"
@@ -211,8 +211,7 @@ class TestFenceLayoutRead(IsolatedAsyncioTestCase):
             symbol("define"), symbol("script"),
             fence_form(
                 "bash", "cd foo/bar/baz\ncurl -s https://example.org/\n",
-                line=2,
-                options=(keyword("filter"), symbol("json")))))
+                line=2)))
         self.assertEqual(forms[0], expected)
 
         self.assertEqual(forms[1], pycons((symbol("script"),)))
@@ -275,7 +274,7 @@ class TestFencePragma(IsolatedAsyncioTestCase):
 
     async def test_default_pragma_enables_fences(self):
         reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY))
-        stream = source_str("```json\n{}\n```\n", "<unittest>")
+        stream = source_str("```bash\necho hi\n```\n", "<unittest>")
         result = reader.read(stream)
         head, _tail = result
         self.assertIs(head, symbol("compile/apply-fence"))
@@ -293,7 +292,7 @@ class TestFencePragma(IsolatedAsyncioTestCase):
         reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY), pragma)
 
         reader.reload_pragma(ModulePragma())
-        stream = source_str("```json\n{}\n```\n", "<unittest>")
+        stream = source_str("```bash\necho hi\n```\n", "<unittest>")
         result = reader.read(stream)
         head, _tail = result
         self.assertIs(head, symbol("compile/apply-fence"))
@@ -306,7 +305,7 @@ class TestFencePragma(IsolatedAsyncioTestCase):
         self.assertEqual(result, self.TRIPLE_QQ)
 
         reader.fences_enabled = True
-        stream = source_str("```json\n{}\n```\n", "<unittest>")
+        stream = source_str("```bash\necho hi\n```\n", "<unittest>")
         result = reader.read(stream)
         head, _tail = result
         self.assertIs(head, symbol("compile/apply-fence"))

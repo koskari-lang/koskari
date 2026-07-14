@@ -24,32 +24,24 @@ the handler returns ordinary Koskari source, which is compiled in place
 of the fence.
 
 Fence expansions are self-contained: they reference only universal
-builtins (fence/json lowers to the #dict / #list builders, fence/bash
-to run-process), never pre-existing helper bindings in the compiling
-module's namespace.
+builtins (fence/bash lowers to run-process), never pre-existing helper
+bindings in the compiling module's namespace.
 
-Handlers register via ``koskari.bootstrap.builtin``.
+The built-in fence handlers are defined in koskari, in
+``koskari/bootstrap/_fences.ki``, via the ``define-fence`` syntax.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-from .helpers import (FenceHandler, fence, find_fence, meta_plist_to_dict,
-                      meta_position, opener_position)
-from .json_ import fence_json
+from .helpers import FenceHandler, find_fence, meta_plist_to_dict
 
 
 __all__ = (
-    "fence",
     "FenceHandler",
-
     "find_fence",
     "meta_plist_to_dict",
-    "meta_position",
-    "opener_position",
-
-    "fence_json",
 )
 
 

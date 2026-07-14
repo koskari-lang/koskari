@@ -19,11 +19,20 @@ define-fence fence/bash [raw meta]:
         define names (.join " " (sorted options))
         raise (FenceError f"fence/bash got unknown options: {names}")
 
-    if (is? exec_now True):
-        `(run-process "bash" "-c" ,raw)
-    else:
-        `function <fence/bash> [*: args]:
-            run-process "bash" "-c" ,raw "bash-fence" *: args
+    ;; meta and options are source forms, so we look for an explicit
+    ;; literal True value -- any other symbol would still be truthy, which
+    ;; is not what we want.
+    switch exec_now:
+        case [True]:
+            `(run-process "bash" "-c" ,raw)
+
+        case [False]:
+            `function <fence/bash> [*: args]:
+                set! args (map str args)
+                run-process "bash" "-c" ,raw "bash-fence" *: args
+
+        else:
+            raise (FenceError f"fence/bash got unknown exec_now: {exec_now}")
 
 
 ;; The end.

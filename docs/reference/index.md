@@ -26,6 +26,7 @@ error-codes
 
 specials/index
 layouts/index
+fences/index
 macros/index
 ```
 

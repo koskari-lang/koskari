@@ -5,8 +5,9 @@
 triple-backtick fence reader syntax rather than written by hand.
 
 **Use-case:** Compile-time expansion of a fenced foreign literal. A fence
-captures raw source in a declared foreign format (JSON, a bash script, ...)
-and lowers it into ordinary Koskari source before compilation continues.
+captures raw source in a declared foreign format — a bash script, and in
+principle any notation awkward to write as s-expressions — and lowers it
+into ordinary Koskari source before compilation continues.
 
 **Reader shorthand:**
 
@@ -59,18 +60,12 @@ therefore define its own fence by binding a two-argument function to
 suspending Koskari handler raises `KoskariSyncViolation`.
 
 **Errors:** `SpecialError` for malformed `apply-fence` forms, unknown
-fences, and handlers returning non-source; `FenceError` (positioned into
-the fence body where possible) for foreign-source parse errors and invalid
-fence options.
+fences, and handlers returning non-source; `FenceError` for invalid fence
+options and foreign-source parse errors. A handler may attach a source
+position (see the `line`/`col` entries in `META-DICT`) so its `FenceError`
+points into the fence body.
 
 **Built-in fences:**
-
-- `fence/json` — extended JSON. Standard JSON lowered to `#dict` / `#list`
-  builder source, with one narrow extension: a bare identifier in value
-  position lowers to an ordinary Koskari name reference. Object keys remain
-  quoted strings; `true`, `false`, and `null` always mean the JSON
-  literals. No expressions, interpolation, or dotted member access. Accepts
-  no options.
 
 - `fence/bash` — bash script capture, built on the `run-process`
   builtin. By default the fence evaluates to an async **callable**:
@@ -92,10 +87,11 @@ fence options.
   the result on success, so strict-and-parsed chains as
   `(.json (.raise_for_status (script)))`.
 
-Fence expansions are self-contained: they reference only universal
-builtins — `fence/json` lowers to the `#dict` / `#list` builders,
-`fence/bash` to `run-process` — so a fence works without any
-pre-existing helper bindings in the surrounding module's namespace.
+Built-in fences are defined in Koskari (`koskari/bootstrap/_fences.ki`,
+via the `define-fence` syntax). Fence expansions are self-contained:
+they reference only universal builtins (`fence/bash` lowers to
+`run-process`), so a fence works without any pre-existing helper
+bindings in the surrounding module's namespace.
 
 **Trust model:** fence handlers are compile-time plugins; compiling a
 module that uses a custom fence executes that fence's handler, exactly as
@@ -103,28 +99,33 @@ with other compile-time extensibility mechanisms.
 
 **Examples:**
 
-````text
-;; JSON literal with a name reference in value position
-define config ```json
-{ "host": server-host, "port": 8080, "tls": true }
-```
+Positional arguments passed to the callable become the script's `$1`,
+`$2`, ... (and so `$@`), each coerced to a string; the call returns a
+`ProcessResult` whose `text` is the decoded stdout:
 
-;; a runnable script value; each (report) launches the subprocess and
-;; yields a ProcessResult
+````text
+>>> define rev ```bash
+... echo -n "$@" | rev
+... ```
+>>> define ohai (rev "Hello" 123 "World")
+>>> ohai
+<ProcessResult 'bash' returncode=0>
+>>> ohai.text
+"dlroW 321 olleH"
+````
+
+A script that returns JSON, parsed and status-checked in one chain; and
+`immediate: True`, which runs the script where the fence sits so the fence
+expression evaluates directly to the result:
+
+````text
+;; each (report) launches the subprocess and yields a ProcessResult
 define report ```bash
 curl -s https://example.org/api/summary/
 ```
 define summary (.json (.raise_for_status (report)))
 
-;; positional arguments become $1, $2, ...
-define greet ```bash
-echo "hello, $1"
-```
-define greeting (greet "world")
-greeting.text                   ; "hello, world\n"
-
-;; immediate: True runs the script where the fence sits; the fence
-;; expression evaluates directly to the ProcessResult
+;; immediate: True — no callable; the fence is the ProcessResult
 define lookup ```bash immediate: True
 hostname -f
 ```

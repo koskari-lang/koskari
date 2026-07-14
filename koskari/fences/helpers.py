@@ -39,26 +39,6 @@ class FenceHandler:
         self.read = read_fn
 
 
-def fence(name):
-    """
-    Decorator that wraps a fence handler function in ``FenceHandler``.
-
-    The handler must have signature (raw, meta) and return a Koskari
-    source form. ``raw`` is the captured fence body text; ``meta`` is a
-    dict with ``name``, ``filename``, ``line``, ``col``, and ``options``
-    entries.
-    """
-
-    def decorator(fn):
-        handler = FenceHandler(name, fn)
-        doc = fn.__doc__
-        if doc:
-            handler.__doc__ = doc
-        return handler
-
-    return decorator
-
-
 def find_fence(ns, name):
     """
     Resolve fence/<name> in the module namespace
@@ -145,37 +125,6 @@ def meta_plist_to_dict(meta, name=None, filename=None):
             result[key] = value
 
     return result
-
-
-def meta_position(meta, line=1, col=0):
-    """
-    Map a payload-relative position through fence META to source terms
-
-    :param meta: metadata dict from :func:`meta_plist_to_dict`
-    :param line: 1-based line within the fence payload
-    :param col: 0-based column within the dedented payload line
-    :return: absolute (line, col) tuple, or None when META has no origin
-    """
-
-    base_line = meta.get("line")
-    if base_line is None:
-        return None
-    base_col = meta.get("col") or 0
-    return (base_line + line - 1, base_col + col)
-
-
-def opener_position(meta):
-    """
-    Best-effort position of the fence opener line from fence META
-
-    :param meta: metadata dict from :func:`meta_plist_to_dict`
-    :return: absolute (line, col) tuple, or None when META has no origin
-    """
-
-    base_line = meta.get("line")
-    if base_line is None:
-        return None
-    return (base_line - 1, 0)
 
 
 # The end.
