@@ -227,23 +227,14 @@ static KosOpResult apply_native_handler(
 }
 
 
-static KosOpResult kos_install_apply(
+/** Shared apply install: fn/arglist/kwds already extracted (borrowed). */
+static KosOpResult kos_apply_install_core(
     KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
+    PyObject *fn,
+    PyObject *arglist,
+    PyObject *kwds,
     int tail_call) {
 
-  (void) callable;
-  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-  if (n < 1 || n > 3) {
-    PyErr_SetString(PyExc_TypeError, "apply expects 1, 2, or 3 arguments");
-    return EVAL_RAISE();
-  }
-
-  PyObject *fn = PyTuple_GET_ITEM(args_tuple, 0);
-  PyObject *arglist = (n >= 2) ? PyTuple_GET_ITEM(args_tuple, 1) : NULL;
-  PyObject *kwds = (n >= 3) ? PyTuple_GET_ITEM(args_tuple, 2) : NULL;
   PyObject *seq_args = NULL;
 
   if (kos_apply_build_args_tuple(arglist, &seq_args) < 0)
@@ -287,6 +278,54 @@ static KosOpResult kos_install_apply(
 }
 
 
+static KosOpResult kos_install_apply(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call) {
+
+  (void) callable;
+  (void) kwds_dict;
+  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
+  if (n < 1 || n > 3) {
+    PyErr_SetString(PyExc_TypeError, "apply expects 1, 2, or 3 arguments");
+    return EVAL_RAISE();
+  }
+
+  return kos_apply_install_core(
+      es,
+      PyTuple_GET_ITEM(args_tuple, 0),
+      (n >= 2) ? PyTuple_GET_ITEM(args_tuple, 1) : NULL,
+      (n >= 3) ? PyTuple_GET_ITEM(args_tuple, 2) : NULL,
+      tail_call);
+}
+
+
+static KosOpResult kos_vinstall_apply(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  (void) callable;
+  (void) kwnames;  /* mirrored from the tuple install, which ignores kwds */
+  if (nargs < 1 || nargs > 3) {
+    PyErr_SetString(PyExc_TypeError, "apply expects 1, 2, or 3 arguments");
+    return EVAL_RAISE();
+  }
+
+  return kos_apply_install_core(
+      es,
+      args[0],
+      (nargs >= 2) ? args[1] : NULL,
+      (nargs >= 3) ? args[2] : NULL,
+      tail_call);
+}
+
+
 static PyObject *apply_call(
     PyObject *self,
     PyObject *args,
@@ -321,7 +360,7 @@ static KosCallableTypeObject KosApplyType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_apply,
-  .tp_kos_vinstall = NULL,
+  .tp_kos_vinstall = kos_vinstall_apply,
   .tp_kos_wants_frame = 1,
   .tp_kos_wants_frame_fn = NULL,
 };

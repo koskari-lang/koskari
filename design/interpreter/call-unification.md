@@ -323,17 +323,21 @@ today).  Gate: reset/shift + finally-return reproducers, tail tests,
 full containers.  Payoff multiplies under the future tail-promotion
 bytecode pass.
 
-### C2. Finish the vector installs: demand, partial, apply
+### C2. Finish the vector installs: demand, partial, apply [DONE for
+demand and apply; partial kept by design]
 
-Closes the Phase 2 "narrowed, not deleted" fallback.  Give the three
-remaining install-only callables `tp_kos_vinstall` implementations
-(partial has real shape -- it re-dispatches with merged args; demand
-and apply are thin), then delete `vcall_build_args_tuple` /
-`vcall_build_kwds_dict` and (optionally) the tuple `tp_kos_install`
-slot itself: the `KosEvalState_CallArgs` path can feed vector installs
-via `PyTuple` ITEMS for positionals plus a cold kwds-dict ->
-kwnames+values marshal.  Cold paths; tidiness and one less marshalling
-layer, not speed.
+Outcome: `apply` gained a vector install (trivial extraction; both
+slots share `kos_apply_install_core`; note the tuple install always
+ignored its kwds param, mirrored).  `demand` gained a vector install
+whose flattenable branch delegates via `KosCallable_Call` -- the inner
+KosFunction now gets the vector AND simple-call prep -- with tuple/dict
+built only on the cold `demand_sync_ex` fallback.  **partial keeps the
+tuple fallback deliberately**: its merge machinery
+(`kospartial_merge_args`/`_merge_kwds`) is tuple-native end to end, so
+a vinstall would relocate the tuple build, not remove it; the
+`KosCallable_Call` fallback and `vcall_build_*` helpers stay for
+partial alone.  Revisit only if partial calls get hot enough to justify
+a vector-native merge.
 
 ### C3. Regenerate dispatch-sizing.md
 

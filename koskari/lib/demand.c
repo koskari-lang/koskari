@@ -834,6 +834,81 @@ static KosOpResult demand_kos_install(
 }
 
 
+static KosOpResult demand_kos_vinstall(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  KosDemandObject *d = (KosDemandObject *) callable;
+  PyObject *inner = d->wrapped;
+
+  if (! inner) {
+    PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+    return EVAL_RAISE();
+  }
+
+  if (demand_inner_is_flattenable(inner)) {
+    /* Install inner directly into the frame prepared by do_frame_prep
+       -- on the vector path, so the inner KosFunction gets its vector
+       (and simple-call) prep.  Then mark the frame as the demand root
+       so in-eval deny guards fire. */
+    KosOpResult r = KosCallable_Call(es, inner, args, nargs, kwnames,
+                                     tail_call);
+    if (r.kind == KOS_RES_NORMAL) {
+      KosDynFrame *frame = KosEvalState_FRAME(es);
+      if (frame)
+        KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
+    }
+    return r;
+  }
+
+  /* Cold fallback: demand_sync_ex needs the tuple + dict shapes. */
+  {
+    Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+    PyObject *tup = PyTuple_New(nargs);
+    PyObject *kwargs = NULL;
+    PyObject *result = NULL;
+    int sr;
+
+    if (! tup)
+      return EVAL_RAISE();
+    for (Py_ssize_t i = 0; i < nargs; i++) {
+      PyObject *v = args[i];
+      Py_INCREF(v);
+      PyTuple_SET_ITEM(tup, i, v);
+    }
+    if (nkw) {
+      kwargs = PyDict_New();
+      if (! kwargs) {
+        Py_DECREF(tup);
+        return EVAL_RAISE();
+      }
+      for (Py_ssize_t i = 0; i < nkw; i++) {
+        if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
+                           args[nargs + i]) < 0) {
+          Py_DECREF(tup);
+          Py_DECREF(kwargs);
+          return EVAL_RAISE();
+        }
+      }
+    }
+
+    sr = demand_sync_ex(inner, tup, kwargs, &result);
+    Py_DECREF(tup);
+    Py_XDECREF(kwargs);
+    if (sr < 0)
+      return EVAL_RAISE();
+
+    if (KosEvalState_StackPUSH(es, result) < 0)
+      return EVAL_RAISE();
+    return EVAL_NORMAL();
+  }
+}
+
+
 KosCallableTypeObject KosDemandCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -856,7 +931,7 @@ KosCallableTypeObject KosDemandCallableType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = demand_kos_install,
-  .tp_kos_vinstall = NULL,
+  .tp_kos_vinstall = demand_kos_vinstall,
   .tp_kos_wants_frame = 0,
   .tp_kos_wants_frame_fn = demand_wants_frame,
 };
