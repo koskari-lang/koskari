@@ -60,6 +60,19 @@ evaluates to Python objects.
 >
 > Evaluation produces normal Python tuple and dict values.
 
+> **Q:** Spread an existing sequence into a literal (Python `[*xs, 1]`)?
+>
+> **A:** Use **`*:`** inside the literal; the sequence's items are spliced in
+> place:
+>
+> ```koskari
+> #[*: xs 1 2]      ; xs items, then 1 and 2
+> #(1 *: xs)        ; 1, then xs items
+> ```
+>
+> Any iterable works, and the result is always a fresh list or tuple — the
+> spread source is never aliased.
+
 > **Q:** Linked lists?
 >
 > **A:** Often built with **`cons`** for macro and list-processing code:

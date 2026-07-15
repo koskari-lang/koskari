@@ -14,39 +14,33 @@
 */
 
 /**
-   BUILD_LIST_APPEND: stack [..., list, value] with value on TOS.
-   Append value to list in place; pop value; leave list on stack.
+   BUILD_LIST_APPEND: arg = count of values.
+   Stack [..., list, v_0, ..., v_{n-1}] with the values on top of the list.
+   Append the n values to list in place; pop them; leave list on stack.
    TypeError when the list slot is not a list.
 */
 
 KOS_OP_HANDLER(BUILD_LIST_APPEND) {
+  unsigned opa = KosOp_ARG(insn);
+  size_t count = (size_t) opa;
 
-  PyObject *value = KosEvalState_StackPopRef(es);
-  if (unlikely(! value))
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count + 1);
+  if (unlikely(! ptr))
     return EVAL_RAISE();
 
-  {
-    PyObject *const *ptr = KosEvalState_StackTailPtr(es, 1);
-    if (unlikely(! ptr)) {
-      Py_DECREF(value);
-      return EVAL_RAISE();
-    }
-
-    PyObject *list = ptr[0];
-    if (unlikely(! PyList_Check(list))) {
-      Py_DECREF(value);
-      PyErr_Format(PyExc_TypeError,
-                   "BUILD_LIST_APPEND requires list, not %R", list);
-      return EVAL_RAISE();
-    }
-
-    if (unlikely(PyList_Append(list, value) < 0)) {
-      Py_DECREF(value);
-      return EVAL_RAISE();
-    }
+  PyObject *list = ptr[0];
+  if (unlikely(! PyList_Check(list))) {
+    PyErr_Format(PyExc_TypeError,
+                 "BUILD_LIST_APPEND requires list, not %R", list);
+    return EVAL_RAISE();
   }
 
-  Py_DECREF(value);
+  for (size_t i = 0; i < count; i++) {
+    if (unlikely(PyList_Append(list, ptr[i + 1]) < 0))
+      return EVAL_RAISE();
+  }
+
+  KosEvalState_StackDropNoErr(es, count);
   return EVAL_NORMAL();
 }
 

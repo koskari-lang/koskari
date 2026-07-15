@@ -30,7 +30,7 @@ from ..matcher import (BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
                        REST, SYMBOL, USING, USING_UNPACK, VALUE,
                        HygienicMatchCompiler, Pattern, frame_formal_name)
 from ..types import is_nil, is_keyword, is_pair, is_proper, is_symbol, unpack
-from .compiler import ByteCodeFragment
+from .compiler import ByteCodeFragment, _is_const
 
 
 __all__ = (
@@ -594,6 +594,73 @@ def const_only_expr(fragment):
             return (False, None)
 
     return (found, value)
+
+
+def call_form_reroute(called_by, body):
+    """
+    Rewrite a variadic builder into its ``(compile/call CALLED_BY . BODY)``
+    form so the ``call`` special assembles keyword / double-splat arguments.
+    """
+
+    return cons(_SYM_COMPILE_CALL, called_by, body)
+
+
+def partition_collection_runs(compiler, args_seq):
+    """
+    Group the positional / splat arguments of a collection literal into
+    contiguous runs. ``args_seq`` is the positional half of a
+    :func:`gather_parameters` result: each entry is ``("*", expr)`` for a
+    ``*:`` splat or ``(index, expr)`` for a plain element. Yields chunks in
+    source order:
+
+      ("const", (v0, v1, ...))       -- a run of poolable constant values,
+                                        already merged into one tuple
+      ("expr", [frag0, frag1, ...])  -- a run of dynamic-expression
+                                        fragments, each leaving one value
+      ("splat", frag)                -- a *: segment whose fragment leaves one
+                                        iterable on the stack
+
+    An element is treated as constant only when it compiles to a single
+    CONST whose value is valid constant-pool material (:func:`_is_const`);
+    this excludes bare symbols (which compile to variable loads) while
+    folding literals and quoted constants. Adjacent constants merge into one
+    tuple; adjacent plain expressions gather into one list; a splat always
+    stands alone.
+    """
+
+    chunks = []
+    const_run = []
+    expr_run = []
+
+    def flush_const():
+        if const_run:
+            chunks.append(("const", tuple(const_run)))
+            const_run.clear()
+
+    def flush_expr():
+        if expr_run:
+            chunks.append(("expr", list(expr_run)))
+            expr_run.clear()
+
+    for kind, element in args_seq:
+        if kind == "*":
+            flush_const()
+            flush_expr()
+            chunks.append(("splat", compiler.full_compile(element, False)))
+            continue
+
+        frag = compiler.full_compile(element, False)
+        found, value = const_only_expr(frag)
+        if found and _is_const(value):
+            flush_expr()
+            const_run.append(value)
+        else:
+            flush_const()
+            expr_run.append(frag)
+
+    flush_const()
+    flush_expr()
+    return chunks
 
 
 def requote(

@@ -94,9 +94,9 @@ quick.py insert [--file <path>] [--shard <name>] [--dry-run]
 
 - `--dry-run` validates without writing — use it while iterating.
 - `--shard <name>` picks the target shard (recommended). When omitted, the
-  shard is inferred from the record's category tag, routing `stability: invalid`
-  / `error` entries to the `*-invalid` shard. If inference fails it tells you to
-  pass `--shard`.
+  shard is inferred from the record's category tag, routing records that carry a
+  `verify.invalid` or `verify.error` stage to the `*-invalid` shard. If inference
+  fails it tells you to pass `--shard`.
 - Output is `OK <id> (...)` on success or `FAIL <id> <reason>` (non-zero exit)
   on rejection. Always check it; on `FAIL`, fix the entry and retry.
 
@@ -156,8 +156,11 @@ macro ([design/MACROS.md](../../design/MACROS.md)), aim for at least:
 2. **Variant** — different argument count, nested form, or edge case.
 3. **Block/layout** — where a layout handler exists (verify the read stage; tag
    `surface:block`).
-4. **Invalid** — an intentionally wrong form, `stability: invalid`, with
-   `notes: corrective: <fix>`.
+4. **Invalid** — an intentionally wrong form. Keep `stability: evolving`, mark
+   the failure with `verify.invalid: <why it's wrong>` (runtime/eval failure or
+   semantic gotcha) or `verify.error: <ExceptionType: message>` (read/compile-time
+   failure), add the `invalid` tag, and give `notes: corrective: <fix>`. There is
+   no `invalid` stability value — the schema rejects it.
 
 Priority order (highest training value first):
 
@@ -180,17 +183,27 @@ verify:
   read:   "<reader output — omit if not testing read stage>"
   expand: "<macro-expanded form — omit if not testing expand stage>"
   eval:   "<eval result string>"
+  # For a wrong form, use ONE of these instead of eval:
+  #   error:   "<ExceptionType: message>"  — read/compile-time failure (asserted)
+  #   invalid: "<prose: why it's wrong>"   — runtime (eval) failure or semantic
+  #                                          gotcha; not run, so also keep a
+  #                                          verify.read to pin the parse
 references:
   - reference/specials/compile-<name>.md   # flatten the feature path with a
                                            # dash, e.g. special/compile/cond ->
                                            # reference/specials/compile-cond.md
-stability: evolving                # stable only for forms whose output is
-                                   # extremely unlikely to change; invalid for
-                                   # corrective entries
+stability: evolving                # one of stable | evolving | experimental
+                                   # (there is NO "invalid" stability — mark a
+                                   # wrong form with verify.invalid / verify.error
+                                   # and the `invalid` tag instead). stable only
+                                   # for forms whose output is extremely unlikely
+                                   # to change.
 tags:
   - <category>
   - <feature-slug>
   - surface:block                  # if testing layout syntax
+  - invalid                        # if a wrong form (with surprising for a
+                                   # form that reads/evals but misleads)
   - <intent>                       # goal word(s) from the closed intent
                                    # vocabulary in SCHEMA.md, e.g. cleanup,
                                    # catch, loop, mutate, branch, define-type

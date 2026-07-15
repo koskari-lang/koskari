@@ -2241,6 +2241,62 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ---
 
+### KOS_OP_BUILD_LIST
+
+- **Style**: COUNT. Arg = number of elements.
+- **Status**: Implemented. (`koskari/lib/opcode/BUILD_LIST.c`)
+- **Stack**: `[..., v_0, ..., v_{n-1}] → [..., list]`. Pop n elements into a new list and push it. Empty (arg 0) pushes `[]`.
+- **Compiler form:** `compile/#list` for a leading/all dynamic run (`collections.py`).
+
+### KOS_OP_BUILD_LIST_CONST
+
+- **Style**: CONST. Arg = constant pool index of a sequence (typically a pooled constant tuple).
+- **Status**: Implemented. (`koskari/lib/opcode/BUILD_LIST_CONST.c`)
+- **Stack**: `[...] → [..., list]`. Build a **fresh** list from the pooled sequence (`PySequence_List`) and push it; each eval mints a new list, never aliasing the immutable pool value.
+- **Compiler form:** `compile/#list` all-constant body, or the seed of a list whose first run is constant.
+
+### KOS_OP_VAR_LIST_APPEND
+
+- **Style**: VAR. Arg = variable name (may lower to FAST_LIST_APPEND).
+- **Status**: Implemented. (`koskari/lib/opcode/VAR_LIST_APPEND.c`)
+- **Stack**: `[..., value] → [...]`. Append TOS to the list bound to the named variable, in place. Used by `compile/#list-append` on a symbol binding.
+
+### KOS_OP_FAST_LIST_APPEND
+
+- **Style**: FASTVAR. Arg = frame slot index.
+- **Status**: Implemented. (`koskari/lib/opcode/FAST_LIST_APPEND.c`)
+- **Stack**: `[..., value] → [...]`. Fast-slot form of VAR_LIST_APPEND.
+
+### KOS_OP_BUILD_LIST_APPEND
+
+- **Style**: COUNT. Arg = number of values to append.
+- **Status**: Implemented. (`koskari/lib/opcode/BUILD_LIST_APPEND.c`)
+- **Stack**: `[..., list, v_0, ..., v_{n-1}] → [..., list]`. Append the top n values to the list at depth n, in place; pop the values; leave the list. TypeError when the list slot is not a list. (Widened from the former NOARG append-one; `compile/#list-append` on a list expression emits count 1.)
+- **Compiler form:** `compile/#list` dynamic tail run of k; `compile/#list-append` list-expression path (count 1).
+
+### KOS_OP_BUILD_LIST_APPEND_CONST
+
+- **Style**: CONST. Arg = constant pool index of a single value.
+- **Status**: Implemented. (`koskari/lib/opcode/BUILD_LIST_APPEND_CONST.c`)
+- **Stack**: `[..., list] → [..., list]`. Append the pooled value to the TOS list in place. TypeError when TOS is not a list.
+- **Compiler form:** `compile/#list` tail constant run of length 1.
+
+### KOS_OP_BUILD_LIST_EXTEND
+
+- **Style**: NOARG.
+- **Status**: Implemented. (`koskari/lib/opcode/BUILD_LIST_EXTEND.c`)
+- **Stack**: `[..., list, iterable] → [..., list]`. Extend the list in place from the TOS iterable (`PySequence_InPlaceConcat`, so any iterable the list API accepts); pop the iterable; leave the list. TypeError when the list slot is not a list.
+- **Compiler form:** `compile/#list` `*:` splat segment.
+
+### KOS_OP_BUILD_LIST_EXTEND_CONST
+
+- **Style**: CONST. Arg = constant pool index of a sequence (typically a pooled constant tuple).
+- **Status**: Implemented. (`koskari/lib/opcode/BUILD_LIST_EXTEND_CONST.c`)
+- **Stack**: `[..., list] → [..., list]`. Extend the TOS list in place from the pooled sequence (tuple fast path, general-iterable fallback). TypeError when TOS is not a list.
+- **Compiler form:** `compile/#list` tail constant run of length ≥ 2.
+
+---
+
 ### KOS_OP_BUILD_FUNCTION
 
 - **Style**: EXTRA (`CONST`, `CONST`, `NOARG`, `NOARG`). Instruction arg =
