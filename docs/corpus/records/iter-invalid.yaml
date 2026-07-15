@@ -55,3 +55,64 @@ tags:
   - loop
   - pitfall
 notes: "corrective: (for-each [x seq] x); await wrapping is unnecessary and misleading"
+---
+id: iter-list-splat-vs-element-invalid-001
+feature: "reader/#list"
+source: |-
+  (#list seq)
+  
+verify:
+  read: "(#list seq)"
+  invalid: "agent mistake: (#list seq) builds a one-element list whose single element is seq itself (here [(1, 2, 3)]), not a list of seq's items. To splice an existing sequence's elements into a list literal, prefix it with *: as in (#list *: seq) or #[*: seq]. The same applies to #(...) tuples."
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - literal
+  - invalid
+  - surprising
+  - pitfall
+  - construct
+notes: "corrective: (#list *: seq)"
+---
+id: iter-list-builtin-miscall-invalid-001
+feature: builtin/list
+source: |-
+  (list 1 2 3)
+  
+verify:
+  read: (list 1 2 3)
+  invalid: "agent mistake: (list 1 2 3) calls the Python `list` builtin, which is a one-argument conversion — list(iterable) — so three arguments raise TypeError: list expected at most 1 argument, got 3. `list` is not the list-literal constructor. To build a list of several elements use the literal form #[1 2 3] or (#list 1 2 3). (list X) is valid only to convert a single iterable X into a list."
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - literal
+  - invalid
+  - pitfall
+  - construct
+notes: "corrective: #[1 2 3] or (#list 1 2 3)"
+---
+id: iter-tuple-builtin-miscall-invalid-001
+feature: builtin/tuple
+source: |-
+  (tuple 1 2 3)
+  
+verify:
+  read: (tuple 1 2 3)
+  invalid: "agent mistake: (tuple 1 2 3) calls the Python `tuple` builtin, which is a one-argument conversion — tuple(iterable) — so three arguments raise TypeError: tuple expected at most 1 argument, got 3. `tuple` is not the tuple-literal constructor. To build a tuple of several elements use the literal form #(1 2 3) or (#tuple 1 2 3). (tuple X) is valid only to convert a single iterable X into a tuple."
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - literal
+  - invalid
+  - pitfall
+  - construct
+notes: "corrective: #(1 2 3) or (#tuple 1 2 3)"

@@ -1124,3 +1124,193 @@ tags:
   - iterate
   - loop
 notes: the for-each else body is skipped when the loop exits via break; here break fires at x==2, so else does not run and the form yields None. seq=(1,2,3) fixture.
+---
+id: iter-list-splat-trailing-001
+feature: "reader/#list"
+source: |-
+  #[1 2 *: seq]
+  
+verify:
+  read: "(#list 1 2 *: seq)"
+  expand: "(#list 1 2 *: seq)"
+  eval: "list:[1,2,1,2,3]"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+  - construct
+  - idiom
+notes: "*: splices seq's items into the list literal after the leading elements (fixture seq=(1,2,3))"
+---
+id: iter-list-splat-leading-001
+feature: "reader/#list"
+source: |-
+  #[*: seq 4]
+  
+verify:
+  read: "(#list *: seq 4)"
+  expand: "(#list *: seq 4)"
+  eval: "list:[1,2,3,4]"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+  - construct
+  - idiom
+notes: "leading *: splice, then trailing elements (fixture seq=(1,2,3))"
+---
+id: special-list-splat-copy-001
+feature: "special/compile/#list"
+source: |-
+  (#list *: seq)
+  
+verify:
+  read: "(#list *: seq)"
+  expand: "(#list *: seq)"
+  eval: "list:[1,2,3]"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - special
+  - literal
+  - "surface:sexpr"
+  - construct
+  - idiom
+notes: "a lone *: splat copies seq into a fresh list; the source is never aliased (fixture seq=(1,2,3))"
+---
+id: iter-list-dynamic-element-001
+feature: "reader/#list"
+source: |-
+  #[1 z 3]
+  
+verify:
+  read: "(#list 1 z 3)"
+  expand: "(#list 1 z 3)"
+  eval: "list:[1,1,3]"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+  - construct
+notes: list literal with a mix of constant and variable elements (fixture z=1)
+---
+id: iter-tuple-splat-mid-001
+feature: "reader/#tuple"
+source: |-
+  #(1 *: seq)
+  
+verify:
+  read: "(#tuple 1 *: seq)"
+  expand: "(#tuple 1 *: seq)"
+  eval: "tuple:(1,1,2,3)"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+  - construct
+  - idiom
+notes: "*: splices seq's items into the tuple literal (fixture seq=(1,2,3))"
+---
+id: special-tuple-splat-copy-001
+feature: "special/compile/#tuple"
+source: |-
+  (#tuple *: seq)
+  
+verify:
+  read: "(#tuple *: seq)"
+  expand: "(#tuple *: seq)"
+  eval: "tuple:(1,2,3)"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - special
+  - literal
+  - "surface:sexpr"
+  - construct
+  - idiom
+notes: "a lone *: splat coerces any iterable into a fresh tuple (fixture seq=(1,2,3))"
+---
+id: iter-tuple-dynamic-element-001
+feature: "reader/#tuple"
+source: |-
+  #(1 z 3)
+  
+verify:
+  read: "(#tuple 1 z 3)"
+  expand: "(#tuple 1 z 3)"
+  eval: "tuple:(1,1,3)"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - "surface:sexpr"
+  - construct
+notes: tuple literal with a mix of constant and variable elements (fixture z=1)
+---
+id: iter-list-builtin-convert-001
+feature: builtin/list
+source: |-
+  (list seq)
+  
+verify:
+  read: (list seq)
+  expand: (list seq)
+  eval: "list:[1,2,3]"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - construct
+  - idiom
+notes: "the `list` builtin converts one iterable into a list; contrast (#list seq) which wraps seq as a single element, and #[a b c] which builds a multi-element literal (fixture seq=(1,2,3))"
+---
+id: iter-tuple-builtin-convert-001
+feature: builtin/tuple
+source: |-
+  (tuple seq)
+  
+verify:
+  read: (tuple seq)
+  expand: (tuple seq)
+  eval: "tuple:(1,2,3)"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - construct
+  - idiom
+notes: "the `tuple` builtin converts one iterable into a tuple; contrast (#tuple seq) which wraps seq as a single element, and #(a b c) which builds a multi-element literal (fixture seq=(1,2,3))"
