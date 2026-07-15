@@ -27,8 +27,8 @@ from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_nil, is_pair
-from ..helpers import (is_symbolish, partition_const_runs, splat_call_form,
-                       unpack)
+from ..helpers import (call_form_reroute, gather_parameters, is_symbolish,
+                       partition_collection_runs)
 
 
 _DEFAULT_LIST_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
@@ -47,28 +47,37 @@ def special_build_tuple(compiler, source, tc=False):
 
     called_by, body = source
 
-    call_form = splat_call_form(called_by, body)
-    if call_form is not None:
-        return call_form
-
     frag = compiler.fragment(called_by)
 
     if is_nil(body):
         frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 0)
         return frag
 
+    args_seq, kwds_seq = gather_parameters(body, source=body)
+    if kwds_seq:
+        # keyword / **: arguments cannot be assembled inline; defer to the
+        # runtime builtin via the call special
+        return call_form_reroute(called_by, body)
+
     frag.position_of(body)
-    chunks = partition_const_runs(compiler, unpack(body))
+    chunks = partition_collection_runs(compiler, args_seq)
 
     for kind, data in chunks:
         if kind == "const":
             frag.instruction(OpCode.KOS_OP_CONST, data)
+        elif kind == "splat":
+            frag.merge(data)
         else:
             for elem in data:
                 frag.merge(elem)
             frag.instruction(OpCode.KOS_OP_BUILD_ARGS, len(data))
 
-    if len(chunks) > 1:
+    # A lone splat leaves the raw iterable on the stack; COMBINE_ARGS coerces
+    # it to a fresh tuple. Multiple chunks always combine. A single const or
+    # expr chunk is already a tuple.
+    needs_combine = (len(chunks) > 1
+                     or (len(chunks) == 1 and chunks[0][0] == "splat"))
+    if needs_combine:
         frag.instruction(OpCode.KOS_OP_COMBINE_ARGS, len(chunks))
 
     return frag
@@ -90,23 +99,29 @@ def special_build_list(compiler, source, tc=False):
 
     called_by, body = source
 
-    call_form = splat_call_form(called_by, body)
-    if call_form is not None:
-        return call_form
-
     frag = compiler.fragment(called_by)
 
     if is_nil(body):
         frag.instruction(OpCode.KOS_OP_BUILD_LIST, 0)
         return frag
 
+    args_seq, kwds_seq = gather_parameters(body, source=body)
+    if kwds_seq:
+        # keyword / **: arguments cannot be assembled inline; defer to the
+        # runtime builtin via the call special
+        return call_form_reroute(called_by, body)
+
     frag.position_of(body)
-    chunks = partition_const_runs(compiler, unpack(body))
+    chunks = partition_collection_runs(compiler, args_seq)
 
     # Seed a fresh list from the first chunk.
     first_kind, first_data = chunks[0]
     if first_kind == "const":
         frag.instruction(OpCode.KOS_OP_BUILD_LIST_CONST, first_data)
+    elif first_kind == "splat":
+        frag.instruction(OpCode.KOS_OP_BUILD_LIST, 0)
+        frag.merge(first_data)
+        frag.instruction(OpCode.KOS_OP_BUILD_LIST_EXTEND, 0)
     else:
         for elem in first_data:
             frag.merge(elem)
@@ -119,6 +134,9 @@ def special_build_list(compiler, source, tc=False):
                 frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND_CONST, data[0])
             else:
                 frag.instruction(OpCode.KOS_OP_BUILD_LIST_EXTEND_CONST, data)
+        elif kind == "splat":
+            frag.merge(data)
+            frag.instruction(OpCode.KOS_OP_BUILD_LIST_EXTEND, 0)
         else:
             for elem in data:
                 frag.merge(elem)

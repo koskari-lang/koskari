@@ -105,6 +105,7 @@
 #include "opcode/FAST_LIST_APPEND.c"
 #include "opcode/BUILD_LIST_APPEND.c"
 #include "opcode/BUILD_LIST_APPEND_CONST.c"
+#include "opcode/BUILD_LIST_EXTEND.c"
 #include "opcode/BUILD_LIST_EXTEND_CONST.c"
 #include "opcode/BUILD_CLASS.c"
 #include "opcode/BUILD_FUNCTION.c"

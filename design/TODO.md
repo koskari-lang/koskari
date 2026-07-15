@@ -156,12 +156,14 @@ Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
 
 ### Const-run squashing for `#list` and `#tuple` — implemented
 
-Landed: `partition_const_runs` classifies collection elements via
+Landed: `partition_collection_runs` classifies collection elements via
 `const_only_expr`; `#tuple` folds constant runs to pooled tuples combined with
 `COMBINE_ARGS`, and `#list` seeds a fresh list (`BUILD_LIST_CONST` /
 `BUILD_LIST`) then accumulates in place (`BUILD_LIST_EXTEND_CONST`,
-`BUILD_LIST_APPEND_CONST`, count-widened `BUILD_LIST_APPEND`). `BUILD_LIST_JOIN`
-(join N runtime sequences) and collection splat are deferred to the splat work.
+`BUILD_LIST_APPEND_CONST`, count-widened `BUILD_LIST_APPEND`). `*:` splat
+compiles inline (`BUILD_LIST_EXTEND`, `COMBINE_ARGS`); keyword / `**:` forms
+still reroute to the runtime builtin. The once-proposed `BUILD_LIST_JOIN` was
+dropped -- the in-place accumulator covers splat.
 
 Ref: [language/const-collection-squashing.md](language/const-collection-squashing.md).
 

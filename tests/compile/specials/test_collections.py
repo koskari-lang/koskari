@@ -152,6 +152,86 @@ class TestBuildTupleSpecial(SpecialsTestCase):
         self.assertIn(OpCode.KOS_OP_COMBINE_ARGS, ops)
 
 
+class TestCollectionSplat(SpecialsTestCase):
+
+    async def test_list_trailing_splat_value(self):
+        expr, mod = self.compile_expr("(#list 1 2 3 *: a)", a=[4, 5])
+        self.assertEqual([1, 2, 3, 4, 5], await expr())
+
+
+    async def test_list_trailing_splat_emits_extend(self):
+        code = self.compile_to_code("(#list 1 2 3 *: a)", a=[4, 5])
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_CONST, ops)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_EXTEND, ops)
+        self.assertEqual([], self.call_ops(code))
+
+
+    async def test_list_leading_splat_value(self):
+        expr, mod = self.compile_expr("(#list *: a 4 5)", a=[1, 2])
+        self.assertEqual([1, 2, 4, 5], await expr())
+
+
+    async def test_list_only_splat_value(self):
+        expr, mod = self.compile_expr("(#list *: a)", a=(1, 2, 3))
+        self.assertEqual([1, 2, 3], await expr())
+
+
+    async def test_list_only_splat_is_fresh_copy(self):
+        # the result must be a new list, not the splatted source
+        src = "(#list *: a)"
+        source = [1, 2]
+        expr, mod = self.compile_expr(src, a=source)
+        result = await expr()
+        self.assertEqual([1, 2], result)
+        self.assertIsNot(result, source)
+        result.append(9)
+        self.assertEqual([1, 2], source)
+
+
+    async def test_list_splat_of_iterable(self):
+        expr, mod = self.compile_expr("(#list 0 *: a)", a=range(1, 4))
+        self.assertEqual([0, 1, 2, 3], await expr())
+
+
+    async def test_list_dynamic_then_splat(self):
+        expr, mod = self.compile_expr("(#list x *: a y)", x=1, a=[2, 3], y=4)
+        self.assertEqual([1, 2, 3, 4], await expr())
+        code = self.compile_to_code("(#list x *: a y)", x=1, a=[2, 3], y=4)
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST, ops)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_EXTEND, ops)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_APPEND, ops)
+
+
+    async def test_tuple_trailing_splat_value(self):
+        expr, mod = self.compile_expr("(#tuple 1 2 *: a)", a=[3, 4])
+        self.assertEqual((1, 2, 3, 4), await expr())
+
+
+    async def test_tuple_trailing_splat_emits_combine(self):
+        code = self.compile_to_code("(#tuple 1 2 *: a)", a=[3, 4])
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_COMBINE_ARGS, ops)
+        self.assertEqual([], self.call_ops(code))
+
+
+    async def test_tuple_only_splat_coerces_to_tuple(self):
+        expr, mod = self.compile_expr("(#tuple *: a)", a=[1, 2, 3])
+        result = await expr()
+        self.assertEqual((1, 2, 3), result)
+        self.assertIsInstance(result, tuple)
+        code = self.compile_to_code("(#tuple *: a)", a=[1, 2, 3])
+        self.assertIn(OpCode.KOS_OP_COMBINE_ARGS, _opcodes(code))
+
+
+    async def test_kwarg_form_reroutes_to_call(self):
+        # keyword arguments cannot build inline; the special defers to a
+        # runtime call of the builtin
+        code = self.compile_to_code("(#list key: 1)")
+        self.assertNotEqual([], self.call_ops(code))
+
+
 class TestListAppendSpecial(SpecialsTestCase):
 
     async def test_list_append_symbol(self):

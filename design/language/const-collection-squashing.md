@@ -57,6 +57,7 @@ into).
 |--------|-------|------|
 | `BUILD_LIST_CONST` | `CONST` | pooled sequence -> a **fresh** list, pushed. Seeds the accumulator; the whole all-const case. |
 | `BUILD_LIST_EXTEND_CONST` | `CONST` | extend the TOS list in place from a pooled sequence. |
+| `BUILD_LIST_EXTEND` | `NOARG` | extend the TOS list in place from a runtime iterable on TOS (`*:` splat segment). Any iterable the list API accepts; driven by `PySequence_InPlaceConcat`. |
 | `BUILD_LIST_APPEND` | `COUNT` | append the top N stack values to the list at depth N, in place. (Widened from the former NOARG append-one; the `#list-append` special now emits count `1`.) |
 | `BUILD_LIST_APPEND_CONST` | `CONST` | append one pooled value to the TOS list in place. |
 | `BUILD_LIST` | `COUNT` | existing -- new list from N stack values (dynamic seed / all-dynamic). |
@@ -67,19 +68,24 @@ into).
 Each evaluation of `BUILD_LIST_CONST` allocates a new list, so the mutable
 result never aliases the immutable pool constant.
 
-### `BUILD_LIST_JOIN` -- deferred
+### `BUILD_LIST_JOIN` -- dropped
 
-An earlier draft proposed a `BUILD_LIST_EXTEND N` / `BUILD_LIST_JOIN N` that pops
-N stack sequences and pushes one new joined list (the list analogue of
-`COMBINE_ARGS`). With `BUILD_LIST_CONST` covering the all-const seed, the
-accumulator never needs `JOIN` for any in-scope literal -- its only real job is
-concatenating **runtime** sequences, i.e. splat (`*: seq`) inside a list literal,
-which is out of scope here. `JOIN` is therefore deferred to the splat work; see
-§7.
+An earlier draft proposed a `BUILD_LIST_JOIN N` that pops N stack sequences and
+pushes one new joined list (the list analogue of `COMBINE_ARGS`), intended for
+splat. The in-place accumulator makes it unnecessary: a `*:` splat segment is an
+in-place `BUILD_LIST_EXTEND` of the seeded list, so there is never a need to
+build N sequences and join them. `JOIN` was never implemented.
 
 ---
 
 ## 4. Emission
+
+Both specials read their body with `gather_parameters`. When the body carries
+any keyword or `**:` argument (`kwds_seq` is non-empty), the special defers to
+the runtime builtin via `call_form_reroute` -> `(compile/call CALLED_BY . BODY)`,
+preserving the builtin's argument handling and error messages. Otherwise the
+positional / `*:` half (`args_seq`) is grouped by `partition_collection_runs`
+into `const`, `expr`, and `splat` chunks and emitted inline.
 
 ### 4.1 `compile/#tuple`
 
@@ -87,11 +93,13 @@ which is out of scope here. `JOIN` is therefore deferred to the splat work; see
 |-------|----------|
 | empty | `BUILD_ARGS 0` |
 | single const run (all elements const) | `CONST (e0, ..., e{n-1})` |
-| single dynamic run | compile elements + `BUILD_ARGS n` (unchanged) |
-| mixed const runs and expressions | per chunk: const -> `CONST tuple`; expr run of k -> compile + `BUILD_ARGS k`; then `COMBINE_ARGS` over the chunk count |
+| single dynamic run | compile elements + `BUILD_ARGS n` |
+| lone `*:` splat | compile iterable + `COMBINE_ARGS 1` (coerce to a fresh tuple) |
+| mixed const runs, expressions, and splats | per chunk: const -> `CONST tuple`; expr run of k -> compile + `BUILD_ARGS k`; splat -> compile iterable (left as-is); then `COMBINE_ARGS` over the chunk count |
 
-`COMBINE_ARGS` passes a lone sequence through when the count is 1, so single-chunk
-forms need no combine.
+`COMBINE_ARGS` passes a lone tuple through when the count is 1, so single const /
+expr chunks need no combine; a lone splat still combines so the iterable is
+copied into a fresh tuple rather than aliased.
 
 ### 4.2 `compile/#list`
 
@@ -101,9 +109,11 @@ forms need no combine.
 | all const | `BUILD_LIST_CONST (e0, ..., e{n-1})` |
 | leading const run (mixed) | `BUILD_LIST_CONST run` seed, then the tail |
 | leading dynamic run (mixed) | compile + `BUILD_LIST k` seed, then the tail |
+| leading `*:` splat | `BUILD_LIST 0` + compile iterable + `BUILD_LIST_EXTEND` seed, then the tail |
 | tail const run, length >= 2 | `BUILD_LIST_EXTEND_CONST run` |
 | tail const run, length 1 | `BUILD_LIST_APPEND_CONST value` |
 | tail dynamic run of k | compile k elements + `BUILD_LIST_APPEND k` |
+| tail `*:` splat | compile iterable + `BUILD_LIST_EXTEND` |
 
 Each evaluation produces a **new** list. A list is never placed in the constant
 pool.
@@ -121,6 +131,13 @@ BUILD_LIST_EXTEND_CONST (8 9)
 One list allocation grown in place, two pooled tuples with no runtime cost, zero
 transient allocations, max stack depth three.
 
+Splat example -- `(#list 1 2 3 *: a)`:
+
+```
+BUILD_LIST_CONST (1 2 3)
+VAR a / BUILD_LIST_EXTEND
+```
+
 ---
 
 ## 5. Parallels elsewhere
@@ -136,20 +153,18 @@ combining immutable sequences.
 ## 6. Tests
 
 - Opcode tests: `tests/lib/opcode/test_list_opcodes.py`
-  (`BUILD_LIST_CONST`, `BUILD_LIST_EXTEND_CONST`, `BUILD_LIST_APPEND_CONST`,
-  and `BUILD_LIST_APPEND` with a count, including type errors and
-  fresh-list-per-eval).
+  (`BUILD_LIST_CONST`, `BUILD_LIST_EXTEND_CONST`, `BUILD_LIST_EXTEND`,
+  `BUILD_LIST_APPEND_CONST`, and `BUILD_LIST_APPEND` with a count, including
+  type errors, arbitrary-iterable extend, and fresh-list-per-eval).
 - Compile specials: `tests/compile/specials/test_collections.py`
   (all-const folds, mixed accumulator/combine, pure-dynamic unchanged, the
-  worked example).
+  worked example, leading/interior/trailing `*:` splat for both `#list` and
+  `#tuple`, fresh-copy splat, and keyword reroute).
 
 ---
 
 ## 7. Out of scope
 
-- `BUILD_LIST_JOIN` (join N runtime sequences) and list/tuple **splat**
-  (`*:`, unquote-splicing) inside collection literals. `JOIN` lands with the
-  splat work.
 - `BUILD_CONST_SET` / frozenset squashing for `#set`.
 
 # The end.

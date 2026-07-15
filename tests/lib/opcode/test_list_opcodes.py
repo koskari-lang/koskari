@@ -14,7 +14,7 @@
 """
 Tests for list-building opcodes: BUILD_LIST, BUILD_LIST_CONST,
 VAR_LIST_APPEND, FAST_LIST_APPEND, BUILD_LIST_APPEND,
-BUILD_LIST_APPEND_CONST, BUILD_LIST_EXTEND_CONST.
+BUILD_LIST_APPEND_CONST, BUILD_LIST_EXTEND, BUILD_LIST_EXTEND_CONST.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -233,6 +233,70 @@ class TestBuildListExtendConst(CevalTest):
         code, ns = build_expr([
             ["CONST", 7],
             ["BUILD_LIST_EXTEND_CONST", (1, 2)],
+            ["RETURN", 0],
+        ])
+        fn = make_callable(code, ns)
+        with self.assertRaises(TypeError):
+            await fn()
+
+
+class TestBuildListExtend(CevalTest):
+
+    async def test_extend_with_tuple(self):
+        code, ns = build_expr([
+            ["BUILD_LIST_CONST", (1, 2)],
+            ["CONST", (3, 4, 5)],
+            ["BUILD_LIST_EXTEND", 0],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        result = await fn()
+        self.assertEqual(result, [1, 2, 3, 4, 5])
+        self.assertIsInstance(result, list)
+
+
+    async def test_extend_with_list(self):
+        code, ns = build_expr([
+            ["BUILD_LIST_CONST", (1,)],
+            ["CONST", [2, 3]],
+            ["BUILD_LIST_EXTEND", 0],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        result = await fn()
+        self.assertEqual(result, [1, 2, 3])
+
+
+    async def test_extend_with_arbitrary_iterable(self):
+        # any iterable the list API accepts, not just sequences
+        code, ns = build_expr([
+            ["BUILD_LIST", 0],
+            ["CONST", range(2, 5)],
+            ["BUILD_LIST_EXTEND", 0],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        result = await fn()
+        self.assertEqual(result, [2, 3, 4])
+
+
+    async def test_extend_empty(self):
+        code, ns = build_expr([
+            ["BUILD_LIST_CONST", (1,)],
+            ["CONST", ()],
+            ["BUILD_LIST_EXTEND", 0],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        result = await fn()
+        self.assertEqual(result, [1])
+
+
+    async def test_extend_type_error(self):
+        code, ns = build_expr([
+            ["CONST", 7],
+            ["CONST", (1, 2)],
+            ["BUILD_LIST_EXTEND", 0],
             ["RETURN", 0],
         ])
         fn = make_callable(code, ns)
