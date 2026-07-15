@@ -5,8 +5,10 @@
 03e6fb93 family conversion + fallback narrowing, 5c722a2e simple-call
 path).  All gates green (suite 4700, native 293, ASAN 293).  Phase 4
 (per-site call cache): DO NOT BUILD -- see the Phase 4 note.
-Remaining branch work: the three closing candidates below (see
-"Closing candidates for this branch").**
+Closing candidates C1-C3 are COMPLETE
+(50e88d97 tail bind-before-reset, 1c5eedd6 vector installs + sizing
+regen).  The branch is closed; the only deliberate residual is
+partial's tuple fallback (see C2).**
 
 ## Purpose
 
@@ -284,6 +286,7 @@ Agreed follow-ups after the Phase 3 gate, in priority order.  Enough
 detail here to implement without the working context that produced it.
 
 ### C1. TAIL_CALL onto the core: bind-before-reset kills the tail steal
+[DONE: 50e88d97]
 
 The tail family (TAIL_CALL hot; TAIL_CALL_NAMES/STAR cold) still
 steals because `kos_dynframe_reset_for_tail` clears the caller's block
@@ -339,7 +342,8 @@ a vinstall would relocate the tuple build, not remove it; the
 partial alone.  Revisit only if partial calls get hot enough to justify
 a vector-native merge.
 
-### C3. Regenerate dispatch-sizing.md
+### C3. Regenerate dispatch-sizing.md [DONE: 1c5eedd6 -- dispatch fn
+81,418 -> 70,962 B across the branch]
 
 Per that doc's embedded procedure (throwaway `KOS_OP_INLINE = static
 KOS_NOINLINE` build, `nm --print-size`).  The CALL rows are fiction
