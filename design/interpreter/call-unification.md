@@ -363,6 +363,26 @@ demand; see the eval-perf roadmap memory and
 deserves its own design note.  Acting on it is out of scope for this
 branch.
 
+## Rested idea: delete the tuple install slot entirely
+
+With C2 done, `tp_kos_install` is invoked only via partial's
+`KosCallable_Call` fallback and the tuple entry `KosCallable_CallArgs`
+(STAR opcodes, apply's flattening branch, demand/partial tuple sides).
+Full removal is short: rework CallArgs into a tuple -> vector converter
+(positionals free via PyTuple ITEMS; a kwds dict marshals to kwnames +
+a combined buffer), give partial a vinstall that keeps its tuple-native
+merges internal, switch apply's flattening branch to the converter,
+then delete the slot, KosInstallFunc, the five remaining tuple
+installs, the vcall_build_* helpers, and the fallback.
+
+**RESTED (2026-07-15) on the dict -> kwnames conversion step**: kwds
+dicts reaching these paths carry the products of `**:` splats and
+partial's keyword merges, so converting at the boundary moves
+duplicate-key, override, and ordering resolution out of the receiving
+install and into the converter -- a semantic relocation, not just a
+marshalling change.  Revisit deliberately; do not fold into unrelated
+work.
+
 ## Phase 4 note -- per-site call cache: recommend NOT building
 
 After Phase 3, the "classification" a call cache would skip is one
