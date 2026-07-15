@@ -1566,6 +1566,7 @@ static int function_init(
   self->creation_annotations = NULL;
   self->annotations_cache = NULL;
   self->annotations_need_resolve = 0;
+  self->bind_self_state = 0;
 
   if (kos_function_attach_annotations(self, annotations) < 0)
     return -1;
@@ -1649,7 +1650,12 @@ static PyObject *func_obtain_call_namespace(KosFunction *fn) {
 
 
 /**
-  Stores self-reference in frame_ns if the function's name is listed in the Code's local_syms.
+  Stores self-reference in frame_ns if the function's name is listed in the
+  Code's local_syms.
+
+  The membership test is static per function (name and code are fixed after
+  construction), so the verdict is computed once on the first call and
+  cached in bind_self_state; every later call is a flag test.
 
   :param fn: KosFunction instance
   :param frame_ns: KosNamespace instance
@@ -1660,33 +1666,30 @@ static int kos_function_bind_self_if_local(
     PyObject *frame_ns,
     PyObject *self) {
 
-  PyObject *name = KosFunction_NAME(fn);
-  PyObject *code;
-  PyObject *nspec;
-  PyObject *locals;
-
-  if (! name)
+  if (likely(fn->bind_self_state == 2))
     return 0;
 
-  code = KosFunction_CODE(fn);
-  if (! code)
-    return 0;
+  if (unlikely(fn->bind_self_state == 0)) {
+    PyObject *name = KosFunction_NAME(fn);
+    PyObject *code;
+    PyObject *nspec;
+    PyObject *locals;
+    int bind = 0;
 
-  nspec = KosCode_NSPEC(code);
-  if (! nspec)
-    return 0;
+    code = name ? KosFunction_CODE(fn) : NULL;
+    nspec = code ? KosCode_NSPEC(code) : NULL;
+    locals = nspec ? KosNamespaceSpec_LOCAL_SYMS(nspec) : NULL;
 
-  locals = KosNamespaceSpec_LOCAL_SYMS(nspec);
-  if (! locals || locals == Py_None)
-    return 0;
+    if (locals && locals != Py_None) {
+      bind = PySequence_Contains(locals, name);
+      if (bind < 0)
+        return -1;  /* leave unresolved; retried on the next call */
+    }
 
-  int bind = PySequence_Contains(locals, name);
-
-  if (bind < 0)
-    return -1;
-
-  if (! bind)
-    return 0;
+    fn->bind_self_state = bind ? 1 : 2;
+    if (! bind)
+      return 0;
+  }
 
   return KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self);
 }
@@ -1969,6 +1972,7 @@ PyObject *KosFunction_NewFromFormals(
   ((KosFunction *) self)->creation_annotations = NULL;
   ((KosFunction *) self)->annotations_cache = NULL;
   ((KosFunction *) self)->annotations_need_resolve = 0;
+  ((KosFunction *) self)->bind_self_state = 0;
 
   KosFunction_DOC(self) = doc_from_code(code);
 

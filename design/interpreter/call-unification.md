@@ -1,7 +1,9 @@
 # CALL Family Unification and Install-Path Acceleration
 
-**Status: Design accepted -- phased implementation plan. Phases gate on
-review; do not start a phase before the prior phase's gate is cleared.**
+**Status: Phases 0-1 COMPLETE (2026-07-15, branch `call_cleanups`);
+Phase 1 gate green (suite 4700, native 293, ASAN 293), awaiting review.
+Phases gate on review; do not start a phase before the prior phase's
+gate is cleared.**
 
 ## Purpose
 
@@ -38,8 +40,8 @@ complementary); PGO ([pgo-build.md](pgo-build.md), complementary).
 | `KosCallable_Call` -> vinstall | indirect call | per type |
 | `KosNamespace_Copy(BASE_NS)` | freelist alloc + header + closure-Ref loop | -- |
 | `KosFormals_VectorApplyFast` | general formals machine | per function shape |
-| `kos_function_bind_self_if_local` | `PySequence_Contains` per call | **per function** |
-| `KosCode_YIELDS` branch | branch per call | per code |
+| `kos_function_bind_self_if_local` | ~~`PySequence_Contains` per call~~ flag test (Phase 1) | **per function** |
+| `KosCode_YIELDS` branch | one bit test (ledger over-attributed it) | per code |
 | `SetFrameCodeAndNamespace` | refcount churn + retarget check | -- |
 | return path | cheap (landed: plain return + DISPATCH) | -- |
 
@@ -85,38 +87,46 @@ No code change. Record: fresh churn run (all pairs), current dispatch
 fn size, and (optional, one traced run) opcode timing for the CALL
 family. Commit nothing; keep numbers in the PR description or notes.
 
-## Phase 1 -- Low-hanging fruit (no structural change)
+## Phase 1 -- Low-hanging fruit (no structural change) [COMPLETE]
 
-Each item is independently landable and testable. Scope is strictly
-"same structure, remove per-call recomputation".
+Each item was independently assessed; one landed as code, the rest
+resolved as audit verdicts that reorder work into Phase 2/3.
 
-1. **`bind_self` at creation.** Compute at function construction
-   whether the function's name appears in its code's `local_syms`;
-   store a boolean flag (plus the resolved bind slot if applicable) on
-   `KosFunction`. The per-call path tests the flag and binds directly.
-   Pre-binding into `BASE_NS` is rejected: it guarantees a
+1. **`bind_self` at creation.** LANDED. `KosFunction.bind_self_state`
+   (0 unresolved / 1 bind / 2 no-bind), computed lazily on first call
+   -- safe because `name` is read-only externally and both internal
+   assignments precede any call; the zero default makes constructors
+   fail-safe. Pre-binding into `BASE_NS` was rejected: it guarantees a
    function -> base-ns -> function reference cycle; the flag form does
-   not.
-2. **Install selection at creation.** `KosCode_YIELDS` is static per
-   code: resolve the generator-vs-function install decision once at
-   `BUILD_FUNCTION` (split install functions or a cached flag), not per
-   call.
-3. **`wants_frame` audit.** Inventory `tp_kos_wants_frame_fn` users;
-   constant-fold to the static flag wherever the answer does not vary
-   per instance. Where it varies, keep the hook but document why.
-4. **Steal -> borrowed window on non-tail installs.** In the
-   KosCallable branches of `CALL_FAST` / `CALL_FAST_ATTR` / `CALL`,
-   replace `KosStackSteal_Tail` with the borrowed-window contract
-   (TailPtr, bind, drop). Requires the bind-before-push reorder (see
-   Phase 2 note) **or** a demonstration that binding after the frame
-   push is safe with the window; if the reorder is needed to do this
-   cleanly, defer this item into Phase 2 rather than half-landing it.
-5. **`KosCallable_Check` audit.** If it resolves through
-   `PyType_IsSubtype` per call, evaluate a `tp_flags` bit or cached
-   check. Measure before/after; drop if noise.
+   not. Measured: churn_method 13.20 -> 12.01 s (-9.0%), list_each
+   -6.2%, tree -2.5% (the per-call `PySequence_Contains` was ~24 ns on
+   every named-function call).
+2. **Install selection at creation.** NO-OP. `KosCode_YIELDS` is
+   already a single flag-bit test; the ledger over-attributed it.
+3. **`wants_frame` audit.** VERDICT: keep the hook. `demand` and
+   `partial` are genuinely per-instance dynamic. For
+   KosFunction/Expression the fn is the YIELDS bit behind an indirect
+   call, eliminated by Phase 2's classify-once core -- an interim
+   constant-fold would be churn.
+4. **Steal -> borrowed window.** DEFERRED INTO PHASE 2, with a
+   sharpened reason beyond the bind-before-push reorder: **no-frame
+   installs push their result onto the caller's block** (generators --
+   `wants_frame` is 0 for yielding code -- plus continuation invokes,
+   demand, partial). With a borrowed window still occupying the
+   caller's stack tail, the install's result lands on top of the args
+   and the post-call drop consumes the result. Steal avoids this by
+   clearing the args first. Only the Phase 2 core, which sequences
+   bind -> drop -> result-push per install class, can host the window
+   safely.
+5. **`KosCallable_Check` audit.** VERDICT: defer. It is a real
+   `PyType_IsSubtype` mro walk per call, but Phase 3's simple-call
+   guard is an exact-type pointer compare that subsumes it on the hot
+   path; a `tp_flags` bit now would be churn in CPython-owned flag
+   space for an interim win.
 
-**Gate: pause for review.** Present churn deltas per item and the
-updated ledger. No Phase 2 work before sign-off.
+**Gate: pause for review.** CLEARED PENDING SIGN-OFF: suite 4700
+passed / 10 skipped, native 293, ASAN 293; churn deltas above. No
+Phase 2 work before sign-off.
 
 ## Phase 2 -- Prologue / shared-core split
 
@@ -132,11 +142,20 @@ kos_call_invoke:         /* ONE noinline shared core */
   [Phase 3 fast path lands here]
   classify callable -> install (KosFunction / generator / Expression /
     instance-call inject / plain Python vectorcall / tail variants)
-  bind ns -> drop argv window -> push frame -> set code+ns
+  bind ns -> drop argv window -> [then, per class] push frame + set
+    code+ns, OR create/push the no-frame result (agen, invoke, ...)
 ```
 
 Design points:
 
+- **Window sequencing is the core's first invariant** (the Phase 1.4
+  finding): the borrowed argv window must be dropped from the caller's
+  block **before anything is pushed onto it**. Frame installs push
+  nothing onto the caller block, but no-frame installs (generator agen
+  creation, continuation invokes, demand, partial) deliver their result
+  there. The core's per-class sequencing -- bind, drop window, only
+  then produce the result -- is what makes the steal removable at all;
+  no prologue-level ordering can achieve this.
 - **Bind-before-push reorder.** The core prepares the namespace (bind
   from the borrowed window), drops the window, and only then pushes the
   frame and installs code+ns. `PrepareCallNamespaceFromVector` does not
@@ -233,5 +252,10 @@ win** (same bar as the other cache-family TODOs). Version-independent
   install failures (no pushed frame to unwind). Audit the error paths
   that currently rely on the empty frame existing (e.g. traceback
   position on install-time TypeError).
+- **No-frame result delivery** (Phase 1.4 finding): any install class
+  that delivers onto the caller's block is ordering-sensitive with the
+  borrowed window. Every new install class added to the core must
+  declare which side of the drop its result lands on; the review
+  checklist for Phase 2 conversions includes this per class.
 
 <!-- The end. -->

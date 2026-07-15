@@ -171,6 +171,9 @@ typedef struct {
   PyObject *creation_annotations; /* raw dict from BUILD_FUNCTION, or NULL */
   PyObject *annotations_cache; /* realized __annotations__ dict, or NULL */
   int annotations_need_resolve; /* creation dict holds str forward refs */
+  int bind_self_state;      /* self-bind on call: 0 unresolved (lazily
+                               computed on first call; name is fixed after
+                               construction), 1 bind, 2 no-bind */
 } KosFunction;
 
 
