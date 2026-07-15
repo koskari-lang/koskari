@@ -154,13 +154,14 @@ for raw `TAIL_CALL*` embedded via bytecode specialty syntax in a generator.
 
 Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
 
-### Const-run squashing for `#list` and `#tuple`
+### Const-run squashing for `#list` and `#tuple` — implemented
 
-Partition collection literal elements into compile-time constant runs vs dynamic
-expressions; emit tuple constants from the pool plus `BUILD_LIST_EXTEND` (new
-opcode) for lists, and `CONST` / `COMBINE_ARGS` for tuples. `compile/#tuple`
-and `compile/#list` today use naive per-element compile + `BUILD_ARGS` /
-`BUILD_LIST`.
+Landed: `partition_const_runs` classifies collection elements via
+`const_only_expr`; `#tuple` folds constant runs to pooled tuples combined with
+`COMBINE_ARGS`, and `#list` seeds a fresh list (`BUILD_LIST_CONST` /
+`BUILD_LIST`) then accumulates in place (`BUILD_LIST_EXTEND_CONST`,
+`BUILD_LIST_APPEND_CONST`, count-widened `BUILD_LIST_APPEND`). `BUILD_LIST_JOIN`
+(join N runtime sequences) and collection splat are deferred to the splat work.
 
 Ref: [language/const-collection-squashing.md](language/const-collection-squashing.md).
 

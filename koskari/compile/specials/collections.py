@@ -27,7 +27,8 @@ from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_nil, is_pair
-from ..helpers import is_symbolish, splat_call_form, unpack
+from ..helpers import (is_symbolish, partition_const_runs, splat_call_form,
+                       unpack)
 
 
 _DEFAULT_LIST_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
@@ -37,7 +38,11 @@ _DEFAULT_LIST_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 @special("compile/#tuple", patterns=_DEFAULT_LIST_PATTERNS)
 def special_build_tuple(compiler, source, tc=False):
     """
-    Build a Python tuple from evaluated elements
+    Build a Python tuple from evaluated elements.
+
+    Contiguous constant elements fold into a single pooled tuple; the tuple
+    is assembled with COMBINE_ARGS only when constant runs and dynamic
+    expressions are interleaved. An all-constant literal reduces to one CONST.
     """
 
     called_by, body = source
@@ -47,20 +52,25 @@ def special_build_tuple(compiler, source, tc=False):
         return call_form
 
     frag = compiler.fragment(called_by)
-    count = 0
 
     if is_nil(body):
         frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 0)
         return frag
 
-    for expr in unpack(body):
-        if not is_pair(expr):
-            frag.position_of(body)
+    frag.position_of(body)
+    chunks = partition_const_runs(compiler, unpack(body))
 
-        frag.merge(compiler.full_compile(expr, False))
-        count += 1
+    for kind, data in chunks:
+        if kind == "const":
+            frag.instruction(OpCode.KOS_OP_CONST, data)
+        else:
+            for elem in data:
+                frag.merge(elem)
+            frag.instruction(OpCode.KOS_OP_BUILD_ARGS, len(data))
 
-    frag.instruction(OpCode.KOS_OP_BUILD_ARGS, count)
+    if len(chunks) > 1:
+        frag.instruction(OpCode.KOS_OP_COMBINE_ARGS, len(chunks))
+
     return frag
 
 
@@ -68,7 +78,14 @@ def special_build_tuple(compiler, source, tc=False):
 @special("compile/#list", patterns=_DEFAULT_LIST_PATTERNS)
 def special_build_list(compiler, source, tc=False):
     """
-    Build a Python list from evaluated elements
+    Build a Python list from evaluated elements.
+
+    Elements are partitioned into constant runs and dynamic expressions. A
+    fresh list is seeded from the first chunk, then extended in place: constant
+    runs come straight from the pool (BUILD_LIST_EXTEND_CONST /
+    BUILD_LIST_APPEND_CONST) and dynamic runs are appended from the stack
+    (BUILD_LIST_APPEND). An all-constant literal reduces to one
+    BUILD_LIST_CONST.
     """
 
     called_by, body = source
@@ -78,20 +95,35 @@ def special_build_list(compiler, source, tc=False):
         return call_form
 
     frag = compiler.fragment(called_by)
-    count = 0
 
     if is_nil(body):
         frag.instruction(OpCode.KOS_OP_BUILD_LIST, 0)
         return frag
 
-    for expr in unpack(body):
-        if not is_pair(expr):
-            frag.position_of(body)
+    frag.position_of(body)
+    chunks = partition_const_runs(compiler, unpack(body))
 
-        frag.merge(compiler.full_compile(expr, False))
-        count += 1
+    # Seed a fresh list from the first chunk.
+    first_kind, first_data = chunks[0]
+    if first_kind == "const":
+        frag.instruction(OpCode.KOS_OP_BUILD_LIST_CONST, first_data)
+    else:
+        for elem in first_data:
+            frag.merge(elem)
+        frag.instruction(OpCode.KOS_OP_BUILD_LIST, len(first_data))
 
-    frag.instruction(OpCode.KOS_OP_BUILD_LIST, count)
+    # Extend / append the remaining chunks in place.
+    for kind, data in chunks[1:]:
+        if kind == "const":
+            if len(data) == 1:
+                frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND_CONST, data[0])
+            else:
+                frag.instruction(OpCode.KOS_OP_BUILD_LIST_EXTEND_CONST, data)
+        else:
+            for elem in data:
+                frag.merge(elem)
+            frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND, len(data))
+
     return frag
 
 
@@ -134,7 +166,7 @@ def special_list_append(compiler, caps, tc=False):
         frag.position_of(called_by)
 
     frag.merge(compiler.full_compile(expr, False))
-    frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND, 0)
+    frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND, 1)
     return frag
 
 

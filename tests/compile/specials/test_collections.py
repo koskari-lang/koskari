@@ -49,16 +49,107 @@ class TestBuildListSpecial(SpecialsTestCase):
         self.assertEqual([], await expr())
 
 
+    async def test_list_empty_emits_build_list(self):
+        code = self.compile_to_code("(#list)")
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST, ops)
+        self.assertEqual(0, _find_op(code, OpCode.KOS_OP_BUILD_LIST))
+
+
     async def test_list_values(self):
         expr, mod = self.compile_expr("(#list 1 2 3)")
         self.assertEqual([1, 2, 3], await expr())
 
 
-    async def test_list_emits_build_list(self):
-        code = self.compile_to_code("(#list 1 2)")
-        self.assertIn(OpCode.KOS_OP_BUILD_LIST, _opcodes(code))
-        self.assertEqual(2, _find_op(code, OpCode.KOS_OP_BUILD_LIST))
+    async def test_list_all_const_emits_build_list_const(self):
+        # an all-constant list folds to a single BUILD_LIST_CONST, no
+        # per-element CONST loads and no dynamic BUILD_LIST
+        code = self.compile_to_code("(#list 1 2 3)")
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_CONST, ops)
+        self.assertNotIn(OpCode.KOS_OP_BUILD_LIST, ops)
+        self.assertNotIn(OpCode.KOS_OP_CONST, ops)
         self.assertEqual([], self.call_ops(code))
+
+
+    async def test_list_single_const_folds(self):
+        expr, mod = self.compile_expr("(#list 42)")
+        self.assertEqual([42], await expr())
+        code = self.compile_to_code("(#list 42)")
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_CONST, _opcodes(code))
+
+
+    async def test_list_pure_dynamic_uses_build_list(self):
+        expr, mod = self.compile_expr("(#list x y)", x=1, y=2)
+        self.assertEqual([1, 2], await expr())
+        code = self.compile_to_code("(#list x y)", x=1, y=2)
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST, ops)
+        self.assertEqual(2, _find_op(code, OpCode.KOS_OP_BUILD_LIST))
+        self.assertNotIn(OpCode.KOS_OP_BUILD_LIST_APPEND, ops)
+
+
+    async def test_list_mixed_runs_value(self):
+        expr, mod = self.compile_expr("(#list 1 x 2)", x=99)
+        self.assertEqual([1, 99, 2], await expr())
+
+
+    async def test_list_mixed_runs_emits_accumulator(self):
+        code = self.compile_to_code("(#list 1 x 2)", x=99)
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_CONST, ops)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_APPEND, ops)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_APPEND_CONST, ops)
+
+
+    async def test_list_worked_example(self):
+        # (#list 1 2 3 a b 4 5 6 z 8 9): const run, dynamic run, const run,
+        # single dynamic, const run
+        src = "(#list 1 2 3 a b 4 5 6 z 8 9)"
+        expr, mod = self.compile_expr(src, a=10, b=20, z=30)
+        self.assertEqual([1, 2, 3, 10, 20, 4, 5, 6, 30, 8, 9], await expr())
+        code = self.compile_to_code(src, a=10, b=20, z=30)
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_CONST, ops)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_EXTEND_CONST, ops)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_APPEND, ops)
+
+
+class TestBuildTupleSpecial(SpecialsTestCase):
+
+    async def test_tuple_empty(self):
+        expr, mod = self.compile_expr("(#tuple)")
+        self.assertEqual((), await expr())
+
+
+    async def test_tuple_all_const_emits_single_const(self):
+        expr, mod = self.compile_expr("(#tuple 1 2 3)")
+        self.assertEqual((1, 2, 3), await expr())
+        code = self.compile_to_code("(#tuple 1 2 3)")
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_CONST, ops)
+        self.assertNotIn(OpCode.KOS_OP_BUILD_ARGS, ops)
+        self.assertNotIn(OpCode.KOS_OP_COMBINE_ARGS, ops)
+
+
+    async def test_tuple_pure_dynamic_uses_build_args(self):
+        expr, mod = self.compile_expr("(#tuple x y)", x=1, y=2)
+        self.assertEqual((1, 2), await expr())
+        code = self.compile_to_code("(#tuple x y)", x=1, y=2)
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_BUILD_ARGS, ops)
+        self.assertNotIn(OpCode.KOS_OP_COMBINE_ARGS, ops)
+
+
+    async def test_tuple_mixed_runs_value(self):
+        expr, mod = self.compile_expr("(#tuple 1 x 2)", x=99)
+        self.assertEqual((1, 99, 2), await expr())
+
+
+    async def test_tuple_mixed_runs_emits_combine(self):
+        code = self.compile_to_code("(#tuple 1 x 2)", x=99)
+        ops = _opcodes(code)
+        self.assertIn(OpCode.KOS_OP_COMBINE_ARGS, ops)
 
 
 class TestListAppendSpecial(SpecialsTestCase):
@@ -86,8 +177,12 @@ class TestListAppendSpecial(SpecialsTestCase):
 
     async def test_list_append_expr_emits_build_list_append(self):
         code = self.compile_to_code("(#list-append (#list 1) 2)")
-        self.assertIn(OpCode.KOS_OP_BUILD_LIST, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_BUILD_LIST_APPEND, _opcodes(code))
+        ops = _opcodes(code)
+        # (#list 1) folds to BUILD_LIST_CONST; the append rides the
+        # single-value BUILD_LIST_APPEND (count 1)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_CONST, ops)
+        self.assertIn(OpCode.KOS_OP_BUILD_LIST_APPEND, ops)
+        self.assertEqual(1, _find_op(code, OpCode.KOS_OP_BUILD_LIST_APPEND))
 
 
 class TestListEachPattern(SpecialsTestCase):

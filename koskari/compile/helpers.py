@@ -30,7 +30,7 @@ from ..matcher import (BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
                        REST, SYMBOL, USING, USING_UNPACK, VALUE,
                        HygienicMatchCompiler, Pattern, frame_formal_name)
 from ..types import is_nil, is_keyword, is_pair, is_proper, is_symbol, unpack
-from .compiler import ByteCodeFragment
+from .compiler import ByteCodeFragment, _is_const
 
 
 __all__ = (
@@ -594,6 +594,52 @@ def const_only_expr(fragment):
             return (False, None)
 
     return (found, value)
+
+
+def partition_const_runs(compiler, elements):
+    """
+    Compile each element of a collection literal and group contiguous
+    elements into runs. Yields chunks in source order:
+
+      ("const", (v0, v1, ...))       -- a run of poolable constant values,
+                                        already merged into one tuple
+      ("expr", [frag0, frag1, ...])  -- a run of dynamic-expression
+                                        fragments, each leaving one value
+
+    An element is treated as constant only when it compiles to a single
+    CONST whose value is valid constant-pool material (:func:`_is_const`);
+    this excludes bare symbols (which compile to variable loads) while
+    folding literals and quoted constants. Adjacent constants merge into
+    one tuple; adjacent expressions gather into one list.
+    """
+
+    chunks = []
+    const_run = []
+    expr_run = []
+
+    def flush_const():
+        if const_run:
+            chunks.append(("const", tuple(const_run)))
+            const_run.clear()
+
+    def flush_expr():
+        if expr_run:
+            chunks.append(("expr", list(expr_run)))
+            expr_run.clear()
+
+    for element in elements:
+        frag = compiler.full_compile(element, False)
+        found, value = const_only_expr(frag)
+        if found and _is_const(value):
+            flush_expr()
+            const_run.append(value)
+        else:
+            flush_const()
+            expr_run.append(frag)
+
+    flush_const()
+    flush_expr()
+    return chunks
 
 
 def requote(
