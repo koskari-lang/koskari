@@ -583,6 +583,11 @@ KosOpResult KosEvalState_Call(
    with the window, never the call target.  The receiver reaches the
    callee only via self_arg injection. */
 #define KOS_CALL_WINDOW_UNDER     0x4u
+/* Tail call: the caller's frame is reused.  Exact non-yielding
+   KosFunctions take the bind-before-reset subpath (the frame reset's
+   block-clear IS the window drop); everything else spills and keeps
+   KosEvalState_Call's tail semantics. */
+#define KOS_CALL_TAIL             0x8u
 
 #define KOS_CALL_SPILL_FAST 16
 
@@ -598,6 +603,52 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
         unsigned flags) {
 
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+
+  /* Class: exact KosFunction, tail position.  Bind-before-reset: the
+     namespace is prepared FROM the still-intact window, then the frame
+     reset's block-clear performs the window drop.  Requires the window
+     to live in the reused frame's own block and non-yielding code;
+     anything else falls to the legacy spill below (which preserves
+     KosEvalState_Call's tail semantics exactly). */
+  if (unlikely(flags & KOS_CALL_TAIL)) {
+    KosDynFrame *frame = KosEvalState_FRAME(es);
+
+    if (Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType)
+        && frame
+        && caller_slot == &KosDynFrame_STACK(frame)) {
+      KosCode *code = (KosCode *) KosFunction_CODE(callable);
+
+      if (! (code && KosCode_YIELDS(code))) {
+        PyObject *frame_ns;
+
+        if (likely(! kwnames
+                   && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
+          frame_ns = KosFunction_SimpleCallNamespaceFromVector(
+              callable, argv, nargs);
+        } else {
+          frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+              callable, argv, nargs, kwnames);
+        }
+        if (unlikely(! frame_ns)) {
+          if (window)
+            kos_stack_drop_noerr_fast(caller_slot, window);
+          return EVAL_RAISE();
+        }
+
+        /* The callable is window-resident: the reset's block-clear
+           releases it.  Hold it (and thereby code) across the reset. */
+        Py_INCREF(callable);
+        kos_dynframe_reset_for_tail(frame);
+        (void) KosEvalState_SetFrameCodeAndNamespace(es, frame, code,
+                                                     frame_ns);
+        Py_DECREF(callable);
+        es->pc = 0;
+        es->acting_pc = 0;
+        return EVAL_NORMAL();
+      }
+    }
+    goto legacy;
+  }
 
   /* Class: exact KosFunction -- the dominant call target. */
   if (likely(Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType))) {
@@ -678,7 +729,10 @@ fn_frame_install:
 
   /* Legacy classes: preserve steal-first ordering.  Spill the window
      into an owned vector (refs transfer out of the block), delegate,
-     release. */
+     release.  Tail flows land here too (py tails need
+     tail_prep_py_call; other-callable and deferred tails keep
+     KosEvalState_Call's semantics). */
+legacy:
   if (window) {
     PyObject *small[KOS_CALL_SPILL_FAST];
     PyObject **vals = small;
@@ -710,7 +764,8 @@ fn_frame_install:
       }
       r = KosEvalState_Call(es, target,
                             (nargs + nkw) ? call_argv : NULL,
-                            nargs, kwnames, 0);
+                            nargs, kwnames,
+                            (flags & KOS_CALL_TAIL) ? 1 : 0);
     }
 
     for (size_t i = 0; i < window; i++)
@@ -720,7 +775,8 @@ fn_frame_install:
     return r;
   }
 
-  return KosEvalState_Call(es, callable, argv, nargs, kwnames, 0);
+  return KosEvalState_Call(es, callable, argv, nargs, kwnames,
+                           (flags & KOS_CALL_TAIL) ? 1 : 0);
 }
 
 
