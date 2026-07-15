@@ -602,7 +602,27 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
   /* Class: exact KosFunction -- the dominant call target. */
   if (likely(Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType))) {
     KosCode *code = (KosCode *) KosFunction_CODE(callable);
-    PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+    PyObject *frame_ns;
+
+    if (likely(! kwnames
+               && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
+      /* Simple call: exact arity against plain positional formals on
+         non-yielding code (classified at construction).  Binds by slot
+         index; the general formals machine is bypassed, and the
+         generator branch below is unreachable by classification.  Any
+         mismatch falls through to the general path, which owns the
+         arity error messages. */
+      frame_ns = KosFunction_SimpleCallNamespaceFromVector(
+          callable, argv, nargs);
+      if (unlikely(! frame_ns)) {
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        return EVAL_RAISE();
+      }
+      goto fn_frame_install;
+    }
+
+    frame_ns = KosFunction_PrepareCallNamespaceFromVector(
         callable, argv, nargs, kwnames);
 
     if (unlikely(! frame_ns)) {
@@ -622,6 +642,8 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
       return KosEvalState_StackPUSH(es, agen) < 0
           ? EVAL_RAISE() : EVAL_NORMAL();
     }
+
+fn_frame_install:
 
     /* Frame install: nothing lands on the caller's block, so the drop
        runs last and the window keeps callable and args alive for the

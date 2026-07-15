@@ -1,9 +1,9 @@
 # CALL Family Unification and Install-Path Acceleration
 
-**Status: Phases 0-2 COMPLETE (2026-07-15, branch `call_cleanups`);
-Phase 2 gate green, awaiting review.  Next: Phase 3 (simple-call fast
-path).  Phases gate on review; do not start a phase before the prior
-phase's gate is cleared.**
+**Status: Phases 0-3 COMPLETE (2026-07-15, branch `call_cleanups`);
+Phase 3 gate green, awaiting review.  Phase 4 (per-site call cache)
+recommendation: DO NOT BUILD -- see the Phase 4 note.  Phases gate on
+review.**
 
 ## Purpose
 
@@ -251,6 +251,38 @@ of duplication and dead branches removed).
 - **v2 (separate, after v1 measures)**: defaults (arity range
   [min, max], fill trailing slots from the defaults tuple); simple-tail
   sharing with the frame-reuse path.
+
+### Phase 3 outcomes [COMPLETE]
+
+- `KosFunction.simple_arity1` (arity PLUS ONE; 0 = not simple, so a
+  zeroed construction is fail-safe) computed at construction by
+  `function_compute_simple_arity`.  Classification landed at **v1.5**,
+  wider than planned v1: both positionally fillable runs count (pos AND
+  kwd -- the vector apply fills kwd runs positionally at the shared
+  slot index), and **defaults are permitted** because the fast path
+  only accepts FULL supply, where defaults are never consulted.  This
+  matters: the idiomatic `[n x: 1]` accumulator signature used by every
+  churn hot function classifies simple.
+- `KosFunction_SimpleCallNamespaceFromVector`: base-ns copy, direct
+  `kos_ns_fast_store` slot loop (exactly the apply machine's own
+  full-supply store), cached self-bind.  Sits at the top of the
+  exact-KosFunction class in the core; any mismatch (arity, kwnames)
+  falls through to the general path, which owns the error messages.
+  The generator branch is unreachable from the fast path by
+  classification.
+- Gate churn (koskari wall vs Phase 0 baseline): **method 10.67 s
+  (13.20, -19%; ratio 368% -> 305%, best runs under 300%)**, tree 9.69
+  (10.44, -7%), list_each 19.90 (22.22, -10%), loop/field/slots/branch
+  at or better than baseline.  Suite 4700, native + ASAN green.
+
+## Phase 4 note -- per-site call cache: recommend NOT building
+
+After Phase 3, the "classification" a call cache would skip is one
+exact-type pointer compare plus two field loads on the already-deref'd
+function.  The deref itself cannot be cached (rebinding is legal).
+There is no meaningful win left for a `KOS_CACHE_CALL` kind; revisit
+only if a workload shows polymorphic call sites hot enough that the
+type compare misprediction matters.
 
 **Gate: pause for review.** churn_method / churn_tree are the verdict;
 target is a meaningful cut of the ~150 ns install cost.

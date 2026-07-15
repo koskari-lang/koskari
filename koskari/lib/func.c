@@ -46,6 +46,10 @@ static int kos_function_wants_frame(PyObject *callable) {
 
 static PyObject *boundmethod_resolve_function(PyObject *func);
 
+static Py_ssize_t function_compute_simple_arity(
+        PyObject *code,
+        PyObject *formals);
+
 
 static int kos_boundmethod_wants_frame(PyObject *callable) {
 
@@ -1600,6 +1604,7 @@ static int function_init(
   self->annotations_cache = NULL;
   self->annotations_need_resolve = 0;
   self->bind_self_state = 0;
+  self->simple_arity1 = function_compute_simple_arity(code, formals) + 1;
 
   if (kos_function_attach_annotations(self, annotations) < 0)
     return -1;
@@ -1679,6 +1684,63 @@ static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
 */
 static PyObject *func_obtain_call_namespace(KosFunction *fn) {
   return KosNamespace_Copy(KosFunction_BASE_NS(fn));
+}
+
+
+/** True when the formals field is absent or an empty container. */
+static int formals_field_empty(PyObject *o) {
+  if (! o || o == Py_None)
+    return 1;
+  if (PyTuple_Check(o))
+    return PyTuple_GET_SIZE(o) == 0;
+  if (PyDict_Check(o))
+    return PyDict_GET_SIZE(o) == 0;
+  return 0;
+}
+
+
+/**
+  Classify a function for the simple-call fast path: positionally
+  fillable runs only (pos and kwd; no pos-only / kwd-only / star /
+  starstar / by-refs) on non-yielding code.  Slot i of the call
+  namespace is positional i, so a FULL-supply call binds by index --
+  defaults may exist but are never consulted at full supply, which is
+  the only shape the fast path accepts.
+
+  :return: the exact full-supply arity, or -1 when not simple
+*/
+static Py_ssize_t function_compute_simple_arity(
+    PyObject *code,
+    PyObject *formals) {
+
+  Py_ssize_t arity = 0;
+
+  if (! code || ! formals || KosCode_YIELDS(code))
+    return -1;
+
+  if (! formals_field_empty(KosFormals_POS_ONLY(formals))
+      || ! formals_field_empty(KosFormals_KWD_ONLY(formals))
+      || KosFormals_STAR(formals)
+      || KosFormals_STARSTAR(formals)
+      || ! formals_field_empty(KosFormals_BY_REFS(formals)))
+    return -1;
+
+  {
+    PyObject *pos = KosFormals_POS(formals);
+    PyObject *kwd = KosFormals_KWD(formals);
+
+    if (pos && pos != Py_None) {
+      if (! PyTuple_Check(pos))
+        return -1;
+      arity += PyTuple_GET_SIZE(pos);
+    }
+    if (kwd && kwd != Py_None) {
+      if (! PyTuple_Check(kwd))
+        return -1;
+      arity += PyTuple_GET_SIZE(kwd);
+    }
+  }
+  return arity;
 }
 
 
@@ -1794,6 +1856,33 @@ PyObject *KosFunction_PrepareCallNamespaceFromVector(
     return NULL;
   }
   if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0) {
+    Py_DECREF(frame_ns);
+    return NULL;
+  }
+  return frame_ns;
+}
+
+
+PyObject *KosFunction_SimpleCallNamespaceFromVector(
+    PyObject *self,
+    PyObject *const *args,
+    Py_ssize_t nargs) {
+
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *frame_ns = KosNamespace_Copy(KosFunction_BASE_NS(fn));
+  if (unlikely(! frame_ns))
+    return NULL;
+
+  /* slot i is positional i (classification guarantee) */
+  for (Py_ssize_t i = 0; i < nargs; i++) {
+    if (unlikely(kos_ns_fast_store(frame_ns, (size_t) i, args[i]) < 0)) {
+      Py_DECREF(frame_ns);
+      return NULL;
+    }
+  }
+
+  if (unlikely(fn->bind_self_state != 2)
+      && kos_function_bind_self_if_local(fn, frame_ns, self) < 0) {
     Py_DECREF(frame_ns);
     return NULL;
   }
@@ -2006,6 +2095,8 @@ PyObject *KosFunction_NewFromFormals(
   ((KosFunction *) self)->annotations_cache = NULL;
   ((KosFunction *) self)->annotations_need_resolve = 0;
   ((KosFunction *) self)->bind_self_state = 0;
+  ((KosFunction *) self)->simple_arity1 =
+      function_compute_simple_arity(code, formals) + 1;
 
   KosFunction_DOC(self) = doc_from_code(code);
 
