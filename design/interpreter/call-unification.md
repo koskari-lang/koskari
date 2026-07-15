@@ -1,9 +1,12 @@
 # CALL Family Unification and Install-Path Acceleration
 
-**Status: Phases 0-3 COMPLETE (2026-07-15, branch `call_cleanups`);
-Phase 3 gate green, awaiting review.  Phase 4 (per-site call cache)
-recommendation: DO NOT BUILD -- see the Phase 4 note.  Phases gate on
-review.**
+**Status: Phases 0-3 COMPLETE and committed (2026-07-15, branch
+`call_cleanups`: d1ddcaf4 bind_self, f2cba06f core + hot trio,
+03e6fb93 family conversion + fallback narrowing, 5c722a2e simple-call
+path).  All gates green (suite 4700, native 293, ASAN 293).  Phase 4
+(per-site call cache): DO NOT BUILD -- see the Phase 4 note.
+Remaining branch work: the three closing candidates below (see
+"Closing candidates for this branch").**
 
 ## Purpose
 
@@ -274,6 +277,83 @@ of duplication and dead branches removed).
   (13.20, -19%; ratio 368% -> 305%, best runs under 300%)**, tree 9.69
   (10.44, -7%), list_each 19.90 (22.22, -10%), loop/field/slots/branch
   at or better than baseline.  Suite 4700, native + ASAN green.
+
+## Closing candidates for this branch (recorded 2026-07-15)
+
+Agreed follow-ups after the Phase 3 gate, in priority order.  Enough
+detail here to implement without the working context that produced it.
+
+### C1. TAIL_CALL onto the core: bind-before-reset kills the tail steal
+
+The tail family (TAIL_CALL hot; TAIL_CALL_NAMES/STAR cold) still
+steals because `kos_dynframe_reset_for_tail` clears the caller's block
+before the install binds.  With the core owning sequencing, the steal
+is avoidable exactly as it was for plain calls:
+
+1. Prologue takes the borrowed window (`[callable, args...]`, so
+   `KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE`) and passes a new
+   `KOS_CALL_TAIL` flag.
+2. For the KosFunction classes (simple AND general), the core prepares
+   the call namespace FROM THE WINDOW FIRST -- the block is still
+   intact -- via the same `SimpleCallNamespaceFromVector` /
+   `PrepareCallNamespaceFromVector` calls the plain path uses.
+3. Then `kos_dynframe_reset_for_tail(frame)`: its block-clear IS the
+   window drop (bind INCREF'd what it needed; the clear releases the
+   block's refs, callable included -- net correct, but the prologue's
+   own callable ref handling must be audited: TAIL_CALL's callable is
+   window-resident, kept alive through step 2 by the block and through
+   step 3 by... NOTHING, so extract `code` and anything else needed
+   from the callable BEFORE the reset, or hold a temp ref).
+4. Then `KosEvalState_SetFrameCodeAndNamespace` and es reg reset
+   (pc = 0), mirroring today's `do_frame_prep` tail branch (which also
+   nulls es code/ns and re-adopts the block slot).
+5. Result kind: the tail install returns NORMAL and dispatch continues
+   in the reused frame (matching today's install-tail behavior).  The
+   py-callable tail path (vectorcall + EVAL_CONTROL_RETURNED /
+   deferred-RETURN when extents are open) stays on the legacy
+   `KosEvalState_Call(tail=1)` route via the spill, unchanged.
+6. Legacy KosCallable tails also stay on the spill + legacy route.
+
+Sequencing invariants to respect: the reset only runs when
+`DYN_TOP == frame` (today's guard in `do_frame_prep` -- extents open
+above the frame defer the tail; replicate); generators cannot be
+tail-installed (classification excludes; general path YIELDS branch
+must keep rejecting or deferring exactly as `wants_frame`=0 does
+today).  Gate: reset/shift + finally-return reproducers, tail tests,
+full containers.  Payoff multiplies under the future tail-promotion
+bytecode pass.
+
+### C2. Finish the vector installs: demand, partial, apply
+
+Closes the Phase 2 "narrowed, not deleted" fallback.  Give the three
+remaining install-only callables `tp_kos_vinstall` implementations
+(partial has real shape -- it re-dispatches with merged args; demand
+and apply are thin), then delete `vcall_build_args_tuple` /
+`vcall_build_kwds_dict` and (optionally) the tuple `tp_kos_install`
+slot itself: the `KosEvalState_CallArgs` path can feed vector installs
+via `PyTuple` ITEMS for positionals plus a cold kwds-dict ->
+kwnames+values marshal.  Cold paths; tidiness and one less marshalling
+layer, not speed.
+
+### C3. Regenerate dispatch-sizing.md
+
+Per that doc's embedded procedure (throwaway `KOS_OP_INLINE = static
+KOS_NOINLINE` build, `nm --print-size`).  The CALL rows are fiction
+now; the regenerated table gives whoever picks up the non-call cold
+giants (`YIELD_FROM` 6.7 KB is the largest body) an honest baseline.
+Record the inlined dispatch fn size too (73,757 B after Phase 2; the
+Phase 3 simple branch grew the core, not the dispatch fn).
+
+### Measure-only: locate the residual method-call cost
+
+One traced churn run (`tox -qe churn-trace -- --method`) to apportion
+the remaining ~200 ns/iter between namespace copy, frame push, and
+attr-cache resolve.  This decides whether the shelved namespace-free
+frames idea (slot storage in the dyn frame, namespace materialized on
+demand; see the eval-perf roadmap memory and
+[../archive/freeze-thaw-context-segments.md](../archive/freeze-thaw-context-segments.md))
+deserves its own design note.  Acting on it is out of scope for this
+branch.
 
 ## Phase 4 note -- per-site call cache: recommend NOT building
 
