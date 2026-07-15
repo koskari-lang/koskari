@@ -2336,20 +2336,34 @@ with the sum of their counts (same for **CAR**).
 **Use-case:** Build a Python `list` from evaluated elements. Replaces the
 bootstrap `build_list` fastcall on the compile path for `#list` forms.
 
-**Behaviour:** Compile each expression in order (stack bottom = first element).
-Emit **BUILD_LIST** with arg = element count. Empty body emits **BUILD_LIST 0**.
+**Behaviour:** Read the body with `gather_parameters`. A keyword / `**:`
+argument defers to the runtime builtin via `(compile/call #list . BODY)`.
+Otherwise the positional / `*:` elements are grouped by
+`partition_collection_runs` (classifying constants via `const_only_expr`) into
+constant runs, dynamic-expression runs, and `*:` splats, and the list is seeded
+fresh then accumulated in place:
 
-Planned **const-run squashing** (tuple constants + **BUILD_LIST_EXTEND**) is
-described in
-[language/const-collection-squashing.md](language/const-collection-squashing.md);
-not implemented yet.
+- **All-constant body** → single **BUILD_LIST_CONST** (pooled tuple → fresh
+  list).
+- **Seed** (first chunk): const run → **BUILD_LIST_CONST**; dynamic run of k →
+  **BUILD_LIST k**; `*:` splat → **BUILD_LIST 0** + iterable +
+  **BUILD_LIST_EXTEND**.
+- **Tail** chunks: const run length ≥ 2 → **BUILD_LIST_EXTEND_CONST**; const
+  run length 1 → **BUILD_LIST_APPEND_CONST**; dynamic run of k →
+  **BUILD_LIST_APPEND k**; `*:` splat → iterable + **BUILD_LIST_EXTEND**.
+
+Empty body emits **BUILD_LIST 0**. Each evaluation produces a new list; a list
+is never placed in the constant pool. See
+[language/const-collection-squashing.md](language/const-collection-squashing.md).
 
 **Examples:**
 
 ```scheme
 (#list)              ; → []
-(#list 1 2 3)        ; → [1, 2, 3]
+(#list 1 2 3)        ; → [1, 2, 3]  (single BUILD_LIST_CONST)
 (#list x y)          ; → [x, y] with dynamic elements
+(#list 1 x 2)        ; → [1, x, 2] mixed const/dynamic runs
+(#list 1 2 *: xs)    ; → [1, 2, *xs] splat via BUILD_LIST_EXTEND
 ```
 
 **Implementation:** `koskari/compile/specials/collections.py`
@@ -2375,8 +2389,10 @@ the stack. Used by macros such as `list-each` (`(#list-append col item)`).
 - **Symbol binding:** `request_for_write` on SYM; compile EXPR; emit
   **VAR_LIST_APPEND** (may lower to **FAST_LIST_APPEND**); push **CONST None**
   (form value is `None`).
-- **List expression:** compile LIST_EXPR, then EXPR; emit **BUILD_LIST_APPEND**
-  (mutates the list in place; leaves the list on the stack).
+- **List expression:** compile LIST_EXPR, then EXPR; emit **BUILD_LIST_APPEND 1**
+  (mutates the list in place; leaves the list on the stack). `BUILD_LIST_APPEND`
+  takes a COUNT arg — the number of stack values to append — and this path
+  appends the single EXPR value.
 
 **Examples:**
 
@@ -2405,26 +2421,33 @@ the stack. Used by macros such as `list-each` (`(#list-append col item)`).
 **Use-case:** Build a Python `tuple` from evaluated elements on the compile
 path. Replaces the bootstrap `build_tuple` fastcall for `#tuple` forms.
 
-**Behaviour:** Compile each expression in order. Emit **BUILD_ARGS** with arg
-= element count. Empty body emits **BUILD_ARGS 0** (empty tuple).
-
-Planned **const-run squashing** (single **CONST** for all-constant bodies,
-**COMBINE_ARGS** for mixed runs) is described in
-[language/const-collection-squashing.md](language/const-collection-squashing.md);
-not implemented yet.
+**Behaviour:** Read the body with `gather_parameters`. A keyword / `**:`
+argument defers to the runtime builtin via `(compile/call #tuple . BODY)`.
+Otherwise the positional / `*:` elements are grouped by
+`partition_collection_runs` into constant runs, dynamic-expression runs, and
+`*:` splats, and each chunk emits one stack sequence: const run → **CONST**
+(pooled tuple); dynamic run of k → **BUILD_ARGS k**; `*:` splat → the iterable
+itself. A single const or dynamic chunk stands alone; otherwise (multiple
+chunks, or a lone splat) **COMBINE_ARGS** over the chunk count concatenates them
+into one fresh tuple. So an all-constant body is a single **CONST**, and a lone
+splat still combines (count 1) to copy the iterable into a new tuple rather than
+alias it. Empty body emits **BUILD_ARGS 0**. See
+[language/const-collection-squashing.md](language/const-collection-squashing.md).
 
 **Examples:**
 
 ```scheme
 (#tuple)             ; → ()
-(#tuple 1 2 3)       ; → (1, 2, 3)
+(#tuple 1 2 3)       ; → (1, 2, 3)  (single CONST)
 (#tuple x y)         ; → (x, y) with dynamic elements
+(#tuple 1 x 2)       ; → (1, x, 2) mixed runs via COMBINE_ARGS
+(#tuple 1 2 *: xs)   ; → (1, 2, *xs) splat via COMBINE_ARGS
 ```
 
 **Implementation:** `koskari/compile/specials/collections.py`
 
-**Tests:** reader `#(` lowering in `tests/reader/test_parse.py`; compile
-special coverage to be extended in `test_collections.py`.
+**Tests:** reader `#(` lowering in `tests/reader/test_parse.py`; compile special
+coverage in `tests/compile/specials/test_collections.py`.
 
 ## compile/cons
 
