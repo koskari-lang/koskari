@@ -19,7 +19,7 @@
    Stack [obj, arg_0, ..., arg_{N-1}]. Resolve obj.name, then call.
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
-KOS_OP_HANDLER(CALL_ATTR) {
+KOS_OP_HANDLER_COLD(CALL_ATTR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;

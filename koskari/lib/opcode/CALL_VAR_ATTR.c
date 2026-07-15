@@ -20,7 +20,7 @@
    from the frame namespace by VAR name. Resolve obj.attr, then call.
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
-KOS_OP_HANDLER(CALL_VAR_ATTR) {
+KOS_OP_HANDLER_COLD(CALL_VAR_ATTR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;

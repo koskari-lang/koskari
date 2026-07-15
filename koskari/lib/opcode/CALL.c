@@ -15,8 +15,8 @@
 
 /**
   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
-  ..., arg_{N-1}] (callable oldest). KosCallable: steal then KosEvalState_Call.
-  Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr (fast path).
+  ..., arg_{N-1}] (callable oldest). Prologue only: the whole window
+  (callable included) is borrowed; kos_call_invoke owns the drop.
 */
 
 KOS_OP_HANDLER(CALL) {
@@ -28,29 +28,9 @@ KOS_OP_HANDLER(CALL) {
 
   SAYF("CALL: callable=%R", ptr[0]);
 
-  if (KosCallable_Check(ptr[0]) || KosInstanceCall_Check(ptr[0])) {
-    KosStackSteal steal = { 0 };
-    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)(n + 1)) < 0)
-      return EVAL_RAISE();
-    KosOpResult r = KosEvalState_Call(es, steal.vals[0],
-                                      (n > 0) ? &steal.vals[1] : NULL,
-                                      (Py_ssize_t) n, NULL, 0);
-    KosStackSteal_Free(&steal);
-    return r;
-
-  } else {
-    PyObject *result;
-
-    if (n == 0) {
-      result = PyObject_CallNoArgs(ptr[0]);
-    } else {
-      result = PyObject_Vectorcall(ptr[0], &ptr[1], (size_t) n, NULL);
-    }
-
-    SAYF("CALL: result=%R", result);
-    KosEvalState_StackDropNoErr(es, n + 1);
-    return kos_op_result_PUSH_OR_AWAIT(es, result);
-  }
+  return kos_call_invoke(es, ptr[0], NULL, n ? ptr + 1 : NULL,
+                         (Py_ssize_t) n, NULL,
+                         KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE);
 }
 
 

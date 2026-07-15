@@ -37,11 +37,13 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   if (! obj)
     return EVAL_RAISE();
 
-  PyObject *const *ptr = NULL;
+  PyObject *const *argv = NULL;
   if (n > 0) {
-    ptr = KosEvalState_StackTailPtr(es, (size_t) n);
-    if (! ptr)
+    argv = KosEvalState_StackTailPtr(es, (size_t) n);
+    if (! argv) {
+      Py_DECREF(obj);
       return EVAL_RAISE();
+    }
   }
 
   /* Per-site cache: this opcode requests one slot (opcodes.incl). The index
@@ -53,54 +55,20 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
 
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
-  if (send_self < 0)
+  if (send_self < 0) {
+    Py_DECREF(obj);
     return EVAL_RAISE();
-
-  if (KosCallable_Check(resolved)) {
-    KosStackSteal steal = { 0 };
-    int steal_ok;
-    if (send_self == 0) {
-      steal_ok = KosEvalState_StackSteal_TailPrepend(es, &steal, obj, (size_t) n);
-    } else {
-      steal_ok = KosEvalState_StackSteal_Tail(es, &steal, (size_t) n);
-    }
-    if (steal_ok < 0) {
-      Py_DECREF(resolved);
-      return EVAL_RAISE();
-    }
-    PyObject *const *args;
-    Py_ssize_t nargs;
-    if (send_self == 0) {
-      args = steal.vals;
-      nargs = (Py_ssize_t) n + 1;
-    } else {
-      args = (n > 0) ? steal.vals : NULL;
-      nargs = (Py_ssize_t) n;
-    }
-    KosOpResult r = KosEvalState_Call(es, resolved, args, nargs, NULL, 0);
-    KosStackSteal_Free(&steal);
-    Py_DECREF(resolved);
-    return r;
   }
 
-  PyObject *result;
-  if (send_self == 0) {
-    KosStackSteal steal = { 0 };
-    if (KosEvalState_StackSteal_TailPrepend(es, &steal, obj, (size_t) n) < 0) {
-      Py_DECREF(resolved);
-      return EVAL_RAISE();
-    }
-    result = PyObject_Vectorcall(resolved, steal.vals, (size_t) n + 1, NULL);
-    KosStackSteal_Free(&steal);
-
-  } else {
-    result = PyObject_Vectorcall(resolved, ptr, (size_t) n, NULL);
-    KosEvalState_StackDropNoErr(es, (size_t) n);
-  }
-
+  /* Prologue only: kos_call_invoke owns the window drop; an unbound
+     resolution injects obj as self via the core's prepend. */
+  KosOpResult r = kos_call_invoke(es, resolved,
+                                  (send_self == 0) ? obj : NULL,
+                                  argv, (Py_ssize_t) n, NULL,
+                                  KOS_CALL_ARGV_WINDOW);
   Py_DECREF(resolved);
-
-  return kos_op_result_PUSH_OR_AWAIT(es, result);
+  Py_DECREF(obj);
+  return r;
 }
 
 
