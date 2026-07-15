@@ -389,6 +389,48 @@ site-preview: site  ## Build the full site and serve build/site for local previe
 	@echo "Serving site at http://127.0.0.1:8000/ (Ctrl+C to stop)"
 	@cd $(BUILD_DIR)/site && $(PYTHON) -m http.server 8000
 
+# Raster favicons / social assets regenerated from the canonical SVG.
+# Committed under docs/_static; re-run when the icon artwork changes.
+ICON_SVG := docs/_static/koskari-icon.svg
+ICON_PNG_DIR := docs/_static
+ICON_FONT_DIR := docs/_static/fonts
+ICON_SIZES := 32 256
+ICON_PNGS := $(foreach s,$(ICON_SIZES),$(ICON_PNG_DIR)/koskari-icon-$(s).png)
+ICON_LOCKUP_SVG := $(ICON_PNG_DIR)/koskari-lockup.svg
+ICON_LOCKUP_PNG := $(ICON_PNG_DIR)/koskari-lockup-64.png
+ICON_FONTCONFIG := $(BUILD_DIR)/koskari-fonts.conf
+
+icons: $(ICON_PNGS) $(ICON_LOCKUP_SVG) $(ICON_LOCKUP_PNG)  ## Regenerate PNG/SVG lockup from koskari-icon.svg
+
+$(ICON_PNG_DIR)/koskari-icon-%.png: $(ICON_SVG)
+	@$(call checkfor,rsvg-convert)
+	@echo "Rendering $@..."
+	@rsvg-convert -w $* -h $* -o $@ $<
+
+# Private fontconfig so rsvg can see the vendored Bricolage Grotesque
+# without installing it system-wide (rsvg ignores SVG @font-face).
+$(ICON_FONTCONFIG): $(ICON_FONT_DIR)/BricolageGrotesque[opsz,wdth,wght].ttf
+	@mkdir -p $(BUILD_DIR)/fontconfig-cache
+	@printf '%s\n' \
+		'<?xml version="1.0"?>' \
+		'<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">' \
+		'<fontconfig>' \
+		'  <dir>$(abspath $(ICON_FONT_DIR))</dir>' \
+		'  <cachedir>$(abspath $(BUILD_DIR)/fontconfig-cache)</cachedir>' \
+		'  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>' \
+		'</fontconfig>' > $@
+	@FONTCONFIG_FILE=$(abspath $@) fc-cache -f "$(abspath $(ICON_FONT_DIR))" >/dev/null 2>&1 || true
+
+$(ICON_LOCKUP_SVG): $(ICON_SVG) tools/build_site.py
+	@$(call checkfor,uv)
+	@echo "Writing $@..."
+	@uv run python3 -c 'from tools.build_site import write_lockup_svg; write_lockup_svg("$(ICON_LOCKUP_SVG)")'
+
+$(ICON_LOCKUP_PNG): $(ICON_LOCKUP_SVG) $(ICON_FONTCONFIG)
+	@$(call checkfor,rsvg-convert)
+	@echo "Rendering $@ (wordmark)..."
+	@FONTCONFIG_FILE=$(abspath $(ICON_FONTCONFIG)) rsvg-convert -h 64 -o $@ $(ICON_LOCKUP_SVG)
+
 
 ##@ Cleanup
 
@@ -453,6 +495,7 @@ python:  ## Show Python executable
 	gdb \
 	handlers \
 	help \
+	icons \
 	build-mcp \
 	build-mcp-container \
 	run-mcp \

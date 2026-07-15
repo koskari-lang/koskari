@@ -26,6 +26,7 @@ marketing page and its static assets.
 
 
 import argparse
+import re
 import shutil
 import sys
 from configparser import ConfigParser
@@ -48,6 +49,17 @@ LICENSE_LABEL = "GPLv3 licensed"
 # The domain the site is served from; emitted as a CNAME so GitHub Pages
 # serves the custom domain from the deployed artifact.
 SITE_DOMAIN = "koskari.org"
+
+# Lockup (apple + "Koskari") is generated from koskari-icon.svg by
+# write_lockup_svg; keep placement and viewBox in sync here.
+ICON_WORDMARK_VIEWBOX = "-7 -10 500 114"
+ICON_WORDMARK_MARKUP = """
+  <text x="110" y="92"
+        font-family="Bricolage Grotesque, sans-serif"
+        font-size="116" font-weight="700" fill="#211C16"
+        letter-spacing="-0.02em">Koskari</text>
+"""
+
 
 # "Find your level" rows, aligned to the documentation we actually
 # publish under /docs. Rendered in order; the number is derived from
@@ -115,6 +127,37 @@ def doc_rows():
     return rows
 
 
+def write_lockup_svg(out_path, root=None):
+    """
+    Build koskari-lockup.svg from the apple-only icon plus a wordmark
+
+    The icon SVG stays mark-only. The lockup widens the viewBox and
+    appends the Bricolage Grotesque label for img references on the
+    landing page and docs chrome.
+
+    :param out_path: destination path for koskari-lockup.svg
+    :param root: repository root path
+    :return: None
+    """
+
+    icon = project_root(root) / "docs" / "_static" / "koskari-icon.svg"
+    svg = icon.read_text(encoding="utf-8")
+    svg = re.sub(
+        r'\bviewBox="[^"]*"',
+        f'viewBox="{ICON_WORDMARK_VIEWBOX}"',
+        svg,
+        count=1)
+    svg = re.sub(r'\s*\bwidth="[^"]*"', '', svg, count=1)
+    svg = re.sub(r'\s*\bheight="[^"]*"', '', svg, count=1)
+    if "</svg>" not in svg:
+        raise ValueError(f"icon SVG missing closing tag: {icon}")
+    svg = svg.replace(
+        "</svg>",
+        ICON_WORDMARK_MARKUP.rstrip() + "\n</svg>",
+        1)
+    Path(out_path).write_text(svg, encoding="utf-8")
+
+
 def render(src, out, root=None):
     """
     Render the landing page and copy its assets into the output tree
@@ -149,8 +192,13 @@ def render(src, out, root=None):
 
     shutil.copyfile(src / "style.css", out / "style.css")
 
-    icon = project_root(root) / "docs" / "_static" / "koskari-icon.svg"
-    shutil.copyfile(icon, out / "koskari-icon.svg")
+    static = project_root(root) / "docs" / "_static"
+    shutil.copyfile(static / "koskari-icon.svg", out / "koskari-icon.svg")
+    lockup = static / "koskari-lockup.svg"
+    if lockup.is_file():
+        shutil.copyfile(lockup, out / "koskari-lockup.svg")
+    else:
+        write_lockup_svg(out / "koskari-lockup.svg", root=root)
 
     (out / "CNAME").write_text(f"{SITE_DOMAIN}\n", encoding="utf-8")
 

@@ -77,6 +77,7 @@ root_doc = 'index'
 
 html_theme = 'sphinx_rtd_theme'
 html_theme_options = {
+    'logo_only': True,
     'navigation_depth': 2,
     'collapse_navigation': True,
     'titles_only': True,
@@ -84,7 +85,7 @@ html_theme_options = {
 }
 html_static_path = ['_static']
 html_favicon = '_static/koskari-icon.svg'
-html_logo = '_static/koskari-icon.svg'
+html_logo = '_static/koskari-lockup-64.png'
 
 # The docs are published under the /docs/ subpath of koskari.org; the
 # landing page occupies the site root. This drives canonical URLs.
