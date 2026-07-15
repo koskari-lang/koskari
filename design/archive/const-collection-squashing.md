@@ -1,6 +1,6 @@
 # Const-run squashing for `#list` and `#tuple`
 
-**Status:** Implemented.
+**Status:** Implemented (archived).
 
 **Goal:** When `compile/#list` or `compile/#tuple` literal elements are known at
 compile time, fold contiguous constant runs into a single tuple in the constant

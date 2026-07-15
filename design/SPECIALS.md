@@ -2354,7 +2354,7 @@ fresh then accumulated in place:
 
 Empty body emits **BUILD_LIST 0**. Each evaluation produces a new list; a list
 is never placed in the constant pool. See
-[language/const-collection-squashing.md](language/const-collection-squashing.md).
+[archive/const-collection-squashing.md](archive/const-collection-squashing.md).
 
 **Examples:**
 
@@ -2432,7 +2432,7 @@ chunks, or a lone splat) **COMBINE_ARGS** over the chunk count concatenates them
 into one fresh tuple. So an all-constant body is a single **CONST**, and a lone
 splat still combines (count 1) to copy the iterable into a new tuple rather than
 alias it. Empty body emits **BUILD_ARGS 0**. See
-[language/const-collection-squashing.md](language/const-collection-squashing.md).
+[archive/const-collection-squashing.md](archive/const-collection-squashing.md).
 
 **Examples:**
 
