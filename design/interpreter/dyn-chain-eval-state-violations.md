@@ -11,7 +11,7 @@
 |----------|----------------|
 | [eval-state-live-authority.md](eval-state-live-authority.md) | Target authority model and Phase 1/2 plan |
 | [../api/tracing.md](../api/tracing.md) | `eval_state_sync` trace buckets |
-| [freeze-thaw-context-segments.md](freeze-thaw-context-segments.md) | Long-term freeze/thaw direction |
+| [freeze-thaw-context-segments.md](../archive/freeze-thaw-context-segments.md) | Long-term freeze/thaw direction |
 
 ---
 

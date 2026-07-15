@@ -311,8 +311,8 @@ struct KosContext {
   frame, code, operand-stack block pointer, and namespace for the active eval
   slice.
 
-  See design/interpreter/freeze-thaw-context-segments.md and
-  design/interpreter/eval-state-live-authority.md.
+  See design/interpreter/eval-state-live-authority.md and the archived
+  design/archive/freeze-thaw-context-segments.md.
 
   KosEvalState_Init only binds ctx and clears es. koskari_eval calls
   KosEvalState_ThawFromContext to move dyn_top, plan, plan_stack, and derived

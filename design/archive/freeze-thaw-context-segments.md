@@ -1,5 +1,58 @@
 # Koskari Design Note: Freeze/Thaw Context Segments and C-Local Execution State
 
+**ARCHIVED 2026-07-14.** Items 1-3 and 5 below are LANDED: `KosEvalState`
+is the C-local live authority (pc/acting_pc/code/namespace/block) with
+freeze/thaw at eval boundaries and retarget choke points -- see
+[eval-state-live-authority.md](../interpreter/eval-state-live-authority.md)
+for the implementation spec, which remains current. CoW stack blocks are
+gone. Item 4, the **fast inline stack block**, was built to completion
+and SHELVED; the full experiment lives on the `maybe-fast-stack` branch
+(commit 1a5df775). The inline fast paths for the hot block-level stack
+ops (a byproduct of the same work) landed on master separately
+(87ad90ce).
+
+## Findings from the fast inline stack experiment
+
+The experiment implemented the active-view design: `es->active` pointing
+at either an es-embedded 32-slot block (with a real `KosStackBlock`
+header, so the authoritative `len` sits behind the active pointer in
+both modes) or the live heap block's `objs`; mode by pointer comparison;
+mode-blind mutations with a single bounds check; flush/restore moves at
+block events. All tests green, including native container and ASAN
+runs. Measured on the churn suite:
+
+- **Per-op cost is parity** with the plain inline heap ops: the block
+  header `len` read-modify-write is the same memory traffic either way,
+  and the active-view refactor trades the slot double-deref and `max`
+  load for a limit load. The no-call churn pairs measured flat.
+- **Call-heavy pairs measured 4-8% slower.** In the stackless model
+  every frame crossing is a spill boundary (flush the caller's segment
+  at call, restore the parent's segment at return) -- precisely the
+  frame-switch frequency scenario the "Scope: suspension vs. frame
+  switch" analysis below flagged as gain-eroding. Suspension-only
+  scoping cannot be applied to the operand stack: a non-innermost
+  frame's segment must be heap-valid at all times, because capture, GC
+  traverse, and dynnode teardown read it.
+- **Transition counters** (`KOS_TE_ES_STACK_*`, landed with the
+  experiment) showed 32 slots ample -- zero overgrows on every
+  benchmark -- and zero transitions in steady-state call loops once
+  steal/tail-prepend had fast-segment paths. Sizing was never the
+  problem; the boundary was.
+- Two invariants any revival must honor: **flush must always leave the
+  heap view active** (raw-slot writers on the delimited-return and
+  transfer-plan paths depend on it), and **rebuild-from-chain must
+  re-derive the view unconditionally**, because chain surgery swaps a
+  slot's CONTENT without changing the slot pointer (in-place invoke
+  displacement, plan resume-stack installs).
+
+**Conclusion:** a C-stack-local operand segment pays off only where the
+operand stack lives and dies with a call frame (the CPython model).
+With a heap-stored dynchain it is cost plus complexity. Direction
+shifted to fused opcodes, which shrink stack traffic instead of
+relocating it.
+
+---
+
 ## Purpose
 
 This document summarizes the design direction for improving Koskari's interpreter hot path by:
@@ -13,7 +66,7 @@ This document summarizes the design direction for improving Koskari's interprete
 The primary goal is to reduce indirection and conditional checks in the hot opcode path while preserving the ability to suspend, resume, and capture execution state.
 
 **Implementation spec (choke points, scatter sync removal, behavioral freeze):**
-[eval-state-live-authority.md](eval-state-live-authority.md).
+[eval-state-live-authority.md](../interpreter/eval-state-live-authority.md).
 
 ---
 
@@ -451,8 +504,8 @@ Section 16 addresses the concern that freeze/thaw overhead may exceed savings; t
 `KosContext` is a heap-allocated struct holding persistent VM state: dynchain, frame cache, **`block`** (pointer to the current operand-stack `KosStackBlock *`), transfer plans, Python bridge (await/yield), exception injection, suspension bookkeeping, and flags. Delimited invoke return metadata lives on **`KOS_DYN_DELIM`** nodes, not in extra context fields.
 
 `koskari_eval()` drives the interpreter. Opcodes receive **`(KosEvalState *es, KosOp *insn)`** and return **`KosOpResult`** via **`EVAL_*()`** macros; they use **`KosEvalState_*`** stack helpers and/or `KosContext_BLOCK(ctx)` after cache refresh. Eval-local macros in `eval.c` still map `CURRENT_FRAME(ctx)` → `frame_top`, `CURRENT_CODE` / `CURRENT_PC` from that frame; the operand stack is the block referenced from **`ctx->block`**, which tracks **`KosDynNode.stack`** on installed nodes (operand stack authority;
-see **Operand stack authority** in [evaluator.md](evaluator.md) and archived
-[node-owned-operand-stack.md](../archive/node-owned-operand-stack.md)).
+see **Operand stack authority** in [evaluator.md](../interpreter/evaluator.md) and archived
+[node-owned-operand-stack.md](node-owned-operand-stack.md)).
 
 ### A.2 Stack and CoW
 

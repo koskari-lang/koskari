@@ -299,7 +299,7 @@ to **one** internal **`dispatch_boundary_event(ctx, out_ev)`** that:
    Attaching boundary delivery to **FOREACH** without **AWAITING_ITER_STEP** (or equivalent) will **mis-handle** any future suspension inside the loop body.
 
 4. **Order of handling vs `walk_handle_yield`**  
-   **Freeze / install / chain version** updates must stay **consistent** with [freeze-thaw-context-segments.md](../interpreter/freeze-thaw-context-segments.md). If **boundary** runs **before** freeze completes, nodes may see **stale** `dyn_top`.
+   **Freeze / install / chain version** updates must stay **consistent** with [freeze-thaw-context-segments.md](freeze-thaw-context-segments.md). If **boundary** runs **before** freeze completes, nodes may see **stale** `dyn_top`.
 
 5. **Ownership of payload**  
    `KosEvent` payload **reference** ownership must match **exactly** one of: **transferred to stack**, **stolen by node**, or **decref’d by generic** path. Document per branch.

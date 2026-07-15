@@ -35,16 +35,6 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 
 ## Evaluator performance
 
-### Fast local stack
-
-Explore a fast local stack (or stack layout) to speed up the evaluator (C-local
-eval state, freeze/thaw; see the design note). The compiler already performs
-reducible constant folding, instruction peephole rewrites in `compress`, and
-VAR→FAST lowering in `Compiler.complete`; a separate fast operand stack in the
-VM remains open.
-
-Ref: [interpreter/freeze-thaw-context-segments.md](interpreter/freeze-thaw-context-segments.md).
-
 ### Opcode caching: further families (investigative)
 
 The per-site cache is **built and active**: the framework (tagged-union slots,

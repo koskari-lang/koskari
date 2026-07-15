@@ -372,6 +372,6 @@ that migration.
 
 - [domain.md](domain.md): Domain / ParamRef / PARAM design (amended by this doc)
 - [extent-wind-unwind.md](extent-wind-unwind.md): unified extent wind/unwind contract
-- [freeze-thaw-context-segments.md](freeze-thaw-context-segments.md): context freeze/thaw
+- [freeze-thaw-context-segments.md](../archive/freeze-thaw-context-segments.md): context freeze/thaw
 - PEP 550 / PEP 567: motivation and semantics for task-local dynamic state
 - Racket parameterization & continuation marks: the chain-based end state

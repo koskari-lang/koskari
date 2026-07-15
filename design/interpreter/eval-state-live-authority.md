@@ -9,7 +9,7 @@
 
 | Document | Relationship |
 |----------|----------------|
-| [freeze-thaw-context-segments.md](freeze-thaw-context-segments.md) | Long-term freeze/thaw and C-local execution model |
+| [freeze-thaw-context-segments.md](../archive/freeze-thaw-context-segments.md) | Long-term freeze/thaw and C-local execution model |
 | [../archive/kos_eval_state_api_migration.md](../archive/kos_eval_state_api_migration.md) | Opcode/API migration off `KosContext_*` macros (archived ledger) |
 | [../EVALUATOR.md](../EVALUATOR.md) | Eval loop, prologue, transfer plans |
 | [../api/tracing.md](../api/tracing.md) | `eval_state_sync` counters (`KOS_TRACE_EVAL_SYNC`) |
