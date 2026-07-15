@@ -34,87 +34,56 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
     return EVAL_RAISE();
 
   PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
-  if (! name)
+  if (! name) {
+    Py_DECREF(obj);
     return EVAL_RAISE();
+  }
 
   PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
-  if (! names)
+  if (! names) {
+    Py_DECREF(obj);
     return EVAL_RAISE();
+  }
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES names must be tuple"
                  ", not %R", names);
+    Py_DECREF(obj);
     return EVAL_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
-  if (npos + nkwds > 0 &&
-      KosEvalState_StackTailPtr(es, (size_t)(npos + nkwds)) == NULL)
-    return EVAL_RAISE();
+  size_t ntotal = (size_t) (npos + nkwds);
 
-  Py_ssize_t total = npos + nkwds;
-  size_t ntotal = (size_t) total;
+  PyObject *const *argv = NULL;
+  if (ntotal) {
+    argv = KosEvalState_StackTailPtr(es, ntotal);
+    if (! argv) {
+      Py_DECREF(obj);
+      return EVAL_RAISE();
+    }
+  }
 
   PyObject *resolved;
   uint16_t cache_ix = KosOp_CACHE(insn);
   KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
       ? NULL : &KosCode_CACHE(code)[cache_ix];
   int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
-  if (send_self < 0)
-    return EVAL_RAISE();
-
-  if (KosCallable_Check(resolved)) {
-    KosStackSteal steal = { 0 };
-    int steal_ok;
-    if (send_self == 0) {
-      steal_ok = KosEvalState_StackSteal_TailPrepend(es, &steal, obj, ntotal);
-    } else {
-      steal_ok = KosEvalState_StackSteal_Tail(es, &steal, ntotal);
-    }
-    if (steal_ok < 0) {
-      Py_DECREF(resolved);
-      return EVAL_RAISE();
-    }
-    PyObject *const *args;
-    Py_ssize_t nargs;
-    if (send_self == 0) {
-      args = steal.vals;
-      nargs = npos + 1;
-    } else {
-      args = (total > 0) ? steal.vals : NULL;
-      nargs = npos;
-    }
-    KosOpResult r = KosEvalState_Call(es, resolved, args, nargs, names, 0);
-    KosStackSteal_Free(&steal);
-    Py_DECREF(resolved);
-    return r;
-  }
-
-  KosStackSteal steal = { 0 };
-  int steal_ok;
-  if (send_self == 0) {
-    steal_ok = KosEvalState_StackSteal_TailPrepend(es, &steal, obj, ntotal);
-  } else {
-    steal_ok = KosEvalState_StackSteal_Tail(es, &steal, ntotal);
-  }
-  if (steal_ok < 0) {
-    Py_DECREF(resolved);
+  if (send_self < 0) {
+    Py_DECREF(obj);
     return EVAL_RAISE();
   }
-  PyObject *result;
-  if (send_self == 0) {
-    result = PyObject_Vectorcall(resolved, steal.vals,
-                                 (size_t)(npos + 1), names);
-  } else {
-    result = PyObject_Vectorcall(resolved,
-        (total > 0) ? steal.vals : NULL, (size_t) npos, names);
-  }
-  KosStackSteal_Free(&steal);
+
+  /* Prologue only: kos_call_invoke owns the window drop; an unbound
+     resolution injects obj as self via the core's prepend. */
+  KosOpResult r = kos_call_invoke(es, resolved,
+                                  (send_self == 0) ? obj : NULL,
+                                  argv, npos, nkwds ? names : NULL,
+                                  KOS_CALL_ARGV_WINDOW);
   Py_DECREF(resolved);
-  if (! result)
-    return EVAL_RAISE();
-  return kos_op_result_PUSH_OR_AWAIT(es, result);
+  Py_DECREF(obj);
+  return r;
 }
 
 

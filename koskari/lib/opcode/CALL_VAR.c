@@ -35,39 +35,19 @@ KOS_OP_HANDLER_COLD(CALL_VAR) {
   if (! callable)
     return EVAL_RAISE();
 
-  if (KosCallable_Check(callable)) {
-    KosStackSteal steal = { 0 };
-    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t) n) < 0) {
+  PyObject *const *argv = NULL;
+  if (n) {
+    argv = KosEvalState_StackTailPtr(es, n);
+    if (! argv) {
       Py_DECREF(callable);
       return EVAL_RAISE();
     }
-    KosOpResult r = KosEvalState_Call(es, callable,
-                            (n > 0) ? steal.vals : NULL,
-                            (Py_ssize_t) n, NULL, 0);
-    Py_DECREF(callable);
-    KosStackSteal_Free(&steal);
-    return r;
-
-  } else {
-    PyObject *result = NULL;
-    if (n == 0) {
-      result = PyObject_CallNoArgs(callable);
-
-    } else {
-      PyObject *const *ptr = KosEvalState_StackTailPtr(es, n);
-      if (! ptr) {
-        Py_DECREF(callable);
-        return EVAL_RAISE();
-      }
-
-      result = PyObject_Vectorcall(callable, ptr, (size_t) n, NULL);
-      KosEvalState_StackDropNoErr(es, n);
-    }
-
-    SAYF("CALL_VAR: result=%R", result);
-    Py_DECREF(callable);
-    return kos_op_result_PUSH_OR_AWAIT(es, result);
   }
+
+  KosOpResult r = kos_call_invoke(es, callable, NULL, argv, (Py_ssize_t) n,
+                                  NULL, KOS_CALL_ARGV_WINDOW);
+  Py_DECREF(callable);
+  return r;
 }
 
 

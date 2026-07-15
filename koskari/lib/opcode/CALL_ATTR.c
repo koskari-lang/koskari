@@ -44,38 +44,19 @@ KOS_OP_HANDLER_COLD(CALL_ATTR) {
   if (send_self < 0)
     return EVAL_RAISE();
 
-  PyObject *result;
-  if (KosCallable_Check(resolved)) {
-    KosStackSteal steal = { 0 };
-    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)count) < 0) {
-      Py_DECREF(resolved);
-      return EVAL_RAISE();
-    }
-    PyObject *const *args;
-    Py_ssize_t nargs;
-    if (send_self == 0) {
-      args = &steal.vals[0];
-      nargs = (Py_ssize_t) n + 1;
-    } else {
-      args = (n > 0) ? &steal.vals[1] : NULL;
-      nargs = (Py_ssize_t) n;
-    }
-    KosOpResult r = KosEvalState_Call(es, resolved, args, nargs, NULL, 0);
-    KosStackSteal_Free(&steal);
-    Py_DECREF(resolved);
-    return r;
-  }
-
+  /* Unbound: obj is already argv[0] in the window.  Bound: obj is the
+     under-slot, dropped with the window but not passed. */
+  KosOpResult r;
   if (send_self == 0) {
-    result = PyObject_Vectorcall(resolved, &ptr[0], (size_t) n + 1, NULL);
+    r = kos_call_invoke(es, resolved, NULL, ptr, (Py_ssize_t) n + 1,
+                        NULL, KOS_CALL_ARGV_WINDOW);
   } else {
-    result = PyObject_Vectorcall(resolved,
-        (n > 0) ? &ptr[1] : NULL, (size_t) n, NULL);
+    r = kos_call_invoke(es, resolved, NULL, (n > 0) ? &ptr[1] : NULL,
+                        (Py_ssize_t) n, NULL,
+                        KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER);
   }
-  KosEvalState_StackDropNoErr(es, count);
   Py_DECREF(resolved);
-
-  return kos_op_result_PUSH_OR_AWAIT(es, result);
+  return r;
 }
 
 

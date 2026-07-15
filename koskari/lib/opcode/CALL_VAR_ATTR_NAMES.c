@@ -68,66 +68,25 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
     }
   }
 
-  Py_ssize_t total = npos + nkwds;
-  size_t ntotal = (size_t) total;
-
   PyObject *resolved;
   uint16_t cache_ix = KosOp_CACHE(insn);
   KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
       ? NULL : &KosCode_CACHE(code)[cache_ix];
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
-  if (send_self < 0)
-    return EVAL_RAISE();
-
-  if (KosCallable_Check(resolved)) {
-    KosStackSteal steal = { 0 };
-    int steal_ok;
-    if (send_self == 0) {
-      steal_ok = KosEvalState_StackSteal_TailPrepend(es, &steal, obj, ntotal);
-    } else {
-      steal_ok = KosEvalState_StackSteal_Tail(es, &steal, ntotal);
-    }
-    if (steal_ok < 0) {
-      Py_DECREF(resolved);
-      Py_DECREF(obj);
-      return EVAL_RAISE();
-    }
-    PyObject *const *args;
-    Py_ssize_t nargs;
-    if (send_self == 0) {
-      args = steal.vals;
-      nargs = npos + 1;
-    } else {
-      args = (total > 0) ? steal.vals : NULL;
-      nargs = npos;
-    }
-    KosOpResult r = KosEvalState_Call(es, resolved, args, nargs, names, 0);
-    KosStackSteal_Free(&steal);
-    Py_DECREF(resolved);
+  if (send_self < 0) {
     Py_DECREF(obj);
-    return r;
+    return EVAL_RAISE();
   }
 
-  PyObject *result;
-  if (send_self == 0) {
-    KosStackSteal steal = { 0 };
-    if (KosEvalState_StackSteal_TailPrepend(es, &steal, obj, ntotal) < 0) {
-      Py_DECREF(resolved);
-      Py_DECREF(obj);
-      return EVAL_RAISE();
-    }
-    result = PyObject_Vectorcall(resolved, steal.vals, (size_t)(npos + 1), names);
-    KosStackSteal_Free(&steal);
-
-  } else {
-    result = PyObject_Vectorcall(resolved, ptr, (size_t) npos, names);
-    KosEvalState_StackDropNoErr(es, ntotal);
-  }
-
+  /* Prologue only: kos_call_invoke owns the window drop; an unbound
+     resolution injects obj as self via the core's prepend. */
+  KosOpResult r = kos_call_invoke(es, resolved,
+                                  (send_self == 0) ? obj : NULL,
+                                  ptr, npos, nkwds ? names : NULL,
+                                  KOS_CALL_ARGV_WINDOW);
   Py_DECREF(resolved);
   Py_DECREF(obj);
-
-  return kos_op_result_PUSH_OR_AWAIT(es, result);
+  return r;
 }
 
 

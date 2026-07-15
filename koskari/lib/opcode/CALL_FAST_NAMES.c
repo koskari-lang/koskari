@@ -47,34 +47,21 @@ KOS_OP_HANDLER_COLD(CALL_FAST_NAMES) {
   }
 
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
-  Py_ssize_t total = npos + nkwds;
-  size_t ntotal = (size_t) total;
+  size_t ntotal = (size_t) (npos + nkwds);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, ntotal);
-  if (! ptr) {
-    Py_DECREF(callable);
-    return EVAL_RAISE();
-  }
-
-  if (KosCallable_Check(callable)) {
-    KosStackSteal steal = { 0 };
-    if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0) {
+  PyObject *const *argv = NULL;
+  if (ntotal) {
+    argv = KosEvalState_StackTailPtr(es, ntotal);
+    if (! argv) {
       Py_DECREF(callable);
       return EVAL_RAISE();
     }
-    KosOpResult r = KosEvalState_Call(es, callable, steal.vals,
-                            npos, names, 0);
-    Py_DECREF(callable);
-    KosStackSteal_Free(&steal);
-    return r;
   }
 
-  PyObject *result = PyObject_Vectorcall(callable, ptr, (size_t) npos,
-                                         names);
-  KosEvalState_StackDropNoErr(es, ntotal);
+  KosOpResult r = kos_call_invoke(es, callable, NULL, argv, npos, names,
+                                  KOS_CALL_ARGV_WINDOW);
   Py_DECREF(callable);
-
-  return kos_op_result_PUSH_OR_AWAIT(es, result);
+  return r;
 }
 
 

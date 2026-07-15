@@ -34,32 +34,26 @@ KOS_OP_HANDLER_COLD(CALL_NAMES) {
   Py_ssize_t npos = (Py_ssize_t) opa;
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
   Py_ssize_t total = npos + nkwds;
-  size_t ntotal = (size_t)(total + 2);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, ntotal);
-  if (! ptr)
+  /* Pop the names tuple off the top; the remaining window is the
+     standard [callable, pos..., kw_vals...] shape for the core. */
+  names = KosEvalState_StackPopRef(es);
+  if (! names)
     return EVAL_RAISE();
 
-  PyObject *kwnames = nkwds ? ptr[total + 1] : NULL;
-
-  if (KosCallable_Check(ptr[0])) {
-    KosStackSteal steal = { 0 };
-    if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0)
-      return EVAL_RAISE();
-    PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
-    KosOpResult r = KosEvalState_Call(es, steal.vals[0],
-                            &steal.vals[1], npos, kwnames_arg, 0);
-    KosStackSteal_Free(&steal);
-    return r;
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, (size_t) total + 1);
+  if (! ptr) {
+    Py_DECREF(names);
+    return EVAL_RAISE();
   }
 
-  PyObject *result = PyObject_Vectorcall(ptr[0], &ptr[1], (size_t) npos,
-                                         kwnames);
-  if (! result)
-    return EVAL_RAISE();
-
-  KosEvalState_StackDropNoErr(es, ntotal);
-  return kos_op_result_PUSH_OR_AWAIT(es, result);
+  KosOpResult r = kos_call_invoke(es, ptr[0], NULL,
+                                  total ? ptr + 1 : NULL, npos,
+                                  nkwds ? names : NULL,
+                                  KOS_CALL_ARGV_WINDOW
+                                  | KOS_CALL_WINDOW_CALLABLE);
+  Py_DECREF(names);
+  return r;
 }
 
 

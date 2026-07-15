@@ -1,9 +1,9 @@
 # CALL Family Unification and Install-Path Acceleration
 
-**Status: Phases 0-1 COMPLETE (2026-07-15, branch `call_cleanups`);
-Phase 1 gate green (suite 4700, native 293, ASAN 293), awaiting review.
-Phases gate on review; do not start a phase before the prior phase's
-gate is cleared.**
+**Status: Phases 0-2 COMPLETE (2026-07-15, branch `call_cleanups`);
+Phase 2 gate green, awaiting review.  Next: Phase 3 (simple-call fast
+path).  Phases gate on review; do not start a phase before the prior
+phase's gate is cleared.**
 
 ## Purpose
 
@@ -190,8 +190,43 @@ Expected outcome: dispatch fn sheds most of the CALL family body
 (~15 KB); per-call cost neutral or better (one call/ret added, layers
 of duplication and dead branches removed).
 
-**Gate: pause for review.** Regenerated dispatch-sizing, churn deltas,
-suite + native + ASAN.
+### Phase 2 outcomes [COMPLETE]
+
+- `kos_call_invoke` landed (noinline, ~2.7 KB out of line) with the
+  per-class window sequencing, plus `KOS_CALL_WINDOW_CALLABLE` (window
+  includes the callable beneath argv) and `KOS_CALL_WINDOW_UNDER` (an
+  on-stack receiver beneath argv, dropped with the window, reached only
+  via self_arg injection).  Self-injection is a borrowed prepend buffer
+  in the entry; the body has no self-awareness.
+- **Converted (12)**: CALL_FAST, CALL, CALL_FAST_ATTR, CALL_FAST_NAMES,
+  CALL_NAMES (prologue pops the on-stack names tuple; the remaining
+  window is the standard shape), CALL_VAR, CALL_VAR_NAMES, CALL_ATTR,
+  CALL_ATTR_NAMES (unbound: obj is already argv[0]; bound: WINDOW_UNDER),
+  CALL_VAR_ATTR, CALL_VAR_ATTR_NAMES, CALL_FAST_ATTR_NAMES.  The
+  KosStackSteal round trip is gone from all of them.
+- **Bug fixes surfaced by the conversion**: per-call reference leaks of
+  the receiver in CALL_FAST_ATTR, CALL_FAST_ATTR_NAMES, and the
+  CALL_VAR_ATTR_NAMES resolve-error path (kos_ns_fast_deref /
+  frame_ns_deref return new references that the old handlers never
+  released), plus leaked receivers on several early-error paths.
+- **Kept by design**: STAR variants gather splats into tuple + dict and
+  delegate via KosEvalState_CallArgs -- that IS the cold gather path
+  (a vector rework buys uniformity, not speed).  TAIL_CALL* stays on
+  KosEvalState_Call until Phase 3 shares the simple path (the
+  tail-promotion pass is the real consumer).  The tuple fallback in
+  KosCallable_Call is NARROWED, not deleted: continuations (both) and
+  Expression gained vinstalls (a k(v) invoke no longer builds a tuple);
+  demand, partial, and apply keep the fallback until they get
+  vector-native installs (mechanical follow-up, cold paths).
+- Sizing correction: 14 of the 17 non-hot variants were ALREADY cold;
+  the inline shrink came from the hot trio's bodies.  Dispatch fn
+  81,418 -> 73,757 B (-9.4%).
+- churn at the Phase 2 gate: method 11.66 s (baseline 13.20, -11.7%),
+  tree 10.12, list_each 21.07, field/slots/branch at or better than
+  baseline.
+
+**Gate: pause for review.** CLEARED PENDING SIGN-OFF: suite 4700 passed
+/ 10 skipped, native + ASAN green, dispatch fn and churn numbers above.
 
 ## Phase 3 -- Simple-call fast path
 

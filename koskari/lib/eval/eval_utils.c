@@ -579,6 +579,10 @@ KosOpResult KosEvalState_Call(
 #define KOS_CALL_PLAIN            0x0u
 #define KOS_CALL_ARGV_WINDOW      0x1u
 #define KOS_CALL_WINDOW_CALLABLE  0x2u
+/* One extra window slot beneath argv (an on-stack receiver): dropped
+   with the window, never the call target.  The receiver reaches the
+   callee only via self_arg injection. */
+#define KOS_CALL_WINDOW_UNDER     0x4u
 
 #define KOS_CALL_SPILL_FAST 16
 
@@ -720,7 +724,8 @@ static KOS_NOINLINE KosOpResult kos_call_invoke(
 
   if (flags & KOS_CALL_ARGV_WINDOW)
     window = (size_t) (nargs + nkw)
-        + ((flags & KOS_CALL_WINDOW_CALLABLE) ? 1u : 0u);
+        + ((flags & KOS_CALL_WINDOW_CALLABLE) ? 1u : 0u)
+        + ((flags & KOS_CALL_WINDOW_UNDER) ? 1u : 0u);
 
   if (! self_arg)
     return kos_call_invoke_body(es, caller_slot, window, callable,

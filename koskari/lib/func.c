@@ -166,6 +166,29 @@ static PyMemberDef expression_members[] = {
 /* === KosExpression install slots === */
 
 
+/** Zero-arg install shared by the tuple and vector Expression slots. */
+static KosOpResult kos_expression_install_core(
+    KosEvalState *es,
+    PyObject *callable) {
+
+  KosCode *code = (KosCode *) KosExpression_CODE(callable);
+  if (code && KosCode_YIELDS(code)) {
+    PyObject *ns = KosExpression_NS(callable);
+    Py_INCREF(ns);  // NewFromCodeAndNs steals a reference
+    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
+    if (! agen)
+      return EVAL_RAISE();
+    return KosEvalState_StackPUSH(es, agen) < 0 ? EVAL_RAISE() : EVAL_NORMAL();
+  }
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  PyObject *ns = KosExpression_NS(callable);
+  Py_INCREF(ns);
+  return KosEvalState_SetFrameCodeAndNamespace(es, frame, code, ns) < 0
+      ? EVAL_RAISE() : EVAL_NORMAL();
+}
+
+
 static KosOpResult kos_install_expression(
     KosEvalState *es,
     PyObject *callable,
@@ -184,21 +207,31 @@ static KosOpResult kos_install_expression(
     return EVAL_RAISE();
   }
 
-  KosCode *code = (KosCode *) KosExpression_CODE(callable);
-  if (code && KosCode_YIELDS(code)) {
-    PyObject *ns = KosExpression_NS(callable);
-    Py_INCREF(ns);  // NewFromCodeAndNs steals a reference
-    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
-    if (! agen)
-      return EVAL_RAISE();
-    return KosEvalState_StackPUSH(es, agen) < 0 ? EVAL_RAISE() : EVAL_NORMAL();
+  return kos_expression_install_core(es, callable);
+}
+
+
+static KosOpResult kos_vinstall_expression(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  (void) args;
+  (void) tail_call;
+
+  if (nargs != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+    return EVAL_RAISE();
+  }
+  if (kwnames && PyTuple_GET_SIZE(kwnames) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
+    return EVAL_RAISE();
   }
 
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  PyObject *ns = KosExpression_NS(callable);
-  Py_INCREF(ns);
-  return KosEvalState_SetFrameCodeAndNamespace(es, frame, code, ns) < 0
-      ? EVAL_RAISE() : EVAL_NORMAL();
+  return kos_expression_install_core(es, callable);
 }
 
 
@@ -282,7 +315,7 @@ KosCallableTypeObject KosExpressionType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_expression,
-  .tp_kos_vinstall = NULL,
+  .tp_kos_vinstall = kos_vinstall_expression,
   .tp_kos_wants_frame = 1,
   .tp_kos_wants_frame_fn = kos_expression_wants_frame,
 };
