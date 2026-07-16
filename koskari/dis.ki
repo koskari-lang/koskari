@@ -13,31 +13,57 @@
 
 
 """
-koskari.dis_ng
+koskari.dis
 
-Experimental koskari-native disassembler aiming for parity with
-koskari.dis output shape.
+Disassembler for Koskari code objects. Similar to Python's dis module:
+unpacks constant pool, vars (local_syms), closure refs (closure_syms from
+namespace_spec), and prints indexed opcodes with human-readable arguments
+(e.g. constant pool index as repr of value, jump targets as instruction
+indices). Also accepts BoundMethod (unwraps __func__ for bytecode, prints
+__self__ in a leading section).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-import-from koskari.lib Code Function NamespaceSpec OpCode OpStyle
+import-from koskari.lib BoundMethod Code Expression Function NamespaceSpec OpCode OpStyle demand
 
 
 (declare-exports dis)
 
 
+define _boundmethod_inner_function [bm]:
+  """
+  Return the KosFunction behind a BoundMethod, unwrapping Demand if needed
+
+  :param bm: BoundMethod instance
+  :return: Function instance
+  :raises TypeError: when __func__ is not Function or Demand(Function)
+  """
+  define func bm.__func__
+  when (instance? func demand):
+    set! func func.__wrapped__
+  when (not (instance? func Function)):
+    (raise
+      (TypeError
+        f"BoundMethod __func__ must be Function or Demand(Function), got {(attr (type func) __name__)}"))
+  return func
+
+
 define _get_code [x]:
   """
-  Return x if it is a Code instance, else None.
+  Return Code for disassembly targets: Code, or Expression (unwrap .code).
 
   :param x: value to check
   :return: Code instance or None
   """
-  when (instance? x Code):
+  if (instance? x Code):
     x
+  elif (instance? x Expression):
+    x.code
+  else:
+    None
 
 
 define _format_constant [val]:
@@ -82,9 +108,7 @@ define _write_function_instance_section [file fn]:
   if (is-not? base_ns None):
     try:
       define items (base_ns.items)
-    except [Exception]:
-      ;; EXPERIMENT-ISSUE: Exception tuple granularity differs from dis.py
-      ;; fallback catches all Exception instead of (AttributeError, TypeError)
+    except [#(AttributeError TypeError)]:
       file.write "    (unable to iterate)\n"
     else:
       for-each [kv items]:
@@ -93,6 +117,18 @@ define _write_function_instance_section [file fn]:
         file.write f"    {(repr k)}: {(_format_constant v)}\n"
   else:
     file.write "    (none)\n"
+  file.write "\n"
+
+
+define _write_bound_method_section [file bm]:
+  """
+  Write a leading section for a BoundMethod: bound __self__.
+
+  :param file: file-like object to write to
+  :param bm: BoundMethod instance
+  """
+  file.write "Bound method instance:\n"
+  file.write f"  __self__: {(_format_constant bm.__self__)}\n"
   file.write "\n"
 
 
@@ -147,8 +183,6 @@ define _build_ns_const_map [code]:
   :return: dict mapping instruction index -> constant pool index
   """
   define result (dict)
-  define cpool code.constants_pool
-  define last_nspec_cpool_idx None
   define i 0
   define n (code.length)
 
@@ -158,24 +192,11 @@ define _build_ns_const_map [code]:
     define arg (item oparg 1)
     define op (OpCode op_int)
 
-    if (equal? op OpCode.KOS_OP_CONST):
-      if (and (<= 0 arg) (< arg (len cpool)) (instance? (item cpool arg) NamespaceSpec)):
-        set! last_nspec_cpool_idx arg
-      else:
-        set! last_nspec_cpool_idx None
-    else:
-      if (equal? op OpCode.KOS_OP_PUSH_NS):
-        define ext (code.extra_tuple arg)
-        (set-item result i (item ext 0))
-        (set! last_nspec_cpool_idx None)
-      else:
-        if (equal? op OpCode.KOS_OP_PUSH_COLLECT):
-          if (and (<= 0 arg) (< arg (len cpool))
-                  (instance? (item cpool arg) NamespaceSpec)):
-            (set-item result i arg)
-          (set! last_nspec_cpool_idx None)
-        else:
-          (set! last_nspec_cpool_idx None)
+    if (equal? op OpCode.KOS_OP_PUSH_NS):
+      define ext (code.extra_tuple arg)
+      (set-item result i (item ext 0))
+    elif (equal? op OpCode.KOS_OP_PUSH_COLLECT):
+      (set-item result i arg)
 
     set! i (+ i 1)
 
@@ -228,8 +249,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
       if schema:
         try:
           define ext (code.extra_tuple arg)
-        except [Exception]:
-          ;; EXPERIMENT-ISSUE: Keep broad exception fallback for interop safety
+        except [#(IndexError TypeError)]:
           return (str arg)
 
         define parts #[]
@@ -343,6 +363,9 @@ define dis [x file: None]:
   For Function: prints a leading section with function instance details
   (name, formals, base_ns closures), then the disassembly of its code.
 
+  For BoundMethod: prints a bound-method section (__self__), then the
+  same function-instance section and code disassembly as for __func__.
+
   For Code: output includes constant pool (with NamespaceSpec entries
   expanded to show their locals and closures), vars (local_syms from
   namespace_spec), closure refs (closure_syms from namespace_spec),
@@ -351,7 +374,7 @@ define dis [x file: None]:
   instructions are annotated with the namespace ID (ns#K) and name of
   the NamespaceSpec they push.
 
-  :param x: Code or Function instance
+  :param x: Code, Expression (unwraps to Code), Function, or BoundMethod
   :param file: file-like object to print to (default: stdout)
   """
   define code None
@@ -361,10 +384,18 @@ define dis [x file: None]:
     set! code x.code
     set! out (_resolve_file out)
     _write_function_instance_section out x
+  elif (instance? x BoundMethod):
+    define fn (_boundmethod_inner_function x)
+    set! code fn.code
+    set! out (_resolve_file out)
+    _write_bound_method_section out x
+    _write_function_instance_section out fn
   else:
     set! code (_get_code x)
     when (is? code None):
-      (raise (TypeError f"expected Code or Function, got {(attr (type x) __name__)}"))
+      (raise
+        (TypeError
+          f"expected Code, Expression, Function, or BoundMethod, got {(attr (type x) __name__)}"))
 
   set! out (_resolve_file out)
   define cpool code.constants_pool
@@ -437,8 +468,7 @@ define dis [x file: None]:
       define line (item pos 0)
       define col (item pos 1)
       set! pos_str f"  # line {line}, col {col}"
-    except [Exception]:
-      ;; EXPERIMENT-ISSUE: Broad catch here mirrors practical fallback behavior
+    except [#(IndexError TypeError)]:
       None
 
     out.write f"""  {i "3d"}  {op.name "24s"} {arg_str}{pos_str}\n"""

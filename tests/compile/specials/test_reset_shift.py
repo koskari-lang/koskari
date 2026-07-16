@@ -20,7 +20,7 @@ handler. Mirrors the semantics in design/language/control-flow.md.
 
 from . import SpecialsTestCase
 from koskari.lib import DelimitedContinuation, ParamRef
-from koskari.dis import dis
+from tests.dis.dis import dis
 
 import pytest
 

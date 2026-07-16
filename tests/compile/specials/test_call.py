@@ -18,7 +18,7 @@ Bytecode shape for positional, keyword, star; evaluation order; end-to-end.
 
 
 from koskari.lib import OpCode
-from koskari.dis import dis
+from tests.dis.dis import dis
 
 from . import SpecialsTestCase
 

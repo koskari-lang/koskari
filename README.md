@@ -174,8 +174,7 @@ koskari/
 │   └── repl.ki              # Interactive REPL loop
 ├── module.py                # Module lifecycle for .ki source files
 ├── importer.py              # Re-exports koskari_importer hooks
-├── dis.py                   # Disassembler for Code objects
-├── dis_ng.ki                # Self-hosted disassembler sources
+├── dis.ki                   # Self-hosted disassembler for Code objects
 ├── bootstrap/               # Bootstrap koskari sources and loader
 │   ├── *.ki                 # Core forms compiled into builtins
 │   ├── __init__.py          # Bootstrap loader

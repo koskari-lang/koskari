@@ -12,9 +12,14 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.dis
+tests.dis.dis
 
-Disassembler for Koskari code objects. Similar to Python's dis module:
+Pure-Python disassembler for Koskari code objects, kept in the test tree
+as a fallback for koskari.dis (which is now written in Koskari itself).
+Tests can rely on this to show opcodes, constant pools, and namespaces
+even when the Koskari stack is too broken to run its own disassembler.
+
+Similar to Python's dis module:
 unpacks constant pool, vars (local_syms), closure refs (closure_syms from
 namespace_spec), and prints indexed opcodes with human-readable arguments
 (e.g. constant pool index as repr of value, jump targets as instruction

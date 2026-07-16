@@ -18,7 +18,7 @@ Dynamic-wind runs before/after thunks on extent entry and exit.
 """
 
 
-from koskari.dis import dis
+from tests.dis.dis import dis
 from . import SpecialsTestCase
 
 import pytest

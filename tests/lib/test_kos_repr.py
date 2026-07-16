@@ -356,8 +356,17 @@ class TestKosReprRegistry(unittest.TestCase):
     Tests for the kos_repr type registry
     """
 
+    def setUp(self):
+        # snapshot so tearDown can restore, rather than clearing the
+        # builtin container handlers that bootstrap registered (which the
+        # whole rest of the suite relies on for koskari-style repr)
+        self._registry_snapshot = kos_repr_registry_snapshot()
+
+
     def tearDown(self):
         kos_repr_registry_clear()
+        for typ, handler in self._registry_snapshot.items():
+            kos_repr_register(typ, handler)
 
 
     def test_register_and_kos_repr(self):
