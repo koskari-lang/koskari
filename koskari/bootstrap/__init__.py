@@ -247,6 +247,7 @@ def make_bootstrap():
     _bind('py-help', help)
     _bind('py-repr', repr)
     _bind('reversed', reversed)
+    _bind('round', round)
     _bind('setattr', setattr)
     _bind('sorted', sorted)
     _bind('super', super)
