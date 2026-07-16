@@ -21,7 +21,7 @@ Integration tests for compile/define with syntax and macro transformers.
 
 import pytest
 
-from koskari.dis import dis
+from tests.dis.dis import dis
 from koskari.lib import OpCode, build_list
 from koskari.syntax import (Syntax, build_macro, build_special, build_syntax,
                             parse_match_pattern, parse_rule_pattern)

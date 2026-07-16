@@ -26,7 +26,7 @@ import os
 import unittest
 
 from koskari.module import init_module, load_module_async, new_module
-from koskari.dis import dis
+from tests.dis.dis import dis
 
 import pytest
 

@@ -17,7 +17,7 @@ noticeably: the fully-inlined dispatch fn (81,418 B) is smaller than floor +
 bodies (111,984 B), so at `-O2 -flto` inlining shares tails and specialises away
 more than the standalone bodies imply.  Hotness is reasoned, not profiled: there
 is no PGO/instrumented build yet (deferred until we have representative profiling
-apps -- scheduler, koslife, churns, mcp, repl, dis_ng).
+apps -- scheduler, koslife, churns, mcp, repl, dis).
 
 Measured 2026-07-15 on branch `call_cleanups` (post call-unification
 phases 1-3 + C1/C2), 200 opcodes (one handler each; 201 symbols counting

@@ -16,7 +16,7 @@ Tests for koskari.compile compile/let and compile/letrec special forms.
 """
 
 
-from koskari.dis import dis
+from tests.dis.dis import dis
 from . import SpecialsTestCase
 
 import pytest

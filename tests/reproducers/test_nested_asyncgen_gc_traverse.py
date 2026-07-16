@@ -28,7 +28,7 @@ import gc
 import pytest
 
 import koskari.compile.specials  # noqa: F401
-from koskari.dis import dis
+from tests.dis.dis import dis
 from tests.compile.specials import SpecialsTestCase
 
 pytestmark = pytest.mark.phase_reproducers
