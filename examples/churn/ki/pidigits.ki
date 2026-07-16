@@ -1,0 +1,43 @@
+;; pidigits -- unbounded spigot (Gibbons) for the digits of pi.  Every step is
+;; arbitrary-precision integer arithmetic (multiply, add, floor-divide on
+;; growing integers), so this is a direct exercise of the bignum path.  The
+;; assembled integer of the first n digits is a known oracle.
+
+define pidigits [n]:
+    define q 1
+    define r 0
+    define t 1
+    define k 1
+    define m 3
+    define x 3
+    define decimal 0
+    define count 0
+
+    while (< count n):
+        if (< (- (+ (* 4 q) r) t) (* m t)):
+            ;; emit digit m; update q, r, m from the current values
+            set! decimal (+ (* decimal 10) m)
+            set! count (+ count 1)
+            define nq (* 10 q)
+            define nr (* 10 (- r (* m t)))
+            define nm (- (// (* 10 (+ (* 3 q) r)) t) (* 10 m))
+            set! q nq
+            set! r nr
+            set! m nm
+        else:
+            define nq (* q k)
+            define nr (* (+ (* 2 q) r) x)
+            define nt (* t x)
+            define nk (+ k 1)
+            define nm (// (+ (* q (+ (* 7 k) 2)) (* r x)) (* t x))
+            define nx (+ x 2)
+            set! q nq
+            set! r nr
+            set! t nt
+            set! k nk
+            set! m nm
+            set! x nx
+    decimal
+
+
+;; The end.

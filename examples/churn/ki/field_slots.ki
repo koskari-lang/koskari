@@ -1,0 +1,31 @@
+;; churn_field_slots -- identical to churn_field but on a __slots__ class, so
+;; attribute access takes the SLOT storage path (a fixed member offset)
+;; rather than the instance dict.
+
+(define MASK32 0xffffffff)
+
+
+define-class SlotBox []:
+
+    define __slots__ #("i" "a" "b")
+
+    define __init__ [self]:
+        set! self.i 0
+        set! self.a 0
+        set! self.b 0
+
+
+define churn_field_slots [n x: 1]:
+    define box (SlotBox)
+    set! box.i 0
+    set! box.a (& x MASK32)
+    set! box.b 1
+    while (< box.i n):
+        set! box.a (+ box.a box.b)
+        set! box.a (& box.a MASK32)
+        set! box.b (^ box.b box.a)
+        set! box.i (+ box.i 1)
+    (& (^ box.a box.b) MASK32)
+
+
+;; The end.

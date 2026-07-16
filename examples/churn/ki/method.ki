@@ -1,0 +1,26 @@
+;; churn_method -- one bound-method call per iteration, mutating instance
+;; state through self.  Exercises attribute resolution and call dispatch.
+
+(define MASK32 0xffffffff)
+
+
+define-class ChurnCounter []:
+
+    define __init__ [self]:
+        set! self.total 0
+
+    define bump [self v]:
+        set! self.total (& (+ self.total v) MASK32)
+        self.total
+
+
+define churn_method [n x: 1]:
+    define c (ChurnCounter)
+    define i 0
+    while (< i n):
+        set! x (c.bump (^ x i))
+        set! i (+ i 1)
+    c.total
+
+
+;; The end.

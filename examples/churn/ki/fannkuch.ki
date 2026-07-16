@@ -1,0 +1,61 @@
+;; fannkuch -- fannkuch-redux (benchmarks-game).  Generates every permutation
+;; of n elements, counting prefix-reversal flips.  Exercises integer array
+;; indexing and in-place mutation (item / set-item) in tight loops.  Returns
+;; #(max-flips checksum); for n=7 that is #(16 228), a known oracle.
+
+define fannkuch [n]:
+    define perm1 (list (range n))
+    define count (list-each [_ (range n)] 0)
+    define max-flips 0
+    define checksum 0
+    define perm-count 0
+    define r n
+
+    while True:
+        while (!= r 1):
+            set-item count (- r 1) r
+            set! r (- r 1)
+
+        define perm (list perm1)
+        define flips 0
+        define k (item perm 0)
+        while (!= k 0):
+            define i 0
+            define j k
+            while (< i j):
+                define tmp (item perm i)
+                set-item perm i (item perm j)
+                set-item perm j tmp
+                set! i (+ i 1)
+                set! j (- j 1)
+            set! flips (+ flips 1)
+            set! k (item perm 0)
+
+        when (> flips max-flips):
+            set! max-flips flips
+        if (== 0 (% perm-count 2)):
+            set! checksum (+ checksum flips)
+        else:
+            set! checksum (- checksum flips)
+
+        ;; advance perm1 to the next permutation
+        define advanced False
+        while (not advanced):
+            when (== r n):
+                return #(max-flips checksum)
+            define perm0 (item perm1 0)
+            define i2 0
+            while (< i2 r):
+                define j2 (+ i2 1)
+                set-item perm1 i2 (item perm1 j2)
+                set! i2 j2
+            set-item perm1 r perm0
+            set-item count r (- (item count r) 1)
+            if (> (item count r) 0):
+                set! advanced True
+            else:
+                set! r (+ r 1)
+        set! perm-count (+ perm-count 1)
+
+
+;; The end.

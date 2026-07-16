@@ -1,0 +1,20 @@
+;; churn_loop -- a tight while loop over an xorshift-style integer mix.
+;; Exercises the loop and arithmetic dispatch path: no calls, no attribute
+;; access, just the bytecode loop.
+
+(define MASK32 0xffffffff)
+
+
+define churn_loop [n x: 1]:
+    define i 0
+    while (< i n):
+        set! x (& (+ (* x 1664525) 1013904223) MASK32)
+        set! x (^ x (& (<< x 13) MASK32))
+        set! x (^ x (>> x 17))
+        set! x (^ x (& (<< x 5) MASK32))
+        set! x (& (+ x (* i 1103515245)) MASK32)
+        set! i (+ i 1)
+    x
+
+
+;; The end.

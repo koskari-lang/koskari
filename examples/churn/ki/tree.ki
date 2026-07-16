@@ -1,0 +1,20 @@
+;; churn_tree -- recursive call-depth churn.  Two self-calls per frame with
+;; light arithmetic, so frame setup/teardown and call dispatch dominate.
+
+(define MASK32 0xffffffff)
+
+
+define churn_tree [depth x: 1]:
+    if (<= depth 0):
+        set! x (& (+ (* x 1664525) 1013904223) MASK32)
+        set! x (^ x (& (<< x 13) MASK32))
+        set! x (^ x (>> x 17))
+        set! x (^ x (& (<< x 5) MASK32))
+        (& x MASK32)
+    else:
+        define a (churn_tree (- depth 1) (& (+ (* x 1664525) 1013904223) MASK32))
+        define b (churn_tree (- depth 1) (& (^ x 2654435769) MASK32))
+        (& (^ (+ a (* (^ b x) 33)) (^ (& (<< a 7) MASK32) (>> b 3))) MASK32)
+
+
+;; The end.

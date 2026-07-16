@@ -1,0 +1,118 @@
+;; nbody -- float-heavy symplectic integration of the Jovian planets
+;; (benchmarks-game n-body).  Every constant matches the Python variant's
+;; decimal string exactly, so both start from bit-identical doubles; the
+;; energy is rounded to 9 places, the canonical output convention.
+
+(import-from math sqrt)
+
+(define PI 3.141592653589793)
+(define SOLAR_MASS (* 4.0 PI PI))
+(define DAYS_PER_YEAR 365.24)
+
+
+define make-bodies []:
+    #[
+      #[ 0.0 0.0 0.0 0.0 0.0 0.0 SOLAR_MASS ]
+      #[ 4.84143144246472090 -1.16032004402742839 -0.103622044471123109
+         (* 0.00166007664274403694 DAYS_PER_YEAR)
+         (* 0.00769901118419740425 DAYS_PER_YEAR)
+         (* -0.0000690460016972063023 DAYS_PER_YEAR)
+         (* 0.000954791938424326609 SOLAR_MASS) ]
+      #[ 8.34336671824457987 4.12479856412430479 -0.403523417114321381
+         (* -0.00276742510726862411 DAYS_PER_YEAR)
+         (* 0.00499852801234917238 DAYS_PER_YEAR)
+         (* 0.0000230417297573763929 DAYS_PER_YEAR)
+         (* 0.000285885980666130812 SOLAR_MASS) ]
+      #[ 12.8943695621391310 -15.1111514016986312 -0.223307578892655734
+         (* 0.00296460137564761618 DAYS_PER_YEAR)
+         (* 0.00237847173959480950 DAYS_PER_YEAR)
+         (* -0.0000296589568540237556 DAYS_PER_YEAR)
+         (* 0.0000436624404335156298 SOLAR_MASS) ]
+      #[ 15.3796971148509165 -25.9193146099879641 0.179258772950371181
+         (* 0.00268067772490389322 DAYS_PER_YEAR)
+         (* 0.00162824170038242295 DAYS_PER_YEAR)
+         (* -0.0000951592254519715870 DAYS_PER_YEAR)
+         (* 0.0000151027818298017794 SOLAR_MASS) ]
+    ]
+
+
+define offset-momentum [bodies]:
+    define px 0.0
+    define py 0.0
+    define pz 0.0
+    for-each [b bodies]:
+        set! px (+ px (* (item b 3) (item b 6)))
+        set! py (+ py (* (item b 4) (item b 6)))
+        set! pz (+ pz (* (item b 5) (item b 6)))
+    define sun (item bodies 0)
+    set-item sun 3 (/ (- 0.0 px) SOLAR_MASS)
+    set-item sun 4 (/ (- 0.0 py) SOLAR_MASS)
+    set-item sun 5 (/ (- 0.0 pz) SOLAR_MASS)
+
+
+define advance [bodies dt]:
+    define n (len bodies)
+    define i 0
+    while (< i n):
+        define bi (item bodies i)
+        define j (+ i 1)
+        while (< j n):
+            define bj (item bodies j)
+            define dx (- (item bi 0) (item bj 0))
+            define dy (- (item bi 1) (item bj 1))
+            define dz (- (item bi 2) (item bj 2))
+            define d2 (+ (* dx dx) (* dy dy) (* dz dz))
+            define mag (/ dt (* d2 (sqrt d2)))
+            define bim (* (item bi 6) mag)
+            define bjm (* (item bj 6) mag)
+            set-item bi 3 (- (item bi 3) (* dx bjm))
+            set-item bi 4 (- (item bi 4) (* dy bjm))
+            set-item bi 5 (- (item bi 5) (* dz bjm))
+            set-item bj 3 (+ (item bj 3) (* dx bim))
+            set-item bj 4 (+ (item bj 4) (* dy bim))
+            set-item bj 5 (+ (item bj 5) (* dz bim))
+            set! j (+ j 1)
+        set! i (+ i 1)
+    define k 0
+    while (< k n):
+        define b (item bodies k)
+        set-item b 0 (+ (item b 0) (* dt (item b 3)))
+        set-item b 1 (+ (item b 1) (* dt (item b 4)))
+        set-item b 2 (+ (item b 2) (* dt (item b 5)))
+        set! k (+ k 1)
+
+
+define energy [bodies]:
+    define n (len bodies)
+    define e 0.0
+    define i 0
+    while (< i n):
+        define b (item bodies i)
+        set! e (+ e (* 0.5 (item b 6)
+                       (+ (* (item b 3) (item b 3))
+                          (* (item b 4) (item b 4))
+                          (* (item b 5) (item b 5)))))
+        define j (+ i 1)
+        while (< j n):
+            define bj (item bodies j)
+            define dx (- (item b 0) (item bj 0))
+            define dy (- (item b 1) (item bj 1))
+            define dz (- (item b 2) (item bj 2))
+            define dist (sqrt (+ (* dx dx) (* dy dy) (* dz dz)))
+            set! e (- e (/ (* (item b 6) (item bj 6)) dist))
+            set! j (+ j 1)
+        set! i (+ i 1)
+    e
+
+
+define nbody [n]:
+    define bodies (make-bodies)
+    (offset-momentum bodies)
+    define step 0
+    while (< step n):
+        (advance bodies 0.01)
+        set! step (+ step 1)
+    (round (energy bodies) 9)
+
+
+;; The end.
