@@ -18,7 +18,7 @@
    Store the value into the name in the current frame namespace.
 */
 
-KOS_OP_HANDLER(VAR_STORE_CONST) {
+KOS_OP_HANDLER_COLD(VAR_STORE_CONST) {
 
     KosCode *code = KosEvalState_CurrentCode(es);
     KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));

@@ -19,7 +19,7 @@
    seq[1] into the two names (VAR_STORE semantics).
 */
 
-KOS_OP_HANDLER(UNPACK_VAR) {
+KOS_OP_HANDLER_COLD(UNPACK_VAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name0_idx = row.a0;

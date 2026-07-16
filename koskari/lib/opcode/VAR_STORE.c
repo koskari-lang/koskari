@@ -18,7 +18,7 @@
    the current frame namespace.
 */
 
-KOS_OP_HANDLER(VAR_STORE) {
+KOS_OP_HANDLER_COLD(VAR_STORE) {
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
     return EVAL_RAISE();

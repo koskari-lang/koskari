@@ -18,7 +18,7 @@
    getattr then delattr on obj = frame_ns_deref(var_name); push value.
 */
 
-KOS_OP_HANDLER(VAR_ATTR_TAKE) {
+KOS_OP_HANDLER_COLD(VAR_ATTR_TAKE) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 

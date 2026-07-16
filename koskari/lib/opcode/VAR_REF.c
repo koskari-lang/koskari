@@ -17,7 +17,7 @@
    VAR_REF: arg = constant index (name). Push name reference (for closure).
 */
 
-KOS_OP_HANDLER(VAR_REF) {
+KOS_OP_HANDLER_COLD(VAR_REF) {
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
     return EVAL_RAISE();

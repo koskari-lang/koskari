@@ -18,7 +18,7 @@
    Push getattr(obj, attr) where obj = frame_ns_deref(var_name).
 */
 
-KOS_OP_HANDLER(VAR_ATTR) {
+KOS_OP_HANDLER_COLD(VAR_ATTR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   PyObject *var_name = KosEvalState_CONST(es, row.a0);

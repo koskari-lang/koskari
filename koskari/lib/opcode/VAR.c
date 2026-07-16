@@ -18,7 +18,7 @@
    frame's namespace and push the value (or await it if async).
 */
 
-KOS_OP_HANDLER(VAR) {
+KOS_OP_HANDLER_COLD(VAR) {
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
     return EVAL_RAISE();

@@ -21,7 +21,7 @@
   jump to row.a0. On mismatch: fall through with stack unchanged.
 */
 
-KOS_OP_HANDLER(SWITCH_EQ_VAR) {
+KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 

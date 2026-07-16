@@ -17,7 +17,7 @@
    VAR_CLEAR: arg = constant index (name). Delete name from namespace.
 */
 
-KOS_OP_HANDLER(VAR_CLEAR) {
+KOS_OP_HANDLER_COLD(VAR_CLEAR) {
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
     return EVAL_RAISE();

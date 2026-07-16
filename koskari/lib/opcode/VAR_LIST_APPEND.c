@@ -19,7 +19,7 @@
    a list.
 */
 
-KOS_OP_HANDLER(VAR_LIST_APPEND) {
+KOS_OP_HANDLER_COLD(VAR_LIST_APPEND) {
 
   PyObject *name = get_name_from_insn(es, insn);
   if (unlikely(! name))

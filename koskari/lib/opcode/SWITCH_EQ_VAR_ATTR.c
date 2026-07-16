@@ -22,7 +22,7 @@
   On mismatch: fall through with stack unchanged.
 */
 
-KOS_OP_HANDLER(SWITCH_EQ_VAR_ATTR) {
+KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR_ATTR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
