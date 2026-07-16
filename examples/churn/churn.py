@@ -172,7 +172,7 @@ def run(opts):
         payload = reporter.to_json(
             results, opts.mode, opts.samples, opts.warmup)
         with open(opts.json_path, "w") as out:
-            json.dump(payload, out, indent=2, default=str)
+            json.dump(payload, out, sort_keys=True, indent=2, default=str)
         print("metrics written to %s" % opts.json_path)
 
     return failures
@@ -188,7 +188,7 @@ def print_trace_report_if_enabled():
     if not report.get("flags", {}).get("events"):
         return
     with open("trace.json", "w") as out:
-        json.dump(report, out, indent=2, default=str)
+        json.dump(report, out, sort_keys=True, indent=2, default=str)
     print("get_trace_report() written to trace.json")
 
 
