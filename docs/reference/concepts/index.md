@@ -8,6 +8,7 @@ narrow.
 :maxdepth: 1
 
 bindings-and-refs
+modules-and-packages
 references-and-storage-indirection
 brackets-and-call-convention
 name-resolution-and-prefixes
@@ -27,6 +28,7 @@ idiomatic-koskari
 | Page | Covers |
 |------|--------|
 | [Bindings and refs](bindings-and-refs.md) | Namespace, bind vs store, ref, deref, unpack |
+| [Modules and packages](modules-and-packages.md) | `.ki` on disk, `__init__.ki` vs namespace packages, submodules, the `.py`/`.ki` same-name conflict, sibling `py/`+`ki/` packages, `sys.path`/`PYTHONSAFEPATH` |
 | [References and storage indirection](references-and-storage-indirection.md) | Refs as location handles, `&` sugar, deref, `set!` target trap, `bind!`, by-ref params, vs Python |
 | [Brackets and the call convention](brackets-and-call-convention.md) | `( )` = call / `[ ]` = data, bracket-pair type, `compiler/call-brackets` pragma |
 | [Name resolution: runtime, compile-time, and layout](name-resolution-and-prefixes.md) | The three slots, `(foo …)` resolution, the two `+`, forcing a call with `call`, the `compile/`/`layout/` prefixes |

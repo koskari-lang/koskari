@@ -72,6 +72,14 @@ When a file grows, split by responsibility rather than by syntax. For example,
 put parsing helpers in one module and reporting helpers in another. Import the
 names you need and keep the top-level run-now code small.
 
+When you split across a directory, `.ki` files follow Python's package rules: a
+directory with an `__init__.ki` is a regular package, one without is a namespace
+package, and either imports its `.ki` submodules the same way. For the full model
+of how files on disk map to importable names — including packages, namespace
+packages, the `.py`/`.ki` same-name conflict, and getting a directory onto
+`sys.path` — see
+[Modules and packages](../reference/concepts/modules-and-packages.md).
+
 ---
 
 ## What you should remember
