@@ -135,7 +135,6 @@ _complex_re = _patterns.COMPLEX_RE.match
 _keyword_re = _patterns.KEYWORD_RE.match
 _dotted_attr_atom_re = regex(
     r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z_][a-zA-Z0-9/_-]*)+$").match
-_ref_atom_re = regex(r"^&\S+$").match
 _ellipsis_atom_re = regex(r"^\.\.\.$").match
 _py_singleton_atom_re = regex(r"^(None|True|False)$").match
 _pass_atom_re = regex(r"^pass$").match
@@ -736,14 +735,20 @@ class Reader:
 
         self.reader_macros = {}
         self.atom_patterns = []
+        self.post_value_hooks = []
         self.terminating = set(_BASE_TERMINATORS)
         self._terms = "".join(sorted(self.terminating))
         self.bracket_pairs = bracket_pairs
+        self.index_brackets = False
         self.fences_enabled = True
 
         if not nodefaults:
             self._add_default_macros()
             self._add_default_atoms()
+
+        # post-value hooks run for every reader (including bare ones), each
+        # self-gating on its own feature switch, mirroring index_brackets
+        self.add_post_value_hook(self._apply_index_brackets)
 
 
     def read(self, reader_stream):
@@ -990,7 +995,51 @@ class Reader:
             else:
                 break
 
+        if event is VALUE:
+            for hook in self.post_value_hooks:
+                value = hook(stream, value, position)
+
         return event, position, value
+
+
+    def _apply_index_brackets(self, stream, value, position):
+        """
+        Post-value hook: postfix index-bracket reader macro
+
+        When ``reader/index-brackets`` is enabled, an ``[ ... ]`` group
+        attached directly to a just-read value (no intervening whitespace)
+        desugars into ``(item VALUE KEY)``. Chains left to right, so
+        ``foo[a][b]`` reads as ``(item (item foo a) b)``. A space breaks the
+        attachment: ``foo [a]`` reads as two forms. Disabled readers pass
+        the value through untouched.
+
+        :param stream: the source stream
+        :param value: the value the bracket group would attach to
+        :param position: the position of ``value``
+        :return: ``value`` unchanged, or the wrapped ``(item ...)`` form
+        """
+
+        if not self.index_brackets:
+            return value
+
+        item = symbol("item")
+
+        while stream.peek(1) == "[":
+            index = self.read_pair(stream)
+
+            keys = []
+            node = index
+            while is_pair(node) and not is_nil(node):
+                head, node = node
+                keys.append(head)
+
+            if not keys:
+                raise stream.error("index brackets require a key", position)
+
+            value = cons(item, value, *keys, nil)
+            value.set_position(position)
+
+        return value
 
 
     def add_event_macro(
@@ -1092,6 +1141,63 @@ class Reader:
                 if not lst:
                     del self.reader_macros[c]
         self._sync_terms_from_macros()
+
+
+    def add_post_value_hook(self, hook):
+        """
+        Register a post-value hook
+
+        Post-value hooks are the reader's post macros: after any token is
+        read as a ``VALUE``, each registered hook is invoked in registration
+        order as ``hook(stream, value, position)`` and returns the value to
+        carry forward (unchanged, or transformed). A hook may peek and
+        consume from ``stream`` to extend the value with trailing syntax --
+        this is how attached-bracket indexing turns ``foo[x]`` into
+        ``(item foo x)``. The value threads through the hooks, so a later
+        hook sees what an earlier one produced.
+
+        :param hook: callable ``(stream, value, position) -> value``
+        """
+
+        self.post_value_hooks.append(hook)
+
+
+    def get_post_value_hooks(self):
+        """
+        Return the registered post-value hooks in registration order
+
+        :return: a list copy of the post-value hooks
+        """
+
+        return list(self.post_value_hooks)
+
+
+    def clear_post_value_hooks(self):
+        """
+        Remove all registered post-value hooks
+        """
+
+        self.post_value_hooks.clear()
+
+
+    @contextmanager
+    def temporary_post_value_hook(self, hook):
+        """
+        Context manager to temporarily append a post-value hook
+
+        On exit, removes that hook from the tail of the list when it still
+        matches there by identity.
+
+        :param hook: callable ``(stream, value, position) -> value``
+        :yields: self
+        """
+
+        self.post_value_hooks.append(hook)
+
+        yield self
+
+        if self.post_value_hooks and self.post_value_hooks[-1] is hook:
+            self.post_value_hooks.pop()
 
 
     def add_macro_character(
@@ -1248,7 +1354,6 @@ class Reader:
 
         ap = self.set_atom_pattern
 
-        ap(symbol("compile/refq"), _ref_atom_re, self._as_ref_atom)
         ap(symbol("compile/attr"), _dotted_attr_atom_re, _as_dotted_attr_atom)
         ap(symbol("keyword"), _keyword_re, keyword)
         ap(symbol("ellipsis"), _ellipsis_atom_re, _as_ellipsis)
@@ -1299,17 +1404,6 @@ class Reader:
             return DOT, None
 
         return ATOM, atom
-
-
-    def _as_ref_atom(self, s):
-        """
-        Convert &rest atom to (compile/ref expanded). Strips the leading &
-        and defers to process_atom for the rest.
-        """
-
-        rest = s[1:]
-        expanded = self.process_atom(rest)
-        return cons(_symbol_ref, expanded, nil)
 
 
     def process_atom(self, atom):
@@ -1489,17 +1583,27 @@ class Reader:
 
     def _read_ref_call(self, stream, fchar):
         """
-        Read a by-ref compound expression (&(expr ...))
+        Read a by-ref expression as ``(compile/ref FORM)``
 
-        Triggers only when ``&`` is immediately followed by ``(``; otherwise
-        defers so ``&rest`` atoms continue to read via the atom pattern path.
+        ``&`` is a prefix operator: when it is directly attached to a
+        following form -- the next character is non-whitespace and does not
+        begin a comment or close a delimiter -- that whole form is read and
+        wrapped in ``compile/ref``. So ``&foo``, ``&foo.bar``, and
+        ``&(item foo 12)`` all wrap their operand, and because the operand
+        is read as a full form any postfix syntax binds tighter than the
+        prefix: ``&foo["a"]`` reads as ``(compile/ref (item foo "a"))``.
+
+        When ``&`` stands alone -- followed by whitespace, a comment, a
+        closing delimiter, or end of input -- it defers so it reads as the
+        bare ``&`` symbol (e.g. the operator in ``(& 8 1)``).
 
         :param stream: the source stream
         :param fchar: the '&' character
         :return: tuple of (event, value)
         """
 
-        if stream.peek(1) != "(":
+        peek = stream.peek(1)
+        if not peek or peek.isspace() or peek == ";" or peek in ")]}":
             return DEFER, None
 
         event, pos, child = self._read(stream)
@@ -1508,6 +1612,9 @@ class Reader:
             raise stream.reader_eof(pos)
         if event is not VALUE:
             raise stream.error(f"invalid use of {fchar}", pos)
+
+        if is_keyword(child):
+            return VALUE, keyword("&" + str(child))
 
         return VALUE, cons(_symbol_ref, child, nil)
 
@@ -2173,6 +2280,11 @@ class LayoutReader(Reader):
         if brackets is not None:
             self.bracket_pairs = bool(brackets)
             self._inner.bracket_pairs = bool(brackets)
+
+        index_brackets = pragma.get("reader/index-brackets")
+        if index_brackets is not None:
+            self.index_brackets = bool(index_brackets)
+            self._inner.index_brackets = bool(index_brackets)
 
         pass_none = pragma.get("reader/pass-none")
         if pass_none is not None:
