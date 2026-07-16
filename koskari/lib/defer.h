@@ -56,8 +56,10 @@ extern PyTypeObject KosDeferType;
 /* === type check macros === */
 
 
-#define KosDefer_Check(obj)                                      \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosDeferType))
+/* Defer is a final marker type (no Py_TPFLAGS_BASETYPE, so subclassing
+   is impossible): the check is an exact type compare, no mro walk. */
+#define KosDefer_Check(obj)                      \
+  ((obj) && ((obj)->ob_type == &KosDeferType))
 
 #define KosDefer_CheckExact(obj)                 \
   ((obj) && ((obj)->ob_type == &KosDeferType))

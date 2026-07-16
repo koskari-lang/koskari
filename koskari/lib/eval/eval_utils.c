@@ -237,15 +237,19 @@ static KosOpResult push_or_await_plain(
     PyObject *val,
     int await_defer) {
 
-  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
-  if (! await_defer && KosDefer_Check(val)) {
-    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
-
+  /* Awaitability gate first: a type-level probe (two loads), so the
+     dominant non-awaitable result skips everything below -- including
+     the Defer subtype walk, which is sound to hoist because KosDefer
+     defines am_await and therefore always passes this gate. */
   PyTypeObject *type = Py_TYPE(val);
   SAYF("[eval] push_or_await entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
+    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+  }
+
+  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
+  if (! await_defer && KosDefer_Check(val)) {
     return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
 
@@ -320,16 +324,20 @@ static inline KosOpResult push_or_await_fused(
     KosEvalState *es,
     PyObject *val) {
 
-  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
-  if (KosDefer_Check(val)) {
-    OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
-    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
-
+  /* Awaitability gate first: a type-level probe (two loads), so the
+     dominant non-awaitable result skips everything below -- including
+     the Defer subtype walk, which is sound to hoist because KosDefer
+     defines am_await and therefore always passes this gate. */
   PyTypeObject *type = Py_TYPE(val);
   SAYF("[eval] push_or_await_fused entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
+    OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
+    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+  }
+
+  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
+  if (KosDefer_Check(val)) {
     OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
     return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
