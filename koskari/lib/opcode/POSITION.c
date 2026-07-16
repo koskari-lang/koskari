@@ -17,7 +17,7 @@
    POSITION: arg unused. Debug/source position marker; no runtime effect.
 */
 
-KOS_OP_HANDLER(POSITION) {
+KOS_OP_HANDLER_COLD(POSITION) {
   (void) insn;
   return EVAL_NORMAL();
 }

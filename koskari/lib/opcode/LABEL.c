@@ -17,7 +17,7 @@
    LABEL: arg unused. Marks a branch target; no runtime effect.
 */
 
-KOS_OP_HANDLER(LABEL) {
+KOS_OP_HANDLER_COLD(LABEL) {
   (void) insn;
   return EVAL_NORMAL();
 }
