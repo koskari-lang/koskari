@@ -1,9 +1,14 @@
 # CALL Family Unification and Install-Path Acceleration
 
-**Status: Phases 0-1 COMPLETE (2026-07-15, branch `call_cleanups`);
-Phase 1 gate green (suite 4700, native 293, ASAN 293), awaiting review.
-Phases gate on review; do not start a phase before the prior phase's
-gate is cleared.**
+**Status: Phases 0-3 COMPLETE and committed (2026-07-15, branch
+`call_cleanups`: d1ddcaf4 bind_self, f2cba06f core + hot trio,
+03e6fb93 family conversion + fallback narrowing, 5c722a2e simple-call
+path).  All gates green (suite 4700, native 293, ASAN 293).  Phase 4
+(per-site call cache): DO NOT BUILD -- see the Phase 4 note.
+Closing candidates C1-C3 are COMPLETE
+(50e88d97 tail bind-before-reset, 1c5eedd6 vector installs + sizing
+regen).  The branch is closed; the only deliberate residual is
+partial's tuple fallback (see C2).**
 
 ## Purpose
 
@@ -190,8 +195,43 @@ Expected outcome: dispatch fn sheds most of the CALL family body
 (~15 KB); per-call cost neutral or better (one call/ret added, layers
 of duplication and dead branches removed).
 
-**Gate: pause for review.** Regenerated dispatch-sizing, churn deltas,
-suite + native + ASAN.
+### Phase 2 outcomes [COMPLETE]
+
+- `kos_call_invoke` landed (noinline, ~2.7 KB out of line) with the
+  per-class window sequencing, plus `KOS_CALL_WINDOW_CALLABLE` (window
+  includes the callable beneath argv) and `KOS_CALL_WINDOW_UNDER` (an
+  on-stack receiver beneath argv, dropped with the window, reached only
+  via self_arg injection).  Self-injection is a borrowed prepend buffer
+  in the entry; the body has no self-awareness.
+- **Converted (12)**: CALL_FAST, CALL, CALL_FAST_ATTR, CALL_FAST_NAMES,
+  CALL_NAMES (prologue pops the on-stack names tuple; the remaining
+  window is the standard shape), CALL_VAR, CALL_VAR_NAMES, CALL_ATTR,
+  CALL_ATTR_NAMES (unbound: obj is already argv[0]; bound: WINDOW_UNDER),
+  CALL_VAR_ATTR, CALL_VAR_ATTR_NAMES, CALL_FAST_ATTR_NAMES.  The
+  KosStackSteal round trip is gone from all of them.
+- **Bug fixes surfaced by the conversion**: per-call reference leaks of
+  the receiver in CALL_FAST_ATTR, CALL_FAST_ATTR_NAMES, and the
+  CALL_VAR_ATTR_NAMES resolve-error path (kos_ns_fast_deref /
+  frame_ns_deref return new references that the old handlers never
+  released), plus leaked receivers on several early-error paths.
+- **Kept by design**: STAR variants gather splats into tuple + dict and
+  delegate via KosEvalState_CallArgs -- that IS the cold gather path
+  (a vector rework buys uniformity, not speed).  TAIL_CALL* stays on
+  KosEvalState_Call until Phase 3 shares the simple path (the
+  tail-promotion pass is the real consumer).  The tuple fallback in
+  KosCallable_Call is NARROWED, not deleted: continuations (both) and
+  Expression gained vinstalls (a k(v) invoke no longer builds a tuple);
+  demand, partial, and apply keep the fallback until they get
+  vector-native installs (mechanical follow-up, cold paths).
+- Sizing correction: 14 of the 17 non-hot variants were ALREADY cold;
+  the inline shrink came from the hot trio's bodies.  Dispatch fn
+  81,418 -> 73,757 B (-9.4%).
+- churn at the Phase 2 gate: method 11.66 s (baseline 13.20, -11.7%),
+  tree 10.12, list_each 21.07, field/slots/branch at or better than
+  baseline.
+
+**Gate: pause for review.** CLEARED PENDING SIGN-OFF: suite 4700 passed
+/ 10 skipped, native + ASAN green, dispatch fn and churn numbers above.
 
 ## Phase 3 -- Simple-call fast path
 
@@ -216,6 +256,141 @@ suite + native + ASAN.
 - **v2 (separate, after v1 measures)**: defaults (arity range
   [min, max], fill trailing slots from the defaults tuple); simple-tail
   sharing with the frame-reuse path.
+
+### Phase 3 outcomes [COMPLETE]
+
+- `KosFunction.simple_arity1` (arity PLUS ONE; 0 = not simple, so a
+  zeroed construction is fail-safe) computed at construction by
+  `function_compute_simple_arity`.  Classification landed at **v1.5**,
+  wider than planned v1: both positionally fillable runs count (pos AND
+  kwd -- the vector apply fills kwd runs positionally at the shared
+  slot index), and **defaults are permitted** because the fast path
+  only accepts FULL supply, where defaults are never consulted.  This
+  matters: the idiomatic `[n x: 1]` accumulator signature used by every
+  churn hot function classifies simple.
+- `KosFunction_SimpleCallNamespaceFromVector`: base-ns copy, direct
+  `kos_ns_fast_store` slot loop (exactly the apply machine's own
+  full-supply store), cached self-bind.  Sits at the top of the
+  exact-KosFunction class in the core; any mismatch (arity, kwnames)
+  falls through to the general path, which owns the error messages.
+  The generator branch is unreachable from the fast path by
+  classification.
+- Gate churn (koskari wall vs Phase 0 baseline): **method 10.67 s
+  (13.20, -19%; ratio 368% -> 305%, best runs under 300%)**, tree 9.69
+  (10.44, -7%), list_each 19.90 (22.22, -10%), loop/field/slots/branch
+  at or better than baseline.  Suite 4700, native + ASAN green.
+
+## Closing candidates for this branch (recorded 2026-07-15)
+
+Agreed follow-ups after the Phase 3 gate, in priority order.  Enough
+detail here to implement without the working context that produced it.
+
+### C1. TAIL_CALL onto the core: bind-before-reset kills the tail steal
+[DONE: 50e88d97]
+
+The tail family (TAIL_CALL hot; TAIL_CALL_NAMES/STAR cold) still
+steals because `kos_dynframe_reset_for_tail` clears the caller's block
+before the install binds.  With the core owning sequencing, the steal
+is avoidable exactly as it was for plain calls:
+
+1. Prologue takes the borrowed window (`[callable, args...]`, so
+   `KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE`) and passes a new
+   `KOS_CALL_TAIL` flag.
+2. For the KosFunction classes (simple AND general), the core prepares
+   the call namespace FROM THE WINDOW FIRST -- the block is still
+   intact -- via the same `SimpleCallNamespaceFromVector` /
+   `PrepareCallNamespaceFromVector` calls the plain path uses.
+3. Then `kos_dynframe_reset_for_tail(frame)`: its block-clear IS the
+   window drop (bind INCREF'd what it needed; the clear releases the
+   block's refs, callable included -- net correct, but the prologue's
+   own callable ref handling must be audited: TAIL_CALL's callable is
+   window-resident, kept alive through step 2 by the block and through
+   step 3 by... NOTHING, so extract `code` and anything else needed
+   from the callable BEFORE the reset, or hold a temp ref).
+4. Then `KosEvalState_SetFrameCodeAndNamespace` and es reg reset
+   (pc = 0), mirroring today's `do_frame_prep` tail branch (which also
+   nulls es code/ns and re-adopts the block slot).
+5. Result kind: the tail install returns NORMAL and dispatch continues
+   in the reused frame (matching today's install-tail behavior).  The
+   py-callable tail path (vectorcall + EVAL_CONTROL_RETURNED /
+   deferred-RETURN when extents are open) stays on the legacy
+   `KosEvalState_Call(tail=1)` route via the spill, unchanged.
+6. Legacy KosCallable tails also stay on the spill + legacy route.
+
+Sequencing invariants to respect: the reset only runs when
+`DYN_TOP == frame` (today's guard in `do_frame_prep` -- extents open
+above the frame defer the tail; replicate); generators cannot be
+tail-installed (classification excludes; general path YIELDS branch
+must keep rejecting or deferring exactly as `wants_frame`=0 does
+today).  Gate: reset/shift + finally-return reproducers, tail tests,
+full containers.  Payoff multiplies under the future tail-promotion
+bytecode pass.
+
+### C2. Finish the vector installs: demand, partial, apply [DONE for
+demand and apply; partial kept by design]
+
+Outcome: `apply` gained a vector install (trivial extraction; both
+slots share `kos_apply_install_core`; note the tuple install always
+ignored its kwds param, mirrored).  `demand` gained a vector install
+whose flattenable branch delegates via `KosCallable_Call` -- the inner
+KosFunction now gets the vector AND simple-call prep -- with tuple/dict
+built only on the cold `demand_sync_ex` fallback.  **partial keeps the
+tuple fallback deliberately**: its merge machinery
+(`kospartial_merge_args`/`_merge_kwds`) is tuple-native end to end, so
+a vinstall would relocate the tuple build, not remove it; the
+`KosCallable_Call` fallback and `vcall_build_*` helpers stay for
+partial alone.  Revisit only if partial calls get hot enough to justify
+a vector-native merge.
+
+### C3. Regenerate dispatch-sizing.md [DONE: 1c5eedd6 -- dispatch fn
+81,418 -> 70,962 B across the branch]
+
+Per that doc's embedded procedure (throwaway `KOS_OP_INLINE = static
+KOS_NOINLINE` build, `nm --print-size`).  The CALL rows are fiction
+now; the regenerated table gives whoever picks up the non-call cold
+giants (`YIELD_FROM` 6.7 KB is the largest body) an honest baseline.
+Record the inlined dispatch fn size too (73,757 B after Phase 2; the
+Phase 3 simple branch grew the core, not the dispatch fn).
+
+### Measure-only: locate the residual method-call cost
+
+One traced churn run (`tox -qe churn-trace -- --method`) to apportion
+the remaining ~200 ns/iter between namespace copy, frame push, and
+attr-cache resolve.  This decides whether the shelved namespace-free
+frames idea (slot storage in the dyn frame, namespace materialized on
+demand; see the eval-perf roadmap memory and
+[../archive/freeze-thaw-context-segments.md](../archive/freeze-thaw-context-segments.md))
+deserves its own design note.  Acting on it is out of scope for this
+branch.
+
+## Rested idea: delete the tuple install slot entirely
+
+With C2 done, `tp_kos_install` is invoked only via partial's
+`KosCallable_Call` fallback and the tuple entry `KosCallable_CallArgs`
+(STAR opcodes, apply's flattening branch, demand/partial tuple sides).
+Full removal is short: rework CallArgs into a tuple -> vector converter
+(positionals free via PyTuple ITEMS; a kwds dict marshals to kwnames +
+a combined buffer), give partial a vinstall that keeps its tuple-native
+merges internal, switch apply's flattening branch to the converter,
+then delete the slot, KosInstallFunc, the five remaining tuple
+installs, the vcall_build_* helpers, and the fallback.
+
+**RESTED (2026-07-15) on the dict -> kwnames conversion step**: kwds
+dicts reaching these paths carry the products of `**:` splats and
+partial's keyword merges, so converting at the boundary moves
+duplicate-key, override, and ordering resolution out of the receiving
+install and into the converter -- a semantic relocation, not just a
+marshalling change.  Revisit deliberately; do not fold into unrelated
+work.
+
+## Phase 4 note -- per-site call cache: recommend NOT building
+
+After Phase 3, the "classification" a call cache would skip is one
+exact-type pointer compare plus two field loads on the already-deref'd
+function.  The deref itself cannot be cached (rebinding is legal).
+There is no meaningful win left for a `KOS_CACHE_CALL` kind; revisit
+only if a workload shows polymorphic call sites hot enough that the
+type compare misprediction matters.
 
 **Gate: pause for review.** churn_method / churn_tree are the verdict;
 target is a meaningful cut of the ~150 ns install cost.

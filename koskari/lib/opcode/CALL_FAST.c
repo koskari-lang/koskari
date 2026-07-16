@@ -16,53 +16,34 @@
 /**
   CALL_FAST: arg = extra index. Schema FASTVAR (slot), COUNT (arg count).
   Call callable from fast local slot. Stack [arg_0, ..., arg_{N-1}].
-  KosCallable: steal args then KosEvalState_Call. Plain Python: TailPtr +
-  PyObject_Vectorcall + DropNoErr.
+  Prologue only: deref the callable, take the borrowed argv window, and
+  delegate to kos_call_invoke (which owns the window drop).
 */
 
 KOS_OP_HANDLER(CALL_FAST) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t slot_idx = row.a0;
   unsigned n = row.a1;
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
-  PyObject *callable = kos_ns_fast_deref(ns, (size_t) slot_idx);
+  PyObject *callable = kos_ns_fast_deref(ns, (size_t) row.a0);
   if (! callable)
     return EVAL_RAISE();
 
-  if (KosCallable_Check(callable)) {
-    KosStackSteal steal = { 0 };
-    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t) n) < 0) {
+  PyObject *const *argv = NULL;
+  if (n) {
+    argv = KosEvalState_StackTailPtr(es, n);
+    if (unlikely(! argv)) {
       Py_DECREF(callable);
       return EVAL_RAISE();
     }
-    KosOpResult r = KosEvalState_Call(es, callable,
-                            (n > 0) ? steal.vals : NULL,
-                            (Py_ssize_t) n, NULL, 0);
-    Py_DECREF(callable);
-    KosStackSteal_Free(&steal);
-    return r;
   }
 
-  PyObject *result = NULL;
-  if (n == 0) {
-    result = PyObject_CallNoArgs(callable);
-
-  } else {
-    PyObject *const *ptr = KosEvalState_StackTailPtr(es, n);
-    if (! ptr) {
-      Py_DECREF(callable);
-      return EVAL_RAISE();
-    }
-
-    result = PyObject_Vectorcall(callable, ptr, (size_t) n, NULL);
-    KosEvalState_StackDropNoErr(es, n);
-  }
-
+  KosOpResult r = kos_call_invoke(es, callable, NULL, argv, (Py_ssize_t) n,
+                                  NULL, KOS_CALL_ARGV_WINDOW);
   Py_DECREF(callable);
-  return kos_op_result_PUSH_OR_AWAIT(es, result);
+  return r;
 }
 
 

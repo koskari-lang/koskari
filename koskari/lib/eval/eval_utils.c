@@ -555,6 +555,288 @@ KosOpResult KosEvalState_Call(
 }
 
 
+/* === kos_call_invoke: the shared call core (call-unification Phase 2) ===
+
+   One noinline entry for the CALL_* opcode prologues.  argv is always a
+   BORROWED read vector (vectorcall convention).  With
+   KOS_CALL_ARGV_WINDOW, argv additionally names the caller's stack tail
+   (nargs + kwname values, plus the callable itself under
+   KOS_CALL_WINDOW_CALLABLE); the core owns dropping that window from
+   the caller's block, sequenced per install class:
+
+   - classes that deliver a result onto the CALLER's block (generator
+     agen creation, plain-Python push-or-await, and every legacy install
+     that may) drop the window BEFORE the delivery;
+   - the frame-install class delivers nothing onto the caller's block,
+     so it drops the window LAST, keeping the callable and args alive
+     through the whole install with no extra refcounting.
+
+   Legacy classes (KosCallables other than exact KosFunction, and
+   instance-call injection) preserve today's steal-first ordering by
+   spilling the window into an owned vector before delegating to
+   KosEvalState_Call.  Tail calls do not come through here yet. */
+
+#define KOS_CALL_PLAIN            0x0u
+#define KOS_CALL_ARGV_WINDOW      0x1u
+#define KOS_CALL_WINDOW_CALLABLE  0x2u
+/* One extra window slot beneath argv (an on-stack receiver): dropped
+   with the window, never the call target.  The receiver reaches the
+   callee only via self_arg injection. */
+#define KOS_CALL_WINDOW_UNDER     0x4u
+/* Tail call: the caller's frame is reused.  Exact non-yielding
+   KosFunctions take the bind-before-reset subpath (the frame reset's
+   block-clear IS the window drop); everything else spills and keeps
+   KosEvalState_Call's tail semantics. */
+#define KOS_CALL_TAIL             0x8u
+
+#define KOS_CALL_SPILL_FAST 16
+
+
+static KOS_NOINLINE KosOpResult kos_call_invoke_body(
+        KosEvalState *es,
+        KosStackBlock **caller_slot,
+        size_t window,
+        PyObject *callable,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags) {
+
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+
+  /* Class: exact KosFunction, tail position.  Bind-before-reset: the
+     namespace is prepared FROM the still-intact window, then the frame
+     reset's block-clear performs the window drop.  Requires the window
+     to live in the reused frame's own block and non-yielding code;
+     anything else falls to the legacy spill below (which preserves
+     KosEvalState_Call's tail semantics exactly). */
+  if (unlikely(flags & KOS_CALL_TAIL)) {
+    KosDynFrame *frame = KosEvalState_FRAME(es);
+
+    if (Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType)
+        && frame
+        && caller_slot == &KosDynFrame_STACK(frame)) {
+      KosCode *code = (KosCode *) KosFunction_CODE(callable);
+
+      if (! (code && KosCode_YIELDS(code))) {
+        PyObject *frame_ns;
+
+        if (likely(! kwnames
+                   && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
+          frame_ns = KosFunction_SimpleCallNamespaceFromVector(
+              callable, argv, nargs);
+        } else {
+          frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+              callable, argv, nargs, kwnames);
+        }
+        if (unlikely(! frame_ns)) {
+          if (window)
+            kos_stack_drop_noerr_fast(caller_slot, window);
+          return EVAL_RAISE();
+        }
+
+        /* The callable is window-resident: the reset's block-clear
+           releases it.  Hold it (and thereby code) across the reset. */
+        Py_INCREF(callable);
+        kos_dynframe_reset_for_tail(frame);
+        (void) KosEvalState_SetFrameCodeAndNamespace(es, frame, code,
+                                                     frame_ns);
+        Py_DECREF(callable);
+        es->pc = 0;
+        es->acting_pc = 0;
+        return EVAL_NORMAL();
+      }
+    }
+    goto legacy;
+  }
+
+  /* Class: exact KosFunction -- the dominant call target. */
+  if (likely(Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType))) {
+    KosCode *code = (KosCode *) KosFunction_CODE(callable);
+    PyObject *frame_ns;
+
+    if (likely(! kwnames
+               && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
+      /* Simple call: exact arity against plain positional formals on
+         non-yielding code (classified at construction).  Binds by slot
+         index; the general formals machine is bypassed, and the
+         generator branch below is unreachable by classification.  Any
+         mismatch falls through to the general path, which owns the
+         arity error messages. */
+      frame_ns = KosFunction_SimpleCallNamespaceFromVector(
+          callable, argv, nargs);
+      if (unlikely(! frame_ns)) {
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        return EVAL_RAISE();
+      }
+      goto fn_frame_install;
+    }
+
+    frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+        callable, argv, nargs, kwnames);
+
+    if (unlikely(! frame_ns)) {
+      if (window)
+        kos_stack_drop_noerr_fast(caller_slot, window);
+      return EVAL_RAISE();
+    }
+
+    if (unlikely(code && KosCode_YIELDS(code))) {
+      /* Generator: no frame; the agen lands on the caller's block, so
+         the window drops first.  NewFromCodeAndNs steals frame_ns. */
+      PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
+      if (window)
+        kos_stack_drop_noerr_fast(caller_slot, window);
+      if (unlikely(! agen))
+        return EVAL_RAISE();
+      return KosEvalState_StackPUSH(es, agen) < 0
+          ? EVAL_RAISE() : EVAL_NORMAL();
+    }
+
+fn_frame_install:
+
+    /* Frame install: nothing lands on the caller's block, so the drop
+       runs last and the window keeps callable and args alive for the
+       whole install. */
+    {
+      KosDynFrame *frame = kos_dyn_push_frame_empty(es);
+      if (unlikely(! frame)) {
+        Py_DECREF(frame_ns);
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        return EVAL_RAISE();
+      }
+      /* takes ownership of frame_ns; INCREFs code itself */
+      (void) KosEvalState_SetFrameCodeAndNamespace(es, frame, code,
+                                                   frame_ns);
+      if (window)
+        kos_stack_drop_noerr_fast(caller_slot, window);
+      return EVAL_NORMAL();
+    }
+  }
+
+  /* Class: plain Python callable -- vectorcall reading argv in place;
+     the result lands on the caller's block, so the window drops first. */
+  if (! KosCallable_Check(callable) && ! KosInstanceCall_Check(callable)) {
+    PyObject *result = (nargs == 0 && ! kwnames)
+        ? PyObject_CallNoArgs(callable)
+        : PyObject_Vectorcall(callable, argv, (size_t) nargs, kwnames);
+    if (window)
+      kos_stack_drop_noerr_fast(caller_slot, window);
+    return kos_op_result_PUSH_OR_AWAIT(es, result);
+  }
+
+  /* Legacy classes: preserve steal-first ordering.  Spill the window
+     into an owned vector (refs transfer out of the block), delegate,
+     release.  Tail flows land here too (py tails need
+     tail_prep_py_call; other-callable and deferred tails keep
+     KosEvalState_Call's semantics). */
+legacy:
+  if (window) {
+    PyObject *small[KOS_CALL_SPILL_FAST];
+    PyObject **vals = small;
+    KosOpResult r;
+
+    if (window > KOS_CALL_SPILL_FAST) {
+      vals = PyMem_Malloc(window * sizeof(PyObject *));
+      if (unlikely(! vals))
+        return EVAL_RAISE();
+    }
+    if (unlikely(KosEvalState_StackPopTailPtr(es, window, vals) < 0)) {
+      if (vals != small)
+        PyMem_Free(vals);
+      return EVAL_RAISE();
+    }
+
+    /* vals is the ownership ledger for the spilled window entries; the
+       pointer VALUES are identical to the window's, so argv (which may
+       be a prepend buffer aliasing them) stays valid for the call. */
+    {
+      PyObject *target;
+      PyObject *const *call_argv;
+      if (flags & KOS_CALL_WINDOW_CALLABLE) {
+        target = vals[0];
+        call_argv = vals + 1;
+      } else {
+        target = callable;
+        call_argv = argv;
+      }
+      r = KosEvalState_Call(es, target,
+                            (nargs + nkw) ? call_argv : NULL,
+                            nargs, kwnames,
+                            (flags & KOS_CALL_TAIL) ? 1 : 0);
+    }
+
+    for (size_t i = 0; i < window; i++)
+      Py_DECREF(vals[i]);
+    if (vals != small)
+      PyMem_Free(vals);
+    return r;
+  }
+
+  return KosEvalState_Call(es, callable, argv, nargs, kwnames,
+                           (flags & KOS_CALL_TAIL) ? 1 : 0);
+}
+
+
+/**
+   Shared call core entry.  self_arg (borrowed, may be NULL) is injected
+   as the first positional via a local borrowed-pointer prepend buffer;
+   the window accounting is untouched by the injection (self never lives
+   on the caller's stack).  See the block comment above for the window
+   sequencing contract.
+*/
+static KOS_NOINLINE KosOpResult kos_call_invoke(
+        KosEvalState *es,
+        PyObject *callable,
+        PyObject *self_arg,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags) {
+
+  KosStackBlock **caller_slot = KosEvalState_BLOCK(es);
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  size_t window = 0;
+
+  if (flags & KOS_CALL_ARGV_WINDOW)
+    window = (size_t) (nargs + nkw)
+        + ((flags & KOS_CALL_WINDOW_CALLABLE) ? 1u : 0u)
+        + ((flags & KOS_CALL_WINDOW_UNDER) ? 1u : 0u);
+
+  if (! self_arg)
+    return kos_call_invoke_body(es, caller_slot, window, callable,
+                                argv, nargs, kwnames, flags);
+
+  {
+    PyObject *pre_small[KOS_CALL_SPILL_FAST];
+    PyObject **pre = pre_small;
+    Py_ssize_t total = nargs + nkw + 1;
+    KosOpResult r;
+
+    if (total > KOS_CALL_SPILL_FAST) {
+      pre = PyMem_Malloc((size_t) total * sizeof(PyObject *));
+      if (unlikely(! pre)) {
+        PyErr_NoMemory();
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        return EVAL_RAISE();
+      }
+    }
+    pre[0] = self_arg;
+    if (total > 1)
+      memcpy(pre + 1, argv, (size_t) (total - 1) * sizeof(PyObject *));
+
+    r = kos_call_invoke_body(es, caller_slot, window, callable,
+                             pre, nargs + 1, kwnames, flags);
+    if (pre != pre_small)
+      PyMem_Free(pre);
+    return r;
+  }
+}
+
+
 KosOpResult KosEvalState_CallArgs(
     KosEvalState *es,
     PyObject *callable,

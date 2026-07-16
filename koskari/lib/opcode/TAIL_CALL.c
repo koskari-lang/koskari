@@ -24,19 +24,17 @@
 
 KOS_OP_HANDLER(TAIL_CALL) {
   unsigned n = KosOp_ARG(insn);
-  size_t count = (size_t)(n + 1);
 
-  KosStackSteal steal = { 0 };
-  if (KosEvalState_StackSteal_Tail(es, &steal, count) < 0)
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
+  if (! ptr)
     return EVAL_RAISE();
 
-  PyObject *callable = steal.vals[0];
-  PyObject *const *args =
-    (n > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
-
-  KosOpResult res = KosEvalState_Call(es, callable, args, (Py_ssize_t) n, NULL, 1);
-  KosStackSteal_Free(&steal);
-  return res;
+  /* Prologue only: the whole window (callable included) is borrowed;
+     the core's tail subpath binds before the frame reset drops it. */
+  return kos_call_invoke(es, ptr[0], NULL, n ? ptr + 1 : NULL,
+                         (Py_ssize_t) n, NULL,
+                         KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE
+                         | KOS_CALL_TAIL);
 }
 
 

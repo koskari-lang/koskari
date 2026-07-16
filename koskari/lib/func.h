@@ -174,7 +174,28 @@ typedef struct {
   int bind_self_state;      /* self-bind on call: 0 unresolved (lazily
                                computed on first call; name is fixed after
                                construction), 1 bind, 2 no-bind */
+  Py_ssize_t simple_arity1; /* exact positional arity PLUS ONE for the
+                               simple-call fast path (plain positional
+                               formals, no defaults/star/kwd/by-refs,
+                               non-yielding code); 0 = not simple, so
+                               zeroed construction is fail-safe */
 } KosFunction;
+
+#define KosFunction_SIMPLE_ARITY1(fn) (((KosFunction *) (fn))->simple_arity1)
+
+
+/**
+   Simple-call namespace prep: copy the base namespace and bind exactly
+   nargs positionals by slot index, plus the cached self-bind.  Caller
+   must have matched fn->simple_arity == nargs (classification
+   guarantees plain positional formals and non-yielding code).
+
+   :return: new namespace reference, or NULL with error set
+*/
+PyObject *KosFunction_SimpleCallNamespaceFromVector(
+      PyObject *self,
+      PyObject *const *args,
+      Py_ssize_t nargs);
 
 
 /** Borrowed reference. Do not Py_DECREF the result. */

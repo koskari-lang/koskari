@@ -98,21 +98,19 @@ static PyObject *delimited_continuation_repr(PyObject *self) {
 
 
 /**
-   call_call_continuation: callable and args are borrowed. First element of
-   args is resume_val for the continuation (we INCREF it; we own that ref only).
-   Plan INCREFs callable on same-evaluator path; handler releases callable and args.
+   call_call_continuation: callable and resume_val are borrowed (we
+   INCREF resume_val; we own that ref only).  Plan INCREFs callable on
+   same-evaluator path; handler releases callable and args.
 */
 static KosOpResult call_call_continuation(
     KosEvalState *es,
     PyObject *callable,
-    PyObject *args) {
+    PyObject *resume_val) {
 
   KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
       ? KosPyDelimitedContinuation_CAPTURED((KosPyDelimitedContinuation *) callable)
       : KosPyContinuation_CAPTURED((KosPyContinuation *) callable);
 
-  Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
-  PyObject *resume_val = (n > 0) ? PyTuple_GET_ITEM(args, 0) : Py_None;
   Py_INCREF(resume_val);
 
   /* Defensive: wrappers are only created with non-NULL k at capture time. */
@@ -188,7 +186,25 @@ static KosOpResult kos_install_continuation(
 
   (void) kwds_dict;
   (void) tail_call;
-  return call_call_continuation(es, callable, args_tuple);
+  return call_call_continuation(
+      es, callable,
+      (args_tuple && PyTuple_GET_SIZE(args_tuple) > 0)
+          ? PyTuple_GET_ITEM(args_tuple, 0) : Py_None);
+}
+
+
+static KosOpResult kos_vinstall_continuation(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  (void) kwnames;
+  (void) tail_call;
+  return call_call_continuation(es, callable,
+                                (nargs > 0) ? args[0] : Py_None);
 }
 
 
@@ -209,7 +225,7 @@ KosCallableTypeObject KosPyDelimitedContinuationType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_continuation,
-  .tp_kos_vinstall = NULL,
+  .tp_kos_vinstall = kos_vinstall_continuation,
   .tp_kos_wants_frame = 0,
   .tp_kos_wants_frame_fn = NULL,
 };
@@ -380,7 +396,7 @@ KosCallableTypeObject KosPyContinuationType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_continuation,
-  .tp_kos_vinstall = NULL,
+  .tp_kos_vinstall = kos_vinstall_continuation,
   .tp_kos_wants_frame = 0,
   .tp_kos_wants_frame_fn = NULL,
 };
