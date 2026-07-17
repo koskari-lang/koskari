@@ -1,0 +1,52 @@
+;; Full-stack reproducer: runs of consecutive local loads pack into
+;; FAST2/FAST4 (VAR2/VAR4 before fast conversion) and push in source
+;; order through the bulk handlers. String concatenation keeps every
+;; check order-sensitive.
+
+
+define verify_fast2 []:
+    define a "a"
+    define b "b"
+    equal? (+ a b) "ab"
+
+
+define verify_fast4 []:
+    define a "a"
+    define b "b"
+    define c "c"
+    define d "d"
+    equal? (+ a b c d) "abcd"
+
+
+define verify_fast4_fast2 []:
+    define a "a"
+    define b "b"
+    define c "c"
+    define d "d"
+    define e "e"
+    define f "f"
+    equal? (+ a b c d e f) "abcdef"
+
+
+define verify_eight []:
+    define a "a"
+    define b "b"
+    define c "c"
+    define d "d"
+    define e "e"
+    define f "f"
+    define g "g"
+    define h "h"
+    equal? (+ a b c d e f g h) "abcdefgh"
+
+
+;; closure slots mix with locals in one packed row
+
+define make_adder [x y]:
+    lambda [u v]:
+        (+ x y u v)
+
+
+define verify_closure_mix []:
+    define add (make_adder 10 20)
+    equal? (add 3 4) 37

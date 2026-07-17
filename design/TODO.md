@@ -47,17 +47,6 @@ with measure gates.
 
 Ref: [interpreter/compare-unification.md](interpreter/compare-unification.md).
 
-### Bulk local loads: VAR2/VAR4 → FAST2/FAST4 (evaluate / implement)
-
-Collapse chains of consecutive local loads (dominantly call-argument
-gathering) into bulk push opcodes: greedy VAR-chain packing late in
-`compress()`, lowering through the existing `convert_fast` path via the
-VAR/FAST twin convention, all rows EXTRA-encoded, VAR twins cold.
-Measure **after** compare-unification Phase 2 (the length-2 population
-overlaps with compare feeder fusion).
-
-Ref: [interpreter/bulk-fast-loads.md](interpreter/bulk-fast-loads.md).
-
 ### Opcode caching: further families (investigative)
 
 The per-site cache is **built and active**: the framework (tagged-union slots,
@@ -137,6 +126,17 @@ promotion entirely for yielding streams — never convert then un-convert.
 for raw `TAIL_CALL*` embedded via bytecode specialty syntax in a generator.
 
 Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
+
+### `#dict` constant compression
+
+`special_build_dict` (`compile/specials/collections.py`) currently
+assembles every key/value run by pushing both keys and values and
+emitting `BUILD_KWDS` (PAIR_COUNT). A smarter emission should notice
+runs of constant keys, pool them as a names tuple, and emit
+`BUILD_KWDS_NAMES` (CONST arg) with only the values on the stack --
+halving the pushes for the common literal-keyed dict. Mixed literals
+can split into alternating `BUILD_KWDS_NAMES` / `BUILD_KWDS` runs under
+the existing multi-run merge behavior.
 
 ### `assert` syntax + runtime function
 

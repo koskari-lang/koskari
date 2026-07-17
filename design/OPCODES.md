@@ -287,8 +287,8 @@ When adding or changing an opcode:
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*
-- [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*
+- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_TAKE, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, ITEM_TAKE, CONST_ITEM, CONST_ITEM_TAKE, and variants
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -362,11 +362,15 @@ When adding or changing an opcode:
 | EXCEPTION_CLEAR | NOARG | Clear exception state | [§11](#kos_op_exception_clear) |
 | EXCEPTION_MATCH | NOARG | Pop type(s), push match result | [§11](#kos_op_exception_match) |
 | VAR | VAR | Load by name | [§12](#kos_op_var) |
+| VAR2 | EXTRA | Load two names, push in row order | [§12](#kos_op_var2) |
+| VAR4 | EXTRA | Load four names, push in row order | [§12](#kos_op_var4) |
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](#kos_op_var_bind) |
 | VAR_TAKE | VAR | Deref name, clear binding, push value (errors if empty) | [§12](#kos_op_var_take) |
 | VAR_STORE | VAR | STORE: write TOS value into name | [§12](#kos_op_var_store) |
 | VAR_STORE_CONST | EXTRA | STORE: write constant into name (no stack) | [§12](#kos_op_var_store_const) |
 | FAST | FASTVAR | Load from slot | [§13](#kos_op_fast) |
+| FAST2 | EXTRA | Load two slots, push in row order | [§13](#kos_op_fast2) |
+| FAST4 | EXTRA | Load four slots, push in row order | [§13](#kos_op_fast4) |
 | FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](#kos_op_fast_bind) |
 | FAST_TAKE | FASTVAR | Deref slot, clear, push value (errors if empty) | [§13](#kos_op_fast_take) |
 | FAST_STORE | FASTVAR | STORE: write TOS value into slot | [§13](#kos_op_fast_store) |
@@ -1615,6 +1619,58 @@ Extra row: `("os.path", 0, 0, 0)`.
 
 ---
 
+### KOS_OP_VAR2 {#kos_op_var2}
+
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG). Row = two constant pool name
+  indices (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b]`. Load both names from the frame namespace
+  and push in row order. Both names resolve before either push, so a missing
+  name errors with nothing pushed.
+- **Invariants**: Names in constant pool.
+- **Compiler form:** Never emitted by specials. Produced only by
+  **`Compiler.pack_var_runs`** (the late `compress` sweep), which combines a
+  run of two consecutive bare **VAR** loads. **`convert_fast`** lowers to
+  **FAST2** when both names have fast slots (all-or-nothing; a
+  mixed-eligibility row stays VAR2).
+- **Implementation**: `koskari/lib/opcode/VAR2.c` (cold handler)
+- **Covered by**: `tests/compile/test_pack_var_runs.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load "x" then "y". Pool: 0 = "x", 1 = "y".
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | VAR2   | 0   | (0 ('x'), 1 ('y'), 0, 0) | stack: [..., x, y] |
+| 1     | RETURN | 1   | 1        | |
+
+---
+
+### KOS_OP_VAR4 {#kos_op_var4}
+
+- **Style**: EXTRA (VAR, VAR, VAR, VAR). Row = four constant pool name
+  indices (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b, c, d]`. Load all four names from the frame
+  namespace and push in row order. All names resolve before any push, so a
+  missing name errors with nothing pushed.
+- **Invariants**: Names in constant pool.
+- **Compiler form:** As **VAR2**: produced only by **`pack_var_runs`** from a
+  run of four (or more, greedily) consecutive bare **VAR** loads.
+  **`convert_fast`** lowers to **FAST4** when all four names have fast slots.
+- **Implementation**: `koskari/lib/opcode/VAR4.c` (cold handler)
+- **Covered by**: `tests/compile/test_pack_var_runs.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load "a", "b", "c", "d". Pool: 0-3 = names.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | VAR4   | 0   | (0 ('a'), 1 ('b'), 2 ('c'), 3 ('d')) | stack: [..., a, b, c, d] |
+| 1     | RETURN | 1   | 1        | |
+
+---
+
 ### KOS_OP_VAR_BIND
 
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
@@ -1789,6 +1845,55 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | FAST   | 0   | 0 (a)    | stack: [..., value] |
+| 1     | RETURN | 1   | 1        | |
+
+---
+
+### KOS_OP_FAST2 {#kos_op_fast2}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG). Row = two fast local
+  slot indices.
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b]`. Load both slots and push in row order.
+  Both slots resolve before either push, so an unbound slot errors with
+  nothing pushed.
+- **Invariants**: Slot indices in range for frame.
+- **Compiler form:** Post-compile only: **`convert_fast`** lowering of
+  **VAR2** when both names have fast slots. See §13 **FAST** for the slot
+  model.
+- **Implementation**: `koskari/lib/opcode/FAST2.c`
+- **Covered by**: `tests/compile/test_pack_var_runs.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load fast locals 0 and 1.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | FAST2  | 0   | (fast 0 (a), fast 1 (b), 0, 0) | stack: [..., a, b] |
+| 1     | RETURN | 1   | 1        | |
+
+---
+
+### KOS_OP_FAST4 {#kos_op_fast4}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, FASTVAR). Row = four fast
+  local slot indices.
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b, c, d]`. Load all four slots and push in row
+  order. All slots resolve before any push, so an unbound slot errors with
+  nothing pushed.
+- **Invariants**: Slot indices in range for frame.
+- **Compiler form:** Post-compile only: **`convert_fast`** lowering of
+  **VAR4** when all four names have fast slots.
+- **Implementation**: `koskari/lib/opcode/FAST4.c`
+- **Covered by**: `tests/compile/test_pack_var_runs.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load fast locals 0-3.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | FAST4  | 0   | (fast 0 (a), fast 1 (b), fast 2 (c), fast 3 (d)) | stack: [..., a, b, c, d] |
 | 1     | RETURN | 1   | 1        | |
 
 ---

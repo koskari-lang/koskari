@@ -985,7 +985,54 @@ class Compiler:
             # remove
             squished = squished[1:]
 
-        return squished
+        return self.pack_var_runs(squished)
+
+
+    def pack_var_runs(self, instr):
+        """
+        Late sweep: combine runs of consecutive bare VAR loads into VAR4 /
+        VAR2 rows (greedy, in that order). Runs after every other squash so
+        consumer-specific fusions get first claim on their feeder rows, and
+        breaks at any non-VAR instruction (including LABEL). POSITION rows
+        inside a run are absorbed -- the merged row keeps the position in
+        effect at the run's first load, and the latest absorbed position is
+        re-emitted after the run so following instructions keep theirs. The
+        fast pass later lowers VAR2/VAR4 to FAST2/FAST4 through the
+        ordinary VAR->FAST path.
+        """
+
+        result = []
+        run = []
+        trailing_pos = None
+
+        def flush():
+            nonlocal trailing_pos
+            while len(run) >= 4:
+                a, b, c, d = run[:4]
+                del run[:4]
+                result.append((OpCode.KOS_OP_VAR4, (a, b, c, d)))
+            if len(run) >= 2:
+                a, b = run[:2]
+                del run[:2]
+                result.append((OpCode.KOS_OP_VAR2, (a, b, None, None)))
+            if run:
+                result.append((OpCode.KOS_OP_VAR, run.pop()))
+            if trailing_pos is not None:
+                result.append(trailing_pos)
+                trailing_pos = None
+
+        for op, arg in instr:
+            if op == OpCode.KOS_OP_VAR:
+                run.append(arg)
+                continue
+            if run and op == OpCode.KOS_OP_POSITION:
+                trailing_pos = (op, arg)
+                continue
+            flush()
+            result.append((op, arg))
+
+        flush()
+        return result
 
 
     def normalize_opcount(self, instr):

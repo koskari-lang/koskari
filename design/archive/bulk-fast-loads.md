@@ -1,8 +1,18 @@
 # Bulk Local Loads: VAR2 / VAR4 and FAST2 / FAST4
 
-**Status: DESIGN (2026-07-16). Not yet implemented. Companion to
-[compare-unification.md](compare-unification.md) -- independent work,
-but the measurement gate is ordered after it (see Sequencing).**
+**Status: COMPLETE (2026-07-17, branch `var4`). All four opcodes,
+the `pack_var_runs` late sweep (with mid-run POSITION absorption --
+positions are interleaved in the stream and would otherwise break
+every run), and the automatic twin lowering are implemented. Suite
+4712 passed / 10 skipped. Gate metric met exactly: FAST runs >= 2
+vanished from the whole corpus (345 singletons remain; 119 FAST2 +
+5 FAST4 emitted across bootstrap/life/churn). Churn: loop -2.9%
+(16.87s best), tree/method within noise; the len-2 population's
+remaining upside transfers to compare-unification Phase 2 as
+sequenced below. Implemented ahead of compare-unification by
+deliberate choice (low-hanging fruit); the packer ran first, so
+compare fusion will take its loop-condition feeders back from
+FAST2 rows rather than raw runs -- re-baseline there, as planned.**
 
 ## Purpose
 
