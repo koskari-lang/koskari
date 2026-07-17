@@ -138,6 +138,17 @@ for raw `TAIL_CALL*` embedded via bytecode specialty syntax in a generator.
 
 Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
 
+### `#dict` constant compression
+
+`special_build_dict` (`compile/specials/collections.py`) currently
+assembles every key/value run by pushing both keys and values and
+emitting `BUILD_KWDS` (PAIR_COUNT). A smarter emission should notice
+runs of constant keys, pool them as a names tuple, and emit
+`BUILD_KWDS_NAMES` (CONST arg) with only the values on the stack --
+halving the pushes for the common literal-keyed dict. Mixed literals
+can split into alternating `BUILD_KWDS_NAMES` / `BUILD_KWDS` runs under
+the existing multi-run merge behavior.
+
 ### `assert` syntax + runtime function
 
 Add `assert` in two forms sharing one gate, `assert/enabled` (a new `assert/*`
