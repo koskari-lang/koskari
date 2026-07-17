@@ -27,11 +27,11 @@ execution frequency. A Markov successor table shows, per opcode, where
 control usually flows next -- an opcode with one dominant successor is a
 fusion candidate even at modest absolute counts.
 
-Run from the repository root inside the project venv:
+Run from the repository root:
 
-    uv run python tools/opgrams.py
-    uv run python tools/opgrams.py --group churn --top 30
-    uv run python tools/opgrams.py --group churn --dis
+    tox -qe opgrams
+    tox -qe opgrams -- --group churn --top 30
+    tox -qe opgrams -- --group churn --dis
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

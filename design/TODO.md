@@ -47,17 +47,6 @@ with measure gates.
 
 Ref: [interpreter/compare-unification.md](interpreter/compare-unification.md).
 
-### Bulk local loads: VAR2/VAR4 → FAST2/FAST4 (evaluate / implement)
-
-Collapse chains of consecutive local loads (dominantly call-argument
-gathering) into bulk push opcodes: greedy VAR-chain packing late in
-`compress()`, lowering through the existing `convert_fast` path via the
-VAR/FAST twin convention, all rows EXTRA-encoded, VAR twins cold.
-Measure **after** compare-unification Phase 2 (the length-2 population
-overlaps with compare feeder fusion).
-
-Ref: [interpreter/bulk-fast-loads.md](interpreter/bulk-fast-loads.md).
-
 ### Opcode caching: further families (investigative)
 
 The per-site cache is **built and active**: the framework (tagged-union slots,
