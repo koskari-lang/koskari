@@ -1,0 +1,191 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+Unit tests for Compiler.fuse_check_feeders (CHECK_COMPARE feeder
+absorption into CHECK_COMPARE_VAR) and its convert_fast lowering to
+CHECK_COMPARE_FAST
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import unittest
+
+import pytest
+
+from koskari.compile import CompilerMode
+from koskari.compile.compiler import (
+    CMPSRC_X_CONST, CMPSRC_Y_CONST, Compiler, make_cmpsrc)
+from koskari.lib import Compare, Module, ModuleNamespace, NamespaceSpec, OpCode
+
+
+pytestmark = pytest.mark.phase_compile
+
+
+LT = Compare.KOS_COMPARE_LT
+IS = Compare.KOS_COMPARE_IS
+
+V = OpCode.KOS_OP_VAR
+C = OpCode.KOS_OP_CONST
+CC = OpCode.KOS_OP_CHECK_COMPARE
+CCV = OpCode.KOS_OP_CHECK_COMPARE_VAR
+
+
+def make_compiler():
+    mod = Module(ModuleNamespace("test", {}))
+    return Compiler("test", mod)
+
+
+def fuse_ops(instr):
+    return make_compiler().fuse_check_feeders(instr)
+
+
+class TestFuseCheckFeeders(unittest.TestCase):
+
+    def test_var_var_fuses(self):
+        out = fuse_ops([
+            (V, "a"), (V, "b"),
+            (CC, (int(LT), 2, "fail", None)),
+        ])
+        self.assertEqual(out, [
+            (CCV, (make_cmpsrc(LT, False, False), "a", "b", "fail")),
+        ])
+
+    def test_var_const_fuses(self):
+        out = fuse_ops([
+            (V, "a"), (C, 100),
+            (CC, (int(LT), 2, "fail", None)),
+        ])
+        self.assertEqual(out, [
+            (CCV, (make_cmpsrc(LT, False, True), "a", 100, "fail")),
+        ])
+
+    def test_const_var_fuses(self):
+        out = fuse_ops([
+            (C, 0), (V, "a"),
+            (CC, (int(LT), 2, "fail", None)),
+        ])
+        self.assertEqual(out, [
+            (CCV, (make_cmpsrc(LT, True, False), 0, "a", "fail")),
+        ])
+
+    def test_const_const_stays_generic(self):
+        instr = [
+            (C, 1), (C, 2),
+            (CC, (int(LT), 2, "fail", None)),
+        ]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_chain_count_stays_generic(self):
+        instr = [
+            (V, "a"), (V, "b"), (V, "c"),
+            (CC, (int(LT), 3, "fail", None)),
+        ]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_extended_selector_fuses(self):
+        out = fuse_ops([
+            (V, "a"), (C, None),
+            (CC, (int(IS), 2, "fail", None)),
+        ])
+        self.assertEqual(out, [
+            (CCV, (make_cmpsrc(IS, False, True), "a", None, "fail")),
+        ])
+
+    def test_non_feeder_prior_stays_generic(self):
+        instr = [
+            (OpCode.KOS_OP_FAST_ATTR, ("a", "x", None, None)), (V, "b"),
+            (CC, (int(LT), 2, "fail", None)),
+        ]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_position_absorbed_and_trailing_reemitted(self):
+        pos1 = (OpCode.KOS_OP_POSITION, (1, 0, None))
+        pos2 = (OpCode.KOS_OP_POSITION, (1, 5, None))
+        out = fuse_ops([
+            pos1, (V, "a"), pos2, (V, "b"),
+            (CC, (int(LT), 2, "fail", None)),
+        ])
+        self.assertEqual(out, [
+            pos1,
+            (CCV, (make_cmpsrc(LT, False, False), "a", "b", "fail")),
+            pos2,
+        ])
+
+    def test_compress_runs_the_fusion_before_packing(self):
+        # a loop-condition shape: the feeders fuse into the check
+        # instead of packing into VAR2
+        comp = make_compiler()
+        out = comp.compress([
+            (V, "a"), (V, "b"),
+            (OpCode.KOS_OP_OBJECT_COMPARE, (int(LT), 2)),
+            (OpCode.KOS_OP_JUMP_FALSE, "fail"),
+            (C, 1),
+            (OpCode.KOS_OP_LABEL, "fail"),
+        ])
+        self.assertEqual(out[0], (
+            CCV, (make_cmpsrc(LT, False, False), "a", "b", "fail")))
+
+
+class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
+    """
+    convert_fast lowers CHECK_COMPARE_VAR to CHECK_COMPARE_FAST via the
+    CMPSRC-aware path, with the all-or-nothing slot rule
+    """
+
+    async def test_var_var_lowers(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("a", "b"), ())
+        src = make_cmpsrc(LT, False, False)
+        instr = [(CCV, (src, "a", "b", "fail"))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [
+            (OpCode.KOS_OP_CHECK_COMPARE_FAST, (src, 0, 1, "fail")),
+        ])
+
+    async def test_const_slot_passes_through(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("a",), ())
+        src = make_cmpsrc(LT, False, True)
+        instr = [(CCV, (src, "a", 100, "fail"))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [
+            (OpCode.KOS_OP_CHECK_COMPARE_FAST, (src, 0, 100, "fail")),
+        ])
+
+    async def test_ineligible_name_stays_var(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("a",), ())
+        src = make_cmpsrc(LT, False, False)
+        instr = [(CCV, (src, "a", "elsewhere", "fail"))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [
+            (CCV, (src, "a", "elsewhere", "fail")),
+        ])
+
+    async def test_const_string_never_mistaken_for_name(self):
+        # a constant that happens to spell a local name must stay a
+        # constant: the source bit, not the value, decides
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("a",), ())
+        src = make_cmpsrc(LT, False, True)
+        instr = [(CCV, (src, "a", "a", "fail"))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [
+            (OpCode.KOS_OP_CHECK_COMPARE_FAST, (src, 0, "a", "fail")),
+        ])
+
+
+# The end.

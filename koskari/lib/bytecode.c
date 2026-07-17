@@ -295,6 +295,15 @@ static PyObject *soften_extra_tuple(
   uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
   PyObject *items[4];
 
+  /* CMPSRC rows: source bits in a0 override operand slots to CONST
+     (mirror of the code_collect pre-step). */
+  if (schema.f0 == KOSTYLE_CMPSRC) {
+    if (KosCmpSrc_X_CONST(row.a0))
+      schema.f1 = KOSTYLE_CONST;
+    if (KosCmpSrc_Y_CONST(row.a0))
+      schema.f2 = KOSTYLE_CONST;
+  }
+
   for (int slot = 0; slot < 4; slot++) {
     KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
         (slot == 2) ? schema.f2 : schema.f3;
@@ -1513,6 +1522,23 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         goto failure;
       }
 
+      /* CMPSRC rows carry per-operand source bits in slot a0: a set bit
+         overrides that operand slot's declared kind to CONST. Resolve
+         the effective schema before interpreting the slots. */
+      if (schema.f0 == KOSTYLE_CMPSRC) {
+        PyObject *srcv = PyTuple_GET_ITEM(b, 0);
+        if (! PyLong_Check(srcv)) {
+          PyErr_Format(PyExc_RuntimeError,
+                       "CMPSRC field expects int, got %R", srcv);
+          goto failure;
+        }
+        long src = PyLong_AsLong(srcv);
+        if (KosCmpSrc_X_CONST(src))
+          schema.f1 = KOSTYLE_CONST;
+        if (KosCmpSrc_Y_CONST(src))
+          schema.f2 = KOSTYLE_CONST;
+      }
+
       KosExtra row = { 0, 0, 0, 0 };
       for (int slot = 0; slot < 4; slot++) {
         KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
@@ -1581,12 +1607,13 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
-        /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT: store raw integer
-           (slot, argc, bitflags, packed op-type+count, comparison
-           selector, packed selector+count) */
+        /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT, CMPSRC: store
+           raw integer (slot, argc, bitflags, packed op-type+count,
+           comparison selector, packed selector+count/source-bits) */
         if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR
             || fk == KOSTYLE_STAR || fk == KOSTYLE_OPCOUNT
-            || fk == KOSTYLE_CMP || fk == KOSTYLE_CMPCOUNT) {
+            || fk == KOSTYLE_CMP || fk == KOSTYLE_CMPCOUNT
+            || fk == KOSTYLE_CMPSRC) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
                          "EXTRA field expects int, got %R", elem);
@@ -3307,6 +3334,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_EXTRA);
   int_enum(enum_dict, KOSTYLE_CMP);
   int_enum(enum_dict, KOSTYLE_CMPCOUNT);
+  int_enum(enum_dict, KOSTYLE_CMPSRC);
 
   return create_int_enum("OpStyle", enum_dict);
 }

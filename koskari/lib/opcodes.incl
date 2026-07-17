@@ -83,8 +83,13 @@ OP(JUMP_OR, 0, LABEL)
 // check jumps - jump to label if predicate does not match. The
 // the comparison check is variadic and selector-keyed: the EXTRA row
 // carries (CMP, COUNT, LABEL) so a chained compare over COUNT operands
-// under any KosCompare selector fuses with its jump.
+// under any KosCompare selector fuses with its jump. The arity-2 fused
+// forms absorb their operand feeders: CMPSRC packs the selector with
+// per-operand source bits (a set bit overrides that slot from its
+// declared kind to CONST).
 OP(CHECK_COMPARE, 0, EXTRA, CMP, COUNT, LABEL, NOARG)
+OP(CHECK_COMPARE_VAR, 0,  EXTRA, CMPSRC, VAR,     VAR,     LABEL)
+OP(CHECK_COMPARE_FAST, 0, EXTRA, CMPSRC, FASTVAR, FASTVAR, LABEL)
 
 OP(CHECK_EXCEPTION, 0, LABEL)
 OP(CHECK_NIL, 0, LABEL)        // squashed NILP + JUMP_FALSE: jump if not nil

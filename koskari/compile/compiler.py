@@ -172,6 +172,22 @@ def split_cmpcount(value):
     return (merged >> 8, merged & 0xff)
 
 
+# CMPSRC packing (mirrors the KosCmpSrc_* macros in bytecode.h):
+# selector in bits 0-3, per-operand constant-source bits above.
+CMPSRC_X_CONST = 0x10
+CMPSRC_Y_CONST = 0x20
+
+
+def make_cmpsrc(sel, x_const, y_const):
+    """
+    Pack a CMPSRC field from a Compare selector and two source flags
+    """
+
+    return ((int(getattr(sel, 'value', sel)) & 0x0f)
+            | (CMPSRC_X_CONST if x_const else 0)
+            | (CMPSRC_Y_CONST if y_const else 0))
+
+
 _TAIL_CALL_TO_CALL = {
     OpCode.KOS_OP_TAIL_CALL: OpCode.KOS_OP_CALL,
     OpCode.KOS_OP_TAIL_CALL_NAMES: OpCode.KOS_OP_CALL_NAMES,
@@ -1015,7 +1031,62 @@ class Compiler:
             # remove
             squished = squished[1:]
 
-        return self.pack_var_runs(squished)
+        return self.pack_var_runs(self.fuse_check_feeders(squished))
+
+
+    def fuse_check_feeders(self, instr):
+        """
+        Late sweep: absorb the operand feeders of arity-2 CHECK_COMPARE
+        rows. When the two immediately preceding value rows are bare VAR
+        or CONST loads (not both CONST -- that is a folding case, not a
+        fusion case), the trio collapses into CHECK_COMPARE_VAR with a
+        CMPSRC field carrying the selector and per-operand source bits;
+        the fast pass later lowers it to CHECK_COMPARE_FAST. Runs before
+        pack_var_runs so this fusion gets first claim on the feeders.
+        POSITION rows between the feeders are transparent -- the fused
+        row keeps the position in effect at the first feeder, and the
+        latest interior position is re-emitted after the row.
+        """
+
+        result = []
+        feeders = (OpCode.KOS_OP_VAR, OpCode.KOS_OP_CONST)
+
+        for op, arg in instr:
+            if op == OpCode.KOS_OP_CHECK_COMPARE and arg[1] == 2:
+                found = []      # feeder indices, nearest (y) first
+                pos_rows = []   # interior POSITION indices
+                i = len(result) - 1
+                while i >= 0 and len(found) < 2:
+                    rop = result[i][0]
+                    if rop == OpCode.KOS_OP_POSITION:
+                        pos_rows.append(i)
+                    elif rop in feeders:
+                        found.append(i)
+                    else:
+                        break
+                    i -= 1
+
+                if len(found) == 2:
+                    y_op, y_arg = result[found[0]]
+                    x_op, x_arg = result[found[1]]
+                    x_const = x_op == OpCode.KOS_OP_CONST
+                    y_const = y_op == OpCode.KOS_OP_CONST
+                    if not (x_const and y_const):
+                        sel, _cnt, label, _pad = arg
+                        trailing = (result[max(pos_rows)]
+                                    if pos_rows else None)
+                        del result[found[1]:]
+                        result.append((
+                            OpCode.KOS_OP_CHECK_COMPARE_VAR,
+                            (make_cmpsrc(sel, x_const, y_const),
+                             x_arg, y_arg, label)))
+                        if trailing is not None:
+                            result.append(trailing)
+                        continue
+
+            result.append((op, arg))
+
+        return result
 
 
     def pack_var_runs(self, instr):
@@ -1142,6 +1213,20 @@ class Compiler:
 
             elif op in (OpCode.KOS_OP_POP_NS, OpCode.KOS_OP_POP_COLLECT):
                 pop_nspec()
+
+            elif nstack and op == OpCode.KOS_OP_CHECK_COMPARE_VAR:
+                # CMPSRC row: slot kinds are data-dependent (a set source
+                # bit means CONST, else the declared VAR kind), so the
+                # generic schema-driven lowering below cannot apply. Lower
+                # each name-sourced slot to its fast index; all-or-nothing
+                # as usual, const-bit slots pass through untouched.
+                cmpsrc, x, y, label = arg
+                nx = x if (cmpsrc & CMPSRC_X_CONST) else fast_slot(x)
+                ny = y if (cmpsrc & CMPSRC_Y_CONST) else fast_slot(y)
+                if (((cmpsrc & CMPSRC_X_CONST) or nx >= 0)
+                        and ((cmpsrc & CMPSRC_Y_CONST) or ny >= 0)):
+                    op = OpCode.KOS_OP_CHECK_COMPARE_FAST
+                    arg = (cmpsrc, nx, ny, label)
 
             elif nstack and op in VAR_TO_FAST:
                 # If opcode style is EXTRA, use op.extra as the schema tuple

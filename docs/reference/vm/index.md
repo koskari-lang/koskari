@@ -899,6 +899,54 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 
 ---
 
+### KOS_OP_CHECK_COMPARE_VAR {#kos_op_check_compare_var}
+
+- **Style**: EXTRA (CMPSRC, VAR, VAR, LABEL). Row = packed selector +
+  source bits, two operand slots, target pc. A set source bit overrides
+  that operand slot from its declared VAR kind to CONST (pool index).
+- **Status**: Implemented.
+- **Stack**: No stack effect. Arity-2 fused comparison branch: load both
+  operands per the source bits (frame namespace name lookup, or constant pool), compare
+  under the selector, jump to LABEL on failure.
+- **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
+  are never emitted (that is a folding case).
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
+- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_VAR.c` (cold handler)
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_compare.py`
+
+**Example:** Loop condition `i < n` on fast slots 1 and 0.
+
+| index | opcode             | arg | arg view                          | comment |
+|------:|--------------------|-----|-----------------------------------|---------|
+| 3     | CHECK_COMPARE_VAR | 2 | (LT, v#1 ('i'), v#0 ('n'), -> 9) | jump to 9 unless i < n |
+
+---
+
+### KOS_OP_CHECK_COMPARE_FAST {#kos_op_check_compare_fast}
+
+- **Style**: EXTRA (CMPSRC, FASTVAR, FASTVAR, LABEL). Row = packed selector +
+  source bits, two operand slots, target pc. A set source bit overrides
+  that operand slot from its declared FASTVAR kind to CONST (pool index).
+- **Status**: Implemented.
+- **Stack**: No stack effect. Arity-2 fused comparison branch: load both
+  operands per the source bits (fast local slot, or constant pool), compare
+  under the selector, jump to LABEL on failure.
+- **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
+  are never emitted (that is a folding case).
+- **Compiler form:** Post-compile only: the CMPSRC-aware `convert_fast` lowering of CHECK_COMPARE_VAR when every name-sourced slot has a fast slot. Constant-bit slots pass through untouched.
+- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_FAST.c`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_compare.py`
+
+**Example:** Loop condition `i < n` on fast slots 1 and 0.
+
+| index | opcode             | arg | arg view                          | comment |
+|------:|--------------------|-----|-----------------------------------|---------|
+| 3     | CHECK_COMPARE_FAST | 2 | (LT, fast 1 ("i"), fast 0 ("n"), -> 9) | jump to 9 unless i < n |
+
+---
+
 ### KOS_OP_CHECK_EXCEPTION
 
 - **Style**: LABEL. Arg = target pc (post-compile).

@@ -26,6 +26,8 @@
 #include "opcode/JUMP_AND.c"
 #include "opcode/JUMP_OR.c"
 #include "opcode/CHECK_COMPARE.c"
+#include "opcode/CHECK_COMPARE_VAR.c"
+#include "opcode/CHECK_COMPARE_FAST.c"
 #include "opcode/CHECK_EXCEPTION.c"
 #include "opcode/CHECK_NIL.c"
 #include "opcode/SWITCH_EQ.c"

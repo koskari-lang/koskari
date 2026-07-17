@@ -437,10 +437,18 @@ def main(argv=None) -> int:
     codes = collect_codes(modules)
 
     if options.dis:
+        import asyncio
+
         from koskari.dis import dis
-        for label, code in codes:
-            sys.stdout.write(f'--- {label} ---\n')
-            dis(code)
+
+        async def dump():
+            for label, code in codes:
+                sys.stdout.write(f'--- {label} ---\n')
+                result = dis(code)
+                if hasattr(result, '__await__'):
+                    await result
+
+        asyncio.run(dump())
         return 0
 
     tally = analyze(

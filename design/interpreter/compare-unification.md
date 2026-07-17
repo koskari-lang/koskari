@@ -10,8 +10,15 @@ the richcompare-six fast path into operator.h as static inline (cold
 extern tail for the extended selectors) recovered it to +6%, with
 loop (4x the CHECK_LT volume) at only +1.4% -- the differential
 pins the residual on method's documented layout sensitivity, and P2
-replaces this exact sequence at loop heads anyway. Phases 2-3
-pending.**
+replaces this exact sequence at loop heads anyway. Phase 2 COMPLETE
+(same day): CMPSRC kind with the schema-override model (operand slots
+declare their primary kind, a set source bit overrides to CONST);
+fuse_check_feeders late sweep (before pack_var_runs, POSITION-tolerant)
+emits CHECK_COMPARE_VAR; CMPSRC-aware convert_fast lowers to
+CHECK_COMPARE_FAST. Every churn loop head is now one dispatch. Churn
+vs the pre-unification baseline: loop -1.3%, tree -2.4%, branch -1.1%,
+method -7.1% (10.21s, its best-ever reading; the P1 layout residual
+inverted). Suite 4745/10. Phase 3 pending.**
 
 ## Purpose
 

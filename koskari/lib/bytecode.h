@@ -91,6 +91,16 @@ typedef enum KosOpStyle {
       decodes the high byte */
   KOSTYLE_CMPCOUNT,
 
+  /** field packs a comparison selector (bits 0-3) with per-operand
+      source-shape bits (bit 4: x, bit 5: y; 0 = the row's declared
+      kind, 1 = constant pool). Used only by the arity-2 fused
+      CHECK_COMPARE_VAR / CHECK_COMPARE_FAST rows, whose operand slots
+      are declared with their primary kind (VAR / FASTVAR); a set shape
+      bit overrides that slot to CONST. Every consumer that interprets
+      those slots (collect, soften, convert_fast, dis) must read the
+      bits first. */
+  KOSTYLE_CMPSRC,
+
 } KosOpStyle;
 
 
@@ -106,6 +116,17 @@ typedef enum KosOpStyle {
   ((uint16_t)(((uint16_t)(sel) << 8) | ((uint16_t)(count) & 0xff)))
 #define KosCmpCount_SEL(v)    ((uint16_t)((v) >> 8))
 #define KosCmpCount_COUNT(v)  ((uint16_t)((v) & 0xff))
+
+
+/** Compose/decode a KOSTYLE_CMPSRC value: comparison selector (bits 0-3)
+    plus per-operand constant-source bits (bit 4: x, bit 5: y). */
+#define KosCmpSrc_MAKE(sel, x_const, y_const)              \
+  ((uint16_t)(((uint16_t)(sel) & 0x0f)                     \
+              | ((x_const) ? 0x10 : 0)                     \
+              | ((y_const) ? 0x20 : 0)))
+#define KosCmpSrc_SEL(v)      ((uint16_t)((v) & 0x0f))
+#define KosCmpSrc_X_CONST(v)  (((v) >> 4) & 1)
+#define KosCmpSrc_Y_CONST(v)  (((v) >> 5) & 1)
 
 
 /** Operator selector carried in the OPCOUNT high byte and dispatched by the

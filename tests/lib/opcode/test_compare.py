@@ -42,6 +42,10 @@ def cmpcount(sel, count):
     return (sel << 8) | count
 
 
+def cmpsrc(sel, x_const, y_const):
+    return (sel & 0x0f) | (0x10 if x_const else 0) | (0x20 if y_const else 0)
+
+
 class TestCheckCompare(CevalTest):
     """
     CHECK_COMPARE chain-compares under a KosCompare selector and jumps
@@ -232,6 +236,104 @@ class TestObjectCompare(CevalTest):
         ])
         result = await make_callable(code, ns)()
         self.assertIs(result, True)
+
+
+class TestCheckCompareFast(CevalTest):
+    """
+    CHECK_COMPARE_FAST loads operands per the CMPSRC source bits and
+    branches on comparison failure
+    """
+
+    async def test_fast_fast(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(LT, False, False), 0, 1, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a", "b"), values={"a": 1, "b": 2})
+        self.assertEqual(await make_callable(code, ns)(), 42)
+
+
+    async def test_fast_const_branches(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(LT, False, True), 0, 5, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a",), values={"a": 9})
+        self.assertEqual(await make_callable(code, ns)(), 0)
+
+
+    async def test_const_fast(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(LT, True, False), 0, 0, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a",), values={"a": 9})
+        self.assertEqual(await make_callable(code, ns)(), 42)
+
+
+    async def test_unbound_slot_raises(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(LT, False, True), 0, 5, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a",))
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
+class TestCheckCompareVar(CevalTest):
+    """
+    CHECK_COMPARE_VAR resolves names per the CMPSRC source bits and
+    branches on comparison failure
+    """
+
+    async def test_var_var(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_VAR", (cmpsrc(EQ, False, False), "a", "b", "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], values={"a": 7, "b": 7})
+        self.assertEqual(await make_callable(code, ns)(), 42)
+
+
+    async def test_var_const_branches(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_VAR", (cmpsrc(EQ, False, True), "a", 8, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], values={"a": 7})
+        self.assertEqual(await make_callable(code, ns)(), 0)
+
+
+    async def test_missing_name_raises(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_VAR", (cmpsrc(EQ, False, True), "nope", 8, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
 
 
 # The end.

@@ -267,7 +267,7 @@ When adding or changing an opcode:
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
-- [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_EXCEPTION
+- [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
@@ -321,6 +321,8 @@ When adding or changing an opcode:
 | JUMP_AND | LABEL | Short-circuit AND | [§8](#kos_op_jump_and) |
 | JUMP_OR | LABEL | Short-circuit OR | [§8](#kos_op_jump_or) |
 | CHECK_COMPARE | EXTRA | Chain-compare N operands under a KosCompare selector; jump if chain fails | [§9](#kos_op_check_compare) |
+| CHECK_COMPARE_VAR | EXTRA | Arity-2 fused check; operands from VAR/CONST per CMPSRC bits | [§9](#kos_op_check_compare_var) |
+| CHECK_COMPARE_FAST | EXTRA | Arity-2 fused check; operands from FAST/CONST per CMPSRC bits | [§9](#kos_op_check_compare_fast) |
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
 | SWITCH_EQ | LABEL | Equality dispatch; on match pop both and jump; on mismatch pop key only, fall through | [§9.1](#kos_op_switch_eq) |
 | SWITCH_EQ_CONST | EXTRA | Compare TOS to constant RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_const) |
@@ -1071,6 +1073,54 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 | 1     | FAST          | 0   | 0 (x)             | stack: [..., 1, x] |
 | 2     | CONST         | 1   | 1 (100)           | stack: [..., 1, x, 100] |
 | 3     | CHECK_COMPARE | 0   | (LT, 3, -> 6, 0)  | jump to 6 unless 1 < x < 100 |
+
+---
+
+### KOS_OP_CHECK_COMPARE_VAR {#kos_op_check_compare_var}
+
+- **Style**: EXTRA (CMPSRC, VAR, VAR, LABEL). Row = packed selector +
+  source bits, two operand slots, target pc. A set source bit overrides
+  that operand slot from its declared VAR kind to CONST (pool index).
+- **Status**: Implemented.
+- **Stack**: No stack effect. Arity-2 fused comparison branch: load both
+  operands per the source bits (frame namespace name lookup, or constant pool), compare
+  under the selector, jump to LABEL on failure.
+- **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
+  are never emitted (that is a folding case).
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
+- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_VAR.c` (cold handler)
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_compare.py`
+
+**Example:** Loop condition `i < n` on fast slots 1 and 0.
+
+| index | opcode             | arg | arg view                          | comment |
+|------:|--------------------|-----|-----------------------------------|---------|
+| 3     | CHECK_COMPARE_VAR | 2 | (LT, v#1 ('i'), v#0 ('n'), -> 9) | jump to 9 unless i < n |
+
+---
+
+### KOS_OP_CHECK_COMPARE_FAST {#kos_op_check_compare_fast}
+
+- **Style**: EXTRA (CMPSRC, FASTVAR, FASTVAR, LABEL). Row = packed selector +
+  source bits, two operand slots, target pc. A set source bit overrides
+  that operand slot from its declared FASTVAR kind to CONST (pool index).
+- **Status**: Implemented.
+- **Stack**: No stack effect. Arity-2 fused comparison branch: load both
+  operands per the source bits (fast local slot, or constant pool), compare
+  under the selector, jump to LABEL on failure.
+- **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
+  are never emitted (that is a folding case).
+- **Compiler form:** Post-compile only: the CMPSRC-aware `convert_fast` lowering of CHECK_COMPARE_VAR when every name-sourced slot has a fast slot. Constant-bit slots pass through untouched.
+- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_FAST.c`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_compare.py`
+
+**Example:** Loop condition `i < n` on fast slots 1 and 0.
+
+| index | opcode             | arg | arg view                          | comment |
+|------:|--------------------|-----|-----------------------------------|---------|
+| 3     | CHECK_COMPARE_FAST | 2 | (LT, fast 1 ("i"), fast 0 ("n"), -> 9) | jump to 9 unless i < n |
 
 ---
 
