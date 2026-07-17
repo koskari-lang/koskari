@@ -28,7 +28,7 @@ split-out `GLOBALS.cold`).
 Three efforts landed between measurements:
 
 - **Comparison unification** (see
-  [interpreter/compare-unification.md](interpreter/compare-unification.md)):
+  [../archive/compare-unification.md](../archive/compare-unification.md)):
   the 24 per-comparison opcodes (12 `CHECK_*`, 12 `OBJECT_*`) collapsed
   into 6 selector-keyed handlers -- generic `CHECK_COMPARE` /
   `OBJECT_COMPARE` plus the fused `_VAR`/`_FAST` pairs.  Family bodies
@@ -101,7 +101,7 @@ Distribution (top-heavy, long-tailed; % of the 80,844 B body):
   call-unification prologue/core split (kos_call_invoke); see
   [interpreter/call-unification.md](interpreter/call-unification.md).
 - **D -- selector-keyed comparisons**: DONE, landed as compare-unification;
-  see [interpreter/compare-unification.md](interpreter/compare-unification.md).
+  see [../archive/compare-unification.md](../archive/compare-unification.md).
 
 Remeasure dispatch fn size and run the suite + ASan after each batch.
 

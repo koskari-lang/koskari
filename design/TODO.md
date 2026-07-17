@@ -35,18 +35,6 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 
 ## Evaluator performance
 
-### Comparison unification (evaluate / implement)
-
-Collapse the 24 comparison opcodes (12 `CHECK_*`, 12 `OBJECT_*`) into
-selector-keyed `CHECK_COMPARE` / `OBJECT_COMPARE` on a `KosCompare` enum
-(CPython richcompare ordinals + extended selectors), then add the fused
-source variants: `CHECK_COMPARE_VAR`/`_FAST` (CMPSRC-encoded arity-2
-branch) and the ternary bounds pair `OBJECT_COMPARE_VAR`/`_FAST`. Three
-new field kinds (CMP, CMPCOUNT, CMPSRC); VAR twins cold; strict phases
-with measure gates.
-
-Ref: [interpreter/compare-unification.md](interpreter/compare-unification.md).
-
 ### Opcode caching: further families (investigative)
 
 The per-site cache is **built and active**: the framework (tagged-union slots,

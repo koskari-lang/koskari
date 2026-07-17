@@ -1,6 +1,11 @@
 # Comparison Unification: CHECK_COMPARE, OBJECT_COMPARE, and Fused Source Variants
 
-**Status: Phase 1 COMPLETE (2026-07-17, branch `check_cmp`). The 24
+**Status: COMPLETE and MERGED (2026-07-17, PR #103, branch
+`check_cmp`). All three phases landed; trace-confirmed results and the
+one forward lever (`CHECK_COMPARE_CONST`) are in the Trace results
+section at the end. Original per-phase status preserved below.**
+
+**Phase 1 COMPLETE (2026-07-17, branch `check_cmp`). The 24
 comparison opcodes are deleted; CHECK_COMPARE / OBJECT_COMPARE carry
 the whole surface on the KosCompare selector. Suite 4725/10 green.
 Dispatch fn 66,045 -> 63,579 B (-3.7%). Gate note: the first
@@ -495,8 +500,43 @@ gate unmeasured.
   shows the pattern warm. The encoding is trivially available (CMPSRC
   row, no label) if justified.
 
+## Trace results (2026-07-17, full churn-trace A/B)
+
+Instrumented koskari-only churn, master (pre-branch) vs `check_cmp`:
+53.96B -> 52.88B dispatches (-2.0%), 1357.7s -> 1327.4s (-2.2%).
+Untraced compare churn: method -7.8% (3.08x -> 2.91x), fannkuch -7.7%,
+binary_trees -6.0%, loop -3.6% (1.57x -> 1.48x), nbody -2.9%; branch
+-0.5%, tree/field_slots/list_each flat.
+
+The mechanism is feeder absorption, and it is exact in the movers: the
+2.00B per-comparison checks became 1.11B generic `CHECK_COMPARE` +
+894M `CHECK_COMPARE_FAST`, and against the 894M fused loop heads the
+feeders vanished in lockstep -- FAST2 -711M, FAST -183M, CONST -183M,
+summing to the entire 1.08B dispatch reduction. So 711M loop heads
+were fast/fast (a `FAST2 + CHECK_LT` pair collapsed to one dispatch)
+and 183M were fast/const. Return path (`return_boundary` 776M,
+`parent_return`) and opcache (method 300.2M hits / 145K miss, field
+5.1B hits / 49 miss) are bit-identical between traces: zero behavioral
+drift.
+
+**Forward lever -- `CHECK_COMPARE_CONST` (const-vs-stack-top).** The
+1.11B generic `CHECK_COMPARE` that remains (26.3s, now the
+second-largest single opcode cost) is almost entirely branch's
+`(== 0 (% v 3))` / `(% v 5)` shape: one operand is a stack-computed
+value, so it correctly cannot fuse under the VAR/CONST feeder rule.
+That is why branch barely moved (-0.5%) while loop moved -3.6%. A
+future comparison lever is a check that pops one operand and compares
+it against a pooled constant, branching on failure -- catching every
+`(op CONST computed)` comparison, which is the conditional-heavy
+pattern ported Python produces constantly. It is a genuinely new
+opcode with a stack source (cleanly outside this effort's VAR/CONST
+feeder model), so it is recorded here rather than folded in.
+
 ## Rested ideas
 
+- **`CHECK_COMPARE_CONST`** (const-vs-stack-top fused check) -- see the
+  Trace results forward lever above; the biggest measured remaining
+  comparison opportunity (branch's 26.3s of unfused generic checks).
 - PyLong 2-operand compare fast path in `kos_compare_chain` (longops
   analogue) -- measure after Phase 2.
 - Generalizing CMPSRC-style source bits to other 2-operand consumers
