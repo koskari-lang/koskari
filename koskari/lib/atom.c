@@ -463,11 +463,37 @@ static PyObject *keyword_rsplit(
 static PyObject *keyword_kos_repr(PyObject *self, PyObject *Py_UNUSED(ignored)) {
 
   PyObject *name = KosInternedAtom_NAME(self);
+  Py_ssize_t len = PyUnicode_GET_LENGTH(name);
 
-  if (! PyUnicode_GET_LENGTH(name))
+  if (! len)
     return PyUnicode_FromString("::");
 
-  return PyUnicode_FromFormat("%S:", name);
+  int needs_quote = 0;
+  for (Py_ssize_t i = 0; i < len; i++) {
+    Py_UCS4 ch = PyUnicode_READ_CHAR(name, i);
+    if (ch == ' ' || ch == '"') {
+      needs_quote = 1;
+      break;
+    }
+  }
+
+  if (! needs_quote)
+    return PyUnicode_FromFormat("%S:", name);
+
+  /* Escape backslashes first, then quotes, so the quoted name reads back
+     unchanged; the trailing colon marks the keyword. */
+  PyObject *esc = PyObject_CallMethod(name, "replace", "ss", "\\", "\\\\");
+  if (! esc)
+    return NULL;
+
+  PyObject *quoted = PyObject_CallMethod(esc, "replace", "ss", "\"", "\\\"");
+  Py_DECREF(esc);
+  if (! quoted)
+    return NULL;
+
+  PyObject *result = PyUnicode_FromFormat("\"%S\":", quoted);
+  Py_DECREF(quoted);
+  return result;
 }
 
 

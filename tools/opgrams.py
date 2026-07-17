@@ -57,7 +57,7 @@ MODULE_GROUPS = {
     'cli': (
         'koskari.cli.launch',
         'koskari.cli.repl',
-        # 'koskari.dis_ng',  # migrating to be koskari.dis; add back after
+        'koskari.dis',
     ),
     'life': (
         'koslife.cli',

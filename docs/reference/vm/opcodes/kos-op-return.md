@@ -1,5 +1,5 @@
 # KOS_OP_RETURN
-- **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
+- **Style**: COUNT. Arg = number of values to package as the return value: `0` returns `None`, `1` returns the single popped value, and `N > 1` pops `N` values and returns them as a tuple.
 - **Status**: Implemented.
 - **Stack**: Pops the return value(s) per `arg`. The opcode returns **`EVAL_RETURN(val)`**; **`apply_kos_op_result`** routes to **`eval_event_return`**, which runs **`KOS_TRANS_WALK_RETURN_TO_FRAME`**, **`kos_dyn_pop_frame`**, iterator-boundary delivery, native-handler delivery, or stack push onto the caller, then **`kos_dynnode_on_control_returned`**. **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**. **Delimited** continuation returns use **`KosEvalState_KReturnDelimited`** in the opcode.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.

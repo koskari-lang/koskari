@@ -63,7 +63,7 @@ from tests.corpus import (  # noqa: E402
     load_schema,
     parse_eval_expected,
 )
-from koskari.lib import car, cdr, nil  # noqa: E402
+from koskari.lib import car, cdr, kos_repr, nil  # noqa: E402
 from koskari.types import is_pair, is_proper, is_symbol, unpack  # noqa: E402
 
 
@@ -127,11 +127,15 @@ def render_form(form):
     """
     Render a read form back to its s-expression text
 
+    Uses kos_repr rather than str so that keywords render with their
+    trailing colon (``count:`` not ``count``) and the text reads back to
+    the same structure.
+
     :param form: a read/expanded form
     :return: source text that reads back to the same structure
     """
 
-    return str(form)
+    return kos_repr(form)
 
 
 def _eval_candidates(got):

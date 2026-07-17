@@ -182,7 +182,7 @@ define _build_ns_const_map [code]:
   :param code: Code instance
   :return: dict mapping instruction index -> constant pool index
   """
-  define result (dict)
+  define result #{}
   define i 0
   define n (code.length)
 
@@ -198,7 +198,7 @@ define _build_ns_const_map [code]:
     elif (equal? op OpCode.KOS_OP_PUSH_COLLECT):
       (set-item result i arg)
 
-    set! i (+ i 1)
+    incr! i
 
   return result
 
@@ -243,90 +243,87 @@ define _format_arg [code op_style arg cpool local_names closure_names
   :return: string description of the argument
   """
 
-  if (equal? op_style OpStyle.KOSTYLE_EXTRA):
-    if (is-not? extra_schema None):
-      define schema extra_schema
-      if schema:
-        try:
-          define ext (code.extra_tuple arg)
-        except [#(IndexError TypeError)]:
-          return (str arg)
+  switch op_style:
 
-        define parts #[]
-        for-each [[val fk] (zip ext schema)]:
-          if (or (equal? fk OpStyle.KOSTYLE_CONST) (equal? fk OpStyle.KOSTYLE_VAR)):
-            if (and (<= 0 val) (< val (len cpool))):
-              (define prefix
-                (if (equal? fk OpStyle.KOSTYLE_CONST) "c" "v"))
-              (define cval (item cpool val))
-              (define inner
-                (if (and (equal? fk OpStyle.KOSTYLE_CONST)
-                         (instance? cval NamespaceSpec))
-                  then: (_format_nspec_inline val cval)
-                  else: (_format_constant cval)))
-              (parts.append f"{prefix}#{val} ({inner})")
+    case [OpStyle.KOSTYLE_EXTRA]:
+      if (is-not? extra_schema None):
+        define schema extra_schema
+        if schema:
+          try:
+            define ext (code.extra_tuple arg)
+          except [#(IndexError TypeError)]:
+            return (str arg)
+
+          define parts #[]
+          for-each [[val fk] (zip ext schema)]:
+            if (or (equal? fk OpStyle.KOSTYLE_CONST) (equal? fk OpStyle.KOSTYLE_VAR)):
+              if (and (<= 0 val) (< val (len cpool))):
+                (define prefix
+                  (if (equal? fk OpStyle.KOSTYLE_CONST) "c" "v"))
+                (define cval (item cpool val))
+                (define inner
+                  (if (and (equal? fk OpStyle.KOSTYLE_CONST)
+                          (instance? cval NamespaceSpec))
+                    then: (_format_nspec_inline val cval)
+                    else: (_format_constant cval)))
+                (parts.append f"{prefix}#{val} ({inner})")
+              else:
+                parts.append (str val)
+
+            elif (equal? fk OpStyle.KOSTYLE_FASTVAR):
+              parts.append (_format_fast_part val local_names closure_names)
+            elif (equal? fk OpStyle.KOSTYLE_COUNT):
+              parts.append (str val)
+            elif (equal? fk OpStyle.KOSTYLE_LABEL):
+              parts.append f"-> {val}"
             else:
               parts.append (str val)
-          else:
-            if (equal? fk OpStyle.KOSTYLE_FASTVAR):
-              parts.append (_format_fast_part val local_names closure_names)
-            else:
-              if (equal? fk OpStyle.KOSTYLE_COUNT):
-                parts.append (str val)
-              else:
-                if (equal? fk OpStyle.KOSTYLE_LABEL):
-                  parts.append f"-> {val}"
-                else:
-                  parts.append (str val)
 
-        define joined (.join ", " parts)
-        return f"{arg} ({joined})"
+          define joined (.join ", " parts)
+          return f"{arg} ({joined})"
+
+        else:
+          return (str arg)
+
       else:
         return (str arg)
-    else:
+
+    case [OpStyle.KOSTYLE_CONST]:
+      if (< -1 arg (len cpool)):
+        define val (item cpool arg)
+        if (instance? val NamespaceSpec):
+          return f"{arg} ({(_format_nspec_inline arg val)})"
+        else:
+          return f"{arg} ({(_format_constant val)})"
       return (str arg)
 
-  if (equal? op_style OpStyle.KOSTYLE_CONST):
-    if (and (<= 0 arg) (< arg (len cpool))):
-      define val (item cpool arg)
-      if (instance? val NamespaceSpec):
-        return f"{arg} ({(_format_nspec_inline arg val)})"
-      else:
-        return f"{arg} ({(_format_constant val)})"
-    return (str arg)
+    case [OpStyle.KOSTYLE_VAR]:
+      if (< -1 arg (len cpool)):
+        define name (item cpool arg)
+        return f"{arg} ({(repr name)})"
+      return (str arg)
 
-  if (equal? op_style OpStyle.KOSTYLE_VAR):
-    if (and (<= 0 arg) (< arg (len cpool))):
-      define name (item cpool arg)
-      return f"{arg} ({(repr name)})"
-    return (str arg)
+    case [OpStyle.KOSTYLE_FASTVAR]:
+      define n_local (if local_names (len local_names) 0)
 
-  if (equal? op_style OpStyle.KOSTYLE_FASTVAR):
-    (define n_local
-      (if local_names
-        (len local_names)
-        0))
-    if (< arg n_local):
-      (define name
-        (if local_names
-          (item local_names arg)
-          f"local[{arg}]"))
-      return f"{arg} (local {(repr name)})"
+      if (< arg n_local):
+        define name (if local_names (item local_names arg) f"local[{arg}]")
+        return f"{arg} (local {(repr name)})"
 
-    define idx (- arg n_local)
-    if (and closure_names (<= 0 idx) (< idx (len closure_names))):
-      return f"{arg} (closure {(repr (item closure_names idx))})"
-    return (str arg)
+      define idx (- arg n_local)
+      if (and closure_names (< -1 idx (len closure_names))):
+        return f"{arg} (closure {(repr (item closure_names idx))})"
+      return (str arg)
 
-  if (equal? op_style OpStyle.KOSTYLE_LABEL):
-    (return f"{arg} (-> {arg})")
+    case [OpStyle.KOSTYLE_LABEL]:
+      return f"{arg} (-> {arg})"
 
-  if (or (equal? op_style OpStyle.KOSTYLE_COUNT)
-         (equal? op_style OpStyle.KOSTYLE_PAIR_COUNT)
-         (equal? op_style OpStyle.KOSTYLE_STAR)):
-    if (is-not? ns_label None):
-      return f"{arg} ({ns_label})"
-    return (str arg)
+    case [OpStyle.KOSTYLE_COUNT
+          OpStyle.KOSTYLE_PAIR_COUNT
+          OpStyle.KOSTYLE_STAR]:
+
+      unless (None? ns_label):
+        return f"{arg} ({ns_label})"
 
   return (str arg)
 
@@ -336,15 +333,14 @@ define _local_and_closure_syms [code]:
   Return (local_syms tuple, closure_syms tuple) from code.namespace_spec.
   Closure syms include both closure_syms and global_syms (all captured refs).
   """
+
   define nspec code.namespace_spec
-  if (is? nspec None):
-    values #() #()
+  if (None? nspec):
+    return #() #()
+
   else:
-    define locals_seq nspec.local_syms
-    define closure_seq nspec.closure_syms
-    define global_seq nspec.global_syms
-    define all_captured (+ (tuple closure_seq) (tuple global_seq))
-    values locals_seq all_captured
+    define all_captured #(*: nspec.closure_syms *: nspec.global_syms)
+    return nspec.local_syms all_captured
 
 
 define _resolve_file [file]:
@@ -377,6 +373,7 @@ define dis [x file: None]:
   :param x: Code, Expression (unwraps to Code), Function, or BoundMethod
   :param file: file-like object to print to (default: stdout)
   """
+
   define code None
   define out file
 
@@ -384,12 +381,14 @@ define dis [x file: None]:
     set! code x.code
     set! out (_resolve_file out)
     _write_function_instance_section out x
+
   elif (instance? x BoundMethod):
     define fn (_boundmethod_inner_function x)
     set! code fn.code
     set! out (_resolve_file out)
     _write_bound_method_section out x
     _write_function_instance_section out fn
+
   else:
     set! code (_get_code x)
     when (is? code None):

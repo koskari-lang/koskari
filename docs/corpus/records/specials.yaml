@@ -1495,3 +1495,66 @@ tags:
   - error-handling
   - guard
 notes: "guard-clause idiom in block layout; a when: guard raises inside a try:, an except peer catches it"
+---
+id: special-return-multiple-values-001
+feature: special/compile/return
+source: ((lambda [a b c] (return a b c)) 1 2 3)
+verify:
+  read: ((lambda [a b c] (return a b c)) 1 2 3)
+  expand: ((lambda [a b c] (return a b c)) 1 2 3)
+  eval: "tuple:(1,2,3)"
+references:
+  - reference/specials/compile-return.md
+stability: evolving
+tags:
+  - special
+  - return
+  - variadic
+  - idiom
+notes: return is variadic; two or more positional arguments return a tuple. koskari/compile/specials/continuations.py
+---
+id: special-return-multiple-values-destructure-001
+feature: special/compile/return
+source: |-
+  begin:
+    define minmax [a b]:
+      if (< a b):
+        return a b
+      else:
+        return b a
+    define-values [lo hi] (minmax 8 3)
+    #(lo hi)
+verify:
+  eval: "tuple:(3,8)"
+references:
+  - reference/specials/compile-return.md
+  - reference/specials/compile-define-values.md
+stability: evolving
+tags:
+  - special
+  - return
+  - variadic
+  - destructure
+  - "surface:block"
+  - idiom
+notes: a multi-value (tuple) return is consumed positionally with define-values; koskari/compile/specials/continuations.py
+---
+id: special-return-keyword-values-001
+feature: special/compile/return
+source: |-
+  begin:
+    define stats [xs]:
+      return count: (len xs) first: (item xs 0)
+    (dict (stats #[10 20 30]))
+verify:
+  eval: "{\"count\": 3, \"first\": 10}"
+references:
+  - reference/specials/compile-return.md
+stability: evolving
+tags:
+  - special
+  - return
+  - keyword-argument
+  - "surface:block"
+  - idiom
+notes: keyword arguments to return produce a values object labelling each result; dict exposes its fields. koskari/compile/specials/continuations.py

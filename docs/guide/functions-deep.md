@@ -44,6 +44,39 @@ define shipping [subtotal]:
 
 ---
 
+## Returning multiple values
+
+`return` is variadic. One argument returns that value; two or more positional
+arguments return a **tuple**; and keyword arguments return a **`values`**
+object:
+
+```koskari
+define minmax [a b]:
+  if (< a b):
+    return a b
+  else:
+    return b a
+
+define-values [lo hi] (minmax 8 3)   ;; lo = 3, hi = 8
+```
+
+Destructure a tuple result with [`define-values`](../reference/specials/compile-define-values.md)
+or [`let-values`](../reference/macros/compile-let-values.md), or index it
+directly with `(item result 0)`.
+
+Keyword arguments label the results instead of ordering them:
+
+```koskari
+define stats [xs]:
+  return count: (len xs) first: (item xs 0)
+
+(stats #[10 20 30])   ;; values(count=3, first=10)
+```
+
+Positional and keyword arguments cannot be mixed in one `return`.
+
+---
+
 ## Defaults and keywords
 
 Function formals can include keyword-style defaults:

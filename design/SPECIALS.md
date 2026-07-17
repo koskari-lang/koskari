@@ -660,24 +660,43 @@ emits RAISE 1 (raise the value as exception).
 
 **Symbol:** `compile/return`
 
-**Syntax:** `(compile/return)` or `(compile/return VAL)`
+**Syntax:** `(compile/return VAL ...)` — variadic.
 
-**Use-case:** Return a value from the current function and transfer control back to
-the caller. With no argument, returns `None`.
+| Form                        | Result                                            |
+|-----------------------------|---------------------------------------------------|
+| `(compile/return)`          | returns `None`                                    |
+| `(compile/return VAL)`      | returns `VAL`                                      |
+| `(compile/return VAL ...)`  | returns a `tuple` of the values                    |
+| `(compile/return K: V ...)` | returns a `values` object over the keyword pairs   |
 
-**Behaviour:** With no arg, emits `RETURN 0` (return None). With one argument,
-compiles VAL and emits `RETURN 1`. At runtime, when the frame has a parent (e.g.
-normal CALL), RETURN walks the dynamic chain with handle(RETURN), runs FINALLY
-if present, detaches the frame, and delivers the value to the parent (opcode
-returns `EVAL_CONTROL_RETURNED()` or `EVAL_NORMAL()`). When the frame has no parent or
-its parent is the generator node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`;
-`eval_event_return` delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
+**Use-case:** Return from the current function and transfer control back to the
+caller. `return` is variadic: two or more positional arguments return a tuple,
+and keyword arguments return a multi-value `values` object. Consume the result
+with tuple indexing or with `compile/define-values` / `compile/let-values`.
+
+**Behaviour:** Compiles each positional argument in turn and emits `RETURN N`,
+where `N` is the argument count: `RETURN 0` returns `None`, `RETURN 1` returns
+the single value, and `RETURN N` (for `N > 1`) leaves the values on the stack
+for the opcode to package as a tuple. A keyword argument anywhere in the
+argument list re-heads the form as `(values ...)` and returns its result, so
+`(compile/return a: 1 b: 2)` compiles as `(compile/return (values a: 1 b: 2))`
+and yields a `values` object; positional and keyword arguments must not be
+mixed (the same rule `values` enforces).
+
+At runtime, when the frame has a parent (e.g. normal CALL), RETURN walks the
+dynamic chain with handle(RETURN), runs FINALLY if present, detaches the frame,
+and delivers the value to the parent (opcode returns `EVAL_CONTROL_RETURNED()`
+or `EVAL_NORMAL()`). When the frame has no parent or its parent is the generator
+node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`; `eval_event_return`
+delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
 
 **Examples:**
 
 ```scheme
-(compile/return)
-(compile/return result)
+(compile/return)                  ;; -> None
+(compile/return result)           ;; -> result
+(compile/return a b c)            ;; -> #(a b c)  (a tuple)
+(compile/return a: a b: b c: c)   ;; -> values(a=a, b=b, c=c)
 ```
 
 ## compile/check-exception

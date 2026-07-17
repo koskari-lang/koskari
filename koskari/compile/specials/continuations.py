@@ -24,15 +24,17 @@ compile/yield, and compile/await.
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, nil
+from ...lib import OpCode, nil, symbol, cons
 from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
 from ...syntax import special
-from ...types import is_nil, is_pair
+from ...types import is_nil, is_pair, is_keyword
 from ..helpers import helper_begin, is_symbolish
 
 
 _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+
+_symbol_values = symbol("values")
 
 
 @builtin("compile/call/cc")
@@ -182,27 +184,34 @@ def special_shift(compiler, source, tc=False):
 @special("compile/return", patterns=_DEFAULT_PATTERNS)
 def special_return(compiler, source, tc=False):
     """
-    Compile (compile/return) or (compile/return VAL). Returns from function
+    Returns from function.
+
+    (return)            ; returns None
+    (return val)        ; returns val
+    (return vals ...)   ; returns tuple of vals
+    (return k: v ...)   ; returns values object over complex arguments
     """
 
     called_by, rest = source
-
-    if is_nil(rest):
-        frag = compiler.fragment(called_by)
-        frag.position_of(source)
-        frag.instruction(OpCode.KOS_OP_RETURN, 0)
-        return frag
-
-    val, tail = rest
-    if not is_nil(tail):
-        raise SpecialError(
-            "return takes at most one argument",
-            source)
-
     frag = compiler.fragment(called_by)
+
+    count = 0
+    while rest:
+        if is_keyword(rest.car):
+            # discard work in progress and return as a transform to
+            # invoke return on the values instead.
+            fixup = cons(cons(_symbol_values, source.cdr), nil)
+            source.cdr = fixup
+            return source
+
+        frag.position_of(rest)
+        frag.merge(compiler.full_compile(rest.car, False))
+
+        rest = rest.cdr
+        count += 1
+
     frag.position_of(source)
-    frag.merge(compiler.full_compile(val, False))
-    frag.instruction(OpCode.KOS_OP_RETURN, 1)
+    frag.instruction(OpCode.KOS_OP_RETURN, count)
     return frag
 
 
@@ -228,8 +237,10 @@ def special_yield(compiler, source, tc=False):
             source)
 
     frag = compiler.fragment(called_by)
-    frag.position_of(source)
+
     frag.merge(compiler.full_compile(val, False))
+
+    frag.position_of(source)
     frag.instruction(OpCode.KOS_OP_YIELD, 1)
     return frag
 
