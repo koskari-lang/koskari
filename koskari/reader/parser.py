@@ -48,6 +48,8 @@ from re import compile as regex
 from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
 from ..lib import (BaseSourceStream, Module, bracket_nil, bracket_pair, cons,
                    keyword, nil, pair, setcdr, symbol)
+from ..matcher import (BIND, KEYWORD, LITERAL_KW, LITERAL_SYM, MATCH, ONEOF,
+                       repeat_capture)
 from ..types import fill_position, is_keyword, is_nil, is_pair
 from . import patterns as _patterns
 from .layouts import apply_layout, apply_layouts, find_layout
@@ -104,6 +106,18 @@ _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
 _symbol_pass_none = symbol("reader/pass-none")
 _symbol_apply_fence = symbol("compile/apply-fence")
+_symbol_colon = symbol(":")
+_keyword_starstar = keyword("**")
+
+# Splits a #dict spine into its key/value pairs. Each repeat is one of:
+# a ``**: EXPR`` splat, an explicit ``KEY : VALUE`` triple, or a
+# ``keyword: VALUE`` pair whose keyword key is normalised away.
+_DICT_SPLIT_MATCHER = repeat_capture("pairs", ONEOF(
+    MATCH(LITERAL_KW("**"), BIND("splat")),
+    MATCH(BIND("key"), LITERAL_SYM(":"), BIND("val")),
+    MATCH(KEYWORD("kw"), BIND("val")),
+)).build()
+
 _keyword_block = keyword(":block:")
 _keyword_fence_filename = keyword("filename")
 _keyword_fence_line = keyword("line")
@@ -1574,11 +1588,51 @@ class Reader:
             event, result = self._read_pair(closer, stream, peek)
 
         if event is VALUE:
+            if name == "#dict":
+                result = self._split_dict_keywords(result)
             new_result = cons(symbol(name), result)
             new_result.set_position(pos)
             result = new_result
 
         return event, result
+
+
+    def _split_dict_keywords(self, body):
+        """
+        Normalise trailing-colon keyword keys in a ``#dict`` spine into
+        the explicit ``KEY : VALUE`` shape, so the read form carries no
+        implicit keyword-key magic downstream.
+
+        A ``foo:`` keyword key becomes the atom ``foo`` (re-read through
+        the normal atom classifier, so ``5:`` yields the integer ``5``)
+        followed by the ``:`` symbol. The ``**`` splat keyword and any
+        keyword appearing in value position pass through untouched. A
+        spine the pair matcher cannot parse is returned unchanged, so the
+        compile-time ``#dict`` special reports the malformed form.
+
+        :param body: the read dict spine (a proper list)
+        :return: the rewritten spine
+        """
+
+        matched = _DICT_SPLIT_MATCHER.match(body)
+        if not matched.matched:
+            return body
+
+        out = []
+        for frame in matched.captures.get("pairs", ()):
+            if "splat" in frame:
+                out.append(_keyword_starstar)
+                out.append(frame["splat"].datum)
+            elif "kw" in frame:
+                out.append(self.process_atom(str(frame["kw"].datum)))
+                out.append(_symbol_colon)
+                out.append(frame["val"].datum)
+            else:
+                out.append(frame["key"].datum)
+                out.append(_symbol_colon)
+                out.append(frame["val"].datum)
+
+        return cons(*out, nil) if out else nil
 
 
     def _read_ref_call(self, stream, fchar):

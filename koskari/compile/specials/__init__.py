@@ -26,7 +26,8 @@ from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call, special_call_attr
 from .class_ import special_class
-from .collections import special_build_list, special_list_append
+from .collections import (special_build_dict, special_build_list,
+                          special_list_append)
 from .conditionals import special_and, special_cond, special_or, special_switch
 from .context import special_dyn_with, special_parameterize, special_with
 from .continuations import (
@@ -146,6 +147,7 @@ __all__ = (
     "special_bit_or",
     "special_bit_right",
     "special_bit_xor",
+    "special_build_dict",
     "special_build_list",
     "special_import",
     "special_import_all_from",

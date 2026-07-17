@@ -562,11 +562,12 @@ class TestCollections(IsolatedAsyncioTestCase):
 
 
     async def test_dict_keywords(self):
+        # keyword keys are normalised into the explicit KEY : VALUE form
         src = "#{key: val key2: val2}"
         col = parse_source(src)
         self.assertEqual(col, cons(symbol("#dict"),
-                                   keyword("key"), symbol("val"),
-                                   keyword("key2"), symbol("val2"),
+                                   symbol("key"), symbol(":"), symbol("val"),
+                                   symbol("key2"), symbol(":"), symbol("val2"),
                                    nil))
 
 

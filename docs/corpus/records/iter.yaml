@@ -316,7 +316,7 @@ id: iter-literal-dict-keywords-read-001
 feature: "reader/#dict"
 source: "#{key: val key2: val2}"
 verify:
-  read: "(#dict key: val key2: val2)"
+  read: "(#dict key : val key2 : val2)"
 references:
   - start/from-python/data-and-control.md
   - reference/grammar.md
@@ -326,6 +326,9 @@ tags:
   - reader
   - literal
   - "surface:sexpr"
+notes: "the #{ } reader macro normalises a keyword key `foo:` into the
+  explicit `foo :` (key, colon symbol) form so the read spine carries no
+  implicit keyword-key magic"
 ---
 id: iter-literal-list-eval-001
 feature: "reader/#list"
@@ -345,7 +348,7 @@ notes: "list literal #[...] evaluates to Python list for item access"
 ---
 id: iter-literal-dict-eval-001
 feature: "reader/#dict"
-source: "(item #{key: 10 key2: 20} \"key\")"
+source: "(item #{\"key\" : 10 \"key2\" : 20} \"key\")"
 verify:
   eval: "10"
 references:
@@ -357,7 +360,8 @@ tags:
   - literal
   - dict
   - "surface:sexpr"
-notes: "keyword dict #{key: val ...} lowers to str keys; lookup via string key"
+notes: "#{KEY : VALUE ...} evaluates each KEY as an expression; a string
+  literal key gives a string dict key, looked up here via item"
 ---
 id: iter-range-predicate-true-002
 feature: builtin/range?

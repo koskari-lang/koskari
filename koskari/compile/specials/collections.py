@@ -14,7 +14,8 @@
 """
 koskari.compile.specials.collections
 
-Special form handlers for compile/#list and compile/#list-append.
+Special form handlers for compile/#tuple, compile/#list,
+compile/#list-append, and compile/#dict.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -24,7 +25,8 @@ Special form handlers for compile/#list and compile/#list-append.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode
-from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
+from ...matcher import (CALLEDBY, LITERAL_KW, LITERAL_SYM, MATCH, ONEOF, REST,
+                        SYMBOL, VALUE, repeat_capture)
 from ...syntax import special
 from ...types import is_nil, is_pair
 from ..helpers import (call_form_reroute, gather_parameters, is_symbolish,
@@ -185,6 +187,77 @@ def special_list_append(compiler, caps, tc=False):
 
     frag.merge(compiler.full_compile(expr, False))
     frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND, 1)
+    return frag
+
+
+_DICT_PATTERNS = (
+    MATCH(CALLEDBY(), repeat_capture("pairs", ONEOF(
+        MATCH(LITERAL_KW("**"), VALUE("splat")),
+        MATCH(VALUE("key"), LITERAL_SYM(":"), VALUE("val")),
+    ))),
+)
+
+
+@builtin("compile/#dict")
+@special("compile/#dict", patterns=_DICT_PATTERNS, unpack="match")
+def special_build_dict(compiler, caps, tc=False):
+    """
+    Build a Python dict from a sequence of key/value pairs.
+
+    Each pair takes one of two shapes: ``KEY : VALUE`` (an explicit ``:``
+    symbol between two forms, where KEY is evaluated as an expression) or
+    ``**: EXPR`` (merge the mapping EXPR). The surface ``keyword: VALUE``
+    spelling is normalised into the ``KEY : VALUE`` form by the ``#{ }``
+    reader macro, so it never reaches this special directly. Contiguous
+    key/value pairs assemble with BUILD_KWDS; ``**:`` splats and multiple
+    runs merge left-to-right with COMBINE_KWDS.
+    """
+
+    called_by = caps["called-by"].datum
+    frag = compiler.fragment(called_by)
+
+    position = caps["called-by"].position
+    if position:
+        frag.position(position)
+
+    pairs = caps.get("pairs")
+    if not pairs:
+        frag.instruction(OpCode.KOS_OP_BUILD_KWDS, 0)
+        return frag
+
+    # Partition into contiguous segments in source order. A "kv" segment
+    # is a run of key/value cells assembled with a single BUILD_KWDS; a
+    # "splat" segment is one mapping expression to merge.
+    segments = []
+    run = []
+    for cell in pairs:
+        if "splat" in cell:
+            if run:
+                segments.append(("kv", run))
+                run = []
+            segments.append(("splat", cell["splat"].datum))
+        else:
+            run.append(cell)
+    if run:
+        segments.append(("kv", run))
+
+    for kind, data in segments:
+        if kind == "splat":
+            frag.merge(compiler.full_compile(data, False))
+            continue
+
+        for cell in data:
+            frag.merge(compiler.full_compile(cell["key"].datum, False))
+            frag.merge(compiler.full_compile(cell["val"].datum, False))
+
+        frag.instruction(OpCode.KOS_OP_BUILD_KWDS, len(data))
+
+    # A lone splat leaves the source mapping on the stack; COMBINE_KWDS
+    # copies it into a fresh dict so the literal never aliases it.
+    has_splat = any(kind == "splat" for kind, _ in segments)
+    if len(segments) > 1 or (len(segments) == 1 and has_splat):
+        frag.instruction(OpCode.KOS_OP_COMBINE_KWDS, len(segments))
+
     return frag
 
 

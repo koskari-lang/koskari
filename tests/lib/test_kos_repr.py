@@ -215,10 +215,11 @@ class TestKosRepr(unittest.TestCase):
 
     def test_dict_pairs(self):
         """
-        dict entries use improper-pair form
+        dict entries use inline ``key: value`` form, colon glued to the key
         """
 
-        self.assertEqual(kos_repr({"foo": 4}), '#{("foo" . 4)}')
+        self.assertEqual(kos_repr({"foo": 4}), '#{"foo": 4}')
+        self.assertEqual(kos_repr({"foo": 4, 5: 6}), '#{"foo": 4 5: 6}')
 
 
     def test_ellipsis(self):

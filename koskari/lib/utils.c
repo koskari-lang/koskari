@@ -27,8 +27,7 @@ static PyObject *_str_dq = NULL;
 static PyObject *_str_esc_dq = NULL;
 static PyObject *_str_kos_repr = NULL;
 
-static PyObject *_str_close_paren = NULL;
-static PyObject *_str_dot_space = NULL;
+static PyObject *_str_colon_space = NULL;
 static PyObject *_str_empty = NULL;
 static PyObject *_str_hash_dict_cycle = NULL;
 static PyObject *_str_hash_dict_empty = NULL;
@@ -41,7 +40,6 @@ static PyObject *_str_hash_tuple_empty = NULL;
 static PyObject *_str_hash_tuple_open = NULL;
 static PyObject *_str_dict_close = NULL;
 static PyObject *_str_list_close = NULL;
-static PyObject *_str_open_paren = NULL;
 static PyObject *_str_space = NULL;
 static PyObject *_str_tuple_close = NULL;
 
@@ -800,23 +798,19 @@ static PyObject *dict_kos_repr(PyObject *self, PyObject *_unused) {
       PyList_Append(col, _str_space);
     first = 0;
 
-    PyList_Append(col, _str_open_paren);
-
     tmp = KosUtils_Repr(key);
     if (! tmp)
       goto error;
     PyList_Append(col, tmp);
     Py_DECREF(tmp);
 
-    PyList_Append(col, _str_dot_space);
+    PyList_Append(col, _str_colon_space);
 
     tmp = KosUtils_Repr(val);
     if (! tmp)
       goto error;
     PyList_Append(col, tmp);
     Py_DECREF(tmp);
-
-    PyList_Append(col, _str_close_paren);
   }
 
   PyList_Append(col, _str_dict_close);
@@ -1531,8 +1525,7 @@ int koskari_utils_init(PyObject *mod) {
   STR_CONST(_str_esc_dq, "\\\"");
   STR_CONST(_str_kos_repr, "__kos_repr__");
 
-  STR_CONST(_str_close_paren, ")");
-  STR_CONST(_str_dot_space, " . ");
+  STR_CONST(_str_colon_space, ": ");
   STR_CONST(_str_empty, "");
   STR_CONST(_str_hash_dict_cycle, "#{...}");
   STR_CONST(_str_hash_dict_empty, "#{}");
@@ -1545,7 +1538,6 @@ int koskari_utils_init(PyObject *mod) {
   STR_CONST(_str_hash_tuple_open, "#(");
   STR_CONST(_str_dict_close, "}");
   STR_CONST(_str_list_close, "]");
-  STR_CONST(_str_open_paren, "(");
   STR_CONST(_str_space, " ");
   STR_CONST(_str_tuple_close, ")");
 
@@ -1663,8 +1655,7 @@ int koskari_utils_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(KosApplyObject);
   Py_CLEAR(kos_utils_repr_registry);
-  Py_CLEAR(_str_close_paren);
-  Py_CLEAR(_str_dot_space);
+  Py_CLEAR(_str_colon_space);
   Py_CLEAR(_str_empty);
   Py_CLEAR(_str_hash_dict_cycle);
   Py_CLEAR(_str_hash_dict_empty);
@@ -1677,7 +1668,6 @@ int koskari_utils_clear(PyObject *mod) {
   Py_CLEAR(_str_hash_tuple_open);
   Py_CLEAR(_str_dict_close);
   Py_CLEAR(_str_list_close);
-  Py_CLEAR(_str_open_paren);
   Py_CLEAR(_str_space);
   Py_CLEAR(_str_tuple_close);
   Py_CLEAR(_str_kos_repr);
