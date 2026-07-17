@@ -1,0 +1,46 @@
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+/**
+   OBJECT_COMPARE_FAST: arg = extra index. Schema CMP, CONST, FASTVAR,
+   CONST. The ternary bounds idiom (const < x < const): chain-compare
+   the three operands under the selector and push the chain result.
+*/
+
+KOS_OP_HANDLER(OBJECT_COMPARE_FAST) {
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  PyObject *ns = CURRENT_NS();
+  KOS_OP_REQUIRE_NS(ns);
+
+  PyObject *ops[3];
+  ops[0] = KosEvalState_CONST(es, row.a1);   /* borrowed */
+  ops[2] = KosEvalState_CONST(es, row.a3);   /* borrowed */
+
+  ops[1] = kos_ns_fast_deref(ns, (size_t) row.a2);
+  if (! ops[1])
+    return EVAL_RAISE();
+
+  PyObject *result = kos_compare_reduce((KosCompare) row.a0, ops, 3);
+  Py_DECREF(ops[1]);
+
+  if (unlikely(! result))
+    return EVAL_RAISE();
+
+  return kos_op_result_PUSH(es, result);
+}
+
+
+// The end.

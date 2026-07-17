@@ -79,6 +79,7 @@ def _build_var_to_fast():
     var_to_fast[OpCode.KOS_OP_UNPACK_VAR] = OpCode.KOS_OP_UNPACK_FAST
     var_to_fast[OpCode.KOS_OP_SWITCH_EQ_VAR] = OpCode.KOS_OP_SWITCH_EQ_FAST
     var_to_fast[OpCode.KOS_OP_SWITCH_EQ_VAR_ATTR] = OpCode.KOS_OP_SWITCH_EQ_FAST_ATTR
+    var_to_fast[OpCode.KOS_OP_OBJECT_COMPARE_VAR] = OpCode.KOS_OP_OBJECT_COMPARE_FAST
 
     return var_to_fast
 
@@ -1036,52 +1037,104 @@ class Compiler:
 
     def fuse_check_feeders(self, instr):
         """
-        Late sweep: absorb the operand feeders of arity-2 CHECK_COMPARE
-        rows. When the two immediately preceding value rows are bare VAR
-        or CONST loads (not both CONST -- that is a folding case, not a
-        fusion case), the trio collapses into CHECK_COMPARE_VAR with a
-        CMPSRC field carrying the selector and per-operand source bits;
-        the fast pass later lowers it to CHECK_COMPARE_FAST. Runs before
-        pack_var_runs so this fusion gets first claim on the feeders.
-        POSITION rows between the feeders are transparent -- the fused
-        row keeps the position in effect at the first feeder, and the
-        latest interior position is re-emitted after the row.
+        Late sweep: absorb the operand feeders of comparison rows. Two
+        patterns, both requiring the immediately preceding value rows to
+        be bare VAR or CONST loads (POSITION rows are transparent -- the
+        fused row keeps the position in effect at the first feeder, and
+        the latest interior position is re-emitted after the row):
+
+        - arity-2 CHECK_COMPARE (not both feeders CONST -- that is a
+          folding case): the trio collapses into CHECK_COMPARE_VAR with
+          a CMPSRC field carrying the selector and per-operand source
+          bits.
+        - the ternary bounds shape CONST / VAR / CONST feeding an
+          arity-3 comparison: collapses into the bool-producing
+          OBJECT_COMPARE_VAR. In branch position (an arity-3
+          CHECK_COMPARE) the row cannot also carry the label -- five
+          fields -- so the check splits back into OBJECT_COMPARE_VAR
+          plus JUMP_FALSE.
+
+        The fast pass later lowers both VAR forms to their FAST twins.
+        Runs before pack_var_runs so fusion gets first claim on the
+        feeders.
         """
 
         result = []
         feeders = (OpCode.KOS_OP_VAR, OpCode.KOS_OP_CONST)
 
+        def scan_back(want):
+            # feeder indices (nearest first) and interior POSITION rows
+            found = []
+            pos_rows = []
+            i = len(result) - 1
+            while i >= 0 and len(found) < want:
+                rop = result[i][0]
+                if rop == OpCode.KOS_OP_POSITION:
+                    pos_rows.append(i)
+                elif rop in feeders:
+                    found.append(i)
+                else:
+                    break
+                i -= 1
+            return (found if len(found) == want else None), pos_rows
+
+        def splice(start, pos_rows, rows):
+            trailing = result[max(pos_rows)] if pos_rows else None
+            del result[start:]
+            result.extend(rows)
+            if trailing is not None:
+                result.append(trailing)
+
+        def ternary_shape(found):
+            # bounds shape: CONST below, VAR middle, CONST on top
+            hi_op = result[found[0]][0]
+            mid_op = result[found[1]][0]
+            lo_op = result[found[2]][0]
+            return (lo_op == OpCode.KOS_OP_CONST
+                    and mid_op == OpCode.KOS_OP_VAR
+                    and hi_op == OpCode.KOS_OP_CONST)
+
         for op, arg in instr:
             if op == OpCode.KOS_OP_CHECK_COMPARE and arg[1] == 2:
-                found = []      # feeder indices, nearest (y) first
-                pos_rows = []   # interior POSITION indices
-                i = len(result) - 1
-                while i >= 0 and len(found) < 2:
-                    rop = result[i][0]
-                    if rop == OpCode.KOS_OP_POSITION:
-                        pos_rows.append(i)
-                    elif rop in feeders:
-                        found.append(i)
-                    else:
-                        break
-                    i -= 1
-
-                if len(found) == 2:
+                found, pos_rows = scan_back(2)
+                if found:
                     y_op, y_arg = result[found[0]]
                     x_op, x_arg = result[found[1]]
                     x_const = x_op == OpCode.KOS_OP_CONST
                     y_const = y_op == OpCode.KOS_OP_CONST
                     if not (x_const and y_const):
                         sel, _cnt, label, _pad = arg
-                        trailing = (result[max(pos_rows)]
-                                    if pos_rows else None)
-                        del result[found[1]:]
-                        result.append((
+                        splice(found[1], pos_rows, [(
                             OpCode.KOS_OP_CHECK_COMPARE_VAR,
                             (make_cmpsrc(sel, x_const, y_const),
-                             x_arg, y_arg, label)))
-                        if trailing is not None:
-                            result.append(trailing)
+                             x_arg, y_arg, label))])
+                        continue
+
+            elif op == OpCode.KOS_OP_CHECK_COMPARE and arg[1] == 3:
+                found, pos_rows = scan_back(3)
+                if found and ternary_shape(found):
+                    sel, _cnt, label, _pad = arg
+                    lo = result[found[2]][1]
+                    mid = result[found[1]][1]
+                    hi = result[found[0]][1]
+                    splice(found[2], pos_rows, [
+                        (OpCode.KOS_OP_OBJECT_COMPARE_VAR,
+                         (sel, lo, mid, hi)),
+                        (OpCode.KOS_OP_JUMP_FALSE, label),
+                    ])
+                    continue
+
+            elif op == OpCode.KOS_OP_OBJECT_COMPARE:
+                sel, cnt = split_cmpcount(arg)
+                if cnt == 3:
+                    found, pos_rows = scan_back(3)
+                    if found and ternary_shape(found):
+                        lo = result[found[2]][1]
+                        mid = result[found[1]][1]
+                        hi = result[found[0]][1]
+                        splice(found[2], pos_rows, [(
+                            OpCode.KOS_OP_OBJECT_COMPARE_VAR,
+                            (sel, lo, mid, hi))])
                         continue
 
             result.append((op, arg))

@@ -2488,7 +2488,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 Object protocol opcodes: single Python operation on TOS (and optionally below); pop operands, push result. All **Implemented** unless noted.
 
-- **Comparisons and predicates**: OBJECT_COMPARE (CMPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, selector-keyed (KosCompare packs with the count).
+- **Comparisons and predicates**: OBJECT_COMPARE (CMPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, selector-keyed (KosCompare packs with the count); the fused OBJECT_COMPARE_VAR / OBJECT_COMPARE_FAST carry the ternary bounds idiom with no stack inputs.
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
 - **Numeric, in-place**: OBJECT_INPLACE_* (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
 - **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
@@ -2511,6 +2511,58 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   specials with a `(selector, count)` pair, merged to the packed uint16
   at normalize. When immediately followed by `JUMP_FALSE`, `compress`
   fuses the pair into [CHECK_COMPARE](#kos_op_check_compare).
+
+### KOS_OP_OBJECT_COMPARE_VAR {#kos_op_object_compare_var}
+
+- **Style**: EXTRA (CMP, CONST, VAR, CONST). Row = bare selector, low
+  bound (pool), middle operand, high bound (pool). Schema-static slots:
+  no source bits, the shape is the opcode.
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., result]`. The ternary bounds idiom
+  (`const < x < const`): chain-compare the three operands under the
+  selector and push the chain result (for JUMP_FALSE / JUMP_TRUE or
+  value use).
+- **Invariants**: Selector is a valid KosCompare ordinal (richcompare
+  chain semantics; extended selectors are never emitted at arity 3).
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when the exact CONST / VAR / CONST feeder shape meets an arity-3 comparison. In value position the OBJECT_COMPARE quartet collapses to this row alone; in branch position the arity-3 CHECK_COMPARE cannot also carry its label (five fields), so it splits into this row plus `JUMP_FALSE`. Lowers to OBJECT_COMPARE_FAST through the generic schema-driven `convert_fast` path.
+- **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_VAR.c` (cold handler)
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_compare.py`,
+  `tests/reproducers/test_compare_fusion.py`
+
+**Example:** `(< 0 x 100)` in value position -- one dispatch.
+
+| index | opcode              | arg | arg view                     | comment |
+|------:|---------------------|-----|------------------------------|---------|
+| 0     | OBJECT_COMPARE_VAR | 0 | (LT, c#0 (0), v#1 ('x'), c#2 (100)) | stack: [..., bool] |
+
+---
+
+### KOS_OP_OBJECT_COMPARE_FAST {#kos_op_object_compare_fast}
+
+- **Style**: EXTRA (CMP, CONST, FASTVAR, CONST). Row = bare selector, low
+  bound (pool), middle operand, high bound (pool). Schema-static slots:
+  no source bits, the shape is the opcode.
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., result]`. The ternary bounds idiom
+  (`const < x < const`): chain-compare the three operands under the
+  selector and push the chain result (for JUMP_FALSE / JUMP_TRUE or
+  value use).
+- **Invariants**: Selector is a valid KosCompare ordinal (richcompare
+  chain semantics; extended selectors are never emitted at arity 3).
+- **Compiler form:** Post-compile only: the generic `convert_fast` lowering of OBJECT_COMPARE_VAR when the middle name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_FAST.c`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_compare.py`,
+  `tests/reproducers/test_compare_fusion.py`
+
+**Example:** `(< 0 x 100)` in value position -- one dispatch.
+
+| index | opcode              | arg | arg view                     | comment |
+|------:|---------------------|-----|------------------------------|---------|
+| 0     | OBJECT_COMPARE_FAST | 0 | (LT, c#0 (0), fast 0 ("x"), c#1 (100)) | stack: [..., bool] |
+
+---
 
 ### KOS_OP_OBJECT_ADD {#kos_op_object_add}
 

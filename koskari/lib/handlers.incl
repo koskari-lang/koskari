@@ -150,6 +150,8 @@
 #include "opcode/POP_NS.c"
 #include "opcode/POP_TRY.c"
 #include "opcode/OBJECT_COMPARE.c"
+#include "opcode/OBJECT_COMPARE_VAR.c"
+#include "opcode/OBJECT_COMPARE_FAST.c"
 #include "opcode/NILP.c"
 #include "opcode/OBJECT_OPERAND.c"
 #include "opcode/OBJECT_INPLACE.c"

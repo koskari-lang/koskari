@@ -245,14 +245,20 @@ class TestCheckCompareFast(CevalTest):
     """
 
     async def test_fast_fast(self):
+        # slots stored explicitly: build_expr's values= path rebuilds
+        # local_syms from a set, so slot order would be hash-dependent
         code, ns = build_expr([
+            ["CONST", 1],
+            ["FAST_STORE", 0],
+            ["CONST", 2],
+            ["FAST_STORE", 1],
             ["CHECK_COMPARE_FAST", (cmpsrc(LT, False, False), 0, 1, "fail")],
             ["CONST", 42],
             ["RETURN", 1],
             ["LABEL", "fail"],
             ["CONST", 0],
             ["RETURN", 1],
-        ], local_syms=("a", "b"), values={"a": 1, "b": 2})
+        ], local_syms=("a", "b"))
         self.assertEqual(await make_callable(code, ns)(), 42)
 
 
@@ -330,6 +336,68 @@ class TestCheckCompareVar(CevalTest):
             ["RETURN", 1],
             ["LABEL", "fail"],
             ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
+class TestObjectCompareFast(CevalTest):
+    """
+    OBJECT_COMPARE_FAST evaluates the ternary bounds row and pushes the
+    chain result
+    """
+
+    async def test_in_bounds(self):
+        code, ns = build_expr([
+            ["OBJECT_COMPARE_FAST", (LT, 0, 0, 100)],
+            ["RETURN", 1],
+        ], local_syms=("x",), values={"x": 50})
+        self.assertIs(await make_callable(code, ns)(), True)
+
+
+    async def test_above_bounds(self):
+        code, ns = build_expr([
+            ["OBJECT_COMPARE_FAST", (LT, 0, 0, 100)],
+            ["RETURN", 1],
+        ], local_syms=("x",), values={"x": 200})
+        self.assertIs(await make_callable(code, ns)(), False)
+
+
+    async def test_below_bounds(self):
+        code, ns = build_expr([
+            ["OBJECT_COMPARE_FAST", (LT, 0, 0, 100)],
+            ["RETURN", 1],
+        ], local_syms=("x",), values={"x": -3})
+        self.assertIs(await make_callable(code, ns)(), False)
+
+
+    async def test_unbound_slot_raises(self):
+        code, ns = build_expr([
+            ["OBJECT_COMPARE_FAST", (LT, 0, 0, 100)],
+            ["RETURN", 1],
+        ], local_syms=("x",))
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
+class TestObjectCompareVar(CevalTest):
+    """
+    OBJECT_COMPARE_VAR resolves the middle operand by name and pushes
+    the chain result
+    """
+
+    async def test_in_bounds(self):
+        code, ns = build_expr([
+            ["OBJECT_COMPARE_VAR", (LT, 0, "x", 100)],
+            ["RETURN", 1],
+        ], values={"x": 50})
+        self.assertIs(await make_callable(code, ns)(), True)
+
+
+    async def test_missing_name_raises(self):
+        code, ns = build_expr([
+            ["OBJECT_COMPARE_VAR", (LT, 0, "nope", 100)],
             ["RETURN", 1],
         ])
         with self.assertRaises(NameError):

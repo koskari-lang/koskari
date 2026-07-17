@@ -253,8 +253,12 @@ OP(POP_NS, 0, NOARG)
 OP(POP_TRY, 0, NOARG)
 
 // comparison interface: OBJECT_COMPARE packs a KosCompare selector
-// (high byte) with the reducing count (low byte)
+// (high byte) with the reducing count (low byte). The ternary fused
+// forms carry the bounds idiom (const < x < const) with a bare CMP
+// selector and schema-static slots, pushing the chain result.
 OP(OBJECT_COMPARE, 0, CMPCOUNT)
+OP(OBJECT_COMPARE_VAR, 0,  EXTRA, CMP, CONST, VAR,     CONST)
+OP(OBJECT_COMPARE_FAST, 0, EXTRA, CMP, CONST, FASTVAR, CONST)
 
 // predicates
 OP(NILP, 0, NOARG)            // pop TOS, push True if an empty-list singleton

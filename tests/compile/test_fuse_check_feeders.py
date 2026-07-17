@@ -41,6 +41,8 @@ V = OpCode.KOS_OP_VAR
 C = OpCode.KOS_OP_CONST
 CC = OpCode.KOS_OP_CHECK_COMPARE
 CCV = OpCode.KOS_OP_CHECK_COMPARE_VAR
+OC = OpCode.KOS_OP_OBJECT_COMPARE
+OCV = OpCode.KOS_OP_OBJECT_COMPARE_VAR
 
 
 def make_compiler():
@@ -137,6 +139,90 @@ class TestFuseCheckFeeders(unittest.TestCase):
         ])
         self.assertEqual(out[0], (
             CCV, (make_cmpsrc(LT, False, False), "a", "b", "fail")))
+
+
+class TestFuseTernaryBounds(unittest.TestCase):
+    """
+    The CONST / VAR / CONST bounds shape collapses into the
+    bool-producing OBJECT_COMPARE_VAR; in branch position the check
+    splits back into the bool row plus JUMP_FALSE
+    """
+
+    def test_value_position_fuses(self):
+        out = fuse_ops([
+            (C, 0), (V, "x"), (C, 100),
+            (OC, (int(LT), 3)),
+        ])
+        self.assertEqual(out, [
+            (OCV, (int(LT), 0, "x", 100)),
+        ])
+
+    def test_branch_position_splits(self):
+        out = fuse_ops([
+            (C, 0), (V, "x"), (C, 100),
+            (CC, (int(LT), 3, "fail", None)),
+        ])
+        self.assertEqual(out, [
+            (OCV, (int(LT), 0, "x", 100)),
+            (OpCode.KOS_OP_JUMP_FALSE, "fail"),
+        ])
+
+    def test_wrong_shape_stays_generic(self):
+        instr = [
+            (V, "x"), (C, 0), (C, 100),
+            (OC, (int(LT), 3)),
+        ]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_all_var_stays_generic(self):
+        instr = [
+            (V, "a"), (V, "b"), (V, "c"),
+            (OC, (int(LT), 3)),
+        ]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_binary_object_compare_untouched(self):
+        instr = [
+            (V, "a"), (C, 1),
+            (OC, (int(LT), 2)),
+        ]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_position_tolerant(self):
+        pos = (OpCode.KOS_OP_POSITION, (2, 4, None))
+        out = fuse_ops([
+            (C, 0), pos, (V, "x"), (C, 100),
+            (OC, (int(LT), 3)),
+        ])
+        self.assertEqual(out, [
+            (OCV, (int(LT), 0, "x", 100)),
+            pos,
+        ])
+
+
+class TestTernaryLowering(unittest.IsolatedAsyncioTestCase):
+    """
+    convert_fast lowers OBJECT_COMPARE_VAR to OBJECT_COMPARE_FAST
+    through the generic schema-driven path
+    """
+
+    async def test_lowers_when_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("x",), ())
+        instr = [(OCV, (int(LT), 0, "x", 100))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [
+            (OpCode.KOS_OP_OBJECT_COMPARE_FAST, (int(LT), 0, 0, 100)),
+        ])
+
+    async def test_stays_var_when_not_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("y",), ())
+        instr = [(OCV, (int(LT), 0, "x", 100))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [
+            (OCV, (int(LT), 0, "x", 100)),
+        ])
 
 
 class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
