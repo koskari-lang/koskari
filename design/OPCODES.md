@@ -82,7 +82,7 @@ Example disassembly in this document is given as a **table** with five columns:
 | Column | Meaning |
 |--------|--------|
 | **index** | Instruction index (pc). |
-| **opcode** | Opcode name (e.g. `KOS_OP_CHECK_IN`). |
+| **opcode** | Opcode name (e.g. `KOS_OP_CHECK_COMPARE`). |
 | **arg** | Raw argument value (uint16). |
 | **arg view** | Decoded argument for readability (e.g. constant as `index (repr)`, branch as `N (-> N)`). |
 | **comment** | Stack state before the instruction and/or control-flow or stack effect. |
@@ -204,30 +204,15 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `VAR_STORE` fusion | Prior **`KOS_OP_CONST`** `value` immediately followed by **`KOS_OP_VAR_STORE`** `name` → **`KOS_OP_VAR_STORE_CONST`** with arg **`(name, value, None, None)`** (drop the **`CONST`**). Only the **immediate** prior instruction counts. |
 | Epilogue | If the stream does not end with **`KOS_OP_RETURN`**: if the last op is **`KOS_OP_CONST`** **`None`**, replace it with **`KOS_OP_RETURN`** **0**; otherwise append **`KOS_OP_RETURN`** **1**. |
 
-**`_CHECK_SQUASHES`** (prior opcode → **LABEL** opcode replacing the **`JUMP_FALSE`** pair; the fused opcode inherits the jump's label). These priors carry no operand count, so the fused check is a single-arg LABEL op:
+**`_CHECK_SQUASHES`** (prior opcode → **LABEL** opcode replacing the **`JUMP_FALSE`** pair; the fused opcode inherits the jump's label):
 
 | Prior | Replaced with |
 |-------|----------------|
-| `KOS_OP_OBJECT_IN` | `KOS_OP_CHECK_IN` |
-| `KOS_OP_OBJECT_NOT_IN` | `KOS_OP_CHECK_NOT_IN` |
-| `KOS_OP_OBJECT_IS` | `KOS_OP_CHECK_IS` |
-| `KOS_OP_OBJECT_IS_NOT` | `KOS_OP_CHECK_IS_NOT` |
-| `KOS_OP_OBJECT_IS_INSTANCE` | `KOS_OP_CHECK_IS_INSTANCE` |
-| `KOS_OP_OBJECT_IS_SUBCLASS` | `KOS_OP_CHECK_IS_SUBCLASS` |
 | `KOS_OP_OBJECT_NOT` | `KOS_OP_JUMP_TRUE` |
 | `KOS_OP_EXCEPTION_MATCH` | `KOS_OP_CHECK_EXCEPTION` |
 | `KOS_OP_NILP` | `KOS_OP_CHECK_NIL` |
 
-**`_CHECK_VAR_SQUASHES`** (variadic comparison prior → **EXTRA** `(COUNT, LABEL)` check). The prior `OBJECT_*` carries its operand count; the fusion preserves it, emitting arg `(count, label, None, None)` so the chained comparison survives (`a < b < c` fuses just like `a < b`):
-
-| Prior | Replaced with |
-|-------|----------------|
-| `KOS_OP_OBJECT_GE` | `KOS_OP_CHECK_GE` |
-| `KOS_OP_OBJECT_LE` | `KOS_OP_CHECK_LE` |
-| `KOS_OP_OBJECT_LT` | `KOS_OP_CHECK_LT` |
-| `KOS_OP_OBJECT_GT` | `KOS_OP_CHECK_GT` |
-| `KOS_OP_OBJECT_EQ` | `KOS_OP_CHECK_EQ` |
-| `KOS_OP_OBJECT_NE` | `KOS_OP_CHECK_NE` |
+**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior → **EXTRA** `(CMP, COUNT, LABEL)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, None)` so the chained comparison survives (`a < b < c` fuses just like `a < b`).
 
 **`_SWITCH_SQUASHES`** (prior opcode → fused switch opcode):
 
@@ -238,8 +223,7 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `KOS_OP_VAR_ATTR` | `KOS_OP_SWITCH_EQ_VAR_ATTR` |
 
 **Examples.**
-- `KOS_OP_OBJECT_IS`, **`KOS_OP_JUMP_FALSE`** `L` → one **`KOS_OP_CHECK_IS`** `L` (same label argument as the jump).
-- `KOS_OP_OBJECT_EQ` `count`, **`KOS_OP_JUMP_FALSE`** `L` → one **`KOS_OP_CHECK_EQ`** `(count, L, None, None)` (count carried from the comparison, label from the jump).
+- `KOS_OP_OBJECT_COMPARE` `(EQ, count)`, **`KOS_OP_JUMP_FALSE`** `L` → one **`KOS_OP_CHECK_COMPARE`** `(EQ, count, L, None)` (selector and count carried from the comparison, label from the jump).
 
 ### 1.9 BIND vs STORE: critical distinction
 
@@ -283,7 +267,7 @@ When adding or changing an opcode:
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
-- [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
+- [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
@@ -336,16 +320,7 @@ When adding or changing an opcode:
 | JUMP_TRUE | LABEL | Jump if TOS true | [§8](#kos_op_jump_true) |
 | JUMP_AND | LABEL | Short-circuit AND | [§8](#kos_op_jump_and) |
 | JUMP_OR | LABEL | Short-circuit OR | [§8](#kos_op_jump_or) |
-| CHECK_EQ | EXTRA | Chain-compare N operands with `==`; jump if chain fails | [§9](#kos_op_check_eq) |
-| CHECK_NE | EXTRA | Chain-compare N operands with `!=`; jump if chain fails | [§9](#kos_op_check_ne) |
-| CHECK_LT | EXTRA | Chain-compare N operands with `<`; jump if chain fails | [§9](#kos_op_check_lt) |
-| CHECK_LE | EXTRA | Chain-compare N operands with `<=`; jump if chain fails | [§9](#kos_op_check_le) |
-| CHECK_GT | EXTRA | Chain-compare N operands with `>`; jump if chain fails | [§9](#kos_op_check_gt) |
-| CHECK_GE | EXTRA | Chain-compare N operands with `>=`; jump if chain fails | [§9](#kos_op_check_ge) |
-| CHECK_IN | LABEL | Jump if value not in container | [§9](#kos_op_check_in) |
-| CHECK_NOT_IN | LABEL | Jump if value in container | [§9](#kos_op_check_not_in) |
-| CHECK_IS | LABEL | Jump if left is not right | [§9](#kos_op_check_is) |
-| CHECK_IS_NOT | LABEL | Jump if left is right | [§9](#kos_op_check_is_not) |
+| CHECK_COMPARE | EXTRA | Chain-compare N operands under a KosCompare selector; jump if chain fails | [§9](#kos_op_check_compare) |
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
 | SWITCH_EQ | LABEL | Equality dispatch; on match pop both and jump; on mismatch pop key only, fall through | [§9.1](#kos_op_switch_eq) |
 | SWITCH_EQ_CONST | EXTRA | Compare TOS to constant RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_const) |
@@ -1067,202 +1042,35 @@ done:
 
 ## 9. Check jumps
 
-Check jumps: if the predicate does **not** hold, jump to the target label. Jump locality applies to every target. The six comparison checks (CHECK_EQ / NE / LT / LE / GT / GE) are **EXTRA** with a `(COUNT, LABEL)` row: `a0` is the operand count (≥ 2), `a1` is the target pc. They are variadic — the top `COUNT` operands are chain-compared left-to-right (e.g. `a < b < c`), and the jump is taken when the chain fails. The remaining checks (membership, identity, isinstance/issubclass, exception) take a single **LABEL** arg.
+Check jumps: if the predicate does **not** hold, jump to the target label. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), and the jump is taken when the chain fails. The extended selectors (IS, IS_NOT, IN, NOT_IN, IS_INSTANCE, IS_SUBCLASS) are strictly binary at this opcode. The remaining checks (exception, nil) take a single **LABEL** arg.
 
-### KOS_OP_CHECK_EQ
+### KOS_OP_CHECK_COMPARE {#kos_op_check_compare}
 
-- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
+- **Style**: EXTRA (CMP, COUNT, LABEL, NOARG). Row = KosCompare selector,
+  operand count, target pc.
 - **Status**: Implemented.
-- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `==`; if the chain fails (any pair unequal), jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
-- **Invariants**: Jump locality for target. Uses `PyObject_RichCompareBool` (identity fast-path), matching the pre-fusion CHECK behavior.
-- **Compiler form:** Pre-compile arg = `(count, string label, None, None)` (label = fail/mismatch target); post-compile `a1` = pc.
+- **Stack**: `[..., a1, ..., aN] → [...]`. Chain-compare the top COUNT
+  operands under the selector; jump to LABEL when the chain fails. The
+  operands are dropped either way. Raises `TypeError` when `COUNT < 2`.
+- **Invariants**: Selector is a valid KosCompare ordinal. The richcompare
+  six (LT/LE/EQ/NE/GT/GE, ordinals 0-5 == CPython's Py_LT..Py_GE) chain
+  over any COUNT; the extended selectors require COUNT == 2.
+- **Compiler form:** Produced by `Compiler.compress` fusing
+  `OBJECT_COMPARE` + `JUMP_FALSE` into one row. Never emitted directly by
+  specials.
+- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE.c`; core dispatch
+  `kos_compare_chain` in `operator.c`.
+- **Covered by**: `tests/lib/opcode/test_compare.py`,
+  `tests/lib/opcode/test_checks.py`
 
-**Example:** Pattern match or guard: jump if not equal. Pool: 0 = 1, 1 = 2, 2 = 99, 3 = 0. Covered by `tests/lib/opcode/test_checks.py`: `test_check_eq_jumps_on_mismatch`, `test_check_eq_continues_on_match`.
+**Example:** Branch unless `1 < x < 100`. Selector LT = 0.
 
-| index | opcode  | arg | arg view | comment |
-|------:|---------|-----|----------|---------|
-| 0     | CONST   | 0   | 0 (1)    | stack: [..., v0] |
-| 1     | CONST   | 1   | 1 (2)    | stack: [..., v0, v1] |
-| 2     | CHECK_EQ| (2, "fail") | (n=2, -> 5) | if v0 != v1 → pc=5; else stack: [...] |
-| 3     | CONST   | 2   | 2 (99)   | stack: [..., 99] |
-| 4     | RETURN  | 1   | 1        | |
-| 5     | LABEL   | —   | —        | fail |
-| 6     | CONST   | 3   | 3 (0)    | stack: [..., 0] |
-| 7     | RETURN  | 1   | 1        | |
-
----
-
-### KOS_OP_CHECK_NE
-
-- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `!=`; if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
-
-**Example:** Jump when the chain fails (e.g. "not equal" guard). Pool: 0 = 1, 1 = 1, 2 = 0.
-
-| index | opcode   | arg | arg view | comment |
-|------:|----------|-----|----------|---------|
-| 0     | CONST    | 0   | 0 (1)    | stack: [..., v0] |
-| 1     | CONST    | 1   | 1 (1)    | stack: [..., v0, v1] |
-| 2     | CHECK_NE | (2, "fail") | (n=2, -> 5) | if v0 == v1 → pc=5; else stack: [...] |
-| 3     | RETURN   | 1   | 1        | |
-| 5     | LABEL    | —   | —        | fail |
-
----
-
-### KOS_OP_CHECK_LT {#kos_op_check_lt}
-
-- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `<` (e.g. `v0 < v1 < v2`); if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
-
----
-
-### KOS_OP_CHECK_LE {#kos_op_check_le}
-
-- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `<=`; if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
-
----
-
-### KOS_OP_CHECK_GT {#kos_op_check_gt}
-
-- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `>`; if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
-
----
-
-### KOS_OP_CHECK_GE {#kos_op_check_ge}
-
-- **Style**: EXTRA `(COUNT, LABEL)`. `a0` = operand count (≥ 2); `a1` = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., v0, ..., v_{n-1}]` (`v_{n-1}` = TOS, `n = a0`). Chain-compares adjacent pairs with `>=`; if the chain fails, jump to `a1`; else fall through. All `n` operands popped either way. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = `(count, string label, None, None)`; post-compile `a1` = pc.
-
----
-
-### KOS_OP_CHECK_IN
-
-- **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., container, value]` (value = TOS). Pops both; tests `value in container` (PySequence_Contains). If **false** (check fails), jump to `arg`; else fall through. Stack after: `[...]` in both cases (both operands always popped).
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label (e.g. "miss"); post-compile arg = pc.
-
-**Example: value in container (guard / pattern match).** Constant pool: 0 = `[1, 2, 3]`, 1 = `2`, 2 = `1`, 3 = `0`. If `2 in [1,2,3]` push 1 and return; else jump to "miss", push 0 and return. Covered by `tests/lib/test_ceval.py`: `test_check_in_continues_when_contained`, `test_check_in_jumps_when_not_contained`.
-
-| index | opcode   | arg | arg view   | comment |
-|------:|----------|-----|------------|---------|
-| 0     | CONST    | 0   | 0 ([1, 2, 3]) | stack: [..., container] |
-| 1     | CONST    | 1   | 1 (2)      | stack: [..., container, value] |
-| 2     | CHECK_IN | 5   | 5 (-> 5)   | if value not in container → pc=5; else fall through. stack: [...] |
-| 3     | CONST    | 2   | 2 (1)      | stack: [..., 1] |
-| 4     | RETURN   | 1   | 1          | |
-| 5     | LABEL    | —   | —          | miss |
-| 6     | CONST    | 3   | 3 (0)      | stack: [..., 0] |
-| 7     | RETURN   | 1   | 1          | |
-
----
-
-### KOS_OP_CHECK_NOT_IN
-
-- **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., container, value]` (value = TOS). Pops both; tests `value not in container`. If **true** (i.e. value not in container), jump to `arg`; else fall through. Stack after: `[...]` in both cases.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
-
-**Example:** Jump when value not in container (e.g. guard for "in" branch).
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | CONST      | 0   | 0 (s)    | stack: [..., container] |
-| 1     | CONST      | 1   | 1 (key) | stack: [..., container, value] |
-| 2     | CHECK_NOT_IN | 5 | 5 (-> 5)| if value not in container → pc=5; else stack: [...] |
-| 3     | RETURN     | 1   | 1        | |
-| 5     | LABEL      | —   | —        | miss |
-
----
-
-### KOS_OP_CHECK_IS
-
-- **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if left is not right, jump to `arg`; else fall through. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
-
-**Example:** Identity check (e.g. for None or singleton). Pool: 0 = [], 1 = [], 2 = 1, 3 = 0.
-
-| index | opcode   | arg | arg view | comment |
-|------:|----------|-----|----------|---------|
-| 0     | CONST    | 0   | 0 ([])   | stack: [..., left] |
-| 1     | CONST    | 1   | 1 ([])   | stack: [..., left, right] (different object) |
-| 2     | CHECK_IS | 5   | 5 (-> 5) | if left is not right → pc=5 |
-| 3     | CONST    | 2   | 2 (1)    | stack: [..., 1] |
-| 4     | RETURN   | 1   | 1        | |
-| 5     | LABEL    | —   | —        | diff |
-| 6     | CONST    | 3   | 3 (0)    | stack: [..., 0] |
-| 7     | RETURN   | 1   | 1        | |
-
----
-
-### KOS_OP_CHECK_IS_NOT
-
-- **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if left is right, jump to `arg`; else fall through. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
-
-**Example:** Jump when left is right (e.g. "is not" guard). Pool: 0 = None, 1 = None.
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | CONST      | 0   | 0 (None) | stack: [..., left] |
-| 1     | CONST      | 1   | 1 (None) | stack: [..., left, right] |
-| 2     | CHECK_IS_NOT | 5  | 5 (-> 5) | if left is right → pc=5; else stack: [...] |
-| 3     | RETURN     | 1   | 1        | |
-| 5     | LABEL      | —   | —        | same |
-
----
-
-### KOS_OP_CHECK_IS_INSTANCE
-
-- **Style**: LABEL (or COUNT for type tuple). Arg = target pc.
-- **Status**: Implemented.
-- **Stack**: `[..., obj, type]` (or obj + N types). Pops operands; if isinstance(obj, type) fails, jump to `arg`; else fall through. Stack after: `[...]`.
-- **Invariants**: Jump locality for target.
-
-**Example:** Pattern match by type. Pool: 0 = obj, 1 = ValueError.
-
-| index | opcode          | arg | arg view | comment |
-|------:|-----------------|-----|----------|---------|
-| 0     | EXCEPTION       | 0   | 0        | stack: [..., exc] |
-| 1     | CONST           | 0   | 0 (ValueError) | stack: [..., exc, typ] |
-| 2     | CHECK_IS_INSTANCE | 5  | 5 (-> 5) | if not isinstance(exc, typ) → pc=5 |
-| 3     | RETURN          | 1   | 1        | handle |
-| 5     | LABEL           | —   | —        | re-raise |
-
----
-
-### KOS_OP_CHECK_IS_SUBCLASS
-
-- **Style**: LABEL (or COUNT). Arg = target pc.
-- **Status**: Implemented.
-- **Stack**: Class and type(s); jump if issubclass check fails. Stack after per implementation.
-- **Invariants**: Jump locality for target.
+| index | opcode        | arg | arg view          | comment |
+|------:|---------------|-----|-------------------|---------|
+| 0     | CONST         | 0   | 0 (1)             | stack: [..., 1] |
+| 1     | FAST          | 0   | 0 (x)             | stack: [..., 1, x] |
+| 2     | CONST         | 1   | 1 (100)           | stack: [..., 1, x, 100] |
+| 3     | CHECK_COMPARE | 0   | (LT, 3, -> 6, 0)  | jump to 6 unless 1 < x < 100 |
 
 ---
 
@@ -1312,7 +1120,7 @@ family rationale and the surface **`compile/switch`** form.
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[..., left, right]` (right = TOS). Compares `left == right` with
-  the same equality semantics as [CHECK_EQ](#kos_op_check_eq)
+  the same equality semantics as [CHECK_COMPARE](#kos_op_check_compare) EQ
   (`PyObject_RichCompareBool` with `Py_EQ`).
   - **Match**: pop both operands; `pc = arg`. Stack after: `[...]`.
   - **Mismatch**: pop `right` only; fall through. Stack after: `[..., left]`.
@@ -3036,97 +2844,33 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 Object protocol opcodes: single Python operation on TOS (and optionally below); pop operands, push result. All **Implemented** unless noted.
 
-- **Comparisons**: OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE, OBJECT_GT, OBJECT_GE (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`.
-- **Predicates**: OBJECT_IN, OBJECT_NOT_IN, OBJECT_IS, OBJECT_IS_NOT; OBJECT_IS_INSTANCE (COUNT), OBJECT_IS_SUBCLASS (COUNT).
+- **Comparisons and predicates**: OBJECT_COMPARE (CMPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, selector-keyed (KosCompare packs with the count).
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
 - **Numeric, in-place**: OBJECT_INPLACE_* (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
 - **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
-### KOS_OP_OBJECT_EQ {#kos_op_object_eq}
+### KOS_OP_OBJECT_COMPARE {#kos_op_object_compare}
 
-- **Style**: COUNT.
+- **Style**: CMPCOUNT. Arg packs a KosCompare selector (high byte) with
+  the reducing count (low byte).
 - **Status**: Implemented.
-- **Semantics**: Rich-compare chain `a1 == a2 == ... == aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
-- **Implementation**: `koskari/lib/opcode/OBJECT_EQ.c`
-
-### KOS_OP_OBJECT_GE {#kos_op_object_ge}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Rich-compare chain `a1 >= a2 >= ... >= aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
-- **Implementation**: `koskari/lib/opcode/OBJECT_GE.c`
-
-### KOS_OP_OBJECT_GT {#kos_op_object_gt}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Rich-compare chain `a1 > a2 > ... > aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
-- **Implementation**: `koskari/lib/opcode/OBJECT_GT.c`
-
-### KOS_OP_OBJECT_LE {#kos_op_object_le}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Rich-compare chain `a1 <= a2 <= ... <= aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
-- **Implementation**: `koskari/lib/opcode/OBJECT_LE.c`
-
-### KOS_OP_OBJECT_LT {#kos_op_object_lt}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Rich-compare chain `a1 < a2 < ... < aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
-- **Implementation**: `koskari/lib/opcode/OBJECT_LT.c`
-
-### KOS_OP_OBJECT_NE {#kos_op_object_ne}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Rich-compare chain `a1 != a2 != ... != aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
-- **Implementation**: `koskari/lib/opcode/OBJECT_NE.c`
-
-### KOS_OP_OBJECT_IN {#kos_op_object_in}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_IN.c`
-
-### KOS_OP_OBJECT_NOT_IN {#kos_op_object_not_in}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_NOT_IN.c`
-
-### KOS_OP_OBJECT_IS {#kos_op_object_is}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_IS.c`
-
-### KOS_OP_OBJECT_IS_NOT {#kos_op_object_is_not}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_IS_NOT.c`
-
-### KOS_OP_OBJECT_IS_INSTANCE {#kos_op_object_is_instance}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_IS_INSTANCE.c`
-
-### KOS_OP_OBJECT_IS_SUBCLASS {#kos_op_object_is_subclass}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_IS_SUBCLASS.c`
+- **Semantics**: Chain-compare `N` stack values under the selector and
+  push the result (`N >= 2`; raises `TypeError` otherwise). The
+  richcompare six (LT/LE/EQ/NE/GT/GE, ordinals 0-5 == Py_LT..Py_GE)
+  chain left-to-right and push the last richcompare result. The extended
+  selectors push a bool: IS / IS_NOT / IN / NOT_IN are strictly binary;
+  IS_INSTANCE / IS_SUBCLASS treat operands past the first as the match
+  (tupled when `N > 2`).
+- **Compiler form:** Emitted by the comparison, predicate, and type-check
+  specials with a `(selector, count)` pair, merged to the packed uint16
+  by `normalize_opcount`. When immediately followed by `JUMP_FALSE`,
+  `compress` fuses the pair into [CHECK_COMPARE](#kos_op_check_compare).
+- **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE.c`; core
+  dispatch `kos_compare_reduce` in `operator.c`.
+- **Covered by**: `tests/lib/opcode/test_compare.py`,
+  `tests/lib/opcode/test_object_comparison.py`
 
 ### KOS_OP_OBJECT_ADD {#kos_op_object_add}
 

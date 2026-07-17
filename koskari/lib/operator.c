@@ -761,9 +761,9 @@ static int compare_require_2(KosCompare sel, size_t count) {
 }
 
 
-/* Cold extended tail of kos_compare_chain: everything past the
-   richcompare six. */
-static KOS_NOINLINE int compare_chain_ext(
+/* Cold extended tail of kos_compare_chain (see operator.h): everything
+   past the richcompare six. */
+KOS_NOINLINE int kos_compare_chain_ext(
     KosCompare sel,
     PyObject *const *args,
     size_t count) {
@@ -803,26 +803,6 @@ static KOS_NOINLINE int compare_chain_ext(
 }
 
 
-int kos_compare_chain(
-    KosCompare sel,
-    PyObject *const *args,
-    size_t count) {
-
-  if (likely(sel <= KOS_COMPARE_GE)) {
-    /* selector IS the Py_LT..Py_GE ordinal: untranslated passthrough */
-    int res = 1;
-    for (size_t i = 1; i < count; i++) {
-      res = PyObject_RichCompareBool(args[i - 1], args[i], (int) sel);
-      if (res <= 0)
-        break;
-    }
-    return res;
-  }
-
-  return compare_chain_ext(sel, args, count);
-}
-
-
 /* Cold extended tail of kos_compare_reduce. Bool results throughout;
    the isinstance/issubclass count form (value + N classes) builds the
    class tuple the way OBJECT_IS_INSTANCE's PopTail did. */
@@ -858,7 +838,7 @@ static KOS_NOINLINE PyObject *compare_reduce_ext(
     return PyBool_FromLong(res);
   }
 
-  int res = compare_chain_ext(sel, args, count);
+  int res = kos_compare_chain_ext(sel, args, count);
   if (res < 0)
     return NULL;
   return PyBool_FromLong(res);

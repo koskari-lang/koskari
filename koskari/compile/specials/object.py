@@ -29,7 +29,7 @@ preserve dunder dispatch semantics.
 
 import operator as _op
 
-from ...lib import Operand, OpCode, symbol, cons
+from ...lib import Compare, Operand, OpCode, symbol, cons
 from ...exceptions import SpecialError
 from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...types import is_nil, get_position, is_pair, is_symbol, is_keyword, unpack
@@ -297,12 +297,12 @@ def special_format(compiler, source, tc=False):
 # ---------------------------------------------------------------------------
 
 
-def _chain_compare(op, compiler, source):
+def _chain_compare(sel, compiler, source):
     """
-    Compile a comparison operator (OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE,
-    OBJECT_GT, OBJECT_GE) with a variadic COUNT argument list.
+    Compile a chained comparison operator as OBJECT_COMPARE carrying a
+    (Compare selector, count) CMPCOUNT argument.
 
-    :param op: OpCode for the OBJECT_* instruction
+    :param sel: Compare selector for the comparison
     :param compiler: active Compiler
     :param source: raw source pair (called_by . body)
 
@@ -332,7 +332,7 @@ def _chain_compare(op, compiler, source):
             "%s requires at least two arguments" % called_by,
             source)
 
-    frag.instruction(op, count)
+    frag.instruction(OpCode.KOS_OP_OBJECT_COMPARE, (sel, count))
     return frag
 
 
@@ -343,7 +343,7 @@ def special_eq(compiler, source, tc=False):
     Compile (compile/= A B). Test equality via __eq__
     """
 
-    return _chain_compare(OpCode.KOS_OP_OBJECT_EQ, compiler, source)
+    return _chain_compare(Compare.KOS_COMPARE_EQ, compiler, source)
 
 
 @builtin("compile/!=", "compile/not-equal?")
@@ -353,7 +353,7 @@ def special_ne(compiler, source, tc=False):
     Compile (compile/!= A B). Test inequality via __ne__
     """
 
-    return _chain_compare(OpCode.KOS_OP_OBJECT_NE, compiler, source)
+    return _chain_compare(Compare.KOS_COMPARE_NE, compiler, source)
 
 
 @builtin("compile/<", "compile/lt?")
@@ -363,7 +363,7 @@ def special_lt(compiler, source, tc=False):
     Compile (compile/< A B). Test less-than via __lt__
     """
 
-    return _chain_compare(OpCode.KOS_OP_OBJECT_LT, compiler, source)
+    return _chain_compare(Compare.KOS_COMPARE_LT, compiler, source)
 
 
 @builtin("compile/<=", "compile/le?")
@@ -373,7 +373,7 @@ def special_le(compiler, source, tc=False):
     Compile (compile/<= A B). Test less-than-or-equal via __le__
     """
 
-    return _chain_compare(OpCode.KOS_OP_OBJECT_LE, compiler, source)
+    return _chain_compare(Compare.KOS_COMPARE_LE, compiler, source)
 
 
 @builtin("compile/>", "compile/gt?")
@@ -383,7 +383,7 @@ def special_gt(compiler, source, tc=False):
     Compile (compile/> A B). Test greater-than via __gt__
     """
 
-    return _chain_compare(OpCode.KOS_OP_OBJECT_GT, compiler, source)
+    return _chain_compare(Compare.KOS_COMPARE_GT, compiler, source)
 
 
 @builtin("compile/>=", "compile/ge?")
@@ -393,7 +393,7 @@ def special_ge(compiler, source, tc=False):
     Compile (compile/>= A B). Test greater-than-or-equal via __ge__
     """
 
-    return _chain_compare(OpCode.KOS_OP_OBJECT_GE, compiler, source)
+    return _chain_compare(Compare.KOS_COMPARE_GE, compiler, source)
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +407,8 @@ def special_in(compiler, source, tc=False):
     Compile (compile/in ITEM COLLECTION). Membership test via __contains__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_IN, compiler, source)
+    return _binary_op(OpCode.KOS_OP_OBJECT_COMPARE, compiler, source,
+                      opa=(Compare.KOS_COMPARE_IN, 2))
 
 
 @builtin("compile/not-in", "compile/not-in?")
@@ -417,7 +418,8 @@ def special_not_in(compiler, source, tc=False):
     Compile (compile/not-in ITEM COLLECTION). Negated membership test
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_NOT_IN, compiler, source)
+    return _binary_op(OpCode.KOS_OP_OBJECT_COMPARE, compiler, source,
+                      opa=(Compare.KOS_COMPARE_NOT_IN, 2))
 
 
 @builtin("compile/is", "compile/is?")
@@ -427,7 +429,8 @@ def special_is(compiler, source, tc=False):
     Compile (compile/is A B). Identity test
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_IS, compiler, source)
+    return _binary_op(OpCode.KOS_OP_OBJECT_COMPARE, compiler, source,
+                      opa=(Compare.KOS_COMPARE_IS, 2))
 
 
 @builtin("compile/is-not", "compile/is-not?")
@@ -437,24 +440,23 @@ def special_is_not(compiler, source, tc=False):
     Compile (compile/is-not A B). Negated identity test
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_IS_NOT, compiler, source)
+    return _binary_op(OpCode.KOS_OP_OBJECT_COMPARE, compiler, source,
+                      opa=(Compare.KOS_COMPARE_IS_NOT, 2))
 
 
-def _type_check_op(op, compiler, source):
+def _type_check_op(sel, compiler, source):
     """
-    Compile a type-check operator (OBJECT_IS_INSTANCE or OBJECT_IS_SUBCLASS).
-
-    The C handler's arg convention differs from the usual COUNT pattern:
-    arg < 2 means pop value and match as two separate stack items (for the
-    single-type case). arg >= 2 means collect arg items from the stack tail
-    as a tuple and use that as the match (for multi-base checks). Requires
-    at least 2 arguments (value plus at least one type).
+    Compile a type-check operator as OBJECT_COMPARE carrying the
+    IS_INSTANCE or IS_SUBCLASS selector. The CMPCOUNT count is the total
+    operand count (value plus N types); the handler treats operands past
+    the value as the match, tupled when N > 1. Requires at least 2
+    arguments (value plus at least one type).
 
     Calling forms:
-      (compile/instance? VAL TYPE)         -> arg = 1  (single type)
-      (compile/instance? VAL T1 T2 ...)    -> arg = N  (N types as tuple)
+      (compile/instance? VAL TYPE)         -> count = 2  (single type)
+      (compile/instance? VAL T1 T2 ...)    -> count = N+1  (types as tuple)
 
-    :param op: OpCode.KOS_OP_OBJECT_IS_INSTANCE or KOS_OP_OBJECT_IS_SUBCLASS
+    :param sel: Compare.KOS_COMPARE_IS_INSTANCE or KOS_COMPARE_IS_SUBCLASS
     :param compiler: active Compiler
     :param source: raw source pair (called_by . body)
     :return: ByteCodeFragment
@@ -474,14 +476,10 @@ def _type_check_op(op, compiler, source):
 
     frag.position_of(source)
 
-    value_expr = exprs[0]
-    type_exprs = exprs[1:]
+    for expr in exprs:
+        frag.merge(compiler.full_compile(expr))
 
-    frag.merge(compiler.full_compile(value_expr))
-    for te in type_exprs:
-        frag.merge(compiler.full_compile(te))
-
-    frag.instruction(op, len(type_exprs))
+    frag.instruction(OpCode.KOS_OP_OBJECT_COMPARE, (sel, len(exprs)))
     return frag
 
 
@@ -493,7 +491,7 @@ def special_isinstance(compiler, source, tc=False):
     """
 
     return _type_check_op(
-        OpCode.KOS_OP_OBJECT_IS_INSTANCE, compiler, source)
+        Compare.KOS_COMPARE_IS_INSTANCE, compiler, source)
 
 
 @builtin("compile/subclass?")
@@ -504,7 +502,7 @@ def special_issubclass(compiler, source, tc=False):
     """
 
     return _type_check_op(
-        OpCode.KOS_OP_OBJECT_IS_SUBCLASS, compiler, source)
+        Compare.KOS_COMPARE_IS_SUBCLASS, compiler, source)
 
 
 # ---------------------------------------------------------------------------

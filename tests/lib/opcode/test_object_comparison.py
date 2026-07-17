@@ -12,11 +12,13 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for OBJECT_EQ opcodes.
+Tests for the OBJECT_COMPARE opcode across its Compare selectors.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
+
+from koskari.lib import Compare
 
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
@@ -26,18 +28,24 @@ import pytest
 pytestmark = pytest.mark.phase_lib
 
 
+def _cmp(sel, count):
+    """
+    Pack a CMPCOUNT arg from a Compare selector name and count
+    """
+
+    return (int(Compare["KOS_COMPARE_" + sel]) << 8) | count
+
+
 class TestObjectComparisonOpcodes(CevalTest):
     """
-    Tests for OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE,
-    OBJECT_GT, OBJECT_GE, OBJECT_IN, OBJECT_NOT_IN, OBJECT_IS,
-    OBJECT_IS_NOT, OBJECT_IS_INSTANCE, OBJECT_IS_SUBCLASS
+    Tests for OBJECT_COMPARE under every Compare selector
     """
 
     async def test_object_eq(self):
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", 42],
-            ["OBJECT_EQ", 2],
+            ["OBJECT_COMPARE", _cmp("EQ", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -47,7 +55,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
-            ["OBJECT_NE", 2],
+            ["OBJECT_COMPARE", _cmp("NE", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -57,7 +65,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
-            ["OBJECT_LT", 2],
+            ["OBJECT_COMPARE", _cmp("LT", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -67,7 +75,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 2],
-            ["OBJECT_LE", 2],
+            ["OBJECT_COMPARE", _cmp("LE", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -77,7 +85,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 3],
             ["CONST", 2],
-            ["OBJECT_GT", 2],
+            ["OBJECT_COMPARE", _cmp("GT", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -87,7 +95,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 2],
-            ["OBJECT_GE", 2],
+            ["OBJECT_COMPARE", _cmp("GE", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -95,18 +103,18 @@ class TestObjectComparisonOpcodes(CevalTest):
 
     async def test_object_comparisons_chain_true(self):
         cases = (
-            ("OBJECT_EQ", [7, 7, 7]),
-            ("OBJECT_NE", [1, 2, 3]),
-            ("OBJECT_LT", [1, 2, 3]),
-            ("OBJECT_LE", [1, 2, 2]),
-            ("OBJECT_GT", [3, 2, 1]),
-            ("OBJECT_GE", [3, 2, 2]),
+            ("EQ", [7, 7, 7]),
+            ("NE", [1, 2, 3]),
+            ("LT", [1, 2, 3]),
+            ("LE", [1, 2, 2]),
+            ("GT", [3, 2, 1]),
+            ("GE", [3, 2, 2]),
         )
 
         for opcode, values in cases:
             with self.subTest(opcode=opcode):
                 expr = [["CONST", value] for value in values]
-                expr.append([opcode, 3])
+                expr.append(["OBJECT_COMPARE", _cmp(opcode, 3)])
                 expr.append(["RETURN", 1])
                 code, ns = build_expr(expr)
                 self.assertEqual(await make_callable(code, ns)(), True)
@@ -114,31 +122,30 @@ class TestObjectComparisonOpcodes(CevalTest):
 
     async def test_object_comparisons_chain_false(self):
         cases = (
-            ("OBJECT_EQ", [7, 7, 8]),
-            ("OBJECT_NE", [1, 2, 2]),
-            ("OBJECT_LT", [1, 3, 2]),
-            ("OBJECT_LE", [1, 2, 1]),
-            ("OBJECT_GT", [3, 1, 2]),
-            ("OBJECT_GE", [3, 2, 3]),
+            ("EQ", [7, 7, 8]),
+            ("NE", [1, 2, 2]),
+            ("LT", [1, 3, 2]),
+            ("LE", [1, 2, 1]),
+            ("GT", [3, 1, 2]),
+            ("GE", [3, 2, 3]),
         )
 
         for opcode, values in cases:
             with self.subTest(opcode=opcode):
                 expr = [["CONST", value] for value in values]
-                expr.append([opcode, 3])
+                expr.append(["OBJECT_COMPARE", _cmp(opcode, 3)])
                 expr.append(["RETURN", 1])
                 code, ns = build_expr(expr)
                 self.assertEqual(await make_callable(code, ns)(), False)
 
 
     async def test_object_comparisons_reject_count_zero(self):
-        opcodes = ("OBJECT_EQ", "OBJECT_NE", "OBJECT_LT",
-                   "OBJECT_LE", "OBJECT_GT", "OBJECT_GE")
+        opcodes = ("EQ", "NE", "LT", "LE", "GT", "GE")
 
         for opcode in opcodes:
             with self.subTest(opcode=opcode):
                 code, ns = build_expr([
-                    [opcode, 0],
+                    ["OBJECT_COMPARE", _cmp(opcode, 0)],
                     ["RETURN", 1],
                 ])
                 with self.assertRaises(TypeError):
@@ -146,14 +153,13 @@ class TestObjectComparisonOpcodes(CevalTest):
 
 
     async def test_object_comparisons_reject_count_one(self):
-        opcodes = ("OBJECT_EQ", "OBJECT_NE", "OBJECT_LT",
-                   "OBJECT_LE", "OBJECT_GT", "OBJECT_GE")
+        opcodes = ("EQ", "NE", "LT", "LE", "GT", "GE")
 
         for opcode in opcodes:
             with self.subTest(opcode=opcode):
                 code, ns = build_expr([
                     ["CONST", 1],
-                    [opcode, 1],
+                    ["OBJECT_COMPARE", _cmp(opcode, 1)],
                     ["RETURN", 1],
                 ])
                 with self.assertRaises(TypeError):
@@ -164,7 +170,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", [1, 2, 3]],
-            ["OBJECT_IN", 0],
+            ["OBJECT_COMPARE", _cmp("IN", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -174,7 +180,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 0],
             ["CONST", [1, 2, 3]],
-            ["OBJECT_NOT_IN", 0],
+            ["OBJECT_COMPARE", _cmp("NOT_IN", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -184,7 +190,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", None],
             ["CONST", None],
-            ["OBJECT_IS", 0],
+            ["OBJECT_COMPARE", _cmp("IS", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -194,7 +200,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", []],
             ["CONST", []],
-            ["OBJECT_IS_NOT", 0],
+            ["OBJECT_COMPARE", _cmp("IS_NOT", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -204,7 +210,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", int],
-            ["OBJECT_IS_INSTANCE", 1],
+            ["OBJECT_COMPARE", _cmp("IS_INSTANCE", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -214,7 +220,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", bool],
             ["CONST", int],
-            ["OBJECT_IS_SUBCLASS", 1],
+            ["OBJECT_COMPARE", _cmp("IS_SUBCLASS", 2)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)

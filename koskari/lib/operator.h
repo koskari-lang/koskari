@@ -21,6 +21,7 @@
 #include <Python.h>
 
 #include "bytecode.h"
+#include "hints.h"
 
 
 /**
@@ -86,9 +87,32 @@ PyObject *kos_inplace_reduce(
 */
 
 
-/* chain-evaluate; 1 = held, 0 = failed (branch), -1 = error */
-int kos_compare_chain(
+/* Cold extended tail of kos_compare_chain: everything past the
+   richcompare six. Reached only through the inline fast path below. */
+int kos_compare_chain_ext(
     KosCompare sel, PyObject *const *args, size_t count);
+
+/* chain-evaluate; 1 = held, 0 = failed (branch), -1 = error. The
+   richcompare six stay inline at the call site -- the selector IS the
+   Py_LT..Py_GE ordinal, passed through untranslated -- so the dispatch
+   loop's check path keeps the pre-unification inlining. */
+static inline int kos_compare_chain(
+    KosCompare sel,
+    PyObject *const *args,
+    size_t count) {
+
+  if (likely(sel <= KOS_COMPARE_GE)) {
+    int res = 1;
+    for (size_t i = 1; i < count; i++) {
+      res = PyObject_RichCompareBool(args[i - 1], args[i], (int) sel);
+      if (res <= 0)
+        break;
+    }
+    return res;
+  }
+
+  return kos_compare_chain_ext(sel, args, count);
+}
 
 /* same reduction, returning a new reference (last richcompare result
    for the six; bool for the extended selectors) */

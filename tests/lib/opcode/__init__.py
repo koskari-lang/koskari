@@ -25,6 +25,7 @@ import unittest
 
 from koskari.lib import (
     Code,
+    Compare,
     NamespaceSpec,
     OpCode,
     Operand,
@@ -76,6 +77,14 @@ _OPERAND_LOWER = {
 _OPERAND_LOWER.update({
     "OBJECT_INPLACE_" + suffix: (operand, "OBJECT_INPLACE")
     for suffix, operand in _OPERAND_BY_NAME.items()
+})
+
+# The per-comparison opcodes were likewise consolidated into the
+# selector-keyed OBJECT_COMPARE; the same sugar applies (arg = count,
+# packed with the Compare selector into a CMPCOUNT arg).
+_OPERAND_LOWER.update({
+    "OBJECT_" + suffix: (Compare["KOS_COMPARE_" + suffix], "OBJECT_COMPARE")
+    for suffix in ("EQ", "NE", "LT", "LE", "GT", "GE")
 })
 
 

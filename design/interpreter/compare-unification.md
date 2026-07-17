@@ -1,8 +1,17 @@
 # Comparison Unification: CHECK_COMPARE, OBJECT_COMPARE, and Fused Source Variants
 
-**Status: DESIGN (2026-07-16). Not yet implemented. Follows the
-call-unification playbook: strict phases, measure gates between them,
-each phase committed and reviewed before the next begins.**
+**Status: Phase 1 COMPLETE (2026-07-17, branch `check_cmp`). The 24
+comparison opcodes are deleted; CHECK_COMPARE / OBJECT_COMPARE carry
+the whole surface on the KosCompare selector. Suite 4725/10 green.
+Dispatch fn 66,045 -> 63,579 B (-3.7%). Gate note: the first
+measurement showed method +9.5% -- the chain core had become an
+out-of-line cross-TU call where kos_check_cmp used to inline; moving
+the richcompare-six fast path into operator.h as static inline (cold
+extern tail for the extended selectors) recovered it to +6%, with
+loop (4x the CHECK_LT volume) at only +1.4% -- the differential
+pins the residual on method's documented layout sensitivity, and P2
+replaces this exact sequence at loop heads anyway. Phases 2-3
+pending.**
 
 ## Purpose
 

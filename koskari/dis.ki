@@ -27,7 +27,7 @@ __self__ in a leading section).
 """
 
 
-import-from koskari.lib BoundMethod Code Expression Function NamespaceSpec OpCode OpStyle demand
+import-from koskari.lib BoundMethod Code Compare Expression Function NamespaceSpec OpCode OpStyle demand
 
 
 (declare-exports dis)
@@ -223,6 +223,18 @@ define _format_fast_part [val local_names closure_names]:
       f"fast {val}"
 
 
+define _compare_name [sel]:
+  """
+  Short display name for a Compare selector value (e.g. 5 -> "GE")
+  """
+
+  try:
+    define member (Compare sel)
+  except [#(ValueError)]:
+    return (str sel)
+  member.name.removeprefix "KOS_COMPARE_"
+
+
 define _format_arg [code op_style arg cpool local_names closure_names
                     ns_label: None extra_schema: None]:
   """
@@ -274,6 +286,8 @@ define _format_arg [code op_style arg cpool local_names closure_names
               parts.append (_format_fast_part val local_names closure_names)
             elif (equal? fk OpStyle.KOSTYLE_COUNT):
               parts.append (str val)
+            elif (equal? fk OpStyle.KOSTYLE_CMP):
+              parts.append (_compare_name val)
             elif (equal? fk OpStyle.KOSTYLE_LABEL):
               parts.append f"-> {val}"
             else:
@@ -317,6 +331,10 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
     case [OpStyle.KOSTYLE_LABEL]:
       return f"{arg} (-> {arg})"
+
+    case [OpStyle.KOSTYLE_CMPCOUNT]:
+      define sc (divmod arg 256)
+      return f"{arg} ({(_compare_name (item sc 0))} x{(item sc 1)})"
 
     case [OpStyle.KOSTYLE_COUNT
           OpStyle.KOSTYLE_PAIR_COUNT

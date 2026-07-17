@@ -86,24 +86,6 @@ static int obj_op_reducing(
 }
 
 
-static int obj_op_binary(
-    KosEvalState *es,
-    KosOp *insn,
-    PyObject *(*fn)(PyObject *left, PyObject *right)) {
-
-  KosEvalStackLR op = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, op))
-    return -1;
-  PyObject *res = fn(op.left, op.right);
-  Py_DECREF(op.left);
-  Py_DECREF(op.right);
-  if (! res)
-    return -1;
-  (void) insn;
-  return KosEvalState_StackPUSH(es, res);
-}
-
-
 /* The operator-selector dispatchers kos_operand_reduce / kos_inplace_reduce
    live in operator.c (declared in operator.h) alongside the per-operator cores
    they switch into; the handlers below call across that boundary. */
@@ -275,35 +257,6 @@ static int kos_attr_inplace_reduce(
   int res = PyObject_SetAttr(obj, attr, acc);
   Py_DECREF(acc);
   return res;
-}
-
-
-/* === Comparison and predicate result helpers === */
-
-
-static PyObject *binary_in_result(PyObject *left, PyObject *right) {
-  int r = PySequence_Contains(right, left);
-  if (r < 0)
-    return NULL;
-  return PyBool_FromLong(r);
-}
-
-
-static PyObject *binary_not_in_result(PyObject *left, PyObject *right) {
-  int r = PySequence_Contains(right, left);
-  if (r < 0)
-    return NULL;
-  return PyBool_FromLong(! r);
-}
-
-
-static PyObject *binary_is_result(PyObject *left, PyObject *right) {
-  return PyBool_FromLong(left == right);
-}
-
-
-static PyObject *binary_is_not_result(PyObject *left, PyObject *right) {
-  return PyBool_FromLong(left != right);
 }
 
 

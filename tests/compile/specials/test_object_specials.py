@@ -27,7 +27,7 @@ compile/aiter.
 
 
 from koskari.exceptions import SpecialError, SyntaxMatchError
-from koskari.lib import OpCode, OpStyle, Operand
+from koskari.lib import Compare, OpCode, OpStyle, Operand
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -66,6 +66,20 @@ def _find_operand(code, operand):
     return None
 
 
+def _find_compare(code, sel):
+    """
+    Return the operand count of the first OBJECT_COMPARE instruction whose
+    selector is `sel`, or None if none is present. The comparison operators
+    were consolidated into OBJECT_COMPARE, whose CMPCOUNT arg packs the
+    Compare selector in the high byte and the count in the low byte.
+    """
+
+    for op, arg in _ops(code):
+        if op == OpCode.KOS_OP_OBJECT_COMPARE and (arg >> 8) == int(sel):
+            return arg & 0xff
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Comparison interface
 # ---------------------------------------------------------------------------
@@ -84,7 +98,7 @@ class TestObjectEq(SpecialsTestCase):
 
     async def test_eq_emits_opcode(self):
         code = self.compile_to_code("(compile/== a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_EQ, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_EQ))
 
 
     async def test_eq_chain_true(self):
@@ -99,9 +113,8 @@ class TestObjectEq(SpecialsTestCase):
 
     async def test_eq_emits_count_for_chain(self):
         code = self.compile_to_code("(compile/== a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_EQ)
-        self.assertIsNotNone(arg)
-        self.assertEqual(3, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_EQ)
+        self.assertEqual(3, count)
 
 
     async def test_eq_requires_two_args(self):
@@ -123,7 +136,7 @@ class TestObjectNe(SpecialsTestCase):
 
     async def test_ne_emits_opcode(self):
         code = self.compile_to_code("(compile/!= a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_NE, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_NE))
 
 
     async def test_ne_chain_true(self):
@@ -138,9 +151,8 @@ class TestObjectNe(SpecialsTestCase):
 
     async def test_ne_emits_count_for_chain(self):
         code = self.compile_to_code("(compile/!= a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_NE)
-        self.assertIsNotNone(arg)
-        self.assertEqual(3, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_NE)
+        self.assertEqual(3, count)
 
 
     async def test_ne_requires_two_args(self):
@@ -162,7 +174,7 @@ class TestObjectLt(SpecialsTestCase):
 
     async def test_lt_emits_opcode(self):
         code = self.compile_to_code("(compile/< a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_LT, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_LT))
 
 
     async def test_lt_chain_true(self):
@@ -177,9 +189,8 @@ class TestObjectLt(SpecialsTestCase):
 
     async def test_lt_emits_count_for_chain(self):
         code = self.compile_to_code("(compile/< a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_LT)
-        self.assertIsNotNone(arg)
-        self.assertEqual(3, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_LT)
+        self.assertEqual(3, count)
 
 
     async def test_lt_requires_two_args(self):
@@ -189,7 +200,7 @@ class TestObjectLt(SpecialsTestCase):
 
     async def test_lt_star_arg_rewrites_to_call(self):
         code = self.compile_to_code("(compile/< a *: xs)")
-        self.assertIsNone(_find_op(code, OpCode.KOS_OP_OBJECT_LT))
+        self.assertIsNone(_find_compare(code, Compare.KOS_COMPARE_LT))
         self.assertTrue(self.call_ops(code))
 
 
@@ -212,7 +223,7 @@ class TestObjectLe(SpecialsTestCase):
 
     async def test_le_emits_opcode(self):
         code = self.compile_to_code("(compile/<= a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_LE, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_LE))
 
 
     async def test_le_chain_true(self):
@@ -227,9 +238,8 @@ class TestObjectLe(SpecialsTestCase):
 
     async def test_le_emits_count_for_chain(self):
         code = self.compile_to_code("(compile/<= a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_LE)
-        self.assertIsNotNone(arg)
-        self.assertEqual(3, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_LE)
+        self.assertEqual(3, count)
 
 
     async def test_le_requires_two_args(self):
@@ -251,7 +261,7 @@ class TestObjectGt(SpecialsTestCase):
 
     async def test_gt_emits_opcode(self):
         code = self.compile_to_code("(compile/> a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_GT, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_GT))
 
 
     async def test_gt_chain_true(self):
@@ -266,9 +276,8 @@ class TestObjectGt(SpecialsTestCase):
 
     async def test_gt_emits_count_for_chain(self):
         code = self.compile_to_code("(compile/> a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_GT)
-        self.assertIsNotNone(arg)
-        self.assertEqual(3, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_GT)
+        self.assertEqual(3, count)
 
 
     async def test_gt_requires_two_args(self):
@@ -295,7 +304,7 @@ class TestObjectGe(SpecialsTestCase):
 
     async def test_ge_emits_opcode(self):
         code = self.compile_to_code("(compile/>= a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_GE, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_GE))
 
 
     async def test_ge_chain_true(self):
@@ -310,9 +319,8 @@ class TestObjectGe(SpecialsTestCase):
 
     async def test_ge_emits_count_for_chain(self):
         code = self.compile_to_code("(compile/>= a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_GE)
-        self.assertIsNotNone(arg)
-        self.assertEqual(3, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_GE)
+        self.assertEqual(3, count)
 
 
     async def test_ge_requires_two_args(self):
@@ -338,7 +346,7 @@ class TestObjectIn(SpecialsTestCase):
 
     async def test_in_emits_opcode(self):
         code = self.compile_to_code("(compile/in a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_IN, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_IN))
 
 
     async def test_in_requires_two_args(self):
@@ -360,7 +368,7 @@ class TestObjectNotIn(SpecialsTestCase):
 
     async def test_not_in_emits_opcode(self):
         code = self.compile_to_code("(compile/not-in a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_NOT_IN, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_NOT_IN))
 
 
 class TestObjectIs(SpecialsTestCase):
@@ -378,7 +386,7 @@ class TestObjectIs(SpecialsTestCase):
 
     async def test_is_emits_opcode(self):
         code = self.compile_to_code("(compile/is a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_IS, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_IS))
 
 
 class TestObjectIsNot(SpecialsTestCase):
@@ -396,7 +404,7 @@ class TestObjectIsNot(SpecialsTestCase):
 
     async def test_is_not_emits_opcode(self):
         code = self.compile_to_code("(compile/is-not a b)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_IS_NOT, _opcodes(code))
+        self.assertEqual(2, _find_compare(code, Compare.KOS_COMPARE_IS_NOT))
 
 
 class TestObjectIsInstance(SpecialsTestCase):
@@ -414,19 +422,17 @@ class TestObjectIsInstance(SpecialsTestCase):
 
 
     async def test_isinstance_single_type_emits_arg_one(self):
-        # single type: arg=1 uses the pop-two-separately C path
+        # single type: count 2 (value + one type)
         code = self.compile_to_code("(compile/instance? a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_IS_INSTANCE)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_IS_INSTANCE)
+        self.assertEqual(2, count)
 
 
     async def test_isinstance_multi_type_emits_arg_n(self):
-        # two types: arg=2 uses the PopTail(2) C path
+        # two types: count 3 (value + tupled types)
         code = self.compile_to_code("(compile/instance? a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_IS_INSTANCE)
-        self.assertIsNotNone(arg)
-        self.assertEqual(2, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_IS_INSTANCE)
+        self.assertEqual(3, count)
 
 
     async def test_isinstance_requires_at_least_two_args(self):
@@ -455,16 +461,14 @@ class TestObjectIsSubclass(SpecialsTestCase):
 
     async def test_issubclass_single_type_emits_arg_one(self):
         code = self.compile_to_code("(compile/subclass? a b)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_IS_SUBCLASS)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_IS_SUBCLASS)
+        self.assertEqual(2, count)
 
 
     async def test_issubclass_multi_type_emits_arg_n(self):
         code = self.compile_to_code("(compile/subclass? a b c)")
-        arg = _find_op(code, OpCode.KOS_OP_OBJECT_IS_SUBCLASS)
-        self.assertIsNotNone(arg)
-        self.assertEqual(2, arg)
+        count = _find_compare(code, Compare.KOS_COMPARE_IS_SUBCLASS)
+        self.assertEqual(3, count)
 
 
 # ---------------------------------------------------------------------------

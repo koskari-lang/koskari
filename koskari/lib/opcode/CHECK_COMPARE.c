@@ -24,6 +24,12 @@ KOS_OP_HANDLER(CHECK_COMPARE) {
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   size_t count = (size_t) row.a1;
 
+  if (unlikely(count < 2)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "CHECK_COMPARE requires at least 2 elements");
+    return EVAL_RAISE();
+  }
+
   PyObject *const *args = KosEvalState_StackTailPtr(es, count);
   if (unlikely(! args))
     return EVAL_RAISE();

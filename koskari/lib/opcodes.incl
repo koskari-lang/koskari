@@ -81,24 +81,11 @@ OP(JUMP_AND, 0, LABEL)
 OP(JUMP_OR, 0, LABEL)
 
 // check jumps - jump to label if predicate does not match. The
-// comparison checks are variadic: the EXTRA row carries (COUNT, LABEL)
-// so a chained compare over COUNT operands can fuse with its jump.
-// CHECK_COMPARE carries the comparison as a KosCompare selector in the
-// row (CMP kind); the per-comparison CHECK_* forms predate it.
+// the comparison check is variadic and selector-keyed: the EXTRA row
+// carries (CMP, COUNT, LABEL) so a chained compare over COUNT operands
+// under any KosCompare selector fuses with its jump.
 OP(CHECK_COMPARE, 0, EXTRA, CMP, COUNT, LABEL, NOARG)
-OP(CHECK_EQ, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
-OP(CHECK_GE, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
-OP(CHECK_GT, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
-OP(CHECK_LE, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
-OP(CHECK_LT, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
-OP(CHECK_NE, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
 
-OP(CHECK_IN, 0, LABEL)
-OP(CHECK_NOT_IN, 0, LABEL)
-OP(CHECK_IS, 0, LABEL)
-OP(CHECK_IS_NOT, 0, LABEL)
-OP(CHECK_IS_INSTANCE, 0, LABEL)
-OP(CHECK_IS_SUBCLASS, 0, LABEL)
 OP(CHECK_EXCEPTION, 0, LABEL)
 OP(CHECK_NIL, 0, LABEL)        // squashed NILP + JUMP_FALSE: jump if not nil
 
@@ -260,24 +247,11 @@ OP(POP_COLLECT, 0, NOARG)
 OP(POP_NS, 0, NOARG)
 OP(POP_TRY, 0, NOARG)
 
-// comparison interface
-// OBJECT_COMPARE packs a KosCompare selector (high byte) with the
-// reducing count (low byte); the per-comparison forms predate it.
+// comparison interface: OBJECT_COMPARE packs a KosCompare selector
+// (high byte) with the reducing count (low byte)
 OP(OBJECT_COMPARE, 0, CMPCOUNT)
-OP(OBJECT_EQ, 0, COUNT)
-OP(OBJECT_GE, 0, COUNT)
-OP(OBJECT_GT, 0, COUNT)
-OP(OBJECT_LE, 0, COUNT)
-OP(OBJECT_LT, 0, COUNT)
-OP(OBJECT_NE, 0, COUNT)
 
 // predicates
-OP(OBJECT_IN, 0, NOARG)
-OP(OBJECT_NOT_IN, 0, NOARG)
-OP(OBJECT_IS, 0, NOARG)
-OP(OBJECT_IS_NOT, 0, NOARG)
-OP(OBJECT_IS_INSTANCE, 0, COUNT)
-OP(OBJECT_IS_SUBCLASS, 0, COUNT)
 OP(NILP, 0, NOARG)            // pop TOS, push True if an empty-list singleton
 
 OP(OBJECT_OPERAND, 0, OPCOUNT)

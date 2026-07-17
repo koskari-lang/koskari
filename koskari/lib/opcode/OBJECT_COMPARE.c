@@ -23,6 +23,12 @@ KOS_OP_HANDLER(OBJECT_COMPARE) {
   uint16_t arg = KosOp_ARG(insn);
   size_t count = (size_t) KosCmpCount_COUNT(arg);
 
+  if (unlikely(count < 2)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "OBJECT_COMPARE requires at least 2 elements");
+    return EVAL_RAISE();
+  }
+
   PyObject *const *args = KosEvalState_StackTailPtr(es, count);
   if (unlikely(! args))
     return EVAL_RAISE();

@@ -29,8 +29,8 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Arena, Operand, Code, FormalsSpec, FunctionSpec, Module,
-                   ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
+from ..lib import (Arena, Compare, Operand, Code, FormalsSpec, FunctionSpec,
+                   Module, ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, nil, symbol)
 from ..types import is_nil, get_position, is_pair, is_proper, is_symbol
@@ -124,6 +124,52 @@ def merge_opcount(value):
         raise ValueError("opcount count out of byte range: %r" % (count,))
 
     return (op_type << 8) | count
+
+
+_COMPARE_COUNT = len(Compare)
+
+
+def merge_cmpcount(value):
+    """
+    Normalize a KOSTYLE_CMPCOUNT operand to its merged uint16 (Compare
+    selector in the high byte, reduce count in the low byte). The
+    CMPCOUNT twin of merge_opcount: accepts a (selector, count) pair or
+    a pre-merged int, both range- and selector-checked.
+
+    :param value: (selector, count) pair, or a pre-merged int
+    :return: merged uint16 int
+    :raises ValueError: on a bad shape, out-of-range byte, or unknown selector
+    """
+
+    if isinstance(value, tuple):
+        if len(value) != 2:
+            raise ValueError("cmpcount operand must be (selector, count), "
+                             "got %r" % (value,))
+        sel, count = value
+        sel = int(getattr(sel, 'value', sel))
+        count = int(count)
+    else:
+        merged = int(value)
+        if not 0 <= merged <= 0xffff:
+            raise ValueError("cmpcount int out of uint16 range: %r" % (value,))
+        sel, count = merged >> 8, merged & 0xff
+
+    if not 0 <= sel < _COMPARE_COUNT:
+        raise ValueError("cmpcount selector is not a known Compare: %r" % (sel,))
+    if not 0 <= count <= 0xff:
+        raise ValueError("cmpcount count out of byte range: %r" % (count,))
+
+    return (sel << 8) | count
+
+
+def split_cmpcount(value):
+    """
+    Split a CMPCOUNT operand -- (selector, count) pair or merged int --
+    into a validated (selector, count) int pair.
+    """
+
+    merged = merge_cmpcount(value)
+    return (merged >> 8, merged & 0xff)
 
 
 _TAIL_CALL_TO_CALL = {
@@ -455,25 +501,9 @@ class CompilerMode(IntEnum):
 
 
 _CHECK_SQUASHES = {
-    OpCode.KOS_OP_OBJECT_IN: OpCode.KOS_OP_CHECK_IN,
-    OpCode.KOS_OP_OBJECT_NOT_IN: OpCode.KOS_OP_CHECK_NOT_IN,
-    OpCode.KOS_OP_OBJECT_IS: OpCode.KOS_OP_CHECK_IS,
-    OpCode.KOS_OP_OBJECT_IS_NOT: OpCode.KOS_OP_CHECK_IS_NOT,
-    OpCode.KOS_OP_OBJECT_IS_INSTANCE: OpCode.KOS_OP_CHECK_IS_INSTANCE,
-    OpCode.KOS_OP_OBJECT_IS_SUBCLASS: OpCode.KOS_OP_CHECK_IS_SUBCLASS,
     OpCode.KOS_OP_OBJECT_NOT: OpCode.KOS_OP_JUMP_TRUE,
     OpCode.KOS_OP_EXCEPTION_MATCH: OpCode.KOS_OP_CHECK_EXCEPTION,
     OpCode.KOS_OP_NILP: OpCode.KOS_OP_CHECK_NIL,
-}
-
-
-_CHECK_VAR_SQUASHES = {
-    OpCode.KOS_OP_OBJECT_GE: OpCode.KOS_OP_CHECK_GE,
-    OpCode.KOS_OP_OBJECT_LE: OpCode.KOS_OP_CHECK_LE,
-    OpCode.KOS_OP_OBJECT_LT: OpCode.KOS_OP_CHECK_LT,
-    OpCode.KOS_OP_OBJECT_GT: OpCode.KOS_OP_CHECK_GT,
-    OpCode.KOS_OP_OBJECT_EQ: OpCode.KOS_OP_CHECK_EQ,
-    OpCode.KOS_OP_OBJECT_NE: OpCode.KOS_OP_CHECK_NE,
 }
 
 
@@ -911,14 +941,14 @@ class Compiler:
                     del squished[-1]
                     op = _CHECK_SQUASHES[prior]
 
-                elif prior in _CHECK_VAR_SQUASHES:
-                    # here we're combining a var operand with a jump
-                    # into a single check jump. The CHECK variation only
-                    # takes two operands, so we need to pop the second one.
-
+                elif prior == OpCode.KOS_OP_OBJECT_COMPARE:
+                    # fuse the compare with its jump: CHECK_COMPARE
+                    # branches on chain failure, carrying the selector,
+                    # count, and target in one EXTRA row
                     del squished[-1]
-                    op = _CHECK_VAR_SQUASHES[prior]
-                    arg = (prior_arg, arg, None, None)
+                    sel, cnt = split_cmpcount(prior_arg)
+                    op = OpCode.KOS_OP_CHECK_COMPARE
+                    arg = (sel, cnt, arg, None)
 
             elif op == OpCode.KOS_OP_SWITCH_EQ:
                 prior = squished[-1]
@@ -1037,17 +1067,20 @@ class Compiler:
 
     def normalize_opcount(self, instr):
         """
-        Merge every KOSTYLE_OPCOUNT operand to its packed uint16. Specials may
-        emit an (op_type, count) pair or a pre-merged int; merge_opcount
-        accepts and validates both. Runs unconditionally, independent of the
-        optional convert_fast lowering (which only relabels VAR->FAST and
-        leaves non-VAR fields, including a merged OPCOUNT, untouched).
+        Merge every KOSTYLE_OPCOUNT and KOSTYLE_CMPCOUNT operand to its
+        packed uint16. Specials may emit a (selector, count) pair or a
+        pre-merged int; the merge helpers accept and validate both. Runs
+        unconditionally, independent of the optional convert_fast lowering
+        (which only relabels VAR->FAST and leaves non-VAR fields, including
+        merged OPCOUNT/CMPCOUNT args, untouched).
         """
 
         result = []
         for op, arg in instr:
             if op.style == OpStyle.KOSTYLE_OPCOUNT:
                 arg = merge_opcount(arg)
+            elif op.style == OpStyle.KOSTYLE_CMPCOUNT:
+                arg = merge_cmpcount(arg)
             elif (op.style == OpStyle.KOSTYLE_EXTRA
                   and OpStyle.KOSTYLE_OPCOUNT in op.extra):
                 arg = tuple(
