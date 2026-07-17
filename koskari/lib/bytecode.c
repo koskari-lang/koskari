@@ -1581,10 +1581,12 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
-        /* FASTVAR, COUNT, STAR, OPCOUNT: store raw integer (slot, argc,
-           bitflags, packed op-type+count) */
+        /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT: store raw integer
+           (slot, argc, bitflags, packed op-type+count, comparison
+           selector, packed selector+count) */
         if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR
-            || fk == KOSTYLE_STAR || fk == KOSTYLE_OPCOUNT) {
+            || fk == KOSTYLE_STAR || fk == KOSTYLE_OPCOUNT
+            || fk == KOSTYLE_CMP || fk == KOSTYLE_CMPCOUNT) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
                          "EXTRA field expects int, got %R", elem);
@@ -3303,6 +3305,8 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_FASTVAR);
   int_enum(enum_dict, KOSTYLE_OPCOUNT);
   int_enum(enum_dict, KOSTYLE_EXTRA);
+  int_enum(enum_dict, KOSTYLE_CMP);
+  int_enum(enum_dict, KOSTYLE_CMPCOUNT);
 
   return create_int_enum("OpStyle", enum_dict);
 }
@@ -3384,6 +3388,36 @@ static PyObject *create_operand_enum(void) {
 }
 
 
+PyObject *KosCompareEnum = NULL;
+
+
+/* IntEnum of the comparison selectors (KosCompare, bytecode.h), exposed as
+   koskari.lib.Compare so the Python compiler and the C dispatch share one
+   selector ordinal set. Written directly; keep in step with the KosCompare
+   enum (values 0..5 are CPython's Py_LT..Py_GE ordinals). */
+static PyObject *create_compare_enum(void) {
+
+  PyObject *enum_dict = PyDict_New();
+  if (! enum_dict)
+    return NULL;
+
+  int_enum(enum_dict, KOS_COMPARE_LT);
+  int_enum(enum_dict, KOS_COMPARE_LE);
+  int_enum(enum_dict, KOS_COMPARE_EQ);
+  int_enum(enum_dict, KOS_COMPARE_NE);
+  int_enum(enum_dict, KOS_COMPARE_GT);
+  int_enum(enum_dict, KOS_COMPARE_GE);
+  int_enum(enum_dict, KOS_COMPARE_IS);
+  int_enum(enum_dict, KOS_COMPARE_IS_NOT);
+  int_enum(enum_dict, KOS_COMPARE_IN);
+  int_enum(enum_dict, KOS_COMPARE_NOT_IN);
+  int_enum(enum_dict, KOS_COMPARE_IS_INSTANCE);
+  int_enum(enum_dict, KOS_COMPARE_IS_SUBCLASS);
+
+  return create_int_enum("Compare", enum_dict);
+}
+
+
 /* === Module lifecycle === */
 
 
@@ -3434,6 +3468,16 @@ int koskari_bytecode_init(PyObject *mod) {
   }
   KosOperandEnum = stuff;
 
+  stuff = create_compare_enum();
+  if (! stuff) {
+    return -1;
+  }
+  if (PyDict_SetItemString(dict, "Compare", stuff)) {
+    Py_DECREF(stuff);
+    return -1;
+  }
+  KosCompareEnum = stuff;
+
   STR_CONST(_str_anon, "<anon>");
 
   return 0;
@@ -3445,6 +3489,7 @@ int koskari_bytecode_clear(PyObject *mod) {
   Py_CLEAR(KosOpCodeEnum);
   Py_CLEAR(KosOpStyleEnum);
   Py_CLEAR(KosOperandEnum);
+  Py_CLEAR(KosCompareEnum);
   Py_CLEAR(_str_anon);
 
   return 0;

@@ -74,6 +74,28 @@ PyObject *kos_inplace_reduce(
     KosOperand op, PyObject *const *values, size_t count);
 
 
+/**
+   Comparison dispatch
+
+   Select a comparison core by KosCompare selector. The richcompare six
+   pass the selector straight through to PyObject_RichCompare(Bool) and
+   chain-reduce over count operands; the extended selectors preserve
+   their prior per-opcode cores (identity, contains, isinstance,
+   issubclass) verbatim. Used by the CHECK_COMPARE / OBJECT_COMPARE
+   opcode handlers.
+*/
+
+
+/* chain-evaluate; 1 = held, 0 = failed (branch), -1 = error */
+int kos_compare_chain(
+    KosCompare sel, PyObject *const *args, size_t count);
+
+/* same reduction, returning a new reference (last richcompare result
+   for the six; bool for the extended selectors) */
+PyObject *kos_compare_reduce(
+    KosCompare sel, PyObject *const *args, size_t count);
+
+
 PyObject *KosOperator_In(PyObject *const *values, size_t count);
 
 PyObject *KosOperator_NotIn(PyObject *const *value, size_t count);

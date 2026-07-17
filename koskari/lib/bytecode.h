@@ -42,6 +42,7 @@
 
 extern PyObject *KosOpStyleEnum;
 extern PyObject *KosOperandEnum;
+extern PyObject *KosCompareEnum;
 
 
 typedef enum KosOpStyle {
@@ -81,6 +82,15 @@ typedef enum KosOpStyle {
   /** opcode argument is an index into the extra table */
   KOSTYLE_EXTRA,
 
+  /** field is a bare comparison selector (KosCompare) */
+  KOSTYLE_CMP,
+
+  /** opcode argument fuses a comparison selector (high byte, KosCompare)
+      with a reducing count (low byte); the comparison analogue of
+      OPCOUNT, named distinctly so dis and readers know which enum
+      decodes the high byte */
+  KOSTYLE_CMPCOUNT,
+
 } KosOpStyle;
 
 
@@ -91,10 +101,40 @@ typedef enum KosOpStyle {
 #define KosOpCount_COUNT(v)  ((uint16_t)((v) & 0xff))
 
 
+/** Compose/decode a KOSTYLE_CMPCOUNT value: comparison selector + count. */
+#define KosCmpCount_MAKE(sel, count)  \
+  ((uint16_t)(((uint16_t)(sel) << 8) | ((uint16_t)(count) & 0xff)))
+#define KosCmpCount_SEL(v)    ((uint16_t)((v) >> 8))
+#define KosCmpCount_COUNT(v)  ((uint16_t)((v) & 0xff))
+
+
 /** Operator selector carried in the OPCOUNT high byte and dispatched by the
     OBJECT_OPERAND / *_INPLACE handlers to the KosOperator_* functions. The
     ordinals are part of the bytecode ABI (encoded in OPCOUNT and mirrored by
     the Python Operand IntEnum); keep this order stable. */
+/** Comparison selector carried in CMP fields and the CMPCOUNT high byte,
+    dispatched by the CHECK_COMPARE / OBJECT_COMPARE handlers to the
+    kos_compare_* cores. WARNING: values 0..5 are CPython's Py_LT..Py_GE
+    richcompare ordinals, relied on for untranslated passthrough into
+    PyObject_RichCompare(Bool). All ordinals are bytecode ABI (mirrored
+    by the Python Compare IntEnum); keep this order stable. */
+typedef enum KosCompare {
+  KOS_COMPARE_LT = 0,          /* == Py_LT */
+  KOS_COMPARE_LE = 1,          /* == Py_LE */
+  KOS_COMPARE_EQ = 2,          /* == Py_EQ */
+  KOS_COMPARE_NE = 3,          /* == Py_NE */
+  KOS_COMPARE_GT = 4,          /* == Py_GT */
+  KOS_COMPARE_GE = 5,          /* == Py_GE */
+  KOS_COMPARE_IS,
+  KOS_COMPARE_IS_NOT,
+  KOS_COMPARE_IN,
+  KOS_COMPARE_NOT_IN,
+  KOS_COMPARE_IS_INSTANCE,
+  KOS_COMPARE_IS_SUBCLASS,
+  KOS_COMPARE_COUNT   /* number of selectors; also the invalid sentinel */
+} KosCompare;
+
+
 typedef enum KosOperand {
   KOS_OPERAND_ADD,
   KOS_OPERAND_SUBTRACT,

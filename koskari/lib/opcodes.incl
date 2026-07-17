@@ -83,6 +83,9 @@ OP(JUMP_OR, 0, LABEL)
 // check jumps - jump to label if predicate does not match. The
 // comparison checks are variadic: the EXTRA row carries (COUNT, LABEL)
 // so a chained compare over COUNT operands can fuse with its jump.
+// CHECK_COMPARE carries the comparison as a KosCompare selector in the
+// row (CMP kind); the per-comparison CHECK_* forms predate it.
+OP(CHECK_COMPARE, 0, EXTRA, CMP, COUNT, LABEL, NOARG)
 OP(CHECK_EQ, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
 OP(CHECK_GE, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
 OP(CHECK_GT, 0, EXTRA, COUNT, LABEL, NOARG, NOARG)
@@ -258,6 +261,9 @@ OP(POP_NS, 0, NOARG)
 OP(POP_TRY, 0, NOARG)
 
 // comparison interface
+// OBJECT_COMPARE packs a KosCompare selector (high byte) with the
+// reducing count (low byte); the per-comparison forms predate it.
+OP(OBJECT_COMPARE, 0, CMPCOUNT)
 OP(OBJECT_EQ, 0, COUNT)
 OP(OBJECT_GE, 0, COUNT)
 OP(OBJECT_GT, 0, COUNT)
