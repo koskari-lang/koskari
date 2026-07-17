@@ -12,30 +12,39 @@ Per-handler sizes come from a throwaway measurement build with `KOS_OP_INLINE`
 redefined to `static KOS_NOINLINE`, so each `op_<NAME>` becomes its own symbol;
 sizes read via `nm --print-size` on the built extension.  Standalone noinline
 size is a proxy for a handler's inlined contribution (inlining can specialise or
-shrink it) -- good enough to rank and prioritise.  The proxy now over-estimates
-noticeably: the fully-inlined dispatch fn (81,418 B) is smaller than floor +
-bodies (111,984 B), so at `-O2 -flto` inlining shares tails and specialises away
-more than the standalone bodies imply.  Hotness is reasoned, not profiled: there
-is no PGO/instrumented build yet (deferred until we have representative profiling
+shrink it) -- good enough to rank and prioritise.  The proxy still over-estimates:
+the fully-inlined dispatch fn (65,435 B) is smaller than floor + bodies
+(103,484 B), so at `-O2 -flto` inlining shares tails and specialises away more
+than the standalone bodies imply.  Hotness is reasoned, not profiled: there is
+no PGO/instrumented build yet (deferred until we have representative profiling
 apps -- scheduler, koslife, churns, mcp, repl, dis).
 
-Measured 2026-07-15 on branch `call_cleanups` (post call-unification
-phases 1-3 + C1/C2), 200 opcodes (one handler each; 201 symbols counting
-the split-out `GLOBALS.cold`).
+Measured 2026-07-17 on branch `check_cmp` (post comparison-unification
+phases 1-3), 186 opcodes (one handler each; 187 symbols counting the
+split-out `GLOBALS.cold`).
 
-## Changes since the 2026-07-15 master measurement
+## Changes since the 2026-07-15 measurement
 
-The call-unification effort (see
-[interpreter/call-unification.md](interpreter/call-unification.md))
-converted the CALL family onto the shared noinline `kos_call_invoke`
-core: the 12 converted handlers plus TAIL_CALL collapsed to
-gather-and-delegate prologues (CALL 650 -> 164 B, CALL_FAST 869 -> 389,
-CALL_FAST_ATTR 1,210 -> 522), taking the family's standalone bodies
-from 21,340 to 14,577 B -- of which the 7 kept-by-design STAR gathers
-are 8,868 B.  The fully-inlined dispatch fn dropped 81,418 -> 70,962 B
-(-12.8%).  `YIELD_FROM` (6,760 B) is now unambiguously the largest
-single body; the Phase A cold-giant carving (YIELD_FROM, IMPORT_*,
-PUSH_WIND, PAIR_SPLICE, ...) is the remaining lever.
+Three efforts landed between measurements:
+
+- **Comparison unification** (see
+  [interpreter/compare-unification.md](interpreter/compare-unification.md)):
+  the 24 per-comparison opcodes (12 `CHECK_*`, 12 `OBJECT_*`) collapsed
+  into 6 selector-keyed handlers -- generic `CHECK_COMPARE` /
+  `OBJECT_COMPARE` plus the fused `_VAR`/`_FAST` pairs.  Family bodies
+  4,273 -> 2,642 B, and the two hot fused handlers (`CHECK_COMPARE_FAST`
+  679 B, `OBJECT_COMPARE_FAST` 362 B) were born inline: every loop head
+  is one dispatch and the bounds idiom is one or two.
+- **Bulk local loads** (var4, PR #102): `VAR2`/`VAR4`/`FAST2`/`FAST4`
+  added (1,738 B of bodies, the FAST pair inline) collapsing FAST runs
+  corpus-wide.
+- **VAR-family cold sweep + never-reached handlers**: 16 VAR-form
+  handlers and the 4 never-reached metadata handlers went
+  `KOS_OP_HANDLER_COLD`.
+
+Net: the fully-inlined dispatch fn dropped 70,962 -> 65,435 B (-7.8%),
+while gaining eight new opcodes.  Cumulative from the 2026-07-12
+baseline: 120,944 -> 65,435 B (-45.9%).
 
 ## Changes since 2026-07-12
 
@@ -46,34 +55,37 @@ dominated that measurement -- `OBJECT_ADD`/`OBJECT_SUBTRACT`/..., the ~78-handle
 op-parameterised handlers (`OBJECT_OPERAND`, `OBJECT_INPLACE`,
 `FAST_OBJECT_INPLACE`, `VAR_OBJECT_INPLACE`, plus the `*_ATTR_INPLACE` trio).
 That is effectively **Phase B landed as opcode design** rather than as inline-stub
-carving.  Net effect: the fully-inlined dispatch fn dropped 120,944 -> 81,418 B
-(~33%).  New `BUILD_LIST_*`/`_CONST` variants were also added.  The `CALL_*`
-family is now the dominant carving target.
+carving.  The call-unification effort then converted the CALL family onto the
+shared noinline `kos_call_invoke` core (family bodies 21,340 -> 14,577 B;
+dispatch fn 81,418 -> 70,962 B).  The comparison family has now followed the
+same selector-keyed consolidation pattern.
 
 ## Baseline
 
 | quantity | bytes | meaning |
 |---|---:|---|
-| fully-inlined dispatch fn | 70,962 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
-| floor (all 200 handlers un-inlined) | 24,488 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 200 + loop scaffold |
-| handler bodies | 80,765 | sum of standalone noinline bodies -- the carving budget |
+| fully-inlined dispatch fn | 65,435 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
+| floor (all 186 handlers un-inlined) | 22,640 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 186 + loop scaffold |
+| handler bodies | 80,844 | sum of standalone noinline bodies -- the carving budget |
 
-Distribution (top-heavy, long-tailed; % of the 87,496 B body):
+Distribution (top-heavy, long-tailed; % of the 80,844 B body):
 
-- `>= 1000 B`: 13 handlers, 22,223 B (27% of body)
-- `>=  500 B`: 47 handlers, 44,298 B (54% of body)
-- `>=  200 B`: 138 handlers, 74,315 B (92% of body)
-- `>=  100 B`: 167 handlers, 78,818 B (97% of body)
+- `>= 1000 B`: 13 handlers, 22,191 B (27% of body)
+- `>=  500 B`: 47 handlers, 44,498 B (55% of body)
+- `>=  200 B`: 140 handlers, 75,372 B (93% of body)
+- `>=  100 B`: 169 handlers, 79,875 B (99% of body)
 
 ## Clusters (size x reasoned hotness x structure)
 
 | cluster | bytes (handlers) | % body | hotness | action |
 |---|---:|---:|---|---|
 | `CALL_*` family (incl. `TAIL_CALL*`) | 14,577 (21) | 18.0% | mixed | DONE (call-unification): prologues + shared core; residual is the 7 STAR gathers (8,868 B), kept by design |
-| YIELD_FROM | 6,760 (1) | 7.7% | cold | un-inline / decompose |
-| IMPORT_* | 2,016 (3) | 2.3% | cold | un-inline |
-| `*_ATTR_INPLACE` | 1,578 (3) | 1.8% | warm | already op-parameterised; leave inline |
-| `*_OBJECT_*` arith/operand | 776 (5) | 0.9% | warm | already consolidated (Phase B) -- keep inline |
+| YIELD_FROM | 6,728 (1) | 8.3% | cold | un-inline / decompose |
+| comparison family (`*_COMPARE*`) | 2,642 (6) | 3.3% | hot | DONE (compare-unification): selector-keyed, fused pairs born inline, VAR twins cold |
+| IMPORT_* | 2,016 (3) | 2.5% | cold | un-inline |
+| bulk loads (`VAR2/4`, `FAST2/4`) | 1,738 (4) | 2.1% | hot | DONE (var4): FAST pair inline, VAR twins cold |
+| `*_ATTR_INPLACE` | 1,594 (3) | 2.0% | warm | already op-parameterised; leave inline |
+| `*_OBJECT_*` arith/operand | 326 (4) | 0.4% | warm | already consolidated (Phase B) -- keep inline |
 
 ## Planned phases
 
@@ -88,6 +100,8 @@ Distribution (top-heavy, long-tailed; % of the 87,496 B body):
 - **C -- decompose CALL_FAST_ATTR / CALL_FAST**: DONE, subsumed by the
   call-unification prologue/core split (kos_call_invoke); see
   [interpreter/call-unification.md](interpreter/call-unification.md).
+- **D -- selector-keyed comparisons**: DONE, landed as compare-unification;
+  see [interpreter/compare-unification.md](interpreter/compare-unification.md).
 
 Remeasure dispatch fn size and run the suite + ASan after each batch.
 
@@ -95,107 +109,99 @@ Remeasure dispatch fn size and run the suite + ASan after each batch.
 
 | bytes | handler | | bytes | handler |
 |---:|---|---|---:|---|
-| 6,760 | `YIELD_FROM` | | 285 | `OBJECT_VARS` |
-| 1,845 | `NEXT` | | 279 | `SWITCH_EQ_CONST` |
-| 1,712 | `CALL_ATTR_STAR` | | 277 | `BUILD_KWDS_NAMES` |
-| 1,493 | `CALL_VAR_ATTR_STAR` | | 275 | `ATTR` |
-| 1,417 | `PUSH_WIND` | | 275 | `ATTR_REF` |
-| 1,301 | `CALL_FAST_ATTR_STAR` | | 275 | `CONST_ITEM` |
-| 1,210 | `CALL_STAR` | | 275 | `CONST_ITEM_REF` |
-| 1,210 | `TAIL_CALL_STAR` | | 275 | `OBJECT_FORMAT_CONST` |
-| 1,106 | `BUILD_CLASS` | | 274 | `OBJECT_NOT` |
-| 1,061 | `IMPORT_STAR` | | 274 | `OBJECT_TRUTH` |
-| 1,051 | `PAIR_SPLICE` | | 273 | `POP_WIND` |
-| 1,043 | `COMBINE_ARGS` | | 267 | `OBJECT_LEN` |
-| 1,014 | `CALL_FAST_STAR` | | 261 | `POP_WITH` |
-| 928 | `CALL_VAR_STAR` | | 259 | `VAR_ATTR_REF` |
-| 887 | `BUILD_FUNCTION` | | 253 | `OBJECT_BIT_INVERT` |
-| 848 | `PUSH_WITH` | | 253 | `OBJECT_DIR` |
-| 842 | `PUSH_NS` | | 253 | `OBJECT_ITER` |
-| 832 | `PUSH_DYN_WITH` | | 253 | `OBJECT_REPR` |
-| 821 | `UNPACK_STAR` | | 250 | `FAST_ATTR_CLEAR` |
-| 811 | `UNPACK_FAST` | | 247 | `FAST_BIND` |
-| 809 | `FAST_ATTR_STORE` | | 245 | `DEREF` |
-| 745 | `IMPORT_FROM` | | 239 | `OBJECT_TYPE` |
-| 738 | `COMBINE_KWDS` | | 236 | `POP_FOREACH` |
-| 733 | `RAISE` | | 234 | `VAR_REF` |
-| 728 | `POP_SHIFT` | | 228 | `POP_TRY` |
-| 705 | `ITER_NEXT` | | 226 | `VAR_STORE` |
-| 680 | `CALL_FAST_ATTR_NAMES` | | 221 | `FAST` |
-| 663 | `FAST_ATTR_INPLACE` | | 218 | `BUILD_ARGS` |
-| 629 | `PUSH_FOREACH` | | 218 | `BUILD_KWDS` |
-| 595 | `OBJECT_FORMAT` | | 215 | `PUSH_LOOP` |
-| 579 | `CALL_VAR_ATTR_NAMES` | | 210 | `IMPORT` |
-| 557 | `POP_FINALLY` | | 205 | `AWAIT` |
-| 550 | `VAR_ATTR_STORE` | | 205 | `JUMP_FALSE` |
-| 546 | `EXCEPTION_MATCH` | | 205 | `JUMP_TRUE` |
-| 543 | `SWITCH_EQ_FAST_ATTR` | | 204 | `GLOBALS` |
-| 541 | `FAST_ATTR` | | 204 | `POP_LOOP` |
-| 540 | `UNPACK_VAR` | | 202 | `POP_COLLECT` |
-| 539 | `PROPER` | | 191 | `CAPTURE_CC` |
-| 538 | `ITEM_TAKE` | | 191 | `FAST_STORE_CONST` |
-| 535 | `POP_PROMPT` | | 183 | `RETURN` |
-| 530 | `VAR_ATTR_INPLACE` | | 182 | `CHECK_NIL` |
-| 522 | `CALL_FAST_ATTR` | | 178 | `ATTR_CLEAR` |
-| 516 | `OBJECT_IS_INSTANCE` | | 178 | `CONST_ITEM_CLEAR` |
-| 516 | `OBJECT_IS_SUBCLASS` | | 178 | `PUSH_COLLECT` |
-| 513 | `CAR` | | 173 | `BUILD_LIST_APPEND_CONST` |
-| 513 | `CDR` | | 173 | `PUSH_CC` |
-| 503 | `CALL_FAST_NAMES` | | 169 | `THEEND` |
-| 498 | `FAST_LIST_APPEND` | | 167 | `YIELD` |
-| 491 | `CALL_ATTR_NAMES` | | 164 | `CALL` |
-| 474 | `FAST_ATTR_TAKE` | | 164 | `TAIL_CALL` |
-| 474 | `PUSH_SHIFT` | | 162 | `PARAM` |
-| 468 | `UNPACK` | | 162 | `VAR` |
-| 460 | `SWITCH_EQ_VAR_ATTR` | | 162 | `VAR_ATTR_CLEAR` |
-| 450 | `OBJECT_DIVMOD` | | 159 | `BUILD_LIST_CONST` |
-| 449 | `POP_DYN_WITH` | | 154 | `CONST` |
-| 447 | `CALL_NAMES` | | 154 | `FAST_REF` |
-| 445 | `BUILD_LIST_EXTEND_CONST` | | 154 | `PUSH_PARAM` |
-| 445 | `ITEM` | | 151 | `VAR_CLEAR` |
-| 445 | `VAR_LIST_APPEND` | | 146 | `FAST_TAKE` |
-| 442 | `ITEM_REF` | | 141 | `POP` |
-| 439 | `SWITCH_EQ_FAST` | | 135 | `PUSH_PROMPT` |
-| 429 | `CHECK_EXCEPTION` | | 124 | `VAR_OBJECT_INPLACE` |
-| 426 | `CALL_VAR_ATTR` | | 103 | `LOCALS` |
-| 420 | `BUILD_LIST_EXTEND` | | 103 | `VAR_STORE_CONST` |
-| 411 | `VAR_ATTR` | | 101 | `CLEAR_FOREACH` |
-| 410 | `ATTR_TAKE` | | 101 | `CLEAR_LOOP` |
-| 402 | `CONST_ITEM_TAKE` | | 88 | `CLEAR_FINALLY` |
-| 401 | `ATTR_INPLACE` | | 88 | `CLEAR_TRY` |
-| 399 | `CALL_VAR_NAMES` | | 78 | `FAST_OBJECT_INPLACE` |
-| 399 | `SWITCH_EQ` | | 76 | `PUSH_FINALLY` |
-| 397 | `OBJECT_STR` | | 76 | `PUSH_TRY` |
-| 395 | `EXCEPTION` | | 62 | `CHECK_EQ` |
-| 394 | `SWITCH_EQ_VAR` | | 62 | `CHECK_GE` |
-| 389 | `CALL_FAST` | | 62 | `CHECK_GT` |
-| 384 | `CONS` | | 62 | `CHECK_LE` |
-| 381 | `OBJECT_EQ` | | 62 | `CHECK_NE` |
-| 381 | `OBJECT_GE` | | 62 | `OBJECT_INPLACE` |
-| 381 | `OBJECT_GT` | | 62 | `OBJECT_OPERAND` |
-| 381 | `OBJECT_LE` | | 60 | `CHECK_IS_INSTANCE` |
-| 381 | `OBJECT_LT` | | 60 | `CHECK_IS_SUBCLASS` |
-| 381 | `OBJECT_NE` | | 59 | `CHECK_LT` |
-| 378 | `FAST_ATTR_REF` | | 59 | `OBJECT_IN` |
-| 378 | `VAR_ATTR_TAKE` | | 59 | `OBJECT_IS` |
-| 370 | `BREAK` | | 59 | `OBJECT_IS_NOT` |
-| 370 | `CONTINUE` | | 59 | `OBJECT_NOT_IN` |
-| 353 | `OBJECT_AITER` | | 58 | `CHECK_IS_NOT` |
-| 351 | `CALL_ATTR` | | 58 | `CHECK_NOT_IN` |
-| 349 | `ATTR_STORE` | | 56 | `DUP` |
-| 349 | `CONST_ITEM_STORE` | | 56 | `FAST_CLEAR` |
-| 333 | `VAR_BIND` | | 55 | `CHECK_IN` |
-| 330 | `BUILD_LIST_APPEND` | | 55 | `CHECK_IS` |
-| 329 | `ITEM_CLEAR` | | 52 | `EXCEPTION_CLEAR` |
-| 314 | `JUMP_AND` | | 52 | `POP_CC` |
-| 314 | `JUMP_OR` | | 52 | `POP_NS` |
-| 311 | `VAR_TAKE` | | 52 | `POP_PARAM` |
-| 301 | `FAST_STORE` | | 35 | `JUMP` |
-| 301 | `TAIL_CALL_NAMES` | | 28 | `LABEL` |
-| 296 | `ITEM_STORE` | | 28 | `NOOP` |
-| 293 | `BUILD_LIST` | | 28 | `POSITION` |
-| 293 | `CALL_VAR` | | 27 | `GLOBALS` |
-| 287 | `NILP` | |  |  |
+| 6,728 | `YIELD_FROM` | | 314 | `JUMP_AND` |
+| 1,845 | `NEXT` | | 314 | `JUMP_OR` |
+| 1,712 | `CALL_ATTR_STAR` | | 311 | `VAR_TAKE` |
+| 1,493 | `CALL_VAR_ATTR_STAR` | | 301 | `FAST_STORE` |
+| 1,417 | `PUSH_WIND` | | 301 | `TAIL_CALL_NAMES` |
+| 1,301 | `CALL_FAST_ATTR_STAR` | | 296 | `ITEM_STORE` |
+| 1,210 | `CALL_STAR` | | 293 | `BUILD_LIST` |
+| 1,210 | `TAIL_CALL_STAR` | | 293 | `CALL_VAR` |
+| 1,106 | `BUILD_CLASS` | | 287 | `NILP` |
+| 1,061 | `IMPORT_STAR` | | 287 | `OBJECT_COMPARE_VAR` |
+| 1,051 | `PAIR_SPLICE` | | 285 | `OBJECT_VARS` |
+| 1,043 | `COMBINE_ARGS` | | 279 | `SWITCH_EQ_CONST` |
+| 1,014 | `CALL_FAST_STAR` | | 277 | `BUILD_KWDS_NAMES` |
+| 928 | `CALL_VAR_STAR` | | 275 | `ATTR` |
+| 887 | `BUILD_FUNCTION` | | 275 | `ATTR_REF` |
+| 858 | `PUSH_NS` | | 275 | `CONST_ITEM` |
+| 848 | `PUSH_WITH` | | 275 | `CONST_ITEM_REF` |
+| 832 | `PUSH_DYN_WITH` | | 275 | `OBJECT_FORMAT_CONST` |
+| 821 | `UNPACK_STAR` | | 274 | `OBJECT_NOT` |
+| 811 | `UNPACK_FAST` | | 274 | `OBJECT_TRUTH` |
+| 809 | `FAST_ATTR_STORE` | | 273 | `POP_WIND` |
+| 745 | `IMPORT_FROM` | | 267 | `OBJECT_LEN` |
+| 738 | `COMBINE_KWDS` | | 261 | `POP_WITH` |
+| 733 | `RAISE` | | 259 | `VAR_ATTR_REF` |
+| 728 | `POP_SHIFT` | | 253 | `OBJECT_BIT_INVERT` |
+| 705 | `ITER_NEXT` | | 253 | `OBJECT_DIR` |
+| 680 | `CALL_FAST_ATTR_NAMES` | | 253 | `OBJECT_ITER` |
+| 679 | `CHECK_COMPARE_FAST` | | 253 | `OBJECT_REPR` |
+| 663 | `FAST_ATTR_INPLACE` | | 250 | `FAST_ATTR_CLEAR` |
+| 629 | `PUSH_FOREACH` | | 247 | `FAST_BIND` |
+| 595 | `OBJECT_FORMAT` | | 245 | `DEREF` |
+| 579 | `CALL_VAR_ATTR_NAMES` | | 239 | `OBJECT_TYPE` |
+| 569 | `FAST2` | | 236 | `POP_FOREACH` |
+| 557 | `POP_FINALLY` | | 234 | `VAR_REF` |
+| 550 | `VAR_ATTR_STORE` | | 231 | `GLOBALS` |
+| 546 | `EXCEPTION_MATCH` | | 228 | `POP_TRY` |
+| 543 | `SWITCH_EQ_FAST_ATTR` | | 226 | `VAR_STORE` |
+| 541 | `FAST_ATTR` | | 221 | `FAST` |
+| 540 | `UNPACK_VAR` | | 218 | `BUILD_ARGS` |
+| 539 | `PROPER` | | 218 | `BUILD_KWDS` |
+| 538 | `ITEM_TAKE` | | 215 | `PUSH_LOOP` |
+| 535 | `POP_PROMPT` | | 210 | `IMPORT` |
+| 530 | `VAR_ATTR_INPLACE` | | 205 | `AWAIT` |
+| 522 | `CALL_FAST_ATTR` | | 205 | `JUMP_FALSE` |
+| 513 | `CAR` | | 205 | `JUMP_TRUE` |
+| 513 | `CDR` | | 204 | `POP_LOOP` |
+| 503 | `CALL_FAST_NAMES` | | 202 | `POP_COLLECT` |
+| 498 | `FAST_LIST_APPEND` | | 191 | `CAPTURE_CC` |
+| 491 | `CALL_ATTR_NAMES` | | 191 | `FAST_STORE_CONST` |
+| 474 | `FAST_ATTR_TAKE` | | 183 | `RETURN` |
+| 474 | `PUSH_SHIFT` | | 182 | `CHECK_NIL` |
+| 468 | `UNPACK` | | 178 | `ATTR_CLEAR` |
+| 467 | `CHECK_COMPARE_VAR` | | 178 | `CONST_ITEM_CLEAR` |
+| 460 | `SWITCH_EQ_VAR_ATTR` | | 178 | `PUSH_COLLECT` |
+| 450 | `OBJECT_DIVMOD` | | 173 | `BUILD_LIST_APPEND_CONST` |
+| 449 | `POP_DYN_WITH` | | 173 | `PUSH_CC` |
+| 447 | `CALL_NAMES` | | 169 | `THEEND` |
+| 445 | `BUILD_LIST_EXTEND_CONST` | | 167 | `YIELD` |
+| 445 | `ITEM` | | 164 | `CALL` |
+| 445 | `VAR_LIST_APPEND` | | 164 | `TAIL_CALL` |
+| 442 | `ITEM_REF` | | 162 | `PARAM` |
+| 439 | `SWITCH_EQ_FAST` | | 162 | `VAR` |
+| 437 | `CHECK_COMPARE` | | 162 | `VAR_ATTR_CLEAR` |
+| 429 | `CHECK_EXCEPTION` | | 159 | `BUILD_LIST_CONST` |
+| 426 | `CALL_VAR_ATTR` | | 154 | `CONST` |
+| 423 | `FAST4` | | 154 | `FAST_REF` |
+| 420 | `BUILD_LIST_EXTEND` | | 154 | `PUSH_PARAM` |
+| 411 | `VAR_ATTR` | | 151 | `VAR_CLEAR` |
+| 410 | `ATTR_TAKE` | | 146 | `FAST_TAKE` |
+| 410 | `OBJECT_COMPARE` | | 141 | `POP` |
+| 402 | `CONST_ITEM_TAKE` | | 135 | `PUSH_PROMPT` |
+| 401 | `ATTR_INPLACE` | | 124 | `VAR_OBJECT_INPLACE` |
+| 399 | `CALL_VAR_NAMES` | | 103 | `LOCALS` |
+| 399 | `SWITCH_EQ` | | 103 | `VAR_STORE_CONST` |
+| 395 | `EXCEPTION` | | 101 | `CLEAR_FOREACH` |
+| 394 | `SWITCH_EQ_VAR` | | 101 | `CLEAR_LOOP` |
+| 389 | `CALL_FAST` | | 88 | `CLEAR_FINALLY` |
+| 384 | `CONS` | | 88 | `CLEAR_TRY` |
+| 381 | `OBJECT_STR` | | 78 | `FAST_OBJECT_INPLACE` |
+| 378 | `FAST_ATTR_REF` | | 76 | `PUSH_FINALLY` |
+| 378 | `VAR_ATTR_TAKE` | | 76 | `PUSH_TRY` |
+| 375 | `VAR4` | | 62 | `OBJECT_INPLACE` |
+| 371 | `VAR2` | | 62 | `OBJECT_OPERAND` |
+| 370 | `BREAK` | | 56 | `DUP` |
+| 370 | `CONTINUE` | | 56 | `FAST_CLEAR` |
+| 362 | `OBJECT_COMPARE_FAST` | | 52 | `EXCEPTION_CLEAR` |
+| 353 | `OBJECT_AITER` | | 52 | `POP_CC` |
+| 351 | `CALL_ATTR` | | 52 | `POP_NS` |
+| 349 | `ATTR_STORE` | | 52 | `POP_PARAM` |
+| 349 | `CONST_ITEM_STORE` | | 35 | `JUMP` |
+| 333 | `VAR_BIND` | | 28 | `LABEL` |
+| 330 | `BUILD_LIST_APPEND` | | 28 | `NOOP` |
+| 329 | `ITEM_CLEAR` | | 28 | `POSITION` |
 
 <!-- Regenerate: throwaway build with KOS_OP_INLINE = static KOS_NOINLINE (edit
      koskari/lib/hints.h), rebuild with `uv pip install -qe .`, then
