@@ -1256,7 +1256,7 @@ class Reader:
         sm('{', partial(self._read_thunk, '}'), True)
         sm('}', self._close_pair, True)
 
-        sm('"', self._read_kw_string, True)
+        sm('"', self._read_string, True)
         sm(';', self._read_comment, True)
 
         sm('f', self._read_fstring, False)
@@ -1722,28 +1722,6 @@ class Reader:
         return VALUE, res
 
 
-    def _read_kw_string(self, stream, char):
-        """
-        Read a string literal, absorbing a directly following ``:`` into a
-        keyword.
-
-        ``"foo bar":`` reads as the keyword named ``foo bar`` -- the quoted
-        analogue of the bare ``foo:`` keyword syntax, for names that cannot
-        be written as a bare keyword. The colon must abut the closing quote;
-        ``"foo" :`` reads as a plain string followed by a separate colon.
-
-        :param stream: the source stream
-        :param char: the quote character
-        :return: tuple of (VALUE, string or keyword)
-        """
-
-        event, value = self._read_string(stream, char)
-        if event is VALUE and stream.peek(1) == ':':
-            stream.read(1)
-            return VALUE, keyword(value)
-        return event, value
-
-
     def _read_3string(self, stream, char, with_escapes=True):
         """
         Read a triple-quoted string
@@ -2178,8 +2156,7 @@ class LayoutReader(Reader):
         sm('{', partial(inner._read_thunk, '}'), True)
         sm('}', inner._close_pair, True)
 
-        self.add_layout_event_macro('"', self._read_kw_string, True)
-        self.add_inner_event_macro('"', inner._read_kw_string, True)
+        sm('"', inner._read_string, True)
         sm(';', inner._read_comment, True)
 
         sm('f', inner._read_fstring, False)
@@ -2364,32 +2341,6 @@ class LayoutReader(Reader):
         """
 
         return COLON, symbol(':')
-
-
-    def _read_kw_string(self, stream, char):
-        """
-        Read a string literal in layout context.
-
-        Like :meth:`Reader._read_kw_string`, but at delimiter depth 0 a
-        structural header colon still opens a block: ``foo "a b":`` is a block
-        with the string ``a b`` as its argument, while ``foo "a b"::`` is a
-        block whose argument is the keyword ``a b`` (mirroring ``foo bar::``).
-        Inside delimiters the colon always binds, since it is never a block
-        opener there.
-
-        :param stream: the source stream
-        :param char: the quote character
-        :return: tuple of (VALUE, string or keyword)
-        """
-
-        event, value = self._inner._read_string(stream, char)
-        if event is VALUE and stream.peek(1) == ':':
-            structural = (self._header_scan
-                          and self._is_structural_colon_at_next(stream))
-            if not structural:
-                stream.read(1)
-                return VALUE, keyword(value)
-        return event, value
 
 
     def _layout_block_quote_predicate(self, stream, c, atom_prefix):
