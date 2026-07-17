@@ -77,9 +77,9 @@ define-class UiJob [Job]:
         (server.add-page prefix
             (lambda []
                 (_render env "dashboard.html"
-                    #{prefix: prefix
-                      jobs: (js.list-jobs)
-                      runs: (js.store.list-runs)})))
+                    #{"prefix": prefix
+                      "jobs": (js.list-jobs)
+                      "runs": (js.store.list-runs)})))
 
         ;; one run's detail (metadata + captured output + result)
         (server.add-page-item f"{prefix}/runs"
@@ -87,7 +87,7 @@ define-class UiJob [Job]:
                 (define detail (js.store.run-detail runid))
                 (if (None? detail)
                     (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
-                    (_render env "run.html" #{prefix: prefix run: detail}))))
+                    (_render env "run.html" #{"prefix": prefix "run": detail}))))
 
         ;; form actions -> act, then redirect back to the dashboard
         (server.add-action prefix "enable"

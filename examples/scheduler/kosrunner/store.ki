@@ -255,7 +255,11 @@ define-class RunStore []:
         (rundir.mkdir parents: True exist_ok: True)
 
         (self._write-json (rundir.joinpath "trigger.json")
-            #{job: job type: type cause: cause parent: parent args: args})
+            #{"job": job
+              "type": type
+              "cause": cause
+              "parent": parent
+              "args": args})
 
         (self._exec
             "INSERT INTO runs (run_id, job, job_dir, type, cause, parent, status, started_at) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)"
@@ -282,7 +286,9 @@ define-class RunStore []:
         when (not (None? log)):
             (self._write-text (rundir.joinpath "output.log") log)
         (self._write-json (rundir.joinpath "result.json")
-            #{status: status result: result error: error})
+            #{"status": status
+              "result": result
+              "error": error})
         (self._exec
             "UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE run_id = ?"
             #[status (_utcnow-iso) (if (None? error) None (str error)) runid])

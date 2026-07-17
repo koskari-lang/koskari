@@ -19,18 +19,18 @@ define-syntax define-route:
 
 define-route "/" home []:
     (print "-> home")
-    #{ok: True
-      message: "hello from Koskari"
-      routes: #["/" "/healthz" "/echo/{name}"]}
+    #{"ok": True
+      "message": "hello from Koskari"
+      "routes": #["/" "/healthz" "/echo/{name}"]}
 
 define-route "/healthz" healthz []:
     (print "-> healthz")
-    #{ok: True}
+    #{"ok": True}
 
 define-route "/echo/{name}" echo [name: "<anon>"]:
     (print "-> echo" name)
-    #{ok: True
-      echo: name}
+    #{"ok": True
+      "echo": name}
 
 
 ;; Server management

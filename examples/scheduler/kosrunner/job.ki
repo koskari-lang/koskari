@@ -187,9 +187,9 @@ define-class JobSet []:
 
     define list-jobs [self]:
         list-each [[name job] (self.jobs.items)]:
-            #{name: name
-              enabled: job.enabled
-              running: job.running}
+            #{"name": name
+              "enabled": job.enabled
+              "running": job.running}
 
 
     define enable [self name]:
@@ -218,16 +218,20 @@ define-class JobSet []:
 
         define trig (self.store.get-trigger runid)
         if (None? trig):
-            #{error: "no such run" run_id: runid}
+            #{"error": "no such run"
+              "run_id": runid}
         else:
             define jobname (item trig "job")
             define job (self.jobs.get jobname)
             if (None? job):
-                #{error: "unknown job" job: jobname}
+                #{"error": "unknown job"
+                  "job": jobname}
             else:
                 define args (or (item trig "args") #[])
                 (job.run *: args cause: "manual" parent: runid)
-                #{ok: True retriggered: runid job: jobname}
+                #{"ok": True
+                  "retriggered": runid
+                  "job": jobname}
 
 
     define start [self]:

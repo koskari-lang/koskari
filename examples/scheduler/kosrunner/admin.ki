@@ -47,11 +47,11 @@ define-class AdminJob [Job]:
         (server.add-listing prefix "jobs"
             (lambda [] (js.list-jobs)))
         (server.add-action prefix "enable"
-            (lambda [name] (js.enable name) #{enabled: name}))
+            (lambda [name] (js.enable name) #{"enabled": name}))
         (server.add-action prefix "disable"
-            (lambda [name] (js.disable name) #{disabled: name}))
+            (lambda [name] (js.disable name) #{"disabled": name}))
         (server.add-route prefix "shutdown"
-            (lambda [req] (js.shutdown) #{ok: True}))
+            (lambda [req] (js.shutdown) #{"ok": True}))
 
         ;; run history + replay
         (server.add-listing prefix "runs"
