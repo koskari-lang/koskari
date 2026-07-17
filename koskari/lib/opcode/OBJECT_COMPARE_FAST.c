@@ -14,24 +14,28 @@
 */
 
 /**
-   OBJECT_LE: arg unused. Pop right then left, push (left <= right).
+   OBJECT_COMPARE_FAST: arg = extra index. Schema CMP, CONST, FASTVAR,
+   CONST. The ternary bounds idiom (const < x < const): chain-compare
+   the three operands under the selector and push the chain result.
 */
 
-KOS_OP_HANDLER(OBJECT_LE) {
-  int count = (int) KosOp_ARG(insn);
+KOS_OP_HANDLER(OBJECT_COMPARE_FAST) {
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  PyObject *ns = CURRENT_NS();
+  KOS_OP_REQUIRE_NS(ns);
 
-  if (count < 2) {
-    PyErr_Format(PyExc_TypeError, "OBJECT_LE requires at least 2"
-                 " elements");
+  PyObject *ops[3];
+  ops[0] = KosEvalState_CONST(es, row.a1);   /* borrowed */
+  ops[2] = KosEvalState_CONST(es, row.a3);   /* borrowed */
+
+  ops[1] = kos_ns_fast_deref(ns, (size_t) row.a2);
+  if (! ops[1])
     return EVAL_RAISE();
-  }
 
-  PyObject *const *args = KosEvalState_StackTailPtr(es, count);
-  if (unlikely(! args))
-    return EVAL_RAISE();
+  PyObject *result = kos_compare_reduce((KosCompare) row.a0, ops, 3);
+  Py_DECREF(ops[1]);
 
-  PyObject *result = KosOperator_Le(args, count);
-  KosEvalState_StackDropNoErr(es, count);
   if (unlikely(! result))
     return EVAL_RAISE();
 

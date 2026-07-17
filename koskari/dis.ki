@@ -27,7 +27,7 @@ __self__ in a leading section).
 """
 
 
-import-from koskari.lib BoundMethod Code Expression Function NamespaceSpec OpCode OpStyle demand
+import-from koskari.lib BoundMethod Code Compare Expression Function NamespaceSpec OpCode OpStyle demand
 
 
 (declare-exports dis)
@@ -223,6 +223,53 @@ define _format_fast_part [val local_names closure_names]:
       f"fast {val}"
 
 
+define _compare_name [sel]:
+  """
+  Short display name for a Compare selector value (e.g. 5 -> "GE")
+  """
+
+  try:
+    define member (Compare sel)
+  except [#(ValueError)]:
+    return (str sel)
+  member.name.removeprefix "KOS_COMPARE_"
+
+
+define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
+  """
+  Render a CMPSRC row: the selector name, then each operand per its
+  source bit (constant pool when the bit is set, else the slot's
+  declared primary kind), then the jump target
+  """
+
+  define src (item ext 0)
+  define bits (// src 16)
+  define parts #[]
+  parts.append (_compare_name (% src 16))
+
+  define render_operand [slot_idx const_bit fk]:
+    define val (item ext slot_idx)
+    if const_bit:
+      if (and (<= 0 val) (< val (len cpool))):
+        parts.append f"c#{val} ({(_format_constant (item cpool val))})"
+      else:
+        parts.append (str val)
+    elif (equal? fk OpStyle.KOSTYLE_FASTVAR):
+      parts.append (_format_fast_part val local_names closure_names)
+    else:
+      if (and (<= 0 val) (< val (len cpool))):
+        parts.append f"v#{val} ({(repr (item cpool val))})"
+      else:
+        parts.append (str val)
+
+  render_operand 1 (% bits 2) (item schema 1)
+  render_operand 2 (% (// bits 2) 2) (item schema 2)
+  parts.append f"-> {(item ext 3)}"
+
+  define joined (.join ", " parts)
+  f"{arg} ({joined})"
+
+
 define _format_arg [code op_style arg cpool local_names closure_names
                     ns_label: None extra_schema: None]:
   """
@@ -254,6 +301,10 @@ define _format_arg [code op_style arg cpool local_names closure_names
           except [#(IndexError TypeError)]:
             return (str arg)
 
+          if (equal? (item schema 0) OpStyle.KOSTYLE_CMPSRC):
+            return (_format_cmpsrc_row arg ext schema cpool
+                                       local_names closure_names)
+
           define parts #[]
           for-each [[val fk] (zip ext schema)]:
             if (or (equal? fk OpStyle.KOSTYLE_CONST) (equal? fk OpStyle.KOSTYLE_VAR)):
@@ -274,6 +325,8 @@ define _format_arg [code op_style arg cpool local_names closure_names
               parts.append (_format_fast_part val local_names closure_names)
             elif (equal? fk OpStyle.KOSTYLE_COUNT):
               parts.append (str val)
+            elif (equal? fk OpStyle.KOSTYLE_CMP):
+              parts.append (_compare_name val)
             elif (equal? fk OpStyle.KOSTYLE_LABEL):
               parts.append f"-> {val}"
             else:
@@ -317,6 +370,10 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
     case [OpStyle.KOSTYLE_LABEL]:
       return f"{arg} (-> {arg})"
+
+    case [OpStyle.KOSTYLE_CMPCOUNT]:
+      define sc (divmod arg 256)
+      return f"{arg} ({(_compare_name (item sc 0))} x{(item sc 1)})"
 
     case [OpStyle.KOSTYLE_COUNT
           OpStyle.KOSTYLE_PAIR_COUNT

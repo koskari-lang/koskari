@@ -25,6 +25,7 @@ import unittest
 
 from koskari.lib import (
     Code,
+    Compare,
     NamespaceSpec,
     OpCode,
     Operand,
@@ -76,6 +77,14 @@ _OPERAND_LOWER = {
 _OPERAND_LOWER.update({
     "OBJECT_INPLACE_" + suffix: (operand, "OBJECT_INPLACE")
     for suffix, operand in _OPERAND_BY_NAME.items()
+})
+
+# The per-comparison opcodes were likewise consolidated into the
+# selector-keyed OBJECT_COMPARE; the same sugar applies (arg = count,
+# packed with the Compare selector into a CMPCOUNT arg).
+_OPERAND_LOWER.update({
+    "OBJECT_" + suffix: (Compare["KOS_COMPARE_" + suffix], "OBJECT_COMPARE")
+    for suffix in ("EQ", "NE", "LT", "LE", "GT", "GE")
 })
 
 
@@ -143,8 +152,13 @@ def build_expr(code, local_syms=None, closure_syms=None, values=None, name="expr
     """
 
     if values:
-        syms = set(local_syms or ()) | set(closure_syms or ()) | set(values.keys())
-        local_syms = tuple(syms)
+        # ordered dedup: a set here would make slot assignment follow
+        # PYTHONHASHSEED, turning any test that hardcodes fast slot
+        # indices into a per-run coin flip
+        merged = dict.fromkeys(local_syms or ())
+        merged.update(dict.fromkeys(closure_syms or ()))
+        merged.update(dict.fromkeys(values.keys()))
+        local_syms = tuple(merged)
     c = build_code(code, local_syms=local_syms, closure_syms=closure_syms, name=name)
     nspec = NamespaceSpec(None, local_syms, closure_syms)
     ns = nspec.get_namespace(None)

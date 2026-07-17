@@ -1363,75 +1363,6 @@ static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
 */
 
 
-/* Pop right (container) then left (item); PySequence_Contains(right, left).
-   Branch to KosOp_ARG(insn) when cmp == branch_when (CHECK_IN: 0,
-   CHECK_NOT_IN: 1). */
-static int kos_check_contains(
-    KosEvalState *es,
-    KosOp *insn,
-    int branch_when) {
-
-  KosEvalStackLR lr = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, lr))
-    return -1;
-
-  int cmp = PySequence_Contains(lr.right, lr.left);
-  Py_DECREF(lr.left);
-  Py_DECREF(lr.right);
-  if (unlikely(cmp < 0))
-    return -1;
-
-  if (cmp == branch_when)
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
-
-  return 0;
-}
-
-
-/* Pop right then left; branch to KosOp_ARG(insn) when (left == right) == branch_when_equal
-   (CHECK_IS: 0 so branch when not equal; CHECK_IS_NOT: 1 so branch when equal). */
-static int kos_check_identity(
-    KosEvalState *es,
-    KosOp *insn,
-    int branch_when_equal) {
-
-  KosEvalStackLR lr = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, lr))
-    return -1;
-
-  int cmp = (lr.left == lr.right);
-  Py_DECREF(lr.left);
-  Py_DECREF(lr.right);
-  if (cmp == branch_when_equal)
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
-
-  return 0;
-}
-
-
-/* Pop right then left; call check(left, right). Branch to KosOp_ARG(insn) when res == 0. */
-static int kos_check_two_arg(
-    KosEvalState *es,
-    KosOp *insn,
-    int (*check)(PyObject *, PyObject *)) {
-
-  KosEvalStackLR lr = {0};
-  if (KOS_EVALSTATE_POP_ARGS(es, lr))
-    return -1;
-
-  int res = check(lr.left, lr.right);
-  Py_DECREF(lr.left);
-  Py_DECREF(lr.right);
-  if (unlikely(res < 0))
-    return -1;
-
-  if (res == 0)
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
-
-  return 0;
-}
-
-
 /* Pop one value; branch to KosOp_ARG(insn) when it is NOT an empty-list
    singleton (nil or bracket-nil) — the squashed form of NILP followed
    by JUMP_FALSE. */
@@ -1448,42 +1379,6 @@ static int kos_check_nil(
 
   if (! is_nil)
     KosEvalState_SET_PC(es, KosOp_ARG(insn));
-
-  return 0;
-}
-
-
-/* Helper for CHECK_EQ/GE/GT/LE/LT/NE: EXTRA row is (COUNT, LABEL). Peek the
-   top COUNT operands and chain-compare them left-to-right with RichCompareBool;
-   jump to the LABEL target if the chain fails (any adjacent pair compares
-   false). The operands are dropped either way. */
-static int kos_check_cmp(
-    KosEvalState *es,
-    KosOp *insn,
-    int cmp_op) {
-
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  size_t count = (size_t) row.a0;
-
-  PyObject *const *args = KosEvalState_StackTailPtr(es, count);
-  if (unlikely(! args))
-    return -1;
-
-  int res = 1;
-  for (size_t i = 1; i < count; i++) {
-    res = PyObject_RichCompareBool(args[i - 1], args[i], cmp_op);
-    if (res <= 0)
-      break;
-  }
-
-  KosEvalState_StackDropNoErr(es, count);
-
-  if (res < 0)
-    return -1;
-
-  if (res == 0)
-    KosEvalState_SET_PC(es, row.a1);
 
   return 0;
 }

@@ -1,8 +1,59 @@
 # Comparison Unification: CHECK_COMPARE, OBJECT_COMPARE, and Fused Source Variants
 
-**Status: DESIGN (2026-07-16). Not yet implemented. Follows the
-call-unification playbook: strict phases, measure gates between them,
-each phase committed and reviewed before the next begins.**
+**Status: Phase 1 COMPLETE (2026-07-17, branch `check_cmp`). The 24
+comparison opcodes are deleted; CHECK_COMPARE / OBJECT_COMPARE carry
+the whole surface on the KosCompare selector. Suite 4725/10 green.
+Dispatch fn 66,045 -> 63,579 B (-3.7%). Gate note: the first
+measurement showed method +9.5% -- the chain core had become an
+out-of-line cross-TU call where kos_check_cmp used to inline; moving
+the richcompare-six fast path into operator.h as static inline (cold
+extern tail for the extended selectors) recovered it to +6%, with
+loop (4x the CHECK_LT volume) at only +1.4% -- the differential
+pins the residual on method's documented layout sensitivity, and P2
+replaces this exact sequence at loop heads anyway. Phase 2 COMPLETE
+(same day): CMPSRC kind with the schema-override model (operand slots
+declare their primary kind, a set source bit overrides to CONST);
+fuse_check_feeders late sweep (before pack_var_runs, POSITION-tolerant)
+emits CHECK_COMPARE_VAR; CMPSRC-aware convert_fast lowers to
+CHECK_COMPARE_FAST. Every churn loop head is now one dispatch. Churn
+vs the pre-unification baseline: loop -1.3%, tree -2.4%, branch -1.1%,
+method -7.1% (10.21s, its best-ever reading; the P1 layout residual
+inverted). Suite 4745/10. Phase 3 COMPLETE
+(same day): OBJECT_COMPARE_VAR/_FAST with pure CMP and schema-static
+slots -- zero new generic-machinery logic, exactly as designed;
+fuse_check_feeders grew the two ternary patterns (value position:
+4 dispatches -> 1; branch position: the arity-3 CHECK_COMPARE splits
+back into bool + JUMP_FALSE, 5 -> 2 vs pre-unification). One gotcha
+recorded below in Implementation notes (VAR_TO_FAST builder). Full
+suite 4762/10 stable across repeated runs; churn regression-free
+(branch 9.45s, loop 16.67s best). Dispatch fn 65,435 B -- still under
+the 66,045 pre-branch baseline with both fused hot handlers inline.**
+
+## Implementation notes (recorded at completion)
+
+- **Schema-override model for CMPSRC** (refinement over the original
+  "neutral raw kind" plan): the fused CHECK pair's operand slots
+  declare their primary kind (VAR / FASTVAR) in the schema and a set
+  source bit overrides that slot to CONST. collect/soften got one
+  shared pre-step; the label map, opgrams, and most of dis stayed
+  fully generic.
+- **`_build_var_to_fast` only auto-pairs names starting with
+  `KOS_OP_FAST` / `KOS_OP_CALL_FAST`.** Trailing-FAST twins
+  (OBJECT_COMPARE_FAST, like SWITCH_EQ_FAST before it) need an
+  explicit map entry -- forgetting one silently leaves the VAR form
+  unlowered. CHECK_COMPARE_VAR does not ride the map at all (its
+  CMPSRC-aware convert_fast case is explicit).
+- **Out-of-line core regression (Phase 1)**: moving kos_check_cmp's
+  logic to operator.c made it a real cross-TU call; method paid ~9%
+  until the richcompare-six chain went static-inline in operator.h
+  with a cold extern tail. Lesson for future unifications: the hot
+  arm of a selector core must stay inline at the dispatch site.
+- **Harness flake unmasked (not a memory error -- verified)**: the
+  first fused-handler test exposed build_expr's values= path building
+  local_syms through a set, making slot order follow PYTHONHASHSEED
+  (which tox randomizes per run). Proven by perfect seed/outcome
+  correlation (stable within seed, flipping across seeds) plus a
+  clean ASAN pass; fixed with ordered dedup in the harness.
 
 ## Purpose
 

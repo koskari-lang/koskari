@@ -14,15 +14,18 @@
 */
 
 /**
-   OBJECT_NE: arg unused. Pop right then left, push (left != right).
+   OBJECT_COMPARE: arg = CMPCOUNT (KosCompare selector high byte, reduce
+   count low byte). Chain-compare the top COUNT operands under the
+   selector and push the result.
 */
 
-KOS_OP_HANDLER(OBJECT_NE) {
-  int count = (int) KosOp_ARG(insn);
+KOS_OP_HANDLER(OBJECT_COMPARE) {
+  uint16_t arg = KosOp_ARG(insn);
+  size_t count = (size_t) KosCmpCount_COUNT(arg);
 
-  if (count < 2) {
-    PyErr_Format(PyExc_TypeError, "OBJECT_NE requires at least 2"
-                 " elements");
+  if (unlikely(count < 2)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "OBJECT_COMPARE requires at least 2 elements");
     return EVAL_RAISE();
   }
 
@@ -30,8 +33,10 @@ KOS_OP_HANDLER(OBJECT_NE) {
   if (unlikely(! args))
     return EVAL_RAISE();
 
-  PyObject *result = KosOperator_Ne(args, count);
+  PyObject *result = kos_compare_reduce(
+      (KosCompare) KosCmpCount_SEL(arg), args, count);
   KosEvalState_StackDropNoErr(es, count);
+
   if (unlikely(! result))
     return EVAL_RAISE();
 

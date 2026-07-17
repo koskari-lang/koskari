@@ -1,0 +1,43 @@
+;; Full-stack reproducer: comparison fusion. Loop heads compile to a
+;; single CHECK_COMPARE_FAST dispatch; the bounds idiom compiles to the
+;; bool-producing OBJECT_COMPARE_FAST (plus JUMP_FALSE in branch
+;; position); results stay correct through the fused paths.
+
+
+define count_below [n]:
+    define i 0
+    define total 0
+    while (< i n):
+        set! total (+ total i)
+        set! i (+ i 1)
+    total
+
+
+define bounded [x]:
+    if (< 0 x 100):
+        "in"
+    else:
+        "out"
+
+
+define bounded_value [x]:
+    (<= 0 x 9)
+
+
+define verify_loop []:
+    equal? (count_below 10) 45
+
+
+define verify_bounds []:
+    and:
+        equal? (bounded 50) "in"
+        equal? (bounded 200) "out"
+        equal? (bounded -1) "out"
+        equal? (bounded 0) "out"
+        equal? (bounded 100) "out"
+
+
+define verify_bounds_value []:
+    and:
+        equal? (bounded_value 5) True
+        equal? (bounded_value 50) False

@@ -29,8 +29,8 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Arena, Operand, Code, FormalsSpec, FunctionSpec, Module,
-                   ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
+from ..lib import (Arena, Compare, Operand, Code, FormalsSpec, FunctionSpec,
+                   Module, ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, nil, symbol)
 from ..types import is_nil, get_position, is_pair, is_proper, is_symbol
@@ -79,6 +79,7 @@ def _build_var_to_fast():
     var_to_fast[OpCode.KOS_OP_UNPACK_VAR] = OpCode.KOS_OP_UNPACK_FAST
     var_to_fast[OpCode.KOS_OP_SWITCH_EQ_VAR] = OpCode.KOS_OP_SWITCH_EQ_FAST
     var_to_fast[OpCode.KOS_OP_SWITCH_EQ_VAR_ATTR] = OpCode.KOS_OP_SWITCH_EQ_FAST_ATTR
+    var_to_fast[OpCode.KOS_OP_OBJECT_COMPARE_VAR] = OpCode.KOS_OP_OBJECT_COMPARE_FAST
 
     return var_to_fast
 
@@ -124,6 +125,68 @@ def merge_opcount(value):
         raise ValueError("opcount count out of byte range: %r" % (count,))
 
     return (op_type << 8) | count
+
+
+_COMPARE_COUNT = len(Compare)
+
+
+def merge_cmpcount(value):
+    """
+    Normalize a KOSTYLE_CMPCOUNT operand to its merged uint16 (Compare
+    selector in the high byte, reduce count in the low byte). The
+    CMPCOUNT twin of merge_opcount: accepts a (selector, count) pair or
+    a pre-merged int, both range- and selector-checked.
+
+    :param value: (selector, count) pair, or a pre-merged int
+    :return: merged uint16 int
+    :raises ValueError: on a bad shape, out-of-range byte, or unknown selector
+    """
+
+    if isinstance(value, tuple):
+        if len(value) != 2:
+            raise ValueError("cmpcount operand must be (selector, count), "
+                             "got %r" % (value,))
+        sel, count = value
+        sel = int(getattr(sel, 'value', sel))
+        count = int(count)
+    else:
+        merged = int(value)
+        if not 0 <= merged <= 0xffff:
+            raise ValueError("cmpcount int out of uint16 range: %r" % (value,))
+        sel, count = merged >> 8, merged & 0xff
+
+    if not 0 <= sel < _COMPARE_COUNT:
+        raise ValueError("cmpcount selector is not a known Compare: %r" % (sel,))
+    if not 0 <= count <= 0xff:
+        raise ValueError("cmpcount count out of byte range: %r" % (count,))
+
+    return (sel << 8) | count
+
+
+def split_cmpcount(value):
+    """
+    Split a CMPCOUNT operand -- (selector, count) pair or merged int --
+    into a validated (selector, count) int pair.
+    """
+
+    merged = merge_cmpcount(value)
+    return (merged >> 8, merged & 0xff)
+
+
+# CMPSRC packing (mirrors the KosCmpSrc_* macros in bytecode.h):
+# selector in bits 0-3, per-operand constant-source bits above.
+CMPSRC_X_CONST = 0x10
+CMPSRC_Y_CONST = 0x20
+
+
+def make_cmpsrc(sel, x_const, y_const):
+    """
+    Pack a CMPSRC field from a Compare selector and two source flags
+    """
+
+    return ((int(getattr(sel, 'value', sel)) & 0x0f)
+            | (CMPSRC_X_CONST if x_const else 0)
+            | (CMPSRC_Y_CONST if y_const else 0))
 
 
 _TAIL_CALL_TO_CALL = {
@@ -455,25 +518,9 @@ class CompilerMode(IntEnum):
 
 
 _CHECK_SQUASHES = {
-    OpCode.KOS_OP_OBJECT_IN: OpCode.KOS_OP_CHECK_IN,
-    OpCode.KOS_OP_OBJECT_NOT_IN: OpCode.KOS_OP_CHECK_NOT_IN,
-    OpCode.KOS_OP_OBJECT_IS: OpCode.KOS_OP_CHECK_IS,
-    OpCode.KOS_OP_OBJECT_IS_NOT: OpCode.KOS_OP_CHECK_IS_NOT,
-    OpCode.KOS_OP_OBJECT_IS_INSTANCE: OpCode.KOS_OP_CHECK_IS_INSTANCE,
-    OpCode.KOS_OP_OBJECT_IS_SUBCLASS: OpCode.KOS_OP_CHECK_IS_SUBCLASS,
     OpCode.KOS_OP_OBJECT_NOT: OpCode.KOS_OP_JUMP_TRUE,
     OpCode.KOS_OP_EXCEPTION_MATCH: OpCode.KOS_OP_CHECK_EXCEPTION,
     OpCode.KOS_OP_NILP: OpCode.KOS_OP_CHECK_NIL,
-}
-
-
-_CHECK_VAR_SQUASHES = {
-    OpCode.KOS_OP_OBJECT_GE: OpCode.KOS_OP_CHECK_GE,
-    OpCode.KOS_OP_OBJECT_LE: OpCode.KOS_OP_CHECK_LE,
-    OpCode.KOS_OP_OBJECT_LT: OpCode.KOS_OP_CHECK_LT,
-    OpCode.KOS_OP_OBJECT_GT: OpCode.KOS_OP_CHECK_GT,
-    OpCode.KOS_OP_OBJECT_EQ: OpCode.KOS_OP_CHECK_EQ,
-    OpCode.KOS_OP_OBJECT_NE: OpCode.KOS_OP_CHECK_NE,
 }
 
 
@@ -911,14 +958,14 @@ class Compiler:
                     del squished[-1]
                     op = _CHECK_SQUASHES[prior]
 
-                elif prior in _CHECK_VAR_SQUASHES:
-                    # here we're combining a var operand with a jump
-                    # into a single check jump. The CHECK variation only
-                    # takes two operands, so we need to pop the second one.
-
+                elif prior == OpCode.KOS_OP_OBJECT_COMPARE:
+                    # fuse the compare with its jump: CHECK_COMPARE
+                    # branches on chain failure, carrying the selector,
+                    # count, and target in one EXTRA row
                     del squished[-1]
-                    op = _CHECK_VAR_SQUASHES[prior]
-                    arg = (prior_arg, arg, None, None)
+                    sel, cnt = split_cmpcount(prior_arg)
+                    op = OpCode.KOS_OP_CHECK_COMPARE
+                    arg = (sel, cnt, arg, None)
 
             elif op == OpCode.KOS_OP_SWITCH_EQ:
                 prior = squished[-1]
@@ -985,7 +1032,114 @@ class Compiler:
             # remove
             squished = squished[1:]
 
-        return self.pack_var_runs(squished)
+        return self.pack_var_runs(self.fuse_check_feeders(squished))
+
+
+    def fuse_check_feeders(self, instr):
+        """
+        Late sweep: absorb the operand feeders of comparison rows. Two
+        patterns, both requiring the immediately preceding value rows to
+        be bare VAR or CONST loads (POSITION rows are transparent -- the
+        fused row keeps the position in effect at the first feeder, and
+        the latest interior position is re-emitted after the row):
+
+        - arity-2 CHECK_COMPARE (not both feeders CONST -- that is a
+          folding case): the trio collapses into CHECK_COMPARE_VAR with
+          a CMPSRC field carrying the selector and per-operand source
+          bits.
+        - the ternary bounds shape CONST / VAR / CONST feeding an
+          arity-3 comparison: collapses into the bool-producing
+          OBJECT_COMPARE_VAR. In branch position (an arity-3
+          CHECK_COMPARE) the row cannot also carry the label -- five
+          fields -- so the check splits back into OBJECT_COMPARE_VAR
+          plus JUMP_FALSE.
+
+        The fast pass later lowers both VAR forms to their FAST twins.
+        Runs before pack_var_runs so fusion gets first claim on the
+        feeders.
+        """
+
+        result = []
+        feeders = (OpCode.KOS_OP_VAR, OpCode.KOS_OP_CONST)
+
+        def scan_back(want):
+            # feeder indices (nearest first) and interior POSITION rows
+            found = []
+            pos_rows = []
+            i = len(result) - 1
+            while i >= 0 and len(found) < want:
+                rop = result[i][0]
+                if rop == OpCode.KOS_OP_POSITION:
+                    pos_rows.append(i)
+                elif rop in feeders:
+                    found.append(i)
+                else:
+                    break
+                i -= 1
+            return (found if len(found) == want else None), pos_rows
+
+        def splice(start, pos_rows, rows):
+            trailing = result[max(pos_rows)] if pos_rows else None
+            del result[start:]
+            result.extend(rows)
+            if trailing is not None:
+                result.append(trailing)
+
+        def ternary_shape(found):
+            # bounds shape: CONST below, VAR middle, CONST on top
+            hi_op = result[found[0]][0]
+            mid_op = result[found[1]][0]
+            lo_op = result[found[2]][0]
+            return (lo_op == OpCode.KOS_OP_CONST
+                    and mid_op == OpCode.KOS_OP_VAR
+                    and hi_op == OpCode.KOS_OP_CONST)
+
+        for op, arg in instr:
+            if op == OpCode.KOS_OP_CHECK_COMPARE and arg[1] == 2:
+                found, pos_rows = scan_back(2)
+                if found:
+                    y_op, y_arg = result[found[0]]
+                    x_op, x_arg = result[found[1]]
+                    x_const = x_op == OpCode.KOS_OP_CONST
+                    y_const = y_op == OpCode.KOS_OP_CONST
+                    if not (x_const and y_const):
+                        sel, _cnt, label, _pad = arg
+                        splice(found[1], pos_rows, [(
+                            OpCode.KOS_OP_CHECK_COMPARE_VAR,
+                            (make_cmpsrc(sel, x_const, y_const),
+                             x_arg, y_arg, label))])
+                        continue
+
+            elif op == OpCode.KOS_OP_CHECK_COMPARE and arg[1] == 3:
+                found, pos_rows = scan_back(3)
+                if found and ternary_shape(found):
+                    sel, _cnt, label, _pad = arg
+                    lo = result[found[2]][1]
+                    mid = result[found[1]][1]
+                    hi = result[found[0]][1]
+                    splice(found[2], pos_rows, [
+                        (OpCode.KOS_OP_OBJECT_COMPARE_VAR,
+                         (sel, lo, mid, hi)),
+                        (OpCode.KOS_OP_JUMP_FALSE, label),
+                    ])
+                    continue
+
+            elif op == OpCode.KOS_OP_OBJECT_COMPARE:
+                sel, cnt = split_cmpcount(arg)
+                if cnt == 3:
+                    found, pos_rows = scan_back(3)
+                    if found and ternary_shape(found):
+                        lo = result[found[2]][1]
+                        mid = result[found[1]][1]
+                        hi = result[found[0]][1]
+                        splice(found[2], pos_rows, [(
+                            OpCode.KOS_OP_OBJECT_COMPARE_VAR,
+                            (sel, lo, mid, hi))])
+                        continue
+
+            result.append((op, arg))
+
+        return result
 
 
     def pack_var_runs(self, instr):
@@ -1037,17 +1191,20 @@ class Compiler:
 
     def normalize_opcount(self, instr):
         """
-        Merge every KOSTYLE_OPCOUNT operand to its packed uint16. Specials may
-        emit an (op_type, count) pair or a pre-merged int; merge_opcount
-        accepts and validates both. Runs unconditionally, independent of the
-        optional convert_fast lowering (which only relabels VAR->FAST and
-        leaves non-VAR fields, including a merged OPCOUNT, untouched).
+        Merge every KOSTYLE_OPCOUNT and KOSTYLE_CMPCOUNT operand to its
+        packed uint16. Specials may emit a (selector, count) pair or a
+        pre-merged int; the merge helpers accept and validate both. Runs
+        unconditionally, independent of the optional convert_fast lowering
+        (which only relabels VAR->FAST and leaves non-VAR fields, including
+        merged OPCOUNT/CMPCOUNT args, untouched).
         """
 
         result = []
         for op, arg in instr:
             if op.style == OpStyle.KOSTYLE_OPCOUNT:
                 arg = merge_opcount(arg)
+            elif op.style == OpStyle.KOSTYLE_CMPCOUNT:
+                arg = merge_cmpcount(arg)
             elif (op.style == OpStyle.KOSTYLE_EXTRA
                   and OpStyle.KOSTYLE_OPCOUNT in op.extra):
                 arg = tuple(
@@ -1109,6 +1266,20 @@ class Compiler:
 
             elif op in (OpCode.KOS_OP_POP_NS, OpCode.KOS_OP_POP_COLLECT):
                 pop_nspec()
+
+            elif nstack and op == OpCode.KOS_OP_CHECK_COMPARE_VAR:
+                # CMPSRC row: slot kinds are data-dependent (a set source
+                # bit means CONST, else the declared VAR kind), so the
+                # generic schema-driven lowering below cannot apply. Lower
+                # each name-sourced slot to its fast index; all-or-nothing
+                # as usual, const-bit slots pass through untouched.
+                cmpsrc, x, y, label = arg
+                nx = x if (cmpsrc & CMPSRC_X_CONST) else fast_slot(x)
+                ny = y if (cmpsrc & CMPSRC_Y_CONST) else fast_slot(y)
+                if (((cmpsrc & CMPSRC_X_CONST) or nx >= 0)
+                        and ((cmpsrc & CMPSRC_Y_CONST) or ny >= 0)):
+                    op = OpCode.KOS_OP_CHECK_COMPARE_FAST
+                    arg = (cmpsrc, nx, ny, label)
 
             elif nstack and op in VAR_TO_FAST:
                 # If opcode style is EXTRA, use op.extra as the schema tuple

@@ -27,12 +27,12 @@ adjacent pair must satisfy the relation).
 
 | Surface | Aliases | Opcode | Chained semantics |
 | ------- | ------- | ------ | ----------------- |
-| `==` | `equal?` | `OBJECT_EQ` | `A == B == ...` |
-| `!=` | `not-equal?` | `OBJECT_NE` | `A != B != ...` |
-| `<` | `lt?` | `OBJECT_LT` | `A < B < ...` |
-| `<=` | `le?` | `OBJECT_LE` | `A <= B <= ...` |
-| `>` | `gt?` | `OBJECT_GT` | `A > B > ...` |
-| `>=` | `ge?` | `OBJECT_GE` | `A >= B >= ...` |
+| `==` | `equal?` | `OBJECT_COMPARE` (EQ) | `A == B == ...` |
+| `!=` | `not-equal?` | `OBJECT_COMPARE` (NE) | `A != B != ...` |
+| `<` | `lt?` | `OBJECT_COMPARE` (LT) | `A < B < ...` |
+| `<=` | `le?` | `OBJECT_COMPARE` (LE) | `A <= B <= ...` |
+| `>` | `gt?` | `OBJECT_COMPARE` (GT) | `A > B > ...` |
+| `>=` | `ge?` | `OBJECT_COMPARE` (GE) | `A >= B >= ...` |
 
 ```koskari
 (< 0 1 2 3)      ; true

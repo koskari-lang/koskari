@@ -14,15 +14,19 @@
 */
 
 /**
-   OBJECT_LT: arg unused. Pop right then left, push (left < right).
+   CHECK_COMPARE: arg = extra index. Schema CMP (KosCompare selector),
+   COUNT, LABEL. Chain-compare the top COUNT operands under the selector;
+   jump to LABEL if the chain fails. The operands are dropped either way.
 */
 
-KOS_OP_HANDLER(OBJECT_LT) {
-  int count = (int) KosOp_ARG(insn);
+KOS_OP_HANDLER(CHECK_COMPARE) {
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  size_t count = (size_t) row.a1;
 
-  if (count < 2) {
-    PyErr_Format(PyExc_TypeError, "OBJECT_LT requires at least 2"
-                 " elements");
+  if (unlikely(count < 2)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "CHECK_COMPARE requires at least 2 elements");
     return EVAL_RAISE();
   }
 
@@ -30,12 +34,16 @@ KOS_OP_HANDLER(OBJECT_LT) {
   if (unlikely(! args))
     return EVAL_RAISE();
 
-  PyObject *result = KosOperator_Lt(args, count);
+  int res = kos_compare_chain((KosCompare) row.a0, args, count);
   KosEvalState_StackDropNoErr(es, count);
-  if (unlikely(! result))
+
+  if (unlikely(res < 0))
     return EVAL_RAISE();
 
-  return kos_op_result_PUSH(es, result);
+  if (res == 0)
+    KosEvalState_SET_PC(es, row.a2);
+
+  return EVAL_NORMAL();
 }
 
 

@@ -6,7 +6,7 @@
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
-- [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
+- [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
@@ -59,16 +59,9 @@
 | JUMP_TRUE | LABEL | Jump if TOS true | [§8](#kos_op_jump_true) |
 | JUMP_AND | LABEL | Short-circuit AND | [§8](#kos_op_jump_and) |
 | JUMP_OR | LABEL | Short-circuit OR | [§8](#kos_op_jump_or) |
-| CHECK_EQ | EXTRA | Chain-compare N operands with `==`; jump if chain fails | [§9](#kos_op_check_eq) |
-| CHECK_NE | EXTRA | Chain-compare N operands with `!=`; jump if chain fails | [§9](#kos_op_check_ne) |
-| CHECK_LT | EXTRA | Chain-compare N operands with `<`; jump if chain fails | [§9](#kos_op_check_lt) |
-| CHECK_LE | EXTRA | Chain-compare N operands with `<=`; jump if chain fails | [§9](#kos_op_check_le) |
-| CHECK_GT | EXTRA | Chain-compare N operands with `>`; jump if chain fails | [§9](#kos_op_check_gt) |
-| CHECK_GE | EXTRA | Chain-compare N operands with `>=`; jump if chain fails | [§9](#kos_op_check_ge) |
-| CHECK_IN | LABEL | Jump if value not in container | [§9](#kos_op_check_in) |
-| CHECK_NOT_IN | LABEL | Jump if value in container | [§9](#kos_op_check_not_in) |
-| CHECK_IS | LABEL | Jump if left is not right | [§9](#kos_op_check_is) |
-| CHECK_IS_NOT | LABEL | Jump if left is right | [§9](#kos_op_check_is_not) |
+| CHECK_COMPARE | EXTRA | Chain-compare N operands under a KosCompare selector; jump if chain fails | [§9](#kos_op_check_compare) |
+| CHECK_COMPARE_VAR | EXTRA | Arity-2 fused check; operands from VAR/CONST per CMPSRC bits | [§9](#kos_op_check_compare_var) |
+| CHECK_COMPARE_FAST | EXTRA | Arity-2 fused check; operands from FAST/CONST per CMPSRC bits | [§9](#kos_op_check_compare_fast) |
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
 | SWITCH_EQ | LABEL | Equality dispatch; on match pop both and jump; on mismatch pop key only, fall through | [§9.1](#kos_op_switch_eq) |
 | SWITCH_EQ_CONST | EXTRA | Compare TOS to constant RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_const) |

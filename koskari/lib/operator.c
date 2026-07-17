@@ -740,6 +740,123 @@ PyObject *kos_inplace_reduce(
 }
 
 
+/* === Comparison dispatch === */
+
+
+/* Display names for the richcompare selectors, indexed by KosCompare
+   ordinal (== Py_LT..Py_GE). */
+static const char *compare_names[] = {
+  "<", "<=", "==", "!=", ">", ">=",
+};
+
+
+/* Arity-2 guard shared by the extended comparison selectors. */
+static int compare_require_2(KosCompare sel, size_t count) {
+  if (count != 2) {
+    PyErr_Format(PyExc_TypeError, "comparison selector %i requires 2"
+                 " positional arguments", (int) sel);
+    return -1;
+  }
+  return 0;
+}
+
+
+/* Cold extended tail of kos_compare_chain (see operator.h): everything
+   past the richcompare six. */
+KOS_NOINLINE int kos_compare_chain_ext(
+    KosCompare sel,
+    PyObject *const *args,
+    size_t count) {
+
+  switch (sel) {
+    case KOS_COMPARE_IS:
+      if (compare_require_2(sel, count))
+        return -1;
+      return args[0] == args[1];
+    case KOS_COMPARE_IS_NOT:
+      if (compare_require_2(sel, count))
+        return -1;
+      return args[0] != args[1];
+    case KOS_COMPARE_IN:
+      if (compare_require_2(sel, count))
+        return -1;
+      return PySequence_Contains(args[1], args[0]);
+    case KOS_COMPARE_NOT_IN: {
+      if (compare_require_2(sel, count))
+        return -1;
+      int r = PySequence_Contains(args[1], args[0]);
+      return (r < 0) ? -1 : ! r;
+    }
+    case KOS_COMPARE_IS_INSTANCE:
+      if (compare_require_2(sel, count))
+        return -1;
+      return PyObject_IsInstance(args[0], args[1]);
+    case KOS_COMPARE_IS_SUBCLASS:
+      if (compare_require_2(sel, count))
+        return -1;
+      return PyObject_IsSubclass(args[0], args[1]);
+    default:
+      PyErr_Format(PyExc_SystemError,
+                   "bad comparison selector: %i", (int) sel);
+      return -1;
+  }
+}
+
+
+/* Cold extended tail of kos_compare_reduce. Bool results throughout;
+   the isinstance/issubclass count form (value + N classes) builds the
+   class tuple the way OBJECT_IS_INSTANCE's PopTail did. */
+static KOS_NOINLINE PyObject *compare_reduce_ext(
+    KosCompare sel,
+    PyObject *const *args,
+    size_t count) {
+
+  if (sel == KOS_COMPARE_IS_INSTANCE || sel == KOS_COMPARE_IS_SUBCLASS) {
+    PyObject *match;
+    if (count < 2) {
+      PyErr_Format(PyExc_TypeError, "comparison selector %i requires at"
+                   " least 2 positional arguments", (int) sel);
+      return NULL;
+    } else if (count == 2) {
+      match = args[1];
+      Py_INCREF(match);
+    } else {
+      match = PyTuple_New((Py_ssize_t) count - 1);
+      if (! match)
+        return NULL;
+      for (size_t i = 1; i < count; i++) {
+        Py_INCREF(args[i]);
+        PyTuple_SET_ITEM(match, (Py_ssize_t) i - 1, args[i]);
+      }
+    }
+    int res = (sel == KOS_COMPARE_IS_INSTANCE)
+        ? PyObject_IsInstance(args[0], match)
+        : PyObject_IsSubclass(args[0], match);
+    Py_DECREF(match);
+    if (res < 0)
+      return NULL;
+    return PyBool_FromLong(res);
+  }
+
+  int res = kos_compare_chain_ext(sel, args, count);
+  if (res < 0)
+    return NULL;
+  return PyBool_FromLong(res);
+}
+
+
+PyObject *kos_compare_reduce(
+    KosCompare sel,
+    PyObject *const *args,
+    size_t count) {
+
+  if (likely(sel <= KOS_COMPARE_GE))
+    return chain_compare((int) sel, compare_names[sel], args, count);
+
+  return compare_reduce_ext(sel, args, count);
+}
+
+
 PyObject *KosOperator_In(PyObject *const *values, size_t count) {
 
   if (count != 2) {
