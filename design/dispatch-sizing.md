@@ -14,19 +14,44 @@ Per-handler sizes come from a throwaway measurement build with `KOS_OP_INLINE`
 redefined to `static KOS_NOINLINE`, so each `op_<NAME>` becomes its own symbol;
 sizes read via `nm --print-size` on the built extension.  Standalone noinline
 size is a proxy for a handler's inlined contribution (inlining can specialise or
-shrink it) -- good enough to rank and prioritise.  The proxy still over-estimates:
-the dispatch fn (58,374 B) is smaller than floor + inline bodies
-(58,418 B) and far smaller than floor + all bodies (103,484 B), so at
-`-O2 -flto` inlining shares tails and specialises away more than the
-standalone bodies imply.  Hotness is reasoned, not profiled: there is
+shrink it) -- good enough to rank and prioritise.  The proxy is close but
+inexact: the dispatch fn (58,433 B) sits within ~120 B of floor + inline
+bodies (58,312 B) and far below floor + all bodies (101,996 B); at
+`-O2 -flto` inlining shares tails and specialises roughly as much as the
+per-op call glue costs.  Hotness is reasoned, not profiled: there is
 no PGO/instrumented build yet (deferred until we have representative profiling
 apps -- scheduler, koslife, churns, mcp, repl, dis).
 
-Measured 2026-07-18 (post phase A2 cold sweep), 186 opcodes (one handler
-each; 187 symbols counting the split-out `GLOBALS.cold`).  67 handlers are
-`KOS_OP_HANDLER_COLD`: their bodies (45,066 B standalone) live out of line
-and the dispatch label calls them; the remaining 119 inline handlers
-contribute 35,778 B of standalone-proxy body to the dispatch fn.
+Measured 2026-07-18 (post boundary dispatcher + phase E decompose), 186
+opcodes (one handler each; 187 symbols counting the split-out
+`GLOBALS.cold`).  67 handlers are `KOS_OP_HANDLER_COLD`: their bodies
+(43,684 B standalone) live out of line and the dispatch label calls them;
+the remaining 119 inline handlers contribute 35,672 B of standalone-proxy
+body to the dispatch fn.
+
+## Changes since the phase A2 measurement (same day)
+
+Two efforts landed after the A2 sweep:
+
+- **Generic iterator-boundary dispatcher** (§5.2 of
+  [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md)):
+  NEXT / FOREACH / YIELD_FROM boundary routing converged on the
+  capability-keyed dispatcher in `dynchain/dyn_boundary.c`; the three
+  per-kind finders and the probe-then-refind double walk are gone.
+  Dispatch fn +24 B (inline capability toggle in ITER_NEXT).
+- **Phase E decompose**: YIELD_FROM's four `drive_*` variants now share
+  noinline helpers for the yield-out / exhaustion-pop /
+  StopAsyncIteration-harvest / await-resume motifs, and delegate
+  classification is one function used by both normalize paths.
+  `op_YIELD_FROM` 6,728 -> 5,346 B (-20.5%), plus ~1,140 B of shared
+  helpers out of line (net cold-family footprint 6,489 B, with the
+  duplication gone).  ITER_NEXT split hot/cold: the sync value path
+  stays inline (standalone body 705 -> 615 B) and the Koskari-agen
+  attach branch became a 190 B noinline helper.
+
+Net: total handler bodies 80,844 -> 79,356 B; dispatch fn
+58,374 -> 58,433 B (+59 B, call glue and layout noise -- these changes
+target cold `.text` and dedup, not the loop).
 
 ## Changes since the 2026-07-17 measurement
 
@@ -87,39 +112,38 @@ same selector-keyed consolidation pattern.
 
 | quantity | bytes | meaning |
 |---|---:|---|
-| dispatch fn | 58,374 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`); 57.0 KiB |
+| dispatch fn | 58,433 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`); 57.1 KiB |
 | floor (all 186 handlers un-inlined) | 22,640 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 186 + loop scaffold |
-| handler bodies | 80,844 | sum of standalone noinline bodies -- the carving budget |
-| cold bodies (out of line) | 45,066 | 67 `KOS_OP_HANDLER_COLD` handlers, excluded from the dispatch fn |
-| inline bodies | 35,778 | 119 inline handlers -- the remaining in-loop budget |
+| handler bodies | 79,356 | sum of standalone noinline bodies -- the carving budget |
+| cold bodies (out of line) | 43,684 | 67 `KOS_OP_HANDLER_COLD` handlers, excluded from the dispatch fn |
+| inline bodies | 35,672 | 119 inline handlers -- the remaining in-loop budget |
 
-Distribution (top-heavy, long-tailed; % of the 80,844 B body):
+Distribution (top-heavy, long-tailed; % of the 79,356 B body):
 
-- `>= 1000 B`: 13 handlers, 22,191 B (27% of body)
-- `>=  500 B`: 47 handlers, 44,498 B (55% of body)
-- `>=  200 B`: 140 handlers, 75,372 B (93% of body)
-- `>=  100 B`: 169 handlers, 79,875 B (99% of body)
+- `>= 1000 B`: 13 handlers, 20,809 B (26% of body)
+- `>=  500 B`: 47 handlers, 43,010 B (54% of body)
+- `>=  200 B`: 140 handlers, 73,884 B (93% of body)
+- `>=  100 B`: 169 handlers, 78,387 B (99% of body)
 
 ## Clusters (size x reasoned hotness x structure)
 
 | cluster | bytes (handlers) | % body | hotness | action |
 |---|---:|---:|---|---|
-| `CALL_*` family (incl. `TAIL_CALL*`) | 14,577 (21) | 18.0% | mixed | DONE (call-unification): prologues + shared core; residual is the 7 STAR gathers (8,868 B), kept by design |
-| YIELD_FROM | 6,728 (1) | 8.3% | cold | un-inlined (phase A); body decompose remains -- fold shared exhaustion/emit paths into the §5.2 boundary dispatcher (see [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md)) |
+| `CALL_*` family (incl. `TAIL_CALL*`) | 14,577 (21) | 18.4% | mixed | DONE (call-unification): prologues + shared core; residual is the 7 STAR gathers (8,868 B), kept by design |
+| YIELD_FROM | 5,346 (1) | 6.7% | cold | DONE (phase A un-inline + phase E decompose): drive family shares noinline motif helpers; the remaining direction is the GEN yield-from passthru idea (undecided, see [TODO.md](TODO.md)) |
 | comparison family (`*_COMPARE*`) | 2,642 (6) | 3.3% | hot | DONE (compare-unification): selector-keyed, fused pairs born inline, VAR twins cold |
 | IMPORT_* | 2,016 (3) | 2.5% | cold | DONE (phase A): `IMPORT_STAR`/`IMPORT_FROM` cold; `IMPORT` (210 B) stays inline |
-| bulk loads (`VAR2/4`, `FAST2/4`) | 1,738 (4) | 2.1% | hot | DONE (var4): FAST pair inline, VAR twins cold |
+| bulk loads (`VAR2/4`, `FAST2/4`) | 1,738 (4) | 2.2% | hot | DONE (var4): FAST pair inline, VAR twins cold |
 | `*_ATTR_INPLACE` | 1,594 (3) | 2.0% | warm | already op-parameterised; all three now cold (phase A + VAR sweep) |
 | `*_OBJECT_*` arith/operand | 326 (4) | 0.4% | warm | already consolidated (Phase B) -- keep inline |
 
-Largest handlers still inline after A2 (all reasoned hot or warm):
-`PUSH_NS` (858 B, let/block entry), `FAST_ATTR_STORE` (809 B, cached
-attr write), `ITER_NEXT` (705 B, loop step -- candidate for a hot/cold
-split: keep the sync value path inline, carve out the Koskari-async-gen
-attach branch), `CHECK_COMPARE_FAST` (679 B, loop bounds), `PUSH_FOREACH`
-(629 B, loop entry), `OBJECT_FORMAT` (595 B), `FAST2` (569 B),
-`EXCEPTION_MATCH` (546 B, except-clause path -- borderline; EAFP-heavy
-code keeps it warm).
+Largest handlers still inline (all reasoned hot or warm):
+`PUSH_NS` (842 B, let/block entry),
+`FAST_ATTR_STORE` (809 B, cached attr write), `CHECK_COMPARE_FAST`
+(679 B, loop bounds), `PUSH_FOREACH` (629 B, loop entry), `ITER_NEXT`
+(615 B, loop step -- hot/cold split done, sync value path only),
+`OBJECT_FORMAT` (595 B), `FAST2` (569 B), `EXCEPTION_MATCH` (546 B,
+except-clause path -- borderline; EAFP-heavy code keeps it warm).
 
 ## Planned phases
 
@@ -141,12 +165,14 @@ code keeps it warm).
   [interpreter/call-unification.md](interpreter/call-unification.md).
 - **D -- selector-keyed comparisons**: DONE, landed as compare-unification;
   see [../archive/compare-unification.md](../archive/compare-unification.md).
-- **E -- decompose the cold giants' bodies** (open): YIELD_FROM's four
-  `drive_*` variants repeat exhaustion-pop / StopIteration-harvest /
-  emit-yield motifs; routing them through the generic §5.2 boundary
-  dispatcher dedups cold `.text`.  Also the ITER_NEXT hot/cold split
-  noted above.  These shrink total `.text` and cold-path I-cache, not
-  the dispatch fn.
+- **E -- decompose the cold giants' bodies**: DONE (2026-07-18).
+  YIELD_FROM's four `drive_*` variants now share noinline helpers for
+  the yield-out / exhaustion-pop / StopAsyncIteration-harvest /
+  await-resume motifs (`op_YIELD_FROM` 6,728 -> 5,346 B), and ITER_NEXT
+  split hot/cold (705 -> 615 B inline, agen attach out of line).  As
+  predicted these shrank total `.text` and cold-path I-cache, not the
+  dispatch fn.  The remaining yield-from direction is the GEN passthru
+  idea (undecided; see [TODO.md](TODO.md)).
 
 Remeasure dispatch fn size and run the suite + ASan after each batch.
 
@@ -157,7 +183,7 @@ live out of line and do not contribute to the dispatch fn.
 
 | bytes | handler | | bytes | handler |
 |---:|---|---|---:|---|
-| 6,728 | `YIELD_FROM` † | | 314 | `JUMP_OR` |
+| 5,346 | `YIELD_FROM` † | | 314 | `JUMP_OR` |
 | 1,845 | `NEXT` † | | 314 | `JUMP_AND` |
 | 1,712 | `CALL_ATTR_STAR` † | | 311 | `VAR_TAKE` † |
 | 1,493 | `CALL_VAR_ATTR_STAR` † | | 301 | `TAIL_CALL_NAMES` † |
@@ -172,8 +198,8 @@ live out of line and do not contribute to the dispatch fn.
 | 1,014 | `CALL_FAST_STAR` † | | 277 | `BUILD_KWDS_NAMES` |
 | 928 | `CALL_VAR_STAR` † | | 275 | `OBJECT_FORMAT_CONST` |
 | 887 | `BUILD_FUNCTION` † | | 275 | `CONST_ITEM_REF` |
-| 858 | `PUSH_NS` | | 275 | `CONST_ITEM` |
-| 848 | `PUSH_WITH` † | | 275 | `ATTR_REF` |
+| 848 | `PUSH_WITH` † | | 275 | `CONST_ITEM` |
+| 842 | `PUSH_NS` | | 275 | `ATTR_REF` |
 | 832 | `PUSH_DYN_WITH` † | | 275 | `ATTR` |
 | 821 | `UNPACK_STAR` † | | 274 | `OBJECT_TRUTH` |
 | 811 | `UNPACK_FAST` † | | 274 | `OBJECT_NOT` |
@@ -182,11 +208,11 @@ live out of line and do not contribute to the dispatch fn.
 | 738 | `COMBINE_KWDS` † | | 261 | `POP_WITH` |
 | 733 | `RAISE` † | | 259 | `VAR_ATTR_REF` † |
 | 728 | `POP_SHIFT` † | | 253 | `OBJECT_REPR` |
-| 705 | `ITER_NEXT` | | 253 | `OBJECT_ITER` |
-| 680 | `CALL_FAST_ATTR_NAMES` † | | 253 | `OBJECT_DIR` |
-| 679 | `CHECK_COMPARE_FAST` | | 253 | `OBJECT_BIT_INVERT` |
-| 663 | `FAST_ATTR_INPLACE` † | | 250 | `FAST_ATTR_CLEAR` |
-| 629 | `PUSH_FOREACH` | | 247 | `FAST_BIND` |
+| 680 | `CALL_FAST_ATTR_NAMES` † | | 253 | `OBJECT_ITER` |
+| 679 | `CHECK_COMPARE_FAST` | | 253 | `OBJECT_DIR` |
+| 663 | `FAST_ATTR_INPLACE` † | | 253 | `OBJECT_BIT_INVERT` |
+| 629 | `PUSH_FOREACH` | | 250 | `FAST_ATTR_CLEAR` |
+| 615 | `ITER_NEXT` | | 247 | `FAST_BIND` |
 | 595 | `OBJECT_FORMAT` | | 245 | `DEREF` |
 | 579 | `CALL_VAR_ATTR_NAMES` † | | 239 | `OBJECT_TYPE` |
 | 569 | `FAST2` | | 236 | `POP_FOREACH` |

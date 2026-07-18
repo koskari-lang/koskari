@@ -7,15 +7,6 @@ design docs for detail.
 
 ## Evaluator architecture
 
-- **Decompose YIELD_FROM / ITER_NEXT bodies over the boundary dispatcher** —
-  the §5.2 generic dispatcher (`dynchain/dyn_boundary.c`, capability-keyed on
-  `KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY`) is implemented; next, fold the
-  repeated exhaustion-pop / StopIteration-harvest / emit-yield motifs of
-  YIELD_FROM's four `drive_*` variants into shared delegate-stepping helpers,
-  and split ITER_NEXT hot/cold (sync value path inline, Koskari-agen attach
-  out of line).  Ref:
-  [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2;
-  [dispatch-sizing.md](dispatch-sizing.md) phase E.
 - **Yield-from passthru on GEN (undecided)** — a `yieldfrom` field on the GEN
   node: re-entering a delegating generator dispatches straight to the delegate
   without thawing the frame; the frame is reconstructed only when the delegate
