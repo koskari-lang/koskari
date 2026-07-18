@@ -89,6 +89,10 @@ _BUILTINS_SOURCES = (
     # requires: _iter.ki, _help.ki
     '_pragma.ki',
 
+    # assert
+    # requires: _define_syntax.ki, _conditionals.ki
+    '_assert.ki',
+
     # fences
     # requires: _define_syntax.ki, _conditionals.ki
     '_fences.ki',

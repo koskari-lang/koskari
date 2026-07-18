@@ -25,7 +25,7 @@ macro-rules, special-rules, syntax-match, macro-match, special-match).
 from ...compile.helpers import match1
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH
+from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH, SYMBOL
 from ...bootstrap import builtin
 from ...types import is_nil, get_position, unpack
 from .helpers import block_source_from_cons, layout, match_block_source
@@ -36,11 +36,15 @@ _case_symbol = symbol('case')
 
 _MATCH_FORM_PATTERN = LIST(LITERAL(_case_symbol), BIND('inner'))
 
-_RULES_HEAD_PATTERN = MATCH(
-    LIST(CALLEDBY(), BIND('literals_expr')))
+_RULES_HEAD_PATTERNS = [
+    MATCH(LIST(CALLEDBY(), SYMBOL("name"), BIND('literals_expr'))),
+    MATCH(LIST(CALLEDBY(), BIND('literals_expr'))),
+]
 
-_MATCH_HEAD_PATTERN = MATCH(
-    LIST(CALLEDBY()))
+_MATCH_HEAD_PATTERNS = [
+    MATCH(LIST(CALLEDBY(), SYMBOL("name"))),
+    MATCH(LIST(CALLEDBY())),
+]
 
 
 _symbol_compile_begin = symbol('compile/begin')
@@ -116,7 +120,7 @@ def _rule_rows(ns, parent_body, layout_body=False):
     return rules
 
 
-def _lower_rules(ns, source, peers, head_sym, head_pattern,
+def _lower_rules(ns, source, peers, head_sym, head_patterns,
                  with_literals, layout_body=False):
     """
     Lower a transformer block with raw rule children
@@ -125,7 +129,7 @@ def _lower_rules(ns, source, peers, head_sym, head_pattern,
     :param source: pass-one block source for the transformer block
     :param peers: peer block sources, must be empty
     :param head_sym: emitted form head symbol
-    :param head_pattern: matcher pattern for the block header
+    :param head_patterns: matcher patterns for the block header
     :param with_literals: whether the header includes a literals list
     :param layout_body: expand nested :block: forms in each rule body
     :return: lowered transformer form
@@ -138,7 +142,7 @@ def _lower_rules(ns, source, peers, head_sym, head_pattern,
 
     parent_header, parent_body = source
 
-    head_m = match1(parent_header, [head_pattern])
+    head_m = match1(parent_header, head_patterns)
     if head_m is None:
         if with_literals:
             raise LayoutError(
@@ -156,11 +160,16 @@ def _lower_rules(ns, source, peers, head_sym, head_pattern,
             '%s requires at least one rule' % (head_sym,),
             get_position(source))
 
+    ret = cons(*rules, nil)
+
     if with_literals:
         literals = head_m['literals_expr'].datum
-        return cons(head_sym, literals, *rules, nil)
+        ret = cons(literals, ret)
 
-    return cons(head_sym, *rules, nil)
+    if 'name' in head_m:
+        ret = cons(head_m['name'].datum, ret)
+
+    return cons(head_sym, ret)
 
 
 @builtin('layout/syntax-rules')
@@ -175,7 +184,7 @@ def layout_syntax_rules(ns, source, peers):
 
     return _lower_rules(
         ns, source, peers, _symbol_syntax_rules,
-        _RULES_HEAD_PATTERN, True)
+        _RULES_HEAD_PATTERNS, True)
 
 
 @builtin('layout/macro-rules')
@@ -189,7 +198,7 @@ def layout_macro_rules(ns, source, peers):
 
     return _lower_rules(
         ns, source, peers, _symbol_macro_rules,
-        _RULES_HEAD_PATTERN, True, layout_body=True)
+        _RULES_HEAD_PATTERNS, True, layout_body=True)
 
 
 @builtin('layout/special-rules')
@@ -203,7 +212,7 @@ def layout_special_rules(ns, source, peers):
 
     return _lower_rules(
         ns, source, peers, _symbol_special_rules,
-        _RULES_HEAD_PATTERN, True, layout_body=True)
+        _RULES_HEAD_PATTERNS, True, layout_body=True)
 
 
 @builtin('layout/syntax-match')
@@ -217,7 +226,7 @@ def layout_syntax_match(ns, source, peers):
 
     return _lower_rules(
         ns, source, peers, _symbol_syntax_match,
-        _MATCH_HEAD_PATTERN, False)
+        _MATCH_HEAD_PATTERNS, False)
 
 
 @builtin('layout/macro-match')
@@ -231,7 +240,7 @@ def layout_macro_match(ns, source, peers):
 
     return _lower_rules(
         ns, source, peers, _symbol_macro_match,
-        _MATCH_HEAD_PATTERN, False, layout_body=True)
+        _MATCH_HEAD_PATTERNS, False, layout_body=True)
 
 
 @builtin('layout/special-match')
@@ -245,7 +254,7 @@ def layout_special_match(ns, source, peers):
 
     return _lower_rules(
         ns, source, peers, _symbol_special_match,
-        _MATCH_HEAD_PATTERN, False, layout_body=True)
+        _MATCH_HEAD_PATTERNS, False, layout_body=True)
 
 
 # The end.

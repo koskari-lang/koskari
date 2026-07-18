@@ -75,7 +75,7 @@ class TestPragmaReadForm(PragmaSyntaxHelpers):
         module, compiler = self.make_module()
         expr = self.compile_expr(
             module, compiler, "(pragma compiler/call-brackets)")
-        self.assertEqual(BracketCalls.IGNORE, await expr())
+        self.assertEqual(BracketCalls.WARN, await expr())
 
 
 class TestPragmaSetForm(PragmaSyntaxHelpers):

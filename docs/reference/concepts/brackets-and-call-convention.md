@@ -28,11 +28,12 @@ The reader records that a form came from `[ ]` by producing a **bracket-pair**
 (and `bracket-nil` for the empty `[]`). A bracket-pair is value-equal to and
 fully interchangeable with a normal pair — every pair operation works on it —
 it simply remembers its bracket origin. That memory does nothing on its own; it
-exists so tooling and an opt-in compiler check can use it.
+exists so tooling and the compiler's call-position check can use it.
 
 ## The convention
 
-The convention — and by default it is **only** a convention — is:
+The convention — which the compiler by default points out rather than enforces
+(a `SyntaxWarning`, never a changed compilation) — is:
 
 - **`( )` means a call/apply form.** The first element is the thing being
   applied; the rest are its arguments. Some forms evaluate every argument;
@@ -76,16 +77,16 @@ module-scoped and set explicitly:
 | Setting | Affects | Values | Default | Meaning |
 |---|---|---|---|---|
 | `reader/brackets` | reader | on / off | on | Whether `[ ]` reads into a bracket-pair (carrying the origin marker) or a plain pair. |
-| `compiler/call-brackets` | compiler | `ignore` / `warn` / `error` | `ignore` | What happens when a bracket-pair reaches call position. |
+| `compiler/call-brackets` | compiler | `ignore` / `warn` / `error` | `warn` | What happens when a bracket-pair reaches call position. |
 
-Enforce the convention as a warning, or a hard error:
+Escalate the convention to a hard error, or silence it entirely:
 
 ```koskari
-; warn when a [ ] fragment lands in call position
-(pragma [compiler/call-brackets 'warn])
-
-; or make it a compile error
+; make a [ ] fragment in call position a compile error
 (pragma [compiler/call-brackets 'error])
+
+; or turn the check off and leave brackets as pure documentation
+(pragma [compiler/call-brackets 'ignore])
 ```
 
 With `error` set, the `ler` typo from above is caught at compile time instead of
@@ -99,9 +100,10 @@ indistinguishable, so no marker is produced and no check can fire:
 ```
 
 A pragma is forward-only and scoped to the module that sets it: it affects only
-the code that follows it, and never the modules you import. With
-`compiler/call-brackets` at its `ignore` default, the language is exactly the
-convention — brackets are documentation. See
+the code that follows it, and never the modules you import. At the `warn`
+default the convention is advisory — a bracket-pair in call position still
+compiles like a paren form, but the compiler points it out; `ignore` reduces
+brackets to pure documentation. See
 [Pragmas and feature settings](pragma.md) for how pragma forms work and the full
 list of settings.
 

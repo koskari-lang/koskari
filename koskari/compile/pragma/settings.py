@@ -77,11 +77,14 @@ class BracketCalls(Enum):
     ERROR = "error"
 
 
-@pragma_setting("compiler/call-brackets", BracketCalls.IGNORE)
+@pragma_setting("compiler/call-brackets", BracketCalls.WARN)
 def compiler_call_brackets(level=BracketCalls.WARN) -> BracketCalls:
     """
-    Policy when a bracket-pair reaches call position. Baseline ignore; a bare
-    declaration enables it at warn.
+    Policy when a bracket-pair reaches call position.
+
+    "warn" - (default) compile it, but emit a SyntaxWarning
+    "error" - raise a CompilerError
+    "ignore" - compile it exactly like a paren form, no diagnostic
     """
 
     if isinstance(level, BracketCalls):

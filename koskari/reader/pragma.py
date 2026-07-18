@@ -39,11 +39,11 @@ def reader_brackets(enabled: bool = True) -> bool:
     return enabled
 
 
-@pragma_setting("reader/index-brackets", False)
+@pragma_setting("reader/index-brackets", True)
 def reader_index_brackets(enabled: bool = True) -> bool:
     """
     Whether an ``[ ... ]`` group attached directly to a value desugars
-    into ``(item VALUE KEY)`` (baseline off; naming the pragma enables it)
+    into ``(item VALUE KEY)``
     """
 
     return enabled
