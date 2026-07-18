@@ -289,4 +289,67 @@ class TestListEachPattern(SpecialsTestCase):
         self.assertEqual([], self.call_ops(code))
 
 
+class TestDictLiteral(SpecialsTestCase):
+    """
+    The #{ } literal lowers to a plain runtime #dict call with
+    (#tuple KEY VALUE) entry arguments; there is no compile/#dict
+    special.
+    """
+
+    async def test_dict_empty(self):
+        expr, mod = self.compile_expr("#{}")
+        self.assertEqual({}, await expr())
+
+
+    async def test_dict_string_keys(self):
+        expr, mod = self.compile_expr('#{"foo": 123 "bar": "tacos"}')
+        self.assertEqual({"foo": 123, "bar": "tacos"}, await expr())
+
+
+    async def test_dict_const_entries_fold(self):
+        # a constant entry folds into a pooled CONST tuple; the literal
+        # is one call to #dict, not an entry-building opcode program
+        code = self.compile_to_code('#{"foo": 123}')
+        ops = _opcodes(code)
+        self.assertNotIn(OpCode.KOS_OP_BUILD_KWDS, ops)
+        self.assertNotIn(OpCode.KOS_OP_COMBINE_KWDS, ops)
+        self.assertEqual(1, len(self.call_ops(code)))
+
+
+    async def test_dict_keyword_key_is_expression(self):
+        # #{foo: bar} resolves foo as an expression, matching Python's
+        # { } literal; the string-key spelling is the direct #dict call
+        src = '(compile/let [[foo "F"]] #{foo: "B"})'
+        expr, mod = self.compile_expr(src)
+        self.assertEqual({"F": "B"}, await expr())
+
+
+    async def test_dict_int_keyword_key(self):
+        expr, mod = self.compile_expr('#{5: "five"}')
+        self.assertEqual({5: "five"}, await expr())
+
+
+    async def test_dict_expression_values(self):
+        expr, mod = self.compile_expr('#{"n": (compile/+ 1 2)}')
+        self.assertEqual({"n": 3}, await expr())
+
+
+    async def test_dict_splat_merges_last(self):
+        src = '(compile/let [[m #{"b": 2}]] #{"a": 1 "b": 99 **: m})'
+        expr, mod = self.compile_expr(src)
+        self.assertEqual({"a": 1, "b": 2}, await expr())
+
+
+    async def test_dict_splat_nonstring_keys(self):
+        src = '(compile/let [[m #{1: "one"}]] #{2: "two" **: m})'
+        expr, mod = self.compile_expr(src)
+        self.assertEqual({2: "two", 1: "one"}, await expr())
+
+
+    async def test_dict_direct_call_keyword_args(self):
+        # in a direct call, keywords are call kwargs: string keys
+        expr, mod = self.compile_expr('(#dict foo: 1 bar: 2)')
+        self.assertEqual({"foo": 1, "bar": 2}, await expr())
+
+
 # The end.

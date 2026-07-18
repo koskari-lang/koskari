@@ -27,7 +27,7 @@ import koskari.compile.specials  # noqa: F401 - populate _BUILTIN_REGISTRY
 
 from koskari.compile import Compiler, CompilerMode
 from koskari.bootstrap import _BUILTIN_REGISTRY
-from koskari.lib import FunctionSpec, OpCode, bracket_cons
+from koskari.lib import FunctionSpec, OpCode, bracket_cons, build_dict
 from koskari.reader import LayoutReader, default_reader, source_str
 from koskari.lib import Module, ModuleNamespace
 from koskari.types import bracket_splice
@@ -40,6 +40,9 @@ def _register_specials(ns, specials):
     # them bound.
     ns.store("bracket-cons", bracket_cons)
     ns.store("bracket-splice", bracket_splice)
+    # the #{ } literal lowers to a plain call of the #dict builtin; a
+    # real module namespace has it bound.
+    ns.store("#dict", build_dict)
 
 
 class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):

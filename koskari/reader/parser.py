@@ -107,6 +107,7 @@ _symbol_unquote_splicing = symbol("compile/unquote-splicing")
 _symbol_pass_none = symbol("reader/pass-none")
 _symbol_apply_fence = symbol("compile/apply-fence")
 _symbol_colon = symbol(":")
+_symbol_tuple = symbol("#tuple")
 _keyword_starstar = keyword("**")
 
 # Splits a #dict spine into its key/value pairs. Each repeat is one of:
@@ -1599,16 +1600,18 @@ class Reader:
 
     def _split_dict_keywords(self, body):
         """
-        Normalise trailing-colon keyword keys in a ``#dict`` spine into
-        the explicit ``KEY : VALUE`` shape, so the read form carries no
-        implicit keyword-key magic downstream.
+        Lower each key/value entry in a ``#dict`` spine into a
+        ``(#tuple KEY VALUE)`` invocation form, so the spine is an
+        ordinary argument list for the ``#dict`` call.
 
         A ``foo:`` keyword key becomes the atom ``foo`` (re-read through
-        the normal atom classifier, so ``5:`` yields the integer ``5``)
-        followed by the ``:`` symbol. The ``**`` splat keyword and any
-        keyword appearing in value position pass through untouched. A
-        spine the pair matcher cannot parse is returned unchanged, so the
-        compile-time ``#dict`` special reports the malformed form.
+        the normal atom classifier, so ``5:`` yields the integer ``5``);
+        an explicit ``KEY : VALUE`` triple keeps its key expression as
+        written. Both shapes emit one ``(#tuple KEY VALUE)`` entry. The
+        ``**`` splat keyword and any keyword appearing in value position
+        pass through untouched. A spine the pair matcher cannot parse is
+        returned unchanged, so the ``#dict`` call reports the malformed
+        form on its own terms.
 
         :param body: the read dict spine (a proper list)
         :return: the rewritten spine
@@ -1623,14 +1626,19 @@ class Reader:
             if "splat" in frame:
                 out.append(_keyword_starstar)
                 out.append(frame["splat"].datum)
-            elif "kw" in frame:
-                out.append(self.process_atom(str(frame["kw"].datum)))
-                out.append(_symbol_colon)
-                out.append(frame["val"].datum)
+                continue
+
+            if "kw" in frame:
+                keycap = frame["kw"]
+                key = self.process_atom(str(keycap.datum))
             else:
-                out.append(frame["key"].datum)
-                out.append(_symbol_colon)
-                out.append(frame["val"].datum)
+                keycap = frame["key"]
+                key = keycap.datum
+
+            entry = cons(_symbol_tuple, key, frame["val"].datum, nil)
+            if keycap.position:
+                entry.set_position(keycap.position)
+            out.append(entry)
 
         return cons(*out, nil) if out else nil
 

@@ -316,7 +316,7 @@ id: iter-literal-dict-keywords-read-001
 feature: "reader/#dict"
 source: "#{key: val key2: val2}"
 verify:
-  read: "(#dict key : val key2 : val2)"
+  read: "(#dict (#tuple key val) (#tuple key2 val2))"
 references:
   - start/from-python/data-and-control.md
   - reference/grammar.md
@@ -326,9 +326,10 @@ tags:
   - reader
   - literal
   - "surface:sexpr"
-notes: "the #{ } reader macro normalises a keyword key `foo:` into the
-  explicit `foo :` (key, colon symbol) form so the read spine carries no
-  implicit keyword-key magic"
+notes: "the #{ } reader macro lowers each `KEY: VALUE` entry into a
+  `(#tuple KEY VALUE)` invocation form; the whole literal is an ordinary
+  call to the #dict builtin, and a keyword key `foo:` becomes the key
+  expression `foo`"
 ---
 id: iter-literal-list-eval-001
 feature: "reader/#list"
