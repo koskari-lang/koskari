@@ -20,7 +20,7 @@
    namespace merge); pushes resulting class.
 */
 
-KOS_OP_HANDLER(BUILD_CLASS) {
+KOS_OP_HANDLER_COLD(BUILD_CLASS) {
   (void) insn;
 
   PyObject *ns = KosEvalState_StackPopRef(es);

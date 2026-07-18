@@ -18,7 +18,7 @@
    Set the current exception; control will transfer to a handler by the eval loop.
 */
 
-KOS_OP_HANDLER(RAISE) {
+KOS_OP_HANDLER_COLD(RAISE) {
   unsigned n = KosOp_ARG(insn);
   if (n == 0) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
