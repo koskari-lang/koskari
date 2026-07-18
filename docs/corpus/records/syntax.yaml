@@ -2,7 +2,7 @@ id: syntax-define-syntax-sr-expand-001
 feature: macro/compile/define-syntax
 source: "(define-syntax unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
 verify:
-  expand: "(compile/define unless (syntax-rules unless unless (else:) ...))"
+  expand: "(compile/define-global unless (syntax-rules unless unless (else:) ...))"
 references:
   - reference/macros/compile-define-syntax.md
   - reference/specials/compile-define-syntax.md
@@ -17,7 +17,7 @@ id: syntax-define-syntax-sm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax double (syntax-match [(double (VALUE x)) (+ x x)]))
 verify:
-  expand: (compile/define double (syntax-match double ...))
+  expand: (compile/define-global double (syntax-match double ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -32,7 +32,7 @@ id: syntax-define-syntax-mr-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (macro-rules [] [(ident x) x]))
 verify:
-  expand: (compile/define ident (macro-rules ident [] [(ident x) x]))
+  expand: (compile/define-global ident (macro-rules ident [] [(ident x) x]))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -47,7 +47,7 @@ id: syntax-define-syntax-mm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (macro-match [(ident (VALUE x)) x]))
 verify:
-  expand: (compile/define ident (macro-match ident ...))
+  expand: (compile/define-global ident (macro-match ident ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -62,7 +62,7 @@ id: syntax-define-syntax-spr-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (special-rules [] [(c (ident x) t) x.datum]))
 verify:
-  expand: (compile/define ident (special-rules ident [] ...))
+  expand: (compile/define-global ident (special-rules ident [] ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -77,7 +77,7 @@ id: syntax-define-syntax-spm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (special-match [(compiler (ident (VALUE x)) t) x.datum]))
 verify:
-  expand: (compile/define ident (special-match ident ...))
+  expand: (compile/define-global ident (special-match ident ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -677,7 +677,7 @@ source: |-
   
 verify:
   read: (define-syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (define-values [head rest] (compile/attr form datum)) (compile/quasiquote ((compile/unquote head) (compile/unquote TAG) (compile/unquote-splicing rest))))]))
-  expand: (compile/define tag-head (macro-rules tag-head [] [(tag-head TAG form) (begin (define-values [head rest] (compile/attr form datum)) (compile/quasiquote ((compile/unquote head) (compile/unquote TAG) (compile/unquote-splicing rest))))]))
+  expand: (compile/define-global tag-head (macro-rules tag-head [] [(tag-head TAG form) (begin (define-values [head rest] (compile/attr form datum)) (compile/quasiquote ((compile/unquote head) (compile/unquote TAG) (compile/unquote-splicing rest))))]))
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -702,7 +702,7 @@ source: |-
        (begin (subhead tag subrest ...) ...)]))
 verify:
   read: (define-syntax with-subitems (syntax-rules [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
-  expand: (compile/define with-subitems (syntax-rules with-subitems [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
+  expand: (compile/define-global with-subitems (syntax-rules with-subitems [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
 references:
   - reference/specials/compile-syntax-rules.md
 stability: evolving
@@ -740,7 +740,7 @@ source: |-
       [(job tp rest ...) `(,(datum (symbol f"job/{tp.datum}")) ,@rest)]))
 verify:
   read: "(define-syntax job (macro-rules [] [(job tp rest ...) (compile/quasiquote ((compile/unquote (datum (symbol (compile/#str \"job/\" (format (compile/attr tp datum)))))) (compile/unquote-splicing rest)))]))"
-  expand: "(compile/define job (macro-rules job [] [(job tp rest ...) (compile/quasiquote ((compile/unquote (datum (symbol (compile/#str \"job/\" (format (compile/attr tp datum)))))) (compile/unquote-splicing rest)))]))"
+  expand: "(compile/define-global job (macro-rules job [] [(job tp rest ...) (compile/quasiquote ((compile/unquote (datum (symbol (compile/#str \"job/\" (format (compile/attr tp datum)))))) (compile/unquote-splicing rest)))]))"
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving

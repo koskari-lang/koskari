@@ -34,8 +34,28 @@ let [[assert-enabled True]]:
     register "compiler/enable-asserts" (demand pragma-enable-asserts) True
 
 
-    define-global compile/assert:
-        macro-rules compile/assert []:
+    define-syntax compile/assert:
+        """
+        Raise AssertionError when the expression is falsey if asserts are
+        enabled. Evaluates as None otherwise.
+
+        Usage::
+
+            (assert expr)
+            (assert expr message)
+
+        Note that the enablement behavior is gated at compile-time, not run-time.
+        The ``expr`` is not evaluated if asserts are disabled.
+
+        Asserts are enabled by default, but may be disabled via the
+        ``compiler/enable-asserts`` pragma.
+
+        eg.::
+
+          (pragma [compiler/enable-asserts False])
+        """
+
+        macro-rules []:
             case (assert expr message):
                 (if assert-enabled
                     `(unless ,expr (raise (AssertionError ,message)))
@@ -45,16 +65,6 @@ let [[assert-enabled True]]:
                 (if assert-enabled
                     `(unless ,expr (raise (AssertionError)))
                     '(begin))
-
-
-    set-attr compile/assert __doc__:
-        """
-        Raise AssertionError when the expression is falsey
-
-        eg.
-        (assert expr)
-        (assert expr message)
-        """
 
 
 ; The end.
