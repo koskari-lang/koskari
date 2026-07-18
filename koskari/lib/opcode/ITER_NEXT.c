@@ -42,12 +42,12 @@ KOS_OP_HANDLER(ITER_NEXT) {
     }
     agen->in_progress = 1;
     KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) = KosOp_ARG(insn);
-    KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) region) =
-        KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN;
+    kos_dyn_foreach_set_iter_step_phase(
+        (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN);
     if (op_attach_koskari_agen_frame_for_iter_next(es, agen, region) < 0) {
       agen->in_progress = 0;
-      KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) region) =
-          KOS_FOREACH_ITER_STEP_IDLE;
+      kos_dyn_foreach_set_iter_step_phase(
+          (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_IDLE);
       return EVAL_RAISE();
     }
     return EVAL_NORMAL();

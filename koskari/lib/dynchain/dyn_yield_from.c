@@ -134,31 +134,6 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
 
 /**
-   Locate flattened yield-from iterator-boundary consumer from current chain
-   state.  Works both after freeze (dyn_top is YIELD_FROM) and while running
-   in the delegate frame (walk ancestors from FRAME).
-*/
-KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
-
-  KosDynNode *top = KosEvalState_DYN_TOP(es);
-  KosDynNode *n;
-
-  if (top && KosDynNode_IS_YIELD_FROM(top)
-      && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY))
-    return (KosDynYieldFrom *) top;
-  if (! top || ! KosDynNode_IS_FRAME(top))
-    return NULL;
-
-  for (n = KosDynNode_PARENT(top); n; n = KosDynNode_PARENT(n)) {
-    if (KosDynNode_IS_YIELD_FROM(n)
-        && KosDynNode_HAS_CAP(n, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY))
-      return (KosDynYieldFrom *) n;
-  }
-  return NULL;
-}
-
-
-/**
    Flattened koskari async gen delegate yielded a value at the iterator
    boundary.  Hand the value to the delegating generator's frame and stop:
    control returns to the eval loop, which re-dispatches the YIELD_FROM opcode

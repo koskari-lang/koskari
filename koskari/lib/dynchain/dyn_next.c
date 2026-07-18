@@ -55,68 +55,6 @@ void kos_dyn_next_abort_after_failed_attach(KosEvalState *es) {
 }
 
 
-KosDynForeach *kos_dyn_find_awaiting_foreach(KosEvalState *es) {
-
-  KosDynNode *top = KosEvalState_DYN_TOP(es);
-
-  /*
-   After freeze, dyn_top can be the FOREACH region (parent of the detached GEN)
-   for ITER_NEXT over a Koskari async gen. The awaiting region is not always an
-   ancestor of frame_top in the parent walk.
-   */
-  if (top && KosDynNode_IS_FOREACH(top)) {
-    KosDynForeach *fe = (KosDynForeach *) top;
-    if (KosDynForeach_ITER_STEP_PHASE(fe) == KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN)
-      return fe;
-  }
-
-  {
-    KosDynFrame *cf = KosEvalState_FRAME(es);
-    KosDynNode *n;
-    if (! cf)
-      return NULL;
-    for (n = KosDynNode_PARENT((KosDynNode *) cf); n; n = KosDynNode_PARENT(n)) {
-      if (KosDynNode_IS_FOREACH(n)) {
-        KosDynForeach *fe = (KosDynForeach *) n;
-        if (KosDynForeach_ITER_STEP_PHASE(fe) == KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN)
-          return fe;
-      }
-    }
-  }
-  return NULL;
-}
-
-
-KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es) {
-
-  KosDynNode *top = KosEvalState_DYN_TOP(es);
-
-  /*
-   After kos_dyn_gen_freeze_and_release, dyn_top is the KOS_DYN_NEXT node
-   (parent of the detached GEN). The consumer frame is an ancestor of NEXT,
-   not a descendant, so walking parent(frame_top) never reaches NEXT.
-   */
-  if (top && KosDynNode_IS_NEXT(top))
-    return (KosDynNext *) top;
-
-  /*
-   While the gen frame is still installed, walk outward from the running
-   frame: FRAME -> GEN -> NEXT.
-   */
-  {
-    KosDynFrame *cf = KosEvalState_FRAME(es);
-    KosDynNode *n;
-    if (! cf)
-      return NULL;
-    for (n = KosDynNode_PARENT((KosDynNode *) cf); n; n = KosDynNode_PARENT(n)) {
-      if (KosDynNode_IS_NEXT(n))
-        return (KosDynNext *) n;
-    }
-  }
-  return NULL;
-}
-
-
 void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
 
   KosDynNode *node = (KosDynNode *) next;
@@ -140,16 +78,11 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
 }
 
 
-int kos_dyn_next_deliver_yield(KosEvalState *es, PyObject *val) {
+int kos_dyn_next_deliver_yield(
+    KosEvalState *es, KosDynNext *next, PyObject *val) {
 
-  KosDynNext *next = kos_dyn_find_next_above_frame(es);
   KosPyAsyncGen *agen;
 
-  if (! next) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_next_deliver_yield: no NEXT boundary");
-    return -1;
-  }
   if (KosEvalState_StackPushRef(es, val) < 0) {
     return -1;
   }
@@ -199,14 +132,6 @@ int kos_dyn_next_deliver_return_node(
 
   kos_dyn_unlink_next_node(es, next);
   return 0;
-}
-
-
-int kos_dyn_need_kos_agen_boundary_deliver(KosEvalState *es) {
-
-  return kos_dyn_find_next_above_frame(es) != NULL
-      || kos_dyn_find_awaiting_foreach(es) != NULL
-      || kos_dyn_find_yield_from_iter_boundary(es) != NULL;
 }
 
 

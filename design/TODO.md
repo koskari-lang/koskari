@@ -7,11 +7,22 @@ design docs for detail.
 
 ## Evaluator architecture
 
-- **Generic boundary dynnode dispatch** — evolve `kos_dynnode_on_control_returned`
-  or add `kos_dynnode_on_boundary_event` so NEXT / FOREACH / YIELD_FROM
-  consumers route through one capacity-driven dispatcher instead of scattered
-  calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
-  Ref: [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
+- **Decompose YIELD_FROM / ITER_NEXT bodies over the boundary dispatcher** —
+  the §5.2 generic dispatcher (`dynchain/dyn_boundary.c`, capability-keyed on
+  `KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY`) is implemented; next, fold the
+  repeated exhaustion-pop / StopIteration-harvest / emit-yield motifs of
+  YIELD_FROM's four `drive_*` variants into shared delegate-stepping helpers,
+  and split ITER_NEXT hot/cold (sync value path inline, Koskari-agen attach
+  out of line).  Ref:
+  [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2;
+  [dispatch-sizing.md](dispatch-sizing.md) phase E.
+- **Yield-from passthru on GEN (undecided)** — a `yieldfrom` field on the GEN
+  node: re-entering a delegating generator dispatches straight to the delegate
+  without thawing the frame; the frame is reconstructed only when the delegate
+  raises or ends.  Staged: foreign delegates first, flattened Koskari
+  delegates second (chain topology, lazy reconstruction cascade, extent-inert
+  guard for wind/parameterize segments).  Receivers join the §5.2 dispatcher
+  by carrying the capability bit.  Evaluate before committing.
 
 ---
 
