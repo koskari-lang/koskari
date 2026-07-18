@@ -34,7 +34,7 @@ body to the dispatch fn.
 Two efforts landed after the A2 sweep:
 
 - **Generic iterator-boundary dispatcher** (§5.2 of
-  [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md)):
+  [archive/boundary-control-reemit.md](archive/boundary-control-reemit.md)):
   NEXT / FOREACH / YIELD_FROM boundary routing converged on the
   capability-keyed dispatcher in `dynchain/dyn_boundary.c`; the three
   per-kind finders and the probe-then-refind double walk are gone.
@@ -130,7 +130,7 @@ Distribution (top-heavy, long-tailed; % of the 79,356 B body):
 | cluster | bytes (handlers) | % body | hotness | action |
 |---|---:|---:|---|---|
 | `CALL_*` family (incl. `TAIL_CALL*`) | 14,577 (21) | 18.4% | mixed | DONE (call-unification): prologues + shared core; residual is the 7 STAR gathers (8,868 B), kept by design |
-| YIELD_FROM | 5,346 (1) | 6.7% | cold | DONE (phase A un-inline + phase E decompose): drive family shares noinline motif helpers; the remaining direction is the GEN yield-from passthru idea (undecided, see [TODO.md](TODO.md)) |
+| YIELD_FROM | 5,346 (1) | 6.7% | cold | DONE (phase A un-inline + phase E decompose): drive family shares noinline motif helpers; the remaining direction is the GEN yield-from passthru proposal (undecided, see [interpreter/gen-yieldfrom-passthru.md](interpreter/gen-yieldfrom-passthru.md)) |
 | comparison family (`*_COMPARE*`) | 2,642 (6) | 3.3% | hot | DONE (compare-unification): selector-keyed, fused pairs born inline, VAR twins cold |
 | IMPORT_* | 2,016 (3) | 2.5% | cold | DONE (phase A): `IMPORT_STAR`/`IMPORT_FROM` cold; `IMPORT` (210 B) stays inline |
 | bulk loads (`VAR2/4`, `FAST2/4`) | 1,738 (4) | 2.2% | hot | DONE (var4): FAST pair inline, VAR twins cold |
@@ -172,7 +172,7 @@ except-clause path -- borderline; EAFP-heavy code keeps it warm).
   split hot/cold (705 -> 615 B inline, agen attach out of line).  As
   predicted these shrank total `.text` and cold-path I-cache, not the
   dispatch fn.  The remaining yield-from direction is the GEN passthru
-  idea (undecided; see [TODO.md](TODO.md)).
+  proposal (undecided; see [interpreter/gen-yieldfrom-passthru.md](interpreter/gen-yieldfrom-passthru.md)).
 
 Remeasure dispatch fn size and run the suite + ASan after each batch.
 

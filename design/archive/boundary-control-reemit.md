@@ -1,20 +1,23 @@
 # Boundary Control Re-emit Model
 
-**Status:** Frame-crossing vs consumer-delivery split is implemented for opcodes
-and eval helpers: thin **`RETURN`**, **`eval_event_*`**, and
-**`apply_kos_op_result`** own unwind/pop and boundary routing. The generic
-dynnode boundary dispatch (§5.2) is implemented as the capability-keyed
-dispatcher in `koskari/lib/dynchain/dyn_boundary.c`.
+**Status: COMPLETE and ARCHIVED (2026-07-18).**  Every migration step
+landed: the frame-crossing vs consumer-delivery split (thin **`RETURN`**,
+**`eval_event_*`**, **`apply_kos_op_result`**), the unified RAISE ingress
+(§5.3), and finally the generic dynnode boundary dispatch (§5.2) as the
+capability-keyed dispatcher in `koskari/lib/dynchain/dyn_boundary.c`.
+The speculative follow-on is
+[gen-yieldfrom-passthru.md](../interpreter/gen-yieldfrom-passthru.md)
+(a proposal, undecided).
 
 This document describes the boundary model where frame-local outcomes are
 signaled first, then delivered to parent consumers after crossing a frame
 boundary.
 
 Companion docs:
-- [kosevent-elimination.md](../archive/kosevent-elimination.md) (archived; implemented)
-- [event-driven-node-delivery.md](../archive/event-driven-node-delivery.md)
-- [generic-dynnode-protocol.md](generic-dynnode-protocol.md)
-- [evaluator.md](evaluator.md)
+- [kosevent-elimination.md](kosevent-elimination.md) (archived; implemented)
+- [event-driven-node-delivery.md](event-driven-node-delivery.md)
+- [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md)
+- [evaluator.md](../interpreter/evaluator.md)
 
 
 ## 1. Problem statement

@@ -3,7 +3,7 @@
 **Status:** Milestone implemented (archived 2026-04-16). `KosContext.pending_agen*`
 removed; boundary state on **`KOS_DYN_NEXT`** / **`KOS_DYN_FOREACH`**. Active
 follow-up: [kosevent-elimination.md](kosevent-elimination.md),
-[boundary-control-reemit.md](../interpreter/boundary-control-reemit.md).
+[boundary-control-reemit.md](boundary-control-reemit.md).
 
 This document specifies a **target architecture** for Koskari iteration and generator boundaries: **boundary outcomes** (yield, return, exhaustion, raise) are described by a **canonical `KosEvent` on the evaluation context**, and **consumption** (stack effects, PC updates, branch to `for`/`else`, default handling) moves into **dynamic nodes** and **generic dynchain dispatch**. Opcodes and `eval.c` stop encoding feature-specific state in **`KosContext` ad-hoc fields** (notably the pending async-generator slots documented below).
 

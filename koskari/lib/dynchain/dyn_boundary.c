@@ -11,7 +11,7 @@
   Future receiver kinds join by carrying the capability and adding a
   delivery case here — in particular a GEN node carrying a yield-from
   passthru field would slot in without touching the finder or the eval
-  loop (see design/interpreter/boundary-control-reemit.md §5.2).
+  loop (see design/archive/boundary-control-reemit.md §5.2).
 */
 
 

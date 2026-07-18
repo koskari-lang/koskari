@@ -35,7 +35,7 @@ raise-after-suspension path is broken.
 that asyncio drives).
 
 **Related:**
-- Evaluator model: [evaluator.md](../interpreter/evaluator.md); [boundary-control-reemit.md](../interpreter/boundary-control-reemit.md).
+- Evaluator model: [evaluator.md](../interpreter/evaluator.md); [boundary-control-reemit.md](boundary-control-reemit.md).
 - Surfaced by: `design/archive/cli-repl-rework.md` (the REPL prompt read had to route
   EOF/interrupt through Python sentinels because of this bug).
 - Raise-path unification that fixed the *sibling* path but not this one: PR #79

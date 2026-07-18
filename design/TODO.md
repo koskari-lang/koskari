@@ -5,18 +5,6 @@ design docs for detail.
 
 ---
 
-## Evaluator architecture
-
-- **Yield-from passthru on GEN (undecided)** — a `yieldfrom` field on the GEN
-  node: re-entering a delegating generator dispatches straight to the delegate
-  without thawing the frame; the frame is reconstructed only when the delegate
-  raises or ends.  Staged: foreign delegates first, flattened Koskari
-  delegates second (chain topology, lazy reconstruction cascade, extent-inert
-  guard for wind/parameterize segments).  Receivers join the §5.2 dispatcher
-  by carrying the capability bit.  Evaluate before committing.
-
----
-
 ## Continuations / transfer plans
 
 - **Async nested await during transfer** — when a wind/unwind thunk under an
@@ -273,6 +261,17 @@ From [FEATURES.md](FEATURES.md) and related docs:
 
 The following items are captured from design discussion. Each has a short
 design note and is open for evaluation and possible implementation.
+
+### GEN yield-from passthru
+
+A `yieldfrom` field on the GEN dynnode: re-entering a delegating generator
+dispatches straight to the delegate without thawing the frame, which is
+reconstructed only when the delegate raises or ends.  Staged foreign-first;
+the flattened Koskari delegate carries the hard questions (chain topology,
+lazy reconstruction cascade, extent-inert guard).  Undecided — the proposal
+doc weighs pros/cons and per-delegate-kind complexity.
+
+Ref: [interpreter/gen-yieldfrom-passthru.md](interpreter/gen-yieldfrom-passthru.md).
 
 ### Seq-values kwargs (in-scope formals apply)
 
