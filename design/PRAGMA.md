@@ -78,6 +78,7 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | Setting | Target | Baseline | Bare `[key]` | Domain | Effect |
 |---|---|---|---|---|---|
 | `reader/brackets` | reader | `True` | `True` | bool | `[ ]` reads into distinct bracket-pair values (vs. plain pairs) |
+| `reader/index-brackets` | reader | `False` | `True` | bool | a `[ ... ]` group attached directly to a value (no whitespace) desugars into `(item VALUE KEY)`, chaining left to right (mention-to-enable) |
 | `reader/layout` | reader | `True` | `True` | bool | layout (indentation) block reading |
 | `reader/implicit-calls` | reader | `True` | `True` | bool | multiple values on one layout line form an implicit call |
 | `reader/pass-none` | reader | `False` | `True` | bool | the `pass` symbol reads as the `None` literal (mention-to-enable) |

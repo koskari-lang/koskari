@@ -56,6 +56,15 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   bracket-pair value that remembers its origin, rather than a plain pair. Off
   makes `[ ]` and `( )` completely indistinguishable. See
   [Brackets and the call convention](brackets-and-call-convention.md).
+- **`reader/index-brackets`** *(default off)* — whether a `[ ... ]` group
+  attached directly to a just-read value (no intervening whitespace) desugars
+  into an item access: `data["bar"]` reads as `(item data "bar")`. Groups
+  chain left to right, so `grid[y][x]` reads as `(item (item grid y) x)`, and
+  a space breaks the attachment — `foo [a]` stays two separate forms. Empty
+  index brackets are a read error. A bare `[reader/index-brackets]` turns it
+  on. Because the desugar happens in the reader, the result is an ordinary
+  `(item …)` form and composes accordingly — for example `&data["bar"]` is a
+  ref to that slot.
 - **`reader/layout`** *(default on)* — whether indentation-based layout blocks
   are read. Off leaves only s-expression syntax.
 - **`reader/implicit-calls`** *(default on)* — whether several values on one
