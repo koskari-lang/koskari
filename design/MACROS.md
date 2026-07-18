@@ -10,12 +10,17 @@ Bootstrap loads these sources in order (`koskari/bootstrap/__init__.py`,
 
 1. `_define_syntax.ki` — meta-macros for `define-syntax` / `extend-syntax` / `let-syntax`
 2. `_conditionals.ki` — `if`, `when`, `unless`, `?`, `bool`, `None?`, `nil?`
-3. `_functions.ki` — coroutine/demand defines, decorators, composition
+3. `_iter.ki` — `each`, `list-each`, `dict-each`, `has?`, slice helpers
 4. `_variables.ki` — assignment, refs, bindings, comprehensions helpers
-5. `_class.ki` — classes, dataclasses, `super`
-6. `_iter.ki` — `each`, `list-each`, `dict-each`, `has?`, slice helpers
-7. `basics.ki` — list accessors, `help`, macro expansion, compile/evaluate helpers,
-   `inline-macro`
+5. `_help.ki` — help formatting helpers
+6. `_pairs.ki` — pair utilities
+7. `_functions.ki` — coroutine/demand defines, decorators, composition
+8. `_class.ki` — classes, dataclasses, `super`
+9. `_pragma.ki` — `pragma` set/read forms, `(help pragma)`
+10. `_assert.ki` — `assert`, gated by the `compiler/enable-asserts` pragma
+11. `_fences.ki` — `define-fence`, `fence/bash`
+12. `basics.ki` — list accessors, `help`, macro expansion, compile/evaluate helpers,
+    `inline-macro`
 
 The merged module is exposed as `koskari.builtins`. Macros are available in every
 module without import.
@@ -535,6 +540,36 @@ settings.
 **`ModulePragma.__kos_help__`** — the current settings plus every registered
 setting and its default. **`(help (pragma NS/KEY))`** renders help for one
 setting: the signature and docstring of its registered function.
+
+
+## koskari/bootstrap/_assert.ki
+
+### compile/assert
+
+**Symbol:** `compile/assert` (surface: `assert`)
+
+**Syntax:** **`(assert EXPR)`**, **`(assert EXPR MESSAGE)`**
+
+**Behaviour:** **`macro-rules`** expansion gated at expand time by the
+`compiler/enable-asserts` pragma setting (baseline `True`; see
+[PRAGMA.md](PRAGMA.md)). Enabled, expands to
+**`(unless EXPR (raise (AssertionError MESSAGE?)))`** — so **`MESSAGE`** is
+evaluated only on failure. Disabled, expands to **`(begin)`**: neither
+**`EXPR`** nor **`MESSAGE`** is compiled or evaluated (Python `-O` semantics).
+Because the gate is consulted per expansion, a pragma change is forward-only —
+an assert compiled while disabled stays compiled away even if asserts are
+re-enabled before it runs.
+
+The gate itself is a private closure variable in `_assert.ki`: the file
+registers `compiler/enable-asserts` via `koskari.pragma.register`, passing a
+`demand`-wrapped closure as the setting function; applying the pragma calls
+that closure, which writes the variable the macro reads. The transformer is
+bound with **`define-global`** inside that closure, using the standalone
+**`macro-rules NAME [literals]`** layout header (the rules/match layout heads
+accept an optional leading name so a transformer can be built outside
+`define-syntax`).
+
+**Tests:** `tests/importer/test_assert.py`
 
 
 ## koskari/bootstrap/basics.ki

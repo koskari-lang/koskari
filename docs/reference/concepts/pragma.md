@@ -56,13 +56,13 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   bracket-pair value that remembers its origin, rather than a plain pair. Off
   makes `[ ]` and `( )` completely indistinguishable. See
   [Brackets and the call convention](brackets-and-call-convention.md).
-- **`reader/index-brackets`** *(default off)* — whether a `[ ... ]` group
+- **`reader/index-brackets`** *(default on)* — whether a `[ ... ]` group
   attached directly to a just-read value (no intervening whitespace) desugars
   into an item access: `data["bar"]` reads as `(item data "bar")`. Groups
   chain left to right, so `grid[y][x]` reads as `(item (item grid y) x)`, and
   a space breaks the attachment — `foo [a]` stays two separate forms. Empty
-  index brackets are a read error. A bare `[reader/index-brackets]` turns it
-  on. Because the desugar happens in the reader, the result is an ordinary
+  index brackets are a read error. `[reader/index-brackets False]` turns it
+  off. Because the desugar happens in the reader, the result is an ordinary
   `(item …)` form and composes accordingly — for example `&data["bar"]` is a
   ref to that slot.
 - **`reader/layout`** *(default on)* — whether indentation-based layout blocks
@@ -88,15 +88,21 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   - `koskari` — strict: a write to an undeclared name is a compile error.
   - `scheme` — an unsatisfied write promotes to a module global.
   - `python` — a first write creates an implicit local unless declared global.
-- **`compiler/call-brackets`** *(default `ignore`)* — what happens when a
+- **`compiler/call-brackets`** *(default `warn`)* — what happens when a
   bracket-pair `[ ]` reaches call position, where `( )` is conventionally
   expected. One of:
-  - `ignore` — nothing; the convention is unenforced.
   - `warn` — emit a `SyntaxWarning`.
   - `error` — raise a compile error.
+  - `ignore` — nothing; the convention is unenforced.
 
   A bare `[compiler/call-brackets]` selects `warn`. See
   [Brackets and the call convention](brackets-and-call-convention.md).
+- **`compiler/enable-asserts`** *(default on)* — whether `(assert …)` forms
+  expand to their check. Off, an `assert` compiles away entirely: neither the
+  condition nor the message is compiled or evaluated, mirroring Python's `-O`
+  behavior. The gate is consulted as each `assert` is compiled, so a change
+  affects only the asserts that appear after it. See
+  [compile/assert](../macros/compile-assert.md).
 - **`compiler/tco-enable`** *(default on)* — whether tail calls are optimized.
 - **`compiler/convert-fast`** *(default on)* — whether the compiler lowers local
   variable access to its fast form. Off disables that optimization.

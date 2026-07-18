@@ -78,16 +78,19 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | Setting | Target | Baseline | Bare `[key]` | Domain | Effect |
 |---|---|---|---|---|---|
 | `reader/brackets` | reader | `True` | `True` | bool | `[ ]` reads into distinct bracket-pair values (vs. plain pairs) |
-| `reader/index-brackets` | reader | `False` | `True` | bool | a `[ ... ]` group attached directly to a value (no whitespace) desugars into `(item VALUE KEY)`, chaining left to right (mention-to-enable) |
+| `reader/index-brackets` | reader | `True` | `True` | bool | a `[ ... ]` group attached directly to a value (no whitespace) desugars into `(item VALUE KEY)`, chaining left to right |
 | `reader/layout` | reader | `True` | `True` | bool | layout (indentation) block reading |
 | `reader/implicit-calls` | reader | `True` | `True` | bool | multiple values on one layout line form an implicit call |
 | `reader/pass-none` | reader | `False` | `True` | bool | the `pass` symbol reads as the `None` literal (mention-to-enable) |
 | `reader/fences` | reader | `True` | `True` | bool | triple-backtick fences read into `compile/apply-fence` forms |
 | `compiler/resolution` | compiler | `koskari` | *(required)* | `koskari` / `scheme` / `python` | name-resolution semantics for writes |
-| `compiler/call-brackets` | compiler | `ignore` | `warn` | `ignore` / `warn` / `error` | policy when a bracket-pair reaches call position |
+| `compiler/call-brackets` | compiler | `warn` | `warn` | `ignore` / `warn` / `error` | policy when a bracket-pair reaches call position |
+| `compiler/enable-asserts` | compiler | `True` | `True` | bool | `(assert …)` forms expand to their check; off, they compile away entirely (Python `-O` semantics) |
 | `compiler/tco-enable` | compiler | `True` | `True` | bool | tail-call optimization |
 | `compiler/convert-fast` | compiler | `True` | `True` | bool | VAR→FAST local-access lowering pass |
 | `compiler/compress` | compiler | `False` | `False` | bool | bytecode compression pass — registered but inert (pass not yet built) |
+| `compiler/cache-expression` | compiler | `False` | `True` | bool | per-site opcode caches on top-level expression code (mention-to-enable) |
+| `compiler/cache-function` | compiler | `True` | `True` | bool | per-site opcode caches on function and lambda code |
 | `compiler/protect-code` | compiler | `False` | `True` | bool | each Code block page-aligned and mprotect-sealed read-only at construction (mention-to-enable) |
 | `compiler/pack-module` | compiler | on, unbounded | on, unbounded | bool + `max-count:` / `max-bytes:` | durable code relocated into shared, singly-sealed arenas when the module seals — see [archive/code-object-arena-packing.md](archive/code-object-arena-packing.md) |
 | `pragma/strict-settings` | pragma | `True` | `True` | bool | an unknown setting raises (else warns) |
@@ -142,8 +145,11 @@ status in the mechanism — it is simply the first registrant.
 Behaviors stay with their owners: the `ResolutionPragma` implementations remain
 compiler-side (they manipulate `ByteCodeFragment` internals) and merely
 *register* `compiler/resolution`; the bracket-call check stays in `compile_pair`
-and registers `compiler/call-brackets`. The surface forms (`compile/pragma`,
-`compile/meta-pragma`) are `define-syntax` macros in
+and registers `compiler/call-brackets`. Registration is not Python-only: the
+assert expansion gate registers `compiler/enable-asserts` from the bootstrap
+itself (`koskari/bootstrap/_assert.ki`), calling `koskari.pragma.register` with
+a `demand`-wrapped Koskari closure as the setting function. The surface forms
+(`compile/pragma`, `compile/meta-pragma`) are `define-syntax` macros in
 `koskari/bootstrap/_pragma.ki`. Model at the bottom, behaviors with their
 owners, syntax in the bootstrap.
 
@@ -235,7 +241,10 @@ prefix — the same surface convention MACROS.md uses (e.g. `?` for `compile/?`)
 See **[Available settings](#available-settings)** above for the current catalog
 with baselines, bare-form values, and domains. Each is registered `active` —
 its refresh reconfigures the reader or compiler — except `compiler/compress`,
-whose pass is not yet built (registered but inert). `compiler/convert-fast`,
+whose pass is not yet built (registered but inert), and
+`compiler/enable-asserts`, whose setting function itself flips the assert
+expansion gate held in the bootstrap closure (no facet refresh involved).
+`compiler/convert-fast`,
 `compiler/tco-enable`, and `compiler/compress` are candidates to collapse into a
 single graduated `compiler/optimize` level later (see **Future**).
 
@@ -251,19 +260,20 @@ A setting behaves like a small function, and **declaring it is calling it.**
 * **Call it** (setting present) → parameters fill from the given arguments; any
   omitted argument takes its **parameter default**.
 
-Baseline and parameter default are independent — `compiler/call-brackets` has
-baseline `ignore` but parameter default `warn`:
+Baseline and parameter default are independent — `compiler/protect-code` has
+baseline `False` but parameter default `True`:
 
-* not mentioned → stays at baseline (`ignore` — the check is off, pure
-  convention);
-* `[compiler/call-brackets]` → `level` omitted → parameter default → `warn`;
-* `[compiler/call-brackets 'error]` → `level` explicit → `error`.
+* not mentioned → stays at baseline (`False` — sealing is off);
+* `[compiler/protect-code]` → `enabled` omitted → parameter default → `True`;
+* `[compiler/protect-code False]` → `enabled` explicit → `False`.
 
-That independence is the useful part: leaving the check unmentioned keeps it
-silent, but the moment you opt in by naming it you get a sensible active default
-(`warn`) instead of having to recall the severity vocabulary — while an explicit
-value still wins. (A purely illustrative inverse would be a feature whose
-baseline is *off* but whose bare form turns it *on*: mention-to-enable.)
+That independence is the useful part: a feature can stay quiet until named, but
+the moment you opt in by naming it you get its sensible active value with no
+argument to recall: mention-to-enable (`reader/pass-none` and
+`compiler/cache-expression` work the same way). Most other settings keep the
+two aligned — e.g. `compiler/call-brackets` has baseline `warn` and parameter
+default `warn`, so bare mention is a no-op and only an explicit `'error` or
+`'ignore` moves it.
 
 ### Replace, not merge
 

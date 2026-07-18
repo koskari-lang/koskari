@@ -116,22 +116,6 @@ halving the pushes for the common literal-keyed dict. Mixed literals
 can split into alternating `BUILD_KWDS_NAMES` / `BUILD_KWDS` runs under
 the existing multi-run merge behavior.
 
-### `assert` syntax + runtime function
-
-Add `assert` in two forms sharing one gate, `assert/enabled` (a new `assert/*`
-pragma feature, baseline `True`, seedable at launch via the CLI pragma). The
-**syntax** `(assert EXPR MSG?)` is a `define-special` that reads compile-time
-`assert/enabled`: enabled → emit a falsey-check that raises `AssertionError`;
-disabled → expand to `(begin)`, so `EXPR` is neither compiled nor evaluated
-(Python `-O` semantics). The **runtime function** `assert` (bootstrap callable)
-consults the session-level launch value at call time: raises on a falsey
-condition when enabled, returns without raising when disabled. Pragma changes
-the level forward-only and module-scoped. Open: graded level vs. bare bool,
-message form.
-
-Ref: [language/assert.md](language/assert.md); [PRAGMA.md](PRAGMA.md);
-[language/pragma-cli.md](language/pragma-cli.md).
-
 ### Bundles and namespace facets
 
 Introduce **bundles** as first-class namespace facet objects: a namespace of
