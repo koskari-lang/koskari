@@ -1236,13 +1236,10 @@ int kos_dyn_push_next_for_kos_agen(
 
 void kos_dyn_next_abort_after_failed_attach(KosEvalState *es);
 
-KosDynForeach *kos_dyn_find_awaiting_foreach(KosEvalState *es);
-
-KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es);
-
 void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *node);
 
-int kos_dyn_next_deliver_yield(KosEvalState *es, PyObject *val);
+int kos_dyn_next_deliver_yield(
+    KosEvalState *es, KosDynNext *next, PyObject *val);
 
 int kos_dyn_next_deliver_return_node(
     KosEvalState *es,
@@ -1255,10 +1252,6 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
 int kos_dyn_foreach_deliver_return_kos_agen(
     KosEvalState *es, KosDynForeach *fe, PyObject *val);
 
-int kos_dyn_need_kos_agen_boundary_deliver(KosEvalState *es);
-
-KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es);
-
 int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf,
     PyObject *inner_val);
@@ -1266,10 +1259,67 @@ int kos_dyn_yield_from_deliver_inner_yield(
 int kos_dyn_yield_from_deliver_inner_return(
     KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
 
-int kos_dyn_deliver_yield_to_iter_boundary(
-    KosEvalState *es, PyObject *val);
-
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
+
+
+/* === Generic iterator-boundary dispatch (dyn_boundary.c) === */
+
+
+/* Result codes for kos_dyn_iter_boundary_deliver_return: how the eval
+   loop should proceed after a delegate-return delivery. */
+#define KOS_ITER_BOUNDARY_DELIVERED  0   /* delivered; REPROLOGUE */
+#define KOS_ITER_BOUNDARY_ERROR    (-1)  /* hard failure; PyErr set */
+#define KOS_ITER_BOUNDARY_RAISE      1   /* PyErr set; route to raise ingress */
+
+/**
+   Locate the nearest receiving iterator boundary from active chain state.
+
+   A node is a receiving boundary iff it carries
+   KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY -- the capability is the single
+   routing key; no node-kind checks.  NEXT and flattened-delegate
+   YIELD_FROM nodes carry it for their whole lifetime; FOREACH toggles it
+   with the ITER_NEXT step phase (kos_dyn_foreach_set_iter_step_phase).
+   Future receiver kinds (e.g. a GEN-carried yield-from passthru field)
+   join by carrying the capability.
+
+   dyn_top is preferred: after a yield freeze the boundary that was
+   directly driving the generator sits at dyn_top.  Otherwise walk
+   outward from the running frame and return the nearest receiver.
+
+   :return: borrowed node, or NULL when no receiver is active
+*/
+KosDynNode *kos_dyn_find_iter_boundary(KosEvalState *es);
+
+/**
+   Deliver a boundary YIELD value to a receiver located by
+   kos_dyn_find_iter_boundary.  val ownership transfers to the consumer.
+
+   :return: 0 on delivery (caller should REPROLOGUE); -1 on error
+*/
+int kos_dyn_iter_boundary_deliver_yield(
+    KosEvalState *es, KosDynNode *node, PyObject *val);
+
+/**
+   Deliver a delegate-return (exhaustion) to the receiving boundary that
+   sits directly above the returning GEN.  val consumed.
+
+   :return: KOS_ITER_BOUNDARY_DELIVERED, _ERROR, or _RAISE
+*/
+int kos_dyn_iter_boundary_deliver_return(
+    KosEvalState *es, KosDynNode *node, PyObject *val);
+
+/**
+   The Koskari async generator object a receiving boundary is driving.
+
+   :return: borrowed KosPyAsyncGen reference as PyObject*
+*/
+PyObject *kos_dyn_iter_boundary_agen(KosDynNode *node);
+
+/**
+   Clear a receiving boundary after its driven generator was torn down on
+   an error path: unlink NEXT / YIELD_FROM nodes, idle a FOREACH step.
+*/
+void kos_dyn_iter_boundary_abort(KosEvalState *es, KosDynNode *node);
 
 
 /**
@@ -2268,6 +2318,23 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
 #define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)
 #define KosDynForeach_ITER_STEP_PHASE(r) (((KosDynNode *)(r))->u.foreach.iter_step_phase)
+
+/**
+   Set a FOREACH node's ITER_NEXT step phase, keeping the
+   KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY capability in lockstep: the node is
+   a receiving iterator boundary exactly while a flattened Koskari agen
+   step is in flight.  All phase writes must go through this so the
+   capability stays the single routing key for boundary dispatch.
+*/
+static inline void kos_dyn_foreach_set_iter_step_phase(
+    KosDynForeach *fe, uint8_t phase) {
+
+  KosDynForeach_ITER_STEP_PHASE(fe) = phase;
+  if (phase == KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN)
+    KosDynNode_CAPS((KosDynNode *) fe) |= KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
+  else
+    KosDynNode_CAPS((KosDynNode *) fe) &= ~KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
+}
 
 #define KosDynNext_AGEN_OBJ(nd) (((KosDynNode *)(nd))->u.next.agen_obj)
 #define KosDynNext_DEFAULT_VAL(nd) (((KosDynNode *)(nd))->u.next.default_val)

@@ -19,7 +19,7 @@
    Merge the m dicts (later overwrite earlier on key clash) and push result.
 */
 
-KOS_OP_HANDLER(COMBINE_KWDS) {
+KOS_OP_HANDLER_COLD(COMBINE_KWDS) {
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *built = PyDict_New();

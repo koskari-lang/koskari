@@ -19,6 +19,41 @@
    exhaustion. Must be inside PUSH_FOREACH block. Auto-await.
 */
 
+/**
+   ITER_NEXT over a flattened Koskari async gen: arm the FOREACH step
+   phase and attach the gen frame.  Out of line — this runs once per
+   flattened agen step, never on the sync iteration fast path.
+*/
+static KOS_NOINLINE KosOpResult iter_next_step_kos_agen(
+    KosEvalState *es,
+    KosOp *insn,
+    KosDynNode *region,
+    KosPyAsyncGen *agen) {
+
+  if (agen->in_progress) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator already being iterated");
+    return EVAL_RAISE();
+  }
+  if (agen->closed || ! agen->ctx) {
+    KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+    return EVAL_NORMAL();
+  }
+  agen->in_progress = 1;
+  KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) = KosOp_ARG(insn);
+  kos_dyn_foreach_set_iter_step_phase(
+      (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN);
+  if (op_attach_koskari_agen_frame_for_iter_next(es, agen, region) < 0) {
+    agen->in_progress = 0;
+    kos_dyn_foreach_set_iter_step_phase(
+        (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_IDLE);
+    return EVAL_RAISE();
+  }
+  return EVAL_NORMAL();
+}
+
+
 KOS_OP_HANDLER(ITER_NEXT) {
   KosDynNode *region = kos_find_node_for_loop(es);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
@@ -28,30 +63,8 @@ KOS_OP_HANDLER(ITER_NEXT) {
   }
 
   PyObject *iter = KosDynForeach_ITER((KosDynForeach *) region);
-  if (KosPyAsyncGen_Check(iter)) {
-    KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
-    if (agen->in_progress) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "async generator already being iterated");
-      return EVAL_RAISE();
-    }
-    if (agen->closed || ! agen->ctx) {
-      KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-      KosEvalState_SET_PC(es, KosOp_ARG(insn));
-      return EVAL_NORMAL();
-    }
-    agen->in_progress = 1;
-    KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) = KosOp_ARG(insn);
-    KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) region) =
-        KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN;
-    if (op_attach_koskari_agen_frame_for_iter_next(es, agen, region) < 0) {
-      agen->in_progress = 0;
-      KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) region) =
-          KOS_FOREACH_ITER_STEP_IDLE;
-      return EVAL_RAISE();
-    }
-    return EVAL_NORMAL();
-  }
+  if (unlikely(KosPyAsyncGen_Check(iter)))
+    return iter_next_step_kos_agen(es, insn, region, (KosPyAsyncGen *) iter);
 
   PyObject *value = NULL;
   PyObject *_await = NULL;

@@ -156,14 +156,11 @@ static void clear_kos_agen_boundary_on_error(KosEvalState *es) {
 
   KosDynFrame *cf;
   KosDynNode *top;
+  KosDynNode *boundary;
+  KosPyAsyncGen *agen;
 
   cf = KosEvalState_FRAME(es);
   top = KosEvalState_DYN_TOP(es);
-  KosDynNext *dn;
-  KosDynForeach *fe;
-  KosDynYieldFrom *yf = NULL;
-  KosDynNode *w;
-  KosPyAsyncGen *agen;
 
   if (! cf || ! top || ! KosDynNode_IS_FRAME(top))
     return;
@@ -173,28 +170,13 @@ static void clear_kos_agen_boundary_on_error(KosEvalState *es) {
       return;
   }
 
-  dn = kos_dyn_find_next_above_frame(es);
-  fe = kos_dyn_find_awaiting_foreach(es);
-  if (! dn && ! fe) {
-    for (w = KosDynNode_PARENT((KosDynNode *) cf); w; w = KosDynNode_PARENT(w)) {
-      if (KosDynNode_IS_YIELD_FROM(w)
-          && KosDynNode_HAS_CAP(w, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
-          && KosDynYieldFrom_KIND((KosDynYieldFrom *) w) == (uint8_t) 4) {
-        yf = (KosDynYieldFrom *) w;
-        break;
-      }
-    }
-  }
-
-  if (! dn && ! fe && ! yf)
+  boundary = kos_dyn_find_iter_boundary(es);
+  if (! boundary)
     return;
 
-  if (dn)
-    agen = (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) dn);
-  else if (fe)
-    agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
-  else
-    agen = (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
+  agen = (KosPyAsyncGen *) kos_dyn_iter_boundary_agen(boundary);
+  if (! agen)
+    return;
 
   {
     KosDynFrame *detached_frame = NULL;
@@ -205,12 +187,7 @@ static void clear_kos_agen_boundary_on_error(KosEvalState *es) {
     }
   }
 
-  if (fe)
-    KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
-  if (dn)
-    kos_dyn_unlink_next_node(es, dn);
-  if (yf)
-    (void) kos_dyn_unlink_yield_from(es, yf);
+  kos_dyn_iter_boundary_abort(es, boundary);
 }
 
 
@@ -1478,8 +1455,8 @@ static int op_attach_koskari_agen_frame_for_iter_next(
 
   if (attach_agen_gen_checked(es, agen) < 0) {
     if (KosDynNode_IS_FOREACH(region))
-      KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) region) =
-          KOS_FOREACH_ITER_STEP_IDLE;
+      kos_dyn_foreach_set_iter_step_phase(
+          (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_IDLE);
     agen->in_progress = 0;
     return -1;
   }
@@ -1838,9 +1815,9 @@ static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
    value as its own yield on its next dispatch).
 */
 static KosOpResult eval_event_yield_deliver_to_boundary(
-    KosEvalState *es, PyObject *val) {
+    KosEvalState *es, KosDynNode *boundary, PyObject *val) {
 
-  if (kos_dyn_deliver_yield_to_iter_boundary(es, val) < 0)
+  if (kos_dyn_iter_boundary_deliver_yield(es, boundary, val) < 0)
     return EVAL_FATAL();
   return EVAL_REPROLOGUE();
 }
@@ -1878,8 +1855,11 @@ static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
     if (ws.kind != KOS_RES_NORMAL)
       return ws;
   }
-  if (kos_dyn_need_kos_agen_boundary_deliver(es))
-    return eval_event_yield_deliver_to_boundary(es, val);
+  {
+    KosDynNode *boundary = kos_dyn_find_iter_boundary(es);
+    if (boundary)
+      return eval_event_yield_deliver_to_boundary(es, boundary, val);
+  }
   KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
   return EVAL_YIELD(val);
 }
@@ -2028,8 +2008,8 @@ static KosOpResult eval_event_return_at_frame(
     return r;
   }
 
-  /* Case 2: gen parent — dispatch on the consumer node above the GEN.
-     The consumer is the true terminus; GEN is unwound on the way out. */
+  /* Case 2: gen parent — deliver to the receiving boundary above the GEN.
+     The receiver is the true terminus; GEN is unwound on the way out. */
   if (parent && KosDynNode_IS_GEN(parent)) {
     KosDynNode *consumer = KosDynNode_PARENT(parent);
 
@@ -2038,32 +2018,15 @@ static KosOpResult eval_event_return_at_frame(
       return EVAL_RETURN(val);
     }
 
-    if (KosDynNode_IS_NEXT(consumer)) {
-      int r = kos_dyn_next_deliver_return_node(
-          es, (KosDynNext *) consumer, val);
-      if (r < 0) {
-        if (PyErr_Occurred())
-          return EVAL_FATAL();
-        return EVAL_REPROLOGUE();
-      }
-      return EVAL_REPROLOGUE();
-    }
-
-    if (KosDynNode_IS_FOREACH(consumer)) {
-      if (kos_dyn_foreach_deliver_return_kos_agen(
-              es, (KosDynForeach *) consumer, val) < 0)
-        return EVAL_FATAL();
-      return EVAL_REPROLOGUE();
-    }
-
-    if (KosDynNode_IS_YIELD_FROM(consumer)) {
-      int r = kos_dyn_yield_from_deliver_inner_return(
-          es, (KosDynYieldFrom *) consumer, val);
-      if (r < 0) {
+    if (KosDynNode_HAS_CAP(consumer, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
+      int r = kos_dyn_iter_boundary_deliver_return(es, consumer, val);
+      if (r == KOS_ITER_BOUNDARY_RAISE) {
         KosOpResult rs;
         KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
         return rs;
       }
+      if (r == KOS_ITER_BOUNDARY_ERROR)
+        return EVAL_FATAL();
       return EVAL_REPROLOGUE();
     }
 

@@ -19,7 +19,7 @@
    and seq[1].
 */
 
-KOS_OP_HANDLER(UNPACK_FAST) {
+KOS_OP_HANDLER_COLD(UNPACK_FAST) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   size_t idx0 = (size_t) row.a0;

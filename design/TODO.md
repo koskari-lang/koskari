@@ -5,16 +5,6 @@ design docs for detail.
 
 ---
 
-## Evaluator architecture
-
-- **Generic boundary dynnode dispatch** — evolve `kos_dynnode_on_control_returned`
-  or add `kos_dynnode_on_boundary_event` so NEXT / FOREACH / YIELD_FROM
-  consumers route through one capacity-driven dispatcher instead of scattered
-  calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
-  Ref: [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md) §5.2.
-
----
-
 ## Continuations / transfer plans
 
 - **Async nested await during transfer** — when a wind/unwind thunk under an
@@ -271,6 +261,17 @@ From [FEATURES.md](FEATURES.md) and related docs:
 
 The following items are captured from design discussion. Each has a short
 design note and is open for evaluation and possible implementation.
+
+### GEN yield-from passthru
+
+A `yieldfrom` field on the GEN dynnode: re-entering a delegating generator
+dispatches straight to the delegate without thawing the frame, which is
+reconstructed only when the delegate raises or ends.  Staged foreign-first;
+the flattened Koskari delegate carries the hard questions (chain topology,
+lazy reconstruction cascade, extent-inert guard).  Undecided — the proposal
+doc weighs pros/cons and per-delegate-kind complexity.
+
+Ref: [interpreter/gen-yieldfrom-passthru.md](interpreter/gen-yieldfrom-passthru.md).
 
 ### Seq-values kwargs (in-scope formals apply)
 

@@ -27,7 +27,7 @@
    push the result.
 */
 
-KOS_OP_HANDLER(BUILD_FUNCTION) {
+KOS_OP_HANDLER_COLD(BUILD_FUNCTION) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 

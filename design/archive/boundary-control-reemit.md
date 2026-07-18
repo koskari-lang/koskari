@@ -1,19 +1,23 @@
 # Boundary Control Re-emit Model
 
-**Status:** Frame-crossing vs consumer-delivery split is implemented for opcodes
-and eval helpers: thin **`RETURN`**, **`eval_event_*`**, and
-**`apply_kos_op_result`** own unwind/pop and boundary routing. **Open:** generic
-dynnode boundary dispatch (§5.2).
+**Status: COMPLETE and ARCHIVED (2026-07-18).**  Every migration step
+landed: the frame-crossing vs consumer-delivery split (thin **`RETURN`**,
+**`eval_event_*`**, **`apply_kos_op_result`**), the unified RAISE ingress
+(§5.3), and finally the generic dynnode boundary dispatch (§5.2) as the
+capability-keyed dispatcher in `koskari/lib/dynchain/dyn_boundary.c`.
+The speculative follow-on is
+[gen-yieldfrom-passthru.md](../interpreter/gen-yieldfrom-passthru.md)
+(a proposal, undecided).
 
 This document describes the boundary model where frame-local outcomes are
 signaled first, then delivered to parent consumers after crossing a frame
 boundary.
 
 Companion docs:
-- [kosevent-elimination.md](../archive/kosevent-elimination.md) (archived; implemented)
-- [event-driven-node-delivery.md](../archive/event-driven-node-delivery.md)
-- [generic-dynnode-protocol.md](generic-dynnode-protocol.md)
-- [evaluator.md](evaluator.md)
+- [kosevent-elimination.md](kosevent-elimination.md) (archived; implemented)
+- [event-driven-node-delivery.md](event-driven-node-delivery.md)
+- [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md)
+- [evaluator.md](../interpreter/evaluator.md)
 
 
 ## 1. Problem statement
@@ -28,9 +32,10 @@ Boundary outcomes combine two responsibilities:
 unwind, frame pop, and parent delivery. `YIELD` returns `EVAL_YIELD(val)`;
 `eval_event_yield` owns walk/freeze and boundary delivery.
 
-**Remaining coupling:** dyn helpers still cross frame boundaries and apply
-NEXT/FOREACH/YIELD_FROM consumer semantics inline instead of routing through a
-single generic boundary dispatcher (§5.2).
+**Consumer routing (implemented):** NEXT/FOREACH/YIELD_FROM consumer
+selection and delivery route through the single capability-keyed dispatcher
+(§5.2); the per-kind semantics remain in their dyn helpers but are only
+reachable through it.
 
 
 ## 2. Core model
@@ -65,15 +70,16 @@ operations.
 Boundary results use **`KosOpResult`** (`KOS_RES_*`). Opcodes return **`EVAL_*()`**
 macros; **`apply_kos_op_result`** routes non-`NORMAL` results to **`eval_event_*`**
 helpers. **`RETURN`** pops the value and returns **`EVAL_RETURN(val)`**;
-**`eval_event_return`** runs unwind, frame pop, and delivery. Parent-frame delivery
-uses **`eval_parent_return_deliver`** (iterator boundary via
-**`kos_dyn_try_deliver_iterator_boundary_after_pop`**, native handler or stack
-push, then **`kos_dynnode_on_control_returned`**). Shared iterator return delivery
-mapping lives in **`eval_deliver_iterator_boundary_return_step`**. **`YIELD`**
-returns **`EVAL_YIELD(val)`**; **`eval_event_yield`** runs
-**`eval_yield_handle_walk_and_freeze`** then **`eval_event_yield_deliver_to_boundary`**.
-Active **`PyErr`** flows through **`process_raise`** (the unified RAISE
-ingress).
+**`eval_event_return_ng`** runs unwind, frame pop, and delivery.  A gen
+consumer (the receiving boundary above the returning GEN) is delivered via
+**`kos_dyn_iter_boundary_deliver_return`** (§5.2); other parents via
+**`eval_parent_return_deliver`** (native handler or stack push, then
+**`kos_dynnode_on_control_returned`**). **`YIELD`** returns
+**`EVAL_YIELD(val)`**; **`eval_event_yield`** runs
+**`eval_yield_handle_walk_and_freeze`**, then **`kos_dyn_find_iter_boundary`**
+and, when a receiver is active, **`kos_dyn_iter_boundary_deliver_yield`**
+(§5.2). Active **`PyErr`** flows through **`process_raise`** (the unified
+RAISE ingress).
 
 
 ## 3. Boundary control event kinds
@@ -125,16 +131,31 @@ Add explicit boundary re-emit handling in eval loop:
 
 ### 5.2 Dynnode dispatch API
 
-Introduce or repurpose a single entry point that consumes boundary-control
-events (instead of ad-hoc direct calls in opcode/dyn helper paths).
+**Implemented** (`koskari/lib/dynchain/dyn_boundary.c`): one generic
+dispatcher drives NEXT / FOREACH / YIELD_FROM consumers from active chain
+state, keyed on **`KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY`** only -- no
+node-kind checks in the routing layer:
 
-Candidate direction:
-- evolve `kos_dynnode_on_control_returned(...)` into a real event consumer
-  (currently too narrow and mostly WIND/WITH oriented)
-- or add a new `kos_dynnode_on_boundary_event(...)`
+- **`kos_dyn_find_iter_boundary`** -- the single receiver walk (dyn_top
+  preferred, else nearest receiver outward from the running frame).  It
+  replaced the three per-kind finders and
+  `kos_dyn_need_kos_agen_boundary_deliver`.
+- **`kos_dyn_iter_boundary_deliver_yield`** / **`_deliver_return`** -- the
+  delivery entries; per-kind semantics stay in the dyn helpers behind them.
+  `_deliver_return` returns `KOS_ITER_BOUNDARY_DELIVERED` / `_ERROR` /
+  `_RAISE` so the eval loop keeps ownership of raise-ingress routing.
+- **`kos_dyn_iter_boundary_agen`** / **`_abort`** -- error-path teardown
+  used by `clear_kos_agen_boundary_on_error`.
 
-Either way, one generic dispatcher should drive NEXT / FOREACH / YIELD_FROM
-consumers from active chain state.
+NEXT and flattened-delegate YIELD_FROM nodes carry the capability for
+their lifetime; FOREACH toggles it in lockstep with its ITER_NEXT step
+phase via `kos_dyn_foreach_set_iter_step_phase`.  A future receiver kind
+(e.g. a GEN node carrying a yield-from passthru field) joins by carrying
+the capability and adding a delivery case -- the finder and the eval loop
+do not change.
+
+`kos_dynnode_on_control_returned` remains the separate WIND/WITH
+control-returned hook; it was not folded in.
 
 ### 5.3 RETURN/YIELD/RAISE refactor
 
@@ -154,11 +175,16 @@ consumers from active chain state.
 
 ## 6. Remaining deviations
 
-| Location | Issue |
-|----------|-------|
-| `koskari/lib/dynchain/dyn_next.c` | Return delivery helpers cross GEN/frame boundary and immediately apply NEXT/FOREACH consumer semantics instead of a generic boundary dispatcher |
-| `koskari/lib/dynchain/dyn_yield_from.c` | Inner-return helper crosses boundary and immediately performs YIELD_FROM consumer semantics |
-| `eval.c` (`eval_parent_return_deliver`) | Calls `kos_dyn_try_deliver_iterator_boundary_after_pop` and `kos_dynnode_on_control_returned` directly; should converge on §5.2 dispatcher |
+None for iterator-boundary routing.  The former deviations -- per-kind
+finders and direct consumer-semantics calls in `dyn_next.c`,
+`dyn_yield_from.c`, and the gen-consumer switch in `eval.c`
+(`eval_event_return_at_frame`) -- converged on the §5.2 dispatcher.  The
+per-kind delivery helpers survive as its internals.
+
+**Done:** §5.2 generic dispatcher (`dynchain/dyn_boundary.c`) -- the
+single capability-keyed finder plus yield/return delivery entries; the
+three per-kind finders, `kos_dyn_need_kos_agen_boundary_deliver`, and the
+eval-side kind switches were removed.
 
 **Done:** `koskari/lib/opcode/RETURN.c` — pop operands, optional delimited
 `k(value)`, then `EVAL_RETURN(val)` only.
@@ -209,14 +235,12 @@ state). See the ordering-contract comment on `process_raise` in
 
 1. ~~Introduce `KosOpResult` boundary kinds and `apply_kos_op_result` routing~~
 2. ~~Move RETURN parent-delivery logic out of opcode into `eval_event_return`~~
-3. Route NEXT/FOREACH/YIELD_FROM return consumers through generic dispatcher (§5.2)
-4. Align YIELD boundary routing to same dispatcher surface — *partially done*:
-   `eval_event_yield_deliver_to_boundary` now hands off uniformly for every
-   boundary kind (NEXT / FOREACH / YIELD_FROM all notify their receiver and
-   `EVAL_REPROLOGUE`), though still via the kind-specific helpers rather than a
-   single §5.2 generic dispatcher.
+3. ~~Route NEXT/FOREACH/YIELD_FROM return consumers through generic dispatcher (§5.2)~~
+4. ~~Align YIELD boundary routing to same dispatcher surface~~ — both
+   directions now route through `dyn_boundary.c`
 5. ~~Normalize RAISE routing under one ingress contract (§5.3)~~
-6. Remove obsolete ad-hoc delivery paths and compatibility shims
+6. ~~Remove obsolete ad-hoc delivery paths and compatibility shims~~ — the
+   three per-kind finders and the need-check probe are gone
 
 
 ## 9. Testing strategy

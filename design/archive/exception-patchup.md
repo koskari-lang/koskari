@@ -53,7 +53,7 @@ Maintainers working on the raise paths: `eval.c` (`process_raise`),
 |----------|----------------|
 | [callcc.md](../interpreter/callcc.md) | Delimited continuation machinery the raise paths must respect |
 | [delimited-invoke-model.md](delimited-invoke-model.md) | Two-path invoke; the INPLACE DELIM restitch is folded into this design |
-| [boundary-control-reemit.md](../interpreter/boundary-control-reemit.md) | Capacity-driven dispatch precedent (§5.2) |
+| [boundary-control-reemit.md](boundary-control-reemit.md) | Capacity-driven dispatch precedent (§5.2) |
 | [../TODO.md](../TODO.md) | Single rollup entry pointing here |
 | `tests/compile/specials/test_raise_across_frames.py` | Frame-crossing propagation regressions |
 | `tests/compile/specials/test_reset_shift.py` | Slice exception routing regressions |

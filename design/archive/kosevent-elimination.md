@@ -5,7 +5,7 @@ consolidates and archives the design work formerly spread across
 `kosevent-elimination-merged.md`, `kosevent-elimination-simplification-response.md`,
 and `event-driven-eval-event-handlers.md`.
 
-**Live follow-on:** [interpreter/boundary-control-reemit.md](../interpreter/boundary-control-reemit.md)
+**Live follow-on:** [boundary-control-reemit.md](boundary-control-reemit.md)
 (generic boundary dynnode dispatch, RAISE staging). Open work is tracked in
 [TODO.md](../TODO.md).
 
@@ -132,7 +132,7 @@ These items were identified during elimination but are **follow-on** architectur
    or add `kos_dynnode_on_boundary_event` so NEXT / FOREACH / YIELD_FROM
    consumers route through one capacity-driven dispatcher instead of scattered
    calls in `dyn_next.c`, `dyn_yield_from.c`, and `eval_parent_return_deliver`.
-   See [boundary-control-reemit.md](../interpreter/boundary-control-reemit.md) §5.2.
+   See [boundary-control-reemit.md](boundary-control-reemit.md) §5.2.
 
 2. **RAISE ingress unification** — `process_raise` is central, but
    `eval_phase_entry` (`KOS_MODE_EXCEPTION`), `run_transfer_plan_to_completion`,

@@ -149,7 +149,7 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
   }
   Py_DECREF(val);
 
-  KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
+  kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
   agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
   agen->in_progress = 0;
   return 0;
@@ -174,7 +174,7 @@ int kos_dyn_foreach_deliver_return_kos_agen(
 
   KosDynForeach_EXHAUSTED(fe) = 1;
   KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
-  KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
+  kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
 
   Py_DECREF(val);
   return 0;

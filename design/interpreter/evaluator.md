@@ -7,7 +7,7 @@ The KosCoroutine type and `kos_run_code_as_coroutine` (the Python-facing
 entry that creates a coroutine from code+namespace) live in `func.c`/`func.h`;
 driving a KosCoroutine (send/await) invokes `koskari_eval()` from func.c.
 
-**Scope**: VM structures and C API reference. For the numbered execution invariants list, see [execution-invariants.md](execution-invariants.md). For the combined master reference (invariants + type details + implementation status), see [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md). For the staged “signal out / cross frame” vs “deliver to parent consumer” split (RETURN/YIELD/RAISE post-opcode helpers), see [boundary-control-reemit.md](boundary-control-reemit.md).
+**Scope**: VM structures and C API reference. For the numbered execution invariants list, see [execution-invariants.md](execution-invariants.md). For the combined master reference (invariants + type details + implementation status), see [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md). For the staged “signal out / cross frame” vs “deliver to parent consumer” split (RETURN/YIELD/RAISE post-opcode helpers), see [boundary-control-reemit.md](../archive/boundary-control-reemit.md).
 
 ## Design Philosophy
 
@@ -16,7 +16,7 @@ Koskari's evaluator implements:
 - **VM-native dynamic wind/unwind hooks** (bytecode blocks, not Python callables)
 - **Flattened async execution**
 - **Unified dynamic chain** for all control flow concerns
-- **Eval-owned boundary staging** where frame crossing (unwind/pop) is separated from parent-consumer delivery using `KosOpResult` and `eval_event_*` helpers in `eval.c` (no `KosEvent` struct); see [boundary-control-reemit.md](boundary-control-reemit.md)
+- **Eval-owned boundary staging** where frame crossing (unwind/pop) is separated from parent-consumer delivery using `KosOpResult` and `eval_event_*` helpers in `eval.c` (no `KosEvent` struct); see [boundary-control-reemit.md](../archive/boundary-control-reemit.md)
 
 ## Core VM Structures
 
@@ -521,7 +521,7 @@ as AWAIT, YIELD, RETURN-boundary, or PyErr by
 `kos_eval_post_opcode_control_returned_after_hook`. All paths use `KosOpResult`
 directly.
 
-See [boundary-control-reemit.md](boundary-control-reemit.md) for the design intent and [../archive/kosevent-elimination.md](../archive/kosevent-elimination.md) for the archived elimination spec.
+See [boundary-control-reemit.md](../archive/boundary-control-reemit.md) for the design intent and [../archive/kosevent-elimination.md](../archive/kosevent-elimination.md) for the archived elimination spec.
 
 #### Exception ownership note
 
@@ -583,7 +583,7 @@ This matches Scheme's `dynamic-wind` semantics.
 
 ## Related Documentation
 
-- [boundary-control-reemit.md](boundary-control-reemit.md) — Staged parent delivery and eval post-opcode helpers (RETURN/YIELD/RAISE)
+- [boundary-control-reemit.md](../archive/boundary-control-reemit.md) — Staged parent delivery and eval post-opcode helpers (RETURN/YIELD/RAISE)
 - [../archive/kosevent-elimination.md](../archive/kosevent-elimination.md) — Archived: KosEvent elimination (implemented)
 - [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)

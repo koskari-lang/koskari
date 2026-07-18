@@ -20,7 +20,7 @@
    Wind may suspend (async enter); otherwise result is bound to name.
 */
 
-KOS_OP_HANDLER(PUSH_DYN_WITH) {
+KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
   PyObject *mgr = KosEvalState_StackPopRef(es);
   if (! mgr)
     return EVAL_RAISE();
