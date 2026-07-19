@@ -26,28 +26,8 @@ static PyObject *_str__empty = NULL;
 /* === PyLong two-operand fast paths === */
 
 
-/* Both operands exact ints that fit in a C long long.  Mechanical extraction
-   only, with no operator knowledge, so it never re-branches on op.  Returns 1
-   with both *a and *b set, or 0 when either operand declines the fast path. */
-static inline int kos_as_ll2(
-    PyObject *l,
-    PyObject *r,
-    long long *a,
-    long long *b) {
-
-  if (! (PyLong_CheckExact(l) && PyLong_CheckExact(r)))
-    return 0;
-
-  int overflow;
-  *a = PyLong_AsLongLongAndOverflow(l, &overflow);
-  if (unlikely(overflow))
-    return 0;
-  *b = PyLong_AsLongLongAndOverflow(r, &overflow);
-  if (unlikely(overflow))
-    return 0;
-
-  return 1;
-}
+/* The shared extraction gate kos_as_ll2 lives in operator.h so the
+   comparison inlines can reach it too. */
 
 
 /* Per-operator two-operand PyLong fast paths.  Each is self-contained and
@@ -189,6 +169,23 @@ static inline int long_fast_bit_right(PyObject *l, PyObject *r, PyObject **out) 
 #endif
 
 
+/* One value-form comparison step.  Exact-int pairs settle on the
+   trichotomy bit-test and return a bool singleton -- identical to what
+   long_richcompare would produce -- everything else keeps the full
+   richcompare result object. */
+static inline PyObject *chain_compare_step(
+    int opid,
+    PyObject *l,
+    PyObject *r) {
+
+  long long a, b;
+  if (likely(kos_as_ll2(l, r, &a, &b)))
+    return PyBool_FromLong(kos_ll_compare((KosCompare) opid, a, b));
+
+  return PyObject_RichCompare(l, r, opid);
+}
+
+
 static inline PyObject *chain_compare(
     int opid,
     const char *name,
@@ -201,13 +198,13 @@ static inline PyObject *chain_compare(
     return NULL;
   }
 
-  PyObject *value = PyObject_RichCompare(args[0], args[1], opid);
+  PyObject *value = chain_compare_step(opid, args[0], args[1]);
   if (unlikely(! value) || PyObject_Not(value))
     return value;
 
   for (size_t i = 2; i < (size_t) count; i++) {
     Py_DECREF(value);
-    value = PyObject_RichCompare(args[i - 1], args[i], opid);
+    value = chain_compare_step(opid, args[i - 1], args[i]);
     if (unlikely(! value) || PyObject_Not(value))
       return value;
   }

@@ -24,6 +24,33 @@
 #include "hints.h"
 
 
+/* === PyLong two-operand fast path === */
+
+
+/* Both operands exact ints that fit in a C long long.  Mechanical extraction
+   only, with no operator knowledge, so it never re-branches on op.  Returns 1
+   with both *a and *b set, or 0 when either operand declines the fast path. */
+static inline int kos_as_ll2(
+    PyObject *l,
+    PyObject *r,
+    long long *a,
+    long long *b) {
+
+  if (! (PyLong_CheckExact(l) && PyLong_CheckExact(r)))
+    return 0;
+
+  int overflow;
+  *a = PyLong_AsLongLongAndOverflow(l, &overflow);
+  if (unlikely(overflow))
+    return 0;
+  *b = PyLong_AsLongLongAndOverflow(r, &overflow);
+  if (unlikely(overflow))
+    return 0;
+
+  return 1;
+}
+
+
 /**
    Reducing or otherwise special-case operators
 
@@ -92,10 +119,27 @@ PyObject *kos_inplace_reduce(
 int kos_compare_chain_ext(
     KosCompare sel, PyObject *const *args, size_t count);
 
+/* Compare two extracted machine ints under a richcompare-six selector:
+   trichotomy bit-test, no object traffic.  Each mask holds the
+   selector's outcome for c = (a > b) - (a < b) at bit c + 1.  Only
+   valid after kos_as_ll2 accepts and for sel <= KOS_COMPARE_GE. */
+static inline int kos_ll_compare(
+    KosCompare sel,
+    long long a,
+    long long b) {
+
+  static const unsigned char masks[6] = { 1, 3, 2, 5, 4, 6 };
+  int c = (a > b) - (a < b);
+  return (masks[sel] >> (c + 1)) & 1;
+}
+
 /* chain-evaluate; 1 = held, 0 = failed (branch), -1 = error. The
    richcompare six stay inline at the call site -- the selector IS the
    Py_LT..Py_GE ordinal, passed through untranslated -- so the dispatch
-   loop's check path keeps the pre-unification inlining. */
+   loop's check path keeps the pre-unification inlining.  Exact-int
+   pairs settle on the trichotomy bit-test without touching the
+   richcompare machinery; identity implies value equality for ints, so
+   the shortcut PyObject_RichCompareBool takes on EQ/NE is preserved. */
 static inline int kos_compare_chain(
     KosCompare sel,
     PyObject *const *args,
@@ -104,7 +148,13 @@ static inline int kos_compare_chain(
   if (likely(sel <= KOS_COMPARE_GE)) {
     int res = 1;
     for (size_t i = 1; i < count; i++) {
-      res = PyObject_RichCompareBool(args[i - 1], args[i], (int) sel);
+      PyObject *l = args[i - 1];
+      PyObject *r = args[i];
+      long long a, b;
+      if (likely(kos_as_ll2(l, r, &a, &b)))
+        res = kos_ll_compare(sel, a, b);
+      else
+        res = PyObject_RichCompareBool(l, r, (int) sel);
       if (res <= 0)
         break;
     }
