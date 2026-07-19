@@ -1018,6 +1018,18 @@ class Compiler:
                     op = OpCode.KOS_OP_VAR_STORE_CONST
                     arg = (arg, prior[1], None, None)
 
+            elif op == OpCode.KOS_OP_VAR_OBJECT_INPLACE:
+                # CONST rhs on a single-operand augmented assignment
+                # fuses to the stack-free form: bare operator selector,
+                # name, pooled operand
+                prior = squished[-1]
+                if prior[0] == OpCode.KOS_OP_CONST:
+                    merged = merge_opcount(arg[0])
+                    if merged & 0xff == 1:
+                        del squished[-1]
+                        op = OpCode.KOS_OP_VAR_OBJECT_INPLACE_CONST
+                        arg = (merged >> 8, arg[1], prior[1], None)
+
             squished.append((op, arg))
 
         if squished[-1][0] != OpCode.KOS_OP_RETURN:

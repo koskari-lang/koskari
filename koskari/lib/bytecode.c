@@ -1607,13 +1607,14 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
-        /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT, CMPSRC: store
-           raw integer (slot, argc, bitflags, packed op-type+count,
-           comparison selector, packed selector+count/source-bits) */
+        /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT, CMPSRC,
+           OPERAND: store raw integer (slot, argc, bitflags, packed
+           op-type+count, comparison selector, packed
+           selector+count/source-bits, operator selector) */
         if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR
             || fk == KOSTYLE_STAR || fk == KOSTYLE_OPCOUNT
             || fk == KOSTYLE_CMP || fk == KOSTYLE_CMPCOUNT
-            || fk == KOSTYLE_CMPSRC) {
+            || fk == KOSTYLE_CMPSRC || fk == KOSTYLE_OPERAND) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
                          "EXTRA field expects int, got %R", elem);
@@ -3335,6 +3336,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_CMP);
   int_enum(enum_dict, KOSTYLE_CMPCOUNT);
   int_enum(enum_dict, KOSTYLE_CMPSRC);
+  int_enum(enum_dict, KOSTYLE_OPERAND);
 
   return create_int_enum("OpStyle", enum_dict);
 }

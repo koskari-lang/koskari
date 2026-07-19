@@ -101,6 +101,11 @@ typedef enum KosOpStyle {
       bits first. */
   KOSTYLE_CMPSRC,
 
+  /** field is a bare arithmetic operator selector (KosOperand); the
+      single-operand analogue of OPCOUNT, used where the count is
+      fixed by the opcode shape */
+  KOSTYLE_OPERAND,
+
 } KosOpStyle;
 
 

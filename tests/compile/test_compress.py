@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.compile.compiler import _CHECK_SQUASHES, Compiler
-from koskari.lib import Module, ModuleNamespace, OpCode
+from koskari.lib import Module, ModuleNamespace, OpCode, Operand
 
 
 pytestmark = pytest.mark.phase_compile
@@ -279,6 +279,52 @@ class TestCompress(unittest.TestCase):
         self.assertIn((OpCode.KOS_OP_VAR, "y"), out)
         self.assertIn((OpCode.KOS_OP_VAR_STORE, "x"), out)
         self.assertNotIn(OpCode.KOS_OP_VAR_STORE_CONST, [op for op, _ in out])
+
+
+class TestInplaceConstSquash(unittest.TestCase):
+    """
+    CONST rhs on a single-operand VAR_OBJECT_INPLACE fuses to the
+    stack-free VAR_OBJECT_INPLACE_CONST form
+    """
+
+    def test_const_rhs_fuses(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_CONST, 1),
+            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+             ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
+        ])
+        self.assertIn(
+            (OpCode.KOS_OP_VAR_OBJECT_INPLACE_CONST,
+             (int(Operand.KOS_OPERAND_ADD), "i", 1, None)),
+            out)
+        self.assertNotIn(
+            OpCode.KOS_OP_VAR_OBJECT_INPLACE, [op for op, _ in out])
+
+    def test_computed_rhs_stays_generic(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_VAR, "y"),
+            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+             ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
+        ])
+        self.assertIn(
+            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+             ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
+            out)
+
+    def test_multi_operand_stays_generic(self):
+        instr = [
+            (OpCode.KOS_OP_VAR, "y"),
+            (OpCode.KOS_OP_CONST, 1),
+            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+             ((Operand.KOS_OPERAND_ADD, 2), "i", 0, 0)),
+        ]
+        out = compress_ops(instr)
+        self.assertIn(
+            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+             ((Operand.KOS_OPERAND_ADD, 2), "i", 0, 0)),
+            out)
+        self.assertNotIn(
+            OpCode.KOS_OP_VAR_OBJECT_INPLACE_CONST, [op for op, _ in out])
 
 
 # The end.

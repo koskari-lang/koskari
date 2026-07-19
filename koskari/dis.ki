@@ -27,7 +27,7 @@ __self__ in a leading section).
 """
 
 
-import-from koskari.lib BoundMethod Code Compare Expression Function NamespaceSpec OpCode OpStyle demand
+import-from koskari.lib BoundMethod Code Compare Expression Function NamespaceSpec OpCode Operand OpStyle
 
 
 (declare-exports dis)
@@ -42,9 +42,10 @@ define _boundmethod_inner_function [bm]:
   :raises TypeError: when __func__ is not Function or Demand(Function)
   """
   define func bm.__func__
-  when (instance? func demand):
+  when (demand? func):
     set! func func.__wrapped__
-  when (not (instance? func Function)):
+
+  unless (instance? func Function):
     (raise
       (TypeError
         f"BoundMethod __func__ must be Function or Demand(Function), got {(attr (type func) __name__)}"))
@@ -96,7 +97,7 @@ define _write_function_instance_section [file fn]:
   file.write "  formals:\n"
 
   define formals fn.formals
-  if (is-not? formals None):
+  if formals:
     for-each [attr_name #("pos" "pos_only" "kwd" "kwd_only" "star" "starstar" "defaults")]:
       define val (getattr formals attr_name None)
       file.write f"    {attr_name}: {(repr val)}\n"
@@ -105,7 +106,7 @@ define _write_function_instance_section [file fn]:
 
   define base_ns fn.base_ns
   file.write "  base_ns (closures):\n"
-  if (is-not? base_ns None):
+  if base_ns:
     try:
       define items (base_ns.items)
     except [#(AttributeError TypeError)]:
@@ -230,9 +231,21 @@ define _compare_name [sel]:
 
   try:
     define member (Compare sel)
-  except [#(ValueError)]:
+  except [ValueError]:
     return (str sel)
   member.name.removeprefix "KOS_COMPARE_"
+
+
+define _operand_name [sel]:
+  """
+  Short display name for an Operand selector value (e.g. 0 -> "ADD")
+  """
+
+  try:
+    define member (Operand sel)
+  except [ValueError]:
+    return (str sel)
+  member.name.removeprefix "KOS_OPERAND_"
 
 
 define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
@@ -327,6 +340,8 @@ define _format_arg [code op_style arg cpool local_names closure_names
               parts.append (str val)
             elif (equal? fk OpStyle.KOSTYLE_CMP):
               parts.append (_compare_name val)
+            elif (equal? fk OpStyle.KOSTYLE_OPERAND):
+              parts.append (_operand_name val)
             elif (equal? fk OpStyle.KOSTYLE_LABEL):
               parts.append f"-> {val}"
             else:
@@ -448,10 +463,9 @@ define dis [x file: None]:
 
   else:
     set! code (_get_code x)
-    when (is? code None):
-      (raise
-        (TypeError
-          f"expected Code, Expression, Function, or BoundMethod, got {(attr (type x) __name__)}"))
+    unless code:
+      raise (TypeError
+          f"expected Code, Expression, Function, or BoundMethod, got {(attr (type x) __name__)}")
 
   set! out (_resolve_file out)
   define cpool code.constants_pool
