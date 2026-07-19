@@ -1558,3 +1558,66 @@ tags:
   - "surface:block"
   - idiom
 notes: keyword arguments to return produce a values object labelling each result; dict exposes its fields. koskari/compile/specials/continuations.py
+---
+id: special-yield-multiple-values-001
+feature: special/compile/yield
+source: (item (list (call (lambda [a b c] (yield a b c)) 1 2 3)) 0)
+verify:
+  read: (item (list (call (lambda [a b c] (yield a b c)) 1 2 3)) 0)
+  expand: (item (list (call (lambda [a b c] (yield a b c)) 1 2 3)) 0)
+  eval: "tuple:(1,2,3)"
+references:
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - special
+  - yield
+  - generator
+  - variadic
+  - idiom
+notes: yield is variadic; two or more positional arguments yield a tuple. koskari/compile/specials/continuations.py
+---
+id: special-yield-multiple-values-destructure-001
+feature: special/compile/yield
+source: |-
+  begin:
+    define gen []:
+      yield 3 8
+    define-values [lo hi] (item (list (gen)) 0)
+    #(lo hi)
+verify:
+  eval: "tuple:(3,8)"
+references:
+  - reference/specials/compile-yield.md
+  - reference/specials/compile-define-values.md
+stability: evolving
+tags:
+  - special
+  - yield
+  - generator
+  - variadic
+  - destructure
+  - "surface:block"
+  - idiom
+notes: a multi-value (tuple) yield is consumed positionally with define-values; koskari/compile/specials/continuations.py
+---
+id: special-yield-keyword-values-001
+feature: special/compile/yield
+source: |-
+  begin:
+    define stats [xs]:
+      yield count: (len xs) first: (item xs 0)
+    (dict (item (list (stats #[10 20 30])) 0))
+verify:
+  eval: "{\"count\": 3, \"first\": 10}"
+references:
+  - reference/specials/compile-yield.md
+stability: evolving
+tags:
+  - special
+  - yield
+  - generator
+  - keyword-argument
+  - "surface:block"
+  - idiom
+notes: keyword arguments to yield produce a values object labelling each result; dict exposes its fields. koskari/compile/specials/continuations.py

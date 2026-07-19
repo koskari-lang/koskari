@@ -219,29 +219,34 @@ def special_return(compiler, source, tc=False):
 @special("compile/yield", patterns=_DEFAULT_PATTERNS)
 def special_yield(compiler, source, tc=False):
     """
-    Compile (compile/yield) or (compile/yield VAL). Yields from function
+    Yields from function.
+
+    (yield)            ; yields None
+    (yield val)        ; yields val
+    (yield vals ...)   ; yields tuple of vals
+    (yield k: v ...)   ; yields values object over complex arguments
     """
 
     called_by, rest = source
-
-    if is_nil(rest):
-        frag = compiler.fragment(called_by)
-        frag.position_of(source)
-        frag.instruction(OpCode.KOS_OP_YIELD, 0)
-        return frag
-
-    val, tail = rest
-    if not is_nil(tail):
-        raise SpecialError(
-            "return takes at most one argument",
-            source)
-
     frag = compiler.fragment(called_by)
 
-    frag.merge(compiler.full_compile(val, False))
+    count = 0
+    while rest:
+        if is_keyword(rest.car):
+            # discard work in progress and return as a transform to
+            # invoke yield on the values instead.
+            fixup = cons(cons(_symbol_values, source.cdr), nil)
+            source.cdr = fixup
+            return source
+
+        frag.position_of(rest)
+        frag.merge(compiler.full_compile(rest.car, False))
+
+        rest = rest.cdr
+        count += 1
 
     frag.position_of(source)
-    frag.instruction(OpCode.KOS_OP_YIELD, 1)
+    frag.instruction(OpCode.KOS_OP_YIELD, count)
     return frag
 
 
