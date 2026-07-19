@@ -1320,9 +1320,9 @@ For item or attribute places, use **`compile/inplace-item`** or
 **`compile/inplace-attr`** (normally via the **`compile/inplace`** macro
 extension — see [MACROS.md](MACROS.md)).
 
-**Behaviour:** Compiles VALUE, emits the corresponding VAR_OBJECT_INPLACE_* opcode (arg =
-name constant index), then CONST None. The compiler may lower VAR_OBJECT_INPLACE_* to
-FAST_OBJECT_INPLACE_* when VAR has a fixed slot. VAR_OBJECT_INPLACE_* uses Python in-place
+**Behaviour:** Compiles VALUE, emits the corresponding VAR_INPLACE_* opcode (arg =
+name constant index), then CONST None. The compiler may lower VAR_INPLACE_* to
+FAST_INPLACE_* when VAR has a fixed slot. VAR_INPLACE_* uses Python in-place
 operators (`PyNumber_InPlaceAdd`, etc.).
 
 **Supported operators:** `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `<<`, `>>`,

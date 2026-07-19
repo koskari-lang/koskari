@@ -283,31 +283,31 @@ class TestCompress(unittest.TestCase):
 
 class TestInplaceConstSquash(unittest.TestCase):
     """
-    CONST rhs on a single-operand VAR_OBJECT_INPLACE fuses to the
-    stack-free VAR_OBJECT_INPLACE_CONST form
+    CONST rhs on a single-operand VAR_INPLACE fuses to the
+    stack-free VAR_INPLACE_CONST form
     """
 
     def test_const_rhs_fuses(self):
         out = compress_ops([
             (OpCode.KOS_OP_CONST, 1),
-            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+            (OpCode.KOS_OP_VAR_INPLACE,
              ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
         ])
         self.assertIn(
-            (OpCode.KOS_OP_VAR_OBJECT_INPLACE_CONST,
+            (OpCode.KOS_OP_VAR_INPLACE_CONST,
              (int(Operand.KOS_OPERAND_ADD), "i", 1, None)),
             out)
         self.assertNotIn(
-            OpCode.KOS_OP_VAR_OBJECT_INPLACE, [op for op, _ in out])
+            OpCode.KOS_OP_VAR_INPLACE, [op for op, _ in out])
 
     def test_computed_rhs_stays_generic(self):
         out = compress_ops([
             (OpCode.KOS_OP_VAR, "y"),
-            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+            (OpCode.KOS_OP_VAR_INPLACE,
              ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
         ])
         self.assertIn(
-            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+            (OpCode.KOS_OP_VAR_INPLACE,
              ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
             out)
 
@@ -315,16 +315,16 @@ class TestInplaceConstSquash(unittest.TestCase):
         instr = [
             (OpCode.KOS_OP_VAR, "y"),
             (OpCode.KOS_OP_CONST, 1),
-            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+            (OpCode.KOS_OP_VAR_INPLACE,
              ((Operand.KOS_OPERAND_ADD, 2), "i", 0, 0)),
         ]
         out = compress_ops(instr)
         self.assertIn(
-            (OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+            (OpCode.KOS_OP_VAR_INPLACE,
              ((Operand.KOS_OPERAND_ADD, 2), "i", 0, 0)),
             out)
         self.assertNotIn(
-            OpCode.KOS_OP_VAR_OBJECT_INPLACE_CONST, [op for op, _ in out])
+            OpCode.KOS_OP_VAR_INPLACE_CONST, [op for op, _ in out])
 
 
 # The end.

@@ -3076,7 +3076,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_VARS.c`
 
-### 19.1 In-place variable update (VAR_OBJECT_INPLACE / FAST_OBJECT_INPLACE and _CONST forms)
+### 19.1 In-place variable update (VAR_INPLACE / FAST_INPLACE and _CONST forms)
 
 Augmented assignment: fetch the current value from a name (VAR) or fast slot
 (FAST), apply the in-place operator with the rhs, store the result back. No
@@ -3084,28 +3084,28 @@ value is pushed (the form evaluates to None). The operator is a KosOperand
 selector dispatched through `kos_inplace_reduce` (`operator.c`), the same
 selector set as OBJECT_OPERAND / OBJECT_INPLACE.
 
-**VAR_OBJECT_INPLACE** -- EXTRA (OPCOUNT, VAR). Row a0 packs the operator
+**VAR_INPLACE** -- EXTRA (OPCOUNT, VAR). Row a0 packs the operator
 selector with the operand count (count is 1 in all compiler emission: one rhs
 popped from the stack); a1 = constant pool index of the name. Stack:
 `[..., rhs] → [...]`.
 
-**FAST_OBJECT_INPLACE** -- EXTRA (OPCOUNT, FASTVAR). As above with a fast
+**FAST_INPLACE** -- EXTRA (OPCOUNT, FASTVAR). As above with a fast
 slot. Produced by `convert_fast` lowering of the VAR form.
 
-**VAR_OBJECT_INPLACE_CONST** -- EXTRA (OPERAND, VAR, CONST). The compressed
+**VAR_INPLACE_CONST** -- EXTRA (OPERAND, VAR, CONST). The compressed
 single-operand form with a constant rhs: a0 is a *bare* KosOperand selector
 (OPERAND kind -- the count is fixed at 1 by the shape), a1 the name, a2 the
 pooled operand. **Completely stack-free**: no push, no pop. Produced by
-`Compiler.compress` fusing a prior CONST into a count-1 VAR_OBJECT_INPLACE --
+`Compiler.compress` fusing a prior CONST into a count-1 VAR_INPLACE --
 the `(set! i (+ i 1))` / `incr!` loop-tail idiom. Cold handler.
 
-**FAST_OBJECT_INPLACE_CONST** -- EXTRA (OPERAND, FASTVAR, CONST). The
+**FAST_INPLACE_CONST** -- EXTRA (OPERAND, FASTVAR, CONST). The
 `convert_fast` lowering of the above; the hot form. A counted loop's
 back-edge increment is this single dispatch.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
-| 6 | FAST_OBJECT_INPLACE_CONST | 4 | (ADD, fast 1 ("i"), c#1 (1), 0) | i += 1, stack-free |
+| 6 | FAST_INPLACE_CONST | 4 | (ADD, fast 1 ("i"), c#1 (1), 0) | i += 1, stack-free |
 
 ## 20. Delimited continuations
 

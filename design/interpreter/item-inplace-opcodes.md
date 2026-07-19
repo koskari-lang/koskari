@@ -60,7 +60,7 @@ The attribute path made this exact move already: `compile/inplace-attr`
 emits a single fused `ATTR_INPLACE` / `VAR_ATTR_INPLACE`, and the read
 and write-back live in one handler over the shared
 `kos_inplace_reduce` core. The item path is currently the odd one out.
-The in-flight `VAR_OBJECT_INPLACE_CONST` / `FAST_OBJECT_INPLACE_CONST`
+The in-flight `VAR_INPLACE_CONST` / `FAST_INPLACE_CONST`
 work continues the same fusion direction for plain variables.
 
 ## Proposed opcodes
@@ -209,12 +209,12 @@ reference.
    carries its dispatch-table weight.
 2. **Naming**: `VAR_CONST_ITEM_INPLACE` follows the `CONST_ITEM*`
    family prefix; the in-flight variable work instead suffixes
-   (`VAR_OBJECT_INPLACE_CONST`, where `_CONST` marks a constant RHS
+   (`VAR_INPLACE_CONST`, where `_CONST` marks a constant RHS
    operand rather than a constant key). Both spellings survive the
    FAST/VAR name mapping; pick one story for "constant key" vs
    "constant operand" before the enum lands.
 3. **Further fusion**: a constant single RHS could later fold into the
-   EXTRA row (the analog of `VAR_OBJECT_INPLACE_CONST`), reaching a
+   EXTRA row (the analog of `VAR_INPLACE_CONST`), reaching a
    fully stack-free `d[k] += 1`. Out of scope here; noted so the row
    schemas leave room (`VAR_CONST_ITEM_INPLACE` already uses three of
    four EXTRA fields).

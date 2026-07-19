@@ -883,8 +883,8 @@ def special_inplace(compiler, source, tc=False):
     frag.request_for_write(name, position=pos)
     frag.merge(compiler.full_compile(value_expr))
     # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
-    # name to a fast slot (-> FAST_OBJECT_INPLACE) when possible.
-    frag.instruction(OpCode.KOS_OP_VAR_OBJECT_INPLACE,
+    # name to a fast slot (-> FAST_INPLACE) when possible.
+    frag.instruction(OpCode.KOS_OP_VAR_INPLACE,
                      ((binop, 1), name, 0, 0))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 

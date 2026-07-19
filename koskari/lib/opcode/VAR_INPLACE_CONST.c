@@ -14,15 +14,15 @@
 */
 
 /**
-   VAR_OBJECT_INPLACE_CONST: arg = EXTRA row index. Row a0 = bare
+   VAR_INPLACE_CONST: arg = EXTRA row index. Row a0 = bare
    KosOperand selector, a1 = constant-pool index of the variable name,
    a2 = constant-pool index of the operand. Augmented assignment with a
    constant rhs through the frame namespace, completely stack-free:
    obj = deref(name); obj OP= const; store back. The compressed form of
-   CONST + VAR_OBJECT_INPLACE (count 1).
+   CONST + VAR_INPLACE (count 1).
 */
 
-KOS_OP_HANDLER_COLD(VAR_OBJECT_INPLACE_CONST) {
+KOS_OP_HANDLER_COLD(VAR_INPLACE_CONST) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 

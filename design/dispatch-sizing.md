@@ -64,7 +64,7 @@ Top weighted patterns (loop-depth weighted, base 100):
 | 2.01M | 3 | `FAST4 ITEM` (and `FAST2 ITEM`, 1.03M) | indexed access off bulk loads; a FAST-keyed ITEM fusion candidate |
 | 2.00M | 2 | `ITEM ITEM_STORE` | element move between subscripts |
 | 1.13M | 45 | `OBJECT_OPERAND FAST_STORE` | compute-then-store; the fused store-destination quad target |
-| 1.04M | 19 | `FAST_OBJECT_INPLACE_CONST CONTINUE` | the loop tail: constant increment in one dispatch |
+| 1.04M | 19 | `FAST_INPLACE_CONST CONTINUE` | the loop tail: constant increment in one dispatch |
 | 1.02M | 68 | `CONST OBJECT_OPERAND` | operand feeder traffic still unfused |
 
 Successor facts worth acting on: `FAST2 -> OBJECT_OPERAND` 20% (bulk
@@ -117,7 +117,7 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 615 | `ITER_NEXT` | hot |
 | 595 | `OBJECT_FORMAT` | hot |
 | 579 | `CALL_VAR_ATTR_NAMES` | cold |
-| 571 | `FAST_OBJECT_INPLACE_CONST` | hot |
+| 571 | `FAST_INPLACE_CONST` | hot |
 | 569 | `FAST2` | hot |
 | 557 | `POP_FINALLY` | cold |
 | 550 | `VAR_ATTR_STORE` | cold |
@@ -182,7 +182,7 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 314 | `JUMP_AND` | hot |
 | 314 | `JUMP_OR` | hot |
 | 311 | `VAR_TAKE` | cold |
-| 306 | `VAR_OBJECT_INPLACE_CONST` | cold |
+| 306 | `VAR_INPLACE_CONST` | cold |
 | 301 | `FAST_STORE` | hot |
 | 301 | `TAIL_CALL_NAMES` | cold |
 | 296 | `ITEM_STORE` | hot |
@@ -251,14 +251,14 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 146 | `FAST_TAKE` | hot |
 | 141 | `POP` | hot |
 | 135 | `PUSH_PROMPT` | hot |
-| 124 | `VAR_OBJECT_INPLACE` | cold |
+| 124 | `VAR_INPLACE` | cold |
 | 103 | `LOCALS` | hot |
 | 103 | `VAR_STORE_CONST` | cold |
 | 101 | `CLEAR_FOREACH` | hot |
 | 101 | `CLEAR_LOOP` | hot |
 | 88 | `CLEAR_FINALLY` | hot |
 | 88 | `CLEAR_TRY` | hot |
-| 78 | `FAST_OBJECT_INPLACE` | cold |
+| 78 | `FAST_INPLACE` | cold |
 | 76 | `PUSH_FINALLY` | hot |
 | 76 | `PUSH_TRY` | hot |
 | 62 | `OBJECT_INPLACE` | cold |

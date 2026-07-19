@@ -40,10 +40,10 @@ the helper** (by `KOS_OP_HANDLER` basename).
 | `get_await_next` | `KosEval_GetAwaitNext` | YIELD_FROM (async path; `NEXT` mentions it in comments only) |
 | `eager_step_awaitable` | `KosEval_EagerStepAwaitable` | YIELD_FROM |
 | `kos_return_delimited` | `KosEval_ReturnDelimited` | RETURN |
-| `get_name_from_insn` | `KosCode_NameFromInsn` | IMPORT, IMPORT_FROM, IMPORT_REL, PUSH_DYN_WITH, PUSH_WITH, VAR_BIND, VAR_OBJECT_INPLACE_*, VAR_REF, VAR_STORE |
+| `get_name_from_insn` | `KosCode_NameFromInsn` | IMPORT, IMPORT_FROM, IMPORT_REL, PUSH_DYN_WITH, PUSH_WITH, VAR_BIND, VAR_INPLACE_*, VAR_REF, VAR_STORE |
 | `get_prompt_id_from_insn` | `KosCode_PromptIdFromInsn` | PUSH_SHIFT |
-| `frame_ns_deref` | `KosFrame_NSDeref` | CALL_VAR, CALL_VAR_ATTR, CALL_VAR_ATTR_NAMES, CALL_VAR_ATTR_STAR, CALL_VAR_NAMES, CALL_VAR_STAR, VAR_ATTR, VAR_ATTR_CLEAR, VAR_ATTR_REF, VAR_ATTR_STORE, VAR_OBJECT_INPLACE_* |
-| `frame_ns_store` | `KosFrame_NSStore` | UNPACK_VAR, VAR_OBJECT_INPLACE_*, VAR_STORE |
+| `frame_ns_deref` | `KosFrame_NSDeref` | CALL_VAR, CALL_VAR_ATTR, CALL_VAR_ATTR_NAMES, CALL_VAR_ATTR_STAR, CALL_VAR_NAMES, CALL_VAR_STAR, VAR_ATTR, VAR_ATTR_CLEAR, VAR_ATTR_REF, VAR_ATTR_STORE, VAR_INPLACE_* |
+| `frame_ns_store` | `KosFrame_NSStore` | UNPACK_VAR, VAR_INPLACE_*, VAR_STORE |
 | `frame_ns_bind` | `KosFrame_NSBind` | VAR_BIND |
 | `frame_ns_ref` | `KosFrame_NSRef` | VAR_REF |
 | `kos_resolve_named_attr` | `KosEval_ResolveNamedAttr` | CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR, CALL_FAST_ATTR, CALL_FAST_ATTR_NAMES, CALL_FAST_ATTR_STAR, CALL_VAR_ATTR, CALL_VAR_ATTR_NAMES, CALL_VAR_ATTR_STAR |
@@ -124,7 +124,7 @@ with `PySequence_Tuple`” pattern. **Suggested public**: one
 Many opcodes use only **stack**, **namespace**, **Python C API**, and/or **already
 public** koskari APIs (`KosContext_Call`, `kos_dyn_*`, `kos_extent_*`,
 `KosStackBlock_*`, `KosNamespace_*`, …) with **no** extra `static` helper from
-`eval.c`. Examples: most `FAST_OBJECT_INPLACE_*`, `NOOP`, `JUMP*`, `BUILD_*`, `POP*`
+`eval.c`. Examples: most `FAST_INPLACE_*`, `NOOP`, `JUMP*`, `BUILD_*`, `POP*`
 (except where listed above), `KOS_OP_HANDLER` stubs that delegate to
 `KosContext_Call`, etc.
 

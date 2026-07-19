@@ -14,15 +14,15 @@
 */
 
 /**
-   FAST_OBJECT_INPLACE_CONST: arg = EXTRA row index. Row a0 = bare
+   FAST_INPLACE_CONST: arg = EXTRA row index. Row a0 = bare
    KosOperand selector, a1 = fast slot, a2 = constant-pool index of the
    operand. Augmented assignment with a constant rhs, completely
    stack-free: obj = deref(slot); obj OP= const; store back. The
-   compressed form of CONST + FAST_OBJECT_INPLACE (count 1) -- e.g.
+   compressed form of CONST + FAST_INPLACE (count 1) -- e.g.
    (incr! i).
 */
 
-KOS_OP_HANDLER(FAST_OBJECT_INPLACE_CONST) {
+KOS_OP_HANDLER(FAST_INPLACE_CONST) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   PyObject *ns = CURRENT_NS();

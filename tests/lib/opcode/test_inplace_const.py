@@ -13,7 +13,7 @@
 
 """
 Tests for the stack-free augmented-assignment opcodes
-VAR_OBJECT_INPLACE_CONST and FAST_OBJECT_INPLACE_CONST
+VAR_INPLACE_CONST and FAST_INPLACE_CONST
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -36,13 +36,13 @@ SUBTRACT = int(Operand.KOS_OPERAND_SUBTRACT)
 
 class TestVarObjectInplaceConst(CevalTest):
     """
-    VAR_OBJECT_INPLACE_CONST applies obj OP= const through the frame
+    VAR_INPLACE_CONST applies obj OP= const through the frame
     namespace with no stack traffic
     """
 
     async def test_add(self):
         code, ns = build_expr([
-            ["VAR_OBJECT_INPLACE_CONST", (ADD, "i", 5, 0)],
+            ["VAR_INPLACE_CONST", (ADD, "i", 5, 0)],
             ["VAR", "i"],
             ["RETURN", 1],
         ], values={"i": 10})
@@ -51,7 +51,7 @@ class TestVarObjectInplaceConst(CevalTest):
 
     async def test_subtract(self):
         code, ns = build_expr([
-            ["VAR_OBJECT_INPLACE_CONST", (SUBTRACT, "i", 3, 0)],
+            ["VAR_INPLACE_CONST", (SUBTRACT, "i", 3, 0)],
             ["VAR", "i"],
             ["RETURN", 1],
         ], values={"i": 10})
@@ -60,7 +60,7 @@ class TestVarObjectInplaceConst(CevalTest):
 
     async def test_missing_name_raises(self):
         code, ns = build_expr([
-            ["VAR_OBJECT_INPLACE_CONST", (ADD, "nope", 1, 0)],
+            ["VAR_INPLACE_CONST", (ADD, "nope", 1, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ])
@@ -70,7 +70,7 @@ class TestVarObjectInplaceConst(CevalTest):
 
 class TestFastObjectInplaceConst(CevalTest):
     """
-    FAST_OBJECT_INPLACE_CONST applies slot OP= const with no stack
+    FAST_INPLACE_CONST applies slot OP= const with no stack
     traffic
     """
 
@@ -79,7 +79,7 @@ class TestFastObjectInplaceConst(CevalTest):
         code, ns = build_expr([
             ["CONST", 10],
             ["FAST_STORE", 0],
-            ["FAST_OBJECT_INPLACE_CONST", (ADD, 0, 5, 0)],
+            ["FAST_INPLACE_CONST", (ADD, 0, 5, 0)],
             ["FAST", 0],
             ["RETURN", 1],
         ], local_syms=("i",))
@@ -90,7 +90,7 @@ class TestFastObjectInplaceConst(CevalTest):
         code, ns = build_expr([
             ["CONST", "ab"],
             ["FAST_STORE", 0],
-            ["FAST_OBJECT_INPLACE_CONST", (ADD, 0, "c", 0)],
+            ["FAST_INPLACE_CONST", (ADD, 0, "c", 0)],
             ["FAST", 0],
             ["RETURN", 1],
         ], local_syms=("s",))
@@ -99,7 +99,7 @@ class TestFastObjectInplaceConst(CevalTest):
 
     async def test_unbound_slot_raises(self):
         code, ns = build_expr([
-            ["FAST_OBJECT_INPLACE_CONST", (ADD, 0, 1, 0)],
+            ["FAST_INPLACE_CONST", (ADD, 0, 1, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], local_syms=("i",))

@@ -12,8 +12,8 @@ For item or attribute places, the **`compile/inplace`** macro (extended in
 bootstrap) dispatches to [`compile/inplace-item`](compile-inplace-item.md) or
 [`compile/inplace-attr`](compile-inplace-attr.md) instead.
 
-**Behaviour:** Compiles VALUE, emits the corresponding VAR_OBJECT_INPLACE_* opcode, then
-CONST None. The compiler may lower VAR_OBJECT_INPLACE_* to FAST_OBJECT_INPLACE_* when VAR has a
+**Behaviour:** Compiles VALUE, emits the corresponding VAR_INPLACE_* opcode, then
+CONST None. The compiler may lower VAR_INPLACE_* to FAST_INPLACE_* when VAR has a
 fixed slot.
 
 **Supported operators:** `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `<<`, `>>`,
