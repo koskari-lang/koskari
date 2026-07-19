@@ -43,7 +43,7 @@ define logger (logging.getLogger "koskari.mcp")
     level: (getenv "LOGLEVEL" "WARNING"))
 
 
-define DATASET "obriencj/koskari"
+define DATASET "koskari/koskari"
 define CONFIG "corpus"
 define DOCS_CONFIG "docs"
 define PROGRAMS_CONFIG "programs"
