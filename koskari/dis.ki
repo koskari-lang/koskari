@@ -541,8 +541,10 @@ define dis [x file: None]:
     except [#(IndexError TypeError)]:
       None
 
-    out.write f"""  {i "3d"}  {op.name "24s"} {arg_str}{pos_str}\n"""
-    set! i (+ i 1)
+    define shortname (item-slice op.name start: 7)
+    out.write f"""  {i "3d"}  {shortname "24s"} {arg_str}{pos_str}\n"""
+    incr! i
+
   out.write "\n"
 
 
@@ -550,6 +552,7 @@ define _get_instruction_lines [code]:
   """
   Yield (index, op_name, arg_str) for each instruction (for tests/API)
   """
+
   define cpool code.constants_pool
   define lcs (_local_and_closure_syms code)
   define local_syms (item lcs 0)
@@ -564,18 +567,21 @@ define _get_instruction_lines [code]:
     define arg (item oparg 1)
     define op (OpCode op_int)
     define op_style (getattr op.style "value" op.style)
-    define extra_schema (if (getattr op "extra" None) (tuple op.extra) None)
+    define extra_schema (when (getattr op "extra" None) (tuple op.extra))
     define ns_label None
 
     when (in? i ns_const_map):
       define ns_idx (item ns_const_map i)
       set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx))
-    (define arg_str
-      (_format_arg code op_style arg cpool local_syms closure_syms
-                   ns_label: ns_label
-                   extra_schema: extra_schema))
-    yield #(i op.name arg_str)
-    set! i (+ i 1)
+
+    define arg_str (_format_arg
+      code op_style arg cpool local_syms closure_syms
+      ns_label: ns_label
+      extra_schema: extra_schema)
+
+    define shortname (item-slice op.name start: 7)
+    yield #(i shortname arg_str)
+    incr! i
 
 
 ;; The end.

@@ -30,7 +30,7 @@ import unittest
 import pytest
 
 from koskari.importer import install
-from koskari.lib import BoundMethod, Code, Expression, Function
+from koskari.lib import BoundMethod, Code
 from koskari.lib import FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 
@@ -157,11 +157,11 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Vars (local_syms", text)
         self.assertIn("Closure refs", text)
         self.assertIn("Instructions (6):", text)
-        self.assertIn("KOS_OP_VAR", text)
+        self.assertIn("VAR", text)
         self.assertIn("0 (", text)
-        self.assertIn("KOS_OP_JUMP_TRUE", text)
+        self.assertIn("JUMP_TRUE", text)
         self.assertIn("(-> 4)", text)
-        self.assertIn("KOS_OP_RETURN", text)
+        self.assertIn("RETURN", text)
 
     async def test_dis_expression(self):
         """
@@ -219,10 +219,10 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         buf = io.StringIO()
         await _dis().dis(code, file=buf)
         text = buf.getvalue()
-        self.assertIn("KOS_OP_PUSH_NS", text)
+        self.assertIn("PUSH_NS", text)
         push_ns_line = next(
             line for line in text.splitlines()
-            if "KOS_OP_PUSH_NS" in line
+            if "PUSH_NS" in line
         )
         self.assertIn("ns#0", push_ns_line)
         self.assertIn('"let"', push_ns_line)
@@ -235,7 +235,7 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         buf = io.StringIO()
         await _dis().dis(code, file=buf)
         text = buf.getvalue()
-        lines = [l for l in text.splitlines() if "KOS_OP_FAST" in l]
+        lines = [l for l in text.splitlines() if "FAST" in l]
         self.assertTrue(any('local "a"' in l for l in lines))
 
     async def test_fast_closure_label(self):
@@ -246,7 +246,7 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         buf = io.StringIO()
         await _dis().dis(code, file=buf)
         text = buf.getvalue()
-        lines = [l for l in text.splitlines() if "KOS_OP_FAST" in l]
+        lines = [l for l in text.splitlines() if "FAST" in l]
         self.assertTrue(any('closure "outer"' in l for l in lines))
 
 
@@ -267,7 +267,7 @@ class TestDisFunction(unittest.IsolatedAsyncioTestCase):
         self.assertIn("  base_ns (closures):", text)
         self.assertIn("KosCode", text)
         self.assertIn("truthy_yus", text)
-        self.assertIn("KOS_OP_VAR", text)
+        self.assertIn("VAR", text)
 
     async def test_dis_function_then_code(self):
         """
@@ -320,7 +320,7 @@ class TestDisBoundMethod(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Function instance:", text)
         self.assertIn("KosCode", text)
         self.assertIn("truthy_yus", text)
-        self.assertIn("KOS_OP_VAR", text)
+        self.assertIn("VAR", text)
 
     async def test_dis_bound_method_not_plain_function(self):
         """
@@ -345,10 +345,10 @@ class TestGetInstructionLines(unittest.IsolatedAsyncioTestCase):
         lines = [line async for line in _dis()._get_instruction_lines(code)]
         self.assertEqual(len(lines), 6)
         self.assertEqual(lines[0][0], 0)
-        self.assertEqual(lines[0][1], "KOS_OP_VAR")
+        self.assertEqual(lines[0][1], "VAR")
         self.assertIn("0 (", lines[0][2])
         self.assertIn("YUS", lines[0][2])
-        self.assertEqual(lines[1][1], "KOS_OP_JUMP_TRUE")
+        self.assertEqual(lines[1][1], "JUMP_TRUE")
         self.assertIn("(-> 4)", lines[1][2])
 
     async def test_push_ns_in_instruction_lines(self):
@@ -359,7 +359,7 @@ class TestGetInstructionLines(unittest.IsolatedAsyncioTestCase):
         lines = [line async for line in _dis()._get_instruction_lines(code)]
         push_ns = next(
             (idx, name, arg) for idx, name, arg in lines
-            if name == "KOS_OP_PUSH_NS"
+            if name == "PUSH_NS"
         )
         self.assertIn("ns#0", push_ns[2])
         self.assertIn('"let"', push_ns[2])
@@ -370,7 +370,7 @@ class TestGetInstructionLines(unittest.IsolatedAsyncioTestCase):
         """
         code = _make_fast_code()
         lines = [line async for line in _dis()._get_instruction_lines(code)]
-        fast_lines = [(n, a) for _, n, a in lines if n == "KOS_OP_FAST"]
+        fast_lines = [(n, a) for _, n, a in lines if n == "FAST"]
         self.assertTrue(any('local "a"' in a for _, a in fast_lines))
 
     async def test_fast_closure_in_instruction_lines(self):
@@ -379,7 +379,7 @@ class TestGetInstructionLines(unittest.IsolatedAsyncioTestCase):
         """
         code = _make_fast_code()
         lines = [line async for line in _dis()._get_instruction_lines(code)]
-        fast_lines = [(n, a) for _, n, a in lines if n == "KOS_OP_FAST"]
+        fast_lines = [(n, a) for _, n, a in lines if n == "FAST"]
         self.assertTrue(any('closure "outer"' in a for _, a in fast_lines))
 
 
