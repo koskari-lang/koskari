@@ -13,31 +13,31 @@ redefined to `static KOS_NOINLINE`, so each `op_<NAME>` becomes its own symbol;
 sizes read via `nm --print-size` on the built extension.  Standalone noinline
 size is a proxy for a handler's inlined contribution (inlining can specialise or
 shrink it) -- good enough to rank and prioritise.  The proxy still over-estimates:
-the fully-inlined dispatch fn (58,433 B) is smaller than floor + bodies
-(101,996 B), so at `-O2 -flto` inlining shares tails and specialises away more
-than the standalone bodies imply.  67 handlers are
+the fully-inlined dispatch fn (59,349 B) is smaller than floor + bodies
+(103,121 B), so at `-O2 -flto` inlining shares tails and specialises away more
+than the standalone bodies imply.  68 handlers are
 `KOS_OP_HANDLER_COLD` -- their bodies appear in the table below but do not
 contribute to the inlined function at all.  Hotness is reasoned, not profiled:
 there is no PGO/instrumented build yet (deferred until we have representative
 profiling apps -- scheduler, koslife, churns, mcp, repl, dis).
 
-Measured 2026-07-19 on `master`, 186 opcodes (one handler each; 187
+Measured 2026-07-19 on `master`, 188 opcodes (one handler each; 189
 symbols counting the split-out `GLOBALS.cold`).
 
 ## Baseline
 
 | quantity | bytes | meaning |
 |---|---:|---|
-| fully-inlined dispatch fn | 58,433 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
-| floor (all 186 handlers un-inlined) | 22,640 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 186 + loop scaffold |
-| handler bodies | 79,356 | sum of standalone noinline bodies -- 43,684 B across the 67 cold handlers, 35,672 B across the 119 hot ones (the actual inline budget) |
+| fully-inlined dispatch fn | 59,349 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
+| floor (all 188 handlers un-inlined) | 22,872 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 188 + loop scaffold |
+| handler bodies | 80,249 | sum of standalone noinline bodies -- 43,990 B across the 68 cold handlers, 36,259 B across the 120 hot ones (the actual inline budget) |
 
-Distribution (top-heavy, long-tailed; % of the 79,356 B body):
+Distribution (top-heavy, long-tailed; % of the 80,249 B body):
 
 - `>= 1000 B`: 13 handlers, 20,809 B (26% of body)
-- `>=  500 B`: 47 handlers, 43,010 B (54% of body)
-- `>=  200 B`: 140 handlers, 73,884 B (93% of body)
-- `>=  100 B`: 169 handlers, 78,387 B (99% of body)
+- `>=  500 B`: 48 handlers, 43,597 B (54% of body)
+- `>=  200 B`: 142 handlers, 74,777 B (93% of body)
+- `>=  100 B`: 171 handlers, 79,280 B (99% of body)
 
 ## Remaining levers
 
@@ -52,18 +52,19 @@ Remeasure dispatch fn size and run the suite + ASan after each batch.
 
 The sizing view above says where inline bytes live; the emission view
 says which *sequences* the compiler produces -- the fusion targets.
-Regenerate the two together (`tox -qe opgrams`, corpus here: 102 codes
-/ 771 blocks across bootstrap, cli, koslife, churn) so both are read
+Regenerate the two together (`tox -qe opgrams`, corpus here: 103 codes
+/ 778 blocks across bootstrap, cli, koslife, churn) so both are read
 against the same tree.
 
 Top weighted patterns (loop-depth weighted, base 100):
 
 | weighted | raw | pattern | reading |
 |---:|---:|---|---|
-| 2.06M | 27 | `CONST FAST_OBJECT_INPLACE` | the `i += const` increment; with `... CONTINUE` (1.04M) it is the loop tail |
 | 2.05M | 18 | `PUSH_LOOP CHECK_COMPARE_FAST` | the fused loop head |
+| 2.01M | 3 | `FAST4 ITEM` (and `FAST2 ITEM`, 1.03M) | indexed access off bulk loads; a FAST-keyed ITEM fusion candidate |
+| 2.00M | 2 | `ITEM ITEM_STORE` | element move between subscripts |
 | 1.13M | 45 | `OBJECT_OPERAND FAST_STORE` | compute-then-store; the fused store-destination quad target |
-| 1.03M | 19 | `FAST2 ITEM` (and `FAST2 ITEM FAST_STORE`, 1.02M) | indexed access; a FAST-keyed ITEM fusion candidate |
+| 1.04M | 19 | `FAST_OBJECT_INPLACE_CONST CONTINUE` | the loop tail: constant increment in one dispatch |
 | 1.02M | 68 | `CONST OBJECT_OPERAND` | operand feeder traffic still unfused |
 
 Successor facts worth acting on: `FAST2 -> OBJECT_OPERAND` 20% (bulk
@@ -99,8 +100,8 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 1,014 | `CALL_FAST_STAR` | cold |
 | 928 | `CALL_VAR_STAR` | cold |
 | 887 | `BUILD_FUNCTION` | cold |
+| 858 | `PUSH_NS` | hot |
 | 848 | `PUSH_WITH` | cold |
-| 842 | `PUSH_NS` | hot |
 | 832 | `PUSH_DYN_WITH` | cold |
 | 821 | `UNPACK_STAR` | cold |
 | 811 | `UNPACK_FAST` | cold |
@@ -111,22 +112,23 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 728 | `POP_SHIFT` | cold |
 | 680 | `CALL_FAST_ATTR_NAMES` | cold |
 | 679 | `CHECK_COMPARE_FAST` | hot |
-| 663 | `FAST_ATTR_INPLACE` | cold |
+| 647 | `FAST_ATTR_INPLACE` | cold |
 | 629 | `PUSH_FOREACH` | hot |
 | 615 | `ITER_NEXT` | hot |
 | 595 | `OBJECT_FORMAT` | hot |
 | 579 | `CALL_VAR_ATTR_NAMES` | cold |
+| 571 | `FAST_OBJECT_INPLACE_CONST` | hot |
 | 569 | `FAST2` | hot |
 | 557 | `POP_FINALLY` | cold |
 | 550 | `VAR_ATTR_STORE` | cold |
 | 546 | `EXCEPTION_MATCH` | hot |
+| 546 | `VAR_ATTR_INPLACE` | cold |
 | 543 | `SWITCH_EQ_FAST_ATTR` | hot |
 | 541 | `FAST_ATTR` | hot |
 | 540 | `UNPACK_VAR` | cold |
 | 539 | `PROPER` | hot |
 | 538 | `ITEM_TAKE` | hot |
 | 535 | `POP_PROMPT` | cold |
-| 530 | `VAR_ATTR_INPLACE` | cold |
 | 522 | `CALL_FAST_ATTR` | hot |
 | 513 | `CAR` | hot |
 | 513 | `CDR` | hot |
@@ -180,6 +182,7 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 314 | `JUMP_AND` | hot |
 | 314 | `JUMP_OR` | hot |
 | 311 | `VAR_TAKE` | cold |
+| 306 | `VAR_OBJECT_INPLACE_CONST` | cold |
 | 301 | `FAST_STORE` | hot |
 | 301 | `TAIL_CALL_NAMES` | cold |
 | 296 | `ITEM_STORE` | hot |
