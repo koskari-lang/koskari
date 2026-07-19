@@ -150,7 +150,7 @@ document uses **finalize** for that VM-oriented stage to avoid confusion with
 |------------------------|-------------------------|---------------------|
 | String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
 | Literal value          | Constant pool index     | CONST |
-| Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key); INVOKE_K_VAR |
+| Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key) |
 | `(name, value, …)`     | Extra-table index       | VAR_STORE_CONST (§12); may lower to FAST_STORE_CONST (§13) |
 | Name → slot (optional) | Fast local index       | VAR may be lowered to FAST*; then arg is slot index |
 | (unchanged)            | (unchanged)             | NOARG, COUNT, etc. |
@@ -281,7 +281,7 @@ When adding or changing an opcode:
 - [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_COLLECT, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) — PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
 - [19. Object protocol](#19-object-protocol) — OBJECT_* (comparisons, predicates, numeric, general)
-- [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT, INVOKE_K, INVOKE_K_VAR
+- [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND
 - [23. Parameterize extent](#23-parameterize-extent) — PUSH_PARAM, PARAM, POP_PARAM
@@ -398,8 +398,6 @@ When adding or changing an opcode:
 | PUSH_SHIFT | CONST | Capture continuation, enter shift block | [§20](#kos_op_push_shift) |
 | POP_SHIFT | NOARG | Return from shift block without invoking k | [§20](#kos_op_pop_shift) |
 | POP_PROMPT | NOARG | Pop prompt | [§20](#kos_op_pop_prompt) |
-| INVOKE_K | NOARG | Pop value, pop k; invoke k(value) | [§20](#kos_op_invoke_k) |
-| INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§24](#kos_op_theend) |
 
 **Completeness:** Every member of the `KosOpCode` enum in `koskari/lib/opcodes.incl` has a dedicated `### KOS_OP_*` heading in this document (some sections group related opcodes under one narrative first, then list each name). Search for `### KOS_OP_` to enumerate. Design-only or future opcodes belong in design notes, not here, until they are added to `opcodes.incl`.
@@ -2897,7 +2895,7 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 - **Comparisons and predicates**: OBJECT_COMPARE (CMPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, selector-keyed (KosCompare packs with the count); the fused OBJECT_COMPARE_VAR / OBJECT_COMPARE_FAST carry the ternary bounds idiom with no stack inputs.
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
 - **Numeric, in-place**: OBJECT_INPLACE_* (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
-- **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
+- **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT.
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
@@ -2974,194 +2972,12 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ---
 
-### KOS_OP_OBJECT_ADD {#kos_op_object_add}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_ADD.c`
-
-### KOS_OP_OBJECT_BIT_AND {#kos_op_object_bit_and}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_AND.c`
-
 ### KOS_OP_OBJECT_BIT_INVERT {#kos_op_object_bit_invert}
 
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_BIT_INVERT.c`
-
-### KOS_OP_OBJECT_BIT_LEFT {#kos_op_object_bit_left}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_LEFT.c`
-
-### KOS_OP_OBJECT_BIT_OR {#kos_op_object_bit_or}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_OR.c`
-
-### KOS_OP_OBJECT_BIT_RIGHT {#kos_op_object_bit_right}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_RIGHT.c`
-
-### KOS_OP_OBJECT_BIT_XOR {#kos_op_object_bit_xor}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_XOR.c`
-
-### KOS_OP_OBJECT_FLOOR_DIVIDE {#kos_op_object_floor_divide}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_FLOOR_DIVIDE.c`
-
-### KOS_OP_OBJECT_MATRIX_MULTIPLY {#kos_op_object_matrix_multiply}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_MATRIX_MULTIPLY.c`
-
-### KOS_OP_OBJECT_MODULO {#kos_op_object_modulo}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_MODULO.c`
-
-### KOS_OP_OBJECT_MULTIPLY {#kos_op_object_multiply}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_MULTIPLY.c`
-
-### KOS_OP_OBJECT_POWER {#kos_op_object_power}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_POWER.c`
-
-### KOS_OP_OBJECT_SUBTRACT {#kos_op_object_subtract}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_SUBTRACT.c`
-
-### KOS_OP_OBJECT_TRUE_DIVIDE {#kos_op_object_true_divide}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_TRUE_DIVIDE.c`
-
-### KOS_OP_OBJECT_INPLACE_ADD {#kos_op_object_inplace_add}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceAdd`, push the result or await it. The in-place `+` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_ADD.c`
-
-### KOS_OP_OBJECT_INPLACE_BIT_AND {#kos_op_object_inplace_bit_and}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceAnd`, push the result or await it. The in-place `&` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_AND.c`
-
-### KOS_OP_OBJECT_INPLACE_BIT_LEFT {#kos_op_object_inplace_bit_left}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceLshift`, push the result or await it. The in-place `<<` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_LEFT.c`
-
-### KOS_OP_OBJECT_INPLACE_BIT_OR {#kos_op_object_inplace_bit_or}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceOr`, push the result or await it. The in-place `|` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_OR.c`
-
-### KOS_OP_OBJECT_INPLACE_BIT_RIGHT {#kos_op_object_inplace_bit_right}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceRshift`, push the result or await it. The in-place `>>` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_RIGHT.c`
-
-### KOS_OP_OBJECT_INPLACE_BIT_XOR {#kos_op_object_inplace_bit_xor}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceXor`, push the result or await it. The in-place `^` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_BIT_XOR.c`
-
-### KOS_OP_OBJECT_INPLACE_FLOOR_DIVIDE {#kos_op_object_inplace_floor_divide}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceFloorDivide`, push the result or await it. The in-place `//` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_FLOOR_DIVIDE.c`
-
-### KOS_OP_OBJECT_INPLACE_MATRIX_MULTIPLY {#kos_op_object_inplace_matrix_multiply}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceMatrixMultiply`, push the result or await it. The in-place `@` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MATRIX_MULTIPLY.c`
-
-### KOS_OP_OBJECT_INPLACE_MODULO {#kos_op_object_inplace_modulo}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceRemainder`, push the result or await it. The in-place `%` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MODULO.c`
-
-### KOS_OP_OBJECT_INPLACE_MULTIPLY {#kos_op_object_inplace_multiply}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceMultiply`, push the result or await it. The in-place `*` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MULTIPLY.c`
-
-### KOS_OP_OBJECT_INPLACE_POWER {#kos_op_object_inplace_power}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = 2, strictly binary (no reduce). Pop exp then base, push `PyNumber_InPlacePower(base, exp, Py_None)` result or await it. The in-place `**` used by the inplace-item and inplace-attr special forms; the ternary pow(base, exp, mod) has no in-place form.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_POWER.c`
-
-### KOS_OP_OBJECT_INPLACE_SUBTRACT {#kos_op_object_inplace_subtract}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceSubtract`, push the result or await it. The in-place `-` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_SUBTRACT.c`
-
-### KOS_OP_OBJECT_INPLACE_TRUE_DIVIDE {#kos_op_object_inplace_true_divide}
-
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceTrueDivide`, push the result or await it. The in-place `/` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_TRUE_DIVIDE.c`
 
 ### KOS_OP_OBJECT_AITER {#kos_op_object_aiter}
 
@@ -3260,231 +3076,36 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_VARS.c`
 
-### 19.1 In-place variable update (VAR_OBJECT_INPLACE_* and FAST_OBJECT_INPLACE_*)
+### 19.1 In-place variable update (VAR_OBJECT_INPLACE / FAST_OBJECT_INPLACE and _CONST forms)
 
-In-place opcodes perform an augmented assignment: fetch the current value from a name (VAR) or slot (FAST), pop the rhs from the stack, apply the corresponding `PyNumber_InPlace*` operation, then store the result back. Stack effect: `[..., rhs] → [...]` (no value pushed; form evaluates to None).
+Augmented assignment: fetch the current value from a name (VAR) or fast slot
+(FAST), apply the in-place operator with the rhs, store the result back. No
+value is pushed (the form evaluates to None). The operator is a KosOperand
+selector dispatched through `kos_inplace_reduce` (`operator.c`), the same
+selector set as OBJECT_OPERAND / OBJECT_INPLACE.
 
-**VAR_OBJECT_INPLACE_* (style VAR):** Arg = constant pool index (name). Fetch obj from frame namespace, pop rhs, `PyNumber_InPlace*(obj, rhs)` (or `PyNumber_InPlacePower(obj, rhs, Py_None)` for POWER), store result back into name.
+**VAR_OBJECT_INPLACE** -- EXTRA (OPCOUNT, VAR). Row a0 packs the operator
+selector with the operand count (count is 1 in all compiler emission: one rhs
+popped from the stack); a1 = constant pool index of the name. Stack:
+`[..., rhs] → [...]`.
 
-**FAST_OBJECT_INPLACE_* (style FASTVAR):** Arg = slot index. Fetch obj from fast slot, pop rhs, same inplace operation, store result back into slot.
+**FAST_OBJECT_INPLACE** -- EXTRA (OPCOUNT, FASTVAR). As above with a fast
+slot. Produced by `convert_fast` lowering of the VAR form.
 
-These opcodes are lowered at compile time: VAR_OBJECT_INPLACE_* may be converted to FAST_OBJECT_INPLACE_* when the name has a fixed slot.
+**VAR_OBJECT_INPLACE_CONST** -- EXTRA (OPERAND, VAR, CONST). The compressed
+single-operand form with a constant rhs: a0 is a *bare* KosOperand selector
+(OPERAND kind -- the count is fixed at 1 by the shape), a1 the name, a2 the
+pooled operand. **Completely stack-free**: no push, no pop. Produced by
+`Compiler.compress` fusing a prior CONST into a count-1 VAR_OBJECT_INPLACE --
+the `(set! i (+ i 1))` / `incr!` loop-tail idiom. Cold handler.
 
-| Opcode | PyNumber call |
-|--------|---------------|
-| VAR_OBJECT_INPLACE_ADD / FAST_OBJECT_INPLACE_ADD | PyNumber_InPlaceAdd |
-| VAR_OBJECT_INPLACE_SUBTRACT / FAST_OBJECT_INPLACE_SUBTRACT | PyNumber_InPlaceSubtract |
-| VAR_OBJECT_INPLACE_MULTIPLY / FAST_OBJECT_INPLACE_MULTIPLY | PyNumber_InPlaceMultiply |
-| VAR_OBJECT_INPLACE_POWER / FAST_OBJECT_INPLACE_POWER | PyNumber_InPlacePower(obj, rhs, Py_None) |
-| VAR_OBJECT_INPLACE_FLOOR_DIVIDE / FAST_OBJECT_INPLACE_FLOOR_DIVIDE | PyNumber_InPlaceFloorDivide |
-| VAR_OBJECT_INPLACE_TRUE_DIVIDE / FAST_OBJECT_INPLACE_TRUE_DIVIDE | PyNumber_InPlaceTrueDivide |
-| VAR_OBJECT_INPLACE_MODULO / FAST_OBJECT_INPLACE_MODULO | PyNumber_InPlaceRemainder |
-| VAR_OBJECT_INPLACE_MATRIX_MULTIPLY / FAST_OBJECT_INPLACE_MATRIX_MULTIPLY | PyNumber_InPlaceMatrixMultiply |
-| VAR_OBJECT_INPLACE_BIT_LEFT / FAST_OBJECT_INPLACE_BIT_LEFT | PyNumber_InPlaceLshift |
-| VAR_OBJECT_INPLACE_BIT_RIGHT / FAST_OBJECT_INPLACE_BIT_RIGHT | PyNumber_InPlaceRshift |
-| VAR_OBJECT_INPLACE_BIT_AND / FAST_OBJECT_INPLACE_BIT_AND | PyNumber_InPlaceAnd |
-| VAR_OBJECT_INPLACE_BIT_XOR / FAST_OBJECT_INPLACE_BIT_XOR | PyNumber_InPlaceXor |
-| VAR_OBJECT_INPLACE_BIT_OR / FAST_OBJECT_INPLACE_BIT_OR | PyNumber_InPlaceOr |
+**FAST_OBJECT_INPLACE_CONST** -- EXTRA (OPERAND, FASTVAR, CONST). The
+`convert_fast` lowering of the above; the hot form. A counted loop's
+back-edge increment is this single dispatch.
 
-
-### KOS_OP_VAR_OBJECT_INPLACE_ADD {#kos_op_var_object_inplace_add}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_ADD.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_BIT_AND {#kos_op_var_object_inplace_bit_and}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_AND.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_BIT_LEFT {#kos_op_var_object_inplace_bit_left}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_LEFT.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_BIT_OR {#kos_op_var_object_inplace_bit_or}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_OR.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_BIT_RIGHT {#kos_op_var_object_inplace_bit_right}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_RIGHT.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_BIT_XOR {#kos_op_var_object_inplace_bit_xor}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_BIT_XOR.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_FLOOR_DIVIDE {#kos_op_var_object_inplace_floor_divide}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_FLOOR_DIVIDE.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_MATRIX_MULTIPLY {#kos_op_var_object_inplace_matrix_multiply}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_MATRIX_MULTIPLY.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_MODULO {#kos_op_var_object_inplace_modulo}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_MODULO.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_MULTIPLY {#kos_op_var_object_inplace_multiply}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_MULTIPLY.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_POWER {#kos_op_var_object_inplace_power}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_POWER.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_SUBTRACT {#kos_op_var_object_inplace_subtract}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_SUBTRACT.c`
-
-### KOS_OP_VAR_OBJECT_INPLACE_TRUE_DIVIDE {#kos_op_var_object_inplace_true_divide}
-
-- **Style**: VAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_INPLACE_TRUE_DIVIDE.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_ADD {#kos_op_fast_object_inplace_add}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_ADD.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_BIT_AND {#kos_op_fast_object_inplace_bit_and}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_AND.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_BIT_LEFT {#kos_op_fast_object_inplace_bit_left}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_LEFT.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_BIT_OR {#kos_op_fast_object_inplace_bit_or}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_OR.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_BIT_RIGHT {#kos_op_fast_object_inplace_bit_right}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_RIGHT.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_BIT_XOR {#kos_op_fast_object_inplace_bit_xor}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_BIT_XOR.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_FLOOR_DIVIDE {#kos_op_fast_object_inplace_floor_divide}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_FLOOR_DIVIDE.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_MATRIX_MULTIPLY {#kos_op_fast_object_inplace_matrix_multiply}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_MATRIX_MULTIPLY.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_MODULO {#kos_op_fast_object_inplace_modulo}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_MODULO.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_MULTIPLY {#kos_op_fast_object_inplace_multiply}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_MULTIPLY.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_POWER {#kos_op_fast_object_inplace_power}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_POWER.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_SUBTRACT {#kos_op_fast_object_inplace_subtract}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_SUBTRACT.c`
-
-### KOS_OP_FAST_OBJECT_INPLACE_TRUE_DIVIDE {#kos_op_fast_object_inplace_true_divide}
-
-- **Style**: FASTVAR.
-- **Status**: Implemented.
-- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
-- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_INPLACE_TRUE_DIVIDE.c`
-
-**Example (VAR_OBJECT_INPLACE_ADD → FAST_OBJECT_INPLACE_ADD):** `(set! x (+ x 1))` compiles to value expr, VAR_OBJECT_INPLACE_ADD name, CONST None; VAR_OBJECT_INPLACE_ADD may lower to FAST_OBJECT_INPLACE_ADD if `x` has a slot.
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | CONST      | 0   | 0 (1)    | stack: [..., 1] |
-| 1     | CONST      | 1   | 1 (2)    | stack: [..., 1, 2] |
-| 2     | OBJECT_ADD| 2   | 2        | stack: [..., 3] |
-| 3     | RETURN     | 1   | 1        | |
-
-**Example (OBJECT_LEN):** Unary; TOS = object. Pop 1, push len(TOS).
-
-| index | opcode    | arg | arg view | comment |
-|------:|-----------|-----|----------|---------|
-| 0     | CONST     | 0   | 0 ([1,2,3]) | stack: [..., obj] |
-| 1     | OBJECT_LEN| 0   | 0        | stack: [..., 3] |
-
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 6 | FAST_OBJECT_INPLACE_CONST | 4 | (ADD, fast 1 ("i"), c#1 (1), 0) | i += 1, stack-free |
 
 ## 20. Delimited continuations
 
@@ -3553,7 +3174,7 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when a nearest **`KOS_DYN_DELIM`** with mode **`KOS_DYN_DELIM_MODE_POP_PROMPT`** is present (`kos_find_nearest_delim`), pops TOS as result, unwinds continuation frames back to the invocation site per that node’s return metadata, drops the PROMPT's stack block, pushes result, sets PC to post-INVOKE_K, and resumes.
+- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when a nearest **`KOS_DYN_DELIM`** with mode **`KOS_DYN_DELIM_MODE_POP_PROMPT`** is present (`kos_find_nearest_delim`), pops TOS as result, unwinds continuation frames back to the invocation site per that node’s return metadata, drops the PROMPT's stack block, pushes result, restores the PC recorded in that node's return metadata (the continuation invocation site), and resumes.
 - **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's stack block and one is injected to the outer stack.
 - **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
 - **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the stack block and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.
@@ -3565,38 +3186,6 @@ between POP_SHIFT and POP_PROMPT.
 | 6     | POP_PROMPT| 0   | 0        | pop result; drop stack block; pop prompt; push result to outer stack |
 
 ---
-
-### KOS_OP_INVOKE_K
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Stack**: Pops value, then continuation (TOS); invokes continuation with value. Uses push model: grafts continuation frames onto current chain (caller stays below); winds PARAM nodes in cont if any; injects value. When continuation hits POP_PROMPT, control returns to the call site with the result. Prompt need not be in the dynamic chain.
-- **Invariants**: Continuation must be valid (same evaluator token, usable state). Multi-shot: invocation clones state.
-
-**Example:** Invoke continuation k with value 100. Stack before: [..., 100, k].
-
-| index | opcode  | arg | arg view | comment |
-|------:|---------|-----|----------|---------|
-| 0     | …       | …   | …        | stack: [..., value, continuation] |
-| 1     | INVOKE_K| 0   | 0        | pop value, pop k; invoke k(value) |
-
----
-
-### KOS_OP_INVOKE_K_VAR
-
-- **Style**: CONST. Arg = constant pool index of name (post-compile).
-- **Status**: Implemented.
-- **Stack**: Pops value; looks up continuation by name; invokes it with value. Same push model as INVOKE_K; prompt need not be in chain.
-- **Invariants**: Name must be bound to a continuation (e.g. from shift handler).
-- **Compiler form:** Pre-compile arg = name (string/symbol); post-compile arg = pool index.
-
-**Example:** Invoke continuation bound to name "k". Pool: 0 = "k".
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | CONST      | 1   | 1 (99)   | stack: [..., 99] |
-| 1     | INVOKE_K_VAR | 0 | 0 ('k')  | pop 99; lookup "k"; invoke k(99) |
-
 
 ## 21. Undelimited continuations (call/cc)
 

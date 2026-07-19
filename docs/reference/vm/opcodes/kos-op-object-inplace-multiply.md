@@ -1,6 +1,0 @@
-# KOS_OP_OBJECT_INPLACE_MULTIPLY
-- **Style**: COUNT.
-- **Status**: Implemented.
-- **Semantics**: Arg = number of operands `N` (`N >= 2`). Pop N values, reduce left-to-right via `PyNumber_InPlaceMultiply`, push the result or await it. The in-place `*` used by the inplace-item and inplace-attr special forms.
-- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE_MULTIPLY.c`
-
