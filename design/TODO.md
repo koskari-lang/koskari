@@ -246,6 +246,20 @@ From [FEATURES.md](FEATURES.md) and related docs:
 The following items are captured from design discussion. Each has a short
 design note and is open for evaluation and possible implementation.
 
+### Fused item in-place opcodes (six-opcode review)
+
+Replace the `DUP` choreography in `compile/inplace-item` with fused
+read-modify-write item opcodes mirroring the attr in-place family:
+stack-object `ITEM_INPLACE` / `CONST_ITEM_INPLACE`, variable-based
+`VAR_ITEM_INPLACE` / `VAR_CONST_ITEM_INPLACE`, and their fast
+derivations `FAST_ITEM_INPLACE` / `FAST_CONST_ITEM_INPLACE`. Review the
+six proposed opcodes -- encodings, the read-at-op-time ordering shift,
+naming vs the `*_INPLACE_CONST` suffix convention, and whether the
+stack-object tier carries its dispatch-table weight -- before any
+implementation.
+
+Ref: [interpreter/item-inplace-opcodes.md](interpreter/item-inplace-opcodes.md).
+
 ### GEN yield-from passthru
 
 A `yieldfrom` field on the GEN dynnode: re-entering a delegating generator
