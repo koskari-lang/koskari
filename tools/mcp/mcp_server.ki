@@ -121,9 +121,9 @@ define viewer-base-params [config: CONFIG]:
     Shared query parameters for every Dataset Viewer request
     """
 
-    #{dataset: DATASET
-      config: config
-      split: SPLIT}
+    #{"dataset": DATASET
+      "config": config
+      "split": SPLIT}
 
 
 define viewer-get [path extra: #{} config: CONFIG]:
@@ -243,7 +243,7 @@ define resolve-references [refs]:
 
     define joined (.join " OR " clauses)
     define where f"({joined})"
-    define extra #{where: where offset: 0 length: (len refs)}
+    define extra #{"where": where "offset": 0 "length": (len refs)}
     define rows (viewer-rows (viewer-get "/filter" extra config: DOCS_CONFIG))
 
     list-each [row rows]:
@@ -290,14 +290,14 @@ define search-docs-config [search_text cap config]:
 
     define rows:
         (viewer-search-rows "/search"
-            #{query: search_text}
+            #{"query": search_text}
             cap
             config: config)
 
     unless rows:
         define clause (doc-like-clause search_text)
         set! rows (viewer-search-rows "/filter"
-            #{where: clause}
+            #{"where": clause}
             cap
             config: config)
 
@@ -371,7 +371,7 @@ define fts-search [search_text cap]:
     Full-text search rows via the Dataset Viewer /search endpoint
     """
 
-    (viewer-search-rows "/search" #{query: search_text} cap)
+    (viewer-search-rows "/search" #{"query": search_text} cap)
 
 
 define like-search [search_text feature_path cap]:
@@ -383,7 +383,7 @@ define like-search [search_text feature_path cap]:
     define clause (search-like-clause search_text)
     when feature_path:
         set! clause f"{clause} AND {(feature-where-clause feature_path)}"
-    (viewer-search-rows "/filter" #{where: clause} cap)
+    (viewer-search-rows "/filter" #{"where": clause} cap)
 
 
 define feature-search [feature_path cap]:
@@ -392,7 +392,7 @@ define feature-search [feature_path cap]:
     """
 
     define where (feature-where-clause feature_path)
-    (viewer-search-rows "/filter" #{where: where} cap)
+    (viewer-search-rows "/filter" #{"where": where} cap)
 
 
 define row-invalid? [row]:
@@ -506,9 +506,9 @@ define get_example [corpus_id]:
     define escaped (escape-sql-string corpus_id)
     define where f"\"corpus_id\"='{escaped}'"
     define extra #{
-        where: where
-        offset: 0
-        length: 1
+        "where": where
+        "offset": 0
+        "length": 1
     }
     define data (viewer-get "/filter" extra)
     define rows (viewer-rows data)
@@ -538,9 +538,9 @@ define get_reference [path]:
     define escaped (escape-sql-string path)
     define where f"\"path\"='{escaped}'"
     define extra #{
-        where: where
-        offset: 0
-        length: 1
+        "where": where
+        "offset": 0
+        "length": 1
     }
     define data (viewer-get "/filter" extra config: config)
     define rows (viewer-rows data)
@@ -588,8 +588,8 @@ define list_features []:
     define offset 0
     while True:
         define extra #{
-            offset: offset
-            length: 100
+            "offset": offset
+            "length": 100
         }
 
         define page (viewer-get "/rows" extra)
@@ -652,8 +652,8 @@ define list_tags []:
     define offset 0
     while True:
         define extra #{
-            offset: offset
-            length: 100
+            "offset": offset
+            "length": 100
         }
 
         define page (viewer-get "/rows" extra)
