@@ -346,7 +346,138 @@ documented "for production gitops" note, not built here.
   hash is committed -- the repo holds only the literal `ADMIN` placeholder, which
   reads as a demo default, not a leaked secret. `.env.example` documents it.
 - Parked for later: per-webhook trigger UUID as a bearer-ish token in the job
-  description, as minimal auth for the open webhook surface.
+  description, as minimal auth for the open webhook surface. (Promoted to a real
+  requirement in Phase 5 as R1.)
+
+### Phase 5 -- front-end auth, webhook doors & reply model
+
+The next body of work is a single entangled collection, not a menu. Every item
+below is committed; none is dropped to focus on the others. The ordering is by
+how deep each reaches into the request path, least-coupled first, which is also
+the order they can be built without redoing shared substrate.
+
+The through-line: the route layer in [server.ki](../kosrunner/server.ki)
+currently hides the `Request` from handlers (`add-route` touches only
+`request.json`; `add-action`/`add-page` inners take a path item or nothing). R1,
+R4, and R5 all need what it hides -- headers, then identity. So there is **one
+request-context seam**, born small in R1 and widened twice, rather than three
+separate reaches into the request.
+
+Auth is split the way the earlier phases settled it: **authn** is oauth2-proxy
+(identity as the trusted `X-Forwarded-Email` header, or absent = anonymous);
+**authz** is kosrunner's own committed lists. Anonymous is a first-class value,
+the read floor of one ladder that runs `anonymous (read)` -> in-group `control`
+(trigger per `allow:`) -> `operator` (trigger all, enable/disable). "Admin" in
+the deploy sense (rebuild the image/compose with new config) is the config-time
+authority that authors everything below; it is never a runtime role.
+
+#### The requirements
+
+**R1 -- webhook token (machine-door guard).**
+- *Intent:* the open `/webhook/*` surface gains a per-webhook secret the caller
+  must present; missing or wrong -> `401`, no run.
+- *Surface:* a per-job `token:` (idiomatically `(reqenv "…")`, matching the
+  secrets pattern), enforced only when set, so an unset webhook stays open and
+  backward-compatible.
+- *Lands:* `WebhookJob` ([webhook.ki](../kosrunner/webhook.ki)) holds the token;
+  the check runs at the route boundary in `add-route`, before `self.run`. This
+  is the first handler that must read a **header** off the `Request` -- it
+  births the request-context seam.
+- *Choice:* where the token rides -- header (`X-Kosrunner-Token`), path segment,
+  or query. Header keeps it out of URLs and logs.
+
+**R2 -- async webhook reply (background run).**
+- *Intent:* a webhook can reply immediately with a receipt
+  (`{run_id, status: "started"}`) and run in the background, versus the current
+  await-and-return-the-result.
+- *Surface:* a per-webhook `wait:` / `mode:` flag; sync returns the callback
+  result, async returns the receipt.
+- *Lands:* `Job.run` ([job.ki](../kosrunner/job.ki)) splits. Today it does
+  record-start -> invoke -> record-finish -> return, all inline. Async records
+  the start (getting `runid`), spins the invoke+finish as a `create-task`, and
+  returns the receipt now. The `_current-run` contextvar Phase 1 was careful to
+  set in `Job.run`'s own context moves into *the task's* context -- set, invoke,
+  and flush must stay together inside the task, or the log buffer goes invisible
+  again.
+- *Choice:* async-default or sync-default. Either way the receipt's run id is
+  the handle the read surface polls, so R2 wires here to status-visibility.
+- *Note:* independent of the request-context seam; it touches execution, not the
+  request. Can be built in parallel with R1.
+
+**R3 -- webhook input parameters (double duty).**
+- *Intent:* a webhook *declares* its inputs, and that one declaration drives both
+  (a) inbound coercion/validation of the POSTed JSON and (b) the UI -- the
+  manual-trigger form and the reveal of what a past run received.
+- *Surface:* a new `input:` sub-item on the webhook job (peer of
+  `handler`/`configure`) declaring name/type/required/default. Today the handler
+  gets the whole raw payload as one positional; with a spec the framework coerces
+  the payload and binds named args, so `handler [ref force]` works and malformed
+  input is a `400`.
+- *Lands:* `webhook.ki` (the new sub-item + coercion), `job.ki` (arg binding into
+  `run`), `ui.ki` (render a form from the spec; render stored args on the
+  run-detail page). Normalized args already land in `trigger.json`, so retrigger
+  and past-run reveal ride existing storage; R3 adds *fresh typed input*.
+- *Reuse lever:* the annotations / `inspect` FastAPI work may allow building a
+  dynamic Pydantic model from the spec instead of hand-rolled coercion.
+- *Note:* needs no auth, but produces the trigger forms and typed-args reveal
+  that R5 later projects. Build before R5 so R5 has something concrete to filter.
+
+**R4 -- access lists (membership at access time).**
+- *Intent:* at action time, resolve the proxy-set identity -> level / group
+  membership against the committed lists; deny with a relevant page/JSON on
+  failure.
+- *Surface:* `config access:` (groups -> member emails, mapped to levels) plus
+  per-job `allow:`. A small `access.ki`: `resolve-identity [request]` (read
+  `X-Forwarded-Email`), `resolve-level`, `member-of?`.
+- *Lands:* the action handlers in `ui.ki` / `admin.ki` gain a check before acting
+  -- `403` HTML for the UI, `403` JSON for admin. The membership test is trivial;
+  the work is plumbing identity to the check point, which **widens the R1 seam**
+  from "read a token header" to "carry resolved identity."
+
+**R5 -- per-user surface projection (reveal only what you may touch).**
+- *Intent:* the dashboard / webhook page shows only the jobs a user may trigger;
+  buttons appear only for permitted ones.
+- *Surface:* a `visible-jobs [identity]` filtering `list-jobs` through per-job
+  `allow:` intersected with the user's groups (operator sees all; anonymous sees
+  the read-only floor).
+- *Lands:* the UI **GET** handlers ([ui.ki](../kosrunner/ui.ki)) -- so identity is
+  needed at render time, not just on actions, threading it through the read
+  surface too. Templates render the filtered set and the R3 trigger forms.
+- *The edge:* projection is display only. Hiding a button without R4 enforcing
+  the action is a leak -- a user could POST the hidden trigger. R5's filter and
+  R4's enforcement are two halves of one guarantee; neither stands alone.
+
+#### Approach
+
+One seam, born small, widened twice; the rest lands on it in detachment order.
+
+1. **R1 births the request-context seam.** `add-route` and kin begin passing a
+   context (headers now, room for identity later) to handlers. Build it minimal
+   for the token but shaped so R4 can hang identity on the same hook. R1 being
+   the most detached is what lets it validate the seam end to end in isolation.
+2. **R2 in parallel.** A `Job.run` split plus a `wait:` flag; independent of the
+   seam. Its only cross-tie is that the receipt is the handle R5's status view
+   renders.
+3. **R3 next, self-contained.** The `input:` vocabulary, coercion, and form
+   rendering. No auth involved, but it yields the trigger forms and typed reveal
+   R5 will project.
+4. **R4 widens the seam.** `access.ki` + `config access:` / `allow:`, with the
+   action handlers enforcing. The seam now carries resolved identity, not just a
+   token.
+5. **R5 composes R3 + R4.** Filtered render over R4's identity, trigger forms
+   from R3, action still enforced by R4 underneath.
+
+#### Edges to hold
+
+- **One seam, born in R1, widened in R4/R5.** Build it extensibly the first time.
+- **R5 display always paired with R4 enforcement.** Filtering the view is not a
+  control; the action check is.
+- **R2 receipt + run store + status view is one poll loop**, and **R3 args flow
+  through it from either door** -- machine POST or UI form -- landing in the same
+  `trigger.json`.
+- **Token, `wait:`, `input:`, and `access:` / `allow:` are all Layer-0 committed
+  config**, authored in the same definitions and shipped by the same rebuild the
+  deploy-admin owns.
 
 ## Open decisions
 
