@@ -41,7 +41,8 @@ from koskari.reader import default_reader, source_str
 class TestPackagePragmaMacro(unittest.IsolatedAsyncioTestCase):
     """
     The (package-pragma ...) surface macro writes both __pragma__ and
-    __package_pragma__
+    __package_pragma__ when given settings; the bare and single-key
+    forms report, mirroring (pragma)
     """
 
     def make_module(self):
@@ -71,13 +72,23 @@ class TestPackagePragmaMacro(unittest.IsolatedAsyncioTestCase):
             False, mvars["__package_pragma__"].get("compiler/tco-enable"))
 
 
-    async def test_empty_declaration_stamps_current(self):
+    async def test_empty_form_reports_unset(self):
         module, compiler = self.make_module()
         expr = self.compile_expr(module, compiler, "(package-pragma)")
-        await expr()
+        result = await expr()
 
-        mvars = vars(module)
-        self.assertIs(mvars["__package_pragma__"], mvars["__pragma__"])
+        self.assertIsNone(result)
+
+
+    async def test_empty_form_reports_recorded(self):
+        module, compiler = self.make_module()
+        expr = self.compile_expr(
+            module, compiler,
+            "(begin (package-pragma [compiler/tco-enable False])"
+            " (package-pragma))")
+        result = await expr()
+
+        self.assertIs(result, vars(module)["__package_pragma__"])
 
 
     async def test_later_local_override_preserves_default(self):
