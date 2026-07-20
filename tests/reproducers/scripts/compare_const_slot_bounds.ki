@@ -1,0 +1,27 @@
+;; Reproducer: a CHECK_COMPARE_FAST that compares a fast var against a
+;; constant (here `(None? x)`) stores the constant's *pool* index in a
+;; slot the opcode schema statically tags FASTVAR. The CMPSRC source
+;; bits reclassify that slot to CONST, but the native FAST-slot bounds
+;; check ignored the bits and range-checked the const index as if it
+;; were a fast slot -- so when the constant landed at a pool index past
+;; the function's fast-slot count the code failed to build with a bogus
+;; "FAST index N out of bounds".
+;;
+;; `pre` is bound (and returned) before the compare so its six string
+;; constants are emitted first, pushing the None constant well past the
+;; two fast slots (x, pre). Keeping `pre` used prevents dead-code
+;; elision from defanging the reproducer.
+
+
+define classify [x]:
+    define pre (cons "a" "b" "c" "d" "e" "f" nil)
+    if (None? x):
+        pre
+    else:
+        "value"
+
+
+define verify []:
+    and:
+        equal? (classify None) (cons "a" "b" "c" "d" "e" "f" nil)
+        equal? (classify 5) "value"

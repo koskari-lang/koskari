@@ -2519,6 +2519,17 @@ static int validate_fast_slots(
       KosExtraSchema schema = kos_opcode_extra_schema(op);
       uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
 
+      /* CMPSRC rows: source bits in a0 override operand slots to CONST
+         (mirror of soften_extra_tuple). A slot the bit marks as CONST
+         holds a constant-pool index, not a fast slot, so it must not be
+         range-checked against the namespace slot limit. */
+      if (schema.f0 == KOSTYLE_CMPSRC) {
+        if (KosCmpSrc_X_CONST(row.a0))
+          schema.f1 = KOSTYLE_CONST;
+        if (KosCmpSrc_Y_CONST(row.a0))
+          schema.f2 = KOSTYLE_CONST;
+      }
+
       for (int slot = 0; slot < 4; slot++) {
         KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
             (slot == 2) ? schema.f2 : schema.f3;
