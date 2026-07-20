@@ -384,6 +384,28 @@ def load_module_kio_demand(module):
 # ---------------------------------------------------------------------------
 
 
+def find_package_pragma(module):
+    """
+    The nearest ancestor package's ``__package_pragma__``, or None.
+
+    Walks the module-name hierarchy through ``sys.modules``, skipping
+    ancestors that do not carry the slot (namespace packages, plain
+    Python packages, missing entries).
+
+    :param module: koskari Module (or object whose ``vars()`` is the ns)
+    :return: ModulePragma or None
+    """
+
+    name = getattr(module, '__name__', None)
+    while name and '.' in name:
+        name = name.rsplit('.', 1)[0]
+        parent = sys.modules.get(name)
+        found = getattr(parent, '__package_pragma__', None)
+        if found is not None:
+            return found
+    return None
+
+
 def build_module_load_facets(module, filename=None):
     """
     Produce the load-time pragma, compiler, and reader for ``module``.
@@ -395,11 +417,17 @@ def build_module_load_facets(module, filename=None):
     filename is refreshed so code minted by this load attributes
     backtrace positions to the current source file.
 
-    Otherwise a default :class:`ModulePragma` is built and bound as
+    Otherwise a :class:`ModulePragma` is built and bound as
     ``__pragma__`` first; the compiler and reader are then chained off
     it via ``from_pragma`` (each subscribing for later pragma changes)
     and bound as load facets.  This is the single chokepoint where the
-    pragma source is resolved.
+    pragma source is resolved: the nearest ancestor package's
+    ``__package_pragma__`` seeds the settings when one exists (a copy
+    with a fresh watcher set -- watchers never cross modules), falling
+    back to the built-in default.  A package additionally pulls the
+    inherited default down as its own ``__package_pragma__`` so its
+    descendants inherit it; a ``(package-pragma ...)`` declaration in
+    the package body overwrites that stamp.
 
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     :param filename: optional source filename
@@ -418,7 +446,12 @@ def build_module_load_facets(module, filename=None):
 
     name = getattr(module, '__name__', '<module>')
 
-    pragma = ModulePragma()
+    inherited = find_package_pragma(module)
+    pragma = inherited.copy() if inherited is not None else ModulePragma()
+
+    if inherited is not None \
+            and getattr(module, '__path__', None) is not None:
+        ns['__package_pragma__'] = inherited.copy()
 
     compiler = Compiler.from_pragma(name, module, filename=filename,
                                     pragma=pragma)

@@ -31,7 +31,7 @@ Non-goals:
 * Runtime feature toggles after module load.
 * Header-scan or multi-phase compilation.
 * Implicit inheritance of a module's *live* pragma across modules (package-level
-  *defaults* are a separate, explicit mechanism — see **Package Meta-Pragma**).
+  *defaults* are a separate, explicit mechanism — see **Package Pragma**).
 * Region/lexical scoping of a pragma (`push`/`pop`); the module is the unit.
   Use a submodule for finer scope.
 
@@ -149,7 +149,7 @@ and registers `compiler/call-brackets`. Registration is not Python-only: the
 assert expansion gate registers `compiler/enable-asserts` from the bootstrap
 itself (`koskari/bootstrap/_assert.ki`), calling `koskari.pragma.register` with
 a `demand`-wrapped Koskari closure as the setting function. The surface forms
-(`compile/pragma`, `compile/meta-pragma`) are `define-syntax` macros in
+(`compile/pragma`, `compile/package-pragma`) are `define-syntax` macros in
 `koskari/bootstrap/_pragma.ki`. Model at the bottom, behaviors with their
 owners, syntax in the bootstrap.
 
@@ -232,9 +232,10 @@ Three setting shapes: `[key]` (bare → parameter defaults), `[key value …]`
 options). Nesting is reserved for a single feature's own parameters (the
 `optimize` case), never for owner grouping.
 
-`compile/pragma` and `compile/meta-pragma` are `define-syntax` **macros**; their
-short forms `pragma` and `meta-pragma` resolve through the compiler's `compile/`
-prefix — the same surface convention MACROS.md uses (e.g. `?` for `compile/?`).
+`compile/pragma` and `compile/package-pragma` are `define-syntax` **macros**;
+their short forms `pragma` and `package-pragma` resolve through the compiler's
+`compile/` prefix — the same surface convention MACROS.md uses (e.g. `?` for
+`compile/?`).
 
 ### Catalog
 
@@ -255,7 +256,7 @@ single graduated `compiler/optimize` level later (see **Future**).
 A setting behaves like a small function, and **declaring it is calling it.**
 
 * **Do not call it** (setting absent) → it keeps its **baseline**. The baseline
-  is dynamic: the built-in default, unless an inherited meta-pragma or an earlier
+  is dynamic: the built-in default, unless an inherited package pragma or an earlier
   declaration in this module already moved it.
 * **Call it** (setting present) → parameters fill from the given arguments; any
   omitted argument takes its **parameter default**.
@@ -331,10 +332,10 @@ supported:
 
 Watchers propagate across **replacements within one module's load** and *never*
 across modules. When a child seeds its baseline from a parent package's
-`__meta_pragma__`, it copies the **settings** but starts a **fresh watcher
+`__package_pragma__`, it copies the **settings** but starts a **fresh watcher
 cell** — otherwise the parent's reader would be announced about the child's
 changes, a cross-module leak. The rule is precise: **replacement shares the
-cell; meta-pragma inheritance does not.**
+cell; package-pragma inheritance does not.**
 
 ### Teardown and granularity
 
@@ -360,7 +361,7 @@ Module and REPL init build the pragma **first**, then construct the reader and
 compiler *with* it:
 
 ```
-pragma  = <active source>                 ; default, or inherited package meta-pragma
+pragma  = <active source>                 ; default, or inherited package pragma
 module.__pragma__ = pragma
 reader  = Reader(pragma)                  ; subscribes itself as a watcher
 compiler = Compiler(pragma)               ; subscribes itself as a watcher
@@ -416,8 +417,9 @@ The *registry* defines what keys exist; **sources** define where a key's value
 comes from before the module's own declaration speaks. Lowest to highest:
 
 1. **Built-in default** — what the registry declares as each feature's baseline.
-2. **Package pragma** *(future)* — a package-wide baseline inherited by
-   sub-packages and sub-modules. See [pragma-package.md](pragma-package.md).
+2. **Package pragma** — a package-wide baseline inherited by sub-packages and
+   sub-modules, declared with `(package-pragma …)` in a package `__init__`.
+   See [pragma-package.md](language/pragma-package.md).
 3. **CLI / REPL session default** *(future)* — a pragma seeded for the entry or
    REPL module from flags or a settings file. See [pragma-cli.md](pragma-cli.md).
 4. **Module declaration** — `(pragma …)` in the module; always wins; forward-only.
@@ -437,56 +439,29 @@ Two guards fall out and are worth reserving namespace for:
 
 ---
 
-## Package Pragma *(future)*
+## Package Pragma
 
-> Now a dedicated design doc: **[pragma-package.md](pragma-package.md)** (and the
-> CLI seed in [pragma-cli.md](pragma-cli.md)). This mechanism was formerly called
-> "meta-pragma"; the current names are `package-pragma` /
-> `__package_pragma__`. The sketch below predates that rename — read the design
-> doc for the authoritative naming.
+**Implemented.** Design doc: **[pragma-package.md](language/pragma-package.md)**
+(and the CLI seed in [pragma-cli.md](language/pragma-cli.md)). This mechanism
+was formerly called "meta-pragma"; the current names are `package-pragma` /
+`__package_pragma__`.
 
-A package may declare defaults for all modules within it — e.g. a Koskari-written
-package distributed as a wheel sets a baseline at the top of its `__init__`.
-
-### Two forms, differing only in which slots they write
+A package declares defaults for all modules within it — e.g. a Koskari-written
+package distributed as a wheel sets a baseline at the top of its `__init__`:
 
 * `compile/pragma` → writes `__pragma__` (this module's local pragma).
-* `compile/meta-pragma` → writes **both** `__pragma__` *and* `__meta_pragma__`,
-  using the same override application.
+* `compile/package-pragma` → the `pragma` set form plus
+  `(setq __package_pragma__ __pragma__)`, so the declaring `__init__` also
+  runs under the default it hands down. Declare it before local `(pragma …)`
+  overrides and before importing submodules.
 
-So a meta-pragma "applies to itself as well" simply because it also writes the
-local slot. The convention is **meta first, then local overrides**, and it is
-not arbitrary: because a meta-pragma *also* writes local, a meta declared *after*
-a local override on the same key would clobber it — meta-first is the only order
-where local wins.
-
-### Package-aware loading, no new phase
-
-Meta-pragma needs no header scan because Python's import system already runs a
-package's `__init__` before any of its submodules. So:
-
-* A package's `__init__` runs first; its `(compile/meta-pragma …)` is an ordinary
-  load-time side effect that stamps `package.__meta_pragma__`.
-* When the loader initializes a submodule, the init seam's "active source"
-  becomes `parent_package.__meta_pragma__` (if present) instead of the built-in
-  default. It copies the **settings** only and starts a fresh watcher cell.
-
-Each package stores its `__meta_pragma__` as *parent's resolved meta + this
-package's own meta declaration*, so a deep submodule reads only its immediate
-parent — the baseline is already accumulated.
-
-A meta-pragma is a **default**, overridable per module, not inheritance of
-another module's live pragma — which is what keeps it consistent with the
-non-goal of cross-module leakage.
-
-### Edges
-
-* A namespace package, or one with no `__init__`, has nowhere to declare a
-  meta-pragma and transparently falls through to *its* parent's resolved meta
-  (or the built-in default).
-* `meta-pragma` in a non-package module still applies locally via the shared
-  write, but its `__meta_pragma__` is never consumed (no descendants) — a
-  candidate future lint.
+No header scan or new phase: Python runs a package's `__init__` before its
+submodules, so the loader seam (`build_module_load_facets`) seeds each fresh
+module from the nearest ancestor package's `__package_pragma__` — a settings
+copy with a fresh watcher cell — and stamps packages with an inherited copy so
+silent intermediate packages keep pulling the default down. A package pragma
+is a **default**, overridable per module, not inheritance of another module's
+live pragma. Details, invariants, and edges: the design doc.
 
 ---
 
@@ -542,14 +517,14 @@ registry defaults in a follow-up.
    its refresh callback applies the flags and swaps the resolution class.
 4. **Init seam** — reorder module/REPL init to build the pragma first and pass it
    into the reader and compiler.
-5. **Surface macros** — `compile/pragma` (and `compile/meta-pragma`) as
+5. **Surface macros** — `compile/pragma` (and `compile/package-pragma`) as
    `define-syntax` macros in `_pragma.ki`; the short forms `pragma` /
-   `meta-pragma` resolve via the `compile/` prefix. Each expands to a
+   `package-pragma` resolve via the `compile/` prefix. Each expands to a
    `(setq __pragma__ (.rebuild __pragma__ …))`; `rebuild` validates against the
    registry and announces at eval time.
-6. **Defer** — `.kio` pragma serialization, the package meta-pragma loader
-   integration (the built-in-default branch ships; meta is additive), CLI/REPL
-   sources, profiles, and the reproducibility lint.
+6. **Defer** — `.kio` pragma serialization, ~~the package pragma loader
+   integration~~ (landed; see [pragma-package.md](language/pragma-package.md)),
+   CLI/REPL sources, profiles, and the reproducibility lint.
 
 ---
 

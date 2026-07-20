@@ -203,6 +203,14 @@ class ModulePragma:
                 missing.item(f"{name}  (default {reg[name][1]!r})")
 
 
+    def copy(self) -> "ModulePragma":
+        """
+        A new pragma with these settings and a fresh, empty watcher set
+        """
+
+        return ModulePragma(dict(self._settings))
+
+
     def rebuild(
             self,
             *changes: Tuple[str, values]) -> "ModulePragma":

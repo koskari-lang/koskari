@@ -2,10 +2,11 @@
 
 ## Status
 
-Proposed. Formerly "meta-pragma." Builds on the implemented pragma system
-([../PRAGMA.md](../PRAGMA.md)): a package declares a default pragma that its
-sub-packages and sub-modules inherit, so a whole distributed package can set
-feature defaults without repeating them in every file.
+Implemented (MVP -- see **Implementation** below). Formerly "meta-pragma."
+Builds on the implemented pragma system ([../PRAGMA.md](../PRAGMA.md)): a
+package declares a default pragma that its sub-packages and sub-modules
+inherit, so a whole distributed package can set feature defaults without
+repeating them in every file.
 
 ## Goal
 
@@ -100,14 +101,57 @@ Both feed the same `build_module_load_facets` active-source chokepoint. For the
 ([pragma-cli.md](pragma-cli.md)); for **imported** modules there is no CLI seed,
 so the package pragma (or built-in default) is the source.
 
+## Implementation (MVP)
+
+The landed shape is deliberately minimal; everything above falls out of two
+small pieces plus the immutability of `ModulePragma`:
+
+- **The macro is a wrapper.** `compile/package-pragma`
+  (`koskari/bootstrap/_pragma.ki`) expands to the ordinary `pragma` set form
+  followed by `(setq __package_pragma__ __pragma__)`. Because `rebuild`
+  replaces rather than mutates, the `setq` captures a frozen snapshot: later
+  local `(pragma ...)` overrides produce new objects and leave the recorded
+  default untouched, and repeated `package-pragma` declarations accumulate
+  naturally (each starts from the current `__pragma__`, which includes the
+  prior declaration).
+- **Seeding and stamping live at the facet seam.** `find_package_pragma`
+  (`koskari/module.py`) walks the module-name hierarchy through
+  `sys.modules`, skipping ancestors without the slot (namespace packages,
+  plain Python packages). `build_module_load_facets` seeds the fresh
+  module's `__pragma__` from the found pragma via `ModulePragma.copy()` (a
+  settings copy with a fresh, empty watcher set), and -- only when the
+  loading module is itself a package (`__path__` bound) -- stamps
+  `__package_pragma__` with another copy, so silent intermediate packages
+  pull the default down without declaring anything.
+- **Persistence is free.** `__package_pragma__` is an ordinary module
+  binding, deliberately absent from `MODULE_LOAD_FACET_NAMES`, so it
+  survives the end-of-load detach that removes `__pragma__` -- it is exactly
+  the pragma trace a later child load reads.
+
+**Known limitation:** seeding copies resolved settings *values*; it never
+runs setting functions and never announces. A setting whose effect is a side
+effect of applying it -- today only `compiler/enable-asserts`, a
+process-global gate in a bootstrap closure -- is not honored by inheritance.
+The fix is to make the assert expansion read the compiling module's
+`__pragma__` at expand time; see the TODO entry. The general invariant for
+new settings: effects must derive from the pragma value (read at expand
+time, or derived by the per-module reader/compiler), never from the act of
+applying the setting.
+
 ## Open questions
 
-- Storage of `__package_pragma__` on non-package modules — always store for
-  uniformity, or only on packages?
-- Whether `package-pragma` should be settable more than once in one `__init__`
-  (accumulating), matching `pragma`'s replace-per-setting semantics.
+- ~~Storage of `__package_pragma__` on non-package modules~~ — resolved:
+  only packages carry the slot; a leaf's would never be consulted.
+- ~~Whether `package-pragma` should be settable more than once in one
+  `__init__`~~ — resolved: repeated declarations accumulate (see
+  **Implementation**).
 - Serialization: whether a `.kio` package artifact records its resolved package
   pragma (ties into the deferred `.kio` pragma snapshot).
+- A submodule import placed *before* the `package-pragma` declaration in an
+  `__init__` seeds that child from the attach-time stamp (the ancestors'
+  defaults), not the declaration below it — forward-only, but a footgun.
+  Convention: declare `package-pragma` first, before submodule imports; a
+  candidate lint alongside the leaf-declaration one.
 
 ## Non-goals
 

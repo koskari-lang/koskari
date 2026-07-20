@@ -154,20 +154,36 @@ modules, so nothing leaks into distributed libraries. Scope out flag spelling,
 
 Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
 
-### Package pragma
+### Package pragma (follow-ups)
 
-Let a package declare a default pragma its sub-packages and sub-modules inherit
-(formerly "meta-pragma"). Add a `__package_pragma__` slot (a `ModulePragma`
-template, no watchers) and a `(package-pragma [ns/key value …] …)` surface macro
-that writes both `__package_pragma__` and the local `__pragma__`. Augment the
-loader so `build_module_load_facets` resolves the parent package's
-`__package_pragma__` as the module's default `__pragma__` (fresh watcher set —
-watchers never cross modules) and stores both, so sub-sub-packages keep pulling
-the value down; a sub-package that declares its own refines the default for its
-subtree. Rides Python's parent-before-child import order — no header scan.
-Reuses `ModulePragma.rebuild` wholesale.
+The package pragma is **implemented** (see the design doc's Implementation
+section): the `(package-pragma …)` macro wrapper, `ModulePragma.copy`, and
+seeding/stamping in `build_module_load_facets` via `find_package_pragma`.
+Remaining follow-ups:
+
+- **Lints** — `package-pragma` in a leaf module (never consulted), and a
+  submodule import placed before the `package-pragma` declaration in an
+  `__init__` (child seeds from the ancestors' defaults instead).
+- **`.kio` snapshot** — whether a compiled package artifact records its
+  resolved package pragma (the deferred `.kio` pragma snapshot).
 
 Ref: [language/pragma-package.md](language/pragma-package.md); [PRAGMA.md](PRAGMA.md).
+
+### Assert gate reads the module pragma at expand time
+
+`compiler/enable-asserts` is applied as a side effect of its setting function:
+a process-global gate held in a bootstrap closure (`_assert.ki`). Two
+consequences: any module's declaration flips the gate for every module loaded
+after it, and package-pragma inheritance never honors it at all (seeding
+copies resolved settings values without running setting functions). Fix: the
+assert expansion should read the compiling module's `__pragma__` at expand
+time — likely by switching the macro to a form with access to the compile
+namespace (special-rules) — and the closure gate goes away. General invariant
+(recorded in the package pragma doc): a setting's effect must derive from the
+pragma value, never from the act of applying the setting.
+
+Ref: [language/pragma-package.md](language/pragma-package.md) (§Implementation,
+known limitation); `koskari/bootstrap/_assert.ki`.
 
 ---
 
