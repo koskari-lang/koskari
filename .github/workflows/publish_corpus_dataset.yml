@@ -51,7 +51,7 @@ jobs:
 
     environment:
       name: huggingface
-      url: https://huggingface.co/datasets/obriencj/koskari
+      url: https://huggingface.co/datasets/koskari/koskari
 
     steps:
       - name: Checkout
@@ -68,16 +68,16 @@ jobs:
 
       - name: Publish parquet to Hugging Face Hub
         env:
-          HF_OIDC_RESOURCE: datasets/obriencj/koskari
+          HF_OIDC_RESOURCE: datasets/koskari/koskari
         run: |
-          hf upload obriencj/koskari build/corpus/datasets . \
+          hf upload koskari/koskari build/corpus/datasets . \
             --repo-type dataset
 
       - name: Publish dataset card
         env:
-          HF_OIDC_RESOURCE: datasets/obriencj/koskari
+          HF_OIDC_RESOURCE: datasets/koskari/koskari
         run: |
-          hf upload obriencj/koskari tools/corpus/dataset_card.md README.md \
+          hf upload koskari/koskari tools/corpus/dataset_card.md README.md \
             --repo-type dataset
 
 
