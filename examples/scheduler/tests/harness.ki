@@ -1,0 +1,88 @@
+;; Async unittest harness for the kosrunner example, authored in koskari.
+;; Because these run through koskari's ambient auto-await, calls read
+;; naturally -- dashed method names, no getattr, no explicit await -- which
+;; is the whole reason to write the tests in koskari. They must run under
+;; `python -m unittest` (which owns the loop); the koskari CLI cannot host
+;; IsolatedAsyncioTestCase, as its ambient loop collides with the runner's.
+
+import asyncio
+import tempfile
+
+import httpx
+
+import-from unittest IsolatedAsyncioTestCase
+
+import-from kosrunner:
+    RunStore JobSet StorageConfig WebhookJob WebhookConfig
+
+
+define-class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
+    """
+    Base for tests exercising kosrunner through its live async surface: a
+    temp-dir store, an ASGI HTTP client, and a one-call webhook builder.
+    """
+
+    define temp-store [self]:
+        """
+        A RunStore rooted at a fresh temp dir, opened for the test and
+        closed on teardown.
+        """
+
+        define tmp (tempfile.TemporaryDirectory)
+        (self.addCleanup tmp.cleanup)
+        define store (RunStore tmp.name)
+        (store.open)
+        ;; coroutine-fn: addAsyncCleanup only awaits native coroutine
+        ;; functions; a bare koskari method would be called and its
+        ;; coroutine dropped unawaited, leaving the DB thread alive
+        (self.addAsyncCleanup (coroutine-fn store.close))
+        store
+
+
+    define jobset-with-store [self]:
+        """
+        A JobSet whose RunStore is rooted at a fresh temp dir (via the same
+        bind-store path production uses, seeded with an explicit root),
+        opened for the test and closed on teardown.
+        """
+
+        define tmp (tempfile.TemporaryDirectory)
+        (self.addCleanup tmp.cleanup)
+        define js (JobSet "test")
+        (js.bind-store (StorageConfig root: tmp.name))
+        (js.store.open)
+        (self.addAsyncCleanup (coroutine-fn js.store.close))
+        js
+
+
+    define http-client [self server]:
+        """
+        An httpx.AsyncClient wired to `server.app` over ASGITransport (no
+        live uvicorn), closed on teardown.
+        """
+
+        define transport (httpx.ASGITransport app: server.app)
+        define client (httpx.AsyncClient transport: transport base_url: "http://test")
+        (self.addAsyncCleanup client.aclose)
+        client
+
+
+    define webhook [self server route handler jobset: None prefix: "/webhook" **: config]:
+        """
+        Build a WebhookJob, wire its config and handler, optionally register
+        it on `jobset` (so its runs are tracked and async replies have a
+        store), mount it on `server`, and return it. `config` keywords
+        (token, wait, ...) seed its WebhookConfig.
+        """
+
+        define job (WebhookJob route)
+        define base (WebhookConfig prefix: prefix **: config)
+        (job.configure via: base)
+        (job.handler handler)
+        unless (None? jobset):
+            (jobset.register route job)
+        (server.add-route prefix route job.dispatch)
+        job
+
+
+;; The end.
