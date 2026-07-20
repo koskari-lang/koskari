@@ -34,9 +34,15 @@ define-dataclass WebhookConfig [ServerConfig]:
     present it in the X-Kosrunner-Token header or be turned away with a
     401. Left unset the route stays open, so existing webhooks are
     unchanged.
+
+    `wait` picks the reply model. The default (True) awaits the handler and
+    returns its result. Set it False for a background run: the route replies
+    at once with a `{run_id, status}` receipt and the handler runs on, its
+    run id the handle the admin/ui read surface polls.
     """
 
     define [token :: str] None
+    define [wait :: bool] True
 
 
 define-class WebhookJob [Job]:
@@ -75,7 +81,7 @@ define-class WebhookJob [Job]:
         """
 
         (self.check-token ctx)
-        (self.run payload cause: "webhook")
+        (self.run payload cause: "webhook" wait: self.config.wait)
 
 
     define start [self]:

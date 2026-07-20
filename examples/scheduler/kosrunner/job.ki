@@ -16,6 +16,7 @@ import asyncio
 import logging
 import signal
 
+import-from asyncio CancelledError
 import-from dataclasses replace
 
 
@@ -91,28 +92,21 @@ define-class Job []:
             (self.callback *: args))
 
 
-    define run [self *: args cause: "manual" parent: None]:
+    define _tracked-invoke [self store runid args]:
         """
-        Fire the handler once as a TRACKED run: record it in the jobset's
-        store, capture its log output, invoke the callback with `args`,
-        and record the outcome (with the kafka-style `on-error` hook on
-        failure). Returns the callback result -- webhook needs it back.
-        Every variety funnels its trigger through here, and re-trigger is
-        just a `run` with `cause: "manual"` and the stored args. Degrades
-        to a plain invoke when there is no store (e.g. an unregistered
-        job).
+        The recorded body of a run: set the per-run log buffer, invoke the
+        callback, dispatch the on-error hook on failure, and flush the
+        outcome to the store. This runs as ONE unit in whatever context
+        executes the callback -- inline for a synchronous run, or inside
+        the background task for an async one -- because the capture
+        contextvar must be set in the same context the callback logs from,
+        or the buffer the log handler reads is not the one this invoke set.
+        Returns the callback result.
         """
 
-        ;; local import dodges the job<->store load-time cycle. The capture
-        ;; contextvar must be set HERE -- in the same context as the callback
-        ;; -- so the run's log output is routed to this run's buffer.
+        ;; local import dodges the job<->store load-time cycle
         import-from .store _current-run
 
-        define store (if self.jobset self.jobset.store None)
-        when (None? store):
-            (return (self._invoke args))
-
-        define runid (store.record-start self.name (self._job-kind) cause args: args parent: parent)
         define buf #[]
         define token (_current-run.set buf)
         define status "success"
@@ -137,6 +131,38 @@ define-class Job []:
         result
 
 
+    define run [self *: args cause: "manual" parent: None wait: True]:
+        """
+        Fire the handler once as a TRACKED run: record it in the jobset's
+        store, capture its log output, invoke the callback with `args`, and
+        record the outcome (with the on-error hook on failure). Every
+        variety funnels its trigger through here, and re-trigger is just a
+        `run` with `cause: "manual"` and the stored args.
+
+        `wait` picks the reply. A synchronous run (the default) invokes
+        inline and returns the callback result -- webhook needs it back,
+        and cron/kafka/retrigger have no caller to answer. An asynchronous
+        run (`wait: False`) records the start, spins the invoke-and-finish
+        as a background task, and returns a receipt `{run_id, status}` at
+        once; the run id is the handle the read surface polls as the run
+        flips running -> success/failed. Degrades to a plain invoke when
+        there is no store (e.g. an unregistered job).
+        """
+
+        define store (if self.jobset self.jobset.store None)
+        when (None? store):
+            (return (self._invoke args))
+
+        define runid (store.record-start self.name (self._job-kind) cause args: args parent: parent)
+        if wait:
+            (self._tracked-invoke store runid args)
+        else:
+            (self.jobset.spawn-run
+                (lambda [] (self._tracked-invoke store runid args)))
+            #{"run_id": runid
+              "status": "started"}
+
+
     ; --- lifecycle (varieties implement) ---
 
     define start [self]:
@@ -159,6 +185,7 @@ define-class JobSet []:
         set! self.jobs #{}
         set! self.store None              ; RunStore, wired by the jobset macro
         set! self._stopping None          ; asyncio.Event, live only while running
+        set! self._inflight (set)         ; background run tasks (async webhooks)
 
 
     define bind-store [self config]:
@@ -234,6 +261,31 @@ define-class JobSet []:
                   "job": jobname}
 
 
+    define spawn-run [self thunk]:
+        """
+        Run a run's recorded body as a background task (an async webhook's
+        reply). The task is held in `_inflight` -- the loop keeps only a
+        weak reference otherwise, so a fire-and-forget run could be GC'd
+        mid-flight -- and drained at teardown. The done-callback discards
+        it and surfaces any crash that escaped the run's own error handling.
+        """
+
+        define task (create-task (defer thunk))
+        (self._inflight.add task)
+        (task.add_done_callback (demand self._run-done))
+        task
+
+
+    define _run-done [self task]:
+        (self._inflight.discard task)
+        try:
+            define exc (task.exception)
+        except [CancelledError]:
+            (return)
+        when exc:
+            (logger.error "background run crashed" exc_info: exc)
+
+
     define start [self]:
         (logger.info "starting jobset: %s" self.name)
         for-each [[name job] (self.jobs.items)]:
@@ -286,6 +338,10 @@ define-class JobSet []:
     define _teardown [self]:
         (self._remove-signals)
         (self.stop)
+        ;; let in-flight background runs finish writing before the store
+        ;; closes under them (a snapshot: the done-callback mutates the set)
+        when self._inflight:
+            (await (asyncio.gather *: (list self._inflight) return_exceptions: True))
         ;; local import dodges the job<->server load-time cycle
         import-from .server stop-all-servers
         (stop-all-servers)
