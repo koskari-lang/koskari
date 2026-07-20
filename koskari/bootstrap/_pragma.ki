@@ -68,12 +68,18 @@ define-syntax compile/package-pragma:
     changes do not alter the recorded package default.
     """
 
-    macro-match:
-        case (package-pragma (REST settings)):
-            define stns (list-each [s settings] s.datum)
-            `(begin
-                (pragma ,@stns)
-                (setq __package_pragma__ __pragma__))
+    syntax-rules []:
+        case (package-pragma):
+            when &__package_pragma__:
+                __package_pragma__
+
+        case (package-pragma [settings ...] ...):
+            (pragma [settings ...] ...)
+            (setq __package_pragma__ __pragma__)
+
+        case (package-pragma setting):
+            when &__package_pragma__:
+                (item __package_pragma__ (str 'setting))
 
 
 define help-pragma-key [key]:

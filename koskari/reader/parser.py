@@ -2226,7 +2226,7 @@ class LayoutReader(Reader):
         sm('b', inner._read_bstring, False)
 
         sm('#', inner._read_collection, False)
-        sm('&', inner._read_ref_call, False)
+        sm('&', self._read_ref_call, False)
 
         self.add_event_macro("'", inner._read_quote, True)
         self.add_event_macro("`", inner._read_quasiquote, True)
