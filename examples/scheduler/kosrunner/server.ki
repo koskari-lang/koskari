@@ -32,6 +32,27 @@ define-dataclass ServerConfig [Config]:
     define [prefix :: str] ""
 
 
+define-class RequestContext []:
+    """
+    The request-context seam (Phase 5). A route handler sees only what it
+    needs off the raw Request -- headers now, resolved identity later (R4/
+    R5) -- never the Request itself. Born in R1 so the webhook token guard
+    can read its header; the intent is to widen it downstream (hang the
+    caller's identity here) without reaching into every route again.
+    """
+
+    define __init__ [self request]:
+        set! self.headers request.headers
+
+    define header [self name default: None]:
+        """
+        Look up a request header (case-insensitive, via FastAPI's Headers),
+        returning `default` when it is absent.
+        """
+
+        (self.headers.get name default)
+
+
 define-class HttpServer []:
     """
     A shared FastAPI/uvicorn server. It is interned by host:port (see
@@ -51,10 +72,14 @@ define-class HttpServer []:
 
     define add-route [self prefix name handler]:
         """
-        POST {prefix}/{name}; the JSON body is passed to handler
+        POST {prefix}/{name}; the parsed JSON body and a RequestContext
+        are passed to handler. An HTTPException the handler raises (e.g. a
+        token guard's 401) is let through as the real HTTP error; any other
+        failure is logged and swallowed, since a handler bug should not tear
+        the door off its hinges.
         """
 
-        import-from fastapi Request
+        import-from fastapi HTTPException Request
         define path f"{prefix}/{name}"
         (logger.info "route POST %s" path)
         define app self.app
@@ -62,9 +87,12 @@ define-class HttpServer []:
         @(app.post path)
         @coroutine-fn
         define inner [[request :: Request]]:
+            define ctx (RequestContext request)
             try:
                 define payload (request.json)
-                (handler payload)
+                (handler payload ctx)
+            except [HTTPException]:
+                (raise)
             except [Exception]:
                 (logger.error "route failed: %s" path exc_info: True)
 

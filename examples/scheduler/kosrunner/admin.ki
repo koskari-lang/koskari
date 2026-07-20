@@ -51,7 +51,7 @@ define-class AdminJob [Job]:
         (server.add-action prefix "disable"
             (lambda [name] (js.disable name) #{"disabled": name}))
         (server.add-route prefix "shutdown"
-            (lambda [req] (js.shutdown) #{"ok": True}))
+            (lambda [payload ctx] (js.shutdown) #{"ok": True}))
 
         ;; run history + replay
         (server.add-listing prefix "runs"

@@ -14,17 +14,29 @@
 
 import logging
 
+import-from hmac compare_digest
+
 import-from .job Job
 import-from .server get-server ServerConfig
 
 
 define logger (logging.getLogger "kosrunner.webhook")
 
+;; The machine-door secret rides in a header, keeping it out of URLs and
+;; access logs (the R1 choice among header / path / query).
+define TOKEN-HEADER "X-Kosrunner-Token"
+
 
 define-dataclass WebhookConfig [ServerConfig]:
     """
-    Config for a webhook route's shared server (host, port, prefix)
+    Config for a webhook route's shared server (host, port, prefix). An
+    optional `token` arms the machine-door guard: when set, a caller must
+    present it in the X-Kosrunner-Token header or be turned away with a
+    401. Left unset the route stays open, so existing webhooks are
+    unchanged.
     """
+
+    define [token :: str] None
 
 
 define-class WebhookJob [Job]:
@@ -37,13 +49,42 @@ define-class WebhookJob [Job]:
         set! self.route route
 
 
+    define check-token [self ctx]:
+        """
+        Enforce the per-webhook token when one is configured: the caller
+        must present it in TOKEN-HEADER, compared in constant time. Raises
+        401 on a missing or wrong token; a no-op for an open (token-less)
+        webhook. Runs at the route boundary, BEFORE any run is recorded, so
+        a rejected call leaves no run behind.
+        """
+
+        import-from fastapi HTTPException
+        define want self.config.token
+        when want:
+            define got (ctx.header TOKEN-HEADER)
+            unless (and got (compare_digest got want)):
+                raise (HTTPException status_code: 401
+                    detail: "invalid or missing webhook token")
+
+
+    define dispatch [self payload ctx]:
+        """
+        The route-boundary entry mounted by `start`: guard the door, then
+        fire the handler as a tracked run. The handler's return value flows
+        back as the HTTP response.
+        """
+
+        (self.check-token ctx)
+        (self.run payload cause: "webhook")
+
+
     define start [self]:
         set! self.running True
         define server (get-server self.config)
-        ;; route through Job.run so each request is a tracked run; the
-        ;; handler's return value still flows back as the HTTP response
-        (server.add-route self.config.prefix self.route
-            (lambda [payload] (self.run payload cause: "webhook")))
+        ;; dispatch guards the token at the boundary, then routes through
+        ;; Job.run so each accepted request is a tracked run whose return
+        ;; value flows back as the HTTP response
+        (server.add-route self.config.prefix self.route self.dispatch)
         (server.start)
 
 
