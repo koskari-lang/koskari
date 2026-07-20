@@ -82,36 +82,40 @@ podman build -t kosrunner -f Containerfile .
 ## Deploying: the compose stack
 
 [compose.yml](compose.yml) stands up the real deployment shape -- the scheduler
-behind an **nginx basic-auth frontend**, with run history on a named volume:
+behind an **oauth2-proxy OIDC frontend**, with run history on a named volume.
+Unlike a bare app run, this stack needs real auth wiring first: copy
+[.env.example](.env.example) to `.env` and fill in your IdP details, then drop a
+full-chain TLS cert at `./certs/tls.crt` and its key at `./certs/tls.key`.
 
 ```bash
+cp .env.example .env      # then edit: issuer, client id/secret, cookie secret
 podman compose up --build
 ```
 
-- **nginx** is the only host-facing service (`:8080`). `/webhook/*` is proxied
-  **open** (that's the inbound-trigger surface); the web UI (`/ui`) and the
-  admin JSON API (`/admin`) sit behind **basic auth**.
-- **kosrunner** runs the definition, not published to the host -- only nginx
+- **oauth2-proxy** is the only host-facing service (`:8443`, HTTPS). It
+  terminates TLS, runs the OIDC login against your IdP, and reverse-proxies to
+  kosrunner. `/webhook/*` is passed **open** (the inbound-trigger surface);
+  everything else requires a login. It only proves a real login happened -- it
+  injects the verified identity as an `X-Forwarded-Email` header and leaves
+  *who may do what* to kosrunner's own access config.
+- **kosrunner** runs the definition, not published to the host -- only the proxy
   reaches it. Its run history lives on the `runs:` volume
   (`KOSRUNNER_STORAGE_ROOT`), so it survives `compose down`/`up`, the way a pod's
   state survives on a PVC.
 
 ```bash
-curl -X POST localhost:8080/webhook/ping -d '{}'      # open
-curl localhost:8080/ui                                # 401
-curl -u ADMIN:ADMIN localhost:8080/ui                 # 200
-open  http://localhost:8080/ui                        # browser prompts for auth
+curl -k -X POST https://localhost:8443/webhook/ping -d '{}'   # open
+curl -k https://localhost:8443/ui                             # 302 -> IdP login
+open  https://localhost:8443/ui                               # browser logs in
 ```
 
-> **Credentials are `ADMIN` / `ADMIN` by default -- an obvious demo placeholder,
-> not a real secret.** They come from `KOSRUNNER_USER` / `KOSRUNNER_PASS`
-> (see [.env.example](.env.example)); nginx hashes them at startup, so no
-> password hash is ever committed. Override them for anything that leaves your
-> laptop:
->
-> ```bash
-> KOSRUNNER_USER=you KOSRUNNER_PASS=$(openssl rand -hex 16) podman compose up
-> ```
+> **No committed secrets, and no ACME.** The client id/secret and cookie signing
+> key come from `.env` (see [.env.example](.env.example)); the TLS cert is a file
+> you mount, since internal PKI rarely offers ACME. Register
+> `https://<host>/oauth2/callback` as an allowed redirect URI on the OIDC client
+> when you create it. For a no-auth local loop, just run the app or container
+> directly (it serves `/ui` on `:8080`) -- the compose stack is the authenticated
+> shape.
 
 The compose stack requires the `koskari:local` base image the Containerfile
 builds `FROM` (see the repo Makefile). For a production gitops flow you would

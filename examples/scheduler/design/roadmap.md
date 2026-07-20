@@ -98,8 +98,9 @@ not a separate service:
   Because it is in-process it reads the live `JobSet` and `js.store` directly,
   no HTTP hop.
 - Both mount on the shared `HttpServer` (interned by host:port) under their own
-  prefix. **nginx fronts the pod and auths by path**: `/ui` and `/admin`
-  protected, `/webhook` open.
+  prefix. **The front-end fronts the pod and auths by path**: `/ui` and `/admin`
+  protected, `/webhook` open. (Originally nginx basic-auth; now oauth2-proxy
+  OIDC -- see the Phase 4 "Superseded (auth)" note.)
 
 The rule of thumb: if it's one process, read in-process; if it's ever a
 separate pod, make it a real HTTP client of admin. Avoid the muddy middle -- a
@@ -309,6 +310,18 @@ and `POST /ui/disable` (both `303` -> `/ui`, retrigger produced a linked `manual
 run). Templates also rendered to static previews with sample data.
 
 ### Phase 4 -- deployment shape
+
+> **Superseded (auth): the front-end is now oauth2-proxy OIDC, not nginx
+> basic-auth.** The notes below record the original nginx/basic-auth stack and
+> stay as the reasoning-of-record. What actually ships: a single oauth2-proxy
+> service terminates TLS and runs an OIDC login against an external IdP,
+> reverse-proxying to kosrunner with `/webhook/*` left open. It injects the
+> verified identity as `X-Forwarded-Email` and leaves authz to kosrunner's own
+> committed access config (an `email -> level` map behind a swappable
+> `resolve-level` seam; groups + per-job `allow:` are the next step), because
+> the IdP will not emit group/role claims. TLS is a mounted full-chain cert (no
+> ACME on internal PKI). The `nginx/` directory is removed; see
+> [compose.yml](../compose.yml) and [.env.example](../.env.example).
 
 Decided against splitting the Containerfile into a baseline + thin job layer.
 That split only pays off in a multi-definition gitops/CI world (a registry

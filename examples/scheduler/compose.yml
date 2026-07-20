@@ -1,15 +1,22 @@
-# kosrunner demo stack: the scheduler behind an nginx basic-auth frontend.
+# kosrunner demo stack: the scheduler behind an oauth2-proxy OIDC frontend.
 #
+#   cp .env.example .env      # then fill in your IdP details + secrets
 #   podman compose up --build
-#   # browse http://localhost:8080/ui   (prompts for auth)
-#   # curl  -X POST http://localhost:8080/webhook/ping -d '{}'   (open)
+#   # browse https://localhost:8443/ui   (redirects to your IdP to log in)
+#   # curl  -k -X POST https://localhost:8443/webhook/ping -d '{}'   (open)
 #
-# DEMO ONLY. The basic-auth credentials default to ADMIN / ADMIN -- these
-# are OBVIOUS PLACEHOLDERS, not a real secret (the htpasswd hash is
-# generated at container start from the env vars below; nothing sensitive
-# is committed). Override before exposing this anywhere:
+# oauth2-proxy is the single front-end: it terminates TLS, runs the OIDC
+# login against your IdP, and reverse-proxies to kosrunner. /webhook/* is
+# left OPEN (inbound triggers); everything else requires a login. It only
+# proves a real login happened -- WHO may do WHAT (view/control/admin, and
+# which jobs they may trigger) is kosrunner's own committed config, keyed
+# on the trusted X-Forwarded-Email header the proxy injects.
 #
-#   KOSRUNNER_USER=you KOSRUNNER_PASS=$(openssl rand -hex 16) podman compose up
+# You supply two things the proxy can't self-serve:
+#   - an OIDC client registered with your IdP (client id + secret), with
+#     the redirect URI below registered against it;
+#   - a full-chain TLS cert (leaf + intermediates) at ./certs/tls.crt and
+#     its key at ./certs/tls.key. There is no ACME; drop the files in.
 #
 # Requires the koskari:local base image (see the repo Makefile) that the
 # Containerfile builds FROM.
@@ -25,26 +32,56 @@ services:
       KOSRUNNER_STORAGE_ROOT: /var/lib/kosrunner
     volumes:
       - runs:/var/lib/kosrunner
-    # not published to the host -- only nginx reaches it, over the
+    # not published to the host -- only the proxy reaches it, over the
     # compose network on the internal port
     expose:
       - "8080"
 
-  nginx:
-    image: nginx:alpine
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
     depends_on:
       - kosrunner
     environment:
-      # DEMO DEFAULTS -- override these. Plaintext placeholders, not creds.
-      KOSRUNNER_USER: ${KOSRUNNER_USER:-ADMIN}
-      KOSRUNNER_PASS: ${KOSRUNNER_PASS:-ADMIN}
+      # secrets, from .env -- never committed. See .env.example.
+      OAUTH2_PROXY_CLIENT_ID:     ${OIDC_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_COOKIE_SECRET}
+    command:
+      - --provider=oidc
+      - --oidc-issuer-url=${OIDC_ISSUER_URL}
+      - --redirect-url=${OIDC_REDIRECT_URL}
+      - --upstream=http://kosrunner:8080
+
+      # authn only: any successful login passes the proxy. Real access
+      # levels are kosrunner's job (resolve-level, deny unknown). Narrow
+      # this to your domain for a coarse first cut if you like.
+      - --email-domain=${OIDC_EMAIL_DOMAIN:-*}
+
+      # inbound triggers stay OPEN -- the same carve-out nginx had. On this
+      # path no identity headers are set; kosrunner's webhook handler never
+      # reads them, so a forged header here hits code that ignores it.
+      - --skip-auth-regex=^/webhook/
+
+      # hand the verified identity to kosrunner as trusted headers, set
+      # from the session and overwriting anything the client sent:
+      # X-Forwarded-User / -Email / -Preferred-Username
+      - --pass-user-headers=true
+      - --skip-provider-button=true      # straight to the IdP, no interstitial
+
+      # TLS terminated here; tls.crt must be the FULL chain (leaf +
+      # intermediates). No ACME -- the files are mounted below.
+      - --https-address=:8443
+      - --http-address=                  # disable plain HTTP entirely
+      - --tls-cert-file=/certs/tls.crt
+      - --tls-key-file=/certs/tls.key
+      - --cookie-name=_kosrunner
+      - --cookie-secure=true
     ports:
-      - "8080:8080"
+      - "8443:8443"
     volumes:
       # `:z` relabels for SELinux hosts (RHEL/Fedora); a harmless no-op
-      # elsewhere. Without it, an enforcing host denies the mounts.
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro,z
-      - ./nginx/10-htpasswd.sh:/docker-entrypoint.d/10-htpasswd.sh:ro,z
+      # elsewhere. Without it, an enforcing host denies the mount.
+      - ./certs:/certs:ro,z
 
 volumes:
   runs:
