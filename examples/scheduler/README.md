@@ -197,8 +197,8 @@ job kafka audit "topic.audit":
         group_id: "audit-consumers"
     on-error [err msg]:            ; kafka-variety code setter
         (print f"dropped {msg}: {err}")
-    handler [msg topic]:
-        (print f"audit {topic}: {msg}")
+    handler [msg]:
+        (print f"audit: {msg}")
 ```
 
 ### Control plane
@@ -228,6 +228,218 @@ admin config the same port as a webhook makes them share one FastAPI server,
 each mounting under its own prefix -- `/webhook/*` and `/admin/*` on `:8080`.
 Give admin a different port for a standalone control server.
 
+
+## The job varieties
+
+Every job shares the header shape `job <type> <name> <trigger-key...>
+[disabled]` and these inherited sub-items:
+
+| sub-item | kind | meaning |
+|---|---|---|
+| `config:` | data | select a base config (`via: <name>`) and/or override fields; merged onto the base by dataclass `merge` |
+| `handler [..]:` | code | the callback fired per trigger; its formals vary by variety (below) |
+| `allow #[<group> ..]` | data | the Group values whose members may trigger this job (see [Access](#access-who-may-do-what)) |
+
+A body-less job is written with **no trailing colon** (`job admin control`);
+a colon with an empty body produces a nil sub-item that fails the variety's
+pattern match. Every fire funnels through `Job.run` as a tracked run, with
+`cause` reflecting the door it came through (`schedule`, `webhook`,
+`kafka`, or `manual`).
+
+### cron
+
+```koskari
+job cron heartbeat [* * * * *]:
+    handler []:
+        (print f"The time is {(datetime.now)}")
+
+job cron nightly "0 0 * * *":
+    handler []:
+        (print "nightly")
+```
+
+The trigger key is the classic five-field crontab schedule, either as a
+bracket of five fields (joined into the schedule string at expand time) or
+as a single string. Scheduling is [aiocron](https://github.com/gawel/aiocron)
+(croniter syntax -- see its docs for the field grammar). The handler takes
+no arguments. `config cron:` exists (`timezone`) but cron jobs normally
+carry no config at all.
+
+### webhook
+
+```koskari
+job webhook ping:
+    handler [payload]:
+        #{ok: True msg: "pong"}
+
+job webhook deploy:
+    config:
+        token: (reqenv "DEPLOY_TOKEN")
+        wait: False
+    handler [[ref :: str] [force :: bool value: False]]:
+        (print f"deploying {ref} force={force}")
+        #{ok: True}
+```
+
+No trigger key: the job's name is the route path segment, mounted as
+`POST {prefix}/{name}` on the shared server. The handler's return value is
+the HTTP response body.
+
+**The handler's formals are its input contract.** An untyped handler
+(`handler [payload]`) receives the parsed JSON body as one positional. With
+typed formals, each annotated parameter is a declared input: bare
+annotation (`[ref :: str]`) means required, a `value:` default
+(`[force :: bool value: False]`) means optional. The POSTed JSON is
+validated and coerced against the signature -- unknown keys, missing
+required keys, and uncoercible values are a `400` -- and the handler is
+called with named args. The same declaration drives the UI's manual-trigger
+form, and the coerced args land in `trigger.json` so re-trigger replays
+them.
+
+`WebhookConfig` extends the shared server shape (`host`, `port`, `prefix`)
+with two per-webhook knobs:
+
+- `token` -- when set, callers must present it in the `X-Kosrunner-Token`
+  header (compared in constant time) or receive a `401` before any run is
+  recorded. Unset = open. Idiomatically `(reqenv "...")`, the secrets
+  pattern.
+- `wait` -- `True` (default) awaits the handler and returns its result;
+  `False` replies immediately with a `{run_id, status: "started"}` receipt
+  and runs the handler in the background. The receipt's run id is the
+  handle to poll: `GET /admin/runs/{id}` flips `running` ->
+  `success`/`failed`.
+
+### kafka
+
+```koskari
+job kafka audit "topic.audit" disabled:
+    config:
+        via: audit-cluster
+        group_id: "audit-consumers"
+    on-error [err msg]:
+        (print f"audit dropped {msg}: {err}")
+    handler [msg]:
+        (print f"audit: {msg}")
+```
+
+The trigger key is the topic. Each consumed message is decoded utf-8 and
+passed to the handler as one positional. Kafka adds the `on-error [err msg]:`
+code sub-item -- called with the exception and the message when the handler
+raises (the run is still recorded as `failed`).
+
+`KafkaConfig` fields pass through to
+[aiokafka's `AIOKafkaConsumer`](https://aiokafka.readthedocs.io/) nearly
+1:1 -- `servers` (its `bootstrap_servers`), `group_id`,
+`security_protocol`, `ssl_cafile`/`ssl_context`, the `sasl_*` trio,
+`auto_offset_reset`, `enable_auto_commit` -- see the aiokafka docs for
+their semantics. Local conveniences: an `ssl_context` is built from
+`ssl_cafile` automatically when the protocol involves SSL, and the
+politeness knobs `fetch_max_wait_ms` (1000) / `retry_backoff_ms` (500)
+default gentler than aiokafka's own.
+
+### admin
+
+```koskari
+config admin:
+    port: 8080          ; same port as the webhook -> shared server
+    prefix: "/admin"
+
+job admin control
+```
+
+No trigger key and normally no body: it serves the JSON control plane from
+its config alone (`AdminConfig` is the server shape with `prefix`
+defaulting to `/admin`). Routes: `GET {prefix}/jobs`, `GET {prefix}/runs`,
+`GET {prefix}/runs/{id}`, `POST {prefix}/enable/{name}` /
+`disable/{name}` / `retrigger/{id}` / `shutdown`. Reads are open; the
+mutations are guarded by the access lists (below), answering `403` as
+JSON.
+
+### ui
+
+```koskari
+config ui:
+    port: 8080
+    prefix: "/ui"
+
+job ui web
+```
+
+The human layer, same shape as admin (`UiConfig` defaults `prefix` to
+`/ui`). Serves the dashboard (`GET /ui`), per-run detail
+(`GET /ui/runs/{id}`), form actions (`POST /ui/{enable,disable}/{name}`,
+`/ui/retrigger/{id}`), and manual-trigger forms
+(`POST /ui/trigger/{name}`) whose fields derive from each webhook
+handler's typed formals. The page is projected per user: control buttons,
+retrigger buttons, and trigger forms render only where the caller may act
+(the jobs/runs tables themselves stay visible to everyone -- the read
+floor). Refusals are `403` HTML.
+
+### fake
+
+```koskari
+job fake demo:
+    config:
+        note: "hello"
+    handler []:
+        (print "fired")
+```
+
+A broker-free variety for tests and experiments: `start`/`stop` just flip
+`running` and log. `FakeConfig` (`note`, `delay`) is the smallest example
+of a variety declaring its config shape. It is also the smallest complete
+worked example of the variety recipe (see below).
+
+### Service configs
+
+Config-only types, no jobs:
+
+- `config logging:` -- the block's `key: value` pairs are passed to
+  Python's `logging.basicConfig` (see the stdlib logging docs). Setting
+  `level: "DEBUG"` (or any level at/below your handlers' calls) is what
+  routes handler log output into per-run capture.
+- `config storage:` -- where run history lives: `root` (resolution:
+  explicit `root:` -> `$KOSRUNNER_STORAGE_ROOT` -> `<cwd>/.kosrunner`),
+  plus the `keep_runs`/`keep_days` retention caps (declared; pruning not
+  wired yet). Singular per jobset, so only the unnamed form exists.
+- `config access:` -- see next section.
+
+## Access: who may do what
+
+Authentication is the front-end's job (oauth2-proxy injects the verified
+identity as `X-Forwarded-Email`; see the compose stack above).
+Authorization is the definition's own committed lists:
+
+```koskari
+group deployers:
+    "dev@example.com"
+    "carol@example.com"
+
+jobset workload:
+
+    config access:
+        operators: #["root@example.com"]
+        groups: #[deployers]
+
+    job webhook deploy:
+        allow #[deployers]
+        handler [[ref :: str]]:
+            ...
+```
+
+A `group` is a first-class value bound at module level, named after its
+own binding -- `allow` and `groups:` reference the **binding**, so a
+typo'd group is a load-time NameError, never a silently empty match.
+
+The ladder: **anonymous** (no or unlisted identity) may read everything --
+job lists, run history, dashboards. A **group member** may additionally
+trigger (and re-trigger) the jobs whose `allow` list carries one of their
+groups. **Operators** may trigger anything and enable/disable/shutdown. A
+job with no `allow` list is operator-only; a jobset with no
+`config access:` at all is fully open, which is the right shape for a
+local loop. The UI projects this ladder (buttons and forms appear only
+where you may act) while the admin/ui action handlers enforce it
+underneath -- hiding a button is never the only control.
 
 ## How it works
 
@@ -314,6 +526,7 @@ by name.
 | [kosrunner/webhook.ki](kosrunner/webhook.ki) | `WebhookJob` + `config/webhook` / `job/webhook` (mounts routes on a shared `HttpServer`) |
 | [kosrunner/admin.ki](kosrunner/admin.ki) | `AdminJob` + `config/admin` / `job/admin` -- the JSON control plane over HTTP |
 | [kosrunner/ui.ki](kosrunner/ui.ki) | `UiJob` + `config/ui` / `job/ui` -- the Jinja2 web UI (jobs/runs dashboard, retrigger), in-process on the shared server |
+| [kosrunner/access.ki](kosrunner/access.ki) | `Group` + `group`, `AccessConfig` + `config/access`, the identity/level seam (`resolve-identity`/`resolve-level`) and the operator/trigger guards behind `/admin` and `/ui` mutations |
 | [kosrunner/fake.ki](kosrunner/fake.ki) | `FakeJob` -- a broker-free variety for tests |
 
 

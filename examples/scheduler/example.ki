@@ -100,8 +100,8 @@ jobset workload:
             group_id: "audit-consumers"
         on-error [err msg]:
             (print f"audit dropped {msg}: {err}")
-        handler [msg topic]:
-            (print f"audit {topic}: {msg}")
+        handler [msg]:
+            (print f"audit: {msg}")
 
 
 when-main:
