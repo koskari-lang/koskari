@@ -18,7 +18,7 @@ jobset workload:
 
     job webhook ping:
         handler [payload]:
-            #{ok: True msg: "pong"}
+            #{"ok": True "msg": "pong"}
 ```
 
 Three job varieties ship: **cron** (aiocron), **webhook** (FastAPI/uvicorn),
@@ -270,7 +270,7 @@ carry no config at all.
 ```koskari
 job webhook ping:
     handler [payload]:
-        #{ok: True msg: "pong"}
+        #{"ok": True "msg": "pong"}
 
 job webhook deploy:
     config:
@@ -278,7 +278,7 @@ job webhook deploy:
         wait: False
     handler [[ref :: str] [force :: bool value: False]]:
         (print f"deploying {ref} force={force}")
-        #{ok: True}
+        #{"ok": True}
 ```
 
 No trigger key: the job's name is the route path segment, mounted as

@@ -69,11 +69,11 @@ jobset workload:
     job webhook ping:
         handler [payload]:
             (print f"Webhook received: {payload}")
-            #{ok: True msg: "pong"}
+            #{"ok": True "msg": "pong"}
 
     job webhook echo:
         handler [payload]:
-            #{ok: True payload: payload}
+            #{"ok": True "payload": payload}
 
     ;; The control plane, as a job. No sub-items: it serves from its
     ;; config alone, sharing the webhook's server (same port) and mounting
