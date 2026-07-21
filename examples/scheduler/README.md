@@ -62,11 +62,14 @@ result. Re-trigger replays a run's stored args as a new run linked to the
 original, so a failed job can be re-run without re-sending its input.
 
 A human-facing **web UI** shares that same server under `/ui` -- point a browser
-at `http://localhost:8080/ui`. It renders a jobs + recent-runs dashboard with
-enable/disable and one-click retrigger, and a per-run detail page
-(`/ui/runs/<run-id>`) showing the captured output and result. It reads the live
-`JobSet` and run store in-process; its form actions post to `/ui` and redirect
-back, so `/admin` stays a clean JSON API for scripting.
+at `http://localhost:8080/ui`. It is a three-level hierarchy with a breadcrumb
+bar (`Dashboard / <job> / <run>`): the dashboard is a gateway listing jobs
+grouped by variety, each with its last run; a job's page carries the actions --
+gated enable/disable, a manual-trigger form when the job supports one, and its
+run history as a paged table; a run's page shows the captured output, result,
+and stored trigger. It reads the live `JobSet` and run store in-process; its
+form actions post back to the job they concern, so `/admin` stays a clean JSON
+API for scripting.
 
 The **kafka** jobs in the example are marked `disabled` because they need a
 running broker. To enable them, point `config kafka:` at your broker and drop
@@ -366,14 +369,34 @@ job ui web
 ```
 
 The human layer, same shape as admin (`UiConfig` defaults `prefix` to
-`/ui`). Serves the dashboard (`GET /ui`), per-run detail
-(`GET /ui/runs/{id}`), form actions (`POST /ui/{enable,disable}/{name}`,
-`/ui/retrigger/{id}`), and manual-trigger forms
-(`POST /ui/trigger/{name}`) whose fields derive from each webhook
-handler's typed formals. The page is projected per user: control buttons,
-retrigger buttons, and trigger forms render only where the caller may act
-(the jobs/runs tables themselves stay visible to everyone -- the read
-floor). Refusals are `403` HTML.
+`/ui`; a prefix of `"/"` or `""` mounts it at the server root and all
+links stay root-relative). The pages form a hierarchy under a breadcrumb
+bar (`Dashboard / <job> / <run>`):
+
+- `GET {prefix}/` -- the **dashboard**, a gateway: jobs grouped by
+  variety, one status line each (`name`, enabled, running, last run),
+  the name linking to the job page and the last run linking straight
+  into that run. No actions live here.
+- `GET {prefix}/jobs/{name}` -- the **job page**: type and status, gated
+  enable/disable buttons, the manual-trigger form when the job supports
+  one, and the job's run history as a paged table (20 per page,
+  `?page=N`, with per-run retrigger).
+- `GET {prefix}/runs/{id}` -- the **run page**: metadata, the stored
+  trigger, captured output, and result, under its job in the breadcrumb.
+
+Whether a job gets a trigger form is the job type's call, via its
+`trigger-spec`: cron says "fire now" with no fields, a typed webhook
+supplies its input fields, and everything else (kafka, untyped webhooks,
+admin/ui) is not manually triggerable -- re-run a past run instead,
+which replays its real recorded input. The actions
+(`POST {prefix}/{enable,disable}/{name}`, `{prefix}/retrigger/{id}`,
+`{prefix}/trigger/{name}`) redirect back to the job page they concern.
+
+Every page is projected per user: buttons and forms render only where
+the caller may act, while the pages themselves stay visible to everyone
+-- the read floor. Refusals are `403` HTML, and the action handlers
+enforce the same checks the projection draws, so a hidden button is
+never the only control.
 
 ### fake
 
@@ -525,7 +548,7 @@ by name.
 | [kosrunner/kafka.ki](kosrunner/kafka.ki) | `KafkaJob` + `on-error` + `config/kafka` / `job/kafka` (aiokafka) |
 | [kosrunner/webhook.ki](kosrunner/webhook.ki) | `WebhookJob` + `config/webhook` / `job/webhook` (mounts routes on a shared `HttpServer`) |
 | [kosrunner/admin.ki](kosrunner/admin.ki) | `AdminJob` + `config/admin` / `job/admin` -- the JSON control plane over HTTP |
-| [kosrunner/ui.ki](kosrunner/ui.ki) | `UiJob` + `config/ui` / `job/ui` -- the Jinja2 web UI (jobs/runs dashboard, retrigger), in-process on the shared server |
+| [kosrunner/ui.ki](kosrunner/ui.ki) | `UiJob` + `config/ui` / `job/ui` -- the Jinja2 web UI (dashboard -> job page -> run page hierarchy, gated actions, trigger forms, paged history), in-process on the shared server |
 | [kosrunner/access.ki](kosrunner/access.ki) | `Group` + `group`, `AccessConfig` + `config/access`, the identity/level seam (`resolve-identity`/`resolve-level`) and the operator/trigger guards behind `/admin` and `/ui` mutations |
 | [kosrunner/fake.ki](kosrunner/fake.ki) | `FakeJob` -- a broker-free variety for tests |
 

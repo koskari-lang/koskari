@@ -18,9 +18,13 @@
   .status-success { color: #197a3a; } .status-failed { color: #c1362f; }
   .status-running { color: #9a6a00; } .status-interrupted { color: #888; }
   .muted { color: #999; }
+  .crumbs { font-size: 0.9rem; color: #999; margin-bottom: 1rem; }
 </style>
 </head>
 <body>
+{% if crumbs is defined %}
+<nav class="crumbs"><a href="{{ root }}">Dashboard</a>{% for c in crumbs %} / {% if c.href %}<a href="{{ c.href }}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}{% endfor %}</nav>
+{% endif %}
 {% block body %}{% endblock %}
 </body>
 </html>

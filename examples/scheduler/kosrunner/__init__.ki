@@ -20,7 +20,8 @@ import-from .access:
     AccessConfig Group group config/access resolve-identity resolve-level
     groups-of operator? may-trigger? trigger-allowed?
     require-operator! require-trigger!
-import-from .server HttpServer get-server ServerConfig stop-all-servers
+import-from .server:
+    HttpServer get-server normalize-prefix ServerConfig stop-all-servers
 import-from .store:
     StorageConfig RunStore config/storage resolve-storage-root safe-segment
 import-from .fake FakeConfig FakeJob config/fake job/fake
@@ -42,7 +43,7 @@ declare-exports [
     groups-of operator? may-trigger? trigger-allowed?
     require-operator! require-trigger!
 
-    HttpServer get-server ServerConfig stop-all-servers
+    HttpServer get-server normalize-prefix ServerConfig stop-all-servers
 
     StorageConfig RunStore config/storage resolve-storage-root safe-segment
 

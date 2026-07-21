@@ -93,6 +93,21 @@ define-class Job []:
         self
 
 
+    define trigger-spec [self]:
+        """
+        The manual-trigger contract. None (the base) means this job cannot
+        be fired fresh from the UI -- admin/ui/kafka and untyped webhooks
+        inherit or return it, since a fresh fire either means nothing or
+        needs a payload the UI cannot invent. An empty dict means fire
+        with no fields (cron); a typed webhook returns its input spec so
+        the trigger form renders its fields. Re-running a PAST run
+        (retrigger) is separate and always supported: it replays real
+        recorded args.
+        """
+
+        None
+
+
     ; --- tracked execution ---
 
     define _job-kind [self]:
@@ -262,10 +277,13 @@ define-class JobSet []:
         define access self.access
         define control (or (None? access)
             (== (resolve-level access identity) "operator"))
+        define lasts (if self.store (self.store.last-runs) #{})
         list-each [[name job] (self.jobs.items)]:
             #{"name": name
+              "type": (job._job-kind)
               "enabled": job.enabled
               "running": job.running
+              "last": (lasts.get name)
               "may_trigger": (may-trigger? access identity job)
               "may_control": control}
 

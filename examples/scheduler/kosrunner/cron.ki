@@ -40,6 +40,11 @@ define-class CronJob [Job]:
         set! self._handle None
 
 
+    define trigger-spec [self]:
+        ;; fire now, no fields; the schedule is ignored for a manual run
+        #{}
+
+
     define start [self]:
         import aiocron
 

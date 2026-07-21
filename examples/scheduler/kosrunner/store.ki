@@ -305,7 +305,7 @@ define-class RunStore []:
         (if rows (item rows 0) None)
 
 
-    define list-runs [self job: None status: None limit: 50]:
+    define list-runs [self job: None status: None limit: 50 offset: 0]:
         define clauses #[]
         define params #[]
         when job:
@@ -317,9 +317,25 @@ define-class RunStore []:
         define joiner " AND "
         define where (if clauses f"WHERE {(joiner.join clauses)}" "")
         (params.append limit)
+        (params.append offset)
         (self._rows
-            f"SELECT * FROM runs {where} ORDER BY started_at DESC LIMIT ?"
+            f"SELECT * FROM runs {where} ORDER BY started_at DESC LIMIT ? OFFSET ?"
             params)
+
+
+    define last-runs [self]:
+        """
+        The most recent run row per job, as a job-name -> row dict. One
+        grouped query, so a dashboard listing every job costs one round
+        trip, not one per job.
+        """
+
+        define rows (self._rows
+            "SELECT r.* FROM runs r JOIN (SELECT job, MAX(started_at) AS latest FROM runs GROUP BY job) m ON r.job = m.job AND r.started_at = m.latest")
+        define out #{}
+        for-each [row rows]:
+            (set! (item out (item row "job")) row)
+        out
 
 
     define run-log-path [self runid]:

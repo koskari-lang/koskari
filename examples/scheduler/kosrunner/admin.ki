@@ -16,7 +16,7 @@ import logging
 
 import-from .access require-operator! require-trigger!
 import-from .job Job
-import-from .server get-server ServerConfig
+import-from .server get-server normalize-prefix ServerConfig
 
 
 define logger (logging.getLogger "kosrunner.admin")
@@ -49,7 +49,7 @@ define-class AdminJob [Job]:
         server it manages itself.
         """
 
-        define prefix self.config.prefix
+        define prefix (normalize-prefix self.config.prefix)
         define js self.jobset
 
         define do-enable [name ctx]:

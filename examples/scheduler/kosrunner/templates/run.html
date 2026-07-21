@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}run {{ run.run_id }}{% endblock %}
 {% block body %}
-<p><a href="{{ prefix }}">&larr; all runs</a></p>
 <h1>{{ run.job }} &middot; <span class="status-{{ run.status }}">{{ run.status }}</span></h1>
 <table>
   <tr><th>run id</th><td>{{ run.run_id }}</td></tr>

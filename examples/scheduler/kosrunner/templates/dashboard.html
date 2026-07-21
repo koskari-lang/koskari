@@ -1,72 +1,23 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Jobs</h1>
+{% for tp, rows in groups|dictsort %}
+<h2>{{ tp }}</h2>
 <table>
-  <tr><th>job</th><th>enabled</th><th>running</th><th></th></tr>
-  {% for j in jobs %}
+  <tr><th>job</th><th>enabled</th><th>running</th><th>last run</th></tr>
+  {% for j in rows %}
   <tr>
-    <td>{{ j.name }}</td>
+    <td><a href="{{ prefix }}/jobs/{{ j.name }}">{{ j.name }}</a></td>
     <td>{{ "yes" if j.enabled else "no" }}</td>
     <td>{{ "yes" if j.running else "no" }}</td>
     <td>
-      {% if j.may_control %}
-      {% if j.enabled %}
-      <form method="post" action="{{ prefix }}/disable/{{ j.name }}"><button>disable</button></form>
-      {% else %}
-      <form method="post" action="{{ prefix }}/enable/{{ j.name }}"><button>enable</button></form>
-      {% endif %}
-      {% endif %}
+      {% if j.last %}
+      <a href="{{ prefix }}/runs/{{ j.last.run_id }}" class="status-{{ j.last.status }}">{{ j.last.status }}</a>
+      <span class="muted">{{ j.last.started_at }}</span>
+      {% else %}<span class="muted">&mdash;</span>{% endif %}
     </td>
   </tr>
   {% endfor %}
 </table>
-
-{% if triggers %}
-<h1>Trigger</h1>
-<table>
-  {% for t in triggers %}
-  <tr>
-    <td>{{ t.name }}</td>
-    <td>
-      <form method="post" action="{{ prefix }}/trigger/{{ t.name }}">
-        {% for f in t.fields %}
-        <label>{{ f.name }}
-          {% if f.type == "bool" %}
-          <input type="checkbox" name="{{ f.name }}"{% if f.default %} checked{% endif %}>
-          {% else %}
-          <input name="{{ f.name }}" placeholder="{{ f.type }}"{% if f.default is not none %} value="{{ f.default }}"{% endif %}>
-          {% endif %}
-        </label>
-        {% endfor %}
-        <button>run</button>
-      </form>
-    </td>
-  </tr>
-  {% endfor %}
-</table>
-{% endif %}
-
-<h1>Recent runs</h1>
-{% if runs %}
-<table>
-  <tr><th>run</th><th>job</th><th>type</th><th>cause</th><th>status</th><th>started</th><th></th></tr>
-  {% for r in runs %}
-  <tr>
-    <td><a href="{{ prefix }}/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
-    <td>{{ r.job }}</td>
-    <td>{{ r.type }}</td>
-    <td>{{ r.cause }}</td>
-    <td class="status-{{ r.status }}">{{ r.status }}</td>
-    <td class="muted">{{ r.started_at }}</td>
-    <td>
-      {% if perms.get(r.job) %}
-      <form method="post" action="{{ prefix }}/retrigger/{{ r.run_id }}"><button>retrigger</button></form>
-      {% endif %}
-    </td>
-  </tr>
-  {% endfor %}
-</table>
-{% else %}
-<p class="muted">No runs recorded yet.</p>
-{% endif %}
+{% endfor %}
 {% endblock %}

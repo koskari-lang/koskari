@@ -32,6 +32,19 @@ define-dataclass ServerConfig [Config]:
     define [prefix :: str] ""
 
 
+define normalize-prefix [prefix]:
+    """
+    Normalize a mount prefix to root-relative form: leading slash
+    ensured, trailing slashes stripped, so "/" and "" both mean the
+    server root. Without this, a prefix of "/" makes f"{prefix}/rest"
+    emit "//rest" -- a protocol-relative URL the browser reads as a
+    hostname.
+    """
+
+    define p (.strip (or prefix "") "/")
+    (if p f"/{p}" "")
+
+
 define-class RequestContext []:
     """
     The request-context seam (Phase 5). A route handler sees only what it
@@ -43,6 +56,7 @@ define-class RequestContext []:
 
     define __init__ [self request]:
         set! self.headers request.headers
+        set! self.query request.query_params
 
     define header [self name default: None]:
         """
@@ -51,6 +65,14 @@ define-class RequestContext []:
         """
 
         (self.headers.get name default)
+
+    define param [self name default: None]:
+        """
+        Look up a query parameter (via FastAPI's QueryParams), returning
+        `default` when it is absent.
+        """
+
+        (self.query.get name default)
 
 
 define-class HttpServer []:

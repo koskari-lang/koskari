@@ -1,9 +1,9 @@
-;; R5: per-user surface projection. visible-jobs annotates each job with
-;; what the caller may do; the dashboard renders control buttons, trigger
-;; forms (fields from the handler's typed formals), and retrigger buttons
-;; only for permitted jobs; POST /ui/trigger/{name} coerces the form and
-;; fires a tracked run -- still enforced by R4 underneath, so the hidden
-;; button is never the only control.
+;; R5+ frontend hierarchy: the dashboard is a gateway (jobs grouped by
+;; variety, last run linked, no actions), the job page carries the gated
+;; actions, the trigger form (only when the job's trigger-spec allows
+;; one), and paged run history, and the run page sits under its job.
+;; Prefixes normalize so a UI bound at "/" emits root-relative links,
+;; never protocol-relative "//" ones. Enforcement stays R4's underneath.
 
 import-from .harness SchedulerAsyncTestCase
 import-from kosrunner:
@@ -34,7 +34,8 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
         set! self.server (HttpServer "127.0.0.1" 8080)
         set! self.http (self.http-client self.server)
 
-        ;; a gated, typed webhook job and an ungated cron-ish stand-in
+        ;; a gated, typed webhook job; the ui job itself is the
+        ;; not-manually-triggerable case
         define seen #[]
         set! self.seen seen
         define handler [[ref :: str]]:
@@ -50,8 +51,12 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
         (ui.mount self.server)
 
 
+    define page-text [self url headers: None]:
+        (attr (self.http.get url headers: headers) text)
+
+
     @coroutine-fn
-    define test-visible-jobs-flags [self]:
+    define test-visible-jobs-carry-type-and-flags [self]:
         define by-name [rows]:
             define out #{}
             for-each [r rows]:
@@ -59,6 +64,7 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
             out
 
         define op (by-name (self.js.visible-jobs OPERATOR))
+        (self.assertEqual (item (item op "deploy") "type") "webhook")
         (self.assertTrue (item (item op "deploy") "may_trigger"))
         (self.assertTrue (item (item op "deploy") "may_control"))
 
@@ -73,23 +79,46 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-dashboard-projects-per-user [self]:
-        ;; operator: control buttons and the deploy trigger form
-        define op-page (attr (self.http.get "/ui" headers: (ident OPERATOR)) text)
+    define test-dashboard-is-a-gateway [self]:
+        ;; jobs link into their pages; no action buttons for ANY caller
+        define op-page (self.page-text "/ui" headers: (ident OPERATOR))
+        (self.assertIn "/ui/jobs/deploy" op-page)
+        (self.assertNotIn "/ui/trigger/" op-page)
+        (self.assertNotIn "/ui/disable/" op-page)
+        define anon-page (self.page-text "/ui")
+        (self.assertIn "/ui/jobs/deploy" anon-page)
+        (self.assertNotIn "/ui/trigger/" anon-page)
+
+
+    @coroutine-fn
+    define test-dashboard-links-last-run [self]:
+        (self.http.post "/webhook/deploy" json: #{"ref": "v1"})
+        define runid (item (item (self.js.store.list-runs) 0) "run_id")
+        (self.assertIn f"/ui/runs/{runid}" (self.page-text "/ui"))
+
+
+    @coroutine-fn
+    define test-job-page-projects-per-user [self]:
+        define url "/ui/jobs/deploy"
+        define op-page (self.page-text url headers: (ident OPERATOR))
         (self.assertIn "/ui/disable/deploy" op-page)
         (self.assertIn "/ui/trigger/deploy" op-page)
+        (self.assertIn "name=\"ref\"" op-page)
 
-        ;; deployers member: trigger form but no control buttons; the form
-        ;; carries the typed field from the handler signature
-        define dev-page (attr (self.http.get "/ui" headers: (ident DEV)) text)
+        define dev-page (self.page-text url headers: (ident DEV))
         (self.assertNotIn "/ui/disable/" dev-page)
         (self.assertIn "/ui/trigger/deploy" dev-page)
-        (self.assertIn "name=\"ref\"" dev-page)
 
-        ;; anonymous: the read floor -- no buttons, no forms
-        define anon-page (attr (self.http.get "/ui") text)
+        define anon-page (self.page-text url)
         (self.assertNotIn "/ui/disable/" anon-page)
         (self.assertNotIn "/ui/trigger/" anon-page)
+
+
+    @coroutine-fn
+    define test-job-page-untriggerable-hides-form [self]:
+        ;; the ui job's trigger-spec is None: no form even for an operator
+        define page (self.page-text "/ui/jobs/web" headers: (ident OPERATOR))
+        (self.assertNotIn "/ui/trigger/web" page)
 
 
     @coroutine-fn
@@ -98,6 +127,7 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
             data: #{"ref": "v2"}
             headers: (ident DEV))
         (self.assertEqual resp.status_code 303)
+        (self.assertEqual (.get resp.headers "location") "/ui/jobs/deploy")
         (self.assertEqual self.seen #["v2"])
         define runs (self.js.store.list-runs)
         (self.assertEqual (len runs) 1)
@@ -106,7 +136,6 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     define test-trigger-form-still-enforced [self]:
-        ;; projection hides the form, but the POST itself is what must hold
         define resp (self.http.post "/ui/trigger/deploy"
             data: #{"ref": "v2"}
             headers: (ident OUTSIDER))
@@ -124,12 +153,47 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
+    define test-untriggerable-trigger-is-400 [self]:
+        define resp (self.http.post "/ui/trigger/web"
+            data: #{}
+            headers: (ident OPERATOR))
+        (self.assertEqual resp.status_code 400)
+
+
+    @coroutine-fn
     define test-run-page-hides-retrigger [self]:
         (self.http.post "/webhook/deploy" json: #{"ref": "v1"})
         define runid (item (item (self.js.store.list-runs) 0) "run_id")
         define url f"/ui/runs/{runid}"
-        (self.assertIn "retrigger" (attr (self.http.get url headers: (ident DEV)) text))
-        (self.assertNotIn "retrigger" (attr (self.http.get url) text))
+        (self.assertIn "retrigger" (self.page-text url headers: (ident DEV)))
+        (self.assertNotIn "retrigger" (self.page-text url))
+
+
+    @coroutine-fn
+    define test-job-page-pages-run-history [self]:
+        (self.http.post "/webhook/deploy" json: #{"ref": "a"})
+        (self.http.post "/webhook/deploy" json: #{"ref": "b"})
+        ;; the store pages: one row past an offset of one
+        define rows (self.js.store.list-runs job: "deploy" limit: 1 offset: 1)
+        (self.assertEqual (len rows) 1)
+        ;; and the page parameter is accepted
+        define resp (self.http.get "/ui/jobs/deploy?page=2")
+        (self.assertEqual resp.status_code 200)
+
+
+    @coroutine-fn
+    define test-root-prefix-normalizes-links [self]:
+        ;; a UI bound at "/" must emit root-relative links, not "//..."
+        define server2 (HttpServer "127.0.0.1" 8081)
+        define http2 (self.http-client server2)
+        define ui2 (UiJob)
+        (ui2.configure via: (UiConfig prefix: "/"))
+        (self.js.register "web2" ui2)
+        (ui2.mount server2)
+        define resp (http2.get "/")
+        (self.assertEqual resp.status_code 200)
+        (self.assertIn "href=\"/jobs/deploy\"" resp.text)
+        (self.assertNotIn "href=\"//" resp.text)
 
 
 ;; The end.

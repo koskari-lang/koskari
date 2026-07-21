@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block body %}
+<h1>{{ name }} <span class="muted">({{ type }})</span></h1>
+<table>
+  <tr><th>enabled</th><td>{{ "yes" if enabled else "no" }}
+    {% if may_control %}
+    {% if enabled %}<form method="post" action="{{ prefix }}/disable/{{ name }}"><button>disable</button></form>
+    {% else %}<form method="post" action="{{ prefix }}/enable/{{ name }}"><button>enable</button></form>{% endif %}
+    {% endif %}</td></tr>
+  <tr><th>running</th><td>{{ "yes" if running else "no" }}</td></tr>
+</table>
+
+{% if may_trigger and fields is not none %}
+<h2>Trigger</h2>
+<form method="post" action="{{ prefix }}/trigger/{{ name }}">
+  {% for f in fields %}
+  <label>{{ f.name }}
+    {% if f.type == "bool" %}
+    <input type="checkbox" name="{{ f.name }}"{% if f.default %} checked{% endif %}>
+    {% else %}
+    <input name="{{ f.name }}" placeholder="{{ f.type }}"{% if f.default is not none %} value="{{ f.default }}"{% endif %}>
+    {% endif %}
+  </label>
+  {% endfor %}
+  <button>run</button>
+</form>
+{% endif %}
+
+<h2>Runs</h2>
+{% if runs %}
+<table>
+  <tr><th>run</th><th>cause</th><th>status</th><th>started</th><th></th></tr>
+  {% for r in runs %}
+  <tr>
+    <td><a href="{{ prefix }}/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
+    <td>{{ r.cause }}</td>
+    <td class="status-{{ r.status }}">{{ r.status }}</td>
+    <td class="muted">{{ r.started_at }}</td>
+    <td>
+      {% if may_trigger %}
+      <form method="post" action="{{ prefix }}/retrigger/{{ r.run_id }}"><button>retrigger</button></form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+<p>
+  {% if page > 1 %}<a href="?page={{ page - 1 }}">&larr; newer</a>{% endif %}
+  {% if has_next %}<a href="?page={{ page + 1 }}">older &rarr;</a>{% endif %}
+</p>
+{% else %}
+<p class="muted">No runs recorded yet.</p>
+{% endif %}
+{% endblock %}
