@@ -86,13 +86,13 @@ define-class Job []:
         (.lower (.removesuffix cls.__name__ "Job"))
 
 
-    define _invoke [self args]:
+    define _invoke [self args kwargs]:
         (if (None? self.callback)
             None
-            (self.callback *: args))
+            (self.callback *: args **: kwargs))
 
 
-    define _tracked-invoke [self store runid args]:
+    define _tracked-invoke [self store runid args kwargs]:
         """
         The recorded body of a run: set the per-run log buffer, invoke the
         callback, dispatch the on-error hook on failure, and flush the
@@ -113,13 +113,13 @@ define-class Job []:
         define result None
         define err None
         try:
-            set! result (self._invoke args)
+            set! result (self._invoke args kwargs)
         except [Exception as: exc]:
             set! status "failed"
             set! err exc
             if self.on_error_cb:
                 try:
-                    (self.on_error_cb exc *: args)
+                    (self.on_error_cb exc *: args **: kwargs)
                 except [Exception]:
                     (logger.error "on-error handler failed: %s" self.name exc_info: True)
             else:
@@ -131,13 +131,15 @@ define-class Job []:
         result
 
 
-    define run [self *: args cause: "manual" parent: None wait: True]:
+    define run [self *: args cause: "manual" parent: None wait: True **: kwargs]:
         """
         Fire the handler once as a TRACKED run: record it in the jobset's
-        store, capture its log output, invoke the callback with `args`, and
-        record the outcome (with the on-error hook on failure). Every
-        variety funnels its trigger through here, and re-trigger is just a
-        `run` with `cause: "manual"` and the stored args.
+        store, capture its log output, invoke the callback with `args` and
+        `kwargs` (the named-args channel typed webhook inputs bind
+        through), and record the outcome (with the on-error hook on
+        failure). Both channels land in trigger.json, so re-trigger is
+        just a `run` with `cause: "manual"` and the stored args/kwargs.
+        Every variety funnels its trigger through here.
 
         `wait` picks the reply. A synchronous run (the default) invokes
         inline and returns the callback result -- webhook needs it back,
@@ -151,14 +153,14 @@ define-class Job []:
 
         define store (if self.jobset self.jobset.store None)
         when (None? store):
-            (return (self._invoke args))
+            (return (self._invoke args kwargs))
 
-        define runid (store.record-start self.name (self._job-kind) cause args: args parent: parent)
+        define runid (store.record-start self.name (self._job-kind) cause args: args kwargs: kwargs parent: parent)
         if wait:
-            (self._tracked-invoke store runid args)
+            (self._tracked-invoke store runid args kwargs)
         else:
             (self.jobset.spawn-run
-                (lambda [] (self._tracked-invoke store runid args)))
+                (lambda [] (self._tracked-invoke store runid args kwargs)))
             #{"run_id": runid
               "status": "started"}
 
@@ -254,8 +256,9 @@ define-class JobSet []:
                 #{"error": "unknown job"
                   "job": jobname}
             else:
-                define args (or (item trig "args") #[])
-                (job.run *: args cause: "manual" parent: runid)
+                define args (or (trig.get "args") #[])
+                define kwargs (or (trig.get "kwargs") #{})
+                (job.run *: args **: kwargs cause: "manual" parent: runid)
                 #{"ok": True
                   "retriggered": runid
                   "job": jobname}

@@ -242,11 +242,11 @@ define-class RunStore []:
 
     ; --- recording ---
 
-    define record-start [self job type cause args: None parent: None]:
+    define record-start [self job type cause args: None kwargs: None parent: None]:
         """
         Open a run: mint a sortable id, create its artifact dir, persist
-        the trigger args (so re-trigger can replay), and insert a
-        `running` row. Returns the run id.
+        the trigger args and kwargs (so re-trigger can replay), and insert
+        a `running` row. Returns the run id.
         """
 
         define runid (_make-runid)
@@ -259,7 +259,8 @@ define-class RunStore []:
               "type": type
               "cause": cause
               "parent": parent
-              "args": args})
+              "args": args
+              "kwargs": kwargs})
 
         (self._exec
             "INSERT INTO runs (run_id, job, job_dir, type, cause, parent, status, started_at) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)"

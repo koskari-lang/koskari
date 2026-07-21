@@ -45,6 +45,69 @@ define-dataclass WebhookConfig [ServerConfig]:
     define [wait :: bool] True
 
 
+define derive-input-spec [fn]:
+    """
+    Read a handler's input spec off its own typed formals: each annotated
+    parameter (`[ref :: str]`, `[force :: bool value: False]`) becomes a
+    name -> type (required) or name -> #(type default) (optional) entry.
+    Returns None when no formal is annotated -- an untyped handler takes
+    the raw payload as today.
+    """
+
+    import inspect
+
+    define spec #{}
+    define sig (inspect.signature fn)
+    for-each [[name param] (.items sig.parameters)]:
+        unless (== param.annotation inspect.Parameter.empty):
+            if (== param.default inspect.Parameter.empty):
+                (set! (item spec name) param.annotation)
+            else:
+                (set! (item spec name) #(param.annotation param.default))
+    (if spec spec None)
+
+
+define coerce-input [spec payload]:
+    """
+    Validate and coerce a POSTed JSON payload against an input spec,
+    returning the named args for the handler. The spec maps name -> type
+    (required) or #(type default) (optional). Unknown keys, missing
+    required keys, and uncoercible values raise a 400.
+    """
+
+    import-from fastapi HTTPException
+
+    define bad [msg]:
+        (raise (HTTPException status_code: 400 detail: msg))
+
+    unless (instance? payload dict):
+        (bad "payload must be a JSON object")
+
+    for-each [key (payload.keys)]:
+        unless (in? key spec):
+            (bad f"unknown input: {key}")
+
+    define kwargs #{}
+    for-each [[name typ] (spec.items)]:
+        define-values [t default required] (if (instance? typ tuple)
+            (values (item typ 0) (item typ 1) False)
+            (values typ None True))
+        if (in? name payload):
+            define val (item payload name)
+            if (instance? val t):
+                (set! (item kwargs name) val)
+            else:
+                try:
+                    (set! (item kwargs name) (t val))
+                except [Exception]:
+                    (bad f"bad value for {name}: expected {t.__name__}")
+        elif required:
+            (bad f"missing required input: {name}")
+        else:
+            (set! (item kwargs name) default)
+    kwargs
+
+
 define-class WebhookJob [Job]:
     """
     An inbound HTTP route; its name is the route path segment
@@ -53,6 +116,20 @@ define-class WebhookJob [Job]:
     define __init__ [self route]:
         (Job.__init__ self)
         set! self.route route
+        set! self.input_spec None
+
+
+    define handler [self fn]:
+        """
+        The inherited code sub-item, plus the webhook's input contract:
+        the handler's own typed formals ARE the input spec. Setting the
+        handler derives it, so one declaration drives coercion (and later
+        the UI trigger forms).
+        """
+
+        (Job.handler self fn)
+        set! self.input_spec (derive-input-spec fn)
+        self
 
 
     define check-token [self ctx]:
@@ -75,13 +152,18 @@ define-class WebhookJob [Job]:
 
     define dispatch [self payload ctx]:
         """
-        The route-boundary entry mounted by `start`: guard the door, then
-        fire the handler as a tracked run. The handler's return value flows
-        back as the HTTP response.
+        The route-boundary entry mounted by `start`: guard the door,
+        coerce the payload when an input spec is declared, then fire the
+        handler as a tracked run. The handler's return value flows back as
+        the HTTP response.
         """
 
         (self.check-token ctx)
-        (self.run payload cause: "webhook" wait: self.config.wait)
+        if (None? self.input_spec):
+            (self.run payload cause: "webhook" wait: self.config.wait)
+        else:
+            define kwargs (coerce-input self.input_spec payload)
+            (self.run **: kwargs cause: "webhook" wait: self.config.wait)
 
 
     define start [self]:
