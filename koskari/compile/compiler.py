@@ -32,9 +32,11 @@ from ..exceptions import CompilerError, UncaughtCompilerError
 from ..lib import (Arena, Compare, Operand, Code, FormalsSpec, FunctionSpec,
                    Module, ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
-                   bracket_pair, cons, keyword, nil, symbol)
-from ..types import is_nil, get_position, is_pair, is_proper, is_symbol
-from .pragma import BracketCalls, KoskariPragma, PackModule, ResolutionMode
+                   bracket_pair, cons, keyword, kos_repr, nil, symbol)
+from ..types import (is_nil, get_position, is_keyword, is_pair, is_proper,
+                     is_symbol)
+from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
+                     PackModule, ResolutionMode, StrayColon)
 
 
 class Compiled(ABC):
@@ -229,6 +231,8 @@ _symbol_nil = symbol("nil")
 
 _symbol_call = symbol("compile/call")
 _symbol_cons = symbol("compile/cons")
+
+_symbol_colon = symbol(":")
 
 
 def unique_append(lst, val):
@@ -547,7 +551,9 @@ class Compiler:
             self, name, module, filename=None,
             tco_enabled=True,
             resolution_mode=ResolutionMode.KOSKARI,
-            bracket_calls=BracketCalls.IGNORE):
+            bracket_calls=BracketCalls.IGNORE,
+            stray_colon=StrayColon.ALLOW,
+            keyword_literals=KeywordLiterals.ALLOW):
 
         self.name = name
 
@@ -557,10 +563,16 @@ class Compiler:
         self.resolution_mode = resolution_mode
         self._resolution_instance = None
         self.bracket_calls = bracket_calls
+        self.stray_colon = stray_colon
+        self.keyword_literals = keyword_literals
         self.protect_code = False
         self.pack_module = PackModule(True, 0, 0)
         self.cache_expression = False
         self.cache_function = True
+
+        # position of the innermost form compiled so far, for attributing
+        # diagnostics about source objects that carry no position
+        self._last_position = None
 
         # weakrefs to every Code minted through complete(), in
         # definition order; the live remainder at seal() time is the
@@ -633,6 +645,8 @@ class Compiler:
         self._resolution_instance = None
 
         self._bracket_calls = pragma.get("compiler/call-brackets")
+        self._stray_colon = pragma.get("compiler/stray-colon")
+        self._keyword_literals = pragma.get("compiler/keyword-literals")
 
         self.protect_code = pragma.get("compiler/protect-code", False)
         self.pack_module = pragma.get(
@@ -652,6 +666,30 @@ class Compiler:
         if not isinstance(value, BracketCalls):
             value = BracketCalls(value)
         self._bracket_calls = value
+
+
+    @property
+    def stray_colon(self):
+        return self._stray_colon
+
+
+    @stray_colon.setter
+    def stray_colon(self, value):
+        if not isinstance(value, StrayColon):
+            value = StrayColon(value)
+        self._stray_colon = value
+
+
+    @property
+    def keyword_literals(self):
+        return self._keyword_literals
+
+
+    @keyword_literals.setter
+    def keyword_literals(self, value):
+        if not isinstance(value, KeywordLiterals):
+            value = KeywordLiterals(value)
+        self._keyword_literals = value
 
 
     @property
@@ -794,6 +832,8 @@ class Compiler:
         elif is_pair(source_obj):
             dispatch = self.compile_pair
         elif _is_const(source_obj):
+            if is_keyword(source_obj):
+                self.check_keyword_literal(source_obj)
             dispatch = self.compile_const
         else:
             raise CompilerError("Unsupported source object", source_obj)
@@ -815,6 +855,9 @@ class Compiler:
 
 
     def compile_symbol(self, fragment, sym, tc):
+
+        if sym is _symbol_colon:
+            self.check_stray_colon(sym)
 
         # TODO: we may want to add an alias/FOO form for
         # compile-time symbolic aliases. These would be distinct
@@ -863,11 +906,87 @@ class Compiler:
         if self.bracket_calls is BracketCalls.ERROR:
             raise CompilerError(msg, source_obj)
 
-        # WARN: attribute the diagnostic to the koskari source location, not to
-        # this compiler frame, so the output isn't compiler-internal noise
-        # (no compiler.py path, no echoed warnings.warn() line).
         pos = get_position(source_obj)
-        lineno = pos[0] if pos else 0
+        self._source_warning(msg, pos[0] if pos else 0)
+
+
+    def check_stray_colon(self, sym, pos=None):
+        """
+        Diagnose a bare ``:`` symbol compiled as a name per the stray_colon
+        policy. Nothing binds ``:``, so reaching here is always a mistake --
+        usually a layout form half-converted to s-expressions, where the
+        trailing block marker of ``(for-each [x (xs)]: body)`` reads as a
+        symbol element rather than as a block colon.
+
+        Symbols are interned and so carry no position of their own; ``pos``
+        is the enclosing form's ``(line, col)``, used to attribute a WARN.
+        It defaults to the innermost form compiled so far.
+
+        :param sym: the symbol about to be compiled as a name
+        :param pos: position of the enclosing form, or None
+        """
+
+        if (sym is not _symbol_colon
+                or self.stray_colon is StrayColon.ALLOW):
+            return
+
+        if pos is None:
+            pos = self._last_position
+
+        msg = ("stray ':' symbol compiled as a name; a layout block colon"
+               " has no meaning inside an s-expression form")
+
+        if self.stray_colon is StrayColon.ERROR:
+            raise CompilerError(msg, sym)
+
+        self._source_warning(msg, pos[0] if pos else 0)
+
+
+    def check_keyword_literal(self, kwd, pos=None):
+        """
+        Diagnose an unquoted keyword compiled as a literal value per the
+        keyword_literals policy. It evaluates to itself, which is legal but
+        is far more often a typo -- ``(if foo: 1 2)`` tests the keyword
+        ``foo:`` for truthiness (always true) instead of reading ``foo``.
+
+        Quoting is exempt: the quote special emits its own constant and
+        never reaches here. Keyword arguments are exempt too, being
+        consumed structurally by gather_parameters rather than as values.
+
+        Keywords are interned and so carry no position of their own; ``pos``
+        is the enclosing form's ``(line, col)``, used to attribute a WARN.
+        It defaults to the innermost form compiled so far.
+
+        :param kwd: the keyword about to be compiled as a constant
+        :param pos: position of the enclosing form, or None
+        """
+
+        if self.keyword_literals is KeywordLiterals.ALLOW:
+            return
+
+        if pos is None:
+            pos = self._last_position
+
+        # str() on a keyword drops the colon; kos_repr keeps it, so the
+        # suggested quoted form is one the reader would actually accept
+        shown = kos_repr(kwd)
+        msg = (f"keyword {shown} used as a literal value;"
+               f" quote it ('{shown}) if that is intended")
+
+        if self.keyword_literals is KeywordLiterals.ERROR:
+            raise CompilerError(msg, kwd)
+
+        self._source_warning(msg, pos[0] if pos else 0)
+
+
+    def _source_warning(self, msg, lineno):
+        """
+        Emit a SyntaxWarning attributed to the koskari source location
+        rather than to this compiler frame, so the output isn't
+        compiler-internal noise (no compiler.py path, no echoed
+        warnings.warn() line).
+        """
+
         warnings.warn_explicit(msg, SyntaxWarning,
                                self.filename or "<unknown>", lineno)
 
@@ -880,7 +999,12 @@ class Compiler:
 
         self._check_bracket_call(source_obj)
 
-        fragment.position_of(source_obj)
+        pos = get_position(source_obj)
+        if pos:
+            # retained so a diagnostic about a positionless source object
+            # (an interned symbol) can name the innermost enclosing form
+            self._last_position = pos
+            fragment.position(pos)
 
         if is_proper(source_obj):
             head, tail = source_obj

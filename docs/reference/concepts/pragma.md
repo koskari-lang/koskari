@@ -97,6 +97,41 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
 
   A bare `[compiler/call-brackets]` selects `warn`. See
   [Brackets and the call convention](brackets-and-call-convention.md).
+- **`compiler/stray-colon`** *(default `warn`)* — what happens when a bare `:`
+  symbol is compiled as a name. Nothing binds `:`, so this is always a
+  mistake; it most often comes from a layout form half-converted to
+  s-expressions, where the trailing block colon of
+
+  ```
+  for-each [x (xs)]:
+      body
+  ```
+
+  survives the rewrite as `(for-each [x (xs)]: body)` — which reads as
+  `(for-each [x (xs)] : body)` and fails at runtime with a `NameError`. One
+  of:
+  - `warn` — emit a `SyntaxWarning`.
+  - `error` — raise a compile error.
+  - `allow` — nothing; the `:` compiles as an ordinary name lookup.
+
+  A bare `[compiler/stray-colon]` selects `warn`. Note that a trailing colon
+  attached to a name is a *keyword*, not a stray colon: `(when foo: (foo))`
+  passes the keyword `foo:`, which `compiler/keyword-literals` covers
+  instead.
+- **`compiler/keyword-literals`** *(default `warn`)* — what happens when an
+  unquoted keyword is compiled as a literal value. A keyword evaluates to
+  itself, which is legal but is more often a typo: `(if foo: 1 2)` tests the
+  keyword `foo:` for truthiness — always true — rather than reading the
+  variable `foo`. One of:
+  - `warn` — emit a `SyntaxWarning`.
+  - `error` — raise a compile error.
+  - `allow` — nothing; the keyword compiles to itself.
+
+  Quote the keyword to state that the literal is what you meant; `'foo:`
+  compiles through the quote special and is always exempt. Two other uses
+  are structural rather than value positions, so they are never flagged:
+  keyword *arguments* (`(print 1 sep: "-")`) and keyword *markers* consumed
+  by a form (`(cond [(> x 1) 'big] [else: 'small])`).
 - **`compiler/enable-asserts`** *(default on)* — whether `(assert …)` forms
   expand to their check. Off, an `assert` compiles away entirely: neither the
   condition nor the message is compiled or evaluated, mirroring Python's `-O`

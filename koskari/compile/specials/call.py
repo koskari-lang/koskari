@@ -140,6 +140,10 @@ def special_call(
 
     fragment = compiler.fragment(called_by)
     if use_var_path:
+        # the var path names the callable directly rather than routing it
+        # through compile_symbol, so the stray-colon check has to run here.
+        # The other path calls full_compile, which checks for us.
+        compiler.check_stray_colon(callable, pos)
         fragment.request_var(name)
 
     fragment.position(pos)

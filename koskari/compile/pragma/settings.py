@@ -15,12 +15,13 @@
 koskari.compile.pragma.settings
 
 Compiler-side pragma settings, registered into the koskari.pragma registry at
-import: compiler/resolution, compiler/call-brackets, compiler/tco-enable,
-compiler/cache-expression, compiler/cache-function, compiler/protect-code,
-compiler/pack-module, and the reserved compiler/convert-fast and
-compiler/compress. Each setting's ``default`` is its baseline (value when
-undeclared); the function's argument defaults are the parameter defaults
-(value when declared but the arg is omitted).
+import: compiler/resolution, compiler/call-brackets, compiler/stray-colon,
+compiler/keyword-literals, compiler/tco-enable, compiler/cache-expression,
+compiler/cache-function, compiler/protect-code, compiler/pack-module, and
+the reserved compiler/convert-fast and compiler/compress. Each setting's
+``default`` is its baseline (value when undeclared); the function's
+argument defaults are the parameter defaults (value when declared but the
+arg is omitted).
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -90,6 +91,79 @@ def compiler_call_brackets(level=BracketCalls.WARN) -> BracketCalls:
     if isinstance(level, BracketCalls):
         return level
     return BracketCalls(str(level))
+
+
+class StrayColon(Enum):
+    """
+    How the compiler treats a bare ``:`` symbol reaching compilation as a
+    name. Nothing binds ``:``, so it is a mistake in every case -- almost
+    always a half-converted layout form, where ``(for-each [x (xs)]: body)``
+    mixes the layout block marker into an s-expression and reads as
+    ``(for-each [x (xs)] : body)``.
+
+    - ``ALLOW``: compile it as an ordinary name lookup, no diagnostic
+    - ``WARN``: compile it, but emit a SyntaxWarning
+    - ``ERROR``: raise a CompilerError
+
+    ``ALLOW`` rather than ``IGNORE`` (the spelling ``compiler/call-brackets``
+    uses) because "ignore the colon" would read as dropping it.
+    """
+
+    ALLOW = "allow"
+    WARN = "warn"
+    ERROR = "error"
+
+
+@pragma_setting("compiler/stray-colon", StrayColon.WARN)
+def compiler_stray_colon(level=StrayColon.WARN) -> StrayColon:
+    """
+    Policy when a bare ``:`` symbol is compiled as a name.
+
+    "warn" - (default) compile it, but emit a SyntaxWarning
+    "error" - raise a CompilerError
+    "allow" - compile it as an ordinary name lookup, no diagnostic
+    """
+
+    if isinstance(level, StrayColon):
+        return level
+    return StrayColon(str(level))
+
+
+class KeywordLiterals(Enum):
+    """
+    How the compiler treats a keyword reaching evaluated position, where it
+    compiles to itself as a constant. Writing the literal unquoted reads as
+    a value but is far more often a typo -- ``(if foo: 1 2)`` tests the
+    truthiness of the keyword ``foo:``, which is always true, rather than
+    reading the variable ``foo``.
+
+    - ``ALLOW``: compile it as a constant, no diagnostic
+    - ``WARN``: compile it, but emit a SyntaxWarning
+    - ``ERROR``: raise a CompilerError
+
+    Quoting states the intent and is always exempt: ``'foo:`` compiles
+    through the quote special and never reaches this check. Keyword
+    arguments are structural, not values, so ``(f bar: 1)`` is exempt too.
+    """
+
+    ALLOW = "allow"
+    WARN = "warn"
+    ERROR = "error"
+
+
+@pragma_setting("compiler/keyword-literals", KeywordLiterals.WARN)
+def compiler_keyword_literals(level=KeywordLiterals.WARN) -> KeywordLiterals:
+    """
+    Policy when an unquoted keyword is compiled as a literal value.
+
+    "warn" - (default) compile it, but emit a SyntaxWarning
+    "error" - raise a CompilerError
+    "allow" - compile it as a constant, no diagnostic
+    """
+
+    if isinstance(level, KeywordLiterals):
+        return level
+    return KeywordLiterals(str(level))
 
 
 @pragma_setting("compiler/tco-enable", True)
