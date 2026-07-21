@@ -349,7 +349,15 @@ documented "for production gitops" note, not built here.
   description, as minimal auth for the open webhook surface. (Promoted to a real
   requirement in Phase 5 as R1.)
 
-### Phase 5 -- front-end auth, webhook doors & reply model
+### Phase 5 -- front-end auth, webhook doors & reply model -- DONE (2026-07-20)
+
+> **All five requirements landed 2026-07-20**, in the planned order, plus a
+> koskari-authored unittest suite (`tests/`, tox-driven -- see "Verifying as
+> we go") that arrived ahead of the fork-time schedule. Each requirement
+> below carries a *Landed:* note recording what shipped and where it
+> deviated from the sketch. The two deliberate deviations: R3 dropped the
+> `input:` sub-item for the handler's own typed formals, and R4 made groups
+> first-class values instead of string keys.
 
 The next body of work is a single entangled collection, not a menu. Every item
 below is committed; none is dropped to focus on the others. The ordering is by
@@ -385,6 +393,12 @@ authority that authors everything below; it is never a runtime role.
   births the request-context seam.
 - *Choice:* where the token rides -- header (`X-Kosrunner-Token`), path segment,
   or query. Header keeps it out of URLs and logs.
+- *Landed:* as sketched. `WebhookConfig` gained `token` (None = open);
+  `check-token` compares the `X-Kosrunner-Token` header in constant time at
+  the route boundary, before `record-start`, so a rejected call leaves no
+  run. The seam is `RequestContext` in [server.ki](../kosrunner/server.ki);
+  `add-route` passes `(handler payload ctx)` and lets `HTTPException`
+  through as the real HTTP error.
 
 **R2 -- async webhook reply (background run).**
 - *Intent:* a webhook can reply immediately with a receipt
@@ -403,6 +417,13 @@ authority that authors everything below; it is never a runtime role.
   the handle the read surface polls, so R2 wires here to status-visibility.
 - *Note:* independent of the request-context seam; it touches execution, not the
   request. Can be built in parallel with R1.
+- *Landed:* sync-default, per-webhook `wait:` on `WebhookConfig`. `Job.run`
+  split exactly as sketched -- `_tracked-invoke` is the recorded body and
+  the `_current-run` contextvar set/invoke/flush stays together inside it,
+  so the log buffer survives the move into the task's context. `JobSet`
+  grew `_inflight` + `spawn-run`/`_run-done` (the loop holds tasks weakly,
+  so the set is the strong ref; escaped crashes are logged) and `_teardown`
+  awaits the in-flight set before the store closes.
 
 **R3 -- webhook input parameters (double duty).**
 - *Intent:* a webhook *declares* its inputs, and that one declaration drives both
@@ -421,6 +442,16 @@ authority that authors everything below; it is never a runtime role.
   dynamic Pydantic model from the spec instead of hand-rolled coercion.
 - *Note:* needs no auth, but produces the trigger forms and typed-args reveal
   that R5 later projects. Build before R5 so R5 has something concrete to filter.
+- *Landed (deviation):* there is no `input:` sub-item. The handler's own
+  typed formals ARE the input contract -- `handler [[ref :: str]
+  [force :: bool value: False]]:` -- read off the callback via
+  `inspect.signature` when `WebhookJob.handler` stores it (the reuse lever,
+  taken at the surface level: one declaration, nothing to drift). Hand-rolled
+  `coerce-input` validates at dispatch (unknown key / missing required /
+  uncoercible -> 400); an unannotated handler takes the raw payload
+  unchanged. `Job.run` carries a kwargs channel recorded beside args in
+  trigger.json, so retrigger replays typed inputs for free. The UI half
+  (forms + reveal) shipped with R5.
 
 **R4 -- access lists (membership at access time).**
 - *Intent:* at action time, resolve the proxy-set identity -> level / group
@@ -433,6 +464,18 @@ authority that authors everything below; it is never a runtime role.
   -- `403` HTML for the UI, `403` JSON for admin. The membership test is trivial;
   the work is plumbing identity to the check point, which **widens the R1 seam**
   from "read a token header" to "carry resolved identity."
+- *Landed (deviation):* groups are first-class VALUES, keyed by binding
+  rather than string. `group deployers:` (a `Group` macro in
+  [access.ki](../kosrunner/access.ki), named after its own binding) defines
+  the value; `config access:` lists `groups: #[deployers]` and a job says
+  `allow #[deployers]` -- a typo'd group is a load-time NameError, never a
+  silently empty string match, and the membership test runs directly
+  against the referenced values. `resolve-identity`/`resolve-level` are the
+  swappable seam as planned; every route helper in server.ki now builds a
+  `RequestContext`. Enable/disable/shutdown require operator; retrigger
+  requires trigger rights on the run's job; reads stay the anonymous floor.
+  AdminJob/UiJob split `mount` from `start` so the guarded routes are
+  testable without uvicorn.
 
 **R5 -- per-user surface projection (reveal only what you may touch).**
 - *Intent:* the dashboard / webhook page shows only the jobs a user may trigger;
@@ -446,6 +489,20 @@ authority that authors everything below; it is never a runtime role.
 - *The edge:* projection is display only. Hiding a button without R4 enforcing
   the action is a leak -- a user could POST the hidden trigger. R5's filter and
   R4's enforcement are two halves of one guarantee; neither stands alone.
+- *Landed (interpretation):* the jobs/runs tables stay visible to everyone
+  -- that IS the anonymous read floor, matching the admin API's open reads;
+  a control-level user must never see less than anonymous. What projects is
+  the ACTIONABLE surface: `JobSet.visible-jobs [identity]` annotates rows
+  with `may_trigger`/`may_control` (via an identity-pure `may-trigger?`
+  split out of `trigger-allowed?`), the dashboard gates its buttons on
+  those flags, and a new Trigger section lists only permitted jobs, each
+  with a manual-trigger form whose fields derive from the R3 typed formals
+  (bool -> checkbox, defaults prefilled). `POST /ui/trigger/{name}` -- via
+  a new `add-form` route helper (urlencoded; python-multipart joined the
+  deps) -- coerces through the same `coerce-input` and fires a tracked
+  `manual` run, 403 HTML / 400 escaped on refusal. The run page reveals
+  the stored trigger and hides its retrigger button by the same flag.
+  Enforcement under projection is tested: the hidden form still 403s.
 
 #### Approach
 
@@ -500,8 +557,20 @@ cheap. Leaning ephemeral-first, add persistence only if the ephemerality bites.
 
 ## Verifying as we go
 
-The `fake` variety ([fake.ki](../kosrunner/fake.ki)) is the local exercise
-loop: run a jobset of fake jobs, watch runs land in the store and render in the
-UI, well before the formal test suite arrives at fork time. Keep it as the
-injectable seam -- the `RunStore` should be constructible against a throwaway
-root so a future in-memory / temp-dir test store drops in.
+The formal suite arrived with Phase 5, ahead of the fork-time schedule: a
+koskari-authored unittest suite under [tests/](../tests/), run by tox
+(`make test`). The tests are `IsolatedAsyncioTestCase` subclasses written
+in Koskari itself, driven by `python -m unittest` naming the modules
+(`tests.webhook_token` .. `tests.webhook_surface`); the koskari CLI cannot
+host them, since its ambient loop collides with the runner's. Two boundary
+rules hold throughout: anything unittest calls or cleans up is wrapped
+`@coroutine-fn` so it presents as a native coroutine function, and
+tasks/futures (e.g. `asyncio.gather`) are auto-await-exempt, so drains are
+explicit `(await ...)`. The throwaway-root `RunStore` seam paid off exactly
+as planned -- the harness stands each test's store up on a temp dir and
+drives the real HTTP surface over ASGI, no uvicorn, via the AdminJob/UiJob
+`mount` split.
+
+The `fake` variety ([fake.ki](../kosrunner/fake.ki)) remains the local
+exercise loop: run a jobset of fake jobs, watch runs land in the store and
+render in the UI.
