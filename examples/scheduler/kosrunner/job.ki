@@ -50,6 +50,7 @@ define-class Job []:
         set! self.enabled True
         set! self.running False
         set! self.jobset None
+        set! self.allowed_groups None
 
 
     ; --- inherited sub-item setters ---
@@ -76,6 +77,19 @@ define-class Job []:
         """
 
         set! self.callback fn
+        self
+
+
+    define allow [self groups]:
+        """
+        The `allow #[..]` sub-item -- the Group values whose members may
+        trigger this job (operators always may), referenced by BINDING,
+        e.g. `allow #[deployers]`. Under an access config a job with no
+        allow list is operator-only; with no access config everything is
+        open.
+        """
+
+        set! self.allowed_groups (list groups)
         self
 
 
@@ -186,6 +200,7 @@ define-class JobSet []:
         set! self.name name
         set! self.jobs #{}
         set! self.store None              ; RunStore, wired by the jobset macro
+        set! self.access None             ; AccessConfig, wired by the jobset macro
         set! self._stopping None          ; asyncio.Event, live only while running
         set! self._inflight (set)         ; background run tasks (async webhooks)
 
@@ -204,6 +219,17 @@ define-class JobSet []:
         define root (resolve-storage-root config)
         set! self.store (RunStore (str root) config: config)
         self.store
+
+
+    define bind-access [self config]:
+        """
+        Attach the access lists (the jobset macro passes `&default/access`,
+        falsey when the definition carried no `config access:`). None
+        means the control surface is open -- today's behavior.
+        """
+
+        set! self.access (if config config None)
+        self.access
 
 
     define register [self name job]:

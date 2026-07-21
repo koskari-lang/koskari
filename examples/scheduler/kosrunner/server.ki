@@ -99,79 +99,87 @@ define-class HttpServer []:
 
     define add-listing [self prefix name handler]:
         """
-        GET {prefix}/{name}; handler takes no args and returns data
+        GET {prefix}/{name}; handler takes a RequestContext and returns
+        data
         """
 
+        import-from fastapi Request
         define path f"{prefix}/{name}"
         (logger.info "route GET %s" path)
         define app self.app
 
         @(app.get path)
         @coroutine-fn
-        define inner []:
-            (handler)
+        define inner [[request :: Request]]:
+            (handler (RequestContext request))
 
 
     define add-action [self prefix name handler]:
         """
-        POST {prefix}/{name}/{item}; the path item is passed to handler
+        POST {prefix}/{name}/{item}; the path item and a RequestContext
+        are passed to handler
         """
 
+        import-from fastapi Request
         define path f"{prefix}/{name}/{{item}}"
         (logger.info "route POST %s" path)
         define app self.app
 
         @(app.post path)
         @coroutine-fn
-        define inner [item]:
-            (handler item)
+        define inner [item [request :: Request]]:
+            (handler item (RequestContext request))
 
 
     define add-detail [self prefix name handler]:
         """
-        GET {prefix}/{name}/{item}; the path item is passed to handler,
-        which returns the item's data (or None -> null for a miss)
+        GET {prefix}/{name}/{item}; the path item and a RequestContext are
+        passed to handler, which returns the item's data (or None -> null
+        for a miss)
         """
 
+        import-from fastapi Request
         define path f"{prefix}/{name}/{{item}}"
         (logger.info "route GET %s" path)
         define app self.app
 
         @(app.get path)
         @coroutine-fn
-        define inner [item]:
-            (handler item)
+        define inner [item [request :: Request]]:
+            (handler item (RequestContext request))
 
 
     define add-page [self path handler]:
         """
-        GET {path}; handler takes no args and returns a Response (HTML).
-        Used by the UI variety to serve rendered pages.
+        GET {path}; handler takes a RequestContext and returns a Response
+        (HTML). Used by the UI variety to serve rendered pages.
         """
 
+        import-from fastapi Request
         (logger.info "route GET %s (html)" path)
         define app self.app
 
         @(app.get path)
         @coroutine-fn
-        define inner []:
-            (handler)
+        define inner [[request :: Request]]:
+            (handler (RequestContext request))
 
 
     define add-page-item [self path handler]:
         """
-        GET {path}/{item}; the path item is passed to handler, which
-        returns a Response (HTML).
+        GET {path}/{item}; the path item and a RequestContext are passed
+        to handler, which returns a Response (HTML).
         """
 
+        import-from fastapi Request
         define full f"{path}/{{item}}"
         (logger.info "route GET %s (html)" full)
         define app self.app
 
         @(app.get full)
         @coroutine-fn
-        define inner [item]:
-            (handler item)
+        define inner [item [request :: Request]]:
+            (handler item (RequestContext request))
 
 
     define start [self]:

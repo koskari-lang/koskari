@@ -14,8 +14,11 @@
 
 import-from .job Config Job JobSet
 import-from .subitems:
-    jobset job config handler on-error with-subitems layout/config
+    jobset job config handler on-error allow with-subitems layout/config
     config/logging configure-logging reqenv
+import-from .access:
+    AccessConfig Group group config/access resolve-identity resolve-level
+    groups-of operator? trigger-allowed? require-operator! require-trigger!
 import-from .server HttpServer get-server ServerConfig stop-all-servers
 import-from .store:
     StorageConfig RunStore config/storage resolve-storage-root safe-segment
@@ -30,9 +33,12 @@ import-from .ui UiConfig UiJob config/ui job/ui
 declare-exports [
     Config Job JobSet
 
-    jobset job config handler on-error with-subitems
+    jobset job config handler on-error allow with-subitems
     layout/config
     config/logging configure-logging reqenv
+
+    AccessConfig Group group config/access resolve-identity resolve-level
+    groups-of operator? trigger-allowed? require-operator! require-trigger!
 
     HttpServer get-server ServerConfig stop-all-servers
 

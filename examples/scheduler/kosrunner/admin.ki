@@ -14,6 +14,7 @@
 
 import logging
 
+import-from .access require-operator! require-trigger!
 import-from .job Job
 import-from .server get-server ServerConfig
 
@@ -38,31 +39,62 @@ define-class AdminJob [Job]:
     webhook it shares that webhook's FastAPI server (see server.get-server).
     """
 
-    define start [self]:
-        set! self.running True
-        define server (get-server self.config)
+    define mount [self server]:
+        """
+        Mount the control-plane routes on `server`. Reads are the
+        anonymous floor; mutations are guarded against the jobset's access
+        lists (open when there are none) -- enable/disable/shutdown need
+        operator level, retrigger needs trigger rights on the run's job.
+        Split from `start` so an embedding (or a test) can mount on a
+        server it manages itself.
+        """
+
         define prefix self.config.prefix
         define js self.jobset
 
+        define do-enable [name ctx]:
+            (require-operator! js.access ctx)
+            (js.enable name)
+            #{"enabled": name}
+
+        define do-disable [name ctx]:
+            (require-operator! js.access ctx)
+            (js.disable name)
+            #{"disabled": name}
+
+        define do-shutdown [payload ctx]:
+            (require-operator! js.access ctx)
+            (js.shutdown)
+            #{"ok": True}
+
+        define do-retrigger [runid ctx]:
+            define trig (js.store.get-trigger runid)
+            unless (None? trig):
+                define job (js.jobs.get (item trig "job"))
+                unless (None? job):
+                    (require-trigger! js.access ctx job)
+            (js.retrigger runid)
+
         (server.add-listing prefix "jobs"
-            (lambda [] (js.list-jobs)))
-        (server.add-action prefix "enable"
-            (lambda [name] (js.enable name) #{"enabled": name}))
-        (server.add-action prefix "disable"
-            (lambda [name] (js.disable name) #{"disabled": name}))
-        (server.add-route prefix "shutdown"
-            (lambda [payload ctx] (js.shutdown) #{"ok": True}))
+            (lambda [ctx] (js.list-jobs)))
+        (server.add-action prefix "enable" do-enable)
+        (server.add-action prefix "disable" do-disable)
+        (server.add-route prefix "shutdown" do-shutdown)
 
         ;; run history + replay
         (server.add-listing prefix "runs"
-            (lambda [] (js.store.list-runs)))
+            (lambda [ctx] (js.store.list-runs)))
         (server.add-detail prefix "runs"
-            (lambda [runid] (js.store.run-detail runid)))
-        (server.add-action prefix "retrigger"
-            (lambda [runid] (js.retrigger runid)))
+            (lambda [runid ctx] (js.store.run-detail runid)))
+        (server.add-action prefix "retrigger" do-retrigger)
 
+
+    define start [self]:
+        set! self.running True
+        define server (get-server self.config)
+        (self.mount server)
         (server.start)
-        (logger.info "admin control plane mounted at %s" prefix)
+        (logger.info "admin control plane mounted at %s" self.config.prefix)
 
 
     define stop [self]:

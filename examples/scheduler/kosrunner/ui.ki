@@ -20,6 +20,7 @@ import jinja2
 import-from importlib.util find_spec
 import-from fastapi.responses HTMLResponse RedirectResponse
 
+import-from .access operator? trigger-allowed?
 import-from .job Job
 import-from .server get-server ServerConfig
 
@@ -58,6 +59,12 @@ define _redirect [target]:
     (RedirectResponse target status_code: 303)
 
 
+define _forbid []:
+    ;; the human-flavored 403 (the admin API's guards answer in JSON)
+    (HTMLResponse "<h1>403 Forbidden</h1><p>you are not allowed to do that</p>"
+        status_code: 403)
+
+
 define-class UiJob [Job]:
     """
     The human-facing control plane: Jinja2-rendered HTML mounted on the
@@ -66,16 +73,22 @@ define-class UiJob [Job]:
     API. Its form actions POST to its own prefix and redirect back.
     """
 
-    define start [self]:
-        set! self.running True
-        define server (get-server self.config)
+    define mount [self server]:
+        """
+        Mount the UI routes on `server`. Pages are the anonymous read
+        floor; the form actions are guarded against the jobset's access
+        lists (open when there are none), answering 403 as HTML. Split
+        from `start` so an embedding (or a test) can mount on a server it
+        manages itself.
+        """
+
         define prefix self.config.prefix
         define js self.jobset
         define env (_build-env)
 
         ;; dashboard: jobs + recent runs
         (server.add-page prefix
-            (lambda []
+            (lambda [ctx]
                 (_render env "dashboard.html"
                     #{"prefix": prefix
                       "jobs": (js.list-jobs)
@@ -83,22 +96,41 @@ define-class UiJob [Job]:
 
         ;; one run's detail (metadata + captured output + result)
         (server.add-page-item f"{prefix}/runs"
-            (lambda [runid]
+            (lambda [runid ctx]
                 (define detail (js.store.run-detail runid))
                 (if (None? detail)
                     (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
                     (_render env "run.html" #{"prefix": prefix "run": detail}))))
 
-        ;; form actions -> act, then redirect back to the dashboard
-        (server.add-action prefix "enable"
-            (lambda [name] (js.enable name) (_redirect prefix)))
-        (server.add-action prefix "disable"
-            (lambda [name] (js.disable name) (_redirect prefix)))
-        (server.add-action prefix "retrigger"
-            (lambda [runid] (js.retrigger runid) (_redirect prefix)))
+        ;; form actions -> guard, act, then redirect back to the dashboard
+        define do-enable [name ctx]:
+            (if (operator? js.access ctx)
+                (begin (js.enable name) (_redirect prefix))
+                (_forbid))
 
+        define do-disable [name ctx]:
+            (if (operator? js.access ctx)
+                (begin (js.disable name) (_redirect prefix))
+                (_forbid))
+
+        define do-retrigger [runid ctx]:
+            define trig (js.store.get-trigger runid)
+            define job (if (None? trig) None (js.jobs.get (item trig "job")))
+            (if (or (None? job) (trigger-allowed? js.access ctx job))
+                (begin (js.retrigger runid) (_redirect prefix))
+                (_forbid))
+
+        (server.add-action prefix "enable" do-enable)
+        (server.add-action prefix "disable" do-disable)
+        (server.add-action prefix "retrigger" do-retrigger)
+
+
+    define start [self]:
+        set! self.running True
+        define server (get-server self.config)
+        (self.mount server)
         (server.start)
-        (logger.info "web ui mounted at %s" prefix)
+        (logger.info "web ui mounted at %s" self.config.prefix)
 
 
     define stop [self]:

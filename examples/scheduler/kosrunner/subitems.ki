@@ -80,6 +80,10 @@ define-syntax jobset:
                 (if &default/storage
                     (.bind-store ,jsname default/storage)
                     (.bind-store ,jsname None))
+                (define default/access)
+                (if &default/access
+                    (.bind-access ,jsname default/access)
+                    (.bind-access ,jsname None))
                 ,@regs)
 
 
@@ -113,6 +117,15 @@ define-syntax on-error:
             (.on-error name (lambda [formals ...] body ...))
         case (on-error (tp name) [] body ...):
             (.on-error name (lambda [] body ...))
+
+
+;; `allow #[..]` -- the access sub-item: the group names whose members
+;; may trigger the job. A childless line in the job block (no colon, no
+;; body), routed to the inherited `allow` setter.
+define-syntax allow:
+    syntax-rules []:
+        case (allow (tp name) groups):
+            (.allow name groups)
 
 
 ;; `with-subitems` factors the tag injection so a procedural (macro-rules)

@@ -1,0 +1,131 @@
+;; R4: access lists. Identity is the proxy-set X-Forwarded-Email header;
+;; the ladder is anonymous (read) -> control (trigger per allow) ->
+;; operator (trigger all, enable/disable, shutdown). A jobset with no
+;; access config stays fully open; reads stay open regardless. Admin
+;; answers 403 as JSON, the UI as HTML.
+
+import-from .harness SchedulerAsyncTestCase
+import-from kosrunner:
+    AccessConfig AdminConfig AdminJob Group group HttpServer UiConfig UiJob
+
+
+define OPERATOR "root@example.com"
+define DEV "dev@example.com"
+define OUTSIDER "other@example.com"
+
+group deployers:
+    "dev@example.com"
+
+
+define ident [email]:
+    #{"X-Forwarded-Email": email}
+
+
+define-class TestAccessControl [SchedulerAsyncTestCase]:
+
+    define post-status [self url headers: None]:
+        (attr (self.http.post url headers: headers) status_code)
+
+
+    define get-status [self url]:
+        (attr (self.http.get url) status_code)
+
+
+    @coroutine-fn
+    define asyncSetUp [self]:
+        set! self.js (self.jobset-with-store)
+        (self.js.bind-access (AccessConfig
+            operators: #[OPERATOR]
+            groups: #[deployers]))
+
+        set! self.server (HttpServer "127.0.0.1" 8080)
+        set! self.http (self.http-client self.server)
+
+        ;; the admin control plane, mounted on a server the test owns
+        define admin (AdminJob)
+        (admin.configure via: (AdminConfig))
+        (self.js.register "control" admin)
+        (admin.mount self.server)
+
+        ;; a gated webhook job, and one run of it to replay
+        define seen #[]
+        set! self.seen seen
+        define handler [[ref :: str]]:
+            (seen.append ref)
+            #{"ok": True}
+        define hook (self.webhook self.server "deploy" handler jobset: self.js)
+        (hook.allow #[deployers])
+        set! self.hook hook
+        define resp (self.http.post "/webhook/deploy" json: #{"ref": "v1"})
+        (self.assertEqual resp.status_code 200)
+        define runs (self.js.store.list-runs)
+        set! self.runid (item (item runs 0) "run_id")
+
+
+    @coroutine-fn
+    define test-no-access-config-stays-open [self]:
+        define js2 (self.jobset-with-store)
+        define server2 (HttpServer "127.0.0.1" 8081)
+        define http2 (self.http-client server2)
+        define admin2 (AdminJob)
+        (admin2.configure via: (AdminConfig))
+        (js2.register "control" admin2)
+        (admin2.mount server2)
+        ;; anonymous mutation, no access config -> open, today's behavior
+        define resp (http2.post "/admin/enable/control")
+        (self.assertEqual resp.status_code 200)
+
+
+    @coroutine-fn
+    define test-reads-stay-anonymous [self]:
+        (self.assertEqual (self.get-status "/admin/jobs") 200)
+        (self.assertEqual (self.get-status "/admin/runs") 200)
+        (self.assertEqual (self.get-status f"/admin/runs/{self.runid}") 200)
+
+
+    @coroutine-fn
+    define test-enable-disable-need-operator [self]:
+        define url "/admin/disable/deploy"
+        (self.assertEqual (self.post-status url) 403)
+        (self.assertEqual (self.post-status url headers: (ident DEV)) 403)
+        (self.assertEqual (self.post-status url headers: (ident OPERATOR)) 200)
+        (self.assertEqual
+            (self.post-status "/admin/enable/deploy" headers: (ident OPERATOR))
+            200)
+
+
+    @coroutine-fn
+    define test-retrigger-honors-allow [self]:
+        define url f"/admin/retrigger/{self.runid}"
+        (self.assertEqual (self.post-status url) 403)
+        (self.assertEqual (self.post-status url headers: (ident OUTSIDER)) 403)
+        (self.assertEqual (len self.seen) 1)
+        ;; a deployers member may replay the deployers-allowed job
+        (self.assertEqual (self.post-status url headers: (ident DEV)) 200)
+        (self.assertEqual (len self.seen) 2)
+        ;; and an operator always may
+        (self.assertEqual (self.post-status url headers: (ident OPERATOR)) 200)
+        (self.assertEqual (len self.seen) 3)
+
+
+    @coroutine-fn
+    define test-no-allow-list-is-operator-only [self]:
+        (self.hook.allow #[])
+        define url f"/admin/retrigger/{self.runid}"
+        (self.assertEqual (self.post-status url headers: (ident DEV)) 403)
+        (self.assertEqual (self.post-status url headers: (ident OPERATOR)) 200)
+
+
+    @coroutine-fn
+    define test-ui-forbids-as-html [self]:
+        define ui (UiJob)
+        (ui.configure via: (UiConfig))
+        (self.js.register "web" ui)
+        (ui.mount self.server)
+        define resp (self.http.post "/ui/enable/deploy" headers: (ident DEV))
+        (self.assertEqual resp.status_code 403)
+        (self.assertIn "403" resp.text)
+        (self.assertIn "text/html" (.get resp.headers "content-type"))
+
+
+;; The end.
