@@ -23,7 +23,8 @@ Requires import koskari.builtins so bootstrap definitions are loaded.
 import pytest
 import unittest
 
-from koskari.compile.pragma import BracketCalls, ResolutionMode
+from koskari.compile.pragma import (BracketCalls, KeywordLiterals,
+                                    ResolutionMode, StrayColon)
 from koskari.lib import Module, ModuleNamespace
 from koskari.module import build_module_load_facets
 from koskari.pragma import ModulePragma
@@ -98,6 +99,29 @@ class TestPragmaSetForm(PragmaSyntaxHelpers):
         self.assertEqual(
             BracketCalls.WARN,
             self.module_pragma(module).get("compiler/call-brackets"))
+
+
+    async def test_set_stray_colon(self):
+        module, compiler = self.make_module()
+        expr = self.compile_expr(
+            module, compiler, "(pragma [compiler/stray-colon 'error])")
+        await expr()
+        self.assertEqual(
+            StrayColon.ERROR,
+            self.module_pragma(module).get("compiler/stray-colon"))
+        # the declaration reaches the watching compiler, not just the pragma
+        self.assertIs(StrayColon.ERROR, compiler.stray_colon)
+
+
+    async def test_set_keyword_literals(self):
+        module, compiler = self.make_module()
+        expr = self.compile_expr(
+            module, compiler, "(pragma [compiler/keyword-literals 'allow])")
+        await expr()
+        self.assertEqual(
+            KeywordLiterals.ALLOW,
+            self.module_pragma(module).get("compiler/keyword-literals"))
+        self.assertIs(KeywordLiterals.ALLOW, compiler.keyword_literals)
 
 
     async def test_set_boolean_value(self):
