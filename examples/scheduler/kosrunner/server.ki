@@ -182,6 +182,25 @@ define-class HttpServer []:
             (handler item (RequestContext request))
 
 
+    define add-form [self path handler]:
+        """
+        POST {path}/{item} with an HTML form body; the path item, the
+        form fields as a dict, and a RequestContext are passed to handler.
+        Used by the UI's manual-trigger forms.
+        """
+
+        import-from fastapi Request
+        define full f"{path}/{{item}}"
+        (logger.info "route POST %s (form)" full)
+        define app self.app
+
+        @(app.post full)
+        @coroutine-fn
+        define inner [item [request :: Request]]:
+            define form (dict (request.form))
+            (handler item form (RequestContext request))
+
+
     define start [self]:
         when self._server:
             (return)

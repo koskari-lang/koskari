@@ -105,17 +105,18 @@ define operator? [access ctx]:
         (== (resolve-level access (resolve-identity ctx)) "operator"))
 
 
-define trigger-allowed? [access ctx job]:
+define may-trigger? [access identity job]:
     """
-    May the caller trigger `job`? Operators always; otherwise membership
+    May `identity` trigger `job`? Operators always; otherwise membership
     in any Group on the job's allow list, tested directly against the
     group VALUES the job references -- no name lookup. A job with no
     allow list is operator-only. Open when there is no access config.
+    The identity-pure core, usable at render time (R5 projection) as
+    well as at the request boundary.
     """
 
     when (None? access):
         (return True)
-    define identity (resolve-identity ctx)
     if (== (resolve-level access identity) "operator"):
         True
     elif (None? identity):
@@ -126,6 +127,15 @@ define trigger-allowed? [access ctx job]:
             when (in? identity g.members):
                 (hits.append g)
         (truth hits)
+
+
+define trigger-allowed? [access ctx job]:
+    """
+    The request-boundary wrapper over may-trigger?: resolve the caller's
+    identity off the request context, then ask.
+    """
+
+    (may-trigger? access (resolve-identity ctx) job)
 
 
 define require-operator! [access ctx]:

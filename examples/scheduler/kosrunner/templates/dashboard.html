@@ -9,15 +9,42 @@
     <td>{{ "yes" if j.enabled else "no" }}</td>
     <td>{{ "yes" if j.running else "no" }}</td>
     <td>
+      {% if j.may_control %}
       {% if j.enabled %}
       <form method="post" action="{{ prefix }}/disable/{{ j.name }}"><button>disable</button></form>
       {% else %}
       <form method="post" action="{{ prefix }}/enable/{{ j.name }}"><button>enable</button></form>
       {% endif %}
+      {% endif %}
     </td>
   </tr>
   {% endfor %}
 </table>
+
+{% if triggers %}
+<h1>Trigger</h1>
+<table>
+  {% for t in triggers %}
+  <tr>
+    <td>{{ t.name }}</td>
+    <td>
+      <form method="post" action="{{ prefix }}/trigger/{{ t.name }}">
+        {% for f in t.fields %}
+        <label>{{ f.name }}
+          {% if f.type == "bool" %}
+          <input type="checkbox" name="{{ f.name }}"{% if f.default %} checked{% endif %}>
+          {% else %}
+          <input name="{{ f.name }}" placeholder="{{ f.type }}"{% if f.default is not none %} value="{{ f.default }}"{% endif %}>
+          {% endif %}
+        </label>
+        {% endfor %}
+        <button>run</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
 
 <h1>Recent runs</h1>
 {% if runs %}
@@ -31,7 +58,11 @@
     <td>{{ r.cause }}</td>
     <td class="status-{{ r.status }}">{{ r.status }}</td>
     <td class="muted">{{ r.started_at }}</td>
-    <td><form method="post" action="{{ prefix }}/retrigger/{{ r.run_id }}"><button>retrigger</button></form></td>
+    <td>
+      {% if perms.get(r.job) %}
+      <form method="post" action="{{ prefix }}/retrigger/{{ r.run_id }}"><button>retrigger</button></form>
+      {% endif %}
+    </td>
   </tr>
   {% endfor %}
 </table>

@@ -247,6 +247,29 @@ define-class JobSet []:
               "running": job.running}
 
 
+    define visible-jobs [self identity]:
+        """
+        The per-user projection of list-jobs: each row carries what THIS
+        identity may do with the job -- `may_trigger` (fire/replay it) and
+        `may_control` (enable/disable), computed from the access lists;
+        everything True when there are none. Projection is DISPLAY only:
+        the action handlers enforce the same checks underneath (R4), so
+        hiding a button is never the only control.
+        """
+
+        ;; local import dodges the job<->access load-time cycle
+        import-from .access may-trigger? resolve-level
+        define access self.access
+        define control (or (None? access)
+            (== (resolve-level access identity) "operator"))
+        list-each [[name job] (self.jobs.items)]:
+            #{"name": name
+              "enabled": job.enabled
+              "running": job.running
+              "may_trigger": (may-trigger? access identity job)
+              "may_control": control}
+
+
     define enable [self name]:
         define job (item self.jobs name)
         set! job.enabled True

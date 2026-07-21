@@ -15,7 +15,12 @@
   {% if run.error %}<tr><th>error</th><td class="status-failed">{{ run.error }}</td></tr>{% endif %}
 </table>
 
+{% if may_retrigger %}
 <form method="post" action="{{ prefix }}/retrigger/{{ run.run_id }}"><button>retrigger this run</button></form>
+{% endif %}
+
+<h2>trigger</h2>
+<pre>{{ run.trigger }}</pre>
 
 <h2>output</h2>
 <pre>{{ run.output or "(no captured output)" }}</pre>

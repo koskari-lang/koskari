@@ -13,6 +13,7 @@
 
 
 import os
+import html
 import logging
 
 import jinja2
@@ -20,9 +21,10 @@ import jinja2
 import-from importlib.util find_spec
 import-from fastapi.responses HTMLResponse RedirectResponse
 
-import-from .access operator? trigger-allowed?
+import-from .access operator? resolve-identity trigger-allowed?
 import-from .job Job
 import-from .server get-server ServerConfig
+import-from .webhook coerce-input
 
 
 define logger (logging.getLogger "kosrunner.ui")
@@ -65,6 +67,25 @@ define _forbid []:
         status_code: 403)
 
 
+define _trigger-fields [spec]:
+    """
+    Flatten a webhook input spec (name -> type or #(type default)) into
+    the field descriptors the trigger form template renders.
+    """
+
+    define out #[]
+    when spec:
+        for-each [[name typ] (spec.items)]:
+            define-values [t default required] (if (instance? typ tuple)
+                (values (item typ 0) (item typ 1) False)
+                (values typ None True))
+            (out.append #{"name": name
+                          "type": t.__name__
+                          "required": required
+                          "default": default})
+    out
+
+
 define-class UiJob [Job]:
     """
     The human-facing control plane: Jinja2-rendered HTML mounted on the
@@ -86,21 +107,46 @@ define-class UiJob [Job]:
         define js self.jobset
         define env (_build-env)
 
-        ;; dashboard: jobs + recent runs
-        (server.add-page prefix
-            (lambda [ctx]
-                (_render env "dashboard.html"
-                    #{"prefix": prefix
-                      "jobs": (js.list-jobs)
-                      "runs": (js.store.list-runs)})))
+        ;; dashboard: the per-user projection (R5). Jobs annotated with
+        ;; what THIS caller may do, trigger forms only for permitted jobs
+        ;; (fields from the handler's typed formals), retrigger buttons
+        ;; keyed off the same flags. Display only -- the action handlers
+        ;; below enforce the same checks.
+        define page-dashboard [ctx]:
+            define identity (resolve-identity ctx)
+            define jobs (js.visible-jobs identity)
+            define perms #{}
+            define triggers #[]
+            for-each [j jobs]:
+                define name (item j "name")
+                (set! (item perms name) (item j "may_trigger"))
+                when (item j "may_trigger"):
+                    define job (js.jobs.get name)
+                    (triggers.append #{"name": name
+                                       "fields": (_trigger-fields
+                                           (getattr job "input_spec" None))})
+            (_render env "dashboard.html"
+                #{"prefix": prefix
+                  "identity": identity
+                  "jobs": jobs
+                  "perms": perms
+                  "triggers": triggers
+                  "runs": (js.store.list-runs)})
 
-        ;; one run's detail (metadata + captured output + result)
-        (server.add-page-item f"{prefix}/runs"
-            (lambda [runid ctx]
-                (define detail (js.store.run-detail runid))
-                (if (None? detail)
-                    (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
-                    (_render env "run.html" #{"prefix": prefix "run": detail}))))
+        ;; one run's detail (metadata + trigger + captured output/result)
+        define page-run [runid ctx]:
+            define detail (js.store.run-detail runid)
+            if (None? detail):
+                (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
+            else:
+                define job (js.jobs.get (item detail "job"))
+                (_render env "run.html"
+                    #{"prefix": prefix
+                      "run": detail
+                      "may_retrigger": (and job (trigger-allowed? js.access ctx job))})
+
+        (server.add-page prefix page-dashboard)
+        (server.add-page-item f"{prefix}/runs" page-run)
 
         ;; form actions -> guard, act, then redirect back to the dashboard
         define do-enable [name ctx]:
@@ -120,9 +166,34 @@ define-class UiJob [Job]:
                 (begin (js.retrigger runid) (_redirect prefix))
                 (_forbid))
 
+        ;; manual trigger: the R3 input spec drives both the form fields
+        ;; and the coercion of what comes back
+        define do-trigger [name form ctx]:
+            import-from fastapi HTTPException
+            define job (js.jobs.get name)
+            if (None? job):
+                (HTMLResponse "<h1>404</h1><p>no such job</p>" status_code: 404)
+            elif (not (trigger-allowed? js.access ctx job)):
+                (_forbid)
+            else:
+                define spec (getattr job "input_spec" None)
+                if (None? spec):
+                    (job.run cause: "manual")
+                    (_redirect prefix)
+                else:
+                    try:
+                        define kwargs (coerce-input spec form)
+                        (job.run **: kwargs cause: "manual")
+                        (_redirect prefix)
+                    except [HTTPException as: exc]:
+                        (HTMLResponse
+                            f"<h1>400</h1><p>{(html.escape (str exc.detail))}</p>"
+                            status_code: 400)
+
         (server.add-action prefix "enable" do-enable)
         (server.add-action prefix "disable" do-disable)
         (server.add-action prefix "retrigger" do-retrigger)
+        (server.add-form f"{prefix}/trigger" do-trigger)
 
 
     define start [self]:

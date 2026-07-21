@@ -1,0 +1,135 @@
+;; R5: per-user surface projection. visible-jobs annotates each job with
+;; what the caller may do; the dashboard renders control buttons, trigger
+;; forms (fields from the handler's typed formals), and retrigger buttons
+;; only for permitted jobs; POST /ui/trigger/{name} coerces the form and
+;; fires a tracked run -- still enforced by R4 underneath, so the hidden
+;; button is never the only control.
+
+import-from .harness SchedulerAsyncTestCase
+import-from kosrunner:
+    AccessConfig Group group HttpServer UiConfig UiJob
+
+
+define OPERATOR "root@example.com"
+define DEV "dev@example.com"
+define OUTSIDER "other@example.com"
+
+group deployers:
+    "dev@example.com"
+
+
+define ident [email]:
+    #{"X-Forwarded-Email": email}
+
+
+define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
+
+    @coroutine-fn
+    define asyncSetUp [self]:
+        set! self.js (self.jobset-with-store)
+        (self.js.bind-access (AccessConfig
+            operators: #[OPERATOR]
+            groups: #[deployers]))
+
+        set! self.server (HttpServer "127.0.0.1" 8080)
+        set! self.http (self.http-client self.server)
+
+        ;; a gated, typed webhook job and an ungated cron-ish stand-in
+        define seen #[]
+        set! self.seen seen
+        define handler [[ref :: str]]:
+            (seen.append ref)
+            #{"ok": True}
+        define hook (self.webhook self.server "deploy" handler jobset: self.js)
+        (hook.allow #[deployers])
+        set! self.hook hook
+
+        define ui (UiJob)
+        (ui.configure via: (UiConfig))
+        (self.js.register "web" ui)
+        (ui.mount self.server)
+
+
+    @coroutine-fn
+    define test-visible-jobs-flags [self]:
+        define by-name [rows]:
+            define out #{}
+            for-each [r rows]:
+                (set! (item out (item r "name")) r)
+            out
+
+        define op (by-name (self.js.visible-jobs OPERATOR))
+        (self.assertTrue (item (item op "deploy") "may_trigger"))
+        (self.assertTrue (item (item op "deploy") "may_control"))
+
+        define dev (by-name (self.js.visible-jobs DEV))
+        (self.assertTrue (item (item dev "deploy") "may_trigger"))
+        (self.assertFalse (item (item dev "deploy") "may_control"))
+        (self.assertFalse (item (item dev "web") "may_trigger"))
+
+        define anon (by-name (self.js.visible-jobs None))
+        (self.assertFalse (item (item anon "deploy") "may_trigger"))
+        (self.assertFalse (item (item anon "deploy") "may_control"))
+
+
+    @coroutine-fn
+    define test-dashboard-projects-per-user [self]:
+        ;; operator: control buttons and the deploy trigger form
+        define op-page (attr (self.http.get "/ui" headers: (ident OPERATOR)) text)
+        (self.assertIn "/ui/disable/deploy" op-page)
+        (self.assertIn "/ui/trigger/deploy" op-page)
+
+        ;; deployers member: trigger form but no control buttons; the form
+        ;; carries the typed field from the handler signature
+        define dev-page (attr (self.http.get "/ui" headers: (ident DEV)) text)
+        (self.assertNotIn "/ui/disable/" dev-page)
+        (self.assertIn "/ui/trigger/deploy" dev-page)
+        (self.assertIn "name=\"ref\"" dev-page)
+
+        ;; anonymous: the read floor -- no buttons, no forms
+        define anon-page (attr (self.http.get "/ui") text)
+        (self.assertNotIn "/ui/disable/" anon-page)
+        (self.assertNotIn "/ui/trigger/" anon-page)
+
+
+    @coroutine-fn
+    define test-trigger-form-fires-typed-run [self]:
+        define resp (self.http.post "/ui/trigger/deploy"
+            data: #{"ref": "v2"}
+            headers: (ident DEV))
+        (self.assertEqual resp.status_code 303)
+        (self.assertEqual self.seen #["v2"])
+        define runs (self.js.store.list-runs)
+        (self.assertEqual (len runs) 1)
+        (self.assertEqual (item (item runs 0) "cause") "manual")
+
+
+    @coroutine-fn
+    define test-trigger-form-still-enforced [self]:
+        ;; projection hides the form, but the POST itself is what must hold
+        define resp (self.http.post "/ui/trigger/deploy"
+            data: #{"ref": "v2"}
+            headers: (ident OUTSIDER))
+        (self.assertEqual resp.status_code 403)
+        (self.assertEqual self.seen #[])
+
+
+    @coroutine-fn
+    define test-trigger-form-bad-input-is-400 [self]:
+        define resp (self.http.post "/ui/trigger/deploy"
+            data: #{}
+            headers: (ident DEV))
+        (self.assertEqual resp.status_code 400)
+        (self.assertEqual self.seen #[])
+
+
+    @coroutine-fn
+    define test-run-page-hides-retrigger [self]:
+        (self.http.post "/webhook/deploy" json: #{"ref": "v1"})
+        define runid (item (item (self.js.store.list-runs) 0) "run_id")
+        define url f"/ui/runs/{runid}"
+        (self.assertIn "retrigger" (attr (self.http.get url headers: (ident DEV)) text))
+        (self.assertNotIn "retrigger" (attr (self.http.get url) text))
+
+
+;; The end.
