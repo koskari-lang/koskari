@@ -116,3 +116,22 @@ tags:
   - pitfall
   - construct
 notes: "corrective: #(1 2 3) or (#tuple 1 2 3)"
+---
+id: iter-literal-dict-keyword-keys-eval-invalid-001
+feature: "reader/#dict"
+source: |-
+  #{ok: True}
+  
+verify:
+  read: "(#dict (#tuple ok True))"
+  invalid: "a keyword key `ok:` lowers to the NAME EXPRESSION `ok`, not the string \"ok\" -- eval raises NameError: Empty reference: ok unless a binding named ok happens to exist, and then its VALUE (whatever it is) becomes the key. Keys are ordinary expressions: quote them."
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - dict
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: #{\"ok\": True}. The payload-dict idiom is quoted string keys throughout: #{\"ok\": True \"msg\": \"pong\"}."

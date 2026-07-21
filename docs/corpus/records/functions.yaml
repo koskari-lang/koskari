@@ -874,3 +874,54 @@ tags:
   - nested-ellipsis
   - local-binding
 notes: "a binding with a multi-form body exercises depth-aware nested ellipsis: the per-binding body (body ...) is captured inside the per-binding declaration list, so both (+ x 1) and (* x 3) survive expansion into the lambda. First form is evaluated for effect; the last is the value, so (f 4) is 12."
+---
+id: function-coroutine-fn-iscoroutinefunction-001
+feature: builtin/coroutine-fn
+source: |-
+  (begin (import inspect) #[(inspect.iscoroutinefunction (lambda [] 1)) (inspect.iscoroutinefunction (coroutine-fn (lambda [] 1)))])
+  
+verify:
+  read: "(begin (import inspect) (#list ((compile/attr inspect iscoroutinefunction) (lambda [] 1)) ((compile/attr inspect iscoroutinefunction) (coroutine-fn (lambda [] 1)))))"
+  expand: "(begin (import inspect) (#list ((compile/attr inspect iscoroutinefunction) (lambda [] 1)) ((compile/attr inspect iscoroutinefunction) (coroutine-fn (lambda [] 1)))))"
+  eval: "list:[false,true]"
+stability: evolving
+tags:
+  - function
+  - coroutine-fn
+  - async
+  - python-interop
+notes: a bare koskari function is a KosCallable, not a native coroutine function, so Python machinery that gates on inspect.iscoroutinefunction (unittest IsolatedAsyncioTestCase asyncSetUp and test methods, addAsyncCleanup, asyncio callbacks) rejects it or calls it and drops the returned coroutine unawaited. (coroutine-fn f) wraps it in a native `async def` that passes the gate and is awaited properly. Koskari-to-koskari calls never need this; ambient auto-await drives them.
+---
+id: function-demand-sync-call-001
+feature: builtin/demand
+source: |-
+  ((demand (lambda [] 42)))
+  
+verify:
+  read: ((demand (lambda [] 42)))
+  expand: ((demand (lambda [] 42)))
+  eval: "42"
+stability: evolving
+tags:
+  - function
+  - demand
+  - async
+  - python-interop
+notes: "demand wraps a koskari callable so a SYNCHRONOUS caller gets the finished value: hand (demand f) to Python code that calls it directly and uses or drops the return -- logging.Handler emit overrides, Task.add_done_callback, sorted key:, map/filter. Without it Python receives an un-awaited coroutine and the body never runs. Contrast coroutine-fn, for Python machinery that AWAITS and gates on a native coroutine function."
+---
+id: function-create-task-await-handle-001
+feature: builtin/create-task
+source: |-
+  (await (create-task (defer (lambda [] 42))))
+  
+verify:
+  read: (await (create-task (defer (lambda [] 42))))
+  expand: (await (create-task (defer (lambda [] 42))))
+stability: evolving
+tags:
+  - function
+  - create-task
+  - await
+  - async
+  - python-interop
+notes: "create-task schedules the deferred body and returns the Task HANDLE. Tasks and Futures are excluded from implicit auto-await, so binding or returning one does NOT wait for it -- an un-awaited (asyncio.gather ...) waits for nothing. Explicit (await t) resolves the handle; (await (asyncio.gather *: tasks)) drains many. Passing a defer consumes it (the Task owns its single shot). Needs a running event loop, which the corpus eval harness does not provide -- hence no eval pin."

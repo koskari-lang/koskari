@@ -40,3 +40,21 @@ tags:
   - invalid
   - pitfall
 notes: "corrective: define the macro in its own module or an earlier top-level unit, then use it from a later one -- the macro must be registered before the unit that calls it is compiled."
+---
+id: layout-split-value-next-line-invalid-001
+feature: reader/layout
+source: |-
+  define-values [a b]
+      (values 1 2)
+  
+verify:
+  read: (compile/begin (define-values [a b]) (values 1 2))
+  invalid: "in layout, a bare indented line under a header is a CHILD form, not a continuation of the header -- the value becomes a separate expression, leaving define-values with no value: SyntaxMatchError (no matching syntax rule) at compile. To split just the value, either open its parenthesis on the header line and continue inside it, or end the header with a colon and nest the single value expression as a block."
+stability: evolving
+tags:
+  - layout
+  - reader
+  - "surface:block"
+  - invalid
+  - pitfall
+notes: "corrective (either): `define-values [a b] (values` + newline + indented `1 2)`; or `define-values [a b]:` + newline + indented `values 1 2`. Sibling of layout-bare-multiline-define-invalid-001."

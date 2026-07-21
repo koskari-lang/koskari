@@ -1319,3 +1319,20 @@ tags:
   - construct
   - idiom
 notes: "the `tuple` builtin converts one iterable into a tuple; contrast (#tuple seq) which wraps seq as a single element, and #(a b c) which builds a multi-element literal (fixture seq=(1,2,3))"
+---
+id: iter-literal-dict-string-keys-eval-002
+feature: "reader/#dict"
+source: |-
+  #{"ok": True "msg": "pong"}
+  
+verify:
+  read: "(#dict (#tuple \"ok\" True) (#tuple \"msg\" \"pong\"))"
+  expand: "(#dict (#tuple \"ok\" True) (#tuple \"msg\" \"pong\"))"
+  eval: "{\"ok\": true, \"msg\": \"pong\"}"
+stability: evolving
+tags:
+  - iter
+  - reader
+  - literal
+  - dict
+notes: "quoted string keys are the idiom for payload dicts (e.g. webhook response bodies). Keys are ordinary expressions, so quoting makes them string literals; a bare `ok:` would instead be the name reference ok."

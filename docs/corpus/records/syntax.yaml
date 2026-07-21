@@ -766,3 +766,39 @@ tags:
   - pitfall
   - surprising
 notes: "unquoting a dotted name takes the WHOLE expression: ,job.enabled reads as (compile/unquote (compile/attr job enabled)), evaluating job.enabled. In a macro that is taken at expand time; to unquote only the symbol write (attr ,job enabled)."
+---
+id: layout-split-value-open-paren-001
+feature: reader/layout
+source: |-
+  define-values [a b] (values
+      1 2)
+  (+ a b)
+  
+verify:
+  read: (compile/begin (define-values [a b] (values 1 2)) (+ a b))
+  expand: (compile/begin (define-values [a b] (values 1 2)) (+ a b))
+  eval: "3"
+stability: evolving
+tags:
+  - layout
+  - reader
+  - "surface:block"
+notes: "splitting a long value across lines, option 1: open the value's parenthesis on the header line; the unclosed paren continues across lines regardless of layout. Option 2 is the colon-block form (see layout-split-value-colon-block-002)."
+---
+id: layout-split-value-colon-block-002
+feature: reader/layout
+source: |-
+  define-values [a b]:
+      values 1 2
+  (+ a b)
+  
+verify:
+  read: (compile/begin (define-values [a b] (values 1 2)) (+ a b))
+  expand: (compile/begin (define-values [a b] (values 1 2)) (+ a b))
+  eval: "3"
+stability: evolving
+tags:
+  - layout
+  - reader
+  - "surface:block"
+notes: "splitting a long value across lines, option 2: end the header with a colon and nest the single value expression as a block -- it reads identically to opening the paren on the header line (see layout-split-value-open-paren-001). Without either, the indented value is a separate child form (see layout-split-value-next-line-invalid-001)."

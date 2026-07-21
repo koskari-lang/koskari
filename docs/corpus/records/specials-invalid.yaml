@@ -69,3 +69,20 @@ tags:
   - pitfall
   - early-exit
 notes: "runtime failure; read and expand succeed. corrective: (return) -- e.g. (when x (return))"
+---
+id: special-call-attr-data-attr-invalid-001
+feature: special/compile/call-attr
+source: |-
+  (.count obj)
+  
+verify:
+  read: (.count obj)
+  invalid: "the leading-dot form is a METHOD CALL: it reads obj.count (an int) and then CALLS it -> TypeError: 'int' object is not callable at runtime. (obj.count) in parens is the same call and fails the same way. To READ the attribute, write bare dotted access obj.count (which lowers to (attr obj count)); use the explicit (attr EXPR name) form when the object is an expression result rather than a symbol."
+stability: evolving
+tags:
+  - special
+  - call-attr
+  - attr
+  - invalid
+  - pitfall
+notes: "corrective: obj.count (bare, no parens) -- or (attr obj count), which it lowers to. Baked fixture obj has .count=5. The surface pairs: obj.count / (attr obj count) READ the attribute; (obj.count) / ((attr obj count)) / (.count obj) all CALL it. Classic instance: (.status_code (client.post url)) -- status_code is data, so write (attr (client.post url) status_code)."
