@@ -20,7 +20,7 @@ Unit tests for ParamRef
 
 import unittest
 
-from koskari.lib import ParamRef, Ref, parameter
+from koskari.lib import ParamRef, Ref, parameter, parameter_cell
 from koskari.lib import symbol
 from tests import make_callable
 from tests.lib.opcode import build_expr
@@ -231,6 +231,36 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         ], values={"f": overwrite})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 30)
+
+
+    def test_parameter_cell_builtin_bound(self):
+        """
+        the parameter-cell builtin is bound for koskari surface code
+        """
+
+        import koskari.builtins as builtins
+        self.assertTrue(callable(vars(builtins)["parameter-cell"]))
+
+
+    async def test_parameter_cell_shares_with_resolver(self):
+        """
+        a held cell and the by-name resolver address the same binding
+        """
+
+        def flow():
+            cell = parameter_cell("cellkey", "first")
+            before = parameter("cellkey")
+            cell.store("second")
+            after = parameter("cellkey")
+            return (before, after, cell.deref())
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": flow})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, ("first", "second", "second"))
 
 
     async def test_deref_with_default_fills_sticky(self):

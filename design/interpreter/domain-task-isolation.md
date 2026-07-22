@@ -145,10 +145,14 @@ contexts. Its narrowed role is D5.
 `KosContext_New` initializes `param_cells` as:
 
 1. Active context on the TLS ctx stack → `PyDict_Copy` of its
-   `param_cells` (NULL stays NULL; lazy init preserved).
+   `param_cells` (NULL stays NULL; lazy init preserved); the domain
+   anchor is inherited.
 2. Else `python_domain_stack` non-empty → `PyDict_Copy` of that domain's
-   base cell dict (D5).
-3. Else → NULL (fresh).
+   base cell dict (D5); the context anchors to that domain.
+3. Else → empty cell table, and a **fresh KosDomain is minted**. Every
+   context has a domain, created as needed; the domain is the mandatory
+   identity/lifecycle anchor of the computation, while live parameter
+   state stays in `param_cells`.
 
 The copy is of **pointers**: parent and child share the cell objects that
 existed at fork time. Only the binding *table* is per-context. A child
@@ -416,9 +420,10 @@ persistence (D4), which gets its pinning test here.
 ### Commit B -- ownership moves to the context; fork (isolation)
 
 1. eval.h/eval.c: `KosContext.param_cells` field; `KosContext_New`
-   implements D3 (fork active ctx / copy `base_cells` / NULL);
-   `KosContext_Free` drops it. `ctx->domain` is retained as an
-   identification anchor only.
+   implements D3 (fork active ctx / copy `base_cells` / fresh mint);
+   `KosContext_Free` drops it. `ctx->domain` remains mandatory --
+   inherited or minted as needed -- as the identity/lifecycle anchor;
+   live parameter state moves to `param_cells`.
 2. domain.c: `KosDomain.base_cells` (D5); Python-side resolution order
    becomes active-ctx cells, else innermost python-scope `base_cells`,
    else no home (default or error, as `m_parameter` today). Evaluator

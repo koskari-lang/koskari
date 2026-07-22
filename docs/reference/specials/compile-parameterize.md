@@ -17,6 +17,15 @@ deepest, last at TOS), emits PUSH_PARAM with a constant names tuple, compiles th
 body with `helper_begin`, then emits POP_PARAM. Uses the VM's PARAM extent;
 restore on exit (and on unwind) is handled by the evaluator.
 
+**Task isolation:** Parameter bindings are per-context. A coroutine, defer,
+or task captures the currently-applied bindings when it is created (the
+`defer` is the call site; `create-task` is transport), and from then on its
+extents bind and restore in its own table. Two concurrently-driven tasks
+never observe or disturb each other's `parameterize` bindings, even when
+they interleave across awaits, and a task abandoned mid-extent cannot leak
+its bindings anywhere. A `set!` on a parameter inside the extent writes the
+extent's binding and is discarded with it when the block exits.
+
 **Examples:**
 
 ```koskari

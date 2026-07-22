@@ -21,8 +21,9 @@
    discovery. Parameter state lives on each KosContext (param_cells,
    forked at creation); the KosDomain object homes base_cells -- the
    pre-define dict root contexts copy from, and the Python-side access
-   point when no context is active. A context's domain pointer is an
-   identification anchor for the explicit Domain it descends from. See
+   point when no context is active. Every context has a domain: the
+   ambient one when present, minted fresh as needed otherwise; it is the
+   identity/lifecycle anchor of the computation. See
    design/interpreter/domain-task-isolation.md.
 
    author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -432,6 +433,50 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
 }
 
 
+static PyObject *m_parameter_cell(PyObject *mod, PyObject *args) {
+  PyObject *key = NULL;
+  PyObject *key_str = NULL;
+  PyObject *default_val = NULL;
+  PyObject *cells;
+  PyObject *cell;
+
+  (void) mod;
+  if (! PyArg_ParseTuple(args, "O|O:parameter-cell", &key, &default_val))
+    return NULL;
+
+  if (! key || key == Py_None) {
+    PyErr_SetString(PyExc_ValueError, "parameter-cell requires a key (name)");
+    return NULL;
+  }
+
+  key_str = kos_key_to_str(key);
+  if (! key_str)
+    return NULL;
+
+  cells = kos_param_cells_reserve();
+  if (! cells) {
+    Py_DECREF(key_str);
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_RuntimeError,
+                      "parameter-cell outside active domain");
+    return NULL;
+  }
+
+  cell = kos_param_resolve_cell_in(cells, key_str);
+  Py_DECREF(key_str);
+  if (! cell)
+    return NULL;
+
+  if (default_val && ! KosSymbolicRef_VALUE(cell)) {
+    /* sticky fill, as with parameter() (D6) */
+    Py_INCREF(default_val);
+    KosSymbolicRef_VALUE(cell) = default_val;
+  }
+
+  return cell;
+}
+
+
 static int domain_snapshot_set_item(
     PyObject *dict,
     const char *key,
@@ -572,6 +617,15 @@ static PyMethodDef domain_mod_methods[] = {
     "Fetch the current domain parameter binding for name.\n"
     "If unbound, return default when provided, otherwise raise NameError.\n"
     "If no active domain, return default when provided, otherwise raise RuntimeError." },
+  { "parameter_cell", (PyCFunction) m_parameter_cell, METH_VARARGS,
+    "parameter_cell(name, default=...) => Ref\n"
+    "Fetch the live cell currently bound to name, creating an empty cell\n"
+    "on miss; an empty cell is sticky-filled with default when provided.\n"
+    "The cell is a plain Ref: deref/store on it act on the shared binding,\n"
+    "including after the extent that installed it has popped. It does not\n"
+    "track later parameterize rebinding of the name; use parameter() for\n"
+    "dynamic reads.\n"
+    "Raises RuntimeError when no context or domain scope is active." },
   { NULL, },
 };
 

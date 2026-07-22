@@ -993,8 +993,9 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
     } else {
       /* no active context: a root context under an explicit
-         `with Domain():` scope copies the domain's base cells (D5);
-         otherwise the context starts empty */
+         `with Domain():` scope anchors to that domain and copies its
+         base cells (D5); otherwise a fresh domain is minted -- every
+         context has a domain, created as needed */
       PyObject *domain = kos_domain_current();
       if (domain) {
         PyObject *base = ((KosDomain *) domain)->base_cells;
@@ -1009,6 +1010,14 @@ KosContext *KosContext_New(KosDynFrame *top) {
         }
         ctx->domain = domain;
         Py_INCREF(ctx->domain);
+      } else {
+        ctx->domain = (PyObject *) KosDomain_New();
+        if (! ctx->domain) {
+          Py_DECREF(KosContext_TOKEN(ctx));
+          KosContext_TOKEN(ctx) = NULL;
+          context_release(ctx);
+          return NULL;
+        }
       }
     }
   }

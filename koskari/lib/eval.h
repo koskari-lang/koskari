@@ -223,9 +223,10 @@ struct KosContext {
   PyObject *namespace;       /* borrowed: active namespace object */
 
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
-  PyObject *domain;         /* KosDomain identification anchor: the explicit
-                               Domain this context descends from, or NULL.
-                               Carries no parameter state. */
+  PyObject *domain;         /* KosDomain; mandatory. Inherited from the
+                               ambient domain at creation, minted fresh when
+                               none is ambient. Identity/lifecycle anchor;
+                               live parameter state is in param_cells. */
   PyObject *param_cells;    /* PyDict: name -> cell (KosRef); this context's
                                parameter cell table, forked (pointer-copied)
                                at creation. Lazy; NULL when empty. */
