@@ -1336,3 +1336,148 @@ tags:
   - literal
   - dict
 notes: "quoted string keys are the idiom for payload dicts (e.g. webhook response bodies). Keys are ordinary expressions, so quoting makes them string literals; a bare `ok:` would instead be the name reference ok."
+---
+id: iter-list-each-when-body-filter-001
+feature: macro/compile/list-each
+source: |-
+  list-each [x (range 0 10)]:
+      when (& x 1):
+          (* x 100)
+  
+verify:
+  read: (list-each [x (range 0 10)] (when (& x 1) (* x 100)))
+  expand: "(list-each [x (range 0 10)] when: (& x 1) (* x 100))"
+  eval: "list:[100,300,500,700,900]"
+stability: evolving
+tags:
+  - iter
+  - list-each
+  - comprehension
+  - filter
+  - "surface:block"
+  - iterate
+notes: "the whole-body filter: a body that is a SINGLE when form collects inside the conditional -- skipped elements contribute nothing, no None gaps. It delegates to the when: clause spelling (visible at expand). Applies only when the when encompasses the whole body."
+---
+id: iter-list-each-unless-body-filter-002
+feature: macro/compile/list-each
+source: |-
+  (list-each [x (range 0 5)] (unless (& x 1) x))
+  
+verify:
+  read: (list-each [x (range 0 5)] (unless (& x 1) x))
+  expand: "(list-each [x (range 0 5)] unless: (& x 1) x)"
+  eval: "list:[0,2,4]"
+stability: evolving
+tags:
+  - iter
+  - list-each
+  - comprehension
+  - filter
+  - iterate
+notes: "the unless twin of the whole-body filter: elements matching the condition are skipped, the rest collect the body value."
+---
+id: iter-list-each-keyword-when-clause-003
+feature: macro/compile/list-each
+source: |-
+  (list-each [x (range 0 10)] when: (& x 1) x)
+  
+verify:
+  read: "(list-each [x (range 0 10)] when: (& x 1) x)"
+  eval: "list:[1,3,5,7,9]"
+stability: evolving
+tags:
+  - iter
+  - list-each
+  - comprehension
+  - filter
+  - iterate
+notes: the keyword-clause spelling of the filter; equivalent to the whole-body (when ...) form, which expands into it. The expansion's accumulator is a gensym, so the full expand string is not pinned here.
+---
+id: iter-list-each-nested-when-no-compose-001
+feature: macro/compile/list-each
+source: |-
+  (list-each [x (range 0 4)] (when True (when (& x 1) x)))
+  
+verify:
+  read: (list-each [x (range 0 4)] (when True (when (& x 1) x)))
+  expand: "(list-each [x (range 0 4)] when: True (when (& x 1) x))"
+  eval: "list:[null,1,null,3]"
+stability: evolving
+tags:
+  - iter
+  - list-each
+  - comprehension
+  - filter
+  - surprising
+  - pitfall
+  - iterate
+notes: "filters do NOT compose: only the outermost whole-body when is the filter; the nested when is an ordinary expression whose None lands in the list when its condition fails. corrective: one composite check -- (list-each [x seq] (when (and a b) body))."
+---
+id: iter-list-each-multiform-no-injection-002
+feature: macro/compile/list-each
+source: |-
+  (list-each [x (range 0 4)] (define y x) (when (& x 1) x))
+  
+verify:
+  read: (list-each [x (range 0 4)] (define y x) (when (& x 1) x))
+  expand: (list-each [x (range 0 4)] (begin (define y x) (when (& x 1) x)))
+  eval: "list:[null,1,null,3]"
+stability: evolving
+tags:
+  - iter
+  - list-each
+  - comprehension
+  - surprising
+  - pitfall
+  - iterate
+notes: "the filter applies only when the conditional encompasses the WHOLE body. In a multi-form body a trailing when is a plain expression, so misses collect None. corrective: move the extra forms inside the when -- (list-each [x seq] (when rule (define y ...) y)) -- or use when:/unless: clauses. To collect the None deliberately, write (if rule x None)."
+---
+id: iter-each-when-body-filter-001
+feature: macro/compile/each
+source: |-
+  (list (each [x (range 0 10)] (when (& x 1) (* x 100))))
+  
+verify:
+  read: (list (each [x (range 0 10)] (when (& x 1) (* x 100))))
+  eval: "list:[100,300,500,700,900]"
+stability: evolving
+tags:
+  - iter
+  - each
+  - comprehension
+  - filter
+  - iterate
+notes: "the whole-body filter on the generator comprehension: a body that is a SINGLE when form yields inside the conditional, so skipped elements produce nothing (no None gaps). Same contract as list-each: whole-body only, no filter composition -- (when (and a b) ...) for a composite check."
+---
+id: iter-each-unless-body-filter-002
+feature: macro/compile/each
+source: |-
+  (list (each [x (range 0 5)] (unless (& x 1) x)))
+  
+verify:
+  read: (list (each [x (range 0 5)] (unless (& x 1) x)))
+  eval: "list:[0,2,4]"
+stability: evolving
+tags:
+  - iter
+  - each
+  - comprehension
+  - filter
+  - iterate
+notes: "the unless twin: matching elements are skipped, the rest yield the body value."
+---
+id: iter-each-plain-call-body-unfiltered-003
+feature: macro/compile/each
+source: |-
+  (list (each [x (range 0 3)] (* x 2)))
+  
+verify:
+  read: (list (each [x (range 0 3)] (* x 2)))
+  eval: "list:[0,2,4]"
+stability: evolving
+tags:
+  - iter
+  - each
+  - comprehension
+  - iterate
+notes: "regression guard for the whole-body filter's matcher: `when` and `unless` must be pattern LITERALS in the rules, or a plain single-form call body -- any (f ...) -- false-matches the filter case and its head is silently taken as the condition (this source then wrongly evaluated to [2,2])."

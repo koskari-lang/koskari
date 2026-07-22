@@ -22,7 +22,13 @@ define-syntax compile/each:
   Generator comprehension over a sequence
   """
 
-  syntax-rules [when: unless:]:
+  syntax-rules [when: unless: when unless]:
+    case (each [binding seq] (when condition body ...)):
+      (each [binding seq] when: condition body ...)
+
+    case (each [binding seq] (unless condition body ...)):
+      (each [binding seq] unless: condition body ...)
+
     case (each [binding seq] when: condition body):
       ((lambda each [] (for-each [binding seq]
          (when condition (yield body)))))
@@ -47,10 +53,24 @@ define-syntax compile/each:
 
 define-syntax compile/list-each:
   """
-  List comprehension over a sequence
+  List comprehension over a sequence.
+
+  A body that is a single `when` or `unless` form is a filter: the
+  collection happens inside the conditional, so skipped elements
+  contribute nothing (no None gaps). This applies only when the
+  conditional encompasses the whole body, and filters do not compose --
+  a nested `when` is an ordinary expression whose None lands in the
+  list. Write `(when (and a b) ...)` for a composite check, or
+  `(if rule x None)` to collect the None deliberately.
   """
 
-  syntax-rules []:
+  syntax-rules [when unless]:
+    case (list-each [binding seq] (when condition body ...)):
+      (list-each [binding seq] when: condition body ...)
+
+    case (list-each [binding seq] (unless condition body ...)):
+      (list-each [binding seq] unless: condition body ...)
+
     case (list-each [binding seq] when: condition body):
       define col (#list)
       for-each [binding seq]:

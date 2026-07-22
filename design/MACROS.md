@@ -448,14 +448,30 @@ deletes it. An empty **`KEY`** raises **`ValueError`**.
 **Syntax:** **`(each [BINDING SEQ] BODY)`**; with **`when:`** or **`unless:`** filter.
 
 **Behaviour:** **`lambda each`** wrapping **`for-each`** + **`yield`** (filtered variants use
-**`when`** / **`unless`**).
+**`when`** / **`unless`**). A **BODY** that is a single **`(when …)`** /
+**`(unless …)`** form is a whole-body filter, rewriting to the matching
+clause — same contract and caveats as `compile/list-each` below. Note
+`when` and `unless` must be pattern **literals** in the rules; as capture
+variables the filter case false-matches any single-form call body.
 
 
 ### compile/list-each
 
-**Syntax:** **`(list-each [BINDING SEQ] BODY)`
+**Syntax:** **`(list-each [BINDING SEQ] BODY)`** (with optional **`when:`** /
+**`unless:`** clauses).
 
 **Behaviour:** **`define col (#list)`**; **`for-each`** with **`#list-append`**; return **`(takeq col)`** (clears gensym accumulator slot).
+
+**Whole-body filter:** a **BODY** that is a single **`(when …)`** or
+**`(unless …)`** form is a filter — it rewrites to the matching
+**`when:`** / **`unless:`** clause, so the collection happens inside the
+conditional and skipped elements contribute nothing (no `None` gaps).
+This applies only when the conditional encompasses the whole body: a
+multi-form body keeps plain value semantics (a trailing `when` collects
+its `None` on a miss), and filters do not compose — a nested `when` is
+an ordinary expression, so write **`(when (and A B) …)`** for a
+composite check, or **`(if RULE X None)`** to collect the `None`
+deliberately.
 
 
 ### compile/dict-each
