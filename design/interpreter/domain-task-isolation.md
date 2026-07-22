@@ -265,12 +265,17 @@ continuations). Required:
 
 ### D9 -- TLS hardening rides along
 
-`push_active_ctx` / `push_active_token` silently drop pushes at
+`push_active_ctx` / `push_active_token` silently dropped pushes at
 `KOS_TLS_STACK_MAX` while pops decrement unconditionally, desynchronizing
 `kos_ctx_current()`. The evaluator-side resolution path (D2) no longer
 depends on TLS, but fork-source selection (D3) and Python-side discovery
-do. Silent drops become silent wrong-fork decisions. These become hard
-errors in the same change series.
+do. Silent drops become silent wrong-fork decisions.
+
+Implemented as **growth** rather than a hard error: the per-thread stacks
+start at `KOS_TLS_STACK_INITIAL` and double on demand, so overflow stops
+existing and legitimately deep Koskari/Python interop recursion is not
+punished. Growth failure is OOM-only and fatal (`Py_FatalError`) --
+continuing with a desynced stack would corrupt fork decisions silently.
 
 ### D10 -- ParamRef narrows to an accessor
 
@@ -419,7 +424,7 @@ persistence (D4), which gets its pinning test here.
    else no home (default or error, as `m_parameter` today). Evaluator
    callers resolve through `KosEvalState` (D2); dyn_param takes the dict
    from the context.
-3. TLS overflow → hard error (D9).
+3. TLS stacks grow instead of silently dropping (D9).
 4. GC (D8): context-traversal visits `param_cells`; `KosDomainType`
    becomes GC-aware over `base_cells`.
 5. Tests: the reproducer above into `tests/reproducers/` (expected

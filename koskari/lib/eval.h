@@ -223,7 +223,12 @@ struct KosContext {
   PyObject *namespace;       /* borrowed: active namespace object */
 
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
-  PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
+  PyObject *domain;         /* KosDomain identification anchor: the explicit
+                               Domain this context descends from, or NULL.
+                               Carries no parameter state. */
+  PyObject *param_cells;    /* PyDict: name -> cell (KosRef); this context's
+                               parameter cell table, forked (pointer-copied)
+                               at creation. Lazy; NULL when empty. */
 
   /* When unwind returns ASYNC_STARTED (wind after-thunk), RETURN stashes the
      value here and resumes unwinding when the thunk returns.  If
@@ -277,6 +282,7 @@ struct KosContext {
 #define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
+#define KosContext_PARAM_CELLS(c)            (((KosContext *)(c))->param_cells)
 #define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)

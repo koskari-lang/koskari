@@ -17,9 +17,13 @@
 /**
    koskari.lib - domain module
 
-   KosDomain type: identity and lifecycle anchor for dynamic context
-   (ambient domain). Each KosContext owns a domain; new contexts inherit
-   the active context's domain when kos_ctx_current() is non-NULL.
+   KosDomain type and the per-thread TLS plumbing for ambient context
+   discovery. Parameter state lives on each KosContext (param_cells,
+   forked at creation); the KosDomain object homes base_cells -- the
+   pre-define dict root contexts copy from, and the Python-side access
+   point when no context is active. A context's domain pointer is an
+   identification anchor for the explicit Domain it descends from. See
+   design/interpreter/domain-task-isolation.md.
 
    author: Christopher O'Brien <obriencj@preoccupied.net>
    license: GNU General Public License v3
@@ -32,20 +36,58 @@
 
 /* === Per-thread TLS state for domain-scoped context and token stacks === */
 
-#define KOS_TLS_STACK_MAX 32
+/* Initial capacity of each per-thread stack; stacks grow by doubling.
+   Growth (rather than a fixed cap) is load-bearing: a silently dropped
+   push desynchronizes kos_ctx_current(), which decides parameter cell
+   inheritance at context creation. Growth failure is OOM-only and fatal
+   -- continuing with a desynced stack would corrupt fork decisions
+   silently. */
+#define KOS_TLS_STACK_INITIAL 32
 
 typedef struct {
-  KosContext *ctx_stack[KOS_TLS_STACK_MAX];
+  KosContext **ctx_stack;
   size_t ctx_depth;
-  KosEvalState *eval_stack[KOS_TLS_STACK_MAX];
+  size_t ctx_cap;
+  KosEvalState **eval_stack;
   size_t eval_depth;
-  KosEvaluatorToken *token_stack[KOS_TLS_STACK_MAX];
+  size_t eval_cap;
+  KosEvaluatorToken **token_stack;
   size_t token_depth;
-  PyObject *python_domain_stack[KOS_TLS_STACK_MAX];
+  size_t token_cap;
+  PyObject **python_domain_stack;
   size_t python_domain_depth;
+  size_t python_domain_cap;
 } KosTlsState;
 
 static Py_tss_t tls_state_key = Py_tss_NEEDS_INIT;
+
+
+/* Grow `stack` (an array of pointer-sized slots) to admit index `depth`.
+   Returns the (possibly moved) array, or aborts on allocation failure. */
+static void *tls_stack_reserve(void *stack, size_t *cap, size_t depth) {
+  size_t ncap;
+  void *grown;
+
+  if (depth < *cap)
+    return stack;
+
+  ncap = *cap ? *cap * 2 : KOS_TLS_STACK_INITIAL;
+  grown = PyMem_Realloc(stack, ncap * sizeof(void *));
+  if (! grown)
+    Py_FatalError("koskari: TLS stack allocation failed");
+  *cap = ncap;
+  return grown;
+}
+
+
+static void tls_state_free(KosTlsState *s) {
+  PyMem_Free(s->ctx_stack);
+  PyMem_Free(s->eval_stack);
+  PyMem_Free(s->token_stack);
+  PyMem_Free(s->python_domain_stack);
+  PyMem_Free(s);
+  PyThread_tss_set(&tls_state_key, NULL);
+}
 
 
 static KosTlsState *get_or_alloc_tls_state(void) {
@@ -54,10 +96,7 @@ static KosTlsState *get_or_alloc_tls_state(void) {
     s = (KosTlsState *) PyMem_Malloc(sizeof(KosTlsState));
     if (! s)
       return NULL;
-    s->ctx_depth = 0;
-    s->eval_depth = 0;
-    s->token_depth = 0;
-    s->python_domain_depth = 0;
+    memset(s, 0, sizeof(KosTlsState));
     PyThread_tss_set(&tls_state_key, s);
   }
   return s;
@@ -66,8 +105,11 @@ static KosTlsState *get_or_alloc_tls_state(void) {
 
 static void push_active_token(KosEvaluatorToken *token) {
   KosTlsState *s = get_or_alloc_tls_state();
-  if (s && s->token_depth < KOS_TLS_STACK_MAX)
-    s->token_stack[s->token_depth++] = token;
+  if (! s)
+    Py_FatalError("koskari: TLS state allocation failed");
+  s->token_stack = (KosEvaluatorToken **) tls_stack_reserve(
+      s->token_stack, &s->token_cap, s->token_depth);
+  s->token_stack[s->token_depth++] = token;
 }
 
 
@@ -76,18 +118,19 @@ static void pop_active_token(KosEvaluatorToken *token) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
   if (s && s->token_depth > 0) {
     s->token_depth--;
-    if (s->ctx_depth == 0 && s->token_depth == 0 && s->python_domain_depth == 0) {
-      PyMem_Free(s);
-      PyThread_tss_set(&tls_state_key, NULL);
-    }
+    if (s->ctx_depth == 0 && s->token_depth == 0 && s->python_domain_depth == 0)
+      tls_state_free(s);
   }
 }
 
 
 static void push_active_ctx(KosContext *ctx) {
   KosTlsState *s = get_or_alloc_tls_state();
-  if (s && s->ctx_depth < KOS_TLS_STACK_MAX)
-    s->ctx_stack[s->ctx_depth++] = ctx;
+  if (! s)
+    Py_FatalError("koskari: TLS state allocation failed");
+  s->ctx_stack = (KosContext **) tls_stack_reserve(
+      s->ctx_stack, &s->ctx_cap, s->ctx_depth);
+  s->ctx_stack[s->ctx_depth++] = ctx;
 }
 
 
@@ -99,9 +142,16 @@ static void pop_active_ctx(void) {
 
 
 void kos_tls_push_active_eval(KosEvalState *es) {
-  KosTlsState *s = get_or_alloc_tls_state();
-  if (s && es && s->eval_depth < KOS_TLS_STACK_MAX)
-    s->eval_stack[s->eval_depth++] = es;
+  KosTlsState *s;
+
+  if (! es)
+    return;
+  s = get_or_alloc_tls_state();
+  if (! s)
+    Py_FatalError("koskari: TLS state allocation failed");
+  s->eval_stack = (KosEvalState **) tls_stack_reserve(
+      s->eval_stack, &s->eval_cap, s->eval_depth);
+  s->eval_stack[s->eval_depth++] = es;
 }
 
 
@@ -178,10 +228,9 @@ int kos_domain_push_python_scope(PyObject *domain) {
   s = get_or_alloc_tls_state();
   if (! s)
     return -1;
-  if (s->python_domain_depth >= KOS_TLS_STACK_MAX) {
-    PyErr_SetString(PyExc_RuntimeError, "python domain stack overflow");
-    return -1;
-  }
+  s->python_domain_stack = (PyObject **) tls_stack_reserve(
+      (void *) s->python_domain_stack, &s->python_domain_cap,
+      s->python_domain_depth);
   s->python_domain_stack[s->python_domain_depth++] = domain;
   Py_INCREF(domain);
   return 0;
@@ -203,10 +252,8 @@ int kos_domain_pop_python_scope(const PyObject *domain) {
   s->python_domain_depth--;
   Py_DECREF(s->python_domain_stack[s->python_domain_depth]);
   s->python_domain_stack[s->python_domain_depth] = NULL;
-  if (s->ctx_depth == 0 && s->token_depth == 0 && s->python_domain_depth == 0) {
-    PyMem_Free(s);
-    PyThread_tss_set(&tls_state_key, NULL);
-  }
+  if (s->ctx_depth == 0 && s->token_depth == 0 && s->python_domain_depth == 0)
+    tls_state_free(s);
   return 0;
 }
 
@@ -214,13 +261,13 @@ int kos_domain_pop_python_scope(const PyObject *domain) {
 /* === param cell store helpers === */
 
 
-static PyObject *ensure_param_bindings(KosDomain *domain) {
-  if (! domain->param_bindings) {
-    domain->param_bindings = PyDict_New();
-    if (! domain->param_bindings)
+static PyObject *ensure_base_cells(KosDomain *domain) {
+  if (! domain->base_cells) {
+    domain->base_cells = PyDict_New();
+    if (! domain->base_cells)
       return NULL;
   }
-  return domain->param_bindings;
+  return domain->base_cells;
 }
 
 
@@ -229,17 +276,46 @@ PyObject *kos_domain_param_cells(PyObject *domain_obj) {
     PyErr_SetString(PyExc_TypeError, "expected a Domain instance");
     return NULL;
   }
-  return ensure_param_bindings((KosDomain *) domain_obj);
+  return ensure_base_cells((KosDomain *) domain_obj);
 }
 
 
-PyObject *kos_domain_resolve_cell(PyObject *domain_obj, PyObject *key) {
-  PyObject *cells;
-  PyObject *cell;
+PyObject *kos_context_param_cells(KosContext *ctx) {
+  if (! KosContext_PARAM_CELLS(ctx)) {
+    KosContext_PARAM_CELLS(ctx) = PyDict_New();
+    if (! KosContext_PARAM_CELLS(ctx))
+      return NULL;
+  }
+  return KosContext_PARAM_CELLS(ctx);
+}
 
-  cells = kos_domain_param_cells(domain_obj);
-  if (! cells)
-    return NULL;
+
+PyObject *kos_param_cells_peek(void) {
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+
+  if (s && s->ctx_depth > 0)
+    return KosContext_PARAM_CELLS(s->ctx_stack[s->ctx_depth - 1]);
+  if (s && s->python_domain_depth > 0)
+    return ((KosDomain *) s->python_domain_stack[s->python_domain_depth - 1])
+        ->base_cells;
+  return NULL;
+}
+
+
+PyObject *kos_param_cells_reserve(void) {
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+
+  if (s && s->ctx_depth > 0)
+    return kos_context_param_cells(s->ctx_stack[s->ctx_depth - 1]);
+  if (s && s->python_domain_depth > 0)
+    return ensure_base_cells(
+        (KosDomain *) s->python_domain_stack[s->python_domain_depth - 1]);
+  return NULL;
+}
+
+
+PyObject *kos_param_resolve_cell_in(PyObject *cells, PyObject *key) {
+  PyObject *cell;
 
   cell = PyDict_GetItem(cells, key);
   if (cell) {
@@ -255,6 +331,17 @@ PyObject *kos_domain_resolve_cell(PyObject *domain_obj, PyObject *key) {
     return NULL;
   }
   return cell;
+}
+
+
+PyObject *kos_domain_resolve_cell(PyObject *domain_obj, PyObject *key) {
+  PyObject *cells;
+
+  cells = kos_domain_param_cells(domain_obj);
+  if (! cells)
+    return NULL;
+
+  return kos_param_resolve_cell_in(cells, key);
 }
 
 
@@ -286,7 +373,7 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
   PyObject *key = NULL;
   PyObject *key_str = NULL;
   PyObject *default_val = NULL;
-  PyObject *domain;
+  PyObject *cells;
   PyObject *cell;
   PyObject *value;
 
@@ -303,21 +390,21 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
   if (! key_str)
     return NULL;
 
-  domain = kos_domain_current();
-  if (! domain) {
+  cells = kos_param_cells_reserve();
+  if (! cells) {
+    Py_DECREF(key_str);
+    if (PyErr_Occurred())
+      return NULL;
     if (default_val) {
-      Py_DECREF(key_str);
       Py_INCREF(default_val);
       return default_val;
     }
-
-    Py_DECREF(key_str);
     PyErr_SetString(PyExc_RuntimeError,
                     "parameter outside active domain and no default");
     return NULL;
   }
 
-  cell = kos_domain_resolve_cell(domain, key_str);
+  cell = kos_param_resolve_cell_in(cells, key_str);
   Py_DECREF(key_str);
   if (! cell)
     return NULL;
@@ -494,10 +581,21 @@ static PyObject *domain_repr(PyObject *self) {
 }
 
 
+static int domain_traverse(PyObject *self, visitproc visit, void *arg) {
+  Py_VISIT(((KosDomain *) self)->base_cells);
+  return 0;
+}
+
+
+static int domain_clear(PyObject *self) {
+  Py_CLEAR(((KosDomain *) self)->base_cells);
+  return 0;
+}
+
+
 static void domain_dealloc(PyObject *self) {
-  KosDomain *domain = (KosDomain *) self;
-  Py_XDECREF(domain->param_bindings);
-  domain->param_bindings = NULL;
+  PyObject_GC_UnTrack(self);
+  Py_CLEAR(((KosDomain *) self)->base_cells);
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -509,7 +607,7 @@ PyObject *kos_domain_get_param(PyObject *domain_obj, PyObject *key) {
 
   if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
     return NULL;
-  bindings = ((KosDomain *) domain_obj)->param_bindings;
+  bindings = ((KosDomain *) domain_obj)->base_cells;
   if (! bindings)
     return NULL;
   cell = PyDict_GetItem(bindings, key);
@@ -541,7 +639,7 @@ int kos_domain_clear_param(PyObject *domain_obj, PyObject *key) {
 
   if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
     return -1;
-  bindings = ((KosDomain *) domain_obj)->param_bindings;
+  bindings = ((KosDomain *) domain_obj)->base_cells;
   if (! bindings)
     return 0;
   cell = PyDict_GetItem(bindings, key);
@@ -560,17 +658,20 @@ PyTypeObject KosDomainType = {
   .tp_new = PyType_GenericNew,
   .tp_repr = domain_repr,
   .tp_dealloc = domain_dealloc,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_traverse = domain_traverse,
+  .tp_clear = domain_clear,
   .tp_methods = domain_methods,
 };
 
 
 KosDomain *KosDomain_New(void) {
-  KosDomain *domain = PyObject_New(KosDomain, &KosDomainType);
+  KosDomain *domain = PyObject_GC_New(KosDomain, &KosDomainType);
   if (! domain)
     return NULL;
   domain->version = 0;
-  domain->param_bindings = NULL;
+  domain->base_cells = NULL;
+  PyObject_GC_Track(domain);
   return domain;
 }
 

@@ -115,6 +115,58 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 42)
 
 
+    async def test_domain_predefined_cell_is_shared_channel(self):
+        """
+        A cell pre-defined in the Domain before the koskari call is copied
+        into the root context (shared by pointer): koskari reads the
+        pre-defined value, and a koskari store through the cell is visible
+        to Python after the return
+        """
+
+        p = ParamRef("chan", None)
+
+        def read_then_store():
+            seen = p.deref()
+            p.store("from-koskari")
+            return seen
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": read_then_store})
+        with Domain():
+            p.store("from-host")
+            result = await make_callable(code, ns)()
+            self.assertEqual(p.deref(), "from-koskari")
+        self.assertEqual(result, "from-host")
+
+
+    async def test_domain_koskari_created_param_not_visible_after(self):
+        """
+        A parameter first created inside the koskari context lands in that
+        context's cell table: it is not visible to Python after the
+        return. Pre-defining in the Domain is the channel (task-isolation
+        D5).
+        """
+
+        p = ParamRef("fresh_key")
+
+        def store_fresh():
+            p.store("inside-only")
+            return p.deref()
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": store_fresh})
+        with Domain():
+            result = await make_callable(code, ns)()
+            self.assertTrue(p.empty)
+        self.assertEqual(result, "inside-only")
+
+
     def test_domain_nested(self):
         """
         Nested with Domain(): scopes; inner exits first, outer domain current again
@@ -127,6 +179,32 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
                 p.store(2)
                 self.assertEqual(p.deref(), 2)
             self.assertEqual(p.deref(), 1)
+
+
+    def test_domain_is_gc_tracked_and_cycle_collectable(self):
+        """
+        Domain participates in GC: instances are tracked, and a reference
+        cycle through a stored parameter value is collected
+        """
+
+        import gc
+        import weakref
+
+        class Marker:
+            pass
+
+        dom = Domain()
+        self.assertTrue(gc.is_tracked(dom))
+
+        # cycle: domain -> base cell -> list -> domain; the marker rides
+        # in the cycle, so it dies only if the cycle is collected
+        marker = Marker()
+        marker_ref = weakref.ref(marker)
+        with dom:
+            ParamRef("loop", None).store([dom, marker])
+        del dom, marker
+        gc.collect()
+        self.assertIsNone(marker_ref())
 
 
     def test_domain_no_domain_outside_with(self):

@@ -153,10 +153,10 @@ static int test_eval_object_add_return(void) {
 }
 
 
-/* === Test: domain non-null on fresh context === */
+/* === Test: no ambient scope -> no domain anchor, empty cells === */
 
 
-static int test_domain_non_null(void) {
+static int test_domain_null_without_ambient_scope(void) {
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
@@ -179,7 +179,12 @@ static int test_domain_non_null(void) {
 
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
+    /* the domain field is an identification anchor: NULL when no explicit
+       Domain scope is ambient; parameter cells start empty (lazy) */
+    TEST_ASSERT(KosContext_DOMAIN(ctx) == NULL,
+                "domain anchor is NULL without ambient scope");
+    TEST_ASSERT(KosContext_PARAM_CELLS(ctx) == NULL,
+                "param cells start unallocated");
 
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
@@ -188,10 +193,10 @@ static int test_domain_non_null(void) {
 }
 
 
-/* === Test: two contexts without TLS get distinct domains === */
+/* === Test: two contexts without TLS have isolated cell tables === */
 
 
-static int test_domain_fresh_when_no_tls(void) {
+static int test_param_cells_isolated_without_tls(void) {
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
@@ -220,10 +225,14 @@ static int test_domain_fresh_when_no_tls(void) {
     KosContext *ctx2 = KosContext_New(frame2);
     TEST_ASSERT_NOT_NULL(ctx1, "create ctx1");
     TEST_ASSERT_NOT_NULL(ctx2, "create ctx2");
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx1), "ctx1 domain non-null");
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx2), "ctx2 domain non-null");
-    TEST_ASSERT_NOT_SAME(KosContext_DOMAIN(ctx1), KosContext_DOMAIN(ctx2),
-                         "contexts without TLS get distinct domains");
+
+    /* each context owns its own cell table */
+    PyObject *cells1 = kos_context_param_cells(ctx1);
+    PyObject *cells2 = kos_context_param_cells(ctx2);
+    TEST_ASSERT_NOT_NULL(cells1, "ctx1 cell table");
+    TEST_ASSERT_NOT_NULL(cells2, "ctx2 cell table");
+    TEST_ASSERT_NOT_SAME(cells1, cells2,
+                         "contexts without TLS have isolated cell tables");
 
     KosContext_Free(ctx1);
     KosContext_Free(ctx2);
@@ -1913,8 +1922,8 @@ int run_eval_tests(void) {
 
     RUN_TEST(test_kostype_is_not_koscallable);
     RUN_TEST(test_eval_object_add_return);
-    RUN_TEST(test_domain_non_null);
-    RUN_TEST(test_domain_fresh_when_no_tls);
+    RUN_TEST(test_domain_null_without_ambient_scope);
+    RUN_TEST(test_param_cells_isolated_without_tls);
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);

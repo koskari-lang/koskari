@@ -1320,13 +1320,15 @@ static int param_ref_init(PyObject *self, PyObject *key, PyObject *default_value
 
 
 static PyObject *param_ref_m_deref(PyObject *self) {
-  PyObject *domain;
+  PyObject *cells;
   PyObject *cell;
   PyObject *value;
   PyObject *default_val;
 
-  domain = kos_domain_current();
-  if (! domain) {
+  cells = kos_param_cells_reserve();
+  if (! cells) {
+    if (PyErr_Occurred())
+      return NULL;
     default_val = KosParamRef_DEFAULT(self);
     if (default_val) {
       Py_INCREF(default_val);
@@ -1337,7 +1339,7 @@ static PyObject *param_ref_m_deref(PyObject *self) {
     return NULL;
   }
 
-  cell = kos_domain_resolve_cell(domain, KosParamRef_KEY(self));
+  cell = kos_param_resolve_cell_in(cells, KosParamRef_KEY(self));
   if (! cell)
     return NULL;
 
@@ -1367,45 +1369,56 @@ static PyObject *param_ref_m_deref(PyObject *self) {
 
 
 static PyObject *param_ref_m_store(PyObject *self, PyObject *value) {
-  PyObject *domain;
+  PyObject *cells;
+  PyObject *cell;
 
-  domain = kos_domain_current();
-  if (! domain) {
+  cells = kos_param_cells_reserve();
+  if (! cells) {
+    if (PyErr_Occurred())
+      return NULL;
     PyErr_SetString(PyExc_RuntimeError,
                     "ParamRef.store outside active domain");
     return NULL;
   }
-  if (kos_domain_set_param(domain, KosParamRef_KEY(self), value) < 0)
+  cell = kos_param_resolve_cell_in(cells, KosParamRef_KEY(self));
+  if (! cell)
     return NULL;
+  Py_INCREF(value);
+  Py_XSETREF(KosSymbolicRef_VALUE(cell), value);
+  Py_DECREF(cell);
   Py_RETURN_NONE;
 }
 
 
 static PyObject *param_ref_m_clear(PyObject *self) {
-  PyObject *domain;
+  PyObject *cells;
+  PyObject *cell;
 
-  domain = kos_domain_current();
-  if (! domain) {
+  cells = kos_param_cells_peek();
+  if (! cells) {
+    if (kos_ctx_current() || kos_domain_current())
+      Py_RETURN_NONE;
     PyErr_SetString(PyExc_RuntimeError,
                     "ParamRef.clear outside active domain");
     return NULL;
   }
-  kos_domain_clear_param(domain, KosParamRef_KEY(self));
+  cell = PyDict_GetItem(cells, KosParamRef_KEY(self));
+  if (cell)
+    Py_CLEAR(KosSymbolicRef_VALUE(cell));
   Py_RETURN_NONE;
 }
 
 
 static PyObject *param_ref_m_is_empty(PyObject *self) {
-  PyObject *domain;
-  PyObject *value;
+  PyObject *cells;
+  PyObject *cell;
 
-  domain = kos_domain_current();
-  if (! domain)
+  cells = kos_param_cells_peek();
+  if (! cells)
     return PyBool_FromLong(1);
-  value = kos_domain_get_param(domain, KosParamRef_KEY(self));
-  if (! value)
+  cell = PyDict_GetItem(cells, KosParamRef_KEY(self));
+  if (! cell || ! KosSymbolicRef_VALUE(cell))
     return PyBool_FromLong(1);
-  Py_DECREF(value);
   return PyBool_FromLong(0);
 }
 

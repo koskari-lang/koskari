@@ -970,23 +970,45 @@ KosContext *KosContext_New(KosDynFrame *top) {
   }
 
   {
-    PyObject *domain = NULL;
     KosContext *active = kos_ctx_current();
 
-    if (active && KosContext_DOMAIN(active))
-      domain = KosContext_DOMAIN(active);
-    else
-      domain = kos_domain_current();
-    if (domain) {
-      ctx->domain = domain;
-      Py_INCREF(ctx->domain);
+    ctx->domain = NULL;
+    ctx->param_cells = NULL;
+
+    if (active) {
+      /* fork: private copy of the creating context's cell table; the
+         cells themselves are shared by pointer (task-isolation D3) */
+      PyObject *cells = KosContext_PARAM_CELLS(active);
+      if (cells && PyDict_GET_SIZE(cells) > 0) {
+        ctx->param_cells = PyDict_Copy(cells);
+        if (! ctx->param_cells) {
+          Py_DECREF(KosContext_TOKEN(ctx));
+          KosContext_TOKEN(ctx) = NULL;
+          context_release(ctx);
+          return NULL;
+        }
+      }
+      ctx->domain = KosContext_DOMAIN(active);
+      Py_XINCREF(ctx->domain);
+
     } else {
-      ctx->domain = (PyObject *) KosDomain_New();
-      if (! ctx->domain) {
-        Py_DECREF(KosContext_TOKEN(ctx));
-        KosContext_TOKEN(ctx) = NULL;
-        context_release(ctx);
-        return NULL;
+      /* no active context: a root context under an explicit
+         `with Domain():` scope copies the domain's base cells (D5);
+         otherwise the context starts empty */
+      PyObject *domain = kos_domain_current();
+      if (domain) {
+        PyObject *base = ((KosDomain *) domain)->base_cells;
+        if (base && PyDict_GET_SIZE(base) > 0) {
+          ctx->param_cells = PyDict_Copy(base);
+          if (! ctx->param_cells) {
+            Py_DECREF(KosContext_TOKEN(ctx));
+            KosContext_TOKEN(ctx) = NULL;
+            context_release(ctx);
+            return NULL;
+          }
+        }
+        ctx->domain = domain;
+        Py_INCREF(ctx->domain);
       }
     }
   }
@@ -1072,6 +1094,8 @@ void KosContext_Free(KosContext *ctx) {
   KosContext_EXC_INFO_TB(ctx) = NULL;
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
+  Py_XDECREF(KosContext_PARAM_CELLS(ctx));
+  KosContext_PARAM_CELLS(ctx) = NULL;
 
   context_release(ctx);
 }
@@ -1092,6 +1116,7 @@ int KosContext_Traverse(
 
   Py_VISIT(KosContext_TOKEN(ctx));
   Py_VISIT(KosContext_DOMAIN(ctx));
+  Py_VISIT(KosContext_PARAM_CELLS(ctx));
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));

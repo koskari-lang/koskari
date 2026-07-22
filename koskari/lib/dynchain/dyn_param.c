@@ -180,20 +180,13 @@ static void kos_dynparam_swap_back(PyObject *cells, PyObject *saved) {
 
 
 /**
-   Install the node's cells into the domain cell store; stash the prior
-   cells (or the absent-sentinel) in SAVED. On failure, roll back any
-   swaps already made and leave the store as found.
+   Install the node's cells into the context's cell store; stash the
+   prior cells (or the absent-sentinel) in SAVED. On failure, roll back
+   any swaps already made and leave the store as found.
 */
 static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
 
-  PyObject *domain = KosContext_DOMAIN(ctx);
-  if (! domain) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "param enter requires active domain");
-    return -1;
-  }
-
-  PyObject *cells = kos_domain_param_cells(domain);
+  PyObject *cells = kos_context_param_cells(ctx);
   if (! cells)
     return -1;
 
@@ -243,15 +236,11 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
 */
 static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 
-  PyObject *domain = KosContext_DOMAIN(ctx);
-  if (! domain)
-    return;
-
   PyObject *saved = KosDynParam_SAVED(node);
   if (! saved)
     return;
 
-  PyObject *cells = ((KosDomain *) domain)->param_bindings;
+  PyObject *cells = KosContext_PARAM_CELLS(ctx);
   if (! cells)
     return;
 
