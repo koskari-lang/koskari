@@ -11,9 +11,10 @@
 ; You should have received a copy of the GNU General Public License
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-
+import inspect
 import logging
 
+import-from fastapi HTTPException
 import-from hmac compare_digest
 
 import-from .job Job
@@ -54,17 +55,16 @@ define derive-input-spec [fn]:
     the raw payload as today.
     """
 
-    import inspect
-
     define spec #{}
     define sig (inspect.signature fn)
-    for-each [[name param] (.items sig.parameters)]:
+    for-each [[name param] (sig.parameters.items)]:
         unless (== param.annotation inspect.Parameter.empty):
             if (== param.default inspect.Parameter.empty):
                 (set! (item spec name) param.annotation)
             else:
                 (set! (item spec name) #(param.annotation param.default))
-    (if spec spec None)
+
+    (or spec None)
 
 
 define coerce-input [spec payload]:
@@ -74,8 +74,6 @@ define coerce-input [spec payload]:
     (required) or #(type default) (optional). Unknown keys, missing
     required keys, and uncoercible values raise a 400.
     """
-
-    import-from fastapi HTTPException
 
     define bad [msg]:
         (raise (HTTPException status_code: 400 detail: msg))
@@ -148,7 +146,6 @@ define-class WebhookJob [Job]:
         a rejected call leaves no run behind.
         """
 
-        import-from fastapi HTTPException
         define want self.config.token
         when want:
             define got (ctx.header TOKEN-HEADER)

@@ -69,11 +69,9 @@ define groups-of [access identity]:
     The Group values under `access` that `identity` belongs to.
     """
 
-    define out #[]
-    for-each [g (or access.groups #[])]:
-        when (in? identity g.members):
-            (out.append g)
-    out
+    (list-each [g (or access.groups #())]
+        when: (in? identity g.members)
+        g)
 
 
 define resolve-level [access identity]:
@@ -116,17 +114,23 @@ define may-trigger? [access identity job]:
     """
 
     when (None? access):
-        (return True)
-    if (== (resolve-level access identity) "operator"):
-        True
-    elif (None? identity):
-        False
+        ; no access config, so everyone is operator
+        return True
+
+    when (None? identity):
+        ; no identity, so anonymous
+        return False
+
+    when (== (resolve-level access identity) "operator"):
+        ; operator level, so allowed
+        return True
+
+    ; check that the identity is a member of any of the allowed groups
+    for-each [g (or job.allowed_groups #())]:
+        when (in? identity g.members):
+            break True
     else:
-        define hits #[]
-        for-each [g (or job.allowed_groups #[])]:
-            when (in? identity g.members):
-                (hits.append g)
-        (truth hits)
+        False
 
 
 define trigger-allowed? [access ctx job]:
@@ -185,10 +189,9 @@ define-syntax group:
 define-syntax config/access:
     syntax-rules []:
         case (config/access () setting ...):
-            (begin
-                (define default/access)
-                (unless &default/access
-                    (set! default/access (AccessConfig setting ...))))
+            define default/access
+            unless &default/access:
+                set! default/access (AccessConfig setting ...)
 
 
 ;; The end.

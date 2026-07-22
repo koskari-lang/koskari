@@ -141,8 +141,10 @@ define-class Job []:
         define status "success"
         define result None
         define err None
+
         try:
             set! result (self._invoke args kwargs)
+
         except [Exception as: exc]:
             set! status "failed"
             set! err exc
@@ -150,17 +152,30 @@ define-class Job []:
                 try:
                     (self.on_error_cb exc *: args **: kwargs)
                 except [Exception]:
-                    (logger.error "on-error handler failed: %s" self.name exc_info: True)
+                    (logger.error "on-error handler failed: %s"
+                        self.name exc_info: True)
             else:
-                (logger.error "job failed: %s" self.name exc_info: True)
+                (logger.error "job failed: %s"
+                    self.name exc_info: True)
+
         finally:
             (_current-run.reset token)
-            define log (if buf (.join "\n" buf) None)
-            (store.record-finish runid status: status result: result error: err log: log)
+            (store.record-finish runid
+                status: status
+                result: result
+                error: err
+                log: (when buf (.join "\n" buf)))
+
         result
 
 
-    define run [self *: args cause: "manual" parent: None wait: True **: kwargs]:
+    define run [
+            self
+            *: args
+            cause: "manual"
+            parent: None
+            wait: True
+            **: kwargs]:
         """
         Fire the handler once as a TRACKED run: record it in the jobset's
         store, capture its log output, invoke the callback with `args` and
@@ -184,7 +199,12 @@ define-class Job []:
         when (None? store):
             (return (self._invoke args kwargs))
 
-        define runid (store.record-start self.name (self._job-kind) cause args: args kwargs: kwargs parent: parent)
+        define runid (store.record-start self.name
+            (self._job-kind) cause
+            args: args
+            kwargs: kwargs
+            parent: parent)
+
         if wait:
             (self._tracked-invoke store runid args kwargs)
         else:
@@ -313,22 +333,24 @@ define-class JobSet []:
         """
 
         define trig (self.store.get-trigger runid)
-        if (None? trig):
-            #{"error": "no such run"
-              "run_id": runid}
-        else:
-            define jobname (item trig "job")
-            define job (self.jobs.get jobname)
-            if (None? job):
-                #{"error": "unknown job"
-                  "job": jobname}
-            else:
-                define args (or (trig.get "args") #[])
-                define kwargs (or (trig.get "kwargs") #{})
-                (job.run *: args **: kwargs cause: "manual" parent: runid)
-                #{"ok": True
-                  "retriggered": runid
-                  "job": jobname}
+        unless trig:
+            return #{"error": "no such run"
+                     "run_id": runid}
+
+        define jobname (item trig "job")
+        define job (self.jobs.get jobname)
+
+        unless job:
+            return #{"error": "unknown job"
+                     "job": jobname}
+
+        define args (or (trig.get "args") #[])
+        define kwargs (or (trig.get "kwargs") #{})
+        (job.run *: args **: kwargs cause: "manual" parent: runid)
+
+        #{"ok": True
+          "retriggered": runid
+          "job": jobname}
 
 
     define spawn-run [self thunk]:
@@ -429,9 +451,11 @@ define-class JobSet []:
 
         set! self._stopping (asyncio.Event)
         (self._install-signals)
+
         when self.store:
             (self.store.open)
         (self.start)
+
         try:
             while (not (self._stopping.is_set)):
                 try:
