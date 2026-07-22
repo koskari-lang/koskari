@@ -2,21 +2,48 @@
 /* === KosDynParam implementation === */
 
 
-/* Sentinel for "param was unset" in saved dict; value must not be a valid param value.
-   Initialized in koskari_dynchain_init, cleared in koskari_dynchain_clear. */
+/* Sentinel for "no cell was present" in saved dict; must not be a valid
+   cell. Initialized in koskari_dynchain_init, cleared in
+   koskari_dynchain_clear. */
 static PyObject *_param_sentinel_unset = NULL;
 
 
 /**
-   Build PARAM node from owned bindings dict (caller transfers ownership).
+   Build PARAM node from a name -> value bindings dict (borrowed): each
+   value is wrapped in a fresh cell (KosRef), so the node's BINDINGS dict
+   maps name -> cell.
 */
 static KosDynParam *kos_dynparam_new_from_bindings(
     KosDynNode *parent,
     PyObject *bindings) {
 
+  PyObject *cells = PyDict_New();
+  if (! cells)
+    return NULL;
+
+  {
+    PyObject *key;
+    PyObject *value;
+    Py_ssize_t pos = 0;
+
+    while (PyDict_Next(bindings, &pos, &key, &value)) {
+      PyObject *cell = KosSymbolicRef_New(key, value);
+      if (! cell) {
+        Py_DECREF(cells);
+        return NULL;
+      }
+      if (PyDict_SetItem(cells, key, cell) < 0) {
+        Py_DECREF(cell);
+        Py_DECREF(cells);
+        return NULL;
+      }
+      Py_DECREF(cell);
+    }
+  }
+
   KosDynParam *node = (KosDynParam *) kos_dynnode_alloc();
   if (! node) {
-    Py_DECREF(bindings);
+    Py_DECREF(cells);
     return NULL;
   }
 
@@ -26,7 +53,7 @@ static KosDynParam *kos_dynparam_new_from_bindings(
     parent,
     KOS_DYN_CAP_NEEDS_UNWIND_ACTION | KOS_DYN_CAP_NEEDS_INSTALL_WIND);
 
-  KosDynParam_BINDINGS(node) = bindings;
+  KosDynParam_BINDINGS(node) = cells;
   KosDynParam_SAVED(node) = NULL;
 
   return node;
@@ -34,7 +61,7 @@ static KosDynParam *kos_dynparam_new_from_bindings(
 
 
 /**
-   Build PARAM from parallel param ref / value arrays (creates dict).
+   Build PARAM from parallel param ref / value arrays.
 */
 static KosDynParam *kos_dynparam_new(
     KosDynNode *parent,
@@ -59,12 +86,18 @@ static KosDynParam *kos_dynparam_new(
     }
   }
 
-  return kos_dynparam_new_from_bindings(parent, bindings);
+  KosDynParam *node = kos_dynparam_new_from_bindings(parent, bindings);
+  Py_DECREF(bindings);
+  return node;
 }
 
 
 /**
-   PyDict_Copy bindings for INSTALL/PUSH segments.
+   PyDict_Copy bindings for INSTALL/PUSH segments. The copy is of cell
+   pointers: a clone shares its cells with the source node, so multi-shot
+   continuation applications share cells (a set! in one application is
+   visible in the next). This is the deliberate Racket-cell semantics; see
+   design/interpreter/domain-task-isolation.md D4.
 */
 static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
 
@@ -123,7 +156,33 @@ static int dynnode_to_dict_param(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Apply bindings to KosContext domain; stash prior values in SAVED dict.
+   Swap the prior cells out of the SAVED dict back into the cell store
+   (helper for restore and for enter's error rollback). A sentinel entry
+   means no cell was present: remove the key.
+*/
+static void kos_dynparam_swap_back(PyObject *cells, PyObject *saved) {
+
+  PyObject *sentinel = _param_sentinel_unset;
+  PyObject *key;
+  PyObject *old_cell;
+  Py_ssize_t pos = 0;
+
+  while (PyDict_Next(saved, &pos, &key, &old_cell)) {
+    if (old_cell == sentinel) {
+      if (PyDict_DelItem(cells, key) < 0)
+        PyErr_Clear();
+    } else {
+      if (PyDict_SetItem(cells, key, old_cell) < 0)
+        PyErr_Clear();
+    }
+  }
+}
+
+
+/**
+   Install the node's cells into the domain cell store; stash the prior
+   cells (or the absent-sentinel) in SAVED. On failure, roll back any
+   swaps already made and leave the store as found.
 */
 static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
 
@@ -133,6 +192,10 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
                     "param enter requires active domain");
     return -1;
   }
+
+  PyObject *cells = kos_domain_param_cells(domain);
+  if (! cells)
+    return -1;
 
   PyObject *bindings = KosDynParam_BINDINGS(node);
   PyObject *saved = PyDict_New();
@@ -146,32 +209,37 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
   }
 
   PyObject *key;
-  PyObject *value;
+  PyObject *cell;
   Py_ssize_t pos = 0;
 
-  while (PyDict_Next(bindings, &pos, &key, &value)) {
-    PyObject *cur = kos_domain_get_param(domain, key);
-    PyObject *to_save = cur ? cur : sentinel;
-    if (PyDict_SetItem(saved, key, to_save) < 0) {
-      Py_XDECREF(cur);
-      Py_DECREF(saved);
-      return -1;
-    }
-    if (cur)
-      Py_DECREF(cur);  /* SetItem holds its own ref */
-    if (kos_domain_set_param(domain, key, value) < 0) {
-      Py_DECREF(saved);
-      return -1;
-    }
+  while (PyDict_Next(bindings, &pos, &key, &cell)) {
+    PyObject *prior = PyDict_GetItem(cells, key);  /* borrowed */
+    PyObject *to_save = prior ? prior : sentinel;
+    if (PyDict_SetItem(saved, key, to_save) < 0)
+      goto rollback;
+    if (PyDict_SetItem(cells, key, cell) < 0)
+      goto rollback;
   }
 
   KosDynParam_SAVED(node) = saved;
   return 0;
+
+ rollback:
+  {
+    /* undo the swaps recorded so far; preserve the pending exception
+       across the best-effort dict operations */
+    PyObject *typ, *val, *tb;
+    PyErr_Fetch(&typ, &val, &tb);
+    kos_dynparam_swap_back(cells, saved);
+    PyErr_Restore(typ, val, tb);
+  }
+  Py_DECREF(saved);
+  return -1;
 }
 
 
 /**
-   Restore domain from SAVED (unwind / transfer).
+   Restore the prior cells from SAVED (unwind / transfer).
 */
 static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 
@@ -183,17 +251,11 @@ static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
   if (! saved)
     return;
 
-  PyObject *sentinel = _param_sentinel_unset;
-  PyObject *key;
-  PyObject *old_val;
-  Py_ssize_t pos = 0;
+  PyObject *cells = ((KosDomain *) domain)->param_bindings;
+  if (! cells)
+    return;
 
-  while (PyDict_Next(saved, &pos, &key, &old_val)) {
-    if (old_val == sentinel)
-      kos_domain_clear_param(domain, key);
-    else
-      kos_domain_set_param(domain, key, old_val);
-  }
+  kos_dynparam_swap_back(cells, saved);
 }
 
 
@@ -216,7 +278,8 @@ void kos_dyn_param_unwind(KosEvalState *es, KosDynParam *node) {
 
 
 /**
-   Push PARAM from dict: enter then link as DYN_TOP. Callers: opcode PUSH_PARAM.
+   Push PARAM from a name -> value dict (borrowed): enter then link as
+   DYN_TOP. Callers: opcode PUSH_PARAM.
 */
 KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings) {
   KosContext *ctx = KosEvalState_CONTEXT(es);

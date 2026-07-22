@@ -90,4 +90,42 @@ class TestParameterizeSpecial(SpecialsTestCase):
         self.assertEqual(result, ("inner", "default"))
 
 
+    async def test_multishot_applications_share_cells(self):
+        """
+        Multi-shot continuation applications share parameter cells: a store
+        made in one application is visible in the next application, rather
+        than each application restarting from the declared binding.
+
+        Pins the Racket-cell semantics of
+        design/interpreter/domain-task-isolation.md D4: PARAM node clones
+        copy cell pointers, so every INSTALL re-enters the same cell.
+        """
+
+        def consume(i):
+            ref = ParamRef("cellshare")
+            seen = ref.deref()
+            ref.store(f"app{i}")
+            return (i, seen)
+
+        def seq(*args):
+            return args
+
+        src_str = """
+        (compile/let [[stolen 0]]
+          (compile/call seq
+            (compile/reset
+              (compile/parameterize [[cellshare "declared"]]
+                (compile/call consume
+                  (compile/shift k (compile/setq stolen k) (compile/call k 0)))))
+            (compile/call stolen 1)
+            (compile/call stolen 2)))
+        """
+
+        expr, mod = self.compile_expr(src_str, consume=consume, seq=seq)
+        result = await expr()
+        self.assertEqual(
+            result,
+            ((0, "declared"), (1, "app0"), (2, "app1")))
+
+
 # The end.

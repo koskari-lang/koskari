@@ -1321,6 +1321,7 @@ static int param_ref_init(PyObject *self, PyObject *key, PyObject *default_value
 
 static PyObject *param_ref_m_deref(PyObject *self) {
   PyObject *domain;
+  PyObject *cell;
   PyObject *value;
   PyObject *default_val;
 
@@ -1335,14 +1336,30 @@ static PyObject *param_ref_m_deref(PyObject *self) {
                     "ParamRef.deref outside active domain and no default");
     return NULL;
   }
-  value = kos_domain_get_param(domain, KosParamRef_KEY(self));
-  if (value)
+
+  cell = kos_domain_resolve_cell(domain, KosParamRef_KEY(self));
+  if (! cell)
+    return NULL;
+
+  value = KosSymbolicRef_VALUE(cell);
+  if (value) {
+    Py_INCREF(value);
+    Py_DECREF(cell);
     return value;
+  }
+
   default_val = KosParamRef_DEFAULT(self);
   if (default_val) {
+    /* sticky fill: the default lands in the (empty) cell, visible to
+       every sharer of the cell */
+    Py_INCREF(default_val);
+    KosSymbolicRef_VALUE(cell) = default_val;
+    Py_DECREF(cell);
     Py_INCREF(default_val);
     return default_val;
   }
+
+  Py_DECREF(cell);
   PyErr_Format(PyExc_NameError, "Param %S has no binding and no default",
                KosParamRef_KEY(self));
   return NULL;

@@ -20,7 +20,7 @@ Unit tests for ParamRef
 
 import unittest
 
-from koskari.lib import ParamRef, Ref
+from koskari.lib import ParamRef, Ref, parameter
 from koskari.lib import symbol
 from tests import make_callable
 from tests.lib.opcode import build_expr
@@ -231,6 +231,71 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         ], values={"f": overwrite})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 30)
+
+
+    async def test_deref_with_default_fills_sticky(self):
+        """
+        deref with a default fills the empty cell: a same-key ParamRef with
+        no default of its own then resolves the filled value instead of
+        raising NameError.
+        """
+
+        p_with = ParamRef("sticky", 42)
+        p_bare = ParamRef("sticky")
+
+        def sticky_flow():
+            first = p_with.deref()
+            second = p_bare.deref()
+            return (first, second)
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": sticky_flow})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, (42, 42))
+
+
+    async def test_parameter_fn_default_fills_sticky(self):
+        """
+        parameter(name, default) fills the empty cell: a later
+        parameter(name) with no default resolves the filled value.
+        """
+
+        def sticky_flow():
+            first = parameter("fn_sticky", 7)
+            second = parameter("fn_sticky")
+            return (first, second)
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": sticky_flow})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, (7, 7))
+
+
+    async def test_deref_no_binding_no_default_raises_nameerror(self):
+        """
+        deref inside an active domain with no binding and no default raises
+        NameError.
+        """
+
+        p = ParamRef("unbound_key")
+
+        def deref_unbound():
+            with self.assertRaises(NameError):
+                p.deref()
+            return True
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": deref_unbound})
+        self.assertTrue(await make_callable(code, ns)())
 
 
     async def test_empty_tracks_binding_state(self):

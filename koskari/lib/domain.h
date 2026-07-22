@@ -30,7 +30,7 @@
 typedef struct {
   PyObject_HEAD
   uint64_t version;
-  PyObject *param_bindings;  /* PyDict: name -> value */
+  PyObject *param_bindings;  /* PyDict: name -> cell (KosRef) */
 } KosDomain;
 
 
@@ -56,25 +56,42 @@ extern PyTypeObject KosDomainType;
 KosDomain *KosDomain_New(void);
 
 
-/* === param value store API === */
+/* === param cell store API === */
 
 
 /**
-   Get param value from domain by name (key).
-   Returns borrowed reference or NULL if unset.
+   The domain's param cell dict (name -> KosRef cell), lazily created.
+   Returns borrowed reference, or NULL on allocation failure.
+*/
+PyObject *kos_domain_param_cells(PyObject *domain);
+
+
+/**
+   Resolve the cell for name (key), creating an empty cell in the domain
+   on miss. Returns new reference, or NULL on error.
+*/
+PyObject *kos_domain_resolve_cell(PyObject *domain, PyObject *key);
+
+
+/**
+   Get param value from domain by name (key): deref of the cell.
+   Returns new reference, or NULL without error when there is no cell or
+   the cell is empty.
 */
 PyObject *kos_domain_get_param(PyObject *domain, PyObject *key);
 
 
 /**
-   Set param value in domain by name (key).
+   Set param value in domain by name (key): write-through on the cell,
+   resolving (creating) it as needed.
    Returns 0 on success, -1 on error.
 */
 int kos_domain_set_param(PyObject *domain, PyObject *key, PyObject *value);
 
 
 /**
-   Remove param binding from domain by name (key).
+   Empty the cell for name (key). The cell object stays in place, so
+   holders observe the clear. No-op when no cell exists.
    Returns 0 on success, -1 on error.
 */
 int kos_domain_clear_param(PyObject *domain, PyObject *key);

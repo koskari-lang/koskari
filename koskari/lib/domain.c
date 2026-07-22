@@ -211,7 +211,7 @@ int kos_domain_pop_python_scope(const PyObject *domain) {
 }
 
 
-/* === param value store helpers === */
+/* === param cell store helpers === */
 
 
 static PyObject *ensure_param_bindings(KosDomain *domain) {
@@ -221,6 +221,40 @@ static PyObject *ensure_param_bindings(KosDomain *domain) {
       return NULL;
   }
   return domain->param_bindings;
+}
+
+
+PyObject *kos_domain_param_cells(PyObject *domain_obj) {
+  if (! domain_obj || ! KosDomain_CheckExact(domain_obj)) {
+    PyErr_SetString(PyExc_TypeError, "expected a Domain instance");
+    return NULL;
+  }
+  return ensure_param_bindings((KosDomain *) domain_obj);
+}
+
+
+PyObject *kos_domain_resolve_cell(PyObject *domain_obj, PyObject *key) {
+  PyObject *cells;
+  PyObject *cell;
+
+  cells = kos_domain_param_cells(domain_obj);
+  if (! cells)
+    return NULL;
+
+  cell = PyDict_GetItem(cells, key);
+  if (cell) {
+    Py_INCREF(cell);
+    return cell;
+  }
+
+  cell = KosSymbolicRef_New(key, NULL);
+  if (! cell)
+    return NULL;
+  if (PyDict_SetItem(cells, key, cell) < 0) {
+    Py_DECREF(cell);
+    return NULL;
+  }
+  return cell;
 }
 
 
@@ -253,6 +287,7 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
   PyObject *key_str = NULL;
   PyObject *default_val = NULL;
   PyObject *domain;
+  PyObject *cell;
   PyObject *value;
 
   (void) mod;
@@ -282,16 +317,29 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
     return NULL;
   }
 
-  value = kos_domain_get_param(domain, key_str);
+  cell = kos_domain_resolve_cell(domain, key_str);
   Py_DECREF(key_str);
-  if (value)
+  if (! cell)
+    return NULL;
+
+  value = KosSymbolicRef_VALUE(cell);
+  if (value) {
+    Py_INCREF(value);
+    Py_DECREF(cell);
     return value;
+  }
 
   if (default_val) {
+    /* sticky fill: the default lands in the (empty) cell, visible to
+       every sharer of the cell */
+    Py_INCREF(default_val);
+    KosSymbolicRef_VALUE(cell) = default_val;
+    Py_DECREF(cell);
     Py_INCREF(default_val);
     return default_val;
   }
 
+  Py_DECREF(cell);
   PyErr_Format(PyExc_NameError, "Param %S has no binding and no default", key);
   return NULL;
 }
@@ -455,17 +503,19 @@ static void domain_dealloc(PyObject *self) {
 
 
 PyObject *kos_domain_get_param(PyObject *domain_obj, PyObject *key) {
-  KosDomain *domain;
   PyObject *bindings;
+  PyObject *cell;
   PyObject *value;
 
   if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
     return NULL;
-  domain = (KosDomain *) domain_obj;
-  bindings = ensure_param_bindings(domain);
+  bindings = ((KosDomain *) domain_obj)->param_bindings;
   if (! bindings)
     return NULL;
-  value = PyDict_GetItem(bindings, key);
+  cell = PyDict_GetItem(bindings, key);
+  if (! cell)
+    return NULL;
+  value = KosSymbolicRef_VALUE(cell);
   if (value)
     Py_INCREF(value);
   return value;
@@ -473,36 +523,31 @@ PyObject *kos_domain_get_param(PyObject *domain_obj, PyObject *key) {
 
 
 int kos_domain_set_param(PyObject *domain_obj, PyObject *key, PyObject *value) {
-  KosDomain *domain;
-  PyObject *bindings;
+  PyObject *cell;
 
-  if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
+  cell = kos_domain_resolve_cell(domain_obj, key);
+  if (! cell)
     return -1;
-  domain = (KosDomain *) domain_obj;
-  bindings = ensure_param_bindings(domain);
-  if (! bindings)
-    return -1;
-  return PyDict_SetItem(bindings, key, value);
+  Py_INCREF(value);
+  Py_XSETREF(KosSymbolicRef_VALUE(cell), value);
+  Py_DECREF(cell);
+  return 0;
 }
 
 
 int kos_domain_clear_param(PyObject *domain_obj, PyObject *key) {
-  KosDomain *domain;
   PyObject *bindings;
+  PyObject *cell;
 
   if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
     return -1;
-  domain = (KosDomain *) domain_obj;
-  bindings = domain->param_bindings;
+  bindings = ((KosDomain *) domain_obj)->param_bindings;
   if (! bindings)
     return 0;
-  if (PyDict_DelItem(bindings, key) < 0) {
-    if (PyErr_ExceptionMatches(PyExc_KeyError)) {
-      PyErr_Clear();
-      return 0;
-    }
-    return -1;
-  }
+  cell = PyDict_GetItem(bindings, key);
+  if (! cell)
+    return 0;
+  Py_CLEAR(KosSymbolicRef_VALUE(cell));
   return 0;
 }
 
