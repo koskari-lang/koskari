@@ -111,6 +111,8 @@ define-class WebhookJob [Job]:
     An inbound HTTP route; its name is the route path segment
     """
 
+    define config-class WebhookConfig
+
     define __init__ [self route]:
         (Job.__init__ self)
         set! self.route route
@@ -199,22 +201,16 @@ define-syntax config/webhook:
                 (unless &default/webhook (set! default/webhook nm)))
 
 
-;; `job webhook <name> [disabled]:` -- no trigger key; the name is the route.
+;; `job webhook <name>:` -- no trigger key; the name is the route.
 define-syntax job/webhook:
-    syntax-rules [disabled]:
-        case (job/webhook name disabled (subhead subrest ...) ...):
-            (begin
-                (define name (WebhookJob 'name))
-                (set! name.enabled False)
-                (define default/webhook)
-                (when &default/webhook (.configure name via: default/webhook))
-                (subhead (webhook name) subrest ...) ...)
-
+    syntax-rules []:
         case (job/webhook name (subhead subrest ...) ...):
             (begin
                 (define name (WebhookJob 'name))
                 (define default/webhook)
-                (when &default/webhook (.configure name via: default/webhook))
+                (if &default/webhook
+                    (.configure name via: default/webhook)
+                    (.configure name))
                 (subhead (webhook name) subrest ...) ...)
 
 

@@ -33,6 +33,8 @@ define-dataclass FakeConfig [Config]:
 define-class FakeJob [Job]:
     """A trivial job variety: start/stop just flip `running` and log."""
 
+    define config-class FakeConfig
+
     define __init__ [self label]:
         (Job.__init__ self)
         set! self.label label
@@ -64,20 +66,18 @@ define-syntax config/fake:
                 (unless &default/fake (set! default/fake nm)))
 
 
-;; The `job fake <name> [disabled]:` variety syntax. Fake has no
-;; trigger-key, so the header is just the name plus an optional trailing
-;; `disabled`; the sub-items are tag-injected with `(fake name)` so the
-;; base `config`/`handler` dispatch routes them.
+;; The `job fake <name>:` variety syntax. Fake has no trigger-key, so
+;; the header is just the name; the sub-items are tag-injected with
+;; `(fake name)` so the base `config`/`handler` dispatch routes them.
 define-syntax job/fake:
-    syntax-rules [disabled]:
-        case (job/fake name disabled (subhead subrest ...) ...):
-            (begin
-                (define name (FakeJob 'name))
-                (set! name.enabled False)
-                (subhead (fake name) subrest ...) ...)
+    syntax-rules []:
         case (job/fake name (subhead subrest ...) ...):
             (begin
                 (define name (FakeJob 'name))
+                (define default/fake)
+                (if &default/fake
+                    (.configure name via: default/fake)
+                    (.configure name))
                 (subhead (fake name) subrest ...) ...)
 
 

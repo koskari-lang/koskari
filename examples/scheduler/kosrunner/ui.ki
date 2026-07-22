@@ -98,6 +98,8 @@ define-class UiJob [Job]:
     API. Its form actions POST to its own prefix and redirect back.
     """
 
+    define config-class UiConfig
+
     define mount [self server]:
         """
         Mount the UI page hierarchy on `server`: the dashboard is a
@@ -265,22 +267,16 @@ define-syntax config/ui:
                 (unless &default/ui (set! default/ui nm)))
 
 
-;; `job ui <name> [disabled]:` -- no trigger key; serves from its config.
+;; `job ui <name>` -- no trigger key; serves from its config.
 define-syntax job/ui:
-    syntax-rules [disabled]:
-        case (job/ui name disabled (subhead subrest ...) ...):
-            (begin
-                (define name (UiJob))
-                (set! name.enabled False)
-                (define default/ui)
-                (when &default/ui (.configure name via: default/ui))
-                (subhead (ui name) subrest ...) ...)
-
+    syntax-rules []:
         case (job/ui name (subhead subrest ...) ...):
             (begin
                 (define name (UiJob))
                 (define default/ui)
-                (when &default/ui (.configure name via: default/ui))
+                (if &default/ui
+                    (.configure name via: default/ui)
+                    (.configure name))
                 (subhead (ui name) subrest ...) ...)
 
 

@@ -14,7 +14,6 @@
 
 import logging
 
-import-from dataclasses field
 import-from typing Any
 
 import-from aiokafka AIOKafkaConsumer
@@ -32,7 +31,10 @@ define-dataclass KafkaConfig [Config]:
     defaults, declared in one place.
     """
 
-    define [servers :: str] (field)  ; required
+    ;; required in practice; defaulted None because the base Config's
+    ;; defaulted `disabled` field precedes it in the dataclass init, and
+    ;; guarded at start so a serverless kafka job still dies loudly
+    define [servers :: str] None
     define [group_id :: str] None
 
     define [security_protocol :: str] "PLAINTEXT"
@@ -60,6 +62,8 @@ define-class KafkaJob [Job]:
     """
     Consumes one topic; dispatches each message to the handler
     """
+
+    define config-class KafkaConfig
 
     define __init__ [self topic]:
         (Job.__init__ self)
@@ -116,6 +120,9 @@ define-class KafkaJob [Job]:
     define start [self]:
         when self._consumer:
             (return)
+        when (None? self.config.servers):
+            raise (ValueError
+                f"kafka job {self.name} has no servers configured")
         set! self.running True
         (logger.info "starting kafka consumer: %s" self.topic)
         set! self._consumer (self.make-consumer)
@@ -148,22 +155,16 @@ define-syntax config/kafka:
                 (unless &default/kafka (set! default/kafka nm)))
 
 
-;; `job kafka <name> <topic> [disabled]:` -- trigger key is the topic.
+;; `job kafka <name> <topic>:` -- trigger key is the topic.
 define-syntax job/kafka:
-    syntax-rules [disabled]:
-        case (job/kafka name topic disabled (subhead subrest ...) ...):
-            (begin
-                (define name (KafkaJob topic))
-                (set! name.enabled False)
-                (define default/kafka)
-                (when &default/kafka (.configure name via: default/kafka))
-                (subhead (kafka name) subrest ...) ...)
-
+    syntax-rules []:
         case (job/kafka name topic (subhead subrest ...) ...):
             (begin
                 (define name (KafkaJob topic))
                 (define default/kafka)
-                (when &default/kafka (.configure name via: default/kafka))
+                (if &default/kafka
+                    (.configure name via: default/kafka)
+                    (.configure name))
                 (subhead (kafka name) subrest ...) ...)
 
 

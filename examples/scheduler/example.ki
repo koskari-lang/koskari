@@ -48,7 +48,7 @@ jobset workload:
         prefix: "/ui"
 
 
-    ;; --- JOBS: `job <type> <name> <trigger...> [disabled]:` ----------
+    ;; --- JOBS: `job <type> <name> <trigger...>:` ---------------------
     ;; The header is the constructor; each sub-item is a method call on
     ;; the job (handler/config inherited; on-error is a kafka setter).
 
@@ -59,8 +59,12 @@ jobset workload:
             (print f"The time is {(datetime.now)}")
 
     ;; A disabled job: present, listed, but not started until enabled
-    ;; via the control plane (constraint 6 + 7).
-    job cron nightly-report [0 0 * * *] disabled:
+    ;; via the control plane (constraint 6 + 7). `disabled:` is a config
+    ;; field like any other; with no cron config declared, this block
+    ;; builds a fresh default one carrying the flag.
+    job cron nightly-report [0 0 * * *]:
+        config:
+            disabled: True
         handler []:
             (print "running the nightly report")
 
@@ -84,8 +88,11 @@ jobset workload:
     ;; renders a jobs/runs dashboard (with enable/disable/retrigger) at /ui.
     job ui web
 
-    ;; kafka job on the DEFAULT kafka config (unnamed one above).
-    job kafka orders "topic.orders" disabled:
+    ;; kafka job on the DEFAULT kafka config (unnamed one above),
+    ;; refined with `disabled` until a real broker is reachable.
+    job kafka orders "topic.orders":
+        config:
+            disabled: True
         handler [msg]:
             (print f"order: {msg}")
 
@@ -94,10 +101,11 @@ jobset workload:
     ;; a kafka-VARIETY `on-error` (code setter), and the inherited
     ;; `handler` (code setter). Order is irrelevant -- they are just
     ;; method calls on the constructed KafkaJob.
-    job kafka audit "topic.audit" disabled:
+    job kafka audit "topic.audit":
         config:
             via: audit-cluster
             group_id: "audit-consumers"
+            disabled: True
         on-error [err msg]:
             (print f"audit dropped {msg}: {err}")
         handler [msg]:

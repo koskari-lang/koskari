@@ -23,16 +23,30 @@ import-from dataclasses replace
 define logger (logging.getLogger "kosrunner")
 
 
-define-class Config []:
+define-class ConfigBase []:
     """
-    Base config. Subclasses are dataclasses that declare their fields,
-    valid shape, and sensible defaults. This base supplies the dataclass
-    -style `merge`: a NEW config instance combining a base's fields with
-    per-job overrides (unknown fields raise).
+    Method carrier for Config (a dataclass body holds fields, so the
+    behavior lives one class up). `merge` builds a NEW config instance
+    combining a base's fields with per-job overrides (unknown fields
+    raise).
     """
 
     define merge [self **: overrides]:
         (replace self **: overrides)
+
+
+define-dataclass Config [ConfigBase]:
+    """
+    Base config. Subclasses are dataclasses that declare their fields,
+    valid shape, and sensible defaults; every config additionally
+    carries `disabled` (False), so a config -- including a shared or
+    named one -- can declare the jobs wired to it dormant. NOTE: base
+    fields precede subclass fields in the dataclass init, so a subclass
+    field after this defaulted one cannot be required-positional --
+    default it and guard at start instead.
+    """
+
+    define [disabled :: bool] False
 
 
 define-class Job []:
@@ -55,19 +69,27 @@ define-class Job []:
 
     ; --- inherited sub-item setters ---
 
+    ;; the variety's Config class, used when a job is configured with no
+    ;; base to merge onto; subclasses override (WebhookJob -> WebhookConfig)
+    define config-class Config
+
     define configure [self via: None **: overrides]:
         """
         The `config:` sub-item. `via` selects a base Config (the type
         default or a named one); with no `via` the job's current config is
-        refined instead. Overrides are layered on by dataclass merge, and
-        the resulting config INSTANCE is stored on the job.
+        refined instead, and a job with no config at all builds a FRESH
+        instance of its variety's config-class from the overrides alone
+        (missing required fields raise, courtesy of the dataclass). The
+        merged result also declares the job's build-time enabled state via
+        its `disabled` field; runtime enable/disable toggles are applied
+        afterwards and unaffected.
         """
 
-        define base (if via via self.config)
-        when (None? base):
-            raise (ValueError
-                "config override has no base config to merge onto")
-        set! self.config (base.merge **: overrides)
+        define base (or via self.config)
+        set! self.config (if base
+            (base.merge **: overrides)
+            (self.config-class **: overrides))
+        set! self.enabled (not self.config.disabled)
         self
 
 

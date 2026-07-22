@@ -39,6 +39,8 @@ define-class AdminJob [Job]:
     webhook it shares that webhook's FastAPI server (see server.get-server).
     """
 
+    define config-class AdminConfig
+
     define mount [self server]:
         """
         Mount the control-plane routes on `server`. Reads are the
@@ -115,23 +117,17 @@ define-syntax config/admin:
                 (unless &default/admin (set! default/admin nm)))
 
 
-;; `job admin <name> [disabled]:` -- no trigger key and usually no
-;; sub-items; it serves the control plane from its config alone.
+;; `job admin <name>` -- no trigger key and usually no sub-items; it
+;; serves the control plane from its config alone.
 define-syntax job/admin:
-    syntax-rules [disabled]:
-        case (job/admin name disabled (subhead subrest ...) ...):
-            (begin
-                (define name (AdminJob))
-                (set! name.enabled False)
-                (define default/admin)
-                (when &default/admin (.configure name via: default/admin))
-                (subhead (admin name) subrest ...) ...)
-
+    syntax-rules []:
         case (job/admin name (subhead subrest ...) ...):
             (begin
                 (define name (AdminJob))
                 (define default/admin)
-                (when &default/admin (.configure name via: default/admin))
+                (if &default/admin
+                    (.configure name via: default/admin)
+                    (.configure name))
                 (subhead (admin name) subrest ...) ...)
 
 

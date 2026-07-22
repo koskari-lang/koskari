@@ -71,9 +71,9 @@ and stored trigger. It reads the live `JobSet` and run store in-process; its
 form actions post back to the job they concern, so `/admin` stays a clean JSON
 API for scripting.
 
-The **kafka** jobs in the example are marked `disabled` because they need a
-running broker. To enable them, point `config kafka:` at your broker and drop
-the `disabled` keyword from the job headers.
+The **kafka** jobs in the example are marked `disabled: True` in their
+config blocks because they need a running broker. To enable them, point
+`config kafka:` at your broker and drop the `disabled` lines.
 
 A container build is also provided:
 
@@ -161,21 +161,30 @@ config kafka audit-cluster:   ; named -> addressable, does not steal default
 
 A job's `config:` sub-item **merges** onto the base it selects: the result is
 a new config instance with the base's fields plus the job's overrides, every
-other field still carrying its default.
+other field still carrying its default. With no base at all -- no `via:`, no
+default of the type declared -- the block builds a **fresh** config of the
+job's variety from the overrides alone, so a small definition never needs a
+standalone `config <type>:` block just to set one field.
+
+Every config also carries **`disabled`** (default False): a config declaring
+`disabled: True` registers its jobs dormant until the control plane enables
+them. Because it is an ordinary merged field, a **shared or named config
+carrying `disabled: True` dims every job wired to it** -- a useful group
+switch ("this broker is down"), and deliberate: a single job opts back in
+with its own `config: disabled: False`.
 
 ### Jobs
 
 ```koskari
-job <type> <name> <trigger-key...> [disabled]:
+job <type> <name> <trigger-key...>:
     <sub-item>
     ...
 ```
 
-The header is the job's **identity and trigger**: its type, its name, the
-type-specific trigger key (cron's 5 fields, kafka's topic, nothing for
-webhook), and an optional trailing `disabled`. Jobs are enabled by default;
-`disabled` registers the job but leaves it dormant until the control plane
-enables it.
+The header is the job's **identity and trigger**: its type, its name, and
+the type-specific trigger key (cron's 5 fields, kafka's topic, nothing for
+webhook). Jobs are enabled by default; declaring one dormant is config
+data -- `disabled: True` in its `config:` block (see Configs above).
 
 The body is a set of **sub-items**. The mental model:
 
@@ -234,8 +243,8 @@ Give admin a different port for a standalone control server.
 
 ## The job varieties
 
-Every job shares the header shape `job <type> <name> <trigger-key...>
-[disabled]` and these inherited sub-items:
+Every job shares the header shape `job <type> <name> <trigger-key...>`
+and these inherited sub-items:
 
 | sub-item | kind | meaning |
 |---|---|---|
@@ -315,10 +324,11 @@ with two per-webhook knobs:
 ### kafka
 
 ```koskari
-job kafka audit "topic.audit" disabled:
+job kafka audit "topic.audit":
     config:
         via: audit-cluster
         group_id: "audit-consumers"
+        disabled: True
     on-error [err msg]:
         (print f"audit dropped {msg}: {err}")
     handler [msg]:
@@ -561,15 +571,19 @@ enumerates types, so this is the whole recipe:
 1. Declare `<Type>Config` as a `define-dataclass` subclass of `Config` (or of
    `ServerConfig` if it needs a shared HTTP server) -- its fields, types, and
    defaults are the config's contract. The base `Config` supplies dataclass
-   `merge` for free.
-2. Subclass `Job`; implement `start`/`stop`, and store the trigger key in
-   `__init__`. Read effective config from `self.config` by attribute
-   (`self.config.servers`), call `self.callback` as the handler. Add variety
-   sub-item methods (like kafka's `on-error`) as needed.
+   `merge` and the `disabled` field for free; note base fields precede yours
+   in the init, so default every field and guard requirements at `start`.
+2. Subclass `Job`; set `config-class` to your config type (it backs fresh
+   construction when a job configures with no base), implement `start`/`stop`,
+   and store the trigger key in `__init__`. Read effective config from
+   `self.config` by attribute (`self.config.servers`), call `self.callback`
+   as the handler. Add variety sub-item methods (like kafka's `on-error`) as
+   needed.
 3. Define `config/<type>` (construct the dataclass, bind the name, run the
    `&default/<type>` guard) with the `()`-sentinel unnamed case.
-4. Define `job/<type>` (parse the header, construct the job, wire the default
-   config, tag-inject sub-items).
+4. Define `job/<type>` (parse the header, construct the job, configure it --
+   `via:` the type default when one exists, fresh otherwise -- and tag-inject
+   sub-items).
 5. Export all of it. Remember: a macro's free names resolve at the **use
    site**, so everything a `job/<type>` or `config/<type>` expansion names
    (its class, helpers) must be exported for `import-all-from kosrunner`.
@@ -589,6 +603,7 @@ feature above:
    partition-and-splice `jobset` macro.
 5. First config of a type is the default; others are named -- the `&ref` guard.
 6. Jobs are enabled by default; a job may declare itself disabled -- the
-   trailing `disabled` header keyword.
+   `disabled` field every config carries, set in the job's `config:` block
+   (or on a shared config, dimming every job wired to it).
 7. The jobset offers list/enable/disable -- `JobSet`'s control-plane methods,
    exposed over HTTP by the admin job.
