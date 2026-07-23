@@ -1246,10 +1246,18 @@ int kos_dyn_next_deliver_return_node(
     KosDynNext *next,
     PyObject *val);
 
+int kos_dyn_next_deliver_exhausted(
+    KosEvalState *es,
+    KosDynNext *next,
+    PyObject *val);
+
 int kos_dyn_foreach_deliver_yield_kos_agen(
     KosEvalState *es, KosDynForeach *fe, PyObject *val);
 
 int kos_dyn_foreach_deliver_return_kos_agen(
+    KosEvalState *es, KosDynForeach *fe, PyObject *val);
+
+int kos_dyn_foreach_deliver_exhausted(
     KosEvalState *es, KosDynForeach *fe, PyObject *val);
 
 int kos_dyn_yield_from_deliver_inner_yield(
@@ -1257,6 +1265,9 @@ int kos_dyn_yield_from_deliver_inner_yield(
     PyObject *inner_val);
 
 int kos_dyn_yield_from_deliver_inner_return(
+    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
+
+int kos_dyn_yield_from_deliver_exhausted(
     KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
@@ -1306,6 +1317,17 @@ int kos_dyn_iter_boundary_deliver_yield(
    :return: KOS_ITER_BOUNDARY_DELIVERED, _ERROR, or _RAISE
 */
 int kos_dyn_iter_boundary_deliver_return(
+    KosEvalState *es, KosDynNode *node, PyObject *val);
+
+/**
+   Deliver exhaustion to a receiving boundary whose flattened generator
+   was already finished (raise-walk StopIteration conversion): the
+   node-specific exhaustion tail without the GEN unwind. val consumed.
+
+   :return: 0 delivered; -1 with PyErr set when the boundary re-emits
+       (e.g. 1-arg NEXT); -1 without PyErr on internal failure
+*/
+int kos_dyn_iter_boundary_deliver_exhausted(
     KosEvalState *es, KosDynNode *node, PyObject *val);
 
 /**

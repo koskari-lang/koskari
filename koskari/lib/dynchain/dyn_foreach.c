@@ -156,19 +156,18 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
 }
 
 
-int kos_dyn_foreach_deliver_return_kos_agen(
+/**
+   Exhaustion tail shared by the return delivery (GEN just unwound) and
+   the raise-walk StopIteration conversion (GEN already finished): mark
+   the iterator closed, flag the loop exhausted, and resume at the
+   else pc. val consumed.
+*/
+int kos_dyn_foreach_deliver_exhausted(
     KosEvalState *es,
     KosDynForeach *fe,
     PyObject *val) {
 
-  KosPyAsyncGen *agen;
-
-  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-
-  agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
   agen->closed = 1;
   agen->in_progress = 0;
 
@@ -176,8 +175,22 @@ int kos_dyn_foreach_deliver_return_kos_agen(
   KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
   kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
 
-  Py_DECREF(val);
+  Py_XDECREF(val);
   return 0;
+}
+
+
+int kos_dyn_foreach_deliver_return_kos_agen(
+    KosEvalState *es,
+    KosDynForeach *fe,
+    PyObject *val) {
+
+  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+
+  return kos_dyn_foreach_deliver_exhausted(es, fe, val);
 }
 
 

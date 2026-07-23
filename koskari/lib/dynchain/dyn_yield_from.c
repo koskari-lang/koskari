@@ -173,21 +173,20 @@ int kos_dyn_yield_from_deliver_inner_yield(
    Inner Koskari async gen returned: pop yield-from (void completion).
    Advance delegating frame PC past the YIELD_FROM instruction.
 */
-int kos_dyn_yield_from_deliver_inner_return(
+/**
+   Exhaustion tail shared by the inner-return delivery (GEN just
+   unwound) and the raise-walk StopIteration conversion (GEN already
+   finished): clear the delegate's in-progress mark, resume after the
+   YIELD_FROM, and pop the node. val consumed.
+*/
+int kos_dyn_yield_from_deliver_exhausted(
     KosEvalState *es, KosDynYieldFrom *yf, PyObject *val) {
 
   KosDynFrame *df;
   KosCode *code;
   KosPyAsyncGen *delegate_agen;
 
-  if (val)
-    Py_DECREF(val);
-
-  /* dyn_top must be the delegate gen frame; free it and the GEN node,
-     restore dyn_top to the YIELD_FROM consumer. */
-  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
-    return -1;
-  }
+  Py_XDECREF(val);
 
   df = KosEvalState_FRAME(es);
 
@@ -202,6 +201,20 @@ int kos_dyn_yield_from_deliver_inner_return(
   if (kos_dyn_pop_yield_from(es, yf) < 0)
     return -1;
   return 0;
+}
+
+
+int kos_dyn_yield_from_deliver_inner_return(
+    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val) {
+
+  /* dyn_top must be the delegate gen frame; free it and the GEN node,
+     restore dyn_top to the YIELD_FROM consumer. */
+  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+    Py_XDECREF(val);
+    return -1;
+  }
+
+  return kos_dyn_yield_from_deliver_exhausted(es, yf, val);
 }
 
 

@@ -101,6 +101,38 @@ int kos_dyn_iter_boundary_deliver_return(
 }
 
 
+/**
+   Exhaustion delivery for a receiving iterator boundary whose flattened
+   generator has already been finished (raise-walk StopIteration
+   conversion): dispatch to the node's exhaustion tail without the GEN
+   unwind the return deliveries perform. val consumed.
+
+   :return: 0 delivered; -1 with PyErr set when the boundary re-emits an
+       exception (e.g. 1-arg NEXT re-raising StopIteration); -1 without
+       PyErr on internal failure
+*/
+int kos_dyn_iter_boundary_deliver_exhausted(
+    KosEvalState *es, KosDynNode *node, PyObject *val) {
+
+  if (KosDynNode_IS_NEXT(node))
+    return kos_dyn_next_deliver_exhausted(es, (KosDynNext *) node, val);
+
+  if (KosDynNode_IS_FOREACH(node))
+    return kos_dyn_foreach_deliver_exhausted(
+        es, (KosDynForeach *) node, val);
+
+  if (KosDynNode_IS_YIELD_FROM(node))
+    return kos_dyn_yield_from_deliver_exhausted(
+        es, (KosDynYieldFrom *) node, val);
+
+  PyErr_Format(PyExc_RuntimeError,
+               "iterator boundary exhaustion to unexpected receiver kind %u",
+               (unsigned) KosDynNode_KIND(node));
+  Py_XDECREF(val);
+  return -1;
+}
+
+
 PyObject *kos_dyn_iter_boundary_agen(KosDynNode *node) {
 
   if (KosDynNode_IS_NEXT(node))

@@ -96,18 +96,19 @@ int kos_dyn_next_deliver_yield(
 }
 
 
-int kos_dyn_next_deliver_return_node(
+/**
+   Exhaustion tail shared by the return delivery (GEN just unwound) and
+   the raise-walk StopIteration conversion (GEN already finished): mark
+   the iterator closed, then honor the NEXT arity -- 2-arg pushes the
+   default, 1-arg re-raises StopIteration to the caller. val consumed.
+*/
+int kos_dyn_next_deliver_exhausted(
     KosEvalState *es,
     KosDynNext *next,
     PyObject *val) {
 
   KosPyAsyncGen *agen;
   int nn = KosDynNext_N((KosDynNode *) next);
-
-  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
 
   agen = (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) next);
   agen->closed = 1;
@@ -117,21 +118,35 @@ int kos_dyn_next_deliver_return_node(
     if (KosEvalState_StackPushRef(
             es,
             KosDynNext_DEFAULT_VAL((KosDynNode *) next)) < 0) {
-      Py_DECREF(val);
+      Py_XDECREF(val);
       return -1;
     }
-    Py_DECREF(val);
+    Py_XDECREF(val);
   } else if (nn == 1) {
-    Py_DECREF(val);
+    Py_XDECREF(val);
     PyErr_SetNone(PyExc_StopIteration);
     kos_dyn_unlink_next_node(es, next);
     return -1;
   } else {
-    Py_DECREF(val);
+    Py_XDECREF(val);
   }
 
   kos_dyn_unlink_next_node(es, next);
   return 0;
+}
+
+
+int kos_dyn_next_deliver_return_node(
+    KosEvalState *es,
+    KosDynNext *next,
+    PyObject *val) {
+
+  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+
+  return kos_dyn_next_deliver_exhausted(es, next, val);
 }
 
 

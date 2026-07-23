@@ -495,8 +495,44 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
 
       {
         KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
-        if (! parent || KosDynNode_IS_GEN(parent))
+        if (! parent)
           break;
+        if (KosDynNode_IS_GEN(parent)) {
+          if (! KosDynNode_PARENT(parent))
+            /* Boundary-driven generator: the GEN is the context root and
+               the raise exits to the Python driver, which translates it
+               (anext / demand step). */
+            break;
+
+          /* Flattened generator: the raise propagates INTO the consumer
+             at the iteration point, per Python generator semantics. The
+             generator is finished by the exception: record its frame in
+             the trace, mark the owner closed, unlink frame+GEN (the
+             chain state here -- frame on top, GEN parent, consumer
+             below -- is exactly the exhaustion shape), and continue the
+             walk so the consumer's regions can catch. */
+          kos_eval_note_crossed_frame(es);
+          {
+            struct KosPyAsyncGen *agen =
+                (struct KosPyAsyncGen *) KosDynGen_OWNER(parent);
+            if (agen) {
+              agen->closed = 1;
+              agen->in_progress = 0;
+            }
+          }
+          {
+            PyObject *typ = NULL, *val = NULL, *tb = NULL;
+            PyErr_Fetch(&typ, &val, &tb);
+            if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+              Py_XDECREF(typ);
+              Py_XDECREF(val);
+              Py_XDECREF(tb);
+              return EVAL_FATAL();
+            }
+            PyErr_Restore(typ, val, tb);
+          }
+          continue;
+        }
         /* Record the frame into the exception's trace before it goes. */
         kos_eval_note_crossed_frame(es);
         if (kos_dyn_pop_frame(es) < 0)
@@ -513,9 +549,12 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
          (void *) top,
          kos_dynnode_kind_name(KosDynNode_KIND(top)));
 
-    /* Cap fast check: only nodes that intercept RAISE are dispatched to
-       the handle phase; everything else goes straight to unwind/pop. */
-    if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)) {
+    /* Cap fast check: nodes that intercept RAISE, and receiving iterator
+       boundaries (which may consume a StopIteration from their in-flight
+       flattened step), are dispatched to the handle phase; everything
+       else goes straight to unwind/pop. */
+    if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)
+        || KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
 
     /* In-place delimited return bookmark: the slice raised. Restitch the
        invoke span and continue the raise from the invoke site. */
@@ -545,9 +584,63 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
 
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_GEN(top)) {
-          kos_eval_prepare_boundary_raise(ctx, es);
-          return EVAL_RAISE();
+          if (! KosDynNode_PARENT(top)) {
+            /* Boundary-driven generator: the GEN is the context root and
+               the raise exits to the Python driver, which translates it. */
+            kos_eval_prepare_boundary_raise(ctx, es);
+            return EVAL_RAISE();
+          }
+
+          /* Flattened generator whose frame the earlier raise phases
+             already crossed (dyn_top is the GEN itself). Finish it --
+             mark the owner closed, unlink the GEN, drop its chain refs
+             -- and continue the walk so the raise propagates into the
+             consumer's regions, per Python generator semantics. */
+          {
+            struct KosPyAsyncGen *agen =
+                (struct KosPyAsyncGen *) KosDynGen_OWNER(top);
+            if (agen) {
+              agen->closed = 1;
+              agen->in_progress = 0;
+            }
+          }
+          {
+            PyObject *typ = NULL, *val = NULL, *tb = NULL;
+            KosDynNode *consumer = KosDynNode_PARENT(top);
+
+            PyErr_Fetch(&typ, &val, &tb);
+            kos_dyn_commit_dyn_top(es, consumer);
+            KosDynNode_PARENT(top) = NULL;
+            kos_dyngen_keepalive_release((KosDynGen *) top);
+            kos_dyngen_release((KosDynGen *) top);
+            PyErr_Restore(typ, val, tb);
+          }
+          continue;
         }
+
+        if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
+          /* The boundary consumed a StopIteration from its in-flight
+             flattened step as end-of-iteration: convert to exhaustion
+             delivery, carrying the StopIteration value as the
+             generator's return value (coroutine protocol equation). */
+          PyObject *stop_val = NULL;
+
+          if (PyGen_FetchStopIterationValue(&stop_val) < 0)
+            return EVAL_FATAL();
+          if (! stop_val) {
+            stop_val = Py_None;
+            Py_INCREF(stop_val);
+          }
+          if (kos_dyn_iter_boundary_deliver_exhausted(es, top, stop_val) < 0) {
+            if (PyErr_Occurred())
+              /* the boundary re-emitted (e.g. 1-arg NEXT re-raising
+                 StopIteration): keep propagating */
+              continue;
+            return EVAL_FATAL();
+          }
+          return EVAL_REPROLOGUE();
+        }
+
         KosDynNode *region = top;
         uint32_t handler_pc =
             kos_dynnode_raise_handler_pc_for_try_finally(es, region);

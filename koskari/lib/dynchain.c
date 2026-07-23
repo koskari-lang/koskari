@@ -1266,6 +1266,18 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
 
   KOS_TRACE_EVENTS_INC(KOS_TE_DYN_HANDLE_ENTER);
 
+  /* A receiving iterator boundary interprets StopIteration from its
+     in-flight flattened generator step as end-of-iteration -- the same
+     protocol judgment the Python-iterator step path makes when
+     classifying GET_NEXT_EXHAUSTED. The capability is the routing key
+     and is held exactly while a step is in flight, so a StopIteration
+     raised by the consumer's own body (boundary idle) passes through. */
+  if (event == KOS_XFER_EVENT_RAISE
+      && KosDynNode_HAS_CAP(node, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
+      && PyErr_Occurred()
+      && PyErr_ExceptionMatches(PyExc_StopIteration))
+    return KOS_HANDLE_CONSUMED;
+
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_TRY:
       if (event == KOS_XFER_EVENT_RAISE) {
