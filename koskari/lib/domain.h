@@ -30,7 +30,7 @@
 typedef struct {
   PyObject_HEAD
   uint64_t version;
-  PyObject *base_cells;  /* PyDict: name -> cell (KosRef); the pre-define
+  PyObject *base_refs;  /* PyDict: name -> cell (KosRef); the pre-define
                             dict root contexts copy at creation, and the
                             Python-side access point when no context is
                             active */
@@ -66,41 +66,41 @@ KosDomain *KosDomain_New(void);
    Resolve the cell for name (key) in a cell store dict, creating an
    empty cell on miss. Returns new reference, or NULL on error.
 */
-PyObject *kos_param_resolve_cell_in(PyObject *cells, PyObject *key);
+PyObject *kos_param_resolve_ref_in(PyObject *cells, PyObject *key);
 
 
 /**
-   The current parameter cell store: the active context's param_cells,
-   else the innermost python-scope domain's base_cells. Returns borrowed
+   The current parameter cell store: the active context's param_refs,
+   else the innermost python-scope domain's base_refs. Returns borrowed
    reference, or NULL without error when neither is ambient.
 
    The peek variant never creates the dict (NULL also when the store
    exists but is unallocated); the reserve variant lazily creates it
    (NULL with error set on allocation failure).
 */
-PyObject *kos_param_cells_peek(void);
-PyObject *kos_param_cells_reserve(void);
+PyObject *kos_param_refs_peek(void);
+PyObject *kos_param_refs_reserve(void);
 
 
 /**
    A context's param cell dict, lazily created.
    Returns borrowed reference, or NULL on allocation failure.
 */
-PyObject *kos_context_param_cells(KosContext *ctx);
+PyObject *kos_context_param_refs(KosContext *ctx);
 
 
 /**
    A domain's base cell dict, lazily created.
    Returns borrowed reference, or NULL on allocation failure.
 */
-PyObject *kos_domain_param_cells(PyObject *domain);
+PyObject *kos_domain_param_refs(PyObject *domain);
 
 
 /**
    Resolve the cell for name (key) in the domain's base cells, creating
    an empty cell on miss. Returns new reference, or NULL on error.
 */
-PyObject *kos_domain_resolve_cell(PyObject *domain, PyObject *key);
+PyObject *kos_domain_resolve_ref(PyObject *domain, PyObject *key);
 
 
 /**

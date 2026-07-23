@@ -2,7 +2,7 @@
 
 This document describes the design and implementation plan for **Domain** (ambient dynamic context), **ParamRef** (canonical parameter references), and **PARAM** dynamic extent (parameter bindings on the dyn chain). It specifies TLS plumbing, opcodes (`PARAM`, `PUSH_PARAM`, `POP_PARAM`), compiler lowering, hard invariants, and step-by-step implementation.
 
-**Amendment (implemented)**: parameter storage was redesigned to fix parameter corruption between concurrently-driven contexts: bindings are cells (ordinary Refs) in a per-context dict (`KosContext.param_cells`) forked at context creation; `parameterize` installs fresh cells and restores prior cells on unwind; the Domain narrows to homing `base_cells` (pre-defines, Python-side access) plus the TLS discovery machinery. Every context still has a domain -- inherited from the ambient one, minted fresh as needed -- as its identity/lifecycle anchor; live parameter state is in `param_cells`. Sections below describing the domain as the live value store predate this; [domain-task-isolation.md](domain-task-isolation.md) is the authority for storage and inheritance.
+**Amendment (implemented)**: parameter storage was redesigned to fix parameter corruption between concurrently-driven contexts: bindings are refs (ordinary Refs) in a per-context dict (`KosContext.param_refs`) forked at context creation; `parameterize` installs fresh refs and restores prior refs on unwind; the Domain narrows to homing `base_refs` (pre-defines, Python-side access) plus the TLS discovery machinery. Every context still has a domain -- inherited from the ambient one, minted fresh as needed -- as its identity/lifecycle anchor; live parameter state is in `param_refs`. Sections below describing the domain as the live value store predate this; [domain-task-isolation.md](domain-task-isolation.md) is the authority for storage and inheritance.
 
 **Implementation status**: Steps 1, 2, 3, 4, 5, and 6 (opcodes) are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`, `kos_domain_push_python_scope()`, `kos_domain_pop_python_scope()`. KosDomain is a context manager (`with Domain():`) so Python can establish a domain before calling Koskari; `kos_domain_current()` consults the ctx stack and the per-thread `python_domain_stack`. KosDomain holds a param value store (PyDict: name -> value). ParamRef (Ref subclass) resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no interning; fully dynamic value lookup. KOS_DYN_PARAM dyn nodes are implemented in `dynchain.c`: `kos_dyn_push_param`, `kos_dyn_push_param_dict`, `kos_dyn_pop_param`, enter/restore via domain, transfer-plan integration (PARAM_RESTORE on unwind, param enter folded into INSTALL). Opcodes PARAM, PUSH_PARAM, POP_PARAM are implemented. PARAM extent is unwound on RETURN and exception propagation via `kos_dyn_unwind_to_frame()`. Compiler lowering is not yet implemented.
 
@@ -86,27 +86,27 @@ There must be a single ParamRef instance per parameter key *within an interning 
 
 ### D2 — Where bindings live (amended; implemented)
 
-**The context holds param cells** (name -> cell dict, cells are plain Refs):
+**The context holds param refs** (name -> ref dict, refs are plain Refs):
 
-- KosContext has `param_cells` (PyDict: name -> KosRef); lazy-init, forked
+- KosContext has `param_refs` (PyDict: name -> KosRef); lazy-init, forked
   (pointer-copied) from the creating context at KosContext_New.
 - `ParamRef.deref()`: resolve the current store (active context's
-  `param_cells`, else the innermost python-scope domain's `base_cells`),
-  resolve the cell (creating an empty cell on miss), deref it; an empty
-  cell is sticky-filled from the ParamRef's default.
+  `param_refs`, else the innermost python-scope domain's `base_refs`),
+  resolve the ref (creating an empty ref on miss), deref it; an empty
+  ref is sticky-filled from the ParamRef's default.
 - ParamRef does **not** walk the dyn chain; it asks the current store.
-- `KOS_DYN_PARAM` nodes mint a fresh cell per binding and swap cell
+- `KOS_DYN_PARAM` nodes mint a fresh ref per binding and swap ref
   pointers in the owning context's dict on enter/restore.
 
 ### D3 — Domain role (amended; implemented)
 
-- KosDomain holds `base_cells` (PyDict: name -> cell): the pre-define dict
+- KosDomain holds `base_refs` (PyDict: name -> ref): the pre-define dict
   root contexts copy at creation, and the Python-side access point when no
   context is active.
 - Interning is not implemented; ParamRef is created via constructor
   `ParamRef(key, default=None)` and acts as a re-resolving accessor.
-- `parameter_cell(name, default=...)` (surface: `parameter-cell`) returns
-  the live cell for deliberate holders.
+- `parameter_ref(name, default=...)` (surface: `parameter-ref`) returns
+  the live ref for deliberate holders.
 
 ---
 
@@ -190,14 +190,14 @@ Debug assertions: `kos_ctx_current() != NULL` during bytecode execution.
 ### Koskari→Python→Koskari
 
 **Default (amended)**: When creating a new Context, if the TLS ctx stack is
-non-empty, the new Context **forks** the active context's `param_cells`
-(pointer copy: private table, shared cells) and inherits its domain anchor.
+non-empty, the new Context **forks** the active context's `param_refs`
+(pointer copy: private table, shared refs) and inherits its domain anchor.
 Otherwise, if `python_domain_stack` is non-empty, the new Context copies
-that domain's `base_cells` and anchors to it. Otherwise a fresh KosDomain
-is minted -- every context has a domain, created as needed -- and the cell
+that domain's `base_refs` and anchors to it. Otherwise a fresh KosDomain
+is minted -- every context has a domain, created as needed -- and the ref
 table starts empty. Synchronous re-entry therefore sees the caller's
 currently-applied bindings (the fork copies applied extents), and its own
-stores stay in its own table except through cells shared at fork.
+stores stay in its own table except through refs shared at fork.
 
 ### Python-managed domain scope (implemented)
 
@@ -346,7 +346,7 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 1. **Nesting restore**: Outer binds X=8, inner binds X=16; verify correct values and restore.
 2. **Exception restore**: Parameterize binds X=16 then raises; after catching, X resolves to prior/default.
 3. **Cross-language re-entry**: Koskari parameterizes X then calls Python; Python calls back into Koskari; inner sees same X binding by default.
-4. **Async interleave**: ctxA binds X then awaits; ctxB runs on same OS thread and sees its own view (per-context cell tables); ctxA resumes and sees its binding intact. Implemented in tests/reproducers/test_param_task_isolation.py (sleep and Event-handshake variants).
+4. **Async interleave**: ctxA binds X then awaits; ctxB runs on same OS thread and sees its own view (per-context ref tables); ctxA resumes and sees its binding intact. Implemented in tests/reproducers/test_param_task_isolation.py (sleep and Event-handshake variants).
 5. **Continuation capture/apply**: Capture inside parameterize; apply later; binding reinstated; multi-shot applies repeatedly.
 
 ---

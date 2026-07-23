@@ -186,7 +186,7 @@ static void kos_dynparam_swap_back(PyObject *cells, PyObject *saved) {
 */
 static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
 
-  PyObject *cells = kos_context_param_cells(ctx);
+  PyObject *cells = kos_context_param_refs(ctx);
   if (! cells)
     return -1;
 
@@ -240,7 +240,7 @@ static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
   if (! saved)
     return;
 
-  PyObject *cells = KosContext_PARAM_CELLS(ctx);
+  PyObject *cells = KosContext_PARAM_REFS(ctx);
   if (! cells)
     return;
 

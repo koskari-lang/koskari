@@ -90,19 +90,19 @@ class TestParameterizeSpecial(SpecialsTestCase):
         self.assertEqual(result, ("inner", "default"))
 
 
-    async def test_parameter_cell_holder_survives_pop(self):
+    async def test_parameter_ref_holder_survives_pop(self):
         """
-        parameter-cell returns the live cell: after the extent pops, the
+        parameter-ref returns the live cell: after the extent pops, the
         held cell still carries its value, while fresh resolution sees
         the outer view (task-isolation D10)
         """
 
-        from koskari.lib import parameter, parameter_cell
+        from koskari.lib import parameter, parameter_ref
 
         held = []
 
         def grab():
-            held.append(parameter_cell("hold"))
+            held.append(parameter_ref("hold"))
             return held[0].deref()
 
         def after():
@@ -138,9 +138,9 @@ class TestParameterizeSpecial(SpecialsTestCase):
         """
 
         def consume(i):
-            ref = ParamRef("cellshare")
-            seen = ref.deref()
-            ref.store(f"app{i}")
+            cell = ParamRef("cellshare")
+            seen = cell.deref()
+            cell.store(f"app{i}")
             return (i, seen)
 
         def seq(*args):

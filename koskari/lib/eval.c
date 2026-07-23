@@ -973,15 +973,15 @@ KosContext *KosContext_New(KosDynFrame *top) {
     KosContext *active = kos_ctx_current();
 
     ctx->domain = NULL;
-    ctx->param_cells = NULL;
+    ctx->param_refs = NULL;
 
     if (active) {
       /* fork: private copy of the creating context's cell table; the
          cells themselves are shared by pointer (task-isolation D3) */
-      PyObject *cells = KosContext_PARAM_CELLS(active);
+      PyObject *cells = KosContext_PARAM_REFS(active);
       if (cells && PyDict_GET_SIZE(cells) > 0) {
-        ctx->param_cells = PyDict_Copy(cells);
-        if (! ctx->param_cells) {
+        ctx->param_refs = PyDict_Copy(cells);
+        if (! ctx->param_refs) {
           Py_DECREF(KosContext_TOKEN(ctx));
           KosContext_TOKEN(ctx) = NULL;
           context_release(ctx);
@@ -998,10 +998,10 @@ KosContext *KosContext_New(KosDynFrame *top) {
          context has a domain, created as needed */
       PyObject *domain = kos_domain_current();
       if (domain) {
-        PyObject *base = ((KosDomain *) domain)->base_cells;
+        PyObject *base = ((KosDomain *) domain)->base_refs;
         if (base && PyDict_GET_SIZE(base) > 0) {
-          ctx->param_cells = PyDict_Copy(base);
-          if (! ctx->param_cells) {
+          ctx->param_refs = PyDict_Copy(base);
+          if (! ctx->param_refs) {
             Py_DECREF(KosContext_TOKEN(ctx));
             KosContext_TOKEN(ctx) = NULL;
             context_release(ctx);
@@ -1103,8 +1103,8 @@ void KosContext_Free(KosContext *ctx) {
   KosContext_EXC_INFO_TB(ctx) = NULL;
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
-  Py_XDECREF(KosContext_PARAM_CELLS(ctx));
-  KosContext_PARAM_CELLS(ctx) = NULL;
+  Py_XDECREF(KosContext_PARAM_REFS(ctx));
+  KosContext_PARAM_REFS(ctx) = NULL;
 
   context_release(ctx);
 }
@@ -1125,7 +1125,7 @@ int KosContext_Traverse(
 
   Py_VISIT(KosContext_TOKEN(ctx));
   Py_VISIT(KosContext_DOMAIN(ctx));
-  Py_VISIT(KosContext_PARAM_CELLS(ctx));
+  Py_VISIT(KosContext_PARAM_REFS(ctx));
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));

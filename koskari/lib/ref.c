@@ -1325,7 +1325,7 @@ static PyObject *param_ref_m_deref(PyObject *self) {
   PyObject *value;
   PyObject *default_val;
 
-  cells = kos_param_cells_reserve();
+  cells = kos_param_refs_reserve();
   if (! cells) {
     if (PyErr_Occurred())
       return NULL;
@@ -1339,7 +1339,7 @@ static PyObject *param_ref_m_deref(PyObject *self) {
     return NULL;
   }
 
-  cell = kos_param_resolve_cell_in(cells, KosParamRef_KEY(self));
+  cell = kos_param_resolve_ref_in(cells, KosParamRef_KEY(self));
   if (! cell)
     return NULL;
 
@@ -1372,7 +1372,7 @@ static PyObject *param_ref_m_store(PyObject *self, PyObject *value) {
   PyObject *cells;
   PyObject *cell;
 
-  cells = kos_param_cells_reserve();
+  cells = kos_param_refs_reserve();
   if (! cells) {
     if (PyErr_Occurred())
       return NULL;
@@ -1380,7 +1380,7 @@ static PyObject *param_ref_m_store(PyObject *self, PyObject *value) {
                     "ParamRef.store outside active domain");
     return NULL;
   }
-  cell = kos_param_resolve_cell_in(cells, KosParamRef_KEY(self));
+  cell = kos_param_resolve_ref_in(cells, KosParamRef_KEY(self));
   if (! cell)
     return NULL;
   Py_INCREF(value);
@@ -1394,7 +1394,7 @@ static PyObject *param_ref_m_clear(PyObject *self) {
   PyObject *cells;
   PyObject *cell;
 
-  cells = kos_param_cells_peek();
+  cells = kos_param_refs_peek();
   if (! cells) {
     if (kos_ctx_current() || kos_domain_current())
       Py_RETURN_NONE;
@@ -1413,7 +1413,7 @@ static PyObject *param_ref_m_is_empty(PyObject *self) {
   PyObject *cells;
   PyObject *cell;
 
-  cells = kos_param_cells_peek();
+  cells = kos_param_refs_peek();
   if (! cells)
     return PyBool_FromLong(1);
   cell = PyDict_GetItem(cells, KosParamRef_KEY(self));
@@ -1567,7 +1567,7 @@ int KosRef_Store(PyObject *self, PyObject *value) {
   PyObject *res = NULL;
   PyTypeObject *const tp = self->ob_type;
 
-  // Fast path: symbolic (mutable) cell — store in place, skipping the
+  // Fast path: symbolic (mutable) ref — store in place, skipping the
   // Py_None materialization the PyObject-returning method convention needs.
   if (likely(tp == &KosRefType)) {
     Py_XINCREF(value);

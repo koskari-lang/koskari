@@ -18,8 +18,8 @@
    koskari.lib - domain module
 
    KosDomain type and the per-thread TLS plumbing for ambient context
-   discovery. Parameter state lives on each KosContext (param_cells,
-   forked at creation); the KosDomain object homes base_cells -- the
+   discovery. Parameter state lives on each KosContext (param_refs,
+   forked at creation); the KosDomain object homes base_refs -- the
    pre-define dict root contexts copy from, and the Python-side access
    point when no context is active. Every context has a domain: the
    ambient one when present, minted fresh as needed otherwise; it is the
@@ -262,60 +262,60 @@ int kos_domain_pop_python_scope(const PyObject *domain) {
 /* === param cell store helpers === */
 
 
-static PyObject *ensure_base_cells(KosDomain *domain) {
-  if (! domain->base_cells) {
-    domain->base_cells = PyDict_New();
-    if (! domain->base_cells)
+static PyObject *ensure_base_refs(KosDomain *domain) {
+  if (! domain->base_refs) {
+    domain->base_refs = PyDict_New();
+    if (! domain->base_refs)
       return NULL;
   }
-  return domain->base_cells;
+  return domain->base_refs;
 }
 
 
-PyObject *kos_domain_param_cells(PyObject *domain_obj) {
+PyObject *kos_domain_param_refs(PyObject *domain_obj) {
   if (! domain_obj || ! KosDomain_CheckExact(domain_obj)) {
     PyErr_SetString(PyExc_TypeError, "expected a Domain instance");
     return NULL;
   }
-  return ensure_base_cells((KosDomain *) domain_obj);
+  return ensure_base_refs((KosDomain *) domain_obj);
 }
 
 
-PyObject *kos_context_param_cells(KosContext *ctx) {
-  if (! KosContext_PARAM_CELLS(ctx)) {
-    KosContext_PARAM_CELLS(ctx) = PyDict_New();
-    if (! KosContext_PARAM_CELLS(ctx))
+PyObject *kos_context_param_refs(KosContext *ctx) {
+  if (! KosContext_PARAM_REFS(ctx)) {
+    KosContext_PARAM_REFS(ctx) = PyDict_New();
+    if (! KosContext_PARAM_REFS(ctx))
       return NULL;
   }
-  return KosContext_PARAM_CELLS(ctx);
+  return KosContext_PARAM_REFS(ctx);
 }
 
 
-PyObject *kos_param_cells_peek(void) {
+PyObject *kos_param_refs_peek(void) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
 
   if (s && s->ctx_depth > 0)
-    return KosContext_PARAM_CELLS(s->ctx_stack[s->ctx_depth - 1]);
+    return KosContext_PARAM_REFS(s->ctx_stack[s->ctx_depth - 1]);
   if (s && s->python_domain_depth > 0)
     return ((KosDomain *) s->python_domain_stack[s->python_domain_depth - 1])
-        ->base_cells;
+        ->base_refs;
   return NULL;
 }
 
 
-PyObject *kos_param_cells_reserve(void) {
+PyObject *kos_param_refs_reserve(void) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
 
   if (s && s->ctx_depth > 0)
-    return kos_context_param_cells(s->ctx_stack[s->ctx_depth - 1]);
+    return kos_context_param_refs(s->ctx_stack[s->ctx_depth - 1]);
   if (s && s->python_domain_depth > 0)
-    return ensure_base_cells(
+    return ensure_base_refs(
         (KosDomain *) s->python_domain_stack[s->python_domain_depth - 1]);
   return NULL;
 }
 
 
-PyObject *kos_param_resolve_cell_in(PyObject *cells, PyObject *key) {
+PyObject *kos_param_resolve_ref_in(PyObject *cells, PyObject *key) {
   PyObject *cell;
 
   cell = PyDict_GetItem(cells, key);
@@ -335,14 +335,14 @@ PyObject *kos_param_resolve_cell_in(PyObject *cells, PyObject *key) {
 }
 
 
-PyObject *kos_domain_resolve_cell(PyObject *domain_obj, PyObject *key) {
+PyObject *kos_domain_resolve_ref(PyObject *domain_obj, PyObject *key) {
   PyObject *cells;
 
-  cells = kos_domain_param_cells(domain_obj);
+  cells = kos_domain_param_refs(domain_obj);
   if (! cells)
     return NULL;
 
-  return kos_param_resolve_cell_in(cells, key);
+  return kos_param_resolve_ref_in(cells, key);
 }
 
 
@@ -391,49 +391,43 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
   if (! key_str)
     return NULL;
 
-  cells = kos_param_cells_reserve();
-  if (! cells) {
-    Py_DECREF(key_str);
-    if (PyErr_Occurred())
-      return NULL;
+  /* value query: observational only. No cell is created and no default
+     is written; the default answers the caller when the store cannot.
+     Cell operations (ParamRef, parameter-ref) are where places are
+     materialized and declared defaults fill. */
+  cells = kos_param_refs_peek();
+  if (! cells && ! kos_ctx_current() && ! kos_domain_current()) {
     if (default_val) {
+      Py_DECREF(key_str);
       Py_INCREF(default_val);
       return default_val;
     }
+
+    Py_DECREF(key_str);
     PyErr_SetString(PyExc_RuntimeError,
                     "parameter outside active domain and no default");
     return NULL;
   }
 
-  cell = kos_param_resolve_cell_in(cells, key_str);
+  cell = cells ? PyDict_GetItem(cells, key_str) : NULL;
   Py_DECREF(key_str);
-  if (! cell)
-    return NULL;
-
-  value = KosSymbolicRef_VALUE(cell);
+  value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
   if (value) {
     Py_INCREF(value);
-    Py_DECREF(cell);
     return value;
   }
 
   if (default_val) {
-    /* sticky fill: the default lands in the (empty) cell, visible to
-       every sharer of the cell */
-    Py_INCREF(default_val);
-    KosSymbolicRef_VALUE(cell) = default_val;
-    Py_DECREF(cell);
     Py_INCREF(default_val);
     return default_val;
   }
 
-  Py_DECREF(cell);
   PyErr_Format(PyExc_NameError, "Param %S has no binding and no default", key);
   return NULL;
 }
 
 
-static PyObject *m_parameter_cell(PyObject *mod, PyObject *args) {
+static PyObject *m_parameter_ref(PyObject *mod, PyObject *args) {
   PyObject *key = NULL;
   PyObject *key_str = NULL;
   PyObject *default_val = NULL;
@@ -441,11 +435,11 @@ static PyObject *m_parameter_cell(PyObject *mod, PyObject *args) {
   PyObject *cell;
 
   (void) mod;
-  if (! PyArg_ParseTuple(args, "O|O:parameter-cell", &key, &default_val))
+  if (! PyArg_ParseTuple(args, "O|O:parameter-ref", &key, &default_val))
     return NULL;
 
   if (! key || key == Py_None) {
-    PyErr_SetString(PyExc_ValueError, "parameter-cell requires a key (name)");
+    PyErr_SetString(PyExc_ValueError, "parameter-ref requires a key (name)");
     return NULL;
   }
 
@@ -453,22 +447,23 @@ static PyObject *m_parameter_cell(PyObject *mod, PyObject *args) {
   if (! key_str)
     return NULL;
 
-  cells = kos_param_cells_reserve();
+  cells = kos_param_refs_reserve();
   if (! cells) {
     Py_DECREF(key_str);
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
-                      "parameter-cell outside active domain");
+                      "parameter-ref outside active domain");
     return NULL;
   }
 
-  cell = kos_param_resolve_cell_in(cells, key_str);
+  cell = kos_param_resolve_ref_in(cells, key_str);
   Py_DECREF(key_str);
   if (! cell)
     return NULL;
 
   if (default_val && ! KosSymbolicRef_VALUE(cell)) {
-    /* sticky fill, as with parameter() (D6) */
+    /* cell operation: the declared default fills the empty place (D6
+       cell rules; value queries never do this) */
     Py_INCREF(default_val);
     KosSymbolicRef_VALUE(cell) = default_val;
   }
@@ -617,14 +612,14 @@ static PyMethodDef domain_mod_methods[] = {
     "Fetch the current domain parameter binding for name.\n"
     "If unbound, return default when provided, otherwise raise NameError.\n"
     "If no active domain, return default when provided, otherwise raise RuntimeError." },
-  { "parameter_cell", (PyCFunction) m_parameter_cell, METH_VARARGS,
-    "parameter_cell(name, default=...) => Ref\n"
-    "Fetch the live cell currently bound to name, creating an empty cell\n"
-    "on miss; an empty cell is sticky-filled with default when provided.\n"
-    "The cell is a plain Ref: deref/store on it act on the shared binding,\n"
-    "including after the extent that installed it has popped. It does not\n"
-    "track later parameterize rebinding of the name; use parameter() for\n"
-    "dynamic reads.\n"
+  { "parameter_ref", (PyCFunction) m_parameter_ref, METH_VARARGS,
+    "parameter_ref(name, default=...) => Cell\n"
+    "Fetch the live ref currently bound to name, creating an empty ref\n"
+    "on miss; an empty ref takes the default when provided.\n"
+    "The result is a plain Ref: deref/store on it act on the shared\n"
+    "binding, including after the extent that installed it has popped. It\n"
+    "does not track later parameterize rebinding of the name; use\n"
+    "parameter() for dynamic reads.\n"
     "Raises RuntimeError when no context or domain scope is active." },
   { NULL, },
 };
@@ -636,20 +631,20 @@ static PyObject *domain_repr(PyObject *self) {
 
 
 static int domain_traverse(PyObject *self, visitproc visit, void *arg) {
-  Py_VISIT(((KosDomain *) self)->base_cells);
+  Py_VISIT(((KosDomain *) self)->base_refs);
   return 0;
 }
 
 
 static int domain_clear(PyObject *self) {
-  Py_CLEAR(((KosDomain *) self)->base_cells);
+  Py_CLEAR(((KosDomain *) self)->base_refs);
   return 0;
 }
 
 
 static void domain_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
-  Py_CLEAR(((KosDomain *) self)->base_cells);
+  Py_CLEAR(((KosDomain *) self)->base_refs);
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -661,7 +656,7 @@ PyObject *kos_domain_get_param(PyObject *domain_obj, PyObject *key) {
 
   if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
     return NULL;
-  bindings = ((KosDomain *) domain_obj)->base_cells;
+  bindings = ((KosDomain *) domain_obj)->base_refs;
   if (! bindings)
     return NULL;
   cell = PyDict_GetItem(bindings, key);
@@ -677,7 +672,7 @@ PyObject *kos_domain_get_param(PyObject *domain_obj, PyObject *key) {
 int kos_domain_set_param(PyObject *domain_obj, PyObject *key, PyObject *value) {
   PyObject *cell;
 
-  cell = kos_domain_resolve_cell(domain_obj, key);
+  cell = kos_domain_resolve_ref(domain_obj, key);
   if (! cell)
     return -1;
   Py_INCREF(value);
@@ -693,7 +688,7 @@ int kos_domain_clear_param(PyObject *domain_obj, PyObject *key) {
 
   if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
     return -1;
-  bindings = ((KosDomain *) domain_obj)->base_cells;
+  bindings = ((KosDomain *) domain_obj)->base_refs;
   if (! bindings)
     return 0;
   cell = PyDict_GetItem(bindings, key);
@@ -724,7 +719,7 @@ KosDomain *KosDomain_New(void) {
   if (! domain)
     return NULL;
   domain->version = 0;
-  domain->base_cells = NULL;
+  domain->base_refs = NULL;
   PyObject_GC_Track(domain);
   return domain;
 }

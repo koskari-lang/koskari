@@ -20,7 +20,7 @@ Unit tests for ParamRef
 
 import unittest
 
-from koskari.lib import ParamRef, Ref, parameter, parameter_cell
+from koskari.lib import ParamRef, Ref, parameter, parameter_ref
 from koskari.lib import symbol
 from tests import make_callable
 from tests.lib.opcode import build_expr
@@ -233,22 +233,22 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 30)
 
 
-    def test_parameter_cell_builtin_bound(self):
+    def test_parameter_ref_builtin_bound(self):
         """
-        the parameter-cell builtin is bound for koskari surface code
+        the parameter-ref builtin is bound for koskari surface code
         """
 
         import koskari.builtins as builtins
-        self.assertTrue(callable(vars(builtins)["parameter-cell"]))
+        self.assertTrue(callable(vars(builtins)["parameter-ref"]))
 
 
-    async def test_parameter_cell_shares_with_resolver(self):
+    async def test_parameter_ref_shares_with_resolver(self):
         """
         a held cell and the by-name resolver address the same binding
         """
 
         def flow():
-            cell = parameter_cell("cellkey", "first")
+            cell = parameter_ref("cellkey", "first")
             before = parameter("cellkey")
             cell.store("second")
             after = parameter("cellkey")
@@ -287,24 +287,29 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, (42, 42))
 
 
-    async def test_parameter_fn_default_fills_sticky(self):
+    async def test_parameter_fn_default_is_local_fallback(self):
         """
-        parameter(name, default) fills the empty cell: a later
-        parameter(name) with no default resolves the filled value.
+        parameter(name, default) is a value query: the fallback answers
+        the caller and never lands in the store. A later parameter(name)
+        with no default still finds nothing.
         """
 
-        def sticky_flow():
-            first = parameter("fn_sticky", 7)
-            second = parameter("fn_sticky")
+        def query_flow():
+            first = parameter("fn_fallback", 7)
+            try:
+                parameter("fn_fallback")
+                second = "no-raise"
+            except NameError:
+                second = "unbound"
             return (first, second)
 
         code, ns = build_expr([
             ["VAR", "f"],
             ["CALL", 0],
             ["RETURN", 1],
-        ], values={"f": sticky_flow})
+        ], values={"f": query_flow})
         result = await make_callable(code, ns)()
-        self.assertEqual(result, (7, 7))
+        self.assertEqual(result, (7, "unbound"))
 
 
     async def test_deref_no_binding_no_default_raises_nameerror(self):

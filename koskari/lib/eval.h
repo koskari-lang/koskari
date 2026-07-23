@@ -226,8 +226,8 @@ struct KosContext {
   PyObject *domain;         /* KosDomain; mandatory. Inherited from the
                                ambient domain at creation, minted fresh when
                                none is ambient. Identity/lifecycle anchor;
-                               live parameter state is in param_cells. */
-  PyObject *param_cells;    /* PyDict: name -> cell (KosRef); this context's
+                               live parameter state is in param_refs. */
+  PyObject *param_refs;    /* PyDict: name -> cell (KosRef); this context's
                                parameter cell table, forked (pointer-copied)
                                at creation. Lazy; NULL when empty. */
 
@@ -283,7 +283,7 @@ struct KosContext {
 #define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
-#define KosContext_PARAM_CELLS(c)            (((KosContext *)(c))->param_cells)
+#define KosContext_PARAM_REFS(c)            (((KosContext *)(c))->param_refs)
 #define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)

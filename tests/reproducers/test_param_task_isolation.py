@@ -97,16 +97,16 @@ FORK_SRC = """
 
   ;; child->parent: a key first created in the child stays in the child
   (set! (item out "child-stored")
-        (await (defer (lambda [] (parameter "k1" "child-value")))))
+        (await (defer (lambda [] (.deref (parameter-ref "k1" "child-value"))))))
   (set! (item out "parent-k1") (parameterq k1 "parent-default"))
 
   ;; parent->child: a key created after the fork is invisible
   (define k2-task (defer (lambda [] (parameterq k2 "child-default"))))
-  (set! (item out "parent-k2") (parameter "k2" "parent-touch"))
+  (set! (item out "parent-k2") (.deref (parameter-ref "k2" "parent-touch")))
   (set! (item out "child-k2") (await k2-task))
 
   ;; write-through: a cell shared at fork is a live channel (D7b)
-  (parameter "k3" "before-fork")
+  (parameter-ref "k3" "before-fork")
   (define k3-ref (ref (parameter k3)))
   (await (defer (lambda [] (k3-ref.store "child-wrote"))))
   (set! (item out "parent-k3") (parameterq k3 "unset"))
