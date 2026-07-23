@@ -162,7 +162,7 @@ def render(src, out, root=None):
     """
     Render the landing page and copy its assets into the output tree
 
-    :param src: source directory holding index.html.j2 and style.css
+    :param src: source directory holding index.html.j2
     :param out: output directory to populate (created if absent)
     :param root: repository root, for reading the version from setup.cfg
     :return: None
@@ -190,9 +190,8 @@ def render(src, out, root=None):
     )
     (out / "index.html").write_text(page, encoding="utf-8")
 
-    shutil.copyfile(src / "style.css", out / "style.css")
-
     static = project_root(root) / "docs" / "_static"
+    shutil.copyfile(static / "style.css", out / "style.css")
     shutil.copyfile(static / "koskari-icon.svg", out / "koskari-icon.svg")
     lockup = static / "koskari-lockup.svg"
     if lockup.is_file():

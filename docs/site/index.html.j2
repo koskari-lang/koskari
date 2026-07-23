@@ -18,87 +18,87 @@
 </head>
 
 <body>
-<div style="max-width:1200px; margin:0 auto; background:#F7F3EA; overflow:hidden; font-family:'Hanken Grotesk',sans-serif; color:#211C16;">
+<div class="ko-page">
 
   <!-- nav -->
-  <div class="ko-nav" style="display:flex; align-items:center; justify-content:space-between; padding:22px 56px; border-bottom:1px solid #E9E0CF;">
-    <div style="display:flex; align-items:center; gap:11px;">
+  <div class="ko-nav">
+    <div class="ko-brand">
       <img src="koskari-icon.svg" alt="" width="34" height="34">
-      <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:21px; letter-spacing:-.01em;">Koskari</span>
-      <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#9C8F79; background:#EFE7D6; padding:3px 8px; border-radius:99px; margin-left:4px;">v{{ version }}</span>
+      <span class="ko-brand-name">Koskari</span>
+      <span class="ko-version">v{{ version }}</span>
     </div>
-    <div class="ko-nav-links" style="display:flex; align-items:center; gap:30px; font-size:15px; font-weight:500;">
-      <a class="ko-link" href="/docs/" style="color:#534b40; text-decoration:none;">Docs</a>
-      <a class="ko-link" href="#examples" style="color:#534b40; text-decoration:none;">Examples</a>
-      <a class="ko-link" href="#download" style="color:#534b40; text-decoration:none;">Download</a>
-      <a class="ko-link" href="{{ github_url }}" style="color:#534b40; text-decoration:none;">GitHub</a>
+    <div class="ko-nav-links">
+      <a class="ko-link" href="/docs/">Docs</a>
+      <a class="ko-link" href="#examples">Examples</a>
+      <a class="ko-link" href="#download">Download</a>
+      <a class="ko-link" href="{{ github_url }}">GitHub</a>
     </div>
   </div>
 
   <!-- hero -->
-  <div class="ko-hero" style="display:grid; grid-template-columns:1.18fr .82fr; gap:40px; align-items:center; padding:72px 56px 60px;">
+  <div class="ko-hero">
     <div>
-      <div style="display:inline-flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.04em; color:#A9761A; background:#F2E8CF; border:1px solid #E7D6A6; padding:6px 12px; border-radius:99px; margin-bottom:24px;">a lisp that runs alongside python</div>
-      <h1 class="ko-h1" style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:62px; line-height:1.02; letter-spacing:-.025em; margin:0 0 22px;">Lisp, the fun parts.<br><span style="color:#A9761A;">Python, all of it.</span></h1>
-      <p style="font-size:18.5px; line-height:1.6; color:#5C544A; max-width:30em; margin:0 0 32px;">Koskari is a stackless Lisp that lives next to Python, with real continuations, ambient async, and an indentation mode that frees you from the parenthesis curse. Come have fun with programming again.</p>
-      <div style="display:flex; align-items:center; gap:14px; margin-bottom:30px; flex-wrap:wrap;">
-        <a class="ko-btn" href="/docs/start/overview/" style="display:inline-flex; align-items:center; gap:8px; background:linear-gradient(#ecc356,#d4a32c); color:#2c2206; font-weight:700; font-size:15.5px; padding:14px 24px; border-radius:8px; text-decoration:none; box-shadow:0 6px 16px rgba(190,150,40,.28);">Get started <span style="font-family:'JetBrains Mono',monospace;">&rarr;</span></a>
-        <a class="ko-btn" href="/docs/" style="display:inline-flex; align-items:center; gap:8px; background:#fff; color:#3b342b; font-weight:600; font-size:15.5px; padding:13px 22px; border-radius:8px; text-decoration:none; border:1px solid #E2D8C5;">Browse the docs</a>
+      <div class="ko-eyebrow">a lisp that runs alongside python</div>
+      <h1 class="ko-h1">Lisp, the fun parts.<br><span class="ko-accent">Python, all of it.</span></h1>
+      <p class="ko-lede">Koskari is a stackless Lisp that lives next to Python, with real continuations, ambient async, and an indentation mode that frees you from the parenthesis curse. Come have fun with programming again.</p>
+      <div class="ko-cta-row">
+        <a class="ko-btn ko-btn-primary" href="/docs/start/overview/">Get started <span class="ko-btn-arrow">&rarr;</span></a>
+        <a class="ko-btn ko-btn-secondary" href="/docs/">Browse the docs</a>
       </div>
-      <div style="display:flex; align-items:center; gap:14px; background:#1c1812; border-radius:9px; padding:13px 18px; max-width:30em;">
-        <span style="font-family:'JetBrains Mono',monospace; font-size:14px; color:#E7DFD0;"><span style="color:#7C8B40">$</span> pip install koskari</span>
-        <span style="margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#8A8070; letter-spacing:.05em;">{{ beta_target }} BETA &middot; SOON</span>
+      <div class="ko-install">
+        <span class="ko-install-cmd"><span class="ko-prompt">$</span> pip install koskari</span>
+        <span class="ko-install-soon">{{ beta_target }} BETA &middot; SOON</span>
       </div>
     </div>
-    <div class="ko-hero-art" style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
-      <div style="position:relative; width:262px; height:262px; display:flex; align-items:center; justify-content:center; background:radial-gradient(circle at 50% 42%, #F4ECD6 0%, #F7F3EA 70%); border-radius:50%; box-shadow:inset 0 0 0 1px #EBE0C9;">
+    <div class="ko-hero-art">
+      <div class="ko-hero-mark">
         <img src="koskari-icon.svg" alt="Koskari" width="190" height="190">
       </div>
-      <div style="text-align:center; margin-top:18px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#9C8F79; letter-spacing:.03em;">&#954;&#945;&#955;&#955;&#953;&#963;&#964;&#953;</div>
+      <div class="ko-etymology">&#954;&#945;&#955;&#955;&#953;&#963;&#964;&#953;</div>
     </div>
   </div>
 
   <!-- features -->
-  <div class="ko-section" style="padding:18px 56px 64px;">
-    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#A9761A; margin-bottom:22px;">Why it's fun</div>
-    <div class="ko-features-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
-      <div class="ko-card" style="background:#fff; border:1px solid #ECE3D2; border-radius:13px; padding:26px;">
-        <div style="display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#F4EAD0; color:#A9761A; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; margin-bottom:16px;">&#8646;</div>
-        <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:20px; margin:0 0 8px; letter-spacing:-.01em;">Lives with Python</h3>
-        <p style="font-size:15px; line-height:1.55; color:#5f5747; margin:0;">Import any module, pass objects both ways. It's no transpiler: a real stackless interpreter running side by side with CPython.</p>
+  <div class="ko-section">
+    <div class="ko-label">Why it's fun</div>
+    <div class="ko-features-grid">
+      <div class="ko-card">
+        <div class="ko-card-icon">&#8646;</div>
+        <h3 class="ko-card-title">Lives with Python</h3>
+        <p class="ko-card-body">Import any module, pass objects both ways. It's no transpiler: a real stackless interpreter running side by side with CPython.</p>
       </div>
-      <div class="ko-card" style="background:#fff; border:1px solid #ECE3D2; border-radius:13px; padding:26px;">
-        <div style="display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#F4EAD0; color:#A9761A; font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; margin-bottom:16px;">(&nbsp;)</div>
-        <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:20px; margin:0 0 8px; letter-spacing:-.01em;">Beyond the parens</h3>
-        <p style="font-size:15px; line-height:1.55; color:#5f5747; margin:0;">A novel indentation layout lets you write Lisp's power without drowning in brackets. Drop back into S-expressions whenever you like.</p>
+      <div class="ko-card">
+        <div class="ko-card-icon ko-card-icon-sm">(&nbsp;)</div>
+        <h3 class="ko-card-title">Beyond the parens</h3>
+        <p class="ko-card-body">A novel indentation layout lets you write Lisp's power without drowning in brackets. Drop back into S-expressions whenever you like.</p>
       </div>
-      <div class="ko-card" style="background:#fff; border:1px solid #ECE3D2; border-radius:13px; padding:26px;">
-        <div style="display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#F4EAD0; color:#A9761A; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; margin-bottom:16px;">&#8635;</div>
-        <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:20px; margin:0 0 8px; letter-spacing:-.01em;">Continuations, really</h3>
-        <p style="font-size:15px; line-height:1.55; color:#5f5747; margin:0;">Stackless to the core: first-class continuations, coroutines, and control flow you can pick up and hold in your hand.</p>
+      <div class="ko-card">
+        <div class="ko-card-icon">&#8635;</div>
+        <h3 class="ko-card-title">Continuations, really</h3>
+        <p class="ko-card-body">Stackless to the core: first-class continuations, coroutines, and control flow you can pick up and hold in your hand.</p>
       </div>
-      <div class="ko-card" style="background:#fff; border:1px solid #ECE3D2; border-radius:13px; padding:26px;">
-        <div style="display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#F4EAD0; color:#A9761A; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; margin-bottom:16px;">&#8767;</div>
-        <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:20px; margin:0 0 8px; letter-spacing:-.01em;">Ambiently async</h3>
-        <p style="font-size:15px; line-height:1.55; color:#5f5747; margin:0;">Concurrency without the colored functions. Everything can await, nothing has to. The runtime just gets out of your way.</p>
+      <div class="ko-card">
+        <div class="ko-card-icon">&#8767;</div>
+        <h3 class="ko-card-title">Ambiently async</h3>
+        <p class="ko-card-body">Concurrency without the colored functions. Everything can await, nothing has to. The runtime just gets out of your way.</p>
       </div>
     </div>
   </div>
 
   <!-- example -->
-  <div id="examples" class="ko-section" style="padding:0 56px 66px;">
-    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#A9761A; margin-bottom:8px;">See it for yourself</div>
-    <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:34px; letter-spacing:-.02em; margin:0 0 6px;">A point, and its neighbors</h2>
-    <p style="font-size:16px; line-height:1.55; color:#5f5747; max-width:40em; margin:0 0 22px;">That <span style="font-family:'JetBrains Mono',monospace; color:#B5683C; font-size:14px;">@dataclass</span> comes straight from Python's standard library; Koskari just uses it. Notice the layout: no wall of closing parens in sight.</p>
-    <div style="background:#FBF8F1; border:1px solid #ECE3D2; border-radius:13px; overflow:hidden; box-shadow:0 10px 30px rgba(60,44,16,.07);">
-      <div style="display:flex; align-items:center; gap:8px; padding:12px 18px; border-bottom:1px solid #EFE7D6; background:#F5EFE2;">
-        <span style="width:11px; height:11px; border-radius:50%; background:#E0865A;"></span>
-        <span style="width:11px; height:11px; border-radius:50%; background:#E6B84C;"></span>
-        <span style="width:11px; height:11px; border-radius:50%; background:#9FB36A;"></span>
-        <span style="font-family:'JetBrains Mono',monospace; font-size:12.5px; color:#9C8F79; margin-left:8px;">point.ki</span>
+  <div id="examples" class="ko-section ko-section-tight">
+    <div class="ko-label ko-label-tight">See it for yourself</div>
+    <h2 class="ko-section-title">A point, and its neighbors</h2>
+    <p class="ko-section-lede">That <span class="ko-inline-code">@dataclass</span> comes straight from Python's standard library; Koskari just uses it. Notice the layout: no wall of closing parens in sight.</p>
+    <div class="ko-code-window">
+      <div class="ko-code-chrome">
+        <span class="ko-dot ko-dot-close"></span>
+        <span class="ko-dot ko-dot-min"></span>
+        <span class="ko-dot ko-dot-max"></span>
+        <span class="ko-code-filename">point.ki</span>
       </div>
-      <div style="padding:22px 24px; overflow-x:auto;">
-<pre style="margin:0; white-space:pre; font-family:'JetBrains Mono','Courier New',monospace; font-size:13.5px; line-height:1.72; tab-size:4; color:#3A332B;"><span class="k-kw">import-from</span> dataclasses dataclass
+      <div class="ko-code-body">
+<pre class="ko-code-pre"><span class="k-kw">import-from</span> dataclasses dataclass
 <span class="k-kw">import-from</span> itertools product
 
 
@@ -134,54 +134,53 @@
   </div>
 
   <!-- docs levels -->
-  <div class="ko-section" style="padding:0 56px 66px;">
-    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#A9761A; margin-bottom:8px;">Documentation</div>
-    <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:34px; letter-spacing:-.02em; margin:0 0 22px;">Find your level</h2>
-    <div style="display:flex; flex-direction:column; gap:10px;">
+  <div class="ko-section ko-section-tight">
+    <div class="ko-label ko-label-tight">Documentation</div>
+    <h2 class="ko-section-title ko-section-title-spaced">Find your level</h2>
+    <div class="ko-doc-list">
       {% for row in doc_rows %}
-      <a class="ko-doc" href="{{ row.href }}" style="display:flex; align-items:center; gap:20px; padding:20px 24px; background:#fff; border:1px solid #ECE3D2; border-radius:12px; text-decoration:none; color:#211C16;">
-        <span style="font-family:'JetBrains Mono',monospace; font-size:13px; color:#C0A050; font-weight:700; width:28px;">{{ row.num }}</span>
-        <span class="ko-doc-title" style="font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:19px; width:230px;">{{ row.title }}</span>
-        <span class="ko-doc-blurb" style="font-size:15px; color:#6a6354; flex:1;">{{ row.blurb }}</span>
-        <span class="ko-arrow" style="font-family:'JetBrains Mono',monospace; color:#B8AD98;">&rarr;</span>
+      <a class="ko-doc" href="{{ row.href }}">
+        <span class="ko-doc-num">{{ row.num }}</span>
+        <span class="ko-doc-title">{{ row.title }}</span>
+        <span class="ko-doc-blurb">{{ row.blurb }}</span>
+        <span class="ko-arrow">&rarr;</span>
       </a>
       {% endfor %}
     </div>
   </div>
 
   <!-- download band -->
-  <div id="download" style="margin:0 56px 64px; background:#1c1812; border-radius:16px; padding:44px 48px; color:#EDE6D7;">
-    <div class="ko-download-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:36px; align-items:center;">
+  <div id="download" class="ko-download">
+    <div class="ko-download-grid">
       <div>
-        <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:32px; letter-spacing:-.02em; margin:0 0 14px; color:#fff;">Get Koskari</h2>
-        <p style="font-size:15.5px; line-height:1.6; color:#B9B0A0; margin:0 0 18px;">Today it's <strong style="color:#E8B84A; font-weight:600;">v{{ version }}</strong>, built from source. Next up is <strong style="color:#E8B84A; font-weight:600;">v{{ beta_target }}</strong>, the first public beta, landing on PyPI. Cross-platform: anywhere CPython runs.</p>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; font-family:'JetBrains Mono',monospace; font-size:11px;">
-          <span style="color:#8A8070; border:1px solid #3a342a; border-radius:99px; padding:4px 11px;">macOS</span>
-          <span style="color:#8A8070; border:1px solid #3a342a; border-radius:99px; padding:4px 11px;">Linux</span>
-          <span style="color:#8A8070; border:1px solid #3a342a; border-radius:99px; padding:4px 11px;">Windows</span>
-          <span style="color:#8A8070; border:1px solid #3a342a; border-radius:99px; padding:4px 11px;">CPython 3.11+</span>
+        <h2 class="ko-download-title">Get Koskari</h2>
+        <p class="ko-download-lede">Today it's <strong class="ko-download-strong">v{{ version }}</strong>, built from source. Next up is <strong class="ko-download-strong">v{{ beta_target }}</strong>, the first public beta, landing on PyPI. Cross-platform: anywhere CPython runs.</p>
+        <div class="ko-platform-tags">
+          <span class="ko-platform-tag">Linux</span>
+          <span class="ko-platform-tag">MacOS</span>
+          <span class="ko-platform-tag">CPython 3.9+</span>
         </div>
       </div>
-      <div style="display:flex; flex-direction:column; gap:12px;">
-        <div style="background:#100d09; border:1px solid #2e2a21; border-radius:10px; padding:16px 18px;">
-          <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#8A8070; letter-spacing:.08em; margin-bottom:8px;">FROM SOURCE &middot; TODAY</div>
-          <div style="font-family:'JetBrains Mono',monospace; font-size:13.5px; color:#E7DFD0; overflow-x:auto;"><span style="color:#6F6657;">$</span> git clone {{ repo_short }}</div>
+      <div class="ko-download-cmds">
+        <div class="ko-cmd-box">
+          <div class="ko-cmd-label">From source &middot; today</div>
+          <div class="ko-cmd-line"><span class="ko-cmd-prompt">$</span> git clone {{ repo_short }}</div>
         </div>
-        <div style="background:#100d09; border:1px solid #2e2a21; border-radius:10px; padding:16px 18px;">
-          <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#8A8070; letter-spacing:.08em; margin-bottom:8px;">PYPI &middot; FROM v{{ beta_target }}</div>
-          <div style="font-family:'JetBrains Mono',monospace; font-size:13.5px; color:#E7DFD0;"><span style="color:#6F6657;">$</span> pip install koskari</div>
+        <div class="ko-cmd-box">
+          <div class="ko-cmd-label">PyPI &middot; pending v{{ beta_target }}</div>
+          <div class="ko-cmd-line"><span class="ko-cmd-prompt">$</span> pip install koskari</div>
         </div>
       </div>
     </div>
   </div>
 
   <!-- footer -->
-  <div class="ko-footer" style="display:flex; align-items:center; justify-content:space-between; padding:26px 56px; border-top:1px solid #E9E0CF;">
-    <div style="display:flex; align-items:center; gap:10px;">
+  <div class="ko-footer">
+    <div class="ko-footer-brand">
       <img src="koskari-icon.svg" alt="" width="26" height="26">
-      <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:16px;">Koskari</span>
+      <span class="ko-footer-name">Koskari</span>
     </div>
-    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:#9C8F79;">{{ license_label }} &middot; <span style="color:#C7BBA3;">fnord</span></div>
+    <div class="ko-footer-meta">{{ license_label }} &middot; <span class="ko-footer-end"># The end.</span></div>
   </div>
 
 </div>
