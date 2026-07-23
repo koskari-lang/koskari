@@ -58,11 +58,47 @@ static int install_frozen_gen_for_resume(
 
 
 /**
+   Dissociate a frozen async generator from its context without running
+   the extent protocol: detach and free the frozen chain, release the
+   gen. Leaves ctx ready for KosContext_Free.
+
+   Safe at arbitrary points, including dealloc mid-unwind with a live
+   exception: no Python calls, no evaluator re-entry, and the pending
+   PyErr is never touched.
+*/
+static void asyncgen_dissociate_chain(KosPyAsyncGen *agen) {
+
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+  KosDynNode *active;
+
+  if (! gen)
+    return;
+  active = (KosDynNode *) KosDynGen_ACTIVE(gen);
+  KosDynGen_ACTIVE(gen) = NULL;
+  if (active)
+    kos_dynchain_free(active, (KosDynNode *) gen);
+  kos_dyngen_release(gen);
+  agen->gen = NULL;
+}
+
+
+/**
    Teardown a frozen async generator: throw GeneratorExit, run to completion,
    or fall back to pure cleanup if the gen attempts to suspend (yield/await).
 
    Assumes agen is frozen: agen->gen set, GEN.active holds chain,
    KosContext_DYN_TOP(agen->ctx) == NULL.
+
+   This is the demand-path close: the GeneratorExit drive runs
+   synchronously to completion, and a suspend attempt during close takes
+   the fallback (cannot honor). All koskari generators are async, so
+   dealloc must still run their teardown; a future explicit aclose is
+   where a genuinely suspending close could be honored.
+
+   Safe at arbitrary points, including dealloc mid-unwind: the caller's
+   pending exception is fenced (fetched before the drive, restored
+   after), so the drive never observes it and the internal PyErr_Clear
+   calls cannot destroy it.
 
    On success (primary path): chain unwound, gen released, ctx ready for free.
    On fallback: chain freed, gen released, ctx ready for free.
@@ -72,8 +108,10 @@ static int install_frozen_gen_for_resume(
 static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx) {
 
   KosDynGen *gen = (KosDynGen *) agen->gen;
-  KosDynNode *active;
   PyObject *throw_exc = NULL;
+  PyObject *fence_typ = NULL;
+  PyObject *fence_val = NULL;
+  PyObject *fence_tb = NULL;
 
   if (! gen || ! KosDynGen_ACTIVE(gen)) {
     /* No active chain; release and let caller free ctx */
@@ -82,6 +120,8 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
     agen->gen = NULL;
     return;
   }
+
+  PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
 
   throw_exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
   if (! throw_exc) {
@@ -146,16 +186,13 @@ primary_success:
      the non-frozen branch in the callers. */
   kos_dyngen_release(gen);
   agen->gen = NULL;
+  PyErr_Restore(fence_typ, fence_val, fence_tb);
   return;
 
 fallback:
   PyErr_Clear();
-  active = (KosDynNode *) KosDynGen_ACTIVE(gen);
-  KosDynGen_ACTIVE(gen) = NULL;
-  if (active)
-    kos_dynchain_free(active, (KosDynNode *) gen);
-  kos_dyngen_release(gen);
-  agen->gen = NULL;
+  asyncgen_dissociate_chain(agen);
+  PyErr_Restore(fence_typ, fence_val, fence_tb);
 }
 
 
@@ -186,9 +223,11 @@ static void asyncgen_dealloc(PyObject *self) {
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
   if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    /* demand-path close; exception-fenced, so safe mid-unwind */
     asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
 
   } else if (agen->gen) {
+    /* installed or ctx-less: the chain, if any, belongs to the context */
     kos_dyngen_release((KosDynGen *) agen->gen);
     agen->gen = NULL;
   }
