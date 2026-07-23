@@ -20,7 +20,7 @@ Unit tests for ParamRef
 
 import unittest
 
-from koskari.lib import ParamRef, Ref
+from koskari.lib import ParamRef, Ref, parameter, parameter_ref
 from koskari.lib import symbol
 from tests import make_callable
 from tests.lib.opcode import build_expr
@@ -231,6 +231,106 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         ], values={"f": overwrite})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 30)
+
+
+    def test_parameter_ref_builtin_bound(self):
+        """
+        the parameter-ref builtin is bound for koskari surface code
+        """
+
+        import koskari.builtins as builtins
+        self.assertTrue(callable(vars(builtins)["parameter-ref"]))
+
+
+    async def test_parameter_ref_shares_with_resolver(self):
+        """
+        a held cell and the by-name resolver address the same binding
+        """
+
+        def flow():
+            cell = parameter_ref("cellkey", "first")
+            before = parameter("cellkey")
+            cell.store("second")
+            after = parameter("cellkey")
+            return (before, after, cell.deref())
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": flow})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, ("first", "second", "second"))
+
+
+    async def test_deref_with_default_fills_sticky(self):
+        """
+        deref with a default fills the empty cell: a same-key ParamRef with
+        no default of its own then resolves the filled value instead of
+        raising NameError.
+        """
+
+        p_with = ParamRef("sticky", 42)
+        p_bare = ParamRef("sticky")
+
+        def sticky_flow():
+            first = p_with.deref()
+            second = p_bare.deref()
+            return (first, second)
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": sticky_flow})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, (42, 42))
+
+
+    async def test_parameter_fn_default_is_local_fallback(self):
+        """
+        parameter(name, default) is a value query: the fallback answers
+        the caller and never lands in the store. A later parameter(name)
+        with no default still finds nothing.
+        """
+
+        def query_flow():
+            first = parameter("fn_fallback", 7)
+            try:
+                parameter("fn_fallback")
+                second = "no-raise"
+            except NameError:
+                second = "unbound"
+            return (first, second)
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": query_flow})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, (7, "unbound"))
+
+
+    async def test_deref_no_binding_no_default_raises_nameerror(self):
+        """
+        deref inside an active domain with no binding and no default raises
+        NameError.
+        """
+
+        p = ParamRef("unbound_key")
+
+        def deref_unbound():
+            with self.assertRaises(NameError):
+                p.deref()
+            return True
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": deref_unbound})
+        self.assertTrue(await make_callable(code, ns)())
 
 
     async def test_empty_tracks_binding_state(self):

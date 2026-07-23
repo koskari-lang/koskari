@@ -970,23 +970,54 @@ KosContext *KosContext_New(KosDynFrame *top) {
   }
 
   {
-    PyObject *domain = NULL;
     KosContext *active = kos_ctx_current();
 
-    if (active && KosContext_DOMAIN(active))
-      domain = KosContext_DOMAIN(active);
-    else
-      domain = kos_domain_current();
-    if (domain) {
-      ctx->domain = domain;
-      Py_INCREF(ctx->domain);
+    ctx->domain = NULL;
+    ctx->param_refs = NULL;
+
+    if (active) {
+      /* fork: private copy of the creating context's cell table; the
+         cells themselves are shared by pointer (task-isolation D3) */
+      PyObject *cells = KosContext_PARAM_REFS(active);
+      if (cells && PyDict_GET_SIZE(cells) > 0) {
+        ctx->param_refs = PyDict_Copy(cells);
+        if (! ctx->param_refs) {
+          Py_DECREF(KosContext_TOKEN(ctx));
+          KosContext_TOKEN(ctx) = NULL;
+          context_release(ctx);
+          return NULL;
+        }
+      }
+      ctx->domain = KosContext_DOMAIN(active);
+      Py_XINCREF(ctx->domain);
+
     } else {
-      ctx->domain = (PyObject *) KosDomain_New();
-      if (! ctx->domain) {
-        Py_DECREF(KosContext_TOKEN(ctx));
-        KosContext_TOKEN(ctx) = NULL;
-        context_release(ctx);
-        return NULL;
+      /* no active context: a root context under an explicit
+         `with Domain():` scope anchors to that domain and copies its
+         base cells (D5); otherwise a fresh domain is minted -- every
+         context has a domain, created as needed */
+      PyObject *domain = kos_domain_current();
+      if (domain) {
+        PyObject *base = ((KosDomain *) domain)->base_refs;
+        if (base && PyDict_GET_SIZE(base) > 0) {
+          ctx->param_refs = PyDict_Copy(base);
+          if (! ctx->param_refs) {
+            Py_DECREF(KosContext_TOKEN(ctx));
+            KosContext_TOKEN(ctx) = NULL;
+            context_release(ctx);
+            return NULL;
+          }
+        }
+        ctx->domain = domain;
+        Py_INCREF(ctx->domain);
+      } else {
+        ctx->domain = (PyObject *) KosDomain_New();
+        if (! ctx->domain) {
+          Py_DECREF(KosContext_TOKEN(ctx));
+          KosContext_TOKEN(ctx) = NULL;
+          context_release(ctx);
+          return NULL;
+        }
       }
     }
   }
@@ -1072,6 +1103,8 @@ void KosContext_Free(KosContext *ctx) {
   KosContext_EXC_INFO_TB(ctx) = NULL;
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
+  Py_XDECREF(KosContext_PARAM_REFS(ctx));
+  KosContext_PARAM_REFS(ctx) = NULL;
 
   context_release(ctx);
 }
@@ -1092,6 +1125,7 @@ int KosContext_Traverse(
 
   Py_VISIT(KosContext_TOKEN(ctx));
   Py_VISIT(KosContext_DOMAIN(ctx));
+  Py_VISIT(KosContext_PARAM_REFS(ctx));
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));

@@ -90,4 +90,78 @@ class TestParameterizeSpecial(SpecialsTestCase):
         self.assertEqual(result, ("inner", "default"))
 
 
+    async def test_parameter_ref_holder_survives_pop(self):
+        """
+        parameter-ref returns the live cell: after the extent pops, the
+        held cell still carries its value, while fresh resolution sees
+        the outer view (task-isolation D10)
+        """
+
+        from koskari.lib import parameter, parameter_ref
+
+        held = []
+
+        def grab():
+            held.append(parameter_ref("hold"))
+            return held[0].deref()
+
+        def after():
+            return parameter("hold", "outer")
+
+        def seq(*args):
+            return args
+
+        src_str = """
+        (compile/call seq
+          (compile/parameterize [[hold "extent"]]
+            (compile/call grab))
+          (compile/call after))
+        """
+        expr, mod = self.compile_expr(
+            src_str, grab=grab, after=after, seq=seq)
+        result = await expr()
+        self.assertEqual(result, ("extent", "outer"))
+
+        # the holder keeps the popped extent's cell alive and readable
+        self.assertEqual(held[0].deref(), "extent")
+
+
+    async def test_multishot_applications_share_cells(self):
+        """
+        Multi-shot continuation applications share parameter cells: a store
+        made in one application is visible in the next application, rather
+        than each application restarting from the declared binding.
+
+        Pins the Racket-cell semantics of
+        design/archive/domain-task-isolation.md D4: PARAM node clones
+        copy cell pointers, so every INSTALL re-enters the same cell.
+        """
+
+        def consume(i):
+            cell = ParamRef("cellshare")
+            seen = cell.deref()
+            cell.store(f"app{i}")
+            return (i, seen)
+
+        def seq(*args):
+            return args
+
+        src_str = """
+        (compile/let [[stolen 0]]
+          (compile/call seq
+            (compile/reset
+              (compile/parameterize [[cellshare "declared"]]
+                (compile/call consume
+                  (compile/shift k (compile/setq stolen k) (compile/call k 0)))))
+            (compile/call stolen 1)
+            (compile/call stolen 2)))
+        """
+
+        expr, mod = self.compile_expr(src_str, consume=consume, seq=seq)
+        result = await expr()
+        self.assertEqual(
+            result,
+            ((0, "declared"), (1, "app0"), (2, "app1")))
+
+
 # The end.

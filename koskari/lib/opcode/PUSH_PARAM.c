@@ -29,10 +29,11 @@ KOS_OP_HANDLER(PUSH_PARAM) {
   if (! bindings)
     return EVAL_RAISE();
 
-  if (! kos_dyn_push_param_dict(es, bindings)) {
-    Py_DECREF(bindings);
+  /* the node wraps each value in a fresh cell; bindings stays ours */
+  KosDynParam *node = kos_dyn_push_param_dict(es, bindings);
+  Py_DECREF(bindings);
+  if (! node)
     return EVAL_RAISE();
-  }
 
   return EVAL_NORMAL();
 }

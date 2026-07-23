@@ -35,8 +35,8 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    build_tuple, car, cdr, cons, defer, demand, demand_apply,
                    demand_call, deref, gensym, getattr_star, getitem_star,
                    hasattr_star, hasitem_star, keyword, kos_repr, list_append,
-                   bracket_cons, bracket_nil, nil, pair, parameter, setcar,
-                   setcdr, symbol, values)
+                   bracket_cons, bracket_nil, nil, pair, parameter,
+                   parameter_ref, setcar, setcdr, symbol, values)
 
 from ..types import (TypePredicate, is_nil, is_None, is_proper, is_recursive,
                      build_proper, bracket_splice, unpack)
@@ -168,6 +168,7 @@ def make_bootstrap():
     _bind('nil', nil)
     _bind('bracket-nil', bracket_nil)
     _bind('parameter', parameter)
+    _bind('parameter-ref', parameter_ref)
     _bind('repr', kos_repr)
     _bind('set-car', setcar)
     _bind('set-cdr', setcdr)

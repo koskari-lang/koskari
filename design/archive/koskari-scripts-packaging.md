@@ -578,7 +578,7 @@ Internal:
 ## References
 
 * **[import-system.md](import-system.md)** — async vs demand module load
-* **[../interpreter/domain.md](../interpreter/domain.md)** — **`Domain`** scope
+* **[domain.md](domain.md)** — **`Domain`** scope
 * **`koskari/cli/__init__.py`** — **`drive_async_loop`**, **`cli_async`**
 * **`examples/life/`** — reference **`koskari_scripts`** application
 * Setuptools **`install_scripts`** — **`setuptools/command/install_scripts.py`**

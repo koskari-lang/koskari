@@ -179,7 +179,11 @@ static int test_domain_non_null(void) {
 
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
+    /* every context has a domain, minted as needed when none is ambient;
+       parameter cells start empty (lazy) */
     TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
+    TEST_ASSERT(KosContext_PARAM_REFS(ctx) == NULL,
+                "param cells start unallocated");
 
     KosContext_Free(ctx);
     Py_DECREF(code_obj);
@@ -224,6 +228,14 @@ static int test_domain_fresh_when_no_tls(void) {
     TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx2), "ctx2 domain non-null");
     TEST_ASSERT_NOT_SAME(KosContext_DOMAIN(ctx1), KosContext_DOMAIN(ctx2),
                          "contexts without TLS get distinct domains");
+
+    /* each context also owns its own cell table */
+    PyObject *cells1 = kos_context_param_refs(ctx1);
+    PyObject *cells2 = kos_context_param_refs(ctx2);
+    TEST_ASSERT_NOT_NULL(cells1, "ctx1 cell table");
+    TEST_ASSERT_NOT_NULL(cells2, "ctx2 cell table");
+    TEST_ASSERT_NOT_SAME(cells1, cells2,
+                         "contexts without TLS have isolated cell tables");
 
     KosContext_Free(ctx1);
     KosContext_Free(ctx2);
