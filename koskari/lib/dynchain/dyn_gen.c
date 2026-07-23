@@ -133,11 +133,23 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext *const ctx = KosEvalState_CONTEXT(es);
   KosDynNode *active;
   KosDynNode *n;
+  KosDynFrame *invoker_frame;
+  uint32_t invoker_demand;
 
   if (! es || ! gen) {
     PyErr_SetString(PyExc_RuntimeError, "NULL es or gen for gen_install");
     return -1;
   }
+
+  /* The demand bit is drive-state: forcibly assigned to the generator's
+     frame at every entry, inherited from the frame below the splice.
+     Boundary installs have no frame below (invoker 0), so an async
+     drive self-cleans any bit a prior demand drive left behind; the
+     demand boundary ORs its forced bit in after this install. */
+  invoker_frame = KosEvalState_FRAME(es);
+  invoker_demand = invoker_frame
+      ? (KosDynFrame_FLAGS(invoker_frame) & KOS_FRAME_DEMAND)
+      : 0;
 
   SAYF("[gen] install ENTER ctx=%p gen=%p dyn_top=%p ctx_dyn_top_kind=%s "
        "active=%p",
@@ -181,6 +193,16 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
   kos_dyngen_keepalive_acquire(gen);
 
+  {
+    KosDynFrame *surfaced = KosEvalState_FRAME(es);
+    if (surfaced) {
+      if (invoker_demand)
+        KosDynFrame_FLAGS(surfaced) |= KOS_FRAME_DEMAND;
+      else
+        KosDynFrame_FLAGS(surfaced) &= ~KOS_FRAME_DEMAND;
+    }
+  }
+
   if (KosEvalState_StackPushRef(es, Py_None) < 0)
     return -1;
 
@@ -208,12 +230,20 @@ int kos_dyn_gen_install_bootstrap(
 
   KosDynNode *chain_head;
   KosDynNode *n;
+  KosDynFrame *invoker_frame;
+  uint32_t invoker_demand;
 
   if (! es || ! src || ! gen) {
     PyErr_SetString(PyExc_RuntimeError,
                     "NULL es, src, or gen for gen_install_bootstrap");
     return -1;
   }
+
+  /* Drive-state demand bit: see kos_dyn_gen_install. */
+  invoker_frame = KosEvalState_FRAME(es);
+  invoker_demand = invoker_frame
+      ? (KosDynFrame_FLAGS(invoker_frame) & KOS_FRAME_DEMAND)
+      : 0;
 
   chain_head = KosContext_DYN_TOP(src);
   if (! chain_head) {
@@ -242,6 +272,16 @@ int kos_dyn_gen_install_bootstrap(
 
   KosContext_DYN_TOP(src) = NULL;
   KosContext_FRAME_TOP(src) = NULL;
+
+  {
+    KosDynFrame *surfaced = KosEvalState_FRAME(es);
+    if (surfaced) {
+      if (invoker_demand)
+        KosDynFrame_FLAGS(surfaced) |= KOS_FRAME_DEMAND;
+      else
+        KosDynFrame_FLAGS(surfaced) &= ~KOS_FRAME_DEMAND;
+    }
+  }
 
   if (KosEvalState_StackPushRef(es, Py_None) < 0)
     return -1;

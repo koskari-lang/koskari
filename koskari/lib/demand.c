@@ -25,9 +25,16 @@
    in-eval KoskariSyncViolation at the deny site so TRY/finally can run;
    uncaught, the exception surfaces as KOS_RES_RAISE.
 
-   Yielding KosFunctions return DemandGenerator instead of raising; the
-   DemandGenerator boundary raises KoskariSyncViolation on AWAIT from the
-   iterator protocol (that path does not use KOS_FRAME_DEMAND).
+   Yielding KosFunctions return DemandGenerator instead of raising.
+   DemandGenerator stepping forces KOS_FRAME_DEMAND onto the generator's
+   frame at each entry (demand intent, embodied by the boundary), so
+   AWAIT denies in-eval exactly as in demand functions -- catchable by
+   the generator body for sync fallback; uncaught, it unwinds and exits
+   as KOS_RES_RAISE. YIELD is untouched: it surfaces as iteration. The
+   demand bit is drive-state: kos_dyn_gen_install assigns it from the
+   frame below the splice at every entry, so flattened iteration
+   inherits the consumer's demand state and async boundary drives force
+   it off.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -1045,6 +1052,17 @@ static PyObject *demand_gen_step(
     return NULL;
   }
 
+  /* Demand intent, embodied: every DemandGenerator drive passes here,
+     so force KOS_FRAME_DEMAND onto the generator's frame post-install
+     (install assigned the invoker bit, 0 at this boundary). AWAIT then
+     denies in-eval as KoskariSyncViolation -- catchable by the body for
+     sync fallback; uncaught, it unwinds and exits via KOS_RES_RAISE. */
+  {
+    KosDynFrame *frame = KosContext_FRAME_TOP(agen->ctx);
+    if (frame)
+      KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
+  }
+
   {
     KosOpResult ev = koskari_eval(agen->ctx, send_val, throw_typ, throw_exc);
 
@@ -1077,6 +1095,10 @@ static PyObject *demand_gen_step(
       return NULL;
 
     case KOS_RES_AWAIT:
+      /* Unreachable: the frame carries KOS_FRAME_DEMAND (forced above),
+         so eval_event_await converts AWAIT to an in-eval
+         KoskariSyncViolation raise before it can surface here. Kept
+         defensively, mirroring demand_sync_ex. */
       demand_gen_close_ctx(gen);
       Py_XDECREF(ev.val);
       PyErr_Format(KoskariSyncViolation,

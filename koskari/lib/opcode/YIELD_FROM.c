@@ -188,9 +188,10 @@ static KosOpResult yield_from_emit_yield(
     KosEvalState *es,
     KosDynYieldFrom *yf) {
 
-  if (kos_eval_demand_deny_suspend(es,
-      "async suspension is not allowed in demand_sync"))
-    return EVAL_RAISE();
+  /* No demand deny here: this is a yield-shaped suspension, and demand
+     generators yield as iteration (the demand bit denies await only).
+     A demand-flagged frame can only reach YIELD_FROM as a demand-driven
+     generator; the await-shaped suspension below keeps its deny. */
 
   PyObject *const *tos = KosEvalState_StackTailPtr(es, 1);
   if (! tos) {
