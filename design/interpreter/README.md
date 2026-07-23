@@ -31,7 +31,6 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **[archive/kosproperty.md](../archive/kosproperty.md)**: KosCallable-aware **`property`** — auto **`Demand`** wrap on accessors; implemented and archived
 - **generic-dynnode-protocol.md**: Generic DynNode interface design, API reference, and type-specific bypass cases (when opcodes use type-named APIs)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
-- **domain.md**: Koskari Domain (ambient dynamic context) — design proposal for parameters and dynamic-extent scoping across AWAIT, boundaries, and continuations
 - **gil-cooperation.md**: GIL cooperation design — domain-TLS counter + timer, maybe_cooperate/ensure_gil, candidate call sites, and cost–benefit of options
 - **kio-format.md**: `.kio` compiled cache format — binary file layout, softened/hardened serialization levels, constant pool policy, `TaggedTuple`, cache invalidation, and loader algorithm
 - **kio-setuptools-build.md**: `.kio` precompilation during `bdist_wheel` (sdist `.ki` only; wheel adds `.kio` beside `.ki`), loader preference, and why not `__pycache__`
@@ -42,6 +41,7 @@ Completed design drafts (historical) live under **[archive/](../archive/)** — 
 `yield-from-revamped-operational-model.md`, `eval-loop-mode-refactor.md`, `eval-result-unification.md`,
 `demand-evalex-phase1.md`, `demand-evalex-phase2.md`,
 `interrupted-transfer-plans.md`, `bytecode-metadata-tables.md`,
+`domain.md` and `domain-task-isolation.md` (Domain / per-context parameter refs),
 `node-owned-operand-stack.md`, `kos_eval_state_api_migration.md`,
 `kosevent-elimination.md`.
 

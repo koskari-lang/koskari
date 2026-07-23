@@ -17,7 +17,7 @@ tests.reproducers.test_param_task_isolation
 Reproducer: two concurrently-driven tasks sharing one parameter store
 corrupted each other's parameterize bindings across awaits (leak,
 lost-binding, stale-restore). Under per-context parameter cells
-(design/interpreter/domain-task-isolation.md) each context forks its
+(design/archive/domain-task-isolation.md) each context forks its
 cell table at creation, so sibling extents swap cells in disjoint
 tables and every task reads its own binding.
 

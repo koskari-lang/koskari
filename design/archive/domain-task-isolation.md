@@ -9,7 +9,7 @@ unwind. The Domain narrows to an interop boundary: it homes the base ref
 dict that root contexts copy from, and the TLS machinery in domain.c
 remains the discovery path for Python-side access.
 
-**Status**: accepted. Companion to [domain.md](domain.md), which
+**Status**: implemented; archived. Companion to [domain.md](domain.md), which
 describes the Domain/ParamRef/PARAM machinery this document amends. This
 revision supersedes the earlier fork-of-values proposal: the observed
 failure and the fork-at-creation discipline are retained, the storage
@@ -540,7 +540,7 @@ lookup. Nothing here prejudges it.
 ## References
 
 - [domain.md](domain.md): Domain / ParamRef / PARAM design (amended by this doc)
-- [extent-wind-unwind.md](extent-wind-unwind.md): unified extent wind/unwind contract
-- [freeze-thaw-context-segments.md](../archive/freeze-thaw-context-segments.md): context freeze/thaw
+- [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md): unified extent wind/unwind contract
+- [freeze-thaw-context-segments.md](freeze-thaw-context-segments.md): context freeze/thaw
 - Racket parameterization and thread cells: the semantic model
 - PEP 550 / PEP 567: the snapshot-at-creation storage discipline (control model not adopted)

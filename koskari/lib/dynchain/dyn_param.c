@@ -97,7 +97,7 @@ static KosDynParam *kos_dynparam_new(
    pointers: a clone shares its cells with the source node, so multi-shot
    continuation applications share cells (a set! in one application is
    visible in the next). This is the deliberate Racket-cell semantics; see
-   design/interpreter/domain-task-isolation.md D4.
+   design/archive/domain-task-isolation.md D4.
 */
 static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
 

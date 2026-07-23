@@ -24,7 +24,7 @@
    point when no context is active. Every context has a domain: the
    ambient one when present, minted fresh as needed otherwise; it is the
    identity/lifecycle anchor of the computation. See
-   design/interpreter/domain-task-isolation.md.
+   design/archive/domain-task-isolation.md.
 
    author: Christopher O'Brien <obriencj@preoccupied.net>
    license: GNU General Public License v3

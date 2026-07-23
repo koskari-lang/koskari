@@ -2,6 +2,8 @@
 
 This document describes the design and implementation plan for **Domain** (ambient dynamic context), **ParamRef** (canonical parameter references), and **PARAM** dynamic extent (parameter bindings on the dyn chain). It specifies TLS plumbing, opcodes (`PARAM`, `PUSH_PARAM`, `POP_PARAM`), compiler lowering, hard invariants, and step-by-step implementation.
 
+**Archived**: implemented; superseded in detail by [domain-task-isolation.md](domain-task-isolation.md).
+
 **Amendment (implemented)**: parameter storage was redesigned to fix parameter corruption between concurrently-driven contexts: bindings are refs (ordinary Refs) in a per-context dict (`KosContext.param_refs`) forked at context creation; `parameterize` installs fresh refs and restores prior refs on unwind; the Domain narrows to homing `base_refs` (pre-defines, Python-side access) plus the TLS discovery machinery. Every context still has a domain -- inherited from the ambient one, minted fresh as needed -- as its identity/lifecycle anchor; live parameter state is in `param_refs`. Sections below describing the domain as the live value store predate this; [domain-task-isolation.md](domain-task-isolation.md) is the authority for storage and inheritance.
 
 **Implementation status**: Steps 1, 2, 3, 4, 5, and 6 (opcodes) are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`, `kos_domain_push_python_scope()`, `kos_domain_pop_python_scope()`. KosDomain is a context manager (`with Domain():`) so Python can establish a domain before calling Koskari; `kos_domain_current()` consults the ctx stack and the per-thread `python_domain_stack`. KosDomain holds a param value store (PyDict: name -> value). ParamRef (Ref subclass) resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no interning; fully dynamic value lookup. KOS_DYN_PARAM dyn nodes are implemented in `dynchain.c`: `kos_dyn_push_param`, `kos_dyn_push_param_dict`, `kos_dyn_pop_param`, enter/restore via domain, transfer-plan integration (PARAM_RESTORE on unwind, param enter folded into INSTALL). Opcodes PARAM, PUSH_PARAM, POP_PARAM are implemented. PARAM extent is unwound on RETURN and exception propagation via `kos_dyn_unwind_to_frame()`. Compiler lowering is not yet implemented.
@@ -363,8 +365,8 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 
 ## References
 
-- [execution-invariants.md](execution-invariants.md): Koskari execution model and boundary semantics
-- [callcc.md](callcc.md): Continuation capture and transfer
-- [evaluator-token-continuation.md](evaluator-token-continuation.md): Evaluator token and context ownership
-- [bytecode.md](bytecode.md): Bytecode format; [OPCODES.md](../OPCODES.md): Opcode catalog (PARAM, PUSH_PARAM, POP_PARAM to be added)
+- [execution-invariants.md](../interpreter/execution-invariants.md): Koskari execution model and boundary semantics
+- [callcc.md](../interpreter/callcc.md): Continuation capture and transfer
+- [evaluator-token-continuation.md](../interpreter/evaluator-token-continuation.md): Evaluator token and context ownership
+- [bytecode.md](../interpreter/bytecode.md): Bytecode format; [OPCODES.md](../OPCODES.md): Opcode catalog (PARAM, PUSH_PARAM, POP_PARAM to be added)
 - [language/special-forms.md](../language/special-forms.md): Special forms (parameterize will extend this)

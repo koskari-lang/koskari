@@ -161,7 +161,7 @@ Placing `maybe_cooperate()` in these zones means that when the counter hits zero
 
 ## 8. References
 
-- [domain.md](domain.md) — Koskari Domain and TLS
+- [domain.md](../archive/domain.md) — Koskari Domain and TLS
 - [evaluator.md](evaluator.md) — Evaluator and eval loop structure
 - `koskari/lib/eval.c` — Current GIL release (counter at loop boundary, on-exit)
 - `koskari/lib/domain.c` — `kos_domain_current()`, TLS scope push/pop
