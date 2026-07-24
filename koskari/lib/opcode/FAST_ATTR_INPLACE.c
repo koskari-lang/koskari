@@ -18,8 +18,9 @@
    FASTVAR (slot), CONST (attr name). obj = fast-slot deref; the stack holds the
    count reduction values [v0, ..., v_{count-1}]. Reduce obj.attr in place with
    the operator and store it back; pushes nothing (the special appends CONST
-   None). The lowered form of VAR_ATTR_INPLACE. Cold: the op-type switch lives
-   in the shared kos_inplace_reduce.
+   None). The lowered form of VAR_ATTR_INPLACE. Hot: the row decode and cache
+   lookup are inlined; the op-type switch stays out of line in the shared
+   kos_inplace_reduce.
 
    Carries one per-site field cache (cache arity 1): a single resolved storage
    location serves both the read of obj.attr and the write-back, so a hit skips
@@ -27,7 +28,7 @@
    read-modify-write; the op-type and count travel in the OPCOUNT slot.
 */
 
-KOS_OP_HANDLER_COLD(FAST_ATTR_INPLACE) {
+KOS_OP_HANDLER(FAST_ATTR_INPLACE) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   KosOperand op = (KosOperand) KosOpCount_TYPE(row.a0);

@@ -16,11 +16,12 @@
 /**
    OBJECT_OPERAND: arg = OPCOUNT (operator selector in the high byte, operand
    count in the low byte). Pop the count operands and apply the operator,
-   pushing the result. Cold: the op-type switch lives in the shared
-   kos_object_operand, out of the inlined dispatch loop.
+   pushing the result. Hot: the hottest opcode by both dispatch count and
+   total time, so the row decode is inlined; the op-type switch stays out
+   of line in the shared kos_object_operand.
 */
 
-KOS_OP_HANDLER_COLD(OBJECT_OPERAND) {
+KOS_OP_HANDLER(OBJECT_OPERAND) {
   uint16_t arg = KosOp_ARG(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
   int count = (int) KosOpCount_COUNT(arg);

@@ -16,12 +16,12 @@
 /**
    FAST_INPLACE: arg = EXTRA row index. Row a0 = OPCOUNT
    (op-type high byte, reduce count low byte), a1 = fast slot. Reduce the
-   count operands from the stack into the slot with the operator. Cold: the
-   op-type switch lives in the shared kos_fast_inplace_operand, out of the
-   inlined dispatch loop.
+   count operands from the stack into the slot with the operator. Hot: the
+   row decode is inlined; the op-type switch stays out of line in the shared
+   kos_fast_inplace_operand.
 */
 
-KOS_OP_HANDLER_COLD(FAST_INPLACE) {
+KOS_OP_HANDLER(FAST_INPLACE) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 

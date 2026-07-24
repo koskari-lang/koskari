@@ -13,13 +13,13 @@ Per-handler sizes come from a measurement build with `KOS_ALL_COLD=1`
 its own symbol; sizes read via `nm --print-size` on the built extension.  Standalone noinline
 size is a proxy for a handler's inlined contribution (inlining can specialise or
 shrink it) -- good enough to rank and prioritise.  The proxy still over-estimates:
-the fully-inlined dispatch fn (62,557 B) is smaller than floor + bodies
+the fully-inlined dispatch fn (63,272 B) is smaller than floor + bodies
 (103,057 B), so at `-O2 -flto` inlining shares tails and specialises away more
 than the standalone bodies imply.  Shared static cores called from several
 handlers sit outside the `op_` symbols and are not in the table (e.g.
 `object_next_step`, the 1,351 B step core behind the three cold NEXT forms --
 which is why OBJECT_NEXT reads far smaller than the old monolithic NEXT).
-70 handlers are `KOS_OP_HANDLER_COLD` -- their bodies appear in the table below
+67 handlers are `KOS_OP_HANDLER_COLD` -- their bodies appear in the table below
 but do not contribute to the inlined function at all.  Hotness is reasoned, not
 profiled: there is no PGO/instrumented build yet (deferred until we have
 representative profiling apps -- scheduler, koslife, churns, mcp, repl, dis).
@@ -31,9 +31,9 @@ symbols counting the split-out `GLOBALS.cold`).
 
 | quantity | bytes | meaning |
 |---|---:|---|
-| fully-inlined dispatch fn | 62,557 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
+| fully-inlined dispatch fn | 63,272 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
 | floor (all 191 handlers un-inlined) | 23,416 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 191 + loop scaffold |
-| handler bodies | 79,641 | sum of standalone noinline bodies -- 43,088 B across the 70 cold handlers, 36,553 B across the 121 hot ones (the actual inline budget) |
+| handler bodies | 79,641 | sum of standalone noinline bodies -- 42,305 B across the 67 cold handlers, 37,336 B across the 124 hot ones (the actual inline budget) |
 
 Distribution (top-heavy, long-tailed; % of the 79,641 B body):
 
@@ -41,6 +41,37 @@ Distribution (top-heavy, long-tailed; % of the 79,641 B body):
 - `>=  500 B`: 48 handlers, 42,379 B (53% of body)
 - `>=  200 B`: 143 handlers, 73,836 B (92% of body)
 - `>=  100 B`: 174 handlers, 78,692 B (98% of body)
+
+## Applied: arithmetic handler promotions (2026-07-24)
+
+`OBJECT_OPERAND`, `FAST_INPLACE`, and `FAST_ATTR_INPLACE` moved from
+`KOS_OP_HANDLER_COLD` to `KOS_OP_HANDLER`, taking the split from 121/70
+to 124/67.  The three were the hottest remaining cold handlers on the
+churn profile: `OBJECT_OPERAND` alone is 28% of instrumented eval time
+and 24% of all dispatches, and the two in-place forms add a further
+13%.  Dispatch fn 62,557 -> 63,272 B (+715), against a 64 KiB working
+ceiling.
+
+The growth is under the 783 B the bodies below predict (58 + 78 + 647),
+which is the same specialise-and-share effect the methodology note
+describes.  `OBJECT_OPERAND` and `FAST_INPLACE` are small because they
+are row-decode wrappers over the still-noinline `kos_object_operand` and
+`kos_fast_inplace_operand` in `eval/eval_obj.c`; promoting them removes
+one of the two out-of-line calls per execution rather than both.  Only
+`FAST_ATTR_INPLACE` had a full body to inline, `kos_attr_inplace_cached`
+having three callers and staying out of line on its own.
+
+Measured on `tox -qe churn --mode koskari`, 3 samples, promoted build
+against a rebuilt pre-change tree (verified back at 62,557 B): `field`
+-3.3%, `loop` -2.3%, `nbody` -1.9%, `binary_trees` flat (0.17s, call and
+allocation bound).  Four of fourteen kernels on a non-isolated machine,
+so read the direction rather than the decimals.
+
+Note that the per-handler byte column below is a property of the
+`KOS_ALL_COLD` sweep, where every handler is un-inlined, so it is
+unaffected by which handlers are hot.  Promotions move only the
+partition-derived totals above and the real dispatch fn size; the sweep
+itself does not need re-running.
 
 ## Remaining levers
 
@@ -117,7 +148,7 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 674 | `CHECK_COMPARE_VAR` | cold |
 | 664 | `CALL_FAST_ATTR_NAMES` | cold |
 | 647 | `ITER_NEXT` | hot |
-| 647 | `FAST_ATTR_INPLACE` | cold |
+| 647 | `FAST_ATTR_INPLACE` | hot |
 | 636 | `CHECK_COMPARE` | hot |
 | 595 | `OBJECT_FORMAT` | hot |
 | 579 | `CALL_VAR_ATTR_NAMES` | cold |
@@ -265,10 +296,10 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 101 | `CLEAR_FOREACH` | hot |
 | 88 | `CLEAR_TRY` | hot |
 | 88 | `CLEAR_FINALLY` | hot |
-| 78 | `FAST_INPLACE` | cold |
+| 78 | `FAST_INPLACE` | hot |
 | 76 | `PUSH_TRY` | hot |
 | 76 | `PUSH_FINALLY` | hot |
-| 58 | `OBJECT_OPERAND` | cold |
+| 58 | `OBJECT_OPERAND` | hot |
 | 58 | `OBJECT_INPLACE` | cold |
 | 56 | `FAST_CLEAR` | hot |
 | 56 | `DUP` | hot |
