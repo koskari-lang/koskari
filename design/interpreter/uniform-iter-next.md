@@ -101,6 +101,7 @@ longer minting a DemandGenerator in koskari code.
 - PUSH_FOREACH.c:54-66 -- the acquisition preference to factor
 - opcode/NEXT.c, opcodes.incl:74 -- the existing combined step opcode
 - specials/object.py:725 -- compile/iter to upgrade
-- [asyncgen-anext-await-underrun.md](asyncgen-anext-await-underrun.md)
-  -- python-side anext defect; unrelated machinery (this layer is
-  koskari-side), but its fix completes the cross-boundary story
+- [asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)
+  -- python-side anext defect, since fixed; unrelated machinery (this
+  layer is koskari-side), but its fix completes the cross-boundary
+  story

@@ -24,7 +24,7 @@ were unaffected.
 The fix records the await on the asend (the generator stays in-use
 across the suspension) and resumes by driving the in-flight awaitable,
 delivering its result to the pending AWAIT. See
-design/interpreter/asyncgen-anext-await-underrun.md for the drive-path
+design/archive/asyncgen-anext-await-underrun.md for the drive-path
 anatomy.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>

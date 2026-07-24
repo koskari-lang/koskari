@@ -7,10 +7,11 @@ by the dealloc-fence work (see the note in `asyncgen_dealloc`, iter.c):
 and cannot cooperate with the standard cleanup idioms.
 
 **Depends on**:
-[asyncgen-anext-await-underrun.md](asyncgen-anext-await-underrun.md) --
-the point of an *async* close is that cleanup may suspend, and a
-suspending drive step is exactly what the underrun defect breaks. Fix
-that first or `aclose` inherits it.
+[asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)
+(fixed) -- the point of an *async* close is that cleanup may suspend,
+and a suspending drive step is exactly what the underrun defect broke.
+With the asend now driving in-flight awaits, `aclose` can build on that
+contract.
 
 ---
 
@@ -147,4 +148,4 @@ hook is set). Not required for the explicit-close surface.
   `KosPyAsyncGen_Teardown`, `asyncgen_dealloc` (fence + comment)
 - coro.c: `coroutine_close` (the sync close shape to mirror)
 - PEP 525 -- Asynchronous Generators
-- [asyncgen-anext-await-underrun.md](asyncgen-anext-await-underrun.md)
+- [asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)

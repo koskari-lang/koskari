@@ -25,14 +25,6 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 
 ## Generators / async iteration
 
-- **anext await-suspension stack underrun** — a single `await
-  agen.__anext__()` fails with "stack pop underrun" whenever the driven
-  step contains an `await`; Python-side `async for` over an awaiting
-  koskari generator is broken. Flattened, demand, and plain-yield anext
-  paths are unaffected (which is why the suite never saw it). Diagnosed
-  to the asend drive's mixed YIELD/AWAIT suspension accounting; root
-  cause needs one traced step. Ref:
-  [interpreter/asyncgen-anext-await-underrun.md](interpreter/asyncgen-anext-await-underrun.md).
 - **Uniform `iter` / `next` (koscallable + specials + ITER opcode)** —
   one access layer over both iteration protocols for koskari code:
   `(iter x)` acquires per PUSH_FOREACH's preference (agen native, aiter,
@@ -47,8 +39,8 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 - **AsyncGenerator aclose / athrow** — PEP 525 protocol surface;
   `aclose` is the sanctioned suspending close (awaits inside `finally`
   honored), distinct from the demand-path dealloc teardown. Spec'd,
-  including the ASend-stepper implementation shape and state machine;
-  depends on the underrun fix above. Phase 2: firstiter/finalizer hooks
+  including the ASend-stepper implementation shape and state machine.
+  Phase 2: firstiter/finalizer hooks
   for `loop.shutdown_asyncgens`. Ref:
   [interpreter/asyncgen-aclose-athrow.md](interpreter/asyncgen-aclose-athrow.md).
 
