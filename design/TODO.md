@@ -33,6 +33,17 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
   to the asend drive's mixed YIELD/AWAIT suspension accounting; root
   cause needs one traced step. Ref:
   [interpreter/asyncgen-anext-await-underrun.md](interpreter/asyncgen-anext-await-underrun.md).
+- **Uniform `iter` / `next` (koscallable + specials + ITER opcode)** —
+  one access layer over both iteration protocols for koskari code:
+  `(iter x)` acquires per PUSH_FOREACH's preference (agen native, aiter,
+  else sync), `(next it [default])` steps either protocol with ambient
+  async and the NEXT opcode's exhaustion contract. compile/iter upgrades
+  from sync-only OBJECT_ITER to a new ITER opcode (acquisition factored
+  from PUSH_FOREACH); compile/next is new, emitting the existing (never
+  yet emitted) NEXT opcode; the koscallable bootstrap forms are the
+  specials one frame deep, replacing the CPython builtins in the builtin
+  namespace. Created together. Ref:
+  [interpreter/uniform-iter-next.md](interpreter/uniform-iter-next.md).
 - **AsyncGenerator aclose / athrow** — PEP 525 protocol surface;
   `aclose` is the sanctioned suspending close (awaits inside `finally`
   honored), distinct from the demand-path dealloc teardown. Spec'd,
