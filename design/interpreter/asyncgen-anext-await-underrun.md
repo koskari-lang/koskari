@@ -1,7 +1,8 @@
 # AsyncGenerator anext: await suspension underruns the operand stack
 
-**Status**: defect, diagnosed to the failing drive path; root cause in
-the placeholder/suspension accounting not yet pinned. No fix attempted.
+**Status**: fixed. Root cause was the asend resume path, not
+placeholder accounting -- see Resolution at the end. Regression pins in
+tests/reproducers/test_asyncgen_anext_await.py.
 
 ---
 
@@ -115,9 +116,47 @@ control, and the flattened/demand paths as no-regression pins. The
 mischaracterized note in tests/reproducers/test_demand_gen_await.py
 should be corrected when this lands.
 
+## Resolution
+
+The trace exonerated the placeholder protocol. The failing sequence:
+the step's fused CALL suspends on the awaitable (`py_await_iter` set,
+pc parked on the explicit AWAIT opcode), `KOS_RES_AWAIT` returns the
+awaitable to the loop, and the loop re-enters via `asend.send(result)`.
+The old asend resume called `koskari_eval` with send/throw all NULL;
+entry election took the legacy all-NULL-with-pending-await shortcut
+(eval.c ~1715, `KOS_MODE_NORMAL`, nothing pushed), so the AWAIT opcode
+popped an empty stack. The imbalance was never between YIELD's freeze
+model and AWAIT -- the resume simply re-entered as if no await were
+pending, instead of honoring the coroutine drive contract.
+
+The fix makes asend mirror `coroutine_send`'s `WAITING_PY` contract,
+implementing the model that AWAIT suspension is identical whether or
+not a generator is on the dynnode chain:
+
+- On `KOS_RES_AWAIT`, the asend keeps `in_progress` held (the
+  generator stays in-use; no freeze, no install, no placeholder) and
+  marks itself `awaiting` -- it owns the parked step.
+- On resume, the asend drives `py_await_iter` directly:
+  `iter.send(value)`. Still yielding: hand the item back to the loop.
+  StopIteration: fetch its value, clear the iterator, re-enter
+  `koskari_eval` with the value as `send_val`, which `revive_await`
+  pushes for the pending AWAIT. Awaitable failure: fetched and primed
+  as throw into eval, delivered at the await point (catchable).
+- While a step is parked on its await, a foreign drive (second anext,
+  flatten, demand) sees `in_progress` without owning `awaiting` and is
+  refused with RuntimeError instead of corrupting the parked step.
+- asend dealloc while awaiting releases `in_progress` so the generator
+  is not wedged.
+
+The legacy eval-entry shortcut is untouched; it predates the generator
+work and is unreachable from the fixed asend. `athrow`/`aclose` remain
+future work (design/interpreter/asyncgen-aclose-athrow.md).
+
 ## References
 
 - iter.c: `asyncgenasend_iternext`, `install_frozen_gen_for_resume`
+- iter.h: `KosPyAsyncGenASend.awaiting`
+- coro.c: `coroutine_send` (the WAITING_PY drive contract mirrored)
 - dyn_gen.c: `kos_dyn_gen_install` (placeholder push),
   `kos_dyn_gen_freeze_and_release`
 - eval.c: `revive_await`, revive-from-YIELD (placeholder pop, ~332)

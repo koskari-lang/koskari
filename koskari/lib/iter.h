@@ -92,6 +92,9 @@ typedef struct {
   int is_throw;           /* if true, throw into generator */
   PyObject *throw_typ;    /* exception type (if is_throw) */
   PyObject *throw_exc;    /* exception value (if is_throw) */
+  int awaiting;           /* mid-step await in flight: this asend owns the
+                             generator's in_progress mark and resumes by
+                             driving ctx->py_await_iter */
 } KosPyAsyncGenASend;
 
 

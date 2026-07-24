@@ -157,15 +157,9 @@ class TestDemandGenAwait(unittest.IsolatedAsyncioTestCase):
         and the violation raises out
         """
 
-        # Direct demand->async alternation on one agen (which would pin
-        # the forced-off polarity) is blocked by a pre-existing,
-        # unrelated defect: any anext step containing an await fails
-        # with "stack pop underrun" (the alternation only positions the
-        # await into the next step); see
-        # design/interpreter/asyncgen-anext-await-underrun.md. The
-        # forced-off path is still exercised by
-        # test_async_iteration_awaits (every anext install assigns
-        # invoker 0).
+        # Direct demand->async alternation on one agen (pinning the
+        # forced-off polarity) lives in
+        # test_asyncgen_anext_await.py::test_demand_then_async_alternation.
         mod = await self.load("dga_resumed")
         agen = vars(mod)["gen-two"]()
         it = iter(agen)

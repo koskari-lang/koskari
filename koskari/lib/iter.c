@@ -371,6 +371,11 @@ static void asyncgenasend_dealloc(PyObject *self) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
 
+  /* An asend abandoned mid-await owns the generator's in_progress
+     mark: release it so the generator is not wedged forever. */
+  if (asend->awaiting && asend->agen)
+    asend->agen->in_progress = 0;
+
   Py_XDECREF(asend->agen);
   Py_XDECREF(asend->send_value);
   Py_XDECREF(asend->throw_typ);
@@ -426,8 +431,10 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
     return NULL;
   }
 
-  /* Re-entrancy guard */
-  if (agen->in_progress) {
+  /* Re-entrancy guard: a mid-step await keeps in_progress set (the
+     generator stays in use across the suspension), and this asend owns
+     that mark while its awaiting flag is up. Anyone else is barred. */
+  if (agen->in_progress && ! asend->awaiting) {
     PyErr_SetString(PyExc_RuntimeError,
                     "async generator already being iterated");
     return NULL;
@@ -441,6 +448,59 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   asend->send_value = NULL;
   asend->throw_typ = NULL;
   asend->throw_exc = NULL;
+
+  /* Resume-from-await: the wrapper owns driving the in-flight __await__
+     iterator, mirroring coroutine_send's WAITING_PY contract. The step
+     stays parked (no freeze, no install) until the awaitable completes;
+     only then is eval re-entered, with the result as send_val so
+     revive_await pushes it for the pending opcode. A throw during the
+     await falls through: revive_await's throw path delivers it into
+     the iterator inside eval. */
+  if (asend->awaiting && ! asend->is_throw) {
+    PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
+    if (it) {
+      PyObject *step = PyObject_CallMethod(
+          it, "send", "O", send_val ? send_val : Py_None);
+      Py_XDECREF(send_val);
+      send_val = NULL;
+
+      if (step)
+        /* still awaiting: hand the next item to the loop */
+        return step;
+
+      if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
+        /* the awaitable failed: deliver the exception into the
+           generator so its handlers see it (raise-at-await shape) */
+        PyObject *tb = NULL;
+        PyErr_Fetch(&throw_typ, &throw_exc, &tb);
+        PyErr_NormalizeException(&throw_typ, &throw_exc, &tb);
+        if (throw_exc && tb)
+          PyException_SetTraceback(throw_exc, tb);
+        Py_XDECREF(tb);
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(agen->ctx));
+        asend->awaiting = 0;
+        /* fall through to eval with the throw primed */
+      } else {
+        /* awaitable completed: its value becomes the await result */
+        PyObject *await_result = NULL;
+        if (PyGen_FetchStopIterationValue(&await_result) < 0) {
+          agen->in_progress = 0;
+          asend->awaiting = 0;
+          return NULL;
+        }
+        if (! await_result) {
+          await_result = Py_None;
+          Py_INCREF(await_result);
+        }
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(agen->ctx));
+        asend->awaiting = 0;
+        send_val = await_result;
+      }
+    } else {
+      /* stale flag with no iterator in flight */
+      asend->awaiting = 0;
+    }
+  }
 
   if (install_frozen_gen_for_resume(agen->ctx, agen) < 0) {
     agen->in_progress = 0;
@@ -457,7 +517,15 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   Py_XDECREF(throw_typ);
   Py_XDECREF(throw_exc);
 
+  if (res.kind == KOS_RES_AWAIT) {
+    /* Mid-step await: the generator stays in use (in_progress held);
+       this asend resumes it by driving the iterator above. */
+    asend->awaiting = 1;
+    return res.val;  /* transfer ownership to caller */
+  }
+
   agen->in_progress = 0;
+  asend->awaiting = 0;
 
   switch (res.kind) {
     case KOS_RES_RETURN: {
@@ -496,11 +564,9 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
       return NULL;
     }
 
-    case KOS_RES_AWAIT:
-      /* Return the awaitable for the caller to await */
-      return res.val;  /* transfer ownership to caller */
-
     default:
+      /* KOS_RES_AWAIT is handled before the switch (in_progress held,
+         awaiting set). */
       PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
       return NULL;
   }
@@ -622,6 +688,7 @@ PyObject *KosPyAsyncGenASend_New(
   asend->is_throw = 0;
   asend->throw_typ = NULL;
   asend->throw_exc = NULL;
+  asend->awaiting = 0;
 
   PyObject_GC_Track((PyObject *) asend);
   return (PyObject *) asend;
