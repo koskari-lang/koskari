@@ -50,7 +50,7 @@ after the header, producing a flat list the `define` form compiles.
 ## Conditionals: `if`, `elif`, `else`
 
 Layout `if` lowers to `cond` with optional `elif` and `else` **peers** at the
-same indent level as the first body.
+same indent level as the primary `if` header.
 
 ```koskari
 define sign [n]:

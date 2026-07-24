@@ -6,7 +6,7 @@
 TEMPLATE)`** (no **`rule`** wrapper).
 
 **Behaviour:** Same per-rule header/body rules as `layout/syntax-rules` (including
-`match (PATTERN):` for keywords). Does not accept peers.
+`case (PATTERN):` to wrap a parenthesized pattern). Does not accept peers.
 
 **Syntax:**
 
@@ -14,7 +14,7 @@ TEMPLATE)`** (no **`rule`** wrapper).
 syntax-match:
   PATTERN1:
     TEMPLATE1...
-  match (PATTERN-WITH-KEYWORDS):
+  case (PATTERN):
     TEMPLATE...
 ```
 

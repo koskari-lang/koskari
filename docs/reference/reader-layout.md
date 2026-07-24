@@ -91,18 +91,28 @@ foo x: 1 y: 2:
 
 Here `x:` and `y:` are keyword atoms in the header; the last `:` ends the header.
 
-Because `:` is terminating at depth 0, bare keyword atoms cannot appear as
-header arguments at the top level. Wrap them in a delimiter:
+Bare keyword atoms are valid header arguments at depth 0. A keyword that is the
+**last** header argument needs a double colon so the structural terminator
+remains distinct from the keyword's own trailing `:`:
 
 ```koskari
-with [(foo) as: x]:
-  ...
+unknown as: x:
+  y
+;; → (unknown as: x y)
+
+unknown x::
+  z
+;; → (unknown x: z)
 ```
 
-Inside `[...]`, s-expression mode applies and `as:` is a valid keyword.
+Wrapping a keyword in a delimiter (`[...]` or `(...)`) is also valid — inside
+delimiters, s-expression mode applies — but wrapping is not required for
+keywords in header arguments.
 
-The parser uses a **single forward pass** with `:` as a structural event at
-header boundaries; there is no probe or replay pass.
+Header-colon recognition is a **single forward pass**: a predicated `:` event
+fires only when the remainder of the logical line is whitespace and/or a
+comment. Peer gathering and quote/quasiquote predicates may speculate on the
+stream separately; that is not a replay of the header scan.
 
 ---
 
@@ -131,9 +141,12 @@ block is expanded.
 
 ### Invalid block shape
 
-A header with no forms before the structural colon is an error. Body content
-on the same physical line as the header colon is not layout block syntax — the
-grammar requires a newline before the body suite.
+A header with no forms before the structural colon is an error. Content after
+`:` on the same physical line means that colon is **not** structural (the
+remainder is neither empty nor a comment), so the line is read as a layout
+line — often with a keyword atom — rather than as a layout block. A structural
+colon therefore requires only whitespace and/or a comment to end of line, then
+a newline before the indented body.
 
 ---
 
@@ -263,9 +276,10 @@ See [Layout handler reference](layouts/index.md) for the per-head catalogue.
 : When false, a layout line with more than one top-level form is an error
   instead of folding to an implicit call.
 
-Module pragma objects may supply `layout_implicit_calls` via `reload_pragma` on
-the reader. These switches are intended for tooling and future pragma-driven
-reader configuration.
+Module pragma objects may supply these via `reload_pragma` on the reader: the
+pragma keys are **`reader/layout`** and **`reader/implicit-calls`** (they map
+to `layout_enabled` and `layout_implicit_calls`). These switches are intended
+for tooling and pragma-driven reader configuration.
 
 ---
 

@@ -10,11 +10,13 @@ inner block of `layout/define-syntax`.
 Each indented rule block has a pattern in the header and a template in the
 body. Does not accept peers.
 
-**match form:** Use `match (PATTERN):` instead of `PATTERN:` when the pattern
-contains top-level keywords. Layout headers cannot parse keywords directly, but
-inside parentheses the form is read in s-expr context, so keywords are valid.
-Both styles expand to the same rule. Example: `ref (item obj name):` and
-`match (ref (item obj name)):` produce identical output.
+**case form:** Use `case (PATTERN):` instead of a bare header when the pattern
+is most clearly written as a single parenthesized s-expression. The `case`
+wrapper unwraps at layout time; both styles expand to the same rule. Example:
+`ref (item obj name):` and `case (ref (item obj name)):` produce identical
+output. Keyword atoms are valid in layout headers (see
+[Reader and layout syntax](../reader-layout.md)); `case` is for grouping the
+full pattern, not a workaround for keywords.
 
 **Syntax:**
 
@@ -22,7 +24,7 @@ Both styles expand to the same rule. Example: `ref (item obj name):` and
 syntax-rules [LIT ...]:
   PATTERN1:
     TEMPLATE1...
-  match (PATTERN-WITH-KEYWORDS):
+  case (PATTERN):
     TEMPLATE...
   PATTERN2 ARG:
     TEMPLATE2...
@@ -43,9 +45,9 @@ syntax-rules [x]:
 ;;     ((do-something-with-x y) (compile/begin (print "one arg" x y) (+ x y))))
 
 syntax-rules [item]:
-  match (ref (item obj name)):
+  case (ref (item obj name)):
     (compile/ref-item obj name)
-;; → same as ref (item obj name): ... ; use match when pattern has keywords
+;; → same as ref (item obj name): ...
 ```
 
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_syntax_rules`

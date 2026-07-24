@@ -62,7 +62,7 @@ try:
   x
 except [Exception as: e]:
   y
-;; → (try (compile/begin x) [[e  Exception] y])
+;; → (try (compile/begin x) [[e Exception] y])
 
 try:
   x
