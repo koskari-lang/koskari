@@ -1,4 +1,4 @@
-# KOS_OP_NEXT
+# KOS_OP_OBJECT_NEXT
 - **Style**: COUNT. Arg = 1 or 2: 1 = TOS is iterator or async iterator (StopIteration raises on exhaustion); 2 = TOS = default, below = iterator or async iterator (StopIteration pushes default).
 - **Status**: Implemented.
 - **Stack**: Stack-based next from iterator or async iterator. May suspend on async iterator.
@@ -9,15 +9,15 @@
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | CONST  | 0   | 0 (iter) | stack: [..., iterator or async iterator] |
-| 1     | NEXT   | 1   | 1        | stack: [..., next_val] or raise StopIteration |
+| 1     | OBJECT_NEXT | 1 | 1      | stack: [..., next_val] or raise StopIteration |
 
 **Example (arg=2):** TOS = default, below = iterator or async iterator; push next or default.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
-| 0     | CONST  | 0   | 0 (99)   | stack: [..., default] |
-| 1     | CONST  | 1   | 1 (iter) | stack: [..., default, iterator or async iterator] |
-| 2     | NEXT   | 2   | 2        | stack: [..., next_val] or [..., 99] if exhausted |
+| 0     | CONST  | 0   | 0 (iter) | stack: [..., iterator or async iterator] |
+| 1     | CONST  | 1   | 1 (99)   | stack: [..., iterator or async iterator, default] |
+| 2     | OBJECT_NEXT | 2 | 2      | stack: [..., next_val] or [..., 99] if exhausted |
 
 
 ## 8. Jumps

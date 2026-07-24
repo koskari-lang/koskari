@@ -53,7 +53,7 @@
 | YIELD | COUNT | Pop value; `EVAL_YIELD(val)` → **`apply_kos_op_result`** → **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](#kos_op_yield) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](#kos_op_yield_from) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](#kos_op_iter_next) |
-| NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](#kos_op_next) |
+| OBJECT_NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](#kos_op_object_next) |
 | JUMP | LABEL | Unconditional jump to pc | [§8](#kos_op_jump) |
 | JUMP_FALSE | LABEL | Jump if TOS false | [§8](#kos_op_jump_false) |
 | JUMP_TRUE | LABEL | Jump if TOS true | [§8](#kos_op_jump_true) |

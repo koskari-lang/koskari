@@ -69,9 +69,9 @@ OP(RETURN, 0, COUNT)
 OP(YIELD, 0, COUNT)
 OP(YIELD_FROM, 0, NOARG)
 
-// iteration
+// iteration (the FOREACH region step; the stack-based step is
+// OBJECT_NEXT in the object interface section)
 OP(ITER_NEXT, 0, LABEL)
-OP(NEXT, 0, COUNT)
 
 // unconditional and conditional jumps
 OP(JUMP, 0, LABEL)
@@ -275,6 +275,7 @@ OP(OBJECT_DIR, 0, NOARG)
 OP(OBJECT_DIVMOD, 0, NOARG)
 OP(OBJECT_ITER, 0, NOARG)
 OP(OBJECT_LEN, 0, NOARG)
+OP(OBJECT_NEXT, 0, COUNT)
 OP(OBJECT_NOT, 0, NOARG)
 OP(OBJECT_REPR, 0, NOARG)
 OP(OBJECT_STR, 0, COUNT)

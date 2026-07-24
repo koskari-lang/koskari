@@ -314,7 +314,7 @@ When adding or changing an opcode:
 | YIELD | COUNT | Pop value; `EVAL_YIELD(val)` → **`apply_kos_op_result`** → **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](#kos_op_yield) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](#kos_op_yield_from) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](#kos_op_iter_next) |
-| NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](#kos_op_next) |
+| OBJECT_NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](#kos_op_object_next) |
 | JUMP | LABEL | Unconditional jump to pc | [§8](#kos_op_jump) |
 | JUMP_FALSE | LABEL | Jump if TOS false | [§8](#kos_op_jump_false) |
 | JUMP_TRUE | LABEL | Jump if TOS true | [§8](#kos_op_jump_true) |
@@ -873,7 +873,7 @@ bottom to top matches push order).
 
 ---
 
-### KOS_OP_NEXT
+### KOS_OP_OBJECT_NEXT
 
 - **Style**: COUNT. Arg = 1 or 2: 1 = TOS is iterator or async iterator (StopIteration raises on exhaustion); 2 = TOS = default, below = iterator or async iterator (StopIteration pushes default).
 - **Status**: Implemented.
@@ -885,15 +885,15 @@ bottom to top matches push order).
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | CONST  | 0   | 0 (iter) | stack: [..., iterator or async iterator] |
-| 1     | NEXT   | 1   | 1        | stack: [..., next_val] or raise StopIteration |
+| 1     | OBJECT_NEXT | 1 | 1      | stack: [..., next_val] or raise StopIteration |
 
 **Example (arg=2):** TOS = default, below = iterator or async iterator; push next or default.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
-| 0     | CONST  | 0   | 0 (99)   | stack: [..., default] |
-| 1     | CONST  | 1   | 1 (iter) | stack: [..., default, iterator or async iterator] |
-| 2     | NEXT   | 2   | 2        | stack: [..., next_val] or [..., 99] if exhausted |
+| 0     | CONST  | 0   | 0 (iter) | stack: [..., iterator or async iterator] |
+| 1     | CONST  | 1   | 1 (99)   | stack: [..., iterator or async iterator, default] |
+| 2     | OBJECT_NEXT | 2 | 2      | stack: [..., next_val] or [..., 99] if exhausted |
 
 
 ## 8. Jumps

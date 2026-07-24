@@ -14,16 +14,16 @@
 */
 
 /**
-   NEXT: arg = 1 or 2 (iterator [and optional default]). If Koskari async
+   OBJECT_NEXT: arg = 1 or 2 (iterator [and optional default]). If Koskari async
    gen we attach its frame; else we use get_await_next (async) or sync
    iteration. Pushes value or default on exhaustion; 1-arg lets
    StopIteration raise. Auto-await.
 */
 
-KOS_OP_HANDLER_COLD(NEXT) {
+KOS_OP_HANDLER_COLD(OBJECT_NEXT) {
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
-    PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
+    PyErr_Format(PyExc_ValueError, "OBJECT_NEXT arg must be 1 or 2, got %u", n);
     return EVAL_RAISE();
   }
 
@@ -40,7 +40,7 @@ KOS_OP_HANDLER_COLD(NEXT) {
     return EVAL_RAISE();
   }
 
-  /* If not already an iterator, get one (NEXT allows iterables). */
+  /* If not already an iterator, get one (OBJECT_NEXT allows iterables). */
   /* this was a stupid idea, but I'm leaving it here for posterity */
   // if (! KosPyAsyncGen_Check(iter)) {
   //   PyObject *awaitable = get_await_next(iter);
