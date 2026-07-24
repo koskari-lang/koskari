@@ -28,10 +28,23 @@
 */
 
 
-/* Opcode handlers are always inlined so the eval loop stays fast. */
+/* Opcode handlers are always inlined so the eval loop stays fast.
+
+   KOS_ALL_COLD=1 builds a measurement variant instead: every handler
+   is un-inlined so each op_<NAME> is its own symbol, for the
+   per-handler sizing sweep in design/dispatch-sizing.md. Never ship
+   this. */
+#ifndef KOS_ALL_COLD
+# define KOS_ALL_COLD 0
+#endif
+
 #if defined(__GNUC__) || defined(__clang__)
-# define KOS_OP_INLINE static inline __attribute__((always_inline))
 # define KOS_NOINLINE __attribute__((noinline))
+# if KOS_ALL_COLD
+#  define KOS_OP_INLINE static KOS_NOINLINE
+# else
+#  define KOS_OP_INLINE static inline __attribute__((always_inline))
+# endif
 # define likely(x)   __builtin_expect(!!(x), 1)
 # define unlikely(x) __builtin_expect(!!(x), 0)
 #else
