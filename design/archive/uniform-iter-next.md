@@ -1,7 +1,12 @@
 # Uniform iter / next: one access layer over both iteration protocols
 
-**Status**: compiler and opcode layer implemented; runtime koscallable
-forms pending. Deltas from the design as written: no new ITER opcode --
+**Status**: complete. All three pieces landed: the uniform opcode layer
+and compiler specials, the operand-fused VAR/FAST variants, and the
+koskari-defined runtime `iter`/`next` builtins (define-global in
+bootstrap `_iter.ki`, bodies riding the specials; `next` distinguishes
+its 1-arg raising form from an explicit default via a module-private
+UNDEFINED sentinel). Deltas from the design as written: no new ITER
+opcode --
 OBJECT_ITER itself was upgraded to the uniform acquisition (shared with
 PUSH_FOREACH via `kos_iter_acquire`), so `compile/iter` needed no
 change; NEXT was renamed OBJECT_NEXT and its suspend legs corrected
@@ -113,7 +118,7 @@ longer minting a DemandGenerator in koskari code.
 - PUSH_FOREACH.c:54-66 -- the acquisition preference to factor
 - opcode/NEXT.c, opcodes.incl:74 -- the existing combined step opcode
 - specials/object.py:725 -- compile/iter to upgrade
-- [asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)
+- [asyncgen-anext-await-underrun.md](asyncgen-anext-await-underrun.md)
   -- python-side anext defect, since fixed; unrelated machinery (this
   layer is koskari-side), but its fix completes the cross-boundary
   story
