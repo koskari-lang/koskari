@@ -197,4 +197,31 @@ let [[py-sorted sorted]]:
       reverse: reverse)
 
 
+let []:
+  define UNDEFINED ((class Undefined []
+                     (define __repr__ [self]
+                       "<raise>")))
+
+  define-global next [it default: UNDEFINED]:
+    """
+    Get the next item from an iterator.
+
+    If the iterator is exhausted, return the default value.
+    If the default value is not provided, raise an error.
+    """
+
+    if (is? default UNDEFINED):
+      compile/next it
+    else:
+      compile/next it default
+
+
+  define-global iter [val]:
+    """
+    Produce an iterator for an iterable value
+    """
+
+    compile/iter val
+
+
 ;; The end.
