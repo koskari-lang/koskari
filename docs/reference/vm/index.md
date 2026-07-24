@@ -2491,7 +2491,7 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 - **Comparisons and predicates**: OBJECT_COMPARE (CMPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, selector-keyed (KosCompare packs with the count); the fused OBJECT_COMPARE_VAR / OBJECT_COMPARE_FAST carry the ternary bounds idiom with no stack inputs.
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
 - **Numeric, in-place**: OBJECT_INPLACE_* (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
-- **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT.
+- **General**: OBJECT_ITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT.
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
@@ -2571,13 +2571,6 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_BIT_INVERT.c`
 
-### KOS_OP_OBJECT_AITER {#kos_op_object_aiter}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_AITER.c`
-
 ### KOS_OP_OBJECT_DIR {#kos_op_object_dir}
 
 - **Style**: NOARG.
@@ -2596,7 +2589,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Uniform iterator acquisition over both protocols (shared with PUSH_FOREACH via `kos_iter_acquire`): a Koskari AsyncGenerator passes through as itself (native, never demand-wrapped), an object with `am_aiter` yields its async iterator, otherwise the sync protocol (`PyObject_GetIter`, including the sequence fallback). See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_ITER.c`
 
 ### KOS_OP_OBJECT_LEN {#kos_op_object_len}

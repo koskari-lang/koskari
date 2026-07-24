@@ -16,7 +16,31 @@
 Test suite for koskari.
 """
 
+import asyncio
+
 from koskari.lib import Expression, Function, FormalsSpec
+
+
+class SlowAIter:
+    """
+    Async iterator whose every __anext__ awaits before producing, so
+    each step genuinely suspends (an eager python async generator
+    finishes its __anext__ synchronously and never exercises the
+    suspend leg); exhaustion therefore also surfaces mid-await
+    """
+
+    def __init__(self, values):
+        self._values = iter(values)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.sleep(0.001)
+        try:
+            return next(self._values)
+        except StopIteration:
+            raise StopAsyncIteration
 
 
 def make_callable(code, ns, formals_spec=None):

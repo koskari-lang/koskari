@@ -30,7 +30,7 @@ class TestObjectUnaryOpcodes(CevalTest):
     """
     Tests for OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_LEN,
     OBJECT_NOT, OBJECT_TRUTH,
-    OBJECT_TYPE, OBJECT_VARS, OBJECT_AITER, OBJECT_REPR, OBJECT_ITER,
+    OBJECT_TYPE, OBJECT_VARS, OBJECT_REPR, OBJECT_ITER,
     OBJECT_BIT_INVERT, OBJECT_DIR
     """
 
@@ -131,21 +131,6 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(result, {"x": 1})
 
 
-    async def test_object_aiter(self):
-        class AsyncIterable(object):
-            def __aiter__(self):
-                return self
-            def __anext__(self):
-                raise StopAsyncIteration
-        code, ns = build_expr([
-            ["CONST", AsyncIterable()],
-            ["OBJECT_AITER", 0],
-            ["RETURN", 1],
-        ])
-        result = await make_callable(code, ns)()
-        self.assertIsNotNone(result)
-
-
     async def test_object_repr(self):
         code, ns = build_expr([
             ["CONST", 42],
@@ -163,6 +148,48 @@ class TestObjectUnaryOpcodes(CevalTest):
         ])
         result = await make_callable(code, ns)()
         self.assertEqual(list(result), [1, 2])
+
+
+    async def test_object_iter_kos_agen_passthrough(self):
+        """
+        OBJECT_ITER passes a koskari AsyncGenerator through as itself:
+        native iteration, never demand-wrapped
+        """
+
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        code, ns = build_expr([
+            ["VAR", "g"],
+            ["OBJECT_ITER", 0],
+            ["RETURN", 1],
+        ], values={"g": gen})
+        result = await make_callable(code, ns)()
+        self.assertIs(result, gen)
+
+
+    async def test_object_iter_async_iterable_uses_aiter(self):
+        """
+        OBJECT_ITER acquires an async iterable's iterator via __aiter__
+        """
+
+        sentinel_iter = object()
+
+        class HasAiter:
+            def __aiter__(self):
+                return sentinel_iter
+
+        code, ns = build_expr([
+            ["VAR", "a"],
+            ["OBJECT_ITER", 0],
+            ["RETURN", 1],
+        ], values={"a": HasAiter()})
+        result = await make_callable(code, ns)()
+        self.assertIs(result, sentinel_iter)
 
 
     async def test_object_bit_invert(self):

@@ -55,7 +55,6 @@ from .let import special_let
 from .loops import special_break, special_continue, special_for_each, special_while
 from .object import (
     special_add,
-    special_aiter,
     special_bit_and,
     special_bit_invert,
     special_bit_left,
@@ -83,6 +82,7 @@ from .object import (
     special_modulo,
     special_multiply,
     special_ne,
+    special_next,
     special_not,
     special_not_in,
     special_power,
@@ -136,7 +136,6 @@ __all__ = (
     "special_and",
     "special_apply_fence",
     "special_apply_layout",
-    "special_aiter",
     "special_await",
     "special_attr",
     "special_begin",
@@ -212,6 +211,7 @@ __all__ = (
     "special_modulo",
     "special_multiply",
     "special_ne",
+    "special_next",
     "special_not",
     "special_not_in",
     "special_or",

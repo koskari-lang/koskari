@@ -156,7 +156,6 @@
 #include "opcode/NILP.c"
 #include "opcode/OBJECT_OPERAND.c"
 #include "opcode/OBJECT_INPLACE.c"
-#include "opcode/OBJECT_AITER.c"
 #include "opcode/OBJECT_BIT_INVERT.c"
 #include "opcode/OBJECT_DIR.c"
 #include "opcode/OBJECT_DIVMOD.c"

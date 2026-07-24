@@ -25,16 +25,13 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 
 ## Generators / async iteration
 
-- **Uniform `iter` / `next` (koscallable + specials + ITER opcode)** —
-  one access layer over both iteration protocols for koskari code:
-  `(iter x)` acquires per PUSH_FOREACH's preference (agen native, aiter,
-  else sync), `(next it [default])` steps either protocol with ambient
-  async and the NEXT opcode's exhaustion contract. compile/iter upgrades
-  from sync-only OBJECT_ITER to a new ITER opcode (acquisition factored
-  from PUSH_FOREACH); compile/next is new, emitting the existing (never
-  yet emitted) NEXT opcode; the koscallable bootstrap forms are the
-  specials one frame deep, replacing the CPython builtins in the builtin
-  namespace. Created together. Ref:
+- **Uniform `iter` / `next`: runtime forms and fusion** — the compiler
+  and opcode layer landed (uniform OBJECT_ITER via `kos_iter_acquire`,
+  OBJECT_NEXT with corrected suspend legs, `compile/next`;
+  `compile/aiter`/OBJECT_AITER retired). Remaining: the koskari-defined
+  runtime `iter`/`next` bootstrap forms replacing the CPython builtins
+  in the builtin namespace, and the operand-fused VAR_ITER / FAST_ITER
+  (possibly VAR_NEXT / FAST_NEXT) variants. Ref:
   [interpreter/uniform-iter-next.md](interpreter/uniform-iter-next.md).
 - **AsyncGenerator aclose / athrow** — PEP 525 protocol surface;
   `aclose` is the sanctioned suspending close (awaits inside `finally`

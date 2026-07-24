@@ -28,10 +28,11 @@ classify correctly, which is how the gap stayed hidden.
 :license: GNU General Public License v3
 """
 
-import asyncio
 import unittest
 
 from koskari.module import load_module_source_async, new_module
+
+from tests import SlowAIter
 
 import pytest
 
@@ -45,27 +46,6 @@ define collect [ait]:
         (out.append x)
     out
 """
-
-
-class SlowAIter:
-    """
-    Async iterator whose every __anext__ awaits before producing, so
-    each step genuinely suspends; exhaustion therefore also surfaces
-    mid-await
-    """
-
-    def __init__(self, values):
-        self._values = iter(values)
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        await asyncio.sleep(0.001)
-        try:
-            return next(self._values)
-        except StopIteration:
-            raise StopAsyncIteration
 
 
 async def eager_source():

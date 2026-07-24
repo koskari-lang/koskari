@@ -50,22 +50,8 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   uint32_t break_pc = ext->pop_pc + 1u;
 
   /* Create iterator from iterable (sync or async) */
-  PyObject *iter = NULL;
-  if (KosPyAsyncGen_Check(iterable)) {
-    iter = iterable;
-    Py_INCREF(iter);
-    Py_DECREF(iterable);
-
-  } else if (Py_TYPE(iterable)->tp_as_async &&
-             Py_TYPE(iterable)->tp_as_async->am_aiter) {
-    iter = Py_TYPE(iterable)->tp_as_async->am_aiter(iterable);
-    Py_DECREF(iterable);
-
-  } else {
-    iter = PyObject_GetIter(iterable);
-    Py_DECREF(iterable);
-  }
-
+  PyObject *iter = kos_iter_acquire(iterable);
+  Py_DECREF(iterable);
   if (! iter)
     return EVAL_RAISE();
 

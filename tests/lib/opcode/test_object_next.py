@@ -18,36 +18,12 @@ Tests for OBJECT_NEXT, ITER_NEXT opcodes.
 :license: GNU General Public License v3
 """
 
-import asyncio
-
-from tests import make_callable
+from tests import SlowAIter, make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
 import pytest
 
 pytestmark = pytest.mark.phase_lib
-
-
-class SlowAIter:
-    """
-    Async iterator whose every __anext__ awaits before producing, so
-    each step genuinely suspends (an eager python async generator
-    finishes its __anext__ synchronously and never exercises the
-    suspend leg); exhaustion therefore also surfaces mid-await
-    """
-
-    def __init__(self, values):
-        self._values = iter(values)
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        await asyncio.sleep(0.001)
-        try:
-            return next(self._values)
-        except StopIteration:
-            raise StopAsyncIteration
 
 
 class TestNextOpcodes(CevalTest):

@@ -1,8 +1,17 @@
 # Uniform iter / next: one access layer over both iteration protocols
 
-**Status**: proposed. Surface builtins and compiler specials created
-together, sharing one C core with the NEXT opcode and a new ITER
-opcode.
+**Status**: compiler and opcode layer implemented; runtime koscallable
+forms pending. Deltas from the design as written: no new ITER opcode --
+OBJECT_ITER itself was upgraded to the uniform acquisition (shared with
+PUSH_FOREACH via `kos_iter_acquire`), so `compile/iter` needed no
+change; NEXT was renamed OBJECT_NEXT and its suspend legs corrected
+(suspended python async iterator steps ride the receiving iterator
+boundary -- NEXT node for OBJECT_NEXT, an AWAITING_PY FOREACH phase for
+ITER_NEXT -- so mid-await values and exhaustion honor the contracts);
+`compile/next` emits OBJECT_NEXT; `compile/aiter` and OBJECT_AITER were
+retired (subsumed by the uniform `compile/iter`). Operand-fused
+VAR_ITER / FAST_ITER (and possibly VAR_NEXT / FAST_NEXT) are a planned
+follow-up.
 
 ---
 

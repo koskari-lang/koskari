@@ -21,13 +21,13 @@ compile/+, compile/-, compile/*, compile/**, compile/&, compile/|, compile/^,
 compile///, compile/@, compile//, compile/%, compile/<<, compile/>>,
 compile/divmod,
 compile/not, compile/repr, compile/truth, compile/iter, compile/~,
-compile/#str, compile/len, compile/type, compile/dir, compile/vars,
-compile/aiter.
+compile/#str, compile/len, compile/type, compile/dir, compile/vars.
 """
 
 
 from koskari.exceptions import SpecialError, SyntaxMatchError
 from koskari.lib import Compare, OpCode, OpStyle, Operand
+from tests import SlowAIter
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -946,6 +946,19 @@ class TestObjectIter(SpecialsTestCase):
         self.assertEqual([1, 2, 3], list(result))
 
 
+    async def test_iter_async_iterable(self):
+        # a python async generator's __aiter__ returns itself; the
+        # uniform acquisition takes the async protocol instead of
+        # raising "not iterable"
+        async def gen():
+            yield 1
+
+        a = gen()
+        expr, mod = self.compile_expr("(compile/iter a)", a=a)
+        result = await expr()
+        self.assertIs(result, a)
+
+
     async def test_iter_emits_opcode(self):
         code = self.compile_to_code("(compile/iter a)")
         self.assertIn(OpCode.KOS_OP_OBJECT_ITER, _opcodes(code))
@@ -954,6 +967,60 @@ class TestObjectIter(SpecialsTestCase):
     async def test_iter_requires_one_arg(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code("(compile/iter)")
+
+
+class TestObjectNext(SpecialsTestCase):
+
+    async def test_next_value(self):
+        expr, mod = self.compile_expr("(compile/next a)", a=iter([5, 6]))
+        self.assertEqual(5, await expr())
+
+
+    async def test_next_exhausted_default(self):
+        expr, mod = self.compile_expr(
+            "(compile/next a b)", a=iter([]), b="empty")
+        self.assertEqual("empty", await expr())
+
+
+    async def test_next_exhausted_raises_catchable(self):
+        expr, mod = self.compile_expr(
+            '(try (compile/next a) [[e StopIteration] "exhausted"])',
+            a=iter([]), StopIteration=StopIteration)
+        self.assertEqual("exhausted", await expr())
+
+
+    async def test_next_async_iterator_value(self):
+        async def gen():
+            yield 10
+
+        expr, mod = self.compile_expr("(compile/next a)", a=gen())
+        self.assertEqual(10, await expr())
+
+
+    async def test_next_awaiting_step_value(self):
+        expr, mod = self.compile_expr(
+            "(compile/next a)", a=SlowAIter([7]))
+        self.assertEqual(7, await expr())
+
+
+    async def test_next_awaiting_step_default(self):
+        expr, mod = self.compile_expr(
+            "(compile/next a b)", a=SlowAIter([]), b="done")
+        self.assertEqual("done", await expr())
+
+
+    async def test_next_emits_opcode_arity(self):
+        code = self.compile_to_code("(compile/next a)")
+        self.assertEqual(1, _find_op(code, OpCode.KOS_OP_OBJECT_NEXT))
+        code = self.compile_to_code("(compile/next a b)")
+        self.assertEqual(2, _find_op(code, OpCode.KOS_OP_OBJECT_NEXT))
+
+
+    async def test_next_requires_one_or_two_args(self):
+        with self.assertRaises(SyntaxMatchError):
+            self.compile_to_code("(compile/next)")
+        with self.assertRaises(SyntaxMatchError):
+            self.compile_to_code("(compile/next a b c)")
 
 
 class TestObjectBitInvert(SpecialsTestCase):
@@ -1073,23 +1140,6 @@ class TestObjectVars(SpecialsTestCase):
     async def test_vars_requires_one_arg(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code("(compile/vars)")
-
-
-class TestObjectAiter(SpecialsTestCase):
-
-    async def test_aiter_emits_opcode(self):
-        code = self.compile_to_code("(compile/aiter a)")
-        self.assertIn(OpCode.KOS_OP_OBJECT_AITER, _opcodes(code))
-
-
-    async def test_aiter_requires_one_arg(self):
-        with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/aiter)")
-
-
-    async def test_aiter_rejects_two_args(self):
-        with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/aiter a b)")
 
 
 class TestObjectFormat(SpecialsTestCase):

@@ -224,7 +224,7 @@ quick lookup.
 - Comparisons: `KOS_OP_OBJECT_EQ`, `KOS_OP_OBJECT_NE`, `KOS_OP_OBJECT_LT`, etc.
 - Predicates: `KOS_OP_OBJECT_IN`, `KOS_OP_OBJECT_IS`, `KOS_OP_OBJECT_IS_INSTANCE`, etc.
 - Arithmetic: `KOS_OP_OBJECT_ADD`, `KOS_OP_OBJECT_SUBTRACT`, `KOS_OP_OBJECT_MULTIPLY`, etc.
-- General: `KOS_OP_OBJECT_ITER`, `KOS_OP_OBJECT_AITER`, `KOS_OP_OBJECT_LEN`, etc.
+- General: `KOS_OP_OBJECT_ITER`, `KOS_OP_OBJECT_LEN`, etc.
 
 ### Iteration
 - `KOS_OP_ITER_NEXT`: Get next from region iterator (must be inside PUSH_FOREACH); arg = else label; uses region->iter; auto-await
