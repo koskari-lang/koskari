@@ -288,16 +288,19 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
       }
 
       if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-        /* Python awaitable completed - pass result as send_val and drive again */
+        /* Python awaitable completed - pass result as send_val and drive
+           again. await_result is uniformly owned; the XDECREF after the
+           drive releases it. */
         PyObject *await_result = NULL;
         PyGen_FetchStopIterationValue(&await_result);
-        if (! await_result)
+        if (! await_result) {
           await_result = Py_None;
+          Py_INCREF(await_result);
+        }
 
         KosEvalState_PythonAwaitClearIter(&coro_es);
         coro->state = KOS_CORO_RUNNING;
         send_val = await_result;
-        Py_INCREF(send_val);
         /* fall through to drive and handle ev */
       } else {
         /* Exception from Python awaitable */
@@ -353,10 +356,13 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
       }
 
       if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+        /* await_result is uniformly owned; PythonResumeSet steals it. */
         PyObject *await_result = NULL;
         PyGen_FetchStopIterationValue(&await_result);
-        if (! await_result)
+        if (! await_result) {
           await_result = Py_None;
+          Py_INCREF(await_result);
+        }
         KosEvalState_PythonAwaitClearIter(&coro_es);
         coro->state = KOS_CORO_RUNNING;
         KosEvalState_PythonResumeSet(&coro_es, await_result, KOS_RESUME_AWAIT);

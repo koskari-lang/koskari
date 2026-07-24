@@ -10,8 +10,8 @@ void kos_dyn_next_free_payload(KosDynNode *node) {
 }
 
 
-int kos_dyn_push_next_for_kos_agen(
-    KosEvalState *es, PyObject *agen_obj, PyObject *default_val, int n) {
+int kos_dyn_push_next_boundary(
+    KosEvalState *es, PyObject *iter_obj, PyObject *default_val, int n) {
 
   // CONTEXT: dirty, touches context directly
   KosDynNode *node = kos_dynnode_alloc();
@@ -21,8 +21,8 @@ int kos_dyn_push_next_for_kos_agen(
 
   kos_dynnode_init(
       node, KOS_DYN_NEXT, KosEvalState_DYN_TOP(es), KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY);
-  Py_INCREF(agen_obj);
-  KosDynNext_AGEN_OBJ(node) = agen_obj;
+  Py_INCREF(iter_obj);
+  KosDynNext_AGEN_OBJ(node) = iter_obj;
   if (default_val) {
     Py_INCREF(default_val);
     KosDynNext_DEFAULT_VAL(node) = default_val;
@@ -81,15 +81,16 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
 int kos_dyn_next_deliver_yield(
     KosEvalState *es, KosDynNext *next, PyObject *val) {
 
-  KosPyAsyncGen *agen;
+  PyObject *iter_obj;
 
   if (KosEvalState_StackPushRef(es, val) < 0) {
     return -1;
   }
   Py_DECREF(val);
 
-  agen = (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) next);
-  agen->in_progress = 0;
+  iter_obj = KosDynNext_AGEN_OBJ((KosDynNode *) next);
+  if (KosPyAsyncGen_Check(iter_obj))
+    ((KosPyAsyncGen *) iter_obj)->in_progress = 0;
 
   kos_dyn_unlink_next_node(es, next);
   return 0;
@@ -107,12 +108,14 @@ int kos_dyn_next_deliver_exhausted(
     KosDynNext *next,
     PyObject *val) {
 
-  KosPyAsyncGen *agen;
+  PyObject *iter_obj;
   int nn = KosDynNext_N((KosDynNode *) next);
 
-  agen = (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) next);
-  agen->closed = 1;
-  agen->in_progress = 0;
+  iter_obj = KosDynNext_AGEN_OBJ((KosDynNode *) next);
+  if (KosPyAsyncGen_Check(iter_obj)) {
+    ((KosPyAsyncGen *) iter_obj)->closed = 1;
+    ((KosPyAsyncGen *) iter_obj)->in_progress = 0;
+  }
 
   if (nn == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) next)) {
     if (KosEvalState_StackPushRef(

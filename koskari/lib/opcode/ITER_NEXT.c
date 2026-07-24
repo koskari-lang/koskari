@@ -82,6 +82,14 @@ KOS_OP_HANDLER(ITER_NEXT) {
       KosEvalState_SET_PC(es, KosOp_ARG(insn));
       return EVAL_NORMAL();
     case GET_NEXT_SUSPEND:
+      /* The step is parked on its await: arm the else pc and the
+         in-flight phase so the awaited value revives through the
+         boundary and StopAsyncIteration from the parked step converts
+         to exhaustion (branch to else) at the raise walk. */
+      KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
+          KosOp_ARG(insn);
+      kos_dyn_foreach_set_iter_step_phase(
+          (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_AWAITING_PY);
       return EVAL_AWAIT(_await);
     case GET_NEXT_ERROR:
       return EVAL_RAISE();

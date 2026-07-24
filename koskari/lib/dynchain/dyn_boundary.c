@@ -133,6 +133,42 @@ int kos_dyn_iter_boundary_deliver_exhausted(
 }
 
 
+/**
+   The exception type that ends this boundary's in-flight step: a
+   flattened Koskari agen step finishes as StopIteration (the flattened
+   generator's own semantics), a suspended python async iterator step
+   finishes as StopAsyncIteration (the __anext__ protocol).
+*/
+PyObject *kos_dyn_iter_boundary_exhaustion_exc(KosDynNode *node) {
+
+  if (KosDynNode_IS_NEXT(node))
+    return KosPyAsyncGen_Check(KosDynNext_AGEN_OBJ(node))
+        ? PyExc_StopIteration : PyExc_StopAsyncIteration;
+  if (KosDynNode_IS_FOREACH(node))
+    return (KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) node)
+            == KOS_FOREACH_ITER_STEP_AWAITING_PY)
+        ? PyExc_StopAsyncIteration : PyExc_StopIteration;
+  return PyExc_StopIteration;
+}
+
+
+/**
+   True when the boundary's in-flight step is a suspended python async
+   iterator being driven through the pending context await -- the flavor
+   whose step value arrives at revive-from-await rather than as a
+   boundary yield event.
+*/
+int kos_dyn_iter_boundary_awaiting_py(KosDynNode *node) {
+
+  if (KosDynNode_IS_NEXT(node))
+    return ! KosPyAsyncGen_Check(KosDynNext_AGEN_OBJ(node));
+  if (KosDynNode_IS_FOREACH(node))
+    return KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) node)
+        == KOS_FOREACH_ITER_STEP_AWAITING_PY;
+  return 0;
+}
+
+
 PyObject *kos_dyn_iter_boundary_agen(KosDynNode *node) {
 
   if (KosDynNode_IS_NEXT(node))

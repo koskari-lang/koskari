@@ -1,8 +1,25 @@
 # Uniform iter / next: one access layer over both iteration protocols
 
-**Status**: proposed. Surface builtins and compiler specials created
-together, sharing one C core with the NEXT opcode and a new ITER
-opcode.
+**Status**: complete. All three pieces landed: the uniform opcode layer
+and compiler specials, the operand-fused VAR/FAST variants, and the
+koskari-defined runtime `iter`/`next` builtins (define-global in
+bootstrap `_iter.ki`, bodies riding the specials; `next` distinguishes
+its 1-arg raising form from an explicit default via a module-private
+UNDEFINED sentinel). Deltas from the design as written: no new ITER
+opcode --
+OBJECT_ITER itself was upgraded to the uniform acquisition (shared with
+PUSH_FOREACH via `kos_iter_acquire`), so `compile/iter` needed no
+change; NEXT was renamed OBJECT_NEXT and its suspend legs corrected
+(suspended python async iterator steps ride the receiving iterator
+boundary -- NEXT node for OBJECT_NEXT, an AWAITING_PY FOREACH phase for
+ITER_NEXT -- so mid-await values and exhaustion honor the contracts);
+`compile/next` emits OBJECT_NEXT; `compile/aiter` and OBJECT_AITER were
+retired (subsumed by the uniform `compile/iter`). The operand-fused
+VAR_ITER / FAST_ITER and VAR_NEXT / FAST_NEXT variants are in: bare VAR
+feeders fuse in `Compiler.fuse_check_feeders` (the 2-arg next form only
+when the default is also a bare feeder, since the iterator load moves
+past it), and `convert_fast` lowers the VAR forms to their FAST twins
+through the existing auto-paired paths.
 
 ---
 
@@ -101,7 +118,7 @@ longer minting a DemandGenerator in koskari code.
 - PUSH_FOREACH.c:54-66 -- the acquisition preference to factor
 - opcode/NEXT.c, opcodes.incl:74 -- the existing combined step opcode
 - specials/object.py:725 -- compile/iter to upgrade
-- [asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)
+- [asyncgen-anext-await-underrun.md](asyncgen-anext-await-underrun.md)
   -- python-side anext defect, since fixed; unrelated machinery (this
   layer is koskari-side), but its fix completes the cross-boundary
   story

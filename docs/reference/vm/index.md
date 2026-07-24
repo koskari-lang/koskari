@@ -704,7 +704,7 @@ bottom to top matches push order).
 
 ---
 
-### KOS_OP_NEXT
+### KOS_OP_OBJECT_NEXT
 
 - **Style**: COUNT. Arg = 1 or 2: 1 = TOS is iterator or async iterator (StopIteration raises on exhaustion); 2 = TOS = default, below = iterator or async iterator (StopIteration pushes default).
 - **Status**: Implemented.
@@ -716,15 +716,37 @@ bottom to top matches push order).
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | CONST  | 0   | 0 (iter) | stack: [..., iterator or async iterator] |
-| 1     | NEXT   | 1   | 1        | stack: [..., next_val] or raise StopIteration |
+| 1     | OBJECT_NEXT | 1 | 1      | stack: [..., next_val] or raise StopIteration |
 
 **Example (arg=2):** TOS = default, below = iterator or async iterator; push next or default.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
-| 0     | CONST  | 0   | 0 (99)   | stack: [..., default] |
-| 1     | CONST  | 1   | 1 (iter) | stack: [..., default, iterator or async iterator] |
-| 2     | NEXT   | 2   | 2        | stack: [..., next_val] or [..., 99] if exhausted |
+| 0     | CONST  | 0   | 0 (iter) | stack: [..., iterator or async iterator] |
+| 1     | CONST  | 1   | 1 (99)   | stack: [..., iterator or async iterator, default] |
+| 2     | OBJECT_NEXT | 2 | 2      | stack: [..., next_val] or [..., 99] if exhausted |
+
+### KOS_OP_VAR_NEXT {#kos_op_var_next}
+
+- **Style**: EXTRA (VAR, COUNT). Row = iterator name (pool), n (1 or 2).
+- **Status**: Implemented.
+- **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
+- **Invariants**: The fused name resolution runs after the default row (the fusion requires a bare default feeder, so the reorder is unobservable beyond NameError timing).
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
+- **Implementation**: `koskari/lib/opcode/VAR_NEXT.c` (cold handler)
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_object_next.py`
+
+### KOS_OP_FAST_NEXT {#kos_op_fast_next}
+
+- **Style**: EXTRA (FASTVAR, COUNT). Row = iterator slot, n (1 or 2).
+- **Status**: Implemented.
+- **Stack**: As VAR_NEXT, with the iterator loaded from its fast slot.
+- **Compiler form:** Post-compile only: the generic `convert_fast` lowering of VAR_NEXT when the iterator name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_NEXT.c` (cold handler)
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_object_next.py`
+
 
 ## 8. Jumps
 
@@ -2491,7 +2513,7 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 - **Comparisons and predicates**: OBJECT_COMPARE (CMPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, selector-keyed (KosCompare packs with the count); the fused OBJECT_COMPARE_VAR / OBJECT_COMPARE_FAST carry the ternary bounds idiom with no stack inputs.
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
 - **Numeric, in-place**: OBJECT_INPLACE_* (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
-- **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT.
+- **General**: OBJECT_ITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT.
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
@@ -2571,13 +2593,6 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_BIT_INVERT.c`
 
-### KOS_OP_OBJECT_AITER {#kos_op_object_aiter}
-
-- **Style**: NOARG.
-- **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
-- **Implementation**: `koskari/lib/opcode/OBJECT_AITER.c`
-
 ### KOS_OP_OBJECT_DIR {#kos_op_object_dir}
 
 - **Style**: NOARG.
@@ -2596,8 +2611,29 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Uniform iterator acquisition over both protocols (shared with PUSH_FOREACH via `kos_iter_acquire`): a Koskari AsyncGenerator passes through as itself (native, never demand-wrapped), an object with `am_aiter` yields its async iterator, otherwise the sync protocol (`PyObject_GetIter`, including the sequence fallback). See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_ITER.c`
+
+
+### KOS_OP_VAR_ITER {#kos_op_var_iter}
+
+- **Style**: VAR. Arg = constant index of a name.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [..., iterator]`. Fused VAR + OBJECT_ITER: resolve the name in the current frame's namespace and push its iterator, acquired uniformly over both protocols (`kos_iter_acquire`).
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_ITER is fed by a bare VAR load. Lowers to FAST_ITER through the simple `convert_fast` path.
+- **Implementation**: `koskari/lib/opcode/VAR_ITER.c`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_object_unary.py`
+
+### KOS_OP_FAST_ITER {#kos_op_fast_iter}
+
+- **Style**: FASTVAR. Arg = slot index.
+- **Status**: Implemented.
+- **Stack**: As VAR_ITER, with the iterable loaded from its fast slot.
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_ITER when the name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITER.c`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_object_unary.py`
 
 ### KOS_OP_OBJECT_LEN {#kos_op_object_len}
 

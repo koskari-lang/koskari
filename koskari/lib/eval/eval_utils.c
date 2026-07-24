@@ -942,7 +942,33 @@ KosOpResult KosEvalState_CallNoArgs(
 }
 
 
-/* === Python iter next (NEXT / ITER_NEXT opcodes) === */
+/* === Python iter next (OBJECT_NEXT / ITER_NEXT opcodes) === */
+
+
+/**
+   Acquire an iterator from an iterable, uniform over both protocols
+   (the PUSH_FOREACH preference order, shared with OBJECT_ITER so the
+   two cannot drift): a Koskari AsyncGenerator passes through as itself
+   (native, never demand-wrapped); an object with am_aiter yields its
+   async iterator; otherwise the sync protocol (PyObject_GetIter,
+   including the sequence fallback).
+
+   :param iterable: borrowed
+   :return: new iterator reference, or NULL with PyErr set
+*/
+static PyObject *kos_iter_acquire(PyObject *iterable) {
+
+  if (KosPyAsyncGen_Check(iterable)) {
+    Py_INCREF(iterable);
+    return iterable;
+  }
+
+  if (Py_TYPE(iterable)->tp_as_async
+      && Py_TYPE(iterable)->tp_as_async->am_aiter)
+    return Py_TYPE(iterable)->tp_as_async->am_aiter(iterable);
+
+  return PyObject_GetIter(iterable);
+}
 
 /**
    Get next value from a Python async iterator using the given __anext__

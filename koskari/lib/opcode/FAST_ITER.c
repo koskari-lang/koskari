@@ -14,26 +14,23 @@
 */
 
 /**
-   OBJECT_AITER: arg unused. Pop TOS (async iterable), call __aiter__, push
-   the async iterator or await it.
+   FAST_ITER: fused FAST + OBJECT_ITER. Arg = slot index. Push the fast
+   local's iterator, acquired uniformly over both protocols
+   (kos_iter_acquire).
 */
 
-KOS_OP_HANDLER(OBJECT_AITER) {
-  PyObject *val = KosEvalState_StackPopRef(es);
+KOS_OP_HANDLER(FAST_ITER) {
+  PyObject *ns = CURRENT_NS();
+  KOS_OP_REQUIRE_NS(ns);
+  size_t idx = (size_t) KosOp_ARG(insn);
+  PyObject *val = kos_ns_fast_deref(ns, idx);
   if (! val)
     return EVAL_RAISE();
 
-  PyObject *res = NULL;
-  PyTypeObject *type = Py_TYPE(val);
-  if (type->tp_as_async && type->tp_as_async->am_aiter)
-    res = type->tp_as_async->am_aiter(val);
-  if (! res) {
-    PyErr_Format(PyExc_RuntimeError, "cannot await for elements of %R", val);
-    Py_DECREF(val);
-    return EVAL_RAISE();
-  }
+  PyObject *res = kos_iter_acquire(val);
   Py_DECREF(val);
-  (void) insn;
+  if (! res)
+    return EVAL_RAISE();
   return kos_op_result_PUSH(es, res);
 }
 

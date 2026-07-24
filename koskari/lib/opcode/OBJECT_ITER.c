@@ -14,12 +14,15 @@
 */
 
 /**
-   OBJECT_ITER: pop TOS, call PyObject_GetIter, push result.
+   OBJECT_ITER: pop TOS, acquire an iterator uniformly over both
+   protocols (kos_iter_acquire, PUSH_FOREACH's preference order: Koskari
+   AsyncGenerator passes through, am_aiter, then the sync protocol),
+   push result.
 */
 KOS_OP_HANDLER(OBJECT_ITER) {
     PyObject *val = KosEvalState_StackPopRef(es);
     if (! val) return EVAL_RAISE();
-    PyObject *res = PyObject_GetIter(val);
+    PyObject *res = kos_iter_acquire(val);
     Py_DECREF(val);
     if (! res) return EVAL_RAISE();
     (void) insn;

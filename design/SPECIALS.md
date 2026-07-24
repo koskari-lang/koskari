@@ -2650,7 +2650,9 @@ Each requires exactly one argument.
 | `(compile/not OBJ)`          | `OBJECT_NOT`                             | `not OBJ`                  |
 | `(compile/repr OBJ)`         | `OBJECT_REPR`                            | `repr(OBJ)`                |
 | `(compile/truth OBJ)`        | `OBJECT_TRUTH`                           | `bool(OBJ)`                |
-| `(compile/iter OBJ)`         | `OBJECT_ITER`                            | `iter(OBJ)`                |
+| `(compile/iter OBJ)`         | `OBJECT_ITER`                            | uniform `iter`/`aiter`     |
+| `(compile/next IT)`          | `OBJECT_NEXT`                            | `next(IT)`, either protocol |
+| `(compile/next IT DEFAULT)`  | `OBJECT_NEXT`                            | `next(IT, DEFAULT)`        |
 | `(compile/~ OBJ)`            | `OBJECT_BIT_INVERT`                      | `~OBJ`                     |
 | `(compile/str OBJ ...)`      | `OBJECT_STR`                             | `str(OBJ)` / f-string join |
 | `(compile/format OBJ)`       | `OBJECT_FORMAT`                          | `format(OBJ)`              |
@@ -2659,7 +2661,6 @@ Each requires exactly one argument.
 | `(compile/type OBJ)`         | `OBJECT_TYPE`                            | `type(OBJ)`                |
 | `(compile/dir OBJ)`          | `OBJECT_DIR`                             | `dir(OBJ)`                 |
 | `(compile/vars OBJ)`         | `OBJECT_VARS`                            | `vars(OBJ)`                |
-| `(compile/aiter OBJ)`        | `OBJECT_AITER`                           | `aiter(OBJ)`               |
 
 
 Note: `compile/str` is variadic (COUNT) at the C level — it uses

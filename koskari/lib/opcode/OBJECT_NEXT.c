@@ -14,33 +14,20 @@
 */
 
 /**
-   NEXT: arg = 1 or 2 (iterator [and optional default]). If Koskari async
-   gen we attach its frame; else we use get_await_next (async) or sync
-   iteration. Pushes value or default on exhaustion; 1-arg lets
-   StopIteration raise. Auto-await.
+   Shared step core for OBJECT_NEXT and its fused VAR_NEXT / FAST_NEXT
+   variants: one step of either iteration protocol. Consumes iter and
+   default_val (may be NULL when n == 1). If Koskari async gen we attach
+   its frame; else async or sync python iteration. Pushes value or
+   default on exhaustion; 1-arg lets StopIteration raise. Auto-await.
 */
 
-KOS_OP_HANDLER_COLD(NEXT) {
-  uint16_t n = KosOp_ARG(insn);
-  if (n != 1 && n != 2) {
-    PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
-    return EVAL_RAISE();
-  }
+static KosOpResult object_next_step(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject *default_val,
+    uint16_t n) {
 
-  PyObject *default_val = NULL;
-  PyObject *iter = NULL;
-  if (n == 2) {
-    default_val = KosEvalState_StackPopRef(es);
-    if (! default_val)
-      return EVAL_RAISE();
-  }
-  iter = KosEvalState_StackPopRef(es);
-  if (! iter) {
-    Py_XDECREF(default_val);
-    return EVAL_RAISE();
-  }
-
-  /* If not already an iterator, get one (NEXT allows iterables). */
+  /* If not already an iterator, get one (OBJECT_NEXT allows iterables). */
   /* this was a stupid idea, but I'm leaving it here for posterity */
   // if (! KosPyAsyncGen_Check(iter)) {
   //   PyObject *awaitable = get_await_next(iter);
@@ -82,8 +69,8 @@ KOS_OP_HANDLER_COLD(NEXT) {
       return EVAL_RAISE();
     }
     agen->in_progress = 1;
-    if (kos_dyn_push_next_for_kos_agen(es, (PyObject *) agen, default_val,
-                                        (int) n)
+    if (kos_dyn_push_next_boundary(es, (PyObject *) agen, default_val,
+                                    (int) n)
         < 0) {
       agen->in_progress = 0;
       Py_DECREF(iter);
@@ -128,21 +115,14 @@ KOS_OP_HANDLER_COLD(NEXT) {
       return EVAL_RAISE();
 
     case GET_NEXT_SUSPEND:
-      if (n == 2) {
-        if (KosEvalState_StackPushRef(es, default_val) < 0) {
-          Py_DECREF(default_val);
-          Py_DECREF(iter);
-          Py_XDECREF(_await);
-          return EVAL_RAISE();
-        }
-      }
-      if (KosEvalState_StackPushRef(es, iter) < 0) {
-        if (n == 2) {
-          PyObject *rollback_default = KosEvalState_StackPopRef(es);
-          Py_XDECREF(rollback_default);
-          Py_DECREF(default_val);
-        }
+      /* The step is parked on its await: arm the NEXT boundary node to
+         carry the arity contract across the suspension. The awaited
+         value revives through the boundary (revive_await election);
+         StopAsyncIteration from the parked step converts to exhaustion
+         at the raise walk. Nothing rides the operand stack. */
+      if (kos_dyn_push_next_boundary(es, iter, default_val, (int) n) < 0) {
         Py_DECREF(iter);
+        Py_XDECREF(default_val);
         Py_XDECREF(_await);
         return EVAL_RAISE();
       }
@@ -160,6 +140,34 @@ KOS_OP_HANDLER_COLD(NEXT) {
       Py_XDECREF(default_val);
       return EVAL_RAISE();
   }
+}
+
+
+/**
+   OBJECT_NEXT: arg = 1 or 2. Stack: [iter] or [iter, default]; pops
+   its operands and runs the shared step core.
+*/
+
+KOS_OP_HANDLER_COLD(OBJECT_NEXT) {
+  uint16_t n = KosOp_ARG(insn);
+  if (n != 1 && n != 2) {
+    PyErr_Format(PyExc_ValueError, "OBJECT_NEXT arg must be 1 or 2, got %u", n);
+    return EVAL_RAISE();
+  }
+
+  PyObject *default_val = NULL;
+  if (n == 2) {
+    default_val = KosEvalState_StackPopRef(es);
+    if (! default_val)
+      return EVAL_RAISE();
+  }
+  PyObject *iter = KosEvalState_StackPopRef(es);
+  if (! iter) {
+    Py_XDECREF(default_val);
+    return EVAL_RAISE();
+  }
+
+  return object_next_step(es, iter, default_val, n);
 }
 
 

@@ -726,10 +726,53 @@ def special_truth(compiler, source, tc=False):
 @special("compile/iter", patterns=_DEFAULT_SPECIAL_PATTERNS)
 def special_iter(compiler, source, tc=False):
     """
-    Compile (compile/iter OBJ). Iterator creation via __iter__
+    Compile (compile/iter OBJ). Iterator acquisition uniform over both
+    protocols: a koskari AsyncGenerator passes through as itself, an
+    async iterable yields its __aiter__, otherwise the sync __iter__
+    protocol
     """
 
     return _unary_op(OpCode.KOS_OP_OBJECT_ITER, compiler, source)
+
+
+_NEXT_PATTERNS = [
+    MATCH(VALUE("it")),
+    MATCH(VALUE("it"), VALUE("default")),
+]
+
+_NEXT_PATTERNS_FULL = tuple(
+    MATCH(CALLEDBY(), *m._children)
+    for m in _NEXT_PATTERNS)
+
+
+@builtin("compile/next")
+@special("compile/next", patterns=_NEXT_PATTERNS_FULL)
+def special_next(compiler, source, tc=False):
+    """
+    Compile (compile/next IT [DEFAULT]). One step of either iteration
+    protocol via OBJECT_NEXT, ambient async: exhaustion raises
+    StopIteration in the one-argument form and yields DEFAULT in the
+    two-argument form
+    """
+
+    called_by, body = source
+    matched = match(body, _NEXT_PATTERNS)
+    if matched is None:
+        raise SpecialError(
+            "compile/next requires one or two arguments",
+            source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+    frag.merge(compiler.full_compile(matched["it"].datum))
+
+    if "default" in matched:
+        frag.merge(compiler.full_compile(matched["default"].datum))
+        frag.instruction(OpCode.KOS_OP_OBJECT_NEXT, 2)
+    else:
+        frag.instruction(OpCode.KOS_OP_OBJECT_NEXT, 1)
+
+    return frag
 
 
 @builtin("compile/~")
@@ -805,16 +848,6 @@ def special_vars(compiler, source, tc=False):
     """
 
     return _unary_op(OpCode.KOS_OP_OBJECT_VARS, compiler, source)
-
-
-@builtin("compile/aiter")
-@special("compile/aiter", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_aiter(compiler, source, tc=False):
-    """
-    Compile (compile/aiter OBJ). Async iterator creation via __aiter__
-    """
-
-    return _unary_op(OpCode.KOS_OP_OBJECT_AITER, compiler, source)
 
 
 # operator symbol -> Operand op-type. Both the plain and compile/ symbol forms

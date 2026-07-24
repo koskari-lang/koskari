@@ -619,14 +619,19 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
         }
 
         if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
-          /* The boundary consumed a StopIteration from its in-flight
-             flattened step as end-of-iteration: convert to exhaustion
-             delivery, carrying the StopIteration value as the
-             generator's return value (coroutine protocol equation). */
+          /* The boundary consumed the step-ending exception from its
+             in-flight step as end-of-iteration: convert to exhaustion
+             delivery. StopIteration carries the flattened generator's
+             return value (coroutine protocol equation);
+             StopAsyncIteration has no return-value channel. */
           PyObject *stop_val = NULL;
 
-          if (PyGen_FetchStopIterationValue(&stop_val) < 0)
-            return EVAL_FATAL();
+          if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+            if (PyGen_FetchStopIterationValue(&stop_val) < 0)
+              return EVAL_FATAL();
+          } else {
+            PyErr_Clear();
+          }
           if (! stop_val) {
             stop_val = Py_None;
             Py_INCREF(stop_val);
