@@ -311,15 +311,34 @@ static KosOpResult revive_await(
   }
   PyObject *to_push = NULL;
   uint8_t resume_kind_unused;
-  KosEvalState_PythonResumeTake(es, &to_push, &resume_kind_unused);
+  /* Take transfers the stored inject's reference to us (owned == 1);
+     the send_val fallback is borrowed from the caller. */
+  int owned = KosEvalState_PythonResumeTake(es, &to_push, &resume_kind_unused);
   (void) resume_kind_unused;
   if (to_push == NULL && send_val != NULL) {
     to_push = send_val;
   }
   if (to_push != NULL && KosEvalState_FRAME(es)) {
-    if (KosEvalState_StackPushRef(es, to_push) < 0)
+    KosDynNode *boundary = kos_dyn_find_iter_boundary(es);
+    if (boundary && kos_dyn_iter_boundary_awaiting_py(boundary)) {
+      /* The pending await was a suspended python iterator step
+         (OBJECT_NEXT / ITER_NEXT): its result is the step value,
+         delivered through the boundary -- push plus disarm -- rather
+         than the bare inject push. */
+      Py_INCREF(to_push);
+      if (kos_dyn_iter_boundary_deliver_yield(es, boundary, to_push) < 0) {
+        if (owned)
+          Py_DECREF(to_push);
+        return EVAL_RAISE();
+      }
+    } else if (KosEvalState_StackPushRef(es, to_push) < 0) {
+      if (owned)
+        Py_DECREF(to_push);
       return EVAL_RAISE();
+    }
   }
+  if (owned)
+    Py_DECREF(to_push);
   {
     if (kos_dyn_complete_pending_exit(es, 1) < 0)
       return EVAL_RAISE();

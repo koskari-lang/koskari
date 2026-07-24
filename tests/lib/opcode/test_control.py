@@ -18,6 +18,8 @@ Tests for RETURN, AWAIT opcodes.
 :license: GNU General Public License v3
 """
 
+import sys
+
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
@@ -61,5 +63,73 @@ class TestControlOpcodes(CevalTest):
         ], values={"f": return_five})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 5)
+
+
+    async def test_send_completed_await_result_refcount(self):
+        """
+        an await completed by the ordinary send drive delivers its
+        result without retaining stray references
+        """
+
+        marker = object()
+
+        class YieldingAwaitable:
+            def __await__(self):
+                yield "token"
+                return marker
+
+        code, ns = build_expr([
+            ["VAR", "aw"],
+            ["AWAIT", 1],
+            ["RETURN", 1],
+        ], values={"aw": YieldingAwaitable()})
+
+        base = sys.getrefcount(marker)
+
+        coro = make_callable(code, ns)()
+        self.assertEqual(coro.send(None), "token")
+        with self.assertRaises(StopIteration) as cm:
+            coro.send(None)
+        self.assertIs(cm.exception.value, marker)
+        del cm
+        del coro
+
+        self.assertEqual(sys.getrefcount(marker), base)
+
+
+    async def test_throw_completed_await_result_refcount(self):
+        """
+        an await completed by throw (the awaitable converts the thrown
+        exception into a StopIteration value) delivers its result
+        without retaining stray references
+        """
+
+        marker = object()
+
+        class ConvertingAwaitable:
+            def __await__(self):
+                try:
+                    yield "token"
+                except KeyError:
+                    return marker
+
+        code, ns = build_expr([
+            ["VAR", "aw"],
+            ["AWAIT", 1],
+            ["RETURN", 1],
+        ], values={"aw": ConvertingAwaitable()})
+
+        base = sys.getrefcount(marker)
+
+        coro = make_callable(code, ns)()
+        self.assertEqual(coro.send(None), "token")
+        with self.assertRaises(StopIteration) as cm:
+            coro.throw(KeyError())
+        self.assertIs(cm.exception.value, marker)
+        del cm
+        del coro
+
+        self.assertEqual(sys.getrefcount(marker), base)
+
 
 # The end.

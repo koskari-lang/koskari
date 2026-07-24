@@ -82,8 +82,8 @@ KOS_OP_HANDLER_COLD(OBJECT_NEXT) {
       return EVAL_RAISE();
     }
     agen->in_progress = 1;
-    if (kos_dyn_push_next_for_kos_agen(es, (PyObject *) agen, default_val,
-                                        (int) n)
+    if (kos_dyn_push_next_boundary(es, (PyObject *) agen, default_val,
+                                    (int) n)
         < 0) {
       agen->in_progress = 0;
       Py_DECREF(iter);
@@ -128,21 +128,14 @@ KOS_OP_HANDLER_COLD(OBJECT_NEXT) {
       return EVAL_RAISE();
 
     case GET_NEXT_SUSPEND:
-      if (n == 2) {
-        if (KosEvalState_StackPushRef(es, default_val) < 0) {
-          Py_DECREF(default_val);
-          Py_DECREF(iter);
-          Py_XDECREF(_await);
-          return EVAL_RAISE();
-        }
-      }
-      if (KosEvalState_StackPushRef(es, iter) < 0) {
-        if (n == 2) {
-          PyObject *rollback_default = KosEvalState_StackPopRef(es);
-          Py_XDECREF(rollback_default);
-          Py_DECREF(default_val);
-        }
+      /* The step is parked on its await: arm the NEXT boundary node to
+         carry the arity contract across the suspension. The awaited
+         value revives through the boundary (revive_await election);
+         StopAsyncIteration from the parked step converts to exhaustion
+         at the raise walk. Nothing rides the operand stack. */
+      if (kos_dyn_push_next_boundary(es, iter, default_val, (int) n) < 0) {
         Py_DECREF(iter);
+        Py_XDECREF(default_val);
         Py_XDECREF(_await);
         return EVAL_RAISE();
       }

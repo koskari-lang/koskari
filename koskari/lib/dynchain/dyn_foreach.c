@@ -142,7 +142,7 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
     KosDynForeach *fe,
     PyObject *val) {
 
-  KosPyAsyncGen *agen;
+  PyObject *iter;
 
   if (KosEvalState_StackPushRef(es, val) < 0) {
     return -1;
@@ -150,8 +150,9 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
   Py_DECREF(val);
 
   kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
-  agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
-  agen->in_progress = 0;
+  iter = KosDynForeach_ITER(fe);
+  if (KosPyAsyncGen_Check(iter))
+    ((KosPyAsyncGen *) iter)->in_progress = 0;
   return 0;
 }
 
@@ -167,9 +168,11 @@ int kos_dyn_foreach_deliver_exhausted(
     KosDynForeach *fe,
     PyObject *val) {
 
-  KosPyAsyncGen *agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
-  agen->closed = 1;
-  agen->in_progress = 0;
+  PyObject *iter = KosDynForeach_ITER(fe);
+  if (KosPyAsyncGen_Check(iter)) {
+    ((KosPyAsyncGen *) iter)->closed = 1;
+    ((KosPyAsyncGen *) iter)->in_progress = 0;
+  }
 
   KosDynForeach_EXHAUSTED(fe) = 1;
   KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));

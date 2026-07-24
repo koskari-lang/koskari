@@ -149,9 +149,12 @@ typedef enum KosRegionStyle {
 } KosRegionStyle;
 
 
-/** FOREACH: ITER_NEXT Koskari async-gen step (phase gating for boundary events) */
+/** FOREACH: ITER_NEXT in-flight step (phase gating for boundary events):
+    a flattened Koskari async-gen step, or a suspended python async
+    iterator step being driven through the pending context await */
 #define KOS_FOREACH_ITER_STEP_IDLE               0u
 #define KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN  1u
+#define KOS_FOREACH_ITER_STEP_AWAITING_PY        2u
 
 
 /**
@@ -1231,8 +1234,8 @@ KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t cont
 KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc);
 
 
-int kos_dyn_push_next_for_kos_agen(
-    KosEvalState *es, PyObject *agen_obj, PyObject *default_val, int n);
+int kos_dyn_push_next_boundary(
+    KosEvalState *es, PyObject *iter_obj, PyObject *default_val, int n);
 
 void kos_dyn_next_abort_after_failed_attach(KosEvalState *es);
 
@@ -1329,6 +1332,19 @@ int kos_dyn_iter_boundary_deliver_return(
 */
 int kos_dyn_iter_boundary_deliver_exhausted(
     KosEvalState *es, KosDynNode *node, PyObject *val);
+
+/**
+   The exception type that ends this boundary's in-flight step:
+   StopIteration for a flattened Koskari agen step, StopAsyncIteration
+   for a suspended python async iterator step.
+*/
+PyObject *kos_dyn_iter_boundary_exhaustion_exc(KosDynNode *node);
+
+/**
+   True when the boundary's in-flight step is a suspended python async
+   iterator being driven through the pending context await.
+*/
+int kos_dyn_iter_boundary_awaiting_py(KosDynNode *node);
 
 /**
    The Koskari async generator object a receiving boundary is driving.
@@ -2344,15 +2360,16 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 /**
    Set a FOREACH node's ITER_NEXT step phase, keeping the
    KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY capability in lockstep: the node is
-   a receiving iterator boundary exactly while a flattened Koskari agen
-   step is in flight.  All phase writes must go through this so the
-   capability stays the single routing key for boundary dispatch.
+   a receiving iterator boundary exactly while a step is in flight
+   (flattened Koskari agen or suspended python async iterator).  All
+   phase writes must go through this so the capability stays the single
+   routing key for boundary dispatch.
 */
 static inline void kos_dyn_foreach_set_iter_step_phase(
     KosDynForeach *fe, uint8_t phase) {
 
   KosDynForeach_ITER_STEP_PHASE(fe) = phase;
-  if (phase == KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN)
+  if (phase != KOS_FOREACH_ITER_STEP_IDLE)
     KosDynNode_CAPS((KosDynNode *) fe) |= KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
   else
     KosDynNode_CAPS((KosDynNode *) fe) &= ~KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
