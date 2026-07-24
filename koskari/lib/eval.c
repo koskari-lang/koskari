@@ -1641,6 +1641,16 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #define KOS_OP_REQUIRE_NS(ns)  ((void) 0)
 #endif
 
+/* Cross-handler helpers defined inside handlers.incl after some of
+   their users (the include follows opcodes.incl order): the shared
+   OBJECT_NEXT step core lives in OBJECT_NEXT.c but VAR_NEXT / FAST_NEXT
+   precede it. */
+static KosOpResult object_next_step(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject *default_val,
+    uint16_t n);
+
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS

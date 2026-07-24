@@ -503,4 +503,86 @@ class TestNextAwaitingIter(CevalTest):
         self.assertEqual(result, (1, 2, "done"))
 
 
+class TestFusedNext(CevalTest):
+    """
+    VAR_NEXT / FAST_NEXT: the fused iterator load runs the same step
+    core as OBJECT_NEXT, including the suspend legs
+    """
+
+    async def test_var_next_1_value(self):
+        code, ns = build_expr([
+            ["VAR_NEXT", ("it", 1, 0, 0)],
+            ["RETURN", 1],
+        ], values={"it": iter([5, 6])})
+        self.assertEqual(await make_callable(code, ns)(), 5)
+
+
+    async def test_var_next_2_exhausted_default(self):
+        code, ns = build_expr([
+            ["CONST", "empty"],
+            ["VAR_NEXT", ("it", 2, 0, 0)],
+            ["RETURN", 1],
+        ], values={"it": iter([])})
+        self.assertEqual(await make_callable(code, ns)(), "empty")
+
+
+    async def test_var_next_awaited_value_on_stack(self):
+        code, ns = build_expr([
+            ["CONST", 100],
+            ["VAR_NEXT", ("it", 1, 0, 0)],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ], values={"it": SlowAIter([5])})
+        self.assertEqual(await make_callable(code, ns)(), 105)
+
+
+    async def test_var_next_awaited_exhausted_default(self):
+        code, ns = build_expr([
+            ["CONST", "empty"],
+            ["VAR_NEXT", ("it", 2, 0, 0)],
+            ["RETURN", 1],
+        ], values={"it": SlowAIter([])})
+        self.assertEqual(await make_callable(code, ns)(), "empty")
+
+
+    async def test_var_next_kos_agen_flattens(self):
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        code, ns = build_expr([
+            ["VAR_NEXT", ("gen", 1, 0, 0)],
+            ["RETURN", 1],
+        ], values={"gen": gen})
+        self.assertEqual(await make_callable(code, ns)(), 1)
+
+
+    async def test_fast_next_1_value(self):
+        code, ns = build_expr([
+            ["FAST_NEXT", (0, 1, 0, 0)],
+            ["RETURN", 1],
+        ], values={"it": iter([7])})
+        self.assertEqual(await make_callable(code, ns)(), 7)
+
+
+    async def test_fast_next_2_exhausted_default(self):
+        code, ns = build_expr([
+            ["CONST", "done"],
+            ["FAST_NEXT", (0, 2, 0, 0)],
+            ["RETURN", 1],
+        ], values={"it": iter([])})
+        self.assertEqual(await make_callable(code, ns)(), "done")
+
+
+    async def test_fast_next_awaited_value(self):
+        code, ns = build_expr([
+            ["FAST_NEXT", (0, 1, 0, 0)],
+            ["RETURN", 1],
+        ], values={"it": SlowAIter([9])})
+        self.assertEqual(await make_callable(code, ns)(), 9)
+
+
 # The end.

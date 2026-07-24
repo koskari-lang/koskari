@@ -14,31 +14,18 @@
 */
 
 /**
-   OBJECT_NEXT: arg = 1 or 2 (iterator [and optional default]). If Koskari async
-   gen we attach its frame; else we use get_await_next (async) or sync
-   iteration. Pushes value or default on exhaustion; 1-arg lets
-   StopIteration raise. Auto-await.
+   Shared step core for OBJECT_NEXT and its fused VAR_NEXT / FAST_NEXT
+   variants: one step of either iteration protocol. Consumes iter and
+   default_val (may be NULL when n == 1). If Koskari async gen we attach
+   its frame; else async or sync python iteration. Pushes value or
+   default on exhaustion; 1-arg lets StopIteration raise. Auto-await.
 */
 
-KOS_OP_HANDLER_COLD(OBJECT_NEXT) {
-  uint16_t n = KosOp_ARG(insn);
-  if (n != 1 && n != 2) {
-    PyErr_Format(PyExc_ValueError, "OBJECT_NEXT arg must be 1 or 2, got %u", n);
-    return EVAL_RAISE();
-  }
-
-  PyObject *default_val = NULL;
-  PyObject *iter = NULL;
-  if (n == 2) {
-    default_val = KosEvalState_StackPopRef(es);
-    if (! default_val)
-      return EVAL_RAISE();
-  }
-  iter = KosEvalState_StackPopRef(es);
-  if (! iter) {
-    Py_XDECREF(default_val);
-    return EVAL_RAISE();
-  }
+static KosOpResult object_next_step(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject *default_val,
+    uint16_t n) {
 
   /* If not already an iterator, get one (OBJECT_NEXT allows iterables). */
   /* this was a stupid idea, but I'm leaving it here for posterity */
@@ -153,6 +140,34 @@ KOS_OP_HANDLER_COLD(OBJECT_NEXT) {
       Py_XDECREF(default_val);
       return EVAL_RAISE();
   }
+}
+
+
+/**
+   OBJECT_NEXT: arg = 1 or 2. Stack: [iter] or [iter, default]; pops
+   its operands and runs the shared step core.
+*/
+
+KOS_OP_HANDLER_COLD(OBJECT_NEXT) {
+  uint16_t n = KosOp_ARG(insn);
+  if (n != 1 && n != 2) {
+    PyErr_Format(PyExc_ValueError, "OBJECT_NEXT arg must be 1 or 2, got %u", n);
+    return EVAL_RAISE();
+  }
+
+  PyObject *default_val = NULL;
+  if (n == 2) {
+    default_val = KosEvalState_StackPopRef(es);
+    if (! default_val)
+      return EVAL_RAISE();
+  }
+  PyObject *iter = KosEvalState_StackPopRef(es);
+  if (! iter) {
+    Py_XDECREF(default_val);
+    return EVAL_RAISE();
+  }
+
+  return object_next_step(es, iter, default_val, n);
 }
 
 

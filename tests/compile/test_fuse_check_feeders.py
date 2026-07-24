@@ -274,4 +274,102 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         ])
 
 
+OI = OpCode.KOS_OP_OBJECT_ITER
+ON = OpCode.KOS_OP_OBJECT_NEXT
+VI = OpCode.KOS_OP_VAR_ITER
+VN = OpCode.KOS_OP_VAR_NEXT
+P = OpCode.KOS_OP_POSITION
+
+
+class TestFuseIterNext(unittest.TestCase):
+    """
+    fuse_check_feeders absorbs bare VAR feeders into VAR_ITER and
+    VAR_NEXT
+    """
+
+    def test_var_iter_fuses(self):
+        out = fuse_ops([(V, "a"), (OI, 0)])
+        self.assertEqual(out, [(VI, "a")])
+
+    def test_const_iter_stays(self):
+        out = fuse_ops([(C, (1, 2)), (OI, 0)])
+        self.assertEqual(out, [(C, (1, 2)), (OI, 0)])
+
+    def test_computed_iter_stays(self):
+        call = (OpCode.KOS_OP_CALL, 0)
+        out = fuse_ops([(V, "f"), call, (OI, 0)])
+        self.assertEqual(out, [(V, "f"), call, (OI, 0)])
+
+    def test_var_iter_position_transparent(self):
+        out = fuse_ops([(V, "a"), (P, 7), (OI, 0)])
+        self.assertEqual(out, [(VI, "a"), (P, 7)])
+
+    def test_var_next_1_fuses(self):
+        out = fuse_ops([(V, "it"), (ON, 1)])
+        self.assertEqual(out, [(VN, ("it", 1, None, None))])
+
+    def test_const_next_1_stays(self):
+        out = fuse_ops([(C, "x"), (ON, 1)])
+        self.assertEqual(out, [(C, "x"), (ON, 1)])
+
+    def test_var_next_2_const_default_fuses(self):
+        out = fuse_ops([(V, "it"), (C, 99), (ON, 2)])
+        self.assertEqual(out, [(C, 99), (VN, ("it", 2, None, None))])
+
+    def test_var_next_2_var_default_fuses(self):
+        out = fuse_ops([(V, "it"), (V, "d"), (ON, 2)])
+        self.assertEqual(out, [(V, "d"), (VN, ("it", 2, None, None))])
+
+    def test_var_next_2_computed_default_stays(self):
+        # the iterator load cannot move past a non-bare default row
+        call = (OpCode.KOS_OP_CALL, 0)
+        out = fuse_ops([(V, "it"), (V, "f"), call, (ON, 2)])
+        self.assertEqual(out, [(V, "it"), (V, "f"), call, (ON, 2)])
+
+    def test_var_next_2_const_iterator_stays(self):
+        # only a VAR iterator feeder fuses
+        out = fuse_ops([(C, "x"), (C, 99), (ON, 2)])
+        self.assertEqual(out, [(C, "x"), (C, 99), (ON, 2)])
+
+
+class TestIterNextLowering(unittest.IsolatedAsyncioTestCase):
+    """
+    convert_fast lowers VAR_ITER / VAR_NEXT to their FAST twins: the
+    simple path for VAR_ITER, the generic schema-driven path for the
+    EXTRA-styled VAR_NEXT
+    """
+
+    async def test_var_iter_lowers_when_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("x",), ())
+        result = compiler.convert_fast(
+            nspec, [(VI, "x")], mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [(OpCode.KOS_OP_FAST_ITER, 0)])
+
+    async def test_var_iter_stays_when_not_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("y",), ())
+        result = compiler.convert_fast(
+            nspec, [(VI, "x")], mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [(VI, "x")])
+
+    async def test_var_next_lowers_when_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("it",), ())
+        result = compiler.convert_fast(
+            nspec, [(VN, ("it", 2, None, None))],
+            mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [
+            (OpCode.KOS_OP_FAST_NEXT, (0, 2, None, None)),
+        ])
+
+    async def test_var_next_stays_when_not_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("y",), ())
+        result = compiler.convert_fast(
+            nspec, [(VN, ("it", 1, None, None))],
+            mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [(VN, ("it", 1, None, None))])
+
+
 # The end.

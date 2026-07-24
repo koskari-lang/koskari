@@ -960,7 +960,12 @@ class TestObjectIter(SpecialsTestCase):
 
 
     async def test_iter_emits_opcode(self):
+        # a bare VAR feeder fuses into VAR_ITER; a computed iterable
+        # keeps the stack-based OBJECT_ITER
         code = self.compile_to_code("(compile/iter a)")
+        name_ix = _find_op(code, OpCode.KOS_OP_VAR_ITER)
+        self.assertEqual("a", str(code.constant(name_ix)))
+        code = self.compile_to_code("(compile/iter (a))")
         self.assertIn(OpCode.KOS_OP_OBJECT_ITER, _opcodes(code))
 
 
@@ -1010,9 +1015,23 @@ class TestObjectNext(SpecialsTestCase):
 
 
     async def test_next_emits_opcode_arity(self):
+        # a bare VAR iterator feeder fuses into VAR_NEXT carrying the
+        # arity; a bare default rides the stack
         code = self.compile_to_code("(compile/next a)")
-        self.assertEqual(1, _find_op(code, OpCode.KOS_OP_OBJECT_NEXT))
+        a0, a1, _a2, _a3 = code.extra_tuple(
+            _find_op(code, OpCode.KOS_OP_VAR_NEXT))
+        self.assertEqual(("a", 1), (str(code.constant(a0)), a1))
         code = self.compile_to_code("(compile/next a b)")
+        a0, a1, _a2, _a3 = code.extra_tuple(
+            _find_op(code, OpCode.KOS_OP_VAR_NEXT))
+        self.assertEqual(("a", 2), (str(code.constant(a0)), a1))
+
+        # a computed iterator keeps the stack-based OBJECT_NEXT, as
+        # does a computed default (the iterator load cannot move past
+        # a non-bare row)
+        code = self.compile_to_code("(compile/next (a))")
+        self.assertEqual(1, _find_op(code, OpCode.KOS_OP_OBJECT_NEXT))
+        code = self.compile_to_code("(compile/next a (b))")
         self.assertEqual(2, _find_op(code, OpCode.KOS_OP_OBJECT_NEXT))
 
 

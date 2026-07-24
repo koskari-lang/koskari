@@ -192,6 +192,48 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertIs(result, sentinel_iter)
 
 
+    async def test_var_iter(self):
+        """
+        VAR_ITER: fused name load plus uniform acquisition
+        """
+
+        code, ns = build_expr([
+            ["VAR_ITER", "a"],
+            ["RETURN", 1],
+        ], values={"a": [1, 2]})
+        result = await make_callable(code, ns)()
+        self.assertEqual(list(result), [1, 2])
+
+
+    async def test_var_iter_kos_agen_passthrough(self):
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        code, ns = build_expr([
+            ["VAR_ITER", "g"],
+            ["RETURN", 1],
+        ], values={"g": gen})
+        result = await make_callable(code, ns)()
+        self.assertIs(result, gen)
+
+
+    async def test_fast_iter(self):
+        """
+        FAST_ITER: fused slot load plus uniform acquisition
+        """
+
+        code, ns = build_expr([
+            ["FAST_ITER", 0],
+            ["RETURN", 1],
+        ], values={"a": [3, 4]})
+        result = await make_callable(code, ns)()
+        self.assertEqual(list(result), [3, 4])
+
+
     async def test_object_bit_invert(self):
         code, ns = build_expr([
             ["CONST", 0],

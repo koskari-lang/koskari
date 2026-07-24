@@ -28,10 +28,10 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 - **Uniform `iter` / `next`: runtime forms and fusion** — the compiler
   and opcode layer landed (uniform OBJECT_ITER via `kos_iter_acquire`,
   OBJECT_NEXT with corrected suspend legs, `compile/next`;
-  `compile/aiter`/OBJECT_AITER retired). Remaining: the koskari-defined
-  runtime `iter`/`next` bootstrap forms replacing the CPython builtins
-  in the builtin namespace, and the operand-fused VAR_ITER / FAST_ITER
-  (possibly VAR_NEXT / FAST_NEXT) variants. Ref:
+  `compile/aiter`/OBJECT_AITER retired). The operand-fused
+  VAR/FAST variants landed too. Remaining: the koskari-defined runtime
+  `iter`/`next` bootstrap forms replacing the CPython builtins in the
+  builtin namespace. Ref:
   [interpreter/uniform-iter-next.md](interpreter/uniform-iter-next.md).
 - **AsyncGenerator aclose / athrow** — PEP 525 protocol surface;
   `aclose` is the sanctioned suspending close (awaits inside `finally`

@@ -1173,11 +1173,12 @@ class Compiler:
 
     def fuse_check_feeders(self, instr):
         """
-        Late sweep: absorb the operand feeders of comparison rows. Two
-        patterns, both requiring the immediately preceding value rows to
-        be bare VAR or CONST loads (POSITION rows are transparent -- the
-        fused row keeps the position in effect at the first feeder, and
-        the latest interior position is re-emitted after the row):
+        Late sweep: absorb the operand feeders of comparison and
+        iteration rows. All patterns require the immediately preceding
+        value rows to be bare VAR or CONST loads (POSITION rows are
+        transparent -- the fused row keeps the position in effect at the
+        first feeder, and the latest interior position is re-emitted
+        after the row):
 
         - arity-2 CHECK_COMPARE (not both feeders CONST -- that is a
           folding case): the trio collapses into CHECK_COMPARE_VAR with
@@ -1189,8 +1190,14 @@ class Compiler:
           CHECK_COMPARE) the row cannot also carry the label -- five
           fields -- so the check splits back into OBJECT_COMPARE_VAR
           plus JUMP_FALSE.
+        - OBJECT_ITER fed by a bare VAR collapses into VAR_ITER.
+        - OBJECT_NEXT fed by a bare VAR iterator collapses into
+          VAR_NEXT. The 2-arg form fuses only when the default is also
+          a bare feeder (absorbing the iterator load moves its name
+          resolution after the default's row); the default row stays on
+          the stack and VAR_NEXT pops it.
 
-        The fast pass later lowers both VAR forms to their FAST twins.
+        The fast pass later lowers the VAR forms to their FAST twins.
         Runs before pack_var_runs so fusion gets first claim on the
         feeders.
         """
@@ -1271,6 +1278,38 @@ class Compiler:
                         splice(found[2], pos_rows, [(
                             OpCode.KOS_OP_OBJECT_COMPARE_VAR,
                             (sel, lo, mid, hi))])
+                        continue
+
+            elif op == OpCode.KOS_OP_OBJECT_ITER:
+                found, pos_rows = scan_back(1)
+                if found and result[found[0]][0] == OpCode.KOS_OP_VAR:
+                    splice(found[0], pos_rows, [(
+                        OpCode.KOS_OP_VAR_ITER, result[found[0]][1])])
+                    continue
+
+            elif op == OpCode.KOS_OP_OBJECT_NEXT:
+                if arg == 1:
+                    found, pos_rows = scan_back(1)
+                    if found and result[found[0]][0] == OpCode.KOS_OP_VAR:
+                        splice(found[0], pos_rows, [(
+                            OpCode.KOS_OP_VAR_NEXT,
+                            (result[found[0]][1], 1, None, None))])
+                        continue
+                else:
+                    # 2-arg: the iterator load sits below the default.
+                    # Absorbing it moves the name resolution after the
+                    # default's row, so the fusion requires the default
+                    # to be a bare feeder too (scan_back guarantees it);
+                    # the default row stays and VAR_NEXT pops it.
+                    found, pos_rows = scan_back(2)
+                    if found and result[found[1]][0] == OpCode.KOS_OP_VAR:
+                        default_row = result[found[0]]
+                        it_name = result[found[1]][1]
+                        splice(found[1], pos_rows, [
+                            default_row,
+                            (OpCode.KOS_OP_VAR_NEXT,
+                             (it_name, 2, None, None)),
+                        ])
                         continue
 
             result.append((op, arg))

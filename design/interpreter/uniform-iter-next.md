@@ -9,9 +9,12 @@ change; NEXT was renamed OBJECT_NEXT and its suspend legs corrected
 boundary -- NEXT node for OBJECT_NEXT, an AWAITING_PY FOREACH phase for
 ITER_NEXT -- so mid-await values and exhaustion honor the contracts);
 `compile/next` emits OBJECT_NEXT; `compile/aiter` and OBJECT_AITER were
-retired (subsumed by the uniform `compile/iter`). Operand-fused
-VAR_ITER / FAST_ITER (and possibly VAR_NEXT / FAST_NEXT) are a planned
-follow-up.
+retired (subsumed by the uniform `compile/iter`). The operand-fused
+VAR_ITER / FAST_ITER and VAR_NEXT / FAST_NEXT variants are in: bare VAR
+feeders fuse in `Compiler.fuse_check_feeders` (the 2-arg next form only
+when the default is also a bare feeder, since the iterator load moves
+past it), and `convert_fast` lowers the VAR forms to their FAST twins
+through the existing auto-paired paths.
 
 ---
 
