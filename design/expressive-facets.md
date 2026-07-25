@@ -95,8 +95,8 @@ what performing means. Same source, different handler:
 ;; or where metrics go. It never imports any of them.
 
 define drain-orders []:
-  let [servers (perform config-lookup "kafka.servers")
-       started (perform now)]:
+  let [[servers (perform config-lookup "kafka.servers")]
+       [started (perform now)]]:
     for-each [msg (consume servers "topic.orders")]:
       (handle-order msg)
     (perform emit-metric "orders.drain.seconds" (- (perform now) started))
@@ -106,7 +106,7 @@ define drain-orders []:
 ;; Production host.
 with-handler:
   handle config-lookup [key]:
-    (resume (.get live-config key))
+    (resume (live-config.get key))
   handle now []:
     (resume (time.monotonic))
   handle emit-metric [name value]:
@@ -123,7 +123,7 @@ with-handler:
   handle now []:
     (resume 1000.0)          ;; frozen clock
   handle emit-metric [name value]:
-    (.append recorded #(name value))
+    (recorded.append #(name value))
     (resume None)
   (drain-orders)
 ```
@@ -148,7 +148,7 @@ define-effect config-lookup [key]:
 ;; operation's formals; `resume` is bound in the clause body.
 with-handler:
   handle config-lookup [key]:
-    (resume (.get defaults key))
+    (resume (defaults.get key))
   BODY ...
 ```
 
@@ -590,10 +590,9 @@ continuations. `(amb 1 2 3)` evaluates to `1`. If the computation later
 
 ```koskari
 solve:
-  let [a (amb (range 1 20))
-       b (amb (range 1 20))
-       c (amb (range 1 20))]:
-    (require (<= a b c))
+  let* [[a (amb (range 1 20))]
+        [b (amb (range a 20))]
+        [c (amb (range b 20))]]:
     (require (== (+ (* a a) (* b b)) (* c c)))
     #(a b c)
 ;; => (3 4 5)
@@ -706,7 +705,7 @@ an agent, or submitted by a user of your product, evaluates against a namespace
 containing the jobset vocabulary and nothing else:
 
 ```koskari
-let [ns (facet-namespace jobset-lang)]:
+let [[ns (facet-namespace jobset-lang)]]:
   (load-source-in ns submitted-source)
 ```
 
