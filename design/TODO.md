@@ -15,6 +15,15 @@ design docs for detail.
   during undelimited nested interrupt (`let/cc` + `dyn-wind` + async Koskari
   await). Archived spec: [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §6.7.
 - **Full delimited PUSH replan** — deferred; §6.6 forbid remains until then.
+- **Delimited handler frame ownership** — a cross-frame `shift` leaves its
+  SHIFT node on the chain: the continuation includes the handler frame's own
+  return, so that frame is freed before the handler resumes, and restitch
+  then writes into it, restores the handler's stack into the caller's frame,
+  and re-links the span with no frame to run in. Fix: the delim owns the
+  handler frame (unlink-not-free, re-push at restitch), and SHIFT pop follows
+  provenance — POP_SHIFT for a live handler, graft teardown for a clone.
+  Four-phase plan, detection first. Ref:
+  [interpreter/delimited-handler-frame-ownership.md](interpreter/delimited-handler-frame-ownership.md).
 
 Ref: [interpreter/callcc.md](interpreter/callcc.md),
 [archive/delimited-invoke-model.md](archive/delimited-invoke-model.md),
