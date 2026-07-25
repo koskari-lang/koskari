@@ -1693,16 +1693,22 @@ static inline KosStackBlock *kos_chain_resume_stack(
     KosDynNode *chain,
     KosDynFrame *frame) {
 
-  KosStackBlock *stack = KosDynFrame_STACK(frame);
+  /* The block that was current at the capture point: the innermost node
+     on the captured chain owning one. A PROMPT owns the delimited
+     region's block, so for a shift capture this is the region's operands
+     and nothing else. Preferring the frame's block instead would sweep in
+     operands belonging to an enclosing pending expression -- and would
+     also miss the region's own, leaving the resumed slice short. Frames
+     own blocks too, so the walk terminates there when no region node
+     above the frame owns one. */
+  KosDynNode *node = chain;
 
-  if (stack)
-    return stack;
-  {
-    KosDynNode *node = chain;
-    while (node && ! KosDynNode_STACK(node))
-      node = KosDynNode_PARENT(node);
-    return node ? KosDynNode_STACK(node) : NULL;
-  }
+  while (node && ! KosDynNode_STACK(node))
+    node = KosDynNode_PARENT(node);
+  if (node)
+    return KosDynNode_STACK(node);
+
+  return KosDynFrame_STACK(frame);
 }
 
 

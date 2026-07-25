@@ -1459,17 +1459,38 @@ static int kos_delimited_invoke_inplace(
   KosDynFrame *return_frame;
   uint32_t return_pc;
 
-  /* Resume frame: nearest FRAME at-or-below the prompt. */
+  /* Resume frame: the FRAME owning the SHIFT, which is what capture
+     recorded RESUME_PC and RESUME_STACK against (kos_shift_capture takes
+     the first frame walking down from the captured chain's top). Chain
+     order root..top is caller FRAME, PROMPT, callee FRAME, SHIFT, so when
+     the shift sits in a callee that frame is ABOVE the prompt and a walk
+     at-or-below the prompt can never reach it -- installing the callee's
+     pc and stack into the caller's frame. When the shift is lexically
+     inside the reset no frame intervenes and the bounded walk finds
+     nothing, so fall back to the frame below the prompt. */
   {
-    KosDynNode *node = prompt;
-    while (node && ! KosDynNode_IS_FRAME(node))
+    KosDynNode *node = shift;
+
+    resume_frame = NULL;
+    while (node && node != prompt) {
+      if (KosDynNode_IS_FRAME(node)) {
+        resume_frame = (KosDynFrame *) node;
+        break;
+      }
       node = KosDynNode_PARENT(node);
-    if (! node) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "in-place invoke: no frame below prompt");
-      return -1;
     }
-    resume_frame = (KosDynFrame *) node;
+
+    if (! resume_frame) {
+      node = prompt;
+      while (node && ! KosDynNode_IS_FRAME(node))
+        node = KosDynNode_PARENT(node);
+      if (! node) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "in-place invoke: no frame below prompt");
+        return -1;
+      }
+      resume_frame = (KosDynFrame *) node;
+    }
   }
 
   resume_stack = KosContinuation_RESUME_STACK(k)

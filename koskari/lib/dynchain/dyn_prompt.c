@@ -3,7 +3,10 @@
 
 
 /**
-   Allocate PROMPT delimiter (barrier only; operand stack stays on the frame).
+   Allocate PROMPT delimiter owning the delimited region's operand-stack
+   block. The region's operands live in that block, so dropping the node
+   leaves the parent block at the depth it had on entry, and capture takes
+   the region's operands without needing to know where they start.
    Callers: kos_dyn_push_prompt.
 */
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
@@ -12,11 +15,18 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
   if (! prompt)
     return NULL;
 
+  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  if (! stack) {
+    kos_dynnode_return_to_freelist((KosDynNode *) prompt);
+    return NULL;
+  }
+
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
                    KOS_DYN_CAP_BARRIER
                    | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynPrompt_ID(prompt) = prompt_id;
   KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
+  KosDynNode_STACK((KosDynNode *) prompt) = stack;
   return prompt;
 }
 
