@@ -2002,6 +2002,67 @@ static inline KosOpResult eval_event_return(
 
 
 /**
+   Case-1 return predicate: parent is a plain Koskari frame, so the return
+   is a straight frame-to-frame pop with no boundary work.  Assumes
+   DYN_TOP == FRAME is already established.  The single definition, shared
+   by eval_event_return_at_frame and kos_return_is_plain.
+*/
+static inline int kos_return_parent_is_plain(KosDynNode *parent) {
+  return parent
+      && KosDynNode_IS_FRAME(parent)
+      && ! KosDynFrame_NATIVE_HANDLER((KosDynFrame *) parent);
+}
+
+
+/**
+   Whole plain-return predicate: no dynamic extent above the returning
+   frame, and its parent is another plain Koskari frame.  Sets out_child
+   and out_parent and returns 1 when it holds.
+
+   Used by the dispatch-loop fast arm to route a KOS_RES_RETURN straight
+   into eval_ng_plain_return, skipping apply_kos_op_result and the guard
+   chain it would otherwise walk to reach the same place.  Stricter than
+   the chain it short-circuits only in requiring a non-NULL frame, so a
+   miss can never do more than fall through to the general path.
+*/
+static inline int kos_return_is_plain(
+    KosEvalState *es,
+    KosDynNode **out_child,
+    KosDynNode **out_parent) {
+
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *parent;
+
+  if (unlikely(! child || KosEvalState_DYN_TOP(es) != child))
+    return 0;
+
+  parent = KosDynNode_PARENT(child);
+  if (unlikely(! kos_return_parent_is_plain(parent)))
+    return 0;
+
+  *out_child = child;
+  *out_parent = parent;
+  return 1;
+}
+
+
+/**
+   Conditional form of the unconditional resume clear at the head of the
+   general post-opcode path, for use on the fast arm.  The slot is armed
+   only across an await revive, and PythonResumeTake clears INJECT while
+   leaving KIND, so both fields are tested to keep the post-condition
+   identical to the call this replaces.
+*/
+static inline void kos_eval_resume_clear_if_armed(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  if (unlikely(KosContext_PY_RESUME_INJECT(ctx)
+               || KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE))
+    KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
+}
+
+
+/**
    NG fast path: plain Koskari frame-to-frame return.
 
    Inline retarget from child (being freed) to parent.  Skips the chain
@@ -2061,10 +2122,11 @@ static KosOpResult eval_event_return_at_frame(
   KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
   KosDynNode *parent = KosDynNode_PARENT(child);
 
-  /* Case 1: plain frame-to-frame — the dominant hot path. */
-  if (likely(parent
-             && KosDynNode_IS_FRAME(parent)
-             && ! KosDynFrame_NATIVE_HANDLER((KosDynFrame *) parent))) {
+  /* Case 1: plain frame-to-frame — the dominant hot path.  Normally taken
+     by the dispatch-loop fast arm before reaching here; this remains the
+     terminus for producers that arrive by other routes (the unwind walk,
+     the boundary drivers). */
+  if (likely(kos_return_parent_is_plain(parent))) {
     KosOpResult r;
     KOS_TRACE_POST_OP_WRAP(parent_return,
         r = eval_ng_plain_return(es, child, parent, val));
@@ -2485,8 +2547,30 @@ cg_pc_bounds_error:
 #endif
 
 cg_handle_op_result: {
+  /* Fast arm: a plain frame-to-frame return needs none of the machinery
+     below.  Route it straight into the transition and back to the fetch,
+     skipping the out-of-line apply_kos_op_result call, its switch, and
+     the guard chain it would walk to reach the same eval_ng_plain_return.
+     Sited here rather than in op_RETURN so every producer of the signal
+     benefits -- POP_PROMPT, the values.c and eval_utils.c termini, and
+     the coro/iter/demand boundary drivers, not just the opcode. */
+  KosOpResult r;
+
+  if (likely(op_res.kind == KOS_RES_RETURN)) {
+    KosDynNode *child, *parent;
+
+    if (likely(kos_return_is_plain(es, &child, &parent))) {
+      kos_eval_resume_clear_if_armed(es);
+      KOS_TRACE_POST_OP_WRAP(plain_return,
+          r = eval_ng_plain_return(es, child, parent, op_res.val));
+      goto cg_have_result;
+    }
+  }
+
   KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
-  KosOpResult r = apply_kos_op_result(es, op_res);
+  r = apply_kos_op_result(es, op_res);
+
+cg_have_result:
   if (r.kind == KOS_RES_DISPATCH) {
     /* Plain frame-to-frame return: live regs already retargeted, no
        pending PyErr / plan / native handler.  Skip the prologue and go

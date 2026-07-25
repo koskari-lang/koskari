@@ -87,6 +87,7 @@ typedef enum KosTracePostOpId {
   KOS_TP_event_await,
   KOS_TP_event_yield,
   KOS_TP_return_boundary,
+  KOS_TP_plain_return,
   KOS_TP__COUNT
 } KosTracePostOpId;
 
