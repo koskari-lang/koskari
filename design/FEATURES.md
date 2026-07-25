@@ -31,6 +31,7 @@ Highlights (not an exhaustive list):
 | Continuations | `compile/call/cc`, `compile/let/cc`, `compile/capture/cc`, `compile/reset`, `compile/shift` |
 | Macros (lowering) | `compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`, `compile/macro-match`, `compile/special-rules`, `compile/special-match` |
 | Operators | `compile/+`, `-`, `*`, `/`, `//`, `///`, `%`, `**`, `@`, `&`, `|`, `^`, `~`, `<<`, `>>`, `compile/divmod`, comparisons (`compile/==`, `!=`, `<`, `<=`, `>`, `>=` and `equal?` / `lt?` aliases), `compile/is`, `compile/is-not`, `compile/in`, `compile/not-in`, **`compile/instance?`**, **`compile/subclass?`**, `compile/not`, `compile/repr`, `compile/truth`, `compile/iter`, `compile/next`, `compile/str`, `compile/format`, `compile/len`, `compile/type`, `compile/dir`, `compile/vars` |
+| Fences | `compile/apply-fence` (see § Fenced foreign literals) |
 | Other | `compile/bytecode`, `compile/inplace`, `compile/inplace-item`, `compile/inplace-attr`, `compile/globals`, `compile/locals`, `compile/gensym-thunk` (`{…}` thunk syntax) |
 
 **Not compiler specials** (use macros or runtime instead): `compile/if`, `compile/when`, `compile/unless` (macros in `bootstrap/_conditionals.ki`); **`define-syntax`** / **`extend-syntax`** (macros in `bootstrap/_define_syntax.ki`); assignment sugar **`set!`**, **`ref`**, **`bind!`**, etc. ([MACROS.md](MACROS.md)).
@@ -41,6 +42,16 @@ Highlights (not an exhaustive list):
 - **Chained** comparisons (`a < b < c`).
 - Method calls: **`compile/call-attr`**, dot-prefix **`(compile/call .method obj …)`**, and **`(compile/call (attr obj m) …)`** expansion — no separate `method-call` special.
 - **Bracket-pair type and call convention**: `[ ]` is **not** a vector literal — it reads into a `bracket-pair` (a value-equal `pair` subtype that marks `[ ]` origin) and **compiles identically to `( )` by default** (a non-empty head-position list is a call either way). The `( )` = call / `[ ]` = data split is a convention; optional module pragmas turn it into a check — `reader/brackets` (reader: emit the marker) and `compiler/call-brackets` (compiler: `ignore` / `warn` / `error` when a bracket-pair reaches call position). See [SYNTAX.md](SYNTAX.md), [PRAGMA.md](PRAGMA.md).
+
+### Slices
+
+Bootstrap macros in `bootstrap/_iter.ki`, not compiler specials:
+**`compile/slice`** routes `(slice …)` to the runtime **`build-slice`**
+constructor (keyword `start:` / `stop:` / `step:`), and **`compile/item-slice`**
+gives the idiomatic direct form `(item-slice seq 1)` in place of
+`(item seq (slice 1 None))`. See
+[docs/reference/concepts/idiomatic-koskari.md](../docs/reference/concepts/idiomatic-koskari.md),
+[docs/reference/runtime/build-slice.md](../docs/reference/runtime/build-slice.md).
 
 ### Macros
 
@@ -57,6 +68,17 @@ Implemented handlers include:
 `layout/if`, `layout/switch`, `layout/try`, `layout/while`, `layout/for-each`, `layout/dyn-wind`, `layout/class`, `layout/define-class`, `layout/call`, `layout/block`, `layout/block-begin`, `layout/quote`, `layout/quasiquote`, `layout/syntax-rules`, `layout/macro-rules`, `layout/special-rules`, `layout/syntax-match`, `layout/macro-match`, `layout/special-match`.
 
 Unknown heads fall back to **`layout/block`**. See [LAYOUTS.md](LAYOUTS.md).
+
+### Fenced foreign literals
+
+A triple-backtick fence captures raw source in a declared foreign format; the
+reader lowers it to **`(compile/apply-fence NAME RAW META)`**, and the
+**`compile/apply-fence`** special resolves **`fence/<name>`** in the module
+namespace and compiles the Koskari source that handler returns. The transform
+is compile-time, parallel to layout expansion. **`fence/bash`** (lowering to
+`run-process`) ships as the sole built-in handler; `koskari/fences/`. A JSON
+fence was prototyped and dropped. See
+[fenced-foreign-literal.md](fenced-foreign-literal.md).
 
 ### Functions and formals
 
@@ -95,7 +117,10 @@ These appear in [language/special-forms.md](language/special-forms.md) or older 
 | **`method-call` / `!`** | Call-attr and dot-prefix sugar |
 | **`doc`** special | Docstrings via leading string on **`compile/lambda`** / **`compile/function`** / class body |
 | **`build-tuple`**, **`build-list`**, … as specials | Runtime **`build_tuple`**, **`build_list`**, … in bootstrap ([api/builtins.md](api/builtins.md)) |
-| Slices, fenced literals, bundles, match-case, … | [TODO.md](TODO.md) |
+| Bundles, match-case, … | [TODO.md](TODO.md) |
+
+Slices and fenced literals were on this list historically; both now ship -- see
+§ Slices and § Fenced foreign literals above.
 
 ---
 

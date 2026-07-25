@@ -2979,6 +2979,83 @@ allowed at module level"), matching Python 3.
 **Tests:** `tests/compile/specials/test_import.py`,
 `tests/lib/opcode/test_import_ops.py`
 
+## compile/apply-fence
+
+**Symbol:** `compile/apply-fence`
+
+**Syntax:** `(compile/apply-fence NAME RAW)` or
+`(compile/apply-fence NAME RAW META)`
+
+- **NAME** -- symbol naming the fence format (e.g. `bash`).
+- **RAW** -- string holding the fenced body verbatim.
+- **META** -- optional keyword plist carrying `filename:`, `line:`, `col:`, and
+  `options:` (itself a keyword plist of the opener-line pairs).
+
+**Use-case:** Compile-time expansion of a fenced foreign literal. The reader
+recognizes triple-backtick fence syntax and lowers it to this form; the special
+resolves a handler, hands it the raw foreign source, and compiles the Koskari
+source the handler returns in place of the fence. Rarely written by hand -- the
+reader emits it. Design: [fenced-foreign-literal.md](fenced-foreign-literal.md).
+
+**Behaviour:** Source-to-source, parallel to layout expansion. This special
+emits no opcodes of its own; the bytecode comes from compiling the form the
+handler returns.
+
+1. Resolve `fence/<NAME>` with `find_fence` over `vars(compiler.module)`. A
+   bare-name binding resolves only when it is a `FenceHandler`; a
+   `fence/`-prefixed binding resolves when it is a `FenceHandler` **or any
+   callable**, so a module may define its own fence as a plain function bound
+   to `fence/<name>`. An unresolved name raises `SpecialError`
+   (`unknown fence: fence/<name>`).
+2. Convert META with `meta_plist_to_dict`. The result always carries `name`,
+   `filename`, `line`, `col`, and `options`; `compiler.filename` is the
+   fallback filename. A malformed plist raises `SpecialError`.
+3. Invoke the handler: `handler.read(raw, meta)` for a `FenceHandler`,
+   otherwise `demand_call(handler, raw, meta)`.
+4. Require the result to be usable as source -- a pair, symbol, keyword, or one
+   of `str` / `bytes` / `bool` / `int` / `float` / `complex`. Anything else
+   (including `None`) raises `SpecialError`
+   (`fence/<name> returned non-source: ...`).
+5. `fill_position` the result with the fence's own position, then return
+   `apply_layout(result, cvars)` so a handler may emit layout forms in its
+   template.
+
+**Built-in handlers:** `fence/bash` only, lowering to `run-process`
+(`koskari/fences/`). A JSON fence was prototyped and dropped; which foreign
+formats earn a built-in is a case-by-case question, and the durable part of the
+design is the mechanism.
+
+**Examples:**
+
+````scheme
+;; Source: a triple-backtick fence
+```bash
+echo hi
+```
+
+;; Reader lowers it to
+(compile/apply-fence bash "echo hi\n"
+  (filename: "job.ki" line: 2 col: 0 options: ()))
+````
+
+````scheme
+;; Opener-line keyword pairs land in options:
+```bash env: prod retries: 3
+deploy --now
+```
+
+;; =>
+(compile/apply-fence bash "deploy --now\n"
+  (filename: "job.ki" line: 2 col: 0
+   options: (env: prod retries: 3)))
+````
+
+**Implementation:** `koskari/compile/specials/fence.py`,
+`koskari/fences/helpers.py`
+
+**Tests:** `tests/reader/test_fence.py` (reader lowering, positions, options),
+`tests/importer/test_fence.py` (end-to-end expansion through import)
+
 ## Other implemented specials
 
 The following specials are implemented but are not given full sections above.
