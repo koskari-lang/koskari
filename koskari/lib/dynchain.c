@@ -2400,9 +2400,21 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
    * the chain for the shift body's POP_SHIFT. */
   {
     KosDynNode *bottom = span;
+    KosDynNode *base = prompt;
+
+    /* A snapshotted handler frame is not on the chain -- the original was
+     * freed when the slice returned out of it. Push the copy above the
+     * prompt so the handler has a frame to resume in, and hang the span
+     * off that rather than straight onto the prompt. */
+    if ((KosDynNode_FLAGS((KosDynNode *) ret_frame) & KOS_DYNF_CLONED)
+        && ! KosDynNode_PARENT((KosDynNode *) ret_frame)) {
+      KosDynNode_PARENT((KosDynNode *) ret_frame) = prompt;
+      base = (KosDynNode *) ret_frame;
+    }
+
     while (KosDynNode_PARENT(bottom))
       bottom = KosDynNode_PARENT(bottom);
-    KosDynNode_PARENT(bottom) = prompt;
+    KosDynNode_PARENT(bottom) = base;
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
   }
 

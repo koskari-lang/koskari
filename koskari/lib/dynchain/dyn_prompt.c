@@ -25,6 +25,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
                    KOS_DYN_CAP_BARRIER
                    | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynPrompt_ID(prompt) = prompt_id;
+  KosDynPrompt_PUSH_PC(prompt) = 0;
   KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
   KosDynNode_STACK((KosDynNode *) prompt) = stack;
   return prompt;
@@ -46,6 +47,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(prompt);
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
+  KosDynPrompt_PUSH_PC(clone) = KosDynPrompt_PUSH_PC(prompt);
   KosDynPrompt_PENDING_SHIFT_WRAPPER(clone) = NULL;
   if (KosDynNode_STACK((KosDynNode *) prompt)) {
     KosDynNode_STACK((KosDynNode *) clone) =
@@ -93,6 +95,8 @@ KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
   KosDynPrompt *prompt = kos_dynprompt_new(KosEvalState_DYN_TOP(es), prompt_id);
   if (! prompt)
     return NULL;
+
+  KosDynPrompt_PUSH_PC(prompt) = KosEvalState_ACTING_PC(es);
 
   if (kos_dyn_push(es, (KosDynNode *) prompt) < 0) {
     kos_dynprompt_free(prompt);

@@ -222,6 +222,11 @@ struct KosDynNode {
     } frame;
     struct {
       uint32_t prompt_id;
+      /* pc of the PUSH_PROMPT that created this node, in its own frame's
+         code. A cross-frame POP_SHIFT resolves the PROMPT extent with
+         this: the frame's live acting pc has moved past the extent by
+         the time the shift body runs. */
+      uint32_t push_pc;
       PyObject *pending_shift_wrapper;  /* KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned */
     } prompt;
     struct {
@@ -2289,6 +2294,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
+#define KosDynPrompt_PUSH_PC(p)          (((KosDynNode *)(p))->u.prompt.push_pc)
 #define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
 
 #define KOS_DYN_DELIM_MODE_NONE       0u

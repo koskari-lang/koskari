@@ -1458,6 +1458,7 @@ static int kos_delimited_invoke_inplace(
   KosDynDelim *delim;
   KosDynFrame *return_frame;
   uint32_t return_pc;
+  int handler_nested = 0;
 
   /* Resume frame: the FRAME owning the SHIFT, which is what capture
      recorded RESUME_PC and RESUME_STACK against (kos_shift_capture takes
@@ -1475,6 +1476,7 @@ static int kos_delimited_invoke_inplace(
     while (node && node != prompt) {
       if (KosDynNode_IS_FRAME(node)) {
         resume_frame = (KosDynFrame *) node;
+        handler_nested = 1;
         break;
       }
       node = KosDynNode_PARENT(node);
@@ -1504,6 +1506,23 @@ static int kos_delimited_invoke_inplace(
   KosEvalState_FlushLiveRegsToFrame(es);
   return_frame = KosEvalState_FRAME(es);
   return_pc = return_frame ? KosEvalState_PC(es) : (uint32_t) -1;
+
+  /* Nested handler: the slice returns out of the handler's own frame and
+     frees it, so restitch has nothing live to resume into and its final
+     "load the invoke-site pc" step -- guarded on the live frame being
+     that frame -- silently never fires. Snapshot the handler's
+     environment (code, ns, operand block, pc) and resume in the copy. */
+  if (handler_nested && return_frame) {
+    KosDynFrame *tmpl = kos_dynframe_clone(return_frame);
+    if (! tmpl) {
+      if (resume_stack)
+        KosStackBlock_ReleaseChain(resume_stack);
+      if (! PyErr_Occurred())
+        PyErr_NoMemory();
+      return -1;
+    }
+    return_frame = tmpl;
+  }
 
   delim = kos_dyndelim_new(prompt,
                            KOS_DYN_DELIM_MODE_INPLACE,

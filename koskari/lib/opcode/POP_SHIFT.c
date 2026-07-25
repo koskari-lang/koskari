@@ -137,7 +137,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
     }
 
     prompt_eid = kos_extent_find(prompt_code,
-                                 KosDynFrame_ACTING_PC(prompt_frame),
+                                 KosDynPrompt_PUSH_PC(prompt),
                                  KOS_EXT_PROMPT);
     if (prompt_eid == KOS_EXTENT_NONE) {
       Py_DECREF(result);
