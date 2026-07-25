@@ -141,6 +141,22 @@ case("remote-invoke-wound", "remote",
      "RESULT 6 ['in', 'out', 'in', 'out']")
 
 
+# === 1c. Re-entrancy: a shift firing inside a resumed continuation ===
+
+case("reentrant-two-shifts", "reentrant",
+     "two shifts in one reset; the second fires inside the first's k",
+     '(define r (reset (+ (shift k (k 1)) (shift j (j 10)))))\n'
+     '(print "RESULT" r)',
+     "RESULT 11")
+
+case("nested-resets", "reentrant",
+     "control: nested resets, each with its own shift",
+     '(define r\n'
+     '  (reset (+ 1 (shift k (k (reset (+ 2 (shift j (j 3)))))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 6")
+
+
 # === 2. Operands pending in the ENCLOSING call, same frame ===
 
 case("encl-none", "enclosing",

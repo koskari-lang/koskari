@@ -1425,8 +1425,21 @@ static int kos_delimited_inplace_ready(KosEvalState *es, KosContinuation *k) {
     return 0;
 
   node = KosDynNode_PARENT(node);
-  while (node && node != prompt)
+  while (node && node != prompt) {
+    /* An INPLACE delim between this SHIFT and the prompt means another
+       invoke against the same prompt is already in flight: its span is
+       detached and its restitch still expects to find itself directly
+       above that prompt. Inserting a second delim there re-parents the
+       first, which then fails with "inconsistent INPLACE delim state".
+       This is the re-entrant case -- a shift firing inside a continuation
+       that is being resumed -- and it belongs on the graft, which
+       instantiates the template per invoke rather than mutating the live
+       chain. The dyn_top-to-SHIFT walk above already rejects barriers;
+       this stretch was unchecked. */
+    if (KosDynNode_IS_DELIM(node))
+      return 0;
     node = KosDynNode_PARENT(node);
+  }
   if (! node || ! KosDynNode_IS_PROMPT(node)
       || KosDynNode_NODE_ID(node) != KosContinuation_LIVE_PROMPT_NODE_ID(k))
     return 0;
