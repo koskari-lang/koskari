@@ -29,6 +29,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **archive/**: Completed implementation specs and superseded proposals (e.g. demand-evalex phase 1–2, eval-result unification, kos_eval_state migration, interrupted-transfer-plans, bytecode-metadata-tables, node-owned-operand-stack, let-syntax-and-inline-macro, koskari-scripts-packaging, switch-eq-opcodes, bracket-pair, EXTRA table / CALL_FAST\*, parameterized arithmetic, function annotations opcode, inspect interop, defer/Task/Future matrix, opcode-access inventory, Domain / parameter task isolation)
 - **[docs-tracker.md](docs-tracker.md)**: User documentation site status (correlates documentation-goals and corpus plans with `docs/` progress)
 - **[ideas.md](ideas.md)**: Potential concepts and options (e.g. feature flag for demand vs run_sync imports) — not committed plans, just notes to revisit
+- **[expressive-facets.md](expressive-facets.md)**: Exploratory survey of language facilities Koskari does not have and could claim cheaply, because the continuation and dynamic-extent machinery already exists — effect handlers, conditions/restarts, structured concurrency, supervision trees, contracts with blame, transducers, `amb`, re-entrant debugging, capability-scoped evaluation. Each with sketches, open questions, and reading
 
 ## Purpose
 
