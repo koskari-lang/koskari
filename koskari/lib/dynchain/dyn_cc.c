@@ -74,6 +74,17 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
     PyErr_SetString(PyExc_RuntimeError, "CC node is not at top of chain");
     return -1;
   }
+
+  /* Being at the top is not enough: a foreign node left on the chain by a
+     mishandled transfer satisfies the check above and is then torn down as
+     a CC. Report which kind is actually on top instead. */
+  if (KosDynNode_KIND((KosDynNode *) cc) != KOS_DYN_CC) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "POP_CC: top of chain is %s, not CC",
+                 kos_dynnode_kind_name(
+                     KosDynNode_KIND((KosDynNode *) cc)));
+    return -1;
+  }
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) cc);
 

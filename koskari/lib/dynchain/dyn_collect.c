@@ -116,6 +116,17 @@ int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
     PyErr_SetString(PyExc_RuntimeError, "COLLECT node is not at top of chain");
     return -1;
   }
+
+  /* Being at the top is not enough: a foreign node left on the chain by a
+     mishandled transfer satisfies the check above and is then torn down as
+     a COLLECT. Report which kind is actually on top instead. */
+  if (KosDynNode_KIND((KosDynNode *) node) != KOS_DYN_COLLECT) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "POP_COLLECT: top of chain is %s, not COLLECT",
+                 kos_dynnode_kind_name(
+                     KosDynNode_KIND((KosDynNode *) node)));
+    return -1;
+  }
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 

@@ -44,15 +44,21 @@ the **same top-level form** as the capture, and raises
 (define r (captured 5))
 ```
 
-This is not a defect to fix here. Post-unwind invocation stitches the
-captured segment onto the current chain so resumption lands where it
-belongs, but the signal that requests it borrows the Python exception
-machinery to cross out of the koskari eval loop, and that path is
-**upwards-only**. Once a top-level form completes, the driver has returned
-and re-entered, so there is no installed handler above the invoke to catch
-the signal and perform the stitch. Frame depth is irrelevant -- invoking
-from inside a function, or inside a fresh `reset`, fails identically. The
-boundary is the eval-loop entry, not the frame.
+**`KoskariContinuationApply` is the undelimited mechanism.** A delimited
+continuation reaching it is a misroute, not a designed boundary: the
+delimited invoke is falling through to the undelimited transport once its
+own path is unavailable. So the failing shape above is a defect, just not
+one this note's plan addresses.
+
+What it exposes: post-unwind invocation should stitch the captured segment
+onto the current chain so resumption lands where it belongs. That stitch is
+reachable while the capturing top-level form is still on the driver. Once
+that form completes, the driver has returned and re-entered, the stitch path
+is no longer available, and the invoke degrades into the upwards-only escape
+-- which is undelimited machinery and cannot land back at the invoke site.
+Frame depth is irrelevant: invoking from inside a function, or inside a fresh
+`reset`, fails identically. The boundary is the eval-loop entry, not the
+frame.
 
 The general delimited case needs to **yoyo** between the invoke site and the
 captured point, which is not a purely upward path, so it cannot be served by
