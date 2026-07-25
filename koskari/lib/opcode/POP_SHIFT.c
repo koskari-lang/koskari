@@ -31,6 +31,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
   uint32_t prompt_pop_pc;
   KosCode *code = KosEvalState_CurrentCode(es);
   KosDynPrompt *prompt = NULL;
+  KosExtentDesc *lexical_prompt = NULL;
   KosTransferPlan *plan = NULL;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
@@ -69,15 +70,10 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
     return EVAL_RAISE();
   }
 
+  /* Preferred: the PROMPT extent lexically enclosing this SHIFT in our own
+     code. Reliable whenever the shift sits inside its reset, and does not
+     depend on any frame's acting pc, which slice execution overwrites. */
   parent_id = shift_extent->parent_extent_id;
-  if (parent_id == KOS_EXTENT_NONE) {
-    Py_DECREF(result);
-    PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: SHIFT extent has no parent");
-    return EVAL_RAISE();
-  }
-
-  /* SHIFT may sit under heritage extents (e.g. WIND) between it and PROMPT. */
-  KosExtentDesc *found_prompt = NULL;
   {
     uint32_t walk_id = parent_id;
     while (walk_id != KOS_EXTENT_NONE) {
@@ -87,27 +83,76 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
         return EVAL_RAISE();
       }
       if (candidate->kind == KOS_EXT_PROMPT) {
-        found_prompt = candidate;
+        lexical_prompt = candidate;
         break;
       }
       walk_id = candidate->parent_extent_id;
     }
   }
-  KosExtentDesc *const prompt_extent = found_prompt;
-  if (! prompt_extent) {
-    Py_DECREF(result);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "POP_SHIFT: no enclosing PROMPT extent for SHIFT");
-    return EVAL_RAISE();
-  }
-
-  prompt_pop_pc = prompt_extent->pop_pc;
 
   prompt = kos_find_nearest_prompt(es);
   if (! prompt) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no prompt on chain");
     return EVAL_RAISE();
+  }
+
+  if (lexical_prompt) {
+    prompt_pop_pc = lexical_prompt->pop_pc;
+  } else
+  /* Resolve POP_PROMPT against the prompt's OWN frame, not ours. The
+     shift/reset relationship is dynamic: a shift in a callee has its
+     prompt in a different code object, where this code object's extent
+     tree necessarily shows the SHIFT extent with no PROMPT parent. Taking
+     pop_pc from the current code would then be a PC into the wrong
+     bytecode. When the shift is lexically inside its reset the prompt's
+     frame is this frame and the two resolutions agree. */
+  {
+    KosDynNode *node = (KosDynNode *) prompt;
+    KosDynFrame *prompt_frame = NULL;
+    PyObject *prompt_code;
+    uint32_t prompt_eid;
+    KosExtentDesc *prompt_extent;
+
+    while (node) {
+      if (KosDynNode_IS_FRAME(node)) {
+        prompt_frame = (KosDynFrame *) node;
+        break;
+      }
+      node = KosDynNode_PARENT(node);
+    }
+    if (! prompt_frame) {
+      Py_DECREF(result);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "POP_SHIFT: no frame below prompt");
+      return EVAL_RAISE();
+    }
+
+    prompt_code = (PyObject *) KosDynFrame_CODE(prompt_frame);
+    if (! prompt_code) {
+      Py_DECREF(result);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "POP_SHIFT: prompt frame has no code");
+      return EVAL_RAISE();
+    }
+
+    prompt_eid = kos_extent_find(prompt_code,
+                                 KosDynFrame_ACTING_PC(prompt_frame),
+                                 KOS_EXT_PROMPT);
+    if (prompt_eid == KOS_EXTENT_NONE) {
+      Py_DECREF(result);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "POP_SHIFT: no enclosing PROMPT extent for SHIFT");
+      return EVAL_RAISE();
+    }
+
+    prompt_extent = kos_extent_desc(prompt_code, prompt_eid);
+    if (! prompt_extent) {
+      Py_DECREF(result);
+      return EVAL_RAISE();
+    }
+
+    prompt_pop_pc = prompt_extent->pop_pc;
   }
 
   if (kos_dyn_build_pop_shift_plan(es, prompt, result, &plan) < 0) {
