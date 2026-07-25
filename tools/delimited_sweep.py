@@ -106,21 +106,39 @@ case("xframe-in-wind", "position",
 # === 1b. Provenance: k escaping its prompt ===
 
 case("remote-invoke", "remote",
-     "k stored, invoked after the prompt unwound naturally",
-     '(define-global saved None)\n'
-     '(define r (reset (+ 1 (shift k (set! saved k) 100))))\n'
-     '(define r2 (saved 5))\n'
-     '(print "RESULT" r r2)',
-     "RESULT 100 6")
+     "k escapes as the reset's value, invoked later in the same form",
+     '(define r\n'
+     '  (let [[captured None]]\n'
+     '    (begin\n'
+     '      (set! captured (reset (+ 1 (shift k k))))\n'
+     '      (captured 5))))\n'
+     '(print "RESULT" r)',
+     "RESULT 6")
 
 case("remote-invoke-twice", "remote",
      "escaped k invoked twice after its prompt unwound",
-     '(define-global saved None)\n'
-     '(define r (reset (+ 1 (shift k (set! saved k) 100))))\n'
-     '(define a (saved 5))\n'
-     '(define b (saved 30))\n'
-     '(print "RESULT" a b)',
-     "RESULT 6 31")
+     '(define r\n'
+     '  (let [[captured None]]\n'
+     '    (begin\n'
+     '      (set! captured (reset (+ 1 (shift k k))))\n'
+     '      (#tuple (captured 5) (captured 30)))))\n'
+     '(print "RESULT" r)',
+     "RESULT (6, 31)")
+
+case("remote-invoke-wound", "remote",
+     "escaped k replays a dyn-wind around the graft on invoke",
+     '(define log (#list))\n'
+     '(define r\n'
+     '  (let [[captured None]]\n'
+     '    (begin\n'
+     '      (set! captured\n'
+     '        (reset\n'
+     '          (dyn-wind (log.append "in")\n'
+     '            (+ 1 (shift k k))\n'
+     '            (log.append "out"))))\n'
+     '      (captured 5))))\n'
+     '(print "RESULT" r log)',
+     "RESULT 6 ['in', 'out', 'in', 'out']")
 
 
 # === 2. Operands pending in the ENCLOSING call, same frame ===
