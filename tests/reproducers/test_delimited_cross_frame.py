@@ -28,19 +28,9 @@ reset body; the deeper-frame tests there invoke k from a deeper frame,
 which is the opposite direction. Capture from a callee frame was
 uncovered, which is why this went unnoticed.
 
-Four of these pass. test_cross_frame_abandonment is EXPECTED RED: a
-cross-frame shift that never invokes k currently raises "POP_SHIFT: SHIFT
-extent has no parent". Abandonment works when the shift is lexical, so the
-gap is in the abort-to-prompt unwind when the shift body lives in a callee
-frame -- the shift node goes out with the unwound frame while its body
-still has to run. It asserts the intended result and stays red until that
-is fixed; no xfail.
-
-Two further broken shapes are quarantined in
-crashers_delimited_cross_frame.py because they SIGSEGV rather than fail:
-cross-frame under an intervening namespace node (a reset nested in a let),
-and multi-shot resume from a callee (the shape a function-valued amb
-needs).
+The last two cases were quarantined in a separate uncollected module while
+they SIGSEGV'd, since a crash takes the whole pytest process down rather
+than failing one test. They pass now and are collected normally.
 
 Note these shapes are order-sensitive under compile_expr: define-global
 bindings do not persist across a fresh module per test, so running this
@@ -143,5 +133,45 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         expr, _mod = self.compile_expr(src)
         self.assertEqual(await expr(), "abandoned")
+
+
+    async def test_let_bound_lambda_shift_whole_body(self):
+        """
+        Let-bound lambda whose whole body is the shift. This shape
+        SIGSEGV'd under the coroutine-driven test harness while the
+        equivalent .ki program merely misbehaved.
+        """
+
+        src = """
+        (compile/let [[f (compile/lambda []
+                           (compile/shift k (compile/call k 1)))]]
+          (compile/reset (compile/call f)))
+        """
+
+        expr, _mod = self.compile_expr(src)
+        self.assertEqual(await expr(), 1)
+
+
+    async def test_multishot_from_callee_collects_each_choice(self):
+        """
+        k invoked once per choice from a callee -- the shape a function
+        form of amb needs.
+        """
+
+        src = """
+        (compile/let [[collect
+                       (compile/lambda [choices]
+                         (compile/shift k
+                           (compile/let [[out (compile/#list)]]
+                             (compile/for-each [c choices]
+                               (compile/call (compile/attr out append)
+                                 (compile/call k c)))
+                             out)))]]
+          (compile/reset
+            (+ 100 (compile/call collect (compile/#list 1 2 3)))))
+        """
+
+        expr, _mod = self.compile_expr(src)
+        self.assertEqual(await expr(), [101, 102, 103])
 
 # The end.
