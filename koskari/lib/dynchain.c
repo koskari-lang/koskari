@@ -134,6 +134,20 @@ static uint32_t dyn_node_id_counter = 1;  /* 0 reserved for unset / no graft poi
 
 
 /**
+   Mint a fresh, never-zero node id. Every allocation gets one; clones for
+   continuation capture overwrite it with the original's id for LCA
+   matching. Prompt instantiation at k-invoke time mints anew so a grafted
+   prompt is a distinct instance from the live original.
+*/
+static uint32_t kos_dynnode_mint_id(void) {
+  uint32_t id = dyn_node_id_counter++;
+  if (! dyn_node_id_counter)
+    dyn_node_id_counter = 1;  /* avoid 0 on rollover */
+  return id;
+}
+
+
+/**
    Allocate and zero a KosDynNode. Prefer reuse from freelist; else PyMem_Malloc.
    Returns NULL on failure (sets PyErr_NoMemory). Caller must set kind and
    the relevant union member.
@@ -146,9 +160,7 @@ static KosDynNode *kos_dynnode_alloc(void) {
     dyn_freecount--;
     KOS_TRACE_FL_ALLOC("dyn_node", 1);
     memset(p, 0, sizeof(KosDynNode));
-    p->node_id = dyn_node_id_counter++;
-    if (! dyn_node_id_counter)
-      dyn_node_id_counter = 1;  /* avoid 0 on rollover */
+    p->node_id = kos_dynnode_mint_id();
     return p;
   }
 
@@ -160,9 +172,7 @@ static KosDynNode *kos_dynnode_alloc(void) {
   }
 
   memset(p, 0, sizeof(KosDynNode));
-  p->node_id = dyn_node_id_counter++;
-  if (! dyn_node_id_counter)
-    dyn_node_id_counter = 1;  /* avoid 0 on rollover */
+  p->node_id = kos_dynnode_mint_id();
 
   return p;
 }
@@ -1730,6 +1740,14 @@ static inline KosStackBlock *kos_chain_resume_stack(
 /**
    Clone segment_top..stop, detach template, wire KosContinuation. Caller
    supplies prompt_id, graft_point_id, one_shot, and no_frame_err text.
+
+   baseline_src, when non-NULL, is cloned and appended at the template
+   bottom, below the prompt clone. It is the compressed region bottom for
+   a capture bounded at an invocation prompt: the frame executing the
+   region's own code lies below the capture boundary and must not be
+   captured in place, but the graft needs its code, namespace, and
+   mid-region pc so a return falling through the invocation prompt lands
+   in the copy and runs the remaining region bytecode to POP_PROMPT.
 */
 static KosContinuation *kos_continuation_capture_segment(
     KosEvalState *es,
@@ -1739,6 +1757,7 @@ static KosContinuation *kos_continuation_capture_segment(
     uint32_t prompt_id,
     uint32_t graft_point_id,
     int one_shot,
+    KosDynFrame *baseline_src,
     const char *no_frame_err) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -1753,6 +1772,23 @@ static KosContinuation *kos_continuation_capture_segment(
     return NULL;
   if (captured_chain)
     kos_chain_detach_template(captured_chain, stop);
+
+  if (baseline_src) {
+    KosDynFrame *base = kos_dynframe_clone(baseline_src);
+    if (! base) {
+      if (captured_chain)
+        kos_dynchain_free(captured_chain, NULL);
+      return NULL;
+    }
+    if (captured_chain) {
+      KosDynNode *bottom = captured_chain;
+      while (KosDynNode_PARENT(bottom))
+        bottom = KosDynNode_PARENT(bottom);
+      KosDynNode_PARENT(bottom) = (KosDynNode *) base;
+    } else {
+      captured_chain = (KosDynNode *) base;
+    }
+  }
 
   resume_frame = kos_chain_first_frame(captured_chain);
   if (! resume_frame) {
@@ -1812,9 +1848,31 @@ int kos_shift_capture(
   /* Bound the invoke template at the prompt's owning FRAME: clone from
    * dyn_top down through heritage nodes (WIND, PARAM, ...), the PROMPT,
    * and the nearest FRAME at-or-below it. Caller frames further down
-   * resolve from the invoke-time environment instead of being replayed. */
+   * resolve from the invoke-time environment instead of being replayed.
+   *
+   * An INVOCATION prompt has no owning frame of its own: it was created
+   * by a k-invocation (graft instantiation or in-place invoke) and the
+   * nodes below it -- the pairing DELIM, the original prompt, the outer
+   * chain -- are not region content and must not be captured. Bound the
+   * template at the prompt itself and synthesize the baseline frame from
+   * the first frame below it: that frame executes the slice, so it
+   * provides code and namespace, and its stack holds the region's
+   * pending operands whenever the prompt does not own a block. */
   KosDynNode *stop;
-  {
+  KosDynFrame *baseline_src = NULL;
+  if (KosDynNode_FLAGS((KosDynNode *) prompt) & KOS_DYNF_INVOCATION) {
+    KosDynNode *below = KosDynNode_PARENT((KosDynNode *) prompt);
+
+    stop = below;
+    while (below && ! KosDynNode_IS_FRAME(below))
+      below = KosDynNode_PARENT(below);
+    if (! below) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "PUSH_SHIFT: no frame below invocation prompt");
+      return -1;
+    }
+    baseline_src = (KosDynFrame *) below;
+  } else {
     KosDynNode *owning = (KosDynNode *) prompt;
     while (owning && ! KosDynNode_IS_FRAME(owning))
       owning = KosDynNode_PARENT(owning);
@@ -1858,10 +1916,41 @@ int kos_shift_capture(
         prompt_id,
         0,
         1,
+        baseline_src,
         "PUSH_SHIFT: no frame in captured chain");
 
     if (! k)
       return -1;
+
+    /* An in-place invocation prompt owns no block -- the live region's
+     * operands sit in the innermost owner below it (ultimately the
+     * original prompt's block). The graft has no such live region, so
+     * the template's prompt clone takes a deep copy of those operands:
+     * the region-bottom pending state a fall-through return delivers
+     * into before the remaining region bytecode runs. */
+    if (baseline_src && ! KosDynNode_STACK((KosDynNode *) prompt)) {
+      KosDynNode *owner = KosDynNode_PARENT((KosDynNode *) prompt);
+
+      while (owner && ! KosDynNode_STACK(owner))
+        owner = KosDynNode_PARENT(owner);
+      if (owner) {
+        KosDynNode *pclone = KosContinuation_CAPTURED_CHAIN(k);
+
+        while (pclone
+               && ! (KosDynNode_IS_PROMPT(pclone)
+                     && KosDynNode_NODE_ID(pclone)
+                        == KosDynNode_NODE_ID((KosDynNode *) prompt)))
+          pclone = KosDynNode_PARENT(pclone);
+        if (pclone && ! KosDynNode_STACK(pclone)) {
+          KosStackBlock *ops = KosStackBlock_DeepCopy(KosDynNode_STACK(owner));
+          if (! ops) {
+            kos_continuation_free(k);
+            return -1;
+          }
+          KosDynNode_STACK(pclone) = ops;
+        }
+      }
+    }
 
     /* Live identities for in-place (Path A) invoke detection; the SHIFT
      * node is recorded by PUSH_SHIFT after it is pushed. */
@@ -1908,6 +1997,7 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
         KOS_PROMPT_ID_UNDELIMITED,
         0,
         0,
+        NULL,
         "CAPTURE_CC: no frame in captured segment");
 
     if (! k)
@@ -2020,6 +2110,43 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
 }
 
 
+/**
+   Turn every PROMPT in a captured segment into a fresh invocation
+   instance before the segment is grafted onto the live chain.
+
+   A clone preserves node_id for LCA matching, but a grafted prompt must
+   be a NEW instance: it can coexist on the chain with the live original,
+   and everything that resolves "which reset" (POP_SHIFT, POP_PROMPT
+   routing) keys on instance identity. Each prompt gets a minted node_id
+   and KOS_DYNF_INVOCATION; any SHIFT node in the same segment that
+   recorded the old instance id is remapped so its POP_SHIFT resolves to
+   the sibling copy it will actually run under.
+
+   Callers: kos_invoke_continuation (delimited graft path only; the
+   undelimited path relies on preserved ids for LCA).
+*/
+static void kos_chain_freshen_invocation_prompts(KosDynNode *segment) {
+
+  KosDynNode *node;
+  KosDynNode *walk;
+
+  for (node = segment; node; node = KosDynNode_PARENT(node)) {
+    if (! KosDynNode_IS_PROMPT(node))
+      continue;
+
+    uint32_t old_id = KosDynNode_NODE_ID(node);
+    uint32_t new_id = kos_dynnode_mint_id();
+
+    KosDynNode_NODE_ID(node) = new_id;
+    KosDynNode_FLAGS(node) |= KOS_DYNF_INVOCATION;
+
+    for (walk = segment; walk; walk = KosDynNode_PARENT(walk)) {
+      if (KosDynNode_IS_SHIFT(walk)
+          && KosDynShift_PROMPT_NODE_ID(walk) == old_id)
+        KosDynShift_PROMPT_NODE_ID(walk) = new_id;
+    }
+  }
+}
 
 
 #include "dynchain/xfer_plan.c"

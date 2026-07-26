@@ -33,6 +33,36 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 
 
 /**
+   Allocate a fresh invocation-prompt instance for an in-place delimited
+   invoke: the delimiter the resumed slice runs under, per Danvy/Filinski
+   (k = lambda x. <E[x]> -- every invocation re-delimits). Owns NO stack
+   block: the slice's operands live in the displaced resume frame below,
+   and the marker only provides the prompt instance that captures inside
+   the slice bound at and POP_SHIFT resolves to. Freshly minted node_id;
+   KOS_DYNF_INVOCATION routes its completion through the paired DELIM.
+   Callers: kos_delimited_invoke_inplace.
+*/
+static KosDynPrompt *kos_dynprompt_new_invocation(
+    KosDynNode *parent,
+    uint32_t prompt_id,
+    uint32_t push_pc) {
+
+  KosDynPrompt *prompt = kos_dynnode_alloc();
+  if (! prompt)
+    return NULL;
+
+  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
+                   KOS_DYN_CAP_BARRIER
+                   | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
+  KosDynNode_FLAGS((KosDynNode *) prompt) |= KOS_DYNF_INVOCATION;
+  KosDynPrompt_ID(prompt) = prompt_id;
+  KosDynPrompt_PUSH_PC(prompt) = push_pc;
+  KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
+  return prompt;
+}
+
+
+/**
    Clone prompt id for captured segments; pending shift wrapper not cloned.
 */
 static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {

@@ -105,6 +105,10 @@ typedef enum KosDynFlags {
   KOS_DYNF_CLONED      = 0x01,  /* node was cloned for continuation capture */
   KOS_DYNF_BOUNDARY    = 0x02,  /* node marks a non-resumable boundary */
   KOS_DYNF_GEN_KEEPALIVE = 0x04,  /* GEN: holds a counted ref on its KPAG owner while active */
+  KOS_DYNF_INVOCATION  = 0x08,  /* PROMPT: instance created by a k-invocation
+                                   (graft instantiation or in-place invoke);
+                                   no POP_PROMPT instruction pairs with it, so
+                                   delivery routes through the paired DELIM */
   KOS_DYNF_LCA_VISITED = (int) 0x80000000u,  /* transient: set during kos_compute_lca */
 } KosDynFlags;
 
@@ -301,7 +305,11 @@ struct KosDynNode {
       int normal_exit;     /* 1 = exit(None,None,None); only when phase == PENDING_EXIT_AWAIT */
     } with;
     struct {
-      /* shift: marker; operands stay on the frame (PROMPT install has no stack) */
+      /* shift: marker; operands stay on the frame (PROMPT install has no
+         stack). prompt_node_id is the instance id of the PROMPT this shift
+         captured against; POP_SHIFT resolves its delimiter by this, never
+         by chain position. */
+      uint32_t prompt_node_id;
     } shift;
     struct {
       PyObject *exc_type;  /* exception type from PyErr_Fetch */
@@ -1160,10 +1168,12 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
    unwinding to the prompt.
 
    :param ctx: execution context
+   :param prompt_node_id: instance id of the PROMPT the shift captured
+      against; POP_SHIFT resolves the delimiter by this id
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_push_shift(KosEvalState *es);
+int kos_dyn_push_shift(KosEvalState *es, uint32_t prompt_node_id);
 
 
 /**
@@ -2317,6 +2327,9 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
   (((KosDynNode *)(d))->u.delim.saved_acting_pc)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
+
+#define KosDynShift_PROMPT_NODE_ID(s) \
+  (((KosDynNode *)(s))->u.shift.prompt_node_id)
 
 #define KosDynWind_BEFORE_THUNK(w) (((KosDynNode *)(w))->u.wind.before_thunk)
 #define KosDynWind_AFTER_THUNK(w)  (((KosDynNode *)(w))->u.wind.after_thunk)

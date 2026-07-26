@@ -162,6 +162,33 @@ case("nested-resets", "reentrant",
      '(print "RESULT" r)',
      "RESULT 6")
 
+case("reentrant-inner-abandon", "reentrant",
+     "inner shift abandons inside invoked k; value lands at the invoke site",
+     '(define r (reset (+ (shift k (+ (k 1) (k 2))) (shift j 100))))\n'
+     '(print "RESULT" r)',
+     "RESULT 200")
+
+case("reentrant-k-of-k", "reentrant",
+     "three-deep re-entrancy: k applied to its own result twice",
+     '(define r (reset (+ 1 (shift k (k (k (k 0)))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 3")
+
+case("reentrant-amb-product", "reentrant",
+     "function amb x amb: multi-shot inside a multi-shot invocation",
+     'define amb [choices]:\n'
+     '  shift k:\n'
+     '    let [[out (#list)]]:\n'
+     '      for-each [c choices]:\n'
+     '        (out.extend (k c))\n'
+     '      out\n'
+     '\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (#list (#tuple (amb (#list 1 2)) (amb (#list 10 20))))))\n'
+     '(print "RESULT" r)',
+     "RESULT [(1, 10), (1, 20), (2, 10), (2, 20)]")
+
 
 # === 2. Operands pending in the ENCLOSING call, same frame ===
 

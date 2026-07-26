@@ -1552,6 +1552,26 @@ static int kos_delimited_invoke_inplace(
   }
   KosDynDelim_RETURN_NODE(delim) = (KosDynNode *) delim;
 
+  /* The invocation re-delimits: a shift firing inside the resumed slice
+     must capture up to THIS invocation's boundary, not the original
+     prompt, or its POP_SHIFT discards the remainder of the suspended
+     handler (control semantics where shift was promised). The fresh
+     instance sits between the delim and the slice; captures inside the
+     slice bound at it and its completion routes through the delim. */
+  KosDynPrompt *invocation_prompt = kos_dynprompt_new_invocation(
+      (KosDynNode *) delim,
+      KosDynPrompt_ID(prompt),
+      KosDynPrompt_PUSH_PC(prompt));
+  if (! invocation_prompt) {
+    KosDynNode_PARENT((KosDynNode *) delim) = NULL;
+    kos_dyndelim_free(delim);
+    if (resume_stack)
+      KosStackBlock_ReleaseChain(resume_stack);
+    if (! PyErr_Occurred())
+      PyErr_NoMemory();
+    return -1;
+  }
+
   #if KOS_XFER_TRACE
     SAYF("[xfer] invoke inplace: span_top=%p shift=%p prompt=%p "
          "resume_frame=%p return_pc=%u",
@@ -1563,15 +1583,16 @@ static int kos_delimited_invoke_inplace(
   KosDynNode_PARENT(shift) = NULL;
   KosDynDelim_RETURN_CHAIN(delim) = span_top;
 
-  /* Wire the delim directly above the prompt so the slice's natural
-   * unwind leaves it at dyn_top when POP_PROMPT runs. */
+  /* Wire prompt <- delim <- invocation prompt <- slice so the slice's
+   * natural unwind leaves the invocation prompt (then the delim) at
+   * dyn_top when POP_PROMPT runs. */
   if (slice_top == prompt) {
-    slice_top = (KosDynNode *) delim;
+    slice_top = (KosDynNode *) invocation_prompt;
   } else {
     KosDynNode *child = slice_top;
     while (KosDynNode_PARENT(child) != prompt)
       child = KosDynNode_PARENT(child);
-    KosDynNode_PARENT(child) = (KosDynNode *) delim;
+    KosDynNode_PARENT(child) = (KosDynNode *) invocation_prompt;
   }
 
   /* Displace the resume frame's live state with the captured resume
@@ -1659,7 +1680,11 @@ int kos_invoke_continuation(
   KosDynDelim *ret_delim = NULL;
   if (is_delimited) {
     KosDynNode *captured = KosContinuation_CAPTURED_CHAIN(to_use);
-    /* Segment to push: captured prompt plus body frames/ns nodes. */
+    /* Segment to push: captured prompt plus body frames/ns nodes. Every
+       prompt in it becomes a fresh invocation instance first -- the graft
+       coexists with the live original, and POP_SHIFT / POP_PROMPT resolve
+       the delimiter by instance identity, never by chain position. */
+    kos_chain_freshen_invocation_prompts(captured);
     push_segment = captured;
     ret_delim = kos_dyn_push_delim(
         es,

@@ -5,12 +5,15 @@
 /**
    Marker for shift handler extent (no frame). Callers: kos_dyn_push_shift.
 */
-static KosDynShift *kos_dynshift_new(KosDynNode *parent) {
+static KosDynShift *kos_dynshift_new(
+    KosDynNode *parent,
+    uint32_t prompt_node_id) {
   KosDynShift *shift = (KosDynShift *) kos_dynnode_alloc();
   if (! shift)
     return NULL;
 
   kos_dynnode_init((KosDynNode *) shift, KOS_DYN_SHIFT, parent, 0);
+  KosDynShift_PROMPT_NODE_ID(shift) = prompt_node_id;
   return shift;
 }
 
@@ -30,6 +33,7 @@ static KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
                    KosDynNode_CAPS((KosDynNode *) shift));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(shift) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(shift);
+  KosDynShift_PROMPT_NODE_ID(clone) = KosDynShift_PROMPT_NODE_ID(shift);
   return clone;
 }
 
@@ -48,9 +52,10 @@ static void kos_dynshift_free(KosDynShift *shift) {
 /**
    Push SHIFT node via kos_dyn_push. Callers: opcode PUSH_SHIFT.
 */
-int kos_dyn_push_shift(KosEvalState *es) {
+int kos_dyn_push_shift(KosEvalState *es, uint32_t prompt_node_id) {
   // CONTEXT: dirty, touches context directly
-  KosDynShift *shift = kos_dynshift_new(KosEvalState_DYN_TOP(es));
+  KosDynShift *shift = kos_dynshift_new(KosEvalState_DYN_TOP(es),
+                                        prompt_node_id);
   if (! shift)
     return -1;
 
@@ -74,8 +79,9 @@ static int dynnode_traverse_shift(KosDynNode *node, visitproc visit, void *arg) 
 
 static int dynnode_to_dict_shift(KosDynNode *node, PyObject *data) {
 
-  (void) node;
-  (void) data;
+  if (snapshot_set_uint(data, "prompt_node_id",
+                        KosDynShift_PROMPT_NODE_ID(node)) < 0)
+    return -1;
   return 0;
 }
 

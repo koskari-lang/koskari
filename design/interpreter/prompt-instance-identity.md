@@ -2,20 +2,49 @@
 
 ## Status
 
-Proposed. Diagnosis verified by instrumentation on this branch; the
-implementation is not started. Successor to
+Implemented on the `solve-amb` branch. Successor to
 [delimited-handler-frame-ownership.md](delimited-handler-frame-ownership.md),
-whose plan was largely superseded by the fixes on the `solve-amb` branch.
+whose plan was largely superseded by the fixes on the same branch.
 
-The failing shape is `reentrant-multishot` in `tools/delimited_sweep.py`,
-red with the value it must produce:
+The formerly failing shape, `reentrant-multishot` in
+`tools/delimited_sweep.py`:
 
 ```koskari
-(reset (+ (shift k (+ (k 1) (k 2))) (shift j (j 10))))   ;; 11 today, must be 23
+(reset (+ (shift k (+ (k 1) (k 2))) (shift j (j 10))))   ;; was 11, now 23
 ```
 
-The same limit caps a function-valued `amb` at its first outer choice
-(`tmp/amb_delimited.ki` t3/t4).
+The same limit capped a function-valued `amb` at its first outer choice;
+the full product and `require`/`fail` pruning now work (sweep shapes
+`reentrant-inner-abandon`, `reentrant-k-of-k`, `reentrant-amb-product`;
+tests/reproducers/test_delimited_reentrant.py).
+
+Two findings from implementation amend the proposal below; the sections
+are kept as proposed, with the deltas here:
+
+- **§5 as written was wrong: in-place does not survive untouched.** An
+  inner shift during an in-place resume must capture up to the
+  *invocation* boundary, not the original prompt -- the same trace
+  argument as the graft case. The in-place invoke therefore installs a
+  fresh, stackless invocation-prompt instance
+  (`kos_dynprompt_new_invocation`) between the INPLACE delim and the
+  slice. It owns no block (the live region's operands stay where they
+  are), acts as the capture bound and POP_SHIFT resolution target inside
+  the slice, and routes its completion through the delim below it.
+- **An invocation-bounded capture always needs the compressed baseline.**
+  Cloning stops at the invocation prompt, so the template loses the
+  frame that executes the region's own bytecode. A plain return falling
+  through the invocation prompt (return-at-frame case 3) must land in a
+  copy of that frame and run the remaining region bytecode to
+  POP_PROMPT -- otherwise the value "arrives" at the invoke site by
+  accident while the grafted prompt and delim stay stranded on the
+  chain (surfaced as "cannot unwind past barrier node" at the next
+  loop CONTINUE). So the capture appends a clone of the first frame
+  below the invocation prompt (code, namespace, mid-region pc) at the
+  template bottom unconditionally, and -- when the live invocation
+  prompt owns no block (the in-place marker) -- backfills the template's
+  prompt clone with a deep copy of the region-bottom operands from the
+  innermost stack owner below. This is the owner's compressed-frame
+  stitch from the predecessor doc, landed as part of capture.
 
 ## The semantics being missed
 

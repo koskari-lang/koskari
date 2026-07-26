@@ -53,7 +53,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   }
 
   shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
-  if (kos_dyn_push_shift(es) < 0) {
+  if (kos_dyn_push_shift(es, KosContinuation_LIVE_PROMPT_NODE_ID(k)) < 0) {
     Py_DECREF(wrapper);
     return EVAL_RAISE();
   }
