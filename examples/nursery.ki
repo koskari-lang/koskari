@@ -146,7 +146,7 @@ define spawn-into [scope fn *: args **: kwargs]:
     when (None? scope):
         (raise (RuntimeError
             "spawn called with no nursery in scope -- the production
-             design attaches these to the process root scope instead"))
+             design attaches these to the process root nursery instead"))
 
     (scope.start (defer fn *: args **: kwargs))
 
