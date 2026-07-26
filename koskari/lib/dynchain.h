@@ -237,6 +237,11 @@ struct KosDynNode {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
       KosDynNode *chain;  /* owned when mode == INPLACE */
       uint32_t pc;
+      /* The yoyo return address: the frame control lands in when the
+         invoke yoyos back from the slice. For an INPLACE invoke of a
+         nested handler this is a parentless CLONED snapshot (the slice
+         returns out of and frees the original); restitch pushes it
+         above the prompt so the handler has a frame to resume in. */
       KosDynNode *frame;
       KosDynNode *node;
       /* INPLACE only: displaced resume-frame state (stack owned) and
