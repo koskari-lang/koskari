@@ -15,7 +15,7 @@ The document is written for implementers: it states goals, proposes concrete mec
 - [iteration-yield-boundaries.md](../interpreter/iteration-yield-boundaries.md) — current opcode map and file locations
 - [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md) — generic vs type-specific bypass; `kos_dynnode_on_control_returned` today
 - [dynamic-node-unified-api.md](dynamic-node-unified-api.md) — capability model (partially adopted; archived spec)
-- [evaluator.md](../interpreter/evaluator.md) — eval loop, `eval_phase_post_opcode`, suspension
+- [EVALUATOR.md](../EVALUATOR.md) — eval loop, `eval_phase_post_opcode`, suspension
 
 **Primary code references (current behavior)**
 

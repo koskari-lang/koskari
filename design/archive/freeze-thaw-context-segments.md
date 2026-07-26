@@ -504,7 +504,7 @@ Section 16 addresses the concern that freeze/thaw overhead may exceed savings; t
 `KosContext` is a heap-allocated struct holding persistent VM state: dynchain, frame cache, **`block`** (pointer to the current operand-stack `KosStackBlock *`), transfer plans, Python bridge (await/yield), exception injection, suspension bookkeeping, and flags. Delimited invoke return metadata lives on **`KOS_DYN_DELIM`** nodes, not in extra context fields.
 
 `koskari_eval()` drives the interpreter. Opcodes receive **`(KosEvalState *es, KosOp *insn)`** and return **`KosOpResult`** via **`EVAL_*()`** macros; they use **`KosEvalState_*`** stack helpers and/or `KosContext_BLOCK(ctx)` after cache refresh. Eval-local macros in `eval.c` still map `CURRENT_FRAME(ctx)` → `frame_top`, `CURRENT_CODE` / `CURRENT_PC` from that frame; the operand stack is the block referenced from **`ctx->block`**, which tracks **`KosDynNode.stack`** on installed nodes (operand stack authority;
-see **Operand stack authority** in [evaluator.md](../interpreter/evaluator.md) and archived
+see **Operand stack authority** in [EVALUATOR.md](../EVALUATOR.md) and archived
 [node-owned-operand-stack.md](node-owned-operand-stack.md)).
 
 ### A.2 Stack and CoW

@@ -2,7 +2,7 @@
 
 This document is intended for teaching another system (human or agent) about the current state of Koskari: what is designed, what is implemented, and what invariants and clarifications hold across the codebase and design docs. Use it as a single reference for "how things work" and "what must stay true."
 
-**Scope**: Agent/human teaching master reference — covers execution invariants, type and data invariants, C structures, implementation status, and clarifications in one place. For a focused numbered invariant list, see [interpreter/execution-invariants.md](interpreter/execution-invariants.md). For the full VM API reference, see [interpreter/evaluator.md](interpreter/evaluator.md). For the **`KosEvalState`** facade (opcode-visible API), see
+**Scope**: Agent/human teaching master reference — covers execution invariants, type and data invariants, C structures, implementation status, and clarifications in one place. For a focused numbered invariant list, see [interpreter/execution-invariants.md](interpreter/execution-invariants.md). For the full VM API reference, see [EVALUATOR.md](EVALUATOR.md) §11. For the **`KosEvalState`** facade (opcode-visible API), see
 [archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md)
 (archived migration ledger), [interpreter/eval-state-live-authority.md](interpreter/eval-state-live-authority.md),
 and [EVALUATOR.md](EVALUATOR.md) §1.
@@ -75,7 +75,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Generators vs async**: Generators are **not** awaitable. Async generators are **not** awaitable. Async **functions** return awaitables. Yield and await are **disjoint** control paths.
 
-- **Auto-await**: The VM auto-awaits only (1) the result of a Python CALL when that result is a coroutine/awaitable, and (2) the value consumed by the AWAIT opcode. All other values (CONST, loads, getattr, subscript, yield-from results, etc.) are pushed with no automatic await. **Defer objects are not eagerly awaited**: a value of type `defer` is never auto-awaited by CALL return or other implicit await sites; it is pushed as a plain value. Only the explicit AWAIT opcode drives a defer. See design/interpreter/evaluator.md § "Pushing results and auto-await" and design/api/defer-coroutine.md.
+- **Auto-await**: The VM auto-awaits only (1) the result of a Python CALL when that result is a coroutine/awaitable, and (2) the value consumed by the AWAIT opcode. All other values (CONST, loads, getattr, subscript, yield-from results, etc.) are pushed with no automatic await. **Defer objects are not eagerly awaited**: a value of type `defer` is never auto-awaited by CALL return or other implicit await sites; it is pushed as a plain value. Only the explicit AWAIT opcode drives a defer. See design/EVALUATOR.md § "Pushing results and auto-await" and design/api/defer-coroutine.md.
 
 - **Yield-from**: YIELD_FROM operates on iterables and async-iterables only. Coroutines (Koskari or Python) are rejected at normalization with `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as plain values. Koskari callables are async generators only if their code contains YIELD or YIELD_FROM; otherwise they are coroutines and invalid as yield-from targets. See [EVALUATOR.md](EVALUATOR.md) §5–8 and [OPCODES.md](OPCODES.md) (YIELD_FROM); archived detail in [archive/yield-from-execution-model.md](archive/yield-from-execution-model.md).
 
@@ -253,7 +253,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 | Coroutine / run-code | (this doc, evaluator.md)       | koskari/lib/coro.c, coro.h              |
 | Async generator   | (this doc, evaluator.md)         | koskari/lib/iter.c, iter.h              |
 | Demand path       | (this doc)                       | koskari/lib/demand.c, demand.h; `as_coroutine` in koskari/types.py |
-| Dynamic chain     | interpreter/evaluator.md          | koskari/lib/dynchain.c, dynchain.h, dynchain/dyn_*.c, dynchain/dyn_walk.c |
+| Dynamic chain     | EVALUATOR.md §11                  | koskari/lib/dynchain.c, dynchain.h, dynchain/dyn_*.c, dynchain/dyn_walk.c |
 | Continuations     | interpreter/callcc.md, archive/interrupted-transfer-plans.md | dynchain.c, dynchain/xfer_plan.c, eval.c, eval/eval_chain.c |
 | Bytecode          | interpreter/bytecode.md, archive/bytecode-metadata-tables.md | koskari/lib/bytecode.c, bytecode.h, opcodes.incl |
 | Types             | api/types.md                     | koskari/lib/*.c, koskari/types.py       |
