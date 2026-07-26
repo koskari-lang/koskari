@@ -149,6 +149,12 @@ case("reentrant-two-shifts", "reentrant",
      '(print "RESULT" r)',
      "RESULT 11")
 
+case("reentrant-multishot", "reentrant",
+     "outer k invoked twice; its continuation contains a second shift",
+     '(define r (reset (+ (shift k (+ (k 1) (k 2))) (shift j (j 10)))))\n'
+     '(print "RESULT" r)',
+     "RESULT 23")
+
 case("nested-resets", "reentrant",
      "control: nested resets, each with its own shift",
      '(define r\n'

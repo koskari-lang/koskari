@@ -686,6 +686,21 @@ KosDynNode *kos_clone_chain_segment(
 
   KosDynNode *node = top;
   while (node && node != stop) {
+    /* An INPLACE delim is transient invoke bookkeeping -- it marks that a
+       resume is in flight against a live prompt -- not part of the
+       delimited region a template represents. Cloning one puts an
+       invoke marker into a segment whose whole purpose is to be
+       instantiated fresh per invoke, and the copy then competes with the
+       live original for POP_PROMPT's attention. Link around it. */
+    if (KosDynNode_IS_DELIM(node)
+        && KosDynDelim_MODE((KosDynDelim *) node)
+           == KOS_DYN_DELIM_MODE_INPLACE) {
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] clone_segment skipping INPLACE delim %p",
+             (void *) node);
+      node = KosDynNode_PARENT(node);
+      continue;
+    }
     if (KOS_XFER_TRACE)
       SAYF("[xfer] clone_segment cloning node %p kind=%u",
            (void *) node, (unsigned) KosDynNode_KIND(node));
