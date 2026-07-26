@@ -1751,8 +1751,14 @@ int kos_invoke_continuation(
   KosTransferPlan_GRAFT_POINT_ID(plan) = KosContinuation_GRAFT_POINT_ID(to_use);
   KosTransferPlan_RESUME_PC(plan) = KosContinuation_RESUME_PC(k);
   KosTransferPlan_RESUME_FRAME(plan) = to_use->resume_frame;  /* template; INSTALL uses fresh */
-  /* DeepCopy of template stack for this invoke; released in kos_free_transfer_plan. */
-  KosTransferPlan_RESUME_STACK(plan) = to_use->resume_stack
+  /* resume_stack is an alias of a template-owned block, and the PUSH
+     step lands a fresh clone of the whole template -- the landed segment
+     already carries this invoke's one copy of those operands, in the
+     same innermost-owner position apply_resume_state would target. A
+     plan-side copy here would only replace identical content, so the
+     delimited graft carries none. Undelimited INSTALL keeps the plan
+     copy (released in kos_free_transfer_plan if the plan dies early). */
+  KosTransferPlan_RESUME_STACK(plan) = (! is_delimited && to_use->resume_stack)
       ? KosStackBlock_DeepCopy(to_use->resume_stack) : NULL;
   #if KOS_XFER_TRACE
     SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
