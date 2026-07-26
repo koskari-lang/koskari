@@ -1,0 +1,372 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Example: structured concurrency (nurseries), built entirely from what
+Koskari already ships.
+
+A nursery is a scope that owns every task spawned inside it. The block
+does not exit until all of its children have settled, and the first
+child failure cancels its siblings. Nothing here needs new VM support:
+`define-parameter` supplies the ambient scope, `defer` holds a call
+without auto-awaiting it, `create-task` schedules it, and a macro turns
+the whole thing into a layout block.
+
+Design notes: design/expressive-facets.md, section 3.
+"""
+
+
+import asyncio
+import time
+
+
+; --- The nursery ------------------------------------------------------------
+
+; The ambient scope. `spawn` finds it here instead of being handed a
+; nursery object, which is what `define-parameter` buys us and what Trio
+; cannot do in Python.
+
+define-parameter current-nursery None
+
+
+define FIRST-EXC asyncio.FIRST_EXCEPTION
+
+
+define task-error [t]:
+    """
+    The exception a settled task failed with, or None
+    """
+
+    if (t.cancelled):
+        None
+    else:
+        (t.exception)
+
+
+define-class Nursery []:
+    """
+    A scope that owns the tasks spawned inside it
+    """
+
+    define __init__ [self]:
+        (set! self.tasks #[])
+        (set! self.error None)
+
+    define start [self handle]:
+        """
+        Adopt an awaitable as a child of this scope
+        """
+
+        define task (create-task handle)
+        (self.tasks.append task)
+        task
+
+    define abort [self]:
+        """
+        Cancel every child that has not settled yet
+        """
+
+        for-each [t self.tasks]:
+            (t.cancel)
+
+    define join [self]:
+        """
+        Wait for every child, cancelling the rest after the first
+        failure. Returns the first child exception, or None -- the
+        caller decides whether it outranks a failure in the block body.
+        """
+
+        while self.tasks:
+            define batch (list self.tasks)
+            (self.tasks.clear)
+
+            define-values [done pending] (asyncio.wait batch return_when: FIRST-EXC)
+
+            for-each [t done]:
+                define exc (task-error t)
+                when (and exc (None? self.error)):
+                    set! self.error exc
+
+            when pending:
+                for-each [t pending]:
+                    (t.cancel)
+                (asyncio.wait pending)
+
+        self.error
+
+
+define run-nursery [thunk]:
+    """
+    Run THUNK with a fresh nursery installed as the ambient scope, then
+    join. A failure in the body cancels the children; a failure in a
+    child cancels its siblings. Either way the block does not return
+    until every child has settled.
+    """
+
+    define scope (Nursery)
+    define result None
+    define failure None
+
+    parameterize [[current-nursery scope]]:
+        try:
+            set! result (thunk)
+        except [Exception as: exc]:
+            set! failure exc
+            (scope.abort)
+
+        define child-failure (scope.join)
+
+        ; A failure in the body outranks the cancellations it caused.
+        unless (None? failure):
+            (raise failure)
+        unless (None? child-failure):
+            (raise child-failure)
+
+    result
+
+
+define spawn-into [scope fn *: args **: kwargs]:
+    """
+    Attach a call to SCOPE as a child task. ARGS are evaluated by the
+    caller and handed to `defer`, which invokes at construction -- so a
+    spawn inside a loop captures this iteration's values, not the slot.
+    """
+
+    when (None? scope):
+        (raise (RuntimeError
+            "spawn called with no nursery in scope -- the production
+             design attaches these to the process root scope instead"))
+
+    (scope.start (defer fn *: args **: kwargs))
+
+
+define-syntax nursery:
+    """
+    (nursery BODY ...) -- run BODY in a scope that owns every task
+    spawned inside it. Written as a layout block, `nursery:` reaches
+    this macro through the default flat splice.
+    """
+
+    syntax-rules []:
+        case (nursery body ...):
+            (run-nursery (lambda [] body ...))
+
+
+define-syntax spawn:
+    """
+    (spawn FN ARG ...) -- call FN concurrently as a child of the
+    innermost enclosing nursery.
+
+    Deliberately a call form rather than a block form, mirroring
+    `defer`: the arguments are evaluated at the spawn site. A block
+    form -- (spawn BODY ...) wrapping BODY in a lambda -- reads better
+    inline but closes over the enclosing slots, so spawning inside a
+    loop would give every child the loop variable's final value.
+    """
+
+    syntax-rules []:
+        case (spawn fn args ...):
+            (spawn-into current-nursery fn args ...)
+
+
+; --- Demo scaffolding -------------------------------------------------------
+
+define log #[]
+
+
+define note [message]:
+    (log.append message)
+    (print "   " message)
+
+
+define-class Stopwatch []:
+
+    define __init__ [self]:
+        (set! self.t0 (time.monotonic))
+
+    define split [self]:
+        (- (time.monotonic) self.t0)
+
+
+define banner [title]:
+    (print)
+    (print title)
+    (print (* "-" (len title)))
+
+
+define worker [name seconds]:
+    """
+    A cooperative job that reports whether it finished or was cancelled
+    """
+
+    try:
+        (sleep seconds)
+        (note f"{name} finished")
+    except [asyncio.CancelledError]:
+        (note f"{name} cancelled")
+        (raise)
+
+
+define failing-worker [name seconds]:
+    (sleep seconds)
+    (note f"{name} raising")
+    (raise (ValueError f"{name} failed"))
+
+
+; --- 1. Fan-out: the block waits, the children overlap ----------------------
+
+define demo-fanout []:
+    (banner "1. Fan-out -- three 0.3s children inside one block")
+
+    define watch (Stopwatch)
+
+    nursery:
+        (spawn worker "a" 0.3)
+        (spawn worker "b" 0.3)
+        (spawn worker "c" 0.3)
+        (note "block body done, children still running")
+
+    (print f"    elapsed: {(watch.split):.2f}s (sequential would be 0.90s)")
+
+
+; --- 2. A child failure cancels its siblings --------------------------------
+
+define demo-sibling-cancel []:
+    (banner "2. One child fails -- siblings are cancelled, error escapes")
+
+    define watch (Stopwatch)
+
+    try:
+        nursery:
+            (spawn failing-worker "boom" 0.05)
+            (spawn worker "long" 2.0)
+    except [ValueError as: exc]:
+        (note f"caught at the block boundary: {exc}")
+
+    (print f"    elapsed: {(watch.split):.2f}s (the 2.0s sibling did not run)")
+
+
+; --- 3. The same shape on asyncio.gather, for contrast ----------------------
+
+define demo-gather-orphan []:
+    (banner "3. asyncio.gather -- the sibling is orphaned, not cancelled")
+
+    (log.clear)
+
+    define boom (create-task (defer failing-worker "boom2" 0.05))
+    define long (create-task (defer worker "orphan" 0.3))
+
+    try:
+        (await (asyncio.gather boom long))
+    except [ValueError as: exc]:
+        (note f"caught from gather: {exc}")
+
+    (note "gather has raised; nobody is holding 'orphan'")
+    (sleep 0.4)
+
+    if (in "orphan finished" log):
+        (note "=> the orphan ran to completion after its owner gave up")
+    else:
+        (note "=> orphan did not complete")
+
+
+; --- 4. Ambient spawn: a helper never sees the nursery ----------------------
+
+define enqueue-batch [prefix count]:
+    """
+    Plain function. It spawns into whatever nursery is ambient at the
+    call site, without receiving one as an argument.
+    """
+
+    for-each [i (range count)]:
+        (spawn worker f"{prefix}{i}" 0.2)
+
+
+define demo-ambient []:
+    (banner "4. Ambient spawn -- a callee spawns into its caller's scope")
+
+    define watch (Stopwatch)
+
+    nursery:
+        (enqueue-batch "job-" 4)
+        (note "enqueue-batch returned; its tasks belong to this block")
+
+    (print f"    elapsed: {(watch.split):.2f}s")
+
+
+; --- 5. The scope reaches into children too ---------------------------------
+
+define parent-worker [name]:
+    """
+    A child that spawns a child of its own. The parameterize installed
+    by the nursery is inherited by the task, so the ambient scope is
+    still found one level down.
+    """
+
+    (sleep 0.1)
+    (note f"{name} spawning a child of its own")
+    (spawn worker f"{name}-child" 0.2)
+    (note f"{name} finished")
+
+
+define demo-transitive []:
+    (banner "5. A child spawns into the same scope; the block still waits")
+
+    define watch (Stopwatch)
+
+    nursery:
+        (spawn parent-worker "p")
+
+    (print f"    elapsed: {(watch.split):.2f}s (0.1 then 0.2, both joined)")
+
+
+; --- 6. Nesting under a timeout ---------------------------------------------
+
+define demo-timeout []:
+    (banner "6. A timeout around a nursery cancels everything inside")
+
+    define watch (Stopwatch)
+
+    define body []:
+        nursery:
+            (spawn worker "slow-1" 5.0)
+            (spawn worker "slow-2" 5.0)
+
+    try:
+        (asyncio.wait_for (defer body) 0.25)
+    except [asyncio.TimeoutError]:
+        (note "timeout fired at the scope boundary")
+
+    (print f"    elapsed: {(watch.split):.2f}s")
+
+    ; The "slow-N cancelled" lines land AFTER this one. wait_for cancels
+    ; the awaitable it wrapped, which cancels the nursery's own join
+    ; before the join can drain its children -- so the timeout returns
+    ; while the cleanup is still in flight. A real cancel scope is an
+    ; extent rather than a wrapper, and would unwind inside-out. This is
+    ; the one place the library version cannot reach.
+    (sleep 0.1)
+
+
+when-main:
+    (demo-fanout)
+    (demo-sibling-cancel)
+    (demo-gather-orphan)
+    (demo-ambient)
+    (demo-transitive)
+    (demo-timeout)
+    (print)
+
+
+; The end.
