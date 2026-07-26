@@ -108,6 +108,11 @@ def _collect_catches(compiler, catches):
 
         elif is_pair(ex) and ex.is_proper():
             ex_binding, ex_expr = helper_using(ex)
+            # helper_using reports "no binding" as None; normalise to the
+            # except: marker so a type-only clause takes the unbound path
+            # and does not compile a binding named "None"
+            if ex_binding is None:
+                ex_binding = _keyword_except
             ex_pair = cons(cons(ex_binding, ex_expr), act)
             pos = get_position(ca)
             if pos:
@@ -313,9 +318,7 @@ def _except(compiler, catches):
                 else (keyword("else"), nil))
 
         elif key is _keyword_except:
-            checksrc = cons(
-                symbol("check-exception"),
-                cons(match, nil) if not is_pair(match) else match)
+            checksrc = cons(symbol("check-exception"), cons(match, nil))
             if pos:
                 fill_position(checksrc, pos)
             act_list = list(unpack(act))
@@ -325,9 +328,7 @@ def _except(compiler, catches):
                 else (checksrc, nil))
 
         else:
-            checksrc = cons(
-                symbol("check-exception"),
-                cons(match, nil) if not is_pair(match) else match)
+            checksrc = cons(symbol("check-exception"), cons(match, nil))
             if pos:
                 fill_position(checksrc, pos)
             define_form = cons(

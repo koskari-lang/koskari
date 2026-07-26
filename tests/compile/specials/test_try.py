@@ -16,6 +16,8 @@ Tests for koskari.compile try/except/finally special form.
 """
 
 
+from types import SimpleNamespace
+
 from . import SpecialsTestCase
 from tests.dis.dis import dis
 
@@ -361,6 +363,135 @@ class TestTrySpecial(SpecialsTestCase):
         res = await expr()
         self.assertEqual(res, -3)
         self.assertEqual(accu, [1])
+
+
+class TestTryCompoundExceptionType(SpecialsTestCase):
+    """
+    An exception-type expression that is a compound form must be
+    compiled as a single expression.
+
+    The reader lowers a dotted atom to (compile/attr obj name), so a
+    pair in the type position is the ordinary case rather than an
+    exotic one, and a clause naming `mod.Err` must resolve `mod.Err` --
+    never the trailing segment on its own.
+    """
+
+    async def test_dotted_type_catches(self):
+        ns = SimpleNamespace(Err=KeyError)
+        accu1, bad_guy = make_raise_accumulator(KeyError)
+        accu2, good_guy = make_accumulator()
+
+        src = """
+        (try
+          (bad_guy 567)
+          ((ns.Err) (good_guy -111)))
+        """
+        expr, mod = self.compile_expr(
+            src, bad_guy=bad_guy, good_guy=good_guy, ns=ns)
+        res = await expr()
+        self.assertEqual(res, -111)
+        self.assertEqual(accu1, [567])
+        self.assertEqual(accu2, [-111])
+
+
+    async def test_dotted_type_misses(self):
+        ns = SimpleNamespace(Err=KeyError)
+        accu1, bad_guy = make_raise_accumulator(ValueError)
+        accu2, good_guy = make_accumulator()
+
+        src = """
+        (try
+          (bad_guy 567)
+          ((ns.Err) (good_guy -111)))
+        """
+        expr, mod = self.compile_expr(
+            src, bad_guy=bad_guy, good_guy=good_guy, ns=ns)
+        with self.assertRaises(ValueError):
+            await expr()
+        self.assertEqual(accu1, [567])
+        self.assertEqual(accu2, [])
+
+
+    async def test_dotted_type_ignores_leaf_shadow(self):
+        """
+        A binding that happens to share the dotted name's last segment
+        is unrelated to the clause and must not be consulted.
+        """
+
+        ns = SimpleNamespace(Err=KeyError)
+        accu1, bad_guy = make_raise_accumulator(ValueError)
+        accu2, good_guy = make_accumulator()
+
+        src = """
+        (try
+          (bad_guy 567)
+          ((ns.Err) (good_guy -111))
+          ((ValueError) (good_guy -222)))
+        """
+        expr, mod = self.compile_expr(
+            src, bad_guy=bad_guy, good_guy=good_guy, ns=ns,
+            Err=ValueError, ValueError=ValueError)
+        res = await expr()
+        self.assertEqual(res, -222)
+        self.assertEqual(accu2, [-222])
+
+
+    async def test_bound_dotted_type(self):
+        ns = SimpleNamespace(Err=KeyError)
+        accu1, bad_guy = make_raise_accumulator(KeyError)
+        accu2, good_guy = make_accumulator()
+
+        src = """
+        (try
+          (bad_guy 567)
+          ((ns.Err as: e) (good_guy e)))
+        """
+        expr, mod = self.compile_expr(
+            src, bad_guy=bad_guy, good_guy=good_guy, ns=ns)
+        res = await expr()
+        self.assertIsInstance(res, KeyError)
+        self.assertEqual(accu1, [567])
+
+
+    async def test_called_type_expression(self):
+        def pick():
+            return KeyError
+
+        accu1, bad_guy = make_raise_accumulator(KeyError)
+        accu2, good_guy = make_accumulator()
+
+        src = """
+        (try
+          (bad_guy 567)
+          (((pick)) (good_guy -111)))
+        """
+        expr, mod = self.compile_expr(
+            src, bad_guy=bad_guy, good_guy=good_guy, pick=pick)
+        res = await expr()
+        self.assertEqual(res, -111)
+        self.assertEqual(accu2, [-111])
+
+
+    async def test_tuple_type_expression(self):
+        """
+        A tuple in the type position is Python's `except (A, B)` -- one
+        expression naming several types.
+        """
+
+        accu1, bad_guy = make_raise_accumulator(KeyError)
+        accu2, good_guy = make_accumulator()
+
+        src = """
+        (try
+          (bad_guy 567)
+          ((#(ValueError KeyError)) (good_guy -111)))
+        """
+        expr, mod = self.compile_expr(
+            src, bad_guy=bad_guy, good_guy=good_guy,
+            ValueError=ValueError, KeyError=KeyError)
+        res = await expr()
+        self.assertEqual(res, -111)
+        self.assertEqual(accu2, [-111])
 
 
 # The end.
