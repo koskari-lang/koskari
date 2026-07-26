@@ -1715,7 +1715,8 @@ static inline KosStackBlock *kos_chain_resume_stack(
    supplies prompt_id, graft_point_id, one_shot, and no_frame_err text.
 
    baseline_src, when non-NULL, is cloned and appended at the template
-   bottom, below the prompt clone. It is the compressed region bottom for
+   bottom, below the prompt clone; baseline_ns, when non-NULL, replaces
+   that clone's namespace with the one live at the capture bound. It is the compressed region bottom for
    a capture bounded at an invocation prompt: the frame executing the
    region's own code lies below the capture boundary and must not be
    captured in place, but the graft needs its code, namespace, and
@@ -1731,6 +1732,7 @@ static KosContinuation *kos_continuation_capture_segment(
     uint32_t graft_point_id,
     int one_shot,
     KosDynFrame *baseline_src,
+    PyObject *baseline_ns,
     const char *no_frame_err) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -1752,6 +1754,14 @@ static KosContinuation *kos_continuation_capture_segment(
       if (captured_chain)
         kos_dynchain_free(captured_chain, NULL);
       return NULL;
+    }
+    /* The clone carries the frame's own namespace; the region runs in
+       the one live at the prompt (enclosing let/collector scopes that
+       the capture bound excluded). */
+    if (baseline_ns && baseline_ns != KosDynFrame_NS(base)) {
+      PyObject *own = KosDynFrame_NS(base);
+      KosDynFrame_NS(base) = KosNamespace_Reveal(baseline_ns);
+      Py_XDECREF(own);
     }
     if (captured_chain) {
       KosDynNode *bottom = captured_chain;
@@ -1844,14 +1854,26 @@ int kos_shift_capture(
    * chain -- are not region content and must not be captured. Bound the
    * template at the prompt itself and synthesize the baseline frame from
    * the first frame below it: that frame executes the slice, so it
-   * provides code and namespace, and its stack holds the region's
-   * pending operands whenever the prompt does not own a block. */
+   * provides code, and its stack holds the region's pending operands
+   * whenever the prompt does not own a block.
+   *
+   * Its namespace, however, is not the one the region runs in. Bounding
+   * at the prompt drops every NS node between the prompt and that frame
+   * -- the enclosing let/collector scopes -- so the frame's own
+   * namespace would leave the resumed region indexing FAST slots it
+   * does not have. Carry the innermost namespace live at the prompt
+   * instead. */
   KosDynNode *stop;
   KosDynFrame *baseline_src = NULL;
+  PyObject *baseline_ns = NULL;
   if (KosDynNode_FLAGS((KosDynNode *) prompt) & KOS_DYNF_INVOCATION) {
     KosDynNode *below = KosDynNode_PARENT((KosDynNode *) prompt);
 
     stop = below;
+    while (below && ! KosDynNode_NS(below) && ! KosDynNode_IS_FRAME(below))
+      below = KosDynNode_PARENT(below);
+    baseline_ns = below ? KosDynNode_NS(below) : NULL;
+
     while (below && ! KosDynNode_IS_FRAME(below))
       below = KosDynNode_PARENT(below);
     if (! below) {
@@ -1905,6 +1927,7 @@ int kos_shift_capture(
         0,
         1,
         baseline_src,
+        baseline_ns,
         "PUSH_SHIFT: no frame in captured chain");
 
     if (! k)
@@ -2022,6 +2045,7 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
         KOS_PROMPT_ID_UNDELIMITED,
         0,
         0,
+        NULL,
         NULL,
         "CAPTURE_CC: no frame in captured segment");
 

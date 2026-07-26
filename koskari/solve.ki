@@ -92,7 +92,7 @@ define solve-first [thunk]:
           (reset
             (#list
               (let [[solution (thunk)]]
-                (_stop.append True)
+                (found.append True)
                 solution))))
         None))
 

@@ -2,11 +2,18 @@
 
 ## Status
 
-Open defect, diagnosed. Reproducers are the `binding` group in
-`tests/sweep/delimited_sweep.py` (red). Found while writing
-[koskari.solve](../../koskari/solve.ki); `solve-first` currently works
-around it by signalling through a parameter instead of an enclosing
-`let` binding.
+Fixed. Reproducers are the `binding` group in
+`tests/sweep/delimited_sweep.py`. Found while writing
+[koskari.solve](../../koskari/solve.ki).
+
+**Cause:** an invocation-bounded capture stops at the invocation
+prompt, which drops every NS node between that prompt and the frame
+below it -- the enclosing `let` / collector scopes. The synthesized
+baseline frame then carried the *frame's own* namespace, so the resumed
+region indexed FAST slots that namespace does not have.
+
+**Fix:** the baseline clone carries the innermost namespace live at the
+capture bound (`baseline_ns` in `kos_shift_capture`), not the frame's.
 
 ## Shape
 
@@ -92,10 +99,10 @@ used to clone a namespace for capture.
 
 ## Guard against a false fix
 
-`kos_ns_fast_deref` takes the reference branch with no NULL check.
-Adding one there would convert the segfault into a clean error and
-would be worth doing on its own merits, but it would leave the region
-running against the wrong namespace and turn a loud crash into a
-plausible-looking `NameError`. Fix the provider resolution first.
+`kos_ns_fast_deref` takes the reference branch with no NULL check, so a
+namespace mismatch here crashes rather than reporting. Adding a NULL
+check there is defensible on its own merits but must not be mistaken
+for a fix: it converts a loud crash into a plausible-looking
+`NameError` while the region still runs against the wrong namespace.
 
 # The end.
