@@ -68,6 +68,26 @@ class TestCorpusLoad(unittest.TestCase):
         self.assertEqual(loaded['source'], record['source'])
 
 
+    def test_empty_list_field_round_trips_as_a_list(self):
+        """
+        An empty references list stays a list; a bare key would load as
+        None and fail shard validation on the next append
+        """
+
+        record = {
+            'id': 'fixture-empty-refs-001',
+            'feature': 'special/compile/cond',
+            'source': '(cond)',
+            'verify': {'eval': 'null'},
+            'references': [],
+            'tags': [],
+        }
+        text = corpus_load.dump_record(record)
+        loaded = list(__import__('yaml').safe_load_all(text))[0]
+        self.assertEqual(loaded['references'], [])
+        self.assertEqual(loaded['tags'], [])
+
+
     def test_null_eval_stays_string(self):
         """
         verify.eval null encodes as a quoted YAML string, not YAML null
