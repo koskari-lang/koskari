@@ -50,8 +50,8 @@ See [with-dyn-with.md](with-dyn-with.md) and `dynchain.h`.
 
 - **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), ns (owned), frame_flags, native_handler (optional; when non-NULL, handler is frame evaluator; see [api/special-call-protocol.md](../api/special-call-protocol.md)).
   Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
-- **Prompt** (u.prompt): prompt_id; pending_shift_wrapper (KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned).
-  Macros: KosDynPrompt_ID, KosDynPrompt_PENDING_SHIFT_WRAPPER.
+- **Prompt** (u.prompt): prompt_id; pop_pc (the region's POP_PROMPT, resolved from the PROMPT extent at push).
+  Macros: KosDynPrompt_ID, KosDynPrompt_POP_PC.
 - **Wind** (u.wind): before_thunk, after_thunk, body_result, entered, phase (`KosDynWindPhase`).
   Macros: KosDynWind_BEFORE_THUNK, KosDynWind_AFTER_THUNK, KosDynWind_BODY_RESULT, KosDynWind_ENTERED, KosDynWind_PHASE.
 - **Try** (u.try_): handler_pc, enabled. Macros: KosDynTry_HANDLER_PC, KosDynTry_ENABLED.

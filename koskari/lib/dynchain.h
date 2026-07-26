@@ -231,7 +231,6 @@ struct KosDynNode {
          pop_pc + 1; stored resolved because by the time a shift body
          runs, no live acting pc still points into the extent. */
       uint32_t pop_pc;
-      PyObject *pending_shift_wrapper;  /* KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned */
     } prompt;
     struct {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
@@ -1869,17 +1868,6 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id);
 
 
-/**
-   Find the nearest prompt from dyn_top toward the root (first PROMPT on
-   the chain). Unlike kos_find_prompt, does not filter by prompt_id.
-
-   :param es: eval state
-
-   :return: innermost prompt, or NULL if none
-*/
-KosDynPrompt *kos_find_nearest_prompt(KosEvalState *es);
-
-
 /* === Context exception stash === */
 
 
@@ -2315,7 +2303,6 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
-#define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
 
 #define KOS_DYN_DELIM_MODE_NONE       0u
 /* 1u retired: K_RETURN (pre-walk delim scan in the RETURN opcode).  The

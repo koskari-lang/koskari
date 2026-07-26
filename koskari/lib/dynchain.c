@@ -1534,22 +1534,6 @@ KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id) {
 
 
 /**
-   Innermost PROMPT from dyn_top. Callers: delimited continuation edge cases.
-*/
-KosDynPrompt *kos_find_nearest_prompt(KosEvalState *es) {
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
-
-  while (node) {
-    if (KosDynNode_IS_PROMPT(node))
-      return (KosDynPrompt *) node;
-    node = KosDynNode_PARENT(node);
-  }
-
-  return NULL;
-}
-
-
-/**
    Ensure target lies on the chain from dyn_top; errmsg names the miss.
 */
 static int kos_chain_contains(

@@ -130,7 +130,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosDynFrame** (union variant): Function activation; `code` (borrowed), `pc`, `acting_pc`, `ns` (owned), `native_handler` (optional; when non-NULL, handler is frame evaluator). The operand stack for the active extent is **`KosDynNode.stack`** on the frame node (macro `KosDynFrame_STACK`); it is not stored inside `u.frame`. Code is not owned. Access via KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
 
-- **KosDynPrompt** (union variant): Delimiter for reset; `prompt_id` for matching (0 = default). `pending_shift_wrapper` when a PUSH_SHIFT plan completed. Access via KosDynPrompt_ID, KosDynPrompt_PENDING_SHIFT_WRAPPER.
+- **KosDynPrompt** (union variant): Delimiter for reset; `prompt_id` for matching (0 = default); `pop_pc`, the region's POP_PROMPT resolved from the PROMPT extent at push. Access via KosDynPrompt_ID, KosDynPrompt_POP_PC.
 
 - **KosDynDelim** (union variant): Delimited invoke / POP_PROMPT return marker; mode (`KOS_DYN_DELIM_MODE_*`), return chain, PC, frame, and node metadata. See `kos_dyndelim_*` and `KosDynDelim_*` in `dynchain.h`.
 
