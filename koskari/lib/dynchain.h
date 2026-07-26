@@ -1854,20 +1854,6 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 /* === Prompt lookup and continuation capture === */
 
 
-/**
-   Find the nearest prompt with the given id.
-
-   Walks the dynamic chain from dyn_top toward root, looking for
-   a PROMPT node with matching prompt_id.
-
-   :param es: eval state
-   :param prompt_id: tag to match (0 = default)
-
-   :return: matching prompt, or NULL if not found
-*/
-KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id);
-
-
 /* === Context exception stash === */
 
 
@@ -1924,17 +1910,6 @@ int kos_ctx_exc_stash_chain_top(
    :return: topmost KosDynCC, or NULL if none
 */
 KosDynCC *kos_find_cc(KosEvalState *es);
-
-
-/**
-   Validate that the prompt is reachable from dyn_top on the chain.
-
-   :param es: eval state
-   :param prompt: target prompt
-
-   :return: 0 if capture allowed, -1 if not (sets exception)
-*/
-int kos_validate_capture(KosEvalState *es, KosDynPrompt *prompt);
 
 
 /**

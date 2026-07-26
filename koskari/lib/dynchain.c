@@ -1513,27 +1513,6 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
 
 
 /**
-   Find PROMPT with matching id walking from dyn_top. Callers: shift capture,
-   POP_PROMPT, reset/shift routing.
-*/
-KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id) {
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
-
-  while (node) {
-    if (KosDynNode_IS_PROMPT(node)) {
-      KosDynPrompt *prompt = (KosDynPrompt *) node;
-      if (KosDynPrompt_ID(prompt) == prompt_id) {
-        return prompt;
-      }
-    }
-    node = KosDynNode_PARENT(node);
-  }
-
-  return NULL;
-}
-
-
-/**
    Ensure target lies on the chain from dyn_top; errmsg names the miss.
 */
 static int kos_chain_contains(
@@ -1553,15 +1532,6 @@ static int kos_chain_contains(
   }
 
   return 0;
-}
-
-
-/**
-   Ensure prompt lies on the chain from dyn_top (shift capture precondition).
-*/
-int kos_validate_capture(KosEvalState *es, KosDynPrompt *prompt) {
-  return kos_chain_contains(es, (KosDynNode *) prompt,
-                            "prompt not found in chain");
 }
 
 
@@ -1803,8 +1773,9 @@ static KosContinuation *kos_continuation_capture_segment(
 
 
 /**
-   Delimited shift: validate prompt, walk handle(SHIFT), clone chain segment for
-   invoke template, build one-shot KosContinuation. Callers: opcode PUSH_SHIFT.
+   Delimited shift: locate the prompt and offer handle(SHIFT) en route in
+   one walk, clone the chain segment for the invoke template, build the
+   KosContinuation. Callers: opcode PUSH_SHIFT.
 */
 int kos_shift_capture(
     KosEvalState *es,
@@ -1812,20 +1783,35 @@ int kos_shift_capture(
     uint32_t resume_pc,
     KosContinuation **out_k) {
 
-  /* Find the prompt */
-  KosDynPrompt *prompt = kos_find_prompt(es, prompt_id);
+  /* One walk from dyn_top locates the nearest matching prompt while
+     offering handle(SHIFT) to every node crossed: GEN denies (a shift
+     cannot cross a generator boundary), a PROMPT consumes -- the match
+     when its tag agrees, a topology error otherwise. Reachability is
+     implied by the walk itself. */
+  KosDynPrompt *prompt = NULL;
+  {
+    KosDynNode *node = KosEvalState_DYN_TOP(es);
+
+    while (node) {
+      KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_SHIFT);
+
+      if (hr == KOS_HANDLE_ERROR)
+        return -1;
+      if (hr == KOS_HANDLE_CONSUMED) {
+        if (KosDynNode_IS_PROMPT(node)
+            && KosDynPrompt_ID((KosDynPrompt *) node) == prompt_id) {
+          prompt = (KosDynPrompt *) node;
+          break;
+        }
+        PyErr_SetString(PyExc_RuntimeError,
+                        "handle(SHIFT) consumed before reaching prompt");
+        return -1;
+      }
+      node = KosDynNode_PARENT(node);
+    }
+  }
   if (! prompt) {
     PyErr_SetString(PyExc_RuntimeError, "prompt not found");
-    return -1;
-  }
-
-  /* Validate no Python boundaries in the way */
-  if (kos_validate_capture(es, prompt) < 0) {
-    return -1;
-  }
-
-  /* handle(SHIFT) walk: GEN denies; must reach PROMPT which consumes */
-  if (kos_dyn_walk_handle_shift_to_prompt(es, prompt) < 0) {
     return -1;
   }
 
