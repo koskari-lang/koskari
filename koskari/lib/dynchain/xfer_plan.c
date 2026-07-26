@@ -1551,6 +1551,8 @@ static int kos_delimited_invoke_inplace(
     return -1;
   }
   KosDynDelim_RETURN_NODE(delim) = (KosDynNode *) delim;
+  if (handler_nested)
+    KosDynNode_FLAGS((KosDynNode *) delim) |= KOS_DYNF_HOLDS_RETURN_FRAME;
 
   /* The invocation re-delimits: a shift firing inside the resumed slice
      must capture up to THIS invocation's boundary, not the original

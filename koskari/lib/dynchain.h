@@ -109,6 +109,12 @@ typedef enum KosDynFlags {
                                    (graft instantiation or in-place invoke);
                                    no POP_PROMPT instruction pairs with it, so
                                    delivery routes through the paired DELIM */
+  KOS_DYNF_HOLDS_RETURN_FRAME = 0x10,  /* DELIM: owns its RETURN_FRAME, the
+                                   yoyo return-address snapshot of a nested
+                                   handler; restitch clears the flag when it
+                                   re-parents the frame onto the chain.
+                                   Traversal and teardown must cover it
+                                   while held */
   KOS_DYNF_LCA_VISITED = (int) 0x80000000u,  /* transient: set during kos_compute_lca */
 } KosDynFlags;
 

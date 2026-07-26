@@ -2532,9 +2532,12 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
     /* A snapshotted handler frame is not on the chain -- the original was
      * freed when the slice returned out of it. Push the copy above the
      * prompt so the handler has a frame to resume in, and hang the span
-     * off that rather than straight onto the prompt. */
-    if ((KosDynNode_FLAGS((KosDynNode *) ret_frame) & KOS_DYNF_CLONED)
-        && ! KosDynNode_PARENT((KosDynNode *) ret_frame)) {
+     * off that rather than straight onto the prompt. Ownership transfers
+     * to the chain here; the delim stops covering the frame in its
+     * traversal and teardown. */
+    if (KosDynNode_FLAGS((KosDynNode *) delim)
+        & KOS_DYNF_HOLDS_RETURN_FRAME) {
+      KosDynNode_FLAGS((KosDynNode *) delim) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
       KosDynNode_PARENT((KosDynNode *) ret_frame) = prompt;
       base = (KosDynNode *) ret_frame;
     }
