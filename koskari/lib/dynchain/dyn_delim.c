@@ -50,7 +50,17 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
   KosDynDelim_RETURN_CHAIN(clone) = NULL;
   KosDynDelim_RETURN_PC(clone) = KosDynDelim_RETURN_PC(delim);
   KosDynDelim_RETURN_FRAME_NODE(clone) = KosDynDelim_RETURN_FRAME_NODE(delim);
-  KosDynDelim_RETURN_NODE(clone) = KosDynDelim_RETURN_NODE(delim);
+  /* RETURN_NODE is a self-reference meaning "unwind to me", so copying it
+     verbatim leaves the clone pointing at the original -- a pointer out of
+     a cloned template and into the live chain, the same hazard
+     kos_chain_detach_template guards against for parent. An unwind then
+     targets the original, passes through the clone, and frees it while
+     POP_PROMPT is still holding it. Re-point self-references at the
+     clone; anything else is a genuine external target and is copied. */
+  KosDynDelim_RETURN_NODE(clone) =
+      (KosDynDelim_RETURN_NODE(delim) == (KosDynNode *) delim)
+          ? (KosDynNode *) clone
+          : KosDynDelim_RETURN_NODE(delim);
   KosDynDelim_SAVED_STACK(clone) = NULL;
   KosDynDelim_SAVED_PC(clone) = KosDynDelim_SAVED_PC(delim);
   KosDynDelim_SAVED_ACTING_PC(clone) = KosDynDelim_SAVED_ACTING_PC(delim);
