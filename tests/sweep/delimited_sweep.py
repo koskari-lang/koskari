@@ -207,6 +207,54 @@ case("reentrant-amb-product", "reentrant",
      "RESULT [(1, 10), (1, 20), (2, 10), (2, 20)]")
 
 
+# === 1d. Bindings read back inside a resumed region ===
+#
+# A `let` around the reset puts its bindings in an NS node that capture
+# clones into the template. Reading one back inside the region after a
+# multi-shot re-invoke finds the cell empty or holding the raw dict --
+# and inside a function frame the same shape takes the process down.
+# Module globals are unaffected (the module namespace is never cloned),
+# which is why every earlier shape missed this.
+
+case("bind-let-reread", "binding",
+     "let binding read inside the region after a multi-shot second shift",
+     '(define r\n'
+     '  (let [[tag "T"]]\n'
+     '    (reset\n'
+     '      (begin\n'
+     '        (shift k (k 1))\n'
+     '        (shift j (begin (j 2) (j 3) "b"))\n'
+     '        tag))))\n'
+     '(print "RESULT" r)',
+     "RESULT b")
+
+case("bind-let-reread-fn", "binding",
+     "same shape inside a function frame (crashes rather than raising)",
+     'define runner []:\n'
+     '  let [[tag "T"]]:\n'
+     '    (reset\n'
+     '      (begin\n'
+     '        (shift k (k 1))\n'
+     '        (shift j (begin (j 2) (j 3) "b"))\n'
+     '        tag))\n'
+     '(print "RESULT" (runner))',
+     "RESULT b")
+
+case("bind-let-accumulate", "binding",
+     "let-bound accumulator mutated once per invocation, both shifts multi-shot",
+     'define runner []:\n'
+     '  let [[acc (#list)]]:\n'
+     '    let [[r (reset\n'
+     '              (begin\n'
+     '                (shift k (begin (k 1) (k 2) "done"))\n'
+     '                (shift j (begin (j 3) (j 4) "done"))\n'
+     '                (acc.append True)\n'
+     '                "z"))]]:\n'
+     '      (#tuple r (len acc))\n'
+     '(print "RESULT" (runner))',
+     "RESULT ('done', 4)")
+
+
 # === 2. Operands pending in the ENCLOSING call, same frame ===
 
 case("encl-none", "enclosing",
