@@ -15,23 +15,6 @@ design docs for detail.
   during undelimited nested interrupt (`let/cc` + `dyn-wind` + async Koskari
   await). Archived spec: [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §6.7.
 - **Full delimited PUSH replan** — deferred; §6.6 forbid remains until then.
-- **Delimited handler frame ownership** — a cross-frame `shift` leaves its
-  SHIFT node on the chain: the continuation includes the handler frame's own
-  return, so that frame is freed before the handler resumes, and restitch
-  then writes into it, restores the handler's stack into the caller's frame,
-  and re-links the span with no frame to run in. Fix: the delim owns the
-  handler frame (unlink-not-free, re-push at restitch), and SHIFT pop follows
-  provenance — POP_SHIFT for a live handler, graft teardown for a clone.
-  Four-phase plan, detection first. Ref:
-  [interpreter/delimited-handler-frame-ownership.md](interpreter/delimited-handler-frame-ownership.md).
-- **Prompt instance identity (multi-shot re-entrant shift)** — the one
-  remaining red delimited shape: `(reset (+ (shift k (+ (k 1) (k 2))) (shift
-  j (j 10))))` yields 11, must be 23. Invoking k does not re-delimit, so an
-  inner shift terminates the outer handler (`control` semantics where `shift`
-  was promised). Proposal: prompts resolved by node_id instance everywhere,
-  grafted prompts get fresh ids, POP_SHIFT grows an invocation-prompt branch
-  resuming to the paired delim. Ref:
-  [interpreter/prompt-instance-identity.md](interpreter/prompt-instance-identity.md).
 
 Ref: [interpreter/callcc.md](interpreter/callcc.md),
 [archive/delimited-invoke-model.md](archive/delimited-invoke-model.md),

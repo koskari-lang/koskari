@@ -174,6 +174,23 @@ case("reentrant-k-of-k", "reentrant",
      '(print "RESULT" r)',
      "RESULT 3")
 
+case("reentrant-nested-same-k", "reentrant",
+     "k re-invoked from an inner handler while a graft of k is still live",
+     '(define log (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (+ (shift k (+ (k 1) (k 2)))\n'
+     '       (shift j\n'
+     '         (cond\n'
+     '           ((== (len log) 1)\n'
+     '             (log.append "re")\n'
+     '             (+ (j 100) (k 7)))\n'
+     '           (else:\n'
+     '             (log.append "x")\n'
+     '             (j 100)))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 310")
+
 case("reentrant-amb-product", "reentrant",
      "function amb x amb: multi-shot inside a multi-shot invocation",
      'define amb [choices]:\n'

@@ -1561,7 +1561,7 @@ static int kos_delimited_invoke_inplace(
   KosDynPrompt *invocation_prompt = kos_dynprompt_new_invocation(
       (KosDynNode *) delim,
       KosDynPrompt_ID(prompt),
-      KosDynPrompt_PUSH_PC(prompt));
+      KosDynPrompt_POP_PC(prompt));
   if (! invocation_prompt) {
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
@@ -1680,11 +1680,9 @@ int kos_invoke_continuation(
   KosDynDelim *ret_delim = NULL;
   if (is_delimited) {
     KosDynNode *captured = KosContinuation_CAPTURED_CHAIN(to_use);
-    /* Segment to push: captured prompt plus body frames/ns nodes. Every
-       prompt in it becomes a fresh invocation instance first -- the graft
-       coexists with the live original, and POP_SHIFT / POP_PROMPT resolve
-       the delimiter by instance identity, never by chain position. */
-    kos_chain_freshen_invocation_prompts(captured);
+    /* Segment to push: captured prompt plus body frames/ns nodes. The
+       prompt clone already carries its falsified invocation identity,
+       assigned once at capture in kos_shift_capture. */
     push_segment = captured;
     ret_delim = kos_dyn_push_delim(
         es,

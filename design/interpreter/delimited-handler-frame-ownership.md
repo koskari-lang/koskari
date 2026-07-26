@@ -159,7 +159,7 @@ shape, and it is unblocked by the case-3 work rather than the case-2 work.
 
 ## Implementation plan
 
-Each phase is independently verifiable. `tools/delimited_sweep.py` runs the shape matrix, one
+Each phase is independently verifiable. `tests/sweep/delimited_sweep.py` runs the shape matrix, one
 subprocess each, because a dynchain fault corrupts state for whatever runs
 next in the same process.
 

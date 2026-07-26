@@ -1922,32 +1922,69 @@ int kos_shift_capture(
     if (! k)
       return -1;
 
-    /* An in-place invocation prompt owns no block -- the live region's
-     * operands sit in the innermost owner below it (ultimately the
-     * original prompt's block). The graft has no such live region, so
-     * the template's prompt clone takes a deep copy of those operands:
-     * the region-bottom pending state a fall-through return delivers
-     * into before the remaining region bytecode runs. */
-    if (baseline_src && ! KosDynNode_STACK((KosDynNode *) prompt)) {
-      KosDynNode *owner = KosDynNode_PARENT((KosDynNode *) prompt);
+    {
+      uint32_t live_id = KosDynNode_NODE_ID((KosDynNode *) prompt);
+      KosDynNode *pclone = KosContinuation_CAPTURED_CHAIN(k);
+      KosDynNode *walk;
 
-      while (owner && ! KosDynNode_STACK(owner))
-        owner = KosDynNode_PARENT(owner);
-      if (owner) {
-        KosDynNode *pclone = KosContinuation_CAPTURED_CHAIN(k);
+      while (pclone
+             && ! (KosDynNode_IS_PROMPT(pclone)
+                   && KosDynNode_NODE_ID(pclone) == live_id))
+        pclone = KosDynNode_PARENT(pclone);
 
-        while (pclone
-               && ! (KosDynNode_IS_PROMPT(pclone)
-                     && KosDynNode_NODE_ID(pclone)
-                        == KosDynNode_NODE_ID((KosDynNode *) prompt)))
-          pclone = KosDynNode_PARENT(pclone);
-        if (pclone && ! KosDynNode_STACK(pclone)) {
-          KosStackBlock *ops = KosStackBlock_DeepCopy(KosDynNode_STACK(owner));
-          if (! ops) {
-            kos_continuation_free(k);
-            return -1;
+      if (pclone) {
+        /* An in-place invocation prompt owns no block -- the live
+         * region's operands sit in the innermost owner below it. The
+         * graft has no live region, so the template's prompt clone
+         * takes a deep copy of those operands: the region-bottom
+         * pending state a fall-through return delivers into. */
+        if (baseline_src && ! KosDynNode_STACK((KosDynNode *) prompt)
+            && ! KosDynNode_STACK(pclone)) {
+          KosDynNode *owner = KosDynNode_PARENT((KosDynNode *) prompt);
+
+          while (owner && ! KosDynNode_STACK(owner))
+            owner = KosDynNode_PARENT(owner);
+          if (owner) {
+            KosStackBlock *ops =
+                KosStackBlock_DeepCopy(KosDynNode_STACK(owner));
+            if (! ops) {
+              kos_continuation_free(k);
+              return -1;
+            }
+            KosDynNode_STACK(pclone) = ops;
           }
-          KosDynNode_STACK(pclone) = ops;
+        }
+      }
+
+      /* Falsify every template prompt's identity, once, here. Invokes
+       * clone the template verbatim (node_id and flags preserved), so
+       * each graft of this k lands as an instance distinct from the
+       * live original and from other ks' grafts, with no per-invoke
+       * renumbering. Grafts of the same k share these ids; that is safe
+       * because grafts land at dyn_top and capture bounds at the
+       * nearest prompt, so a same-id instance can never sit between a
+       * SHIFT and its true delimiter. Beyond the boundary prompt, the
+       * walk to the owning frame can pass heritage prompts (a reset
+       * inside an outer shift's handler) whose clones ride below as
+       * never-executed padding; their originals stay live, so they must
+       * be falsified too or the landed copy shadows the real one. SHIFT
+       * nodes cloned alongside recorded live ids; follow each to its
+       * falsified copy. */
+      for (walk = KosContinuation_CAPTURED_CHAIN(k); walk;
+           walk = KosDynNode_PARENT(walk)) {
+        KosDynNode *snode;
+        uint32_t old_id;
+
+        if (! KosDynNode_IS_PROMPT(walk))
+          continue;
+        old_id = KosDynNode_NODE_ID(walk);
+        KosDynNode_NODE_ID(walk) = kos_dynnode_mint_id();
+        KosDynNode_FLAGS(walk) |= KOS_DYNF_INVOCATION;
+        for (snode = KosContinuation_CAPTURED_CHAIN(k); snode;
+             snode = KosDynNode_PARENT(snode)) {
+          if (KosDynNode_IS_SHIFT(snode)
+              && KosDynShift_PROMPT_NODE_ID(snode) == old_id)
+            KosDynShift_PROMPT_NODE_ID(snode) = KosDynNode_NODE_ID(walk);
         }
       }
     }
@@ -2107,45 +2144,6 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
       KosContinuation_LIVE_SHIFT_NODE_ID(k);
 
   return clone;
-}
-
-
-/**
-   Turn every PROMPT in a captured segment into a fresh invocation
-   instance before the segment is grafted onto the live chain.
-
-   A clone preserves node_id for LCA matching, but a grafted prompt must
-   be a NEW instance: it can coexist on the chain with the live original,
-   and everything that resolves "which reset" (POP_SHIFT, POP_PROMPT
-   routing) keys on instance identity. Each prompt gets a minted node_id
-   and KOS_DYNF_INVOCATION; any SHIFT node in the same segment that
-   recorded the old instance id is remapped so its POP_SHIFT resolves to
-   the sibling copy it will actually run under.
-
-   Callers: kos_invoke_continuation (delimited graft path only; the
-   undelimited path relies on preserved ids for LCA).
-*/
-static void kos_chain_freshen_invocation_prompts(KosDynNode *segment) {
-
-  KosDynNode *node;
-  KosDynNode *walk;
-
-  for (node = segment; node; node = KosDynNode_PARENT(node)) {
-    if (! KosDynNode_IS_PROMPT(node))
-      continue;
-
-    uint32_t old_id = KosDynNode_NODE_ID(node);
-    uint32_t new_id = kos_dynnode_mint_id();
-
-    KosDynNode_NODE_ID(node) = new_id;
-    KosDynNode_FLAGS(node) |= KOS_DYNF_INVOCATION;
-
-    for (walk = segment; walk; walk = KosDynNode_PARENT(walk)) {
-      if (KosDynNode_IS_SHIFT(walk)
-          && KosDynShift_PROMPT_NODE_ID(walk) == old_id)
-        KosDynShift_PROMPT_NODE_ID(walk) = new_id;
-    }
-  }
 }
 
 

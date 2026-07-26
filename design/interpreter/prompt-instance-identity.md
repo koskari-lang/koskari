@@ -7,7 +7,7 @@ Implemented on the `solve-amb` branch. Successor to
 whose plan was largely superseded by the fixes on the same branch.
 
 The formerly failing shape, `reentrant-multishot` in
-`tools/delimited_sweep.py`:
+`tests/sweep/delimited_sweep.py`:
 
 ```koskari
 (reset (+ (shift k (+ (k 1) (k 2))) (shift j (j 10))))   ;; was 11, now 23
@@ -18,9 +18,35 @@ the full product and `require`/`fail` pruning now work (sweep shapes
 `reentrant-inner-abandon`, `reentrant-k-of-k`, `reentrant-amb-product`;
 tests/reproducers/test_delimited_reentrant.py).
 
-Two findings from implementation amend the proposal below; the sections
-are kept as proposed, with the deltas here:
+Findings from implementation amend the proposal below; the sections are
+kept as proposed, with the deltas here:
 
+- **Falsification happens once, at capture.** §1 proposed minting the
+  fresh id at instantiation (per graft). Landed instead as a one-time
+  rewrite of every prompt clone in the template inside
+  `kos_shift_capture`: fresh node_id, KOS_DYNF_INVOCATION, and
+  in-template SHIFT nodes remapped from each live id. Invokes then
+  clone the template verbatim, so grafts of one k share the falsified
+  ids. That degrades resolution within one k to nearest-with-that-id,
+  which is safe by construction: grafts land at dyn_top and capture
+  bounds at the nearest prompt, so a same-id instance can never sit
+  between a SHIFT and its true delimiter (sweep shape
+  `reentrant-nested-same-k`). "Every prompt clone" matters: the walk to
+  the owning frame can pass heritage prompts (a reset inside an outer
+  shift's handler) whose clones ride below the boundary as
+  never-executed padding while their originals stay live. Cross-k and
+  original-vs-graft ambiguity stay impossible since each capture mints
+  its own ids. `kos_dynprompt_clone` stays id-preserving for the
+  undelimited path, where INSTALL replaces the chain and the reinstated
+  prompt is the same delimiter re-materialized.
+
+- **The prompt records the answer, not the hint.** PUSH_PROMPT resolves
+  its PROMPT extent once at push and stores the region's closing pc
+  (`KosDynPrompt_POP_PC`); POP_SHIFT reads it and resumes at pop_pc + 1.
+  This replaces both the lexical extent walk and the push-pc-keyed
+  dynamic fallback that §3 mentions -- a stored answer cannot go stale
+  the way a live acting pc does, so the whole resolution split
+  disappears.
 - **§5 as written was wrong: in-place does not survive untouched.** An
   inner shift during an in-place resume must capture up to the
   *invocation* boundary, not the original prompt -- the same trace

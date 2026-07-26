@@ -226,11 +226,11 @@ struct KosDynNode {
     } frame;
     struct {
       uint32_t prompt_id;
-      /* pc of the PUSH_PROMPT that created this node, in its own frame's
-         code. A cross-frame POP_SHIFT resolves the PROMPT extent with
-         this: the frame's live acting pc has moved past the extent by
-         the time the shift body runs. */
-      uint32_t push_pc;
+      /* pc of the POP_PROMPT closing this prompt's region, resolved from
+         the PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
+         pop_pc + 1; stored resolved because by the time a shift body
+         runs, no live acting pc still points into the extent. */
+      uint32_t pop_pc;
       PyObject *pending_shift_wrapper;  /* KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned */
     } prompt;
     struct {
@@ -1051,10 +1051,15 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
 
    :param ctx: execution context
    :param prompt_id: tag for matching (0 = default)
+   :param pop_pc: pc of the POP_PROMPT closing the region (from the
+      PROMPT extent at the push site); POP_SHIFT resumes at pop_pc + 1
 
    :return: new prompt, or NULL on error
 */
-KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id);
+KosDynPrompt *kos_dyn_push_prompt(
+    KosEvalState *es,
+    uint32_t prompt_id,
+    uint32_t pop_pc);
 
 
 /**
@@ -2304,7 +2309,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
-#define KosDynPrompt_PUSH_PC(p)          (((KosDynNode *)(p))->u.prompt.push_pc)
+#define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
 #define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
 
 #define KOS_DYN_DELIM_MODE_NONE       0u
