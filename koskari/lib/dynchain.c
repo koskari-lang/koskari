@@ -467,6 +467,27 @@ int kos_ctx_exc_stash_chain_top(
 }
 
 
+/**
+   Guard a kos_dyn_pop_* teardown against a foreign node. Being at the
+   top of the chain is not enough: a node left behind by a mishandled
+   transfer satisfies that check and is then torn down as the expected
+   kind -- freeing fields it does not have (e.g. Py_DECREF of an absent
+   namespace) instead of reporting the topology fault. Names the kind
+   actually on top and fails the pop. A macro, not a helper: these sit
+   on every dynchain pop.
+*/
+#define KOS_DYN_POP_REQUIRE_KIND(node, kind, who, want)                 \
+  do {                                                                  \
+    if (KosDynNode_KIND((KosDynNode *) (node)) != (kind)) {             \
+      PyErr_Format(PyExc_RuntimeError,                                  \
+                   who ": top of chain is %s, not " want,               \
+                   kos_dynnode_kind_name(                               \
+                       KosDynNode_KIND((KosDynNode *) (node))));        \
+      return -1;                                                        \
+    }                                                                   \
+  } while (0)
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_delim.c"
@@ -1579,12 +1600,11 @@ static KosContinuation *cont_freelist = NULL;
 
 /**
    Allocate or reuse a KosContinuation struct and wire captured chain, resume
-   frame/pc/stack, graft id, one-shot flag, token ref. Callers: kos_shift_capture,
+   pc/stack, graft id, one-shot flag, token ref. Callers: kos_shift_capture,
    kos_capture_cc, kos_continuation_clone.
 */
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
-    KosDynFrame *resume_frame,
     uint32_t resume_pc,
     KosStackBlock *resume_stack,
     uint32_t prompt_id,
@@ -1609,7 +1629,6 @@ static KosContinuation *kos_continuation_create(
   }
 
   KosContinuation_CAPTURED_CHAIN(k) = captured_chain;
-  KosContinuation_RESUME_FRAME(k) = resume_frame;
   KosContinuation_RESUME_PC(k) = resume_pc;
   KosContinuation_RESUME_STACK(k) = resume_stack;
   KosContinuation_PROMPT_ID(k) = prompt_id;
@@ -1756,7 +1775,6 @@ static KosContinuation *kos_continuation_capture_segment(
   token = KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL;
   k = kos_continuation_create(
       captured_chain,
-      resume_frame,
       resume_pc,
       resume_stack,
       prompt_id,
@@ -2043,9 +2061,9 @@ void kos_continuation_free(KosContinuation *k) {
   Py_XDECREF(KosContinuation_TOKEN_REF(k));
   KosContinuation_TOKEN_REF(k) = NULL;
 
-  /* resume_stack aliases the operand stack owned by resume_frame (or an
-   * innermost region node) on captured_chain; kos_dynchain_free releases
-   * node-owned blocks. Clear the pointer only. */
+  /* resume_stack aliases a node-owned operand stack on captured_chain;
+   * kos_dynchain_free releases node-owned blocks. Clear the pointer
+   * only. */
   KosContinuation_RESUME_STACK(k) = NULL;
 
   kos_dynchain_free(KosContinuation_CAPTURED_CHAIN(k), NULL);
@@ -2081,8 +2099,8 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
     return NULL;
   }
 
-  KosDynFrame *resume_frame = kos_chain_first_frame(cloned_chain);
-  if (KosContinuation_CAPTURED_CHAIN(k) && ! resume_frame) {
+  if (KosContinuation_CAPTURED_CHAIN(k)
+      && ! kos_chain_first_frame(cloned_chain)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "continuation clone has no frame");
     kos_dynchain_free(cloned_chain, NULL);
@@ -2091,7 +2109,6 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
 
   KosContinuation *clone = kos_continuation_create(
       cloned_chain,
-      resume_frame,
       KosContinuation_RESUME_PC(k),
       KosStackBlock_DeepCopy(KosContinuation_RESUME_STACK(k)),
       KosContinuation_PROMPT_ID(k),

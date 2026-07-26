@@ -121,7 +121,6 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
   Py_DECREF(result);
 
   KosTransferPlan_RESUME_PC(plan) = prompt_pop_pc + 1;
-  KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
   SAYF("[POP_SHIFT] plan ready: RESUME_PC=%u (first instr after POP_PROMPT)",
        (unsigned) (prompt_pop_pc + 1));

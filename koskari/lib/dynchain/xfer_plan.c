@@ -421,7 +421,6 @@ static int kos_build_xfer_plan(
   KosTransferPlan_ORIGINAL_TARGET(plan) = options->target;
   KosTransferPlan_GRAFT_POINT_ID(plan) = options->graft_point_id;
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
-  KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
 
   if (options->unwind_from_current)
@@ -533,7 +532,7 @@ int kos_build_delimited_push_plan(
    after a nested transfer interrupted and completed an outer plan's wind
    thunk.
 
-   Caller must set RESUME_PC, RESUME_FRAME, RESUME_STACK on the plan.
+   Caller must set RESUME_PC, RESUME_STACK on the plan.
    Returns 0 on success, -1 on error.
 */
 int kos_build_direct_install_plan(
@@ -1750,7 +1749,6 @@ int kos_invoke_continuation(
 
   KosTransferPlan_GRAFT_POINT_ID(plan) = KosContinuation_GRAFT_POINT_ID(to_use);
   KosTransferPlan_RESUME_PC(plan) = KosContinuation_RESUME_PC(k);
-  KosTransferPlan_RESUME_FRAME(plan) = to_use->resume_frame;  /* template; INSTALL uses fresh */
   /* resume_stack is an alias of a template-owned block, and the PUSH
      step lands a fresh clone of the whole template -- the landed segment
      already carries this invoke's one copy of those operands, in the
@@ -1761,8 +1759,8 @@ int kos_invoke_continuation(
   KosTransferPlan_RESUME_STACK(plan) = (! is_delimited && to_use->resume_stack)
       ? KosStackBlock_DeepCopy(to_use->resume_stack) : NULL;
   #if KOS_XFER_TRACE
-    SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
-         (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
+    SAYF("[xfer] plan resume_stack=%p",
+         (void *) KosTransferPlan_RESUME_STACK(plan));
   #endif
 
   if (kos_xfer_plan_is_delimited_push(KosEvalState_PLAN(es))) {

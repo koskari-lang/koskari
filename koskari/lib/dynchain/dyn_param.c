@@ -286,16 +286,7 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
     return -1;
   }
 
-  /* Being at the top is not enough: a foreign node left on the chain by a
-     mishandled transfer satisfies the check above and is then torn down as
-     a PARAM. Report which kind is actually on top instead. */
-  if (KosDynNode_KIND((KosDynNode *) node) != KOS_DYN_PARAM) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "POP_PARAM: top of chain is %s, not PARAM",
-                 kos_dynnode_kind_name(
-                     KosDynNode_KIND((KosDynNode *) node)));
-    return -1;
-  }
+  KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_PARAM, "POP_PARAM", "PARAM");
 
   kos_dynparam_restore(ctx, node);
   {

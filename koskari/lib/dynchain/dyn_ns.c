@@ -95,18 +95,7 @@ int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
     return -1;
   }
 
-  /* Being at the top is not enough: a foreign node left on the chain by a
-     mishandled transfer will satisfy the check above and then be freed as
-     an NS. Only an NS node carries a namespace, so kos_dynns_free would
-     Py_DECREF a NULL and take the process down instead of reporting the
-     topology fault. Report which kind is actually on top. */
-  if (KosDynNode_KIND((KosDynNode *) node) != KOS_DYN_NS) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "POP_NS: top of chain is %s, not NS",
-                 kos_dynnode_kind_name(
-                     KosDynNode_KIND((KosDynNode *) node)));
-    return -1;
-  }
+  KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_NS, "POP_NS", "NS");
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 

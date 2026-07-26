@@ -95,16 +95,7 @@ int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
     return -1;
   }
 
-  /* Being at the top is not enough: a foreign node left on the chain by a
-     mishandled transfer satisfies the check above and is then torn down as
-     a TRY. Report which kind is actually on top instead. */
-  if (KosDynNode_KIND((KosDynNode *) node) != KOS_DYN_TRY) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "POP_TRY: top of chain is %s, not TRY",
-                 kos_dynnode_kind_name(
-                     KosDynNode_KIND((KosDynNode *) node)));
-    return -1;
-  }
+  KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_TRY, "POP_TRY", "TRY");
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 

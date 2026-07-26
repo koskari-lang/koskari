@@ -465,7 +465,6 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
       }
       Py_XDECREF(inject_val);
       KosTransferPlan_RESUME_PC(new_plan) = rpc;
-      KosTransferPlan_RESUME_FRAME(new_plan) = NULL;
       KosTransferPlan_RESUME_STACK(new_plan) = rstack;
       KosEvalState_ArmTransferPlan(es, new_plan);
     }

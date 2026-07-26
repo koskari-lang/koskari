@@ -309,10 +309,12 @@ struct KosDynNode {
       int normal_exit;     /* 1 = exit(None,None,None); only when phase == PENDING_EXIT_AWAIT */
     } with;
     struct {
-      /* shift: marker; operands stay on the frame (PROMPT install has no
-         stack). prompt_node_id is the instance id of the PROMPT this shift
-         captured against; POP_SHIFT resolves its delimiter by this, never
-         by chain position. */
+      /* shift: marker delimiting the handler body; owns no block, so
+         handler operands land in the innermost owner below (the
+         prompt's region block, or a frame). prompt_node_id is the
+         instance id of the PROMPT this shift captured against;
+         POP_SHIFT resolves its delimiter by this, never by chain
+         position. */
       uint32_t prompt_node_id;
     } shift;
     struct {
@@ -433,10 +435,10 @@ typedef struct KosDynNode KosDynNext;
    capture point down through the prompt and its owning FRAME node
    (delimited), or from above the CC block down to root (undelimited).
 
-   The resume_frame points to the frame where execution resumes.
-   The resume_pc is the program counter to resume at.
-   The resume_stack points at the operand stack owned by resume_frame
-   (or the innermost region with a stack on captured_chain); it is an
+   The resume_pc is the program counter to resume at; the frame it
+   resumes in is resolved from the chain at invoke time (the landed
+   segment's innermost FRAME), never stored. The resume_stack points at
+   the innermost node-owned operand stack on captured_chain; it is an
    alias for that node-owned block, not separately released here.
 
    For multi-shot continuations, the chain/stack are cloned on
@@ -445,7 +447,6 @@ typedef struct KosDynNode KosDynNext;
 
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
-  KosDynFrame *resume_frame;    /* frame to resume into */
   uint32_t resume_pc;           /* pc to resume at */
   KosStackBlock *resume_stack;  /* aliases node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
@@ -466,7 +467,6 @@ struct KosContinuation {
 
 
 #define KosContinuation_CAPTURED_CHAIN(k)  (((KosContinuation *)(k))->captured_chain)
-#define KosContinuation_RESUME_FRAME(k)    (((KosContinuation *)(k))->resume_frame)
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
 #define KosContinuation_RESUME_STACK(k)    (((KosContinuation *)(k))->resume_stack)
 #define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
@@ -611,7 +611,6 @@ struct KosTransferPlan {
   KosDynNode *original_target;  /* target for chain-change detection */
   uint32_t graft_point_id;      /* node_id for LCA fallback when replanning */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
-  KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
   KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
   PyObject *continuation_ref;   /* strong ref (Py_INCREF) until plan freed or moved to prompt */
   KosContinuation *invoke_clone;  /* when set, release then free when plan freed */
@@ -632,7 +631,6 @@ struct KosTransferPlan {
 #define KosTransferPlan_ORIGINAL_TARGET(p)  (((KosTransferPlan *)(p))->original_target)
 #define KosTransferPlan_GRAFT_POINT_ID(p)   (((KosTransferPlan *)(p))->graft_point_id)
 #define KosTransferPlan_RESUME_PC(p)       (((KosTransferPlan *)(p))->resume_pc)
-#define KosTransferPlan_RESUME_FRAME(p)    (((KosTransferPlan *)(p))->resume_frame)
 #define KosTransferPlan_RESUME_STACK(p)    (((KosTransferPlan *)(p))->resume_stack)
 #define KosTransferPlan_CONTINUATION_REF(p) (((KosTransferPlan *)(p))->continuation_ref)
 #define KosTransferPlan_INVOKE_CLONE(p)    (((KosTransferPlan *)(p))->invoke_clone)
@@ -2019,7 +2017,7 @@ int kos_build_transfer_plan(
    Build a transfer plan with no unwind (INSTALL + wind + INJECT only).
    Use when the current and target chains are disjoint, such as after a
    nested transfer interrupted an outer plan's wind thunk.
-   Caller sets RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
+   Caller sets RESUME_PC, RESUME_STACK after return.
 
    :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
 
@@ -2038,7 +2036,7 @@ int kos_build_direct_install_plan(
    Build a PUSH plan for delimited continuation invoke.  Appends continuation
    frames (excluding prompt) to the current chain.  Plan has: EXTENT_ACTION
    (wind) for PARAM nodes in the segment if any, PUSH, INJECT.  Caller must
-   set RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
+   set RESUME_PC, RESUME_STACK after return.
 */
 int kos_build_delimited_push_plan(
    KosEvalState *es,
