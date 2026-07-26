@@ -1434,11 +1434,12 @@ void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node);
 /**
    Push a parameter extent onto the dynamic chain from a bindings dict.
 
-   Creates a PARAM node, runs enter (save domain, set values), and pushes.
-   Caller gives ownership of bindings (dict name -> value); node takes it.
+   Creates a PARAM node wrapping each value in a fresh cell, runs enter
+   (swap the cells into the context's shadow table, saving what they
+   displace), and pushes.
 
-   :param ctx: execution context
-   :param bindings: PyDict mapping names to values (ownership transferred)
+   :param es: evaluator state
+   :param bindings: PyDict mapping names to values (borrowed)
 
    :return: new KosDynParam node, or NULL on error
 */
@@ -1446,31 +1447,11 @@ KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings);
 
 
 /**
-   Push a parameter extent onto the dynamic chain.
-
-   Creates a PARAM node, runs enter (save domain, set values), and pushes.
-   Caller passes arrays of params (ParamRef) and values; these are INCREF'd.
-
-   :param ctx: execution context
-   :param count: number of (param, value) pairs
-   :param params: array of ParamRef objects (new ref for each)
-   :param values: array of values to bind (new ref for each)
-
-   :return: new KosDynParam node, or NULL on error
-*/
-KosDynParam *kos_dyn_push_param(
-    KosEvalState *es,
-    uint32_t count,
-    PyObject **params,
-    PyObject **values);
-
-
-/**
    Pop a parameter extent from the dynamic chain.
 
-   Restores domain, updates dyn_top, and frees the node.
+   Restores the displaced cells, updates dyn_top, and frees the node.
 
-   :param ctx: execution context
+   :param es: evaluator state
    :param node: PARAM node to pop (must be dyn_top)
 */
 int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);

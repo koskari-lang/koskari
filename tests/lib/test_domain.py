@@ -115,12 +115,11 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 42)
 
 
-    async def test_domain_predefined_cell_is_shared_channel(self):
+    async def test_domain_root_scope_is_shared_channel(self):
         """
-        A cell pre-defined in the Domain before the koskari call is copied
-        into the root context (shared by pointer): koskari reads the
-        pre-defined value, and a koskari store through the cell is visible
-        to Python after the return
+        The Domain's root scope is reached by resolution from the koskari
+        context, so a host pre-define is read inside and a koskari store
+        is visible to Python after the return
         """
 
         p = ParamRef("chan", None)
@@ -142,18 +141,17 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "from-host")
 
 
-    async def test_domain_koskari_created_param_not_visible_after(self):
+    async def test_domain_koskari_store_lands_in_root_scope(self):
         """
-        A parameter first created inside the koskari context lands in that
-        context's cell table: it is not visible to Python after the
-        return. Pre-defining in the Domain is the channel (task-isolation
-        D5).
+        A store made inside koskari with no enclosing parameterize extent
+        lands in the Domain's root scope, so Python reads it after the
+        return without any pre-define.
         """
 
         p = ParamRef("fresh_key")
 
         def store_fresh():
-            p.store("inside-only")
+            p.store("from-koskari")
             return p.deref()
 
         code, ns = build_expr([
@@ -161,8 +159,34 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
             ["CALL", 0],
             ["RETURN", 1],
         ], values={"f": store_fresh})
-        with Domain():
+        with Domain() as domain:
             result = await make_callable(code, ns)()
+            self.assertEqual(p.deref(), "from-koskari")
+            self.assertEqual(
+                domain.param_scopes()["root"]["fresh_key"].deref(),
+                "from-koskari")
+        self.assertEqual(result, "from-koskari")
+
+
+    async def test_domain_extent_binding_stays_out_of_root_scope(self):
+        """
+        A parameterize extent inside koskari shadows in the context's own
+        table: the Domain's root scope never sees the binding, and the
+        name is unbound again after the return.
+        """
+
+        p = ParamRef("extent_key")
+
+        code, ns = build_expr([
+            ["CONST", "inside-only"],
+            ["PUSH_PARAM", ("extent_key",)],
+            ["PARAM", ("extent_key", 0, 0, 0)],
+            ["POP_PARAM", 0],
+            ["RETURN", 1],
+        ])
+        with Domain() as domain:
+            result = await make_callable(code, ns)()
+            self.assertNotIn("extent_key", domain.param_scopes()["root"])
             self.assertTrue(p.empty)
         self.assertEqual(result, "inside-only")
 

@@ -61,38 +61,6 @@ static KosDynParam *kos_dynparam_new_from_bindings(
 
 
 /**
-   Build PARAM from parallel param ref / value arrays.
-*/
-static KosDynParam *kos_dynparam_new(
-    KosDynNode *parent,
-    uint32_t count,
-    PyObject **params,
-    PyObject **values) {
-
-  if (count == 0) {
-    PyErr_SetString(PyExc_ValueError, "KosDynParam requires at least one binding");
-    return NULL;
-  }
-
-  PyObject *bindings = PyDict_New();
-  if (! bindings)
-    return NULL;
-
-  for (uint32_t i = 0; i < count; i++) {
-    PyObject *key = KosParamRef_KEY(params[i]);
-    if (PyDict_SetItem(bindings, key, values[i]) < 0) {
-      Py_DECREF(bindings);
-      return NULL;
-    }
-  }
-
-  KosDynParam *node = kos_dynparam_new_from_bindings(parent, bindings);
-  Py_DECREF(bindings);
-  return node;
-}
-
-
-/**
    PyDict_Copy bindings for INSTALL/PUSH segments. The copy is of cell
    pointers: a clone shares its cells with the source node, so multi-shot
    continuation applications share cells (a set! in one application is
@@ -214,7 +182,7 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
       goto rollback;
   }
 
-  KosDynParam_SAVED(node) = saved;
+  Py_XSETREF(KosDynParam_SAVED(node), saved);
   return 0;
 
  rollback:
@@ -290,35 +258,6 @@ KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings) {
 
   KosDynParam *node = kos_dynparam_new_from_bindings(
       KosEvalState_DYN_TOP(es), bindings);
-  if (! node)
-    return NULL;
-
-  if (kos_dynparam_enter(ctx, node) < 0) {
-    kos_dynparam_free(node);
-    return NULL;
-  }
-
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
-    kos_dynparam_restore(ctx, node);
-    kos_dynparam_free(node);
-    return NULL;
-  }
-  return node;
-}
-
-
-/**
-   Push PARAM from parallel arrays (vector call sites).
-*/
-KosDynParam *kos_dyn_push_param(
-    KosEvalState *es,
-    uint32_t count,
-    PyObject **params,
-    PyObject **values) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  KosDynParam *node = kos_dynparam_new(KosEvalState_DYN_TOP(es),
-                                       count, params, values);
   if (! node)
     return NULL;
 

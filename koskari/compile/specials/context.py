@@ -29,7 +29,7 @@ from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_nil, is_pair
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import gather_bindings, helper_begin
+from ..helpers import const_only_expr, gather_bindings, helper_begin
 
 
 _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
@@ -57,6 +57,11 @@ def special_parameterize(
 
     bindings, body = rest
     args, vals = gather_bindings(bindings, source)
+    if not args:
+        raise SpecialError(
+            "parameterize requires at least one binding",
+            source)
+
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
 
@@ -66,6 +71,54 @@ def special_parameterize(
     fragment.instruction(OpCode.KOS_OP_PUSH_PARAM, tuple(map(str, args)))
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_PARAM, 0)
+    return fragment
+
+
+@builtin("compile/parameter")
+@special("compile/parameter", patterns=_DEFAULT_PATTERNS)
+def special_parameter(
+        compiler: Compiler,
+        source: pair,
+        tc: bool = False) -> ByteCodeFragment:
+    """
+    Compile (compile/parameter NAME [DEFAULT]).
+
+    Resolves the value bound to NAME: the enclosing `parameterize` extent
+    first, then the root scope. Neither store is written, and neither
+    gains an entry on a miss. Without a binding DEFAULT answers, and with
+    no DEFAULT the resolution raises NameError.
+    """
+
+    called_by, rest = source
+    if is_nil(rest) or not is_pair(rest):
+        raise SpecialError("parameter requires a name", source)
+
+    name, rest = rest
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+
+    if is_nil(rest):
+        fragment.instruction(OpCode.KOS_OP_PARAM, (str(name), 0, 0, 0))
+        return fragment
+
+    if not is_pair(rest):
+        raise SpecialError("parameter takes a name and one default", source)
+
+    default, extra = rest
+    if not is_nil(extra):
+        raise SpecialError("parameter takes a name and one default", source)
+
+    defaultfrag = compiler.full_compile(default, False)
+    is_const, const_val = const_only_expr(defaultfrag)
+
+    if is_const:
+        fragment.instruction(
+            OpCode.KOS_OP_PARAM_CONST, (str(name), const_val, 0, 0))
+
+    else:
+        fragment.merge(defaultfrag)
+        fragment.instruction(OpCode.KOS_OP_PARAM, (str(name), 1, 0, 0))
+
     return fragment
 
 

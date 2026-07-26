@@ -16,10 +16,10 @@ tests.reproducers.test_param_task_isolation
 
 Reproducer: two concurrently-driven tasks sharing one parameter store
 corrupted each other's parameterize bindings across awaits (leak,
-lost-binding, stale-restore). Under per-context parameter cells
-(design/archive/domain-task-isolation.md) each context forks its
-cell table at creation, so sibling extents swap cells in disjoint
-tables and every task reads its own binding.
+lost-binding, stale-restore). Under per-context shadow tables
+(design/parameter-resolution.md) each context forks its table at
+creation, so sibling extents swap cells in disjoint tables and every
+task reads its own binding.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -87,36 +87,39 @@ define outcome (main)
 """
 
 
-# Fork semantics without any interleaving: table isolation both
-# directions, the shared-cell write-through channel, and extent capture.
-# One function, one context: each top-level module form evaluates in its
-# own context, so cross-form parameter state does not persist.
+# Fork semantics without any interleaving. A store with no enclosing
+# extent lands in the domain's root scope, which parent and children
+# share, so it crosses the fork in both directions. A parameterize
+# extent lands in the forking context's own table, so the fork captures
+# the extents applied at creation and nothing later.
 FORK_SRC = """
 (define run-checks (lambda []
   (define out #{})
 
-  ;; child->parent: a key first created in the child stays in the child
-  (set! (item out "child-stored")
-        (await (defer (lambda [] (.deref (parameter-ref "k1" "child-value"))))))
-  (set! (item out "parent-k1") (parameterq k1 "parent-default"))
+  ;; parent->child through the root scope
+  (define k1-ref (ref (parameter k1)))
+  (k1-ref.store "parent-wrote")
+  (set! (item out "child-sees-parent")
+        (await (defer (lambda [] (parameterq k1 "unset")))))
 
-  ;; parent->child: a key created after the fork is invisible
-  (define k2-task (defer (lambda [] (parameterq k2 "child-default"))))
-  (set! (item out "parent-k2") (.deref (parameter-ref "k2" "parent-touch")))
-  (set! (item out "child-k2") (await k2-task))
+  ;; child->parent through the root scope
+  (await (defer (lambda [] (.store (ref (parameter k2)) "child-wrote"))))
+  (set! (item out "parent-sees-child") (parameterq k2 "unset"))
 
-  ;; write-through: a cell shared at fork is a live channel (D7b)
-  (parameter-ref "k3" "before-fork")
-  (define k3-ref (ref (parameter k3)))
-  (await (defer (lambda [] (k3-ref.store "child-wrote"))))
-  (set! (item out "parent-k3") (parameterq k3 "unset"))
-
-  ;; snapshot captures the applied extent; survives the extent's exit
+  ;; the fork captures the extent applied at creation, and it survives
+  ;; the extent's exit
   (define captured
-    (parameterize [[k4 "extent-value"]]
-      (create-task (defer (lambda [] (parameterq k4 "unset"))))))
-  (set! (item out "after-extent") (parameterq k4 "outside"))
-  (set! (item out "child-k4") (await captured))
+    (parameterize [[k3 "extent-value"]]
+      (create-task (defer (lambda [] (parameterq k3 "unset"))))))
+  (set! (item out "after-extent") (parameterq k3 "outside"))
+  (set! (item out "child-k3") (await captured))
+
+  ;; an extent the parent enters after the fork is invisible to the
+  ;; child: the defer is the capture point
+  (define late (defer (lambda [] (parameterq k4 "child-default"))))
+  (set! (item out "child-k4")
+        (parameterize [[k4 "too-late"]]
+          (await late)))
 
   out))
 
@@ -185,19 +188,17 @@ class TestParamTaskIsolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_fork_semantics(self):
         """
-        Table isolation both directions, shared-cell write-through, and
-        snapshot capture of applied extents
+        Root-scope stores cross the fork both directions, and the fork
+        captures exactly the extents applied when it was made
         """
 
         mod = await self.load("param_iso_fork", FORK_SRC)
         out = vars(mod)["fork-results"]
-        self.assertEqual(out["child-stored"], "child-value")
-        self.assertEqual(out["parent-k1"], "parent-default")
-        self.assertEqual(out["parent-k2"], "parent-touch")
-        self.assertEqual(out["child-k2"], "child-default")
-        self.assertEqual(out["parent-k3"], "child-wrote")
+        self.assertEqual(out["child-sees-parent"], "parent-wrote")
+        self.assertEqual(out["parent-sees-child"], "child-wrote")
         self.assertEqual(out["after-extent"], "outside")
-        self.assertEqual(out["child-k4"], "extent-value")
+        self.assertEqual(out["child-k3"], "extent-value")
+        self.assertEqual(out["child-k4"], "child-default")
 
     async def test_drop_mid_extent_harmless(self):
         """

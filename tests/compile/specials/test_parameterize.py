@@ -67,14 +67,19 @@ class TestParameterizeSpecial(SpecialsTestCase):
         self.assertEqual(result, (100, 101))
 
 
-    async def test_parameter_restored_after_block_exits(self):
+    async def test_parameter_unbound_again_after_block_exits(self):
         """
-        First call inside parameterize sees overridden value; second call
-        outside sees default
+        First call inside parameterize sees the overridden value; after
+        the extent pops the name is unbound again, which a ref with no
+        default reports as NameError. Asserting the absence rather than a
+        declared default keeps a stubbed-out restore from passing.
         """
 
-        def pretty(x):
-            return ParamRef("format", "default").deref()
+        def probe():
+            try:
+                return ParamRef("format").deref()
+            except NameError:
+                return "unbound"
 
         def seq(*args):
             return args
@@ -82,48 +87,52 @@ class TestParameterizeSpecial(SpecialsTestCase):
         src_str = """
         (compile/call seq
           (compile/parameterize [[format "inner"]]
-            (compile/call pretty 0))
-          (compile/call pretty 1))
+            (compile/call probe))
+          (compile/call probe))
         """
-        expr, mod = self.compile_expr(src_str, pretty=pretty, seq=seq)
+        expr, mod = self.compile_expr(src_str, probe=probe, seq=seq)
         result = await expr()
-        self.assertEqual(result, ("inner", "default"))
+        self.assertEqual(result, ("inner", "unbound"))
 
 
-    async def test_parameter_ref_holder_survives_pop(self):
+    async def test_extent_cell_is_not_the_root_cell(self):
         """
-        parameter-ref returns the live cell: after the extent pops, the
-        held cell still carries its value, while fresh resolution sees
-        the outer view (task-isolation D10)
+        parameterize shadows rather than overwrites: a value already in
+        the root scope is intact underneath the extent, and the extent's
+        binding never reaches the root scope.
         """
 
-        from koskari.lib import parameter, parameter_ref
+        from koskari.lib import Domain
 
-        held = []
+        seen = []
 
-        def grab():
-            held.append(parameter_ref("hold"))
-            return held[0].deref()
+        def outer_store():
+            ParamRef("shadowed").store("root-value")
 
-        def after():
-            return parameter("hold", "outer")
+        def inside():
+            seen.append(Domain.current_domain().param_scopes())
+            return ParamRef("shadowed").deref()
 
         def seq(*args):
             return args
 
         src_str = """
         (compile/call seq
-          (compile/parameterize [[hold "extent"]]
-            (compile/call grab))
-          (compile/call after))
+          (compile/call outer_store)
+          (compile/parameterize [[shadowed "extent-value"]]
+            (compile/call inside))
+          (compile/call inside))
         """
         expr, mod = self.compile_expr(
-            src_str, grab=grab, after=after, seq=seq)
+            src_str, outer_store=outer_store, inside=inside, seq=seq)
         result = await expr()
-        self.assertEqual(result, ("extent", "outer"))
+        self.assertEqual(result, (None, "extent-value", "root-value"))
 
-        # the holder keeps the popped extent's cell alive and readable
-        self.assertEqual(held[0].deref(), "extent")
+        inner_scopes = seen[0]
+        self.assertEqual(inner_scopes["shadow"]["shadowed"].deref(),
+                         "extent-value")
+        self.assertEqual(inner_scopes["root"]["shadowed"].deref(),
+                         "root-value")
 
 
     async def test_multishot_applications_share_cells(self):

@@ -303,10 +303,11 @@ OP(CAPTURE_CC, 0, NOARG)          // capture undelimited continuation, push on s
 OP(PUSH_WIND, 0, COUNT)           // arg = 1 (before only) or 2 (both); stack: [..., before, after]
 OP(POP_WIND, 0, NOARG)            // pop wind from dynamic chain
 
-// parameterize extent (domain param bindings)
+// parameterize extent and parameter reads
 OP(PUSH_PARAM, 0, CONST)          // arg = constant index of names tuple
-OP(PARAM, 0, CONST)               // arg = constant index of name (ParamRef key)
 OP(POP_PARAM, 0, NOARG)           // pop KOS_DYN_PARAM from chain
+OP(PARAM, 0, EXTRA, CONST, COUNT, NOARG, NOARG)   // name; 0 or 1 stacked default
+OP(PARAM_CONST, 0, EXTRA, CONST, CONST, NOARG, NOARG)  // name; const default
 
 // sequence unpack (realize TOS to PySequence, then peel or assign)
 OP(UNPACK, 0, COUNT)

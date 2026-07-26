@@ -1319,17 +1319,19 @@ static int param_ref_init(PyObject *self, PyObject *key, PyObject *default_value
 }
 
 
+/* True when neither a koskari context nor a python Domain scope is
+   ambient, so there is no store to resolve against at all. */
+static int param_ref_no_domain(void) {
+  return (! kos_ctx_current()) && (! kos_domain_current());
+}
+
+
 static PyObject *param_ref_m_deref(PyObject *self) {
-  PyObject *cells;
   PyObject *cell;
   PyObject *value;
-  PyObject *default_val;
+  PyObject *default_val = KosParamRef_DEFAULT(self);
 
-  cells = kos_param_refs_reserve();
-  if (! cells) {
-    if (PyErr_Occurred())
-      return NULL;
-    default_val = KosParamRef_DEFAULT(self);
+  if (param_ref_no_domain()) {
     if (default_val) {
       Py_INCREF(default_val);
       return default_val;
@@ -1339,29 +1341,20 @@ static PyObject *param_ref_m_deref(PyObject *self) {
     return NULL;
   }
 
-  cell = kos_param_resolve_ref_in(cells, KosParamRef_KEY(self));
-  if (! cell)
-    return NULL;
-
-  value = KosSymbolicRef_VALUE(cell);
+  /* a read creates nothing: extent shadow, then root scope, then the
+     default this ref declares */
+  cell = kos_param_lookup_ambient(KosParamRef_KEY(self));
+  value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
   if (value) {
     Py_INCREF(value);
-    Py_DECREF(cell);
     return value;
   }
 
-  default_val = KosParamRef_DEFAULT(self);
   if (default_val) {
-    /* sticky fill: the default lands in the (empty) cell, visible to
-       every sharer of the cell */
-    Py_INCREF(default_val);
-    KosSymbolicRef_VALUE(cell) = default_val;
-    Py_DECREF(cell);
     Py_INCREF(default_val);
     return default_val;
   }
 
-  Py_DECREF(cell);
   PyErr_Format(PyExc_NameError, "Param %S has no binding and no default",
                KosParamRef_KEY(self));
   return NULL;
@@ -1369,18 +1362,18 @@ static PyObject *param_ref_m_deref(PyObject *self) {
 
 
 static PyObject *param_ref_m_store(PyObject *self, PyObject *value) {
-  PyObject *cells;
   PyObject *cell;
 
-  cells = kos_param_refs_reserve();
-  if (! cells) {
-    if (PyErr_Occurred())
-      return NULL;
-    PyErr_SetString(PyExc_RuntimeError,
-                    "ParamRef.store outside active domain");
-    return NULL;
+  /* an existing binding is written in place, wherever it lives; with no
+     binding the value lands in the root scope */
+  cell = kos_param_lookup_ambient(KosParamRef_KEY(self));
+  if (cell) {
+    Py_INCREF(value);
+    Py_XSETREF(KosSymbolicRef_VALUE(cell), value);
+    Py_RETURN_NONE;
   }
-  cell = kos_param_resolve_ref_in(cells, KosParamRef_KEY(self));
+
+  cell = kos_param_root_resolve_ambient(KosParamRef_KEY(self));
   if (! cell)
     return NULL;
   Py_INCREF(value);
@@ -1391,18 +1384,15 @@ static PyObject *param_ref_m_store(PyObject *self, PyObject *value) {
 
 
 static PyObject *param_ref_m_clear(PyObject *self) {
-  PyObject *cells;
   PyObject *cell;
 
-  cells = kos_param_refs_peek();
-  if (! cells) {
-    if (kos_ctx_current() || kos_domain_current())
-      Py_RETURN_NONE;
+  if (param_ref_no_domain()) {
     PyErr_SetString(PyExc_RuntimeError,
                     "ParamRef.clear outside active domain");
     return NULL;
   }
-  cell = PyDict_GetItem(cells, KosParamRef_KEY(self));
+
+  cell = kos_param_lookup_ambient(KosParamRef_KEY(self));
   if (cell)
     Py_CLEAR(KosSymbolicRef_VALUE(cell));
   Py_RETURN_NONE;
@@ -1410,16 +1400,13 @@ static PyObject *param_ref_m_clear(PyObject *self) {
 
 
 static PyObject *param_ref_m_is_empty(PyObject *self) {
-  PyObject *cells;
   PyObject *cell;
 
-  cells = kos_param_refs_peek();
-  if (! cells)
+  if (param_ref_no_domain())
     return PyBool_FromLong(1);
-  cell = PyDict_GetItem(cells, KosParamRef_KEY(self));
-  if (! cell || ! KosSymbolicRef_VALUE(cell))
-    return PyBool_FromLong(1);
-  return PyBool_FromLong(0);
+
+  cell = kos_param_lookup_ambient(KosParamRef_KEY(self));
+  return PyBool_FromLong(! (cell && KosSymbolicRef_VALUE(cell)));
 }
 
 

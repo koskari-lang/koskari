@@ -14,13 +14,15 @@
 """
 tests.reproducers.test_param_thread_isolation
 
-Threading verifiers for parameter cells and domain ambience. Parameter
-resolution inside the evaluator is context-resident (es -> ctx ->
-param_refs) and never consults thread state, so a context created on
-one thread and driven on another keeps its captured view; parameterize
-extents swap cells in per-context tables, so extents live on different
-OS threads simultaneously cannot corrupt each other; and the ambient
-TLS state (context stack, python domain scope) is per-thread, so one
+Threading verifiers for parameter resolution and domain ambience.
+Resolution inside the evaluator is context-resident (es -> ctx ->
+shadow table, then the domain root scope) and never consults thread
+state, so a context created on one thread and driven on another keeps
+its captured view; parameterize extents swap cells in per-context
+tables, so extents live on different OS threads simultaneously cannot
+corrupt each other; the root scope follows the domain rather than the
+thread, so a store with no extent crosses threads; and the ambient TLS
+state (context stack, python domain scope) is per-thread, so one
 thread's ambience is invisible to another until a Domain object is
 entered there explicitly.
 
@@ -50,12 +52,13 @@ CAPTURE_SRC = """
 """
 
 
-# Two defers forked from one context that touched `shared` first, so
-# both hold the same root cell. Each worker parameterizes `shared` with
-# its own name; barrier B1 forces both extents to be live at the same
-# moment on different threads. After the extents exit, T1 stores through
-# the fork-shared root cell and B2 orders that store before T2's read.
-# B1, B2, and RESULTS are pre-seeded into the module namespace.
+# Two defers forked from one context, so both resolve against the same
+# domain root scope. Each worker parameterizes `shared` with its own
+# name; barrier B1 forces both extents to be live at the same moment on
+# different threads. After the extents exit, T1 stores with no extent in
+# the way -- which lands in the root scope -- and B2 orders that store
+# before T2's read. B1, B2, and RESULTS are pre-seeded into the module
+# namespace.
 SHARED_SRC = """
 (define worker (lambda [name]
   (parameterize [[shared name]]
@@ -68,10 +71,7 @@ SHARED_SRC = """
   (when (== name "T2")
     (set! (item RESULTS "after") (parameterq shared "unset")))))
 
-(define probes
-  (begin
-    (parameter-ref "shared" "root")
-    #[(defer worker "T1") (defer worker "T2")]))
+(define probes #[(defer worker "T1") (defer worker "T2")])
 """
 
 
@@ -140,8 +140,9 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
     async def test_concurrent_extents_on_two_threads(self):
         """
         Two threads inside parameterize extents of the same name at the
-        same moment each read their own binding, and a store through the
-        fork-shared root cell is visible across threads afterward
+        same moment each read their own binding, and a store made with no
+        extent in the way reaches the shared root scope and is visible
+        across threads afterward
         """
 
         seed = {

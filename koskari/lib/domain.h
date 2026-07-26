@@ -29,11 +29,10 @@
 
 typedef struct {
   PyObject_HEAD
-  uint64_t version;
-  PyObject *base_refs;  /* PyDict: name -> cell (KosRef); the pre-define
-                            dict root contexts copy at creation, and the
-                            Python-side access point when no context is
-                            active */
+  PyObject *root_refs;  /* PyDict: name -> cell (KosRef); the root scope
+                            of this computation. Never copied: contexts
+                            reach it by resolution, and a store made
+                            outside any parameterize extent lands here */
 } KosDomain;
 
 
@@ -63,68 +62,42 @@ KosDomain *KosDomain_New(void);
 
 
 /**
-   Resolve the cell for name (key) in a cell store dict, creating an
-   empty cell on miss. Returns new reference, or NULL on error.
+   Resolve the cell bound to name (key) for reading: the context's
+   shadow table (written by parameterize), then the root scope of the
+   context's domain. Creates nothing and sets no error on a miss.
+
+   The lookup variant takes the context from the caller, which is how
+   the evaluator resolves (no TLS on that path). The ambient variant is
+   for Python-side entry with no eval state in hand: it discovers the
+   active context, falling back to the innermost python-scope domain's
+   root scope.
+
+   Returns borrowed reference, or NULL when nothing is bound.
 */
-PyObject *kos_param_resolve_ref_in(PyObject *cells, PyObject *key);
+PyObject *kos_param_lookup(KosContext *ctx, PyObject *key);
+PyObject *kos_param_lookup_ambient(PyObject *key);
 
 
 /**
-   The current parameter cell store: the active context's param_refs,
-   else the innermost python-scope domain's base_refs. Returns borrowed
-   reference, or NULL without error when neither is ambient.
+   Resolve the cell bound to name (key) in the root scope, creating an
+   empty cell on miss. This is where a store with no enclosing
+   parameterize extent lands.
 
-   The peek variant never creates the dict (NULL also when the store
-   exists but is unallocated); the reserve variant lazily creates it
-   (NULL with error set on allocation failure).
+   The ambient variant discovers the domain the same way as
+   kos_param_lookup_ambient, and fails with RuntimeError when neither a
+   context nor a python domain scope is active.
+
+   Returns new reference, or NULL on error.
 */
-PyObject *kos_param_refs_peek(void);
-PyObject *kos_param_refs_reserve(void);
+PyObject *kos_param_root_resolve(KosContext *ctx, PyObject *key);
+PyObject *kos_param_root_resolve_ambient(PyObject *key);
 
 
 /**
-   A context's param cell dict, lazily created.
+   A context's param shadow dict, lazily created.
    Returns borrowed reference, or NULL on allocation failure.
 */
 PyObject *kos_context_param_refs(KosContext *ctx);
-
-
-/**
-   A domain's base cell dict, lazily created.
-   Returns borrowed reference, or NULL on allocation failure.
-*/
-PyObject *kos_domain_param_refs(PyObject *domain);
-
-
-/**
-   Resolve the cell for name (key) in the domain's base cells, creating
-   an empty cell on miss. Returns new reference, or NULL on error.
-*/
-PyObject *kos_domain_resolve_ref(PyObject *domain, PyObject *key);
-
-
-/**
-   Get param value from domain by name (key): deref of the cell.
-   Returns new reference, or NULL without error when there is no cell or
-   the cell is empty.
-*/
-PyObject *kos_domain_get_param(PyObject *domain, PyObject *key);
-
-
-/**
-   Set param value in domain by name (key): write-through on the cell,
-   resolving (creating) it as needed.
-   Returns 0 on success, -1 on error.
-*/
-int kos_domain_set_param(PyObject *domain, PyObject *key, PyObject *value);
-
-
-/**
-   Empty the cell for name (key). The cell object stays in place, so
-   holders observe the clear. No-op when no cell exists.
-   Returns 0 on success, -1 on error.
-*/
-int kos_domain_clear_param(PyObject *domain, PyObject *key);
 
 
 /* === domain-scoped ambient context API === */

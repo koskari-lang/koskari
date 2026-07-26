@@ -14,20 +14,42 @@
 */
 
 /**
-   PARAM: arg = constant index of name (ParamRef key).
-   Loads ParamRef for that key and pushes it onto the stack.
+   PARAM: arg = extra index. Schema CONST (parameter name), COUNT (0 or
+   1 stacked defaults).
+   Stack [] -> [value] at count 0, [default] -> [value] at count 1.
+   Resolves the enclosing parameterize extent, then the root scope. On a
+   miss the stacked default answers, or NameError when there is none.
+   Creates nothing in either store.
 */
 
 KOS_OP_HANDLER(PARAM) {
-  PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (! key)
+  KosCode *code = KosEvalState_CurrentCode(es);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+
+  PyObject *name = KosEvalState_CONST(es, row.a0);
+  if (! name)
     return EVAL_RAISE();
 
-  PyObject *param_ref = KosParamRef_New(key, Py_None);
-  if (! param_ref)
-    return EVAL_RAISE();
+  PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(es), name);
+  PyObject *value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
 
-  return kos_op_result_PUSH(es, param_ref);
+  if (value) {
+    Py_INCREF(value);
+    if (row.a1 && unlikely(KosEvalState_StackDrop1(es) < 0)) {
+      Py_DECREF(value);
+      return EVAL_RAISE();
+    }
+    return kos_op_result_PUSH(es, value);
+  }
+
+  if (row.a1) {
+    // the stacked default is already in result position
+    return EVAL_NORMAL();
+  }
+
+  PyErr_Format(PyExc_NameError, "Param %S has no binding and no default",
+               name);
+  return EVAL_RAISE();
 }
 
 

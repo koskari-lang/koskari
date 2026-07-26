@@ -9,11 +9,20 @@ unwind. The Domain narrows to an interop boundary: it homes the base ref
 dict that root contexts copy from, and the TLS machinery in domain.c
 remains the discovery path for Python-side access.
 
-**Status**: implemented; archived. Companion to [domain.md](domain.md), which
+**Status**: superseded; archived. Companion to [domain.md](domain.md), which
 describes the Domain/ParamRef/PARAM machinery this document amends. This
 revision supersedes the earlier fork-of-values proposal: the observed
 failure and the fork-at-creation discipline are retained, the storage
 representation and ownership changed during review.
+
+**Superseded in part by
+[../parameter-resolution.md](../parameter-resolution.md)**, which replaces D5,
+D6, D7 and D10. The reasons: D2's evaluator-side resolution path was never
+built, so every read went through thread-local discovery; D6's sticky default
+fill wrote on read, which made whether a `set!` was task-local depend on whether
+anyone had read the name before the fork; and D10's ref-fetch surface
+(`parameter-ref`) exposed the inner cells, giving two ref types with opposite
+capture semantics. The problem statement, the reproducer, and D1/D3/D4 stand.
 
 ---
 

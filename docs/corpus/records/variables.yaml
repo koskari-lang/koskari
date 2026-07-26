@@ -396,7 +396,8 @@ tags:
   - variable
   - macro
   - parameterq
-notes: expands to parameter; unbound key returns default
+notes: an unbound key is answered by the default, which is never written into
+  any parameter store
 ---
 id: variable-define-parameter-default-001
 feature: macro/compile/define-parameter
@@ -700,7 +701,7 @@ source: |-
   (parameterq some-setting 99)
   
 verify:
-  expand: (parameter (compile/quote some-setting) 99)
+  expand: (compile/parameter some-setting 99)
 references:
   - reference/macros/compile-define-parameter-and-compile-parameterq.md
 stability: evolving
@@ -708,7 +709,9 @@ tags:
   - variable
   - macro
   - parameterq
-notes: parameterq expands to a parameter form with quoted key and default
+notes: parameterq expands to the compile/parameter special, which lowers to the
+  PARAM opcode family; the runtime parameter function remains for names computed
+  at runtime
 ---
 id: variable-define-parameter-expand-002
 feature: macro/compile/define-parameter

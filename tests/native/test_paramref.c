@@ -76,18 +76,40 @@ static PyObject *create_minimal_code(void) {
 
 static KosDynParam *push_dyn_param(
     KosContext *ctx,
-    int count,
-    PyObject **params,
-    PyObject **values) {
+    PyObject *key,
+    PyObject *value) {
 
     KosEvalState es;
     KosDynParam *node;
+    PyObject *bindings = PyDict_New();
+
+    if (! bindings)
+        return NULL;
+    if (PyDict_SetItem(bindings, key, value) < 0) {
+        Py_DECREF(bindings);
+        return NULL;
+    }
 
     KosEvalState_Init(&es, ctx);
     KosEvalState_ThawFromContext(&es);
-    node = kos_dyn_push_param(&es, count, params, values);
+    node = kos_dyn_push_param_dict(&es, bindings);
     KosEvalState_FreezeToContext(&es);
+    Py_DECREF(bindings);
     return node;
+}
+
+
+/* Assert that name is unbound: deref of a ParamRef with no default of
+   its own must fail with NameError rather than answer with a value. */
+static int assert_param_unbound(PyObject *param_ref, const char *what) {
+
+    PyObject *value = KosRef_Deref(param_ref);
+    if (value) {
+        Py_DECREF(value);
+        TEST_ASSERT(0, what);
+    }
+    PyErr_Clear();
+    return 0;
 }
 
 
@@ -357,8 +379,7 @@ static int test_dynparam_push_pop_restore(void) {
     KosContext *ctx;
     PyObject *key;
     PyObject *param_ref;
-    PyObject *params[1];
-    PyObject *values[1];
+    PyObject *bound;
     KosDynParam *param_node;
     PyObject *value;
     long val;
@@ -376,23 +397,21 @@ static int test_dynparam_push_pop_restore(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     key = PyUnicode_FromString("dynparam");
-    param_ref = KosParamRef_New(key, PyLong_FromLong(0));
+    /* no default of its own: an answer can only come from a binding, so
+       "restored" cannot be satisfied by a fallback value */
+    param_ref = KosParamRef_New(key, NULL);
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
     kos_domain_push_scope(ctx);
 
-    /* Initially unset; deref returns default */
-    value = KosRef_Deref(param_ref);
-    TEST_ASSERT_NOT_NULL(value, "deref before push");
-    TEST_ASSERT_EQ(PyLong_AsLong(value), 0, "default value");
-    Py_DECREF(value);
+    TEST_ASSERT(assert_param_unbound(param_ref, "unbound before push") == 0,
+                "unbound before push");
 
     /* Push param extent with value 999 */
-    params[0] = param_ref;
-    values[0] = PyLong_FromLong(999);
-    param_node = push_dyn_param(ctx, 1, params, values);
+    bound = PyLong_FromLong(999);
+    param_node = push_dyn_param(ctx, key, bound);
     TEST_ASSERT_NOT_NULL(param_node, "push param");
-    Py_DECREF(values[0]);
+    Py_DECREF(bound);
 
     value = KosRef_Deref(param_ref);
     TEST_ASSERT_NOT_NULL(value, "deref inside extent");
@@ -402,11 +421,8 @@ static int test_dynparam_push_pop_restore(void) {
 
     TEST_ASSERT(pop_dyn_param(ctx, param_node) == 0, "pop param");
 
-    /* After pop, restored to prior (unset -> default) */
-    value = KosRef_Deref(param_ref);
-    TEST_ASSERT_NOT_NULL(value, "deref after pop");
-    TEST_ASSERT_EQ(PyLong_AsLong(value), 0, "restored to default");
-    Py_DECREF(value);
+    TEST_ASSERT(assert_param_unbound(param_ref, "unbound after pop") == 0,
+                "unbound after pop");
 
     kos_domain_pop_scope(ctx);
 
@@ -429,9 +445,7 @@ static int test_dynparam_nested_restore(void) {
     KosContext *ctx;
     PyObject *key;
     PyObject *param_ref;
-    PyObject *params[1];
-    PyObject *values_outer[1];
-    PyObject *values_inner[1];
+    PyObject *bound;
     KosDynParam *outer_node;
     KosDynParam *inner_node;
     PyObject *value;
@@ -443,26 +457,25 @@ static int test_dynparam_nested_restore(void) {
     frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     ctx = KosContext_New(frame);
     key = PyUnicode_FromString("nested");
-    param_ref = KosParamRef_New(key, PyLong_FromLong(0));
+    param_ref = KosParamRef_New(key, NULL);
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
     kos_domain_push_scope(ctx);
 
-    params[0] = param_ref;
-    values_outer[0] = PyLong_FromLong(8);
-    outer_node = push_dyn_param(ctx, 1, params, values_outer);
+    bound = PyLong_FromLong(8);
+    outer_node = push_dyn_param(ctx, key, bound);
     TEST_ASSERT_NOT_NULL(outer_node, "push outer");
-    Py_DECREF(values_outer[0]);
+    Py_DECREF(bound);
 
     value = KosRef_Deref(param_ref);
     TEST_ASSERT_NOT_NULL(value, "deref outer");
     TEST_ASSERT_EQ(PyLong_AsLong(value), 8, "outer value");
     Py_DECREF(value);
 
-    values_inner[0] = PyLong_FromLong(16);
-    inner_node = push_dyn_param(ctx, 1, params, values_inner);
+    bound = PyLong_FromLong(16);
+    inner_node = push_dyn_param(ctx, key, bound);
     TEST_ASSERT_NOT_NULL(inner_node, "push inner");
-    Py_DECREF(values_inner[0]);
+    Py_DECREF(bound);
 
     value = KosRef_Deref(param_ref);
     TEST_ASSERT_NOT_NULL(value, "deref inner");
@@ -478,10 +491,8 @@ static int test_dynparam_nested_restore(void) {
 
     TEST_ASSERT(pop_dyn_param(ctx, outer_node) == 0, "pop outer param");
 
-    value = KosRef_Deref(param_ref);
-    TEST_ASSERT_NOT_NULL(value, "deref after outer pop");
-    TEST_ASSERT_EQ(PyLong_AsLong(value), 0, "restored to default");
-    Py_DECREF(value);
+    TEST_ASSERT(assert_param_unbound(param_ref, "unbound after outer pop") == 0,
+                "unbound after outer pop");
 
     kos_domain_pop_scope(ctx);
     Py_DECREF(param_ref);

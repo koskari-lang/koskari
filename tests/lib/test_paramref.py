@@ -20,7 +20,7 @@ Unit tests for ParamRef
 
 import unittest
 
-from koskari.lib import ParamRef, Ref, parameter, parameter_ref
+from koskari.lib import Domain, ParamRef, Ref, parameter
 from koskari.lib import symbol
 from tests import make_callable
 from tests.lib.opcode import build_expr
@@ -191,12 +191,17 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
 
     async def test_deref_before_store_returns_default(self):
         """
-        deref before any store returns default; after store returns stored value.
+        deref before any store returns default; after store returns stored
+        value. A bare same-key ref pins that "returns the default" means
+        unbound rather than bound to that value.
         """
 
         p = ParamRef("y", 99)
+        p_bare = ParamRef("y")
 
         def before_after_store():
+            with self.assertRaises(NameError):
+                p_bare.deref()
             before = p.deref()
             p.store(1)
             after = p.deref()
@@ -233,58 +238,92 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 30)
 
 
-    def test_parameter_ref_builtin_bound(self):
+    def test_parameter_ref_builtin_absent(self):
         """
-        the parameter-ref builtin is bound for koskari surface code
+        parameter-ref is not part of the surface: ParamRef is the only
+        way to address a parameter
         """
 
         import koskari.builtins as builtins
-        self.assertTrue(callable(vars(builtins)["parameter-ref"]))
+        self.assertNotIn("parameter-ref", vars(builtins))
 
 
-    async def test_parameter_ref_shares_with_resolver(self):
+    async def test_deref_default_does_not_store(self):
         """
-        a held cell and the by-name resolver address the same binding
-        """
-
-        def flow():
-            cell = parameter_ref("cellkey", "first")
-            before = parameter("cellkey")
-            cell.store("second")
-            after = parameter("cellkey")
-            return (before, after, cell.deref())
-
-        code, ns = build_expr([
-            ["VAR", "f"],
-            ["CALL", 0],
-            ["RETURN", 1],
-        ], values={"f": flow})
-        result = await make_callable(code, ns)()
-        self.assertEqual(result, ("first", "second", "second"))
-
-
-    async def test_deref_with_default_fills_sticky(self):
-        """
-        deref with a default fills the empty cell: a same-key ParamRef with
-        no default of its own then resolves the filled value instead of
-        raising NameError.
+        A default answers the ref that declares it and never lands in a
+        store, so a same-key ParamRef with no default of its own still
+        raises NameError.
         """
 
-        p_with = ParamRef("sticky", 42)
-        p_bare = ParamRef("sticky")
+        p_with = ParamRef("nonsticky", 42)
+        p_bare = ParamRef("nonsticky")
 
-        def sticky_flow():
+        def default_flow():
             first = p_with.deref()
-            second = p_bare.deref()
+            try:
+                p_bare.deref()
+                second = "no-raise"
+            except NameError:
+                second = "unbound"
             return (first, second)
 
         code, ns = build_expr([
             ["VAR", "f"],
             ["CALL", 0],
             ["RETURN", 1],
-        ], values={"f": sticky_flow})
+        ], values={"f": default_flow})
         result = await make_callable(code, ns)()
-        self.assertEqual(result, (42, 42))
+        self.assertEqual(result, (42, "unbound"))
+
+
+    async def test_deref_miss_creates_no_cell(self):
+        """
+        A read that misses leaves both the shadow table and the root
+        scope untouched.
+        """
+
+        p = ParamRef("untouched", "fallback")
+        seen = []
+
+        def read_then_inspect():
+            value = p.deref()
+            seen.append(value)
+            seen.append(Domain.current_domain().param_scopes())
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": read_then_inspect})
+        await make_callable(code, ns)()
+
+        self.assertEqual(seen[0], "fallback")
+        self.assertNotIn("untouched", seen[1]["shadow"])
+        self.assertNotIn("untouched", seen[1]["root"])
+
+
+    async def test_store_lands_in_root_scope(self):
+        """
+        With no enclosing parameterize extent, a store creates its cell
+        in the root scope rather than the context's shadow table.
+        """
+
+        p = ParamRef("rooted")
+        seen = []
+
+        def store_then_inspect():
+            p.store("v")
+            seen.append(Domain.current_domain().param_scopes())
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": store_then_inspect})
+        await make_callable(code, ns)()
+
+        self.assertNotIn("rooted", seen[0]["shadow"])
+        self.assertEqual(seen[0]["root"]["rooted"].deref(), "v")
 
 
     async def test_parameter_fn_default_is_local_fallback(self):

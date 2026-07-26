@@ -1103,20 +1103,21 @@ With zero arguments, emits `AWAIT` with operand **0** then `CONST None`. See
 `gather_bindings`.
 
 **Use-case:** Temporarily rebind dynamic parameters for the duration of the
-body. Parameters are consumed by functions that read them (e.g. via
-ParamRef(name).deref(); bind-param not yet implemented). When the body runs,
-calls to such functions see the parameterized values; when the block exits,
-parameters are restored.
+body. Parameters are read by `parameterq`, by the `parameter` builtin, or
+through a `ParamRef`. When the body runs those reads see the parameterized
+values; when the block exits the previous bindings are restored. At least one
+binding is required.
 
 **Behaviour:** Compiles each value expression onto the stack (first binding
 deepest, last at TOS), emits PUSH_PARAM with a constant names tuple, compiles the
 body with `helper_begin`, then emits POP_PARAM. Uses the VM's PARAM extent;
-restore on exit (and on unwind) is handled by the evaluator.
+restore on exit (and on unwind) is handled by the evaluator. The extent's cells
+go into the running context's shadow table, never the domain root scope.
 
 **Examples:**
 
 ```scheme
-;; Parameterize format; consumer pretty reads it via ParamRef("format").deref()
+;; Parameterize format; consumer pretty reads it via (parameterq format)
 (compile/parameterize [[format "woot %r woot"]]
   (compile/call pretty 100))
 
@@ -1126,6 +1127,35 @@ restore on exit (and on unwind) is handled by the evaluator.
 ```
 
 See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
+
+## compile/parameter
+
+**Symbol:** `compile/parameter`
+
+**Syntax:** `(compile/parameter NAME [DEFAULT])`
+
+**Use-case:** Read a parameter by literal name. This is what `parameterq`
+expands to; the `parameter` builtin remains for names computed at runtime.
+
+**Behaviour:** Resolves the enclosing `parameterize` extent, then the root scope
+of the current domain. Neither store is written and neither gains an entry on a
+miss. With no `DEFAULT` a miss raises `NameError`. A `DEFAULT` that compiles to
+a single CONST is folded into `PARAM_CONST`; otherwise the expression is
+compiled and `PARAM` is emitted with a count of 1, so the stacked value answers
+a miss.
+
+**Examples:**
+
+```scheme
+;; unbound name raises NameError
+(compile/parameter verbose)
+
+;; literal default folds into the instruction
+(compile/parameter verbose False)
+
+;; computed default is evaluated and left on the stack
+(compile/parameter verbose (compile/call default-for 'verbose))
+```
 
 ## compile/dyn-wind
 

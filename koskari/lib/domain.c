@@ -18,13 +18,14 @@
    koskari.lib - domain module
 
    KosDomain type and the per-thread TLS plumbing for ambient context
-   discovery. Parameter state lives on each KosContext (param_refs,
-   forked at creation); the KosDomain object homes base_refs -- the
-   pre-define dict root contexts copy from, and the Python-side access
-   point when no context is active. Every context has a domain: the
-   ambient one when present, minted fresh as needed otherwise; it is the
-   identity/lifecycle anchor of the computation. See
-   design/archive/domain-task-isolation.md.
+   discovery. Parameter resolution is two-tier: a context's param_refs
+   holds the shadow cells written by parameterize (forked at context
+   creation), and the KosDomain object homes root_refs, the root scope
+   where a store with no enclosing extent lands. root_refs is never
+   copied; contexts reach it by resolution. Every context has a domain:
+   the ambient one when present, minted fresh as needed otherwise; it is
+   the identity/lifecycle anchor of the computation. See
+   design/parameter-resolution.md.
 
    author: Christopher O'Brien <obriencj@preoccupied.net>
    license: GNU General Public License v3
@@ -259,25 +260,16 @@ int kos_domain_pop_python_scope(const PyObject *domain) {
 }
 
 
-/* === param cell store helpers === */
+/* === param cell store === */
 
 
-static PyObject *ensure_base_refs(KosDomain *domain) {
-  if (! domain->base_refs) {
-    domain->base_refs = PyDict_New();
-    if (! domain->base_refs)
+static PyObject *ensure_root_refs(KosDomain *domain) {
+  if (! domain->root_refs) {
+    domain->root_refs = PyDict_New();
+    if (! domain->root_refs)
       return NULL;
   }
-  return domain->base_refs;
-}
-
-
-PyObject *kos_domain_param_refs(PyObject *domain_obj) {
-  if (! domain_obj || ! KosDomain_CheckExact(domain_obj)) {
-    PyErr_SetString(PyExc_TypeError, "expected a Domain instance");
-    return NULL;
-  }
-  return ensure_base_refs((KosDomain *) domain_obj);
+  return domain->root_refs;
 }
 
 
@@ -291,34 +283,52 @@ PyObject *kos_context_param_refs(KosContext *ctx) {
 }
 
 
-PyObject *kos_param_refs_peek(void) {
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+/* Probe a domain's root scope without creating it. Borrowed or NULL. */
+static PyObject *root_probe(PyObject *domain_obj, PyObject *key) {
+  PyObject *root;
 
-  if (s && s->ctx_depth > 0)
-    return KosContext_PARAM_REFS(s->ctx_stack[s->ctx_depth - 1]);
-  if (s && s->python_domain_depth > 0)
-    return ((KosDomain *) s->python_domain_stack[s->python_domain_depth - 1])
-        ->base_refs;
-  return NULL;
+  if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
+    return NULL;
+  root = ((KosDomain *) domain_obj)->root_refs;
+  if (! root)
+    return NULL;
+  return PyDict_GetItem(root, key);
 }
 
 
-PyObject *kos_param_refs_reserve(void) {
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
-
-  if (s && s->ctx_depth > 0)
-    return kos_context_param_refs(s->ctx_stack[s->ctx_depth - 1]);
-  if (s && s->python_domain_depth > 0)
-    return ensure_base_refs(
-        (KosDomain *) s->python_domain_stack[s->python_domain_depth - 1]);
-  return NULL;
-}
-
-
-PyObject *kos_param_resolve_ref_in(PyObject *cells, PyObject *key) {
+PyObject *kos_param_lookup(KosContext *ctx, PyObject *key) {
+  PyObject *shadow;
   PyObject *cell;
 
-  cell = PyDict_GetItem(cells, key);
+  if (! ctx)
+    return NULL;
+
+  shadow = KosContext_PARAM_REFS(ctx);
+  if (shadow) {
+    cell = PyDict_GetItem(shadow, key);
+    if (cell)
+      return cell;
+  }
+
+  return root_probe(KosContext_DOMAIN(ctx), key);
+}
+
+
+PyObject *kos_param_lookup_ambient(PyObject *key) {
+  KosContext *ctx = kos_ctx_current();
+
+  if (ctx)
+    return kos_param_lookup(ctx, key);
+
+  return root_probe(kos_domain_current(), key);
+}
+
+
+/* Resolve-or-create in an already-materialized root scope dict. */
+static PyObject *root_resolve_in(PyObject *root, PyObject *key) {
+  PyObject *cell;
+
+  cell = PyDict_GetItem(root, key);
   if (cell) {
     Py_INCREF(cell);
     return cell;
@@ -327,7 +337,7 @@ PyObject *kos_param_resolve_ref_in(PyObject *cells, PyObject *key) {
   cell = KosSymbolicRef_New(key, NULL);
   if (! cell)
     return NULL;
-  if (PyDict_SetItem(cells, key, cell) < 0) {
+  if (PyDict_SetItem(root, key, cell) < 0) {
     Py_DECREF(cell);
     return NULL;
   }
@@ -335,14 +345,45 @@ PyObject *kos_param_resolve_ref_in(PyObject *cells, PyObject *key) {
 }
 
 
-PyObject *kos_domain_resolve_ref(PyObject *domain_obj, PyObject *key) {
-  PyObject *cells;
+PyObject *kos_param_root_resolve(KosContext *ctx, PyObject *key) {
+  PyObject *domain_obj;
+  PyObject *root;
 
-  cells = kos_domain_param_refs(domain_obj);
-  if (! cells)
+  domain_obj = ctx ? KosContext_DOMAIN(ctx) : NULL;
+  if (! domain_obj || ! KosDomain_CheckExact(domain_obj)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "parameter store outside an active domain");
+    return NULL;
+  }
+
+  root = ensure_root_refs((KosDomain *) domain_obj);
+  if (! root)
     return NULL;
 
-  return kos_param_resolve_ref_in(cells, key);
+  return root_resolve_in(root, key);
+}
+
+
+PyObject *kos_param_root_resolve_ambient(PyObject *key) {
+  KosContext *ctx = kos_ctx_current();
+  PyObject *domain_obj;
+  PyObject *root;
+
+  if (ctx)
+    return kos_param_root_resolve(ctx, key);
+
+  domain_obj = kos_domain_current();
+  if (! domain_obj || ! KosDomain_CheckExact(domain_obj)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "parameter store outside an active domain");
+    return NULL;
+  }
+
+  root = ensure_root_refs((KosDomain *) domain_obj);
+  if (! root)
+    return NULL;
+
+  return root_resolve_in(root, key);
 }
 
 
@@ -374,7 +415,6 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
   PyObject *key = NULL;
   PyObject *key_str = NULL;
   PyObject *default_val = NULL;
-  PyObject *cells;
   PyObject *cell;
   PyObject *value;
 
@@ -391,25 +431,21 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
   if (! key_str)
     return NULL;
 
-  /* value query: observational only. No cell is created and no default
-     is written; the default answers the caller when the store cannot.
-     Cell operations (ParamRef, parameter-ref) are where places are
-     materialized and declared defaults fill. */
-  cells = kos_param_refs_peek();
-  if (! cells && ! kos_ctx_current() && ! kos_domain_current()) {
+  /* A read creates nothing. The caller's default answers when nothing
+     is bound, and never lands in a store. */
+  if (! kos_ctx_current() && ! kos_domain_current()) {
+    Py_DECREF(key_str);
     if (default_val) {
-      Py_DECREF(key_str);
       Py_INCREF(default_val);
       return default_val;
     }
 
-    Py_DECREF(key_str);
     PyErr_SetString(PyExc_RuntimeError,
                     "parameter outside active domain and no default");
     return NULL;
   }
 
-  cell = cells ? PyDict_GetItem(cells, key_str) : NULL;
+  cell = kos_param_lookup_ambient(key_str);
   Py_DECREF(key_str);
   value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
   if (value) {
@@ -424,51 +460,6 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
 
   PyErr_Format(PyExc_NameError, "Param %S has no binding and no default", key);
   return NULL;
-}
-
-
-static PyObject *m_parameter_ref(PyObject *mod, PyObject *args) {
-  PyObject *key = NULL;
-  PyObject *key_str = NULL;
-  PyObject *default_val = NULL;
-  PyObject *cells;
-  PyObject *cell;
-
-  (void) mod;
-  if (! PyArg_ParseTuple(args, "O|O:parameter-ref", &key, &default_val))
-    return NULL;
-
-  if (! key || key == Py_None) {
-    PyErr_SetString(PyExc_ValueError, "parameter-ref requires a key (name)");
-    return NULL;
-  }
-
-  key_str = kos_key_to_str(key);
-  if (! key_str)
-    return NULL;
-
-  cells = kos_param_refs_reserve();
-  if (! cells) {
-    Py_DECREF(key_str);
-    if (! PyErr_Occurred())
-      PyErr_SetString(PyExc_RuntimeError,
-                      "parameter-ref outside active domain");
-    return NULL;
-  }
-
-  cell = kos_param_resolve_ref_in(cells, key_str);
-  Py_DECREF(key_str);
-  if (! cell)
-    return NULL;
-
-  if (default_val && ! KosSymbolicRef_VALUE(cell)) {
-    /* cell operation: the declared default fills the empty place (D6
-       cell rules; value queries never do this) */
-    Py_INCREF(default_val);
-    KosSymbolicRef_VALUE(cell) = default_val;
-  }
-
-  return cell;
 }
 
 
@@ -592,12 +583,61 @@ static PyObject *domain_get_contexts(const PyObject *self, PyObject *unused) {
 }
 
 
+/**
+   Both tiers of the parameter store, for inspection: "shadow" is the
+   active context's parameterize cells when that context belongs to this
+   Domain, "root" is this Domain's root scope. Each is a fresh dict of
+   name -> cell, so callers see the binding topology without being able
+   to disturb it.
+*/
+static PyObject *domain_param_scopes(PyObject *self, PyObject *unused) {
+
+  (void) unused;
+  KosContext *ctx = kos_ctx_current();
+  PyObject *out = PyDict_New();
+  PyObject *shadow;
+  PyObject *root;
+
+  if (! out)
+    return NULL;
+
+  shadow = (ctx && KosContext_DOMAIN(ctx) == self
+            && KosContext_PARAM_REFS(ctx))
+      ? PyDict_Copy(KosContext_PARAM_REFS(ctx))
+      : PyDict_New();
+  if (! shadow) {
+    Py_DECREF(out);
+    return NULL;
+  }
+  if (domain_snapshot_set_item(out, "shadow", shadow) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  root = ((KosDomain *) self)->root_refs
+      ? PyDict_Copy(((KosDomain *) self)->root_refs)
+      : PyDict_New();
+  if (! root) {
+    Py_DECREF(out);
+    return NULL;
+  }
+  if (domain_snapshot_set_item(out, "root", root) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  return out;
+}
+
+
 static PyMethodDef domain_methods[] = {
   {"current_domain", (PyCFunction) domain_current_domain,
    METH_CLASS | METH_NOARGS,
    "Return the active Domain from current TLS scope, or None"},
   {"get_contexts", (PyCFunction) domain_get_contexts, METH_NOARGS,
    "Return current-thread context snapshots for this Domain"},
+  {"param_scopes", (PyCFunction) domain_param_scopes, METH_NOARGS,
+   "Return {'shadow': {name: cell}, 'root': {name: cell}} for this Domain"},
   {"__enter__", (PyCFunction) domain_enter, METH_NOARGS,
    "Push this domain onto the per-thread scope stack"},
   {"__exit__", (PyCFunction) domain_exit, METH_VARARGS,
@@ -609,18 +649,10 @@ static PyMethodDef domain_methods[] = {
 static PyMethodDef domain_mod_methods[] = {
   { "parameter", (PyCFunction) m_parameter, METH_VARARGS,
     "parameter(name, default=...) => value\n"
-    "Fetch the current domain parameter binding for name.\n"
+    "Resolve the value bound to name: the enclosing parameterize extent\n"
+    "first, then the root scope. Creates nothing and writes nothing.\n"
     "If unbound, return default when provided, otherwise raise NameError.\n"
     "If no active domain, return default when provided, otherwise raise RuntimeError." },
-  { "parameter_ref", (PyCFunction) m_parameter_ref, METH_VARARGS,
-    "parameter_ref(name, default=...) => Cell\n"
-    "Fetch the live ref currently bound to name, creating an empty ref\n"
-    "on miss; an empty ref takes the default when provided.\n"
-    "The result is a plain Ref: deref/store on it act on the shared\n"
-    "binding, including after the extent that installed it has popped. It\n"
-    "does not track later parameterize rebinding of the name; use\n"
-    "parameter() for dynamic reads.\n"
-    "Raises RuntimeError when no context or domain scope is active." },
   { NULL, },
 };
 
@@ -631,71 +663,21 @@ static PyObject *domain_repr(PyObject *self) {
 
 
 static int domain_traverse(PyObject *self, visitproc visit, void *arg) {
-  Py_VISIT(((KosDomain *) self)->base_refs);
+  Py_VISIT(((KosDomain *) self)->root_refs);
   return 0;
 }
 
 
 static int domain_clear(PyObject *self) {
-  Py_CLEAR(((KosDomain *) self)->base_refs);
+  Py_CLEAR(((KosDomain *) self)->root_refs);
   return 0;
 }
 
 
 static void domain_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
-  Py_CLEAR(((KosDomain *) self)->base_refs);
+  Py_CLEAR(((KosDomain *) self)->root_refs);
   Py_TYPE(self)->tp_free(self);
-}
-
-
-PyObject *kos_domain_get_param(PyObject *domain_obj, PyObject *key) {
-  PyObject *bindings;
-  PyObject *cell;
-  PyObject *value;
-
-  if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
-    return NULL;
-  bindings = ((KosDomain *) domain_obj)->base_refs;
-  if (! bindings)
-    return NULL;
-  cell = PyDict_GetItem(bindings, key);
-  if (! cell)
-    return NULL;
-  value = KosSymbolicRef_VALUE(cell);
-  if (value)
-    Py_INCREF(value);
-  return value;
-}
-
-
-int kos_domain_set_param(PyObject *domain_obj, PyObject *key, PyObject *value) {
-  PyObject *cell;
-
-  cell = kos_domain_resolve_ref(domain_obj, key);
-  if (! cell)
-    return -1;
-  Py_INCREF(value);
-  Py_XSETREF(KosSymbolicRef_VALUE(cell), value);
-  Py_DECREF(cell);
-  return 0;
-}
-
-
-int kos_domain_clear_param(PyObject *domain_obj, PyObject *key) {
-  PyObject *bindings;
-  PyObject *cell;
-
-  if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
-    return -1;
-  bindings = ((KosDomain *) domain_obj)->base_refs;
-  if (! bindings)
-    return 0;
-  cell = PyDict_GetItem(bindings, key);
-  if (! cell)
-    return 0;
-  Py_CLEAR(KosSymbolicRef_VALUE(cell));
-  return 0;
 }
 
 
@@ -718,8 +700,7 @@ KosDomain *KosDomain_New(void) {
   KosDomain *domain = PyObject_GC_New(KosDomain, &KosDomainType);
   if (! domain)
     return NULL;
-  domain->version = 0;
-  domain->base_refs = NULL;
+  domain->root_refs = NULL;
   PyObject_GC_Track(domain);
   return domain;
 }

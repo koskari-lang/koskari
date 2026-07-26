@@ -1,22 +1,29 @@
 # compile/define-parameter and compile/parameterq
 **Syntax:** **`(define-parameter NAME [DEFAULT])`**, **`(parameterq NAME [DEFAULT])`**.
 
-**Behaviour:** **`compile/define`** + **`ParamRef`** binding; **`parameterq`** → **`parameter`**.
+**Behaviour:** **`compile/define`** + **`ParamRef`** binding; **`parameterq`** →
+**`compile/parameter`**.
 
-**Scope guidance:** The bound `ParamRef` is a re-resolving accessor -- every
-read and store finds the innermost binding of the context it runs in -- so a
-`define-parameter` binding is safe to use anywhere, including module scope.
-Parameter *state* is another matter: each context owns its bindings, forked
-from its creator at creation, and each top-level module form evaluates in
-its own context. A value stored at module scope therefore does not persist
-into later forms or into the importing program. Set defaults with the
-`DEFAULT` argument (or a host-side pre-define in a `Domain`), and treat
-stored parameter values as scoped to the function or task that stored them.
+**Defaults declare, they do not store.** A `DEFAULT` is the answer a read gives
+when nothing is bound. It belongs to the ref or the read site that names it and
+never lands in a parameter store, so two places can declare different defaults
+for one name without racing, and a read never changes what a later read sees.
+Without a default, resolving an unbound name raises `NameError`.
 
-The related `parameter-ref` builtin returns the live binding ref itself.
-A held ref is a shared object: every holder sees every store, including
-after the extent that installed it has exited. It does not track later
-`parameterize` rebinding of the name -- capture it deliberately, for
-storage channels or hot loops, and use `parameterq` / `parameter` for
-ordinary dynamic reads.
+**Where a value lives.** Resolution looks in the enclosing `parameterize` extent
+first, then in the root scope of the current `Domain`. `parameterize` binds for
+its extent only, in the running context's own table, so concurrent tasks never
+see each other's bindings. A store made with no `parameterize` in the way lands
+in the root scope, which the whole computation shares: that is the deliberate
+channel for host pre-defines and for values a program sets once at startup.
 
+**Across a fork.** Creating a callable with `defer` captures the extents applied
+at that moment, so a task reads the bindings that were live when it was made,
+not those the parent enters afterward. The root scope is not captured; it is
+shared, so a store there is visible to parent and children alike.
+
+**Scope guidance:** The bound `ParamRef` is a re-resolving accessor. Every read
+and store finds the innermost binding of the context it runs in, so a
+`define-parameter` binding is safe to use anywhere, including module scope and
+closures. Reach for `parameterize` to bind for a dynamic extent, and for a plain
+store when you want one value for the whole computation.

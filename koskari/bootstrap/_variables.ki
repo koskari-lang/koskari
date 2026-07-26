@@ -338,11 +338,16 @@ define-syntax compile/define-parameter:
 
 
 define-syntax compile/parameterq:
+  """
+  Resolve a parameter by literal name. Lowers to the PARAM opcode
+  family; `parameter` remains for names computed at runtime.
+  """
+
   syntax-rules []:
     case (parameterq name):
-      (parameter 'name)
+      (compile/parameter name)
     case (parameterq name default):
-      (parameter 'name default)
+      (compile/parameter name default)
 
 
 define-syntax compile/define-environ:

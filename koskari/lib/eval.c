@@ -995,8 +995,10 @@ KosContext *KosContext_New(KosDynFrame *top) {
     ctx->param_refs = NULL;
 
     if (active) {
-      /* fork: private copy of the creating context's cell table; the
-         cells themselves are shared by pointer (task-isolation D3) */
+      /* fork: private copy of the creating context's shadow table, so
+         the parameterize extents applied at this moment are captured.
+         The cells are shared by pointer. The root scope is not copied;
+         it is reached by resolution through the domain. */
       PyObject *cells = KosContext_PARAM_REFS(active);
       if (cells && PyDict_GET_SIZE(cells) > 0) {
         ctx->param_refs = PyDict_Copy(cells);
@@ -1012,21 +1014,11 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
     } else {
       /* no active context: a root context under an explicit
-         `with Domain():` scope anchors to that domain and copies its
-         base cells (D5); otherwise a fresh domain is minted -- every
-         context has a domain, created as needed */
+         `with Domain():` scope anchors to that domain, and so resolves
+         against its root scope; otherwise a fresh domain is minted --
+         every context has a domain, created as needed */
       PyObject *domain = kos_domain_current();
       if (domain) {
-        PyObject *base = ((KosDomain *) domain)->base_refs;
-        if (base && PyDict_GET_SIZE(base) > 0) {
-          ctx->param_refs = PyDict_Copy(base);
-          if (! ctx->param_refs) {
-            Py_DECREF(KosContext_TOKEN(ctx));
-            KosContext_TOKEN(ctx) = NULL;
-            context_release(ctx);
-            return NULL;
-          }
-        }
         ctx->domain = domain;
         Py_INCREF(ctx->domain);
       } else {
