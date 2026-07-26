@@ -1,0 +1,21 @@
+id: module-solve-amb-outside-solve-invalid-001
+feature: module/koskari.solve
+source: |-
+  (begin
+    (import-from koskari.solve amb)
+    (amb (#list 1 2)))
+verify:
+  read: "(begin (import-from (compile/attr koskari solve) amb) (amb (#list 1 2)))"
+  invalid: "amb is a shift over the delimiter that solve (or solve-first) establishes, so calling it with no enclosing search fails at runtime with RuntimeError: prompt not found. Wrap the whole search in (solve (lambda [] ...)) or (solve-first (lambda [] ...))."
+references:
+  - reference/runtime/koskari-solve.md
+stability: evolving
+tags:
+  - module
+  - solve
+  - amb
+  - invalid
+  - pitfall
+  - nondeterminism
+  - search
+notes: "runtime failure, not a compile error; corrective: establish the delimiter with solve or solve-first around the code that calls amb"
