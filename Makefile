@@ -288,6 +288,21 @@ FORCE:
 .PHONY: FORCE
 
 
+# Developer tool dependencies (tools/requirements.txt) are kept out of the
+# package extras deliberately, and out of the koskari install recipe above so
+# that bumping a tool dep does not force an extension rebuild. Same
+# content-hash guard, for the same git-pull-mtime reason.
+.venv/.tools-built: FORCE | .venv
+	@$(call checkfor,uv)
+	@new=`cat tools/requirements.txt | cksum`; \
+	if [ -f $@ ] && [ "$$new" = "`cat .venv/.tools-srchash 2>/dev/null`" ]; \
+	then exit 0; fi; \
+	echo "Installing tool dependencies..."; \
+	uv pip install -q -r tools/requirements.txt; \
+	printf '%s\n' "$$new" > .venv/.tools-srchash; \
+	touch $@
+
+
 .venv/bin/koskari: .venv/.koskari-built
 	@test -x $@
 
@@ -299,7 +314,7 @@ FORCE:
 	@uv pip install -qe ./examples/life --no-build-isolation
 
 
-venv: .venv/bin/koskari ## Create virtual environment
+venv: .venv/bin/koskari .venv/.tools-built ## Create virtual environment
 	@echo "Virtual environment ready"
 	@echo "   'make venv-activate' to activate it"
 	@echo "   'uv run koskari' to run the REPL"
@@ -355,6 +370,24 @@ build-mcp-container: build-container build-mcp  ## Build koskari:local then the 
 
 run-mcp:  ## Run MCP server on stdio (manual smoke test; use -i, no -t)
 	@$(CONTAINER_ENGINE) run -i --rm $(MCP_IMAGE):local
+
+
+##@ Developer Tools
+
+TOOLS_IMAGE := koskari-tools
+
+# Tool sources are not baked into the image; they arrive on the bind
+# mount, so only a koskari or dependency change needs a rebuild.
+TOOLS_RUN := $(CONTAINER_ENGINE) run --rm -v $(PWD):/work:Z $(TOOLS_IMAGE):local
+
+build-tools:  ## Build koskari developer tools container (requires koskari:local)
+	@echo "Building tools container image $(TOOLS_IMAGE)..."
+	@$(CONTAINER_ENGINE) build -q -t $(TOOLS_IMAGE):local -f tools/Containerfile.tools tools/
+
+build-tools-container: build-container build-tools  ## Build koskari:local then the tools container
+
+run-tools-selftest:  ## Smoke test the tools dispatcher in the container
+	@$(TOOLS_RUN) tools/tools.ki -- selftest
 
 
 ##@ Code Quality

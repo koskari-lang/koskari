@@ -1,0 +1,13 @@
+# Dependencies of the Koskari-implemented developer tools under tools/.
+#
+# Consumed by both substrates, so this file is the single source of
+# truth for them: the local .venv (via make venv) and the
+# koskari-tools container image (via tools/Containerfile.tools).
+#
+# These are developer tooling only. They are deliberately not a package
+# extra, since nothing here is part of what koskari ships to users.
+
+jinja2
+jsonschema
+pyarrow
+PyYAML

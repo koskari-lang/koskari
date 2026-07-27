@@ -1,0 +1,31 @@
+# Containerfile for the Koskari developer tools image.
+#
+# Hosts the artifact-generating tools (editor syntax assets, corpus
+# parquet export). The tool sources are NOT copied in; they arrive on a
+# bind mount of the repository at /work, so editing a .ki tool never
+# requires an image rebuild. Only a koskari or dependency change does.
+#
+# Build (requires koskari:local from repository root):
+#   make build-tools-container
+#
+# Run (repository bind-mounted at /work):
+#   podman run --rm -v ./:/work:Z koskari-tools:local \
+#     tools/tools.ki -- selftest
+#
+# author: Christopher O'Brien <obriencj@gmail.com>
+# license: GPL v.3
+
+FROM koskari:local
+
+LABEL maintainer="obriencj@gmail.com" \
+      description="Koskari developer tools: editor assets, corpus export"
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --disable-pip-version-check \
+    --root-user-action=ignore \
+    -r /tmp/requirements.txt && \
+    rm -f /tmp/requirements.txt
+
+WORKDIR /work
+
+# The end.
