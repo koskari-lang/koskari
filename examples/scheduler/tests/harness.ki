@@ -73,6 +73,10 @@ define-class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
         it on `jobset` (so its runs are tracked and async replies have a
         store), mount it on `server`, and return it. `config` keywords
         (token, wait, ...) seed its WebhookConfig.
+
+        Mounts both routes `start` does -- the POST door and the run
+        read-back one segment deeper -- so a test sees the same surface a
+        live webhook serves.
         """
 
         define job (WebhookJob route)
@@ -82,6 +86,7 @@ define-class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
         unless (None? jobset):
             (jobset.register route job)
         (server.add-route prefix route job.dispatch)
+        (server.add-detail prefix route job.read-run)
         job
 
 

@@ -172,14 +172,40 @@ define-class WebhookJob [Job]:
             (self.run **: kwargs cause: "webhook" wait: self.config.wait)
 
 
+    define read-run [self runid ctx]:
+        """
+        The `GET {prefix}/{route}/{runid}` read-back -- the other half of an
+        async webhook's `{run_id, status}` receipt. It is mounted on the
+        webhook's OWN door: same prefix, same server, and guarded by the
+        same token the POST takes, so a caller trusted to fire the job can
+        follow its run without being handed the control plane (whose run
+        surface is the anonymous floor, and serves every job's history).
+
+        Scoped to runs of THIS webhook. A run belonging to another job
+        reads as a 404 exactly like an unknown id, so the route never
+        confirms that someone else's run exists.
+        """
+
+        (self.check-token ctx)
+
+        define store (if self.jobset self.jobset.store None)
+        define detail (if store (store.run-detail runid) None)
+        unless (and detail (== (item detail "job") self.name)):
+            raise (HTTPException status_code: 404 detail: "no such run")
+        detail
+
+
     define start [self]:
         set! self.running True
         define server (get-server self.config)
+        define prefix (normalize-prefix self.config.prefix)
         ;; dispatch guards the token at the boundary, then routes through
         ;; Job.run so each accepted request is a tracked run whose return
         ;; value flows back as the HTTP response
-        (server.add-route (normalize-prefix self.config.prefix) self.route
-            self.dispatch)
+        (server.add-route prefix self.route self.dispatch)
+        ;; the read-back sits one segment deeper on the same door, so POST
+        ;; {prefix}/{route} fires and GET {prefix}/{route}/{runid} follows
+        (server.add-detail prefix self.route self.read-run)
         (server.start)
 
 

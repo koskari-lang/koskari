@@ -342,8 +342,35 @@ with two per-webhook knobs:
 - `wait` -- `True` (default) awaits the handler and returns its result;
   `False` replies immediately with a `{run_id, status: "started"}` receipt
   and runs the handler in the background. The receipt's run id is the
-  handle to poll: `GET /admin/runs/{id}` flips `running` ->
-  `success`/`failed`.
+  handle to poll, through the read-back below.
+
+Every webhook mounts a second route beside its POST door:
+
+```
+POST {prefix}/{route}            fire it       -> result, or a receipt
+GET  {prefix}/{route}/{run_id}   follow it     -> the run's detail
+```
+
+The read-back answers the receipt. It takes the **same `token`** the POST
+takes, so a webhook whose fire is guarded has no unguarded reader, and it
+is **scoped to that webhook's own runs** -- a run belonging to another job
+reads as a `404` exactly like an unknown id, so the route never confirms
+that someone else's run exists. The body is the same `run-detail` shape
+`/admin/runs/{id}` serves: `status`, the `result` artifact, the captured
+`output`, and the stored `trigger`.
+
+The two routes stand or fall together, by design: an open (token-less)
+webhook has an open read-back. A definition that leaves the door unguarded
+is declaring that its environment decides who reaches the pod, and a
+caller admitted to *trigger* the job on those terms is admitted to *review*
+what it did.
+
+That scoping is the point. `/admin`'s run surface is the anonymous read
+floor over *every* job's history (see [Access](#access-who-may-do-what)),
+and it exists at all only if the definition declares `job admin control` --
+possibly on another port. Pointing a machine caller there to follow its own
+run would hand it a far wider grant than the one webhook it was trusted
+with, so the receipt is answered on the door that issued it.
 
 ### kafka
 
@@ -645,7 +672,7 @@ by name.
 | [kosrunner/cron.ki](kosrunner/cron.ki) | `CronJob` + `config/cron` / `job/cron` (aiocron) |
 | [kosrunner/kafka.ki](kosrunner/kafka.ki) | `KafkaJob` + `on-error` + `config/kafka` / `job/kafka` (aiokafka) |
 | [kosrunner/umb.ki](kosrunner/umb.ki) | `UmbJob` + `on-error` + `config/umb` / `job/umb` -- UMB over STOMP (stompman), with reply-on-return |
-| [kosrunner/webhook.ki](kosrunner/webhook.ki) | `WebhookJob` + `config/webhook` / `job/webhook` (mounts routes on a shared `HttpServer`) |
+| [kosrunner/webhook.ki](kosrunner/webhook.ki) | `WebhookJob` + `config/webhook` / `job/webhook` (mounts the POST door and its token-guarded, job-scoped run read-back on a shared `HttpServer`) |
 | [kosrunner/admin.ki](kosrunner/admin.ki) | `AdminJob` + `config/admin` / `job/admin` -- the JSON control plane over HTTP |
 | [kosrunner/ui.ki](kosrunner/ui.ki) | `UiJob` + `config/ui` / `job/ui` -- the Jinja2 web UI (dashboard -> job page -> run page hierarchy, gated actions, trigger forms, paged history), in-process on the shared server |
 | [kosrunner/access.ki](kosrunner/access.ki) | `Group` + `group`, `AccessConfig` + `config/access`, the identity/level seam (`resolve-identity`/`resolve-level`) and the operator/trigger guards behind `/admin` and `/ui` mutations |
