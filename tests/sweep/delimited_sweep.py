@@ -389,6 +389,49 @@ case("param-around", "extent",
      '(print "RESULT" r)',
      "RESULT 9")
 
+case("param-around-multishot", "extent",
+     "parameterize spans the region; every invoke reads the bound value",
+     '(define-parameter p 1)\n'
+     '(define seen (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (parameterize [[p 9]]\n'
+     '      (begin\n'
+     '        (shift k (begin (k "a") (k "b") "done"))\n'
+     '        (seen.append p)\n'
+     '        p))))\n'
+     '(print "RESULT" r seen)',
+     "RESULT done [9, 9]")
+
+case("param-inside-multishot", "extent",
+     "parameterize inside the resumed part; entered and restored per invoke",
+     '(define-parameter p 1)\n'
+     '(define seen (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (begin\n'
+     '      (shift k (begin (k "a") (k "b") "done"))\n'
+     '      (parameterize [[p 9]]\n'
+     '        (seen.append p))\n'
+     '      (seen.append p)\n'
+     '      "z")))\n'
+     '(print "RESULT" r seen)',
+     "RESULT done [9, 1, 9, 1]")
+
+case("param-ends-before-resume", "extent",
+     "parameterize closes before the shift returns; resume sees the default",
+     '(define-parameter p 1)\n'
+     '(define seen (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (begin\n'
+     '      (parameterize [[p 9]]\n'
+     '        (shift k (begin (k "a") (k "b") "done")))\n'
+     '      (seen.append p)\n'
+     '      "z")))\n'
+     '(print "RESULT" r seen)',
+     "RESULT done [1, 1]")
+
 
 def run_case(cid, src, want, keep):
     fd, path = tempfile.mkstemp(suffix=".ki", prefix=f"sw_{cid}_",
