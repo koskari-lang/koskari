@@ -90,5 +90,8 @@ make corpus-parquet
 make corpus-parquet-container
 ```
 
-The container target builds `tools/corpus/Containerfile` and writes all views
-into `build/corpus/datasets/` on the host.
+The container target runs the export in the shared `koskari-tools` image
+(`make build-tools-container`) and writes all views into
+`build/corpus/datasets/` on the host. Provenance differs there: the image
+carries no git, so the `git_ref` column is empty in container-produced
+output.

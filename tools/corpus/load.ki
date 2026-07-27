@@ -1,0 +1,267 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+tools.corpus.load
+
+Load and dump Koskari corpus records as multi-document YAML shards.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import re
+
+import-from pathlib Path
+
+import-from koskari.lib demand
+
+import yaml
+
+
+define _RECORD_FIELD_ORDER #(
+    "id"
+    "feature"
+    "source"
+    "verify"
+    "references"
+    "stability"
+    "tags"
+    "notes")
+
+define _VERIFY_KEY_ORDER #(
+    "read"
+    "expand"
+    "compile"
+    "eval"
+    "error"
+    "invalid")
+
+define _YAML_BOOL_WORDS (frozenset #(
+    "null"
+    "true"
+    "false"
+    "yes"
+    "no"
+    "on"
+    "off"
+    "~"))
+
+(define _NUMBER_RE
+    (re.compile "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$"))
+
+; Leading characters that carry YAML meaning in a plain scalar.
+define _LEADING_META "@`&*!|>\\%"
+
+; Whole-token scalars that YAML would read as an anchor, alias, or
+; complex-key marker rather than a string.
+define _BARE_META #("?" "*" "&")
+
+
+@demand
+define load_records [records_dir]:
+    """
+    Load all corpus records from YAML shards in a directory
+
+    :param records_dir: directory containing *.yaml files
+    :return: list of record dicts
+    :raises ValueError: on malformed YAML with shard name in message
+    """
+
+    define records #[]
+    define records_path (Path records_dir)
+    define shards (sorted (records_path.glob "*.yaml"))
+
+    for-each [shard shards]:
+        define text (shard.read_text)
+        define docs None
+        try:
+            set! docs (list (yaml.safe_load_all text))
+        ; Koskari's raise takes no explicit cause, so the chain here is
+        ; the implicit __context__ from raising inside the handler.
+        except [yaml.YAMLError as: exc]:
+            raise (ValueError f"{shard.name}: {exc}")
+
+        for-each [[doc_no doc] (enumerate docs 1)]:
+            when (None? doc):
+                (continue)
+            unless (instance? doc dict):
+                define kind (attr (type doc) __name__)
+                raise (ValueError
+                    f"{shard.name}:document {doc_no}: expected mapping, got {kind}")
+            (records.append doc)
+
+    return records
+
+
+define _escape_double_quoted [text]:
+    """
+    Escape a string for YAML double-quoted scalar form
+    """
+
+    return (.replace (.replace text "\\" "\\\\") "\"" "\\\"")
+
+
+define _yaml_needs_double_quotes [text]:
+    """
+    Return True when text must be double-quoted to round-trip as a string
+    """
+
+    unless text:
+        return True
+    when (in? text _BARE_META):
+        return True
+    define lowered (text.lower)
+    when (in? lowered _YAML_BOOL_WORDS):
+        return True
+    when (_NUMBER_RE.match text):
+        return True
+    when (in? "#" text):
+        return True
+    when (in? ":" text):
+        return True
+    when (in? (item text 0) _LEADING_META):
+        return True
+    when (!= (text.strip) text):
+        return True
+    return False
+
+
+define _use_block_scalar [text]:
+    """
+    Return True when text should be emitted as a literal block scalar
+    """
+
+    return (in? "\n" text)
+
+
+define _format_inline_scalar [text]:
+    """
+    Format a single-line string for YAML output
+    """
+
+    when (and (>= (len text) 2)
+              (== (item text 0) "\"")
+              (== (item text -1) "\"")):
+        define single (.replace text "'" "''")
+        return f"'{single}'"
+    when (_yaml_needs_double_quotes text):
+        define escaped (_escape_double_quoted text)
+        return f"\"{escaped}\""
+    return text
+
+
+define _format_scalar_lines [key text indent]:
+    """
+    Format one key and string value as YAML lines
+    """
+
+    define prefix (* "  " indent)
+    when (_use_block_scalar text):
+        define lines #[f"{prefix}{key}: |-"]
+        for-each [line (text.split "\n")]:
+            (lines.append f"{prefix}  {line}")
+        return lines
+    define scalar (_format_inline_scalar text)
+    return #[f"{prefix}{key}: {scalar}"]
+
+
+define _format_verify [verify indent]:
+    """
+    Format the verify mapping for YAML output
+    """
+
+    define prefix (* "  " indent)
+    define lines #[f"{prefix}verify:"]
+    for-each [key _VERIFY_KEY_ORDER]:
+        unless (in? key verify):
+            (continue)
+        (lines.extend
+            (_format_scalar_lines key (item verify key) (+ indent 1)))
+    return lines
+
+
+define _format_list [key values indent]:
+    """
+    Format a list field as a YAML block sequence.
+
+    An empty list needs the explicit flow form: a bare ``key:`` parses
+    back as None, which fails schema validation for the whole shard on
+    the next append.
+    """
+
+    define prefix (* "  " indent)
+    unless values:
+        return #[f"{prefix}{key}: []"]
+    define lines #[f"{prefix}{key}:"]
+    for-each [value values]:
+        define scalar (_format_inline_scalar value)
+        (lines.append f"{prefix}  - {scalar}")
+    return lines
+
+
+@demand
+define dump_record [record]:
+    """
+    Serialize one corpus record as a YAML document string
+
+    :param record: corpus record dict
+    :return: YAML document text without leading document marker
+    """
+
+    define lines #[]
+    for-each [field _RECORD_FIELD_ORDER]:
+        unless (in? field record):
+            (continue)
+        define value (item record field)
+        if (== field "verify"):
+            (lines.extend (_format_verify value 0))
+        elif (in? field #("references" "tags")):
+            (lines.extend (_format_list field value 0))
+        elif (== field "source"):
+            (lines.extend (_format_scalar_lines field value 0))
+        elif (== field "notes"):
+            (lines.extend (_format_scalar_lines field value 0))
+        else:
+            define scalar (_format_inline_scalar value)
+            (lines.append f"{field}: {scalar}")
+    return (.join "\n" lines)
+
+
+@demand
+define dump_shard [records]:
+    """
+    Serialize corpus records as a multi-document YAML shard
+
+    :param records: list of corpus record dicts
+    :return: full shard text
+    """
+
+    define docs (list-each [record records] (dump_record record))
+    return (+ (.join "\n---\n" docs) "\n")
+
+
+@demand
+define write_shard [path records]:
+    """
+    Write corpus records to a YAML shard file
+
+    :param path: destination path
+    :param records: list of corpus record dicts
+    """
+
+    (.write_text (Path path) (dump_shard records))
+
+
+; The end.

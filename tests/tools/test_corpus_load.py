@@ -20,31 +20,16 @@ Unit tests for tools.corpus.load
 """
 
 
-import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
 
+import koskari  # noqa: F401  (activates the .ki import hook)
+
+from tools.corpus import load as corpus_load
+
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-
-
-def load_module(name, path):
-    """
-    Load a Python module from a file path
-
-    :param name: module name for importlib
-    :param path: path to the .py file
-    :return: loaded module
-    """
-
-    spec = importlib.util.spec_from_file_location(name, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-corpus_load = load_module('corpus_load', ROOT / 'tools' / 'corpus' / 'load.py')
 
 
 class TestCorpusLoad(unittest.TestCase):

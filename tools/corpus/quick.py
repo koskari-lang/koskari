@@ -17,7 +17,7 @@ tools.corpus.quick
 
 Quick oracle and validator for corpus generation. Thin CLI over the
 existing record runner in ``tests/corpus`` and the YAML serializer in
-``tools/corpus/load.py`` -- it does not reimplement read, expand, eval,
+``tools/corpus/load.ki`` -- it does not reimplement read, expand, eval,
 verify, or serialization logic, so its output matches what the corpus
 test phase accepts.
 
@@ -39,7 +39,6 @@ Subcommands:
 
 
 import argparse
-import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -67,22 +66,7 @@ from koskari.lib import car, cdr, kos_repr, nil  # noqa: E402
 from koskari.types import is_pair, is_proper, is_symbol, unpack  # noqa: E402
 
 
-def _load_py(path, name):
-    """
-    Load a standalone .py file as a module by path
-
-    :param path: filesystem path to the source file
-    :param name: module name to register under
-    :return: the loaded module
-    """
-
-    spec = importlib.util.spec_from_file_location(name, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_load = _load_py(REPO_ROOT / 'tools' / 'corpus' / 'load.py', 'corpus_load')
+from tools.corpus import load as _load  # noqa: E402
 
 
 # Categories whose entries route to a known shard when --shard is omitted.

@@ -48,7 +48,10 @@ def load_module(name, path):
 
 
 export = load_module('corpus_export', ROOT / 'tools' / 'corpus' / 'export.py')
-corpus_load = load_module('corpus_load', ROOT / 'tools' / 'corpus' / 'load.py')
+
+import koskari  # noqa: E402,F401  (activates the .ki import hook)
+
+from tools.corpus import load as corpus_load  # noqa: E402
 
 
 FIXTURE_RECORDS = [

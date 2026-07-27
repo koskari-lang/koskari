@@ -334,8 +334,6 @@ venv-koslife: .venv/bin/koslife ## Install koslife example
 
 ##@ Corpus
 
-CORPUS_IMAGE := koskari-corpus-export
-
 corpus-parquet:  ## Export koskari-corpus parquet from corpus YAML via tox
 	@$(call checkfor,tox)
 	@echo "Exporting corpus view koskari-corpus..."
@@ -346,15 +344,16 @@ corpus-parquet-all:  ## Export all corpus views to build/corpus/datasets/
 	@echo "Exporting all corpus views..."
 	@tox -qe regen-corpus -- --all-views
 
-corpus-parquet-container-build:  ## Build corpus parquet export container image
-	@echo "Building corpus export container image $(CORPUS_IMAGE)..."
-	@$(CONTAINER_ENGINE) build -q -t $(CORPUS_IMAGE) -f tools/corpus/Containerfile .
-
-corpus-parquet-container: corpus-parquet-container-build  ## Run corpus export container; writes to build/corpus/datasets/
+# The corpus loader is Koskari, so the export needs an image carrying
+# koskari: the dedicated alpine export image is gone in favour of the
+# shared tools container (see build-tools). The python entrypoint
+# override goes away once export itself is Koskari.
+corpus-parquet-container:  ## Run corpus export in the tools container; writes to build/corpus/datasets/
 	@mkdir -p $(BUILD_DIR)/corpus/datasets
-	@$(CONTAINER_ENGINE) run --rm \
-	  -v $(PWD)/$(BUILD_DIR)/corpus/datasets:/out:Z \
-	  $(CORPUS_IMAGE)
+	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/work:Z \
+	  --entrypoint python $(TOOLS_IMAGE):local \
+	  -B tools/corpus/export.py --all-views \
+	  --output-base /work/$(BUILD_DIR)/corpus/datasets
 
 
 ##@ MCP
@@ -515,7 +514,6 @@ python:  ## Show Python executable
 	corpus-parquet \
 	corpus-parquet-all \
 	corpus-parquet-container \
-	corpus-parquet-container-build \
 	clean-built \
 	clean-ext \
 	clean-native \

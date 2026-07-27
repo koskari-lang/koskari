@@ -394,7 +394,7 @@ contention with main-tree `tox`/`make test`. Tooling
 (`tools/corpus/quick.py` — `verify` oracle, `insert` validate+append,
 `coverage`) and the generation-task `docs/corpus/CLAUDE.md` are **implemented**;
 `quick.py` is a thin wrapper over the existing `tests/corpus` runner and
-`tools/corpus/load.py` serializer, run via `uv run` (the one sanctioned non-tox
+`tools/corpus/load.ki` serializer, run via `uv run` (the one sanctioned non-tox
 path). Remaining work is the supervised worktree run itself. Mandate per
 special/macro: basic, variant, block/layout, and invalid+corrective entries;
 priority on patterns common in real code (`define-class`, `for-each`,

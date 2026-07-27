@@ -76,7 +76,7 @@ the agent exactly one entry point to discover. It reaches the implementation via
 Crucially, `quick.py` is a thin wrapper over the **existing record runner** in
 `tests/corpus/__init__.py` (`CorpusTestCase`, the `HANDLERS` for
 read/expand/eval/error, `load_corpus_index`, the eval encode/compare helpers)
-and the YAML serializer in `tools/corpus/load.py` (`dump_record`). It does not
+and the YAML serializer in `tools/corpus/load.ki` (`dump_record`). It does not
 reimplement read/expand/eval, verification, or serialization — so its output is
 exactly what the corpus test phase (`phase_corpus`) accepts. The agent-facing
 CLI contract lives in `docs/corpus/CLAUDE.md`; the sketch below is the rationale.

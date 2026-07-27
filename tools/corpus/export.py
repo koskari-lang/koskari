@@ -32,6 +32,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 
+# Run as a script, sys.path[0] is this directory rather than the
+# repository root, so the tools package is not importable without help.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
 def project_root(root=None):
     """
     Return the repository root path
@@ -98,30 +105,23 @@ def git_ref(root=None):
     return state.get('commit') or ''
 
 
-def _import_corpus_load():
-    """
-    Load tools.corpus.load as a module
-
-    :return: corpus load module
-    """
-
-    path = Path(__file__).resolve().parent / 'load.py'
-    spec = importlib.util.spec_from_file_location('corpus_load', path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def load_records(records_dir):
     """
     Load all corpus records from YAML shards in a directory
+
+    The loader is written in Koskari, so importing it goes through the
+    koskari import hook rather than a path-based loader.
 
     :param records_dir: directory containing *.yaml files
     :return: list of record dicts
     :raises ValueError: on malformed YAML with shard name in message
     """
 
-    return _import_corpus_load().load_records(records_dir)
+    import koskari  # noqa: F401  (activates the .ki import hook)
+
+    from tools.corpus.load import load_records as _load_records
+
+    return _load_records(records_dir)
 
 
 def apply_view(records, transform, provenance):
