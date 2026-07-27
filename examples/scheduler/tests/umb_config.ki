@@ -1,0 +1,111 @@
+;; The umb variety's pure surface: how a `servers` string becomes the
+;; connection list stompman dials, how a handler's return value is encoded
+;; onto the wire, and how the ssl context is derived from the config. None
+;; of this needs a broker.
+
+import-from .harness SchedulerAsyncTestCase
+import-from kosrunner UmbConfig UmbJob
+import-from kosrunner.umb encode-body parse-servers DEFAULT-PORT
+
+
+define-class TestUmbServers [SchedulerAsyncTestCase]:
+
+    @coroutine-fn
+    define test-bare-host-takes-config-port [self]:
+        define servers (parse-servers "bus.example.com" 61612 "" "" #{})
+        (self.assertEqual (len servers) 1)
+        define first (item servers 0)
+        (self.assertEqual first.host "bus.example.com")
+        (self.assertEqual first.port 61612)
+
+
+    @coroutine-fn
+    define test-explicit-port-wins [self]:
+        define servers (parse-servers "bus.example.com:61613" 61612 "" "" #{})
+        define first (item servers 0)
+        (self.assertEqual first.port 61613)
+
+
+    @coroutine-fn
+    define test-comma-separated-with-whitespace [self]:
+        define servers (parse-servers "a.example.com, b.example.com:61616 "
+            61612 "" "" #{})
+        (self.assertEqual (len servers) 2)
+        define first (item servers 0)
+        define second (item servers 1)
+        (self.assertEqual first.host "a.example.com")
+        (self.assertEqual first.port 61612)
+        (self.assertEqual second.host "b.example.com")
+        (self.assertEqual second.port 61616)
+
+
+    @coroutine-fn
+    define test-credentials-and-connect-headers-shared [self]:
+        define servers (parse-servers "a.example.com,b.example.com"
+            61612 "user" "pass" #{"client-id": "kosrunner-1"})
+        (self.assertEqual (len servers) 2)
+        for-each [s servers]:
+            (self.assertEqual s.login "user")
+            (self.assertEqual s.passcode "pass")
+            (self.assertEqual s.connect_headers #{"client-id": "kosrunner-1"})
+
+
+define-class TestUmbEncodeBody [SchedulerAsyncTestCase]:
+
+    @coroutine-fn
+    define test-bytes-pass-through-untyped [self]:
+        define-values [body ctype] (encode-body b"raw")
+        (self.assertEqual body b"raw")
+        (self.assertIsNone ctype)
+
+
+    @coroutine-fn
+    define test-str-is-utf8-encoded-untyped [self]:
+        define-values [body ctype] (encode-body "pong")
+        (self.assertEqual body b"pong")
+        (self.assertIsNone ctype)
+
+
+    @coroutine-fn
+    define test-other-values-are-json [self]:
+        define-values [body ctype] (encode-body #{"ok": True})
+        (self.assertEqual body b"{\"ok\": true}")
+        (self.assertEqual ctype "application/json")
+
+
+define-class TestUmbConfig [SchedulerAsyncTestCase]:
+
+    @coroutine-fn
+    define test-defaults [self]:
+        define job (UmbJob "/topic/VirtualTopic.eng.test")
+        (job.configure servers: "bus.example.com")
+        (self.assertIsInstance job.config UmbConfig)
+        (self.assertEqual job.config.port DEFAULT-PORT)
+        (self.assertEqual job.config.ack "client-individual")
+        (self.assertTrue job.enabled)
+
+
+    @coroutine-fn
+    define test-no-servers-fails-at-start [self]:
+        define job (UmbJob "/topic/VirtualTopic.eng.test")
+        (job.configure)
+        with [(self.assertRaises ValueError)]:
+            (job.start)
+
+
+    @coroutine-fn
+    define test-plaintext-config-builds-no-ssl-context [self]:
+        define job (UmbJob "/topic/VirtualTopic.eng.test")
+        (job.configure servers: "bus.example.com")
+        (self.assertIsNone (job.make-ssl-context))
+
+
+    @coroutine-fn
+    define test-explicit-ssl-context-wins [self]:
+        define sentinel (object)
+        define job (UmbJob "/topic/VirtualTopic.eng.test")
+        (job.configure servers: "bus.example.com" ssl_context: sentinel)
+        (self.assertIs (job.make-ssl-context) sentinel)
+
+
+;; The end.

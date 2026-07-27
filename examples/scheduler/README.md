@@ -21,8 +21,9 @@ jobset workload:
             #{"ok": True "msg": "pong"}
 ```
 
-Three job varieties ship: **cron** (aiocron), **webhook** (FastAPI/uvicorn),
-and **kafka** (aiokafka), plus a broker-free **fake** variety used in tests.
+Four job varieties ship: **cron** (aiocron), **webhook** (FastAPI/uvicorn),
+**kafka** (aiokafka), and **umb** (stompman), plus a broker-free **fake**
+variety used in tests.
 
 See [example.ki](example.ki) for the full definition.
 
@@ -33,8 +34,30 @@ Install the package and its dependencies, then run the definition with the
 `koskari` CLI:
 
 ```bash
-pip install .
+pip install '.[all]'
 koskari example.ki
+```
+
+The two broker varieties are **extras**, so a definition that declares no
+kafka or umb job need not carry their client libraries:
+
+| install | brings | enables |
+|---|---|---|
+| `pip install .` | the framework: cron, webhook, admin, ui, storage, access | everything but the brokers |
+| `pip install '.[kafka]'` | aiokafka | `job kafka` |
+| `pip install '.[umb]'` | stompman (needs Python 3.11+) | `job umb` |
+| `pip install '.[all]'` | both | everything -- what the container image installs |
+
+`import kosrunner` never needs an extra: both variety modules stay
+importable, and each resolves its client library in the job
+**constructor**. A definition naming a variety whose extra was never
+installed therefore dies at load time with the install line to fix it --
+the same bargain `reqenv` makes for a missing secret, rather
+than a pod that comes up healthy and fails at first connect:
+
+```
+ImportError: the umb job variety needs the 'stompman' package:
+pip install koskari-kosrunner[umb]
 ```
 
 `example.ki` starts a cron heartbeat (fires every minute) and a webhook
@@ -71,9 +94,10 @@ and stored trigger. It reads the live `JobSet` and run store in-process; its
 form actions post back to the job they concern, so `/admin` stays a clean JSON
 API for scripting.
 
-The **kafka** jobs in the example are marked `disabled: True` in their
-config blocks because they need a running broker. To enable them, point
-`config kafka:` at your broker and drop the `disabled` lines.
+The **kafka** and **umb** jobs in the example are marked `disabled: True`
+in their config blocks because they need a running broker. To enable them,
+point `config kafka:` / `config umb:` at your broker and drop the
+`disabled` lines.
 
 A container build is also provided:
 
@@ -256,7 +280,7 @@ A body-less job is written with **no trailing colon** (`job admin control`);
 a colon with an empty body produces a nil sub-item that fails the variety's
 pattern match. Every fire funnels through `Job.run` as a tracked run, with
 `cause` reflecting the door it came through (`schedule`, `webhook`,
-`kafka`, or `manual`).
+`kafka`, `umb`, or `manual`).
 
 ### cron
 
@@ -350,6 +374,70 @@ their semantics. Local conveniences: an `ssl_context` is built from
 politeness knobs `fetch_max_wait_ms` (1000) / `retry_backoff_ms` (500)
 default gentler than aiokafka's own.
 
+### umb
+
+```koskari
+config umb:
+    servers: "umb-broker01.example.com,umb-broker02.example.com"
+    ssl_certfile: (reqenv "UMB_CERT")
+    ssl_keyfile: (reqenv "UMB_KEY")
+    ssl_cafile: "/etc/pki/umb/ca.crt"
+
+job umb builds "/topic/VirtualTopic.eng.brew.build.complete":
+    on-error [err msg]:
+        (print f"build event dropped {msg}: {err}")
+    handler [msg]:
+        (print f"build: {msg}")
+
+job umb status "/queue/kosrunner.status.request":
+    config:
+        reply_to: "/queue/kosrunner.status.reply"
+    handler [msg]:
+        #{"ok": True "asked": msg}
+```
+
+The Unified Message Bus, over STOMP 1.2. The trigger key is the
+destination. Each received message is decoded utf-8 and passed to the
+handler as one positional, exactly as kafka does, and umb adds the same
+`on-error [err msg]:` code sub-item.
+
+**Replying.** A handler that returns a non-None value has it published
+back as a reply -- to the incoming message's `reply-to` header, or to the
+config's `reply_to` when the requester named none, carrying a
+`correlation-id` echoed from the requester (falling back to its
+`message-id`, which is what a requester that sent none will be waiting
+on). `bytes` ride as-is and a `str` is utf-8 encoded, both with no
+declared content type; anything else is JSON encoded and declared
+`application/json`. Return `None` for a plain event consumer that answers
+nothing. A handler that *raises* records a failed run and dispatches to
+`on-error`, and never replies -- the message is still consumed, same as
+kafka's offset still commits.
+
+`UmbConfig` covers the connection: `servers` is the same comma-separated
+`host:port` string kafka takes (a bare host takes the config's `port`,
+defaulting to 61612, and the list is tried in turn), plus `login` /
+`passcode` for a broker that wants them -- normally empty, since UMB
+authenticates with an x509 client cert. That cert is the `ssl_certfile` /
+`ssl_keyfile` / `ssl_password` / `ssl_cafile` group, from which an
+`ssl.SSLContext` is built automatically; set `ssl_context` directly for
+anything more exotic, and leave all of them unset for a plaintext
+connection. `connect_headers` reaches the CONNECT frame (where UMB wants
+`client-id` for a durable subscription) and `subscribe_headers` the
+SUBSCRIBE frame (`selector`, `activemq.subscriptionName`). `ack` defaults
+to `client-individual`. The heartbeat pair (`heartbeat_send_ms` /
+`heartbeat_receive_ms`, both 10000) defaults a good deal quieter than
+[stompman](https://github.com/community-of-python/stompman)'s own 1s/1s,
+and the connect trio (`connect_retry_attempts`, `connect_retry_interval`,
+`connect_timeout`) bounds a reconnect storm. `connection_class` selects
+the transport -- unset takes plain TCP; point it at
+`stompman.connection_ws.WebSocketConnection` for STOMP over a websocket.
+
+> Note: there is no maintained asyncio-native AMQP 1.0 client -- the
+> canonical `python-qpid-proton` binding is reactor-based, and the one
+> asyncio bridge over it (`qpid-bow`) was archived in 2019. STOMP is the
+> protocol UMB exposes that has one, which is why this variety speaks it.
+> Check that your service account has the STOMP endpoint enabled.
+
 ### admin
 
 ```koskari
@@ -396,8 +484,8 @@ bar (`Dashboard / <job> / <run>`):
 
 Whether a job gets a trigger form is the job type's call, via its
 `trigger-spec`: cron says "fire now" with no fields, a typed webhook
-supplies its input fields, and everything else (kafka, untyped webhooks,
-admin/ui) is not manually triggerable -- re-run a past run instead,
+supplies its input fields, and everything else (kafka, umb, untyped
+webhooks, admin/ui) is not manually triggerable -- re-run a past run instead,
 which replays its real recorded input. The actions
 (`POST {prefix}/{enable,disable}/{name}`, `{prefix}/retrigger/{id}`,
 `{prefix}/trigger/{name}`) redirect back to the job page they concern.
@@ -550,12 +638,13 @@ by name.
 
 | File | Contents |
 |---|---|
-| [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`) |
+| [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`), `require-extra` |
 | [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
 | [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture) + `config/storage` |
 | [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action/page helpers |
 | [kosrunner/cron.ki](kosrunner/cron.ki) | `CronJob` + `config/cron` / `job/cron` (aiocron) |
 | [kosrunner/kafka.ki](kosrunner/kafka.ki) | `KafkaJob` + `on-error` + `config/kafka` / `job/kafka` (aiokafka) |
+| [kosrunner/umb.ki](kosrunner/umb.ki) | `UmbJob` + `on-error` + `config/umb` / `job/umb` -- UMB over STOMP (stompman), with reply-on-return |
 | [kosrunner/webhook.ki](kosrunner/webhook.ki) | `WebhookJob` + `config/webhook` / `job/webhook` (mounts routes on a shared `HttpServer`) |
 | [kosrunner/admin.ki](kosrunner/admin.ki) | `AdminJob` + `config/admin` / `job/admin` -- the JSON control plane over HTTP |
 | [kosrunner/ui.ki](kosrunner/ui.ki) | `UiJob` + `config/ui` / `job/ui` -- the Jinja2 web UI (dashboard -> job page -> run page hierarchy, gated actions, trigger forms, paged history), in-process on the shared server |

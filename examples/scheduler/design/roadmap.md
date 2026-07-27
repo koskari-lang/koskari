@@ -26,9 +26,12 @@ Operating assumptions:
 Two-tier images:
 
 - **Baseline `kosrunner:<ver>`** -- alpine + python + koskari + the `kosrunner`
-  package + all deps (aiocron, aiokafka, fastapi, uvicorn, aiosqlite, jinja2).
-  Built once, versioned, reused. All framework machinery (run tracking, store,
-  admin API, UI) lives here.
+  package + all deps (aiocron, fastapi, uvicorn, aiosqlite, jinja2) and every
+  extra (aiokafka, stompman), installed as `koskari-kosrunner[all]`. The broker
+  client libraries are packaging extras so a *library* consumer can skip them,
+  but the baseline image is one artifact serving every job layer, so it carries
+  the lot. Built once, versioned, reused. All framework machinery (run tracking,
+  store, admin API, UI) lives here.
 - **Per-job layer** -- `FROM kosrunner:<ver>` then `COPY definition.ki
   /job/run.ki`. Three lines. A job definition is pure surface DSL and never
   carries framework code.

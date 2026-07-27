@@ -30,13 +30,23 @@ requires-python = ">=3.9"
 dependencies = [
     "koskari",
     "aiocron",
-    "aiokafka",
     "aiosqlite",
     "fastapi",
     "jinja2",
     "python-multipart",
     "uvicorn",
 ]
+
+
+# The broker varieties are extras: their client libraries are heavy (and
+# stompman's own floor is 3.11), so a definition that never declares a
+# kafka or umb job need not carry them. The variety modules themselves stay
+# importable regardless -- each resolves its client in the job constructor
+# via require-extra, which names the extra to install when it is missing.
+[project.optional-dependencies]
+kafka = ["aiokafka"]
+umb = ["stompman"]
+all = ["aiokafka", "stompman"]
 
 [project.urls]
 Homepage = "https://github.com/obriencj/koskari/"

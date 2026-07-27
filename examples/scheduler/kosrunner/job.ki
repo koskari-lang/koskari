@@ -18,9 +18,30 @@ import signal
 
 import-from asyncio CancelledError
 import-from dataclasses replace
+import-from importlib import_module
 
 
 define logger (logging.getLogger "kosrunner")
+
+
+define require-extra [module extra]:
+    """
+    Resolve a variety's optional client library, raising a message that
+    names the extra to install when it is absent. A variety whose library
+    is an extra calls this from its CONSTRUCTOR, so a definition using it
+    dies at load time -- the same bargain `reqenv` makes -- rather than at
+    first connect. The variety module itself stays importable either way,
+    so `import kosrunner` never depends on an extra being present.
+    """
+
+    try:
+        (return (import_module module))
+    except [ImportError]:
+        ;; adjacent literals are separate ARGS in koskari; #str is the
+        ;; variadic join that spreads one message over several lines
+        raise (ImportError (#str
+            f"the {extra} job variety needs the '{module}' package:"
+            f" pip install koskari-kosrunner[{extra}]"))
 
 
 define-class ConfigBase []:

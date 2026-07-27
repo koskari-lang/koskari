@@ -1,0 +1,78 @@
+;; The optional-extra contract. The broker varieties ship their client
+;; libraries as extras, so `import kosrunner` must not need them -- each
+;; variety resolves its client in the job CONSTRUCTOR instead, and says
+;; which extra to install when it is missing.
+
+import sys
+
+import-from .harness SchedulerAsyncTestCase
+import-from kosrunner KafkaJob UmbJob require-extra
+
+
+define-class TestRequireExtra [SchedulerAsyncTestCase]:
+
+    @coroutine-fn
+    define test-present-module-is-returned [self]:
+        import json
+        (self.assertIs (require-extra "json" "irrelevant") json)
+
+
+    @coroutine-fn
+    define test-absent-module-names-the-module-and-the-extra [self]:
+        with [caught (self.assertRaises ImportError)]:
+            (require-extra "no_such_client_library" "someextra")
+        ;; one contiguous message: koskari does NOT join adjacent string
+        ;; literals, so a split one would arrive as separate args
+        (self.assertEqual (str caught.exception)
+            (+ "the someextra job variety needs the"
+                " 'no_such_client_library' package:"
+                " pip install koskari-kosrunner[someextra]"))
+
+
+define-class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
+    """
+    Both broker varieties check at construction, so a definition naming one
+    whose extra was never installed dies at LOAD time. The check is
+    simulated by making the underlying import fail, since the test env has
+    both extras installed.
+    """
+
+    define hide-module [self name]:
+        """
+        Make `name` unimportable for the duration of one test by parking
+        None under it in sys.modules -- which is what the import machinery
+        itself treats as "halted", so the failure is a real ImportError
+        raised from the real import, not a stubbed one.
+        """
+
+        define saved (sys.modules.get name)
+        (set! (item sys.modules name) None)
+
+        define restore []:
+            if (None? saved):
+                (sys.modules.pop name None)
+            else:
+                (set! (item sys.modules name) saved)
+
+        (self.addCleanup (demand restore))
+
+
+    @coroutine-fn
+    define test-kafka-job-names-the-kafka-extra [self]:
+        (self.hide-module "aiokafka")
+        with [caught (self.assertRaises ImportError)]:
+            (KafkaJob "topic.orders")
+        (self.assertIn "the 'aiokafka' package: pip install koskari-kosrunner[kafka]"
+            (str caught.exception))
+
+
+    @coroutine-fn
+    define test-umb-job-names-the-umb-extra [self]:
+        (self.hide-module "stompman")
+        with [caught (self.assertRaises ImportError)]:
+            (UmbJob "/topic/VirtualTopic.eng.test")
+        (self.assertIn "the 'stompman' package: pip install koskari-kosrunner[umb]"
+            (str caught.exception))
+
+
+;; The end.

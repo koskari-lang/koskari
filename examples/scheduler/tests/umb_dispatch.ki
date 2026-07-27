@@ -1,0 +1,209 @@
+;; The umb variety over stompman's real client, against an in-memory
+;; broker (tests/fakebroker.py): a delivered message becomes a tracked run
+;; and the handler's return value becomes a reply frame carrying the
+;; correlation id. This exercises the whole path -- handshake, SUBSCRIBE,
+;; the awaited handler callback, ACK, SEND -- with no socket.
+
+import-from stompman.frames:
+    AckFrame SendFrame SubscribeFrame UnsubscribeFrame
+
+import-from .fakebroker FakeBroker
+import-from .harness SchedulerAsyncTestCase
+import-from kosrunner UmbConfig UmbJob
+
+
+define DESTINATION "/topic/VirtualTopic.eng.test"
+
+
+define-class UmbDispatchTestCase [SchedulerAsyncTestCase]:
+    """
+    Base for the dispatch tests: one call builds a started UmbJob talking
+    to a fake broker, registered on a jobset with a temp-dir store so its
+    runs are tracked, and stopped on teardown.
+    """
+
+    define umb-job [self handler **: config]:
+        define broker (FakeBroker)
+        define js (self.jobset-with-store)
+        define job (UmbJob DESTINATION)
+        (job.configure via: (UmbConfig
+            servers: "bus.example.com"
+            connection_class: broker.connection_class
+            **: config))
+        (job.handler handler)
+        (js.register "umbtest" job)
+        (job.start)
+        ;; coroutine-fn: addAsyncCleanup only awaits native coroutine
+        ;; functions, and stop must run before the loop closes under the
+        ;; client's task group
+        (self.addAsyncCleanup (coroutine-fn job.stop))
+        (values job broker)
+
+
+define-class TestUmbSubscription [UmbDispatchTestCase]:
+
+    @coroutine-fn
+    define test-start-subscribes-to-the-destination [self]:
+        define-values [job broker] (self.umb-job (lambda [msg] None))
+        define frames (broker.wait_for_frame SubscribeFrame)
+        define sub (item frames 0)
+        define headers sub.headers
+        (self.assertEqual (item headers "destination") DESTINATION)
+        (self.assertEqual (item headers "ack") "client-individual")
+        (self.assertTrue job.running)
+
+
+    @coroutine-fn
+    define test-subscribe-headers-ride-along [self]:
+        define-values [job broker] (self.umb-job (lambda [msg] None)
+            subscribe_headers: #{"selector": "type = 'build'"})
+        define frames (broker.wait_for_frame SubscribeFrame)
+        define sub (item frames 0)
+        (self.assertEqual (item sub.headers "selector") "type = 'build'")
+
+
+    @coroutine-fn
+    define test-stop-unsubscribes [self]:
+        define-values [job broker] (self.umb-job (lambda [msg] None))
+        (broker.wait_for_frame SubscribeFrame)
+        (job.stop)
+        (self.assertFalse job.running)
+        (self.assertEqual (len (broker.frames_of UnsubscribeFrame)) 1)
+
+
+define-class TestUmbDispatch [UmbDispatchTestCase]:
+
+    @coroutine-fn
+    define test-message-body-reaches-the-handler [self]:
+        define seen #[]
+        define handler [msg]:
+            (seen.append msg)
+            None
+
+        define-values [job broker] (self.umb-job handler)
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"hello")
+        (broker.wait_for_frame AckFrame)
+        (self.assertEqual seen #["hello"])
+
+
+    @coroutine-fn
+    define test-run-is-tracked-with-umb-cause [self]:
+        define-values [job broker] (self.umb-job (lambda [msg] None))
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"hello")
+        (broker.wait_for_frame AckFrame)
+
+        define runs (job.jobset.store.list-runs job: "umbtest")
+        (self.assertEqual (len runs) 1)
+        define run (item runs 0)
+        (self.assertEqual (item run "cause") "umb")
+        (self.assertEqual (item run "status") "success")
+
+
+define-class TestUmbReply [UmbDispatchTestCase]:
+
+    @coroutine-fn
+    define test-return-value-replies-to-the-reply-to-header [self]:
+        define handler [msg]:
+            #{"echo": msg}
+
+        define-values [job broker] (self.umb-job handler)
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"ping"
+            headers: #{"reply-to": "/queue/replies"})
+
+        define frames (broker.wait_for_frame SendFrame)
+        define sent (item frames 0)
+        (self.assertEqual (item sent.headers "destination") "/queue/replies")
+        (self.assertEqual (item sent.headers "content-type") "application/json")
+        (self.assertEqual sent.body b"{\"echo\": \"ping\"}")
+
+
+    @coroutine-fn
+    define test-reply-echoes-the-requesters-correlation-id [self]:
+        define-values [job broker] (self.umb-job (lambda [msg] "pong"))
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"ping"
+            headers: #{"reply-to": "/queue/replies"
+                       "correlation-id": "corr-7"})
+
+        define frames (broker.wait_for_frame SendFrame)
+        define sent (item frames 0)
+        (self.assertEqual (item sent.headers "correlation-id") "corr-7")
+        ;; a plain str reply rides as utf-8 with no declared content type
+        (self.assertEqual sent.body b"pong")
+        (self.assertNotIn "content-type" sent.headers)
+
+
+    @coroutine-fn
+    define test-reply-falls-back-to-the-message-id [self]:
+        ;; a requester that sent no correlation id waits on its message id
+        define-values [job broker] (self.umb-job (lambda [msg] "pong"))
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"ping"
+            message_id: "msg-42"
+            headers: #{"reply-to": "/queue/replies"})
+
+        define frames (broker.wait_for_frame SendFrame)
+        define sent (item frames 0)
+        (self.assertEqual (item sent.headers "correlation-id") "msg-42")
+
+
+    @coroutine-fn
+    define test-config-reply-to-answers-a-message-carrying-none [self]:
+        define-values [job broker] (self.umb-job (lambda [msg] "pong")
+            reply_to: "/queue/default-replies")
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"ping")
+
+        define frames (broker.wait_for_frame SendFrame)
+        define sent (item frames 0)
+        (self.assertEqual (item sent.headers "destination")
+            "/queue/default-replies")
+
+
+    @coroutine-fn
+    define test-none-return-sends-nothing [self]:
+        define-values [job broker] (self.umb-job (lambda [msg] None))
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"ping"
+            headers: #{"reply-to": "/queue/replies"})
+        ;; the ack proves the message was fully handled, so an absent SEND
+        ;; is a decision and not a race
+        (broker.wait_for_frame AckFrame)
+        (self.assertEqual (len (broker.frames_of SendFrame)) 0)
+
+
+    @coroutine-fn
+    define test-no-destination-anywhere-drops-the-reply [self]:
+        define-values [job broker] (self.umb-job (lambda [msg] "pong"))
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"ping")
+        (broker.wait_for_frame AckFrame)
+        (self.assertEqual (len (broker.frames_of SendFrame)) 0)
+
+
+    @coroutine-fn
+    define test-failed-handler-fires-on-error-and-does-not-reply [self]:
+        define errs #[]
+        define handler [msg]:
+            raise (RuntimeError "boom")
+
+        define-values [job broker] (self.umb-job handler)
+        (job.on-error (lambda [err msg] (errs.append err)))
+        (broker.wait_for_frame SubscribeFrame)
+        (broker.deliver job._subscription.id b"ping"
+            headers: #{"reply-to": "/queue/replies"})
+        (broker.wait_for_frame AckFrame)
+
+        (self.assertEqual (len errs) 1)
+        (self.assertIsInstance (item errs 0) RuntimeError)
+        (self.assertEqual (len (broker.frames_of SendFrame)) 0)
+
+        define runs (job.jobset.store.list-runs job: "umbtest")
+        define run (item runs 0)
+        (self.assertEqual (item run "status") "failed")
+
+
+;; The end.

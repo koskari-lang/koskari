@@ -16,10 +16,9 @@ import logging
 
 import-from typing Any
 
-import-from aiokafka AIOKafkaConsumer
-import-from aiokafka.helpers create_ssl_context
-
-import-from .job Config Job
+;; aiokafka is the `kafka` EXTRA, so it is imported where it is used, not
+;; here -- this module must stay importable without it (see `require-extra`)
+import-from .job Config Job require-extra
 
 
 define logger (logging.getLogger "kosrunner.kafka")
@@ -67,6 +66,7 @@ define-class KafkaJob [Job]:
 
     define __init__ [self topic]:
         (Job.__init__ self)
+        (require-extra "aiokafka" "kafka")
         set! self.topic topic
         set! self._consumer None
         set! self._task None
@@ -79,6 +79,9 @@ define-class KafkaJob [Job]:
 
 
     define make-consumer [self]:
+
+        import-from aiokafka AIOKafkaConsumer
+        import-from aiokafka.helpers create_ssl_context
 
         define c self.config
 

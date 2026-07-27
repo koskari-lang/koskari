@@ -36,7 +36,7 @@ RUN pip install \
         --no-cache-dir \
         --root-user-action=ignore \
         --find-links=/wheels \
-        koskari-kosrunner ; \
+        "koskari-kosrunner[all]" ; \
     rm -rf /wheels
 
 WORKDIR /job

@@ -29,6 +29,16 @@ jobset workload:
         servers: "audit-1:9092,audit-2:9092"
         security_protocol: "SSL"
 
+    ;; Default UMB config. The bus speaks STOMP over TLS and authenticates
+    ;; with an x509 client cert, so the cert files ARE the credentials --
+    ;; idiomatically `(reqenv "UMB_CERT")`, the secrets pattern; literal
+    ;; here so the example still loads with no environment set.
+    config umb:
+        servers: "umb-broker01.example.com,umb-broker02.example.com"
+        ssl_certfile: "/etc/pki/umb/client.crt"
+        ssl_keyfile: "/etc/pki/umb/client.key"
+        ssl_cafile: "/etc/pki/umb/ca.crt"
+
     ;; Default webhook config -- also backs inbound job triggers.
     config webhook:
         port: 8080
@@ -110,6 +120,28 @@ jobset workload:
             (print f"audit dropped {msg}: {err}")
         handler [msg]:
             (print f"audit: {msg}")
+
+    ;; umb job on the DEFAULT umb config, disabled until a real bus is
+    ;; reachable. The destination is the trigger key, and the sub-items are
+    ;; the same three flavours kafka uses. This handler returns None, so
+    ;; nothing is published back -- a plain event consumer.
+    job umb builds "/topic/VirtualTopic.eng.brew.build.complete":
+        config:
+            disabled: True
+        on-error [err msg]:
+            (print f"build event dropped {msg}: {err}")
+        handler [msg]:
+            (print f"build: {msg}")
+
+    ;; A request/reply umb job: the handler's return value is published to
+    ;; the requesting message's `reply-to` -- or to the config's, when the
+    ;; requester named none -- carrying the correlation id it matches on.
+    job umb status "/queue/kosrunner.status.request":
+        config:
+            disabled: True
+            reply_to: "/queue/kosrunner.status.reply"
+        handler [msg]:
+            #{"ok": True "asked": msg}
 
 
 when-main:
