@@ -1,8 +1,8 @@
 # KOS_OP_POP_SHIFT
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops TOS as result; builds a transfer plan that unwinds from the current position through the matching SHIFT and PROMPT nodes (TRUNCATE_AND_INJECT step drops both and their stack block), then injects the single result value onto the outer frame's stack (below the PROMPT's block boundary). Handler returns without invoking k.
-- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). Stack block owned by PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
+- **Stack**: Pops TOS as result and resolves the delimiter by the prompt instance the SHIFT recorded at capture. For a live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (dropping both and the PROMPT's stack block), injects the result onto the outer frame's stack, and resumes at the closing pc the prompt recorded at push, + 1. For an invocation prompt (created by invoking a captured k; no POP_PROMPT pairs with it): the result is the value of that k-invocation, delivered at the invoke site through the paired DELIM bookmark.
+- **Invariants**: Must be inside a PUSH_SHIFT extent. The delimiter is resolved by instance identity, never by chain position; the resolved prompt carries the resume pc, so no extent lookup happens at pop time.
 - **Compiler form:** No argument.
 
 **Example:** Shift handler returns value without invoking k.

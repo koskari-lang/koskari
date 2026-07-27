@@ -105,6 +105,16 @@ typedef enum KosDynFlags {
   KOS_DYNF_CLONED      = 0x01,  /* node was cloned for continuation capture */
   KOS_DYNF_BOUNDARY    = 0x02,  /* node marks a non-resumable boundary */
   KOS_DYNF_GEN_KEEPALIVE = 0x04,  /* GEN: holds a counted ref on its KPAG owner while active */
+  KOS_DYNF_INVOCATION  = 0x08,  /* PROMPT: instance created by a k-invocation
+                                   (graft instantiation or in-place invoke);
+                                   no POP_PROMPT instruction pairs with it, so
+                                   delivery routes through the paired DELIM */
+  KOS_DYNF_HOLDS_RETURN_FRAME = 0x10,  /* DELIM: owns its RETURN_FRAME, the
+                                   yoyo return-address snapshot of a nested
+                                   handler; restitch clears the flag when it
+                                   re-parents the frame onto the chain.
+                                   Traversal and teardown must cover it
+                                   while held */
   KOS_DYNF_LCA_VISITED = (int) 0x80000000u,  /* transient: set during kos_compute_lca */
 } KosDynFlags;
 
@@ -222,12 +232,21 @@ struct KosDynNode {
     } frame;
     struct {
       uint32_t prompt_id;
-      PyObject *pending_shift_wrapper;  /* KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned */
+      /* pc of the POP_PROMPT closing this prompt's region, resolved from
+         the PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
+         pop_pc + 1; stored resolved because by the time a shift body
+         runs, no live acting pc still points into the extent. */
+      uint32_t pop_pc;
     } prompt;
     struct {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
       KosDynNode *chain;  /* owned when mode == INPLACE */
       uint32_t pc;
+      /* The yoyo return address: the frame control lands in when the
+         invoke yoyos back from the slice. For an INPLACE invoke of a
+         nested handler this is a parentless CLONED snapshot (the slice
+         returns out of and frees the original); restitch pushes it
+         above the prompt so the handler has a frame to resume in. */
       KosDynNode *frame;
       KosDynNode *node;
       /* INPLACE only: displaced resume-frame state (stack owned) and
@@ -296,7 +315,13 @@ struct KosDynNode {
       int normal_exit;     /* 1 = exit(None,None,None); only when phase == PENDING_EXIT_AWAIT */
     } with;
     struct {
-      /* shift: marker; operands stay on the frame (PROMPT install has no stack) */
+      /* shift: marker delimiting the handler body; owns no block, so
+         handler operands land in the innermost owner below (the
+         prompt's region block, or a frame). prompt_node_id is the
+         instance id of the PROMPT this shift captured against;
+         POP_SHIFT resolves its delimiter by this, never by chain
+         position. */
+      uint32_t prompt_node_id;
     } shift;
     struct {
       PyObject *exc_type;  /* exception type from PyErr_Fetch */
@@ -416,10 +441,10 @@ typedef struct KosDynNode KosDynNext;
    capture point down through the prompt and its owning FRAME node
    (delimited), or from above the CC block down to root (undelimited).
 
-   The resume_frame points to the frame where execution resumes.
-   The resume_pc is the program counter to resume at.
-   The resume_stack points at the operand stack owned by resume_frame
-   (or the innermost region with a stack on captured_chain); it is an
+   The resume_pc is the program counter to resume at; the frame it
+   resumes in is resolved from the chain at invoke time (the landed
+   segment's innermost FRAME), never stored. The resume_stack points at
+   the innermost node-owned operand stack on captured_chain; it is an
    alias for that node-owned block, not separately released here.
 
    For multi-shot continuations, the chain/stack are cloned on
@@ -428,7 +453,6 @@ typedef struct KosDynNode KosDynNext;
 
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
-  KosDynFrame *resume_frame;    /* frame to resume into */
   uint32_t resume_pc;           /* pc to resume at */
   KosStackBlock *resume_stack;  /* aliases node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
@@ -449,7 +473,6 @@ struct KosContinuation {
 
 
 #define KosContinuation_CAPTURED_CHAIN(k)  (((KosContinuation *)(k))->captured_chain)
-#define KosContinuation_RESUME_FRAME(k)    (((KosContinuation *)(k))->resume_frame)
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
 #define KosContinuation_RESUME_STACK(k)    (((KosContinuation *)(k))->resume_stack)
 #define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
@@ -594,7 +617,6 @@ struct KosTransferPlan {
   KosDynNode *original_target;  /* target for chain-change detection */
   uint32_t graft_point_id;      /* node_id for LCA fallback when replanning */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
-  KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
   KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
   PyObject *continuation_ref;   /* strong ref (Py_INCREF) until plan freed or moved to prompt */
   KosContinuation *invoke_clone;  /* when set, release then free when plan freed */
@@ -615,7 +637,6 @@ struct KosTransferPlan {
 #define KosTransferPlan_ORIGINAL_TARGET(p)  (((KosTransferPlan *)(p))->original_target)
 #define KosTransferPlan_GRAFT_POINT_ID(p)   (((KosTransferPlan *)(p))->graft_point_id)
 #define KosTransferPlan_RESUME_PC(p)       (((KosTransferPlan *)(p))->resume_pc)
-#define KosTransferPlan_RESUME_FRAME(p)    (((KosTransferPlan *)(p))->resume_frame)
 #define KosTransferPlan_RESUME_STACK(p)    (((KosTransferPlan *)(p))->resume_stack)
 #define KosTransferPlan_CONTINUATION_REF(p) (((KosTransferPlan *)(p))->continuation_ref)
 #define KosTransferPlan_INVOKE_CLONE(p)    (((KosTransferPlan *)(p))->invoke_clone)
@@ -1038,10 +1059,15 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
 
    :param ctx: execution context
    :param prompt_id: tag for matching (0 = default)
+   :param pop_pc: pc of the POP_PROMPT closing the region (from the
+      PROMPT extent at the push site); POP_SHIFT resumes at pop_pc + 1
 
    :return: new prompt, or NULL on error
 */
-KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id);
+KosDynPrompt *kos_dyn_push_prompt(
+    KosEvalState *es,
+    uint32_t prompt_id,
+    uint32_t pop_pc);
 
 
 /**
@@ -1155,10 +1181,12 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
    unwinding to the prompt.
 
    :param ctx: execution context
+   :param prompt_node_id: instance id of the PROMPT the shift captured
+      against; POP_SHIFT resolves the delimiter by this id
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_push_shift(KosEvalState *es);
+int kos_dyn_push_shift(KosEvalState *es, uint32_t prompt_node_id);
 
 
 /**
@@ -1830,31 +1858,6 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 /* === Prompt lookup and continuation capture === */
 
 
-/**
-   Find the nearest prompt with the given id.
-
-   Walks the dynamic chain from dyn_top toward root, looking for
-   a PROMPT node with matching prompt_id.
-
-   :param es: eval state
-   :param prompt_id: tag to match (0 = default)
-
-   :return: matching prompt, or NULL if not found
-*/
-KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id);
-
-
-/**
-   Find the nearest prompt from dyn_top toward the root (first PROMPT on
-   the chain). Unlike kos_find_prompt, does not filter by prompt_id.
-
-   :param es: eval state
-
-   :return: innermost prompt, or NULL if none
-*/
-KosDynPrompt *kos_find_nearest_prompt(KosEvalState *es);
-
-
 /* === Context exception stash === */
 
 
@@ -1911,17 +1914,6 @@ int kos_ctx_exc_stash_chain_top(
    :return: topmost KosDynCC, or NULL if none
 */
 KosDynCC *kos_find_cc(KosEvalState *es);
-
-
-/**
-   Validate that the prompt is reachable from dyn_top on the chain.
-
-   :param es: eval state
-   :param prompt: target prompt
-
-   :return: 0 if capture allowed, -1 if not (sets exception)
-*/
-int kos_validate_capture(KosEvalState *es, KosDynPrompt *prompt);
 
 
 /**
@@ -2031,7 +2023,7 @@ int kos_build_transfer_plan(
    Build a transfer plan with no unwind (INSTALL + wind + INJECT only).
    Use when the current and target chains are disjoint, such as after a
    nested transfer interrupted an outer plan's wind thunk.
-   Caller sets RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
+   Caller sets RESUME_PC, RESUME_STACK after return.
 
    :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
 
@@ -2050,7 +2042,7 @@ int kos_build_direct_install_plan(
    Build a PUSH plan for delimited continuation invoke.  Appends continuation
    frames (excluding prompt) to the current chain.  Plan has: EXTENT_ACTION
    (wind) for PARAM nodes in the segment if any, PUSH, INJECT.  Caller must
-   set RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
+   set RESUME_PC, RESUME_STACK after return.
 */
 int kos_build_delimited_push_plan(
    KosEvalState *es,
@@ -2289,7 +2281,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
-#define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
+#define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
 
 #define KOS_DYN_DELIM_MODE_NONE       0u
 /* 1u retired: K_RETURN (pre-walk delim scan in the RETURN opcode).  The
@@ -2311,6 +2303,9 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
   (((KosDynNode *)(d))->u.delim.saved_acting_pc)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
+
+#define KosDynShift_PROMPT_NODE_ID(s) \
+  (((KosDynNode *)(s))->u.shift.prompt_node_id)
 
 #define KosDynWind_BEFORE_THUNK(w) (((KosDynNode *)(w))->u.wind.before_thunk)
 #define KosDynWind_AFTER_THUNK(w)  (((KosDynNode *)(w))->u.wind.after_thunk)

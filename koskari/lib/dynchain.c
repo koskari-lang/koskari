@@ -134,6 +134,20 @@ static uint32_t dyn_node_id_counter = 1;  /* 0 reserved for unset / no graft poi
 
 
 /**
+   Mint a fresh, never-zero node id. Every allocation gets one; clones for
+   continuation capture overwrite it with the original's id for LCA
+   matching. Prompt instantiation at k-invoke time mints anew so a grafted
+   prompt is a distinct instance from the live original.
+*/
+static uint32_t kos_dynnode_mint_id(void) {
+  uint32_t id = dyn_node_id_counter++;
+  if (! dyn_node_id_counter)
+    dyn_node_id_counter = 1;  /* avoid 0 on rollover */
+  return id;
+}
+
+
+/**
    Allocate and zero a KosDynNode. Prefer reuse from freelist; else PyMem_Malloc.
    Returns NULL on failure (sets PyErr_NoMemory). Caller must set kind and
    the relevant union member.
@@ -146,9 +160,7 @@ static KosDynNode *kos_dynnode_alloc(void) {
     dyn_freecount--;
     KOS_TRACE_FL_ALLOC("dyn_node", 1);
     memset(p, 0, sizeof(KosDynNode));
-    p->node_id = dyn_node_id_counter++;
-    if (! dyn_node_id_counter)
-      dyn_node_id_counter = 1;  /* avoid 0 on rollover */
+    p->node_id = kos_dynnode_mint_id();
     return p;
   }
 
@@ -160,9 +172,7 @@ static KosDynNode *kos_dynnode_alloc(void) {
   }
 
   memset(p, 0, sizeof(KosDynNode));
-  p->node_id = dyn_node_id_counter++;
-  if (! dyn_node_id_counter)
-    dyn_node_id_counter = 1;  /* avoid 0 on rollover */
+  p->node_id = kos_dynnode_mint_id();
 
   return p;
 }
@@ -457,6 +467,27 @@ int kos_ctx_exc_stash_chain_top(
 }
 
 
+/**
+   Guard a kos_dyn_pop_* teardown against a foreign node. Being at the
+   top of the chain is not enough: a node left behind by a mishandled
+   transfer satisfies that check and is then torn down as the expected
+   kind -- freeing fields it does not have (e.g. Py_DECREF of an absent
+   namespace) instead of reporting the topology fault. Names the kind
+   actually on top and fails the pop. A macro, not a helper: these sit
+   on every dynchain pop.
+*/
+#define KOS_DYN_POP_REQUIRE_KIND(node, kind, who, want)                 \
+  do {                                                                  \
+    if (KosDynNode_KIND((KosDynNode *) (node)) != (kind)) {             \
+      PyErr_Format(PyExc_RuntimeError,                                  \
+                   who ": top of chain is %s, not " want,               \
+                   kos_dynnode_kind_name(                               \
+                       KosDynNode_KIND((KosDynNode *) (node))));        \
+      return -1;                                                        \
+    }                                                                   \
+  } while (0)
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_delim.c"
@@ -686,6 +717,21 @@ KosDynNode *kos_clone_chain_segment(
 
   KosDynNode *node = top;
   while (node && node != stop) {
+    /* An INPLACE delim is transient invoke bookkeeping -- it marks that a
+       resume is in flight against a live prompt -- not part of the
+       delimited region a template represents. Cloning one puts an
+       invoke marker into a segment whose whole purpose is to be
+       instantiated fresh per invoke, and the copy then competes with the
+       live original for POP_PROMPT's attention. Link around it. */
+    if (KosDynNode_IS_DELIM(node)
+        && KosDynDelim_MODE((KosDynDelim *) node)
+           == KOS_DYN_DELIM_MODE_INPLACE) {
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] clone_segment skipping INPLACE delim %p",
+             (void *) node);
+      node = KosDynNode_PARENT(node);
+      continue;
+    }
     if (KOS_XFER_TRACE)
       SAYF("[xfer] clone_segment cloning node %p kind=%u",
            (void *) node, (unsigned) KosDynNode_KIND(node));
@@ -1488,43 +1534,6 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
 
 
 /**
-   Find PROMPT with matching id walking from dyn_top. Callers: shift capture,
-   POP_PROMPT, reset/shift routing.
-*/
-KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id) {
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
-
-  while (node) {
-    if (KosDynNode_IS_PROMPT(node)) {
-      KosDynPrompt *prompt = (KosDynPrompt *) node;
-      if (KosDynPrompt_ID(prompt) == prompt_id) {
-        return prompt;
-      }
-    }
-    node = KosDynNode_PARENT(node);
-  }
-
-  return NULL;
-}
-
-
-/**
-   Innermost PROMPT from dyn_top. Callers: delimited continuation edge cases.
-*/
-KosDynPrompt *kos_find_nearest_prompt(KosEvalState *es) {
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
-
-  while (node) {
-    if (KosDynNode_IS_PROMPT(node))
-      return (KosDynPrompt *) node;
-    node = KosDynNode_PARENT(node);
-  }
-
-  return NULL;
-}
-
-
-/**
    Ensure target lies on the chain from dyn_top; errmsg names the miss.
 */
 static int kos_chain_contains(
@@ -1544,15 +1553,6 @@ static int kos_chain_contains(
   }
 
   return 0;
-}
-
-
-/**
-   Ensure prompt lies on the chain from dyn_top (shift capture precondition).
-*/
-int kos_validate_capture(KosEvalState *es, KosDynPrompt *prompt) {
-  return kos_chain_contains(es, (KosDynNode *) prompt,
-                            "prompt not found in chain");
 }
 
 
@@ -1600,12 +1600,11 @@ static KosContinuation *cont_freelist = NULL;
 
 /**
    Allocate or reuse a KosContinuation struct and wire captured chain, resume
-   frame/pc/stack, graft id, one-shot flag, token ref. Callers: kos_shift_capture,
+   pc/stack, graft id, one-shot flag, token ref. Callers: kos_shift_capture,
    kos_capture_cc, kos_continuation_clone.
 */
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
-    KosDynFrame *resume_frame,
     uint32_t resume_pc,
     KosStackBlock *resume_stack,
     uint32_t prompt_id,
@@ -1630,7 +1629,6 @@ static KosContinuation *kos_continuation_create(
   }
 
   KosContinuation_CAPTURED_CHAIN(k) = captured_chain;
-  KosContinuation_RESUME_FRAME(k) = resume_frame;
   KosContinuation_RESUME_PC(k) = resume_pc;
   KosContinuation_RESUME_STACK(k) = resume_stack;
   KosContinuation_PROMPT_ID(k) = prompt_id;
@@ -1693,22 +1691,37 @@ static inline KosStackBlock *kos_chain_resume_stack(
     KosDynNode *chain,
     KosDynFrame *frame) {
 
-  KosStackBlock *stack = KosDynFrame_STACK(frame);
+  /* The block that was current at the capture point: the innermost node
+     on the captured chain owning one. A PROMPT owns the delimited
+     region's block, so for a shift capture this is the region's operands
+     and nothing else. Preferring the frame's block instead would sweep in
+     operands belonging to an enclosing pending expression -- and would
+     also miss the region's own, leaving the resumed slice short. Frames
+     own blocks too, so the walk terminates there when no region node
+     above the frame owns one. */
+  KosDynNode *node = chain;
 
-  if (stack)
-    return stack;
-  {
-    KosDynNode *node = chain;
-    while (node && ! KosDynNode_STACK(node))
-      node = KosDynNode_PARENT(node);
-    return node ? KosDynNode_STACK(node) : NULL;
-  }
+  while (node && ! KosDynNode_STACK(node))
+    node = KosDynNode_PARENT(node);
+  if (node)
+    return KosDynNode_STACK(node);
+
+  return KosDynFrame_STACK(frame);
 }
 
 
 /**
    Clone segment_top..stop, detach template, wire KosContinuation. Caller
    supplies prompt_id, graft_point_id, one_shot, and no_frame_err text.
+
+   baseline_src, when non-NULL, is cloned and appended at the template
+   bottom, below the prompt clone; baseline_ns, when non-NULL, replaces
+   that clone's namespace with the one live at the capture bound. It is the compressed region bottom for
+   a capture bounded at an invocation prompt: the frame executing the
+   region's own code lies below the capture boundary and must not be
+   captured in place, but the graft needs its code, namespace, and
+   mid-region pc so a return falling through the invocation prompt lands
+   in the copy and runs the remaining region bytecode to POP_PROMPT.
 */
 static KosContinuation *kos_continuation_capture_segment(
     KosEvalState *es,
@@ -1718,6 +1731,8 @@ static KosContinuation *kos_continuation_capture_segment(
     uint32_t prompt_id,
     uint32_t graft_point_id,
     int one_shot,
+    KosDynFrame *baseline_src,
+    PyObject *baseline_ns,
     const char *no_frame_err) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -1733,6 +1748,31 @@ static KosContinuation *kos_continuation_capture_segment(
   if (captured_chain)
     kos_chain_detach_template(captured_chain, stop);
 
+  if (baseline_src) {
+    KosDynFrame *base = kos_dynframe_clone(baseline_src);
+    if (! base) {
+      if (captured_chain)
+        kos_dynchain_free(captured_chain, NULL);
+      return NULL;
+    }
+    /* The clone carries the frame's own namespace; the region runs in
+       the one live at the prompt (enclosing let/collector scopes that
+       the capture bound excluded). */
+    if (baseline_ns && baseline_ns != KosDynFrame_NS(base)) {
+      PyObject *own = KosDynFrame_NS(base);
+      KosDynFrame_NS(base) = KosNamespace_Reveal(baseline_ns);
+      Py_XDECREF(own);
+    }
+    if (captured_chain) {
+      KosDynNode *bottom = captured_chain;
+      while (KosDynNode_PARENT(bottom))
+        bottom = KosDynNode_PARENT(bottom);
+      KosDynNode_PARENT(bottom) = (KosDynNode *) base;
+    } else {
+      captured_chain = (KosDynNode *) base;
+    }
+  }
+
   resume_frame = kos_chain_first_frame(captured_chain);
   if (! resume_frame) {
     if (captured_chain)
@@ -1745,7 +1785,6 @@ static KosContinuation *kos_continuation_capture_segment(
   token = KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL;
   k = kos_continuation_create(
       captured_chain,
-      resume_frame,
       resume_pc,
       resume_stack,
       prompt_id,
@@ -1762,8 +1801,9 @@ static KosContinuation *kos_continuation_capture_segment(
 
 
 /**
-   Delimited shift: validate prompt, walk handle(SHIFT), clone chain segment for
-   invoke template, build one-shot KosContinuation. Callers: opcode PUSH_SHIFT.
+   Delimited shift: locate the prompt and offer handle(SHIFT) en route in
+   one walk, clone the chain segment for the invoke template, build the
+   KosContinuation. Callers: opcode PUSH_SHIFT.
 */
 int kos_shift_capture(
     KosEvalState *es,
@@ -1771,29 +1811,78 @@ int kos_shift_capture(
     uint32_t resume_pc,
     KosContinuation **out_k) {
 
-  /* Find the prompt */
-  KosDynPrompt *prompt = kos_find_prompt(es, prompt_id);
+  /* One walk from dyn_top locates the nearest matching prompt while
+     offering handle(SHIFT) to every node crossed: GEN denies (a shift
+     cannot cross a generator boundary), a PROMPT consumes -- the match
+     when its tag agrees, a topology error otherwise. Reachability is
+     implied by the walk itself. */
+  KosDynPrompt *prompt = NULL;
+  {
+    KosDynNode *node = KosEvalState_DYN_TOP(es);
+
+    while (node) {
+      KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_SHIFT);
+
+      if (hr == KOS_HANDLE_ERROR)
+        return -1;
+      if (hr == KOS_HANDLE_CONSUMED) {
+        if (KosDynNode_IS_PROMPT(node)
+            && KosDynPrompt_ID((KosDynPrompt *) node) == prompt_id) {
+          prompt = (KosDynPrompt *) node;
+          break;
+        }
+        PyErr_SetString(PyExc_RuntimeError,
+                        "handle(SHIFT) consumed before reaching prompt");
+        return -1;
+      }
+      node = KosDynNode_PARENT(node);
+    }
+  }
   if (! prompt) {
     PyErr_SetString(PyExc_RuntimeError, "prompt not found");
-    return -1;
-  }
-
-  /* Validate no Python boundaries in the way */
-  if (kos_validate_capture(es, prompt) < 0) {
-    return -1;
-  }
-
-  /* handle(SHIFT) walk: GEN denies; must reach PROMPT which consumes */
-  if (kos_dyn_walk_handle_shift_to_prompt(es, prompt) < 0) {
     return -1;
   }
 
   /* Bound the invoke template at the prompt's owning FRAME: clone from
    * dyn_top down through heritage nodes (WIND, PARAM, ...), the PROMPT,
    * and the nearest FRAME at-or-below it. Caller frames further down
-   * resolve from the invoke-time environment instead of being replayed. */
+   * resolve from the invoke-time environment instead of being replayed.
+   *
+   * An INVOCATION prompt has no owning frame of its own: it was created
+   * by a k-invocation (graft instantiation or in-place invoke) and the
+   * nodes below it -- the pairing DELIM, the original prompt, the outer
+   * chain -- are not region content and must not be captured. Bound the
+   * template at the prompt itself and synthesize the baseline frame from
+   * the first frame below it: that frame executes the slice, so it
+   * provides code, and its stack holds the region's pending operands
+   * whenever the prompt does not own a block.
+   *
+   * Its namespace, however, is not the one the region runs in. Bounding
+   * at the prompt drops every NS node between the prompt and that frame
+   * -- the enclosing let/collector scopes -- so the frame's own
+   * namespace would leave the resumed region indexing FAST slots it
+   * does not have. Carry the innermost namespace live at the prompt
+   * instead. */
   KosDynNode *stop;
-  {
+  KosDynFrame *baseline_src = NULL;
+  PyObject *baseline_ns = NULL;
+  if (KosDynNode_FLAGS((KosDynNode *) prompt) & KOS_DYNF_INVOCATION) {
+    KosDynNode *below = KosDynNode_PARENT((KosDynNode *) prompt);
+
+    stop = below;
+    while (below && ! KosDynNode_NS(below) && ! KosDynNode_IS_FRAME(below))
+      below = KosDynNode_PARENT(below);
+    baseline_ns = below ? KosDynNode_NS(below) : NULL;
+
+    while (below && ! KosDynNode_IS_FRAME(below))
+      below = KosDynNode_PARENT(below);
+    if (! below) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "PUSH_SHIFT: no frame below invocation prompt");
+      return -1;
+    }
+    baseline_src = (KosDynFrame *) below;
+  } else {
     KosDynNode *owning = (KosDynNode *) prompt;
     while (owning && ! KosDynNode_IS_FRAME(owning))
       owning = KosDynNode_PARENT(owning);
@@ -1837,10 +1926,79 @@ int kos_shift_capture(
         prompt_id,
         0,
         1,
+        baseline_src,
+        baseline_ns,
         "PUSH_SHIFT: no frame in captured chain");
 
     if (! k)
       return -1;
+
+    {
+      uint32_t live_id = KosDynNode_NODE_ID((KosDynNode *) prompt);
+      KosDynNode *pclone = KosContinuation_CAPTURED_CHAIN(k);
+      KosDynNode *walk;
+
+      while (pclone
+             && ! (KosDynNode_IS_PROMPT(pclone)
+                   && KosDynNode_NODE_ID(pclone) == live_id))
+        pclone = KosDynNode_PARENT(pclone);
+
+      if (pclone) {
+        /* An in-place invocation prompt owns no block -- the live
+         * region's operands sit in the innermost owner below it. The
+         * graft has no live region, so the template's prompt clone
+         * takes a deep copy of those operands: the region-bottom
+         * pending state a fall-through return delivers into. */
+        if (baseline_src && ! KosDynNode_STACK((KosDynNode *) prompt)
+            && ! KosDynNode_STACK(pclone)) {
+          KosDynNode *owner = KosDynNode_PARENT((KosDynNode *) prompt);
+
+          while (owner && ! KosDynNode_STACK(owner))
+            owner = KosDynNode_PARENT(owner);
+          if (owner) {
+            KosStackBlock *ops =
+                KosStackBlock_DeepCopy(KosDynNode_STACK(owner));
+            if (! ops) {
+              kos_continuation_free(k);
+              return -1;
+            }
+            KosDynNode_STACK(pclone) = ops;
+          }
+        }
+      }
+
+      /* Falsify every template prompt's identity, once, here. Invokes
+       * clone the template verbatim (node_id and flags preserved), so
+       * each graft of this k lands as an instance distinct from the
+       * live original and from other ks' grafts, with no per-invoke
+       * renumbering. Grafts of the same k share these ids; that is safe
+       * because grafts land at dyn_top and capture bounds at the
+       * nearest prompt, so a same-id instance can never sit between a
+       * SHIFT and its true delimiter. Beyond the boundary prompt, the
+       * walk to the owning frame can pass heritage prompts (a reset
+       * inside an outer shift's handler) whose clones ride below as
+       * never-executed padding; their originals stay live, so they must
+       * be falsified too or the landed copy shadows the real one. SHIFT
+       * nodes cloned alongside recorded live ids; follow each to its
+       * falsified copy. */
+      for (walk = KosContinuation_CAPTURED_CHAIN(k); walk;
+           walk = KosDynNode_PARENT(walk)) {
+        KosDynNode *snode;
+        uint32_t old_id;
+
+        if (! KosDynNode_IS_PROMPT(walk))
+          continue;
+        old_id = KosDynNode_NODE_ID(walk);
+        KosDynNode_NODE_ID(walk) = kos_dynnode_mint_id();
+        KosDynNode_FLAGS(walk) |= KOS_DYNF_INVOCATION;
+        for (snode = KosContinuation_CAPTURED_CHAIN(k); snode;
+             snode = KosDynNode_PARENT(snode)) {
+          if (KosDynNode_IS_SHIFT(snode)
+              && KosDynShift_PROMPT_NODE_ID(snode) == old_id)
+            KosDynShift_PROMPT_NODE_ID(snode) = KosDynNode_NODE_ID(walk);
+        }
+      }
+    }
 
     /* Live identities for in-place (Path A) invoke detection; the SHIFT
      * node is recorded by PUSH_SHIFT after it is pushed. */
@@ -1887,6 +2045,8 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
         KOS_PROMPT_ID_UNDELIMITED,
         0,
         0,
+        NULL,
+        NULL,
         "CAPTURE_CC: no frame in captured segment");
 
     if (! k)
@@ -1925,9 +2085,9 @@ void kos_continuation_free(KosContinuation *k) {
   Py_XDECREF(KosContinuation_TOKEN_REF(k));
   KosContinuation_TOKEN_REF(k) = NULL;
 
-  /* resume_stack aliases the operand stack owned by resume_frame (or an
-   * innermost region node) on captured_chain; kos_dynchain_free releases
-   * node-owned blocks. Clear the pointer only. */
+  /* resume_stack aliases a node-owned operand stack on captured_chain;
+   * kos_dynchain_free releases node-owned blocks. Clear the pointer
+   * only. */
   KosContinuation_RESUME_STACK(k) = NULL;
 
   kos_dynchain_free(KosContinuation_CAPTURED_CHAIN(k), NULL);
@@ -1963,8 +2123,8 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
     return NULL;
   }
 
-  KosDynFrame *resume_frame = kos_chain_first_frame(cloned_chain);
-  if (KosContinuation_CAPTURED_CHAIN(k) && ! resume_frame) {
+  if (KosContinuation_CAPTURED_CHAIN(k)
+      && ! kos_chain_first_frame(cloned_chain)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "continuation clone has no frame");
     kos_dynchain_free(cloned_chain, NULL);
@@ -1973,7 +2133,6 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
 
   KosContinuation *clone = kos_continuation_create(
       cloned_chain,
-      resume_frame,
       KosContinuation_RESUME_PC(k),
       KosStackBlock_DeepCopy(KosContinuation_RESUME_STACK(k)),
       KosContinuation_PROMPT_ID(k),
@@ -1997,8 +2156,6 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
 
   return clone;
 }
-
-
 
 
 #include "dynchain/xfer_plan.c"
@@ -2394,9 +2551,24 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
    * the chain for the shift body's POP_SHIFT. */
   {
     KosDynNode *bottom = span;
+    KosDynNode *base = prompt;
+
+    /* A snapshotted handler frame is not on the chain -- the original was
+     * freed when the slice returned out of it. Push the copy above the
+     * prompt so the handler has a frame to resume in, and hang the span
+     * off that rather than straight onto the prompt. Ownership transfers
+     * to the chain here; the delim stops covering the frame in its
+     * traversal and teardown. */
+    if (KosDynNode_FLAGS((KosDynNode *) delim)
+        & KOS_DYNF_HOLDS_RETURN_FRAME) {
+      KosDynNode_FLAGS((KosDynNode *) delim) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
+      KosDynNode_PARENT((KosDynNode *) ret_frame) = prompt;
+      base = (KosDynNode *) ret_frame;
+    }
+
     while (KosDynNode_PARENT(bottom))
       bottom = KosDynNode_PARENT(bottom);
-    KosDynNode_PARENT(bottom) = prompt;
+    KosDynNode_PARENT(bottom) = base;
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
   }
 

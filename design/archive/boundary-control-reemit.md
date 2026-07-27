@@ -17,7 +17,7 @@ Companion docs:
 - [kosevent-elimination.md](kosevent-elimination.md) (archived; implemented)
 - [event-driven-node-delivery.md](event-driven-node-delivery.md)
 - [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md)
-- [evaluator.md](../interpreter/evaluator.md)
+- [EVALUATOR.md](../EVALUATOR.md)
 
 
 ## 1. Problem statement

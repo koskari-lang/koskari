@@ -38,7 +38,7 @@ kind values — **has been implemented**. `KOS_DYN_TRY`, `KOS_DYN_FINALLY`, `KOS
 - §10 Steps 5–7 (remove `KosRegionStyle`, merge teardown into unwind, rename pop→uninstall):
   `KosRegionStyle` is still present as a vestigial typedef in `dynchain.h`.
 
-**Superseded:** See `design/interpreter/evaluator.md` and `design/INVARIANTS-AND-CLARIFICATIONS.md`
+**Superseded:** See `design/EVALUATOR.md` and `design/INVARIANTS-AND-CLARIFICATIONS.md`
 for the current accurate description of the dynamic chain kinds.
 
 ---

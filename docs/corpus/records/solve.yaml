@@ -1,0 +1,77 @@
+id: module-solve-amb-require-001
+feature: module/koskari.solve
+source: |-
+  (begin
+    (import-from koskari.solve amb require solve)
+    (solve (lambda []
+      (define x (amb (#list 1 2 3)))
+      (require (> x 1))
+      x)))
+verify:
+  eval: "list:[2,3]"
+references:
+  - reference/runtime/koskari-solve.md
+stability: evolving
+tags:
+  - module
+  - solve
+  - amb
+  - require
+  - nondeterminism
+  - backtracking
+  - search
+  - pick-from-choices
+  - prune-branches
+  - idiom
+notes: amb chooses; require prunes; solve collects every surviving choice in choice order
+---
+id: module-solve-amb-product-001
+feature: module/koskari.solve
+source: |-
+  (begin
+    (import-from koskari.solve amb solve)
+    (solve (lambda []
+      (+ (amb (#list 1 2)) (amb (#list 10 20))))))
+verify:
+  eval: "list:[11,21,12,22]"
+references:
+  - reference/runtime/koskari-solve.md
+stability: evolving
+tags:
+  - module
+  - solve
+  - amb
+  - nondeterminism
+  - search
+  - cross-product
+  - nested-choices
+  - combinations
+  - idiom
+notes: "nested choice points multiply: every choice of the first amb re-runs the rest of the search, so two ambs enumerate the full product"
+---
+id: module-solve-first-001
+feature: module/koskari.solve
+source: |-
+  (begin
+    (import-from koskari.solve amb require solve-first)
+    (solve-first (lambda []
+      (define x (amb (#list 1 2 3)))
+      (require (> x 1))
+      x)))
+verify:
+  eval: "2"
+references:
+  - reference/runtime/koskari-solve.md
+stability: evolving
+tags:
+  - module
+  - solve
+  - solve-first
+  - amb
+  - require
+  - nondeterminism
+  - search
+  - first-match
+  - early-exit
+  - idiom
+notes: solve-first stops at the first accepted solution; remaining choices are skipped without running. Returns None when every branch fails

@@ -421,7 +421,6 @@ static int kos_build_xfer_plan(
   KosTransferPlan_ORIGINAL_TARGET(plan) = options->target;
   KosTransferPlan_GRAFT_POINT_ID(plan) = options->graft_point_id;
   KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
-  KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
 
   if (options->unwind_from_current)
@@ -533,7 +532,7 @@ int kos_build_delimited_push_plan(
    after a nested transfer interrupted and completed an outer plan's wind
    thunk.
 
-   Caller must set RESUME_PC, RESUME_FRAME, RESUME_STACK on the plan.
+   Caller must set RESUME_PC, RESUME_STACK on the plan.
    Returns 0 on success, -1 on error.
 */
 int kos_build_direct_install_plan(
@@ -1394,8 +1393,16 @@ int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan) {
    DELIM, GEN, NEXT, PROMPT, CC_RAISE) sits between dyn_top and the shift
    node, and no transfer plan is in flight. Returns 1 when in-place invoke
    applies, 0 otherwise (fall back to the PUSH path).
+
+   On success, *out_nested_frame is the first FRAME between the SHIFT and
+   its prompt (the nested handler's frame), or NULL when the handler
+   shares the prompt's frame -- recorded here so the invoke does not
+   re-walk the same stretch.
 */
-static int kos_delimited_inplace_ready(KosEvalState *es, KosContinuation *k) {
+static int kos_delimited_inplace_ready(
+    KosEvalState *es,
+    KosContinuation *k,
+    KosDynFrame **out_nested_frame) {
 
   KosDynNode *prompt = KosContinuation_LIVE_PROMPT_NODE(k);
   KosDynNode *shift = KosContinuation_LIVE_SHIFT_NODE(k);
@@ -1424,9 +1431,25 @@ static int kos_delimited_inplace_ready(KosEvalState *es, KosContinuation *k) {
       || KosDynNode_NODE_ID(node) != KosContinuation_LIVE_SHIFT_NODE_ID(k))
     return 0;
 
+  *out_nested_frame = NULL;
   node = KosDynNode_PARENT(node);
-  while (node && node != prompt)
+  while (node && node != prompt) {
+    /* An INPLACE delim between this SHIFT and the prompt means another
+       invoke against the same prompt is already in flight: its span is
+       detached and its restitch still expects to find itself directly
+       above that prompt. Inserting a second delim there re-parents the
+       first, which then fails with "inconsistent INPLACE delim state".
+       This is the re-entrant case -- a shift firing inside a continuation
+       that is being resumed -- and it belongs on the graft, which
+       instantiates the template per invoke rather than mutating the live
+       chain. The dyn_top-to-SHIFT walk above already rejects barriers;
+       this stretch was unchecked. */
+    if (KosDynNode_IS_DELIM(node))
+      return 0;
+    if (! *out_nested_frame && KosDynNode_IS_FRAME(node))
+      *out_nested_frame = (KosDynFrame *) node;
     node = KosDynNode_PARENT(node);
+  }
   if (! node || ! KosDynNode_IS_PROMPT(node)
       || KosDynNode_NODE_ID(node) != KosContinuation_LIVE_PROMPT_NODE_ID(k))
     return 0;
@@ -1447,7 +1470,8 @@ static int kos_delimited_inplace_ready(KosEvalState *es, KosContinuation *k) {
 static int kos_delimited_invoke_inplace(
     KosEvalState *es,
     KosContinuation *k,
-    PyObject *value) {
+    PyObject *value,
+    KosDynFrame *nested_frame) {
 
   KosDynNode *shift = KosContinuation_LIVE_SHIFT_NODE(k);
   KosDynNode *prompt = KosContinuation_LIVE_PROMPT_NODE(k);
@@ -1458,10 +1482,22 @@ static int kos_delimited_invoke_inplace(
   KosDynDelim *delim;
   KosDynFrame *return_frame;
   uint32_t return_pc;
+  int handler_nested = (nested_frame != NULL);
 
-  /* Resume frame: nearest FRAME at-or-below the prompt. */
-  {
+  /* Resume frame: the FRAME owning the SHIFT, which is what capture
+     recorded RESUME_PC and RESUME_STACK against (kos_shift_capture takes
+     the first frame walking down from the captured chain's top). Chain
+     order root..top is caller FRAME, PROMPT, callee FRAME, SHIFT, so when
+     the shift sits in a callee that frame is ABOVE the prompt and a walk
+     at-or-below the prompt can never reach it -- installing the callee's
+     pc and stack into the caller's frame. The readiness walk records
+     that frame (nested_frame); when the shift is lexically inside the
+     reset no frame intervenes, so fall back to the frame below the
+     prompt. */
+  resume_frame = nested_frame;
+  if (! resume_frame) {
     KosDynNode *node = prompt;
+
     while (node && ! KosDynNode_IS_FRAME(node))
       node = KosDynNode_PARENT(node);
     if (! node) {
@@ -1484,6 +1520,23 @@ static int kos_delimited_invoke_inplace(
   return_frame = KosEvalState_FRAME(es);
   return_pc = return_frame ? KosEvalState_PC(es) : (uint32_t) -1;
 
+  /* Nested handler: the slice returns out of the handler's own frame and
+     frees it, so restitch has nothing live to resume into and its final
+     "load the invoke-site pc" step -- guarded on the live frame being
+     that frame -- silently never fires. Snapshot the handler's
+     environment (code, ns, operand block, pc) and resume in the copy. */
+  if (handler_nested && return_frame) {
+    KosDynFrame *tmpl = kos_dynframe_clone(return_frame);
+    if (! tmpl) {
+      if (resume_stack)
+        KosStackBlock_ReleaseChain(resume_stack);
+      if (! PyErr_Occurred())
+        PyErr_NoMemory();
+      return -1;
+    }
+    return_frame = tmpl;
+  }
+
   delim = kos_dyndelim_new(prompt,
                            KOS_DYN_DELIM_MODE_INPLACE,
                            NULL,
@@ -1498,6 +1551,27 @@ static int kos_delimited_invoke_inplace(
     return -1;
   }
   KosDynDelim_RETURN_NODE(delim) = (KosDynNode *) delim;
+  if (handler_nested)
+    KosDynNode_FLAGS((KosDynNode *) delim) |= KOS_DYNF_HOLDS_RETURN_FRAME;
+
+  /* The invocation re-delimits: a shift firing inside the resumed slice
+     must capture up to THIS invocation's boundary, not the original
+     prompt, or its POP_SHIFT discards the remainder of the suspended
+     handler (control semantics where shift was promised). The fresh
+     instance sits between the delim and the slice; captures inside the
+     slice bound at it and its completion routes through the delim. */
+  KosDynPrompt *invocation_prompt = kos_dynprompt_new_invocation(
+      (KosDynNode *) delim,
+      KosDynPrompt_ID(prompt));
+  if (! invocation_prompt) {
+    KosDynNode_PARENT((KosDynNode *) delim) = NULL;
+    kos_dyndelim_free(delim);
+    if (resume_stack)
+      KosStackBlock_ReleaseChain(resume_stack);
+    if (! PyErr_Occurred())
+      PyErr_NoMemory();
+    return -1;
+  }
 
   #if KOS_XFER_TRACE
     SAYF("[xfer] invoke inplace: span_top=%p shift=%p prompt=%p "
@@ -1510,15 +1584,16 @@ static int kos_delimited_invoke_inplace(
   KosDynNode_PARENT(shift) = NULL;
   KosDynDelim_RETURN_CHAIN(delim) = span_top;
 
-  /* Wire the delim directly above the prompt so the slice's natural
-   * unwind leaves it at dyn_top when POP_PROMPT runs. */
+  /* Wire prompt <- delim <- invocation prompt <- slice so the slice's
+   * natural unwind leaves the invocation prompt (then the delim) at
+   * dyn_top when POP_PROMPT runs. */
   if (slice_top == prompt) {
-    slice_top = (KosDynNode *) delim;
+    slice_top = (KosDynNode *) invocation_prompt;
   } else {
     KosDynNode *child = slice_top;
     while (KosDynNode_PARENT(child) != prompt)
       child = KosDynNode_PARENT(child);
-    KosDynNode_PARENT(child) = (KosDynNode *) delim;
+    KosDynNode_PARENT(child) = (KosDynNode *) invocation_prompt;
   }
 
   /* Displace the resume frame's live state with the captured resume
@@ -1572,9 +1647,11 @@ int kos_invoke_continuation(
      Throw injection also stays on the PUSH path. */
   if (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED
       && ! is_throw
-      && ! KosContinuation_LIVE_SLICE_CONSUMED(k)
-      && kos_delimited_inplace_ready(es, k)) {
-    return kos_delimited_invoke_inplace(es, k, value);
+      && ! KosContinuation_LIVE_SLICE_CONSUMED(k)) {
+    KosDynFrame *nested_frame = NULL;
+
+    if (kos_delimited_inplace_ready(es, k, &nested_frame))
+      return kos_delimited_invoke_inplace(es, k, value, nested_frame);
   }
 
   /* For multi-shot, clone the continuation */
@@ -1606,7 +1683,9 @@ int kos_invoke_continuation(
   KosDynDelim *ret_delim = NULL;
   if (is_delimited) {
     KosDynNode *captured = KosContinuation_CAPTURED_CHAIN(to_use);
-    /* Segment to push: captured prompt plus body frames/ns nodes. */
+    /* Segment to push: captured prompt plus body frames/ns nodes. The
+       prompt clone already carries its falsified invocation identity,
+       assigned once at capture in kos_shift_capture. */
     push_segment = captured;
     ret_delim = kos_dyn_push_delim(
         es,
@@ -1672,13 +1751,18 @@ int kos_invoke_continuation(
 
   KosTransferPlan_GRAFT_POINT_ID(plan) = KosContinuation_GRAFT_POINT_ID(to_use);
   KosTransferPlan_RESUME_PC(plan) = KosContinuation_RESUME_PC(k);
-  KosTransferPlan_RESUME_FRAME(plan) = to_use->resume_frame;  /* template; INSTALL uses fresh */
-  /* DeepCopy of template stack for this invoke; released in kos_free_transfer_plan. */
-  KosTransferPlan_RESUME_STACK(plan) = to_use->resume_stack
+  /* resume_stack is an alias of a template-owned block, and the PUSH
+     step lands a fresh clone of the whole template -- the landed segment
+     already carries this invoke's one copy of those operands, in the
+     same innermost-owner position apply_resume_state would target. A
+     plan-side copy here would only replace identical content, so the
+     delimited graft carries none. Undelimited INSTALL keeps the plan
+     copy (released in kos_free_transfer_plan if the plan dies early). */
+  KosTransferPlan_RESUME_STACK(plan) = (! is_delimited && to_use->resume_stack)
       ? KosStackBlock_DeepCopy(to_use->resume_stack) : NULL;
   #if KOS_XFER_TRACE
-    SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
-         (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
+    SAYF("[xfer] plan resume_stack=%p",
+         (void *) KosTransferPlan_RESUME_STACK(plan));
   #endif
 
   if (kos_xfer_plan_is_delimited_push(KosEvalState_PLAN(es))) {

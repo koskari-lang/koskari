@@ -1,0 +1,508 @@
+"""
+Delimited-continuation exercise sweep.
+
+Each case is a standalone .ki program printing exactly one line starting
+with RESULT. Cases run in separate subprocesses because a dynchain
+failure in one case corrupts state for anything that follows it in the
+same process (observed: a broken shift leaves CLEAR_TRY reporting "top
+is not a TRY region" for a later, unrelated try block).
+
+Run: uv run python tools/delimited_sweep.py
+"""
+
+
+import os
+import subprocess
+import sys
+import tempfile
+
+
+# (id, category, description, source, expected-RESULT-line)
+CASES = []
+
+
+def case(cid, cat, desc, src, want):
+    CASES.append((cid, cat, desc, src.strip() + "\n", want))
+
+
+# === 1. Where the shift sits relative to its reset ===
+
+case("pos-lexical", "position",
+     "shift lexically in reset body",
+     '(define r (reset (shift k (k 1))))\n(print "RESULT" r)',
+     "RESULT 1")
+
+case("pos-arith", "position",
+     "shift lexical, one pending operand in region",
+     '(define r (reset (+ 1 (shift k (k 5)))))\n(print "RESULT" r)',
+     "RESULT 6")
+
+case("pos-let", "position",
+     "shift lexical, inside a let in the region",
+     '(define r (reset (let [[z 1]] (+ z (shift k (k 5))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 6")
+
+case("pos-nested-build", "position",
+     "shift lexical, pending #list and + in region",
+     '(define r (reset (#list "x" (+ 1 (shift k (k 5))) "y")))\n'
+     '(print "RESULT" r)',
+     "RESULT ['x', 6, 'y']")
+
+case("pos-iife", "position",
+     "shift one frame deep via immediately-invoked lambda",
+     '(define r (reset ((lambda [] (shift k (k 1))))))\n(print "RESULT" r)',
+     "RESULT 1")
+
+case("pos-callee", "position",
+     "shift one frame deep in a named function",
+     'define f []:\n  (shift k (k 1))\n'
+     '(define r (reset (f)))\n(print "RESULT" r)',
+     "RESULT 1")
+
+case("pos-callee-arith", "position",
+     "shift one frame deep, pending operand in caller region",
+     'define f []:\n  (shift k (k 5))\n'
+     '(define r (reset (+ 1 (f))))\n(print "RESULT" r)',
+     "RESULT 6")
+
+case("pos-callee-own-arith", "position",
+     "shift one frame deep, pending operand in callee frame",
+     'define f [n]:\n  (+ n (shift k (k 100)))\n'
+     '(define r (reset (+ 1 (f 2))))\n(print "RESULT" r)',
+     "RESULT 103")
+
+case("pos-callee2", "position",
+     "shift two frames deep",
+     'define inner []:\n  (shift k (k 1))\n'
+     'define outer []:\n  (inner)\n'
+     '(define r (reset (outer)))\n(print "RESULT" r)',
+     "RESULT 1")
+
+
+case("xframe-abandon", "position",
+     "cross-frame shift that never invokes k",
+     'define f []:\n  (shift k "abandoned")\n'
+     '(define r (reset (+ 1 (f))))\n(print "RESULT" r)',
+     "RESULT abandoned")
+
+case("xframe-in-let", "position",
+     "cross-frame shift, reset nested in a let (NS below prompt)",
+     'define f []:\n  (shift k (k 5))\n'
+     '(define r (let [[z 9]] (reset (+ 1 (f)))))\n'
+     '(print "RESULT" r)',
+     "RESULT 6")
+
+case("xframe-in-wind", "position",
+     "cross-frame shift, reset nested in a dyn-wind (WIND below prompt)",
+     'define f []:\n  (shift k (k 5))\n'
+     '(define log (#list))\n'
+     '(define r\n'
+     '  (dyn-wind (log.append "in") (reset (+ 1 (f))) (log.append "out")))\n'
+     '(print "RESULT" r log)',
+     "RESULT 6 ['in', 'out']")
+
+
+# === 1b. Provenance: k escaping its prompt ===
+
+case("remote-invoke", "remote",
+     "k escapes as the reset's value, invoked later in the same form",
+     '(define r\n'
+     '  (let [[captured None]]\n'
+     '    (begin\n'
+     '      (set! captured (reset (+ 1 (shift k k))))\n'
+     '      (captured 5))))\n'
+     '(print "RESULT" r)',
+     "RESULT 6")
+
+case("remote-invoke-twice", "remote",
+     "escaped k invoked twice after its prompt unwound",
+     '(define r\n'
+     '  (let [[captured None]]\n'
+     '    (begin\n'
+     '      (set! captured (reset (+ 1 (shift k k))))\n'
+     '      (#tuple (captured 5) (captured 30)))))\n'
+     '(print "RESULT" r)',
+     "RESULT (6, 31)")
+
+case("remote-invoke-wound", "remote",
+     "escaped k replays a dyn-wind around the graft on invoke",
+     '(define log (#list))\n'
+     '(define r\n'
+     '  (let [[captured None]]\n'
+     '    (begin\n'
+     '      (set! captured\n'
+     '        (reset\n'
+     '          (dyn-wind (log.append "in")\n'
+     '            (+ 1 (shift k k))\n'
+     '            (log.append "out"))))\n'
+     '      (captured 5))))\n'
+     '(print "RESULT" r log)',
+     "RESULT 6 ['in', 'out', 'in', 'out']")
+
+
+# === 1c. Re-entrancy: a shift firing inside a resumed continuation ===
+
+case("reentrant-two-shifts", "reentrant",
+     "two shifts in one reset; the second fires inside the first's k",
+     '(define r (reset (+ (shift k (k 1)) (shift j (j 10)))))\n'
+     '(print "RESULT" r)',
+     "RESULT 11")
+
+case("reentrant-multishot", "reentrant",
+     "outer k invoked twice; its continuation contains a second shift",
+     '(define r (reset (+ (shift k (+ (k 1) (k 2))) (shift j (j 10)))))\n'
+     '(print "RESULT" r)',
+     "RESULT 23")
+
+case("nested-resets", "reentrant",
+     "control: nested resets, each with its own shift",
+     '(define r\n'
+     '  (reset (+ 1 (shift k (k (reset (+ 2 (shift j (j 3)))))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 6")
+
+case("reentrant-inner-abandon", "reentrant",
+     "inner shift abandons inside invoked k; value lands at the invoke site",
+     '(define r (reset (+ (shift k (+ (k 1) (k 2))) (shift j 100))))\n'
+     '(print "RESULT" r)',
+     "RESULT 200")
+
+case("reentrant-k-of-k", "reentrant",
+     "three-deep re-entrancy: k applied to its own result twice",
+     '(define r (reset (+ 1 (shift k (k (k (k 0)))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 3")
+
+case("reentrant-nested-same-k", "reentrant",
+     "k re-invoked from an inner handler while a graft of k is still live",
+     '(define log (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (+ (shift k (+ (k 1) (k 2)))\n'
+     '       (shift j\n'
+     '         (cond\n'
+     '           ((== (len log) 1)\n'
+     '             (log.append "re")\n'
+     '             (+ (j 100) (k 7)))\n'
+     '           (else:\n'
+     '             (log.append "x")\n'
+     '             (j 100)))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 310")
+
+case("reentrant-amb-product", "reentrant",
+     "function amb x amb: multi-shot inside a multi-shot invocation",
+     'define amb [choices]:\n'
+     '  shift k:\n'
+     '    let [[out (#list)]]:\n'
+     '      for-each [c choices]:\n'
+     '        (out.extend (k c))\n'
+     '      out\n'
+     '\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (#list (#tuple (amb (#list 1 2)) (amb (#list 10 20))))))\n'
+     '(print "RESULT" r)',
+     "RESULT [(1, 10), (1, 20), (2, 10), (2, 20)]")
+
+
+# === 1d. Bindings read back inside a resumed region ===
+#
+# A `let` around the reset puts its bindings in an NS node that capture
+# clones into the template. Reading one back inside the region after a
+# multi-shot re-invoke finds the cell empty or holding the raw dict --
+# and inside a function frame the same shape takes the process down.
+# Module globals are unaffected (the module namespace is never cloned),
+# which is why every earlier shape missed this.
+
+case("bind-let-reread", "binding",
+     "let binding read inside the region after a multi-shot second shift",
+     '(define r\n'
+     '  (let [[tag "T"]]\n'
+     '    (reset\n'
+     '      (begin\n'
+     '        (shift k (k 1))\n'
+     '        (shift j (begin (j 2) (j 3) "b"))\n'
+     '        tag))))\n'
+     '(print "RESULT" r)',
+     "RESULT b")
+
+case("bind-let-reread-fn", "binding",
+     "same shape inside a function frame (crashes rather than raising)",
+     'define runner []:\n'
+     '  let [[tag "T"]]:\n'
+     '    (reset\n'
+     '      (begin\n'
+     '        (shift k (k 1))\n'
+     '        (shift j (begin (j 2) (j 3) "b"))\n'
+     '        tag))\n'
+     '(print "RESULT" (runner))',
+     "RESULT b")
+
+case("bind-let-accumulate", "binding",
+     "let-bound accumulator mutated once per invocation, both shifts multi-shot",
+     'define runner []:\n'
+     '  let [[acc (#list)]]:\n'
+     '    let [[r (reset\n'
+     '              (begin\n'
+     '                (shift k (begin (k 1) (k 2) "done"))\n'
+     '                (shift j (begin (j 3) (j 4) "done"))\n'
+     '                (acc.append True)\n'
+     '                "z"))]]:\n'
+     '      (#tuple r (len acc))\n'
+     '(print "RESULT" (runner))',
+     "RESULT ('done', 4)")
+
+
+# === 2. Operands pending in the ENCLOSING call, same frame ===
+
+case("encl-none", "enclosing",
+     "reset as sole argument",
+     '(print "RESULT" (reset (+ 1 (shift k (k 5)))))',
+     "RESULT 6")
+
+case("encl-clean-region", "enclosing",
+     "one enclosing operand, nothing pending in region",
+     '(print "RESULT" "B" (reset (shift k (k 5))))',
+     "RESULT B 5")
+
+case("encl-one", "enclosing",
+     "one enclosing operand, one pending in region",
+     '(print "RESULT" "B" (reset (+ 1 (shift k (k 5)))))',
+     "RESULT B 6")
+
+case("encl-two", "enclosing",
+     "two enclosing operands, two pending in region",
+     '(print "RESULT" "C" "D" (reset (+ 1 2 (shift k (k 5)))))',
+     "RESULT C D 8")
+
+case("encl-three", "enclosing",
+     "PREDICTION: one-slot leak -> stale 6 (=1+2+3), args slid down",
+     '(print "RESULT" "B" (reset (+ 1 2 3 (shift k (k 4)))))',
+     "RESULT B 10")
+
+case("encl-nonarith", "enclosing",
+     "DISCRIMINATOR: pending operand is a call arg, not a reducing op",
+     '(print "RESULT" "B" (reset (max 1 (shift k (k 5)))))',
+     "RESULT B 5")
+
+case("encl-build-list", "enclosing",
+     "reset inside a pending #list build",
+     '(define r (#list "E" (reset (+ 1 (shift k (k 5))))))\n'
+     '(print "RESULT" r)',
+     "RESULT ['E', 6]")
+
+
+# === 3. How k is used ===
+
+case("k-abandon", "invoke",
+     "k never invoked; shift body value wins",
+     '(define r (reset (+ 1 (shift k "abandoned"))))\n(print "RESULT" r)',
+     "RESULT abandoned")
+
+case("k-twice", "invoke",
+     "k invoked twice (multi-shot)",
+     '(define r (reset (+ 1 (shift k (+ (k 10) (k 20))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 32")
+
+case("k-loop", "invoke",
+     "k invoked once per element of a list",
+     '(define r\n'
+     '  (reset\n'
+     '    (+ 100\n'
+     '      (shift k\n'
+     '        (let [[out (#list)]]\n'
+     '          (for-each [c (#list 1 2 3)]\n'
+     '            (out.append (k c)))\n'
+     '          out)))))\n'
+     '(print "RESULT" r)',
+     "RESULT [101, 102, 103]")
+
+case("k-callee-loop", "invoke",
+     "k invoked per element, shift one frame deep (the amb shape)",
+     'define collect [choices]:\n'
+     '  shift k:\n'
+     '    let [[out (#list)]]:\n'
+     '      for-each [c choices]:\n'
+     '        (out.append (k c))\n'
+     '      out\n'
+     '(define r (reset (+ 100 (collect (#list 1 2 3)))))\n'
+     '(print "RESULT" r)',
+     "RESULT [101, 102, 103]")
+
+
+# === 4. Interaction with other dynamic extents ===
+
+case("try-inside", "extent",
+     "try block inside the region, shift inside the try",
+     '(define r\n'
+     '  (reset\n'
+     '    (try\n'
+     '      (+ 1 (shift k (k 5)))\n'
+     '      [[Exception] "caught"])))\n'
+     '(print "RESULT" r)',
+     "RESULT 6")
+
+case("try-outside", "extent",
+     "reset inside a try block",
+     '(define r None)\n'
+     'try:\n'
+     '  (set! r (reset (+ 1 (shift k (k 5)))))\n'
+     'except [Exception as: e]:\n'
+     '  (set! r (repr e))\n'
+     '(print "RESULT" r)',
+     "RESULT 6")
+
+case("dynwind-around", "extent",
+     "dyn-wind around the shift, k invoked once",
+     '(define log (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (dyn-wind\n'
+     '      (log.append "in")\n'
+     '      (+ 1 (shift k (k 5)))\n'
+     '      (log.append "out"))))\n'
+     '(print "RESULT" r log)',
+     "RESULT 6 ['in', 'out']")
+
+case("dynwind-multishot", "extent",
+     "dyn-wind around the shift, k invoked twice",
+     '(define log (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (dyn-wind\n'
+     '      (log.append "in")\n'
+     '      (+ 1 (shift k (+ (k 10) (k 20))))\n'
+     '      (log.append "out"))))\n'
+     '(print "RESULT" r (len log))',
+     "RESULT 32 4")
+
+case("param-around", "extent",
+     "parameterize around the shift",
+     '(define-parameter p 1)\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (parameterize [[p 9]]\n'
+     '      (+ p (shift k (k 0))))))\n'
+     '(print "RESULT" r)',
+     "RESULT 9")
+
+case("param-around-multishot", "extent",
+     "parameterize spans the region; every invoke reads the bound value",
+     '(define-parameter p 1)\n'
+     '(define seen (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (parameterize [[p 9]]\n'
+     '      (begin\n'
+     '        (shift k (begin (k "a") (k "b") "done"))\n'
+     '        (seen.append p)\n'
+     '        p))))\n'
+     '(print "RESULT" r seen)',
+     "RESULT done [9, 9]")
+
+case("param-inside-multishot", "extent",
+     "parameterize inside the resumed part; entered and restored per invoke",
+     '(define-parameter p 1)\n'
+     '(define seen (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (begin\n'
+     '      (shift k (begin (k "a") (k "b") "done"))\n'
+     '      (parameterize [[p 9]]\n'
+     '        (seen.append p))\n'
+     '      (seen.append p)\n'
+     '      "z")))\n'
+     '(print "RESULT" r seen)',
+     "RESULT done [9, 1, 9, 1]")
+
+case("param-ends-before-resume", "extent",
+     "parameterize closes before the shift returns; resume sees the default",
+     '(define-parameter p 1)\n'
+     '(define seen (#list))\n'
+     '(define r\n'
+     '  (reset\n'
+     '    (begin\n'
+     '      (parameterize [[p 9]]\n'
+     '        (shift k (begin (k "a") (k "b") "done")))\n'
+     '      (seen.append p)\n'
+     '      "z")))\n'
+     '(print "RESULT" r seen)',
+     "RESULT done [1, 1]")
+
+
+def run_case(cid, src, want, keep):
+    fd, path = tempfile.mkstemp(suffix=".ki", prefix=f"sw_{cid}_",
+                                dir=keep)
+    with os.fdopen(fd, "w") as f:
+        f.write(src)
+
+    try:
+        proc = subprocess.run(
+            ["uv", "run", "koskari", path],
+            capture_output=True, text=True, timeout=90)
+    except subprocess.TimeoutExpired:
+        return "TIMEOUT", ""
+
+    out = [ln for ln in proc.stdout.splitlines()
+           if ln.startswith("RESULT")]
+
+    if out:
+        got = out[0]
+        if got == want:
+            return "PASS", ""
+        return "WRONG", got
+
+    err = proc.stderr.strip().splitlines()
+    if err:
+        # last line of a traceback is the exception
+        return "ERROR", err[-1][:88]
+
+    # No RESULT line. If anything was printed at all, the RESULT prefix
+    # itself was destroyed -- that is operand-stack corruption, not
+    # silence, and the raw line is the evidence.
+    raw = proc.stdout.strip().splitlines()
+    if raw:
+        return "CLOBBER", f"stdout {raw[0]!r} (RESULT prefix destroyed)"
+    return "SILENT", "(no output, no error)"
+
+
+def main():
+    # Generated cases go to a temp dir, not into the tree. The path is
+    # printed so a failing case can still be run by hand.
+    keep = tempfile.mkdtemp(prefix="delimited_sweep_")
+    print(f"cases: {keep}")
+
+    tally = {}
+    cat = None
+
+    for (cid, ccat, desc, src, want) in CASES:
+        if ccat != cat:
+            cat = ccat
+            print(f"\n=== {cat} ===")
+
+        status, detail = run_case(cid, src, want, keep)
+        tally[status] = tally.get(status, 0) + 1
+
+        mark = "ok  " if status == "PASS" else "FAIL"
+        print(f"  [{mark}] {cid:22s} {status:7s} {desc}")
+        if status == "WRONG":
+            print(f"         got  {detail}")
+            print(f"         want {want}")
+        elif status not in ("PASS",):
+            print(f"         {detail}")
+
+    print("\n--- tally ---")
+    for k in sorted(tally):
+        print(f"  {k:8s} {tally[k]}")
+    print(f"  {'TOTAL':8s} {len(CASES)}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+# The end.

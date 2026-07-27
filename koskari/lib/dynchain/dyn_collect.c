@@ -116,6 +116,8 @@ int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
     PyErr_SetString(PyExc_RuntimeError, "COLLECT node is not at top of chain");
     return -1;
   }
+
+  KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_COLLECT, "POP_COLLECT", "COLLECT");
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 

@@ -71,7 +71,7 @@
 
 ### Synchronous entry points (demand / DemandGenerator)
 
-For synchronous Python code (e.g. tests, scripts), the runtime provides **KosCoroutine.demand()** and sync iteration via **`iter(agen)`** ( **`tp_iter`** → **DemandGenerator**). See `design/interpreter/evaluator.md` § "Synchronous entry points (demand / tp_iter)". Use **asyncio** when the coroutine awaits Python objects or you need `async for`.
+For synchronous Python code (e.g. tests, scripts), the runtime provides **KosCoroutine.demand()** and sync iteration via **`iter(agen)`** ( **`tp_iter`** → **DemandGenerator**). See `design/EVALUATOR.md` § "Synchronous entry points (demand / tp_iter)". Use **asyncio** when the coroutine awaits Python objects or you need `async for`.
 
 ## Migration Notes
 

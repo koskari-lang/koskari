@@ -13,7 +13,7 @@ See §1.6. Other design docs should refer here instead of duplicating status.
 **See also:** [interpreter/bytecode.md](interpreter/bytecode.md) (format, layout,
 metadata tables), [interpreter/execution-invariants.md](interpreter/execution-invariants.md)
 (execution model), [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md)
-(extents, jump locality), [interpreter/evaluator.md](interpreter/evaluator.md)
+(extents, jump locality), [EVALUATOR.md](EVALUATOR.md)
 (VM structures, C API), [EVALUATOR.md](EVALUATOR.md) (eval loop, post-opcode
 delivery, **`KosOpOutcome`**), [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md)
 (context managers).
@@ -3147,14 +3147,24 @@ back-edge increment is this single dispatch.
 
 Delimited continuations use a block-based layout: PUSH_PROMPT establishes the
 reset and owns the COW stack block for the delimited region; PUSH_SHIFT and
-POP_SHIFT delimit the shift block (handler); the continuation is the code
-between POP_SHIFT and POP_PROMPT.
+POP_SHIFT delimit the shift block (handler). The captured continuation is the
+delimited region with the shift expression as its hole -- a cloned chain
+segment, not a bytecode span -- so a shift hosted in a callee captures
+through the calling frames up to the prompt. Invoking k re-delimits, per
+Danvy/Filinski: every invocation runs under a fresh prompt *instance*, and
+prompts are resolved by instance identity (node_id), never by chain
+position. The SHIFT node records the instance it captured against, capture
+falsifies the ids of prompt clones in the template, the first invoke resumes
+the live region in place (an INPLACE delim plus a fresh invocation-prompt
+marker), and re-invokes graft a fresh copy of the template. An invocation
+prompt pairs with no POP_PROMPT instruction; its completion routes through
+the paired DELIM bookmark to the invoke site.
 
 ### KOS_OP_PUSH_PROMPT
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: Pushes a new COW stack block (so the reset body has an isolated stack), then pushes the prompt node onto the dynamic chain.
+- **Stack**: Pushes a new COW stack block (so the reset body has an isolated stack), resolves the PROMPT extent at the push site and records the region's closing pc on the node (POP_SHIFT resumes at that pop_pc + 1), then pushes the prompt node onto the dynamic chain.
 - **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the stack block for the delimited region; SHIFT does not create one.
 - **Invariants**: PUSH_SHIFT captures up to this prompt. Exception unwinding past a PROMPT drops the stack block and unlinks the node via the HANDLES_EXCEPTIONS capability (no kind-specific check in the unwind loop).
 - **Compiler form:** Pre-compile arg may be prompt id value or symbol; post-compile arg = pool index.
@@ -3177,9 +3187,9 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: Captures the continuation from POP_SHIFT+1 through POP_PROMPT when the matching prompt is in acceptable chain heritage (`kos_validate_capture` and `handle(SHIFT)` walk). Clones the chain segment from current `dyn_top` through the prompt (including heritage nodes such as WIND above the prompt). Pushes a KOS_DYN_SHIFT marker on current `dyn_top` (which may be WIND, not PROMPT), pushes the captured continuation wrapper on stack, and enters the shift block. Does **not** peel nodes above the prompt via a transfer plan.
-- **Pushes:** KOS_DYN_SHIFT (simple marker; no stack block, no handlers).
-- **Invariants**: Capture validated by `kos_validate_capture` (prompt reachability) and `kos_dyn_walk_handle_shift_to_prompt`. Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
+- **Stack**: Captures the continuation: one walk from `dyn_top` locates the nearest matching prompt while offering `handle(SHIFT)` to each node crossed (GEN denies -- a shift cannot cross a generator boundary). Clones the chain segment from `dyn_top` through the prompt and its owning FRAME (including heritage nodes such as WIND); a capture bounded at an *invocation* prompt stops at the prompt and appends a compressed baseline frame instead. Prompt clones in the template are falsified -- fresh instance node_id plus KOS_DYNF_INVOCATION, with in-template SHIFT records remapped -- so grafted instances never collide with the live original. Pushes a KOS_DYN_SHIFT marker recording the captured prompt's node_id, pushes the captured continuation wrapper on stack, and enters the shift block. Does **not** peel nodes above the prompt via a transfer plan.
+- **Pushes:** KOS_DYN_SHIFT (marker recording the captured prompt instance; no stack block, no handlers).
+- **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
 - **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
 
 **Example:** shift k: body. Capture k in place, run shift body with k on stack. Pool: 0 = prompt_id.
@@ -3194,8 +3204,8 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops TOS as result; builds a transfer plan that unwinds from the current position through the matching SHIFT and PROMPT nodes (TRUNCATE_AND_INJECT step drops both and their stack block), then injects the single result value onto the outer frame's stack (below the PROMPT's block boundary). Handler returns without invoking k.
-- **Invariants**: Must be inside a PUSH_SHIFT extent. When heritage extents (e.g. WIND) sit between SHIFT and PROMPT in the bytecode extent table, POP_SHIFT walks ancestors to find the enclosing PROMPT extent for resume PC. Stack block owned by PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
+- **Stack**: Pops TOS as result and resolves the delimiter by the instance id recorded on the SHIFT node -- never by chain position or the current code object's extent tree. Live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (TRUNCATE_AND_INJECT drops both and the PROMPT's stack block), injects the result onto the outer frame's stack, and resumes at the pop_pc the prompt recorded at push, + 1. Invocation prompt (created by a k-invoke; no POP_PROMPT pairs with it): the result is the value of that k-invocation and is delivered at the invoke site through the paired DELIM bookmark below the prompt.
+- **Invariants**: Must be inside a PUSH_SHIFT extent. The resolved prompt carries everything the resume needs; no extent lookup happens at pop time.
 - **Compiler form:** No argument.
 
 **Example:** Shift handler returns value without invoking k.
@@ -3210,7 +3220,7 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when a nearest **`KOS_DYN_DELIM`** with mode **`KOS_DYN_DELIM_MODE_POP_PROMPT`** is present (`kos_find_nearest_delim`), pops TOS as result, unwinds continuation frames back to the invocation site per that node’s return metadata, drops the PROMPT's stack block, pushes result, restores the PC recorded in that node's return metadata (the continuation invocation site), and resumes.
+- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: the walk down from the current node finds a **`KOS_DYN_DELIM`** bookmark (mode **`POP_PROMPT`** for a graft, **`INPLACE`** for an in-place invoke), passing invocation prompts and stopping at a live (non-invocation) PROMPT; it pops TOS as result, unwinds to the delim (freeing the invocation prompt and any remnants), delivers the result at the invoke site per the delim's return metadata (an INPLACE delim restitches the displaced state and re-links the stashed span first), and resumes there.
 - **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's stack block and one is injected to the outer stack.
 - **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
 - **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the stack block and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.
@@ -3387,7 +3397,7 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](i
 - [interpreter/bytecode.md](interpreter/bytecode.md) — Bytecode format, KosCode layout, API
 - [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md) — Extents, location table, jump locality
 - [interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution model
-- [interpreter/evaluator.md](interpreter/evaluator.md) — Evaluation loop
+- [EVALUATOR.md](EVALUATOR.md) — Evaluation loop
 - [FEATURES.md](FEATURES.md) — Implementation status and feature list
 - `koskari/lib/opcodes.incl` — Authoritative opcode enum and order
 - `koskari.dis` — Runtime disassembly of KosCode objects

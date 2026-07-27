@@ -181,10 +181,16 @@ def _format_verify(verify, indent):
 
 def _format_list(key, values, indent):
     """
-    Format a list field as a YAML block sequence
+    Format a list field as a YAML block sequence.
+
+    An empty list needs the explicit flow form: a bare ``key:`` parses
+    back as None, which fails schema validation for the whole shard on
+    the next append.
     """
 
     prefix = '  ' * indent
+    if not values:
+        return [prefix + '%s: []' % key]
     lines = [prefix + '%s:' % key]
     for value in values:
         lines.append(prefix + '  - %s' % _format_inline_scalar(value))

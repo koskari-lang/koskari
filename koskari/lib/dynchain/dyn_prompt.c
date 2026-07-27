@@ -3,7 +3,10 @@
 
 
 /**
-   Allocate PROMPT delimiter (barrier only; operand stack stays on the frame).
+   Allocate PROMPT delimiter owning the delimited region's operand-stack
+   block. The region's operands live in that block, so dropping the node
+   leaves the parent block at the depth it had on entry, and capture takes
+   the region's operands without needing to know where they start.
    Callers: kos_dyn_push_prompt.
 */
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
@@ -12,17 +15,53 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
   if (! prompt)
     return NULL;
 
+  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  if (! stack) {
+    kos_dynnode_return_to_freelist((KosDynNode *) prompt);
+    return NULL;
+  }
+
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
                    KOS_DYN_CAP_BARRIER
                    | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynPrompt_ID(prompt) = prompt_id;
-  KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
+  KosDynPrompt_POP_PC(prompt) = (uint32_t) -1;
+  KosDynNode_STACK((KosDynNode *) prompt) = stack;
   return prompt;
 }
 
 
 /**
-   Clone prompt id for captured segments; pending shift wrapper not cloned.
+   Allocate a fresh invocation-prompt instance for an in-place delimited
+   invoke: the delimiter the resumed slice runs under, per Danvy/Filinski
+   (k = lambda x. <E[x]> -- every invocation re-delimits). Owns NO stack
+   block: the slice's operands live in the displaced resume frame below,
+   and the marker only provides the prompt instance that captures inside
+   the slice bound at and POP_SHIFT resolves to. No pop_pc either --
+   completion routes through the paired DELIM (KOS_DYNF_INVOCATION),
+   never through a POP_PROMPT resume. Freshly minted node_id.
+   Callers: kos_delimited_invoke_inplace.
+*/
+static KosDynPrompt *kos_dynprompt_new_invocation(
+    KosDynNode *parent,
+    uint32_t prompt_id) {
+
+  KosDynPrompt *prompt = kos_dynnode_alloc();
+  if (! prompt)
+    return NULL;
+
+  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
+                   KOS_DYN_CAP_BARRIER
+                   | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
+  KosDynNode_FLAGS((KosDynNode *) prompt) |= KOS_DYNF_INVOCATION;
+  KosDynPrompt_ID(prompt) = prompt_id;
+  KosDynPrompt_POP_PC(prompt) = (uint32_t) -1;
+  return prompt;
+}
+
+
+/**
+   Clone prompt id for captured segments.
 */
 static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! prompt)
@@ -36,7 +75,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(prompt);
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
-  KosDynPrompt_PENDING_SHIFT_WRAPPER(clone) = NULL;
+  KosDynPrompt_POP_PC(clone) = KosDynPrompt_POP_PC(prompt);
   if (KosDynNode_STACK((KosDynNode *) prompt)) {
     KosDynNode_STACK((KosDynNode *) clone) =
         KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) prompt));
@@ -50,14 +89,12 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
 
 
 /**
-   DECREF pending wrapper; return node to freelist.
+   Return node to freelist.
 */
 void kos_dynprompt_free(KosDynPrompt *prompt) {
   if (! prompt)
     return;
 
-  Py_XDECREF(KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt));
-  KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) prompt);
 }
 
@@ -67,9 +104,6 @@ static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
   if (snapshot_set_uint(data, "prompt_id",
                         KosDynPrompt_ID((KosDynPrompt *) node)) < 0)
     return -1;
-  if (snapshot_set_obj(data, "pending_shift_wrapper",
-      KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node)) < 0)
-    return -1;
   return 0;
 }
 
@@ -77,12 +111,17 @@ static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
 /**
    Push prompt via kos_dyn_push. Callers: opcode PUSH_PROMPT.
 */
-KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
+KosDynPrompt *kos_dyn_push_prompt(
+    KosEvalState *es,
+    uint32_t prompt_id,
+    uint32_t pop_pc) {
 
   // CONTEXT: dirty, touches context directly
   KosDynPrompt *prompt = kos_dynprompt_new(KosEvalState_DYN_TOP(es), prompt_id);
   if (! prompt)
     return NULL;
+
+  KosDynPrompt_POP_PC(prompt) = pop_pc;
 
   if (kos_dyn_push(es, (KosDynNode *) prompt) < 0) {
     kos_dynprompt_free(prompt);
@@ -116,13 +155,9 @@ int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
 
 
 /**
-   GC traverse a KOS_DYN_PROMPT: visit pending shift wrapper if any.
+   GC traverse a KOS_DYN_PROMPT: the owned region block.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
-  if (tr != 0)
-    return tr;
-  Py_VISIT(KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node));
-  return 0;
+  return KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
 }
 

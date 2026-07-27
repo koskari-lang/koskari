@@ -1,0 +1,95 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Example: nondeterministic search with koskari.solve.
+
+`amb` chooses a value; each choice runs the rest of the search, and
+`require` prunes branches that cannot work. `solve` collects every
+surviving assignment, `solve-first` stops at the first one. There is no
+search engine here -- amb is an ordinary function over the language's
+delimited continuations, so choice points compose across function calls
+and nest to any depth.
+
+Run: koskari examples/solve.ki
+"""
+
+
+import-from koskari.solve amb fail require solve solve-first
+
+
+; --- Pythagorean triples ----------------------------------------------------
+
+; Three nested choice points; require keeps the triangles.
+
+(define triples
+  (solve
+    (lambda []
+      (define a (amb (range 1 21)))
+      (define b (amb (range a 21)))
+      (define c (amb (range b 21)))
+      (require (== (+ (* a a) (* b b)) (* c c)))
+      (#tuple a b c))))
+
+(print "pythagorean triples under 21:" triples)
+
+
+; --- Dinesman's dwelling puzzle ---------------------------------------------
+
+; Baker, Cooper, Fletcher, Miller, and Smith live on five floors of a
+; building. Baker does not live on the top floor. Cooper does not live
+; on the bottom floor. Fletcher does not live on either the top or the
+; bottom floor. Miller lives on a higher floor than Cooper. Smith does
+; not live on a floor adjacent to Fletcher's. Fletcher does not live on
+; a floor adjacent to Cooper's. Where does everyone live?
+
+; Requirements sit as early as possible so branches die before the
+; remaining floors are even chosen.
+
+define distinct [*: floors]:
+  """
+  True when no two of floors coincide
+  """
+  (== (len floors) (len (set floors)))
+
+
+define adjacent? [a b]:
+  """
+  True when floors a and b are next to each other
+  """
+  (== 1 (abs (- a b)))
+
+
+(define dwelling
+  (solve-first
+    (lambda []
+      (define baker (amb (range 1 6)))
+      (require (!= baker 5))
+      (define cooper (amb (range 1 6)))
+      (require (!= cooper 1))
+      (define fletcher (amb (range 1 6)))
+      (require (and (!= fletcher 1) (!= fletcher 5)))
+      (require (not (adjacent? fletcher cooper)))
+      (define miller (amb (range 1 6)))
+      (require (> miller cooper))
+      (define smith (amb (range 1 6)))
+      (require (not (adjacent? smith fletcher)))
+      (require (distinct baker cooper fletcher miller smith))
+      #{"baker": baker "cooper": cooper "fletcher": fletcher
+        "miller": miller "smith": smith})))
+
+(print "dwelling:" dwelling)
+
+
+;; The end.

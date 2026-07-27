@@ -16,10 +16,11 @@
 /**
    PUSH_SHIFT: arg = constant index of prompt_id. Capture the continuation
    from POP_SHIFT+1 to POP_PROMPT (via extent) when the prompt lies in
-   acceptable chain heritage (kos_validate_capture and handle(SHIFT) walk),
-   push a SHIFT node on the current dyn_top, push k on stack, and enter the
-   shift block (first instruction = push_pc + 1).  Does not peel nodes above
-   the prompt via a transfer plan.
+   acceptable chain heritage (kos_shift_capture locates it and offers
+   handle(SHIFT) en route in one walk), push a SHIFT node on the current
+   dyn_top, push k on stack, and enter the shift block (first instruction
+   = push_pc + 1).  Does not peel nodes above the prompt via a transfer
+   plan.
 */
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
@@ -30,11 +31,6 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
 
   if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
     return EVAL_RAISE();
-
-  if (! kos_find_prompt(es, prompt_id)) {
-    PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: prompt not found");
-    return EVAL_RAISE();
-  }
 
   resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
                                KosEvalState_ACTING_PC(es));
@@ -53,7 +49,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   }
 
   shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
-  if (kos_dyn_push_shift(es) < 0) {
+  if (kos_dyn_push_shift(es, KosContinuation_LIVE_PROMPT_NODE_ID(k)) < 0) {
     Py_DECREF(wrapper);
     return EVAL_RAISE();
   }

@@ -94,6 +94,8 @@ int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
     PyErr_SetString(PyExc_RuntimeError, "NS node is not at top of chain");
     return -1;
   }
+
+  KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_NS, "POP_NS", "NS");
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 

@@ -286,6 +286,8 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
     return -1;
   }
 
+  KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_PARAM, "POP_PARAM", "PARAM");
+
   kos_dynparam_restore(ctx, node);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);

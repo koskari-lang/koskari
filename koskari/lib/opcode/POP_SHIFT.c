@@ -15,21 +15,16 @@
 
 /**
    POP_SHIFT: Take TOS as result, unwind the SHIFT node (teardown drops its
-   stack block) and the PROMPT, jump past POP_PROMPT, push the result.
-
-   Expects DYN_TOP to be a KOS_DYN_SHIFT node.  Uses a transfer plan to
-   unwind (EXTENT_ACTION for the shift, then TRUNCATE_AND_INJECT) and
-   inject the result past the prompt.  Heritage bytecode extents between
-   SHIFT and PROMPT (e.g. WIND) are skipped when resolving the enclosing
-   PROMPT extent for resume PC.
+   stack block) and the PROMPT, then deliver the result as the region's
+   value.  The delimiter is resolved by the instance the shift captured
+   against; an invocation prompt delivers through its paired DELIM at the
+   invoke site, a live reset resumes past its POP_PROMPT (the pop_pc the
+   prompt recorded at push).
 */
 
 KOS_OP_HANDLER_COLD(POP_SHIFT) {
   PyObject *result;
-  uint32_t eid;
-  uint32_t parent_id;
   uint32_t prompt_pop_pc;
-  KosCode *code = KosEvalState_CurrentCode(es);
   KosDynPrompt *prompt = NULL;
   KosTransferPlan *plan = NULL;
 
@@ -52,61 +47,70 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
     return EVAL_RAISE();
   }
 
-  /* acting_pc is POP_SHIFT; find SHIFT extent by its pop_pc. */
+  /* Resolve the delimiter by the instance the shift captured against
+     (recorded on the SHIFT node at PUSH_SHIFT). Two prompts with the
+     same tag can coexist on the chain -- a grafted or in-place
+     invocation instance alongside the live original -- so position
+     (nearest) is never the right answer; identity is. */
   {
-    uint32_t pop_pc = KosEvalState_ACTING_PC(es);
-    eid = kos_extent_find_by_pop_pc((PyObject *) code, pop_pc, KOS_EXT_SHIFT);
-  }
-  if (eid == KOS_EXTENT_NONE) {
-    Py_DECREF(result);
-    PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no SHIFT extent at pc");
-    return EVAL_RAISE();
-  }
+    uint32_t want = KosDynShift_PROMPT_NODE_ID(top);
+    KosDynNode *node = KosDynNode_PARENT(top);
 
-  KosExtentDesc *const shift_extent = kos_extent_desc((PyObject *) code, eid);
-  if (! shift_extent) {
-    Py_DECREF(result);
-    return EVAL_RAISE();
-  }
-
-  parent_id = shift_extent->parent_extent_id;
-  if (parent_id == KOS_EXTENT_NONE) {
-    Py_DECREF(result);
-    PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: SHIFT extent has no parent");
-    return EVAL_RAISE();
-  }
-
-  /* SHIFT may sit under heritage extents (e.g. WIND) between it and PROMPT. */
-  KosExtentDesc *found_prompt = NULL;
-  {
-    uint32_t walk_id = parent_id;
-    while (walk_id != KOS_EXTENT_NONE) {
-      KosExtentDesc *candidate = kos_extent_desc((PyObject *) code, walk_id);
-      if (! candidate) {
-        Py_DECREF(result);
-        return EVAL_RAISE();
-      }
-      if (candidate->kind == KOS_EXT_PROMPT) {
-        found_prompt = candidate;
+    while (node) {
+      if (KosDynNode_IS_PROMPT(node)
+          && KosDynNode_NODE_ID(node) == want) {
+        prompt = (KosDynPrompt *) node;
         break;
       }
-      walk_id = candidate->parent_extent_id;
+      node = KosDynNode_PARENT(node);
     }
   }
-  KosExtentDesc *const prompt_extent = found_prompt;
-  if (! prompt_extent) {
+  if (! prompt) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
-                    "POP_SHIFT: no enclosing PROMPT extent for SHIFT");
+                    "POP_SHIFT: captured prompt instance not on chain");
     return EVAL_RAISE();
   }
 
-  prompt_pop_pc = prompt_extent->pop_pc;
+  /* Invocation prompt: created by a k-invocation, so no POP_PROMPT
+     instruction anywhere pairs with it. The handler value IS the value
+     of that k-invocation; deliver it at the invoke site through the
+     paired DELIM bookmark below the prompt (unwinds this SHIFT, the
+     region remnants, and the invocation prompt on the way). */
+  if (KosDynNode_FLAGS((KosDynNode *) prompt) & KOS_DYNF_INVOCATION) {
+    KosDynDelim *pair = NULL;
+    KosDynNode *node = KosDynNode_PARENT((KosDynNode *) prompt);
 
-  prompt = kos_find_nearest_prompt(es);
-  if (! prompt) {
+    while (node && ! KosDynNode_IS_PROMPT(node)) {
+      if (KosDynNode_IS_DELIM(node)) {
+        uint8_t mode = KosDynDelim_MODE((KosDynDelim *) node);
+        if (mode == KOS_DYN_DELIM_MODE_POP_PROMPT
+            || mode == KOS_DYN_DELIM_MODE_INPLACE) {
+          pair = (KosDynDelim *) node;
+          break;
+        }
+      }
+      node = KosDynNode_PARENT(node);
+    }
+    if (! pair) {
+      Py_DECREF(result);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "POP_SHIFT: invocation prompt has no paired delim");
+      return EVAL_RAISE();
+    }
+    SAYF("[POP_SHIFT] invocation prompt %u: delivering to paired delim %p",
+         (unsigned) KosDynNode_NODE_ID((KosDynNode *) prompt),
+         (void *) pair);
+    return kos_eval_route_delim_return(es, pair, result);
+  }
+
+  /* Live reset: the prompt recorded its region's closing pc when
+     PUSH_PROMPT resolved the PROMPT extent; resume past POP_PROMPT. */
+  prompt_pop_pc = KosDynPrompt_POP_PC(prompt);
+  if (prompt_pop_pc == (uint32_t) -1) {
     Py_DECREF(result);
-    PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no prompt on chain");
+    PyErr_SetString(PyExc_RuntimeError,
+                    "POP_SHIFT: prompt has no recorded pop pc");
     return EVAL_RAISE();
   }
 
@@ -117,7 +121,6 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
   Py_DECREF(result);
 
   KosTransferPlan_RESUME_PC(plan) = prompt_pop_pc + 1;
-  KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
   SAYF("[POP_SHIFT] plan ready: RESUME_PC=%u (first instr after POP_PROMPT)",
        (unsigned) (prompt_pop_pc + 1));

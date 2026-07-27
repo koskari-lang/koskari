@@ -15,14 +15,37 @@
 
 /**
    PUSH_PROMPT: arg = constant index of prompt_id. Push a delimited prompt
-   onto the dynamic chain for shift/reset.
+   onto the dynamic chain for shift/reset. The region's closing pc is
+   resolved from the PROMPT extent here, once, and stored on the node;
+   POP_SHIFT reads the answer instead of re-deriving it from a pc that
+   slice execution has long since moved.
 */
 
 KOS_OP_HANDLER(PUSH_PROMPT) {
   uint32_t prompt_id;
+  uint32_t pop_pc;
+
   if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
     return EVAL_RAISE();
-  if (! kos_dyn_push_prompt(es, prompt_id))
+
+  {
+    PyObject *code = (PyObject *) KosEvalState_CurrentCode(es);
+    uint32_t eid = kos_extent_find(code, KosEvalState_ACTING_PC(es),
+                                   KOS_EXT_PROMPT);
+    KosExtentDesc *extent;
+
+    if (eid == KOS_EXTENT_NONE) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "PUSH_PROMPT: no PROMPT extent at pc");
+      return EVAL_RAISE();
+    }
+    extent = kos_extent_desc(code, eid);
+    if (! extent)
+      return EVAL_RAISE();
+    pop_pc = extent->pop_pc;
+  }
+
+  if (! kos_dyn_push_prompt(es, prompt_id, pop_pc))
     return EVAL_RAISE();
   return EVAL_NORMAL();
 }

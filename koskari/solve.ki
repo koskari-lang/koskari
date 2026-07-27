@@ -1,0 +1,100 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+koskari.solve
+
+Nondeterministic choice on delimited continuations. `amb` picks a value
+from a sequence of choices, `require` prunes the current branch, `fail`
+abandons it outright, and `solve` / `solve-first` delimit a search and
+collect what survives. `amb` is an ordinary function -- a shift whose
+handler invokes the continuation once per choice and gathers each
+choice's solutions -- so choice points compose across function calls
+and nest to any depth: every `(amb ...)` inside another choice's
+continuation multiplies the search.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+(declare-exports amb fail require solve solve-first)
+
+
+; Dynamic stop marker for solve-first: a mutable box (list). None or
+; empty means keep exploring; non-empty means a solution has been
+; accepted and remaining choices are skipped without invoking their
+; continuations. Scoped with parameterize per search, so a nested
+; search never observes an enclosing search's stop.
+(define-parameter _stop None)
+
+
+define amb [choices]:
+  """
+  Nondeterministically choose a value from choices.
+
+  Captures the continuation up to the enclosing search delimiter and
+  invokes it once per choice, collecting each choice's solutions; the
+  collected list becomes the search's result at the delimiter
+  """
+  shift k:
+    let [[out (#list)]]:
+      for-each [c choices]:
+        (unless _stop (out.extend (k c)))
+      out
+
+
+define fail []:
+  """
+  Abandon the current branch; it contributes no solutions
+  """
+  shift k (#list)
+
+
+define require [test]:
+  """
+  Prune the current branch unless test is truthy
+  """
+  (unless test (fail))
+
+
+define solve [thunk]:
+  """
+  Every solution of thunk, as a list, in choice order
+  """
+  (parameterize [[_stop None]]
+    (reset
+      (#list (thunk))))
+
+
+define solve-first [thunk]:
+  """
+  The first solution of thunk, or None when every branch fails.
+
+  Once a solution is accepted the remaining choices at every level are
+  skipped; their continuations are never invoked
+  """
+  let [[found (#list)]]:
+    (parameterize [[_stop found]]
+      (next
+        (iter
+          (reset
+            (#list
+              (let [[solution (thunk)]]
+                (found.append True)
+                solution))))
+        None))
+
+
+;; The end.

@@ -182,4 +182,4 @@ same invocation-wins rule.
 [special-call-protocol.md](../api/special-call-protocol.md),
 [OBJECT-MODEL.md](../api/OBJECT-MODEL.md),
 [../interpreter/eval-state-live-authority.md](../interpreter/eval-state-live-authority.md),
-[../interpreter/evaluator.md](../interpreter/evaluator.md).
+[../EVALUATOR.md](../EVALUATOR.md).

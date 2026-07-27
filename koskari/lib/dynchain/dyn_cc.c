@@ -74,6 +74,8 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
     PyErr_SetString(PyExc_RuntimeError, "CC node is not at top of chain");
     return -1;
   }
+
+  KOS_DYN_POP_REQUIRE_KIND(cc, KOS_DYN_CC, "POP_CC", "CC");
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) cc);
 

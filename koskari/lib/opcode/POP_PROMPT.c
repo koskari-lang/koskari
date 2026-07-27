@@ -22,13 +22,21 @@
 KOS_OP_HANDLER_COLD(POP_PROMPT) {
   (void) insn;
 
-  /* Nearest return bookmark: PUSH-graft (POP_PROMPT) or in-place
-   * (INPLACE) delimited invoke. */
+  /* Return bookmark: PUSH-graft (POP_PROMPT) or in-place (INPLACE)
+   * delimited invoke. Invocation prompts (created by a k-invocation)
+   * have no POP_PROMPT instruction of their own -- their completion
+   * routes through the paired delim below, so the walk passes them. A
+   * non-invocation PROMPT ends the walk: that is a live reset whose own
+   * POP_PROMPT this is, and any delim beyond it belongs to an outer
+   * invocation, not to this region. */
   KosDynDelim *ret_delim = NULL;
   {
     KosDynNode *node;
     for (node = KosEvalState_CurrentNode(es); node;
          node = KosDynNode_PARENT(node)) {
+      if (KosDynNode_IS_PROMPT(node)
+          && ! (KosDynNode_FLAGS(node) & KOS_DYNF_INVOCATION))
+        break;
       if (! KosDynNode_IS_DELIM(node))
         continue;
       uint8_t mode = KosDynDelim_MODE((KosDynDelim *) node);
