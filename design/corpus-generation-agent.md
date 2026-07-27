@@ -255,7 +255,7 @@ there picks it up. It should cover:
   got wrong; add the `coverage` subcommand once volume justifies it; re-run
   targeting remaining gaps.
 - **Phase 4 — Dataset conversion** (later). HuggingFace format needs a
-  conversion step from YAML corpus records; `tools/corpus/export.py` is the
+  conversion step from YAML corpus records; `tools/corpus/export.ki` is the
   natural home. Volume and correctness come first.
 
 ---

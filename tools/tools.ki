@@ -77,6 +77,16 @@ define cmd_opgrams [options]:
     return (run options)
 
 
+define cmd_corpus [options]:
+    """
+    Export corpus YAML records to parquet dataset views.
+    """
+
+    import-from tools.corpus.export run
+
+    return (run options)
+
+
 define build_parser [name]:
     """
     Construct the dispatcher argument parser.
@@ -102,13 +112,21 @@ define build_parser [name]:
         help: "path to write the generated file")
     (pe.set_defaults func: cmd_editors)
 
-    ; opgrams owns its own option set, so the subparser and the
-    ; standalone entry point cannot drift apart.
-    import-from tools.opgrams build_arguments
+    ; Each tool owns its own option set, so a subparser and the tool's
+    ; standalone entry point cannot drift apart. Imported as modules
+    ; because they each export build_arguments.
+    import-from tools opgrams
+    import-from tools.corpus export
+
     define po (sub.add_parser "opgrams"
         help: "opcode n-gram frequency analysis over compiled Koskari code")
-    (build_arguments po)
+    (opgrams.build_arguments po)
     (po.set_defaults func: cmd_opgrams)
+
+    define pc (sub.add_parser "corpus"
+        help: "export corpus YAML records to parquet dataset views")
+    (export.build_arguments pc)
+    (pc.set_defaults func: cmd_corpus)
 
     return parser
 

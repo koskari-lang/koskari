@@ -344,15 +344,11 @@ corpus-parquet-all:  ## Export all corpus views to build/corpus/datasets/
 	@echo "Exporting all corpus views..."
 	@tox -qe regen-corpus -- --all-views
 
-# The corpus loader is Koskari, so the export needs an image carrying
-# koskari: the dedicated alpine export image is gone in favour of the
-# shared tools container (see build-tools). The python entrypoint
-# override goes away once export itself is Koskari.
+# The corpus export is Koskari, so it runs in the shared tools container
+# (see build-tools) rather than a dedicated image.
 corpus-parquet-container:  ## Run corpus export in the tools container; writes to build/corpus/datasets/
 	@mkdir -p $(BUILD_DIR)/corpus/datasets
-	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/work:Z \
-	  --entrypoint python $(TOOLS_IMAGE):local \
-	  -B tools/corpus/export.py --all-views \
+	@$(TOOLS_RUN) tools/tools.ki -- corpus --all-views \
 	  --output-base /work/$(BUILD_DIR)/corpus/datasets
 
 

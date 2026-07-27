@@ -47,7 +47,7 @@ YAML remains authoritative, and `docs/` does not link here.
 
 ```text
 docs/corpus/records/*.yaml
-        │  tools/corpus/export.py  (--all-views)
+        │  tools/corpus/export.ki  (--all-views)
         ▼
 build/corpus/datasets/
   koskari-corpus/train.parquet     (config: corpus)
@@ -421,7 +421,7 @@ The stated intent is more than one MCP server over time. Make the AWS side
 - [corpus-schema-philosophy.md](corpus-schema-philosophy.md) -- corpus as
   source of truth, datasets as views
 - `tools/mcp/mcp_server.ki` -- the server being migrated
-- `tools/corpus/export.py`, `tools/corpus/views/` -- parquet export and view
+- `tools/corpus/export.ki`, `tools/corpus/views/` -- parquet export and view
   registry (`koskari-corpus`, `koskari-docs`, `koskari-programs`)
 - `.github/workflows/publish_corpus_dataset.yml` -- existing OIDC publish
   workflow, the CI/CD pattern to mirror
