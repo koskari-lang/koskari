@@ -53,6 +53,30 @@ define cmd_selftest [options]:
     return 0
 
 
+define cmd_editors [options]:
+    """
+    Regenerate one editor syntax-highlighting asset.
+
+    The generator is imported here rather than at module scope so that
+    unrelated subcommands do not pay for jinja2 and PyYAML.
+    """
+
+    import-from tools.editor_tokens.regen render
+
+    (render options.spec_yaml options.template options.output)
+    return 0
+
+
+define cmd_opgrams [options]:
+    """
+    Run opcode n-gram frequency analysis over compiled Koskari code.
+    """
+
+    import-from tools.opgrams run
+
+    return (run options)
+
+
 define build_parser [name]:
     """
     Construct the dispatcher argument parser.
@@ -67,6 +91,24 @@ define build_parser [name]:
     define ps (sub.add_parser "selftest"
         help: "report interpreter and working directory")
     (ps.set_defaults func: cmd_selftest)
+
+    define pe (sub.add_parser "editors"
+        help: "render one editor asset from YAML and a Jinja2 template")
+    (pe.add_argument "spec_yaml"
+        help: "path to the token spec YAML")
+    (pe.add_argument "template"
+        help: "path to the .j2 template")
+    (pe.add_argument "output"
+        help: "path to write the generated file")
+    (pe.set_defaults func: cmd_editors)
+
+    ; opgrams owns its own option set, so the subparser and the
+    ; standalone entry point cannot drift apart.
+    import-from tools.opgrams build_arguments
+    define po (sub.add_parser "opgrams"
+        help: "opcode n-gram frequency analysis over compiled Koskari code")
+    (build_arguments po)
+    (po.set_defaults func: cmd_opgrams)
 
     return parser
 

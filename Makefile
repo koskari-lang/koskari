@@ -45,31 +45,30 @@ koskari/lib/handlers.incl: koskari/lib/opcodes.incl
 handlers: koskari/lib/handlers.incl
 
 # Editor highlighting assets: each output is rebuilt only when spec, its
-# template, or the generator script is newer than the output.
-EDITOR_SPEC := tools/editor-tokens/spec.yml
-EDITOR_REGEN := tools/editor-tokens/regen_editors_assets.py
+# template, or the generator script is newer than the output. Generation runs
+# in the tools container (see build-tools) so the toolchain producing these
+# committed files is pinned rather than whatever the contributor happens to
+# have installed.
+EDITOR_SPEC := tools/editor_tokens/spec.yml
+EDITOR_REGEN := tools/editor_tokens/regen.ki
 
 editors/textmate/syntaxes/koskari.tmLanguage.json: $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 $(EDITOR_REGEN)
-	@$(call checkfor,tox)
 	@echo "Re-generating koskari.tmLanguage.json..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 editors/textmate/syntaxes/koskari.tmLanguage.json
+	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 $@
 
 # Canonical tree-sitter highlight queries (shared by Helix and Neovim).
 editors/tree-sitter/queries/highlights.scm: $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $(EDITOR_REGEN)
-	@$(call checkfor,tox)
 	@echo "Re-generating tree-sitter highlights.scm..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 editors/tree-sitter/queries/highlights.scm
+	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $@
 
 # Zed needs the queries inside its own extension dir; same template, same output.
 editors/zed/languages/koskari/highlights.scm: $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $(EDITOR_REGEN)
-	@$(call checkfor,tox)
 	@echo "Re-generating Zed highlights.scm..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 editors/zed/languages/koskari/highlights.scm
+	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $@
 
 editors/emacs/koskari-mode.el: $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $(EDITOR_REGEN)
-	@$(call checkfor,tox)
 	@echo "Re-generating koskari-mode.el..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 editors/emacs/koskari-mode.el
+	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $@
 
 editors-grammar:  ## Regenerate the tree-sitter parser (src/parser.c) from grammar.js
 	@echo "Re-generating tree-sitter parser..."
