@@ -20,8 +20,7 @@ Unit tests for corpus dataset view transforms.
 """
 
 
-import importlib.util
-from pathlib import Path
+import importlib
 
 import pytest
 
@@ -58,18 +57,20 @@ _MATERIAL_COLUMNS = frozenset({
 })
 
 
-def _load_view_module(filename):
+def _load_view_module(name):
     """
     Load a corpus view module from tools/corpus/views/
+
+    The view modules are written in Koskari, so this resolves them
+    through the koskari import hook rather than by filesystem path.
+
+    :param name: bare module name, e.g. ``full`` or ``_material``
+    :return: the imported view module
     """
 
-    path = Path(__file__).resolve().parents[2] / 'tools' / 'corpus' / 'views'
-    path = path / filename
-    name = 'test_corpus_view_' + path.stem
-    spec = importlib.util.spec_from_file_location(name, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    import koskari  # noqa: F401  (activates the .ki import hook)
+
+    return importlib.import_module('tools.corpus.views.%s' % name)
 
 
 def _apply_view(transform, records):
@@ -106,7 +107,7 @@ def test_full_view_includes_every_record():
     koskari-corpus emits one row per loaded record
     """
 
-    full = _load_view_module('full.py')
+    full = _load_view_module('full')
     records = load_records(default_records_dir())
     rows = _apply_view(full.transform, records)
     assert len(rows) == len(records)
@@ -117,7 +118,7 @@ def test_full_view_columns():
     koskari-corpus rows expose all expected columns
     """
 
-    full = _load_view_module('full.py')
+    full = _load_view_module('full')
     records = load_records(default_records_dir())
     rows = _apply_view(full.transform, records)
     assert rows
@@ -131,7 +132,7 @@ def test_docs_view_row_per_markdown_page():
     docs subtree
     """
 
-    docs = _load_view_module('docs.py')
+    docs = _load_view_module('docs')
     rows = _generate_source_view(docs)
 
     root = project_root()
@@ -148,7 +149,7 @@ def test_docs_view_columns():
     koskari-docs rows expose the material column set and doc kind
     """
 
-    docs = _load_view_module('docs.py')
+    docs = _load_view_module('docs')
     rows = _generate_source_view(docs)
     assert rows
     for row in rows:
@@ -164,7 +165,7 @@ def test_docs_view_resolves_all_record_references():
     documentation content. Guards against reintroducing dangling references.
     """
 
-    docs = _load_view_module('docs.py')
+    docs = _load_view_module('docs')
     doc_paths = {row['path'] for row in _generate_source_view(docs)}
 
     records = load_records(default_records_dir())
@@ -185,7 +186,7 @@ def test_programs_view_columns():
     koskari-programs rows expose the material column set and example kind
     """
 
-    programs = _load_view_module('programs.py')
+    programs = _load_view_module('programs')
     rows = _generate_source_view(programs)
     assert rows
     for row in rows:
@@ -199,7 +200,7 @@ def test_programs_view_excludes_build_artifacts():
     koskari-programs skips generated build/ trees under examples/
     """
 
-    programs = _load_view_module('programs.py')
+    programs = _load_view_module('programs')
     rows = _generate_source_view(programs)
     assert rows
     for row in rows:
@@ -211,7 +212,7 @@ def test_programs_view_extracts_summaries():
     koskari-programs derives summaries from docstrings and comment banners
     """
 
-    programs = _load_view_module('programs.py')
+    programs = _load_view_module('programs')
     rows = {row['path']: row for row in _generate_source_view(programs)}
 
     life = rows.get('examples/life/koslife/life.ki')
@@ -229,7 +230,7 @@ def test_rewrite_markdown_links_roots_relative_targets():
     match the row ``path`` scheme, so get_reference can follow them
     """
 
-    material = _load_view_module('_material.py')
+    material = _load_view_module('_material')
     rewrite = material.rewrite_markdown_links
     page = 'start/from-python/map.md'
 
@@ -249,7 +250,7 @@ def test_rewrite_markdown_links_preserves_anchor_and_leaves_externals():
     links are left untouched
     """
 
-    material = _load_view_module('_material.py')
+    material = _load_view_module('_material')
     rewrite = material.rewrite_markdown_links
     page = 'reference/layouts/layout-if.md'
 
@@ -268,7 +269,7 @@ def test_rewrite_markdown_links_skips_fenced_code():
     Link-like text inside fenced code blocks is left verbatim
     """
 
-    material = _load_view_module('_material.py')
+    material = _load_view_module('_material')
     text = '```\n[a](../other.md)\n```\n[b](../other.md)\n'
     result = material.rewrite_markdown_links(text, 'start/from-python/map.md')
 
@@ -282,7 +283,7 @@ def test_rewrite_toctree_normalizes_non_glob_entries():
     directive option lines are left untouched
     """
 
-    material = _load_view_module('_material.py')
+    material = _load_view_module('_material')
     text = (
         '# Reference\n\n'
         '```{toctree}\n'
@@ -309,7 +310,7 @@ def test_rewrite_toctree_leaves_glob_blocks_unchanged():
     left verbatim
     """
 
-    material = _load_view_module('_material.py')
+    material = _load_view_module('_material')
     text = (
         '# Specials\n\n'
         '```{toctree}\n'
@@ -330,7 +331,7 @@ def test_rewrite_toctree_handles_titled_entry():
     The ``Title <docname>`` toctree form rewrites only the docname
     """
 
-    material = _load_view_module('_material.py')
+    material = _load_view_module('_material')
     text = '```{toctree}\nThe Map <map>\n```\n'
     result = material.rewrite_markdown_links(text, 'start/from-python/index.md')
 
@@ -343,7 +344,7 @@ def test_docs_view_normalizes_toctree_navigation():
     root-relative paths, while glob indexes keep their patterns
     """
 
-    docs = _load_view_module('docs.py')
+    docs = _load_view_module('docs')
     rows = {row['path']: row for row in _generate_source_view(docs)}
 
     from_python = rows['start/from-python/index.md']['content']

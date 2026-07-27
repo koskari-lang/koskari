@@ -69,7 +69,7 @@ content.
 **Whole-file cells:** each page is one `content` cell. The Hugging Face
 Dataset Viewer caps cell size in API responses, so a very large page would
 be truncated. Pages are small today (a few KiB); chunk-by-heading is a
-deferred mitigation should pages grow. See `tools/corpus/views/docs.py`.
+deferred mitigation should pages grow. See `tools/corpus/views/docs.ki`.
 
 ### programs
 

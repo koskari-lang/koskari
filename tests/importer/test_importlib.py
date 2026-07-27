@@ -40,6 +40,7 @@ class TestInstallUninstall(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         uninstall()
+        install()
 
     async def test_install_inserts_finder(self):
         self.assertFalse(is_installed())
@@ -85,6 +86,7 @@ class TestKiImport(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         uninstall()
+        install()
         sys.path[:] = self._prev_path
         # Evict any modules loaded from the tmpdir
         to_remove = [
@@ -147,6 +149,7 @@ class TestExecModuleDemand(unittest.TestCase):
 
     def tearDown(self):
         uninstall()
+        install()
         sys.path[:] = self._prev_path
         to_remove = [
             name for name, mod in list(sys.modules.items())

@@ -1,0 +1,57 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+tools.corpus.views.full
+
+koskari-corpus dataset view: every record with all verify stages.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import-from koskari.lib demand
+
+
+define VIEW_NAME "koskari-corpus"
+
+define _STAGES #("read" "expand" "eval" "error" "invalid")
+
+
+@demand
+define transform [record provenance]:
+    """
+    Build one koskari-corpus row from a corpus record
+
+    :param record: parsed corpus record dict
+    :param provenance: dict with schema_version and git_ref keys
+    :return: row dict for every record
+    """
+
+    define verify (or (record.get "verify") (dict))
+    define row (dict
+        corpus_id: (item record "id")
+        feature: (item record "feature")
+        source: (item record "source")
+        references: (or (record.get "references") #[])
+        stability: (record.get "stability")
+        tags: (or (record.get "tags") #[])
+        schema_version: (item provenance "schema_version")
+        git_ref: (item provenance "git_ref"))
+    for-each [stage _STAGES]:
+        (set-item row stage (verify.get stage))
+    return row
+
+
+; The end.

@@ -70,14 +70,17 @@ def load_views():
     """
     Load tools.corpus.views as a module
 
+    The view modules are written in Koskari, so importing them goes
+    through the koskari import hook rather than a path-based loader.
+
     :return: views module with VIEWS registry
     """
 
-    path = Path(__file__).resolve().parent / 'views' / '__init__.py'
-    spec = importlib.util.spec_from_file_location('corpus_views', path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    import koskari  # noqa: F401  (activates the .ki import hook)
+
+    from tools.corpus import views
+
+    return views
 
 
 def read_schema_version(schema_path):
