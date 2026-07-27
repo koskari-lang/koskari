@@ -48,10 +48,12 @@ define amb [choices]:
   invokes it once per choice, collecting each choice's solutions; the
   collected list becomes the search's result at the delimiter
   """
+
   shift k:
-    let [[out (#list)]]:
+    let [[out #[]]]:
       for-each [c choices]:
-        (unless _stop (out.extend (k c)))
+        when _stop (break)
+        out.extend (k c)
       out
 
 
@@ -59,23 +61,26 @@ define fail []:
   """
   Abandon the current branch; it contributes no solutions
   """
-  shift k (#list)
+
+  shift k #[]
 
 
 define require [test]:
   """
   Prune the current branch unless test is truthy
   """
-  (unless test (fail))
+
+  unless test (fail)
 
 
 define solve [thunk]:
   """
   Every solution of thunk, as a list, in choice order
   """
-  (parameterize [[_stop None]]
-    (reset
-      (#list (thunk))))
+
+  parameterize [[_stop None]]:
+    reset:
+      #[(thunk)]
 
 
 define solve-first [thunk]:
@@ -85,16 +90,18 @@ define solve-first [thunk]:
   Once a solution is accepted the remaining choices at every level are
   skipped; their continuations are never invoked
   """
-  let [[found (#list)]]:
-    (parameterize [[_stop found]]
-      (next
-        (iter
-          (reset
-            (#list
-              (let [[solution (thunk)]]
-                (found.append True)
-                solution))))
-        None))
+
+  define found #[]
+
+  parameterize [[_stop found]]:
+
+    ; the shifts are expecting a list wrapping the result.
+    reset:
+      let [[solution (thunk)]]:
+        found.append solution
+        #[solution]
+
+  when found found[0]
 
 
 ;; The end.
