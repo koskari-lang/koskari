@@ -189,4 +189,87 @@ define async_nested [outer inner]:
             (#list a b)
 
 
+;; === dyn-with exercises === ;;
+;;
+;; Same managers, driven through the multi-shot dyn-with extent.
+
+
+define dyn_with_no_binding [mgr]:
+    """
+    dyn-with over a koskari manager, no binding.
+    """
+
+    (dyn-with [mgr] "body")
+
+
+define dyn_with_binding [mgr]:
+    """
+    dyn-with binding form; the body sees the __enter__ value.
+    """
+
+    (dyn-with [x mgr] x)
+
+
+define dyn_with_raises [mgr]:
+    """
+    Body raises; a non-swallowing exit lets the exception through.
+    """
+
+    (dyn-with [x mgr] (boom))
+
+
+define dyn_with_swallowed [mgr]:
+    """
+    Body raises and exit swallows it; execution resumes after the extent.
+    """
+
+    (dyn-with [x mgr] (boom))
+    "after"
+
+
+define dyn_with_nested [outer inner]:
+    """
+    Nested dyn-with extents over two koskari managers.
+    """
+
+    (dyn-with [a outer]
+      (dyn-with [b inner] (#list a b)))
+
+
+;; === dyn-wind exercises === ;;
+;;
+;; before/body/after are koskari-defined functions, so each one installs a
+;; frame rather than completing inline.
+
+
+define dyn_wind_normal [rec]:
+    """
+    before, body, after all run, in that order; result is the body value.
+    Each segment calls a koskari-defined function, so each one installs a
+    frame rather than completing inline.
+    """
+
+    define note [tag]:
+        (rec.append tag)
+
+    (dyn-wind
+      (note "before")
+      (begin (note "body") "value")
+      (note "after"))
+
+
+define dyn_wind_raises [rec]:
+    """
+    Body raises; the after segment still runs and the exception propagates.
+    """
+
+    define note [tag]:
+        (rec.append tag)
+
+    (dyn-wind
+      (note "before")
+      (begin (note "body") (boom))
+      (note "after"))
+
+
 ;; The end.

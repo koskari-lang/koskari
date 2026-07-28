@@ -254,4 +254,98 @@ class TestAsyncContextManager(ContextManagerShapeTestCase):
         self.assertManagers(result, (True, True, None), (True, True, None))
 
 
+class TestDynWithContextManager(ContextManagerShapeTestCase):
+    """
+    The same koskari-defined managers driven through dyn-with, the
+    multi-shot extent
+    """
+
+    def test_no_binding(self):
+        """
+        dyn-with runs enter and exit around the body and yields the body
+        value
+        """
+
+        result = self.run_shape('dyn_with_no_binding')
+        self.assertEqual(result['outcome'], 'value')
+        self.assertEqual(result['value'], "body")
+        self.assertManagers(result, (True, True, None))
+
+
+    def test_binding_gets_enter_value(self):
+        """
+        The binding form binds whatever __enter__ returned
+        """
+
+        result = self.run_shape('dyn_with_binding')
+        self.assertEqual(result['outcome'], 'value')
+        self.assertEqual(result['value'], 42)
+        self.assertManagers(result, (True, True, None))
+
+
+    def test_exception_propagates(self):
+        """
+        A body exception reaches __exit__ and then propagates
+        """
+
+        result = self.run_shape('dyn_with_raises')
+        self.assertEqual(result['outcome'], 'raised')
+        self.assertEqual(result['exc_type'], 'ValueError')
+        self.assertEqual(result['exc_str'], "oops")
+        self.assertManagers(result, (True, True, 'ValueError'))
+
+
+    def test_exception_swallowed(self):
+        """
+        __exit__ returning true swallows the body exception and execution
+        continues after the extent
+        """
+
+        result = self.run_shape('dyn_with_swallowed')
+        self.assertEqual(result['outcome'], 'value')
+        self.assertEqual(result['value'], "after")
+        self.assertManagers(result, (True, True, 'ValueError'))
+
+
+    def test_nested(self):
+        """
+        Nested dyn-with extents enter outer-first and both bindings are
+        live in the inner body
+        """
+
+        result = self.run_shape('dyn_with_nested')
+        self.assertEqual(result['outcome'], 'value')
+        self.assertEqual(result['value'], [42, 42])
+        self.assertManagers(result, (True, True, None), (True, True, None))
+
+
+class TestDynWind(ContextManagerShapeTestCase):
+    """
+    dyn-wind whose before, body, and after segments each call a
+    koskari-defined function
+    """
+
+    def test_segments_run_in_order(self):
+        """
+        before, body, then after; the extent yields the body value
+        """
+
+        result = self.run_shape('dyn_wind_normal')
+        self.assertEqual(result['outcome'], 'value')
+        self.assertEqual(result['value'], "value")
+        self.assertEqual(result['record'], ["before", "body", "after"])
+
+
+    def test_after_runs_when_body_raises(self):
+        """
+        A raising body still runs the after segment, then propagates
+        """
+
+        result = self.run_shape('dyn_wind_raises')
+        self.assertEqual(result['outcome'], 'raised')
+        self.assertEqual(result['exc_type'], 'ValueError')
+        self.assertEqual(result['exc_str'], "oops")
+        self.assertEqual(result['record'], ["before", "body", "after"])
+
+
 # The end.

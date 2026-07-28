@@ -54,8 +54,15 @@ SHAPES = {
     'async_raises': ('async_raises', ('KosAsyncCM',)),
     'async_swallowed': ('async_swallowed', ('KosAsyncSwallowCM',)),
     'async_nested': ('async_nested', ('KosAsyncCM', 'KosAsyncCM')),
+    'dyn_with_no_binding': ('dyn_with_no_binding', ('KosCM',)),
+    'dyn_with_binding': ('dyn_with_binding', ('KosCM',)),
+    'dyn_with_raises': ('dyn_with_raises', ('KosCM',)),
+    'dyn_with_swallowed': ('dyn_with_swallowed', ('KosSwallowCM',)),
+    'dyn_with_nested': ('dyn_with_nested', ('KosCM', 'KosCM')),
     'direct_protocol': (None, ()),
     'direct_async_protocol': (None, ()),
+    'dyn_wind_normal': ('dyn_wind_normal', None),
+    'dyn_wind_raises': ('dyn_wind_raises', None),
 }
 
 
@@ -118,6 +125,21 @@ async def run_shape(mod, shape):
         return await run_direct(mod, True)
 
     fname, mgr_names = SHAPES[shape]
+
+    if mgr_names is None:
+        # dyn-wind shapes record their thunk order into a plain list
+        record = []
+        try:
+            value = await getattr(mod, fname)(record)
+        except Exception as exc:
+            report = {'outcome': 'raised', 'exc_type': type(exc).__name__,
+                      'exc_str': str(exc)}
+        else:
+            report = {'outcome': 'value', 'value': value}
+        report['record'] = list(record)
+        report['managers'] = []
+        return report
+
     mgrs = [getattr(mod, name)(42) for name in mgr_names]
 
     try:
