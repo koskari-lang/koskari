@@ -190,3 +190,23 @@ tags:
   - "pragma:reader/string-segments"
   - invalid
 notes: "corrective: join expressions with (#str \"a\" 5) instead. segments are string literals only, and the marker is a commitment -- once written, a literal must follow"
+---
+id: reader-string-segment-block-dedent-invalid-008
+feature: reader/string-segment
+source: |-
+  if True:
+      print "a"-
+  " b"
+  
+verify:
+  error: "ReaderSyntaxError: string segment must stay indented within its block"
+references:
+  - reference/reader-layout.md
+stability: evolving
+tags:
+  - reader
+  - string-segment
+  - "pragma:reader/string-segments"
+  - "surface:block"
+  - invalid
+notes: "corrective: indent the continuation, any amount will do -- even less than the block's own body indent. a continuation belongs to the line that opened it, and column 0 ends the logical line before the gap skip can reach the segment"

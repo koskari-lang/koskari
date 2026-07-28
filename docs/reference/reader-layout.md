@@ -293,8 +293,10 @@ One suffix interacts with layout. A string segment's gap crosses newlines, so a
 continuation line is consumed as part of the value on the line that opened it,
 and the block structure is unaffected. Because the gap skip stops at a dedent,
 a continuation line **may not sit at column 0** inside a layout block — that
-column ends the logical line, and the marker then reports the form as
-unfinished.
+column ends the logical line before the gap can reach the segment, and the
+reader reports `string segment must stay indented within its block`. Any
+indentation satisfies this, including less than the block's own body indent; a
+continuation belongs to the line that opened it.
 
 ---
 

@@ -395,6 +395,13 @@ class SourceStream(BaseSourceStream):
     used by the reader (skip_exec, suspend_indent).
     """
 
+    # a plain stream has no indent threshold, so a whitespace skip never
+    # stops on a dedent. Declared here so every stream carries the
+    # attribute and readers can consult it without a getattr guard;
+    # IndentAwareStream shadows it per instance.
+    dedented = False
+
+
     def __init__(
             self,
             stream,
@@ -1378,6 +1385,17 @@ class Reader:
         self._skip_segment_gap(stream)
 
         segment_at = stream.position()
+
+        # the gap skip stops at a dedent rather than crossing it, so a
+        # continuation that falls out of its block never reaches its
+        # segment. Report the indentation, which is the actual cause; the
+        # generic message describes the symptom and sends people looking
+        # at the marker instead.
+        if stream.dedented:
+            raise stream.error(
+                "string segment must stay indented within its block",
+                segment_at)
+
         opener = self._peek_string_opener(stream)
         if opener is EOF:
             raise stream.reader_eof(segment_at, context="string segment")

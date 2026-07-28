@@ -933,3 +933,24 @@ tags:
   - "pragma:reader/string-segments"
   - construct
 notes: "requires reader/string-segments (baseline on). each segment carries its own prefix, so only the f segment interpolates; an f-string already reads as compile/#str, so its parts splice in rather than nesting"
+---
+id: reader-string-segment-block-surface-003
+feature: reader/string-segment
+source: |-
+  define greet [name]:
+      return "Hello, "-
+             f"{name}!"
+  
+verify:
+  read: "(define greet [name] (return (compile/#str \"Hello, \" (format name) \"!\")))"
+  eval: "null"
+references:
+  - reference/reader-layout.md
+stability: evolving
+tags:
+  - reader
+  - string-segment
+  - "pragma:reader/string-segments"
+  - "surface:block"
+  - construct
+notes: requires reader/string-segments (baseline on). the continuation lines are consumed as part of the value on the line that opened them, so the block structure is untouched and the statement after the segment chain still belongs to the block

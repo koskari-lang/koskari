@@ -26,9 +26,14 @@ others.
 
 import unittest
 
+import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
+import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
+
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import kos_repr
 
-from koskari.reader import (DEFER, READ_EOF, Reader, ReaderEOF,
+from koskari.pragma import ModulePragma
+from koskari.reader import (DEFER, READ_EOF, LayoutReader, Reader, ReaderEOF,
                             ReaderSyntaxError, source_str)
 
 import pytest
@@ -768,6 +773,46 @@ class TestStringSegmentsMalformed(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assert_read_error('"a"- (compute)')
+
+
+class TestStringSegmentsInLayout(unittest.TestCase):
+    """
+    Segments on the layout surface, where the gap meets block structure
+    """
+
+    def read(self, src):
+        reader = LayoutReader.from_pragma(
+            dict(_BUILTIN_REGISTRY), ModulePragma())
+        return reader.read(source_str(src, "<unittest>"))
+
+    def test_indented_continuation_joins(self):
+        """
+        A continuation inside a block is consumed by the line that opened it
+        """
+
+        form = self.read('if True:\n    print "a"-\n      " b"\n')
+        self.assertIn('(compile/#str "a" " b")', kos_repr(form))
+
+    def test_continuation_indented_less_than_the_block_joins(self):
+        """
+        Any indentation will do; it need not match the block's body
+        """
+
+        form = self.read('if True:\n    print "a"-\n  " b"\n')
+        self.assertIn('(compile/#str "a" " b")', kos_repr(form))
+
+    def test_continuation_at_column_zero_names_the_indentation(self):
+        """
+        A dedent is reported as a dedent, not as a missing segment
+
+        The generic message describes the symptom and points at the
+        marker, which is not where the mistake is.
+        """
+
+        with self.assertRaises(ReaderSyntaxError) as raised:
+            self.read('if True:\n    print "a"-\n" b"\n')
+
+        self.assertIn("must stay indented", str(raised.exception))
 
 
 class TestStringSegmentsDisabled(SuffixReaderMixin, unittest.TestCase):

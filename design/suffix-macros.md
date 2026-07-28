@@ -482,11 +482,19 @@ Reality did impose one constraint that the open question had proposed
 away. Because the layout surface reads through an indent-aware stream
 whose whitespace skip stops at a dedent, a continuation line **may not sit
 at column 0** inside a layout block -- that column ends the logical line,
-so the gap skip never reaches the segment and the marker fails as an unmet
-commitment. Any indentation at all is accepted, including less than the
-enclosing block's own body indent. The constraint is mild, it matches the
-intuition that a continuation is inside something, and the failure is a
-positioned error at the marker rather than a silent misparse.
+so the gap skip never reaches the segment. Any indentation at all is
+accepted, including less than the enclosing block's own body indent. The
+constraint is mild and it matches the intuition that a continuation is
+inside something.
+
+The handler reports it specifically. A dedent is observable at the failure
+point -- the stream's `dedented` flag is set and the skip stopped on the
+newline -- so rather than falling through to the generic "string segment
+expected" the handler says `string segment must stay indented within its
+block`. The generic message describes the symptom and sends the reader
+back to the marker, which is not where the mistake is. `SourceStream`
+carries `dedented = False` as a class attribute so every stream answers
+the question without a `getattr` guard.
 
 ## Open questions
 
