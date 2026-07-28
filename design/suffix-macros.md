@@ -552,3 +552,6 @@ none of it is in the corpus yet.
 * [SYNTAX.md](SYNTAX.md) -- reader surface syntax
 * [fenced-foreign-literal.md](fenced-foreign-literal.md) -- the other
   reader feature that lowers to an ordinary compiler form
+* [koskari-lint.md](koskari-lint.md) -- these suffixes join the
+  adjacency-significant family, where a space produces a different valid
+  parse rather than an error; adding a suffix macro adds a member

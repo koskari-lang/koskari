@@ -185,6 +185,58 @@ severity attached at the analysis layer:
 * opaque/unchecked region (reader macro or computed macro spec)
 * style / convention suggestion (bracketing, spacing, naming, docstrings, …)
 
+## Adjacency-significant syntax
+
+A class of mistake the linter is well placed to catch, and which it should
+handle as a family rather than one member at a time.
+
+Several reader constructs are **adjacency-significant**: they attach only when
+written with no whitespace, and inserting a space produces a different, equally
+valid parse rather than an error. The current members:
+
+| Attached | Spaced | What the spaced form is |
+|---|---|---|
+| `f"{x}"` | `f "{x}"` | symbol `f`, then a string |
+| `r"..."`, `b"..."` | `r "..."`, `b "..."` | symbol, then a string |
+| `&(form)` | `& (form)` | symbol `&`, then a form |
+| `foo[0]` | `foo [0]` | symbol, then a bracket list |
+| `foo.bar` | `foo .bar` | symbol, then symbol `.bar` |
+| `"a"- " b"` | `"a" - " b"` | two strings around the minus function |
+
+The reader cannot adjudicate any of these -- the spaced reading is legitimate
+in each case. Passing a string, the minus function, and another string as
+three arguments is a real thing to write.
+
+**How loudly the mistake fails is luck, not design.** Most of these blow up
+because the stray prefix symbol is unbound, so `f "{x}"` usually reaches a
+`NameError`. But `-` *is* bound, and string literals are self-evaluating, so
+`("a" - " b")` at top level quietly evaluates to `" b"`. `(f "{x}")` where `f`
+happens to be a function is equally quiet. There is no rule separating the
+loud cases from the silent ones, which is why detection has to be
+pattern-based rather than resolution-based.
+
+**Two mitigations at two layers, and the linter is the second.** The uniform
+fix is the lexer: if an attached prefix tokenized as one unit and a spaced one
+as two, the difference would be visible while typing, across every member at
+once and including the bound-`f` case. The linter is the backstop for source
+not being read in a highlighting buffer, and for review.
+
+The finding belongs in the **style / convention** category and must be a
+suggestion, never an error. Suggested shapes, both narrow enough to have
+near-zero false positives:
+
+* a bare `-` symbol sitting between two adjacent string literals in a body
+* a bare `f`, `r`, or `b` symbol immediately preceding a string literal in an
+  argument list
+
+Both are cheap to spot in read output and neither can plausibly be intended.
+A broader rule -- flagging every spaced occurrence -- would be noise, since
+each spaced form is ordinary syntax somewhere.
+
+New members will arrive as suffix reader macros are added (see
+[suffix-macros.md](suffix-macros.md)), so this wants to be a table the linter
+consults, not a set of hand-written checks.
+
 ## Open questions
 
 1. Is compiler resolution logic (special vs. macro vs. call dispatch, scoping,
