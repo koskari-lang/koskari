@@ -31,6 +31,8 @@ jobs:
       - name: Install tox
         run: pip install tox
 
+      # The export is Koskari, so regen-corpus installs the package and
+      # builds the C extension; it is no longer a pure-Python job.
       - name: Export all corpus views to parquet
         run: tox -qe regen-corpus -- --all-views
 
