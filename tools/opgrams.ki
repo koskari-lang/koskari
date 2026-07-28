@@ -14,9 +14,10 @@
 """
 opgrams -- opcode n-gram frequency analysis over compiled Koskari code.
 
-Imports a group of modules (the bootstrap builtins, the churn benchmark
-kernels), collects every reachable Code object, softens each back to its
-symbolic instruction stream, and counts 2..4-opcode sequences within
+Imports a group of modules (the bootstrap builtins, the CLI, the churn
+benchmark kernels, the life example, the developer tools), collects
+every reachable Code object, softens each back to its symbolic
+instruction stream, and counts 2..4-opcode sequences within
 straight-line runs. Sequences never cross a jump target (LABEL) and
 never continue past a branching or terminal opcode, so every reported
 n-gram is a candidate for opcode fusion. POSITION and NOOP rows are
@@ -63,7 +64,23 @@ define MODULE_GROUPS #{
         "ki.binary_trees" "ki.branch" "ki.fannkuch" "ki.field"
         "ki.field_slots" "ki.list_each" "ki.loop" "ki.method"
         "ki.nbody" "ki.pidigits" "ki.starmap" "ki.tree"
-        "ki.yieldfrom")}
+        "ki.yieldfrom")
+    ; The developer tools: string, dict, path, and argparse work, a
+    ; different opcode mix from the numeric churn kernels. Importing
+    ; tools.corpus.quick pulls in tests.corpus, which is why this group
+    ; costs more to load than the others.
+    "tools": #(
+        "tools.tools"
+        "tools.opgrams"
+        "tools.editor_tokens.regen"
+        "tools.corpus.load"
+        "tools.corpus.export"
+        "tools.corpus.quick"
+        "tools.corpus.views"
+        "tools.corpus.views._material"
+        "tools.corpus.views.docs"
+        "tools.corpus.views.full"
+        "tools.corpus.views.programs")}
 
 ; Terminal opcodes with no label argument: control leaves the straight
 ; line here, so no sequence may continue past them. Ops that carry a
@@ -85,7 +102,8 @@ define TRANSPARENT_OPS (frozenset #("POSITION" "NOOP"))
 ; from these repository-relative directories.
 define GROUP_PATHS #{
     "churn": (join TOPDIR "examples" "churn")
-    "life": (join TOPDIR "examples" "life")}
+    "life": (join TOPDIR "examples" "life")
+    "tools": TOPDIR}
 
 
 define op_short_name [op]:
