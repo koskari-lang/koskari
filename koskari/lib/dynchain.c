@@ -524,10 +524,9 @@ KosOpResult kos_dynnode_on_control_returned(
   if (KosDynNode_IS_FRAME(node)) {
     KosDynNode *parent = KosDynNode_PARENT(node);
     if (parent && KosDynNode_IS_WITH(parent)) {
-      uint8_t phase = KosDynWith_PHASE((KosDynWith *) parent);
-      if (phase == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+      if (KosDynWith_EXIT_PENDING((KosDynWith *) parent))
         r = kos_dyn_with_on_control_returned(es, (KosDynWith *) parent, 1);
-      else if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+      else if (KosDynWith_ENTER_PENDING((KosDynWith *) parent))
         r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) parent);
     }
   } else {
@@ -539,10 +538,9 @@ KosOpResult kos_dynnode_on_control_returned(
         /* An installed __enter__/__exit__ frame has already popped by the
            time we get here, so the WITH node itself is current; the frame
            branch above only sees the await-resume shape. */
-        if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+        if (KosDynWith_EXIT_PENDING((KosDynWith *) node))
           r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
-        else if (KosDynWith_PHASE((KosDynWith *) node)
-                 == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+        else if (KosDynWith_ENTER_PENDING((KosDynWith *) node))
           r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) node);
         break;
       default:
@@ -1282,12 +1280,11 @@ KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
          parent stack by dyn_with_unwind.  Map to NORMAL so kos_dyn_uninstall_core
          pops the WITH node and commits the stack — then kos_dyn_try_local_raise_body's
          top_may_swallow check returns REPROLOGUE to restart past POP_WITH.
-         A node left in PENDING_EXIT_AWAIT means the opposite: __exit__ has
-         not run yet (installed frame), so the node must survive for
-         kos_dynnode_on_control_returned to complete and pop it. */
+         An exit still pending means the opposite: __exit__ has not run
+         yet, so the node must survive for kos_dynnode_on_control_returned
+         to complete and pop it. */
       if (wr.kind == KOS_RES_REPROLOGUE
-          && KosDynWith_PHASE((KosDynWith *) node)
-             != KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+          && ! KosDynWith_EXIT_PENDING((KosDynWith *) node))
         return EVAL_NORMAL();
       return wr;
     }

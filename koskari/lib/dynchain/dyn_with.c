@@ -416,15 +416,12 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
       kos_dyn_with_shot_after_exit_done(with_node);
       if (kos_dyn_pop_with(es, with_node) < 0)
         return -1;
-      /* The node is gone, so its owning frame's block is now the current
-         stack; a parent-stack push would walk past it. */
-      if (KosEvalState_StackPushRef(es, Py_None) < 0)
-        return -1;
-      return 0;
     }
-    if (KosEvalState_ParentStackPushRef(es, Py_None) < 0) {
+    /* Every caller pops, so the node is gone and its owning frame's
+       block is the current stack; a parent-stack push would walk past
+       the very frame that is about to receive the value. */
+    if (KosEvalState_StackPushRef(es, Py_None) < 0)
       return -1;
-    }
     return 0;
   }
 

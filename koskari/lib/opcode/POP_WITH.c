@@ -56,8 +56,7 @@ KOS_OP_HANDLER(POP_WITH) {
      run. Leave the node on the chain and the pc alone (the current frame
      is the callee's): kos_dynnode_on_control_returned completes the exit,
      pops the node, and sets the pc past this opcode. */
-  if (KosDynWith_PHASE((KosDynWith *) top)
-      == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+  if (KosDynWith_EXIT_PENDING((KosDynWith *) top))
     return kr;
 
   /* all is well (NORMAL or REPROLOGUE/swallowed), pop the node and return */

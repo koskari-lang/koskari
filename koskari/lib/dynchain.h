@@ -2432,6 +2432,22 @@ enum {
 #define KosDynWith_EXC_TB(n)       (((KosDynNode *)(n))->u.with.exc_tb)
 #define KosDynWith_NORMAL_EXIT(n)  (((KosDynNode *)(n))->u.with.normal_exit)
 
+/**
+   True while __enter__ or __exit__ has been started but has not
+   returned: it suspended on an awaitable, or it is a callable whose
+   frame is installed and has yet to run. Either way the node belongs to
+   kos_dynnode_on_control_returned and must not be advanced or popped by
+   whoever started the call.
+
+   EXIT_PENDING also disambiguates a KOS_RES_REPROLOGUE coming out of
+   kos_dyn_with_unwind: set means __exit__ is still running, clear means
+   the exception was swallowed and the node is finished.
+*/
+#define KosDynWith_ENTER_PENDING(n) \
+  (KosDynWith_PHASE(n) == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+#define KosDynWith_EXIT_PENDING(n) \
+  (KosDynWith_PHASE(n) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+
 
 /* === Unit lifecycle === */
 
