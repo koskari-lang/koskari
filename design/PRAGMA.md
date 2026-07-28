@@ -79,6 +79,8 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 |---|---|---|---|---|---|
 | `reader/brackets` | reader | `True` | `True` | bool | `[ ]` reads into distinct bracket-pair values (vs. plain pairs) |
 | `reader/index-brackets` | reader | `True` | `True` | bool | a `[ ... ]` group attached directly to a value (no whitespace) desugars into `(item VALUE KEY)`, chaining left to right |
+| `reader/dot-attrs` | reader | `True` | `True` | bool | `.` reads as attribute access, both within an atom (`foo.bar`) and attached to any value (`(get-fn x).baz`), producing `(compile/attr ...)`; off, a dot is inert in both spellings |
+| `reader/string-segments` | reader | `True` | `True` | bool | a `-` attached to a string literal's closing quote continues it into the next quoted segment, joining into `(compile/#str ...)` |
 | `reader/layout` | reader | `True` | `True` | bool | layout (indentation) block reading |
 | `reader/implicit-calls` | reader | `True` | `True` | bool | multiple values on one layout line form an implicit call |
 | `reader/pass-none` | reader | `False` | `True` | bool | the `pass` symbol reads as the `None` literal (mention-to-enable) |
@@ -101,6 +103,13 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 `reader/*` settings drive the reader, `compiler/*` the compiler, and `pragma/*`
 govern the pragma machinery itself. Third-party tools register their own
 `toolname/*` settings the same way (see **The Registry**).
+
+`reader/index-brackets`, `reader/dot-attrs`, and `reader/string-segments` gate
+one family: **suffix reader macros**, which attach postfix syntax to a value
+already read. Each is a registered macro whose predicate consults its own
+setting, so the three compose without knowing about each other and a fourth can
+be added the same way — see
+[suffix-macros.md](suffix-macros.md).
 
 ---
 

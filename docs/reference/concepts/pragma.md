@@ -65,6 +65,39 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   off. Because the desugar happens in the reader, the result is an ordinary
   `(item …)` form and composes accordingly — for example `&data["bar"]` is a
   ref to that slot.
+- **`reader/dot-attrs`** *(default on)* — whether `.` reads as attribute
+  access. This governs both spellings at once: `foo.bar` written inside a
+  single atom, and a `.` attached to any just-read value, so
+  `(get-fn x).baz` and `"".join` are attribute reads on a form and on a
+  literal. Both produce `(compile/attr …)`, chain left to right
+  (`obj.a.b`), and compose with index brackets in either order —
+  `foo[0].bar` and `foo.bar[0]` both read the way they look. A space breaks
+  the attachment, so `.name` after whitespace stays an ordinary symbol and
+  the leading-dot method call `(.name obj)` is unaffected. With the feature
+  on, a dot with no name after it (`foo.`, `foo..bar`, `(f x).`) is a read
+  error naming the offending segment; off, a dot is inert in both spellings
+  and `foo.bar` is an ordinary symbol.
+- **`reader/string-segments`** *(default on)* — whether a `-` attached
+  directly to a string literal's closing quote continues that literal into
+  the next quoted segment, so a long string can be broken to fit a line
+  without restructuring the call around an explicit join:
+
+  ```koskari
+  (print "This is one"-
+         " long string broken"-
+         " up across lines")
+  ```
+
+  The segments join into a `(compile/#str …)` form, which folds back to a
+  single constant when every segment is one, so the result costs nothing at
+  runtime. Each segment carries its own prefix — an `f` segment
+  interpolates, an `r` segment is raw — and the gap between a marker and
+  its segment may be any amount of whitespace, on the same line or several
+  lines down, with comments skipped. The marker is strictly adjacent to the
+  closing quote: `"a" -` with a space is a string followed by a minus.
+  Inside a layout block a continuation line must be indented at all, since
+  column 0 ends the logical line. Once the marker is written a segment must
+  follow, so `"a"- 5` is a read error.
 - **`reader/layout`** *(default on)* — whether indentation-based layout blocks
   are read. Off leaves only s-expression syntax.
 - **`reader/implicit-calls`** *(default on)* — whether several values on one
