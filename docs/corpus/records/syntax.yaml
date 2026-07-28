@@ -855,9 +855,11 @@ stability: evolving
 tags:
   - reader
   - dot-attr
+  - call-attr
+  - attr
   - "pragma:reader/dot-attrs"
   - idiom
-notes: requires reader/dot-attrs (baseline on). the dot is the attribute read and the enclosing parens are the call, so a literal receiver works like any other. (.upper "hello") is the equivalent leading-dot spelling
+notes: "how to call a method on a string literal, or on any literal receiver. requires reader/dot-attrs (baseline on). the dot is the attribute read and the enclosing parens are the method call, so a literal receiver works like any other -- no need for (call (attr ...)) or the explicit attr form. (.upper \"hello\") is the equivalent leading-dot spelling"
 ---
 id: reader-dot-attr-expression-receiver-002
 feature: reader/dot-attr
@@ -873,9 +875,11 @@ stability: evolving
 tags:
   - reader
   - dot-attr
+  - call-attr
+  - attr
   - "pragma:reader/dot-attrs"
   - idiom
-notes: requires reader/dot-attrs (baseline on). str.join takes one iterable, so the arguments go in a collection rather than being spread
+notes: "how to call a method with arguments on a string literal -- joining a list of strings. requires reader/dot-attrs (baseline on). str.join takes one iterable, so the arguments go in a collection rather than being spread across the call"
 ---
 id: reader-suffix-mixed-chain-003
 feature: reader/dot-attr
