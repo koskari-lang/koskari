@@ -56,7 +56,7 @@ first `make venv` always compiles.)
 through tox. Inside this isolated worktree that rule is relaxed for the corpus
 task only: the tooling reaches the implementation via `uv run` against the
 worktree's own `.venv`, not tox. This is not a general license to invoke
-`python` ad hoc — the bypass lives inside the corpus tooling (see `quick.py`
+`python` ad hoc — the bypass lives inside the corpus tooling (see `quick`
 below) so there is exactly one sanctioned non-tox entry point. The canonical
 `make test` on the eventual PR remains the authoritative backstop.
 
@@ -65,7 +65,7 @@ below) so there is exactly one sanctioned non-tox entry point. The canonical
 ## Tooling to build first
 
 The minimum viable tooling is a single multi-command script,
-`tools/corpus/quick.py` (implemented), alongside the existing corpus tooling
+`tools/corpus/quick.ki` (implemented), alongside the existing corpus tooling
 (`export.py`, `load.py`). One file rather than three because importing Koskari
 compiles the bootstrap `.ki` files on every launch — a shared script lets
 verify / insert / coverage reuse one warmup and one set of helpers, and gives
@@ -73,7 +73,7 @@ the agent exactly one entry point to discover. It reaches the implementation via
 `uv run` against the worktree's `.venv` (the single sanctioned non-tox path; see
 *Isolation and environment* above).
 
-Crucially, `quick.py` is a thin wrapper over the **existing record runner** in
+Crucially, `quick` is a thin wrapper over the **existing record runner** in
 `tests/corpus/__init__.py` (`CorpusTestCase`, the `HANDLERS` for
 read/expand/eval/error, `load_corpus_index`, the eval encode/compare helpers)
 and the YAML serializer in `tools/corpus/load.ki` (`dump_record`). It does not
@@ -81,17 +81,17 @@ reimplement read/expand/eval, verification, or serialization — so its output i
 exactly what the corpus test phase (`phase_corpus`) accepts. The agent-facing
 CLI contract lives in `docs/corpus/CLAUDE.md`; the sketch below is the rationale.
 
-### `quick.py verify` — the oracle
+### `quick verify` — the oracle
 
 Accepts a source form and one or more stage flags, runs it through the
 implementation, and returns the verify strings.
 
 ```
 Usage:
-  quick.py verify --read   '<form>'
-  quick.py verify --expand '<form>'
-  quick.py verify --eval   '<form>'
-  quick.py verify --all    '<form>'
+  quick verify --read   '<form>'
+  quick verify --expand '<form>'
+  quick verify --eval   '<form>'
+  quick verify --all    '<form>'
 
 Output: JSON  { "read": "...", "expand": "...", "eval": "..." }
 Errors: non-zero exit + JSON { "error": "...", "stage": "read|expand|eval" }
@@ -103,14 +103,14 @@ Notes:
   `--feature`, and `--fixture '<json>'` (extra eval bindings) are supported. A
   set of fixtures (`seq`, `obj`, `add`, `f`, `z`, `a`, `deref`) is baked in via
   the runner.
-- The emitted `eval` string is **verified**: `quick.py` only outputs an encoding
+- The emitted `eval` string is **verified**: `quick` only outputs an encoding
   that round-trips through the same parse + compare helpers `insert` uses, so it
   is safe to paste. When it cannot auto-encode (e.g. a proper list of symbols, a
   `KosType`, a callable) it returns `eval_raw` + `eval_type` + a warning instead,
   and the author hand-writes a literal or `@marked:` encoding and confirms it
   with `insert --dry-run`.
 
-### `quick.py insert` — insert and validate
+### `quick insert` — insert and validate
 
 Accepts a candidate YAML record (from stdin or file), inserts it into the
 correct records file, runs the corpus validation framework, and reports
@@ -118,9 +118,9 @@ pass/fail with detail.
 
 ```
 Usage:
-  quick.py insert < candidate.yaml                 # infer shard, write
-  quick.py insert --shard <name> < candidate.yaml  # explicit shard (preferred)
-  quick.py insert --dry-run < candidate.yaml        # validate only, don't write
+  quick insert < candidate.yaml                 # infer shard, write
+  quick insert --shard <name> < candidate.yaml  # explicit shard (preferred)
+  quick insert --dry-run < candidate.yaml        # validate only, don't write
 
 Output:
   OK   <id>  (inserted into docs/corpus/records/<category>.yaml)
@@ -138,15 +138,15 @@ Notes:
 - Appends the new record as a fresh YAML document, leaving existing records
   byte-for-byte unchanged (minimal diff), rather than rewriting the shard.
 
-### `quick.py coverage` — coverage query
+### `quick coverage` — coverage query
 
 Reports which features have fewer than N entries, so the agent knows where to
 focus.
 
 ```
 Usage:
-  quick.py coverage --min-entries 3
-  quick.py coverage --feature 'special/compile/cond'
+  quick coverage --min-entries 3
+  quick coverage --feature 'special/compile/cond'
 
 Output: table of count -> feature, sorted ascending
 ```
@@ -223,10 +223,10 @@ Place a generation-task `CLAUDE.md` in `docs/corpus/` so an agent session rooted
 there picks it up. It should cover:
 
 - **Setup:** run `make venv` once in the worktree, then drive the implementation
-  through `uv run` via `quick.py` — do not use tox for the corpus task.
-- **Tools:** `quick.py verify --all '<form>'` (always use it — never invent
-  verify output); `quick.py insert < entry.yaml` (check exit code; FAIL means
-  rejected and why); `quick.py coverage --min-entries 3` (start here each
+  through `uv run` via `quick` — do not use tox for the corpus task.
+- **Tools:** `quick verify --all '<form>'` (always use it — never invent
+  verify output); `quick insert < entry.yaml` (check exit code; FAIL means
+  rejected and why); `quick coverage --min-entries 3` (start here each
   session).
 - **Rules:** never write a verify field without running the oracle first; never
   duplicate an existing id (check coverage first); prefer realistic forms from
@@ -245,7 +245,7 @@ there picks it up. It should cover:
 
 ## Phasing
 
-- **Phase 1 — Tooling** (done). `quick.py` (`verify` / `insert` / `coverage`)
+- **Phase 1 — Tooling** (done). `quick` (`verify` / `insert` / `coverage`)
   and `docs/corpus/CLAUDE.md` exist and validate a known-good entry end to end.
   Remaining: set up the worktree and run the smoke test there.
 - **Phase 2 — First agent run** (unsupervised, in the worktree). Agent works
@@ -262,7 +262,7 @@ there picks it up. It should cover:
 
 ## Notes
 
-- The corpus validation framework already exists — `quick.py insert` just
+- The corpus validation framework already exists — `quick insert` just
   invokes it. Don't reinvent the wheel.
 - `stability: evolving` is correct for almost everything now. Reserve
   `stability: stable` for forms whose expand/eval output is extremely unlikely

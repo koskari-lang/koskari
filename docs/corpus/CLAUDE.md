@@ -19,11 +19,11 @@ through tox. For this corpus task that rule does not apply. Instead:
 
 1. Run `make venv` once at the start of the session. This builds the C
    extension into this worktree's `.venv` (`uv pip install -qe .[repl]`).
-2. Install the corpus tooling deps once (not in the `repl` extra):
-   `uv pip install jsonschema PyYAML`.
-3. Drive the implementation only through `tools/corpus/quick.py`, which uses
+2. `make venv` also installs the corpus tooling deps from
+   `tools/requirements.txt`, so there is nothing else to install.
+3. Drive the implementation only through `tools/corpus/quick.ki`, which uses
    `uv run` against that `.venv`. Do not invoke `tox`, `pytest`, `python`, or
-   `python3` directly for corpus work — `quick.py` is the single sanctioned
+   `python3` directly for corpus work — `quick` is the single sanctioned
    entry point.
 
 You never edit C or `.ki` source here, so the build stays stable for the whole
@@ -32,13 +32,21 @@ session. The PR's `make test` is the authoritative final check.
 **Smoke test before generating.** Confirm the toolchain end to end:
 
 ```
-uv run python tools/corpus/quick.py verify --all '(cond [True 100])'
-# -> {"read": "(cond (True 100))", "expand": "(cond (True 100))", "eval": "100"}
+uv run python -B -m koskari tools/corpus/quick.ki -- verify --all '(cond [True 100])'
+# -> {"read": "(cond [True 100])", "expand": "(cond [True 100])", "eval": "100"}
 ```
 
 ## Your tools
 
-All commands run as `uv run python tools/corpus/quick.py <subcommand>`.
+All commands run as:
+
+```
+uv run python -B -m koskari tools/corpus/quick.ki -- <subcommand>
+```
+
+The `--` is required: the koskari CLI rejects option-like tokens before it and
+forwards everything after it to the script. The usage blocks below abbreviate
+that prefix to `quick`.
 
 ### `verify` — the oracle (advisory)
 
@@ -46,7 +54,7 @@ Runs a source form through the real implementation and emits corpus-encoded
 strings. ALWAYS use this — never invent verify output.
 
 ```
-quick.py verify [--read] [--expand] [--eval] [--all]
+quick verify [--read] [--expand] [--eval] [--all]
                 [--block] [--feature <f>] [--fixture <json>]
                 ['<form>']
 ```
@@ -64,7 +72,7 @@ quick.py verify [--read] [--expand] [--eval] [--all]
 Output is a JSON object. Example:
 
 ```
-$ quick.py verify --all '(incr! z)'
+$ quick verify --all '(incr! z)'
 {
   "read": "(incr! z)",
   "expand": "(compile/inplace + z 1)",
@@ -89,7 +97,7 @@ the record through the real handlers (`read`/`expand`/`eval`/`error`). On
 success it appends the record to a shard, leaving existing records untouched.
 
 ```
-quick.py insert [--file <path>] [--shard <name>] [--dry-run]
+quick insert [--file <path>] [--shard <name>] [--dry-run]
 ```
 
 - `--dry-run` validates without writing — use it while iterating.
@@ -101,14 +109,14 @@ quick.py insert [--file <path>] [--shard <name>] [--dry-run]
   on rejection. Always check it; on `FAIL`, fix the entry and retry.
 
 ```
-$ quick.py insert --shard conditionals < entry.yaml
+$ quick insert --shard conditionals < entry.yaml
 OK conditional-cond-else-only-002 (inserted into docs/corpus/records/conditionals.yaml)
 ```
 
 ### `coverage` — find gaps (start here each session)
 
 ```
-quick.py coverage [--min-entries N] [--feature <f>]
+quick coverage [--min-entries N] [--feature <f>]
 ```
 
 - `--min-entries N` (default 3) lists features with fewer than N entries,
@@ -121,22 +129,22 @@ quick.py coverage [--min-entries N] [--feature <f>]
 
 ### Typical loop
 
-1. `quick.py coverage` → pick a sparse feature.
-2. `quick.py verify --all '<form>'` → get the verify strings.
+1. `quick coverage` → pick a sparse feature.
+2. `quick verify --all '<form>'` → get the verify strings.
 3. Write the YAML record (format below), pasting the verified strings.
-4. `quick.py insert --dry-run --shard <name> < entry.yaml` → confirm it passes.
-5. `quick.py insert --shard <name> < entry.yaml` → write it. Commit.
+4. `quick insert --dry-run --shard <name> < entry.yaml` → confirm it passes.
+5. `quick insert --shard <name> < entry.yaml` → write it. Commit.
 
 ## Rules
 
-1. Never write a `verify` field without running `quick.py verify` first.
-2. Never duplicate an existing `id`. Check `quick.py coverage` first.
+1. Never write a `verify` field without running `quick verify` first.
+2. Never duplicate an existing `id`. Check `quick coverage` first.
 3. Prefer realistic source forms extracted from `examples/` and
    `koskari/bootstrap/` over toy examples. Toy examples are acceptable for edge
    cases only.
 4. If eval produces an unexpected exception, do not suppress it — write an
    `invalid` entry with `notes: corrective: <the fixed form>`.
-5. If `quick.py insert` fails, fix the entry and retry. Do not skip.
+5. If `quick insert` fails, fix the entry and retry. Do not skip.
 6. Tag `surface:block` on any entry that tests layout/indentation syntax.
 7. When unsure what a form should expand or evaluate to, check
    `docs/corpus/records/` for similar existing entries first.

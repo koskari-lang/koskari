@@ -391,9 +391,9 @@ dev time. The agent runs in its own git worktree (own gitignored `.venv` from a
 one-time `make venv` plus `uv pip install jsonschema PyYAML`; commits freely;
 human opens a PR per batch), keeping the oracle drift-free and avoiding
 contention with main-tree `tox`/`make test`. Tooling
-(`tools/corpus/quick.py` — `verify` oracle, `insert` validate+append,
+(`tools/corpus/quick.ki` — `verify` oracle, `insert` validate+append,
 `coverage`) and the generation-task `docs/corpus/CLAUDE.md` are **implemented**;
-`quick.py` is a thin wrapper over the existing `tests/corpus` runner and
+`quick` is a thin wrapper over the existing `tests/corpus` runner and
 `tools/corpus/load.ki` serializer, run via `uv run` (the one sanctioned non-tox
 path). Remaining work is the supervised worktree run itself. Mandate per
 special/macro: basic, variant, block/layout, and invalid+corrective entries;

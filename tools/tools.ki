@@ -115,6 +115,12 @@ define build_parser [name]:
     ; Each tool owns its own option set, so a subparser and the tool's
     ; standalone entry point cannot drift apart. Imported as modules
     ; because they each export build_arguments.
+    ;
+    ; tools/corpus/quick.ki is deliberately absent. Registering it would
+    ; import tests.corpus here, dragging the corpus test harness into
+    ; every unrelated invocation for about a quarter second, and it is
+    ; the one tool driven interactively in a tight loop. It is run
+    ; directly instead; see docs/corpus/CLAUDE.md.
     import-from tools opgrams
     import-from tools.corpus export
 
