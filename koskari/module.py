@@ -276,7 +276,8 @@ async def load_module_source_async(
         module,
         source, *,
         seal=True,
-        detach=True):
+        detach=True,
+        layout=True):
     """
     Execute koskari source passed as a string.
 
@@ -293,6 +294,10 @@ async def load_module_source_async(
         completion steps: an interactive session seals but retains
         facets; the bootstrap builtins loop defers both across its
         source files and performs them once at the end
+    :param layout: when False, read plain s-expressions instead of
+        layout.  A layout line is a single form, so several expressions
+        on one line become one implicit call; that suits a file but not
+        a one-liner, where consecutive top-level forms are wanted
     """
 
     filename = getattr(module, '__file__', '<string>')
@@ -303,6 +308,8 @@ async def load_module_source_async(
     source_stream = source_str(source, filename, auto_skip_exec=False)
 
     compiler, reader = build_module_load_facets(module, filename)
+    if not layout:
+        reader.set_layout_modes(layout_enabled=False)
     try:
         stream = IndentAwareStream(
             source_stream.stream,
