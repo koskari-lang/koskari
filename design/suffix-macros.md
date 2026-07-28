@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposal. Nothing here is implemented.
+Implemented. The registry and driver landed first with index brackets
+rewritten onto them, then dotted attributes, then string segments.
 
 The durable part of this design is the **mechanism** -- a registry and
 driver for reader macros that attach to a value already read, so that
@@ -76,22 +77,22 @@ the author to restructure the call to introduce it.
 
 ## Part 1: The suffix macro system
 
-### Current state
+### What this replaced
 
-* `post_value_hooks` is a plain list on the reader
+* `post_value_hooks` was a plain list on the reader
   ([parser.py](../koskari/reader/parser.py)), with
   `add_post_value_hook`, `get_post_value_hooks`,
   `clear_post_value_hooks`, and a `temporary_post_value_hook` context
   manager.
-* The driver is three lines in the read loop: on a `VALUE` event, every
-  hook is called in registration order and its return replaces the value.
-* `_apply_index_brackets` is the only registrant anywhere in the tree, and
-  nothing in `tests/` registers a hook. The mechanism is therefore free to
-  be redesigned rather than migrated.
-* That handler self-gates on `self.index_brackets` (set from the
-  `reader/index-brackets` pragma and mirrored onto `_inner`), then loops
+* The driver was three lines in the read loop: on a `VALUE` event, every
+  hook was called in registration order and its return replaced the value.
+* `_apply_index_brackets` was the only registrant anywhere in the tree, and
+  nothing in `tests/` registered a hook, so the mechanism was free to be
+  redesigned rather than migrated.
+* That handler self-gated on `self.index_brackets`, then looped
   `while stream.peek(1) == "["`, reading each group with `read_pair` and
-  wrapping into `(item VALUE KEY ...)`.
+  wrapping into `(item VALUE KEY ...)`. It is now one group per call, with
+  the loop moved into the driver.
 
 ### Registry and driver
 
@@ -177,10 +178,11 @@ stack does not shift when a pragma is toggled mid-module.
 
 ### API surface
 
-`post_value_hooks` and its four methods are removed. `_apply_index_brackets`
-is rewritten as a registered suffix macro on `[` that consumes one group.
-A `temporary_suffix_macro` context manager replaces
-`temporary_post_value_hook` if anything needs it; nothing does today.
+`post_value_hooks` and its four methods are gone. `_apply_index_brackets`
+is a registered suffix macro on `[` that consumes one group. The registry
+exposes `add_suffix_macro`, `get_suffix_macros`, `get_suffix_macro`,
+`clear_suffix_macro`, and a `temporary_suffix_macro` context manager,
+matching the event macro surface name for name.
 
 ## Part 2: Dotted attribute suffix
 
@@ -261,14 +263,20 @@ somewhere downstream.
 
 Two constraints on the widening:
 
-* **The leading `[a-zA-Z_]` anchor must stay.** Atom patterns are tried in
-  registration order and the dotted pattern is registered *before* both
-  ellipsis and float, so only that anchor keeps `1.5` and `...` from
-  reaching it.
-* **The pattern is installed and removed with the pragma**, as the rest of
-  this feature is. With `reader/dot-attrs` off, the pattern is absent and
-  `foo.` falls through to the symbol it is today. The error exists only
-  where the feature does.
+* **The leading `[a-zA-Z_]` anchor must stay.** `set_atom_pattern` inserts
+  at the front of the list, so patterns are tried in the *reverse* of their
+  registration order and the dotted pattern is checked **last**, after both
+  ellipsis and float. Those two therefore claim `1.5` and `...` before the
+  dotted pattern ever sees them, and the anchor is a second line of defense
+  rather than the only one. It is still worth keeping: the ordering is an
+  artifact of how registration works, not a stated contract.
+* **The pattern stays registered and gates on the flag**, via a matcher
+  that returns no match when `reader/dot-attrs` is off, rather than being
+  installed and removed the way `set_pass_none` toggles `pass`. Removing
+  and re-adding would move the entry to the front of the list on re-enable,
+  silently changing which pattern claims an ambiguous atom. With the
+  feature off, `foo.` falls through to the symbol it is today; the error
+  exists only where the feature does.
 
 Raising is enough to get a positioned error: `process_atom` is called
 inside a `try` that converts a `ValueError` into a reader error carrying
@@ -324,9 +332,16 @@ whitespace, including none. Segments need not be on separate lines:
 Comments in that span are skipped as though absent from the stream
 entirely.
 
-What follows must be a **quoted string literal** -- plain, `f`, `r`, `b`,
-or triple-quoted. Arbitrary expressions do not join, so there is no
+What follows must be a **quoted string literal** -- plain, `f`, `r`, or
+triple-quoted. Arbitrary expressions do not join, so there is no
 `"foo"- (compute)`; that is what `#str` itself is for.
+
+`b` is excluded in both roles, which is narrower than this design first
+said. A joined chain lowers to `compile/#str`, a *string* join, and a
+bytes segment there does not fail the way a mismatched type should -- it
+succeeds and yields `str(b'...')`, the repr, silently. Declining is the
+loud alternative: a bytes receiver is not continued, and a `b"` opener
+after a marker is a read error.
 
 Anything else is a read error naming the unjoined segment. The marker is a
 commitment: once `"foo"-` is written, a segment must follow.
@@ -399,6 +414,19 @@ Koskari has no infix subtraction; `"foo" -` with a space can be, and so is
 left alone. Requiring adjacency also keeps the driver's dispatch a plain
 `peek(1)`, with no provision for markers behind horizontal whitespace.
 
+### Chains stay flat
+
+The driver re-enters after each segment, so the second marker in a
+three-segment chain sees a `compile/#str` form rather than a string
+literal. The predicate accepts both, and the handler appends, so the chain
+flattens to one `(compile/#str "a" " b" " c")` instead of nesting.
+
+This falls out neatly because **an f-string already reads as a
+`compile/#str` form**. An f-string opener is therefore continuable with no
+special case, and an f-string segment splices its parts in rather than
+nesting, so `"head"- f"{x}"` and `f"{x}"- " tail"` produce the same shape
+of form that a single f-string would.
+
 ### Cost: none at runtime
 
 `#str` is bound in bootstrap and compiles through the `compile/#str`
@@ -440,16 +468,24 @@ Both register in `koskari/reader/pragma.py` alongside the existing
 `reader/*` settings, and both are applied in `reload_pragma`, mirrored
 onto `_inner` as the others are.
 
-## Accepted risk
+## Resolved: layout interaction
 
-**Layout interaction.** The segment handler consumes newlines inside what
-the outer reader sees as a single value, so the layout reader must derive
-its column and block state from the stream position after the value
-completes, rather than from a line counter the handler would bypass.
-Multi-line string literals and multi-line s-expressions already require
-this, so the expectation is that it holds unchanged. It is not verified.
-The decision is to proceed and backfill a fix if step 3 finds otherwise,
-rather than to gate the design on it.
+This was carried as an accepted risk -- the segment handler consumes
+newlines inside what the outer reader sees as a single value, and it was
+unverified whether the layout reader would keep its block state across
+that. It holds. A segment chain spanning three lines inside an indented
+block joins correctly, the following statement stays in the block, an
+`else:` peer still binds, and the dedent after the block is unaffected.
+
+Reality did impose one constraint that the open question had proposed
+away. Because the layout surface reads through an indent-aware stream
+whose whitespace skip stops at a dedent, a continuation line **may not sit
+at column 0** inside a layout block -- that column ends the logical line,
+so the gap skip never reaches the segment and the marker fails as an unmet
+commitment. Any indentation at all is accepted, including less than the
+enclosing block's own body indent. The constraint is mild, it matches the
+intuition that a continuation is inside something, and the failure is a
+positioned error at the marker rather than a silent misparse.
 
 ## Open questions
 
@@ -463,15 +499,24 @@ has the pointer.
 
 ## Implementation order
 
-1. Suffix macro registry, driver, and termination guard. Rewrite
-   `_apply_index_brackets` onto it. No behavior change, existing tests
-   hold.
-2. Dotted attribute suffix plus `reader/dot-attrs`, sharing a chain
-   builder with the atom pattern and gating both.
+All three landed as separate commits, each green on the full suite:
+
+1. Suffix macro registry, driver, and termination guard, with
+   `_apply_index_brackets` rewritten onto it. No behavior change. This step
+   also added the first tests for index brackets, which had none.
+2. Dotted attribute suffix plus `reader/dot-attrs`.
 3. String segments plus `reader/string-segments`.
 
-Each step is independently landable, and step 1 is worth landing on its
-own merits regardless of whether either feature follows.
+## Corpus follow-up
+
+Step 2 obsoleted `special-call-attr-literal-dot-invalid-001`, a
+wrong-usage record whose whole content was the limitation dotted
+attributes removed, and it was deleted rather than flipped in place so it
+would not sit in the invalid shard describing working code. Replacement
+coverage is owed, and wants more than the one record: the literal
+receiver, the expression receiver, suffix interleaving, the malformed-dot
+errors, and the whole of string segments are all newly documentable, and
+none of it is in the corpus yet.
 
 ## See also
 

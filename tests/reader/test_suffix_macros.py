@@ -563,4 +563,211 @@ class TestDotAttrsDisabled(SuffixReaderMixin, unittest.TestCase):
         self.assertEqual(self.read("1.5"), 1.5)
 
 
+class TestStringSegments(SuffixReaderMixin, unittest.TestCase):
+    """
+    String segments, ``reader/string-segments`` enabled (the baseline)
+    """
+
+    def test_adjacent_segment_joins(self):
+        """
+        A marker directly between two literals joins them
+        """
+
+        self.assertEqual(kos_repr(self.read('"a"-" b"')),
+                         '(compile/#str "a" " b")')
+
+    def test_gap_may_be_whitespace(self):
+        """
+        Segments need not be adjacent, only separated by whitespace
+        """
+
+        self.assertEqual(kos_repr(self.read('"a"-   " b"')),
+                         '(compile/#str "a" " b")')
+
+    def test_gap_may_cross_lines(self):
+        """
+        The gap crosses newlines, which is the point of the feature
+        """
+
+        self.assertEqual(kos_repr(self.read('"a"-\n" b"')),
+                         '(compile/#str "a" " b")')
+
+    def test_gap_may_cross_blank_lines(self):
+        """
+        Any amount of vertical whitespace is still one gap
+        """
+
+        self.assertEqual(kos_repr(self.read('"a"-\n\n\n" b"')),
+                         '(compile/#str "a" " b")')
+
+    def test_gap_skips_comments(self):
+        """
+        A comment in the gap is treated as absent from the stream
+        """
+
+        self.assertEqual(kos_repr(self.read('"a"- ; note\n" b"')),
+                         '(compile/#str "a" " b")')
+
+    def test_chain_stays_flat(self):
+        """
+        Three segments join into one form, not nested pairs
+        """
+
+        self.assertEqual(kos_repr(self.read('"a"-\n" b"-\n" c"')),
+                         '(compile/#str "a" " b" " c")')
+
+    def test_raw_segment_keeps_its_own_flavor(self):
+        """
+        Each segment carries its own prefix; r stays raw
+        """
+
+        self.assertEqual(kos_repr(self.read('"head"-\nr"\\d+"')),
+                         '(compile/#str "head" "\\d+")')
+
+    def test_format_segment_splices(self):
+        """
+        An f-string segment contributes its parts rather than nesting
+        """
+
+        self.assertEqual(kos_repr(self.read('"head"-\nf"{x}"')),
+                         '(compile/#str "head" (format x))')
+
+    def test_format_opener_continues(self):
+        """
+        A joined form already built from a literal keeps accepting segments
+        """
+
+        self.assertEqual(kos_repr(self.read('f"{x}"-\n" tail"')),
+                         '(compile/#str (format x) " tail")')
+
+    def test_later_suffixes_bind_outside_the_join(self):
+        """
+        .join attaches to the joined result, not to the last segment
+        """
+
+        self.assertEqual(
+            kos_repr(self.read('"a"- " b".join')),
+            '(compile/attr (compile/#str "a" " b") join)')
+
+
+class TestStringSegmentsDecline(SuffixReaderMixin, unittest.TestCase):
+    """
+    Cases the predicate declines, leaving the source reading as it does
+    today
+    """
+
+    def test_space_before_the_marker_is_a_minus(self):
+        """
+        The marker is strictly adjacent to the closing quote
+        """
+
+        values = self.read_all('"a" - " b"')
+        self.assertEqual([kos_repr(v) for v in values],
+                         ['"a"', "-", '" b"'])
+
+    def test_non_string_receiver_declines(self):
+        """
+        (foo)- stays a form followed by a minus
+        """
+
+        values = self.read_all('(foo)- " b"')
+        self.assertEqual([kos_repr(v) for v in values],
+                         ["(foo)", "-", '" b"'])
+
+    def test_arithmetic_is_untouched(self):
+        """
+        An ordinary minus form is unaffected
+        """
+
+        self.assertEqual(kos_repr(self.read("(- 1 2)")), "(- 1 2)")
+
+
+class TestStringSegmentsMalformed(SuffixReaderMixin, unittest.TestCase):
+    """
+    Once the marker is claimed, a missing segment is an error
+    """
+
+    def assert_read_error(self, src):
+        with self.assertRaises(ReaderSyntaxError) as raised:
+            self.read(src)
+        self.assertIn("string segment expected", str(raised.exception))
+
+    def test_non_string_after_the_marker(self):
+        """
+        The continuation must be a string literal, not an expression
+        """
+
+        self.assert_read_error('"a"- 5')
+
+    def test_marker_at_end_of_input(self):
+        """
+        A marker with nothing after it is a commitment unmet
+        """
+
+        self.assert_read_error('"a"-')
+
+    def test_bytes_segment_is_rejected(self):
+        """
+        A joined form is a string join, so b"" is not a segment
+        """
+
+        self.assert_read_error('"a"- b"x"')
+
+
+class TestStringSegmentsDisabled(SuffixReaderMixin, unittest.TestCase):
+    """
+    With ``reader/string-segments`` off, the marker is inert
+    """
+
+    def make_reader(self):
+        reader = Reader()
+        reader.string_segments = False
+        return reader
+
+    def test_marker_does_not_join(self):
+        """
+        The literal ends at its quote and the marker is a minus
+        """
+
+        values = self.read_all('"a"- " b"')
+        self.assertEqual([kos_repr(v) for v in values],
+                         ['"a"', "-", '" b"'])
+
+    def test_missing_segment_is_not_an_error(self):
+        """
+        The error belongs to the feature, not to the reader
+        """
+
+        values = self.read_all('"a"-')
+        self.assertEqual([kos_repr(v) for v in values], ['"a"', "-"])
+
+
+class TestSuffixesCompose(SuffixReaderMixin, unittest.TestCase):
+    """
+    All three suffix kinds alternate, which is the driver's doing
+    """
+
+    def make_reader(self):
+        reader = Reader()
+        reader.index_brackets = True
+        return reader
+
+    def test_index_binds_outside_a_join(self):
+        """
+        The join completes before the index attaches
+        """
+
+        self.assertEqual(kos_repr(self.read('"a"- " b"[0]')),
+                         '(item (compile/#str "a" " b") 0)')
+
+    def test_all_three_kinds_in_one_expression(self):
+        """
+        Segment, then index, then attribute, left to right
+        """
+
+        self.assertEqual(
+            kos_repr(self.read('"ab"-"cd"[1].x')),
+            '(compile/attr (item (compile/#str "ab" "cd") 1) x)')
+
+
 # The end.

@@ -16,8 +16,8 @@ koskari.reader.pragma
 
 Reader-side pragma settings, registered into the koskari.pragma registry at
 import: reader/brackets, reader/index-brackets, reader/dot-attrs,
-reader/layout, reader/implicit-calls, reader/pass-none, reader/fences.
-Each setting's
+reader/string-segments, reader/layout, reader/implicit-calls,
+reader/pass-none, reader/fences. Each setting's
 ``default`` is its baseline (value when undeclared); the function's argument
 defaults are the parameter defaults (value when declared but the arg is
 omitted).
@@ -56,6 +56,17 @@ def reader_dot_attrs(enabled: bool = True) -> bool:
     Whether ``.`` reads as attribute access (baseline on), both within an
     atom (``foo.bar``) and attached to any just-read value
     (``(get-fn x).baz``)
+    """
+
+    return enabled
+
+
+@pragma_setting("reader/string-segments", True)
+def reader_string_segments(enabled: bool = True) -> bool:
+    """
+    Whether a ``-`` attached to a string literal's closing quote continues
+    it into the next quoted segment (baseline on), joining into
+    ``compile/#str``
     """
 
     return enabled

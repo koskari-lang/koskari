@@ -276,6 +276,31 @@ def _attr_link(obj, name):
     return cons(_symbol_attr, obj, symbol(name), nil)
 
 
+def _string_segment_parts(value):
+    """
+    The parts a value contributes to a joined string form
+
+    A ``(compile/#str ...)`` form contributes its arguments, so chains stay
+    flat and an f-string segment splices rather than nesting. Anything else
+    contributes itself.
+
+    :param value: a string literal, or a compile/#str form
+    :return: a list of forms
+    """
+
+    if is_pair(value) and not is_nil(value):
+        head, tail = value
+        if head is _symbol__str:
+            parts = []
+            node = tail
+            while is_pair(node) and not is_nil(node):
+                item, node = node
+                parts.append(item)
+            return parts
+
+    return [value]
+
+
 def _as_dotted_attr_atom(s):
     """
     Convert dotted identifier atom (e.g. foo.bar) to (compile/attr obj name).
@@ -805,6 +830,7 @@ class Reader:
         self.bracket_pairs = bracket_pairs
         self.index_brackets = False
         self.dot_attrs = True
+        self.string_segments = True
         self.fences_enabled = True
 
         if not nodefaults:
@@ -819,6 +845,9 @@ class Reader:
         self.add_suffix_macro(
             ".", self._apply_dot_attr,
             predicate=self._dot_attrs_enabled)
+        self.add_suffix_macro(
+            "-", self._apply_string_segment,
+            predicate=self._string_segments_enabled)
 
 
     def read(self, reader_stream):
@@ -1220,6 +1249,119 @@ class Reader:
             name.append(stream.read(1))
 
         value = _attr_link(value, "".join(name))
+        value.set_position(position)
+
+        return value
+
+
+    def _string_segments_enabled(self, stream, char, value):
+        """
+        Suffix macro predicate for :meth:`_apply_string_segment`
+
+        Only a text string literal, or a joined form already built from
+        one, can continue. Deciding here rather than in the handler is
+        what keeps ``(foo)-`` reading as a form followed by a minus.
+
+        :param stream: the source stream
+        :param char: the trigger character
+        :param value: the value the segment would continue
+        :return: whether a string segment may attach here
+        """
+
+        if not self.string_segments:
+            return False
+
+        # a str subclass (Atom) is not a string literal, so match exactly
+        if type(value) is str:
+            return True
+
+        if is_pair(value) and not is_nil(value):
+            head, _tail = value
+            return head is _symbol__str
+
+        return False
+
+
+    def _skip_segment_gap(self, stream):
+        """
+        Consume whitespace and comments between a segment marker and the
+        next segment
+
+        Comments are treated as absent from the stream entirely, and the
+        gap crosses newlines -- a segment need not be on the following
+        line, and need not be indented.
+
+        :param stream: the source stream
+        """
+
+        while True:
+            stream.skip_whitespace()
+            if stream.peek(1) != ";":
+                break
+            stream.readline()
+
+
+    def _peek_string_opener(self, stream):
+        """
+        Whether the stream is positioned at a text string literal opener
+
+        Accepts a bare quote and the ``f`` and ``r`` flavors. ``b`` is
+        excluded: a joined form is a string join, and admitting bytes would
+        produce a silently wrong result rather than a failure.
+
+        :param stream: the source stream
+        :return: whether a string segment can be read here
+        """
+
+        char = stream.peek(1)
+        if char == '"':
+            return True
+        elif char in "fr":
+            return stream.peek(2)[1:2] == '"'
+        else:
+            return False
+
+
+    def _apply_string_segment(self, stream, value, position):
+        """
+        Suffix macro: string segment continuation
+
+        When ``reader/string-segments`` is enabled, a ``-`` attached
+        directly to a string literal's closing quote continues that literal
+        into the next quoted chunk, wrapping into ``(compile/#str ...)``.
+        Consumes exactly one segment; the driver re-enters, so a chain
+        stays flat. Each segment carries its own flavor prefix, and an
+        f-string segment splices its parts rather than nesting, matching
+        what f-strings already read as.
+
+        The following segment is read through the character macros directly
+        rather than as a general value, so its own suffixes do not bind
+        before the join: in ``"a"- " b".join`` the ``.join`` attaches to the
+        joined result.
+
+        :param stream: the source stream, positioned at ``-``
+        :param value: the string literal being continued
+        :param position: the position of ``value``
+        :return: the joined (compile/#str ...) form
+        :raises ReaderSyntaxError: when no string segment follows
+        """
+
+        stream.read(1)
+        self._skip_segment_gap(stream)
+
+        segment_at = stream.position()
+        if not self._peek_string_opener(stream):
+            raise stream.error(
+                "string segment expected after '-'", segment_at)
+
+        event, segment = self._dispatch_event_macros(stream, stream.read(1))
+        if event is not VALUE:
+            raise stream.error(
+                "string segment expected after '-'", segment_at)
+
+        parts = _string_segment_parts(value) + _string_segment_parts(segment)
+
+        value = cons(_symbol__str, *parts, nil)
         value.set_position(position)
 
         return value
@@ -2585,6 +2727,11 @@ class LayoutReader(Reader):
         if dot_attrs is not None:
             self.dot_attrs = bool(dot_attrs)
             self._inner.dot_attrs = bool(dot_attrs)
+
+        string_segments = pragma.get("reader/string-segments")
+        if string_segments is not None:
+            self.string_segments = bool(string_segments)
+            self._inner.string_segments = bool(string_segments)
 
         pass_none = pragma.get("reader/pass-none")
         if pass_none is not None:
