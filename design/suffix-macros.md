@@ -508,6 +508,24 @@ All three landed as separate commits, each green on the full suite:
 2. Dotted attribute suffix plus `reader/dot-attrs`.
 3. String segments plus `reader/string-segments`.
 
+## Deferred: a fully bare reader
+
+Raw reader defaults are meant to be bare-bones, with the pragma as the thing
+that turns switches on. `index_brackets` and `string_segments` follow that;
+`dot_attrs` does not, and defaults on.
+
+The reason is not principle but inertia: the atom spelling `foo.bar` predates
+the pragma, and four tests in `tests/reader/test_parse_ng.py` pin it as
+behavior of a directly-constructed reader. Flipping the default breaks them.
+
+The intended end state is that constructing a reader with everything off yields
+the purest reader, with no grandfathered exception. Getting there means
+converting those four tests to build their reader with `dot_attrs` enabled and
+then flipping the default, so the setting becomes off-by-default like its two
+siblings. Deferred rather than rejected -- it is a behavior change to
+long-standing reader defaults and wants its own pass, not a ride-along on a
+feature commit.
+
 ## Corpus follow-up
 
 Step 2 obsoleted `special-call-attr-literal-dot-invalid-001`, a

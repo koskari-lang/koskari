@@ -832,7 +832,8 @@ class Reader:
         # on, so a baseline-on setting still reads off here until a pragma
         # is applied. dot_attrs is the exception: the atom spelling
         # (foo.bar) predates the pragma and bare readers have always done
-        # it, so it stays on to keep that contract.
+        # it, so it stays on to keep that contract. Retiring that exception
+        # is deferred, not rejected -- see design/suffix-macros.md.
         self.index_brackets = False
         self.dot_attrs = True
         self.string_segments = False
