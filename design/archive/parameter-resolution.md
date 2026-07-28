@@ -2,11 +2,11 @@
 
 How a parameter name becomes a value, where a value lives, and what crosses a
 context fork. This supersedes D5, D6, D7 and D10 of
-[archive/domain-task-isolation.md](archive/domain-task-isolation.md), which
+[domain-task-isolation.md](domain-task-isolation.md), which
 remains the record of the task-isolation bug and the fork discipline that fixed
 it.
 
-**Status**: implemented.
+**Status**: Implemented (archived 2026-07-28).
 
 ---
 
@@ -114,7 +114,7 @@ do not interfere, because neither default is ever stored.
 
 `Domain` is thread-scoped by design: it represents the contexts currently active
 on a thread, and a suspending context removes itself (invariant I2 in
-[archive/domain.md](archive/domain.md)). The pop-mismatch `RuntimeError` is the
+[domain.md](domain.md)). The pop-mismatch `RuntimeError` is the
 intended tripwire for two tasks interleaving `Domain` blocks on one thread.
 
 `Domain.param_scopes()` returns `{"shadow": {...}, "root": {...}}` as fresh
@@ -146,8 +146,8 @@ version stamp is the natural first step, and it is invisible to the surface.
 
 ## References
 
-- [archive/domain-task-isolation.md](archive/domain-task-isolation.md): the
+- [domain-task-isolation.md](domain-task-isolation.md): the
   task-isolation bug, the reproducer, and the fork discipline
-- [archive/domain.md](archive/domain.md): Domain and TLS scope machinery
-- [OPCODES.md](OPCODES.md): PARAM, PARAM_CONST, PUSH_PARAM, POP_PARAM
+- [domain.md](domain.md): Domain and TLS scope machinery
+- [OPCODES.md](../OPCODES.md): PARAM, PARAM_CONST, PUSH_PARAM, POP_PARAM
 - Racket parameterization and thread cells: the semantic model

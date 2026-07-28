@@ -234,7 +234,7 @@ A broader rule -- flagging every spaced occurrence -- would be noise, since
 each spaced form is ordinary syntax somewhere.
 
 New members will arrive as suffix reader macros are added (see
-[suffix-macros.md](suffix-macros.md)), so this wants to be a table the linter
+[archive/suffix-macros.md](archive/suffix-macros.md)), so this wants to be a table the linter
 consults, not a set of hand-written checks.
 
 ## Open questions

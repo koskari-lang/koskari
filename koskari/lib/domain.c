@@ -25,7 +25,7 @@
    copied; contexts reach it by resolution. Every context has a domain:
    the ambient one when present, minted fresh as needed otherwise; it is
    the identity/lifecycle anchor of the computation. See
-   design/parameter-resolution.md.
+   design/archive/parameter-resolution.md.
 
    author: Christopher O'Brien <obriencj@preoccupied.net>
    license: GNU General Public License v3

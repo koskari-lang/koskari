@@ -2,8 +2,10 @@
 
 ## Status
 
-Implemented. The registry and driver landed first with index brackets
-rewritten onto them, then dotted attributes, then string segments.
+**Implemented (archived 2026-07-28).** The registry and driver landed
+first with index brackets rewritten onto them, then dotted attributes,
+then string segments. Canonical surface notes live in
+[PRAGMA.md](../PRAGMA.md) and [SYNTAX.md](../SYNTAX.md).
 
 The durable part of this design is the **mechanism** -- a registry and
 driver for reader macros that attach to a value already read, so that
@@ -80,7 +82,7 @@ the author to restructure the call to introduce it.
 ### What this replaced
 
 * `post_value_hooks` was a plain list on the reader
-  ([parser.py](../koskari/reader/parser.py)), with
+  ([parser.py](../../koskari/reader/parser.py)), with
   `add_post_value_hook`, `get_post_value_hooks`,
   `clear_post_value_hooks`, and a `temporary_post_value_hook` context
   manager.
@@ -290,7 +292,7 @@ Worth covering when the widening lands.
 
 `compile/call` already pattern-matches a `(compile/attr obj sym)` head and
 rewrites it to `(compile/call-attr obj attr args...)`, for both the `attr`
-and `compile/attr` spellings ([call.py](../koskari/compile/specials/call.py)).
+and `compile/attr` spellings ([call.py](../../koskari/compile/specials/call.py)).
 So `((get-fn x).baz a)` lowers through the ordinary method-call path and
 picks up the `CALL_FAST_ATTR` family where the receiver qualifies. No
 special or opcode work is required.
@@ -434,7 +436,7 @@ of form that a single f-string would.
 special, which reduces via `_reduce_op` with a Python fold. That fold
 consumes leading constant arguments into a single `CONST`, and a lone
 folded constant is emitted as a bare `CONST` with no `OBJECT_STR`
-instruction at all ([object.py](../koskari/compile/specials/object.py)).
+instruction at all ([object.py](../../koskari/compile/specials/object.py)).
 
 So an all-constant segment chain compiles to exactly the single string
 constant that writing it on one line would have produced. Folding in the
@@ -547,11 +549,11 @@ none of it is in the corpus yet.
 
 ## See also
 
-* [PRAGMA.md](PRAGMA.md) -- pragma registry, watchers, and the reader
+* [PRAGMA.md](../PRAGMA.md) -- pragma registry, watchers, and the reader
   settings these join
-* [SYNTAX.md](SYNTAX.md) -- reader surface syntax
-* [fenced-foreign-literal.md](fenced-foreign-literal.md) -- the other
+* [SYNTAX.md](../SYNTAX.md) -- reader surface syntax
+* [fenced-foreign-literal.md](../fenced-foreign-literal.md) -- the other
   reader feature that lowers to an ordinary compiler form
-* [koskari-lint.md](koskari-lint.md) -- these suffixes join the
+* [koskari-lint.md](../koskari-lint.md) -- these suffixes join the
   adjacency-significant family, where a space produces a different valid
   parse rather than an error; adding a suffix macro adds a member

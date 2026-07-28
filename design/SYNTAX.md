@@ -189,10 +189,10 @@ delimited it: `[f 1 2]` compiles the same as `(f 1 2)` — a call to `f`.
 What differs is a marker. The reader records the bracket origin by producing a
 **`bracket-pair`** (and `bracket-nil`) — a `pair` subtype that is value-equal to
 and structurally interchangeable with an ordinary pair, but carries the fact
-that the source used `[ ]`. That marker exists so tooling and an *opt-in*
-compiler check can act on it; it does not change evaluation by itself.
+that the source used `[ ]`. That marker exists so tooling and a compiler check
+can act on it; it does not change evaluation by itself.
 
-The **convention** — and by default it is only a convention — is:
+The **convention** — evaluation still follows it either way — is:
 
 - **`( )` indicates a call/apply form**: the first element is applied to the
   rest. Some forms evaluate every argument; others treat selected arguments as
@@ -213,7 +213,8 @@ fragment accidentally lands in call position — e.g. a typo `ler` for `let`:
 This expands to a call to the value `ler` whose first argument is
 `(call (call a 1))` — clearly not intended. With the bracket marker, the
 compiler can diagnose it. That diagnosis is gated (see below) and defaults to
-silence, so the unannotated language stays a pure convention.
+`warn`, so a stray bracket-pair in call position still compiles but emits a
+`SyntaxWarning`.
 
 #### Gating the bracket-in-call-position check
 
@@ -224,8 +225,8 @@ Two independent settings, both **module-scoped** and set via the pragma system
   `bracket-pair` / `bracket-nil` values (default on) or into plain pairs. When
   off, the origin marker is never produced.
 - `compiler/call-brackets` (**compiler**) — policy when a `bracket-pair` reaches
-  call position: `ignore` (default, pure convention), `warn` (emit a
-  `SyntaxWarning`), or `error` (raise at compile time).
+  call position: `ignore` (pure convention, no diagnostic), `warn` (default;
+  emit a `SyntaxWarning`), or `error` (raise at compile time).
 
 ```
 (pragma [compiler/call-brackets 'error])   ; make stray brackets-in-call a hard error

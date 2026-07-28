@@ -109,7 +109,7 @@ one family: **suffix reader macros**, which attach postfix syntax to a value
 already read. Each is a registered macro whose predicate consults its own
 setting, so the three compose without knowing about each other and a fourth can
 be added the same way — see
-[suffix-macros.md](suffix-macros.md).
+[archive/suffix-macros.md](archive/suffix-macros.md).
 
 ---
 
