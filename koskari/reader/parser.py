@@ -1258,9 +1258,9 @@ class Reader:
         """
         Suffix macro predicate for :meth:`_apply_string_segment`
 
-        Only a text string literal, or a joined form already built from
-        one, can continue. Deciding here rather than in the handler is
-        what keeps ``(foo)-`` reading as a form followed by a minus.
+        Only a string literal, or a joined form already built from one, can
+        continue. Deciding here rather than in the handler is what keeps
+        ``(foo)-`` reading as a form followed by a minus.
 
         :param stream: the source stream
         :param char: the trigger character
@@ -1272,7 +1272,7 @@ class Reader:
             return False
 
         # a str subclass (Atom) is not a string literal, so match exactly
-        if type(value) is str:
+        if type(value) is str or type(value) is bytes:
             return True
 
         if is_pair(value) and not is_nil(value):
@@ -1303,11 +1303,12 @@ class Reader:
 
     def _peek_string_opener(self, stream):
         """
-        Whether the stream is positioned at a text string literal opener
+        Whether the stream is positioned at a string literal opener
 
-        Accepts a bare quote and the ``f`` and ``r`` flavors. ``b`` is
-        excluded: a joined form is a string join, and admitting bytes would
-        produce a silently wrong result rather than a failure.
+        Accepts a bare quote and every flavor prefix the reader has. The
+        macro decides that a literal follows, not which literals are
+        sensible to join: a ``b`` segment joins like any other, and what
+        ``compile/#str`` makes of it is the author's business.
 
         :param stream: the source stream
         :return: whether a string segment can be read here
@@ -1316,7 +1317,7 @@ class Reader:
         char = stream.peek(1)
         if char == '"':
             return True
-        elif char in "fr":
+        elif char in "frb":
             return stream.peek(2)[1:2] == '"'
         else:
             return False
@@ -1332,7 +1333,9 @@ class Reader:
         Consumes exactly one segment; the driver re-enters, so a chain
         stays flat. Each segment carries its own flavor prefix, and an
         f-string segment splices its parts rather than nesting, matching
-        what f-strings already read as.
+        what f-strings already read as. Mixing flavors is not the reader's
+        business: a ``b`` segment joins like any other and answers to
+        ``compile/#str``.
 
         The following segment is read through the character macros directly
         rather than as a general value, so its own suffixes do not bind

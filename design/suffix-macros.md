@@ -332,16 +332,17 @@ whitespace, including none. Segments need not be on separate lines:
 Comments in that span are skipped as though absent from the stream
 entirely.
 
-What follows must be a **quoted string literal** -- plain, `f`, `r`, or
-triple-quoted. Arbitrary expressions do not join, so there is no
+What follows must be a **quoted string literal** -- plain, `f`, `r`, `b`,
+or triple-quoted. Arbitrary expressions do not join, so there is no
 `"foo"- (compute)`; that is what `#str` itself is for.
 
-`b` is excluded in both roles, which is narrower than this design first
-said. A joined chain lowers to `compile/#str`, a *string* join, and a
-bytes segment there does not fail the way a mismatched type should -- it
-succeeds and yields `str(b'...')`, the repr, silently. Declining is the
-loud alternative: a bytes receiver is not continued, and a `b"` opener
-after a marker is a read error.
+Every flavor is accepted in both roles, including `b`. Joining bytes into
+a `compile/#str` yields `str(b'...')`, the repr, which is almost certainly
+not what an author wants -- and the macro allows it anyway. The reader
+decides that a literal follows, not which literals are worth joining.
+Excluding `b` would make this construct impose a rule that writing the
+`#str` call by hand does not, and the whole point is that it is another
+spelling of the same thing rather than a narrower one.
 
 Anything else is a read error naming the unjoined segment. The marker is a
 commitment: once `"foo"-` is written, a segment must follow.

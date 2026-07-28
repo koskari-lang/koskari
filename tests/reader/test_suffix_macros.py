@@ -640,6 +640,22 @@ class TestStringSegments(SuffixReaderMixin, unittest.TestCase):
         self.assertEqual(kos_repr(self.read('f"{x}"-\n" tail"')),
                          '(compile/#str (format x) " tail")')
 
+    def test_bytes_segment_joins_like_any_other(self):
+        """
+        The macro decides a literal follows, not which are worth joining
+        """
+
+        self.assertEqual(kos_repr(self.read('"a"- b"x"')),
+                         '(compile/#str "a" b\'x\')')
+
+    def test_bytes_opener_continues(self):
+        """
+        A bytes receiver is continued too; compile/#str answers for it
+        """
+
+        self.assertEqual(kos_repr(self.read('b"x"- b"y"')),
+                         "(compile/#str b'x' b'y')")
+
     def test_later_suffixes_bind_outside_the_join(self):
         """
         .join attaches to the joined result, not to the last segment
@@ -706,12 +722,12 @@ class TestStringSegmentsMalformed(SuffixReaderMixin, unittest.TestCase):
 
         self.assert_read_error('"a"-')
 
-    def test_bytes_segment_is_rejected(self):
+    def test_expression_after_the_marker(self):
         """
-        A joined form is a string join, so b"" is not a segment
+        A parenthesized form is not a segment either
         """
 
-        self.assert_read_error('"a"- b"x"')
+        self.assert_read_error('"a"- (compute)')
 
 
 class TestStringSegmentsDisabled(SuffixReaderMixin, unittest.TestCase):
