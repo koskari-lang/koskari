@@ -148,8 +148,19 @@ _decimal_re = _patterns.DECIMAL_RE.match
 _fraction_re = _patterns.FRACTION_RE.match
 _complex_re = _patterns.COMPLEX_RE.match
 _keyword_re = _patterns.KEYWORD_RE.match
+# deliberately wider than the well-formed shape: a trailing segment that
+# is empty or not an identifier still matches, so _as_dotted_attr_atom can
+# reject it by name rather than letting `foo.` fall through to a symbol.
+# The leading identifier anchor is what keeps floats and ellipsis out.
 _dotted_attr_atom_re = regex(
-    r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z_][a-zA-Z0-9/_-]*)+$").match
+    r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z0-9/_-]*)+$").match
+_attr_name_re = regex(r"^[a-zA-Z_][a-zA-Z0-9/_-]*$").match
+
+# the same name shape as _attr_name_re, as character sets, for the reader's
+# `.` suffix macro to scan with
+_ATTR_NAME_HEAD = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_")
+_ATTR_NAME_REST = _ATTR_NAME_HEAD | frozenset("0123456789/-")
 _ellipsis_atom_re = regex(r"^\.\.\.$").match
 _py_singleton_atom_re = regex(r"^(None|True|False)$").match
 _pass_atom_re = regex(r"^pass$").match
@@ -249,17 +260,47 @@ def _as_decimal(s):
     return cons(_symbol_decimal, tuple(ct), nil)
 
 
+def _attr_link(obj, name):
+    """
+    Build one ``(compile/attr OBJ NAME)`` link
+
+    The shared rule behind both spellings of attribute access: the atom
+    pattern below chains it over a dotted atom, and the reader's ``.``
+    suffix macro applies it once per pass.
+
+    :param obj: the value the attribute is read from
+    :param name: the attribute name, as a string
+    :return: the (compile/attr ...) form
+    """
+
+    return cons(_symbol_attr, obj, symbol(name), nil)
+
+
 def _as_dotted_attr_atom(s):
     """
     Convert dotted identifier atom (e.g. foo.bar) to (compile/attr obj name).
     Left-associative: foo.bar.baz becomes (compile/attr (compile/attr foo bar)
     baz).
+
+    The matching pattern is wider than the well-formed shape, so a dot with
+    no name after it (``foo.``, ``foo..bar``, ``foo.9x``) arrives here and
+    is rejected by name. ``ValueError`` is what the read loop converts into
+    a positioned reader error.
+
+    :param s: the raw dotted atom text
+    :return: the nested (compile/attr ...) form
+    :raises ValueError: when any segment after a dot is not an identifier
     """
 
     parts = s.split(".")
+
     obj = symbol(parts[0])
     for name in parts[1:]:
-        obj = cons(_symbol_attr, obj, symbol(name), nil)
+        if not name:
+            raise ValueError(f"attribute name missing in {s!r}")
+        if not _attr_name_re(name):
+            raise ValueError(f"invalid attribute name {name!r} in {s!r}")
+        obj = _attr_link(obj, name)
 
     return obj
 
@@ -763,6 +804,7 @@ class Reader:
         self._terms = "".join(sorted(self.terminating))
         self.bracket_pairs = bracket_pairs
         self.index_brackets = False
+        self.dot_attrs = True
         self.fences_enabled = True
 
         if not nodefaults:
@@ -774,6 +816,9 @@ class Reader:
         self.add_suffix_macro(
             "[", self._apply_index_brackets,
             predicate=self._index_brackets_enabled)
+        self.add_suffix_macro(
+            ".", self._apply_dot_attr,
+            predicate=self._dot_attrs_enabled)
 
 
     def read(self, reader_stream):
@@ -1128,6 +1173,58 @@ class Reader:
         return value
 
 
+    def _dot_attrs_enabled(self, stream, char, value):
+        """
+        Suffix macro predicate for :meth:`_apply_dot_attr`
+
+        :param stream: the source stream
+        :param char: the trigger character
+        :param value: the value the attribute would be read from
+        :return: whether ``reader/dot-attrs`` is enabled
+        """
+
+        return self.dot_attrs
+
+
+    def _apply_dot_attr(self, stream, value, position):
+        """
+        Suffix macro: postfix dotted attribute reader macro
+
+        When ``reader/dot-attrs`` is enabled, a ``.`` attached directly to
+        a just-read value (no intervening whitespace) reads an attribute
+        name and wraps into ``(compile/attr VALUE NAME)``. Consumes exactly
+        one attribute; the suffix driver re-enters for chains, so
+        ``(f x).a.b`` is left-associative. A space breaks the attachment,
+        leaving ``.name`` an ordinary symbol, so the leading-dot method
+        spelling ``(.name obj)`` is untouched.
+
+        :param stream: the source stream, positioned at ``.``
+        :param value: the value the attribute is read from
+        :param position: the position of ``value``
+        :return: the wrapped (compile/attr ...) form
+        :raises ReaderSyntaxError: when no attribute name follows the dot
+        """
+
+        stream.read(1)
+
+        dot_at = stream.position()
+        char = stream.peek(1)
+        if not char or char not in _ATTR_NAME_HEAD:
+            raise stream.error("attribute name expected after '.'", dot_at)
+
+        name = [stream.read(1)]
+        while True:
+            char = stream.peek(1)
+            if not char or char not in _ATTR_NAME_REST:
+                break
+            name.append(stream.read(1))
+
+        value = _attr_link(value, "".join(name))
+        value.set_position(position)
+
+        return value
+
+
     def add_event_macro(
             self, char, macro_fn, terminating=False, predicate=None):
         """
@@ -1452,6 +1549,22 @@ class Reader:
                 break
 
 
+    def _dotted_attr_match(self, atom):
+        """
+        Atom pattern matcher for dotted attribute access
+
+        Gated on ``reader/dot-attrs`` so one setting governs both spellings.
+        Gating here rather than by installing and removing the pattern keeps
+        its position in the ordered pattern list fixed, which matters because
+        that order decides which pattern claims an ambiguous atom.
+
+        :param atom: the raw atom text
+        :return: a match when dotted attributes are enabled, else None
+        """
+
+        return self.dot_attrs and _dotted_attr_atom_re(atom)
+
+
     def set_pass_none(self, enabled):
         """
         Install or remove the reader symbol macro that reads the ``pass``
@@ -1487,7 +1600,8 @@ class Reader:
 
         ap = self.set_atom_pattern
 
-        ap(symbol("compile/attr"), _dotted_attr_atom_re, _as_dotted_attr_atom)
+        ap(symbol("compile/attr"), self._dotted_attr_match,
+           _as_dotted_attr_atom)
         ap(symbol("keyword"), _keyword_re, keyword)
         ap(symbol("ellipsis"), _ellipsis_atom_re, _as_ellipsis)
         ap(symbol("py_singleton"), _py_singleton_atom_re, _as_py_singleton)
@@ -2445,6 +2559,7 @@ class LayoutReader(Reader):
         Apply reader settings from a module pragma: reader/layout and
         reader/implicit-calls drive the layout switches; reader/brackets sets
         bracket-pair reading on this reader and its inner reader;
+        reader/dot-attrs governs both spellings of dotted attribute access;
         reader/pass-none toggles the ``pass`` symbol macro; reader/fences
         toggles triple-backtick fence reading.
         """
@@ -2465,6 +2580,11 @@ class LayoutReader(Reader):
         if index_brackets is not None:
             self.index_brackets = bool(index_brackets)
             self._inner.index_brackets = bool(index_brackets)
+
+        dot_attrs = pragma.get("reader/dot-attrs")
+        if dot_attrs is not None:
+            self.dot_attrs = bool(dot_attrs)
+            self._inner.dot_attrs = bool(dot_attrs)
 
         pass_none = pragma.get("reader/pass-none")
         if pass_none is not None:

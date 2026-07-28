@@ -15,8 +15,9 @@
 koskari.reader.pragma
 
 Reader-side pragma settings, registered into the koskari.pragma registry at
-import: reader/brackets, reader/layout, reader/implicit-calls,
-reader/pass-none, reader/fences. Each setting's
+import: reader/brackets, reader/index-brackets, reader/dot-attrs,
+reader/layout, reader/implicit-calls, reader/pass-none, reader/fences.
+Each setting's
 ``default`` is its baseline (value when undeclared); the function's argument
 defaults are the parameter defaults (value when declared but the arg is
 omitted).
@@ -44,6 +45,17 @@ def reader_index_brackets(enabled: bool = True) -> bool:
     """
     Whether an ``[ ... ]`` group attached directly to a value desugars
     into ``(item VALUE KEY)``
+    """
+
+    return enabled
+
+
+@pragma_setting("reader/dot-attrs", True)
+def reader_dot_attrs(enabled: bool = True) -> bool:
+    """
+    Whether ``.`` reads as attribute access (baseline on), both within an
+    atom (``foo.bar``) and attached to any just-read value
+    (``(get-fn x).baz``)
     """
 
     return enabled

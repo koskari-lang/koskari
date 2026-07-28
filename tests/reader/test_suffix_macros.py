@@ -347,4 +347,220 @@ class TestIndexBracketsDisabled(SuffixReaderMixin, unittest.TestCase):
         self.assertEqual([kos_repr(v) for v in values], ["foo", "[]"])
 
 
+class TestDotAttrs(SuffixReaderMixin, unittest.TestCase):
+    """
+    Dotted attribute access, ``reader/dot-attrs`` enabled (the baseline)
+    """
+
+    def test_dotted_atom_is_an_attr_form(self):
+        """
+        foo.bar reads as (compile/attr foo bar)
+        """
+
+        self.assertEqual(kos_repr(self.read("foo.bar")),
+                         "(compile/attr foo bar)")
+
+    def test_dotted_atom_is_left_associative(self):
+        """
+        foo.bar.baz nests left to right
+        """
+
+        self.assertEqual(kos_repr(self.read("foo.bar.baz")),
+                         "(compile/attr (compile/attr foo bar) baz)")
+
+    def test_attaches_to_a_form(self):
+        """
+        The receiver may be a form, which the atom rule alone cannot do
+        """
+
+        self.assertEqual(kos_repr(self.read("(get-fn x).baz")),
+                         "(compile/attr (get-fn x) baz)")
+
+    def test_attaches_to_a_string_literal(self):
+        """
+        "".join is a method call once the parens are around it
+        """
+
+        self.assertEqual(kos_repr(self.read('"".join')),
+                         '(compile/attr "" join)')
+
+    def test_suffix_chains_on_a_form(self):
+        """
+        (f x).a.b nests left to right through driver re-entry
+        """
+
+        self.assertEqual(kos_repr(self.read("(f x).a.b")),
+                         "(compile/attr (compile/attr (f x) a) b)")
+
+    def test_attribute_names_admit_dash_and_slash(self):
+        """
+        The suffix accepts the same name characters the atom rule does
+        """
+
+        self.assertEqual(kos_repr(self.read("(f x).bar-baz")),
+                         "(compile/attr (f x) bar-baz)")
+        self.assertEqual(kos_repr(self.read("(f x).a/b")),
+                         "(compile/attr (f x) a/b)")
+
+    def test_whitespace_breaks_the_attachment(self):
+        """
+        A space leaves .bar an ordinary symbol
+        """
+
+        values = self.read_all("foo .bar")
+        self.assertEqual([kos_repr(v) for v in values], ["foo", ".bar"])
+
+    def test_leading_dot_call_is_untouched(self):
+        """
+        The (.name obj) method spelling still reads as itself
+        """
+
+        self.assertEqual(kos_repr(self.read("(.baz obj)")), "(.baz obj)")
+
+    def test_float_is_still_a_float(self):
+        """
+        A numeric atom is claimed before the dotted pattern is reached
+        """
+
+        self.assertEqual(self.read("1.5"), 1.5)
+
+    def test_ellipsis_is_still_ellipsis(self):
+        """
+        ... is claimed by its own atom pattern
+        """
+
+        self.assertIs(self.read("..."), ...)
+
+    def test_keyword_is_unaffected(self):
+        """
+        A trailing colon is a keyword, not an attribute
+        """
+
+        self.assertEqual(kos_repr(self.read("foo:")), "foo:")
+
+
+class TestDotAttrsMalformed(SuffixReaderMixin, unittest.TestCase):
+    """
+    A dot with no name after it is an error in both spellings
+    """
+
+    def assert_read_error(self, src, expected):
+        with self.assertRaises(ReaderSyntaxError) as raised:
+            self.read(src)
+        self.assertIn(expected, str(raised.exception))
+
+    def test_trailing_dot_on_an_atom(self):
+        """
+        foo. is rejected rather than falling through to a symbol
+        """
+
+        self.assert_read_error("foo.", "attribute name missing")
+
+    def test_empty_segment_within_an_atom(self):
+        """
+        foo..bar names the empty segment
+        """
+
+        self.assert_read_error("foo..bar", "attribute name missing")
+
+    def test_non_identifier_segment(self):
+        """
+        A segment that is not an identifier is named in the error
+        """
+
+        self.assert_read_error("foo.9x", "invalid attribute name '9x'")
+
+    def test_trailing_dot_on_a_form(self):
+        """
+        The suffix path reaches the error by its own route
+        """
+
+        self.assert_read_error("(f x).", "attribute name expected")
+
+    def test_dot_before_a_bracket(self):
+        """
+        foo.[0] has no attribute name
+        """
+
+        self.assert_read_error("foo.[0]", "attribute name missing")
+
+
+class TestDotAttrsWithIndexBrackets(SuffixReaderMixin, unittest.TestCase):
+    """
+    The two suffixes interleave, which is the driver's doing rather than
+    either macro's
+    """
+
+    def make_reader(self):
+        reader = Reader()
+        reader.index_brackets = True
+        return reader
+
+    def test_attr_after_index(self):
+        """
+        foo[0].bar reads the attribute off the item access
+        """
+
+        self.assertEqual(kos_repr(self.read("foo[0].bar")),
+                         "(compile/attr (item foo 0) bar)")
+
+    def test_index_after_attr(self):
+        """
+        foo.bar[0] indexes the attribute
+        """
+
+        self.assertEqual(kos_repr(self.read("foo.bar[0]")),
+                         "(item (compile/attr foo bar) 0)")
+
+    def test_arbitrary_alternation(self):
+        """
+        The two kinds alternate freely, left to right
+        """
+
+        self.assertEqual(
+            kos_repr(self.read("(f x)[0].a.b[1]")),
+            "(item (compile/attr (compile/attr (item (f x) 0) a) b) 1)")
+
+
+class TestDotAttrsDisabled(SuffixReaderMixin, unittest.TestCase):
+    """
+    With ``reader/dot-attrs`` off, one switch silences both spellings
+    """
+
+    def make_reader(self):
+        reader = Reader()
+        reader.dot_attrs = False
+        return reader
+
+    def test_dotted_atom_stays_a_symbol(self):
+        """
+        foo.bar is an ordinary symbol when the feature is off
+        """
+
+        self.assertEqual(kos_repr(self.read("foo.bar")), "foo.bar")
+
+    def test_suffix_does_not_attach(self):
+        """
+        (get-fn x).baz is two forms when the feature is off
+        """
+
+        values = self.read_all("(get-fn x).baz")
+        self.assertEqual([kos_repr(v) for v in values],
+                         ["(get-fn x)", ".baz"])
+
+    def test_trailing_dot_is_not_an_error(self):
+        """
+        The error belongs to the feature, not to the reader
+        """
+
+        self.assertEqual(kos_repr(self.read("foo.")), "foo.")
+
+    def test_float_is_unaffected(self):
+        """
+        Numeric atoms never depended on this setting
+        """
+
+        self.assertEqual(self.read("1.5"), 1.5)
+
+
 # The end.
