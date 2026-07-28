@@ -58,7 +58,7 @@ source: |-
   
 verify:
   read: (.count obj)
-  invalid: "the leading-dot form is a METHOD CALL: it reads obj.count (an int) and then CALLS it -> TypeError: 'int' object is not callable at runtime. (obj.count) in parens is the same call and fails the same way. To READ the attribute, write bare dotted access obj.count (which lowers to (attr obj count)); use the explicit (attr EXPR name) form when the object is an expression result rather than a symbol."
+  invalid: "the leading-dot form is a METHOD CALL: it reads obj.count (an int) and then CALLS it -> TypeError: 'int' object is not callable at runtime. (obj.count) in parens is the same call and fails the same way. To READ the attribute rather than call it, drop the enclosing parens: obj.count. The receiver may be any value, so (get-fn x).count reads an attribute off an expression result too -- the dot is the read and the parens are the call, whatever the receiver is."
 stability: evolving
 tags:
   - special
@@ -66,4 +66,4 @@ tags:
   - attr
   - invalid
   - pitfall
-notes: "corrective: obj.count (bare, no parens) -- or (attr obj count), which it lowers to. Baked fixture obj has .count=5. The surface pairs: obj.count / (attr obj count) READ the attribute; (obj.count) / ((attr obj count)) / (.count obj) all CALL it. Classic instance: (.status_code (client.post url)) -- status_code is data, so write (attr (client.post url) status_code)."
+notes: "corrective: obj.count (bare, no parens) -- or (attr obj count), which it lowers to. Baked fixture obj has .count=5. The surface pairs: obj.count / (attr obj count) READ the attribute; (obj.count) / ((attr obj count)) / (.count obj) all CALL it. Classic instance: (.status_code (client.post url)) -- status_code is data, so write (client.post url).status_code."

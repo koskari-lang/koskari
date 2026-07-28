@@ -1584,7 +1584,8 @@ references:
 stability: evolving
 tags:
   - object
-notes: attr returns a bound method; calling it gives the method result
+  - attr
+notes: "attr returns a bound method; calling it gives the method result. this is the explicit spelling -- the idiomatic one is (\"hello\".upper), which reads to the same thing; see reader-dot-attr-literal-receiver-001"
 ---
 id: object-ref-attr-deref-001
 feature: special/compile/ref-attr
