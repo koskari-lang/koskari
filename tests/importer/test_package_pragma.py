@@ -254,6 +254,7 @@ class TestPackagePragmaImport(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         uninstall()
+        install()
         sys.path[:] = self._prev_path
         to_remove = [
             name for name, mod in list(sys.modules.items())

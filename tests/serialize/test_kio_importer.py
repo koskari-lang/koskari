@@ -48,6 +48,7 @@ class TestKioImporterParity(unittest.TestCase):
 
     def tearDown(self):
         uninstall()
+        install()
         __import__('sys').path[:] = self._prev_path
         to_remove = [
             name for name, mod in list(__import__('sys').modules.items())

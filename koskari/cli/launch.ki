@@ -73,21 +73,30 @@ define run_file [
 define run_command [
     mod
     command
+    filename: "<string>"
+    layout: False
     interactive: False]:
   """
-  Load and execute koskari source from a command-line string into mod.
+  Load and execute koskari source from a string into mod.
 
-  Sets ``__file__`` to ``'<string>'`` and runs each top-level expression
-  in order, matching file execution semantics.
+  Runs each top-level expression in order.  ``-c`` passes s-expressions
+  (``layout`` False): a layout line is one form, so several expressions
+  on a line would read as a single implicit call, which is wrong for a
+  one-liner.  Source arriving on stdin via ``-`` is a whole program and
+  is read as layout, exactly like a file.
 
   :param mod: koskari Module to execute into
-  :param command: koskari source text from ``-c`` / ``--command``
+  :param command: koskari source text
+  :param filename: value to report as ``__file__``
+  :param layout: when True, read layout rather than plain s-expressions
   :param interactive: when True, retain load facets for the ongoing
       session (the module still seals on completion)
   """
 
-  init_module mod "<string>"
-  load_module_source_async mod command detach: (not interactive)
+  init_module mod filename
+  (load_module_source_async mod command
+    detach: (not interactive)
+    layout: layout)
 
 
 ; === Argument parsing ===
@@ -99,6 +108,10 @@ define reject_option_like_rest [parser rest]:
   """
 
   for-each [it rest]:
+    ; A bare "-" names stdin as the script, so it is a filename here
+    ; rather than a misplaced option.
+    when (equal? it "-"):
+      (continue)
     when (or (equal? it "--") (it.startswith "-")):
       parser.error f"unrecognized arguments: {it}"
 
@@ -215,7 +228,7 @@ define option_parser [name]:
 
   (target.add_argument "-c" "--command"
     dest: "command" metavar: "CMD" default: None
-    help: "Program passed in as a string, then exit")
+    help: "S-expressions evaluated as a string, then exit; for a layout program use - to read stdin")
 
   (target.add_argument "--compile-kio"
     dest: "compile_kio" nargs: 2 metavar: #("OUT" "SRC") default: None
@@ -232,7 +245,7 @@ define option_parser [name]:
 
   (parser.add_argument "rest"
     nargs: REMAINDER default: #[]
-    help: "Script path and arguments forwarded to the script or REPL session")
+    help: "Script path (- for stdin) and arguments forwarded to the script or REPL session")
 
   return parser
 
@@ -293,6 +306,14 @@ define run []:
 
   if command:
     (run_command mod command
+      interactive: options.interactive)
+    unless options.interactive:
+      return 0
+
+  elif (equal? filename "-"):
+    (run_command mod (sys.stdin.read)
+      filename: "<stdin>"
+      layout: True
       interactive: options.interactive)
     unless options.interactive:
       return 0

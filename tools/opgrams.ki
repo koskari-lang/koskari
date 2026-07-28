@@ -1,0 +1,519 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+opgrams -- opcode n-gram frequency analysis over compiled Koskari code.
+
+Imports a group of modules (the bootstrap builtins, the CLI, the churn
+benchmark kernels, the life example, the developer tools), collects
+every reachable Code object, softens each back to its symbolic
+instruction stream, and counts 2..4-opcode sequences within
+straight-line runs. Sequences never cross a jump target (LABEL) and
+never continue past a branching or terminal opcode, so every reported
+n-gram is a candidate for opcode fusion. POSITION and NOOP rows are
+transparent.
+
+Counts are reported both raw (emission frequency) and weighted by static
+loop-nesting depth (weight = BASE ** depth), the latter approximating
+execution frequency. A Markov successor table shows, per opcode, where
+control usually flows next -- an opcode with one dominant successor is a
+fusion candidate even at modest absolute counts.
+
+Run from the repository root:
+
+    tox -qe opgrams
+    tox -qe opgrams -- --group churn --top 30
+    uv run python -B -m koskari tools/tools.ki -- opgrams --group churn --dis
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import importlib
+import json
+import sys
+import types
+
+import-from argparse ArgumentParser
+import-from collections Counter defaultdict
+import-from os.path abspath basename dirname join
+
+import-from koskari.lib BoundMethod Code Expression Function OpCode OpStyle
+import-from koskari.lib demand
+import-from koskari.syntax Syntax
+
+
+define TOPDIR (dirname (dirname (abspath __file__)))
+
+define MODULE_GROUPS #{
+    "bootstrap": #("koskari.builtins")
+    "cli": #("koskari.cli.launch" "koskari.cli.repl" "koskari.dis")
+    "life": #("koslife.cli" "koslife.curse" "koslife.life")
+    "churn": #(
+        "ki.binary_trees" "ki.branch" "ki.fannkuch" "ki.field"
+        "ki.field_slots" "ki.list_each" "ki.loop" "ki.method"
+        "ki.nbody" "ki.pidigits" "ki.starmap" "ki.tree"
+        "ki.yieldfrom")
+    ; The developer tools: string, dict, path, and argparse work, a
+    ; different opcode mix from the numeric churn kernels. Importing
+    ; tools.corpus.quick pulls in tests.corpus, which is why this group
+    ; costs more to load than the others.
+    "tools": #(
+        "tools.tools"
+        "tools.opgrams"
+        "tools.editor_tokens.regen"
+        "tools.corpus.load"
+        "tools.corpus.export"
+        "tools.corpus.quick"
+        "tools.corpus.views"
+        "tools.corpus.views._material"
+        "tools.corpus.views.docs"
+        "tools.corpus.views.full"
+        "tools.corpus.views.programs")}
+
+; Terminal opcodes with no label argument: control leaves the straight
+; line here, so no sequence may continue past them. Ops that carry a
+; label argument (jumps, checks, switches, iteration) are detected from
+; opcode metadata instead of being listed.
+define TERMINAL_OPS (frozenset #(
+    "RETURN" "RAISE" "BREAK" "CONTINUE"
+    "YIELD" "YIELD_FROM" "AWAIT"
+    "TAIL_CALL" "TAIL_CALL_NAMES" "TAIL_CALL_STAR"
+    "THEEND"))
+
+define LOOP_PUSH_OPS (frozenset #("PUSH_LOOP" "PUSH_FOREACH"))
+
+define LOOP_POP_OPS (frozenset #("POP_LOOP" "POP_FOREACH"))
+
+define TRANSPARENT_OPS (frozenset #("POSITION" "NOOP"))
+
+; Groups whose modules live outside the installed package join sys.path
+; from these repository-relative directories.
+define GROUP_PATHS #{
+    "churn": (join TOPDIR "examples" "churn")
+    "life": (join TOPDIR "examples" "life")
+    "tools": TOPDIR}
+
+
+define op_short_name [op]:
+    """
+    Strip the KOS_OP_ prefix from an OpCode member name
+    """
+
+    define name op.name
+    if (name.startswith "KOS_OP_"):
+        return (item-slice name 7)
+    else:
+        return name
+
+
+define build_block_enders []:
+    """
+    Compute the set of opcode names that end a straight-line run: any
+    opcode with a LABEL field in its argument schema, plus the terminal
+    set. Computed from OpCode metadata so new branching opcodes are
+    picked up automatically.
+    """
+
+    define enders (set TERMINAL_OPS)
+    for-each [op OpCode]:
+        define style (getattr op "style" None)
+        if (== style OpStyle.KOSTYLE_LABEL):
+            (enders.add (op_short_name op))
+        else:
+            define extra (getattr op "extra" None)
+            when (and extra (in? OpStyle.KOSTYLE_LABEL (tuple extra))):
+                (enders.add (op_short_name op))
+    return (frozenset enders)
+
+
+define unwrap_code [obj]:
+    """
+    Return the Code behind a collectable object, or None. Accepts Code,
+    Expression, Function, demand-wrapped Function, and BoundMethod.
+    """
+
+    when (instance? obj demand):
+        set! obj (getattr obj "__wrapped__" None)
+    when (instance? obj BoundMethod):
+        set! obj obj.__func__
+        when (instance? obj demand):
+            set! obj (getattr obj "__wrapped__" None)
+    when (instance? obj Function):
+        return obj.code
+    when (instance? obj Expression):
+        return obj.code
+    when (instance? obj Code):
+        return obj
+    return None
+
+
+define closure_codes [fn]:
+    """
+    Yield Code objects captured in a Python function's closure cells.
+    Macro handlers arrive as Python lambdas closing over the compiled
+    Koskari body (MacroTransform.handler cell 'raw').
+    """
+
+    for-each [cell (or fn.__closure__ #())]:
+        define val None
+        define found True
+        try:
+            set! val cell.cell_contents
+        except [ValueError]:
+            set! found False
+        when found:
+            define code (unwrap_code val)
+            when (not (None? code)):
+                yield code
+
+
+define syntax_codes [label syn]:
+    """
+    Walk a Syntax object's transformers for code-bearing attributes.
+    Macro-based syntax carries its body as a Function behind the
+    transform's handler; syntax-rules templates and Python specials
+    contribute nothing.
+    """
+
+    for-each [[i transform] (enumerate syn.transforms)]:
+        define members (getattr transform "__dict__" None)
+        unless members:
+            (continue)
+        for-each [[key val] (.items members)]:
+            define code (unwrap_code val)
+            if (not (None? code)):
+                yield #(f"{label}[{i}].{key}" code)
+            else:
+                when (instance? val types.FunctionType):
+                    for-each [inner (closure_codes val)]:
+                        yield #(f"{label}[{i}].{key}" inner)
+
+
+define collect_codes [modules]:
+    """
+    Walk module namespaces for code-bearing objects, then recurse into
+    each Code's constant pool for nested Code objects (closures, class
+    bodies). Syntax objects are walked through their transformers to
+    catch macro bodies. Returns (label, Code) pairs, deduplicated by
+    identity.
+    """
+
+    define seen (set)
+    define found #[]
+    define stack #[]
+
+    for-each [mod modules]:
+        for-each [[key val] (sorted (.items (vars mod)))]:
+            when (key.startswith "__"):
+                (continue)
+            define label f"{mod.__name__}.{key}"
+            if (instance? val Syntax):
+                (stack.extend (syntax_codes label val))
+            else:
+                define code (unwrap_code val)
+                when (not (None? code)):
+                    (stack.append #(label code))
+
+    while stack:
+        define-values [label code] (stack.pop 0)
+        when (in? (id code) seen):
+            (continue)
+        (seen.add (id code))
+        (found.append #(label code))
+
+        for-each [[i val] (enumerate code.constants_pool)]:
+            define nested (unwrap_code val)
+            when (and (instance? nested Code) (not (in? (id nested) seen))):
+                define nested_name (or nested.name f"c#{i}")
+                (stack.append #(f"{label}/{nested_name}" nested))
+
+    return found
+
+
+define iter_blocks [code enders]:
+    """
+    Soften code and yield straight-line runs as lists of (op_name,
+    loop_depth) pairs. A run starts fresh at every LABEL and stops after
+    any block-ending opcode; POSITION and NOOP are transparent. Loop
+    depth follows PUSH_LOOP/PUSH_FOREACH nesting in textual order.
+
+    :param enders: the block-ending opcode names, from
+        :func:`build_block_enders`
+    """
+
+    define depth 0
+    define block #[]
+
+    for-each [[op_int _arg] (code.soften)]:
+        define name (op_short_name (OpCode op_int))
+
+        when (== name "LABEL"):
+            when block:
+                yield block
+            set! block #[]
+            (continue)
+
+        when (in? name TRANSPARENT_OPS):
+            (continue)
+
+        when (in? name LOOP_PUSH_OPS):
+            set! depth (+ depth 1)
+        when (and (in? name LOOP_POP_OPS) (> depth 0)):
+            set! depth (- depth 1)
+
+        (block.append #(name depth))
+
+        when (in? name enders):
+            yield block
+            set! block #[]
+
+    when block:
+        yield block
+
+
+define-class GramTally []:
+    """
+    Accumulates raw and depth-weighted n-gram counts, exemplar
+    locations, and the bigram successor table.
+    """
+
+    define __init__ [self sizes weight_base]:
+        set! self.sizes sizes
+        set! self.weight_base weight_base
+        set! self.raw (dict (list-each [n sizes] #(n (Counter))))
+        set! self.weighted (dict (list-each [n sizes] #(n (Counter))))
+        set! self.exemplar (dict)
+        set! self.successors (defaultdict Counter)
+        set! self.op_counts (Counter)
+        set! self.code_count 0
+        set! self.block_count 0
+
+    define feed [self label block]:
+        set! self.block_count (+ self.block_count 1)
+        define names (list-each [entry block] (item entry 0))
+
+        for-each [name names]:
+            (set-item self.op_counts name (+ (item self.op_counts name) 1))
+
+        for-each [[prev succ] (zip names (item-slice names 1))]:
+            define bucket (item self.successors prev)
+            (set-item bucket succ (+ (item bucket succ) 1))
+
+        for-each [n self.sizes]:
+            define raw_counts (item self.raw n)
+            define weighted_counts (item self.weighted n)
+            for-each [i (range (+ (- (len block) n) 1))]:
+                define gram (tuple (item-slice names i (+ i n)))
+                define weight (** self.weight_base (item (item block i) 1))
+                (set-item raw_counts gram (+ (item raw_counts gram) 1))
+                (set-item weighted_counts gram
+                    (+ (item weighted_counts gram) weight))
+                unless (in? gram self.exemplar):
+                    (set-item self.exemplar gram label)
+
+
+define analyze [codes sizes weight_base enders]:
+    """
+    Run the n-gram tally over every collected code object
+    """
+
+    define tally (GramTally sizes weight_base)
+    for-each [[label code] codes]:
+        set! tally.code_count (+ tally.code_count 1)
+        for-each [block (iter_blocks code enders)]:
+            (tally.feed label block)
+    return tally
+
+
+define print_gram_tables [tally top file]:
+    """
+    Write the weighted n-gram tables for every configured size
+    """
+
+    define pad12 (* " " 12)
+    define pad6 (* " " 6)
+
+    for-each [n tally.sizes]:
+        define weighted (item tally.weighted n)
+        (file.write
+            f"\n=== top {n}-grams (weighted, base {tally.weight_base}) ===\n")
+        for-each [[gram wcount] (.most_common weighted top)]:
+            define raw (item (item tally.raw n) gram)
+            define seq (.join " " gram)
+            define exemplar (item tally.exemplar gram)
+            file.write f"  {wcount:>12}  {raw:>6}  {seq}\n"
+            file.write f"  {pad12}  {pad6}    e.g. {exemplar}\n"
+
+
+define print_markov [tally threshold file]:
+    """
+    Write the per-opcode successor distribution table
+    """
+
+    (file.write
+        f"\n=== successor distribution (ops emitted >= {threshold} times) ===\n")
+
+    for-each [[op count] (.most_common tally.op_counts)]:
+        when (< count threshold):
+            (break)
+        define succs (item tally.successors op)
+        define total (sum (.values succs))
+        unless total:
+            (continue)
+        define parts #[]
+        for-each [[succ scount] (.most_common succs 4)]:
+            define pct (/ (* 100.0 scount) total)
+            (parts.append f"{succ} {pct:.0f}%")
+        define joined (.join ", " parts)
+        file.write f"  {op:<24} x{count:<7} -> {joined}\n"
+
+
+define tally_to_json [tally top]:
+    """
+    Render the tally as a JSON-serializable mapping
+    """
+
+    define out (dict
+        codes: tally.code_count
+        blocks: tally.block_count
+        weight_base: tally.weight_base
+        grams: (dict)
+        successors: (dict))
+
+    define grams (item out "grams")
+    for-each [n tally.sizes]:
+        define rows #[]
+        for-each [[gram wcount] (.most_common (item tally.weighted n) top)]:
+            (rows.append (dict
+                seq: (list gram)
+                weighted: wcount
+                raw: (item (item tally.raw n) gram)
+                exemplar: (item tally.exemplar gram)))
+        (set-item grams (str n) rows)
+
+    define successors (item out "successors")
+    for-each [[op succs] (.items tally.successors)]:
+        (set-item successors op (dict (.most_common succs)))
+
+    return out
+
+
+define load_group [group]:
+    """
+    Import and return the modules for a named group. Groups that live
+    outside the installed package get their directory on sys.path first.
+    """
+
+    define extra_path (GROUP_PATHS.get group)
+    when (and extra_path (not (in? extra_path sys.path))):
+        sys.path.insert 0 extra_path
+
+    return (list-each [name (item MODULE_GROUPS group)]
+        (importlib.import_module name))
+
+
+define build_arguments [parser]:
+    """
+    Register the opgrams options on a parser or subparser
+    """
+
+    (parser.add_argument "--group"
+        choices: (+ (list MODULE_GROUPS) #["all"]) default: "all"
+        help: "module group to analyze (default: all groups)")
+    (parser.add_argument "--top"
+        type: int default: 25
+        help: "rows per n-gram table (default: 25)")
+    (parser.add_argument "--weight-base"
+        type: int default: 100
+        help: "per-loop-depth weight multiplier (default: 100)")
+    (parser.add_argument "--markov-threshold"
+        type: int default: 20
+        help: "min emission count for the successor table (default: 20)")
+    (parser.add_argument "--json"
+        action: "store_true"
+        help: "emit the report as JSON instead of text")
+    (parser.add_argument "--dis"
+        action: "store_true"
+        help: "print full disassembly of each collected code object")
+    return parser
+
+
+define run [options]:
+    """
+    Execute the analysis described by parsed options
+
+    :param options: parsed argument namespace
+    :return: integer exit code
+    """
+
+    define groups (if (== options.group "all")
+        (list MODULE_GROUPS)
+        #[options.group])
+
+    define modules #[]
+    for-each [group groups]:
+        (modules.extend (load_group group))
+
+    define enders (build_block_enders)
+    define codes (collect_codes modules)
+
+    when options.dis:
+        import-from koskari.dis dis
+        for-each [[label code] codes]:
+            sys.stdout.write f"--- {label} ---\n"
+            (dis code)
+        return 0
+
+    define tally (analyze codes #(2 3 4) options.weight_base enders)
+
+    when options.json:
+        (json.dump (tally_to_json tally options.top) sys.stdout indent: 2)
+        sys.stdout.write "\n"
+        return 0
+
+    define joined (.join ", " groups)
+    (sys.stdout.write
+        f"codes: {tally.code_count}   blocks: {tally.block_count}   groups: {joined}\n")
+    (print_gram_tables tally options.top sys.stdout)
+    (print_markov tally options.markov_threshold sys.stdout)
+    return 0
+
+
+define main [argv: None]:
+    """
+    Parse arguments and run the analysis
+
+    :param argv: optional argument vector; defaults to sys.argv
+    :return: integer exit code
+    """
+
+    when (None? argv):
+        set! argv sys.argv
+
+    define-values [name *: args] argv
+
+    define parser (ArgumentParser
+        prog: (basename name)
+        description: "Opcode n-gram frequency analysis over Koskari code")
+    (build_arguments parser)
+
+    return (run (parser.parse_args args))
+
+
+when-main:
+    (sys.exit (main))
+
+
+; The end.

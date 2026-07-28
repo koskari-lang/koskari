@@ -45,31 +45,30 @@ koskari/lib/handlers.incl: koskari/lib/opcodes.incl
 handlers: koskari/lib/handlers.incl
 
 # Editor highlighting assets: each output is rebuilt only when spec, its
-# template, or the generator script is newer than the output.
-EDITOR_SPEC := tools/editor-tokens/spec.yml
-EDITOR_REGEN := tools/editor-tokens/regen_editors_assets.py
+# template, or the generator script is newer than the output. Generation runs
+# in the tools container (see build-tools) so the toolchain producing these
+# committed files is pinned rather than whatever the contributor happens to
+# have installed.
+EDITOR_SPEC := tools/editor_tokens/spec.yml
+EDITOR_REGEN := tools/editor_tokens/regen.ki
 
 editors/textmate/syntaxes/koskari.tmLanguage.json: $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 $(EDITOR_REGEN)
-	@$(call checkfor,tox)
 	@echo "Re-generating koskari.tmLanguage.json..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 editors/textmate/syntaxes/koskari.tmLanguage.json
+	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 $@
 
 # Canonical tree-sitter highlight queries (shared by Helix and Neovim).
 editors/tree-sitter/queries/highlights.scm: $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $(EDITOR_REGEN)
-	@$(call checkfor,tox)
 	@echo "Re-generating tree-sitter highlights.scm..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 editors/tree-sitter/queries/highlights.scm
+	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $@
 
 # Zed needs the queries inside its own extension dir; same template, same output.
 editors/zed/languages/koskari/highlights.scm: $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $(EDITOR_REGEN)
-	@$(call checkfor,tox)
 	@echo "Re-generating Zed highlights.scm..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 editors/zed/languages/koskari/highlights.scm
+	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $@
 
 editors/emacs/koskari-mode.el: $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $(EDITOR_REGEN)
-	@$(call checkfor,tox)
 	@echo "Re-generating koskari-mode.el..."
-	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 editors/emacs/koskari-mode.el
+	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $@
 
 editors-grammar:  ## Regenerate the tree-sitter parser (src/parser.c) from grammar.js
 	@echo "Re-generating tree-sitter parser..."
@@ -288,6 +287,21 @@ FORCE:
 .PHONY: FORCE
 
 
+# Developer tool dependencies (tools/requirements.txt) are kept out of the
+# package extras deliberately, and out of the koskari install recipe above so
+# that bumping a tool dep does not force an extension rebuild. Same
+# content-hash guard, for the same git-pull-mtime reason.
+.venv/.tools-built: FORCE | .venv
+	@$(call checkfor,uv)
+	@new=`cat tools/requirements.txt | cksum`; \
+	if [ -f $@ ] && [ "$$new" = "`cat .venv/.tools-srchash 2>/dev/null`" ]; \
+	then exit 0; fi; \
+	echo "Installing tool dependencies..."; \
+	uv pip install -q -r tools/requirements.txt; \
+	printf '%s\n' "$$new" > .venv/.tools-srchash; \
+	touch $@
+
+
 .venv/bin/koskari: .venv/.koskari-built
 	@test -x $@
 
@@ -299,7 +313,7 @@ FORCE:
 	@uv pip install -qe ./examples/life --no-build-isolation
 
 
-venv: .venv/bin/koskari ## Create virtual environment
+venv: .venv/bin/koskari .venv/.tools-built ## Create virtual environment
 	@echo "Virtual environment ready"
 	@echo "   'make venv-activate' to activate it"
 	@echo "   'uv run koskari' to run the REPL"
@@ -320,8 +334,6 @@ venv-koslife: .venv/bin/koslife ## Install koslife example
 
 ##@ Corpus
 
-CORPUS_IMAGE := koskari-corpus-export
-
 corpus-parquet:  ## Export koskari-corpus parquet from corpus YAML via tox
 	@$(call checkfor,tox)
 	@echo "Exporting corpus view koskari-corpus..."
@@ -332,15 +344,12 @@ corpus-parquet-all:  ## Export all corpus views to build/corpus/datasets/
 	@echo "Exporting all corpus views..."
 	@tox -qe regen-corpus -- --all-views
 
-corpus-parquet-container-build:  ## Build corpus parquet export container image
-	@echo "Building corpus export container image $(CORPUS_IMAGE)..."
-	@$(CONTAINER_ENGINE) build -q -t $(CORPUS_IMAGE) -f tools/corpus/Containerfile .
-
-corpus-parquet-container: corpus-parquet-container-build  ## Run corpus export container; writes to build/corpus/datasets/
+# The corpus export is Koskari, so it runs in the shared tools container
+# (see build-tools) rather than a dedicated image.
+corpus-parquet-container:  ## Run corpus export in the tools container; writes to build/corpus/datasets/
 	@mkdir -p $(BUILD_DIR)/corpus/datasets
-	@$(CONTAINER_ENGINE) run --rm \
-	  -v $(PWD)/$(BUILD_DIR)/corpus/datasets:/out:Z \
-	  $(CORPUS_IMAGE)
+	@$(TOOLS_RUN) tools/tools.ki -- corpus --all-views \
+	  --output-base /work/$(BUILD_DIR)/corpus/datasets
 
 
 ##@ MCP
@@ -355,6 +364,24 @@ build-mcp-container: build-container build-mcp  ## Build koskari:local then the 
 
 run-mcp:  ## Run MCP server on stdio (manual smoke test; use -i, no -t)
 	@$(CONTAINER_ENGINE) run -i --rm $(MCP_IMAGE):local
+
+
+##@ Developer Tools
+
+TOOLS_IMAGE := koskari-tools
+
+# Tool sources are not baked into the image; they arrive on the bind
+# mount, so only a koskari or dependency change needs a rebuild.
+TOOLS_RUN := $(CONTAINER_ENGINE) run --rm -v $(PWD):/work:Z $(TOOLS_IMAGE):local
+
+build-tools:  ## Build koskari developer tools container (requires koskari:local)
+	@echo "Building tools container image $(TOOLS_IMAGE)..."
+	@$(CONTAINER_ENGINE) build -q -t $(TOOLS_IMAGE):local -f tools/Containerfile.tools tools/
+
+build-tools-container: build-container build-tools  ## Build koskari:local then the tools container
+
+run-tools-selftest:  ## Smoke test the tools dispatcher in the container
+	@$(TOOLS_RUN) tools/tools.ki -- selftest
 
 
 ##@ Code Quality
@@ -483,7 +510,6 @@ python:  ## Show Python executable
 	corpus-parquet \
 	corpus-parquet-all \
 	corpus-parquet-container \
-	corpus-parquet-container-build \
 	clean-built \
 	clean-ext \
 	clean-native \

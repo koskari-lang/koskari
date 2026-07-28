@@ -1,0 +1,343 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+tools.corpus.export
+
+Export corpus YAML records to parquet dataset views.
+
+The entry points are ``@demand``-wrapped: the unit tests drive them
+directly from Python, where a bare Koskari callable returns a coroutine.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import json
+import sys
+
+import-from argparse ArgumentParser
+import-from pathlib Path
+
+import-from pyarrow Table
+import-from pyarrow.parquet write_table
+
+import-from koskari.lib demand
+
+
+define _HERE (.resolve (Path __file__))
+
+; parents is a property, so it is indexed rather than called.
+define _REPO_ROOT (item _HERE.parents 2)
+
+; Invoked as a script the interpreter puts this directory on sys.path
+; rather than the repository root, so the tools package needs help.
+when (not (in? (str _REPO_ROOT) sys.path)):
+    sys.path.insert 0 (str _REPO_ROOT)
+
+
+define DEFAULT_VIEW "koskari-corpus"
+
+
+define project_root [root: None]:
+    """
+    Return the repository root path
+
+    :param root: optional override; defaults to parent of tools/
+    :return: Path to repository root
+    """
+
+    unless (None? root):
+        return (.resolve (Path root))
+    return _REPO_ROOT
+
+
+define load_views []:
+    """
+    Load tools.corpus.views as a module
+
+    :return: views module with VIEWS registry
+    """
+
+    import-from tools.corpus views
+    return views
+
+
+define read_schema_version [schema_path]:
+    """
+    Read the corpus schema identifier from SCHEMA.json
+
+    :param schema_path: path to SCHEMA.json
+    :return: schema $id string
+    """
+
+    define data (json.loads (.read_text (Path schema_path)))
+    return (data.get "$id" "")
+
+
+define git_ref [root: None]:
+    """
+    Return short git commit for provenance, or empty string
+
+    :param root: repository root path
+    :return: short commit hash or empty string
+    """
+
+    import-from tools.regen_version git_state
+
+    define state (git_state root)
+    return (or (state.get "commit") "")
+
+
+@demand
+define load_records [records_dir]:
+    """
+    Load all corpus records from YAML shards in a directory
+
+    :param records_dir: directory containing *.yaml files
+    :return: list of record dicts
+    :raises ValueError: on malformed YAML with shard name in message
+    """
+
+    ; imported as a module: the member name would shadow this one
+    import-from tools.corpus load
+
+    return (load.load_records records_dir)
+
+
+define _provenance [schema_path root]:
+    """
+    Build the provenance mapping stamped onto every row
+    """
+
+    return (dict
+        schema_version: (read_schema_version schema_path)
+        git_ref: (git_ref root))
+
+
+define apply_view [records transform provenance]:
+    """
+    Apply a view transform to corpus records
+
+    :param records: list of corpus record dicts
+    :param transform: view transform callable
+    :param provenance: dict passed to each transform call
+    :return: list of output row dicts
+    """
+
+    define rows #[]
+    for-each [record records]:
+        define row (transform record provenance)
+        unless (None? row):
+            (rows.append row)
+    return rows
+
+
+define write_parquet [rows output_dir filename: "train.parquet"]:
+    """
+    Write rows to a parquet file under output_dir
+
+    :param rows: list of row dicts
+    :param output_dir: destination directory
+    :param filename: parquet filename
+    :return: path to written parquet file
+    """
+
+    define out_path (Path output_dir)
+    (out_path.mkdir parents: True exist_ok: True)
+    define parquet_path (out_path.joinpath filename)
+    define table (Table.from_pylist rows)
+    (write_table table parquet_path)
+    return parquet_path
+
+
+@demand
+define export_corpus [view records_dir schema_path output_dir root: None]:
+    """
+    Export one corpus dataset view to parquet
+
+    :param view: view name registered in views.VIEWS
+    :param records_dir: directory containing YAML shards
+    :param schema_path: path to SCHEMA.json
+    :param output_dir: directory for train.parquet
+    :param root: repository root for git provenance
+    :return: path to written parquet file
+    :raises KeyError: when view is unknown
+    """
+
+    define views (load_views)
+    define transform (item views.VIEWS view)
+    define root_path (project_root root)
+
+    define provenance (_provenance schema_path root_path)
+    define records (load_records records_dir)
+    define rows (apply_view records transform provenance)
+    return (write_parquet rows output_dir)
+
+
+@demand
+define export_source_view [view schema_path output_dir root: None]:
+    """
+    Export one source-generated view to parquet
+
+    Source views build rows from repository files (docs, example
+    programs) rather than from corpus records, so they receive the
+    repository root and provenance instead of the loaded record list.
+
+    :param view: view name registered in views.SOURCE_VIEWS
+    :param schema_path: path to SCHEMA.json
+    :param output_dir: directory for train.parquet
+    :param root: repository root for git provenance
+    :return: path to written parquet file
+    :raises KeyError: when view is unknown
+    """
+
+    define views (load_views)
+    define generate (item views.SOURCE_VIEWS view)
+    define root_path (project_root root)
+
+    define provenance (_provenance schema_path root_path)
+    define rows (generate root_path provenance)
+    return (write_parquet rows output_dir)
+
+
+@demand
+define export_all_views [records_dir schema_path output_base root: None]:
+    """
+    Export every registered corpus and source view to parquet
+
+    :param records_dir: directory containing YAML shards
+    :param schema_path: path to SCHEMA.json
+    :param output_base: parent directory for per-view subdirectories
+    :param root: repository root for git provenance
+    :return: list of paths to written parquet files
+    """
+
+    define views (load_views)
+    define base (Path output_base)
+    define paths #[]
+
+    for-each [view_name (sorted views.VIEWS)]:
+        (paths.append (export_corpus
+            view_name records_dir schema_path
+            (base.joinpath view_name) root: root))
+
+    for-each [view_name (sorted views.SOURCE_VIEWS)]:
+        (paths.append (export_source_view
+            view_name schema_path
+            (base.joinpath view_name) root: root))
+
+    return paths
+
+
+define build_arguments [parser]:
+    """
+    Register the export options on a parser or subparser
+    """
+
+    define root (project_root)
+    define datasets (.joinpath root "build" "corpus" "datasets")
+
+    (parser.add_argument "--all-views"
+        action: "store_true"
+        help: "export every registered view under the output base directory")
+    (parser.add_argument "--view"
+        default: DEFAULT_VIEW
+        help: "dataset view name (default: %(default)s)")
+    (parser.add_argument "--records-dir"
+        default: (str (.joinpath root "docs" "corpus" "records"))
+        help: "directory of YAML shards (default: %(default)s)")
+    (parser.add_argument "--schema"
+        default: (str (.joinpath root "docs" "corpus" "SCHEMA.json"))
+        help: "path to SCHEMA.json (default: %(default)s)")
+    (parser.add_argument "--output-dir"
+        default: (str (datasets.joinpath DEFAULT_VIEW))
+        help: "output directory for train.parquet (default: %(default)s)")
+    (parser.add_argument "--output-base"
+        default: (str datasets)
+        help: "parent directory for --all-views (default: %(default)s)")
+    return parser
+
+
+define run [options]:
+    """
+    Execute the export described by parsed options
+
+    :param options: parsed argument namespace
+    :return: integer exit code
+    """
+
+    define root (project_root)
+    define views (load_views)
+    define path None
+
+    try:
+        when options.all_views:
+            define paths (export_all_views
+                options.records_dir options.schema options.output_base
+                root: root)
+            for-each [each paths]:
+                (sys.stdout.write f"{each}\n")
+            return 0
+
+        if (in? options.view views.SOURCE_VIEWS):
+            set! path (export_source_view
+                options.view options.schema options.output_dir root: root)
+        elif (not (in? options.view views.VIEWS)):
+            define names (.join ", "
+                (sorted (.union (set views.VIEWS) (set views.SOURCE_VIEWS))))
+            ; Quoted explicitly: koskari's repr renders strings
+            ; double-quoted, where this message has always used Python's.
+            (sys.stderr.write
+                f"unknown view '{options.view}'; available: {names}\n")
+            return 2
+        else:
+            set! path (export_corpus
+                options.view options.records_dir options.schema
+                options.output_dir root: root)
+
+    except [ValueError as: exc]:
+        (sys.stderr.write f"{exc}\n")
+        return 1
+
+    (sys.stdout.write f"{path}\n")
+    return 0
+
+
+define main [argv: None]:
+    """
+    Export corpus views from the command line
+
+    :param argv: optional argument vector; defaults to sys.argv
+    :return: integer exit code
+    """
+
+    when (None? argv):
+        set! argv sys.argv
+
+    define-values [_name *: args] argv
+
+    define parser (ArgumentParser
+        prog: "corpus-export"
+        description: "Export corpus YAML records to parquet dataset views")
+    (build_arguments parser)
+
+    return (run (parser.parse_args args))
+
+
+when-main:
+    (sys.exit (main))
+
+
+; The end.

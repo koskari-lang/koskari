@@ -1,0 +1,163 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+Koskari developer tool dispatcher
+
+Single entry point for the repository's Koskari-implemented developer
+tools, so that the same command line works under either substrate:
+
+  container (artifact generators, repository bind-mounted at /work)
+    podman run --rm -v ./:/work:Z koskari-tools:local \\
+      tools/tools.ki -- selftest
+
+  local venv (introspection tools, sees the working-tree build)
+    uv run python -B -m koskari tools/tools.ki -- selftest
+
+Note the ``--`` in both forms. The koskari CLI rejects option-like
+tokens before it, forwarding everything after it to the script verbatim.
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
+
+import os
+import sys
+
+import-from argparse ArgumentParser
+import-from os.path basename
+
+
+define cmd_selftest [options]:
+    """
+    Report the running interpreter and working directory.
+
+    Exists so both substrates can be smoke-tested through the same
+    entry point before any tool is registered behind it.
+    """
+
+    print "dispatcher: ok"
+    print f"python:     {sys.executable}"
+    print f"cwd:        {(os.getcwd)}"
+    return 0
+
+
+define cmd_editors [options]:
+    """
+    Regenerate one editor syntax-highlighting asset.
+
+    The generator is imported here rather than at module scope so that
+    unrelated subcommands do not pay for jinja2 and PyYAML.
+    """
+
+    import-from tools.editor_tokens.regen render
+
+    (render options.spec_yaml options.template options.output)
+    return 0
+
+
+define cmd_opgrams [options]:
+    """
+    Run opcode n-gram frequency analysis over compiled Koskari code.
+    """
+
+    import-from tools.opgrams run
+
+    return (run options)
+
+
+define cmd_corpus [options]:
+    """
+    Export corpus YAML records to parquet dataset views.
+    """
+
+    import-from tools.corpus.export run
+
+    return (run options)
+
+
+define build_parser [name]:
+    """
+    Construct the dispatcher argument parser.
+    """
+
+    define parser (ArgumentParser
+        prog: (basename name)
+        description: "Koskari developer tools")
+
+    define sub (parser.add_subparsers dest: "command" required: True)
+
+    define ps (sub.add_parser "selftest"
+        help: "report interpreter and working directory")
+    (ps.set_defaults func: cmd_selftest)
+
+    define pe (sub.add_parser "editors"
+        help: "render one editor asset from YAML and a Jinja2 template")
+    (pe.add_argument "spec_yaml"
+        help: "path to the token spec YAML")
+    (pe.add_argument "template"
+        help: "path to the .j2 template")
+    (pe.add_argument "output"
+        help: "path to write the generated file")
+    (pe.set_defaults func: cmd_editors)
+
+    ; Each tool owns its own option set, so a subparser and the tool's
+    ; standalone entry point cannot drift apart. Imported as modules
+    ; because they each export build_arguments.
+    ;
+    ; tools/corpus/quick.ki is deliberately absent. Registering it would
+    ; import tests.corpus here, dragging the corpus test harness into
+    ; every unrelated invocation for about a quarter second, and it is
+    ; the one tool driven interactively in a tight loop. It is run
+    ; directly instead; see docs/corpus/CLAUDE.md.
+    import-from tools opgrams
+    import-from tools.corpus export
+
+    define po (sub.add_parser "opgrams"
+        help: "opcode n-gram frequency analysis over compiled Koskari code")
+    (opgrams.build_arguments po)
+    (po.set_defaults func: cmd_opgrams)
+
+    define pc (sub.add_parser "corpus"
+        help: "export corpus YAML records to parquet dataset views")
+    (export.build_arguments pc)
+    (pc.set_defaults func: cmd_corpus)
+
+    return parser
+
+
+define main [argv: None]:
+    """
+    Parse arguments and dispatch to the selected subcommand.
+
+    :param argv: optional argument vector; defaults to sys.argv
+    :return: integer exit code
+    """
+
+    when (None? argv):
+        set! argv sys.argv
+
+    define-values [name *: args] argv
+
+    define parser (build_parser name)
+    define options (parser.parse_args args)
+
+    return (options.func options)
+
+
+when-main:
+    (sys.exit (main))
+
+
+; The end.

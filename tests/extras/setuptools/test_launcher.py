@@ -90,6 +90,7 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         uninstall()
+        install()
         sys.path[:] = self._prev_path
         for name in self._loaded:
             sys.modules.pop(name, None)

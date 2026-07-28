@@ -1,0 +1,394 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+tools.corpus.views._material
+
+Text helpers for the reference-material views (docs, programs).
+
+Title and summary extraction are best-effort heuristics used only to
+populate the ``title`` and ``summary`` columns. Link rewriting
+(:func:`rewrite_markdown_links`) normalizes relative Markdown links in
+the ``content`` column so an agent reading a stored page can resolve a
+link straight through the MCP ``get_reference`` tool.
+
+The public helpers are ``@demand``-wrapped: they are called both from
+Koskari views and directly from Python tests, and a bare Koskari
+callable would hand a coroutine back to a Python caller.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import posixpath
+import re
+
+import-from koskari.lib demand
+
+
+(define _LINK_RE (re.compile "\\[([^\\]]+)\\]\\([^)]*\\)"))
+(define _EMPHASIS_RE (re.compile "[*_`]+"))
+
+define _LICENSE_MARKERS #(
+    "redistribute"
+    "without any warranty"
+    "free software foundation"
+    "general public license"
+    "gnu "
+    "see <http"
+    "copyright")
+
+(define _HEADING_RE (re.compile "#+\\s+(.*)"))
+(define _MD_LINK_RE (re.compile "(!?\\[[^\\]]*\\]\\()([^)]+)(\\))"))
+(define _SCHEME_RE (re.compile "[A-Za-z][A-Za-z0-9+.-]*:"))
+(define _TITLE_RE (re.compile "(\\S+)(\\s+[\"'].*)\\Z"))
+(define _TOCTREE_TITLE_RE (re.compile "(.*<)([^>]+)(>)\\Z"))
+(define _GLOB_CHARS (frozenset "*?[]"))
+
+
+define _clean_inline [text]:
+    """
+    Strip common inline Markdown so a summary reads as plain prose
+
+    :param text: raw line or paragraph text
+    :return: cleaned single-line text
+    """
+
+    set! text (_LINK_RE.sub "\\1" text)
+    set! text (_EMPHASIS_RE.sub "" text)
+    return (.join " " (text.split))
+
+
+define _strip_frontmatter [lines]:
+    """
+    Drop a leading YAML frontmatter block delimited by ``---`` lines
+
+    :param lines: list of source lines
+    :return: lines with any leading frontmatter removed
+    """
+
+    when (and lines (== (.strip (item lines 0)) "---")):
+        for-each [index (range 1 (len lines))]:
+            when (== (.strip (item lines index)) "---"):
+                return (item-slice lines (+ index 1))
+    return lines
+
+
+@demand
+define markdown_title_summary [text]:
+    """
+    Extract a heading title and first-paragraph summary from Markdown
+
+    :param text: raw Markdown document text
+    :return: tuple of (title or None, summary or None)
+    """
+
+    define lines (_strip_frontmatter (text.splitlines))
+
+    define title None
+    for-each [line lines]:
+        define match (_HEADING_RE.match line)
+        when match:
+            set! title (_clean_inline (match.group 1))
+            (break)
+
+    define summary None
+    define in_fence False
+    define paragraph #[]
+    for-each [line lines]:
+        define stripped (line.strip)
+        if (stripped.startswith "```"):
+            set! in_fence (not in_fence)
+        elif in_fence:
+            (continue)
+        elif (or (stripped.startswith "#") (not stripped)):
+            when paragraph:
+                (break)
+        else:
+            (paragraph.append stripped)
+    when paragraph:
+        set! summary (_clean_inline (.join " " paragraph))
+
+    return #(title summary)
+
+
+define _normalize_link_target [dest base_dir]:
+    """
+    Resolve one Markdown link destination to a root-relative path
+
+    Rewrites a repo-internal relative link (possibly containing ``../``)
+    into a path rooted at the view's content tree, matching the scheme
+    used by the row ``path`` column. External links, ``mailto:``, pure
+    ``#anchor`` fragments, site-absolute paths, and links that escape the
+    tree are left unchanged.
+
+    :param dest: raw destination text from inside the link parentheses
+    :param base_dir: directory of the linking file, as a root-relative
+        posix path
+    :return: the rewritten destination, or None to leave it unchanged
+    """
+
+    define stripped (dest.strip)
+    unless stripped:
+        return None
+
+    define title ""
+    define target stripped
+    define match (_TITLE_RE.match stripped)
+    when match:
+        set! target (match.group 1)
+        set! title (match.group 2)
+
+    when (and (target.startswith "<") (target.endswith ">")):
+        set! target (item-slice target 1 -1)
+
+    when (or (_SCHEME_RE.match target)
+             (in? (item-slice target 0 1) #("#" "/"))):
+        return None
+
+    define fragment ""
+    define hash_index (target.find "#")
+    when (>= hash_index 0):
+        set! fragment (item-slice target hash_index)
+        set! target (item-slice target 0 hash_index)
+    unless target:
+        return None
+
+    define resolved (posixpath.normpath (posixpath.join base_dir target))
+    when (resolved.startswith ".."):
+        return None
+
+    return (+ resolved fragment title)
+
+
+define _normalize_toctree_entry [entry base_dir]:
+    """
+    Resolve one ``{toctree}`` child entry to a root-relative page path
+
+    Sphinx toctree entries name a page by its extension-less docname
+    (``map``, ``concepts/index``) or as ``Title <docname>``. Rewrites the
+    docname to the root-relative ``.md`` path matching the row ``path``
+    column. Glob patterns, ``self``, external, and absolute entries are
+    left unchanged.
+
+    :param entry: the stripped toctree line text
+    :param base_dir: directory of the index file, as a root-relative
+        posix path
+    :return: the rewritten entry, or None to leave it unchanged
+    """
+
+    define prefix ""
+    define target entry
+    define suffix ""
+    define match (_TOCTREE_TITLE_RE.match entry)
+    when match:
+        set! prefix (match.group 1)
+        set! target (.strip (match.group 2))
+        set! suffix (match.group 3)
+
+    when (or (not target) (_GLOB_CHARS.intersection target)):
+        return None
+    when (or (_SCHEME_RE.match target)
+             (in? (item-slice target 0 1) #("#" "/"))
+             (== target "self")):
+        return None
+
+    define resolved (posixpath.normpath (posixpath.join base_dir target))
+    when (resolved.startswith ".."):
+        return None
+    unless (resolved.endswith ".md"):
+        set! resolved (+ resolved ".md")
+    return (+ prefix resolved suffix)
+
+
+define _rewrite_toctree_line [line base_dir]:
+    """
+    Rewrite a single non-glob ``{toctree}`` body line, preserving layout
+
+    :param line: raw line including leading indent and line ending
+    :param base_dir: directory of the index file, root-relative posix
+    :return: the line with its entry rewritten, or unchanged
+    """
+
+    define body (line.rstrip "\r\n")
+    define ending (item-slice line (len body))
+    define stripped (body.strip)
+    when (or (not stripped) (stripped.startswith ":")):
+        return line
+    define rewritten (_normalize_toctree_entry stripped base_dir)
+    when (None? rewritten):
+        return line
+    define leading (item-slice body 0 (- (len body) (len (body.lstrip))))
+    return (+ leading rewritten ending)
+
+
+@demand
+define rewrite_markdown_links [text rel_path]:
+    """
+    Rewrite relative Markdown links to root-relative content paths
+
+    Applies :func:`_normalize_link_target` to every inline
+    ``[text](dest)`` link outside fenced code blocks, and
+    :func:`_normalize_toctree_entry` to the child entries of non-glob
+    ``{toctree}`` directives, so an agent reading the stored ``content``
+    can resolve a link or a navigation entry straight through
+    ``get_reference``.
+
+    :param text: raw Markdown document text
+    :param rel_path: the document's own root-relative posix path
+    :return: text with intra-repo relative links and toctree entries
+        rewritten
+    """
+
+    define base_dir (posixpath.dirname rel_path)
+
+    define _sub [match]:
+        define replaced (_normalize_link_target (match.group 2) base_dir)
+        when (None? replaced):
+            return (match.group 0)
+        return (+ (match.group 1) replaced (match.group 3))
+
+    ; re.sub calls back from Python, so the substitution must be driven
+    ; synchronously rather than handed over as a coroutine.
+    define sub_fn (demand _sub)
+
+    define out #[]
+    define fence None
+    define toctree_glob False
+
+    for-each [line (text.splitlines keepends: True)]:
+        define marker (line.lstrip)
+        if (None? fence):
+            if (or (marker.startswith "```") (marker.startswith "~~~")):
+                if (and (marker.startswith "```") (in? "toctree" marker)):
+                    set! fence "toctree"
+                    set! toctree_glob False
+                else:
+                    set! fence "code"
+            else:
+                set! line (_MD_LINK_RE.sub sub_fn line)
+            (out.append line)
+        elif (or (marker.startswith "```") (marker.startswith "~~~")):
+            set! fence None
+            (out.append line)
+        elif (!= fence "toctree"):
+            (out.append line)
+        elif (== (marker.strip) ":glob:"):
+            set! toctree_glob True
+            (out.append line)
+        elif toctree_glob:
+            (out.append line)
+        else:
+            (out.append (_rewrite_toctree_line line base_dir))
+
+    return (.join "" out)
+
+
+define _extract_module_docstring [lines start]:
+    """
+    Read a triple-double-quoted block beginning at or after ``start``
+
+    :param lines: list of source lines
+    :param start: index of the line opening the docstring
+    :return: first non-empty line of the docstring, or None
+    """
+
+    define body #[]
+    define first (.lstrip (item lines start))
+    unless (first.startswith "\"\"\""):
+        return None
+    define remainder (item-slice first 3)
+    when (in? "\"\"\"" remainder):
+        return (or (_clean_inline (item (remainder.split "\"\"\"" 1) 0)) None)
+
+    (body.append remainder)
+    for-each [line (item-slice lines (+ start 1))]:
+        when (in? "\"\"\"" line):
+            (body.append (item (line.split "\"\"\"" 1) 0))
+            (break)
+        (body.append line)
+    for-each [line body]:
+        define cleaned (_clean_inline line)
+        when cleaned:
+            return cleaned
+    return None
+
+
+define _is_boilerplate_comment [line stem]:
+    """
+    Return True for comment lines that are not a useful summary
+
+    Filters the leading file-path banner, GPL license text, and
+    ``:field:`` metadata lines common to Koskari source headers.
+
+    :param line: comment text with leading ``;`` markers removed
+    :param stem: file stem, used to spot the path banner line
+    :return: True when the line should be skipped
+    """
+
+    unless line:
+        return True
+    define lowered (line.lower)
+    when (line.startswith ":"):
+        return True
+    when (or (line.endswith ".ki") (and (in? "/" line) (in? stem line))):
+        return True
+    for-each [marker _LICENSE_MARKERS]:
+        when (in? marker lowered):
+            return True
+    return False
+
+
+@demand
+define ki_title_summary [text stem]:
+    """
+    Extract a title and summary from a Koskari source file
+
+    Prefers a top-level triple-double-quoted module docstring; otherwise
+    falls back to the first substantive line of the leading ``;`` comment
+    banner.
+
+    :param text: raw Koskari source text
+    :param stem: file stem used as the title and to skip the path banner
+    :return: tuple of (title, summary or None)
+    """
+
+    define lines (text.splitlines)
+    define comments #[]
+    define index 0
+    while (< index (len lines)):
+        define stripped (.strip (item lines index))
+        if (not stripped):
+            set! index (+ index 1)
+        elif (stripped.startswith ";"):
+            (comments.append (.strip (stripped.lstrip ";")))
+            set! index (+ index 1)
+        else:
+            (break)
+
+    define summary None
+    when (and (< index (len lines))
+              (.startswith (.lstrip (item lines index)) "\"\"\"")):
+        set! summary (_extract_module_docstring lines index)
+
+    when (None? summary):
+        for-each [comment comments]:
+            unless (_is_boilerplate_comment comment stem):
+                set! summary (_clean_inline comment)
+                (break)
+
+    return #(stem summary)
+
+
+; The end.

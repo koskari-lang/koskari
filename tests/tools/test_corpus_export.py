@@ -20,7 +20,6 @@ Unit tests for tools.corpus.export
 """
 
 
-import importlib.util
 import json
 import tempfile
 import unittest
@@ -32,23 +31,10 @@ import pyarrow.parquet as pq
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-def load_module(name, path):
-    """
-    Load a Python module from a file path
+import koskari  # noqa: E402,F401  (activates the .ki import hook)
 
-    :param name: module name for importlib
-    :param path: path to the .py file
-    :return: loaded module
-    """
-
-    spec = importlib.util.spec_from_file_location(name, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-export = load_module('corpus_export', ROOT / 'tools' / 'corpus' / 'export.py')
-corpus_load = load_module('corpus_load', ROOT / 'tools' / 'corpus' / 'load.py')
+from tools.corpus import export  # noqa: E402
+from tools.corpus import load as corpus_load  # noqa: E402
 
 
 FIXTURE_RECORDS = [

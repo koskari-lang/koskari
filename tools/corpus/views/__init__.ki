@@ -1,0 +1,49 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+tools.corpus.views
+
+Registry of corpus dataset view transforms.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import-from importlib import_module
+
+
+; Imported as modules rather than by name: each view module exports its
+; own VIEW_NAME, so importing the names directly would collide.
+define _full (import_module "tools.corpus.views.full")
+define _docs (import_module "tools.corpus.views.docs")
+define _programs (import_module "tools.corpus.views.programs")
+
+
+; Record-mapped views: each value is a transform(record, provenance)
+; callable applied once per corpus record.
+define VIEWS (dict)
+(set-item VIEWS _full.VIEW_NAME _full.transform)
+
+
+; Source-generated views: each value is a generate(root, provenance)
+; callable that produces rows from repository files rather than from
+; corpus records. These publish reference material (docs, example
+; programs) that is not part of the verified corpus.
+define SOURCE_VIEWS (dict)
+(set-item SOURCE_VIEWS _docs.VIEW_NAME _docs.generate)
+(set-item SOURCE_VIEWS _programs.VIEW_NAME _programs.generate)
+
+
+; The end.

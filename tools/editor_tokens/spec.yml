@@ -72,7 +72,7 @@ constants:
 #
 # TextMate: editors/textmate/syntaxes/koskari.tmLanguage.json.j2 renders this
 # word set into #list-head-special and #bare-line-call-head (same alternation);
-# regenerate the JSON after edits (tox -e regen-editors or make editors-regen).
+# regenerate the JSON after edits (make regen-editors).
 # Emacs: editors/emacs/koskari-mode.el.j2 uses the same list for paren list-head
 # and for implicit layout lines (line-start, optional indent, head word);
 # regenerate koskari-mode.el after edits.

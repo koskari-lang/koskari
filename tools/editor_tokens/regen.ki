@@ -1,0 +1,258 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+tools.editor_tokens.regen
+
+Regenerate one editor asset: ``spec.yml``, ``template.j2``, ``output``
+(three positional arguments only). Registers Jinja filters for regex
+alternation, JSON string escaping, and Emacs ``concat`` line wrapping.
+
+Every callable handed to Jinja is wrapped with ``@demand``. Jinja
+invokes filters and globals from Python, and a bare koskari callable
+returns a coroutine there -- which Jinja renders into the output as
+``<coroutine at 0x...>`` rather than raising, so the failure is silent.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import json
+import sys
+
+import-from argparse ArgumentParser
+import-from os.path basename
+import-from pathlib Path
+
+import yaml
+
+import-from jinja2 Environment FileSystemLoader StrictUndefined
+
+import-from koskari.lib demand
+
+
+; Characters that must be backslash-escaped inside a regex alternation.
+; Membership is tested per character, so a string serves as the set.
+define REGEX_META "\\.^$*+?{}[]|()"
+
+; Width at which an Emacs ``concat`` fragment is wrapped.
+define MAX_CHUNK 72
+
+
+@demand
+define expand_block_header_tokens [layout_heads layout_peers]:
+    """
+    Expand layout heads and peer heads into a single ordered token list.
+
+    For each layout head, emit the head followed by its declared peers
+    (if any).
+    """
+
+    define out #[]
+    for-each [head layout_heads]:
+        (out.append head)
+        (out.extend (layout_peers.get head #()))
+    return (sorted (set out) reverse: True)
+
+
+define escape_regex_token [token]:
+    """
+    Escape a Koskari symbol token for inclusion inside a regex
+    alternation.
+    """
+
+    define parts #[]
+    for-each [ch token]:
+        when (in? ch REGEX_META):
+            (parts.append "\\")
+        (parts.append ch)
+    return (.join "" parts)
+
+
+@demand
+define join_regex_alternation [tokens]:
+    """
+    Join escaped tokens with ``|`` for a regex alternation.
+    """
+
+    return (.join "|" (list-each [t tokens] (escape_regex_token t)))
+
+
+@demand
+define json_string_escape [fragment]:
+    """
+    Escape a string for use inside a JSON double-quoted value (no
+    quotes).
+    """
+
+    return (item-slice (json.dumps fragment) 1 -1)
+
+
+define emacs_regex_alternation [tokens]:
+    """
+    Build an Emacs regexp alternation string using ``\\|`` separators.
+    """
+
+    return (.join "\\|" (list-each [t tokens] (escape_regex_token t)))
+
+
+define emacs_regex_body_concat_lines [body indent continuation]:
+    """
+    Split a regexp body across lines like the committed ``concat``
+    fragments.
+
+    When ``continuation`` is true, each non-final line ends with a
+    ``\\|`` separator (alternation continues on the next string).
+    """
+
+    define lines #[]
+    define start 0
+    define body_len (len body)
+    define end 0
+    define split_at None
+    define cut 0
+    define chunk ""
+
+    while (< start body_len):
+        set! end (min body_len (+ start MAX_CHUNK))
+        set! split_at None
+
+        when (< end body_len):
+            set! cut (body.rfind "\\|" start end)
+            ; cut > start already excludes the -1 not-found case, since
+            ; start is never negative.
+            when (> cut start):
+                ; Split before this ``\|`` so the chunk does not include
+                ; it; continuation lines append ``\|`` below (avoids
+                ; ``\|\|``).
+                set! end cut
+                set! split_at cut
+
+        set! chunk (item-slice body start end)
+        when (and continuation (< end body_len)):
+            set! chunk (+ chunk "\\|")
+        (lines.append (+ indent (json.dumps chunk)))
+
+        if (None? split_at):
+            set! start end
+        else:
+            set! start (+ split_at (len "\\|"))
+
+    (lines.append "")
+    return (.join "\n" lines)
+
+
+@demand
+define emacs_regex_lines [tokens indent]:
+    """
+    Format Emacs ``concat`` fragment lines with trailing ``\\|``
+    continuations.
+    """
+
+    define alt (emacs_regex_alternation tokens)
+    return (emacs_regex_body_concat_lines alt indent True)
+
+
+@demand
+define emacs_block_control_concat_lines [tokens indent]:
+    """
+    Build ``concat`` lines for the block-control keyword regexp group.
+
+    ``indent`` is the leading whitespace before each string literal (set
+    in the template so it lines up with surrounding ``concat``
+    fragments).
+    """
+
+    define body (+ "\\(" (emacs_regex_alternation tokens) "\\)")
+    return (emacs_regex_body_concat_lines body indent True)
+
+
+define jinja_env [templates_dir]:
+    """
+    Jinja environment with Koskari editor filters and globals.
+    """
+
+    define env (Environment
+        loader: (FileSystemLoader (str templates_dir))
+        autoescape: False
+        undefined: StrictUndefined
+        trim_blocks: False
+        lstrip_blocks: False)
+
+    (set-item env.filters "regex_alternation" join_regex_alternation)
+    (set-item env.filters "json_string_escape" json_string_escape)
+    (set-item env.filters "emacs_concat_block" emacs_block_control_concat_lines)
+    (set-item env.filters "emacs_concat_list_head" emacs_regex_lines)
+    (set-item env.globals "block_header_tokens" expand_block_header_tokens)
+
+    return env
+
+
+define render [spec_path template_path output_path]:
+    """
+    Load YAML, render one template, write ``output_path``.
+    """
+
+    define spec_file (.resolve (Path spec_path))
+    define spec (yaml.safe_load (spec_file.read_text))
+    (set-item spec "list_head_specials"
+        (sorted (item spec "list_head_specials") reverse: True))
+
+    define template_file (.resolve (Path template_path))
+    define env (jinja_env template_file.parent)
+    define template (env.get_template template_file.name)
+    define rendered (template.render spec)
+
+    define output_file (.resolve (Path output_path))
+    (output_file.parent.mkdir parents: True exist_ok: True)
+    (output_file.write_text rendered)
+
+
+define main [argv: None]:
+    """
+    Three positional arguments only: YAML spec, Jinja template, output
+    file.
+
+    :param argv: optional argument vector; defaults to sys.argv
+    :return: integer exit code
+    """
+
+    when (None? argv):
+        set! argv sys.argv
+
+    define-values [name *: args] argv
+
+    define parser (ArgumentParser
+        prog: (basename name)
+        description: "Render one editor asset from YAML and a Jinja2 template")
+
+    (parser.add_argument "spec_yaml"
+        help: "path to the token spec YAML")
+    (parser.add_argument "template"
+        help: "path to the .j2 template")
+    (parser.add_argument "output"
+        help: "path to write the generated file")
+
+    define options (parser.parse_args args)
+
+    (render options.spec_yaml options.template options.output)
+
+    return 0
+
+
+when-main:
+    (sys.exit (main))
+
+
+; The end.

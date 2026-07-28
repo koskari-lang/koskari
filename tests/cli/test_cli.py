@@ -559,6 +559,64 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Hello, koskari!', out)
 
 
+    async def test_main_command_reads_sexpr_not_layout(self):
+        """
+        -c reads s-expressions, so several forms on one line are
+        consecutive top-level forms rather than one implicit call
+        """
+
+        code, out = await self._capture_main(
+            '-c', '(print "a") (print "b")')
+        self.assertEqual(0, code)
+        self.assertEqual(['a', 'b'], out.split())
+
+
+    async def test_main_stdin_dash_reads_layout(self):
+        """
+        - runs a whole program from stdin, read as layout like a file
+        """
+
+        source = 'define greet [who]:\n  print f"hi {who}"\ngreet "stdin"\n'
+
+        def run():
+            captured = io.StringIO()
+            orig_out, orig_in = sys.stdout, sys.stdin
+            sys.stdout, sys.stdin = captured, io.StringIO(source)
+            try:
+                return main(['koskari', '-']), captured.getvalue()
+            finally:
+                sys.stdout, sys.stdin = orig_out, orig_in
+
+        loop = asyncio.get_running_loop()
+        code, out = await loop.run_in_executor(None, run)
+        self.assertEqual(0, code)
+        self.assertIn('hi stdin', out)
+
+
+    async def test_main_stdin_dash_forwards_script_args(self):
+        """
+        - keeps its place as argv[0] with script arguments after it
+        """
+
+        def run():
+            orig_argv, orig_in = sys.argv, sys.stdin
+            captured = io.StringIO()
+            orig_out = sys.stdout
+            sys.stdout = captured
+            sys.stdin = io.StringIO('import sys\nprint sys.argv\n')
+            try:
+                return main(['koskari', '-', 'one', 'two']), \
+                    captured.getvalue()
+            finally:
+                sys.stdout, sys.stdin, sys.argv = \
+                    orig_out, orig_in, orig_argv
+
+        loop = asyncio.get_running_loop()
+        code, out = await loop.run_in_executor(None, run)
+        self.assertEqual(0, code)
+        self.assertIn("['-', 'one', 'two']", out)
+
+
     async def test_main_command_sets_sys_argv(self):
         def run():
             orig_argv = sys.argv
