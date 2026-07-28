@@ -1722,6 +1722,50 @@ class Reader:
                 break
 
 
+    def reload_pragma(self, pragma):
+        """
+        Apply reader settings from a module pragma to this reader
+
+        Covers every setting a plain reader carries: reader/brackets,
+        reader/index-brackets, reader/dot-attrs, reader/string-segments,
+        reader/pass-none, and reader/fences.
+
+        Raw reader defaults are deliberately bare, so this is how a
+        directly-constructed reader is brought up to the pragma's baseline.
+        Tooling that builds a reader and skips this step sees none of the
+        pragma-gated syntax, which is rarely what it wants.
+
+        :param pragma: a module pragma, or None for a no-op
+        """
+
+        if pragma is None:
+            return
+
+        brackets = pragma.get("reader/brackets")
+        if brackets is not None:
+            self.bracket_pairs = bool(brackets)
+
+        index_brackets = pragma.get("reader/index-brackets")
+        if index_brackets is not None:
+            self.index_brackets = bool(index_brackets)
+
+        dot_attrs = pragma.get("reader/dot-attrs")
+        if dot_attrs is not None:
+            self.dot_attrs = bool(dot_attrs)
+
+        string_segments = pragma.get("reader/string-segments")
+        if string_segments is not None:
+            self.string_segments = bool(string_segments)
+
+        pass_none = pragma.get("reader/pass-none")
+        if pass_none is not None:
+            self.set_pass_none(bool(pass_none))
+
+        fences = pragma.get("reader/fences")
+        if fences is not None:
+            self.fences_enabled = bool(fences)
+
+
     def _dotted_attr_match(self, atom):
         """
         Atom pattern matcher for dotted attribute access
@@ -2729,49 +2773,24 @@ class LayoutReader(Reader):
 
     def reload_pragma(self, pragma):
         """
-        Apply reader settings from a module pragma: reader/layout and
-        reader/implicit-calls drive the layout switches; reader/brackets sets
-        bracket-pair reading on this reader and its inner reader;
-        reader/dot-attrs governs both spellings of dotted attribute access;
-        reader/pass-none toggles the ``pass`` symbol macro; reader/fences
-        toggles triple-backtick fence reading.
+        Apply reader settings from a module pragma
+
+        Extends :meth:`Reader.reload_pragma` with the layout switches
+        (reader/layout and reader/implicit-calls) and mirrors every setting
+        onto the inner s-expression reader, so both surfaces agree.
+
+        :param pragma: a module pragma, or None for a no-op
         """
 
         if pragma is None:
             return
 
+        super().reload_pragma(pragma)
+        self._inner.reload_pragma(pragma)
+
         self.set_layout_modes(
             layout_enabled=pragma.get("reader/layout"),
             layout_implicit_calls=pragma.get("reader/implicit-calls"))
-
-        brackets = pragma.get("reader/brackets")
-        if brackets is not None:
-            self.bracket_pairs = bool(brackets)
-            self._inner.bracket_pairs = bool(brackets)
-
-        index_brackets = pragma.get("reader/index-brackets")
-        if index_brackets is not None:
-            self.index_brackets = bool(index_brackets)
-            self._inner.index_brackets = bool(index_brackets)
-
-        dot_attrs = pragma.get("reader/dot-attrs")
-        if dot_attrs is not None:
-            self.dot_attrs = bool(dot_attrs)
-            self._inner.dot_attrs = bool(dot_attrs)
-
-        string_segments = pragma.get("reader/string-segments")
-        if string_segments is not None:
-            self.string_segments = bool(string_segments)
-            self._inner.string_segments = bool(string_segments)
-
-        pass_none = pragma.get("reader/pass-none")
-        if pass_none is not None:
-            self._inner.set_pass_none(bool(pass_none))
-
-        fences = pragma.get("reader/fences")
-        if fences is not None:
-            self.fences_enabled = bool(fences)
-            self._inner.fences_enabled = bool(fences)
 
 
     @contextmanager
