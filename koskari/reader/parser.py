@@ -736,6 +736,14 @@ class Reader:
     terminating registrations. Event macros may return DEFER so the next
     handler in ``_event_macro_chain_for`` runs; the leading-character chain
     ends with ``_read_default``.
+
+    Suffix macros are a second, parallel registry keyed the same way (see
+    :meth:`add_suffix_macro`). Where an event macro dispatches on the
+    character that *opens* a token, a suffix macro dispatches on the
+    character following a completed value, and wraps that value. Each
+    consumes exactly one suffix and the driver re-enters, so chains across
+    differing suffix kinds compose without any one macro knowing about the
+    others.
     """
 
     def __init__(self, nodefaults=False, bracket_pairs=True):
@@ -750,7 +758,7 @@ class Reader:
 
         self.reader_macros = {}
         self.atom_patterns = []
-        self.post_value_hooks = []
+        self.suffix_macros = {}
         self.terminating = set(_BASE_TERMINATORS)
         self._terms = "".join(sorted(self.terminating))
         self.bracket_pairs = bracket_pairs
@@ -761,9 +769,11 @@ class Reader:
             self._add_default_macros()
             self._add_default_atoms()
 
-        # post-value hooks run for every reader (including bare ones), each
-        # self-gating on its own feature switch, mirroring index_brackets
-        self.add_post_value_hook(self._apply_index_brackets)
+        # suffix macros are registered for every reader (including bare
+        # ones); each gates on its own feature switch via its predicate
+        self.add_suffix_macro(
+            "[", self._apply_index_brackets,
+            predicate=self._index_brackets_enabled)
 
 
     def read(self, reader_stream):
@@ -1011,48 +1021,109 @@ class Reader:
                 break
 
         if event is VALUE:
-            for hook in self.post_value_hooks:
-                value = hook(stream, value, position)
+            value = self._dispatch_suffix_macros(stream, value, position)
 
         return event, position, value
 
 
+    def _dispatch_suffix_macros(self, stream, value, position):
+        """
+        Apply suffix macros to a just-read value until none claim it
+
+        Peeks the next character, dispatches to that character's macro
+        stack (newest first, skipping entries whose predicate declines),
+        and applies at most one macro per pass. A macro that returns a
+        value re-enters this loop with it, so chains across differing
+        suffix kinds -- ``foo[a].b[c]`` -- fall out of dispatch rather than
+        out of any one macro. Dispatch stops at end of input, at an
+        unregistered character, or when every entry for that character
+        declines.
+
+        :param stream: the source stream, positioned after ``value``
+        :param value: the value just read
+        :param position: the position of ``value``
+        :return: the value, wrapped by however many suffix macros claimed it
+        :raises ReaderSyntaxError: when a macro claims a suffix without
+            consuming any input
+        """
+
+        while True:
+            char = stream.peek(1)
+            if not char:
+                break
+
+            entries = self.suffix_macros.get(char)
+            if not entries:
+                break
+
+            for macro_fn, predicate_fn in entries:
+                if predicate_fn is not None:
+                    if not predicate_fn(stream, char, value):
+                        continue
+
+                before = stream.position()
+                result = macro_fn(stream, value, position)
+                if result is DEFER:
+                    continue
+
+                if stream.position() == before:
+                    raise stream.error(
+                        f"suffix macro for {char!r} consumed no input",
+                        before)
+
+                value = result
+                break
+
+            else:
+                break
+
+        return value
+
+
+    def _index_brackets_enabled(self, stream, char, value):
+        """
+        Suffix macro predicate for :meth:`_apply_index_brackets`
+
+        :param stream: the source stream
+        :param char: the trigger character
+        :param value: the value the bracket group would attach to
+        :return: whether ``reader/index-brackets`` is enabled
+        """
+
+        return self.index_brackets
+
+
     def _apply_index_brackets(self, stream, value, position):
         """
-        Post-value hook: postfix index-bracket reader macro
+        Suffix macro: postfix index-bracket reader macro
 
         When ``reader/index-brackets`` is enabled, an ``[ ... ]`` group
         attached directly to a just-read value (no intervening whitespace)
-        desugars into ``(item VALUE KEY)``. Chains left to right, so
-        ``foo[a][b]`` reads as ``(item (item foo a) b)``. A space breaks the
-        attachment: ``foo [a]`` reads as two forms. Disabled readers pass
-        the value through untouched.
+        desugars into ``(item VALUE KEY)``. Consumes exactly one group; the
+        suffix driver re-enters for chains, so ``foo[a][b]`` reads as
+        ``(item (item foo a) b)``. A space breaks the attachment:
+        ``foo [a]`` reads as two forms.
 
-        :param stream: the source stream
-        :param value: the value the bracket group would attach to
+        :param stream: the source stream, positioned at ``[``
+        :param value: the value the bracket group attaches to
         :param position: the position of ``value``
-        :return: ``value`` unchanged, or the wrapped ``(item ...)`` form
+        :return: the wrapped ``(item ...)`` form
+        :raises ReaderSyntaxError: when the group carries no key
         """
 
-        if not self.index_brackets:
-            return value
+        index = self.read_pair(stream)
 
-        item = symbol("item")
+        keys = []
+        node = index
+        while is_pair(node) and not is_nil(node):
+            head, node = node
+            keys.append(head)
 
-        while stream.peek(1) == "[":
-            index = self.read_pair(stream)
+        if not keys:
+            raise stream.error("index brackets require a key", position)
 
-            keys = []
-            node = index
-            while is_pair(node) and not is_nil(node):
-                head, node = node
-                keys.append(head)
-
-            if not keys:
-                raise stream.error("index brackets require a key", position)
-
-            value = cons(item, value, *keys, nil)
-            value.set_position(position)
+        value = cons(symbol("item"), value, *keys, nil)
+        value.set_position(position)
 
         return value
 
@@ -1158,61 +1229,108 @@ class Reader:
         self._sync_terms_from_macros()
 
 
-    def add_post_value_hook(self, hook):
+    def add_suffix_macro(self, char, macro_fn, predicate=None):
         """
-        Register a post-value hook
+        Add a suffix macro to the reader
 
-        Post-value hooks are the reader's post macros: after any token is
-        read as a ``VALUE``, each registered hook is invoked in registration
-        order as ``hook(stream, value, position)`` and returns the value to
-        carry forward (unchanged, or transformed). A hook may peek and
-        consume from ``stream`` to extend the value with trailing syntax --
-        this is how attached-bracket indexing turns ``foo[x]`` into
-        ``(item foo x)``. The value threads through the hooks, so a later
-        hook sees what an earlier one produced.
+        Suffix macros are the reader's post macros: after any token is read
+        as a ``VALUE``, the driver peeks the next character and dispatches
+        to that character's macro stack. This is how attached-bracket
+        indexing turns ``foo[x]`` into ``(item foo x)``.
 
-        :param hook: callable ``(stream, value, position) -> value``
-        """
+        Each call **prepends** ``(macro_fn, predicate)`` to that character's
+        macro stack (newest first), mirroring :meth:`add_event_macro`.
 
-        self.post_value_hooks.append(hook)
+        A macro consumes **exactly one** suffix and returns the value to
+        carry forward; the driver re-enters with that value, so chains such
+        as ``foo[a][b]`` fall out of dispatch rather than out of any one
+        macro.
 
-
-    def get_post_value_hooks(self):
-        """
-        Return the registered post-value hooks in registration order
-
-        :return: a list copy of the post-value hooks
-        """
-
-        return list(self.post_value_hooks)
-
-
-    def clear_post_value_hooks(self):
-        """
-        Remove all registered post-value hooks
+        :param char: the character(s) to trigger on
+        :param macro_fn: function(stream, value, position) -> value. The
+            trigger character has **not** been consumed. May return
+            ``DEFER`` to decline, leaving the stream untouched beyond
+            peek-only inspection, in which case the next handler from that
+            character's stack runs. A macro that has consumed input owes a
+            reader error rather than a late ``DEFER``, and one that claims
+            a suffix without consuming anything is an error.
+        :param predicate: optional ``(stream, char, value) -> bool``. If
+            false, that entry is skipped without calling ``macro_fn`` (early
+            DEFER). Feature gating belongs here, where the value the suffix
+            would attach to is available.
         """
 
-        self.post_value_hooks.clear()
+        entry = (macro_fn, predicate)
+        for c in char:
+            self.suffix_macros.setdefault(c, []).insert(0, entry)
+
+
+    def get_suffix_macros(self, char):
+        """
+        Return stacked suffix macros for one character
+
+        :param char: single character to look up
+        :return: list of ``(macro_fn, predicate)``, newest first; empty if
+            none
+        """
+
+        return list(self.suffix_macros.get(char, ()))
+
+
+    def get_suffix_macro(self, char):
+        """
+        Get the newest suffix macro from the reader
+
+        :param char: the character to look up
+        :return: tuple of (macro_fn, predicate) or None
+        """
+
+        lst = self.suffix_macros.get(char)
+        if not lst:
+            return None
+        return lst[0]
+
+
+    def clear_suffix_macro(self, char):
+        """
+        Remove all stacked suffix macros for each character in ``char``
+
+        :param char: the character(s) to clear
+        """
+
+        for c in char:
+            self.suffix_macros.pop(c, None)
 
 
     @contextmanager
-    def temporary_post_value_hook(self, hook):
+    def temporary_suffix_macro(self, char, macro_fn, predicate=None):
         """
-        Context manager to temporarily append a post-value hook
+        Context manager to temporarily apply a suffix macro
 
-        On exit, removes that hook from the tail of the list when it still
-        matches there by identity.
+        Prepends one ``(macro_fn, predicate)`` entry shared across ``char``.
+        On exit, removes **only** that entry from the head of each affected
+        list when it still matches by identity.
 
-        :param hook: callable ``(stream, value, position) -> value``
+        :param char: the character(s) to trigger on
+        :param macro_fn: function(stream, value, position) -> value; may
+            return ``DEFER`` like other suffix macros (see
+            :meth:`add_suffix_macro`).
+        :param predicate: optional predicate (see :meth:`add_suffix_macro`)
         :yields: self
         """
 
-        self.post_value_hooks.append(hook)
+        entry = (macro_fn, predicate)
+        for c in char:
+            self.suffix_macros.setdefault(c, []).insert(0, entry)
 
         yield self
 
-        if self.post_value_hooks and self.post_value_hooks[-1] is hook:
-            self.post_value_hooks.pop()
+        for c in char:
+            lst = self.suffix_macros.get(c)
+            if lst and lst[0] is entry:
+                lst.pop(0)
+                if not lst:
+                    del self.suffix_macros[c]
 
 
     def add_macro_character(
