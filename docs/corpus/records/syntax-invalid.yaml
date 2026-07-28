@@ -58,3 +58,135 @@ tags:
   - invalid
   - pitfall
 notes: "corrective (either): `define-values [a b] (values` + newline + indented `1 2)`; or `define-values [a b]:` + newline + indented `values 1 2`. Sibling of layout-bare-multiline-define-invalid-001."
+---
+id: reader-dot-attr-python-call-parens-invalid-001
+feature: reader/dot-attr
+source: |-
+  (define d (dict a: 1))
+  (d.keys())
+  
+verify:
+  read: "(compile/begin (define d (dict a: 1)) ((compile/attr d keys) ()))"
+  invalid: "python call syntax does not carry over. the dot reads the attribute and the ENCLOSING parens are the call, so d.keys() is not a no-argument call -- the trailing () is a second, empty list passed as an argument, giving ((compile/attr d keys) ()) and TypeError: dict.keys() takes no arguments (1 given). the same mistake is silent when the method tolerates an argument."
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - reader
+  - dot-attr
+  - "pragma:reader/dot-attrs"
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: (d.keys) -- parens go around the whole form, never after the attribute. for a nested call write (sorted (d.keys)), not (sorted d.keys())"
+---
+id: reader-dot-attr-space-breaks-invalid-002
+feature: reader/dot-attr
+source: |-
+  ("hello" .upper)
+  
+verify:
+  read: ("hello" .upper)
+  invalid: "the suffix must touch the value. with a space, .upper is an ordinary symbol and this reads as calling the string \"hello\" with that symbol as an argument, failing at eval with NameError: Empty reference: .upper. nothing about the receiver is wrong here -- only the space."
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - reader
+  - dot-attr
+  - "pragma:reader/dot-attrs"
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: (\"hello\".upper) with no space, or the leading-dot spelling (.upper \"hello\") where the symbol is in head position"
+---
+id: reader-dot-attr-trailing-dot-invalid-003
+feature: reader/dot-attr
+source: |-
+  obj.
+  
+verify:
+  error: "ReaderSyntaxError: attribute name missing in 'obj.'"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - dot-attr
+  - "pragma:reader/dot-attrs"
+  - invalid
+notes: "corrective: name the attribute, obj.value. a dot with nothing after it is rejected at read time rather than becoming the symbol obj."
+---
+id: reader-index-bracket-space-breaks-invalid-004
+feature: reader/index-bracket
+source: |-
+  seq [0]
+  
+verify:
+  read: (compile/begin seq [0])
+  invalid: "the group must touch the value. with a space this is two separate forms, a symbol and a one-element bracket list, not an item access -- and because a bracket list is value-equal to a paren form it goes on to fail at eval with TypeError: 'int' object is not callable rather than reporting anything about indexing."
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - index-bracket
+  - "pragma:reader/index-brackets"
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: seq[0] with no space; fixture seq is (1, 2, 3)"
+---
+id: reader-index-bracket-empty-group-invalid-005
+feature: reader/index-bracket
+source: |-
+  seq[]
+  
+verify:
+  error: "ReaderSyntaxError: index brackets require a key"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - index-bracket
+  - "pragma:reader/index-brackets"
+  - invalid
+notes: "corrective: supply a key, seq[0]. an attached group with nothing in it is rejected at read time"
+---
+id: reader-string-segment-space-breaks-invalid-006
+feature: reader/string-segment
+source: |-
+  "a" - " b"
+  
+verify:
+  read: (compile/begin "a" - " b")
+  invalid: the marker must touch the closing quote. with a space this is three separate forms -- two strings and the subtraction symbol -- which at top level evaluates to the last of them, " b", instead of joining anything. it fails silently rather than erroring, so the wrong result is easy to miss.
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - string-segment
+  - "pragma:reader/string-segments"
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: \"a\"- \" b\" -- adjacent to the quote. the gap AFTER the marker may be any whitespace, including newlines; only the marker itself must be attached"
+---
+id: reader-string-segment-non-literal-invalid-007
+feature: reader/string-segment
+source: |-
+  "a"- 5
+  
+verify:
+  error: "ReaderSyntaxError: string segment expected after '-'"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - string-segment
+  - "pragma:reader/string-segments"
+  - invalid
+notes: "corrective: join expressions with (#str \"a\" 5) instead. segments are string literals only, and the marker is a commitment -- once written, a literal must follow"
