@@ -191,7 +191,7 @@ define syntax_codes [label syn]:
         define members (getattr transform "__dict__" None)
         unless members:
             (continue)
-        for-each [[key val] (.items members)]:
+        for-each [[key val] (members.items)]:
             define code (unwrap_code val)
             if (not (None? code)):
                 yield #(f"{label}[{i}].{key}" code)
@@ -215,9 +215,10 @@ define collect_codes [modules]:
     define stack #[]
 
     for-each [mod modules]:
-        for-each [[key val] (sorted (.items (vars mod)))]:
+        for-each [[key val] (sorted ((vars mod).items))]:
             when (key.startswith "__"):
                 (continue)
+
             define label f"{mod.__name__}.{key}"
             if (instance? val Syntax):
                 (stack.extend (syntax_codes label val))
@@ -235,7 +236,7 @@ define collect_codes [modules]:
 
         for-each [[i val] (enumerate code.constants_pool)]:
             define nested (unwrap_code val)
-            when (and (instance? nested Code) (not (in? (id nested) seen))):
+            when (and (instance? nested Code) (not-in? (id nested) seen)):
                 define nested_name (or nested.name f"c#{i}")
                 (stack.append #(f"{label}/{nested_name}" nested))
 
@@ -259,19 +260,20 @@ define iter_blocks [code enders]:
     for-each [[op_int _arg] (code.soften)]:
         define name (op_short_name (OpCode op_int))
 
-        when (== name "LABEL"):
+        if (== name "LABEL"):
             when block:
                 yield block
             set! block #[]
             (continue)
 
-        when (in? name TRANSPARENT_OPS):
+        elif (in? name TRANSPARENT_OPS):
             (continue)
 
-        when (in? name LOOP_PUSH_OPS):
-            set! depth (+ depth 1)
-        when (and (in? name LOOP_POP_OPS) (> depth 0)):
-            set! depth (- depth 1)
+        elif (in? name LOOP_PUSH_OPS):
+            incr! depth
+
+        elif (and (in? name LOOP_POP_OPS) (> depth 0)):
+            decr! depth
 
         (block.append #(name depth))
 
@@ -294,34 +296,36 @@ define-class GramTally []:
         set! self.weight_base weight_base
         set! self.raw (dict (list-each [n sizes] #(n (Counter))))
         set! self.weighted (dict (list-each [n sizes] #(n (Counter))))
-        set! self.exemplar (dict)
+        set! self.exemplar #{}
         set! self.successors (defaultdict Counter)
         set! self.op_counts (Counter)
         set! self.code_count 0
         set! self.block_count 0
 
     define feed [self label block]:
-        set! self.block_count (+ self.block_count 1)
-        define names (list-each [entry block] (item entry 0))
+        incr! self.block_count
+        define names (list-each [entry block] entry[0])
 
         for-each [name names]:
-            (set-item self.op_counts name (+ (item self.op_counts name) 1))
+            incr! self.op_counts[name]
 
         for-each [[prev succ] (zip names (item-slice names 1))]:
-            define bucket (item self.successors prev)
-            (set-item bucket succ (+ (item bucket succ) 1))
+            define bucket self.successors[prev]
+            incr! bucket[succ]
 
         for-each [n self.sizes]:
-            define raw_counts (item self.raw n)
-            define weighted_counts (item self.weighted n)
+            define raw_counts self.raw[n]
+            define weighted_counts self.weighted[n]
             for-each [i (range (+ (- (len block) n) 1))]:
+
                 define gram (tuple (item-slice names i (+ i n)))
-                define weight (** self.weight_base (item (item block i) 1))
-                (set-item raw_counts gram (+ (item raw_counts gram) 1))
-                (set-item weighted_counts gram
-                    (+ (item weighted_counts gram) weight))
+
+                define weight (** self.weight_base block[i][1])
+
+                incr! raw_counts[gram]
+                incr! weighted_counts[gram] weight
                 unless (in? gram self.exemplar):
-                    (set-item self.exemplar gram label)
+                    set! self.exemplar[gram] label
 
 
 define analyze [codes sizes weight_base enders]:
@@ -330,10 +334,12 @@ define analyze [codes sizes weight_base enders]:
     """
 
     define tally (GramTally sizes weight_base)
+
     for-each [[label code] codes]:
-        set! tally.code_count (+ tally.code_count 1)
+        incr! tally.code_count
         for-each [block (iter_blocks code enders)]:
             (tally.feed label block)
+
     return tally
 
 
@@ -346,13 +352,14 @@ define print_gram_tables [tally top file]:
     define pad6 (* " " 6)
 
     for-each [n tally.sizes]:
-        define weighted (item tally.weighted n)
+        define weighted tally.weighted[n]
         (file.write
             f"\n=== top {n}-grams (weighted, base {tally.weight_base}) ===\n")
-        for-each [[gram wcount] (.most_common weighted top)]:
-            define raw (item (item tally.raw n) gram)
-            define seq (.join " " gram)
-            define exemplar (item tally.exemplar gram)
+
+        for-each [[gram wcount] (weighted.most_common top)]:
+            define raw tally.raw[n][gram]
+            define seq (" ".join gram)
+            define exemplar tally.exemplar[gram]
             file.write f"  {wcount:>12}  {raw:>6}  {seq}\n"
             file.write f"  {pad12}  {pad6}    e.g. {exemplar}\n"
 
@@ -363,20 +370,24 @@ define print_markov [tally threshold file]:
     """
 
     (file.write
-        f"\n=== successor distribution (ops emitted >= {threshold} times) ===\n")
+        f"\n=== successor distribution"-
+        f" (ops emitted >= {threshold} times) ===\n")
 
-    for-each [[op count] (.most_common tally.op_counts)]:
+    for-each [[op count] (tally.op_counts.most_common)]:
         when (< count threshold):
             (break)
-        define succs (item tally.successors op)
-        define total (sum (.values succs))
+
+        define succs tally.successors[op]
+        define total (sum (succs.values))
         unless total:
             (continue)
+
         define parts #[]
-        for-each [[succ scount] (.most_common succs 4)]:
+        for-each [[succ scount] (succs.most_common 4)]:
             define pct (/ (* 100.0 scount) total)
             (parts.append f"{succ} {pct:.0f}%")
-        define joined (.join ", " parts)
+
+        define joined (", ".join parts)
         file.write f"  {op:<24} x{count:<7} -> {joined}\n"
 
 
@@ -389,23 +400,23 @@ define tally_to_json [tally top]:
         codes: tally.code_count
         blocks: tally.block_count
         weight_base: tally.weight_base
-        grams: (dict)
-        successors: (dict))
+        grams: #{}
+        successors: #{})
 
-    define grams (item out "grams")
+    define grams out["grams"]
     for-each [n tally.sizes]:
         define rows #[]
-        for-each [[gram wcount] (.most_common (item tally.weighted n) top)]:
+        for-each [[gram wcount] (tally.weighted[n].most_common top)]:
             (rows.append (dict
                 seq: (list gram)
                 weighted: wcount
-                raw: (item (item tally.raw n) gram)
-                exemplar: (item tally.exemplar gram)))
-        (set-item grams (str n) rows)
+                raw: tally.raw[n][gram]
+                exemplar: tally.exemplar[gram]))
+        set! grams[(str n)] rows
 
-    define successors (item out "successors")
-    for-each [[op succs] (.items tally.successors)]:
-        (set-item successors op (dict (.most_common succs)))
+    define successors out["successors"]
+    for-each [[op succs] (tally.successors.items)]:
+        set! successors[op] (dict (succs.most_common))
 
     return out
 
@@ -417,11 +428,11 @@ define load_group [group]:
     """
 
     define extra_path (GROUP_PATHS.get group)
-    when (and extra_path (not (in? extra_path sys.path))):
+    when (and extra_path (not-in? extra_path sys.path)):
         sys.path.insert 0 extra_path
 
-    return (list-each [name (item MODULE_GROUPS group)]
-        (importlib.import_module name))
+    list-each [name MODULE_GROUPS[group]]:
+        (importlib.import_module name)
 
 
 define build_arguments [parser]:
@@ -483,9 +494,11 @@ define run [options]:
         sys.stdout.write "\n"
         return 0
 
-    define joined (.join ", " groups)
+    define joined (", ".join groups)
     (sys.stdout.write
-        f"codes: {tally.code_count}   blocks: {tally.block_count}   groups: {joined}\n")
+        f"codes: {tally.code_count}"-
+        f"   blocks: {tally.block_count}"-
+        f"   groups: {joined}\n")
     (print_gram_tables tally options.top sys.stdout)
     (print_markov tally options.markov_threshold sys.stdout)
     return 0
