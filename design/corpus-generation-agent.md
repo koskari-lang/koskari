@@ -66,7 +66,7 @@ below) so there is exactly one sanctioned non-tox entry point. The canonical
 
 The minimum viable tooling is a single multi-command script,
 `tools/corpus/quick.ki` (implemented), alongside the existing corpus tooling
-(`export.py`, `load.py`). One file rather than three because importing Koskari
+(`export.ki`, `load.ki`). One file rather than three because importing Koskari
 compiles the bootstrap `.ki` files on every launch — a shared script lets
 verify / insert / coverage reuse one warmup and one set of helpers, and gives
 the agent exactly one entry point to discover. It reaches the implementation via
