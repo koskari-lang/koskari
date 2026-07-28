@@ -828,9 +828,14 @@ class Reader:
         self.terminating = set(_BASE_TERMINATORS)
         self._terms = "".join(sorted(self.terminating))
         self.bracket_pairs = bracket_pairs
+        # raw reader defaults stay bare; the pragma is what turns switches
+        # on, so a baseline-on setting still reads off here until a pragma
+        # is applied. dot_attrs is the exception: the atom spelling
+        # (foo.bar) predates the pragma and bare readers have always done
+        # it, so it stays on to keep that contract.
         self.index_brackets = False
         self.dot_attrs = True
-        self.string_segments = True
+        self.string_segments = False
         self.fences_enabled = True
 
         if not nodefaults:
@@ -1231,11 +1236,17 @@ class Reader:
         :param value: the value the attribute is read from
         :param position: the position of ``value``
         :return: the wrapped (compile/attr ...) form
-        :raises ReaderSyntaxError: when no attribute name follows the dot
+        :raises ReaderEOF: when input ends right after the dot, so the REPL
+            treats the form as unfinished rather than wrong
+        :raises ReaderSyntaxError: when what follows is not a name
         """
 
         stream.read(1)
 
+        # not a ReaderEOF even at end of input: the name must be adjacent
+        # to the dot, so no amount of further input can complete this, and
+        # signalling "unfinished" would have the REPL prompt for a line it
+        # is then obliged to reject
         dot_at = stream.position()
         char = stream.peek(1)
         if not char or char not in _ATTR_NAME_HEAD:
@@ -1310,15 +1321,26 @@ class Reader:
         sensible to join: a ``b`` segment joins like any other, and what
         ``compile/#str`` makes of it is the author's business.
 
+        Running out of input is reported as ``EOF`` rather than as "not an
+        opener", so the caller can distinguish an unfinished form from a
+        wrong one. A flavor prefix with nothing after it is EOF too: at the
+        end of ``"a"- f`` the next character is still coming.
+
         :param stream: the source stream
-        :return: whether a string segment can be read here
+        :return: True at an opener, ``EOF`` when input ran out mid-check,
+            False otherwise
         """
 
         char = stream.peek(1)
-        if char == '"':
+        if not char:
+            return EOF
+        elif char == '"':
             return True
         elif char in "frb":
-            return stream.peek(2)[1:2] == '"'
+            ahead = stream.peek(2)
+            if len(ahead) < 2:
+                return EOF
+            return ahead[1:2] == '"'
         else:
             return False
 
@@ -1346,14 +1368,19 @@ class Reader:
         :param value: the string literal being continued
         :param position: the position of ``value``
         :return: the joined (compile/#str ...) form
-        :raises ReaderSyntaxError: when no string segment follows
+        :raises ReaderEOF: when input ends before the segment arrives, so
+            the REPL treats the form as unfinished rather than wrong
+        :raises ReaderSyntaxError: when what follows is not a string literal
         """
 
         stream.read(1)
         self._skip_segment_gap(stream)
 
         segment_at = stream.position()
-        if not self._peek_string_opener(stream):
+        opener = self._peek_string_opener(stream)
+        if opener is EOF:
+            raise stream.reader_eof(segment_at, context="string segment")
+        elif not opener:
             raise stream.error(
                 "string segment expected after '-'", segment_at)
 

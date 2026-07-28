@@ -28,8 +28,8 @@ import unittest
 
 from koskari.lib import kos_repr
 
-from koskari.reader import (DEFER, READ_EOF, Reader, ReaderSyntaxError,
-                            source_str)
+from koskari.reader import (DEFER, READ_EOF, Reader, ReaderEOF,
+                            ReaderSyntaxError, source_str)
 
 import pytest
 
@@ -473,6 +473,11 @@ class TestDotAttrsMalformed(SuffixReaderMixin, unittest.TestCase):
     def test_trailing_dot_on_a_form(self):
         """
         The suffix path reaches the error by its own route
+
+        This stays an error at end of input rather than becoming an
+        unfinished-form signal: the name must be adjacent to the dot, so no
+        later line can complete it, and reporting it as incomplete would
+        have the REPL prompt for input it is then obliged to reject.
         """
 
         self.assert_read_error("(f x).", "attribute name expected")
@@ -563,9 +568,23 @@ class TestDotAttrsDisabled(SuffixReaderMixin, unittest.TestCase):
         self.assertEqual(self.read("1.5"), 1.5)
 
 
-class TestStringSegments(SuffixReaderMixin, unittest.TestCase):
+class SegmentReaderMixin(SuffixReaderMixin):
     """
-    String segments, ``reader/string-segments`` enabled (the baseline)
+    A reader with string segments switched on
+
+    Raw reader defaults stay bare, so this is what the pragma does at its
+    baseline rather than what a bare ``Reader()`` does.
+    """
+
+    def make_reader(self):
+        reader = Reader()
+        reader.string_segments = True
+        return reader
+
+
+class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
+    """
+    String segments, ``reader/string-segments`` enabled
     """
 
     def test_adjacent_segment_joins(self):
@@ -666,7 +685,7 @@ class TestStringSegments(SuffixReaderMixin, unittest.TestCase):
             '(compile/attr (compile/#str "a" " b") join)')
 
 
-class TestStringSegmentsDecline(SuffixReaderMixin, unittest.TestCase):
+class TestStringSegmentsDecline(SegmentReaderMixin, unittest.TestCase):
     """
     Cases the predicate declines, leaving the source reading as it does
     today
@@ -698,7 +717,7 @@ class TestStringSegmentsDecline(SuffixReaderMixin, unittest.TestCase):
         self.assertEqual(kos_repr(self.read("(- 1 2)")), "(- 1 2)")
 
 
-class TestStringSegmentsMalformed(SuffixReaderMixin, unittest.TestCase):
+class TestStringSegmentsMalformed(SegmentReaderMixin, unittest.TestCase):
     """
     Once the marker is claimed, a missing segment is an error
     """
@@ -715,12 +734,33 @@ class TestStringSegmentsMalformed(SuffixReaderMixin, unittest.TestCase):
 
         self.assert_read_error('"a"- 5')
 
-    def test_marker_at_end_of_input(self):
+    def test_marker_at_end_of_input_is_incomplete(self):
         """
-        A marker with nothing after it is a commitment unmet
+        Running out of input is unfinished, not wrong
+
+        The gap crosses newlines, so a later line genuinely completes this.
+        Reporting it as ReaderEOF is what lets the REPL keep prompting
+        rather than rejecting a form the reader could still accept.
         """
 
-        self.assert_read_error('"a"-')
+        with self.assertRaises(ReaderEOF):
+            self.read('"a"-')
+
+    def test_flavor_prefix_at_end_of_input_is_incomplete(self):
+        """
+        A flavor prefix with its quote still to come is also unfinished
+        """
+
+        with self.assertRaises(ReaderEOF):
+            self.read('"a"- f')
+
+    def test_incomplete_inside_a_form_is_incomplete(self):
+        """
+        The unfinished signal survives being nested in a call
+        """
+
+        with self.assertRaises(ReaderEOF):
+            self.read('(print "foo bar baz"-')
 
     def test_expression_after_the_marker(self):
         """
@@ -766,6 +806,7 @@ class TestSuffixesCompose(SuffixReaderMixin, unittest.TestCase):
     def make_reader(self):
         reader = Reader()
         reader.index_brackets = True
+        reader.string_segments = True
         return reader
 
     def test_index_binds_outside_a_join(self):
