@@ -416,6 +416,11 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
       kos_dyn_with_shot_after_exit_done(with_node);
       if (kos_dyn_pop_with(es, with_node) < 0)
         return -1;
+      /* The node is gone, so its owning frame's block is now the current
+         stack; a parent-stack push would walk past it. */
+      if (KosEvalState_StackPushRef(es, Py_None) < 0)
+        return -1;
+      return 0;
     }
     if (KosEvalState_ParentStackPushRef(es, Py_None) < 0) {
       return -1;
@@ -461,12 +466,23 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
   }
 
   PyObject *enter_fn = KosDynWith_ENTER(node);
+
+  /* A KosCallable does not run here: its install configures a frame that
+     the dispatch loop enters once we hand control back, so nothing has
+     been pushed and the completion below must not run. */
+  const int installs_frame = KosCallable_Check(enter_fn);
+
   KosOpResult kr = KosEvalState_CallNoArgs(es, enter_fn, 0);
-  if (kr.kind == KOS_RES_AWAIT) {
-    return kr;
-  }
   if (kr.kind == KOS_RES_RAISE) {
     return EVAL_RAISE();
+  }
+  if (kr.kind != KOS_RES_NORMAL || installs_frame) {
+    /* __enter__ has not returned: it suspended, or its frame is installed
+       and pending. Leave the node in PENDING_ENTER_AWAIT for
+       kos_dynnode_on_control_returned, which binds the result when the
+       call actually returns. */
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_ENTER_AWAIT;
+    return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
   }
 
   {
@@ -515,6 +531,7 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
   }
 
   PyObject *exit_fn = KosDynWith_EXIT(node);
+  const int installs_frame = KosCallable_Check(exit_fn);
   PyObject *typ = NULL;
   PyObject *val = NULL;
   PyObject *tb = NULL;
@@ -543,20 +560,24 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
   KosOpResult kr = KosEvalState_CallArgs(es, exit_fn, args, NULL, 0);
   Py_DECREF(args);
 
-  if (kr.kind == KOS_RES_AWAIT) {
-    KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
-    KosDynWith_EXC_TYP(node) = typ;
-    KosDynWith_EXC_VAL(node) = val;
-    KosDynWith_EXC_TB(node) = tb;
-    KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
-    return kr;
-  }
-
   if (kr.kind == KOS_RES_RAISE) {
     Py_DECREF(typ);
     Py_DECREF(val);
     Py_DECREF(tb);
     return EVAL_RAISE();
+  }
+
+  if (kr.kind != KOS_RES_NORMAL || installs_frame) {
+    /* __exit__ has not returned: suspended, or its frame is installed and
+       pending. The node keeps the exception triple and stays on the
+       chain; kos_dynnode_on_control_returned merges the result and pops
+       it once the call actually returns. */
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
+    KosDynWith_EXC_TYP(node) = typ;
+    KosDynWith_EXC_VAL(node) = val;
+    KosDynWith_EXC_TB(node) = tb;
+    KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
+    return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
   }
 
   if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)

@@ -1,0 +1,192 @@
+;; Full-stack reproducers for koskari-defined context managers under with.
+;;
+;; The synchronous protocol methods (__enter__ / __exit__) are decorated
+;; with @demand: Python's with protocol invokes them synchronously, so an
+;; undecorated koskari method would hand back an un-awaited coroutine.
+;; The async protocol methods (__aenter__ / __aexit__) need no decoration --
+;; the evaluator awaits them on the with path.
+
+
+;; === Synchronous managers === ;;
+
+
+define-class KosCM []:
+    """
+    Koskari-defined synchronous context manager. Records entry, exit, and
+    the exception type handed to __exit__.
+    """
+
+    define __init__ [self value]:
+        set! self.value value
+        set! self.entered False
+        set! self.exited False
+        set! self.exc_type None
+
+    @demand
+    define __enter__ [self]:
+        set! self.entered True
+        self.value
+
+    @demand
+    define __exit__ [self typ val tb]:
+        set! self.exited True
+        set! self.exc_type typ
+        False
+
+
+define-class KosSwallowCM [KosCM]:
+    """
+    Synchronous manager whose __exit__ swallows the body's exception.
+    """
+
+    @demand
+    define __exit__ [self typ val tb]:
+        set! self.exited True
+        set! self.exc_type typ
+        True
+
+
+;; === Asynchronous managers === ;;
+
+
+define-class KosAsyncCM []:
+    """
+    Koskari-defined asynchronous context manager. The protocol methods are
+    undecorated -- with awaits them.
+    """
+
+    define __init__ [self value]:
+        set! self.value value
+        set! self.entered False
+        set! self.exited False
+        set! self.exc_type None
+
+    define __aenter__ [self]:
+        set! self.entered True
+        self.value
+
+    define __aexit__ [self typ val tb]:
+        set! self.exited True
+        set! self.exc_type typ
+        False
+
+
+define-class KosAsyncSwallowCM [KosAsyncCM]:
+    """
+    Asynchronous manager whose __aexit__ swallows the body's exception.
+    """
+
+    define __aexit__ [self typ val tb]:
+        set! self.exited True
+        set! self.exc_type typ
+        True
+
+
+;; === Helpers === ;;
+
+
+define boom []:
+    raise (ValueError "oops")
+
+
+;; === Synchronous with exercises === ;;
+
+
+define sync_no_binding [mgr]:
+    """
+    with over a koskari manager, no binding; yields the body value.
+    """
+
+    with [mgr]:
+        "body"
+
+
+define sync_binding [mgr]:
+    """
+    with binding form; the body sees the value returned by __enter__.
+    """
+
+    with [x mgr]:
+        x
+
+
+define sync_raises [mgr]:
+    """
+    Body raises; a non-swallowing __exit__ lets the exception through.
+    """
+
+    with [x mgr]:
+        (boom)
+
+
+define sync_swallowed [mgr]:
+    """
+    Body raises and __exit__ swallows it; execution resumes after the block.
+    """
+
+    with [x mgr]:
+        (boom)
+    "after"
+
+
+define sync_nested [outer inner]:
+    """
+    Nested with blocks over two koskari managers.
+    """
+
+    with [a outer]:
+        with [b inner]:
+            (#list a b)
+
+
+;; === Asynchronous with exercises === ;;
+
+
+define async_no_binding [mgr]:
+    """
+    with over a koskari async manager, no binding; yields the body value.
+    """
+
+    with [mgr]:
+        "body"
+
+
+define async_binding [mgr]:
+    """
+    with binding form over an async manager; body sees the __aenter__ value.
+    """
+
+    with [x mgr]:
+        x
+
+
+define async_raises [mgr]:
+    """
+    Body raises; a non-swallowing __aexit__ lets the exception through.
+    """
+
+    with [x mgr]:
+        (boom)
+
+
+define async_swallowed [mgr]:
+    """
+    Body raises and __aexit__ swallows it; execution resumes after the block.
+    """
+
+    with [x mgr]:
+        (boom)
+    "after"
+
+
+define async_nested [outer inner]:
+    """
+    Nested with blocks over two koskari async managers.
+    """
+
+    with [a outer]:
+        with [b inner]:
+            (#list a b)
+
+
+;; The end.

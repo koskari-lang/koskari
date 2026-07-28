@@ -46,6 +46,23 @@
 #endif
 
 
+/*
+  Expands to the type name and address of an object, for use with a
+  "%s@%p" conversion in SAYF. Never formats the object itself.
+
+  Tracing a value with %R calls its repr, and a koskari-defined __repr__
+  is koskari code: it re-enters the evaluator, reaches the same trace
+  point, and formats its own arguments with %R again. That recursion does
+  not terminate and does not blow the C stack, because evaluator frames
+  live on the heap. Use this for anything that may hold caller values --
+  arguments, keywords, defaults.
+*/
+
+#define SAY_OBJ(o)                                      \
+  ((o)? Py_TYPE((PyObject *) (o))->tp_name: "<NULL>"),  \
+  ((void *) (o))
+
+
 #endif
 
 // The end.

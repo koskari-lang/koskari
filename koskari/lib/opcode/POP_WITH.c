@@ -40,6 +40,10 @@ KOS_OP_HANDLER(POP_WITH) {
   /* the unwind will pass the value to the upper stack */
   KosOpResult kr = kos_dyn_with_unwind(es, (KosDynWith *) top);
 
+  /* Error path, bail out. */
+  if (kr.kind == KOS_RES_RAISE)
+    return EVAL_RAISE();
+
   /* Async path, need to suspend, we'll resume at this opcode when we
      wake back up. */
   if (kr.kind == KOS_RES_AWAIT) {
@@ -48,9 +52,13 @@ KOS_OP_HANDLER(POP_WITH) {
     return kr;
   }
 
-  /* Error path, bail out. */
-  if (kr.kind == KOS_RES_RAISE)
-    return EVAL_RAISE();
+  /* __exit__ is a KosCallable whose frame is installed and has yet to
+     run. Leave the node on the chain and the pc alone (the current frame
+     is the callee's): kos_dynnode_on_control_returned completes the exit,
+     pops the node, and sets the pc past this opcode. */
+  if (KosDynWith_PHASE((KosDynWith *) top)
+      == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+    return kr;
 
   /* all is well (NORMAL or REPROLOGUE/swallowed), pop the node and return */
   if (unlikely(kos_dyn_pop_with(es, (KosDynWith *) top) < 0))

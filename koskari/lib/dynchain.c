@@ -536,8 +536,14 @@ KosOpResult kos_dynnode_on_control_returned(
         r = kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
         break;
       case KOS_DYN_WITH:
+        /* An installed __enter__/__exit__ frame has already popped by the
+           time we get here, so the WITH node itself is current; the frame
+           branch above only sees the await-resume shape. */
         if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
           r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
+        else if (KosDynWith_PHASE((KosDynWith *) node)
+                 == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+          r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) node);
         break;
       default:
         break;
@@ -1275,8 +1281,13 @@ KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
       /* REPROLOGUE: exception swallowed; resume_pc set and Py_None pushed to
          parent stack by dyn_with_unwind.  Map to NORMAL so kos_dyn_uninstall_core
          pops the WITH node and commits the stack — then kos_dyn_try_local_raise_body's
-         top_may_swallow check returns REPROLOGUE to restart past POP_WITH. */
-      if (wr.kind == KOS_RES_REPROLOGUE)
+         top_may_swallow check returns REPROLOGUE to restart past POP_WITH.
+         A node left in PENDING_EXIT_AWAIT means the opposite: __exit__ has
+         not run yet (installed frame), so the node must survive for
+         kos_dynnode_on_control_returned to complete and pop it. */
+      if (wr.kind == KOS_RES_REPROLOGUE
+          && KosDynWith_PHASE((KosDynWith *) node)
+             != KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
         return EVAL_NORMAL();
       return wr;
     }

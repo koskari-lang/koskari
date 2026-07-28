@@ -66,16 +66,25 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
   }
 
   KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
+
+  if (wr.kind == KOS_RES_RAISE) {
+    kos_dyn_pop_with(es, with_node);
+    return EVAL_RAISE();
+  }
+
   if (wr.kind == KOS_RES_AWAIT) {
     uint32_t same_pc = KosEvalState_ACTING_PC(es);
     KosEvalState_SET_PC(es, same_pc);
     return wr;
   }
 
-  if (wr.kind == KOS_RES_RAISE) {
-    kos_dyn_pop_with(es, with_node);
-    return EVAL_RAISE();
-  }
+  /* REPROLOGUE: __enter__ is a KosCallable whose frame is installed and
+     runs when we hand control back. Do not touch the pc here — the
+     current frame is now the callee's. This frame's pc already sits past
+     PUSH_WITH, so the with body runs once the callee returns and
+     kos_dynnode_on_control_returned binds the result. */
+  if (wr.kind != KOS_RES_NORMAL)
+    return wr;
 
   return EVAL_NORMAL();
 }

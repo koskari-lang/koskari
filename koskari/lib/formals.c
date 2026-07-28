@@ -1013,8 +1013,8 @@ int KosFormals_ApplyFast(
     PyObject *args,
     PyObject *kwargs) {
 
-  SAYF("in KosFormals_ApplyFast(%R, %R, %R, %R)",
-       formals, namespace, args, kwargs);
+  SAYF("in KosFormals_ApplyFast(%R, %R, %s@%p, %s@%p)",
+       formals, namespace, SAY_OBJ(args), SAY_OBJ(kwargs));
 
   if (! KosNamespace_Check(namespace)) {
     PyErr_Format(PyExc_TypeError, "namespace must be a Namespace instance,"
@@ -1038,7 +1038,7 @@ int KosFormals_ApplyFast(
   SAYF("  kwd_only : %R", kwd_only);
   SAYF("  star     : %R", star);
   SAYF("  starstar : %R", starstar);
-  SAYF("  defaults : %R", defaults);
+  SAYF("  defaults : %s@%p", SAY_OBJ(defaults));
 
   int star_first = formals_pos_star_before_kwd(kwd, kwd_only);
 
@@ -1198,8 +1198,8 @@ int KosFormals_Apply(
     PyObject *args,
     PyObject *kwargs) {
 
-  SAYF("in KosFormals_Apply(%R, %R, %R, %R)",
-       formals, namespace, args, kwargs);
+  SAYF("in KosFormals_Apply(%R, %R, %s@%p, %s@%p)",
+       formals, namespace, SAY_OBJ(args), SAY_OBJ(kwargs));
 
   if (! KosNamespace_Check(namespace)) {
     PyErr_Format(PyExc_TypeError, "namespace must be a Namespace instance,"
@@ -1223,7 +1223,7 @@ int KosFormals_Apply(
   SAYF("  kwd_only : %R", kwd_only);
   SAYF("  star     : %R", star);
   SAYF("  starstar : %R", starstar);
-  SAYF("  defaults : %R", defaults);
+  SAYF("  defaults : %s@%p", SAY_OBJ(defaults));
 
   int star_first = formals_pos_star_before_kwd(kwd, kwd_only);
 
@@ -1412,7 +1412,7 @@ int KosFormals_VectorApply(
   SAYF("  kwd_only : %R", kwd_only);
   SAYF("  star     : %R", star);
   SAYF("  starstar : %R", starstar);
-  SAYF("  defaults : %R", defaults);
+  SAYF("  defaults : %s@%p", SAY_OBJ(defaults));
 
   int star_first = formals_pos_star_before_kwd(kwd, kwd_only);
 
@@ -1629,7 +1629,7 @@ int KosFormals_VectorApplyFast(
   SAYF("  kwd_only : %R", kwd_only);
   SAYF("  star     : %R", star);
   SAYF("  starstar : %R", starstar);
-  SAYF("  defaults : %R", defaults);
+  SAYF("  defaults : %s@%p", SAY_OBJ(defaults));
 
   int star_first = formals_pos_star_before_kwd(kwd, kwd_only);
 
