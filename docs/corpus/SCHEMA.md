@@ -57,7 +57,8 @@ Two facets share the one `tags` list, and both are full-text searchable:
 - **Structural tags** answer *what form is this* — the category
   (`object`, `special`, `macro`, `variable`, `iter`, …), the form name
   (`try`, `for-each`, `cond`), the surface (`surface:block`,
-  `surface:sexpr`, `surface:line`), and polarity (`invalid`, `surprising`).
+  `surface:sexpr`, `surface:line`), the pragma a record depends on
+  (`pragma:reader/dot-attrs`), and polarity (`invalid`, `surprising`).
 - **Intent tags** answer *what am I trying to do* — the goal words a
   newcomer types before they know the form's name. Add them so a search
   for `cleanup` or `catch` finds `try`/`finally` even though neither word
@@ -82,6 +83,23 @@ per-record):
 `metaprogramming` marks records that teach *writing* macros (define-syntax,
 syntax-rules, quasiquote/unquote, gensym, special-match) — not every builtin
 that happens to live under a `macro/compile/…` feature path.
+
+### Pragma tags
+
+A record whose syntax exists only because a pragma setting is on carries
+`pragma:<setting>`, one per setting it relies on, and says so in `notes` as
+well. Reading a record that shows `seq[0]` is useless without knowing that
+`reader/index-brackets` is what makes it read that way and that turning the
+setting off changes the parse rather than raising. A record exercising two
+gated features carries both tags.
+
+```yaml
+tags:
+  - reader
+  - index-bracket
+  - pragma:reader/index-brackets
+notes: "requires reader/index-brackets (baseline on). …"
+```
 
 ## Source conventions
 

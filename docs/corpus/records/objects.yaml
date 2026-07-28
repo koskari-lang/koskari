@@ -1802,7 +1802,9 @@ stability: stable
 tags:
   - object
   - reader
-notes: "dot-attr shorthand: foo.bar reads as (compile/attr foo bar); obj.value fixture is 99"
+  - dot-attr
+  - pragma:reader/dot-attrs
+notes: "requires reader/dot-attrs (baseline on). dot-attr shorthand: foo.bar reads as (compile/attr foo bar); obj.value fixture is 99"
 ---
 id: object-dot-attr-count-002
 feature: reader/dot-attr
@@ -1819,7 +1821,9 @@ stability: stable
 tags:
   - object
   - reader
-notes: dot-attr shorthand for obj.count attribute; fixture value is 5
+  - dot-attr
+  - pragma:reader/dot-attrs
+notes: "requires reader/dot-attrs (baseline on). dot-attr shorthand for obj.count attribute; fixture value is 5"
 ---
 id: object-dot-attr-chain-003
 feature: reader/dot-attr
@@ -1836,7 +1840,9 @@ stability: stable
 tags:
   - object
   - reader
-notes: "chained dot: obj.a.b reads as nested (compile/attr (compile/attr obj a) b)"
+  - dot-attr
+  - pragma:reader/dot-attrs
+notes: "requires reader/dot-attrs (baseline on). chained dot: obj.a.b reads as nested (compile/attr (compile/attr obj a) b)"
 ---
 id: object-layout-class-read-001
 feature: layout/class

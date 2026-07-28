@@ -279,6 +279,67 @@ foo.bar      ->  (compile/attr foo bar)
 obj.foo.bar  ->  (compile/attr (compile/attr obj foo) bar)
 ```
 
+With `reader/dot-attrs` off this pattern is not applied and `foo.bar` is an
+ordinary symbol. With it on, a dot that has no identifier after it is a read
+error rather than a symbol: `foo.`, `foo..bar`, `foo.9x`.
+
+### Suffix reader macros
+
+A **suffix macro** dispatches on the character immediately following a
+completed value and wraps that value. Each consumes exactly one suffix and the
+reader re-enters, so the three below chain and interleave freely, left to
+right, without any of them knowing about the others:
+
+```
+(f x)[0].a.b[1]   ->  (item (compile/attr (compile/attr (item (f x) 0) a) b) 1)
+```
+
+Attachment is strict — any whitespace before the trigger character ends the
+value instead. Each is gated by its own pragma, and each reads off on a raw
+reader until a pragma is applied (`reader/dot-attrs` excepted, see above).
+
+**Index bracket (`[`) — `reader/index-brackets`.** A `[ ... ]` group attached
+to a value desugars to an item access. An empty group is a read error.
+
+```
+foo[0]       ->  (item foo 0)
+foo[1 2]     ->  (item foo 1 2)
+grid[y][x]   ->  (item (item grid y) x)
+foo [a]      ->  two forms (space breaks attachment)
+```
+
+**Dotted attribute (`.`) — `reader/dot-attrs`.** A `.` attached to a value
+reads an identifier and wraps it, the same expansion the atom pattern above
+produces, but for receivers the atom pattern cannot reach. A dot with no
+identifier after it is a read error.
+
+```
+(get-fn x).baz  ->  (compile/attr (get-fn x) baz)
+"".join         ->  (compile/attr "" join)
+foo .bar        ->  two forms; the leading-dot call (.bar foo) is unaffected
+```
+
+**String segment (`-`) — `reader/string-segments`.** A `-` attached to a
+string literal's closing quote continues that literal into the next quoted
+segment, joining into `compile/#str`. The gap between marker and segment may
+be any whitespace, crossing lines, with comments skipped; the marker itself is
+strictly adjacent. Each segment carries its own flavor prefix, and because an
+f-string already reads as a `compile/#str` form, an f-string segment splices
+rather than nesting and a chain stays flat.
+
+```
+"a"- " b"        ->  (compile/#str "a" " b")
+"a"- " b"- " c"  ->  (compile/#str "a" " b" " c")
+"a"- f"{x}"      ->  (compile/#str "a" (format x))
+"a" - " b"       ->  three forms (space breaks attachment)
+```
+
+The marker is a commitment: once written, a segment must follow. Content that
+is not a string literal is a read error, while *running out of input* is
+reported as unfinished, so an interactive reader prompts for the next line
+rather than rejecting the form. In layout mode a continuation line may not sit
+at column 0, since that column ends the logical line.
+
 ### Dotted pairs
 
 Inside `<list>`, a single `.` token separates the car side from the cdr:

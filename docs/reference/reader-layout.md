@@ -281,6 +281,23 @@ pragma keys are **`reader/layout`** and **`reader/implicit-calls`** (they map
 to `layout_enabled` and `layout_implicit_calls`). These switches are intended
 for tooling and pragma-driven reader configuration.
 
+`reload_pragma` carries the suffix-syntax switches too — **`reader/index-brackets`**,
+**`reader/dot-attrs`**, and **`reader/string-segments`** (see
+[Grammar](grammar.md#suffix-syntax)). A raw reader constructed directly reads
+with these off; the pragma is what turns them on, so tooling that builds a
+reader without applying a pragma sees none of that syntax. `reader/dot-attrs`
+is the exception: the single-name spelling `foo.bar` predates the pragma and
+reads on a raw reader too.
+
+One suffix interacts with layout. A string segment's gap crosses newlines, so a
+continuation line is consumed as part of the value on the line that opened it,
+and the block structure is unaffected. Because the gap skip stops at a dedent,
+a continuation line **may not sit at column 0** inside a layout block — that
+column ends the logical line before the gap can reach the segment, and the
+reader reports `string segment must stay indented within its block`. Any
+indentation satisfies this, including less than the block's own body indent; a
+continuation belongs to the line that opened it.
+
 ---
 
 ## Formal grammar

@@ -148,8 +148,19 @@ _decimal_re = _patterns.DECIMAL_RE.match
 _fraction_re = _patterns.FRACTION_RE.match
 _complex_re = _patterns.COMPLEX_RE.match
 _keyword_re = _patterns.KEYWORD_RE.match
+# deliberately wider than the well-formed shape: a trailing segment that
+# is empty or not an identifier still matches, so _as_dotted_attr_atom can
+# reject it by name rather than letting `foo.` fall through to a symbol.
+# The leading identifier anchor is what keeps floats and ellipsis out.
 _dotted_attr_atom_re = regex(
-    r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z_][a-zA-Z0-9/_-]*)+$").match
+    r"^[a-zA-Z_][a-zA-Z0-9/_-]*(\.[a-zA-Z0-9/_-]*)+$").match
+_attr_name_re = regex(r"^[a-zA-Z_][a-zA-Z0-9/_-]*$").match
+
+# the same name shape as _attr_name_re, as character sets, for the reader's
+# `.` suffix macro to scan with
+_ATTR_NAME_HEAD = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_")
+_ATTR_NAME_REST = _ATTR_NAME_HEAD | frozenset("0123456789/-")
 _ellipsis_atom_re = regex(r"^\.\.\.$").match
 _py_singleton_atom_re = regex(r"^(None|True|False)$").match
 _pass_atom_re = regex(r"^pass$").match
@@ -249,17 +260,72 @@ def _as_decimal(s):
     return cons(_symbol_decimal, tuple(ct), nil)
 
 
+def _attr_link(obj, name):
+    """
+    Build one ``(compile/attr OBJ NAME)`` link
+
+    The shared rule behind both spellings of attribute access: the atom
+    pattern below chains it over a dotted atom, and the reader's ``.``
+    suffix macro applies it once per pass.
+
+    :param obj: the value the attribute is read from
+    :param name: the attribute name, as a string
+    :return: the (compile/attr ...) form
+    """
+
+    return cons(_symbol_attr, obj, symbol(name), nil)
+
+
+def _string_segment_parts(value):
+    """
+    The parts a value contributes to a joined string form
+
+    A ``(compile/#str ...)`` form contributes its arguments, so chains stay
+    flat and an f-string segment splices rather than nesting. Anything else
+    contributes itself.
+
+    :param value: a string literal, or a compile/#str form
+    :return: a list of forms
+    """
+
+    if is_pair(value) and not is_nil(value):
+        head, tail = value
+        if head is _symbol__str:
+            parts = []
+            node = tail
+            while is_pair(node) and not is_nil(node):
+                item, node = node
+                parts.append(item)
+            return parts
+
+    return [value]
+
+
 def _as_dotted_attr_atom(s):
     """
     Convert dotted identifier atom (e.g. foo.bar) to (compile/attr obj name).
     Left-associative: foo.bar.baz becomes (compile/attr (compile/attr foo bar)
     baz).
+
+    The matching pattern is wider than the well-formed shape, so a dot with
+    no name after it (``foo.``, ``foo..bar``, ``foo.9x``) arrives here and
+    is rejected by name. ``ValueError`` is what the read loop converts into
+    a positioned reader error.
+
+    :param s: the raw dotted atom text
+    :return: the nested (compile/attr ...) form
+    :raises ValueError: when any segment after a dot is not an identifier
     """
 
     parts = s.split(".")
+
     obj = symbol(parts[0])
     for name in parts[1:]:
-        obj = cons(_symbol_attr, obj, symbol(name), nil)
+        if not name:
+            raise ValueError(f"attribute name missing in {s!r}")
+        if not _attr_name_re(name):
+            raise ValueError(f"invalid attribute name {name!r} in {s!r}")
+        obj = _attr_link(obj, name)
 
     return obj
 
@@ -328,6 +394,13 @@ class SourceStream(BaseSourceStream):
     I/O with position tracking. Adds error reporting and the helper methods
     used by the reader (skip_exec, suspend_indent).
     """
+
+    # a plain stream has no indent threshold, so a whitespace skip never
+    # stops on a dedent. Declared here so every stream carries the
+    # attribute and readers can consult it without a getattr guard;
+    # IndentAwareStream shadows it per instance.
+    dedented = False
+
 
     def __init__(
             self,
@@ -736,6 +809,14 @@ class Reader:
     terminating registrations. Event macros may return DEFER so the next
     handler in ``_event_macro_chain_for`` runs; the leading-character chain
     ends with ``_read_default``.
+
+    Suffix macros are a second, parallel registry keyed the same way (see
+    :meth:`add_suffix_macro`). Where an event macro dispatches on the
+    character that *opens* a token, a suffix macro dispatches on the
+    character following a completed value, and wraps that value. Each
+    consumes exactly one suffix and the driver re-enters, so chains across
+    differing suffix kinds compose without any one macro knowing about the
+    others.
     """
 
     def __init__(self, nodefaults=False, bracket_pairs=True):
@@ -750,20 +831,36 @@ class Reader:
 
         self.reader_macros = {}
         self.atom_patterns = []
-        self.post_value_hooks = []
+        self.suffix_macros = {}
         self.terminating = set(_BASE_TERMINATORS)
         self._terms = "".join(sorted(self.terminating))
         self.bracket_pairs = bracket_pairs
+        # raw reader defaults stay bare; the pragma is what turns switches
+        # on, so a baseline-on setting still reads off here until a pragma
+        # is applied. dot_attrs is the exception: the atom spelling
+        # (foo.bar) predates the pragma and bare readers have always done
+        # it, so it stays on to keep that contract. Retiring that exception
+        # is deferred, not rejected -- see design/suffix-macros.md.
         self.index_brackets = False
+        self.dot_attrs = True
+        self.string_segments = False
         self.fences_enabled = True
 
         if not nodefaults:
             self._add_default_macros()
             self._add_default_atoms()
 
-        # post-value hooks run for every reader (including bare ones), each
-        # self-gating on its own feature switch, mirroring index_brackets
-        self.add_post_value_hook(self._apply_index_brackets)
+        # suffix macros are registered for every reader (including bare
+        # ones); each gates on its own feature switch via its predicate
+        self.add_suffix_macro(
+            "[", self._apply_index_brackets,
+            predicate=self._index_brackets_enabled)
+        self.add_suffix_macro(
+            ".", self._apply_dot_attr,
+            predicate=self._dot_attrs_enabled)
+        self.add_suffix_macro(
+            "-", self._apply_string_segment,
+            predicate=self._string_segments_enabled)
 
 
     def read(self, reader_stream):
@@ -1011,48 +1108,310 @@ class Reader:
                 break
 
         if event is VALUE:
-            for hook in self.post_value_hooks:
-                value = hook(stream, value, position)
+            value = self._dispatch_suffix_macros(stream, value, position)
 
         return event, position, value
 
 
+    def _dispatch_suffix_macros(self, stream, value, position):
+        """
+        Apply suffix macros to a just-read value until none claim it
+
+        Peeks the next character, dispatches to that character's macro
+        stack (newest first, skipping entries whose predicate declines),
+        and applies at most one macro per pass. A macro that returns a
+        value re-enters this loop with it, so chains across differing
+        suffix kinds -- ``foo[a].b[c]`` -- fall out of dispatch rather than
+        out of any one macro. Dispatch stops at end of input, at an
+        unregistered character, or when every entry for that character
+        declines.
+
+        :param stream: the source stream, positioned after ``value``
+        :param value: the value just read
+        :param position: the position of ``value``
+        :return: the value, wrapped by however many suffix macros claimed it
+        :raises ReaderSyntaxError: when a macro claims a suffix without
+            consuming any input
+        """
+
+        while True:
+            char = stream.peek(1)
+            if not char:
+                break
+
+            entries = self.suffix_macros.get(char)
+            if not entries:
+                break
+
+            for macro_fn, predicate_fn in entries:
+                if predicate_fn is not None:
+                    if not predicate_fn(stream, char, value):
+                        continue
+
+                before = stream.position()
+                result = macro_fn(stream, value, position)
+                if result is DEFER:
+                    continue
+
+                if stream.position() == before:
+                    raise stream.error(
+                        f"suffix macro for {char!r} consumed no input",
+                        before)
+
+                value = result
+                break
+
+            else:
+                break
+
+        return value
+
+
+    def _index_brackets_enabled(self, stream, char, value):
+        """
+        Suffix macro predicate for :meth:`_apply_index_brackets`
+
+        :param stream: the source stream
+        :param char: the trigger character
+        :param value: the value the bracket group would attach to
+        :return: whether ``reader/index-brackets`` is enabled
+        """
+
+        return self.index_brackets
+
+
     def _apply_index_brackets(self, stream, value, position):
         """
-        Post-value hook: postfix index-bracket reader macro
+        Suffix macro: postfix index-bracket reader macro
 
         When ``reader/index-brackets`` is enabled, an ``[ ... ]`` group
         attached directly to a just-read value (no intervening whitespace)
-        desugars into ``(item VALUE KEY)``. Chains left to right, so
-        ``foo[a][b]`` reads as ``(item (item foo a) b)``. A space breaks the
-        attachment: ``foo [a]`` reads as two forms. Disabled readers pass
-        the value through untouched.
+        desugars into ``(item VALUE KEY)``. Consumes exactly one group; the
+        suffix driver re-enters for chains, so ``foo[a][b]`` reads as
+        ``(item (item foo a) b)``. A space breaks the attachment:
+        ``foo [a]`` reads as two forms.
 
-        :param stream: the source stream
-        :param value: the value the bracket group would attach to
+        :param stream: the source stream, positioned at ``[``
+        :param value: the value the bracket group attaches to
         :param position: the position of ``value``
-        :return: ``value`` unchanged, or the wrapped ``(item ...)`` form
+        :return: the wrapped ``(item ...)`` form
+        :raises ReaderSyntaxError: when the group carries no key
         """
 
-        if not self.index_brackets:
-            return value
+        index = self.read_pair(stream)
 
-        item = symbol("item")
+        keys = []
+        node = index
+        while is_pair(node) and not is_nil(node):
+            head, node = node
+            keys.append(head)
 
-        while stream.peek(1) == "[":
-            index = self.read_pair(stream)
+        if not keys:
+            raise stream.error("index brackets require a key", position)
 
-            keys = []
-            node = index
-            while is_pair(node) and not is_nil(node):
-                head, node = node
-                keys.append(head)
+        value = cons(symbol("item"), value, *keys, nil)
+        value.set_position(position)
 
-            if not keys:
-                raise stream.error("index brackets require a key", position)
+        return value
 
-            value = cons(item, value, *keys, nil)
-            value.set_position(position)
+
+    def _dot_attrs_enabled(self, stream, char, value):
+        """
+        Suffix macro predicate for :meth:`_apply_dot_attr`
+
+        :param stream: the source stream
+        :param char: the trigger character
+        :param value: the value the attribute would be read from
+        :return: whether ``reader/dot-attrs`` is enabled
+        """
+
+        return self.dot_attrs
+
+
+    def _apply_dot_attr(self, stream, value, position):
+        """
+        Suffix macro: postfix dotted attribute reader macro
+
+        When ``reader/dot-attrs`` is enabled, a ``.`` attached directly to
+        a just-read value (no intervening whitespace) reads an attribute
+        name and wraps into ``(compile/attr VALUE NAME)``. Consumes exactly
+        one attribute; the suffix driver re-enters for chains, so
+        ``(f x).a.b`` is left-associative. A space breaks the attachment,
+        leaving ``.name`` an ordinary symbol, so the leading-dot method
+        spelling ``(.name obj)`` is untouched.
+
+        :param stream: the source stream, positioned at ``.``
+        :param value: the value the attribute is read from
+        :param position: the position of ``value``
+        :return: the wrapped (compile/attr ...) form
+        :raises ReaderEOF: when input ends right after the dot, so the REPL
+            treats the form as unfinished rather than wrong
+        :raises ReaderSyntaxError: when what follows is not a name
+        """
+
+        stream.read(1)
+
+        # not a ReaderEOF even at end of input: the name must be adjacent
+        # to the dot, so no amount of further input can complete this, and
+        # signalling "unfinished" would have the REPL prompt for a line it
+        # is then obliged to reject
+        dot_at = stream.position()
+        char = stream.peek(1)
+        if not char or char not in _ATTR_NAME_HEAD:
+            raise stream.error("attribute name expected after '.'", dot_at)
+
+        name = [stream.read(1)]
+        while True:
+            char = stream.peek(1)
+            if not char or char not in _ATTR_NAME_REST:
+                break
+            name.append(stream.read(1))
+
+        value = _attr_link(value, "".join(name))
+        value.set_position(position)
+
+        return value
+
+
+    def _string_segments_enabled(self, stream, char, value):
+        """
+        Suffix macro predicate for :meth:`_apply_string_segment`
+
+        Only a string literal, or a joined form already built from one, can
+        continue. Deciding here rather than in the handler is what keeps
+        ``(foo)-`` reading as a form followed by a minus.
+
+        :param stream: the source stream
+        :param char: the trigger character
+        :param value: the value the segment would continue
+        :return: whether a string segment may attach here
+        """
+
+        if not self.string_segments:
+            return False
+
+        # a str subclass (Atom) is not a string literal, so match exactly
+        if type(value) is str or type(value) is bytes:
+            return True
+
+        if is_pair(value) and not is_nil(value):
+            head, _tail = value
+            return head is _symbol__str
+
+        return False
+
+
+    def _skip_segment_gap(self, stream):
+        """
+        Consume whitespace and comments between a segment marker and the
+        next segment
+
+        Comments are treated as absent from the stream entirely, and the
+        gap crosses newlines -- a segment need not be on the following
+        line, and need not be indented.
+
+        :param stream: the source stream
+        """
+
+        while True:
+            stream.skip_whitespace()
+            if stream.peek(1) != ";":
+                break
+            stream.readline()
+
+
+    def _peek_string_opener(self, stream):
+        """
+        Whether the stream is positioned at a string literal opener
+
+        Accepts a bare quote and every flavor prefix the reader has. The
+        macro decides that a literal follows, not which literals are
+        sensible to join: a ``b`` segment joins like any other, and what
+        ``compile/#str`` makes of it is the author's business.
+
+        Running out of input is reported as ``EOF`` rather than as "not an
+        opener", so the caller can distinguish an unfinished form from a
+        wrong one. A flavor prefix with nothing after it is EOF too: at the
+        end of ``"a"- f`` the next character is still coming.
+
+        :param stream: the source stream
+        :return: True at an opener, ``EOF`` when input ran out mid-check,
+            False otherwise
+        """
+
+        char = stream.peek(1)
+        if not char:
+            return EOF
+        elif char == '"':
+            return True
+        elif char in "frb":
+            ahead = stream.peek(2)
+            if len(ahead) < 2:
+                return EOF
+            return ahead[1:2] == '"'
+        else:
+            return False
+
+
+    def _apply_string_segment(self, stream, value, position):
+        """
+        Suffix macro: string segment continuation
+
+        When ``reader/string-segments`` is enabled, a ``-`` attached
+        directly to a string literal's closing quote continues that literal
+        into the next quoted chunk, wrapping into ``(compile/#str ...)``.
+        Consumes exactly one segment; the driver re-enters, so a chain
+        stays flat. Each segment carries its own flavor prefix, and an
+        f-string segment splices its parts rather than nesting, matching
+        what f-strings already read as. Mixing flavors is not the reader's
+        business: a ``b`` segment joins like any other and answers to
+        ``compile/#str``.
+
+        The following segment is read through the character macros directly
+        rather than as a general value, so its own suffixes do not bind
+        before the join: in ``"a"- " b".join`` the ``.join`` attaches to the
+        joined result.
+
+        :param stream: the source stream, positioned at ``-``
+        :param value: the string literal being continued
+        :param position: the position of ``value``
+        :return: the joined (compile/#str ...) form
+        :raises ReaderEOF: when input ends before the segment arrives, so
+            the REPL treats the form as unfinished rather than wrong
+        :raises ReaderSyntaxError: when what follows is not a string literal
+        """
+
+        stream.read(1)
+        self._skip_segment_gap(stream)
+
+        segment_at = stream.position()
+
+        # the gap skip stops at a dedent rather than crossing it, so a
+        # continuation that falls out of its block never reaches its
+        # segment. Report the indentation, which is the actual cause; the
+        # generic message describes the symptom and sends people looking
+        # at the marker instead.
+        if stream.dedented:
+            raise stream.error(
+                "string segment must stay indented within its block",
+                segment_at)
+
+        opener = self._peek_string_opener(stream)
+        if opener is EOF:
+            raise stream.reader_eof(segment_at, context="string segment")
+        elif not opener:
+            raise stream.error(
+                "string segment expected after '-'", segment_at)
+
+        event, segment = self._dispatch_event_macros(stream, stream.read(1))
+        if event is not VALUE:
+            raise stream.error(
+                "string segment expected after '-'", segment_at)
+
+        parts = _string_segment_parts(value) + _string_segment_parts(segment)
+
+        value = cons(_symbol__str, *parts, nil)
+        value.set_position(position)
 
         return value
 
@@ -1158,61 +1517,108 @@ class Reader:
         self._sync_terms_from_macros()
 
 
-    def add_post_value_hook(self, hook):
+    def add_suffix_macro(self, char, macro_fn, predicate=None):
         """
-        Register a post-value hook
+        Add a suffix macro to the reader
 
-        Post-value hooks are the reader's post macros: after any token is
-        read as a ``VALUE``, each registered hook is invoked in registration
-        order as ``hook(stream, value, position)`` and returns the value to
-        carry forward (unchanged, or transformed). A hook may peek and
-        consume from ``stream`` to extend the value with trailing syntax --
-        this is how attached-bracket indexing turns ``foo[x]`` into
-        ``(item foo x)``. The value threads through the hooks, so a later
-        hook sees what an earlier one produced.
+        Suffix macros are the reader's post macros: after any token is read
+        as a ``VALUE``, the driver peeks the next character and dispatches
+        to that character's macro stack. This is how attached-bracket
+        indexing turns ``foo[x]`` into ``(item foo x)``.
 
-        :param hook: callable ``(stream, value, position) -> value``
-        """
+        Each call **prepends** ``(macro_fn, predicate)`` to that character's
+        macro stack (newest first), mirroring :meth:`add_event_macro`.
 
-        self.post_value_hooks.append(hook)
+        A macro consumes **exactly one** suffix and returns the value to
+        carry forward; the driver re-enters with that value, so chains such
+        as ``foo[a][b]`` fall out of dispatch rather than out of any one
+        macro.
 
-
-    def get_post_value_hooks(self):
-        """
-        Return the registered post-value hooks in registration order
-
-        :return: a list copy of the post-value hooks
-        """
-
-        return list(self.post_value_hooks)
-
-
-    def clear_post_value_hooks(self):
-        """
-        Remove all registered post-value hooks
+        :param char: the character(s) to trigger on
+        :param macro_fn: function(stream, value, position) -> value. The
+            trigger character has **not** been consumed. May return
+            ``DEFER`` to decline, leaving the stream untouched beyond
+            peek-only inspection, in which case the next handler from that
+            character's stack runs. A macro that has consumed input owes a
+            reader error rather than a late ``DEFER``, and one that claims
+            a suffix without consuming anything is an error.
+        :param predicate: optional ``(stream, char, value) -> bool``. If
+            false, that entry is skipped without calling ``macro_fn`` (early
+            DEFER). Feature gating belongs here, where the value the suffix
+            would attach to is available.
         """
 
-        self.post_value_hooks.clear()
+        entry = (macro_fn, predicate)
+        for c in char:
+            self.suffix_macros.setdefault(c, []).insert(0, entry)
+
+
+    def get_suffix_macros(self, char):
+        """
+        Return stacked suffix macros for one character
+
+        :param char: single character to look up
+        :return: list of ``(macro_fn, predicate)``, newest first; empty if
+            none
+        """
+
+        return list(self.suffix_macros.get(char, ()))
+
+
+    def get_suffix_macro(self, char):
+        """
+        Get the newest suffix macro from the reader
+
+        :param char: the character to look up
+        :return: tuple of (macro_fn, predicate) or None
+        """
+
+        lst = self.suffix_macros.get(char)
+        if not lst:
+            return None
+        return lst[0]
+
+
+    def clear_suffix_macro(self, char):
+        """
+        Remove all stacked suffix macros for each character in ``char``
+
+        :param char: the character(s) to clear
+        """
+
+        for c in char:
+            self.suffix_macros.pop(c, None)
 
 
     @contextmanager
-    def temporary_post_value_hook(self, hook):
+    def temporary_suffix_macro(self, char, macro_fn, predicate=None):
         """
-        Context manager to temporarily append a post-value hook
+        Context manager to temporarily apply a suffix macro
 
-        On exit, removes that hook from the tail of the list when it still
-        matches there by identity.
+        Prepends one ``(macro_fn, predicate)`` entry shared across ``char``.
+        On exit, removes **only** that entry from the head of each affected
+        list when it still matches by identity.
 
-        :param hook: callable ``(stream, value, position) -> value``
+        :param char: the character(s) to trigger on
+        :param macro_fn: function(stream, value, position) -> value; may
+            return ``DEFER`` like other suffix macros (see
+            :meth:`add_suffix_macro`).
+        :param predicate: optional predicate (see :meth:`add_suffix_macro`)
         :yields: self
         """
 
-        self.post_value_hooks.append(hook)
+        entry = (macro_fn, predicate)
+        for c in char:
+            self.suffix_macros.setdefault(c, []).insert(0, entry)
 
         yield self
 
-        if self.post_value_hooks and self.post_value_hooks[-1] is hook:
-            self.post_value_hooks.pop()
+        for c in char:
+            lst = self.suffix_macros.get(c)
+            if lst and lst[0] is entry:
+                lst.pop(0)
+                if not lst:
+                    del self.suffix_macros[c]
 
 
     def add_macro_character(
@@ -1334,6 +1740,66 @@ class Reader:
                 break
 
 
+    def reload_pragma(self, pragma):
+        """
+        Apply reader settings from a module pragma to this reader
+
+        Covers every setting a plain reader carries: reader/brackets,
+        reader/index-brackets, reader/dot-attrs, reader/string-segments,
+        reader/pass-none, and reader/fences.
+
+        Raw reader defaults are deliberately bare, so this is how a
+        directly-constructed reader is brought up to the pragma's baseline.
+        Tooling that builds a reader and skips this step sees none of the
+        pragma-gated syntax, which is rarely what it wants.
+
+        :param pragma: a module pragma, or None for a no-op
+        """
+
+        if pragma is None:
+            return
+
+        brackets = pragma.get("reader/brackets")
+        if brackets is not None:
+            self.bracket_pairs = bool(brackets)
+
+        index_brackets = pragma.get("reader/index-brackets")
+        if index_brackets is not None:
+            self.index_brackets = bool(index_brackets)
+
+        dot_attrs = pragma.get("reader/dot-attrs")
+        if dot_attrs is not None:
+            self.dot_attrs = bool(dot_attrs)
+
+        string_segments = pragma.get("reader/string-segments")
+        if string_segments is not None:
+            self.string_segments = bool(string_segments)
+
+        pass_none = pragma.get("reader/pass-none")
+        if pass_none is not None:
+            self.set_pass_none(bool(pass_none))
+
+        fences = pragma.get("reader/fences")
+        if fences is not None:
+            self.fences_enabled = bool(fences)
+
+
+    def _dotted_attr_match(self, atom):
+        """
+        Atom pattern matcher for dotted attribute access
+
+        Gated on ``reader/dot-attrs`` so one setting governs both spellings.
+        Gating here rather than by installing and removing the pattern keeps
+        its position in the ordered pattern list fixed, which matters because
+        that order decides which pattern claims an ambiguous atom.
+
+        :param atom: the raw atom text
+        :return: a match when dotted attributes are enabled, else None
+        """
+
+        return self.dot_attrs and _dotted_attr_atom_re(atom)
+
+
     def set_pass_none(self, enabled):
         """
         Install or remove the reader symbol macro that reads the ``pass``
@@ -1369,7 +1835,8 @@ class Reader:
 
         ap = self.set_atom_pattern
 
-        ap(symbol("compile/attr"), _dotted_attr_atom_re, _as_dotted_attr_atom)
+        ap(symbol("compile/attr"), self._dotted_attr_match,
+           _as_dotted_attr_atom)
         ap(symbol("keyword"), _keyword_re, keyword)
         ap(symbol("ellipsis"), _ellipsis_atom_re, _as_ellipsis)
         ap(symbol("py_singleton"), _py_singleton_atom_re, _as_py_singleton)
@@ -2324,38 +2791,24 @@ class LayoutReader(Reader):
 
     def reload_pragma(self, pragma):
         """
-        Apply reader settings from a module pragma: reader/layout and
-        reader/implicit-calls drive the layout switches; reader/brackets sets
-        bracket-pair reading on this reader and its inner reader;
-        reader/pass-none toggles the ``pass`` symbol macro; reader/fences
-        toggles triple-backtick fence reading.
+        Apply reader settings from a module pragma
+
+        Extends :meth:`Reader.reload_pragma` with the layout switches
+        (reader/layout and reader/implicit-calls) and mirrors every setting
+        onto the inner s-expression reader, so both surfaces agree.
+
+        :param pragma: a module pragma, or None for a no-op
         """
 
         if pragma is None:
             return
 
+        super().reload_pragma(pragma)
+        self._inner.reload_pragma(pragma)
+
         self.set_layout_modes(
             layout_enabled=pragma.get("reader/layout"),
             layout_implicit_calls=pragma.get("reader/implicit-calls"))
-
-        brackets = pragma.get("reader/brackets")
-        if brackets is not None:
-            self.bracket_pairs = bool(brackets)
-            self._inner.bracket_pairs = bool(brackets)
-
-        index_brackets = pragma.get("reader/index-brackets")
-        if index_brackets is not None:
-            self.index_brackets = bool(index_brackets)
-            self._inner.index_brackets = bool(index_brackets)
-
-        pass_none = pragma.get("reader/pass-none")
-        if pass_none is not None:
-            self._inner.set_pass_none(bool(pass_none))
-
-        fences = pragma.get("reader/fences")
-        if fences is not None:
-            self.fences_enabled = bool(fences)
-            self._inner.fences_enabled = bool(fences)
 
 
     @contextmanager

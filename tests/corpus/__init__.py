@@ -45,12 +45,37 @@ from koskari.lib import (
     symbol,
 )
 from koskari.module import new_module, public_vars
-from koskari.reader import READ_EOF, LayoutReader, default_reader, source_str
+from koskari.pragma import ModulePragma
+from koskari.reader import (READ_EOF, LayoutReader, Reader,
+                            source_str)
 from koskari.syntax import MacroTransform, Syntax, SyntaxTransform
 from koskari.types import is_pair, is_proper, is_symbol, unpack
 
 
 _WILDCARD = object()
+
+_PRAGMA_SEXPR_READER = None
+
+
+def _pragma_sexpr_reader():
+    """
+    A shared s-expression reader configured from a default module pragma
+
+    Stands in for ``default_reader``, which is built raw and so reads with
+    every pragma-gated feature off.
+
+    :return: the shared configured reader
+    """
+
+    global _PRAGMA_SEXPR_READER
+
+    if _PRAGMA_SEXPR_READER is None:
+        reader = Reader()
+        reader.reload_pragma(ModulePragma())
+        _PRAGMA_SEXPR_READER = reader
+
+    return _PRAGMA_SEXPR_READER
+
 
 _FORBIDDEN_MARKED_EVAL_PATTERNS = (
     r'^opcode:',
@@ -58,6 +83,7 @@ _FORBIDDEN_MARKED_EVAL_PATTERNS = (
     r'^expression:opcode:',
     r'^fold-prefix:',
 )
+
 
 def _corpus_fixtures():
     """
@@ -634,29 +660,39 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
 
     def _reader_for(self, record, ns):
         """
-        Select LayoutReader or default_reader for a record
+        Select a layout or s-expression reader for a record
+
+        Both are configured from a default module pragma, because that is
+        what reads real source. Raw reader defaults are bare, so a reader
+        built without a pragma sees none of the pragma-gated syntax --
+        index brackets and string segments would silently read as
+        something else.
         """
 
         feature = record.get('feature') or ''
         tags = record.get('tags') or []
         if feature.startswith('layout/'):
-            return LayoutReader(ns)
+            return LayoutReader.from_pragma(ns, ModulePragma())
         for tag in tags:
             if tag in ('surface:block', 'surface:line'):
-                return LayoutReader(ns)
-        return default_reader
+                return LayoutReader.from_pragma(ns, ModulePragma())
+        return _pragma_sexpr_reader()
 
 
     def parse_expected_form(self, text):
         """
         Parse an expected s-expression string into a form
 
+        Uses the same pragma-configured reader the source goes through, so
+        an expected string cannot read differently from the source it is
+        being compared against.
+
         :param text: verify.read or verify.expand string
         :return: parsed form
         """
 
         stream = source_str(text, '<expected>')
-        return default_reader.read(stream)
+        return _pragma_sexpr_reader().read(stream)
 
 
     def read_source(self, source):

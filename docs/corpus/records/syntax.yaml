@@ -802,3 +802,155 @@ tags:
   - reader
   - "surface:block"
 notes: "splitting a long value across lines, option 2: end the header with a colon and nest the single value expression as a block -- it reads identically to opening the paren on the header line (see layout-split-value-open-paren-001). Without either, the indented value is a separate child form (see layout-split-value-next-line-invalid-001)."
+---
+id: reader-index-bracket-basic-001
+feature: reader/index-bracket
+source: |-
+  seq[0]
+  
+verify:
+  read: (item seq 0)
+  expand: (item seq 0)
+  eval: "1"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - index-bracket
+  - "pragma:reader/index-brackets"
+  - index
+notes: requires reader/index-brackets (baseline on). a [ ] group attached with no space desugars to (item VALUE KEY); fixture seq is (1, 2, 3)
+---
+id: reader-index-bracket-chain-002
+feature: reader/index-bracket
+source: |-
+  (define grid #[#[1 2] #[3 4]])
+  grid[1][0]
+  
+verify:
+  read: "(compile/begin (define grid (#list (#list 1 2) (#list 3 4))) (item (item grid 1) 0))"
+  eval: "3"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - index-bracket
+  - "pragma:reader/index-brackets"
+  - index
+notes: requires reader/index-brackets (baseline on). groups chain left to right, so grid[1][0] nests as (item (item grid 1) 0) rather than taking two keys
+---
+id: reader-dot-attr-literal-receiver-001
+feature: reader/dot-attr
+source: |-
+  ("hello".upper)
+  
+verify:
+  read: ((compile/attr "hello" upper))
+  eval: '"HELLO"'
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - reader
+  - dot-attr
+  - "pragma:reader/dot-attrs"
+  - idiom
+notes: requires reader/dot-attrs (baseline on). the dot is the attribute read and the enclosing parens are the call, so a literal receiver works like any other. (.upper "hello") is the equivalent leading-dot spelling
+---
+id: reader-dot-attr-expression-receiver-002
+feature: reader/dot-attr
+source: |-
+  ("-".join #["a" "b"])
+  
+verify:
+  read: "((compile/attr \"-\" join) (#list \"a\" \"b\"))"
+  eval: '"a-b"'
+references:
+  - reference/specials/compile-call-attr.md
+stability: evolving
+tags:
+  - reader
+  - dot-attr
+  - "pragma:reader/dot-attrs"
+  - idiom
+notes: requires reader/dot-attrs (baseline on). str.join takes one iterable, so the arguments go in a collection rather than being spread
+---
+id: reader-suffix-mixed-chain-003
+feature: reader/dot-attr
+source: |-
+  ("abc"[0].upper)
+  
+verify:
+  read: ((compile/attr (item "abc" 0) upper))
+  eval: '"A"'
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - dot-attr
+  - index-bracket
+  - "pragma:reader/dot-attrs"
+  - "pragma:reader/index-brackets"
+  - idiom
+notes: requires reader/dot-attrs and reader/index-brackets (both baseline on). suffixes apply left to right in reading order, so the index binds first and the attribute is read off its result
+---
+id: reader-string-segment-basic-001
+feature: reader/string-segment
+source: |-
+  (print "one"- " two"- " three")
+  
+verify:
+  read: "(print (compile/#str \"one\" \" two\" \" three\"))"
+  eval: "null"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - string-segment
+  - "pragma:reader/string-segments"
+  - construct
+notes: "requires reader/string-segments (baseline on). a hyphen touching the closing quote continues the literal into the next quoted chunk; the chain stays flat as one compile/#str, and an all-literal chain folds to a single constant"
+---
+id: reader-string-segment-format-splice-002
+feature: reader/string-segment
+source: |-
+  (define n 7)
+  (print "n is "- f"{n}")
+  
+verify:
+  read: "(compile/begin (define n 7) (print (compile/#str \"n is \" (format n))))"
+  eval: "null"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - string-segment
+  - "pragma:reader/string-segments"
+  - construct
+notes: "requires reader/string-segments (baseline on). each segment carries its own prefix, so only the f segment interpolates; an f-string already reads as compile/#str, so its parts splice in rather than nesting"
+---
+id: reader-string-segment-block-surface-003
+feature: reader/string-segment
+source: |-
+  define greet [name]:
+      return "Hello, "-
+             f"{name}!"
+  
+verify:
+  read: "(define greet [name] (return (compile/#str \"Hello, \" (format name) \"!\")))"
+  eval: "null"
+references:
+  - reference/reader-layout.md
+stability: evolving
+tags:
+  - reader
+  - string-segment
+  - "pragma:reader/string-segments"
+  - "surface:block"
+  - construct
+notes: requires reader/string-segments (baseline on). the continuation lines are consumed as part of the value on the line that opened them, so the block structure is untouched and the statement after the segment chain still belongs to the block
