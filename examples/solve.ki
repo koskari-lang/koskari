@@ -33,16 +33,16 @@ import-from koskari.solve amb fail require solve solve-first
 
 ; Three nested choice points; require keeps the triangles.
 
-(define triples
-  (solve
-    (lambda []
-      (define a (amb (range 1 21)))
-      (define b (amb (range a 21)))
-      (define c (amb (range b 21)))
-      (require (== (+ (* a a) (* b b)) (* c c)))
-      (#tuple a b c))))
+define triples:
+  solve:
+    lambda []:
+      define a (amb (range 1 21))
+      define b (amb (range a 21))
+      define c (amb (range b 21))
+      require (== (+ (* a a) (* b b)) (* c c))
+      #(a b c)
 
-(print "pythagorean triples under 21:" triples)
+print "pythagorean triples under 21:" triples
 
 
 ; --- Dinesman's dwelling puzzle ---------------------------------------------
@@ -71,25 +71,30 @@ define adjacent? [a b]:
   (== 1 (abs (- a b)))
 
 
-(define dwelling
-  (solve-first
-    (lambda []
-      (define baker (amb (range 1 6)))
-      (require (!= baker 5))
-      (define cooper (amb (range 1 6)))
-      (require (!= cooper 1))
-      (define fletcher (amb (range 1 6)))
-      (require (and (!= fletcher 1) (!= fletcher 5)))
-      (require (not (adjacent? fletcher cooper)))
-      (define miller (amb (range 1 6)))
-      (require (> miller cooper))
-      (define smith (amb (range 1 6)))
-      (require (not (adjacent? smith fletcher)))
-      (require (distinct baker cooper fletcher miller smith))
-      #{"baker": baker "cooper": cooper "fletcher": fletcher
-        "miller": miller "smith": smith})))
+define dwelling:
+  solve-first:
+    lambda []:
+      define baker (amb (range 1 6))
+      require (!= baker 5)
 
-(print "dwelling:" dwelling)
+      define cooper (amb (range 1 6))
+      require (!= cooper 1)
+
+      define fletcher (amb (range 1 6))
+      require (and (!= fletcher 1) (!= fletcher 5))
+      require (not (adjacent? fletcher cooper))
+
+      define miller (amb (range 1 6))
+      require (> miller cooper)
+
+      define smith (amb (range 1 6))
+      require (not (adjacent? smith fletcher))
+      require (distinct baker cooper fletcher miller smith)
+
+      #{"baker": baker "cooper": cooper "fletcher": fletcher
+        "miller": miller "smith": smith}
+
+print "dwelling:" dwelling
 
 
 ;; The end.
