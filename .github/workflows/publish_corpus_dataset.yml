@@ -20,24 +20,13 @@ jobs:
   export:
     runs-on: self-hosted
     container:
-      image: docker.io/library/ubuntu:24.04
+      image: docker.io/library/python:3.14-bookworm
     steps:
-      - name: Install system packages
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends gcc libc6-dev git ca-certificates
-          rm -rf /var/lib/apt/lists/*
-
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: 3.14
-
       - name: Install tox
-        run: pip install tox
+        run: python -m pip install --disable-pip-version-check tox
 
       # The export is Koskari, so regen-corpus installs the package and
       # builds the C extension; it is no longer a pure-Python job.
@@ -53,7 +42,7 @@ jobs:
   publish:
     runs-on: self-hosted
     container:
-      image: docker.io/library/ubuntu:24.04
+      image: docker.io/library/python:3.14-bookworm
     needs: export
     if: ${{ !inputs.dry_run }}
 
@@ -66,19 +55,8 @@ jobs:
       url: https://huggingface.co/datasets/koskari/koskari
 
     steps:
-      - name: Install system packages
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates
-          rm -rf /var/lib/apt/lists/*
-
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: 3.14
 
       - name: Download parquet artifact
         uses: actions/download-artifact@v8
