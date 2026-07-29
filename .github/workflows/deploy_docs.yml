@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Dependencies
-        run: python -m pip install --disable-pip-version-check tox
+        run: python -m pip install --disable-pip-version-check tox tox-uv
 
       - name: Generate Site
         run: tox -qe site
