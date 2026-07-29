@@ -7,9 +7,17 @@ on:
 jobs:
 
   build-documentation:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: docker.io/library/ubuntu:24.04
 
     steps:
+      - name: Install system packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gcc git ca-certificates
+          rm -rf /var/lib/apt/lists/*
+
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -32,7 +40,9 @@ jobs:
           path: build/site
 
   deploy-documentation:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: docker.io/library/ubuntu:24.04
 
     needs:
       - build-documentation
