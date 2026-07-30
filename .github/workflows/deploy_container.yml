@@ -1,10 +1,5 @@
 # Build koskari runtime image (root Containerfile) and push to GHCR.
 # Invoke via workflow_call, workflow_dispatch, or from release pipelines.
-#
-# Runs inside docker:*-cli so Buildx sees a real Docker client. The bare
-# self-hosted runner's `docker` is a podman-remote shim that Buildx rejects.
-# The runner is expected to expose the engine socket at the usual path inside
-# this job container (/var/run/docker.sock).
 
 name: Deploy container
 
@@ -28,16 +23,8 @@ permissions:
 
 jobs:
   image:
-    runs-on: self-hosted
-    container:
-      image: docker.io/library/docker:27-cli
-      options: >-
-        -v /run/run/docker.sock:/var/run/docker.sock
+    runs-on: ubuntu-latest
     steps:
-      - name: Install tools
-        run: |
-          apk add --no-cache git python3
-
       - name: Checkout
         uses: actions/checkout@v7
 
