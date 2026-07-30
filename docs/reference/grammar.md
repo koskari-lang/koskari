@@ -9,11 +9,130 @@ special forms.
 
 ## S-expression forms
 
-<!-- content TBD: base s-expression grammar; see tutorial examples in guide and start tracks -->
+Inside any `(`, `[`, or `{`, and at the top level of a form, the base reader
+applies. It reads **atoms** and **lists** and a handful of **prefix** and
+**collection** syntaxes. Everyday shapes are covered in
+[Forms and combining](../guide/forms-and-combining.md); this section is the
+normative catalogue.
 
-Parenthesized calls, literals, and collection syntax work inside delimiters and
-at the top level. See [Forms and combining](../guide/forms-and-combining.md)
-for everyday shapes.
+**Whitespace is the only separator.** Tokens are split on spaces, tabs, and
+newlines (and on the delimiter characters). Punctuation that other languages
+use to separate items — most notably the **comma** — is an ordinary atom
+character here, so `#[1, 2, 3]` reads three symbols `1,` `2,` `3`, not three
+integers. Separate list items with spaces.
+
+### Atoms
+
+An atom is one whitespace- or delimiter-bounded token. The reader matches each
+token against the literal patterns below; a token that matches **none of them**
+is a **symbol**.
+
+**Numbers.** Each numeric shape is a distinct literal:
+
+| Written | Reads as | Notes |
+|---|---|---|
+| `42`, `-7` | integer | |
+| `0xff`, `0o17`, `0b1010` | integer | hex digits are lowercase |
+| `3.14`, `.5`, `6.` | float | |
+| `1e9`, `2.5e-3` | float | exponent form |
+| `3f`, `1.0f` | float | trailing `f` forces float |
+| `1/2` | fraction | `fractions.Fraction` |
+| `9.99d`, `5d` | decimal | trailing `d`, `decimal.Decimal` |
+| `3+4j`, `2.0+1i` | complex | trailing `i` or `j` |
+
+**Strings** are double-quoted, with optional single-character prefixes attached
+directly to the opening quote:
+
+| Written | Meaning |
+|---|---|
+| `"text"` | plain string |
+| `f"x is {x}"` | format string — interpolates `{…}` expressions |
+| `r"a\d+"` | raw string — no backslash escapes |
+| `b"bytes"` | bytes literal |
+
+A prefix is recognised only when it sits immediately before the quote (`f"…"`,
+not `f "…"`). A trailing hyphen continues a string into the next quoted segment;
+see [Suffix syntax](#suffix-syntax).
+
+**Symbols** are names: any token that is not a number, string, keyword, or
+singleton. Symbols may contain letters, digits, `-`, `_`, `/`, and most
+punctuation (`+`, `<`, `list->vector`, `None?` are all symbols). A leading digit
+generally makes a number instead, so names start with a non-digit.
+
+**Keywords** are self-evaluating name markers written with a colon on either
+end. `:foo` and `foo:` both read as the keyword `foo`; the trailing-colon
+spelling is what carries keyword arguments in calls and headers.
+
+**Singletons and constants:**
+
+| Written | Reads as |
+|---|---|
+| `True`, `False` | Python booleans |
+| `None` | Python `None` |
+| `...` | `Ellipsis` |
+| `()`, `[]` | the empty list, `nil` |
+
+`nil` is both the empty list and the terminator of every proper list.
+
+### Lists
+
+Parentheses group forms into a **pair chain** (a cons list):
+
+```koskari
+(+ 1 2 3)         ;; a three-argument call
+(a b (c d) e)     ;; nested lists
+()                ;; the empty list, nil
+```
+
+A **dotted pair** places a value directly in the tail with `.`:
+
+```koskari
+(k . v)           ;; one cons cell: car k, cdr v
+(1 2 . 3)         ;; improper list ending in 3
+```
+
+Square brackets `[ ]` read with the **same grammar** as `( )` and produce a
+value-equal chain; the reader records the bracket style so a call-position lint
+can flag it, but the compiler treats the two the same. See
+[Brackets and the call convention](concepts/brackets-and-call-convention.md).
+
+### Collection literals
+
+A `#` prefix on a delimiter reads a container literal whose items are
+whitespace-separated:
+
+| Written | Reads as | Builds |
+|---|---|---|
+| `#(1 2 3)` | `(#tuple 1 2 3)` | a tuple |
+| `#[1 2 3]` | `(#list 1 2 3)` | a list |
+| `#{"a": 1 "b": 2}` | `(#dict (#tuple "a" 1) (#tuple "b" 2))` | a dict |
+
+A `#dict` spine accepts alternating `key value` pairs, dotted `(key . value)`
+entries, or `key:` keyword keys (`#{name: n}`). Keys are **ordinary
+expressions**, so a `key:` key lowers to the *name* `key`, not the string
+`"key"` — quote or write the string explicitly (`#{"name": n}`) when you want a
+literal string key.
+
+### Prefix reader sugar
+
+Four prefixes wrap the form that follows them:
+
+| Written | Reads as |
+|---|---|
+| `'form` | `(compile/quote form)` |
+| `` `form `` | `(compile/quasiquote form)` |
+| `,form` | `(compile/unquote form)` |
+| `,@form` | `(compile/unquote-splicing form)` |
+
+`,` and `,@` are meaningful only inside a quasiquote. One more prefix, `&form`,
+reads as `(compile/ref form)` for by-reference passing; a bare `&` with nothing
+attached is the ordinary `&` symbol.
+
+### Comments
+
+A `;` begins a line comment that runs to the end of the line (the doubled `;;`
+is a common style, still just a line comment). Comments may appear between any
+tokens and are skipped by the reader.
 
 ---
 
