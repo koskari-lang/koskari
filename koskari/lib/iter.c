@@ -54,6 +54,68 @@ static int install_frozen_gen_for_resume(
 }
 
 
+static PyObject *asyncgenasend_new_ex(
+    KosPyAsyncGen *agen,
+    PyObject *send_value,
+    PyObject *throw_typ,
+    PyObject *throw_exc);
+
+
+/**
+   Parse and normalize throw-method arguments (typ[, val[, tb]]) into an
+   owned (type, exception-instance) pair shaped for the evaluator's
+   throw ingress. Accepts an exception class with optional value, or a
+   bare exception instance. format carries the method name for error
+   messages, e.g. "O|OO:athrow".
+*/
+static int normalize_throw_args(
+    PyObject *args,
+    const char *format,
+    PyObject **typ_out,
+    PyObject **exc_out) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
+  if (! PyArg_ParseTuple(args, format, &typ, &val, &tb))
+    return -1;
+
+  if (PyExceptionClass_Check(typ)) {
+    Py_INCREF(typ);
+    Py_XINCREF(val);
+    Py_XINCREF(tb);
+    PyErr_NormalizeException(&typ, &val, &tb);
+    Py_XDECREF(tb);
+    if (! typ)
+      return -1;
+    if (! val) {
+      val = typ;
+      Py_INCREF(val);
+    }
+    *typ_out = typ;
+    *exc_out = val;
+    return 0;
+  }
+
+  if (PyExceptionInstance_Check(typ)) {
+    if (val && val != Py_None) {
+      PyErr_SetString(PyExc_TypeError,
+                      "instance exception may not have a separate value");
+      return -1;
+    }
+    Py_INCREF(typ);
+    *exc_out = typ;
+    *typ_out = (PyObject *) Py_TYPE(typ);
+    Py_INCREF(*typ_out);
+    return 0;
+  }
+
+  PyErr_SetString(PyExc_TypeError,
+                  "exceptions must be classes or instances deriving "
+                  "from BaseException");
+  return -1;
+}
+
+
 /* === KosPyAsyncGen type === */
 
 
@@ -304,6 +366,30 @@ static PyObject *asyncgen_anext(PyObject *self) {
 }
 
 
+static PyObject *asyncgen_asend(PyObject *self, PyObject *value) {
+
+  /* No call-time closed check: CPython raises StopAsyncIteration when
+     the awaitable is driven, not when it is constructed. The stepper's
+     entry guard covers the closed case. */
+  return asyncgenasend_new_ex((KosPyAsyncGen *) self, value, NULL, NULL);
+}
+
+
+static PyObject *asyncgen_athrow(PyObject *self, PyObject *args) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+  PyObject *typ = NULL, *exc = NULL;
+
+  if (normalize_throw_args(args, "O|OO:athrow", &typ, &exc) < 0)
+    return NULL;
+
+  PyObject *stepper = asyncgenasend_new_ex(agen, NULL, typ, exc);
+  Py_DECREF(typ);
+  Py_DECREF(exc);
+  return stepper;
+}
+
+
 static PyObject *asyncgen_repr(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
@@ -319,6 +405,17 @@ static PyObject *asyncgen_tp_iter(PyObject *self) {
 
   return KosDemandGenerator_FromAsyncGen((KosPyAsyncGen *) self);
 }
+
+
+static PyMethodDef asyncgen_methods[] = {
+  { "asend", (PyCFunction) asyncgen_asend, METH_O,
+    "Send a value into the async generator; returns an awaitable" },
+
+  { "athrow", (PyCFunction) asyncgen_athrow, METH_VARARGS,
+    "Throw an exception into the async generator; returns an awaitable" },
+
+  { NULL, NULL, 0, NULL },
+};
 
 
 static PyAsyncMethods asyncgen_async_methods = {
@@ -341,6 +438,7 @@ PyTypeObject KosPyAsyncGenType = {
   .tp_traverse = asyncgen_traverse,
   .tp_clear = asyncgen_clear,
   .tp_iter = asyncgen_tp_iter,
+  .tp_methods = asyncgen_methods,
 };
 
 
@@ -355,6 +453,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
   agen->ctx = ctx;
   agen->code_name = NULL;
   agen->in_progress = 0;
+  agen->started = 0;
   agen->closed = 0;
 
   PyObject_GC_Track((PyObject *) agen);
@@ -427,7 +526,13 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   KosPyAsyncGen *agen = asend->agen;
 
   if (! agen || ! agen->ctx || agen->closed) {
-    PyErr_SetNone(PyExc_StopAsyncIteration);
+    /* CPython parity: a throw-flavored drive on a finished generator
+       completes quietly (bare StopIteration, so awaiting yields None);
+       a send-flavored drive raises StopAsyncIteration. */
+    if (asend->is_throw)
+      PyErr_SetNone(PyExc_StopIteration);
+    else
+      PyErr_SetNone(PyExc_StopAsyncIteration);
     return NULL;
   }
 
@@ -437,6 +542,14 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   if (agen->in_progress && ! asend->awaiting) {
     PyErr_SetString(PyExc_RuntimeError,
                     "async generator already being iterated");
+    return NULL;
+  }
+
+  if (! agen->started && ! asend->is_throw
+      && asend->send_value && asend->send_value != Py_None) {
+    PyErr_SetString(PyExc_TypeError,
+                    "can't send non-None value to a just-started "
+                    "async generator");
     return NULL;
   }
 
@@ -511,6 +624,7 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   }
 
   /* Drive the context */
+  agen->started = 1;
   KosOpResult res = koskari_eval(agen->ctx, send_val, throw_typ, throw_exc);
 
   Py_XDECREF(send_val);
@@ -529,12 +643,18 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   switch (res.kind) {
     case KOS_RES_RETURN: {
-      /* Generator completed; raise StopAsyncIteration with return value. */
+      /* Generator completed; raise StopAsyncIteration, carrying the
+         return value only when there is one -- CPython raises it bare,
+         and a (None,) payload is a visible parity difference. */
       agen->closed = 1;
       PyObject *payload = res.val;
-      PyObject *exc = koskari_StopAsyncIteration_FromValue(
-          payload ? payload : Py_None);
-      Py_XDECREF(payload);
+      if (! payload || payload == Py_None) {
+        Py_XDECREF(payload);
+        PyErr_SetNone(PyExc_StopAsyncIteration);
+        return NULL;
+      }
+      PyObject *exc = koskari_StopAsyncIteration_FromValue(payload);
+      Py_DECREF(payload);
       if (exc) {
         PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
         Py_DECREF(exc);
@@ -592,19 +712,12 @@ static PyObject *asyncgenasend_throw(PyObject *self, PyObject *args) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
 
-  asend->is_throw = 1;
-  Py_CLEAR(asend->send_value);
-
-  PyObject *typ = NULL, *val = NULL, *tb = NULL;
-  if (! PyArg_ParseTuple(args, "O|OO:throw", &typ, &val, &tb))
+  PyObject *typ = NULL, *exc = NULL;
+  if (normalize_throw_args(args, "O|OO:throw", &typ, &exc) < 0)
     return NULL;
 
-  PyErr_NormalizeException(&typ, &val, &tb);
-  PyObject *exc = val;
-  if (! exc)
-    exc = typ;
-  Py_INCREF(typ);
-  Py_INCREF(exc);
+  asend->is_throw = 1;
+  Py_CLEAR(asend->send_value);
   Py_CLEAR(asend->throw_typ);
   Py_CLEAR(asend->throw_exc);
   asend->throw_typ = typ;
@@ -670,9 +783,17 @@ PyTypeObject KosPyAsyncGenASendType = {
 };
 
 
-PyObject *KosPyAsyncGenASend_New(
+/**
+   Build a stepper primed to send or throw on its first drive.
+   throw_typ / throw_exc are optional borrowed references; when given,
+   is_throw is set and the first drive delivers them through the
+   evaluator's throw ingress.
+*/
+static PyObject *asyncgenasend_new_ex(
     KosPyAsyncGen *agen,
-    PyObject *send_value) {
+    PyObject *send_value,
+    PyObject *throw_typ,
+    PyObject *throw_exc) {
 
   KosPyAsyncGenASend *asend = PyObject_GC_New(KosPyAsyncGenASend,
                                               &KosPyAsyncGenASendType);
@@ -685,13 +806,24 @@ PyObject *KosPyAsyncGenASend_New(
   Py_XINCREF(send_value);
   asend->send_value = send_value;
 
-  asend->is_throw = 0;
-  asend->throw_typ = NULL;
-  asend->throw_exc = NULL;
+  asend->is_throw = (throw_typ != NULL);
+  Py_XINCREF(throw_typ);
+  asend->throw_typ = throw_typ;
+  Py_XINCREF(throw_exc);
+  asend->throw_exc = throw_exc;
+
   asend->awaiting = 0;
 
   PyObject_GC_Track((PyObject *) asend);
   return (PyObject *) asend;
+}
+
+
+PyObject *KosPyAsyncGenASend_New(
+    KosPyAsyncGen *agen,
+    PyObject *send_value) {
+
+  return asyncgenasend_new_ex(agen, send_value, NULL, NULL);
 }
 
 

@@ -1064,6 +1064,7 @@ static PyObject *demand_gen_step(
   }
 
   {
+    agen->started = 1;
     KosOpResult ev = koskari_eval(agen->ctx, send_val, throw_typ, throw_exc);
 
     agen->in_progress = 0;

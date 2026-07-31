@@ -1,0 +1,225 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+tests.reproducers.test_asyncgen_protocol
+
+CPython parity for the async-generator protocol methods. Every scenario
+runs twice -- once against a native ``async def`` generator and once
+against the equivalent Koskari generator -- and the outcomes must
+match. CPython is the oracle: no expected value here is hand-written,
+so a Koskari behavior difference cannot hide behind a wrong
+expectation.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+import unittest
+
+from koskari.module import load_module_source_async, new_module
+
+import pytest
+
+pytestmark = pytest.mark.phase_reproducers
+
+
+SRC = """
+import-from asyncio sleep
+
+define g-plain []:
+    (yield 1)
+    (yield 2)
+
+define g-echo []:
+    define got (yield 1)
+    (yield got)
+
+define g-catches []:
+    try:
+        (yield 1)
+        (yield "unreached")
+    except [ValueError]:
+        (yield "caught")
+
+define g-catch-return []:
+    try:
+        (yield 1)
+        (yield "unreached")
+    except [ValueError]:
+        None
+
+define g-await-echo []:
+    (await (sleep 0.001))
+    define got (yield 1)
+    (yield got)
+"""
+
+
+async def p_plain():
+    yield 1
+    yield 2
+
+
+async def p_echo():
+    got = yield 1
+    yield got
+
+
+async def p_catches():
+    try:
+        yield 1
+        yield "unreached"
+    except ValueError:
+        yield "caught"
+
+
+async def p_catch_return():
+    try:
+        yield 1
+        yield "unreached"
+    except ValueError:
+        return
+
+
+async def p_await_echo():
+    import asyncio
+    await asyncio.sleep(0.001)
+    got = yield 1
+    yield got
+
+
+async def outcome(awaitable):
+    """
+    Collapse an await into a comparable (kind, payload) pair.
+    """
+
+    try:
+        return ("value", await awaitable)
+    except BaseException as exc:
+        return ("raise", type(exc).__name__, str(exc))
+
+
+class TestAsyncGenParity(unittest.IsolatedAsyncioTestCase):
+    """
+    Identical drive sequences against CPython and Koskari async
+    generators produce identical outcomes.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import asyncio
+
+        async def load():
+            module = new_module("asyncgen_parity")
+            vars(module)["__file__"] = "<asyncgen_parity>"
+            await load_module_source_async(module, SRC)
+            return module
+
+        cls.module = asyncio.run(load())
+
+
+    def kos(self, name):
+        return vars(self.module)[name]()
+
+
+    async def parity(self, python_gen, koskari_name, scenario):
+        expected = await scenario(python_gen)
+        actual = await scenario(self.kos(koskari_name))
+        self.assertEqual(actual, expected)
+
+
+    async def test_asend_echo(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.asend("ping")),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_echo(), "g-echo", scenario)
+
+
+    async def test_asend_non_none_just_started(self):
+        async def scenario(agen):
+            first = await outcome(agen.asend("early"))
+            second = await outcome(agen.asend(None))
+            return [first, second]
+
+        await self.parity(p_echo(), "g-echo", scenario)
+
+
+    async def test_athrow_caught_yields(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.athrow(ValueError("boom"))),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_catches(), "g-catches", scenario)
+
+
+    async def test_athrow_caught_then_return(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.athrow(ValueError("boom"))),
+            ]
+
+        await self.parity(p_catch_return(), "g-catch-return", scenario)
+
+
+    async def test_athrow_uncaught(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.athrow(KeyError("boom"))),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+    async def test_athrow_never_started(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.athrow(ValueError("early"))),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+    async def test_athrow_exhausted(self):
+        async def scenario(agen):
+            results = [await outcome(agen.asend(None))]
+            results.append(await outcome(agen.asend(None)))
+            results.append(await outcome(agen.asend(None)))
+            results.append(await outcome(agen.athrow(ValueError("late"))))
+            return results
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+    async def test_asend_across_await(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.asend("ping")),
+            ]
+
+        await self.parity(p_await_echo(), "g-await-echo", scenario)
+
+
+# The end.

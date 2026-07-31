@@ -103,8 +103,9 @@ point:
   awaiting the athrow.
 - body catches and returns / falls off the end -> StopAsyncIteration.
 - body does not catch -> the exception propagates to the awaiter.
-- generator already closed / never started and exhausted ->
-  StopAsyncIteration (GeneratorExit returns quietly instead).
+- generator already closed / exhausted -> quiet completion: the
+  awaitable raises bare StopIteration, so awaiting it yields None
+  (CPython 3.12 behavior, taken from the parity oracle).
 - generator currently running -> RuntimeError, via the existing
   `in_progress` guard.
 
@@ -154,7 +155,7 @@ covers this by construction.
 - `in_progress` guards re-entrancy for asend/athrow/aclose uniformly.
 - terminal athrow/aclose outcomes set `closed`.
 - `aclose` on `closed` -> immediate None; `athrow` on `closed` ->
-  StopAsyncIteration (GeneratorExit -> None).
+  quiet None (bare StopIteration from the awaitable).
 - dealloc behavior is unchanged: `KosPyAsyncGen_Teardown` remains the
   demand-path close for the drop-without-close case, exception-fenced
   per the dealloc-fence work.
