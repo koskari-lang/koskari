@@ -68,9 +68,9 @@ def special_parameterize(
     for val in vals:
         fragment.merge(compiler.full_compile(val, False))
 
-    fragment.instruction(OpCode.KOS_OP_PUSH_PARAM, tuple(map(str, args)))
+    fragment.instruction(OpCode.PUSH_PARAM, tuple(map(str, args)))
     helper_begin(fragment, body, False)
-    fragment.instruction(OpCode.KOS_OP_POP_PARAM, 0)
+    fragment.instruction(OpCode.POP_PARAM, 0)
     return fragment
 
 
@@ -98,7 +98,7 @@ def special_parameter(
     fragment.position_of(source)
 
     if is_nil(rest):
-        fragment.instruction(OpCode.KOS_OP_PARAM, (str(name), 0, 0, 0))
+        fragment.instruction(OpCode.PARAM, (str(name), 0, 0, 0))
         return fragment
 
     if not is_pair(rest):
@@ -113,11 +113,11 @@ def special_parameter(
 
     if is_const:
         fragment.instruction(
-            OpCode.KOS_OP_PARAM_CONST, (str(name), const_val, 0, 0))
+            OpCode.PARAM_CONST, (str(name), const_val, 0, 0))
 
     else:
         fragment.merge(defaultfrag)
-        fragment.instruction(OpCode.KOS_OP_PARAM, (str(name), 1, 0, 0))
+        fragment.instruction(OpCode.PARAM, (str(name), 1, 0, 0))
 
     return fragment
 
@@ -160,9 +160,9 @@ def special_with(compiler, caps, tc=False):
         fragment.declare_var(name)
 
     fragment.position(pos)
-    fragment.instruction(OpCode.KOS_OP_PUSH_WITH, name)
+    fragment.instruction(OpCode.PUSH_WITH, name)
     helper_begin(fragment, body, False)
-    fragment.instruction(OpCode.KOS_OP_POP_WITH, 0)
+    fragment.instruction(OpCode.POP_WITH, 0)
 
     return fragment
 
@@ -195,9 +195,9 @@ def special_dyn_with(compiler, caps, tc=False):
         fragment.declare_var(name)
 
     fragment.position(pos)
-    fragment.instruction(OpCode.KOS_OP_PUSH_DYN_WITH, name)
+    fragment.instruction(OpCode.PUSH_DYN_WITH, name)
     helper_begin(fragment, body, False)
-    fragment.instruction(OpCode.KOS_OP_POP_DYN_WITH, 0)
+    fragment.instruction(OpCode.POP_DYN_WITH, 0)
 
     return fragment
 

@@ -47,10 +47,10 @@ class _OpcodeHelper:
     """
 
     _FILTER_OPS = (
-        OpCode.KOS_OP_NOOP,
-        OpCode.KOS_OP_POSITION,
-        OpCode.KOS_OP_LABEL,
-        OpCode.KOS_OP_RETURN,
+        OpCode.NOOP,
+        OpCode.POSITION,
+        OpCode.LABEL,
+        OpCode.RETURN,
     )
 
     def instructions(self, code):
@@ -74,16 +74,16 @@ class TestSpecialImportAbsolute(_OpcodeHelper, SpecialsTestCase):
 
     async def test_simple_import_row(self):
         code = self.compile_to_code('(import os)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual(('os', 0, _IMPORT_ROOT, 'os'), arg)
 
 
     async def test_simple_import_is_self_contained(self):
         code = self.compile_to_code('(import os)')
         ops = self.op_sequence(code)
-        self.assertNotIn(OpCode.KOS_OP_VAR_STORE, ops)
-        self.assertNotIn(OpCode.KOS_OP_POP, ops)
-        self.assertNotIn(OpCode.KOS_OP_IMPORT_FROM, ops)
+        self.assertNotIn(OpCode.VAR_STORE, ops)
+        self.assertNotIn(OpCode.POP, ops)
+        self.assertNotIn(OpCode.IMPORT_FROM, ops)
 
 
     async def test_simple_import_ends_with_const_none(self):
@@ -92,25 +92,25 @@ class TestSpecialImportAbsolute(_OpcodeHelper, SpecialsTestCase):
 
         code = self.compile_to_code('(foo (import os))')
         instrs = self.instructions(code)
-        self.assertEqual(OpCode.KOS_OP_CONST, instrs[-2][0])
+        self.assertEqual(OpCode.CONST, instrs[-2][0])
         self.assertEqual(None, instrs[-2][1])
 
 
     async def test_dotted_import_binds_root(self):
         code = self.compile_to_code('(import os.path)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual(('os.path', 0, _IMPORT_ROOT, 'os'), arg)
 
 
     async def test_member_import_binds_leaf_alias(self):
         code = self.compile_to_code('(import [os.path as: p])')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual(('os.path', 0, _IMPORT_LEAF, 'p'), arg)
 
 
     async def test_member_import_undotted(self):
         code = self.compile_to_code('(import [os as: operating-system])')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual(('os', 0, _IMPORT_LEAF, 'operating-system'), arg)
 
 
@@ -118,25 +118,25 @@ class TestSpecialImportRelative(_OpcodeHelper, SpecialsTestCase):
 
     async def test_single_dot_level_one_leaf(self):
         code = self.compile_to_code('(import .foo)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual(('foo', 1, _IMPORT_LEAF, 'foo'), arg)
 
 
     async def test_double_dot_level_two(self):
         code = self.compile_to_code('(import ..bar)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual(('bar', 2, _IMPORT_LEAF, 'bar'), arg)
 
 
     async def test_relative_dotted_binds_leaf(self):
         code = self.compile_to_code('(import .foo.bar)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual(('foo.bar', 1, _IMPORT_LEAF, 'bar'), arg)
 
 
     async def test_relative_member_alias(self):
         code = self.compile_to_code('(import [.foo as: f])')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual(('foo', 1, _IMPORT_LEAF, 'f'), arg)
 
 
@@ -144,7 +144,7 @@ class TestSpecialImportRelative(_OpcodeHelper, SpecialsTestCase):
         # a lone dot is the reader's dotted-pair marker, so bare
         # relative imports start at two dots
         code = self.compile_to_code('(import [.. as: pkg])')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
+        arg = self.first_op_with(code, OpCode.IMPORT)
         self.assertEqual((None, 2, _IMPORT_LEAF, 'pkg'), arg)
 
 
@@ -152,41 +152,41 @@ class TestSpecialImportFrom(_OpcodeHelper, SpecialsTestCase):
 
     async def test_import_from_single_member(self):
         code = self.compile_to_code('(import-from os path)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        arg = self.first_op_with(code, OpCode.IMPORT_FROM)
         self.assertEqual(('os', 0, ('path',), ('path',)), arg)
 
 
     async def test_import_from_is_self_contained(self):
         code = self.compile_to_code('(import-from os path)')
         ops = self.op_sequence(code)
-        self.assertNotIn(OpCode.KOS_OP_IMPORT, ops)
-        self.assertNotIn(OpCode.KOS_OP_VAR_STORE, ops)
-        self.assertNotIn(OpCode.KOS_OP_POP, ops)
+        self.assertNotIn(OpCode.IMPORT, ops)
+        self.assertNotIn(OpCode.VAR_STORE, ops)
+        self.assertNotIn(OpCode.POP, ops)
 
 
     async def test_import_from_multiple_members(self):
         code = self.compile_to_code('(import-from os path sep)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        arg = self.first_op_with(code, OpCode.IMPORT_FROM)
         self.assertEqual(('os', 0, ('path', 'sep'), ('path', 'sep')), arg)
 
 
     async def test_import_from_with_alias(self):
         code = self.compile_to_code('(import-from os [getcwd as: cwd])')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        arg = self.first_op_with(code, OpCode.IMPORT_FROM)
         self.assertEqual(('os', 0, ('getcwd',), ('cwd',)), arg)
 
 
     async def test_import_from_mixed_members(self):
         code = self.compile_to_code(
             '(import-from os.path join [basename as: bn])')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        arg = self.first_op_with(code, OpCode.IMPORT_FROM)
         self.assertEqual(
             ('os.path', 0, ('join', 'basename'), ('join', 'bn')), arg)
 
 
     async def test_import_from_relative(self):
         code = self.compile_to_code('(import-from .foo bar)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        arg = self.first_op_with(code, OpCode.IMPORT_FROM)
         self.assertEqual(('foo', 1, ('bar',), ('bar',)), arg)
 
 
@@ -194,14 +194,14 @@ class TestSpecialImportFrom(_OpcodeHelper, SpecialsTestCase):
         # a lone dot is the reader's dotted-pair marker, so bare
         # relative imports start at two dots
         code = self.compile_to_code('(import-from .. util)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_FROM)
+        arg = self.first_op_with(code, OpCode.IMPORT_FROM)
         self.assertEqual((None, 2, ('util',), ('util',)), arg)
 
 
     async def test_import_from_ends_with_const_none(self):
         code = self.compile_to_code('(foo (import-from os path))')
         instrs = self.instructions(code)
-        self.assertEqual(OpCode.KOS_OP_CONST, instrs[-2][0])
+        self.assertEqual(OpCode.CONST, instrs[-2][0])
         self.assertEqual(None, instrs[-2][1])
 
 
@@ -209,29 +209,29 @@ class TestSpecialImportAllFrom(_OpcodeHelper, SpecialsTestCase):
 
     async def test_import_all_from_row(self):
         code = self.compile_to_code('(import-all-from os)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_STAR)
+        arg = self.first_op_with(code, OpCode.IMPORT_STAR)
         self.assertEqual(('os', 0, 0, 0), arg)
 
 
     async def test_import_all_from_dotted(self):
         code = self.compile_to_code('(import-all-from os.path)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_STAR)
+        arg = self.first_op_with(code, OpCode.IMPORT_STAR)
         self.assertEqual(('os.path', 0, 0, 0), arg)
 
 
     async def test_import_all_from_relative(self):
         code = self.compile_to_code('(import-all-from .util)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT_STAR)
+        arg = self.first_op_with(code, OpCode.IMPORT_STAR)
         self.assertEqual(('util', 1, 0, 0), arg)
 
 
     async def test_import_all_from_is_self_contained(self):
         code = self.compile_to_code('(import-all-from os)')
         ops = self.op_sequence(code)
-        self.assertNotIn(OpCode.KOS_OP_IMPORT, ops)
-        self.assertNotIn(OpCode.KOS_OP_IMPORT_FROM, ops)
-        self.assertNotIn(OpCode.KOS_OP_VAR_STORE, ops)
-        self.assertNotIn(OpCode.KOS_OP_POP, ops)
+        self.assertNotIn(OpCode.IMPORT, ops)
+        self.assertNotIn(OpCode.IMPORT_FROM, ops)
+        self.assertNotIn(OpCode.VAR_STORE, ops)
+        self.assertNotIn(OpCode.POP, ops)
 
 
 class TestSpecialImportErrors(_OpcodeHelper, SpecialsTestCase):

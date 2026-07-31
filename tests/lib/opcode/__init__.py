@@ -55,19 +55,19 @@ def opcount(operand, count):
 # directly while exercising the real opcode. Each maps its per-operator name to
 # the Operand op-type; the arg supplies the operand count.
 _OPERAND_BY_NAME = {
-    "ADD": Operand.KOS_OPERAND_ADD,
-    "SUBTRACT": Operand.KOS_OPERAND_SUBTRACT,
-    "MULTIPLY": Operand.KOS_OPERAND_MULTIPLY,
-    "MODULO": Operand.KOS_OPERAND_MODULO,
-    "POWER": Operand.KOS_OPERAND_POWER,
-    "TRUE_DIVIDE": Operand.KOS_OPERAND_TRUE_DIVIDE,
-    "FLOOR_DIVIDE": Operand.KOS_OPERAND_FLOOR_DIVIDE,
-    "MATRIX_MULTIPLY": Operand.KOS_OPERAND_MATRIX_MULTIPLY,
-    "BIT_AND": Operand.KOS_OPERAND_BIT_AND,
-    "BIT_OR": Operand.KOS_OPERAND_BIT_OR,
-    "BIT_XOR": Operand.KOS_OPERAND_BIT_XOR,
-    "BIT_LEFT": Operand.KOS_OPERAND_BIT_LEFT,
-    "BIT_RIGHT": Operand.KOS_OPERAND_BIT_RIGHT,
+    "ADD": Operand.ADD,
+    "SUBTRACT": Operand.SUBTRACT,
+    "MULTIPLY": Operand.MULTIPLY,
+    "MODULO": Operand.MODULO,
+    "POWER": Operand.POWER,
+    "TRUE_DIVIDE": Operand.TRUE_DIVIDE,
+    "FLOOR_DIVIDE": Operand.FLOOR_DIVIDE,
+    "MATRIX_MULTIPLY": Operand.MATRIX_MULTIPLY,
+    "BIT_AND": Operand.BIT_AND,
+    "BIT_OR": Operand.BIT_OR,
+    "BIT_XOR": Operand.BIT_XOR,
+    "BIT_LEFT": Operand.BIT_LEFT,
+    "BIT_RIGHT": Operand.BIT_RIGHT,
 }
 
 _OPERAND_LOWER = {
@@ -83,17 +83,17 @@ _OPERAND_LOWER.update({
 # selector-keyed OBJECT_COMPARE; the same sugar applies (arg = count,
 # packed with the Compare selector into a CMPCOUNT arg).
 _OPERAND_LOWER.update({
-    "OBJECT_" + suffix: (Compare["KOS_COMPARE_" + suffix], "OBJECT_COMPARE")
+    "OBJECT_" + suffix: (Compare[suffix], "OBJECT_COMPARE")
     for suffix in ("EQ", "NE", "LT", "LE", "GT", "GE")
 })
 
 
 def _op(name):
     """
-    Map string opcode name to OpCode enum (e.g. CONST -> KOS_OP_CONST)
+    Map string opcode name to OpCode enum member
     """
 
-    return getattr(OpCode, "KOS_OP_" + name)
+    return getattr(OpCode, name)
 
 
 def _lower_instr(op, arg):

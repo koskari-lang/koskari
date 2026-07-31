@@ -562,11 +562,11 @@ def intern_instruction_args(pb, instructions):
     for op, arg in instructions:
         op = op if isinstance(op, OpCode) else OpCode(op)
         st = op.style
-        if st == OpStyle.KOSTYLE_CONST:
+        if st == OpStyle.CONST:
             intern_for_pool(pb, arg)
-        elif st == OpStyle.KOSTYLE_VAR:
+        elif st == OpStyle.VAR:
             intern_for_pool(pb, arg)
-        elif st == OpStyle.KOSTYLE_EXTRA:
+        elif st == OpStyle.EXTRA:
             intern_for_pool(pb, arg)
 
 
@@ -623,43 +623,43 @@ def encode_instruction(op, arg, pool_index_of):
     op_int = int(op)
     st = op.style
 
-    if op == OpCode.KOS_OP_POSITION:
+    if op == OpCode.POSITION:
         line, col = arg[0], arg[1]
         packed = ((line & 0xFFFF) << 16) | (col & 0xFFFF)
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.U32, 0, packed)
 
-    if op == OpCode.KOS_OP_LABEL:
+    if op == OpCode.LABEL:
         lid = label_id_from_name(arg)
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.LABEL_ID, 0, lid)
 
-    if st == OpStyle.KOSTYLE_CONST:
+    if st == OpStyle.CONST:
         idx = pool_index_of(arg)
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.POOL_INDEX, 0, idx)
 
-    if st == OpStyle.KOSTYLE_VAR:
+    if st == OpStyle.VAR:
         idx = pool_index_of(arg)
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.POOL_INDEX, 0, idx)
 
-    if st == OpStyle.KOSTYLE_LABEL:
+    if st == OpStyle.LABEL:
         lid = label_id_from_name(arg)
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.LABEL_ID, 0, lid)
 
-    if st == OpStyle.KOSTYLE_EXTRA:
+    if st == OpStyle.EXTRA:
         idx = pool_index_of(arg)
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.POOL_INDEX, 0, idx)
 
-    if st in (OpStyle.KOSTYLE_NOARG,):
+    if st in (OpStyle.NOARG,):
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.NONE, 0, 0)
 
-    if st in (OpStyle.KOSTYLE_COUNT, OpStyle.KOSTYLE_PAIR_COUNT,
-              OpStyle.KOSTYLE_STAR, OpStyle.KOSTYLE_FASTVAR):
+    if st in (OpStyle.COUNT, OpStyle.PAIR_COUNT,
+              OpStyle.STAR, OpStyle.FASTVAR):
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.U32, 0, int(arg) & 0xFFFFFFFF)
 
@@ -677,17 +677,17 @@ def decode_instruction(buf, off, pool_list):
     op = OpCode(op_int)
     st = op.style
 
-    if op == OpCode.KOS_OP_POSITION:
+    if op == OpCode.POSITION:
         line = (arg_val >> 16) & 0xFFFF
         col = arg_val & 0xFFFF
         return (op, (line, col)), off
 
-    if op == OpCode.KOS_OP_LABEL:
+    if op == OpCode.LABEL:
         return (op, label_name_from_id(arg_val)), off
 
     if arg_kind == InstructionArgKind.POOL_INDEX:
         val = pool_list[arg_val]
-        if st == OpStyle.KOSTYLE_EXTRA:
+        if st == OpStyle.EXTRA:
             return (op, val), off
         return (op, val), off
 
@@ -698,7 +698,7 @@ def decode_instruction(buf, off, pool_list):
         return (op, 0), off
 
     if arg_kind == InstructionArgKind.U32:
-        if st == OpStyle.KOSTYLE_FASTVAR:
+        if st == OpStyle.FASTVAR:
             return (op, arg_val), off
         return (op, arg_val), off
 
@@ -815,7 +815,7 @@ def encode_pool_record_value(val, index_of, pb=None):
         instr = code.soften()
         yld = False
         for op, _ in instr:
-            if op in (OpCode.KOS_OP_YIELD, OpCode.KOS_OP_YIELD_FROM):
+            if op in (OpCode.YIELD, OpCode.YIELD_FROM):
                 yld = True
                 break
         flg = 0x01 if yld else 0

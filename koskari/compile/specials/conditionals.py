@@ -58,7 +58,7 @@ def special_cond(compiler, source, tc=False):
         element, cl = cl
 
         fragment.position_of(element)
-        fragment.instruction(OpCode.KOS_OP_LABEL, label)
+        fragment.instruction(OpCode.LABEL, label)
         label = gen_label()
 
         test, body = element
@@ -71,15 +71,15 @@ def special_cond(compiler, source, tc=False):
             break
 
         fragment.merge(compiler.full_compile(test))
-        fragment.instruction(OpCode.KOS_OP_JUMP_FALSE, label)
+        fragment.instruction(OpCode.JUMP_FALSE, label)
         helper_begin(fragment, body, tc)
-        fragment.instruction(OpCode.KOS_OP_JUMP, done)
+        fragment.instruction(OpCode.JUMP, done)
 
     else:
-        fragment.instruction(OpCode.KOS_OP_LABEL, label)
-        fragment.instruction(OpCode.KOS_OP_CONST, None)
+        fragment.instruction(OpCode.LABEL, label)
+        fragment.instruction(OpCode.CONST, None)
 
-    fragment.instruction(OpCode.KOS_OP_LABEL, done)
+    fragment.instruction(OpCode.LABEL, done)
     return fragment
 
 
@@ -120,11 +120,11 @@ def special_switch(compiler, source, tc=False):
                 raise SpecialError("else: must be last clause", source)
 
             else_label = gen_label()
-            checks.instruction(OpCode.KOS_OP_JUMP, else_label)
-            bodies.instruction(OpCode.KOS_OP_LABEL, else_label)
-            bodies.instruction(OpCode.KOS_OP_POP, 1)
+            checks.instruction(OpCode.JUMP, else_label)
+            bodies.instruction(OpCode.LABEL, else_label)
+            bodies.instruction(OpCode.POP, 1)
             helper_begin(bodies, body, tc)
-            bodies.instruction(OpCode.KOS_OP_JUMP, done)
+            bodies.instruction(OpCode.JUMP, done)
             break
 
         elif not (test and is_pair(test)):
@@ -137,22 +137,22 @@ def special_switch(compiler, source, tc=False):
             tval, test = test
 
             checks.merge(compiler.full_compile(tval))
-            checks.instruction(OpCode.KOS_OP_SWITCH_EQ, body_label)
+            checks.instruction(OpCode.SWITCH_EQ, body_label)
 
-        bodies.instruction(OpCode.KOS_OP_LABEL, body_label)
+        bodies.instruction(OpCode.LABEL, body_label)
         helper_begin(bodies, body, tc)
-        bodies.instruction(OpCode.KOS_OP_JUMP, done)
+        bodies.instruction(OpCode.JUMP, done)
 
     else:
         body_label = gen_label()
-        checks.instruction(OpCode.KOS_OP_JUMP, body_label)
-        bodies.instruction(OpCode.KOS_OP_LABEL, body_label)
-        bodies.instruction(OpCode.KOS_OP_POP, 1)
-        bodies.instruction(OpCode.KOS_OP_CONST, None)
+        checks.instruction(OpCode.JUMP, body_label)
+        bodies.instruction(OpCode.LABEL, body_label)
+        bodies.instruction(OpCode.POP, 1)
+        bodies.instruction(OpCode.CONST, None)
 
     fragment.merge(checks)
     fragment.merge(bodies)
-    fragment.instruction(OpCode.KOS_OP_LABEL, done)
+    fragment.instruction(OpCode.LABEL, done)
     return fragment
 
 
@@ -171,7 +171,7 @@ def special_and(compiler, source, tc=False):
     fragment = compiler.fragment(called_by)
 
     if not cl:
-        fragment.instruction(OpCode.KOS_OP_CONST, True)
+        fragment.instruction(OpCode.CONST, True)
         return fragment
 
     done = compiler.gen_label()
@@ -181,9 +181,9 @@ def special_and(compiler, source, tc=False):
         fragment.position_of(expr)
         fragment.merge(compiler.full_compile(expr, tc if not cl else False))
         if cl:
-            fragment.instruction(OpCode.KOS_OP_JUMP_AND, done)
+            fragment.instruction(OpCode.JUMP_AND, done)
 
-    fragment.instruction(OpCode.KOS_OP_LABEL, done)
+    fragment.instruction(OpCode.LABEL, done)
     return fragment
 
 
@@ -202,7 +202,7 @@ def special_or(compiler, source, tc=False):
     fragment = compiler.fragment(called_by)
 
     if not cl:
-        fragment.instruction(OpCode.KOS_OP_CONST, False)
+        fragment.instruction(OpCode.CONST, False)
         return fragment
 
     done = compiler.gen_label()
@@ -212,9 +212,9 @@ def special_or(compiler, source, tc=False):
         fragment.position_of(expr)
         fragment.merge(compiler.full_compile(expr, tc if not cl else False))
         if cl:
-            fragment.instruction(OpCode.KOS_OP_JUMP_OR, done)
+            fragment.instruction(OpCode.JUMP_OR, done)
 
-    fragment.instruction(OpCode.KOS_OP_LABEL, done)
+    fragment.instruction(OpCode.LABEL, done)
     return fragment
 
 

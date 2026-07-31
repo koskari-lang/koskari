@@ -53,7 +53,7 @@ def special_deref(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.position_of(body)
     frag.merge(compiler.full_compile(arg))
-    frag.instruction(OpCode.KOS_OP_DEREF, 0)
+    frag.instruction(OpCode.DEREF, 0)
 
     return frag
 
@@ -77,7 +77,7 @@ def special_ref_attr(compiler, source, tc=False):
 
     frag.position_of(body)
     frag.merge(compiler.full_compile(obj))
-    frag.instruction(OpCode.KOS_OP_ATTR_REF, str(sym))
+    frag.instruction(OpCode.ATTR_REF, str(sym))
 
     return frag
 
@@ -106,11 +106,11 @@ def special_ref_item(compiler, source, tc=False):
     is_const, key_val = const_only_expr(keyfrag)
 
     if is_const:
-        frag.instruction(OpCode.KOS_OP_CONST_ITEM_REF, key_val)
+        frag.instruction(OpCode.CONST_ITEM_REF, key_val)
 
     else:
         frag.merge(keyfrag)
-        frag.instruction(OpCode.KOS_OP_ITEM_REF, 0)
+        frag.instruction(OpCode.ITEM_REF, 0)
 
     return frag
 
@@ -134,7 +134,7 @@ def special_refq(compiler, source, tc=False):
 
     frag.position_of(body)
     frag.request_var(sym)
-    frag.instruction(OpCode.KOS_OP_VAR_REF, sym)
+    frag.instruction(OpCode.VAR_REF, sym)
 
     return frag
 
@@ -169,8 +169,8 @@ def special_bindq(compiler, caps, tc=False):
     frag.merge(compiler.full_compile(value_datum))
 
     frag.position(pos)
-    frag.instruction(OpCode.KOS_OP_VAR_BIND, name)
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.VAR_BIND, name)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 

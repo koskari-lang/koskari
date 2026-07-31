@@ -51,7 +51,7 @@ def special_build_tuple(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
 
     if is_nil(body):
-        frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 0)
+        frag.instruction(OpCode.BUILD_ARGS, 0)
         return frag
 
     args_seq, kwds_seq = gather_parameters(body, source=body)
@@ -65,13 +65,13 @@ def special_build_tuple(compiler, source, tc=False):
 
     for kind, data in chunks:
         if kind == "const":
-            frag.instruction(OpCode.KOS_OP_CONST, data)
+            frag.instruction(OpCode.CONST, data)
         elif kind == "splat":
             frag.merge(data)
         else:
             for elem in data:
                 frag.merge(elem)
-            frag.instruction(OpCode.KOS_OP_BUILD_ARGS, len(data))
+            frag.instruction(OpCode.BUILD_ARGS, len(data))
 
     # A lone splat leaves the raw iterable on the stack; COMBINE_ARGS coerces
     # it to a fresh tuple. Multiple chunks always combine. A single const or
@@ -79,7 +79,7 @@ def special_build_tuple(compiler, source, tc=False):
     needs_combine = (len(chunks) > 1
                      or (len(chunks) == 1 and chunks[0][0] == "splat"))
     if needs_combine:
-        frag.instruction(OpCode.KOS_OP_COMBINE_ARGS, len(chunks))
+        frag.instruction(OpCode.COMBINE_ARGS, len(chunks))
 
     return frag
 
@@ -103,7 +103,7 @@ def special_build_list(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
 
     if is_nil(body):
-        frag.instruction(OpCode.KOS_OP_BUILD_LIST, 0)
+        frag.instruction(OpCode.BUILD_LIST, 0)
         return frag
 
     args_seq, kwds_seq = gather_parameters(body, source=body)
@@ -118,30 +118,30 @@ def special_build_list(compiler, source, tc=False):
     # Seed a fresh list from the first chunk.
     first_kind, first_data = chunks[0]
     if first_kind == "const":
-        frag.instruction(OpCode.KOS_OP_BUILD_LIST_CONST, first_data)
+        frag.instruction(OpCode.BUILD_LIST_CONST, first_data)
     elif first_kind == "splat":
-        frag.instruction(OpCode.KOS_OP_BUILD_LIST, 0)
+        frag.instruction(OpCode.BUILD_LIST, 0)
         frag.merge(first_data)
-        frag.instruction(OpCode.KOS_OP_BUILD_LIST_EXTEND, 0)
+        frag.instruction(OpCode.BUILD_LIST_EXTEND, 0)
     else:
         for elem in first_data:
             frag.merge(elem)
-        frag.instruction(OpCode.KOS_OP_BUILD_LIST, len(first_data))
+        frag.instruction(OpCode.BUILD_LIST, len(first_data))
 
     # Extend / append the remaining chunks in place.
     for kind, data in chunks[1:]:
         if kind == "const":
             if len(data) == 1:
-                frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND_CONST, data[0])
+                frag.instruction(OpCode.BUILD_LIST_APPEND_CONST, data[0])
             else:
-                frag.instruction(OpCode.KOS_OP_BUILD_LIST_EXTEND_CONST, data)
+                frag.instruction(OpCode.BUILD_LIST_EXTEND_CONST, data)
         elif kind == "splat":
             frag.merge(data)
-            frag.instruction(OpCode.KOS_OP_BUILD_LIST_EXTEND, 0)
+            frag.instruction(OpCode.BUILD_LIST_EXTEND, 0)
         else:
             for elem in data:
                 frag.merge(elem)
-            frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND, len(data))
+            frag.instruction(OpCode.BUILD_LIST_APPEND, len(data))
 
     return frag
 
@@ -175,8 +175,8 @@ def special_list_append(compiler, caps, tc=False):
             frag.position(pos)
 
         frag.merge(compiler.full_compile(expr, False))
-        frag.instruction(OpCode.KOS_OP_VAR_LIST_APPEND, name)
-        frag.instruction(OpCode.KOS_OP_CONST, None)
+        frag.instruction(OpCode.VAR_LIST_APPEND, name)
+        frag.instruction(OpCode.CONST, None)
         return frag
 
     list_expr = caps["list_expr"].datum
@@ -185,7 +185,7 @@ def special_list_append(compiler, caps, tc=False):
         frag.position_of(called_by)
 
     frag.merge(compiler.full_compile(expr, False))
-    frag.instruction(OpCode.KOS_OP_BUILD_LIST_APPEND, 1)
+    frag.instruction(OpCode.BUILD_LIST_APPEND, 1)
     return frag
 
 

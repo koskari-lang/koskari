@@ -267,8 +267,8 @@ def special_import(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.declare_var(bind)
     frag.instruction(
-        OpCode.KOS_OP_IMPORT, (dotted, level, leaf, bind))
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+        OpCode.IMPORT, (dotted, level, leaf, bind))
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -321,8 +321,8 @@ def special_import_from(compiler, source, tc=False):
         binds = attrs
 
     frag.instruction(
-        OpCode.KOS_OP_IMPORT_FROM, (dotted, level, attrs, binds))
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+        OpCode.IMPORT_FROM, (dotted, level, attrs, binds))
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -354,8 +354,8 @@ def special_import_all_from(compiler, source, tc=False):
 
     frag = compiler.fragment(called_by)
     frag.instruction(
-        OpCode.KOS_OP_IMPORT_STAR, (dotted, level, 0, 0))
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+        OpCode.IMPORT_STAR, (dotted, level, 0, 0))
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 

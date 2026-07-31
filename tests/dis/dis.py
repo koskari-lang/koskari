@@ -189,10 +189,10 @@ def _build_ns_const_map(code):
     for i in range(code.length()):
         op_int, arg = code.oparg(i)
         op = OpCode(op_int)
-        if op == OpCode.KOS_OP_PUSH_NS:
+        if op == OpCode.PUSH_NS:
             a0, _a1, _a2, _a3 = code.extra_tuple(arg)
             result[i] = a0
-        elif op == OpCode.KOS_OP_PUSH_COLLECT:
+        elif op == OpCode.PUSH_COLLECT:
             result[i] = arg
     return result
 
@@ -221,11 +221,11 @@ def _format_arg(
     :param closure_names: sequence of closure sym names from nspec
     :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
     :param extra_schema: op.extra -- a 4-tuple of OpStyle field kinds for
-      a KOSTYLE_EXTRA opcode, empty for every other style
+      an EXTRA-style opcode, empty for every other style
     :return: string description of the argument
     """
 
-    if op_style == OpStyle.KOSTYLE_EXTRA:
+    if op_style == OpStyle.EXTRA:
         if extra_schema:
             schema = extra_schema
             try:
@@ -235,20 +235,20 @@ def _format_arg(
             parts = []
             for val, fk in ((a0, schema[0]), (a1, schema[1]),
                             (a2, schema[2]), (a3, schema[3])):
-                if fk == OpStyle.KOSTYLE_CONST or fk == OpStyle.KOSTYLE_VAR:
+                if fk == OpStyle.CONST or fk == OpStyle.VAR:
                     if 0 <= val < len(cpool):
                         cval = cpool[val]
-                        if fk == OpStyle.KOSTYLE_CONST and isinstance(
+                        if fk == OpStyle.CONST and isinstance(
                                 cval, NamespaceSpec):
                             inner = _format_nspec_inline(val, cval)
                         else:
                             inner = _format_constant(cval)
                         parts.append('%s#%d (%s)' % (
-                            'c' if fk == OpStyle.KOSTYLE_CONST else 'v',
+                            'c' if fk == OpStyle.CONST else 'v',
                             val, inner))
                     else:
                         parts.append('%d' % val)
-                elif fk == OpStyle.KOSTYLE_FASTVAR:
+                elif fk == OpStyle.FASTVAR:
                     n_local = len(local_names) if local_names else 0
                     if val < n_local:
                         name = (local_names[val]
@@ -261,16 +261,16 @@ def _format_arg(
                                 val, repr(closure_names[idx])))
                         else:
                             parts.append('fast %d' % val)
-                elif fk == OpStyle.KOSTYLE_COUNT:
+                elif fk == OpStyle.COUNT:
                     parts.append(str(val))
-                elif fk == OpStyle.KOSTYLE_LABEL:
+                elif fk == OpStyle.LABEL:
                     parts.append('-> %d' % val)
                 else:
                     parts.append(str(val))
             return '%d (%s)' % (arg, ', '.join(parts))
         return str(arg)
 
-    if op_style == OpStyle.KOSTYLE_CONST:
+    if op_style == OpStyle.CONST:
         if 0 <= arg < len(cpool):
             val = cpool[arg]
             if isinstance(val, NamespaceSpec):
@@ -278,13 +278,13 @@ def _format_arg(
             return '%d (%s)' % (arg, _format_constant(val))
         return str(arg)
 
-    if op_style == OpStyle.KOSTYLE_VAR:
+    if op_style == OpStyle.VAR:
         if 0 <= arg < len(cpool):
             name = cpool[arg]
             return '%d (%s)' % (arg, repr(name))
         return str(arg)
 
-    if op_style == OpStyle.KOSTYLE_FASTVAR:
+    if op_style == OpStyle.FASTVAR:
         n_local = len(local_names) if local_names else 0
         if arg < n_local:
             name = local_names[arg] if local_names else ('local[%d]' % arg)
@@ -294,11 +294,11 @@ def _format_arg(
             return '%d (closure %s)' % (arg, repr(closure_names[idx]))
         return str(arg)
 
-    if op_style == OpStyle.KOSTYLE_LABEL:
+    if op_style == OpStyle.LABEL:
         return '%d (-> %d)' % (arg, arg)
 
-    if op_style in (OpStyle.KOSTYLE_COUNT, OpStyle.KOSTYLE_PAIR_COUNT,
-                    OpStyle.KOSTYLE_STAR):
+    if op_style in (OpStyle.COUNT, OpStyle.PAIR_COUNT,
+                    OpStyle.STAR):
         if ns_label is not None:
             return '%d (%s)' % (arg, ns_label)
         return str(arg)

@@ -107,20 +107,20 @@ def special_class(compiler, source, tc=False):
 
     # Build pos tuple: (name, bases) or (name, bases, metaclass)
     # Stack order for BUILD_ARGS: first pushed is last popped
-    frag.instruction(OpCode.KOS_OP_CONST, name)
+    frag.instruction(OpCode.CONST, name)
 
     if bases:
         for base_expr in bases:
             frag.merge(compiler.full_compile(base_expr, False))
-        frag.instruction(OpCode.KOS_OP_BUILD_ARGS, len(bases))
+        frag.instruction(OpCode.BUILD_ARGS, len(bases))
     else:
-        frag.instruction(OpCode.KOS_OP_CONST, ())
+        frag.instruction(OpCode.CONST, ())
 
     if metaclass_expr is not None:
         frag.merge(compiler.full_compile(metaclass_expr, False))
-        frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 3)
+        frag.instruction(OpCode.BUILD_ARGS, 3)
     else:
-        frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 2)
+        frag.instruction(OpCode.BUILD_ARGS, 2)
 
     with frag.collector_namespace(called_by) as body_frag:
         helper_begin(body_frag, body, tc)
@@ -131,8 +131,8 @@ def special_class(compiler, source, tc=False):
 
             doc_frag = compiler.fragment("__doc__")
             doc_frag.declare_var("__doc__")
-            doc_frag.instruction(OpCode.KOS_OP_CONST, doc)
-            doc_frag.instruction(OpCode.KOS_OP_VAR_STORE, "__doc__")
+            doc_frag.instruction(OpCode.CONST, doc)
+            doc_frag.instruction(OpCode.VAR_STORE, "__doc__")
             body_frag.merge(doc_frag)
 
         if "__qualname__" not in body_frag.declares:
@@ -141,8 +141,8 @@ def special_class(compiler, source, tc=False):
 
             qn_frag = compiler.fragment("__qualname__")
             qn_frag.declare_var("__qualname__")
-            qn_frag.instruction(OpCode.KOS_OP_CONST, name)
-            qn_frag.instruction(OpCode.KOS_OP_VAR_STORE, "__qualname__")
+            qn_frag.instruction(OpCode.CONST, name)
+            qn_frag.instruction(OpCode.VAR_STORE, "__qualname__")
             body_frag.merge(qn_frag)
 
         mod_for_class = _compiling_module_name(compiler)
@@ -150,8 +150,8 @@ def special_class(compiler, source, tc=False):
                 and "__module__" not in body_frag.declares):
             mod_frag = compiler.fragment("__module__")
             mod_frag.declare_var("__module__")
-            mod_frag.instruction(OpCode.KOS_OP_CONST, mod_for_class)
-            mod_frag.instruction(OpCode.KOS_OP_VAR_STORE, "__module__")
+            mod_frag.instruction(OpCode.CONST, mod_for_class)
+            mod_frag.instruction(OpCode.VAR_STORE, "__module__")
             body_frag.merge(mod_frag)
 
         binds = body_frag.annotation_bindings
@@ -166,12 +166,12 @@ def special_class(compiler, source, tc=False):
             for name, type_expr in collapsed.items():
                 annos.merge(compiler.full_compile(type_expr, False))
 
-            annos.instruction(OpCode.KOS_OP_BUILD_KWDS_NAMES,
+            annos.instruction(OpCode.BUILD_KWDS_NAMES,
                               tuple(collapsed.keys()))
-            annos.instruction(OpCode.KOS_OP_VAR_STORE, "__annotations__")
+            annos.instruction(OpCode.VAR_STORE, "__annotations__")
             body_frag.merge(annos)
 
-    frag.instruction(OpCode.KOS_OP_BUILD_CLASS, 0)
+    frag.instruction(OpCode.BUILD_CLASS, 0)
     return frag
 
 

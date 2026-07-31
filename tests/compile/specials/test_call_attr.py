@@ -31,18 +31,18 @@ pytestmark = pytest.mark.phase_specials
 
 
 CALL_ATTR_OPCODES = (
-    OpCode.KOS_OP_CALL_ATTR,
-    OpCode.KOS_OP_CALL_ATTR_NAMES,
-    OpCode.KOS_OP_CALL_ATTR_STAR,
+    OpCode.CALL_ATTR,
+    OpCode.CALL_ATTR_NAMES,
+    OpCode.CALL_ATTR_STAR,
 )
 
 CALL_ATTR_OR_FAST_OPCODES = CALL_ATTR_OPCODES + (
-    OpCode.KOS_OP_CALL_VAR_ATTR,
-    OpCode.KOS_OP_CALL_VAR_ATTR_NAMES,
-    OpCode.KOS_OP_CALL_VAR_ATTR_STAR,
-    OpCode.KOS_OP_CALL_FAST_ATTR,
-    OpCode.KOS_OP_CALL_FAST_ATTR_NAMES,
-    OpCode.KOS_OP_CALL_FAST_ATTR_STAR,
+    OpCode.CALL_VAR_ATTR,
+    OpCode.CALL_VAR_ATTR_NAMES,
+    OpCode.CALL_VAR_ATTR_STAR,
+    OpCode.CALL_FAST_ATTR,
+    OpCode.CALL_FAST_ATTR_NAMES,
+    OpCode.CALL_FAST_ATTR_STAR,
 )
 
 
@@ -79,7 +79,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "upper")
@@ -93,7 +93,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "split")
@@ -107,7 +107,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "replace")
@@ -121,7 +121,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR_NAMES)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR_NAMES)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "m")
@@ -136,7 +136,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR_STAR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR_STAR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(a2, 1)
@@ -149,7 +149,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR_STAR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR_STAR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(a2, 2)
@@ -160,9 +160,9 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
             "(lambda [] (compile/call-attr s upper))", s="x")
         body = self.lambda_body_code(code)
         all_ops = [body.oparg(i)[0] for i in range(body.length())]
-        self.assertIn(OpCode.KOS_OP_CALL_FAST_ATTR, all_ops)
-        self.assertNotIn(OpCode.KOS_OP_CALL_FAST_ATTR_NAMES, all_ops)
-        self.assertNotIn(OpCode.KOS_OP_CALL_FAST_ATTR_STAR, all_ops)
+        self.assertIn(OpCode.CALL_FAST_ATTR, all_ops)
+        self.assertNotIn(OpCode.CALL_FAST_ATTR_NAMES, all_ops)
+        self.assertNotIn(OpCode.CALL_FAST_ATTR_STAR, all_ops)
 
 
 class TestCallAttrNameMustBeSymbol(SpecialsTestCase):
@@ -250,7 +250,7 @@ class TestCallAttrExpansion(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "upper")
@@ -264,7 +264,7 @@ class TestCallAttrExpansion(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "m")
@@ -304,7 +304,7 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_family_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(a0, 0)
@@ -319,7 +319,7 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_family_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(a0, 0)
@@ -334,7 +334,7 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_family_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR_NAMES)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR_NAMES)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(a0, 0)
@@ -351,7 +351,7 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_family_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR_STAR)
+        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR_STAR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(a0, 0)

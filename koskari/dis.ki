@@ -193,10 +193,10 @@ define _build_ns_const_map [code]:
     define arg (item oparg 1)
     define op (OpCode op_int)
 
-    if (equal? op OpCode.KOS_OP_PUSH_NS):
+    if (equal? op OpCode.PUSH_NS):
       define ext (code.extra_tuple arg)
       (set-item result i (item ext 0))
-    elif (equal? op OpCode.KOS_OP_PUSH_COLLECT):
+    elif (equal? op OpCode.PUSH_COLLECT):
       (set-item result i arg)
 
     incr! i
@@ -233,7 +233,7 @@ define _compare_name [sel]:
     define member (Compare sel)
   except [ValueError]:
     return (str sel)
-  member.name.removeprefix "KOS_COMPARE_"
+  member.name
 
 
 define _operand_name [sel]:
@@ -245,7 +245,7 @@ define _operand_name [sel]:
     define member (Operand sel)
   except [ValueError]:
     return (str sel)
-  member.name.removeprefix "KOS_OPERAND_"
+  member.name
 
 
 define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
@@ -267,7 +267,7 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
         parts.append f"c#{val} ({(_format_constant (item cpool val))})"
       else:
         parts.append (str val)
-    elif (equal? fk OpStyle.KOSTYLE_FASTVAR):
+    elif (equal? fk OpStyle.FASTVAR):
       parts.append (_format_fast_part val local_names closure_names)
     else:
       if (and (<= 0 val) (< val (len cpool))):
@@ -300,13 +300,13 @@ define _format_arg [code op_style arg cpool local_names closure_names
   :param closure_names: sequence of closure sym names from nspec
   :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
   :param extra_schema: op.extra -- a 4-tuple of OpStyle field kinds for
-    a KOSTYLE_EXTRA opcode, empty for every other style
+    an EXTRA-style opcode, empty for every other style
   :return: string description of the argument
   """
 
   switch op_style:
 
-    case [OpStyle.KOSTYLE_EXTRA]:
+    case [OpStyle.EXTRA]:
       if extra_schema:
         define schema extra_schema
         try:
@@ -314,19 +314,19 @@ define _format_arg [code op_style arg cpool local_names closure_names
         except [#(IndexError TypeError)]:
           return (str arg)
 
-        if (equal? (item schema 0) OpStyle.KOSTYLE_CMPSRC):
+        if (equal? (item schema 0) OpStyle.CMPSRC):
           return (_format_cmpsrc_row arg ext schema cpool
                                      local_names closure_names)
 
         define parts #[]
         for-each [[val fk] (zip ext schema)]:
-          if (or (equal? fk OpStyle.KOSTYLE_CONST) (equal? fk OpStyle.KOSTYLE_VAR)):
+          if (or (equal? fk OpStyle.CONST) (equal? fk OpStyle.VAR)):
             if (and (<= 0 val) (< val (len cpool))):
               (define prefix
-                (if (equal? fk OpStyle.KOSTYLE_CONST) "c" "v"))
+                (if (equal? fk OpStyle.CONST) "c" "v"))
               (define cval (item cpool val))
               (define inner
-                (if (and (equal? fk OpStyle.KOSTYLE_CONST)
+                (if (and (equal? fk OpStyle.CONST)
                         (instance? cval NamespaceSpec))
                   then: (_format_nspec_inline val cval)
                   else: (_format_constant cval)))
@@ -334,15 +334,15 @@ define _format_arg [code op_style arg cpool local_names closure_names
             else:
               parts.append (str val)
 
-          elif (equal? fk OpStyle.KOSTYLE_FASTVAR):
+          elif (equal? fk OpStyle.FASTVAR):
             parts.append (_format_fast_part val local_names closure_names)
-          elif (equal? fk OpStyle.KOSTYLE_COUNT):
+          elif (equal? fk OpStyle.COUNT):
             parts.append (str val)
-          elif (equal? fk OpStyle.KOSTYLE_CMP):
+          elif (equal? fk OpStyle.CMP):
             parts.append (_compare_name val)
-          elif (equal? fk OpStyle.KOSTYLE_OPERAND):
+          elif (equal? fk OpStyle.OPERAND):
             parts.append (_operand_name val)
-          elif (equal? fk OpStyle.KOSTYLE_LABEL):
+          elif (equal? fk OpStyle.LABEL):
             parts.append f"-> {val}"
           else:
             parts.append (str val)
@@ -353,7 +353,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
       else:
         return (str arg)
 
-    case [OpStyle.KOSTYLE_CONST]:
+    case [OpStyle.CONST]:
       if (< -1 arg (len cpool)):
         define val (item cpool arg)
         if (instance? val NamespaceSpec):
@@ -362,13 +362,13 @@ define _format_arg [code op_style arg cpool local_names closure_names
           return f"{arg} ({(_format_constant val)})"
       return (str arg)
 
-    case [OpStyle.KOSTYLE_VAR]:
+    case [OpStyle.VAR]:
       if (< -1 arg (len cpool)):
         define name (item cpool arg)
         return f"{arg} ({(repr name)})"
       return (str arg)
 
-    case [OpStyle.KOSTYLE_FASTVAR]:
+    case [OpStyle.FASTVAR]:
       define n_local (if local_names (len local_names) 0)
 
       if (< arg n_local):
@@ -380,16 +380,16 @@ define _format_arg [code op_style arg cpool local_names closure_names
         return f"{arg} (closure {(repr (item closure_names idx))})"
       return (str arg)
 
-    case [OpStyle.KOSTYLE_LABEL]:
+    case [OpStyle.LABEL]:
       return f"{arg} (-> {arg})"
 
-    case [OpStyle.KOSTYLE_CMPCOUNT]:
+    case [OpStyle.CMPCOUNT]:
       define sc (divmod arg 256)
       return f"{arg} ({(_compare_name (item sc 0))} x{(item sc 1)})"
 
-    case [OpStyle.KOSTYLE_COUNT
-          OpStyle.KOSTYLE_PAIR_COUNT
-          OpStyle.KOSTYLE_STAR]:
+    case [OpStyle.COUNT
+          OpStyle.PAIR_COUNT
+          OpStyle.STAR]:
 
       unless (None? ns_label):
         return f"{arg} ({ns_label})"
@@ -538,8 +538,7 @@ define dis [x file: None]:
     except [#(IndexError TypeError)]:
       None
 
-    define shortname (item-slice op.name start: 7)
-    out.write f"""  {i "3d"}  {shortname "24s"} {arg_str}{pos_str}\n"""
+    out.write f"""  {i "3d"}  {op.name "24s"} {arg_str}{pos_str}\n"""
     incr! i
 
   out.write "\n"
@@ -576,8 +575,7 @@ define _get_instruction_lines [code]:
       ns_label: ns_label
       extra_schema: extra_schema)
 
-    define shortname (item-slice op.name start: 7)
-    yield #(i shortname arg_str)
+    yield #(i op.name arg_str)
     incr! i
 
 

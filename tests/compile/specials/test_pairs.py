@@ -51,12 +51,12 @@ class TestCompileConsCarCdr(SpecialsTestCase):
 
     async def test_compile_cons_star_arg_rewrites_to_call_not_cons_opcode(self):
         """
-        *: cannot lower to KOS_OP_CONS; handler falls back to compile/call.
+        *: cannot lower to CONS; handler falls back to compile/call.
         """
 
         code = self.compile_to_code("(compile/cons 1 *: xs nil)")
         opcodes = [code.oparg(i)[0] for i in range(code.length())]
-        self.assertNotIn(OpCode.KOS_OP_CONS, opcodes)
+        self.assertNotIn(OpCode.CONS, opcodes)
         self.assertTrue(self.call_ops(code))
 
 

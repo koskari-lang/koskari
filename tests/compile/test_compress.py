@@ -43,242 +43,242 @@ class TestCompress(unittest.TestCase):
 
     def test_pop_elides_const(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 1),
-            (OpCode.KOS_OP_POP, 1),
+            (OpCode.CONST, 1),
+            (OpCode.POP, 1),
         ])
-        self.assertEqual(out, [(OpCode.KOS_OP_RETURN, 1)])
+        self.assertEqual(out, [(OpCode.RETURN, 1)])
 
     def test_pop_elides_dup(self):
         out = compress_ops([
-            (OpCode.KOS_OP_DUP, 0),
-            (OpCode.KOS_OP_POP, 1),
+            (OpCode.DUP, 0),
+            (OpCode.POP, 1),
         ])
-        self.assertEqual(out, [(OpCode.KOS_OP_RETURN, 1)])
+        self.assertEqual(out, [(OpCode.RETURN, 1)])
 
     def test_object_not_folds_const_truthy(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, True),
-            (OpCode.KOS_OP_OBJECT_NOT, 0),
+            (OpCode.CONST, True),
+            (OpCode.OBJECT_NOT, 0),
         ])
-        self.assertEqual(out, [(OpCode.KOS_OP_CONST, False),
-                               (OpCode.KOS_OP_RETURN, 1)])
+        self.assertEqual(out, [(OpCode.CONST, False),
+                               (OpCode.RETURN, 1)])
 
     def test_object_not_folds_const_falsy(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 0),
-            (OpCode.KOS_OP_OBJECT_NOT, 0),
+            (OpCode.CONST, 0),
+            (OpCode.OBJECT_NOT, 0),
         ])
-        self.assertEqual(out, [(OpCode.KOS_OP_CONST, True),
-                               (OpCode.KOS_OP_RETURN, 1)])
+        self.assertEqual(out, [(OpCode.CONST, True),
+                               (OpCode.RETURN, 1)])
 
     def test_jump_true_after_const_true_becomes_jump(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, True),
-            (OpCode.KOS_OP_JUMP_TRUE, "L1"),
-            (OpCode.KOS_OP_CONST, "nope"),
-            (OpCode.KOS_OP_LABEL, "L1"),
-            (OpCode.KOS_OP_CONST, "yep"),
+            (OpCode.CONST, True),
+            (OpCode.JUMP_TRUE, "L1"),
+            (OpCode.CONST, "nope"),
+            (OpCode.LABEL, "L1"),
+            (OpCode.CONST, "yep"),
         ])
-        self.assertEqual(out[:1], [(OpCode.KOS_OP_JUMP, "L1")])
+        self.assertEqual(out[:1], [(OpCode.JUMP, "L1")])
 
     def test_jump_true_after_const_false_is_removed(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, False),
-            (OpCode.KOS_OP_JUMP_TRUE, "L1"),
-            (OpCode.KOS_OP_CONST, "nope"),
-            (OpCode.KOS_OP_LABEL, "L1"),
-            (OpCode.KOS_OP_CONST, "yep"),
+            (OpCode.CONST, False),
+            (OpCode.JUMP_TRUE, "L1"),
+            (OpCode.CONST, "nope"),
+            (OpCode.LABEL, "L1"),
+            (OpCode.CONST, "yep"),
         ])
-        self.assertNotIn((OpCode.KOS_OP_JUMP_TRUE, "L1"), out)
-        self.assertNotIn((OpCode.KOS_OP_JUMP, "L1"), out)
+        self.assertNotIn((OpCode.JUMP_TRUE, "L1"), out)
+        self.assertNotIn((OpCode.JUMP, "L1"), out)
 
     def test_jump_false_after_const_false_becomes_jump(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, False),
-            (OpCode.KOS_OP_JUMP_FALSE, "L1"),
-            (OpCode.KOS_OP_CONST, "nope"),
-            (OpCode.KOS_OP_LABEL, "L1"),
-            (OpCode.KOS_OP_CONST, "yep"),
+            (OpCode.CONST, False),
+            (OpCode.JUMP_FALSE, "L1"),
+            (OpCode.CONST, "nope"),
+            (OpCode.LABEL, "L1"),
+            (OpCode.CONST, "yep"),
         ])
-        self.assertEqual(out[:1], [(OpCode.KOS_OP_JUMP, "L1")])
+        self.assertEqual(out[:1], [(OpCode.JUMP, "L1")])
 
     def test_jump_false_after_const_true_is_removed(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, True),
-            (OpCode.KOS_OP_JUMP_FALSE, "L1"),
-            (OpCode.KOS_OP_CONST, "nope"),
-            (OpCode.KOS_OP_LABEL, "L1"),
-            (OpCode.KOS_OP_CONST, "yep"),
+            (OpCode.CONST, True),
+            (OpCode.JUMP_FALSE, "L1"),
+            (OpCode.CONST, "nope"),
+            (OpCode.LABEL, "L1"),
+            (OpCode.CONST, "yep"),
         ])
-        self.assertNotIn((OpCode.KOS_OP_JUMP_FALSE, "L1"), out)
-        self.assertNotIn((OpCode.KOS_OP_JUMP, "L1"), out)
+        self.assertNotIn((OpCode.JUMP_FALSE, "L1"), out)
+        self.assertNotIn((OpCode.JUMP, "L1"), out)
 
     def test_check_squash_object_not_to_jump_true(self):
         out = compress_ops([
-            (OpCode.KOS_OP_OBJECT_NOT, 0),
-            (OpCode.KOS_OP_JUMP_FALSE, "L1"),
-            (OpCode.KOS_OP_CONST, 123),
-            (OpCode.KOS_OP_LABEL, "L1"),
-            (OpCode.KOS_OP_CONST, 456),
+            (OpCode.OBJECT_NOT, 0),
+            (OpCode.JUMP_FALSE, "L1"),
+            (OpCode.CONST, 123),
+            (OpCode.LABEL, "L1"),
+            (OpCode.CONST, 456),
         ])
-        self.assertEqual(out[:1], [(OpCode.KOS_OP_JUMP_TRUE, "L1")])
+        self.assertEqual(out[:1], [(OpCode.JUMP_TRUE, "L1")])
 
     def test_check_squash_exception_match_to_check_exception(self):
         """
         EXCEPTION_MATCH then JUMP_FALSE squashes to CHECK_EXCEPTION
         """
         out = compress_ops([
-            (OpCode.KOS_OP_EXCEPTION_MATCH, 0),
-            (OpCode.KOS_OP_JUMP_FALSE, "handler"),
-            (OpCode.KOS_OP_CONST, "matched"),
-            (OpCode.KOS_OP_LABEL, "handler"),
-            (OpCode.KOS_OP_CONST, "no_match"),
+            (OpCode.EXCEPTION_MATCH, 0),
+            (OpCode.JUMP_FALSE, "handler"),
+            (OpCode.CONST, "matched"),
+            (OpCode.LABEL, "handler"),
+            (OpCode.CONST, "no_match"),
         ])
-        self.assertEqual(out[:1], [(OpCode.KOS_OP_CHECK_EXCEPTION, "handler")])
+        self.assertEqual(out[:1], [(OpCode.CHECK_EXCEPTION, "handler")])
 
     def test_check_squash_object_ops(self):
         for prior, squashed in _CHECK_SQUASHES.items():
-            if prior == OpCode.KOS_OP_OBJECT_NOT:
+            if prior == OpCode.OBJECT_NOT:
                 continue
 
             out = compress_ops([
                 (prior, 0),
-                (OpCode.KOS_OP_JUMP_FALSE, "L1"),
-                (OpCode.KOS_OP_CONST, "ok"),
-                (OpCode.KOS_OP_LABEL, "L1"),
-                (OpCode.KOS_OP_CONST, "bad"),
+                (OpCode.JUMP_FALSE, "L1"),
+                (OpCode.CONST, "ok"),
+                (OpCode.LABEL, "L1"),
+                (OpCode.CONST, "bad"),
             ])
             self.assertEqual(out[:1], [(squashed, "L1")],
                              msg="expected %s -> %s" % (prior, squashed))
 
     def test_jump_to_immediate_label_is_removed(self):
         out = compress_ops([
-            (OpCode.KOS_OP_JUMP, "L1"),
-            (OpCode.KOS_OP_LABEL, "L1"),
-            (OpCode.KOS_OP_CONST, 1),
+            (OpCode.JUMP, "L1"),
+            (OpCode.LABEL, "L1"),
+            (OpCode.CONST, 1),
         ])
-        self.assertNotIn((OpCode.KOS_OP_JUMP, "L1"), out)
-        self.assertIn((OpCode.KOS_OP_LABEL, "L1"), out)
+        self.assertNotIn((OpCode.JUMP, "L1"), out)
+        self.assertIn((OpCode.LABEL, "L1"), out)
 
     def test_cond_jump_to_immediate_label_with_const_is_removed(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, True),
-            (OpCode.KOS_OP_JUMP_TRUE, "L1"),
-            (OpCode.KOS_OP_LABEL, "L1"),
-            (OpCode.KOS_OP_CONST, "one"),
+            (OpCode.CONST, True),
+            (OpCode.JUMP_TRUE, "L1"),
+            (OpCode.LABEL, "L1"),
+            (OpCode.CONST, "one"),
         ])
-        self.assertNotIn((OpCode.KOS_OP_CONST, True), out)
-        self.assertNotIn((OpCode.KOS_OP_JUMP_TRUE, "L1"), out)
-        self.assertIn((OpCode.KOS_OP_LABEL, "L1"), out)
+        self.assertNotIn((OpCode.CONST, True), out)
+        self.assertNotIn((OpCode.JUMP_TRUE, "L1"), out)
+        self.assertIn((OpCode.LABEL, "L1"), out)
 
     def test_cond_jump_to_immediate_label_becomes_pop(self):
         out = compress_ops([
-            (OpCode.KOS_OP_VAR, "x"),
-            (OpCode.KOS_OP_JUMP_TRUE, "L1"),
-            (OpCode.KOS_OP_LABEL, "L1"),
-            (OpCode.KOS_OP_CONST, 1),
+            (OpCode.VAR, "x"),
+            (OpCode.JUMP_TRUE, "L1"),
+            (OpCode.LABEL, "L1"),
+            (OpCode.CONST, 1),
         ])
-        self.assertIn((OpCode.KOS_OP_POP, 1), out)
-        self.assertNotIn((OpCode.KOS_OP_JUMP_TRUE, "L1"), out)
-        self.assertIn((OpCode.KOS_OP_LABEL, "L1"), out)
+        self.assertIn((OpCode.POP, 1), out)
+        self.assertNotIn((OpCode.JUMP_TRUE, "L1"), out)
+        self.assertIn((OpCode.LABEL, "L1"), out)
 
     def test_const_none_before_return_is_removed(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, None),
-            (OpCode.KOS_OP_RETURN, 1),
+            (OpCode.CONST, None),
+            (OpCode.RETURN, 1),
         ])
-        self.assertEqual(out, [(OpCode.KOS_OP_RETURN, 0)])
+        self.assertEqual(out, [(OpCode.RETURN, 0)])
 
     def test_missing_return_appends_return_one(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 123),
+            (OpCode.CONST, 123),
         ])
-        self.assertEqual(out[-1], (OpCode.KOS_OP_RETURN, 1))
+        self.assertEqual(out[-1], (OpCode.RETURN, 1))
 
     def test_trailing_const_none_becomes_return_zero(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, None),
+            (OpCode.CONST, None),
         ])
-        self.assertEqual(out, [(OpCode.KOS_OP_RETURN, 0)])
+        self.assertEqual(out, [(OpCode.RETURN, 0)])
 
     def test_consecutive_cdr_merges_to_sum(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 0),
-            (OpCode.KOS_OP_CDR, 1),
-            (OpCode.KOS_OP_CDR, 1),
-            (OpCode.KOS_OP_CDR, 1),
+            (OpCode.CONST, 0),
+            (OpCode.CDR, 1),
+            (OpCode.CDR, 1),
+            (OpCode.CDR, 1),
         ])
         self.assertEqual(
             out,
-            [(OpCode.KOS_OP_CONST, 0),
-             (OpCode.KOS_OP_CDR, 3),
-             (OpCode.KOS_OP_RETURN, 1)])
+            [(OpCode.CONST, 0),
+             (OpCode.CDR, 3),
+             (OpCode.RETURN, 1)])
 
     def test_consecutive_cdr_merges_mixed_counts(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 0),
-            (OpCode.KOS_OP_CDR, 2),
-            (OpCode.KOS_OP_CDR, 1),
+            (OpCode.CONST, 0),
+            (OpCode.CDR, 2),
+            (OpCode.CDR, 1),
         ])
         self.assertEqual(
             out,
-            [(OpCode.KOS_OP_CONST, 0),
-             (OpCode.KOS_OP_CDR, 3),
-             (OpCode.KOS_OP_RETURN, 1)])
+            [(OpCode.CONST, 0),
+             (OpCode.CDR, 3),
+             (OpCode.RETURN, 1)])
 
     def test_consecutive_car_merges_to_sum(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 0),
-            (OpCode.KOS_OP_CAR, 1),
-            (OpCode.KOS_OP_CAR, 1),
+            (OpCode.CONST, 0),
+            (OpCode.CAR, 1),
+            (OpCode.CAR, 1),
         ])
         self.assertEqual(
             out,
-            [(OpCode.KOS_OP_CONST, 0),
-             (OpCode.KOS_OP_CAR, 2),
-             (OpCode.KOS_OP_RETURN, 1)])
+            [(OpCode.CONST, 0),
+             (OpCode.CAR, 2),
+             (OpCode.RETURN, 1)])
 
     def test_car_then_cdr_not_merged(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 0),
-            (OpCode.KOS_OP_CAR, 1),
-            (OpCode.KOS_OP_CDR, 1),
+            (OpCode.CONST, 0),
+            (OpCode.CAR, 1),
+            (OpCode.CDR, 1),
         ])
         self.assertEqual(
             out,
-            [(OpCode.KOS_OP_CONST, 0),
-             (OpCode.KOS_OP_CAR, 1),
-             (OpCode.KOS_OP_CDR, 1),
-             (OpCode.KOS_OP_RETURN, 1)])
+            [(OpCode.CONST, 0),
+             (OpCode.CAR, 1),
+             (OpCode.CDR, 1),
+             (OpCode.RETURN, 1)])
 
     def test_var_store_const_squash(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 42),
-            (OpCode.KOS_OP_VAR_STORE, "x"),
+            (OpCode.CONST, 42),
+            (OpCode.VAR_STORE, "x"),
         ])
         self.assertEqual(
             out,
-            [(OpCode.KOS_OP_VAR_STORE_CONST, ("x", 42, None, None)),
-             (OpCode.KOS_OP_RETURN, 1)])
+            [(OpCode.VAR_STORE_CONST, ("x", 42, None, None)),
+             (OpCode.RETURN, 1)])
 
     def test_var_store_not_squashed_without_const(self):
         out = compress_ops([
-            (OpCode.KOS_OP_VAR, "y"),
-            (OpCode.KOS_OP_VAR_STORE, "x"),
+            (OpCode.VAR, "y"),
+            (OpCode.VAR_STORE, "x"),
         ])
-        self.assertIn((OpCode.KOS_OP_VAR_STORE, "x"), out)
-        self.assertNotIn(OpCode.KOS_OP_VAR_STORE_CONST, [op for op, _ in out])
+        self.assertIn((OpCode.VAR_STORE, "x"), out)
+        self.assertNotIn(OpCode.VAR_STORE_CONST, [op for op, _ in out])
 
     def test_var_store_not_squashed_when_prior_not_const(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 1),
-            (OpCode.KOS_OP_VAR, "y"),
-            (OpCode.KOS_OP_VAR_STORE, "x"),
+            (OpCode.CONST, 1),
+            (OpCode.VAR, "y"),
+            (OpCode.VAR_STORE, "x"),
         ])
-        self.assertIn((OpCode.KOS_OP_CONST, 1), out)
-        self.assertIn((OpCode.KOS_OP_VAR, "y"), out)
-        self.assertIn((OpCode.KOS_OP_VAR_STORE, "x"), out)
-        self.assertNotIn(OpCode.KOS_OP_VAR_STORE_CONST, [op for op, _ in out])
+        self.assertIn((OpCode.CONST, 1), out)
+        self.assertIn((OpCode.VAR, "y"), out)
+        self.assertIn((OpCode.VAR_STORE, "x"), out)
+        self.assertNotIn(OpCode.VAR_STORE_CONST, [op for op, _ in out])
 
 
 class TestInplaceConstSquash(unittest.TestCase):
@@ -289,42 +289,42 @@ class TestInplaceConstSquash(unittest.TestCase):
 
     def test_const_rhs_fuses(self):
         out = compress_ops([
-            (OpCode.KOS_OP_CONST, 1),
-            (OpCode.KOS_OP_VAR_INPLACE,
-             ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
+            (OpCode.CONST, 1),
+            (OpCode.VAR_INPLACE,
+             ((Operand.ADD, 1), "i", 0, 0)),
         ])
         self.assertIn(
-            (OpCode.KOS_OP_VAR_INPLACE_CONST,
-             (int(Operand.KOS_OPERAND_ADD), "i", 1, None)),
+            (OpCode.VAR_INPLACE_CONST,
+             (int(Operand.ADD), "i", 1, None)),
             out)
         self.assertNotIn(
-            OpCode.KOS_OP_VAR_INPLACE, [op for op, _ in out])
+            OpCode.VAR_INPLACE, [op for op, _ in out])
 
     def test_computed_rhs_stays_generic(self):
         out = compress_ops([
-            (OpCode.KOS_OP_VAR, "y"),
-            (OpCode.KOS_OP_VAR_INPLACE,
-             ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
+            (OpCode.VAR, "y"),
+            (OpCode.VAR_INPLACE,
+             ((Operand.ADD, 1), "i", 0, 0)),
         ])
         self.assertIn(
-            (OpCode.KOS_OP_VAR_INPLACE,
-             ((Operand.KOS_OPERAND_ADD, 1), "i", 0, 0)),
+            (OpCode.VAR_INPLACE,
+             ((Operand.ADD, 1), "i", 0, 0)),
             out)
 
     def test_multi_operand_stays_generic(self):
         instr = [
-            (OpCode.KOS_OP_VAR, "y"),
-            (OpCode.KOS_OP_CONST, 1),
-            (OpCode.KOS_OP_VAR_INPLACE,
-             ((Operand.KOS_OPERAND_ADD, 2), "i", 0, 0)),
+            (OpCode.VAR, "y"),
+            (OpCode.CONST, 1),
+            (OpCode.VAR_INPLACE,
+             ((Operand.ADD, 2), "i", 0, 0)),
         ]
         out = compress_ops(instr)
         self.assertIn(
-            (OpCode.KOS_OP_VAR_INPLACE,
-             ((Operand.KOS_OPERAND_ADD, 2), "i", 0, 0)),
+            (OpCode.VAR_INPLACE,
+             ((Operand.ADD, 2), "i", 0, 0)),
             out)
         self.assertNotIn(
-            OpCode.KOS_OP_VAR_INPLACE_CONST, [op for op, _ in out])
+            OpCode.VAR_INPLACE_CONST, [op for op, _ in out])
 
 
 # The end.

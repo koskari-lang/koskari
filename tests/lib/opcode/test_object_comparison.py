@@ -33,7 +33,7 @@ def _cmp(sel, count):
     Pack a CMPCOUNT arg from a Compare selector name and count
     """
 
-    return (int(Compare["KOS_COMPARE_" + sel]) << 8) | count
+    return (int(Compare[sel]) << 8) | count
 
 
 class TestObjectComparisonOpcodes(CevalTest):

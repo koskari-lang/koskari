@@ -44,8 +44,8 @@ def make_code(name, protect=True, payload=None):
 
     nspec = NamespaceSpec(name, (), ())
     instr = (
-        [OpCode.KOS_OP_CONST, payload or f"payload-{name}"],
-        [OpCode.KOS_OP_RETURN, 1],
+        [OpCode.CONST, payload or f"payload-{name}"],
+        [OpCode.RETURN, 1],
     )
     return Code(nspec, instr, name, "<test-arena>", protect=protect)
 
@@ -197,8 +197,8 @@ class TestPackInto(unittest.TestCase):
         arena = Arena(8)
         nspec = NamespaceSpec("big", (), ())
         pairs = max(1024, PAGE // 4)
-        instr = [[OpCode.KOS_OP_CONST, None], [OpCode.KOS_OP_POP, 1]] * pairs
-        instr.append([OpCode.KOS_OP_RETURN, 0])
+        instr = [[OpCode.CONST, None], [OpCode.POP, 1]] * pairs
+        instr.append([OpCode.RETURN, 0])
         big = Code(nspec, instr, "big", "<test-arena>")
 
         self.assertGreater(block_size(big), arena.size)

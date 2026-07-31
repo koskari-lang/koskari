@@ -64,19 +64,19 @@ class TestCompileYieldFrom(SpecialsTestCase):
     async def test_yield_from_emits_opcode(self):
         code = self.compile_to_code("(compile/yield-from (compile/quote 1))")
         ops = _opcodes(code)
-        self.assertIn(OpCode.KOS_OP_YIELD_FROM, ops)
-        yf = ops.index(OpCode.KOS_OP_YIELD_FROM)
-        ret = ops.index(OpCode.KOS_OP_RETURN)
+        self.assertIn(OpCode.YIELD_FROM, ops)
+        yf = ops.index(OpCode.YIELD_FROM)
+        ret = ops.index(OpCode.RETURN)
         self.assertLess(yf, ret)
-        self.assertEqual(ops[yf - 1], OpCode.KOS_OP_CONST)
+        self.assertEqual(ops[yf - 1], OpCode.CONST)
 
 
     async def test_yield_from_arg_zero(self):
         code = self.compile_to_code("(compile/yield-from (compile/quote x))")
         pairs = _opcodes_with_arg(code)
-        yf_idx = _opcodes(code).index(OpCode.KOS_OP_YIELD_FROM)
+        yf_idx = _opcodes(code).index(OpCode.YIELD_FROM)
         op, arg = pairs[yf_idx]
-        self.assertEqual(op, OpCode.KOS_OP_YIELD_FROM)
+        self.assertEqual(op, OpCode.YIELD_FROM)
         self.assertEqual(arg, 0)
 
 
@@ -105,9 +105,9 @@ class TestYieldFromWithForEach(SpecialsTestCase):
         )
         body = self.lambda_body_code(code)
         ops = _opcodes(body)
-        self.assertIn(OpCode.KOS_OP_PUSH_FOREACH, ops)
-        self.assertIn(OpCode.KOS_OP_YIELD, ops)
-        self.assertNotIn(OpCode.KOS_OP_YIELD_FROM, ops)
+        self.assertIn(OpCode.PUSH_FOREACH, ops)
+        self.assertIn(OpCode.YIELD, ops)
+        self.assertNotIn(OpCode.YIELD_FROM, ops)
 
 
     async def test_yield_from_alone_has_foreach_loops(self):
@@ -121,8 +121,8 @@ class TestYieldFromWithForEach(SpecialsTestCase):
         )
         body = self.lambda_body_code(code)
         ops = _opcodes(body)
-        self.assertIn(OpCode.KOS_OP_YIELD_FROM, ops)
-        self.assertNotIn(OpCode.KOS_OP_PUSH_FOREACH, ops)
+        self.assertIn(OpCode.YIELD_FROM, ops)
+        self.assertNotIn(OpCode.PUSH_FOREACH, ops)
 
 
     async def test_dict_items_foreach_yield_matches_yield_from(self):

@@ -67,16 +67,16 @@ def _qq_expr(compiler, frag, expr, level):
     """
 
     if _is_const(expr):
-        frag.instruction(OpCode.KOS_OP_CONST, expr)
+        frag.instruction(OpCode.CONST, expr)
         return
 
     # redundant with _is_const(expr)
     # if is_nil(expr):
-    #     frag.instruction(OpCode.KOS_OP_CONST, nil)
+    #     frag.instruction(OpCode.CONST, nil)
     #     return
 
     if not is_pair(expr):
-        frag.instruction(OpCode.KOS_OP_CONST, expr)
+        frag.instruction(OpCode.CONST, expr)
         return
 
     head, tail = expr
@@ -91,9 +91,9 @@ def _qq_expr(compiler, frag, expr, level):
         if level == 0:
             frag.merge(compiler.full_compile(inner))
         else:
-            frag.instruction(OpCode.KOS_OP_CONST, _symbol_unquote)
+            frag.instruction(OpCode.CONST, _symbol_unquote)
             _qq_expr(compiler, frag, inner, level - 1)
-            frag.instruction(OpCode.KOS_OP_PROPER, 2)
+            frag.instruction(OpCode.PROPER, 2)
 
         return
 
@@ -107,9 +107,9 @@ def _qq_expr(compiler, frag, expr, level):
         if not is_nil(rest):
             raise SpecialError("quasiquote takes one argument", expr)
 
-        frag.instruction(OpCode.KOS_OP_CONST, _symbol_quasiquote)
+        frag.instruction(OpCode.CONST, _symbol_quasiquote)
         _qq_expr(compiler, frag, inner, level + 1)
-        frag.instruction(OpCode.KOS_OP_PROPER, 2)
+        frag.instruction(OpCode.PROPER, 2)
         return
 
     # [ ] lists build bracket cells directly during reconstruction:
@@ -138,7 +138,7 @@ def _emit_call_var(frag, name, count):
     """
 
     frag.request_var(name)
-    frag.instruction(OpCode.KOS_OP_CALL_VAR, (name, count, 0, 0))
+    frag.instruction(OpCode.CALL_VAR, (name, count, 0, 0))
 
 
 def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False,
@@ -168,21 +168,21 @@ def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False,
 
     if as_tuple_for_splice and all(flag for _, flag in segment):
         const_tuple = tuple(v for v, _ in segment)
-        frag.instruction(OpCode.KOS_OP_CONST, const_tuple)
+        frag.instruction(OpCode.CONST, const_tuple)
         return True
 
     for sub_frag, is_c in segment:
         if is_c:
-            frag.instruction(OpCode.KOS_OP_CONST, sub_frag)
+            frag.instruction(OpCode.CONST, sub_frag)
         else:
             frag.merge(sub_frag)
 
     if bracket and not as_tuple_for_splice:
         # whole-list build for a [ ] form: bracket-cons elements + bracket-nil
-        frag.instruction(OpCode.KOS_OP_CONST, bracket_nil)
+        frag.instruction(OpCode.CONST, bracket_nil)
         _emit_call_var(frag, "bracket-cons", len(segment) + 1)
     else:
-        frag.instruction(OpCode.KOS_OP_PROPER, len(segment))
+        frag.instruction(OpCode.PROPER, len(segment))
 
     return True
 
@@ -307,13 +307,13 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
         # Emit the segment elements (no PROPER — tail will be explicit for CONS)
         for sub_frag, is_c in segment:
             if is_c:
-                frag.instruction(OpCode.KOS_OP_CONST, sub_frag)
+                frag.instruction(OpCode.CONST, sub_frag)
             else:
                 frag.merge(sub_frag)
 
         # Emit the dotted tail value
         if _is_const(current):
-            frag.instruction(OpCode.KOS_OP_CONST, current)
+            frag.instruction(OpCode.CONST, current)
         elif (is_pair(current)
               and not is_nil(current)
               and current[0] is _symbol_unquote
@@ -336,7 +336,7 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
         if bracket:
             _emit_call_var(frag, "bracket-cons", len(segment) + 1)
         else:
-            frag.instruction(OpCode.KOS_OP_CONS, len(segment) + 1)
+            frag.instruction(OpCode.CONS, len(segment) + 1)
         return
 
     # Proper list: flush the final segment
@@ -355,10 +355,10 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
             if bracket:
                 _emit_call_var(frag, "bracket-splice", splice_count)
             else:
-                frag.instruction(OpCode.KOS_OP_PAIR_SPLICE, splice_count)
+                frag.instruction(OpCode.PAIR_SPLICE, splice_count)
     elif splice_count == 0:
         # Empty list: `() → nil, `[] → bracket-nil
-        frag.instruction(OpCode.KOS_OP_CONST, bracket_nil if bracket else nil)
+        frag.instruction(OpCode.CONST, bracket_nil if bracket else nil)
 
 
 @builtin("compile/quasiquote")

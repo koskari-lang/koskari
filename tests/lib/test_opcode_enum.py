@@ -43,7 +43,7 @@ class TestOpCodeStyle(unittest.IsolatedAsyncioTestCase):
     async def test_style_spot_check(self):
         """OBJECT_STR is a COUNT-style opcode"""
 
-        self.assertIs(OpStyle.KOSTYLE_COUNT, OpCode.KOS_OP_OBJECT_STR.style)
+        self.assertIs(OpStyle.COUNT, OpCode.OBJECT_STR.style)
 
 
 class TestOpCodeExtra(unittest.IsolatedAsyncioTestCase):
@@ -64,7 +64,7 @@ class TestOpCodeExtra(unittest.IsolatedAsyncioTestCase):
         """
 
         for op in OpCode:
-            if op.style == OpStyle.KOSTYLE_EXTRA:
+            if op.style == OpStyle.EXTRA:
                 self.assertTrue(op.extra, op.name)
             else:
                 self.assertEqual((), op.extra, op.name)
@@ -74,7 +74,7 @@ class TestOpCodeExtra(unittest.IsolatedAsyncioTestCase):
         """an EXTRA opcode's schema is four OpStyle field kinds"""
 
         for op in OpCode:
-            if op.style != OpStyle.KOSTYLE_EXTRA:
+            if op.style != OpStyle.EXTRA:
                 continue
             self.assertEqual(4, len(op.extra), op.name)
             for field in op.extra:
@@ -85,9 +85,9 @@ class TestOpCodeExtra(unittest.IsolatedAsyncioTestCase):
         """CALL_ATTR indexes a row of (attr name, argument count)"""
 
         self.assertEqual(
-            (OpStyle.KOSTYLE_CONST, OpStyle.KOSTYLE_COUNT,
-             OpStyle.KOSTYLE_NOARG, OpStyle.KOSTYLE_NOARG),
-            OpCode.KOS_OP_CALL_ATTR.extra)
+            (OpStyle.CONST, OpStyle.COUNT,
+             OpStyle.NOARG, OpStyle.NOARG),
+            OpCode.CALL_ATTR.extra)
 
 
 # The end.

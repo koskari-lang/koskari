@@ -106,18 +106,6 @@ define GROUP_PATHS #{
     "tools": TOPDIR}
 
 
-define op_short_name [op]:
-    """
-    Strip the KOS_OP_ prefix from an OpCode member name
-    """
-
-    define name op.name
-    if (name.startswith "KOS_OP_"):
-        return (item-slice name 7)
-    else:
-        return name
-
-
 define build_block_enders []:
     """
     Compute the set of opcode names that end a straight-line run: any
@@ -128,13 +116,9 @@ define build_block_enders []:
 
     define enders (set TERMINAL_OPS)
     for-each [op OpCode]:
-        define style (getattr op "style" None)
-        if (== style OpStyle.KOSTYLE_LABEL):
-            (enders.add (op_short_name op))
-        else:
-            define extra (getattr op "extra" None)
-            when (and extra (in? OpStyle.KOSTYLE_LABEL (tuple extra))):
-                (enders.add (op_short_name op))
+        when (or (== op.style OpStyle.LABEL)
+                 (in? OpStyle.LABEL op.extra)):
+            (enders.add op.name)
     return (frozenset enders)
 
 
@@ -258,7 +242,8 @@ define iter_blocks [code enders]:
     define block #[]
 
     for-each [[op_int _arg] (code.soften)]:
-        define name (op_short_name (OpCode op_int))
+        define op (OpCode op_int)
+        define name op.name
 
         if (== name "LABEL"):
             when block:

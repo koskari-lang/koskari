@@ -83,8 +83,8 @@ def mint(compiler, name, payload=None):
     """
 
     frag = compiler.fragment(name)
-    frag.instruction(OpCode.KOS_OP_CONST, payload or f"payload-{name}")
-    frag.instruction(OpCode.KOS_OP_RETURN, 1)
+    frag.instruction(OpCode.CONST, payload or f"payload-{name}")
+    frag.instruction(OpCode.RETURN, 1)
     return compiler.complete(frag, mode=CompilerMode.EXPRESSION)
 
 

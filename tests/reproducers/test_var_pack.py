@@ -56,21 +56,21 @@ class TestVarPack(unittest.IsolatedAsyncioTestCase):
     async def test_fast2(self):
         mod = await self.load_module()
         self.assertTrue(await mod.verify_fast2())
-        self.assertIn(OpCode.KOS_OP_FAST2, opcodes_of(mod.verify_fast2))
+        self.assertIn(OpCode.FAST2, opcodes_of(mod.verify_fast2))
 
 
     async def test_fast4(self):
         mod = await self.load_module()
         self.assertTrue(await mod.verify_fast4())
-        self.assertIn(OpCode.KOS_OP_FAST4, opcodes_of(mod.verify_fast4))
+        self.assertIn(OpCode.FAST4, opcodes_of(mod.verify_fast4))
 
 
     async def test_fast4_fast2(self):
         mod = await self.load_module()
         self.assertTrue(await mod.verify_fast4_fast2())
         ops = opcodes_of(mod.verify_fast4_fast2)
-        self.assertIn(OpCode.KOS_OP_FAST4, ops)
-        self.assertIn(OpCode.KOS_OP_FAST2, ops)
+        self.assertIn(OpCode.FAST4, ops)
+        self.assertIn(OpCode.FAST2, ops)
 
 
     async def test_eight(self):
@@ -78,7 +78,7 @@ class TestVarPack(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await mod.verify_eight())
         ops = opcodes_of(mod.verify_eight)
         self.assertEqual(
-            2, sum(1 for op in ops if op == OpCode.KOS_OP_FAST4))
+            2, sum(1 for op in ops if op == OpCode.FAST4))
 
 
     async def test_closure_mix(self):

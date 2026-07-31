@@ -30,8 +30,8 @@ import pytest
 pytestmark = pytest.mark.phase_lib
 
 
-ADD = int(Operand.KOS_OPERAND_ADD)
-SUBTRACT = int(Operand.KOS_OPERAND_SUBTRACT)
+ADD = int(Operand.ADD)
+SUBTRACT = int(Operand.SUBTRACT)
 
 
 class TestVarObjectInplaceConst(CevalTest):

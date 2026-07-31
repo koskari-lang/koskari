@@ -134,7 +134,7 @@ def special_letrec(
     """
     Compile (compile/letrec BINDINGS BODY...). Each name is declared in a
     single child scope without initial values, then each RHS is evaluated and
-    stored left-to-right with KOS_OP_VAR_STORE (same effect as compile/setq)
+    stored left-to-right with VAR_STORE (same effect as compile/setq)
     so lambdas may close over the same bindings before body runs.
     """
 
@@ -160,7 +160,7 @@ def special_letrec(
 
             frag.declare_var(str(name))
             frag.merge(compiler.full_compile(expr))
-            frag.instruction(OpCode.KOS_OP_VAR_STORE, str(name))
+            frag.instruction(OpCode.VAR_STORE, str(name))
         helper_begin(frag, body, tc)
 
     return fragment

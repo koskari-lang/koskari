@@ -34,15 +34,15 @@ from koskari.lib import Compare, Module, ModuleNamespace, NamespaceSpec, OpCode
 pytestmark = pytest.mark.phase_compile
 
 
-LT = Compare.KOS_COMPARE_LT
-IS = Compare.KOS_COMPARE_IS
+LT = Compare.LT
+IS = Compare.IS
 
-V = OpCode.KOS_OP_VAR
-C = OpCode.KOS_OP_CONST
-CC = OpCode.KOS_OP_CHECK_COMPARE
-CCV = OpCode.KOS_OP_CHECK_COMPARE_VAR
-OC = OpCode.KOS_OP_OBJECT_COMPARE
-OCV = OpCode.KOS_OP_OBJECT_COMPARE_VAR
+V = OpCode.VAR
+C = OpCode.CONST
+CC = OpCode.CHECK_COMPARE
+CCV = OpCode.CHECK_COMPARE_VAR
+OC = OpCode.OBJECT_COMPARE
+OCV = OpCode.OBJECT_COMPARE_VAR
 
 
 def make_compiler():
@@ -108,14 +108,14 @@ class TestFuseCheckFeeders(unittest.TestCase):
 
     def test_non_feeder_prior_stays_generic(self):
         instr = [
-            (OpCode.KOS_OP_FAST_ATTR, ("a", "x", None, None)), (V, "b"),
+            (OpCode.FAST_ATTR, ("a", "x", None, None)), (V, "b"),
             (CC, (int(LT), 2, "fail", None)),
         ]
         self.assertEqual(fuse_ops(instr), instr)
 
     def test_position_absorbed_and_trailing_reemitted(self):
-        pos1 = (OpCode.KOS_OP_POSITION, (1, 0, None))
-        pos2 = (OpCode.KOS_OP_POSITION, (1, 5, None))
+        pos1 = (OpCode.POSITION, (1, 0, None))
+        pos2 = (OpCode.POSITION, (1, 5, None))
         out = fuse_ops([
             pos1, (V, "a"), pos2, (V, "b"),
             (CC, (int(LT), 2, "fail", None)),
@@ -132,10 +132,10 @@ class TestFuseCheckFeeders(unittest.TestCase):
         comp = make_compiler()
         out = comp.compress([
             (V, "a"), (V, "b"),
-            (OpCode.KOS_OP_OBJECT_COMPARE, (int(LT), 2)),
-            (OpCode.KOS_OP_JUMP_FALSE, "fail"),
+            (OpCode.OBJECT_COMPARE, (int(LT), 2)),
+            (OpCode.JUMP_FALSE, "fail"),
             (C, 1),
-            (OpCode.KOS_OP_LABEL, "fail"),
+            (OpCode.LABEL, "fail"),
         ])
         self.assertEqual(out[0], (
             CCV, (make_cmpsrc(LT, False, False), "a", "b", "fail")))
@@ -164,7 +164,7 @@ class TestFuseTernaryBounds(unittest.TestCase):
         ])
         self.assertEqual(out, [
             (OCV, (int(LT), 0, "x", 100)),
-            (OpCode.KOS_OP_JUMP_FALSE, "fail"),
+            (OpCode.JUMP_FALSE, "fail"),
         ])
 
     def test_wrong_shape_stays_generic(self):
@@ -189,7 +189,7 @@ class TestFuseTernaryBounds(unittest.TestCase):
         self.assertEqual(fuse_ops(instr), instr)
 
     def test_position_tolerant(self):
-        pos = (OpCode.KOS_OP_POSITION, (2, 4, None))
+        pos = (OpCode.POSITION, (2, 4, None))
         out = fuse_ops([
             (C, 0), pos, (V, "x"), (C, 100),
             (OC, (int(LT), 3)),
@@ -212,7 +212,7 @@ class TestTernaryLowering(unittest.IsolatedAsyncioTestCase):
         instr = [(OCV, (int(LT), 0, "x", 100))]
         result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
         self.assertEqual(result, [
-            (OpCode.KOS_OP_OBJECT_COMPARE_FAST, (int(LT), 0, 0, 100)),
+            (OpCode.OBJECT_COMPARE_FAST, (int(LT), 0, 0, 100)),
         ])
 
     async def test_stays_var_when_not_local(self):
@@ -238,7 +238,7 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         instr = [(CCV, (src, "a", "b", "fail"))]
         result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
         self.assertEqual(result, [
-            (OpCode.KOS_OP_CHECK_COMPARE_FAST, (src, 0, 1, "fail")),
+            (OpCode.CHECK_COMPARE_FAST, (src, 0, 1, "fail")),
         ])
 
     async def test_const_slot_passes_through(self):
@@ -248,7 +248,7 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         instr = [(CCV, (src, "a", 100, "fail"))]
         result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
         self.assertEqual(result, [
-            (OpCode.KOS_OP_CHECK_COMPARE_FAST, (src, 0, 100, "fail")),
+            (OpCode.CHECK_COMPARE_FAST, (src, 0, 100, "fail")),
         ])
 
     async def test_ineligible_name_stays_var(self):
@@ -270,15 +270,15 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         instr = [(CCV, (src, "a", "a", "fail"))]
         result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
         self.assertEqual(result, [
-            (OpCode.KOS_OP_CHECK_COMPARE_FAST, (src, 0, "a", "fail")),
+            (OpCode.CHECK_COMPARE_FAST, (src, 0, "a", "fail")),
         ])
 
 
-OI = OpCode.KOS_OP_OBJECT_ITER
-ON = OpCode.KOS_OP_OBJECT_NEXT
-VI = OpCode.KOS_OP_VAR_ITER
-VN = OpCode.KOS_OP_VAR_NEXT
-P = OpCode.KOS_OP_POSITION
+OI = OpCode.OBJECT_ITER
+ON = OpCode.OBJECT_NEXT
+VI = OpCode.VAR_ITER
+VN = OpCode.VAR_NEXT
+P = OpCode.POSITION
 
 
 class TestFuseIterNext(unittest.TestCase):
@@ -296,7 +296,7 @@ class TestFuseIterNext(unittest.TestCase):
         self.assertEqual(out, [(C, (1, 2)), (OI, 0)])
 
     def test_computed_iter_stays(self):
-        call = (OpCode.KOS_OP_CALL, 0)
+        call = (OpCode.CALL, 0)
         out = fuse_ops([(V, "f"), call, (OI, 0)])
         self.assertEqual(out, [(V, "f"), call, (OI, 0)])
 
@@ -322,7 +322,7 @@ class TestFuseIterNext(unittest.TestCase):
 
     def test_var_next_2_computed_default_stays(self):
         # the iterator load cannot move past a non-bare default row
-        call = (OpCode.KOS_OP_CALL, 0)
+        call = (OpCode.CALL, 0)
         out = fuse_ops([(V, "it"), (V, "f"), call, (ON, 2)])
         self.assertEqual(out, [(V, "it"), (V, "f"), call, (ON, 2)])
 
@@ -344,7 +344,7 @@ class TestIterNextLowering(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, ("x",), ())
         result = compiler.convert_fast(
             nspec, [(VI, "x")], mode=CompilerMode.FUNCTION)
-        self.assertEqual(result, [(OpCode.KOS_OP_FAST_ITER, 0)])
+        self.assertEqual(result, [(OpCode.FAST_ITER, 0)])
 
     async def test_var_iter_stays_when_not_local(self):
         compiler = Compiler("<test>", None)
@@ -360,7 +360,7 @@ class TestIterNextLowering(unittest.IsolatedAsyncioTestCase):
             nspec, [(VN, ("it", 2, None, None))],
             mode=CompilerMode.FUNCTION)
         self.assertEqual(result, [
-            (OpCode.KOS_OP_FAST_NEXT, (0, 2, None, None)),
+            (OpCode.FAST_NEXT, (0, 2, None, None)),
         ])
 
     async def test_var_next_stays_when_not_local(self):

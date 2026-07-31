@@ -52,10 +52,10 @@ def special_attr(compiler, caps, tc=False):
 
     if is_symbol(obj):
         frag.request_var(str(obj))
-        frag.instruction(OpCode.KOS_OP_VAR_ATTR, (str(obj), str(sym), 0, 0))
+        frag.instruction(OpCode.VAR_ATTR, (str(obj), str(sym), 0, 0))
     else:
         frag.merge(compiler.full_compile(obj))
-        frag.instruction(OpCode.KOS_OP_ATTR, str(sym))
+        frag.instruction(OpCode.ATTR, str(sym))
 
     return frag
 
@@ -85,10 +85,10 @@ def special_take_attr(compiler, caps, tc=False):
     if is_symbol(obj):
         frag.request_var(str(obj))
         frag.instruction(
-            OpCode.KOS_OP_VAR_ATTR_TAKE, (str(obj), str(sym), 0, 0))
+            OpCode.VAR_ATTR_TAKE, (str(obj), str(sym), 0, 0))
     else:
         frag.merge(compiler.full_compile(obj))
-        frag.instruction(OpCode.KOS_OP_ATTR_TAKE, str(sym))
+        frag.instruction(OpCode.ATTR_TAKE, str(sym))
 
     return frag
 
@@ -111,13 +111,13 @@ def special_del_attr(compiler, caps, tc=False):
 
     if is_symbol(obj):
         frag.request_var(str(obj))
-        frag.instruction(OpCode.KOS_OP_VAR_ATTR_CLEAR, (str(obj), str(sym), 0, 0))
+        frag.instruction(OpCode.VAR_ATTR_CLEAR, (str(obj), str(sym), 0, 0))
     else:
         frag.merge(compiler.full_compile(obj))
-        frag.instruction(OpCode.KOS_OP_ATTR_CLEAR, str(sym))
+        frag.instruction(OpCode.ATTR_CLEAR, str(sym))
 
     # every expression must evaluate to something
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -147,14 +147,14 @@ def special_set_attr(compiler, caps, tc=False):
     if is_symbol(obj):
         frag.request_var(str(obj))
         frag.merge(compiler.full_compile(val))
-        frag.instruction(OpCode.KOS_OP_VAR_ATTR_STORE, (str(obj), str(sym), 0, 0))
+        frag.instruction(OpCode.VAR_ATTR_STORE, (str(obj), str(sym), 0, 0))
     else:
         frag.merge(compiler.full_compile(obj))
         frag.merge(compiler.full_compile(val))
-        frag.instruction(OpCode.KOS_OP_ATTR_STORE, str(sym))
+        frag.instruction(OpCode.ATTR_STORE, str(sym))
 
     # every expression must evaluate to something
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 

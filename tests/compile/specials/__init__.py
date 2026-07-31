@@ -116,27 +116,27 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
 
 
     CALL_OPCODES = (
-        OpCode.KOS_OP_CALL,
-        OpCode.KOS_OP_TAIL_CALL,
-        OpCode.KOS_OP_CALL_NAMES,
-        OpCode.KOS_OP_TAIL_CALL_NAMES,
-        OpCode.KOS_OP_CALL_STAR,
-        OpCode.KOS_OP_TAIL_CALL_STAR,
-        OpCode.KOS_OP_CALL_VAR,
-        OpCode.KOS_OP_CALL_VAR_NAMES,
-        OpCode.KOS_OP_CALL_VAR_STAR,
-        OpCode.KOS_OP_CALL_FAST,
-        OpCode.KOS_OP_CALL_FAST_NAMES,
-        OpCode.KOS_OP_CALL_FAST_STAR,
-        OpCode.KOS_OP_CALL_ATTR,
-        OpCode.KOS_OP_CALL_ATTR_NAMES,
-        OpCode.KOS_OP_CALL_ATTR_STAR,
-        OpCode.KOS_OP_CALL_VAR_ATTR,
-        OpCode.KOS_OP_CALL_VAR_ATTR_NAMES,
-        OpCode.KOS_OP_CALL_VAR_ATTR_STAR,
-        OpCode.KOS_OP_CALL_FAST_ATTR,
-        OpCode.KOS_OP_CALL_FAST_ATTR_NAMES,
-        OpCode.KOS_OP_CALL_FAST_ATTR_STAR,
+        OpCode.CALL,
+        OpCode.TAIL_CALL,
+        OpCode.CALL_NAMES,
+        OpCode.TAIL_CALL_NAMES,
+        OpCode.CALL_STAR,
+        OpCode.TAIL_CALL_STAR,
+        OpCode.CALL_VAR,
+        OpCode.CALL_VAR_NAMES,
+        OpCode.CALL_VAR_STAR,
+        OpCode.CALL_FAST,
+        OpCode.CALL_FAST_NAMES,
+        OpCode.CALL_FAST_STAR,
+        OpCode.CALL_ATTR,
+        OpCode.CALL_ATTR_NAMES,
+        OpCode.CALL_ATTR_STAR,
+        OpCode.CALL_VAR_ATTR,
+        OpCode.CALL_VAR_ATTR_NAMES,
+        OpCode.CALL_VAR_ATTR_STAR,
+        OpCode.CALL_FAST_ATTR,
+        OpCode.CALL_FAST_ATTR_NAMES,
+        OpCode.CALL_FAST_ATTR_STAR,
     )
 
 
@@ -157,10 +157,10 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         """
 
         arg_ops = (
-            OpCode.KOS_OP_BUILD_ARGS,
-            OpCode.KOS_OP_COMBINE_ARGS,
-            OpCode.KOS_OP_BUILD_KWDS_NAMES,
-            OpCode.KOS_OP_COMBINE_KWDS,
+            OpCode.BUILD_ARGS,
+            OpCode.COMBINE_ARGS,
+            OpCode.BUILD_KWDS_NAMES,
+            OpCode.COMBINE_KWDS,
         )
         return [(i, op, arg) for i in range(code.length())
                 for op, arg in [code.oparg(i)]

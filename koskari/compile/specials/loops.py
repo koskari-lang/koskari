@@ -53,23 +53,23 @@ def special_while(compiler, tc, _while, test, body):
     body, elsebody = helper_elsebody(body)
     has_elsebody = not is_nil(elsebody) and elsebody is not None
 
-    fragment.instruction(OpCode.KOS_OP_PUSH_LOOP, 0)
+    fragment.instruction(OpCode.PUSH_LOOP, 0)
 
     # loop test
     fragment.merge(compiler.full_compile(test.datum, False))
-    fragment.instruction(OpCode.KOS_OP_JUMP_FALSE, loop_exit)
+    fragment.instruction(OpCode.JUMP_FALSE, loop_exit)
 
     helper_begin(fragment, body, False)
-    fragment.instruction(OpCode.KOS_OP_CONTINUE, 1)
+    fragment.instruction(OpCode.CONTINUE, 1)
 
-    fragment.instruction(OpCode.KOS_OP_LABEL, loop_exit)
+    fragment.instruction(OpCode.LABEL, loop_exit)
 
     if has_elsebody:
-        fragment.instruction(OpCode.KOS_OP_CLEAR_LOOP, 0)
+        fragment.instruction(OpCode.CLEAR_LOOP, 0)
         fragment.merge(compiler.full_compile(elsebody, False))
-        fragment.instruction(OpCode.KOS_OP_BREAK, 1)
+        fragment.instruction(OpCode.BREAK, 1)
 
-    fragment.instruction(OpCode.KOS_OP_POP_LOOP, 0)
+    fragment.instruction(OpCode.POP_LOOP, 0)
 
     return fragment
 
@@ -118,8 +118,8 @@ def special_for_each(compiler, caps, tc=False):
     fragment.merge(compiler.full_compile(expr.datum, False))
 
     # set up the loop and get the first value
-    fragment.instruction(OpCode.KOS_OP_PUSH_FOREACH, 0)
-    fragment.instruction(OpCode.KOS_OP_ITER_NEXT, loop_else)
+    fragment.instruction(OpCode.PUSH_FOREACH, 0)
+    fragment.instruction(OpCode.ITER_NEXT, loop_else)
 
     if using:
         src = using.source
@@ -128,19 +128,19 @@ def special_for_each(compiler, caps, tc=False):
     else:
         binding_name = str(binding["name"].datum)
         fragment.declare_var(binding_name)
-        fragment.instruction(OpCode.KOS_OP_VAR_STORE, binding_name)
+        fragment.instruction(OpCode.VAR_STORE, binding_name)
 
     # perform the loop body, then continue back up at the ITER_NEXT
     helper_begin(fragment, body, False)
-    fragment.instruction(OpCode.KOS_OP_CONTINUE, 1)
+    fragment.instruction(OpCode.CONTINUE, 1)
 
-    fragment.instruction(OpCode.KOS_OP_LABEL, loop_else)
+    fragment.instruction(OpCode.LABEL, loop_else)
     if has_elsebody:
-        fragment.instruction(OpCode.KOS_OP_CLEAR_FOREACH, 0)
+        fragment.instruction(OpCode.CLEAR_FOREACH, 0)
         fragment.merge(compiler.full_compile(elsebody, False))
-        fragment.instruction(OpCode.KOS_OP_BREAK, 1)
+        fragment.instruction(OpCode.BREAK, 1)
 
-    fragment.instruction(OpCode.KOS_OP_POP_FOREACH, 0)
+    fragment.instruction(OpCode.POP_FOREACH, 0)
 
     return fragment
 
@@ -181,7 +181,7 @@ def special_break(compiler, source, tc=False):
     Compile (compile/break) or (compile/break VAL). Exits innermost loop.
     """
 
-    return _special_break_continue(compiler, source, OpCode.KOS_OP_BREAK)
+    return _special_break_continue(compiler, source, OpCode.BREAK)
 
 
 @builtin("compile/continue")
@@ -191,7 +191,7 @@ def special_continue(compiler, source, tc=False):
     Compile (compile/continue) or (compile/continue VAL). Restarts loop.
     """
 
-    return _special_break_continue(compiler, source, OpCode.KOS_OP_CONTINUE)
+    return _special_break_continue(compiler, source, OpCode.CONTINUE)
 
 
 # The end.

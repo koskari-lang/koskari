@@ -53,7 +53,7 @@ def special_quote(compiler, source, tc=False):
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)
-    frag.instruction(OpCode.KOS_OP_CONST, body)
+    frag.instruction(OpCode.CONST, body)
     return frag
 
 
@@ -77,7 +77,7 @@ def special_car(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.position_of(body)
     frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.KOS_OP_CAR, 1)
+    frag.instruction(OpCode.CAR, 1)
 
     return frag
 
@@ -102,7 +102,7 @@ def special_cdr(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.position_of(body)
     frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.KOS_OP_CDR, 1)
+    frag.instruction(OpCode.CDR, 1)
 
     return frag
 
@@ -135,7 +135,7 @@ def special_cons(compiler, source, tc=False):
     for expr in exprs:
         frag.merge(compiler.full_compile(expr))
 
-    frag.instruction(OpCode.KOS_OP_CONS, len(exprs))
+    frag.instruction(OpCode.CONS, len(exprs))
 
     return frag
 

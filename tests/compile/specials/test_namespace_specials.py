@@ -35,7 +35,7 @@ class TestCompileGlobals(SpecialsTestCase):
 
     async def test_globals_emits_opcode(self):
         code = self.compile_to_code("(compile/globals)")
-        self.assertIn(OpCode.KOS_OP_GLOBALS, _opcodes(code))
+        self.assertIn(OpCode.GLOBALS, _opcodes(code))
 
 
     async def test_globals_rejects_args(self):
@@ -63,7 +63,7 @@ class TestCompileLocals(SpecialsTestCase):
 
     async def test_locals_emits_opcode(self):
         code = self.compile_to_code("(compile/locals)")
-        self.assertIn(OpCode.KOS_OP_LOCALS, _opcodes(code))
+        self.assertIn(OpCode.LOCALS, _opcodes(code))
 
 
     async def test_locals_rejects_args(self):

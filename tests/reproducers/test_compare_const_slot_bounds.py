@@ -64,7 +64,7 @@ class TestCompareConstSlotBounds(unittest.IsolatedAsyncioTestCase):
         # UncaughtCompilerError during native Code construction.
         mod = await self.load_module()
         ops = opcodes_of(mod.classify)
-        self.assertIn(OpCode.KOS_OP_CHECK_COMPARE_FAST, ops)
+        self.assertIn(OpCode.CHECK_COMPARE_FAST, ops)
 
 
     async def test_evaluates_correctly(self):

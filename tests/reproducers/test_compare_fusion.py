@@ -59,17 +59,17 @@ class TestCompareFusion(unittest.IsolatedAsyncioTestCase):
         mod = await self.load_module()
         self.assertTrue(await mod.verify_loop())
         ops = opcodes_of(mod.count_below)
-        self.assertIn(OpCode.KOS_OP_CHECK_COMPARE_FAST, ops)
-        self.assertNotIn(OpCode.KOS_OP_CHECK_COMPARE, ops)
+        self.assertIn(OpCode.CHECK_COMPARE_FAST, ops)
+        self.assertNotIn(OpCode.CHECK_COMPARE, ops)
 
 
     async def test_bounds_branch_splits_to_bool_and_jump(self):
         mod = await self.load_module()
         self.assertTrue(await mod.verify_bounds())
         ops = opcodes_of(mod.bounded)
-        self.assertIn(OpCode.KOS_OP_OBJECT_COMPARE_FAST, ops)
-        self.assertIn(OpCode.KOS_OP_JUMP_FALSE, ops)
-        self.assertNotIn(OpCode.KOS_OP_CHECK_COMPARE, ops)
+        self.assertIn(OpCode.OBJECT_COMPARE_FAST, ops)
+        self.assertIn(OpCode.JUMP_FALSE, ops)
+        self.assertNotIn(OpCode.CHECK_COMPARE, ops)
 
 
     async def test_bounds_value_is_one_dispatch(self):
@@ -77,8 +77,8 @@ class TestCompareFusion(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await mod.verify_bounds_value())
         ops = opcodes_of(mod.bounded_value)
         self.assertEqual(ops, [
-            OpCode.KOS_OP_OBJECT_COMPARE_FAST,
-            OpCode.KOS_OP_RETURN,
+            OpCode.OBJECT_COMPARE_FAST,
+            OpCode.RETURN,
         ])
 
 

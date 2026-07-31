@@ -61,14 +61,14 @@ def _make_truthy_code():
     Code: VAR YUS, jump-if-true to 4, else CONST NO, JUMP 5, CONST YES, RETURN
     """
     instr = (
-        [OpCode.KOS_OP_VAR, "YUS"],
-        [OpCode.KOS_OP_JUMP_TRUE, "truthy"],
-        [OpCode.KOS_OP_CONST, "NO"],
-        [OpCode.KOS_OP_JUMP, "done"],
-        [OpCode.KOS_OP_LABEL, "truthy"],
-        [OpCode.KOS_OP_CONST, "YES"],
-        [OpCode.KOS_OP_LABEL, "done"],
-        [OpCode.KOS_OP_RETURN, 1],
+        [OpCode.VAR, "YUS"],
+        [OpCode.JUMP_TRUE, "truthy"],
+        [OpCode.CONST, "NO"],
+        [OpCode.JUMP, "done"],
+        [OpCode.LABEL, "truthy"],
+        [OpCode.CONST, "YES"],
+        [OpCode.LABEL, "done"],
+        [OpCode.RETURN, 1],
     )
     nspec = NamespaceSpec(None, (), ())
     return Code(nspec, instr, "truthy_yus", "something.ki")
@@ -81,10 +81,10 @@ def _make_push_ns_code():
     """
     child_nspec = NamespaceSpec("let", ("x", "y"), ("outer",))
     instr = (
-        [OpCode.KOS_OP_PUSH_NS, (child_nspec, None, 0, 0)],
-        [OpCode.KOS_OP_CONST, None],
-        [OpCode.KOS_OP_POP_NS, 1],
-        [OpCode.KOS_OP_RETURN, 1],
+        [OpCode.PUSH_NS, (child_nspec, None, 0, 0)],
+        [OpCode.CONST, None],
+        [OpCode.POP_NS, 1],
+        [OpCode.RETURN, 1],
     )
     outer_nspec = NamespaceSpec("outer", ("outer",), ())
     return Code(outer_nspec, instr, "push_ns_fn", "file.ki")
@@ -99,9 +99,9 @@ def _make_fast_code():
     closure_syms = ("outer",)
     nspec = NamespaceSpec("fn", local_syms, closure_syms)
     instr = (
-        [OpCode.KOS_OP_FAST, 0],
-        [OpCode.KOS_OP_FAST, 2],
-        [OpCode.KOS_OP_RETURN, 1],
+        [OpCode.FAST, 0],
+        [OpCode.FAST, 2],
+        [OpCode.RETURN, 1],
     )
     return Code(nspec, instr, "fast_fn", "file.ki")
 
@@ -182,8 +182,8 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         closure_syms = ("outer",)
         nspec = NamespaceSpec(None, local_syms, closure_syms)
         instr = (
-            [OpCode.KOS_OP_FAST_REF, 0],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.FAST_REF, 0],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr, "fn", "file.ki")
         buf = io.StringIO()

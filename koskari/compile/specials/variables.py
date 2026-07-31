@@ -101,8 +101,8 @@ def special_setq(compiler, caps, tc=False):
 
     frag.request_for_write(sym, position=pos)
     frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.VAR_STORE, sym)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -139,7 +139,7 @@ def special_setq_values(compiler, caps, tc=False):
     frag.merge(compiler.full_compile(expr_mr.datum))
     frag.merge(
         using_unpack_helper(compiler, lhs, declare=False))
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -166,7 +166,7 @@ def special_define_values(compiler, caps, tc=False):
     frag.merge(compiler.full_compile(expr_mr.datum))
     frag.merge(
         using_unpack_helper(compiler, lhs, declare=True))
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -191,8 +191,8 @@ def special_delq(compiler, caps, tc=False):
 
     frag.position(pos)
     frag.request_for_write(str(sym), position=pos)
-    frag.instruction(OpCode.KOS_OP_VAR_CLEAR, str(sym))
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.VAR_CLEAR, str(sym))
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -217,7 +217,7 @@ def special_takeq(compiler, caps, tc=False):
 
     frag.position(pos)
     frag.request_for_write(str(sym), position=pos)
-    frag.instruction(OpCode.KOS_OP_VAR_TAKE, str(sym))
+    frag.instruction(OpCode.VAR_TAKE, str(sym))
 
     return frag
 
@@ -322,15 +322,15 @@ def special_define(compiler, caps, tc=False):
             frag.declare_var(name, position=pos, type_expr=type_expr)
         else:
             frag.declare_var(name, position=pos)
-        frag.instruction(OpCode.KOS_OP_CONST, None)
+        frag.instruction(OpCode.CONST, None)
         return frag
 
     if not is_pair(val_expr) and "value" in caps:
         frag.position(caps["value"].position)
 
     frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.VAR_STORE, name)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -347,7 +347,7 @@ def special_globals(compiler, source, tc=False):
         raise SpecialError("%s takes no arguments" % called_by, source)
 
     frag = compiler.fragment(called_by)
-    frag.instruction(OpCode.KOS_OP_GLOBALS, 0)
+    frag.instruction(OpCode.GLOBALS, 0)
     return frag
 
 
@@ -363,7 +363,7 @@ def special_locals(compiler, source, tc=False):
         raise SpecialError("%s takes no arguments" % called_by, source)
 
     frag = compiler.fragment(called_by)
-    frag.instruction(OpCode.KOS_OP_LOCALS, 0)
+    frag.instruction(OpCode.LOCALS, 0)
     return frag
 
 
@@ -415,15 +415,15 @@ def special_define_global(compiler, caps, tc=False):
         val_expr = caps["value"].datum
 
     else:
-        frag.instruction(OpCode.KOS_OP_CONST, None)
+        frag.instruction(OpCode.CONST, None)
         return frag
 
     if not is_pair(val_expr) and "value" in caps:
         frag.position(caps["value"].position)
 
     frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.VAR_STORE, name)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 

@@ -71,17 +71,17 @@ def _build_var_to_fast():
     var_to_fast = {}
     for opcode in OpCode:
         opname = opcode.name
-        if not (opname.startswith('KOS_OP_FAST')
-                or opname.startswith('KOS_OP_CALL_FAST')):
+        if not (opname.startswith('FAST')
+                or opname.startswith('CALL_FAST')):
             continue
         varname = opname.replace('FAST', 'VAR', 1)
         if hasattr(OpCode, varname):
             var_to_fast[OpCode[varname]] = opcode
 
-    var_to_fast[OpCode.KOS_OP_UNPACK_VAR] = OpCode.KOS_OP_UNPACK_FAST
-    var_to_fast[OpCode.KOS_OP_SWITCH_EQ_VAR] = OpCode.KOS_OP_SWITCH_EQ_FAST
-    var_to_fast[OpCode.KOS_OP_SWITCH_EQ_VAR_ATTR] = OpCode.KOS_OP_SWITCH_EQ_FAST_ATTR
-    var_to_fast[OpCode.KOS_OP_OBJECT_COMPARE_VAR] = OpCode.KOS_OP_OBJECT_COMPARE_FAST
+    var_to_fast[OpCode.UNPACK_VAR] = OpCode.UNPACK_FAST
+    var_to_fast[OpCode.SWITCH_EQ_VAR] = OpCode.SWITCH_EQ_FAST
+    var_to_fast[OpCode.SWITCH_EQ_VAR_ATTR] = OpCode.SWITCH_EQ_FAST_ATTR
+    var_to_fast[OpCode.OBJECT_COMPARE_VAR] = OpCode.OBJECT_COMPARE_FAST
 
     return var_to_fast
 
@@ -94,7 +94,7 @@ _OPERAND_COUNT = len(Operand)
 
 def merge_opcount(value):
     """
-    Normalize a KOSTYLE_OPCOUNT operand to its merged uint16 (operator selector
+    Normalize an OPCOUNT-style operand to its merged uint16 (operator selector
     in the high byte, reduce count in the low byte).
 
     Accepts either idiom, so specials may emit whichever reads cleanly:
@@ -134,7 +134,7 @@ _COMPARE_COUNT = len(Compare)
 
 def merge_cmpcount(value):
     """
-    Normalize a KOSTYLE_CMPCOUNT operand to its merged uint16 (Compare
+    Normalize a CMPCOUNT-style operand to its merged uint16 (Compare
     selector in the high byte, reduce count in the low byte). The
     CMPCOUNT twin of merge_opcount: accepts a (selector, count) pair or
     a pre-merged int, both range- and selector-checked.
@@ -192,9 +192,9 @@ def make_cmpsrc(sel, x_const, y_const):
 
 
 _TAIL_CALL_TO_CALL = {
-    OpCode.KOS_OP_TAIL_CALL: OpCode.KOS_OP_CALL,
-    OpCode.KOS_OP_TAIL_CALL_NAMES: OpCode.KOS_OP_CALL_NAMES,
-    OpCode.KOS_OP_TAIL_CALL_STAR: OpCode.KOS_OP_CALL_STAR,
+    OpCode.TAIL_CALL: OpCode.CALL,
+    OpCode.TAIL_CALL_NAMES: OpCode.CALL_NAMES,
+    OpCode.TAIL_CALL_STAR: OpCode.CALL_STAR,
 }
 
 
@@ -381,7 +381,7 @@ class ByteCodeFragment:
 
         if linecol:
             line, col = linecol[:2]
-            self.instruction(OpCode.KOS_OP_POSITION, (line, col, extra))
+            self.instruction(OpCode.POSITION, (line, col, extra))
 
 
     def instruction(self, op, opa):
@@ -457,10 +457,10 @@ class ByteCodeFragment:
                 self.merge(valfrag)
 
             self.instruction(
-                OpCode.KOS_OP_PUSH_NS,
+                OpCode.PUSH_NS,
                 (nspec, tuple(names) if names else None, 0, 0))
             self.instructions.extend(child.instructions)
-            self.instruction(OpCode.KOS_OP_POP_NS, 0)
+            self.instruction(OpCode.POP_NS, 0)
 
 
     @contextmanager
@@ -483,9 +483,9 @@ class ByteCodeFragment:
             yield child
             nspec = child.as_namespace_spec()
 
-            self.instruction(OpCode.KOS_OP_PUSH_COLLECT, nspec)
+            self.instruction(OpCode.PUSH_COLLECT, nspec)
             self.instructions.extend(child.instructions)
-            self.instruction(OpCode.KOS_OP_POP_COLLECT, 0)
+            self.instruction(OpCode.POP_COLLECT, 0)
 
 
     def as_bytecode(self):
@@ -522,16 +522,16 @@ class CompilerMode(IntEnum):
 
 
 _CHECK_SQUASHES = {
-    OpCode.KOS_OP_OBJECT_NOT: OpCode.KOS_OP_JUMP_TRUE,
-    OpCode.KOS_OP_EXCEPTION_MATCH: OpCode.KOS_OP_CHECK_EXCEPTION,
-    OpCode.KOS_OP_NILP: OpCode.KOS_OP_CHECK_NIL,
+    OpCode.OBJECT_NOT: OpCode.JUMP_TRUE,
+    OpCode.EXCEPTION_MATCH: OpCode.CHECK_EXCEPTION,
+    OpCode.NILP: OpCode.CHECK_NIL,
 }
 
 
 _SWITCH_SQUASHES = {
-    OpCode.KOS_OP_CONST: OpCode.KOS_OP_SWITCH_EQ_CONST,
-    OpCode.KOS_OP_VAR: OpCode.KOS_OP_SWITCH_EQ_VAR,
-    OpCode.KOS_OP_VAR_ATTR: OpCode.KOS_OP_SWITCH_EQ_VAR_ATTR,
+    OpCode.CONST: OpCode.SWITCH_EQ_CONST,
+    OpCode.VAR: OpCode.SWITCH_EQ_VAR,
+    OpCode.VAR_ATTR: OpCode.SWITCH_EQ_VAR_ATTR,
 }
 
 
@@ -850,7 +850,7 @@ class Compiler:
 
 
     def compile_const(self, fragment, value, tc):
-        fragment.instruction(OpCode.KOS_OP_CONST, value)
+        fragment.instruction(OpCode.CONST, value)
         return fragment
 
 
@@ -884,7 +884,7 @@ class Compiler:
     def compile_raw_symbol(self, fragment, sym, tc):
         strsym = str(sym)
         fragment.request_var(strsym)
-        fragment.instruction(OpCode.KOS_OP_VAR, strsym)
+        fragment.instruction(OpCode.VAR, strsym)
         return fragment
 
 
@@ -1038,41 +1038,41 @@ class Compiler:
 
 
     def compress(self, instr):
-        squished = [(OpCode.KOS_OP_NOOP, 0)]
+        squished = [(OpCode.NOOP, 0)]
 
         for (op, arg) in instr:
-            if ((op == OpCode.KOS_OP_POP
+            if ((op == OpCode.POP
                  and arg == 1
-                 and squished[-1][0] in (OpCode.KOS_OP_CONST,
-                                         OpCode.KOS_OP_DUP))):
+                 and squished[-1][0] in (OpCode.CONST,
+                                         OpCode.DUP))):
                 del squished[-1]
                 continue
 
-            elif (op == OpCode.KOS_OP_OBJECT_NOT):
+            elif (op == OpCode.OBJECT_NOT):
                 prior = squished[-1][0]
-                if prior == OpCode.KOS_OP_CONST:
+                if prior == OpCode.CONST:
                     val = squished[-1][1]
-                    squished[-1] = (OpCode.KOS_OP_CONST, not val)
+                    squished[-1] = (OpCode.CONST, not val)
                     continue
 
-            elif (op == OpCode.KOS_OP_JUMP_TRUE
-                  and squished[-1][0] == OpCode.KOS_OP_CONST):
+            elif (op == OpCode.JUMP_TRUE
+                  and squished[-1][0] == OpCode.CONST):
                 truthy = bool(squished[-1][1])
                 del squished[-1]
                 if truthy:
-                    op = OpCode.KOS_OP_JUMP
+                    op = OpCode.JUMP
                 else:
                     continue
 
-            elif (op == OpCode.KOS_OP_JUMP_FALSE):
+            elif (op == OpCode.JUMP_FALSE):
                 prior, prior_arg = squished[-1]
 
-                if prior == OpCode.KOS_OP_CONST:
+                if prior == OpCode.CONST:
                     # jumping based on a constant value
                     truthy = not squished[-1][1]
                     del squished[-1]
                     if truthy:
-                        op = OpCode.KOS_OP_JUMP
+                        op = OpCode.JUMP
                     else:
                         continue
 
@@ -1082,16 +1082,16 @@ class Compiler:
                     del squished[-1]
                     op = _CHECK_SQUASHES[prior]
 
-                elif prior == OpCode.KOS_OP_OBJECT_COMPARE:
+                elif prior == OpCode.OBJECT_COMPARE:
                     # fuse the compare with its jump: CHECK_COMPARE
                     # branches on chain failure, carrying the selector,
                     # count, and target in one EXTRA row
                     del squished[-1]
                     sel, cnt = split_cmpcount(prior_arg)
-                    op = OpCode.KOS_OP_CHECK_COMPARE
+                    op = OpCode.CHECK_COMPARE
                     arg = (sel, cnt, arg, None)
 
-            elif op == OpCode.KOS_OP_SWITCH_EQ:
+            elif op == OpCode.SWITCH_EQ:
                 prior = squished[-1]
                 if prior[0] in _SWITCH_SQUASHES:
                     op = _SWITCH_SQUASHES[prior[0]]
@@ -1102,66 +1102,66 @@ class Compiler:
                         arg = (arg, pargs, None, None)
                     del squished[-1]
 
-            elif op == OpCode.KOS_OP_LABEL:
+            elif op == OpCode.LABEL:
                 # omit useless jump when the jump target is the next instruction
                 # JUMP foo, LABEL foo -> NOOP
                 prior = squished[-1]
-                if prior[0] == OpCode.KOS_OP_JUMP and prior[1] == arg:
+                if prior[0] == OpCode.JUMP and prior[1] == arg:
                     del squished[-1]
 
-                elif (prior[0] in (OpCode.KOS_OP_JUMP_TRUE,
-                                   OpCode.KOS_OP_JUMP_FALSE)
+                elif (prior[0] in (OpCode.JUMP_TRUE,
+                                   OpCode.JUMP_FALSE)
                       and prior[1] == arg):
-                    if len(squished) > 1 and squished[-2][0] == OpCode.KOS_OP_CONST:
+                    if len(squished) > 1 and squished[-2][0] == OpCode.CONST:
                         del squished[-1]
                         del squished[-1]
                     else:
-                        squished[-1] = (OpCode.KOS_OP_POP, 1)
+                        squished[-1] = (OpCode.POP, 1)
 
-            elif ((op in (OpCode.KOS_OP_RETURN,
-                          OpCode.KOS_OP_BREAK,
-                          OpCode.KOS_OP_CONTINUE,
-                          OpCode.KOS_OP_YIELD)
+            elif ((op in (OpCode.RETURN,
+                          OpCode.BREAK,
+                          OpCode.CONTINUE,
+                          OpCode.YIELD)
                    and arg == 1
-                   and squished[-1][0] == OpCode.KOS_OP_CONST
+                   and squished[-1][0] == OpCode.CONST
                    and squished[-1][1] is None)):
                 # CONST None, RETURN 1 -> RETURN 0
                 del squished[-1]
                 arg = 0
 
-            elif (op in (OpCode.KOS_OP_CAR, OpCode.KOS_OP_CDR)
+            elif (op in (OpCode.CAR, OpCode.CDR)
                   and squished[-1][0] == op):
                 prev_op, prev_arg = squished[-1]
                 squished[-1] = (prev_op, prev_arg + arg)
                 continue
 
-            elif op == OpCode.KOS_OP_VAR_STORE:
+            elif op == OpCode.VAR_STORE:
                 prior = squished[-1]
-                if prior[0] == OpCode.KOS_OP_CONST:
+                if prior[0] == OpCode.CONST:
                     del squished[-1]
-                    op = OpCode.KOS_OP_VAR_STORE_CONST
+                    op = OpCode.VAR_STORE_CONST
                     arg = (arg, prior[1], None, None)
 
-            elif op == OpCode.KOS_OP_VAR_INPLACE:
+            elif op == OpCode.VAR_INPLACE:
                 # CONST rhs on a single-operand augmented assignment
                 # fuses to the stack-free form: bare operator selector,
                 # name, pooled operand
                 prior = squished[-1]
-                if prior[0] == OpCode.KOS_OP_CONST:
+                if prior[0] == OpCode.CONST:
                     merged = merge_opcount(arg[0])
                     if merged & 0xff == 1:
                         del squished[-1]
-                        op = OpCode.KOS_OP_VAR_INPLACE_CONST
+                        op = OpCode.VAR_INPLACE_CONST
                         arg = (merged >> 8, arg[1], prior[1], None)
 
             squished.append((op, arg))
 
-        if squished[-1][0] != OpCode.KOS_OP_RETURN:
-            if squished[-1][0] == OpCode.KOS_OP_CONST \
+        if squished[-1][0] != OpCode.RETURN:
+            if squished[-1][0] == OpCode.CONST \
                and squished[-1][1] is None:
-                squished[-1] = (OpCode.KOS_OP_RETURN, 0)
+                squished[-1] = (OpCode.RETURN, 0)
             else:
-                squished.append((OpCode.KOS_OP_RETURN, 1))
+                squished.append((OpCode.RETURN, 1))
 
         if len(squished) > 1:
             # if we actually had ops, we'll have a leading NOOP that we can
@@ -1203,7 +1203,7 @@ class Compiler:
         """
 
         result = []
-        feeders = (OpCode.KOS_OP_VAR, OpCode.KOS_OP_CONST)
+        feeders = (OpCode.VAR, OpCode.CONST)
 
         def scan_back(want):
             # feeder indices (nearest first) and interior POSITION rows
@@ -1212,7 +1212,7 @@ class Compiler:
             i = len(result) - 1
             while i >= 0 and len(found) < want:
                 rop = result[i][0]
-                if rop == OpCode.KOS_OP_POSITION:
+                if rop == OpCode.POSITION:
                     pos_rows.append(i)
                 elif rop in feeders:
                     found.append(i)
@@ -1233,27 +1233,27 @@ class Compiler:
             hi_op = result[found[0]][0]
             mid_op = result[found[1]][0]
             lo_op = result[found[2]][0]
-            return (lo_op == OpCode.KOS_OP_CONST
-                    and mid_op == OpCode.KOS_OP_VAR
-                    and hi_op == OpCode.KOS_OP_CONST)
+            return (lo_op == OpCode.CONST
+                    and mid_op == OpCode.VAR
+                    and hi_op == OpCode.CONST)
 
         for op, arg in instr:
-            if op == OpCode.KOS_OP_CHECK_COMPARE and arg[1] == 2:
+            if op == OpCode.CHECK_COMPARE and arg[1] == 2:
                 found, pos_rows = scan_back(2)
                 if found:
                     y_op, y_arg = result[found[0]]
                     x_op, x_arg = result[found[1]]
-                    x_const = x_op == OpCode.KOS_OP_CONST
-                    y_const = y_op == OpCode.KOS_OP_CONST
+                    x_const = x_op == OpCode.CONST
+                    y_const = y_op == OpCode.CONST
                     if not (x_const and y_const):
                         sel, _cnt, label, _pad = arg
                         splice(found[1], pos_rows, [(
-                            OpCode.KOS_OP_CHECK_COMPARE_VAR,
+                            OpCode.CHECK_COMPARE_VAR,
                             (make_cmpsrc(sel, x_const, y_const),
                              x_arg, y_arg, label))])
                         continue
 
-            elif op == OpCode.KOS_OP_CHECK_COMPARE and arg[1] == 3:
+            elif op == OpCode.CHECK_COMPARE and arg[1] == 3:
                 found, pos_rows = scan_back(3)
                 if found and ternary_shape(found):
                     sel, _cnt, label, _pad = arg
@@ -1261,13 +1261,13 @@ class Compiler:
                     mid = result[found[1]][1]
                     hi = result[found[0]][1]
                     splice(found[2], pos_rows, [
-                        (OpCode.KOS_OP_OBJECT_COMPARE_VAR,
+                        (OpCode.OBJECT_COMPARE_VAR,
                          (sel, lo, mid, hi)),
-                        (OpCode.KOS_OP_JUMP_FALSE, label),
+                        (OpCode.JUMP_FALSE, label),
                     ])
                     continue
 
-            elif op == OpCode.KOS_OP_OBJECT_COMPARE:
+            elif op == OpCode.OBJECT_COMPARE:
                 sel, cnt = split_cmpcount(arg)
                 if cnt == 3:
                     found, pos_rows = scan_back(3)
@@ -1276,23 +1276,23 @@ class Compiler:
                         mid = result[found[1]][1]
                         hi = result[found[0]][1]
                         splice(found[2], pos_rows, [(
-                            OpCode.KOS_OP_OBJECT_COMPARE_VAR,
+                            OpCode.OBJECT_COMPARE_VAR,
                             (sel, lo, mid, hi))])
                         continue
 
-            elif op == OpCode.KOS_OP_OBJECT_ITER:
+            elif op == OpCode.OBJECT_ITER:
                 found, pos_rows = scan_back(1)
-                if found and result[found[0]][0] == OpCode.KOS_OP_VAR:
+                if found and result[found[0]][0] == OpCode.VAR:
                     splice(found[0], pos_rows, [(
-                        OpCode.KOS_OP_VAR_ITER, result[found[0]][1])])
+                        OpCode.VAR_ITER, result[found[0]][1])])
                     continue
 
-            elif op == OpCode.KOS_OP_OBJECT_NEXT:
+            elif op == OpCode.OBJECT_NEXT:
                 if arg == 1:
                     found, pos_rows = scan_back(1)
-                    if found and result[found[0]][0] == OpCode.KOS_OP_VAR:
+                    if found and result[found[0]][0] == OpCode.VAR:
                         splice(found[0], pos_rows, [(
-                            OpCode.KOS_OP_VAR_NEXT,
+                            OpCode.VAR_NEXT,
                             (result[found[0]][1], 1, None, None))])
                         continue
                 else:
@@ -1302,12 +1302,12 @@ class Compiler:
                     # to be a bare feeder too (scan_back guarantees it);
                     # the default row stays and VAR_NEXT pops it.
                     found, pos_rows = scan_back(2)
-                    if found and result[found[1]][0] == OpCode.KOS_OP_VAR:
+                    if found and result[found[1]][0] == OpCode.VAR:
                         default_row = result[found[0]]
                         it_name = result[found[1]][1]
                         splice(found[1], pos_rows, [
                             default_row,
-                            (OpCode.KOS_OP_VAR_NEXT,
+                            (OpCode.VAR_NEXT,
                              (it_name, 2, None, None)),
                         ])
                         continue
@@ -1339,22 +1339,22 @@ class Compiler:
             while len(run) >= 4:
                 a, b, c, d = run[:4]
                 del run[:4]
-                result.append((OpCode.KOS_OP_VAR4, (a, b, c, d)))
+                result.append((OpCode.VAR4, (a, b, c, d)))
             if len(run) >= 2:
                 a, b = run[:2]
                 del run[:2]
-                result.append((OpCode.KOS_OP_VAR2, (a, b, None, None)))
+                result.append((OpCode.VAR2, (a, b, None, None)))
             if run:
-                result.append((OpCode.KOS_OP_VAR, run.pop()))
+                result.append((OpCode.VAR, run.pop()))
             if trailing_pos is not None:
                 result.append(trailing_pos)
                 trailing_pos = None
 
         for op, arg in instr:
-            if op == OpCode.KOS_OP_VAR:
+            if op == OpCode.VAR:
                 run.append(arg)
                 continue
-            if run and op == OpCode.KOS_OP_POSITION:
+            if run and op == OpCode.POSITION:
                 trailing_pos = (op, arg)
                 continue
             flush()
@@ -1366,7 +1366,7 @@ class Compiler:
 
     def normalize_opcount(self, instr):
         """
-        Merge every KOSTYLE_OPCOUNT and KOSTYLE_CMPCOUNT operand to its
+        Merge every OPCOUNT and CMPCOUNT operand to its
         packed uint16. Specials may emit a (selector, count) pair or a
         pre-merged int; the merge helpers accept and validate both. Runs
         unconditionally, independent of the optional convert_fast lowering
@@ -1376,13 +1376,13 @@ class Compiler:
 
         result = []
         for op, arg in instr:
-            if op.style == OpStyle.KOSTYLE_OPCOUNT:
+            if op.style == OpStyle.OPCOUNT:
                 arg = merge_opcount(arg)
-            elif op.style == OpStyle.KOSTYLE_CMPCOUNT:
+            elif op.style == OpStyle.CMPCOUNT:
                 arg = merge_cmpcount(arg)
-            elif OpStyle.KOSTYLE_OPCOUNT in op.extra:
+            elif OpStyle.OPCOUNT in op.extra:
                 arg = tuple(
-                    merge_opcount(v) if fk == OpStyle.KOSTYLE_OPCOUNT else v
+                    merge_opcount(v) if fk == OpStyle.OPCOUNT else v
                     for v, fk in zip(arg, op.extra))
             result.append((op, arg))
         return result
@@ -1426,22 +1426,22 @@ class Compiler:
 
         nspec = None
         for op, arg in instr:
-            if op == OpCode.KOS_OP_CONST:
+            if op == OpCode.CONST:
                 if isinstance(arg, NamespaceSpec):
                     nspec = arg
 
-            elif op == OpCode.KOS_OP_PUSH_NS:
+            elif op == OpCode.PUSH_NS:
                 push_nspec(arg[0])
                 nspec = None
 
-            elif op == OpCode.KOS_OP_PUSH_COLLECT:
+            elif op == OpCode.PUSH_COLLECT:
                 push_nspec(arg if isinstance(arg, NamespaceSpec) else nspec)
                 nspec = None
 
-            elif op in (OpCode.KOS_OP_POP_NS, OpCode.KOS_OP_POP_COLLECT):
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
                 pop_nspec()
 
-            elif nstack and op == OpCode.KOS_OP_CHECK_COMPARE_VAR:
+            elif nstack and op == OpCode.CHECK_COMPARE_VAR:
                 # CMPSRC row: slot kinds are data-dependent (a set source
                 # bit means CONST, else the declared VAR kind), so the
                 # generic schema-driven lowering below cannot apply. Lower
@@ -1452,24 +1452,24 @@ class Compiler:
                 ny = y if (cmpsrc & CMPSRC_Y_CONST) else fast_slot(y)
                 if (((cmpsrc & CMPSRC_X_CONST) or nx >= 0)
                         and ((cmpsrc & CMPSRC_Y_CONST) or ny >= 0)):
-                    op = OpCode.KOS_OP_CHECK_COMPARE_FAST
+                    op = OpCode.CHECK_COMPARE_FAST
                     arg = (cmpsrc, nx, ny, label)
 
             elif nstack and op in VAR_TO_FAST:
                 # An EXTRA opcode carries its schema tuple in op.extra
                 # (opcodes.incl field kinds). Zip with the operand 4-tuple; each
-                # KOSTYLE_VAR slot is lowered to a fast index if one is
+                # VAR-kind slot is lowered to a fast index if one is
                 # available; otherwise that field stays as the original value
                 # and the whole opcode stays as VAR.
                 new_op = VAR_TO_FAST[op]
                 if op.extra:
                     new_arg = tuple([
-                        fast_slot(v) if fk == OpStyle.KOSTYLE_VAR else v
+                        fast_slot(v) if fk == OpStyle.VAR else v
                         for v, fk in zip(arg, op.extra)])
                     if all(
                             idx >= 0
                             for v, fk, idx in zip(arg, op.extra, new_arg)
-                            if fk == OpStyle.KOSTYLE_VAR):
+                            if fk == OpStyle.VAR):
                         arg = new_arg
                         op = new_op
                 else:
@@ -1490,7 +1490,7 @@ class Compiler:
         Code lowering rejects the combination outright.
         """
 
-        yield_ops = (OpCode.KOS_OP_YIELD, OpCode.KOS_OP_YIELD_FROM)
+        yield_ops = (OpCode.YIELD, OpCode.YIELD_FROM)
         if not any(op in yield_ops for op, _ in instr):
             return instr
         return [
@@ -1506,7 +1506,7 @@ class Compiler:
 
         reso = fragment.resolution
         for op, arg in instr:
-            if op == OpCode.KOS_OP_CONST and isinstance(arg, FunctionSpec):
+            if op == OpCode.CONST and isinstance(arg, FunctionSpec):
                 code = arg.code
                 if code is None:
                     continue

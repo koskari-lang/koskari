@@ -50,8 +50,8 @@ def _compile_thunk(compiler, body_src, fragment):
     thunk.merge(compiler.full_compile(body_src, True))
     code = compiler.complete(thunk, CompilerMode.FUNCTION)
     fspec = FunctionSpec(None, FormalsSpec((), (), (), (), None, None), code)
-    fragment.instruction(OpCode.KOS_OP_CONST, fspec)
-    fragment.instruction(OpCode.KOS_OP_BUILD_FUNCTION, ((), (), 0, 0))
+    fragment.instruction(OpCode.CONST, fspec)
+    fragment.instruction(OpCode.BUILD_FUNCTION, ((), (), 0, 0))
     return fragment
 
 
@@ -167,18 +167,18 @@ def special_dyn_wind(
     if before_src and after_src:
         _compile_thunk(compiler, before_src, fragment)
         _compile_thunk(compiler, after_src, fragment)
-        fragment.instruction(OpCode.KOS_OP_PUSH_WIND, 2)
+        fragment.instruction(OpCode.PUSH_WIND, 2)
     elif before_src:
         _compile_thunk(compiler, before_src, fragment)
-        fragment.instruction(OpCode.KOS_OP_PUSH_WIND, 1)
+        fragment.instruction(OpCode.PUSH_WIND, 1)
     else:
-        fragment.instruction(OpCode.KOS_OP_CONST, None)
+        fragment.instruction(OpCode.CONST, None)
         _compile_thunk(compiler, after_src, fragment)
-        fragment.instruction(OpCode.KOS_OP_PUSH_WIND, 2)
+        fragment.instruction(OpCode.PUSH_WIND, 2)
 
     # helper_begin(fragment, body_src, False)
     fragment.merge(compiler.full_compile(body_src, False))
-    fragment.instruction(OpCode.KOS_OP_POP_WIND, 0)
+    fragment.instruction(OpCode.POP_WIND, 0)
     return fragment
 
 

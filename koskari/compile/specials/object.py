@@ -127,7 +127,7 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
                 return cons(symbol("compile/call"), called_by, body)
 
     if have_acc:
-        frag.instruction(OpCode.KOS_OP_CONST, acc)
+        frag.instruction(OpCode.CONST, acc)
         count += 1
 
     current = body
@@ -146,7 +146,7 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
         return frag
 
     if operand is not None:
-        frag.instruction(OpCode.KOS_OP_OBJECT_OPERAND, (operand, count))
+        frag.instruction(OpCode.OBJECT_OPERAND, (operand, count))
     else:
         frag.instruction(op, count)
     return frag
@@ -192,7 +192,7 @@ def _binary_op(op, compiler, source, opa=0, operand=None):
             source)
 
     if operand is not None:
-        frag.instruction(OpCode.KOS_OP_OBJECT_OPERAND, (operand, 2))
+        frag.instruction(OpCode.OBJECT_OPERAND, (operand, 2))
     else:
         frag.instruction(op, opa)
     return frag
@@ -273,21 +273,21 @@ def special_format(compiler, source, tc=False):
 
     if rules_expr:
         if obj_is_const and rules_is_const:
-            frag.instruction(OpCode.KOS_OP_CONST, format(obj_const, rules_const))
+            frag.instruction(OpCode.CONST, format(obj_const, rules_const))
         elif rules_is_const:
             frag.merge(obj_frag)
-            frag.instruction(OpCode.KOS_OP_OBJECT_FORMAT_CONST, rules_const)
+            frag.instruction(OpCode.OBJECT_FORMAT_CONST, rules_const)
         else:
             frag.merge(obj_frag)
             frag.merge(rules_frag)
-            frag.instruction(OpCode.KOS_OP_OBJECT_FORMAT, 2)
+            frag.instruction(OpCode.OBJECT_FORMAT, 2)
 
     else:
         if obj_is_const:
-            frag.instruction(OpCode.KOS_OP_CONST, format(obj_const))
+            frag.instruction(OpCode.CONST, format(obj_const))
         else:
             frag.merge(obj_frag)
-            frag.instruction(OpCode.KOS_OP_OBJECT_FORMAT, 1)
+            frag.instruction(OpCode.OBJECT_FORMAT, 1)
 
     return frag
 
@@ -332,7 +332,7 @@ def _chain_compare(sel, compiler, source):
             "%s requires at least two arguments" % called_by,
             source)
 
-    frag.instruction(OpCode.KOS_OP_OBJECT_COMPARE, (sel, count))
+    frag.instruction(OpCode.OBJECT_COMPARE, (sel, count))
     return frag
 
 
@@ -343,7 +343,7 @@ def special_eq(compiler, source, tc=False):
     Compile (compile/= A B). Test equality via __eq__
     """
 
-    return _chain_compare(Compare.KOS_COMPARE_EQ, compiler, source)
+    return _chain_compare(Compare.EQ, compiler, source)
 
 
 @builtin("compile/!=", "compile/not-equal?")
@@ -353,7 +353,7 @@ def special_ne(compiler, source, tc=False):
     Compile (compile/!= A B). Test inequality via __ne__
     """
 
-    return _chain_compare(Compare.KOS_COMPARE_NE, compiler, source)
+    return _chain_compare(Compare.NE, compiler, source)
 
 
 @builtin("compile/<", "compile/lt?")
@@ -363,7 +363,7 @@ def special_lt(compiler, source, tc=False):
     Compile (compile/< A B). Test less-than via __lt__
     """
 
-    return _chain_compare(Compare.KOS_COMPARE_LT, compiler, source)
+    return _chain_compare(Compare.LT, compiler, source)
 
 
 @builtin("compile/<=", "compile/le?")
@@ -373,7 +373,7 @@ def special_le(compiler, source, tc=False):
     Compile (compile/<= A B). Test less-than-or-equal via __le__
     """
 
-    return _chain_compare(Compare.KOS_COMPARE_LE, compiler, source)
+    return _chain_compare(Compare.LE, compiler, source)
 
 
 @builtin("compile/>", "compile/gt?")
@@ -383,7 +383,7 @@ def special_gt(compiler, source, tc=False):
     Compile (compile/> A B). Test greater-than via __gt__
     """
 
-    return _chain_compare(Compare.KOS_COMPARE_GT, compiler, source)
+    return _chain_compare(Compare.GT, compiler, source)
 
 
 @builtin("compile/>=", "compile/ge?")
@@ -393,7 +393,7 @@ def special_ge(compiler, source, tc=False):
     Compile (compile/>= A B). Test greater-than-or-equal via __ge__
     """
 
-    return _chain_compare(Compare.KOS_COMPARE_GE, compiler, source)
+    return _chain_compare(Compare.GE, compiler, source)
 
 
 # ---------------------------------------------------------------------------
@@ -407,8 +407,8 @@ def special_in(compiler, source, tc=False):
     Compile (compile/in ITEM COLLECTION). Membership test via __contains__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_COMPARE, compiler, source,
-                      opa=(Compare.KOS_COMPARE_IN, 2))
+    return _binary_op(OpCode.OBJECT_COMPARE, compiler, source,
+                      opa=(Compare.IN, 2))
 
 
 @builtin("compile/not-in", "compile/not-in?")
@@ -418,8 +418,8 @@ def special_not_in(compiler, source, tc=False):
     Compile (compile/not-in ITEM COLLECTION). Negated membership test
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_COMPARE, compiler, source,
-                      opa=(Compare.KOS_COMPARE_NOT_IN, 2))
+    return _binary_op(OpCode.OBJECT_COMPARE, compiler, source,
+                      opa=(Compare.NOT_IN, 2))
 
 
 @builtin("compile/is", "compile/is?")
@@ -429,8 +429,8 @@ def special_is(compiler, source, tc=False):
     Compile (compile/is A B). Identity test
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_COMPARE, compiler, source,
-                      opa=(Compare.KOS_COMPARE_IS, 2))
+    return _binary_op(OpCode.OBJECT_COMPARE, compiler, source,
+                      opa=(Compare.IS, 2))
 
 
 @builtin("compile/is-not", "compile/is-not?")
@@ -440,8 +440,8 @@ def special_is_not(compiler, source, tc=False):
     Compile (compile/is-not A B). Negated identity test
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_COMPARE, compiler, source,
-                      opa=(Compare.KOS_COMPARE_IS_NOT, 2))
+    return _binary_op(OpCode.OBJECT_COMPARE, compiler, source,
+                      opa=(Compare.IS_NOT, 2))
 
 
 def _type_check_op(sel, compiler, source):
@@ -456,7 +456,7 @@ def _type_check_op(sel, compiler, source):
       (compile/instance? VAL TYPE)         -> count = 2  (single type)
       (compile/instance? VAL T1 T2 ...)    -> count = N+1  (types as tuple)
 
-    :param sel: Compare.KOS_COMPARE_IS_INSTANCE or KOS_COMPARE_IS_SUBCLASS
+    :param sel: Compare.IS_INSTANCE or Compare.IS_SUBCLASS
     :param compiler: active Compiler
     :param source: raw source pair (called_by . body)
     :return: ByteCodeFragment
@@ -479,7 +479,7 @@ def _type_check_op(sel, compiler, source):
     for expr in exprs:
         frag.merge(compiler.full_compile(expr))
 
-    frag.instruction(OpCode.KOS_OP_OBJECT_COMPARE, (sel, len(exprs)))
+    frag.instruction(OpCode.OBJECT_COMPARE, (sel, len(exprs)))
     return frag
 
 
@@ -491,7 +491,7 @@ def special_isinstance(compiler, source, tc=False):
     """
 
     return _type_check_op(
-        Compare.KOS_COMPARE_IS_INSTANCE, compiler, source)
+        Compare.IS_INSTANCE, compiler, source)
 
 
 @builtin("compile/subclass?")
@@ -502,7 +502,7 @@ def special_issubclass(compiler, source, tc=False):
     """
 
     return _type_check_op(
-        Compare.KOS_COMPARE_IS_SUBCLASS, compiler, source)
+        Compare.IS_SUBCLASS, compiler, source)
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +518,7 @@ def special_add(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.add, compiler, source,
-        operand=Operand.KOS_OPERAND_ADD)
+        operand=Operand.ADD)
 
 
 @builtin("compile/-")
@@ -530,7 +530,7 @@ def special_subtract(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.sub, compiler, source,
-        operand=Operand.KOS_OPERAND_SUBTRACT)
+        operand=Operand.SUBTRACT)
 
 
 @builtin("compile/*")
@@ -542,7 +542,7 @@ def special_multiply(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.mul, compiler, source,
-        operand=Operand.KOS_OPERAND_MULTIPLY)
+        operand=Operand.MULTIPLY)
 
 
 @builtin("compile/**")
@@ -554,7 +554,7 @@ def special_power(compiler, source, tc=False):
 
     return _reduce_op(
         None, None, compiler, source,
-        operand=Operand.KOS_OPERAND_POWER)
+        operand=Operand.POWER)
 
 
 @builtin("compile/&")
@@ -566,7 +566,7 @@ def special_bit_and(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.and_, compiler, source,
-        operand=Operand.KOS_OPERAND_BIT_AND)
+        operand=Operand.BIT_AND)
 
 
 @builtin("compile/|")
@@ -578,7 +578,7 @@ def special_bit_or(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.or_, compiler, source,
-        operand=Operand.KOS_OPERAND_BIT_OR)
+        operand=Operand.BIT_OR)
 
 
 @builtin("compile/^")
@@ -590,7 +590,7 @@ def special_bit_xor(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.xor, compiler, source,
-        operand=Operand.KOS_OPERAND_BIT_XOR)
+        operand=Operand.BIT_XOR)
 
 
 @builtin("compile///")
@@ -602,7 +602,7 @@ def special_floor_divide(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.floordiv, compiler, source,
-        operand=Operand.KOS_OPERAND_FLOOR_DIVIDE)
+        operand=Operand.FLOOR_DIVIDE)
 
 
 @builtin("compile/@")
@@ -614,7 +614,7 @@ def special_matrix_multiply(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.matmul, compiler, source,
-        operand=Operand.KOS_OPERAND_MATRIX_MULTIPLY)
+        operand=Operand.MATRIX_MULTIPLY)
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +630,7 @@ def special_true_divide(compiler, source, tc=False):
 
     return _reduce_op(
         None, _op.truediv, compiler, source,
-        operand=Operand.KOS_OPERAND_TRUE_DIVIDE)
+        operand=Operand.TRUE_DIVIDE)
 
 
 @builtin("compile/%")
@@ -641,7 +641,7 @@ def special_modulo(compiler, source, tc=False):
     """
 
     return _binary_op(
-        None, compiler, source, operand=Operand.KOS_OPERAND_MODULO)
+        None, compiler, source, operand=Operand.MODULO)
 
 
 @builtin("compile/<<")
@@ -652,7 +652,7 @@ def special_bit_left(compiler, source, tc=False):
     """
 
     return _binary_op(
-        None, compiler, source, operand=Operand.KOS_OPERAND_BIT_LEFT)
+        None, compiler, source, operand=Operand.BIT_LEFT)
 
 
 @builtin("compile/>>")
@@ -663,7 +663,7 @@ def special_bit_right(compiler, source, tc=False):
     """
 
     return _binary_op(
-        None, compiler, source, operand=Operand.KOS_OPERAND_BIT_RIGHT)
+        None, compiler, source, operand=Operand.BIT_RIGHT)
 
 
 @builtin("compile/divmod")
@@ -673,7 +673,7 @@ def special_divmod(compiler, source, tc=False):
     Compile (compile/divmod A B). Combined quotient and remainder
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_DIVMOD, compiler, source, opa=2)
+    return _binary_op(OpCode.OBJECT_DIVMOD, compiler, source, opa=2)
 
 
 # ---------------------------------------------------------------------------
@@ -687,7 +687,7 @@ def special_not(compiler, source, tc=False):
     Compile (compile/not OBJ). Boolean negation via __bool__ then invert
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_NOT, compiler, source)
+    return _unary_op(OpCode.OBJECT_NOT, compiler, source)
 
 
 @builtin("compile/nil?")
@@ -699,7 +699,7 @@ def special_nilp(compiler, source, tc=False):
     CHECK_NIL when followed by a conditional jump.
     """
 
-    return _unary_op(OpCode.KOS_OP_NILP, compiler, source)
+    return _unary_op(OpCode.NILP, compiler, source)
 
 
 @builtin("compile/repr")
@@ -709,7 +709,7 @@ def special_repr(compiler, source, tc=False):
     Compile (compile/repr OBJ). String representation via __repr__
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_REPR, compiler, source)
+    return _unary_op(OpCode.OBJECT_REPR, compiler, source)
 
 
 @builtin("compile/truth")
@@ -719,7 +719,7 @@ def special_truth(compiler, source, tc=False):
     Compile (compile/truth OBJ). Boolean coercion via __bool__
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_TRUTH, compiler, source)
+    return _unary_op(OpCode.OBJECT_TRUTH, compiler, source)
 
 
 @builtin("compile/iter")
@@ -732,7 +732,7 @@ def special_iter(compiler, source, tc=False):
     protocol
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_ITER, compiler, source)
+    return _unary_op(OpCode.OBJECT_ITER, compiler, source)
 
 
 _NEXT_PATTERNS = [
@@ -768,9 +768,9 @@ def special_next(compiler, source, tc=False):
 
     if "default" in matched:
         frag.merge(compiler.full_compile(matched["default"].datum))
-        frag.instruction(OpCode.KOS_OP_OBJECT_NEXT, 2)
+        frag.instruction(OpCode.OBJECT_NEXT, 2)
     else:
-        frag.instruction(OpCode.KOS_OP_OBJECT_NEXT, 1)
+        frag.instruction(OpCode.OBJECT_NEXT, 1)
 
     return frag
 
@@ -782,7 +782,7 @@ def special_bit_invert(compiler, source, tc=False):
     Compile (compile/~ OBJ). Bitwise inversion via __invert__
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_BIT_INVERT, compiler, source)
+    return _unary_op(OpCode.OBJECT_BIT_INVERT, compiler, source)
 
 
 @builtin("compile/#str")
@@ -796,7 +796,7 @@ def special_str(compiler, source, tc=False):
     called_by, body = source
     if is_nil(body):
         frag = compiler.fragment(called_by)
-        frag.instruction(OpCode.KOS_OP_CONST, "")
+        frag.instruction(OpCode.CONST, "")
         return frag
 
     call_form = splat_call_form(called_by, body)
@@ -804,7 +804,7 @@ def special_str(compiler, source, tc=False):
         return call_form
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_STR,
+        OpCode.OBJECT_STR,
         lambda a, b: str(a) + str(b),
         compiler,
         source)
@@ -817,7 +817,7 @@ def special_len(compiler, source, tc=False):
     Compile (compile/len OBJ). Length query via __len__
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_LEN, compiler, source)
+    return _unary_op(OpCode.OBJECT_LEN, compiler, source)
 
 
 @builtin("compile/type")
@@ -827,7 +827,7 @@ def special_type(compiler, source, tc=False):
     Compile (compile/type OBJ). Type introspection via type()
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_TYPE, compiler, source)
+    return _unary_op(OpCode.OBJECT_TYPE, compiler, source)
 
 
 @builtin("compile/dir")
@@ -837,7 +837,7 @@ def special_dir(compiler, source, tc=False):
     Compile (compile/dir OBJ). Attribute listing via __dir__
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_DIR, compiler, source)
+    return _unary_op(OpCode.OBJECT_DIR, compiler, source)
 
 
 @builtin("compile/vars")
@@ -847,25 +847,25 @@ def special_vars(compiler, source, tc=False):
     Compile (compile/vars OBJ). Attribute dict via __dict__
     """
 
-    return _unary_op(OpCode.KOS_OP_OBJECT_VARS, compiler, source)
+    return _unary_op(OpCode.OBJECT_VARS, compiler, source)
 
 
 # operator symbol -> Operand op-type. Both the plain and compile/ symbol forms
 # of each operator map to the same op-type.
 _OPERAND_BY_SYM = {
-    '+': Operand.KOS_OPERAND_ADD,
-    '-': Operand.KOS_OPERAND_SUBTRACT,
-    '*': Operand.KOS_OPERAND_MULTIPLY,
-    '**': Operand.KOS_OPERAND_POWER,
-    '/': Operand.KOS_OPERAND_TRUE_DIVIDE,
-    '//': Operand.KOS_OPERAND_FLOOR_DIVIDE,
-    '%': Operand.KOS_OPERAND_MODULO,
-    '@': Operand.KOS_OPERAND_MATRIX_MULTIPLY,
-    '<<': Operand.KOS_OPERAND_BIT_LEFT,
-    '>>': Operand.KOS_OPERAND_BIT_RIGHT,
-    '&': Operand.KOS_OPERAND_BIT_AND,
-    '^': Operand.KOS_OPERAND_BIT_XOR,
-    '|': Operand.KOS_OPERAND_BIT_OR,
+    '+': Operand.ADD,
+    '-': Operand.SUBTRACT,
+    '*': Operand.MULTIPLY,
+    '**': Operand.POWER,
+    '/': Operand.TRUE_DIVIDE,
+    '//': Operand.FLOOR_DIVIDE,
+    '%': Operand.MODULO,
+    '@': Operand.MATRIX_MULTIPLY,
+    '<<': Operand.BIT_LEFT,
+    '>>': Operand.BIT_RIGHT,
+    '&': Operand.BIT_AND,
+    '^': Operand.BIT_XOR,
+    '|': Operand.BIT_OR,
 }
 
 _INPLACE_OPERAND_MAP = {}
@@ -917,9 +917,9 @@ def special_inplace(compiler, source, tc=False):
     frag.merge(compiler.full_compile(value_expr))
     # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
     # name to a fast slot (-> FAST_INPLACE) when possible.
-    frag.instruction(OpCode.KOS_OP_VAR_INPLACE,
+    frag.instruction(OpCode.VAR_INPLACE,
                      ((binop, 1), name, 0, 0))
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -958,7 +958,7 @@ def special_inplace_item(compiler, source, tc=False):
     if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
-    if (binop is Operand.KOS_OPERAND_POWER
+    if (binop is Operand.POWER
             and len(value_exprs) != 1):
         raise SpecialError("inplace ** takes exactly one value", source)
 
@@ -973,24 +973,24 @@ def special_inplace_item(compiler, source, tc=False):
     is_const, key_val = const_only_expr(keyfrag)
 
     if is_const:
-        frag.instruction(OpCode.KOS_OP_DUP, 1)
-        frag.instruction(OpCode.KOS_OP_CONST_ITEM, key_val)
+        frag.instruction(OpCode.DUP, 1)
+        frag.instruction(OpCode.CONST_ITEM, key_val)
     else:
         frag.merge(keyfrag)
-        frag.instruction(OpCode.KOS_OP_DUP, 2)
-        frag.instruction(OpCode.KOS_OP_ITEM, 0)
+        frag.instruction(OpCode.DUP, 2)
+        frag.instruction(OpCode.ITEM, 0)
 
     for value_expr in value_exprs:
         frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(OpCode.KOS_OP_OBJECT_INPLACE,
+    frag.instruction(OpCode.OBJECT_INPLACE,
                      (binop, 1 + len(value_exprs)))
 
     if is_const:
-        frag.instruction(OpCode.KOS_OP_CONST_ITEM_STORE, key_val)
+        frag.instruction(OpCode.CONST_ITEM_STORE, key_val)
     else:
-        frag.instruction(OpCode.KOS_OP_ITEM_STORE, 0)
+        frag.instruction(OpCode.ITEM_STORE, 0)
 
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -1034,7 +1034,7 @@ def special_inplace_attr(compiler, source, tc=False):
     if binop is None:
         raise SpecialError("unknown inplace operator", source)
 
-    if (binop is Operand.KOS_OPERAND_POWER
+    if (binop is Operand.POWER
             and len(value_exprs) != 1):
         raise SpecialError("inplace ** takes exactly one value", source)
 
@@ -1053,7 +1053,7 @@ def special_inplace_attr(compiler, source, tc=False):
         frag.request_var(name)
         for value_expr in value_exprs:
             frag.merge(compiler.full_compile(value_expr))
-        frag.instruction(OpCode.KOS_OP_VAR_ATTR_INPLACE,
+        frag.instruction(OpCode.VAR_ATTR_INPLACE,
                          ((binop, count), name, sym, 0))
     else:
         # obj is an expression: fused ATTR_INPLACE, obj left on the stack
@@ -1061,10 +1061,10 @@ def special_inplace_attr(compiler, source, tc=False):
         frag.merge(compiler.full_compile(obj_expr))
         for value_expr in value_exprs:
             frag.merge(compiler.full_compile(value_expr))
-        frag.instruction(OpCode.KOS_OP_ATTR_INPLACE,
+        frag.instruction(OpCode.ATTR_INPLACE,
                          ((binop, count), sym, 0, 0))
 
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 

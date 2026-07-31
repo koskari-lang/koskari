@@ -54,11 +54,11 @@ def special_call_cc(compiler, source, tc=False):
 
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
-    fragment.instruction(OpCode.KOS_OP_PUSH_CC, 0)
+    fragment.instruction(OpCode.PUSH_CC, 0)
     fragment.merge(compiler.full_compile(expr, False))
-    fragment.instruction(OpCode.KOS_OP_CAPTURE_CC, 0)
-    fragment.instruction(OpCode.KOS_OP_CALL, 1)
-    fragment.instruction(OpCode.KOS_OP_POP_CC, 0)
+    fragment.instruction(OpCode.CAPTURE_CC, 0)
+    fragment.instruction(OpCode.CALL, 1)
+    fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
 
@@ -82,13 +82,13 @@ def special_let_cc(compiler, source, tc=False):
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
 
-    fragment.instruction(OpCode.KOS_OP_PUSH_CC, 0)
+    fragment.instruction(OpCode.PUSH_CC, 0)
     with fragment.child_namespace(called_by, [], []) as frag:
         frag.declare_var(k_name)
-        frag.instruction(OpCode.KOS_OP_CAPTURE_CC, 0)
-        frag.instruction(OpCode.KOS_OP_VAR_STORE, k_name)
+        frag.instruction(OpCode.CAPTURE_CC, 0)
+        frag.instruction(OpCode.VAR_STORE, k_name)
         helper_begin(frag, body, False)
-    fragment.instruction(OpCode.KOS_OP_POP_CC, 0)
+    fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
 
@@ -117,11 +117,11 @@ def special_capture_cc(compiler, source, tc=False):
 
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
-    fragment.instruction(OpCode.KOS_OP_PUSH_CC, 0)
-    fragment.instruction(OpCode.KOS_OP_CAPTURE_CC, 0)
-    fragment.instruction(OpCode.KOS_OP_VAR_STORE, k_name)
+    fragment.instruction(OpCode.PUSH_CC, 0)
+    fragment.instruction(OpCode.CAPTURE_CC, 0)
+    fragment.instruction(OpCode.VAR_STORE, k_name)
     helper_begin(fragment, body, False)
-    fragment.instruction(OpCode.KOS_OP_POP_CC, 0)
+    fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
 
@@ -140,9 +140,9 @@ def special_reset(compiler, source, tc=False):
 
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
-    fragment.instruction(OpCode.KOS_OP_PUSH_PROMPT, 0)
+    fragment.instruction(OpCode.PUSH_PROMPT, 0)
     helper_begin(fragment, rest, False)
-    fragment.instruction(OpCode.KOS_OP_POP_PROMPT, 0)
+    fragment.instruction(OpCode.POP_PROMPT, 0)
 
     return fragment
 
@@ -171,11 +171,11 @@ def special_shift(compiler, source, tc=False):
 
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
-    fragment.instruction(OpCode.KOS_OP_PUSH_SHIFT, 0)
+    fragment.instruction(OpCode.PUSH_SHIFT, 0)
     fragment.declare_var(k_name)
-    fragment.instruction(OpCode.KOS_OP_VAR_STORE, k_name)
+    fragment.instruction(OpCode.VAR_STORE, k_name)
     helper_begin(fragment, body, False)
-    fragment.instruction(OpCode.KOS_OP_POP_SHIFT, 0)
+    fragment.instruction(OpCode.POP_SHIFT, 0)
 
     return fragment
 
@@ -211,7 +211,7 @@ def special_return(compiler, source, tc=False):
         count += 1
 
     frag.position_of(source)
-    frag.instruction(OpCode.KOS_OP_RETURN, count)
+    frag.instruction(OpCode.RETURN, count)
     return frag
 
 
@@ -246,7 +246,7 @@ def special_yield(compiler, source, tc=False):
         count += 1
 
     frag.position_of(source)
-    frag.instruction(OpCode.KOS_OP_YIELD, count)
+    frag.instruction(OpCode.YIELD, count)
     return frag
 
 
@@ -269,9 +269,9 @@ def special_await(compiler, source, tc=False):
     frag.position_of(source)
     if expr:
         frag.merge(compiler.full_compile(expr, False))
-        frag.instruction(OpCode.KOS_OP_AWAIT, 1)
+        frag.instruction(OpCode.AWAIT, 1)
     else:
-        frag.instruction(OpCode.KOS_OP_AWAIT, 0)
+        frag.instruction(OpCode.AWAIT, 0)
     return frag
 
 
@@ -294,8 +294,8 @@ def special_yield_from(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.position_of(source)
     frag.merge(compiler.full_compile(expr, False))
-    frag.instruction(OpCode.KOS_OP_YIELD_FROM, 0)
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.YIELD_FROM, 0)
+    frag.instruction(OpCode.CONST, None)
     return frag
 
 

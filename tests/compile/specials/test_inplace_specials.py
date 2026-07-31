@@ -50,7 +50,7 @@ def _find_inplace(code, operand):
     """
 
     for op, arg in _ops(code):
-        if op == OpCode.KOS_OP_OBJECT_INPLACE and (arg >> 8) == int(operand):
+        if op == OpCode.OBJECT_INPLACE and (arg >> 8) == int(operand):
             return arg & 0xff
     return None
 
@@ -136,18 +136,18 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
     async def test_inplace_item_const_key_emits_dup_and_const_item_store(self):
         code = self.compile_to_code('(compile/inplace-item + d "k" 1)', d={})
-        self.assertEqual(1, _count_op(code, OpCode.KOS_OP_DUP))
-        self.assertIn(OpCode.KOS_OP_CONST_ITEM, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_CONST_ITEM_STORE, _opcodes(code))
-        self.assertIsNotNone(_find_inplace(code, Operand.KOS_OPERAND_ADD))
+        self.assertEqual(1, _count_op(code, OpCode.DUP))
+        self.assertIn(OpCode.CONST_ITEM, _opcodes(code))
+        self.assertIn(OpCode.CONST_ITEM_STORE, _opcodes(code))
+        self.assertIsNotNone(_find_inplace(code, Operand.ADD))
 
 
     async def test_inplace_item_var_key_emits_dup_and_item_store(self):
         code = self.compile_to_code("(compile/inplace-item + lst i 1)", lst=[], i=0)
-        self.assertEqual(1, _count_op(code, OpCode.KOS_OP_DUP))
-        self.assertIn(OpCode.KOS_OP_ITEM, _opcodes(code))
-        self.assertIn(OpCode.KOS_OP_ITEM_STORE, _opcodes(code))
-        self.assertNotIn(OpCode.KOS_OP_CONST_ITEM, _opcodes(code))
+        self.assertEqual(1, _count_op(code, OpCode.DUP))
+        self.assertIn(OpCode.ITEM, _opcodes(code))
+        self.assertIn(OpCode.ITEM_STORE, _opcodes(code))
+        self.assertNotIn(OpCode.CONST_ITEM, _opcodes(code))
 
 
     async def test_inplace_item_mutates_in_place(self):
@@ -179,7 +179,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
         code = self.compile_to_code('(compile/inplace-item + d "k" 1 2 3)',
                                     d={})
-        arg = _find_inplace(code, Operand.KOS_OPERAND_ADD)
+        arg = _find_inplace(code, Operand.ADD)
         self.assertEqual(4, arg)
 
 
@@ -254,11 +254,11 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
             obj=SimpleNamespace(x=0))
         ops = _opcodes(code)
         # a single fused op replaces load + OBJECT_INPLACE + store
-        self.assertIn(OpCode.KOS_OP_VAR_ATTR_INPLACE, ops)
-        self.assertNotIn(OpCode.KOS_OP_VAR_ATTR, ops)
-        self.assertNotIn(OpCode.KOS_OP_VAR_ATTR_STORE, ops)
-        self.assertNotIn(OpCode.KOS_OP_OBJECT_INPLACE, ops)
-        self.assertNotIn(OpCode.KOS_OP_DUP, ops)
+        self.assertIn(OpCode.VAR_ATTR_INPLACE, ops)
+        self.assertNotIn(OpCode.VAR_ATTR, ops)
+        self.assertNotIn(OpCode.VAR_ATTR_STORE, ops)
+        self.assertNotIn(OpCode.OBJECT_INPLACE, ops)
+        self.assertNotIn(OpCode.DUP, ops)
 
 
     async def test_inplace_attr_expression_obj_emits_attr_inplace(self):
@@ -269,11 +269,11 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
         ops = _opcodes(code)
         # obj rides the stack; the single fused op replaces DUP + ATTR +
         # OBJECT_INPLACE + ATTR_STORE
-        self.assertIn(OpCode.KOS_OP_ATTR_INPLACE, ops)
-        self.assertNotIn(OpCode.KOS_OP_ATTR, ops)
-        self.assertNotIn(OpCode.KOS_OP_ATTR_STORE, ops)
-        self.assertNotIn(OpCode.KOS_OP_OBJECT_INPLACE, ops)
-        self.assertNotIn(OpCode.KOS_OP_DUP, ops)
+        self.assertIn(OpCode.ATTR_INPLACE, ops)
+        self.assertNotIn(OpCode.ATTR, ops)
+        self.assertNotIn(OpCode.ATTR_STORE, ops)
+        self.assertNotIn(OpCode.OBJECT_INPLACE, ops)
+        self.assertNotIn(OpCode.DUP, ops)
 
 
     async def test_inplace_attr_mutates_in_place(self):

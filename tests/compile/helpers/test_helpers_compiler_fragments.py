@@ -47,23 +47,23 @@ class TestConstOnlyExpr(unittest.TestCase):
 
     def test_single_const_true(self):
         frag = self.compiler.fragment("c")
-        frag.instruction(OpCode.KOS_OP_CONST, 7)
+        frag.instruction(OpCode.CONST, 7)
         ok, val = const_only_expr(frag)
         self.assertTrue(ok)
         self.assertEqual(val, 7)
 
     def test_two_consts_false(self):
         frag = self.compiler.fragment("c")
-        frag.instruction(OpCode.KOS_OP_CONST, 1)
-        frag.instruction(OpCode.KOS_OP_CONST, 2)
+        frag.instruction(OpCode.CONST, 1)
+        frag.instruction(OpCode.CONST, 2)
         ok, val = const_only_expr(frag)
         self.assertFalse(ok)
         self.assertIsNone(val)
 
     def test_const_then_pop_resets(self):
         frag = self.compiler.fragment("c")
-        frag.instruction(OpCode.KOS_OP_CONST, 3)
-        frag.instruction(OpCode.KOS_OP_POP, 1)
+        frag.instruction(OpCode.CONST, 3)
+        frag.instruction(OpCode.POP, 1)
         ok, val = const_only_expr(frag)
         self.assertFalse(ok)
         self.assertIsNone(val)
@@ -82,7 +82,7 @@ class TestHelperBegin(unittest.TestCase):
         self.assertIs(out, frag)
         self.assertEqual(
             frag.instructions,
-            [(OpCode.KOS_OP_CONST, None)])
+            [(OpCode.CONST, None)])
 
     def test_two_const_exprs_tail_pops_first(self):
         frag = self.compiler.fragment("b")
@@ -90,8 +90,8 @@ class TestHelperBegin(unittest.TestCase):
         out = helper_begin(frag, body)
         self.assertIs(out, frag)
         ops = [op for op, _ in frag.instructions]
-        self.assertIn(OpCode.KOS_OP_CONST, ops)
-        self.assertIn(OpCode.KOS_OP_POP, ops)
+        self.assertIn(OpCode.CONST, ops)
+        self.assertIn(OpCode.POP, ops)
 
 
 class TestUsingUnpackHelper(unittest.TestCase):
@@ -107,7 +107,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
         self.assertEqual(frag.declares, ["x"])
         self.assertEqual(
             frag.instructions,
-            [(OpCode.KOS_OP_VAR_STORE, "x")])
+            [(OpCode.VAR_STORE, "x")])
 
     def test_fixed_arity_list(self):
         a, b, c = symbol("a"), symbol("b"), symbol("c")
@@ -117,10 +117,10 @@ class TestUsingUnpackHelper(unittest.TestCase):
         self.assertEqual(
             frag.instructions,
             [
-                (OpCode.KOS_OP_UNPACK, 3),
-                (OpCode.KOS_OP_VAR_STORE, "a"),
-                (OpCode.KOS_OP_VAR_STORE, "b"),
-                (OpCode.KOS_OP_VAR_STORE, "c"),
+                (OpCode.UNPACK, 3),
+                (OpCode.VAR_STORE, "a"),
+                (OpCode.VAR_STORE, "b"),
+                (OpCode.VAR_STORE, "c"),
             ])
 
     def test_two_symbol_unpack_var(self):
@@ -129,7 +129,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
         self.assertEqual(frag.declares, [])
         self.assertEqual(
             frag.instructions,
-            [(OpCode.KOS_OP_UNPACK_VAR, ("a", "b", 0, 0))])
+            [(OpCode.UNPACK_VAR, ("a", "b", 0, 0))])
 
     def test_star_pattern(self):
         star = keyword("*")
@@ -139,10 +139,10 @@ class TestUsingUnpackHelper(unittest.TestCase):
         self.assertEqual(
             frag.instructions,
             [
-                (OpCode.KOS_OP_UNPACK_STAR, (1, 1, 0, 0)),
-                (OpCode.KOS_OP_VAR_STORE, "a"),
-                (OpCode.KOS_OP_VAR_STORE, "rest"),
-                (OpCode.KOS_OP_VAR_STORE, "b"),
+                (OpCode.UNPACK_STAR, (1, 1, 0, 0)),
+                (OpCode.VAR_STORE, "a"),
+                (OpCode.VAR_STORE, "rest"),
+                (OpCode.VAR_STORE, "b"),
             ])
 
     def test_whole_sequence_star_only(self):
@@ -153,13 +153,13 @@ class TestUsingUnpackHelper(unittest.TestCase):
         self.assertEqual(frag.declares, ["whole"])
         self.assertEqual(
             frag.instructions,
-            [(OpCode.KOS_OP_VAR_STORE, "whole")])
+            [(OpCode.VAR_STORE, "whole")])
 
     def test_nested_pair_tail(self):
         inner = cons(symbol("i"), symbol("j"), nil)
         lhs = cons(symbol("a"), inner, nil)
         frag = using_unpack_helper(self.compiler, lhs)
-        self.assertIn((OpCode.KOS_OP_UNPACK, 2), frag.instructions)
+        self.assertIn((OpCode.UNPACK, 2), frag.instructions)
 
     def test_non_symbol_element_raises(self):
         lhs = cons(symbol("a"), 42, nil)
@@ -189,10 +189,10 @@ class TestUsingUnpackHelper(unittest.TestCase):
         self.assertEqual(
             frag.instructions,
             [
-                (OpCode.KOS_OP_UNPACK, 3),
-                (OpCode.KOS_OP_VAR_STORE, "a"),
-                (OpCode.KOS_OP_VAR_STORE, "b"),
-                (OpCode.KOS_OP_VAR_STORE, "c"),
+                (OpCode.UNPACK, 3),
+                (OpCode.VAR_STORE, "a"),
+                (OpCode.VAR_STORE, "b"),
+                (OpCode.VAR_STORE, "c"),
             ])
 
 

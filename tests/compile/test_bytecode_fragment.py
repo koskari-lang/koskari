@@ -38,14 +38,14 @@ pytestmark = pytest.mark.phase_compile
 def example_bytecode_truthy_yus():
     """Example Code: VAR YUS, jump-if-truthy to truthy, else NO, jump done."""
     instr = (
-        [OpCode.KOS_OP_VAR, "YUS"],
-        [OpCode.KOS_OP_JUMP_TRUE, "truthy"],
-        [OpCode.KOS_OP_CONST, "NO"],
-        [OpCode.KOS_OP_JUMP, "done"],
-        [OpCode.KOS_OP_LABEL, "truthy"],
-        [OpCode.KOS_OP_CONST, "YES"],
-        [OpCode.KOS_OP_LABEL, "done"],
-        [OpCode.KOS_OP_RETURN, 1],
+        [OpCode.VAR, "YUS"],
+        [OpCode.JUMP_TRUE, "truthy"],
+        [OpCode.CONST, "NO"],
+        [OpCode.JUMP, "done"],
+        [OpCode.LABEL, "truthy"],
+        [OpCode.CONST, "YES"],
+        [OpCode.LABEL, "done"],
+        [OpCode.RETURN, 1],
     )
     nspec = NamespaceSpec(None, (), ())
     return Code(nspec, instr, "truthy_yus", "something.ki")
@@ -57,7 +57,7 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
     async def test_fields(self):
         """Code stores name, filename, namespace_spec, yields, and uses_fast."""
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_CONST, None], [OpCode.KOS_OP_RETURN, 1])
+        instr = ([OpCode.CONST, None], [OpCode.RETURN, 1])
         code = Code(nspec, instr, "testing")
         self.assertEqual(code.name, "testing")
         self.assertEqual(code.filename, "<anon>")
@@ -70,16 +70,16 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         """Code.uses_fast is True when FAST opcodes appear at root scope."""
         nspec_fast = NamespaceSpec(None, ("x",), ())
         instr_fast = (
-            [OpCode.KOS_OP_FAST, 0],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.FAST, 0],
+            [OpCode.RETURN, 1],
         )
         code_fast = Code(nspec_fast, instr_fast)
         self.assertTrue(code_fast.uses_fast)
 
         nspec_nofast = NamespaceSpec(None, ("x",), ())
         instr_nofast = (
-            [OpCode.KOS_OP_CONST, 42],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.CONST, 42],
+            [OpCode.RETURN, 1],
         )
         code_nofast = Code(nspec_nofast, instr_nofast)
         self.assertFalse(code_nofast.uses_fast)
@@ -88,12 +88,12 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         """Instruction fragments are resolved: labels, constants, opargs."""
         bc = example_bytecode_truthy_yus()
         self.assertEqual(bc.name, "truthy_yus")
-        self.assertEqual(bc.oparg(0), (OpCode.KOS_OP_VAR, 0))
-        self.assertEqual(bc.oparg(1), (OpCode.KOS_OP_JUMP_TRUE, 4))
-        self.assertEqual(bc.oparg(2), (OpCode.KOS_OP_CONST, 1))
-        self.assertEqual(bc.oparg(3), (OpCode.KOS_OP_JUMP, 5))
-        self.assertEqual(bc.oparg(4), (OpCode.KOS_OP_CONST, 2))
-        self.assertEqual(bc.oparg(5), (OpCode.KOS_OP_RETURN, 1))
+        self.assertEqual(bc.oparg(0), (OpCode.VAR, 0))
+        self.assertEqual(bc.oparg(1), (OpCode.JUMP_TRUE, 4))
+        self.assertEqual(bc.oparg(2), (OpCode.CONST, 1))
+        self.assertEqual(bc.oparg(3), (OpCode.JUMP, 5))
+        self.assertEqual(bc.oparg(4), (OpCode.CONST, 2))
+        self.assertEqual(bc.oparg(5), (OpCode.RETURN, 1))
         self.assertRaises(IndexError, bc.oparg, 8)
         self.assertEqual(bc.constant(0), "YUS")
         self.assertEqual(bc.constant(1), "NO")
@@ -103,32 +103,32 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
     async def test_distinct_consts(self):
         """Constant pool deduplicates; VAR and CONST share by identity."""
         instr = (
-            [OpCode.KOS_OP_VAR, "NO"],
-            [OpCode.KOS_OP_CONST, "NO"],
-            [OpCode.KOS_OP_CONST, "YES"],
-            [OpCode.KOS_OP_CONST, -1],
-            [OpCode.KOS_OP_CONST, 1],
-            [OpCode.KOS_OP_CONST, True],
-            [OpCode.KOS_OP_CONST, None],
-            [OpCode.KOS_OP_CONST, False],
-            [OpCode.KOS_OP_CONST, 0],
-            [OpCode.KOS_OP_CONST, 0],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.VAR, "NO"],
+            [OpCode.CONST, "NO"],
+            [OpCode.CONST, "YES"],
+            [OpCode.CONST, -1],
+            [OpCode.CONST, 1],
+            [OpCode.CONST, True],
+            [OpCode.CONST, None],
+            [OpCode.CONST, False],
+            [OpCode.CONST, 0],
+            [OpCode.CONST, 0],
+            [OpCode.RETURN, 1],
         )
         nspec = NamespaceSpec(None, (), ())
         bc = Code(nspec, instr)
         self.assertEqual(bc.length(), 11)
-        self.assertEqual(bc.oparg(0), (OpCode.KOS_OP_VAR, 0))
-        self.assertEqual(bc.oparg(1), (OpCode.KOS_OP_CONST, 0))
-        self.assertEqual(bc.oparg(2), (OpCode.KOS_OP_CONST, 1))
-        self.assertEqual(bc.oparg(3), (OpCode.KOS_OP_CONST, 2))
-        self.assertEqual(bc.oparg(4), (OpCode.KOS_OP_CONST, 3))
-        self.assertEqual(bc.oparg(5), (OpCode.KOS_OP_CONST, 4))
-        self.assertEqual(bc.oparg(6), (OpCode.KOS_OP_CONST, 5))
-        self.assertEqual(bc.oparg(7), (OpCode.KOS_OP_CONST, 6))
-        self.assertEqual(bc.oparg(8), (OpCode.KOS_OP_CONST, 7))
-        self.assertEqual(bc.oparg(9), (OpCode.KOS_OP_CONST, 7))
-        self.assertEqual(bc.oparg(10), (OpCode.KOS_OP_RETURN, 1))
+        self.assertEqual(bc.oparg(0), (OpCode.VAR, 0))
+        self.assertEqual(bc.oparg(1), (OpCode.CONST, 0))
+        self.assertEqual(bc.oparg(2), (OpCode.CONST, 1))
+        self.assertEqual(bc.oparg(3), (OpCode.CONST, 2))
+        self.assertEqual(bc.oparg(4), (OpCode.CONST, 3))
+        self.assertEqual(bc.oparg(5), (OpCode.CONST, 4))
+        self.assertEqual(bc.oparg(6), (OpCode.CONST, 5))
+        self.assertEqual(bc.oparg(7), (OpCode.CONST, 6))
+        self.assertEqual(bc.oparg(8), (OpCode.CONST, 7))
+        self.assertEqual(bc.oparg(9), (OpCode.CONST, 7))
+        self.assertEqual(bc.oparg(10), (OpCode.RETURN, 1))
         self.assertRaises(IndexError, bc.oparg, 11)
         self.assertIs(bc.constant(0), "NO")
         self.assertIs(bc.constant(1), "YES")
@@ -145,24 +145,24 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
     async def test_return_constant(self):
         """Simple Code: CONST 42, RETURN 1."""
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_CONST, 42], [OpCode.KOS_OP_RETURN, 1])
+        instr = ([OpCode.CONST, 42], [OpCode.RETURN, 1])
         code = Code(nspec, instr, "return_42")
         self.assertEqual(code.length(), 2)
-        self.assertEqual(code.oparg(0), (OpCode.KOS_OP_CONST, 0))
-        self.assertEqual(code.oparg(1), (OpCode.KOS_OP_RETURN, 1))
+        self.assertEqual(code.oparg(0), (OpCode.CONST, 0))
+        self.assertEqual(code.oparg(1), (OpCode.RETURN, 1))
         self.assertEqual(code.constant(0), 42)
 
     async def test_return_none(self):
         """Simple Code: CONST None, RETURN 1."""
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_CONST, None], [OpCode.KOS_OP_RETURN, 1])
+        instr = ([OpCode.CONST, None], [OpCode.RETURN, 1])
         code = Code(nspec, instr)
         self.assertEqual(code.constant(0), None)
 
     async def test_return_string(self):
         """Simple Code: CONST string, RETURN 1."""
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_CONST, "hello"], [OpCode.KOS_OP_RETURN, 1])
+        instr = ([OpCode.CONST, "hello"], [OpCode.RETURN, 1])
         code = Code(nspec, instr)
         self.assertEqual(code.constant(0), "hello")
 
@@ -170,9 +170,9 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         """Code with POSITION instruction updates source position."""
         nspec = NamespaceSpec(None, (), ())
         instr = (
-            [OpCode.KOS_OP_POSITION, (1, 1)],
-            [OpCode.KOS_OP_CONST, 1],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.POSITION, (1, 1)],
+            [OpCode.CONST, 1],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 2)
@@ -183,30 +183,30 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         """Code with VAR instruction stores name in constant pool."""
         nspec = NamespaceSpec(None, (), ())
         instr = (
-            [OpCode.KOS_OP_VAR, "x"],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.VAR, "x"],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
-        self.assertEqual(code.oparg(0), (OpCode.KOS_OP_VAR, 0))
+        self.assertEqual(code.oparg(0), (OpCode.VAR, 0))
         self.assertEqual(code.constant(0), "x")
 
     async def test_backward_jump(self):
         """Jump backward to earlier LABEL. LABEL opcodes become NOOP."""
         nspec = NamespaceSpec(None, (), ())
         instr = (
-            [OpCode.KOS_OP_LABEL, "loop"],
-            [OpCode.KOS_OP_CONST, 0],
-            [OpCode.KOS_OP_JUMP_FALSE, "done"],
-            [OpCode.KOS_OP_JUMP, "loop"],
-            [OpCode.KOS_OP_LABEL, "done"],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.LABEL, "loop"],
+            [OpCode.CONST, 0],
+            [OpCode.JUMP_FALSE, "done"],
+            [OpCode.JUMP, "loop"],
+            [OpCode.LABEL, "done"],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 4)
-        self.assertEqual(code.oparg(0), (OpCode.KOS_OP_CONST, 0))
-        self.assertEqual(code.oparg(1), (OpCode.KOS_OP_JUMP_FALSE, 3))
-        self.assertEqual(code.oparg(2), (OpCode.KOS_OP_JUMP, 0))
-        self.assertEqual(code.oparg(3), (OpCode.KOS_OP_RETURN, 1))
+        self.assertEqual(code.oparg(0), (OpCode.CONST, 0))
+        self.assertEqual(code.oparg(1), (OpCode.JUMP_FALSE, 3))
+        self.assertEqual(code.oparg(2), (OpCode.JUMP, 0))
+        self.assertEqual(code.oparg(3), (OpCode.RETURN, 1))
 
     async def test_empty_instructions_rejected(self):
         """Code with empty instructions raises ValueError."""
@@ -218,8 +218,8 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         """Jump to undefined label raises RuntimeError."""
         nspec = NamespaceSpec(None, (), ())
         instr = (
-            [OpCode.KOS_OP_JUMP, "missing"],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.JUMP, "missing"],
+            [OpCode.RETURN, 1],
         )
         with self.assertRaises(RuntimeError):
             Code(nspec, instr)
@@ -227,7 +227,7 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
     async def test_length_and_position_bounds(self):
         """length() and position() respect instruction count."""
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_CONST, 1], [OpCode.KOS_OP_RETURN, 1])
+        instr = ([OpCode.CONST, 1], [OpCode.RETURN, 1])
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 2)
         with self.assertRaises(IndexError):
@@ -238,14 +238,14 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
     async def test_filename_default(self):
         """Code with no filename uses default."""
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_CONST, 1], [OpCode.KOS_OP_RETURN, 1])
+        instr = ([OpCode.CONST, 1], [OpCode.RETURN, 1])
         code = Code(nspec, instr)
         self.assertEqual(code.filename, "<anon>")
 
     async def test_filename_explicit(self):
         """Code accepts explicit filename."""
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_CONST, 1], [OpCode.KOS_OP_RETURN, 1])
+        instr = ([OpCode.CONST, 1], [OpCode.RETURN, 1])
         code = Code(nspec, instr, "fn", "script.ki")
         self.assertEqual(code.filename, "script.ki")
         self.assertEqual(code.name, "fn")
@@ -255,15 +255,15 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, ("obj",), ())
         kw_names = ()
         instr = (
-            [OpCode.KOS_OP_CONST, "obj"],
-            [OpCode.KOS_OP_VAR, "obj"],
-            [OpCode.KOS_OP_CALL_FAST_ATTR_NAMES, (0, "bar", kw_names, 0)],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.CONST, "obj"],
+            [OpCode.VAR, "obj"],
+            [OpCode.CALL_FAST_ATTR_NAMES, (0, "bar", kw_names, 0)],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 4)
         op, arg = code.oparg(2)
-        self.assertEqual(op, OpCode.KOS_OP_CALL_FAST_ATTR_NAMES)
+        self.assertEqual(op, OpCode.CALL_FAST_ATTR_NAMES)
         self.assertEqual(arg, 0)
         a0, a1, a2, a3 = code.extra_tuple(0)
         self.assertEqual(a0, 0)
@@ -278,13 +278,13 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, ("obj",), ())
         kw_names = ()
         instr = (
-            [OpCode.KOS_OP_CALL_VAR_ATTR_NAMES, ("obj", "bar", kw_names, 0)],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.CALL_VAR_ATTR_NAMES, ("obj", "bar", kw_names, 0)],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 2)
         op, arg = code.oparg(0)
-        self.assertEqual(op, OpCode.KOS_OP_CALL_VAR_ATTR_NAMES)
+        self.assertEqual(op, OpCode.CALL_VAR_ATTR_NAMES)
         self.assertEqual(arg, 0)
         a0, a1, a2, a3 = code.extra_tuple(0)
         self.assertIn(a0, range(len(code.constants_pool)))
@@ -300,14 +300,14 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, (), ())
         attr_name = "upper"
         instr = (
-            [OpCode.KOS_OP_CONST, "hello"],
-            [OpCode.KOS_OP_CALL_ATTR, (attr_name, 0, 0, 0)],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.CONST, "hello"],
+            [OpCode.CALL_ATTR, (attr_name, 0, 0, 0)],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 3)
         op, arg = code.oparg(1)
-        self.assertEqual(op, OpCode.KOS_OP_CALL_ATTR)
+        self.assertEqual(op, OpCode.CALL_ATTR)
         self.assertEqual(arg, 0)
         a0, a1, a2, a3 = code.extra_tuple(0)
         self.assertIn(a0, range(len(code.constants_pool)))
@@ -322,13 +322,13 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         var_name = "obj"
         attr_name = "value"
         instr = (
-            [OpCode.KOS_OP_VAR_ATTR, (var_name, attr_name, 0, 0)],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.VAR_ATTR, (var_name, attr_name, 0, 0)],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 2)
         op, arg = code.oparg(0)
-        self.assertEqual(op, OpCode.KOS_OP_VAR_ATTR)
+        self.assertEqual(op, OpCode.VAR_ATTR)
         self.assertEqual(arg, 0)
         a0, a1, a2, a3 = code.extra_tuple(0)
         self.assertIn(a0, range(len(code.constants_pool)))
@@ -342,13 +342,13 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         """EXTRA opcode FAST_ATTR: arg indexes extra table row (slot, attr)."""
         nspec = NamespaceSpec(None, ("obj",), ())
         instr = (
-            [OpCode.KOS_OP_FAST_ATTR, (0, "value", 0, 0)],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.FAST_ATTR, (0, "value", 0, 0)],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 2)
         op, arg = code.oparg(0)
-        self.assertEqual(op, OpCode.KOS_OP_FAST_ATTR)
+        self.assertEqual(op, OpCode.FAST_ATTR)
         self.assertEqual(arg, 0)
         a0, a1, a2, a3 = code.extra_tuple(0)
         self.assertEqual(a0, 0)
@@ -362,22 +362,22 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, (), ())
         shared = 42
         instr = (
-            [OpCode.KOS_OP_CONST, shared],
-            [OpCode.KOS_OP_CONST, shared],
-            [OpCode.KOS_OP_CONST, shared],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.CONST, shared],
+            [OpCode.CONST, shared],
+            [OpCode.CONST, shared],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr)
         self.assertEqual(len(code.constants_pool), 1)
-        self.assertEqual(code.oparg(0), (OpCode.KOS_OP_CONST, 0))
-        self.assertEqual(code.oparg(1), (OpCode.KOS_OP_CONST, 0))
-        self.assertEqual(code.oparg(2), (OpCode.KOS_OP_CONST, 0))
+        self.assertEqual(code.oparg(0), (OpCode.CONST, 0))
+        self.assertEqual(code.oparg(1), (OpCode.CONST, 0))
+        self.assertEqual(code.oparg(2), (OpCode.CONST, 0))
 
     async def test_allocation_introspection_fields_basic(self):
         """Allocation fields exist and satisfy the identity relation."""
 
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_CONST, 1], [OpCode.KOS_OP_RETURN, 1])
+        instr = ([OpCode.CONST, 1], [OpCode.RETURN, 1])
         code = Code(nspec, instr, "alloc_basic")
         fields = (
             'allocation_bytes',
@@ -406,10 +406,10 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
 
         nspec = NamespaceSpec(None, ('obj',), ())
         instr = (
-            [OpCode.KOS_OP_PUSH_LOOP, 0],
-            [OpCode.KOS_OP_FAST_ATTR, (0, 'value', 0, 0)],
-            [OpCode.KOS_OP_POP_LOOP, 0],
-            [OpCode.KOS_OP_RETURN, 1],
+            [OpCode.PUSH_LOOP, 0],
+            [OpCode.FAST_ATTR, (0, 'value', 0, 0)],
+            [OpCode.POP_LOOP, 0],
+            [OpCode.RETURN, 1],
         )
         code = Code(nspec, instr, "alloc_complex")
 
@@ -436,7 +436,7 @@ class TestCodeFunctionSpec(unittest.IsolatedAsyncioTestCase):
         """Code.function_spec(FormalsSpec()) returns a FunctionSpec"""
 
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_RETURN, 0],)
+        instr = ([OpCode.RETURN, 0],)
         code = Code(nspec, instr, "inner")
         fspec = FormalsSpec()
         result = code.function_spec(fspec)
@@ -448,7 +448,7 @@ class TestCodeFunctionSpec(unittest.IsolatedAsyncioTestCase):
         """Code.function_spec(non-FormalsSpec) raises TypeError"""
 
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_RETURN, 0],)
+        instr = ([OpCode.RETURN, 0],)
         code = Code(nspec, instr, "inner")
         with self.assertRaises(TypeError):
             code.function_spec(None)
@@ -459,7 +459,7 @@ class TestCodeFunctionSpec(unittest.IsolatedAsyncioTestCase):
         """Code.extras is a dict; compiler may set doc metadata"""
 
         nspec = NamespaceSpec(None, (), ())
-        instr = ([OpCode.KOS_OP_RETURN, 0],)
+        instr = ([OpCode.RETURN, 0],)
         code = Code(nspec, instr, "inner")
         self.assertIsInstance(code.extras, dict)
         code.extras['doc'] = 'stored'
@@ -520,11 +520,11 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
 
     async def test_instruction(self):
         f = ByteCodeFragment()
-        f.instruction(OpCode.KOS_OP_CONST, 42)
-        f.instruction(OpCode.KOS_OP_RETURN, 1)
+        f.instruction(OpCode.CONST, 42)
+        f.instruction(OpCode.RETURN, 1)
         self.assertEqual(
             f.instructions,
-            [(OpCode.KOS_OP_CONST, 42), (OpCode.KOS_OP_RETURN, 1)],
+            [(OpCode.CONST, 42), (OpCode.RETURN, 1)],
         )
 
     async def test_position(self):
@@ -532,7 +532,7 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
         f.position((3, 10), extra="line text")
         self.assertEqual(
             f.instructions,
-            [(OpCode.KOS_OP_POSITION, (3, 10, "line text"))],
+            [(OpCode.POSITION, (3, 10, "line text"))],
         )
 
     async def test_position_of_no_position(self):
@@ -555,17 +555,17 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
         a = ByteCodeFragment(name="a")
         a.declare_var("x")
         a.request_var("y")
-        a.instruction(OpCode.KOS_OP_CONST, 1)
+        a.instruction(OpCode.CONST, 1)
         b = ByteCodeFragment(name="b")
         b.declare_var("z")
         b.request_var("y")
-        b.instruction(OpCode.KOS_OP_RETURN, 1)
+        b.instruction(OpCode.RETURN, 1)
         a.merge(b)
         self.assertEqual(a.declares, ["x", "z"])
         self.assertEqual(a.requests, ["y"])
         self.assertEqual(
             a.instructions,
-            [(OpCode.KOS_OP_CONST, 1), (OpCode.KOS_OP_RETURN, 1)],
+            [(OpCode.CONST, 1), (OpCode.RETURN, 1)],
         )
 
     async def test_declare_var_with_type_expr(self):

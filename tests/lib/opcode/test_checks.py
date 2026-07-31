@@ -29,14 +29,14 @@ import pytest
 pytestmark = pytest.mark.phase_lib
 
 
-EQ = int(Compare.KOS_COMPARE_EQ)
-NE = int(Compare.KOS_COMPARE_NE)
-IN = int(Compare.KOS_COMPARE_IN)
-NOT_IN = int(Compare.KOS_COMPARE_NOT_IN)
-IS = int(Compare.KOS_COMPARE_IS)
-IS_NOT = int(Compare.KOS_COMPARE_IS_NOT)
-IS_INSTANCE = int(Compare.KOS_COMPARE_IS_INSTANCE)
-IS_SUBCLASS = int(Compare.KOS_COMPARE_IS_SUBCLASS)
+EQ = int(Compare.EQ)
+NE = int(Compare.NE)
+IN = int(Compare.IN)
+NOT_IN = int(Compare.NOT_IN)
+IS = int(Compare.IS)
+IS_NOT = int(Compare.IS_NOT)
+IS_INSTANCE = int(Compare.IS_INSTANCE)
+IS_SUBCLASS = int(Compare.IS_SUBCLASS)
 
 
 class TestCheckOpcodes(CevalTest):

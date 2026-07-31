@@ -109,8 +109,8 @@ class TestDynWithSpecial(SpecialsTestCase):
         src = "(compile/dyn-with [x (compile/call make_mgr)] (compile/call noop x))"
         code = self.compile_to_code(src, make_mgr=lambda: None, noop=lambda x: None)
         ops = [code.oparg(i)[0] for i in range(code.length())]
-        self.assertIn(OpCode.KOS_OP_PUSH_DYN_WITH, ops)
-        self.assertIn(OpCode.KOS_OP_POP_DYN_WITH, ops)
+        self.assertIn(OpCode.PUSH_DYN_WITH, ops)
+        self.assertIn(OpCode.POP_DYN_WITH, ops)
 
 
     async def test_dyn_with_body_value_is_expression_result(self):

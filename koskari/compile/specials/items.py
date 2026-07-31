@@ -57,11 +57,11 @@ def special_item(compiler, source, tc=False):
     is_const, key_val = const_only_expr(keyfrag)
 
     if is_const:
-        frag.instruction(OpCode.KOS_OP_CONST_ITEM, key_val)
+        frag.instruction(OpCode.CONST_ITEM, key_val)
 
     else:
         frag.merge(keyfrag)
-        frag.instruction(OpCode.KOS_OP_ITEM, 0)
+        frag.instruction(OpCode.ITEM, 0)
 
     return frag
 
@@ -90,13 +90,13 @@ def special_del_item(compiler, source, tc=False):
     is_const, key_val = const_only_expr(keyfrag)
 
     if is_const:
-        frag.instruction(OpCode.KOS_OP_CONST_ITEM_CLEAR, key_val)
+        frag.instruction(OpCode.CONST_ITEM_CLEAR, key_val)
 
     else:
         frag.merge(keyfrag)
-        frag.instruction(OpCode.KOS_OP_ITEM_CLEAR, 0)
+        frag.instruction(OpCode.ITEM_CLEAR, 0)
 
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 
@@ -126,11 +126,11 @@ def special_take_item(compiler, source, tc=False):
     is_const, key_val = const_only_expr(keyfrag)
 
     if is_const:
-        frag.instruction(OpCode.KOS_OP_CONST_ITEM_TAKE, key_val)
+        frag.instruction(OpCode.CONST_ITEM_TAKE, key_val)
 
     else:
         frag.merge(keyfrag)
-        frag.instruction(OpCode.KOS_OP_ITEM_TAKE, 0)
+        frag.instruction(OpCode.ITEM_TAKE, 0)
 
     return frag
 
@@ -160,14 +160,14 @@ def special_set_item(compiler, source, tc=False):
 
     if is_const:
         frag.merge(compiler.full_compile(val))
-        frag.instruction(OpCode.KOS_OP_CONST_ITEM_STORE, key_val)
+        frag.instruction(OpCode.CONST_ITEM_STORE, key_val)
 
     else:
         frag.merge(keyfrag)
         frag.merge(compiler.full_compile(val))
-        frag.instruction(OpCode.KOS_OP_ITEM_STORE, 0)
+        frag.instruction(OpCode.ITEM_STORE, 0)
 
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+    frag.instruction(OpCode.CONST, None)
 
     return frag
 

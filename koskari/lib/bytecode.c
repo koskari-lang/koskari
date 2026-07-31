@@ -3294,11 +3294,15 @@ PyCodeObject *KosCode_Faux(PyObject *self) {
 /* === Enum creation === */
 
 
-#define int_enum(enum_dict, ek)                   \
-  do {                                            \
-    PyObject *_v = PyLong_FromLong(ek);           \
-    PyDict_SetItemString(enum_dict, #ek, _v);     \
-    Py_DECREF(_v);                                \
+/* Add one member to an enum dict, keyed by the bare suffix of its C
+   constant. The prefix exists so the constant stands alone in C; from
+   the object model the enum class already supplies that context, so
+   OpCode.CONST rather than OpCode.CONST. */
+#define int_enum(enum_dict, prefix, suffix)               \
+  do {                                                    \
+    PyObject *_v = PyLong_FromLong(prefix ## suffix);     \
+    PyDict_SetItemString(enum_dict, #suffix, _v);         \
+    Py_DECREF(_v);                                        \
   } while(0)
 
 
@@ -3333,21 +3337,21 @@ static PyObject *create_opstyle_enum(void) {
   if (! enum_dict)
     return NULL;
 
-  int_enum(enum_dict, KOSTYLE_COMPILE);
-  int_enum(enum_dict, KOSTYLE_LABEL);
-  int_enum(enum_dict, KOSTYLE_NOARG);
-  int_enum(enum_dict, KOSTYLE_COUNT);
-  int_enum(enum_dict, KOSTYLE_PAIR_COUNT);
-  int_enum(enum_dict, KOSTYLE_STAR);
-  int_enum(enum_dict, KOSTYLE_CONST);
-  int_enum(enum_dict, KOSTYLE_VAR);
-  int_enum(enum_dict, KOSTYLE_FASTVAR);
-  int_enum(enum_dict, KOSTYLE_OPCOUNT);
-  int_enum(enum_dict, KOSTYLE_EXTRA);
-  int_enum(enum_dict, KOSTYLE_CMP);
-  int_enum(enum_dict, KOSTYLE_CMPCOUNT);
-  int_enum(enum_dict, KOSTYLE_CMPSRC);
-  int_enum(enum_dict, KOSTYLE_OPERAND);
+  int_enum(enum_dict, KOSTYLE_, COMPILE);
+  int_enum(enum_dict, KOSTYLE_, LABEL);
+  int_enum(enum_dict, KOSTYLE_, NOARG);
+  int_enum(enum_dict, KOSTYLE_, COUNT);
+  int_enum(enum_dict, KOSTYLE_, PAIR_COUNT);
+  int_enum(enum_dict, KOSTYLE_, STAR);
+  int_enum(enum_dict, KOSTYLE_, CONST);
+  int_enum(enum_dict, KOSTYLE_, VAR);
+  int_enum(enum_dict, KOSTYLE_, FASTVAR);
+  int_enum(enum_dict, KOSTYLE_, OPCOUNT);
+  int_enum(enum_dict, KOSTYLE_, EXTRA);
+  int_enum(enum_dict, KOSTYLE_, CMP);
+  int_enum(enum_dict, KOSTYLE_, CMPCOUNT);
+  int_enum(enum_dict, KOSTYLE_, CMPSRC);
+  int_enum(enum_dict, KOSTYLE_, OPERAND);
 
   return create_int_enum("OpStyle", enum_dict);
 }
@@ -3440,7 +3444,7 @@ static PyObject *create_opcode_enum(PyObject *styles) {
   if (! enum_dict)
     return NULL;
 
-#define OP(name, ...)  int_enum(enum_dict, KOS_OP_##name);
+#define OP(name, ...)  int_enum(enum_dict, KOS_OP_, name);
 #include "opcodes.incl"
 #undef OP
 
@@ -3450,16 +3454,7 @@ static PyObject *create_opcode_enum(PyObject *styles) {
 
   /* Attach style and extra schema to each opcode */
   for (KosOpCode op = 0; op <= KOS_OP_THEEND; op++) {
-    char buf[64];
-    int n = PyOS_snprintf(buf, sizeof buf, "KOS_OP_%s", opcode_names[op]);
-    if (n < 0 || (size_t) n >= sizeof buf) {
-      PyErr_Format(PyExc_RuntimeError, "opcode name too long: %s",
-                   opcode_names[op]);
-      Py_DECREF(res);
-      return NULL;
-    }
-
-    PyObject *member = PyObject_GetAttrString(res, buf);
+    PyObject *member = PyObject_GetAttrString(res, opcode_names[op]);
     if (! member) {
       Py_DECREF(res);
       return NULL;
@@ -3490,19 +3485,19 @@ static PyObject *create_operand_enum(void) {
   if (! enum_dict)
     return NULL;
 
-  int_enum(enum_dict, KOS_OPERAND_ADD);
-  int_enum(enum_dict, KOS_OPERAND_SUBTRACT);
-  int_enum(enum_dict, KOS_OPERAND_MULTIPLY);
-  int_enum(enum_dict, KOS_OPERAND_MODULO);
-  int_enum(enum_dict, KOS_OPERAND_BIT_AND);
-  int_enum(enum_dict, KOS_OPERAND_BIT_OR);
-  int_enum(enum_dict, KOS_OPERAND_BIT_XOR);
-  int_enum(enum_dict, KOS_OPERAND_BIT_LEFT);
-  int_enum(enum_dict, KOS_OPERAND_BIT_RIGHT);
-  int_enum(enum_dict, KOS_OPERAND_TRUE_DIVIDE);
-  int_enum(enum_dict, KOS_OPERAND_FLOOR_DIVIDE);
-  int_enum(enum_dict, KOS_OPERAND_MATRIX_MULTIPLY);
-  int_enum(enum_dict, KOS_OPERAND_POWER);
+  int_enum(enum_dict, KOS_OPERAND_, ADD);
+  int_enum(enum_dict, KOS_OPERAND_, SUBTRACT);
+  int_enum(enum_dict, KOS_OPERAND_, MULTIPLY);
+  int_enum(enum_dict, KOS_OPERAND_, MODULO);
+  int_enum(enum_dict, KOS_OPERAND_, BIT_AND);
+  int_enum(enum_dict, KOS_OPERAND_, BIT_OR);
+  int_enum(enum_dict, KOS_OPERAND_, BIT_XOR);
+  int_enum(enum_dict, KOS_OPERAND_, BIT_LEFT);
+  int_enum(enum_dict, KOS_OPERAND_, BIT_RIGHT);
+  int_enum(enum_dict, KOS_OPERAND_, TRUE_DIVIDE);
+  int_enum(enum_dict, KOS_OPERAND_, FLOOR_DIVIDE);
+  int_enum(enum_dict, KOS_OPERAND_, MATRIX_MULTIPLY);
+  int_enum(enum_dict, KOS_OPERAND_, POWER);
 
   return create_int_enum("Operand", enum_dict);
 }
@@ -3521,18 +3516,18 @@ static PyObject *create_compare_enum(void) {
   if (! enum_dict)
     return NULL;
 
-  int_enum(enum_dict, KOS_COMPARE_LT);
-  int_enum(enum_dict, KOS_COMPARE_LE);
-  int_enum(enum_dict, KOS_COMPARE_EQ);
-  int_enum(enum_dict, KOS_COMPARE_NE);
-  int_enum(enum_dict, KOS_COMPARE_GT);
-  int_enum(enum_dict, KOS_COMPARE_GE);
-  int_enum(enum_dict, KOS_COMPARE_IS);
-  int_enum(enum_dict, KOS_COMPARE_IS_NOT);
-  int_enum(enum_dict, KOS_COMPARE_IN);
-  int_enum(enum_dict, KOS_COMPARE_NOT_IN);
-  int_enum(enum_dict, KOS_COMPARE_IS_INSTANCE);
-  int_enum(enum_dict, KOS_COMPARE_IS_SUBCLASS);
+  int_enum(enum_dict, KOS_COMPARE_, LT);
+  int_enum(enum_dict, KOS_COMPARE_, LE);
+  int_enum(enum_dict, KOS_COMPARE_, EQ);
+  int_enum(enum_dict, KOS_COMPARE_, NE);
+  int_enum(enum_dict, KOS_COMPARE_, GT);
+  int_enum(enum_dict, KOS_COMPARE_, GE);
+  int_enum(enum_dict, KOS_COMPARE_, IS);
+  int_enum(enum_dict, KOS_COMPARE_, IS_NOT);
+  int_enum(enum_dict, KOS_COMPARE_, IN);
+  int_enum(enum_dict, KOS_COMPARE_, NOT_IN);
+  int_enum(enum_dict, KOS_COMPARE_, IS_INSTANCE);
+  int_enum(enum_dict, KOS_COMPARE_, IS_SUBCLASS);
 
   return create_int_enum("Compare", enum_dict);
 }

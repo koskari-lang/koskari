@@ -48,7 +48,7 @@ class TestDerefSpecial(SpecialsTestCase):
             (compile/deref r)))
         """)
         ops = [code.oparg(i)[0] for i in range(code.length())]
-        self.assertIn(OpCode.KOS_OP_DEREF, ops)
+        self.assertIn(OpCode.DEREF, ops)
 
 
     async def test_deref_call_for_higher_order(self):

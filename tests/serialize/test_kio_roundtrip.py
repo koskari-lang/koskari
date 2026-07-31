@@ -64,7 +64,7 @@ class TestKioRoundTrip(unittest.TestCase):
         buf.seek(0)
         kio = load_kio(buf)
         for op, arg in kio.codes[0].soften():
-            if op == OpCode.KOS_OP_CONST:
+            if op == OpCode.CONST:
                 return arg
         self.fail("no CONST in roundtripped code")
 
@@ -94,7 +94,7 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertEqual(len(kio.codes), 1)
         loaded = None
         for op, arg in kio.codes[0].soften():
-            if op == OpCode.KOS_OP_CONST:
+            if op == OpCode.CONST:
                 loaded = arg
                 break
         self.assertIsInstance(loaded, FunctionSpec)
@@ -160,7 +160,7 @@ class TestFastValidation(unittest.TestCase):
 
     def test_fast_index_rejected(self):
         nspec = NamespaceSpec(None, ('a',), ())
-        instr = [(OpCode.KOS_OP_FAST, 1)]
+        instr = [(OpCode.FAST, 1)]
         with self.assertRaises(ValueError) as ctx:
             Code(nspec, instr, 'x', 'y.ki')
         self.assertIn('FAST', str(ctx.exception))

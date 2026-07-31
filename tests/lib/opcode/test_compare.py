@@ -30,12 +30,12 @@ import pytest
 pytestmark = pytest.mark.phase_lib
 
 
-LT = int(Compare.KOS_COMPARE_LT)
-EQ = int(Compare.KOS_COMPARE_EQ)
-IS = int(Compare.KOS_COMPARE_IS)
-IN = int(Compare.KOS_COMPARE_IN)
-NOT_IN = int(Compare.KOS_COMPARE_NOT_IN)
-IS_INSTANCE = int(Compare.KOS_COMPARE_IS_INSTANCE)
+LT = int(Compare.LT)
+EQ = int(Compare.EQ)
+IS = int(Compare.IS)
+IN = int(Compare.IN)
+NOT_IN = int(Compare.NOT_IN)
+IS_INSTANCE = int(Compare.IS_INSTANCE)
 
 
 def cmpcount(sel, count):

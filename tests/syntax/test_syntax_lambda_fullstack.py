@@ -80,7 +80,7 @@ def special_lambda_ng(
     for name, expr in ann_exprs:
         ann_names.append(name)
         if isinstance(expr, str):
-            frag.instruction(OpCode.KOS_OP_CONST, expr)
+            frag.instruction(OpCode.CONST, expr)
         else:
             frag.merge(compiler.full_compile(expr))
 
@@ -113,9 +113,9 @@ def special_lambda_ng(
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
         star, starstar, by_refs), code)
-    frag.instruction(OpCode.KOS_OP_CONST, fspec)
+    frag.instruction(OpCode.CONST, fspec)
     frag.instruction(
-        OpCode.KOS_OP_BUILD_FUNCTION,
+        OpCode.BUILD_FUNCTION,
         (tuple(defnames), tuple(ann_names), 0, 0))
 
     return frag

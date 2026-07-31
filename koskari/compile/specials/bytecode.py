@@ -55,12 +55,6 @@ def special_bytecode(
 
         elif isinstance(op, (str, symbol, keyword)):
             op = str(op)
-            if not op.startswith("KOS_OP_"):
-                if op.startswith("OP_"):
-                    op = "KOS_" + op
-                else:
-                    op = "KOS_OP_" + op
-
             opc = getattr(OpCode, op, None)
 
         else:

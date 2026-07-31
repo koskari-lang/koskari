@@ -42,17 +42,17 @@ class TestCompileNilp(SpecialsTestCase):
 
         code = self.compile_to_code("(nil? x)")
         ops = self.opcodes(code)
-        self.assertIn(OpCode.KOS_OP_NILP, ops)
-        self.assertNotIn(OpCode.KOS_OP_CHECK_NIL, ops)
+        self.assertIn(OpCode.NILP, ops)
+        self.assertNotIn(OpCode.CHECK_NIL, ops)
 
     def test_cond_nilp_squashes_to_check_nil(self):
         """a nil? test in cond lowers NILP + JUMP_FALSE into CHECK_NIL"""
 
         code = self.compile_to_code("(cond [(nil? x) 1] [else: 2])")
         ops = self.opcodes(code)
-        self.assertIn(OpCode.KOS_OP_CHECK_NIL, ops)
+        self.assertIn(OpCode.CHECK_NIL, ops)
         # the squash consumes the standalone NILP and the JUMP_FALSE
-        self.assertNotIn(OpCode.KOS_OP_NILP, ops)
+        self.assertNotIn(OpCode.NILP, ops)
 
 
 # The end.

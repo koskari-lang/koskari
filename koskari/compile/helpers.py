@@ -577,16 +577,16 @@ def const_only_expr(fragment):
     value = None
 
     for op, opa in fragment.instructions:
-        if op == OpCode.KOS_OP_CONST:
+        if op == OpCode.CONST:
             if found:
                 return (False, None)
             found = True
             value = opa
 
-        elif op in (OpCode.KOS_OP_NOOP, OpCode.KOS_OP_POSITION):
+        elif op in (OpCode.NOOP, OpCode.POSITION):
             continue
 
-        elif found and op == OpCode.KOS_OP_POP and opa == 1:
+        elif found and op == OpCode.POP and opa == 1:
             found = False
             value = None
 
@@ -862,7 +862,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     if is_symbolish(lhs):
         name = str(lhs)
         maybe_declare(name)
-        frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
+        frag.instruction(OpCode.VAR_STORE, name)
         return frag
 
     if not is_proper(lhs):
@@ -879,7 +879,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         name2 = str(items[1])
         maybe_declare(name1)
         maybe_declare(name2)
-        frag.instruction(OpCode.KOS_OP_UNPACK_VAR, (name1, name2, 0, 0))
+        frag.instruction(OpCode.UNPACK_VAR, (name1, name2, 0, 0))
         return frag
 
     star_idx = [
@@ -891,14 +891,14 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
 
     if not star_idx:
         n = len(items)
-        frag.instruction(OpCode.KOS_OP_UNPACK, n)
+        frag.instruction(OpCode.UNPACK, n)
         for elt in items:
             if is_pair(elt):
                 frag.merge(using_unpack_helper(compiler, elt, source, declare))
             elif is_symbolish(elt):
                 elt = str(elt)
                 maybe_declare(elt)
-                frag.instruction(OpCode.KOS_OP_VAR_STORE, elt)
+                frag.instruction(OpCode.VAR_STORE, elt)
             else:
                 fail("unpack pattern list elements must be symbols or pairs")
         return frag
@@ -917,24 +917,24 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
 
     if not prefix and not suffix:
         maybe_declare(star_name)
-        frag.instruction(OpCode.KOS_OP_VAR_STORE, star_name)
+        frag.instruction(OpCode.VAR_STORE, star_name)
         return frag
 
     left = len(prefix)
     right = len(suffix)
-    frag.instruction(OpCode.KOS_OP_UNPACK_STAR, (left, right, 0, 0))
+    frag.instruction(OpCode.UNPACK_STAR, (left, right, 0, 0))
     for elt in prefix:
         if is_pair(elt):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
         elif is_symbolish(elt):
             elt = str(elt)
             maybe_declare(elt)
-            frag.instruction(OpCode.KOS_OP_VAR_STORE, elt)
+            frag.instruction(OpCode.VAR_STORE, elt)
         else:
             fail("unpack pattern list elements must be symbols or pairs")
 
     maybe_declare(star_name)
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, star_name)
+    frag.instruction(OpCode.VAR_STORE, star_name)
 
     for elt in suffix:
         if is_pair(elt):
@@ -942,7 +942,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         elif is_symbolish(elt):
             elt = str(elt)
             maybe_declare(elt)
-            frag.instruction(OpCode.KOS_OP_VAR_STORE, elt)
+            frag.instruction(OpCode.VAR_STORE, elt)
         else:
             fail("unpack pattern list elements must be symbols or pairs")
 
@@ -994,7 +994,7 @@ def helper_begin(
     """
 
     if is_nil(body):
-        fragment.instruction(OpCode.KOS_OP_CONST, None)
+        fragment.instruction(OpCode.CONST, None)
         return fragment
 
     compiler = fragment.compiler
@@ -1008,7 +1008,7 @@ def helper_begin(
             break
         else:
             fragment.merge(compiler.full_compile(expr, False))
-            fragment.instruction(OpCode.KOS_OP_POP, 1)
+            fragment.instruction(OpCode.POP, 1)
 
     return fragment
 

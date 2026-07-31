@@ -378,7 +378,7 @@ class TestClassBytecode(SpecialsTestCase):
     def opcode_named(self, name):
         from koskari.lib import OpCode
 
-        return getattr(OpCode, "KOS_OP_" + name, None)
+        return getattr(OpCode, name, None)
 
 
 # The end.

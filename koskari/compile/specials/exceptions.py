@@ -59,7 +59,7 @@ def _finally_body(compiler, fragment, body):
         fragment.position_of(body)
         expr, body = body
         fragment.merge(compiler.full_compile(expr, False))
-        fragment.instruction(OpCode.KOS_OP_POP, 1)
+        fragment.instruction(OpCode.POP, 1)
         if is_nil(body):
             break
 
@@ -155,8 +155,8 @@ def special_check_exception(compiler, source, tc=False):
         fragment.merge(compiler.full_compile(expr, False))
         count += 1
 
-    fragment.instruction(OpCode.KOS_OP_BUILD_ARGS, count)
-    fragment.instruction(OpCode.KOS_OP_EXCEPTION_MATCH, 0)
+    fragment.instruction(OpCode.BUILD_ARGS, count)
+    fragment.instruction(OpCode.EXCEPTION_MATCH, 0)
     return fragment
 
 
@@ -169,7 +169,7 @@ def special_clear_exception(compiler, source, tc=False):
         raise TypeError("too many arguments to clear-exception")
 
     fragment = compiler.fragment(called_by)
-    fragment.instruction(OpCode.KOS_OP_EXCEPTION_CLEAR, 0)
+    fragment.instruction(OpCode.EXCEPTION_CLEAR, 0)
 
     return fragment
 
@@ -183,7 +183,7 @@ def special_load_exception(compiler, source, tc=False):
         raise TypeError("too many arguments to %s" % called_by)
 
     fragment = compiler.fragment(called_by)
-    fragment.instruction(OpCode.KOS_OP_EXCEPTION, 0)
+    fragment.instruction(OpCode.EXCEPTION, 0)
 
     return fragment
 
@@ -218,17 +218,17 @@ def _try(compiler, try_expr, catches, tc):
 
     frag = compiler.fragment("<try>")
 
-    frag.instruction(OpCode.KOS_OP_PUSH_TRY, except_label)
+    frag.instruction(OpCode.PUSH_TRY, except_label)
     frag.merge(compiler.full_compile(try_expr, False))
 
-    frag.instruction(OpCode.KOS_OP_CLEAR_TRY, 0)
-    frag.instruction(OpCode.KOS_OP_JUMP, end_label)
+    frag.instruction(OpCode.CLEAR_TRY, 0)
+    frag.instruction(OpCode.JUMP, end_label)
 
-    frag.instruction(OpCode.KOS_OP_LABEL, except_label)
+    frag.instruction(OpCode.LABEL, except_label)
     frag.merge(_except(compiler, catches))
 
-    frag.instruction(OpCode.KOS_OP_LABEL, end_label)
-    frag.instruction(OpCode.KOS_OP_POP_TRY, 1)
+    frag.instruction(OpCode.LABEL, end_label)
+    frag.instruction(OpCode.POP_TRY, 1)
 
     return frag
 
@@ -239,18 +239,18 @@ def _try_else(compiler, try_expr, catches, else_exprs, tc):
 
     frag = compiler.fragment("<try-else>")
 
-    frag.instruction(OpCode.KOS_OP_PUSH_TRY, except_label)
+    frag.instruction(OpCode.PUSH_TRY, except_label)
     frag.merge(compiler.full_compile(try_expr, False))
 
-    frag.instruction(OpCode.KOS_OP_CLEAR_TRY, 0)
+    frag.instruction(OpCode.CLEAR_TRY, 0)
     helper_begin(frag, else_exprs, tc)
-    frag.instruction(OpCode.KOS_OP_JUMP, end_label)
+    frag.instruction(OpCode.JUMP, end_label)
 
-    frag.instruction(OpCode.KOS_OP_LABEL, except_label)
+    frag.instruction(OpCode.LABEL, except_label)
     frag.merge(_except(compiler, catches))
 
-    frag.instruction(OpCode.KOS_OP_LABEL, end_label)
-    frag.instruction(OpCode.KOS_OP_POP_TRY, 1)
+    frag.instruction(OpCode.LABEL, end_label)
+    frag.instruction(OpCode.POP_TRY, 1)
 
     return frag
 
@@ -260,17 +260,17 @@ def _try_finally(compiler, try_expr, catches, fin_exprs, tc):
 
     frag = compiler.fragment("<try-finally>")
 
-    frag.instruction(OpCode.KOS_OP_PUSH_FINALLY, cleanup)
+    frag.instruction(OpCode.PUSH_FINALLY, cleanup)
     if catches:
         frag.merge(_try(compiler, try_expr, catches, tc))
     else:
         frag.merge(compiler.full_compile(try_expr, False))
 
-    frag.instruction(OpCode.KOS_OP_CLEAR_FINALLY, 0)
-    frag.instruction(OpCode.KOS_OP_LABEL, cleanup)
+    frag.instruction(OpCode.CLEAR_FINALLY, 0)
+    frag.instruction(OpCode.LABEL, cleanup)
     _finally_body(compiler, frag, fin_exprs)
 
-    frag.instruction(OpCode.KOS_OP_POP_FINALLY, 1)
+    frag.instruction(OpCode.POP_FINALLY, 1)
 
     return frag
 
@@ -287,14 +287,14 @@ def _try_else_finally(
 
     frag = compiler.fragment("<try-else-finally>")
 
-    frag.instruction(OpCode.KOS_OP_PUSH_FINALLY, cleanup)
+    frag.instruction(OpCode.PUSH_FINALLY, cleanup)
     frag.merge(_try_else(compiler, try_expr, catches, else_exprs, False))
 
-    frag.instruction(OpCode.KOS_OP_CLEAR_FINALLY, 0)
-    frag.instruction(OpCode.KOS_OP_LABEL, cleanup)
+    frag.instruction(OpCode.CLEAR_FINALLY, 0)
+    frag.instruction(OpCode.LABEL, cleanup)
     _finally_body(compiler, frag, fin_exprs)
 
-    frag.instruction(OpCode.KOS_OP_POP_FINALLY, 1)
+    frag.instruction(OpCode.POP_FINALLY, 1)
 
     return frag
 
@@ -357,7 +357,7 @@ def special_raise(compiler, source, tc=False):
 
     fragment = compiler.fragment(called_by)
     if is_nil(rest):
-        fragment.instruction(OpCode.KOS_OP_RAISE, 0)
+        fragment.instruction(OpCode.RAISE, 0)
         return fragment
 
     expr, rest = rest
@@ -365,7 +365,7 @@ def special_raise(compiler, source, tc=False):
         raise TypeError("too many arguments to raise")
 
     fragment.merge(compiler.full_compile(expr, False))
-    fragment.instruction(OpCode.KOS_OP_RAISE, 1)
+    fragment.instruction(OpCode.RAISE, 1)
 
     return fragment
 

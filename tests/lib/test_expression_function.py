@@ -39,10 +39,10 @@ pytestmark = pytest.mark.phase_lib
 
 def _op(name):
     """
-    Map string opcode name to OpCode enum (e.g. 'CONST' -> KOS_OP_CONST)
+    Map string opcode name to OpCode enum member
     """
 
-    return getattr(OpCode, "KOS_OP_" + name)
+    return getattr(OpCode, name)
 
 
 def build_code(code, local_syms=None, name="expr"):

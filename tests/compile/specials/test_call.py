@@ -36,7 +36,7 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         code = self.compile_to_code("(lambda [x] (f x))", tc=True)
         ops = self.call_ops(self.lambda_body_code(code))
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
         self.assertEqual(ops[0][2], 1)
 
 
@@ -44,7 +44,7 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         code = self.compile_to_code("(lambda [] (f))", tc=True)
         ops = self.call_ops(self.lambda_body_code(code))
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
         self.assertEqual(ops[0][2], 0)
 
 
@@ -52,9 +52,9 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         code = self.compile_to_code("(lambda [x] (begin (f 1) (g x)))", tc=True)
         ops = self.call_ops(self.lambda_body_code(code))
         self.assertEqual(len(ops), 2)
-        self.assertIn(ops[0][1], (OpCode.KOS_OP_CALL, OpCode.KOS_OP_CALL_VAR,
-                                  OpCode.KOS_OP_CALL_FAST))
-        self.assertEqual(ops[1][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertIn(ops[0][1], (OpCode.CALL, OpCode.CALL_VAR,
+                                  OpCode.CALL_FAST))
+        self.assertEqual(ops[1][1], OpCode.TAIL_CALL)
         self.assertEqual(ops[1][2], 1)
 
 
@@ -62,7 +62,7 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         code = self.compile_to_code("(begin (f 1))", tc=True)
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
         self.assertEqual(ops[0][2], 1)
 
 
@@ -73,8 +73,8 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         code = self.compile_to_code("(begin (f x) x)", tc=True)
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
-        self.assertIn(ops[0][1], (OpCode.KOS_OP_CALL, OpCode.KOS_OP_CALL_VAR,
-                                  OpCode.KOS_OP_CALL_FAST))
+        self.assertIn(ops[0][1], (OpCode.CALL, OpCode.CALL_VAR,
+                                  OpCode.CALL_FAST))
 
 
     async def test_begin_x_f_x_tail_call(self):
@@ -84,7 +84,7 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         code = self.compile_to_code("(begin x (f x))", tc=True)
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
         self.assertEqual(ops[0][2], 1)
 
 
@@ -98,7 +98,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
         self.assertEqual(ops[0][2], 0)
 
 
@@ -107,7 +107,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
         self.assertEqual(ops[0][2], 3)
 
 
@@ -116,9 +116,9 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
-        self.assertNotIn(OpCode.KOS_OP_CALL_NAMES, [o[1] for o in ops])
-        self.assertNotIn(OpCode.KOS_OP_CALL_STAR, [o[1] for o in ops])
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
+        self.assertNotIn(OpCode.CALL_NAMES, [o[1] for o in ops])
+        self.assertNotIn(OpCode.CALL_STAR, [o[1] for o in ops])
 
 
     async def test_keyword_emits_call_names(self):
@@ -126,7 +126,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL_NAMES)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_NAMES)
         self.assertEqual(ops[0][2], 1)
 
 
@@ -137,9 +137,9 @@ class TestCallBytecodeShape(SpecialsTestCase):
         const_idx = None
         for i in range(body.length()):
             op, arg = body.oparg(i)
-            if op == OpCode.KOS_OP_TAIL_CALL_NAMES:
+            if op == OpCode.TAIL_CALL_NAMES:
                 call_idx = i
-            elif op == OpCode.KOS_OP_CONST:
+            elif op == OpCode.CONST:
                 val = body.constant(arg)
                 if isinstance(val, tuple) and "name" in val:
                     const_idx = i
@@ -153,7 +153,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL_STAR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_STAR)
         self.assertEqual(ops[0][2], 1)
 
 
@@ -163,9 +163,9 @@ class TestCallBytecodeShape(SpecialsTestCase):
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
         self.assertEqual(len(call_ops), 1)
-        self.assertEqual(call_ops[0][1], OpCode.KOS_OP_TAIL_CALL_STAR)
-        self.assertIn(OpCode.KOS_OP_BUILD_ARGS, [o[1] for o in arg_ops])
-        self.assertIn(OpCode.KOS_OP_COMBINE_ARGS, [o[1] for o in arg_ops])
+        self.assertEqual(call_ops[0][1], OpCode.TAIL_CALL_STAR)
+        self.assertIn(OpCode.BUILD_ARGS, [o[1] for o in arg_ops])
+        self.assertIn(OpCode.COMBINE_ARGS, [o[1] for o in arg_ops])
 
 
     async def test_full_varargs_emits_call_star_with_positional_and_keywords(self):
@@ -177,7 +177,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL_STAR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_STAR)
         self.assertEqual(ops[0][2], 3)
 
 
@@ -191,10 +191,10 @@ class TestCallBytecodeShape(SpecialsTestCase):
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
         self.assertEqual(len(call_ops), 1)
-        self.assertEqual(call_ops[0][1], OpCode.KOS_OP_TAIL_CALL_STAR)
-        self.assertIn(OpCode.KOS_OP_BUILD_ARGS, [o[1] for o in arg_ops])
-        self.assertIn(OpCode.KOS_OP_COMBINE_ARGS, [o[1] for o in arg_ops])
-        combine_ops = [o for o in arg_ops if o[1] == OpCode.KOS_OP_COMBINE_ARGS]
+        self.assertEqual(call_ops[0][1], OpCode.TAIL_CALL_STAR)
+        self.assertIn(OpCode.BUILD_ARGS, [o[1] for o in arg_ops])
+        self.assertIn(OpCode.COMBINE_ARGS, [o[1] for o in arg_ops])
+        combine_ops = [o for o in arg_ops if o[1] == OpCode.COMBINE_ARGS]
         self.assertEqual(len(combine_ops), 1)
         self.assertEqual(combine_ops[0][2], 4)
 
@@ -209,10 +209,10 @@ class TestCallBytecodeShape(SpecialsTestCase):
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
         self.assertEqual(len(call_ops), 1)
-        self.assertEqual(call_ops[0][1], OpCode.KOS_OP_TAIL_CALL_STAR)
-        self.assertIn(OpCode.KOS_OP_BUILD_KWDS_NAMES, [o[1] for o in arg_ops])
-        self.assertIn(OpCode.KOS_OP_COMBINE_KWDS, [o[1] for o in arg_ops])
-        combine_ops = [o for o in arg_ops if o[1] == OpCode.KOS_OP_COMBINE_KWDS]
+        self.assertEqual(call_ops[0][1], OpCode.TAIL_CALL_STAR)
+        self.assertIn(OpCode.BUILD_KWDS_NAMES, [o[1] for o in arg_ops])
+        self.assertIn(OpCode.COMBINE_KWDS, [o[1] for o in arg_ops])
+        combine_ops = [o for o in arg_ops if o[1] == OpCode.COMBINE_KWDS]
         self.assertEqual(len(combine_ops), 1)
         self.assertEqual(combine_ops[0][2], 4)
 
@@ -225,10 +225,10 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
         all_ops = [body.oparg(i)[0] for i in range(body.length())]
-        self.assertNotIn(OpCode.KOS_OP_CALL_NAMES, all_ops)
-        self.assertNotIn(OpCode.KOS_OP_CALL_STAR, all_ops)
+        self.assertNotIn(OpCode.CALL_NAMES, all_ops)
+        self.assertNotIn(OpCode.CALL_STAR, all_ops)
 
 
     async def test_positional_and_keyword_uses_call_names_not_call_star(self):
@@ -239,9 +239,9 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL_NAMES)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_NAMES)
         all_ops = [body.oparg(i)[0] for i in range(body.length())]
-        self.assertNotIn(OpCode.KOS_OP_CALL_STAR, all_ops)
+        self.assertNotIn(OpCode.CALL_STAR, all_ops)
 
 
 class TestCallVarPath(SpecialsTestCase):
@@ -259,7 +259,7 @@ class TestCallVarPath(SpecialsTestCase):
         self.assertEqual(len(ops), 1)
         self.assertIn(
             ops[0][1],
-            (OpCode.KOS_OP_CALL_VAR, OpCode.KOS_OP_CALL_FAST),
+            (OpCode.CALL_VAR, OpCode.CALL_FAST),
             "non-tail symbol call should use CALL_VAR or CALL_FAST")
 
 
@@ -273,7 +273,7 @@ class TestCallVarPath(SpecialsTestCase):
         self.assertEqual(len(ops), 1)
         self.assertIn(
             ops[0][1],
-            (OpCode.KOS_OP_CALL_VAR, OpCode.KOS_OP_CALL_FAST))
+            (OpCode.CALL_VAR, OpCode.CALL_FAST))
 
 
     async def test_symbol_callable_keyword_no_tc_emits_call_var_names(self):
@@ -287,7 +287,7 @@ class TestCallVarPath(SpecialsTestCase):
         self.assertEqual(len(ops), 1)
         self.assertIn(
             ops[0][1],
-            (OpCode.KOS_OP_CALL_VAR_NAMES, OpCode.KOS_OP_CALL_FAST_NAMES))
+            (OpCode.CALL_VAR_NAMES, OpCode.CALL_FAST_NAMES))
 
 
     async def test_symbol_callable_star_no_tc_emits_call_var_star(self):
@@ -300,7 +300,7 @@ class TestCallVarPath(SpecialsTestCase):
         self.assertEqual(len(ops), 1)
         self.assertIn(
             ops[0][1],
-            (OpCode.KOS_OP_CALL_VAR_STAR, OpCode.KOS_OP_CALL_FAST_STAR))
+            (OpCode.CALL_VAR_STAR, OpCode.CALL_FAST_STAR))
 
 
     async def test_tail_position_still_emits_tail_call(self):
@@ -311,7 +311,7 @@ class TestCallVarPath(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
 
 
     async def test_complex_callable_emits_call_attr_not_call_var(self):
@@ -326,9 +326,9 @@ class TestCallVarPath(SpecialsTestCase):
         self.assertEqual(len(ops), 1)
         self.assertIn(
             ops[0][1],
-            (OpCode.KOS_OP_CALL_ATTR,
-             OpCode.KOS_OP_CALL_VAR_ATTR,
-             OpCode.KOS_OP_CALL_FAST_ATTR),
+            (OpCode.CALL_ATTR,
+             OpCode.CALL_VAR_ATTR,
+             OpCode.CALL_FAST_ATTR),
             "complex attr callable should use a fused attr-call opcode")
 
 
@@ -344,9 +344,9 @@ class TestCallEvaluationOrder(SpecialsTestCase):
         const_count = 0
         for i in range(body.length()):
             op, arg = body.oparg(i)
-            if op in (OpCode.KOS_OP_CALL, OpCode.KOS_OP_TAIL_CALL):
+            if op in (OpCode.CALL, OpCode.TAIL_CALL):
                 call_idx = i
-            elif op == OpCode.KOS_OP_CONST:
+            elif op == OpCode.CONST:
                 const_count += 1
         self.assertIsNotNone(call_idx)
         self.assertGreaterEqual(const_count, 2)
@@ -492,9 +492,9 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
         )
         body = self.lambda_body_code(code)
         ops = [body.oparg(i)[0] for i in range(body.length())]
-        self.assertIn(OpCode.KOS_OP_YIELD, ops)
-        self.assertNotIn(OpCode.KOS_OP_TAIL_CALL, ops)
-        self.assertIn(OpCode.KOS_OP_CALL, ops)
+        self.assertIn(OpCode.YIELD, ops)
+        self.assertNotIn(OpCode.TAIL_CALL, ops)
+        self.assertIn(OpCode.CALL, ops)
 
 
 # The end.

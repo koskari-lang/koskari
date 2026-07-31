@@ -161,11 +161,11 @@ def special_call(
             fragment.position(pos)
             if use_var_path:
                 fragment.instruction(
-                    OpCode.KOS_OP_CALL_VAR, (name, len(args_seq), 0, 0))
+                    OpCode.CALL_VAR, (name, len(args_seq), 0, 0))
             elif tc:
-                fragment.instruction(OpCode.KOS_OP_TAIL_CALL, len(args_seq))
+                fragment.instruction(OpCode.TAIL_CALL, len(args_seq))
             else:
-                fragment.instruction(OpCode.KOS_OP_CALL, len(args_seq))
+                fragment.instruction(OpCode.CALL, len(args_seq))
         else:
             pos_exprs = [expr for (idx, expr) in args_seq]
             kw_names = []
@@ -179,16 +179,16 @@ def special_call(
             for expr in kw_values:
                 fragment.merge(compiler.full_compile(expr, False))
             if not use_var_path:
-                fragment.instruction(OpCode.KOS_OP_CONST, tuple(kw_names))
+                fragment.instruction(OpCode.CONST, tuple(kw_names))
             fragment.position(pos)
             if use_var_path:
                 fragment.instruction(
-                    OpCode.KOS_OP_CALL_VAR_NAMES,
+                    OpCode.CALL_VAR_NAMES,
                     (name, tuple(kw_names), opa, 0))
             elif tc:
-                fragment.instruction(OpCode.KOS_OP_TAIL_CALL_NAMES, opa)
+                fragment.instruction(OpCode.TAIL_CALL_NAMES, opa)
             else:
-                fragment.instruction(OpCode.KOS_OP_CALL_NAMES, opa)
+                fragment.instruction(OpCode.CALL_NAMES, opa)
     else:
         opa = 0
         if args_seq:
@@ -202,11 +202,11 @@ def special_call(
                 if kind == "pos":
                     for _, expr in data:
                         fragment.merge(compiler.full_compile(expr, False))
-                    fragment.instruction(OpCode.KOS_OP_BUILD_ARGS, len(data))
+                    fragment.instruction(OpCode.BUILD_ARGS, len(data))
                 else:
                     fragment.merge(compiler.full_compile(data, False))
             if len(arg_chunks) > 1:
-                fragment.instruction(OpCode.KOS_OP_COMBINE_ARGS, len(arg_chunks))
+                fragment.instruction(OpCode.COMBINE_ARGS, len(arg_chunks))
 
         if kwds_seq:
             kwd_chunks = _partition_kwds(kwds_seq)
@@ -215,20 +215,20 @@ def special_call(
                     names = tuple(n for n, _ in data)
                     for _, expr in data:
                         fragment.merge(compiler.full_compile(expr, False))
-                    fragment.instruction(OpCode.KOS_OP_BUILD_KWDS_NAMES, names)
+                    fragment.instruction(OpCode.BUILD_KWDS_NAMES, names)
                 else:
                     fragment.merge(compiler.full_compile(data, False))
             if len(kwd_chunks) > 1:
-                fragment.instruction(OpCode.KOS_OP_COMBINE_KWDS, len(kwd_chunks))
+                fragment.instruction(OpCode.COMBINE_KWDS, len(kwd_chunks))
 
         fragment.position(pos)
         if use_var_path:
             fragment.instruction(
-                OpCode.KOS_OP_CALL_VAR_STAR, (name, opa, 0, 0))
+                OpCode.CALL_VAR_STAR, (name, opa, 0, 0))
         elif tc:
-            fragment.instruction(OpCode.KOS_OP_TAIL_CALL_STAR, opa)
+            fragment.instruction(OpCode.TAIL_CALL_STAR, opa)
         else:
-            fragment.instruction(OpCode.KOS_OP_CALL_STAR, opa)
+            fragment.instruction(OpCode.CALL_STAR, opa)
 
     return fragment
 
@@ -285,10 +285,10 @@ def special_call_attr(
             fragment.position_of(source)
             if use_var_path:
                 fragment.instruction(
-                    OpCode.KOS_OP_CALL_VAR_ATTR, (str(obj), str(attr), len(args_seq), 0))
+                    OpCode.CALL_VAR_ATTR, (str(obj), str(attr), len(args_seq), 0))
             else:
                 fragment.instruction(
-                    OpCode.KOS_OP_CALL_ATTR, (str(attr), len(args_seq), 0, 0))
+                    OpCode.CALL_ATTR, (str(attr), len(args_seq), 0, 0))
         else:
             pos_exprs = [expr for (idx, expr) in args_seq]
             kw_names = []
@@ -304,10 +304,10 @@ def special_call_attr(
             fragment.position_of(source)
             if use_var_path:
                 fragment.instruction(
-                    OpCode.KOS_OP_CALL_VAR_ATTR_NAMES, (str(obj), str(attr), tuple(kw_names), opa))
+                    OpCode.CALL_VAR_ATTR_NAMES, (str(obj), str(attr), tuple(kw_names), opa))
             else:
                 fragment.instruction(
-                    OpCode.KOS_OP_CALL_ATTR_NAMES, (str(attr), tuple(kw_names), opa, 0))
+                    OpCode.CALL_ATTR_NAMES, (str(attr), tuple(kw_names), opa, 0))
     else:
         opa = 0
         if args_seq:
@@ -321,11 +321,11 @@ def special_call_attr(
                 if kind == "pos":
                     for _, expr in data:
                         fragment.merge(compiler.full_compile(expr, False))
-                    fragment.instruction(OpCode.KOS_OP_BUILD_ARGS, len(data))
+                    fragment.instruction(OpCode.BUILD_ARGS, len(data))
                 else:
                     fragment.merge(compiler.full_compile(data, False))
             if len(arg_chunks) > 1:
-                fragment.instruction(OpCode.KOS_OP_COMBINE_ARGS, len(arg_chunks))
+                fragment.instruction(OpCode.COMBINE_ARGS, len(arg_chunks))
 
         if kwds_seq:
             kwd_chunks = _partition_kwds(kwds_seq)
@@ -334,19 +334,19 @@ def special_call_attr(
                     names = tuple(n for n, _ in data)
                     for _, expr in data:
                         fragment.merge(compiler.full_compile(expr, False))
-                    fragment.instruction(OpCode.KOS_OP_BUILD_KWDS_NAMES, names)
+                    fragment.instruction(OpCode.BUILD_KWDS_NAMES, names)
                 else:
                     fragment.merge(compiler.full_compile(data, False))
             if len(kwd_chunks) > 1:
-                fragment.instruction(OpCode.KOS_OP_COMBINE_KWDS, len(kwd_chunks))
+                fragment.instruction(OpCode.COMBINE_KWDS, len(kwd_chunks))
 
         fragment.position_of(source)
         if use_var_path:
             fragment.instruction(
-                OpCode.KOS_OP_CALL_VAR_ATTR_STAR, (str(obj), str(attr), opa, 0))
+                OpCode.CALL_VAR_ATTR_STAR, (str(obj), str(attr), opa, 0))
         else:
             fragment.instruction(
-                OpCode.KOS_OP_CALL_ATTR_STAR, (str(attr), opa, 0, 0))
+                OpCode.CALL_ATTR_STAR, (str(attr), opa, 0, 0))
 
     return fragment
 
