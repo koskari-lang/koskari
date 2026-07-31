@@ -37,7 +37,7 @@ continuation multiplies the search.
 ; accepted and remaining choices are skipped without invoking their
 ; continuations. Scoped with parameterize per search, so a nested
 ; search never observes an enclosing search's stop.
-(define-parameter _stop None)
+(define-parameter amb-stop-marker None)
 
 
 define amb [choices]:
@@ -52,7 +52,7 @@ define amb [choices]:
   shift k:
     let [[out #[]]]:
       for-each [c choices]:
-        when _stop (break)
+        when amb-stop-marker (break)
         out.extend (k c)
       out
 
@@ -62,7 +62,7 @@ define fail []:
   Abandon the current branch; it contributes no solutions
   """
 
-  shift k #[]
+  shift k #()
 
 
 define require [test]:
@@ -71,6 +71,7 @@ define require [test]:
   """
 
   unless test (fail)
+  test
 
 
 define solve [thunk]:
@@ -78,7 +79,7 @@ define solve [thunk]:
   Every solution of thunk, as a list, in choice order
   """
 
-  parameterize [[_stop None]]:
+  parameterize [[amb-stop-marker None]]:
     reset:
       #[(thunk)]
 
@@ -93,7 +94,7 @@ define solve-first [thunk]:
 
   define found #[]
 
-  parameterize [[_stop found]]:
+  parameterize [[amb-stop-marker found]]:
 
     ; the shifts are expecting a list wrapping the result.
     reset:
