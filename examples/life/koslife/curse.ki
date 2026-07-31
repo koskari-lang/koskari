@@ -22,8 +22,8 @@ define dots "⣷⣯⣟⡿⢿⣻⣽⣾"
 
 
 define make-char-renderer [alive: "O" dead: " "]:
-  define alive-ch (item alive 0)
-  define dead-ch (item dead 0)
+  define alive-ch alive[0]
+  define dead-ch dead[0]
   lambda [cell]:
     if cell:
       #(alive-ch 0)
@@ -47,16 +47,16 @@ define make-age-color-controls [base-pair: 40]:
 
 
 define make-color-char-renderer [alive: "O" dead: " " controls: None]:
-  define alive-ch (item alive 0)
-  define dead-ch (item dead 0)
-
   when (None? controls):
     set! controls (make-age-color-controls)
+
+  define alive-ch alive[0]
+  define dead-ch dead[0]
 
   lambda [cell]:
     if cell:
       define index (- (min (len controls) cell) 1)
-      #(alive-ch (item controls index))
+      #(alive-ch controls[index])
     else:
       #(dead-ch 0)
 
@@ -69,7 +69,7 @@ define digit-renderer [cell]:
 
 define dots-renderer [cell]:
   if cell:
-    #((item dots (% cell (len dots))) 0)
+    #(dots[(% cell (len dots))] 0)
   else:
     #(" " 0)
 

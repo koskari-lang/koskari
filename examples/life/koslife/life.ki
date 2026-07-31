@@ -7,8 +7,8 @@
 ;; :license: GNU General Public License v3
 
 
-(import-from itertools product)
-(import-from random random seed)
+import-from itertools product
+import-from random random seed
 
 
 define-class LifeBoard []:
@@ -18,7 +18,7 @@ define-class LifeBoard []:
         set! self.height height
         set! self.wrap wrap
 
-        set! self.data (dict)
+        set! self.data #{}
 
 
     define clear [self]:
@@ -28,7 +28,7 @@ define-class LifeBoard []:
 
         define dat self.data
         for-each [key (list (dat.keys))]:
-            (set! (item dat key) 0)
+            set! dat[key] 0
 
 
     define all-coordinates [self]:
@@ -45,7 +45,7 @@ define-class LifeBoard []:
 
         for-each [[x y] (self.all-coordinates)]:
             when (< threshold (random)):
-                (self.set-cell x y 1)
+                self.set-cell x y 1
 
 
     define tracked [self cleanup: True]:
@@ -56,10 +56,10 @@ define-class LifeBoard []:
         define data self.data
         if cleanup:
             for-each [item (list (data.items))]:
-                (define-values [coord cell] item)
+                define-values [coord cell] item
                 unless cell:
-                    (del-item data coord)
-                (yield item)
+                    del! data[coord]
+                yield item
         else:
             yield-from (data.items)
 
@@ -67,7 +67,7 @@ define-class LifeBoard []:
     define toggle [self x y]:
         define coord #(x y)
         define cell (self.data.get coord None)
-        (set! (item self.data coord) (if cell 0 1))
+        set! self.data[coord] (if cell 0 1)
 
 
     define coord-key [self x y]:
@@ -82,7 +82,7 @@ define-class LifeBoard []:
     define set-cell [self x y value]:
         define key (self.coord-key x y)
         unless (None? key):
-            (set! (item self.data key) value)
+            set! self.data[key] value
 
 
     define group-coords [self x y]:
@@ -104,40 +104,39 @@ define-class LifeBoard []:
 
         ;; Scatter: each live cell adds 1 to each of its eight neighbours.
         for-each [[coord value] (data.items)]:
-          when value:
-            (define-values [x y] coord)
-            for-each [[cx cy] (self.group-coords x y)]:
-              unless (and (== cx x) (== cy y)):
-                (define key (self.coord-key cx cy))
-                unless (None? key):
-                  (set! (item counts key) (+ 1 (counts.get key 0)))
+            when value:
+                define-values [x y] coord
+                for-each [[cx cy] (self.group-coords x y)]:
+                    unless (and (== cx x) (== cy y)):
+                        define key (self.coord-key cx cy)
+                        unless (None? key):
+                            set! counts[key] (+ 1 (counts.get key 0))
 
-        define new (dict)
+        define new #{}
 
         ;; Survival ages the cell up; birth needs exactly three neighbours.
         for-each [[key n] (counts.items)]:
-          define prev (data.get key 0)
-          define survives (<= 2 n 3)
-          if prev:
-            (set! (item new key) (if survives (+ prev 1) 0))
-          elif (== n 3):
-            (set! (item new key) 1)
+            define prev (data.get key 0)
+            define survives (<= 2 n 3)
+            if prev:
+                set! new[key] (if survives (+ prev 1) 0)
+            elif (== n 3):
+                set! new[key] 1
 
         ;; A cell drawn last frame but not resolved above just died; keep
         ;; it (and any older marker) as 0 until a redraw clears it.
         for-each [[coord value] (data.items)]:
-          unless (in coord new):
-            (set! (item new coord) 0)
+            unless (in coord new):
+                set! new[coord] 0
 
-        (set! self.data new)
+        set! self.data new
         self
 
 
     define child [self]:
         define clone (LifeBoard self.width self.height self.wrap)
-        (set! clone.data self.data)
+        set! clone.data self.data
         (clone.age)
 
 
 ;; The end.
-

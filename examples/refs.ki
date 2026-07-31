@@ -63,7 +63,7 @@ set! (deref r2) 20
 
 set! r2 99
 (print "after set! r2 99 -> food:" food)   ; -> 20  (unchanged)
-(print "                     r2:" r2)      ; -> 99  (r2 now holds 99, not a ref)
+(print "                      r2:" r2)      ; -> 99  (r2 now holds 99, not a ref)
 
 
 ; --- Refs to places that have no name of their own --------------------------
@@ -83,7 +83,7 @@ set! (deref cell) 100
 bind! r2 &food   ; attach food's location to the name r2
 set! r2 99       ; store 99 into that location (food becomes 99)
 (print "after bind! then set! r2 99 -> food:" food) ; -> 99  (write-through)
-(print "                              r2:" r2)      ; -> 99  (same location)
+(print "                                 r2:" r2)      ; -> 99  (same location)
 
 define total 5
 bind! alias &total
@@ -105,7 +105,7 @@ set! cnt 99
 
 define bump-manual [the-ref]:
     bind! n the-ref
-    set! n (+ n 1)
+    incr! n 1
 
 define a 7
 (bump-manual &a)
@@ -115,7 +115,7 @@ define a 7
 ; --- ...and the by-ref formal that does the bind for you --------------------
 
 define bump [&n]:
-    set! n (+ n 1)
+    incr! n 1
 
 define b 7
 (bump &b)

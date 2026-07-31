@@ -50,7 +50,7 @@ define ref-incr! [&r by: 101]:
 
 define data-val 123
 define data-list #[1 2 3 4]
-define data-dict #{a: 5 b: 10}
+define data-dict #{"a": 5 "b": 10}
 define data-obj (SimpleNamespace count: 15)
 
 
@@ -61,12 +61,12 @@ report data-val
 
 ; pass a reference to an item in a list
 report data-list " -> "
-ref-incr! &(item data-list 2)
+ref-incr! &data-list[2]
 report data-list
 
 ; pass a reference to an item in a dictionary
 report data-dict " -> "
-ref-incr! &(item data-dict "a")
+ref-incr! &data-dict["a"]
 report data-dict
 
 ; pass a reference to an attribute in an object
@@ -76,12 +76,12 @@ report data-obj
 
 ; pass a dynamic reference
 ref-incr! &(dynamic
-                { ; the dynamic getter thunk
-                    (define result 567)
-                    (print f"dynamic ref was asked for a value {result}")
-                    result }
-                { ; the dynamic setter thunk
-                    (print f"dynamic ref was fed a value {%1}") })
+    { ; the dynamic getter thunk
+        (define result 567)
+        (print f"dynamic ref was asked for a value {result}")
+        result }
+    { ; the dynamic setter thunk
+        (print f"dynamic ref was fed a value {%1}") })
 
 
 ; The end.
