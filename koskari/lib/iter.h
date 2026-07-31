@@ -91,6 +91,8 @@ typedef struct {
   KosPyAsyncGen *agen;
   PyObject *send_value;   /* value to send into generator */
   int is_throw;           /* if true, throw into generator */
+  int closing;            /* close-flavored drive: GeneratorExit with the
+                             aclose result mapping at terminal outcomes */
   PyObject *throw_typ;    /* exception type (if is_throw) */
   PyObject *throw_exc;    /* exception value (if is_throw) */
   int awaiting;           /* mid-step await in flight: this asend owns the

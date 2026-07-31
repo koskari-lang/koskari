@@ -63,6 +63,33 @@ define g-await-echo []:
     (await (sleep 0.001))
     define got (yield 1)
     (yield got)
+
+define g-cleanup [col]:
+    try:
+        (yield "ready")
+    finally:
+        (await (sleep 0.001))
+        (col.append "cleaned")
+
+define g-ignores-exit []:
+    try:
+        (yield 1)
+    except [GeneratorExit]:
+        (yield "ignored")
+
+define g-handler-await []:
+    try:
+        (yield 1)
+    except [ValueError]:
+        (await (sleep 0.001))
+        (yield "handled")
+
+define g-param-extent [col]:
+    try:
+        (parameterize [[pval "inside"]]
+            (yield (parameterq pval "no-extent")))
+    finally:
+        (col.append (parameterq pval "no-extent"))
 """
 
 
@@ -99,6 +126,31 @@ async def p_await_echo():
     yield got
 
 
+async def p_cleanup(col):
+    import asyncio
+    try:
+        yield "ready"
+    finally:
+        await asyncio.sleep(0.001)
+        col.append("cleaned")
+
+
+async def p_ignores_exit():
+    try:
+        yield 1
+    except GeneratorExit:
+        yield "ignored"
+
+
+async def p_handler_await():
+    import asyncio
+    try:
+        yield 1
+    except ValueError:
+        await asyncio.sleep(0.001)
+        yield "handled"
+
+
 async def outcome(awaitable):
     """
     Collapse an await into a comparable (kind, payload) pair.
@@ -129,8 +181,8 @@ class TestAsyncGenParity(unittest.IsolatedAsyncioTestCase):
         cls.module = asyncio.run(load())
 
 
-    def kos(self, name):
-        return vars(self.module)[name]()
+    def kos(self, name, *args):
+        return vars(self.module)[name](*args)
 
 
     async def parity(self, python_gen, koskari_name, scenario):
@@ -220,6 +272,161 @@ class TestAsyncGenParity(unittest.IsolatedAsyncioTestCase):
             ]
 
         await self.parity(p_await_echo(), "g-await-echo", scenario)
+
+
+    async def test_athrow_await_in_handler(self):
+        """
+        the except handler awaits before yielding: the throw-flavored
+        drive suspends to the loop and resumes correctly
+        """
+
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.athrow(ValueError("boom"))),
+            ]
+
+        await self.parity(p_handler_await(), "g-handler-await", scenario)
+
+
+    async def test_athrow_finally_await(self):
+        """
+        an unhandled athrow whose unwind awaits inside finally still
+        runs the cleanup and propagates
+        """
+
+        async def scenario(agen, col):
+            out = [
+                await outcome(agen.asend(None)),
+                await outcome(agen.athrow(ValueError("boom"))),
+            ]
+            out.append(tuple(col))
+            return out
+
+        pcol = []
+        expected = await scenario(p_cleanup(pcol), pcol)
+        kcol = []
+        actual = await scenario(self.kos("g-cleanup", kcol), kcol)
+        self.assertEqual(actual, expected)
+
+
+    async def test_aclose_suspended(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.aclose()),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+    async def test_aclose_never_started(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.aclose()),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+    async def test_aclose_idempotent(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.aclose()),
+                await outcome(agen.aclose()),
+            ]
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+    async def test_aclose_finally_await(self):
+        """
+        an await inside finally is honored during aclose: the cleanup
+        suspends to the loop and completes
+        """
+
+        async def scenario(agen, col):
+            out = [
+                await outcome(agen.asend(None)),
+                await outcome(agen.aclose()),
+            ]
+            out.append(tuple(col))
+            return out
+
+        pcol = []
+        expected = await scenario(p_cleanup(pcol), pcol)
+        kcol = []
+        actual = await scenario(self.kos("g-cleanup", kcol), kcol)
+        self.assertEqual(actual, expected)
+
+
+    async def test_aclose_ignored_generator_exit(self):
+        """
+        a body that catches GeneratorExit and yields makes aclose raise
+        RuntimeError
+        """
+
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.aclose()),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_ignores_exit(), "g-ignores-exit", scenario)
+
+
+    async def test_athrow_generator_exit_explicit(self):
+        async def scenario(agen):
+            return [
+                await outcome(agen.asend(None)),
+                await outcome(agen.athrow(GeneratorExit())),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+class TestAcloseKoskariExtent(unittest.IsolatedAsyncioTestCase):
+    """
+    Koskari-specific aclose behavior with no Python analog: the dynamic
+    extent unwinds before outer cleanup runs.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        TestAsyncGenParity.setUpClass()
+        cls.module = TestAsyncGenParity.module
+
+
+    async def test_aclose_restores_extent(self):
+        """
+        aclose unwinds the parameterize extent before the enclosing
+        finally observes the parameter
+        """
+
+        col = []
+        agen = vars(self.module)["g-param-extent"](col)
+        self.assertEqual(await agen.asend(None), "inside")
+        self.assertIsNone(await agen.aclose())
+        self.assertEqual(col, ["no-extent"])
+
+
+    async def test_aclose_after_demand_step(self):
+        """
+        aclose after a sync demand step closes the generator for both
+        drive paths
+        """
+
+        agen = vars(self.module)["g-plain"]()
+        dgen = iter(agen)
+        self.assertEqual(next(dgen), 1)
+        self.assertIsNone(await agen.aclose())
+        with self.assertRaises(StopIteration):
+            next(dgen)
 
 
 # The end.

@@ -226,9 +226,9 @@ hook is set). Not required for the explicit-close surface.
 - interplay: aclose after partial flattened consumption; aclose after a
   demand step.
 - conformance: `isinstance(agen, collections.abc.AsyncGenerator)` and
-  `isinstance(dgen, collections.abc.Generator)`; a Koskari async
-  generator round-tripped through Python classifies as
-  `KOS_YF_PY_ASYNC_GEN` in yield-from.
+  `isinstance(dgen, collections.abc.Generator)`. (Yield-from
+  classification is unaffected: `KosPyAsyncGen_Check` matches before
+  the `hasattr(obj, "asend")` probe ever runs.)
 - `contextlib.aclosing` and `contextlib.closing` smoke;
   `loop.shutdown_asyncgens` once phase 2 hooks exist.
 

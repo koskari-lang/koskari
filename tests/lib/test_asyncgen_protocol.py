@@ -24,6 +24,8 @@ try/except or awaits live in tests.reproducers.test_asyncgen_protocol.
 :license: GNU General Public License v3
 """
 
+import collections.abc
+
 from koskari.lib import AsyncGenerator
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
@@ -140,6 +142,73 @@ class TestAthrow(CevalTest):
         with self.assertRaises(StopAsyncIteration):
             await agen.asend(None)
         self.assertIsNone(await agen.athrow(ValueError("late")))
+
+
+class TestAclose(CevalTest):
+    """
+    aclose on the generator object.
+    """
+
+    async def test_aclose_suspended(self):
+        """
+        aclose on a suspended generator completes with None and closes
+        it
+        """
+
+        agen = make_agen()
+        self.assertEqual(await agen.asend(None), 1)
+        self.assertIsNone(await agen.aclose())
+        with self.assertRaises(StopAsyncIteration):
+            await agen.asend(None)
+
+
+    async def test_aclose_never_started(self):
+        """
+        aclose before the first step closes the generator without
+        running it
+        """
+
+        agen = make_agen()
+        self.assertIsNone(await agen.aclose())
+        with self.assertRaises(StopAsyncIteration):
+            await agen.asend(None)
+
+
+    async def test_aclose_idempotent(self):
+        """
+        a second aclose is a quiet None
+        """
+
+        agen = make_agen()
+        self.assertEqual(await agen.asend(None), 1)
+        self.assertIsNone(await agen.aclose())
+        self.assertIsNone(await agen.aclose())
+
+
+    async def test_aclose_exhausted(self):
+        """
+        aclose after exhaustion is a quiet None
+        """
+
+        agen = make_agen(steps=1)
+        self.assertEqual(await agen.asend(None), 1)
+        with self.assertRaises(StopAsyncIteration):
+            await agen.asend(None)
+        self.assertIsNone(await agen.aclose())
+
+
+class TestProtocolConformance(CevalTest):
+    """
+    The structural collections.abc hooks accept the generator.
+    """
+
+    async def test_abc_async_generator(self):
+        """
+        AsyncGenerator satisfies collections.abc.AsyncGenerator
+        """
+
+        agen = make_agen()
+        self.assertIsInstance(agen, collections.abc.AsyncGenerator)
 
 
 # The end.

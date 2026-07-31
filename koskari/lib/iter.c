@@ -58,7 +58,8 @@ static PyObject *asyncgenasend_new_ex(
     KosPyAsyncGen *agen,
     PyObject *send_value,
     PyObject *throw_typ,
-    PyObject *throw_exc);
+    PyObject *throw_exc,
+    int closing);
 
 
 /**
@@ -371,7 +372,7 @@ static PyObject *asyncgen_asend(PyObject *self, PyObject *value) {
   /* No call-time closed check: CPython raises StopAsyncIteration when
      the awaitable is driven, not when it is constructed. The stepper's
      entry guard covers the closed case. */
-  return asyncgenasend_new_ex((KosPyAsyncGen *) self, value, NULL, NULL);
+  return asyncgenasend_new_ex((KosPyAsyncGen *) self, value, NULL, NULL, 0);
 }
 
 
@@ -383,8 +384,23 @@ static PyObject *asyncgen_athrow(PyObject *self, PyObject *args) {
   if (normalize_throw_args(args, "O|OO:athrow", &typ, &exc) < 0)
     return NULL;
 
-  PyObject *stepper = asyncgenasend_new_ex(agen, NULL, typ, exc);
+  PyObject *stepper = asyncgenasend_new_ex(agen, NULL, typ, exc, 0);
   Py_DECREF(typ);
+  Py_DECREF(exc);
+  return stepper;
+}
+
+
+static PyObject *asyncgen_aclose(PyObject *self, PyObject *ignored) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
+  if (! exc)
+    return NULL;
+
+  PyObject *stepper = asyncgenasend_new_ex(
+      agen, NULL, PyExc_GeneratorExit, exc, 1);
   Py_DECREF(exc);
   return stepper;
 }
@@ -413,6 +429,9 @@ static PyMethodDef asyncgen_methods[] = {
 
   { "athrow", (PyCFunction) asyncgen_athrow, METH_VARARGS,
     "Throw an exception into the async generator; returns an awaitable" },
+
+  { "aclose", (PyCFunction) asyncgen_aclose, METH_NOARGS,
+    "Close the async generator; returns an awaitable" },
 
   { NULL, NULL, 0, NULL },
 };
@@ -566,10 +585,12 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
      iterator, mirroring coroutine_send's WAITING_PY contract. The step
      stays parked (no freeze, no install) until the awaitable completes;
      only then is eval re-entered, with the result as send_val so
-     revive_await pushes it for the pending opcode. A throw during the
-     await falls through: revive_await's throw path delivers it into
-     the iterator inside eval. */
-  if (asend->awaiting && ! asend->is_throw) {
+     revive_await pushes it for the pending opcode. A throw arriving
+     during the await -- primed fields, not the stale is_throw flag,
+     which survives the first drive consuming them -- falls through:
+     revive_await's throw path delivers it into the iterator inside
+     eval. */
+  if (asend->awaiting && ! throw_typ) {
     PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
     if (it) {
       PyObject *step = PyObject_CallMethod(
@@ -643,14 +664,18 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   switch (res.kind) {
     case KOS_RES_RETURN: {
-      /* Generator completed; raise StopAsyncIteration, carrying the
-         return value only when there is one -- CPython raises it bare,
-         and a (None,) payload is a visible parity difference. */
+      /* Generator completed. Closing drive: awaiting aclose yields
+         None. Normal drive: StopAsyncIteration, carrying the return
+         value only when there is one -- CPython raises it bare, and a
+         (None,) payload is a visible parity difference. */
       agen->closed = 1;
       PyObject *payload = res.val;
-      if (! payload || payload == Py_None) {
+      if (asend->closing || ! payload || payload == Py_None) {
         Py_XDECREF(payload);
-        PyErr_SetNone(PyExc_StopAsyncIteration);
+        if (asend->closing)
+          PyErr_SetNone(PyExc_StopIteration);
+        else
+          PyErr_SetNone(PyExc_StopAsyncIteration);
         return NULL;
       }
       PyObject *exc = koskari_StopAsyncIteration_FromValue(payload);
@@ -667,12 +692,29 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
     case KOS_RES_RAISE:
     case KOS_RES_FATAL:
       agen->closed = 1;
+      /* Closing drive: GeneratorExit escaping the body is the success
+         shape -- awaiting aclose yields None. Anything else
+         propagates. */
+      if (asend->closing && PyErr_Occurred()
+          && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
+        PyErr_Clear();
+        PyErr_SetNone(PyExc_StopIteration);
+        return NULL;
+      }
       /* PyErr already set (RAISE); for FATAL synthesize if needed */
       if (! PyErr_Occurred())
         PyErr_SetNone(PyExc_StopAsyncIteration);
       return NULL;
 
     case KOS_RES_YIELD: {
+      if (asend->closing) {
+        /* The body caught GeneratorExit and yielded */
+        agen->closed = 1;
+        Py_XDECREF(res.val);
+        PyErr_SetString(PyExc_RuntimeError,
+                        "async generator ignored GeneratorExit");
+        return NULL;
+      }
       /* Yielded a value - wrap in StopIteration so the __anext__ awaitable
          completes. Wrap in 1-tuple so PyErr_SetObject doesn't unpack args. */
       PyObject *args = PyTuple_Pack(1, res.val);
@@ -787,13 +829,15 @@ PyTypeObject KosPyAsyncGenASendType = {
    Build a stepper primed to send or throw on its first drive.
    throw_typ / throw_exc are optional borrowed references; when given,
    is_throw is set and the first drive delivers them through the
-   evaluator's throw ingress.
+   evaluator's throw ingress. closing selects the aclose result mapping
+   at terminal outcomes.
 */
 static PyObject *asyncgenasend_new_ex(
     KosPyAsyncGen *agen,
     PyObject *send_value,
     PyObject *throw_typ,
-    PyObject *throw_exc) {
+    PyObject *throw_exc,
+    int closing) {
 
   KosPyAsyncGenASend *asend = PyObject_GC_New(KosPyAsyncGenASend,
                                               &KosPyAsyncGenASendType);
@@ -807,6 +851,7 @@ static PyObject *asyncgenasend_new_ex(
   asend->send_value = send_value;
 
   asend->is_throw = (throw_typ != NULL);
+  asend->closing = closing;
   Py_XINCREF(throw_typ);
   asend->throw_typ = throw_typ;
   Py_XINCREF(throw_exc);
@@ -823,7 +868,7 @@ PyObject *KosPyAsyncGenASend_New(
     KosPyAsyncGen *agen,
     PyObject *send_value) {
 
-  return asyncgenasend_new_ex(agen, send_value, NULL, NULL);
+  return asyncgenasend_new_ex(agen, send_value, NULL, NULL, 0);
 }
 
 
