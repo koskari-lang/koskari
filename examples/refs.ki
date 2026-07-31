@@ -18,6 +18,10 @@ Example: references as storage-location indirection.
 Companion to the guide page docs/guide/references-and-storage-indirection.md.
 Every snippet on that page is exercised here; the printed values match the
 REPL results shown in the prose.
+
+Demonstrates bind vs store: bind! attaches a storage location to a name;
+set! stores a value into whatever location a name already labels. See
+docs/reference/concepts/bindings-and-refs.md.
 """
 
 
@@ -35,7 +39,9 @@ set! food 11
 
 define r1 (ref food)
 define r2 &food
+(print "r1 is a:" (type r1))               ; -> <class 'Ref'>
 (print "r2 is a:" (type r2))               ; -> <class 'Ref'>
+(print "same object:" (is r1 r2))          ; -> True
 
 
 ; --- A ref is a value you can pass and read through --------------------------
@@ -51,7 +57,9 @@ set! (deref r2) 20
 (print "food after (set! (deref r2) 20):" food)   ; -> 20
 
 
-; --- The trap: set! on the name rebinds it, it does NOT write through --------
+; --- The trap: set! stores into the name's existing location.
+; It does not change which location the name is bound to, and it does not
+; write through a ref that happens to be the current value.
 
 set! r2 99
 (print "after set! r2 99 -> food:" food)   ; -> 20  (unchanged)
@@ -61,7 +69,6 @@ set! r2 99
 ; --- Refs to places that have no name of their own --------------------------
 
 define xs #[1 2 3 4]
-define obj (SimpleNamespace count: 15)
 define cell &(item xs 2)
 (print "cell points into xs, reads:" (deref cell))  ; -> 3
 set! (deref cell) 100
@@ -69,6 +76,14 @@ set! (deref cell) 100
 
 
 ; --- Making the indirection invisible: bind! --------------------------------
+; bind! attaches a location to a name, so plain reads and set! go through.
+; That is distinct from storing a ref as the value in a name's existing
+; location (the trap above).
+
+bind! r2 &food   ; attach food's location to the name r2
+set! r2 99       ; store 99 into that location (food becomes 99)
+(print "after bind! then set! r2 99 -> food:" food) ; -> 99  (write-through)
+(print "                              r2:" r2)      ; -> 99  (same location)
 
 define total 5
 bind! alias &total
@@ -80,12 +95,13 @@ bind! first &(item xs 0)
 set! first 1000
 (print "xs after set! first 1000:" xs)     ; -> [1000, 2, 100, 4]
 
+define obj (SimpleNamespace count: 15)
 bind! cnt &obj.count
 set! cnt 99
 (print "obj.count after set! cnt 99:" obj.count)  ; -> 99
 
 
-; --- Passing a ref to a function: by hand -----------------------------------
+; --- Passing a ref to a function: bind! inside the callee -------------------
 
 define bump-manual [the-ref]:
     bind! n the-ref
