@@ -197,9 +197,50 @@ class TestAclose(CevalTest):
         self.assertIsNone(await agen.aclose())
 
 
+class TestDemandClose(CevalTest):
+    """
+    close on the sync DemandGenerator.
+    """
+
+    async def test_close_suspended(self):
+        """
+        close drives GeneratorExit through the body and closes the
+        generator
+        """
+
+        dgen = iter(make_agen())
+        self.assertEqual(next(dgen), 1)
+        self.assertIsNone(dgen.close())
+        with self.assertRaises(StopIteration):
+            next(dgen)
+
+
+    async def test_close_idempotent(self):
+        """
+        a second close is a quiet None
+        """
+
+        dgen = iter(make_agen())
+        self.assertEqual(next(dgen), 1)
+        self.assertIsNone(dgen.close())
+        self.assertIsNone(dgen.close())
+
+
+    async def test_close_never_started(self):
+        """
+        close before the first step closes without running the body
+        """
+
+        dgen = iter(make_agen())
+        self.assertIsNone(dgen.close())
+        with self.assertRaises(StopIteration):
+            next(dgen)
+
+
 class TestProtocolConformance(CevalTest):
     """
-    The structural collections.abc hooks accept the generator.
+    The structural collections.abc hooks accept both generator
+    flavors.
     """
 
     async def test_abc_async_generator(self):
@@ -209,6 +250,15 @@ class TestProtocolConformance(CevalTest):
 
         agen = make_agen()
         self.assertIsInstance(agen, collections.abc.AsyncGenerator)
+
+
+    async def test_abc_generator(self):
+        """
+        DemandGenerator satisfies collections.abc.Generator
+        """
+
+        dgen = iter(make_agen())
+        self.assertIsInstance(dgen, collections.abc.Generator)
 
 
 # The end.

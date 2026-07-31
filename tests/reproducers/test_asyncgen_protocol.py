@@ -90,6 +90,13 @@ define g-param-extent [col]:
             (yield (parameterq pval "no-extent")))
     finally:
         (col.append (parameterq pval "no-extent"))
+
+define g-fin-sync [col]:
+    try:
+        (yield 1)
+        (yield 2)
+    finally:
+        (col.append "cleaned")
 """
 
 
@@ -151,6 +158,26 @@ async def p_handler_await():
         yield "handled"
 
 
+def s_plain():
+    yield 1
+    yield 2
+
+
+def s_fin(col):
+    try:
+        yield 1
+        yield 2
+    finally:
+        col.append("cleaned")
+
+
+def s_ignores_exit():
+    try:
+        yield 1
+    except GeneratorExit:
+        yield "ignored"
+
+
 async def outcome(awaitable):
     """
     Collapse an await into a comparable (kind, payload) pair.
@@ -158,6 +185,17 @@ async def outcome(awaitable):
 
     try:
         return ("value", await awaitable)
+    except BaseException as exc:
+        return ("raise", type(exc).__name__, str(exc))
+
+
+def sync_outcome(thunk):
+    """
+    Collapse a call into a comparable (kind, payload) pair.
+    """
+
+    try:
+        return ("value", thunk())
     except BaseException as exc:
         return ("raise", type(exc).__name__, str(exc))
 
@@ -379,6 +417,27 @@ class TestAsyncGenParity(unittest.IsolatedAsyncioTestCase):
         await self.parity(p_ignores_exit(), "g-ignores-exit", scenario)
 
 
+    async def test_contextlib_aclosing(self):
+        """
+        contextlib.aclosing drives our aclose on scope exit
+        """
+
+        import contextlib
+        if not hasattr(contextlib, "aclosing"):
+            self.skipTest("contextlib.aclosing requires Python 3.10")
+
+        async def scenario(agen, col):
+            async with contextlib.aclosing(agen) as g:
+                first = await outcome(g.__anext__())
+            return [first, tuple(col)]
+
+        pcol = []
+        expected = await scenario(p_cleanup(pcol), pcol)
+        kcol = []
+        actual = await scenario(self.kos("g-cleanup", kcol), kcol)
+        self.assertEqual(actual, expected)
+
+
     async def test_athrow_generator_exit_explicit(self):
         async def scenario(agen):
             return [
@@ -427,6 +486,90 @@ class TestAcloseKoskariExtent(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await agen.aclose())
         with self.assertRaises(StopIteration):
             next(dgen)
+
+
+class TestDemandGenParity(unittest.TestCase):
+    """
+    Identical drive sequences against CPython sync generators and
+    Koskari DemandGenerators produce identical outcomes.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        TestAsyncGenParity.setUpClass()
+        cls.module = TestAsyncGenParity.module
+
+
+    def kos_iter(self, name, *args):
+        return iter(vars(self.module)[name](*args))
+
+
+    def parity(self, python_gen, koskari_name, scenario):
+        self.assertEqual(
+            scenario(self.kos_iter(koskari_name)),
+            scenario(python_gen))
+
+
+    def test_close_suspended(self):
+        def scenario(gen):
+            return [
+                sync_outcome(lambda: next(gen)),
+                sync_outcome(gen.close),
+                sync_outcome(lambda: next(gen)),
+            ]
+
+        self.parity(s_plain(), "g-plain", scenario)
+
+
+    def test_close_never_started(self):
+        def scenario(gen):
+            return [
+                sync_outcome(gen.close),
+                sync_outcome(lambda: next(gen)),
+            ]
+
+        self.parity(s_plain(), "g-plain", scenario)
+
+
+    def test_close_runs_finally(self):
+        def scenario(gen, col):
+            out = [
+                sync_outcome(lambda: next(gen)),
+                sync_outcome(gen.close),
+            ]
+            out.append(tuple(col))
+            return out
+
+        pcol = []
+        expected = scenario(s_fin(pcol), pcol)
+        kcol = []
+        actual = scenario(self.kos_iter("g-fin-sync", kcol), kcol)
+        self.assertEqual(actual, expected)
+
+
+    def test_close_ignored_generator_exit(self):
+        def scenario(gen):
+            return [
+                sync_outcome(lambda: next(gen)),
+                sync_outcome(gen.close),
+            ]
+
+        self.parity(s_ignores_exit(), "g-ignores-exit", scenario)
+
+
+    def test_contextlib_closing(self):
+        import contextlib
+
+        def scenario(gen, col):
+            with contextlib.closing(gen) as g:
+                first = sync_outcome(lambda: next(g))
+            return [first, tuple(col)]
+
+        pcol = []
+        expected = scenario(s_fin(pcol), pcol)
+        kcol = []
+        actual = scenario(self.kos_iter("g-fin-sync", kcol), kcol)
+        self.assertEqual(actual, expected)
 
 
 # The end.
