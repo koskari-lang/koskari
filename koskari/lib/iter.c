@@ -61,6 +61,8 @@ static PyObject *asyncgenasend_new_ex(
     PyObject *throw_exc,
     int closing);
 
+static int asyncgen_close_drive(KosPyAsyncGen *agen);
+
 
 /**
    Parse and normalize throw-method arguments (typ[, val[, tb]]) into an
@@ -264,6 +266,19 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
   if (! agen)
     return;
 
+  if (agen->ctx && KosContext_DYN_TOP(agen->ctx) && ! agen->in_progress) {
+    /* Live chain: the generator was abandoned mid-await, where the
+       frozen-chain teardown below cannot reach it. Demand-drive the
+       close through the suspended context, exception-fenced --
+       teardown runs from dealloc, so every outcome of the drive is
+       swallowed and cleared. */
+    PyObject *fence_typ, *fence_val, *fence_tb;
+    PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
+    (void) asyncgen_close_drive(agen);
+    PyErr_Clear();
+    PyErr_Restore(fence_typ, fence_val, fence_tb);
+  }
+
   if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
     asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
 
@@ -285,18 +300,9 @@ static void asyncgen_dealloc(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
-    /* demand-path close; exception-fenced, so safe mid-unwind */
-    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
-
-  } else if (agen->gen) {
-    /* installed or ctx-less: the chain, if any, belongs to the context */
-    kos_dyngen_release((KosDynGen *) agen->gen);
-    agen->gen = NULL;
-  }
-
-  if (agen->ctx)
-    KosContext_Free(agen->ctx);
+  /* demand-path close; exception-fenced, so safe mid-unwind. A live
+     (abandoned mid-await) chain is demand-driven closed first. */
+  KosPyAsyncGen_Teardown(agen);
 
   Py_XDECREF(agen->code_name);
 
@@ -330,18 +336,7 @@ static int asyncgen_clear(PyObject *self) {
 
   Py_CLEAR(agen->code_name);
 
-  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
-    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
-
-  } else if (agen->gen) {
-    kos_dyngen_release((KosDynGen *) agen->gen);
-    agen->gen = NULL;
-  }
-
-  if (agen->ctx) {
-    KosContext_Free(agen->ctx);
-    agen->ctx = NULL;
-  }
+  KosPyAsyncGen_Teardown(agen);
 
   return 0;
 }
@@ -840,7 +835,6 @@ static PyObject *asyncgenasend_close(PyObject *self) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
   KosPyAsyncGen *agen = asend->agen;
-  int failed = 0;
 
   /* Close cascades are terminal (loop shutdown, task destruction, GC
      of an abandoned chain), so closing a step's awaitable closes the
@@ -848,15 +842,14 @@ static PyObject *asyncgenasend_close(PyObject *self) {
      supported versions. The stepper is spent either way; a generator
      another stepper is actively driving is left alone. An asend
      abandoned mid-await owns the generator's in_progress mark; release
-     it, mirroring dealloc, then close through the live chain. */
+     it, mirroring dealloc, and the teardown demand-drives the close
+     through the live chain (outcomes swallowed). */
   if (agen) {
     if (asend->awaiting) {
       agen->in_progress = 0;
       asend->awaiting = 0;
     }
     if (! agen->in_progress && ! agen->closed) {
-      if (agen->ctx && KosContext_DYN_TOP(agen->ctx))
-        failed = asyncgen_close_drive(agen);
       KosPyAsyncGen_Teardown(agen);
       agen->closed = 1;
     }
@@ -867,8 +860,6 @@ static PyObject *asyncgenasend_close(PyObject *self) {
   Py_CLEAR(asend->throw_typ);
   Py_CLEAR(asend->throw_exc);
 
-  if (failed)
-    return NULL;
   Py_RETURN_NONE;
 }
 

@@ -208,6 +208,14 @@ Details of the contract:
 - An asend abandoned mid-await owns `agen->in_progress`; close
   releases it (the same release `asyncgenasend_dealloc` performs) and
   then tears down. CPython 3.12 wedges the generator in this case.
+- The mid-await state has a *live* dynchain the frozen-path teardown
+  cannot reach, so `KosPyAsyncGen_Teardown` demand-drives the close
+  through the suspended context first (close the pending awaitable,
+  GeneratorExit at the AWAIT), exception-fenced with every outcome
+  swallowed. Dealloc and tp_clear route through the same teardown, so
+  a generator dropped mid-await without any close call still runs its
+  cleanup -- awaits inside that cleanup take the cannot-honor
+  fallback, as everywhere on the demand path.
 - A generator another stepper is actively driving is left alone: close
   spends this stepper only.
 - CPython 3.12 and earlier leave the generator open after a stepper

@@ -591,6 +591,30 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await agen.aclose())
 
 
+    async def test_drop_midflight_without_close(self):
+        """
+        dropping the generator and its pending stepper without any
+        close call still runs the cleanup at dealloc
+        """
+
+        import gc
+
+        col = []
+        agen = self.kos("g-slow", col)
+        self.assertEqual(await agen.__anext__(), 1)
+
+        stepper = agen.__anext__()
+        pending = stepper.send(None)
+        self.assertIsNotNone(pending)
+
+        del pending
+        del stepper
+        del agen
+        gc.collect()
+
+        self.assertEqual(col, ["cleaned"])
+
+
 class TestDemandGenParity(unittest.TestCase):
     """
     Identical drive sequences against CPython sync generators and
