@@ -166,21 +166,6 @@ modules, so nothing leaks into distributed libraries. Scope out flag spelling,
 
 Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
 
-### Package pragma (follow-ups)
-
-The package pragma is **implemented** (see the design doc's Implementation
-section): the `(package-pragma …)` macro wrapper, `ModulePragma.copy`, and
-seeding/stamping in `build_module_load_facets` via `find_package_pragma`.
-Remaining follow-ups:
-
-- **Lints** — `package-pragma` in a leaf module (never consulted), and a
-  submodule import placed before the `package-pragma` declaration in an
-  `__init__` (child seeds from the ancestors' defaults instead).
-- **`.kio` snapshot** — whether a compiled package artifact records its
-  resolved package pragma (the deferred `.kio` pragma snapshot).
-
-Ref: [language/pragma-package.md](language/pragma-package.md); [PRAGMA.md](PRAGMA.md).
-
 ### Assert gate reads the module pragma at expand time
 
 `compiler/enable-asserts` is applied as a side effect of its setting function:
@@ -237,8 +222,6 @@ Ref: [ideas.md](ideas.md); [api/import-system.md](api/import-system.md) (async v
 
 Gaps per [documentation-goals.md](documentation-goals.md):
 
-- **`reference/grammar.md`** — layout and handler links exist; the base
-  s-expression grammar section is still marked TBD.
 - **`reference/stdlib/`** — no per-topic user stdlib reference; `reference/runtime/`
   covers only a handful of bootstrap entry points (builtins surface mainly in
   `api/koskari-builtins.md` autodoc).
