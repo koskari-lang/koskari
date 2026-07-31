@@ -52,7 +52,7 @@ The native extension is the runtime foundation. It provides:
 
 - `koskari/bootstrap/*.ki` — Core builtins written in Koskari itself (`basics.ki`, `_functions.ki`, `_conditionals.ki`, etc.). These are compiled and loaded at package import time by `koskari/bootstrap/__init__.py`.
 - `koskari/__init__.py` installs the import hook via `koskari.importer`, which allows `import` of `.ki` source files and `.kio` compiled objects.
-- `koskari_importer.py` / `koskari.pth` — Standalone hooks that activate when the package is installed.
+- `koskari.pth` — Installed beside the package; its `import koskari` runs `koskari/__init__.py` at interpreter startup, so the import hooks activate automatically in an installed environment.
 
 ### Testing
 

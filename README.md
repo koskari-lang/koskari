@@ -103,7 +103,7 @@ and eval phases.
 | **Language** | Layout blocks, hygienic macros, and a broad special-form surface are implemented — see the [language reference](docs/reference/index.md) |
 | **Runtime** | Stackless bytecode VM: coroutines, ambient async, continuations, dynamic wind, tail-call optimization |
 | **Tooling** | REPL (`repl` extra), disassembler, optional LSP, Pygments, and Sphinx integrations |
-| **Self-hosting** | Core builtins and much of the library live in bootstrap `.ki` sources; CLI port and self-hosted compiler work continue |
+| **Self-hosting** | Core builtins and much of the library live in bootstrap `.ki` sources; the CLI runs on self-hosted `.ki`, and the self-hosted compiler is on the roadmap |
 
 The language and APIs are still **evolving** — treat the reference as authoritative,
 not frozen. Compiler and opcode inventories for maintainers live in
@@ -146,8 +146,7 @@ The repository root is the Koskari project. Import symbols from the submodule th
 ├── editors/                 # Editor syntax assets (emacs, helix, textmate)
 ├── examples/                # Example koskari programs (.ki files)
 ├── koskari/                 # Main Python package
-├── koskari_importer.py      # Import hooks for .ki and .kio modules
-├── koskari.pth              # Enables import hooks when installed
+├── koskari.pth              # Imports koskari on startup to install the .ki/.kio hooks
 ├── tests/                   # Test suite (mirrors package layout)
 ├── tools/                   # Opcode/editor regen, corpus tooling, and the MCP server
 ├── setup.py, setup.cfg      # Package build and tox configuration
@@ -173,12 +172,11 @@ koskari/
 │   ├── launch.ki            # CLI launchpad: argparse, file/command load, dispatch
 │   └── repl.ki              # Interactive REPL loop
 ├── module.py                # Module lifecycle for .ki source files
-├── importer.py              # Re-exports koskari_importer hooks
+├── importer.py              # Import hook and loader for .ki/.kio modules
 ├── dis.ki                   # Self-hosted disassembler for Code objects
 ├── bootstrap/               # Bootstrap koskari sources and loader
 │   ├── *.ki                 # Core forms compiled into builtins
-│   ├── __init__.py          # Bootstrap loader
-│   └── compile/             # Self-hosted compiler pieces (in progress)
+│   └── __init__.py          # Bootstrap loader
 ├── reader/                  # S-expression parser and layout block syntax
 │   ├── parser.py            # Reader, SourceStream, LayoutReader
 │   └── layouts/             # Layout handlers (conditionals, try, class, ...)
