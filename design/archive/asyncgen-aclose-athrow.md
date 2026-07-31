@@ -190,28 +190,29 @@ step's awaitable: `asyncio.wait_for(anext(agen), t)` timing out
 permanently kills a generator that should remain usable, while the
 generator's `finally` blocks never run for it either.
 
-The fix operates on the stepper, not the generator: mark the stepper
-spent, and release the in-flight ownership it may hold (an asend
-abandoned mid-await owns `agen->in_progress` -- the same release
-`asyncgenasend_dealloc` already performs). `agen->closed` is not
-touched. Driving a spent stepper raises RuntimeError ("cannot reuse
-already awaited __anext__()/asend()"), CPython's message.
+The fix tracks CPython 3.13+ semantics, applied uniformly across
+supported versions: closing a step's awaitable closes the generator
+through the demand-path teardown (`KosPyAsyncGen_Teardown`), because
+close cascades are terminal -- loop shutdown, task destruction, GC of
+an abandoned chain -- and eager deterministic cleanup beats deferring
+to dealloc. This also makes stepper close consistent with the rest of
+the Koskari close family (`coroutine_close`, `DemandGenerator.close`,
+dealloc teardown): GeneratorExit driven synchronously, awaits taking
+the cannot-honor fallback, with `aclose` remaining the one sanctioned
+place suspending cleanup is honored.
 
-Two deliberate CPython deviations, decided against the parity oracle
-rather than assumed:
+Details of the contract:
 
-- CPython (3.12) does not release the running state when a mid-flight
-  asend is closed, so the generator wedges -- a later aclose raises
-  "asynchronous generator is already running" and the `finally` blocks
-  never get a sanctioned chance to run. We release `in_progress`
-  (consistent with our dealloc contract) so explicit cleanup keeps
-  working after an abandoned step.
-- CPython 3.13 changed stepper close to also close the generator
-  (3.12 and earlier leave it usable). Koskari keeps one semantic
-  across supported versions rather than per-version `#ifdef` behavior:
-  stepper close is generator-neutral, and cleanup belongs to explicit
-  aclose or dealloc. The affected tests assert this declared contract
-  instead of oracle parity.
+- The stepper is spent; driving it again raises RuntimeError ("cannot
+  reuse already awaited __anext__()/asend()"), CPython's message.
+- An asend abandoned mid-await owns `agen->in_progress`; close
+  releases it (the same release `asyncgenasend_dealloc` performs) and
+  then tears down. CPython 3.12 wedges the generator in this case.
+- A generator another stepper is actively driving is left alone: close
+  spends this stepper only.
+- CPython 3.12 and earlier leave the generator open after a stepper
+  close; on those versions the affected tests assert this declared
+  contract instead of oracle parity.
 
 ## Phase 2 (separate, optional): finalizer hooks
 

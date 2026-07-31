@@ -776,23 +776,99 @@ static PyObject *asyncgenasend_throw(PyObject *self, PyObject *args) {
 }
 
 
+/**
+   Drive GeneratorExit through a context abandoned mid-await, so its
+   cleanup runs during a synchronous stepper close; the frozen-chain
+   teardown cannot reach a live chain. Mirrors coroutine_close: the
+   pending awaitable is closed first, then the throw is delivered at
+   the suspended AWAIT. Returns 0 when the generator wound down
+   (including a cleanup suspension taking the cannot-honor fallback),
+   -1 with an exception set when the body ignored GeneratorExit or
+   raised something else.
+*/
+static int asyncgen_close_drive(KosPyAsyncGen *agen) {
+
+  PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
+  if (it) {
+    PyObject *r = PyObject_CallMethod(it, "close", NULL);
+    Py_XDECREF(r);
+    PyErr_Clear();
+    Py_CLEAR(KosContext_PY_AWAIT_ITER(agen->ctx));
+  }
+
+  PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
+  if (! exc)
+    return -1;
+
+  KosOpResult res = koskari_eval(agen->ctx, NULL, PyExc_GeneratorExit, exc);
+  Py_DECREF(exc);
+
+  switch (res.kind) {
+    case KOS_RES_RETURN:
+      Py_XDECREF(res.val);
+      return 0;
+
+    case KOS_RES_AWAIT:
+      /* a synchronous close cannot suspend: cannot-honor fallback */
+      Py_XDECREF(res.val);
+      PyErr_Clear();
+      return 0;
+
+    case KOS_RES_YIELD:
+      Py_XDECREF(res.val);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "async generator ignored GeneratorExit");
+      return -1;
+
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
+    default:
+      if (! PyErr_Occurred())
+        return 0;
+      if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
+          || PyErr_ExceptionMatches(PyExc_StopIteration)
+          || PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+        PyErr_Clear();
+        return 0;
+      }
+      return -1;
+  }
+}
+
+
 static PyObject *asyncgenasend_close(PyObject *self) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+  KosPyAsyncGen *agen = asend->agen;
+  int failed = 0;
 
-  /* Spend the stepper, not the generator: dropping one step's
-     awaitable must leave the generator usable for a later step or an
-     explicit aclose. An asend abandoned mid-await owns the generator's
-     in_progress mark; release it, mirroring dealloc. */
-  if (asend->awaiting && asend->agen)
-    asend->agen->in_progress = 0;
-  asend->awaiting = 0;
+  /* Close cascades are terminal (loop shutdown, task destruction, GC
+     of an abandoned chain), so closing a step's awaitable closes the
+     generator too -- CPython 3.13+ semantics, applied uniformly across
+     supported versions. The stepper is spent either way; a generator
+     another stepper is actively driving is left alone. An asend
+     abandoned mid-await owns the generator's in_progress mark; release
+     it, mirroring dealloc, then close through the live chain. */
+  if (agen) {
+    if (asend->awaiting) {
+      agen->in_progress = 0;
+      asend->awaiting = 0;
+    }
+    if (! agen->in_progress && ! agen->closed) {
+      if (agen->ctx && KosContext_DYN_TOP(agen->ctx))
+        failed = asyncgen_close_drive(agen);
+      KosPyAsyncGen_Teardown(agen);
+      agen->closed = 1;
+    }
+  }
 
   Py_CLEAR(asend->agen);
   Py_CLEAR(asend->send_value);
   Py_CLEAR(asend->throw_typ);
   Py_CLEAR(asend->throw_exc);
 
+  if (failed)
+    return NULL;
   Py_RETURN_NONE;
 }
 

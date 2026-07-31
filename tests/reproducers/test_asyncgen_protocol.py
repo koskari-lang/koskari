@@ -508,15 +508,14 @@ class TestAcloseKoskariExtent(unittest.IsolatedAsyncioTestCase):
 
 class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
     """
-    Closing one step's awaitable spends the stepper without closing
-    the generator.
+    Closing one step's awaitable closes the generator through the
+    demand-path teardown: close cascades are terminal, so cleanup runs
+    eagerly instead of deferring to GC.
 
-    These are declared-contract tests, not oracle parity: CPython
-    changed sides in 3.13, where closing a pending stepper also closes
-    the generator (3.12 and earlier leave it usable, matching us).
-    Koskari keeps one behavior across supported versions -- the
-    stepper is spent, the generator stays open for later steps or an
-    explicit aclose.
+    These are declared-contract tests, not oracle parity: this is
+    CPython 3.13+ behavior, applied uniformly across supported
+    versions. CPython 3.12 and earlier leave the generator open here;
+    the divergence is recorded in the design doc.
     """
 
     @classmethod
@@ -531,21 +530,20 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
 
     async def test_close_undriven_stepper(self):
         """
-        closing a never-driven __anext__ awaitable leaves the
-        generator usable
+        closing a never-driven __anext__ awaitable closes the
+        generator
         """
 
         agen = self.kos("g-plain")
         stepper = agen.__anext__()
         self.assertIsNone(stepper.close())
-        self.assertEqual(await agen.asend(None), 1)
-        self.assertEqual(await agen.asend(None), 2)
+        with self.assertRaises(StopAsyncIteration):
+            await agen.asend(None)
 
 
     async def test_reuse_closed_stepper(self):
         """
-        driving a stepper after closing it raises RuntimeError, and
-        the generator is unharmed
+        driving a stepper after closing it raises RuntimeError
         """
 
         agen = self.kos("g-plain")
@@ -554,19 +552,30 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError) as ctx:
             await stepper
         self.assertIn("cannot reuse", str(ctx.exception))
-        self.assertEqual(await agen.asend(None), 1)
 
 
-    async def test_close_midflight_stepper_then_aclose(self):
+    async def test_close_runs_cleanup(self):
         """
-        a stepper abandoned mid-await releases the generator: aclose
-        still runs the cleanup.
+        closing a stepper runs the suspended generator's finally
+        blocks at close time
+        """
 
-        Deliberate CPython deviation: CPython leaves the generator
-        marked running here, so its aclose raises "already running"
-        and the finally never gets a sanctioned chance to run. We
-        release the in-flight ownership (matching our dealloc
-        contract) so explicit cleanup keeps working.
+        col = []
+        agen = self.kos("g-fin-sync", col)
+        self.assertEqual(await agen.__anext__(), 1)
+
+        stepper = agen.__anext__()
+        stepper.close()
+
+        self.assertEqual(col, ["cleaned"])
+        self.assertIsNone(await agen.aclose())
+
+
+    async def test_close_midflight_stepper(self):
+        """
+        a stepper abandoned mid-await releases and tears down the
+        generator; cleanup runs at close time and a later aclose is a
+        quiet None
         """
 
         col = []
@@ -578,8 +587,8 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(pending)
         stepper.close()
 
-        self.assertIsNone(await agen.aclose())
         self.assertEqual(col, ["cleaned"])
+        self.assertIsNone(await agen.aclose())
 
 
 class TestDemandGenParity(unittest.TestCase):
