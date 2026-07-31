@@ -1,92 +1,155 @@
-# AsyncGenerator aclose / athrow
+# AsyncGenerator asend / athrow / aclose
 
-**Status**: proposed. Closes the async-generator protocol gap left open
-by the dealloc-fence work (see the note in `asyncgen_dealloc`, iter.c):
-`koskari.lib.AsyncGenerator` implements `__aiter__` / `__anext__` /
-`asend` but has no `aclose` or `athrow`, so it does not fulfill PEP 525
-and cannot cooperate with the standard cleanup idioms.
+**Status**: proposed. Completes the Python-facing generator protocol on
+`koskari.lib.AsyncGenerator`, closing the gap left open by the
+dealloc-fence work (see the note in `asyncgen_dealloc`, iter.c).
 
 **Depends on**:
 [asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)
 (fixed) -- the point of an *async* close is that cleanup may suspend,
 and a suspending drive step is exactly what the underrun defect broke.
-With the asend now driving in-flight awaits, `aclose` can build on that
-contract.
+With the asend stepper now driving in-flight awaits, `aclose` can build
+on that contract.
 
 ---
 
-## Motivation
+## Scope
 
-- **Protocol completeness**: `async for ... finally aclose()`,
-  `contextlib.aclosing`, and `loop.shutdown_asyncgens()` all assume
-  `aclose`/`athrow` exist. Today they get AttributeError.
-- **The suspending close**: dealloc teardown (`KosPyAsyncGen_Teardown`)
-  is deliberately the *demand-path* close -- GeneratorExit driven
-  synchronously to completion, suspend attempts taking the
-  cannot-honor fallback. That is correct for dealloc, which can run
-  mid-unwind. An explicit `aclose` driven by a loop is the sanctioned
-  place where `finally: (await ...)` inside a generator can actually be
-  honored.
-- **History**: the original observation that "aclose kills the driver"
-  was an AttributeError walking into the (since fixed) exceptional
-  unwind teardown corruption. The method itself never existed.
+This is an outward-facing surface only. Koskari itself needs nothing
+here: `iter` and `next` already cover both the synchronous and the
+awaitable generator, and `asyncgen_tp_iter` hands a `DemandGenerator`
+to the sync path. The work is what Python sees when it receives one of
+our objects.
 
-## Semantics (PEP 525 / CPython parity)
+`collections.abc` membership is structural, so each method directly
+buys library compatibility rather than just protocol tidiness
+(`_collections_abc.py`):
 
-### athrow(exc)
+- `AsyncGenerator` hook checks `__aiter__`, `__anext__`, `asend`,
+  `athrow`, `aclose`.
+- `Generator` hook checks `__iter__`, `__next__`, `send`, `throw`,
+  `close`.
 
-Returns an awaitable (an ASend-flavored stepper). Driving it throws
-`exc` into the generator at its suspension point:
+**Not in scope**: the introspection attributes (`ag_frame`, `ag_code`,
+`ag_await`, `ag_running`, `__name__`, `__qualname__`). Every asyncio
+access to those is `hasattr`-guarded (`asyncio/base_tasks.py`,
+`asyncio/coroutines.py`), so their absence costs repr and
+`Task.get_stack()` detail and nothing else. Deliberately left out.
+
+## Current state
+
+`KosPyAsyncGenType` (iter.c) declares no `tp_methods` at all -- only
+`am_aiter` and `am_anext`. All three of `asend`, `athrow`, and `aclose`
+are missing, so the type satisfies `abc.AsyncIterator` and stops there.
+(`send` / `throw` / `close` exist on the *awaitable*,
+`koskari.lib.async_generator_asend`, which is a different object.)
+
+Two consequences beyond the ABC:
+
+- `contextlib.aclosing` and `loop.shutdown_asyncgens()` raise
+  AttributeError.
+- `YIELD_FROM.c` classifies a foreign delegate as an async generator
+  rather than a bare async iterator by `hasattr(obj, "asend")`, so a
+  Koskari async generator that reaches yield-from through a Python
+  round-trip classifies one tier down.
+
+The original observation that "aclose kills the driver" was an
+AttributeError walking into the (since fixed) exceptional unwind
+teardown corruption. The method itself never existed.
+
+## Staging
+
+The three methods are not equal work, and they split cleanly:
+
+1. **`asend` and `athrow`** -- plumbing over the stepper that already
+   exists. No new drive path, no new result mapping.
+2. **`aclose`** -- the same stepper with a close-flavored result
+   mapping, landed together with the `asyncgenasend_close` fix below.
+3. **`DemandGenerator.close`** -- independent one-liner over
+   `KosPyAsyncGen_Teardown`.
+
+## Stage 1: asend and athrow
+
+`KosPyAsyncGenASend` already carries `is_throw`, `throw_typ`,
+`throw_exc`, and its step loop forwards them into
+`koskari_eval(ctx, send_val, throw_typ, throw_exc)`. The evaluator's
+throw ingress delivers into the suspended context, where the dynchain's
+TRY/FINALLY machinery gives catchability for free. So both methods are
+constructors:
+
+- **`asend(value)`** = `asyncgen_anext` with a value: the `closed`
+  check, then `KosPyAsyncGenASend_New(agen, value)`.
+- **`athrow(typ[, val[, tb]])`** = normalize the argument (the same
+  `PyErr_NormalizeException` shape `asyncgenasend_throw` already uses),
+  then construct a stepper with `is_throw` set and the throw fields
+  primed. `KosPyAsyncGenASend_New` grows throw parameters, or gains a
+  sibling constructor.
+
+A freshly constructed stepper has `awaiting` clear, so the
+resume-from-await branch is skipped and the first drive goes straight
+to install plus `koskari_eval` with the throw in hand. No change to the
+step loop.
+
+### Semantics (PEP 525 / CPython parity)
+
+`asend` matches `__anext__` in every respect but the sent value.
+
+`athrow` drives the exception into the generator at its suspension
+point:
 
 - body catches and yields -> the yielded value is the result of
   awaiting the athrow.
 - body catches and returns / falls off the end -> StopAsyncIteration.
 - body does not catch -> the exception propagates to the awaiter.
 - generator already closed / never started and exhausted ->
-  StopAsyncIteration (CPython: athrow on a closed agen raises
-  StopAsyncIteration, except GeneratorExit which returns quietly).
-- generator currently running -> RuntimeError (re-entrancy guard, same
-  as `asend`).
+  StopAsyncIteration (GeneratorExit returns quietly instead).
+- generator currently running -> RuntimeError, via the existing
+  `in_progress` guard.
 
-### aclose()
+## Stage 2: aclose
 
-Returns an awaitable. Semantically `athrow(GeneratorExit)` with the
-close-specific result mapping:
+`aclose()` is `athrow(GeneratorExit)` with a close-specific result
+mapping: a `closing` flag on the stepper (or a small subtype) that
+branches the terminal switch in `asyncgenasend_iternext`.
 
-- GeneratorExit propagates out (uncaught) or the body returns ->
-  success; awaiting aclose yields None; generator marked closed.
-- body catches GeneratorExit and *yields* -> RuntimeError
-  ("async generator ignored GeneratorExit"); generator marked closed.
-- body raises some other exception -> it propagates to the awaiter.
-- already closed -> immediate None (idempotent).
-- suspension during cleanup (`finally: (await ...)`) -> honored: the
-  awaitable suspends like any anext step and the loop drives it. This
-  is the capability the demand-path teardown cannot offer.
+The mapping is stated in awaitable terms, because "awaiting X yields
+None" means raising `StopIteration(None)`, not `StopAsyncIteration`:
 
-## Design
+| eval result | normal stepper | closing stepper |
+|---|---|---|
+| `KOS_RES_YIELD` | StopIteration(value) | RuntimeError, "async generator ignored GeneratorExit" |
+| `KOS_RES_RETURN` | StopAsyncIteration(value) | StopIteration(None) |
+| `KOS_RES_RAISE`, GeneratorExit | propagates | StopIteration(None) |
+| `KOS_RES_RAISE`, other | propagates | propagates |
 
-### Machinery: extend the ASend stepper
+Every terminal outcome marks `agen->closed`; `RETURN` / `RAISE` /
+`FATAL` already do so today. `aclose` on an already-closed generator
+returns an awaitable completing immediately with None (idempotent),
+resolved at the method before any stepper is built.
 
-`KosPyAsyncGenASend` (iter.c) already carries `is_throw`, `throw_typ`,
-`throw_exc` and its step loop already forwards throws into
-`koskari_eval(ctx, send_val, throw_typ, throw_exc)` -- the evaluator's
-throw ingress delivers into the suspended context, where the dynchain's
-TRY/FINALLY machinery gives catchability for free. So:
-
-- **athrow(exc)** = `KosPyAsyncGenASend_New(agen, NULL)` with the throw
-  fields primed. Mostly plumbing: a `m_athrow` method normalizing its
-  argument and constructing the stepper.
-- **aclose()** = a close-flavored stepper: same drive, GeneratorExit as
-  the thrown exception, plus the close result mapping (a `closing` flag
-  on the stepper or a small subtype): YIELD -> RuntimeError instead of
-  a value; RETURN / GeneratorExit-raise -> None; mark `agen->closed`
-  on every terminal outcome.
+Suspension during cleanup (`finally: (await ...)`) is honored: the
+awaitable suspends like any anext step and the loop drives it. That is
+the capability the demand-path teardown cannot offer, and the reason
+`aclose` exists as a distinct path rather than an alias for teardown.
 
 The GeneratorExit drive logic shared with `coroutine_close` (coro.c)
 and `asyncgen_teardown_chain_on_ctx` (iter.c) should be factored where
-practical, but the async steppers drive through the normal
+practical, but the async stepper drives through the normal
 suspend/resume protocol rather than the teardown's run-to-completion
 loop -- they are siblings, not the same function.
+
+### Prerequisite: the asyncgenasend_close stub
+
+`asyncgenasend_close` (iter.c) sets `agen->closed = 1` and returns None:
+no GeneratorExit, no teardown. asyncio calls this when it drops a
+pending `__anext__` awaitable, so a cancelled `async for` skips the
+generator's `finally` blocks and then marks the generator closed, which
+bars anything else from cleaning it up.
+
+This is a live defect independent of the feature, but it must be fixed
+with `aclose` rather than before it: the correct behavior is the
+close-flavored drive, so the fix is the same machinery. Left as-is it
+would pre-empt `aclose` outright.
 
 ### Interaction with the drive-state demand bit
 
@@ -107,15 +170,16 @@ covers this by construction.
   demand-path close for the drop-without-close case, exception-fenced
   per the dealloc-fence work.
 
-### DemandGenerator surface
+## Stage 3: DemandGenerator.close
 
-`DemandGenerator` already has `throw` (demand_gen_throw) and its close
-path (`demand_gen_close_ctx`) rides `KosPyAsyncGen_Teardown`. A sync
-`close()` method for generator-protocol parity is a one-liner over the
-same teardown; include it for symmetry, or defer -- no dependency
-either way.
+`DemandGenerator` exposes `__iter__`, `__next__`, `send`, and `throw`.
+The single missing `close` is what keeps it out of `abc.Generator`, so
+`contextlib.closing` and duck-typed generator handling reject it today.
+Its close path (`demand_gen_close_ctx`) already rides
+`KosPyAsyncGen_Teardown`; the method is a wrapper over that, idempotent
+on an already-closed generator. No dependency on stages 1 or 2.
 
-### Phase 2 (separate, optional): finalizer hooks
+## Phase 2 (separate, optional): finalizer hooks
 
 PEP 525's `sys.set_asyncgen_hooks` firstiter/finalizer integration is
 what lets asyncio schedule `aclose` for dropped generators
@@ -126,6 +190,9 @@ hook is set). Not required for the explicit-close surface.
 
 ## Testing matrix
 
+- asend: value delivered to the suspended yield; asend on a
+  never-started generator (None-equivalent first step); asend on closed
+  -> StopAsyncIteration.
 - athrow caught -> yielded value returned; uncaught -> propagates;
   caught-then-return -> StopAsyncIteration.
 - aclose: plain suspended gen -> None, closed; `finally` with an await
@@ -134,18 +201,29 @@ hook is set). Not required for the explicit-close surface.
   idempotent second aclose -> None; aclose on never-started and on
   exhausted gens.
 - re-entrancy: aclose/athrow while in_progress -> RuntimeError.
+- cancelled `async for`: drop a pending `__anext__` awaitable and
+  assert the generator's `finally` ran (the `asyncgenasend_close`
+  regression).
 - extent restore: parameterize inside the gen; aclose runs the unwind;
   a parameter read after close shows the extent restored (the test the
   original aclose investigation set out to write).
 - interplay: aclose after partial flattened consumption; aclose after a
   demand step.
-- `contextlib.aclosing` and `loop.shutdown_asyncgens` smoke once
-  phase 2 hooks exist.
+- conformance: `isinstance(agen, collections.abc.AsyncGenerator)` and
+  `isinstance(dgen, collections.abc.Generator)`; a Koskari async
+  generator round-tripped through Python classifies as
+  `KOS_YF_PY_ASYNC_GEN` in yield-from.
+- `contextlib.aclosing` and `contextlib.closing` smoke;
+  `loop.shutdown_asyncgens` once phase 2 hooks exist.
 
 ## References
 
-- iter.c: `KosPyAsyncGenASend` (`is_throw` plumbing), `asyncgen_anext`,
+- iter.c: `KosPyAsyncGenType` (no `tp_methods`), `asyncgen_anext`,
+  `KosPyAsyncGenASend` (`is_throw` plumbing), `asyncgenasend_iternext`
+  (terminal switch), `asyncgenasend_close` (the stub),
   `KosPyAsyncGen_Teardown`, `asyncgen_dealloc` (fence + comment)
+- demand.c: `demand_gen_methods`, `demand_gen_close_ctx`
 - coro.c: `coroutine_close` (the sync close shape to mirror)
+- YIELD_FROM.c: delegate classification by `hasattr(obj, "asend")`
 - PEP 525 -- Asynchronous Generators
 - [asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)
