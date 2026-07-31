@@ -1380,8 +1380,7 @@ class Compiler:
                 arg = merge_opcount(arg)
             elif op.style == OpStyle.KOSTYLE_CMPCOUNT:
                 arg = merge_cmpcount(arg)
-            elif (op.style == OpStyle.KOSTYLE_EXTRA
-                  and OpStyle.KOSTYLE_OPCOUNT in op.extra):
+            elif OpStyle.KOSTYLE_OPCOUNT in op.extra:
                 arg = tuple(
                     merge_opcount(v) if fk == OpStyle.KOSTYLE_OPCOUNT else v
                     for v, fk in zip(arg, op.extra))
@@ -1457,13 +1456,13 @@ class Compiler:
                     arg = (cmpsrc, nx, ny, label)
 
             elif nstack and op in VAR_TO_FAST:
-                # If opcode style is EXTRA, use op.extra as the schema tuple
+                # An EXTRA opcode carries its schema tuple in op.extra
                 # (opcodes.incl field kinds). Zip with the operand 4-tuple; each
                 # KOSTYLE_VAR slot is lowered to a fast index if one is
                 # available; otherwise that field stays as the original value
                 # and the whole opcode stays as VAR.
                 new_op = VAR_TO_FAST[op]
-                if op.style == OpStyle.KOSTYLE_EXTRA:
+                if op.extra:
                     new_arg = tuple([
                         fast_slot(v) if fk == OpStyle.KOSTYLE_VAR else v
                         for v, fk in zip(arg, op.extra)])

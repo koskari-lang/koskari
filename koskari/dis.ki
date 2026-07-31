@@ -284,7 +284,7 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
 
 
 define _format_arg [code op_style arg cpool local_names closure_names
-                    ns_label: None extra_schema: None]:
+                    ns_label: None extra_schema: #()]:
   """
   Format an opcode argument for display. Uses constant pool, local
   names, and closure names when the argument is an index into them.
@@ -293,65 +293,62 @@ define _format_arg [code op_style arg cpool local_names closure_names
   to annotate which namespace is being pushed.
 
   :param code: Koskari Code
-  :param op_style: OpStyle value (from OpCode.style or OpStyle enum)
+  :param op_style: OpStyle member (op.style)
   :param arg: raw argument value
   :param cpool: code.constants_pool (sequence)
   :param local_names: sequence of local sym names from nspec
   :param closure_names: sequence of closure sym names from nspec
   :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
-  :param extra_schema: optional 4-tuple (f0, f1, f2, f3) for KOSTYLE_EXTRA
+  :param extra_schema: op.extra -- a 4-tuple of OpStyle field kinds for
+    a KOSTYLE_EXTRA opcode, empty for every other style
   :return: string description of the argument
   """
 
   switch op_style:
 
     case [OpStyle.KOSTYLE_EXTRA]:
-      if (is-not? extra_schema None):
+      if extra_schema:
         define schema extra_schema
-        if schema:
-          try:
-            define ext (code.extra_tuple arg)
-          except [#(IndexError TypeError)]:
-            return (str arg)
+        try:
+          define ext (code.extra_tuple arg)
+        except [#(IndexError TypeError)]:
+          return (str arg)
 
-          if (equal? (item schema 0) OpStyle.KOSTYLE_CMPSRC):
-            return (_format_cmpsrc_row arg ext schema cpool
-                                       local_names closure_names)
+        if (equal? (item schema 0) OpStyle.KOSTYLE_CMPSRC):
+          return (_format_cmpsrc_row arg ext schema cpool
+                                     local_names closure_names)
 
-          define parts #[]
-          for-each [[val fk] (zip ext schema)]:
-            if (or (equal? fk OpStyle.KOSTYLE_CONST) (equal? fk OpStyle.KOSTYLE_VAR)):
-              if (and (<= 0 val) (< val (len cpool))):
-                (define prefix
-                  (if (equal? fk OpStyle.KOSTYLE_CONST) "c" "v"))
-                (define cval (item cpool val))
-                (define inner
-                  (if (and (equal? fk OpStyle.KOSTYLE_CONST)
-                          (instance? cval NamespaceSpec))
-                    then: (_format_nspec_inline val cval)
-                    else: (_format_constant cval)))
-                (parts.append f"{prefix}#{val} ({inner})")
-              else:
-                parts.append (str val)
-
-            elif (equal? fk OpStyle.KOSTYLE_FASTVAR):
-              parts.append (_format_fast_part val local_names closure_names)
-            elif (equal? fk OpStyle.KOSTYLE_COUNT):
-              parts.append (str val)
-            elif (equal? fk OpStyle.KOSTYLE_CMP):
-              parts.append (_compare_name val)
-            elif (equal? fk OpStyle.KOSTYLE_OPERAND):
-              parts.append (_operand_name val)
-            elif (equal? fk OpStyle.KOSTYLE_LABEL):
-              parts.append f"-> {val}"
+        define parts #[]
+        for-each [[val fk] (zip ext schema)]:
+          if (or (equal? fk OpStyle.KOSTYLE_CONST) (equal? fk OpStyle.KOSTYLE_VAR)):
+            if (and (<= 0 val) (< val (len cpool))):
+              (define prefix
+                (if (equal? fk OpStyle.KOSTYLE_CONST) "c" "v"))
+              (define cval (item cpool val))
+              (define inner
+                (if (and (equal? fk OpStyle.KOSTYLE_CONST)
+                        (instance? cval NamespaceSpec))
+                  then: (_format_nspec_inline val cval)
+                  else: (_format_constant cval)))
+              (parts.append f"{prefix}#{val} ({inner})")
             else:
               parts.append (str val)
 
-          define joined (.join ", " parts)
-          return f"{arg} ({joined})"
+          elif (equal? fk OpStyle.KOSTYLE_FASTVAR):
+            parts.append (_format_fast_part val local_names closure_names)
+          elif (equal? fk OpStyle.KOSTYLE_COUNT):
+            parts.append (str val)
+          elif (equal? fk OpStyle.KOSTYLE_CMP):
+            parts.append (_compare_name val)
+          elif (equal? fk OpStyle.KOSTYLE_OPERAND):
+            parts.append (_operand_name val)
+          elif (equal? fk OpStyle.KOSTYLE_LABEL):
+            parts.append f"-> {val}"
+          else:
+            parts.append (str val)
 
-        else:
-          return (str arg)
+        define joined (.join ", " parts)
+        return f"{arg} ({joined})"
 
       else:
         return (str arg)
@@ -521,8 +518,8 @@ define dis [x file: None]:
     define op_int (item oparg 0)
     define arg (item oparg 1)
     define op (OpCode op_int)
-    define op_style (getattr op.style "value" op.style)
-    define extra_schema (if (getattr op "extra" None) (tuple op.extra) None)
+    define op_style op.style
+    define extra_schema op.extra
     define ns_label None
 
     when (in? i ns_const_map):
@@ -566,8 +563,8 @@ define _get_instruction_lines [code]:
     define op_int (item oparg 0)
     define arg (item oparg 1)
     define op (OpCode op_int)
-    define op_style (getattr op.style "value" op.style)
-    define extra_schema (when (getattr op "extra" None) (tuple op.extra))
+    define op_style op.style
+    define extra_schema op.extra
     define ns_label None
 
     when (in? i ns_const_map):

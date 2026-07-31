@@ -3356,7 +3356,85 @@ static PyObject *create_opstyle_enum(void) {
 PyObject *KosOpCodeEnum = NULL;
 
 
-static PyObject *create_opcode_enum(void) {
+/**
+   Fetch the OpStyle enum member for a raw style ordinal.
+
+   :param styles: the OpStyle IntEnum
+   :return: new reference, or NULL with an exception set
+*/
+static PyObject *opstyle_member(PyObject *styles, KosOpStyle style) {
+
+  return PyObject_CallFunction(styles, "i", (int) style);
+}
+
+
+/**
+   Build an EXTRA opcode's field schema as a 4-tuple of OpStyle members.
+
+   :param styles: the OpStyle IntEnum
+   :return: new reference, or NULL with an exception set
+*/
+static PyObject *opstyle_schema(PyObject *styles, KosExtraSchema ex) {
+
+  const KosOpStyle fields[4] = { ex.f0, ex.f1, ex.f2, ex.f3 };
+
+  PyObject *res = PyTuple_New(4);
+  if (! res)
+    return NULL;
+
+  for (int i = 0; i < 4; i++) {
+    PyObject *member = opstyle_member(styles, fields[i]);
+    if (! member) {
+      Py_DECREF(res);
+      return NULL;
+    }
+    PyTuple_SET_ITEM(res, i, member);
+  }
+
+  return res;
+}
+
+
+/**
+   Attach the ``style`` and ``extra`` attributes to one opcode member.
+   ``style`` is an OpStyle member; ``extra`` is the field schema of an
+   EXTRA opcode, or an empty tuple for every other style, so consumers
+   can test it for truth and iterate it without a presence check.
+
+   :param styles: the OpStyle IntEnum
+   :return: 0 on success, -1 with an exception set
+*/
+static int decorate_opcode(PyObject *member, PyObject *styles,
+    KosOpCode op) {
+
+  KosOpStyle style = opcode_styles[op].style;
+
+  PyObject *sty = opstyle_member(styles, style);
+  if (! sty)
+    return -1;
+
+  int rc = PyObject_SetAttrString(member, "style", sty);
+  Py_DECREF(sty);
+  if (rc)
+    return -1;
+
+  PyObject *extra;
+  if (style == KOSTYLE_EXTRA) {
+    extra = opstyle_schema(styles, opcode_styles[op].extra);
+  } else {
+    extra = PyTuple_New(0);
+  }
+  if (! extra)
+    return -1;
+
+  rc = PyObject_SetAttrString(member, "extra", extra);
+  Py_DECREF(extra);
+
+  return rc ? -1 : 0;
+}
+
+
+static PyObject *create_opcode_enum(PyObject *styles) {
 
   PyObject *enum_dict = PyDict_New();
   if (! enum_dict)
@@ -3370,28 +3448,29 @@ static PyObject *create_opcode_enum(void) {
   if (! res)
     return NULL;
 
-  /* Attach style and optional extra schema to each opcode */
+  /* Attach style and extra schema to each opcode */
   for (KosOpCode op = 0; op <= KOS_OP_THEEND; op++) {
     char buf[64];
     int n = PyOS_snprintf(buf, sizeof buf, "KOS_OP_%s", opcode_names[op]);
-    if (n < 0 || (size_t) n >= sizeof buf)
-      continue;
-    PyObject *_en = PyObject_GetAttrString(res, buf);
-    if (! _en)
-      continue;
-    KosOpStyle style = opcode_styles[op].style;
-    PyObject *_fl = PyLong_FromLong((long) style);
-    PyObject_SetAttrString(_en, "style", _fl);
-    Py_DECREF(_fl);
-    if (style == KOSTYLE_EXTRA) {
-      KosExtraSchema ex = opcode_styles[op].extra;
-      PyObject *_ex = Py_BuildValue("(iiii)", ex.f0, ex.f1, ex.f2, ex.f3);
-      if (_ex) {
-        PyObject_SetAttrString(_en, "extra", _ex);
-        Py_DECREF(_ex);
-      }
+    if (n < 0 || (size_t) n >= sizeof buf) {
+      PyErr_Format(PyExc_RuntimeError, "opcode name too long: %s",
+                   opcode_names[op]);
+      Py_DECREF(res);
+      return NULL;
     }
-    Py_DECREF(_en);
+
+    PyObject *member = PyObject_GetAttrString(res, buf);
+    if (! member) {
+      Py_DECREF(res);
+      return NULL;
+    }
+
+    int rc = decorate_opcode(member, styles, op);
+    Py_DECREF(member);
+    if (rc) {
+      Py_DECREF(res);
+      return NULL;
+    }
   }
 
   return res;
@@ -3479,16 +3558,7 @@ int koskari_bytecode_init(PyObject *mod) {
 
   PyObject *stuff;
 
-  stuff = create_opcode_enum();
-  if (! stuff) {
-    return -1;
-  }
-  if (PyDict_SetItemString(dict, "OpCode", stuff)) {
-    Py_DECREF(stuff);
-    return -1;
-  }
-  KosOpCodeEnum = stuff;
-
+  /* OpStyle first: the opcode members carry OpStyle values */
   stuff = create_opstyle_enum();
   if (! stuff) {
     return -1;
@@ -3498,6 +3568,16 @@ int koskari_bytecode_init(PyObject *mod) {
     return -1;
   }
   KosOpStyleEnum = stuff;
+
+  stuff = create_opcode_enum(KosOpStyleEnum);
+  if (! stuff) {
+    return -1;
+  }
+  if (PyDict_SetItemString(dict, "OpCode", stuff)) {
+    Py_DECREF(stuff);
+    return -1;
+  }
+  KosOpCodeEnum = stuff;
 
   stuff = create_operand_enum();
   if (! stuff) {

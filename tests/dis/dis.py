@@ -205,7 +205,7 @@ def _format_arg(
         local_names,
         closure_names,
         ns_label=None,
-        extra_schema=None):
+        extra_schema=()):
     """
     Format an opcode argument for display. Uses constant pool, local
     names, and closure names when the argument is an index into them.
@@ -214,60 +214,60 @@ def _format_arg(
     to annotate which namespace is being pushed.
 
     :param code: Koskari Code
-    :param op_style: OpStyle value (from OpCode.style or OpStyle enum)
+    :param op_style: OpStyle member (op.style)
     :param arg: raw argument value
     :param cpool: code.constants_pool (sequence)
     :param local_names: sequence of local sym names from nspec
     :param closure_names: sequence of closure sym names from nspec
     :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
-    :param extra_schema: optional 4-tuple (f0, f1, f2, f3) for KOSTYLE_EXTRA
+    :param extra_schema: op.extra -- a 4-tuple of OpStyle field kinds for
+      a KOSTYLE_EXTRA opcode, empty for every other style
     :return: string description of the argument
     """
 
     if op_style == OpStyle.KOSTYLE_EXTRA:
-        if extra_schema is not None:
+        if extra_schema:
             schema = extra_schema
-            if schema:
-                try:
-                    a0, a1, a2, a3 = code.extra_tuple(arg)
-                except (IndexError, TypeError):
-                    return str(arg)
-                parts = []
-                for val, fk in ((a0, schema[0]), (a1, schema[1]),
-                                (a2, schema[2]), (a3, schema[3])):
-                    if fk == OpStyle.KOSTYLE_CONST or fk == OpStyle.KOSTYLE_VAR:
-                        if 0 <= val < len(cpool):
-                            cval = cpool[val]
-                            if fk == OpStyle.KOSTYLE_CONST and isinstance(
-                                    cval, NamespaceSpec):
-                                inner = _format_nspec_inline(val, cval)
-                            else:
-                                inner = _format_constant(cval)
-                            parts.append('%s#%d (%s)' % (
-                                'c' if fk == OpStyle.KOSTYLE_CONST else 'v',
-                                val, inner))
+            try:
+                a0, a1, a2, a3 = code.extra_tuple(arg)
+            except (IndexError, TypeError):
+                return str(arg)
+            parts = []
+            for val, fk in ((a0, schema[0]), (a1, schema[1]),
+                            (a2, schema[2]), (a3, schema[3])):
+                if fk == OpStyle.KOSTYLE_CONST or fk == OpStyle.KOSTYLE_VAR:
+                    if 0 <= val < len(cpool):
+                        cval = cpool[val]
+                        if fk == OpStyle.KOSTYLE_CONST and isinstance(
+                                cval, NamespaceSpec):
+                            inner = _format_nspec_inline(val, cval)
                         else:
-                            parts.append('%d' % val)
-                    elif fk == OpStyle.KOSTYLE_FASTVAR:
-                        n_local = len(local_names) if local_names else 0
-                        if val < n_local:
-                            name = (local_names[val]
-                                    if local_names else 'local[%d]' % val)
-                            parts.append('fast %d (%s)' % (val, repr(name)))
-                        else:
-                            idx = val - n_local
-                            if closure_names and 0 <= idx < len(closure_names):
-                                parts.append('fast %d (closure %s)' % (
-                                    val, repr(closure_names[idx])))
-                            else:
-                                parts.append('fast %d' % val)
-                    elif fk == OpStyle.KOSTYLE_COUNT:
-                        parts.append(str(val))
-                    elif fk == OpStyle.KOSTYLE_LABEL:
-                        parts.append('-> %d' % val)
+                            inner = _format_constant(cval)
+                        parts.append('%s#%d (%s)' % (
+                            'c' if fk == OpStyle.KOSTYLE_CONST else 'v',
+                            val, inner))
                     else:
-                        parts.append(str(val))
-                return '%d (%s)' % (arg, ', '.join(parts))
+                        parts.append('%d' % val)
+                elif fk == OpStyle.KOSTYLE_FASTVAR:
+                    n_local = len(local_names) if local_names else 0
+                    if val < n_local:
+                        name = (local_names[val]
+                                if local_names else 'local[%d]' % val)
+                        parts.append('fast %d (%s)' % (val, repr(name)))
+                    else:
+                        idx = val - n_local
+                        if closure_names and 0 <= idx < len(closure_names):
+                            parts.append('fast %d (closure %s)' % (
+                                val, repr(closure_names[idx])))
+                        else:
+                            parts.append('fast %d' % val)
+                elif fk == OpStyle.KOSTYLE_COUNT:
+                    parts.append(str(val))
+                elif fk == OpStyle.KOSTYLE_LABEL:
+                    parts.append('-> %d' % val)
+                else:
+                    parts.append(str(val))
+            return '%d (%s)' % (arg, ', '.join(parts))
         return str(arg)
 
     if op_style == OpStyle.KOSTYLE_CONST:
@@ -415,8 +415,8 @@ def dis(x, file=None):
     for i in range(n):
         op_int, arg = code.oparg(i)
         op = OpCode(op_int)
-        op_style = getattr(op.style, 'value', op.style)
-        extra_schema = tuple(op.extra) if getattr(op, 'extra', None) else None
+        op_style = op.style
+        extra_schema = op.extra
         ns_label = None
         if i in ns_const_map:
             ns_label = _format_nspec_inline(ns_const_map[i], cpool[ns_const_map[i]])
@@ -447,8 +447,8 @@ def _get_instruction_lines(code):
     for i in range(n):
         op_int, arg = code.oparg(i)
         op = OpCode(op_int)
-        op_style = getattr(op.style, 'value', op.style)
-        extra_schema = tuple(op.extra) if getattr(op, 'extra', None) else None
+        op_style = op.style
+        extra_schema = op.extra
         ns_label = None
         if i in ns_const_map:
             ns_label = _format_nspec_inline(ns_const_map[i], cpool[ns_const_map[i]])

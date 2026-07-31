@@ -561,7 +561,7 @@ def intern_instruction_args(pb, instructions):
 
     for op, arg in instructions:
         op = op if isinstance(op, OpCode) else OpCode(op)
-        st = getattr(op.style, 'value', op.style)
+        st = op.style
         if st == OpStyle.KOSTYLE_CONST:
             intern_for_pool(pb, arg)
         elif st == OpStyle.KOSTYLE_VAR:
@@ -620,8 +620,8 @@ def encode_instruction(op, arg, pool_index_of):
     Encode one softened instruction
     """
 
-    op_int = op.value if hasattr(op, 'value') else int(op)
-    st = getattr(op.style, 'value', op.style)
+    op_int = int(op)
+    st = op.style
 
     if op == OpCode.KOS_OP_POSITION:
         line, col = arg[0], arg[1]
@@ -675,7 +675,7 @@ def decode_instruction(buf, off, pool_list):
     op_int, arg_kind, _pad, arg_val = struct.unpack_from('<HBBI', buf, off)
     off += INSTRUCTION_SIZE
     op = OpCode(op_int)
-    st = getattr(op.style, 'value', op.style)
+    st = op.style
 
     if op == OpCode.KOS_OP_POSITION:
         line = (arg_val >> 16) & 0xFFFF
