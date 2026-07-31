@@ -23,18 +23,6 @@ Ref: [interpreter/callcc.md](interpreter/callcc.md),
 
 ---
 
-## Generators / async iteration
-
-- **AsyncGenerator aclose / athrow** — PEP 525 protocol surface;
-  `aclose` is the sanctioned suspending close (awaits inside `finally`
-  honored), distinct from the demand-path dealloc teardown. Spec'd,
-  including the ASend-stepper implementation shape and state machine.
-  Phase 2: firstiter/finalizer hooks
-  for `loop.shutdown_asyncgens`. Ref:
-  [interpreter/asyncgen-aclose-athrow.md](interpreter/asyncgen-aclose-athrow.md).
-
----
-
 ## Evaluator performance
 
 ### Opcode caching: further families (investigative)

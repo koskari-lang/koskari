@@ -149,8 +149,8 @@ not a generator is on the dynnode chain:
   is not wedged.
 
 The legacy eval-entry shortcut is untouched; it predates the generator
-work and is unreachable from the fixed asend. `athrow`/`aclose` remain
-future work (design/interpreter/asyncgen-aclose-athrow.md).
+work and is unreachable from the fixed asend. `athrow`/`aclose` have
+since been implemented (design/archive/asyncgen-aclose-athrow.md).
 
 ## References
 

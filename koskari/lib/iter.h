@@ -39,6 +39,7 @@ struct KosPyAsyncGen {
   void *gen;         /* KosDynGen * when set; agen holds ref when GEN released from chain */
   PyObject *code_name;  /* strong ref; KosCode name for repr (ctx may not expose frame) */
   int in_progress;   /* anext in progress */
+  int started;       /* first step has driven the evaluator */
   int closed;        /* generator closed */
 };
 
@@ -90,6 +91,8 @@ typedef struct {
   KosPyAsyncGen *agen;
   PyObject *send_value;   /* value to send into generator */
   int is_throw;           /* if true, throw into generator */
+  int closing;            /* close-flavored drive: GeneratorExit with the
+                             aclose result mapping at terminal outcomes */
   PyObject *throw_typ;    /* exception type (if is_throw) */
   PyObject *throw_exc;    /* exception value (if is_throw) */
   int awaiting;           /* mid-step await in flight: this asend owns the

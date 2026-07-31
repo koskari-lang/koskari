@@ -54,6 +54,71 @@ static int install_frozen_gen_for_resume(
 }
 
 
+static PyObject *asyncgenasend_new_ex(
+    KosPyAsyncGen *agen,
+    PyObject *send_value,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    int closing);
+
+static int asyncgen_close_drive(KosPyAsyncGen *agen);
+
+
+/**
+   Parse and normalize throw-method arguments (typ[, val[, tb]]) into an
+   owned (type, exception-instance) pair shaped for the evaluator's
+   throw ingress. Accepts an exception class with optional value, or a
+   bare exception instance. format carries the method name for error
+   messages, e.g. "O|OO:athrow".
+*/
+static int normalize_throw_args(
+    PyObject *args,
+    const char *format,
+    PyObject **typ_out,
+    PyObject **exc_out) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
+  if (! PyArg_ParseTuple(args, format, &typ, &val, &tb))
+    return -1;
+
+  if (PyExceptionClass_Check(typ)) {
+    Py_INCREF(typ);
+    Py_XINCREF(val);
+    Py_XINCREF(tb);
+    PyErr_NormalizeException(&typ, &val, &tb);
+    Py_XDECREF(tb);
+    if (! typ)
+      return -1;
+    if (! val) {
+      val = typ;
+      Py_INCREF(val);
+    }
+    *typ_out = typ;
+    *exc_out = val;
+    return 0;
+  }
+
+  if (PyExceptionInstance_Check(typ)) {
+    if (val && val != Py_None) {
+      PyErr_SetString(PyExc_TypeError,
+                      "instance exception may not have a separate value");
+      return -1;
+    }
+    Py_INCREF(typ);
+    *exc_out = typ;
+    *typ_out = (PyObject *) Py_TYPE(typ);
+    Py_INCREF(*typ_out);
+    return 0;
+  }
+
+  PyErr_SetString(PyExc_TypeError,
+                  "exceptions must be classes or instances deriving "
+                  "from BaseException");
+  return -1;
+}
+
+
 /* === KosPyAsyncGen type === */
 
 
@@ -201,6 +266,19 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
   if (! agen)
     return;
 
+  if (agen->ctx && KosContext_DYN_TOP(agen->ctx) && ! agen->in_progress) {
+    /* Live chain: the generator was abandoned mid-await, where the
+       frozen-chain teardown below cannot reach it. Demand-drive the
+       close through the suspended context, exception-fenced --
+       teardown runs from dealloc, so every outcome of the drive is
+       swallowed and cleared. */
+    PyObject *fence_typ, *fence_val, *fence_tb;
+    PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
+    (void) asyncgen_close_drive(agen);
+    PyErr_Clear();
+    PyErr_Restore(fence_typ, fence_val, fence_tb);
+  }
+
   if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
     asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
 
@@ -222,18 +300,9 @@ static void asyncgen_dealloc(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
-    /* demand-path close; exception-fenced, so safe mid-unwind */
-    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
-
-  } else if (agen->gen) {
-    /* installed or ctx-less: the chain, if any, belongs to the context */
-    kos_dyngen_release((KosDynGen *) agen->gen);
-    agen->gen = NULL;
-  }
-
-  if (agen->ctx)
-    KosContext_Free(agen->ctx);
+  /* demand-path close; exception-fenced, so safe mid-unwind. A live
+     (abandoned mid-await) chain is demand-driven closed first. */
+  KosPyAsyncGen_Teardown(agen);
 
   Py_XDECREF(agen->code_name);
 
@@ -267,18 +336,7 @@ static int asyncgen_clear(PyObject *self) {
 
   Py_CLEAR(agen->code_name);
 
-  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
-    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
-
-  } else if (agen->gen) {
-    kos_dyngen_release((KosDynGen *) agen->gen);
-    agen->gen = NULL;
-  }
-
-  if (agen->ctx) {
-    KosContext_Free(agen->ctx);
-    agen->ctx = NULL;
-  }
+  KosPyAsyncGen_Teardown(agen);
 
   return 0;
 }
@@ -304,6 +362,45 @@ static PyObject *asyncgen_anext(PyObject *self) {
 }
 
 
+static PyObject *asyncgen_asend(PyObject *self, PyObject *value) {
+
+  /* No call-time closed check: CPython raises StopAsyncIteration when
+     the awaitable is driven, not when it is constructed. The stepper's
+     entry guard covers the closed case. */
+  return asyncgenasend_new_ex((KosPyAsyncGen *) self, value, NULL, NULL, 0);
+}
+
+
+static PyObject *asyncgen_athrow(PyObject *self, PyObject *args) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+  PyObject *typ = NULL, *exc = NULL;
+
+  if (normalize_throw_args(args, "O|OO:athrow", &typ, &exc) < 0)
+    return NULL;
+
+  PyObject *stepper = asyncgenasend_new_ex(agen, NULL, typ, exc, 0);
+  Py_DECREF(typ);
+  Py_DECREF(exc);
+  return stepper;
+}
+
+
+static PyObject *asyncgen_aclose(PyObject *self, PyObject *ignored) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
+  if (! exc)
+    return NULL;
+
+  PyObject *stepper = asyncgenasend_new_ex(
+      agen, NULL, PyExc_GeneratorExit, exc, 1);
+  Py_DECREF(exc);
+  return stepper;
+}
+
+
 static PyObject *asyncgen_repr(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
@@ -319,6 +416,20 @@ static PyObject *asyncgen_tp_iter(PyObject *self) {
 
   return KosDemandGenerator_FromAsyncGen((KosPyAsyncGen *) self);
 }
+
+
+static PyMethodDef asyncgen_methods[] = {
+  { "asend", (PyCFunction) asyncgen_asend, METH_O,
+    "Send a value into the async generator; returns an awaitable" },
+
+  { "athrow", (PyCFunction) asyncgen_athrow, METH_VARARGS,
+    "Throw an exception into the async generator; returns an awaitable" },
+
+  { "aclose", (PyCFunction) asyncgen_aclose, METH_NOARGS,
+    "Close the async generator; returns an awaitable" },
+
+  { NULL, NULL, 0, NULL },
+};
 
 
 static PyAsyncMethods asyncgen_async_methods = {
@@ -341,6 +452,7 @@ PyTypeObject KosPyAsyncGenType = {
   .tp_traverse = asyncgen_traverse,
   .tp_clear = asyncgen_clear,
   .tp_iter = asyncgen_tp_iter,
+  .tp_methods = asyncgen_methods,
 };
 
 
@@ -355,6 +467,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
   agen->ctx = ctx;
   agen->code_name = NULL;
   agen->in_progress = 0;
+  agen->started = 0;
   agen->closed = 0;
 
   PyObject_GC_Track((PyObject *) agen);
@@ -426,8 +539,21 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
   KosPyAsyncGen *agen = asend->agen;
 
-  if (! agen || ! agen->ctx || agen->closed) {
-    PyErr_SetNone(PyExc_StopAsyncIteration);
+  if (! agen) {
+    /* Spent by close(); CPython parity for reuse */
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot reuse already awaited __anext__()/asend()");
+    return NULL;
+  }
+
+  if (! agen->ctx || agen->closed) {
+    /* CPython parity: a throw-flavored drive on a finished generator
+       completes quietly (bare StopIteration, so awaiting yields None);
+       a send-flavored drive raises StopAsyncIteration. */
+    if (asend->is_throw)
+      PyErr_SetNone(PyExc_StopIteration);
+    else
+      PyErr_SetNone(PyExc_StopAsyncIteration);
     return NULL;
   }
 
@@ -437,6 +563,14 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   if (agen->in_progress && ! asend->awaiting) {
     PyErr_SetString(PyExc_RuntimeError,
                     "async generator already being iterated");
+    return NULL;
+  }
+
+  if (! agen->started && ! asend->is_throw
+      && asend->send_value && asend->send_value != Py_None) {
+    PyErr_SetString(PyExc_TypeError,
+                    "can't send non-None value to a just-started "
+                    "async generator");
     return NULL;
   }
 
@@ -453,10 +587,12 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
      iterator, mirroring coroutine_send's WAITING_PY contract. The step
      stays parked (no freeze, no install) until the awaitable completes;
      only then is eval re-entered, with the result as send_val so
-     revive_await pushes it for the pending opcode. A throw during the
-     await falls through: revive_await's throw path delivers it into
-     the iterator inside eval. */
-  if (asend->awaiting && ! asend->is_throw) {
+     revive_await pushes it for the pending opcode. A throw arriving
+     during the await -- primed fields, not the stale is_throw flag,
+     which survives the first drive consuming them -- falls through:
+     revive_await's throw path delivers it into the iterator inside
+     eval. */
+  if (asend->awaiting && ! throw_typ) {
     PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
     if (it) {
       PyObject *step = PyObject_CallMethod(
@@ -511,6 +647,7 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   }
 
   /* Drive the context */
+  agen->started = 1;
   KosOpResult res = koskari_eval(agen->ctx, send_val, throw_typ, throw_exc);
 
   Py_XDECREF(send_val);
@@ -529,12 +666,22 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   switch (res.kind) {
     case KOS_RES_RETURN: {
-      /* Generator completed; raise StopAsyncIteration with return value. */
+      /* Generator completed. Closing drive: awaiting aclose yields
+         None. Normal drive: StopAsyncIteration, carrying the return
+         value only when there is one -- CPython raises it bare, and a
+         (None,) payload is a visible parity difference. */
       agen->closed = 1;
       PyObject *payload = res.val;
-      PyObject *exc = koskari_StopAsyncIteration_FromValue(
-          payload ? payload : Py_None);
-      Py_XDECREF(payload);
+      if (asend->closing || ! payload || payload == Py_None) {
+        Py_XDECREF(payload);
+        if (asend->closing)
+          PyErr_SetNone(PyExc_StopIteration);
+        else
+          PyErr_SetNone(PyExc_StopAsyncIteration);
+        return NULL;
+      }
+      PyObject *exc = koskari_StopAsyncIteration_FromValue(payload);
+      Py_DECREF(payload);
       if (exc) {
         PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
         Py_DECREF(exc);
@@ -547,12 +694,29 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
     case KOS_RES_RAISE:
     case KOS_RES_FATAL:
       agen->closed = 1;
+      /* Closing drive: GeneratorExit escaping the body is the success
+         shape -- awaiting aclose yields None. Anything else
+         propagates. */
+      if (asend->closing && PyErr_Occurred()
+          && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
+        PyErr_Clear();
+        PyErr_SetNone(PyExc_StopIteration);
+        return NULL;
+      }
       /* PyErr already set (RAISE); for FATAL synthesize if needed */
       if (! PyErr_Occurred())
         PyErr_SetNone(PyExc_StopAsyncIteration);
       return NULL;
 
     case KOS_RES_YIELD: {
+      if (asend->closing) {
+        /* The body caught GeneratorExit and yielded */
+        agen->closed = 1;
+        Py_XDECREF(res.val);
+        PyErr_SetString(PyExc_RuntimeError,
+                        "async generator ignored GeneratorExit");
+        return NULL;
+      }
       /* Yielded a value - wrap in StopIteration so the __anext__ awaitable
          completes. Wrap in 1-tuple so PyErr_SetObject doesn't unpack args. */
       PyObject *args = PyTuple_Pack(1, res.val);
@@ -592,19 +756,12 @@ static PyObject *asyncgenasend_throw(PyObject *self, PyObject *args) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
 
-  asend->is_throw = 1;
-  Py_CLEAR(asend->send_value);
-
-  PyObject *typ = NULL, *val = NULL, *tb = NULL;
-  if (! PyArg_ParseTuple(args, "O|OO:throw", &typ, &val, &tb))
+  PyObject *typ = NULL, *exc = NULL;
+  if (normalize_throw_args(args, "O|OO:throw", &typ, &exc) < 0)
     return NULL;
 
-  PyErr_NormalizeException(&typ, &val, &tb);
-  PyObject *exc = val;
-  if (! exc)
-    exc = typ;
-  Py_INCREF(typ);
-  Py_INCREF(exc);
+  asend->is_throw = 1;
+  Py_CLEAR(asend->send_value);
   Py_CLEAR(asend->throw_typ);
   Py_CLEAR(asend->throw_exc);
   asend->throw_typ = typ;
@@ -614,13 +771,94 @@ static PyObject *asyncgenasend_throw(PyObject *self, PyObject *args) {
 }
 
 
+/**
+   Drive GeneratorExit through a context abandoned mid-await, so its
+   cleanup runs during a synchronous stepper close; the frozen-chain
+   teardown cannot reach a live chain. Mirrors coroutine_close: the
+   pending awaitable is closed first, then the throw is delivered at
+   the suspended AWAIT. Returns 0 when the generator wound down
+   (including a cleanup suspension taking the cannot-honor fallback),
+   -1 with an exception set when the body ignored GeneratorExit or
+   raised something else.
+*/
+static int asyncgen_close_drive(KosPyAsyncGen *agen) {
+
+  PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
+  if (it) {
+    PyObject *r = PyObject_CallMethod(it, "close", NULL);
+    Py_XDECREF(r);
+    PyErr_Clear();
+    Py_CLEAR(KosContext_PY_AWAIT_ITER(agen->ctx));
+  }
+
+  PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
+  if (! exc)
+    return -1;
+
+  KosOpResult res = koskari_eval(agen->ctx, NULL, PyExc_GeneratorExit, exc);
+  Py_DECREF(exc);
+
+  switch (res.kind) {
+    case KOS_RES_RETURN:
+      Py_XDECREF(res.val);
+      return 0;
+
+    case KOS_RES_AWAIT:
+      /* a synchronous close cannot suspend: cannot-honor fallback */
+      Py_XDECREF(res.val);
+      PyErr_Clear();
+      return 0;
+
+    case KOS_RES_YIELD:
+      Py_XDECREF(res.val);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "async generator ignored GeneratorExit");
+      return -1;
+
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
+    default:
+      if (! PyErr_Occurred())
+        return 0;
+      if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
+          || PyErr_ExceptionMatches(PyExc_StopIteration)
+          || PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+        PyErr_Clear();
+        return 0;
+      }
+      return -1;
+  }
+}
+
+
 static PyObject *asyncgenasend_close(PyObject *self) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+  KosPyAsyncGen *agen = asend->agen;
 
-  if (asend->agen) {
-    asend->agen->closed = 1;
+  /* Close cascades are terminal (loop shutdown, task destruction, GC
+     of an abandoned chain), so closing a step's awaitable closes the
+     generator too -- CPython 3.13+ semantics, applied uniformly across
+     supported versions. The stepper is spent either way; a generator
+     another stepper is actively driving is left alone. An asend
+     abandoned mid-await owns the generator's in_progress mark; release
+     it, mirroring dealloc, and the teardown demand-drives the close
+     through the live chain (outcomes swallowed). */
+  if (agen) {
+    if (asend->awaiting) {
+      agen->in_progress = 0;
+      asend->awaiting = 0;
+    }
+    if (! agen->in_progress && ! agen->closed) {
+      KosPyAsyncGen_Teardown(agen);
+      agen->closed = 1;
+    }
   }
+
+  Py_CLEAR(asend->agen);
+  Py_CLEAR(asend->send_value);
+  Py_CLEAR(asend->throw_typ);
+  Py_CLEAR(asend->throw_exc);
 
   Py_RETURN_NONE;
 }
@@ -670,9 +908,19 @@ PyTypeObject KosPyAsyncGenASendType = {
 };
 
 
-PyObject *KosPyAsyncGenASend_New(
+/**
+   Build a stepper primed to send or throw on its first drive.
+   throw_typ / throw_exc are optional borrowed references; when given,
+   is_throw is set and the first drive delivers them through the
+   evaluator's throw ingress. closing selects the aclose result mapping
+   at terminal outcomes.
+*/
+static PyObject *asyncgenasend_new_ex(
     KosPyAsyncGen *agen,
-    PyObject *send_value) {
+    PyObject *send_value,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    int closing) {
 
   KosPyAsyncGenASend *asend = PyObject_GC_New(KosPyAsyncGenASend,
                                               &KosPyAsyncGenASendType);
@@ -685,13 +933,25 @@ PyObject *KosPyAsyncGenASend_New(
   Py_XINCREF(send_value);
   asend->send_value = send_value;
 
-  asend->is_throw = 0;
-  asend->throw_typ = NULL;
-  asend->throw_exc = NULL;
+  asend->is_throw = (throw_typ != NULL);
+  asend->closing = closing;
+  Py_XINCREF(throw_typ);
+  asend->throw_typ = throw_typ;
+  Py_XINCREF(throw_exc);
+  asend->throw_exc = throw_exc;
+
   asend->awaiting = 0;
 
   PyObject_GC_Track((PyObject *) asend);
   return (PyObject *) asend;
+}
+
+
+PyObject *KosPyAsyncGenASend_New(
+    KosPyAsyncGen *agen,
+    PyObject *send_value) {
+
+  return asyncgenasend_new_ex(agen, send_value, NULL, NULL, 0);
 }
 
 

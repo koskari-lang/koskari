@@ -1064,6 +1064,7 @@ static PyObject *demand_gen_step(
   }
 
   {
+    agen->started = 1;
     KosOpResult ev = koskari_eval(agen->ctx, send_val, throw_typ, throw_exc);
 
     agen->in_progress = 0;
@@ -1158,11 +1159,46 @@ static PyObject *demand_gen_throw(PyObject *self, PyObject *args) {
 }
 
 
+/**
+   Kin to coroutine_close (coro.c), not shared with it: throw
+   GeneratorExit through the body so finally blocks run, then classify
+   the outcome. demand_gen_step already tears the context down on every
+   terminal path, and demand_gen_throw's closed guard makes a second
+   close a quiet None.
+*/
+static PyObject *demand_gen_close(PyObject *self) {
+
+  PyObject *close_args = Py_BuildValue("(O)", PyExc_GeneratorExit);
+  if (! close_args)
+    return NULL;
+
+  PyObject *result = demand_gen_throw(self, close_args);
+  Py_DECREF(close_args);
+
+  if (result) {
+    Py_DECREF(result);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "generator ignored GeneratorExit");
+    return NULL;
+  }
+
+  if (PyErr_ExceptionMatches(PyExc_StopIteration) ||
+      PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
+    PyErr_Clear();
+    Py_RETURN_NONE;
+  }
+
+  return NULL;
+}
+
+
 static PyMethodDef demand_gen_methods[] = {
   { "send", (PyCFunction) demand_gen_send, METH_O,
     "Send a value into the generator" },
   { "throw", (PyCFunction) demand_gen_throw, METH_VARARGS,
     "Raise an exception in the generator" },
+  { "close", (PyCFunction) demand_gen_close, METH_NOARGS,
+    "Close the generator" },
   { NULL, NULL, 0, NULL },
 };
 

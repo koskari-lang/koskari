@@ -605,6 +605,8 @@ static int yield_from_drive_kos_async_gen(
     Py_DECREF(yf_throw_exc);
   }
 
+  agen->started = 1;
+
   if (! PyErr_Occurred()) {
     PyObject *popped = KosEvalState_StackPopRef(es);
     PyObject *pushv;
