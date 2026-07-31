@@ -197,13 +197,21 @@ abandoned mid-await owns `agen->in_progress` -- the same release
 touched. Driving a spent stepper raises RuntimeError ("cannot reuse
 already awaited __anext__()/asend()"), CPython's message.
 
-One deliberate CPython deviation, decided by the parity oracle rather
-than assumed: CPython does not release the running state when a
-mid-flight asend is closed, so the generator wedges -- a later aclose
-raises "asynchronous generator is already running" and the `finally`
-blocks never get a sanctioned chance to run. We release `in_progress`
-(consistent with our dealloc contract) so explicit cleanup keeps
-working after an abandoned step.
+Two deliberate CPython deviations, decided against the parity oracle
+rather than assumed:
+
+- CPython (3.12) does not release the running state when a mid-flight
+  asend is closed, so the generator wedges -- a later aclose raises
+  "asynchronous generator is already running" and the `finally` blocks
+  never get a sanctioned chance to run. We release `in_progress`
+  (consistent with our dealloc contract) so explicit cleanup keeps
+  working after an abandoned step.
+- CPython 3.13 changed stepper close to also close the generator
+  (3.12 and earlier leave it usable). Koskari keeps one semantic
+  across supported versions rather than per-version `#ifdef` behavior:
+  stepper close is generator-neutral, and cleanup belongs to explicit
+  aclose or dealloc. The affected tests assert this declared contract
+  instead of oracle parity.
 
 ## Phase 2 (separate, optional): finalizer hooks
 

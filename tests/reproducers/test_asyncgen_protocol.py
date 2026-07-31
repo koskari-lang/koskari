@@ -510,6 +510,13 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
     """
     Closing one step's awaitable spends the stepper without closing
     the generator.
+
+    These are declared-contract tests, not oracle parity: CPython
+    changed sides in 3.13, where closing a pending stepper also closes
+    the generator (3.12 and earlier leave it usable, matching us).
+    Koskari keeps one behavior across supported versions -- the
+    stepper is spent, the generator stays open for later steps or an
+    explicit aclose.
     """
 
     @classmethod
@@ -528,36 +535,26 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
         generator usable
         """
 
-        async def scenario(agen):
-            stepper = agen.__anext__()
-            closed = sync_outcome(stepper.close)
-            return [
-                closed,
-                await outcome(agen.asend(None)),
-                await outcome(agen.asend(None)),
-            ]
-
-        expected = await scenario(p_plain())
-        actual = await scenario(self.kos("g-plain"))
-        self.assertEqual(actual, expected)
+        agen = self.kos("g-plain")
+        stepper = agen.__anext__()
+        self.assertIsNone(stepper.close())
+        self.assertEqual(await agen.asend(None), 1)
+        self.assertEqual(await agen.asend(None), 2)
 
 
     async def test_reuse_closed_stepper(self):
         """
-        awaiting a stepper after closing it
+        driving a stepper after closing it raises RuntimeError, and
+        the generator is unharmed
         """
 
-        async def scenario(agen):
-            stepper = agen.__anext__()
-            stepper.close()
-            return [
-                await outcome(stepper),
-                await outcome(agen.asend(None)),
-            ]
-
-        expected = await scenario(p_plain())
-        actual = await scenario(self.kos("g-plain"))
-        self.assertEqual(actual, expected)
+        agen = self.kos("g-plain")
+        stepper = agen.__anext__()
+        stepper.close()
+        with self.assertRaises(RuntimeError) as ctx:
+            await stepper
+        self.assertIn("cannot reuse", str(ctx.exception))
+        self.assertEqual(await agen.asend(None), 1)
 
 
     async def test_close_midflight_stepper_then_aclose(self):
