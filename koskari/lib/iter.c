@@ -544,7 +544,14 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
   KosPyAsyncGen *agen = asend->agen;
 
-  if (! agen || ! agen->ctx || agen->closed) {
+  if (! agen) {
+    /* Spent by close(); CPython parity for reuse */
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot reuse already awaited __anext__()/asend()");
+    return NULL;
+  }
+
+  if (! agen->ctx || agen->closed) {
     /* CPython parity: a throw-flavored drive on a finished generator
        completes quietly (bare StopIteration, so awaiting yields None);
        a send-flavored drive raises StopAsyncIteration. */
@@ -773,9 +780,18 @@ static PyObject *asyncgenasend_close(PyObject *self) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
 
-  if (asend->agen) {
-    asend->agen->closed = 1;
-  }
+  /* Spend the stepper, not the generator: dropping one step's
+     awaitable must leave the generator usable for a later step or an
+     explicit aclose. An asend abandoned mid-await owns the generator's
+     in_progress mark; release it, mirroring dealloc. */
+  if (asend->awaiting && asend->agen)
+    asend->agen->in_progress = 0;
+  asend->awaiting = 0;
+
+  Py_CLEAR(asend->agen);
+  Py_CLEAR(asend->send_value);
+  Py_CLEAR(asend->throw_typ);
+  Py_CLEAR(asend->throw_exc);
 
   Py_RETURN_NONE;
 }

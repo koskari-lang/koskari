@@ -97,6 +97,14 @@ define g-fin-sync [col]:
         (yield 2)
     finally:
         (col.append "cleaned")
+
+define g-slow [col]:
+    try:
+        (yield 1)
+        (await (sleep 60))
+        (yield 2)
+    finally:
+        (col.append "cleaned")
 """
 
 
@@ -156,6 +164,16 @@ async def p_handler_await():
     except ValueError:
         await asyncio.sleep(0.001)
         yield "handled"
+
+
+async def p_slow(col):
+    import asyncio
+    try:
+        yield 1
+        await asyncio.sleep(60)
+        yield 2
+    finally:
+        col.append("cleaned")
 
 
 def s_plain():
@@ -486,6 +504,85 @@ class TestAcloseKoskariExtent(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await agen.aclose())
         with self.assertRaises(StopIteration):
             next(dgen)
+
+
+class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
+    """
+    Closing one step's awaitable spends the stepper without closing
+    the generator.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        TestAsyncGenParity.setUpClass()
+        cls.module = TestAsyncGenParity.module
+
+
+    def kos(self, name, *args):
+        return vars(self.module)[name](*args)
+
+
+    async def test_close_undriven_stepper(self):
+        """
+        closing a never-driven __anext__ awaitable leaves the
+        generator usable
+        """
+
+        async def scenario(agen):
+            stepper = agen.__anext__()
+            closed = sync_outcome(stepper.close)
+            return [
+                closed,
+                await outcome(agen.asend(None)),
+                await outcome(agen.asend(None)),
+            ]
+
+        expected = await scenario(p_plain())
+        actual = await scenario(self.kos("g-plain"))
+        self.assertEqual(actual, expected)
+
+
+    async def test_reuse_closed_stepper(self):
+        """
+        awaiting a stepper after closing it
+        """
+
+        async def scenario(agen):
+            stepper = agen.__anext__()
+            stepper.close()
+            return [
+                await outcome(stepper),
+                await outcome(agen.asend(None)),
+            ]
+
+        expected = await scenario(p_plain())
+        actual = await scenario(self.kos("g-plain"))
+        self.assertEqual(actual, expected)
+
+
+    async def test_close_midflight_stepper_then_aclose(self):
+        """
+        a stepper abandoned mid-await releases the generator: aclose
+        still runs the cleanup.
+
+        Deliberate CPython deviation: CPython leaves the generator
+        marked running here, so its aclose raises "already running"
+        and the finally never gets a sanctioned chance to run. We
+        release the in-flight ownership (matching our dealloc
+        contract) so explicit cleanup keeps working.
+        """
+
+        col = []
+        agen = self.kos("g-slow", col)
+        self.assertEqual(await agen.__anext__(), 1)
+
+        stepper = agen.__anext__()
+        pending = stepper.send(None)
+        self.assertIsNotNone(pending)
+        stepper.close()
+
+        self.assertIsNone(await agen.aclose())
+        self.assertEqual(col, ["cleaned"])
 
 
 class TestDemandGenParity(unittest.TestCase):

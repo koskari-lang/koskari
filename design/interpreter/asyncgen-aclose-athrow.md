@@ -191,9 +191,16 @@ The fix operates on the stepper, not the generator: mark the stepper
 spent, and release the in-flight ownership it may hold (an asend
 abandoned mid-await owns `agen->in_progress` -- the same release
 `asyncgenasend_dealloc` already performs). `agen->closed` is not
-touched. Exact parity for the abandoned-mid-flight cases (what a
-subsequent anext does, whether close resets the running state) is
-decided by the dual-subject parity tests, not asserted here.
+touched. Driving a spent stepper raises RuntimeError ("cannot reuse
+already awaited __anext__()/asend()"), CPython's message.
+
+One deliberate CPython deviation, decided by the parity oracle rather
+than assumed: CPython does not release the running state when a
+mid-flight asend is closed, so the generator wedges -- a later aclose
+raises "asynchronous generator is already running" and the `finally`
+blocks never get a sanctioned chance to run. We release `in_progress`
+(consistent with our dealloc contract) so explicit cleanup keeps
+working after an abandoned step.
 
 ## Phase 2 (separate, optional): finalizer hooks
 
