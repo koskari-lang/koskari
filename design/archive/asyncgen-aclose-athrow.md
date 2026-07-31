@@ -1,11 +1,14 @@
 # AsyncGenerator asend / athrow / aclose
 
-**Status**: proposed. Completes the Python-facing generator protocol on
-`koskari.lib.AsyncGenerator`, closing the gap left open by the
-dealloc-fence work (see the note in `asyncgen_dealloc`, iter.c).
+**Status**: implemented. asend/athrow/aclose on
+`koskari.lib.AsyncGenerator`, close on `DemandGenerator`, and the
+stepper-spending asend close, with dual-subject CPython parity tests in
+tests/reproducers/test_asyncgen_protocol.py and surface tests in
+tests/lib/test_asyncgen_protocol.py. Phase 2 (firstiter/finalizer
+hooks) remains unimplemented.
 
 **Depends on**:
-[asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)
+[asyncgen-anext-await-underrun.md](asyncgen-anext-await-underrun.md)
 (fixed) -- the point of an *async* close is that cleanup may suspend,
 and a suspending drive step is exactly what the underrun defect broke.
 With the asend stepper now driving in-flight awaits, `aclose` can build
@@ -249,4 +252,4 @@ hook is set). Not required for the explicit-close surface.
 - coro.c: `coroutine_close` (the sync close shape to mirror)
 - YIELD_FROM.c: delegate classification by `hasattr(obj, "asend")`
 - PEP 525 -- Asynchronous Generators
-- [asyncgen-anext-await-underrun.md](../archive/asyncgen-anext-await-underrun.md)
+- [asyncgen-anext-await-underrun.md](asyncgen-anext-await-underrun.md)
