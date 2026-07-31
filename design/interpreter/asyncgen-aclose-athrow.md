@@ -59,14 +59,16 @@ teardown corruption. The method itself never existed.
 
 ## Staging
 
-The three methods are not equal work, and they split cleanly:
+The methods are not equal work, and they split cleanly:
 
 1. **`asend` and `athrow`** -- plumbing over the stepper that already
    exists. No new drive path, no new result mapping.
 2. **`aclose`** -- the same stepper with a close-flavored result
-   mapping, landed together with the `asyncgenasend_close` fix below.
-3. **`DemandGenerator.close`** -- independent one-liner over
-   `KosPyAsyncGen_Teardown`.
+   mapping.
+3. **`DemandGenerator.close`** -- independent; a throw-then-classify
+   wrapper in the `coroutine_close` shape.
+4. **the `asyncgenasend_close` stub** -- independent defect fix on the
+   awaitable, not on the generator.
 
 ## Stage 1: asend and athrow
 
@@ -138,19 +140,6 @@ practical, but the async stepper drives through the normal
 suspend/resume protocol rather than the teardown's run-to-completion
 loop -- they are siblings, not the same function.
 
-### Prerequisite: the asyncgenasend_close stub
-
-`asyncgenasend_close` (iter.c) sets `agen->closed = 1` and returns None:
-no GeneratorExit, no teardown. asyncio calls this when it drops a
-pending `__anext__` awaitable, so a cancelled `async for` skips the
-generator's `finally` blocks and then marks the generator closed, which
-bars anything else from cleaning it up.
-
-This is a live defect independent of the feature, but it must be fixed
-with `aclose` rather than before it: the correct behavior is the
-close-flavored drive, so the fix is the same machinery. Left as-is it
-would pre-empt `aclose` outright.
-
 ### Interaction with the drive-state demand bit
 
 aclose/athrow steppers are async boundary drives: the install assigns
@@ -175,9 +164,35 @@ covers this by construction.
 `DemandGenerator` exposes `__iter__`, `__next__`, `send`, and `throw`.
 The single missing `close` is what keeps it out of `abc.Generator`, so
 `contextlib.closing` and duck-typed generator handling reject it today.
-Its close path (`demand_gen_close_ctx`) already rides
-`KosPyAsyncGen_Teardown`; the method is a wrapper over that, idempotent
-on an already-closed generator. No dependency on stages 1 or 2.
+
+`close` must drive GeneratorExit through the body so `finally` blocks
+run -- it is not a teardown call. `demand_gen_step` already invokes
+`demand_gen_close_ctx` (the `KosPyAsyncGen_Teardown` wrapper) on every
+terminal path, so the method is throw-then-classify in the
+`coroutine_close` shape (coro.c): throw GeneratorExit via the existing
+`demand_gen_throw`; a value coming back means the body yielded ->
+RuntimeError "generator ignored GeneratorExit"; StopIteration or
+GeneratorExit -> cleared, return None; anything else propagates.
+Already-closed is a no-op None. Not factored with `coroutine_close`:
+different translation units, and sharing would cost a header export to
+save a dozen lines -- comment the kinship instead. No dependency on
+stages 1 or 2.
+
+## Stage 4: the asyncgenasend_close stub
+
+`asyncgenasend_close` (iter.c) sets `agen->closed = 1` and returns
+None. That closes the *generator* as a side effect of dropping one
+step's awaitable: `asyncio.wait_for(anext(agen), t)` timing out
+permanently kills a generator that should remain usable, while the
+generator's `finally` blocks never run for it either.
+
+The fix operates on the stepper, not the generator: mark the stepper
+spent, and release the in-flight ownership it may hold (an asend
+abandoned mid-await owns `agen->in_progress` -- the same release
+`asyncgenasend_dealloc` already performs). `agen->closed` is not
+touched. Exact parity for the abandoned-mid-flight cases (what a
+subsequent anext does, whether close resets the running state) is
+decided by the dual-subject parity tests, not asserted here.
 
 ## Phase 2 (separate, optional): finalizer hooks
 
@@ -201,9 +216,9 @@ hook is set). Not required for the explicit-close surface.
   idempotent second aclose -> None; aclose on never-started and on
   exhausted gens.
 - re-entrancy: aclose/athrow while in_progress -> RuntimeError.
-- cancelled `async for`: drop a pending `__anext__` awaitable and
-  assert the generator's `finally` ran (the `asyncgenasend_close`
-  regression).
+- cancelled step: close a pending `__anext__` awaitable and assert the
+  generator is not marked closed -- a later aclose still runs its
+  `finally` (the `asyncgenasend_close` regression).
 - extent restore: parameterize inside the gen; aclose runs the unwind;
   a parameter read after close shows the extent restored (the test the
   original aclose investigation set out to write).
