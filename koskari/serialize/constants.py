@@ -25,11 +25,11 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 
 # Semantic bytecode ABI for .kio (four little-endian u32 in the file header).
 # Bump when KosOpCode values or softened CODEP instruction semantics change.
-# MINOR bumped: added the fused augmented attribute-assignment opcodes
-# (VAR_ATTR_INPLACE, FAST_ATTR_INPLACE, ATTR_INPLACE), shifting the opcode
-# values that follow the attribute-access section.
+# MINOR bumped: appended the runtime match/case dispatch opcodes
+# (MATCH_CASE, MATCH_STORE_NAMES) before THEEND; existing opcode values are
+# unchanged, THEEND shifts up by two.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 7
+BYTECODE_ABI_MINOR = 8
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

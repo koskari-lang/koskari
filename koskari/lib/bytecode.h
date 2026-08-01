@@ -339,6 +339,7 @@ typedef enum KosCacheKind {
   KOS_CACHE_EMPTY = 0,   /* zeroed slot: no layout, no owned refs, no cleanup */
   KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
   KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
+  KOS_CACHE_MATCHER,     /* thawed Matcher for a MATCH_CASE arm */
 } KosCacheKind;
 
 
@@ -418,6 +419,17 @@ typedef struct KosCacheSlot {
       uint8_t misses;          /* consecutive guard misses; drives the bypass */
       uint32_t index;          /* value slot / byte offset / dict-key hint */
     } field;
+
+    /* KOS_CACHE_MATCHER: the native Matcher thawed once from a MATCH_CASE
+       arm's frozen 6-tuple const. One owned strong ref and no guard -- the
+       thaw is a pure function of the const, so a populated slot is
+       permanently valid for its site. An immutable Matcher cannot route a
+       reference cycle back to the KosCode (its consts hold literals and
+       sub-matchers, never this code), so KosCode stays GC-untracked; the
+       teardown arm decrefs the ref. */
+    struct {
+      PyObject *matcher;       /* thawed KosMatcher; owned, may be NULL */
+    } matcher;
   } u;
 } KosCacheSlot;
 

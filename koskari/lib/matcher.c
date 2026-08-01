@@ -4387,6 +4387,11 @@ static PyObject *thaw_matcher_tuple(PyObject *t) {
 }
 
 
+PyObject *KosMatcher_FromTuple(PyObject *tuple) {
+  return thaw_matcher_tuple(tuple);
+}
+
+
 static PyObject *matcher_from_tuple(
     PyObject *cls,
     PyObject *args) {
@@ -4395,7 +4400,7 @@ static PyObject *matcher_from_tuple(
   PyObject *t;
   if (! PyArg_ParseTuple(args, "O", &t))
     return NULL;
-  return thaw_matcher_tuple(t);
+  return KosMatcher_FromTuple(t);
 }
 
 

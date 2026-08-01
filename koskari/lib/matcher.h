@@ -337,6 +337,15 @@ PyObject *KosMatcher_Match(
 
 
 /**
+   Thaw a frozen matcher 6-tuple (`("MATCHER", slots, externs, consts,
+   nodes, entry)`) into a native Matcher. Same reconstruction as the
+   `Matcher.from_tuple` classmethod. Returns a new reference on success;
+   NULL with a Python exception set on an invalid tuple.
+ */
+PyObject *KosMatcher_FromTuple(PyObject *tuple);
+
+
+/**
    Run matchers in sequence order against one subject until the first
    successful match. ``kwargs`` is optional (NULL) and follows the same
    extern resolution rules as ``Matcher.match`` for each arm.

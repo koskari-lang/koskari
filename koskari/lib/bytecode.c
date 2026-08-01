@@ -2839,6 +2839,9 @@ static void cache_slot_release(KosCacheSlot *slot) {
   case KOS_CACHE_FIELD:
     /* ref-free: a borrowed guard type and an integer index. */
     break;
+  case KOS_CACHE_MATCHER:
+    Py_XDECREF(slot->u.matcher.matcher);
+    break;
   }
 }
 
