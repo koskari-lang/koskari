@@ -3618,6 +3618,10 @@ class FormatStringReader(object):
                     terms = terms + c
             expr = norm.process_atom(
                 norm._collect_atom_continuation(stream, first, terms))
+            # apply suffix adjacency (subscript, attribute, ...) before the
+            # value/format-spec split, so `{foo[0]}` reads as one subscript
+            # form rather than dropping `[0]` into the spec position.
+            expr = norm._dispatch_suffix_macros(stream, expr, position)
             pos = position
             event = VALUE
         else:

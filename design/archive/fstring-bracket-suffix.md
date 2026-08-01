@@ -2,9 +2,14 @@
 
 ## Status
 
-Open bug. Reader-level; reproduced at the REPL. No fix designed yet — this
-doc records the observation and frames the design tension so the fix does not
-break the format-spec surface.
+Resolved. The slot reader now applies suffix adjacency before the value/spec
+split: the bare-atom branch of `_read_format_field` runs
+`_dispatch_suffix_macros` on the head atom, so `{foo[0]}` reads as a single
+subscript form while a space-separated or `:`-introduced format spec still
+parses. Attachment stays gated on `reader/index-brackets`, matching normal
+expression context, which also settles the first open question below (any
+registered suffix, not just `[`, attaches in a slot). Tests in
+`tests/reader/test_format_string.py`.
 
 ## Summary
 

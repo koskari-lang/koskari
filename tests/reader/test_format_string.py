@@ -23,6 +23,7 @@ Reader and eval tests for f-string format fields
 from unittest import IsolatedAsyncioTestCase
 
 from koskari.lib import keyword, symbol
+from koskari.pragma import ModulePragma
 from koskari.reader import Reader, source_str
 from koskari.types import unpack
 
@@ -41,6 +42,22 @@ def read_fstring(src):
     """
 
     reader = Reader()
+    stream = source_str(src, "<unittest>")
+    return reader.read(stream)
+
+
+def read_fstring_pragma(src):
+    """
+    Read one f-string form through a reader brought up to the default module
+    pragma the way a real ``.ki`` module reads
+
+    A directly-constructed reader is bare (suffix syntax off); applying a
+    default ``ModulePragma`` turns on the settings a module gets by default,
+    including ``reader/index-brackets``.
+    """
+
+    reader = Reader()
+    reader.reload_pragma(ModulePragma())
     stream = source_str(src, "<unittest>")
     return reader.read(stream)
 
@@ -128,6 +145,52 @@ class TestFormatStringReader(IsolatedAsyncioTestCase):
         form = read_fstring('f"{x:{w}}"')
         parts = fstring_parts(form)
         self.assertEqual(format_field_args(parts[0]), [symbol("x"), "{w}"])
+
+    async def test_bracket_suffix_attaches_in_field(self):
+        # a bare index-bracket suffix in a slot must attach as a subscript,
+        # not land in the format-spec position as a separate form.
+        form = read_fstring_pragma('f"{foo[0]}"')
+        parts = fstring_parts(form)
+        args = format_field_args(parts[0])
+        self.assertEqual(len(args), 1)
+        self.assertEqual(
+            list(unpack(args[0])),
+            [symbol("item"), symbol("foo"), 0])
+
+    async def test_bracket_suffix_chains_in_field(self):
+        form = read_fstring_pragma('f"{grid[y][x]}"')
+        parts = fstring_parts(form)
+        args = format_field_args(parts[0])
+        self.assertEqual(len(args), 1)
+        outer = list(unpack(args[0]))
+        self.assertEqual(outer[0], symbol("item"))
+        self.assertEqual(outer[2], symbol("x"))
+        self.assertEqual(
+            list(unpack(outer[1])),
+            [symbol("item"), symbol("grid"), symbol("y")])
+
+    async def test_bracket_suffix_with_colon_spec_in_field(self):
+        # subscript attaches, then a colon still opens the format spec.
+        form = read_fstring_pragma('f"{foo[0]:3d}"')
+        parts = fstring_parts(form)
+        args = format_field_args(parts[0])
+        self.assertEqual(len(args), 2)
+        self.assertEqual(
+            list(unpack(args[0])),
+            [symbol("item"), symbol("foo"), 0])
+        self.assertEqual(args[1], "3d")
+
+    async def test_bracket_suffix_before_spec_in_field(self):
+        # the subscript attaches, and a following space-separated form is
+        # still the format spec.
+        form = read_fstring_pragma('f"{foo[0] \\"3d\\"}"')
+        parts = fstring_parts(form)
+        args = format_field_args(parts[0])
+        self.assertEqual(len(args), 2)
+        self.assertEqual(
+            list(unpack(args[0])),
+            [symbol("item"), symbol("foo"), 0])
+        self.assertEqual(args[1], "3d")
 
 
 class TestFormatStringEval(IsolatedAsyncioTestCase):
