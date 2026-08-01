@@ -1,0 +1,336 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+Tests for the runtime case-pattern dialect: the CASE_ELEMENT_MATCHER /
+CASE_DELIM_MATCHER walkers (parse_case_element, parse_case_pattern)
+that classify match/case patterns by head symbol or marker, and
+end-to-end matching of the classified patterns against runtime values
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import unittest
+
+import pytest
+
+from dataclasses import dataclass
+
+from koskari.lib import cons, keyword, nil, symbol
+from koskari.matcher import (
+    CAPTURE,
+    CLASS,
+    FORM,
+    LITERAL,
+    MATCH,
+    MatchCompiler,
+    NOT,
+    ONEOF,
+    PREDICATE,
+    REST,
+    parse_case_element,
+    parse_case_pattern,
+    thaw,
+)
+
+
+pytestmark = pytest.mark.phase_infra
+
+
+def _list(*items):
+    return cons(*items, nil) if items else nil
+
+
+def _delim(*items):
+    """
+    Wrap pattern content the way a match clause delimiter delivers it
+    """
+
+    return _list(*items)
+
+
+def _frozen(pattern):
+    return MatchCompiler().lower(MATCH(pattern))
+
+
+def _match_value(pattern, subject, **externs):
+    """
+    Thaw a classified pattern and run it against one runtime value
+    """
+
+    m = thaw(_frozen(pattern))
+    r = m.match((subject,), **externs)
+    caps = {k: getattr(v, "datum", v) for k, v in r.captures.items()}
+    return r.matched, caps
+
+
+@dataclass
+class Point:
+    x: int
+    y: int
+
+
+class TestClassifyAtoms(unittest.TestCase):
+
+    def test_symbol_is_capture(self):
+        pat = parse_case_pattern(_delim(symbol("x")))
+        self.assertIsInstance(pat, CAPTURE)
+        self.assertEqual(_frozen(pat)[1], ("x",))
+
+    def test_int_is_literal(self):
+        pat = parse_case_pattern(_delim(5))
+        self.assertIsInstance(pat, LITERAL)
+        self.assertEqual(_frozen(pat)[1], ())
+
+    def test_string_is_literal(self):
+        pat = parse_case_pattern(_delim("hello"))
+        self.assertIsInstance(pat, LITERAL)
+
+    def test_quoted_symbol_is_literal_symbol(self):
+        pat = parse_case_pattern(
+            _delim(_list(symbol("quote"), symbol("foo"))))
+        self.assertIsInstance(pat, LITERAL)
+
+    def test_empty_delimiter_raises(self):
+        with self.assertRaises(ValueError):
+            parse_case_pattern(nil)
+
+
+class TestClassifyTyped(unittest.TestCase):
+
+    def test_multi_token_typed(self):
+        # [[x :: int]]
+        pat = parse_case_pattern(
+            _delim(symbol("x"), keyword("::"), symbol("int")))
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[1], ("x",))
+        self.assertEqual(frozen[2], ("int",))
+
+    def test_single_form_typed(self):
+        # [[(x :: int)]]
+        pat = parse_case_pattern(
+            _delim(_list(symbol("x"), keyword("::"), symbol("int"))))
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[1], ("x",))
+        self.assertEqual(frozen[2], ("int",))
+
+    def test_anonymous_typed(self):
+        # [[:: int]]
+        pat = parse_case_pattern(
+            _delim(keyword("::"), symbol("int")))
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[1], ())
+        self.assertEqual(frozen[2], ("int",))
+
+
+class TestClassifySequence(unittest.TestCase):
+
+    def test_list_head_is_sequence(self):
+        # #[a b c]
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), symbol("b"), symbol("c"))))
+        self.assertIsInstance(pat, FORM)
+        self.assertEqual(_frozen(pat)[1], ("a", "b", "c"))
+
+    def test_tuple_head_is_sequence(self):
+        # #(a b)
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#tuple"), symbol("a"), symbol("b"))))
+        self.assertIsInstance(pat, FORM)
+        self.assertEqual(_frozen(pat)[1], ("a", "b"))
+
+    def test_star_rest(self):
+        # #[a *: r]
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), keyword("*"), symbol("r"))))
+        self.assertEqual(_frozen(pat)[1], ("a", "r"))
+
+    def test_empty_sequence(self):
+        # #[]
+        pat = parse_case_pattern(_delim(_list(symbol("#list"))))
+        self.assertIsInstance(pat, FORM)
+        self.assertEqual(_frozen(pat)[1], ())
+
+    def test_nested_sequence(self):
+        # #[a #[b c]]
+        inner = _list(symbol("#list"), symbol("b"), symbol("c"))
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), inner)))
+        self.assertEqual(_frozen(pat)[1], ("a", "b", "c"))
+
+    def test_sequence_element_literal(self):
+        # #[1 x]
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), 1, symbol("x"))))
+        self.assertEqual(_frozen(pat)[1], ("x",))
+
+    def test_bare_list_is_never_a_sequence(self):
+        with self.assertRaises(ValueError):
+            parse_case_pattern(
+                _delim(symbol("a"), symbol("b"), symbol("c")))
+
+
+class TestClassifyClass(unittest.TestCase):
+
+    def test_positional_fields(self):
+        # Point[a b] -> (item Point a b)
+        pat = parse_case_pattern(_delim(
+            _list(symbol("item"), symbol("Point"),
+                  symbol("a"), symbol("b"))))
+        self.assertIsInstance(pat, CLASS)
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[1], ("a", "b"))
+        self.assertEqual(frozen[2], ("Point",))
+
+    def test_keyword_field_literal(self):
+        # Point[x: 0 y] -> attr x must equal 0, self-bind attr y
+        pat = parse_case_pattern(_delim(
+            _list(symbol("item"), symbol("Point"),
+                  keyword("x"), 0, symbol("y"))))
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[1], ("y",))
+        self.assertEqual(frozen[2], ("Point",))
+
+    def test_no_fields(self):
+        # Name[] -> bare isinstance
+        pat = parse_case_pattern(_delim(
+            _list(symbol("item"), symbol("Point"))))
+        self.assertIsInstance(pat, CLASS)
+        self.assertEqual(_frozen(pat)[2], ("Point",))
+
+    def test_keyword_field_missing_pattern_raises(self):
+        with self.assertRaises(ValueError):
+            parse_case_pattern(_delim(
+                _list(symbol("item"), symbol("Point"), keyword("x"))))
+
+
+class TestClassifyCombinators(unittest.TestCase):
+
+    def test_or_is_oneof(self):
+        pat = parse_case_pattern(_delim(_list(symbol("or"), 1, 2)))
+        self.assertIsInstance(pat, ONEOF)
+
+    def test_empty_or_raises(self):
+        with self.assertRaises(ValueError):
+            parse_case_pattern(_delim(_list(symbol("or"))))
+
+    def test_not_is_not(self):
+        pat = parse_case_pattern(_delim(_list(symbol("not"), 5)))
+        self.assertIsInstance(pat, NOT)
+
+    def test_predicate(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("?"), symbol("even"))))
+        self.assertIsInstance(pat, PREDICATE)
+        self.assertEqual(_frozen(pat)[2], ("even",))
+
+    def test_registry_head_passthrough(self):
+        # explicit matcher heads still work: (REST r)
+        pat = parse_case_pattern(_delim(
+            _list(symbol("REST"), symbol("r"))))
+        self.assertIsInstance(pat, REST)
+
+    def test_unknown_head_raises(self):
+        with self.assertRaises(ValueError):
+            parse_case_pattern(_delim(
+                _list(symbol("frobnicate"), symbol("a"))))
+
+
+class TestCasePatternMatching(unittest.TestCase):
+    """
+    End-to-end: classified patterns thawed and run against values
+    """
+
+    def test_capture_binds_whole_value(self):
+        pat = parse_case_pattern(_delim(symbol("x")))
+        matched, caps = _match_value(pat, 42)
+        self.assertTrue(matched)
+        self.assertEqual(caps["x"], 42)
+
+    def test_literal_hit_and_miss(self):
+        pat = parse_case_pattern(_delim(5))
+        self.assertTrue(_match_value(pat, 5)[0])
+        self.assertFalse(_match_value(pat, 6)[0])
+
+    def test_typed_hit_and_miss(self):
+        pat = parse_case_pattern(
+            _delim(symbol("x"), keyword("::"), symbol("int")))
+        matched, caps = _match_value(pat, 7, int=int)
+        self.assertTrue(matched)
+        self.assertEqual(caps["x"], 7)
+        self.assertFalse(_match_value(pat, "hi", int=int)[0])
+
+    def test_sequence_with_rest(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), symbol("b"),
+                  keyword("*"), symbol("r"))))
+        matched, caps = _match_value(pat, (1, 2, 3, 4))
+        self.assertTrue(matched)
+        self.assertEqual(caps["a"], 1)
+        self.assertEqual(caps["b"], 2)
+        self.assertEqual(caps["r"], (3, 4))
+
+    def test_sequence_wrong_length_misses(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), symbol("b"))))
+        self.assertFalse(_match_value(pat, (1, 2, 3))[0])
+
+    def test_class_positional(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("item"), symbol("Point"),
+                  symbol("a"), symbol("b"))))
+        matched, caps = _match_value(pat, Point(3, 4), Point=Point)
+        self.assertTrue(matched)
+        self.assertEqual(caps["a"], 3)
+        self.assertEqual(caps["b"], 4)
+        self.assertFalse(_match_value(pat, "zzz", Point=Point)[0])
+
+    def test_class_keyword_fields(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("item"), symbol("Point"),
+                  keyword("x"), 0, symbol("y"))))
+        matched, caps = _match_value(pat, Point(0, 9), Point=Point)
+        self.assertTrue(matched)
+        self.assertEqual(caps["y"], 9)
+        self.assertFalse(_match_value(pat, Point(1, 9), Point=Point)[0])
+
+    def test_or_alternation(self):
+        pat = parse_case_pattern(_delim(_list(symbol("or"), 1, 2)))
+        self.assertTrue(_match_value(pat, 1)[0])
+        self.assertTrue(_match_value(pat, 2)[0])
+        self.assertFalse(_match_value(pat, 3)[0])
+
+    def test_predicate_hit_and_miss(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("?"), symbol("even"))))
+        even = lambda v: v % 2 == 0  # noqa: E731
+        self.assertTrue(_match_value(pat, 4, even=even)[0])
+        self.assertFalse(_match_value(pat, 5, even=even)[0])
+
+    def test_nested_class_in_sequence(self):
+        # #[Point[a b] z]
+        cls = _list(symbol("item"), symbol("Point"),
+                    symbol("a"), symbol("b"))
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), cls, symbol("z"))))
+        matched, caps = _match_value(
+            pat, (Point(1, 2), 3), Point=Point)
+        self.assertTrue(matched)
+        self.assertEqual(caps["a"], 1)
+        self.assertEqual(caps["b"], 2)
+        self.assertEqual(caps["z"], 3)
+
+
+# The end.

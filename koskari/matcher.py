@@ -34,8 +34,8 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 from typing import Protocol, runtime_checkable
 
 from koskari.hygiene import Hygiene, HygieneEdge, HygieneNode
-from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, keyword,
-                         kos_repr, nil, pair, symbol)
+from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, cons,
+                         keyword, kos_repr, nil, pair, symbol)
 from koskari.types import is_nil, is_keyword, is_pair, is_proper, is_symbol, unpack
 
 
@@ -103,6 +103,13 @@ __all__ = (
     "META_MATCHER",
     "KNOWN_HEADS",
     "CAPTURE_OPTION_KEYS",
+
+    "CASE_ELEMENT_PATTERN",
+    "CASE_ELEMENT_MATCHER",
+    "CASE_DELIM_PATTERN",
+    "CASE_DELIM_MATCHER",
+    "parse_case_element",
+    "parse_case_pattern",
 )
 
 
@@ -3340,14 +3347,17 @@ def tail_match_factory(head_sym, raw_args):
     return OPTIONAL(REST(slot, min_tail=1))
 
 
-def _lower_spine_children(raw_args):
+def _lower_spine_children(raw_args, child_parser=None):
     """
     Lower the child patterns of a spine composite (FORM / MATCH),
     recognizing the ``*: name`` rest marker: a ``*:`` keyword followed by
     a slot name lowers to a named REST capture. Every other child is
-    lowered through parse_matcher.
+    lowered through ``child_parser`` (parse_matcher by default; the
+    runtime case-pattern dialect passes parse_case_element).
     """
 
+    if child_parser is None:
+        child_parser = parse_matcher
     items = list(unpack(raw_args))
     out = []
     i = 0
@@ -3360,7 +3370,7 @@ def _lower_spine_children(raw_args):
             out.append(REST(coerce_slot("*:", items[i + 1])))
             i += 2
         else:
-            out.append(parse_matcher(elem))
+            out.append(child_parser(elem))
             i += 1
     return out
 
@@ -3553,6 +3563,236 @@ register_builtin_matchers()
 
 
 KNOWN_HEADS = frozenset(MATCHER_REGISTRY)
+
+
+# === Runtime case-pattern dialect (match/case surface) ===
+#
+# The runtime match/case surface classifies case patterns the same way
+# parse_matcher classifies matcher syntax: an ordered ONEOF meta-pattern
+# recognizes one pattern element, and a walker dispatches on which
+# capture slot bound, recursing one level at a time. Pattern *kind* is
+# decided entirely by head symbol or marker -- reader sugars mint the
+# distinguishing heads (#list / #tuple for sequences, item for class,
+# #dict for mappings) -- never by cell or bracket type. See
+# design/language/match-pattern-language.md.
+
+
+CASE_ELEMENT_PATTERN = ONEOF(
+    # 'sym -- literal symbol
+    FORM(MATCH(
+        LITERAL_SYM("quote"),
+        CAPTURE("quoted_symbol", TYPE("symbol")))),
+
+    # sequence sugar: (#list ...) / (#tuple ...); the head capture keeps
+    # the branch distinguishable even when the element list is empty
+    FORM(MATCH(
+        CAPTURE("seq_head",
+                ONEOF(LITERAL_SYM("#list"), LITERAL_SYM("#tuple"))),
+        REST("seq_elems"))),
+
+    # class sugar: (item Name field...)
+    FORM(MATCH(
+        CAPTURE("class_head", LITERAL_SYM("item")),
+        CAPTURE("class_name", TYPE("symbol")),
+        REST("class_fields"))),
+
+    # combinators
+    FORM(MATCH(
+        CAPTURE("or_head", LITERAL_SYM("or")),
+        REST("or_branches"))),
+    FORM(MATCH(LITERAL_SYM("not"), CAPTURE("not_operand"))),
+    FORM(MATCH(LITERAL_SYM("?"), CAPTURE("pred_name", TYPE("symbol")))),
+
+    # marked typed element: (name :: ...) / (:: ...); the whole form is
+    # re-fed to parse_matcher, which owns the constraint grammar
+    FORM(MATCH(
+        CAPTURE("marked_name", TYPE("symbol")),
+        LITERAL_KW("::"),
+        REST("marked_args"))),
+    FORM(MATCH(
+        CAPTURE("anon_marker", LITERAL_KW("::")),
+        REST("marked_args"))),
+
+    # explicit matcher heads (CLASS, FORM, ONEOF, REST, ...); the walker
+    # checks the registry -- a bare (a b c) is never a silent sequence
+    FORM(MATCH(
+        CAPTURE("known_head", TYPE("symbol")),
+        REST("known_args"))),
+
+    # atoms
+    CAPTURE("atom_symbol", TYPE("symbol")),
+    CAPTURE("atom_literal"),
+)
+
+
+CASE_ELEMENT_MATCHER = make_matcher(MATCH(CASE_ELEMENT_PATTERN))
+
+
+CASE_DELIM_PATTERN = ONEOF(
+    # one form inside the delimiter: the pattern itself
+    FORM(MATCH(CAPTURE("single"))),
+
+    # multi-token marked pattern: [[x :: int]] / [[:: int]]
+    FORM(MATCH(
+        CAPTURE("multi_name", TYPE("symbol")),
+        LITERAL_KW("::"),
+        REST("multi_args"))),
+    FORM(MATCH(
+        CAPTURE("multi_marker", LITERAL_KW("::")),
+        REST("multi_args"))),
+)
+
+
+CASE_DELIM_MATCHER = make_matcher(MATCH(CASE_DELIM_PATTERN))
+
+
+def _lower_case_class(name_sym, fields):
+    """
+    Lower the fields of a class sugar pattern ((item Name field...),
+    written Name[field...]) into CLASS(name, FIELD...). Python-style
+    field rules: elements before the first keyword are positional
+    fields (matched via __match_args__); ``k: pat`` is a keyword field
+    on attribute k; a bare symbol after keywords have started is the
+    self-binding keyword field ``k: k``. Positional fields may not
+    follow keyword fields
+    """
+
+    type_name = str(name_sym)
+    field_objs = []
+    items = list(unpack(fields))
+    seen_keyword = False
+    i = 0
+    n = len(items)
+    while i < n:
+        elem = items[i]
+        if is_keyword(elem):
+            if i + 1 >= n:
+                raise ValueError(
+                    f"{type_name}[...] keyword field"
+                    f" {elem!s} missing its pattern")
+            field_objs.append(FIELD(
+                parse_case_element(items[i + 1]),
+                name=str(elem).rstrip(":")))
+            seen_keyword = True
+            i += 2
+        elif seen_keyword:
+            if not is_symbol(elem):
+                raise ValueError(
+                    f"{type_name}[...] field after keyword fields"
+                    f" must be a symbol, got {elem!r}")
+            field_objs.append(FIELD(CAPTURE(str(elem)), name=str(elem)))
+            i += 1
+        else:
+            field_objs.append(FIELD(parse_case_element(elem)))
+            i += 1
+    return CLASS(type_name, *field_objs)
+
+
+def parse_case_element(elem):
+    """
+    Lower one runtime case-pattern element to a matcher pattern object.
+    Runs CASE_ELEMENT_MATCHER against (elem,), then dispatches on which
+    capture slot bound. Raises ValueError when elem does not satisfy any
+    case-pattern surface form
+
+    :param elem: one koskari source element (atom or pair-tree)
+    :rtype: Pattern
+    """
+
+    if is_nil(elem):
+        raise ValueError(
+            "nil is not a valid case pattern element")
+    result = CASE_ELEMENT_MATCHER.match(
+        (elem,), symbol=symbol, keyword=keyword)
+    if not result.matched:
+        raise ValueError(
+            f"not a valid case pattern: {elem!r}")
+    c = result.captures
+
+    if "atom_symbol" in c:
+        return CAPTURE(str(c["atom_symbol"].datum))
+
+    if "atom_literal" in c:
+        atom = c["atom_literal"].datum
+        if isinstance(atom, pair):
+            raise ValueError(
+                f"improper list is not a valid case pattern: {atom!r}")
+        return LITERAL(atom)
+
+    if "quoted_symbol" in c:
+        return LITERAL_SYM(str(c["quoted_symbol"].datum))
+
+    if "seq_head" in c:
+        elems = c["seq_elems"].datum if "seq_elems" in c else nil
+        return FORM(MATCH(
+            *_lower_spine_children(elems, parse_case_element)))
+
+    if "class_head" in c:
+        name = c["class_name"].datum
+        fields = c["class_fields"].datum if "class_fields" in c else nil
+        return _lower_case_class(name, fields)
+
+    if "or_head" in c:
+        if "or_branches" not in c:
+            raise ValueError("(or ...) requires at least one branch")
+        branches = [
+            parse_case_element(e)
+            for e in unpack(c["or_branches"].datum)]
+        if not branches:
+            raise ValueError("(or ...) requires at least one branch")
+        return ONEOF(*branches)
+
+    if "not_operand" in c:
+        return NOT(parse_case_element(c["not_operand"].datum))
+
+    if "pred_name" in c:
+        return PREDICATE(str(c["pred_name"].datum))
+
+    if "marked_name" in c or "anon_marker" in c:
+        return parse_matcher(elem)
+
+    if "known_head" in c:
+        head = c["known_head"].datum
+        if str(head) in MATCHER_REGISTRY:
+            return parse_matcher(elem)
+        raise ValueError(
+            f"unknown case pattern head {head!s};"
+            " sequence patterns use #[...] or #(...)")
+
+    raise ValueError(
+        f"internal: case meta-matcher matched with no slot bound: {elem!r}")
+
+
+def parse_case_pattern(content):
+    """
+    Lower the content of one match/case clause delimiter to a matcher
+    pattern object. The delimiter ([[PATTERN] BODY...]) holds either a
+    single pattern form, or the multi-token spelling of a marked typed
+    pattern (x :: int); a bare multi-token content is an error -- it is
+    never a silent sequence
+
+    :param content: the delimiter list (pair-tree)
+    :rtype: Pattern
+    """
+
+    if is_nil(content):
+        raise ValueError("empty case pattern")
+    result = CASE_DELIM_MATCHER.match(
+        (content,), symbol=symbol, keyword=keyword)
+    if not result.matched:
+        raise ValueError(
+            f"invalid case pattern {content!r};"
+            " sequence patterns use #[...] or #(...)")
+    c = result.captures
+
+    if "single" in c:
+        return parse_case_element(c["single"].datum)
+
+    if "multi_name" in c or "multi_marker" in c:
+        return parse_matcher(content)
+
+    raise ValueError(
+        f"internal: case delimiter matched with no slot bound: {content!r}")
 
 
 # The end.
