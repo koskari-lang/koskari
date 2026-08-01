@@ -15,7 +15,7 @@ and [EVALUATOR.md](EVALUATOR.md) §1.
 
 **Koskari** is a LISP dialect for Python (sibilant-ng). It is the fourth iteration of the Sibilant idea, preceded by:
 
-- **spexy**: String-to-string transformer; parsed s-expression text and emitted Python expression strings. The original proof-of-concept; the earliest reader and s-expression representation ideas trace back here.
+- **spexy**: S-expressions compiled to Python expression strings, with `let`, `cond`, and multi-expression `lambda` grafted on. The original proof-of-concept; where the reader and s-expression representation began.
 - **python-sibilant**: Compiles to CPython bytecode (targets 3.5–3.7); provides reader, types, compiler to `.pyc`.
 - **sibilant-ceval**: Custom bytecode and custom evaluator; provides Namespace, Ref, Formals, frame/stack model.
 

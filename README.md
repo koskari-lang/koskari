@@ -20,7 +20,7 @@ koskari hello.ki
 ## Overview
 
 Koskari is the fourth iteration of the Sibilant idea, learning from the experiences of:
-- **[spexy](https://github.com/obriencj/python-spexy)**: String-to-string transformer; parsed s-expression text and emitted Python expression strings. The earliest groundwork -- reader and s-expression representation -- carries through to this day.
+- **[spexy](https://github.com/obriencj/python-spexy)**: S-expressions compiled to Python expression strings, with `let`, `cond`, and multi-expression `lambda` grafted on. Where the reader and s-expression representation began.
 - **[python-sibilant](https://github.com/obriencj/python-sibilant)**: CPython bytecode target (abandoned due to version churn)
 - **[sibilant-ceval](https://github.com/obriencj/sibilant-ceval)**: Custom bytecode evaluator (blocked on call/cc implementation)
 
