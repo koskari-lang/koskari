@@ -19,7 +19,7 @@ define churn_method [n x: 1]:
     define i 0
     while (< i n):
         set! x (c.bump (^ x i))
-        set! i (+ i 1)
+        incr! i
     c.total
 
 

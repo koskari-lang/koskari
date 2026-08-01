@@ -51,20 +51,24 @@ define make-color-char-renderer [alive: "O" dead: " " controls: None]:
     set! controls (make-age-color-controls)
 
   define alive-ch alive[0]
-  define dead-ch dead[0]
+  define dead-cell #(dead[0] 0)
 
   lambda [cell]:
     if cell:
       define index (- (min (len controls) cell) 1)
       #(alive-ch controls[index])
     else:
-      #(dead-ch 0)
+      dead-cell
 
 
 define digit-renderer [cell]:
   when (< 9 cell):
     (set! cell 9)
-  #((if cell (str cell) " ") 0)
+
+  if cell:
+    #((str cell) 0)
+  else:
+    #(" " 0)
 
 
 define dots-renderer [cell]:

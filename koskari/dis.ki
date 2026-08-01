@@ -277,7 +277,7 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
 
   render_operand 1 (% bits 2) schema[1]
   render_operand 2 (% (// bits 2) 2) schema[2]
-  parts.append f"-> {(item ext 3)}"
+  parts.append f"-> {ext[3]}"
 
   define joined (", ".join parts)
   f"{arg} ({joined})"
@@ -314,7 +314,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
         except [#(IndexError TypeError)]:
           return (str arg)
 
-        if (equal? (item schema 0) OpStyle.CMPSRC):
+        if (equal? schema[0] OpStyle.CMPSRC):
           return (_format_cmpsrc_row arg ext schema cpool
                                      local_names closure_names)
 
@@ -389,7 +389,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
     case [OpStyle.CMPCOUNT]:
       define sc (divmod arg 256)
-      return f"{arg} ({(_compare_name sc[0])} x{(item sc 1)})"
+      return f"{arg} ({(_compare_name sc[0])} x{sc[1]})"
 
     case [OpStyle.COUNT
           OpStyle.PAIR_COUNT

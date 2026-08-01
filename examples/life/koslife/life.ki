@@ -26,9 +26,7 @@ define-class LifeBoard []:
         Clear the board to dead; keeps keys so UIs can turn cells off
         """
 
-        define dat self.data
-        for-each [key (list (dat.keys))]:
-            set! dat[key] 0
+        set! self.data (dict.fromkeys self.data 0)
 
 
     define all-coordinates [self]:
@@ -100,7 +98,7 @@ define-class LifeBoard []:
         """
 
         define data self.data
-        define counts (dict)
+        define counts #{}
 
         ;; Scatter: each live cell adds 1 to each of its eight neighbours.
         for-each [[coord value] (data.items)]:
