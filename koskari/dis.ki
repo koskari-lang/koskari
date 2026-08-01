@@ -76,7 +76,7 @@ define _format_constant [val]:
   """
   define r (repr val)
   if (> (len r) 60):
-    f"{(item r (slice None 57))}..."
+    f"{(item-slice r stop: 57)}..."
   else:
     r
 
@@ -90,7 +90,7 @@ define _write_function_instance_section [file fn]:
   :param fn: Function instance (KosFunction)
   """
   define name fn.name
-  define name_repr (if (None? name) "None" (repr name))
+  define name_repr (repr name)
 
   file.write "Function instance:\n"
   file.write f"  name: {name_repr}\n"
@@ -113,8 +113,8 @@ define _write_function_instance_section [file fn]:
       file.write "    (unable to iterate)\n"
     else:
       for-each [kv items]:
-        define k (item kv 0)
-        define v (item kv 1)
+        define k kv[0]
+        define v kv[1]
         file.write f"    {(repr k)}: {(_format_constant v)}\n"
   else:
     file.write "    (none)\n"
@@ -145,7 +145,7 @@ define _format_nspec_inline [cpool_idx nspec]:
   :return: inline annotation string
   """
   define ns_name nspec.name
-  define name_repr (if (None? ns_name) "None" (repr ns_name))
+  define name_repr (repr ns_name)
   return f"ns#{cpool_idx} {name_repr}"
 
 
@@ -161,7 +161,7 @@ define _write_nspec_cpool_entry [file cpool_idx nspec]:
   :param nspec: NamespaceSpec instance
   """
   define ns_name nspec.name
-  define name_repr (if (None? ns_name) "None" (repr ns_name))
+  define name_repr (repr ns_name)
   define local_syms nspec.local_syms
   define closure_syms nspec.closure_syms
   define global_syms nspec.global_syms
@@ -189,15 +189,15 @@ define _build_ns_const_map [code]:
 
   while (< i n):
     define oparg (code.oparg i)
-    define op_int (item oparg 0)
-    define arg (item oparg 1)
+    define op_int oparg[0]
+    define arg oparg[1]
     define op (OpCode op_int)
 
     if (equal? op OpCode.PUSH_NS):
       define ext (code.extra_tuple arg)
-      (set-item result i (item ext 0))
+      set! result[i] ext[0]
     elif (equal? op OpCode.PUSH_COLLECT):
-      (set-item result i arg)
+      set! result[i] arg
 
     incr! i
 
@@ -213,13 +213,13 @@ define _format_fast_part [val local_names closure_names]:
   if (< val n_local):
     (define name
       (if local_names
-       then: (item local_names val)
+       then: local_names[val]
        else: f"local[{val}]"))
     f"fast {val} ({(repr name)})"
   else:
     define idx (- val n_local)
     if (and closure_names (<= 0 idx) (< idx (len closure_names))):
-      f"fast {val} (closure {(repr (item closure_names idx))})"
+      f"fast {val} (closure {(repr closure_names[idx])})"
     else:
       f"fast {val}"
 
@@ -255,31 +255,31 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
   declared primary kind), then the jump target
   """
 
-  define src (item ext 0)
+  define src ext[0]
   define bits (// src 16)
   define parts #[]
   parts.append (_compare_name (% src 16))
 
   define render_operand [slot_idx const_bit fk]:
-    define val (item ext slot_idx)
+    define val ext[slot_idx]
     if const_bit:
       if (and (<= 0 val) (< val (len cpool))):
-        parts.append f"c#{val} ({(_format_constant (item cpool val))})"
+        parts.append f"c#{val} ({(_format_constant cpool[val])})"
       else:
         parts.append (str val)
     elif (equal? fk OpStyle.FASTVAR):
       parts.append (_format_fast_part val local_names closure_names)
     else:
       if (and (<= 0 val) (< val (len cpool))):
-        parts.append f"v#{val} ({(repr (item cpool val))})"
+        parts.append f"v#{val} ({(repr cpool[val])})"
       else:
         parts.append (str val)
 
-  render_operand 1 (% bits 2) (item schema 1)
-  render_operand 2 (% (// bits 2) 2) (item schema 2)
+  render_operand 1 (% bits 2) schema[1]
+  render_operand 2 (% (// bits 2) 2) schema[2]
   parts.append f"-> {(item ext 3)}"
 
-  define joined (.join ", " parts)
+  define joined (", ".join parts)
   f"{arg} ({joined})"
 
 
@@ -347,7 +347,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
           else:
             parts.append (str val)
 
-        define joined (.join ", " parts)
+        define joined (", ".join parts)
         return f"{arg} ({joined})"
 
       else:
@@ -355,7 +355,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
     case [OpStyle.CONST]:
       if (< -1 arg (len cpool)):
-        define val (item cpool arg)
+        define val cpool[arg]
         if (instance? val NamespaceSpec):
           return f"{arg} ({(_format_nspec_inline arg val)})"
         else:
@@ -364,7 +364,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
     case [OpStyle.VAR]:
       if (< -1 arg (len cpool)):
-        define name (item cpool arg)
+        define name cpool[arg]
         return f"{arg} ({(repr name)})"
       return (str arg)
 
@@ -372,12 +372,12 @@ define _format_arg [code op_style arg cpool local_names closure_names
       define n_local (if local_names (len local_names) 0)
 
       if (< arg n_local):
-        define name (if local_names (item local_names arg) f"local[{arg}]")
+        define name (if local_names local_names[arg] f"local[{arg}]")
         return f"{arg} (local {(repr name)})"
 
       define idx (- arg n_local)
       if (and closure_names (< -1 idx (len closure_names))):
-        return f"{arg} (closure {(repr (item closure_names idx))})"
+        return f"{arg} (closure {(repr closure_names[idx])})"
       return (str arg)
 
     case [OpStyle.LABEL]:
@@ -385,7 +385,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
     case [OpStyle.CMPCOUNT]:
       define sc (divmod arg 256)
-      return f"{arg} ({(_compare_name (item sc 0))} x{(item sc 1)})"
+      return f"{arg} ({(_compare_name sc[0])} x{(item sc 1)})"
 
     case [OpStyle.COUNT
           OpStyle.PAIR_COUNT
@@ -467,8 +467,8 @@ define dis [x file: None]:
   set! out (_resolve_file out)
   define cpool code.constants_pool
   define lcs (_local_and_closure_syms code)
-  define local_syms (item lcs 0)
-  define closure_syms (item lcs 1)
+  define local_syms lcs[0]
+  define closure_syms lcs[1]
   define ns_const_map (_build_ns_const_map code)
 
   define name code.name
@@ -482,20 +482,20 @@ define dis [x file: None]:
   out.write f"Constant pool ({(len cpool)}):\n"
   define i 0
   while (< i (len cpool)):
-    define val (item cpool i)
+    define val cpool[i]
     if (instance? val NamespaceSpec):
       _write_nspec_cpool_entry out i val
     else:
       out.write f"""  {i "3d"}: {(_format_constant val)}\n"""
-    set! i (+ i 1)
+    incr! i
   out.write "\n"
 
   out.write f"Vars (local_syms, {(len local_syms)}):\n"
   if local_syms:
     define i 0
     while (< i (len local_syms)):
-      out.write f"""  {i "3d"}: {(repr (item local_syms i))}\n"""
-      set! i (+ i 1)
+      out.write f"""  {i "3d"}: {(repr local_syms[i])}\n"""
+      incr! i
   else:
     out.write "  (none)\n"
   out.write "\n"
@@ -504,8 +504,8 @@ define dis [x file: None]:
   if closure_syms:
     define i 0
     while (< i (len closure_syms)):
-      out.write f"""  {i "3d"}: {(repr (item closure_syms i))}\n"""
-      set! i (+ i 1)
+      out.write f"""  {i "3d"}: {(repr closure_syms[i])}\n"""
+      incr! i
   else:
     out.write "  (none)\n"
   out.write "\n"
@@ -515,16 +515,16 @@ define dis [x file: None]:
   define i 0
   while (< i n):
     define oparg (code.oparg i)
-    define op_int (item oparg 0)
-    define arg (item oparg 1)
+    define op_int oparg[0]
+    define arg oparg[1]
     define op (OpCode op_int)
     define op_style op.style
     define extra_schema op.extra
     define ns_label None
 
     when (in? i ns_const_map):
-      define ns_idx (item ns_const_map i)
-      set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx))
+      define ns_idx ns_const_map[i]
+      set! ns_label (_format_nspec_inline ns_idx cpool[ns_idx])
     (define arg_str
       (_format_arg code op_style arg cpool local_syms closure_syms
                    ns_label: ns_label
@@ -532,8 +532,8 @@ define dis [x file: None]:
     define pos_str ""
     try:
       define pos (code.position i)
-      define line (item pos 0)
-      define col (item pos 1)
+      define line pos[0]
+      define col pos[1]
       set! pos_str f"  # line {line}, col {col}"
     except [#(IndexError TypeError)]:
       None
@@ -551,31 +551,31 @@ define _get_instruction_lines [code]:
 
   define cpool code.constants_pool
   define lcs (_local_and_closure_syms code)
-  define local_syms (item lcs 0)
-  define closure_syms (item lcs 1)
+  define local_syms lcs[0]
+  define closure_syms lcs[1]
   define ns_const_map (_build_ns_const_map code)
   define n (code.length)
 
   define i 0
   while (< i n):
     define oparg (code.oparg i)
-    define op_int (item oparg 0)
-    define arg (item oparg 1)
+    define op_int oparg[0]
+    define arg oparg[1]
     define op (OpCode op_int)
     define op_style op.style
     define extra_schema op.extra
     define ns_label None
 
     when (in? i ns_const_map):
-      define ns_idx (item ns_const_map i)
-      set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx))
+      define ns_idx ns_const_map[i]
+      set! ns_label (_format_nspec_inline ns_idx cpool[ns_idx])
 
     define arg_str (_format_arg
       code op_style arg cpool local_syms closure_syms
       ns_label: ns_label
       extra_schema: extra_schema)
 
-    yield #(i op.name arg_str)
+    yield i op.name arg_str
     incr! i
 
 
