@@ -23,8 +23,10 @@ compile/when, and compile/unless.
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, keyword
-from ...matcher import CALLEDBY, MATCH, REST
+from ...lib import OpCode, bracket_nil, bracket_pair, keyword
+from ...matcher import (
+        CALLEDBY, FORM, MATCH, MatchCompiler, REST,
+        parse_matcher, pattern_slot_names)
 from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_pair
@@ -32,6 +34,7 @@ from ..helpers import helper_begin
 
 
 _keyword_else = keyword("else")
+_keyword_star = keyword("*")
 
 _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
@@ -152,6 +155,137 @@ def special_switch(compiler, source, tc=False):
 
     fragment.merge(checks)
     fragment.merge(bodies)
+    fragment.instruction(OpCode.LABEL, done)
+    return fragment
+
+
+def _iter_forms(seq):
+    """
+    Yield the elements of a koskari list (pair or bracket-pair), stopping
+    at either terminator (nil or bracket-nil, both falsy).
+    """
+
+    while seq:
+        element, seq = seq
+        yield element
+
+
+def _lower_match_element(element, source):
+    """
+    Lower one scalar case-pattern element through the shared matcher
+    surface parser.
+    """
+
+    try:
+        return parse_matcher(element)
+    except ValueError as exc:
+        raise SpecialError(str(exc), source)
+
+
+def _lower_match_sequence(seq, source):
+    """
+    Lower a ``[...]`` sequence pattern into ``FORM(MATCH(...))``. A ``*:``
+    marker binds the remaining elements as a rest capture; a nested
+    bracket list is a nested sequence; every other element is matcher
+    surface syntax.
+    """
+
+    elements = []
+    forms = _iter_forms(seq)
+    for element in forms:
+        if element is _keyword_star:
+            name = next(forms, None)
+            if name is None:
+                raise SpecialError("*: must be followed by a name", source)
+            elements.append(REST(str(name)))
+        elif isinstance(element, bracket_pair) or element is bracket_nil:
+            elements.append(_lower_match_sequence(element, source))
+        else:
+            elements.append(_lower_match_element(element, source))
+    return FORM(MATCH(*elements))
+
+
+def _lower_match_pattern(pattern, source):
+    """
+    Lower one case pattern. A bracket list is a sequence pattern matched
+    against the whole subject; anything else is a single matcher element.
+    """
+
+    if isinstance(pattern, bracket_pair) or pattern is bracket_nil:
+        return _lower_match_sequence(pattern, source)
+    return _lower_match_element(pattern, source)
+
+
+@builtin("compile/match")
+@special("compile/match", patterns=_DEFAULT_PATTERNS)
+def special_match(compiler, source, tc=False):
+    """
+    Compile (compile/match SUBJECT [PATTERN BODY...] ... [else: BODY...]).
+    Evaluates SUBJECT once, then tries each arm's pattern in order. The
+    first matching arm binds its captured names and runs its body, whose
+    value is the result. A [else: BODY...] arm always matches; with no
+    else and no match the form yields None.
+    """
+
+    called_by, cl = source
+
+    fragment = compiler.fragment(called_by)
+
+    gen_label = compiler.gen_label
+    done = gen_label()
+
+    if not cl:
+        raise SpecialError("match requires a subject", source)
+    subject, cl = cl
+
+    fragment.merge(compiler.full_compile(subject))
+
+    declared = set()
+
+    while cl:
+        element, cl = cl
+
+        fragment.position_of(element)
+
+        if not is_pair(element):
+            raise SpecialError("match clause must be a list", source)
+        pattern, body = element
+
+        if pattern is _keyword_else:
+            if cl:
+                raise SpecialError("else: must be last clause", source)
+
+            fragment.instruction(OpCode.POP, 1)
+            helper_begin(fragment, body, tc)
+            fragment.instruction(OpCode.JUMP, done)
+            break
+
+        arm = MATCH(_lower_match_pattern(pattern, source))
+        frozen = MatchCompiler().lower(arm)
+        names = [str(n) for n in pattern_slot_names(arm)]
+
+        next_label = gen_label()
+        fragment.instruction(OpCode.MATCH_CASE,
+                             (next_label, frozen, frozen[2], 0))
+
+        for name in names:
+            if name not in declared:
+                declared.add(name)
+                fragment.declare_var(name)
+
+        if names:
+            fragment.instruction(OpCode.MATCH_STORE_NAMES, tuple(names))
+        else:
+            fragment.instruction(OpCode.POP, 1)
+
+        helper_begin(fragment, body, tc)
+        fragment.instruction(OpCode.JUMP, done)
+        fragment.instruction(OpCode.LABEL, next_label)
+
+    else:
+        fragment.instruction(OpCode.POP, 1)
+        fragment.instruction(OpCode.CONST, None)
+
     fragment.instruction(OpCode.LABEL, done)
     return fragment
 
