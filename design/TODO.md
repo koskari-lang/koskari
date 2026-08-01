@@ -332,6 +332,13 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 ## Bootstrap and reader surface
 
+- **Bracket suffix in an f-string interpolation slot** — a bare `f"{foo[0]}"`
+  reads as `(format foo [0])`: the slot reads a *sequence* of forms, so the
+  bracket lands in the format-spec position instead of attaching as a
+  subscript. Silent — no read or compile error. Wrapping works
+  (`f"{(+ 1 foo[0])}"` gives `(item foo 0)`). Fix direction: apply suffix
+  adjacency before the value/spec split. Ref:
+  [fstring-bracket-suffix.md](fstring-bracket-suffix.md).
 - **Reader macro dollars example** — bootstrap **`set-macro-character`** /
   **`read-atom`** helpers, port **`examples/reader-macro/dollars.ki`**, reader
   tests, user recipe. Ref:
