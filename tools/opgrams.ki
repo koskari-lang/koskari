@@ -86,11 +86,11 @@ define MODULE_GROUPS #{
 ; line here, so no sequence may continue past them. Ops that carry a
 ; label argument (jumps, checks, switches, iteration) are detected from
 ; opcode metadata instead of being listed.
-define TERMINAL_OPS (frozenset #(
+define TERMINAL_OPS #(
     "RETURN" "RAISE" "BREAK" "CONTINUE"
     "YIELD" "YIELD_FROM" "AWAIT"
     "TAIL_CALL" "TAIL_CALL_NAMES" "TAIL_CALL_STAR"
-    "THEEND"))
+    "THEEND")
 
 define LOOP_PUSH_OPS (frozenset #("PUSH_LOOP" "PUSH_FOREACH"))
 
@@ -114,12 +114,14 @@ define build_block_enders []:
     picked up automatically.
     """
 
-    define enders (set TERMINAL_OPS)
-    for-each [op OpCode]:
-        when (or (== op.style OpStyle.LABEL)
-                 (in? OpStyle.LABEL op.extra)):
-            (enders.add op.name)
-    return (frozenset enders)
+    define enders:
+        list-each [op OpCode]:
+            when (or (== op.style OpStyle.LABEL)
+                     (has? op.extra OpStyle.LABEL)):
+                op.name
+
+    enders.extend TERMINAL_OPS
+    frozenset enders
 
 
 define unwrap_code [obj]:
@@ -130,17 +132,20 @@ define unwrap_code [obj]:
 
     when (instance? obj demand):
         set! obj (getattr obj "__wrapped__" None)
+
     when (instance? obj BoundMethod):
         set! obj obj.__func__
         when (instance? obj demand):
             set! obj (getattr obj "__wrapped__" None)
-    when (instance? obj Function):
-        return obj.code
-    when (instance? obj Expression):
-        return obj.code
-    when (instance? obj Code):
-        return obj
-    return None
+
+    if (instance? obj Function):
+        obj.code
+    elif (instance? obj Expression):
+        obj.code
+    elif (instance? obj Code):
+        obj
+    else:
+        None
 
 
 define closure_codes [fn]:
@@ -151,16 +156,15 @@ define closure_codes [fn]:
     """
 
     for-each [cell (or fn.__closure__ #())]:
-        define val None
-        define found True
         try:
-            set! val cell.cell_contents
+            define val cell.cell_contents
+
         except [ValueError]:
-            set! found False
-        when found:
-            define code (unwrap_code val)
-            when (not (None? code)):
-                yield code
+            (continue)
+
+        define code (unwrap_code val)
+        when code:
+            yield code
 
 
 define syntax_codes [label syn]:
@@ -171,18 +175,21 @@ define syntax_codes [label syn]:
     contribute nothing.
     """
 
+    local members
+
     for-each [[i transform] (enumerate syn.transforms)]:
-        define members (getattr transform "__dict__" None)
+        set! members (getattr transform "__dict__" None)
         unless members:
             (continue)
+
         for-each [[key val] (members.items)]:
             define code (unwrap_code val)
-            if (not (None? code)):
+            if code:
                 yield #(f"{label}[{i}].{key}" code)
-            else:
-                when (instance? val types.FunctionType):
-                    for-each [inner (closure_codes val)]:
-                        yield #(f"{label}[{i}].{key}" inner)
+
+            elif (instance? val types.FunctionType):
+                for-each [inner (closure_codes val)]:
+                    yield #(f"{label}[{i}].{key}" inner)
 
 
 define collect_codes [modules]:
@@ -367,10 +374,10 @@ define print_markov [tally threshold file]:
         unless total:
             (continue)
 
-        define parts #[]
-        for-each [[succ scount] (succs.most_common 4)]:
-            define pct (/ (* 100.0 scount) total)
-            (parts.append f"{succ} {pct:.0f}%")
+        define parts:
+            list-each [[succ scount] (succs.most_common 4)]:
+                define pct (/ (* 100.0 scount) total)
+                f"{succ} {pct:.0f}%"
 
         define joined (", ".join parts)
         file.write f"  {op:<24} x{count:<7} -> {joined}\n"
@@ -381,29 +388,24 @@ define tally_to_json [tally top]:
     Render the tally as a JSON-serializable mapping
     """
 
-    define out (dict
-        codes: tally.code_count
-        blocks: tally.block_count
-        weight_base: tally.weight_base
-        grams: #{}
-        successors: #{})
-
-    define grams out["grams"]
+    define grams #{}
     for-each [n tally.sizes]:
-        define rows #[]
-        for-each [[gram wcount] (tally.weighted[n].most_common top)]:
-            (rows.append (dict
-                seq: (list gram)
-                weighted: wcount
-                raw: tally.raw[n][gram]
-                exemplar: tally.exemplar[gram]))
-        set! grams[(str n)] rows
+        set! grams[(str n)]:
+            list-each [[gram wcount] (tally.weighted[n].most_common top)]:
+                #{"seq": (list gram)
+                  "weighted": wcount
+                  "raw": tally.raw[n][gram]
+                  "exemplar": tally.exemplar[gram]}
 
-    define successors out["successors"]
+    define successors #{}
     for-each [[op succs] (tally.successors.items)]:
         set! successors[op] (dict (succs.most_common))
 
-    return out
+    #{"codes": tally.code_count
+      "blocks": tally.block_count
+      "weight_base": tally.weight_base
+      "grams": grams
+      "successors": successors}
 
 
 define load_group [group]:
@@ -460,7 +462,7 @@ define run [options]:
 
     define modules #[]
     for-each [group groups]:
-        (modules.extend (load_group group))
+        modules.extend (load_group group)
 
     define enders (build_block_enders)
     define codes (collect_codes modules)
@@ -468,7 +470,7 @@ define run [options]:
     when options.dis:
         import-from koskari.dis dis
         for-each [[label code] codes]:
-            sys.stdout.write f"--- {label} ---\n"
+            print f"--- {label} ---"
             (dis code)
         return 0
 
@@ -476,14 +478,14 @@ define run [options]:
 
     when options.json:
         (json.dump (tally_to_json tally options.top) sys.stdout indent: 2)
-        sys.stdout.write "\n"
+        (print)
         return 0
 
     define joined (", ".join groups)
-    (sys.stdout.write
+    (print
         f"codes: {tally.code_count}"-
         f"   blocks: {tally.block_count}"-
-        f"   groups: {joined}\n")
+        f"   groups: {joined}")
     (print_gram_tables tally options.top sys.stdout)
     (print_markov tally options.markov_threshold sys.stdout)
     return 0

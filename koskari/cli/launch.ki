@@ -126,7 +126,7 @@ define split_script_rest [parser rest]:
 
   unless (in? "--" rest):
     reject_option_like_rest parser rest
-    return #((item rest 0) (item-slice rest 1))
+    return rest[0] (item-slice rest 1)
 
   define idx (rest.index "--")
   define pre (item-slice rest stop: idx)
@@ -136,7 +136,7 @@ define split_script_rest [parser rest]:
     parser.error "expected script filename before --"
 
   reject_option_like_rest parser pre
-  return #((item pre 0) (+ (item-slice pre 1) post))
+  return pre[0] (+ (item-slice pre 1) post)
 
 
 define resolve_cli_target [parser options]:
@@ -155,7 +155,7 @@ define resolve_cli_target [parser options]:
 
   when options.command:
     set! options.filename None
-    when (and rest (equal? (item rest 0) "--")):
+    when (and rest (equal? rest[0] "--")):
       set! rest (item-slice rest 1)
     set! options.args rest
     set! options.execute_kio False
@@ -163,7 +163,7 @@ define resolve_cli_target [parser options]:
 
   when options.compile_kio:
     when rest:
-      define joined (.join " " rest)
+      define joined (" ".join rest)
       parser.error f"unexpected extra arguments: {joined}"
     define-values [out_src src] options.compile_kio
     set! options.compile_kio out_src
@@ -174,10 +174,10 @@ define resolve_cli_target [parser options]:
 
   when options.execute_kio_file:
     when rest:
-      define joined (.join " " rest)
+      define joined (" ".join rest)
       parser.error f"unexpected extra arguments: {joined}"
     set! options.execute_kio True
-    set! options.filename (item options.execute_kio_file 0)
+    set! options.filename options.execute_kio_file[0]
     set! options.args #[]
     return options
 

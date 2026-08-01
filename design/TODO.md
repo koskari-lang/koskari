@@ -154,6 +154,15 @@ modules, so nothing leaks into distributed libraries. Scope out flag spelling,
 
 Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
 
+### Rewrite `koskari.help` in Koskari
+
+Port `koskari/help/` (`tools.py`, `syntax.py`, `layout.py`) from Python to
+`.ki`, matching the CLI/REPL already living in Koskari. Preserve the help
+registry, formatter, and `kos-help` builtins that bootstrap, pragma help, and
+Sphinx extras depend on.
+
+Ref: `koskari/help/`; [archive/cli-repl-rework.md](archive/cli-repl-rework.md).
+
 ### Assert gate reads the module pragma at expand time
 
 `compiler/enable-asserts` is applied as a side effect of its setting function:

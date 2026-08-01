@@ -64,7 +64,7 @@ define block_body? [buffer]:
   unless nonempty:
     return False
 
-  (in? (item* nonempty -1 0) " \t")
+  (in? nonempty[-1][0] " \t")
 
 
 define continuation_indent [buffer]:
@@ -84,7 +84,7 @@ define continuation_indent [buffer]:
     return ""
 
   when (.endswith (buffer.rstrip) ":"):
-    define last (item lines -1)
+    define last lines[-1]
     define indent_len (- (len last) (len (last.lstrip)))
     return (* " " (+ indent_len 4))
 
@@ -121,7 +121,7 @@ define eval_expression [compiler source ns]:
   define reader (ns.get "__reader__")
   when (None? reader):
     set! reader (LayoutReader ns)
-    (set-item ns "__reader__" reader)
+    set! ns["__reader__"] reader
 
   define stream (source_str source "<stdin>")
 
@@ -178,7 +178,7 @@ define repl [
   when (None? compiler):
     init_module mod "<stdin>"
     define facets (build_module_load_facets mod filename: "<stdin>")
-    set! compiler (item facets 0)
+    set! compiler facets[0]
 
   define ns (vars mod)
   when (None? prompter):
@@ -219,7 +219,7 @@ define repl [
       (continue)
 
     when (line.strip):
-      when (.endswith (buffer.rstrip) ":"):
+      when ((buffer.rstrip).endswith ":"):
         set! prompt "... "
         (continue)
       when (block_body? buffer):
@@ -241,7 +241,7 @@ define repl [
       set! buffer ""
       set! prompt ">>> "
 
-      (set-item ns "_" result)
+      set! ns["_"] result
       unless (None? result):
         print (kos_repr result) file: stdout
 
@@ -257,7 +257,7 @@ define repl [
       (break)
 
     except [ReaderSyntaxError as: e]:
-      define ename (attr (type e) __name__)
+      define ename (type e).__name__
       define emsg e.message
       print f"{ename}: {emsg}" file: stderr
       (stderr.flush)
@@ -268,14 +268,14 @@ define repl [
       define res (format_code_boundary_exception boundary
         nofold: full_trace
         infrastructure_modules: REPL_INFRASTRUCTURE_MODULES)
-      apply_sys_last_exc (item res 1) (item res 2) (item res 3)
-      print (.join "" (item res 0)) end: "" file: stderr
+      apply_sys_last_exc res[1] res[2] res[3]
+      print ("".join res[0]) end: "" file: stderr
       (stderr.flush)
       set! buffer ""
       set! prompt ">>> "
 
     except [UncaughtCompilerError as: exc]:
-      define tb (attr exc __traceback__)
+      define tb exc.__traceback__
       define elines (format_exception_with_koskari_trace (type exc) exc tb)
       apply_sys_last_exc (type exc) exc tb
       print (.join "" elines) end: "" file: stderr
