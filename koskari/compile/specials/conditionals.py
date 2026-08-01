@@ -23,9 +23,9 @@ compile/when, and compile/unless.
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, bracket_nil, bracket_pair, keyword
+from ...lib import OpCode, cons, keyword, symbol
 from ...matcher import (
-        CALLEDBY, FORM, MATCH, MatchCompiler, REST,
+        CALLEDBY, MATCH, MatchCompiler, REST,
         parse_matcher, pattern_slot_names)
 from ...bootstrap import builtin
 from ...syntax import special
@@ -34,7 +34,7 @@ from ..helpers import helper_begin
 
 
 _keyword_else = keyword("else")
-_keyword_star = keyword("*")
+_symbol_form = symbol("FORM")
 
 _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
@@ -159,72 +159,32 @@ def special_switch(compiler, source, tc=False):
     return fragment
 
 
-def _iter_forms(seq):
+def _lower_pattern(pattern, source):
     """
-    Yield the elements of a koskari list (pair or bracket-pair), stopping
-    at either terminator (nil or bracket-nil, both falsy).
-    """
-
-    while seq:
-        element, seq = seq
-        yield element
-
-
-def _lower_match_element(element, source):
-    """
-    Lower one scalar case-pattern element through the shared matcher
-    surface parser.
+    Imply ``FORM`` over the case pattern: the pattern's elements are the
+    positional sub-patterns of a sequence matched against the subject.
+    The whole form is handed to the shared matcher surface parser, which
+    classifies and lowers every element (captures, `::` typed captures,
+    literals, `CLASS`, `REST`, ...) -- the special makes no shape
+    decisions of its own.
     """
 
     try:
-        return parse_matcher(element)
+        return parse_matcher(cons(_symbol_form, pattern))
     except ValueError as exc:
         raise SpecialError(str(exc), source)
-
-
-def _lower_match_sequence(seq, source):
-    """
-    Lower a ``[...]`` sequence pattern into ``FORM(MATCH(...))``. A ``*:``
-    marker binds the remaining elements as a rest capture; a nested
-    bracket list is a nested sequence; every other element is matcher
-    surface syntax.
-    """
-
-    elements = []
-    forms = _iter_forms(seq)
-    for element in forms:
-        if element is _keyword_star:
-            name = next(forms, None)
-            if name is None:
-                raise SpecialError("*: must be followed by a name", source)
-            elements.append(REST(str(name)))
-        elif isinstance(element, bracket_pair) or element is bracket_nil:
-            elements.append(_lower_match_sequence(element, source))
-        else:
-            elements.append(_lower_match_element(element, source))
-    return FORM(MATCH(*elements))
-
-
-def _lower_match_pattern(pattern, source):
-    """
-    Lower one case pattern. A bracket list is a sequence pattern matched
-    against the whole subject; anything else is a single matcher element.
-    """
-
-    if isinstance(pattern, bracket_pair) or pattern is bracket_nil:
-        return _lower_match_sequence(pattern, source)
-    return _lower_match_element(pattern, source)
 
 
 @builtin("compile/match")
 @special("compile/match", patterns=_DEFAULT_PATTERNS)
 def special_match(compiler, source, tc=False):
     """
-    Compile (compile/match SUBJECT [PATTERN BODY...] ... [else: BODY...]).
+    Compile (compile/match SUBJECT (PATTERN BODY...) ... (else: BODY...)).
     Evaluates SUBJECT once, then tries each arm's pattern in order. The
     first matching arm binds its captured names and runs its body, whose
-    value is the result. A [else: BODY...] arm always matches; with no
-    else and no match the form yields None.
+    value is the result. An (else: BODY...) arm always matches; with no
+    else and no match the form yields None. FORM is implied over each
+    pattern, so its elements are the positional pieces of a sequence.
     """
 
     called_by, cl = source
@@ -260,7 +220,7 @@ def special_match(compiler, source, tc=False):
             fragment.instruction(OpCode.JUMP, done)
             break
 
-        arm = MATCH(_lower_match_pattern(pattern, source))
+        arm = MATCH(_lower_pattern(pattern, source))
         frozen = MatchCompiler().lower(arm)
         names = [str(n) for n in pattern_slot_names(arm)]
         externs = tuple(str(name) for name in frozen[2])

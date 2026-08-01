@@ -2844,6 +2844,7 @@ def lookup_matcher(name):
 KW_DCOLON = keyword("::")
 KW_TYPE = keyword("type")
 KW_VAL = keyword("val")
+KW_STAR = keyword("*")
 KW_SCOPE = keyword("scope")
 KW_MODE = keyword("mode")
 KW_ROLE = keyword("role")
@@ -3339,28 +3340,54 @@ def tail_match_factory(head_sym, raw_args):
     return OPTIONAL(REST(slot, min_tail=1))
 
 
+def _lower_spine_children(raw_args):
+    """
+    Lower the child patterns of a spine composite (FORM / MATCH),
+    recognizing the ``*: name`` rest marker: a ``*:`` keyword followed by
+    a slot name lowers to a named REST capture. Every other child is
+    lowered through parse_matcher.
+    """
+
+    items = list(unpack(raw_args))
+    out = []
+    i = 0
+    n = len(items)
+    while i < n:
+        elem = items[i]
+        if elem == KW_STAR:
+            if i + 1 >= n:
+                raise ValueError("`*:` must be followed by a rest slot name")
+            out.append(REST(coerce_slot("*:", items[i + 1])))
+            i += 2
+        else:
+            out.append(parse_matcher(elem))
+            i += 1
+    return out
+
+
 def form_factory(head_sym, raw_args):
     """
     Lower (FORM pat) and (FORM pat1 pat2 ...). The single-arg form
     becomes FORM(parse_matcher(pat)); the multi-arg form implicitly
-    wraps the children in MATCH per the rollup convention
+    wraps the children in MATCH per the rollup convention. A ``*: name``
+    child lowers to a named REST capture
     """
 
-    items = list(unpack(raw_args))
+    items = _lower_spine_children(raw_args)
     if not items:
         raise ValueError("(FORM ...) requires at least one sub-pattern")
     if len(items) == 1:
-        return FORM(parse_matcher(items[0]))
-    return FORM(MATCH(*[parse_matcher(i) for i in items]))
+        return FORM(items[0])
+    return FORM(MATCH(*items))
 
 
 def match_factory(head_sym, raw_args):
     """
     Lower (MATCH pat...). Empty MATCH is permitted (matches zero
-    elements)
+    elements). A ``*: name`` child lowers to a named REST capture
     """
 
-    return MATCH(*[parse_matcher(i) for i in unpack(raw_args)])
+    return MATCH(*_lower_spine_children(raw_args))
 
 
 def group_named_factory(head_sym, raw_args):

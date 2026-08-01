@@ -38,25 +38,26 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), 100)
 
 
-    async def test_match_scalar_literal(self):
+    async def test_match_literal_element(self):
+        # a literal element must equal that position of the sequence
         src = """
-        (compile/match 5
-          [1 "one"]
-          [5 "five"]
+        (compile/match data
+          [[1 x] "one"]
+          [[5 x] "five"]
           [else: "meh"])
         """
-        expr, mod = self.compile_expr(src)
+        expr, mod = self.compile_expr(src, data=(5, "z"))
         self.assertEqual(await expr(), "five")
 
 
-    async def test_match_scalar_no_match_to_else(self):
+    async def test_match_literal_element_no_match_to_else(self):
         src = """
-        (compile/match 9
-          [1 "one"]
-          [5 "five"]
+        (compile/match data
+          [[1 x] "one"]
+          [[5 x] "five"]
           [else: "meh"])
         """
-        expr, mod = self.compile_expr(src)
+        expr, mod = self.compile_expr(src, data=(9, "z"))
         self.assertEqual(await expr(), "meh")
 
 
@@ -90,32 +91,32 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), 1)
 
 
-    async def test_match_bare_symbol_captures_whole(self):
+    async def test_match_single_element_capture(self):
         src = """
         (compile/match data
-          [x x])
+          [[x] x])
         """
-        expr, mod = self.compile_expr(src, data=42)
+        expr, mod = self.compile_expr(src, data=(42,))
         self.assertEqual(await expr(), 42)
 
 
     async def test_match_typed_extern(self):
         src = """
         (compile/match data
-          [(x :: int) x]
+          [[(x :: int)] x]
           [else: "nope"])
         """
-        expr, mod = self.compile_expr(src, data=7, int=int)
+        expr, mod = self.compile_expr(src, data=(7,), int=int)
         self.assertEqual(await expr(), 7)
 
 
     async def test_match_typed_extern_no_match(self):
         src = """
         (compile/match data
-          [(x :: int) x]
+          [[(x :: int)] x]
           [else: "nope"])
         """
-        expr, mod = self.compile_expr(src, data="hello", int=int)
+        expr, mod = self.compile_expr(src, data=("hello",), int=int)
         self.assertEqual(await expr(), "nope")
 
 
@@ -148,29 +149,29 @@ class TestMatchLayout(SpecialsTestCase):
         self.assertEqual(await expr(), 2)
 
 
-    async def test_layout_scalar_literal(self):
+    async def test_layout_literal_element(self):
         src = """
         match data:
-          case 1:
+          case [1 x]:
             "one"
-          case 5:
+          case [5 x]:
             "five"
           else:
             "meh"
         """
-        expr, mod = self.compile_expr(src, data=5)
+        expr, mod = self.compile_expr(src, data=(5, "z"))
         self.assertEqual(await expr(), "five")
 
 
     async def test_layout_typed_extern(self):
         src = """
         match data:
-          case (x :: int):
+          case [(x :: int)]:
             x
           else:
             "nope"
         """
-        expr, mod = self.compile_expr(src, data=7, int=int)
+        expr, mod = self.compile_expr(src, data=(7,), int=int)
         self.assertEqual(await expr(), 7)
 
 
@@ -210,13 +211,13 @@ class TestMatchExternResolution(SpecialsTestCase):
         (compile/let [[T int]]
           (lambda [data]
             (compile/match data
-              [(x :: T) "isT"]
+              [[(x :: T)] "isT"]
               [else: "no"])))
         """
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
-        self.assertEqual(await fn(7), "isT")
-        self.assertEqual(await fn("hi"), "no")
+        self.assertEqual(await fn((7,)), "isT")
+        self.assertEqual(await fn(("hi",)), "no")
 
 
 # The end.

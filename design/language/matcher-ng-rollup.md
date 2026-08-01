@@ -1553,10 +1553,15 @@ Per-special-form authoring remains either Python **`matcher`** builders or,
 after broader **`define-matcher`** integration, surface matcher syntax lowered
 through Phase 6.
 
-### Phase 8 — Runtime match/case *(design settled; implementation pending)*
+### Phase 8 — Runtime match/case *(implemented)*
 
-Add runtime `match` syntax using the same matcher constants. Full design in
-[match-case-form.md](match-case-form.md).
+Runtime `match` is a **sequence-unpacking** form over the same matcher
+constants. Full design in [match-case-form.md](match-case-form.md). The special
+makes no shape decisions: it **implies `FORM`** over each case pattern and hands
+the whole form to `parse_matcher`, so pattern classification (captures, `::`
+typed captures, literals, `CLASS`, `REST`) is entirely the matcher's. `*: name`
+rest is a matcher-surface rule on the spine composites (`form_factory` /
+`match_factory`), not a match-only convenience.
 
 Two new opcodes carry the lowering, styled on the `SWITCH_EQ` chain: **`MATCH_CASE`**
 (run an arm's frozen matcher against the subject held on the stack; no-match keeps
