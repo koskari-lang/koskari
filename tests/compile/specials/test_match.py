@@ -194,4 +194,29 @@ class TestMatchLayout(SpecialsTestCase):
         self.assertEqual(await expr(), None)
 
 
+class TestMatchExternResolution(SpecialsTestCase):
+    """
+    A pattern's type / class externs are resolved from the namespace at
+    match time, so the special must request each one through resolution.
+    Otherwise a name bound in an enclosing scope and used only in a
+    pattern is never captured into the closure.
+    """
+
+    async def test_pattern_extern_is_closure_captured(self):
+        # T is bound by the outer let and referenced only inside the
+        # match pattern of the returned lambda, so it can only resolve if
+        # the extern name was requested (and thus captured).
+        src = """
+        (compile/let [[T int]]
+          (lambda [data]
+            (compile/match data
+              [(x :: T) "isT"]
+              [else: "no"])))
+        """
+        expr, mod = self.compile_expr(src, int=int)
+        fn = await expr()
+        self.assertEqual(await fn(7), "isT")
+        self.assertEqual(await fn("hi"), "no")
+
+
 # The end.

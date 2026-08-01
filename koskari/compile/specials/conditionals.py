@@ -263,10 +263,18 @@ def special_match(compiler, source, tc=False):
         arm = MATCH(_lower_match_pattern(pattern, source))
         frozen = MatchCompiler().lower(arm)
         names = [str(n) for n in pattern_slot_names(arm)]
+        externs = tuple(str(name) for name in frozen[2])
+
+        # the matcher resolves its externs (type / class / predicate
+        # names) from the namespace at match time, so request each one
+        # through resolution -- otherwise a closure-bound type used only
+        # in a pattern is never captured.
+        for extern in externs:
+            fragment.request_var(extern)
 
         next_label = gen_label()
         fragment.instruction(OpCode.MATCH_CASE,
-                             (next_label, frozen, frozen[2], 0))
+                             (next_label, frozen, externs, 0))
 
         for name in names:
             if name not in declared:
