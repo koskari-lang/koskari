@@ -80,13 +80,16 @@ define _trigger-fields [spec]:
     define out #[]
     when spec:
         for-each [[name typ] (spec.items)]:
-            define-values [t default required] (if (instance? typ tuple)
-                (values (item typ 0) (item typ 1) False)
-                (values typ None True))
-            (out.append #{"name": name
-                          "type": t.__name__
-                          "required": required
-                          "default": default})
+            define-values [t default required]:
+                if (tuple? typ):
+                    #(typ[0] typ[1] False)
+                else:
+                    #(typ None True)
+
+            out.append #{"name": name
+                         "type": t.__name__
+                         "required": required
+                         "default": default}
     out
 
 
@@ -128,10 +131,10 @@ define-class UiJob [Job]:
             define identity (resolve-identity ctx)
             define groups #{}
             for-each [j (js.visible-jobs identity)]:
-                define tp (item j "type")
+                define tp j["type"]
                 unless (in? tp groups):
-                    (set! (item groups tp) #[])
-                (.append (item groups tp) j)
+                    set! groups[tp] #[]
+                groups[tp].append j
             (_render env "dashboard.html"
                 #{"prefix": prefix
                   "root": root
@@ -175,7 +178,7 @@ define-class UiJob [Job]:
             if (None? detail):
                 (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
             else:
-                define jobname (item detail "job")
+                define jobname detail["job"]
                 define job (js.jobs.get jobname)
                 (_render env "run.html"
                     #{"prefix": prefix
@@ -183,7 +186,7 @@ define-class UiJob [Job]:
                       "run": detail
                       "may_retrigger": (and job (trigger-allowed? js.access ctx job))
                       "crumbs": #[#{"label": jobname "href": (job-url jobname)}
-                                  #{"label": (item detail "run_id")}]})
+                                  #{"label": detail["run_id"]}]})
 
         (server.add-page root page-dashboard)
         (server.add-page-item f"{prefix}/jobs" page-job)
@@ -202,7 +205,7 @@ define-class UiJob [Job]:
 
         define do-retrigger [runid ctx]:
             define trig (js.store.get-trigger runid)
-            define jobname (if (None? trig) None (item trig "job"))
+            define jobname (if (None? trig) None trig["job"])
             define job (if (None? jobname) None (js.jobs.get jobname))
             (if (or (None? job) (trigger-allowed? js.access ctx job))
                 (begin

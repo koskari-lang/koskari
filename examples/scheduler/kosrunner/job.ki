@@ -207,7 +207,7 @@ define-class Job []:
                 status: status
                 result: result
                 error: err
-                log: (when buf (.join "\n" buf)))
+                log: (when buf ("\n".join buf)))
 
         result
 
@@ -352,7 +352,7 @@ define-class JobSet []:
 
 
     define enable [self name]:
-        define job (item self.jobs name)
+        define job self.jobs[name]
         set! job.enabled True
         unless job.running:
             (job.start)
@@ -360,7 +360,7 @@ define-class JobSet []:
 
 
     define disable [self name]:
-        define job (item self.jobs name)
+        define job self.jobs[name]
         set! job.enabled False
         when job.running:
             (job.stop)
@@ -380,7 +380,7 @@ define-class JobSet []:
             return #{"error": "no such run"
                      "run_id": runid}
 
-        define jobname (item trig "job")
+        define jobname trig["job"]
         define job (self.jobs.get jobname)
 
         unless job:
