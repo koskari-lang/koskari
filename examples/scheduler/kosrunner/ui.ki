@@ -103,6 +103,7 @@ define-class UiJob [Job]:
 
     define config-class UiConfig
 
+
     define mount [self server]:
         """
         Mount the UI page hierarchy on `server`: the dashboard is a
@@ -146,47 +147,51 @@ define-class UiJob [Job]:
         ;; to know whether an older page exists)
         define page-job [name ctx]:
             define job (js.jobs.get name)
-            if (None? job):
-                (HTMLResponse "<h1>404</h1><p>no such job</p>" status_code: 404)
-            else:
-                define spec (job.trigger-spec)
-                define page (max 1 (try (int (or (ctx.param "page") 1))
-                    (except: 1)))
-                define offset (* (- page 1) PAGE-SIZE)
-                define rows (if js.store
-                    (js.store.list-runs job: name limit: (+ PAGE-SIZE 1) offset: offset)
-                    #[])
-                (_render env "job.html"
-                    #{"prefix": prefix
-                      "root": root
-                      "name": name
-                      "type": (job._job-kind)
-                      "enabled": job.enabled
-                      "running": job.running
-                      "may_control": (operator? js.access ctx)
-                      "may_trigger": (trigger-allowed? js.access ctx job)
-                      "fields": (if (None? spec) None (_trigger-fields spec))
-                      "runs": (item-slice rows stop: PAGE-SIZE)
-                      "page": page
-                      "has_next": (> (len rows) PAGE-SIZE)
-                      "crumbs": #[#{"label": name}]})
+
+            when (None? job):
+                return (HTMLResponse "<h1>404</h1><p>no such job</p>" status_code: 404)
+
+            define spec (job.trigger-spec)
+            define page (max 1
+                (try
+                    (int (or (ctx.param "page") 1))
+                (except: 1)))
+            define offset (* (- page 1) PAGE-SIZE)
+            define rows (if js.store
+                (js.store.list-runs job: name limit: (+ PAGE-SIZE 1) offset: offset)
+                #[])
+
+            (_render env "job.html"
+                #{"prefix": prefix
+                  "root": root
+                  "name": name
+                  "type": (job._job-kind)
+                  "enabled": job.enabled
+                  "running": job.running
+                  "may_control": (operator? js.access ctx)
+                  "may_trigger": (trigger-allowed? js.access ctx job)
+                  "fields": (unless (None? spec) (_trigger-fields spec))
+                  "runs": (item-slice rows stop: PAGE-SIZE)
+                  "page": page
+                  "has_next": (> (len rows) PAGE-SIZE)
+                  "crumbs": #[#{"label": name}]})
 
         ;; run page: one run's detail (metadata + trigger + captured
         ;; output/result), under its job in the breadcrumb
         define page-run [runid ctx]:
             define detail (js.store.run-detail runid)
-            if (None? detail):
-                (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
-            else:
-                define jobname detail["job"]
-                define job (js.jobs.get jobname)
-                (_render env "run.html"
-                    #{"prefix": prefix
-                      "root": root
-                      "run": detail
-                      "may_retrigger": (and job (trigger-allowed? js.access ctx job))
-                      "crumbs": #[#{"label": jobname "href": (job-url jobname)}
-                                  #{"label": detail["run_id"]}]})
+            when (None? detail):
+                return (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
+
+            define jobname detail["job"]
+            define job (js.jobs.get jobname)
+            (_render env "run.html"
+                #{"prefix": prefix
+                  "root": root
+                  "run": detail
+                  "may_retrigger": (and job (trigger-allowed? js.access ctx job))
+                  "crumbs": #[#{"label": jobname "href": (job-url jobname)}
+                              #{"label": detail["run_id"]}]})
 
         (server.add-page root page-dashboard)
         (server.add-page-item f"{prefix}/jobs" page-job)
@@ -194,24 +199,29 @@ define-class UiJob [Job]:
 
         ;; form actions -> guard, act, then redirect back to the job page
         define do-enable [name ctx]:
-            (if (operator? js.access ctx)
-                (begin (js.enable name) (_redirect (job-url name)))
-                (_forbid))
+            if (operator? js.access ctx):
+                js.enable name
+                _redirect (job-url name)
+            else:
+                (_forbid)
 
         define do-disable [name ctx]:
-            (if (operator? js.access ctx)
-                (begin (js.disable name) (_redirect (job-url name)))
-                (_forbid))
+            if (operator? js.access ctx):
+                js.disable name
+                _redirect (job-url name)
+            else:
+                (_forbid)
 
         define do-retrigger [runid ctx]:
             define trig (js.store.get-trigger runid)
-            define jobname (if (None? trig) None trig["job"])
-            define job (if (None? jobname) None (js.jobs.get jobname))
-            (if (or (None? job) (trigger-allowed? js.access ctx job))
-                (begin
-                    (js.retrigger runid)
-                    (_redirect (if jobname (job-url jobname) root)))
-                (_forbid))
+            define jobname (unless (None? trig) trig["job"])
+            define job (unless (None? jobname) (js.jobs.get jobname))
+
+            if (or (None? job) (trigger-allowed? js.access ctx job)):
+                js.retrigger runid
+                _redirect (if jobname (job-url jobname) root)
+            else:
+                (_forbid)
 
         ;; manual trigger: the job's trigger-spec drives both the form
         ;; fields and the coercion of what comes back; a job whose spec
@@ -219,7 +229,7 @@ define-class UiJob [Job]:
         define do-trigger [name form ctx]:
             import-from fastapi HTTPException
             define job (js.jobs.get name)
-            define spec (if (None? job) None (job.trigger-spec))
+            define spec (unless (None? job) (job.trigger-spec))
             if (None? job):
                 (HTMLResponse "<h1>404</h1><p>no such job</p>" status_code: 404)
             elif (not (trigger-allowed? js.access ctx job)):
