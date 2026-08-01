@@ -21,8 +21,8 @@ Layout handlers for conditional block syntax.
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
 from ...bootstrap import builtin
-from ...types import get_position, unpack, is_pair
-from .helpers import layout
+from ...types import get_position, is_nil, is_pair, unpack
+from .helpers import block_source_from_cons, layout, match_block_source
 
 
 _symbol_case = symbol('case')
@@ -191,35 +191,39 @@ def layout_switch(ns, source, peers):
 
 
 @builtin('layout/match')
-@layout(symbol('layout/match'))
+@layout(symbol('layout/match'), raw=True)
 def layout_match(ns, source, peers):
     """
     Lower a match block source into a flat match form for compilation
 
     eg.
     match (get-value):
-      case [a b c]:
+      case #[a b c]:
         (use a b c)
-      case (x :: int):
+      case x :: int:
         (use x)
-      case 5:
-        (small)
+      case Point[x y]:
+        (use x y)
       else:
         (other)
 
-    The inner case and else children are read by the default layout/block,
-    which splices body forms after the header. Each case takes a single
-    pattern form (use a [ ... ] list for a sequence pattern); this handler
-    walks the match body, validates each child shape, and emits
+    A raw layout: the case and else children arrive as block sources, so
+    each case header (however many tokens) is structurally separate from
+    its body. The whole header tail becomes the clause's pattern
+    delimiter, giving
 
         (compile/match VALUE
-          (PATTERN BODY...)
+          [[PATTERN...] BODY...]
           ...
-          (else: BODY...))
+          [else: BODY...])
 
-    :param source: ((match VALUE) . BODY) pair
+    which is the same clause shape an s-expr author writes directly.
+
+    :param source: ((match VALUE) . BODY) pair with raw block children
     :param peers: must be empty
     """
+
+    from . import apply_layouts
 
     if peers:
         raise LayoutError(
@@ -239,43 +243,53 @@ def layout_match(ns, source, peers):
     clauses = []
     saw_else = False
 
-    for form in unpack(body):
-        if not is_pair(form):
+    for child in unpack(body):
+        child = block_source_from_cons(child) or child
+        matched = match_block_source(child)
+        if matched is None:
             raise LayoutError(
-                'match body may only contain case or else clauses',
-                get_position(form) or get_position(source))
+                'match body may only contain case or else blocks',
+                get_position(child) or get_position(source))
 
-        head = form.car
-        rest_parts = list(unpack(form.cdr))
+        chead, cargs = matched['header'].datum
+        cbody = apply_layouts(matched['body'].datum, ns)
 
-        if head is _symbol_case:
+        if chead is _symbol_case:
             if saw_else:
                 raise LayoutError(
                     'case cannot follow else',
-                    get_position(form))
-            if len(rest_parts) < 2:
+                    get_position(child))
+            if is_nil(cargs):
                 raise LayoutError(
-                    'case requires a pattern and body',
-                    get_position(form))
-            clauses.append(cons(*rest_parts, nil))
+                    'case requires a pattern',
+                    get_position(child))
+            if is_nil(cbody):
+                raise LayoutError(
+                    'case requires a body',
+                    get_position(child))
+            clauses.append(cons(cargs, *unpack(cbody), nil))
 
-        elif head is _symbol_else:
+        elif chead is _symbol_else:
             if saw_else:
                 raise LayoutError(
                     'multiple else clauses are not allowed',
-                    get_position(form))
-            if not rest_parts:
+                    get_position(child))
+            if not is_nil(cargs):
+                raise LayoutError(
+                    'else block does not take arguments',
+                    get_position(child))
+            if is_nil(cbody):
                 raise LayoutError(
                     'else block requires a body',
-                    get_position(form))
-            clauses.append(cons(_keyword_else, *rest_parts, nil))
+                    get_position(child))
+            clauses.append(cons(_keyword_else, *unpack(cbody), nil))
             saw_else = True
 
         else:
             raise LayoutError(
-                'match body may only contain case or else clauses, '
-                'got %r' % (head,),
-                get_position(form))
+                'match body may only contain case or else blocks, '
+                'got %r' % (chead,),
+                get_position(child))
 
     return cons(symbol('compile/match'), value, *clauses, nil)
 

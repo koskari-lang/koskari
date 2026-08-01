@@ -23,10 +23,10 @@ compile/when, and compile/unless.
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, cons, keyword, symbol
+from ...lib import OpCode, keyword
 from ...matcher import (
         CALLEDBY, MATCH, MatchCompiler, REST,
-        parse_matcher, pattern_slot_names)
+        parse_case_pattern, pattern_slot_names)
 from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_pair
@@ -34,7 +34,6 @@ from ..helpers import helper_begin
 
 
 _keyword_else = keyword("else")
-_symbol_form = symbol("FORM")
 
 _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
@@ -161,16 +160,15 @@ def special_switch(compiler, source, tc=False):
 
 def _lower_pattern(pattern, source):
     """
-    Imply ``FORM`` over the case pattern: the pattern's elements are the
-    positional sub-patterns of a sequence matched against the subject.
-    The whole form is handed to the shared matcher surface parser, which
-    classifies and lowers every element (captures, `::` typed captures,
-    literals, `CLASS`, `REST`, ...) -- the special makes no shape
-    decisions of its own.
+    Lower one clause delimiter's content through the runtime
+    case-pattern dialect. parse_case_pattern classifies by head symbol
+    or marker (#list / #tuple sequences, item class sugar, ::-typed,
+    combinators, atoms) -- the special makes no shape decisions of its
+    own.
     """
 
     try:
-        return parse_matcher(cons(_symbol_form, pattern))
+        return parse_case_pattern(pattern)
     except ValueError as exc:
         raise SpecialError(str(exc), source)
 
@@ -179,12 +177,13 @@ def _lower_pattern(pattern, source):
 @special("compile/match", patterns=_DEFAULT_PATTERNS)
 def special_match(compiler, source, tc=False):
     """
-    Compile (compile/match SUBJECT (PATTERN BODY...) ... (else: BODY...)).
+    Compile (compile/match SUBJECT [[PATTERN] BODY...] ... [else: BODY...]).
     Evaluates SUBJECT once, then tries each arm's pattern in order. The
     first matching arm binds its captured names and runs its body, whose
-    value is the result. An (else: BODY...) arm always matches; with no
-    else and no match the form yields None. FORM is implied over each
-    pattern, so its elements are the positional pieces of a sequence.
+    value is the result. An [else: BODY...] arm always matches; with no
+    else and no match the form yields None. Each arm's pattern rides in
+    its own delimiter list ahead of the body and is classified by the
+    case-pattern dialect (see design/language/match-pattern-language.md).
     """
 
     called_by, cl = source

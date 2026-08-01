@@ -14,9 +14,10 @@
 """
 Tests for koskari.reader.layouts.conditionals layout_match
 
-Match / case / else block syntax parsing. Inner case and else blocks are
-read by the default layout/block, which splices body forms after the
-header. Each case carries a single pattern form.
+Match / case / else block syntax parsing. A raw layout: each case
+header (however many tokens) is wrapped whole into the clause's
+pattern delimiter, so the emitted clause is [[PATTERN...] BODY...] --
+the same shape an s-expr author writes directly.
 """
 
 
@@ -40,10 +41,10 @@ _keyword_else = keyword('else')
 
 class TestLayoutMatch(IsolatedAsyncioTestCase):
 
-    async def test_match_basic(self):
+    async def test_match_single_form_patterns(self):
         src = """
         match x:
-          case [a b c]:
+          case #[a b]:
             "seq"
           case 5:
             "five"
@@ -53,27 +54,24 @@ class TestLayoutMatch(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_symbol_match, symbol('x'),
-             (cons(symbol('a'), symbol('b'), symbol('c'), nil), "seq"),
-             (5, "five"),
+             (((symbol('#list'), symbol('a'), symbol('b')),), "seq"),
+             ((5,), "five"),
              (_keyword_else, "meh"))
         )
 
         self.assertEqual(parse_layout(src), expected)
 
 
-    async def test_match_no_else(self):
+    async def test_match_multi_token_pattern(self):
         src = """
         match x:
-          case [a b]:
-            "two"
-          case y:
-            "bound"
+          case y :: int:
+            y
         """
 
         expected = pycons(
             (_symbol_match, symbol('x'),
-             (cons(symbol('a'), symbol('b'), nil), "two"),
-             (symbol('y'), "bound"))
+             ((symbol('y'), keyword('::'), symbol('int')), symbol('y')))
         )
 
         self.assertEqual(parse_layout(src), expected)
@@ -97,7 +95,7 @@ class TestLayoutMatch(IsolatedAsyncioTestCase):
     async def test_match_multi_body(self):
         src = """
         match x:
-          case [a]:
+          case y:
             (foo)
             (bar)
           else:
@@ -107,7 +105,7 @@ class TestLayoutMatch(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_symbol_match, symbol('x'),
-             (cons(symbol('a'), nil), (symbol('foo'),), (symbol('bar'),)),
+             ((symbol('y'),), (symbol('foo'),), (symbol('bar'),)),
              (_keyword_else,
               (symbol('baz'),), (symbol('qux'),)))
         )
@@ -120,7 +118,7 @@ class TestLayoutMatchValidation(IsolatedAsyncioTestCase):
     async def test_match_missing_value(self):
         src = """
         match:
-          case [a]:
+          case y:
             "a"
         """
 
@@ -130,17 +128,28 @@ class TestLayoutMatchValidation(IsolatedAsyncioTestCase):
     async def test_match_extra_value(self):
         src = """
         match x y:
-          case [a]:
+          case z:
             "a"
         """
 
         self.assertRaises(LayoutError, parse_layout, src)
 
 
-    async def test_match_invalid_body_form(self):
+    async def test_match_case_missing_pattern(self):
         src = """
         match x:
-          (foo 1)
+          case:
+            "a"
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+
+    async def test_match_else_with_arguments(self):
+        src = """
+        match x:
+          else y:
+            "a"
         """
 
         self.assertRaises(LayoutError, parse_layout, src)
