@@ -9,6 +9,14 @@ Implemented (branch `match-case`). The user-facing **`match`** expression is a
 constants, runtime `PySequence_Fast` adapter, and the surface matcher parser it
 drives were already landed.
 
+**This doc is the runtime / opcode machinery** — `MATCH_CASE`,
+`MATCH_STORE_NAMES`, the `KOS_CACHE_MATCHER` cache, and the lowering. The
+**surface pattern language** (clause delimiter, head-driven classifier,
+reader-sugar heads, guards) is specced in
+[match-pattern-language.md](match-pattern-language.md); its delimiter /
+head-driven model supersedes the interim imply-`FORM` special described under
+"Design principle" and "Surface syntax" below.
+
 ## What it is
 
 `match` destructures a value **as a sequence**. Each `case` supplies the
@@ -100,6 +108,13 @@ The subject is wrapped as a length-1 sequence on entry so the whole value
 matches as one spine element. Each arm re-runs its matcher, re-adapting the
 subject (`PySequence_Fast` is near-free when it is already a list/tuple); the
 rollup's adapt-once dynnode strategy is a deferred optimization.
+
+**Guard support (planned):** the 4th `EXTRA` slot (currently `NOARG`) becomes a
+`keep`-subject flag. When set, a match does **not** pop the subject — it leaves
+it on the stack and pushes the captures — so a `when` / `unless` guard can run
+after binding and either advance to the next arm (subject intact) or `POP` the
+subject and commit. See
+[match-pattern-language.md](match-pattern-language.md) §Guards.
 
 ### Matcher constant and the `KOS_CACHE_MATCHER` cache slot
 
@@ -248,6 +263,9 @@ directly. seq-values-kwargs remains a later optimization, not a prerequisite.
 
 ## Related
 
+- [match-pattern-language.md](match-pattern-language.md) — the surface pattern
+  language (clause delimiter, head vocabulary, reader sugars, guards) and the
+  universal shape-detection vision.
 - [matcher-ng-rollup.md](matcher-ng-rollup.md) — unified matcher; Phase 8 is this
   form.
 - [../archive/switch-eq-opcodes.md](../archive/switch-eq-opcodes.md) — `SWITCH_EQ`

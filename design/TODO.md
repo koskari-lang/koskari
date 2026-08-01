@@ -287,15 +287,10 @@ runtime match and from `define-values` / `setq-values` kwargs paths.
 
 Ref: [language/seq-values-kwargs-formals-apply.md](language/seq-values-kwargs-formals-apply.md).
 
-### Runtime `match` form, `match/case` layout, and `MATCH_CASE` lowering
+### Runtime `match` form, `match/case` layout, and pattern language
 
-**Landed.** Sequence-unpacking `match`: `MATCH_CASE` / `MATCH_STORE_NAMES`
-opcodes with the `KOS_CACHE_MATCHER` per-site cache, a `compile/match` special
-that implies `FORM` and delegates all pattern parsing to `parse_matcher`, the
-`layout/match` reader block, and the `*: name` rest rule on the matcher spine
-composites. Remaining optional follow-up: the adapt-once subject dynnode.
-
-Ref: [language/match-case-form.md](language/match-case-form.md);
+Ref: [language/match-pattern-language.md](language/match-pattern-language.md)
+(surface); [language/match-case-form.md](language/match-case-form.md) (opcodes);
 [language/matcher-ng-rollup.md](language/matcher-ng-rollup.md) (Phase 8).
 
 ### `RETURN` frame-only; `return-shift` for delim continuations

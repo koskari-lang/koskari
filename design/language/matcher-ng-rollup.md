@@ -1556,12 +1556,13 @@ through Phase 6.
 ### Phase 8 — Runtime match/case *(implemented)*
 
 Runtime `match` is a **sequence-unpacking** form over the same matcher
-constants. Full design in [match-case-form.md](match-case-form.md). The special
-makes no shape decisions: it **implies `FORM`** over each case pattern and hands
-the whole form to `parse_matcher`, so pattern classification (captures, `::`
-typed captures, literals, `CLASS`, `REST`) is entirely the matcher's. `*: name`
-rest is a matcher-surface rule on the spine composites (`form_factory` /
-`match_factory`), not a match-only convenience.
+constants. Opcodes / lowering in [match-case-form.md](match-case-form.md); the
+surface pattern language (clause delimiter, head-driven classifier,
+reader-sugar heads, guards, and the universal shape-detection vision) in
+[match-pattern-language.md](match-pattern-language.md). The special makes no
+shape decisions — all pattern classification is the matcher's, dispatched on
+head. `*: name` rest is a matcher-surface rule on the spine composites
+(`form_factory` / `match_factory`), not a match-only convenience.
 
 Two new opcodes carry the lowering, styled on the `SWITCH_EQ` chain: **`MATCH_CASE`**
 (run an arm's frozen matcher against the subject held on the stack; no-match keeps
