@@ -318,34 +318,38 @@ define _format_arg [code op_style arg cpool local_names closure_names
           return (_format_cmpsrc_row arg ext schema cpool
                                      local_names closure_names)
 
-        define parts #[]
-        for-each [[val fk] (zip ext schema)]:
-          if (or (equal? fk OpStyle.CONST) (equal? fk OpStyle.VAR)):
-            if (and (<= 0 val) (< val (len cpool))):
-              (define prefix
-                (if (equal? fk OpStyle.CONST) "c" "v"))
-              (define cval (item cpool val))
-              (define inner
-                (if (and (equal? fk OpStyle.CONST)
-                        (instance? cval NamespaceSpec))
-                  then: (_format_nspec_inline val cval)
-                  else: (_format_constant cval)))
-              (parts.append f"{prefix}#{val} ({inner})")
-            else:
-              parts.append (str val)
+        define parts:
+          list-each [[val fk] (zip ext schema)]:
+            switch fk:
+              case [OpStyle.CONST OpStyle.VAR]:
+                if (and (<= 0 val) (< val (len cpool))):
+                  define prefix:
+                    (if (equal? fk OpStyle.CONST) "c" "v")
 
-          elif (equal? fk OpStyle.FASTVAR):
-            parts.append (_format_fast_part val local_names closure_names)
-          elif (equal? fk OpStyle.COUNT):
-            parts.append (str val)
-          elif (equal? fk OpStyle.CMP):
-            parts.append (_compare_name val)
-          elif (equal? fk OpStyle.OPERAND):
-            parts.append (_operand_name val)
-          elif (equal? fk OpStyle.LABEL):
-            parts.append f"-> {val}"
-          else:
-            parts.append (str val)
+                  define cval cpool[val]
+                  define inner:
+                    if (and (equal? fk OpStyle.CONST)
+                            (instance? cval NamespaceSpec)):
+                      (_format_nspec_inline val cval)
+                    else:
+                      (_format_constant cval)
+
+                  f"{prefix}#{val} ({inner})"
+                else:
+                  (str val)
+
+              case [OpStyle.FASTVAR]:
+                (_format_fast_part val local_names closure_names)
+              case [OpStyle.COUNT]:
+                (str val)
+              case [OpStyle.CMP]:
+                (_compare_name val)
+              case [OpStyle.OPERAND]:
+                (_operand_name val)
+              case [OpStyle.LABEL]:
+                f"-> {val}"
+              else:
+                (str val)
 
         define joined (", ".join parts)
         return f"{arg} ({joined})"
@@ -462,7 +466,8 @@ define dis [x file: None]:
     set! code (_get_code x)
     unless code:
       raise (TypeError
-          f"expected Code, Expression, Function, or BoundMethod, got {(attr (type x) __name__)}")
+          "expected Code, Expression, Function, or"-
+          f" BoundMethod, got {(attr (type x) __name__)}")
 
   set! out (_resolve_file out)
   define cpool code.constants_pool
