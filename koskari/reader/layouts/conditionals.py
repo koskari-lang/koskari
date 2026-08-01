@@ -190,4 +190,94 @@ def layout_switch(ns, source, peers):
     return cons(symbol('compile/switch'), value, *clauses, nil)
 
 
+@builtin('layout/match')
+@layout(symbol('layout/match'))
+def layout_match(ns, source, peers):
+    """
+    Lower a match block source into a flat match form for compilation
+
+    eg.
+    match (get-value):
+      case [a b c]:
+        (use a b c)
+      case (x :: int):
+        (use x)
+      case 5:
+        (small)
+      else:
+        (other)
+
+    The inner case and else children are read by the default layout/block,
+    which splices body forms after the header. Each case takes a single
+    pattern form (use a [ ... ] list for a sequence pattern); this handler
+    walks the match body, validates each child shape, and emits
+
+        (compile/match VALUE
+          (PATTERN BODY...)
+          ...
+          (else: BODY...))
+
+    :param source: ((match VALUE) . BODY) pair
+    :param peers: must be empty
+    """
+
+    if peers:
+        raise LayoutError(
+            'match does not take peers',
+            get_position(source))
+
+    header, body = source
+    header_parts = list(unpack(header))
+    pargs = header_parts[1:]
+
+    if len(pargs) != 1:
+        raise LayoutError(
+            'match block requires exactly one value expression',
+            get_position(source))
+
+    value = pargs[0]
+    clauses = []
+    saw_else = False
+
+    for form in unpack(body):
+        if not is_pair(form):
+            raise LayoutError(
+                'match body may only contain case or else clauses',
+                get_position(form) or get_position(source))
+
+        head = form.car
+        rest_parts = list(unpack(form.cdr))
+
+        if head is _symbol_case:
+            if saw_else:
+                raise LayoutError(
+                    'case cannot follow else',
+                    get_position(form))
+            if len(rest_parts) < 2:
+                raise LayoutError(
+                    'case requires a pattern and body',
+                    get_position(form))
+            clauses.append(cons(*rest_parts, nil))
+
+        elif head is _symbol_else:
+            if saw_else:
+                raise LayoutError(
+                    'multiple else clauses are not allowed',
+                    get_position(form))
+            if not rest_parts:
+                raise LayoutError(
+                    'else block requires a body',
+                    get_position(form))
+            clauses.append(cons(_keyword_else, *rest_parts, nil))
+            saw_else = True
+
+        else:
+            raise LayoutError(
+                'match body may only contain case or else clauses, '
+                'got %r' % (head,),
+                get_position(form))
+
+    return cons(symbol('compile/match'), value, *clauses, nil)
+
+
 # The end.

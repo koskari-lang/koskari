@@ -130,4 +130,68 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "two")
 
 
+class TestMatchLayout(SpecialsTestCase):
+    """
+    End-to-end tests through the match/case block layout, which lowers to
+    the compile/match special.
+    """
+
+    async def test_layout_sequence_binds(self):
+        src = """
+        match data:
+          case [a b c]:
+            b
+          else:
+            0
+        """
+        expr, mod = self.compile_expr(src, data=(1, 2, 3))
+        self.assertEqual(await expr(), 2)
+
+
+    async def test_layout_scalar_literal(self):
+        src = """
+        match data:
+          case 1:
+            "one"
+          case 5:
+            "five"
+          else:
+            "meh"
+        """
+        expr, mod = self.compile_expr(src, data=5)
+        self.assertEqual(await expr(), "five")
+
+
+    async def test_layout_typed_extern(self):
+        src = """
+        match data:
+          case (x :: int):
+            x
+          else:
+            "nope"
+        """
+        expr, mod = self.compile_expr(src, data=7, int=int)
+        self.assertEqual(await expr(), 7)
+
+
+    async def test_layout_rest_and_no_else(self):
+        src = """
+        match data:
+          case [a *: rest]:
+            a
+        """
+        expr, mod = self.compile_expr(src, data=(1, 2, 3))
+        self.assertEqual(await expr(), 1)
+
+
+    async def test_layout_no_match_no_else_is_none(self):
+        src = """
+        match data:
+          case [a b]:
+            b
+        """
+        expr, mod = self.compile_expr(src, data=(1, 2, 3))
+        self.assertEqual(await expr(), None)
+
+
 # The end.
