@@ -289,12 +289,18 @@ Ref: [language/seq-values-kwargs-formals-apply.md](language/seq-values-kwargs-fo
 
 ### Runtime `match` form, `match/case` layout, and `MATCH_CASE` lowering
 
-Reader layout, compile lowering per arm, opcode applier (analogous to
-`SWITCH_EQ`), constant pools with extern names from local env, and
-syntax-rules-style namespace mapping for committed arms; depends on seq-values
-kwargs foundation where arm binding requires it.
+Design settled; implementation pending. A `match/case` reader layout and a
+`compile/match` special lower each arm through the Phase 6 matcher parser to a
+frozen 6-tuple const, then emit a `SWITCH_EQ`-style chain of two new opcodes:
+**`MATCH_CASE`** (test + branch on the stacked subject, thawing its matcher once
+into a new `KOS_CACHE_MATCHER` per-site cache slot, externs loaded from the local
+env) and **`MATCH_STORE_NAMES`** (bind the committed arm's captures into the arm
+namespace by name in one dispatch, `ABSENT` for unbound slots). Arm binding is
+inlined, so seq-values kwargs is **not** blocking. Implementation order: opcodes +
+cache kind, reader layout, `compile/match` special, tests.
 
-Ref: [language/match-case-form.md](language/match-case-form.md).
+Ref: [language/match-case-form.md](language/match-case-form.md) (full design);
+[language/matcher-ng-rollup.md](language/matcher-ng-rollup.md) (Phase 8).
 
 ### `RETURN` frame-only; `return-shift` for delim continuations
 

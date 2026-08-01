@@ -1553,17 +1553,29 @@ Per-special-form authoring remains either Python **`matcher`** builders or,
 after broader **`define-matcher`** integration, surface matcher syntax lowered
 through Phase 6.
 
-### Phase 8 — Runtime match/case *(pending)*
+### Phase 8 — Runtime match/case *(design settled; implementation pending)*
 
-Add runtime `match` syntax using the same matcher constants.
+Add runtime `match` syntax using the same matcher constants. Full design in
+[match-case-form.md](match-case-form.md).
+
+Two new opcodes carry the lowering, styled on the `SWITCH_EQ` chain: **`MATCH_CASE`**
+(run an arm's frozen matcher against the subject held on the stack; no-match keeps
+the subject and jumps, first match pops it and deposits the `MatchResult`) and
+**`MATCH_STORE_NAMES`** (bind the committed arm's captures into the arm namespace by
+name in one dispatch). The arm matcher rides as a frozen 6-tuple const; `MATCH_CASE`
+thaws it once into a new **`KOS_CACHE_MATCHER`** per-site cache slot (the simplest
+`KosCacheSlot` kind — one owned ref, no guard/version/miss, since the thaw is a pure
+function of the const). Arm binding is inlined per arm, so the seq-values-kwargs
+foundation is not on the critical path.
 
 Runtime flow:
 
-1. Evaluate subject.
-2. Adapt subject once (sequence adapter at runtime).
+1. Evaluate subject once; keep it on the stack across the arm chain.
+2. Per arm, `MATCH_CASE` re-adapts the subject and runs the arm matcher (adapt-once
+   via a dynnode is a deferred optimization).
 3. Run case matchers in order.
-4. Apply captures to namespace.
-5. Execute selected body.
+4. On the first match, `MATCH_STORE_NAMES` binds captures into the namespace.
+5. Execute the selected body.
 
 ### Phase 9 — Hygiene extraction migration *(partial)*
 
