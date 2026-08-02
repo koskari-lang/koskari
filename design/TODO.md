@@ -293,6 +293,14 @@ Ref: [language/match-pattern-language.md](language/match-pattern-language.md)
 (surface); [language/match-case-form.md](language/match-case-form.md) (opcodes);
 [language/matcher-ng-rollup.md](language/matcher-ng-rollup.md) (Phase 8).
 
+### `define-matcher` parameterized matcher templates
+
+Named, parameterized matcher construction from the native units,
+module-scoped via `matcher/NAME` namespace resolution. The type and value
+association semantics are deliberately open for deliberation.
+
+Ref: [language/define-matcher.md](language/define-matcher.md).
+
 ### `RETURN` frame-only; `return-shift` for delim continuations
 
 Split ordinary return from delimited-continuation rebound: `RETURN`

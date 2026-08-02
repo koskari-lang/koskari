@@ -230,9 +230,10 @@ remaining work is surface spelling plus a few additions (`?`, `app`/`=`, the
 - **Single-element delimiter content**: a lone atom is capture/literal, a lone
   headed form is that construct; sequences are always the explicit `#`-form, so
   bare juxtaposition inside the delimiter is never a silent sequence.
-- **`define-matcher`** extensibility (Racket `define-match-expander` analog) for
-  the universal-substrate goal.
 - **`rule/case`** simple tier — deferred (above).
+
+Parameterized matcher templates (`define-matcher`) are a **separate
+effort** with their own design: [define-matcher.md](define-matcher.md).
 
 ## Related
 
