@@ -77,6 +77,39 @@ class TestLayoutMatch(IsolatedAsyncioTestCase):
         self.assertEqual(parse_layout(src), expected)
 
 
+    async def test_match_when_guard(self):
+        src = """
+        match x:
+          case y when (big y):
+            y
+        """
+
+        expected = pycons(
+            (_symbol_match, symbol('x'),
+             ((symbol('y'),), keyword('when'),
+              (symbol('big'), symbol('y')), symbol('y')))
+        )
+
+        self.assertEqual(parse_layout(src), expected)
+
+
+    async def test_match_unless_guard_multi_token_pattern(self):
+        src = """
+        match x:
+          case y :: int unless (big y):
+            y
+        """
+
+        expected = pycons(
+            (_symbol_match, symbol('x'),
+             ((symbol('y'), keyword('::'), symbol('int')),
+              keyword('unless'),
+              (symbol('big'), symbol('y')), symbol('y')))
+        )
+
+        self.assertEqual(parse_layout(src), expected)
+
+
     async def test_match_else_only(self):
         src = """
         match x:
@@ -150,6 +183,16 @@ class TestLayoutMatchValidation(IsolatedAsyncioTestCase):
         match x:
           else y:
             "a"
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+
+    async def test_match_guard_without_pattern(self):
+        src = """
+        match x:
+          case when (big x):
+            x
         """
 
         self.assertRaises(LayoutError, parse_layout, src)

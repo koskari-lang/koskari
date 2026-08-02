@@ -206,6 +206,76 @@ class TestMatchCaseOpcode(CevalTest):
         self.assertEqual(await fn(), 5)
 
 
+class TestMatchCaseKeepFlag(CevalTest):
+    """
+    Tests for the keep-subject flag (EXTRA a3). With keep set, a match
+    leaves the subject on the stack beneath the pushed capture dict, so
+    a guard can later advance (subject intact) or POP it to commit. A
+    no-match is unchanged: subject left, jump taken.
+    """
+
+
+    async def test_keep_match_leaves_subject_under_captures(self):
+        """
+        keep=1 match pushes captures over the retained subject; after
+        MATCH_STORE_NAMES pops the dict, the subject is TOS
+        """
+
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["MATCH_CASE", ("elsebody", frozen(MATCH(CAPTURE("x"))), (), 1)],
+            ["MATCH_STORE_NAMES", ("x",)],
+            ["RETURN", 1],
+            ["LABEL", "elsebody"],
+            ["POP", 1],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("x",))
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 5)
+
+
+    async def test_keep_match_still_binds_captures(self):
+        """
+        keep=1 binding works as usual; dropping the retained subject
+        then reading the bound name yields the capture
+        """
+
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["MATCH_CASE", ("elsebody", frozen(MATCH(CAPTURE("x"))), (), 1)],
+            ["MATCH_STORE_NAMES", ("x",)],
+            ["POP", 1],
+            ["VAR", "x"],
+            ["RETURN", 1],
+            ["LABEL", "elsebody"],
+            ["POP", 1],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("x",))
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 5)
+
+
+    async def test_keep_no_match_jumps_leaving_subject(self):
+        """
+        keep=1 no-match behaves exactly like keep=0: subject left on the
+        stack, jump to the label
+        """
+
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["MATCH_CASE", ("elsebody", frozen(MATCH(LITERAL(10))), (), 1)],
+            ["POP", 1],
+            ["CONST", 111],
+            ["RETURN", 1],
+            ["LABEL", "elsebody"],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 5)
+
+
 class TestMatchStoreNamesOpcode(CevalTest):
     """
     Tests for MATCH_STORE_NAMES, exercised through a matching MATCH_CASE

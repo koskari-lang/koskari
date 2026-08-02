@@ -14,18 +14,22 @@
 */
 
 /**
-  MATCH_CASE: arg = extra index. Schema (LABEL, CONST, CONST, NOARG):
+  MATCH_CASE: arg = extra index. Schema (LABEL, CONST, CONST, COUNT):
   row.a0 = no-match target PC, row.a1 = frozen matcher 6-tuple cpool
-  index, row.a2 = externs name tuple cpool index. Cache: one
-  KOS_CACHE_MATCHER slot holding the Matcher thawed from row.a1.
+  index, row.a2 = externs name tuple cpool index, row.a3 = keep-subject
+  flag. Cache: one KOS_CACHE_MATCHER slot holding the Matcher thawed
+  from row.a1.
 
   Stack [..., subject] with subject = TOS. The subject is wrapped as a
   length-1 sequence so the whole value matches as one spine element, then
   the arm matcher runs against it with an extern env resolved from the
   local namespace. On no match: leave the subject and jump to row.a0. On
-  the first match: drop the subject and push the capture dict, falling
-  through to the arm's MATCH_STORE_NAMES (or a POP for a capture-less arm)
-  and its body.
+  the first match: push the capture dict for the arm's MATCH_STORE_NAMES
+  (or a following POP for a capture-less arm). When the keep flag is
+  clear the match consumes the subject; when set (a guarded arm) the
+  subject stays beneath the capture dict, and the guard code is
+  responsible for either jumping to row.a0 with the subject intact or
+  popping it before the arm body commits.
 */
 
 KOS_OP_HANDLER_COLD(MATCH_CASE) {
@@ -126,12 +130,15 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     return EVAL_NORMAL();
   }
 
-  /* Committed: drop the subject, push the capture dict for the arm's
-     MATCH_STORE_NAMES (or a following POP for a capture-less arm). */
+  /* Matched: push the capture dict for the arm's MATCH_STORE_NAMES (or
+     a following POP for a capture-less arm). Without the keep flag the
+     subject is consumed here; with it (a guarded arm) the subject stays
+     beneath the dict for the guard's advance-or-commit. */
   PyObject *caps = ((KosMatchResult *) result)->captures;
   Py_INCREF(caps);
   Py_DECREF(result);
-  KosEvalState_StackDropNoErr(es, 1);
+  if (! row.a3)
+    KosEvalState_StackDropNoErr(es, 1);
   return kos_op_result_PUSH(es, caps);
 }
 

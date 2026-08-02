@@ -316,7 +316,7 @@ OP(UNPACK_VAR, 0, EXTRA, VAR, VAR, NOARG, NOARG)
 OP(UNPACK_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
 
 // runtime match/case dispatch — subject held on the stack across arms
-OP(MATCH_CASE, 1, EXTRA, LABEL, CONST, CONST, NOARG)  // no-match label; frozen matcher tuple; externs name tuple; cache: thawed Matcher
+OP(MATCH_CASE, 1, EXTRA, LABEL, CONST, CONST, COUNT)  // no-match label; frozen matcher tuple; externs name tuple; keep-subject flag; cache: thawed Matcher
 OP(MATCH_STORE_NAMES, 0, CONST)  // names tuple; bind the matched arm's captures into the namespace by name
 
 // THEEND must always be last

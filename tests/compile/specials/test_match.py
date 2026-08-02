@@ -205,6 +205,82 @@ class TestMatchSpecial(SpecialsTestCase):
             self.compile_expr(src, data=(1, 2, 3))
 
 
+class TestMatchGuards(SpecialsTestCase):
+    """
+    when: / unless: guards run after the pattern binds; a failed guard
+    advances to the next arm with the subject intact.
+    """
+
+    async def test_when_guard_passes(self):
+        src = """
+        (compile/match data
+          [[x :: int] when: (big x) "big"]
+          [else: "other"])
+        """
+        big = lambda v: v > 10  # noqa: E731
+        expr, mod = self.compile_expr(src, data=50, int=int, big=big)
+        self.assertEqual(await expr(), "big")
+
+
+    async def test_when_guard_fails_advances(self):
+        src = """
+        (compile/match data
+          [[x :: int] when: (big x) "big"]
+          [[y :: int] "small"]
+          [else: "other"])
+        """
+        big = lambda v: v > 10  # noqa: E731
+        expr, mod = self.compile_expr(src, data=5, int=int, big=big)
+        self.assertEqual(await expr(), "small")
+
+
+    async def test_unless_guard(self):
+        src = """
+        (compile/match data
+          [[x :: int] unless: (big x) "small"]
+          [else: "other"])
+        """
+        big = lambda v: v > 10  # noqa: E731
+        expr, mod = self.compile_expr(src, data=5, int=int, big=big)
+        self.assertEqual(await expr(), "small")
+        expr, mod = self.compile_expr(src, data=50, int=int, big=big)
+        self.assertEqual(await expr(), "other")
+
+
+    async def test_guard_sees_bound_captures(self):
+        src = """
+        (compile/match data
+          [[#[a b]] when: (bigger a b) a]
+          [[#[a b]] b]
+          [else: 0])
+        """
+        bigger = lambda x, y: x > y  # noqa: E731
+        expr, mod = self.compile_expr(src, data=(9, 2), bigger=bigger)
+        self.assertEqual(await expr(), 9)
+        expr, mod = self.compile_expr(src, data=(2, 9), bigger=bigger)
+        self.assertEqual(await expr(), 9)
+
+
+    async def test_guard_fail_then_else(self):
+        src = """
+        (compile/match data
+          [[x] when: (big x) "big"]
+          [else: "meh"])
+        """
+        big = lambda v: v > 10  # noqa: E731
+        expr, mod = self.compile_expr(src, data=5, big=big)
+        self.assertEqual(await expr(), "meh")
+
+
+    async def test_guard_missing_expression_raises(self):
+        src = """
+        (compile/match data
+          [[x] when:])
+        """
+        with self.assertRaises(SpecialError):
+            self.compile_expr(src, data=5)
+
+
 class TestMatchLayout(SpecialsTestCase):
     """
     End-to-end tests through the match/case block layout, which wraps
@@ -290,6 +366,38 @@ class TestMatchLayout(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, data=(1, 2, 3))
         self.assertEqual(await expr(), None)
+
+
+    async def test_layout_when_guard(self):
+        src = """
+        match data:
+          case x :: int when (big x):
+            "big"
+          case y :: int:
+            "small"
+          else:
+            "other"
+        """
+        big = lambda v: v > 10  # noqa: E731
+        expr, mod = self.compile_expr(src, data=50, int=int, big=big)
+        self.assertEqual(await expr(), "big")
+        expr, mod = self.compile_expr(src, data=5, int=int, big=big)
+        self.assertEqual(await expr(), "small")
+
+
+    async def test_layout_unless_guard(self):
+        src = """
+        match data:
+          case x unless (big x):
+            "small"
+          else:
+            "big"
+        """
+        big = lambda v: v > 10  # noqa: E731
+        expr, mod = self.compile_expr(src, data=5, big=big)
+        self.assertEqual(await expr(), "small")
+        expr, mod = self.compile_expr(src, data=50, big=big)
+        self.assertEqual(await expr(), "big")
 
 
 class TestMatchExternResolution(SpecialsTestCase):
