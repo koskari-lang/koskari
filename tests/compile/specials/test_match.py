@@ -196,6 +196,36 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "odd")
 
 
+    async def test_match_mapping(self):
+        src = """
+        (compile/match data
+          [[#{"kind": "job" "url": u}] u]
+          [[#{"kind": k}] k]
+          [else: "other"])
+        """
+        expr, mod = self.compile_expr(
+            src, data={"kind": "job", "url": "http://x"})
+        self.assertEqual(await expr(), "http://x")
+        expr, mod = self.compile_expr(src, data={"kind": "task"})
+        self.assertEqual(await expr(), "task")
+        expr, mod = self.compile_expr(src, data={"nope": 1})
+        self.assertEqual(await expr(), "other")
+
+
+    async def test_match_mapping_extern_key(self):
+        src = """
+        (compile/match data
+          [[#{field: v}] v]
+          [else: "missing"])
+        """
+        expr, mod = self.compile_expr(
+            src, data={"dyn": 42}, field="dyn")
+        self.assertEqual(await expr(), 42)
+        expr, mod = self.compile_expr(
+            src, data={"dyn": 42}, field="absent")
+        self.assertEqual(await expr(), "missing")
+
+
     async def test_match_app_extraction(self):
         src = """
         (compile/match data

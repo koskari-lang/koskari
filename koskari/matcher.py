@@ -59,6 +59,8 @@ __all__ = (
     "TYPE",
     "PREDICATE",
     "APP",
+    "MAP",
+    "MAPENTRY",
     "CAPTURE",
     "FORM",
     "MATCH",
@@ -1113,6 +1115,105 @@ class APP(Pattern):
         if self._sub is None:
             return f"(APP {self._extern})"
         return f"(APP {self._extern} {kos_repr(self._sub)})"
+
+
+class MAPENTRY:
+    """
+    One mapping-pattern entry: a key plus an optional sub-pattern for
+    the looked-up value. The key is a literal constant, or -- when
+    ``extern`` is true -- an extern name resolved from the namespace at
+    match time (the same channel as TYPE / CLASS names). Not a Pattern:
+    only meaningful as a child of MAP
+    """
+
+
+    def __init__(self, key, sub=None, extern=False):
+        """
+        :param key: literal key value, or extern name str when extern
+        :param sub: optional pattern applied to the looked-up value
+        :param extern: when true, key is an extern binding name
+        :raises TypeError: when sub is not a pattern, or extern is set
+            and key is not a str
+        """
+
+        if extern:
+            check_str_arg(key, "MAPENTRY extern key")
+        if sub is not None:
+            check_pattern_arg(sub, "MAPENTRY sub")
+        self._key = key
+        self._sub = sub
+        self._extern = extern
+
+
+    def lower(self, ctx):
+        """
+        Intern the key, emit the sub-pattern, then a MENTRY node
+        """
+
+        if self._extern:
+            tag = "MENTRY_EXTERN"
+            ref = ctx.intern_extern(self._key)
+        else:
+            tag = "MENTRY_CONST"
+            ref = ctx.intern_const(self._key)
+        sub_idx = self._sub.lower(ctx) if self._sub is not None else -1
+        return ctx.append_node((tag, ref, sub_idx))
+
+
+    def visit(self, fn):
+        if self._sub is not None:
+            self._sub.visit(fn)
+
+
+    def __repr__(self):
+        parts = [repr(self._key)]
+        if self._sub is not None:
+            parts.append(repr(self._sub))
+        if self._extern:
+            parts.append("extern=True")
+        return f"MAPENTRY({', '.join(parts)})"
+
+
+class MAP(Pattern):
+    """
+    Match a single element as a mapping (dict or collections.abc
+    Mapping): every entry's key must be present with a value matching
+    the entry's sub-pattern. Extra keys are ignored, per PEP 634
+    mapping-pattern semantics
+    """
+
+
+    def __init__(self, *entries):
+        """
+        :param entries: MAPENTRY children
+        :raises TypeError: when an entry is not a MAPENTRY
+        """
+
+        for entry in entries:
+            if not isinstance(entry, MAPENTRY):
+                raise TypeError(
+                    f"MAP entries must be MAPENTRY, got {entry!r}")
+        self._entries = entries
+
+
+    def lower(self, ctx):
+        """
+        Emit each entry then a MAP node chaining them
+        """
+
+        idxs = [entry.lower(ctx) for entry in self._entries]
+        return ctx.append_node(("MAP",) + tuple(idxs))
+
+
+    def visit(self, fn):
+        fn(self)
+        for entry in self._entries:
+            entry.visit(fn)
+
+
+    def __repr__(self):
+        inner = ", ".join(repr(entry) for entry in self._entries)
+        return f"MAP({inner})"
 
 
 class MATCH(Pattern):
@@ -3663,6 +3764,11 @@ CASE_ELEMENT_PATTERN = ONEOF(
                 ONEOF(LITERAL_SYM("#list"), LITERAL_SYM("#tuple"))),
         REST("seq_elems"))),
 
+    # mapping sugar: (#dict (#tuple KEY VAL) ...)
+    FORM(MATCH(
+        CAPTURE("map_head", LITERAL_SYM("#dict")),
+        REST("map_entries"))),
+
     # class sugar: (item Name field...)
     FORM(MATCH(
         CAPTURE("class_head", LITERAL_SYM("item")),
@@ -3726,6 +3832,35 @@ CASE_DELIM_PATTERN = ONEOF(
 
 
 CASE_DELIM_MATCHER = make_matcher(MATCH(CASE_DELIM_PATTERN))
+
+
+def _lower_case_map(entries):
+    """
+    Lower the entries of a mapping sugar pattern ((#dict (#tuple KEY
+    VAL) ...), written #{KEY: VAL ...}). A symbol key is an extern
+    resolved from the namespace at match time (the same channel as type
+    and class names); any other atom is a literal key. Each value is a
+    case-pattern element for the looked-up value
+    """
+
+    lowered = []
+    for entry in unpack(entries):
+        items = list(unpack(entry)) if is_pair(entry) else []
+        if len(items) != 3 or not is_symbol(items[0]) \
+                or str(items[0]) != "#tuple":
+            raise ValueError(
+                f"#{{...}} pattern entry must be a key: value pair,"
+                f" got {entry!r}")
+        key, val = items[1], items[2]
+        sub = parse_case_element(val)
+        if is_symbol(key):
+            lowered.append(MAPENTRY(str(key), sub, extern=True))
+        elif is_pair(key):
+            raise ValueError(
+                f"#{{...}} pattern key must be an atom, got {key!r}")
+        else:
+            lowered.append(MAPENTRY(key, sub))
+    return MAP(*lowered)
 
 
 def _lower_case_class(name_sym, fields):
@@ -3808,6 +3943,10 @@ def parse_case_element(elem):
         elems = c["seq_elems"].datum if "seq_elems" in c else nil
         return FORM(MATCH(
             *_lower_spine_children(elems, parse_case_element)))
+
+    if "map_head" in c:
+        entries = c["map_entries"].datum if "map_entries" in c else nil
+        return _lower_case_map(entries)
 
     if "class_head" in c:
         name = c["class_name"].datum

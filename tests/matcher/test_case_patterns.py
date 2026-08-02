@@ -35,6 +35,7 @@ from koskari.matcher import (
     CLASS,
     FORM,
     LITERAL,
+    MAP,
     MATCH,
     MatchCompiler,
     NOT,
@@ -374,6 +375,146 @@ class TestCasePatternMatching(unittest.TestCase):
         self.assertEqual(caps["a"], 1)
         self.assertEqual(caps["b"], 2)
         self.assertEqual(caps["z"], 3)
+
+
+def _dict_entry(key, val):
+    """
+    Build one reader-shaped mapping entry: (#tuple KEY VAL)
+    """
+
+    return _list(symbol("#tuple"), key, val)
+
+
+def _dict_pattern(*entries):
+    """
+    Build a reader-shaped mapping pattern: (#dict (#tuple K V) ...)
+    """
+
+    return _list(symbol("#dict"), *entries)
+
+
+class TestClassifyMap(unittest.TestCase):
+
+    def test_literal_key_bind_value(self):
+        # #{"kind": k}
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(_dict_entry("kind", symbol("k")))))
+        self.assertIsInstance(pat, MAP)
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[1], ("k",))
+        self.assertEqual(frozen[2], ())
+
+    def test_extern_key(self):
+        # #{key: v} -- symbol key resolves from the namespace
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(_dict_entry(symbol("key"), symbol("v")))))
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[1], ("v",))
+        self.assertEqual(frozen[2], ("key",))
+
+    def test_empty_map(self):
+        # #{} -- bare mapping check
+        pat = parse_case_pattern(_delim(_dict_pattern()))
+        self.assertIsInstance(pat, MAP)
+
+    def test_malformed_entry_raises(self):
+        with self.assertRaises(ValueError):
+            parse_case_pattern(_delim(
+                _dict_pattern(_list(symbol("#tuple"), "only-key"))))
+
+    def test_pair_key_raises(self):
+        with self.assertRaises(ValueError):
+            parse_case_pattern(_delim(
+                _dict_pattern(_dict_entry(
+                    _list(symbol("f"), 1), symbol("v")))))
+
+
+class TestMapMatching(unittest.TestCase):
+    """
+    MAP: match a mapping element; each entry's key must be present with
+    a value matching the sub-pattern; extra keys are ignored (PEP 634).
+    """
+
+    def test_literal_key_hit_and_bind(self):
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(
+                _dict_entry("kind", "job"),
+                _dict_entry("url", symbol("u")))))
+        matched, caps = _match_value(
+            pat, {"kind": "job", "url": "http://x", "extra": 1})
+        self.assertTrue(matched)
+        self.assertEqual(caps["u"], "http://x")
+
+    def test_missing_key_misses(self):
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(_dict_entry("kind", symbol("k")))))
+        self.assertFalse(_match_value(pat, {"other": 1})[0])
+
+    def test_value_pattern_misses(self):
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(_dict_entry("kind", "job"))))
+        self.assertFalse(_match_value(pat, {"kind": "task"})[0])
+
+    def test_extern_key_resolved_at_match_time(self):
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(_dict_entry(symbol("key"), symbol("v")))))
+        matched, caps = _match_value(
+            pat, {"dynamic": 9}, key="dynamic")
+        self.assertTrue(matched)
+        self.assertEqual(caps["v"], 9)
+        self.assertFalse(
+            _match_value(pat, {"dynamic": 9}, key="absent")[0])
+
+    def test_non_mapping_misses(self):
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(_dict_entry("kind", symbol("k")))))
+        self.assertFalse(_match_value(pat, (1, 2))[0])
+        self.assertFalse(_match_value(pat, "kind")[0])
+        self.assertFalse(_match_value(pat, 5)[0])
+
+    def test_abc_mapping_accepted(self):
+        import collections
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(_dict_entry("a", symbol("v")))))
+        subject = collections.ChainMap({"a": 3}, {"b": 4})
+        matched, caps = _match_value(pat, subject)
+        self.assertTrue(matched)
+        self.assertEqual(caps["v"], 3)
+
+    def test_empty_map_is_bare_mapping_check(self):
+        pat = parse_case_pattern(_delim(_dict_pattern()))
+        self.assertTrue(_match_value(pat, {})[0])
+        self.assertTrue(_match_value(pat, {"any": 1})[0])
+        self.assertFalse(_match_value(pat, (1, 2))[0])
+
+    def test_nested_value_patterns(self):
+        # #{"point": Point[a b] "tags": #[t *: r]}
+        cls = _list(symbol("item"), symbol("Point"),
+                    symbol("a"), symbol("b"))
+        seq = _list(symbol("#list"), symbol("t"),
+                    keyword("*"), symbol("r"))
+        pat = parse_case_pattern(_delim(
+            _dict_pattern(
+                _dict_entry("point", cls),
+                _dict_entry("tags", seq))))
+        matched, caps = _match_value(
+            pat, {"point": Point(1, 2), "tags": ("x", "y", "z")},
+            Point=Point)
+        self.assertTrue(matched)
+        self.assertEqual(caps["a"], 1)
+        self.assertEqual(caps["b"], 2)
+        self.assertEqual(caps["t"], "x")
+        self.assertEqual(caps["r"], ("y", "z"))
+
+    def test_map_in_sequence(self):
+        # #[#{"id": i} y]
+        mp = _dict_pattern(_dict_entry("id", symbol("i")))
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), mp, symbol("y"))))
+        matched, caps = _match_value(pat, ({"id": 7}, 8))
+        self.assertTrue(matched)
+        self.assertEqual(caps["i"], 7)
+        self.assertEqual(caps["y"], 8)
 
 
 class TestAppMatching(unittest.TestCase):

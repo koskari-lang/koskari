@@ -40,6 +40,8 @@ typedef enum {
   KOS_MATCH_NODE_FIELD,
   KOS_MATCH_NODE_SAME,
   KOS_MATCH_NODE_APP,
+  KOS_MATCH_NODE_MAP,
+  KOS_MATCH_NODE_MENTRY,
   KOS_MATCH_NODE_KIND_COUNT
 } KosMatchNodeKind;
 
@@ -49,6 +51,13 @@ typedef enum {
   KOS_MATCH_FIELD_KEYWORD,
   KOS_MATCH_FIELD_KIND_COUNT
 } KosMatchFieldKind;
+
+
+typedef enum {
+  KOS_MATCH_MAPKEY_CONST = 0,   /* key_ref indexes matcher->consts */
+  KOS_MATCH_MAPKEY_EXTERN,      /* key_ref indexes externs / extern_env */
+  KOS_MATCH_MAPKEY_KIND_COUNT
+} KosMatchMapKeyKind;
 
 
 typedef enum {
@@ -168,6 +177,22 @@ typedef struct {
 
 
 typedef struct {
+  uint32_t first_entry;   /* head of a MENTRY chain via next, or
+                             KOS_MATCH_NO_INDEX for a bare mapping
+                             check */
+} KosMatchMap;
+
+
+typedef struct {
+  uint16_t key_kind;      /* KosMatchMapKeyKind */
+  uint16_t reserved;
+  uint32_t key_ref;       /* const or extern index, per key_kind */
+  uint32_t subnode;       /* width-1 sub-matcher for the looked-up
+                             value; KOS_MATCH_NO_INDEX = presence only */
+} KosMatchMentry;
+
+
+typedef struct {
   uint16_t kind;
   uint16_t flags;
   uint32_t next;         /* next sibling in GROUP, next branch in ONEOF,
@@ -190,6 +215,8 @@ typedef struct {
     KosMatchField    field;
     KosMatchSame     same;
     KosMatchApp      app;
+    KosMatchMap      map;
+    KosMatchMentry   mentry;
   } as;
 } KosMatchNode;
 
@@ -536,6 +563,33 @@ int KosMatcherBuilder_AppendClass(
     KosMatcherBuilder *builder,
     uint32_t type_extern,
     const uint32_t *fields,
+    Py_ssize_t count);
+
+/**
+   Append a MENTRY node: one mapping-pattern entry. key_kind selects
+   whether key_ref indexes the consts pool (a literal key) or the
+   extern table (a key resolved from the namespace at match time);
+   subnode is an existing width-1 sub-matcher for the looked-up value,
+   or KOS_MATCH_NO_INDEX for a presence-only check.
+
+   Returns the index of the new MENTRY node, or -1 on error.
+ */
+int KosMatcherBuilder_AppendMentry(
+    KosMatcherBuilder *builder,
+    uint16_t key_kind,
+    uint32_t key_ref,
+    uint32_t subnode);
+
+/**
+   Append a MAP node whose entries are the supplied MENTRY-node indices
+   in order, stitched into a chain through their `next` links (same
+   contract as KosMatcherBuilder_AppendClass over FIELDs).
+
+   Returns the index of the new MAP node, or -1 on error.
+ */
+int KosMatcherBuilder_AppendMap(
+    KosMatcherBuilder *builder,
+    const uint32_t *entries,
     Py_ssize_t count);
 
 /**
