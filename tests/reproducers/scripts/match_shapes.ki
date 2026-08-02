@@ -1,0 +1,183 @@
+;; Reproducer: runtime match/case over a dataclass shape hierarchy.
+;;
+;; Point, Plane, Square, and Cube are @dataclass define-classes, so
+;; positional class patterns resolve fields through __match_args__.  The
+;; verify functions drive one consumer through the whole pattern
+;; vocabulary: class patterns, keyword-field literals, guards, or / not,
+;; sequences with rest, mappings with literal and computed keys, app
+;; extraction, typed captures, and the string-atom rule.
+
+
+import-from dataclasses dataclass
+
+
+@dataclass
+define-class Point []:
+    define x :: int 0
+    define y :: int 0
+
+
+@dataclass
+define-class Plane []:
+    define w :: int 0
+    define h :: int 0
+
+
+@dataclass
+define-class Square []:
+    define side :: int 0
+
+
+@dataclass
+define-class Cube []:
+    define side :: int 0
+
+
+define area [shape]:
+    match shape:
+        case Point[x y]:
+            0
+        case Square[s]:
+            (* s s)
+        case Plane[w h]:
+            (* w h)
+        case Cube[s]:
+            (* 6 s s)
+        else:
+            None
+
+
+define describe [shape]:
+    match shape:
+        case Point[x: 0 y: 0]:
+            "origin"
+        case Point[x y]:
+            "point"
+        case Square[s] when (> s 100):
+            "big-square"
+        case (or Square[s] Cube[s]):
+            "equal-sided"
+        case Plane[w h] unless (equal? w h):
+            "plane"
+        case Plane[w h]:
+            "square-plane"
+        else:
+            "unknown"
+
+
+define side-of [shape]:
+    match shape:
+        case (or Square[s] Cube[s]):
+            s
+        else:
+            None
+
+
+define summarize [shapes]:
+    match shapes:
+        case #[]:
+            "empty"
+        case #[(only :: Point)]:
+            "one-point"
+        case #[first *: rest]:
+            (len rest)
+        else:
+            "not-a-sequence"
+
+
+define from-message [msg]:
+    match msg:
+        case #{"shape": "square" "side": s}:
+            (Square s)
+        case #{"shape": "plane" "w": w "h": h}:
+            (Plane w h)
+        case #{"x": x "y": y}:
+            (Point x y)
+        else:
+            None
+
+
+define lookup [msg key]:
+    match msg:
+        case #{key: v}:
+            v
+        else:
+            None
+
+
+define grade [shape]:
+    match shape:
+        case (app area 0):
+            "flat"
+        case (app area (a :: int)) when (> a 100):
+            "large"
+        case (app area (a :: int)):
+            "small"
+        else:
+            "unmeasured"
+
+
+define verify_area []:
+    (and (equal? (area (Point 3 5)) 0)
+         (equal? (area (Square 12)) 144)
+         (equal? (area (Plane 4 8)) 32)
+         (equal? (area (Cube 3)) 54)
+         (equal? (area "nonsense") None))
+
+
+define verify_describe []:
+    (and (equal? (describe (Point 0 0)) "origin")
+         (equal? (describe (Point 3 5)) "point")
+         (equal? (describe (Square 500)) "big-square")
+         (equal? (describe (Square 12)) "equal-sided")
+         (equal? (describe (Cube 3)) "equal-sided")
+         (equal? (describe (Plane 4 8)) "plane")
+         (equal? (describe (Plane 6 6)) "square-plane")
+         (equal? (describe 99) "unknown"))
+
+
+define verify_or_pattern []:
+    (and (equal? (side-of (Square 7)) 7)
+         (equal? (side-of (Cube 9)) 9)
+         (equal? (side-of (Plane 2 3)) None))
+
+
+define verify_sequences []:
+    (and (equal? (summarize #()) "empty")
+         (equal? (summarize #((Point 1 2))) "one-point")
+         (equal? (summarize #((Square 1))) 0)
+         (equal? (summarize #((Cube 1) (Cube 2) (Cube 3))) 2)
+         ;; strings are atoms, never sequences (PEP 634)
+         (equal? (summarize "abc") "not-a-sequence")
+         (equal? (summarize 55) "not-a-sequence"))
+
+
+define verify_mappings []:
+    define sq (from-message #{"shape": "square" "side": 9})
+    define pl (from-message #{"shape": "plane" "w": 2 "h": 3})
+    define pt (from-message #{"x": 1 "y": 2})
+    (and (equal? sq (Square 9))
+         (equal? pl (Plane 2 3))
+         (equal? pt (Point 1 2))
+         (equal? (from-message #{"unrelated": True}) None)
+         ;; extra keys are ignored
+         (equal? (from-message #{"x": 1 "y": 2 "z": 3}) (Point 1 2))
+         ;; non-mappings fall through
+         (equal? (from-message #(1 2)) None))
+
+
+define verify_computed_key []:
+    define msg #{"alpha": 1 "beta": 2}
+    (and (equal? (lookup msg "alpha") 1)
+         (equal? (lookup msg "beta") 2)
+         (equal? (lookup msg "gamma") None))
+
+
+define verify_extraction []:
+    (and (equal? (grade (Point 1 1)) "flat")
+         (equal? (grade (Square 20)) "large")
+         (equal? (grade (Square 5)) "small")
+         (equal? (grade "nonsense") "unmeasured"))
+
+
+;; The end.

@@ -1,0 +1,138 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Example: match/case over a small dataclass shape hierarchy
+
+Point, Plane, Square, and Cube are plain dataclasses; @dataclass provides
+__match_args__, so positional class patterns like Square[s] destructure
+fields by position. The match arms show class patterns, keyword-field
+literals, guards, or-patterns, sequence patterns, and mapping patterns.
+"""
+
+
+import-from dataclasses dataclass
+
+
+@dataclass
+define-class Point []:
+    """ a location; encloses no area """
+
+    define x :: int 0
+    define y :: int 0
+
+
+@dataclass
+define-class Plane []:
+    """ a rectangular region """
+
+    define w :: int 0
+    define h :: int 0
+
+
+@dataclass
+define-class Square []:
+    """ a plane with equal sides """
+
+    define side :: int 0
+
+
+@dataclass
+define-class Cube []:
+    """ a solid with equal sides """
+
+    define side :: int 0
+
+
+define area [shape]:
+    """ dispatch on shape class, destructuring fields positionally """
+
+    match shape:
+        case Point[x y]:
+            0
+        case Square[s]:
+            (* s s)
+        case Plane[w h]:
+            (* w h)
+        case Cube[s]:
+            (* 6 s s)
+        else:
+            None
+
+
+define describe [shape]:
+    """ keyword-field literals and guards refine the dispatch """
+
+    match shape:
+        case Point[x: 0 y: 0]:
+            "the origin"
+        case Point[x y]:
+            f"a point at {x},{y}"
+        case Square[s] when (> s 100):
+            "a big square"
+        case (or Square[s] Cube[s]):
+            f"an equal-sided shape, side {s}"
+        case Plane[w h] unless (equal? w h):
+            f"a {w} by {h} plane"
+        case Plane[w h]:
+            "a square plane in disguise"
+        else:
+            "no idea"
+
+
+define summarize [shapes]:
+    """ sequence patterns destructure the collection itself """
+
+    match shapes:
+        case #[]:
+            "nothing"
+        case #[only]:
+            f"just {(describe only)}"
+        case #[first *: rest]:
+            f"{(describe first)} and {(len rest)} more"
+
+
+define from-message [msg]:
+    """ mapping patterns pick apart dict-shaped input """
+
+    match msg:
+        case #{"shape": "square" "side": s}:
+            (Square s)
+        case #{"shape": "plane" "w": w "h": h}:
+            (Plane w h)
+        case #{"x": x "y": y}:
+            (Point x y)
+        else:
+            None
+
+
+when-main:
+    define shapes #((Point 0 0) (Point 3 5) (Square 12) (Square 500)
+                    (Plane 4 8) (Plane 6 6) (Cube 3))
+
+    for-each [s shapes]:
+        print s "->" (describe s) "| area:" (area s)
+
+    print "summarize:" (summarize shapes)
+    print "summarize:" (summarize #((Cube 2)))
+    print "summarize:" (summarize #())
+
+    for-each [m #(#{"shape": "square" "side": 9}
+                  #{"shape": "plane" "w": 2 "h": 3}
+                  #{"x": 1 "y": 2}
+                  #{"unrelated": True})]:
+        print m "->" (from-message m)
+
+
+;; The end.
