@@ -25,7 +25,7 @@ compile/when, and compile/unless.
 from ...exceptions import SpecialError
 from ...lib import OpCode, keyword
 from ...matcher import (
-        CALLEDBY, MATCH, MatchCompiler, REST, parse_case_pattern)
+    CALLEDBY, MATCH, MatchCompiler, REST, parse_case_pattern)
 from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_pair
