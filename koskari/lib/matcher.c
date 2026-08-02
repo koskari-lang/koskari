@@ -2004,23 +2004,20 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 
 
 /**
-   Enforce the matcher's synchronous-callable contract: matching never
-   enters the evaluator, so a callable extern (predicate, APP extractor)
-   that returns an awaitable is an error, never silently truthy and
-   never auto-awaited. Koskari callables must be demand-wrapped by the
-   caller. Returns 0 when res is an ordinary value; -1 with TypeError
-   set when it is awaitable.
+   Invoke a callable extern (predicate, APP extractor) on one argument
+   through the demand path. Matching never enters the evaluator, so the
+   call is driven synchronously: koskari callables run on a demand eval
+   drive, plain Python awaitable results are eagerly stepped, and a
+   genuine async suspension raises KoskariSyncViolation. Returns a new
+   reference, or NULL with an exception set.
 */
-static int matcher_check_sync_result(PyObject *res, const char *what) {
-  if (res && Py_TYPE(res)->tp_as_async
-      && Py_TYPE(res)->tp_as_async->am_await) {
-    PyErr_Format(PyExc_TypeError,
-                 "matcher %s returned an awaitable %.200s; matcher"
-                 " externs must be synchronous (demand-wrap koskari"
-                 " callables)", what, Py_TYPE(res)->tp_name);
-    return -1;
-  }
-  return 0;
+static PyObject *matcher_call_extern(PyObject *fn, PyObject *arg) {
+  PyObject *args = PyTuple_Pack(1, arg);
+  if (! args)
+    return NULL;
+  PyObject *res = Koskari_DemandSync(fn, args, NULL);
+  Py_DECREF(args);
+  return res;
 }
 
 
@@ -2587,13 +2584,9 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
     }
     PyObject *pred = PyTuple_GET_ITEM(e->extern_env, t->ref_index);
     PyObject *got = matcher_peel_datum(elem);
-    PyObject *res = PyObject_CallOneArg(pred, got);
+    PyObject *res = matcher_call_extern(pred, got);
     if (! res)
       return -1;
-    if (matcher_check_sync_result(res, "predicate")) {
-      Py_DECREF(res);
-      return -1;
-    }
     int r = PyObject_IsTrue(res);
     Py_DECREF(res);
     if (r < 0)
@@ -3294,10 +3287,11 @@ static int match_one_field(
 /**
    APP: call the extractor extern on the current spine element and match
    the sub-pattern against the call's result. The extractor is invoked
-   synchronously (an awaitable result raises); a raising extractor
-   propagates as an error, never a no-match. The result is matched in
-   its own synthesized single-element subject, same as a CLASS field's
-   projected value.
+   through the demand path (a plain koskari callable works directly; a
+   genuine async suspension raises KoskariSyncViolation); a raising
+   extractor propagates as an error, never a no-match. The result is
+   matched in its own synthesized single-element subject, same as a
+   CLASS field's projected value.
 */
 static int match_app(
     MatchEngine *e,
@@ -3319,13 +3313,9 @@ static int match_app(
   PyObject *fn = PyTuple_GET_ITEM(e->extern_env, n->as.app.fn_extern);
   PyObject *got = matcher_peel_datum(elem);
 
-  PyObject *res = PyObject_CallOneArg(fn, got);
+  PyObject *res = matcher_call_extern(fn, got);
   if (! res)
     return -1;
-  if (matcher_check_sync_result(res, "extractor")) {
-    Py_DECREF(res);
-    return -1;
-  }
 
   if (n->as.app.subnode == KOS_MATCH_NO_INDEX) {
     Py_DECREF(res);

@@ -1064,9 +1064,10 @@ class APP(Pattern):
     """
     Apply the named extern callable to a single source element and match
     the inner pattern against the call's result. The extern is invoked
-    synchronously at match time (an awaitable result raises; demand-wrap
-    koskari callables); a raising extractor propagates as an error, not
-    a no-match
+    through the demand path at match time, so a plain koskari callable
+    works directly; a genuine async suspension raises
+    KoskariSyncViolation, and a raising extractor propagates as an
+    error, not a no-match
     """
 
 

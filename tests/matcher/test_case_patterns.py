@@ -358,8 +358,9 @@ class TestCasePatternMatching(unittest.TestCase):
 class TestAppMatching(unittest.TestCase):
     """
     APP: apply an extern extractor to the element and match the result.
-    The extractor is synchronous; an awaitable result raises and a
-    raising extractor propagates.
+    The extractor is invoked through the demand path -- an awaitable
+    result is driven to completion, a genuine async suspension raises
+    KoskariSyncViolation, and a raising extractor propagates.
     """
 
     def test_extraction_and_bind(self):
@@ -409,13 +410,29 @@ class TestAppMatching(unittest.TestCase):
         self.assertTrue(_match_value(pat, 10, half=half)[0])
         self.assertFalse(_match_value(pat, 8, half=half)[0])
 
-    def test_awaitable_result_raises(self):
+    def test_async_extractor_driven_by_demand(self):
+        # an immediately-completing coroutine result is stepped to its
+        # value on the demand path
         async def afn(v):
+            return v * 2
+        pat = parse_case_pattern(_delim(
+            _list(symbol("app"), symbol("f"), symbol("x"))))
+        m = thaw(_frozen(pat))
+        r = m.match((5,), f=afn)
+        self.assertTrue(r.matched)
+        self.assertEqual(r.captures["x"].datum, 10)
+
+    def test_suspending_extractor_raises_sync_violation(self):
+        import asyncio
+        from koskari.lib import KoskariSyncViolation
+
+        async def afn(v):
+            await asyncio.sleep(0)
             return v
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"), symbol("x"))))
         m = thaw(_frozen(pat))
-        with self.assertRaises(TypeError):
+        with self.assertRaises(KoskariSyncViolation):
             m.match((5,), f=afn)
 
     def test_raising_extractor_propagates(self):
@@ -427,14 +444,14 @@ class TestAppMatching(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             m.match((5,), f=bad)
 
-    def test_awaitable_predicate_result_raises(self):
+    def test_async_predicate_driven_by_demand(self):
         async def apred(v):
-            return True
+            return v > 3
         pat = parse_case_pattern(_delim(
             _list(symbol("?"), symbol("p"))))
         m = thaw(_frozen(pat))
-        with self.assertRaises(TypeError):
-            m.match((5,), p=apred)
+        self.assertTrue(m.match((5,), p=apred).matched)
+        self.assertFalse(m.match((1,), p=apred).matched)
 
 
 # The end.
