@@ -2202,6 +2202,27 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 
 
 /**
+   Cached collections.abc.Sequence, resolved lazily on the first
+   non-fast-path FORM descent and then immortal — the same shape as
+   get_abc_mapping, for the same reason: the FORM miss path runs for
+   every non-sequence element that flows past a sequence arm. Returns a
+   borrowed reference, or NULL with an exception set.
+*/
+static PyObject *get_abc_sequence(void) {
+  static PyObject *abc_sequence_type = NULL;
+
+  if (! abc_sequence_type) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    abc_sequence_type = PyObject_GetAttrString(abc, "Sequence");
+    Py_DECREF(abc);
+  }
+  return abc_sequence_type;
+}
+
+
+/**
    Invoke a callable extern (predicate, APP extractor) on one argument
    through the demand path. Matching never enters the evaluator, so the
    call is driven synchronously: koskari callables run on a demand eval
@@ -2874,14 +2895,35 @@ static int match_form(
 
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
 
-  /* PEP 634: str / bytes / bytearray are atoms to sequence patterns —
+  /* PEP 634 sequence-pattern gate. str / bytes / bytearray are atoms —
      destructuring a string into characters is never what a match
-     meant. Soft no-match, same as any other non-sequence. */
+     meant. Beyond the KosPair spine and the list/tuple fast paths,
+     only collections.abc.Sequence instances descend: mappings and sets
+     are not sequences (PySequence_Fast would happily iterate a dict's
+     keys), and an iterator must never be silently consumed by a
+     failed arm. Soft no-match for all of them. */
   PyObject *peeled = matcher_peel_datum(elem);
   if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
       || PyByteArray_Check(peeled)) {
     e->in_from_datum = saved_in;
     return 0;
+  }
+  if (! (KosPair_Check(peeled) || KosNilP(peeled)
+         || PyList_Check(peeled) || PyTuple_Check(peeled))) {
+    PyObject *seq_type = get_abc_sequence();
+    if (! seq_type) {
+      e->in_from_datum = saved_in;
+      return -1;
+    }
+    int isinst = PyObject_IsInstance(peeled, seq_type);
+    if (isinst < 0) {
+      e->in_from_datum = saved_in;
+      return -1;
+    }
+    if (! isinst) {
+      e->in_from_datum = saved_in;
+      return 0;
+    }
   }
 
   KosMatchSubject sub;

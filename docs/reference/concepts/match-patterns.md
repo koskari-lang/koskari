@@ -63,10 +63,15 @@ list is never silently a sequence. Length must agree unless a `*: rest`
 marker captures the remaining elements. Inside a sequence, a typed element
 must be parenthesized: `#[(x :: int) y]`.
 
-**Strings are not sequences.** `str`, `bytes`, and `bytearray` never
-destructure into characters under a sequence pattern (the same rule as
-Python's PEP 634): `"hi"` falls past `#[a b]` untouched. A string still
-matches as a whole value — as a literal, a capture, or `s :: str`.
+**Only real sequences destructure.** A sequence pattern matches lists,
+tuples, and other `collections.abc.Sequence` instances (`range`, for
+example) — the same rule as Python's PEP 634. `str`, `bytes`, and
+`bytearray` never destructure into characters; mappings never
+destructure into their keys (they belong to `#{...}` arms); sets are
+not sequences; and an iterator flowing past a sequence arm is never
+silently consumed. All of these fall through as a soft no-match — a
+string still matches as a whole value (a literal, a capture, or
+`s :: str`), and a dict still matches mapping arms.
 
 ### Classes
 

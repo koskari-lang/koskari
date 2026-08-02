@@ -335,6 +335,37 @@ class TestCasePatternMatching(unittest.TestCase):
         self.assertFalse(_match_value(pat, b"plain")[0])
         self.assertFalse(_match_value(pat, bytearray(b"plain"))[0])
 
+    def test_mappings_and_sets_are_not_sequences(self):
+        # PEP 634: sequence patterns match Sequence instances only — a
+        # dict must not destructure into its keys, nor a set into its
+        # elements
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), symbol("b"),
+                  keyword("*"), symbol("r"))))
+        self.assertFalse(_match_value(pat, {"a": 1, "b": 2})[0])
+        self.assertFalse(_match_value(pat, {1, 2, 3})[0])
+
+    def test_iterators_are_not_sequences_and_not_consumed(self):
+        # an iterator flowing past a sequence arm must miss without
+        # being advanced
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), symbol("b"),
+                  keyword("*"), symbol("r"))))
+        it = iter((1, 2, 3))
+        self.assertFalse(_match_value(pat, it)[0])
+        self.assertEqual(next(it), 1)
+
+    def test_sequence_abc_instances_match(self):
+        # a genuine non-list Sequence (range) destructures normally
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), symbol("b"),
+                  keyword("*"), symbol("r"))))
+        matched, caps = _match_value(pat, range(4))
+        self.assertTrue(matched)
+        self.assertEqual(caps["a"], 0)
+        self.assertEqual(caps["b"], 1)
+        self.assertEqual(caps["r"], (2, 3))
+
     def test_string_still_matches_as_atom(self):
         # excluded from sequences, but still a literal / capture / typed
         # subject as a whole value

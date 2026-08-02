@@ -201,7 +201,7 @@ hygienic composite or by `VALUE` / `BODY`.
 | `LITERAL_KW(s)` | Keyword `keyword(s)` | No |
 | `LITERAL_SYM(s)` | Symbol `symbol(s)` | No |
 | `MATCH(p1, p2, …)` | Sequence on current spine | Inner `CAPTURE` / `GROUP` slots |
-| `FORM(inner)` | One element; match `inner` on its contents. `str` / `bytes` / `bytearray` elements are **atoms, not sequences** (PEP 634): soft no-match | Via inner |
+| `FORM(inner)` | One element; match `inner` on its contents. Runtime descent is PEP 634-gated: KosPair / list / tuple / `collections.abc.Sequence` only — `str`/`bytes`/`bytearray` are atoms, mappings / sets / iterators soft no-match (an iterator is never consumed by a failed arm) | Via inner |
 | `GROUP(slot, …)` | Nested dict frame | `captures[slot]` → dict or `DatumFrame`; anonymous `GROUP(None, …)` is scratch only |
 | `ONEOF(b1, b2, …)` | First succeeding branch | Per-branch capture scopes |
 | `REPEAT(sub, min_count=0)` | Greedy repeat | List via wrapping `CAPTURE` |

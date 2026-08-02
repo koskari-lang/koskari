@@ -576,3 +576,22 @@ tags:
   - mapping
   - "surface:block"
   - destructure
+---
+id: match-mapping-not-sequence-001
+feature: special/compile/match
+source: |-
+  (match #{"a": 1 "b": 2} [[#[x y]] "keys?"] [[#{"a": v}] v] [else: "other"])
+  
+verify:
+  eval: "1"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - mapping
+  - idiom
+  - pitfall
+notes: a mapping never destructures into its keys under a sequence pattern (PEP 634); it falls through to mapping arms
