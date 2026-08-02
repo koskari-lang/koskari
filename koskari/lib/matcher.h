@@ -41,7 +41,7 @@ typedef enum {
   KOS_MATCH_NODE_SAME,
   KOS_MATCH_NODE_APP,
   KOS_MATCH_NODE_MAP,
-  KOS_MATCH_NODE_MENTRY,
+  KOS_MATCH_NODE_MAP_ENTRY,
   KOS_MATCH_NODE_KIND_COUNT
 } KosMatchNodeKind;
 
@@ -177,7 +177,7 @@ typedef struct {
 
 
 typedef struct {
-  uint32_t first_entry;   /* head of a MENTRY chain via next, or
+  uint32_t first_entry;   /* head of a MAP_ENTRY chain via next, or
                              KOS_MATCH_NO_INDEX for a bare mapping
                              check */
 } KosMatchMap;
@@ -189,7 +189,7 @@ typedef struct {
   uint32_t key_ref;       /* const or extern index, per key_kind */
   uint32_t subnode;       /* width-1 sub-matcher for the looked-up
                              value; KOS_MATCH_NO_INDEX = presence only */
-} KosMatchMentry;
+} KosMatchMapEntry;
 
 
 typedef struct {
@@ -216,7 +216,7 @@ typedef struct {
     KosMatchSame     same;
     KosMatchApp      app;
     KosMatchMap      map;
-    KosMatchMentry   mentry;
+    KosMatchMapEntry   map_entry;
   } as;
 } KosMatchNode;
 
@@ -566,22 +566,22 @@ int KosMatcherBuilder_AppendClass(
     Py_ssize_t count);
 
 /**
-   Append a MENTRY node: one mapping-pattern entry. key_kind selects
+   Append a MAP_ENTRY node: one mapping-pattern entry. key_kind selects
    whether key_ref indexes the consts pool (a literal key) or the
    extern table (a key resolved from the namespace at match time);
    subnode is an existing width-1 sub-matcher for the looked-up value,
    or KOS_MATCH_NO_INDEX for a presence-only check.
 
-   Returns the index of the new MENTRY node, or -1 on error.
+   Returns the index of the new MAP_ENTRY node, or -1 on error.
  */
-int KosMatcherBuilder_AppendMentry(
+int KosMatcherBuilder_AppendMapEntry(
     KosMatcherBuilder *builder,
     uint16_t key_kind,
     uint32_t key_ref,
     uint32_t subnode);
 
 /**
-   Append a MAP node whose entries are the supplied MENTRY-node indices
+   Append a MAP node whose entries are the supplied MAP_ENTRY-node indices
    in order, stitched into a chain through their `next` links (same
    contract as KosMatcherBuilder_AppendClass over FIELDs).
 

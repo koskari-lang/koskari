@@ -60,7 +60,7 @@ __all__ = (
     "PREDICATE",
     "APP",
     "MAP",
-    "MAPENTRY",
+    "MAP_ENTRY",
     "CAPTURE",
     "FORM",
     "MATCH",
@@ -1117,7 +1117,7 @@ class APP(Pattern):
         return f"(APP {self._extern} {kos_repr(self._sub)})"
 
 
-class MAPENTRY:
+class MAP_ENTRY:
     """
     One mapping-pattern entry: a key plus an optional sub-pattern for
     the looked-up value. The key is a literal constant, or -- when
@@ -1137,9 +1137,9 @@ class MAPENTRY:
         """
 
         if extern:
-            check_str_arg(key, "MAPENTRY extern key")
+            check_str_arg(key, "MAP_ENTRY extern key")
         if sub is not None:
-            check_pattern_arg(sub, "MAPENTRY sub")
+            check_pattern_arg(sub, "MAP_ENTRY sub")
         self._key = key
         self._sub = sub
         self._extern = extern
@@ -1147,14 +1147,14 @@ class MAPENTRY:
 
     def lower(self, ctx):
         """
-        Intern the key, emit the sub-pattern, then a MENTRY node
+        Intern the key, emit the sub-pattern, then a MAP_ENTRY node
         """
 
         if self._extern:
-            tag = "MENTRY_EXTERN"
+            tag = "MAP_ENTRY_EXTERN"
             ref = ctx.intern_extern(self._key)
         else:
-            tag = "MENTRY_CONST"
+            tag = "MAP_ENTRY_CONST"
             ref = ctx.intern_const(self._key)
         sub_idx = self._sub.lower(ctx) if self._sub is not None else -1
         return ctx.append_node((tag, ref, sub_idx))
@@ -1171,7 +1171,7 @@ class MAPENTRY:
             parts.append(repr(self._sub))
         if self._extern:
             parts.append("extern=True")
-        return f"MAPENTRY({', '.join(parts)})"
+        return f"MAP_ENTRY({', '.join(parts)})"
 
 
 class MAP(Pattern):
@@ -1185,14 +1185,14 @@ class MAP(Pattern):
 
     def __init__(self, *entries):
         """
-        :param entries: MAPENTRY children
-        :raises TypeError: when an entry is not a MAPENTRY
+        :param entries: MAP_ENTRY children
+        :raises TypeError: when an entry is not a MAP_ENTRY
         """
 
         for entry in entries:
-            if not isinstance(entry, MAPENTRY):
+            if not isinstance(entry, MAP_ENTRY):
                 raise TypeError(
-                    f"MAP entries must be MAPENTRY, got {entry!r}")
+                    f"MAP entries must be MAP_ENTRY, got {entry!r}")
         self._entries = entries
 
 
@@ -3867,12 +3867,12 @@ def _lower_case_map(entries):
         key, val = items[1], items[2]
         sub = parse_case_element(val)
         if is_symbol(key):
-            lowered.append(MAPENTRY(str(key), sub, extern=True))
+            lowered.append(MAP_ENTRY(str(key), sub, extern=True))
         elif is_pair(key):
             raise ValueError(
                 f"#{{...}} pattern key must be an atom, got {key!r}")
         else:
-            lowered.append(MAPENTRY(key, sub))
+            lowered.append(MAP_ENTRY(key, sub))
     return MAP(*lowered)
 
 

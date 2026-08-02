@@ -212,8 +212,8 @@ hygienic composite or by `VALUE` / `BODY`.
 | `CLASS(name, FIELD…)` | Extern-typed object with fields | Via `FIELD` captures |
 | `FIELD(pat)` / `FIELD(name, pat)` | One field | Inner slot |
 | `APP(fn, sub=None)` | Call extern `fn` on the element (demand path), match `sub` against the result in a projected single-element subject; a raising extractor propagates, a genuine async suspension raises `KoskariSyncViolation` | Via `sub` |
-| `MAP(MAPENTRY…)` | One mapping element (dict or `collections.abc.Mapping`); each entry's key must be present with value matching the entry's sub-pattern; extra keys ignored (PEP 634) | Via entry sub-patterns |
-| `MAPENTRY(key, sub=None, extern=False)` | One MAP entry; key is a const, or an extern name resolved at match time when `extern` | Via `sub` |
+| `MAP(MAP_ENTRY…)` | One mapping element (dict or `collections.abc.Mapping`); each entry's key must be present with value matching the entry's sub-pattern; extra keys ignored (PEP 634) | Via entry sub-patterns |
+| `MAP_ENTRY(key, sub=None, extern=False)` | One MAP entry; key is a const, or an extern name resolved at match time when `extern` | Via `sub` |
 
 **Callable externs run on the demand path** (`Koskari_DemandSync`): `PREDICATE`
 and `APP` externs may be plain koskari callables with no wrapping; a plain

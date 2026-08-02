@@ -14,7 +14,7 @@ externs. The opcode / runtime machinery is recorded in
 | Piece | Location |
 | ----- | -------- |
 | Case-pattern classifier | `koskari/matcher.py` — `CASE_ELEMENT_MATCHER`, `CASE_DELIM_MATCHER`, `parse_case_pattern`, `parse_case_element` |
-| Engine nodes added | `koskari/lib/matcher.{c,h}` — `APP`, `MAP` / `MENTRY` |
+| Engine nodes added | `koskari/lib/matcher.{c,h}` — `APP`, `MAP` / `MAP_ENTRY` |
 | Guards | `MATCH_CASE` keep-subject flag; `when:` / `unless:` in `compile/match` and `layout/match` |
 | Tests | `tests/matcher/test_case_patterns.py`; `tests/compile/specials/test_match.py`; `tests/reader/layouts/test_match_layout.py` |
 

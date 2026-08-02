@@ -47,7 +47,7 @@ import-from dataclasses dataclass
 import-from os.path basename
 import-from time perf_counter
 
-import-from koskari.matcher APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAPENTRY MATCH ONEOF PREDICATE SYMBOL MatchCompiler make_matcher thaw
+import-from koskari.matcher APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY MATCH ONEOF PREDICATE SYMBOL MatchCompiler make_matcher thaw
 
 
 ;; === fixtures ===
@@ -79,8 +79,8 @@ define M_CLS (make_matcher
 
 define M_MAP (make_matcher
     (MATCH (MAP
-        (MAPENTRY "kind" (LITERAL "job"))
-        (MAPENTRY "url" (CAPTURE "u")))))
+        (MAP_ENTRY "kind" (LITERAL "job"))
+        (MAP_ENTRY "url" (CAPTURE "u")))))
 
 define M_ONEOF (make_matcher
     (MATCH (ONEOF
