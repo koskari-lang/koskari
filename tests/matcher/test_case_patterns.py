@@ -229,9 +229,24 @@ class TestClassifyCombinators(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_case_pattern(_delim(_list(symbol("or"))))
 
-    def test_not_is_not(self):
+    def test_not_is_consuming(self):
+        # the case dialect's (not p) is a whole-element pattern: the
+        # engine's zero-width NOT paired with a consuming any, so it can
+        # match (and reject) a value on its own
         pat = parse_case_pattern(_delim(_list(symbol("not"), 5)))
-        self.assertIsInstance(pat, NOT)
+        self.assertIsInstance(pat, MATCH)
+        self.assertTrue(_match_value(pat, 6)[0])
+        self.assertFalse(_match_value(pat, 5)[0])
+
+    def test_not_in_sequence(self):
+        # #[(not 9) b] -- element-position not consumes its element
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"),
+                  _list(symbol("not"), 9), symbol("b"))))
+        matched, caps = _match_value(pat, (1, 2))
+        self.assertTrue(matched)
+        self.assertEqual(caps["b"], 2)
+        self.assertFalse(_match_value(pat, (9, 2))[0])
 
     def test_predicate(self):
         pat = parse_case_pattern(_delim(

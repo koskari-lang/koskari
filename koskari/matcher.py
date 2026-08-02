@@ -3964,7 +3964,14 @@ def parse_case_element(elem):
         return ONEOF(*branches)
 
     if "not_operand" in c:
-        return NOT(parse_case_element(c["not_operand"].datum))
+        # the engine's NOT is a zero-width lookahead; the case dialect's
+        # (not p) is a whole-element pattern, so pair the check with a
+        # consuming any -- the element must be present and must not
+        # match p. (The canonical registry (NOT ...) head keeps the raw
+        # zero-width semantics.)
+        return MATCH(
+            NOT(parse_case_element(c["not_operand"].datum)),
+            TEST_ANY())
 
     if "pred_name" in c:
         return PREDICATE(str(c["pred_name"].datum))
