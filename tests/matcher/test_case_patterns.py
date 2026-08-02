@@ -22,6 +22,7 @@ end-to-end matching of the classified patterns against runtime values
 """
 
 
+import sys
 import unittest
 
 import pytest
@@ -393,6 +394,26 @@ class TestCasePatternMatching(unittest.TestCase):
         matched, caps = _match_value(pat, "plain", str=str)
         self.assertTrue(matched)
         self.assertEqual(caps["s"], "plain")
+
+    @unittest.skipUnless(
+        sys.version_info < (3, 10),
+        "3.10+ generates __match_args__; the synthesis gate is 3.9-only")
+    def test_class_positional_synthesized_on_39(self):
+        # Python 3.9 predates __match_args__; the engine synthesizes the
+        # 3.10-equivalent tuple for dataclasses (init fields) and
+        # namedtuples (_fields)
+        import collections
+        pat = parse_case_pattern(_delim(
+            _list(symbol("item"), symbol("P"),
+                  symbol("a"), symbol("b"))))
+        matched, caps = _match_value(pat, Point(3, 4), P=Point)
+        self.assertTrue(matched)
+        self.assertEqual(caps["a"], 3)
+        self.assertEqual(caps["b"], 4)
+        NT = collections.namedtuple("NT", ("u", "v"))
+        matched, caps = _match_value(pat, NT(7, 8), P=NT)
+        self.assertTrue(matched)
+        self.assertEqual(caps["a"], 7)
 
     def test_class_positional(self):
         pat = parse_case_pattern(_delim(

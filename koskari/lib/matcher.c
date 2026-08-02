@@ -3548,6 +3548,96 @@ static int match_one_field(
 }
 
 
+#if PY_MINOR_VERSION < 10
+/**
+   Python 3.9 predates __match_args__ (PEP 634 added it, and dataclass
+   / namedtuple generation of it, in 3.10). Fill that one API gap
+   predictably: synthesize the 3.10-equivalent tuple for a dataclass
+   (its init fields, via the public dataclasses.fields) or a namedtuple
+   (_fields). Gated to < 3.10 only — on newer Pythons an absent
+   __match_args__ on a dataclass means @dataclass(match_args=False),
+   a deliberate opt-out this fallback must never override.
+
+   Returns a new tuple reference; NULL with no exception set when cls
+   is neither shape (the caller raises its usual TypeError); NULL with
+   an exception set on internal failure.
+*/
+static PyObject *synth_match_args_39(PyObject *cls) {
+  static PyObject *dc_fields = NULL;
+
+  int is_dc = PyObject_HasAttrString(cls, "__dataclass_fields__");
+  if (is_dc) {
+    if (! dc_fields) {
+      PyObject *dc = PyImport_ImportModule("dataclasses");
+      if (! dc)
+        return NULL;
+      dc_fields = PyObject_GetAttrString(dc, "fields");
+      Py_DECREF(dc);
+      if (! dc_fields)
+        return NULL;
+    }
+
+    PyObject *flds = PyObject_CallOneArg(dc_fields, cls);
+    if (! flds)
+      return NULL;
+    PyObject *fast = PySequence_Fast(
+        flds, "dataclasses.fields must return a sequence");
+    Py_DECREF(flds);
+    if (! fast)
+      return NULL;
+
+    PyObject *names = PyList_New(0);
+    if (! names) {
+      Py_DECREF(fast);
+      return NULL;
+    }
+
+    Py_ssize_t count = PySequence_Fast_GET_SIZE(fast);
+    for (Py_ssize_t i = 0; i < count; i++) {
+      PyObject *fld = PySequence_Fast_GET_ITEM(fast, i);
+      PyObject *init = PyObject_GetAttrString(fld, "init");
+      if (! init)
+        goto dc_fail;
+      int wanted = PyObject_IsTrue(init);
+      Py_DECREF(init);
+      if (wanted < 0)
+        goto dc_fail;
+      if (! wanted)
+        continue;
+      PyObject *name = PyObject_GetAttrString(fld, "name");
+      if (! name)
+        goto dc_fail;
+      int rc = PyList_Append(names, name);
+      Py_DECREF(name);
+      if (rc < 0)
+        goto dc_fail;
+    }
+
+    Py_DECREF(fast);
+    PyObject *result = PyList_AsTuple(names);
+    Py_DECREF(names);
+    return result;
+
+  dc_fail:
+    Py_DECREF(fast);
+    Py_DECREF(names);
+    return NULL;
+  }
+
+  PyObject *nt_fields = PyObject_GetAttrString(cls, "_fields");
+  if (! nt_fields) {
+    if (PyErr_ExceptionMatches(PyExc_AttributeError))
+      PyErr_Clear();
+    return NULL;
+  }
+  if (PyTuple_Check(nt_fields))
+    return nt_fields;
+  Py_DECREF(nt_fields);
+  return NULL;
+}
+#endif
+
+
 /**
    Match one MAP entry against a mapping subject: resolve the key
    (const or extern), look it up, and match the entry's sub-matcher
@@ -3741,11 +3831,20 @@ static int match_class(
         PyErr_Clear();
       else
         return -1;
-      PyErr_Format(PyExc_TypeError,
-                   "%R has no __match_args__ but %zd positional field "
-                   "pattern(s) were supplied",
-                   cls, num_positional);
-      return -1;
+#if PY_MINOR_VERSION < 10
+      /* 3.9: no generated __match_args__ exists anywhere — synthesize
+         the 3.10-equivalent for dataclasses and namedtuples. */
+      match_args = synth_match_args_39(cls);
+      if (! match_args && PyErr_Occurred())
+        return -1;
+#endif
+      if (! match_args) {
+        PyErr_Format(PyExc_TypeError,
+                     "%R has no __match_args__ but %zd positional field "
+                     "pattern(s) were supplied",
+                     cls, num_positional);
+        return -1;
+      }
     }
     if (! PyTuple_Check(match_args)) {
       PyErr_Format(PyExc_TypeError,

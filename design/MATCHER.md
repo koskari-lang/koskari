@@ -513,7 +513,7 @@ mint the distinguishing heads:
 | `#[a b *: r]` | `(#list a b *: r)` | `FORM(MATCH(...))`, `*:` → `REST` |
 | `#(a b)` | `(#tuple a b)` | `FORM(MATCH(...))` |
 | `#{K: PAT ...}` | `(#dict (#tuple K PAT) ...)` | `MAP`; symbol keys are externs, atom keys consts |
-| `Point[x y]` | `(item Point x y)` | `CLASS`; Python field rules (`__match_args__` positional, `k: pat` keyword, self-binding bare symbol after keywords) |
+| `Point[x y]` | `(item Point x y)` | `CLASS`; Python field rules (`__match_args__` positional, `k: pat` keyword, self-binding bare symbol after keywords). On 3.9 (pre-PEP 634) the engine synthesizes `__match_args__` for dataclasses / namedtuples, gated `PY_MINOR_VERSION < 10` so a 3.10+ `match_args=False` opt-out is never overridden |
 | `(app f PAT)` | head `app` | `APP` |
 | `(? pred)` | head `?` | `PREDICATE` |
 | `(or ...)` / `(not ...)` | heads | `ONEOF` / `NOT` |

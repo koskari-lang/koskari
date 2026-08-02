@@ -77,7 +77,10 @@ string still matches as a whole value (a literal, a capture, or
 
 `Point[x y]` checks `isinstance(value, Point)` and extracts fields:
 positional fields resolve through the class's `__match_args__`
-(dataclasses and named tuples provide it automatically); keyword fields
+(dataclasses and named tuples provide it automatically on Python 3.10+;
+on 3.9, which predates `__match_args__`, koskari synthesizes the
+equivalent for dataclasses and namedtuples, and any other class needs an
+explicit `__match_args__`); keyword fields
 (`Point[x: 0 y]`) read attributes directly and work on any class. A bare
 `Point[]` is an isinstance check alone. Field patterns nest:
 `Point[(x :: int) y]`.
