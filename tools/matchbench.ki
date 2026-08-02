@@ -1,0 +1,429 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+matchbench -- matcher and match/case micro-benchmarks.
+
+Three tiers of timing cells over the one matcher engine:
+
+  engine-*   direct Matcher.match on pre-thawed matchers -- the C
+             engine in isolation, hit and miss paths per node family
+  match-*    compiled koskari match functions -- the full MATCH_CASE
+             chain: per-arm subject wrap, extern env build, binding
+  anchor-*   the same 8-way literal dispatch as match, switch, and
+             cond -- the ratios that say when engine taxes matter
+
+Methodology follows examples/churn: a uniform harness loop, an
+empty-cell baseline subtracted from every measurement, and a warmup
+pass so MATCH_CASE cache slots are thawed before timing. Numbers are
+machine-relative; compare before/after on one machine, not across.
+
+Run from the repository root:
+
+    tox -qe matchbench
+    tox -qe matchbench -- --iterations 50000 --json
+    tox -qe matchbench -- engine-seq-hit anchor-match anchor-switch
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import json
+import sys
+
+import-from argparse ArgumentParser
+import-from dataclasses dataclass
+import-from os.path basename
+import-from time perf_counter
+
+import-from koskari.matcher APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAPENTRY MATCH ONEOF PREDICATE SYMBOL MatchCompiler make_matcher thaw
+
+
+;; === fixtures ===
+
+
+@dataclass
+define-class Point []:
+    define x :: int 0
+    define y :: int 0
+
+
+define SUBJ_SEQ3 #(#(1 2 3))
+define SUBJ_SEQ2 #(#(1 2))
+define SUBJ_PT #((Point 3 4))
+define SUBJ_STR #("not-a-point")
+define SUBJ_MAP #(#{"kind": "job" "url": "http://x"})
+define SUBJ_TUP #(#(1 2))
+define SUBJ_SEVEN #(7)
+
+define M_SEQ (make_matcher
+    (MATCH (FORM (MATCH (CAPTURE "a") (CAPTURE "b") (CAPTURE "c")))))
+
+define M_CLS (make_matcher
+    (MATCH (CLASS "Point"
+        (FIELD (CAPTURE "a"))
+        (FIELD (CAPTURE "b")))))
+
+define M_MAP (make_matcher
+    (MATCH (MAP
+        (MAPENTRY "kind" (LITERAL "job"))
+        (MAPENTRY "url" (CAPTURE "u")))))
+
+define M_ONEOF (make_matcher
+    (MATCH (ONEOF
+        (LITERAL 0) (LITERAL 1) (LITERAL 2) (LITERAL 3)
+        (LITERAL 4) (LITERAL 5) (LITERAL 6) (LITERAL 7))))
+
+define M_PRED (make_matcher (MATCH (PREDICATE "p")))
+
+define M_APP (make_matcher (MATCH (APP "f" (CAPTURE "x"))))
+
+define FROZEN_SEQ ((MatchCompiler).lower
+    (MATCH (FORM (MATCH (CAPTURE "a") (CAPTURE "b") (CAPTURE "c")))))
+
+define M_SYNTAX (make_matcher
+    (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body")))
+
+define FORM_LET '(mylet [[x 1] [y 2]] (+ x y))
+
+define ki-pred [v]:
+    True
+
+define ki-extract [v]:
+    v
+
+
+;; === statement-tier consumers ===
+
+
+define m8 [v]:
+    match v:
+        case 0:
+            "a0"
+        case 1:
+            "a1"
+        case 2:
+            "a2"
+        case 3:
+            "a3"
+        case 4:
+            "a4"
+        case 5:
+            "a5"
+        case 6:
+            "a6"
+        case 7:
+            "a7"
+        else:
+            "meh"
+
+
+define m-guarded [v]:
+    match v:
+        case x :: int when (> x 5):
+            "big"
+        case x :: int:
+            "small"
+        else:
+            "other"
+
+
+define m-externs [v]:
+    match v:
+        case x :: float:
+            "float"
+        case x :: bytes:
+            "bytes"
+        case x :: str:
+            "str"
+        case x :: int:
+            "int"
+        else:
+            "other"
+
+
+define s8 [v]:
+    switch v:
+        case [0]:
+            "a0"
+        case [1]:
+            "a1"
+        case [2]:
+            "a2"
+        case [3]:
+            "a3"
+        case [4]:
+            "a4"
+        case [5]:
+            "a5"
+        case [6]:
+            "a6"
+        case [7]:
+            "a7"
+        else:
+            "meh"
+
+
+define c8 [v]:
+    cond:
+        [(== v 0) "a0"]
+        [(== v 1) "a1"]
+        [(== v 2) "a2"]
+        [(== v 3) "a3"]
+        [(== v 4) "a4"]
+        [(== v 5) "a5"]
+        [(== v 6) "a6"]
+        [(== v 7) "a7"]
+        [else: "meh"]
+
+
+;; === cells ===
+
+
+define cell-noop []:
+    None
+
+
+define cell-engine-seq-hit []:
+    (M_SEQ.match SUBJ_SEQ3)
+
+define cell-engine-seq-miss []:
+    (M_SEQ.match SUBJ_SEQ2)
+
+define cell-engine-class-hit []:
+    (M_CLS.match SUBJ_PT Point: Point)
+
+define cell-engine-class-miss []:
+    (M_CLS.match SUBJ_STR Point: Point)
+
+define cell-engine-map-hit []:
+    (M_MAP.match SUBJ_MAP)
+
+define cell-engine-map-miss []:
+    (M_MAP.match SUBJ_TUP)
+
+define cell-engine-oneof-backtrack []:
+    (M_ONEOF.match SUBJ_SEVEN)
+
+define cell-engine-pred-py []:
+    (M_PRED.match SUBJ_SEVEN p: bool)
+
+define cell-engine-pred-ki []:
+    (M_PRED.match SUBJ_SEVEN p: ki-pred)
+
+define cell-engine-app-py []:
+    (M_APP.match SUBJ_SEVEN f: abs)
+
+define cell-engine-app-ki []:
+    (M_APP.match SUBJ_SEVEN f: ki-extract)
+
+define cell-thaw []:
+    (thaw FROZEN_SEQ)
+
+define cell-syntax-dispatch []:
+    (M_SYNTAX.match FORM_LET)
+
+define cell-match-first-arm []:
+    (m8 0)
+
+define cell-match-last-arm []:
+    (m8 7)
+
+define cell-match-else []:
+    (m8 99)
+
+define cell-match-guarded []:
+    (m-guarded 9)
+
+define cell-match-externs []:
+    (m-externs 7)
+
+define cell-anchor-match []:
+    (m8 7)
+
+define cell-anchor-switch []:
+    (s8 7)
+
+define cell-anchor-cond []:
+    (c8 7)
+
+
+define CELLS #(
+    #("engine-seq-hit" cell-engine-seq-hit)
+    #("engine-seq-miss" cell-engine-seq-miss)
+    #("engine-class-hit" cell-engine-class-hit)
+    #("engine-class-miss" cell-engine-class-miss)
+    #("engine-map-hit" cell-engine-map-hit)
+    #("engine-map-miss" cell-engine-map-miss)
+    #("engine-oneof-backtrack" cell-engine-oneof-backtrack)
+    #("engine-pred-py" cell-engine-pred-py)
+    #("engine-pred-ki" cell-engine-pred-ki)
+    #("engine-app-py" cell-engine-app-py)
+    #("engine-app-ki" cell-engine-app-ki)
+    #("thaw" cell-thaw)
+    #("syntax-dispatch" cell-syntax-dispatch)
+    #("match-first-arm" cell-match-first-arm)
+    #("match-last-arm" cell-match-last-arm)
+    #("match-else" cell-match-else)
+    #("match-guarded" cell-match-guarded)
+    #("match-externs" cell-match-externs)
+    #("anchor-match" cell-anchor-match)
+    #("anchor-switch" cell-anchor-switch)
+    #("anchor-cond" cell-anchor-cond))
+
+
+;; === harness ===
+
+
+define time-loop [fn n]:
+    """
+    Time n calls of fn under the uniform harness loop; returns seconds
+    """
+
+    define t0 (perf_counter)
+    for-each [_i (range n)]:
+        (fn)
+    define t1 (perf_counter)
+    (- t1 t0)
+
+
+define run-cells [names iterations]:
+    """
+    Warm up, measure the baseline, then time each selected cell.
+
+    :param names: cell names to run, or None for all
+    :param iterations: harness loop count per cell
+    :return: list of #(name ns-per-op) rows, baseline-subtracted
+    """
+
+    define selected (list)
+    for-each [[cname cfn] CELLS]:
+        when (or (None? names) (in? cname names)):
+            (selected.append #(cname cfn))
+
+    ; warmup: thaw MATCH_CASE cache slots and stabilize
+    for-each [[cname cfn] selected]:
+        (time-loop cfn 100)
+
+    (time-loop cell-noop 100)
+    define baseline (time-loop cell-noop iterations)
+
+    define rows (list)
+    for-each [[cname cfn] selected]:
+        define secs (time-loop cfn iterations)
+        define nsop (/ (* (- secs baseline) 1e9) iterations)
+        (rows.append #(cname nsop))
+    rows
+
+
+define report-text [rows iterations]:
+    """
+    Print the per-cell table and the anchor ratios
+    """
+
+    print f"matchbench: {iterations} iterations/cell, baseline-subtracted"
+    print ""
+    define found (dict)
+    for-each [[cname nsop] rows]:
+        (found.__setitem__ cname nsop)
+        print f"  {(cname.ljust 24)} {nsop:10.1f} ns/op"
+    define am (found.get "anchor-match")
+    define asw (found.get "anchor-switch")
+    define ac (found.get "anchor-cond")
+    when (and am asw):
+        print ""
+        print f"  match/switch ratio: {(/ am asw):.2f}x"
+    when (and am ac):
+        print f"  match/cond ratio:   {(/ am ac):.2f}x"
+    return 0
+
+
+define report-json [rows iterations]:
+    """
+    Emit the rows as a JSON object on stdout
+    """
+
+    define cells (dict)
+    for-each [[cname nsop] rows]:
+        (cells.__setitem__ cname nsop)
+    define payload #{
+        "iterations": iterations
+        "unit": "ns/op"
+        "cells": cells}
+    print (json.dumps payload indent: 2 sort_keys: True)
+    return 0
+
+
+;; === entry points ===
+
+
+define build_arguments [parser]:
+    """
+    Register the matchbench options on a parser or subparser
+    """
+
+    (parser.add_argument "cells" nargs: "*"
+        help: "cell names to run (default: all)")
+    (parser.add_argument "--iterations"
+        type: int default: 10000
+        help: "harness loop count per cell (default: 10000)")
+    (parser.add_argument "--json"
+        action: "store_true"
+        help: "emit the report as JSON instead of text")
+    return parser
+
+
+define run [options]:
+    """
+    Run the selected cells and report
+
+    :param options: parsed argparse namespace
+    :return: integer exit code
+    """
+
+    define names (if options.cells options.cells None)
+    define rows (run-cells names options.iterations)
+    if options.json:
+        (report-json rows options.iterations)
+    else:
+        (report-text rows options.iterations)
+    return 0
+
+
+define main [argv: None]:
+    """
+    Parse arguments and run the benchmark
+
+    :param argv: optional argument vector; defaults to sys.argv
+    :return: integer exit code
+    """
+
+    when (None? argv):
+        set! argv sys.argv
+
+    define-values [name *: args] argv
+
+    define parser (ArgumentParser
+        prog: (basename name)
+        description: "Matcher and match/case micro-benchmarks")
+    (build_arguments parser)
+
+    return (run (parser.parse_args args))
+
+
+when-main:
+    (sys.exit (main))
+
+
+; The end.

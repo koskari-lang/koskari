@@ -87,6 +87,16 @@ define cmd_corpus [options]:
     return (run options)
 
 
+define cmd_matchbench [options]:
+    """
+    Run the matcher and match/case micro-benchmarks.
+    """
+
+    import-from tools.matchbench run
+
+    return (run options)
+
+
 define build_parser [name]:
     """
     Construct the dispatcher argument parser.
@@ -121,7 +131,7 @@ define build_parser [name]:
     ; every unrelated invocation for about a quarter second, and it is
     ; the one tool driven interactively in a tight loop. It is run
     ; directly instead; see docs/corpus/CLAUDE.md.
-    import-from tools opgrams
+    import-from tools matchbench opgrams
     import-from tools.corpus export
 
     define po (sub.add_parser "opgrams"
@@ -133,6 +143,11 @@ define build_parser [name]:
         help: "export corpus YAML records to parquet dataset views")
     (export.build_arguments pc)
     (pc.set_defaults func: cmd_corpus)
+
+    define pm (sub.add_parser "matchbench"
+        help: "matcher and match/case micro-benchmarks")
+    (matchbench.build_arguments pm)
+    (pm.set_defaults func: cmd_matchbench)
 
     return parser
 

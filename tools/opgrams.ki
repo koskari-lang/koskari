@@ -72,6 +72,7 @@ define MODULE_GROUPS #{
     "tools": #(
         "tools.tools"
         "tools.opgrams"
+        "tools.matchbench"
         "tools.editor_tokens.regen"
         "tools.corpus.load"
         "tools.corpus.export"
