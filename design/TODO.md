@@ -287,12 +287,6 @@ runtime match and from `define-values` / `setq-values` kwargs paths.
 
 Ref: [language/seq-values-kwargs-formals-apply.md](language/seq-values-kwargs-formals-apply.md).
 
-### Runtime `match` form, `match/case` layout, and pattern language
-
-Ref: [language/match-pattern-language.md](language/match-pattern-language.md)
-(surface); [language/match-case-form.md](language/match-case-form.md) (opcodes);
-[language/matcher-ng-rollup.md](language/matcher-ng-rollup.md) (Phase 8).
-
 ### `define-matcher` parameterized matcher templates
 
 Named, parameterized matcher construction from the native units,

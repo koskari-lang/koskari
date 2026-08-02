@@ -126,7 +126,7 @@ minimally declared. The alternatives worth weighing before committing:
 
 - [matcher-ng-rollup.md](matcher-ng-rollup.md) — the engine, the registry
   factory protocol, resolved decision 3 (composites always inline).
-- [match-pattern-language.md](match-pattern-language.md) — the case
+- [match-pattern-language.md](../archive/match-pattern-language.md) — the case
   dialect a template body would likely be written in.
 - `koskari/matcher.py` — the Python composites this generalizes
   (`BINDING`, `FORMALS`, `slot_prefix`, `BINDING_CELL`) and

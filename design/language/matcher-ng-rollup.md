@@ -33,11 +33,12 @@ special-rules** dispatch for **`compile/define-syntax`** lowers rule surfaces
 in **`koskari/compile/specials/syntax.py`** into quoted runtime call forms
 (**`build-syntax`**, **`build-macro`**, **`build-special`**) backed by
 **`parse-rule-pattern`** / **`parse-match-pattern`**; see bootstrap bindings in
-**`koskari/importer/bootstrap.py`**. What remains for this rollup is narrower than the original Phase 7
-bullet: per-special polish where a form still prefers ad hoc matching over
-shared **`matcher`** / **`helpers`** surfaces, **runtime `match/case`**
-(Phase 8), and optional **rename NG modules to canonical names** once the
-tree stabilizes. Earlier legacy matcher stacks and duplicate compile-helper paths
+**`koskari/importer/bootstrap.py`**. **Runtime `match/case` (Phase 8) is
+landed** (see the Phase 8 section below and the archived design docs). What
+remains for this rollup is narrower than the original Phase 7 bullet:
+per-special polish where a form still prefers ad hoc matching over shared
+**`matcher`** / **`helpers`** surfaces, and optional **rename NG modules to
+canonical names** once the tree stabilizes. Earlier legacy matcher stacks and duplicate compile-helper paths
 that predated this layout are **removed**. Treat Phase 7 in the checklist below as **landed** for the define-syntax /
 **`syntax.Syntax`** story, with follow-up only for straggler specials and
 hardening.
@@ -1556,10 +1557,10 @@ through Phase 6.
 ### Phase 8 — Runtime match/case *(implemented)*
 
 Runtime `match` is a **sequence-unpacking** form over the same matcher
-constants. Opcodes / lowering in [match-case-form.md](match-case-form.md); the
+constants. Opcodes / lowering in [match-case-form.md](../archive/match-case-form.md); the
 surface pattern language (clause delimiter, head-driven classifier,
 reader-sugar heads, guards, and the universal shape-detection vision) in
-[match-pattern-language.md](match-pattern-language.md). The special makes no
+[match-pattern-language.md](../archive/match-pattern-language.md). The special makes no
 shape decisions — all pattern classification is the matcher's, dispatched on
 head. `*: name` rest is a matcher-surface rule on the spine composites
 (`form_factory` / `match_factory`), not a match-only convenience.

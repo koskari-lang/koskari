@@ -2,12 +2,21 @@
 
 ## Status
 
-Design settled; partially built. The runtime engine, the `MATCH_CASE` /
-`MATCH_STORE_NAMES` opcodes, and the `KOS_CACHE_MATCHER` cache are landed (see
-[match-case-form.md](match-case-form.md)). The **surface language** described
-here — the delimiter clause shape, the head-driven pattern classifier, the
-reader-sugar head vocabulary, and guards — supersedes the interim imply-`FORM`
-`compile/match` currently in the tree and is the target we build to.
+**Implemented (archived).** The surface language described here — the
+delimiter clause shape, the head-driven pattern classifier, the
+reader-sugar head vocabulary (`#[…]`/`#(…)` sequences, `#{…}` mappings,
+`Name[…]` class, `::` typed, `?` predicate, `app` extraction, `or`/`not`),
+and `when`/`unless` guards — is shipped, along with the string-as-atom
+sequence exclusion (PEP 634) and demand-path invocation of callable
+externs. The opcode / runtime machinery is recorded in
+[match-case-form.md](match-case-form.md).
+
+| Piece | Location |
+| ----- | -------- |
+| Case-pattern classifier | `koskari/matcher.py` — `CASE_ELEMENT_MATCHER`, `CASE_DELIM_MATCHER`, `parse_case_pattern`, `parse_case_element` |
+| Engine nodes added | `koskari/lib/matcher.{c,h}` — `APP`, `MAP` / `MENTRY` |
+| Guards | `MATCH_CASE` keep-subject flag; `when:` / `unless:` in `compile/match` and `layout/match` |
+| Tests | `tests/matcher/test_case_patterns.py`; `tests/compile/specials/test_match.py`; `tests/reader/layouts/test_match_layout.py` |
 
 ## Purpose and long-term vision
 
@@ -233,12 +242,12 @@ remaining work is surface spelling plus a few additions (`?`, `app`/`=`, the
 - **`rule/case`** simple tier — deferred (above).
 
 Parameterized matcher templates (`define-matcher`) are a **separate
-effort** with their own design: [define-matcher.md](define-matcher.md).
+effort** with their own design: [define-matcher.md](../language/define-matcher.md).
 
 ## Related
 
 - [match-case-form.md](match-case-form.md) — opcodes, `KOS_CACHE_MATCHER`,
   lowering, stack contract.
-- [matcher-ng-rollup.md](matcher-ng-rollup.md) — the unified matcher engine;
+- [matcher-ng-rollup.md](../language/matcher-ng-rollup.md) — the unified matcher engine;
   Phase 8 is runtime match/case.
 - [../LAYOUTS.md](../LAYOUTS.md) — layout conventions.

@@ -2,20 +2,24 @@
 
 ## Status
 
-Implemented (branch `match-case`). The user-facing **`match`** expression is a
-**sequence-unpacking** matcher, distinct from **`switch`** / equality dispatch
-(`compile/switch`). It is **Phase 8** of the matcher rollup
-([matcher-ng-rollup.md](matcher-ng-rollup.md)); the native engine, frozen-tuple
-constants, runtime `PySequence_Fast` adapter, and the surface matcher parser it
-drives were already landed.
+**Implemented (archived).** The runtime `match` expression — a
+**sequence-unpacking** matcher, distinct from **`switch`** / equality
+dispatch — is shipped as **Phase 8** of the matcher rollup
+([matcher-ng-rollup.md](../language/matcher-ng-rollup.md)). This doc is
+the runtime / opcode-machinery record; the **surface pattern language**
+(clause delimiter, head-driven classifier, reader-sugar heads, guards) is
+in [match-pattern-language.md](match-pattern-language.md), whose model
+supersedes the interim imply-`FORM` lowering described under "Design
+principle" and "Surface syntax" below.
 
-**This doc is the runtime / opcode machinery** — `MATCH_CASE`,
-`MATCH_STORE_NAMES`, the `KOS_CACHE_MATCHER` cache, and the lowering. The
-**surface pattern language** (clause delimiter, head-driven classifier,
-reader-sugar heads, guards) is specced in
-[match-pattern-language.md](match-pattern-language.md); its delimiter /
-head-driven model supersedes the interim imply-`FORM` special described under
-"Design principle" and "Surface syntax" below.
+| Piece | Location |
+| ----- | -------- |
+| Opcodes | `koskari/lib/opcodes.incl` — `MATCH_CASE`, `MATCH_STORE_NAMES` |
+| Handlers | `koskari/lib/opcode/MATCH_CASE.c`, `koskari/lib/opcode/MATCH_STORE_NAMES.c` |
+| Cache kind | `koskari/lib/bytecode.h` — `KOS_CACHE_MATCHER` |
+| Compiler special | `koskari/compile/specials/conditionals.py` — `compile/match` |
+| Reader layout | `koskari/reader/layouts/conditionals.py` — `layout/match` |
+| Tests | `tests/lib/opcode/test_match_case.py`; `tests/compile/specials/test_match.py`; `tests/reader/layouts/test_match_layout.py` |
 
 ## What it is
 
@@ -245,7 +249,7 @@ No-match with no `else:` yields `None`, matching `compile/switch` and
 ## Dependency posture
 
 The **seq-values-kwargs** foundation
-([seq-values-kwargs-formals-apply.md](seq-values-kwargs-formals-apply.md)) would
+([seq-values-kwargs-formals-apply.md](../language/seq-values-kwargs-formals-apply.md)) would
 generalize arm binding into a runtime application ABI, but it was **not** on the
 critical path. `MATCH_STORE_NAMES` binds the arm's compile-time-known slot set
 directly. seq-values-kwargs remains a later optimization, not a prerequisite.
@@ -266,10 +270,10 @@ directly. seq-values-kwargs remains a later optimization, not a prerequisite.
 - [match-pattern-language.md](match-pattern-language.md) — the surface pattern
   language (clause delimiter, head vocabulary, reader sugars, guards) and the
   universal shape-detection vision.
-- [matcher-ng-rollup.md](matcher-ng-rollup.md) — unified matcher; Phase 8 is this
+- [matcher-ng-rollup.md](../language/matcher-ng-rollup.md) — unified matcher; Phase 8 is this
   form.
-- [../archive/switch-eq-opcodes.md](../archive/switch-eq-opcodes.md) — `SWITCH_EQ`
+- [switch-eq-opcodes.md](switch-eq-opcodes.md) — `SWITCH_EQ`
   design the stack contract mirrors.
-- [seq-values-kwargs-formals-apply.md](seq-values-kwargs-formals-apply.md) — the
+- [seq-values-kwargs-formals-apply.md](../language/seq-values-kwargs-formals-apply.md) — the
   deferred generalized-binding foundation.
 - [../LAYOUTS.md](../LAYOUTS.md) — layout conventions.
