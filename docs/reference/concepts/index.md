@@ -17,6 +17,7 @@ choosing-an-async-construct
 layout-and-s-expressions
 fences
 macro-matching-and-hygiene
+match-patterns
 pragma
 code-sealing
 opcode-caching
@@ -37,6 +38,7 @@ idiomatic-koskari
 | [Layout and s-expressions](layout-and-s-expressions.md) | Layout vs s-expr surfaces, YAML/JSON mental model, three authoring forms |
 | [Fences](fences.md) | Triple-backtick foreign literals, the compile-time transliterator model, when a format earns a fence |
 | [Macro matching and hygiene](macro-matching-and-hygiene.md) | Pattern match at expand time, datum forms and wrappers |
+| [Match patterns](match-patterns.md) | Runtime `match`/`case` pattern language: sequences, classes, mappings, typed captures, extraction, guards |
 | [Pragmas and feature settings](pragma.md) | Setting a pragma, the `reader/*` / `compiler/*` / `pragma/*` settings and their values |
 | [Code sealing and arena packing](code-sealing.md) | Read-only bytecode, the `compiler/protect-code` / `compiler/pack-module` pragmas, arena pinning, per-expression sealing costs |
 | [Attribute and method caching](opcode-caching.md) | Per-site monomorphic cache, the `compiler/cache-function` / `compiler/cache-expression` pragmas, what it accelerates, the 3.11+ dict-attribute floor |

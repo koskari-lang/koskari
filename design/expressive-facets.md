@@ -11,7 +11,7 @@ Deliberately **out of scope** here, because they already have owners:
 
 | Facility | Where it lives |
 | -------- | -------------- |
-| Runtime `match` / destructuring binding | [language/match-case-form.md](language/match-case-form.md), [language/seq-values-kwargs-formals-apply.md](language/seq-values-kwargs-formals-apply.md) |
+| Runtime `match` / destructuring binding | [archive/match-case-form.md](archive/match-case-form.md), [language/seq-values-kwargs-formals-apply.md](language/seq-values-kwargs-formals-apply.md) |
 | Pure parser, lint, formatter | [koskari-lint.md](koskari-lint.md) |
 | Test runner (`koskari.unittest`, pytest collection) | not yet written up |
 | Bundles and namespace facets | [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md) |

@@ -158,6 +158,13 @@ static int append_check_node(KosMatcherBuilder *b, const KosMatchNode *node) {
                  "AppendFieldKeyword");
     return -1;
 
+  case KOS_MATCH_NODE_MAP:
+  case KOS_MATCH_NODE_MENTRY:
+    PyErr_Format(PyExc_ValueError,
+                 "AppendNode does not accept MAP or MENTRY kinds; "
+                 "use AppendMap / AppendMentry");
+    return -1;
+
   case KOS_MATCH_NODE_REPEAT:
     if (append_check_index(b, node->as.repeat.subnode, "repeat.subnode"))
       return -1;
@@ -178,6 +185,11 @@ static int append_check_node(KosMatcherBuilder *b, const KosMatchNode *node) {
     break;
 
   case KOS_MATCH_NODE_SAME:
+    break;
+
+  case KOS_MATCH_NODE_APP:
+    if (append_check_index(b, node->as.app.subnode, "app.subnode"))
+      return -1;
     break;
 
   default:
@@ -631,6 +643,143 @@ int KosMatcherBuilder_AppendClass(
 }
 
 
+int KosMatcherBuilder_AppendMentry(
+    KosMatcherBuilder *b,
+    uint16_t key_kind,
+    uint32_t key_ref,
+    uint32_t subnode) {
+
+  if (! b) {
+    PyErr_SetString(PyExc_ValueError, "AppendMentry requires builder");
+    return -1;
+  }
+
+  if (key_kind >= (uint16_t) KOS_MATCH_MAPKEY_KIND_COUNT) {
+    PyErr_Format(PyExc_ValueError,
+                 "AppendMentry unknown key kind %u", (unsigned) key_kind);
+    return -1;
+  }
+
+  if (key_ref == KOS_MATCH_NO_INDEX) {
+    PyErr_SetString(PyExc_ValueError,
+                    "AppendMentry requires a key_ref index");
+    return -1;
+  }
+
+  if (subnode != KOS_MATCH_NO_INDEX &&
+      append_check_index(b, subnode, "mentry.subnode"))
+    return -1;
+
+  if (builder_grow_nodes(b, 1))
+    return -1;
+
+  Py_ssize_t off = b->node_count;
+  KosMatchNode *n = &b->nodes[off];
+  memset(n, 0, sizeof(*n));
+  n->kind = (uint16_t) KOS_MATCH_NODE_MENTRY;
+  n->next = KOS_MATCH_NO_INDEX;
+  n->min_width = 0;
+  n->max_width = 0;
+  n->as.mentry.key_kind = key_kind;
+  n->as.mentry.reserved = 0;
+  n->as.mentry.key_ref = key_ref;
+  n->as.mentry.subnode = subnode;
+  b->node_count++;
+
+  if (off > (Py_ssize_t) 0x7FFFFFFE) {
+    PyErr_SetString(PyExc_OverflowError, "matcher node space exhausted");
+    return -1;
+  }
+
+  return (int) off;
+}
+
+
+int KosMatcherBuilder_AppendMap(
+    KosMatcherBuilder *b,
+    const uint32_t *entries,
+    Py_ssize_t count) {
+
+  if (! b) {
+    PyErr_SetString(PyExc_ValueError, "AppendMap requires builder");
+    return -1;
+  }
+
+  if (count < 0) {
+    PyErr_SetString(PyExc_ValueError,
+                    "AppendMap count must be non-negative");
+    return -1;
+  }
+
+  if (count > 0 && ! entries) {
+    PyErr_SetString(PyExc_ValueError,
+                    "AppendMap requires entries pointer");
+    return -1;
+  }
+
+  for (Py_ssize_t i = 0; i < count; i++) {
+    uint32_t eidx = entries[i];
+    if (eidx == KOS_MATCH_NO_INDEX) {
+      PyErr_SetString(PyExc_ValueError,
+                      "AppendMap entry index may not be NO_INDEX");
+      return -1;
+    }
+    if ((Py_ssize_t) eidx >= b->node_count) {
+      PyErr_Format(PyExc_ValueError,
+                   "AppendMap forward reference: entry=%u "
+                   "(current count=%zd)",
+                   (unsigned) eidx, b->node_count);
+      return -1;
+    }
+    KosMatchNode *const en = &b->nodes[eidx];
+    if (en->kind != KOS_MATCH_NODE_MENTRY) {
+      PyErr_Format(PyExc_ValueError,
+                   "AppendMap child %u is not a MENTRY node",
+                   (unsigned) eidx);
+      return -1;
+    }
+    if (en->next != KOS_MATCH_NO_INDEX) {
+      PyErr_Format(PyExc_ValueError,
+                   "AppendMap child %u already participates in another "
+                   "chain", (unsigned) eidx);
+      return -1;
+    }
+    for (Py_ssize_t j = 0; j < i; j++) {
+      if (entries[j] == eidx) {
+        PyErr_Format(PyExc_ValueError,
+                     "AppendMap repeats entry index %u",
+                     (unsigned) eidx);
+        return -1;
+      }
+    }
+  }
+
+  for (Py_ssize_t i = 0; i + 1 < count; i++)
+    b->nodes[entries[i]].next = entries[i + 1];
+
+  if (builder_grow_nodes(b, 1))
+    return -1;
+
+  Py_ssize_t off = b->node_count;
+  KosMatchNode *n = &b->nodes[off];
+  memset(n, 0, sizeof(*n));
+  n->kind = (uint16_t) KOS_MATCH_NODE_MAP;
+  n->next = KOS_MATCH_NO_INDEX;
+  n->min_width = 0;
+  n->max_width = 0;
+  n->as.map.first_entry =
+      (count > 0) ? entries[0] : KOS_MATCH_NO_INDEX;
+  b->node_count++;
+
+  if (off > (Py_ssize_t) 0x7FFFFFFE) {
+    PyErr_SetString(PyExc_OverflowError, "matcher node space exhausted");
+    return -1;
+  }
+
+  return (int) off;
+}
+
+
 /* === width compute === */
 
 
@@ -739,6 +888,25 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
     break;
 
   case KOS_MATCH_NODE_CLASS:
+    n->min_width = 1;
+    n->max_width = 1;
+    break;
+
+  case KOS_MATCH_NODE_APP:
+    /* consumes exactly one spine element; the sub-matcher runs against
+       the extractor's result in its own synthesized subject */
+    n->min_width = 1;
+    n->max_width = 1;
+    break;
+
+  case KOS_MATCH_NODE_MAP:
+    n->min_width = 1;
+    n->max_width = 1;
+    break;
+
+  case KOS_MATCH_NODE_MENTRY:
+    /* inert on the outer spine, like FIELD: only meaningful in a MAP
+       chain; report the width-1 contract of the looked-up value */
     n->min_width = 1;
     n->max_width = 1;
     break;
@@ -858,6 +1026,44 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
       }
       break;
 
+    case KOS_MATCH_NODE_APP:
+      if ((Py_ssize_t) n->as.app.fn_extern >= n_externs) {
+        PyErr_Format(PyExc_ValueError,
+                     "APP fn_extern %u out of range "
+                     "(externs size=%zd) at node %zd",
+                     (unsigned) n->as.app.fn_extern, n_externs, i);
+        return -1;
+      }
+      break;
+
+    case KOS_MATCH_NODE_MENTRY:
+      switch (n->as.mentry.key_kind) {
+      case KOS_MATCH_MAPKEY_CONST:
+        if ((Py_ssize_t) n->as.mentry.key_ref >= n_consts) {
+          PyErr_Format(PyExc_ValueError,
+                       "MENTRY const key_ref %u out of range "
+                       "(consts size=%zd) at node %zd",
+                       (unsigned) n->as.mentry.key_ref, n_consts, i);
+          return -1;
+        }
+        break;
+      case KOS_MATCH_MAPKEY_EXTERN:
+        if ((Py_ssize_t) n->as.mentry.key_ref >= n_externs) {
+          PyErr_Format(PyExc_ValueError,
+                       "MENTRY extern key_ref %u out of range "
+                       "(externs size=%zd) at node %zd",
+                       (unsigned) n->as.mentry.key_ref, n_externs, i);
+          return -1;
+        }
+        break;
+      default:
+        PyErr_Format(PyExc_ValueError,
+                     "unknown MENTRY key kind %u at node %zd",
+                     (unsigned) n->as.mentry.key_kind, i);
+        return -1;
+      }
+      break;
+
     case KOS_MATCH_NODE_FIELD:
       switch (n->as.field.field_kind) {
       case KOS_MATCH_FIELD_POSITIONAL:
@@ -924,6 +1130,9 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
 
   case KOS_MATCH_NODE_FORM:
     return has_capture_in_subtree(m, n->as.form.subnode);
+
+  case KOS_MATCH_NODE_APP:
+    return has_capture_in_subtree(m, n->as.app.subnode);
 
   case KOS_MATCH_NODE_MATCH:
     for (uint32_t cidx = n->as.match.first_child;
@@ -1117,7 +1326,9 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
   case KOS_MATCH_NODE_TEST:
   case KOS_MATCH_NODE_SAME:
   case KOS_MATCH_NODE_FORM:
-  case KOS_MATCH_NODE_CLASS: {
+  case KOS_MATCH_NODE_CLASS:
+  case KOS_MATCH_NODE_APP:
+  case KOS_MATCH_NODE_MAP: {
     c.min = 1;
     c.max = 1;
     c.is_rest = 0;
@@ -1370,6 +1581,12 @@ static int validate_branches(KosMatcher *m) {
         return -1;
       break;
 
+    case KOS_MATCH_NODE_APP:
+      if (n->as.app.subnode != KOS_MATCH_NO_INDEX &&
+          validate_one_branch(m, n->as.app.subnode))
+        return -1;
+      break;
+
     case KOS_MATCH_NODE_REPEAT:
       if (n->as.repeat.subnode != KOS_MATCH_NO_INDEX &&
           validate_one_branch(m, n->as.repeat.subnode))
@@ -1400,6 +1617,19 @@ static int validate_branches(KosMatcher *m) {
           break;
         if (fn->as.field.subnode != KOS_MATCH_NO_INDEX &&
             validate_one_branch(m, fn->as.field.subnode))
+          return -1;
+      }
+      break;
+
+    case KOS_MATCH_NODE_MAP:
+      for (uint32_t eidx = n->as.map.first_entry;
+           eidx != KOS_MATCH_NO_INDEX;
+           eidx = m->nodes[eidx].next) {
+        KosMatchNode *const en = &m->nodes[eidx];
+        if (en->kind != KOS_MATCH_NODE_MENTRY)
+          break;
+        if (en->as.mentry.subnode != KOS_MATCH_NO_INDEX &&
+            validate_one_branch(m, en->as.mentry.subnode))
           return -1;
       }
       break;
@@ -1971,6 +2201,45 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 }
 
 
+/**
+   Cached collections.abc.Sequence, resolved lazily on the first
+   non-fast-path FORM descent and then immortal — the same shape as
+   get_abc_mapping, for the same reason: the FORM miss path runs for
+   every non-sequence element that flows past a sequence arm. Returns a
+   borrowed reference, or NULL with an exception set.
+*/
+static PyObject *get_abc_sequence(void) {
+  static PyObject *abc_sequence_type = NULL;
+
+  if (! abc_sequence_type) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    abc_sequence_type = PyObject_GetAttrString(abc, "Sequence");
+    Py_DECREF(abc);
+  }
+  return abc_sequence_type;
+}
+
+
+/**
+   Invoke a callable extern (predicate, APP extractor) on one argument
+   through the demand path. Matching never enters the evaluator, so the
+   call is driven synchronously: koskari callables run on a demand eval
+   drive, plain Python awaitable results are eagerly stepped, and a
+   genuine async suspension raises KoskariSyncViolation. Returns a new
+   reference, or NULL with an exception set.
+*/
+static PyObject *matcher_call_extern(PyObject *fn, PyObject *arg) {
+  PyObject *args = PyTuple_Pack(1, arg);
+  if (! args)
+    return NULL;
+  PyObject *res = Koskari_DemandSync(fn, args, NULL);
+  Py_DECREF(args);
+  return res;
+}
+
+
 /* === subject adapters === */
 
 
@@ -2534,7 +2803,7 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
     }
     PyObject *pred = PyTuple_GET_ITEM(e->extern_env, t->ref_index);
     PyObject *got = matcher_peel_datum(elem);
-    PyObject *res = PyObject_CallOneArg(pred, got);
+    PyObject *res = matcher_call_extern(pred, got);
     if (! res)
       return -1;
     int r = PyObject_IsTrue(res);
@@ -2625,6 +2894,37 @@ static int match_form(
     e->in_from_datum = 1;
 
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
+
+  /* PEP 634 sequence-pattern gate. str / bytes / bytearray are atoms —
+     destructuring a string into characters is never what a match
+     meant. Beyond the KosPair spine and the list/tuple fast paths,
+     only collections.abc.Sequence instances descend: mappings and sets
+     are not sequences (PySequence_Fast would happily iterate a dict's
+     keys), and an iterator must never be silently consumed by a
+     failed arm. Soft no-match for all of them. */
+  PyObject *peeled = matcher_peel_datum(elem);
+  if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
+      || PyByteArray_Check(peeled)) {
+    e->in_from_datum = saved_in;
+    return 0;
+  }
+  if (! (KosPair_Check(peeled) || KosNilP(peeled)
+         || PyList_Check(peeled) || PyTuple_Check(peeled))) {
+    PyObject *seq_type = get_abc_sequence();
+    if (! seq_type) {
+      e->in_from_datum = saved_in;
+      return -1;
+    }
+    int isinst = PyObject_IsInstance(peeled, seq_type);
+    if (isinst < 0) {
+      e->in_from_datum = saved_in;
+      return -1;
+    }
+    if (! isinst) {
+      e->in_from_datum = saved_in;
+      return 0;
+    }
+  }
 
   KosMatchSubject sub;
   if (subject_from_any(elem, &sub)) {
@@ -3158,6 +3458,52 @@ static int match_not(
 
 
 /**
+   Match a width-1 sub-matcher against one projected value — a CLASS
+   field, an APP call result, or a MAP entry lookup. The value is
+   matched in its own synthesized single-element subject rather than
+   being treated as a sequence itself. subnode may be
+   KOS_MATCH_NO_INDEX for a presence-only projection (immediate match).
+   val is borrowed; the caller retains ownership. Returns 1 on match,
+   0 on no-match, -1 on error.
+*/
+static int match_projected_value(
+    MatchEngine *e,
+    uint32_t subnode,
+    PyObject *val) {
+
+  if (subnode == KOS_MATCH_NO_INDEX)
+    return 1;
+
+  PyObject *one = PyTuple_Pack(1, val);
+  if (! one)
+    return -1;
+
+  KosMatchSubject sub;
+  if (KosMatchSubject_FromPySequence(one, &sub)) {
+    Py_DECREF(one);
+    return -1;
+  }
+  Py_DECREF(one);
+
+  KosMatchSubject *saved = e->subj;
+  e->subj = &sub;
+
+  Py_ssize_t sub_cursor = 0;
+  int r = match_node(e, subnode, &sub_cursor, 0);
+
+  Py_ssize_t sub_length = sub.vt->length(&sub);
+  e->subj = saved;
+  KosMatchSubject_Release(&sub);
+
+  if (r != 1)
+    return r;
+  if (sub_cursor != sub_length)
+    return 0;
+  return 1;
+}
+
+
+/**
    Run a single FIELD against an instance. value resolution failure
    (AttributeError) is turned into a soft no-match (return 0); any
    other exception (or sub-matcher error) propagates as -1.
@@ -3196,40 +3542,249 @@ static int match_one_field(
     return -1;
   }
 
-  if (fn->as.field.subnode == KOS_MATCH_NO_INDEX) {
-    Py_DECREF(val);
-    return 1;
-  }
-
-  /* The FIELD's sub-matcher is width-1 — synthesize a single-element
-     subject around the projected value rather than treating val itself
-     as a sequence. */
-  PyObject *one = PyTuple_Pack(1, val);
+  int r = match_projected_value(e, fn->as.field.subnode, val);
   Py_DECREF(val);
-  if (! one)
-    return -1;
+  return r;
+}
 
-  KosMatchSubject sub;
-  if (KosMatchSubject_FromPySequence(one, &sub)) {
-    Py_DECREF(one);
+
+#if PY_MINOR_VERSION < 10
+/**
+   Python 3.9 predates __match_args__ (PEP 634 added it, and dataclass
+   / namedtuple generation of it, in 3.10). Fill that one API gap
+   predictably: synthesize the 3.10-equivalent tuple for a dataclass
+   (its init fields, via the public dataclasses.fields) or a namedtuple
+   (_fields). Gated to < 3.10 only — on newer Pythons an absent
+   __match_args__ on a dataclass means @dataclass(match_args=False),
+   a deliberate opt-out this fallback must never override.
+
+   Returns a new tuple reference; NULL with no exception set when cls
+   is neither shape (the caller raises its usual TypeError); NULL with
+   an exception set on internal failure.
+*/
+static PyObject *synth_match_args_39(PyObject *cls) {
+  static PyObject *dc_fields = NULL;
+
+  int is_dc = PyObject_HasAttrString(cls, "__dataclass_fields__");
+  if (is_dc) {
+    if (! dc_fields) {
+      PyObject *dc = PyImport_ImportModule("dataclasses");
+      if (! dc)
+        return NULL;
+      dc_fields = PyObject_GetAttrString(dc, "fields");
+      Py_DECREF(dc);
+      if (! dc_fields)
+        return NULL;
+    }
+
+    PyObject *flds = PyObject_CallOneArg(dc_fields, cls);
+    if (! flds)
+      return NULL;
+    PyObject *fast = PySequence_Fast(
+        flds, "dataclasses.fields must return a sequence");
+    Py_DECREF(flds);
+    if (! fast)
+      return NULL;
+
+    PyObject *names = PyList_New(0);
+    if (! names) {
+      Py_DECREF(fast);
+      return NULL;
+    }
+
+    Py_ssize_t count = PySequence_Fast_GET_SIZE(fast);
+    for (Py_ssize_t i = 0; i < count; i++) {
+      PyObject *fld = PySequence_Fast_GET_ITEM(fast, i);
+      PyObject *init = PyObject_GetAttrString(fld, "init");
+      if (! init)
+        goto dc_fail;
+      int wanted = PyObject_IsTrue(init);
+      Py_DECREF(init);
+      if (wanted < 0)
+        goto dc_fail;
+      if (! wanted)
+        continue;
+      PyObject *name = PyObject_GetAttrString(fld, "name");
+      if (! name)
+        goto dc_fail;
+      int rc = PyList_Append(names, name);
+      Py_DECREF(name);
+      if (rc < 0)
+        goto dc_fail;
+    }
+
+    Py_DECREF(fast);
+    PyObject *result = PyList_AsTuple(names);
+    Py_DECREF(names);
+    return result;
+
+  dc_fail:
+    Py_DECREF(fast);
+    Py_DECREF(names);
+    return NULL;
+  }
+
+  PyObject *nt_fields = PyObject_GetAttrString(cls, "_fields");
+  if (! nt_fields) {
+    if (PyErr_ExceptionMatches(PyExc_AttributeError))
+      PyErr_Clear();
+    return NULL;
+  }
+  if (PyTuple_Check(nt_fields))
+    return nt_fields;
+  Py_DECREF(nt_fields);
+  return NULL;
+}
+#endif
+
+
+/**
+   Match one MAP entry against a mapping subject: resolve the key
+   (const or extern), look it up, and match the entry's sub-matcher
+   against the looked-up value in its own synthesized single-element
+   subject. A missing key folds to a soft no-match; other lookup
+   errors propagate.
+*/
+static int match_one_mentry(
+    MatchEngine *e,
+    KosMatchNode *en,
+    PyObject *mapping) {
+
+  PyObject *key;
+  if (en->as.mentry.key_kind == KOS_MATCH_MAPKEY_CONST) {
+    key = PyTuple_GET_ITEM(e->m->consts, en->as.mentry.key_ref);
+  } else {
+    if (! e->extern_env) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "MAP extern key requires an extern environment");
+      return -1;
+    }
+    key = PyTuple_GET_ITEM(e->extern_env, en->as.mentry.key_ref);
+  }
+
+  PyObject *val = PyObject_GetItem(mapping, key);
+  if (! val) {
+    if (PyErr_ExceptionMatches(PyExc_KeyError)) {
+      PyErr_Clear();
+      return 0;
+    }
     return -1;
   }
-  Py_DECREF(one);
 
-  KosMatchSubject *saved = e->subj;
-  e->subj = &sub;
+  int r = match_projected_value(e, en->as.mentry.subnode, val);
+  Py_DECREF(val);
+  return r;
+}
 
-  Py_ssize_t sub_cursor = 0;
-  int r = match_node(e, fn->as.field.subnode, &sub_cursor, 0);
 
-  Py_ssize_t sub_length = sub.vt->length(&sub);
-  e->subj = saved;
-  KosMatchSubject_Release(&sub);
+/**
+   Cached collections.abc.Mapping, resolved lazily on the first non-dict
+   MAP attempt and then immortal. The MAP miss path runs for every
+   non-mapping element that flows past a mapping arm, so it must not pay
+   import-machinery costs per call; a benign double-resolve race under
+   the GIL at worst leaks one reference. Returns a borrowed reference,
+   or NULL with an exception set.
+*/
+static PyObject *get_abc_mapping(void) {
+  static PyObject *abc_mapping_type = NULL;
 
+  if (! abc_mapping_type) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    abc_mapping_type = PyObject_GetAttrString(abc, "Mapping");
+    Py_DECREF(abc);
+  }
+  return abc_mapping_type;
+}
+
+
+/**
+   MAP: match the current spine element as a mapping. The element must
+   be dict-like (PyDict, or an instance of collections.abc.Mapping);
+   each entry's key must be present with a value matching the entry's
+   sub-pattern. Extra keys are ignored, per PEP 634 mapping-pattern
+   semantics.
+*/
+static int match_map(
+    MatchEngine *e,
+    KosMatchNode *n,
+    Py_ssize_t *cursor,
+    uint32_t trailing_min) {
+
+  Py_ssize_t length = e->subj->vt->length(e->subj);
+  if (*cursor + 1 + (Py_ssize_t) trailing_min > length)
+    return 0;
+
+  PyObject *elem = e->subj->vt->get(e->subj, *cursor);
+  PyObject *mapping = matcher_peel_datum(elem);
+
+  if (! PyDict_Check(mapping)) {
+    /* Not a dict: accept any collections.abc.Mapping, reject the rest
+       with a soft no-match. */
+    PyObject *mapping_type = get_abc_mapping();
+    if (! mapping_type)
+      return -1;
+    int isinst = PyObject_IsInstance(mapping, mapping_type);
+    if (isinst < 0)
+      return -1;
+    if (! isinst)
+      return 0;
+  }
+
+  for (uint32_t eidx = n->as.map.first_entry;
+       eidx != KOS_MATCH_NO_INDEX;
+       eidx = e->m->nodes[eidx].next) {
+    KosMatchNode *en = &e->m->nodes[eidx];
+    int r = match_one_mentry(e, en, mapping);
+    if (r != 1)
+      return r;
+  }
+
+  (*cursor)++;
+  return 1;
+}
+
+
+/**
+   APP: call the extractor extern on the current spine element and match
+   the sub-pattern against the call's result. The extractor is invoked
+   through the demand path (a plain koskari callable works directly; a
+   genuine async suspension raises KoskariSyncViolation); a raising
+   extractor propagates as an error, never a no-match. The result is
+   matched in its own synthesized single-element subject, same as a
+   CLASS field's projected value.
+*/
+static int match_app(
+    MatchEngine *e,
+    KosMatchNode *n,
+    Py_ssize_t *cursor,
+    uint32_t trailing_min) {
+
+  Py_ssize_t length = e->subj->vt->length(e->subj);
+  if (*cursor + 1 + (Py_ssize_t) trailing_min > length)
+    return 0;
+
+  if (! e->extern_env) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "APP requires an extern environment");
+    return -1;
+  }
+
+  PyObject *elem = e->subj->vt->get(e->subj, *cursor);
+  PyObject *fn = PyTuple_GET_ITEM(e->extern_env, n->as.app.fn_extern);
+  PyObject *got = matcher_peel_datum(elem);
+
+  PyObject *res = matcher_call_extern(fn, got);
+  if (! res)
+    return -1;
+
+  int r = match_projected_value(e, n->as.app.subnode, res);
+  Py_DECREF(res);
   if (r != 1)
     return r;
-  if (sub_cursor != sub_length)
-    return 0;
+
+  (*cursor)++;
   return 1;
 }
 
@@ -3276,11 +3831,20 @@ static int match_class(
         PyErr_Clear();
       else
         return -1;
-      PyErr_Format(PyExc_TypeError,
-                   "%R has no __match_args__ but %zd positional field "
-                   "pattern(s) were supplied",
-                   cls, num_positional);
-      return -1;
+#if PY_MINOR_VERSION < 10
+      /* 3.9: no generated __match_args__ exists anywhere — synthesize
+         the 3.10-equivalent for dataclasses and namedtuples. */
+      match_args = synth_match_args_39(cls);
+      if (! match_args && PyErr_Occurred())
+        return -1;
+#endif
+      if (! match_args) {
+        PyErr_Format(PyExc_TypeError,
+                     "%R has no __match_args__ but %zd positional field "
+                     "pattern(s) were supplied",
+                     cls, num_positional);
+        return -1;
+      }
     }
     if (! PyTuple_Check(match_args)) {
       PyErr_Format(PyExc_TypeError,
@@ -3420,10 +3984,22 @@ static int match_node(
   case KOS_MATCH_NODE_CLASS:
     return match_class(e, n, cursor, trailing_min);
 
+  case KOS_MATCH_NODE_APP:
+    return match_app(e, n, cursor, trailing_min);
+
+  case KOS_MATCH_NODE_MAP:
+    return match_map(e, n, cursor, trailing_min);
+
   case KOS_MATCH_NODE_FIELD:
     PyErr_Format(PyExc_RuntimeError,
                  "FIELD node may not be matched directly (must be "
                  "reached via a CLASS chain)");
+    return -1;
+
+  case KOS_MATCH_NODE_MENTRY:
+    PyErr_Format(PyExc_RuntimeError,
+                 "MENTRY node may not be matched directly (must be "
+                 "reached via a MAP chain)");
     return -1;
 
   default:
@@ -4050,6 +4626,63 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
                          &n.as.form.subnode, "FORM.subnode"))
       return -1;
 
+  } else if (PyUnicode_CompareWithASCIIString(tag, "APP") == 0) {
+    if (arity != 3) {
+      PyErr_Format(PyExc_ValueError,
+                   "APP node tuple must be 3-tuple, got %zd", arity);
+      return -1;
+    }
+    n.kind = KOS_MATCH_NODE_APP;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
+                         &n.as.app.fn_extern, "APP.fn_extern"))
+      return -1;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 2),
+                         &n.as.app.subnode, "APP.subnode"))
+      return -1;
+
+  } else if (PyUnicode_CompareWithASCIIString(tag, "MAP") == 0) {
+    Py_ssize_t cnt = arity - 1;
+    uint32_t *entries = NULL;
+    if (cnt > 0) {
+      entries = PyMem_Malloc(cnt * sizeof(uint32_t));
+      if (! entries) {
+        PyErr_NoMemory();
+        return -1;
+      }
+    }
+    for (Py_ssize_t i = 0; i < cnt; i++) {
+      if (thaw_parse_index(PyTuple_GET_ITEM(t, 1 + i), &entries[i],
+                           "MAP entry")) {
+        PyMem_Free(entries);
+        return -1;
+      }
+    }
+    int rc = KosMatcherBuilder_AppendMap(b, entries, cnt);
+    PyMem_Free(entries);
+    return (rc < 0) ? -1 : 0;
+
+  } else if (PyUnicode_CompareWithASCIIString(tag, "MENTRY_CONST") == 0
+             || PyUnicode_CompareWithASCIIString(tag,
+                                                 "MENTRY_EXTERN") == 0) {
+    if (arity != 3) {
+      PyErr_Format(PyExc_ValueError,
+                   "MENTRY node tuple must be 3-tuple, got %zd", arity);
+      return -1;
+    }
+    uint16_t kind =
+        (PyUnicode_CompareWithASCIIString(tag, "MENTRY_CONST") == 0)
+        ? (uint16_t) KOS_MATCH_MAPKEY_CONST
+        : (uint16_t) KOS_MATCH_MAPKEY_EXTERN;
+    uint32_t key_ref, sub;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1), &key_ref,
+                         "MENTRY.key_ref"))
+      return -1;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 2), &sub,
+                         "MENTRY.subnode"))
+      return -1;
+    int rc = KosMatcherBuilder_AppendMentry(b, kind, key_ref, sub);
+    return (rc < 0) ? -1 : 0;
+
   } else if (PyUnicode_CompareWithASCIIString(tag, "MATCH") == 0) {
     Py_ssize_t cnt = arity - 1;
     if (cnt < 0) {
@@ -4387,6 +5020,11 @@ static PyObject *thaw_matcher_tuple(PyObject *t) {
 }
 
 
+PyObject *KosMatcher_FromTuple(PyObject *tuple) {
+  return thaw_matcher_tuple(tuple);
+}
+
+
 static PyObject *matcher_from_tuple(
     PyObject *cls,
     PyObject *args) {
@@ -4395,7 +5033,7 @@ static PyObject *matcher_from_tuple(
   PyObject *t;
   if (! PyArg_ParseTuple(args, "O", &t))
     return NULL;
-  return thaw_matcher_tuple(t);
+  return KosMatcher_FromTuple(t);
 }
 
 

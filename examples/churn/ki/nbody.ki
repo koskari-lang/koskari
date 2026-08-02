@@ -41,45 +41,45 @@ define offset-momentum [bodies]:
     define py 0.0
     define pz 0.0
     for-each [b bodies]:
-        set! px (+ px (* (item b 3) (item b 6)))
-        set! py (+ py (* (item b 4) (item b 6)))
-        set! pz (+ pz (* (item b 5) (item b 6)))
-    define sun (item bodies 0)
-    set-item sun 3 (/ (- 0.0 px) SOLAR_MASS)
-    set-item sun 4 (/ (- 0.0 py) SOLAR_MASS)
-    set-item sun 5 (/ (- 0.0 pz) SOLAR_MASS)
+        incr! px (* b[3] b[6])
+        incr! py (* b[4] b[6])
+        incr! pz (* b[5] b[6])
+    define sun bodies[0]
+    set! sun[3] (/ (- 0.0 px) SOLAR_MASS)
+    set! sun[4] (/ (- 0.0 py) SOLAR_MASS)
+    set! sun[5] (/ (- 0.0 pz) SOLAR_MASS)
 
 
 define advance [bodies dt]:
     define n (len bodies)
     define i 0
     while (< i n):
-        define bi (item bodies i)
+        define bi bodies[i]
         define j (+ i 1)
         while (< j n):
-            define bj (item bodies j)
-            define dx (- (item bi 0) (item bj 0))
-            define dy (- (item bi 1) (item bj 1))
-            define dz (- (item bi 2) (item bj 2))
+            define bj bodies[j]
+            define dx (- bi[0] bj[0])
+            define dy (- bi[1] bj[1])
+            define dz (- bi[2] bj[2])
             define d2 (+ (* dx dx) (* dy dy) (* dz dz))
             define mag (/ dt (* d2 (sqrt d2)))
-            define bim (* (item bi 6) mag)
-            define bjm (* (item bj 6) mag)
-            set-item bi 3 (- (item bi 3) (* dx bjm))
-            set-item bi 4 (- (item bi 4) (* dy bjm))
-            set-item bi 5 (- (item bi 5) (* dz bjm))
-            set-item bj 3 (+ (item bj 3) (* dx bim))
-            set-item bj 4 (+ (item bj 4) (* dy bim))
-            set-item bj 5 (+ (item bj 5) (* dz bim))
-            set! j (+ j 1)
-        set! i (+ i 1)
+            define bim (* bi[6] mag)
+            define bjm (* bj[6] mag)
+            decr! bi[3] (* dx bjm)
+            decr! bi[4] (* dy bjm)
+            decr! bi[5] (* dz bjm)
+            incr! bj[3] (* dx bim)
+            incr! bj[4] (* dy bim)
+            incr! bj[5] (* dz bim)
+            incr! j
+        incr! i
     define k 0
     while (< k n):
-        define b (item bodies k)
-        set-item b 0 (+ (item b 0) (* dt (item b 3)))
-        set-item b 1 (+ (item b 1) (* dt (item b 4)))
-        set-item b 2 (+ (item b 2) (* dt (item b 5)))
-        set! k (+ k 1)
+        define b bodies[k]
+        incr! b[0] (* dt b[3])
+        incr! b[1] (* dt b[4])
+        incr! b[2] (* dt b[5])
+        incr! k
 
 
 define energy [bodies]:
@@ -87,21 +87,21 @@ define energy [bodies]:
     define e 0.0
     define i 0
     while (< i n):
-        define b (item bodies i)
-        set! e (+ e (* 0.5 (item b 6)
-                       (+ (* (item b 3) (item b 3))
-                          (* (item b 4) (item b 4))
-                          (* (item b 5) (item b 5)))))
+        define b bodies[i]
+        set! e (+ e (* 0.5 b[6]
+                       (+ (* b[3] b[3])
+                          (* b[4] b[4])
+                          (* b[5] b[5]))))
         define j (+ i 1)
         while (< j n):
-            define bj (item bodies j)
-            define dx (- (item b 0) (item bj 0))
-            define dy (- (item b 1) (item bj 1))
-            define dz (- (item b 2) (item bj 2))
+            define bj bodies[j]
+            define dx (- b[0] bj[0])
+            define dy (- b[1] bj[1])
+            define dz (- b[2] bj[2])
             define dist (sqrt (+ (* dx dx) (* dy dy) (* dz dz)))
-            set! e (- e (/ (* (item b 6) (item bj 6)) dist))
-            set! j (+ j 1)
-        set! i (+ i 1)
+            set! e (- e (/ (* b[6] bj[6]) dist))
+            incr! j
+        incr! i
     e
 
 
@@ -111,7 +111,7 @@ define nbody [n]:
     define step 0
     while (< step n):
         (advance bodies 0.01)
-        set! step (+ step 1)
+        incr! step
     (round (energy bodies) 9)
 
 

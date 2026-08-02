@@ -19,7 +19,7 @@ Proposal — not implemented.
 
 ## Related
 
-- [match-case-form.md](match-case-form.md) — runtime match form (depends on
+- [match-case-form.md](../archive/match-case-form.md) — runtime match form (depends on
   this foundation).
 - Formals and **`FormalsSpec`** implementation paths under `koskari` (see
   [../api/types.md](../api/types.md) and compiler specials for lambda/apply).

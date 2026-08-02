@@ -21,14 +21,18 @@ Layout handlers for conditional block syntax.
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
 from ...bootstrap import builtin
-from ...types import get_position, unpack, is_pair
-from .helpers import layout
+from ...types import get_position, is_nil, is_pair, unpack
+from .helpers import block_source_from_cons, layout, match_block_source
 
 
 _symbol_case = symbol('case')
 _symbol_elif = symbol('elif')
 _symbol_else = symbol('else')
+_symbol_when = symbol('when')
+_symbol_unless = symbol('unless')
 _keyword_else = keyword('else')
+_keyword_when = keyword('when')
+_keyword_unless = keyword('unless')
 
 
 @builtin('layout/if')
@@ -188,6 +192,150 @@ def layout_switch(ns, source, peers):
                 get_position(form))
 
     return cons(symbol('compile/switch'), value, *clauses, nil)
+
+
+def _split_case_guard(cargs, child):
+    """
+    Split a case header tail on a when / unless marker. The tokens
+    before the marker are the pattern; exactly one form after it is the
+    guard expression. Returns (pattern_list, guard_keyword, guard_form),
+    with the latter two None when the header carries no guard.
+
+    :param cargs: case header tail spine
+    :param child: the case block source, for error positions
+    """
+
+    pattern_parts = []
+    walk = cargs
+    while walk:
+        element, walk = walk
+        if element is _symbol_when or element is _symbol_unless:
+            gkw = (_keyword_when if element is _symbol_when
+                   else _keyword_unless)
+            if not pattern_parts:
+                raise LayoutError(
+                    f'case requires a pattern before {element}',
+                    get_position(child))
+            gparts = list(unpack(walk))
+            if len(gparts) != 1:
+                raise LayoutError(
+                    f'{element} guard requires exactly one expression',
+                    get_position(child))
+            return cons(*pattern_parts, nil), gkw, gparts[0]
+        pattern_parts.append(element)
+    return cargs, None, None
+
+
+@builtin('layout/match')
+@layout(symbol('layout/match'), raw=True)
+def layout_match(ns, source, peers):
+    """
+    Lower a match block source into a flat match form for compilation
+
+    eg.
+    match (get-value):
+      case #[a b c]:
+        (use a b c)
+      case x :: int:
+        (use x)
+      case Point[x y]:
+        (use x y)
+      else:
+        (other)
+
+    A raw layout: the case and else children arrive as block sources, so
+    each case header (however many tokens) is structurally separate from
+    its body. The whole header tail becomes the clause's pattern
+    delimiter, giving
+
+        (compile/match VALUE
+          [[PATTERN...] BODY...]
+          ...
+          [else: BODY...])
+
+    which is the same clause shape an s-expr author writes directly. A
+    ``when`` / ``unless`` marker in a case header splits it into pattern
+    and guard: ``case PATTERN when COND:`` emits
+    ``[[PATTERN] when: COND BODY...]``.
+
+    :param source: ((match VALUE) . BODY) pair with raw block children
+    :param peers: must be empty
+    """
+
+    from . import apply_layouts
+
+    if peers:
+        raise LayoutError(
+            'match does not take peers',
+            get_position(source))
+
+    header, body = source
+    header_parts = list(unpack(header))
+    pargs = header_parts[1:]
+
+    if len(pargs) != 1:
+        raise LayoutError(
+            'match block requires exactly one value expression',
+            get_position(source))
+
+    value = pargs[0]
+    clauses = []
+    saw_else = False
+
+    for child in unpack(body):
+        child = block_source_from_cons(child) or child
+        matched = match_block_source(child)
+        if matched is None:
+            raise LayoutError(
+                'match body may only contain case or else blocks',
+                get_position(child) or get_position(source))
+
+        chead, cargs = matched['header'].datum
+        cbody = apply_layouts(matched['body'].datum, ns)
+
+        if chead is _symbol_case:
+            if saw_else:
+                raise LayoutError(
+                    'case cannot follow else',
+                    get_position(child))
+            if is_nil(cargs):
+                raise LayoutError(
+                    'case requires a pattern',
+                    get_position(child))
+            if is_nil(cbody):
+                raise LayoutError(
+                    'case requires a body',
+                    get_position(child))
+            pattern, gkw, guard = _split_case_guard(cargs, child)
+            if gkw is not None:
+                clauses.append(
+                    cons(pattern, gkw, guard, *unpack(cbody), nil))
+            else:
+                clauses.append(cons(pattern, *unpack(cbody), nil))
+
+        elif chead is _symbol_else:
+            if saw_else:
+                raise LayoutError(
+                    'multiple else clauses are not allowed',
+                    get_position(child))
+            if not is_nil(cargs):
+                raise LayoutError(
+                    'else block does not take arguments',
+                    get_position(child))
+            if is_nil(cbody):
+                raise LayoutError(
+                    'else block requires a body',
+                    get_position(child))
+            clauses.append(cons(_keyword_else, *unpack(cbody), nil))
+            saw_else = True
+
+        else:
+            raise LayoutError(
+                f'match body may only contain case or else blocks, '
+                f'got {chead!r}',
+                get_position(child))
+
+    return cons(symbol('compile/match'), value, *clauses, nil)
 
 
 # The end.

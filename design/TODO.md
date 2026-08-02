@@ -287,14 +287,13 @@ runtime match and from `define-values` / `setq-values` kwargs paths.
 
 Ref: [language/seq-values-kwargs-formals-apply.md](language/seq-values-kwargs-formals-apply.md).
 
-### Runtime `match` form, `match/case` layout, and `MATCH_CASE` lowering
+### `define-matcher` parameterized matcher templates
 
-Reader layout, compile lowering per arm, opcode applier (analogous to
-`SWITCH_EQ`), constant pools with extern names from local env, and
-syntax-rules-style namespace mapping for committed arms; depends on seq-values
-kwargs foundation where arm binding requires it.
+Named, parameterized matcher construction from the native units,
+module-scoped via `matcher/NAME` namespace resolution. The type and value
+association semantics are deliberately open for deliberation.
 
-Ref: [language/match-case-form.md](language/match-case-form.md).
+Ref: [language/define-matcher.md](language/define-matcher.md).
 
 ### `RETURN` frame-only; `return-shift` for delim continuations
 

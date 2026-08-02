@@ -65,6 +65,7 @@
 #include "debug.h"
 #include "operator.h"
 #include "tracing.h"
+#include "matcher.h"
 
 #include <stdint.h>
 #include <frameobject.h>

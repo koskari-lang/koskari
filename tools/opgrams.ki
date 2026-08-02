@@ -62,8 +62,8 @@ define MODULE_GROUPS #{
     "life": #("koslife.cli" "koslife.curse" "koslife.life")
     "churn": #(
         "ki.binary_trees" "ki.branch" "ki.fannkuch" "ki.field"
-        "ki.field_slots" "ki.list_each" "ki.loop" "ki.method"
-        "ki.nbody" "ki.pidigits" "ki.starmap" "ki.tree"
+        "ki.field_slots" "ki.list_each" "ki.loop" "ki.match_case"
+        "ki.method" "ki.nbody" "ki.pidigits" "ki.starmap" "ki.tree"
         "ki.yieldfrom")
     ; The developer tools: string, dict, path, and argparse work, a
     ; different opcode mix from the numeric churn kernels. Importing
@@ -72,6 +72,7 @@ define MODULE_GROUPS #{
     "tools": #(
         "tools.tools"
         "tools.opgrams"
+        "tools.matchbench"
         "tools.editor_tokens.regen"
         "tools.corpus.load"
         "tools.corpus.export"

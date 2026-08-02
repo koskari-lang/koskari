@@ -1,0 +1,165 @@
+id: match-bare-multitoken-001
+feature: special/compile/match
+source: |-
+  (match seq [[a b c] "seq?"] [else: 0])
+  
+verify:
+  error: "SpecialError: invalid case pattern"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - invalid
+notes: "corrective: a sequence is always the explicit form -- (match seq [[#[a b c]] ...] ...)"
+---
+id: match-else-not-last-001
+feature: special/compile/match
+source: |-
+  (match 5 [else: 1] [[5] 2])
+  
+verify:
+  error: "SpecialError: else: must be last clause"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - invalid
+notes: "corrective: move the else: clause after every case clause"
+---
+id: match-no-subject-001
+feature: special/compile/match
+source: |-
+  (match)
+  
+verify:
+  error: "SpecialError: match requires a subject"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - invalid
+notes: "corrective: give match a subject expression -- (match VALUE ...)"
+---
+id: match-guard-missing-expr-001
+feature: special/compile/match
+source: |-
+  (match 5 [[x] when:])
+  
+verify:
+  error: "SpecialError: match guard requires an expression"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - guard
+  - invalid
+notes: "corrective: when: takes one guard expression -- [[x] when: (> x 1) BODY]"
+---
+id: match-layout-case-after-else-001
+feature: layout/match
+source: |-
+  match 5:
+      else:
+          1
+      case x:
+          x
+  
+verify:
+  error: "LayoutError: case cannot follow else"
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - "surface:block"
+  - invalid
+notes: "corrective: else must be the last block in a match body"
+---
+id: match-layout-else-args-001
+feature: layout/match
+source: |-
+  match 5:
+      else y:
+          1
+  
+verify:
+  error: "LayoutError: else block does not take arguments"
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - "surface:block"
+  - invalid
+notes: "corrective: else takes no arguments; bind in the body instead"
+---
+id: match-layout-two-subjects-001
+feature: layout/match
+source: |-
+  match 5 6:
+      case x:
+          x
+  
+verify:
+  error: "LayoutError: match block requires exactly one value expression"
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - "surface:block"
+  - invalid
+notes: "corrective: match takes one subject; wrap multiple values -- match #(5 6):"
+---
+id: match-spine-dcolon-surprising-001
+feature: special/compile/match
+source: |-
+  (match seq [[#[a :: int]] "typed?"] [else: "fell-through"])
+  
+verify:
+  read: "(match seq [[(#list a :: int)] \"typed?\"] [else: \"fell-through\"])"
+  invalid: "surprising: a bare :: inside a sequence is not a type marker -- #[a :: int] is a THREE-element sequence (capture a, literal :: keyword, capture int), so seq=(1,2,3) falls through to else; no error is raised"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - typed
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: parenthesize typed elements inside sequences -- #[(a :: int)]"
+---
+id: match-string-seq-surprising-001
+feature: special/compile/match
+source: |-
+  (match "ab" [[#[a b]] "chars"] [else: "atom"])
+  
+verify:
+  read: "(match \"ab\" [[(#list a b)] \"chars\"] [else: \"atom\"])"
+  invalid: "surprising for Python sequence intuitions elsewhere: a two-character string does NOT destructure into characters -- strings are atoms to sequence patterns (PEP 634), so this falls to else"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: match a string as a whole value -- [[s :: str] ...] or a literal arm"

@@ -1,0 +1,597 @@
+id: match-capture-whole-001
+feature: special/compile/match
+source: |-
+  (match 42 [[x] x])
+  
+verify:
+  read: (match 42 [[x] x])
+  eval: "42"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - capture
+  - branch
+  - destructure
+---
+id: match-literal-arms-001
+feature: special/compile/match
+source: |-
+  (match 5 [[1] "one"] [[5] "five"] [else: "meh"])
+  
+verify:
+  eval: '"five"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - literal
+  - branch
+  - multi-way
+---
+id: match-no-clauses-001
+feature: special/compile/match
+source: |-
+  (match 5)
+  
+verify:
+  eval: "null"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - branch
+notes: no clauses is legal; the subject is evaluated and discarded
+---
+id: match-no-match-no-else-001
+feature: special/compile/match
+source: |-
+  (match "hi" [[x :: int] x])
+  
+verify:
+  eval: "null"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - branch
+notes: no matching arm and no else yields None, like cond and switch
+---
+id: match-typed-multitoken-001
+feature: special/compile/match
+source: |-
+  (match 7 [[x :: int] x] [else: "no"])
+  
+verify:
+  eval: "7"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - typed
+  - branch
+  - destructure
+notes: "the bare multi-token x :: int spelling is allowed at delimiter top level"
+---
+id: match-typed-miss-001
+feature: special/compile/match
+source: |-
+  (match "hi" [[x :: int] x] [else: "no"])
+  
+verify:
+  eval: '"no"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - typed
+  - branch
+---
+id: match-seq-basic-001
+feature: special/compile/match
+source: |-
+  (match seq [[#[a b c]] b] [else: 0])
+  
+verify:
+  eval: "2"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - branch
+  - destructure
+notes: uses the baked fixture seq=(1,2,3)
+---
+id: match-seq-rest-001
+feature: special/compile/match
+source: |-
+  (match seq [[#[a *: r]] r] [else: 0])
+  
+verify:
+  eval: "tuple:(2,3)"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - rest
+  - destructure
+notes: "uses the baked fixture seq=(1,2,3); *: r binds the remaining elements"
+---
+id: match-seq-wrong-length-001
+feature: special/compile/match
+source: |-
+  (match seq [[#[a b]] b] [else: 99])
+  
+verify:
+  eval: "99"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - branch
+notes: uses the baked fixture seq=(1,2,3); a two-element pattern misses a three-element subject
+---
+id: match-seq-empty-001
+feature: special/compile/match
+source: |-
+  (match #() [[#[]] "empty"] [else: "nonempty"])
+  
+verify:
+  eval: '"empty"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - branch
+---
+id: match-seq-nested-001
+feature: special/compile/match
+source: |-
+  (match #(#(1 2) #(3 4)) [[#[#[a b] #[c d]]] (+ a d)] [else: 0])
+  
+verify:
+  eval: "5"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - destructure
+---
+id: match-or-001
+feature: special/compile/match
+source: |-
+  (match 2 [[(or 1 2)] "low"] [else: "high"])
+  
+verify:
+  eval: '"low"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - or
+  - branch
+  - multi-way
+---
+id: match-not-001
+feature: special/compile/match
+source: |-
+  (match 5 [[(not 9)] "not-nine"] [else: "nine"])
+  
+verify:
+  eval: '"not-nine"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - not
+  - branch
+---
+id: match-first-arm-wins-001
+feature: special/compile/match
+source: |-
+  (match seq [[#[a *: r]] "first-arm"] [[#[a b c]] "exact"] [else: 0])
+  
+verify:
+  eval: '"first-arm"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - branch
+  - idiom
+notes: arms are tried in order; put more specific patterns before more general ones
+---
+id: match-string-atom-001
+feature: special/compile/match
+source: |-
+  (match "ab" [[#[a b]] "seq"] [[s :: str] "string"])
+  
+verify:
+  eval: '"string"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - typed
+  - idiom
+  - pitfall
+notes: strings are atoms to sequence patterns (PEP 634); a str never destructures into characters
+---
+id: match-guard-when-001
+feature: special/compile/match
+source: |-
+  (match 42 [[x :: int] when: (> x 10) "big"] [[x :: int] "small"] [else: "other"])
+  
+verify:
+  eval: '"big"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - guard
+  - branch
+---
+id: match-guard-unless-001
+feature: special/compile/match
+source: |-
+  (match 4 [[x :: int] unless: (> x 10) "small"] [else: "big"])
+  
+verify:
+  eval: '"small"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - guard
+  - branch
+---
+id: match-mapping-literal-001
+feature: special/compile/match
+source: |-
+  (match #{"kind": "job" "url": "http://x"} [[#{"kind": "job" "url": u}] u] [[#{"kind": k}] k] [else: "other"])
+  
+verify:
+  eval: '"http://x"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - mapping
+  - branch
+  - destructure
+notes: every listed key must be present; extra keys are ignored
+---
+id: match-mapping-extern-key-001
+feature: special/compile/match
+source: |-
+  (begin (define key "dyn") (match #{"dyn": 9} [[#{key: v}] v] [else: "missing"]))
+  
+verify:
+  eval: "9"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - mapping
+  - destructure
+notes: a symbol mapping key resolves from the enclosing scope at match time -- a computed key
+---
+id: match-mapping-nonmap-001
+feature: special/compile/match
+source: |-
+  (match seq [[#{"kind": k}] k] [else: "not-a-mapping"])
+  
+verify:
+  eval: '"not-a-mapping"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - mapping
+  - branch
+notes: uses the baked fixture seq=(1,2,3); a non-mapping falls past mapping arms
+---
+id: match-predicate-001
+feature: special/compile/match
+source: |-
+  (begin (define pos? (lambda [v] (> v 0))) (match 5 [[(? pos?)] "positive"] [else: "nope"]))
+  
+verify:
+  eval: '"positive"'
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - predicate
+  - branch
+  - higher-order
+notes: the predicate is called through the demand path; a plain koskari lambda works directly
+---
+id: match-app-001
+feature: special/compile/match
+source: |-
+  (begin (define half (lambda [v] (// v 2))) (match 10 [[(app half h)] h]))
+  
+verify:
+  eval: "5"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - app
+  - destructure
+  - higher-order
+notes: (app f pat) calls f on the subject and matches pat against the result
+---
+id: match-app-destructure-001
+feature: special/compile/match
+source: |-
+  (begin (define dm3 (lambda [v] (divmod v 3))) (match 10 [[(app dm3 #[q r])] r] [else: "no"]))
+  
+verify:
+  eval: "1"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - app
+  - sequence
+  - destructure
+  - higher-order
+notes: the extraction result is itself pattern-matched -- here destructured as a sequence
+---
+id: match-class-001
+feature: special/compile/match
+source: |-
+  (begin (import-from dataclasses dataclass) (define-class Point [] (define x :: int 0) (define y :: int 0)) (define P (dataclass Point)) (match (P 3 4) [[(item P a b)] b] [else: "no"]))
+  
+verify:
+  eval: "4"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - class
+  - destructure
+  - define-type
+notes: (item P a b) is the s-expr spelling of the P[a b] subscript sugar; positional fields resolve through __match_args__ (provided by @dataclass)
+---
+id: match-typed-in-seq-001
+feature: special/compile/match
+source: |-
+  (match seq [[#[(a :: int) b c]] a] [else: "no"])
+  
+verify:
+  eval: "1"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - typed
+  - destructure
+notes: uses the baked fixture seq=(1,2,3); inside a sequence a typed element must be parenthesized
+---
+id: match-layout-basic-001
+feature: layout/match
+source: |-
+  match 5:
+      case 1:
+          "one"
+      case 5:
+          "five"
+      else:
+          "meh"
+  
+verify:
+  read: "(compile/match 5 ((1) \"one\") ((5) \"five\") (else: \"meh\"))"
+  eval: '"five"'
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - literal
+  - "surface:block"
+  - branch
+  - multi-way
+---
+id: match-layout-multitoken-001
+feature: layout/match
+source: |-
+  match 7:
+      case x :: int:
+          x
+      else:
+          "no"
+  
+verify:
+  read: "(compile/match 7 ((x :: int) x) (else: \"no\"))"
+  eval: "7"
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - typed
+  - "surface:block"
+  - branch
+  - destructure
+notes: a case header may span multiple tokens; the whole header becomes the pattern
+---
+id: match-layout-guard-001
+feature: layout/match
+source: |-
+  match 42:
+      case x when (> x 10):
+          "big"
+      else:
+          "small"
+  
+verify:
+  read: "(compile/match 42 ((x) when: (> x 10) \"big\") (else: \"small\"))"
+  eval: '"big"'
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - guard
+  - "surface:block"
+  - branch
+notes: the guard runs after the pattern binds; a failed guard advances to the next arm
+---
+id: match-layout-seq-001
+feature: layout/match
+source: |-
+  match seq:
+      case #[a b c]:
+          b
+      case #[a *: rest]:
+          rest
+      else:
+          0
+  
+verify:
+  read: "(compile/match seq (((#list a b c)) b) (((#list a *: rest)) rest) (else: 0))"
+  eval: "2"
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - rest
+  - "surface:block"
+  - destructure
+notes: uses the baked fixture seq=(1,2,3)
+---
+id: match-layout-class-001
+feature: layout/match
+source: |-
+  begin:
+      import-from dataclasses dataclass
+      @dataclass
+      define-class Point []:
+          define x :: int 0
+          define y :: int 0
+      match (Point 3 4):
+          case Point[a b]:
+              b
+          else:
+              "no"
+  
+verify:
+  eval: "4"
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - class
+  - "surface:block"
+  - destructure
+  - define-type
+notes: Point[a b] subscript sugar is the class pattern; @dataclass provides __match_args__
+---
+id: match-layout-mapping-001
+feature: layout/match
+source: |-
+  match #{"kind": "job" "url": "http://x"}:
+      case #{"kind": "job" "url": u}:
+          u
+      else:
+          "other"
+  
+verify:
+  eval: '"http://x"'
+references:
+  - reference/layouts/layout-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - mapping
+  - "surface:block"
+  - destructure
+---
+id: match-mapping-not-sequence-001
+feature: special/compile/match
+source: |-
+  (match #{"a": 1 "b": 2} [[#[x y]] "keys?"] [[#{"a": v}] v] [else: "other"])
+  
+verify:
+  eval: "1"
+references:
+  - reference/specials/compile-match.md
+  - reference/concepts/match-patterns.md
+stability: evolving
+tags:
+  - match
+  - sequence
+  - mapping
+  - idiom
+  - pitfall
+notes: a mapping never destructures into its keys under a sequence pattern (PEP 634); it falls through to mapping arms

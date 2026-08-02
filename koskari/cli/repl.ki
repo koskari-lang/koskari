@@ -91,7 +91,7 @@ define continuation_indent [buffer]:
   when (block_body? buffer):
     define nonempty (list (filter (lambda [ln] (ln.strip)) lines))
     when nonempty:
-      define ln (item nonempty -1)
+      define ln nonempty[-1]
       return (* " " (- (len ln) (len (ln.lstrip))))
 
   return ""

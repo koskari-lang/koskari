@@ -33,11 +33,12 @@ special-rules** dispatch for **`compile/define-syntax`** lowers rule surfaces
 in **`koskari/compile/specials/syntax.py`** into quoted runtime call forms
 (**`build-syntax`**, **`build-macro`**, **`build-special`**) backed by
 **`parse-rule-pattern`** / **`parse-match-pattern`**; see bootstrap bindings in
-**`koskari/importer/bootstrap.py`**. What remains for this rollup is narrower than the original Phase 7
-bullet: per-special polish where a form still prefers ad hoc matching over
-shared **`matcher`** / **`helpers`** surfaces, **runtime `match/case`**
-(Phase 8), and optional **rename NG modules to canonical names** once the
-tree stabilizes. Earlier legacy matcher stacks and duplicate compile-helper paths
+**`koskari/importer/bootstrap.py`**. **Runtime `match/case` (Phase 8) is
+landed** (see the Phase 8 section below and the archived design docs). What
+remains for this rollup is narrower than the original Phase 7 bullet:
+per-special polish where a form still prefers ad hoc matching over shared
+**`matcher`** / **`helpers`** surfaces, and optional **rename NG modules to
+canonical names** once the tree stabilizes. Earlier legacy matcher stacks and duplicate compile-helper paths
 that predated this layout are **removed**. Treat Phase 7 in the checklist below as **landed** for the define-syntax /
 **`syntax.Syntax`** story, with follow-up only for straggler specials and
 hardening.
@@ -1553,17 +1554,35 @@ Per-special-form authoring remains either Python **`matcher`** builders or,
 after broader **`define-matcher`** integration, surface matcher syntax lowered
 through Phase 6.
 
-### Phase 8 — Runtime match/case *(pending)*
+### Phase 8 — Runtime match/case *(implemented)*
 
-Add runtime `match` syntax using the same matcher constants.
+Runtime `match` is a **sequence-unpacking** form over the same matcher
+constants. Opcodes / lowering in [match-case-form.md](../archive/match-case-form.md); the
+surface pattern language (clause delimiter, head-driven classifier,
+reader-sugar heads, guards, and the universal shape-detection vision) in
+[match-pattern-language.md](../archive/match-pattern-language.md). The special makes no
+shape decisions — all pattern classification is the matcher's, dispatched on
+head. `*: name` rest is a matcher-surface rule on the spine composites
+(`form_factory` / `match_factory`), not a match-only convenience.
+
+Two new opcodes carry the lowering, styled on the `SWITCH_EQ` chain: **`MATCH_CASE`**
+(run an arm's frozen matcher against the subject held on the stack; no-match keeps
+the subject and jumps, first match pops it and deposits the `MatchResult`) and
+**`MATCH_STORE_NAMES`** (bind the committed arm's captures into the arm namespace by
+name in one dispatch). The arm matcher rides as a frozen 6-tuple const; `MATCH_CASE`
+thaws it once into a new **`KOS_CACHE_MATCHER`** per-site cache slot (the simplest
+`KosCacheSlot` kind — one owned ref, no guard/version/miss, since the thaw is a pure
+function of the const). Arm binding is inlined per arm, so the seq-values-kwargs
+foundation is not on the critical path.
 
 Runtime flow:
 
-1. Evaluate subject.
-2. Adapt subject once (sequence adapter at runtime).
+1. Evaluate subject once; keep it on the stack across the arm chain.
+2. Per arm, `MATCH_CASE` re-adapts the subject and runs the arm matcher (adapt-once
+   via a dynnode is a deferred optimization).
 3. Run case matchers in order.
-4. Apply captures to namespace.
-5. Execute selected body.
+4. On the first match, `MATCH_STORE_NAMES` binds captures into the namespace.
+5. Execute the selected body.
 
 ### Phase 9 — Hygiene extraction migration *(partial)*
 

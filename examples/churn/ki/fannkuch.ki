@@ -5,7 +5,7 @@
 
 define fannkuch [n]:
     define perm1 (list (range n))
-    define count (list-each [_ (range n)] 0)
+    define count (* #[0] n)
     define max-flips 0
     define checksum 0
     define perm-count 0
@@ -13,26 +13,28 @@ define fannkuch [n]:
 
     while True:
         while (!= r 1):
-            set-item count (- r 1) r
-            set! r (- r 1)
+            set! count[(- r 1)] r
+            decr! r
 
         define perm (list perm1)
         define flips 0
-        define k (item perm 0)
+        define k perm[0]
         while (!= k 0):
             define i 0
             define j k
             while (< i j):
-                define tmp (item perm i)
-                set-item perm i (item perm j)
-                set-item perm j tmp
-                set! i (+ i 1)
-                set! j (- j 1)
-            set! flips (+ flips 1)
-            set! k (item perm 0)
+                define tmp perm[i]
+                set! perm[i] perm[j]
+                set! perm[j] tmp
+                incr! i
+                decr! j
+
+            incr! flips
+            set! k perm[0]
 
         when (> flips max-flips):
             set! max-flips flips
+
         if (== 0 (% perm-count 2)):
             set! checksum (+ checksum flips)
         else:
@@ -42,20 +44,21 @@ define fannkuch [n]:
         define advanced False
         while (not advanced):
             when (== r n):
-                return #(max-flips checksum)
-            define perm0 (item perm1 0)
+                return max-flips checksum
+            define perm0 perm1[0]
             define i2 0
             while (< i2 r):
                 define j2 (+ i2 1)
-                set-item perm1 i2 (item perm1 j2)
+                set! perm1[i2] perm1[j2]
                 set! i2 j2
-            set-item perm1 r perm0
-            set-item count r (- (item count r) 1)
-            if (> (item count r) 0):
+
+            set! perm1[r] perm0
+            decr! count[r]
+            if (> count[r] 0):
                 set! advanced True
             else:
-                set! r (+ r 1)
-        set! perm-count (+ perm-count 1)
+                incr! r
+        incr! perm-count
 
 
 ;; The end.
