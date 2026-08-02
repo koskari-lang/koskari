@@ -1,0 +1,58 @@
+;; churn_match_case -- an eight-arm structural match per iteration over a
+;; rotating mix of subjects: class patterns, sequence destructuring with
+;; rest, mapping lookup, guarded and typed captures, string atoms, and an
+;; else arm. Paired with the Python-native match statement in
+;; py/match_case.py, so the cross-check pins koskari's match semantics
+;; against PEP 634 directly.
+
+import-from dataclasses dataclass
+
+(define MASK32 0xffffffff)
+
+
+@dataclass
+define-class Point []:
+    define x :: int 0
+    define y :: int 0
+
+
+define SUBJECTS #(
+    (Point 0 0)
+    (Point 3 4)
+    #(10 20 30 40)
+    #(1 2)
+    #{"k": 9 "extra": True}
+    17
+    2
+    "hello"
+    #{"other": 1})
+
+
+define churn_match_case [n]:
+    define acc 0
+    define count (len SUBJECTS)
+    for-each [i (range n)]:
+        define v (item SUBJECTS (% i count))
+        define r None
+        match v:
+            case Point[x: 0 y: 0]:
+                set! r 1
+            case Point[a b]:
+                set! r (+ a b)
+            case #[a b *: rest]:
+                set! r (+ (* a 2) b (len rest))
+            case #{"k": m}:
+                set! r m
+            case m :: int when (> m 5):
+                set! r (>> m 1)
+            case m :: int:
+                set! r m
+            case s :: str:
+                set! r (len s)
+            else:
+                set! r 7
+        set! acc (& (+ acc r i) MASK32)
+    acc
+
+
+;; The end.
