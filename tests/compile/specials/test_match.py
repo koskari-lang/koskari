@@ -183,6 +183,20 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "low")
 
 
+    async def test_match_or_shared_slot_binds(self):
+        # ONEOF branches may declare the same slot; the arm's binding
+        # step dedups the name and binds whichever branch matched
+        src = """
+        (compile/match data
+          [[(or (s :: str) (s :: int))] s]
+          [else: "no"])
+        """
+        expr, mod = self.compile_expr(src, data=7, int=int, str=str)
+        self.assertEqual(await expr(), 7)
+        expr, mod = self.compile_expr(src, data="hi", int=int, str=str)
+        self.assertEqual(await expr(), "hi")
+
+
     async def test_match_predicate(self):
         src = """
         (compile/match data

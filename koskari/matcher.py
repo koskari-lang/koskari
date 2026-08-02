@@ -3834,6 +3834,20 @@ CASE_DELIM_PATTERN = ONEOF(
 CASE_DELIM_MATCHER = make_matcher(MATCH(CASE_DELIM_PATTERN))
 
 
+_symbol_hash_tuple = symbol("#tuple")
+
+
+# expected shapes for the case-dialect heads, used to diagnose an
+# arity / argument-shape mistake that fell past the meta-branches
+_CASE_DIALECT_USAGE = {
+    "app": "(app extractor) or (app extractor PATTERN)",
+    "?": "(? predicate) with a symbol predicate name",
+    "not": "(not PATTERN)",
+    "or": "(or PATTERN ...)",
+    "item": "(item ClassName field...) -- the ClassName[field...] sugar",
+}
+
+
 def _lower_case_map(entries):
     """
     Lower the entries of a mapping sugar pattern ((#dict (#tuple KEY
@@ -3846,8 +3860,7 @@ def _lower_case_map(entries):
     lowered = []
     for entry in unpack(entries):
         items = list(unpack(entry)) if is_pair(entry) else []
-        if len(items) != 3 or not is_symbol(items[0]) \
-                or str(items[0]) != "#tuple":
+        if len(items) != 3 or items[0] is not _symbol_hash_tuple:
             raise ValueError(
                 f"#{{...}} pattern entry must be a key: value pair,"
                 f" got {entry!r}")
@@ -3959,8 +3972,6 @@ def parse_case_element(elem):
         branches = [
             parse_case_element(e)
             for e in unpack(c["or_branches"].datum)]
-        if not branches:
-            raise ValueError("(or ...) requires at least one branch")
         return ONEOF(*branches)
 
     if "not_operand" in c:
@@ -3987,10 +3998,18 @@ def parse_case_element(elem):
 
     if "known_head" in c:
         head = c["known_head"].datum
-        if str(head) in MATCHER_REGISTRY:
+        name = str(head)
+        if name in MATCHER_REGISTRY:
             return parse_matcher(elem)
+        # a dialect head that missed its meta-branch got the arity or
+        # argument shape wrong -- diagnose that, not "unknown head"
+        usage = _CASE_DIALECT_USAGE.get(name)
+        if usage is not None:
+            raise ValueError(
+                f"malformed ({name} ...) case pattern {elem!r};"
+                f" expected {usage}")
         raise ValueError(
-            f"unknown case pattern head {head!s};"
+            f"unknown case pattern head {name};"
             " sequence patterns use #[...] or #(...)")
 
     raise ValueError(

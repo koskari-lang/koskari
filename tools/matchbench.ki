@@ -67,8 +67,10 @@ define SUBJ_MAP #(#{"kind": "job" "url": "http://x"})
 define SUBJ_TUP #(#(1 2))
 define SUBJ_SEVEN #(7)
 
-define M_SEQ (make_matcher
+define FROZEN_SEQ ((MatchCompiler).lower
     (MATCH (FORM (MATCH (CAPTURE "a") (CAPTURE "b") (CAPTURE "c")))))
+
+define M_SEQ (thaw FROZEN_SEQ)
 
 define M_CLS (make_matcher
     (MATCH (CLASS "Point"
@@ -88,9 +90,6 @@ define M_ONEOF (make_matcher
 define M_PRED (make_matcher (MATCH (PREDICATE "p")))
 
 define M_APP (make_matcher (MATCH (APP "f" (CAPTURE "x"))))
-
-define FROZEN_SEQ ((MatchCompiler).lower
-    (MATCH (FORM (MATCH (CAPTURE "a") (CAPTURE "b") (CAPTURE "c")))))
 
 define M_SYNTAX (make_matcher
     (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body")))
@@ -249,6 +248,8 @@ define cell-match-guarded []:
 define cell-match-externs []:
     (m-externs 7)
 
+;; deliberately the same call as cell-match-last-arm: the anchor tier
+;; re-reports it beside switch and cond so the ratio rows read together
 define cell-anchor-match []:
     (m8 7)
 

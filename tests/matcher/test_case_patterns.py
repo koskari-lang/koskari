@@ -285,6 +285,23 @@ class TestClassifyCombinators(unittest.TestCase):
             parse_case_pattern(_delim(
                 _list(symbol("frobnicate"), symbol("a"))))
 
+    def test_dialect_head_arity_diagnosed(self):
+        # a dialect head with the wrong arity gets a usage message, not
+        # a misleading "unknown head" error
+        with self.assertRaises(ValueError) as ctx:
+            parse_case_pattern(_delim(
+                _list(symbol("app"), symbol("f"), symbol("p"),
+                      symbol("q"))))
+        self.assertIn("(app extractor)", str(ctx.exception))
+
+        with self.assertRaises(ValueError) as ctx:
+            parse_case_pattern(_delim(_list(symbol("not"))))
+        self.assertIn("(not PATTERN)", str(ctx.exception))
+
+        with self.assertRaises(ValueError) as ctx:
+            parse_case_pattern(_delim(_list(symbol("?"), 5)))
+        self.assertIn("(? predicate)", str(ctx.exception))
+
 
 class TestCasePatternMatching(unittest.TestCase):
     """

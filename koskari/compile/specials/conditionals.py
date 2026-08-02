@@ -25,8 +25,7 @@ compile/when, and compile/unless.
 from ...exceptions import SpecialError
 from ...lib import OpCode, keyword
 from ...matcher import (
-        CALLEDBY, MATCH, MatchCompiler, REST,
-        parse_case_pattern, pattern_slot_names)
+        CALLEDBY, MATCH, MatchCompiler, REST, parse_case_pattern)
 from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_pair
@@ -172,7 +171,7 @@ def _lower_pattern(pattern, source):
     try:
         return parse_case_pattern(pattern)
     except ValueError as exc:
-        raise SpecialError(str(exc), source)
+        raise SpecialError(str(exc), source) from exc
 
 
 @builtin("compile/match")
@@ -239,7 +238,11 @@ def special_match(compiler, source, tc=False):
 
         arm = MATCH(_lower_pattern(pattern, source))
         frozen = MatchCompiler().lower(arm)
-        names = [str(n) for n in pattern_slot_names(arm)]
+        # frozen[1] is the full slot table in emission order -- the one
+        # lowering yields both the constant and the binding names.
+        # Ordered dedup: ONEOF branches may declare the same slot in
+        # mutually exclusive arms.
+        names = list(dict.fromkeys(str(n) for n in frozen[1]))
         externs = tuple(str(name) for name in frozen[2])
 
         # the matcher resolves its externs (type / class / predicate
@@ -252,7 +255,8 @@ def special_match(compiler, source, tc=False):
         next_label = gen_label()
         fragment.instruction(
             OpCode.MATCH_CASE,
-            (next_label, frozen, externs, 1 if guard_kw else 0))
+            (next_label, frozen, externs,
+             1 if guard_kw is not None else 0))
 
         for name in names:
             if name not in declared:
