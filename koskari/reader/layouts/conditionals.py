@@ -214,12 +214,12 @@ def _split_case_guard(cargs, child):
                    else _keyword_unless)
             if not pattern_parts:
                 raise LayoutError(
-                    'case requires a pattern before %s' % (element,),
+                    f'case requires a pattern before {element}',
                     get_position(child))
             gparts = list(unpack(walk))
             if len(gparts) != 1:
                 raise LayoutError(
-                    '%s guard requires exactly one expression' % (element,),
+                    f'{element} guard requires exactly one expression',
                     get_position(child))
             return cons(*pattern_parts, nil), gkw, gparts[0]
         pattern_parts.append(element)
@@ -331,8 +331,8 @@ def layout_match(ns, source, peers):
 
         else:
             raise LayoutError(
-                'match body may only contain case or else blocks, '
-                'got %r' % (chead,),
+                f'match body may only contain case or else blocks, '
+                f'got {chead!r}',
                 get_position(child))
 
     return cons(symbol('compile/match'), value, *clauses, nil)

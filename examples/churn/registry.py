@@ -65,7 +65,7 @@ def discover():
         if info.name.startswith("_"):
             continue
         try:
-            module = importlib.import_module("py.%s" % info.name)
+            module = importlib.import_module(f"py.{info.name}")
         except SyntaxError:
             # a reference kernel using newer-Python syntax (for example
             # match_case's match statement, 3.10+); skip it on older
