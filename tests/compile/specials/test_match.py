@@ -130,6 +130,18 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), 99)
 
 
+    async def test_match_string_is_not_a_sequence(self):
+        # PEP 634: a string never destructures under a sequence pattern
+        src = """
+        (compile/match data
+          [[#[a b *: rest]] "seq"]
+          [[s :: str] "string"]
+          [else: "other"])
+        """
+        expr, mod = self.compile_expr(src, data="plain", str=str)
+        self.assertEqual(await expr(), "string")
+
+
     async def test_match_sequence_rest(self):
         src = """
         (compile/match data

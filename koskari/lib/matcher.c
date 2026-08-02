@@ -2676,6 +2676,16 @@ static int match_form(
 
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
 
+  /* PEP 634: str / bytes / bytearray are atoms to sequence patterns —
+     destructuring a string into characters is never what a match
+     meant. Soft no-match, same as any other non-sequence. */
+  PyObject *peeled = matcher_peel_datum(elem);
+  if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
+      || PyByteArray_Check(peeled)) {
+    e->in_from_datum = saved_in;
+    return 0;
+  }
+
   KosMatchSubject sub;
   if (subject_from_any(elem, &sub)) {
     /* Not a sequence-like subject — match fails (no exception). */

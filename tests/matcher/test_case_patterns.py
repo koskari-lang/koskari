@@ -309,6 +309,27 @@ class TestCasePatternMatching(unittest.TestCase):
             _list(symbol("#list"), symbol("a"), symbol("b"))))
         self.assertFalse(_match_value(pat, (1, 2, 3))[0])
 
+    def test_strings_are_not_sequences(self):
+        # PEP 634: str / bytes / bytearray never destructure into
+        # characters under a sequence pattern
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), symbol("a"), symbol("b"),
+                  keyword("*"), symbol("r"))))
+        self.assertFalse(_match_value(pat, "plain")[0])
+        self.assertFalse(_match_value(pat, b"plain")[0])
+        self.assertFalse(_match_value(pat, bytearray(b"plain"))[0])
+
+    def test_string_still_matches_as_atom(self):
+        # excluded from sequences, but still a literal / capture / typed
+        # subject as a whole value
+        pat = parse_case_pattern(_delim("plain"))
+        self.assertTrue(_match_value(pat, "plain")[0])
+        pat = parse_case_pattern(
+            _delim(symbol("s"), keyword("::"), symbol("str")))
+        matched, caps = _match_value(pat, "plain", str=str)
+        self.assertTrue(matched)
+        self.assertEqual(caps["s"], "plain")
+
     def test_class_positional(self):
         pat = parse_case_pattern(_delim(
             _list(symbol("item"), symbol("Point"),
